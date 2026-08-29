@@ -10,7 +10,7 @@ import {
   getInboxEntry,
   setInboxItemAssetTime,
 } from "@/lib/inbox/service";
-import { confirmInboxEntry } from "@/lib/memories/service";
+import { confirmInboxEntry, mergeInboxEntries } from "@/lib/memories/service";
 
 export type InboxActionState = { error?: string; itemId?: string };
 
@@ -92,6 +92,52 @@ export async function confirmAction(
           ? "家庭还没有孩子档案，请先在「家人」页补充。"
           : "确认失败，请检查标题（1–100 字）。",
       itemId,
+    };
+  }
+  revalidatePath("/inbox");
+  revalidatePath("/timeline");
+  redirect(`/memories/${result.eventId}`);
+}
+
+/**
+ * 多选合并（#010）：N 个收件箱条目 → 一个 MemoryEvent。
+ * occurredAt 默认取全部素材最早可信 capturedAt，可显式覆盖。
+ */
+export async function mergeAction(
+  _prev: InboxActionState | undefined,
+  formData: FormData,
+): Promise<InboxActionState> {
+  const { familyId } = await requireFamily();
+  const itemIds = formData
+    .getAll("itemIds")
+    .map((v) => String(v))
+    .filter(Boolean);
+  const title = String(formData.get("title") ?? "").trim();
+  const occurredWall = String(formData.get("occurredAt") ?? "").trim();
+
+  let occurredAt: Date | undefined;
+  if (occurredWall) {
+    const family = await getFamily(familyId);
+    try {
+      occurredAt = zonedWallTimeToUtc(
+        occurredWall.length === 16 ? `${occurredWall}:00` : occurredWall,
+        family?.timezone ?? "Asia/Shanghai",
+      );
+    } catch {
+      return { error: "时间格式不正确。" };
+    }
+  }
+
+  const result = await mergeInboxEntries(familyId, itemIds, {
+    title,
+    occurredAt,
+  });
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "no_child"
+          ? "家庭还没有孩子档案。"
+          : "合并失败：至少选择两个条目，标题 1–100 字。",
     };
   }
   revalidatePath("/inbox");

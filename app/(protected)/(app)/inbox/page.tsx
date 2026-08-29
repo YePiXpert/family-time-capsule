@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { listInbox } from "@/lib/inbox/service";
-import { InboxCard } from "./inbox-card";
+import { InboxBoard } from "./inbox-board";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export default async function InboxPage() {
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
       <h1 className="text-2xl font-semibold">收件箱</h1>
       <p className="mt-2 text-sm leading-6 text-foreground/60">
-        新内容先在这里整理：确认真实时间后进入时间轴。先捕获，后整理。
+        新内容先在这里整理：确认真实时间后进入时间轴。勾选多项可以合并成一件事。
       </p>
 
       {entries.length === 0 ? (
@@ -28,11 +28,7 @@ export default async function InboxPage() {
           页上传照片、录音或写下一段话。
         </div>
       ) : (
-        <ul className="mt-8 flex flex-col gap-4" aria-label="待整理列表">
-          {entries.map((entry) => (
-            <InboxCard key={entry.item.id} item={entry.item} assets={entry.assets} />
-          ))}
-        </ul>
+        <InboxBoard entries={entries} />
       )}
     </main>
   );

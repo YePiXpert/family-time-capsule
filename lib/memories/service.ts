@@ -10,7 +10,7 @@ import {
   memoryEventParticipant,
 } from "@/db/schema/memory";
 import type { AssetRow } from "@/lib/assets/service";
-import type { InboxEntry } from "@/lib/inbox/service";
+import { getInboxEntry, type InboxEntry } from "@/lib/inbox/service";
 
 /**
  * MemoryEvent 领域服务（Issue #008）。
@@ -187,8 +187,123 @@ export async function confirmInboxEntry(
   return { ok: true, eventId };
 }
 
-export async function getMemoryEventDetail(
+export type MergeOptions = {
+  title: string;
+  occurredAt?: Date;
+  coverAssetId?: string;
+};
+
+/**
+ * 多个收件箱条目合并为一个 MemoryEvent（#010）：
+ * - Assets 只关联不复制；
+ * - occurredAt 默认取全部素材中最早的可信 capturedAt；
+ * - 全部条目置 confirmed。
+ */
+export async function mergeInboxEntries(
   familyId: string,
+  itemIds: string[],
+  opts: MergeOptions,
+): Promise<ConfirmResult> {
+  if (itemIds.length < 2) return { ok: false, error: "invalid" };
+  const title = opts.title.trim();
+  if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
+
+  const entries: InboxEntry[] = [];
+  const seenAssets = new Set<string>();
+  const assets: AssetRow[] = [];
+  for (const itemId of itemIds) {
+    const entry = await getInboxEntry(familyId, itemId);
+    if (!entry) return { ok: false, error: "not_found" };
+    entries.push(entry);
+    for (const a of entry.assets) {
+      if (!seenAssets.has(a.id)) {
+        seenAssets.add(a.id);
+        assets.push(a);
+      }
+    }
+  }
+
+  const childPersonId = await getChildPersonId(familyId);
+  if (!childPersonId) return { ok: false, error: "no_child" };
+
+  const occurredAt =
+    opts.occurredAt ??
+    defaultOccurredAt(assets, entries[0].item);
+  const assetIds = assets.map((a) => a.id);
+  const coverAssetId =
+    opts.coverAssetId && assetIds.includes(opts.coverAssetId)
+      ? opts.coverAssetId
+      : (assets.find((a) => a.type === "image")?.id ?? assets[0]?.id ?? null);
+
+  const db = getDb();
+  const eventId = randomUUID();
+  const now = new Date();
+
+  const childBirth = await db
+    .select({ birthDate: personTable.birthDate })
+    .from(personTable)
+    .where(eq(personTable.id, childPersonId))
+    .limit(1);
+  const ageDays =
+    childBirth[0]?.birthDate != null
+      ? computeAgeDays(childBirth[0].birthDate, occurredAt)
+      : null;
+
+  db.transaction((tx) => {
+    tx.insert(memoryEvent)
+      .values({
+        id: eventId,
+        familyId,
+        childPersonId,
+        title,
+        occurredAt,
+        occurredAtPrecision: "exact",
+        locationText: null,
+        coverAssetId,
+        status: "confirmed",
+        ageDays,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    if (assetIds.length > 0) {
+      tx.insert(memoryEventAsset)
+        .values(
+          assetIds.map((assetId) => ({
+            id: randomUUID(),
+            memoryEventId: eventId,
+            assetId,
+            familyId,
+            createdAt: now,
+          })),
+        )
+        .run();
+    }
+    tx.insert(memoryEventParticipant)
+      .values({
+        id: randomUUID(),
+        memoryEventId: eventId,
+        personId: childPersonId,
+        familyId,
+        createdAt: now,
+      })
+      .run();
+    // 涉及的全部条目都确认掉
+    tx.update(inboxItem)
+      .set({ status: "confirmed", updatedAt: now })
+      .where(
+        and(
+          eq(inboxItem.familyId, familyId),
+          inArray(inboxItem.id, itemIds),
+        ),
+      )
+      .run();
+  });
+
+  return { ok: true, eventId };
+}
+
+export async function getMemoryEventDetail(  familyId: string,
   eventId: string,
 ): Promise<MemoryEventDetail | undefined> {
   const db = getDb();
