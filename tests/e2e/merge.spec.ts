@@ -27,7 +27,9 @@ test("上传 5 张照片合并为一个事件", async ({ page }) => {
   }));
 
   await page.goto("/capture");
-  await page.locator('input[type="file"]').setInputFiles(files);
+  await page
+    .locator('section[aria-label="照片"] input[type="file"]')
+    .setInputFiles(files);
   await expect(page.getByText("已保存，等待整理").first()).toBeVisible();
   await expect(page.getByText("已保存，等待整理")).toHaveCount(5);
 

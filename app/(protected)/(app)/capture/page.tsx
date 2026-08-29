@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ImageUploadForm } from "./image-upload-form";
+import { MediaUploadForm, TextNoteForm } from "./media-upload-form";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,26 @@ export default function CapturePage() {
         今天想留下什么？照片、录音、视频、文字都可以先收进来，
         过几天再整理也不迟——系统会记住它们真实发生的时间。
       </p>
-      <ImageUploadForm />
+
+      <section aria-label="照片" className="mt-10">
+        <h2 className="text-lg font-medium">照片</h2>
+        <ImageUploadForm />
+      </section>
+
+      <section aria-label="录音" className="mt-10">
+        <h2 className="text-lg font-medium">录音</h2>
+        <MediaUploadForm kind="audio" />
+      </section>
+
+      <section aria-label="视频" className="mt-10">
+        <h2 className="text-lg font-medium">视频</h2>
+        <MediaUploadForm kind="video" />
+      </section>
+
+      <section aria-label="文字" className="mt-10">
+        <h2 className="text-lg font-medium">文字</h2>
+        <TextNoteForm />
+      </section>
     </main>
   );
 }

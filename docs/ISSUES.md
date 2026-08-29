@@ -16,7 +16,7 @@
 | #008 | Confirm InboxItem to MemoryEvent | ✅ 已完成（2026-08-29，memory_event + asset/participant 关联表、occurredAt 默认 capturedAt、ageDays 快照、事件详情页 /memories/[id]） |
 | #009 | Timeline + child age calculation | ✅ 已完成（2026-08-29，按 occurredAt 倒序 + 家庭时区年月分组、年龄现算（出生前/当天/第N天/满月/百天/岁月）、关键 E2E「8/29 上传 8/10 照片出现在 8/10」） |
 | #010 | Multi-select merge into one MemoryEvent | ✅ 已完成（2026-08-29，收件箱多选 + mergeInboxEntries：最早可信 capturedAt 为默认 occurredAt、条目全部 confirmed、Assets 只关联不复制；E2E 5 素材 → 1 事件） |
-| #011 | Audio / video / text ingestion | ☐ |
+| #011 | Audio / video / text ingestion | ✅ 已完成（2026-08-29，audio/video MIME 白名单+魔数嗅探（200/500MB 限制）、ffprobe 增强（缺失时优雅降级）、/api/upload/media、媒体端点 HTTP Range、文字速记入箱、收件箱/事件页 audio/video 回放元素） |
 | #012 | Contribution model + multi-view UI | ☐ |
 | #013 | Capsule model + date/age unlock | ☐ |
 | #014 | Full export ZIP | ☐ |

@@ -24,7 +24,7 @@ test("上传照片：保存成功、重复明确提示", async ({ page }) => {
   await page.goto("/capture");
 
   const file = path.join(__dirname, "..", "fixtures", "sample-exif.jpg");
-  const input = page.locator('input[type="file"]');
+  const input = page.locator('section[aria-label="照片"] input[type="file"]');
   await input.setInputFiles(file);
   await expect(page.getByText("已保存，等待整理")).toBeVisible();
 

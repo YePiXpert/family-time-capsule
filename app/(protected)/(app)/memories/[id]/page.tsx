@@ -71,29 +71,56 @@ export default async function MemoryEventPage({
         {assets.length === 0 ? (
           <p className="mt-2 text-sm text-foreground/50">无关联素材。</p>
         ) : (
-          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="mt-3 flex flex-col gap-4">
             {assets.map((a) => (
-              <a
-                key={a.id}
-                href={`/api/media/${a.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="group block overflow-hidden rounded-lg border border-foreground/10"
-                title={a.originalFilename}
-              >
-                {a.type === "image" ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`/api/media/${a.id}`}
-                    alt={a.originalFilename}
-                    className="aspect-square w-full object-cover transition-opacity group-hover:opacity-90"
-                  />
-                ) : (
-                  <div className="flex aspect-square w-full items-center justify-center bg-foreground/[0.03] text-sm text-foreground/60">
-                    {a.type === "audio" ? "音频" : a.type === "video" ? "视频" : "文件"}
-                  </div>
+              <div key={a.id} className="w-full">
+                {a.type === "image" && (
+                  <a
+                    href={`/api/media/${a.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group block overflow-hidden rounded-lg border border-foreground/10"
+                    title={a.originalFilename}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/media/${a.id}`}
+                      alt={a.originalFilename}
+                      className="max-h-[28rem] w-full object-contain transition-opacity group-hover:opacity-95"
+                    />
+                  </a>
                 )}
-              </a>
+                {a.type === "video" && (
+                  <video
+                    controls
+                    preload="metadata"
+                    src={`/api/media/${a.id}`}
+                    className="max-h-[28rem] w-full rounded-lg border border-foreground/10"
+                  />
+                )}
+                {a.type === "audio" && (
+                  <audio
+                    controls
+                    preload="metadata"
+                    src={`/api/media/${a.id}`}
+                    className="w-full"
+                  />
+                )}
+                {a.type === "document" && (
+                  <a
+                    href={`/api/media/${a.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block rounded-lg border border-foreground/10 px-4 py-3 text-sm underline underline-offset-2"
+                  >
+                    {a.originalFilename}
+                  </a>
+                )}
+                <p className="mt-1 truncate text-xs text-foreground/40" title={a.originalFilename}>
+                  {a.originalFilename}
+                  {a.durationMs ? ` · ${(a.durationMs / 1000).toFixed(1)} 秒` : ""}
+                </p>
+              </div>
             ))}
           </div>
         )}

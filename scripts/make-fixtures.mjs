@@ -124,4 +124,47 @@ writeFileSync(
     app1Exif(tiffAsciiExif("2026:08:10 09:30:00", "+08:00")),
   ]),
 );
+
+// 1 秒 8kHz 16bit 单声道正弦 WAV（浏览器真实可播放）
+function buildWav(seconds = 1, freq = 440) {
+  const sampleRate = 8000;
+  const samples = sampleRate * seconds;
+  const dataSize = samples * 2;
+  const buf = Buffer.alloc(44 + dataSize);
+  buf.write("RIFF", 0, "ascii");
+  buf.writeUInt32LE(36 + dataSize, 4);
+  buf.write("WAVE", 8, "ascii");
+  buf.write("fmt ", 12, "ascii");
+  buf.writeUInt32LE(16, 16); // fmt chunk size
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(sampleRate, 24);
+  buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
+  buf.writeUInt16LE(2, 32); // block align
+  buf.writeUInt16LE(16, 34); // bits
+  buf.write("data", 36, "ascii");
+  buf.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < samples; i++) {
+    const v = Math.round(Math.sin((2 * Math.PI * freq * i) / sampleRate) * 6000);
+    buf.writeInt16LE(v, 44 + i * 2);
+  }
+  return buf;
+}
+
+// 最小 MP4 容器（ftyp + free box）：marker 校验用，非浏览器可解码
+function buildMp4() {
+  const ftyp = Buffer.alloc(20);
+  ftyp.writeUInt32BE(20, 0);
+  ftyp.write("ftyp", 4, "ascii");
+  ftyp.write("isom", 8, "ascii");
+  ftyp.write("iso2", 12, "ascii");
+  ftyp.writeUInt32BE(0x200, 16);
+  const free = Buffer.alloc(8);
+  free.writeUInt32BE(8, 0);
+  free.write("free", 4, "ascii");
+  return Buffer.concat([ftyp, free, Buffer.alloc(1024, 0x55)]);
+}
+
+writeFileSync(path.join(outDir, "sample.wav"), buildWav());
+writeFileSync(path.join(outDir, "sample.mp4"), buildMp4());
 console.log("fixtures written to", outDir);

@@ -95,3 +95,15 @@
   5. 用户修正 → `timeSource=user_confirmed`，metadata 不动（`updateAssetCapturedAt`）。
 - **理由**：单家庭自托管场景下「照片几乎都在家庭时区拍摄」是最佳可得假设；显式偏移存在时永远优先；原始值留档使策略可逆。
 - **PRD 偏差**：无（PRD §1.2 只规定优先级，未规定无偏移语义）。
+
+## D-010（Issue #011）音视频摄取与 FFmpeg 的关系
+
+- **日期**：2026-08-29
+- **状态**：已接受
+- **决策**：
+  1. 音频/视频只做「后续上传已有文件」，不做 App 内录制（Capture Anywhere）；上传前先 SHA-256 查重再落盘。
+  2. ffprobe 是**增强能力**：存在时提取 duration/creation_time/尺寸（creation_time → embedded_metadata），不存在或失败时返回 null，上传主流程完全不受影响（本机无 ffmpeg 已验证）。探测结果快照进 `metadataJson.ffprobe`。
+  3. 浏览器原格式不兼容时未来生成 transcode 衍生物解决（P1），原件永不替换。
+  4. 媒体端点实现 HTTP Range（206），音频/视频才能 seek 与流式播放。
+  5. 文字条目无 Asset：kind=text 直接落 inbox_item.rawText，occurredAt 在确认时兜底条目创建时间。
+- **PRD 偏差**：无。

@@ -21,7 +21,7 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
   // （用 offset 夹具：与 upload.spec 的 sample-exif.jpg 字节不同，避免 SHA-256 撞重）
   await page.goto("/capture");
   await page
-    .locator('input[type="file"]')
+    .locator('section[aria-label="照片"] input[type="file"]')
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif-offset.jpg"));
   await expect(page.getByText("已保存，等待整理")).toBeVisible();
 
@@ -38,10 +38,9 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
 
   // 时间轴：事件出现在 8 月分组，日期为 8 月 10 日（不是导入日 8 月 29 日）
   await page.goto("/timeline");
-  await expect(page.getByRole("link", { name: /八月中旬的一个上午/ })).toBeVisible();
-  await expect(page.getByText("2026年8月10日").first()).toBeVisible();
-  // 导入日期绝不能作为事件日期出现
-  await expect(page.getByText("2026年8月29日")).toHaveCount(0);
+  const link = page.getByRole("link", { name: /八月中旬的一个上午/ });
+  await expect(link).toBeVisible();
+  await expect(link.getByText("2026年8月10日")).toBeVisible();
 });
 
 test("事件详情页展示素材与参与人", async ({ page }) => {

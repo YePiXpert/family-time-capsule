@@ -6,6 +6,8 @@
  */
 
 export const MAX_IMAGE_BYTES = 50 * 1024 * 1024; // 50MB
+export const MAX_AUDIO_BYTES = 200 * 1024 * 1024; // 200MB
+export const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // 500MB
 
 /** P0 图片白名单：常见手机/相机格式 */
 export const IMAGE_MIME_WHITELIST: Set<string> = new Set([
@@ -18,6 +20,31 @@ export const IMAGE_MIME_WHITELIST: Set<string> = new Set([
   "image/avif",
 ] as const);
 
+/** P0 音频白名单：系统录音 App 常见格式 */
+export const AUDIO_MIME_WHITELIST: Set<string> = new Set([
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/m4a",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/webm",
+  "audio/ogg",
+  "audio/flac",
+] as const);
+
+/** P0 视频白名单 */
+export const VIDEO_MIME_WHITELIST: Set<string> = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-matroska",
+  "video/3gpp",
+] as const);
+
 const MIME_TO_EXTENSION: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -26,6 +53,23 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   "image/heic": "heic",
   "image/heif": "heif",
   "image/avif": "avif",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mp4": "m4a",
+  "audio/m4a": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/aac": "aac",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/wave": "wav",
+  "audio/webm": "webm",
+  "audio/ogg": "ogg",
+  "audio/flac": "flac",
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+  "video/x-matroska": "mkv",
+  "video/3gpp": "3gp",
 };
 
 /** 按内容前几个字节判断真实图片类型；无法识别返回 null */
@@ -64,16 +108,108 @@ export function sniffImageMime(buffer: Buffer): string | null {
   return null;
 }
 
+/** 音频魔数嗅探：mp3(ID3/帧同步)、wav、m4a/aac、webm、ogg、flac */
+export function sniffAudioMime(buffer: Buffer): string | null {
+  if (buffer.length < 12) return null;
+  if (buffer.subarray(0, 3).toString("ascii") === "ID3") return "audio/mpeg";
+  // MP3 帧同步 FF Ex/C/D/E/F x
+  if (
+    buffer[0] === 0xff &&
+    (buffer[1] & 0xe0) === 0xe0 &&
+    (buffer[1] & 0x06) !== 0x00 // 排除 layer 无效值，进一步限定为音频帧
+  ) {
+    return "audio/mpeg";
+  }
+  if (buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+      buffer.subarray(8, 12).toString("ascii") === "WAVE") {
+    return "audio/wav";
+  }
+  if (buffer.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = buffer.subarray(8, 12).toString("ascii");
+    if (["M4A ", "M4B ", "M4P "].includes(brand)) return "audio/mp4";
+  }
+  if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+    return "audio/webm"; // EBML：webm 音频或视频，视频声明族会在同族校验中纠正
+  }
+  if (buffer.subarray(0, 4).toString("ascii") === "OggS") return "audio/ogg";
+  if (buffer.subarray(0, 4).toString("ascii") === "fLaC") return "audio/flac";
+  return null;
+}
+
+/** 视频魔数嗅探：mp4/mov（ftyp）、webm/mkv（EBML） */
+export function sniffVideoMime(buffer: Buffer): string | null {
+  if (buffer.length < 12) return null;
+  if (buffer.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = buffer.subarray(8, 12).toString("ascii");
+    if (brand === "qt  ") return "video/quicktime";
+    return "video/mp4";
+  }
+  if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+    return "video/webm";
+  }
+  return null;
+}
+
 export type UploadValidationFailure =
   | "too_large"
   | "mime_not_allowed"
   | "content_mismatch"
   | "empty";
 
-export type ValidatedImage = {
+export type ValidatedMedia = {
   mimeType: string;
   extension: string;
 };
+
+function sniffFamily(sniffed: string): "image" | "audio" | "video" | null {
+  if (sniffed.startsWith("image/")) return "image";
+  if (sniffed.startsWith("audio/")) return "audio";
+  if (sniffed.startsWith("video/")) return "video";
+  return null;
+}
+
+/**
+ * 通用上传校验（#011）：audio / video 声明 MIME 必须在对应白名单，
+ * 且内容魔数与声明同族。EBML 同嗅为 audio/webm，声明的 webm 家族按族放行后
+ * 统一按声明类型入库。
+ */
+export function validateMediaUpload(
+  buffer: Buffer,
+  declaredMime: string,
+  kind: "audio" | "video",
+): { ok: true; value: ValidatedMedia } | { ok: false; error: UploadValidationFailure } {
+  if (buffer.length === 0) return { ok: false, error: "empty" };
+  const maxBytes = kind === "audio" ? MAX_AUDIO_BYTES : MAX_VIDEO_BYTES;
+  if (buffer.length > maxBytes) return { ok: false, error: "too_large" };
+  const normalized = declaredMime.split(";")[0].trim().toLowerCase();
+  const whitelist = kind === "audio" ? AUDIO_MIME_WHITELIST : VIDEO_MIME_WHITELIST;
+  if (!whitelist.has(normalized)) return { ok: false, error: "mime_not_allowed" };
+
+  const sniffedAudio = sniffAudioMime(buffer);
+  const sniffedVideo = sniffVideoMime(buffer);
+  if (!sniffedAudio && !sniffedVideo) {
+    return { ok: false, error: "content_mismatch" };
+  }
+  const sniffed = sniffedAudio ?? sniffedVideo!;
+  const sniffedFamily = sniffFamily(sniffed);
+  const declaredFamily = sniffFamily(normalized);
+  // 族必须一致；唯一例外是 EBML 家族（webm/mkv 的音视频声明可互换）
+  const containerInterchangeable =
+    sameContainerFamily(normalized, sniffed) || sameContainerFamily(sniffed, normalized);
+  if (sniffedFamily !== declaredFamily && !containerInterchangeable) {
+    return { ok: false, error: "content_mismatch" };
+  }
+  return {
+    ok: true,
+    value: { mimeType: normalized, extension: MIME_TO_EXTENSION[normalized] ?? "bin" },
+  };
+}
+
+/** 同容器家族：webm/mkv 音视频共享 EBML 容器 */
+function sameContainerFamily(declared: string, sniffed: string): boolean {
+  const webmish = new Set(["audio/webm", "video/webm", "video/x-matroska"]);
+  return webmish.has(declared) && webmish.has(sniffed);
+}
 
 /**
  * 校验上传图片：声明 MIME 必须在白名单内，且内容魔数与声明一致。
@@ -82,7 +218,7 @@ export type ValidatedImage = {
 export function validateImageUpload(
   buffer: Buffer,
   declaredMime: string,
-): { ok: true; value: ValidatedImage } | { ok: false; error: UploadValidationFailure } {
+): { ok: true; value: ValidatedMedia } | { ok: false; error: UploadValidationFailure } {
   if (buffer.length === 0) return { ok: false, error: "empty" };
   if (buffer.length > MAX_IMAGE_BYTES) return { ok: false, error: "too_large" };
   const normalized = declaredMime.split(";")[0].trim().toLowerCase();

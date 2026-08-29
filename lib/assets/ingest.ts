@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset } from "@/db/schema/asset";
@@ -9,9 +10,17 @@ import {
 import {
   parseImageSize,
   validateImageUpload,
+  validateMediaUpload,
   type UploadValidationFailure,
 } from "./validation";
-import { storeOriginal, type AssetRow } from "./service";
+import { probeMedia } from "@/lib/metadata/ffprobe";
+import { getAssetStorage } from "./storage";
+import {
+  sanitizeDisplayFilename,
+  sha256Of,
+  storeOriginal,
+  type AssetRow,
+} from "./service";
 
 /**
  * 图片摄取入口（Issue #005）。
@@ -33,6 +42,107 @@ export type IngestImageResult =
   | { status: "stored"; asset: AssetRow }
   | { status: "duplicate"; existing: AssetRow }
   | { status: "rejected"; error: UploadValidationFailure };
+
+export type IngestMediaInput = {
+  familyId: string;
+  createdByUserId: string;
+  kind: "audio" | "video";
+  filename: string;
+  declaredMime: string;
+  buffer: Buffer;
+  clientLastModifiedMs?: number | null;
+};
+
+export type IngestMediaResult = IngestImageResult;
+
+/**
+ * 音频/视频摄取（Issue #011）。
+ * 校验 → 先落盘原件（临时日期分层）→ ffprobe 增强 metadata（缺失则跳过）
+ * → 更新 capturedAt/duration/尺寸 → 入库。
+ * 原件永远保留；浏览器不兼容格式由 P1 的 transcode 衍生物解决。
+ */
+export async function ingestMedia(input: IngestMediaInput): Promise<IngestMediaResult> {
+  const validated = validateMediaUpload(input.buffer, input.declaredMime, input.kind);
+  if (!validated.ok) return { status: "rejected", error: validated.error };
+  const { mimeType, extension } = validated.value;
+
+  const family = await getFamily(input.familyId);
+  const familyTimezone = family?.timezone ?? "Asia/Shanghai";
+  void familyTimezone; // 音视频容器时间（creation_time）自带 UTC，无需时区解释
+
+  // 先查重（SHA-256），重复则不落盘
+  const sha256 = sha256Of(input.buffer);
+  const { findOriginalBySha256 } = await import("./service");
+  const existing = await findOriginalBySha256(input.familyId, sha256);
+  if (existing) return { status: "duplicate", existing };
+
+  const storage = getAssetStorage();
+  const assetId = randomUUID();
+  const importedAt = new Date();
+  const clientModified =
+    input.clientLastModifiedMs && Number.isFinite(input.clientLastModifiedMs)
+      ? new Date(input.clientLastModifiedMs)
+      : null;
+  const dateForPath = clientModified ?? importedAt;
+  const { storageKey } = storage.putOriginal(
+    input.familyId,
+    assetId,
+    extension,
+    input.buffer,
+    dateForPath,
+  );
+
+  // ffprobe 增强（缺失/失败 → null，不影响上传）
+  const absPath = storage.resolvePath(storageKey);
+  const probe = await probeMedia(absPath);
+
+  let capturedAt: Date | null = null;
+  let timeSource: "embedded_metadata" | "file_metadata" | "import_time" =
+    "import_time";
+  if (probe?.creationTime) {
+    capturedAt = probe.creationTime;
+    timeSource = "embedded_metadata";
+  } else if (clientModified) {
+    capturedAt = clientModified;
+    timeSource = "file_metadata";
+  }
+
+  const db = getDb();
+  const metadata: Record<string, unknown> = {};
+  if (probe) {
+    metadata.container = {
+      formatName: probe.formatName,
+      durationMs: probe.durationMs,
+    };
+    if (probe.raw) metadata.ffprobe = probe.raw;
+  }
+
+  const rows = await db
+    .insert(asset)
+    .values({
+      id: assetId,
+      familyId: input.familyId,
+      type: input.kind,
+      originalFilename: sanitizeDisplayFilename(input.filename),
+      mimeType,
+      bytes: input.buffer.byteLength,
+      sha256,
+      storageKey,
+      capturedAt,
+      importedAt,
+      timeSource,
+      width: input.kind === "video" ? (probe?.width ?? null) : null,
+      height: input.kind === "video" ? (probe?.height ?? null) : null,
+      durationMs: probe?.durationMs ?? null,
+      metadataJson: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
+      createdByUserId: input.createdByUserId,
+      originalAssetId: null,
+      derivativeType: null,
+      createdAt: new Date(),
+    })
+    .returning();
+  return { status: "stored", asset: rows[0] };
+}
 
 export async function ingestImage(
   input: IngestImageInput,

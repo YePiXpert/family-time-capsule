@@ -50,6 +50,22 @@ export function InboxCard({
             className="h-32 w-32 shrink-0 rounded-lg border border-foreground/10 object-cover"
           />
         )}
+        {cover?.type === "audio" && (
+          <audio
+            controls
+            preload="metadata"
+            src={`/api/media/${cover.id}`}
+            className="mt-2 w-full sm:w-80"
+          />
+        )}
+        {cover?.type === "video" && (
+          <video
+            controls
+            preload="metadata"
+            src={`/api/media/${cover.id}`}
+            className="h-32 w-auto shrink-0 rounded-lg border border-foreground/10"
+          />
+        )}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm">
           <div className="flex flex-wrap items-baseline gap-x-3">
             <span className="truncate font-medium" title={cover?.originalFilename}>
