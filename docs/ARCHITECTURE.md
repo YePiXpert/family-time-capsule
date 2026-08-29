@@ -69,6 +69,12 @@ interface AssetStorage {
 - 去重：家庭内 `(familyId, sha256)` 唯一索引；相同原件再上传由服务层返回 duplicate 交 UI 提示（PRD §12）。
 - MVP 实现 `LocalFilesystemStorage`；未来增加 `S3Storage`、`WebDAVStorage`。
 
+## 完整导出（#014 已落地：`lib/export/service.ts`）
+
+- `GET /api/export`（需会话+家庭）→ 流式 ZIP 下载，文件同时落 `$DATA_DIR/exports/`。
+- 导出前**重读并重算每个原件的 SHA-256**，与库不符抛 `ExportVerificationError`（HTTP 409）——绝不产出看似成功的备份。
+- 结构与语义见 `docs/EXPORT_FORMAT.md`；timeline.md 用相对路径引用原媒体；封存胶囊内容始终完整包含（`includeLocked` 语义）。
+
 ## AI Provider Adapter（PRD §13）
 
 P0 使用 `NullMemoryAssistant`——无 AI key 时功能完整。任何 AI 能力都通过 `MemoryAssistant` 接口注入，不写死供应商。AI 只产出候选与建议，绝不自动制造 `user_confirmed` Fact（事实锁见 PRD §14）。

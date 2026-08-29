@@ -19,7 +19,7 @@
 | #011 | Audio / video / text ingestion | ✅ 已完成（2026-08-29，audio/video MIME 白名单+魔数嗅探（200/500MB 限制）、ffprobe 增强（缺失时优雅降级）、/api/upload/media、媒体端点 HTTP Range、文字速记入箱、收件箱/事件页 audio/video 回放元素） |
 | #012 | Contribution model + multi-view UI | ✅ 已完成（2026-08-29，contribution + fact 表、事件页按人分块独立编辑、作者可为无账号 Person、Fact 手工确认） |
 | #013 | Capsule model + date/age unlock | ✅ 已完成（2026-08-29，capsule + asset/event/contribution 关联表、date/age 解锁（家庭时区/周岁）、seal 后 UI 隐藏但 includeLocked 供导出、到期开启） |
-| #014 | Full export ZIP | ☐ |
+| #014 | Full export ZIP | ✅ 已完成（2026-08-29，archiver 流式打包；导出前重验全部原件 SHA-256，不符即失败（409）；manifest/7 个 JSON/timeline.md 相对路径引用；胶囊内容始终包含；/api/export 鉴权下载 + 设置页入口） |
 | #015 | Backup/restore design document | ☐ |
 | #016 | PWA polish | ☐ |
 | #017 | Security audit | ☐ |
