@@ -21,7 +21,7 @@
 | #013 | Capsule model + date/age unlock | ✅ 已完成（2026-08-29，capsule + asset/event/contribution 关联表、date/age 解锁（家庭时区/周岁）、seal 后 UI 隐藏但 includeLocked 供导出、到期开启） |
 | #014 | Full export ZIP | ✅ 已完成（2026-08-29，archiver 流式打包；导出前重验全部原件 SHA-256，不符即失败（409）；manifest/7 个 JSON/timeline.md 相对路径引用；胶囊内容始终包含；/api/export 鉴权下载 + 设置页入口） |
 | #015 | Backup/restore design document | ✅ 已完成（2026-08-29，docs/EXPORT_FORMAT.md + docs/RESTORE.md（哈希校验/重复合并/family ID 映射/User 关系/迁移策略）+ `npm run verify:export` CLI（实测通过/篡改双路径）） |
-| #016 | PWA polish | ☐ |
+| #016 | PWA polish | ✅ 已完成（2026-08-29，manifest + 生成式图标（暖纸/皮革色）、standalone 可安装、viewport-fit + safe-area、极简离线壳（SW 只缓存离线提示页，/api/** 永不缓存）） |
 | #017 | Security audit | ☐ |
 | #018 | Playwright critical regression suite | ☐ |
 

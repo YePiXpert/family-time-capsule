@@ -120,3 +120,14 @@
   5. 跨实例恢复：空实例保留原 UUID；已有家庭走 ID 重映射，冲突时新导入方换新 ID 并写入恢复报告。
   6. `stories/` 恢复为只读文件不建表——Story 永远可从 user_confirmed Fact + Contribution 再生（事实锁）。
 - **PRD 偏差**：无。
+
+## D-012（Issue #016）PWA 离线策略与图标
+
+- **日期**：2026-08-29
+- **状态**：已接受
+- **决策**：
+  1. Service Worker 只做「离线提示壳」：缓存唯一的 `/offline.html`，导航请求失败时回退；**`/api/**` 一律直连，绝不做离线缓存**（私人媒体库离线存储被明确禁止，也避免把私人内容写进 Cache Storage）。
+  2. SW 仅生产注册（`NODE_ENV=production`），开发不缓存。
+  3. 图标由 `scripts/make-icons.mjs` 纯 Node 生成（内置 PNG 编码器）：暖纸底 + 皮革色胶囊图形，与 globals.css 的低饱和档案基调一致；无 emoji、无卡通元素。
+  4. 移动端 viewport：`viewport-fit=cover` + body 的 safe-area padding；上传控件不带 `capture` 属性——相册/拍摄由用户在系统选择器决定（Capture Anywhere，不强制现场拍摄）。
+- **PRD 偏差**：无（PRD §28 风格约束落实）。
