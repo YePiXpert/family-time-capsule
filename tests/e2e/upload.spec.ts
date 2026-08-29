@@ -32,6 +32,11 @@ test("上传照片：保存成功、重复明确提示", async ({ page }) => {
   await input.setInputFiles(file);
   await expect(page.getByText("已存在相同原件")).toBeVisible();
 
+  // 上传的内容进入收件箱（不直接进时间轴）
+  await page.goto("/inbox");
+  await expect(page.getByText("sample-exif.jpg")).toBeVisible();
+  await expect(page.getByText("照片内嵌时间")).toBeVisible();
+
   // 未登录时媒体与上传端点必须拒绝（私有媒体不存在匿名 URL）
   await page.getByRole("button", { name: "退出" }).click();
   await expect(page).toHaveURL(/\/login/);

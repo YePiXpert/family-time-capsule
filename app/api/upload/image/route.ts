@@ -1,5 +1,6 @@
 import { getApiFamilyContext } from "@/lib/family/context";
 import { ingestImage } from "@/lib/assets/ingest";
+import { createInboxItemForAsset } from "@/lib/inbox/service";
 import { isSameOrigin } from "@/lib/security/origin";
 
 /**
@@ -61,6 +62,8 @@ export async function POST(request: Request) {
         { status: 200 },
       );
     case "stored":
+      // 新内容一律先进收件箱（#007），不直接进 Timeline
+      await createInboxItemForAsset(context.familyId, result.asset);
       return Response.json(
         {
           status: "stored",

@@ -12,7 +12,7 @@
 | #004 | AssetStorage abstraction + LocalFilesystemStorage | ✅ 已完成（2026-08-29，storage key 白名单 + 原件不可覆盖 + asset 表 + 去重索引） |
 | #005 | Image upload + SHA-256 | ✅ 已完成（2026-08-29，MIME 白名单+魔数嗅探、50MB 限制、SHA-256 查重明确提示、/api/media 鉴权读取、恶意文件名测试） |
 | #006 | EXIF capturedAt parser | ✅ 已完成（2026-08-29，exifr + DateTimeOriginal/OffsetTime + 家庭时区解释（D-009）+ user_confirmed 修正保留原 metadata） |
-| #007 | Inbox workflow + UI | ☐ |
+| #007 | Inbox workflow + UI | ✅ 已完成（2026-08-29，inbox_item + inbox_item_asset 关联表、缺时间自动 needs_review、收件箱 UI（预览/时间/来源/修改/废弃）） |
 | #008 | Confirm InboxItem to MemoryEvent | ☐ |
 | #009 | Timeline + child age calculation | ☐ |
 | #010 | Multi-select merge into one MemoryEvent | ☐ |

@@ -7,6 +7,7 @@ import { DATA_DIR } from "@/lib/paths";
 import * as assetSchema from "./schema/asset";
 import * as authSchema from "./schema/auth";
 import * as familySchema from "./schema/family";
+import * as inboxSchema from "./schema/inbox";
 
 /**
  * SQLite 单例：数据库文件位于 $DATA_DIR/db/capsule.sqlite（PRD §11）。
@@ -40,7 +41,7 @@ function createDatabase() {
   sqlite.pragma("foreign_keys = ON");
 
   const db = drizzle(sqlite, {
-    schema: { ...authSchema, ...familySchema, ...assetSchema },
+    schema: { ...authSchema, ...familySchema, ...assetSchema, ...inboxSchema },
   });
   migrate(db, {
     migrationsFolder: path.join(process.cwd(), "db", "migrations"),

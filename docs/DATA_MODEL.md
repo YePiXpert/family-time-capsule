@@ -104,28 +104,24 @@ type Asset = {
 - `sha256` 用于原件去重与导出校验；原件写入后不可覆盖。
 - 衍生物通过 `originalAssetId` + `derivativeType` 指回原件，可随时删除重建。
 
-## InboxItem
+## InboxItem（#007 已落地：`db/schema/inbox.ts`）
 
 ```ts
 type InboxItem = {
   id: string
-  familyId: string
-  kind: "text" | "asset" | "bundle"
+  familyId: string           // FK → family
+  kind: "text" | "asset" | "bundle"   // bundle = 多 asset 合并项（#010）
   status: "new" | "processing" | "needs_review" | "confirmed" | "discarded"
-
-  rawText?: string
-  assetIds: string[]
-
-  suggestedTitle?: string
-  suggestedOccurredAt?: string
-  suggestedPersonIds: string[]
-  suggestedTags: string[]
-
-  aiResultJson?: unknown
+  rawText?: string           // kind=text 的正文
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
-所有新素材先进 Inbox，确认后才生成 MemoryEvent；`suggested*` 字段只是建议（可全部为空，无 AI 也正常工作）。
+- Asset 关联走 **inbox_item_asset** 关联表（inboxItemId + assetId + familyId），不塞 JSON。
+- 上传后一律先进收件箱；`timeSource=import_time`（缺少真实时间）的条目自动标 `needs_review`。
+- 废弃（discarded）只改条目状态，**Asset 原件永远保留**。
+- PRD 中的 `suggested*` / `aiResultJson` 是 AI 时代字段，P0 未建列（NullMemoryAssistant 不产出建议），P1 接 AI 时再迁移加入。
 
 ## MemoryEvent
 

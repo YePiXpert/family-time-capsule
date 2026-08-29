@@ -5,3 +5,4 @@
 export * as authSchema from "./auth";
 export * as familySchema from "./family";
 export * as assetSchema from "./asset";
+export * as inboxSchema from "./inbox";
