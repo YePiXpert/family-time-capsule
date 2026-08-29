@@ -2,11 +2,14 @@
 
 FROM node:24-alpine AS deps
 WORKDIR /app
+# better-sqlite3 在 musl 上可能需要源码编译；装完构建依赖后卸载，保持层干净
+RUN apk add --no-cache libc6-compat python3 make g++
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci && apk del python3 make g++
 
 FROM node:24-alpine AS build
 WORKDIR /app
+RUN apk add --no-cache libc6-compat
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -17,7 +20,7 @@ RUN npm run build
 FROM node:24-alpine AS runner
 WORKDIR /app
 # FFmpeg 是增强能力（视频封面/波形/转码），不是核心硬依赖（PRD §19）
-RUN apk add --no-cache ffmpeg \
+RUN apk add --no-cache ffmpeg libc6-compat \
   && addgroup -S --gid 1001 nodejs \
   && adduser -S --uid 1001 --ingroup nodejs nextjs
 ENV NODE_ENV=production \

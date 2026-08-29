@@ -43,25 +43,25 @@ Auth → Family/Person → Asset Upload → metadata/hash → Inbox
 5. **Slice 5**：胶囊创建 → 加内容 → 设日期 → Seal → 到期 Open。
 6. **Slice 6**：完整导出，manifest 校验全部 SHA-256，Markdown 相对路径引用媒体。
 
-## P0 Definition of Done（PRD §27）
+## P0 Definition of Done（PRD §27）— 2026-08-29 达成（v0.1.0）
 
 ```text
-[ ] 手机/电脑可创建私人家庭空间
-[ ] 可创建女儿与家庭成员
-[ ] 可后补上传旧照片
-[ ] 可上传音频和视频
-[ ] 可写文字
-[ ] capturedAt / importedAt 分离
-[ ] 相同原件可识别重复
-[ ] 多素材可合为一个 MemoryEvent
-[ ] 多家人可写独立 Contribution
-[ ] 时间轴按真实发生时间展示
-[ ] 显示事件发生时女儿年龄
-[ ] 可创建并封存日期/年龄胶囊
-[ ] 可完整 ZIP 导出
-[ ] 原件 SHA-256 可验证
-[ ] Docker 部署可持续保存数据
-[ ] 无 AI key 也完整可用
-[ ] 关键 E2E 全绿
-[ ] docs 与代码一致
+[x] 手机/电脑可创建私人家庭空间
+[x] 可创建女儿与家庭成员
+[x] 可后补上传旧照片
+[x] 可上传音频和视频
+[x] 可写文字
+[x] capturedAt / importedAt 分离
+[x] 相同原件可识别重复
+[x] 多素材可合为一个 MemoryEvent
+[x] 多家人可写独立 Contribution
+[x] 时间轴按真实发生时间展示
+[x] 显示事件发生时女儿年龄
+[x] 可创建并封存日期/年龄胶囊
+[x] 可完整 ZIP 导出
+[x] 原件 SHA-256 可验证
+[x] Docker 部署可持续保存数据（静态检查；本机无 Docker，见 CHANGELOG/报告）
+[x] 无 AI key 也完整可用（P0 无任何 AI 代码路径）
+[x] 关键 E2E 全绿（19 个）
+[x] docs 与代码一致
 ```

@@ -1,5 +1,7 @@
 # Family Time Capsule
 
+**P0 v0.1.0 — Trusted Private Timeline（可信私人时间轴）**
+
 A private, self-hosted family memory archive.
 
 随处记录，统一归档。
@@ -15,11 +17,24 @@ AI helps organize memories.
 Family members tell the story.
 Original sources always come first.
 
+> P0 不包含任何 AI 功能——无 API Key 也完整可用。P1 计划见 docs/PRD.md。
+
 ---
+
+## 功能一览（P0）
+
+- **私人认证**：无公开注册；首次部署凭 `INITIAL_SETUP_TOKEN` 初始化管理员。
+- **家庭与人物**：Person ≠ User——女儿、外公、外婆没有账号也完整存在于记忆里。
+- **原件档案**：照片/音频/视频/文字事后上传；SHA-256 去重；**原件永不覆盖**；EXIF 保留真实拍摄时间（`capturedAt` 与 `importedAt` 永不混淆）。
+- **收件箱**：新内容先整理再入档；可修正时间（修正后 `timeSource=user_confirmed`）、多选合并成一件事。
+- **时间轴**：按真实发生时间排序，显示孩子当时的年龄；晚上传的旧照片不会跑到今天。
+- **多人视角**：同一件事，爸爸、妈妈、外婆各自独立讲述，互不覆盖。
+- **时间胶囊**：按日期或孩子年龄封存开启；封存是仪式不是加密——导出永远完整。
+- **完整导出**：ZIP 内含全部原件（哈希校验）+ JSON + 可读 Markdown，离开本系统一切仍可打开。
 
 ## 技术栈
 
-Next.js (App Router) + TypeScript + Tailwind CSS + SQLite (Drizzle ORM，随 Issue #003 引入) + Docker。
+Next.js 16（App Router）+ TypeScript strict + Tailwind CSS v4 + SQLite（better-sqlite3 + Drizzle ORM）+ better-auth + exifr + archiver + Vitest / Playwright + Docker。
 
 ## 本地开发
 
@@ -35,7 +50,8 @@ npm run dev            # http://localhost:3000
 
 1. 在 `.env` 中设置 `INITIAL_SETUP_TOKEN`（一次性令牌）与 `AUTH_SECRET`；
 2. 访问 `/setup`，凭令牌创建第一个管理员账号；
-3. 初始化完成后 `/setup` 永久失效（即使令牌仍在），之后用 `/login` 登录。
+3. 初始化完成后 `/setup` 永久失效（即使令牌仍在），之后用 `/login` 登录；
+4. 首次登录进入 `/onboarding`：创建家庭、孩子档案，并绑定自己。
 
 详见 [docs/SECURITY.md](docs/SECURITY.md)。
 
@@ -44,10 +60,16 @@ npm run dev            # http://localhost:3000
 | 命令 | 说明 |
 | --- | --- |
 | `npm run dev` | 开发服务器 |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | 路由类型生成 + `tsc --noEmit` |
-| `npm test` | Vitest 单元 + 集成测试 |
-| `npm run test:e2e` | Playwright 端到端测试（会先自动 build，使用独立的 data/e2e 数据目录） |
+| `npm run lint` / `npm run typecheck` | 静态检查 |
+| `npm test` | Vitest 单元 + 集成测试（126 个） |
+| `npm run test:e2e` | Playwright 端到端（会先自动 build，使用独立的 data/e2e 数据目录） |
+| `npm run verify:export <zip>` | 校验导出 ZIP 的 manifest 与全部原件 SHA-256 |
+
+## 备份与迁移
+
+- 设置页「导出完整备份（ZIP）」或 `GET /api/export`；导出前服务端重验每个原件哈希。
+- 导出格式与兼容承诺：[docs/EXPORT_FORMAT.md](docs/EXPORT_FORMAT.md)；
+  恢复设计与校验流程：[docs/RESTORE.md](docs/RESTORE.md)。
 
 ## Docker 部署
 
@@ -62,6 +84,8 @@ AUTH_SECRET=$(openssl rand -base64 32) INITIAL_SETUP_TOKEN=<一次性令牌> doc
 - [docs/PRD.md](docs/PRD.md) — 产品计划书（唯一需求来源）
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 技术架构与存储约定
 - [docs/DATA_MODEL.md](docs/DATA_MODEL.md) — 核心数据模型
-- [docs/SECURITY.md](docs/SECURITY.md) — 安全基线与威胁模型
+- [docs/SECURITY.md](docs/SECURITY.md) — 安全基线与威胁模型（含 #017 审计结论）
 - [docs/ISSUES.md](docs/ISSUES.md) — 开发路线、垂直切片与 Issue 清单
 - [docs/DECISIONS.md](docs/DECISIONS.md) — 关键决策记录（ADR）
+- [docs/EXPORT_FORMAT.md](docs/EXPORT_FORMAT.md) / [docs/RESTORE.md](docs/RESTORE.md) — 导出格式与恢复设计
+- [CHANGELOG.md](CHANGELOG.md) — 版本记录

@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   ...(process.env.BUILD_STANDALONE === "1"
     ? { output: "standalone" as const }
     : {}),
+  // lib/export/service.ts import 了 package.json 读版本号——
+  // standalone 产物按路由追踪文件，显式包含避免运行时缺文件
+  outputFileTracingIncludes: {
+    "/api/export": ["./package.json"],
+  },
 };
 
 export default nextConfig;
