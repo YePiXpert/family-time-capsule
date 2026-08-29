@@ -10,7 +10,7 @@
 | #002 | Authentication + private registration policy | ✅ 已完成（2026-08-29，better-auth + 首次 setup 令牌，见 docs/SECURITY.md） |
 | #003 | Family / User / Person schema | ✅ 已完成（2026-08-29，family/person 表 + user 表业务 FK + /onboarding + /family 管理页） |
 | #004 | AssetStorage abstraction + LocalFilesystemStorage | ✅ 已完成（2026-08-29，storage key 白名单 + 原件不可覆盖 + asset 表 + 去重索引） |
-| #005 | Image upload + SHA-256 | ☐ |
+| #005 | Image upload + SHA-256 | ✅ 已完成（2026-08-29，MIME 白名单+魔数嗅探、50MB 限制、SHA-256 查重明确提示、/api/media 鉴权读取、恶意文件名测试） |
 | #006 | EXIF capturedAt parser | ☐ |
 | #007 | Inbox workflow + UI | ☐ |
 | #008 | Confirm InboxItem to MemoryEvent | ☐ |

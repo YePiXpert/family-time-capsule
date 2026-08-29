@@ -61,11 +61,14 @@
 - `docker-compose.yml` 强制要求 `AUTH_SECRET`；缺失则拒绝启动。
 - `AUTH_SECRET` 至少 32 字符随机值（`openssl rand -base64 32`）；泄露即轮换（会使现有 session 失效，需重新登录）。
 
-## 8. 媒体与文件（后续 Issue 的前置要求）
+## 8. 媒体与文件（#005 已实施）
 
-- #004/#005 起：上传必须校验 MIME 与大小；用户文件名不得直接作为磁盘路径（用 storageKey）。
-- #005 起：媒体 URL 必须鉴权，禁止未登录访问原件与衍生物。
-- 删除操作二次确认；导出/删除操作写审计记录（#014/#017）。
+- **上传校验**（`lib/assets/validation.ts`）：MIME 白名单（jpeg/png/webp/gif/heic/heif/avif）+ 内容魔数嗅探（声明与内容必须同族，防伪装扩展名）；单文件 50MB 上限；扩展名由 MIME 反推，**不信任上传文件名的扩展名**。
+- **路径安全**：原 filename 永不进入磁盘路径，只清洗后作展示名；storageKey 白名单校验（见 DECISIONS D-008）。恶意文件名 `../../abc.jpg` 无法逃逸存储根目录（有测试）。
+- **媒体鉴权**：`/data/**` 永不静态公开。唯一读取入口 `GET /api/media/[assetId]`：要求会话 + Asset 属于该会话家庭，否则一律 404（不向跨家庭访问者暴露存在性）。响应带 `Cache-Control: private, no-store` 与 `X-Content-Type-Options: nosniff`。
+- **上传端点**：`POST /api/upload/image` 要求会话 + 家庭绑定 + 同源 Origin（自建 POST 路由的 CSRF 纵深防御，Cookie SameSite=Lax 之外的第二层）。
+- 重复原件（家庭内 SHA-256 一致）不静默复制，UI 明确提示并链接已有原件。
+- 删除操作二次确认；导出/删除操作写审计记录（#014/#017 计划）。
 
 ## 9. 环境变量清单（安全相关）
 

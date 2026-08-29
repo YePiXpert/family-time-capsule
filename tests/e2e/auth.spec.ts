@@ -95,7 +95,7 @@ test("D: 退出登录后受保护页面跳回 /login", async ({ page }) => {
   await page.getByLabel("邮箱").fill(ADMIN.email);
   await page.getByLabel("密码").fill(ADMIN.password);
   await page.getByRole("button", { name: "登录" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "家庭时间胶囊" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
 
   // 退出
   await page.getByRole("button", { name: "退出" }).click();

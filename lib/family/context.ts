@@ -44,3 +44,19 @@ export async function requireFamily(): Promise<FamilyContext> {
     personId: binding.personId,
   };
 }
+
+/** API 路由入口：返回 null 而不是 redirect，由调用方决定 401/403。 */
+export async function getApiFamilyContext(
+  requestHeaders: Headers,
+): Promise<FamilyContext | null> {
+  const session = await getAuth().api.getSession({ headers: requestHeaders });
+  if (!session) return null;
+  const binding = await getUserBinding(session.user.id);
+  if (!binding.familyId) return null;
+  return {
+    userId: session.user.id,
+    userName: session.user.name,
+    familyId: binding.familyId,
+    personId: binding.personId,
+  };
+}
