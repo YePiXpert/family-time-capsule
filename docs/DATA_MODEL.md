@@ -123,29 +123,26 @@ type InboxItem = {
 - 废弃（discarded）只改条目状态，**Asset 原件永远保留**。
 - PRD 中的 `suggested*` / `aiResultJson` 是 AI 时代字段，P0 未建列（NullMemoryAssistant 不产出建议），P1 接 AI 时再迁移加入。
 
-## MemoryEvent
+## MemoryEvent（#008 已落地：`db/schema/memory.ts`）
 
 ```ts
 type MemoryEvent = {
   id: string
-  familyId: string
-  childPersonId: string
-
-  title: string
-  occurredAt: string
+  familyId: string            // FK → family
+  childPersonId: string       // FK → person（isChild）
+  title: string               // 1–100 字
+  occurredAt: Date            // 默认取最早可信 capturedAt，绝不是 importedAt
   occurredAtPrecision: "exact" | "approximate" | "date_only"
-
   locationText?: string
-  ageDays?: number
-  coverAssetId?: string
-
-  status: "draft" | "confirmed" | "hidden"
-  createdAt: string
-  updatedAt: string
+  coverAssetId?: string       // FK → asset（set null）
+  status: "draft" | "confirmed" | "hidden"   // 确认后默认 confirmed
+  ageDays?: number            // 满天数快照（展示永远现算，见 lib/memories/age.ts）
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
-**关系表单独建立，不把核心关系塞 JSON**：Event-Asset、Event-Person、Event-Tag。
+**关系表**（不塞 JSON）：`memory_event_asset`（event↔asset）、`memory_event_participant`（event↔person，参与人默认含孩子本人）。确认收件箱条目 = 一个事务里建事件 + 建关系 + InboxItem 置 confirmed；Assets 只关联不复制。
 
 ## Contribution
 

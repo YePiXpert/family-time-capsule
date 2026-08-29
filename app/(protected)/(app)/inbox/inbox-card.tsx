@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { InboxItemRow } from "@/lib/inbox/service";
-import { discardAction, editTimeAction } from "./actions";
+import { confirmAction, discardAction, editTimeAction } from "./actions";
 
 const TIME_SOURCE_LABEL: Record<string, string> = {
   user_confirmed: "你确认的时间",
@@ -32,7 +32,12 @@ export function InboxCard({
 }) {
   const [timeState, timeAction, timePending] = useActionState(editTimeAction, undefined);
   const [discardState, discardActionRun, discardPending] = useActionState(discardAction, undefined);
+  const [confirmState, confirmActionRun, confirmPending] = useActionState(confirmAction, undefined);
   const cover = assets[0];
+  const defaultTitle =
+    item.kind === "text" && item.rawText
+      ? item.rawText.trim().slice(0, 30)
+      : (cover?.originalFilename ?? "一段记忆").replace(/\.[a-z0-9]{1,8}$/i, "");
 
   return (
     <li className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
@@ -86,6 +91,31 @@ export function InboxCard({
             </button>
             {timeState?.error && timeState.itemId === item.id && (
               <span className="text-xs text-red-700 dark:text-red-400">{timeState.error}</span>
+            )}
+          </form>
+
+          <form action={confirmActionRun} className="mt-3 flex flex-wrap items-center gap-2">
+            <input type="hidden" name="itemId" value={item.id} />
+            <input
+              type="text"
+              name="title"
+              defaultValue={defaultTitle}
+              maxLength={100}
+              placeholder="这件事的标题"
+              aria-label="事件标题"
+              className={`${inputClass} min-w-40 flex-1`}
+            />
+            <button
+              type="submit"
+              disabled={confirmPending}
+              className="rounded-lg bg-foreground px-3 py-1.5 text-xs text-background transition-opacity disabled:opacity-50"
+            >
+              {confirmPending ? "整理中…" : "确认进入时间轴"}
+            </button>
+            {confirmState?.error && confirmState.itemId === item.id && (
+              <span className="text-xs text-red-700 dark:text-red-400">
+                {confirmState.error}
+              </span>
             )}
           </form>
 
