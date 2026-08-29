@@ -14,7 +14,7 @@
 | #006 | EXIF capturedAt parser | ✅ 已完成（2026-08-29，exifr + DateTimeOriginal/OffsetTime + 家庭时区解释（D-009）+ user_confirmed 修正保留原 metadata） |
 | #007 | Inbox workflow + UI | ✅ 已完成（2026-08-29，inbox_item + inbox_item_asset 关联表、缺时间自动 needs_review、收件箱 UI（预览/时间/来源/修改/废弃）） |
 | #008 | Confirm InboxItem to MemoryEvent | ✅ 已完成（2026-08-29，memory_event + asset/participant 关联表、occurredAt 默认 capturedAt、ageDays 快照、事件详情页 /memories/[id]） |
-| #009 | Timeline + child age calculation | ☐ |
+| #009 | Timeline + child age calculation | ✅ 已完成（2026-08-29，按 occurredAt 倒序 + 家庭时区年月分组、年龄现算（出生前/当天/第N天/满月/百天/岁月）、关键 E2E「8/29 上传 8/10 照片出现在 8/10」） |
 | #010 | Multi-select merge into one MemoryEvent | ☐ |
 | #011 | Audio / video / text ingestion | ☐ |
 | #012 | Contribution model + multi-view UI | ☐ |

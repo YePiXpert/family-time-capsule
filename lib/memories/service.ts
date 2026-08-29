@@ -252,3 +252,79 @@ export async function listMemoryEvents(
     .orderBy(desc(memoryEvent.occurredAt))
     .limit(limit);
 }
+
+export type TimelineEntry = {
+  event: MemoryEventRow;
+  coverAssetId: string | null;
+  coverAssetType: string | null;
+  assetCount: number;
+  participantNames: string[];
+};
+
+/** 时间轴装配：按 occurredAt 倒序的事件 + 封面 + 素材数 + 参与人（#009） */
+export async function getTimeline(
+  familyId: string,
+): Promise<TimelineEntry[]> {
+  const db = getDb();
+  const events = await listMemoryEvents(familyId);
+  if (events.length === 0) return [];
+  const eventIds = events.map((e) => e.id);
+
+  const assetLinks = await db
+    .select({
+      memoryEventId: memoryEventAsset.memoryEventId,
+      assetId: memoryEventAsset.assetId,
+      type: assetTable.type,
+    })
+    .from(memoryEventAsset)
+    .innerJoin(assetTable, eq(memoryEventAsset.assetId, assetTable.id))
+    .where(inArray(memoryEventAsset.memoryEventId, eventIds));
+  const coverAssetIds = events
+    .map((e) => e.coverAssetId)
+    .filter((id): id is string => id !== null);
+  const coverAssets =
+    coverAssetIds.length > 0
+      ? await db
+          .select({ id: assetTable.id, type: assetTable.type })
+          .from(assetTable)
+          .where(inArray(assetTable.id, coverAssetIds))
+      : [];
+  const coverTypeById = new Map(coverAssets.map((a) => [a.id, a.type]));
+
+  const participantLinks = await db
+    .select({
+      memoryEventId: memoryEventParticipant.memoryEventId,
+      personId: memoryEventParticipant.personId,
+    })
+    .from(memoryEventParticipant)
+    .where(inArray(memoryEventParticipant.memoryEventId, eventIds));
+  const personIds = [...new Set(participantLinks.map((l) => l.personId))];
+  const people =
+    personIds.length > 0
+      ? await db
+          .select({ id: personTable.id, displayName: personTable.displayName })
+          .from(personTable)
+          .where(inArray(personTable.id, personIds))
+      : [];
+  const nameById = new Map(people.map((p) => [p.id, p.displayName]));
+
+  return events.map((event) => {
+    const links = assetLinks.filter((l) => l.memoryEventId === event.id);
+    const cover =
+      (event.coverAssetId && coverTypeById.get(event.coverAssetId)) ??
+      links.find((l) => l.type === "image")?.type ??
+      links[0]?.type ??
+      null;
+    return {
+      event,
+      coverAssetId:
+        event.coverAssetId ?? links.find((l) => l.type === "image")?.assetId ?? null,
+      coverAssetType: cover,
+      assetCount: links.length,
+      participantNames: participantLinks
+        .filter((l) => l.memoryEventId === event.id)
+        .map((l) => nameById.get(l.personId))
+        .filter((n): n is string => Boolean(n)),
+    };
+  });
+}

@@ -40,6 +40,16 @@ function createAuth() {
     advanced: {
       useSecureCookies: process.env.NODE_ENV === "production",
     },
+    rateLimit: {
+      // better-auth 默认对 /sign-in/* 限 10 秒 3 次（防暴力破解）。
+      // 保留该默认，但允许部署/测试环境通过环境变量放宽。
+      customRules: {
+        "/sign-in/email": {
+          window: 10,
+          max: Number(process.env.AUTH_SIGNIN_RATE_LIMIT_MAX ?? 3),
+        },
+      },
+    },
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 天
       updateAge: 60 * 60 * 24, // 滚动续期：每天刷新一次

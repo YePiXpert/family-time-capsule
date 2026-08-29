@@ -17,6 +17,8 @@ const env = {
   BETTER_AUTH_URL: "http://localhost:3100",
   AUTH_SECRET: process.env.AUTH_SECRET ?? "e2e-test-auth-secret-0123456789abcdef",
   INITIAL_SETUP_TOKEN: process.env.INITIAL_SETUP_TOKEN ?? "e2e-setup-token",
+  // e2e 多个 spec 各自登录，会撞 better-auth 的 /sign-in 默认限流（10s 3 次）
+  AUTH_SIGNIN_RATE_LIMIT_MAX: process.env.AUTH_SIGNIN_RATE_LIMIT_MAX ?? "100",
 };
 
 // 直接用当前 node 启动 next 的 bin，避免 npx/.cmd/shell 的跨平台问题

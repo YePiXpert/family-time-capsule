@@ -46,7 +46,7 @@
 
 ## 5. 暴力破解与限流
 
-- 现状：better-auth 内建 rate-limit 在生产默认开启（内存存储，按 IP+路径窗口限流）。单实例部署下可用。
+- 现状：better-auth 内建 rate-limit 在生产默认开启（内存存储，按 IP+路径窗口限流），对 `/sign-in/*` 默认 10 秒 3 次；本项目通过 `customRules` 保留该默认并允许 `AUTH_SIGNIN_RATE_LIMIT_MAX` 环境变量放宽（e2e 使用）。
 - 后续计划（#017 前完成）：持久化限流存储（SQLite/Redis）、登录失败延迟、可选验证码；对 `/setup` 增加同样的限流规则。
 
 ## 6. CSRF 策略

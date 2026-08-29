@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
+import { getFamily } from "@/lib/family/service";
 import { getMemoryEventDetail } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 
@@ -23,8 +24,13 @@ export default async function MemoryEventPage({
 }) {
   const { familyId } = await requireFamily();
   const { id } = await params;
-  const detail = await getMemoryEventDetail(familyId, id);
+  const [detail, family] = await Promise.all([
+    getMemoryEventDetail(familyId, id),
+    getFamily(familyId),
+  ]);
   if (!detail) notFound();
+
+  const timezone = family?.timezone ?? "Asia/Shanghai";
 
   const { event, assets, participants } = detail;
   const child = participants.find((p) => p.id === event.childPersonId);
@@ -43,6 +49,7 @@ export default async function MemoryEventPage({
             dateStyle: "long",
             timeStyle:
               event.occurredAtPrecision === "date_only" ? undefined : "short",
+            timeZone: timezone,
           }).format(event.occurredAt)}
         </span>
         {ageLabel && <span className="text-accent">{ageLabel}</span>}
@@ -118,6 +125,7 @@ export default async function MemoryEventPage({
                   ? new Intl.DateTimeFormat("zh-CN", {
                       dateStyle: "medium",
                       timeStyle: "short",
+                      timeZone: timezone,
                     }).format(a.capturedAt)
                   : "无拍摄时间"}{" "}
                 · SHA-256 {a.sha256.slice(0, 12)}… · {(a.bytes / 1024).toFixed(0)} KB

@@ -107,7 +107,6 @@ describe("确认收件箱 → MemoryEvent（#008）", () => {
     const a = await ingestAndInbox(2);
     const b = await ingestAndInbox(3);
     const entryA = (await getInboxEntry(familyId, a.item.id))!;
-    const entryB = (await getInboxEntry(familyId, b.item.id))!;
 
     // 手工把 b 的 capturedAt 改早，验证默认取最早（重新加载拿到新时间）
     const { updateAssetCapturedAt } = await import("@/lib/assets/ingest");
