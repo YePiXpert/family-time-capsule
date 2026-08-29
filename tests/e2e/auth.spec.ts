@@ -41,11 +41,22 @@ test("B2: 正确 token 完成初始化并登录进入受保护首页", async ({ 
   await expect(page).toHaveURL(/\/login/);
   await expect(page.getByText("初始化完成")).toBeVisible();
 
-  // 登录 → 进入受保护首页
+  // 登录 → 尚无家庭，进入 /onboarding
   await page.getByLabel("邮箱").fill(ADMIN.email);
   await page.getByLabel("密码").fill(ADMIN.password);
   await page.getByRole("button", { name: "登录" }).click();
 
+  await expect(page).toHaveURL(/\/onboarding/);
+
+  // 完成 onboarding：创建家庭 + 女儿 + 自己
+  await page.getByLabel("家庭名称").fill("我们一家");
+  await page.getByLabel("孩子姓名").fill("小满");
+  await page.getByLabel("出生日期（时间轴按它计算成长年龄）").fill("2026-08-10");
+  await page.getByLabel("显示名称").fill("爸爸");
+  await page.getByLabel("对孩子的称谓").fill("爸爸");
+  await page.getByRole("button", { name: "创建家庭" }).click();
+
+  // 进入受保护首页
   await expect(page).toHaveURL(/\/[^/]*$/); // 回到 /
   await expect(
     page.getByRole("heading", { level: 1, name: "家庭时间胶囊" }),
@@ -59,6 +70,15 @@ test("B2: 正确 token 完成初始化并登录进入受保护首页", async ({ 
   await expect(
     page.getByRole("heading", { level: 1, name: "家庭时间胶囊" }),
   ).toBeVisible();
+
+  // 家人页可以看到女儿与爸爸，并添加没有账号的外婆
+  await page.goto("/family");
+  await expect(page.getByText("小满")).toBeVisible();
+  await expect(page.getByText("孩子", { exact: true })).toBeVisible();
+  await page.getByLabel("姓名").fill("外婆");
+  await page.getByLabel("对孩子的称谓").fill("外婆");
+  await page.getByRole("button", { name: "添加家人" }).click();
+  await expect(page.getByText("外婆").first()).toBeVisible();
 });
 
 test("C: 初始化完成后 /setup 失效（跳回 /login，无法创建第二个 admin）", async ({

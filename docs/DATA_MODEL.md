@@ -11,9 +11,9 @@ better-auth 1.7 所需的四张表，字段名与 `getAuthTables()` 一致：
 - **account**：`id, userId→user, accountId, providerId, issuer, accessToken…, password(scrypt 哈希, providerId='credential'), createdAt, updatedAt`
 - **verification**：`id, identifier, value, expiresAt, createdAt, updatedAt`
 
-约定：better-auth 的 `user.name` 即 PRD 语境的 displayName；`role` 在 #003 完整建模前由服务端固定写入 `admin`（`input: false`）。**#003 将在本目录加入 Family / Person 等业务表，并建立 User ↔ Person 关联；本 Issue 不预建。**
+约定：better-auth 的 `user.name` 即 PRD 语境的 displayName。**#003 已落地**：`user` 表增加业务列 `family_id` / `person_id`（可空 FK——管理员在 `/setup` 阶段尚无家庭，完成 `/onboarding` 后绑定），并以 additionalFields（`input: false`）暴露给会话读取；`role` 在多角色建模前仍由服务端固定写入 `admin`。
 
-## 实体总览（业务模型，#003 起）
+## 实体总览（业务模型）
 
 ```text
 Family ──┬── Person（真实家庭人物，不等于登录账号）
@@ -24,43 +24,48 @@ Family ──┬── Person（真实家庭人物，不等于登录账号）
          └── Capsule（时间胶囊）
 ```
 
-## Family
+## Family（#003 已落地：`db/schema/family.ts`）
 
 ```ts
 type Family = {
-  id: string
-  name: string
-  timezone: string
-  createdAt: string
+  id: string            // UUID
+  name: string          // 1–50 字
+  timezone: string      // IANA 时区，默认 Asia/Shanghai；#006 起解释无时区的 EXIF 时间
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
-## Person
-
-真实家庭人物，不等于登录账号。
+## Person（#003 已落地）
 
 ```ts
 type Person = {
-  id: string
-  familyId: string
-  displayName: string
-  relationToChild?: string
-  avatarAssetId?: string
-  isChild: boolean
-  birthDate?: string
+  id: string            // UUID
+  familyId: string      // FK → family，cascade delete
+  displayName: string   // 1–50 字
+  relationToChild?: string  // 对孩子的称谓，如「外婆」
+  isChild: boolean      // P0 每个家庭至少一个 child Person（onboarding 创建）
+  birthDate?: string    // YYYY-MM-DD 本地日历日；child 必填（时间轴年龄基准）
+  avatarAssetId?: string    // 暂为普通列，#004 Asset 表落地后升级为 FK
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
-## User
+Person 不要求有 User：祖辈、孩子都可以先建档参加事件，以后再开账号绑定。
+
+## User（#003 已落地：better-auth user 表 + 业务 FK 列）
 
 ```ts
 type User = {
   id: string
-  familyId: string
-  personId?: string
-  role: "admin" | "editor" | "contributor" | "viewer"
+  familyId?: string   // user.family_id → family.id（onboarding 时写入）
+  personId?: string   // user.person_id → person.id（绑定到现实中的自己）
+  role: "admin" | "editor" | "contributor" | "viewer"  // P0 仅 admin
 }
 ```
+
+不复制第二套认证 User；业务关系全部是显式 FK。`bindUserToPerson` 校验目标 Person 属于同家庭，防跨家庭绑定。
 
 ## Asset
 

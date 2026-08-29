@@ -22,13 +22,14 @@ Docker Compose                      自托管部署
 
 - 认证全权交给 better-auth（`lib/auth/auth.ts`）：email+password 登录、数据库 session、`/api/auth/[...all]` 端点。详见 `docs/SECURITY.md`。
 - **路由保护用 `(protected)` 路由组的布局层守卫**（`app/(protected)/layout.tsx` 里 `getSession` + `redirect`），不用 middleware：SQLite 原生模块无法在 Edge Runtime 访问数据库，布局守卫覆盖组内全部页面且始终跑在 Node runtime。
+- **家庭守卫**（#003 起）：`app/(protected)/(app)/layout.tsx` 要求已绑定家庭，否则重定向 `/onboarding`；`/onboarding` 在 (protected) 内完成一次性建家（Family + 女儿 Person + 自己 Person + User 绑定，事务）。
 - 首次初始化：`/setup`（`force-dynamic`）+ `INITIAL_SETUP_TOKEN`，详见 `docs/SECURITY.md` §2。
 - 登录/初始化状态类页面必须 `force-dynamic`，禁止构建期静态预渲染（见 `docs/DECISIONS.md` D-005）。
 
 ## 数据库（#002 起）
 
 - `db/index.ts`：单例连接，首次连接自动应用 `db/migrations/`（幂等）；`closeDatabase()` 供测试收尾。
-- schema 字段以 better-auth 的 `getAuthTables()` 输出为准（`db/schema/auth.ts`）。
+- schema 按域拆分在 `db/schema/`：`auth.ts`（better-auth 四表 + #003 的 user 业务 FK 列）、`family.ts`（family/person）。
 - 修改数据模型流程：改 `db/schema/` → `npx drizzle-kit generate` → 迁移文件随代码提交。
 
 ## 数据目录（PRD §11）

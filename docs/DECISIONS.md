@@ -59,3 +59,12 @@
 - **状态**：已接受
 - **决策**：SQLite 文件固定在 `$DATA_DIR/db/capsule.sqlite`（随 DATA_DIR 进 Docker volume）；better-sqlite3 + WAL + foreign_keys；Drizzle migration（`db/migrations/`，由 `drizzle-kit generate` 生成）在**首次连接时自动应用**（幂等，`db/index.ts`），dev/prod/Docker 行为一致；不使用内存数据库。
 - **注意**：集成/e2e 测试必须通过独立 `DATA_DIR` 隔离；vitest 中环境变量须在**动态导入前**（模块顶层）设置，因为 `lib/paths` 在 import 时读取 `DATA_DIR`。
+
+## D-007（Issue #003）User↔Person 绑定与 onboarding
+
+- **日期**：2026-08-29
+- **状态**：已接受
+- **决策**：不复制第二套认证 User。在 better-auth `user` 表上增加业务列 `family_id` / `person_id`（可空 FK），additionalFields 以 `input: false` 暴露（客户端不可写入，只能由服务端在 onboarding/绑定时更新）。`person.avatar_asset_id` 暂为普通列，#004 Asset 表落地后再升级 FK。
+- **onboarding**：首次登录且未绑定家庭的用户被重定向到 `/onboarding`，一个事务里创建 Family + 女儿 Person（isChild，birthDate 必填）+ 管理员自己的 Person，并写回 user 的 familyId/personId。
+- **路由结构**：认证守卫在 `app/(protected)/layout.tsx`（不变）；家庭守卫在嵌套路由组 `app/(protected)/(app)/layout.tsx`——因为服务端 layout 拿不到 pathname，无法在上级判断「当前是否就在 /onboarding」，用嵌套组比每页手写检查更可靠。`/onboarding` 本身位于 (protected) 内（需要登录）。
+- **PRD 偏差**：无（PRD §10 的 User 型中 familyId 在 P0 阶段实际可空——管理员先于家庭存在）。

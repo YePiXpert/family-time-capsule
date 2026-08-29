@@ -1,8 +1,12 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { family, person } from "./family";
 
 /**
  * better-auth 1.7 所需的表（字段名与 better-auth 内部模型一致，
- * 以 getAuthTables() 输出为准）。#003 将在此目录加入 Family/Person 业务表。
+ * 以 getAuthTables() 输出为准）。业务表（Family/Person/Asset…）在 db/schema/ 各域文件。
+ *
+ * #003：user 表增加 familyId / personId 业务 FK（可空——管理员在 /setup
+ * 阶段尚无家庭，完成 onboarding 后绑定）。不复制第二套认证 User。
  */
 
 const createdAtColumn = () =>
@@ -26,6 +30,13 @@ export const user = sqliteTable("user", {
   image: text("image"),
   // 自定义字段：角色在 #003 完整建模前先固定 admin
   role: text("role").notNull().default("admin"),
+  // #003：登录账号 ↔ 家庭 / 现实人物 的业务关联（明确 FK，可空）
+  familyId: text("family_id").references(() => family.id, {
+    onDelete: "set null",
+  }),
+  personId: text("person_id").references(() => person.id, {
+    onDelete: "set null",
+  }),
   createdAt: createdAtColumn(),
   updatedAt: updatedAtColumn(),
 });

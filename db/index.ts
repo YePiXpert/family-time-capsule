@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { DATA_DIR } from "@/lib/paths";
 import * as authSchema from "./schema/auth";
+import * as familySchema from "./schema/family";
 
 /**
  * SQLite 单例：数据库文件位于 $DATA_DIR/db/capsule.sqlite（PRD §11）。
@@ -37,7 +38,9 @@ function createDatabase() {
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");
 
-  const db = drizzle(sqlite, { schema: { ...authSchema } });
+  const db = drizzle(sqlite, {
+    schema: { ...authSchema, ...familySchema },
+  });
   migrate(db, {
     migrationsFolder: path.join(process.cwd(), "db", "migrations"),
   });

@@ -51,6 +51,16 @@ function createAuth() {
           defaultValue: "admin",
           input: false, // 角色由服务端控制，客户端不可传入
         },
+        familyId: {
+          type: "string",
+          required: false,
+          input: false, // 业务绑定只由服务端在 onboarding 时写入
+        },
+        personId: {
+          type: "string",
+          required: false,
+          input: false,
+        },
       },
     },
   });
