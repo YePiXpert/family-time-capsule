@@ -23,7 +23,7 @@
 | #015 | Backup/restore design document | ✅ 已完成（2026-08-29，docs/EXPORT_FORMAT.md + docs/RESTORE.md（哈希校验/重复合并/family ID 映射/User 关系/迁移策略）+ `npm run verify:export` CLI（实测通过/篡改双路径）） |
 | #016 | PWA polish | ✅ 已完成（2026-08-29，manifest + 生成式图标（暖纸/皮革色）、standalone 可安装、viewport-fit + safe-area、极简离线壳（SW 只缓存离线提示页，/api/** 永不缓存）） |
 | #017 | Security audit | ✅ 已完成（2026-08-29，双家庭全资源隔离专项测试（Asset/Inbox/Event/Contribution/Fact/Capsule/Export）；**发现并修复 High 级 IDOR 写入**（contribution/fact 先写后校验 → 先校验后写）；导出 Markdown 转义加固；docs/SECURITY.md 全面重写含审计结论） |
-| #018 | Playwright critical regression suite | ☐ |
+| #018 | Playwright critical regression suite | ✅ 已完成（2026-08-29，8 条关键路径全覆盖：setup→家庭、旧照片时间链路、5 合 1、音视频文字回放、多视角、胶囊锁/开、导出哈希验证、登出不可访问 + 冷启动回顾 + 伪装文件拒绝；全套 lint/typecheck/126 单测/build/19 e2e 全绿） |
 
 ## P0 完成顺序（PRD §22）
 
