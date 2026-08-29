@@ -1,0 +1,91 @@
+# 导出格式（EXPORT_FORMAT）
+
+> 本文档定义 `GET /api/export` 产出的 ZIP 结构（Issue #014 实现）与兼容性承诺。
+> 恢复流程见 [RESTORE.md](./RESTORE.md)。离开本系统后，ZIP 内的媒体、
+> Markdown、JSON 都必须可直接打开/解析（PRD §18）。
+
+## 版本
+
+- 当前 `exportVersion: 1`。
+- **兼容承诺**：未来版本只做增量演进——新增字段不删旧字段、不改变既有字段语义；
+  任何 `exportVersion: 1` 的导出永远可以被当时的 `verify:export` 校验、
+  并被「同大版本」的恢复工具读取。重大不兼容变更将提升主版本号并提供迁移说明。
+
+## 目录结构
+
+```text
+family-time-capsule-export/
+├── manifest.json          导出清单与每个原件的哈希（见下）
+├── family.json            家庭元信息（单对象）
+├── people.json            Person 数组（现实家庭成员，含无账号者）
+├── memories.json          MemoryEvent 数组（含 assetIds / participantPersonIds 关系）
+├── contributions.json     Contribution 数组（按家人的独立讲述）
+├── facts.json             Fact 数组（已确认/否决的事实）
+├── capsules.json          Capsule 数组（含封存胶囊的完整内容引用）
+├── timeline.md            人类可读时间轴（相对路径引用原媒体）
+├── originals/
+│   ├── images/            <assetId>.<ext>
+│   ├── audio/
+│   ├── video/
+│   └── documents/
+└── stories/               P1 起存放生成的章节；P0 为空
+```
+
+空目录以 `.keep` 占位，保证「没有内容的目录也存在」。
+
+## manifest.json
+
+```jsonc
+{
+  "exportVersion": 1,
+  "appVersion": "0.1.0",          // 产生导出的应用版本（package.json version）
+  "exportedAt": "2026-08-29T12:00:00.000Z",
+  "familyId": "<uuid>",
+  "familyName": "我们一家",
+  "fileCount": 15,                 // JSON+MD+媒体文件总数（不含 .keep）
+  "assetCount": 7,
+  "assets": [
+    {
+      "assetId": "<uuid>",
+      "relativePath": "originals/images/<uuid>.jpg",
+      "sha256": "<hex>",
+      "bytes": 123456,
+      "mimeType": "image/jpeg",
+      "capturedAt": "2026-08-10T01:30:00.000Z",  // null = 未知
+      "importedAt": "2026-08-29T04:00:00.000Z"
+    }
+  ]
+}
+```
+
+规则：
+
+- `assets` 只包含**原件**（derivativeType=null）；衍生物可再生，不入档。
+- `capturedAt` 为 UTC ISO-8601；时间来源（timeSource）不进入 manifest，
+  完整语义在 `memories.json` 引用的 Asset 逻辑中（恢复时以库内为准）。
+
+## 实体 JSON 语义
+
+- `family.json`：`{ id, name, timezone, createdAt, updatedAt }`。
+- `people.json`：`{ id, displayName, relationToChild, isChild, birthDate(YYYY-MM-DD|null), createdAt }`。
+  `id` 即 `personId`，被 memories/contributions 引用。
+- `memories.json`：按 `occurredAt` 升序；每个事件含
+  `assetIds: string[]` 与 `participantPersonIds: string[]`（关系以数组表达，
+  对应库内关联表，不丢结构）。
+- `contributions.json`：`{ id, memoryEventId, authorPersonId, rawText, editedText, audioAssetId, visibility, createdAt }`。
+- `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
+- `capsules.json`：`{ id, title, unlockType, unlockValue, status, sealedAt, openedAt,
+  memoryEventIds, assetIds, contributionIds }`。**无论是否到期/封存，内容引用始终完整**——
+  封存是 UI 仪式，不是加密（PRD §15）。
+
+## timeline.md
+
+- 一级标题 = 家庭名；按家庭时区年月分组；事件含日期、孩子年龄（由
+  `people.json` 的 child `birthDate` 现算）、参与人。
+- 媒体引用一律是**相对路径**（`originals/images/xxx.jpg`），解压后在本目录内有效。
+- 图片内联为 Markdown 图片；音频/视频为链接（Markdown 阅读器外直接双击文件播放）。
+
+## 校验
+
+- 导出时：服务端**重读磁盘重算 SHA-256** 并与数据库比对，不符则整个导出失败（HTTP 409）。
+- 导出后：`npm run verify:export <zip路径>` 独立校验 manifest 与 ZIP 内容（见 RESTORE.md）。

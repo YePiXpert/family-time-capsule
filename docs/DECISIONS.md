@@ -107,3 +107,16 @@
   4. 媒体端点实现 HTTP Range（206），音频/视频才能 seek 与流式播放。
   5. 文字条目无 Asset：kind=text 直接落 inbox_item.rawText，occurredAt 在确认时兜底条目创建时间。
 - **PRD 偏差**：无。
+
+## D-011（Issue #015）恢复设计与导出格式承诺
+
+- **日期**：2026-08-29
+- **状态**：已接受
+- **决策**：
+  1. `exportVersion` 主版本=1；未来只做增量字段，旧导出按「缺失字段取默认值」读取，重大不兼容才升版本。
+  2. P0 交付恢复**设计**与校验 CLI（`npm run verify:export`），不实现恢复 UI（P1）。
+  3. 恢复四条铁律：先校验后恢复；合并导入不覆盖；原件只增不改；认证数据（user/session）不导入——Person/User 绑定恢复后手工重建。
+  4. 重复判定沿用 `(familyId, sha256)` 唯一键：命中则复用 Asset 行但关系照常导入。
+  5. 跨实例恢复：空实例保留原 UUID；已有家庭走 ID 重映射，冲突时新导入方换新 ID 并写入恢复报告。
+  6. `stories/` 恢复为只读文件不建表——Story 永远可从 user_confirmed Fact + Contribution 再生（事实锁）。
+- **PRD 偏差**：无。
