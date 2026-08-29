@@ -94,7 +94,7 @@ export async function createContribution(
   return { ok: true, contributionId: id };
 }
 
-/** 只改这一行的定稿文本——不同人的行天然互不影响 */
+/** 只改这一行的定稿文本——不同人的行天然互不影响；先校验归属再写入 */
 export async function updateContributionText(
   familyId: string,
   contributionId: string,
@@ -103,16 +103,21 @@ export async function updateContributionText(
   const trimmed = editedText.trim();
   if (trimmed.length < 1 || trimmed.length > 5000) return undefined;
   const db = getDb();
+  // 先取行校验归属，再更新（防止跨家庭写入）
+  const existing = await db
+    .select()
+    .from(contribution)
+    .where(eq(contribution.id, contributionId))
+    .limit(1);
+  const row = existing[0];
+  if (!row) return undefined;
+  if (!(await eventBelongsToFamily(familyId, row.memoryEventId))) return undefined;
   const rows = await db
     .update(contribution)
     .set({ editedText: trimmed, updatedAt: new Date() })
     .where(eq(contribution.id, contributionId))
     .returning();
-  const row = rows[0];
-  if (!row) return undefined;
-  // family 校验放在取行之后（事件→family 传递可信）
-  const owned = await eventBelongsToFamily(familyId, row.memoryEventId);
-  return owned ? row : undefined;
+  return rows[0];
 }
 
 export type ContributionWithAuthor = ContributionRow & {
@@ -175,15 +180,17 @@ export async function setFactStatus(
   status: "user_confirmed" | "rejected",
 ): Promise<FactRow | undefined> {
   const db = getDb();
+  // 先取行校验归属，再更新（防止跨家庭写入）
+  const existing = await db.select().from(fact).where(eq(fact.id, factId)).limit(1);
+  const row = existing[0];
+  if (!row) return undefined;
+  if (!(await eventBelongsToFamily(familyId, row.memoryEventId))) return undefined;
   const rows = await db
     .update(fact)
     .set({ status, updatedAt: new Date() })
     .where(eq(fact.id, factId))
     .returning();
-  const row = rows[0];
-  if (!row) return undefined;
-  const owned = await eventBelongsToFamily(familyId, row.memoryEventId);
-  return owned ? row : undefined;
+  return rows[0];
 }
 
 export async function listFacts(

@@ -22,7 +22,7 @@
 | #014 | Full export ZIP | ✅ 已完成（2026-08-29，archiver 流式打包；导出前重验全部原件 SHA-256，不符即失败（409）；manifest/7 个 JSON/timeline.md 相对路径引用；胶囊内容始终包含；/api/export 鉴权下载 + 设置页入口） |
 | #015 | Backup/restore design document | ✅ 已完成（2026-08-29，docs/EXPORT_FORMAT.md + docs/RESTORE.md（哈希校验/重复合并/family ID 映射/User 关系/迁移策略）+ `npm run verify:export` CLI（实测通过/篡改双路径）） |
 | #016 | PWA polish | ✅ 已完成（2026-08-29，manifest + 生成式图标（暖纸/皮革色）、standalone 可安装、viewport-fit + safe-area、极简离线壳（SW 只缓存离线提示页，/api/** 永不缓存）） |
-| #017 | Security audit | ☐ |
+| #017 | Security audit | ✅ 已完成（2026-08-29，双家庭全资源隔离专项测试（Asset/Inbox/Event/Contribution/Fact/Capsule/Export）；**发现并修复 High 级 IDOR 写入**（contribution/fact 先写后校验 → 先校验后写）；导出 Markdown 转义加固；docs/SECURITY.md 全面重写含审计结论） |
 | #018 | Playwright critical regression suite | ☐ |
 
 ## P0 完成顺序（PRD §22）

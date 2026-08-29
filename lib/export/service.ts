@@ -228,13 +228,15 @@ export async function buildFamilyExport(
       const asset = assets.find((a) => a.id === link.assetId);
       if (!asset || asset.derivativeType) continue;
       const rel = assetRelPaths.get(asset.id)!;
+      // 转义 ] 与换行，防止展示名破坏 Markdown 结构
+      const safeAlt = asset.originalFilename.replace(/[\r\n\]]/g, " ");
       if (asset.type === "image") {
-        md.push(`![${asset.originalFilename}](${rel})`);
+        md.push(`![${safeAlt}](${rel})`);
         md.push("");
       } else if (asset.type === "audio") {
-        md.push(`- 🎧 [录音：${asset.originalFilename}](${rel})`);
+        md.push(`- 🎧 [录音：${safeAlt}](${rel})`);
       } else if (asset.type === "video") {
-        md.push(`- 🎬 [视频：${asset.originalFilename}](${rel})`);
+        md.push(`- 🎬 [视频：${safeAlt}](${rel})`);
       }
     }
     for (const c of contributions.filter((c) => c.memoryEventId === e.id)) {
