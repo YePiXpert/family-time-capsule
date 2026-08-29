@@ -181,22 +181,26 @@ type Fact = {
 
 P0 只允许用户手工创建（直接 `user_confirmed`）；P1 起 AI 只能产出 `ai_suggested`，永不自动升级。P0 未建 FactSource 关系表（无来源关联需求），P1 需要时再加。
 
-## Capsule
+## Capsule（#013 已落地：`db/schema/capsule.ts`）
 
 ```ts
 type Capsule = {
   id: string
-  familyId: string
+  familyId: string          // FK → family
   title: string
   unlockType: "date" | "age"
-  unlockValue: string
+  unlockValue: string       // date: YYYY-MM-DD（严格日历日）；age: 岁数
   status: "draft" | "sealed" | "opened"
-  sealedAt?: string
-  openedAt?: string
+  sealedAt?: Date
+  openedAt?: Date
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
-胶囊内容（信/声音/照片/视频/事件/给未来的问题）通过单独的关联表挂载。
+- 解锁判定：date = 家庭时区当日零点起；age = `calendarDiff(child.birthDate, now).years >= N`。
+- 内容通过 **capsule_asset / capsule_event / capsule_contribution** 关联表挂载；draft 可增删，sealed 后锁定。
+- **封存不是物理加密**：sealed 且未解锁时普通查询只返回元信息与空内容，`getCapsuleDetail(..., { includeLocked: true })` 供管理员导出/备份完整读取（#014 依赖此语义）。
 
 ## Story（P1，事实锁 PRD §14）
 

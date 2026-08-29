@@ -18,7 +18,7 @@
 | #010 | Multi-select merge into one MemoryEvent | ✅ 已完成（2026-08-29，收件箱多选 + mergeInboxEntries：最早可信 capturedAt 为默认 occurredAt、条目全部 confirmed、Assets 只关联不复制；E2E 5 素材 → 1 事件） |
 | #011 | Audio / video / text ingestion | ✅ 已完成（2026-08-29，audio/video MIME 白名单+魔数嗅探（200/500MB 限制）、ffprobe 增强（缺失时优雅降级）、/api/upload/media、媒体端点 HTTP Range、文字速记入箱、收件箱/事件页 audio/video 回放元素） |
 | #012 | Contribution model + multi-view UI | ✅ 已完成（2026-08-29，contribution + fact 表、事件页按人分块独立编辑、作者可为无账号 Person、Fact 手工确认） |
-| #013 | Capsule model + date/age unlock | ☐ |
+| #013 | Capsule model + date/age unlock | ✅ 已完成（2026-08-29，capsule + asset/event/contribution 关联表、date/age 解锁（家庭时区/周岁）、seal 后 UI 隐藏但 includeLocked 供导出、到期开启） |
 | #014 | Full export ZIP | ☐ |
 | #015 | Backup/restore design document | ☐ |
 | #016 | PWA polish | ☐ |
