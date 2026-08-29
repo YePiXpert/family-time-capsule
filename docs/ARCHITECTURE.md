@@ -14,6 +14,7 @@ Drizzle ORM                         schema 在 db/schema/，迁移自动应用
 better-auth 1.7                     认证（#002）：session、密码 scrypt、cookie 管理全权委托
 Sharp                               图片衍生物（后续）
 FFmpeg / ffprobe                    视频元数据/转码（增强能力，非核心硬依赖）
+exifr                               EXIF 时间/尺寸解析（#006）
 Vitest / Playwright                 单元·集成 / 端到端测试
 Docker Compose                      自托管部署
 ```

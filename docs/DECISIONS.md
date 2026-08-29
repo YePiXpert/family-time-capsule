@@ -81,3 +81,17 @@
   5. `person.avatar_asset_id` 在 P0 保持普通可空列（尚未使用）——SQLite 无法 ALTER 加 FK 约束，为未用功能重建 person 表不值得。
   6. LocalFilesystemStorage 的 API 是同步的（better-sqlite3 风格，Node fs 本地写足够快）；大文件流式读取用 `createWebStream` 供媒体端点。
 - **PRD 偏差**：无。
+
+## D-009（Issue #006）EXIF 时间缺失时区的解释策略
+
+- **日期**：2026-08-29
+- **状态**：已接受
+- **背景**：EXIF `DateTimeOriginal` 绝大多数是「拍摄地本地时间」，不带偏移。若凭空按 UTC 解释，时间轴会错 8 小时。
+- **决策**：
+  1. 有 `OffsetTimeOriginal` / `OffsetTime` → 按显式偏移折算 UTC；
+  2. 无偏移 → 按 **Family.timezone** 解释为家庭所在地墙钟时间，两遍法（Intl longOffset）折算 UTC，正确处理 DST；
+  3. 墙钟原始值 + 偏移字段完整快照进 `Asset.metadataJson.exif`，事后可重新解释；
+  4. 时间优先级：EXIF(DateTimeOriginal > CreateDate) > 文件系统时间（浏览器 `File.lastModified`，本身 UTC ms）> 导入时间（`capturedAt=null` + `timeSource=import_time`，确认事件时用 importedAt 兜底）；
+  5. 用户修正 → `timeSource=user_confirmed`，metadata 不动（`updateAssetCapturedAt`）。
+- **理由**：单家庭自托管场景下「照片几乎都在家庭时区拍摄」是最佳可得假设；显式偏移存在时永远优先；原始值留档使策略可逆。
+- **PRD 偏差**：无（PRD §1.2 只规定优先级，未规定无偏移语义）。

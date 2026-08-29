@@ -11,7 +11,7 @@
 | #003 | Family / User / Person schema | ✅ 已完成（2026-08-29，family/person 表 + user 表业务 FK + /onboarding + /family 管理页） |
 | #004 | AssetStorage abstraction + LocalFilesystemStorage | ✅ 已完成（2026-08-29，storage key 白名单 + 原件不可覆盖 + asset 表 + 去重索引） |
 | #005 | Image upload + SHA-256 | ✅ 已完成（2026-08-29，MIME 白名单+魔数嗅探、50MB 限制、SHA-256 查重明确提示、/api/media 鉴权读取、恶意文件名测试） |
-| #006 | EXIF capturedAt parser | ☐ |
+| #006 | EXIF capturedAt parser | ✅ 已完成（2026-08-29，exifr + DateTimeOriginal/OffsetTime + 家庭时区解释（D-009）+ user_confirmed 修正保留原 metadata） |
 | #007 | Inbox workflow + UI | ☐ |
 | #008 | Confirm InboxItem to MemoryEvent | ☐ |
 | #009 | Timeline + child age calculation | ☐ |

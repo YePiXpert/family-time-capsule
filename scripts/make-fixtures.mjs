@@ -63,10 +63,10 @@ function tiffAsciiExif(dateTimeOriginal, offsetTimeOriginal) {
 
   const ifd0 = Buffer.alloc(ifd0Size);
   ifd0.writeUInt16LE(1, 0);
-  ifd0.writeUInt16LE(0x8769, 2); // ExifIFDPointer
-  ifd0.writeUInt16LE(4, 4); // LONG
-  ifd0.writeUInt32LE(1, 6);
-  ifd0.writeUInt32LE(exifIfdOffset, 8);
+  ifd0.writeUInt16LE(0x8769, 2); // ExifIFDPointer：entry 从 ifd0+2 开始
+  ifd0.writeUInt16LE(4, 4); // LONG（entry+2）
+  ifd0.writeUInt32LE(1, 6); // count（entry+4）
+  ifd0.writeUInt32LE(exifIfdOffset, 10); // value（entry+8）
 
   const ifdExif = Buffer.alloc(2 + exifEntries.length * 12 + 4);
   ifdExif.writeUInt16LE(exifEntries.length, 0);
