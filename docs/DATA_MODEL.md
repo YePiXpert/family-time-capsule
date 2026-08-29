@@ -52,7 +52,7 @@ type Person = {
 }
 ```
 
-Person 不要求有 User：祖辈、孩子都可以先建档参加事件，以后再开账号绑定。
+Person 不要求有 User：祖辈、孩子都可以先建档参加事件，以后再开账号绑定。`avatarAssetId` 在 P0 保持普通可空列（尚未使用；避免为未用功能做表重建迁移，见 DECISIONS D-008）。
 
 ## User（#003 已落地：better-auth user 表 + 业务 FK 列）
 
@@ -67,35 +67,33 @@ type User = {
 
 不复制第二套认证 User；业务关系全部是显式 FK。`bindUserToPerson` 校验目标 Person 属于同家庭，防跨家庭绑定。
 
-## Asset
+## Asset（#004 已落地：`db/schema/asset.ts`）
 
 ```ts
 type Asset = {
-  id: string
-  familyId: string
+  id: string                 // UUID
+  familyId: string           // FK → family，cascade delete
   type: "image" | "video" | "audio" | "document"
 
-  originalFilename: string
+  originalFilename: string   // 上传时的文件名，仅作展示；绝不参与磁盘路径
   mimeType: string
   bytes: number
-  sha256: string
-  storageKey: string
+  sha256: string             // 家庭内唯一（unique(familyId, sha256)），导出时重验
+  storageKey: string         // originals/{familyId}/{yyyy}/{mm}/{assetId}.{ext}
 
-  capturedAt?: string
-  importedAt: string
-  timeSource:
-    | "user_confirmed"
-    | "embedded_metadata"
-    | "file_metadata"
-    | "import_time"
+  capturedAt?: Date          // 真实发生时间（按 capturedAt 年月分层存放）
+  importedAt: Date
+  timeSource: "user_confirmed" | "embedded_metadata" | "file_metadata" | "import_time"
 
   width?: number
   height?: number
   durationMs?: number
-  metadataJson?: unknown
+  metadataJson?: unknown     // EXIF/容器 metadata 的 JSON 快照，只增不改
 
-  originalAssetId?: string
+  createdByUserId: string    // FK → user
+  originalAssetId?: string   // 自引用 FK：衍生物 → 原件（cascade）
   derivativeType?: "thumbnail" | "preview" | "transcode" | "waveform"
+  createdAt: Date
 }
 ```
 

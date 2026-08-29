@@ -15,6 +15,13 @@
       "when": 1788013461094,
       "tag": "0001_curly_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788014113167,
+      "tag": "0002_plain_lockjaw",
+      "breakpoints": true
     }
   ]
 }

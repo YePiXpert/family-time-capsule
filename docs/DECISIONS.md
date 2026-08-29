@@ -68,3 +68,16 @@
 - **onboarding**：首次登录且未绑定家庭的用户被重定向到 `/onboarding`，一个事务里创建 Family + 女儿 Person（isChild，birthDate 必填）+ 管理员自己的 Person，并写回 user 的 familyId/personId。
 - **路由结构**：认证守卫在 `app/(protected)/layout.tsx`（不变）；家庭守卫在嵌套路由组 `app/(protected)/(app)/layout.tsx`——因为服务端 layout 拿不到 pathname，无法在上级判断「当前是否就在 /onboarding」，用嵌套组比每页手写检查更可靠。`/onboarding` 本身位于 (protected) 内（需要登录）。
 - **PRD 偏差**：无（PRD §10 的 User 型中 familyId 在 P0 阶段实际可空——管理员先于家庭存在）。
+
+## D-008（Issue #004）Asset 存储与不可覆盖语义
+
+- **日期**：2026-08-29
+- **状态**：已接受
+- **决策**：
+  1. storageKey = `originals/{familyId}/{yyyy}/{mm}/{assetId}.{ext}`（yyyy/mm 取 capturedAt，缺失用导入时间）；derivatives 同构但前缀为 `derivatives/{type}s/`。**上传原 filename 永不进入路径**，只作为展示名存 DB（清洗路径分隔符与控制字符）。
+  2. 原件不可覆盖在**存储层强制**：`putOriginal` 对已存在 key 抛 `OriginalExistsError`；写入走临时文件 + rename 原子落盘。衍生物可再生、允许覆盖。
+  3. key 安全是白名单而非黑名单：正则限定前缀与字符集、禁止 `..` 与 `//`，resolve 后必须仍在 DATA_DIR 内（纵深防御，主防御是 filename 根本不参与路径）。
+  4. 去重以家庭为边界：unique `(familyId, sha256)`。跨家庭允许相同文件（隔离单位是 family，不是全局）。
+  5. `person.avatar_asset_id` 在 P0 保持普通可空列（尚未使用）——SQLite 无法 ALTER 加 FK 约束，为未用功能重建 person 表不值得。
+  6. LocalFilesystemStorage 的 API 是同步的（better-sqlite3 风格，Node fs 本地写足够快）；大文件流式读取用 `createWebStream` 供媒体端点。
+- **PRD 偏差**：无。

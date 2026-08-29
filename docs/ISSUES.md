@@ -9,7 +9,7 @@
 | #001 | Bootstrap Next.js + TypeScript + Docker + CI | ✅ 已完成（2026-08-29） |
 | #002 | Authentication + private registration policy | ✅ 已完成（2026-08-29，better-auth + 首次 setup 令牌，见 docs/SECURITY.md） |
 | #003 | Family / User / Person schema | ✅ 已完成（2026-08-29，family/person 表 + user 表业务 FK + /onboarding + /family 管理页） |
-| #004 | AssetStorage abstraction + LocalFilesystemStorage | ☐ |
+| #004 | AssetStorage abstraction + LocalFilesystemStorage | ✅ 已完成（2026-08-29，storage key 白名单 + 原件不可覆盖 + asset 表 + 去重索引） |
 | #005 | Image upload + SHA-256 | ☐ |
 | #006 | EXIF capturedAt parser | ☐ |
 | #007 | Inbox workflow + UI | ☐ |

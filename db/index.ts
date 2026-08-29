@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { DATA_DIR } from "@/lib/paths";
+import * as assetSchema from "./schema/asset";
 import * as authSchema from "./schema/auth";
 import * as familySchema from "./schema/family";
 
@@ -39,7 +40,7 @@ function createDatabase() {
   sqlite.pragma("foreign_keys = ON");
 
   const db = drizzle(sqlite, {
-    schema: { ...authSchema, ...familySchema },
+    schema: { ...authSchema, ...familySchema, ...assetSchema },
   });
   migrate(db, {
     migrationsFolder: path.join(process.cwd(), "db", "migrations"),

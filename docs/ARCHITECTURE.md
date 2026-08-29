@@ -47,21 +47,26 @@ $DATA_DIR（本地默认 ./data，Docker 内为 /data）
 - `data/` 整体 gitignore。
 - Docker 用 named volume `capsule-data` 挂载 `/data`，容器重建数据不丢。
 
-## Asset Storage 抽象（PRD §19）
+## Asset Storage 抽象（#004 已落地：`lib/assets/storage.ts`）
 
-业务层不得直接硬编码磁盘目录，一律通过接口（Issue #004 落地）：
+业务层不得直接硬编码磁盘目录，一律通过接口：
 
 ```ts
 interface AssetStorage {
-  putOriginal(...): Promise<StoredAsset>
-  putDerivative(...): Promise<StoredAsset>
-  open(...): Promise<ReadableStream>
-  exists(...): Promise<boolean>
-  delete(...): Promise<void>
+  putOriginal(familyId, assetId, extension, data, dateForPath): PutResult  // 已存在即抛错，原件永不覆盖
+  putDerivative(derivativeType, familyId, assetId, extension, data, dateForPath): PutResult
+  read(key): Buffer
+  createWebStream(key): ReadableStream   // 鉴权媒体端点用
+  exists(key): boolean
+  delete(key): void
+  resolvePath(key): string               // 白名单校验 + 不得越出 DATA_DIR
 }
 ```
 
-MVP 实现 `LocalFilesystemStorage`；未来增加 `S3Storage`、`WebDAVStorage`。
+- storageKey：`originals/{familyId}/{yyyy}/{mm}/{assetId}.{ext}`（yyyy/mm 取 capturedAt，缺失用导入时间）与 `derivatives/{type}s/{familyId}/{yyyy}/{mm}/{assetId}.{ext}`；上传的原始 filename 永不进入路径。
+- 写入策略：临时文件 + rename 原子落盘；key 经正则白名单 + resolve 边界双重校验（防路径穿越）。
+- 去重：家庭内 `(familyId, sha256)` 唯一索引；相同原件再上传由服务层返回 duplicate 交 UI 提示（PRD §12）。
+- MVP 实现 `LocalFilesystemStorage`；未来增加 `S3Storage`、`WebDAVStorage`。
 
 ## AI Provider Adapter（PRD §13）
 
