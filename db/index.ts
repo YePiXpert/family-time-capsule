@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { DATA_DIR } from "@/lib/paths";
 import * as assetSchema from "./schema/asset";
 import * as authSchema from "./schema/auth";
+import * as contributionSchema from "./schema/contribution";
 import * as familySchema from "./schema/family";
 import * as inboxSchema from "./schema/inbox";
 import * as memorySchema from "./schema/memory";
@@ -48,6 +49,7 @@ function createDatabase() {
       ...assetSchema,
       ...inboxSchema,
       ...memorySchema,
+      ...contributionSchema,
     },
   });
   migrate(db, {

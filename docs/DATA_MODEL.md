@@ -144,39 +144,42 @@ type MemoryEvent = {
 
 **关系表**（不塞 JSON）：`memory_event_asset`（event↔asset）、`memory_event_participant`（event↔person，参与人默认含孩子本人）。确认收件箱条目 = 一个事务里建事件 + 建关系 + InboxItem 置 confirmed；Assets 只关联不复制。
 
-## Contribution
-
-同一事件多个家人独立表达，互不覆盖：
+## Contribution（#012 已落地：`db/schema/contribution.ts`）
 
 ```ts
 type Contribution = {
   id: string
-  memoryEventId: string
-  authorPersonId: string
+  memoryEventId: string     // FK → memory_event
+  authorPersonId: string    // FK → person（作者是 Person，不要求有 User）
 
-  rawText?: string
-  audioAssetId?: string
-  transcript?: string
-  editedText?: string
+  rawText?: string          // 原稿
+  audioAssetId?: string     // FK → asset（set null）
+  transcript?: string       // P1 转录
+  editedText?: string       // 定稿（编辑只改自己的行，原稿保留）
 
   visibility: "private" | "parents" | "family" | "child_later"
-  createdAt: string
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
-## Fact
+行级独立：妈妈编辑自己的 contribution 永远不会覆盖爸爸的行。爸爸登录也可以替外婆记录「外婆说」（authorPersonId=外婆）。
+
+## Fact（#012 已落地，P0 手工）
 
 ```ts
 type Fact = {
   id: string
-  memoryEventId: string
-  statement: string
+  memoryEventId: string    // FK → memory_event
+  statement: string        // 1–500 字
   status: "ai_suggested" | "user_confirmed" | "rejected"
   confidence?: number
+  createdAt: Date
+  updatedAt: Date
 }
 ```
 
-Fact 与素材/Contribution 的来源另建引用表或结构化 sourceRefs。**AI 建议永远不会自动升级为 `user_confirmed`。**
+P0 只允许用户手工创建（直接 `user_confirmed`）；P1 起 AI 只能产出 `ai_suggested`，永不自动升级。P0 未建 FactSource 关系表（无来源关联需求），P1 需要时再加。
 
 ## Capsule
 

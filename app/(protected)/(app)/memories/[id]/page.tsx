@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
-import { getFamily } from "@/lib/family/service";
+import { getFamily, listPeople } from "@/lib/family/service";
 import { getMemoryEventDetail } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
+import { listContributions, listFacts } from "@/lib/contributions/service";
+import { AddContributionForm, ContributionBlock } from "./contribution-ui";
+import { FactSection } from "./fact-ui";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +27,12 @@ export default async function MemoryEventPage({
 }) {
   const { familyId } = await requireFamily();
   const { id } = await params;
-  const [detail, family] = await Promise.all([
+  const [detail, family, people, contributions, facts] = await Promise.all([
     getMemoryEventDetail(familyId, id),
     getFamily(familyId),
+    listPeople(familyId),
+    listContributions(familyId, id),
+    listFacts(familyId, id),
   ]);
   if (!detail) notFound();
 
@@ -133,10 +139,18 @@ export default async function MemoryEventPage({
 
       <section aria-label="家人视角" className="mt-10">
         <h2 className="text-lg font-medium">家人视角</h2>
-        <p className="mt-2 text-sm leading-6 text-foreground/50">
-          每位家人可以留下自己独立的讲述（#012 起支持）。
+        <p className="mt-1 text-sm leading-6 text-foreground/50">
+          每个人留下自己独立的讲述，互不覆盖；没有账号的家人（祖辈）也可以被记录。
         </p>
+        <div className="mt-3 flex flex-col gap-3">
+          {contributions.map((c) => (
+            <ContributionBlock key={c.id} contribution={c} />
+          ))}
+        </div>
+        <AddContributionForm memoryEventId={event.id} people={people} />
       </section>
+
+      <FactSection memoryEventId={event.id} facts={facts} />
 
       <section aria-label="素材 metadata" className="mt-10">
         <h2 className="text-lg font-medium">档案信息</h2>
