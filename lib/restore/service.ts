@@ -723,6 +723,19 @@ export async function restoreFromZip(
     "恢复后行数校验失败（数据库与导出不一致）",
   );
 
+  // 审计留痕（v0.1.3）：恢复是高价值操作
+  {
+    const { recordAudit, AUDIT_KINDS } = await import("@/lib/audit/service");
+    await recordAudit(familyId, AUDIT_KINDS.restoreCompleted, operatorUserId, {
+      zipBytes: zipBuffer.byteLength,
+      people: num(peopleCount),
+      assets: num(assetCount),
+      events: num(eventCount),
+      contributions: num(contribCount),
+      facts: num(factCount),
+      capsules: num(capsuleCount),
+    });
+  }
   return {
     familyId,
     people: num(peopleCount),

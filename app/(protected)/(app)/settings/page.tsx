@@ -3,14 +3,23 @@ import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily } from "@/lib/family/service";
 import { getAppVersion } from "@/lib/export/service";
+import { listRecentAudit } from "@/lib/audit/service";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "设置 · Family Time Capsule" };
 
+const AUDIT_LABEL: Record<string, string> = {
+  "export.created": "导出完整备份",
+  "restore.completed": "从备份恢复",
+};
+
 export default async function SettingsPage() {
   const { familyId, userName } = await requireFamily();
-  const family = await getFamily(familyId);
+  const [family, auditEntries] = await Promise.all([
+    getFamily(familyId),
+    listRecentAudit(familyId, 10),
+  ]);
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
@@ -60,6 +69,42 @@ export default async function SettingsPage() {
         <p className="mt-2 text-xs text-foreground/45">
           导出较大时需要等待一会儿；导出过程会重新校验每个原件的哈希。
         </p>
+      </section>
+
+      <section aria-label="最近操作" className="mt-10">
+        <h2 className="text-lg font-medium">最近操作</h2>
+        {auditEntries.length === 0 ? (
+          <p className="mt-2 text-sm text-foreground/50">暂无导出/恢复记录。</p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-2">
+            {auditEntries.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex flex-wrap items-baseline justify-between gap-x-4 rounded-lg border border-foreground/10 px-4 py-2.5 text-sm"
+              >
+                <span>
+                  {AUDIT_LABEL[entry.kind] ?? entry.kind}
+                  <span className="ml-2 text-foreground/50">
+                    {entry.actorName ?? "系统"}
+                  </span>
+                </span>
+                <span className="text-xs text-foreground/45">
+                  {new Intl.DateTimeFormat("zh-CN", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                    timeZone: family?.timezone ?? "Asia/Shanghai",
+                  }).format(entry.createdAt)}
+                  {typeof entry.detail.bytes === "number"
+                    ? ` · ${(entry.detail.bytes / 1024 / 1024).toFixed(1)} MB`
+                    : ""}
+                  {typeof entry.detail.assetCount === "number"
+                    ? ` · ${entry.detail.assetCount} 份原件`
+                    : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   );

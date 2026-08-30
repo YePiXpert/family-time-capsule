@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { DATA_DIR } from "@/lib/paths";
 import * as assetSchema from "./schema/asset";
+import * as auditSchema from "./schema/audit";
 import * as authSchema from "./schema/auth";
 import * as capsuleSchema from "./schema/capsule";
 import * as contributionSchema from "./schema/contribution";
@@ -52,6 +53,7 @@ function createDatabase() {
       ...memorySchema,
       ...contributionSchema,
       ...capsuleSchema,
+      ...auditSchema,
     },
   });
   migrate(db, {

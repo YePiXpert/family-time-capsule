@@ -296,6 +296,18 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(capDetail!.capsule.status).toBe("sealed");
     expect(capDetail!.events).toHaveLength(1);
 
+    // 7.5) 恢复审计（v0.1.3）
+    const auditList = await m.db.getDb().all(
+      (await import("drizzle-orm")).sql`SELECT kind, actor_user_id, detail_json FROM audit_log`,
+    );
+    const restoreAudit = (auditList as Array<{ kind: string; detail_json: string }>).find(
+      (r) => r.kind === "restore.completed",
+    );
+    expect(restoreAudit).toBeTruthy();
+    const auditDetail = JSON.parse(restoreAudit!.detail_json);
+    expect(auditDetail.events).toBe(snapshot.events.length);
+    expect(auditDetail.zipBytes).toBeGreaterThan(0);
+
     // 8) 恢复后绑定流程：管理员绑定到「爸爸」
     const dadB = peopleB.find((p) => p.relationToChild === "爸爸")!;
     const bind = await m.family.bindRestoredFamily(adminId, dadB.id);

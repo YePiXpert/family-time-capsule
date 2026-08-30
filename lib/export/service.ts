@@ -95,6 +95,7 @@ export type ExportResult = {
 
 export async function buildFamilyExport(
   familyId: string,
+  opts: { actorUserId?: string | null } = {},
 ): Promise<ExportResult> {
   const db = getDb();
   const family = await getFamily(familyId);
@@ -351,6 +352,16 @@ export async function buildFamilyExport(
   });
 
   const bytes = statSync(filePath).size;
+  // 审计留痕（v0.1.3）：best-effort，失败不影响导出结果
+  {
+    const { recordAudit, AUDIT_KINDS } = await import("@/lib/audit/service");
+    await recordAudit(familyId, AUDIT_KINDS.exportCreated, opts.actorUserId ?? null, {
+      fileName,
+      bytes,
+      assetCount: manifestAssets.length,
+      fileCount: manifestAssets.length + 8,
+    });
+  }
   return {
     filePath,
     fileName,

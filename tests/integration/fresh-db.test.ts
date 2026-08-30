@@ -22,7 +22,7 @@ afterAll(async () => {
 const { sql } = await import("drizzle-orm");
 
 describe("fresh database 冷启动", () => {
-  it("空 DATA_DIR 首次连接即应用全部 migration（19 张表）", async () => {
+  it("空 DATA_DIR 首次连接即应用全部 migration（20 张表）", async () => {
     const { getDb } = await import("@/db");
     const db = getDb(); // 模块导入即触发迁移
     const rows = (await db.all(
@@ -49,6 +49,7 @@ describe("fresh database 冷启动", () => {
       "capsule_asset",
       "capsule_event",
       "capsule_contribution",
+      "audit_log",
     ];
     for (const table of expected) {
       expect(names, `missing table: ${table}`).toContain(table);

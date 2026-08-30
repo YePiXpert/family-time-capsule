@@ -14,7 +14,9 @@ export async function GET(request: Request) {
 
   let result;
   try {
-    result = await buildFamilyExport(context.familyId);
+    result = await buildFamilyExport(context.familyId, {
+      actorUserId: context.userId,
+    });
   } catch (err) {
     if (err instanceof ExportVerificationError) {
       return Response.json(
