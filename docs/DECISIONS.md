@@ -131,3 +131,12 @@
   3. 图标由 `scripts/make-icons.mjs` 纯 Node 生成（内置 PNG 编码器）：暖纸底 + 皮革色胶囊图形，与 globals.css 的低饱和档案基调一致；无 emoji、无卡通元素。
   4. 移动端 viewport：`viewport-fit=cover` + body 的 safe-area padding；上传控件不带 `capture` 属性——相册/拍摄由用户在系统选择器决定（Capture Anywhere，不强制现场拍摄）。
 - **PRD 偏差**：无（PRD §28 风格约束落实）。
+
+## D-013（RH-002）Live Photo 的 P0.1 语义：两个可合并的独立 Asset
+
+- **日期**：2026-08-30
+- **状态**：已接受
+- **决策**：Apple Live Photo（及各厂商等效的「照片+动图」）在 v0.1.x 中**不做自动识别与配对**。静帧（HEIC/JPEG）与动帧（MOV）作为两个完全独立的 Asset 摄取：独立落盘、独立 SHA-256、各自进入收件箱；由用户多选合并到同一个 MemoryEvent（#010 既有能力），系统绝不自动删除其中任何一方，也不为预览把 HEIC 转换替换。
+- **理由**：自动配对需要解析 Apple 的 asset identifier（`maker note` / `ContentIdentifier` atom），可靠实现依赖对多机型的样本验证；P0.1 目标是「两份文件都不丢、可合并」，用户手动勾选的成本可接受且零误判风险。
+- **未来**：P1 可读取 MOV 的 `com.apple.quicktime.contentidentifier` 与 HEIC 的对应 metadata 自动建议配对（仍只建议，不自动合并/删除）。
+- **测试**：tests/integration/live-photo.test.ts（HEIC+MOV、JPEG+MOV、废弃一方原件保留）。
