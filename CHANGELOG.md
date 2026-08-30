@@ -1,6 +1,32 @@
 # Changelog
 
-本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **v0.1.1 Real-world Hardening** → P1 AI 整理员 → P2 家庭口述史。
+本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ P1 AI 整理员 → P2 家庭口述史。
+
+## 0.1.2 — Verification Hardening（2026-08-30）
+
+关闭 v0.1.1 报告中的两项「未在本机验证」残留与基础设施缺口。无新产品功能、无 AI。
+
+### 真实 ffprobe 元数据提取（关闭 v0.1.1 已知风险 5）
+
+- `FFPROBE_PATH` 环境变量：显式指定 ffprobe 二进制（Docker 镜像走 PATH 默认；Windows 宿主/测试可注入）。
+- 以 `ffprobe-static`（devDependency，跨平台二进制）在测试中注入真实 ffprobe，实证提取链路：MOV 的 `duration=1s`、`creation_time`（QuickTime 纪元 mvhd）→ `timeSource=embedded_metadata`；WAV `duration=1s`。
+- 修复 fixture bug：mvhd timescale/duration 字段偏移错误（旧值会被真实 ffprobe 报 "time scale 0" 并读出 600 秒）。
+- probeMedia 新增 **rotation** 提取（tkhd matrix → side_data_list；旧文件 tags.rotate），写入 `metadataJson.container.rotation`。
+
+### HEIC EXIF 读取实证（关闭 v0.1.1 已知风险 2）
+
+- 新增 `sample-exif.heic`：完整 HEIF 结构（iinf 声明 Exif item + iloc 指向 TIFF 块），exifr 实际读出 `DateTimeOriginal`。
+- 摄取链路实证：带 EXIF 的 HEIC → `embedded_metadata` + 无偏移按家庭时区折算（09:00 上海 → 01:00Z）+ EXIF 快照完整保留；无 EXIF 的 HEIC 仍优雅 null。
+
+### CI 修复
+
+- 触发分支由 `main` 改为 `[master, main]`——此前仓库实际默认分支为 master，**CI 从未运行过**。
+- e2e 任务纳入灾难恢复 roundtrip（`vitest.roundtrip.config.ts`）。
+
+### 其他
+
+- README 文档索引补充 DEPLOYMENT_CHECKLIST / REAL_DEVICE_TEST；`.env.example` 增补 FFPROBE_PATH 与测试限流变量说明。
+- 勘误：0.1.1 记录的端到端测试数 23 → 实为 24（新增公开注册闸门 e2e 后未同步）。
 
 ## 0.1.1 — Real-world Hardening（2026-08-30）
 

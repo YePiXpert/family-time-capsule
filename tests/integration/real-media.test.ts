@@ -134,6 +134,24 @@ describe("图片支持矩阵", () => {
     });
     expect(result.status).toBe("stored");
   });
+
+  it("带 EXIF 的 HEIC：metadata 可读则读 → embedded_metadata + 家庭时区折算", async () => {
+    const result = await ingestFixture({
+      kind: "image",
+      filename: "IMG_EXIF.HEIC",
+      declaredMime: "image/heic",
+      bytes: fixture("sample-exif.heic"),
+      lastModified: null, // 不给 fallback，逼出 EXIF 时间
+    });
+    if (result.status !== "stored") throw new Error("store failed");
+    const row = result.asset;
+    // EXIF 2026:08:15 09:00:00 无偏移 → 家庭时区 Asia/Shanghai → UTC 01:00
+    expect(row.timeSource).toBe("embedded_metadata");
+    expect(row.capturedAt?.toISOString()).toBe("2026-08-15T01:00:00.000Z");
+    // EXIF 快照完整保留
+    const meta = JSON.parse(row.metadataJson ?? "{}");
+    expect(meta.exif.DateTimeOriginal).toBe("2026:08:15 09:00:00");
+  });
 });
 
 describe("音频支持矩阵", () => {

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
 
 concurrency:
@@ -26,7 +26,7 @@ jobs:
       - run: npm run build
 
   e2e:
-    name: playwright
+    name: e2e · restore-roundtrip
     runs-on: ubuntu-latest
     needs: quality
     steps:
@@ -38,4 +38,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
+      # Playwright（10 个独立 project）+ 灾难恢复 roundtrip（真实服务器 boot）
       - run: npx playwright test
+      - run: npx vitest run --config vitest.roundtrip.config.ts

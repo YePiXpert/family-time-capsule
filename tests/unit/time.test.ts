@@ -65,6 +65,20 @@ describe("extractEmbeddedTime", () => {
     expect(await extractEmbeddedTime(buffer)).toBeNull();
   });
 
+  it("HEIC（完整 HEIF 结构）可读出 DateTimeOriginal（v0.1.2 实证）", async () => {
+    const buffer = readFileSync(path.join(fixtures, "sample-exif.heic"));
+    const embedded = await extractEmbeddedTime(buffer);
+    expect(embedded).not.toBeNull();
+    expect(embedded!.wallTime).toBe("2026-08-15T09:00:00");
+    expect(embedded!.offset).toBeNull();
+    expect(embedded!.sourceTag).toBe("DateTimeOriginal");
+  });
+
+  it("无 EXIF 的 HEIC 仍优雅返回 null", async () => {
+    const buffer = readFileSync(path.join(fixtures, "sample.heic"));
+    expect(await extractEmbeddedTime(buffer)).toBeNull();
+  });
+
   it("非图片字节返回 null 而不是抛错", async () => {
     expect(await extractEmbeddedTime(Buffer.alloc(64, 0x41))).toBeNull();
   });

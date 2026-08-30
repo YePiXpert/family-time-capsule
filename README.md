@@ -95,8 +95,10 @@ AUTH_SECRET=$(openssl rand -base64 32) INITIAL_SETUP_TOKEN=<一次性令牌> doc
 - [docs/PRD.md](docs/PRD.md) — 产品计划书（唯一需求来源）
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 技术架构与存储约定
 - [docs/DATA_MODEL.md](docs/DATA_MODEL.md) — 核心数据模型
-- [docs/SECURITY.md](docs/SECURITY.md) — 安全基线与威胁模型（含 #017 审计结论）
+- [docs/SECURITY.md](docs/SECURITY.md) — 安全基线与威胁模型（含 #017 / RH-010 审计结论）
 - [docs/ISSUES.md](docs/ISSUES.md) — 开发路线、垂直切片与 Issue 清单
 - [docs/DECISIONS.md](docs/DECISIONS.md) — 关键决策记录（ADR）
+- [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) — 部署、冒烟、持久性验证与备份/灾难恢复手册
+- [docs/REAL_DEVICE_TEST.md](docs/REAL_DEVICE_TEST.md) — 真实设备手工验收清单（正式录入前执行）
 - [docs/EXPORT_FORMAT.md](docs/EXPORT_FORMAT.md) / [docs/RESTORE.md](docs/RESTORE.md) — 导出格式与恢复设计
 - [CHANGELOG.md](CHANGELOG.md) — 版本记录

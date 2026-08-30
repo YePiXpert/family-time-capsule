@@ -25,6 +25,10 @@
 | #017 | Security audit | ✅ 已完成（2026-08-29，双家庭全资源隔离专项测试（Asset/Inbox/Event/Contribution/Fact/Capsule/Export）；**发现并修复 High 级 IDOR 写入**（contribution/fact 先写后校验 → 先校验后写）；导出 Markdown 转义加固；docs/SECURITY.md 全面重写含审计结论） |
 | #018 | Playwright critical regression suite | ✅ 已完成（2026-08-29，8 条关键路径全覆盖：setup→家庭、旧照片时间链路、5 合 1、音视频文字回放、多视角、胶囊锁/开、导出哈希验证、登出不可访问 + 冷启动回顾 + 伪装文件拒绝；全套 lint/typecheck/126 单测/build/19 e2e 全绿） |
 
+## v0.1.2 Verification Hardening（2026-08-30 完成）
+
+关闭 v0.1.1 遗留的「未在本机验证」项：真实 ffprobe 元数据提取（FFPROBE_PATH + ffprobe-static 实证，含 MOV fixture mvhd 偏移修复与 rotation 提取）；HEIC EXIF 读取实证（sample-exif.heic 完整 HEIF 结构）；CI 修复（master 分支触发 + roundtrip 纳入 e2e job——此前 CI 因分支名从未运行）；文档索引与 .env.example 补全。无新产品功能，未进入 P1。
+
 ## v0.1.1 Real-world Hardening（2026-08-30 完成）
 
 | Issue | 标题 | 状态 |

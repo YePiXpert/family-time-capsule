@@ -113,6 +113,7 @@ export async function ingestMedia(input: IngestMediaInput): Promise<IngestMediaR
     metadata.container = {
       formatName: probe.formatName,
       durationMs: probe.durationMs,
+      ...(probe.rotation !== null ? { rotation: probe.rotation } : {}),
     };
     if (probe.raw) metadata.ffprobe = probe.raw;
   }

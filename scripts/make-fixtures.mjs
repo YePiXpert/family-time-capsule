@@ -154,7 +154,7 @@ function app1Exif(tiff) {
   return segment(0xe1, Buffer.concat([header, tiff]));
 }
 
-// ---------- HEIC / HEIF（CISB 结构最小样本） ----------
+// ---------- HEIC / HEIF（CISB 结构） ----------
 function buildHeic(brand) {
   // ftyp + meta(hdlr(pict)) + idat 占位：魔数/容器嗅探与“可保存原件”验证用；
   // 无 iloc/iinf → EXIF 解析优雅返回 null（符合“metadata 可读则读”）
@@ -173,15 +173,72 @@ function buildHeic(brand) {
   ]);
 }
 
+// 带 EXIF 的 HEIC：完整 HEIF 结构（iinf 声明 Exif item + iloc 指向文件尾的 TIFF 块），
+// exifr 可实际读出 DateTimeOriginal（v0.1.2 实证）。
+function buildHeicWithExif(dateTimeOriginal) {
+  const hdlr = fullBox("hdlr", 0, 0, (() => {
+    const b = Buffer.alloc(24);
+    b.write("pict", 8, "ascii");
+    b.write("e", 16, "ascii");
+    return b;
+  })());
+  const infe = fullBox("infe", 2, 0, (() => {
+    const b = Buffer.alloc(11);
+    b.writeUInt16BE(1, 0); // item_ID
+    b.writeUInt16BE(0, 2); // protection
+    b.write("Exif", 4, "ascii"); // item_type
+    b.write("E\0", 8, "ascii"); // item_name
+    return b;
+  })());
+  const iinf = fullBox("iinf", 0, 0, (() => {
+    const c = Buffer.alloc(2);
+    c.writeUInt16BE(1);
+    return Buffer.concat([c, infe]);
+  })());
+  const ilocPayload = (() => {
+    const b = Buffer.alloc(22);
+    b.writeUInt8(0x44, 0); // offset_size=4 | length_size=4
+    b.writeUInt8(0x40, 1); // base_offset_size=4 | index_size=0
+    b.writeUInt16BE(1, 2); // item_count
+    b.writeUInt16BE(1, 4); // item_ID
+    b.writeUInt16BE(0, 6); // data_reference_index
+    b.writeUInt32BE(0, 8); // base_offset
+    b.writeUInt16BE(1, 12); // extent_count
+    b.writeUInt32BE(0, 14); // extent_offset（占位）
+    b.writeUInt32BE(0, 18); // extent_length（占位）
+    return b;
+  })();
+  const iloc = fullBox("iloc", 0, 0, ilocPayload);
+  const meta = fullBox("meta", 0, 0, Buffer.concat([hdlr, iinf, iloc]));
+
+  const tiff = tiffAsciiExif(dateTimeOriginal, null);
+  const exifItem = Buffer.concat([Buffer.alloc(4), tiff]); // exif_tiff_header_offset=0 + TIFF
+
+  const ftypBox = ftyp("heic", 0, ["heic", "mif1"]);
+  const mdat = box("mdat", Buffer.alloc(64, 0x22));
+  const prefix = Buffer.concat([ftypBox, meta, mdat]);
+  const exifOffset = prefix.length;
+  const ilocNew = Buffer.from(iloc);
+  ilocNew.writeUInt32BE(exifOffset, 12 + 14);
+  ilocNew.writeUInt32BE(exifItem.length, 12 + 18);
+  const metaNew = fullBox("meta", 0, 0, Buffer.concat([hdlr, iinf, ilocNew]));
+  return Buffer.concat([ftypBox, metaNew, mdat, exifItem]);
+}
+
 // ---------- MOV / M4A / MP4 ----------
 function mvhd() {
-  // version 0 mvhd：timescale 600, duration 600（1 秒）——ffprobe 可读时能给出时长
+  // version 0 mvhd（payload 布局：creation@0 mod@4 timescale@8 duration@12 rate@16…）
+  // creation_time 为 QuickTime 纪元（1904-01-01 UTC）秒：对应 2026-08-15T05:00:00Z
+  const qtCreation = Math.floor(
+    (Date.UTC(2026, 7, 15, 5) - Date.UTC(1904, 0, 1)) / 1000,
+  );
   const b = Buffer.alloc(100);
-  b.writeUInt32BE(0x00010000, 0); // rate
-  b.writeUInt16BE(0x0100, 4); // volume
-  b.writeUInt32BE(600, 12); // timescale
-  b.writeUInt32BE(600, 16); // duration
-  b.writeUInt32BE(0x00010000, 20); // preferred rate
+  b.writeUInt32BE(qtCreation, 0); // creation_time
+  b.writeUInt32BE(qtCreation, 4); // modification_time
+  b.writeUInt32BE(600, 8); // timescale
+  b.writeUInt32BE(600, 12); // duration = 1 秒
+  b.writeUInt32BE(0x00010000, 16); // preferred rate 1.0
+  b.writeUInt16BE(0x0100, 20); // volume
   return fullBox("mvhd", 0, 0, b);
 }
 function buildMov() {
@@ -268,6 +325,10 @@ writeFileSync(path.join(outDir, "sample-exif-offset.jpg"), buildJpeg([app1Exif(t
 writeFileSync(path.join(outDir, "sample.png"), encodePng(1, 1, pngPixel));
 writeFileSync(path.join(outDir, "sample.heic"), buildHeic("heic"));
 writeFileSync(path.join(outDir, "sample.heif"), buildHeic("mif1"));
+writeFileSync(
+  path.join(outDir, "sample-exif.heic"),
+  buildHeicWithExif("2026:08:15 09:00:00"),
+);
 writeFileSync(path.join(outDir, "sample.mov"), buildMov());
 writeFileSync(path.join(outDir, "sample.m4a"), buildM4a());
 writeFileSync(path.join(outDir, "sample.mp4"), buildMp4());

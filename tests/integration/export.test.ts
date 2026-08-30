@@ -146,7 +146,7 @@ describe("完整导出（#014）", () => {
     const timelineMd = await zip.file(`${root}/timeline.md`)!.async("string");
 
     expect(manifest.exportVersion).toBe(1);
-    expect(manifest.appVersion).toBe("0.1.1");
+    expect(manifest.appVersion).toBe("0.1.2");
     expect(manifest.familyId).toBe(familyId);
     expect(familyJson.name).toBe("我们一家");
     expect(peopleJson.length).toBeGreaterThanOrEqual(3);
