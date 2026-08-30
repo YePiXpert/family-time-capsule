@@ -692,7 +692,7 @@ export async function restoreFromZip(
   }
 
   // 3) 恢复后复核：行数与引用抽查
-  const [familyCount, peopleCount, assetCount, eventCount, contribCount, factCount, capsuleCount] =
+  const [familyRow, peopleCount, assetCount, eventCount, contribCount, factCount, capsuleCount] =
     await Promise.all([
       db.select({ value: count() }).from(familyTable).where(eq(familyTable.id, familyId)),
       db.select({ value: count() }).from(personTable).where(eq(personTable.familyId, familyId)),
@@ -712,7 +712,8 @@ export async function restoreFromZip(
     ]);
   const num = (r: Array<{ value: number }>) => Number(r[0]?.value ?? 0);
   requireCondition(
-    num(assetCount) === data.manifest.assets.length &&
+    num(familyRow) === 1 &&
+      num(assetCount) === data.manifest.assets.length &&
       num(peopleCount) === peopleJson.length &&
       num(eventCount) === memoriesJson.length &&
       num(contribCount) === contributionsJson.length &&

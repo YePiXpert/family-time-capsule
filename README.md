@@ -67,9 +67,20 @@ npm run dev            # http://localhost:3000
 
 ## 备份与迁移
 
-- 设置页「导出完整备份（ZIP）」或 `GET /api/export`；导出前服务端重验每个原件哈希。
+> **`/data` 是不可替代的持久数据。** 其中两样缺一不可：
+> `db/capsule.sqlite`（家庭、人物、事件、讲述的全部结构化数据）与
+> `originals/`（**全部照片/录音/视频原始字节**）。只复制 sqlite 会丢掉所有媒体；
+> 只复制媒体会丢掉标题、真实时间与讲述。**二者必须一起备份。**
+
+- 应用内导出：设置页「导出完整备份（ZIP）」或 `GET /api/export`；
+  导出前服务端重验每个原件哈希，ZIP 可直接阅读/播放、可跨实例恢复；
+- 独立校验：`npm run verify:export <zip>`；
+- 灾难恢复：新实例 `/setup` 创建管理员后 `DATA_DIR=/data npm run restore -- backup.zip`，
+  再到 `/onboarding` 选择「你是谁」完成绑定（认证凭据永不来自备份）；
+- 基础 3-2-1 与「停容器 → tar volume」等经过验证的备份命令：
+  见 [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) §6；
 - 导出格式与兼容承诺：[docs/EXPORT_FORMAT.md](docs/EXPORT_FORMAT.md)；
-  恢复设计与校验流程：[docs/RESTORE.md](docs/RESTORE.md)。
+  恢复设计与安全校验：[docs/RESTORE.md](docs/RESTORE.md)。
 
 ## Docker 部署
 

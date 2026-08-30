@@ -12,7 +12,7 @@ export function BindRestoredForm({
   people: Array<{ id: string; displayName: string; relationToChild: string | null }>;
 }) {
   const [state, formAction, pending] = useActionState(bindRestoredAction, undefined);
-  const candidates = people.filter((p) => true); // 服务端已校验 isChild；UI 允许全部显示但提交校验
+  const candidates = people; // 服务端已校验 isChild；UI 允许全部显示但提交校验
 
   return (
     <form action={formAction} className="mt-8 flex flex-col gap-4">
