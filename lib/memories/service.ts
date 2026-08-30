@@ -372,6 +372,7 @@ export type TimelineEntry = {
   event: MemoryEventRow;
   coverAssetId: string | null;
   coverAssetType: string | null;
+  coverAssetMime: string | null;
   assetCount: number;
   participantNames: string[];
 };
@@ -390,6 +391,7 @@ export async function getTimeline(
       memoryEventId: memoryEventAsset.memoryEventId,
       assetId: memoryEventAsset.assetId,
       type: assetTable.type,
+      mimeType: assetTable.mimeType,
     })
     .from(memoryEventAsset)
     .innerJoin(assetTable, eq(memoryEventAsset.assetId, assetTable.id))
@@ -400,11 +402,12 @@ export async function getTimeline(
   const coverAssets =
     coverAssetIds.length > 0
       ? await db
-          .select({ id: assetTable.id, type: assetTable.type })
+          .select({ id: assetTable.id, type: assetTable.type, mimeType: assetTable.mimeType })
           .from(assetTable)
           .where(inArray(assetTable.id, coverAssetIds))
       : [];
   const coverTypeById = new Map(coverAssets.map((a) => [a.id, a.type]));
+  const coverMimeById = new Map(coverAssets.map((a) => [a.id, a.mimeType]));
 
   const participantLinks = await db
     .select({
@@ -425,16 +428,21 @@ export async function getTimeline(
 
   return events.map((event) => {
     const links = assetLinks.filter((l) => l.memoryEventId === event.id);
+    const fallbackImage = links.find((l) => l.type === "image");
+    const coverId = event.coverAssetId ?? fallbackImage?.assetId ?? null;
     const cover =
       (event.coverAssetId && coverTypeById.get(event.coverAssetId)) ??
-      links.find((l) => l.type === "image")?.type ??
+      fallbackImage?.type ??
       links[0]?.type ??
       null;
     return {
       event,
-      coverAssetId:
-        event.coverAssetId ?? links.find((l) => l.type === "image")?.assetId ?? null,
+      coverAssetId: coverId,
       coverAssetType: cover,
+      coverAssetMime:
+        (coverId && coverMimeById.get(coverId)) ??
+        (coverId ? links.find((l) => l.assetId === coverId)?.mimeType : null) ??
+        null,
       assetCount: links.length,
       participantNames: participantLinks
         .filter((l) => l.memoryEventId === event.id)

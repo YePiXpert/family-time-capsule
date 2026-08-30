@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { InboxItemRow } from "@/lib/inbox/service";
+import { MediaImage, MediaVideo } from "@/components/media-view";
 import { confirmAction, discardAction, editTimeAction } from "./actions";
 
 const TIME_SOURCE_LABEL: Record<string, string> = {
@@ -43,11 +44,12 @@ export function InboxCard({
     <li className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
       <div className="flex flex-col gap-4 sm:flex-row">
         {cover?.type === "image" && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`/api/media/${cover.id}`}
-            alt={cover.originalFilename}
-            className="h-32 w-32 shrink-0 rounded-lg border border-foreground/10 object-cover"
+          <MediaImage
+            assetId={cover.id}
+            filename={cover.originalFilename}
+            mimeType={cover.mimeType}
+            className="h-32 w-32 shrink-0"
+            imgClassName="h-32 w-32 shrink-0 rounded-lg border border-foreground/10 object-cover"
           />
         )}
         {cover?.type === "audio" && (
@@ -59,11 +61,12 @@ export function InboxCard({
           />
         )}
         {cover?.type === "video" && (
-          <video
-            controls
-            preload="metadata"
-            src={`/api/media/${cover.id}`}
-            className="h-32 w-auto shrink-0 rounded-lg border border-foreground/10"
+          <MediaVideo
+            assetId={cover.id}
+            filename={cover.originalFilename}
+            mimeType={cover.mimeType}
+            className="h-32 w-48 shrink-0"
+            videoClassName="h-32 w-auto shrink-0 rounded-lg border border-foreground/10"
           />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm">

@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
-import { getFamily } from "@/lib/family/service";
+import { getFamily, listPeople } from "@/lib/family/service";
 import { getTimeline } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
-import { listPeople } from "@/lib/family/service";
+import { MediaImage } from "@/components/media-view";
 
 export const dynamic = "force-dynamic";
 
@@ -63,18 +63,18 @@ export default async function TimelinePage() {
                 {month}
               </h2>
               <ol className="mt-4 flex flex-col gap-4">
-                {list.map(({ event, coverAssetId, coverAssetType, assetCount, participantNames }) => (
+                {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, assetCount, participantNames }) => (
                   <li key={event.id}>
                     <Link
                       href={`/memories/${event.id}`}
                       className="flex gap-4 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4 transition-colors hover:border-accent/50"
                     >
                       {coverAssetId && coverAssetType === "image" ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={`/api/media/${coverAssetId}`}
-                          alt=""
-                          className="h-20 w-20 shrink-0 rounded-lg border border-foreground/10 object-cover"
+                        <MediaImage
+                          assetId={coverAssetId}
+                          mimeType={coverAssetMime ?? "image/jpeg"}
+                          className="h-20 w-20 shrink-0"
+                          imgClassName="h-20 w-20 shrink-0 rounded-lg border border-foreground/10 object-cover"
                         />
                       ) : (
                         coverAssetId && (

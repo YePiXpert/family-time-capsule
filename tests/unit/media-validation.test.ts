@@ -5,6 +5,7 @@ import {
   MAX_AUDIO_BYTES,
   MAX_VIDEO_BYTES,
   sniffAudioMime,
+  sniffImageMime,
   sniffVideoMime,
   validateImageUpload,
   validateMediaUpload,
@@ -52,6 +53,76 @@ describe("sniffVideoMime", () => {
 
   it("非视频返回 null", () => {
     expect(sniffVideoMime(readFileSync(path.join(fixtures, "sample.wav")))).toBeNull();
+  });
+});
+
+describe("sniffImageMime（RH-001 真实容器样本）", () => {
+  it("识别 HEIC / HEIF 品牌", () => {
+    expect(sniffImageMime(readFileSync(path.join(fixtures, "sample.heic")))).toBe("image/heic");
+    expect(sniffImageMime(readFileSync(path.join(fixtures, "sample.heif")))).toBe("image/heif");
+  });
+
+  it("识别真实 PNG", () => {
+    expect(sniffImageMime(readFileSync(path.join(fixtures, "sample.png")))).toBe("image/png");
+  });
+});
+
+describe("validateImageUpload（HEIC 家族）", () => {
+  it("声明 image/heic + heic 内容通过", () => {
+    const buf = readFileSync(path.join(fixtures, "sample.heic"));
+    expect(validateImageUpload(buf, "image/heic")).toEqual({
+      ok: true,
+      value: { mimeType: "image/heic", extension: "heic" },
+    });
+  });
+
+  it("声明 image/heif + mif1 内容通过（同族）", () => {
+    const buf = readFileSync(path.join(fixtures, "sample.heif"));
+    expect(validateImageUpload(buf, "image/heif")).toEqual({
+      ok: true,
+      value: { mimeType: "image/heif", extension: "heif" },
+    });
+    // 声明 heic、内容 heif 也放行（同族互换）
+    expect(validateImageUpload(buf, "image/heic").ok).toBe(true);
+  });
+
+  it("HEIC 内容声明成 PNG 被拒绝（跨族）", () => {
+    const buf = readFileSync(path.join(fixtures, "sample.heic"));
+    expect(validateImageUpload(buf, "image/png")).toEqual({
+      ok: false,
+      error: "content_mismatch",
+    });
+  });
+});
+
+describe("sniffAudioMime / sniffVideoMime（RH-001 真实容器样本）", () => {
+  it("识别 M4A / MP3(ID3)", () => {
+    expect(sniffAudioMime(readFileSync(path.join(fixtures, "sample.m4a")))).toBe("audio/mp4");
+    expect(sniffAudioMime(readFileSync(path.join(fixtures, "sample.mp3")))).toBe("audio/mpeg");
+  });
+
+  it("识别 MOV（qt 品牌）/ MP4", () => {
+    expect(sniffVideoMime(readFileSync(path.join(fixtures, "sample.mov")))).toBe("video/quicktime");
+    expect(sniffVideoMime(readFileSync(path.join(fixtures, "sample.mp4")))).toBe("video/mp4");
+  });
+
+  it("MOV 声明 video/quicktime 通过；伪装成音频被拒绝", () => {
+    const mov = readFileSync(path.join(fixtures, "sample.mov"));
+    expect(validateMediaUpload(mov, "video/quicktime", "video")).toEqual({
+      ok: true,
+      value: { mimeType: "video/quicktime", extension: "mov" },
+    });
+    expect(validateMediaUpload(mov, "audio/m4a", "audio")).toEqual({
+      ok: false,
+      error: "content_mismatch",
+    });
+  });
+
+  it("M4A 家族（m4a/x-m4a/mp4 声明）全部通过", () => {
+    const m4a = readFileSync(path.join(fixtures, "sample.m4a"));
+    for (const declared of ["audio/m4a", "audio/x-m4a", "audio/mp4"]) {
+      expect(validateMediaUpload(m4a, declared, "audio").ok, declared).toBe(true);
+    }
   });
 });
 

@@ -97,12 +97,11 @@ export function sniffImageMime(buffer: Buffer): string | null {
       buffer.subarray(8, 12).toString("ascii") === "WEBP") {
     return "image/webp";
   }
-  // ISO-BMFF: ....ftypheic / heix / hevc / heif / mif1 / msf1 / avif
+  // ISO-BMFF: ....ftyp + 品牌。HEIC 家族精确到 heic/heif（声明族一致即可通过）
   if (buffer.subarray(4, 8).toString("ascii") === "ftyp") {
     const brand = buffer.subarray(8, 12).toString("ascii");
-    if (["heic", "heix", "hevc", "heif", "mif1", "msf1"].includes(brand)) {
-      return "image/heic";
-    }
+    if (["heic", "heix", "hevc"].includes(brand)) return "image/heic";
+    if (["heif", "mif1", "msf1"].includes(brand)) return "image/heif";
     if (brand === "avif" || brand === "avis") return "image/avif";
   }
   return null;

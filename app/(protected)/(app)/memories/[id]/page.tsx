@@ -6,6 +6,7 @@ import { getFamily, listPeople } from "@/lib/family/service";
 import { getMemoryEventDetail } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { listContributions, listFacts } from "@/lib/contributions/service";
+import { MediaBlock } from "@/components/media-view";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
 import { FactSection } from "./fact-ui";
 
@@ -79,54 +80,14 @@ export default async function MemoryEventPage({
         ) : (
           <div className="mt-3 flex flex-col gap-4">
             {assets.map((a) => (
-              <div key={a.id} className="w-full">
-                {a.type === "image" && (
-                  <a
-                    href={`/api/media/${a.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group block overflow-hidden rounded-lg border border-foreground/10"
-                    title={a.originalFilename}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/media/${a.id}`}
-                      alt={a.originalFilename}
-                      className="max-h-[28rem] w-full object-contain transition-opacity group-hover:opacity-95"
-                    />
-                  </a>
-                )}
-                {a.type === "video" && (
-                  <video
-                    controls
-                    preload="metadata"
-                    src={`/api/media/${a.id}`}
-                    className="max-h-[28rem] w-full rounded-lg border border-foreground/10"
-                  />
-                )}
-                {a.type === "audio" && (
-                  <audio
-                    controls
-                    preload="metadata"
-                    src={`/api/media/${a.id}`}
-                    className="w-full"
-                  />
-                )}
-                {a.type === "document" && (
-                  <a
-                    href={`/api/media/${a.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block rounded-lg border border-foreground/10 px-4 py-3 text-sm underline underline-offset-2"
-                  >
-                    {a.originalFilename}
-                  </a>
-                )}
-                <p className="mt-1 truncate text-xs text-foreground/40" title={a.originalFilename}>
-                  {a.originalFilename}
-                  {a.durationMs ? ` · ${(a.durationMs / 1000).toFixed(1)} 秒` : ""}
-                </p>
-              </div>
+              <MediaBlock
+                key={a.id}
+                assetId={a.id}
+                filename={a.originalFilename}
+                mimeType={a.mimeType}
+                type={a.type}
+                durationMs={a.durationMs}
+              />
             ))}
           </div>
         )}
