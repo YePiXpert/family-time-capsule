@@ -57,6 +57,13 @@
       "when": 1788098094395,
       "tag": "0007_thick_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788105194944,
+      "tag": "0008_mute_matthew_murdock",
+      "breakpoints": true
     }
   ]
 }

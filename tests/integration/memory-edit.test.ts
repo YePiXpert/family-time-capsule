@@ -43,6 +43,7 @@ const {
   updateMemoryEvent,
   getMemoryEventDetail,
   listMemoryEvents,
+  listEventRevisions,
 } = await import("@/lib/memories/service");
 
 const db = getDb();
@@ -216,5 +217,44 @@ describe("事件编辑（RH-003）", () => {
     expect(ok.ok).toBe(true);
     const detail = (await getMemoryEventDetail(familyId, eventId))!;
     expect(detail.event.occurredAtPrecision).toBe("date_only");
+  });
+
+  it("编辑历史（v0.1.3）：每次编辑写入编辑前快照，按新→旧排列", async () => {
+    const { eventId } = await makeEvent("会被改两次的事");
+    // 初始无历史
+    expect(await listEventRevisions(familyId, eventId)).toHaveLength(0);
+
+    // 第一次编辑：标题 + 时间
+    await updateMemoryEvent(familyId, eventId, adminUserId, {
+      title: "第一次修改后",
+      occurredAt: new Date("2026-08-12T00:00:00.000Z"),
+    });
+    // 第二次编辑：地点
+    await updateMemoryEvent(familyId, eventId, adminUserId, {
+      locationText: "北京 · 公园",
+    });
+
+    const revisions = await listEventRevisions(familyId, eventId);
+    expect(revisions).toHaveLength(2);
+    // 新→旧：第一条的快照是「第一次修改后」（第二次编辑前的状态）
+    expect(revisions[0].snapshot.title).toBe("第一次修改后");
+    expect(revisions[0].snapshot.locationText).toBeNull();
+    expect(revisions[0].snapshot.occurredAt).toBe("2026-08-12T00:00:00.000Z");
+    // 第二条是最初状态
+    expect(revisions[1].snapshot.title).toBe("会被改两次的事");
+    expect(revisions[1].snapshot.occurredAt).toBe("2026-08-10T01:30:00.000Z");
+    // 编辑者记录正确
+    expect(revisions[0].editedByUserId).toBe(adminUserId);
+    expect(revisions[0].editorName).toBe("爸爸");
+    // 参与人快照包含孩子
+    const people = await listPeople(familyId);
+    const child = people.find((p) => p.isChild)!;
+    expect(revisions[1].snapshot.participantPersonIds).toContain(child.id);
+  });
+
+  it("编辑历史跨家庭隔离", async () => {
+    const { eventId } = await makeEvent("别人看不到的历史");
+    await updateMemoryEvent(familyId, eventId, adminUserId, { title: "改一下" });
+    expect(await listEventRevisions(OTHER_FAMILY, eventId)).toHaveLength(0);
   });
 });

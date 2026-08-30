@@ -5,8 +5,8 @@ import {
   text,
 } from "drizzle-orm/sqlite-core";
 import { asset } from "./asset";
-import { family } from "./family";
-import { person } from "./family";
+import { user } from "./auth";
+import { family, person } from "./family";
 
 /**
  * MemoryEvent：核心记忆事件（Issue #008，PRD §10）。
@@ -98,4 +98,30 @@ export const memoryEventParticipant = sqliteTable(
     index("memory_participant_event_idx").on(t.memoryEventId),
     index("memory_participant_person_idx").on(t.personId),
   ],
+);
+
+/**
+ * 事件编辑历史（v0.1.3，RH-003 backlog 落地）。
+ * 每次编辑前保存一份「编辑前快照」：谁、何时、改了什么之前是什么。
+ * 只增不改；跨家庭读取按 familyId 隔离；不随导出/恢复流转（实例本地审计）。
+ */
+export const memoryEventRevision = sqliteTable(
+  "memory_event_revision",
+  {
+    id: text("id").primaryKey(),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    memoryEventId: text("memory_event_id")
+      .notNull()
+      .references(() => memoryEvent.id, { onDelete: "cascade" }),
+    editedByUserId: text("edited_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    // 编辑前快照：title/occurredAt/occurredAtPrecision/locationText/
+    // coverAssetId/childPersonId/participantPersonIds/ageDays
+    snapshotJson: text("snapshot_json").notNull(),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [index("revision_event_idx").on(t.memoryEventId, t.createdAt)],
 );

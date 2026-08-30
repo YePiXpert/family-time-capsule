@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
-import { getMemoryEventDetail } from "@/lib/memories/service";
+import { getMemoryEventDetail, listEventRevisions } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { listContributions, listFacts } from "@/lib/contributions/service";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
@@ -30,12 +30,13 @@ export default async function MemoryEventPage({
 }) {
   const { familyId } = await requireFamily();
   const { id } = await params;
-  const [detail, family, people, contributions, facts] = await Promise.all([
+  const [detail, family, people, contributions, facts, revisions] = await Promise.all([
     getMemoryEventDetail(familyId, id),
     getFamily(familyId),
     listPeople(familyId),
     listContributions(familyId, id),
     listFacts(familyId, id),
+    listEventRevisions(familyId, id),
   ]);
   if (!detail) notFound();
 
@@ -137,6 +138,49 @@ export default async function MemoryEventPage({
       </section>
 
       <FactSection memoryEventId={event.id} facts={facts} />
+
+      {revisions.length > 0 && (
+        <section aria-label="编辑历史" className="mt-10">
+          <details>
+            <summary className="cursor-pointer text-lg font-medium">
+              编辑历史（{revisions.length}）
+            </summary>
+            <ol className="mt-3 flex flex-col gap-2">
+              {revisions.map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-lg border border-foreground/10 px-4 py-3 text-sm"
+                >
+                  <p className="text-foreground/60">
+                    {new Intl.DateTimeFormat("zh-CN", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                      timeZone: timezone,
+                    }).format(r.createdAt)}
+                    {" · "}
+                    {r.editorName ?? "家人"} 修改
+                  </p>
+                  <p className="mt-1 leading-6">
+                    之前：{r.snapshot.title}
+                    <span className="ml-2 text-foreground/50">
+                      {new Intl.DateTimeFormat("zh-CN", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                        timeZone: timezone,
+                      }).format(new Date(r.snapshot.occurredAt))}
+                    </span>
+                    {r.snapshot.locationText && (
+                      <span className="ml-2 text-foreground/50">
+                        · {r.snapshot.locationText}
+                      </span>
+                    )}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </details>
+        </section>
+      )}
 
       <section aria-label="素材 metadata" className="mt-10">
         <h2 className="text-lg font-medium">档案信息</h2>

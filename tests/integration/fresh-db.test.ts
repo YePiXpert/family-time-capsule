@@ -22,7 +22,7 @@ afterAll(async () => {
 const { sql } = await import("drizzle-orm");
 
 describe("fresh database 冷启动", () => {
-  it("空 DATA_DIR 首次连接即应用全部 migration（18 张表）", async () => {
+  it("空 DATA_DIR 首次连接即应用全部 migration（19 张表）", async () => {
     const { getDb } = await import("@/db");
     const db = getDb(); // 模块导入即触发迁移
     const rows = (await db.all(
@@ -42,6 +42,7 @@ describe("fresh database 冷启动", () => {
       "memory_event",
       "memory_event_asset",
       "memory_event_participant",
+      "memory_event_revision",
       "contribution",
       "fact",
       "capsule",

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
+import { user as userTable } from "@/db/schema/auth";
 import { asset as assetTable } from "@/db/schema/asset";
 import { person as personTable } from "@/db/schema/family";
 import { inboxItem } from "@/db/schema/inbox";
@@ -8,6 +9,7 @@ import {
   memoryEvent,
   memoryEventAsset,
   memoryEventParticipant,
+  memoryEventRevision,
 } from "@/db/schema/memory";
 import type { AssetRow } from "@/lib/assets/service";
 import { getInboxEntry, type InboxEntry } from "@/lib/inbox/service";
@@ -96,6 +98,11 @@ export async function updateMemoryEvent(
   }
 
   // participants：全部必须属于本家庭（含新孩子本人）
+  const existingParticipantRows = await db
+    .select({ personId: memoryEventParticipant.personId })
+    .from(memoryEventParticipant)
+    .where(eq(memoryEventParticipant.memoryEventId, eventId));
+  const participantIdsBefore = existingParticipantRows.map((l) => l.personId);
   let participantIds: string[];
   if (patch.participantPersonIds !== undefined) {
     if (patch.participantPersonIds.length > 50) return { ok: false, error: "invalid" };
@@ -115,11 +122,7 @@ export async function updateMemoryEvent(
     }
     participantIds = wanted;
   } else {
-    const existing = await db
-      .select({ personId: memoryEventParticipant.personId })
-      .from(memoryEventParticipant)
-      .where(eq(memoryEventParticipant.memoryEventId, eventId));
-    participantIds = existing.map((l) => l.personId);
+    participantIds = [...participantIdsBefore];
     if (!participantIds.includes(childPersonId)) participantIds.unshift(childPersonId);
   }
 
@@ -157,6 +160,27 @@ export async function updateMemoryEvent(
 
   const now = new Date();
   db.transaction((tx) => {
+    // 编辑前快照（v0.1.3）：与本次修改同事务写入，保证可追溯
+    tx.insert(memoryEventRevision)
+      .values({
+        id: randomUUID(),
+        familyId,
+        memoryEventId: eventId,
+        editedByUserId: editorUserId,
+        snapshotJson: JSON.stringify({
+          title: current.title,
+          occurredAt: current.occurredAt.toISOString(),
+          occurredAtPrecision: current.occurredAtPrecision,
+          locationText: current.locationText,
+          coverAssetId: current.coverAssetId,
+          childPersonId: current.childPersonId,
+          participantPersonIds: participantIdsBefore,
+          ageDays: current.ageDays,
+        }),
+        createdAt: now,
+      })
+      .run();
+
     tx.update(memoryEvent)
       .set({
         title,
@@ -534,6 +558,55 @@ export async function listMemoryEvents(
     )
     .orderBy(desc(memoryEvent.occurredAt))
     .limit(limit);
+}
+
+// ---------- 编辑历史（v0.1.3） ----------
+
+export type EventRevision = {
+  id: string;
+  editedByUserId: string | null;
+  editorName: string | null;
+  createdAt: Date;
+  snapshot: {
+    title: string;
+    occurredAt: string;
+    occurredAtPrecision: string;
+    locationText: string | null;
+    coverAssetId: string | null;
+    childPersonId: string;
+    participantPersonIds: string[];
+    ageDays: number | null;
+  };
+};
+
+/** 事件的编辑历史（新→旧）；跨家庭返回空（事件本身按 family 校验） */
+export async function listEventRevisions(
+  familyId: string,
+  eventId: string,
+): Promise<EventRevision[]> {
+  const db = getDb();
+  const owned = await db
+    .select({ id: memoryEvent.id })
+    .from(memoryEvent)
+    .where(and(eq(memoryEvent.familyId, familyId), eq(memoryEvent.id, eventId)))
+    .limit(1);
+  if (!owned[0]) return [];
+  const rows = await db
+    .select({
+      revision: memoryEventRevision,
+      editorName: userTable.name,
+    })
+    .from(memoryEventRevision)
+    .leftJoin(userTable, eq(memoryEventRevision.editedByUserId, userTable.id))
+    .where(eq(memoryEventRevision.memoryEventId, eventId))
+    .orderBy(desc(memoryEventRevision.createdAt));
+  return rows.map((r) => ({
+    id: r.revision.id,
+    editedByUserId: r.revision.editedByUserId,
+    editorName: r.editorName ?? null,
+    createdAt: r.revision.createdAt,
+    snapshot: JSON.parse(r.revision.snapshotJson) as EventRevision["snapshot"],
+  }));
 }
 
 export type TimelineEntry = {
