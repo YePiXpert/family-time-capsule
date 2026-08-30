@@ -47,8 +47,9 @@
 
 ## 5. 暴力破解与限流
 
-- better-auth 内建 rate-limit 在生产默认开启（内存存储，按 IP+路径窗口限流），对 `/sign-in/*` 默认 10 秒 3 次；本项目通过 `customRules` 保留该默认并允许 `AUTH_SIGNIN_RATE_LIMIT_MAX` 环境变量放宽（仅 e2e 使用，见 e2e-server.mjs）。
-- **已知限制（backlog）**：限流存储在进程内存——重启清零、多实例不共享。P1 计划：SQLite 持久化限流存储、登录失败延迟、可选验证码、`/setup` 同样限流。
+- **持久化限流（v0.1.3）**：`rateLimit.storage: "database"` + `enabled: true`——计数落在 SQLite `rate_limit` 表（migration 0010），**重启不清零**，多实例共享同一数据库时天然一致。对 `/sign-in/*` 默认 10 秒 3 次（`customRules`，可用 `AUTH_SIGNIN_RATE_LIMIT_MAX` 放宽，仅测试环境使用）。行为在真实生产服务器上验证（roundtrip 测试：窗口内第 4 次登录 429、计数可从另一连接读到）。
+- 注意：better-auth 的限流挂在 **HTTP 请求层**；服务端内部 `auth.api.*` 调用（如 /setup 的 performSetup）不经过限流，属预期。
+- 剩余 backlog（Low）：登录失败人为延迟、可选验证码、`/setup` 专项限流规则。
 
 ## 6. CSRF 策略
 

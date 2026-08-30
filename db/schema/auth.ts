@@ -86,3 +86,15 @@ export const verification = sqliteTable("verification", {
   createdAt: createdAtColumn(),
   updatedAt: updatedAtColumn(),
 });
+
+/**
+ * 持久化限流（v0.1.3）：better-auth `rateLimit.storage: "database"` 所需表。
+ * 字段名与 @better-auth/core 的 rateLimit 模型一致（id 主键 / key 唯一 /
+ * 次数 / 上次请求毫秒）。存 SQLite 后重启不清零、多实例共享（SECURITY.md §5）。
+ */
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});

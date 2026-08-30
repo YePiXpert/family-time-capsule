@@ -5,6 +5,7 @@ import { count } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   account,
+  rateLimit,
   session,
   user,
   verification,
@@ -26,11 +27,16 @@ export function getAuth() {
   return authInstance;
 }
 
+/** @internal 仅供测试模拟进程重启（丢弃实例缓存；生产代码不得调用） */
+export function __resetAuthInstanceForTests() {
+  authInstance = undefined;
+}
+
 function createAuth() {
   return betterAuth({
     database: drizzleAdapter(getDb(), {
       provider: "sqlite",
-      schema: { user, session, account, verification },
+      schema: { user, session, account, verification, rateLimit },
     }),
     secret: process.env.AUTH_SECRET || undefined,
     emailAndPassword: {
@@ -43,6 +49,10 @@ function createAuth() {
       useSecureCookies: process.env.NODE_ENV === "production",
     },
     rateLimit: {
+      // v0.1.3：显式启用（不依赖 NODE_ENV 推断），计数持久化到 SQLite
+      // rate_limit 表（重启不清零；表定义见 db/schema/auth.ts）
+      enabled: true,
+      storage: "database",
       // better-auth 默认对 /sign-in/* 限 10 秒 3 次（防暴力破解）。
       // 保留该默认，但允许部署/测试环境通过环境变量放宽。
       customRules: {

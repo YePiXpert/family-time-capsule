@@ -273,4 +273,32 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     });
     expect(verify.status, verify.stdout + verify.stderr).toBe(0);
   });
+
+  it("登录限流持久化到 SQLite（v0.1.3）：窗口内超额 429，计数落库", async () => {
+    // 说明：better-auth 限流挂在 HTTP 请求层（内部 api 不经过），本测试是真实
+    // 生产服务器上的行为验证。此前“按恢复设计登录”测试已消耗 1 次（共 3 次/10s）。
+    const attempt = async (password: string) => {
+      const res = await fetch(`${BASE}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: BASE },
+        body: JSON.stringify({ email: "b@example.com", password }),
+      });
+      return res.status;
+    };
+    // 第 2、3 次：密码错误 → 401（不是 429，说明尚未触顶）
+    expect(await attempt("wrong-1")).toBe(401);
+    expect(await attempt("wrong-2")).toBe(401);
+    // 第 4 次：即使密码正确也被限流 → 429
+    expect(await attempt("b-long-enough-password")).toBe(429);
+
+    // 计数确实落在 SQLite（另一连接只读 WAL 快照）
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(path.join(dirB, "db", "capsule.sqlite"), { readonly: true });
+    const rows = db
+      .prepare(`SELECT key, count FROM rate_limit WHERE key LIKE '%sign-in%'`)
+      .all() as Array<{ key: string; count: number }>;
+    db.close();
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows[0].count).toBeGreaterThanOrEqual(3);
+  });
 });
