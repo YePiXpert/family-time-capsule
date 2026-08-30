@@ -1,6 +1,37 @@
 # Changelog
 
-本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ P1 AI 整理员 → P2 家庭口述史。
+本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ P1 AI 整理员 → P2 家庭口述史。
+
+## 0.1.3 — Performance & Audit Hardening（2026-08-30）
+
+落地四项在 PRD §21 / SECURITY.md / RH-003 中明确记录、且不进入 P1 的既有缺口。无 AI。
+
+### 缩略图衍生物（PRD §21「衍生预览独立保存」落地）
+
+- 上传图片时经 **sharp** 自动生成 ≤640px、遵循 EXIF 方向的 **WebP 缩略图**，存于 `derivatives/thumbnails/`（独立文件，原件字节零改动）。
+- 时间轴 / 收件箱 / 事件详情的图片展示一律优先缩略图（真实照片下不再加载全尺寸原件）；缩略图加载失败自动回退原件，再失败才显示占位。
+- **HEIC 等 sharp 不支持的格式优雅跳过**（预构建 libvips 无 HEIF 解码），沿用「原件已安全保存」占位；生成失败只留 console 痕迹、绝不让上传失败。
+- 导出仍只含原件（衍生物可再生，`getThumbnailMap` 批量查询按家庭隔离）。
+
+### 事件编辑历史（RH-003 backlog 落地）
+
+- `memory_event_revision`（migration 0008）：每次编辑在**同一事务**内写入「编辑前快照」（标题/时间/精度/地点/封面/孩子/参与人/年龄）。
+- 事件页新增「编辑历史（N）」折叠区：时间 · 编辑者 · 之前的内容；跨家庭不可读；不随导出/恢复流转（实例本地审计）。
+
+### 操作审计（SECURITY.md backlog 落地）
+
+- `audit_log`（migration 0009）：导出完成（文件名/字节数/原件数）与恢复完成（来源大小/各实体计数）留痕，best-effort 不阻断主操作。
+- 设置页新增「最近操作」列表；跨家庭隔离。
+
+### 限流持久化（SECURITY.md §5 backlog 落地）
+
+- better-auth `rateLimit.storage: "database"` + `enabled: true`：登录限流计数落 SQLite `rate_limit` 表（migration 0010），**重启不清零**。
+- 在真实生产服务器上验证（roundtrip 测试）：窗口内第 4 次登录 429、计数可从另一连接读到。
+- 已知边界：限流挂在 HTTP 请求层，服务端内部 `auth.api.*`（如 /setup）不经过限流，属预期。
+
+### 版本与质量基线
+
+- 197 单元/集成 + 24 Playwright + 6 roundtrip 全绿；lint/typecheck/build 通过；数据库 21 张表、10 个 migration 从零可建。
 
 ## 0.1.2 — Verification Hardening（2026-08-30）
 

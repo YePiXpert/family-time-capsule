@@ -11,8 +11,8 @@ Next.js（App Router）+ TypeScript   单体全栈
 Tailwind CSS                        样式（后续按需引入 shadcn/ui）
 SQLite（better-sqlite3, WAL）       单文件数据库，位于 $DATA_DIR/db/capsule.sqlite
 Drizzle ORM                         schema 在 db/schema/，迁移自动应用
-better-auth 1.7                     认证（#002）：session、密码 scrypt、cookie 管理全权委托
-Sharp                               图片衍生物（后续）
+better-auth 1.7                     认证（#002）：session、密码 scrypt、cookie 管理全权委托；限流持久化到 SQLite（v0.1.3）
+Sharp                               图片缩略图衍生物（v0.1.3：≤640px WebP，展示层优先）
 FFmpeg / ffprobe                    视频元数据/转码（增强能力，非核心硬依赖）
 exifr                               EXIF 时间/尺寸解析（#006）
 Vitest / Playwright                 单元·集成 / 端到端测试

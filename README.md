@@ -1,6 +1,6 @@
 # Family Time Capsule
 
-**P0 v0.1.0 — Trusted Private Timeline（可信私人时间轴）**
+**v0.1.3 — P0 Trusted Private Timeline（可信私人时间轴）+ Real-world Hardening**
 
 A private, self-hosted family memory archive.
 

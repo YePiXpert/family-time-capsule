@@ -144,6 +144,36 @@ type MemoryEvent = {
 
 **关系表**（不塞 JSON）：`memory_event_asset`（event↔asset）、`memory_event_participant`（event↔person，参与人默认含孩子本人）。确认收件箱条目 = 一个事务里建事件 + 建关系 + InboxItem 置 confirmed；Assets 只关联不复制。
 
+### memory_event_revision（v0.1.3 已落地）
+
+```ts
+type MemoryEventRevision = {
+  id: string
+  familyId: string           // FK → family（隔离）
+  memoryEventId: string      // FK → memory_event（cascade）
+  editedByUserId?: string    // FK → user（set null）
+  snapshotJson: string       // 编辑前快照：title/occurredAt/precision/locationText/cover/child/participants/ageDays
+  createdAt: Date
+}
+```
+
+每次 `updateMemoryEvent` 在同一事务写入「编辑前快照」；事件页「编辑历史」折叠区展示；不随导出/恢复流转（实例本地审计）。
+
+### audit_log（v0.1.3 已落地）
+
+```ts
+type AuditLog = {
+  id: string
+  familyId: string           // FK → family（隔离）
+  kind: "export.created" | "restore.completed"
+  actorUserId?: string       // FK → user（set null；CLI 恢复时为 operator）
+  detailJson: string         // { fileName?, bytes?, assetCount? } / { zipBytes?, people?, assets?, events?… }
+  createdAt: Date
+}
+```
+
+best-effort 写入（审计失败不阻断导出/恢复）；设置页「最近操作」消费。
+
 ## Contribution（#012 已落地：`db/schema/contribution.ts`）
 
 ```ts
