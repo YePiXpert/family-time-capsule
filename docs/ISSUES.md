@@ -25,6 +25,21 @@
 | #017 | Security audit | ✅ 已完成（2026-08-29，双家庭全资源隔离专项测试（Asset/Inbox/Event/Contribution/Fact/Capsule/Export）；**发现并修复 High 级 IDOR 写入**（contribution/fact 先写后校验 → 先校验后写）；导出 Markdown 转义加固；docs/SECURITY.md 全面重写含审计结论） |
 | #018 | Playwright critical regression suite | ✅ 已完成（2026-08-29，8 条关键路径全覆盖：setup→家庭、旧照片时间链路、5 合 1、音视频文字回放、多视角、胶囊锁/开、导出哈希验证、登出不可访问 + 冷启动回顾 + 伪装文件拒绝；全套 lint/typecheck/126 单测/build/19 e2e 全绿） |
 
+## v0.1.1 Real-world Hardening（2026-08-30 完成）
+
+| Issue | 标题 | 状态 |
+| --- | --- | --- |
+| RH-001 | 真实媒体格式兼容 | ✅（HEIC/HEIF/MOV/M4A 等支持矩阵 + fallback UI + 真实容器 fixtures） |
+| RH-002 | Live Photo 安全摄取基础 | ✅（HEIC+MOV 独立保存/合并，D-013） |
+| RH-003 | MemoryEvent 编辑 | ✅（lastEditedByUserId + IDOR 校验 + E2E 8/10→8/11） |
+| RH-004 | 真正的 Restore | ✅（CLI + 绑定流 + 集成测试，D-014） |
+| RH-005 | 灾难恢复 roundtrip | ✅（真实服务器 boot + HTTP 全链路验证） |
+| RH-006 | E2E 独立性 | ✅（每 spec 独立 project/DATA_DIR，可单独执行） |
+| RH-007 | 部署冒烟 | ✅（smoke 脚本 + /api/health + DEPLOYMENT_CHECKLIST.md） |
+| RH-008 | 真实设备验收清单 | ✅（REAL_DEVICE_TEST.md） |
+| RH-009 | 备份安全说明 | ✅（README + 清单；VACUUM INTO 实测） |
+| RH-010 | 安全回归 | ✅（**修复 High 级公开注册漏洞**；restore 加固；IDOR 回归） |
+
 ## P0 完成顺序（PRD §22）
 
 ```text

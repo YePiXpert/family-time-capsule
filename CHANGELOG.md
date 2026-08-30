@@ -1,6 +1,61 @@
 # Changelog
 
-本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ P1 AI 整理员 → P2 家庭口述史。
+本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **v0.1.1 Real-world Hardening** → P1 AI 整理员 → P2 家庭口述史。
+
+## 0.1.1 — Real-world Hardening（2026-08-30）
+
+目标不是加功能，而是在保存真实家庭资料之前完成真实媒体兼容、事件纠错、灾难恢复与部署可靠性验证。
+
+### RH-001 真实媒体格式兼容
+
+- 支持矩阵明确并全测：JPEG/PNG/WebP/**HEIC/HEIF**；M4A（m4a/x-m4a/mp4 三种声明）/MP3/WAV（wav/x-wav）；MP4/**MOV(quicktime)**——判定始终是 MIME 白名单 + 魔数 + 容器嗅探组合，不信任扩展名。
+- HEIC/HEIF：原件必存、SHA-256 正常、EXIF 可读则读；**绝不因无法生成缩略图而拒收**，也绝不为预览把 HEIC 替换成 JPEG；嗅探精确区分 heic/heif 品牌（同族互表放行）。
+- MOV：原件保留；ffprobe 存在时提取 duration/creation_time（本机缺失时优雅降级）；浏览器不能直接播放时显示「原件已安全保存」+ 鉴权下载入口（`components/media-view.tsx`，解码失败 onError 自动降级）。
+- 无内嵌时间媒体：fallback 链路与 `timeSource` 语义有专项测试（import_time / file_metadata）。
+- fixtures 升级为结构合规的真实容器样本（含 ISO-BMFF/QuickTime/ID3 结构），不再是无意义占位字节。
+
+### RH-002 Live Photo 安全摄取基础
+
+- HEIC/JPEG 静帧 + MOV 动帧：同时上传、独立原件、独立 SHA-256、都进收件箱、用户合并为同一 MemoryEvent；绝不自动删除任何一方（决策 D-013：P0.1 视作两个可合并 Asset，未来按 contentidentifier 自动建议配对）。
+
+### RH-003 MemoryEvent 编辑
+
+- `/memories/[id]` 新增编辑：标题 / occurredAt / 时间精度 / 地点 / 封面 / 参与人 / 孩子档案（限同家庭孩子）。
+- 修改 occurredAt → 时间轴自动重排、年龄按 birthDate 现算重算；`importedAt` 不可改；**Asset.capturedAt 与事件编辑完全解耦**。
+- 全部 mutation 先校验 session / family / event / person / cover 所有权（防 IDOR）；记录 `lastEditedByUserId`（migration 0007；完整修订历史在 backlog）。
+- E2E：8/10 事件改 8/11 → 时间轴移动、年龄「出生当天」→「第 1 天」。
+
+### RH-004 真正的 Restore（CLI）
+
+- `DATA_DIR=/data npm run restore -- backup.zip`：验证（exportVersion / manifest 结构 / 引用完整性 / 全部原件 SHA-256 / **ZIP path traversal** / **zip bomb 三重限额**）→ 先落盘文件 → 单事务恢复 Family/Person/Asset/Event/关系/Contribution/Fact/Capsule → 行数复核；任何一步失败删除已写文件、无半恢复数据库。
+- 只允许恢复到「无 Family」实例（merge 明确禁止）；认证数据永不来自备份——先 `/setup` 建管理员，恢复后 `/onboarding` 自动进入**绑定流**选择「你是谁」（决策 D-014）。
+- manifest 增量字段（type/originalFilename/timeSource/尺寸/时长/metadataJson），exportVersion 仍为 1，旧导出按默认值恢复。
+- 集成测试：A 建档（照片+音频+视频+文字+3 事件+讲述+事实+封存胶囊）→ 导出 → 空实例 B 恢复 → sha256 字节级一致、occurredAt 一致、关系/胶囊完整 + 7 个恶意输入用例。
+
+### RH-005 灾难恢复 roundtrip（`npm run test:e2e` 内置）
+
+- A 建档 → 导出 → **销毁 A** → 干净 B → restore → **启动真实生产服务器** → 登录（按恢复设计）→ 时间轴/详情核对 → 媒体字节 SHA-256 一致 + Range 206 + 匿名 401 → 导出 B → verify:export CLI 全绿。
+
+### RH-006 E2E 独立性
+
+- 每 spec 一个 Playwright project：独立端口 + 独立 `data/e2e-<project>` DATA_DIR，自行 bootstrap（`tests/e2e/helpers.ts`）；`npx playwright test timeline.spec.ts` 等单独执行全部通过；完整旅程保留在 `full-journey.spec.ts`。v0.1.0 的文件名顺序依赖（zz-export/zzz-final）已消除。
+
+### RH-007/008/009 部署可靠性
+
+- `scripts/smoke-deployment.mjs` + `/api/health`：login/health/匿名 401/ffmpeg/ffprobe/导出依赖/DATA_DIR 可写，可选凭据后追加登录/上传/媒体 Range/导出检查（本机实测通过）。
+- `docs/DEPLOYMENT_CHECKLIST.md`：compose 构建/启动/日志、首次 setup、冒烟、数据持久性验证（down → up → 数据仍在）、升级流程。
+- 备份安全：README 与清单明确 **`/data` 中 sqlite 与 originals 缺一不可**；给出停容器 tar volume、应用内导出、`VACUUM INTO` 在线快照（已实测包含未 checkpoint 的 WAL 写入）三种**经验证**的方案与 3-2-1 建议；明确「只复制 sqlite 不够」。
+- `docs/REAL_DEVICE_TEST.md`：iOS/Android/桌面 × JPEG/HEIC/PNG/MOV(H.265)/MP4/M4A/MP3/WAV/微信图/大视频/竖屏/Live Photo 组合的手工验收清单（capturedAt/orientation/duration/playback/merge/export）。
+
+### RH-010 安全回归
+
+- **发现并修复 High 级漏洞**：better-auth `/sign-up/email` 端点默认公开暴露，初始化后任何人可经 HTTP 创建账号（等于公开注册）。现仅零用户时放行（与 /setup 同闸门），此后一律 403；集成 + e2e 双层回归。
+- Restore 加固如上（traversal/bomb/manifest/hash/目标校验）；跨家庭事件编辑、participant/cover IDOR、media/export/capsule IDOR 全部回归覆盖。
+
+### 版本与质量基线
+
+- 179 个单元/集成测试 + 23 个端到端测试 + 5 个 roundtrip 测试全绿；lint / typecheck / build 通过。
+- 仍无任何 AI 代码路径；未进入 P1。
 
 ## 0.1.0 — P0 · Trusted Private Timeline（2026-08-29）
 
