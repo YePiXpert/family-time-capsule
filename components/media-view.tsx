@@ -43,11 +43,12 @@ function FallbackTile({
   );
 }
 
-/** HEIC/HEIF（桌面浏览器普遍不可解码）或解码失败时的图片渲染 */
+/** HEIC/HEIF（桌面浏览器普遍不可解码）或解码失败时的图片渲染；有缩略图时优先用缩略图 */
 export function MediaImage({
   assetId,
   filename,
   mimeType,
+  thumbAssetId,
   className = "",
   imgClassName = "",
   alt,
@@ -55,29 +56,47 @@ export function MediaImage({
   assetId: string;
   filename?: string;
   mimeType: string;
+  /** 缩略图衍生物（image/webp）；提供时用它展示，加载失败回退原件 */
+  thumbAssetId?: string | null;
   className?: string;
   imgClassName?: string;
   alt?: string;
 }) {
   const heicLike = mimeType === "image/heic" || mimeType === "image/heif";
   const [failed, setFailed] = useState(false);
-  if (heicLike || failed) {
+  const [thumbFailed, setThumbFailed] = useState(false);
+  // HEIC 原件桌面端多不可解码，但缩略图是 WebP——可显示
+  if (heicLike && (!thumbAssetId || thumbFailed)) {
     return (
       <FallbackTile
-        label={heicLike ? "HEIC 照片" : "照片"}
+        label="HEIC 照片"
         filename={filename}
         assetId={assetId}
         className={className}
       />
     );
   }
+  if (failed) {
+    return (
+      <FallbackTile
+        label="照片"
+        filename={filename}
+        assetId={assetId}
+        className={className}
+      />
+    );
+  }
+  const src = thumbAssetId && !thumbFailed ? `/api/media/${thumbAssetId}` : `/api/media/${assetId}`;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`/api/media/${assetId}`}
+      src={src}
       alt={alt ?? filename ?? ""}
       className={imgClassName}
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (thumbAssetId && !thumbFailed) setThumbFailed(true); // 缩略图坏了 → 试原件
+        else setFailed(true); // 原件也坏 → 占位
+      }}
     />
   );
 }
@@ -125,12 +144,14 @@ export function MediaBlock({
   mimeType,
   type,
   durationMs,
+  thumbAssetId,
 }: {
   assetId: string;
   filename: string;
   mimeType: string;
   type: string;
   durationMs?: number | null;
+  thumbAssetId?: string | null;
 }) {
   const [videoFailed, setVideoFailed] = useState(false);
   return (
@@ -140,6 +161,7 @@ export function MediaBlock({
           assetId={assetId}
           filename={filename}
           mimeType={mimeType}
+          thumbAssetId={thumbAssetId}
           className="aspect-video w-full"
           imgClassName="max-h-[28rem] w-full rounded-lg border border-foreground/10 object-contain"
         />

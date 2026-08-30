@@ -63,7 +63,7 @@ export default async function TimelinePage() {
                 {month}
               </h2>
               <ol className="mt-4 flex flex-col gap-4">
-                {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, assetCount, participantNames }) => (
+                {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, coverThumbAssetId, assetCount, participantNames }) => (
                   <li key={event.id}>
                     <Link
                       href={`/memories/${event.id}`}
@@ -73,6 +73,7 @@ export default async function TimelinePage() {
                         <MediaImage
                           assetId={coverAssetId}
                           mimeType={coverAssetMime ?? "image/jpeg"}
+                          thumbAssetId={coverThumbAssetId}
                           className="h-20 w-20 shrink-0"
                           imgClassName="h-20 w-20 shrink-0 rounded-lg border border-foreground/10 object-cover"
                         />

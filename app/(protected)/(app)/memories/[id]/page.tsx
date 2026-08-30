@@ -39,6 +39,13 @@ export default async function MemoryEventPage({
   ]);
   if (!detail) notFound();
 
+  // 详情页图片优先缩略图（原件仍可点开下载）
+  const { getThumbnailMap } = await import("@/lib/assets/service");
+  const thumbMap = await getThumbnailMap(
+    familyId,
+    detail.assets.map((a) => a.id),
+  );
+
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
   const { event, assets, participants } = detail;
@@ -104,6 +111,7 @@ export default async function MemoryEventPage({
                 mimeType={a.mimeType}
                 type={a.type}
                 durationMs={a.durationMs}
+                thumbAssetId={thumbMap.get(a.id)?.id ?? null}
               />
             ))}
           </div>

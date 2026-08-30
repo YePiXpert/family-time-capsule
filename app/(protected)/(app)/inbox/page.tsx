@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { listInbox } from "@/lib/inbox/service";
+import { getThumbnailMap } from "@/lib/assets/service";
 import { InboxBoard } from "./inbox-board";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,15 @@ export const metadata: Metadata = { title: "收件箱 · Family Time Capsule" };
 export default async function InboxPage() {
   const { familyId } = await requireFamily();
   const entries = await listInbox(familyId);
+  // 收件箱封面优先用缩略图（避免列表加载全尺寸原件）
+  const thumbMap = await getThumbnailMap(
+    familyId,
+    entries.map((e) => e.assets[0]?.id).filter((id): id is string => Boolean(id)),
+  );
+  const withThumbs = entries.map((e) => ({
+    ...e,
+    coverThumbAssetId: e.assets[0] ? (thumbMap.get(e.assets[0].id)?.id ?? null) : null,
+  }));
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
@@ -28,7 +38,7 @@ export default async function InboxPage() {
           页上传照片、录音或写下一段话。
         </div>
       ) : (
-        <InboxBoard entries={entries} />
+        <InboxBoard entries={withThumbs} />
       )}
     </main>
   );

@@ -12,6 +12,7 @@ const inputClass =
 export type InboxEntryDto = {
   item: InboxItemRow;
   assets: AssetRow[];
+  coverThumbAssetId?: string | null;
 };
 
 /** 收件箱面板：多选合并（#010）+ 单条操作 */
@@ -88,7 +89,11 @@ export function InboxBoard({ entries }: { entries: InboxEntryDto[] }) {
                 className="mt-6 h-4 w-4 shrink-0 accent-[var(--accent)]"
               />
               <div className="min-w-0 flex-1">
-                <InboxCard item={entry.item} assets={entry.assets} />
+                <InboxCard
+                  item={entry.item}
+                  assets={entry.assets}
+                  coverThumbAssetId={entry.coverThumbAssetId ?? null}
+                />
               </div>
             </li>
           );

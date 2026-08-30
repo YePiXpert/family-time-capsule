@@ -27,9 +27,11 @@ function formatDateTime(date: Date | null | undefined, fallback = "—"): string
 export function InboxCard({
   item,
   assets,
+  coverThumbAssetId = null,
 }: {
   item: InboxItemRow;
   assets: AssetRow[];
+  coverThumbAssetId?: string | null;
 }) {
   const [timeState, timeAction, timePending] = useActionState(editTimeAction, undefined);
   const [discardState, discardActionRun, discardPending] = useActionState(discardAction, undefined);
@@ -48,6 +50,7 @@ export function InboxCard({
             assetId={cover.id}
             filename={cover.originalFilename}
             mimeType={cover.mimeType}
+            thumbAssetId={coverThumbAssetId}
             className="h-32 w-32 shrink-0"
             imgClassName="h-32 w-32 shrink-0 rounded-lg border border-foreground/10 object-cover"
           />

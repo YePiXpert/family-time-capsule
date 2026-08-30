@@ -18,6 +18,7 @@ import { getAssetStorage } from "./storage";
 import {
   sanitizeDisplayFilename,
   sha256Of,
+  storeDerivative,
   storeOriginal,
   type AssetRow,
 } from "./service";
@@ -151,7 +152,6 @@ export async function ingestImage(
   const validated = validateImageUpload(input.buffer, input.declaredMime);
   if (!validated.ok) return { status: "rejected", error: validated.error };
   const { mimeType, extension } = validated.value;
-
   // capturedAt 优先级：EXIF > 文件系统时间 > 导入时间（家庭时区解释见 D-009）
   const family = await getFamily(input.familyId);
   const familyTimezone = family?.timezone ?? "Asia/Shanghai";
@@ -168,7 +168,7 @@ export async function ingestImage(
   if (exif) metadata.exif = exif.raw;
   if (dimensions) metadata.image = dimensions;
 
-  return storeOriginal({
+  const result = await storeOriginal({
     familyId: input.familyId,
     createdByUserId: input.createdByUserId,
     type: "image",
@@ -182,6 +182,25 @@ export async function ingestImage(
     height: dimensions?.height ?? null,
     metadataJson: Object.keys(metadata).length > 0 ? metadata : undefined,
   });
+
+  // 缩略图衍生物（v0.1.3）：仅对新存原件生成；sharp 不支持的格式（HEIC 等）
+  // 优雅跳过；生成失败绝不让上传失败，但留 console 痕迹便于运维发现。
+  if (result.status === "stored") {
+    try {
+      const { generateThumbnail } = await import("./thumbnails");
+      const thumb = await generateThumbnail(input.buffer);
+      if (thumb && thumb.byteLength > 0) {
+        await storeDerivative(input.familyId, result.asset.id, "thumbnail", {
+          mimeType: "image/webp",
+          extension: "webp",
+          buffer: thumb,
+        });
+      }
+    } catch (err) {
+      console.error("[thumbnail] derivative generation failed:", err);
+    }
+  }
+  return result;
 }
 
 export type ResolvedCaptureTime = {

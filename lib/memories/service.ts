@@ -541,6 +541,7 @@ export type TimelineEntry = {
   coverAssetId: string | null;
   coverAssetType: string | null;
   coverAssetMime: string | null;
+  coverThumbAssetId: string | null;
   assetCount: number;
   participantNames: string[];
 };
@@ -594,6 +595,18 @@ export async function getTimeline(
       : [];
   const nameById = new Map(people.map((p) => [p.id, p.displayName]));
 
+  const coverIdsForThumb = [
+    ...new Set(
+      events
+        .map((e) => e.coverAssetId ?? assetLinks.find(
+          (l) => l.memoryEventId === e.id && l.type === "image",
+        )?.assetId)
+        .filter((id): id is string => id !== null && id !== undefined),
+    ),
+  ];
+  const { getThumbnailMap } = await import("@/lib/assets/service");
+  const thumbByOriginal = await getThumbnailMap(familyId, coverIdsForThumb);
+
   return events.map((event) => {
     const links = assetLinks.filter((l) => l.memoryEventId === event.id);
     const fallbackImage = links.find((l) => l.type === "image");
@@ -611,6 +624,7 @@ export async function getTimeline(
         (coverId && coverMimeById.get(coverId)) ??
         (coverId ? links.find((l) => l.assetId === coverId)?.mimeType : null) ??
         null,
+      coverThumbAssetId: coverId ? (thumbByOriginal.get(coverId)?.id ?? null) : null,
       assetCount: links.length,
       participantNames: participantLinks
         .filter((l) => l.memoryEventId === event.id)

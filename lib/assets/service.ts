@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset } from "@/db/schema/asset";
 import {
@@ -214,4 +214,34 @@ export function sanitizeDisplayFilename(filename: string): string {
   const base = filename.replaceAll(/[\\/]/g, "-").replaceAll(/[\x00-\x1f]/g, "");
   const trimmed = base.trim();
   return trimmed.length > 0 ? trimmed.slice(0, 200) : "unnamed";
+}
+
+/**
+ * 批量取缩略图（v0.1.3）：originalAssetId → thumbnail 衍生物行。
+ * 展示层用它避免在时间轴/收件箱加载全尺寸原件。
+ * 同一原件存在多个衍生物时取最新（createdAt 降序第一条）。
+ */
+export async function getThumbnailMap(
+  familyId: string,
+  originalAssetIds: string[],
+): Promise<Map<string, AssetRow>> {
+  const map = new Map<string, AssetRow>();
+  if (originalAssetIds.length === 0) return map;
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(asset)
+    .where(
+      and(
+        eq(asset.familyId, familyId),
+        eq(asset.derivativeType, "thumbnail"),
+        inArray(asset.originalAssetId, originalAssetIds),
+      ),
+    )
+    .orderBy(desc(asset.createdAt));
+  for (const row of rows) {
+    const key = row.originalAssetId!;
+    if (!map.has(key)) map.set(key, row); // 第一条即最新
+  }
+  return map;
 }
