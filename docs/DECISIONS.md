@@ -140,3 +140,15 @@
 - **理由**：自动配对需要解析 Apple 的 asset identifier（`maker note` / `ContentIdentifier` atom），可靠实现依赖对多机型的样本验证；P0.1 目标是「两份文件都不丢、可合并」，用户手动勾选的成本可接受且零误判风险。
 - **未来**：P1 可读取 MOV 的 `com.apple.quicktime.contentidentifier` 与 HEIC 的对应 metadata 自动建议配对（仍只建议，不自动合并/删除）。
 - **测试**：tests/integration/live-photo.test.ts（HEIC+MOV、JPEG+MOV、废弃一方原件保留）。
+
+## D-014（RH-004）恢复目标与认证数据的处理
+
+- **日期**：2026-08-30
+- **状态**：已接受
+- **决策**：
+  1. 恢复目标限定为「**无 Family** 的实例」（family/person 表为空即保证全业务为空）；用户表允许且通常需要已有 1 个通过 `/setup` 新建的管理员——恢复内容的所有 `created_by` 指向该 operator。理由：`asset.created_by_user_id` 为 NOT NULL FK，指向备份中的旧用户会违反引用完整性；而先 setup 再 restore 让认证凭据永不来自备份（密码哈希/secret 不随归档流转）。
+  2. 恢复后 `/onboarding` 自动检测「实例已有家庭」→ 进入**绑定流**（选择自己是哪位 Person；孩子档案不可作为登录身份）→ 写入 `user.familyId/personId`。
+  3. 恢复写入顺序：先落盘全部原件（`putOriginal`，key 冲突即报错），后单事务写库；DB 失败 → 删除已写文件。事务提交后做行数复核，任何不一致 → 报错（文件已写但库回滚极小概率残留时，下一次恢复会因 target 非空或 key 冲突安全失败）。
+  4. v0.1.1 明确禁止 merge restore（向已有数据的实例合并导入）。
+  5. CLI 形态：`npm run restore -- backup.zip`（tsx 运行 TS、复用业务服务与校验；恢复是管理员运维操作，不需要 Web UI）。
+- **PRD 偏差**：无（PRD §15/§18 允许；docs/RESTORE.md 已同步）。

@@ -1,96 +1,86 @@
 # 恢复设计（RESTORE）
 
-> P0 不提供恢复 UI（Issue #015 交付的是设计与校验工具）。本文档定义：
-> 如何从 [EXPORT_FORMAT.md](./EXPORT_FORMAT.md) 的 ZIP 恢复数据、
-> 如何处理哈希校验 / 重复 / ID 映射 / 用户关系，以及未来迁移策略。
+> v0.1.1 起恢复已实现（RH-004）：`npm run restore -- backup.zip`。
+> 本文档定义：恢复前置条件、CLI 流程、安全校验、以及未来迁移策略。
+> 导出格式见 [EXPORT_FORMAT.md](./EXPORT_FORMAT.md)。
 
 ## 0. 铁律
 
-1. **先校验，后恢复**：任何恢复动作前必须通过哈希校验（见 §2）。
-2. **绝不覆盖现存数据**：恢复是合并导入，不删除、不改写现有家庭内容。
-3. **原件只增不改**：导入的原件按新 Asset 落盘（除非 SHA-256 已存在），永不覆盖。
-4. **认证数据不导入**：user/session/account 属于部署实例，不属于家庭档案；
-   Person/User 的绑定在恢复后手工重建设计（§5）。
+1. **先校验，后恢复**：任何写入前必须通过全部校验（§2）。
+2. **绝不覆盖现存数据**：只允许恢复到「无 Family」的实例；目标非空 → 明确拒绝（`target_not_empty`）。
+3. **原件只增不改**：恢复的原件按原 assetId 落盘（`putOriginal`，已存在即报错）。
+4. **认证数据不恢复**：user/session/account 永不来自备份。
 
-## 1. 校验工具（已随 #015 提供）
+## 1. 恢复流程（已实现）
 
-```bash
-npm run verify:export path/to/family-time-capsule-export-*.zip
+```text
+# 1) 在新实例上创建管理员（认证从零开始，不用备份里的旧凭据）
+#    访问 /setup（需 INITIAL_SETUP_TOKEN）创建账号
+#
+# 2) 恢复归档（DATA_DIR 指向该实例）
+DATA_DIR=/data npm run restore -- /path/to/backup.zip [--user <userId>]
+#
+# 3) 管理员登录 → 访问 /onboarding → 检测到已恢复的家庭 → 选择「你是谁」完成绑定
 ```
 
-检查项：
+CLI 内部执行顺序（对应 RH-004 要求 1–18）：
 
-- ZIP 可解压，`family-time-capsule-export/manifest.json` 存在且可解析；
-- `exportVersion` 为受支持的大版本（当前 1）；
-- manifest.assets 中每一项：
-  - `relativePath` 在 ZIP 内存在；
-  - 字节数与 `bytes` 一致；
-  - 实际 SHA-256 与 `sha256` 一致；
-- 必需 JSON（family/people/memories/contributions/facts/capsules）存在且可解析；
-- memories/contributions/capsules 引用的 `assetIds`/`personId` 在导出内有定义。
+1. 读取 ZIP；2. 校验 `exportVersion`；3. 解析 manifest；4. **逐个复核原件 SHA-256**；
+5. 校验全部实体 JSON 结构；6. **ZIP 条目名 path traversal 校验**；
+7. 校验目标实例无 Family / 无 Person；8–16. 写入原件文件（失败回滚删除）→
+单事务恢复 Family → Person → Asset → MemoryEvent → 关联表 → Contribution →
+Fact → Capsule（含内容引用）；17. 事务提交后**行数复核**（与导出逐项一致）；
+18. 任何一步失败：已写文件删除、事务回滚，**不存在半恢复数据库**。
 
-任何一项失败 → 非零退出码并列出失败条目。**校验失败的同时也可能意味着备份介质损坏，应换一份备份再试。**
+## 2. 安全校验（RH-010）
 
-## 2. 哈希校验失败的处理
-
-| 现象 | 处理 |
+| 校验 | 失败码 |
 | --- | --- |
-| 单个原件哈希不符 | 拒绝恢复该 Asset，其余可恢复；报告中列出损坏文件 |
-| manifest 缺失/损坏 | 拒绝整个恢复 |
-| 字节数不符但哈希相符 | 不可能（SHA-256 抗碰撞），视为工具 bug 处理 |
+| 条目名逃逸导出根目录 / `..` / 盘符 / 反斜杠 | `unsafe_entry` |
+| 条目数 > 200,000 | `too_many_entries` |
+| 单文件解压 > 2GB | `file_too_large` |
+| 总解压 > 25GB（zip bomb） | `zip_bomb` |
+| `exportVersion` 不在支持列表 | `unsupported_version` |
+| manifest/JSON 损坏、引用缺失（未知 person/event/asset） | `bad_manifest` / `bad_json` / `bad_refs` |
+| 任何原件 SHA-256/字节数不符 | `hash_mismatch` |
+| 目标实例已有家庭数据 | `target_not_empty` |
+| operator 用户不存在 | `bad_operator` |
+| manifest 中重复 assetId | `bad_manifest` |
 
-导出侧已内置同等校验（导出时重算，不符则导出失败），因此「导出成功 + 导入校验失败」
-组合几乎必然意味着**存储介质在导出之后损坏**。
+限额可通过 `restoreFromZip(buffer, userId, { limits })` 注入（运维/测试用）。
 
-## 3. 重复 Asset 的合并策略
+## 3. 哈希校验失败的处理
 
-以 `(familyId, sha256)` 为唯一键（与库内唯一索引一致）：
+单个原件不符 → **整个恢复拒绝**（比逐文件跳过更保守）：备份介质可疑时应换一份备份重试。
+导出侧的强校验 + 恢复侧的强校验组合下，「导出成功 + 恢复校验失败」几乎必然意味着
+备份文件在导出之后损坏或被篡改。
 
-- 导入的 Asset 哈希已存在 → 复用现有 Asset 行，**不重复落盘**；
-  但其关系（属于哪个事件/胶囊）仍然导入。
-- 哈希不存在 → 新建 Asset，文件写入 `originals/{familyId}/{yyyy}/{mm}/{assetId}.{ext}`
-  （yyyy/mm 取 capturedAt，与正常上传同构）。
-- `metadataJson`：现存行为准（导出不改写已确认的档案）。
+## 4. 重复 Asset / 不同 family ID
 
-## 4. 不同 family ID 的处理
-
-- 恢复到一个**已存在**的家庭：所有实体 ID 需要重映射
-  （`oldId → newId`），关系表按映射重建；family 元信息（name/timezone）不覆盖，
-  由管理员决定是否采纳导出值。
-- 恢复到一个**空实例**：直接按导出的原始 UUID 建库，ID 不变；
-  `family.id` 采用导出值，使未来导出可对账。
-- 两边都可能有同 ID 的不同实体（极小概率 UUID 撞车 / 从同源分叉）：
-  冲突时新导入方一律生成新 ID 并记录在恢复报告里。
+- v0.1.1 恢复目标必须是空实例 → 导出的原始 UUID 直接沿用，**无 ID 重映射需求**。
+- 若实例需要「合并导入」已有家庭：明确不支持（高风险 merge 被禁止）；
+  正确做法是恢复到一个新实例，再从该实例按需导出/迁移。
+- 重复 `(familyId, sha256)` 不可能出现在 v0.1.1 路径（空实例 + manifest 去重校验）。
 
 ## 5. Person / User 关系恢复
 
-- `people.json` 全量导入为 Person（含无账号成员）。
-- User（登录账号）不导入。恢复后：
-  1. 管理员在新实例 `/setup` 创建账号；
-  2. onboarding 时选择「恢复已有家庭」→ 从 people.json 选择自己对应的 Person；
-  3. `user.personId` 绑定到该 Person（`bindUserToPerson`，服务端校验同家庭）。
+- `people.json` 全量恢复为 Person（含无账号成员），ID 原样保留。
+- 恢复完成后：管理员登录 → `/onboarding` 自动检测「实例已有家庭」→
+  显示绑定表单（选择自己是哪位成员；孩子档案不能作为登录身份）→
+  `user.familyId / personId` 写入（`bindRestoredFamily`，服务端校验）。
 - 时间线、事件、胶囊的完整性**不依赖任何 User 存在**（Person ≠ User）。
 
-## 6. 恢复算法（P1 实现蓝本）
+## 6. 测试
 
-```text
-verify:export 全绿
-→ 开事务
-→ family：采用/映射（§4）
-→ people：按 id 映射导入
-→ assets：逐个 §3 合并（哈希存在则复用）
-→ memories：按映射导入事件 + memory_event_asset / participant 关系
-→ contributions / facts：按映射导入
-→ capsules：按映射导入 + 关系（内容引用始终完整，不论 sealed）
-→ 提交；输出恢复报告（新增 N / 复用 M / 跳过 K + 原因）
-```
-
-单事务保证半恢复状态不落库；大媒体文件先落盘后入库（入库失败则删除已落盘文件）。
+- `tests/integration/restore.test.ts`：A 建档（照片+音频+视频+文字+3 事件+讲述+事实+封存胶囊）
+  → 导出 → 空实例 B setup → restore → 全量比对（sha256/字节/occurredAt/关系/胶囊）；
+  外加 7 个恶意输入用例（篡改哈希/坏版本/路径穿越/malformed manifest/解压限额/非空目标/坏 operator）。
+- `tests/roundtrip/restore-roundtrip.test.ts`（`npm run test:e2e` 末尾执行）：
+  A 建档 → export → **销毁 A** → 干净 B → restore → **启动真实服务器** →
+  登录 → 时间轴/详情核对 → 媒体字节+Range+401 → 导出 B → verify:export CLI 全绿。
 
 ## 7. 未来迁移
 
-- `exportVersion` 升级只做增量字段；旧导出按「缺失字段取默认值」读取。
-- 数据库 schema 迁移与导出格式解耦：恢复工具按 exportVersion 读，
-  不按 DB migration 版本读。
-- `stories/`（P1 章节产物）恢复为只读文件，不建表——Story 生成物永远可以从
-  user_confirmed Fact + Contribution 重新生成（事实锁，PRD §14）。
+- `exportVersion` 升级只做增量字段；恢复端对缺失字段取默认值
+  （如 `type` 由目录推断、`timeSource` 按 capturedAt 推断、文件名回退 assetId.ext）。
+- merge-into-existing、ID 重映射、增量导入均在 backlog，需先定义安全合并语义。

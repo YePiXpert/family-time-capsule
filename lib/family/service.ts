@@ -207,3 +207,55 @@ export async function bindUserToPerson(
     .where(eq(userTable.id, userId));
   return true;
 }
+
+/**
+ * RH-004 / 恢复后的绑定流程：实例里已有（被恢复的）家庭时，
+ * 管理员不再「创建家庭」，而是把自己绑定到家庭中的某个 Person。
+ * 仅当实例恰好一个家庭且用户未绑定时可用。
+ */
+export async function getRestorableFamilyForUser(userId: string): Promise<{
+  family: typeof family.$inferSelect;
+  people: PersonRowLite[];
+} | null> {
+  const db = getDb();
+  const binding = await getUserBinding(userId);
+  if (binding.familyId) return null;
+  const families = await db.select().from(family).limit(2);
+  if (families.length !== 1) return null;
+  const people = await db
+    .select()
+    .from(person)
+    .where(eq(person.familyId, families[0].id));
+  return { family: families[0], people };
+}
+
+type PersonRowLite = typeof person.$inferSelect;
+
+export type BindResult =
+  | { ok: true; familyId: string }
+  | { ok: false; error: "no_restored_family" | "bad_person" | "already_bound" };
+
+/** 绑定到被恢复家庭中的某个 Person（普通成员优先，孩子不允许作为登录身份） */
+export async function bindRestoredFamily(
+  userId: string,
+  personId: string,
+): Promise<BindResult> {
+  const db = getDb();
+  const restorable = await getRestorableFamilyForUser(userId);
+  if (!restorable) {
+    const binding = await getUserBinding(userId);
+    if (binding.familyId) return { ok: false, error: "already_bound" };
+    return { ok: false, error: "no_restored_family" };
+  }
+  const target = restorable.people.find((p) => p.id === personId);
+  if (!target || target.isChild) return { ok: false, error: "bad_person" };
+  await db
+    .update(userTable)
+    .set({
+      familyId: restorable.family.id,
+      personId: target.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(userTable.id, userId));
+  return { ok: true, familyId: restorable.family.id };
+}

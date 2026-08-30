@@ -52,7 +52,15 @@ family-time-capsule-export/
       "bytes": 123456,
       "mimeType": "image/jpeg",
       "capturedAt": "2026-08-10T01:30:00.000Z",  // null = 未知
-      "importedAt": "2026-08-29T04:00:00.000Z"
+      "importedAt": "2026-08-29T04:00:00.000Z",
+      // ↓ v0.1.1 增量字段（exportVersion 仍为 1；旧导出缺失时恢复端取默认值）
+      "type": "image",
+      "originalFilename": "IMG_0001.HEIC",
+      "timeSource": "embedded_metadata",
+      "width": 4032,
+      "height": 3024,
+      "durationMs": null,
+      "metadataJson": "{...}"        // EXIF/ffprobe 快照原样带回
     }
   ]
 }
@@ -61,8 +69,10 @@ family-time-capsule-export/
 规则：
 
 - `assets` 只包含**原件**（derivativeType=null）；衍生物可再生，不入档。
-- `capturedAt` 为 UTC ISO-8601；时间来源（timeSource）不进入 manifest，
-  完整语义在 `memories.json` 引用的 Asset 逻辑中（恢复时以库内为准）。
+- `capturedAt`/`importedAt` 为 UTC ISO-8601。
+- 增量字段缺失时的恢复端默认：`type` 按目录名（images/audio/video/documents）推断；
+  `timeSource` 按 capturedAt 有无推断（有→embedded_metadata，无→import_time）；
+  `originalFilename` 回退 `<assetId>.<ext>`。
 
 ## 实体 JSON 语义
 

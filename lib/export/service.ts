@@ -151,6 +151,14 @@ export async function buildFamilyExport(
       mimeType: a.mimeType,
       capturedAt: iso(a.capturedAt),
       importedAt: iso(a.importedAt),
+      // v0.1.1 起的增量字段（exportVersion 仍为 1，旧导出缺失时恢复端取默认值）
+      type: a.type,
+      originalFilename: a.originalFilename,
+      timeSource: a.timeSource,
+      width: a.width,
+      height: a.height,
+      durationMs: a.durationMs,
+      metadataJson: a.metadataJson,
     });
   }
 

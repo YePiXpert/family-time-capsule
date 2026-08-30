@@ -12,8 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:export": "node scripts/verify-export.mjs",
+    "restore": "tsx scripts/restore.ts",
     "pretest:e2e": "npm run build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test && vitest run --config vitest.roundtrip.config.ts"
   },
   "dependencies": {
     "archiver": "^8.0.0",
@@ -38,6 +39,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^4.1.11"
   }
