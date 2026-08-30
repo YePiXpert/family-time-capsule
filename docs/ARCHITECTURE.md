@@ -92,7 +92,7 @@ P0 使用 `NullMemoryAssistant`——无 AI key 时功能完整。任何 AI 能�
 
 - **单元（Vitest）**：`tests/unit/`，覆盖纯逻辑（路径、时间解析、年龄计算、导出清单等）。
 - **集成（Vitest）**：`tests/integration/`，真实 SQLite + better-auth 栈（临时 `DATA_DIR`，环境变量须在动态导入前设置）。
-- **端到端（Playwright）**：`tests/e2e/`，覆盖 PRD §23 的关键路径。webServer（`scripts/e2e-server.mjs`）使用**独立的 `data/e2e` 数据目录**（每次运行前清空）跑生产构建，端口 3100，不污染开发数据；单 worker 串行，因为用例共享一次 setup→login→logout 的状态推进。
+- **端到端（Playwright，RH-006 重构）**：`tests/e2e/`，覆盖 PRD §23 的关键路径。**每个功能 spec 一个独立 project**（`playwright.config.ts`），各自拥有独立 webServer（`scripts/e2e-server.mjs`，参数 PORT / E2E_DATA_DIR）与独立 `data/e2e-<project>` 数据目录（每次运行前清空）——spec 之间零共享状态，任何 spec 可单独执行（`npx playwright test timeline.spec.ts`）。各 spec 通过 `tests/e2e/helpers.ts` 自行 bootstrap（setup → login → onboarding）。完整用户旅程保留在 `full-journey.spec.ts`。
 - 每个 Issue 完成时必须 `lint`、`typecheck`、`test`、`build`、`test:e2e` 全绿（PRD §25）。
 
 ## 目录结构（PRD §20）

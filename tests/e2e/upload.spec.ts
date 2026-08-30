@@ -1,26 +1,15 @@
+import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { ensureBootstrap, ensureLogin } from "./helpers";
 
-// 与 auth.spec.ts 共享同一实例状态：B2 完成后数据库已有管理员+家庭
+// RH-006：本 spec 自包含（独立 DATA_DIR，自行 bootstrap）
 test.describe.configure({ mode: "serial" });
 
-const ADMIN = {
-  email: "admin@example.com",
-  password: "e2e-admin-password",
-};
-
-async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.getByLabel("邮箱").fill(ADMIN.email);
-  await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
-  // (protected) 布局独有的导航——登录页同名 h1 会造成假通过，必须等真正进入受保护区域
-  await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
-}
-
-test("上传照片：保存成功、重复明确提示", async ({ page }) => {
-  await login(page);
+test("上传照片：保存成功、重复明确提示、收件箱可见、未登录端点拒绝", async ({
+  page,
+}) => {
+  await ensureBootstrap(page);
   await page.goto("/capture");
 
   const file = path.join(__dirname, "..", "fixtures", "sample-exif.jpg");
@@ -40,7 +29,9 @@ test("上传照片：保存成功、重复明确提示", async ({ page }) => {
   // 未登录时媒体与上传端点必须拒绝（私有媒体不存在匿名 URL）
   await page.getByRole("button", { name: "退出" }).click();
   await expect(page).toHaveURL(/\/login/);
-  const mediaResp = await page.request.get("/api/media/00000000-0000-0000-0000-000000000000");
+  const mediaResp = await page.request.get(
+    "/api/media/00000000-0000-0000-0000-000000000000",
+  );
   expect(mediaResp.status()).toBe(401);
   const uploadResp = await page.request.post("/api/upload/image", {
     multipart: {
@@ -52,4 +43,26 @@ test("上传照片：保存成功、重复明确提示", async ({ page }) => {
     },
   });
   expect(uploadResp.status()).toBe(401);
+});
+
+test("HEIC 上传：原件保存、收件箱显示不可预览占位 + 下载入口", async ({ page }) => {
+  // 每个测试是独立 context → 幂等登录
+  await ensureLogin(page);
+  await page.goto("/capture");
+  await page
+    .locator('section[aria-label="照片"] input[type="file"]')
+    .setInputFiles({
+      name: "IMG_0001.HEIC",
+      mimeType: "image/heic", // iOS Safari 上传 HEIC 时的声明；桌面 Chromium 路径方式给不出
+      buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.heic")),
+    });
+  await expect(page.getByText("已保存，等待整理")).toBeVisible();
+
+  await page.goto("/inbox");
+  // HEIC 卡片：不渲染 <img>，而是占位说明 + 下载原件
+  await expect(page.getByText("HEIC 照片").first()).toBeVisible();
+  await expect(
+    page.getByText("原件已安全保存，当前浏览器可能无法直接预览").first(),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载 / 打开原件" }).first()).toBeVisible();
 });

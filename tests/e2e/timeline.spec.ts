@@ -1,24 +1,14 @@
 import { expect, test } from "@playwright/test";
 import path from "node:path";
+import { ensureBootstrap, ensureLogin } from "./helpers";
 
-// 依赖 auth.spec / upload.spec 已完成 setup + onboarding
+// RH-006：本 spec 自包含（独立 DATA_DIR，自行 bootstrap）
 test.describe.configure({ mode: "serial" });
 
-const ADMIN = { email: "admin@example.com", password: "e2e-admin-password" };
-
-async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.getByLabel("邮箱").fill(ADMIN.email);
-  await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
-  await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
-}
-
 test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展示", async ({ page }) => {
-  await login(page);
+  await ensureBootstrap(page);
 
   // 上传一张 EXIF 拍摄于 2026-08-10 09:30 +08:00 的照片
-  // （用 offset 夹具：与 upload.spec 的 sample-exif.jpg 字节不同，避免 SHA-256 撞重）
   await page.goto("/capture");
   await page
     .locator('section[aria-label="照片"] input[type="file"]')
@@ -36,7 +26,7 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
   await expect(page.getByText("2026年8月10日 09:30").first()).toBeVisible();
   await expect(page.getByText("出生当天")).toBeVisible();
 
-  // 时间轴：事件出现在 8 月分组，日期为 8 月 10 日（不是导入日 8 月 29 日）
+  // 时间轴：事件出现在 8 月分组，日期为 8 月 10 日（不是导入日）
   await page.goto("/timeline");
   const link = page.getByRole("link", { name: /八月中旬的一个上午/ });
   await expect(link).toBeVisible();
@@ -44,7 +34,7 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
 });
 
 test("事件详情页展示素材与参与人", async ({ page }) => {
-  await login(page);
+  await ensureLogin(page);
   await page.goto("/timeline");
   await page.getByRole("link", { name: /八月中旬的一个上午/ }).click();
   await expect(page.getByRole("heading", { name: "八月中旬的一个上午" })).toBeVisible();

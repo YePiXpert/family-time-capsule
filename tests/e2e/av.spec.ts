@@ -1,22 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { ensureBootstrap } from "./helpers";
 
 // Slice 3（PRD §23）：音频/视频/文字；FFmpeg 不可用时上传仍工作
+// RH-006：本 spec 自包含（独立 DATA_DIR，自行 bootstrap）
 test.describe.configure({ mode: "serial" });
 
-const ADMIN = { email: "admin@example.com", password: "e2e-admin-password" };
-
-async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.getByLabel("邮箱").fill(ADMIN.email);
-  await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
-  await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
-}
-
 test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元素", async ({ page }) => {
-  await login(page);
+  await ensureBootstrap(page);
   await page.goto("/capture");
 
   // 上传音频（真实可播放 WAV）
@@ -26,11 +18,11 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
     .setInputFiles({ name: "外婆哼的歌.wav", mimeType: "audio/wav", buffer: wav });
   await expect(page.getByText("已保存，等待整理").first()).toBeVisible();
 
-  // 上传视频
-  const mp4 = readFileSync(path.join(__dirname, "..", "fixtures", "sample.mp4"));
+  // 上传视频（MOV：多数桌面浏览器不可直接解码 → 占位 + 下载入口）
+  const mov = readFileSync(path.join(__dirname, "..", "fixtures", "sample.mov"));
   await page
     .locator('section[aria-label="视频"] input[type="file"]')
-    .setInputFiles({ name: "第一次翻身.mp4", mimeType: "video/mp4", buffer: mp4 });
+    .setInputFiles({ name: "第一次翻身.MOV", mimeType: "video/quicktime", buffer: mov });
   await expect(page.getByText("已保存，等待整理").nth(1)).toBeVisible();
 
   // 写文字
@@ -55,12 +47,15 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await expect(page.getByRole("heading", { name: "外婆哼的歌" })).toBeVisible();
   await expect(page.locator("audio").first()).toBeVisible();
 
-  // 回到收件箱确认视频条目
+  // 回到收件箱确认视频条目（MOV 不可解码 → 显示安全保存占位）
   await page.goto("/inbox");
-  const videoCard = page.locator("li", { has: page.locator("video") });
+  const videoCard = page.locator("li", { hasText: "第一次翻身" });
   await videoCard.getByLabel("事件标题").fill("第一次翻身");
   await videoCard.getByRole("button", { name: "确认进入时间轴" }).click();
-  await expect(page.locator("video").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "第一次翻身" })).toBeVisible();
+  await expect(
+    page.getByText("原件已安全保存，当前浏览器可能无法直接预览").first(),
+  ).toBeVisible();
 
   // 最后确认文字条目
   await page.goto("/inbox");

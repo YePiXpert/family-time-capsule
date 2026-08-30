@@ -1,13 +1,7 @@
 import { expect, test } from "@playwright/test";
+import { ADMIN, SETUP_TOKEN } from "./helpers";
 
-// 必须与 scripts/e2e-server.mjs 的默认值保持一致
-const SETUP_TOKEN = process.env.INITIAL_SETUP_TOKEN ?? "e2e-setup-token";
-const ADMIN = {
-  displayName: "管理员",
-  email: "admin@example.com",
-  password: "e2e-admin-password",
-};
-
+// 认证与初始化（RH-006：本 project 独立 DATA_DIR，自包含执行）
 test.describe.configure({ mode: "serial" });
 
 test("A: 未登录访问 /timeline 自动跳转 /login", async ({ page }) => {
@@ -28,7 +22,7 @@ test("B1: 错误 setup token 无法初始化", async ({ page }) => {
   await expect(page).toHaveURL(/\/setup/);
 });
 
-test("B2: 正确 token 完成初始化并登录进入受保护首页", async ({ page }) => {
+test("B2: 正确 token 完成初始化并登录进入 onboarding", async ({ page }) => {
   await page.goto("/setup");
   await page.getByLabel("初始化令牌").fill(SETUP_TOKEN);
   await page.getByLabel("显示名称").fill(ADMIN.displayName);
@@ -57,12 +51,11 @@ test("B2: 正确 token 完成初始化并登录进入受保护首页", async ({ 
   await page.getByRole("button", { name: "创建家庭" }).click();
 
   // 进入受保护首页
-  await expect(page).toHaveURL(/\/[^/]*$/); // 回到 /
+  await expect(page).toHaveURL(/\/[^/]*$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "家庭时间胶囊" }),
   ).toBeVisible();
   await expect(page.getByText("随处记录，统一归档。")).toBeVisible();
-  // 页头显示当前用户
   await expect(page.getByText(ADMIN.displayName)).toBeVisible();
 
   // 已登录用户访问 /login 应回首页
