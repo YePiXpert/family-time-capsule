@@ -2,6 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { requireFamily } from "@/lib/family/context";
+import { getFamily } from "@/lib/family/service";
+import { zonedWallTimeToUtc } from "@/lib/metadata/time";
+import { updateMemoryEvent } from "@/lib/memories/service";
 import {
   addFact,
   createContribution,
@@ -11,6 +14,85 @@ import {
 } from "@/lib/contributions/service";
 
 export type ContributionFormState = { error?: string };
+
+export type EditEventFormState = { error?: string; saved?: boolean };
+
+const PRECISIONS = ["exact", "approximate", "date_only"] as const;
+
+/**
+ * 编辑记忆事件（RH-003）。
+ * datetime-local 是家庭时区墙钟时间；修改 occurredAt 只改事件时间，
+ * 不触碰任何 Asset 的 capturedAt / importedAt。
+ */
+export async function editEventAction(
+  _prev: EditEventFormState | undefined,
+  formData: FormData,
+): Promise<EditEventFormState> {
+  const { familyId, userId } = await requireFamily();
+  const eventId = String(formData.get("eventId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+
+  const family = await getFamily(familyId);
+  const timezone = family?.timezone ?? "Asia/Shanghai";
+
+  let occurredAt: Date | undefined;
+  const wall = String(formData.get("occurredAt") ?? "").trim();
+  if (wall) {
+    try {
+      occurredAt = zonedWallTimeToUtc(
+        wall.length === 16 ? `${wall}:00` : wall,
+        timezone,
+      );
+    } catch {
+      return { error: "时间格式不正确。" };
+    }
+  }
+
+  const precisionInput = String(formData.get("occurredAtPrecision") ?? "");
+  const occurredAtPrecision = PRECISIONS.includes(
+    precisionInput as (typeof PRECISIONS)[number],
+  )
+    ? (precisionInput as (typeof PRECISIONS)[number])
+    : undefined;
+
+  const locationRaw = String(formData.get("locationText") ?? "").trim();
+
+  const coverRaw = String(formData.get("coverAssetId") ?? "");
+  const coverAssetId = coverRaw === "" ? undefined : coverRaw;
+
+  const childRaw = String(formData.get("childPersonId") ?? "");
+  const childPersonId = childRaw === "" ? undefined : childRaw;
+
+  const participants = formData
+    .getAll("participantPersonIds")
+    .map((v) => String(v))
+    .filter(Boolean);
+
+  const result = await updateMemoryEvent(familyId, eventId, userId, {
+    title,
+    occurredAt,
+    occurredAtPrecision,
+    locationText: locationRaw || null,
+    coverAssetId,
+    childPersonId,
+    participantPersonIds: participants,
+  });
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "not_found"
+          ? "事件不存在。"
+          : result.error === "bad_person"
+            ? "参与人或孩子档案无效。"
+            : result.error === "bad_cover"
+              ? "封面素材无效。"
+              : "请检查填写内容（标题 1–100 字）。",
+    };
+  }
+  revalidatePath(`/memories/${eventId}`);
+  revalidatePath("/timeline");
+  return { saved: true };
+}
 
 const VISIBILITIES: Visibility[] = ["private", "parents", "family", "child_later"];
 

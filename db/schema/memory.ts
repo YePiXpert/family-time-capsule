@@ -47,6 +47,8 @@ export const memoryEvent = sqliteTable(
     // 展示快照（冗余）：child.birthDate + occurredAt 计算的满天数；
     // 时间轴展示仍按 birthDate 现算，快照仅用于导出与核对（#009）
     ageDays: integer("age_days"),
+    // RH-003：最后编辑者（审计用最小实现；完整修订历史在 backlog）
+    lastEditedByUserId: text("last_edited_by_user_id"),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

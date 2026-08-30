@@ -1,0 +1,1 @@
+ALTER TABLE `memory_event` ADD `last_edited_by_user_id` text;

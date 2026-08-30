@@ -122,6 +122,22 @@ export function parseOffsetMinutes(offset: string): number | null {
   return m[1] === "-" ? -minutes : minutes;
 }
 
+/** UTC 时刻 → 指定时区的 datetime-local 值（YYYY-MM-DDTHH:mm，供输入框默认值） */
+export function utcToZonedWallTimeInput(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
+}
+
 /**
  * 内嵌时间 → UTC。有显式偏移用偏移；无偏移按 familyTimezone 解释。
  */

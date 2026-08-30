@@ -26,6 +26,174 @@ export type MemoryEventDetail = {
   participants: PersonRow[];
 };
 
+/**
+ * 编辑记忆事件（RH-003）。
+ * 允许修改：title / occurredAt / occurredAtPrecision / locationText /
+ * coverAsset / participants / childPersonId（须为本家庭的孩子 Person）。
+ * 不可修改：importedAt（Asset 层语义）、Asset.capturedAt（与 Event occurredAt 是两回事，
+ * 编辑事件绝不联动改素材时间）。
+ * 安全：family/event/person/asset 所有权逐项校验（防 IDOR）；
+ * 编辑者记录在 lastEditedByUserId；ageDays 快照按新 occurredAt 重算。
+ */
+export type EditMemoryEventPatch = {
+  title?: string;
+  occurredAt?: Date;
+  occurredAtPrecision?: "exact" | "approximate" | "date_only";
+  locationText?: string | null;
+  coverAssetId?: string | null;
+  participantPersonIds?: string[];
+  childPersonId?: string;
+};
+
+export type EditResult =
+  | { ok: true; event: MemoryEventRow }
+  | { ok: false; error: "not_found" | "invalid" | "bad_person" | "bad_cover" };
+
+export async function updateMemoryEvent(
+  familyId: string,
+  eventId: string,
+  editorUserId: string,
+  patch: EditMemoryEventPatch,
+): Promise<EditResult> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(memoryEvent)
+    .where(and(eq(memoryEvent.familyId, familyId), eq(memoryEvent.id, eventId)))
+    .limit(1);
+  const current = rows[0];
+  if (!current) return { ok: false, error: "not_found" };
+
+  const title = patch.title !== undefined ? patch.title.trim() : current.title;
+  if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
+  const occurredAt = patch.occurredAt ?? current.occurredAt;
+  if (Number.isNaN(occurredAt.getTime())) return { ok: false, error: "invalid" };
+  const precision =
+    patch.occurredAtPrecision ?? (current.occurredAtPrecision as "exact");
+  const locationText =
+    patch.locationText !== undefined
+      ? patch.locationText === null
+        ? null
+        : patch.locationText.trim().slice(0, 200) || null
+      : current.locationText;
+
+  // childPersonId：如提供，必须仍是本家庭的孩子 Person
+  let childPersonId = current.childPersonId;
+  if (patch.childPersonId !== undefined && patch.childPersonId !== current.childPersonId) {
+    const child = await db
+      .select({ id: personTable.id })
+      .from(personTable)
+      .where(
+        and(
+          eq(personTable.familyId, familyId),
+          eq(personTable.id, patch.childPersonId),
+          eq(personTable.isChild, true),
+        ),
+      )
+      .limit(1);
+    if (!child[0]) return { ok: false, error: "bad_person" };
+    childPersonId = patch.childPersonId;
+  }
+
+  // participants：全部必须属于本家庭（含新孩子本人）
+  let participantIds: string[];
+  if (patch.participantPersonIds !== undefined) {
+    if (patch.participantPersonIds.length > 50) return { ok: false, error: "invalid" };
+    const wanted = [...new Set([childPersonId, ...patch.participantPersonIds])];
+    const valid = await db
+      .select({ id: personTable.id })
+      .from(personTable)
+      .where(
+        and(
+          eq(personTable.familyId, familyId),
+          inArray(personTable.id, wanted),
+        ),
+      );
+    const validSet = new Set(valid.map((p) => p.id));
+    if (wanted.some((id) => !validSet.has(id))) {
+      return { ok: false, error: "bad_person" };
+    }
+    participantIds = wanted;
+  } else {
+    const existing = await db
+      .select({ personId: memoryEventParticipant.personId })
+      .from(memoryEventParticipant)
+      .where(eq(memoryEventParticipant.memoryEventId, eventId));
+    participantIds = existing.map((l) => l.personId);
+    if (!participantIds.includes(childPersonId)) participantIds.unshift(childPersonId);
+  }
+
+  // cover：如提供，必须属于本家庭（不强制属于本事件——允许把库里任一照片设为封面）
+  let coverAssetId = current.coverAssetId;
+  if (patch.coverAssetId !== undefined) {
+    if (patch.coverAssetId === null) {
+      coverAssetId = null;
+    } else {
+      const cover = await db
+        .select({ id: assetTable.id })
+        .from(assetTable)
+        .where(
+          and(
+            eq(assetTable.familyId, familyId),
+            eq(assetTable.id, patch.coverAssetId),
+          ),
+        )
+        .limit(1);
+      if (!cover[0]) return { ok: false, error: "bad_cover" };
+      coverAssetId = patch.coverAssetId;
+    }
+  }
+
+  // ageDays 快照按（可能新的）孩子生日与 occurredAt 重算
+  const childBirth = await db
+    .select({ birthDate: personTable.birthDate })
+    .from(personTable)
+    .where(eq(personTable.id, childPersonId))
+    .limit(1);
+  const ageDays =
+    childBirth[0]?.birthDate != null
+      ? computeAgeDays(childBirth[0].birthDate, occurredAt)
+      : null;
+
+  const now = new Date();
+  db.transaction((tx) => {
+    tx.update(memoryEvent)
+      .set({
+        title,
+        occurredAt,
+        occurredAtPrecision: precision,
+        locationText,
+        coverAssetId,
+        childPersonId,
+        ageDays,
+        lastEditedByUserId: editorUserId,
+        updatedAt: now,
+      })
+      .where(and(eq(memoryEvent.familyId, familyId), eq(memoryEvent.id, eventId)))
+      .run();
+
+    if (patch.participantPersonIds !== undefined) {
+      tx.delete(memoryEventParticipant)
+        .where(eq(memoryEventParticipant.memoryEventId, eventId))
+        .run();
+      tx.insert(memoryEventParticipant)
+        .values(
+          participantIds.map((personId) => ({
+            id: randomUUID(),
+            memoryEventId: eventId,
+            personId,
+            familyId,
+            createdAt: now,
+          })),
+        )
+        .run();
+    }
+  });
+
+  const updated = await getMemoryEventDetail(familyId, eventId);
+  return { ok: true, event: updated!.event };
+}
+
 /** occurredAt 默认值：最早的可信 capturedAt；全都没有时用最早 importedAt */
 export function defaultOccurredAt(assets: AssetRow[], rawTextItem?: { createdAt: Date }): Date {
   const captured = assets

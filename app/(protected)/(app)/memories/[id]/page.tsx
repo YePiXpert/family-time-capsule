@@ -6,8 +6,10 @@ import { getFamily, listPeople } from "@/lib/family/service";
 import { getMemoryEventDetail } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { listContributions, listFacts } from "@/lib/contributions/service";
+import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { MediaBlock } from "@/components/media-view";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
+import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +74,21 @@ export default async function MemoryEventPage({
           </span>
         ))}
       </section>
+
+      {event.locationText && (
+        <p className="mt-2 text-sm text-foreground/70">{event.locationText}</p>
+      )}
+
+      <div className="mt-4">
+        <EditEventForm
+          event={event}
+          people={people}
+          assets={assets}
+          participantIds={participants.map((p) => p.id)}
+          defaultWallTime={utcToZonedWallTimeInput(event.occurredAt, timezone)}
+          timezone={timezone}
+        />
+      </div>
 
       <section aria-label="原始资料" className="mt-8">
         <h2 className="text-lg font-medium">原始资料（{assets.length}）</h2>
