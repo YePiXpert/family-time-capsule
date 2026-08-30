@@ -1,12 +1,13 @@
 # 安全基线（Security）
 
-> 本文档对应 PRD §16（权限与隐私）与 §17（安全底线）。当前状态：#002–#005、#017 已实施并通过审计。
+> 本文档对应 PRD §16（权限与隐私）与 §17（安全底线）。当前状态：#002–#005、#017、RH-010 已实施并通过审计。
 
 ## 1. 无公开注册
 
 - 不提供公开 signup 页面；普通访问者无法自行创建账号。
-- 未登录用户只能访问：`/login`、`/setup`（受控，见下）、`/api/auth/*` 认证端点与静态资源（图标/manifest/SW/离线页，不含任何家庭数据）。
-- 其余全部路由位于 `(protected)` 路由组，由布局层会话守卫统一重定向到 `/login`；组内 `(app)` 子组再要求已完成家庭 onboarding。
+- 未登录用户只能访问：`/login`、`/setup`（受控，见下）、`/api/auth/*` 认证端点、`/api/health`（只报数据库连通与版本，零数据泄露）与静态资源（图标/manifest/SW/离线页，不含任何家庭数据）。
+- 其余全部路由位于 `(protected)` 路由组，由布局层会话守卫统一重定向到 `/login`；组内 `(app)` 子组再要求已完成家庭 onboarding（或恢复后的绑定流）。
+- **注册闸门（RH-010 修复，High）**：better-auth 的 `/sign-up/email` 端点默认对外暴露——不加闸门时任何人可经 HTTP 直接创建账号（等于公开注册）。现以 `hooks.before` 守卫：仅当数据库**零用户**时放行（即 `/setup` 首次管理员的内部路径），此后无论 HTTP 还是内部调用一律 403「注册已关闭」。回归测试：`tests/integration/signup-gate.test.ts` + `full-journey.spec.ts` HTTP 级验证。
 - 未来成员加入通过 **管理员邀请**，而非开放注册。
 
 ## 2. 首次初始化（/setup）威胁模型
@@ -118,3 +119,21 @@
 | 限流 | ⚠️ 内存存储（单实例可用），持久化在 backlog |
 | SQLite 文件权限 | ⚠️ 交给部署方（文档见 §7） |
 | CSP / 审计日志 / 加密备份 | 📋 backlog（Low，P1+） |
+
+## 14. 审计结论（2026-08-30，v0.1.1 RH-010）
+
+| 项 | 结论 |
+| --- | --- |
+| **公开注册端点（/sign-up/email）** | 🔴→✅ **发现 High 级漏洞并修复**：better-auth 该端点默认暴露，任何人在初始化后仍可经 HTTP 创建账号（等于公开注册）。已加 `hooks.before` 闸门（仅零用户放行）。集成 + e2e 双层回归 |
+| Restore ZIP path traversal | ✅ 条目名必须位于导出根内（禁 `..`/绝对路径/盘符/反斜杠），`unsafe_entry` 拒绝（tests/integration/restore.test.ts） |
+| zip bomb | ✅ 三重限制：条目数 20 万 / 单文件 2GB / 总解压 25GB（`zip_bomb`/`file_too_large`/`too_many_entries`，限额可注入） |
+| malformed manifest / JSON | ✅ 结构 + 引用完整性校验（`bad_manifest`/`bad_json`/`bad_refs`），重复 assetId 拒绝 |
+| restore hash mismatch | ✅ 全部原件 SHA-256 复核，单个不符 → 整体拒绝且数据库保持为空 |
+| 恢复目标校验 | ✅ 仅「无 Family」实例可恢复；merge restore 明确禁止（`target_not_empty`） |
+| 跨家庭事件编辑（RH-003 新面） | ✅ `updateMemoryEvent` 先校验 event/family 归属；child/participant/cover 逐项校验（`bad_person`/`bad_cover`/`not_found`），tests/integration/memory-edit.test.ts |
+| person participant IDOR | ✅ 同上（外家庭 Person 拒绝；参与者全集重写前逐个校验） |
+| media / export / capsule IDOR | ✅ 沿用 #017 专项隔离测试（isolation.test.ts），随套件回归 |
+| 事件编辑不触碰素材时间 | ✅ 编辑 occurredAt 与 Asset.capturedAt 完全解耦（集成测试断言不变） |
+| 健康端点 | ✅ `/api/health` 仅报 db 连通与版本，无家庭数据 |
+
+**backlog（低风险，未修）**：限流持久化存储；CSP；导出/删除审计日志；备份加密。

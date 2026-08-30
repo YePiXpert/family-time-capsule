@@ -123,3 +123,16 @@ test("上传端点拒绝伪装文件（内容与声明不符）", async ({ page 
   const body = await resp.json();
   expect(body.error).toBe("content_mismatch");
 });
+
+test("公开注册闸门：/api/auth/sign-up/email 已被关闭（RH-010）", async ({ page }) => {
+  await ensureLogin(page);
+  const resp = await page.request.post("/api/auth/sign-up/email", {
+    headers: { "Content-Type": "application/json", Origin: "http://localhost:3118" },
+    data: {
+      name: "attacker",
+      email: "attacker@example.com",
+      password: "attacker-password-123",
+    },
+  });
+  expect(resp.status()).toBe(403);
+});

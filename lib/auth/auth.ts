@@ -1,5 +1,7 @@
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { count } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   account,
@@ -72,6 +74,22 @@ function createAuth() {
           input: false,
         },
       },
+    },
+    hooks: {
+      // RH-010：/sign-up/email 默认对外暴露，等于公开注册（与 docs/SECURITY.md §1 冲突）。
+      // 闸门与 /setup 同语义：仅当数据库没有任何用户时放行（首次管理员引导路径），
+      // 之后无论来自 HTTP 还是内部调用一律 403。
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/sign-up/email") {
+          const db = getDb();
+          const rows = await db.select({ value: count() }).from(user);
+          if (Number(rows[0]?.value ?? 0) > 0) {
+            throw new APIError("FORBIDDEN", {
+              message: "注册已关闭。本实例为私人部署，账号由管理员创建。",
+            });
+          }
+        }
+      }),
     },
   });
 }
