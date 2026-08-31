@@ -201,6 +201,31 @@ type AuditLog = {
 
 best-effort 写入（审计失败不阻断导出/恢复）；设置页「最近操作」消费。
 
+## AssetTranscript（M3-A 已落地：`db/schema/transcript.ts`）
+
+```ts
+type AssetTranscript = {
+  id: string
+  familyId: string        // FK → family，cascade delete
+  assetId: string         // FK → asset，cascade delete；unique(assetId)
+  language?: string       // 转录语言（如 'zh'），nullable
+  provider: string        // providerId（如 'openai-compatible'）
+  model: string           // 实际使用的模型
+  rawTranscript: string   // 机器转录原文，可重建
+  editedTranscript?: string // 用户修订后的耐久文本
+  segmentsJson?: string   // JSON [{startSeconds,endSeconds,text}]
+  status: "machine" | "user_edited"
+  sourceSha256: string    // 处理时 asset.sha256 的快照
+  createdByJobId?: string // 产生本次 machine 结果的 ai_job.id
+  createdAt: Date
+  updatedAt: Date
+}
+```
+
+- 每 asset 最多一行 transcript；rerun 时 UPSERT，但永不覆盖 `editedTranscript`。
+- `status='machine'` 表示当前显示的是机器文本；一旦用户保存修订，`status='user_edited'` 且后续 AI rerun 保持该状态。
+- 旧 `contribution.transcript` 列是占位且未使用的，新表是权威来源。
+
 ## Contribution（#012 已落地：`db/schema/contribution.ts`）
 
 ```ts

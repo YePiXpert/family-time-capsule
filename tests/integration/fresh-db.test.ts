@@ -52,6 +52,7 @@ describe("fresh database 冷启动", () => {
       "audit_log",
       "rate_limit",
       "family_invitation",
+      "asset_transcript",
     ];
     for (const table of expected) {
       expect(names, `missing table: ${table}`).toContain(table);

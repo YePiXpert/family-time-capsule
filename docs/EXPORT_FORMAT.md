@@ -23,6 +23,7 @@ family-time-capsule-export/
 ├── inbox-item-assets.json InboxItem ↔ Asset 关联行全量数组
 ├── contributions.json     Contribution 数组（按家人的独立讲述）
 ├── facts.json             Fact 数组（已确认/否决的事实）
+├── transcripts.json       AssetTranscript 数组（机器转录 + 用户修订）
 ├── capsules.json          Capsule 数组（含封存胶囊的完整内容引用）
 ├── timeline.md            人类可读时间轴（相对路径引用原媒体）
 ├── originals/
@@ -75,9 +76,9 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 规则：
 
 - `assets` 只包含**原件**（derivativeType=null）；衍生物可再生，不入档。
-- 当前格式固定包含 10 个非媒体文件：manifest、family、people、memories、
-  inbox-items、inbox-item-assets、contributions、facts、capsules、timeline；因此
-  `fileCount = assetCount + 10`，`.keep` 不计数。
+- 当前格式固定包含 11 个非媒体文件：manifest、family、people、memories、
+  inbox-items、inbox-item-assets、contributions、facts、transcripts、capsules、
+  timeline；因此 `fileCount = assetCount + 11`，`.keep` 不计数。
 - `capturedAt`/`importedAt` 为 UTC ISO-8601。
 - 增量字段缺失时的恢复端默认：`type` 按目录名（images/audio/video/documents）推断；
   `timeSource` 按 capturedAt 有无推断（有→embedded_metadata，无→import_time）；
@@ -109,6 +110,11 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
   `private` 与尚未解锁的 `child_later` 都会完整进入归档。`recordedByUserId` 属于本地认证
   身份，明确不导出；Person、姓名快照和记录模式构成可迁移的长期来源信息。
 - `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
+- `transcripts.json`：`{ id, familyId, assetId, language, provider, model,
+  rawTranscript, editedTranscript, segmentsJson, status, sourceSha256,
+  createdByJobId, createdAt, updatedAt }`。同时导出机器原文与用户修订文本；
+  恢复后的新实例不会自动恢复 AI 处理同意，因此 rawTranscript 可作为可重建
+  衍生，而 editedTranscript 是耐久家庭资料。
 - `capsules.json`：`{ id, title, unlockType, unlockValue, status, sealedAt, openedAt,
   memoryEventIds, assetIds, contributionIds }`。**无论是否到期/封存，内容引用始终完整**——
   封存是 UI 仪式，不是加密（PRD §15）。
@@ -117,12 +123,15 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 事件详情把这些 `rawText` 显示为**无作者的原始文字记录**；系统不会为了显示正文而虚构
 Contribution 或讲述者。合并到同一事件的多条文字也各自保留为独立行。
 
-### 收件箱文件的增量兼容
+### 收件箱与转录文件的增量兼容
 
 - 当前导出始终同时写入 `inbox-items.json` 与 `inbox-item-assets.json`，即使数组为空。
 - 两个文件是在 `exportVersion: 1` 上的增量扩展。较早的 v1 归档可能两者都不存在；恢复端
   将其解释为“空收件箱”，仍可恢复。
 - 若归档只缺其中一个文件，条目与素材关系可能不完整，恢复端会拒绝，而不会静默丢行。
+- `transcripts.json` 是 `exportVersion: 1` 上的另一项增量扩展。较早的 v1 归档可能不存在
+  该文件；恢复端将其解释为“空转录”，仍可恢复。若归档存在该文件，必须是数组，且每行
+  `assetId` 必须引用 manifest 中的原件。
 
 ## timeline.md
 

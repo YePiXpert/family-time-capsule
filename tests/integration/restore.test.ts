@@ -61,6 +61,22 @@ type Snapshot = {
     updatedAt: string;
   }>;
   facts: Array<{ id: string; statement: string }>;
+  transcripts: Array<{
+    id: string;
+    familyId: string;
+    assetId: string;
+    language: string | null;
+    provider: string;
+    model: string;
+    rawTranscript: string;
+    editedTranscript: string | null;
+    segmentsJson: string | null;
+    status: string;
+    sourceSha256: string;
+    createdByJobId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   capsules: Array<{ id: string; title: string; status: string; eventIds: string[] }>;
   assets: Array<{ id: string; sha256: string; bytes: number; mimeType: string; fileBytes: string }>;
   inboxItems: Array<{
@@ -107,6 +123,7 @@ async function freshModules() {
       contribution: (await import("@/db/schema/contribution")).contribution,
       inboxItem: (await import("@/db/schema/inbox")).inboxItem,
       inboxItemAsset: (await import("@/db/schema/inbox")).inboxItemAsset,
+      assetTranscript: (await import("@/db/schema/transcript")).assetTranscript,
     },
   };
 }
@@ -344,6 +361,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
         }))
         .sort((a, b) => a.id.localeCompare(b.id)),
       facts: [{ id: "", statement: "2026-08-10 小满出生。" }],
+      transcripts: [],
       capsules: [
         { id: cap.capsuleId, title: "写给一岁的你", status: "sealed", eventIds: [e1] },
       ],
@@ -389,6 +407,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(report.events).toBe(snapshot.events.length);
     expect(report.contributions).toBe(snapshot.contributions.length);
     expect(report.facts).toBe(1);
+    expect(report.transcripts).toBe(0);
     expect(report.capsules).toBe(1);
     expect(report.inboxItems).toBe(snapshot.inboxItems.length);
     expect(report.inboxItemAssets).toBe(snapshot.inboxItemAssets.length);
@@ -517,6 +536,25 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
     expect(restoredContributionRows).toEqual(snapshot.contributions);
+    const restoredTranscriptRows = (await db.select().from(m.schema.assetTranscript))
+      .map((row) => ({
+        id: row.id,
+        familyId: row.familyId,
+        assetId: row.assetId,
+        language: row.language,
+        provider: row.provider,
+        model: row.model,
+        rawTranscript: row.rawTranscript,
+        editedTranscript: row.editedTranscript,
+        segmentsJson: row.segmentsJson,
+        status: row.status,
+        sourceSha256: row.sourceSha256,
+        createdByJobId: row.createdByJobId,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(restoredTranscriptRows).toEqual(snapshot.transcripts);
     expect(
       restoredDbContributionRows.every((row) => row.recordedByUserId === null),
     ).toBe(true);
@@ -549,6 +587,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(auditDetail.events).toBe(snapshot.events.length);
     expect(auditDetail.inboxItems).toBe(snapshot.inboxItems.length);
     expect(auditDetail.inboxItemAssets).toBe(snapshot.inboxItemAssets.length);
+    expect(auditDetail.transcripts).toBe(snapshot.transcripts.length);
     expect(auditDetail.zipBytes).toBeGreaterThan(0);
 
     // 8) 恢复后绑定流程：管理员绑定到「爸爸」
@@ -756,9 +795,10 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     const buf = await buildTamperedZip(async (zip) => {
       zip.remove("family-time-capsule-export/inbox-items.json");
       zip.remove("family-time-capsule-export/inbox-item-assets.json");
+      zip.remove("family-time-capsule-export/transcripts.json");
       const manifestFile = zip.file("family-time-capsule-export/manifest.json")!;
       const manifest = JSON.parse(await manifestFile.async("string"));
-      manifest.fileCount -= 2;
+      manifest.fileCount -= 3;
       zip.file(
         "family-time-capsule-export/manifest.json",
         JSON.stringify(manifest),
@@ -802,6 +842,7 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     const report = await m.restoreSvc.restoreFromZip(buf, adminId);
     expect(report.inboxItems).toBe(0);
     expect(report.inboxItemAssets).toBe(0);
+    expect(report.transcripts).toBe(0);
     expect(await m.db.getDb().select().from(m.schema.inboxItem)).toHaveLength(0);
     expect((await m.family.getFamily(snapshot.familyId))?.childLaterUnlockAge).toBe(
       18,

@@ -1,45 +1,14 @@
-import type { MemoryAssistant } from "@/lib/ai/types";
-import type { ContributionAccessTransaction } from "@/lib/authz/contribution-access";
-import type {
-  AiJobFinalizeContext,
-  AiJobLease,
-} from "@/lib/ai/jobs";
-import { isSafeJobType, isSafeOperationalCode } from "@/lib/ai/jobs/validation";
+import { isSafeJobType } from "@/lib/ai/jobs/validation";
+import { transcribeAssetHandler } from "@/lib/ai/handlers/transcribe-asset";
+import type { AiJobHandler } from "./types";
 
-export type AiJobCommit = (
-  tx: ContributionAccessTransaction,
-  context: AiJobFinalizeContext,
-) => void;
-
-export type AiJobHandlerResult = Readonly<{
-  /** Synchronous normalized writes; provider calls must already be finished. */
-  commit: AiJobCommit;
-}>;
-
-export type AiJobHandlerContext = Readonly<{
-  lease: AiJobLease;
-  assistant: MemoryAssistant;
-  signal: AbortSignal;
-}>;
-
-export type AiJobHandler = (
-  context: AiJobHandlerContext,
-) => Promise<AiJobHandlerResult>;
-
-export class AiJobHandlerError extends Error {
-  readonly code: string;
-  readonly retryable: boolean;
-
-  constructor(code: string, retryable: boolean) {
-    if (!isSafeOperationalCode(code)) {
-      throw new Error("unsafe AI handler error code");
-    }
-    super("AI job handler failed");
-    this.name = "AiJobHandlerError";
-    this.code = code;
-    this.retryable = retryable;
-  }
-}
+export {
+  AiJobHandlerError,
+  type AiJobCommit,
+  type AiJobHandler,
+  type AiJobHandlerContext,
+  type AiJobHandlerResult,
+} from "./types";
 
 export class AiJobRegistry {
   readonly #handlers = new Map<string, AiJobHandler>();
@@ -60,6 +29,8 @@ export class AiJobRegistry {
 
 /** Organizer slices register handlers here as their normalized tables land. */
 export function createProductionAiJobRegistry(): AiJobRegistry {
-  return new AiJobRegistry();
+  return new AiJobRegistry().register(
+    "transcribe.asset.v1",
+    transcribeAssetHandler,
+  );
 }
-

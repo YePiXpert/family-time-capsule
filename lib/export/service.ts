@@ -9,6 +9,7 @@ import { asset as assetTable } from "@/db/schema/asset";
 import { person as personTable } from "@/db/schema/family";
 import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
+import { assetTranscript as assetTranscriptTable } from "@/db/schema/transcript";
 import {
   memoryEvent as memoryEventTable,
   memoryEventAsset,
@@ -44,7 +45,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 10;
+export const EXPORT_NON_ASSET_FILE_COUNT = 11;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -107,7 +108,7 @@ export async function buildFamilyExport(
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
-  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets] = await Promise.all([
+  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets, transcripts] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
     db.select().from(memoryEventTable).where(eq(memoryEventTable.familyId, familyId)),
@@ -116,6 +117,7 @@ export async function buildFamilyExport(
     db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
     db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
     db.select().from(inboxItemAsset).where(eq(inboxItemAsset.familyId, familyId)),
+    db.select().from(assetTranscriptTable).where(eq(assetTranscriptTable.familyId, familyId)),
   ]);
 
   const eventIds = events.map((e) => e.id);
@@ -367,6 +369,22 @@ export async function buildFamilyExport(
       statement: f.statement,
       status: f.status,
       createdAt: iso(f.createdAt),
+    })));
+    json("transcripts.json", transcripts.map((t) => ({
+      id: t.id,
+      familyId: t.familyId,
+      assetId: t.assetId,
+      language: t.language,
+      provider: t.provider,
+      model: t.model,
+      rawTranscript: t.rawTranscript,
+      editedTranscript: t.editedTranscript,
+      segmentsJson: t.segmentsJson,
+      status: t.status,
+      sourceSha256: t.sourceSha256,
+      createdByJobId: t.createdByJobId,
+      createdAt: iso(t.createdAt),
+      updatedAt: iso(t.updatedAt),
     })));
     json("capsules.json", capsulesJson);
     archive.append(Buffer.from(md.join("\n"), "utf8"), {

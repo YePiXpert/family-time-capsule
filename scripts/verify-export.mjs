@@ -57,12 +57,13 @@ if (!SUPPORTED_EXPORT_VERSIONS.has(manifest.exportVersion)) {
   ok(`exportVersion=${manifest.exportVersion}, appVersion=${manifest.appVersion ?? "?"}, 导出时间=${manifest.exportedAt}`);
 }
 
-const [familyJson, people, memories, contributions, facts, capsules] = await Promise.all([
+const [familyJson, people, memories, contributions, facts, transcripts, capsules] = await Promise.all([
   readJsonAsync("family.json"),
   readJsonAsync("people.json"),
   readJsonAsync("memories.json"),
   readJsonAsync("contributions.json"),
   readJsonAsync("facts.json"),
+  readJsonAsync("transcripts.json"),
   readJsonAsync("capsules.json"),
 ]);
 if (familyJson) ok(`family: ${familyJson.name} (${familyJson.timezone})`);
@@ -103,6 +104,7 @@ if (capsules) {
   ok(`capsules: ${capsules.length} 个`);
 }
 if (facts) ok(`facts: ${facts.length} 条`);
+if (transcripts) ok(`transcripts: ${transcripts.length} 条`);
 
 // 原件哈希校验
 let verified = 0;

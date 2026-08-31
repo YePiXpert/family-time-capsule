@@ -141,6 +141,19 @@
 - **未来**：P1 可读取 MOV 的 `com.apple.quicktime.contentidentifier` 与 HEIC 的对应 metadata 自动建议配对（仍只建议，不自动合并/删除）。
 - **测试**：tests/integration/live-photo.test.ts（HEIC+MOV、JPEG+MOV、废弃一方原件保留）。
 
+## D-015（M3-A）AssetTranscript：独立表存储机器转录与用户修订
+
+- **日期**：2026-08-31
+- **状态**：已接受
+- **决策**：
+  1. 新增 `asset_transcript` 表作为音频/视频素材转录的权威存储；`contribution.transcript` 是未使用的占位列，不写入、不删除。
+  2. 每 asset 一行 transcript，rerun 时 UPSERT；`rawTranscript`/`segmentsJson` 是可重建的机器输出，`editedTranscript` 是耐久家庭资料。
+  3. AI rerun 只更新 `rawTranscript`、`segmentsJson`、`language`、`provider`、`model`、`sourceSha256`、`createdByJobId`、`updatedAt`，绝不触碰 `editedTranscript`；若已有 `editedTranscript`，保持 `status='user_edited'`。
+  4. 只接受原始 asset（`originalAssetId IS NULL`），且 `mimeType` 必须在 provider 接受的音频列表内；超过 25 MiB 的素材以非重试安全错误拒绝。
+  5. 转录结果进入家庭导出（`transcripts.json`），旧归档缺失该文件时恢复端按空数组处理。
+- **后果**：UI 在记忆详情页为每个音频/视频原件展示转录状态；`ai:review` 角色可请求 AI 转录，`event:write` 角色可保存人工修订。
+- **PRD 偏差**：无。
+
 ## D-014（RH-004）恢复目标与认证数据的处理
 
 - **日期**：2026-08-30

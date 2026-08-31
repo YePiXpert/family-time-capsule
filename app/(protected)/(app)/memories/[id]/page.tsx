@@ -12,9 +12,19 @@ import {
 } from "@/lib/authz/contribution-access";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { MediaBlock } from "@/components/media-view";
+import {
+  getAiRuntimeDisclosure,
+  listAiProcessingConsents,
+} from "@/lib/ai/jobs";
+import {
+  getTranscriptsForAssets,
+  getLatestTranscriptionJobForAsset,
+} from "@/lib/transcripts/service";
+import { getAsset } from "@/lib/assets/service";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
 import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
+import { TranscriptSection } from "./transcript-ui";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +51,7 @@ export default async function MemoryEventPage({
     "contribution:create",
   );
   const canViewAudit = hasFamilyCapability(context.role, "audit:view");
+  const canRequestTranscription = hasFamilyCapability(context.role, "ai:review");
   const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
   const [detail, family, people, contributions, facts, revisions] = await Promise.all([
@@ -63,6 +74,50 @@ export default async function MemoryEventPage({
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
   const { event, assets, participants, sourceNotes } = detail;
+
+  // 音频/视频原件：事件直接关联的 + Contribution 引用的 audioAssetId
+  const avAssetIds = new Set<string>();
+  for (const a of assets) {
+    if ((a.type === "audio" || a.type === "video") && a.originalAssetId === null) {
+      avAssetIds.add(a.id);
+    }
+  }
+  for (const c of contributions) {
+    if (c.audioAssetId) avAssetIds.add(c.audioAssetId);
+  }
+  const avAssetIdsArray = [...avAssetIds];
+  const contributionAudioAssetIds = avAssetIdsArray.filter(
+    (id) => !assets.some((a) => a.id === id),
+  );
+
+  const [contributionAudioAssets, transcripts, jobs, disclosure, consents] =
+    await Promise.all([
+      Promise.all(
+        contributionAudioAssetIds.map((id) => getAsset(familyId, id)),
+      ),
+      getTranscriptsForAssets(familyId, avAssetIdsArray),
+      Promise.all(
+        avAssetIdsArray.map((assetId) =>
+          getLatestTranscriptionJobForAsset(familyId, assetId),
+        ),
+      ),
+      Promise.resolve(getAiRuntimeDisclosure()),
+      canRequestTranscription
+        ? listAiProcessingConsents(context)
+        : Promise.resolve([]),
+    ]);
+  const assetById = new Map(
+    [...assets, ...contributionAudioAssets.filter((a): a is NonNullable<typeof a> => Boolean(a))].map((a) => [
+      a.id,
+      a,
+    ]),
+  );
+  const transcriptionConsent = consents.find((c) => c.capability === "transcription");
+  const transcriptionAvailable =
+    disclosure.valid &&
+    disclosure.capabilities?.transcription?.available === true &&
+    (disclosure.external === false || transcriptionConsent?.enabled === true);
+
   const child = participants.find((p) => p.id === event.childPersonId);
   const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt);
   const cover = assets.find((a) => a.id === event.coverAssetId) ?? assets[0];
@@ -70,6 +125,9 @@ export default async function MemoryEventPage({
     context.role === "admin" || context.role === "editor"
       ? people
       : people.filter((p) => p.id === context.personId);
+  const jobByAssetId = new Map(
+    avAssetIdsArray.map((assetId, index) => [assetId, jobs[index]]),
+  );
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
@@ -161,6 +219,32 @@ export default async function MemoryEventPage({
           </p>
         )}
       </section>
+
+      {avAssetIdsArray.length > 0 && (
+        <section aria-label="转录" className="mt-10">
+          <h2 className="text-lg font-medium">转录</h2>
+          <p className="mt-1 text-sm leading-6 text-foreground/50">
+            AI 转录仅作为可重建的参考，人工修订后的文本永不覆盖。
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {avAssetIdsArray.map((assetId) => {
+              const asset = assetById.get(assetId);
+              if (!asset) return null;
+              return (
+                <TranscriptSection
+                  key={assetId}
+                  memoryEventId={event.id}
+                  asset={asset}
+                  transcript={transcripts.get(assetId)}
+                  job={jobByAssetId.get(assetId)}
+                  canRequest={canRequestTranscription && transcriptionAvailable}
+                  canEdit={canWriteEvent}
+                />
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section aria-label="家人视角" className="mt-10">
         <h2 className="text-lg font-medium">家人视角</h2>

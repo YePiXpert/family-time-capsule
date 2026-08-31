@@ -15,6 +15,7 @@ import * as familySchema from "./schema/family";
 import * as inboxSchema from "./schema/inbox";
 import * as invitationSchema from "./schema/invitation";
 import * as memorySchema from "./schema/memory";
+import * as transcriptSchema from "./schema/transcript";
 
 /**
  * SQLite 单例：数据库文件位于 $DATA_DIR/db/capsule.sqlite（PRD §11）。
@@ -55,6 +56,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...memorySchema,
         ...contributionSchema,
         ...capsuleSchema,
+        ...transcriptSchema,
         ...auditSchema,
       },
     });

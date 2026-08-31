@@ -10,6 +10,7 @@ import {
   contribution as contributionTable,
   fact as factTable,
 } from "@/db/schema/contribution";
+import { assetTranscript as assetTranscriptTable } from "@/db/schema/transcript";
 import {
   memoryEvent,
   memoryEventAsset,
@@ -26,7 +27,6 @@ import { getAssetStorage } from "@/lib/assets/storage";
 import { AUDIT_KINDS, recordAudit } from "@/lib/audit/service";
 import { isContributionVisibility } from "@/lib/authz/policy";
 import {
-  EXPORT_NON_ASSET_FILE_COUNT,
   EXPORT_ROOT_DIR,
   EXPORT_VERSION,
   LEGACY_EXPORT_NON_ASSET_FILE_COUNT,
@@ -156,6 +156,23 @@ type ContributionArchiveRow = {
   updatedAt?: string | null;
 };
 
+type TranscriptArchiveRow = {
+  id: string;
+  familyId: string;
+  assetId: string;
+  language?: string | null;
+  provider: string;
+  model: string;
+  rawTranscript: string;
+  editedTranscript?: string | null;
+  segmentsJson?: string | null;
+  status?: string;
+  sourceSha256: string;
+  createdByJobId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 const UUID_LIKE = /^[0-9a-zA-Z_-]{6,64}$/;
 const INBOX_KINDS = new Set(["text", "asset", "bundle"]);
@@ -174,6 +191,7 @@ const TIME_SOURCES = new Set([
   "import_time",
 ]);
 const RECORDING_MODES = new Set(["legacy", "self", "on_behalf"]);
+const TRANSCRIPT_STATUSES = new Set<string>(["machine", "user_edited"]);
 
 function requireCondition(cond: unknown, code: string, message: string): asserts cond {
   if (!cond) throw new RestoreError(code, message);
@@ -253,6 +271,7 @@ export type RestoreReport = {
   events: number;
   contributions: number;
   facts: number;
+  transcripts: number;
   capsules: number;
   inboxItems: number;
   inboxItemAssets: number;
@@ -441,15 +460,28 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     "bad_json",
     "inbox-item-assets.json 必须是数组",
   );
+
+  // v0.1.4 后的 additive 文件：旧 exportVersion=1 归档不存在 transcripts.json 时按空转录恢复。
+  const transcriptsFile = zip.file(`${EXPORT_ROOT_DIR}/transcripts.json`);
+  const transcriptsRaw = transcriptsFile
+    ? await readJson<unknown>("transcripts.json")
+    : [];
+  requireCondition(
+    Array.isArray(transcriptsRaw),
+    "bad_json",
+    "transcripts.json 必须是数组",
+  );
+
+  const hasInboxFiles = Boolean(inboxItemsFile) && Boolean(inboxItemAssetsFile);
   const expectedFileCount =
     manifest.assets.length +
-    (inboxItemsFile
-      ? EXPORT_NON_ASSET_FILE_COUNT
-      : LEGACY_EXPORT_NON_ASSET_FILE_COUNT);
+    LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
+    (hasInboxFiles ? 2 : 0) +
+    (transcriptsFile ? 1 : 0);
   requireCondition(
     manifest.fileCount === expectedFileCount,
-    inboxItemsFile ? "bad_manifest" : "missing_json",
-    inboxItemsFile
+    hasInboxFiles ? "bad_manifest" : "missing_json",
+    hasInboxFiles
       ? "manifest.fileCount 与当前 v1 文件集不一致"
       : "归档声明包含 Inbox 文件，但两份 Inbox JSON 均缺失",
   );
@@ -919,6 +951,92 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       `fact ${f.id} 缺少陈述`,
     );
   }
+  const transcriptIds = new Set<string>();
+  const transcriptsJson: TranscriptArchiveRow[] = [];
+  for (const value of transcriptsRaw) {
+    requireCondition(isRecord(value), "bad_json", "transcript 必须是对象");
+    const t = value;
+    requireCondition(
+      typeof t.id === "string" &&
+        UUID_LIKE.test(t.id) &&
+        !transcriptIds.has(t.id),
+      "bad_json",
+      `transcript id 缺失或重复: ${String(t.id)}`,
+    );
+    transcriptIds.add(t.id);
+    requireCondition(
+      typeof t.familyId === "string" && t.familyId === manifest.familyId,
+      "bad_refs",
+      `transcript ${t.id} 的 familyId 不一致`,
+    );
+    requireCondition(
+      typeof t.assetId === "string" && assetIds.has(t.assetId),
+      "bad_refs",
+      `transcript ${t.id} 引用未知素材 ${String(t.assetId)}`,
+    );
+    requireCondition(
+      typeof t.provider === "string" && t.provider.length > 0,
+      "bad_json",
+      `transcript ${t.id} 的 provider 非法`,
+    );
+    requireCondition(
+      typeof t.model === "string" && t.model.length > 0,
+      "bad_json",
+      `transcript ${t.id} 的 model 非法`,
+    );
+    requireCondition(
+      t.language === undefined || t.language === null || typeof t.language === "string",
+      "bad_json",
+      `transcript ${t.id} 的 language 非法`,
+    );
+    requireCondition(
+      typeof t.rawTranscript === "string",
+      "bad_json",
+      `transcript ${t.id} 的 rawTranscript 非法`,
+    );
+    requireCondition(
+      isNullableString(t.editedTranscript) &&
+        isNullableString(t.segmentsJson) &&
+        isNullableString(t.createdByJobId),
+      "bad_json",
+      `transcript ${t.id} 的可空字段非法`,
+    );
+    requireCondition(
+      t.status === undefined ||
+        (typeof t.status === "string" && TRANSCRIPT_STATUSES.has(t.status)),
+      "bad_json",
+      `transcript ${t.id} 的 status 非法`,
+    );
+    requireCondition(
+      typeof t.sourceSha256 === "string" && /^[0-9a-f]{64}$/.test(t.sourceSha256),
+      "bad_json",
+      `transcript ${t.id} 的 sourceSha256 非法`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(t.createdAt) && isOptionalArchiveDate(t.updatedAt),
+      "bad_json",
+      `transcript ${t.id} 的时间字段非法`,
+    );
+    transcriptsJson.push({
+      id: t.id as string,
+      familyId: t.familyId as string,
+      assetId: t.assetId as string,
+      language:
+        t.language === undefined || t.language === null
+          ? null
+          : (t.language as string),
+      provider: t.provider as string,
+      model: t.model as string,
+      rawTranscript: t.rawTranscript as string,
+      editedTranscript: (t.editedTranscript ?? null) as string | null,
+      segmentsJson: (t.segmentsJson ?? null) as string | null,
+      status: (t.status ?? "machine") as string,
+      sourceSha256: t.sourceSha256 as string,
+      createdByJobId: (t.createdByJobId ?? null) as string | null,
+      createdAt: t.createdAt as string | null | undefined,
+      updatedAt: t.updatedAt as string | null | undefined,
+    });
+  }
   requireCondition(
     Array.isArray(capsulesJson),
     "bad_json",
@@ -982,6 +1100,7 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     memoriesJson,
     contributionsJson,
     factsJson,
+    transcriptsJson,
     capsulesJson,
     inboxItemsJson,
     inboxItemAssetsJson,
@@ -1030,6 +1149,7 @@ export async function restoreFromZip(
     memoriesJson,
     contributionsJson,
     factsJson,
+    transcriptsJson,
     capsulesJson,
     inboxItemsJson,
     inboxItemAssetsJson,
@@ -1073,22 +1193,24 @@ export async function restoreFromZip(
         })
         .run();
 
-      tx.insert(personTable)
-        .values(
-          peopleJson.map((p) => ({
-            id: p.id,
-            familyId,
-            displayName: p.displayName,
-            relationToChild: p.relationToChild ?? null,
-            isChild: p.isChild ?? false,
-            isGuardian: p.isGuardian ?? false,
-            birthDate: p.birthDate ?? null,
-            childLaterUnlockedAt: parseDate(p.childLaterUnlockedAt),
-            createdAt: parseDate(p.createdAt) ?? now,
-            updatedAt: parseDate(p.updatedAt) ?? parseDate(p.createdAt) ?? now,
-          })),
-        )
-        .run();
+      if (peopleJson.length > 0) {
+        tx.insert(personTable)
+          .values(
+            peopleJson.map((p) => ({
+              id: p.id,
+              familyId,
+              displayName: p.displayName,
+              relationToChild: p.relationToChild ?? null,
+              isChild: p.isChild ?? false,
+              isGuardian: p.isGuardian ?? false,
+              birthDate: p.birthDate ?? null,
+              childLaterUnlockedAt: parseDate(p.childLaterUnlockedAt),
+              createdAt: parseDate(p.createdAt) ?? now,
+              updatedAt: parseDate(p.updatedAt) ?? parseDate(p.createdAt) ?? now,
+            })),
+          )
+          .run();
+      }
 
       if (data.manifest.assets.length > 0) {
         tx.insert(assetTable)
@@ -1126,25 +1248,27 @@ export async function restoreFromZip(
           .run();
       }
 
-      tx.insert(memoryEvent)
-        .values(
-          memoriesJson.map((m) => ({
-            id: m.id,
-            familyId,
-            childPersonId: m.childPersonId,
-            title: m.title,
-            occurredAt: parseDate(m.occurredAt) ?? now,
-            occurredAtPrecision: m.occurredAtPrecision ?? "exact",
-            locationText: m.locationText ?? null,
-            coverAssetId: m.coverAssetId ?? null,
-            status: m.status ?? "confirmed",
-            ageDays: m.ageDays ?? null,
-            lastEditedByUserId: null,
-            createdAt: parseDate(m.createdAt) ?? now,
-            updatedAt: parseDate(m.updatedAt) ?? now,
-          })),
-        )
-        .run();
+      if (memoriesJson.length > 0) {
+        tx.insert(memoryEvent)
+          .values(
+            memoriesJson.map((m) => ({
+              id: m.id,
+              familyId,
+              childPersonId: m.childPersonId,
+              title: m.title,
+              occurredAt: parseDate(m.occurredAt) ?? now,
+              occurredAtPrecision: m.occurredAtPrecision ?? "exact",
+              locationText: m.locationText ?? null,
+              coverAssetId: m.coverAssetId ?? null,
+              status: m.status ?? "confirmed",
+              ageDays: m.ageDays ?? null,
+              lastEditedByUserId: null,
+              createdAt: parseDate(m.createdAt) ?? now,
+              updatedAt: parseDate(m.updatedAt) ?? now,
+            })),
+          )
+          .run();
+      }
 
       if (inboxItemsJson.length > 0) {
         tx.insert(inboxItem)
@@ -1244,6 +1368,29 @@ export async function restoreFromZip(
           .run();
       }
 
+      if (transcriptsJson.length > 0) {
+        tx.insert(assetTranscriptTable)
+          .values(
+            transcriptsJson.map((t) => ({
+              id: t.id,
+              familyId,
+              assetId: t.assetId,
+              language: t.language,
+              provider: t.provider,
+              model: t.model,
+              rawTranscript: t.rawTranscript,
+              editedTranscript: t.editedTranscript,
+              segmentsJson: t.segmentsJson,
+              status: t.status,
+              sourceSha256: t.sourceSha256,
+              createdByJobId: t.createdByJobId,
+              createdAt: parseDate(t.createdAt) ?? now,
+              updatedAt: parseDate(t.updatedAt) ?? parseDate(t.createdAt) ?? now,
+            })),
+          )
+          .run();
+      }
+
       if (capsulesJson.length > 0) {
         tx.insert(capsuleTable)
           .values(
@@ -1320,6 +1467,7 @@ export async function restoreFromZip(
         eventCount,
         contribCount,
         factCount,
+        transcriptCount,
         capsuleCount,
         inboxItemCount,
         inboxItemAssetCount,
@@ -1360,6 +1508,11 @@ export async function restoreFromZip(
           .from(factTable)
           .innerJoin(memoryEvent, eq(factTable.memoryEventId, memoryEvent.id))
           .where(eq(memoryEvent.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(assetTranscriptTable)
+          .where(eq(assetTranscriptTable.familyId, familyId))
           .all(),
         tx
           .select({ value: count() })
@@ -1404,23 +1557,30 @@ export async function restoreFromZip(
       ];
       const num = (rows: Array<{ value: number }>) =>
         Number(rows[0]?.value ?? 0);
+      const countChecks = {
+        family: { actual: num(familyRow), expected: 1 },
+        assets: { actual: num(assetCount), expected: data.manifest.assets.length },
+        people: { actual: num(peopleCount), expected: peopleJson.length },
+        events: { actual: num(eventCount), expected: memoriesJson.length },
+        contributions: { actual: num(contribCount), expected: contributionsJson.length },
+        facts: { actual: num(factCount), expected: factsJson.length },
+        transcripts: { actual: num(transcriptCount), expected: transcriptsJson.length },
+        capsules: { actual: num(capsuleCount), expected: capsulesJson.length },
+        inboxItems: { actual: num(inboxItemCount), expected: inboxItemsJson.length },
+        inboxItemAssets: { actual: num(inboxItemAssetCount), expected: inboxItemAssetsJson.length },
+        memoryEventAssets: { actual: num(memoryEventAssetCount), expected: eventAssets.length },
+        memoryEventParticipants: { actual: num(memoryEventParticipantCount), expected: participants.length },
+        capsuleEvents: { actual: num(capsuleEventCount), expected: expectedCapsuleEventCount },
+        capsuleAssets: { actual: num(capsuleAssetCount), expected: expectedCapsuleAssetCount },
+        capsuleContributions: { actual: num(capsuleContributionCount), expected: expectedCapsuleContributionCount },
+      };
+      const mismatches = Object.entries(countChecks)
+        .filter(([, { actual, expected }]) => actual !== expected)
+        .map(([name, { actual, expected }]) => `${name}: ${actual} != ${expected}`);
       requireCondition(
-        num(familyRow) === 1 &&
-          num(assetCount) === data.manifest.assets.length &&
-          num(peopleCount) === peopleJson.length &&
-          num(eventCount) === memoriesJson.length &&
-          num(contribCount) === contributionsJson.length &&
-          num(factCount) === factsJson.length &&
-          num(capsuleCount) === capsulesJson.length &&
-          num(inboxItemCount) === inboxItemsJson.length &&
-          num(inboxItemAssetCount) === inboxItemAssetsJson.length &&
-          num(memoryEventAssetCount) === eventAssets.length &&
-          num(memoryEventParticipantCount) === participants.length &&
-          num(capsuleEventCount) === expectedCapsuleEventCount &&
-          num(capsuleAssetCount) === expectedCapsuleAssetCount &&
-          num(capsuleContributionCount) === expectedCapsuleContributionCount,
+        mismatches.length === 0,
         "post_verify_failed",
-        "恢复后行数校验失败（数据库与导出不一致）",
+        `恢复后行数校验失败（${mismatches.join("; ")}）`,
       );
     });
   } catch (err) {
@@ -1444,6 +1604,7 @@ export async function restoreFromZip(
     events: memoriesJson.length,
     contributions: contributionsJson.length,
     facts: factsJson.length,
+    transcripts: transcriptsJson.length,
     capsules: capsulesJson.length,
     inboxItems: inboxItemsJson.length,
     inboxItemAssets: inboxItemAssetsJson.length,
@@ -1455,6 +1616,7 @@ export async function restoreFromZip(
     events: memoriesJson.length,
     contributions: contributionsJson.length,
     facts: factsJson.length,
+    transcripts: transcriptsJson.length,
     capsules: capsulesJson.length,
     inboxItems: inboxItemsJson.length,
     inboxItemAssets: inboxItemAssetsJson.length,

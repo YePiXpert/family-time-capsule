@@ -211,13 +211,16 @@ describe("完整导出（#014）", () => {
       await zip.file(`${root}/contributions.json`)!.async("string"),
     );
     const facts = JSON.parse(await zip.file(`${root}/facts.json`)!.async("string"));
+    const transcripts = JSON.parse(
+      await zip.file(`${root}/transcripts.json`)!.async("string"),
+    );
     const capsules = JSON.parse(await zip.file(`${root}/capsules.json`)!.async("string"));
     const timelineMd = await zip.file(`${root}/timeline.md`)!.async("string");
 
     expect(manifest.exportVersion).toBe(1);
     expect(manifest.appVersion).toBe("0.1.3");
     expect(manifest.familyId).toBe(familyId);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 10);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 11);
     expect(result.fileCount).toBe(manifest.fileCount);
     expect(familyJson.name).toBe("我们一家");
     expect(familyJson.childLaterUnlockAge).toBe(21);
@@ -270,6 +273,7 @@ describe("完整导出（#014）", () => {
       ),
     ).toBe(true);
     expect(facts.length).toBe(1);
+    expect(Array.isArray(transcripts)).toBe(true);
 
     const expectedInboxItems = (await db.select().from(inboxItemTable))
       .map((item) => ({

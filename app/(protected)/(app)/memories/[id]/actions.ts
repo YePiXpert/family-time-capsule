@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { requireFamilyCapability } from "@/lib/authz/context";
 import {
+  requestTranscription,
+  saveEditedTranscript,
+} from "@/lib/transcripts/service";
+import {
   canCreateContributionForPerson,
   FamilyAuthorizationError,
 } from "@/lib/authz/policy";
@@ -204,4 +208,63 @@ export async function setFactStatusAction(
   if (!row) return { error: "操作失败。" };
   revalidatePath(`/memories/${memoryEventId}`);
   return {};
+}
+
+export type TranscriptActionState = { error?: string; success?: string };
+
+/** 为音频/视频素材请求 AI 转录（需要 ai:review）。 */
+export async function requestTranscriptionAction(
+  _prev: TranscriptActionState | undefined,
+  formData: FormData,
+): Promise<TranscriptActionState> {
+  const context = await requireFamilyCapability("ai:review");
+  const assetId = String(formData.get("assetId") ?? "");
+  const memoryEventId = String(formData.get("memoryEventId") ?? "");
+  const result = requestTranscription(context, assetId);
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "asset_not_found"
+          ? "素材不存在。"
+          : result.error === "unsupported_asset_type"
+            ? "该类型素材不支持转录。"
+            : result.error === "unsupported_media_type"
+              ? "该编码格式不支持转录。"
+              : result.error === "audio_too_large"
+                ? "音频超过 25 MiB 上限，无法转录。"
+                : result.error === "source_forbidden_or_not_found"
+                  ? "当前不可见或已被删除。"
+                  : result.error === "capability_unavailable"
+                    ? "当前未配置转录能力。"
+                    : result.error === "capability_not_consented"
+                      ? "请先由管理员在「设置 › AI」开启转录外部处理同意。"
+                      : "请求失败，请重试。",
+    };
+  }
+  revalidatePath(`/memories/${memoryEventId}`);
+  return { success: "已加入转录队列。" };
+}
+
+/** 保存用户对转录的修订（需要 event:write）。 */
+export async function editTranscriptAction(
+  _prev: TranscriptActionState | undefined,
+  formData: FormData,
+): Promise<TranscriptActionState> {
+  const context = await requireFamilyCapability("event:write");
+  const assetId = String(formData.get("assetId") ?? "");
+  const memoryEventId = String(formData.get("memoryEventId") ?? "");
+  const text = String(formData.get("editedText") ?? "");
+  const result = saveEditedTranscript(context, assetId, text);
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "invalid"
+          ? "修订内容需为 1–200,000 字。"
+          : result.error === "not_found"
+            ? "素材不存在。"
+            : "保存失败：权限已变化。",
+    };
+  }
+  revalidatePath(`/memories/${memoryEventId}`);
+  return { success: "修订已保存。" };
 }

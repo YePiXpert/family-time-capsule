@@ -30,11 +30,11 @@ CLI 内部执行顺序（对应 RH-004 要求 1–18）：
 1. 校验目标实例无 Family / 无 Person；2. 校验 operator 是未禁用、未绑定的 setup admin；
 3. 读取 ZIP；4. 校验 `exportVersion` 与 manifest；5. **ZIP 条目名 path traversal 校验**；
 6. 校验全部实体 JSON、关系、家庭解锁年龄、显式 guardian/手工解锁、Contribution
-可见性/音频引用/可迁移 recorder provenance；7. **逐个复核原件 SHA-256**；8–16.
+可见性/音频引用/可迁移 recorder provenance、Transcript 引用；7. **逐个复核原件 SHA-256**；8–16.
 全部预验通过后才写入原件文件（失败回滚删除）→
 单事务恢复 Family → Person → Asset → MemoryEvent → InboxItem → InboxItemAsset →
-事件关联表 → Contribution → Fact → Capsule（含内容引用）；17. 在同一事务提交前执行
-**行数复核**（包括 InboxItem、InboxItemAsset、事件素材/参与人关系，以及胶囊的事件/素材/
+事件关联表 → Contribution → Fact → Transcript → Capsule（含内容引用）；17. 在同一事务提交前执行
+**行数复核**（包括 InboxItem、InboxItemAsset、Transcript、事件素材/参与人关系，以及胶囊的事件/素材/
 讲述关系，均与导出逐项一致），复核通过才提交；
 18. 任一写入或复核失败：事务回滚并删除已写文件，**不存在半恢复数据库**。提交后的审计为
 best-effort，不会把已经成功提交的恢复改报为失败。
@@ -57,6 +57,7 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 | 家庭解锁年龄、guardian/child 组合或手工解锁时间非法 | `bad_policy` |
 | Contribution visibility 不在白名单 | `bad_visibility` |
 | Contribution 音频引用悬空或引用非音频原件 | `bad_audio_ref` |
+| Transcript 引用未知 assetId 或 familyId 不一致 | `bad_refs` / `bad_json` |
 | recorder Person/姓名快照/记录模式组合非法，或档案夹带本地 User id | `bad_provenance` |
 
 限额可通过 `restoreFromZip(buffer, userId, { limits })` 注入（运维/测试用）。
@@ -79,6 +80,16 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 - 已确认文字通过 `memoryEventId` 回到对应 MemoryEvent，详情页将完整正文显示为无作者的
   “文字记录”。恢复不会为它创建 Contribution，也不会虚构作者；同一事件的多条文字保持
   多条独立来源记录。
+
+### 2.2 转录归档的完整性与旧档兼容
+
+- 新导出必须包含 `transcripts.json`。旧的 `exportVersion: 1` 归档若不存在该文件，
+  恢复端按空转录处理，仍可恢复。
+- `transcripts.json` 存在时必须是数组。恢复端校验每行 ID 唯一、`familyId` 与 manifest
+  一致、`assetId` 引用 manifest 中的原件、`status` 在 `machine|user_edited` 白名单内、
+  `sourceSha256` 为 64 位十六进制、时间字段合法。
+- 通过校验后，恢复按导出值原样写入 `rawTranscript`、`editedTranscript`、
+  `segmentsJson`、`status` 与来源信息；提交前在同一事务内复核 `asset_transcript` 行数。
 
 ## 3. 哈希校验失败的处理
 
