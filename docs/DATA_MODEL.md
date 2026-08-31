@@ -6,18 +6,19 @@
 
 better-auth 1.7 所需的四张表，字段名与 `getAuthTables()` 一致：
 
-- **user**：`id, name(即 displayName), email(unique), emailVerified, image, role(暂固定 'admin'), createdAt, updatedAt`
+- **user**：`id, name(即 displayName), email(unique), emailVerified, image, role, familyId, personId, createdAt, updatedAt`
 - **session**：`id, token(unique), userId→user, expiresAt, ipAddress, userAgent, createdAt, updatedAt`
 - **account**：`id, userId→user, accountId, providerId, issuer, accessToken…, password(scrypt 哈希, providerId='credential'), createdAt, updatedAt`
 - **verification**：`id, identifier, value, expiresAt, createdAt, updatedAt`
 
-约定：better-auth 的 `user.name` 即 PRD 语境的 displayName。**#003 已落地**：`user` 表增加业务列 `family_id` / `person_id`（可空 FK——管理员在 `/setup` 阶段尚无家庭，完成 `/onboarding` 后绑定），并以 additionalFields（`input: false`）暴露给会话读取；`role` 在多角色建模前仍由服务端固定写入 `admin`。
+约定：better-auth 的 `user.name` 即 PRD 语境的 displayName。`user.family_id` / `person_id` 是可空业务 FK；首次管理员在 `/setup` 后由 `/onboarding` 绑定，受邀账号由已验证邀请绑定。`role/familyId/personId` 的 additionalFields 均为 `input: false`，浏览器注册体不能赋权。
 
 ## 实体总览（业务模型）
 
 ```text
 Family ──┬── Person（真实家庭人物，不等于登录账号）
          ├── User（登录账号，role: admin | editor | contributor | viewer）
+         ├── FamilyInvitation（邀请账号的短期 bearer capability）
          ├── Asset（原始素材 + 衍生物）
          ├── InboxItem（收件箱待整理项）
          ├── MemoryEvent（核心：记忆事件）
@@ -61,11 +62,37 @@ type User = {
   id: string
   familyId?: string   // user.family_id → family.id（onboarding 时写入）
   personId?: string   // user.person_id → person.id（绑定到现实中的自己）
-  role: "admin" | "editor" | "contributor" | "viewer"  // P0 仅 admin
+  role: "admin" | "editor" | "contributor" | "viewer"
 }
 ```
 
-不复制第二套认证 User；业务关系全部是显式 FK。`bindUserToPerson` 校验目标 Person 属于同家庭，防跨家庭绑定。
+不复制第二套认证 User；业务关系全部是显式 FK。`bindUserToPerson` 校验目标 Person 属于同家庭，防跨家庭绑定。migration 0014 增加 `user_person_uidx` partial UNIQUE（仅 `person_id IS NOT NULL`），从数据库边界保证一个现实 Person 最多绑定一个登录账号，同时允许任意数量尚未绑定 Person 的 provisional/恢复账号。
+
+## FamilyInvitation（migration 0014）
+
+```ts
+type FamilyInvitation = {
+  id: string
+  tokenHash: string       // SHA-256 hex；原 token 永不入库
+  familyId: string        // FK → family
+  role: "admin" | "editor" | "contributor" | "viewer"
+  email?: string          // 可选的规范化邮箱约束
+  personId?: string       // 可选；必须是同家庭且尚未绑定账号的 Person
+  expiresAt: Date
+  claimNonce?: string     // 仅服务端内部的短期原子 claim
+  claimExpiresAt?: Date
+  provisionedUserId?: string // INSERT 前预留的精确 crash-cleanup receipt（故意无 FK）
+  usedAt?: Date
+  usedByUserId?: string
+  revokedAt?: Date
+  revokedByUserId?: string
+  createdByUserId: string
+  createdAt: Date
+  updatedAt: Date
+}
+```
+
+`tokenHash` 唯一且固定 64 个十六进制字符；role 有数据库 CHECK。claim nonce 与过期时间必须成对出现。`provisionedUserId` 故意不设 FK：它必须能在 User INSERT 之前落库，并在 claim 重领/撤销后继续作为稳定的 primary-key fencing tombstone；只有邀请成功使用才清空。这样崩溃发生在 INSERT 两侧都能按准确 id 做幂等清理，迟到 writer 也不会生成不同 id 的无追踪账号。邀请不进入灾备导出：它是短期访问凭据而不是家庭记忆；恢复后由管理员重新邀请/绑定账号。
 
 ## Asset（#004 已落地：`db/schema/asset.ts`）
 

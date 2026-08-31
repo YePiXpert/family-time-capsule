@@ -9,3 +9,4 @@ export * as inboxSchema from "./inbox";
 export * as memorySchema from "./memory";
 export * as contributionSchema from "./contribution";
 export * as capsuleSchema from "./capsule";
+export * as invitationSchema from "./invitation";

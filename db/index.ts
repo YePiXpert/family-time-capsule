@@ -12,6 +12,7 @@ import * as capsuleSchema from "./schema/capsule";
 import * as contributionSchema from "./schema/contribution";
 import * as familySchema from "./schema/family";
 import * as inboxSchema from "./schema/inbox";
+import * as invitationSchema from "./schema/invitation";
 import * as memorySchema from "./schema/memory";
 
 /**
@@ -45,6 +46,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...familySchema,
         ...assetSchema,
         ...inboxSchema,
+        ...invitationSchema,
         ...memorySchema,
         ...contributionSchema,
         ...capsuleSchema,

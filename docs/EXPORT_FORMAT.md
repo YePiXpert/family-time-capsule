@@ -35,6 +35,10 @@ family-time-capsule-export/
 
 空目录以 `.keep` 占位，保证「没有内容的目录也存在」。
 
+认证与临时 capability 不属于家庭档案，明确不导出：`user`、`account`、`session`、
+`verification`、`rate_limit`、`family_invitation`、邀请 token/hash/claim、密码哈希与
+setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立账号与 Person 绑定。
+
 ## manifest.json
 
 ```jsonc

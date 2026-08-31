@@ -28,6 +28,16 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
+  if (request.nextUrl.pathname.startsWith("/invite/")) {
+    // The path carries a one-time bearer token. It must not enter a shared
+    // cache, browser history restoration cache, search index, or Referer.
+    response.headers.set(
+      "Cache-Control",
+      "private, no-store, no-cache, must-revalidate",
+    );
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    response.headers.set("Referrer-Policy", "no-referrer");
+  }
   return response;
 }
 

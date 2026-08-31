@@ -205,6 +205,39 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
       family_id: "family-v013",
       person_id: "parent-v013",
     });
+    const userIndexes = (await db.all(
+      sql.raw("PRAGMA index_list('user')"),
+    )) as Array<{ name: string; unique: number; partial: number }>;
+    expect(
+      userIndexes.find((candidate) => candidate.name === "user_person_uidx"),
+    ).toMatchObject({ unique: 1, partial: 1 });
+    const userPersonIndexSql = (await db.all(
+      sql`SELECT sql
+            FROM sqlite_schema
+           WHERE type = 'index'
+             AND name = 'user_person_uidx'`,
+    )) as Array<{ sql: string }>;
+    expect(userPersonIndexSql[0]!.sql).toMatch(
+      /WHERE\s+"user"\."person_id"\s+is\s+not\s+null$/i,
+    );
+    let duplicatePersonBindingError: unknown;
+    try {
+      await db.run(sql`
+        INSERT INTO user (
+          id, name, email, email_verified, role, family_id, person_id,
+          created_at, updated_at
+        ) VALUES (
+          'duplicate-person-user-v013', '不得创建的重复账号',
+          'duplicate-person-v013@example.com', 0, 'viewer', 'family-v013',
+          'parent-v013', 0, 0
+        )
+      `);
+    } catch (error) {
+      duplicatePersonBindingError = error;
+    }
+    expect(duplicatePersonBindingError).toMatchObject({
+      cause: { code: "SQLITE_CONSTRAINT_UNIQUE" },
+    });
     const upgradedInbox = (await db.all(
       sql`SELECT id, raw_text, memory_event_id FROM inbox_item ORDER BY id`,
     )) as Array<{

@@ -36,6 +36,27 @@ docker compose logs --tail=100 app    # 看启动日志
 - `AUTH_SECRET` 缺失 → compose 会拒绝启动（设计如此）。
 - better-sqlite3 构建失败 → 确认镜像为 `node:24-alpine` 且 Dockerfile 已装构建依赖（`python3 make g++`）。
 
+### 反向代理日志必须隐藏邀请 token
+
+账号邀请使用 `/invite/<高熵 token>`。应用会发送 `no-store/no-referrer`，但请求到达应用前，
+Nginx、Caddy、Traefik、CDN 或 NAS 网关可能已经记录完整 URL。生产部署必须在日志落盘前
+把整个 `/invite/*` 路径改写为固定占位符；不要只隐藏 query，也不要继续记录原始 request line。
+
+Nginx 可采用以下等价配置（重点是 access log 使用 `$ftc_safe_uri`，**不使用 `$request`**）：
+
+```nginx
+map $uri $ftc_safe_uri {
+  ~^/invite/  /invite/[redacted];
+  default     $uri;
+}
+log_format ftc '$remote_addr - $request_method $ftc_safe_uri $server_protocol $status';
+access_log /var/log/nginx/family-time-capsule.access.log ftc;
+```
+
+其他代理应配置相同的 path-redaction，并检查现有日志、APM/trace、WAF 与 CDN analytics 都不
+保留邀请路径。链接仍会出现在受邀者的浏览器历史中，因此只通过可信私聊发送；使用后立即失效，
+疑似泄露时在「设置 → 账号邀请」撤销并重建。
+
 ## 2. 首次初始化
 
 浏览器访问 `http://<服务器>:3000/setup`：

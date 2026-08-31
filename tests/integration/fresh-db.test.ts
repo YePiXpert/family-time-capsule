@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 /**
  * 冷启动验证（迁移纪律）：空 DATA_DIR → 打开数据库 → 全部 migration 自动应用
- * → 18 张表齐备 → setup 流程可用（#018 / PRD §27）。
+ * → 全部 durable 表齐备 → setup 流程可用（#018 / PRD §27）。
  */
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-fresh-"));
@@ -22,7 +22,7 @@ afterAll(async () => {
 const { sql } = await import("drizzle-orm");
 
 describe("fresh database 冷启动", () => {
-  it("空 DATA_DIR 首次连接即应用全部 migration（21 张表）", async () => {
+  it("空 DATA_DIR 首次连接即应用全部 migration（含 family_invitation）", async () => {
     const { getDb } = await import("@/db");
     const db = getDb(); // 模块导入即触发迁移
     const rows = (await db.all(
@@ -51,6 +51,7 @@ describe("fresh database 冷启动", () => {
       "capsule_contribution",
       "audit_log",
       "rate_limit",
+      "family_invitation",
     ];
     for (const table of expected) {
       expect(names, `missing table: ${table}`).toContain(table);

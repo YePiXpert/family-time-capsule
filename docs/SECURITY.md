@@ -5,10 +5,20 @@
 ## 1. 无公开注册
 
 - 不提供公开 signup 页面；普通访问者无法自行创建账号。
-- 未登录用户只能访问：`/login`、`/setup`（受控，见下）、`/api/auth/*` 认证端点、`/api/health`（只报数据库连通与版本，零数据泄露）与静态资源（图标/manifest/SW/离线页，不含任何家庭数据）。
+- 未登录用户只能访问：`/login`、`/setup`（受控，见下）、持有高熵 bearer token 的 `/invite/[token]`、`/api/auth/*` 认证端点、`/api/health`（只报数据库连通与版本，零数据泄露）与静态资源（图标/manifest/SW/离线页，不含任何家庭数据）。
 - 其余全部路由位于 `(protected)` 路由组，由布局层会话守卫统一重定向到 `/login`；组内 `(app)` 子组再要求已完成家庭 onboarding（或恢复后的绑定流）。
-- **注册闸门（RH-010 修复，High）**：better-auth 的 `/sign-up/email` 端点默认对外暴露——不加闸门时任何人可经 HTTP 直接创建账号（等于公开注册）。现以 `hooks.before` 守卫：仅当数据库**零用户**时放行（即 `/setup` 首次管理员的内部路径），此后无论 HTTP 还是内部调用一律 403「注册已关闭」。回归测试：`tests/integration/signup-gate.test.ts` + `full-journey.spec.ts` HTTP 级验证。
-- 未来成员加入通过 **管理员邀请**，而非开放注册。
+- **注册闸门（RH-010 修复，High）**：better-auth 的 `/sign-up/email` 端点默认对外暴露——不加闸门时任何人可经 HTTP 直接创建账号（等于公开注册）。现以 `hooks.before` 守卫：所有带真实 `Request` 的调用（包括零用户实例）一律 403。无 Request 的内部调用仅有两条：零用户 `/setup`；或携带 AsyncLocalStorage capability 且数据库中仍有匹配、未过期、未撤销原子 claim 的邀请 provisioning。普通内部调用在已有用户后同样 403。回归测试：`tests/integration/signup-gate.test.ts`、`tests/integration/invitations.test.ts` 与 auth e2e。
+- 后续成员只通过 **管理员邀请** 加入，而非开放注册。
+
+### 邀请 token 与并发接受
+
+- 管理员在 `/settings/invitations` 创建家庭作用域邀请，角色固定为 `admin | editor | contributor | viewer`，可选限定邮箱与未绑定账号的 Person；创建和撤销在服务端再次校验当前数据库中的 admin 角色。
+- token 来自 `randomBytes(32)`（256 bit，base64url）；`family_invitation` **只存 SHA-256 hash**。原 token 只在创建成功响应中显示一次，不进入数据库、审计详情、导出或日志。
+- 邀请有 `expiresAt`、`revokedAt`、`usedAt/usedBy`。接受前用单条带条件的 SQLite `UPDATE … RETURNING` 获取带过期时间的随机 claim nonce；因此 20 个并发请求最多一个能进入密码哈希。
+- provisioning capability 同时绑定 invitation id、claim nonce、family、role、Person 与规范化邮箱；Better Auth hook 会从数据库重验 claim，且 Request-backed signup 即使碰巧处于 capability 上下文仍先被拒绝。
+- Better Auth 生成 user id 后会在真正 INSERT 前把它写入邀请的 `provisioned_user_id`。provisional User 始终是**未绑定 family/Person 的 viewer**；即使进程在 scrypt / account / finalize 任一点崩溃，残留 session 也不能访问家庭或执行 onboarding 管理。过期 lease 重领时不换 receipt，而是删除旧的 unbound viewer 后复用同一 user primary key：旧进程迟到 INSERT 与新进程最多一个能通过 PK，且失败/撤销不会清掉这枚 durable fencing tombstone。正常完成时，目标 family/role/person 绑定、`usedAt`、receipt/claim 清理、临时 session 删除和接受审计在同一事务提交。邀请撤销会立即删当前 provisional；管理员邀请页用 Next `after()` 在响应后重扫 revoked/expired tombstone，安全清理更晚到达的孤儿。所有删除都要求准确 id 且仍是 unbound viewer，绝不按邮箱或删除已绑定/提权账号。
+- token 位于 `/invite/<token>` 路径，应用响应带 `no-store`、`noindex` 与 `no-referrer`，但这些响应头**不能删除浏览器历史，也不能抹掉入口反向代理先写下的 access log**。生产代理必须在日志落盘前把 `/invite/*` 路径整体替换为 `/invite/[redacted]`，且日志格式不得使用仍含原请求行的 `$request`；部署清单给出 Nginx 示例。
+- 当前 token 有 256 bit 熵，未知 token 的在线猜测不可行；原子 claim 也让一个有效 token 同时最多触发一次 scrypt。公共邀请/贡献链接的统一持久化速率限制仍是 v1 安全 backlog，不能把现有 Better Auth 登录限流误认为已覆盖邀请 Server Action。
 
 ## 2. 首次初始化（/setup）威胁模型
 
@@ -96,7 +106,7 @@
 ## 11. 删除与审计日志
 
 - P0 **没有物理删除**：收件箱“废弃”是软状态（discarded），Asset 原件永不删除——不存在误删/越删的破坏面。
-- 完整导出与恢复完成会写 family-scoped 审计条目；审计失败为 best-effort，不会把已经成功的恢复错误报告为失败。
+- 完整导出与恢复完成会写 family-scoped 审计条目；邀请创建、撤销与使用也写入不含 token、hash、密码的 family-scoped 审计。邀请审计与邀请状态在同一事务提交；导出/恢复审计仍为 best-effort，不会把已经成功的恢复错误报告为失败。
 - Trash/显式 purge、删除二次确认及其扩展审计仍属于 v1 backlog。
 
 ## 12. 环境变量清单（安全相关）
@@ -124,7 +134,7 @@
 | 限流 | ✅ SQLite 持久化，进程重启不清零 |
 | SQLite 文件权限 | ⚠️ 交给部署方（文档见 §7） |
 | CSP | ✅ 生产 nonce CSP，无 `unsafe-eval`，安全头 e2e 覆盖 |
-| 审计日志 / 加密备份 | ⚠️ 导出与恢复已审计；v1 敏感操作扩展与备份加密仍待完成 |
+| 审计日志 / 加密备份 | ⚠️ 导出、恢复与邀请生命周期已审计；其余 v1 敏感操作扩展与备份加密仍待完成 |
 
 ## 14. 审计结论（2026-08-30，v0.1.1 RH-010）
 
@@ -142,4 +152,4 @@
 | 事件编辑不触碰素材时间 | ✅ 编辑 occurredAt 与 Asset.capturedAt 完全解耦（集成测试断言不变） |
 | 健康端点 | ✅ `/api/health` 仅报 db 连通与版本，无家庭数据 |
 
-**仍待 v1 完成**：邀请/角色/可见性审计、Trash/purge 审计、备份加密、setup 专项滥用防护。
+**仍待 v1 完成**：账号禁用/角色变更与可见性专项审计、Trash/purge 审计、备份加密、setup 专项滥用防护。

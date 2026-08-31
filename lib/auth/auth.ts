@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { count } from "drizzle-orm";
+import { and, count, eq, gt, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   account,
@@ -10,6 +11,11 @@ import {
   user,
   verification,
 } from "@/db/schema/auth";
+import { familyInvitation } from "@/db/schema/invitation";
+import {
+  getInvitationProvisioningCapability,
+  recordInvitationProvisionedUser,
+} from "./provisioning-capability";
 
 /**
  * 会话策略（docs/SECURITY.md）：
@@ -85,11 +91,99 @@ function createAuth() {
         },
       },
     },
+    databaseHooks: {
+      user: {
+        create: {
+          // The binding comes from an active, DB-verified invitation claim,
+          // never from the sign-up body (additionalFields remain input:false).
+          // The user stays unbound and least-privileged until finalizeInvitation
+          // atomically binds it and marks the invitation used.
+          before: async (newUser) => {
+            const provisioning = getInvitationProvisioningCapability();
+            if (!provisioning) return;
+            const now = new Date();
+            const activeClaims = await getDb()
+              .select({
+                provisionedUserId: familyInvitation.provisionedUserId,
+              })
+              .from(familyInvitation)
+              .where(
+                and(
+                  eq(familyInvitation.id, provisioning.invitationId),
+                  eq(familyInvitation.claimNonce, provisioning.claimNonce),
+                  gt(familyInvitation.claimExpiresAt, now),
+                  gt(familyInvitation.expiresAt, now),
+                  isNull(familyInvitation.usedAt),
+                  isNull(familyInvitation.revokedAt),
+                ),
+              )
+              .limit(1);
+            const activeClaim = activeClaims[0];
+            if (!activeClaim) {
+              throw new APIError("FORBIDDEN", {
+                message: "邀请不可用，请重新打开邀请链接。",
+              });
+            }
+            // Better Auth's hook type declares id, but the email-signup path
+            // may defer generation until after this hook. Supply it here so
+            // the crash receipt is durable before the user INSERT. An expired
+            // lease reuses the same id as a PK fence against a late old writer.
+            const provisionedUserId =
+              activeClaim.provisionedUserId || newUser.id || randomUUID();
+            const reserved = getDb()
+              .update(familyInvitation)
+              .set({
+                provisionedUserId,
+                updatedAt: now,
+              })
+              .where(
+                and(
+                  eq(familyInvitation.id, provisioning.invitationId),
+                  eq(familyInvitation.claimNonce, provisioning.claimNonce),
+                  gt(familyInvitation.claimExpiresAt, now),
+                  gt(familyInvitation.expiresAt, now),
+                  or(
+                    isNull(familyInvitation.provisionedUserId),
+                    eq(
+                      familyInvitation.provisionedUserId,
+                      provisionedUserId,
+                    ),
+                  ),
+                  isNull(familyInvitation.usedAt),
+                  isNull(familyInvitation.revokedAt),
+                ),
+              )
+              .run();
+            if (reserved.changes !== 1) {
+              throw new APIError("FORBIDDEN", {
+                message: "邀请不可用，请重新打开邀请链接。",
+              });
+            }
+            // Record the id before Better Auth inserts the user. If the process
+            // dies on either side of that insert, the expired claim can delete
+            // exactly this id without touching any account selected by email.
+            recordInvitationProvisionedUser(provisionedUserId);
+            return {
+              data: {
+                ...newUser,
+                id: provisionedUserId,
+                role: "viewer",
+                familyId: null,
+                personId: null,
+              },
+            };
+          },
+          after: async (newUser) => {
+            recordInvitationProvisionedUser(newUser.id);
+          },
+        },
+      },
+    },
     hooks: {
       // RH-010：/sign-up/email 默认对外暴露，等于公开注册（与 docs/SECURITY.md §1 冲突）。
       // 所有 HTTP 请求一律拒绝；首次管理员只能由 /setup 校验
-      // INITIAL_SETUP_TOKEN 后，通过不携带 Request 的服务端 auth.api 调用创建。
-      // 内部调用仍以“数据库无用户”为一次性闸门。
+      // INITIAL_SETUP_TOKEN 后通过无 Request 的内部调用创建。后续账号还必须
+      // 携带经过数据库 active-claim 复核的 AsyncLocalStorage 邀请 capability。
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path === "/sign-up/email") {
           if (ctx.request) {
@@ -97,6 +191,50 @@ function createAuth() {
               message: "注册已关闭。本实例为私人部署，首个管理员只能通过初始化页面创建。",
             });
           }
+
+          const provisioning = getInvitationProvisioningCapability();
+          if (provisioning) {
+            const now = new Date();
+            const rows = await getDb()
+              .select({
+                familyId: familyInvitation.familyId,
+                role: familyInvitation.role,
+                email: familyInvitation.email,
+                personId: familyInvitation.personId,
+              })
+              .from(familyInvitation)
+              .where(
+                and(
+                  eq(familyInvitation.id, provisioning.invitationId),
+                  eq(familyInvitation.claimNonce, provisioning.claimNonce),
+                  gt(familyInvitation.claimExpiresAt, now),
+                  gt(familyInvitation.expiresAt, now),
+                  isNull(familyInvitation.usedAt),
+                  isNull(familyInvitation.revokedAt),
+                ),
+              )
+              .limit(1);
+            const invitation = rows[0];
+            const requestEmail = String(
+              (ctx.body as { email?: unknown } | undefined)?.email ?? "",
+            )
+              .trim()
+              .toLowerCase();
+            if (
+              !invitation ||
+              invitation.familyId !== provisioning.familyId ||
+              invitation.role !== provisioning.role ||
+              invitation.personId !== provisioning.personId ||
+              requestEmail !== provisioning.accountEmail ||
+              (invitation.email !== null && invitation.email !== requestEmail)
+            ) {
+              throw new APIError("FORBIDDEN", {
+                message: "邀请不可用，请重新打开邀请链接。",
+              });
+            }
+            return;
+          }
+
           const db = getDb();
           const rows = await db.select({ value: count() }).from(user);
           if (Number(rows[0]?.value ?? 0) > 0) {

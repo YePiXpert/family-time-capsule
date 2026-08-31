@@ -4,6 +4,7 @@ import { requireFamily } from "@/lib/family/context";
 import { getFamily } from "@/lib/family/service";
 import { getAppVersion } from "@/lib/export/service";
 import { listRecentAudit } from "@/lib/audit/service";
+import { hasFamilyCapability } from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +13,19 @@ export const metadata: Metadata = { title: "设置 · Family Time Capsule" };
 const AUDIT_LABEL: Record<string, string> = {
   "export.created": "导出完整备份",
   "restore.completed": "从备份恢复",
+  "invitation.created": "创建账号邀请",
+  "invitation.revoked": "撤销账号邀请",
+  "invitation.accepted": "接受账号邀请",
 };
 
 export default async function SettingsPage() {
-  const { familyId, userName } = await requireFamily();
+  const { familyId, userName, role } = await requireFamily();
+  const canExport = hasFamilyCapability(role, "archive:export");
+  const canViewAudit = hasFamilyCapability(role, "audit:view");
+  const canInvite = hasFamilyCapability(role, "account:invite");
   const [family, auditEntries] = await Promise.all([
     getFamily(familyId),
-    listRecentAudit(familyId, 10),
+    canViewAudit ? listRecentAudit(familyId, 10) : Promise.resolve([]),
   ]);
 
   return (
@@ -52,9 +59,17 @@ export default async function SettingsPage() {
           </Link>
           页。
         </p>
+        {canInvite && (
+          <Link
+            href="/settings/invitations"
+            className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            管理账号邀请
+          </Link>
+        )}
       </section>
 
-      <section aria-label="备份与导出" className="mt-10">
+      {canExport && <section aria-label="备份与导出" className="mt-10">
         <h2 className="text-lg font-medium">备份与导出</h2>
         <p className="mt-1 text-sm leading-6 text-foreground/60">
           完整导出包含全部原件（SHA-256 校验）、记忆事件、家人视角、事实与胶囊——
@@ -69,9 +84,9 @@ export default async function SettingsPage() {
         <p className="mt-2 text-xs text-foreground/45">
           导出较大时需要等待一会儿；导出过程会重新校验每个原件的哈希。
         </p>
-      </section>
+      </section>}
 
-      <section aria-label="最近操作" className="mt-10">
+      {canViewAudit && <section aria-label="最近操作" className="mt-10">
         <h2 className="text-lg font-medium">最近操作</h2>
         {auditEntries.length === 0 ? (
           <p className="mt-2 text-sm text-foreground/50">暂无导出/恢复记录。</p>
@@ -105,7 +120,7 @@ export default async function SettingsPage() {
             ))}
           </ul>
         )}
-      </section>
+      </section>}
     </main>
   );
 }

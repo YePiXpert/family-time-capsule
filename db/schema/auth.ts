@@ -1,4 +1,10 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import {
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { family, person } from "./family";
 
 /**
@@ -19,27 +25,36 @@ const updatedAtColumn = () =>
     .notNull()
     .$defaultFn(() => new Date());
 
-export const user = sqliteTable("user", {
-  id: text("id").primaryKey(),
-  // better-auth 的 name 即显示名称（displayName）
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" })
-    .notNull()
-    .default(false),
-  image: text("image"),
-  // 自定义字段：角色在 #003 完整建模前先固定 admin
-  role: text("role").notNull().default("admin"),
-  // #003：登录账号 ↔ 家庭 / 现实人物 的业务关联（明确 FK，可空）
-  familyId: text("family_id").references(() => family.id, {
-    onDelete: "set null",
-  }),
-  personId: text("person_id").references(() => person.id, {
-    onDelete: "set null",
-  }),
-  createdAt: createdAtColumn(),
-  updatedAt: updatedAtColumn(),
-});
+export const user = sqliteTable(
+  "user",
+  {
+    id: text("id").primaryKey(),
+    // better-auth 的 name 即显示名称（displayName）
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: integer("email_verified", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    image: text("image"),
+    role: text("role").notNull().default("admin"),
+    // 登录账号 ↔ 家庭 / 现实人物 的业务关联（明确 FK，可空）
+    familyId: text("family_id").references(() => family.id, {
+      onDelete: "set null",
+    }),
+    personId: text("person_id").references(() => person.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => [
+    // A real Person may exist without an account, but can never be represented
+    // by two login principals. NULL remains allowed for unbound accounts.
+    uniqueIndex("user_person_uidx")
+      .on(table.personId)
+      .where(sql`${table.personId} is not null`),
+  ],
+);
 
 export const session = sqliteTable("session", {
   id: text("id").primaryKey(),
