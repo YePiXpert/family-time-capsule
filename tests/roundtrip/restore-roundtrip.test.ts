@@ -546,7 +546,16 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       await zip.file("family-time-capsule-export/manifest.json")!.async("string"),
     );
     expect(manifest.familyId).toBe(expect_.familyId);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 10);
+    // 自洽校验：manifest.fileCount = 原件数 + 12 个非媒体文件
+    //（manifest/family/people/memories/inbox-items/inbox-item-assets/contributions/
+    //  facts/fact-sources/transcripts/capsules/timeline.md）。
+    // ZIP 另含 5 个空 .keep 占位（stories/ + originals/*），不计入 fileCount。
+    const zipFileNames = Object.entries(zip.files)
+      .filter(([name, entry]) => name.startsWith("family-time-capsule-export/") && !entry.dir)
+      .map(([name]) => name);
+    const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
+    expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 12);
     const shas = new Set(manifest.assets.map((a: { sha256: string }) => a.sha256));
     expect(shas.has(expect_.assetSha256)).toBe(true);
     const inboxItems = JSON.parse(
