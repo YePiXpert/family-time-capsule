@@ -506,3 +506,115 @@ describe("source-linked AI suggestions (M3-C)", () => {
     expect(sources[0].sourceId).toBeNull();
   });
 });
+
+describe("M3-E：event occurred_at 建议", () => {
+  it("接受 occurred_at 建议更新事件时间与精度，并生成修订", async () => {
+    const eventId = makeEvent("时间待修正");
+    const newTime = "2026-08-25T08:30:00.000Z";
+    await runSuggestionJob(eventId, {
+      title: null,
+      locationText: null,
+      occurredAt: newTime,
+      timePrecision: "date_only",
+      tags: [],
+      personNames: [],
+      facts: [],
+    });
+
+    const pending = await listPendingSuggestions(familyId, "memory_event", eventId);
+    const occurred = pending.find((s) => s.suggestionType === "occurred_at");
+    expect(occurred).toBeTruthy();
+    expect(JSON.parse(occurred!.valueJson)).toEqual({
+      occurredAt: newTime,
+      precision: "date_only",
+    });
+
+    expect(
+      await resolveSuggestion(familyId, admin.id, occurred!.id, "accept"),
+    ).toEqual({ ok: true });
+
+    const event = getDb()
+      .select()
+      .from(memoryEvent)
+      .where(eq(memoryEvent.id, eventId))
+      .get()!;
+    expect(event.occurredAt.toISOString()).toBe(newTime);
+    expect(event.occurredAtPrecision).toBe("date_only");
+
+    // 修订历史记录了这次修改（时间轴重排 / 年龄重算由此保证）
+    const { memoryEventRevision } = await import("@/db/schema/memory");
+    const revisions = getDb()
+      .select()
+      .from(memoryEventRevision)
+      .where(eq(memoryEventRevision.memoryEventId, eventId))
+      .all();
+    expect(revisions.length).toBeGreaterThan(0);
+  });
+
+  it("AI 给出与当前一致的时间时不产生建议；精度缺失归一为 approximate", async () => {
+    const eventId = makeEvent("时间正确");
+    const current = getDb()
+      .select({ occurredAt: memoryEvent.occurredAt })
+      .from(memoryEvent)
+      .where(eq(memoryEvent.id, eventId))
+      .get()!;
+
+    await runSuggestionJob(eventId, {
+      title: null,
+      locationText: null,
+      occurredAt: current.occurredAt.toISOString(),
+      timePrecision: "exact",
+      tags: [],
+      personNames: [],
+      facts: [],
+    });
+    let pending = await listPendingSuggestions(familyId, "memory_event", eventId);
+    expect(pending.find((s) => s.suggestionType === "occurred_at")).toBeUndefined();
+
+    // 不同时间但没有精度 → 默认 approximate，绝不 exact
+    const eventId2 = makeEvent("时间模糊");
+    await runSuggestionJob(eventId2, {
+      title: null,
+      locationText: null,
+      occurredAt: "2026-08-15T12:00:00.000Z",
+      tags: [],
+      personNames: [],
+      facts: [],
+    });
+    pending = await listPendingSuggestions(familyId, "memory_event", eventId2);
+    const occurred = pending.find((s) => s.suggestionType === "occurred_at");
+    expect(occurred).toBeTruthy();
+    expect(JSON.parse(occurred!.valueJson).precision).toBe("approximate");
+  });
+
+  it("拒绝 occurred_at 建议不改变事件时间", async () => {
+    const eventId = makeEvent("时间保持");
+    await runSuggestionJob(eventId, {
+      title: null,
+      locationText: null,
+      occurredAt: "2020-01-01T00:00:00.000Z",
+      timePrecision: "exact",
+      tags: [],
+      personNames: [],
+      facts: [],
+    });
+    const before = getDb()
+      .select({ occurredAt: memoryEvent.occurredAt })
+      .from(memoryEvent)
+      .where(eq(memoryEvent.id, eventId))
+      .get()!;
+
+    const pending = await listPendingSuggestions(familyId, "memory_event", eventId);
+    const occurred = pending.find((s) => s.suggestionType === "occurred_at")!;
+    expect(
+      await resolveSuggestion(familyId, admin.id, occurred.id, "reject"),
+    ).toEqual({ ok: true });
+
+    const after = getDb()
+      .select({ occurredAt: memoryEvent.occurredAt })
+      .from(memoryEvent)
+      .where(eq(memoryEvent.id, eventId))
+      .get()!;
+    expect(after.occurredAt.getTime()).toBe(before.occurredAt.getTime());
+  });
+});

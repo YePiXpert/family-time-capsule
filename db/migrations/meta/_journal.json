@@ -141,6 +141,13 @@
       "when": 1788189005582,
       "tag": "0019_luxuriant_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1788191296096,
+      "tag": "0020_previous_puck",
+      "breakpoints": true
     }
   ]
 }

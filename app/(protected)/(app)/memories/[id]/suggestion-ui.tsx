@@ -15,8 +15,15 @@ const inputClass =
 const SUGGESTION_TYPE_LABEL: Record<string, string> = {
   title: "标题",
   location: "地点",
+  occurred_at: "发生时间",
   person: "参与人",
   tag: "标签",
+};
+
+const PRECISION_LABEL: Record<string, string> = {
+  exact: "精确",
+  approximate: "约",
+  date_only: "仅日期",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -59,17 +66,33 @@ function SuggestionCard({
   const [state, action, pending] = useActionState(resolveSuggestionAction, undefined);
 
   let displayValue = "";
+  let precisionLabel: string | undefined;
   try {
     const payload = JSON.parse(suggestion.valueJson);
     if (suggestion.suggestionType === "title") displayValue = payload.title ?? "";
     if (suggestion.suggestionType === "location") displayValue = payload.locationText ?? "";
     if (suggestion.suggestionType === "person") displayValue = payload.personName ?? "";
     if (suggestion.suggestionType === "tag") displayValue = payload.tag ?? "";
+    if (suggestion.suggestionType === "occurred_at") {
+      const d = new Date(String(payload.occurredAt ?? ""));
+      displayValue = Number.isNaN(d.getTime())
+        ? ""
+        : new Intl.DateTimeFormat("zh-CN", {
+            dateStyle: "medium",
+            timeStyle: payload.precision === "date_only" ? undefined : "short",
+          }).format(d);
+      precisionLabel = PRECISION_LABEL[payload.precision] ?? PRECISION_LABEL.approximate;
+    }
   } catch {
     displayValue = suggestion.valueJson;
   }
 
-  const editable = suggestion.suggestionType === "title" || suggestion.suggestionType === "location" || suggestion.suggestionType === "tag";
+  // occurred_at 不提供自由文本编辑：时间修正走事件编辑表单（含家庭时区换算），
+  // 接受即按建议值 + 建议精度更新事件时间
+  const editable =
+    suggestion.suggestionType === "title" ||
+    suggestion.suggestionType === "location" ||
+    suggestion.suggestionType === "tag";
 
   return (
     <li className="rounded-lg border border-foreground/10 px-4 py-3 text-sm">
@@ -79,6 +102,11 @@ function SuggestionCard({
             {SUGGESTION_TYPE_LABEL[suggestion.suggestionType] ?? suggestion.suggestionType}
           </span>
           <span className="ml-2">{displayValue}</span>
+          {precisionLabel && (
+            <span className="ml-1 text-xs text-foreground/40">
+              （{precisionLabel}）
+            </span>
+          )}
         </span>
         {canWrite && (
           <form action={action} className="flex flex-wrap items-center gap-2">

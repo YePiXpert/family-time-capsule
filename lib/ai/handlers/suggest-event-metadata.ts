@@ -27,6 +27,15 @@ const MAX_FACTS_PER_RUN = 10;
 const MAX_TAGS_PER_RUN = 10;
 const MAX_SUGGESTIONS_PER_TYPE = 10;
 
+const TIME_PRECISIONS = ["exact", "approximate", "date_only"] as const;
+type TimePrecision = (typeof TIME_PRECISIONS)[number];
+
+function normalizePrecision(value: unknown): TimePrecision {
+  return TIME_PRECISIONS.includes(value as TimePrecision)
+    ? (value as TimePrecision)
+    : "approximate";
+}
+
 function trunc(text: string, maxChars: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= maxChars) return trimmed;
@@ -100,9 +109,11 @@ function buildPrompt(context: {
 
   lines.push("输出要求：");
   lines.push("- 严格返回 JSON 对象，不要添加任何 JSON 之外的解释或 Markdown 代码块。");
-  lines.push('- JSON 格式：{ "title": string|null, "locationText": string|null, "tags": string[], "personNames": string[], "facts": string[] }');
+  lines.push('- JSON 格式：{ "title": string|null, "locationText": string|null, "occurredAt": string|null (ISO 8601 UTC), "timePrecision": "exact"|"approximate"|"date_only", "tags": string[], "personNames": string[], "facts": string[] }');
   lines.push("- title：只有当当前标题看起来像占位符（如「一段记忆」、极短无意义标题）时才给出更合适的标题；否则填 null。");
   lines.push("- locationText：如果资料能推断出明确地点，给出简短地点描述；否则 null。");
+  lines.push("- occurredAt：推断「事件发生时间」（不是素材拍摄时间）。仅当资料（转录/讲述/图中文字/文件时间）强烈指示当前发生时间明显不对、且能给出更准确的时间时才给出 ISO 8601 UTC；否则 null。");
+  lines.push("- timePrecision：exact=资料中有精确到时分的依据；approximate=只能推断大致时段；date_only=只有日期。不确定时禁止写 exact。");
   lines.push("- tags：给出 0–10 个有助于归类的事件标签，每个不超过 20 字。");
   lines.push("- personNames：只能从上文「家庭成员」列表中选取，不要添加列表外的人。");
   lines.push("- facts：给出 0–10 条可陈述的事实。必须是基于转录、图片分析或讲述中可见/可闻内容的 plain 陈述句。");
@@ -124,6 +135,8 @@ function extractJsonObject(text: string): string {
 function validateSuggestionPayload(value: unknown): value is {
   title: string | null;
   locationText: string | null;
+  occurredAt: string | null;
+  timePrecision: unknown;
   tags: string[];
   personNames: string[];
   facts: string[];
@@ -134,6 +147,7 @@ function validateSuggestionPayload(value: unknown): value is {
   const obj = value as Record<string, unknown>;
   if (obj.title !== null && typeof obj.title !== "string") return false;
   if (obj.locationText !== null && typeof obj.locationText !== "string") return false;
+  if (obj.occurredAt != null && typeof obj.occurredAt !== "string") return false;
   if (!Array.isArray(obj.tags) || !obj.tags.every((t) => typeof t === "string")) return false;
   if (!Array.isArray(obj.personNames) || !obj.personNames.every((n) => typeof n === "string")) return false;
   if (!Array.isArray(obj.facts) || !obj.facts.every((f) => typeof f === "string")) return false;
@@ -395,6 +409,8 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
   let payload: {
     title: string | null;
     locationText: string | null;
+    occurredAt: string | null;
+    timePrecision: unknown;
     tags: string[];
     personNames: string[];
     facts: string[];
@@ -425,11 +441,22 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
     .filter((f) => f.length > 0 && f.length <= 500)
     .slice(0, MAX_FACTS_PER_RUN);
 
-  // 标题/地点清理
+  // 标题/地点/时间清理
   const title = payload.title?.trim() || null;
   const locationText = payload.locationText?.trim() || null;
   const safeTitle = title && title.length >= 1 && title.length <= 100 ? title : null;
   const safeLocation = locationText && locationText.length <= 200 ? locationText : null;
+
+  // 事件发生时间建议：仅当与当前时间不同才值得建议；精度不明时绝不 exact
+  let safeOccurredAt: string | null = null;
+  let occurredAtPrecision: TimePrecision = "approximate";
+  if (payload.occurredAt) {
+    const d = new Date(payload.occurredAt);
+    if (!Number.isNaN(d.getTime()) && d.getTime() !== eventRow.occurredAt.getTime()) {
+      safeOccurredAt = d.toISOString();
+      occurredAtPrecision = normalizePrecision(payload.timePrecision);
+    }
+  }
 
   // 计算来源指纹：基于实际送入模型的上下文
   const sourceFingerprint = hashCanonical({
@@ -445,6 +472,8 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
     suggestion: {
       title: safeTitle,
       locationText: safeLocation,
+      occurredAt: safeOccurredAt,
+      occurredAtPrecision,
       tags: normalizedTags,
       personNames: resolvedPersons.map((p) => p.name),
       facts: cleanedFacts,
@@ -472,7 +501,7 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
       // 插入新的 pending 建议
       const suggestionsToInsert: {
         id: string;
-        suggestionType: "title" | "location" | "person" | "tag";
+        suggestionType: "title" | "location" | "occurred_at" | "person" | "tag";
         valueJson: string;
       }[] = [];
       if (safeTitle) {
@@ -487,6 +516,16 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
           id: randomUUID(),
           suggestionType: "location",
           valueJson: JSON.stringify({ locationText: safeLocation }),
+        });
+      }
+      if (safeOccurredAt) {
+        suggestionsToInsert.push({
+          id: randomUUID(),
+          suggestionType: "occurred_at",
+          valueJson: JSON.stringify({
+            occurredAt: safeOccurredAt,
+            precision: occurredAtPrecision,
+          }),
         });
       }
       for (const p of resolvedPersons) {
