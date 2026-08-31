@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "verify:export": "node scripts/verify-export.mjs",
     "restore": "tsx scripts/restore.ts",
+    "search:rebuild": "tsx scripts/search-rebuild.ts",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test && vitest run --config vitest.roundtrip.config.ts"
   },

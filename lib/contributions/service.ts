@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
+import { indexContribution, indexFactIfConfirmed } from "@/lib/search/service";
 import { auditLog } from "@/db/schema/audit";
 import { user as userTable } from "@/db/schema/auth";
 import { person as personTable } from "@/db/schema/family";
@@ -88,7 +89,7 @@ export async function createContribution(
   const db = getDb();
   const id = randomUUID();
   const now = new Date();
-  return db.transaction((tx) => {
+  const result = db.transaction((tx) => {
     const actor = tx
       .select({
         name: userTable.name,
@@ -189,6 +190,18 @@ export async function createContribution(
     }
     return { ok: true, contributionId: id } as const;
   });
+  if (result.ok) {
+    indexContribution({
+      id,
+      familyId,
+      memoryEventId: input.memoryEventId,
+      authorPersonId: input.authorPersonId,
+      rawText: input.rawText ?? null,
+      editedText: input.editedText ?? null,
+      visibility: input.visibility ?? "family",
+    });
+  }
+  return result;
 }
 
 /** 只改这一行的定稿文本——不同人的行天然互不影响；先校验归属再写入 */
@@ -214,6 +227,17 @@ export async function updateContributionText(
     .set({ editedText: trimmed, updatedAt: new Date() })
     .where(eq(contribution.id, contributionId))
     .returning();
+  if (rows[0]) {
+    indexContribution({
+      id: rows[0].id,
+      familyId,
+      memoryEventId: rows[0].memoryEventId,
+      authorPersonId: rows[0].authorPersonId,
+      rawText: rows[0].rawText,
+      editedText: rows[0].editedText,
+      visibility: rows[0].visibility,
+    });
+  }
   return rows[0];
 }
 
@@ -277,7 +301,7 @@ export async function addFact(
   if (!(await eventBelongsToFamily(familyId, memoryEventId))) return undefined;
   const db = getDb();
   const now = new Date();
-  return db.transaction((tx) => {
+  const factRow = db.transaction((tx) => {
     const rows = tx
       .insert(fact)
       .values({
@@ -304,6 +328,16 @@ export async function addFact(
       .run();
     return row;
   });
+  if (factRow) {
+    indexFactIfConfirmed({
+      id: factRow.id,
+      familyId,
+      memoryEventId,
+      statement: factRow.statement,
+      status: factRow.status,
+    });
+  }
+  return factRow;
 }
 
 export async function setFactStatus(
@@ -322,6 +356,15 @@ export async function setFactStatus(
     .set({ status, updatedAt: new Date() })
     .where(eq(fact.id, factId))
     .returning();
+  if (rows[0]) {
+    indexFactIfConfirmed({
+      id: rows[0].id,
+      familyId,
+      memoryEventId: rows[0].memoryEventId,
+      statement: rows[0].statement,
+      status: rows[0].status,
+    });
+  }
   return rows[0];
 }
 

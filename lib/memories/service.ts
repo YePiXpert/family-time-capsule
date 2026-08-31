@@ -12,6 +12,7 @@ import {
   memoryEventRevision,
 } from "@/db/schema/memory";
 import type { AssetRow } from "@/lib/assets/service";
+import { indexMemoryEvent } from "@/lib/search/service";
 import { getInboxEntry, type InboxEntry } from "@/lib/inbox/service";
 
 /**
@@ -219,6 +220,7 @@ export async function updateMemoryEvent(
     }
   });
 
+  indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
   const updated = await getMemoryEventDetail(familyId, eventId);
   return { ok: true, event: updated!.event };
 }
@@ -386,6 +388,7 @@ export async function confirmInboxEntry(
       .run();
   });
 
+  indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
   return { ok: true, eventId };
 }
 
@@ -502,6 +505,7 @@ export async function mergeInboxEntries(
       .run();
   });
 
+  indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
   return { ok: true, eventId };
 }
 

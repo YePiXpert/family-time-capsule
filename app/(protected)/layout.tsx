@@ -17,6 +17,7 @@ const NAV: ReadonlyArray<{
   { href: "/capture", label: "记录", capability: "capture:create" },
   { href: "/inbox", label: "收件箱" },
   { href: "/timeline", label: "时光轴" },
+  { href: "/search", label: "搜索" },
   { href: "/family", label: "家人" },
   { href: "/capsules", label: "胶囊" },
   { href: "/settings", label: "设置" },

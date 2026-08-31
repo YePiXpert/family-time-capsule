@@ -1770,6 +1770,15 @@ export async function restoreFromZip(
     inboxItems: inboxItemsJson.length,
     inboxItemAssets: inboxItemAssetsJson.length,
   });
+
+  // 4) 全文索引是可重建 derivative：恢复完成后整体重建（失败不阻断恢复本身）。
+  try {
+    const { rebuildSearchIndex } = await import("@/lib/search/service");
+    rebuildSearchIndex();
+  } catch {
+    // 索引可随时用 `npm run search:rebuild` 手动重建
+  }
+
   return {
     familyId,
     people: peopleJson.length,

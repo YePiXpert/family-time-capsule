@@ -1,4 +1,5 @@
 import "server-only";
+import { indexEditedTranscript } from "@/lib/search/service";
 
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -182,7 +183,7 @@ export function saveEditedTranscript(
     return { ok: false, error: "invalid" };
   }
 
-  return getDb().transaction((tx) => {
+  const result = getDb().transaction((tx) => {
     const asset = tx
       .select()
       .from(assetTable)
@@ -240,5 +241,27 @@ export function saveEditedTranscript(
     }
     return { ok: true } as const;
   });
+  if (result.ok) {
+    const row = getDb()
+      .select()
+      .from(assetTranscript)
+      .where(
+        and(
+          eq(assetTranscript.familyId, context.familyId),
+          eq(assetTranscript.assetId, assetId),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (row) {
+      indexEditedTranscript({
+        id: row.id,
+        familyId: row.familyId,
+        assetId: row.assetId,
+        editedTranscript: row.editedTranscript,
+      });
+    }
+  }
+  return result;
 }
 
