@@ -975,12 +975,21 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       `fact ${f.id} 缺少陈述`,
     );
   }
-  const SOURCE_TYPES = new Set(["asset", "contribution", "transcript", "user_text"]);
+  const SOURCE_TYPES = new Set([
+    "asset",
+    "asset_analysis",
+    "contribution",
+    "transcript",
+    "user_text",
+  ]);
   const factSourcesJson: Array<{
     id: string;
     factId: string;
     sourceType: string;
     sourceId: string | null;
+    quote: string | null;
+    startMs: number | null;
+    endMs: number | null;
     createdAt?: string | null;
   }> = [];
   for (const value of factSourcesRaw) {
@@ -1009,6 +1018,31 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       "bad_json",
       `fact source ${id} 的 sourceId 非法`,
     );
+    // M3-D locator：quote 可选字符串（≤300）；时间毫秒可选、0 ≤ start ≤ end
+    requireCondition(
+      s.quote === undefined ||
+        s.quote === null ||
+        (typeof s.quote === "string" && s.quote.length <= 300),
+      "bad_json",
+      `fact source ${id} 的 quote 非法`,
+    );
+    for (const field of ["startMs", "endMs"] as const) {
+      const raw = s[field];
+      requireCondition(
+        raw === undefined ||
+          raw === null ||
+          (typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= 86_400_000),
+        "bad_json",
+        `fact source ${id} 的 ${field} 非法`,
+      );
+    }
+    const startMs = (s.startMs ?? null) as number | null;
+    const endMs = (s.endMs ?? null) as number | null;
+    requireCondition(
+      startMs === null || endMs === null || startMs <= endMs,
+      "bad_json",
+      `fact source ${id} 的时间区间非法`,
+    );
     requireCondition(
       isOptionalArchiveDate(s.createdAt),
       "bad_json",
@@ -1019,6 +1053,9 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       factId,
       sourceType,
       sourceId: (s.sourceId ?? null) as string | null,
+      quote: ((s.quote as string | null | undefined) ?? null) || null,
+      startMs,
+      endMs,
       createdAt: s.createdAt as string | null | undefined,
     });
   }
@@ -1465,6 +1502,9 @@ export async function restoreFromZip(
               factId: s.factId,
               sourceType: s.sourceType,
               sourceId: s.sourceId,
+              quote: s.quote,
+              startMs: s.startMs,
+              endMs: s.endMs,
               createdAt: parseDate(s.createdAt) ?? now,
             })),
           )

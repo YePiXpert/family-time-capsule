@@ -67,6 +67,15 @@ export const factSource = sqliteTable(
       .references(() => fact.id, { onDelete: "cascade" }),
     sourceType: text("source_type").notNull(),
     sourceId: text("source_id"),
+    /**
+     * M3-D 精确来源 locator：quote 在创建时必须能在来源文本中逐字验证
+     * （contribution/edited transcript/analysis description/OCR）；时间段
+     * 只由服务端从 transcript segment 推导，不信任模型自报的毫秒数。
+     * 字段在确认时固化，STT rerun 不会改写已确认事实的来源。
+     */
+    quote: text("quote"),
+    startMs: integer("start_ms"),
+    endMs: integer("end_ms"),
     createdAt: createdAtColumn(),
   },
   (t) => [
@@ -74,7 +83,7 @@ export const factSource = sqliteTable(
     index("fact_source_family_idx").on(t.familyId),
     check(
       "fact_source_type_check",
-      sql`${t.sourceType} in ('asset', 'contribution', 'transcript', 'user_text')`,
+      sql`${t.sourceType} in ('asset', 'asset_analysis', 'contribution', 'transcript', 'user_text')`,
     ),
   ],
 );

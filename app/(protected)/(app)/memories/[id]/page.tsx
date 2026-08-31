@@ -166,6 +166,30 @@ export default async function MemoryEventPage({
       a,
     ]),
   );
+
+  // M3-D：factSource → 展示名（asset/asset_analysis→文件名；transcript→其素材；contribution→作者）
+  const transcriptIdToAssetId = new Map(
+    [...transcripts.entries()].map(([assetId, t]) => [t.id, assetId]),
+  );
+  const personById = new Map(people.map((p) => [p.id, p.displayName]));
+  const factSourceLabels = new Map<string, string>();
+  for (const source of factSources) {
+    let label: string | undefined;
+    if (source.sourceType === "asset" || source.sourceType === "asset_analysis") {
+      if (source.sourceId) label = assetById.get(source.sourceId)?.originalFilename;
+    } else if (source.sourceType === "transcript") {
+      const assetId = source.sourceId
+        ? transcriptIdToAssetId.get(source.sourceId)
+        : undefined;
+      if (assetId) label = assetById.get(assetId)?.originalFilename;
+    } else if (source.sourceType === "contribution") {
+      const contribution = contributions.find((c) => c.id === source.sourceId);
+      if (contribution) {
+        label = personById.get(contribution.authorPersonId) ?? "家人讲述";
+      }
+    }
+    if (label) factSourceLabels.set(source.id, label);
+  }
   const transcriptionConsent = consents.find((c) => c.capability === "transcription");
   const transcriptionAvailable =
     disclosure.valid &&
@@ -377,6 +401,7 @@ export default async function MemoryEventPage({
         memoryEventId={event.id}
         facts={facts}
         factSources={factSources}
+        sourceLabels={factSourceLabels}
         canWrite={canWriteEvent}
       />
 

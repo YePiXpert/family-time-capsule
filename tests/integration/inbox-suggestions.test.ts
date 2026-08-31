@@ -40,7 +40,6 @@ const {
   finalizeAiJob,
 } = await import("@/lib/ai/jobs");
 const {
-  requestInboxItemSuggestions,
   requestInboxSuggestionsBatch,
   resolveInboxSuggestion,
 } = await import("@/lib/suggestions/service");

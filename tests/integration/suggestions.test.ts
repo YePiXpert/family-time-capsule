@@ -248,7 +248,12 @@ describe("source-linked AI suggestions (M3-C)", () => {
       locationText: "家附近的公园",
       tags: ["户外", "亲子"],
       personNames: ["妈妈"],
-      facts: ["孩子和妈妈一起去了公园。"],
+      facts: [
+        {
+          statement: "孩子和妈妈一起去了公园。",
+          sources: [{ ref: "C1", quote: "今天带孩子去公园" }],
+        },
+      ],
     });
 
     const pending = await listPendingSuggestions(familyId, "memory_event", eventId);
@@ -460,12 +465,24 @@ describe("source-linked AI suggestions (M3-C)", () => {
   it("exports fact sources and accepted tags", async () => {
     const eventId = makeEvent("导出测试");
     await addFact(familyId, eventId, "手工确认的事实。");
+    await createContribution(familyId, {
+      memoryEventId: eventId,
+      authorPersonId: adminPersonId,
+      recordedByUserId: admin.id,
+      rawText: "我们在海边住了三天，孩子每天都玩沙子。",
+      visibility: "family",
+    });
     await runSuggestionJob(eventId, {
       title: null,
       locationText: null,
       tags: ["旅行"],
       personNames: [],
-      facts: ["AI 建议的事实。"],
+      facts: [
+        {
+          statement: "一家人在海边度假三天。",
+          sources: [{ ref: "C1", quote: "我们在海边住了三天" }],
+        },
+      ],
     });
 
     const tagSuggestion = (await listPendingSuggestions(familyId, "memory_event", eventId)).find(
@@ -490,6 +507,12 @@ describe("source-linked AI suggestions (M3-C)", () => {
     expect(factSources.some((s: { sourceType: string }) => s.sourceType === "user_text")).toBe(
       true,
     );
+    // M3-D：带 locator 的来源导出（quote 固化）
+    const quoted = factSources.find(
+      (s: { quote?: string | null }) => s.quote === "我们在海边住了三天",
+    );
+    expect(quoted).toBeTruthy();
+    expect(quoted.sourceType).toBe("contribution");
   });
 
   it("manual facts carry user_text source", async () => {

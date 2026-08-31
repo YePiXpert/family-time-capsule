@@ -215,7 +215,12 @@ describe("suggest.event_metadata.v1 handler", () => {
       locationText: "家附近的公园",
       tags: ["户外", "亲子"],
       personNames: ["爸爸"],
-      facts: ["孩子和爸爸一起去了公园。"],
+      facts: [
+        {
+          statement: "孩子和爸爸一起去了公园。",
+          sources: [{ ref: "C1", quote: "今天带孩子去公园玩" }],
+        },
+      ],
     });
 
     const result = await suggestEventMetadataHandler({
@@ -264,8 +269,9 @@ describe("suggest.event_metadata.v1 handler", () => {
       .from(factSource)
       .where(eq(factSource.factId, facts[0].id))
       .all();
-    expect(sources.length).toBeGreaterThan(0);
-    expect(sources.some((s) => s.sourceType === "contribution")).toBe(true);
+    expect(sources.length).toBe(1);
+    expect(sources[0].sourceType).toBe("contribution");
+    expect(sources[0].quote).toBe("今天带孩子去公园玩");
   });
 
   it("throws bad_provider_output for malformed JSON", async () => {

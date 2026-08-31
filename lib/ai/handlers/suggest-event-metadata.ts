@@ -16,6 +16,13 @@ import type { ContributionAccessSnapshot } from "@/lib/authz/contribution-access
 import { listVisibleContributionsForEvent } from "@/lib/authz/contribution-access";
 import { isFamilyRole } from "@/lib/authz/policy";
 import { familyLocalDate } from "@/lib/authz/principal";
+import {
+  SourceAliasRegistry,
+  formatSegmentClock,
+  parseSegmentsJson,
+  resolveFactSources,
+  type ResolvedSourceRef,
+} from "@/lib/facts/source-refs";
 import { AiJobHandlerError, type AiJobHandler } from "@/jobs/types";
 
 const MAX_ASSETS = 20;
@@ -51,14 +58,14 @@ function buildPrompt(context: {
   occurredAt: string;
   people: { displayName: string }[];
   confirmedFacts: string[];
-  transcripts: { assetId: string; text: string }[];
-  analyses: { assetId: string; description: string; ocrText: string | null }[];
-  contributions: { id: string; text: string }[];
+  /** 已按别名标注的来源块（T#/A#/C#）；facts 的 sources 只能引用这些别名 */
+  sourceBlocks: string[];
   existingTags: string[];
 }): string {
   const lines: string[] = [];
   lines.push("你正在帮助整理一份家庭时间胶囊中的记忆事件。请仅根据下面提供的本事件资料生成建议，不要编造。");
   lines.push("");
+
   lines.push("当前事件信息：");
   lines.push(`- 标题：${context.title}`);
   lines.push(`- 发生时间：${context.occurredAt}`);
@@ -73,31 +80,10 @@ function buildPrompt(context: {
     lines.push("");
   }
 
-  if (context.transcripts.length > 0) {
-    lines.push("音视频转录（按素材分组）：");
-    for (const t of context.transcripts) {
-      lines.push(`[素材 ${t.assetId}]`);
-      lines.push(t.text);
-    }
-    lines.push("");
-  }
-
-  if (context.analyses.length > 0) {
-    lines.push("图片视觉分析（按素材分组）：");
-    for (const a of context.analyses) {
-      lines.push(`[素材 ${a.assetId}]`);
-      lines.push(a.description);
-      if (a.ocrText) {
-        lines.push(`图中文字：${a.ocrText}`);
-      }
-    }
-    lines.push("");
-  }
-
-  if (context.contributions.length > 0) {
-    lines.push("家人讲述：");
-    for (const c of context.contributions) {
-      lines.push(c.text);
+  if (context.sourceBlocks.length > 0) {
+    lines.push("来源资料（每块开头的 [T1]/[A1]/[C1] 等是来源别名；生成事实时只能在 sources 里引用这些别名）：");
+    for (const block of context.sourceBlocks) {
+      lines.push(block);
     }
     lines.push("");
   }
@@ -109,14 +95,16 @@ function buildPrompt(context: {
 
   lines.push("输出要求：");
   lines.push("- 严格返回 JSON 对象，不要添加任何 JSON 之外的解释或 Markdown 代码块。");
-  lines.push('- JSON 格式：{ "title": string|null, "locationText": string|null, "occurredAt": string|null (ISO 8601 UTC), "timePrecision": "exact"|"approximate"|"date_only", "tags": string[], "personNames": string[], "facts": string[] }');
+  lines.push('- JSON 格式：{ "title": string|null, "locationText": string|null, "occurredAt": string|null (ISO 8601 UTC), "timePrecision": "exact"|"approximate"|"date_only", "tags": string[], "personNames": string[], "facts": [{ "statement": string, "sources": [{ "ref": "T1", "quote": "来源原文关键句" }] }] }');
   lines.push("- title：只有当当前标题看起来像占位符（如「一段记忆」、极短无意义标题）时才给出更合适的标题；否则填 null。");
   lines.push("- locationText：如果资料能推断出明确地点，给出简短地点描述；否则 null。");
   lines.push("- occurredAt：推断「事件发生时间」（不是素材拍摄时间）。仅当资料（转录/讲述/图中文字/文件时间）强烈指示当前发生时间明显不对、且能给出更准确的时间时才给出 ISO 8601 UTC；否则 null。");
   lines.push("- timePrecision：exact=资料中有精确到时分的依据；approximate=只能推断大致时段；date_only=只有日期。不确定时禁止写 exact。");
   lines.push("- tags：给出 0–10 个有助于归类的事件标签，每个不超过 20 字。");
   lines.push("- personNames：只能从上文「家庭成员」列表中选取，不要添加列表外的人。");
-  lines.push("- facts：给出 0–10 条可陈述的事实。必须是基于转录、图片分析或讲述中可见/可闻内容的 plain 陈述句。");
+  lines.push("- facts：0–10 条事实，每条包含 statement 与 sources。事实必须基于来源资料中可见/可闻的内容。");
+  lines.push('- sources[].ref：只能引用来源资料中出现过的别名（T#/A#/C#），不允许编造别名，也不允许写任何其他 ID。');
+  lines.push('- sources[].quote：从该来源原文中逐字摘录的关键句；无法逐字引用时省略 quote 字段。');
   lines.push("- 禁止编造引号内的原话；禁止把情绪、推测、身份、医疗诊断当作事实；禁止添加资料中没有的信息。");
   lines.push("- 如果资料不足，所有数组都可以为空。");
 
@@ -139,7 +127,7 @@ function validateSuggestionPayload(value: unknown): value is {
   timePrecision: unknown;
   tags: string[];
   personNames: string[];
-  facts: string[];
+  facts: { statement: string; sources?: unknown }[];
 } {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return false;
@@ -150,7 +138,13 @@ function validateSuggestionPayload(value: unknown): value is {
   if (obj.occurredAt != null && typeof obj.occurredAt !== "string") return false;
   if (!Array.isArray(obj.tags) || !obj.tags.every((t) => typeof t === "string")) return false;
   if (!Array.isArray(obj.personNames) || !obj.personNames.every((n) => typeof n === "string")) return false;
-  if (!Array.isArray(obj.facts) || !obj.facts.every((f) => typeof f === "string")) return false;
+  if (!Array.isArray(obj.facts)) return false;
+  for (const f of obj.facts) {
+    if (f === null || typeof f !== "object" || Array.isArray(f)) return false;
+    const rec = f as Record<string, unknown>;
+    if (typeof rec.statement !== "string") return false;
+    if (rec.sources !== undefined && !Array.isArray(rec.sources)) return false;
+  }
   return true;
 }
 
@@ -217,11 +211,6 @@ async function buildContributionAccessSnapshot(
   };
 }
 
-type SourceReference =
-  | { type: "asset"; id: string }
-  | { type: "transcript"; id: string }
-  | { type: "contribution"; id: string };
-
 export const suggestEventMetadataHandler: AiJobHandler = async ({
   lease,
   assistant,
@@ -269,9 +258,12 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
   ]);
 
   const linkedAssetIds = assetLinks.map((l) => l.assetId);
-  const originalAssetIds = linkedAssetIds.length
+  const originalAssets = linkedAssetIds.length
     ? await db
-        .select({ id: assetTable.id })
+        .select({
+          id: assetTable.id,
+          filename: assetTable.originalFilename,
+        })
         .from(assetTable)
         .where(
           and(
@@ -280,18 +272,20 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
             isNull(assetTable.originalAssetId),
           ),
         )
-        .then((rows) => rows.map((r) => r.id))
+        .then((rows) => rows.slice(0, MAX_ASSETS))
     : [];
-  const cappedAssetIds = originalAssetIds.slice(0, MAX_ASSETS);
+  const cappedAssetIds = originalAssets.map((a) => a.id);
+  const filenameByAssetId = new Map(originalAssets.map((a) => [a.id, a.filename]));
 
   const [transcripts, analyses] = await Promise.all([
     cappedAssetIds.length
       ? db
           .select({
+            id: assetTranscript.id,
             assetId: assetTranscript.assetId,
             rawTranscript: assetTranscript.rawTranscript,
             editedTranscript: assetTranscript.editedTranscript,
-            id: assetTranscript.id,
+            segmentsJson: assetTranscript.segmentsJson,
           })
           .from(assetTranscript)
           .where(
@@ -304,10 +298,10 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
     cappedAssetIds.length
       ? db
           .select({
+            id: assetAnalysis.id,
             assetId: assetAnalysis.assetId,
             description: assetAnalysis.description,
             ocrText: assetAnalysis.ocrText,
-            id: assetAnalysis.id,
           })
           .from(assetAnalysis)
           .where(
@@ -319,74 +313,128 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
       : Promise.resolve([]),
   ]);
 
-  const includedSources: SourceReference[] = [];
-  for (const id of cappedAssetIds) {
-    includedSources.push({ type: "asset", id });
-  }
+  // ---- 构建来源别名注册表与 prompt 来源块（M3-D）----
+  // 真实行 ID 从不进入 prompt；模型只能看到 T#/A#/C# 别名。
+  const registry = new SourceAliasRegistry();
+  const sourceBlocks: string[] = [];
+
+  let transcriptSerial = 0;
   for (const t of transcripts) {
-    includedSources.push({ type: "transcript", id: t.id });
+    transcriptSerial += 1;
+    const alias = `T${transcriptSerial}`;
+    const fullText = trunc(
+      (t.editedTranscript ?? t.rawTranscript) || "",
+      MAX_TRANSCRIPT_CHARS,
+    );
+    if (!fullText) continue;
+    const segments = parseSegmentsJson(t.segmentsJson);
+    registry.register({
+      alias,
+      kind: "transcript",
+      sourceId: t.id,
+      searchText: fullText,
+      segments,
+      label: filenameByAssetId.get(t.assetId) ?? t.assetId,
+      analysis: null,
+    });
+    const lines = [`[${alias}] 转录（${filenameByAssetId.get(t.assetId) ?? "素材"}）：`];
+    if (segments && segments.length > 0) {
+      for (const seg of segments) {
+        lines.push(
+          `${formatSegmentClock(seg.startSeconds)}–${formatSegmentClock(seg.endSeconds)}：${seg.text}`,
+        );
+      }
+    } else {
+      lines.push(fullText);
+    }
+    sourceBlocks.push(lines.join("\n"));
   }
 
-  let transcriptParts = transcripts.map((t) => ({
-    assetId: t.assetId,
-    text: trunc((t.editedTranscript ?? t.rawTranscript) || "", MAX_TRANSCRIPT_CHARS),
-  }));
+  const analysisByAssetId = new Map<
+    string,
+    { id: string; description: string; ocrText: string | null }
+  >();
+  for (const a of analyses) {
+    analysisByAssetId.set(a.assetId, a);
+  }
+  let assetSerial = 0;
+  for (const assetId of cappedAssetIds) {
+    assetSerial += 1;
+    const alias = `A${assetSerial}`;
+    const filename = filenameByAssetId.get(assetId) ?? "素材";
+    const analysis = analysisByAssetId.get(assetId);
+    const description = analysis
+      ? trunc(analysis.description, MAX_ANALYSIS_CHARS)
+      : null;
+    const ocrText = analysis?.ocrText
+      ? trunc(analysis.ocrText, MAX_ANALYSIS_CHARS)
+      : null;
+    registry.register({
+      alias,
+      kind: "asset",
+      sourceId: assetId,
+      // 整体素材证据不允许引文；引文只可能落到其视觉分析（见 analysis 字段）
+      searchText: null,
+      segments: null,
+      label: filename,
+      analysis:
+        description || ocrText
+          ? {
+              searchText: [description, ocrText].filter(Boolean).join("\n"),
+            }
+          : null,
+    });
+    const lines = [`[${alias}] 素材 ${filename}${analysis ? "（AI 视觉分析，未经确认）" : ""}：`];
+    if (description) lines.push(`视觉描述：${description}`);
+    if (ocrText) lines.push(`图中文字：${ocrText}`);
+    if (!description && !ocrText) lines.push("（无文字性内容）");
+    sourceBlocks.push(lines.join("\n"));
+  }
 
-  let analysisParts = analyses.map((a) => ({
-    assetId: a.assetId,
-    description: trunc(a.description, MAX_ANALYSIS_CHARS),
-    ocrText: a.ocrText ? trunc(a.ocrText, MAX_ANALYSIS_CHARS) : null,
-  }));
-
-  let contributionParts = visibleContributions
-    .filter((c) => c.visibility === "family")
-    .map((c) => ({
-      id: c.id,
-      text: trunc(c.editedText ?? c.rawText ?? "", MAX_CONTRIBUTION_CHARS),
-    }))
-    .filter((c) => c.text.length > 0);
-  for (const c of contributionParts) {
-    includedSources.push({ type: "contribution", id: c.id });
+  let contributionSerial = 0;
+  const contributionTexts: { id: string; text: string }[] = [];
+  for (const c of visibleContributions) {
+    if (c.visibility !== "family") continue;
+    const text = trunc(c.editedText ?? c.rawText ?? "", MAX_CONTRIBUTION_CHARS);
+    if (!text) continue;
+    contributionSerial += 1;
+    const alias = `C${contributionSerial}`;
+    registry.register({
+      alias,
+      kind: "contribution",
+      sourceId: c.id,
+      searchText: text,
+      segments: null,
+      label: "家人讲述",
+      analysis: null,
+    });
+    contributionTexts.push({ id: c.id, text });
+    sourceBlocks.push(`[${alias}] 家人讲述：\n${text}`);
   }
 
   const confirmedFactStatements = confirmedFacts.map((f) => f.statement);
   const existingTagStrings = existingTags.map((t) => t.tag);
 
-  const contextParts = [
+  // 上下文超长时整体截断来源块（从最后一块开始移除，保持最早的来源稳定）
+  const baseContext = [
     eventRow.title,
     eventRow.occurredAt.toISOString(),
     ...people.map((p) => p.displayName),
     ...confirmedFactStatements,
-    ...transcriptParts.flatMap((t) => [t.assetId, t.text]),
-    ...analysisParts.flatMap((a) => [a.assetId, a.description, a.ocrText ?? ""]),
-    ...contributionParts.map((c) => c.text),
     ...existingTagStrings,
   ];
-
-  // 如果上下文超长，按优先级截断：先截讲述，再截分析，再截转录
-  if (totalContextChars(contextParts) > MAX_TOTAL_CONTEXT_CHARS) {
-    let allowed = MAX_TOTAL_CONTEXT_CHARS;
-    const base = [
-      eventRow.title,
-      eventRow.occurredAt.toISOString(),
-      ...people.map((p) => p.displayName),
-      ...confirmedFactStatements,
-      ...existingTagStrings,
-    ];
-    allowed -= totalContextChars(base);
-    contributionParts = contributionParts.map((c) => ({
-      ...c,
-      text: trunc(c.text, Math.max(100, Math.floor(allowed / Math.max(1, contributionParts.length)))),
-    }));
-    analysisParts = analysisParts.map((a) => ({
-      ...a,
-      description: trunc(a.description, Math.max(100, Math.floor(allowed / Math.max(1, analysisParts.length)))),
-      ocrText: a.ocrText ? trunc(a.ocrText, Math.max(100, Math.floor(allowed / Math.max(1, analysisParts.length)))) : null,
-    }));
-    transcriptParts = transcriptParts.map((t) => ({
-      ...t,
-      text: trunc(t.text, Math.max(100, Math.floor(allowed / Math.max(1, transcriptParts.length)))),
-    }));
+  const contextSourceBlocks = sourceBlocks;
+  while (
+    totalContextChars([...baseContext, ...contextSourceBlocks]) >
+      MAX_TOTAL_CONTEXT_CHARS &&
+    contextSourceBlocks.length > 0
+  ) {
+    const removed = contextSourceBlocks.pop();
+    // 移除的来源块对应的别名也必须从注册表下线，防止模型引用已不可见的来源
+    if (removed) {
+      const aliasMatch = removed.match(/^\[([A-Z]\d+)\]/);
+      if (aliasMatch) registry.unregister(aliasMatch[1]);
+    }
   }
 
   const prompt = buildPrompt({
@@ -394,9 +442,7 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
     occurredAt: eventRow.occurredAt.toISOString(),
     people,
     confirmedFacts: confirmedFactStatements,
-    transcripts: transcriptParts,
-    analyses: analysisParts,
-    contributions: contributionParts,
+    sourceBlocks: contextSourceBlocks,
     existingTags: existingTagStrings,
   });
 
@@ -413,7 +459,7 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
     timePrecision: unknown;
     tags: string[];
     personNames: string[];
-    facts: string[];
+    facts: { statement: string; sources?: unknown }[];
   };
   try {
     const raw = extractJsonObject(result.text);
@@ -435,11 +481,20 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
   // 标签规范化
   const normalizedTags = [...new Set(payload.tags.map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0 && t.length <= 50))].slice(0, MAX_TAGS_PER_RUN);
 
-  // 事实去重/清理
-  const cleanedFacts = payload.facts
-    .map((f) => f.trim())
-    .filter((f) => f.length > 0 && f.length <= 500)
-    .slice(0, MAX_FACTS_PER_RUN);
+  // 事实解析：别名映射 + 引文锁 + segment 时间推导（M3-D）。
+  // 引用全部失效的事实整条丢弃——AI 永远不能产出无来源的事实。
+  const cleanedFacts: { statement: string; sources: ResolvedSourceRef[] }[] = [];
+  const seenStatements = new Set<string>();
+  for (const f of payload.facts) {
+    const statement = f.statement.trim();
+    if (statement.length === 0 || statement.length > 500) continue;
+    if (seenStatements.has(statement)) continue;
+    const sources = resolveFactSources(registry, f.sources);
+    if (sources.length === 0) continue;
+    seenStatements.add(statement);
+    cleanedFacts.push({ statement, sources });
+    if (cleanedFacts.length >= MAX_FACTS_PER_RUN) break;
+  }
 
   // 标题/地点/时间清理
   const title = payload.title?.trim() || null;
@@ -458,16 +513,14 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
     }
   }
 
-  // 计算来源指纹：基于实际送入模型的上下文
+  // 计算来源指纹：基于实际送入模型的上下文（含别名块）
   const sourceFingerprint = hashCanonical({
     eventId: eventRow.id,
     title: eventRow.title,
     occurredAt: eventRow.occurredAt.toISOString(),
     people: people.map((p) => ({ id: p.id, displayName: p.displayName })),
     confirmedFacts: confirmedFactStatements,
-    transcripts: transcriptParts,
-    analyses: analysisParts,
-    contributions: contributionParts.map((c) => ({ id: c.id, text: c.text })),
+    sourceBlocks: contextSourceBlocks,
     existingTags: existingTagStrings,
     suggestion: {
       title: safeTitle,
@@ -567,32 +620,31 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
           .run();
       }
 
-      // 插入 ai_suggested 事实及其来源
+      // 插入 ai_suggested 事实及其逐条来源（含 quote / 时间 locator）
       if (cleanedFacts.length > 0) {
-        const factRows = cleanedFacts.map((statement) => ({
+        const factRows = cleanedFacts.map((f) => ({
           id: randomUUID(),
           memoryEventId: eventRow.id,
-          statement,
+          statement: f.statement,
           status: "ai_suggested" as const,
           createdAt: now,
           updatedAt: now,
         }));
         tx.insert(fact).values(factRows).run();
 
-        const factSourcesToInsert = factRows.flatMap((f) => {
-          const refs: { id: string; familyId: string; factId: string; sourceType: "asset" | "contribution" | "transcript"; sourceId: string; createdAt: Date }[] = [];
-          for (const source of includedSources) {
-            refs.push({
-              id: randomUUID(),
-              familyId: lease.familyId,
-              factId: f.id,
-              sourceType: source.type,
-              sourceId: source.id,
-              createdAt: now,
-            });
-          }
-          return refs.slice(0, MAX_SUGGESTIONS_PER_TYPE);
-        });
+        const factSourcesToInsert = factRows.flatMap((row, index) =>
+          cleanedFacts[index].sources.map((source) => ({
+            id: randomUUID(),
+            familyId: lease.familyId,
+            factId: row.id,
+            sourceType: source.sourceType,
+            sourceId: source.sourceId,
+            quote: source.quote,
+            startMs: source.startMs,
+            endMs: source.endMs,
+            createdAt: now,
+          })),
+        );
         if (factSourcesToInsert.length > 0) {
           tx.insert(factSource).values(factSourcesToInsert).run();
         }

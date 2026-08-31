@@ -387,6 +387,10 @@ export async function buildFamilyExport(
       factId: s.factId,
       sourceType: s.sourceType,
       sourceId: s.sourceId,
+      // M3-D 精确 locator：引文 + 转录时间段（服务端推导、创建时固化）
+      quote: s.quote,
+      startMs: s.startMs,
+      endMs: s.endMs,
       createdAt: iso(s.createdAt),
     })));
     json("transcripts.json", transcripts.map((t) => ({
