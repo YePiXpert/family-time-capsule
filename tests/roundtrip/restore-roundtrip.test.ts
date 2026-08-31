@@ -32,6 +32,26 @@ type Expectation = {
   ageLabel: string;
   assetId: string;
   assetSha256: string;
+  photoEventId: string;
+  confirmedTextEventId: string;
+  confirmedTextBody: string;
+  inboxItems: Array<{
+    id: string;
+    familyId: string;
+    kind: string;
+    status: string;
+    rawText: string | null;
+    memoryEventId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  inboxItemAssets: Array<{
+    id: string;
+    inboxItemId: string;
+    assetId: string;
+    familyId: string;
+    createdAt: string;
+  }>;
 };
 
 let expect_: Expectation;
@@ -47,9 +67,11 @@ async function freshModules() {
     ingest: await import("@/lib/assets/ingest"),
     inbox: await import("@/lib/inbox/service"),
     memories: await import("@/lib/memories/service"),
+    contributions: await import("@/lib/contributions/service"),
     exportSvc: await import("@/lib/export/service"),
     restoreSvc: await import("@/lib/restore/service"),
     schemaAuth: await import("@/db/schema/auth"),
+    schemaInbox: await import("@/db/schema/inbox"),
   };
 }
 
@@ -133,6 +155,68 @@ beforeAll(async () => {
       title: "出生后的第一天",
     });
     if (!ev.ok) throw new Error("confirm failed");
+
+    const pendingTextBody =
+      "这是一条超过一百个字符、仍然等待整理的文字记录，用来验证生产构建下的导出、销毁、恢复和再次导出都不会截断内容。".repeat(
+        3,
+      );
+    await m.inbox.createTextInboxItem(on.familyId, pendingTextBody);
+    await m.inbox.createInboxItemForAsset(on.familyId, stored.asset);
+    await m.inbox.createInboxItemForAsset(on.familyId, {
+      ...stored.asset,
+      timeSource: "import_time",
+    });
+    const discarded = await m.inbox.createTextInboxItem(
+      on.familyId,
+      "这条记录已经被家人丢弃。",
+    );
+    await m.inbox.discardInboxItem(on.familyId, discarded.id);
+    const confirmedTextBody =
+      "小满今天第一次认真看了很久的树影。\n这句确认后的原始文字必须完整留下。";
+    const confirmedText = await m.inbox.createTextInboxItem(
+      on.familyId,
+      confirmedTextBody,
+    );
+    const confirmedTextEntry = (await m.inbox.getInboxEntry(
+      on.familyId,
+      confirmedText.id,
+    ))!;
+    const textEvent = await m.memories.confirmInboxEntry(
+      on.familyId,
+      confirmedTextEntry,
+      { title: "窗边的树影" },
+    );
+    if (!textEvent.ok) throw new Error("text confirm failed");
+
+    const inboxItems = (
+      await m.db.getDb().select().from(m.schemaInbox.inboxItem)
+    )
+      .map((inboxRow) => ({
+        id: inboxRow.id,
+        familyId: inboxRow.familyId,
+        kind: inboxRow.kind,
+        status: inboxRow.status,
+        rawText: inboxRow.rawText,
+        memoryEventId: inboxRow.memoryEventId,
+        createdAt: inboxRow.createdAt.toISOString(),
+        updatedAt: inboxRow.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const inboxItemAssets = (
+      await m.db.getDb().select().from(m.schemaInbox.inboxItemAsset)
+    )
+      .map((link) => ({
+        id: link.id,
+        inboxItemId: link.inboxItemId,
+        assetId: link.assetId,
+        familyId: link.familyId,
+        createdAt: link.createdAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(pendingTextBody.length).toBeGreaterThan(100);
+    expect(new Set(inboxItems.map((inboxRow) => inboxRow.status))).toEqual(
+      new Set(["new", "needs_review", "confirmed", "discarded"]),
+    );
     const zip = await m.exportSvc.buildFamilyExport(on.familyId);
     expect_ = {
       zipPath: zip.filePath,
@@ -142,6 +226,11 @@ beforeAll(async () => {
       ageLabel: "出生当天",
       assetId: stored.asset.id,
       assetSha256: stored.asset.sha256,
+      photoEventId: ev.eventId,
+      confirmedTextEventId: textEvent.eventId,
+      confirmedTextBody,
+      inboxItems,
+      inboxItemAssets,
     };
     m.db.closeDatabase();
   }
@@ -169,7 +258,43 @@ beforeAll(async () => {
       await m.db.getDb().select({ id: m.schemaAuth.user.id }).from(m.schemaAuth.user)
     )[0].id;
     const report = await m.restoreSvc.restoreFromZipFile(expect_.zipPath, adminId);
-    expect(report.events).toBe(1);
+    expect(report.events).toBe(2);
+    expect(report.inboxItems).toBe(expect_.inboxItems.length);
+    expect(report.inboxItemAssets).toBe(expect_.inboxItemAssets.length);
+
+    const restoredInboxItems = (
+      await m.db.getDb().select().from(m.schemaInbox.inboxItem)
+    )
+      .map((inboxRow) => ({
+        id: inboxRow.id,
+        familyId: inboxRow.familyId,
+        kind: inboxRow.kind,
+        status: inboxRow.status,
+        rawText: inboxRow.rawText,
+        memoryEventId: inboxRow.memoryEventId,
+        createdAt: inboxRow.createdAt.toISOString(),
+        updatedAt: inboxRow.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const restoredInboxItemAssets = (
+      await m.db.getDb().select().from(m.schemaInbox.inboxItemAsset)
+    )
+      .map((link) => ({
+        id: link.id,
+        inboxItemId: link.inboxItemId,
+        assetId: link.assetId,
+        familyId: link.familyId,
+        createdAt: link.createdAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(restoredInboxItems).toEqual(expect_.inboxItems);
+    expect(restoredInboxItemAssets).toEqual(expect_.inboxItemAssets);
+    expect(
+      await m.contributions.listContributions(
+        expect_.familyId,
+        expect_.confirmedTextEventId,
+      ),
+    ).toHaveLength(0);
 
     // 绑定到「爸爸」
     const people = await m.family.listPeople(expect_.familyId);
@@ -224,14 +349,26 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     expect(html).toContain("2026年8月10日");
     expect(html).toContain(expect_.ageLabel);
 
-    // 详情页含完整时刻
-    const eventId = /\/memories\/([0-9a-f-]{36})/.exec(html)?.[1];
-    expect(eventId).toBeTruthy();
-    const detail = await fetch(`${BASE}/memories/${eventId}`, { headers: { cookie } });
+    // 图片事件详情页含完整时刻
+    const detail = await fetch(`${BASE}/memories/${expect_.photoEventId}`, {
+      headers: { cookie },
+    });
     expect(detail.status).toBe(200);
     const detailHtml = await detail.text();
     expect(detailHtml).toContain(expect_.eventDate); // 2026年8月10日 09:30
     expect(detailHtml).toContain(expect_.ageLabel);
+
+    // 已确认文字以无作者的原始来源记录显示，正文不截断，也不伪造 Contribution。
+    const textDetail = await fetch(
+      `${BASE}/memories/${expect_.confirmedTextEventId}`,
+      { headers: { cookie } },
+    );
+    expect(textDetail.status).toBe(200);
+    const textDetailHtml = await textDetail.text();
+    for (const line of expect_.confirmedTextBody.split("\n")) {
+      expect(textDetailHtml).toContain(line);
+    }
+    expect(textDetailHtml).toContain("未标注讲述者");
   });
 
   it("恢复的媒体可访问：字节 SHA-256 与源一致；Range 206；未授权 401", async () => {
@@ -261,8 +398,21 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       await zip.file("family-time-capsule-export/manifest.json")!.async("string"),
     );
     expect(manifest.familyId).toBe(expect_.familyId);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 10);
     const shas = new Set(manifest.assets.map((a: { sha256: string }) => a.sha256));
     expect(shas.has(expect_.assetSha256)).toBe(true);
+    const inboxItems = JSON.parse(
+      await zip
+        .file("family-time-capsule-export/inbox-items.json")!
+        .async("string"),
+    ).sort((a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id));
+    const inboxItemAssets = JSON.parse(
+      await zip
+        .file("family-time-capsule-export/inbox-item-assets.json")!
+        .async("string"),
+    ).sort((a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id));
+    expect(inboxItems).toEqual(expect_.inboxItems);
+    expect(inboxItemAssets).toEqual(expect_.inboxItemAssets);
 
     // verify:export CLI 独立复核
     const tmpZip = path.join(dirB, "b-export.zip");

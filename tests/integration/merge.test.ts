@@ -57,8 +57,8 @@ const fixtures = path.join(__dirname, "..", "fixtures");
 const BASE = readFileSync(path.join(fixtures, "sample-exif.jpg"));
 
 describe("多选合并（#010）", () => {
-  it("5 张照片 + 1 段文字 → 1 个 MemoryEvent，5 份素材，条目全部 confirmed", async () => {
-    // 4 张照片（各自字节不同）+ 1 张改过时间的照片 + 1 条文字
+  it("5 张照片 + 2 段文字 → 1 个 MemoryEvent，保留全部来源条目", async () => {
+    // 4 张照片（各自字节不同）+ 1 张改过时间的照片 + 2 条文字
     const itemIds: string[] = [];
     const assetIds: string[] = [];
     for (let i = 1; i <= 4; i++) {
@@ -96,6 +96,11 @@ describe("多选合并（#010）", () => {
 
     const textItem = await createTextInboxItem(familyId, "那天出去玩了一下午。");
     itemIds.push(textItem.id);
+    const secondTextItem = await createTextInboxItem(
+      familyId,
+      "回家路上她一直看着窗外。",
+    );
+    itemIds.push(secondTextItem.id);
 
     const result = await mergeInboxEntries(familyId, itemIds, {
       title: "八月的一次出游",
@@ -113,10 +118,14 @@ describe("多选合并（#010）", () => {
     expect(detail.event.occurredAt.toISOString()).toBe("2026-08-08T02:00:00.000Z");
     // 封面默认选图片
     expect(detail.event.coverAssetId).toBeTruthy();
+    expect(detail.sourceNotes.map((note) => note.rawText).sort()).toEqual(
+      ["那天出去玩了一下午。", "回家路上她一直看着窗外。"].sort(),
+    );
     // 全部条目 confirmed；收件箱清空
     for (const id of itemIds) {
       const entry = await getInboxEntry(familyId, id);
       expect(entry?.item.status).toBe("confirmed");
+      expect(entry?.item.memoryEventId).toBe(result.eventId);
     }
     expect(await listInbox(familyId)).toHaveLength(0);
   });

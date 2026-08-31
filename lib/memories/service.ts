@@ -26,6 +26,11 @@ export type MemoryEventDetail = {
   event: MemoryEventRow;
   assets: AssetRow[];
   participants: PersonRow[];
+  sourceNotes: Array<{
+    id: string;
+    rawText: string;
+    createdAt: Date;
+  }>;
 };
 
 /**
@@ -371,8 +376,13 @@ export async function confirmInboxEntry(
       )
       .run();
     tx.update(inboxItem)
-      .set({ status: "confirmed", updatedAt: now })
-      .where(eq(inboxItem.id, entry.item.id))
+      .set({ status: "confirmed", memoryEventId: eventId, updatedAt: now })
+      .where(
+        and(
+          eq(inboxItem.familyId, familyId),
+          eq(inboxItem.id, entry.item.id),
+        ),
+      )
       .run();
   });
 
@@ -482,7 +492,7 @@ export async function mergeInboxEntries(
       .run();
     // 涉及的全部条目都确认掉
     tx.update(inboxItem)
-      .set({ status: "confirmed", updatedAt: now })
+      .set({ status: "confirmed", memoryEventId: eventId, updatedAt: now })
       .where(
         and(
           eq(inboxItem.familyId, familyId),
@@ -542,7 +552,28 @@ export async function getMemoryEventDetail(  familyId: string,
           .orderBy(asc(personTable.createdAt))
       : [];
 
-  return { event: events[0], assets, participants };
+  const linkedTextItems = await db
+    .select({
+      id: inboxItem.id,
+      rawText: inboxItem.rawText,
+      createdAt: inboxItem.createdAt,
+    })
+    .from(inboxItem)
+    .where(
+      and(
+        eq(inboxItem.familyId, familyId),
+        eq(inboxItem.memoryEventId, eventId),
+        eq(inboxItem.kind, "text"),
+      ),
+    )
+    .orderBy(asc(inboxItem.createdAt));
+  const sourceNotes = linkedTextItems.flatMap((item) =>
+    item.rawText === null
+      ? []
+      : [{ id: item.id, rawText: item.rawText, createdAt: item.createdAt }],
+  );
+
+  return { event: events[0], assets, participants, sourceNotes };
 }
 
 export async function listMemoryEvents(

@@ -49,7 +49,7 @@ export default async function MemoryEventPage({
 
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
-  const { event, assets, participants } = detail;
+  const { event, assets, participants, sourceNotes } = detail;
   const child = participants.find((p) => p.id === event.childPersonId);
   const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt);
   const cover = assets.find((a) => a.id === event.coverAssetId) ?? assets[0];
@@ -97,6 +97,27 @@ export default async function MemoryEventPage({
           timezone={timezone}
         />
       </div>
+
+      {sourceNotes.length > 0 && (
+        <section aria-label="原始文字记录" className="mt-8">
+          <h2 className="text-lg font-medium">文字记录（{sourceNotes.length}）</h2>
+          <p className="mt-1 text-sm leading-6 text-foreground/60">
+            确认收件箱内容时保留的原始文字；未标注讲述者。
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {sourceNotes.map((note) => (
+              <article
+                key={note.id}
+                className="rounded-lg border border-foreground/10 bg-foreground/[0.025] px-4 py-3"
+              >
+                <p className="max-w-prose whitespace-pre-wrap break-words text-base leading-7 text-foreground/90">
+                  {note.rawText}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section aria-label="原始资料" className="mt-8">
         <h2 className="text-lg font-medium">原始资料（{assets.length}）</h2>

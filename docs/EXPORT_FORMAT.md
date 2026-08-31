@@ -19,6 +19,8 @@ family-time-capsule-export/
 ├── family.json            家庭元信息（单对象）
 ├── people.json            Person 数组（现实家庭成员，含无账号者）
 ├── memories.json          MemoryEvent 数组（含 assetIds / participantPersonIds 关系）
+├── inbox-items.json       InboxItem 全量数组（含所有状态与完整原始文字）
+├── inbox-item-assets.json InboxItem ↔ Asset 关联行全量数组
 ├── contributions.json     Contribution 数组（按家人的独立讲述）
 ├── facts.json             Fact 数组（已确认/否决的事实）
 ├── capsules.json          Capsule 数组（含封存胶囊的完整内容引用）
@@ -42,7 +44,7 @@ family-time-capsule-export/
   "exportedAt": "2026-08-29T12:00:00.000Z",
   "familyId": "<uuid>",
   "familyName": "我们一家",
-  "fileCount": 15,                 // JSON+MD+媒体文件总数（不含 .keep）
+  "fileCount": 17,                 // 固定 10 个非媒体文件 + 7 个原件（不含 .keep）
   "assetCount": 7,
   "assets": [
     {
@@ -69,6 +71,9 @@ family-time-capsule-export/
 规则：
 
 - `assets` 只包含**原件**（derivativeType=null）；衍生物可再生，不入档。
+- 当前格式固定包含 10 个非媒体文件：manifest、family、people、memories、
+  inbox-items、inbox-item-assets、contributions、facts、capsules、timeline；因此
+  `fileCount = assetCount + 10`，`.keep` 不计数。
 - `capturedAt`/`importedAt` 为 UTC ISO-8601。
 - 增量字段缺失时的恢复端默认：`type` 按目录名（images/audio/video/documents）推断；
   `timeSource` 按 capturedAt 有无推断（有→embedded_metadata，无→import_time）；
@@ -82,11 +87,30 @@ family-time-capsule-export/
 - `memories.json`：按 `occurredAt` 升序；每个事件含
   `assetIds: string[]` 与 `participantPersonIds: string[]`（关系以数组表达，
   对应库内关联表，不丢结构）。
+- `inbox-items.json`：`{ id, familyId, kind, status, rawText, memoryEventId, createdAt, updatedAt }`。
+  导出家庭下的**每一行**，不按状态过滤；`status` 原样保留 `new`（待处理）、
+  `processing`、`needs_review`、`confirmed`、`discarded`，`rawText` 保留完整正文，
+  不做 100 字截断。`memoryEventId` 可为 `null`；确认或合并后的条目用它指向消费该条目的
+  MemoryEvent。
+- `inbox-item-assets.json`：`{ id, inboxItemId, assetId, familyId, createdAt }`。
+  导出家庭下的**每一条关联行**，包括仍待处理、需复核、已确认或已丢弃条目的素材关系；
+  行 ID 与两端引用均原样保留。
 - `contributions.json`：`{ id, memoryEventId, authorPersonId, rawText, editedText, audioAssetId, visibility, createdAt }`。
 - `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
 - `capsules.json`：`{ id, title, unlockType, unlockValue, status, sealedAt, openedAt,
   memoryEventIds, assetIds, contributionIds }`。**无论是否到期/封存，内容引用始终完整**——
   封存是 UI 仪式，不是加密（PRD §15）。
+
+确认文字条目的正文仍属于 `inbox-items.json`，并通过可空的 `memoryEventId` 关联到事件。
+事件详情把这些 `rawText` 显示为**无作者的原始文字记录**；系统不会为了显示正文而虚构
+Contribution 或讲述者。合并到同一事件的多条文字也各自保留为独立行。
+
+### 收件箱文件的增量兼容
+
+- 当前导出始终同时写入 `inbox-items.json` 与 `inbox-item-assets.json`，即使数组为空。
+- 两个文件是在 `exportVersion: 1` 上的增量扩展。较早的 v1 归档可能两者都不存在；恢复端
+  将其解释为“空收件箱”，仍可恢复。
+- 若归档只缺其中一个文件，条目与素材关系可能不完整，恢复端会拒绝，而不会静默丢行。
 
 ## timeline.md
 

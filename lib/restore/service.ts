@@ -5,6 +5,7 @@ import JSZip from "jszip";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { family as familyTable, person as personTable } from "@/db/schema/family";
+import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
 import {
   contribution as contributionTable,
   fact as factTable,
@@ -22,7 +23,13 @@ import {
 } from "@/db/schema/capsule";
 import { user as userTable } from "@/db/schema/auth";
 import { getAssetStorage } from "@/lib/assets/storage";
-import { EXPORT_ROOT_DIR, EXPORT_VERSION } from "@/lib/export/service";
+import { AUDIT_KINDS, recordAudit } from "@/lib/audit/service";
+import {
+  EXPORT_NON_ASSET_FILE_COUNT,
+  EXPORT_ROOT_DIR,
+  EXPORT_VERSION,
+  LEGACY_EXPORT_NON_ASSET_FILE_COUNT,
+} from "@/lib/export/service";
 
 /**
  * 归档恢复（RH-004，docs/RESTORE.md）。
@@ -85,14 +92,47 @@ type Manifest = {
   exportVersion: number;
   appVersion?: string;
   familyId: string;
+  fileCount: number;
+  assetCount: number;
   assets: ManifestAsset[];
+};
+
+type InboxItemArchiveRow = {
+  id: string;
+  familyId: string;
+  kind: string;
+  status: string;
+  rawText: string | null;
+  memoryEventId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type InboxItemAssetArchiveRow = {
+  id: string;
+  inboxItemId: string;
+  assetId: string;
+  familyId: string;
+  createdAt: string;
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 const UUID_LIKE = /^[0-9a-zA-Z_-]{6,64}$/;
+const INBOX_KINDS = new Set(["text", "asset", "bundle"]);
+const INBOX_STATUSES = new Set([
+  "new",
+  "processing",
+  "needs_review",
+  "confirmed",
+  "discarded",
+]);
 
 function requireCondition(cond: unknown, code: string, message: string): asserts cond {
   if (!cond) throw new RestoreError(code, message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 
@@ -138,6 +178,8 @@ export type RestoreReport = {
   contributions: number;
   facts: number;
   capsules: number;
+  inboxItems: number;
+  inboxItemAssets: number;
   filesWritten: number;
 };
 
@@ -224,6 +266,21 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     "manifest.familyId 缺失",
   );
   requireCondition(Array.isArray(manifest.assets), "bad_manifest", "manifest.assets 必须是数组");
+  requireCondition(
+    Number.isSafeInteger(manifest.assetCount) && manifest.assetCount >= 0,
+    "bad_manifest",
+    "manifest.assetCount 非法",
+  );
+  requireCondition(
+    manifest.assetCount === manifest.assets.length,
+    "bad_manifest",
+    "manifest.assetCount 与 assets 数量不一致",
+  );
+  requireCondition(
+    Number.isSafeInteger(manifest.fileCount) && manifest.fileCount >= 0,
+    "bad_manifest",
+    "manifest.fileCount 非法",
+  );
 
   // JSON 实体文件
   async function readJson<T>(name: string): Promise<T> {
@@ -307,6 +364,44 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     }>
   >("capsules.json");
 
+  // v0.1.3 后的 additive 文件：旧 exportVersion=1 归档两者都不存在时按空收件箱恢复。
+  // 只缺一个代表图关系不完整，拒绝静默丢行。
+  const inboxItemsFile = zip.file(`${EXPORT_ROOT_DIR}/inbox-items.json`);
+  const inboxItemAssetsFile = zip.file(`${EXPORT_ROOT_DIR}/inbox-item-assets.json`);
+  requireCondition(
+    Boolean(inboxItemsFile) === Boolean(inboxItemAssetsFile),
+    "missing_json",
+    "inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失",
+  );
+  const inboxItemsRaw = inboxItemsFile
+    ? await readJson<unknown>("inbox-items.json")
+    : [];
+  const inboxItemAssetsRaw = inboxItemAssetsFile
+    ? await readJson<unknown>("inbox-item-assets.json")
+    : [];
+  requireCondition(
+    Array.isArray(inboxItemsRaw),
+    "bad_json",
+    "inbox-items.json 必须是数组",
+  );
+  requireCondition(
+    Array.isArray(inboxItemAssetsRaw),
+    "bad_json",
+    "inbox-item-assets.json 必须是数组",
+  );
+  const expectedFileCount =
+    manifest.assets.length +
+    (inboxItemsFile
+      ? EXPORT_NON_ASSET_FILE_COUNT
+      : LEGACY_EXPORT_NON_ASSET_FILE_COUNT);
+  requireCondition(
+    manifest.fileCount === expectedFileCount,
+    inboxItemsFile ? "bad_manifest" : "missing_json",
+    inboxItemsFile
+      ? "manifest.fileCount 与当前 v1 文件集不一致"
+      : "归档声明包含 Inbox 文件，但两份 Inbox JSON 均缺失",
+  );
+
   // 结构与引用完整性
   requireCondition(
     familyJson.id === manifest.familyId,
@@ -338,6 +433,112 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     for (const aid of m.assetIds ?? []) {
       requireCondition(assetIds.has(aid), "bad_refs", `事件 ${m.id} 引用未知素材 ${aid}`);
     }
+  }
+  const inboxItemIds = new Set<string>();
+  const inboxItemsJson: InboxItemArchiveRow[] = [];
+  for (const value of inboxItemsRaw) {
+    requireCondition(isRecord(value), "bad_json", "inbox item 必须是对象");
+    const item = value;
+    requireCondition(
+      typeof item.id === "string" &&
+        UUID_LIKE.test(item.id) &&
+        !inboxItemIds.has(item.id),
+      "bad_json",
+      `inbox item id 缺失或重复: ${String(item.id)}`,
+    );
+    inboxItemIds.add(item.id);
+    requireCondition(
+      item.familyId === manifest.familyId,
+      "bad_refs",
+      `inbox item ${item.id} 的 familyId 不一致`,
+    );
+    requireCondition(
+      typeof item.kind === "string" && INBOX_KINDS.has(item.kind),
+      "bad_json",
+      `inbox item ${item.id} 的 kind 非法`,
+    );
+    requireCondition(
+      typeof item.status === "string" && INBOX_STATUSES.has(item.status),
+      "bad_json",
+      `inbox item ${item.id} 的 status 非法`,
+    );
+    requireCondition(
+      item.rawText === null || typeof item.rawText === "string",
+      "bad_json",
+      `inbox item ${item.id} 的 rawText 非法`,
+    );
+    requireCondition(
+      item.memoryEventId === null || typeof item.memoryEventId === "string",
+      "bad_json",
+      `inbox item ${item.id} 的 memoryEventId 非法`,
+    );
+    if (item.memoryEventId !== null) {
+      requireCondition(
+        eventIds.has(item.memoryEventId),
+        "bad_refs",
+        `inbox item ${item.id} 引用未知事件 ${item.memoryEventId}`,
+      );
+    }
+    requireCondition(
+      typeof item.createdAt === "string" &&
+        typeof item.updatedAt === "string" &&
+        parseDate(item.createdAt) !== null &&
+        parseDate(item.updatedAt) !== null,
+      "bad_json",
+      `inbox item ${item.id} 的时间非法`,
+    );
+    inboxItemsJson.push({
+      id: item.id,
+      familyId: item.familyId,
+      kind: item.kind,
+      status: item.status,
+      rawText: item.rawText,
+      memoryEventId: item.memoryEventId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    });
+  }
+  const inboxItemAssetIds = new Set<string>();
+  const inboxItemAssetsJson: InboxItemAssetArchiveRow[] = [];
+  for (const value of inboxItemAssetsRaw) {
+    requireCondition(isRecord(value), "bad_json", "inbox item asset 必须是对象");
+    const link = value;
+    requireCondition(
+      typeof link.id === "string" &&
+        UUID_LIKE.test(link.id) &&
+        !inboxItemAssetIds.has(link.id),
+      "bad_json",
+      `inbox item asset id 缺失或重复: ${String(link.id)}`,
+    );
+    inboxItemAssetIds.add(link.id);
+    requireCondition(
+      link.familyId === manifest.familyId,
+      "bad_refs",
+      `inbox item asset ${link.id} 的 familyId 不一致`,
+    );
+    requireCondition(
+      typeof link.inboxItemId === "string" &&
+        inboxItemIds.has(link.inboxItemId),
+      "bad_refs",
+      `inbox item asset ${link.id} 引用未知 inbox item ${link.inboxItemId}`,
+    );
+    requireCondition(
+      typeof link.assetId === "string" && assetIds.has(link.assetId),
+      "bad_refs",
+      `inbox item asset ${link.id} 引用未知素材 ${link.assetId}`,
+    );
+    requireCondition(
+      typeof link.createdAt === "string" && parseDate(link.createdAt) !== null,
+      "bad_json",
+      `inbox item asset ${link.id} 的 createdAt 非法`,
+    );
+    inboxItemAssetsJson.push({
+      id: link.id,
+      inboxItemId: link.inboxItemId,
+      assetId: link.assetId,
+      familyId: link.familyId,
+      createdAt: link.createdAt,
+    });
   }
   for (const c of contributionsJson) {
     requireCondition(
@@ -419,6 +620,8 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     contributionsJson,
     factsJson,
     capsulesJson,
+    inboxItemsJson,
+    inboxItemAssetsJson,
     assetBuffers,
   };
 }
@@ -454,6 +657,8 @@ export async function restoreFromZip(
     contributionsJson,
     factsJson,
     capsulesJson,
+    inboxItemsJson,
+    inboxItemAssetsJson,
     assetBuffers,
   } = data;
 
@@ -563,6 +768,37 @@ export async function restoreFromZip(
           })),
         )
         .run();
+
+      if (inboxItemsJson.length > 0) {
+        tx.insert(inboxItem)
+          .values(
+            inboxItemsJson.map((item) => ({
+              id: item.id,
+              familyId: item.familyId,
+              kind: item.kind,
+              status: item.status,
+              rawText: item.rawText,
+              memoryEventId: item.memoryEventId,
+              createdAt: parseDate(item.createdAt)!,
+              updatedAt: parseDate(item.updatedAt)!,
+            })),
+          )
+          .run();
+      }
+
+      if (inboxItemAssetsJson.length > 0) {
+        tx.insert(inboxItemAsset)
+          .values(
+            inboxItemAssetsJson.map((link) => ({
+              id: link.id,
+              inboxItemId: link.inboxItemId,
+              assetId: link.assetId,
+              familyId: link.familyId,
+              createdAt: parseDate(link.createdAt)!,
+            })),
+          )
+          .run();
+      }
 
       const eventAssets = memoriesJson.flatMap((m) =>
         (m.assetIds ?? []).map((assetId) => ({
@@ -677,6 +913,131 @@ export async function restoreFromZip(
           tx.insert(capsuleContribution).values(capContribs).run();
         }
       }
+
+      // The verification belongs to the restore transaction. If it ran after
+      // commit, a read/verification failure could report a failed restore even
+      // though the database and originals had already been mutated.
+      const expectedCapsuleEventCount = capsulesJson.reduce(
+        (total, capsule) => total + (capsule.memoryEventIds?.length ?? 0),
+        0,
+      );
+      const expectedCapsuleAssetCount = capsulesJson.reduce(
+        (total, capsule) => total + (capsule.assetIds?.length ?? 0),
+        0,
+      );
+      const expectedCapsuleContributionCount = capsulesJson.reduce(
+        (total, capsule) => total + (capsule.contributionIds?.length ?? 0),
+        0,
+      );
+      const [
+        familyRow,
+        peopleCount,
+        assetCount,
+        eventCount,
+        contribCount,
+        factCount,
+        capsuleCount,
+        inboxItemCount,
+        inboxItemAssetCount,
+        memoryEventAssetCount,
+        memoryEventParticipantCount,
+        capsuleEventCount,
+        capsuleAssetCount,
+        capsuleContributionCount,
+      ] = [
+        tx
+          .select({ value: count() })
+          .from(familyTable)
+          .where(eq(familyTable.id, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(personTable)
+          .where(eq(personTable.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(assetTable)
+          .where(eq(assetTable.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(memoryEvent)
+          .where(eq(memoryEvent.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(contributionTable)
+          .innerJoin(memoryEvent, eq(contributionTable.memoryEventId, memoryEvent.id))
+          .where(eq(memoryEvent.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(factTable)
+          .innerJoin(memoryEvent, eq(factTable.memoryEventId, memoryEvent.id))
+          .where(eq(memoryEvent.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(capsuleTable)
+          .where(eq(capsuleTable.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(inboxItem)
+          .where(eq(inboxItem.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(inboxItemAsset)
+          .where(eq(inboxItemAsset.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(memoryEventAsset)
+          .where(eq(memoryEventAsset.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(memoryEventParticipant)
+          .where(eq(memoryEventParticipant.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(capsuleEvent)
+          .where(eq(capsuleEvent.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(capsuleAsset)
+          .where(eq(capsuleAsset.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(capsuleContribution)
+          .where(eq(capsuleContribution.familyId, familyId))
+          .all(),
+      ];
+      const num = (rows: Array<{ value: number }>) =>
+        Number(rows[0]?.value ?? 0);
+      requireCondition(
+        num(familyRow) === 1 &&
+          num(assetCount) === data.manifest.assets.length &&
+          num(peopleCount) === peopleJson.length &&
+          num(eventCount) === memoriesJson.length &&
+          num(contribCount) === contributionsJson.length &&
+          num(factCount) === factsJson.length &&
+          num(capsuleCount) === capsulesJson.length &&
+          num(inboxItemCount) === inboxItemsJson.length &&
+          num(inboxItemAssetCount) === inboxItemAssetsJson.length &&
+          num(memoryEventAssetCount) === eventAssets.length &&
+          num(memoryEventParticipantCount) === participants.length &&
+          num(capsuleEventCount) === expectedCapsuleEventCount &&
+          num(capsuleAssetCount) === expectedCapsuleAssetCount &&
+          num(capsuleContributionCount) === expectedCapsuleContributionCount,
+        "post_verify_failed",
+        "恢复后行数校验失败（数据库与导出不一致）",
+      );
     });
   } catch (err) {
     // 回滚：删除已写入的文件，保持「无半恢复状态」
@@ -691,59 +1052,28 @@ export async function restoreFromZip(
     throw new RestoreError("db_restore_failed", `数据库恢复失败: ${(err as Error).message}`);
   }
 
-  // 3) 恢复后复核：行数与引用抽查
-  const [familyRow, peopleCount, assetCount, eventCount, contribCount, factCount, capsuleCount] =
-    await Promise.all([
-      db.select({ value: count() }).from(familyTable).where(eq(familyTable.id, familyId)),
-      db.select({ value: count() }).from(personTable).where(eq(personTable.familyId, familyId)),
-      db.select({ value: count() }).from(assetTable).where(eq(assetTable.familyId, familyId)),
-      db.select({ value: count() }).from(memoryEvent).where(eq(memoryEvent.familyId, familyId)),
-      db
-        .select({ value: count() })
-        .from(contributionTable)
-        .innerJoin(memoryEvent, eq(contributionTable.memoryEventId, memoryEvent.id))
-        .where(eq(memoryEvent.familyId, familyId)),
-      db
-        .select({ value: count() })
-        .from(factTable)
-        .innerJoin(memoryEvent, eq(factTable.memoryEventId, memoryEvent.id))
-        .where(eq(memoryEvent.familyId, familyId)),
-      db.select({ value: count() }).from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
-    ]);
-  const num = (r: Array<{ value: number }>) => Number(r[0]?.value ?? 0);
-  requireCondition(
-    num(familyRow) === 1 &&
-      num(assetCount) === data.manifest.assets.length &&
-      num(peopleCount) === peopleJson.length &&
-      num(eventCount) === memoriesJson.length &&
-      num(contribCount) === contributionsJson.length &&
-      num(factCount) === factsJson.length &&
-      num(capsuleCount) === capsulesJson.length,
-    "post_verify_failed",
-    "恢复后行数校验失败（数据库与导出不一致）",
-  );
-
-  // 审计留痕（v0.1.3）：恢复是高价值操作
-  {
-    const { recordAudit, AUDIT_KINDS } = await import("@/lib/audit/service");
-    await recordAudit(familyId, AUDIT_KINDS.restoreCompleted, operatorUserId, {
-      zipBytes: zipBuffer.byteLength,
-      people: num(peopleCount),
-      assets: num(assetCount),
-      events: num(eventCount),
-      contributions: num(contribCount),
-      facts: num(factCount),
-      capsules: num(capsuleCount),
-    });
-  }
+  // 3) 审计留痕。recordAudit 自身为 best-effort，不会把已提交恢复改报为失败。
+  await recordAudit(familyId, AUDIT_KINDS.restoreCompleted, operatorUserId, {
+    zipBytes: zipBuffer.byteLength,
+    people: peopleJson.length,
+    assets: data.manifest.assets.length,
+    events: memoriesJson.length,
+    contributions: contributionsJson.length,
+    facts: factsJson.length,
+    capsules: capsulesJson.length,
+    inboxItems: inboxItemsJson.length,
+    inboxItemAssets: inboxItemAssetsJson.length,
+  });
   return {
     familyId,
-    people: num(peopleCount),
-    assets: num(assetCount),
-    events: num(eventCount),
-    contributions: num(contribCount),
-    facts: num(factCount),
-    capsules: num(capsuleCount),
+    people: peopleJson.length,
+    assets: data.manifest.assets.length,
+    events: memoriesJson.length,
+    contributions: contributionsJson.length,
+    facts: factsJson.length,
+    capsules: capsulesJson.length,
+    inboxItems: inboxItemsJson.length,
+    inboxItemAssets: inboxItemAssetsJson.length,
     filesWritten: writtenKeys.length,
   };
 }

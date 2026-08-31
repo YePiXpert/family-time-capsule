@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -23,6 +23,12 @@ afterAll(() => {
 
 const fixtures = path.join(__dirname, "..", "fixtures");
 const read = (name: string) => readFileSync(path.join(fixtures, name));
+const LONG_PENDING_TEXT =
+  "这是一条超过一百个字符、尚未确认的收件箱文字，用来证明灾难恢复不会截断原文，也不会只备份已经进入时间轴的内容。".repeat(
+    3,
+  );
+const CONFIRMED_TEXT_BODY =
+  "小满今天会翻身了。\n她先安静地试了几次，随后完整地翻到另一边。";
 
 type Snapshot = {
   zipPath: string;
@@ -34,6 +40,24 @@ type Snapshot = {
   facts: Array<{ id: string; statement: string }>;
   capsules: Array<{ id: string; title: string; status: string; eventIds: string[] }>;
   assets: Array<{ id: string; sha256: string; bytes: number; mimeType: string; fileBytes: string }>;
+  inboxItems: Array<{
+    id: string;
+    familyId: string;
+    kind: string;
+    status: string;
+    rawText: string | null;
+    memoryEventId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  inboxItemAssets: Array<{
+    id: string;
+    inboxItemId: string;
+    assetId: string;
+    familyId: string;
+    createdAt: string;
+  }>;
+  confirmedText: { eventId: string; itemId: string; body: string };
 };
 
 let snapshot: Snapshot;
@@ -55,6 +79,8 @@ async function freshModules() {
     storage: await import("@/lib/assets/storage"),
     schema: {
       user: (await import("@/db/schema/auth")).user,
+      inboxItem: (await import("@/db/schema/inbox")).inboxItem,
+      inboxItemAsset: (await import("@/db/schema/inbox")).inboxItemAsset,
     },
   };
 }
@@ -137,12 +163,34 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       title: "声音与影像",
     });
     if (!merged.ok) throw new Error("merge failed");
-    const textItem = await m.inbox.createTextInboxItem(familyId, "小满今天会翻身了。");
+    const textItem = await m.inbox.createTextInboxItem(familyId, CONFIRMED_TEXT_BODY);
     const textEntry = await m.inbox.getInboxEntry(familyId, textItem.id);
     const e3 = await m.memories.confirmInboxEntry(familyId, textEntry!, {
       title: "第一次翻身",
     });
     if (!e3.ok) throw new Error("text confirm failed");
+
+    const pendingTextItem = await m.inbox.createTextInboxItem(
+      familyId,
+      LONG_PENDING_TEXT,
+    );
+    const pendingAssetItem = await m.inbox.createInboxItemForAsset(
+      familyId,
+      photo.asset,
+    );
+    const needsReviewItem = await m.inbox.createInboxItemForAsset(
+      familyId,
+      audio.asset,
+    );
+    const discardedItem = await m.inbox.createTextInboxItem(
+      familyId,
+      "这条待整理文字后来被丢弃。",
+    );
+    await m.inbox.discardInboxItem(familyId, discardedItem.id);
+    expect(pendingTextItem.status).toBe("new");
+    expect(LONG_PENDING_TEXT.length).toBeGreaterThan(100);
+    expect(pendingAssetItem.status).toBe("new");
+    expect(needsReviewItem.status).toBe("needs_review");
 
     // 讲述 + 事实
     const contrib = await m.contributions.createContribution(familyId, {
@@ -179,6 +227,27 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       mimeType: a.mimeType,
       fileBytes: storage.read(a.storageKey).toString("base64"),
     }));
+    const inboxItems = (await db.select().from(m.schema.inboxItem))
+      .map((item) => ({
+        id: item.id,
+        familyId: item.familyId,
+        kind: item.kind,
+        status: item.status,
+        rawText: item.rawText,
+        memoryEventId: item.memoryEventId,
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const inboxItemAssets = (await db.select().from(m.schema.inboxItemAsset))
+      .map((link) => ({
+        id: link.id,
+        inboxItemId: link.inboxItemId,
+        assetId: link.assetId,
+        familyId: link.familyId,
+        createdAt: link.createdAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
 
     snapshot = {
       zipPath: exported.filePath,
@@ -201,9 +270,19 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
         { id: cap.capsuleId, title: "写给一岁的你", status: "sealed", eventIds: [e1] },
       ],
       assets,
+      inboxItems,
+      inboxItemAssets,
+      confirmedText: {
+        eventId: e3.eventId,
+        itemId: textItem.id,
+        body: CONFIRMED_TEXT_BODY,
+      },
     };
     expect(snapshot.events.length).toBeGreaterThanOrEqual(3);
     expect(snapshot.people.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(snapshot.inboxItems.map((item) => item.status))).toEqual(
+      new Set(["new", "needs_review", "confirmed", "discarded"]),
+    );
 
     // 关闭 A（模拟灾难：原始数据丢失由 rmSync 表达——dir 由 afterAll 清理）
     m.db.closeDatabase();
@@ -233,6 +312,8 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(report.contributions).toBe(1);
     expect(report.facts).toBe(1);
     expect(report.capsules).toBe(1);
+    expect(report.inboxItems).toBe(snapshot.inboxItems.length);
+    expect(report.inboxItemAssets).toBe(snapshot.inboxItemAssets.length);
 
     // 3) 家庭 / 成员
     const family = await m.family.getFamily(snapshot.familyId);
@@ -258,6 +339,30 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       expect(storage.read(row!.storageKey).toString("base64")).toBe(a.fileBytes);
     }
 
+    const restoredInboxItems = (await db.select().from(m.schema.inboxItem))
+      .map((item) => ({
+        id: item.id,
+        familyId: item.familyId,
+        kind: item.kind,
+        status: item.status,
+        rawText: item.rawText,
+        memoryEventId: item.memoryEventId,
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const restoredInboxItemAssets = (await db.select().from(m.schema.inboxItemAsset))
+      .map((link) => ({
+        id: link.id,
+        inboxItemId: link.inboxItemId,
+        assetId: link.assetId,
+        familyId: link.familyId,
+        createdAt: link.createdAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(restoredInboxItems).toEqual(snapshot.inboxItems);
+    expect(restoredInboxItemAssets).toEqual(snapshot.inboxItemAssets);
+
     // 5) 事件：occurredAt 逐一一致（时间轴不漂移）
     const detailChecks = await Promise.all(
       snapshot.events.map(async (e) => {
@@ -276,6 +381,23 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     );
     expect(avDetail!.assets).toHaveLength(2);
     expect(avDetail!.assets.map((x) => x.type).sort()).toEqual(["audio", "video"]);
+
+    const textDetail = await m.memories.getMemoryEventDetail(
+      snapshot.familyId,
+      snapshot.confirmedText.eventId,
+    );
+    expect(textDetail!.sourceNotes).toEqual([
+      expect.objectContaining({
+        id: snapshot.confirmedText.itemId,
+        rawText: snapshot.confirmedText.body,
+      }),
+    ]);
+    expect(
+      await m.contributions.listContributions(
+        snapshot.familyId,
+        snapshot.confirmedText.eventId,
+      ),
+    ).toHaveLength(0);
 
     // 6) 讲述 / 事实
     const e1Id = snapshot.capsules[0].eventIds[0];
@@ -306,6 +428,8 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(restoreAudit).toBeTruthy();
     const auditDetail = JSON.parse(restoreAudit!.detail_json);
     expect(auditDetail.events).toBe(snapshot.events.length);
+    expect(auditDetail.inboxItems).toBe(snapshot.inboxItems.length);
+    expect(auditDetail.inboxItemAssets).toBe(snapshot.inboxItemAssets.length);
     expect(auditDetail.zipBytes).toBeGreaterThan(0);
 
     // 8) 恢复后绑定流程：管理员绑定到「爸爸」
@@ -377,6 +501,70 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     await expect(m.restoreSvc.restoreFromZip(buf, adminId)).rejects.toMatchObject({
       code: "unsupported_version",
     });
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("旧 exportVersion=1 归档缺少两份 inbox 文件 → 按空收件箱恢复", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-legacy-inbox-"));
+    const { m, adminId } = await freshB(dir);
+    const buf = await buildTamperedZip(async (zip) => {
+      zip.remove("family-time-capsule-export/inbox-items.json");
+      zip.remove("family-time-capsule-export/inbox-item-assets.json");
+      const manifestFile = zip.file("family-time-capsule-export/manifest.json")!;
+      const manifest = JSON.parse(await manifestFile.async("string"));
+      manifest.fileCount -= 2;
+      zip.file(
+        "family-time-capsule-export/manifest.json",
+        JSON.stringify(manifest),
+      );
+    });
+    const report = await m.restoreSvc.restoreFromZip(buf, adminId);
+    expect(report.inboxItems).toBe(0);
+    expect(report.inboxItemAssets).toBe(0);
+    expect(await m.db.getDb().select().from(m.schema.inboxItem)).toHaveLength(0);
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("新归档只缺一份 inbox 文件 → 拒绝部分关系图", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-partial-inbox-"));
+    const { m, adminId } = await freshB(dir);
+    const buf = await buildTamperedZip(async (zip) => {
+      zip.remove("family-time-capsule-export/inbox-item-assets.json");
+    });
+    await expect(m.restoreSvc.restoreFromZip(buf, adminId)).rejects.toMatchObject({
+      code: "missing_json",
+    });
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("事务内行数复核失败 → 数据库回滚且已写原件清理", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-verify-rollback-"));
+    const { m, adminId } = await freshB(dir);
+    const db = m.db.getDb();
+
+    // 模拟底层静默漏写非 Inbox 事件素材关系；若未复核所有关系表，这会留下一个
+    // 实际已恢复但调用方收到失败的半成功实例。
+    db.$client.exec(`
+      CREATE TRIGGER ignore_restored_memory_event_asset
+      BEFORE INSERT ON memory_event_asset
+      BEGIN
+        SELECT RAISE(IGNORE);
+      END;
+    `);
+
+    await expect(
+      m.restoreSvc.restoreFromZipFile(snapshot.zipPath, adminId),
+    ).rejects.toMatchObject({ code: "post_verify_failed" });
+
+    const familyTable = (await import("@/db/schema/family")).family;
+    const assetTable = (await import("@/db/schema/asset")).asset;
+    expect(await db.select().from(familyTable)).toHaveLength(0);
+    expect(await db.select().from(assetTable)).toHaveLength(0);
+    expect(existsSync(path.join(dir, "originals", snapshot.familyId))).toBe(false);
+
     m.db.closeDatabase();
     rmSync(dir, { recursive: true, force: true });
   });

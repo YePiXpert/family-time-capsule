@@ -1,6 +1,7 @@
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { asset } from "./asset";
 import { family } from "./family";
+import { memoryEvent } from "./memory";
 
 /**
  * 收件箱（Issue #007，PRD §9.2）。
@@ -31,12 +32,17 @@ export const inboxItem = sqliteTable(
     status: text("status").notNull().default("new"),
     // kind=text 时的正文
     rawText: text("raw_text"),
+    // 确认/合并后对应的事件；保留原始收件箱正文作为无作者来源记录
+    memoryEventId: text("memory_event_id").references(() => memoryEvent.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (t) => [
     index("inbox_family_status_idx").on(t.familyId, t.status),
     index("inbox_family_created_idx").on(t.familyId, t.createdAt),
+    index("inbox_family_event_idx").on(t.familyId, t.memoryEventId),
   ],
 );
 

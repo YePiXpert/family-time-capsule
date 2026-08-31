@@ -135,14 +135,20 @@ describe("确认收件箱 → MemoryEvent（#008）", () => {
   });
 
   it("文本条目确认：标题取正文，occurredAt 兜底条目创建时间", async () => {
-    const item = await createTextInboxItem(familyId, "小满今天会翻身了。");
+    const rawText = "小满今天会翻身了。\n完整正文不会被标题截断。";
+    const item = await createTextInboxItem(familyId, rawText);
     const entry = (await getInboxEntry(familyId, item.id))!;
     const result = await confirmInboxEntry(familyId, entry, {});
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const detail = (await getMemoryEventDetail(familyId, result.eventId))!;
-    expect(detail.event.title).toBe("小满今天会翻身了。");
+    expect(detail.event.title).toBe(rawText);
     expect(detail.assets).toHaveLength(0);
+    expect(detail.sourceNotes).toEqual([
+      expect.objectContaining({ id: item.id, rawText }),
+    ]);
+    const confirmedItem = await getInboxEntry(familyId, item.id);
+    expect(confirmedItem?.item.memoryEventId).toBe(result.eventId);
   });
 
   it("非法输入：空标题拒绝", async () => {

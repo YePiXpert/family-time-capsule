@@ -19,6 +19,8 @@
 #
 # 2) 恢复归档（DATA_DIR 指向该实例）
 DATA_DIR=/data npm run restore -- /path/to/backup.zip [--user <userId>]
+# Docker Compose 的生产镜像使用已编译、无需 tsx/源码的运维产物：
+docker compose exec app node /app/ops/restore.mjs /path/to/backup.zip [--user <userId>]
 #
 # 3) 管理员登录 → 访问 /onboarding → 检测到已恢复的家庭 → 选择「你是谁」完成绑定
 ```
@@ -28,9 +30,12 @@ CLI 内部执行顺序（对应 RH-004 要求 1–18）：
 1. 读取 ZIP；2. 校验 `exportVersion`；3. 解析 manifest；4. **逐个复核原件 SHA-256**；
 5. 校验全部实体 JSON 结构；6. **ZIP 条目名 path traversal 校验**；
 7. 校验目标实例无 Family / 无 Person；8–16. 写入原件文件（失败回滚删除）→
-单事务恢复 Family → Person → Asset → MemoryEvent → 关联表 → Contribution →
-Fact → Capsule（含内容引用）；17. 事务提交后**行数复核**（与导出逐项一致）；
-18. 任何一步失败：已写文件删除、事务回滚，**不存在半恢复数据库**。
+单事务恢复 Family → Person → Asset → MemoryEvent → InboxItem → InboxItemAsset →
+事件关联表 → Contribution → Fact → Capsule（含内容引用）；17. 在同一事务提交前执行
+**行数复核**（包括 InboxItem、InboxItemAsset、事件素材/参与人关系，以及胶囊的事件/素材/
+讲述关系，均与导出逐项一致），复核通过才提交；
+18. 任一写入或复核失败：事务回滚并删除已写文件，**不存在半恢复数据库**。提交后的审计为
+best-effort，不会把已经成功提交的恢复改报为失败。
 
 ## 2. 安全校验（RH-010）
 
@@ -42,12 +47,32 @@ Fact → Capsule（含内容引用）；17. 事务提交后**行数复核**（�
 | 总解压 > 25GB（zip bomb） | `zip_bomb` |
 | `exportVersion` 不在支持列表 | `unsupported_version` |
 | manifest/JSON 损坏、引用缺失（未知 person/event/asset） | `bad_manifest` / `bad_json` / `bad_refs` |
+| inbox 两个增量 JSON 只存在一个 | `missing_json` |
 | 任何原件 SHA-256/字节数不符 | `hash_mismatch` |
 | 目标实例已有家庭数据 | `target_not_empty` |
 | operator 用户不存在 | `bad_operator` |
 | manifest 中重复 assetId | `bad_manifest` |
 
 限额可通过 `restoreFromZip(buffer, userId, { limits })` 注入（运维/测试用）。
+
+### 2.1 收件箱归档的完整性与旧档兼容
+
+- 新导出必须同时包含 `inbox-items.json` 与 `inbox-item-assets.json`。旧的
+  `exportVersion: 1` 归档若**两者都不存在**，恢复端按两个空数组处理，因此仍可恢复；
+  若恰好缺一个则以 `missing_json` 拒绝，避免只恢复条目或只恢复关系。
+- 两个文件存在时必须都是数组。恢复端校验 InboxItem 的 ID 唯一、`familyId` 与 manifest
+  一致、`kind`/`status` 合法、`rawText` 类型与时间合法；合法状态包括 `new`（待处理）、
+  `processing`、`needs_review`、`confirmed`、`discarded`。
+- `memoryEventId` 可为 `null`；非空时必须引用 `memories.json` 中的事件。
+  每条 InboxItemAsset 的 ID 必须唯一，`familyId` 必须一致，且 `inboxItemId` 必须引用
+  `inbox-items.json`、`assetId` 必须引用 manifest 中的原件。任何悬空或跨家庭引用均以
+  `bad_refs` 在写入前拒绝。
+- 通过校验后，恢复按导出值原样写入条目 ID、状态、完整 `rawText`、时间、
+  `memoryEventId` 与每条素材关联，不截断长文字、不重建或合并关联行。提交前在同一事务内
+  分别复核 InboxItem 与 InboxItemAsset 行数；不一致则 `post_verify_failed` 并完整回滚。
+- 已确认文字通过 `memoryEventId` 回到对应 MemoryEvent，详情页将完整正文显示为无作者的
+  “文字记录”。恢复不会为它创建 Contribution，也不会虚构作者；同一事件的多条文字保持
+  多条独立来源记录。
 
 ## 3. 哈希校验失败的处理
 
@@ -78,6 +103,15 @@ Fact → Capsule（含内容引用）；17. 事务提交后**行数复核**（�
 - `tests/roundtrip/restore-roundtrip.test.ts`（`npm run test:e2e` 末尾执行）：
   A 建档 → export → **销毁 A** → 干净 B → restore → **启动真实服务器** →
   登录 → 时间轴/详情核对 → 媒体字节+Range+401 → 导出 B → verify:export CLI 全绿。
+
+P0 收件箱完整性的计划验收覆盖（在相应用例落地并通过前，不作为已完成声明）：
+
+- 导出集成：断言两个 inbox 文件与 `fileCount = assetCount + 10`，逐行比对超过 100 字的
+  待处理文字、待处理素材、`needs_review`、`discarded`、已确认文字及其素材关联。
+- 恢复集成：逐项比对上述条目的 ID、状态、完整正文、`memoryEventId`、时间与关联行；验证
+  两个文件都缺失的旧归档可恢复、只缺一个会拒绝，以及悬空 event/item/asset 引用会拒绝。
+- 生产 roundtrip：A → export → 销毁 A → B restore → 真实服务器详情页仍能读取已确认文字
+  的完整正文，且以无作者来源记录呈现，不产生虚构 Contribution 作者。
 
 ## 7. 未来迁移
 

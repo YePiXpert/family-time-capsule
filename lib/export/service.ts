@@ -7,6 +7,7 @@ import pkg from "../../package.json";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { person as personTable } from "@/db/schema/family";
+import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import {
   memoryEvent as memoryEventTable,
@@ -29,6 +30,7 @@ import { getFamily } from "@/lib/family/service";
  * 结构（docs/EXPORT_FORMAT.md）：
  * family-time-capsule-export/
  * ├── manifest.json / family.json / people.json / memories.json
+ * ├── inbox-items.json / inbox-item-assets.json
  * ├── contributions.json / facts.json / capsules.json / timeline.md
  * ├── originals/{images,audio,video,documents}/
  * └── stories/
@@ -41,6 +43,10 @@ import { getFamily } from "@/lib/family/service";
 
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
+/** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
+export const EXPORT_NON_ASSET_FILE_COUNT = 10;
+/** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
+export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
   code: "checksum_mismatch";
   assetId: string;
@@ -101,13 +107,15 @@ export async function buildFamilyExport(
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
-  const [people, assets, events, contributions, facts, capsules] = await Promise.all([
+  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
     db.select().from(memoryEventTable).where(eq(memoryEventTable.familyId, familyId)),
     listFamilyContributions(db, familyId),
     listFamilyFacts(db, familyId),
     db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
+    db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
+    db.select().from(inboxItemAsset).where(eq(inboxItemAsset.familyId, familyId)),
   ]);
 
   const eventIds = events.map((e) => e.id);
@@ -203,6 +211,24 @@ export async function buildFamilyExport(
       .map((l) => l.contributionId),
   }));
 
+  const inboxItemsJson = inboxItems.map((item) => ({
+    id: item.id,
+    familyId: item.familyId,
+    kind: item.kind,
+    status: item.status,
+    rawText: item.rawText,
+    memoryEventId: item.memoryEventId,
+    createdAt: iso(item.createdAt),
+    updatedAt: iso(item.updatedAt),
+  }));
+  const inboxItemAssetsJson = inboxItemAssets.map((link) => ({
+    id: link.id,
+    inboxItemId: link.inboxItemId,
+    assetId: link.assetId,
+    familyId: link.familyId,
+    createdAt: iso(link.createdAt),
+  }));
+
   // 3) timeline.md（相对路径引用原媒体）
   const tz = family.timezone;
   const dt = (d: Date, style: Intl.DateTimeFormatOptions = { dateStyle: "long", timeZone: tz }) =>
@@ -270,7 +296,7 @@ export async function buildFamilyExport(
     exportedAt: new Date().toISOString(),
     familyId,
     familyName: family.name,
-    fileCount: 0, // 填充于打包后
+    fileCount: manifestAssets.length + EXPORT_NON_ASSET_FILE_COUNT,
     assetCount: manifestAssets.length,
     assets: manifestAssets,
   };
@@ -295,7 +321,7 @@ export async function buildFamilyExport(
         name: `${EXPORT_ROOT_DIR}/${name}`,
       });
 
-    json("manifest.json", { ...manifest, fileCount: manifestAssets.length + 8 });
+    json("manifest.json", manifest);
     json("family.json", {
       id: family.id,
       name: family.name,
@@ -312,6 +338,8 @@ export async function buildFamilyExport(
       createdAt: iso(p.createdAt),
     })));
     json("memories.json", memoriesJson);
+    json("inbox-items.json", inboxItemsJson);
+    json("inbox-item-assets.json", inboxItemAssetsJson);
     json("contributions.json", contributions.map((c) => ({
       id: c.id,
       memoryEventId: c.memoryEventId,
@@ -359,14 +387,14 @@ export async function buildFamilyExport(
       fileName,
       bytes,
       assetCount: manifestAssets.length,
-      fileCount: manifestAssets.length + 8,
+      fileCount: manifestAssets.length + EXPORT_NON_ASSET_FILE_COUNT,
     });
   }
   return {
     filePath,
     fileName,
     bytes,
-    fileCount: manifestAssets.length + 8,
+    fileCount: manifestAssets.length + EXPORT_NON_ASSET_FILE_COUNT,
     assetCount: manifestAssets.length,
   };
 }

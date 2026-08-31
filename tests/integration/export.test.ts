@@ -26,13 +26,18 @@ if (!okSetup.ok) throw new Error("setup failed");
 
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
+const { inboxItem: inboxItemTable, inboxItemAsset: inboxItemAssetTable } =
+  await import("@/db/schema/inbox");
 const { completeOnboarding, addPerson, listPeople } = await import(
   "@/lib/family/service"
 );
 const { ingestImage, ingestMedia } = await import("@/lib/assets/ingest");
-const { createInboxItemForAsset, getInboxEntry } = await import(
-  "@/lib/inbox/service"
-);
+const {
+  createInboxItemForAsset,
+  createTextInboxItem,
+  discardInboxItem,
+  getInboxEntry,
+} = await import("@/lib/inbox/service");
 const { confirmInboxEntry, mergeInboxEntries } = await import("@/lib/memories/service");
 const { createContribution, addFact } = await import("@/lib/contributions/service");
 const {
@@ -79,9 +84,11 @@ async function ingestN(n: number) {
 
 // ---- 准备数据：合并事件（5 素材）、独立事件、文字、contribution、fact、封存胶囊 ----
 const items: string[] = [];
+const ingestedPhotos: Awaited<ReturnType<typeof ingestN>>[] = [];
 for (let i = 1; i <= 5; i++) {
-  const { item } = await ingestN(i);
-  items.push(item.id);
+  const photo = await ingestN(i);
+  ingestedPhotos.push(photo);
+  items.push(photo.item.id);
 }
 const merged = await mergeInboxEntries(familyId, items, { title: "八月的一次出游" });
 if (!merged.ok) throw new Error("merge failed");
@@ -100,6 +107,27 @@ const audioItem = await createInboxItemForAsset(familyId, audio.asset);
 const audioEntry = (await getInboxEntry(familyId, audioItem.id))!;
 const audioEvent = await confirmInboxEntry(familyId, audioEntry, { title: "外婆的歌" });
 if (!audioEvent.ok) throw new Error("confirm failed");
+
+const LONG_PENDING_TEXT =
+  "这是一条仍在收件箱里等待整理的长文字记录，用来确认导出和恢复不会只保留标题或前一百个字符。".repeat(
+    3,
+  );
+const pendingTextItem = await createTextInboxItem(familyId, LONG_PENDING_TEXT);
+const pendingAssetItem = await createInboxItemForAsset(
+  familyId,
+  ingestedPhotos[0].asset,
+);
+const needsReviewItem = await createInboxItemForAsset(familyId, audio.asset);
+const discardedItem = await createTextInboxItem(familyId, "这条文字决定不放进时间轴。");
+await discardInboxItem(familyId, discardedItem.id);
+const CONFIRMED_TEXT_BODY =
+  "小满今天第一次认真盯着窗外的树影看了很久。\n这是确认后的完整第二行。";
+const confirmedTextItem = await createTextInboxItem(familyId, CONFIRMED_TEXT_BODY);
+const confirmedTextEntry = (await getInboxEntry(familyId, confirmedTextItem.id))!;
+const confirmedTextEvent = await confirmInboxEntry(familyId, confirmedTextEntry, {
+  title: "窗外的树影",
+});
+if (!confirmedTextEvent.ok) throw new Error("text confirm failed");
 
 await addPerson(familyId, { displayName: "外婆", relationToChild: "外婆" });
 const people = await listPeople(familyId);
@@ -138,6 +166,12 @@ describe("完整导出（#014）", () => {
     const familyJson = JSON.parse(await zip.file(`${root}/family.json`)!.async("string"));
     const peopleJson = JSON.parse(await zip.file(`${root}/people.json`)!.async("string"));
     const memories = JSON.parse(await zip.file(`${root}/memories.json`)!.async("string"));
+    const inboxItems = JSON.parse(
+      await zip.file(`${root}/inbox-items.json`)!.async("string"),
+    );
+    const inboxItemAssets = JSON.parse(
+      await zip.file(`${root}/inbox-item-assets.json`)!.async("string"),
+    );
     const contributions = JSON.parse(
       await zip.file(`${root}/contributions.json`)!.async("string"),
     );
@@ -148,6 +182,8 @@ describe("完整导出（#014）", () => {
     expect(manifest.exportVersion).toBe(1);
     expect(manifest.appVersion).toBe("0.1.3");
     expect(manifest.familyId).toBe(familyId);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 10);
+    expect(result.fileCount).toBe(manifest.fileCount);
     expect(familyJson.name).toBe("我们一家");
     expect(peopleJson.length).toBeGreaterThanOrEqual(3);
 
@@ -159,6 +195,67 @@ describe("完整导出（#014）", () => {
     expect(contributions.length).toBe(1);
     expect(contributions[0].rawText).toContain("不肯撒手");
     expect(facts.length).toBe(1);
+
+    const expectedInboxItems = (await db.select().from(inboxItemTable))
+      .map((item) => ({
+        id: item.id,
+        familyId: item.familyId,
+        kind: item.kind,
+        status: item.status,
+        rawText: item.rawText,
+        memoryEventId: item.memoryEventId,
+        createdAt: item.createdAt.toISOString(),
+        updatedAt: item.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const expectedInboxItemAssets = (await db.select().from(inboxItemAssetTable))
+      .map((link) => ({
+        id: link.id,
+        inboxItemId: link.inboxItemId,
+        assetId: link.assetId,
+        familyId: link.familyId,
+        createdAt: link.createdAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(
+      inboxItems.sort((a: { id: string }, b: { id: string }) =>
+        a.id.localeCompare(b.id),
+      ),
+    ).toEqual(expectedInboxItems);
+    expect(
+      inboxItemAssets.sort((a: { id: string }, b: { id: string }) =>
+        a.id.localeCompare(b.id),
+      ),
+    ).toEqual(expectedInboxItemAssets);
+
+    const exportedInboxById = new Map(
+      inboxItems.map((item: { id: string }) => [item.id, item]),
+    );
+    expect(exportedInboxById.get(pendingTextItem.id)).toMatchObject({
+      kind: "text",
+      status: "new",
+      rawText: LONG_PENDING_TEXT,
+      memoryEventId: null,
+    });
+    expect(LONG_PENDING_TEXT.length).toBeGreaterThan(100);
+    expect(exportedInboxById.get(pendingAssetItem.id)).toMatchObject({
+      kind: "asset",
+      status: "new",
+    });
+    expect(exportedInboxById.get(needsReviewItem.id)).toMatchObject({
+      kind: "asset",
+      status: "needs_review",
+    });
+    expect(exportedInboxById.get(discardedItem.id)).toMatchObject({
+      status: "discarded",
+      rawText: "这条文字决定不放进时间轴。",
+    });
+    expect(exportedInboxById.get(confirmedTextItem.id)).toMatchObject({
+      status: "confirmed",
+      rawText: CONFIRMED_TEXT_BODY,
+      memoryEventId: confirmedTextEvent.eventId,
+    });
+    expect(contributions).toHaveLength(1);
 
     // 封存胶囊内容在导出中完整（export 始终包含）
     expect(capsules.length).toBe(1);
