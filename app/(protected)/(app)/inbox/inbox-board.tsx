@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { InboxItemRow } from "@/lib/inbox/service";
 import { InboxCard } from "./inbox-card";
+import type { InboxSuggestionChipDto } from "./inbox-suggestion-ui";
 import { mergeAction } from "./actions";
 
 const inputClass =
@@ -13,6 +14,9 @@ export type InboxEntryDto = {
   item: InboxItemRow;
   assets: AssetRow[];
   coverThumbAssetId?: string | null;
+  suggestionChips?: InboxSuggestionChipDto[];
+  suggestedTitle?: string;
+  suggestedOccurredWall?: string;
 };
 
 /** 收件箱面板：多选合并（#010）+ 单条操作 */
@@ -102,6 +106,9 @@ export function InboxBoard({
                   assets={entry.assets}
                   coverThumbAssetId={entry.coverThumbAssetId ?? null}
                   canReview={canReview}
+                  suggestionChips={entry.suggestionChips}
+                  suggestedTitle={entry.suggestedTitle}
+                  suggestedOccurredWall={entry.suggestedOccurredWall}
                 />
               </div>
             </li>

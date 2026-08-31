@@ -5,6 +5,7 @@ import type { AssetRow } from "@/lib/assets/service";
 import type { InboxItemRow } from "@/lib/inbox/service";
 import { MediaImage, MediaVideo } from "@/components/media-view";
 import { confirmAction, discardAction, editTimeAction } from "./actions";
+import { InboxSuggestionChips, type InboxSuggestionChipDto } from "./inbox-suggestion-ui";
 
 const TIME_SOURCE_LABEL: Record<string, string> = {
   user_confirmed: "你确认的时间",
@@ -29,20 +30,28 @@ export function InboxCard({
   assets,
   coverThumbAssetId = null,
   canReview,
+  suggestionChips = [],
+  suggestedTitle,
+  suggestedOccurredWall,
 }: {
   item: InboxItemRow;
   assets: AssetRow[];
   coverThumbAssetId?: string | null;
   canReview: boolean;
+  suggestionChips?: InboxSuggestionChipDto[];
+  suggestedTitle?: string;
+  /** AI 建议的事件发生时间（家庭时区 datetime-local 值），仅预填 */
+  suggestedOccurredWall?: string;
 }) {
   const [timeState, timeAction, timePending] = useActionState(editTimeAction, undefined);
   const [discardState, discardActionRun, discardPending] = useActionState(discardAction, undefined);
   const [confirmState, confirmActionRun, confirmPending] = useActionState(confirmAction, undefined);
   const cover = assets[0];
   const defaultTitle =
-    item.kind === "text" && item.rawText
+    suggestedTitle ??
+    (item.kind === "text" && item.rawText
       ? item.rawText.trim().slice(0, 30)
-      : (cover?.originalFilename ?? "一段记忆").replace(/\.[a-z0-9]{1,8}$/i, "");
+      : (cover?.originalFilename ?? "一段记忆").replace(/\.[a-z0-9]{1,8}$/i, ""));
 
   return (
     <li className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
@@ -129,6 +138,13 @@ export function InboxCard({
               aria-label="事件标题"
               className={`${inputClass} min-w-40 flex-1`}
             />
+            <input
+              type="datetime-local"
+              name="occurredAt"
+              defaultValue={suggestedOccurredWall}
+              aria-label="发生时间（可选）"
+              className={inputClass}
+            />
             <button
               type="submit"
               disabled={confirmPending}
@@ -142,6 +158,10 @@ export function InboxCard({
               </span>
             )}
           </form>}
+
+          {canReview && (
+            <InboxSuggestionChips suggestions={suggestionChips} />
+          )}
 
           {canReview && <form action={discardActionRun} className="mt-1">
             <input type="hidden" name="itemId" value={item.id} />
