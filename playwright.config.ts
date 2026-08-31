@@ -21,7 +21,30 @@ const specs = [
   { name: "journey", files: ["full-journey.spec.ts"], port: 3118 },
   { name: "edit", files: ["edit.spec.ts"], port: 3119 },
   { name: "rbac", files: ["rbac.spec.ts"], port: 3120 },
+  { name: "invitations", files: ["invitations.spec.ts"], port: 3121 },
 ];
+
+// A targeted `--project=<exact-name>` run only needs that project's server.
+// Keeping unrelated Next processes out of focused runs also makes Windows
+// teardown deterministic. Pattern/unknown project selectors fall back to all.
+const requestedProjectNames = new Set<string>();
+for (let index = 0; index < process.argv.length; index += 1) {
+  const argument = process.argv[index]!;
+  if (argument === "--project" && process.argv[index + 1]) {
+    requestedProjectNames.add(process.argv[index + 1]!);
+    index += 1;
+  } else if (argument.startsWith("--project=")) {
+    requestedProjectNames.add(argument.slice("--project=".length));
+  }
+}
+const requestedServerSpecs = specs.filter((spec) =>
+  requestedProjectNames.has(spec.name),
+);
+const serverSpecs =
+  requestedProjectNames.size > 0 &&
+  requestedServerSpecs.length === requestedProjectNames.size
+    ? requestedServerSpecs
+    : specs;
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -34,7 +57,7 @@ export default defineConfig({
     baseURL: "http://localhost:3100",
     trace: "on-first-retry",
   },
-  webServer: specs.map((s) => ({
+  webServer: serverSpecs.map((s) => ({
     command: "node scripts/e2e-server.mjs",
     url: `http://localhost:${s.port}`,
     reuseExistingServer: false,
