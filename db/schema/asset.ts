@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -65,8 +66,11 @@ export const asset = sqliteTable(
     createdAt: createdAtColumn(),
   },
   (t) => [
-    // 家庭内 SHA-256 精确去重；跨家庭允许相同文件（数据隔离边界是 family）
-    uniqueIndex("asset_family_sha_idx").on(t.familyId, t.sha256),
+    // 仅原件按家庭 + SHA-256 精确去重；不同原件可产生字节相同的衍生物。
+    // 跨家庭仍允许相同原件（数据隔离边界是 family）。
+    uniqueIndex("asset_family_sha_idx")
+      .on(t.familyId, t.sha256)
+      .where(sql`${t.originalAssetId} is null`),
     index("asset_family_created_idx").on(t.familyId, t.createdAt),
   ],
 );

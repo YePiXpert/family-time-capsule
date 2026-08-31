@@ -242,6 +242,123 @@ describe("原件不可覆盖 / 衍生物独立", () => {
     expect(storage.read(original!.storageKey).equals(PNG_BYTES)).toBe(true);
     expect(storage.read(derivative!.storageKey).toString()).toBe("thumb-bytes");
   });
+
+  it("不同原件可各自保留字节相同的缩略图", async () => {
+    const firstOriginal = await findOriginalBySha256(
+      familyId,
+      sha256Of(PNG_BYTES),
+    );
+    expect(firstOriginal).toBeTruthy();
+
+    const secondOriginalBytes = Buffer.concat([
+      PNG_BYTES,
+      Buffer.from("second-original-for-shared-thumbnail"),
+    ]);
+    const secondOriginalResult = await storeOriginal({
+      familyId,
+      createdByUserId: adminUserId,
+      type: "image",
+      originalFilename: "第二张原图.png",
+      mimeType: "image/png",
+      buffer: secondOriginalBytes,
+      extension: "png",
+      capturedAt: null,
+      timeSource: "import_time",
+    });
+    expect(secondOriginalResult.status).toBe("stored");
+    if (secondOriginalResult.status !== "stored") return;
+
+    const sharedThumbnailBytes = Buffer.from("identical-thumbnail-bytes");
+    const firstThumbnail = await storeDerivative(
+      familyId,
+      firstOriginal!.id,
+      "thumbnail",
+      {
+        mimeType: "image/png",
+        extension: "png",
+        buffer: sharedThumbnailBytes,
+      },
+    );
+    const secondThumbnail = await storeDerivative(
+      familyId,
+      secondOriginalResult.asset.id,
+      "thumbnail",
+      {
+        mimeType: "image/png",
+        extension: "png",
+        buffer: sharedThumbnailBytes,
+      },
+    );
+
+    expect(firstThumbnail).toBeTruthy();
+    expect(secondThumbnail).toBeTruthy();
+    expect(firstThumbnail!.id).not.toBe(secondThumbnail!.id);
+    expect(firstThumbnail!.sha256).toBe(secondThumbnail!.sha256);
+    expect(firstThumbnail!.originalAssetId).toBe(firstOriginal!.id);
+    expect(secondThumbnail!.originalAssetId).toBe(
+      secondOriginalResult.asset.id,
+    );
+
+    const stored = (await db.all(
+      sql`SELECT id, original_asset_id
+            FROM asset
+           WHERE family_id = ${familyId}
+             AND sha256 = ${sha256Of(sharedThumbnailBytes)}
+             AND original_asset_id IS NOT NULL
+        ORDER BY original_asset_id`,
+    )) as Array<{ id: string; original_asset_id: string }>;
+    expect(stored).toEqual([
+      {
+        id: firstThumbnail!.id,
+        original_asset_id: firstOriginal!.id,
+      },
+      {
+        id: secondThumbnail!.id,
+        original_asset_id: secondOriginalResult.asset.id,
+      },
+    ].sort((left, right) =>
+      left.original_asset_id.localeCompare(right.original_asset_id),
+    ));
+
+    const storage = getAssetStorage();
+    expect(storage.read(firstThumbnail!.storageKey)).toEqual(
+      sharedThumbnailBytes,
+    );
+    expect(storage.read(secondThumbnail!.storageKey)).toEqual(
+      sharedThumbnailBytes,
+    );
+  });
+
+  it("SQLite 用 partial unique index 查询并约束原件", async () => {
+    const indexes = (await db.all(
+      sql.raw("PRAGMA index_list('asset')"),
+    )) as Array<{ name: string; unique: number; partial: number }>;
+    expect(indexes.find((candidate) => candidate.name === "asset_family_sha_idx"))
+      .toMatchObject({ unique: 1, partial: 1 });
+
+    const definitions = (await db.all(
+      sql`SELECT sql
+            FROM sqlite_schema
+           WHERE type = 'index'
+             AND name = 'asset_family_sha_idx'`,
+    )) as Array<{ sql: string }>;
+    expect(definitions).toHaveLength(1);
+    expect(definitions[0]!.sql).toMatch(
+      /WHERE\s+"asset"\."original_asset_id"\s+is\s+null$/i,
+    );
+
+    const plan = (await db.all(
+      sql`EXPLAIN QUERY PLAN
+          SELECT id
+            FROM asset
+           WHERE family_id = ${familyId}
+             AND sha256 = ${sha256Of(PNG_BYTES)}
+             AND original_asset_id IS NULL`,
+    )) as Array<{ detail: string }>;
+    expect(plan.some((step) => step.detail.includes("asset_family_sha_idx"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("storage key 安全", () => {

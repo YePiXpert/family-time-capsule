@@ -242,6 +242,56 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
       createHash("sha256").update(readFileSync(originalPath)).digest("hex"),
     ).toBe(assetRow[0]!.sha256);
 
+    const assetIndexes = (await db.all(
+      sql.raw("PRAGMA index_list('asset')"),
+    )) as Array<{ name: string; unique: number; partial: number }>;
+    expect(
+      assetIndexes.find((candidate) => candidate.name === "asset_family_sha_idx"),
+    ).toMatchObject({ unique: 1, partial: 1 });
+    const assetIndexSql = (await db.all(
+      sql`SELECT sql
+            FROM sqlite_schema
+           WHERE type = 'index'
+             AND name = 'asset_family_sha_idx'`,
+    )) as Array<{ sql: string }>;
+    expect(assetIndexSql[0]!.sql).toMatch(
+      /WHERE\s+"asset"\."original_asset_id"\s+is\s+null$/i,
+    );
+
+    let duplicateOriginalError: unknown;
+    try {
+      await db.run(sql`
+        INSERT INTO asset (
+          id, family_id, type, original_filename, mime_type, bytes, sha256,
+          storage_key, captured_at, imported_at, time_source, width, height,
+          duration_ms, metadata_json, created_by_user_id, original_asset_id,
+          derivative_type, created_at
+        )
+        SELECT
+          'asset-v013-duplicate-probe', family_id, type,
+          '不得写入的重复原件.png', mime_type, bytes, sha256,
+          'originals/v0/13/duplicate-probe.png', captured_at, imported_at,
+          time_source, width, height, duration_ms, metadata_json,
+          created_by_user_id, NULL, NULL, created_at
+        FROM asset
+        WHERE id = 'asset-v013'
+      `);
+    } catch (error) {
+      duplicateOriginalError = error;
+    }
+    expect(duplicateOriginalError).toMatchObject({
+      cause: { code: "SQLITE_CONSTRAINT_UNIQUE" },
+    });
+    expect(
+      (await db.all(
+        sql`SELECT count(*) AS count
+              FROM asset
+             WHERE family_id = 'family-v013'
+               AND sha256 = ${ORIGINAL_ASSET_SHA}
+               AND original_asset_id IS NULL`,
+      ))[0],
+    ).toEqual({ count: 1 });
+
     const detail = await getMemoryEventDetail(
       "family-v013",
       "event-old-v013",
