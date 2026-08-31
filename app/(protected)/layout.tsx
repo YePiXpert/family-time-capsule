@@ -7,7 +7,7 @@ import {
   hasFamilyCapability,
   type FamilyCapability,
 } from "@/lib/authz/policy";
-import { getUserBinding } from "@/lib/family/service";
+import { requireUserBinding } from "@/lib/family/context";
 
 const NAV: ReadonlyArray<{
   href: string;
@@ -37,7 +37,7 @@ export default async function ProtectedLayout({
   const requestHeaders = await headers();
   const session = await getAuth().api.getSession({ headers: requestHeaders });
   if (!session) redirect("/login");
-  const binding = await getUserBinding(session.user.id);
+  const binding = await requireUserBinding(session.user.id);
   const visibleNav = NAV.filter(
     (item) =>
       !item.capability || hasFamilyCapability(binding.role, item.capability),

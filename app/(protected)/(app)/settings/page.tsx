@@ -16,13 +16,21 @@ const AUDIT_LABEL: Record<string, string> = {
   "invitation.created": "创建账号邀请",
   "invitation.revoked": "撤销账号邀请",
   "invitation.accepted": "接受账号邀请",
+  "account.disabled": "停用账号",
+  "account.enabled": "恢复账号",
+  "account.role_changed": "调整账号角色",
+  "person.guardian_changed": "调整监护人身份",
+  "child_later.policy_changed": "调整孩子解锁年龄",
+  "child_later.manually_unlocked": "手工解锁孩子内容",
 };
 
-export default async function SettingsPage() {
+export default async function SettingsPage(props: PageProps<"/settings">) {
   const { familyId, userName, role } = await requireFamily();
+  const searchParams = await props.searchParams;
   const canExport = hasFamilyCapability(role, "archive:export");
   const canViewAudit = hasFamilyCapability(role, "audit:view");
   const canInvite = hasFamilyCapability(role, "account:invite");
+  const canManageAccounts = hasFamilyCapability(role, "account:manage");
   const [family, auditEntries] = await Promise.all([
     getFamily(familyId),
     canViewAudit ? listRecentAudit(familyId, 10) : Promise.resolve([]),
@@ -31,6 +39,23 @@ export default async function SettingsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
       <h1 className="text-2xl font-semibold">设置</h1>
+
+      {searchParams?.accountRoleUpdated === "1" && (
+        <p
+          role="status"
+          className="mt-6 rounded-lg border border-accent/30 bg-accent/10 p-3 text-sm leading-6"
+        >
+          你的账号角色已更新；可用功能已按新角色刷新。
+        </p>
+      )}
+      {searchParams?.authorizationChanged === "1" && (
+        <p
+          role="alert"
+          className="mt-6 rounded-lg border border-amber-700/30 bg-amber-500/10 p-3 text-sm leading-6 text-amber-900 dark:text-amber-200"
+        >
+          你的管理员权限已经变化，账号管理页已关闭，本次没有执行任何修改。
+        </p>
+      )}
 
       <section aria-label="家庭" className="mt-8">
         <h2 className="text-lg font-medium">家庭</h2>
@@ -59,13 +84,25 @@ export default async function SettingsPage() {
           </Link>
           页。
         </p>
-        {canInvite && (
-          <Link
-            href="/settings/invitations"
-            className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            管理账号邀请
-          </Link>
+        {(canManageAccounts || canInvite) && (
+          <div className="mt-4 flex flex-wrap gap-3">
+            {canManageAccounts && (
+              <Link
+                href="/settings/accounts"
+                className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                管理现有账号
+              </Link>
+            )}
+            {canInvite && (
+              <Link
+                href="/settings/invitations"
+                className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                管理账号邀请
+              </Link>
+            )}
+          </div>
         )}
       </section>
 

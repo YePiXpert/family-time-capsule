@@ -135,6 +135,7 @@ const grandma = people.find((p) => p.displayName === "外婆")!;
 const contrib = await createContribution(familyId, {
   memoryEventId: merged.eventId,
   authorPersonId: grandma.id,
+  recordedByUserId: adminUserId,
   rawText: "那天外婆抱着她不肯撒手。",
   visibility: "child_later",
 });

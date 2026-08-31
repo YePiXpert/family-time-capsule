@@ -178,6 +178,24 @@ function createAuth() {
           },
         },
       },
+      session: {
+        create: {
+          // Provider-neutral gate: a disabled principal can never obtain a new
+          // session, even if another sign-in method is added later.
+          before: async (newSession) => {
+            const rows = await getDb()
+              .select({ disabledAt: user.disabledAt })
+              .from(user)
+              .where(eq(user.id, newSession.userId))
+              .limit(1);
+            if (!rows[0] || rows[0].disabledAt !== null) {
+              throw new APIError("UNAUTHORIZED", {
+                message: "账号或凭据不可用。",
+              });
+            }
+          },
+        },
+      },
     },
     hooks: {
       // RH-010：/sign-up/email 默认对外暴露，等于公开注册（与 docs/SECURITY.md §1 冲突）。

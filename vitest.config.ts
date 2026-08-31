@@ -3,7 +3,10 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    alias: { "@": path.resolve(__dirname, ".") },
+    alias: {
+      "server-only": path.resolve(__dirname, "tests/mocks/server-only.ts"),
+      "@": path.resolve(__dirname, "."),
+    },
   },
   test: {
     include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],

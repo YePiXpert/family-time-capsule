@@ -125,6 +125,7 @@ describe("胶囊工作流（#013）", () => {
     const contrib = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: dad.id,
+      recordedByUserId: adminUserId,
       rawText: "写给一岁的你：愿你被很多人爱着。",
       visibility: "child_later",
     });

@@ -18,6 +18,7 @@ export async function onboardingAction(
     childBirthDate: String(formData.get("childBirthDate") ?? ""),
     selfDisplayName: String(formData.get("selfDisplayName") ?? ""),
     selfRelationToChild: String(formData.get("selfRelationToChild") ?? ""),
+    selfIsGuardian: formData.get("selfIsGuardian") === "yes",
   };
   const result = await completeOnboarding(session.id, input);
   if (!result.ok) {

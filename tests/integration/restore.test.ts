@@ -196,6 +196,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     const contrib = await m.contributions.createContribution(familyId, {
       memoryEventId: e1,
       authorPersonId: grandma.personId,
+      recordedByUserId: adminId,
       rawText: "外婆说：这孩子的手真小。",
       visibility: "child_later",
     });

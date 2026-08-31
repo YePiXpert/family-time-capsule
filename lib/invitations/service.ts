@@ -123,6 +123,8 @@ type ClaimedInvitation = {
 };
 
 class FinalizeInvitationError extends Error {}
+class InvitationAuthorizationError extends Error {}
+class InvitationPersonUnavailableError extends Error {}
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -184,6 +186,7 @@ async function isFamilyAdmin(
         eq(userTable.id, actorUserId),
         eq(userTable.familyId, familyId),
         eq(userTable.role, "admin"),
+        isNull(userTable.disabledAt),
       ),
     )
     .limit(1);
@@ -262,17 +265,40 @@ export async function reconcileFamilyInvitationProvisioning(
   actorUserId: string,
   now = new Date(),
 ): Promise<boolean> {
-  if (!(await isFamilyAdmin(familyId, actorUserId))) return false;
-  reconcileTerminalProvisioningReceipts(familyId, now);
-  return true;
+  const db = getDb();
+  return db.transaction((tx) => {
+    const actor = tx
+      .select({ id: userTable.id })
+      .from(userTable)
+      .leftJoin(person, eq(userTable.personId, person.id))
+      .where(
+        and(
+          eq(userTable.id, actorUserId),
+          eq(userTable.familyId, familyId),
+          eq(userTable.role, "admin"),
+          isNull(userTable.disabledAt),
+          or(
+            isNull(userTable.personId),
+            and(
+              eq(person.id, userTable.personId),
+              eq(person.familyId, familyId),
+            ),
+          ),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (!actor) return false;
+    // The helper uses the singleton connection; while this callback is active
+    // those statements participate in this same better-sqlite3 transaction.
+    reconcileTerminalProvisioningReceipts(familyId, now);
+    return true;
+  });
 }
 
 export async function createFamilyInvitation(
   input: CreateInvitationInput,
 ): Promise<CreateInvitationResult> {
-  if (!(await isFamilyAdmin(input.familyId, input.actorUserId))) {
-    return { ok: false, error: "forbidden" };
-  }
   if (!isFamilyRole(input.role)) {
     return { ok: false, error: "invalid_input" };
   }
@@ -292,12 +318,6 @@ export async function createFamilyInvitation(
     return { ok: false, error: "invalid_input" };
   }
   const personId = input.personId?.trim() || null;
-  if (
-    personId &&
-    !(await personCanReceiveAccount(input.familyId, personId))
-  ) {
-    return { ok: false, error: "person_unavailable" };
-  }
 
   const token = randomBytes(TOKEN_BYTES).toString("base64url");
   const invitationId = randomUUID();
@@ -305,6 +325,44 @@ export async function createFamilyInvitation(
 
   try {
     db.transaction((tx) => {
+      const actor = tx
+        .select({ id: userTable.id })
+        .from(userTable)
+        .leftJoin(person, eq(userTable.personId, person.id))
+        .where(
+          and(
+            eq(userTable.id, input.actorUserId),
+            eq(userTable.familyId, input.familyId),
+            eq(userTable.role, "admin"),
+            isNull(userTable.disabledAt),
+            or(
+              isNull(userTable.personId),
+              and(
+                eq(person.id, userTable.personId),
+                eq(person.familyId, input.familyId),
+              ),
+            ),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (!actor) throw new InvitationAuthorizationError();
+
+      if (personId) {
+        const candidate = tx
+          .select({ id: person.id, boundUserId: userTable.id })
+          .from(person)
+          .leftJoin(userTable, eq(userTable.personId, person.id))
+          .where(
+            and(eq(person.id, personId), eq(person.familyId, input.familyId)),
+          )
+          .limit(1)
+          .get();
+        if (!candidate || candidate.boundUserId !== null) {
+          throw new InvitationPersonUnavailableError();
+        }
+      }
+
       tx.insert(familyInvitation)
         .values({
           id: invitationId,
@@ -336,7 +394,13 @@ export async function createFamilyInvitation(
         })
         .run();
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof InvitationAuthorizationError) {
+      return { ok: false, error: "forbidden" };
+    }
+    if (error instanceof InvitationPersonUnavailableError) {
+      return { ok: false, error: "person_unavailable" };
+    }
     return { ok: false, error: "invalid_input" };
   }
 
@@ -395,14 +459,34 @@ export async function revokeFamilyInvitation(input: {
   actorUserId: string;
   invitationId: string;
 }): Promise<{ ok: true } | { ok: false; error: InvitationAdminFailure }> {
-  if (!(await isFamilyAdmin(input.familyId, input.actorUserId))) {
-    return { ok: false, error: "forbidden" };
-  }
   const now = new Date();
   const db = getDb();
   try {
     let changed = 0;
     db.transaction((tx) => {
+      const actor = tx
+        .select({ id: userTable.id })
+        .from(userTable)
+        .leftJoin(person, eq(userTable.personId, person.id))
+        .where(
+          and(
+            eq(userTable.id, input.actorUserId),
+            eq(userTable.familyId, input.familyId),
+            eq(userTable.role, "admin"),
+            isNull(userTable.disabledAt),
+            or(
+              isNull(userTable.personId),
+              and(
+                eq(person.id, userTable.personId),
+                eq(person.familyId, input.familyId),
+              ),
+            ),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (!actor) throw new InvitationAuthorizationError();
+
       const receipt = tx
         .select({ provisionedUserId: familyInvitation.provisionedUserId })
         .from(familyInvitation)
@@ -460,7 +544,10 @@ export async function revokeFamilyInvitation(input: {
         .run();
     });
     return { ok: true };
-  } catch {
+  } catch (error) {
+    if (error instanceof InvitationAuthorizationError) {
+      return { ok: false, error: "forbidden" };
+    }
     return { ok: false, error: "not_found" };
   }
 }

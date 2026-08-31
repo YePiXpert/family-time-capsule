@@ -87,18 +87,26 @@ describe("onboarding：创建家庭与人物", () => {
     const dad = people.find((p) => !p.isChild);
     expect(dad?.displayName).toBe("爸爸");
     expect(dad?.relationToChild).toBe("爸爸");
+    // 称谓只是展示文本；未显式选择时绝不推断监护人权限。
+    expect(dad?.isGuardian).toBe(false);
+    expect(binding.isGuardian).toBe(false);
     // 管理员 Person 即 User 绑定的 Person
     expect(dad?.id).toBe(binding.personId);
   });
 
-  it("未知持久化角色失败关闭，恢复合法角色后不锁死管理员", async () => {
+  it("数据库拒绝未知持久化角色，并保留原管理员", async () => {
     const userId = await getAdminUserId();
     const db = getDb();
-    await db.run(sql`UPDATE user SET role = 'owner' WHERE id = ${userId}`);
-    await expect(getUserBinding(userId)).rejects.toMatchObject({
-      code: "invalid_family_role",
-    });
-    await db.run(sql`UPDATE user SET role = 'admin' WHERE id = ${userId}`);
+    let failure: unknown;
+    try {
+      db.run(sql`UPDATE user SET role = 'owner' WHERE id = ${userId}`);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    const cause = (failure as Error & { cause?: { code?: string; message?: string } })
+      .cause;
+    expect(cause?.code).toBe("SQLITE_CONSTRAINT_TRIGGER");
     await expect(getUserBinding(userId)).resolves.toMatchObject({ role: "admin" });
   });
 

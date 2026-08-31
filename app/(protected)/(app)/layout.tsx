@@ -1,6 +1,4 @@
-import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/family/context";
-import { getUserBinding } from "@/lib/family/service";
+import { requireFamily } from "@/lib/family/context";
 
 /**
  * (app) 组：所有依赖家庭数据的页面。
@@ -13,8 +11,6 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await requireSession();
-  const binding = await getUserBinding(session.id);
-  if (!binding.familyId) redirect("/onboarding");
+  await requireFamily();
   return <>{children}</>;
 }

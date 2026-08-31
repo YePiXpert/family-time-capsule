@@ -1,8 +1,9 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-contrib-"));
 process.env.DATA_DIR = dataDir;
@@ -25,6 +26,7 @@ const okSetup = await performSetup({
 if (!okSetup.ok) throw new Error("setup failed");
 
 const { getDb } = await import("@/db");
+const { auditLog } = await import("@/db/schema/audit");
 const { user: userTable } = await import("@/db/schema/auth");
 const { addPerson, completeOnboarding, listPeople } = await import(
   "@/lib/family/service"
@@ -97,6 +99,7 @@ describe("多人视角（#012）", () => {
     const r1 = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: dad.id,
+      recordedByUserId: adminUserId,
       rawText: "她攥着我手指的那一刻，我在产房外哭了。",
       visibility: "family",
     });
@@ -104,16 +107,19 @@ describe("多人视角（#012）", () => {
     const r2 = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: mom.personId,
+      recordedByUserId: adminUserId,
       rawText: "生产很辛苦，但听到哭声就都值了。",
       visibility: "family",
     });
     const r3 = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: grandma.personId,
+      recordedByUserId: adminUserId,
       rawText: "外婆说：这孩子的手真小。",
       visibility: "child_later",
     });
     expect(r1.ok && r2.ok && r3.ok).toBe(true);
+    if (!r1.ok || !r2.ok || !r3.ok) throw new Error("create failed");
 
     const list = await listContributions(familyId, eventId);
     expect(list).toHaveLength(3);
@@ -122,6 +128,39 @@ describe("多人视角（#012）", () => {
     // 外婆没有 User 也完整存在
     const waipo = list.find((c) => c.authorName === "外婆")!;
     expect(waipo.visibility).toBe("child_later");
+    expect(list.find((c) => c.id === r1.contributionId)).toMatchObject({
+      recordedByUserId: adminUserId,
+      recordedByPersonId: dad.id,
+      recordedByNameSnapshot: "爸爸",
+      recordingMode: "self",
+    });
+    expect(waipo).toMatchObject({
+      recordedByUserId: adminUserId,
+      recordedByPersonId: dad.id,
+      recordedByNameSnapshot: "爸爸",
+      recordingMode: "on_behalf",
+    });
+    expect(
+      db
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(eq(auditLog.kind, "contribution.recorded_on_behalf"))
+        .all().length,
+    ).toBeGreaterThanOrEqual(2);
+
+    expect(() =>
+      db.run(sql`
+        INSERT INTO contribution (
+          id, memory_event_id, author_person_id,
+          recorded_by_person_id, recorded_by_name_snapshot, recording_mode,
+          raw_text, visibility, created_at, updated_at
+        ) VALUES (
+          ${randomUUID()}, ${eventId}, ${dad.id},
+          NULL, '爸爸', 'self',
+          '无有效录入人', 'family', 0, 0
+        )
+      `),
+    ).toThrow();
   });
 
   it("编辑只影响自己的行：妈妈改定稿不覆盖爸爸文本", async () => {
@@ -133,11 +172,13 @@ describe("多人视角（#012）", () => {
     const r1 = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: dad.id,
+      recordedByUserId: adminUserId,
       rawText: "爸爸的原文",
     });
     const r2 = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: mom.id,
+      recordedByUserId: adminUserId,
       rawText: "妈妈的原文",
     });
     if (!r1.ok || !r2.ok) throw new Error("create failed");
@@ -169,6 +210,7 @@ describe("多人视角（#012）", () => {
       await createContribution(familyId, {
         memoryEventId: eventId,
         authorPersonId: "x",
+        recordedByUserId: adminUserId,
         rawText: "  ",
       }),
     ).toEqual({ ok: false, error: "invalid" });
@@ -177,11 +219,65 @@ describe("多人视角（#012）", () => {
       await createContribution(familyId, {
         memoryEventId: "not-my-event",
         authorPersonId: "x",
+        recordedByUserId: adminUserId,
         rawText: "hello",
       }),
     ).toEqual({ ok: false, error: "event_not_found" });
     // 他家庭视角读取为空
     expect(await listContributions(OTHER_FAMILY, eventId)).toHaveLength(0);
+  });
+
+  it("管理员不能替已有账号的 Person 发言，但账号本人可以", async () => {
+    const eventId = await makeEvent(5);
+    const aunt = await addPerson(familyId, {
+      displayName: "姑姑",
+      relationToChild: "姑姑",
+    });
+    if (!aunt.ok) throw new Error("add aunt failed");
+    const auntUserId = randomUUID();
+    db.insert(userTable)
+      .values({
+        id: auntUserId,
+        name: "姑姑",
+        email: "aunt-contribution@example.com",
+        emailVerified: false,
+        role: "contributor",
+        familyId,
+        personId: aunt.personId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .run();
+
+    await expect(
+      createContribution(familyId, {
+        memoryEventId: eventId,
+        authorPersonId: aunt.personId,
+        recordedByUserId: adminUserId,
+        rawText: "管理员不能替她发表。",
+      }),
+    ).resolves.toEqual({ ok: false, error: "author_not_allowed" });
+
+    const own = await createContribution(familyId, {
+      memoryEventId: eventId,
+      authorPersonId: aunt.personId,
+      recordedByUserId: auntUserId,
+      rawText: "这是姑姑本人记录。",
+    });
+    expect(own.ok).toBe(true);
+    if (!own.ok) return;
+    expect(
+      db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.kind, "contribution.recorded_on_behalf"),
+            eq(auditLog.actorUserId, auntUserId),
+          ),
+        )
+        .all(),
+    ).toHaveLength(0);
   });
 });
 

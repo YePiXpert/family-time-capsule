@@ -228,9 +228,10 @@ describe("Contribution / Fact 隔离", () => {
       await createContribution(familyB, {
         memoryEventId: confirmed.eventId,
         authorPersonId: personB,
+        recordedByUserId: userA,
         rawText: "越界",
       }),
-    ).toEqual({ ok: false, error: "event_not_found" });
+    ).toEqual({ ok: false, error: "forbidden" });
 
     // A 正常创建
     const peopleA = await db
@@ -240,6 +241,7 @@ describe("Contribution / Fact 隔离", () => {
     const contribA = await createContribution(familyA, {
       memoryEventId: confirmed.eventId,
       authorPersonId: peopleA.find((p) => p.isChild)!.id,
+      recordedByUserId: userA,
       rawText: "A家的讲述",
     });
     expect(contribA.ok).toBe(true);

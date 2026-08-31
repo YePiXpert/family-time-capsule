@@ -104,6 +104,20 @@ export function OnboardingForm({ defaultDisplayName }: { defaultDisplayName: str
             ))}
           </datalist>
         </label>
+        <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-foreground/15 p-3 text-sm leading-6">
+          <input
+            name="selfIsGuardian"
+            value="yes"
+            type="checkbox"
+            className="mt-1 size-4 shrink-0 accent-accent"
+          />
+          <span>
+            <span className="block font-medium">我是孩子的监护人</span>
+            <span className="block text-foreground/60">
+              监护人可以查看“仅父母”和尚未到龄的“长大后可见”内容。此权限不会根据“爸爸”“妈妈”等称谓自动推断，默认不启用。
+            </span>
+          </span>
+        </label>
       </fieldset>
       <button
         type="submit"

@@ -1,8 +1,14 @@
+import "server-only";
+
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuth } from "@/lib/auth/auth";
 import type { FamilyRole } from "@/lib/authz/policy";
-import { getUserBinding } from "./service";
+import {
+  getUserBinding,
+  InvalidUserBindingError,
+  type UserBinding,
+} from "./service";
 
 /**
  * 页面层上下文：认证 + 家庭绑定。
@@ -32,19 +38,49 @@ export type FamilyContext = {
   familyId: string;
   personId: string | null;
   role: FamilyRole;
+  accountEnabled: true;
+  isGuardian: boolean;
+  familyTimezone: string;
+  childLaterUnlockAge: number;
 };
+
+/**
+ * Page/Server Action boundary for a persisted principal. Invalid or disabled
+ * bindings get a stable, non-500 recovery screen. Route Handlers deliberately
+ * use getApiFamilyContext instead so they can return 401/403 themselves.
+ */
+export async function requireUserBinding(userId: string): Promise<UserBinding> {
+  try {
+    return await getUserBinding(userId);
+  } catch (error) {
+    if (error instanceof InvalidUserBindingError) {
+      redirect("/login?unavailable=1");
+    }
+    throw error;
+  }
+}
 
 /** 业务页面入口：已登录且已绑定家庭，否则分别跳 /login、/onboarding。 */
 export async function requireFamily(): Promise<FamilyContext> {
   const session = await requireSession();
-  const binding = await getUserBinding(session.id);
+  const binding = await requireUserBinding(session.id);
   if (!binding.familyId) redirect("/onboarding");
+  if (
+    binding.familyTimezone === null ||
+    binding.childLaterUnlockAge === null
+  ) {
+    throw new Error("family policy is unavailable");
+  }
   return {
     userId: session.id,
     userName: session.name,
     familyId: binding.familyId,
     personId: binding.personId,
     role: binding.role,
+    accountEnabled: binding.accountEnabled,
+    isGuardian: binding.isGuardian,
+    familyTimezone: binding.familyTimezone,
+    childLaterUnlockAge: binding.childLaterUnlockAge,
   };
 }
 
@@ -56,11 +92,21 @@ export async function getApiFamilyContext(
   if (!session) return null;
   const binding = await getUserBinding(session.user.id);
   if (!binding.familyId) return null;
+  if (
+    binding.familyTimezone === null ||
+    binding.childLaterUnlockAge === null
+  ) {
+    throw new Error("family policy is unavailable");
+  }
   return {
     userId: session.user.id,
     userName: session.user.name,
     familyId: binding.familyId,
     personId: binding.personId,
     role: binding.role,
+    accountEnabled: binding.accountEnabled,
+    isGuardian: binding.isGuardian,
+    familyTimezone: binding.familyTimezone,
+    childLaterUnlockAge: binding.childLaterUnlockAge,
   };
 }

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/family/context";
-import { getUserBinding, getRestorableFamilyForUser } from "@/lib/family/service";
+import { requireSession, requireUserBinding } from "@/lib/family/context";
+import { getRestorableFamilyForUser } from "@/lib/family/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { OnboardingForm } from "./onboarding-form";
 import { BindRestoredForm } from "./bind-restored-form";
@@ -12,7 +12,7 @@ export const metadata = { title: "创建家庭 · Family Time Capsule" };
 
 export default async function OnboardingPage() {
   const session = await requireSession();
-  const binding = await getUserBinding(session.id);
+  const binding = await requireUserBinding(session.id);
   if (binding.familyId) redirect("/");
   if (!hasFamilyCapability(binding.role, "family:manage")) {
     return (

@@ -1,9 +1,12 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
+  index,
   integer,
   sqliteTable,
   text,
   uniqueIndex,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 import { family, person } from "./family";
 
@@ -38,12 +41,14 @@ export const user = sqliteTable(
     image: text("image"),
     role: text("role").notNull().default("admin"),
     // 登录账号 ↔ 家庭 / 现实人物 的业务关联（明确 FK，可空）
-    familyId: text("family_id").references(() => family.id, {
-      onDelete: "set null",
-    }),
-    personId: text("person_id").references(() => person.id, {
-      onDelete: "set null",
-    }),
+    familyId: text("family_id").references(() => family.id),
+    personId: text("person_id").references(() => person.id),
+    // Accounts are retained for attribution and disabled instead of deleted.
+    disabledAt: integer("disabled_at", { mode: "timestamp" }),
+    disabledByUserId: text("disabled_by_user_id").references(
+      (): AnySQLiteColumn => user.id,
+      { onDelete: "set null" },
+    ),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -53,6 +58,19 @@ export const user = sqliteTable(
     uniqueIndex("user_person_uidx")
       .on(table.personId)
       .where(sql`${table.personId} is not null`),
+    index("user_family_role_disabled_idx").on(
+      table.familyId,
+      table.role,
+      table.disabledAt,
+    ),
+    check(
+      "user_disabled_at_check",
+      sql`${table.disabledAt} is null or (typeof(${table.disabledAt}) = 'integer' and ${table.disabledAt} >= 0)`,
+    ),
+    check(
+      "user_disabled_pair_check",
+      sql`${table.disabledByUserId} is null or ${table.disabledAt} is not null`,
+    ),
   ],
 );
 

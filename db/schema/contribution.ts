@@ -1,5 +1,7 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { asset } from "./asset";
+import { user } from "./auth";
 import { person } from "./family";
 import { memoryEvent } from "./memory";
 
@@ -29,6 +31,14 @@ export const contribution = sqliteTable(
     authorPersonId: text("author_person_id")
       .notNull()
       .references(() => person.id, { onDelete: "cascade" }),
+    // Durable provenance for who actually entered the words. Legacy and
+    // disaster-restored rows may be null; new interactive writes always set it.
+    recordedByUserId: text("recorded_by_user_id").references(() => user.id),
+    // Portable provenance survives family export where login credentials and
+    // local User ids are intentionally excluded.
+    recordedByPersonId: text("recorded_by_person_id").references(() => person.id),
+    recordedByNameSnapshot: text("recorded_by_name_snapshot"),
+    recordingMode: text("recording_mode").notNull().default("legacy"),
     // 口述原稿 / 手写正文
     rawText: text("raw_text"),
     audioAssetId: text("audio_asset_id").references(() => asset.id, {
@@ -45,6 +55,34 @@ export const contribution = sqliteTable(
   (t) => [
     index("contribution_event_idx").on(t.memoryEventId),
     index("contribution_author_idx").on(t.authorPersonId),
+    index("contribution_recorded_by_user_idx").on(t.recordedByUserId),
+    index("contribution_recorded_by_person_idx").on(t.recordedByPersonId),
+    index("contribution_event_visibility_author_idx").on(
+      t.memoryEventId,
+      t.visibility,
+      t.authorPersonId,
+    ),
+    index("contribution_audio_asset_idx").on(t.audioAssetId),
+    check(
+      "contribution_recording_provenance_check",
+      sql`(
+        (${t.recordingMode} = 'legacy'
+          and ${t.recordedByUserId} is null
+          and ${t.recordedByPersonId} is null
+          and ${t.recordedByNameSnapshot} is null)
+        or
+        (${t.recordingMode} = 'self'
+          and ${t.recordedByPersonId} is not null
+          and ${t.recordedByPersonId} = ${t.authorPersonId}
+          and ${t.recordedByNameSnapshot} is not null
+          and length(trim(${t.recordedByNameSnapshot})) between 1 and 50)
+        or
+        (${t.recordingMode} = 'on_behalf'
+          and (${t.recordedByPersonId} is null or ${t.recordedByPersonId} <> ${t.authorPersonId})
+          and ${t.recordedByNameSnapshot} is not null
+          and length(trim(${t.recordedByNameSnapshot})) between 1 and 50)
+      )`,
+    ),
   ],
 );
 

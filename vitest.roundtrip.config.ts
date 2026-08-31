@@ -5,7 +5,10 @@ import { defineConfig } from "vitest/config";
 // 由 `npm run test:e2e` 在 playwright 之后运行，不参与普通 `npm test`。
 export default defineConfig({
   resolve: {
-    alias: { "@": path.resolve(__dirname, ".") },
+    alias: {
+      "server-only": path.resolve(__dirname, "tests/mocks/server-only.ts"),
+      "@": path.resolve(__dirname, "."),
+    },
   },
   test: {
     include: ["tests/roundtrip/**/*.test.ts"],

@@ -10,6 +10,7 @@ const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-auth-"));
 process.env.DATA_DIR = dataDir;
 process.env.INITIAL_SETUP_TOKEN = "integration-setup-token";
 process.env.AUTH_SECRET = "integration-test-secret";
+process.env.AUTH_SIGNIN_RATE_LIMIT_MAX = "100";
 
 afterAll(async () => {
   const { closeDatabase } = await import("@/db");
@@ -23,6 +24,7 @@ const { performSetup, getSetupState, countUsers } = await import(
 const { getAuth } = await import("@/lib/auth/auth");
 const { getDb } = await import("@/db");
 const { account, session, user } = await import("@/db/schema/auth");
+const { getUserBinding } = await import("@/lib/family/service");
 
 const ADMIN = {
   token: "integration-setup-token",
@@ -123,5 +125,26 @@ describe("登录", () => {
     const sessions = await db.select().from(session);
     expect(sessions.length).toBeGreaterThanOrEqual(1);
     expect(sessions[0].userId).toBeTruthy();
+  });
+
+  it("停用账号无法新建会话，且不会泄露成可用 principal", async () => {
+    const db = getDb();
+    const admin = (await db.select({ id: user.id }).from(user))[0];
+    await db
+      .update(user)
+      .set({ disabledAt: new Date() })
+      .where(eq(user.id, admin.id));
+
+    expect(await trySignIn("admin@example.com", ADMIN.password)).toBe(false);
+    expect(await db.select({ id: session.id }).from(session)).toHaveLength(0);
+    await expect(getUserBinding(admin.id)).rejects.toMatchObject({
+      code: "account_disabled",
+    });
+
+    await db
+      .update(user)
+      .set({ disabledAt: null, disabledByUserId: null })
+      .where(eq(user.id, admin.id));
+    expect(await trySignIn("admin@example.com", ADMIN.password)).toBe(true);
   });
 });

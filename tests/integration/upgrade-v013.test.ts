@@ -205,6 +205,155 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
       family_id: "family-v013",
       person_id: "parent-v013",
     });
+    expect(
+      (await db.all(sql`
+        SELECT child_later_unlock_age
+        FROM family WHERE id = 'family-v013'
+      `))[0],
+    ).toEqual({ child_later_unlock_age: 18 });
+    expect(
+      await db.all(sql`
+        SELECT is_guardian, child_later_unlocked_at
+        FROM person WHERE family_id = 'family-v013' ORDER BY id
+      `),
+    ).toEqual([
+      { is_guardian: 0, child_later_unlocked_at: null },
+      { is_guardian: 0, child_later_unlocked_at: null },
+    ]);
+    expect(
+      (await db.all(sql`
+        SELECT disabled_at, disabled_by_user_id
+        FROM user WHERE id = 'user-v013'
+      `))[0],
+    ).toEqual({ disabled_at: null, disabled_by_user_id: null });
+    expect(
+      (await db.all(sql`
+        SELECT recorded_by_user_id, recorded_by_person_id,
+               recorded_by_name_snapshot, recording_mode
+        FROM contribution WHERE id = 'contribution-v013'
+      `))[0],
+    ).toEqual({
+      recorded_by_user_id: null,
+      recorded_by_person_id: null,
+      recorded_by_name_snapshot: null,
+      recording_mode: "legacy",
+    });
+
+    const userForeignKeys = (await db.all(
+      sql.raw("PRAGMA foreign_key_list('user')"),
+    )) as Array<{ from: string; on_delete: string }>;
+    expect(
+      userForeignKeys.find((foreignKey) => foreignKey.from === "family_id"),
+    ).toMatchObject({ on_delete: "NO ACTION" });
+    expect(
+      userForeignKeys.find((foreignKey) => foreignKey.from === "person_id"),
+    ).toMatchObject({ on_delete: "NO ACTION" });
+    expect(
+      userForeignKeys.find(
+        (foreignKey) => foreignKey.from === "disabled_by_user_id",
+      ),
+    ).toMatchObject({ on_delete: "SET NULL" });
+
+    const triggerNames = (await db.all(sql`
+      SELECT name FROM sqlite_schema WHERE type = 'trigger' ORDER BY name
+    `)) as Array<{ name: string }>;
+    expect(triggerNames.map((trigger) => trigger.name)).toEqual(
+      expect.arrayContaining([
+        "contribution_family_provenance_insert_guard",
+        "contribution_family_provenance_update_guard",
+        "contribution_visibility_insert_guard",
+        "contribution_visibility_update_guard",
+        "person_child_policy_insert_guard",
+        "person_child_policy_update_guard",
+        "person_family_immutable_guard",
+        "session_enabled_user_insert_guard",
+        "session_enabled_user_update_guard",
+        "user_disable_revoke_sessions",
+        "user_last_enabled_admin_delete_guard",
+        "user_last_enabled_admin_update_guard",
+        "user_person_family_insert_guard",
+        "user_person_family_update_guard",
+        "user_role_insert_guard",
+        "user_role_update_guard",
+      ]),
+    );
+    expect(
+      await db.all(sql`
+        SELECT name FROM sqlite_schema
+        WHERE name LIKE '__new_%' OR tbl_name LIKE '__new_%'
+      `),
+    ).toEqual([]);
+    const migration0015 = readFileSync(
+      path.join(
+        process.cwd(),
+        "db",
+        "migrations",
+        "0015_account_visibility_policy.sql",
+      ),
+      "utf8",
+    );
+    expect(migration0015).not.toMatch(/__new_/i);
+    expect(migration0015).not.toMatch(
+      /DROP\s+TABLE\s+[`"]?(?:user|family|person|contribution)[`"]?/i,
+    );
+
+    expect(() =>
+      db.run(sql`
+        UPDATE family SET child_later_unlock_age = 18.5
+        WHERE id = 'family-v013'
+      `),
+    ).toThrow();
+    expect(() =>
+      db.run(sql`
+        UPDATE person SET child_later_unlocked_at = -1
+        WHERE id = 'child-v013'
+      `),
+    ).toThrow();
+
+    await db.run(sql`
+      INSERT INTO family (id, name, timezone, created_at, updated_at)
+      VALUES ('family-immutable-probe', '不可迁移目标', 'Asia/Shanghai', 0, 0)
+    `);
+    expect(() =>
+      db.run(sql`
+        UPDATE person SET family_id = 'family-immutable-probe'
+        WHERE id = 'parent-v013'
+      `),
+    ).toThrow();
+    await db.run(sql`DELETE FROM family WHERE id = 'family-immutable-probe'`);
+
+    expect(() =>
+      db.run(sql`
+        UPDATE contribution
+        SET recording_mode = 'self',
+            recorded_by_person_id = NULL,
+            recorded_by_name_snapshot = '妈妈'
+        WHERE id = 'contribution-v013'
+      `),
+    ).toThrow();
+
+    await db.run(sql`
+      INSERT INTO user (
+        id, name, email, email_verified, role, family_id, disabled_at,
+        created_at, updated_at
+      ) VALUES (
+        'disabled-session-probe', '停用探针', 'disabled-probe@example.com',
+        0, 'viewer', 'family-v013', 1, 0, 0
+      )
+    `);
+    expect(() =>
+      db.run(sql`
+        INSERT INTO session (
+          id, token, user_id, expires_at, created_at, updated_at
+        ) VALUES (
+          'disabled-session-row', 'disabled-session-token',
+          'disabled-session-probe', 9999999999999, 0, 0
+        )
+      `),
+    ).toThrow();
+    await db.run(sql`DELETE FROM user WHERE id = 'disabled-session-probe'`);
+    expect(await db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
     const userIndexes = (await db.all(
       sql.raw("PRAGMA index_list('user')"),
     )) as Array<{ name: string; unique: number; partial: number }>;

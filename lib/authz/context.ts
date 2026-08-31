@@ -9,14 +9,11 @@ import {
   getApiFamilyContext,
   requireFamily,
   requireSession,
+  requireUserBinding,
   type FamilyContext,
   type SessionUser,
 } from "@/lib/family/context";
-import {
-  getUserBinding,
-  InvalidUserBindingError,
-  type UserBinding,
-} from "@/lib/family/service";
+import { InvalidUserBindingError, type UserBinding } from "@/lib/family/service";
 
 /** Server-only authorization context for an authenticated, possibly unbound account. */
 export type AccountAuthorizationContext = SessionUser & UserBinding;
@@ -30,7 +27,7 @@ export async function requireAccountCapability(
   capability: FamilyCapability,
 ): Promise<AccountAuthorizationContext> {
   const session = await requireSession();
-  const binding = await getUserBinding(session.id);
+  const binding = await requireUserBinding(session.id);
   assertFamilyCapability(binding.role, capability);
   return { ...session, ...binding };
 }

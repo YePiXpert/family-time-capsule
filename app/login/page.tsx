@@ -1,6 +1,10 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuth } from "@/lib/auth/auth";
+import {
+  getUserBinding,
+  InvalidUserBindingError,
+} from "@/lib/family/service";
 import { LoginForm } from "./login-form";
 
 export const metadata = { title: "登录 · Family Time Capsule" };
@@ -8,10 +12,24 @@ export const metadata = { title: "登录 · Family Time Capsule" };
 export default async function LoginPage(props: PageProps<"/login">) {
   const requestHeaders = await headers();
   const session = await getAuth().api.getSession({ headers: requestHeaders });
-  if (session) redirect("/");
 
   const searchParams = await props.searchParams;
   const justSetup = searchParams?.setup === "1";
+  let accountUnavailable = searchParams?.unavailable === "1";
+  let validSession = false;
+  if (session) {
+    try {
+      await getUserBinding(session.user.id);
+      validSession = true;
+    } catch (error) {
+      if (error instanceof InvalidUserBindingError) {
+        accountUnavailable = true;
+      } else {
+        throw error;
+      }
+    }
+  }
+  if (validSession) redirect("/");
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-20">
@@ -22,6 +40,14 @@ export default async function LoginPage(props: PageProps<"/login">) {
       {justSetup && (
         <p className="mt-6 rounded-lg border border-accent/40 bg-accent/5 p-3 text-sm leading-6">
           初始化完成。请使用刚创建的管理员账号登录。
+        </p>
+      )}
+      {accountUnavailable && (
+        <p
+          role="alert"
+          className="mt-6 rounded-lg border border-amber-700/30 bg-amber-500/10 p-3 text-sm leading-6 text-amber-900 dark:text-amber-200"
+        >
+          当前登录状态已失效，或账号暂不可用。请联系家庭管理员恢复账号后再登录。
         </p>
       )}
       <LoginForm />

@@ -1,9 +1,19 @@
+import "server-only";
+
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
+import { auditLog } from "@/db/schema/audit";
+import { user as userTable } from "@/db/schema/auth";
 import { person as personTable } from "@/db/schema/family";
 import { memoryEvent } from "@/db/schema/memory";
 import { contribution, fact } from "@/db/schema/contribution";
+import { AUDIT_KINDS, requiredAuditValues } from "@/lib/audit/service";
+import {
+  hasFamilyCapability,
+  isContributionVisibility,
+  isFamilyRole,
+} from "@/lib/authz/policy";
 
 /**
  * Contribution 领域服务（Issue #012）。
@@ -18,6 +28,7 @@ export type Visibility = "private" | "parents" | "family" | "child_later";
 export type CreateContributionInput = {
   memoryEventId: string;
   authorPersonId: string;
+  recordedByUserId: string;
   rawText?: string;
   editedText?: string;
   visibility?: Visibility;
@@ -25,7 +36,15 @@ export type CreateContributionInput = {
 
 export type CreateResult =
   | { ok: true; contributionId: string }
-  | { ok: false; error: "event_not_found" | "author_not_found" | "invalid" };
+  | {
+      ok: false;
+      error:
+        | "event_not_found"
+        | "author_not_found"
+        | "author_not_allowed"
+        | "forbidden"
+        | "invalid";
+    };
 
 function validateText(text: string | undefined): boolean {
   if (text === undefined) return true;
@@ -48,19 +67,6 @@ async function eventBelongsToFamily(
   return Boolean(rows[0]);
 }
 
-async function personBelongsToFamily(
-  familyId: string,
-  personId: string,
-): Promise<boolean> {
-  const db = getDb();
-  const rows = await db
-    .select({ id: personTable.id })
-    .from(personTable)
-    .where(and(eq(personTable.familyId, familyId), eq(personTable.id, personId)))
-    .limit(1);
-  return Boolean(rows[0]);
-}
-
 /** 创建视角：author 是 Person（无 User 也可，如外婆） */
 export async function createContribution(
   familyId: string,
@@ -72,26 +78,116 @@ export async function createContribution(
   if (!input.rawText?.trim() && !input.editedText?.trim()) {
     return { ok: false, error: "invalid" };
   }
-  if (!(await eventBelongsToFamily(familyId, input.memoryEventId))) {
-    return { ok: false, error: "event_not_found" };
-  }
-  if (!(await personBelongsToFamily(familyId, input.authorPersonId))) {
-    return { ok: false, error: "author_not_found" };
+  if (
+    input.visibility !== undefined &&
+    !isContributionVisibility(input.visibility)
+  ) {
+    return { ok: false, error: "invalid" };
   }
   const db = getDb();
   const id = randomUUID();
   const now = new Date();
-  await db.insert(contribution).values({
-    id,
-    memoryEventId: input.memoryEventId,
-    authorPersonId: input.authorPersonId,
-    rawText: input.rawText?.trim() || null,
-    editedText: input.editedText?.trim() || null,
-    visibility: input.visibility ?? "family",
-    createdAt: now,
-    updatedAt: now,
+  return db.transaction((tx) => {
+    const actor = tx
+      .select({
+        name: userTable.name,
+        role: userTable.role,
+        personId: userTable.personId,
+        boundPersonId: personTable.id,
+        boundPersonFamilyId: personTable.familyId,
+      })
+      .from(userTable)
+      .leftJoin(personTable, eq(userTable.personId, personTable.id))
+      .where(
+        and(
+          eq(userTable.id, input.recordedByUserId),
+          eq(userTable.familyId, familyId),
+          isNull(userTable.disabledAt),
+          or(
+            isNull(userTable.personId),
+            and(
+              eq(personTable.id, userTable.personId),
+              eq(personTable.familyId, familyId),
+            ),
+          ),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (
+      !actor ||
+      !isFamilyRole(actor.role) ||
+      !hasFamilyCapability(actor.role, "contribution:create")
+    ) {
+      return { ok: false, error: "forbidden" } as const;
+    }
+
+    const event = tx
+      .select({ id: memoryEvent.id })
+      .from(memoryEvent)
+      .where(
+        and(
+          eq(memoryEvent.id, input.memoryEventId),
+          eq(memoryEvent.familyId, familyId),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (!event) return { ok: false, error: "event_not_found" } as const;
+
+    const author = tx
+      .select({ id: personTable.id, boundUserId: userTable.id })
+      .from(personTable)
+      .leftJoin(userTable, eq(userTable.personId, personTable.id))
+      .where(
+        and(
+          eq(personTable.id, input.authorPersonId),
+          eq(personTable.familyId, familyId),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (!author) return { ok: false, error: "author_not_found" } as const;
+
+    const recordingOwnWords = actor.personId === author.id;
+    const mayRecordOnBehalf =
+      (actor.role === "admin" || actor.role === "editor") &&
+      author.boundUserId === null;
+    if (!recordingOwnWords && !mayRecordOnBehalf) {
+      return { ok: false, error: "author_not_allowed" } as const;
+    }
+
+    tx.insert(contribution)
+      .values({
+        id,
+        memoryEventId: input.memoryEventId,
+        authorPersonId: input.authorPersonId,
+        recordedByUserId: input.recordedByUserId,
+        recordedByPersonId: actor.personId,
+        recordedByNameSnapshot: actor.name,
+        recordingMode: recordingOwnWords ? "self" : "on_behalf",
+        rawText: input.rawText?.trim() || null,
+        editedText: input.editedText?.trim() || null,
+        visibility: input.visibility ?? "family",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    if (!recordingOwnWords) {
+      tx.insert(auditLog)
+        .values(
+          requiredAuditValues(
+            familyId,
+            AUDIT_KINDS.contributionRecordedOnBehalf,
+            input.recordedByUserId,
+            { contributionId: id, authorPersonId: input.authorPersonId },
+            now,
+          ),
+        )
+        .run();
+    }
+    return { ok: true, contributionId: id } as const;
   });
-  return { ok: true, contributionId: id };
 }
 
 /** 只改这一行的定稿文本——不同人的行天然互不影响；先校验归属再写入 */

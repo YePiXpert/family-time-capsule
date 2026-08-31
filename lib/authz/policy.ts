@@ -25,6 +25,7 @@ export const FAMILY_CAPABILITIES = [
   "contribution:create",
   "capsule:write",
   "family:manage",
+  "account:manage",
   "account:invite",
   "archive:export",
   "backup:manage",
@@ -95,6 +96,15 @@ export const CONTRIBUTION_VISIBILITIES = [
 
 export type ContributionVisibility =
   (typeof CONTRIBUTION_VISIBILITIES)[number];
+
+export function isContributionVisibility(
+  value: unknown,
+): value is ContributionVisibility {
+  return (
+    typeof value === "string" &&
+    CONTRIBUTION_VISIBILITIES.includes(value as ContributionVisibility)
+  );
+}
 
 export type ContributionViewer = {
   /** The viewer and contribution have already been proven to share a family. */

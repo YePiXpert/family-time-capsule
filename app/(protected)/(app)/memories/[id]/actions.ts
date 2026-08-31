@@ -131,6 +131,7 @@ export async function addContributionAction(
   const result = await createContribution(familyId, {
     memoryEventId,
     authorPersonId,
+    recordedByUserId: context.userId,
     rawText: text,
     visibility,
   });
@@ -141,7 +142,11 @@ export async function addContributionAction(
           ? "事件不存在。"
           : result.error === "author_not_found"
             ? "请选择家庭成员。"
-            : "写 1–5000 字。",
+            : result.error === "author_not_allowed"
+              ? "该家人已有自己的登录账号，不能替对方发表观点。"
+              : result.error === "forbidden"
+                ? "你的账号权限已经变化，本次没有保存。"
+                : "写 1–5000 字。",
     };
   }
   revalidatePath(`/memories/${memoryEventId}`);

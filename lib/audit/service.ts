@@ -21,7 +21,32 @@ export type AuditEntry = {
 export const AUDIT_KINDS = {
   exportCreated: "export.created",
   restoreCompleted: "restore.completed",
+  accountDisabled: "account.disabled",
+  accountEnabled: "account.enabled",
+  accountRoleChanged: "account.role_changed",
+  contributionRecordedOnBehalf: "contribution.recorded_on_behalf",
+  guardianChanged: "person.guardian_changed",
+  childLaterPolicyChanged: "child_later.policy_changed",
+  childLaterManuallyUnlocked: "child_later.manually_unlocked",
 } as const;
+
+/** Values for security-critical mutations that write audit in the same tx. */
+export function requiredAuditValues(
+  familyId: string,
+  kind: string,
+  actorUserId: string,
+  detail: Record<string, unknown>,
+  createdAt = new Date(),
+) {
+  return {
+    id: randomUUID(),
+    familyId,
+    kind,
+    actorUserId,
+    detailJson: JSON.stringify(detail),
+    createdAt,
+  };
+}
 
 export async function recordAudit(
   familyId: string,

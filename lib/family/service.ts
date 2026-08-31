@@ -20,6 +20,7 @@ export type OnboardingInput = {
   childBirthDate: string; // YYYY-MM-DD，孩子的成长时间轴基准
   selfDisplayName: string;
   selfRelationToChild: string;
+  selfIsGuardian?: boolean;
 };
 
 export type OnboardingResult =
@@ -53,17 +54,29 @@ export type UserBinding = {
   familyId: string | null;
   personId: string | null;
   role: FamilyRole;
+  accountEnabled: true;
+  isGuardian: boolean;
+  familyTimezone: string | null;
+  childLaterUnlockAge: number | null;
 };
 
 export class InvalidUserBindingError extends Error {
-  readonly code: "user_not_found" | "invalid_family_role";
+  readonly code:
+    | "user_not_found"
+    | "invalid_family_role"
+    | "account_disabled"
+    | "invalid_family_binding"
+    | "invalid_person_binding";
 
-  constructor(code: "user_not_found" | "invalid_family_role") {
-    super(
-      code === "user_not_found"
-        ? "authenticated user no longer exists"
-        : "authenticated user has an invalid family role",
-    );
+  constructor(code: InvalidUserBindingError["code"]) {
+    const messages: Record<InvalidUserBindingError["code"], string> = {
+      user_not_found: "authenticated user no longer exists",
+      invalid_family_role: "authenticated user has an invalid family role",
+      account_disabled: "authenticated user account is disabled",
+      invalid_family_binding: "authenticated user has an invalid family binding",
+      invalid_person_binding: "authenticated user has an invalid Person binding",
+    };
+    super(messages[code]);
     this.name = "InvalidUserBindingError";
     this.code = code;
   }
@@ -80,16 +93,46 @@ export async function getUserBinding(userId: string): Promise<UserBinding> {
       familyId: userTable.familyId,
       personId: userTable.personId,
       role: userTable.role,
+      disabledAt: userTable.disabledAt,
+      boundPersonId: person.id,
+      boundPersonFamilyId: person.familyId,
+      isGuardian: person.isGuardian,
+      boundFamilyId: family.id,
+      familyTimezone: family.timezone,
+      childLaterUnlockAge: family.childLaterUnlockAge,
     })
     .from(userTable)
+    .leftJoin(person, eq(userTable.personId, person.id))
+    .leftJoin(family, eq(userTable.familyId, family.id))
     .where(eq(userTable.id, userId));
   const row = rows[0];
   if (!row) throw new InvalidUserBindingError("user_not_found");
+  if (row.disabledAt !== null) {
+    throw new InvalidUserBindingError("account_disabled");
+  }
   const role = row.role;
   if (!isFamilyRole(role)) {
     throw new InvalidUserBindingError("invalid_family_role");
   }
-  return { familyId: row.familyId, personId: row.personId, role };
+  if (row.familyId !== null && row.boundFamilyId !== row.familyId) {
+    throw new InvalidUserBindingError("invalid_family_binding");
+  }
+  if (
+    row.personId !== null &&
+    (row.boundPersonId !== row.personId ||
+      row.boundPersonFamilyId !== row.familyId)
+  ) {
+    throw new InvalidUserBindingError("invalid_person_binding");
+  }
+  return {
+    familyId: row.familyId,
+    personId: row.personId,
+    role,
+    accountEnabled: true,
+    isGuardian: row.isGuardian ?? false,
+    familyTimezone: row.familyTimezone ?? null,
+    childLaterUnlockAge: row.childLaterUnlockAge ?? null,
+  };
 }
 
 export async function getFamily(familyId: string) {
@@ -167,6 +210,7 @@ export async function completeOnboarding(
           displayName: input.selfDisplayName.trim(),
           relationToChild: input.selfRelationToChild.trim(),
           isChild: false,
+          isGuardian: input.selfIsGuardian === true,
           createdAt: now,
           updatedAt: now,
         },
