@@ -154,6 +154,20 @@
 - **后果**：UI 在记忆详情页为每个音频/视频原件展示转录状态；`ai:review` 角色可请求 AI 转录，`event:write` 角色可保存人工修订。
 - **PRD 偏差**：无。
 
+## D-016（M3-B）AssetAnalysis：图片视觉分析作为可再生衍生物
+
+- **日期**：2026-08-31
+- **状态**：已接受
+- **决策**：
+  1. 新增 `asset_analysis` 表存储图片素材的机器视觉分析；每条分析只对应一个原始图片 asset（`originalAssetId IS NULL`），rerun 时 UPSERT。
+  2. 分析分为 `description`（客观可见内容描述）与 `ocrText`（图中文字），两者都是机器输出、可重建；UI 必须始终标注「AI 生成 · 未确认」，不得伪装成用户确认事实。
+  3. 若原图 MIME（JPEG/PNG/WebP/GIF）被 vision provider 直接接受，则 `analyzedVia='original'`；否则查找同 asset 的 `thumbnail` 衍生物作为输入（`analyzedVia='thumbnail'`），以覆盖 HEIC/AVIF 等格式而不触碰原件。
+  4. `sourceSha256` 永远记录原始 asset 的 SHA-256，用于漂移检测；thumbnail 的 SHA-256 不进入分析表。
+  5. `asset_analysis` 是可再生衍生物：**不进入 portable family archive**，不写入导出 JSON，恢复端不重建该表；需要时重新运行 `analyze.asset_image.v1` 即可重建。
+  6. 图片分析不会写入 `fact` 表，也不能自动确认事实；本切片不触碰事实锁。
+- **后果**：记忆详情页为每个原始图片 asset 展示 AI 图像理解区块；具备 `ai:review` 能力的用户可逐项触发，触发前需要 vision capability 可用且（外部 provider 时）已同意。
+- **PRD 偏差**：无。
+
 ## D-014（RH-004）恢复目标与认证数据的处理
 
 - **日期**：2026-08-30

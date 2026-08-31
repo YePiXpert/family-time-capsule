@@ -226,6 +226,30 @@ type AssetTranscript = {
 - `status='machine'` 表示当前显示的是机器文本；一旦用户保存修订，`status='user_edited'` 且后续 AI rerun 保持该状态。
 - 旧 `contribution.transcript` 列是占位且未使用的，新表是权威来源。
 
+## AssetAnalysis（M3-B 已落地：`db/schema/analysis.ts`）
+
+```ts
+type AssetAnalysis = {
+  id: string
+  familyId: string        // FK → family，cascade delete
+  assetId: string         // FK → asset，cascade delete；unique(assetId)
+  description: string     // 机器生成的图片描述（客观可见内容）
+  ocrText?: string        // 图中文字（无则为 null）
+  provider: string        // providerId
+  model: string           // 实际使用的模型
+  sourceSha256: string    // 处理时原始 asset.sha256 的快照
+  analyzedVia: "original" | "thumbnail"  // 实际送入 provider 的媒体来源
+  createdByJobId?: string // 产生本次 machine 结果的 ai_job.id
+  createdAt: Date
+  updatedAt: Date
+}
+```
+
+- 每 asset 最多一行 analysis；rerun 时 UPSERT 全字段。
+- 只接受原始图片 asset（`originalAssetId IS NULL`）。
+- 若原图 MIME（JPEG/PNG/WebP/GIF）直接被 vision provider 接受，则分析原图（`analyzedVia='original'`）；否则使用同 asset 的 thumbnail 衍生物（`analyzedVia='thumbnail'`）；既不接受又无 thumbnail 则拒绝。
+- 结果是可再生衍生物：**不进入 portable family archive**，不写入 `facts.json`，恢复端不会重建该表；UI 必须始终标注「AI 生成 · 未确认」。
+
 ## Contribution（#012 已落地：`db/schema/contribution.ts`）
 
 ```ts

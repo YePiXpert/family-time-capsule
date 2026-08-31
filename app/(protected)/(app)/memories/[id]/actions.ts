@@ -6,6 +6,7 @@ import {
   requestTranscription,
   saveEditedTranscript,
 } from "@/lib/transcripts/service";
+import { requestImageAnalysis } from "@/lib/analysis/service";
 import {
   canCreateContributionForPerson,
   FamilyAuthorizationError,
@@ -211,6 +212,41 @@ export async function setFactStatusAction(
 }
 
 export type TranscriptActionState = { error?: string; success?: string };
+
+export type ImageAnalysisActionState = { error?: string; success?: string };
+
+/** 为图片素材请求 AI 视觉分析（需要 ai:review）。 */
+export async function requestImageAnalysisAction(
+  _prev: ImageAnalysisActionState | undefined,
+  formData: FormData,
+): Promise<ImageAnalysisActionState> {
+  const context = await requireFamilyCapability("ai:review");
+  const assetId = String(formData.get("assetId") ?? "");
+  const memoryEventId = String(formData.get("memoryEventId") ?? "");
+  const result = requestImageAnalysis(context, assetId);
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "asset_not_found"
+          ? "素材不存在。"
+          : result.error === "unsupported_asset_type"
+            ? "该类型素材不支持图像分析。"
+            : result.error === "unsupported_media_type"
+              ? "该编码格式不支持分析，且没有可用的缩略图。"
+              : result.error === "image_too_large"
+                ? "图片超过 20 MiB 上限，无法分析。"
+                : result.error === "source_forbidden_or_not_found"
+                  ? "当前不可见或已被删除。"
+                  : result.error === "capability_unavailable"
+                    ? "当前未配置视觉分析能力。"
+                    : result.error === "capability_not_consented"
+                      ? "请先由管理员在「设置 › AI」开启视觉分析外部处理同意。"
+                      : "请求失败，请重试。",
+    };
+  }
+  revalidatePath(`/memories/${memoryEventId}`);
+  return { success: "已加入图像分析队列。" };
+}
 
 /** 为音频/视频素材请求 AI 转录（需要 ai:review）。 */
 export async function requestTranscriptionAction(

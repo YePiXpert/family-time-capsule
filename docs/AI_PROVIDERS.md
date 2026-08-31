@@ -1,11 +1,11 @@
 # AI Provider 配置与适配器
 
-> 当前状态：**Provider、同意与后台任务基础设施已实现，首个真实 AI handler
-> 已启用**。`lib/ai/` 提供 provider-neutral 接口、关闭实现、离线 Fake 和
+> 当前状态：**Provider、同意与后台任务基础设施已实现，真实 AI handler
+> 已扩展至图片视觉分析**。`lib/ai/` 提供 provider-neutral 接口、关闭实现、离线 Fake 和
 > OpenAI-compatible 传输层；`lib/ai/jobs/`、`jobs/` 与 `/settings/ai` 提供
 > SQLite queue、worker、披露和同意控制。production handler registry 已注册
-> `transcribe.asset.v1`（音频/视频转录），其他能力（vision、suggestion、
-> embedding）仍为空，不会自动处理家庭资料。
+> `transcribe.asset.v1`（音频/视频转录）与 `analyze.asset_image.v1`（图片视觉分析），
+> 其余能力（suggestion、embedding）仍为空，不会自动处理家庭资料。
 
 ## 1. 架构边界
 
@@ -157,9 +157,9 @@ service 与 app 共享 `/data` 和同一组 AI 环境变量。worker 停止、Pr
 所有 capability 关闭，都不影响上传、Inbox、Timeline、Contribution、Capsule、
 导出和恢复。
 
-当前 registry 已注册 `transcribe.asset.v1`（音频/视频转录），其余真实 handler
-（vision、suggestion、embedding）会随对应的数据模型和审核流程一起注册，不能
-仅为了“能调用接口”而绕过来源和事实锁。
+当前 registry 已注册 `transcribe.asset.v1`（音频/视频转录）与
+`analyze.asset_image.v1`（图片视觉分析），其余真实 handler（suggestion、embedding）
+会随对应的数据模型和审核流程一起注册，不能仅为了“能调用接口”而绕过来源和事实锁。
 
 ## 5. 输入与响应限制
 

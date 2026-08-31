@@ -12,3 +12,4 @@ export * as contributionSchema from "./contribution";
 export * as capsuleSchema from "./capsule";
 export * as invitationSchema from "./invitation";
 export * as transcriptSchema from "./transcript";
+export * as analysisSchema from "./analysis";

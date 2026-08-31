@@ -127,6 +127,13 @@
       "when": 1788184827887,
       "tag": "0017_superb_hawkeye",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788188072494,
+      "tag": "0018_cool_lucky_pierre",
+      "breakpoints": true
     }
   ]
 }

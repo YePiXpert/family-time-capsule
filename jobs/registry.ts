@@ -1,5 +1,6 @@
 import { isSafeJobType } from "@/lib/ai/jobs/validation";
 import { transcribeAssetHandler } from "@/lib/ai/handlers/transcribe-asset";
+import { analyzeAssetImageHandler } from "@/lib/ai/handlers/analyze-asset-image";
 import type { AiJobHandler } from "./types";
 
 export {
@@ -29,8 +30,7 @@ export class AiJobRegistry {
 
 /** Organizer slices register handlers here as their normalized tables land. */
 export function createProductionAiJobRegistry(): AiJobRegistry {
-  return new AiJobRegistry().register(
-    "transcribe.asset.v1",
-    transcribeAssetHandler,
-  );
+  return new AiJobRegistry()
+    .register("transcribe.asset.v1", transcribeAssetHandler)
+    .register("analyze.asset_image.v1", analyzeAssetImageHandler);
 }

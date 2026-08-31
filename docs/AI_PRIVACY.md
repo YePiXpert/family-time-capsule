@@ -1,10 +1,10 @@
 # AI 隐私与外部处理边界
 
-> 当前状态：**安全启用基础设施已实现，首个真实素材处理器已启用**。仓库已有
+> 当前状态：**安全启用基础设施已实现，真实素材处理器已扩展至图片视觉分析**。仓库已有
 > provider-neutral 适配器、SQLite job queue、独立 worker、`/settings/ai`
 > 披露与逐能力同意。production handler registry 已注册 `transcribe.asset.v1`
->（音频/视频转录），只有具备 `ai:review` 能力的用户才能逐项触发；即使配置
-> `AI_PROVIDER` 并完成同意，系统仍不会自动扫描或发送其他家庭资料。
+>（音频/视频转录）与 `analyze.asset_image.v1`（图片视觉分析），只有具备 `ai:review`
+> 能力的用户才能逐项触发；即使配置 `AI_PROVIDER` 并完成同意，系统仍不会自动扫描或发送其他家庭资料。
 
 ## 1. 原则
 
@@ -28,8 +28,9 @@
 - 登录成员可在 `/settings/ai` 查看 Provider、模型、本机/外部边界和各能力会发送
   的内容类型；只有 admin 能启用或撤销逐能力同意；
 - admin/editor 可查看家庭作用域 job 状态并取消或重试允许的任务；
-- 具备 `ai:review` 的用户可在记忆详情页为音频/视频原件请求 AI 转录；
+- 具备 `ai:review` 的用户可在记忆详情页为音频/视频原件请求 AI 转录，或为图片原件请求 AI 视觉分析；
 - 转录结果存入独立的 `asset_transcript` 表，用户修订后的文本不会被 AI rerun 覆盖；
+- 图片分析结果存入独立的 `asset_analysis` 表，仅作为可重建的未确认参考，不进入 portable family archive；
 - SQLite 保存有界的 job、source fingerprint、attempt、lease 与 worker heartbeat
   运维元数据，worker 可恢复过期租约并安全退避重试；
 - 入队、领取、续租和提交结果时都会重验账号、角色、家庭、来源指纹、可见性、
@@ -39,8 +40,7 @@
 
 - 自动扫描、上传或转录任何原始媒体（转录必须人工逐项触发）；
 - 从 Inbox、Contribution、Capsule、Story 或时间轴读取资料交给 AI；
-- 执行 vision、suggestion 或 embedding job；这些 handler 将在对应
-  业务切片实现后逐项注册；
+- 执行 suggestion 或 embedding job；这些 handler 将在对应业务切片实现后逐项注册；
 - AI 自动确认 Fact 或覆盖用户修订的转录文本；
 - 在 SQLite 保存 API key；
 - 在导出 archive 包含 API key；
@@ -131,6 +131,7 @@ Story 来源锁等业务能力必须在各自上线前补完第 5、6、9、10 �
 | AI consent | 当前实例的外部处理授权 | 与当前 Provider/model 绑定；不随家庭 archive 导出或自动恢复，恢复实例须由 admin 重新同意 |
 | job / source fingerprint / attempt / worker heartbeat | 运维衍生元数据 | 不进入 portable family archive；可取消、过期或重建，不是家庭记忆的唯一来源 |
 | 原始机器分析/未编辑机器 transcript | 可再生衍生物 | 存入 `asset_transcript.rawTranscript`，随家庭 archive 导出以保留 fidelity，但仍是可重建衍生；provider/model 更换后可安全丢弃并重建 |
+| 图片视觉分析 (`asset_analysis`) | 可再生衍生物 | **不进入 portable archive**；可通过重跑 `analyze.asset_image.v1` 重建；UI 始终标注「AI 生成 · 未确认」 |
 | embedding / FTS index | 可再生索引 | 不作为唯一数据源，provider/model 更换可重建 |
 | `asset_transcript` 用户编辑 editedTranscript | 耐久家庭资料 | 必须导出/恢复，AI 重跑不得覆盖 |
 | 用户确认 Fact | 耐久事实 | 必须带来源导出/恢复，AI 不得直接创建 |

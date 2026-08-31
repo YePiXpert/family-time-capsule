@@ -20,11 +20,16 @@ import {
   getTranscriptsForAssets,
   getLatestTranscriptionJobForAsset,
 } from "@/lib/transcripts/service";
+import {
+  getAnalysesForAssets,
+  getLatestImageAnalysisJobForAsset,
+} from "@/lib/analysis/service";
 import { getAsset } from "@/lib/assets/service";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
 import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
 import { TranscriptSection } from "./transcript-ui";
+import { ImageAnalysisSection } from "./analysis-ui";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
@@ -90,22 +95,40 @@ export default async function MemoryEventPage({
     (id) => !assets.some((a) => a.id === id),
   );
 
-  const [contributionAudioAssets, transcripts, jobs, disclosure, consents] =
-    await Promise.all([
-      Promise.all(
-        contributionAudioAssetIds.map((id) => getAsset(familyId, id)),
+  // 图片原件：事件直接关联的原始图片
+  const imageAssetIds = assets
+    .filter((a) => a.type === "image" && a.originalAssetId === null)
+    .map((a) => a.id);
+
+  const [
+    contributionAudioAssets,
+    transcripts,
+    jobs,
+    analyses,
+    imageJobs,
+    disclosure,
+    consents,
+  ] = await Promise.all([
+    Promise.all(
+      contributionAudioAssetIds.map((id) => getAsset(familyId, id)),
+    ),
+    getTranscriptsForAssets(familyId, avAssetIdsArray),
+    Promise.all(
+      avAssetIdsArray.map((assetId) =>
+        getLatestTranscriptionJobForAsset(familyId, assetId),
       ),
-      getTranscriptsForAssets(familyId, avAssetIdsArray),
-      Promise.all(
-        avAssetIdsArray.map((assetId) =>
-          getLatestTranscriptionJobForAsset(familyId, assetId),
-        ),
+    ),
+    getAnalysesForAssets(familyId, imageAssetIds),
+    Promise.all(
+      imageAssetIds.map((assetId) =>
+        getLatestImageAnalysisJobForAsset(familyId, assetId),
       ),
-      Promise.resolve(getAiRuntimeDisclosure()),
-      canRequestTranscription
-        ? listAiProcessingConsents(context)
-        : Promise.resolve([]),
-    ]);
+    ),
+    Promise.resolve(getAiRuntimeDisclosure()),
+    canRequestTranscription
+      ? listAiProcessingConsents(context)
+      : Promise.resolve([]),
+  ]);
   const assetById = new Map(
     [...assets, ...contributionAudioAssets.filter((a): a is NonNullable<typeof a> => Boolean(a))].map((a) => [
       a.id,
@@ -118,6 +141,12 @@ export default async function MemoryEventPage({
     disclosure.capabilities?.transcription?.available === true &&
     (disclosure.external === false || transcriptionConsent?.enabled === true);
 
+  const visionConsent = consents.find((c) => c.capability === "vision");
+  const visionAvailable =
+    disclosure.valid &&
+    disclosure.capabilities?.vision?.available === true &&
+    (disclosure.external === false || visionConsent?.enabled === true);
+
   const child = participants.find((p) => p.id === event.childPersonId);
   const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt);
   const cover = assets.find((a) => a.id === event.coverAssetId) ?? assets[0];
@@ -127,6 +156,9 @@ export default async function MemoryEventPage({
       : people.filter((p) => p.id === context.personId);
   const jobByAssetId = new Map(
     avAssetIdsArray.map((assetId, index) => [assetId, jobs[index]]),
+  );
+  const imageJobByAssetId = new Map(
+    imageAssetIds.map((assetId, index) => [assetId, imageJobs[index]]),
   );
 
   return (
@@ -239,6 +271,31 @@ export default async function MemoryEventPage({
                   job={jobByAssetId.get(assetId)}
                   canRequest={canRequestTranscription && transcriptionAvailable}
                   canEdit={canWriteEvent}
+                />
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {imageAssetIds.length > 0 && (
+        <section aria-label="AI 图像理解" className="mt-10">
+          <h2 className="text-lg font-medium">AI 图像理解</h2>
+          <p className="mt-1 text-sm leading-6 text-foreground/50">
+            AI 描述与图中文字仅为未确认的参考，可随时重新生成，不进入导出归档。
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {imageAssetIds.map((assetId) => {
+              const asset = assetById.get(assetId);
+              if (!asset) return null;
+              return (
+                <ImageAnalysisSection
+                  key={assetId}
+                  memoryEventId={event.id}
+                  asset={asset}
+                  analysis={analyses.get(assetId)}
+                  job={imageJobByAssetId.get(assetId)}
+                  canRequest={canRequestTranscription && visionAvailable}
                 />
               );
             })}
