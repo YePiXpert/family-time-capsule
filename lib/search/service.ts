@@ -1,4 +1,8 @@
-import "server-only";
+/**
+ * 注意：本模块刻意不引入 `server-only` —— `npm run search:rebuild` 与恢复
+ * CLI 都要在纯 Node 进程中直接导入它（与 lib/restore、lib/export 同一惯例）。
+ * 授权语义由调用方保证：searchFamily 必须传入 requireFamily() 的 FamilyContext。
+ */
 
 import { and, eq, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";

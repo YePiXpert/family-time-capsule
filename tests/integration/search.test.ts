@@ -59,21 +59,28 @@ const onboarding = await completeOnboarding(adminId, {
 if (!onboarding.ok) throw new Error("onboarding failed");
 const familyId = onboarding.familyId;
 const binding = await getUserBinding(adminId);
-if (!binding.familyTimezone || binding.childLaterUnlockAge === null) {
+if (
+  !binding.familyTimezone ||
+  binding.childLaterUnlockAge === null ||
+  binding.personId === null
+) {
   throw new Error("binding incomplete");
 }
+const adminPersonId = binding.personId;
+const adminTimezone = binding.familyTimezone;
+const adminUnlockAge = binding.childLaterUnlockAge;
 
 function contextOf(overrides: Partial<FamilyContext> = {}): FamilyContext {
   return {
     userId: adminId,
     userName: "爸爸",
     familyId,
-    personId: binding.personId,
+    personId: adminPersonId,
     role: binding.role,
     accountEnabled: true,
     isGuardian: binding.isGuardian,
-    familyTimezone: binding.familyTimezone,
-    childLaterUnlockAge: binding.childLaterUnlockAge,
+    familyTimezone: adminTimezone,
+    childLaterUnlockAge: adminUnlockAge,
     ...overrides,
   };
 }
@@ -180,7 +187,7 @@ describe("M4：FTS5 全文搜索", () => {
     const eventId = await makeEvent("出生那几天");
     const priv = await createContribution(familyId, {
       memoryEventId: eventId,
-      authorPersonId: binding.personId!,
+      authorPersonId: adminPersonId,
       recordedByUserId: adminId,
       rawText: "这是爸爸的私人备忘：存好脐带夹。",
       visibility: "private",
