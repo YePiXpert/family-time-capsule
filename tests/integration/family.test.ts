@@ -76,6 +76,7 @@ describe("onboarding：创建家庭与人物", () => {
     const binding = await getUserBinding(userId);
     expect(binding.familyId).toBe(result.familyId);
     expect(binding.personId).toBeTruthy();
+    expect(binding.role).toBe("admin");
 
     const people = await listPeople(result.familyId);
     expect(people).toHaveLength(2);
@@ -88,6 +89,17 @@ describe("onboarding：创建家庭与人物", () => {
     expect(dad?.relationToChild).toBe("爸爸");
     // 管理员 Person 即 User 绑定的 Person
     expect(dad?.id).toBe(binding.personId);
+  });
+
+  it("未知持久化角色失败关闭，恢复合法角色后不锁死管理员", async () => {
+    const userId = await getAdminUserId();
+    const db = getDb();
+    await db.run(sql`UPDATE user SET role = 'owner' WHERE id = ${userId}`);
+    await expect(getUserBinding(userId)).rejects.toMatchObject({
+      code: "invalid_family_role",
+    });
+    await db.run(sql`UPDATE user SET role = 'admin' WHERE id = ${userId}`);
+    await expect(getUserBinding(userId)).resolves.toMatchObject({ role: "admin" });
   });
 
   it("已绑定后重复 onboarding 被拒绝", async () => {

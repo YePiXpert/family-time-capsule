@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/family/context";
 import { getUserBinding, getRestorableFamilyForUser } from "@/lib/family/service";
+import { hasFamilyCapability } from "@/lib/authz/policy";
 import { OnboardingForm } from "./onboarding-form";
 import { BindRestoredForm } from "./bind-restored-form";
 
@@ -13,6 +14,16 @@ export default async function OnboardingPage() {
   const session = await requireSession();
   const binding = await getUserBinding(session.id);
   if (binding.familyId) redirect("/");
+  if (!hasFamilyCapability(binding.role, "family:manage")) {
+    return (
+      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-20">
+        <h1 className="text-2xl font-semibold">尚未加入家庭</h1>
+        <p className="mt-2 text-sm leading-6 text-foreground/60">
+          当前账号不能创建或接管家庭。请让家庭管理员完成邀请与绑定。
+        </p>
+      </main>
+    );
+  }
 
   // RH-004：实例里已有（被恢复的）家庭 → 走绑定流而不是创建流
   const restorable = await getRestorableFamilyForUser(session.id);

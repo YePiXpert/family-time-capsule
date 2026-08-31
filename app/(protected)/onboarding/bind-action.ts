@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/family/context";
+import { requireAccountCapability } from "@/lib/authz/context";
 import { bindRestoredFamily } from "@/lib/family/service";
 
 export type BindFormState = { error?: string };
@@ -11,7 +11,7 @@ export async function bindRestoredAction(
   _prev: BindFormState | undefined,
   formData: FormData,
 ): Promise<BindFormState> {
-  const session = await requireSession();
+  const session = await requireAccountCapability("family:manage");
   const personId = String(formData.get("personId") ?? "");
   const result = await bindRestoredFamily(session.id, personId);
   if (!result.ok) {

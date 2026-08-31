@@ -1,13 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireFamily } from "@/lib/family/context";
+import { requireFamilyCapability } from "@/lib/authz/context";
+import {
+  canCreateContributionForPerson,
+  canEditContribution,
+  FamilyAuthorizationError,
+} from "@/lib/authz/policy";
 import { getFamily } from "@/lib/family/service";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { updateMemoryEvent } from "@/lib/memories/service";
 import {
   addFact,
   createContribution,
+  getContributionForFamily,
   setFactStatus,
   updateContributionText,
   type Visibility,
@@ -28,7 +34,7 @@ export async function editEventAction(
   _prev: EditEventFormState | undefined,
   formData: FormData,
 ): Promise<EditEventFormState> {
-  const { familyId, userId } = await requireFamily();
+  const { familyId, userId } = await requireFamilyCapability("event:write");
   const eventId = String(formData.get("eventId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
 
@@ -101,7 +107,8 @@ export async function addContributionAction(
   _prev: ContributionFormState | undefined,
   formData: FormData,
 ): Promise<ContributionFormState> {
-  const { familyId } = await requireFamily();
+  const context = await requireFamilyCapability("contribution:create");
+  const { familyId } = context;
   const memoryEventId = String(formData.get("memoryEventId") ?? "");
   const authorPersonId = String(formData.get("authorPersonId") ?? "");
   const text = String(formData.get("text") ?? "");
@@ -109,6 +116,17 @@ export async function addContributionAction(
   const visibility = VISIBILITIES.includes(visibilityInput as Visibility)
     ? (visibilityInput as Visibility)
     : "family";
+
+  if (
+    !canCreateContributionForPerson({
+      role: context.role,
+      userPersonId: context.personId,
+      authorPersonId,
+      accountEnabled: true,
+    })
+  ) {
+    throw new FamilyAuthorizationError("contribution:create");
+  }
 
   const result = await createContribution(familyId, {
     memoryEventId,
@@ -135,13 +153,27 @@ export async function editContributionAction(
   _prev: ContributionFormState | undefined,
   formData: FormData,
 ): Promise<ContributionFormState> {
-  const { familyId } = await requireFamily();
+  const context = await requireFamilyCapability("contribution:create");
+  const { familyId } = context;
   const contributionId = String(formData.get("contributionId") ?? "");
-  const memoryEventId = String(formData.get("memoryEventId") ?? "");
   const text = String(formData.get("editedText") ?? "");
+  const existing = await getContributionForFamily(familyId, contributionId);
+  if (!existing) return { error: "保存失败：内容 1–5000 字，或条目不存在。" };
+  if (
+    !canEditContribution({
+      role: context.role,
+      userPersonId: context.personId,
+      authorPersonId: existing.authorPersonId,
+      isGuardian: false,
+      childLaterUnlocked: false,
+      accountEnabled: true,
+    })
+  ) {
+    throw new FamilyAuthorizationError("contribution:create");
+  }
   const row = await updateContributionText(familyId, contributionId, text);
   if (!row) return { error: "保存失败：内容 1–5000 字，或条目不存在。" };
-  revalidatePath(`/memories/${memoryEventId}`);
+  revalidatePath(`/memories/${existing.memoryEventId}`);
   return {};
 }
 
@@ -149,7 +181,7 @@ export async function addFactAction(
   _prev: ContributionFormState | undefined,
   formData: FormData,
 ): Promise<ContributionFormState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("event:write");
   const memoryEventId = String(formData.get("memoryEventId") ?? "");
   const statement = String(formData.get("statement") ?? "");
   const row = await addFact(familyId, memoryEventId, statement);
@@ -162,7 +194,7 @@ export async function setFactStatusAction(
   _prev: ContributionFormState | undefined,
   formData: FormData,
 ): Promise<ContributionFormState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("event:write");
   const factId = String(formData.get("factId") ?? "");
   const memoryEventId = String(formData.get("memoryEventId") ?? "");
   const status = String(formData.get("status") ?? "") === "rejected" ? "rejected" : "user_confirmed";

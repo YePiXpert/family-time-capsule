@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireFamily } from "@/lib/family/context";
+import { requireFamilyCapability } from "@/lib/authz/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import {
   addCapsuleAsset,
@@ -17,7 +17,7 @@ import {
 export type CapsuleFormState = { error?: string };
 
 async function capsuleContext() {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("capsule:write");
   const [family, people] = await Promise.all([getFamily(familyId), listPeople(familyId)]);
   const child = people.find((p) => p.isChild);
   return {
@@ -31,7 +31,7 @@ export async function createCapsuleAction(
   _prev: CapsuleFormState | undefined,
   formData: FormData,
 ): Promise<CapsuleFormState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("capsule:write");
   const title = String(formData.get("title") ?? "").trim();
   const unlockType = (String(formData.get("unlockType") ?? "") === "age"
     ? "age"
@@ -49,7 +49,7 @@ export async function addContentAction(
   _prev: CapsuleFormState | undefined,
   formData: FormData,
 ): Promise<CapsuleFormState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("capsule:write");
   const capsuleId = String(formData.get("capsuleId") ?? "");
   const kind = String(formData.get("kind") ?? "");
   const id = String(formData.get("id") ?? "");
@@ -67,7 +67,7 @@ export async function sealAction(
   _prev: CapsuleFormState | undefined,
   formData: FormData,
 ): Promise<CapsuleFormState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("capsule:write");
   const capsuleId = String(formData.get("capsuleId") ?? "");
   const row = await sealCapsule(familyId, capsuleId);
   if (!row) return { error: "封存失败：只有收集中的胶囊可以封存。" };

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireFamily } from "@/lib/family/context";
+import { requireFamilyCapability } from "@/lib/authz/context";
 import { getFamily } from "@/lib/family/service";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import {
@@ -22,7 +22,7 @@ export async function editTimeAction(
   _prev: InboxActionState | undefined,
   formData: FormData,
 ): Promise<InboxActionState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("inbox:review");
   const itemId = String(formData.get("itemId") ?? "");
   const wall = String(formData.get("capturedAt") ?? ""); // YYYY-MM-DDTHH:mm
   const family = await getFamily(familyId);
@@ -44,7 +44,7 @@ export async function discardAction(
   _prev: InboxActionState | undefined,
   formData: FormData,
 ): Promise<InboxActionState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("inbox:review");
   const itemId = String(formData.get("itemId") ?? "");
   const ok = await discardInboxItem(familyId, itemId);
   if (!ok) return { error: "条目不存在。", itemId };
@@ -60,7 +60,7 @@ export async function confirmAction(
   _prev: InboxActionState | undefined,
   formData: FormData,
 ): Promise<InboxActionState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("inbox:review");
   const itemId = String(formData.get("itemId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   const occurredWall = String(formData.get("occurredAt") ?? "").trim();
@@ -107,7 +107,7 @@ export async function mergeAction(
   _prev: InboxActionState | undefined,
   formData: FormData,
 ): Promise<InboxActionState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("inbox:review");
   const itemIds = formData
     .getAll("itemIds")
     .map((v) => String(v))

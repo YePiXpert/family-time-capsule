@@ -1,4 +1,4 @@
-import { getApiFamilyContext } from "@/lib/family/context";
+import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { ingestImage } from "@/lib/assets/ingest";
 import { createInboxItemForAsset } from "@/lib/inbox/service";
 import { isSameOrigin } from "@/lib/security/origin";
@@ -19,8 +19,17 @@ export async function POST(request: Request) {
   if (!isSameOrigin(request)) {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
-  const context = await getApiFamilyContext(request.headers);
-  if (!context) return Response.json({ error: "unauthorized" }, { status: 401 });
+  const authorization = await authorizeApiFamilyRequest(
+    request.headers,
+    "capture:create",
+  );
+  if (!authorization.ok) {
+    return Response.json(
+      { error: authorization.error },
+      { status: authorization.status },
+    );
+  }
+  const { context } = authorization;
 
   let form: FormData;
   try {

@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { AddPersonForm } from "./add-person-form";
+import { hasFamilyCapability } from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "家人 · Family Time Capsule" };
 
 export default async function FamilyPage() {
-  const { familyId } = await requireFamily();
+  const { familyId, role } = await requireFamily();
   const [family, people] = await Promise.all([
     getFamily(familyId),
     listPeople(familyId),
@@ -44,13 +45,15 @@ export default async function FamilyPage() {
         ))}
       </section>
 
-      <section aria-label="添加家人" className="mt-10">
-        <h2 className="text-lg font-medium">添加家人</h2>
-        <p className="mt-1 text-sm leading-6 text-foreground/60">
-          添加没有账号的成员（外公、外婆等），他们可以出现在照片、事件与留言里。
-        </p>
-        <AddPersonForm />
-      </section>
+      {hasFamilyCapability(role, "family:manage") && (
+        <section aria-label="添加家人" className="mt-10">
+          <h2 className="text-lg font-medium">添加家人</h2>
+          <p className="mt-1 text-sm leading-6 text-foreground/60">
+            添加没有账号的成员（外公、外婆等），他们可以出现在照片、事件与留言里。
+          </p>
+          <AddPersonForm />
+        </section>
+      )}
     </main>
   );
 }

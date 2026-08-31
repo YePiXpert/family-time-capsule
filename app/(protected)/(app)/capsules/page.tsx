@@ -4,6 +4,7 @@ import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { listCapsules } from "@/lib/capsules/service";
 import { CreateCapsuleForm } from "./create-capsule-form";
+import { hasFamilyCapability } from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,8 @@ function unlockLabel(type: string, value: string): string {
 }
 
 export default async function CapsulesPage() {
-  const { familyId } = await requireFamily();
+  const { familyId, role } = await requireFamily();
+  const canWrite = hasFamilyCapability(role, "capsule:write");
   const [family, people] = await Promise.all([getFamily(familyId), listPeople(familyId)]);
   const childBirthDate = people.find((p) => p.isChild)?.birthDate ?? null;
   const items = await listCapsules(
@@ -69,10 +71,12 @@ export default async function CapsulesPage() {
         ))}
       </section>
 
-      <section aria-label="创建胶囊" className="mt-10">
-        <h2 className="text-lg font-medium">创建胶囊</h2>
-        <CreateCapsuleForm />
-      </section>
+      {canWrite && (
+        <section aria-label="创建胶囊" className="mt-10">
+          <h2 className="text-lg font-medium">创建胶囊</h2>
+          <CreateCapsuleForm />
+        </section>
+      )}
     </main>
   );
 }

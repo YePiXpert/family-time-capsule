@@ -3,6 +3,10 @@ import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { family, person } from "@/db/schema/family";
+import {
+  isFamilyRole,
+  type FamilyRole,
+} from "@/lib/authz/policy";
 
 /**
  * 家庭域服务（Issue #003）。
@@ -45,15 +49,47 @@ export function isValidDateString(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-export async function getUserBinding(
-  userId: string,
-): Promise<{ familyId: string | null; personId: string | null }> {
+export type UserBinding = {
+  familyId: string | null;
+  personId: string | null;
+  role: FamilyRole;
+};
+
+export class InvalidUserBindingError extends Error {
+  readonly code: "user_not_found" | "invalid_family_role";
+
+  constructor(code: "user_not_found" | "invalid_family_role") {
+    super(
+      code === "user_not_found"
+        ? "authenticated user no longer exists"
+        : "authenticated user has an invalid family role",
+    );
+    this.name = "InvalidUserBindingError";
+    this.code = code;
+  }
+}
+
+/**
+ * The database role is untrusted text until it passes the durable four-role
+ * policy. Never coerce an unknown value to admin or another permissive role.
+ */
+export async function getUserBinding(userId: string): Promise<UserBinding> {
   const db = getDb();
   const rows = await db
-    .select({ familyId: userTable.familyId, personId: userTable.personId })
+    .select({
+      familyId: userTable.familyId,
+      personId: userTable.personId,
+      role: userTable.role,
+    })
     .from(userTable)
     .where(eq(userTable.id, userId));
-  return rows[0] ?? { familyId: null, personId: null };
+  const row = rows[0];
+  if (!row) throw new InvalidUserBindingError("user_not_found");
+  const role = row.role;
+  if (!isFamilyRole(role)) {
+    throw new InvalidUserBindingError("invalid_family_role");
+  }
+  return { familyId: row.familyId, personId: row.personId, role };
 }
 
 export async function getFamily(familyId: string) {

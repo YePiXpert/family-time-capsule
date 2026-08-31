@@ -28,10 +28,12 @@ export function InboxCard({
   item,
   assets,
   coverThumbAssetId = null,
+  canReview,
 }: {
   item: InboxItemRow;
   assets: AssetRow[];
   coverThumbAssetId?: string | null;
+  canReview: boolean;
 }) {
   const [timeState, timeAction, timePending] = useActionState(editTimeAction, undefined);
   const [discardState, discardActionRun, discardPending] = useActionState(discardAction, undefined);
@@ -95,7 +97,7 @@ export function InboxCard({
             {cover ? `${cover.width ?? "?"}×${cover.height ?? "?"}` : ""}
           </p>
 
-          <form action={timeAction} className="mt-2 flex flex-wrap items-center gap-2">
+          {canReview && <form action={timeAction} className="mt-2 flex flex-wrap items-center gap-2">
             <input type="hidden" name="itemId" value={item.id} />
             <input
               type="datetime-local"
@@ -114,9 +116,9 @@ export function InboxCard({
             {timeState?.error && timeState.itemId === item.id && (
               <span className="text-xs text-red-700 dark:text-red-400">{timeState.error}</span>
             )}
-          </form>
+          </form>}
 
-          <form action={confirmActionRun} className="mt-3 flex flex-wrap items-center gap-2">
+          {canReview && <form action={confirmActionRun} className="mt-3 flex flex-wrap items-center gap-2">
             <input type="hidden" name="itemId" value={item.id} />
             <input
               type="text"
@@ -139,9 +141,9 @@ export function InboxCard({
                 {confirmState.error}
               </span>
             )}
-          </form>
+          </form>}
 
-          <form action={discardActionRun} className="mt-1">
+          {canReview && <form action={discardActionRun} className="mt-1">
             <input type="hidden" name="itemId" value={item.id} />
             <button
               type="submit"
@@ -155,7 +157,7 @@ export function InboxCard({
                 {discardState.error}
               </span>
             )}
-          </form>
+          </form>}
         </div>
       </div>
     </li>

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireSession } from "@/lib/family/context";
+import { requireAccountCapability } from "@/lib/authz/context";
 import { completeOnboarding } from "@/lib/family/service";
 
 export type OnboardingFormState = { error?: string };
@@ -10,7 +10,7 @@ export async function onboardingAction(
   _prev: OnboardingFormState | undefined,
   formData: FormData,
 ): Promise<OnboardingFormState> {
-  const session = await requireSession();
+  const session = await requireAccountCapability("family:manage");
   const input = {
     familyName: String(formData.get("familyName") ?? ""),
     timezone: String(formData.get("timezone") ?? ""),

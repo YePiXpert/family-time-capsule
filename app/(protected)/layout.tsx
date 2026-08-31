@@ -3,9 +3,18 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { getAuth } from "@/lib/auth/auth";
+import {
+  hasFamilyCapability,
+  type FamilyCapability,
+} from "@/lib/authz/policy";
+import { getUserBinding } from "@/lib/family/service";
 
-const NAV = [
-  { href: "/capture", label: "记录" },
+const NAV: ReadonlyArray<{
+  href: string;
+  label: string;
+  capability?: FamilyCapability;
+}> = [
+  { href: "/capture", label: "记录", capability: "capture:create" },
   { href: "/inbox", label: "收件箱" },
   { href: "/timeline", label: "时光轴" },
   { href: "/family", label: "家人" },
@@ -28,6 +37,11 @@ export default async function ProtectedLayout({
   const requestHeaders = await headers();
   const session = await getAuth().api.getSession({ headers: requestHeaders });
   if (!session) redirect("/login");
+  const binding = await getUserBinding(session.user.id);
+  const visibleNav = NAV.filter(
+    (item) =>
+      !item.capability || hasFamilyCapability(binding.role, item.capability),
+  );
 
   return (
     <div className="flex min-h-screen flex-1 flex-col">
@@ -40,7 +54,7 @@ export default async function ProtectedLayout({
             aria-label="一级导航"
             className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-foreground/70"
           >
-            {NAV.map((item) => (
+            {visibleNav.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

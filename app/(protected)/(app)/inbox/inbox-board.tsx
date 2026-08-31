@@ -16,7 +16,13 @@ export type InboxEntryDto = {
 };
 
 /** 收件箱面板：多选合并（#010）+ 单条操作 */
-export function InboxBoard({ entries }: { entries: InboxEntryDto[] }) {
+export function InboxBoard({
+  entries,
+  canReview,
+}: {
+  entries: InboxEntryDto[];
+  canReview: boolean;
+}) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [mergeState, mergeActionRun, mergePending] = useActionState(mergeAction, undefined);
 
@@ -33,7 +39,7 @@ export function InboxBoard({ entries }: { entries: InboxEntryDto[] }) {
 
   return (
     <div className="mt-8 flex flex-col gap-4">
-      {selectedCount >= 2 && (
+      {canReview && selectedCount >= 2 && (
         <form
           action={mergeActionRun}
           className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-background/95 p-3 shadow-sm backdrop-blur"
@@ -81,18 +87,21 @@ export function InboxBoard({ entries }: { entries: InboxEntryDto[] }) {
           const checked = selected.has(id);
           return (
             <li key={id} className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => toggle(id)}
-                aria-label={`选择 ${entry.assets[0]?.originalFilename ?? entry.item.rawText?.slice(0, 12) ?? "条目"}`}
-                className="mt-6 h-4 w-4 shrink-0 accent-[var(--accent)]"
-              />
+              {canReview && (
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(id)}
+                  aria-label={`选择 ${entry.assets[0]?.originalFilename ?? entry.item.rawText?.slice(0, 12) ?? "条目"}`}
+                  className="mt-6 h-4 w-4 shrink-0 accent-[var(--accent)]"
+                />
+              )}
               <div className="min-w-0 flex-1">
                 <InboxCard
                   item={entry.item}
                   assets={entry.assets}
                   coverThumbAssetId={entry.coverThumbAssetId ?? null}
+                  canReview={canReview}
                 />
               </div>
             </li>

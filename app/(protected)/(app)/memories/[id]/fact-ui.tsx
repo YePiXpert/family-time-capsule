@@ -16,9 +16,11 @@ const STATUS_LABEL: Record<string, string> = {
 export function FactSection({
   memoryEventId,
   facts,
+  canWrite,
 }: {
   memoryEventId: string;
   facts: FactRow[];
+  canWrite: boolean;
 }) {
   const [addState, addAction, addPending] = useActionState(addFactAction, undefined);
   const [, statusAction] = useActionState(setFactStatusAction, undefined);
@@ -38,7 +40,7 @@ export function FactSection({
             <span className="min-w-0 flex-1">{f.statement}</span>
             <span className="flex items-center gap-2 text-xs text-foreground/50">
               {STATUS_LABEL[f.status] ?? f.status}
-              {f.status === "ai_suggested" && (
+              {canWrite && f.status === "ai_suggested" && (
                 <form action={statusAction}>
                   <input type="hidden" name="factId" value={f.id} />
                   <input type="hidden" name="memoryEventId" value={memoryEventId} />
@@ -48,7 +50,7 @@ export function FactSection({
                   </button>
                 </form>
               )}
-              {f.status !== "rejected" && (
+              {canWrite && f.status !== "rejected" && (
                 <form action={statusAction}>
                   <input type="hidden" name="factId" value={f.id} />
                   <input type="hidden" name="memoryEventId" value={memoryEventId} />
@@ -62,7 +64,7 @@ export function FactSection({
           </li>
         ))}
       </ul>
-      <form action={addAction} className="mt-3 flex flex-wrap gap-2">
+      {canWrite && <form action={addAction} className="mt-3 flex flex-wrap gap-2">
         <input type="hidden" name="memoryEventId" value={memoryEventId} />
         <input
           name="statement"
@@ -82,7 +84,7 @@ export function FactSection({
         {addState?.error && (
           <span className="text-xs text-red-700 dark:text-red-400">{addState.error}</span>
         )}
-      </form>
+      </form>}
     </section>
   );
 }

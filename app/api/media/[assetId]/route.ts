@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
-import { getApiFamilyContext } from "@/lib/family/context";
+import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { getAssetByIdUnchecked } from "@/lib/assets/ingest";
 import { getAssetStorage } from "@/lib/assets/storage";
 
@@ -16,8 +16,17 @@ export async function GET(
   { params }: { params: Promise<{ assetId: string }> },
 ) {
   const { assetId } = await params;
-  const context = await getApiFamilyContext(request.headers);
-  if (!context) return new Response("Unauthorized", { status: 401 });
+  const authorization = await authorizeApiFamilyRequest(
+    request.headers,
+    "archive:view",
+  );
+  if (!authorization.ok) {
+    return new Response(
+      authorization.status === 401 ? "Unauthorized" : "Forbidden",
+      { status: authorization.status },
+    );
+  }
+  const { context } = authorization;
 
   const row = await getAssetByIdUnchecked(assetId);
   if (!row || row.familyId !== context.familyId) {

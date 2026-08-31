@@ -11,6 +11,10 @@ import { MediaBlock } from "@/components/media-view";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
 import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
+import {
+  canEditContribution,
+  hasFamilyCapability,
+} from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +32,14 @@ export default async function MemoryEventPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { familyId } = await requireFamily();
+  const context = await requireFamily();
+  const { familyId } = context;
+  const canWriteEvent = hasFamilyCapability(context.role, "event:write");
+  const canCreateContribution = hasFamilyCapability(
+    context.role,
+    "contribution:create",
+  );
+  const canViewAudit = hasFamilyCapability(context.role, "audit:view");
   const { id } = await params;
   const [detail, family, people, contributions, facts, revisions] = await Promise.all([
     getMemoryEventDetail(familyId, id),
@@ -36,7 +47,7 @@ export default async function MemoryEventPage({
     listPeople(familyId),
     listContributions(familyId, id),
     listFacts(familyId, id),
-    listEventRevisions(familyId, id),
+    canViewAudit ? listEventRevisions(familyId, id) : Promise.resolve([]),
   ]);
   if (!detail) notFound();
 
@@ -53,6 +64,10 @@ export default async function MemoryEventPage({
   const child = participants.find((p) => p.id === event.childPersonId);
   const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt);
   const cover = assets.find((a) => a.id === event.coverAssetId) ?? assets[0];
+  const contributionAuthors =
+    context.role === "admin" || context.role === "editor"
+      ? people
+      : people.filter((p) => p.id === context.personId);
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
@@ -87,7 +102,7 @@ export default async function MemoryEventPage({
         <p className="mt-2 text-sm text-foreground/70">{event.locationText}</p>
       )}
 
-      <div className="mt-4">
+      {canWriteEvent && <div className="mt-4">
         <EditEventForm
           event={event}
           people={people}
@@ -96,7 +111,7 @@ export default async function MemoryEventPage({
           defaultWallTime={utcToZonedWallTimeInput(event.occurredAt, timezone)}
           timezone={timezone}
         />
-      </div>
+      </div>}
 
       {sourceNotes.length > 0 && (
         <section aria-label="原始文字记录" className="mt-8">
@@ -152,13 +167,33 @@ export default async function MemoryEventPage({
         </p>
         <div className="mt-3 flex flex-col gap-3">
           {contributions.map((c) => (
-            <ContributionBlock key={c.id} contribution={c} />
+            <ContributionBlock
+              key={c.id}
+              contribution={c}
+              canEdit={canEditContribution({
+                role: context.role,
+                userPersonId: context.personId,
+                authorPersonId: c.authorPersonId,
+                isGuardian: false,
+                childLaterUnlocked: false,
+                accountEnabled: true,
+              })}
+            />
           ))}
         </div>
-        <AddContributionForm memoryEventId={event.id} people={people} />
+        {canCreateContribution && contributionAuthors.length > 0 && (
+          <AddContributionForm
+            memoryEventId={event.id}
+            people={contributionAuthors}
+          />
+        )}
       </section>
 
-      <FactSection memoryEventId={event.id} facts={facts} />
+      <FactSection
+        memoryEventId={event.id}
+        facts={facts}
+        canWrite={canWriteEvent}
+      />
 
       {revisions.length > 0 && (
         <section aria-label="编辑历史" className="mt-10">

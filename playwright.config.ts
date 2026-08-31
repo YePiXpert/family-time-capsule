@@ -20,6 +20,7 @@ const specs = [
   { name: "export", files: ["export.spec.ts"], port: 3117 },
   { name: "journey", files: ["full-journey.spec.ts"], port: 3118 },
   { name: "edit", files: ["edit.spec.ts"], port: 3119 },
+  { name: "rbac", files: ["rbac.spec.ts"], port: 3120 },
 ];
 
 export default defineConfig({

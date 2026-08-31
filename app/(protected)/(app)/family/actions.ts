@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireFamily } from "@/lib/family/context";
+import { requireFamilyCapability } from "@/lib/authz/context";
 import { addPerson } from "@/lib/family/service";
 
 export type AddPersonFormState = { error?: string };
@@ -10,7 +10,7 @@ export async function addPersonAction(
   _prev: AddPersonFormState | undefined,
   formData: FormData,
 ): Promise<AddPersonFormState> {
-  const { familyId } = await requireFamily();
+  const { familyId } = await requireFamilyCapability("family:manage");
   const result = await addPerson(familyId, {
     displayName: String(formData.get("displayName") ?? ""),
     relationToChild: String(formData.get("relationToChild") ?? ""),

@@ -6,6 +6,7 @@ import { getFamily, listPeople } from "@/lib/family/service";
 import { getCapsuleDetail } from "@/lib/capsules/service";
 import { listMemoryEvents } from "@/lib/memories/service";
 import { CapsuleActions } from "./capsule-actions";
+import { hasFamilyCapability } from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,8 @@ export default async function CapsuleDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { familyId } = await requireFamily();
+  const { familyId, role } = await requireFamily();
+  const canWrite = hasFamilyCapability(role, "capsule:write");
   const { id } = await params;
   const [family, people] = await Promise.all([getFamily(familyId), listPeople(familyId)]);
   const childBirthDate = people.find((p) => p.isChild)?.birthDate ?? null;
@@ -33,7 +35,7 @@ export default async function CapsuleDetailPage({
   const { capsule, events, contributions, unlocked } = detail;
   const locked = capsule.status === "sealed" && !unlocked;
   const eventOptions =
-    capsule.status === "draft"
+    canWrite && capsule.status === "draft"
       ? (await listMemoryEvents(familyId)).map((e) => ({ id: e.id, title: e.title }))
       : [];
 
@@ -54,12 +56,14 @@ export default async function CapsuleDetailPage({
           ` · 开启于 ${new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(capsule.openedAt)}`}
       </p>
 
-      <CapsuleActions
-        capsuleId={capsule.id}
-        status={capsule.status}
-        unlocked={unlocked}
-        eventOptions={eventOptions}
-      />
+      {canWrite && (
+        <CapsuleActions
+          capsuleId={capsule.id}
+          status={capsule.status}
+          unlocked={unlocked}
+          eventOptions={eventOptions}
+        />
+      )}
 
       {locked ? (
         <section

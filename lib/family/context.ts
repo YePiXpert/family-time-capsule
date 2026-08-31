@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getAuth } from "@/lib/auth/auth";
+import type { FamilyRole } from "@/lib/authz/policy";
 import { getUserBinding } from "./service";
 
 /**
@@ -30,6 +31,7 @@ export type FamilyContext = {
   userName: string;
   familyId: string;
   personId: string | null;
+  role: FamilyRole;
 };
 
 /** 业务页面入口：已登录且已绑定家庭，否则分别跳 /login、/onboarding。 */
@@ -42,6 +44,7 @@ export async function requireFamily(): Promise<FamilyContext> {
     userName: session.name,
     familyId: binding.familyId,
     personId: binding.personId,
+    role: binding.role,
   };
 }
 
@@ -58,5 +61,6 @@ export async function getApiFamilyContext(
     userName: session.user.name,
     familyId: binding.familyId,
     personId: binding.personId,
+    role: binding.role,
   };
 }

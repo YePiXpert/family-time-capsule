@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
-import { getApiFamilyContext } from "@/lib/family/context";
+import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { buildFamilyExport, ExportVerificationError } from "@/lib/export/service";
 
 /**
@@ -9,8 +9,17 @@ import { buildFamilyExport, ExportVerificationError } from "@/lib/export/service
  * 不符则 409 明确失败（绝不生成看似成功的备份）。
  */
 export async function GET(request: Request) {
-  const context = await getApiFamilyContext(request.headers);
-  if (!context) return new Response("Unauthorized", { status: 401 });
+  const authorization = await authorizeApiFamilyRequest(
+    request.headers,
+    "archive:export",
+  );
+  if (!authorization.ok) {
+    return new Response(
+      authorization.status === 401 ? "Unauthorized" : "Forbidden",
+      { status: authorization.status },
+    );
+  }
+  const { context } = authorization;
 
   let result;
   try {

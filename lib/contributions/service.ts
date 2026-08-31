@@ -120,6 +120,26 @@ export async function updateContributionText(
   return rows[0];
 }
 
+/** Family-scoped lookup used before author-owned mutations. */
+export async function getContributionForFamily(
+  familyId: string,
+  contributionId: string,
+): Promise<ContributionRow | undefined> {
+  const db = getDb();
+  const rows = await db
+    .select({ contribution })
+    .from(contribution)
+    .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(contribution.id, contributionId),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.contribution;
+}
+
 export type ContributionWithAuthor = ContributionRow & {
   authorName: string;
   authorRelation: string | null;

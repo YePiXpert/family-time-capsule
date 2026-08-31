@@ -87,8 +87,10 @@ export function AddContributionForm({
 /** 单条视角：显示 + 行内编辑（只影响这一行） */
 export function ContributionBlock({
   contribution,
+  canEdit,
 }: {
   contribution: ContributionWithAuthor;
+  canEdit: boolean;
 }) {
   const [state, formAction, pending] = useActionState(editContributionAction, undefined);
   const text = contribution.editedText ?? contribution.rawText ?? "";
@@ -114,7 +116,7 @@ export function ContributionBlock({
         </p>
       )}
       <p className="mt-2 whitespace-pre-wrap leading-7">{text}</p>
-      <form action={formAction} className="mt-3 flex flex-col gap-2">
+      {canEdit && <form action={formAction} className="mt-3 flex flex-col gap-2">
         <input type="hidden" name="contributionId" value={contribution.id} />
         <input
           type="hidden"
@@ -140,7 +142,7 @@ export function ContributionBlock({
         {state?.error && (
           <span className="text-xs text-red-700 dark:text-red-400">{state.error}</span>
         )}
-      </form>
+      </form>}
     </article>
   );
 }
