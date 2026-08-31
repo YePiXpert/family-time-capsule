@@ -62,7 +62,8 @@ const setup = await performSetup({
 if (!setup.ok) throw new Error("setup failed");
 const admin = getDb().select({ id: userTable.id }).from(userTable).get();
 if (!admin) throw new Error("admin missing");
-const onboarding = await completeOnboarding(admin.id, {
+const adminId = admin.id;
+const onboarding = await completeOnboarding(adminId, {
   familyName: "收件箱建议测试家庭",
   timezone: "Asia/Shanghai",
   childDisplayName: "小满",
@@ -73,13 +74,13 @@ const onboarding = await completeOnboarding(admin.id, {
 });
 if (!onboarding.ok) throw new Error("onboarding failed");
 const familyId = onboarding.familyId;
-const binding = await getUserBinding(admin.id);
+const binding = await getUserBinding(adminId);
 if (!binding.familyId || !binding.familyTimezone || binding.childLaterUnlockAge === null) {
   throw new Error("binding incomplete");
 }
 
 const adminContext: FamilyContext = {
-  userId: admin.id,
+  userId: adminId,
   userName: "爸爸",
   familyId,
   personId: binding.personId,
@@ -132,7 +133,7 @@ function makeAssistant(payload: unknown): MemoryAssistant {
 async function makePhotoInboxItem(n: number, filename: string) {
   const stored = await ingestImage({
     familyId,
-    createdByUserId: admin.id,
+    createdByUserId: adminId,
     filename,
     declaredMime: "image/jpeg",
     buffer: jpegVariant(n),
@@ -152,7 +153,7 @@ async function runInboxSuggestionJob(
   const queued = enqueueAiJob(
     {
       familyId,
-      requestedByUserId: admin.id,
+      requestedByUserId: adminId,
       jobType: "suggest.inbox_item.v1",
       entityType: "inbox_item",
       entityId: inboxItemId,
@@ -220,7 +221,7 @@ describe("M3-E：收件箱 occurred_at 建议", () => {
 
     const accepted = await resolveInboxSuggestion(
       familyId,
-      admin.id,
+      adminId,
       occurred!.id,
       "accept",
     );
@@ -267,7 +268,7 @@ describe("M3-E：收件箱 occurred_at 建议", () => {
 
     const bad = await resolveInboxSuggestion(
       familyId,
-      admin.id,
+      adminId,
       randomUUID(),
       "accept",
     );
@@ -290,7 +291,7 @@ describe("M3-E：收件箱 occurred_at 建议", () => {
       .all()
       .find((s) => s.suggestionType === "occurred_at" && s.status === "pending");
     expect(
-      await resolveInboxSuggestion(familyId, admin.id, occurred!.id, "reject"),
+      await resolveInboxSuggestion(familyId, adminId, occurred!.id, "reject"),
     ).toEqual({ ok: true });
     const row = getDb()
       .select()
