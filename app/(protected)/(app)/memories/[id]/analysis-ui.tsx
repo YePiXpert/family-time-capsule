@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { AssetAnalysisRow } from "@/db/schema/analysis";
 import { aiJob } from "@/db/schema/ai-job";
-import { requestImageAnalysisAction } from "./actions";
+import { requestImageAnalysisAction, requestVideoAnalysisAction } from "./actions";
 
 function StatusLabel({
   analysis,
@@ -73,17 +73,27 @@ export function ImageAnalysisSection({
   analysis,
   job,
   canRequest,
+  kind = "image",
 }: {
   memoryEventId: string;
   asset: AssetRow;
   analysis: AssetAnalysisRow | undefined;
   job: typeof aiJob.$inferSelect | undefined;
+  /** image = 图片视觉分析；video = ffmpeg 抽帧后的视频理解（M3-G） */
+  kind?: "image" | "video";
   canRequest: boolean;
 }) {
-  const [state, action, pending] = useActionState(
+  const [imageState, imageAction, imagePending] = useActionState(
     requestImageAnalysisAction,
     undefined,
   );
+  const [videoState, videoAction, videoPending] = useActionState(
+    requestVideoAnalysisAction,
+    undefined,
+  );
+  const state = kind === "video" ? videoState : imageState;
+  const action = kind === "video" ? videoAction : imageAction;
+  const pending = kind === "video" ? videoPending : imagePending;
 
   return (
     <article className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
@@ -104,8 +114,13 @@ export function ImageAnalysisSection({
             disabled={pending}
             className="min-h-11 rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {pending ? "请求中…" : "生成 AI 描述"}
+            {pending ? "请求中…" : kind === "video" ? "生成视频理解" : "生成 AI 描述"}
           </button>
+          {kind === "video" && (
+            <p className="mt-1 text-xs text-foreground/45">
+              由服务器抽取少量代表帧送 AI 分析；需要 ffmpeg（缺失时此功能不可用，原件不受影响）。
+            </p>
+          )}
           {state?.error && (
             <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-400">
               {state.error}

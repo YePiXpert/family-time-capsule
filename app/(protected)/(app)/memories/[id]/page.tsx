@@ -24,6 +24,7 @@ import {
 import {
   getAnalysesForAssets,
   getLatestImageAnalysisJobForAsset,
+  getLatestVideoAnalysisJobForAsset,
 } from "@/lib/analysis/service";
 import { getAsset } from "@/lib/assets/service";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
@@ -112,12 +113,18 @@ export default async function MemoryEventPage({
     .filter((a) => a.type === "image" && a.originalAssetId === null)
     .map((a) => a.id);
 
+  // 视频原件：事件直接关联的原始视频（M3-G 视频理解）
+  const videoAssetIds = assets
+    .filter((a) => a.type === "video" && a.originalAssetId === null)
+    .map((a) => a.id);
+
   const [
     contributionAudioAssets,
     transcripts,
     jobs,
     analyses,
     imageJobs,
+    videoJobs,
     disclosure,
     consents,
     factSources,
@@ -132,10 +139,15 @@ export default async function MemoryEventPage({
         getLatestTranscriptionJobForAsset(familyId, assetId),
       ),
     ),
-    getAnalysesForAssets(familyId, imageAssetIds),
+    getAnalysesForAssets(familyId, [...imageAssetIds, ...videoAssetIds]),
     Promise.all(
       imageAssetIds.map((assetId) =>
         getLatestImageAnalysisJobForAsset(familyId, assetId),
+      ),
+    ),
+    Promise.all(
+      videoAssetIds.map((assetId) =>
+        getLatestVideoAnalysisJobForAsset(familyId, assetId),
       ),
     ),
     Promise.resolve(getAiRuntimeDisclosure()),
@@ -222,6 +234,9 @@ export default async function MemoryEventPage({
   );
   const imageJobByAssetId = new Map(
     imageAssetIds.map((assetId, index) => [assetId, imageJobs[index]]),
+  );
+  const videoJobByAssetId = new Map(
+    videoAssetIds.map((assetId, index) => [assetId, videoJobs[index]]),
   );
 
   return (
@@ -359,6 +374,32 @@ export default async function MemoryEventPage({
                   analysis={analyses.get(assetId)}
                   job={imageJobByAssetId.get(assetId)}
                   canRequest={canRequestTranscription && visionAvailable}
+                />
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {videoAssetIds.length > 0 && (
+        <section aria-label="AI 视频理解" className="mt-10">
+          <h2 className="text-lg font-medium">AI 视频理解</h2>
+          <p className="mt-1 text-sm leading-6 text-foreground/50">
+            服务器从视频抽取少量代表帧送 AI 分析；结果为未确认参考，可随时重新生成，不进入导出归档。
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            {videoAssetIds.map((assetId) => {
+              const asset = assetById.get(assetId);
+              if (!asset) return null;
+              return (
+                <ImageAnalysisSection
+                  key={assetId}
+                  memoryEventId={event.id}
+                  asset={asset}
+                  analysis={analyses.get(assetId)}
+                  job={videoJobByAssetId.get(assetId)}
+                  canRequest={canRequestTranscription && visionAvailable}
+                  kind="video"
                 />
               );
             })}

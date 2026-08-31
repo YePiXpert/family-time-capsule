@@ -127,6 +127,76 @@ export async function getLatestImageAnalysisJobForAsset(
     .get();
 }
 
+export async function getLatestVideoAnalysisJobForAsset(
+  familyId: string,
+  assetId: string,
+): Promise<typeof aiJob.$inferSelect | undefined> {
+  return getDb()
+    .select()
+    .from(aiJob)
+    .where(
+      and(
+        eq(aiJob.familyId, familyId),
+        eq(aiJob.jobType, "analyze.asset_video.v1"),
+        eq(aiJob.entityId, assetId),
+      ),
+    )
+    .orderBy(desc(aiJob.createdAt))
+    .limit(1)
+    .get();
+}
+
+/**
+ * Request AI video analysis (M3-G). Caller must already hold `ai:review`;
+ * re-checks capability, asset type/visibility, then enqueues a durable job.
+ * The handler extracts representative frames with ffmpeg; when ffmpeg is
+ * unavailable the job fails non-retryably and the archive is unaffected.
+ */
+export function requestVideoAnalysis(
+  context: FamilyContext,
+  assetId: string,
+  options: AiJobServiceDependencies & { now?: Date } = {},
+): ImageAnalysisRequestResult {
+  try {
+    assertFamilyCapability(context.role, "ai:review");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+
+  const asset = loadAssetInFamily(context.familyId, assetId);
+  if (!asset) {
+    return { ok: false, error: "asset_not_found" };
+  }
+  if (asset.originalAssetId !== null) {
+    return { ok: false, error: "derivative_not_analyzable" };
+  }
+  if (asset.type !== "video") {
+    return { ok: false, error: "unsupported_asset_type" };
+  }
+
+  const snapshot = createContributionAccessSnapshot(context, options.now);
+  const access = getDb().transaction((tx) =>
+    getContributionAssetAccessInTransaction(tx, snapshot, assetId),
+  );
+  if (!access.readable) {
+    return { ok: false, error: "source_forbidden_or_not_found" };
+  }
+
+  return enqueueAiJob(
+    {
+      familyId: context.familyId,
+      requestedByUserId: context.userId,
+      jobType: "analyze.asset_video.v1",
+      entityType: "asset",
+      entityId: assetId,
+      requiredCapability: "vision",
+      triggerMode: "manual",
+      sources: [{ kind: "asset", id: assetId }],
+    },
+    options,
+  );
+}
+
 /**
  * Request AI image analysis for an asset. Caller must already hold `ai:review`
  * capability; this helper re-checks capability and asset visibility before

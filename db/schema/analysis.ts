@@ -4,12 +4,14 @@ import { asset } from "./asset";
 import { family } from "./family";
 
 /**
- * AssetAnalysis：图片素材的机器视觉分析（Issue #M3-B）。
+ * AssetAnalysis：图片/视频素材的机器视觉分析（Issue #M3-B / M3-G）。
  *
  * - 每个 asset 只有一行 analysis（rerun = upsert）；
  * - description / ocrText 是机器输出，可重建；不进入 portable archive；
- * - 只分析原始图片 asset（originalAssetId IS NULL）；
- * - analyzedVia 记录实际送入 vision provider 的是 original 还是 thumbnail（HEIC/AVIF 回退）。
+ * - 只分析原始 asset（originalAssetId IS NULL）；图片走 original/thumbnail，
+ *   视频走 ffmpeg 抽帧（video_frames），帧只作临时输入不落盘成 asset；
+ * - analyzedVia 记录实际送入 vision provider 的输入形态
+ *   （original / thumbnail / video_frames）。
  */
 
 const createdAtColumn = () =>
@@ -47,7 +49,7 @@ export const assetAnalysis = sqliteTable(
     index("asset_analysis_family_idx").on(t.familyId),
     check(
       "asset_analysis_analyzed_via_check",
-      sql`${t.analyzedVia} in ('original', 'thumbnail')`,
+      sql`${t.analyzedVia} in ('original', 'thumbnail', 'video_frames')`,
     ),
   ],
 );

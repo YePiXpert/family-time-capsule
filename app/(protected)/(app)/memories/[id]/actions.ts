@@ -6,7 +6,7 @@ import {
   requestTranscription,
   saveEditedTranscript,
 } from "@/lib/transcripts/service";
-import { requestImageAnalysis } from "@/lib/analysis/service";
+import { requestImageAnalysis, requestVideoAnalysis } from "@/lib/analysis/service";
 import {
   canCreateContributionForPerson,
   FamilyAuthorizationError,
@@ -250,6 +250,35 @@ export async function requestImageAnalysisAction(
   }
   revalidatePath(`/memories/${memoryEventId}`);
   return { success: "已加入图像分析队列。" };
+}
+
+/** 为视频素材请求 AI 视频理解（抽帧 + vision，需要 ai:review；M3-G）。 */
+export async function requestVideoAnalysisAction(
+  _prev: ImageAnalysisActionState | undefined,
+  formData: FormData,
+): Promise<ImageAnalysisActionState> {
+  const context = await requireFamilyCapability("ai:review");
+  const assetId = String(formData.get("assetId") ?? "");
+  const memoryEventId = String(formData.get("memoryEventId") ?? "");
+  const result = requestVideoAnalysis(context, assetId);
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "asset_not_found"
+          ? "素材不存在。"
+          : result.error === "unsupported_asset_type"
+            ? "只有视频素材支持视频理解。"
+            : result.error === "source_forbidden_or_not_found"
+              ? "当前不可见或已被删除。"
+              : result.error === "capability_unavailable"
+                ? "当前未配置视觉分析能力。"
+                : result.error === "capability_not_consented"
+                  ? "请先由管理员在「设置 › AI」开启视觉分析外部处理同意。"
+                  : "请求失败，请重试。",
+    };
+  }
+  revalidatePath(`/memories/${memoryEventId}`);
+  return { success: "已加入视频理解队列。" };
 }
 
 /** 为音频/视频素材请求 AI 转录（需要 ai:review）。 */
