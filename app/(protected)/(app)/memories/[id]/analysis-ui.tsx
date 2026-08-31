@@ -88,7 +88,8 @@ export function ImageAnalysisSection({
   return (
     <article className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-medium">{asset.originalFilename}</h4>
+        {/* 文件名不是章节标题：避免与事件标题的 heading 角色撞名（可访问性/测试稳定性） */}
+        <p className="text-sm font-medium">{asset.originalFilename}</p>
         <StatusLabel analysis={analysis} job={job} />
       </header>
 

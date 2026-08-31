@@ -63,6 +63,9 @@ export default defineConfig({
   // 各 project 数据隔离，project 间可并行；project 内 serial（共享同一 DB）
   workers: process.env.CI ? 3 : 2,
   timeout: 45_000,
+  // CI 上 12 个独立 server 共享 runner，SSR 渲染偶发超过默认 5s——
+  // 只放宽等待预算，不放宽断言内容
+  expect: { timeout: 10_000 },
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
