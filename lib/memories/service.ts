@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { asset as assetTable } from "@/db/schema/asset";
@@ -650,14 +650,95 @@ export type TimelineEntry = {
   participantNames: string[];
 };
 
-/** 时间轴装配：按 occurredAt 倒序的事件 + 封面 + 素材数 + 参与人（#009） */
-export async function getTimeline(
+const DEFAULT_TIMELINE_PAGE_SIZE = 25;
+const MAX_TIMELINE_PAGE_SIZE = 50;
+
+type TimelineCursorPayload = {
+  v: 1;
+  occurredAtMs: number;
+  eventId: string;
+};
+
+export type TimelinePage = {
+  entries: TimelineEntry[];
+  nextCursor: string | null;
+};
+
+function encodeTimelineCursor(event: MemoryEventRow): string {
+  const payload: TimelineCursorPayload = {
+    v: 1,
+    occurredAtMs: event.occurredAt.getTime(),
+    eventId: event.id,
+  };
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeTimelineCursor(value: string | null | undefined): TimelineCursorPayload | null {
+  if (!value || value.length > 512) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8"),
+    ) as Partial<TimelineCursorPayload>;
+    if (
+      parsed.v !== 1 ||
+      typeof parsed.occurredAtMs !== "number" ||
+      !Number.isSafeInteger(parsed.occurredAtMs) ||
+      typeof parsed.eventId !== "string" ||
+      parsed.eventId.length === 0 ||
+      parsed.eventId.length > 128
+    ) {
+      return null;
+    }
+    const occurredAt = new Date(parsed.occurredAtMs);
+    if (Number.isNaN(occurredAt.getTime())) return null;
+    return {
+      v: 1,
+      occurredAtMs: parsed.occurredAtMs,
+      eventId: parsed.eventId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function timelinePageSize(value: number | undefined): number {
+  if (!Number.isSafeInteger(value) || !value || value < 1) {
+    return DEFAULT_TIMELINE_PAGE_SIZE;
+  }
+  return Math.min(value, MAX_TIMELINE_PAGE_SIZE);
+}
+
+/**
+ * Stable keyset page ordered by (occurredAt DESC, id DESC). The opaque cursor
+ * keeps request cost proportional to one page even after decades of events.
+ */
+export async function getTimelinePage(
   familyId: string,
-): Promise<TimelineEntry[]> {
+  options: { cursor?: string | null; limit?: number } = {},
+): Promise<TimelinePage> {
   const db = getDb();
-  const events = await listMemoryEvents(familyId);
-  if (events.length === 0) return [];
-  const eventIds = events.map((e) => e.id);
+  const limit = timelinePageSize(options.limit);
+  const cursor = decodeTimelineCursor(options.cursor);
+  const cursorFilter = cursor
+    ? sql`(${memoryEvent.occurredAt}, ${memoryEvent.id}) < (${Math.floor(cursor.occurredAtMs / 1000)}, ${cursor.eventId})`
+    : undefined;
+  const eventRows = await db
+    .select()
+    .from(memoryEvent)
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.status, "confirmed"),
+        cursorFilter,
+      ),
+    )
+    .orderBy(desc(memoryEvent.occurredAt), desc(memoryEvent.id))
+    .limit(limit + 1);
+
+  const hasMore = eventRows.length > limit;
+  const events = hasMore ? eventRows.slice(0, limit) : eventRows;
+  if (events.length === 0) return { entries: [], nextCursor: null };
+  const eventIds = events.map((event) => event.id);
 
   const assetLinks = await db
     .select({
@@ -668,72 +749,116 @@ export async function getTimeline(
     })
     .from(memoryEventAsset)
     .innerJoin(assetTable, eq(memoryEventAsset.assetId, assetTable.id))
-    .where(inArray(memoryEventAsset.memoryEventId, eventIds));
-  const coverAssetIds = events
-    .map((e) => e.coverAssetId)
-    .filter((id): id is string => id !== null);
+    .where(
+      and(
+        eq(memoryEventAsset.familyId, familyId),
+        eq(assetTable.familyId, familyId),
+        inArray(memoryEventAsset.memoryEventId, eventIds),
+      ),
+    )
+    .orderBy(asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id));
+  const assetLinksByEvent = new Map<string, typeof assetLinks>();
+  for (const link of assetLinks) {
+    const links = assetLinksByEvent.get(link.memoryEventId) ?? [];
+    links.push(link);
+    assetLinksByEvent.set(link.memoryEventId, links);
+  }
+
+  const coverAssetIds = [
+    ...new Set(
+      events
+        .map((event) => event.coverAssetId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
   const coverAssets =
     coverAssetIds.length > 0
       ? await db
-          .select({ id: assetTable.id, type: assetTable.type, mimeType: assetTable.mimeType })
+          .select({
+            id: assetTable.id,
+            type: assetTable.type,
+            mimeType: assetTable.mimeType,
+          })
           .from(assetTable)
-          .where(inArray(assetTable.id, coverAssetIds))
+          .where(
+            and(
+              eq(assetTable.familyId, familyId),
+              inArray(assetTable.id, coverAssetIds),
+            ),
+          )
       : [];
-  const coverTypeById = new Map(coverAssets.map((a) => [a.id, a.type]));
-  const coverMimeById = new Map(coverAssets.map((a) => [a.id, a.mimeType]));
+  const coverById = new Map(coverAssets.map((asset) => [asset.id, asset]));
 
   const participantLinks = await db
     .select({
       memoryEventId: memoryEventParticipant.memoryEventId,
       personId: memoryEventParticipant.personId,
+      displayName: personTable.displayName,
     })
     .from(memoryEventParticipant)
-    .where(inArray(memoryEventParticipant.memoryEventId, eventIds));
-  const personIds = [...new Set(participantLinks.map((l) => l.personId))];
-  const people =
-    personIds.length > 0
-      ? await db
-          .select({ id: personTable.id, displayName: personTable.displayName })
-          .from(personTable)
-          .where(inArray(personTable.id, personIds))
-      : [];
-  const nameById = new Map(people.map((p) => [p.id, p.displayName]));
+    .innerJoin(personTable, eq(memoryEventParticipant.personId, personTable.id))
+    .where(
+      and(
+        eq(memoryEventParticipant.familyId, familyId),
+        eq(personTable.familyId, familyId),
+        inArray(memoryEventParticipant.memoryEventId, eventIds),
+      ),
+    )
+    .orderBy(
+      asc(memoryEventParticipant.createdAt),
+      asc(memoryEventParticipant.id),
+    );
+  const participantNamesByEvent = new Map<string, string[]>();
+  for (const link of participantLinks) {
+    const names = participantNamesByEvent.get(link.memoryEventId) ?? [];
+    names.push(link.displayName);
+    participantNamesByEvent.set(link.memoryEventId, names);
+  }
 
   const coverIdsForThumb = [
     ...new Set(
       events
-        .map((e) => e.coverAssetId ?? assetLinks.find(
-          (l) => l.memoryEventId === e.id && l.type === "image",
-        )?.assetId)
-        .filter((id): id is string => id !== null && id !== undefined),
+        .map((event) => {
+          if (event.coverAssetId) return event.coverAssetId;
+          return assetLinksByEvent
+            .get(event.id)
+            ?.find((link) => link.type === "image")?.assetId;
+        })
+        .filter((id): id is string => Boolean(id)),
     ),
   ];
   const { getThumbnailMap } = await import("@/lib/assets/service");
   const thumbByOriginal = await getThumbnailMap(familyId, coverIdsForThumb);
 
-  return events.map((event) => {
-    const links = assetLinks.filter((l) => l.memoryEventId === event.id);
-    const fallbackImage = links.find((l) => l.type === "image");
+  const entries = events.map((event): TimelineEntry => {
+    const links = assetLinksByEvent.get(event.id) ?? [];
+    const fallbackImage = links.find((link) => link.type === "image");
+    const fallbackAsset = fallbackImage ?? links[0];
     const coverId = event.coverAssetId ?? fallbackImage?.assetId ?? null;
-    const cover =
-      (event.coverAssetId && coverTypeById.get(event.coverAssetId)) ??
-      fallbackImage?.type ??
-      links[0]?.type ??
-      null;
+    const explicitCover = coverId ? coverById.get(coverId) : undefined;
+    const linkedCover = coverId
+      ? links.find((link) => link.assetId === coverId)
+      : undefined;
     return {
       event,
       coverAssetId: coverId,
-      coverAssetType: cover,
+      coverAssetType:
+        explicitCover?.type ?? linkedCover?.type ?? fallbackAsset?.type ?? null,
       coverAssetMime:
-        (coverId && coverMimeById.get(coverId)) ??
-        (coverId ? links.find((l) => l.assetId === coverId)?.mimeType : null) ??
+        explicitCover?.mimeType ??
+        linkedCover?.mimeType ??
+        fallbackAsset?.mimeType ??
         null,
-      coverThumbAssetId: coverId ? (thumbByOriginal.get(coverId)?.id ?? null) : null,
+      coverThumbAssetId: coverId
+        ? (thumbByOriginal.get(coverId)?.id ?? null)
+        : null,
       assetCount: links.length,
-      participantNames: participantLinks
-        .filter((l) => l.memoryEventId === event.id)
-        .map((l) => nameById.get(l.personId))
-        .filter((n): n is string => Boolean(n)),
+      participantNames: participantNamesByEvent.get(event.id) ?? [],
     };
   });
+
+  return {
+    entries,
+    nextCursor: hasMore ? encodeTimelineCursor(events.at(-1)!) : null,
+  };
 }

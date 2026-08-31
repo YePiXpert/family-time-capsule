@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
-import { getTimeline } from "@/lib/memories/service";
+import { getTimelinePage } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { MediaImage } from "@/components/media-view";
 
@@ -10,13 +10,20 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "时光轴 · Family Time Capsule" };
 
-export default async function TimelinePage() {
+export default async function TimelinePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cursor?: string | string[] }>;
+}) {
   const { familyId } = await requireFamily();
-  const [family, people, entries] = await Promise.all([
+  const params = await searchParams;
+  const cursor = typeof params.cursor === "string" ? params.cursor : undefined;
+  const [family, people, timelinePage] = await Promise.all([
     getFamily(familyId),
     listPeople(familyId),
-    getTimeline(familyId),
+    getTimelinePage(familyId, { cursor }),
   ]);
+  const entries = timelinePage.entries;
 
   // 年龄基于孩子生日现算（不依赖持久化字符串）
   const child = people.find((p) => p.isChild);
@@ -47,7 +54,17 @@ export default async function TimelinePage() {
         晚上传的旧照片不会跑到今天。
       </p>
 
-      {entries.length === 0 ? (
+      {entries.length === 0 && cursor ? (
+        <div className="mt-10 rounded-xl border border-dashed border-foreground/20 p-8 text-center text-sm text-foreground/60">
+          <p>这一页已没有记忆，可能是内容刚刚发生了调整。</p>
+          <Link
+            href="/timeline"
+            className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-foreground/15 px-4 hover:border-accent/50"
+          >
+            回到最新记忆
+          </Link>
+        </div>
+      ) : entries.length === 0 ? (
         <div className="mt-10 rounded-xl border border-dashed border-foreground/20 p-8 text-center text-sm text-foreground/50">
           还没有记忆事件。上传的内容在
           <Link href="/inbox" className="mx-1 underline underline-offset-2">
@@ -106,6 +123,27 @@ export default async function TimelinePage() {
               </ol>
             </section>
           ))}
+          <nav aria-label="时间轴分页" className="flex items-center justify-between gap-4">
+            {cursor ? (
+              <Link
+                href="/timeline"
+                className="inline-flex min-h-11 items-center rounded-lg border border-foreground/15 px-4 text-sm hover:border-accent/50"
+              >
+                回到最新
+              </Link>
+            ) : (
+              <span />
+            )}
+            {timelinePage.nextCursor && (
+              <Link
+                href={`/timeline?cursor=${encodeURIComponent(timelinePage.nextCursor)}`}
+                rel="next"
+                className="inline-flex min-h-11 items-center rounded-lg border border-foreground/15 px-4 text-sm hover:border-accent/50"
+              >
+                查看更早的记忆
+              </Link>
+            )}
+          </nav>
         </div>
       )}
     </main>

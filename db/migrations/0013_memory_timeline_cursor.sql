@@ -1,0 +1,1 @@
+CREATE INDEX `memory_family_status_cursor_idx` ON `memory_event` (`family_id`,`status`,`occurred_at`,`id`);

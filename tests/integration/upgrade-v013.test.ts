@@ -88,7 +88,7 @@ process.env.DATA_DIR = dataDir;
 process.env.AUTH_SECRET = "upgrade-v013-test-secret";
 
 const { closeDatabase, getDb } = await import("@/db");
-const { getMemoryEventDetail, getTimeline } = await import(
+const { getMemoryEventDetail, getTimelinePage } = await import(
   "@/lib/memories/service"
 );
 const { buildFamilyExport } = await import("@/lib/export/service");
@@ -302,7 +302,7 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
       ["妈妈", "小星"],
     );
 
-    const timeline = await getTimeline("family-v013");
+    const timeline = (await getTimelinePage("family-v013")).entries;
     expect(timeline.map((entry) => entry.event.id)).toEqual([
       "event-new-v013",
       "event-old-v013",

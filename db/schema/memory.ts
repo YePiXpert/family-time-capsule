@@ -54,6 +54,12 @@ export const memoryEvent = sqliteTable(
   },
   (t) => [
     index("memory_family_occurred_idx").on(t.familyId, t.occurredAt),
+    index("memory_family_status_cursor_idx").on(
+      t.familyId,
+      t.status,
+      t.occurredAt,
+      t.id,
+    ),
     index("memory_child_idx").on(t.childPersonId),
   ],
 );

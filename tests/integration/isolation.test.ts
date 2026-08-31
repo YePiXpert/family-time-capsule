@@ -51,7 +51,7 @@ const {
   mergeInboxEntries,
   getMemoryEventDetail,
   listMemoryEvents,
-  getTimeline,
+  getTimelinePage,
 } = await import("@/lib/memories/service");
 const {
   createContribution,
@@ -180,7 +180,11 @@ describe("MemoryEvent 隔离", () => {
 
     expect(await getMemoryEventDetail(familyB, confirmed.eventId)).toBeUndefined();
     expect((await listMemoryEvents(familyB)).find((e) => e.id === confirmed.eventId)).toBeUndefined();
-    expect((await getTimeline(familyB)).find((e) => e.event.id === confirmed.eventId)).toBeUndefined();
+    expect(
+      (await getTimelinePage(familyB)).entries.find(
+        (entry) => entry.event.id === confirmed.eventId,
+      ),
+    ).toBeUndefined();
     // merge 混入他家庭条目 → not_found
     expect(
       await mergeInboxEntries(familyB, [b.item.id, a.item.id], { title: "越界合并" }),
