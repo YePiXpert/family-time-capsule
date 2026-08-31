@@ -18,11 +18,12 @@ family-time-capsule-export/
 ├── manifest.json          导出清单与每个原件的哈希（见下）
 ├── family.json            家庭元信息（单对象）
 ├── people.json            Person 数组（现实家庭成员，含无账号者）
-├── memories.json          MemoryEvent 数组（含 assetIds / participantPersonIds 关系）
+├── memories.json          MemoryEvent 数组（含 assetIds / participantPersonIds / tags 关系）
 ├── inbox-items.json       InboxItem 全量数组（含所有状态与完整原始文字）
 ├── inbox-item-assets.json InboxItem ↔ Asset 关联行全量数组
 ├── contributions.json     Contribution 数组（按家人的独立讲述）
 ├── facts.json             Fact 数组（已确认/否决的事实）
+├── fact-sources.json      Fact 来源关联数组（每条 fact 必须有来源）
 ├── transcripts.json       AssetTranscript 数组（机器转录 + 用户修订）
 ├── capsules.json          Capsule 数组（含封存胶囊的完整内容引用）
 ├── timeline.md            人类可读时间轴（相对路径引用原媒体）
@@ -49,7 +50,7 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
   "exportedAt": "2026-08-29T12:00:00.000Z",
   "familyId": "<uuid>",
   "familyName": "我们一家",
-  "fileCount": 17,                 // 固定 10 个非媒体文件 + 7 个原件（不含 .keep）
+  "fileCount": 19,                 // 固定 12 个非媒体文件 + 7 个原件（不含 .keep）
   "assetCount": 7,
   "assets": [
     {
@@ -76,9 +77,9 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 规则：
 
 - `assets` 只包含**原件**（derivativeType=null）；衍生物可再生，不入档。
-- 当前格式固定包含 11 个非媒体文件：manifest、family、people、memories、
-  inbox-items、inbox-item-assets、contributions、facts、transcripts、capsules、
-  timeline；因此 `fileCount = assetCount + 11`，`.keep` 不计数。
+- 当前格式固定包含 12 个非媒体文件：manifest、family、people、memories、
+  inbox-items、inbox-item-assets、contributions、facts、fact-sources、transcripts、
+  capsules、timeline；因此 `fileCount = assetCount + 12`，`.keep` 不计数。
 - `capturedAt`/`importedAt` 为 UTC ISO-8601。
 - 增量字段缺失时的恢复端默认：`type` 按目录名（images/audio/video/documents）推断；
   `timeSource` 按 capturedAt 有无推断（有→embedded_metadata，无→import_time）；
@@ -94,8 +95,8 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
   手工解锁时间。旧 v1 档案缺失两个字段时分别恢复为 `false` / `null`。
   `id` 即 `personId`，被 memories/contributions 引用。
 - `memories.json`：按 `occurredAt` 升序；每个事件含
-  `assetIds: string[]` 与 `participantPersonIds: string[]`（关系以数组表达，
-  对应库内关联表，不丢结构）。
+  `assetIds: string[]`、`participantPersonIds: string[]` 与 `tags: string[]`（关系以数组表达，
+  对应库内关联表，不丢结构）。标签已做小写/trim/≤50 字符规范化，导出为字符串数组。
 - `inbox-items.json`：`{ id, familyId, kind, status, rawText, memoryEventId, createdAt, updatedAt }`。
   导出家庭下的**每一行**，不按状态过滤；`status` 原样保留 `new`（待处理）、
   `processing`、`needs_review`、`confirmed`、`discarded`，`rawText` 保留完整正文，
@@ -110,6 +111,10 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
   `private` 与尚未解锁的 `child_later` 都会完整进入归档。`recordedByUserId` 属于本地认证
   身份，明确不导出；Person、姓名快照和记录模式构成可迁移的长期来源信息。
 - `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
+- `fact-sources.json`：`{ id, factId, sourceType, sourceId, createdAt }`。
+  每条 fact 必须有且仅有一行来源；`sourceType` 限定为 `asset|contribution|transcript|user_text`，
+  `sourceId` 在 `user_text` 时为 `null`，其余情况引用对应素材/讲述/转录行的 id。
+  这是事实锁的最小来源追踪，随家庭 archive 完整导出/恢复。
 - `transcripts.json`：`{ id, familyId, assetId, language, provider, model,
   rawTranscript, editedTranscript, segmentsJson, status, sourceSha256,
   createdByJobId, createdAt, updatedAt }`。同时导出机器原文与用户修订文本；
@@ -132,6 +137,9 @@ Contribution 或讲述者。合并到同一事件的多条文字也各自保留�
 - `transcripts.json` 是 `exportVersion: 1` 上的另一项增量扩展。较早的 v1 归档可能不存在
   该文件；恢复端将其解释为“空转录”，仍可恢复。若归档存在该文件，必须是数组，且每行
   `assetId` 必须引用 manifest 中的原件。
+- `fact-sources.json` 是 `exportVersion: 1` 上的另一项增量扩展。较早的 v1 归档可能不存在
+  该文件；恢复端将其解释为“空来源”，仍可恢复。若归档存在该文件，必须是数组，每行
+  `factId` 必须引用 `facts.json` 中的事实，`sourceType` 必须在限定白名单内。
 
 ## timeline.md
 

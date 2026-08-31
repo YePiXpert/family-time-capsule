@@ -271,7 +271,7 @@ type Contribution = {
 
 行级独立：妈妈编辑自己的 contribution 永远不会覆盖爸爸的行。爸爸登录也可以替外婆记录「外婆说」（authorPersonId=外婆）。
 
-## Fact（#012 已落地，P0 手工）
+## Fact（#012 已落地，P0 手工；M3-C 增加来源）
 
 ```ts
 type Fact = {
@@ -285,7 +285,67 @@ type Fact = {
 }
 ```
 
-P0 只允许用户手工创建（直接 `user_confirmed`）；P1 起 AI 只能产出 `ai_suggested`，永不自动升级。P0 未建 FactSource 关系表（无来源关联需求），P1 需要时再加。
+P0 只允许用户手工创建（直接 `user_confirmed`）；M3-C 起 AI 产出 `ai_suggested`，
+永不自动升级。每张 fact 必须有且仅有一行 `fact_source`（见下），手工创建时
+`sourceType='user_text'`、`sourceId=null`。
+
+## FactSource（M3-C 已落地：`db/schema/suggestion.ts`）
+
+```ts
+type FactSource = {
+  id: string
+  familyId: string         // FK → family，cascade delete
+  factId: string           // FK → fact，cascade delete
+  sourceType: "asset" | "contribution" | "transcript" | "user_text"
+  sourceId?: string | null // asset/contribution/transcript 行 id；user_text 为 null
+  createdAt: Date
+}
+```
+
+- 每条 fact 必须有一行来源；事实锁的最小 provenance 追踪。
+- 来源类型是白名单 CHECK；`sourceId` 在 `user_text` 时必须为 `null`。
+- 随家庭 archive 完整导出（`fact-sources.json`）/恢复。
+
+## MemoryEventTag（M3-C 已落地：`db/schema/suggestion.ts`）
+
+```ts
+type MemoryEventTag = {
+  id: string
+  familyId: string         // FK → family，cascade delete
+  memoryEventId: string    // FK → memory_event，cascade delete
+  tag: string              // 小写、trim、1–50 字符
+  createdAt: Date
+}
+```
+
+- `(memoryEventId, tag)` 唯一索引阻止同一事件重复标签。
+- 标签随 `memories.json` 的 `tags` 数组导出/恢复。
+
+## AiSuggestion（M3-C 已落地：`db/schema/suggestion.ts`）
+
+```ts
+type AiSuggestion = {
+  id: string
+  familyId: string         // FK → family，cascade delete
+  entityType: "memory_event"
+  entityId: string         // 当前仅 memoryEventId
+  suggestionType: "title" | "location" | "person" | "tag"
+  valueJson: string        // 结构化建议值
+  provider: string
+  model: string
+  status: "pending" | "accepted" | "rejected"
+  createdByJobId?: string  // ai_job.id
+  sourceFingerprint: string// 入队时来源内容指纹
+  createdAt: Date
+  resolvedAt?: Date
+  resolvedByUserId?: string
+}
+```
+
+- 运维/可重建状态：只保存当前待审建议与接受/拒绝墓碑，不进入 portable family archive。
+- 同一实体的 rerun 会删除旧 pending 建议并插入新建议（单推荐方案）。
+- 接受 title/location 时复用 `updateMemoryEvent` 的验证与修订快照逻辑；接受 person/tag
+  时直接修改事件参与人或添加标签。
 
 ## AI Processing Consent 与 Job Queue（migration 0016）
 

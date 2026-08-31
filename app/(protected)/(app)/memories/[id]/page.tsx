@@ -16,6 +16,7 @@ import {
   getAiRuntimeDisclosure,
   listAiProcessingConsents,
 } from "@/lib/ai/jobs";
+import type { AiConsentDto, AiJobSummary } from "@/lib/ai/jobs";
 import {
   getTranscriptsForAssets,
   getLatestTranscriptionJobForAsset,
@@ -30,7 +31,16 @@ import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
 import { TranscriptSection } from "./transcript-ui";
 import { ImageAnalysisSection } from "./analysis-ui";
+import { SuggestionSection } from "./suggestion-ui";
 import { hasFamilyCapability } from "@/lib/authz/policy";
+import {
+  listPendingSuggestions,
+  listEventTags,
+} from "@/lib/suggestions/service";
+import { listJobsForEntity } from "@/lib/ai/jobs";
+import { factSource, type FactSourceRow } from "@/db/schema/suggestion";
+import { and, eq, inArray } from "drizzle-orm";
+import { getDb } from "@/db";
 
 export const dynamic = "force-dynamic";
 
@@ -59,13 +69,15 @@ export default async function MemoryEventPage({
   const canRequestTranscription = hasFamilyCapability(context.role, "ai:review");
   const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
-  const [detail, family, people, contributions, facts, revisions] = await Promise.all([
+  const [detail, family, people, contributions, facts, revisions, suggestions, tags] = await Promise.all([
     getMemoryEventDetail(familyId, id),
     getFamily(familyId),
     listPeople(familyId),
     listVisibleContributionsForEvent(contributionAccess, id),
     listFacts(familyId, id),
     canViewAudit ? listEventRevisions(familyId, id) : Promise.resolve([]),
+    listPendingSuggestions(familyId, "memory_event", id),
+    listEventTags(familyId, id),
   ]);
   if (!detail) notFound();
 
@@ -108,6 +120,8 @@ export default async function MemoryEventPage({
     imageJobs,
     disclosure,
     consents,
+    factSources,
+    suggestionJobs,
   ] = await Promise.all([
     Promise.all(
       contributionAudioAssetIds.map((id) => getAsset(familyId, id)),
@@ -127,10 +141,27 @@ export default async function MemoryEventPage({
     Promise.resolve(getAiRuntimeDisclosure()),
     canRequestTranscription
       ? listAiProcessingConsents(context)
-      : Promise.resolve([]),
+      : Promise.resolve([] as AiConsentDto[]),
+    facts.length > 0
+      ? getDb()
+          .select()
+          .from(factSource)
+          .where(
+            and(
+              eq(factSource.familyId, familyId),
+              inArray(
+                factSource.factId,
+                facts.map((f) => f.id),
+              ),
+            ),
+          )
+      : Promise.resolve([] as FactSourceRow[]),
+    canRequestTranscription
+      ? listJobsForEntity(context, "memory_event", id)
+      : Promise.resolve([] as AiJobSummary[]),
   ]);
   const assetById = new Map(
-    [...assets, ...contributionAudioAssets.filter((a): a is NonNullable<typeof a> => Boolean(a))].map((a) => [
+    [...assets, ...contributionAudioAssets.filter((a): a is NonNullable<typeof contributionAudioAssets[number]> => Boolean(a))].map((a) => [
       a.id,
       a,
     ]),
@@ -146,6 +177,14 @@ export default async function MemoryEventPage({
     disclosure.valid &&
     disclosure.capabilities?.vision?.available === true &&
     (disclosure.external === false || visionConsent?.enabled === true);
+
+  const textConsent = consents.find((c) => c.capability === "text");
+  const textAvailable =
+    disclosure.valid &&
+    disclosure.capabilities?.text?.available === true &&
+    (disclosure.external === false || textConsent?.enabled === true);
+
+  const latestSuggestionJob = suggestionJobs[0];
 
   const child = participants.find((p) => p.id === event.childPersonId);
   const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt);
@@ -325,9 +364,19 @@ export default async function MemoryEventPage({
         )}
       </section>
 
+      <SuggestionSection
+        memoryEventId={event.id}
+        suggestions={suggestions}
+        tags={tags}
+        latestJob={latestSuggestionJob}
+        canRequest={canRequestTranscription && textAvailable}
+        canWrite={canWriteEvent}
+      />
+
       <FactSection
         memoryEventId={event.id}
         facts={facts}
+        factSources={factSources}
         canWrite={canWriteEvent}
       />
 

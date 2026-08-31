@@ -22,6 +22,7 @@ import {
   capsuleContribution,
   capsuleEvent,
 } from "@/db/schema/capsule";
+import { factSource, memoryEventTag } from "@/db/schema/suggestion";
 import { user as userTable } from "@/db/schema/auth";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { AUDIT_KINDS, recordAudit } from "@/lib/audit/service";
@@ -271,6 +272,8 @@ export type RestoreReport = {
   events: number;
   contributions: number;
   facts: number;
+  factSources: number;
+  tags: number;
   transcripts: number;
   capsules: number;
   inboxItems: number;
@@ -405,6 +408,7 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       updatedAt?: string | null;
       assetIds?: string[];
       participantPersonIds?: string[];
+      tags?: string[];
     }>
   >("memories.json");
   const contributionsJson = await readJson<ContributionArchiveRow[]>(
@@ -472,15 +476,27 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     "transcripts.json 必须是数组",
   );
 
+  // v0.1.5 后的 additive 文件：旧 exportVersion=1 归档不存在 fact-sources.json 时按空来源恢复。
+  const factSourcesFile = zip.file(`${EXPORT_ROOT_DIR}/fact-sources.json`);
+  const factSourcesRaw = factSourcesFile
+    ? await readJson<unknown>("fact-sources.json")
+    : [];
+  requireCondition(
+    Array.isArray(factSourcesRaw),
+    "bad_json",
+    "fact-sources.json 必须是数组",
+  );
+
   const hasInboxFiles = Boolean(inboxItemsFile) && Boolean(inboxItemAssetsFile);
   const expectedFileCount =
     manifest.assets.length +
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
-    (transcriptsFile ? 1 : 0);
+    (transcriptsFile ? 1 : 0) +
+    (factSourcesFile ? 1 : 0);
   requireCondition(
     manifest.fileCount === expectedFileCount,
-    hasInboxFiles ? "bad_manifest" : "missing_json",
+    hasInboxFiles || factSourcesFile ? "bad_manifest" : "missing_json",
     hasInboxFiles
       ? "manifest.fileCount 与当前 v1 文件集不一致"
       : "归档声明包含 Inbox 文件，但两份 Inbox JSON 均缺失",
@@ -734,6 +750,13 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       "bad_refs",
       `事件 ${m.id} 引用未知封面素材`,
     );
+    requireCondition(
+      m.tags === undefined ||
+        (Array.isArray(m.tags) &&
+          m.tags.every((t) => typeof t === "string" && t.length > 0 && t.length <= 50)),
+      "bad_json",
+      `事件 ${m.id} 的 tags 非法`,
+    );
     for (const pid of m.participantPersonIds ?? []) {
       requireCondition(personIds.has(pid), "bad_refs", `事件 ${m.id} 引用未知参与人 ${pid}`);
     }
@@ -943,6 +966,7 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     );
   }
   requireCondition(Array.isArray(factsJson), "bad_json", "facts.json 必须是数组");
+  const factIds = new Set<string>(factsJson.map((f) => f.id));
   for (const f of factsJson) {
     requireCondition(eventIds.has(f.memoryEventId), "bad_refs", `fact ${f.id} 引用未知事件`);
     requireCondition(
@@ -950,6 +974,53 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       "bad_json",
       `fact ${f.id} 缺少陈述`,
     );
+  }
+  const SOURCE_TYPES = new Set(["asset", "contribution", "transcript", "user_text"]);
+  const factSourcesJson: Array<{
+    id: string;
+    factId: string;
+    sourceType: string;
+    sourceId: string | null;
+    createdAt?: string | null;
+  }> = [];
+  for (const value of factSourcesRaw) {
+    requireCondition(isRecord(value), "bad_json", "fact source 必须是对象");
+    const s = value as Record<string, unknown>;
+    const id = s.id as string;
+    const factId = s.factId as string;
+    const sourceType = s.sourceType as string;
+    requireCondition(
+      typeof id === "string" && UUID_LIKE.test(id),
+      "bad_json",
+      `fact source id 非法: ${String(id)}`,
+    );
+    requireCondition(
+      factIds.has(factId),
+      "bad_refs",
+      `fact source ${id} 引用未知 fact ${String(factId)}`,
+    );
+    requireCondition(
+      typeof sourceType === "string" && SOURCE_TYPES.has(sourceType),
+      "bad_json",
+      `fact source ${id} 的 sourceType 非法`,
+    );
+    requireCondition(
+      s.sourceId === undefined || s.sourceId === null || typeof s.sourceId === "string",
+      "bad_json",
+      `fact source ${id} 的 sourceId 非法`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(s.createdAt),
+      "bad_json",
+      `fact source ${id} 的时间非法`,
+    );
+    factSourcesJson.push({
+      id,
+      factId,
+      sourceType,
+      sourceId: (s.sourceId ?? null) as string | null,
+      createdAt: s.createdAt as string | null | undefined,
+    });
   }
   const transcriptIds = new Set<string>();
   const transcriptsJson: TranscriptArchiveRow[] = [];
@@ -1100,6 +1171,7 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     memoriesJson,
     contributionsJson,
     factsJson,
+    factSourcesJson,
     transcriptsJson,
     capsulesJson,
     inboxItemsJson,
@@ -1149,6 +1221,7 @@ export async function restoreFromZip(
     memoriesJson,
     contributionsJson,
     factsJson,
+    factSourcesJson,
     transcriptsJson,
     capsulesJson,
     inboxItemsJson,
@@ -1159,6 +1232,17 @@ export async function restoreFromZip(
   const storage = getAssetStorage();
   const familyId = familyJson.id;
   const now = new Date();
+
+  // 事件标签在事务内外都会用到（审计/报告），预先计算
+  const eventTags = memoriesJson.flatMap((m) =>
+    (m.tags ?? []).map((tag) => ({
+      id: randomUUID(),
+      memoryEventId: m.id,
+      tag,
+      familyId,
+      createdAt: now,
+    })),
+  );
 
   // 1) 先写文件（DB 失败时回滚删除）；storageKey 以 putOriginal 实际返回为准
   const writtenKeys: string[] = [];
@@ -1270,6 +1354,10 @@ export async function restoreFromZip(
           .run();
       }
 
+      if (eventTags.length > 0) {
+        tx.insert(memoryEventTag).values(eventTags).run();
+      }
+
       if (inboxItemsJson.length > 0) {
         tx.insert(inboxItem)
           .values(
@@ -1363,6 +1451,21 @@ export async function restoreFromZip(
               status: f.status ?? "user_confirmed",
               createdAt: parseDate(f.createdAt) ?? now,
               updatedAt: parseDate(f.createdAt) ?? now,
+            })),
+          )
+          .run();
+      }
+
+      if (factSourcesJson.length > 0) {
+        tx.insert(factSource)
+          .values(
+            factSourcesJson.map((s) => ({
+              id: s.id,
+              familyId,
+              factId: s.factId,
+              sourceType: s.sourceType,
+              sourceId: s.sourceId,
+              createdAt: parseDate(s.createdAt) ?? now,
             })),
           )
           .run();
@@ -1467,12 +1570,14 @@ export async function restoreFromZip(
         eventCount,
         contribCount,
         factCount,
+        factSourceCount,
         transcriptCount,
         capsuleCount,
         inboxItemCount,
         inboxItemAssetCount,
         memoryEventAssetCount,
         memoryEventParticipantCount,
+        memoryEventTagCount,
         capsuleEventCount,
         capsuleAssetCount,
         capsuleContributionCount,
@@ -1511,6 +1616,13 @@ export async function restoreFromZip(
           .all(),
         tx
           .select({ value: count() })
+          .from(factSource)
+          .innerJoin(factTable, eq(factSource.factId, factTable.id))
+          .innerJoin(memoryEvent, eq(factTable.memoryEventId, memoryEvent.id))
+          .where(eq(memoryEvent.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
           .from(assetTranscriptTable)
           .where(eq(assetTranscriptTable.familyId, familyId))
           .all(),
@@ -1541,6 +1653,11 @@ export async function restoreFromZip(
           .all(),
         tx
           .select({ value: count() })
+          .from(memoryEventTag)
+          .where(eq(memoryEventTag.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
           .from(capsuleEvent)
           .where(eq(capsuleEvent.familyId, familyId))
           .all(),
@@ -1564,12 +1681,14 @@ export async function restoreFromZip(
         events: { actual: num(eventCount), expected: memoriesJson.length },
         contributions: { actual: num(contribCount), expected: contributionsJson.length },
         facts: { actual: num(factCount), expected: factsJson.length },
+        factSources: { actual: num(factSourceCount), expected: factSourcesJson.length },
         transcripts: { actual: num(transcriptCount), expected: transcriptsJson.length },
         capsules: { actual: num(capsuleCount), expected: capsulesJson.length },
         inboxItems: { actual: num(inboxItemCount), expected: inboxItemsJson.length },
         inboxItemAssets: { actual: num(inboxItemAssetCount), expected: inboxItemAssetsJson.length },
         memoryEventAssets: { actual: num(memoryEventAssetCount), expected: eventAssets.length },
         memoryEventParticipants: { actual: num(memoryEventParticipantCount), expected: participants.length },
+        memoryEventTags: { actual: num(memoryEventTagCount), expected: eventTags.length },
         capsuleEvents: { actual: num(capsuleEventCount), expected: expectedCapsuleEventCount },
         capsuleAssets: { actual: num(capsuleAssetCount), expected: expectedCapsuleAssetCount },
         capsuleContributions: { actual: num(capsuleContributionCount), expected: expectedCapsuleContributionCount },
@@ -1604,6 +1723,8 @@ export async function restoreFromZip(
     events: memoriesJson.length,
     contributions: contributionsJson.length,
     facts: factsJson.length,
+    factSources: factSourcesJson.length,
+    tags: eventTags.length,
     transcripts: transcriptsJson.length,
     capsules: capsulesJson.length,
     inboxItems: inboxItemsJson.length,
@@ -1616,6 +1737,8 @@ export async function restoreFromZip(
     events: memoriesJson.length,
     contributions: contributionsJson.length,
     facts: factsJson.length,
+    factSources: factSourcesJson.length,
+    tags: eventTags.length,
     transcripts: transcriptsJson.length,
     capsules: capsulesJson.length,
     inboxItems: inboxItemsJson.length,

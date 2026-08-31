@@ -9,6 +9,7 @@ export {
   finalizeAiJob,
   getAiRuntimeDisclosure,
   listAiProcessingConsents,
+  listJobsForEntity,
   listRecentAiJobs,
   recoverExpiredAiJobs,
   renewAiJobLease,

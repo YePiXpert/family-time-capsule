@@ -15,12 +15,14 @@ import {
   memoryEventAsset,
   memoryEventParticipant,
 } from "@/db/schema/memory";
+import { memoryEventTag } from "@/db/schema/suggestion";
 import {
   capsule as capsuleTable,
   capsuleAsset,
   capsuleContribution,
   capsuleEvent,
 } from "@/db/schema/capsule";
+import { factSource } from "@/db/schema/suggestion";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { getFamily } from "@/lib/family/service";
@@ -45,7 +47,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 11;
+export const EXPORT_NON_ASSET_FILE_COUNT = 12;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -108,7 +110,7 @@ export async function buildFamilyExport(
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
-  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets, transcripts] = await Promise.all([
+  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets, transcripts, factSources, tags] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
     db.select().from(memoryEventTable).where(eq(memoryEventTable.familyId, familyId)),
@@ -118,6 +120,8 @@ export async function buildFamilyExport(
     db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
     db.select().from(inboxItemAsset).where(eq(inboxItemAsset.familyId, familyId)),
     db.select().from(assetTranscriptTable).where(eq(assetTranscriptTable.familyId, familyId)),
+    db.select().from(factSource).where(eq(factSource.familyId, familyId)),
+    db.select().from(memoryEventTag).where(eq(memoryEventTag.familyId, familyId)),
   ]);
 
   const eventIds = events.map((e) => e.id);
@@ -178,6 +182,13 @@ export async function buildFamilyExport(
   const eventsSorted = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
   const child = people.find((p) => p.isChild);
 
+  const tagsByEvent = new Map<string, string[]>();
+  for (const t of tags) {
+    const list = tagsByEvent.get(t.memoryEventId) ?? [];
+    list.push(t.tag);
+    tagsByEvent.set(t.memoryEventId, list);
+  }
+
   const memoriesJson = eventsSorted.map((e) => ({
     id: e.id,
     childPersonId: e.childPersonId,
@@ -194,6 +205,7 @@ export async function buildFamilyExport(
     participantPersonIds: eventParticipantLinks
       .filter((l) => l.memoryEventId === e.id)
       .map((l) => l.personId),
+    tags: tagsByEvent.get(e.id) ?? [],
   }));
 
   const capsulesJson = capsules.map((c) => ({
@@ -369,6 +381,13 @@ export async function buildFamilyExport(
       statement: f.statement,
       status: f.status,
       createdAt: iso(f.createdAt),
+    })));
+    json("fact-sources.json", factSources.map((s) => ({
+      id: s.id,
+      factId: s.factId,
+      sourceType: s.sourceType,
+      sourceId: s.sourceId,
+      createdAt: iso(s.createdAt),
     })));
     json("transcripts.json", transcripts.map((t) => ({
       id: t.id,

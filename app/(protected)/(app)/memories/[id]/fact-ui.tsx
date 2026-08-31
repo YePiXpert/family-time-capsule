@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import type { FactRow } from "@/lib/contributions/service";
+import type { FactSourceRow } from "@/db/schema/suggestion";
 import { addFactAction, setFactStatusAction } from "./actions";
 
 const inputClass =
@@ -13,15 +14,46 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: "已否决",
 };
 
+const SOURCE_TYPE_LABEL: Record<string, string> = {
+  asset: "原件",
+  transcript: "转录",
+  contribution: "讲述",
+  user_text: "手工记录",
+};
+
+function SourceChips({ sources }: { sources: FactSourceRow[] }) {
+  if (sources.length === 0) return null;
+  const types = [...new Set(sources.map((s) => s.sourceType))];
+  return (
+    <span className="ml-2 text-xs text-foreground/40">
+      来源：
+      {types.map((type, i) => (
+        <span key={type}>
+          {i > 0 && " / "}
+          {SOURCE_TYPE_LABEL[type] ?? type}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function FactSection({
   memoryEventId,
   facts,
+  factSources,
   canWrite,
 }: {
   memoryEventId: string;
   facts: FactRow[];
+  factSources: FactSourceRow[];
   canWrite: boolean;
 }) {
+  const sourcesByFactId = new Map<string, FactSourceRow[]>();
+  for (const source of factSources) {
+    const list = sourcesByFactId.get(source.factId) ?? [];
+    list.push(source);
+    sourcesByFactId.set(source.factId, list);
+  }
   const [addState, addAction, addPending] = useActionState(addFactAction, undefined);
   const [, statusAction] = useActionState(setFactStatusAction, undefined);
 
@@ -37,7 +69,10 @@ export function FactSection({
             key={f.id}
             className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg border border-foreground/10 px-4 py-2.5 text-sm"
           >
-            <span className="min-w-0 flex-1">{f.statement}</span>
+            <span className="min-w-0 flex-1">
+              {f.statement}
+              <SourceChips sources={sourcesByFactId.get(f.id) ?? []} />
+            </span>
             <span className="flex items-center gap-2 text-xs text-foreground/50">
               {STATUS_LABEL[f.status] ?? f.status}
               {canWrite && f.status === "ai_suggested" && (

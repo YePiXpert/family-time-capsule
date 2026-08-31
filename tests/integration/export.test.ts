@@ -211,6 +211,9 @@ describe("完整导出（#014）", () => {
       await zip.file(`${root}/contributions.json`)!.async("string"),
     );
     const facts = JSON.parse(await zip.file(`${root}/facts.json`)!.async("string"));
+    const factSources = JSON.parse(
+      await zip.file(`${root}/fact-sources.json`)!.async("string"),
+    );
     const transcripts = JSON.parse(
       await zip.file(`${root}/transcripts.json`)!.async("string"),
     );
@@ -220,7 +223,7 @@ describe("完整导出（#014）", () => {
     expect(manifest.exportVersion).toBe(1);
     expect(manifest.appVersion).toBe("0.1.3");
     expect(manifest.familyId).toBe(familyId);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 11);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 12);
     expect(result.fileCount).toBe(manifest.fileCount);
     expect(familyJson.name).toBe("我们一家");
     expect(familyJson.childLaterUnlockAge).toBe(21);
@@ -273,6 +276,12 @@ describe("完整导出（#014）", () => {
       ),
     ).toBe(true);
     expect(facts.length).toBe(1);
+    expect(factSources.length).toBe(1);
+    expect(factSources[0]).toMatchObject({
+      factId: facts[0].id,
+      sourceType: "user_text",
+      sourceId: null,
+    });
     expect(Array.isArray(transcripts)).toBe(true);
 
     const expectedInboxItems = (await db.select().from(inboxItemTable))

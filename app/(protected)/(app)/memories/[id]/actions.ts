@@ -24,6 +24,10 @@ import {
   setFactStatus,
   type Visibility,
 } from "@/lib/contributions/service";
+import {
+  requestEventSuggestions,
+  resolveSuggestion,
+} from "@/lib/suggestions/service";
 
 export type ContributionFormState = { error?: string };
 
@@ -303,4 +307,68 @@ export async function editTranscriptAction(
   }
   revalidatePath(`/memories/${memoryEventId}`);
   return { success: "修订已保存。" };
+}
+
+export type SuggestionActionState = { error?: string; success?: string };
+
+export async function requestEventSuggestionsAction(
+  _prev: SuggestionActionState | undefined,
+  formData: FormData,
+): Promise<SuggestionActionState> {
+  const context = await requireFamilyCapability("ai:review");
+  const memoryEventId = String(formData.get("memoryEventId") ?? "");
+  const result = requestEventSuggestions(context, memoryEventId);
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "forbidden"
+          ? "你没有权限请求 AI 整理。"
+          : result.error === "event_not_found"
+            ? "事件不存在。"
+            : result.error === "capability_unavailable"
+              ? "当前未配置文本整理能力。"
+              : result.error === "capability_not_consented"
+                ? "请先由管理员在「设置 › AI」开启文本处理外部处理同意。"
+                : "请求失败，请重试。",
+    };
+  }
+  revalidatePath(`/memories/${memoryEventId}`);
+  return { success: "已加入整理建议队列。" };
+}
+
+export async function resolveSuggestionAction(
+  _prev: SuggestionActionState | undefined,
+  formData: FormData,
+): Promise<SuggestionActionState> {
+  const context = await requireFamilyCapability("event:write");
+  const suggestionId = String(formData.get("suggestionId") ?? "");
+  const actionRaw = String(formData.get("action") ?? "");
+  const action = actionRaw === "reject" ? "reject" : "accept";
+  const editedValue = String(formData.get("editedValue") ?? "").trim() || undefined;
+  const result = await resolveSuggestion(
+    context.familyId,
+    context.userId,
+    suggestionId,
+    action,
+    editedValue,
+  );
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "not_found"
+          ? "建议不存在。"
+          : result.error === "already_resolved"
+            ? "该建议已处理。"
+            : result.error === "person_not_found"
+              ? "所选家庭成员无效。"
+              : result.error === "invalid_tag"
+                ? "标签需为 1–50 字。"
+                : result.error === "invalid_title"
+                  ? "标题需为 1–100 字。"
+                  : result.error === "invalid_location"
+                    ? "地点需为 200 字以内。"
+                    : "操作失败。",
+    };
+  }
+  return { success: "已处理。" };
 }

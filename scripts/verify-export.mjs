@@ -57,12 +57,13 @@ if (!SUPPORTED_EXPORT_VERSIONS.has(manifest.exportVersion)) {
   ok(`exportVersion=${manifest.exportVersion}, appVersion=${manifest.appVersion ?? "?"}, 导出时间=${manifest.exportedAt}`);
 }
 
-const [familyJson, people, memories, contributions, facts, transcripts, capsules] = await Promise.all([
+const [familyJson, people, memories, contributions, facts, factSources, transcripts, capsules] = await Promise.all([
   readJsonAsync("family.json"),
   readJsonAsync("people.json"),
   readJsonAsync("memories.json"),
   readJsonAsync("contributions.json"),
   readJsonAsync("facts.json"),
+  readJsonAsync("fact-sources.json"),
   readJsonAsync("transcripts.json"),
   readJsonAsync("capsules.json"),
 ]);
@@ -72,9 +73,24 @@ const timelineMd = zip.file(`${ROOT}/timeline.md`);
 if (timelineMd) ok("timeline.md 存在");
 else fail("缺少 timeline.md");
 
+// v0.1.5 起固定 12 个非媒体文件（含 inbox*2）；旧档无 inbox 时为 10
+const hasInboxItems = Boolean(zip.file(`${ROOT}/inbox-items.json`));
+const hasInboxItemAssets = Boolean(zip.file(`${ROOT}/inbox-item-assets.json`));
+const expectedNonAssetCount = hasInboxItems && hasInboxItemAssets ? 12 : 10;
+if (hasInboxItems !== hasInboxItemAssets) {
+  fail("inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失");
+}
+const expectedFileCount = (manifest.assets?.length ?? 0) + expectedNonAssetCount;
+if (manifest.fileCount !== expectedFileCount) {
+  fail(`manifest.fileCount 不匹配: ${manifest.fileCount} != ${expectedFileCount}`);
+} else {
+  ok(`fileCount=${manifest.fileCount} 与文件集一致`);
+}
+
 // 引用完整性
 const personIds = new Set((people ?? []).map((p) => p.id));
 const assetIds = new Set((manifest.assets ?? []).map((a) => a.assetId));
+const factIds = new Set((facts ?? []).map((f) => f.id));
 if (people) ok(`people: ${people.length} 人`);
 if (memories) {
   for (const m of memories) {
@@ -104,6 +120,26 @@ if (capsules) {
   ok(`capsules: ${capsules.length} 个`);
 }
 if (facts) ok(`facts: ${facts.length} 条`);
+if (factSources) {
+  for (const s of factSources) {
+    if (!factIds.has(s.factId))
+      fail(`fact-sources: ${s.id} 引用未知 fact ${s.factId}`);
+    if (!["asset", "contribution", "transcript", "user_text"].includes(s.sourceType))
+      fail(`fact-sources: ${s.id} 的 sourceType 非法 ${s.sourceType}`);
+  }
+  ok(`fact-sources: ${factSources.length} 条，引用完整`);
+}
+if (memories) {
+  let tagCount = 0;
+  for (const m of memories) {
+    for (const tag of m.tags ?? []) {
+      tagCount++;
+      if (typeof tag !== "string" || tag.length === 0 || tag.length > 50)
+        fail(`memories: 事件 ${m.id} 的 tag 非法 ${tag}`);
+    }
+  }
+  if (tagCount > 0) ok(`tags: ${tagCount} 个`);
+}
 if (transcripts) ok(`transcripts: ${transcripts.length} 条`);
 
 // 原件哈希校验

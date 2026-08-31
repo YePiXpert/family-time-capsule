@@ -8,6 +8,7 @@ import { user as userTable } from "@/db/schema/auth";
 import { person as personTable } from "@/db/schema/family";
 import { memoryEvent } from "@/db/schema/memory";
 import { contribution, fact } from "@/db/schema/contribution";
+import { factSource } from "@/db/schema/suggestion";
 import { AUDIT_KINDS, requiredAuditValues } from "@/lib/audit/service";
 import {
   hasFamilyCapability,
@@ -276,18 +277,33 @@ export async function addFact(
   if (!(await eventBelongsToFamily(familyId, memoryEventId))) return undefined;
   const db = getDb();
   const now = new Date();
-  const rows = await db
-    .insert(fact)
-    .values({
-      id: randomUUID(),
-      memoryEventId,
-      statement: trimmed,
-      status: "user_confirmed",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  return rows[0];
+  return db.transaction((tx) => {
+    const rows = tx
+      .insert(fact)
+      .values({
+        id: randomUUID(),
+        memoryEventId,
+        statement: trimmed,
+        status: "user_confirmed",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .all();
+    const row = rows[0];
+    if (!row) return undefined;
+    tx.insert(factSource)
+      .values({
+        id: randomUUID(),
+        familyId,
+        factId: row.id,
+        sourceType: "user_text",
+        sourceId: null,
+        createdAt: now,
+      })
+      .run();
+    return row;
+  });
 }
 
 export async function setFactStatus(

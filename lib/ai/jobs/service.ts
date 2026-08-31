@@ -1854,3 +1854,41 @@ export function listRecentAiJobs(
       .all();
   });
 }
+
+export function listJobsForEntity(
+  context: FamilyContext,
+  entityType: string,
+  entityId: string,
+  dependencies: AiJobServiceDependencies = {},
+): AiJobSummary[] {
+  assertFamilyCapability(context.role, "ai:review");
+  const now = new Date();
+  return database(dependencies).transaction((tx) => {
+    if (!getLiveActor(tx, context.familyId, context.userId, "ai:review", now)) {
+      return [];
+    }
+    return tx
+      .select({
+        id: aiJob.id,
+        jobType: aiJob.jobType,
+        entityType: aiJob.entityType,
+        entityId: aiJob.entityId,
+        status: aiJob.status,
+        attempts: aiJob.attempts,
+        maxAttempts: aiJob.maxAttempts,
+        lastErrorCode: aiJob.lastErrorCode,
+        createdAt: aiJob.createdAt,
+        updatedAt: aiJob.updatedAt,
+      })
+      .from(aiJob)
+      .where(
+        and(
+          eq(aiJob.familyId, context.familyId),
+          eq(aiJob.entityType, entityType),
+          eq(aiJob.entityId, entityId),
+        ),
+      )
+      .orderBy(desc(aiJob.createdAt))
+      .all();
+  });
+}

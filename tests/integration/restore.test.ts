@@ -61,6 +61,8 @@ type Snapshot = {
     updatedAt: string;
   }>;
   facts: Array<{ id: string; statement: string }>;
+  factSources: Array<{ id: string; factId: string; sourceType: string; sourceId: string | null }>;
+  tags: Array<{ memoryEventId: string; tag: string }>;
   transcripts: Array<{
     id: string;
     familyId: string;
@@ -121,6 +123,8 @@ async function freshModules() {
       family: (await import("@/db/schema/family")).family,
       person: (await import("@/db/schema/family")).person,
       contribution: (await import("@/db/schema/contribution")).contribution,
+      factSource: (await import("@/db/schema/suggestion")).factSource,
+      memoryEventTag: (await import("@/db/schema/suggestion")).memoryEventTag,
       inboxItem: (await import("@/db/schema/inbox")).inboxItem,
       inboxItemAsset: (await import("@/db/schema/inbox")).inboxItemAsset,
       assetTranscript: (await import("@/db/schema/transcript")).assetTranscript,
@@ -293,6 +297,9 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     const people = await m.family.listPeople(familyId);
     const events = await m.memories.listMemoryEvents(familyId);
     const contributionRows = await db.select().from(m.schema.contribution);
+    const factRows = await db.select().from((await import("@/db/schema/contribution")).fact);
+    const factSourceRows = await db.select().from(m.schema.factSource);
+    const tagRows = await db.select().from(m.schema.memoryEventTag);
     const storage = m.storage.getAssetStorage();
     const assets = [photo.asset, audio.asset, video.asset].map((a) => ({
       id: a.id,
@@ -360,7 +367,14 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
           updatedAt: row.updatedAt.toISOString(),
         }))
         .sort((a, b) => a.id.localeCompare(b.id)),
-      facts: [{ id: "", statement: "2026-08-10 小满出生。" }],
+      facts: factRows.map((f) => ({ id: f.id, statement: f.statement })),
+      factSources: factSourceRows.map((s) => ({
+        id: s.id,
+        factId: s.factId,
+        sourceType: s.sourceType,
+        sourceId: s.sourceId,
+      })),
+      tags: tagRows.map((t) => ({ memoryEventId: t.memoryEventId, tag: t.tag })),
       transcripts: [],
       capsules: [
         { id: cap.capsuleId, title: "写给一岁的你", status: "sealed", eventIds: [e1] },
@@ -406,7 +420,9 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(report.assets).toBe(snapshot.assets.length);
     expect(report.events).toBe(snapshot.events.length);
     expect(report.contributions).toBe(snapshot.contributions.length);
-    expect(report.facts).toBe(1);
+    expect(report.facts).toBe(snapshot.facts.length);
+    expect(report.factSources).toBe(snapshot.factSources.length);
+    expect(report.tags).toBe(snapshot.tags.length);
     expect(report.transcripts).toBe(0);
     expect(report.capsules).toBe(1);
     expect(report.inboxItems).toBe(snapshot.inboxItems.length);
@@ -564,6 +580,27 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     ]);
     const facts = await m.contributions.listFacts(snapshot.familyId, e1Id);
     expect(facts.map((f) => f.statement)).toContain("2026-08-10 小满出生。");
+
+    const restoredFactSources = (await db.select().from(m.schema.factSource))
+      .map((s) => ({
+        id: s.id,
+        factId: s.factId,
+        sourceType: s.sourceType,
+        sourceId: s.sourceId,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(restoredFactSources).toEqual(
+      [...snapshot.factSources].sort((a, b) => a.id.localeCompare(b.id)),
+    );
+
+    const restoredTags = (await db.select().from(m.schema.memoryEventTag))
+      .map((t) => ({ memoryEventId: t.memoryEventId, tag: t.tag }))
+      .sort((a, b) => `${a.memoryEventId}-${a.tag}`.localeCompare(`${b.memoryEventId}-${b.tag}`));
+    expect(restoredTags).toEqual(
+      [...snapshot.tags].sort((a, b) =>
+        `${a.memoryEventId}-${a.tag}`.localeCompare(`${b.memoryEventId}-${b.tag}`),
+      ),
+    );
 
     // 7) 封存胶囊：内容引用完整（导出/恢复不因 seal 丢失内容）
     const capDetail = await m.capsules.getCompleteCapsuleDetailForDisasterExport(
@@ -795,10 +832,11 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     const buf = await buildTamperedZip(async (zip) => {
       zip.remove("family-time-capsule-export/inbox-items.json");
       zip.remove("family-time-capsule-export/inbox-item-assets.json");
+      zip.remove("family-time-capsule-export/fact-sources.json");
       zip.remove("family-time-capsule-export/transcripts.json");
       const manifestFile = zip.file("family-time-capsule-export/manifest.json")!;
       const manifest = JSON.parse(await manifestFile.async("string"));
-      manifest.fileCount -= 3;
+      manifest.fileCount -= 4;
       zip.file(
         "family-time-capsule-export/manifest.json",
         JSON.stringify(manifest),
@@ -842,6 +880,8 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     const report = await m.restoreSvc.restoreFromZip(buf, adminId);
     expect(report.inboxItems).toBe(0);
     expect(report.inboxItemAssets).toBe(0);
+    expect(report.factSources).toBe(0);
+    expect(report.tags).toBe(0);
     expect(report.transcripts).toBe(0);
     expect(await m.db.getDb().select().from(m.schema.inboxItem)).toHaveLength(0);
     expect((await m.family.getFamily(snapshot.familyId))?.childLaterUnlockAge).toBe(

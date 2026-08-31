@@ -168,6 +168,22 @@
 - **后果**：记忆详情页为每个原始图片 asset 展示 AI 图像理解区块；具备 `ai:review` 能力的用户可逐项触发，触发前需要 vision capability 可用且（外部 provider 时）已同意。
 - **PRD 偏差**：无。
 
+## D-017（M3-C）Source-Linked AI Suggestions：事实来源、事件标签与建议工作流
+
+- **日期**：2026-08-31
+- **状态**：已接受
+- **决策**：
+  1. 新增三张表：`ai_suggestion`（待审建议与接受/拒绝墓碑）、`fact_source`（每条 fact 的来源追踪）、`memory_event_tag`（事件标签）。
+  2. `ai_suggestion` 是运维/可重建状态：只保存当前待审建议与接受/拒绝记录，不进入 portable family archive；恢复后的新实例不会自动恢复旧建议。
+  3. `fact_source` 与 `memory_event_tag` 是耐久家庭资料：必须随家庭 archive 完整导出/恢复。
+  4. 建议类型限定为 `title|location|person|tag`，单推荐方案（每次 rerun 删除旧 pending 建议并插入新建议）；接受 title/location 时复用 `updateMemoryEvent` 的验证与修订快照逻辑。
+  5. 标签存储规范化：小写、trim、长度 ≤50；`(memoryEventId, tag)` 唯一索引阻止重复。
+  6. 事实来源类型限定为 `asset|contribution|transcript|user_text`；手工创建的 fact 来源类型为 `user_text`，sourceId 为 `null`。
+  7. 建议 handler `suggest.event_metadata.v1` 只发送事件可见 contribution、家庭成员、已确认事实、转录与分析摘要等受限上下文；privacy contribution 不进入建议上下文。
+  8. AI 建议产出 `ai_suggested` 事实与对应 `fact_source`，但永不自动确认；必须由具备编辑权限的用户逐项接受/拒绝。
+- **后果**：记忆详情页出现「AI 建议」区块，可请求、接受、拒绝或重跑事件元数据建议；事实卡片展示来源 chips；导出/恢复保留事实来源与标签。
+- **PRD 偏差**：无。
+
 ## D-014（RH-004）恢复目标与认证数据的处理
 
 - **日期**：2026-08-30
