@@ -28,6 +28,10 @@ export const AUDIT_KINDS = {
   guardianChanged: "person.guardian_changed",
   childLaterPolicyChanged: "child_later.policy_changed",
   childLaterManuallyUnlocked: "child_later.manually_unlocked",
+  aiConsentEnabled: "ai.consent_enabled",
+  aiConsentRevoked: "ai.consent_revoked",
+  aiJobCancelled: "ai.job_cancelled",
+  aiJobRetried: "ai.job_retried",
 } as const;
 
 /** Values for security-critical mutations that write audit in the same tx. */

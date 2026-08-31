@@ -6,6 +6,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { DATA_DIR } from "@/lib/paths";
 import { runMigrationsWithPreMigrationSnapshot } from "./migration-safety";
 import * as assetSchema from "./schema/asset";
+import * as aiJobSchema from "./schema/ai-job";
 import * as auditSchema from "./schema/audit";
 import * as authSchema from "./schema/auth";
 import * as capsuleSchema from "./schema/capsule";
@@ -39,12 +40,16 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
   try {
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("foreign_keys = ON");
+    // Multi-process app/worker writes wait briefly for the current IMMEDIATE
+    // transaction instead of surfacing transient SQLITE_BUSY to users.
+    sqlite.pragma("busy_timeout = 5000");
 
     const db = drizzle(sqlite, {
       schema: {
         ...authSchema,
         ...familySchema,
         ...assetSchema,
+        ...aiJobSchema,
         ...inboxSchema,
         ...invitationSchema,
         ...memorySchema,

@@ -106,7 +106,10 @@
 ## 11. 删除与审计日志
 
 - P0 **没有物理删除**：收件箱“废弃”是软状态（discarded），Asset 原件永不删除——不存在误删/越删的破坏面。
-- 完整导出与恢复完成会写 family-scoped 审计条目；邀请创建、撤销与使用也写入不含 token、hash、密码的 family-scoped 审计。邀请审计与邀请状态在同一事务提交；导出/恢复审计仍为 best-effort，不会把已经成功的恢复错误报告为失败。
+- 完整导出与恢复完成会写 family-scoped 审计条目；邀请、账号角色/禁用、guardian、
+  `child_later` policy/unlock、AI consent 及 job cancel/retry 也写入不含 token、hash、
+  正文、Provider response 或密码的 family-scoped 审计。关键权限变化与审计在同一
+  事务提交；导出/恢复审计仍为 best-effort，不会把已经成功的恢复错误报告为失败。
 - Trash/显式 purge、删除二次确认及其扩展审计仍属于 v1 backlog。
 
 ## 12. 环境变量清单（安全相关）
@@ -118,6 +121,9 @@
 | `BETTER_AUTH_URL` | 反代部署建议 | 对外地址，用于 origin 校验 |
 | `DATA_DIR` | 否 | 数据根目录（Docker 内为 `/data`） |
 | `AUTH_SIGNIN_RATE_LIMIT_MAX` | 否 | 登录限流覆盖（默认 3/10s；仅测试环境放宽） |
+| `AI_PROVIDER` / `AI_BASE_URL` / capability models | 否 | 服务端 AI 配置；默认 disabled，远程 base URL 必须 HTTPS |
+| `AI_API_KEY` | 启用外部 AI 时 | 仅服务端 secret 注入；不入库、不导出、不发客户端 |
+| `AI_WORKER_POLL_MS` | 否 | worker 轮询间隔；不包含 secret |
 
 ## 13. 审计结论（2026-08-29，#017）
 
@@ -153,3 +159,23 @@
 | 健康端点 | ✅ `/api/health` 仅报 db 连通与版本，无家庭数据 |
 
 **仍待 v1 完成**：账号禁用/角色变更与可见性专项审计、Trash/purge 审计、备份加密、setup 专项滥用防护。
+
+## 15. AI 同意、队列与 worker（migration 0016）
+
+- 外部处理默认关闭；设置页披露 Provider、model、是否离开本机及每项 capability
+  会发送的内容类型。只有当前未禁用 admin 可 enable/revoke consent。
+- consent 与 family、capability、Provider/model、披露版本及递增版本号绑定，不随
+  archive 导出/恢复；恢复实例必须重新同意。配置或 consent 漂移令旧 job fail closed。
+- enqueue/claim/renew/finalize 都重验实时账号、角色、family、Contribution
+  visibility、asset-root policy、source SHA/fingerprint 与运行时配置。admin 对
+  private 内容没有旁路；automatic 处理只允许完全 family-visible 来源。
+- queue 的 payload/output DB CHECK 固定为 `{}`；只保存 opaque id、fingerprint、
+  provider/model、状态、attempt、lease 和安全错误 code。日志同样不得包含正文、
+  transcript、媒体 URL/token、secret 或 Provider response。
+- IMMEDIATE transaction、5 秒 busy timeout、幂等键、lease-generation fencing、
+  heartbeat 与 terminal immutability 防止多进程重复提交和过期 worker 写回。
+- 当前 production registry 为空，因此不会实际发送家庭素材。未来每个 handler 仍需
+  独立完成来源锁、结果审核、删除/保留及 export/restore 安全审计。
+
+详细边界见 [AI_PRIVACY.md](./AI_PRIVACY.md) 和
+[AI_PROVIDERS.md](./AI_PROVIDERS.md)。

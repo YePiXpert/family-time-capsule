@@ -27,6 +27,18 @@ The 2026-08-31 audit established:
 
 This is the minimum baseline. Every milestone must keep it green and add targeted tests for its new behavior.
 
+### Current progress after the initial audit
+
+- Application version intentionally remains `0.1.3`; no release tag exists.
+- Schema now has **27 tables** and **17 forward migrations** (`0000`–`0016`).
+- M1 family roles, invitations, account lifecycle, guardians, `child_later` unlock, and
+  Contribution visibility are enforced across services, media, events, capsules and UI.
+- M2 provider-neutral AI, offline Fake/Null providers, SQLite jobs, consent disclosure,
+  worker leases/retry/cancellation and settings UI are implemented. The production handler
+  registry is intentionally empty until transcript/vision/suggestion result models land.
+- `0.1.3` upgrade, pre-migration snapshot, visibility/media authorization and disaster
+  roundtrip suites are present and passing at the latest completed checkpoint.
+
 ### Working archive capabilities
 
 - Private first-run admin setup; public signup is closed.
@@ -41,6 +53,10 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 - Authenticated media streaming with Range support.
 - Portable ZIP export, independent verification, hardened restore, and production-server disaster roundtrip.
 - Export/restore audit entries, PWA/offline shell, Docker packaging, health check, and deployment smoke tooling.
+- Invite-only multi-account administration with admin/editor/contributor/viewer authorization.
+- Enforced private/parents/family/child_later policy with guardians and irreversible unlock.
+- Provider-neutral AI configuration, explicit per-capability consent, durable jobs, optional
+  worker, crash-safe leases/retry and status/cancel/retry UI; no real content handler yet.
 
 ### Current schema domains
 
@@ -51,6 +67,9 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 - Narrative: `contribution`, `fact`.
 - Capsules: `capsule`, `capsule_asset`, `capsule_event`, `capsule_contribution`.
 - Operations: `audit_log`.
+- Invitations/policy: `family_invitation` plus account/guardian/unlock fields on existing tables.
+- AI operations: `ai_processing_consent`, `ai_job`, `ai_job_source`, `ai_job_attempt`,
+  `ai_worker_heartbeat`.
 
 ## Invariants
 
@@ -67,11 +86,10 @@ Every milestone must preserve these rules:
 
 ## Product Gaps
 
-- No provider-neutral AI implementation, transcription, media analysis, suggestion review, or clustering.
+- No real transcription, media analysis, suggestion review, or clustering handler yet; the
+  provider/queue/consent foundation is complete.
 - No Story model or weekly/monthly/yearly publishing workflow.
 - No full-text or semantic search.
-- No real roles, invitations, or multi-account administration.
-- Contribution visibility is stored but not enforced as an access policy.
 - No scoped contribution links, oral-history prompts, or interview workflow.
 - Capsules have no future questions, replies, or milestone trigger.
 - No PDF/EPUB books, WebDAV backup, or PWA Share Target.
@@ -81,12 +99,11 @@ Every milestone must preserve these rules:
 
 ## Architecture Gaps
 
-- `jobs/` is empty: there is no durable queue, worker, retry/backoff, or stuck-job recovery.
-- No MemoryAssistant/provider capability abstraction or deterministic fake provider.
 - `contribution.transcript` is only a placeholder column; it lacks provenance, segments, edit protection, and export/restore support.
 - Facts have no normalized source relationship.
-- No Story/StoryParagraph/StorySource, tag, analysis, suggestion, embedding, invitation, contribution-request, or interview schemas.
-- Timeline is capped at 100 events with no cursor; inbox is unbounded.
+- No Story/StoryParagraph/StorySource, tag, analysis, suggestion, embedding,
+  contribution-request, or interview schemas.
+- Inbox remains unbounded.
 - Timeline, inbox, capsules, and export contain repeated per-row array scans that will not scale to the v1 dataset.
 - Upload routes buffer complete files; export hashes complete files synchronously; restore retains the whole ZIP and all extracted originals in memory.
 - No 10k-event/50k-asset benchmark harness or `docs/PERFORMANCE.md`.
@@ -95,15 +112,15 @@ Every milestone must preserve these rules:
 
 ## Security Gaps
 
-- No Content Security Policy.
-- Roles and Contribution visibility do not yet authorize reads and mutations.
-- No invitation or public-contribution token security model.
-- No external-AI consent, content policy, provider disclosure, or secret-handling implementation.
+- No public-contribution token security model.
+- Real AI content handlers still require per-capability result/source/deletion threat reviews;
+  the consent, disclosure, secret and queue boundary is implemented.
 - No WebDAV SSRF/redirect/credential threat model.
-- Audit covers export/restore only; it must include invites, role changes, purge, AI configuration, backup, and capsule unlock.
+- Audit covers export/restore, invitations, account/guardian/unlock policy and AI consent/job
+  controls; trash/purge, WebDAV and backup audit remain.
 - Setup-specific brute-force protection and backup encryption remain documented backlog items.
-- Future search, stories, AI jobs, books, and capsules have no visibility/isolation tests yet.
-- No complete v1 security review or CSP deployment verification.
+- Future search, stories, books and new capsule domains still need visibility/isolation tests.
+- No complete v1 security review or production-proxy CSP verification.
 
 ## Data Migration Risks
 
@@ -188,7 +205,7 @@ Exit: contracts and fixtures exist; the current archive still passes the complet
 
 Exit: multi-account family tests, role-escalation tests, IDOR tests, and visibility tests pass; public signup remains closed.
 
-### M2 — 0.4.x AI foundation and durable jobs
+### M2 — 0.4.x AI foundation and durable jobs — foundation complete
 
 - Add capability-aware provider interfaces for text, vision, transcription, and embeddings.
 - Implement `NullMemoryAssistant` and deterministic offline fake providers.
@@ -197,7 +214,9 @@ Exit: multi-account family tests, role-escalation tests, IDOR tests, and visibil
 - Add explicit consent and provider/model/content disclosure before external processing.
 - Ensure missing worker/provider never blocks core archive operations.
 
-Exit: offline AI tests are deterministic; provider outage and worker crash tests preserve originals and recover jobs.
+Exit evidence: offline AI tests are deterministic; queue authorization, consent/config/source
+drift, concurrency, expired leases, retry cloning, worker error mapping and settings disclosure
+are covered. Real content processing remains in M3 and cannot bypass this foundation.
 
 ### M3 — 0.5.x AI memory organizer and fact sources
 
@@ -328,13 +347,13 @@ Exit: every release gate below is evidenced; version remains below `1.0.0` until
 | Brief area | Current | v1 acceptance evidence | Milestone |
 | --- | --- | --- | --- |
 | Archive invariants (§2, §40) | Strong P0 base; scale gaps | Byte/hash/time invariants, immutable originals, derivative-only lists, long timeline | M7–M8 |
-| AI architecture/jobs (§4–5) | Missing | Provider-neutral capabilities, Null/Fake providers, durable jobs, retry/failure UI, consent | M2 |
+| AI architecture/jobs (§4–5) | Foundation implemented; production handlers empty | Provider-neutral capabilities, Null/Fake providers, durable jobs, retry/failure UI, consent | M2 |
 | STT/vision/suggestions/clustering (§6–9) | Missing; placeholder transcript column | Edited transcript protection, analysis provenance, review flows, non-destructive clusters | M3 |
 | Fact lock (§8, §10) | Manual confirmed Facts; no sources | Normalized sources, AI cannot confirm, rejected suggestions excluded, quotations traceable | M3–M4 |
 | Weekly/monthly/yearly Stories (§10–11, §18) | Missing | Paragraph sources, draft/edit/publish, regeneration protection, weekly/monthly/yearly UX | M4 |
 | Search (§12) | Missing | Visibility-aware FTS and filters without AI; optional rebuildable semantic search | M4 |
-| Roles/invites (§13) | Role column only; effectively admin-only | Invite-only accounts, four enforced roles, no public signup or escalation | M1 |
-| Contribution visibility (§14) | Stored/displayed only | Documented and enforced private/parents/family/child_later policy in all consumers | M1 |
+| Roles/invites (§13) | Implemented and enforced | Invite-only accounts, four enforced roles, no public signup or escalation | M1 |
+| Contribution visibility (§14) | Implemented across current consumers | Documented and enforced private/parents/family/child_later policy in all consumers | M1 |
 | Contribution links/oral history (§15–16) | Missing | Scoped token links, review queue, prompt/interview flow, anonymous isolation | M5 |
 | Capsules (§17) | Date/age works | Existing behavior preserved; future questions, replies, immutable old content | M5 |
 | Books (§19) | Missing | Portable PDF/EPUB with embedded derivatives and no auth-only URLs | M6 |
@@ -342,8 +361,8 @@ Exit: every release gate below is evidenced; version remains below `1.0.0` until
 | System Share Target (§21) | Missing | Supported inputs enter Inbox; platform limitations documented | M6 |
 | Trash/purge (§22) | Inbox discard only | Recoverable trash, explicit purge, Asset retention and backup semantics | M7 |
 | Performance (§23, §35) | No benchmark; bounded lists incomplete | 10k/50k evidence, cursor pagination, indexed/batched queries, bounded memory | M7 |
-| Upgrade and pre-migration backup (§24–25) | Forward migrations; no old fixture/snapshot | `0.1.3 -> 1.0` test, consistent snapshot, rollback, old archive compatibility | M0, M8 |
-| Security/privacy/audit (§26–27) | Strong P0 isolation; CSP and v1 domains missing | Full review, CSP, secret/privacy controls, expanded audit, no High/Critical | M1–M8 |
+| Upgrade and pre-migration backup (§24–25) | `0.1.3` fixture and consistent snapshot implemented; final v1 upgrade pending | `0.1.3 -> 1.0` test, consistent snapshot, rollback, old archive compatibility | M0, M8 |
+| Security/privacy/audit (§26–27) | Roles, visibility, CSP, invitations and AI foundation hardened; future domains pending | Full review, CSP, secret/privacy controls, expanded audit, no High/Critical | M1–M8 |
 | UX/accessibility (§28–29) | Basic responsive PWA | Progress/states, mobile/desktop/PWA journeys, WCAG smoke and real-device record | M7–M8 |
 | Quality/data-integrity fixture (§32–34, §40) | 197/24/6 baseline | All new suites plus complete fictional-family destroy/restore roundtrip | Every milestone, M8 |
 | Documentation/release (§36–43) | P0 docs with known drift | All named v1 docs current; exact final report; version/tag only after gates | M0, M8–M9 |
@@ -352,12 +371,9 @@ Exit: every release gate below is evidenced; version remains below `1.0.0` until
 
 - README reports 126 tests; the audited baseline is 197 unit/integration tests.
 - CHANGELOG and `docs/ISSUES.md` call `0000`–`0010` “10 migrations”; there are 11 migration entries.
-- `docs/SECURITY.md` contains older rows that still call persistent rate limiting and audit logging backlog.
-- `docs/ARCHITECTURE.md` describes an AI adapter and `lib/ai/` that do not exist, and shows an outdated database path.
-- Export/restore omit the existing transcript column.
-- Timeline silently caps at 100 events; inbox has no pagination.
+- Inbox has no pagination.
 - Upload and restore memory behavior is unsafe for their documented maximum sizes.
-- Contribution visibility is not an authorization boundary yet.
+- Production AI handler registry is empty; STT/vision/suggestion behavior is not yet available.
 - Docker persistence has historical static-review evidence, not a recorded local Docker acceptance run.
 - `docs/REAL_DEVICE_TEST.md` has no completed iOS/Android/desktop record.
 - No git release tags exist yet.

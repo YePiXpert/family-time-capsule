@@ -1,9 +1,10 @@
 # AI Provider 配置与适配器
 
-> 当前状态：**基础设施已实现，业务功能尚未启用**。`lib/ai/` 已提供
-> provider-neutral 接口、关闭实现、离线 Fake 和 OpenAI-compatible 传输层；
-> 当前没有 Route Handler、页面、后台任务或数据库流程把家庭素材交给 AI。
-> 仅配置环境变量不会自动上传或处理任何资料。
+> 当前状态：**Provider、同意与后台任务基础设施已实现，真实 AI handler 尚未
+> 启用**。`lib/ai/` 提供 provider-neutral 接口、关闭实现、离线 Fake 和
+> OpenAI-compatible 传输层；`lib/ai/jobs/`、`jobs/` 与 `/settings/ai` 提供
+> SQLite queue、worker、披露和同意控制。production handler registry 当前为空，
+> 所以仅配置环境变量或启动 worker 都不会自动上传、转录或分析家庭资料。
 
 ## 1. 架构边界
 
@@ -11,7 +12,7 @@
 Anthropic 或任何特定 SDK：
 
 ```text
-未来的授权应用服务 / SQLite worker
+已授权的应用服务 / SQLite worker
                   │
                   ▼
           MemoryAssistant（聚合接口）
@@ -32,8 +33,8 @@ Null / Deterministic Fake       OpenAI-compatible adapter
 - `EmbeddingProvider.createEmbeddings()`。
 
 每个结果都带 `providerId`、面向用户的 `providerName` 和实际/回退
-`model`，供未来同意界面、来源记录和审计使用。接口不接收数据库实体，也不
-能写入 Fact；AI 输出是否形成可审核建议，由后续业务服务决定。
+`model`，供同意界面、来源记录和审计使用。接口不接收数据库实体，也不能写入
+Fact；AI 输出是否形成可审核建议，由后续业务服务决定。
 
 ## 2. 三种当前实现
 
@@ -94,6 +95,7 @@ Fake 输出永远不得进入生产档案或伪装成用户确认内容。
 | `AI_REQUEST_TIMEOUT_MS` | 默认 `30000`，允许 `50`–`120000` |
 | `AI_MAX_REQUEST_BYTES` | 默认 `33554432`，允许 `4096`–`104857600` |
 | `AI_MAX_RESPONSE_BYTES` | 默认 `4194304`，允许 `1024`–`16777216` |
+| `AI_WORKER_POLL_MS` | worker 空闲轮询间隔，默认 `1000`，允许 `50`–`60000`；不影响请求超时 |
 
 启用适配器时至少要明确配置一个能力模型。模型之间没有继承关系，也不会请求
 `/models` 后猜测能力；这可避免把“能生成文本”错误等同于“能看图/转录/生成
@@ -126,7 +128,38 @@ if (assistant.supports("vision")) {
 `lib/ai/index.ts` 只导出协议、Null/Fake 和安全错误类型。读取密钥及联网的工厂
 位于明确的 `lib/ai/server.ts` 入口；运行时也会拒绝在浏览器中构造提供商。
 
-## 4. 输入与响应限制
+## 4. 同意、队列与 worker
+
+- `/settings/ai` 向登录家庭成员显示 Provider、model、是否离开本机及每项能力会
+  发送的内容类型；只有 admin 可以启用或撤销 consent。
+- consent 按 family + capability 保存，并绑定 Provider id、model、披露版本和
+  consent version。Provider/model 变化不会继承旧同意。
+- automatic job 只允许完全 `family` 可见的来源；`private`、`parents` 与
+  `child_later` 只能由当前有权用户逐项手工触发。
+- queue 的 payload/output 固定为 `{}`；正文、媒体、secret 和 Provider response
+  不进入 job 表。source 表只保存受控实体 id 与 SHA-256/fingerprint。
+- worker 在 claim、续租、提交结果前重验 live actor、family、visibility、来源
+  指纹、Provider/model 与 consent；租约使用 generation fencing，过期 worker
+  不能迟到提交。
+- 业务 handler 必须用 worker 提供的 transaction-scoped commit callback，把衍生
+  结果写入与 job 完成放在同一事务；直接把 Provider 输出写进 queue 是禁止的。
+
+开发环境运行：
+
+```bash
+npm run worker
+npm run worker:once
+```
+
+生产构建通过 `npm run build:ops` 生成 `.next/ops/worker.mjs`；Compose 的 `worker`
+service 与 app 共享 `/data` 和同一组 AI 环境变量。worker 停止、Provider 失效或
+所有 capability 关闭，都不影响上传、Inbox、Timeline、Contribution、Capsule、
+导出和恢复。
+
+当前 registry 刻意为空。真实转录、vision、suggestion 与 embedding handler 会随
+对应的数据模型和审核流程一起注册，不能仅为了“能调用接口”而绕过来源和事实锁。
+
+## 5. 输入与响应限制
 
 除可调的 HTTP 请求/响应上限外，协议层还有固定的逐能力输入上限：
 
@@ -136,17 +169,18 @@ if (assistant.supports("vision")) {
 - 向量：一次 1–256 条，每条最多 20,000 字符，总计最多 1 MiB UTF-8；
 - 兼容层返回的向量必须数量一致、索引唯一、维数一致且全部为有限数值。
 
-这些是应用安全上限，不代表某个供应商一定接受同样大小。长音频分片、重试、
-持久化 job 和断点恢复属于后续 worker 里程碑，当前尚未启用。
+这些是应用安全上限，不代表某个供应商一定接受同样大小。通用 job 的租约、重试
+与 crash recovery 已实现；长音频分片、部分失败恢复和真实 STT 结果持久化属于
+后续 transcript 里程碑。
 
-## 5. 无网络测试
+## 6. 无网络测试
 
 所有 AI 单元测试使用 `DeterministicFakeMemoryAssistant` 或注入的内存 `fetch`。
 测试不会访问真实服务，不消耗额度，不读取真实 key，也不使用真实家庭素材。
 兼容适配器的测试覆盖：独立能力、请求格式、密钥脱敏、错误正文隔离、取消、
 超时、请求/响应大小、流式截断和响应 schema 校验。
 
-## 6. 协议参考
+## 7. 协议参考
 
 适配器的通用请求形状参考官方 OpenAI 文档，但是否兼容仍由所选服务负责：
 
@@ -155,4 +189,4 @@ if (assistant.supports("vision")) {
 - [File transcription](https://developers.openai.com/api/docs/guides/speech-to-text)
 - [Vector embeddings](https://developers.openai.com/api/docs/guides/embeddings)
 
-隐私、同意与尚未完成的启用门禁见 [AI_PRIVACY.md](./AI_PRIVACY.md)。
+隐私、同意、可见性与尚未完成的业务门禁见 [AI_PRIVACY.md](./AI_PRIVACY.md)。

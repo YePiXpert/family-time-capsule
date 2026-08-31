@@ -264,7 +264,8 @@ export function loadAiProviderConfig(
     );
   }
 
-  const providerLabel = env.AI_PROVIDER_LABEL ?? "OpenAI-compatible endpoint";
+  const providerLabel =
+    env.AI_PROVIDER_LABEL || "OpenAI-compatible endpoint";
   if (
     providerLabel.trim() !== providerLabel ||
     providerLabel.length === 0 ||

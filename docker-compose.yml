@@ -14,6 +14,17 @@ services:
       INITIAL_SETUP_TOKEN: ${INITIAL_SETUP_TOKEN:-}
       # 对外地址（反向代理 + HTTPS 时设置），例如：
       # BETTER_AUTH_URL: https://capsule.example.com
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_PROVIDER_LABEL: ${AI_PROVIDER_LABEL:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-}
+      AI_TRANSCRIPTION_MODEL: ${AI_TRANSCRIPTION_MODEL:-}
+      AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-}
+      AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-}
+      AI_MAX_REQUEST_BYTES: ${AI_MAX_REQUEST_BYTES:-}
+      AI_MAX_RESPONSE_BYTES: ${AI_MAX_RESPONSE_BYTES:-}
     volumes:
       # 原件、衍生物、导出与数据库全部落在这个卷里，重建容器不丢数据
       - capsule-data:/data
@@ -23,6 +34,30 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
+    restart: unless-stopped
+
+  worker:
+    image: family-time-capsule
+    command: ["node", "/app/ops/worker.mjs"]
+    environment:
+      DATA_DIR: /data
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_PROVIDER_LABEL: ${AI_PROVIDER_LABEL:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_VISION_MODEL: ${AI_VISION_MODEL:-}
+      AI_TRANSCRIPTION_MODEL: ${AI_TRANSCRIPTION_MODEL:-}
+      AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-}
+      AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-}
+      AI_MAX_REQUEST_BYTES: ${AI_MAX_REQUEST_BYTES:-}
+      AI_MAX_RESPONSE_BYTES: ${AI_MAX_RESPONSE_BYTES:-}
+      AI_WORKER_POLL_MS: ${AI_WORKER_POLL_MS:-1000}
+    volumes:
+      - capsule-data:/data
+    depends_on:
+      app:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

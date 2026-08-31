@@ -7,6 +7,8 @@
     "build": "next build",
     "build:ops": "node scripts/build-ops.mjs",
     "start": "next start",
+    "worker": "tsx --conditions=react-server jobs/worker.ts",
+    "worker:once": "tsx --conditions=react-server jobs/worker.ts --once",
     "lint": "eslint",
     "typegen": "next typegen",
     "typecheck": "next typegen && tsc --noEmit",

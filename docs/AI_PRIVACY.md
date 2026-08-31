@@ -1,8 +1,9 @@
 # AI 隐私与外部处理边界
 
-> 当前状态：**外部 AI 未接入任何产品流程**。仓库已有 provider-neutral
-> 基础层，但还没有后台 job、AI 设置页面、同意记录或素材处理调用。现在即使
-> 配置 `AI_PROVIDER`，也没有页面或定时任务会自动把家庭资料发送出去。
+> 当前状态：**安全启用基础设施已实现，真实素材处理器尚未启用**。仓库已有
+> provider-neutral 适配器、SQLite job queue、独立 worker、`/settings/ai`
+> 披露与逐能力同意。当前 production handler registry 仍为空，因此即使配置
+> `AI_PROVIDER` 并完成同意，也不会自动扫描或向外部 Provider 发送家庭资料。
 
 ## 1. 原则
 
@@ -23,11 +24,20 @@
 - `NullMemoryAssistant` 保持 AI 关闭；
 - 测试可使用完全离线、可复现的 Fake；
 - 开发者可用注入的内存传输验证兼容协议。
+- 登录成员可在 `/settings/ai` 查看 Provider、模型、本机/外部边界和各能力会发送
+  的内容类型；只有 admin 能启用或撤销逐能力同意；
+- admin/editor 可查看家庭作用域 job 状态并取消或重试允许的任务；
+- SQLite 保存有界的 job、source fingerprint、attempt、lease 与 worker heartbeat
+  运维元数据，worker 可恢复过期租约并安全退避重试；
+- 入队、领取、续租和提交结果时都会重验账号、角色、家庭、来源指纹、可见性、
+  Provider/model 与 consent version。
 
 当前不会发生：
 
 - 自动扫描、上传或转录任何原始媒体；
 - 从 Inbox、Contribution、Capsule、Story 或时间轴读取资料交给 AI；
+- 执行真实 STT、vision、suggestion 或 embedding job；这些 handler 将在对应
+  业务切片实现后逐项注册；
 - 在 SQLite 保存 API key；
 - 在导出 archive 包含 API key；
 - 在浏览器返回 provider 配置对象或密钥；
@@ -73,9 +83,11 @@ logging，并按供应商要求轮换 key。
 管理员权限、审计、加密 secret 存储或外部 secret manager，以及专门的 SSRF
 威胁模型，不能把明文 key 写进 SQLite。
 
-## 5. 启用外部处理前必须完成的门禁
+## 5. 已实现的启用门禁与后续业务门禁
 
-基础适配器存在不等于外部 AI 已获准使用。任何真实素材路径上线前必须同时满足：
+基础适配器存在不等于外部 AI 已获准使用。当前 foundation 已实现前四项基础
+门禁；任何真实素材 handler 上线时还必须完成该能力对应的结果、来源与端到端
+门禁：
 
 1. **显式同意**：家庭管理员启用外部处理，记录同意版本；可随时关闭。
 2. **逐次披露**：显示 Provider、Model，以及会发送文本、图片、音频还是已有
@@ -97,7 +109,14 @@ logging，并按供应商要求轮换 key。
 10. **端到端验证**：AI disabled、provider outage、跨家庭/不可见资源、用户编辑
     transcript 后重跑、拒绝建议、备份恢复等真实路径全部通过。
 
-上述门禁未完成前，产品 UI 不得声称 AI 已可安全启用。
+同意绑定当前实例的 Provider id、model、披露版本和递增 consent version。更换
+Provider/model、撤销同意、账号禁用/降权、guardian/visibility 改变或来源内容
+指纹变化，都会让旧 job 在执行或完成前 fail closed；不会把旧同意静默套到新
+配置。
+
+当前已完成 queue/consent/worker 的离线和浏览器门禁验证；STT、vision、建议、
+Story 来源锁等业务能力必须在各自上线前补完第 5、6、9、10 项，产品 UI 不得
+提前宣称这些能力已可处理真实素材。
 
 ## 6. 数据分类
 
@@ -105,6 +124,8 @@ logging，并按供应商要求轮换 key。
 | --- | --- | --- |
 | 原始照片/视频/音频/文档 | 不可变原件 | 必须完整保留，AI 永不覆盖 |
 | `AI_API_KEY` | secret | 不入库、不导出、不发客户端 |
+| AI consent | 当前实例的外部处理授权 | 与当前 Provider/model 绑定；不随家庭 archive 导出或自动恢复，恢复实例须由 admin 重新同意 |
+| job / source fingerprint / attempt / worker heartbeat | 运维衍生元数据 | 不进入 portable family archive；可取消、过期或重建，不是家庭记忆的唯一来源 |
 | 原始机器分析/未编辑机器 transcript | 可再生衍生物 | 可选择不备份，但须明确并可重建 |
 | embedding / FTS index | 可再生索引 | 不作为唯一数据源，provider/model 更换可重建 |
 | 用户编辑 transcript | 耐久家庭资料 | 必须导出/恢复，AI 重跑不得覆盖 |

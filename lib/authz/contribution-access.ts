@@ -353,55 +353,59 @@ export function updateVisibleContributionText(
   );
 }
 
+export type ContributionAssetAccess = Readonly<{
+  readable: boolean;
+  /** Automatic external processing is limited to wholly family-visible roots. */
+  automaticEligible: boolean;
+}>;
+
 /**
- * Contribution audio is sensitive. If any Contribution reference to an asset
- * is hidden, the bytes (and derivatives) fail closed even if another archive
- * relationship also points at the same file.
+ * Transaction-scoped media policy used by Route Handlers and background-job
+ * source hydration. If any Contribution reference to an asset root is hidden,
+ * all original/derivative bytes fail closed. Automatic processing additionally
+ * requires every reference to be explicitly `family` visible.
  */
-export async function canReadContributionAsset(
+export function getContributionAssetAccessInTransaction(
+  tx: ContributionAccessTransaction,
   snapshot: ContributionAccessSnapshot,
   assetId: string,
-): Promise<boolean> {
+): ContributionAssetAccess {
   const principal = snapshot.principal;
-  return getDb().transaction((tx) => {
-    const liveActor = tx
-      .select({ id: viewerUser.id })
-      .from(viewerUser)
-      .innerJoin(viewerFamily, eq(viewerFamily.id, viewerUser.familyId))
-      .leftJoin(
-        viewerPerson,
-        and(
-          eq(viewerUser.personId, viewerPerson.id),
-          eq(viewerPerson.familyId, viewerUser.familyId),
-        ),
-      )
-      .where(
-        and(
-          eq(viewerUser.id, principal.userId),
-          eq(viewerUser.familyId, principal.familyId),
-          eq(viewerUser.role, principal.role),
-          isNull(viewerUser.disabledAt),
-          eq(viewerFamily.timezone, principal.familyTimezone),
-          eq(
-            viewerFamily.childLaterUnlockAge,
-            principal.childLaterUnlockAge,
-          ),
-          principal.personId === null
-            ? and(isNull(viewerUser.personId), isNull(viewerPerson.id))
-            : and(
-                eq(viewerUser.personId, principal.personId),
-                eq(viewerPerson.id, principal.personId),
-                eq(viewerPerson.isGuardian, principal.isGuardian),
-              ),
-        ),
-      )
-      .limit(1)
-      .get();
-    if (!liveActor) return false;
+  const liveActor = tx
+    .select({ id: viewerUser.id })
+    .from(viewerUser)
+    .innerJoin(viewerFamily, eq(viewerFamily.id, viewerUser.familyId))
+    .leftJoin(
+      viewerPerson,
+      and(
+        eq(viewerUser.personId, viewerPerson.id),
+        eq(viewerPerson.familyId, viewerUser.familyId),
+      ),
+    )
+    .where(
+      and(
+        eq(viewerUser.id, principal.userId),
+        eq(viewerUser.familyId, principal.familyId),
+        eq(viewerUser.role, principal.role),
+        isNull(viewerUser.disabledAt),
+        eq(viewerFamily.timezone, principal.familyTimezone),
+        eq(viewerFamily.childLaterUnlockAge, principal.childLaterUnlockAge),
+        principal.personId === null
+          ? and(isNull(viewerUser.personId), isNull(viewerPerson.id))
+          : and(
+              eq(viewerUser.personId, principal.personId),
+              eq(viewerPerson.id, principal.personId),
+              eq(viewerPerson.isGuardian, principal.isGuardian),
+            ),
+      ),
+    )
+    .limit(1)
+    .get();
+  if (!liveActor) return { readable: false, automaticEligible: false };
 
-    // Walk both directions so a historical derivative->derivative chain is
-    // treated as one family too. Path guards make corrupt cycles fail closed.
-    const familyAssets = tx.all<{ id: string }>(sql`
+  // Walk both directions so a historical derivative->derivative chain is
+  // treated as one family too. Path guards make corrupt cycles fail closed.
+  const familyAssets = tx.all<{ id: string }>(sql`
       WITH RECURSIVE
       ancestors(id, original_asset_id, path) AS (
         SELECT ${asset.id}, ${asset.originalAssetId}, ',' || ${asset.id} || ','
@@ -433,11 +437,16 @@ export async function canReadContributionAsset(
           AND instr(descendants.path, ',' || child.${sql.identifier("id")} || ',') = 0
       )
       SELECT id FROM descendants
-    `);
-    if (familyAssets.length === 0) return false;
+  `);
+  if (familyAssets.length === 0) {
+    return { readable: false, automaticEligible: false };
+  }
 
-    const familyAssetIds = familyAssets.map((row) => row.id);
-    const hiddenReference = tx
+  const familyAssetIds = familyAssets.map((row) => row.id);
+  const assetReferencePredicate = sql`${contribution.audioAssetId} in (
+    select value from json_each(${JSON.stringify(familyAssetIds)})
+  )`;
+  const hiddenReference = tx
       .select({ id: contribution.id })
       .from(contribution)
       .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
@@ -461,9 +470,7 @@ export async function canReadContributionAsset(
         and(
           // One JSON parameter avoids SQLite's host-variable ceiling even if
           // a corrupt/historical derivative tree contains thousands of rows.
-          sql`${contribution.audioAssetId} in (
-            select value from json_each(${JSON.stringify(familyAssetIds)})
-          )`,
+          assetReferencePredicate,
           or(
             ne(memoryEvent.familyId, principal.familyId),
             isNull(eventChild.id),
@@ -475,8 +482,36 @@ export async function canReadContributionAsset(
         ),
       )
       .limit(1)
-      .get();
+    .get();
+  if (hiddenReference) {
+    return { readable: false, automaticEligible: false };
+  }
 
-    return !hiddenReference;
-  });
+  const restrictedReference = tx
+    .select({ id: contribution.id })
+    .from(contribution)
+    .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
+    .where(
+      and(
+        assetReferencePredicate,
+        or(
+          ne(memoryEvent.familyId, principal.familyId),
+          ne(contribution.visibility, "family"),
+        ),
+      ),
+    )
+    .limit(1)
+    .get();
+  return { readable: true, automaticEligible: !restrictedReference };
+}
+
+/** Authenticated media read facade. */
+export async function canReadContributionAsset(
+  snapshot: ContributionAccessSnapshot,
+  assetId: string,
+): Promise<boolean> {
+  return getDb().transaction(
+    (tx) =>
+      getContributionAssetAccessInTransaction(tx, snapshot, assetId).readable,
+  );
 }

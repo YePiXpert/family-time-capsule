@@ -22,6 +22,10 @@ const AUDIT_LABEL: Record<string, string> = {
   "person.guardian_changed": "调整监护人身份",
   "child_later.policy_changed": "调整孩子解锁年龄",
   "child_later.manually_unlocked": "手工解锁孩子内容",
+  "ai.consent_enabled": "启用外部 AI 处理",
+  "ai.consent_revoked": "关闭外部 AI 处理",
+  "ai.job_cancelled": "停止 AI 后台任务",
+  "ai.job_retried": "重试 AI 后台任务",
 };
 
 export default async function SettingsPage(props: PageProps<"/settings">) {
@@ -31,6 +35,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
   const canViewAudit = hasFamilyCapability(role, "audit:view");
   const canInvite = hasFamilyCapability(role, "account:invite");
   const canManageAccounts = hasFamilyCapability(role, "account:manage");
+  const canReviewAi = hasFamilyCapability(role, "ai:review");
   const [family, auditEntries] = await Promise.all([
     getFamily(familyId),
     canViewAudit ? listRecentAudit(familyId, 10) : Promise.resolve([]),
@@ -102,6 +107,16 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
                 管理账号邀请
               </Link>
             )}
+          </div>
+        )}
+        {canReviewAi && (
+          <div className="mt-3">
+            <Link
+              href="/settings/ai"
+              className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              AI 整理与隐私
+            </Link>
           </div>
         )}
       </section>

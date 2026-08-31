@@ -36,6 +36,29 @@ docker compose logs --tail=100 app    # 看启动日志
 - `AUTH_SECRET` 缺失 → compose 会拒绝启动（设计如此）。
 - better-sqlite3 构建失败 → 确认镜像为 `node:24-alpine` 且 Dockerfile 已装构建依赖（`python3 make g++`）。
 
+### 可选 AI Provider 与 worker
+
+默认 `AI_PROVIDER=disabled`，app 与 worker 都不会访问外部 AI；worker 停止也不影响
+上传、Inbox、Timeline、Contribution、Capsule、导出或恢复。Compose 会启动独立
+`worker` service，但当前版本的 production handler registry 为空，不会实际发送、
+转录或分析家庭素材。
+
+未来启用真实 handler 时，必须把完全相同的 `AI_PROVIDER`、`AI_BASE_URL`、
+`AI_API_KEY`、Provider label 和各 capability model 同时注入 app 与 worker。远程
+endpoint 必须 HTTPS，key 应来自部署平台 secret store；禁止写入镜像、仓库或日志。
+启动后由 admin 访问「设置 → AI 整理与隐私」，核对 Provider/model/内容类型并逐项
+同意。仅配置环境变量不会代表家庭已经同意。
+
+```bash
+docker compose ps app worker
+docker compose logs --tail=100 worker
+docker compose run --rm worker node /app/ops/worker.mjs --once
+```
+
+Provider/model 变化、恢复到新实例或撤销同意后，必须重新检查设置页并由 admin
+重新同意；旧 job 不会沿用旧同意。job/attempt/heartbeat 和 consent 是实例运维状态，
+不属于 portable family archive。
+
 ### 反向代理日志必须隐藏邀请 token
 
 账号邀请使用 `/invite/<高熵 token>`。应用会发送 `no-store/no-referrer`，但请求到达应用前，

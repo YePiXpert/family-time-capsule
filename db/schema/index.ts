@@ -5,6 +5,7 @@
 export * as authSchema from "./auth";
 export * as familySchema from "./family";
 export * as assetSchema from "./asset";
+export * as aiJobSchema from "./ai-job";
 export * as inboxSchema from "./inbox";
 export * as memorySchema from "./memory";
 export * as contributionSchema from "./contribution";

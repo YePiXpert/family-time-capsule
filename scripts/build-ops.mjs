@@ -18,6 +18,7 @@ await build({
     // Resolve from this script rather than the caller's current directory;
     // every entry remains inside the checked-out project.
     healthcheck: path.join(rootDir, "scripts", "healthcheck.mjs"),
+    worker: path.join(rootDir, "jobs", "worker.ts"),
     restore: path.join(rootDir, "scripts", "restore.ts"),
     "smoke-deployment": path.join(rootDir, "scripts", "smoke-deployment.mjs"),
     "verify-export": path.join(rootDir, "scripts", "verify-export.mjs"),
@@ -26,6 +27,9 @@ await build({
   outExtension: { ".js": ".mjs" },
   entryNames: "[name]",
   bundle: true,
+  alias: {
+    "server-only": path.join(rootDir, "scripts", "server-only-stub.mjs"),
+  },
   platform: "node",
   target: "node24",
   format: "esm",

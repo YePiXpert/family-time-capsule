@@ -29,6 +29,26 @@ describe("AI provider configuration", () => {
     });
   });
 
+  it("treats Compose-style empty optional values as unset", () => {
+    expect(
+      loadAiProviderConfig({
+        AI_PROVIDER: "disabled",
+        AI_BASE_URL: "",
+        AI_API_KEY: "",
+        AI_PROVIDER_LABEL: "",
+        AI_MODEL: "",
+      }).kind,
+    ).toBe("disabled");
+    const configured = loadAiProviderConfig({
+      ...BASE_ENV,
+      AI_PROVIDER_LABEL: "",
+    });
+    expect(configured.kind).toBe("openai-compatible");
+    if (configured.kind === "openai-compatible") {
+      expect(configured.providerLabel).toBe("OpenAI-compatible endpoint");
+    }
+  });
+
   it("refuses orphaned settings instead of silently enabling or ignoring AI", () => {
     expect(() =>
       loadAiProviderConfig({ AI_API_KEY: "must-not-be-used" }),

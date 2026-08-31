@@ -4,7 +4,8 @@
 
 ## 总体形态
 
-MVP 为**单体全栈应用**，不上微服务。媒体处理变复杂后再拆 Worker。
+核心档案为**单体全栈应用**，不上微服务。AI 长任务使用共享同一 SQLite 与数据卷
+的独立 worker 进程；它是可停止的运维组件，不是核心档案的可用性依赖。
 
 ```text
 Next.js（App Router）+ TypeScript   单体全栈
@@ -17,6 +18,7 @@ FFmpeg / ffprobe                    视频元数据/转码（增强能力，非�
 exifr                               EXIF 时间/尺寸解析（#006）
 Vitest / Playwright                 单元·集成 / 端到端测试
 Docker Compose                      自托管部署
+SQLite AI queue + Node worker       可选后台处理；租约/重试/崩溃恢复
 ```
 
 ## 认证与路由保护（#002 起）
@@ -30,7 +32,9 @@ Docker Compose                      自托管部署
 ## 数据库（#002 起）
 
 - `db/index.ts`：单例连接，首次连接自动应用 `db/migrations/`（幂等）；`closeDatabase()` 供测试收尾。
-- schema 按域拆分在 `db/schema/`：`auth.ts`（better-auth 四表 + #003 的 user 业务 FK 列）、`family.ts`（family/person）。
+- schema 按域拆分在 `db/schema/`；migration 0016 起共有 27 张表和 17 个只向前
+  migration（`0000`–`0016`），包括认证、家庭、档案、事件、讲述、胶囊、审计与
+  AI 运维域。
 - 修改数据模型流程：改 `db/schema/` → `npx drizzle-kit generate` → 迁移文件随代码提交。
 
 ## 数据目录（PRD §11）
@@ -42,7 +46,7 @@ $DATA_DIR（本地默认 ./data，Docker 内为 /data）
 ├── originals/          原件，按 yyyy/mm/ 分层；写入后永不覆盖、不改 EXIF
 ├── derivatives/        可再生衍生物：thumbnails/ previews/ transcodes/ waveforms/
 ├── exports/            导出产物
-└── family-time-capsule.sqlite（Issue #003 起）
+└── db/capsule.sqlite      SQLite 主库（WAL/SHM 同目录）
 ```
 
 - `data/` 整体 gitignore。
@@ -77,7 +81,21 @@ interface AssetStorage {
 
 ## AI Provider Adapter（PRD §13）
 
-P0 使用 `NullMemoryAssistant`——无 AI key 时功能完整。任何 AI 能力都通过 `MemoryAssistant` 接口注入，不写死供应商。AI 只产出候选与建议，绝不自动制造 `user_confirmed` Fact（事实锁见 PRD §14）。
+默认使用 `NullMemoryAssistant`——无 AI key 时功能完整。任何 AI 能力都通过
+`MemoryAssistant` 的 text/vision/transcription/embeddings capability 注入，不写死
+供应商。外部兼容端点只从服务端环境变量读取，密钥不入库、不发客户端、不导出。
+
+migration 0016 增加 family-scoped SQLite queue、source fingerprint、attempt、lease
+generation、worker heartbeat 与逐 capability consent。`/settings/ai` 负责
+Provider/model/内容类型披露、admin 同意/撤销以及 job 取消/重试。automatic job
+只接受完全 family-visible 来源；受限来源必须逐项手工触发。入队、claim、renew、
+finalize 都重新验证实时角色、可见性、来源、Provider/model 和 consent，过期租约
+无法提交。
+
+queue 只保存 `{}` payload/output 与有界运维元数据，不保存正文、媒体、secret 或
+Provider response。真实结果必须由 handler 在同一事务写入独立衍生表再完成 job。
+当前 production registry 为空，尚不会实际转录/分析家庭资料。worker 缺失或停止
+不影响核心档案；详见 `docs/AI_PRIVACY.md` 与 `docs/AI_PROVIDERS.md`。
 
 ## 认证与安全底线（PRD §17）
 
@@ -102,7 +120,7 @@ app/          路由（capture/ inbox/ timeline/ memories/[id]/ family/ capsules
 components/   UI 组件
 db/           schema/ + migrations/（Drizzle）
 lib/          auth/ assets/ metadata/ memories/ ai/ export/ security/
-jobs/         后台任务（未来 Worker 化）
+jobs/         AI handler registry、租约执行 runtime 与独立 worker 入口
 tests/        unit/ + e2e/
 docs/         PRD、架构、数据模型、决策、Issue 清单
 docker/       Dockerfile（compose 文件在仓库根）

@@ -1,38 +1,67 @@
 #!/usr/bin/env node
-// Playwright webServer：为每个 project 启动一个隔离实例。
-// 环境变量：PORT（默认 3100）、E2E_DATA_DIR（默认 data/e2e，每次运行前清空）。
-// 测试进程与本脚本使用相同的默认 token/secret，保证两边一致。
-import { spawn } from "node:child_process";
+// Playwright webServer: one isolated production Next instance per project.
 import { mkdirSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import next from "next";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const port = process.env.PORT ?? "3100";
+const portText = process.env.PORT ?? "3100";
+const port = Number(portText);
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error("invalid E2E port");
+}
 const dataDirName = process.env.E2E_DATA_DIR ?? "e2e";
-const e2eDataDir = path.join(root, "data", dataDirName);
+if (!/^[A-Za-z0-9_-]{1,64}$/u.test(dataDirName)) {
+  throw new Error("invalid E2E data directory name");
+}
+const dataRoot = path.join(root, "data");
+const e2eDataDir = path.join(dataRoot, dataDirName);
+if (
+  !e2eDataDir.startsWith(
+    `${dataRoot}${path.sep}`,
+  )
+) {
+  throw new Error("unsafe E2E data directory");
+}
 rmSync(e2eDataDir, { recursive: true, force: true });
 mkdirSync(e2eDataDir, { recursive: true });
 
-const env = {
-  ...process.env,
+Object.assign(process.env, {
   DATA_DIR: e2eDataDir,
   BETTER_AUTH_URL: `http://localhost:${port}`,
-  AUTH_SECRET: process.env.AUTH_SECRET ?? "e2e-test-auth-secret-0123456789abcdef",
-  INITIAL_SETUP_TOKEN: process.env.INITIAL_SETUP_TOKEN ?? "e2e-setup-token",
-  // e2e 多个 spec 各自登录，会撞 better-auth 的 /sign-in 默认限流（10s 3 次）
-  AUTH_SIGNIN_RATE_LIMIT_MAX: process.env.AUTH_SIGNIN_RATE_LIMIT_MAX ?? "100",
-};
-
-// 直接用当前 node 启动 next 的 bin，避免 npx/.cmd/shell 的跨平台问题
-const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
-const child = spawn(process.execPath, [nextBin, "start", "--port", port], {
-  cwd: root,
-  env,
-  stdio: "inherit",
+  AUTH_SECRET:
+    process.env.AUTH_SECRET ?? "e2e-test-auth-secret-0123456789abcdef",
+  INITIAL_SETUP_TOKEN:
+    process.env.INITIAL_SETUP_TOKEN ?? "e2e-setup-token",
+  AUTH_SIGNIN_RATE_LIMIT_MAX:
+    process.env.AUTH_SIGNIN_RATE_LIMIT_MAX ?? "100",
 });
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => child.kill(signal));
+// Hosting Next directly avoids a wrapper -> child process tree that Windows
+// cannot reliably tear down after Playwright completes.
+const app = next({ dev: false, dir: root, hostname: "localhost", port });
+await app.prepare();
+const handle = app.getRequestHandler();
+const server = createServer((request, response) => {
+  void handle(request, response);
+});
+await new Promise((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(port, "0.0.0.0", resolve);
+});
+
+let stopping = false;
+async function stop() {
+  if (stopping) return;
+  stopping = true;
+  const forceExit = setTimeout(() => process.exit(0), 2_000);
+  await new Promise((resolve) => server.close(resolve));
+  await app.close();
+  clearTimeout(forceExit);
+  process.exit(0);
 }
-child.on("exit", (code) => process.exit(code ?? 0));
+
+process.on("SIGINT", () => void stop());
+process.on("SIGTERM", () => void stop());

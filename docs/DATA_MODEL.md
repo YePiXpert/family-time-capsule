@@ -238,6 +238,40 @@ type Fact = {
 
 P0 只允许用户手工创建（直接 `user_confirmed`）；P1 起 AI 只能产出 `ai_suggested`，永不自动升级。P0 未建 FactSource 关系表（无来源关联需求），P1 需要时再加。
 
+## AI Processing Consent 与 Job Queue（migration 0016）
+
+AI foundation 新增 5 张运维表：
+
+- `ai_processing_consent`：family + capability 唯一；保存启用状态、是否允许自动
+  处理 family-visible 内容、Provider/model、披露版本、递增 consent version 与
+  approve/revoke actor。只有当前家庭未禁用 admin 可改变；配置变化不会继承同意。
+- `ai_job`：family-scoped 状态机（pending/running/completed/failed/cancelled），
+  保存 job/entity/capability、服务器派生的 Provider/model、trigger mode、聚合
+  visibility、幂等键、attempt/lease、取消请求和安全错误 code。
+- `ai_job_source`：受控 source kind（Asset/Contribution/MemoryEvent）、source id 与
+  enqueue 时内容 SHA-256/fingerprint；行不可单独修改或删除。
+- `ai_job_attempt`：每次 fenced lease 的 worker、generation、Provider/model、结果
+  状态和安全错误 code；terminal attempt 不可变。
+- `ai_worker_heartbeat`：仅保存 worker id/version/status/timestamps，不保存主机路径、
+  命令行或环境变量。
+
+关键约束：
+
+- `payload_json` 永远是 `{}`，`output_json` 只能为 `NULL`/`{}`；家庭正文、媒体、
+  secret 与 Provider response 不得放入 queue。
+- automatic job 只允许完全 `family` 可见来源；其他 visibility 必须逐项手工触发，
+  并在 claim/renew/finalize 再次通过当前查看者策略。
+- 外部 job 绑定 Provider/model、disclosure version 和 consent version；账号、角色、
+  guardian、visibility、source fingerprint、配置或同意漂移时原子取消。
+- job 完成与衍生结果写入必须共享一个 IMMEDIATE transaction；lease generation
+  fencing 阻止已过期 worker 迟到提交。
+- failed/cancelled 的“重试”创建新 job，旧 terminal job 保留；幂等键防止双击重复。
+
+这些表是实例运维衍生状态，不进入 portable family archive；恢复后的新实例不会
+自动恢复外部处理同意，管理员必须按新实例的 Provider/model 重新确认。将来的用户
+编辑 transcript、confirmed Fact、published Story 等仍是 durable family data，必须
+由各自模型和 export/restore 版本完整保存。
+
 ## Capsule（#013 已落地：`db/schema/capsule.ts`）
 
 ```ts

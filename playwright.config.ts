@@ -22,6 +22,18 @@ const specs = [
   { name: "edit", files: ["edit.spec.ts"], port: 3119 },
   { name: "rbac", files: ["rbac.spec.ts"], port: 3120 },
   { name: "invitations", files: ["invitations.spec.ts"], port: 3121 },
+  {
+    name: "ai",
+    files: ["ai.spec.ts"],
+    port: 3122,
+    env: {
+      AI_PROVIDER: "openai-compatible",
+      AI_BASE_URL: "http://127.0.0.1:3999/v1",
+      AI_API_KEY: "e2e-not-a-real-provider-key",
+      AI_PROVIDER_LABEL: "E2E local-compatible mock",
+      AI_MODEL: "e2e-text-model",
+    },
+  },
 ];
 
 // A targeted `--project=<exact-name>` run only needs that project's server.
@@ -62,9 +74,11 @@ export default defineConfig({
     url: `http://localhost:${s.port}`,
     reuseExistingServer: false,
     timeout: 120_000,
+    gracefulShutdown: { signal: "SIGTERM", timeout: 3_000 },
     env: {
       PORT: String(s.port),
       E2E_DATA_DIR: `e2e-${s.name}`,
+      ...("env" in s ? s.env : {}),
     },
   })),
   projects: specs.map((s) => ({
