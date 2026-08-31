@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import type { PersonRow } from "@/lib/memories/service";
-import type { ContributionWithAuthor } from "@/lib/contributions/service";
+import type { VisibleContributionDto } from "@/lib/authz/contribution-access";
 import {
   addContributionAction,
   editContributionAction,
@@ -89,7 +89,7 @@ export function ContributionBlock({
   contribution,
   canEdit,
 }: {
-  contribution: ContributionWithAuthor;
+  contribution: VisibleContributionDto;
   canEdit: boolean;
 }) {
   const [state, formAction, pending] = useActionState(editContributionAction, undefined);

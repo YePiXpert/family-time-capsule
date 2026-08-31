@@ -5,16 +5,17 @@ import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getMemoryEventDetail, listEventRevisions } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
-import { listContributions, listFacts } from "@/lib/contributions/service";
+import { listFacts } from "@/lib/contributions/service";
+import {
+  createContributionAccessSnapshot,
+  listVisibleContributionsForEvent,
+} from "@/lib/authz/contribution-access";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { MediaBlock } from "@/components/media-view";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
 import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
-import {
-  canEditContribution,
-  hasFamilyCapability,
-} from "@/lib/authz/policy";
+import { hasFamilyCapability } from "@/lib/authz/policy";
 
 export const dynamic = "force-dynamic";
 
@@ -40,12 +41,13 @@ export default async function MemoryEventPage({
     "contribution:create",
   );
   const canViewAudit = hasFamilyCapability(context.role, "audit:view");
+  const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
   const [detail, family, people, contributions, facts, revisions] = await Promise.all([
     getMemoryEventDetail(familyId, id),
     getFamily(familyId),
     listPeople(familyId),
-    listContributions(familyId, id),
+    listVisibleContributionsForEvent(contributionAccess, id),
     listFacts(familyId, id),
     canViewAudit ? listEventRevisions(familyId, id) : Promise.resolve([]),
   ]);
@@ -170,14 +172,7 @@ export default async function MemoryEventPage({
             <ContributionBlock
               key={c.id}
               contribution={c}
-              canEdit={canEditContribution({
-                role: context.role,
-                userPersonId: context.personId,
-                authorPersonId: c.authorPersonId,
-                isGuardian: false,
-                childLaterUnlocked: false,
-                accountEnabled: true,
-              })}
+              canEdit={c.canEdit}
             />
           ))}
         </div>

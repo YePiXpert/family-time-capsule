@@ -27,9 +27,11 @@ docker compose exec app node /app/ops/restore.mjs /path/to/backup.zip [--user <u
 
 CLI 内部执行顺序（对应 RH-004 要求 1–18）：
 
-1. 读取 ZIP；2. 校验 `exportVersion`；3. 解析 manifest；4. **逐个复核原件 SHA-256**；
-5. 校验全部实体 JSON 结构；6. **ZIP 条目名 path traversal 校验**；
-7. 校验目标实例无 Family / 无 Person；8–16. 写入原件文件（失败回滚删除）→
+1. 校验目标实例无 Family / 无 Person；2. 校验 operator 是未禁用、未绑定的 setup admin；
+3. 读取 ZIP；4. 校验 `exportVersion` 与 manifest；5. **ZIP 条目名 path traversal 校验**；
+6. 校验全部实体 JSON、关系、家庭解锁年龄、显式 guardian/手工解锁、Contribution
+可见性/音频引用/可迁移 recorder provenance；7. **逐个复核原件 SHA-256**；8–16.
+全部预验通过后才写入原件文件（失败回滚删除）→
 单事务恢复 Family → Person → Asset → MemoryEvent → InboxItem → InboxItemAsset →
 事件关联表 → Contribution → Fact → Capsule（含内容引用）；17. 在同一事务提交前执行
 **行数复核**（包括 InboxItem、InboxItemAsset、事件素材/参与人关系，以及胶囊的事件/素材/
@@ -50,8 +52,12 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 | inbox 两个增量 JSON 只存在一个 | `missing_json` |
 | 任何原件 SHA-256/字节数不符 | `hash_mismatch` |
 | 目标实例已有家庭数据 | `target_not_empty` |
-| operator 用户不存在 | `bad_operator` |
+| operator 不存在、非 admin、已禁用或不是干净实例的未绑定 setup admin | `bad_operator` |
 | manifest 中重复 assetId | `bad_manifest` |
+| 家庭解锁年龄、guardian/child 组合或手工解锁时间非法 | `bad_policy` |
+| Contribution visibility 不在白名单 | `bad_visibility` |
+| Contribution 音频引用悬空或引用非音频原件 | `bad_audio_ref` |
+| recorder Person/姓名快照/记录模式组合非法，或档案夹带本地 User id | `bad_provenance` |
 
 限额可通过 `restoreFromZip(buffer, userId, { limits })` 注入（运维/测试用）。
 
@@ -90,6 +96,10 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 ## 5. Person / User 关系恢复
 
 - `people.json` 全量恢复为 Person（含无账号成员），ID 原样保留。
+- 家庭 `childLaterUnlockAge`、Person 的显式 `isGuardian` 与不可逆
+  `childLaterUnlockedAt` 按归档值精确恢复；旧 v1 档案使用 18 / false / null 默认值。
+- Contribution 的 visibility、transcript、音频引用、recorder Person、姓名快照与记录模式
+  原样恢复；旧实例的 `recordedByUserId` 不可迁移并始终恢复为 null。
 - 恢复完成后：管理员登录 → `/onboarding` 自动检测「实例已有家庭」→
   显示绑定表单（选择自己是哪位成员；孩子档案不能作为登录身份）→
   `user.familyId / personId` 写入（`bindRestoredFamily`，服务端校验）。

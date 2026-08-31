@@ -85,8 +85,12 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 
 ## 实体 JSON 语义
 
-- `family.json`：`{ id, name, timezone, createdAt, updatedAt }`。
-- `people.json`：`{ id, displayName, relationToChild, isChild, birthDate(YYYY-MM-DD|null), createdAt }`。
+- `family.json`：`{ id, name, timezone, childLaterUnlockAge, createdAt, updatedAt }`。
+  `childLaterUnlockAge` 是 `child_later` 讲述的家庭自动解锁年龄；旧 v1 档案缺失时恢复为 18。
+- `people.json`：`{ id, displayName, relationToChild, isChild, isGuardian,
+  birthDate(YYYY-MM-DD|null), childLaterUnlockedAt, createdAt, updatedAt }`。
+  `isGuardian` 是显式权限事实，绝不从称谓推断；`childLaterUnlockedAt` 是孩子档案不可逆的
+  手工解锁时间。旧 v1 档案缺失两个字段时分别恢复为 `false` / `null`。
   `id` 即 `personId`，被 memories/contributions 引用。
 - `memories.json`：按 `occurredAt` 升序；每个事件含
   `assetIds: string[]` 与 `participantPersonIds: string[]`（关系以数组表达，
@@ -99,7 +103,11 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 - `inbox-item-assets.json`：`{ id, inboxItemId, assetId, familyId, createdAt }`。
   导出家庭下的**每一条关联行**，包括仍待处理、需复核、已确认或已丢弃条目的素材关系；
   行 ID 与两端引用均原样保留。
-- `contributions.json`：`{ id, memoryEventId, authorPersonId, rawText, editedText, audioAssetId, visibility, createdAt }`。
+- `contributions.json`：`{ id, memoryEventId, authorPersonId, recordedByPersonId,
+  recordedByNameSnapshot, recordingMode, rawText, transcript, editedText, audioAssetId,
+  visibility, createdAt, updatedAt }`。完整灾难导出不套用日常行可见性过滤，因而
+  `private` 与尚未解锁的 `child_later` 都会完整进入归档。`recordedByUserId` 属于本地认证
+  身份，明确不导出；Person、姓名快照和记录模式构成可迁移的长期来源信息。
 - `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
 - `capsules.json`：`{ id, title, unlockType, unlockValue, status, sealedAt, openedAt,
   memoryEventIds, assetIds, contributionIds }`。**无论是否到期/封存，内容引用始终完整**——

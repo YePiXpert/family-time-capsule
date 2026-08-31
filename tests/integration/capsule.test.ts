@@ -26,7 +26,7 @@ if (!okSetup.ok) throw new Error("setup failed");
 
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
-const { completeOnboarding, listPeople } = await import("@/lib/family/service");
+const { completeOnboarding, getUserBinding, listPeople } = await import("@/lib/family/service");
 const { ingestImage } = await import("@/lib/assets/ingest");
 const { createInboxItemForAsset, getInboxEntry } = await import("@/lib/inbox/service");
 const { confirmInboxEntry } = await import("@/lib/memories/service");
@@ -39,9 +39,13 @@ const {
   addCapsuleAsset,
   addCapsuleContribution,
   getCapsuleDetail,
+  getCompleteCapsuleDetailForDisasterExport,
   listCapsules,
   isCapsuleUnlocked,
 } = await import("@/lib/capsules/service");
+const { createContributionAccessSnapshot } = await import(
+  "@/lib/authz/contribution-access"
+);
 
 const db = getDb();
 const adminUserId = (await db.select({ id: userTable.id }).from(userTable))[0].id;
@@ -59,6 +63,32 @@ const TZ = "Asia/Shanghai";
 const CHILD_BIRTH = "2026-08-10";
 const OTHER_FAMILY = "fam-capsule-other";
 const NOW = new Date("2026-08-29T04:00:00.000Z"); // 8/29 中午
+const adminBinding = await getUserBinding(adminUserId);
+if (
+  !adminBinding.familyId ||
+  !adminBinding.familyTimezone ||
+  adminBinding.childLaterUnlockAge === null
+) {
+  throw new Error("admin binding unavailable");
+}
+const ADMIN_ACCESS = createContributionAccessSnapshot(
+  {
+    userId: adminUserId,
+    userName: "爸爸",
+    familyId: adminBinding.familyId,
+    personId: adminBinding.personId,
+    role: adminBinding.role,
+    accountEnabled: adminBinding.accountEnabled,
+    isGuardian: adminBinding.isGuardian,
+    familyTimezone: adminBinding.familyTimezone,
+    childLaterUnlockAge: adminBinding.childLaterUnlockAge,
+  },
+  NOW,
+);
+const OTHER_ACCESS = createContributionAccessSnapshot(
+  { ...ADMIN_ACCESS.principal, userName: "爸爸", familyId: OTHER_FAMILY },
+  NOW,
+);
 
 const fixtures = path.join(__dirname, "..", "fixtures");
 
@@ -142,11 +172,19 @@ describe("胶囊工作流（#013）", () => {
     expect(await addCapsuleEvent(familyId, created.capsuleId, eventId)).toBe(true);
     expect(await addCapsuleAsset(familyId, created.capsuleId, assetId)).toBe(true);
     expect(
-      await addCapsuleContribution(familyId, created.capsuleId, contrib.contributionId),
+      await addCapsuleContribution(
+        ADMIN_ACCESS,
+        created.capsuleId,
+        contrib.contributionId,
+      ),
     ).toBe(true);
 
     // draft 状态内容可见
-    const draft = (await getCapsuleDetail(familyId, created.capsuleId, CHILD_BIRTH, TZ))!;
+    const draft = (await getCapsuleDetail(
+      ADMIN_ACCESS,
+      created.capsuleId,
+      CHILD_BIRTH,
+    ))!;
     expect(draft.events).toHaveLength(1);
     expect(draft.assets).toHaveLength(1);
     expect(draft.contributions).toHaveLength(1);
@@ -157,16 +195,24 @@ describe("胶囊工作流（#013）", () => {
     expect(sealed?.sealedAt).toBeTruthy();
 
     // 未到时间：普通视图隐藏正文
-    const lockedView = (await getCapsuleDetail(familyId, created.capsuleId, CHILD_BIRTH, TZ))!;
+    const lockedView = (await getCapsuleDetail(
+      ADMIN_ACCESS,
+      created.capsuleId,
+      CHILD_BIRTH,
+    ))!;
     expect(lockedView.events).toHaveLength(0);
     expect(lockedView.assets).toHaveLength(0);
     expect(lockedView.contributions).toHaveLength(0);
     expect(lockedView.capsule.title).toBe("写给一岁的你"); // 元信息仍可见
 
     // 导出/备份视角（includeLocked）：完整包含——封存不是物理加密
-    const exportView = (await getCapsuleDetail(familyId, created.capsuleId, CHILD_BIRTH, TZ, {
-      includeLocked: true,
-    }))!;
+    const exportView = (await getCompleteCapsuleDetailForDisasterExport(
+      familyId,
+      created.capsuleId,
+      CHILD_BIRTH,
+      TZ,
+      NOW,
+    ))!;
     expect(exportView.events).toHaveLength(1);
     expect(exportView.assets).toHaveLength(1);
     expect(exportView.contributions).toHaveLength(1);
@@ -189,7 +235,7 @@ describe("胶囊工作流（#013）", () => {
     await sealCapsule(familyId, created.capsuleId);
 
     // 列表显示已解锁
-    const list = await listCapsules(familyId, CHILD_BIRTH, TZ);
+    const list = await listCapsules(ADMIN_ACCESS, CHILD_BIRTH);
     const mine = list.find((c) => c.id === created.capsuleId)!;
     expect(mine.unlocked).toBe(true);
 
@@ -199,7 +245,11 @@ describe("胶囊工作流（#013）", () => {
     expect(opened.row.status).toBe("opened");
     expect(opened.row.openedAt).toBeTruthy();
 
-    const detail = (await getCapsuleDetail(familyId, created.capsuleId, CHILD_BIRTH, TZ))!;
+    const detail = (await getCapsuleDetail(
+      ADMIN_ACCESS,
+      created.capsuleId,
+      CHILD_BIRTH,
+    ))!;
     expect(detail.events).toHaveLength(1);
   });
 
@@ -221,9 +271,9 @@ describe("胶囊工作流（#013）", () => {
       sql`INSERT INTO family (id, name, timezone, created_at, updated_at) VALUES (${OTHER_FAMILY}, '别人家', 'Asia/Shanghai', 0, 0)`,
     );
     expect(
-      await getCapsuleDetail(OTHER_FAMILY, "whatever", CHILD_BIRTH, TZ),
+      await getCapsuleDetail(OTHER_ACCESS, "whatever", CHILD_BIRTH),
     ).toBeUndefined();
-    const list = await listCapsules(OTHER_FAMILY, CHILD_BIRTH, TZ);
+    const list = await listCapsules(OTHER_ACCESS, CHILD_BIRTH);
     expect(list).toHaveLength(0);
   });
 });

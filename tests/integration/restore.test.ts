@@ -34,9 +34,32 @@ type Snapshot = {
   zipPath: string;
   familyId: string;
   familyName: string;
-  people: Array<{ id: string; displayName: string; isChild: boolean }>;
+  familyUnlockAge: number;
+  people: Array<{
+    id: string;
+    displayName: string;
+    isChild: boolean;
+    isGuardian: boolean;
+    childLaterUnlockedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   events: Array<{ id: string; title: string; occurredAt: string; assetIds: string[] }>;
-  contributions: Array<{ id: string; authorPersonId: string; text: string }>;
+  contributions: Array<{
+    id: string;
+    memoryEventId: string;
+    authorPersonId: string;
+    recordedByPersonId: string | null;
+    recordedByNameSnapshot: string | null;
+    recordingMode: string;
+    rawText: string | null;
+    transcript: string | null;
+    editedText: string | null;
+    audioAssetId: string | null;
+    visibility: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   facts: Array<{ id: string; statement: string }>;
   capsules: Array<{ id: string; title: string; status: string; eventIds: string[] }>;
   assets: Array<{ id: string; sha256: string; bytes: number; mimeType: string; fileBytes: string }>;
@@ -79,6 +102,9 @@ async function freshModules() {
     storage: await import("@/lib/assets/storage"),
     schema: {
       user: (await import("@/db/schema/auth")).user,
+      family: (await import("@/db/schema/family")).family,
+      person: (await import("@/db/schema/family")).person,
+      contribution: (await import("@/db/schema/contribution")).contribution,
       inboxItem: (await import("@/db/schema/inbox")).inboxItem,
       inboxItemAsset: (await import("@/db/schema/inbox")).inboxItemAsset,
     },
@@ -106,6 +132,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       childBirthDate: "2026-08-10",
       selfDisplayName: "爸爸",
       selfRelationToChild: "爸爸",
+      selfIsGuardian: true,
     });
     if (!onboarding.ok) throw new Error("onboarding A failed");
     const familyId = onboarding.familyId;
@@ -115,6 +142,19 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       relationToChild: "外婆",
     });
     if (!grandma.ok) throw new Error("addPerson failed");
+    const { eq } = await import("drizzle-orm");
+    const policyPeople = await m.family.listPeople(familyId);
+    const dad = policyPeople.find((p) => p.displayName === "爸爸")!;
+    const child = policyPeople.find((p) => p.isChild)!;
+    const manualUnlockAt = new Date("2035-02-28T16:00:00.000Z");
+    await db
+      .update(m.schema.family)
+      .set({ childLaterUnlockAge: 21 })
+      .where(eq(m.schema.family.id, familyId));
+    await db
+      .update(m.schema.person)
+      .set({ childLaterUnlockedAt: manualUnlockAt })
+      .where(eq(m.schema.person.id, child.id));
 
     // 素材：照片 + 音频 + 视频
     const photo = await m.ingest.ingestImage({
@@ -201,6 +241,21 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       visibility: "child_later",
     });
     if (!contrib.ok) throw new Error("contribution failed");
+    await db
+      .update(m.schema.contribution)
+      .set({
+        audioAssetId: audio.asset.id,
+        transcript: "外婆的歌声转写：这孩子的手真小。",
+      })
+      .where(eq(m.schema.contribution.id, contrib.contributionId));
+    const privateContrib = await m.contributions.createContribution(familyId, {
+      memoryEventId: e1,
+      authorPersonId: dad.id,
+      recordedByUserId: adminId,
+      rawText: "爸爸的私人备忘，只进入完整灾难备份。",
+      visibility: "private",
+    });
+    if (!privateContrib.ok) throw new Error("private contribution failed");
     await m.contributions.addFact(familyId, e1, "2026-08-10 小满出生。");
 
     // 封存胶囊（未到期）
@@ -220,6 +275,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     // 快照期望值（独立于实现读取）
     const people = await m.family.listPeople(familyId);
     const events = await m.memories.listMemoryEvents(familyId);
+    const contributionRows = await db.select().from(m.schema.contribution);
     const storage = m.storage.getAssetStorage();
     const assets = [photo.asset, audio.asset, video.asset].map((a) => ({
       id: a.id,
@@ -254,10 +310,15 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       zipPath: exported.filePath,
       familyId,
       familyName: "我们一家",
+      familyUnlockAge: 21,
       people: people.map((p) => ({
         id: p.id,
         displayName: p.displayName,
         isChild: p.isChild,
+        isGuardian: p.isGuardian,
+        childLaterUnlockedAt: p.childLaterUnlockedAt?.toISOString() ?? null,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
       })),
       events: events.map((e) => ({
         id: e.id,
@@ -265,7 +326,23 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
         occurredAt: e.occurredAt.toISOString(),
         assetIds: [],
       })),
-      contributions: [{ id: contrib.contributionId, authorPersonId: grandma.personId, text: "外婆说：这孩子的手真小。" }],
+      contributions: contributionRows
+        .map((row) => ({
+          id: row.id,
+          memoryEventId: row.memoryEventId,
+          authorPersonId: row.authorPersonId,
+          recordedByPersonId: row.recordedByPersonId,
+          recordedByNameSnapshot: row.recordedByNameSnapshot,
+          recordingMode: row.recordingMode,
+          rawText: row.rawText,
+          transcript: row.transcript,
+          editedText: row.editedText,
+          audioAssetId: row.audioAssetId,
+          visibility: row.visibility,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
       facts: [{ id: "", statement: "2026-08-10 小满出生。" }],
       capsules: [
         { id: cap.capsuleId, title: "写给一岁的你", status: "sealed", eventIds: [e1] },
@@ -310,7 +387,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(report.people).toBe(snapshot.people.length);
     expect(report.assets).toBe(snapshot.assets.length);
     expect(report.events).toBe(snapshot.events.length);
-    expect(report.contributions).toBe(1);
+    expect(report.contributions).toBe(snapshot.contributions.length);
     expect(report.facts).toBe(1);
     expect(report.capsules).toBe(1);
     expect(report.inboxItems).toBe(snapshot.inboxItems.length);
@@ -319,12 +396,26 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     // 3) 家庭 / 成员
     const family = await m.family.getFamily(snapshot.familyId);
     expect(family?.name).toBe(snapshot.familyName);
+    expect(family?.childLaterUnlockAge).toBe(snapshot.familyUnlockAge);
     const peopleB = await m.family.listPeople(snapshot.familyId);
     expect(peopleB.map((p) => p.displayName).sort()).toEqual(
       snapshot.people.map((p) => p.displayName).sort(),
     );
     const childB = peopleB.find((p) => p.isChild);
     expect(childB?.birthDate).toBe("2026-08-10");
+    expect(
+      peopleB
+        .map((p) => ({
+          id: p.id,
+          displayName: p.displayName,
+          isChild: p.isChild,
+          isGuardian: p.isGuardian,
+          childLaterUnlockedAt: p.childLaterUnlockedAt?.toISOString() ?? null,
+          createdAt: p.createdAt.toISOString(),
+          updatedAt: p.updatedAt.toISOString(),
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    ).toEqual([...snapshot.people].sort((a, b) => a.id.localeCompare(b.id)));
 
     // 4) Asset：sha256(source) === sha256(restored)；字节逐一一致
     const storage = m.storage.getAssetStorage();
@@ -404,17 +495,44 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     const e1Id = snapshot.capsules[0].eventIds[0];
     const contribs = await m.contributions.listContributions(snapshot.familyId, e1Id);
     expect(contribs.map((c) => c.rawText)).toContain("外婆说：这孩子的手真小。");
-    expect(contribs[0].authorName).toBe("外婆");
+    expect(contribs.map((c) => c.authorName)).toContain("外婆");
+    const restoredDbContributionRows = await db
+      .select()
+      .from(m.schema.contribution);
+    const restoredContributionRows = restoredDbContributionRows
+      .map((row) => ({
+        id: row.id,
+        memoryEventId: row.memoryEventId,
+        authorPersonId: row.authorPersonId,
+        recordedByPersonId: row.recordedByPersonId,
+        recordedByNameSnapshot: row.recordedByNameSnapshot,
+        recordingMode: row.recordingMode,
+        rawText: row.rawText,
+        transcript: row.transcript,
+        editedText: row.editedText,
+        audioAssetId: row.audioAssetId,
+        visibility: row.visibility,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(restoredContributionRows).toEqual(snapshot.contributions);
+    expect(
+      restoredDbContributionRows.every((row) => row.recordedByUserId === null),
+    ).toBe(true);
+    expect(restoredContributionRows.map((row) => row.visibility).sort()).toEqual([
+      "child_later",
+      "private",
+    ]);
     const facts = await m.contributions.listFacts(snapshot.familyId, e1Id);
     expect(facts.map((f) => f.statement)).toContain("2026-08-10 小满出生。");
 
     // 7) 封存胶囊：内容引用完整（导出/恢复不因 seal 丢失内容）
-    const capDetail = await m.capsules.getCapsuleDetail(
+    const capDetail = await m.capsules.getCompleteCapsuleDetailForDisasterExport(
       snapshot.familyId,
       snapshot.capsules[0].id,
       "2026-08-10",
       "Asia/Shanghai",
-      { includeLocked: true },
     );
     expect(capDetail!.capsule.status).toBe("sealed");
     expect(capDetail!.events).toHaveLength(1);
@@ -469,6 +587,132 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     return { m, adminId };
   }
 
+  it("策略/可见性/音频/来源档案异常 → 预验拒绝且 filesWritten=0", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-policy-preflight-"));
+    const { m, adminId } = await freshB(dir);
+    const putOriginal = vi.spyOn(m.storage.getAssetStorage(), "putOriginal");
+
+    const cases: Array<{
+      code: string;
+      mutate: (zip: import("jszip")) => Promise<void>;
+    }> = [
+      {
+        code: "bad_policy",
+        mutate: async (zip) => {
+          const file = zip.file("family-time-capsule-export/family.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json.childLaterUnlockAge = 18.5;
+          zip.file("family-time-capsule-export/family.json", JSON.stringify(json));
+        },
+      },
+      {
+        code: "bad_policy",
+        mutate: async (zip) => {
+          const file = zip.file("family-time-capsule-export/people.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json.find((p: { isChild: boolean }) => p.isChild).isGuardian = true;
+          zip.file("family-time-capsule-export/people.json", JSON.stringify(json));
+        },
+      },
+      {
+        code: "bad_policy",
+        mutate: async (zip) => {
+          const file = zip.file("family-time-capsule-export/people.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json.find((p: { isChild: boolean }) => p.isChild).childLaterUnlockedAt =
+            "not-an-instant";
+          zip.file("family-time-capsule-export/people.json", JSON.stringify(json));
+        },
+      },
+      {
+        code: "bad_policy",
+        mutate: async (zip) => {
+          const file = zip.file("family-time-capsule-export/people.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json.find((p: { isChild: boolean }) => p.isChild).childLaterUnlockedAt =
+            "1969-12-31T23:59:59.000Z";
+          zip.file("family-time-capsule-export/people.json", JSON.stringify(json));
+        },
+      },
+      {
+        code: "bad_visibility",
+        mutate: async (zip) => {
+          const file = zip.file("family-time-capsule-export/contributions.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json[0].visibility = "public";
+          zip.file(
+            "family-time-capsule-export/contributions.json",
+            JSON.stringify(json),
+          );
+        },
+      },
+      {
+        code: "bad_audio_ref",
+        mutate: async (zip) => {
+          const manifestFile = zip.file(
+            "family-time-capsule-export/manifest.json",
+          )!;
+          const manifest = JSON.parse(await manifestFile.async("string"));
+          const imageId = manifest.assets.find(
+            (a: { type: string }) => a.type === "image",
+          ).assetId;
+          const file = zip.file("family-time-capsule-export/contributions.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json[0].audioAssetId = imageId;
+          zip.file(
+            "family-time-capsule-export/contributions.json",
+            JSON.stringify(json),
+          );
+        },
+      },
+      {
+        code: "bad_provenance",
+        mutate: async (zip) => {
+          const file = zip.file("family-time-capsule-export/contributions.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json[0].recordingMode = "self";
+          json[0].recordedByPersonId = null;
+          zip.file(
+            "family-time-capsule-export/contributions.json",
+            JSON.stringify(json),
+          );
+        },
+      },
+      {
+        code: "bad_provenance",
+        mutate: async (zip) => {
+          const file = zip.file("family-time-capsule-export/contributions.json")!;
+          const json = JSON.parse(await file.async("string"));
+          json[0].recordedByUserId = "destroyed-instance-user";
+          zip.file(
+            "family-time-capsule-export/contributions.json",
+            JSON.stringify(json),
+          );
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      putOriginal.mockClear();
+      const buf = await buildTamperedZip(testCase.mutate);
+      await expect(
+        m.restoreSvc.restoreFromZip(buf, adminId),
+      ).rejects.toMatchObject({ code: testCase.code });
+      expect(putOriginal, testCase.code).not.toHaveBeenCalled();
+      expect(
+        await m.db.getDb().select().from(m.schema.family),
+        testCase.code,
+      ).toHaveLength(0);
+      expect(existsSync(path.join(dir, "originals", snapshot.familyId))).toBe(
+        false,
+      );
+    }
+
+    putOriginal.mockRestore();
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("哈希不符 → 拒绝且数据库保持为空", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-tamper-"));
     const { m, adminId } = await freshB(dir);
@@ -506,7 +750,7 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("旧 exportVersion=1 归档缺少两份 inbox 文件 → 按空收件箱恢复", async () => {
+  it("旧 exportVersion=1 增量字段缺失 → 按安全默认值兼容恢复", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-legacy-inbox-"));
     const { m, adminId } = await freshB(dir);
     const buf = await buildTamperedZip(async (zip) => {
@@ -519,11 +763,63 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
         "family-time-capsule-export/manifest.json",
         JSON.stringify(manifest),
       );
+      const familyFile = zip.file("family-time-capsule-export/family.json")!;
+      const familyJson = JSON.parse(await familyFile.async("string"));
+      delete familyJson.childLaterUnlockAge;
+      zip.file(
+        "family-time-capsule-export/family.json",
+        JSON.stringify(familyJson),
+      );
+      const peopleFile = zip.file("family-time-capsule-export/people.json")!;
+      const peopleJson = JSON.parse(await peopleFile.async("string"));
+      for (const person of peopleJson) {
+        delete person.isGuardian;
+        delete person.childLaterUnlockedAt;
+        delete person.updatedAt;
+      }
+      zip.file(
+        "family-time-capsule-export/people.json",
+        JSON.stringify(peopleJson),
+      );
+      const contributionsFile = zip.file(
+        "family-time-capsule-export/contributions.json",
+      )!;
+      const contributionsJson = JSON.parse(
+        await contributionsFile.async("string"),
+      );
+      for (const contribution of contributionsJson) {
+        delete contribution.recordedByPersonId;
+        delete contribution.recordedByNameSnapshot;
+        delete contribution.recordingMode;
+        delete contribution.transcript;
+        delete contribution.updatedAt;
+      }
+      zip.file(
+        "family-time-capsule-export/contributions.json",
+        JSON.stringify(contributionsJson),
+      );
     });
     const report = await m.restoreSvc.restoreFromZip(buf, adminId);
     expect(report.inboxItems).toBe(0);
     expect(report.inboxItemAssets).toBe(0);
     expect(await m.db.getDb().select().from(m.schema.inboxItem)).toHaveLength(0);
+    expect((await m.family.getFamily(snapshot.familyId))?.childLaterUnlockAge).toBe(
+      18,
+    );
+    expect(
+      (await m.family.listPeople(snapshot.familyId)).every(
+        (person) => !person.isGuardian && person.childLaterUnlockedAt === null,
+      ),
+    ).toBe(true);
+    expect(
+      (await m.db.getDb().select().from(m.schema.contribution)).every(
+        (contribution) =>
+          contribution.recordingMode === "legacy" &&
+          contribution.recordedByPersonId === null &&
+          contribution.recordedByNameSnapshot === null &&
+          contribution.transcript === null,
+      ),
+    ).toBe(true);
     m.db.closeDatabase();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -648,6 +944,60 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     await expect(
       m.restoreSvc.restoreFromZip(readFileSync(snapshot.zipPath), "no-such-user"),
     ).rejects.toMatchObject({ code: "bad_operator" });
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("operator 必须是 enabled admin；干净实例的 unbound setup admin 可用", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-operator-policy-"));
+    const { m, adminId } = await freshB(dir);
+    const db = m.db.getDb();
+    const now = new Date();
+    await db.insert(m.schema.user).values([
+      {
+        id: "viewer-operator",
+        name: "viewer",
+        email: "viewer-operator@example.com",
+        emailVerified: false,
+        role: "viewer",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "disabled-admin-operator",
+        name: "disabled admin",
+        email: "disabled-admin-operator@example.com",
+        emailVerified: false,
+        role: "admin",
+        disabledAt: now,
+        disabledByUserId: adminId,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    const putOriginal = vi.spyOn(m.storage.getAssetStorage(), "putOriginal");
+
+    for (const operatorId of ["viewer-operator", "disabled-admin-operator"]) {
+      await expect(
+        m.restoreSvc.restoreFromZip(readFileSync(snapshot.zipPath), operatorId),
+      ).rejects.toMatchObject({ code: "bad_operator" });
+    }
+    expect(putOriginal).not.toHaveBeenCalled();
+
+    // The normal successful Phase B above proves this exact clean-instance
+    // setup admin shape is accepted; assert its binding state explicitly here.
+    const setupAdmin = await db
+      .select()
+      .from(m.schema.user)
+      .where((await import("drizzle-orm")).eq(m.schema.user.id, adminId));
+    expect(setupAdmin[0]).toMatchObject({
+      role: "admin",
+      familyId: null,
+      personId: null,
+      disabledAt: null,
+    });
+
+    putOriginal.mockRestore();
     m.db.closeDatabase();
     rmSync(dir, { recursive: true, force: true });
   });

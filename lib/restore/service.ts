@@ -24,6 +24,7 @@ import {
 import { user as userTable } from "@/db/schema/auth";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { AUDIT_KINDS, recordAudit } from "@/lib/audit/service";
+import { isContributionVisibility } from "@/lib/authz/policy";
 import {
   EXPORT_NON_ASSET_FILE_COUNT,
   EXPORT_ROOT_DIR,
@@ -116,6 +117,45 @@ type InboxItemAssetArchiveRow = {
   createdAt: string;
 };
 
+type FamilyArchiveRow = {
+  id: string;
+  name: string;
+  timezone: string;
+  childLaterUnlockAge?: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+type PersonArchiveRow = {
+  id: string;
+  displayName: string;
+  relationToChild?: string | null;
+  isChild?: boolean;
+  isGuardian?: boolean;
+  birthDate?: string | null;
+  childLaterUnlockedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type ContributionArchiveRow = {
+  id: string;
+  memoryEventId: string;
+  authorPersonId: string;
+  /** Local User ids are never portable and must not be accepted from an archive. */
+  recordedByUserId?: unknown;
+  recordedByPersonId?: string | null;
+  recordedByNameSnapshot?: string | null;
+  recordingMode?: string;
+  rawText?: string | null;
+  transcript?: string | null;
+  editedText?: string | null;
+  audioAssetId?: string | null;
+  visibility?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 const UUID_LIKE = /^[0-9a-zA-Z_-]{6,64}$/;
 const INBOX_KINDS = new Set(["text", "asset", "bundle"]);
@@ -126,6 +166,14 @@ const INBOX_STATUSES = new Set([
   "confirmed",
   "discarded",
 ]);
+const ASSET_TYPES = new Set(["image", "audio", "video", "document"]);
+const TIME_SOURCES = new Set([
+  "user_confirmed",
+  "embedded_metadata",
+  "file_metadata",
+  "import_time",
+]);
+const RECORDING_MODES = new Set(["legacy", "self", "on_behalf"]);
 
 function requireCondition(cond: unknown, code: string, message: string): asserts cond {
   if (!cond) throw new RestoreError(code, message);
@@ -160,6 +208,34 @@ function parseDate(value: unknown): Date | null {
   if (typeof value !== "string" || !ISO_DATE.test(value)) return null;
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isOptionalArchiveDate(value: unknown): boolean {
+  return value === undefined || value === null || parseDate(value) !== null;
+}
+
+function isValidDateOnly(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function isValidTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date(0));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isNullableString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
 }
 
 /** 从导出相对路径推断 asset type（旧导出无 type 字段时的 fallback） */
@@ -293,23 +369,8 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     }
   }
 
-  const familyJson = await readJson<{
-    id: string;
-    name: string;
-    timezone: string;
-    createdAt: string | null;
-    updatedAt: string | null;
-  }>("family.json");
-  const peopleJson = await readJson<
-    Array<{
-      id: string;
-      displayName: string;
-      relationToChild?: string | null;
-      isChild?: boolean;
-      birthDate?: string | null;
-      createdAt?: string | null;
-    }>
-  >("people.json");
+  const familyJson = await readJson<FamilyArchiveRow>("family.json");
+  const peopleJson = await readJson<PersonArchiveRow[]>("people.json");
   const memoriesJson = await readJson<
     Array<{
       id: string;
@@ -327,18 +388,9 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       participantPersonIds?: string[];
     }>
   >("memories.json");
-  const contributionsJson = await readJson<
-    Array<{
-      id: string;
-      memoryEventId: string;
-      authorPersonId: string;
-      rawText?: string | null;
-      editedText?: string | null;
-      audioAssetId?: string | null;
-      visibility?: string;
-      createdAt?: string | null;
-    }>
-  >("contributions.json");
+  const contributionsJson = await readJson<ContributionArchiveRow[]>(
+    "contributions.json",
+  );
   const factsJson = await readJson<
     Array<{
       id: string;
@@ -403,29 +455,252 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
   );
 
   // 结构与引用完整性
+  requireCondition(isRecord(familyJson), "bad_json", "family.json 必须是对象");
   requireCondition(
     familyJson.id === manifest.familyId,
     "bad_manifest",
     "family.json.id 与 manifest.familyId 不一致",
   );
-  const personIds = new Set(peopleJson.map((p) => p.id));
-  const assetIds = new Set(manifest.assets.map((a) => a.assetId));
+  requireCondition(
+    typeof familyJson.name === "string" &&
+      familyJson.name.trim().length >= 1 &&
+      familyJson.name.trim().length <= 50,
+    "bad_json",
+    "family.json.name 非法",
+  );
+  requireCondition(
+    typeof familyJson.timezone === "string" &&
+      isValidTimezone(familyJson.timezone),
+    "bad_json",
+    "family.json.timezone 非法",
+  );
+  requireCondition(
+    familyJson.childLaterUnlockAge === undefined ||
+      (Number.isInteger(familyJson.childLaterUnlockAge) &&
+        familyJson.childLaterUnlockAge >= 1 &&
+        familyJson.childLaterUnlockAge <= 100),
+    "bad_policy",
+    "family.childLaterUnlockAge 必须是 1 到 100 的整数",
+  );
+  requireCondition(
+    isOptionalArchiveDate(familyJson.createdAt) &&
+      isOptionalArchiveDate(familyJson.updatedAt),
+    "bad_json",
+    "family 时间字段非法",
+  );
+
+  const assetIds = new Set<string>();
+  const assetTypeById = new Map<string, string>();
+  const assetPaths = new Set<string>();
+  for (const entry of manifest.assets) {
+    requireCondition(isRecord(entry), "bad_manifest", "manifest asset 必须是对象");
+    requireCondition(
+      typeof entry.assetId === "string" &&
+        UUID_LIKE.test(entry.assetId) &&
+        !assetIds.has(entry.assetId),
+      "bad_manifest",
+      `assetId 非法或重复: ${String(entry.assetId)}`,
+    );
+    requireCondition(
+      typeof entry.relativePath === "string" &&
+        /^originals\/(images|audio|video|documents)\/[^/\\]+$/.test(
+          entry.relativePath,
+        ) &&
+        !entry.relativePath.includes("..") &&
+        !assetPaths.has(entry.relativePath),
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 relativePath 非法或重复`,
+    );
+    const inferredType = typeFromPath(entry.relativePath);
+    const resolvedType = entry.type ?? inferredType;
+    requireCondition(
+      typeof resolvedType === "string" &&
+        ASSET_TYPES.has(resolvedType) &&
+        resolvedType === inferredType,
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 type 与路径不一致`,
+    );
+    requireCondition(
+      typeof entry.sha256 === "string" && /^[0-9a-f]{64}$/.test(entry.sha256),
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 SHA-256 非法`,
+    );
+    requireCondition(
+      Number.isSafeInteger(entry.bytes) &&
+        entry.bytes >= 0 &&
+        entry.bytes <= limits.maxSingleFileBytes,
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 bytes 非法`,
+    );
+    requireCondition(
+      typeof entry.mimeType === "string" && entry.mimeType.length > 0,
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 mimeType 非法`,
+    );
+    requireCondition(
+      (entry.capturedAt === null || parseDate(entry.capturedAt) !== null) &&
+        parseDate(entry.importedAt) !== null,
+      "bad_manifest",
+      `素材 ${entry.assetId} 的时间字段非法`,
+    );
+    requireCondition(
+      entry.originalFilename === undefined ||
+        (typeof entry.originalFilename === "string" &&
+          entry.originalFilename.length >= 1 &&
+          entry.originalFilename.length <= 255),
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 originalFilename 非法`,
+    );
+    requireCondition(
+      entry.timeSource === undefined ||
+        (typeof entry.timeSource === "string" &&
+          TIME_SOURCES.has(entry.timeSource)),
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 timeSource 非法`,
+    );
+    for (const [field, value] of [
+      ["width", entry.width],
+      ["height", entry.height],
+      ["durationMs", entry.durationMs],
+    ] as const) {
+      requireCondition(
+        value === undefined ||
+          value === null ||
+          (Number.isSafeInteger(value) && value >= 0),
+        "bad_manifest",
+        `素材 ${entry.assetId} 的 ${field} 非法`,
+      );
+    }
+    requireCondition(
+      entry.metadataJson === undefined ||
+        entry.metadataJson === null ||
+        typeof entry.metadataJson === "string",
+      "bad_manifest",
+      `素材 ${entry.assetId} 的 metadataJson 非法`,
+    );
+    assetIds.add(entry.assetId);
+    assetPaths.add(entry.relativePath);
+    assetTypeById.set(entry.assetId, resolvedType);
+  }
   requireCondition(
     assetIds.size === manifest.assets.length,
     "bad_manifest",
     "manifest.assets 存在重复 assetId",
   );
-  const eventIds = new Set(memoriesJson.map((m) => m.id));
+
+  requireCondition(Array.isArray(peopleJson), "bad_json", "people.json 必须是数组");
+  const personIds = new Set<string>();
+  const childPersonIds = new Set<string>();
+  for (const p of peopleJson) {
+    requireCondition(isRecord(p), "bad_json", "person 必须是对象");
+    requireCondition(
+      typeof p.id === "string" && UUID_LIKE.test(p.id) && !personIds.has(p.id),
+      "bad_json",
+      `person id 非法或重复: ${String(p.id)}`,
+    );
+    requireCondition(
+      typeof p.displayName === "string" &&
+        p.displayName.trim().length >= 1 &&
+        p.displayName.trim().length <= 50,
+      "bad_json",
+      `person ${p.id} 的 displayName 非法`,
+    );
+    requireCondition(
+      p.relationToChild === undefined ||
+        p.relationToChild === null ||
+        (typeof p.relationToChild === "string" &&
+          p.relationToChild.length <= 20),
+      "bad_json",
+      `person ${p.id} 的 relationToChild 非法`,
+    );
+    requireCondition(
+      (p.isChild === undefined || typeof p.isChild === "boolean") &&
+        (p.isGuardian === undefined || typeof p.isGuardian === "boolean"),
+      "bad_policy",
+      `person ${p.id} 的 guardian/child 标记非法`,
+    );
+    const isChild = p.isChild ?? false;
+    const isGuardian = p.isGuardian ?? false;
+    requireCondition(
+      !(isChild && isGuardian),
+      "bad_policy",
+      `person ${p.id} 不能同时是 child 与 guardian`,
+    );
+    requireCondition(
+      p.birthDate === undefined ||
+        p.birthDate === null ||
+        (typeof p.birthDate === "string" && isValidDateOnly(p.birthDate)),
+      "bad_policy",
+      `person ${p.id} 的 birthDate 非法`,
+    );
+    requireCondition(
+      p.childLaterUnlockedAt === undefined ||
+        p.childLaterUnlockedAt === null ||
+        (isChild &&
+          parseDate(p.childLaterUnlockedAt) !== null &&
+          parseDate(p.childLaterUnlockedAt)!.getTime() >= 0),
+      "bad_policy",
+      `person ${p.id} 的 childLaterUnlockedAt 非法`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(p.createdAt) && isOptionalArchiveDate(p.updatedAt),
+      "bad_json",
+      `person ${p.id} 的时间字段非法`,
+    );
+    personIds.add(p.id);
+    if (isChild) childPersonIds.add(p.id);
+  }
+  requireCondition(
+    Array.isArray(memoriesJson),
+    "bad_json",
+    "memories.json 必须是数组",
+  );
+  const eventIds = new Set<string>();
   for (const m of memoriesJson) {
+    requireCondition(isRecord(m), "bad_json", "memory event 必须是对象");
+    requireCondition(
+      typeof m.id === "string" && UUID_LIKE.test(m.id) && !eventIds.has(m.id),
+      "bad_json",
+      `memory event id 非法或重复: ${String(m.id)}`,
+    );
+    eventIds.add(m.id);
     requireCondition(
       typeof m.title === "string" && m.title.length > 0,
       "bad_json",
       `memories: 事件 ${m.id} 缺少标题`,
     );
     requireCondition(
-      personIds.has(m.childPersonId),
+      childPersonIds.has(m.childPersonId),
       "bad_refs",
-      `memories: 事件 ${m.id} 引用未知 childPerson ${m.childPersonId}`,
+      `memories: 事件 ${m.id} 引用未知或非 child Person ${m.childPersonId}`,
+    );
+    requireCondition(
+      parseDate(m.occurredAt) !== null &&
+        isOptionalArchiveDate(m.createdAt) &&
+        isOptionalArchiveDate(m.updatedAt),
+      "bad_json",
+      `memories: 事件 ${m.id} 的时间字段非法`,
+    );
+    requireCondition(
+      m.participantPersonIds === undefined ||
+        (Array.isArray(m.participantPersonIds) &&
+          m.participantPersonIds.every((id) => typeof id === "string")),
+      "bad_json",
+      `事件 ${m.id} 的 participantPersonIds 非法`,
+    );
+    requireCondition(
+      m.assetIds === undefined ||
+        (Array.isArray(m.assetIds) &&
+          m.assetIds.every((id) => typeof id === "string")),
+      "bad_json",
+      `事件 ${m.id} 的 assetIds 非法`,
+    );
+    requireCondition(
+      m.coverAssetId === undefined ||
+        m.coverAssetId === null ||
+        (typeof m.coverAssetId === "string" && assetIds.has(m.coverAssetId)),
+      "bad_refs",
+      `事件 ${m.id} 引用未知封面素材`,
     );
     for (const pid of m.participantPersonIds ?? []) {
       requireCondition(personIds.has(pid), "bad_refs", `事件 ${m.id} 引用未知参与人 ${pid}`);
@@ -540,7 +815,22 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       createdAt: link.createdAt,
     });
   }
+  requireCondition(
+    Array.isArray(contributionsJson),
+    "bad_json",
+    "contributions.json 必须是数组",
+  );
+  const contributionIds = new Set<string>();
   for (const c of contributionsJson) {
+    requireCondition(isRecord(c), "bad_json", "contribution 必须是对象");
+    requireCondition(
+      typeof c.id === "string" &&
+        UUID_LIKE.test(c.id) &&
+        !contributionIds.has(c.id),
+      "bad_json",
+      `contribution id 非法或重复: ${String(c.id)}`,
+    );
+    contributionIds.add(c.id);
     requireCondition(
       eventIds.has(c.memoryEventId),
       "bad_refs",
@@ -551,7 +841,76 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       "bad_refs",
       `contribution ${c.id} 引用未知作者`,
     );
+    requireCondition(
+      isContributionVisibility(c.visibility ?? "family"),
+      "bad_visibility",
+      `contribution ${c.id} 的 visibility 非法`,
+    );
+    requireCondition(
+      isNullableString(c.rawText) &&
+        isNullableString(c.transcript) &&
+        isNullableString(c.editedText),
+      "bad_json",
+      `contribution ${c.id} 的文字字段非法`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(c.createdAt) && isOptionalArchiveDate(c.updatedAt),
+      "bad_json",
+      `contribution ${c.id} 的时间字段非法`,
+    );
+    requireCondition(
+      c.audioAssetId === undefined ||
+        c.audioAssetId === null ||
+        (typeof c.audioAssetId === "string" &&
+          assetIds.has(c.audioAssetId) &&
+          assetTypeById.get(c.audioAssetId) === "audio"),
+      "bad_audio_ref",
+      `contribution ${c.id} 的 audioAssetId 非法或不是原始音频`,
+    );
+
+    // Authentication data is instance-local. Portable provenance is expressed
+    // only by Person + immutable name snapshot + recording mode.
+    requireCondition(
+      c.recordedByUserId === undefined || c.recordedByUserId === null,
+      "bad_provenance",
+      `contribution ${c.id} 不得携带本地 recordedByUserId`,
+    );
+    requireCondition(
+      c.recordedByPersonId === undefined ||
+        c.recordedByPersonId === null ||
+        (typeof c.recordedByPersonId === "string" &&
+          personIds.has(c.recordedByPersonId)),
+      "bad_provenance",
+      `contribution ${c.id} 引用未知 recorder Person`,
+    );
+    requireCondition(
+      isNullableString(c.recordedByNameSnapshot),
+      "bad_provenance",
+      `contribution ${c.id} 的 recorder name snapshot 非法`,
+    );
+    const recordingMode = c.recordingMode ?? "legacy";
+    const recorderPersonId = c.recordedByPersonId ?? null;
+    const recorderName = c.recordedByNameSnapshot ?? null;
+    const hasValidRecorderName =
+      typeof recorderName === "string" &&
+      recorderName.trim().length >= 1 &&
+      recorderName.trim().length <= 50;
+    requireCondition(
+      RECORDING_MODES.has(recordingMode) &&
+        ((recordingMode === "legacy" &&
+          recorderPersonId === null &&
+          recorderName === null) ||
+          (recordingMode === "self" &&
+            recorderPersonId === c.authorPersonId &&
+            hasValidRecorderName) ||
+          (recordingMode === "on_behalf" &&
+            recorderPersonId !== c.authorPersonId &&
+            hasValidRecorderName)),
+      "bad_provenance",
+      `contribution ${c.id} 的 recorder provenance 组合非法`,
+    );
   }
+  requireCondition(Array.isArray(factsJson), "bad_json", "facts.json 必须是数组");
   for (const f of factsJson) {
     requireCondition(eventIds.has(f.memoryEventId), "bad_refs", `fact ${f.id} 引用未知事件`);
     requireCondition(
@@ -560,7 +919,11 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       `fact ${f.id} 缺少陈述`,
     );
   }
-  const contributionIds = new Set(contributionsJson.map((c) => c.id));
+  requireCondition(
+    Array.isArray(capsulesJson),
+    "bad_json",
+    "capsules.json 必须是数组",
+  );
   for (const cap of capsulesJson) {
     for (const eid of cap.memoryEventIds ?? []) {
       requireCondition(eventIds.has(eid), "bad_refs", `capsule ${cap.id} 引用未知事件`);
@@ -639,14 +1002,25 @@ export async function restoreFromZip(
   await assertRestoreTargetEmpty();
   const db = getDb();
   const operator = await db
-    .select({ id: userTable.id })
+    .select({
+      id: userTable.id,
+      role: userTable.role,
+      familyId: userTable.familyId,
+      personId: userTable.personId,
+      disabledAt: userTable.disabledAt,
+    })
     .from(userTable)
     .where(eq(userTable.id, operatorUserId))
     .limit(1);
+  const operatorRow = operator[0];
   requireCondition(
-    Boolean(operator[0]),
+    Boolean(operatorRow) &&
+      operatorRow.role === "admin" &&
+      operatorRow.disabledAt === null &&
+      operatorRow.familyId === null &&
+      operatorRow.personId === null,
     "bad_operator",
-    `operator 用户不存在: ${operatorUserId}`,
+    `operator 必须是当前干净实例中未禁用、尚未绑定的 setup 管理员: ${operatorUserId}`,
   );
 
   const data = await loadAndVerifyZip(zipBuffer, limits);
@@ -693,6 +1067,7 @@ export async function restoreFromZip(
           id: familyId,
           name: familyJson.name,
           timezone: familyJson.timezone || "Asia/Shanghai",
+          childLaterUnlockAge: familyJson.childLaterUnlockAge ?? 18,
           createdAt: parseDate(familyJson.createdAt) ?? now,
           updatedAt: parseDate(familyJson.updatedAt) ?? now,
         })
@@ -706,9 +1081,11 @@ export async function restoreFromZip(
             displayName: p.displayName,
             relationToChild: p.relationToChild ?? null,
             isChild: p.isChild ?? false,
+            isGuardian: p.isGuardian ?? false,
             birthDate: p.birthDate ?? null,
+            childLaterUnlockedAt: parseDate(p.childLaterUnlockedAt),
             createdAt: parseDate(p.createdAt) ?? now,
-            updatedAt: parseDate(p.createdAt) ?? now,
+            updatedAt: parseDate(p.updatedAt) ?? parseDate(p.createdAt) ?? now,
           })),
         )
         .run();
@@ -834,12 +1211,19 @@ export async function restoreFromZip(
               id: c.id,
               memoryEventId: c.memoryEventId,
               authorPersonId: c.authorPersonId,
+              // User ids belong to the destroyed instance and are deliberately
+              // not restored. Portable Person/name/mode provenance remains.
+              recordedByUserId: null,
+              recordedByPersonId: c.recordedByPersonId ?? null,
+              recordedByNameSnapshot: c.recordedByNameSnapshot ?? null,
+              recordingMode: c.recordingMode ?? "legacy",
               rawText: c.rawText ?? null,
+              transcript: c.transcript ?? null,
               editedText: c.editedText ?? null,
               audioAssetId: c.audioAssetId ?? null,
               visibility: c.visibility ?? "family",
               createdAt: parseDate(c.createdAt) ?? now,
-              updatedAt: parseDate(c.createdAt) ?? now,
+              updatedAt: parseDate(c.updatedAt) ?? parseDate(c.createdAt) ?? now,
             })),
           )
           .run();

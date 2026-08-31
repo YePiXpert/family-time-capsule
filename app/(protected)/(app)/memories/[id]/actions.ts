@@ -4,18 +4,19 @@ import { revalidatePath } from "next/cache";
 import { requireFamilyCapability } from "@/lib/authz/context";
 import {
   canCreateContributionForPerson,
-  canEditContribution,
   FamilyAuthorizationError,
 } from "@/lib/authz/policy";
+import {
+  createContributionAccessSnapshot,
+  updateVisibleContributionText,
+} from "@/lib/authz/contribution-access";
 import { getFamily } from "@/lib/family/service";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { updateMemoryEvent } from "@/lib/memories/service";
 import {
   addFact,
   createContribution,
-  getContributionForFamily,
   setFactStatus,
-  updateContributionText,
   type Visibility,
 } from "@/lib/contributions/service";
 
@@ -122,7 +123,7 @@ export async function addContributionAction(
       role: context.role,
       userPersonId: context.personId,
       authorPersonId,
-      accountEnabled: true,
+      accountEnabled: context.accountEnabled,
     })
   ) {
     throw new FamilyAuthorizationError("contribution:create");
@@ -159,26 +160,22 @@ export async function editContributionAction(
   formData: FormData,
 ): Promise<ContributionFormState> {
   const context = await requireFamilyCapability("contribution:create");
-  const { familyId } = context;
   const contributionId = String(formData.get("contributionId") ?? "");
   const text = String(formData.get("editedText") ?? "");
-  const existing = await getContributionForFamily(familyId, contributionId);
-  if (!existing) return { error: "保存失败：内容 1–5000 字，或条目不存在。" };
-  if (
-    !canEditContribution({
-      role: context.role,
-      userPersonId: context.personId,
-      authorPersonId: existing.authorPersonId,
-      isGuardian: false,
-      childLaterUnlocked: false,
-      accountEnabled: true,
-    })
-  ) {
-    throw new FamilyAuthorizationError("contribution:create");
+  const result = updateVisibleContributionText(
+    createContributionAccessSnapshot(context),
+    contributionId,
+    text,
+  );
+  if (!result.ok) {
+    return {
+      error:
+        result.error === "invalid"
+          ? "保存失败：内容需为 1–5000 字。"
+          : "保存失败：条目不存在，或你的账号权限已经变化。",
+    };
   }
-  const row = await updateContributionText(familyId, contributionId, text);
-  if (!row) return { error: "保存失败：内容 1–5000 字，或条目不存在。" };
-  revalidatePath(`/memories/${existing.memoryEventId}`);
+  revalidatePath(`/memories/${result.memoryEventId}`);
   return {};
 }
 

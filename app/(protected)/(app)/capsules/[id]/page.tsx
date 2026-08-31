@@ -2,11 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
-import { getFamily, listPeople } from "@/lib/family/service";
+import { listPeople } from "@/lib/family/service";
 import { getCapsuleDetail } from "@/lib/capsules/service";
 import { listMemoryEvents } from "@/lib/memories/service";
 import { CapsuleActions } from "./capsule-actions";
 import { hasFamilyCapability } from "@/lib/authz/policy";
+import {
+  createContributionAccessSnapshot,
+  listVisibleContributionsForFamily,
+} from "@/lib/authz/contribution-access";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +27,19 @@ export default async function CapsuleDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { familyId, role } = await requireFamily();
-  const canWrite = hasFamilyCapability(role, "capsule:write");
+  const context = await requireFamily();
+  const { familyId } = context;
+  const canWrite = hasFamilyCapability(context.role, "capsule:write");
+  const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
-  const [family, people] = await Promise.all([getFamily(familyId), listPeople(familyId)]);
+  const people = await listPeople(familyId);
   const childBirthDate = people.find((p) => p.isChild)?.birthDate ?? null;
-  const timezone = family?.timezone ?? "Asia/Shanghai";
-  const detail = await getCapsuleDetail(familyId, id, childBirthDate, timezone);
+  const timezone = context.familyTimezone;
+  const detail = await getCapsuleDetail(
+    contributionAccess,
+    id,
+    childBirthDate,
+  );
   if (!detail) notFound();
 
   const { capsule, events, contributions, unlocked } = detail;
@@ -37,6 +47,28 @@ export default async function CapsuleDetailPage({
   const eventOptions =
     canWrite && capsule.status === "draft"
       ? (await listMemoryEvents(familyId)).map((e) => ({ id: e.id, title: e.title }))
+      : [];
+  const contributionOptions =
+    canWrite && capsule.status === "draft"
+      ? (await listVisibleContributionsForFamily(contributionAccess))
+          .filter(
+            (contribution) =>
+              !contributions.some((linked) => linked.id === contribution.id),
+          )
+          .map((contribution) => {
+            const text =
+              contribution.editedText ??
+              contribution.rawText ??
+              contribution.transcript ??
+              "音频讲述";
+            const excerpt = text.replace(/\s+/g, " ").trim();
+            return {
+              id: contribution.id,
+              label: `${contribution.authorName} · ${
+                excerpt.length > 48 ? `${excerpt.slice(0, 48)}…` : excerpt
+              }`,
+            };
+          })
       : [];
 
   return (
@@ -62,6 +94,7 @@ export default async function CapsuleDetailPage({
           status={capsule.status}
           unlocked={unlocked}
           eventOptions={eventOptions}
+          contributionOptions={contributionOptions}
         />
       )}
 

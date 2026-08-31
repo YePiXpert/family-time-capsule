@@ -27,6 +27,7 @@ const read = (name: string) => readFileSync(path.join(fixtures, name));
 type Expectation = {
   zipPath: string;
   familyId: string;
+  familyUnlockAge: number;
   eventTitle: string;
   eventDate: string; // 详情页可见文本（家庭时区）
   ageLabel: string;
@@ -35,6 +36,27 @@ type Expectation = {
   photoEventId: string;
   confirmedTextEventId: string;
   confirmedTextBody: string;
+  peoplePolicy: Array<{
+    id: string;
+    isChild: boolean;
+    isGuardian: boolean;
+    childLaterUnlockedAt: string | null;
+  }>;
+  contributions: Array<{
+    id: string;
+    memoryEventId: string;
+    authorPersonId: string;
+    recordedByPersonId: string | null;
+    recordedByNameSnapshot: string | null;
+    recordingMode: string;
+    rawText: string | null;
+    transcript: string | null;
+    editedText: string | null;
+    audioAssetId: string | null;
+    visibility: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   inboxItems: Array<{
     id: string;
     familyId: string;
@@ -71,6 +93,8 @@ async function freshModules() {
     exportSvc: await import("@/lib/export/service"),
     restoreSvc: await import("@/lib/restore/service"),
     schemaAuth: await import("@/db/schema/auth"),
+    schemaFamily: await import("@/db/schema/family"),
+    schemaContribution: await import("@/db/schema/contribution"),
     schemaInbox: await import("@/db/schema/inbox"),
   };
 }
@@ -138,6 +162,7 @@ beforeAll(async () => {
       childBirthDate: "2026-08-10",
       selfDisplayName: "爸爸",
       selfRelationToChild: "爸爸",
+      selfIsGuardian: true,
     });
     if (!on.ok) throw new Error("onboarding A failed");
     const stored = await m.ingest.ingestImage({
@@ -188,6 +213,88 @@ beforeAll(async () => {
     );
     if (!textEvent.ok) throw new Error("text confirm failed");
 
+    const grandma = await m.family.addPerson(on.familyId, {
+      displayName: "外婆",
+      relationToChild: "外婆",
+    });
+    if (!grandma.ok) throw new Error("add grandma failed");
+    const people = await m.family.listPeople(on.familyId);
+    const dad = people.find((p) => p.displayName === "爸爸")!;
+    const child = people.find((p) => p.isChild)!;
+    const { eq } = await import("drizzle-orm");
+    await m.db
+      .getDb()
+      .update(m.schemaFamily.family)
+      .set({ childLaterUnlockAge: 21 })
+      .where(eq(m.schemaFamily.family.id, on.familyId));
+    await m.db
+      .getDb()
+      .update(m.schemaFamily.person)
+      .set({ childLaterUnlockedAt: new Date("2035-02-28T16:00:00.000Z") })
+      .where(eq(m.schemaFamily.person.id, child.id));
+
+    const childLaterContribution = await m.contributions.createContribution(
+      on.familyId,
+      {
+        memoryEventId: ev.eventId,
+        authorPersonId: grandma.personId,
+        recordedByUserId: adminId,
+        rawText: "外婆留给孩子长大后看的话。",
+        visibility: "child_later",
+      },
+    );
+    if (!childLaterContribution.ok) throw new Error("child later contribution failed");
+    await m.db
+      .getDb()
+      .update(m.schemaContribution.contribution)
+      .set({ transcript: "外婆留给孩子长大后看的话。" })
+      .where(
+        eq(
+          m.schemaContribution.contribution.id,
+          childLaterContribution.contributionId,
+        ),
+      );
+    const privateContribution = await m.contributions.createContribution(
+      on.familyId,
+      {
+        memoryEventId: ev.eventId,
+        authorPersonId: dad.id,
+        recordedByUserId: adminId,
+        rawText: "爸爸的私人备忘。",
+        visibility: "private",
+      },
+    );
+    if (!privateContribution.ok) throw new Error("private contribution failed");
+
+    const peoplePolicy = (await m.family.listPeople(on.familyId))
+      .map((person) => ({
+        id: person.id,
+        isChild: person.isChild,
+        isGuardian: person.isGuardian,
+        childLaterUnlockedAt:
+          person.childLaterUnlockedAt?.toISOString() ?? null,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const contributions = (
+      await m.db.getDb().select().from(m.schemaContribution.contribution)
+    )
+      .map((row) => ({
+        id: row.id,
+        memoryEventId: row.memoryEventId,
+        authorPersonId: row.authorPersonId,
+        recordedByPersonId: row.recordedByPersonId,
+        recordedByNameSnapshot: row.recordedByNameSnapshot,
+        recordingMode: row.recordingMode,
+        rawText: row.rawText,
+        transcript: row.transcript,
+        editedText: row.editedText,
+        audioAssetId: row.audioAssetId,
+        visibility: row.visibility,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
     const inboxItems = (
       await m.db.getDb().select().from(m.schemaInbox.inboxItem)
     )
@@ -221,6 +328,7 @@ beforeAll(async () => {
     expect_ = {
       zipPath: zip.filePath,
       familyId: on.familyId,
+      familyUnlockAge: 21,
       eventTitle: "出生后的第一天",
       eventDate: "2026年8月10日 09:30",
       ageLabel: "出生当天",
@@ -229,6 +337,8 @@ beforeAll(async () => {
       photoEventId: ev.eventId,
       confirmedTextEventId: textEvent.eventId,
       confirmedTextBody,
+      peoplePolicy,
+      contributions,
       inboxItems,
       inboxItemAssets,
     };
@@ -259,6 +369,7 @@ beforeAll(async () => {
     )[0].id;
     const report = await m.restoreSvc.restoreFromZipFile(expect_.zipPath, adminId);
     expect(report.events).toBe(2);
+    expect(report.contributions).toBe(expect_.contributions.length);
     expect(report.inboxItems).toBe(expect_.inboxItems.length);
     expect(report.inboxItemAssets).toBe(expect_.inboxItemAssets.length);
 
@@ -289,6 +400,43 @@ beforeAll(async () => {
       .sort((a, b) => a.id.localeCompare(b.id));
     expect(restoredInboxItems).toEqual(expect_.inboxItems);
     expect(restoredInboxItemAssets).toEqual(expect_.inboxItemAssets);
+    const restoredFamily = await m.family.getFamily(expect_.familyId);
+    expect(restoredFamily?.childLaterUnlockAge).toBe(expect_.familyUnlockAge);
+    const restoredPeoplePolicy = (await m.family.listPeople(expect_.familyId))
+      .map((person) => ({
+        id: person.id,
+        isChild: person.isChild,
+        isGuardian: person.isGuardian,
+        childLaterUnlockedAt:
+          person.childLaterUnlockedAt?.toISOString() ?? null,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(restoredPeoplePolicy).toEqual(expect_.peoplePolicy);
+    const restoredContributionDbRows = await m.db
+      .getDb()
+      .select()
+      .from(m.schemaContribution.contribution);
+    const restoredContributions = restoredContributionDbRows
+      .map((row) => ({
+        id: row.id,
+        memoryEventId: row.memoryEventId,
+        authorPersonId: row.authorPersonId,
+        recordedByPersonId: row.recordedByPersonId,
+        recordedByNameSnapshot: row.recordedByNameSnapshot,
+        recordingMode: row.recordingMode,
+        rawText: row.rawText,
+        transcript: row.transcript,
+        editedText: row.editedText,
+        audioAssetId: row.audioAssetId,
+        visibility: row.visibility,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    expect(restoredContributions).toEqual(expect_.contributions);
+    expect(
+      restoredContributionDbRows.every((row) => row.recordedByUserId === null),
+    ).toBe(true);
     expect(
       await m.contributions.listContributions(
         expect_.familyId,
@@ -413,6 +561,64 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     ).sort((a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id));
     expect(inboxItems).toEqual(expect_.inboxItems);
     expect(inboxItemAssets).toEqual(expect_.inboxItemAssets);
+    const exportedFamily = JSON.parse(
+      await zip
+        .file("family-time-capsule-export/family.json")!
+        .async("string"),
+    );
+    const exportedPeople = JSON.parse(
+      await zip
+        .file("family-time-capsule-export/people.json")!
+        .async("string"),
+    );
+    const exportedContributions = JSON.parse(
+      await zip
+        .file("family-time-capsule-export/contributions.json")!
+        .async("string"),
+    );
+    expect(exportedFamily.childLaterUnlockAge).toBe(expect_.familyUnlockAge);
+    expect(
+      exportedPeople
+        .map(
+          (person: {
+            id: string;
+            isChild: boolean;
+            isGuardian: boolean;
+            childLaterUnlockedAt: string | null;
+          }) => ({
+            id: person.id,
+            isChild: person.isChild,
+            isGuardian: person.isGuardian,
+            childLaterUnlockedAt: person.childLaterUnlockedAt,
+          }),
+        )
+        .sort((a: { id: string }, b: { id: string }) =>
+          a.id.localeCompare(b.id),
+        ),
+    ).toEqual(expect_.peoplePolicy);
+    expect(
+      exportedContributions
+        .map(
+          (row: (typeof expect_.contributions)[number]) => ({
+            id: row.id,
+            memoryEventId: row.memoryEventId,
+            authorPersonId: row.authorPersonId,
+            recordedByPersonId: row.recordedByPersonId,
+            recordedByNameSnapshot: row.recordedByNameSnapshot,
+            recordingMode: row.recordingMode,
+            rawText: row.rawText,
+            transcript: row.transcript,
+            editedText: row.editedText,
+            audioAssetId: row.audioAssetId,
+            visibility: row.visibility,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          }),
+        )
+        .sort((a: { id: string }, b: { id: string }) =>
+          a.id.localeCompare(b.id),
+        ),
+    ).toEqual(expect_.contributions);
 
     // verify:export CLI 独立复核
     const tmpZip = path.join(dirB, "b-export.zip");

@@ -28,6 +28,22 @@ function withDatabase<T>(run: (db: Database.Database) => T): T {
 
 function setRole(role: Role): void {
   withDatabase((db) => {
+    if (role !== "admin") {
+      // The database correctly prevents demoting the last enabled admin. This
+      // stale-action scenario needs a second administrator so the requested
+      // downgrade is itself valid while the old rendered form becomes stale.
+      db.prepare(`
+        INSERT OR IGNORE INTO user (
+          id, name, email, email_verified, role, family_id, created_at, updated_at
+        )
+        SELECT
+          'rbac-replacement-admin', '备用管理员',
+          'rbac-replacement-admin@example.com', 0, 'admin', family_id,
+          unixepoch(), unixepoch()
+        FROM user
+        WHERE email = ?
+      `).run("admin@example.com");
+    }
     const result = db
       .prepare("UPDATE user SET role = ? WHERE email = ?")
       .run(role, "admin@example.com");

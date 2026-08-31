@@ -4,20 +4,23 @@ import { useActionState } from "react";
 import { addContentAction, openAction, sealAction } from "../actions";
 
 const inputClass =
-  "rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
+  "min-h-11 rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export type CapsuleEventOption = { id: string; title: string };
+export type CapsuleContributionOption = { id: string; label: string };
 
 export function CapsuleActions({
   capsuleId,
   status,
   unlocked,
   eventOptions,
+  contributionOptions,
 }: {
   capsuleId: string;
   status: string;
   unlocked: boolean;
   eventOptions: CapsuleEventOption[];
+  contributionOptions: CapsuleContributionOption[];
 }) {
   const [addState, addAction, addPending] = useActionState(addContentAction, undefined);
   const [sealState, sealRun, sealPending] = useActionState(sealAction, undefined);
@@ -50,16 +53,54 @@ export function CapsuleActions({
             <button
               type="submit"
               disabled={addPending}
-              className="rounded-lg border border-foreground/20 px-3 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50"
+              className="min-h-11 rounded-lg border border-foreground/20 px-3 py-2 text-sm transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50"
             >
               {addPending ? "添加中…" : "添加"}
             </button>
-            {addState?.error && (
-              <span className="text-xs text-red-700 dark:text-red-400">
-                {addState.error}
-              </span>
-            )}
           </form>
+          {contributionOptions.length > 0 ? (
+            <form
+              action={addAction}
+              className="mt-4 flex flex-wrap items-end gap-2 border-t border-foreground/10 pt-4"
+            >
+              <input type="hidden" name="capsuleId" value={capsuleId} />
+              <input type="hidden" name="kind" value="contribution" />
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
+                家人讲述
+                <select
+                  name="id"
+                  required
+                  defaultValue=""
+                  className={`${inputClass} w-full`}
+                >
+                  <option value="" disabled>
+                    选择当前可见的讲述
+                  </option>
+                  {contributionOptions.map((contribution) => (
+                    <option key={contribution.id} value={contribution.id}>
+                      {contribution.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="submit"
+                disabled={addPending}
+                className="min-h-11 rounded-lg border border-foreground/20 px-3 py-2 text-sm transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50"
+              >
+                {addPending ? "添加中…" : "添加讲述"}
+              </button>
+            </form>
+          ) : (
+            <p className="mt-4 border-t border-foreground/10 pt-4 text-sm text-foreground/50">
+              暂无可加入的家人讲述。
+            </p>
+          )}
+          {addState?.error && (
+            <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-400">
+              {addState.error}
+            </p>
+          )}
         </section>
       )}
 

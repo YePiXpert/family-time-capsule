@@ -111,7 +111,7 @@ export async function buildFamilyExport(
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
     db.select().from(memoryEventTable).where(eq(memoryEventTable.familyId, familyId)),
-    listFamilyContributions(db, familyId),
+    listCompleteFamilyContributionsForDisasterExport(db, familyId),
     listFamilyFacts(db, familyId),
     db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
     db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
@@ -326,6 +326,7 @@ export async function buildFamilyExport(
       id: family.id,
       name: family.name,
       timezone: family.timezone,
+      childLaterUnlockAge: family.childLaterUnlockAge,
       createdAt: iso(family.createdAt),
       updatedAt: iso(family.updatedAt),
     });
@@ -334,8 +335,11 @@ export async function buildFamilyExport(
       displayName: p.displayName,
       relationToChild: p.relationToChild,
       isChild: p.isChild,
+      isGuardian: p.isGuardian,
       birthDate: p.birthDate,
+      childLaterUnlockedAt: iso(p.childLaterUnlockedAt),
       createdAt: iso(p.createdAt),
+      updatedAt: iso(p.updatedAt),
     })));
     json("memories.json", memoriesJson);
     json("inbox-items.json", inboxItemsJson);
@@ -344,11 +348,18 @@ export async function buildFamilyExport(
       id: c.id,
       memoryEventId: c.memoryEventId,
       authorPersonId: c.authorPersonId,
+      // Login credentials and local User ids are intentionally not portable.
+      // Person/name/mode preserve who entered the words after disaster restore.
+      recordedByPersonId: c.recordedByPersonId,
+      recordedByNameSnapshot: c.recordedByNameSnapshot,
+      recordingMode: c.recordingMode,
       rawText: c.rawText,
+      transcript: c.transcript,
       editedText: c.editedText,
       audioAssetId: c.audioAssetId,
       visibility: c.visibility,
       createdAt: iso(c.createdAt),
+      updatedAt: iso(c.updatedAt),
     })));
     json("facts.json", facts.map((f) => ({
       id: f.id,
@@ -399,7 +410,14 @@ export async function buildFamilyExport(
   };
 }
 
-async function listFamilyContributions(db: ReturnType<typeof getDb>, familyId: string) {
+/**
+ * Deliberate full-backup bypass: the API route has already required
+ * `archive:export`. Never reuse this query for ordinary archive reads.
+ */
+async function listCompleteFamilyContributionsForDisasterExport(
+  db: ReturnType<typeof getDb>,
+  familyId: string,
+) {
   return db
     .select({ contribution: contributionTable })
     .from(contributionTable)

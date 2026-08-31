@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireFamilyCapability } from "@/lib/authz/context";
+import { createContributionAccessSnapshot } from "@/lib/authz/contribution-access";
 import { getFamily, listPeople } from "@/lib/family/service";
 import {
   addCapsuleAsset,
@@ -49,7 +50,8 @@ export async function addContentAction(
   _prev: CapsuleFormState | undefined,
   formData: FormData,
 ): Promise<CapsuleFormState> {
-  const { familyId } = await requireFamilyCapability("capsule:write");
+  const context = await requireFamilyCapability("capsule:write");
+  const { familyId } = context;
   const capsuleId = String(formData.get("capsuleId") ?? "");
   const kind = String(formData.get("kind") ?? "");
   const id = String(formData.get("id") ?? "");
@@ -57,8 +59,17 @@ export async function addContentAction(
   if (kind === "event") ok = await addCapsuleEvent(familyId, capsuleId, id);
   else if (kind === "asset") ok = await addCapsuleAsset(familyId, capsuleId, id);
   else if (kind === "contribution")
-    ok = await addCapsuleContribution(familyId, capsuleId, id);
-  if (!ok) return { error: "添加失败：内容不存在或胶囊已封存。" };
+    ok = await addCapsuleContribution(
+      createContributionAccessSnapshot(context),
+      capsuleId,
+      id,
+    );
+  if (!ok) {
+    return {
+      error:
+        "添加失败：内容不可见或不存在、账号权限已变化，或胶囊已封存。请刷新后重试。",
+    };
+  }
   revalidatePath(`/capsules/${capsuleId}`);
   return {};
 }

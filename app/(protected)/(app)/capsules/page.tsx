@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
-import { getFamily, listPeople } from "@/lib/family/service";
+import { listPeople } from "@/lib/family/service";
 import { listCapsules } from "@/lib/capsules/service";
 import { CreateCapsuleForm } from "./create-capsule-form";
 import { hasFamilyCapability } from "@/lib/authz/policy";
+import { createContributionAccessSnapshot } from "@/lib/authz/contribution-access";
 
 export const dynamic = "force-dynamic";
 
@@ -21,14 +22,13 @@ function unlockLabel(type: string, value: string): string {
 }
 
 export default async function CapsulesPage() {
-  const { familyId, role } = await requireFamily();
-  const canWrite = hasFamilyCapability(role, "capsule:write");
-  const [family, people] = await Promise.all([getFamily(familyId), listPeople(familyId)]);
+  const context = await requireFamily();
+  const canWrite = hasFamilyCapability(context.role, "capsule:write");
+  const people = await listPeople(context.familyId);
   const childBirthDate = people.find((p) => p.isChild)?.birthDate ?? null;
   const items = await listCapsules(
-    familyId,
+    createContributionAccessSnapshot(context),
     childBirthDate,
-    family?.timezone ?? "Asia/Shanghai",
   );
 
   return (

@@ -26,6 +26,13 @@ if (!okSetup.ok) throw new Error("setup failed");
 
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
+const { family: familyTable, person: personTable } = await import(
+  "@/db/schema/family"
+);
+const { contribution: contributionTable } = await import(
+  "@/db/schema/contribution"
+);
+const { eq } = await import("drizzle-orm");
 const { inboxItem: inboxItemTable, inboxItemAsset: inboxItemAssetTable } =
   await import("@/db/schema/inbox");
 const { completeOnboarding, addPerson, listPeople } = await import(
@@ -60,6 +67,7 @@ const onboarding = await completeOnboarding(adminUserId, {
   childBirthDate: "2026-08-10",
   selfDisplayName: "爸爸",
   selfRelationToChild: "爸爸",
+  selfIsGuardian: true,
 });
 if (!onboarding.ok) throw new Error("onboarding failed");
 const familyId = onboarding.familyId;
@@ -132,6 +140,17 @@ if (!confirmedTextEvent.ok) throw new Error("text confirm failed");
 await addPerson(familyId, { displayName: "外婆", relationToChild: "外婆" });
 const people = await listPeople(familyId);
 const grandma = people.find((p) => p.displayName === "外婆")!;
+const dad = people.find((p) => p.displayName === "爸爸")!;
+const child = people.find((p) => p.isChild)!;
+const manualUnlockAt = new Date("2035-02-28T16:00:00.000Z");
+await db
+  .update(familyTable)
+  .set({ childLaterUnlockAge: 21 })
+  .where(eq(familyTable.id, familyId));
+await db
+  .update(personTable)
+  .set({ childLaterUnlockedAt: manualUnlockAt })
+  .where(eq(personTable.id, child.id));
 const contrib = await createContribution(familyId, {
   memoryEventId: merged.eventId,
   authorPersonId: grandma.id,
@@ -140,6 +159,21 @@ const contrib = await createContribution(familyId, {
   visibility: "child_later",
 });
 if (!contrib.ok) throw new Error("contribution failed");
+await db
+  .update(contributionTable)
+  .set({
+    audioAssetId: audio.asset.id,
+    transcript: "外婆轻声唱完后，说起那天在公园的记忆。",
+  })
+  .where(eq(contributionTable.id, contrib.contributionId));
+const privateContrib = await createContribution(familyId, {
+  memoryEventId: merged.eventId,
+  authorPersonId: dad.id,
+  recordedByUserId: adminUserId,
+  rawText: "这是爸爸留给自己的私人备忘。",
+  visibility: "private",
+});
+if (!privateContrib.ok) throw new Error("private contribution failed");
 await addFact(familyId, merged.eventId, "2026-08-10 全家一起去了一次公园。");
 
 const capsuleCreated = await createCapsule(familyId, {
@@ -186,15 +220,55 @@ describe("完整导出（#014）", () => {
     expect(manifest.fileCount).toBe(manifest.assets.length + 10);
     expect(result.fileCount).toBe(manifest.fileCount);
     expect(familyJson.name).toBe("我们一家");
+    expect(familyJson.childLaterUnlockAge).toBe(21);
     expect(peopleJson.length).toBeGreaterThanOrEqual(3);
+    expect(peopleJson.find((p: { id: string }) => p.id === dad.id)).toMatchObject({
+      isGuardian: true,
+      childLaterUnlockedAt: null,
+    });
+    expect(peopleJson.find((p: { id: string }) => p.id === child.id)).toMatchObject({
+      isChild: true,
+      isGuardian: false,
+      childLaterUnlockedAt: manualUnlockAt.toISOString(),
+    });
 
     // memories：合并事件有 5 个 asset、参与者
     const mergedEvent = memories.find((m: { title: string }) => m.title === "八月的一次出游");
     expect(mergedEvent.assetIds).toHaveLength(5);
     expect(mergedEvent.occurredAt).toBe("2026-08-10T01:30:00.000Z"); // EXIF 8/10
 
-    expect(contributions.length).toBe(1);
-    expect(contributions[0].rawText).toContain("不肯撒手");
+    expect(contributions).toHaveLength(2);
+    expect(contributions.map((c: { visibility: string }) => c.visibility).sort()).toEqual([
+      "child_later",
+      "private",
+    ]);
+    expect(
+      contributions.find((c: { id: string }) => c.id === contrib.contributionId),
+    ).toMatchObject({
+      authorPersonId: grandma.id,
+      recordedByPersonId: dad.id,
+      recordedByNameSnapshot: "爸爸",
+      recordingMode: "on_behalf",
+      audioAssetId: audio.asset.id,
+      transcript: "外婆轻声唱完后，说起那天在公园的记忆。",
+      visibility: "child_later",
+    });
+    expect(
+      contributions.find(
+        (c: { id: string }) => c.id === privateContrib.contributionId,
+      ),
+    ).toMatchObject({
+      authorPersonId: dad.id,
+      recordedByPersonId: dad.id,
+      recordedByNameSnapshot: "爸爸",
+      recordingMode: "self",
+      visibility: "private",
+    });
+    expect(
+      contributions.every(
+        (c: Record<string, unknown>) => !("recordedByUserId" in c),
+      ),
+    ).toBe(true);
     expect(facts.length).toBe(1);
 
     const expectedInboxItems = (await db.select().from(inboxItemTable))
@@ -256,7 +330,7 @@ describe("完整导出（#014）", () => {
       rawText: CONFIRMED_TEXT_BODY,
       memoryEventId: confirmedTextEvent.eventId,
     });
-    expect(contributions).toHaveLength(1);
+    expect(contributions).toHaveLength(2);
 
     // 封存胶囊内容在导出中完整（export 始终包含）
     expect(capsules.length).toBe(1);

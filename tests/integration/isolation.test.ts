@@ -35,7 +35,10 @@ const { getDb } = await import("@/db");
 const { randomUUID } = await import("node:crypto");
 const { user: userTable } = await import("@/db/schema/auth");
 const { family: familyTable } = await import("@/db/schema/family");
-const { completeOnboarding } = await import("@/lib/family/service");
+const { completeOnboarding, getUserBinding } = await import("@/lib/family/service");
+const { createContributionAccessSnapshot } = await import(
+  "@/lib/authz/contribution-access"
+);
 const { ingestImage, updateAssetCapturedAt } = await import("@/lib/assets/ingest");
 const { getAsset, listAssets, findOriginalBySha256, sha256Of, storeDerivative } =
   await import("@/lib/assets/service");
@@ -98,6 +101,25 @@ db.insert(familyTable)
     updatedAt: new Date(),
   })
   .run();
+const bindingA = await getUserBinding(userA);
+if (
+  !bindingA.familyId ||
+  !bindingA.familyTimezone ||
+  bindingA.childLaterUnlockAge === null
+) {
+  throw new Error("family A binding unavailable");
+}
+const FAMILY_B_ACCESS = createContributionAccessSnapshot({
+  userId: userA,
+  userName: "管理员A",
+  familyId: familyB,
+  personId: bindingA.personId,
+  role: bindingA.role,
+  accountEnabled: bindingA.accountEnabled,
+  isGuardian: bindingA.isGuardian,
+  familyTimezone: "Asia/Shanghai",
+  childLaterUnlockAge: bindingA.childLaterUnlockAge,
+});
 
 const fixtures = path.join(__dirname, "..", "fixtures");
 const EXIF = readFileSync(path.join(fixtures, "sample-exif.jpg"));
@@ -276,8 +298,10 @@ describe("Capsule 隔离", () => {
     if (!created.ok) throw new Error("capsule failed");
     const events = await listMemoryEvents(familyA);
 
-    expect(await getCapsuleDetail(familyB, created.capsuleId, null, "Asia/Shanghai")).toBeUndefined();
-    expect((await listCapsules(familyB, null, "Asia/Shanghai"))).toHaveLength(0);
+    expect(
+      await getCapsuleDetail(FAMILY_B_ACCESS, created.capsuleId, null),
+    ).toBeUndefined();
+    expect(await listCapsules(FAMILY_B_ACCESS, null)).toHaveLength(0);
     expect(await sealCapsule(familyB, created.capsuleId)).toBeUndefined();
     expect(await openCapsule(familyB, created.capsuleId, null, "Asia/Shanghai")).toEqual({
       ok: false,

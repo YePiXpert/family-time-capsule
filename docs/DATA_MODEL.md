@@ -257,7 +257,7 @@ type Capsule = {
 
 - 解锁判定：date = 家庭时区当日零点起；age = `calendarDiff(child.birthDate, now).years >= N`。
 - 内容通过 **capsule_asset / capsule_event / capsule_contribution** 关联表挂载；draft 可增删，sealed 后锁定。
-- **封存不是物理加密**：sealed 且未解锁时普通查询只返回元信息与空内容，`getCapsuleDetail(..., { includeLocked: true })` 供管理员导出/备份完整读取（#014 依赖此语义）。
+- **封存不是物理加密**：sealed 且未解锁时普通查询只返回元信息与空内容；普通查询必须携带实时查看者快照并过滤 Contribution visibility。唯一完整读取入口 `getCompleteCapsuleDetailForDisasterExport(...)` 只供已验证管理员权限的灾难导出/备份使用（#014 依赖此语义）。
 
 ## Story（P1，事实锁 PRD §14）
 

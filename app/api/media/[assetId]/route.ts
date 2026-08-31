@@ -1,13 +1,18 @@
 import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
+import {
+  canReadContributionAsset,
+  createContributionAccessSnapshot,
+} from "@/lib/authz/contribution-access";
 import { getAssetByIdUnchecked } from "@/lib/assets/ingest";
 import { getAssetStorage } from "@/lib/assets/storage";
 
 /**
  * GET /api/media/[assetId] —— 唯一合法的媒体读取入口（Issue #005/#011）。
- * /data/** 永不静态公开；必须携带会话，且 Asset 必须属于该会话的家庭，
- * 否则一律 404（不向跨家庭访问者暴露资源是否存在）。
+ * /data/** 永不静态公开；必须携带会话，Asset 必须属于该会话的家庭，
+ * 且同一原件/衍生物家族不能被任何当前不可见的 Contribution 引用。
+ * 资源授权失败一律 404（不向调用者暴露资源或隐藏讲述是否存在）。
  * 音频/视频回放需要 HTTP Range（seek/流式播放），图片无需 Range 也不受影响。
  */
 
@@ -27,6 +32,11 @@ export async function GET(
     );
   }
   const { context } = authorization;
+
+  const access = createContributionAccessSnapshot(context);
+  if (!(await canReadContributionAsset(access, assetId))) {
+    return new Response("Not Found", { status: 404 });
+  }
 
   const row = await getAssetByIdUnchecked(assetId);
   if (!row || row.familyId !== context.familyId) {

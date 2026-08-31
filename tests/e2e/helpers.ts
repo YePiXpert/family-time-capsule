@@ -58,6 +58,10 @@ export async function bootstrapWorkspace(page: Page) {
   await page.getByLabel("出生日期（时间轴按它计算成长年龄）").fill(FAMILY.childBirthDate);
   await page.getByLabel("显示名称").fill("爸爸");
   await page.getByLabel("对孩子的称谓").fill("爸爸");
+  // Guardian access is explicit policy, never inferred from the free-form
+  // relationship label. Most end-to-end journeys model this account as the
+  // child's guardian, so opt in deliberately during onboarding.
+  await page.getByLabel("我是孩子的监护人").check();
   await page.getByRole("button", { name: "创建家庭" }).click();
   await expectInApp(page);
 }
