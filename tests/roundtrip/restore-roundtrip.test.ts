@@ -74,6 +74,14 @@ type Expectation = {
     familyId: string;
     createdAt: string;
   }>;
+  // M3 durable：转录 / 事实 locator / 标签 / date_only 精度
+  audioAssetId: string;
+  transcriptId: string;
+  editedTranscript: string;
+  factStatement: string;
+  factQuote: string;
+  tags: string[];
+  textEventDateOnly: string;
 };
 
 let expect_: Expectation;
@@ -266,6 +274,134 @@ beforeAll(async () => {
     );
     if (!privateContribution.ok) throw new Error("private contribution failed");
 
+    // ---- M3 durable：edited transcript / confirmed fact locator / accepted tags ----
+    const { createHash, randomUUID } = await import("node:crypto");
+    const storageModule = await import("@/lib/assets/storage");
+    const schemaMemoryTable = await import("@/db/schema/memory");
+    const schemaTranscript = await import("@/db/schema/transcript");
+    const schemaSuggestion = await import("@/db/schema/suggestion");
+
+    const audioAssetId = randomUUID();
+    const audioBytes = Buffer.from("roundtrip-audio-bytes-m3");
+    const audioPut = storageModule
+      .getAssetStorage()
+      .putOriginal(on.familyId, audioAssetId, "wav", audioBytes, new Date());
+    const schemaAssetTable = await import("@/db/schema/asset");
+    m.db
+      .getDb()
+      .insert(schemaAssetTable.asset)
+      .values({
+        id: audioAssetId,
+        familyId: on.familyId,
+        type: "audio",
+        originalFilename: "出生当天的录音.wav",
+        mimeType: "audio/wav",
+        bytes: audioBytes.byteLength,
+        sha256: createHash("sha256").update(audioBytes).digest("hex"),
+        storageKey: audioPut.storageKey,
+        capturedAt: new Date("2026-08-10T01:30:00.000Z"),
+        importedAt: new Date("2026-08-11T00:00:00.000Z"),
+        timeSource: "file_metadata",
+        width: null,
+        height: null,
+        durationMs: 61_000,
+        createdByUserId: adminId,
+        originalAssetId: null,
+        derivativeType: null,
+        createdAt: new Date("2026-08-11T00:00:00.000Z"),
+      })
+      .run();
+    m.db
+      .getDb()
+      .insert(schemaMemoryTable.memoryEventAsset)
+      .values({
+        id: randomUUID(),
+        memoryEventId: ev.eventId,
+        assetId: audioAssetId,
+        familyId: on.familyId,
+        createdAt: new Date(),
+      })
+      .run();
+
+    const transcriptId = randomUUID();
+    m.db
+      .getDb()
+      .insert(schemaTranscript.assetTranscript)
+      .values({
+        id: transcriptId,
+        familyId: on.familyId,
+        assetId: audioAssetId,
+        language: "zh",
+        provider: "legacy-stt",
+        model: "stt-v1",
+        rawTranscript: "机器第一版：妈妈哼歌哄睡。",
+        editedTranscript: "妈妈那天哼着歌哄她入睡，一直到天亮。",
+        segmentsJson: JSON.stringify([
+          { startSeconds: 31, endSeconds: 37, text: "妈妈那天哼着歌哄她入睡" },
+        ]),
+        status: "user_edited",
+        sourceSha256: createHash("sha256").update(audioBytes).digest("hex"),
+        createdAt: new Date("2026-08-11T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-11T00:00:00.000Z"),
+      })
+      .run();
+
+    const confirmedFactId = randomUUID();
+    const schemaContributionTable = await import("@/db/schema/contribution");
+    m.db
+      .getDb()
+      .insert(schemaContributionTable.fact)
+      .values({
+        id: confirmedFactId,
+        memoryEventId: ev.eventId,
+        statement: "出生第一天妈妈整夜哼歌陪着她。",
+        status: "user_confirmed",
+        createdAt: new Date("2026-08-11T00:00:00.000Z"),
+        updatedAt: new Date("2026-08-11T00:00:00.000Z"),
+      })
+      .run();
+    m.db
+      .getDb()
+      .insert(schemaSuggestion.factSource)
+      .values({
+        id: randomUUID(),
+        familyId: on.familyId,
+        factId: confirmedFactId,
+        sourceType: "transcript",
+        sourceId: transcriptId,
+        quote: "妈妈那天哼着歌哄她入睡",
+        startMs: 31_000,
+        endMs: 37_000,
+        createdAt: new Date("2026-08-11T00:00:00.000Z"),
+      })
+      .run();
+
+    for (const tag of ["出生", "医院"]) {
+      m.db
+        .getDb()
+        .insert(schemaSuggestion.memoryEventTag)
+        .values({
+          id: randomUUID(),
+          familyId: on.familyId,
+          memoryEventId: ev.eventId,
+          tag,
+          createdAt: new Date("2026-08-11T00:00:00.000Z"),
+        })
+        .run();
+    }
+
+    // accepted occurredAt suggestion 的 durable 结果：事件时间 + 精度
+    m.db
+      .getDb()
+      .update(schemaMemoryTable.memoryEvent)
+      .set({
+        occurredAt: new Date("2026-08-10T01:30:00.000Z"),
+        occurredAtPrecision: "date_only",
+      })
+      .where(eq(schemaMemoryTable.memoryEvent.id, textEvent.eventId))
+      .run();
+    const textEventDateOnly = "2026年8月10日";
+
     const peoplePolicy = (await m.family.listPeople(on.familyId))
       .map((person) => ({
         id: person.id,
@@ -341,6 +477,14 @@ beforeAll(async () => {
       contributions,
       inboxItems,
       inboxItemAssets,
+      // M3 durable
+      audioAssetId,
+      transcriptId,
+      editedTranscript: "妈妈那天哼着歌哄她入睡，一直到天亮。",
+      factStatement: "出生第一天妈妈整夜哼歌陪着她。",
+      factQuote: "妈妈那天哼着歌哄她入睡",
+      tags: ["出生", "医院"],
+      textEventDateOnly,
     };
     m.db.closeDatabase();
   }
@@ -506,6 +650,15 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     expect(detailHtml).toContain(expect_.eventDate); // 2026年8月10日 09:30
     expect(detailHtml).toContain(expect_.ageLabel);
 
+    // M3 durable：用户修订的转录、确认事实及其 locator 引文、接受的标签全部回来
+    expect(detailHtml).toContain(expect_.editedTranscript);
+    expect(detailHtml).toContain(expect_.factStatement);
+    expect(detailHtml).toContain(expect_.factQuote); // fact_source.locator quote
+    expect(detailHtml).toContain("00:31–00:37"); // segment 时间段
+    for (const tag of expect_.tags) {
+      expect(detailHtml).toContain(tag);
+    }
+
     // 已确认文字以无作者的原始来源记录显示，正文不截断，也不伪造 Contribution。
     const textDetail = await fetch(
       `${BASE}/memories/${expect_.confirmedTextEventId}`,
@@ -517,6 +670,9 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       expect(textDetailHtml).toContain(line);
     }
     expect(textDetailHtml).toContain("未标注讲述者");
+    // accepted occurredAt suggestion 的 durable 结果：date_only 事件不显示时分
+    expect(textDetailHtml).toContain(expect_.textEventDateOnly);
+    expect(textDetailHtml).not.toMatch(/2026年8月10日\s*\d{1,2}:\d{2}/);
   });
 
   it("恢复的媒体可访问：字节 SHA-256 与源一致；Range 206；未授权 401", async () => {
@@ -556,6 +712,41 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
     expect(manifest.fileCount).toBe(manifest.assets.length + 12);
+
+    // M3 durable：edited transcript / fact locator / tags / date_only 精度全部往返
+    const transcripts = JSON.parse(
+      await zip.file("family-time-capsule-export/transcripts.json")!.async("string"),
+    );
+    const restoredTranscript = transcripts.find(
+      (t: { id: string }) => t.id === expect_.transcriptId,
+    );
+    expect(restoredTranscript.editedTranscript).toBe(expect_.editedTranscript);
+    expect(restoredTranscript.rawTranscript).toBe("机器第一版：妈妈哼歌哄睡。");
+
+    const restoredFactSources = JSON.parse(
+      await zip.file("family-time-capsule-export/fact-sources.json")!.async("string"),
+    );
+    const locator = restoredFactSources.find(
+      (s: { quote?: string }) => s.quote === expect_.factQuote,
+    );
+    expect(locator).toMatchObject({
+      sourceType: "transcript",
+      sourceId: expect_.transcriptId,
+      startMs: 31_000,
+      endMs: 37_000,
+    });
+
+    const restoredMemories = JSON.parse(
+      await zip.file("family-time-capsule-export/memories.json")!.async("string"),
+    );
+    const photoEvent = restoredMemories.find(
+      (m2: { id: string }) => m2.id === expect_.photoEventId,
+    );
+    expect([...photoEvent.tags].sort()).toEqual([...expect_.tags].sort());
+    const textEventExport = restoredMemories.find(
+      (m2: { id: string }) => m2.id === expect_.confirmedTextEventId,
+    );
+    expect(textEventExport.occurredAtPrecision).toBe("date_only");
     const shas = new Set(manifest.assets.map((a: { sha256: string }) => a.sha256));
     expect(shas.has(expect_.assetSha256)).toBe(true);
     const inboxItems = JSON.parse(
