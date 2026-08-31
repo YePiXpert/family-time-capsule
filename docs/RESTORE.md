@@ -97,7 +97,10 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 
 - 新导出必须包含 `fact-sources.json`。旧的 `exportVersion: 1` 归档若不存在该文件，
   恢复端按空来源处理，仍可恢复。
-- `fact-sources.json` 存在时必须是数组。恢复端校验每行 ID 唯一、`factId` 引用
+- `fact-sources.json` 存在时必须是数组。恢复端校验每行 ID 唯一、`factId` 引用已知 fact、
+  `sourceType` ∈ `asset | asset_analysis | contribution | transcript | user_text`；
+  M3-D locator 字段 `quote`（可空字符串 ≤300）与 `startMs`/`endMs`
+  （可空整数，0 ≤ start ≤ end ≤ 86,400,000）逐行校验，非法即拒绝整个归档。
   `facts.json` 中的事实、`sourceType` 在 `asset|contribution|transcript|user_text` 白名单内、
   `sourceId` 类型合法、时间字段合法。
 - 通过校验后，恢复按导出值原样写入 `fact_source` 行；提交前在同一事务内复核

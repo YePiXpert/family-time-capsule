@@ -238,7 +238,7 @@ type AssetAnalysis = {
   provider: string        // providerId
   model: string           // 实际使用的模型
   sourceSha256: string    // 处理时原始 asset.sha256 的快照
-  analyzedVia: "original" | "thumbnail"  // 实际送入 provider 的媒体来源
+  analyzedVia: "original" | "thumbnail" | "video_frames"  // 实际送入 provider 的输入形态
   createdByJobId?: string // 产生本次 machine 结果的 ai_job.id
   createdAt: Date
   updatedAt: Date
@@ -248,6 +248,10 @@ type AssetAnalysis = {
 - 每 asset 最多一行 analysis；rerun 时 UPSERT 全字段。
 - 只接受原始图片 asset（`originalAssetId IS NULL`）。
 - 若原图 MIME（JPEG/PNG/WebP/GIF）直接被 vision provider 接受，则分析原图（`analyzedVia='original'`）；否则使用同 asset 的 thumbnail 衍生物（`analyzedVia='thumbnail'`）；既不接受又无 thumbnail 则拒绝。
+- M3-G 视频理解：`analyze.asset_video.v1` 用 ffmpeg 抽代表帧（≤30s 取 3 帧、更长最多
+  6 帧，单帧最大边 1280px、合计 ≤12 MiB），逐帧 vision 后汇总为一行
+  `analyzedVia='video_frames'` 的 analysis。整段视频绝不发送给 provider；帧是内存中
+  的临时输入，不落成 asset 行。ffmpeg 缺失 → `ffmpeg_unavailable` 非重试失败，原件不受影响。
 - 结果是可再生衍生物：**不进入 portable family archive**，不写入 `facts.json`，恢复端不会重建该表；UI 必须始终标注「AI 生成 · 未确认」。
 
 ## Contribution（#012 已落地：`db/schema/contribution.ts`）
@@ -289,22 +293,29 @@ P0 只允许用户手工创建（直接 `user_confirmed`）；M3-C 起 AI 产出
 永不自动升级。每张 fact 必须有且仅有一行 `fact_source`（见下），手工创建时
 `sourceType='user_text'`、`sourceId=null`。
 
-## FactSource（M3-C 已落地：`db/schema/suggestion.ts`）
+## FactSource（M3-C 落地，M3-D 扩展精确 locator：`db/schema/suggestion.ts`）
 
 ```ts
 type FactSource = {
   id: string
   familyId: string         // FK → family，cascade delete
   factId: string           // FK → fact，cascade delete
-  sourceType: "asset" | "contribution" | "transcript" | "user_text"
-  sourceId?: string | null // asset/contribution/transcript 行 id；user_text 为 null
+  sourceType: "asset" | "asset_analysis" | "contribution" | "transcript" | "user_text"
+  sourceId?: string | null // asset/asset_analysis→asset id；contribution/transcript→行 id；user_text 为 null
+  quote?: string | null    // ≤300 字；创建时逐字验证于来源文本（引文锁）
+  startMs?: number | null  // transcript segment 起始毫秒（服务端推导，不信任模型自报）
+  endMs?: number | null    // transcript segment 结束毫秒
   createdAt: Date
 }
 ```
 
-- 每条 fact 必须有一行来源；事实锁的最小 provenance 追踪。
-- 来源类型是白名单 CHECK；`sourceId` 在 `user_text` 时必须为 `null`。
-- 随家庭 archive 完整导出（`fact-sources.json`）/恢复。
+- 每条 fact 必须有来源；引用全部失效的 AI 事实在 handler 内整条丢弃。
+- AI prompt 只暴露 T#/A#/C# 一次性别名（`lib/facts/source-refs.ts`），内部行 id
+  绝不进入模型上下文；编造别名/非逐字引文一律拒绝。
+- `asset_analysis` 的 `sourceId` 指向 durable 的 asset id（分析行是可重建 derivative，
+  灾难恢复后引用仍可解析）；OCR/视觉描述引文逐字验证于该素材最新分析。
+- locator 在事实创建时固化：STT rerun / transcript 编辑不会改写已确认事实的来源。
+- 随家庭 archive 完整导出（`fact-sources.json` 含 quote/startMs/endMs）/恢复。
 
 ## MemoryEventTag（M3-C 已落地：`db/schema/suggestion.ts`）
 
@@ -321,16 +332,16 @@ type MemoryEventTag = {
 - `(memoryEventId, tag)` 唯一索引阻止同一事件重复标签。
 - 标签随 `memories.json` 的 `tags` 数组导出/恢复。
 
-## AiSuggestion（M3-C 已落地：`db/schema/suggestion.ts`）
+## AiSuggestion（M3-C 落地；M3-E 扩展：`db/schema/suggestion.ts`）
 
 ```ts
 type AiSuggestion = {
   id: string
   familyId: string         // FK → family，cascade delete
-  entityType: "memory_event"
-  entityId: string         // 当前仅 memoryEventId
-  suggestionType: "title" | "location" | "person" | "tag"
-  valueJson: string        // 结构化建议值
+  entityType: "memory_event" | "inbox_item"
+  entityId: string         // memoryEventId 或 inboxItemId
+  suggestionType: "title" | "location" | "occurred_at" | "person" | "tag"
+  valueJson: string        // 结构化建议值；occurred_at 为 { occurredAt, precision }
   provider: string
   model: string
   status: "pending" | "accepted" | "rejected"
@@ -344,8 +355,34 @@ type AiSuggestion = {
 
 - 运维/可重建状态：只保存当前待审建议与接受/拒绝墓碑，不进入 portable family archive。
 - 同一实体的 rerun 会删除旧 pending 建议并插入新建议（单推荐方案）。
-- 接受 title/location 时复用 `updateMemoryEvent` 的验证与修订快照逻辑；接受 person/tag
-  时直接修改事件参与人或添加标签。
+- 接受 title/location/occurred_at（memory_event）时复用 `updateMemoryEvent` 的验证与
+  修订快照逻辑——时间轴自动重排、child age 重算；`occurred_at` 附带精度
+  `exact|approximate|date_only`，不确定的时间绝不写成 exact。AI 永远不触碰
+  `asset.capturedAt/importedAt`。
+- inbox_item 建议（`suggest.inbox_item.v1`）只做确认表单预填；接受仅记录采用审计，
+  条目确认/丢弃时 pending 建议随之落定（accepted/rejected）。
+
+## ClusterSuggestion（M3-F 已落地：`db/schema/clusters.ts`）
+
+```ts
+type ClusterSuggestion = {
+  id: string
+  familyId: string         // FK → family，cascade delete
+  kind: "time_proximity" | "similar_media" | "live_photo_pair"
+  inboxItemIdsJson: string // 成员 inbox item id 的 JSON 数组（排序后作为去重 key）
+  reasonText: string       // 可解释理由（如“拍摄于 N 分钟内”“感知哈希距离 ≤5”）
+  status: "pending" | "accepted" | "dismissed"
+  createdAt: Date
+  resolvedAt?: Date
+  resolvedByUserId?: string
+}
+```
+
+- 完全本地、无 AI 的收件箱分簇（时间邻近 45 分钟窗 / dHash 感知相似 / Live Photo
+  同名配对 3 秒窗）；扫描上限 200 条目、500 张待哈希图片。
+- 非破坏性：accept 走既有 `mergeInboxEntries`；dismiss 留墓碑，同组成员组合不会在
+  重扫时复活；成员离开收件箱后 pending 建议被清理。
+- 运维状态，不进入 portable family archive。
 
 ## AI Processing Consent 与 Job Queue（migration 0016）
 

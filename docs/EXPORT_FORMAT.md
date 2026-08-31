@@ -111,7 +111,12 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
   `private` 与尚未解锁的 `child_later` 都会完整进入归档。`recordedByUserId` 属于本地认证
   身份，明确不导出；Person、姓名快照和记录模式构成可迁移的长期来源信息。
 - `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
-- `fact-sources.json`：`{ id, factId, sourceType, sourceId, createdAt }`。
+- `fact-sources.json`：`{ id, factId, sourceType, sourceId, quote, startMs, endMs, createdAt }`。
+  - `sourceType` ∈ `asset | asset_analysis | contribution | transcript | user_text`（M3-D 起
+    增加 `asset_analysis`，其 `sourceId` 指向 durable 的 asset id）。
+  - `quote`（≤300 字）是创建时逐字验证过的引文；`startMs`/`endMs`（毫秒）是服务端从
+    transcript segment 推导的时间段。三个 locator 字段在事实确认时固化，均为可空。
+  - 旧归档缺这些字段时按 null 恢复（additive，exportVersion 仍为 1）。
   每条 fact 必须有且仅有一行来源；`sourceType` 限定为 `asset|contribution|transcript|user_text`，
   `sourceId` 在 `user_text` 时为 `null`，其余情况引用对应素材/讲述/转录行的 id。
   这是事实锁的最小来源追踪，随家庭 archive 完整导出/恢复。

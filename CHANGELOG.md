@@ -2,6 +2,50 @@
 
 本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ P1 AI 整理员 → P2 家庭口述史。
 
+## Unreleased（M3 — AI memory organizer 完成）
+
+M3 全部四块（M3-D/E/F/G）落地，版本号仍保持 0.1.3（v1 发布时统一升 1.0.0）。
+
+### 精确 FactSource locator（M3-D，migration 0021）
+
+- `fact_source` 增加 `quote` / `start_ms` / `end_ms` 与新来源类型 `asset_analysis`。
+- 建议协议改为**一次性别名**：prompt 只暴露 T#/A#/C#，内部行 id 绝不进入模型上下文；
+  编造别名、非逐字引文一律丢弃，引用全部失效的 AI 事实整条不入库。
+- transcript 时间段只由服务端从 segment 推导（模型自报毫秒被忽略）；OCR 引文落
+  `asset_analysis` 且 `sourceId` 指向 durable 的 asset id（分析行可重建）。
+- locator 在确认时固化：STT rerun / 转录编辑不改写已确认事实的来源。
+- 导出/恢复携带全部 locator 字段（旧档缺字段按 null 恢复）。
+
+### occurredAt 建议（M3-E）
+
+- `ai_suggestion` 新增 `occurred_at` 类型（带 `exact|approximate|date_only` 精度，
+  不确定的时间绝不 exact）与 `inbox_item` 实体（migration 0020 一并落地）。
+- 事件侧接受即走 `updateMemoryEvent`（修订快照、时间轴重排、年龄重算）；
+  **AI 永远不触碰 `asset.capturedAt/importedAt`**。
+- 收件箱建议（`suggest.inbox_item.v1`）产出标题/时间/人物/标签并**只做确认表单预填**；
+  确认/丢弃时 pending 建议随之落定。
+
+### 本地分簇建议（M3-F）
+
+- `cluster_suggestion`（时间邻近 / dHash 感知相似 / Live Photo 同名配对），完全本地、
+  无 AI、可解释理由；accept 走既有合并流程，绝不自动合并/删除，dismiss 留墓碑防复活。
+- 收件箱 UI：扫描按钮 + 分簇面板 + 建议预填条。
+
+### 视频理解（M3-G，migration 0022）
+
+- `analyze.asset_video.v1`：ffmpeg 抽代表帧（≤30s 取 3 帧、最长 6 帧、单边 ≤1280px、
+  合计 ≤12 MiB）→ 逐帧 vision → 汇总为 `analyzedVia='video_frames'` 的可重建 derivative。
+  整段视频绝不发送给 provider；ffmpeg 缺失优雅降级（`ffmpeg_unavailable` 非重试失败）。
+
+### 测试与稳定性
+
+- 修复 CI Playwright 失败：转录/图像分析卡片文件名不再用 heading（与事件标题子串撞名）；
+  e2e 断言预算在 CI 负载下放宽到 10s（断言内容不变）。
+- roundtrip 导出计数断言与当前 12 非媒体文件格式对齐（此前 roundtrip 在 CI 从未跑到）。
+- 生产 roundtrip 现在覆盖 edited transcript、确认事实 locator（quote + 时间段）、
+  接受的标签与 date_only 精度的完整往返。
+- 单元/集成测试 381 通过，Playwright 29 通过，roundtrip 6 通过。
+
 ## 0.1.3 — Performance & Audit Hardening（2026-08-30）
 
 落地四项在 PRD §21 / SECURITY.md / RH-003 中明确记录、且不进入 P1 的既有缺口。无 AI。

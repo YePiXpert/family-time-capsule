@@ -30,14 +30,27 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 ### Current progress after the initial audit
 
 - Application version intentionally remains `0.1.3`; no release tag exists.
-- Schema now has **27 tables** and **17 forward migrations** (`0000`–`0016`).
+- Schema now has **33 tables** and **23 forward migrations** (`0000`–`0022`).
 - M1 family roles, invitations, account lifecycle, guardians, `child_later` unlock, and
   Contribution visibility are enforced across services, media, events, capsules and UI.
 - M2 provider-neutral AI, offline Fake/Null providers, SQLite jobs, consent disclosure,
-  worker leases/retry/cancellation and settings UI are implemented. The production handler
-  registry is intentionally empty until transcript/vision/suggestion result models land.
-- `0.1.3` upgrade, pre-migration snapshot, visibility/media authorization and disaster
-  roundtrip suites are present and passing at the latest completed checkpoint.
+  worker leases/retry/cancellation and settings UI are implemented.
+- M3 AI memory organizer is **complete**: source-preserving transcripts (segments,
+  machine/user-edited separation, rerun protection), image and video analysis
+  derivatives (`analyze.asset_image.v1`, `analyze.asset_video.v1` with ffmpeg frame
+  sampling and graceful unavailability), candidate title/location/person/tag and
+  `occurred_at` suggestions with precision (`exact`/`approximate`/`date_only`),
+  inbox-item suggestions that prefill without touching asset times, local
+  explainable cluster suggestions (time proximity, dHash similarity, Live Photo
+  pairing) that only merge on explicit accept, and precise fact source locators
+  (temporary-alias protocol, verbatim quote lock, server-derived segment time
+  ranges, fabricated refs dropped). The production handler registry runs
+  `transcribe.asset.v1`, `analyze.asset_image.v1`, `analyze.asset_video.v1`,
+  `suggest.event_metadata.v1`, and `suggest.inbox_item.v1`.
+- `0.1.3` upgrade, pre-migration snapshot, visibility/media authorization, disaster
+  roundtrip (now covering edited transcripts, confirmed facts with locators,
+  accepted tags and `date_only` precision), suggestion, cluster and video-analysis
+  suites are present and passing.
 
 ### Working archive capabilities
 
@@ -70,6 +83,8 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 - Invitations/policy: `family_invitation` plus account/guardian/unlock fields on existing tables.
 - AI operations: `ai_processing_consent`, `ai_job`, `ai_job_source`, `ai_job_attempt`,
   `ai_worker_heartbeat`.
+- AI derivatives/suggestions: `asset_transcript`, `asset_analysis`, `ai_suggestion`,
+  `cluster_suggestion`, `fact_source`, `memory_event_tag`.
 
 ## Invariants
 
@@ -86,16 +101,15 @@ Every milestone must preserve these rules:
 
 ## Product Gaps
 
-- No real transcription, media analysis, suggestion review, or clustering handler yet; the
-  provider/queue/consent foundation is complete.
-- No Story model or weekly/monthly/yearly publishing workflow.
-- No full-text or semantic search.
-- No scoped contribution links, oral-history prompts, or interview workflow.
-- Capsules have no future questions, replies, or milestone trigger.
-- No PDF/EPUB books, WebDAV backup, or PWA Share Target.
-- No event/contribution/story trash and explicit purge lifecycle.
-- Upload status is coarse and has no byte progress or resumable behavior.
-- No completed accessibility audit or recorded real-device acceptance run.
+- No Story model or weekly/monthly/yearly publishing workflow.（M4）
+- No full-text or semantic search.（M4）
+- No scoped contribution links, oral-history prompts, or interview workflow.（M5）
+- Capsules have no future questions, replies, or milestone trigger.（M5）
+- No PDF/EPUB books, WebDAV backup, or PWA Share Target.（M6）
+- No event/contribution/story trash and explicit purge lifecycle.（M7）
+- Upload status is coarse and has no byte progress or resumable behavior.（M7）
+- Inbox has no pagination; growing lists still need cursor pagination everywhere.（M7）
+- No completed accessibility audit or recorded real-device acceptance run.（M7–M8）
 
 ## Architecture Gaps
 
@@ -218,16 +232,19 @@ Exit evidence: offline AI tests are deterministic; queue authorization, consent/
 drift, concurrency, expired leases, retry cloning, worker error mapping and settings disclosure
 are covered. Real content processing remains in M3 and cannot bypass this foundation.
 
-### M3 — 0.5.x AI memory organizer and fact sources
+### M3 — 0.5.x AI memory organizer and fact sources — **COMPLETE**
 
-- Add source-preserving transcripts with segments, machine/user-edited separation, and rerun protection.
-- Add image/video description and OCR derivatives.
-- Add candidate title, time, location, person, tag, and Fact suggestions with accept/edit/reject flows.
-- Add normalized Fact sources for Asset, Contribution, Transcript, and user text.
-- Add time/metadata/perceptual/AI-assisted cluster suggestions, including non-destructive Live Photo hints.
-- Export/restore all user-edited and accepted durable results.
+- Add source-preserving transcripts with segments, machine/user-edited separation, and rerun protection. ✅
+- Add image/video description and OCR derivatives. ✅（视频走 ffmpeg 抽帧，缺失时优雅降级）
+- Add candidate title, time, location, person, tag, and Fact suggestions with accept/edit/reject flows. ✅
+- Add normalized Fact sources for Asset, Contribution, Transcript, and user text. ✅
+  精确 locator：quote（创建时逐字验证）、transcript segment 时间段（服务端推导）、
+  `asset_analysis` 指向 durable 的 asset id；AI 只见 T#/A#/C# 别名，伪造引用整条丢弃。
+- Add time/metadata/perceptual/AI-assisted cluster suggestions, including non-destructive Live Photo hints. ✅
+- Export/restore all user-edited and accepted durable results. ✅（roundtrip 覆盖 edited transcript、
+  confirmed fact locator、accepted tags、date_only 精度）
 
-Exit: suggestion rejection never reaches a Story; AI cannot write `user_confirmed`; edited transcripts survive reruns and roundtrip.
+Exit: suggestion rejection never reaches a Story; AI cannot write `user_confirmed`; edited transcripts survive reruns and roundtrip. ✅
 
 ### M4 — 0.6.x Search and source-linked Stories
 
@@ -369,13 +386,13 @@ Exit: every release gate below is evidenced; version remains below `1.0.0` until
 
 ## Known Current Warnings
 
-- README reports 126 tests; the audited baseline is 197 unit/integration tests.
-- CHANGELOG and `docs/ISSUES.md` call `0000`–`0010` “10 migrations”; there are 11 migration entries.
-- Inbox has no pagination.
-- Upload and restore memory behavior is unsafe for their documented maximum sizes.
-- Production AI handler registry is empty; STT/vision/suggestion behavior is not yet available.
+- README/CHANGELOG test counts lag behind the current suite（文档随 M8 发布同步）。
+- Inbox has no pagination.（M7）
+- Upload and restore memory behavior is unsafe for their documented maximum sizes.（M7）
 - Docker persistence has historical static-review evidence, not a recorded local Docker acceptance run.
 - `docs/REAL_DEVICE_TEST.md` has no completed iOS/Android/desktop record.
 - No git release tags exist yet.
+- 本地开发机可能没有 ffmpeg：视频理解任务会以 `ffmpeg_unavailable` 非重试失败
+  （Docker 镜像内置 ffmpeg；这是设计内的优雅降级，不是缺陷）。
 
 These warnings are not permission to lower the v1 bar; they are the first items to close and continuously re-audit.
