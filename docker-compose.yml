@@ -17,6 +17,12 @@ services:
     volumes:
       # 原件、衍生物、导出与数据库全部落在这个卷里，重建容器不丢数据
       - capsule-data:/data
+    healthcheck:
+      test: ["CMD", "node", "/app/ops/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     restart: unless-stopped
 
 volumes:

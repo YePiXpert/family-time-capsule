@@ -28,10 +28,16 @@ function ffprobeBinary(): string {
   return process.env.FFPROBE_PATH ?? "ffprobe";
 }
 
-function runFfprobe(absPath: string): Promise<string | null> {
+type ProbeExecution =
+  | { status: "ok"; stdout: string }
+  | { status: "unavailable" }
+  | { status: "failed" };
+
+function runFfprobe(absPath: string): Promise<ProbeExecution> {
   return new Promise((resolve) => {
+    const binary = ffprobeBinary();
     const child = spawn(
-      ffprobeBinary(),
+      /* turbopackIgnore: true */ binary,
       [
         "-v",
         "quiet",
@@ -45,20 +51,26 @@ function runFfprobe(absPath: string): Promise<string | null> {
     );
     let stdout = "";
     let settled = false;
-    const done = (value: string | null) => {
+    const done = (value: ProbeExecution) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       resolve(value);
     };
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
-    child.on("error", () => done(null)); // ENOENT：未安装
-    child.on("close", (code) => done(code === 0 ? stdout : null));
-    setTimeout(() => {
+    child.on("error", (error: NodeJS.ErrnoException) =>
+      done(error.code === "ENOENT" ? { status: "unavailable" } : { status: "failed" }),
+    );
+    child.on("close", (code) =>
+      done(code === 0 ? { status: "ok", stdout } : { status: "failed" }),
+    );
+    const timeout = setTimeout(() => {
       child.kill();
-      done(null);
-    }, PROBE_TIMEOUT_MS).unref();
+      done({ status: "failed" });
+    }, PROBE_TIMEOUT_MS);
+    timeout.unref();
   });
 }
 
@@ -80,19 +92,21 @@ function extractRotation(
   return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : null;
 }
 
-let ffprobeAvailable: boolean | undefined;
+let unavailableBinary: string | undefined;
 
 /** 探测媒体文件；ffprobe 缺失/失败返回 null（调用方不感知差异） */
 export async function probeMedia(absPath: string): Promise<ProbeResult | null> {
-  if (ffprobeAvailable === false) return null;
-  const stdout = await runFfprobe(absPath);
-  if (stdout === null) {
-    ffprobeAvailable = false;
+  const binary = ffprobeBinary();
+  if (unavailableBinary === binary) return null;
+  const execution = await runFfprobe(absPath);
+  if (execution.status === "unavailable") {
+    unavailableBinary = binary;
     return null;
   }
-  ffprobeAvailable = true;
+  if (execution.status === "failed") return null;
+  unavailableBinary = undefined;
   try {
-    const parsed = JSON.parse(stdout) as {
+    const parsed = JSON.parse(execution.stdout) as {
       format?: {
         duration?: string;
         tags?: { creation_time?: string };

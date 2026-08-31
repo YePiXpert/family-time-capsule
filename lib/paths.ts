@@ -33,7 +33,10 @@ export function ensureDataDirs(root: string = DATA_DIR): DataDirs {
     mkdirSync(dir, { recursive: true });
   }
   for (const sub of DERIVATIVE_SUBDIRS) {
-    mkdirSync(path.join(dirs.derivatives, sub), { recursive: true });
+    // Runtime DATA_DIR is an operator-controlled volume, not a build input.
+    mkdirSync(path.join(/* turbopackIgnore: true */ dirs.derivatives, sub), {
+      recursive: true,
+    });
   }
   return dirs;
 }

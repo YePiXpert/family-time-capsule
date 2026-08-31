@@ -35,3 +35,24 @@ test("页面携带 PWA meta（viewport-fit / manifest / theme-color）", async (
     .getAttribute("href");
   expect(manifestLink).toBe("/manifest.webmanifest");
 });
+
+test("生产页面与 API 带严格安全响应头，CSP 不含 unsafe-eval", async ({ page }) => {
+  const pageResponse = await page.request.get("/login");
+  expect(pageResponse.status()).toBe(200);
+  const pageHeaders = pageResponse.headers();
+  expect(pageHeaders["content-security-policy"]).toContain("default-src 'self'");
+  expect(pageHeaders["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(pageHeaders["content-security-policy"]).not.toContain("'unsafe-eval'");
+  // TLS terminates at the deployment proxy. The app's documented direct-HTTP
+  // setup/health path must not rewrite its own assets to a nonexistent HTTPS port.
+  expect(pageHeaders["content-security-policy"]).not.toContain(
+    "upgrade-insecure-requests",
+  );
+  expect(pageHeaders["x-content-type-options"]).toBe("nosniff");
+  expect(pageHeaders["x-frame-options"]).toBe("DENY");
+  expect(pageHeaders["referrer-policy"]).toBe("no-referrer");
+
+  const apiResponse = await page.request.get("/api/health");
+  expect(apiResponse.headers()["content-security-policy"]).toContain("default-src 'none'");
+  expect(apiResponse.headers()["x-content-type-options"]).toBe("nosniff");
+});

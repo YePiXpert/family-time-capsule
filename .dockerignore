@@ -1,0 +1,37 @@
+# Never send private archive state or local secrets to the Docker daemon.
+data/
+.env*
+!.env.example
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Host/build state must not replace Linux dependencies or enter layer caches.
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# VCS, editor, and test artifacts are not build inputs.
+.git/
+.github/
+.agents/
+.codex/
+.vscode/
+.idea/
+.DS_Store
+test-results/
+playwright-report/
+blob-report/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Tests and local design research are not required in the runtime image.
+tests/
+design-system/

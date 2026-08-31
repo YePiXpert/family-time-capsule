@@ -16,6 +16,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # 触发 next.config.ts 中的 output: "standalone"
 ENV BUILD_STANDALONE=1
 RUN npm run build
+# 运维 CLI 在构建阶段打包为独立 ESM；runner 不携带 TS 源码、tsx 或完整 node_modules。
+RUN npm run build:ops
 
 FROM node:24-alpine AS runner
 WORKDIR /app
@@ -38,5 +40,9 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 # 运行时自动迁移需要 migration 文件（db/index.ts 在首次连接时执行）
 COPY --from=build --chown=nextjs:nodejs /app/db/migrations ./db/migrations
+# 冒烟、导出校验、恢复与健康检查的可复现运行时产物。
+COPY --from=build --chown=nextjs:nodejs /app/.next/ops ./ops
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["node", "/app/ops/healthcheck.mjs"]
 CMD ["node", "server.js"]

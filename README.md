@@ -75,7 +75,8 @@ npm run dev            # http://localhost:3000
 - 应用内导出：设置页「导出完整备份（ZIP）」或 `GET /api/export`；
   导出前服务端重验每个原件哈希，ZIP 可直接阅读/播放、可跨实例恢复；
 - 独立校验：`npm run verify:export <zip>`；
-- 灾难恢复：新实例 `/setup` 创建管理员后 `DATA_DIR=/data npm run restore -- backup.zip`，
+- 灾难恢复：新实例 `/setup` 创建管理员后，本地用 `DATA_DIR=/data npm run restore -- backup.zip`；
+  Compose 生产容器用 `docker compose exec app node /app/ops/restore.mjs /path/to/backup.zip`，
   再到 `/onboarding` 选择「你是谁」完成绑定（认证凭据永不来自备份）；
 - 基础 3-2-1 与「停容器 → tar volume」等经过验证的备份命令：
   见 [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) §6；
@@ -88,7 +89,7 @@ npm run dev            # http://localhost:3000
 AUTH_SECRET=$(openssl rand -base64 32) INITIAL_SETUP_TOKEN=<一次性令牌> docker compose up -d --build
 ```
 
-所有原件、衍生物、导出与数据库都保存在 named volume `capsule-data`（挂载为容器内 `/data`），重建容器数据不丢失。`AUTH_SECRET` 未设置时 compose 拒绝启动。
+所有原件、衍生物、导出与数据库都保存在 Compose 逻辑卷 `capsule-data`（挂载为容器内 `/data`；实际卷名通常为 `<项目名>_capsule-data`），重建容器数据不丢失。备份命令必须从正在运行的 `app` 容器解析实际 `/data` 卷名，详见部署清单 §6。`AUTH_SECRET` 未设置时 compose 拒绝启动。
 
 ## 文档
 

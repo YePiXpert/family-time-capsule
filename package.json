@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:ops": "node scripts/build-ops.mjs",
     "start": "next start",
     "lint": "eslint",
     "typegen": "next typegen",
@@ -37,6 +38,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "ffprobe-static": "^3.1.0",
@@ -44,5 +46,10 @@
     "tsx": "^4.23.13",
     "typescript": "^5",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    }
   }
 }

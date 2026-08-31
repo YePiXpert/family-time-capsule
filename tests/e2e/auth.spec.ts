@@ -9,6 +9,23 @@ test("A: 未登录访问 /timeline 自动跳转 /login", async ({ page }) => {
   await expect(page).toHaveURL(/\/login/);
 });
 
+test("B0: 未初始化时公开 HTTP 注册也被拒绝", async ({ page }) => {
+  await page.goto("/setup");
+  const resp = await page.request.post("/api/auth/sign-up/email", {
+    headers: {
+      "Content-Type": "application/json",
+      Origin: new URL(page.url()).origin,
+    },
+    data: {
+      name: "attacker",
+      email: "attacker-before-setup@example.com",
+      password: "attacker-password-123",
+    },
+  });
+  expect(resp.status()).toBe(403);
+  await expect(page.getByLabel("初始化令牌")).toBeVisible();
+});
+
 test("B1: 错误 setup token 无法初始化", async ({ page }) => {
   await page.goto("/setup");
   await page.getByLabel("初始化令牌").fill("wrong-token");
@@ -80,6 +97,19 @@ test("C: 初始化完成后 /setup 失效（跳回 /login，无法创建第二�
   await page.goto("/setup");
   await expect(page).toHaveURL(/\/login/);
   await expect(page.getByLabel("初始化令牌")).toHaveCount(0);
+
+  const resp = await page.request.post("/api/auth/sign-up/email", {
+    headers: {
+      "Content-Type": "application/json",
+      Origin: new URL(page.url()).origin,
+    },
+    data: {
+      name: "attacker",
+      email: "attacker-after-setup@example.com",
+      password: "attacker-password-123",
+    },
+  });
+  expect(resp.status()).toBe(403);
 });
 
 test("D: 退出登录后受保护页面跳回 /login", async ({ page }) => {

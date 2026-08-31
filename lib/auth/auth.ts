@@ -87,10 +87,16 @@ function createAuth() {
     },
     hooks: {
       // RH-010：/sign-up/email 默认对外暴露，等于公开注册（与 docs/SECURITY.md §1 冲突）。
-      // 闸门与 /setup 同语义：仅当数据库没有任何用户时放行（首次管理员引导路径），
-      // 之后无论来自 HTTP 还是内部调用一律 403。
+      // 所有 HTTP 请求一律拒绝；首次管理员只能由 /setup 校验
+      // INITIAL_SETUP_TOKEN 后，通过不携带 Request 的服务端 auth.api 调用创建。
+      // 内部调用仍以“数据库无用户”为一次性闸门。
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path === "/sign-up/email") {
+          if (ctx.request) {
+            throw new APIError("FORBIDDEN", {
+              message: "注册已关闭。本实例为私人部署，首个管理员只能通过初始化页面创建。",
+            });
+          }
           const db = getDb();
           const rows = await db.select({ value: count() }).from(user);
           if (Number(rows[0]?.value ?? 0) > 0) {

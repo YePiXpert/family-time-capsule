@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -121,6 +121,57 @@ describe("原件保存", () => {
     expect(result.existing.sha256).toBe(sha256Of(PNG_BYTES));
   });
 
+  it("DB 插入失败会回收已落盘文件，不留下孤儿原件", async () => {
+    const before = listFiles(path.join(dataDir, "originals", familyId));
+    await expect(
+      storeOriginal({
+        familyId,
+        createdByUserId: "missing-user",
+        type: "image",
+        originalFilename: "must-rollback.png",
+        mimeType: "image/png",
+        buffer: Buffer.concat([PNG_BYTES, Buffer.from("db-failure")]),
+        extension: "png",
+        capturedAt: null,
+        timeSource: "import_time",
+      }),
+    ).rejects.toMatchObject({ code: "SQLITE_CONSTRAINT_FOREIGNKEY" });
+    expect(listFiles(path.join(dataDir, "originals", familyId))).toEqual(before);
+  });
+
+  it("20 路并发相同上传只保留一个 canonical 行和一个原件", async () => {
+    const bytes = Buffer.concat([PNG_BYTES, Buffer.from("parallel-canonical")]);
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        storeOriginal({
+          familyId,
+          createdByUserId: adminUserId,
+          type: "image",
+          originalFilename: `parallel-${i}.png`,
+          mimeType: "image/png",
+          buffer: bytes,
+          extension: "png",
+          capturedAt: null,
+          timeSource: "import_time",
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.status === "stored")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "duplicate")).toHaveLength(19);
+    const ids = new Set(
+      results.map((result) =>
+        result.status === "stored" ? result.asset.id : result.existing.id,
+      ),
+    );
+    expect(ids.size).toBe(1);
+    const canonical = await findOriginalBySha256(familyId, sha256Of(bytes));
+    expect(canonical).toBeTruthy();
+    const matchingFiles = listFiles(path.join(dataDir, "originals", familyId)).filter(
+      (file) => file.includes(canonical!.id),
+    );
+    expect(matchingFiles).toHaveLength(1);
+  });
+
   it("跨家庭允许相同文件（隔离边界是 family）", async () => {
     // 直接种一个 family B（绕过 onboarding，它只服务首个管理员）
     await db.run(
@@ -148,6 +199,17 @@ describe("原件保存", () => {
     expect(await getAsset(familyId, "not-exist")).toBeUndefined();
   });
 });
+
+function listFiles(root: string): string[] {
+  if (!existsSync(root)) return [];
+  const result: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) result.push(...listFiles(full));
+    else result.push(full);
+  }
+  return result.sort();
+}
 
 describe("原件不可覆盖 / 衍生物独立", () => {
   it("putOriginal 对已存在 key 抛错", () => {

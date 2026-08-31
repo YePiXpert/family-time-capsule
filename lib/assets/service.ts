@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset } from "@/db/schema/asset";
 import {
@@ -68,6 +68,7 @@ export async function findOriginalBySha256(
       and(
         eq(asset.familyId, familyId),
         eq(asset.sha256, sha256),
+        isNull(asset.originalAssetId),
       ),
     )
     .orderBy(desc(asset.createdAt))
@@ -126,34 +127,46 @@ export async function storeOriginal(
   );
 
   const db = getDb();
-  const rows = await db
-    .insert(asset)
-    .values({
-      id: assetId,
-      familyId: input.familyId,
-      type: input.type,
-      originalFilename: sanitizeDisplayFilename(input.originalFilename),
-      mimeType: input.mimeType,
-      bytes: input.buffer.byteLength,
-      sha256,
-      storageKey,
-      capturedAt: input.capturedAt ?? null,
-      importedAt,
-      timeSource: input.timeSource,
-      width: input.width ?? null,
-      height: input.height ?? null,
-      durationMs: input.durationMs ?? null,
-      metadataJson:
-        input.metadataJson === undefined
-          ? null
-          : JSON.stringify(input.metadataJson),
-      createdByUserId: input.createdByUserId,
-      originalAssetId: null,
-      derivativeType: null,
-      createdAt: new Date(),
-    })
-    .returning();
-  return { status: "stored", asset: rows[0] };
+  try {
+    const rows = await db
+      .insert(asset)
+      .values({
+        id: assetId,
+        familyId: input.familyId,
+        type: input.type,
+        originalFilename: sanitizeDisplayFilename(input.originalFilename),
+        mimeType: input.mimeType,
+        bytes: input.buffer.byteLength,
+        sha256,
+        storageKey,
+        capturedAt: input.capturedAt ?? null,
+        importedAt,
+        timeSource: input.timeSource,
+        width: input.width ?? null,
+        height: input.height ?? null,
+        durationMs: input.durationMs ?? null,
+        metadataJson:
+          input.metadataJson === undefined
+            ? null
+            : JSON.stringify(input.metadataJson),
+        createdByUserId: input.createdByUserId,
+        originalAssetId: null,
+        derivativeType: null,
+        createdAt: new Date(),
+      })
+      .returning();
+    return { status: "stored", asset: rows[0] };
+  } catch (error) {
+    // 文件先于 DB 行落盘；任何 DB 失败都必须回收本次唯一 assetId 对应的文件。
+    storage.delete(storageKey);
+    const code = (error as { code?: string }).code ?? "";
+    if (code.startsWith("SQLITE_CONSTRAINT_UNIQUE")) {
+      // 并发相同上传：另一请求已成为 canonical，当前请求按正常 duplicate 返回。
+      const canonical = await findOriginalBySha256(input.familyId, sha256);
+      if (canonical) return { status: "duplicate", existing: canonical };
+    }
+    throw error;
+  }
 }
 
 /** 保存衍生物（缩略图/预览/转码/波形），不影响原件 */
@@ -182,31 +195,36 @@ export async function storeDerivative(
     dateForPath,
   );
   const db = getDb();
-  const rows = await db
-    .insert(asset)
-    .values({
-      id: derivativeId,
-      familyId,
-      type: original.type,
-      originalFilename: `${derivativeType}-${original.originalFilename}`,
-      mimeType: opts.mimeType,
-      bytes: opts.buffer.byteLength,
-      sha256: sha256Of(opts.buffer),
-      storageKey,
-      capturedAt: original.capturedAt,
-      importedAt: new Date(),
-      timeSource: original.timeSource,
-      metadataJson:
-        opts.metadataJson === undefined
-          ? null
-          : JSON.stringify(opts.metadataJson),
-      createdByUserId: original.createdByUserId,
-      originalAssetId,
-      derivativeType,
-      createdAt: new Date(),
-    })
-    .returning();
-  return rows[0];
+  try {
+    const rows = await db
+      .insert(asset)
+      .values({
+        id: derivativeId,
+        familyId,
+        type: original.type,
+        originalFilename: `${derivativeType}-${original.originalFilename}`,
+        mimeType: opts.mimeType,
+        bytes: opts.buffer.byteLength,
+        sha256: sha256Of(opts.buffer),
+        storageKey,
+        capturedAt: original.capturedAt,
+        importedAt: new Date(),
+        timeSource: original.timeSource,
+        metadataJson:
+          opts.metadataJson === undefined
+            ? null
+            : JSON.stringify(opts.metadataJson),
+        createdByUserId: original.createdByUserId,
+        originalAssetId,
+        derivativeType,
+        createdAt: new Date(),
+      })
+      .returning();
+    return rows[0];
+  } catch (error) {
+    storage.delete(storageKey);
+    throw error;
+  }
 }
 
 /** 展示名清洗：去掉路径分隔符与控制字符，限制长度 */

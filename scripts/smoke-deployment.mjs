@@ -2,17 +2,17 @@
 // 部署冒烟（RH-007）：在部署服务器上运行，验证实例健康。
 //
 //   node scripts/smoke-deployment.mjs                        # 基础检查（无需凭据）
-//   SMOKE_EMAIL=... SMOKE_PASSWORD=... node scripts/smoke-deployment.mjs   # 附加登录/上传/媒体/导出检查
+//   SMOKE_SESSION_COOKIE='better-auth.session_token=…' node scripts/smoke-deployment.mjs
+//       # 附加只读认证检查；复用现有会话，不创建测试账号/会话/业务数据
 //
 // 环境变量：BASE_URL（默认 http://localhost:3000）、DATA_DIR（默认 ./data，检查可写）
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 
-const BASE = process.env.BASE_URL ?? "http://localhost:3000";
+const BASE = (process.env.BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
+const ORIGIN = new URL(BASE).origin;
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
-const require = createRequire(import.meta.url);
 
 let failed = 0;
 function ok(msg) {
@@ -60,88 +60,45 @@ async function main() {
     else console.log(`· ${bin} 不可用（音视频元数据/转码增强能力降级，不影响上传）`);
   }
 
-  // 导出依赖（archiver/jszip 已安装且可加载）
-  try {
-    require.resolve("archiver");
-    require.resolve("jszip");
-    ok("导出依赖（archiver/jszip）已安装");
-  } catch (err) {
-    fail(`导出依赖缺失: ${err.message}`);
-  }
-
   // DATA_DIR 可写
+  let probeDir;
   try {
     mkdirSync(DATA_DIR, { recursive: true });
-    const probe = path.join(mkdtempSync(path.join(DATA_DIR, "smoke-")), "probe.txt");
+    probeDir = mkdtempSync(path.join(DATA_DIR, "smoke-"));
+    const probe = path.join(probeDir, "probe.txt");
     writeFileSync(probe, "ok");
-    rmSync(path.dirname(probe), { recursive: true, force: true });
     ok(`DATA_DIR 可写（${DATA_DIR}）`);
   } catch (err) {
     fail(`DATA_DIR 不可写（${DATA_DIR}）: ${err.message}`);
+  } finally {
+    if (probeDir) {
+      try {
+        rmSync(probeDir, { recursive: true, force: true });
+      } catch (err) {
+        fail(`DATA_DIR 探针清理失败（${probeDir}）: ${err.message}`);
+      }
+    }
   }
 
-  // ---- 可选：带凭据的深度检查 ----
-  const email = process.env.SMOKE_EMAIL;
-  const password = process.env.SMOKE_PASSWORD;
-  if (!email || !password) {
-    console.log("\n· 跳过登录/上传/导出检查（设置 SMOKE_EMAIL / SMOKE_PASSWORD 启用）");
+  // ---- 可选：带凭据的只读检查 ----
+  // 生产冒烟必须可重复执行：这里不上传、不创建导出，也不改任何业务数据。
+  const sessionCookie = process.env.SMOKE_SESSION_COOKIE;
+  if (!sessionCookie) {
+    console.log("\n· 跳过只读认证检查（设置 SMOKE_SESSION_COOKIE 复用现有会话）");
     return summary();
   }
 
-  // 登录
-  const signIn = await fetch(`${BASE}/api/auth/sign-in/email`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Origin: BASE },
-    body: JSON.stringify({ email, password }),
+  const session = await fetch(`${BASE}/api/auth/get-session`, {
+    headers: { cookie: sessionCookie, Origin: ORIGIN },
   });
-  if (signIn.status !== 200) {
-    fail(`登录失败 → ${signIn.status}（检查 SMOKE_EMAIL/SMOKE_PASSWORD）`);
-    return summary();
-  }
-  const cookie = (signIn.headers.getSetCookie?.() ?? [])
-    .find((c) => c.includes("better-auth.session_token"))
-    ?.split(";")[0];
-  check(Boolean(cookie), "登录成功（会话 cookie 下发）", "未取到会话 cookie");
+  const sessionBody = await session.json().catch(() => null);
+  check(
+    session.status === 200 && Boolean(sessionBody?.user),
+    "会话读取成功（只读、无业务数据写入）",
+    `会话读取失败 → ${session.status}（检查 SMOKE_SESSION_COOKIE 是否仍有效）`,
+  );
 
-  // 上传一张最小 JPEG
-  const jpeg = Buffer.concat([
-    Buffer.from("ffd8ffe000104a46494600010100000100010000", "hex"),
-    Buffer.from("ffd9", "hex"),
-  ]);
-  const form = new FormData();
-  form.append("file", new Blob([jpeg], { type: "image/jpeg" }), "smoke.jpg");
-  form.append("lastModified", String(Date.now()));
-  const upload = await fetch(`${BASE}/api/upload/image`, {
-    method: "POST",
-    headers: { cookie, Origin: BASE },
-    body: form,
-  });
-  const uploaded = await upload.json().catch(() => ({}));
-  if (upload.status === 201 && uploaded.assetId) {
-    ok(`测试图片上传成功（assetId ${uploaded.assetId.slice(0, 8)}…）`);
-
-    // 媒体读取 + Range
-    const media = await fetch(`${BASE}/api/media/${uploaded.assetId}`, { headers: { cookie } });
-    check(media.status === 200, "媒体读取 → 200", `媒体读取 → ${media.status}`);
-    const range = await fetch(`${BASE}/api/media/${uploaded.assetId}`, {
-      headers: { cookie, Range: "bytes=0-3" },
-    });
-    check(
-      range.status === 206,
-      "媒体 Range 请求 → 206",
-      `媒体 Range → ${range.status}（应为 206）`,
-    );
-
-    // 导出
-    const exp = await fetch(`${BASE}/api/export`, { headers: { cookie } });
-    check(
-      exp.status === 200 && exp.headers.get("content-type") === "application/zip",
-      "完整导出 → 200 application/zip",
-      `导出 → ${exp.status}`,
-    );
-  } else {
-    fail(`测试图片上传失败 → ${upload.status} ${JSON.stringify(uploaded).slice(0, 120)}`);
-  }
+  console.log("· 认证冒烟复用现有会话且只读：未创建会话、上传或导出，可安全重复执行");
 
   return summary();
 }

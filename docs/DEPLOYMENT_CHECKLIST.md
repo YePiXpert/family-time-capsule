@@ -7,7 +7,7 @@
 ## 0. 前置
 
 - 一台长期在线的机器（家庭服务器 / NAS / VPS），已安装 Docker 与 Docker Compose；
-- 一个用于存放家庭数据的目录或 named volume 计划（默认 named volume `capsule-data`）；
+- 一个用于存放家庭数据的目录或 named volume 计划（Compose 逻辑名为 `capsule-data`；实际卷名通常带项目名前缀）；
 - 生成两个 secret：`AUTH_SECRET`（≥32 随机字符）与 `INITIAL_SETUP_TOKEN`（一次性初始化令牌）：
 
 ```bash
@@ -23,6 +23,9 @@ AUTH_SECRET=<上一步的值> INITIAL_SETUP_TOKEN=<上一步的值> docker compo
 ```
 
 预期：`docker compose ps` 显示 `app` 为 `running (healthy)`（端口 3000）。
+
+生产镜像只携带 Next standalone 运行文件及 `/app/ops/*.mjs` 运维产物；恢复、导出校验、
+部署冒烟和健康检查不依赖仓库里的 TypeScript 源码、`tsx` 或完整开发依赖。
 
 排障：
 
@@ -47,15 +50,15 @@ docker compose logs --tail=100 app    # 看启动日志
 
 ```bash
 # 基础检查（无需凭据）
-docker compose exec app node scripts/smoke-deployment.mjs
+docker compose exec app node /app/ops/smoke-deployment.mjs
 
-# 深度检查（登录/上传/媒体 Range/导出）
+# 可选的只读认证检查：从已登录浏览器复制现有 session cookie；不会登录、上传或导出
 docker compose exec app \
-  env SMOKE_EMAIL=<管理员邮箱> SMOKE_PASSWORD=<密码> BASE_URL=http://localhost:3000 \
-  node scripts/smoke-deployment.mjs
+  env 'SMOKE_SESSION_COOKIE=better-auth.session_token=<现有值>' BASE_URL=http://localhost:3000 \
+  node /app/ops/smoke-deployment.mjs
 ```
 
-预期输出全部 `✓`；`ffmpeg/ffprobe` 缺失只会降级提示（本镜像已内置）。
+预期输出全部 `✓`；`ffmpeg/ffprobe` 缺失只会降级提示（本镜像已内置）。冒烟只做读取与会自动清理的临时可写探针，可在真实实例重复执行，不会留下测试媒体、导出 ZIP 或新会话。
 
 ## 4. 手工验收（浏览器 / 真机）
 
@@ -69,7 +72,7 @@ docker compose exec app \
 6. 同一事件留下两条不同家人的讲述 → 各自独立显示；
 7. 创建并封存一个胶囊 → 未到期不显示正文；
 8. 设置页导出 ZIP → 解压可看 Markdown、可播放媒体；
-   `node scripts/verify-export.mjs <zip>` → 全绿。
+   容器内执行 `node /app/ops/verify-export.mjs <zip>` → 全绿。
 
 完整清单（按设备/格式）见 [REAL_DEVICE_TEST.md](./REAL_DEVICE_TEST.md)。
 
@@ -83,7 +86,7 @@ docker compose up -d
 # → 刷新页面：照片、事件、时间轴全部还在
 docker compose down
 docker compose up -d --build       # 重建镜像后启动
-# → 数据仍在（数据在 named volume capsule-data，与镜像无关）
+# → 数据仍在（数据在 Compose 的 /data named volume，与镜像无关）
 ```
 
 若数据丢失 → 检查是否误用了 `docker compose down -v`（**该命令会删除 volume，永远不要用**）。
@@ -105,20 +108,28 @@ docker compose up -d --build       # 重建镜像后启动
 ### 推荐备份方式 A：停容器 → 打包（最简单、绝对一致）
 
 ```bash
+# 必须在 app 仍运行时解析挂到 /data 的实际卷名；不要写死 capsule-data，
+# Compose 默认会把它命名为 <项目名>_capsule-data。
+APP_CONTAINER="$(docker compose ps -q app)"
+DATA_VOLUME="$(docker inspect "$APP_CONTAINER" \
+  --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}')"
+test -n "$DATA_VOLUME" || { echo '未找到 app 的 /data named volume' >&2; exit 1; }
+echo "备份实际卷: $DATA_VOLUME"
+
 docker compose down
-docker run --rm -v capsule-data:/data -v "$(pwd)":/backup alpine \
+docker run --rm -v "$DATA_VOLUME":/data:ro -v "$(pwd)":/backup alpine \
   tar czf /backup/capsule-data-$(date +%F).tar.gz -C /data .
 docker compose up -d
 ```
 
-恢复：`tar xzf capsule-data-<日期>.tar.gz -C /data`（先 `down` 再解压再 `up`）。
+`docker compose down`（不带 `-v`）不会删除该实际卷。恢复时同样先在容器运行期间按上面的 `docker inspect` 解析并记录 `DATA_VOLUME`，再 `down`，只向确认过的空目标卷解压，最后 `up -d`；不要用字面量 `capsule-data`，否则可能新建一个空卷而把真实数据留在另一个卷中。
 
 ### 推荐备份方式 B：应用内导出 ZIP（可迁移、自带哈希校验）
 
 设置页「导出完整备份（ZIP）」，或：
 
 ```bash
-docker compose exec app node scripts/verify-export.mjs /data/exports/<最新>.zip   # 校验
+docker compose exec app node /app/ops/verify-export.mjs /data/exports/<最新>.zip   # 校验
 ```
 
 导出 ZIP **可跨实例恢复**（见 §7），且自带 SHA-256 完整性验证。建议两种方式都做：
@@ -157,7 +168,7 @@ AUTH_SECRET=<新或原值> INITIAL_SETUP_TOKEN=<新一次性令牌> docker compo
 # 浏览器 /setup 创建管理员（认证不来自备份）
 # 把备份 ZIP 拷进容器可达位置后恢复：
 docker compose cp capsule-backup.zip app:/tmp/backup.zip
-docker compose exec app npm run restore -- /tmp/backup.zip
+docker compose exec app node /app/ops/restore.mjs /tmp/backup.zip
 # 管理员登录 → /onboarding 选择「你是谁」→ 时间轴/媒体/胶囊全部回来
 ```
 
@@ -169,7 +180,7 @@ docker compose exec app npm run restore -- /tmp/backup.zip
 ```bash
 git pull
 docker compose up -d --build     # 数据库迁移在启动后首次连接时自动应用
-docker compose exec app node scripts/smoke-deployment.mjs
+docker compose exec app node /app/ops/smoke-deployment.mjs
 ```
 
 升级前先做一次 §6 备份。

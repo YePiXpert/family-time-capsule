@@ -119,31 +119,41 @@ export async function ingestMedia(input: IngestMediaInput): Promise<IngestMediaR
     if (probe.raw) metadata.ffprobe = probe.raw;
   }
 
-  const rows = await db
-    .insert(asset)
-    .values({
-      id: assetId,
-      familyId: input.familyId,
-      type: input.kind,
-      originalFilename: sanitizeDisplayFilename(input.filename),
-      mimeType,
-      bytes: input.buffer.byteLength,
-      sha256,
-      storageKey,
-      capturedAt,
-      importedAt,
-      timeSource,
-      width: input.kind === "video" ? (probe?.width ?? null) : null,
-      height: input.kind === "video" ? (probe?.height ?? null) : null,
-      durationMs: probe?.durationMs ?? null,
-      metadataJson: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
-      createdByUserId: input.createdByUserId,
-      originalAssetId: null,
-      derivativeType: null,
-      createdAt: new Date(),
-    })
-    .returning();
-  return { status: "stored", asset: rows[0] };
+  try {
+    const rows = await db
+      .insert(asset)
+      .values({
+        id: assetId,
+        familyId: input.familyId,
+        type: input.kind,
+        originalFilename: sanitizeDisplayFilename(input.filename),
+        mimeType,
+        bytes: input.buffer.byteLength,
+        sha256,
+        storageKey,
+        capturedAt,
+        importedAt,
+        timeSource,
+        width: input.kind === "video" ? (probe?.width ?? null) : null,
+        height: input.kind === "video" ? (probe?.height ?? null) : null,
+        durationMs: probe?.durationMs ?? null,
+        metadataJson: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
+        createdByUserId: input.createdByUserId,
+        originalAssetId: null,
+        derivativeType: null,
+        createdAt: new Date(),
+      })
+      .returning();
+    return { status: "stored", asset: rows[0] };
+  } catch (error) {
+    storage.delete(storageKey);
+    const code = (error as { code?: string }).code ?? "";
+    if (code.startsWith("SQLITE_CONSTRAINT_UNIQUE")) {
+      const canonical = await findOriginalBySha256(input.familyId, sha256);
+      if (canonical) return { status: "duplicate", existing: canonical };
+    }
+    throw error;
+  }
 }
 
 export async function ingestImage(

@@ -7,7 +7,8 @@ import { afterAll, describe, expect, it } from "vitest";
  * RH-010：公开注册回归闸门。
  * better-auth 的 /sign-up/email 端点默认对外暴露——若不加闸门，
  * 任何人都可通过 HTTP 直接创建账号（等于公开注册，违反 docs/SECURITY.md §1）。
- * 修复：hooks.before 守卫，仅当数据库零用户时放行（与 /setup 闸门同语义）。
+ * 修复：所有 HTTP 请求一律拒绝；只有 /setup 校验 INITIAL_SETUP_TOKEN 后的
+ * 内部 auth.api 调用可在零用户时创建首个管理员。
  */
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-signupgate-"));
@@ -26,27 +27,31 @@ const { getAuth } = await import("@/lib/auth/auth");
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
 
-async function trySignUp(name: string, email: string, password: string) {
-  try {
-    const r = await getAuth().api.signUpEmail({
-      body: { name, email, password },
-    });
-    const maybe = r as { error?: unknown };
-    return maybe && typeof maybe === "object" && "error" in maybe && maybe.error
-      ? { ok: false as const, reason: "error-field" }
-      : { ok: true as const };
-  } catch (e) {
-    const err = e as { status?: string; statusCode?: number; message?: string };
-    return {
-      ok: false as const,
-      status: err.status ?? err.statusCode,
-      message: err.message,
-    };
-  }
+async function httpSignUp(name: string, email: string, password: string) {
+  return getAuth().handler(
+    new Request("http://localhost/api/auth/sign-up/email", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost",
+      },
+      body: JSON.stringify({ name, email, password }),
+    }),
+  );
 }
 
 describe("sign-up 闸门（RH-010）", () => {
-  it("零用户时注册放行（这是 /setup 的内部路径）", async () => {
+  it("零用户时公开 HTTP 注册仍被拒绝", async () => {
+    const response = await httpSignUp(
+      "attacker",
+      "attacker-before-setup@example.com",
+      "attacker-password-123",
+    );
+    expect(response.status).toBe(403);
+    expect((await getDb().select().from(userTable)).length).toBe(0);
+  });
+
+  it("正确 setup token 仍可通过内部 auth API 创建首个管理员", async () => {
     const r = await performSetup({
       token: "gate-token",
       displayName: "admin",
@@ -57,19 +62,13 @@ describe("sign-up 闸门（RH-010）", () => {
     expect((await getDb().select().from(userTable)).length).toBe(1);
   });
 
-  it("已有用户后：HTTP 同源的注册调用被 FORBIDDEN 拒绝", async () => {
-    const attacker = await trySignUp(
+  it("已有用户后公开 HTTP 注册仍被拒绝", async () => {
+    const response = await httpSignUp(
       "attacker",
-      "attacker@example.com",
+      "attacker-after-setup@example.com",
       "attacker-password-123",
     );
-    expect(attacker.ok).toBe(false);
-    if (!attacker.ok && "status" in attacker) {
-      // HTTP 端点 / 内部 api 同一 router：403 FORBIDDEN
-      expect(String(attacker.status)).toBe("FORBIDDEN");
-      expect(attacker.message).toContain("注册已关闭");
-    }
-    // 用户数不变
+    expect(response.status).toBe(403);
     expect((await getDb().select().from(userTable)).length).toBe(1);
   });
 

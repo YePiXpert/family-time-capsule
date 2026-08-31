@@ -62,6 +62,7 @@
 ## 7. 传输与部署
 
 - 生产必须在 HTTPS 反向代理后运行（终止 TLS），容器内为 HTTP。
+- 应用 CSP 不发送 `upgrade-insecure-requests`：TLS/HSTS 由真正持有证书的入口代理负责，避免把容器内 HTTP、自托管初始设置或健康检查错误升级到不存在的 HTTPS 端口。
 - `docker-compose.yml` 强制要求 `AUTH_SECRET`；缺失则拒绝启动。
 - `AUTH_SECRET` 至少 32 字符随机值（`openssl rand -base64 32`）；泄露即轮换（会使现有 session 失效，需重新登录）。
 - SQLite 数据库位于 `$DATA_DIR/db/capsule.sqlite`，随 Docker named volume 持久化。**文件系统权限由部署方负责**：`/data` 仅应对运行用户可读写（compose 不做 host bind mount 时由 Docker 卷隔离；若 bind mount，请自设属主 1001:nodejs 或更严格 umask）。数据库不含媒体本体（大媒体在文件系统）。
@@ -88,12 +89,15 @@
 - 全部页面为 React 服务端渲染，用户内容（标题/文本/文件名）默认转义。
 - 媒体以 `<img>/<audio>/<video>` 或下载方式呈现，`Content-Type` 来自库内记录（上传时白名单化），加 `nosniff`。
 - 导出 `timeline.md`：图片 alt 文本剥离 `]` 与换行，防止展示名破坏 Markdown 结构；标题/讲述为纯文本行。导出内容在 Markdown 查看器中的富渲染属于家庭内部自担内容（无跨用户注入面）。
-- 未开启 CSP（backlog，见 §12）。
+- UI 响应使用逐请求随机 nonce 的 CSP；生产 `script-src` 不含 `unsafe-eval`，并限制 `object-src`、`base-uri`、`form-action` 与 `frame-ancestors`。API 使用 `default-src 'none'`。
+- 全局响应同时发送 `nosniff`、`DENY` frame policy、`no-referrer`、Permissions Policy、COOP 与同源 CORP；Service Worker 另有严格脚本 CSP 和 `no-store`。
+- TLS/HSTS 是部署入口职责；CSP 不强制升级请求，保证反向代理后的容器内 HTTP 与文档中的首次设置路径可用。
 
 ## 11. 删除与审计日志
 
 - P0 **没有物理删除**：收件箱“废弃”是软状态（discarded），Asset 原件永不删除——不存在误删/越删的破坏面。
-- 删除二次确认与导出/删除审计日志为 backlog（当前唯一高危操作“导出”已有明文入口与哈希校验）。
+- 完整导出与恢复完成会写 family-scoped 审计条目；审计失败为 best-effort，不会把已经成功的恢复错误报告为失败。
+- Trash/显式 purge、删除二次确认及其扩展审计仍属于 v1 backlog。
 
 ## 12. 环境变量清单（安全相关）
 
@@ -117,15 +121,16 @@
 | 导出下载 | ✅ 鉴权 + 哈希强制校验 + 409 语义 |
 | 胶囊可见性 | ✅ UI 锁定 + 导出完整（非加密，设计如此） |
 | XSS / 文件服务头 / 缓存头 | ✅ React 转义 + nosniff + private,no-store |
-| 限流 | ⚠️ 内存存储（单实例可用），持久化在 backlog |
+| 限流 | ✅ SQLite 持久化，进程重启不清零 |
 | SQLite 文件权限 | ⚠️ 交给部署方（文档见 §7） |
-| CSP / 审计日志 / 加密备份 | 📋 backlog（Low，P1+） |
+| CSP | ✅ 生产 nonce CSP，无 `unsafe-eval`，安全头 e2e 覆盖 |
+| 审计日志 / 加密备份 | ⚠️ 导出与恢复已审计；v1 敏感操作扩展与备份加密仍待完成 |
 
 ## 14. 审计结论（2026-08-30，v0.1.1 RH-010）
 
 | 项 | 结论 |
 | --- | --- |
-| **公开注册端点（/sign-up/email）** | 🔴→✅ **发现 High 级漏洞并修复**：better-auth 该端点默认暴露，任何人在初始化后仍可经 HTTP 创建账号（等于公开注册）。已加 `hooks.before` 闸门（仅零用户放行）。集成 + e2e 双层回归 |
+| **公开注册端点（/sign-up/email）** | 🔴→✅ **发现 High 级漏洞并修复**：所有真实 HTTP 注册请求（包括零用户实例）一律 403；首个管理员只能由 `/setup` 校验 `INITIAL_SETUP_TOKEN` 后通过无 Request 的内部 API 创建。初始化前后均有集成 + e2e 回归 |
 | Restore ZIP path traversal | ✅ 条目名必须位于导出根内（禁 `..`/绝对路径/盘符/反斜杠），`unsafe_entry` 拒绝（tests/integration/restore.test.ts） |
 | zip bomb | ✅ 三重限制：条目数 20 万 / 单文件 2GB / 总解压 25GB（`zip_bomb`/`file_too_large`/`too_many_entries`，限额可注入） |
 | malformed manifest / JSON | ✅ 结构 + 引用完整性校验（`bad_manifest`/`bad_json`/`bad_refs`），重复 assetId 拒绝 |
@@ -137,4 +142,4 @@
 | 事件编辑不触碰素材时间 | ✅ 编辑 occurredAt 与 Asset.capturedAt 完全解耦（集成测试断言不变） |
 | 健康端点 | ✅ `/api/health` 仅报 db 连通与版本，无家庭数据 |
 
-**backlog（低风险，未修）**：限流持久化存储；CSP；导出/删除审计日志；备份加密。
+**仍待 v1 完成**：邀请/角色/可见性审计、Trash/purge 审计、备份加密、setup 专项滥用防护。

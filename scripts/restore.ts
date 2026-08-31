@@ -13,35 +13,64 @@ import { restoreFromZipFile, RestoreError } from "@/lib/restore/service";
 
 async function main() {
   const args = process.argv.slice(2);
-  const zipPath = args.find((a) => !a.startsWith("--"));
-  const userFlagIdx = args.indexOf("--user");
-  const explicitUser = userFlagIdx >= 0 ? args[userFlagIdx + 1] : undefined;
+  let zipPath: string | undefined;
+  let explicitUser: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--user") {
+      const value = args[++i];
+      if (!value || value.startsWith("--")) {
+        console.error("✗ --user 必须提供 userId");
+        process.exitCode = 2;
+        return;
+      }
+      explicitUser = value;
+    } else if (arg.startsWith("--")) {
+      console.error(`✗ 未知参数: ${arg}`);
+      process.exitCode = 2;
+      return;
+    } else if (!zipPath) {
+      zipPath = arg;
+    } else {
+      console.error(`✗ 多余参数: ${arg}`);
+      process.exitCode = 2;
+      return;
+    }
+  }
 
   if (!zipPath) {
     console.error("用法: npm run restore -- <backup.zip> [--user <userId>]");
-    process.exit(2);
+    process.exitCode = 2;
+    return;
   }
 
   const db = getDb();
-  const users = await db
-    .select({ id: userTable.id, email: userTable.email })
-    .from(userTable)
-    .orderBy(asc(userTable.createdAt));
-  if (users.length === 0) {
-    console.error(
-      "✗ 实例中没有任何用户。请先访问 /setup 创建管理员（INITIAL_SETUP_TOKEN），再执行恢复。",
-    );
-    process.exit(1);
-  }
-  const operator =
-    (explicitUser && users.find((u) => u.id === explicitUser)) || users[0];
-  if (explicitUser && !operator) {
-    console.error(`✗ 指定的 --user 不存在: ${explicitUser}`);
-    process.exit(1);
-  }
-  console.log(`操作者: ${operator.email}`);
-
   try {
+    const users = await db
+      .select({ id: userTable.id, email: userTable.email })
+      .from(userTable)
+      .orderBy(asc(userTable.createdAt));
+    if (users.length === 0) {
+      console.error(
+        "✗ 实例中没有任何用户。请先访问 /setup 创建管理员（INITIAL_SETUP_TOKEN），再执行恢复。",
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    // An explicit operator is authoritative. Never fall back to the first user:
+    // a typo must fail before the archive is opened or restore writes begin.
+    const operator = explicitUser
+      ? users.find((candidate) => candidate.id === explicitUser)
+      : users[0];
+    if (!operator) {
+      console.error(`✗ 指定的 --user 不存在: ${explicitUser}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`操作者: ${operator.email}`);
+
     const report = await restoreFromZipFile(zipPath, operator.id);
     console.log("✓ 恢复完成：");
     console.log(`  家庭     ${report.familyId}`);
@@ -59,10 +88,14 @@ async function main() {
     } else {
       console.error("✗ 恢复失败:", err);
     }
-    process.exit(1);
+    process.exitCode = 1;
   } finally {
     closeDatabase();
   }
 }
 
-main();
+main().catch((err) => {
+  closeDatabase();
+  console.error("✗ 恢复 CLI 异常:", err);
+  process.exitCode = 1;
+});

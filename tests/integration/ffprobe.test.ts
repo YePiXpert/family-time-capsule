@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -38,6 +38,7 @@ const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
 const { completeOnboarding } = await import("@/lib/family/service");
 const { ingestMedia } = await import("@/lib/assets/ingest");
+const { probeMedia } = await import("@/lib/metadata/ffprobe");
 
 const db = getDb();
 const adminUserId = (await db.select({ id: userTable.id }).from(userTable))[0].id;
@@ -55,6 +56,20 @@ const familyId = onboarding.familyId;
 const fixtures = path.join(__dirname, "..", "fixtures");
 
 describe("真实 ffprobe 元数据提取（v0.1.2）", () => {
+  it("单个坏文件不会把后续有效媒体的 ffprobe 全局禁用", async () => {
+    const malformed = path.join(dataDir, "malformed.mp4");
+    // ISO-BMFF 魔数外观成立但容器不完整，ffprobe 应只拒绝这一份文件。
+    writeFileSync(
+      malformed,
+      Buffer.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]),
+    );
+    expect(await probeMedia(malformed)).toBeNull();
+
+    const valid = await probeMedia(path.join(fixtures, "sample.mov"));
+    expect(valid?.durationMs).toBe(1000);
+    expect(valid?.creationTime?.toISOString()).toBe("2026-08-15T05:00:00.000Z");
+  });
+
   it("MOV：duration=1s、creation_time=2026-08-15T05:00Z、embedded_metadata", async () => {
     const result = await ingestMedia({
       familyId,
