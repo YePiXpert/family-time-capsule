@@ -29,5 +29,22 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "maskable",
       },
     ],
+    // M6：系统分享目标——照片/视频/音频/文字/链接直接进收件箱（需登录）
+    share_target: {
+      action: "/share",
+      method: "POST",
+      enctype: "multipart/form-data",
+      params: {
+        title: "title",
+        text: "text",
+        url: "url",
+        files: [
+          {
+            name: "files",
+            accept: ["image/*", "video/*", "audio/*"],
+          },
+        ],
+      },
+    },
   };
 }

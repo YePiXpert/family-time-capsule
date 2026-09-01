@@ -21,6 +21,7 @@ import * as suggestionSchema from "./schema/suggestion";
 import * as clusterSchema from "./schema/clusters";
 import * as storySchema from "./schema/story";
 import * as oralHistorySchema from "./schema/oral-history";
+import * as backupSchema from "./schema/backup";
 
 /**
  * SQLite 单例：数据库文件位于 $DATA_DIR/db/capsule.sqlite（PRD §11）。
@@ -67,6 +68,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...clusterSchema,
         ...storySchema,
         ...oralHistorySchema,
+        ...backupSchema,
         ...auditSchema,
       },
     });

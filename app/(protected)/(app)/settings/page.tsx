@@ -127,12 +127,20 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
           完整导出包含全部原件（SHA-256 校验）、记忆事件、家人视角、事实与胶囊——
           即使胶囊尚未到开启时间。ZIP 解压后无需本系统即可阅读 Markdown、播放媒体。
         </p>
-        <a
-          href="/api/export"
-          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm text-background transition-opacity hover:opacity-90"
-        >
-          导出完整备份（ZIP）
-        </a>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <a
+            href="/api/export"
+            className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm text-background transition-opacity hover:opacity-90"
+          >
+            导出完整备份（ZIP）
+          </a>
+          <Link
+            href="/settings/backup"
+            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent"
+          >
+            WebDAV 远程备份
+          </Link>
+        </div>
         <p className="mt-2 text-xs text-foreground/45">
           导出较大时需要等待一会儿；导出过程会重新校验每个原件的哈希。
         </p>

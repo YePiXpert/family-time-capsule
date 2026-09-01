@@ -17,3 +17,4 @@ export * as suggestionSchema from "./suggestion";
 export * as clusterSchema from "./clusters";
 export * as storySchema from "./story";
 export * as oralHistorySchema from "./oral-history";
+export * as backupSchema from "./backup";

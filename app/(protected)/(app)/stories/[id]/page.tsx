@@ -130,10 +130,29 @@ export default async function StoryDetailPage({
         </div>
       )}
       {storyRow.status === "published" && (
-        <p className="mt-6 text-xs text-foreground/45">
-          已发布 · {storyRow.publishedAt ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "long" }).format(storyRow.publishedAt) : ""}
-          ——发布版本不可再修改；再生成会另立新草稿。
-        </p>
+        <div className="mt-6 flex flex-col gap-2">
+          <p className="text-xs text-foreground/45">
+            已发布 · {storyRow.publishedAt ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "long" }).format(storyRow.publishedAt) : ""}
+            ——发布版本不可再修改；再生成会另立新草稿。
+          </p>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <a
+              href={`/api/books/story/${storyRow.id}?format=pdf`}
+              className="rounded-lg border border-foreground/20 px-3 py-1.5 transition-colors hover:border-accent"
+            >
+              下载 PDF 书
+            </a>
+            <a
+              href={`/api/books/story/${storyRow.id}?format=epub`}
+              className="rounded-lg border border-foreground/20 px-3 py-1.5 transition-colors hover:border-accent"
+            >
+              下载 EPUB 书
+            </a>
+          </div>
+          <p className="text-xs text-foreground/40">
+            媒体与文字全部内嵌在文件里，可直接送给家人或在任何阅读器打开。
+          </p>
+        </div>
       )}
     </main>
   );
