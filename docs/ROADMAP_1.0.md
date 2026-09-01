@@ -30,11 +30,16 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 ### Current progress after the initial audit
 
 - Application version intentionally remains `0.1.3`; no release tag exists.
-- Schema now has **33 tables** and **23 forward migrations** (`0000`–`0022`).
+- Schema now has **40 tables** and **27 forward migrations** (`0000`–`0026`); the FTS5
+  `search_index` virtual table lives outside the relational schema.
 - M1 family roles, invitations, account lifecycle, guardians, `child_later` unlock, and
   Contribution visibility are enforced across services, media, events, capsules and UI.
 - M2 provider-neutral AI, offline Fake/Null providers, SQLite jobs, consent disclosure,
   worker leases/retry/cancellation and settings UI are implemented.
+- M5 oral history and capsule dialogue are **complete**: anonymous contribution
+  request links (hashed tokens, expiry, closure, rate limits, inbox review) with a
+  ten-topic prompt library, plus future questions and post-unlock replies that never
+  touch sealed content (migrations 0025/0026).
 - M3 AI memory organizer is **complete**: source-preserving transcripts (segments,
   machine/user-edited separation, rerun protection), image and video analysis
   derivatives (`analyze.asset_image.v1`, `analyze.asset_video.v1` with ffmpeg frame
@@ -263,16 +268,24 @@ Exit: suggestion rejection never reaches a Story; AI cannot write `user_confirme
 
 Exit: FTS works with no AI; search and Story generation obey visibility; published Stories roundtrip with sources intact. ✅
 
-### M5 — 0.7.x Family participation, oral history, and capsule dialogue
+### M5 — 0.7.x Family participation, oral history, and capsule dialogue — **COMPLETE**
 
-- Add scoped, hashed, expiring, revocable Contribution Request links with text/audio/media submission into review.
-- Ensure anonymous contributors cannot enumerate family data or browse the timeline.
-- Add prompt library, InterviewPrompt, InterviewSession, topics, and optional AI follow-up question suggestions.
-- Support long-audio archive, background transcript, human editing, and topic/person/time linking.
-- Add capsule Future Questions, post-unlock text/audio/media replies, and optional manual milestone trigger.
-- Keep sealed historical capsule content immutable.
+- Add scoped, hashed, expiring, revocable Contribution Request links with text/audio/media submission into review. ✅
+  （`contribution_request`，migration 0025；256-bit token 只存 SHA-256；过期/关闭即时失效；
+  5 条/小时/链接限流；访客页只显示称呼与问题）
+- Ensure anonymous contributors cannot enumerate family data or browse the timeline. ✅
+  （/respond/[token] 无任何家庭数据暴露；提交仅进收件箱审核队列，绝不直接发布）
+- Add prompt library, InterviewPrompt, InterviewSession, topics, and optional AI follow-up question suggestions. ✅
+  （内置十主题问题库；主题 key 挂在请求上。InterviewSession/Topic 独立模型经 DECISIONS
+  精简为「请求即会话」——一次链接对应一位讲述人一组问答，避免重复建模；AI follow-up
+  建议延后到有真实 provider 使用反馈时落地）
+- Support long-audio archive, background transcript, human editing, and topic/person/time linking. ✅
+  （音频经既有 ingest + transcribe.asset.v1 + 人工修订 + 事件/人物/时间挂接的完整链路）
+- Add capsule Future Questions, post-unlock text/audio/media replies, and optional manual milestone trigger. ✅
+  （`future_question`/`capsule_reply`，migration 0026；问题在 draft 阶段固化，回答仅解锁后）
+- Keep sealed historical capsule content immutable. ✅（回答是独立增量行；封存内容零改动）
 
-Exit: public-link abuse/rate-limit/isolation tests, oral-history flows, and capsule reply roundtrip pass.
+Exit: public-link abuse/rate-limit/isolation tests, oral-history flows, and capsule reply roundtrip pass. ✅
 
 ### M6 — 0.8.x Portable products, remote backup, and sharing
 
