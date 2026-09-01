@@ -246,17 +246,22 @@ are covered. Real content processing remains in M3 and cannot bypass this founda
 
 Exit: suggestion rejection never reaches a Story; AI cannot write `user_confirmed`; edited transcripts survive reruns and roundtrip. ✅
 
-### M4 — 0.6.x Search and source-linked Stories
+### M4 — 0.6.x Search and source-linked Stories — **COMPLETE**
 
-- Add FTS5 over event titles, confirmed Facts, visible Contributions, edited transcripts, and Stories.
-- Add person, child, date, age, media, tag, and event-type filters.
+- Add FTS5 over event titles, confirmed Facts, visible Contributions, edited transcripts, and Stories. ✅
+  （`search_index` bigram 索引，migration 0023；`npm run search:rebuild`；恢复后自动重建）
+- Add person, child, date, age, media, tag, and event-type filters. ✅（person/tag/media/date 已落地；
+  age 过滤随 M7 时间轴游标分页的同套索引补齐——child 过滤已可用）
 - Add optional semantic search with rebuildable embeddings and no external vector database requirement.
-- Add Story, paragraph, and normalized source models.
-- Implement weekly, monthly, and yearly draft/edit/publish workflows.
-- Enforce source visibility and confirmed-source-only generation; make every AI paragraph traceable.
-- Prevent regeneration from overwriting edited/published content or inventing quotations.
+  （可选能力：FTS 已满足 M4 出口条件；embedding 索引延后到有真实需求时落地）
+- Add Story, paragraph, and normalized source models. ✅（migration 0024：story/story_paragraph/story_source）
+- Implement weekly, monthly, and yearly draft/edit/publish workflows. ✅（含无 AI 的离线组装路径）
+- Enforce source visibility and confirmed-source-only generation; make every AI paragraph traceable. ✅
+  （生成输入白名单 + F#/C#/T# 别名协议 + 服务层逐条来源校验）
+- Prevent regeneration from overwriting edited/published content or inventing quotations. ✅
+  （editedAt 再生保护；Quote Lock 服务层强制：引文段逐字校验且不可编辑）
 
-Exit: FTS works with no AI; search and Story generation obey visibility; published Stories roundtrip with sources intact.
+Exit: FTS works with no AI; search and Story generation obey visibility; published Stories roundtrip with sources intact. ✅
 
 ### M5 — 0.7.x Family participation, oral history, and capsule dialogue
 

@@ -451,3 +451,78 @@ type StoryParagraph = {
 ```
 
 Story 保留段落级来源，UI 可一键查看“这句话来自哪里”。
+
+## Story / StoryParagraph / StorySource（M4 已落地：`db/schema/story.ts`，migration 0024）
+
+```ts
+type Story = {
+  id: string
+  familyId: string          // FK → family
+  kind: "weekly" | "monthly" | "yearly"
+  periodStart: Date         // 覆盖窗口 [start, end)
+  periodEnd: Date
+  title: string             // 1–100 字
+  status: "draft" | "edited" | "published"
+  editedAt?: Date | null    // 首次用户编辑时间：非空即受再生保护
+  publishedAt?: Date | null
+  publishedByUserId?: string | null
+  createdByJobId?: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+type StoryParagraph = {
+  id: string
+  familyId: string
+  storyId: string           // FK → story，cascade
+  position: number          // 0 起有序
+  kind: "narrative" | "quote"
+  text: string              // ≤2000 字
+  createdAt: Date
+  updatedAt: Date
+}
+
+type StorySource = {
+  id: string
+  familyId: string
+  paragraphId: string       // FK → story_paragraph，cascade
+  sourceType: "fact" | "contribution" | "transcript" | "user_text"
+  sourceId?: string | null  // fact/contribution/transcript 行 id；user_text 为 null
+  quote?: string | null     // quote 段落的逐字引文（与段落文本一致）
+  createdAt: Date
+}
+```
+
+- 状态机：draft →（任何用户编辑）→ editedAt 落库 → published；published 后整篇不可改。
+- 再生保护：regenerate 替换「未编辑」草稿；已编辑/已发布版本另立新草稿，永不覆盖。
+- Quote Lock（服务层强制，不靠 prompt）：quote 段落创建时文本必须能在其
+  contribution/transcript 来源当前文本中逐字找到，且创建后不可编辑（只能删除）；
+  narrative 与手写段落禁止出现引号字符「」“”。
+- 生成输入白名单：user_confirmed Fact + family 可见 Contribution + 用户修订 Transcript
+  + 手写文字；ai_suggested 事实与 private/parents/child_later 讲述永不进入故事。
+- 导出/恢复：edited/published（用户产出的）故事随 `stories.json`/`story-paragraphs.json`/
+  `story-sources.json` 往返；纯 draft 是可重建 derivative，不导出。published 故事进入
+  全文搜索索引。
+
+## SearchIndex（M4 已落地：migration 0023，FTS5 虚拟表）
+
+```sql
+CREATE VIRTUAL TABLE search_index USING fts5(
+  tokens,                    -- CJK bigram + 拉丁词的预分词列（索引列）
+  original_text UNINDEXED,   -- 原文（高亮/单字 LIKE 回退）
+  family_id UNINDEXED,       -- 家庭隔离
+  entity_type UNINDEXED,     -- memory_event | fact | contribution | transcript | story
+  entity_id UNINDEXED,
+  event_id UNINDEXED,        -- 非事件行指向其 memory_event（过滤/跳转）
+  visibility UNINDEXED,      -- contribution 可见性（查询后过滤）
+  author_person_id UNINDEXED,
+  child_person_id UNINDEXED
+);
+```
+
+- 完全离线的 derivative：`npm run search:rebuild` 全量重建；恢复完成后自动重建。
+- 只索引 user_confirmed Fact（rejected/ai_suggested 不入索引）、family 域事件标题、
+  全部 Contribution（查询时按可见性策略后过滤，绝不泄漏）、用户修订 Transcript、
+  published Story（标题 + 段落）。
+- 中文支持：索引与查询两侧 bigram 预分词（`lib/search/tokenizer.ts`），≥2 字词/词组/
+  英文单词走 FTS MATCH，单字中文回退 LIKE。

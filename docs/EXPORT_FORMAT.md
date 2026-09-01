@@ -24,6 +24,7 @@ family-time-capsule-export/
 ├── contributions.json     Contribution 数组（按家人的独立讲述）
 ├── facts.json             Fact 数组（已确认/否决的事实）
 ├── fact-sources.json      Fact 来源关联数组（每条 fact 必须有来源）
+├── stories.json / story-paragraphs.json / story-sources.json   M4 故事三件套
 ├── transcripts.json       AssetTranscript 数组（机器转录 + 用户修订）
 ├── capsules.json          Capsule 数组（含封存胶囊的完整内容引用）
 ├── timeline.md            人类可读时间轴（相对路径引用原媒体）
@@ -112,6 +113,11 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
   身份，明确不导出；Person、姓名快照和记录模式构成可迁移的长期来源信息。
 - `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
 - `fact-sources.json`：`{ id, factId, sourceType, sourceId, quote, startMs, endMs, createdAt }`。
+- `stories.json` / `story-paragraphs.json` / `story-sources.json`（M4 起，additive）：
+  只含 durable 故事（`status='published'` 或 `editedAt != null`；纯 draft 不导出）。
+  段落 `{ id, storyId, position, kind: narrative|quote, text }`；来源
+  `{ id, paragraphId, sourceType: fact|contribution|transcript|user_text, sourceId, quote }`。
+  恢复端校验来源引用存在、quote ≤300、user_text 无 sourceId；三件套必须同时存在或缺失。
   - `sourceType` ∈ `asset | asset_analysis | contribution | transcript | user_text`（M3-D 起
     增加 `asset_analysis`，其 `sourceId` 指向 durable 的 asset id）。
   - `quote`（≤300 字）是创建时逐字验证过的引文；`startMs`/`endMs`（毫秒）是服务端从

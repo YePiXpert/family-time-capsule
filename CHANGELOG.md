@@ -2,6 +2,22 @@
 
 本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ P1 AI 整理员 → P2 家庭口述史。
 
+## Unreleased（M4 — 搜索与故事完成）
+
+### 全文搜索（M4-A，migration 0023）
+
+- FTS5 `search_index`：事件标题、user_confirmed 事实、家人讲述、用户修订转录、已发布故事。
+- 中文 bigram 预分词（≥2 字词/词组命中；单字回退 LIKE）；参与人/标签/媒介/日期过滤。
+- 家庭隔离 + 可见性后过滤：private/parents/child_later 讲述只对策略允许的读者可见。
+- `npm run search:rebuild` 全量重建；恢复完成后自动重建；完全离线、不依赖 AI。
+
+### 故事（M4-C/D/E，migration 0024）
+
+- story/story_paragraph/story_source：周记/月章/年章，draft→edited→published。
+- Quote Lock 服务层强制；再生保护（未编辑草稿可替换，已编辑/已发布永不覆盖）。
+- `generate.story.v1` AI 起草（F#/C#/T# 别名 + 逐条来源校验）+ 无 AI 的离线组装路径。
+- 导出/恢复携带 edited/published 故事三件套；published 故事进入搜索索引。
+
 ## Unreleased（M3 — AI memory organizer 完成）
 
 M3 全部四块（M3-D/E/F/G）落地，版本号仍保持 0.1.3（v1 发布时统一升 1.0.0）。
