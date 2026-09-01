@@ -82,6 +82,8 @@ type Expectation = {
   factQuote: string;
   tags: string[];
   textEventDateOnly: string;
+  publishedStoryId: string;
+  publishedStoryTitle: string;
 };
 
 let expect_: Expectation;
@@ -402,6 +404,42 @@ beforeAll(async () => {
       .run();
     const textEventDateOnly = "2026年8月10日";
 
+    // M4 durable：已发布的故事（含逐字引文段与来源）
+    const storyService = await import("@/lib/stories/service");
+    const storyCtx = {
+      userId: adminId,
+      userName: "爸爸",
+      familyId: on.familyId,
+      personId: dad.id,
+      role: "admin" as const,
+      accountEnabled: true as const,
+      isGuardian: true,
+      familyTimezone: "Asia/Shanghai",
+      childLaterUnlockAge: 21,
+    };
+    const familyContribution = await m.contributions.createContribution(on.familyId, {
+      memoryEventId: ev.eventId,
+      authorPersonId: dad.id,
+      recordedByUserId: adminId,
+      rawText: "出生那天清晨，我第一次抱起她。",
+      visibility: "family",
+    });
+    if (!familyContribution.ok) throw new Error("family contribution failed");
+    const storyAnchorDate = new Date("2026-08-12T00:00:00.000Z");
+    const storyPeriod = storyService.periodForKind("weekly", storyAnchorDate);
+    const storyMaterial = storyService.collectStoryMaterial(on.familyId, storyPeriod);
+    const storyTranscripts = storyService.collectTranscriptMaterial(on.familyId, storyPeriod);
+    const storyPlans = storyService.planDeterministicDraft(storyMaterial, storyTranscripts);
+    expect(storyPlans.length).toBeGreaterThanOrEqual(2);
+    const storyCreated = storyService.createStoryDraft(
+      storyCtx,
+      { kind: "weekly", anchor: storyAnchorDate, title: "出生的那一周" },
+      storyPlans,
+    );
+    if (!storyCreated.ok) throw new Error("story draft failed");
+    const storyPublished = storyService.publishStory(storyCtx, storyCreated.storyId);
+    if (!storyPublished.ok) throw new Error("story publish failed");
+
     const peoplePolicy = (await m.family.listPeople(on.familyId))
       .map((person) => ({
         id: person.id,
@@ -485,6 +523,9 @@ beforeAll(async () => {
       factQuote: "妈妈那天哼着歌哄她入睡",
       tags: ["出生", "医院"],
       textEventDateOnly,
+      // M4 durable
+      publishedStoryId: storyCreated.storyId,
+      publishedStoryTitle: "出生的那一周",
     };
     m.db.closeDatabase();
   }
@@ -711,7 +752,36 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       .map(([name]) => name);
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 12);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 15);
+
+    // M4 durable：已发布故事 + 段落 + 来源（含逐字引文）往返
+    const restoredStories = JSON.parse(
+      await zip.file("family-time-capsule-export/stories.json")!.async("string"),
+    );
+    const publishedStory = restoredStories.find(
+      (st: { id: string }) => st.id === expect_.publishedStoryId,
+    );
+    expect(publishedStory).toMatchObject({
+      title: expect_.publishedStoryTitle,
+      status: "published",
+    });
+    const restoredStoryParagraphs = JSON.parse(
+      await zip.file("family-time-capsule-export/story-paragraphs.json")!.async("string"),
+    );
+    const quoteParagraph = restoredStoryParagraphs.find(
+      (pp: { kind: string; text: string }) =>
+        pp.kind === "quote" && pp.text.includes("我第一次抱起她"),
+    );
+    expect(quoteParagraph).toBeTruthy();
+    const restoredStorySources = JSON.parse(
+      await zip.file("family-time-capsule-export/story-sources.json")!.async("string"),
+    );
+    expect(
+      restoredStorySources.some(
+        (ss: { paragraphId: string; quote: string | null }) =>
+          ss.paragraphId === quoteParagraph.id && ss.quote === quoteParagraph.text,
+      ),
+    ).toBe(true);
 
     // M3 durable：edited transcript / fact locator / tags / date_only 精度全部往返
     const transcripts = JSON.parse(

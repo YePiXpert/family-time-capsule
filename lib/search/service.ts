@@ -13,6 +13,7 @@ import { fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset, memoryEventParticipant } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
 import { assetTranscript } from "@/db/schema/transcript";
+import { story as storyTable, storyParagraph as storyParagraphTable } from "@/db/schema/story";
 import { person as personTable } from "@/db/schema/family";
 import type { FamilyContext } from "@/lib/family/context";
 import { canViewContribution, type ContributionVisibility } from "@/lib/authz/policy";
@@ -264,7 +265,30 @@ export function rebuildSearchIndex(): {
     });
   }
 
-  // stories 由 story 服务在发布时维护；重建时无 published story 表前直接跳过
+  // 已发布故事（标题 + 段落文本）随重建进入索引
+  const stories = db.select().from(storyTable).all().filter((st) => st.status === "published");
+  for (const st of stories) {
+    const body = db
+      .select({ text: storyParagraphTable.text })
+      .from(storyParagraphTable)
+      .where(eq(storyParagraphTable.storyId, st.id))
+      .all()
+      .map((pp) => pp.text)
+      .join("\n");
+    insertIndexRows(db, [
+      {
+        original_text: `${st.title}\n${body}`,
+        family_id: st.familyId,
+        entity_type: "story",
+        entity_id: st.id,
+        event_id: null,
+        visibility: "family",
+        author_person_id: null,
+        child_person_id: null,
+      },
+    ]);
+  }
+
   return {
     events: events.length,
     facts: confirmedFacts.length,
@@ -298,6 +322,7 @@ export type SearchResult = {
   facts: Array<{ id: string; eventId: string; statement: string }>;
   contributions: Array<{ id: string; eventId: string; text: string; authorName: string | null }>;
   transcripts: Array<{ id: string; eventId: string; text: string }>;
+  stories: Array<{ id: string; title: string; snippet: string }>;
   total: number;
 };
 
@@ -327,7 +352,7 @@ export function searchFamily(
   const db = getDb();
   const q = params.q.trim();
   if (!q) {
-    return { events: [], facts: [], contributions: [], transcripts: [], total: 0 };
+    return { events: [], facts: [], contributions: [], transcripts: [], stories: [], total: 0 };
   }
 
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
@@ -344,7 +369,7 @@ export function searchFamily(
   } else {
     const expr = ftsQueryExpression(q);
     if (!expr) {
-      return { events: [], facts: [], contributions: [], transcripts: [], total: 0 };
+      return { events: [], facts: [], contributions: [], transcripts: [], stories: [], total: 0 };
     }
     raw = db
       .all(
@@ -424,6 +449,7 @@ export function searchFamily(
     facts: [],
     contributions: [],
     transcripts: [],
+    stories: [],
     total: 0,
   };
 
@@ -488,14 +514,29 @@ export function searchFamily(
         }
         break;
       case "story":
-        break; // story 命中随 Story 切片接入 UI 时补齐
+        if (result.stories.length < limit) {
+          const storyRow = db
+            .select({ title: storyTable.title })
+            .from(storyTable)
+            .where(eq(storyTable.id, hit.entity_id))
+            .get();
+          if (storyRow) {
+            result.stories.push({
+              id: hit.entity_id,
+              title: storyRow.title,
+              snippet,
+            });
+          }
+        }
+        break;
     }
   }
   result.total =
     result.events.length +
     result.facts.length +
     result.contributions.length +
-    result.transcripts.length;
+    result.transcripts.length +
+    result.stories.length;
   return result;
 }
 

@@ -119,7 +119,7 @@ export default async function SearchPage({
           <p className="text-sm text-foreground/60">
             共 {result.total} 条结果（事件 {result.events.length} · 确认事实{" "}
             {result.facts.length} · 家人讲述 {result.contributions.length} · 转录{" "}
-            {result.transcripts.length}）
+            {result.transcripts.length} · 故事 {result.stories.length}）
           </p>
 
           {result.events.length > 0 && (
@@ -178,6 +178,22 @@ export default async function SearchPage({
                     <Link href={`/memories/${t.eventId}`} className="hover:text-accent">
                       {t.text}
                     </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.stories.length > 0 && (
+            <div>
+              <h2 className="text-base font-medium">故事</h2>
+              <ul className="mt-2 flex flex-col gap-2">
+                {result.stories.map((st) => (
+                  <li key={st.id} className="rounded-lg border border-foreground/10 px-4 py-2.5 text-sm">
+                    <Link href={`/stories/${st.id}`} className="font-medium hover:text-accent">
+                      {st.title}
+                    </Link>
+                    <p className="mt-1 text-xs leading-5 text-foreground/50">{st.snippet}</p>
                   </li>
                 ))}
               </ul>

@@ -57,6 +57,10 @@ if (!SUPPORTED_EXPORT_VERSIONS.has(manifest.exportVersion)) {
   ok(`exportVersion=${manifest.exportVersion}, appVersion=${manifest.appVersion ?? "?"}, 导出时间=${manifest.exportedAt}`);
 }
 
+async function zipEntryExists(name) {
+  return zip.file(`${ROOT}/${name}`) !== null;
+}
+
 const [familyJson, people, memories, contributions, facts, factSources, transcripts, capsules] = await Promise.all([
   readJsonAsync("family.json"),
   readJsonAsync("people.json"),
@@ -73,10 +77,12 @@ const timelineMd = zip.file(`${ROOT}/timeline.md`);
 if (timelineMd) ok("timeline.md 存在");
 else fail("缺少 timeline.md");
 
-// v0.1.5 起固定 12 个非媒体文件（含 inbox*2）；旧档无 inbox 时为 10
+// v0.1.5 起固定 12 个非媒体文件（含 inbox*2）；M4 起 stories 三件套（+3）
 const hasInboxItems = Boolean(zip.file(`${ROOT}/inbox-items.json`));
 const hasInboxItemAssets = Boolean(zip.file(`${ROOT}/inbox-item-assets.json`));
-const expectedNonAssetCount = hasInboxItems && hasInboxItemAssets ? 12 : 10;
+const hasStories = await zipEntryExists("stories.json");
+const expectedNonAssetCount =
+  (hasInboxItems && hasInboxItemAssets ? 12 : 10) + (hasStories ? 3 : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
   fail("inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失");
 }

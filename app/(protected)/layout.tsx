@@ -18,6 +18,7 @@ const NAV: ReadonlyArray<{
   { href: "/inbox", label: "收件箱" },
   { href: "/timeline", label: "时光轴" },
   { href: "/search", label: "搜索" },
+  { href: "/stories", label: "故事" },
   { href: "/family", label: "家人" },
   { href: "/capsules", label: "胶囊" },
   { href: "/settings", label: "设置" },

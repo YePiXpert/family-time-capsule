@@ -4,6 +4,7 @@ import { analyzeAssetImageHandler } from "@/lib/ai/handlers/analyze-asset-image"
 import { analyzeAssetVideoHandler } from "@/lib/ai/handlers/analyze-asset-video";
 import { suggestEventMetadataHandler } from "@/lib/ai/handlers/suggest-event-metadata";
 import { suggestInboxItemHandler } from "@/lib/ai/handlers/suggest-inbox-item";
+import { generateStoryHandler } from "@/lib/ai/handlers/generate-story";
 import type { AiJobHandler } from "./types";
 
 export {
@@ -38,5 +39,6 @@ export function createProductionAiJobRegistry(): AiJobRegistry {
     .register("analyze.asset_image.v1", analyzeAssetImageHandler)
     .register("analyze.asset_video.v1", analyzeAssetVideoHandler)
     .register("suggest.event_metadata.v1", suggestEventMetadataHandler)
-    .register("suggest.inbox_item.v1", suggestInboxItemHandler);
+    .register("suggest.inbox_item.v1", suggestInboxItemHandler)
+    .register("generate.story.v1", generateStoryHandler);
 }

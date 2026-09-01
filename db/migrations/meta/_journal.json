@@ -169,6 +169,13 @@
       "when": 1788217997635,
       "tag": "0023_search_index",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1788219680694,
+      "tag": "0024_stories",
+      "breakpoints": true
     }
   ]
 }

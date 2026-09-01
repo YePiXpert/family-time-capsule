@@ -23,6 +23,11 @@ import {
   capsuleEvent,
 } from "@/db/schema/capsule";
 import { factSource, memoryEventTag } from "@/db/schema/suggestion";
+import {
+  story as storyTable,
+  storyParagraph as storyParagraphTable,
+  storySource as storySourceTable,
+} from "@/db/schema/story";
 import { user as userTable } from "@/db/schema/auth";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { AUDIT_KINDS, recordAudit } from "@/lib/audit/service";
@@ -487,16 +492,47 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     "fact-sources.json 必须是数组",
   );
 
+  // M4 后的 additive 文件：stories 三件套。旧归档缺失时按空故事恢复。
+  const storiesFile = zip.file(`${EXPORT_ROOT_DIR}/stories.json`);
+  const storiesRaw = storiesFile ? await readJson<unknown>("stories.json") : [];
+  requireCondition(Array.isArray(storiesRaw), "bad_json", "stories.json 必须是数组");
+  const storyParagraphsFile = zip.file(`${EXPORT_ROOT_DIR}/story-paragraphs.json`);
+  const storyParagraphsRaw = storyParagraphsFile
+    ? await readJson<unknown>("story-paragraphs.json")
+    : [];
+  requireCondition(
+    Array.isArray(storyParagraphsRaw),
+    "bad_json",
+    "story-paragraphs.json 必须是数组",
+  );
+  const storySourcesFile = zip.file(`${EXPORT_ROOT_DIR}/story-sources.json`);
+  const storySourcesRaw = storySourcesFile
+    ? await readJson<unknown>("story-sources.json")
+    : [];
+  requireCondition(
+    Array.isArray(storySourcesRaw),
+    "bad_json",
+    "story-sources.json 必须是数组",
+  );
+  requireCondition(
+    Boolean(storiesFile) === Boolean(storyParagraphsFile) &&
+      Boolean(storiesFile) === Boolean(storySourcesFile),
+    "bad_json",
+    "stories 三件套文件必须同时存在或同时缺失",
+  );
+
   const hasInboxFiles = Boolean(inboxItemsFile) && Boolean(inboxItemAssetsFile);
+  const hasStoryFiles = Boolean(storiesFile);
   const expectedFileCount =
     manifest.assets.length +
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
     (transcriptsFile ? 1 : 0) +
-    (factSourcesFile ? 1 : 0);
+    (factSourcesFile ? 1 : 0) +
+    (hasStoryFiles ? 3 : 0);
   requireCondition(
     manifest.fileCount === expectedFileCount,
-    hasInboxFiles || factSourcesFile ? "bad_manifest" : "missing_json",
+    hasInboxFiles || factSourcesFile || hasStoryFiles ? "bad_manifest" : "missing_json",
     hasInboxFiles
       ? "manifest.fileCount 与当前 v1 文件集不一致"
       : "归档声明包含 Inbox 文件，但两份 Inbox JSON 均缺失",
@@ -1145,6 +1181,207 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       updatedAt: t.updatedAt as string | null | undefined,
     });
   }
+
+  // ---- M4 故事三件套校验 ----
+  const STORY_KINDS_RESTORE = new Set(["weekly", "monthly", "yearly"]);
+  const STORY_STATUSES = new Set(["draft", "edited", "published"]);
+  const STORY_SOURCE_TYPES = new Set([
+    "fact",
+    "contribution",
+    "transcript",
+    "user_text",
+  ]);
+  const storyIds = new Set<string>();
+  const storiesJson: Array<{
+    id: string;
+    kind: string;
+    periodStart: string;
+    periodEnd: string;
+    title: string;
+    status: string;
+    editedAt: string | null;
+    publishedAt: string | null;
+    publishedByUserId: string | null;
+    createdAt: string | null | undefined;
+    updatedAt: string | null | undefined;
+  }> = [];
+  for (const value of storiesRaw) {
+    requireCondition(isRecord(value), "bad_json", "story 必须是对象");
+    const st = value as Record<string, unknown>;
+    requireCondition(
+      typeof st.id === "string" && UUID_LIKE.test(st.id) && !storyIds.has(st.id),
+      "bad_json",
+      `story id 缺失或重复: ${String(st.id)}`,
+    );
+    storyIds.add(st.id);
+    requireCondition(
+      typeof st.kind === "string" && STORY_KINDS_RESTORE.has(st.kind),
+      "bad_json",
+      `story ${st.id} 的 kind 非法`,
+    );
+    requireCondition(
+      typeof st.title === "string" && st.title.trim().length >= 1 && st.title.length <= 100,
+      "bad_json",
+      `story ${st.id} 的 title 非法`,
+    );
+    requireCondition(
+      typeof st.status === "string" && STORY_STATUSES.has(st.status),
+      "bad_json",
+      `story ${st.id} 的 status 非法`,
+    );
+    requireCondition(
+      typeof st.periodStart === "string" && typeof st.periodEnd === "string",
+      "bad_json",
+      `story ${st.id} 的时间窗口非法`,
+    );
+    requireCondition(
+      isNullableString(st.editedAt) &&
+        isNullableString(st.publishedAt) &&
+        isNullableString(st.publishedByUserId),
+      "bad_json",
+      `story ${st.id} 的可空字段非法`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(st.createdAt) && isOptionalArchiveDate(st.updatedAt),
+      "bad_json",
+      `story ${st.id} 的时间字段非法`,
+    );
+    storiesJson.push({
+      id: st.id as string,
+      kind: st.kind as string,
+      periodStart: st.periodStart as string,
+      periodEnd: st.periodEnd as string,
+      title: st.title as string,
+      status: st.status as string,
+      editedAt: (st.editedAt ?? null) as string | null,
+      publishedAt: (st.publishedAt ?? null) as string | null,
+      publishedByUserId: (st.publishedByUserId ?? null) as string | null,
+      createdAt: st.createdAt as string | null | undefined,
+      updatedAt: st.updatedAt as string | null | undefined,
+    });
+  }
+
+  const storyParagraphIds = new Set<string>();
+  const storyParagraphsJson: Array<{
+    id: string;
+    storyId: string;
+    position: number;
+    kind: string;
+    text: string;
+    createdAt: string | null | undefined;
+    updatedAt: string | null | undefined;
+  }> = [];
+  for (const value of storyParagraphsRaw) {
+    requireCondition(isRecord(value), "bad_json", "story paragraph 必须是对象");
+    const pp = value as Record<string, unknown>;
+    requireCondition(
+      typeof pp.id === "string" && UUID_LIKE.test(pp.id) && !storyParagraphIds.has(pp.id),
+      "bad_json",
+      `story paragraph id 缺失或重复: ${String(pp.id)}`,
+    );
+    storyParagraphIds.add(pp.id);
+    requireCondition(
+      typeof pp.storyId === "string" && storyIds.has(pp.storyId),
+      "bad_refs",
+      `story paragraph ${String(pp.id)} 引用未知故事`,
+    );
+    requireCondition(
+      typeof pp.position === "number" &&
+        Number.isInteger(pp.position) &&
+        pp.position >= 0 &&
+        pp.position <= 1000,
+      "bad_json",
+      `story paragraph ${String(pp.id)} 的 position 非法`,
+    );
+    requireCondition(
+      (pp.kind === "narrative" || pp.kind === "quote") &&
+        typeof pp.text === "string" &&
+        pp.text.length > 0 &&
+        pp.text.length <= 2000,
+      "bad_json",
+      `story paragraph ${String(pp.id)} 的 kind/text 非法`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(pp.createdAt) && isOptionalArchiveDate(pp.updatedAt),
+      "bad_json",
+      `story paragraph ${String(pp.id)} 的时间字段非法`,
+    );
+    storyParagraphsJson.push({
+      id: pp.id as string,
+      storyId: pp.storyId as string,
+      position: pp.position as number,
+      kind: pp.kind as string,
+      text: pp.text as string,
+      createdAt: pp.createdAt as string | null | undefined,
+      updatedAt: pp.updatedAt as string | null | undefined,
+    });
+  }
+
+  const storySourcesJson: Array<{
+    id: string;
+    paragraphId: string;
+    sourceType: string;
+    sourceId: string | null;
+    quote: string | null;
+    createdAt: string | null | undefined;
+  }> = [];
+  const seenStorySourceIds = new Set<string>();
+  for (const value of storySourcesRaw) {
+    requireCondition(isRecord(value), "bad_json", "story source 必须是对象");
+    const ss = value as Record<string, unknown>;
+    requireCondition(
+      typeof ss.id === "string" && UUID_LIKE.test(ss.id) && !seenStorySourceIds.has(ss.id),
+      "bad_json",
+      `story source id 缺失或重复: ${String(ss.id)}`,
+    );
+    seenStorySourceIds.add(ss.id);
+    requireCondition(
+      typeof ss.paragraphId === "string" && storyParagraphIds.has(ss.paragraphId),
+      "bad_refs",
+      `story source ${String(ss.id)} 引用未知段落`,
+    );
+    requireCondition(
+      typeof ss.sourceType === "string" && STORY_SOURCE_TYPES.has(ss.sourceType),
+      "bad_json",
+      `story source ${String(ss.id)} 的 sourceType 非法`,
+    );
+    if (ss.sourceType === "user_text") {
+      requireCondition(
+        ss.sourceId === undefined || ss.sourceId === null,
+        "bad_refs",
+        `story source ${String(ss.id)}：user_text 不允许 sourceId`,
+      );
+    } else {
+      requireCondition(
+        typeof ss.sourceId === "string" && ss.sourceId.length > 0,
+        "bad_refs",
+        `story source ${String(ss.id)} 缺少 sourceId`,
+      );
+      const known =
+        (ss.sourceType === "fact" && factIds.has(ss.sourceId as string)) ||
+        (ss.sourceType === "contribution" && contributionIds.has(ss.sourceId as string)) ||
+        (ss.sourceType === "transcript" && transcriptIds.has(ss.sourceId as string));
+      requireCondition(
+        known,
+        "bad_refs",
+        `story source ${String(ss.id)} 引用未知 ${ss.sourceType} ${String(ss.sourceId)}`,
+      );
+    }
+    requireCondition(
+      isNullableString(ss.quote) &&
+        (ss.quote === undefined || ss.quote === null || ss.quote.length <= 300),
+      "bad_json",
+      `story source ${String(ss.id)} 的 quote 非法`,
+    );
+    storySourcesJson.push({
+      id: ss.id as string,
+      paragraphId: ss.paragraphId as string,
+      sourceType: ss.sourceType as string,
+      sourceId: (ss.sourceId ?? null) as string | null,
+      quote: ((ss.quote as string | null | undefined) ?? null) || null,
+      createdAt: ss.createdAt as string | null | undefined,
+    });
+  }
   requireCondition(
     Array.isArray(capsulesJson),
     "bad_json",
@@ -1214,6 +1451,9 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     inboxItemsJson,
     inboxItemAssetsJson,
     assetBuffers,
+    storiesJson,
+    storyParagraphsJson,
+    storySourcesJson,
   };
 }
 
@@ -1264,6 +1504,9 @@ export async function restoreFromZip(
     inboxItemsJson,
     inboxItemAssetsJson,
     assetBuffers,
+    storiesJson,
+    storyParagraphsJson,
+    storySourcesJson,
   } = data;
 
   const storage = getAssetStorage();
@@ -1534,6 +1777,59 @@ export async function restoreFromZip(
           .run();
       }
 
+      if (storiesJson.length > 0) {
+        tx.insert(storyTable)
+          .values(
+            storiesJson.map((st) => ({
+              id: st.id,
+              familyId,
+              kind: st.kind,
+              periodStart: new Date(st.periodStart),
+              periodEnd: new Date(st.periodEnd),
+              title: st.title,
+              status: st.status,
+              editedAt: st.editedAt ? new Date(st.editedAt) : null,
+              publishedAt: st.publishedAt ? new Date(st.publishedAt) : null,
+              publishedByUserId: st.publishedByUserId,
+              createdByJobId: null,
+              createdAt: parseDate(st.createdAt) ?? now,
+              updatedAt: parseDate(st.updatedAt) ?? parseDate(st.createdAt) ?? now,
+            })),
+          )
+          .run();
+        if (storyParagraphsJson.length > 0) {
+          tx.insert(storyParagraphTable)
+            .values(
+              storyParagraphsJson.map((pp) => ({
+                id: pp.id,
+                familyId,
+                storyId: pp.storyId,
+                position: pp.position,
+                kind: pp.kind,
+                text: pp.text,
+                createdAt: parseDate(pp.createdAt) ?? now,
+                updatedAt: parseDate(pp.updatedAt) ?? parseDate(pp.createdAt) ?? now,
+              })),
+            )
+            .run();
+        }
+        if (storySourcesJson.length > 0) {
+          tx.insert(storySourceTable)
+            .values(
+              storySourcesJson.map((ss) => ({
+                id: ss.id,
+                familyId,
+                paragraphId: ss.paragraphId,
+                sourceType: ss.sourceType,
+                sourceId: ss.sourceId,
+                quote: ss.quote,
+                createdAt: parseDate(ss.createdAt) ?? now,
+              })),
+            )
+            .run();
+        }
+      }
+
       if (capsulesJson.length > 0) {
         tx.insert(capsuleTable)
           .values(
@@ -1621,6 +1917,9 @@ export async function restoreFromZip(
         capsuleEventCount,
         capsuleAssetCount,
         capsuleContributionCount,
+        storyCount,
+        storyParagraphCount,
+        storySourceCount,
       ] = [
         tx
           .select({ value: count() })
@@ -1711,6 +2010,17 @@ export async function restoreFromZip(
           .from(capsuleContribution)
           .where(eq(capsuleContribution.familyId, familyId))
           .all(),
+        tx.select({ value: count() }).from(storyTable).where(eq(storyTable.familyId, familyId)).all(),
+        tx
+          .select({ value: count() })
+          .from(storyParagraphTable)
+          .where(eq(storyParagraphTable.familyId, familyId))
+          .all(),
+        tx
+          .select({ value: count() })
+          .from(storySourceTable)
+          .where(eq(storySourceTable.familyId, familyId))
+          .all(),
       ];
       const num = (rows: Array<{ value: number }>) =>
         Number(rows[0]?.value ?? 0);
@@ -1722,6 +2032,9 @@ export async function restoreFromZip(
         contributions: { actual: num(contribCount), expected: contributionsJson.length },
         facts: { actual: num(factCount), expected: factsJson.length },
         factSources: { actual: num(factSourceCount), expected: factSourcesJson.length },
+        stories: { actual: num(storyCount), expected: storiesJson.length },
+        storyParagraphs: { actual: num(storyParagraphCount), expected: storyParagraphsJson.length },
+        storySources: { actual: num(storySourceCount), expected: storySourcesJson.length },
         transcripts: { actual: num(transcriptCount), expected: transcriptsJson.length },
         capsules: { actual: num(capsuleCount), expected: capsulesJson.length },
         inboxItems: { actual: num(inboxItemCount), expected: inboxItemsJson.length },

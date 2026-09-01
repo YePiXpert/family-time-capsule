@@ -309,7 +309,7 @@ describe("image analysis end-to-end", () => {
       await zip.file(`${root}/manifest.json`)!.async("string"),
     );
     expect(manifest.fileCount).toBe(
-      manifest.assets.length + 12,
+      manifest.assets.length + 15,
     );
 
     const files = Object.keys(zip.files).filter((n) =>

@@ -223,7 +223,7 @@ describe("完整导出（#014）", () => {
     expect(manifest.exportVersion).toBe(1);
     expect(manifest.appVersion).toBe("0.1.3");
     expect(manifest.familyId).toBe(familyId);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 12);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 15);
     expect(result.fileCount).toBe(manifest.fileCount);
     expect(familyJson.name).toBe("我们一家");
     expect(familyJson.childLaterUnlockAge).toBe(21);

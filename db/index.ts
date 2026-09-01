@@ -19,6 +19,7 @@ import * as transcriptSchema from "./schema/transcript";
 import * as analysisSchema from "./schema/analysis";
 import * as suggestionSchema from "./schema/suggestion";
 import * as clusterSchema from "./schema/clusters";
+import * as storySchema from "./schema/story";
 
 /**
  * SQLite 单例：数据库文件位于 $DATA_DIR/db/capsule.sqlite（PRD §11）。
@@ -63,6 +64,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...analysisSchema,
         ...suggestionSchema,
         ...clusterSchema,
+        ...storySchema,
         ...auditSchema,
       },
     });

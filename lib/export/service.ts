@@ -1,3 +1,4 @@
+import { collectDurableStories } from "@/lib/stories/service";
 import { createWriteStream, statSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -47,7 +48,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 12;
+export const EXPORT_NON_ASSET_FILE_COUNT = 15;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -392,6 +393,36 @@ export async function buildFamilyExport(
       startMs: s.startMs,
       endMs: s.endMs,
       createdAt: iso(s.createdAt),
+    })));    const storyBundle = collectDurableStories(familyId);
+    json("stories.json", storyBundle.stories.map((st) => ({
+      id: st.id,
+      kind: st.kind,
+      periodStart: iso(st.periodStart),
+      periodEnd: iso(st.periodEnd),
+      title: st.title,
+      status: st.status,
+      editedAt: st.editedAt ? iso(st.editedAt) : null,
+      publishedAt: st.publishedAt ? iso(st.publishedAt) : null,
+      publishedByUserId: st.publishedByUserId,
+      createdAt: iso(st.createdAt),
+      updatedAt: iso(st.updatedAt),
+    })));
+    json("story-paragraphs.json", storyBundle.paragraphs.map((pp) => ({
+      id: pp.id,
+      storyId: pp.storyId,
+      position: pp.position,
+      kind: pp.kind,
+      text: pp.text,
+      createdAt: iso(pp.createdAt),
+      updatedAt: iso(pp.updatedAt),
+    })));
+    json("story-sources.json", storyBundle.sources.map((ss) => ({
+      id: ss.id,
+      paragraphId: ss.paragraphId,
+      sourceType: ss.sourceType,
+      sourceId: ss.sourceId,
+      quote: ss.quote,
+      createdAt: iso(ss.createdAt),
     })));
     json("transcripts.json", transcripts.map((t) => ({
       id: t.id,
