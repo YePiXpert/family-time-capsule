@@ -2,6 +2,25 @@
 
 本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ P1 AI 整理员 → P2 家庭口述史。
 
+## Unreleased（M5 + M6 — 口述史、胶囊对话、书籍与备份）
+
+### 口述收集与胶囊对话（M5，migrations 0025/0026）
+
+- 匿名讲述链接：256-bit token 只存 SHA-256、可过期可关闭、5 条/小时限流；
+  访客页只显示称呼与问题；文字/录音/照片/视频提交进收件箱审核，绝不直接发布。
+- 内置十主题口述问题库。
+- 胶囊对话：未来问题在 draft 阶段固化；开启后家人可用文字/媒体回答；
+  封存历史内容零改动；两表随 archive 导出/恢复。
+
+### 书籍 / WebDAV 备份 / 分享目标（M6）
+
+- PDF（sharp SVG 排版 → JPEG 页 → DCTDecode 直嵌）与 EPUB 3 生成器；
+  已发布故事与年度事件可成书下载；媒体全部内嵌，绝无内部鉴权 URL。
+- WebDAV BackupTarget（migration 0027）：verified export → 临时上传 → 回读
+  SHA-256 → 原子 MOVE（降级路径如实记录）；凭据仅存 env，零泄漏（测试覆盖）；
+  设置页历史与一键重试。
+- PWA Share Target：系统分享的照片/视频/音频/文字/链接直达收件箱。
+
 ## Unreleased（M4 — 搜索与故事完成）
 
 ### 全文搜索（M4-A，migration 0023）

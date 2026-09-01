@@ -30,7 +30,7 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 ### Current progress after the initial audit
 
 - Application version intentionally remains `0.1.3`; no release tag exists.
-- Schema now has **40 tables** and **27 forward migrations** (`0000`–`0026`); the FTS5
+- Schema now has **41 tables** and **28 forward migrations** (`0000`–`0027`); the FTS5
   `search_index` virtual table lives outside the relational schema.
 - M1 family roles, invitations, account lifecycle, guardians, `child_later` unlock, and
   Contribution visibility are enforced across services, media, events, capsules and UI.
@@ -287,15 +287,25 @@ Exit: FTS works with no AI; search and Story generation obey visibility; publish
 
 Exit: public-link abuse/rate-limit/isolation tests, oral-history flows, and capsule reply roundtrip pass. ✅
 
-### M6 — 0.8.x Portable products, remote backup, and sharing
+### M6 — 0.8.x Portable products, remote backup, and sharing — **COMPLETE**
 
-- Produce source-aware printable PDF and standards-compatible EPUB books without authenticated internal URLs.
-- Add WebDAV `BackupTarget`, connection test, verified temporary upload, remote validation, atomic rename where supported, history, retry, and CLI.
-- Keep WebDAV credentials out of logs/export/client code; use environment configuration unless secure encryption is implemented.
-- Add PWA Share Target for supported photo/video/audio/text/link inputs into Inbox; document platform limits.
-- Extend export/restore/verify for all v1 durable domains and retain old archive compatibility.
+- Produce source-aware printable PDF and standards-compatible EPUB books without authenticated internal URLs. ✅
+  （手写 PDF 封装：sharp SVG 排版中文页 → JPEG → DCTDecode 直嵌；EPUB 3 生成器
+  （mimetype 首位不压缩 / nav / opf spine）；已发布故事书 + 年度事件书；Docker 镜像
+  内置 Noto CJK 字体）
+- Add WebDAV `BackupTarget`, connection test, verified temporary upload, remote validation, atomic rename where supported, history, retry, and CLI. ✅
+  （migration 0027 `backup_run` 历史；verified export → 临时上传 → 回读 SHA-256 →
+  原子 MOVE（不支持时降级 direct-upload 并如实记录）；重试 = 全量重跑；设置页 UI；
+  连接状态显示即目标解析结果）
+- Keep WebDAV credentials out of logs/export/client code; use environment configuration unless secure encryption is implemented. ✅
+  （凭据仅存在于 env；错误信息/历史/客户端输出经测试验证零泄漏）
+- Add PWA Share Target for supported photo/video/audio/text/link inputs into Inbox; document platform limits. ✅
+  （manifest share_target → POST /share multipart → 同源 + 会话 + capture:create
+  校验后入箱；平台限制：仅安装为 PWA 的浏览器出现系统分享入口）
+- Extend export/restore/verify for all v1 durable domains and retain old archive compatibility. ✅
+  （M3–M5 的 additive 文件已全部接入 verify:export；旧档缺失文件按空域恢复）
 
-Exit: PDF/EPUB portability, fake-WebDAV success/failure/retry, share-target security, and v1 disaster roundtrip pass.
+Exit: PDF/EPUB portability, fake-WebDAV success/failure/retry, share-target security, and v1 disaster roundtrip pass. ✅
 
 ### M7 — 0.9.x Scale, resilience, UX, and accessibility
 

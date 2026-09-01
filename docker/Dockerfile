@@ -21,8 +21,9 @@ RUN npm run build:ops
 
 FROM node:24-alpine AS runner
 WORKDIR /app
-# FFmpeg 是增强能力（视频封面/波形/转码），不是核心硬依赖（PRD §19）
-RUN apk add --no-cache ffmpeg libc6-compat \
+# FFmpeg 是增强能力（视频封面/波形/转码），不是核心硬依赖（PRD §19）；
+# Noto CJK 供 PDF 书籍排版（sharp/librsvg 渲染中文页面）
+RUN apk add --no-cache ffmpeg libc6-compat font-noto-cjk \
   && addgroup -S --gid 1001 nodejs \
   && adduser -S --uid 1001 --ingroup nodejs nextjs
 ENV NODE_ENV=production \
