@@ -81,8 +81,11 @@ else fail("缺少 timeline.md");
 const hasInboxItems = Boolean(zip.file(`${ROOT}/inbox-items.json`));
 const hasInboxItemAssets = Boolean(zip.file(`${ROOT}/inbox-item-assets.json`));
 const hasStories = await zipEntryExists("stories.json");
+const hasDialogue = await zipEntryExists("capsule-questions.json");
 const expectedNonAssetCount =
-  (hasInboxItems && hasInboxItemAssets ? 12 : 10) + (hasStories ? 3 : 0);
+  (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
+  (hasStories ? 3 : 0) +
+  (hasDialogue ? 2 : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
   fail("inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失");
 }

@@ -482,6 +482,6 @@ describe("M4：Story 生命周期", () => {
     const manifest = JSON.parse(
       await zip.file("family-time-capsule-export/manifest.json")!.async("string"),
     );
-    expect(manifest.fileCount).toBe(manifest.assets.length + 15);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 17);
   });
 });

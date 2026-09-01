@@ -176,6 +176,20 @@
       "when": 1788219680694,
       "tag": "0024_stories",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1788238987619,
+      "tag": "0025_contribution_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1788239131526,
+      "tag": "0026_capsule_dialogue",
+      "breakpoints": true
     }
   ]
 }

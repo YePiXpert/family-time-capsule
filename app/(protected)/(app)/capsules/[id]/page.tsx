@@ -6,6 +6,8 @@ import { listPeople } from "@/lib/family/service";
 import { getCapsuleDetail } from "@/lib/capsules/service";
 import { listMemoryEvents } from "@/lib/memories/service";
 import { CapsuleActions } from "./capsule-actions";
+import { AddQuestionForm, ReplyForm, RemoveQuestionButton } from "./dialogue-ui";
+import { getCapsuleDialogue } from "@/lib/capsules/dialogue";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import {
   createContributionAccessSnapshot,
@@ -44,6 +46,7 @@ export default async function CapsuleDetailPage({
 
   const { capsule, events, contributions, unlocked } = detail;
   const locked = capsule.status === "sealed" && !unlocked;
+  const dialogue = await getCapsuleDialogue(familyId, capsule.id);
   const eventOptions =
     canWrite && capsule.status === "draft"
       ? (await listMemoryEvents(familyId)).map((e) => ({ id: e.id, title: e.title }))
@@ -97,6 +100,80 @@ export default async function CapsuleDetailPage({
           contributionOptions={contributionOptions}
         />
       )}
+
+      <section aria-label="胶囊对话" className="mt-10 flex flex-col gap-4">
+        <h2 className="text-lg font-medium">跨时空对话</h2>
+        {capsule.status === "draft" ? (
+          <>
+            <p className="text-sm leading-6 text-foreground/50">
+              在封存前写下想问未来的他/她的问题；胶囊开启后，家人可以用文字、录音、
+              照片或视频回答。封存后问题不再改变，已封存的内容也不会因回答被修改。
+            </p>
+            {dialogue.map((q) => (
+              <div
+                key={q.id}
+                className="flex items-center justify-between gap-2 rounded-lg border border-foreground/10 px-4 py-2.5 text-sm"
+              >
+                <span>{q.questionText}</span>
+                {canWrite && (
+                  <RemoveQuestionButton capsuleId={capsule.id} questionId={q.id} />
+                )}
+              </div>
+            ))}
+            {canWrite && <AddQuestionForm capsuleId={capsule.id} />}
+          </>
+        ) : (
+          <>
+            {locked && (
+              <p className="text-sm leading-6 text-foreground/50">
+                封存了 {dialogue.length} 个问题；开启后可以回答。
+              </p>
+            )}
+            {dialogue.map((q) => (
+              <article
+                key={q.id}
+                className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4"
+              >
+                <p className="text-base font-medium leading-7">{q.questionText}</p>
+                <ul className="mt-3 flex flex-col gap-2">
+                  {q.replies.map((r) => (
+                    <li
+                      key={r.id}
+                      className="rounded-lg border border-foreground/10 bg-background px-3 py-2 text-sm"
+                    >
+                      <span className="text-xs text-foreground/50">
+                        {r.authorName ?? "家人"} ·{" "}
+                        {new Intl.DateTimeFormat("zh-CN", {
+                          dateStyle: "medium",
+                          timeZone: timezone,
+                        }).format(r.createdAt)}
+                      </span>
+                      {r.text && (
+                        <p className="mt-1 whitespace-pre-wrap leading-7">{r.text}</p>
+                      )}
+                      {r.assetId && (
+                        <p className="mt-1 text-xs text-foreground/50">
+                          （附带一份媒体，见 /api/media/{r.assetId}）
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {unlocked && canWrite && (
+                  <div className="mt-3">
+                    <ReplyForm capsuleId={capsule.id} questionId={q.id} />
+                  </div>
+                )}
+              </article>
+            ))}
+            {dialogue.length === 0 && (
+              <p className="text-sm text-foreground/50">
+                这个胶囊没有留下未来问题。
+              </p>
+            )}
+          </>
+        )}
+      </section>
 
       {locked ? (
         <section

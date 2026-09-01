@@ -28,6 +28,10 @@ import {
   storyParagraph as storyParagraphTable,
   storySource as storySourceTable,
 } from "@/db/schema/story";
+import {
+  futureQuestion as futureQuestionTable,
+  capsuleReply as capsuleReplyTable,
+} from "@/db/schema/capsule";
 import { user as userTable } from "@/db/schema/auth";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { AUDIT_KINDS, recordAudit } from "@/lib/audit/service";
@@ -521,18 +525,47 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     "stories 三件套文件必须同时存在或同时缺失",
   );
 
+  // M5 后的 additive 文件：胶囊对话两件套。旧归档缺失时按空恢复。
+  const capsuleQuestionsFile = zip.file(`${EXPORT_ROOT_DIR}/capsule-questions.json`);
+  const capsuleQuestionsRaw = capsuleQuestionsFile
+    ? await readJson<unknown>("capsule-questions.json")
+    : [];
+  requireCondition(
+    Array.isArray(capsuleQuestionsRaw),
+    "bad_json",
+    "capsule-questions.json 必须是数组",
+  );
+  const capsuleRepliesFile = zip.file(`${EXPORT_ROOT_DIR}/capsule-replies.json`);
+  const capsuleRepliesRaw = capsuleRepliesFile
+    ? await readJson<unknown>("capsule-replies.json")
+    : [];
+  requireCondition(
+    Array.isArray(capsuleRepliesRaw),
+    "bad_json",
+    "capsule-replies.json 必须是数组",
+  );
+  requireCondition(
+    Boolean(capsuleQuestionsFile) === Boolean(capsuleRepliesFile),
+    "bad_json",
+    "capsule 对话两件套必须同时存在或同时缺失",
+  );
+
   const hasInboxFiles = Boolean(inboxItemsFile) && Boolean(inboxItemAssetsFile);
   const hasStoryFiles = Boolean(storiesFile);
+  const hasDialogueFiles = Boolean(capsuleQuestionsFile);
   const expectedFileCount =
     manifest.assets.length +
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
     (transcriptsFile ? 1 : 0) +
     (factSourcesFile ? 1 : 0) +
-    (hasStoryFiles ? 3 : 0);
+    (hasStoryFiles ? 3 : 0) +
+    (hasDialogueFiles ? 2 : 0);
   requireCondition(
     manifest.fileCount === expectedFileCount,
-    hasInboxFiles || factSourcesFile || hasStoryFiles ? "bad_manifest" : "missing_json",
+    hasInboxFiles || factSourcesFile || hasStoryFiles || hasDialogueFiles
+      ? "bad_manifest"
+      : "missing_json",
     hasInboxFiles
       ? "manifest.fileCount 与当前 v1 文件集不一致"
       : "归档声明包含 Inbox 文件，但两份 Inbox JSON 均缺失",
@@ -1382,6 +1415,111 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
       createdAt: ss.createdAt as string | null | undefined,
     });
   }
+
+  // ---- M5 胶囊对话校验 ----
+  const capsuleIdSet = new Set(capsulesJson.map((c) => c.id));
+  const questionIds = new Set<string>();
+  const capsuleQuestionJson: Array<{
+    id: string;
+    capsuleId: string;
+    questionText: string;
+    createdAt: string | null | undefined;
+  }> = [];
+  for (const value of capsuleQuestionsRaw) {
+    requireCondition(isRecord(value), "bad_json", "capsule question 必须是对象");
+    const q = value as Record<string, unknown>;
+    requireCondition(
+      typeof q.id === "string" && UUID_LIKE.test(q.id) && !questionIds.has(q.id),
+      "bad_json",
+      `capsule question id 缺失或重复: ${String(q.id)}`,
+    );
+    questionIds.add(q.id);
+    requireCondition(
+      typeof q.capsuleId === "string" && capsuleIdSet.has(q.capsuleId),
+      "bad_refs",
+      `capsule question ${String(q.id)} 引用未知胶囊`,
+    );
+    requireCondition(
+      typeof q.questionText === "string" &&
+        q.questionText.trim().length >= 1 &&
+        q.questionText.length <= 500,
+      "bad_json",
+      `capsule question ${String(q.id)} 的文本非法`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(q.createdAt),
+      "bad_json",
+      `capsule question ${String(q.id)} 的时间非法`,
+    );
+    capsuleQuestionJson.push({
+      id: q.id as string,
+      capsuleId: q.capsuleId as string,
+      questionText: q.questionText as string,
+      createdAt: q.createdAt as string | null | undefined,
+    });
+  }
+
+  const capsuleReplyJson: Array<{
+    id: string;
+    questionId: string;
+    authorPersonId: string | null;
+    text: string | null;
+    assetId: string | null;
+    createdAt: string | null | undefined;
+  }> = [];
+  const seenReplyIds = new Set<string>();
+  for (const value of capsuleRepliesRaw) {
+    requireCondition(isRecord(value), "bad_json", "capsule reply 必须是对象");
+    const r = value as Record<string, unknown>;
+    requireCondition(
+      typeof r.id === "string" && UUID_LIKE.test(r.id) && !seenReplyIds.has(r.id),
+      "bad_json",
+      `capsule reply id 缺失或重复: ${String(r.id)}`,
+    );
+    seenReplyIds.add(r.id);
+    requireCondition(
+      typeof r.questionId === "string" && questionIds.has(r.questionId),
+      "bad_refs",
+      `capsule reply ${String(r.id)} 引用未知问题`,
+    );
+    requireCondition(
+      r.text === undefined ||
+        r.text === null ||
+        (typeof r.text === "string" && r.text.length >= 1 && r.text.length <= 10000),
+      "bad_json",
+      `capsule reply ${String(r.id)} 的文本非法`,
+    );
+    requireCondition(
+      (r.text !== null && r.text !== undefined) || typeof r.assetId === "string",
+      "bad_json",
+      `capsule reply ${String(r.id)} 缺少内容（文字或媒体至少其一）`,
+    );
+    requireCondition(
+      r.assetId === undefined || r.assetId === null || (typeof r.assetId === "string" && assetIds.has(r.assetId as string)),
+      "bad_refs",
+      `capsule reply ${String(r.id)} 引用未知素材`,
+    );
+    requireCondition(
+      r.authorPersonId === undefined ||
+        r.authorPersonId === null ||
+        (typeof r.authorPersonId === "string" && personIds.has(r.authorPersonId as string)),
+      "bad_refs",
+      `capsule reply ${String(r.id)} 引用未知人物`,
+    );
+    requireCondition(
+      isOptionalArchiveDate(r.createdAt),
+      "bad_json",
+      `capsule reply ${String(r.id)} 的时间非法`,
+    );
+    capsuleReplyJson.push({
+      id: r.id as string,
+      questionId: r.questionId as string,
+      authorPersonId: (r.authorPersonId ?? null) as string | null,
+      text: (r.text ?? null) as string | null,
+      assetId: (r.assetId ?? null) as string | null,
+      createdAt: r.createdAt as string | null | undefined,
+    });
+  }
   requireCondition(
     Array.isArray(capsulesJson),
     "bad_json",
@@ -1454,6 +1592,8 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     storiesJson,
     storyParagraphsJson,
     storySourcesJson,
+    capsuleQuestionJson,
+    capsuleReplyJson,
   };
 }
 
@@ -1507,6 +1647,8 @@ export async function restoreFromZip(
     storiesJson,
     storyParagraphsJson,
     storySourcesJson,
+    capsuleQuestionJson,
+    capsuleReplyJson,
   } = data;
 
   const storage = getAssetStorage();
@@ -1882,6 +2024,37 @@ export async function restoreFromZip(
         if (capContribs.length > 0) {
           tx.insert(capsuleContribution).values(capContribs).run();
         }
+      if (capsuleQuestionJson.length > 0) {
+        tx.insert(futureQuestionTable)
+          .values(
+            capsuleQuestionJson.map((q) => ({
+              id: q.id,
+              familyId,
+              capsuleId: q.capsuleId,
+              questionText: q.questionText,
+              createdByUserId: operatorUserId,
+              createdAt: parseDate(q.createdAt) ?? now,
+            })),
+          )
+          .run();
+        if (capsuleReplyJson.length > 0) {
+          tx.insert(capsuleReplyTable)
+            .values(
+              capsuleReplyJson.map((r) => ({
+                id: r.id,
+                familyId,
+                questionId: r.questionId,
+                capsuleId:
+                  capsuleQuestionJson.find((q) => q.id === r.questionId)?.capsuleId ?? "",
+                authorPersonId: r.authorPersonId,
+                text: r.text,
+                assetId: r.assetId,
+                createdAt: parseDate(r.createdAt) ?? now,
+              })),
+            )
+            .run();
+        }
+      }
       }
 
       // The verification belongs to the restore transaction. If it ran after
@@ -1920,6 +2093,8 @@ export async function restoreFromZip(
         storyCount,
         storyParagraphCount,
         storySourceCount,
+        capsuleQuestionCount,
+        capsuleReplyCount,
       ] = [
         tx
           .select({ value: count() })
@@ -2021,6 +2196,12 @@ export async function restoreFromZip(
           .from(storySourceTable)
           .where(eq(storySourceTable.familyId, familyId))
           .all(),
+        tx.select({ value: count() }).from(futureQuestionTable).where(eq(futureQuestionTable.familyId, familyId)).all(),
+        tx
+          .select({ value: count() })
+          .from(capsuleReplyTable)
+          .where(eq(capsuleReplyTable.familyId, familyId))
+          .all(),
       ];
       const num = (rows: Array<{ value: number }>) =>
         Number(rows[0]?.value ?? 0);
@@ -2035,6 +2216,8 @@ export async function restoreFromZip(
         stories: { actual: num(storyCount), expected: storiesJson.length },
         storyParagraphs: { actual: num(storyParagraphCount), expected: storyParagraphsJson.length },
         storySources: { actual: num(storySourceCount), expected: storySourcesJson.length },
+        capsuleQuestions: { actual: num(capsuleQuestionCount), expected: capsuleQuestionJson.length },
+        capsuleReplies: { actual: num(capsuleReplyCount), expected: capsuleReplyJson.length },
         transcripts: { actual: num(transcriptCount), expected: transcriptsJson.length },
         capsules: { actual: num(capsuleCount), expected: capsulesJson.length },
         inboxItems: { actual: num(inboxItemCount), expected: inboxItemsJson.length },

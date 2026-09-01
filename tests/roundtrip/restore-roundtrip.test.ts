@@ -84,6 +84,8 @@ type Expectation = {
   textEventDateOnly: string;
   publishedStoryId: string;
   publishedStoryTitle: string;
+  dialogueQuestionId: string;
+  dialogueReplyText: string;
 };
 
 let expect_: Expectation;
@@ -440,6 +442,39 @@ beforeAll(async () => {
     const storyPublished = storyService.publishStory(storyCtx, storyCreated.storyId);
     if (!storyPublished.ok) throw new Error("story publish failed");
 
+    // M5 durable：胶囊未来问题 + 开启后的回答
+    const dialogueService = await import("@/lib/capsules/dialogue");
+    const schemaCapsule = await import("@/db/schema/capsule");
+    const { randomUUID: uuid5 } = await import("node:crypto");
+    const dialogueCapsuleId = uuid5();
+    m.db.getDb().insert(schemaCapsule.capsule).values({
+      id: dialogueCapsuleId,
+      familyId: on.familyId,
+      title: "写给十六岁",
+      unlockType: "date",
+      unlockValue: "2026-08-15",
+      status: "draft",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).run();
+    const addedQuestion = await dialogueService.addFutureQuestion(
+      storyCtx,
+      dialogueCapsuleId,
+      "十六岁的你，最想对现在的我们说什么？",
+    );
+    if (!addedQuestion.ok) throw new Error("question failed");
+    // 直接置为 opened（构造已解锁状态）
+    m.db.getDb().update(schemaCapsule.capsule)
+      .set({ status: "opened", sealedAt: new Date(), openedAt: new Date(), updatedAt: new Date() })
+      .where(eq(schemaCapsule.capsule.id, dialogueCapsuleId))
+      .run();
+    const dialogueReply = await dialogueService.addCapsuleReply(
+      storyCtx,
+      addedQuestion.questionId!,
+      { text: "谢谢你们留下这些。我现在很好。" },
+    );
+    if (!dialogueReply.ok) throw new Error("reply failed");
+
     const peoplePolicy = (await m.family.listPeople(on.familyId))
       .map((person) => ({
         id: person.id,
@@ -526,6 +561,8 @@ beforeAll(async () => {
       // M4 durable
       publishedStoryId: storyCreated.storyId,
       publishedStoryTitle: "出生的那一周",
+      dialogueQuestionId: addedQuestion.questionId!,
+      dialogueReplyText: "谢谢你们留下这些。我现在很好。",
     };
     m.db.closeDatabase();
   }
@@ -752,7 +789,7 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       .map(([name]) => name);
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 15);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 17);
 
     // M4 durable：已发布故事 + 段落 + 来源（含逐字引文）往返
     const restoredStories = JSON.parse(
@@ -781,6 +818,22 @@ describe("RH-005 灾难恢复 roundtrip", () => {
         (ss: { paragraphId: string; quote: string | null }) =>
           ss.paragraphId === quoteParagraph.id && ss.quote === quoteParagraph.text,
       ),
+    ).toBe(true);
+
+    // M5 durable：胶囊问题与回答往返
+    const restoredQuestions = JSON.parse(
+      await zip.file("family-time-capsule-export/capsule-questions.json")!.async("string"),
+    );
+    expect(
+      restoredQuestions.some(
+        (q: { id: string }) => q.id === expect_.dialogueQuestionId,
+      ),
+    ).toBe(true);
+    const restoredReplies = JSON.parse(
+      await zip.file("family-time-capsule-export/capsule-replies.json")!.async("string"),
+    );
+    expect(
+      restoredReplies.some((r: { text: string | null }) => r.text === expect_.dialogueReplyText),
     ).toBe(true);
 
     // M3 durable：edited transcript / fact locator / tags / date_only 精度全部往返

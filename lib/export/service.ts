@@ -1,4 +1,5 @@
 import { collectDurableStories } from "@/lib/stories/service";
+import { collectCapsuleDialogue } from "@/lib/capsules/dialogue";
 import { createWriteStream, statSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -48,7 +49,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 15;
+export const EXPORT_NON_ASSET_FILE_COUNT = 17;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -441,6 +442,22 @@ export async function buildFamilyExport(
       updatedAt: iso(t.updatedAt),
     })));
     json("capsules.json", capsulesJson);
+    const dialogue = collectCapsuleDialogue(familyId);
+    json("capsule-questions.json", dialogue.questions.map((q) => ({
+      id: q.id,
+      capsuleId: q.capsuleId,
+      questionText: q.questionText,
+      createdAt: iso(q.createdAt),
+    })));
+    json("capsule-replies.json", dialogue.replies.map((r) => ({
+      id: r.id,
+      questionId: r.questionId,
+      capsuleId: r.capsuleId,
+      authorPersonId: r.authorPersonId,
+      text: r.text,
+      assetId: r.assetId,
+      createdAt: iso(r.createdAt),
+    })));
     archive.append(Buffer.from(md.join("\n"), "utf8"), {
       name: `${EXPORT_ROOT_DIR}/timeline.md`,
     });

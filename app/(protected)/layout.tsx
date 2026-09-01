@@ -19,6 +19,7 @@ const NAV: ReadonlyArray<{
   { href: "/timeline", label: "时光轴" },
   { href: "/search", label: "搜索" },
   { href: "/stories", label: "故事" },
+  { href: "/requests", label: "口述", capability: "contribution:create" },
   { href: "/family", label: "家人" },
   { href: "/capsules", label: "胶囊" },
   { href: "/settings", label: "设置" },

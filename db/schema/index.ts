@@ -16,3 +16,4 @@ export * as analysisSchema from "./analysis";
 export * as suggestionSchema from "./suggestion";
 export * as clusterSchema from "./clusters";
 export * as storySchema from "./story";
+export * as oralHistorySchema from "./oral-history";
