@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { isNull, and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { person as personTable } from "@/db/schema/family";
@@ -475,6 +475,7 @@ export async function getCompleteCapsuleDetailForDisasterExport(
               and(
                 eq(memoryEventTable.familyId, familyId),
                 inArray(contributionTable.id, contributionIds),
+                isNull(contributionTable.deletedAt),
               ),
             )
             .orderBy(asc(contributionTable.createdAt))

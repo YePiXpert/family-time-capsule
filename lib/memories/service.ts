@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { isNull, and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { asset as assetTable } from "@/db/schema/asset";
@@ -516,7 +516,13 @@ export async function getMemoryEventDetail(  familyId: string,
   const events = await db
     .select()
     .from(memoryEvent)
-    .where(and(eq(memoryEvent.familyId, familyId), eq(memoryEvent.id, eventId)))
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.id, eventId),
+        isNull(memoryEvent.deletedAt),
+      ),
+    )
     .limit(1);
   if (!events[0]) return undefined;
 
@@ -589,7 +595,11 @@ export async function listMemoryEvents(
     .select()
     .from(memoryEvent)
     .where(
-      and(eq(memoryEvent.familyId, familyId), eq(memoryEvent.status, "confirmed")),
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.status, "confirmed"),
+        isNull(memoryEvent.deletedAt),
+      ),
     )
     .orderBy(desc(memoryEvent.occurredAt))
     .limit(limit);

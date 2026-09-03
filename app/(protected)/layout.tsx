@@ -23,6 +23,7 @@ const NAV: ReadonlyArray<{
   { href: "/family", label: "家人" },
   { href: "/capsules", label: "胶囊" },
   { href: "/settings", label: "设置" },
+  { href: "/trash", label: "回收站", capability: "event:write" },
 ] as const;
 
 /**

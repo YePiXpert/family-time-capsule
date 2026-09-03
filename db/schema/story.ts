@@ -50,6 +50,8 @@ export const story = sqliteTable(
     createdByJobId: text("created_by_job_id"),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
+    // M7 Trash：软删除时间；非空 = 回收站中
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
   },
   (t) => [
     index("story_family_period_idx").on(t.familyId, t.kind, t.periodStart),

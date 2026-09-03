@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
+import { isNull, and, asc, eq, gte, inArray, lt } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
@@ -79,7 +79,7 @@ export async function listStories(familyId: string): Promise<
   const rows = db
     .select()
     .from(story)
-    .where(eq(story.familyId, familyId))
+    .where(and(eq(story.familyId, familyId), isNull(story.deletedAt)))
     .orderBy(asc(story.periodStart), asc(story.createdAt))
     .all()
     .slice(0, MAX_STORIES_PER_FAMILY);
@@ -109,7 +109,13 @@ export async function getStory(
   const storyRow = db
     .select()
     .from(story)
-    .where(and(eq(story.id, storyId), eq(story.familyId, familyId)))
+    .where(
+      and(
+        eq(story.id, storyId),
+        eq(story.familyId, familyId),
+        isNull(story.deletedAt),
+      ),
+    )
     .limit(1)
     .get();
   if (!storyRow) return undefined;
@@ -188,6 +194,7 @@ export function collectStoryMaterial(
     .where(
       and(
         eq(memoryEvent.familyId, familyId),
+        isNull(memoryEvent.deletedAt),
         gte(memoryEvent.occurredAt, period.start),
         lt(memoryEvent.occurredAt, period.end),
       ),
@@ -235,6 +242,7 @@ export function collectStoryMaterial(
             and(
               inArray(contributionTable.memoryEventId, eventIds),
               eq(contributionTable.visibility, "family"),
+              isNull(contributionTable.deletedAt),
             ),
           )
           .all()
@@ -264,6 +272,7 @@ export function collectTranscriptMaterial(
     .where(
       and(
         eq(memoryEvent.familyId, familyId),
+        isNull(memoryEvent.deletedAt),
         gte(memoryEvent.occurredAt, period.start),
         lt(memoryEvent.occurredAt, period.end),
       ),
@@ -771,7 +780,7 @@ export function collectDurableStories(familyId: string): {
   const stories = db
     .select()
     .from(story)
-    .where(eq(story.familyId, familyId))
+    .where(and(eq(story.familyId, familyId), isNull(story.deletedAt)))
     .all()
     .filter(isStoryDurable);
   if (stories.length === 0) return { stories: [], paragraphs: [], sources: [] };

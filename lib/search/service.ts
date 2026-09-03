@@ -4,8 +4,7 @@
  * 授权语义由调用方保证：searchFamily 必须传入 requireFamily() 的 FamilyContext。
  */
 
-import { and, eq, inArray } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { contribution as contributionTable } from "@/db/schema/contribution";
@@ -204,7 +203,11 @@ export function rebuildSearchIndex(): {
   const db = getDb();
   db.run(sql`DELETE FROM search_index`);
 
-  const events = db.select().from(memoryEvent).all();
+  const events = db
+    .select()
+    .from(memoryEvent)
+    .all()
+    .filter((e) => e.deletedAt === null);
   const familyByEventId = new Map(events.map((e) => [e.id, e.familyId]));
   insertIndexRows(
     db,
@@ -238,7 +241,11 @@ export function rebuildSearchIndex(): {
     })),
   );
 
-  const contributions = db.select().from(contributionTable).all();
+  const contributions = db
+    .select()
+    .from(contributionTable)
+    .all()
+    .filter((c) => c.deletedAt === null);
   const contributionRows = contributions
     .filter((c) => familyByEventId.has(c.memoryEventId))
     .map((c) => ({
@@ -266,7 +273,11 @@ export function rebuildSearchIndex(): {
   }
 
   // 已发布故事（标题 + 段落文本）随重建进入索引
-  const stories = db.select().from(storyTable).all().filter((st) => st.status === "published");
+  const stories = db
+    .select()
+    .from(storyTable)
+    .all()
+    .filter((st) => st.status === "published" && st.deletedAt === null);
   for (const st of stories) {
     const body = db
       .select({ text: storyParagraphTable.text })

@@ -192,6 +192,8 @@ export function getVisibleContributionInTransaction(
       and(
         eq(contribution.id, contributionId),
         eq(memoryEvent.familyId, snapshot.principal.familyId),
+        // M7 Trash：软删除的讲述按不存在处理
+        isNull(contribution.deletedAt),
         visibilityPredicate(snapshot),
       ),
     )
@@ -247,7 +249,7 @@ async function queryVisibleContributions(
         eq(viewerPerson.familyId, viewerUser.familyId),
       ),
     )
-    .where(and(...conditions))
+    .where(and(...conditions, isNull(contribution.deletedAt)))
     .orderBy(asc(contribution.createdAt));
 
   return rows.map(({ row, authorName, authorRelation }) => {

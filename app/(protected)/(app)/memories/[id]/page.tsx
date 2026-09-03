@@ -33,6 +33,7 @@ import { FactSection } from "./fact-ui";
 import { TranscriptSection } from "./transcript-ui";
 import { ImageAnalysisSection } from "./analysis-ui";
 import { SuggestionSection } from "./suggestion-ui";
+import { TrashEventButton } from "../../trash/trash-ui";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import {
   listPendingSuggestions,
@@ -272,6 +273,11 @@ export default async function MemoryEventPage({
         <p className="mt-2 text-sm text-foreground/70">{event.locationText}</p>
       )}
 
+      {canWriteEvent && (
+        <div className="mt-3">
+          <TrashEventButton eventId={event.id} />
+        </div>
+      )}
       {canWriteEvent && <div className="mt-4">
         <EditEventForm
           event={event}

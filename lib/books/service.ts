@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import { and, eq, gte, lt } from "drizzle-orm";
+import { isNull, and, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { memoryEvent } from "@/db/schema/memory";
 import { getAsset } from "@/lib/assets/service";
@@ -144,6 +144,7 @@ export async function generateYearBook(
     .where(
       and(
         eq(memoryEvent.familyId, familyId),
+        isNull(memoryEvent.deletedAt),
         gte(memoryEvent.occurredAt, start),
         lt(memoryEvent.occurredAt, end),
       ),

@@ -51,6 +51,8 @@ export const contribution = sqliteTable(
     visibility: text("visibility").notNull().default("family"),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
+    // M7 Trash：软删除时间；非空 = 回收站中
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
   },
   (t) => [
     index("contribution_event_idx").on(t.memoryEventId),

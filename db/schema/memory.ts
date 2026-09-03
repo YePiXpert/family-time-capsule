@@ -51,6 +51,8 @@ export const memoryEvent = sqliteTable(
     lastEditedByUserId: text("last_edited_by_user_id"),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
+    // M7 Trash：软删除时间；非空 = 回收站中（列表/导出/搜索均过滤）
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
   },
   (t) => [
     index("memory_family_occurred_idx").on(t.familyId, t.occurredAt),

@@ -4,7 +4,7 @@ import { createWriteStream, statSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { ZipArchive } from "archiver";
-import { and, eq, inArray } from "drizzle-orm";
+import { isNull, and, eq, inArray } from "drizzle-orm";
 import pkg from "../../package.json";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
@@ -115,7 +115,15 @@ export async function buildFamilyExport(
   const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets, transcripts, factSources, tags] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
-    db.select().from(memoryEventTable).where(eq(memoryEventTable.familyId, familyId)),
+    db
+      .select()
+      .from(memoryEventTable)
+      .where(
+        and(
+          eq(memoryEventTable.familyId, familyId),
+          isNull(memoryEventTable.deletedAt),
+        ),
+      ),
     listCompleteFamilyContributionsForDisasterExport(db, familyId),
     listFamilyFacts(db, familyId),
     db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
@@ -511,7 +519,12 @@ async function listCompleteFamilyContributionsForDisasterExport(
     .select({ contribution: contributionTable })
     .from(contributionTable)
     .innerJoin(memoryEventTable, eq(contributionTable.memoryEventId, memoryEventTable.id))
-    .where(and(eq(memoryEventTable.familyId, familyId)))
+    .where(
+      and(
+        eq(memoryEventTable.familyId, familyId),
+        isNull(contributionTable.deletedAt),
+      ),
+    )
     .then((rows) => rows.map((r) => r.contribution));
 }
 
