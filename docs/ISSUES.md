@@ -2,6 +2,10 @@
 
 > 来源：PRD §22（路线）、§23（垂直切片）、§24（Issues）、§27（P0 DoD）。每个 Issue 的执行方式见 PRD §25（固定前缀）与 §26（PR 自检）。
 
+> 1.0 状态（2026-09-03）：M0–M7 与 M8 自动化/Docker 门禁完成，版本为
+> `1.0.0-rc.1`。稳定 `1.0.0` 只等待 `REAL_DEVICE_TEST.md` 的 iOS、Android、
+> Windows/PWA 实测记录；未留档前不打稳定 tag。
+
 ## 状态
 
 | Issue | 标题 | 状态 |
@@ -27,7 +31,7 @@
 
 ## v0.1.3 Performance & Audit Hardening（2026-08-30 完成）
 
-落地 PRD §21 / SECURITY.md / RH-003 中明确记录、不进入 P1 的缺口：sharp WebP 缩略图衍生物（展示层优先缩略图、HEIC 优雅跳过、原件零改动）；memory_event_revision 编辑历史（同事务快照 + 事件页折叠区）；audit_log 导出/恢复审计（设置页「最近操作」）；better-auth 限流持久化到 SQLite rate_limit 表（roundtrip 真实服务器验证 429 与落库）。数据库 21 张表 / 10 个 migration。无 AI，未进入 P1。
+落地 PRD §21 / SECURITY.md / RH-003 中明确记录、不进入当时 P1 的缺口：sharp WebP 缩略图衍生物（展示层优先缩略图、HEIC 优雅跳过、原件零改动）；memory_event_revision 编辑历史（同事务快照 + 事件页折叠区）；audit_log 导出/恢复审计（设置页「最近操作」）；better-auth 限流持久化到 SQLite rate_limit 表（roundtrip 真实服务器验证 429 与落库）。这是 0.1.3 的历史基线；当前 1.0 RC 为 41 张关系表 / 29 个 migration，另有 FTS5 virtual table。
 
 ## v0.1.2 Verification Hardening（2026-08-30 完成）
 
@@ -83,8 +87,8 @@ Auth → Family/Person → Asset Upload → metadata/hash → Inbox
 [x] 可创建并封存日期/年龄胶囊
 [x] 可完整 ZIP 导出
 [x] 原件 SHA-256 可验证
-[x] Docker 部署可持续保存数据（静态检查；本机无 Docker，见 CHANGELOG/报告）
+[x] Docker 部署可持续保存数据（2026-09-03 实机验证 build/health/down-up 持久化/跨实例恢复/0.1.3 升级）
 [x] 无 AI key 也完整可用（P0 无任何 AI 代码路径）
-[x] 关键 E2E 全绿（19 个）
+[x] 关键 E2E 全绿（当前 31 Playwright + 6 production roundtrip）
 [x] docs 与代码一致
 ```

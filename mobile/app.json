@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "家庭时间胶囊",
+    "slug": "family-time-capsule",
+    "platforms": ["ios", "android"],
+    "scheme": "familytimecapsule",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "app.familytimecapsule.mobile",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "NSPhotoLibraryUsageDescription": "选择要保存到家庭时间胶囊的照片或视频。"
+      }
+    },
+    "android": {
+      "package": "app.familytimecapsule.mobile",
+      "versionCode": 1,
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"],
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF8F4",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "允许家庭时间胶囊安全读取登录凭据。"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "选择要保存到家庭时间胶囊的照片或视频。",
+          "cameraPermission": "拍摄要保存到家庭时间胶囊的照片。",
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}

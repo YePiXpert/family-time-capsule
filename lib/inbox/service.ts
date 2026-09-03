@@ -1,3 +1,5 @@
+import "server-only";
+
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -27,33 +29,147 @@ export type InboxEntry = {
   assets: AssetRow[];
 };
 
+export type IdempotentAssetCaptureResult =
+  | { status: "created" | "existing" | "duplicate"; item: InboxItemRow }
+  | { status: "conflict" };
+
+/**
+ * Atomically attach a native media outbox UUID to its canonical asset. The
+ * same UUID + same bytes is a successful retry; the same UUID + other bytes
+ * is a conflict. If SHA deduplication finds an asset already represented by a
+ * different inbox item, reuse that item instead of creating duplicate work.
+ */
+export function createInboxItemForAssetIdempotent(
+  familyId: string,
+  assetRow: AssetRow,
+  itemId: string,
+): IdempotentAssetCaptureResult {
+  if (assetRow.familyId !== familyId) return { status: "conflict" };
+  const db = getDb();
+  return db.transaction((tx) => {
+    const existingItem = tx
+      .select()
+      .from(inboxItem)
+      .where(eq(inboxItem.id, itemId))
+      .limit(1)
+      .get();
+    if (existingItem) {
+      if (existingItem.familyId !== familyId || existingItem.kind !== "asset") {
+        return { status: "conflict" };
+      }
+      const existingLinks = tx
+        .select({ assetId: inboxItemAsset.assetId })
+        .from(inboxItemAsset)
+        .where(eq(inboxItemAsset.inboxItemId, itemId))
+        .all();
+      if (existingLinks.some((link) => link.assetId === assetRow.id)) {
+        return { status: "existing", item: existingItem };
+      }
+      if (existingLinks.length > 0) return { status: "conflict" };
+      const assetLink = tx
+        .select({ inboxItemId: inboxItemAsset.inboxItemId })
+        .from(inboxItemAsset)
+        .where(
+          and(
+            eq(inboxItemAsset.familyId, familyId),
+            eq(inboxItemAsset.assetId, assetRow.id),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (assetLink) return { status: "conflict" };
+      tx.insert(inboxItemAsset)
+        .values({
+          id: randomUUID(),
+          inboxItemId: itemId,
+          assetId: assetRow.id,
+          familyId,
+          createdAt: new Date(),
+        })
+        .run();
+      return { status: "existing", item: existingItem };
+    }
+
+    const existingAssetLink = tx
+      .select({ inboxItemId: inboxItemAsset.inboxItemId })
+      .from(inboxItemAsset)
+      .where(
+        and(
+          eq(inboxItemAsset.familyId, familyId),
+          eq(inboxItemAsset.assetId, assetRow.id),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (existingAssetLink) {
+      const represented = tx
+        .select()
+        .from(inboxItem)
+        .where(eq(inboxItem.id, existingAssetLink.inboxItemId))
+        .limit(1)
+        .get();
+      if (represented) return { status: "duplicate", item: represented };
+      return { status: "conflict" };
+    }
+
+    const now = new Date();
+    const item = tx
+      .insert(inboxItem)
+      .values({
+        id: itemId,
+        familyId,
+        kind: "asset",
+        status: assetRow.timeSource === "import_time" ? "needs_review" : "new",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
+    tx.insert(inboxItemAsset)
+      .values({
+        id: randomUUID(),
+        inboxItemId: itemId,
+        assetId: assetRow.id,
+        familyId,
+        createdAt: now,
+      })
+      .run();
+    return { status: "created", item };
+  });
+}
+
 /** 上传入箱：asset 无可信时间（import_time）时标 needs_review（「缺少时间」） */
 export async function createInboxItemForAsset(
   familyId: string,
   assetRow: AssetRow,
 ): Promise<InboxItemRow> {
   const db = getDb();
-  const itemId = randomUUID();
-  const now = new Date();
-  const rows = await db
-    .insert(inboxItem)
-    .values({
-      id: itemId,
-      familyId,
-      kind: "asset",
-      status: assetRow.timeSource === "import_time" ? "needs_review" : "new",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  await db.insert(inboxItemAsset).values({
-    id: randomUUID(),
-    inboxItemId: itemId,
-    assetId: assetRow.id,
-    familyId,
-    createdAt: now,
+  return db.transaction((tx) => {
+    const itemId = randomUUID();
+    const now = new Date();
+    const item = tx
+      .insert(inboxItem)
+      .values({
+        id: itemId,
+        familyId,
+        kind: "asset",
+        status: assetRow.timeSource === "import_time" ? "needs_review" : "new",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
+    tx.insert(inboxItemAsset)
+      .values({
+        id: randomUUID(),
+        inboxItemId: itemId,
+        assetId: assetRow.id,
+        familyId,
+        createdAt: now,
+      })
+      .run();
+    return item;
   });
-  return rows[0];
 }
 
 /** 文本入箱（#011 使用；kind=text 不关联 asset） */
@@ -76,6 +192,51 @@ export async function createTextInboxItem(
     })
     .returning();
   return rows[0];
+}
+
+export type IdempotentTextCaptureResult =
+  | { status: "created" | "existing"; item: InboxItemRow }
+  | { status: "conflict" };
+
+/**
+ * Native offline outbox entry point. The device generates the inbox id before
+ * it goes offline, so retrying after an ambiguous network failure cannot
+ * create duplicate family memories.
+ */
+export async function createTextInboxItemIdempotent(
+  familyId: string,
+  rawText: string,
+  itemId: string,
+): Promise<IdempotentTextCaptureResult> {
+  const db = getDb();
+  const now = new Date();
+  const inserted = await db
+    .insert(inboxItem)
+    .values({
+      id: itemId,
+      familyId,
+      kind: "text",
+      status: "new",
+      rawText,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: inboxItem.id })
+    .returning();
+  if (inserted[0]) return { status: "created", item: inserted[0] };
+
+  const existing = await db
+    .select()
+    .from(inboxItem)
+    .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, itemId)))
+    .limit(1);
+  if (
+    existing[0]?.kind === "text" &&
+    existing[0].rawText === rawText
+  ) {
+    return { status: "existing", item: existing[0] };
+  }
+  return { status: "conflict" };
 }
 
 export type InboxPage = {

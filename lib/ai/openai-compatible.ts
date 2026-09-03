@@ -1,3 +1,5 @@
+import "server-only";
+
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { AiCapabilityUnavailableError, AiError, AiInputError, AiProviderError } from "./errors";

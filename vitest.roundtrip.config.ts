@@ -15,5 +15,7 @@ export default defineConfig({
     environment: "node",
     testTimeout: 240_000,
     hookTimeout: 120_000,
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });

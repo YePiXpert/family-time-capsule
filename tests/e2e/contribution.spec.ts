@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { addFamilyMember, ensureBootstrap } from "./helpers";
 
@@ -72,4 +73,49 @@ test("同一事件的多人视角独立保存与显示", async ({ page }) => {
   await expect(
     page.getByText("2026-08-10 小满出生，体重 3200 克。").first(),
   ).toBeVisible();
+});
+
+test("匿名家人通过专用端点上传媒体，提交只进入收件箱", async ({
+  browser,
+  page,
+}) => {
+  await ensureBootstrap(page);
+  await page.goto("/requests");
+  await page.getByLabel("家人的称呼").fill("外公");
+  await page.getByLabel("问题").fill("讲讲你小时候最喜欢的一首歌。");
+  await page.getByRole("button", { name: "创建讲述链接" }).click();
+
+  const linkText = await page
+    .locator("p", { hasText: "/respond/" })
+    .first()
+    .textContent();
+  const guestUrl = linkText?.trim();
+  expect(guestUrl).toMatch(/^http:\/\/localhost:3115\/respond\/[A-Za-z0-9_-]+$/u);
+
+  const guestContext = await browser.newContext();
+  try {
+    const guestPage = await guestContext.newPage();
+    await guestPage.goto(guestUrl!);
+    await expect(
+      guestPage.getByRole("heading", { name: "给外公的一封信" }),
+    ).toBeVisible();
+    await guestPage.getByLabel("选择录音、照片或视频").setInputFiles({
+      name: "外公的歌.wav",
+      mimeType: "audio/wav",
+      buffer: readFileSync(
+        path.join(__dirname, "..", "fixtures", "sample.wav"),
+      ),
+    });
+    await guestPage
+      .getByRole("button", { name: "上传录音 / 照片 / 视频" })
+      .click();
+    await expect(guestPage.getByText("已收到，谢谢！")).toBeVisible();
+  } finally {
+    await guestContext.close();
+  }
+
+  await page.goto("/requests");
+  await expect(page.getByText("已收到 1 条")).toBeVisible();
+  await page.goto("/inbox");
+  await expect(page.getByText("外公的歌.wav")).toBeVisible();
 });

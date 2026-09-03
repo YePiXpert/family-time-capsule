@@ -1,6 +1,6 @@
 # Family Time Capsule
 
-**v0.1.3 — P0 Trusted Private Timeline（可信私人时间轴）+ Real-world Hardening**
+**v1.0.0-rc.1 — Family Archive release candidate**
 
 A private, self-hosted family memory archive.
 
@@ -17,7 +17,9 @@ AI helps organize memories.
 Family members tell the story.
 Original sources always come first.
 
-> P0 不包含任何 AI 功能——无 API Key 也完整可用。P1 计划见 docs/PRD.md。
+> AI 默认关闭、始终可选；没有 API Key、Provider 或 worker 时，核心档案仍完整可用。
+> 当前是 1.0 发布候选版：自动化与 Docker 发布门禁已通过，稳定版仍等待
+> [真实设备验收](docs/REAL_DEVICE_TEST.md) 留档。
 
 ---
 
@@ -47,11 +49,15 @@ Original sources always come first.
 - **书籍**：已发布故事与年度事件导出 PDF/EPUB（媒体内嵌、无内部 URL）。
 - **远程备份**：WebDAV verified upload + 原子改名（凭据仅存环境变量）。
 - **系统分享**：PWA Share Target 直达收件箱。
+- **原生客户端**：React Native iOS/Android（无 WebView）；SQLite 离线时间轴、
+  Keychain/Keystore 凭据、私有文件缓存，以及断网文字/照片/视频补传队列。
 - **回收站**：事件/讲述/故事软删除、恢复、确认式清除；素材引用守卫。
 
 ## 技术栈
 
-Next.js 16（App Router）+ TypeScript strict + Tailwind CSS v4 + SQLite（better-sqlite3 + Drizzle ORM）+ better-auth + exifr + archiver + Vitest / Playwright + Docker。
+服务端：Next.js 16（App Router）+ TypeScript strict + Tailwind CSS v4 + SQLite
+（better-sqlite3 + Drizzle ORM）+ better-auth + Docker。原生端：Expo SDK 57 +
+React Native + 原生 SQLite/SecureStore/FileSystem；不是 PWA/WebView 套壳。
 
 ## 本地开发
 
@@ -78,9 +84,12 @@ npm run dev            # http://localhost:3000
 | --- | --- |
 | `npm run dev` | 开发服务器 |
 | `npm run lint` / `npm run typecheck` | 静态检查 |
-| `npm test` | Vitest 单元 + 集成测试（419 个） |
-| `npm run test:e2e` | Playwright 端到端（会先自动 build，使用独立的 data/e2e 数据目录） |
+| `npm test` | Vitest 单元 + 集成测试（455 个） |
+| `npm run test:e2e` | 32 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
 | `npm run verify:export <zip>` | 校验导出 ZIP 的 manifest 与全部原件 SHA-256 |
+
+原生客户端开发、设备数据边界和 GitHub 云构建 IPA/APK：
+[docs/MOBILE.md](docs/MOBILE.md)。
 
 ## 备份与迁移
 
@@ -103,10 +112,15 @@ npm run dev            # http://localhost:3000
 ## Docker 部署
 
 ```bash
-AUTH_SECRET=$(openssl rand -base64 32) INITIAL_SETUP_TOKEN=<一次性令牌> docker compose up -d --build
+AUTH_SECRET=$(openssl rand -base64 32) \
+BETTER_AUTH_URL=http://localhost:3000 \
+INITIAL_SETUP_TOKEN=<一次性令牌> \
+docker compose up -d --build --wait
 ```
 
 所有原件、衍生物、导出与数据库都保存在 Compose 逻辑卷 `capsule-data`（挂载为容器内 `/data`；实际卷名通常为 `<项目名>_capsule-data`），重建容器数据不丢失。备份命令必须从正在运行的 `app` 容器解析实际 `/data` 卷名，详见部署清单 §6。`AUTH_SECRET` 未设置时 compose 拒绝启动。
+`BETTER_AUTH_URL` 也必须设置为浏览器实际访问的唯一 origin（反代时填最终 HTTPS
+地址）；填错会安全拒绝登录。`app` 与 `worker` 都有各自适用的健康检查。
 
 ## 文档
 
@@ -118,5 +132,7 @@ AUTH_SECRET=$(openssl rand -base64 32) INITIAL_SETUP_TOKEN=<一次性令牌> doc
 - [docs/DECISIONS.md](docs/DECISIONS.md) — 关键决策记录（ADR）
 - [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md) — 部署、冒烟、持久性验证与备份/灾难恢复手册
 - [docs/REAL_DEVICE_TEST.md](docs/REAL_DEVICE_TEST.md) — 真实设备手工验收清单（正式录入前执行）
+- [docs/MOBILE.md](docs/MOBILE.md) — 原生客户端、本地数据、同步协议与云构建
+- [docs/RELEASE_1.0.md](docs/RELEASE_1.0.md) — 1.0 RC 自动化、Docker 与外部门禁报告
 - [docs/EXPORT_FORMAT.md](docs/EXPORT_FORMAT.md) / [docs/RESTORE.md](docs/RESTORE.md) — 导出格式与恢复设计
 - [CHANGELOG.md](CHANGELOG.md) — 版本记录

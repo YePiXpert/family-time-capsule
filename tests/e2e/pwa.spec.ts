@@ -56,3 +56,12 @@ test("生产页面与 API 带严格安全响应头，CSP 不含 unsafe-eval", as
   expect(apiResponse.headers()["content-security-policy"]).toContain("default-src 'none'");
   expect(apiResponse.headers()["x-content-type-options"]).toBe("nosniff");
 });
+
+test("未知页面返回可恢复的中文 404", async ({ page }) => {
+  const response = await page.goto("/definitely-not-a-family-memory");
+  expect(response?.status()).toBe(404);
+  await expect(
+    page.getByRole("heading", { name: "这里没有这段记忆" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回家庭档案" })).toBeVisible();
+});

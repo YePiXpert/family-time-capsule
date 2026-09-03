@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * 注意：本模块刻意不引入 `server-only` —— `npm run search:rebuild` 与恢复
  * CLI 都要在纯 Node 进程中直接导入它（与 lib/restore、lib/export 同一惯例）。

@@ -1,3 +1,5 @@
+import "server-only";
+
 import { loadAiProviderConfig, type AiEnvironment } from "./config";
 import { NullMemoryAssistant } from "./null";
 import {

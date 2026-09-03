@@ -5,11 +5,14 @@ services:
       dockerfile: docker/Dockerfile
     image: family-time-capsule
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     environment:
       DATA_DIR: /data
       # 认证会话密钥，必须在部署机的 .env 中设置（openssl rand -base64 32）
       AUTH_SECRET: ${AUTH_SECRET:?请在 .env 设置 AUTH_SECRET}
+      # Better Auth 的唯一外部 origin；直连填写 http://服务器:端口，
+      # 反向代理填写最终 https 地址。缺失时登录会安全拒绝而不是猜测 Host。
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?请设置 BETTER_AUTH_URL 为浏览器访问地址}
       # 首次初始化 /setup 的一次性令牌；初始化完成后建议移除
       INITIAL_SETUP_TOKEN: ${INITIAL_SETUP_TOKEN:-}
       # 对外地址（反向代理 + HTTPS 时设置），例如：
@@ -39,6 +42,15 @@ services:
   worker:
     image: family-time-capsule
     command: ["node", "/app/ops/worker.mjs"]
+    # The shared image probes the app's HTTP endpoint. A queue worker does not
+    # listen on port 3000, so use process liveness here; durable worker
+    # heartbeats provide the separate queue-level freshness signal.
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.kill(1, 0)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     environment:
       DATA_DIR: /data
       AI_PROVIDER: ${AI_PROVIDER:-disabled}

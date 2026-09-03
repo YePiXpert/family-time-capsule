@@ -1,7 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import "server-only";
+
+import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
+import { Readable } from "node:stream";
 import { count, eq } from "drizzle-orm";
-import JSZip from "jszip";
+import yauzl, { type Entry, type ZipFile } from "yauzl";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { family as familyTable, person as personTable } from "@/db/schema/family";
@@ -70,6 +73,20 @@ export const RESTORE_LIMITS: RestoreLimits = {
   maxEntries: 200_000,
   maxSingleFileBytes: 2 * 1024 * 1024 * 1024, // 2GB（与上传上限同量级）
   maxTotalUncompressedBytes: 25 * 1024 * 1024 * 1024, // 25GB
+};
+
+const MAX_METADATA_FILE_BYTES = 64 * 1024 * 1024;
+
+type RestoreArchiveEntry = {
+  name: string;
+  uncompressedSize: number;
+};
+
+type RestoreArchive = {
+  entries: RestoreArchiveEntry[];
+  has(name: string): boolean;
+  openReadStream(name: string): Promise<Readable | null>;
+  close(): void;
 };
 
 export class RestoreError extends Error {
@@ -213,20 +230,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 
 /** ZIP 条目名必须位于导出根目录之内（防 traversal / 绝对路径 / 盘符） */
-function assertSafeEntryName(name: string) {
+function assertSafeEntryName(name: string, isDirectory = false) {
   const normalized = typeof name === "string" ? name.replaceAll("\\", "/") : "";
+  const logicalName = isDirectory ? normalized.slice(0, -1) : normalized;
+  const parts = logicalName.split("/");
   requireCondition(
-    !normalized.includes("..") &&
+    name === normalized &&
+      !normalized.includes("\0") &&
       !normalized.startsWith("/") &&
       !/^[a-zA-Z]:/.test(normalized) &&
-      !normalized.endsWith("/") &&
-      normalized.startsWith(`${EXPORT_ROOT_DIR}/`),
+      normalized.endsWith("/") === isDirectory &&
+      (logicalName === EXPORT_ROOT_DIR ||
+        logicalName.startsWith(`${EXPORT_ROOT_DIR}/`)) &&
+      parts.every((part) => part.length > 0 && part !== "." && part !== ".."),
     "unsafe_entry",
     `ZIP 条目名不安全: ${name}`,
   );
-  const parts = normalized.split("/").filter((p) => p.length > 0);
   requireCondition(
-    parts[0] === EXPORT_ROOT_DIR && parts.length >= 2,
+    parts[0] === EXPORT_ROOT_DIR && (isDirectory || parts.length >= 2),
     "unsafe_entry",
     `ZIP 条目名逃逸导出根目录: ${name}`,
   );
@@ -310,23 +331,194 @@ export async function assertRestoreTargetEmpty(): Promise<void> {
   );
 }
 
-/** 读取并校验 ZIP（结构 + 限制 + 哈希 + 引用完整性），返回解析后的数据集 */
-async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
+function zipFailure(error: unknown): RestoreError {
+  if (error instanceof RestoreError) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  if (/invalid relative path|absolute path|invalid characters in fileName/iu.test(message)) {
+    return new RestoreError("unsafe_entry", `ZIP 条目名不安全: ${message}`);
+  }
+  return new RestoreError("bad_zip", `ZIP 无法解析: ${message}`);
+}
+
+function openZipBuffer(buffer: Buffer): Promise<ZipFile> {
+  return new Promise((resolve, reject) => {
+    yauzl.fromBuffer(
+      buffer,
+      {
+        autoClose: false,
+        lazyEntries: true,
+        validateEntrySizes: true,
+        strictFileNames: true,
+      },
+      (error, zipFile) => {
+        if (error) reject(error);
+        else resolve(zipFile);
+      },
+    );
+  });
+}
+
+function openZipPath(zipPath: string): Promise<ZipFile> {
+  return new Promise((resolve, reject) => {
+    yauzl.open(
+      zipPath,
+      {
+        autoClose: false,
+        lazyEntries: true,
+        validateEntrySizes: true,
+        strictFileNames: true,
+      },
+      (error, zipFile) => {
+        if (error) reject(error);
+        else resolve(zipFile);
+      },
+    );
+  });
+}
+
+async function createRestoreArchive(
+  zipFile: ZipFile,
+  limits: RestoreLimits,
+): Promise<RestoreArchive> {
+  const entryMap = new Map<string, Entry>();
+  const entryNames = new Set<string>();
+  const entries: RestoreArchiveEntry[] = [];
+  let entryCount = 0;
+  let totalBytes = 0;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+      zipFile.on("error", fail);
+      zipFile.on("entry", (entry: Entry) => {
+        if (settled) return;
+        try {
+          const isDirectory = entry.fileName.endsWith("/");
+          assertSafeEntryName(entry.fileName, isDirectory);
+          requireCondition(
+            !entryNames.has(entry.fileName),
+            "bad_zip",
+            `ZIP 存在重复条目: ${entry.fileName}`,
+          );
+          requireCondition(
+            !entry.isEncrypted(),
+            "bad_zip",
+            `ZIP 条目不允许加密: ${entry.fileName}`,
+          );
+          requireCondition(
+            entry.compressionMethod === 0 || entry.compressionMethod === 8,
+            "bad_zip",
+            `ZIP 条目压缩方法不支持: ${entry.fileName}`,
+          );
+          entryCount += 1;
+          requireCondition(
+            entryCount <= limits.maxEntries,
+            "too_many_entries",
+            `ZIP 条目数超限（> ${limits.maxEntries}）`,
+          );
+          requireCondition(
+            entry.uncompressedSize <= limits.maxSingleFileBytes,
+            "file_too_large",
+            `条目解压后过大: ${entry.fileName}`,
+          );
+          totalBytes += entry.uncompressedSize;
+          requireCondition(
+            totalBytes <= limits.maxTotalUncompressedBytes,
+            "zip_bomb",
+            `ZIP 总解压大小超限（${(totalBytes / 1024 / 1024 / 1024).toFixed(2)}GB）`,
+          );
+          entryNames.add(entry.fileName);
+          if (!isDirectory) {
+            entryMap.set(entry.fileName, entry);
+            entries.push({
+              name: entry.fileName,
+              uncompressedSize: entry.uncompressedSize,
+            });
+          }
+          zipFile.readEntry();
+        } catch (error) {
+          fail(error);
+        }
+      });
+      zipFile.on("end", () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      });
+      zipFile.readEntry();
+    });
+  } catch (error) {
+    zipFile.close();
+    throw zipFailure(error);
+  }
+
+  return {
+    entries,
+    has: (name) => entryMap.has(name),
+    openReadStream: (name) => {
+      const entry = entryMap.get(name);
+      if (!entry) return Promise.resolve(null);
+      return new Promise((resolve, reject) => {
+        zipFile.openReadStream(entry, (error, stream) => {
+          if (error) reject(zipFailure(error));
+          else resolve(stream);
+        });
+      });
+    },
+    close: () => {
+      if (zipFile.isOpen) zipFile.close();
+    },
+  };
+}
+
+async function readArchiveText(
+  archive: RestoreArchive,
+  name: string,
+  missingCode: "missing_manifest" | "missing_json",
+): Promise<string> {
+  const entry = archive.entries.find((candidate) => candidate.name === name);
+  requireCondition(entry, missingCode, `缺少 ${name.split("/").at(-1) ?? name}`);
   requireCondition(
-    zipBuffer.byteLength > 0 && zipBuffer.byteLength < limits.maxTotalUncompressedBytes,
+    entry.uncompressedSize <= MAX_METADATA_FILE_BYTES,
+    "file_too_large",
+    `metadata 条目过大: ${name}`,
+  );
+  const stream = await archive.openReadStream(name);
+  requireCondition(stream, missingCode, `缺少 ${name}`);
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of stream) {
+    const buffer = Buffer.from(chunk);
+    bytes += buffer.byteLength;
+    requireCondition(
+      bytes <= MAX_METADATA_FILE_BYTES,
+      "file_too_large",
+      `metadata 条目过大: ${name}`,
+    );
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, bytes).toString("utf8");
+}
+
+/** 读取并校验 ZIP（结构 + 限制 + 哈希 + 引用完整性），返回解析后的数据集 */
+async function loadAndVerifyZip(
+  archive: RestoreArchive,
+  archiveBytes: number,
+  limits: RestoreLimits,
+) {
+  requireCondition(
+    archiveBytes > 0 && archiveBytes < limits.maxTotalUncompressedBytes,
     "zip_too_large",
     "ZIP 压缩包本身超出大小限制。",
   );
 
-  let zip: JSZip;
-  try {
-    zip = await JSZip.loadAsync(zipBuffer);
-  } catch (err) {
-    throw new RestoreError("bad_zip", `ZIP 无法解析: ${(err as Error).message}`);
-  }
-
   // 条目枚举 + traversal + zip bomb 限制
-  const entries = Object.values(zip.files).filter((f) => !f.dir);
+  const entries = archive.entries;
   requireCondition(
     entries.length <= limits.maxEntries,
     "too_many_entries",
@@ -335,17 +527,12 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
   let totalBytes = 0;
   for (const entry of entries) {
     assertSafeEntryName(entry.name);
-    // JSZip 元数据中的 uncompressedSize
-    const size = (entry as unknown as { _data?: { uncompressedSize?: number } })._data
-      ?.uncompressedSize;
-    if (typeof size === "number") {
-      requireCondition(
-        size <= limits.maxSingleFileBytes,
-        "file_too_large",
-        `条目解压后过大: ${entry.name}`,
-      );
-      totalBytes += size;
-    }
+    requireCondition(
+      entry.uncompressedSize <= limits.maxSingleFileBytes,
+      "file_too_large",
+      `条目解压后过大: ${entry.name}`,
+    );
+    totalBytes += entry.uncompressedSize;
   }
   requireCondition(
     totalBytes <= limits.maxTotalUncompressedBytes,
@@ -354,12 +541,15 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
   );
 
   // manifest
-  const manifestFile = zip.file(`${EXPORT_ROOT_DIR}/manifest.json`);
-  requireCondition(manifestFile, "missing_manifest", "缺少 manifest.json");
+  const manifestPath = `${EXPORT_ROOT_DIR}/manifest.json`;
+  requireCondition(archive.has(manifestPath), "missing_manifest", "缺少 manifest.json");
   let manifest: Manifest;
   try {
-    manifest = JSON.parse(await manifestFile!.async("string"));
-  } catch {
+    manifest = JSON.parse(
+      await readArchiveText(archive, manifestPath, "missing_manifest"),
+    );
+  } catch (error) {
+    if (error instanceof RestoreError) throw error;
     throw new RestoreError("bad_manifest", "manifest.json 无法解析");
   }
   requireCondition(
@@ -391,11 +581,14 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
 
   // JSON 实体文件
   async function readJson<T>(name: string): Promise<T> {
-    const f = zip.file(`${EXPORT_ROOT_DIR}/${name}`);
-    requireCondition(f, "missing_json", `缺少 ${name}`);
+    const entryPath = `${EXPORT_ROOT_DIR}/${name}`;
+    requireCondition(archive.has(entryPath), "missing_json", `缺少 ${name}`);
     try {
-      return JSON.parse(await f!.async("string")) as T;
-    } catch {
+      return JSON.parse(
+        await readArchiveText(archive, entryPath, "missing_json"),
+      ) as T;
+    } catch (error) {
+      if (error instanceof RestoreError) throw error;
       throw new RestoreError("bad_json", `${name} 无法解析`);
     }
   }
@@ -450,8 +643,10 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
 
   // v0.1.3 后的 additive 文件：旧 exportVersion=1 归档两者都不存在时按空收件箱恢复。
   // 只缺一个代表图关系不完整，拒绝静默丢行。
-  const inboxItemsFile = zip.file(`${EXPORT_ROOT_DIR}/inbox-items.json`);
-  const inboxItemAssetsFile = zip.file(`${EXPORT_ROOT_DIR}/inbox-item-assets.json`);
+  const inboxItemsFile = archive.has(`${EXPORT_ROOT_DIR}/inbox-items.json`);
+  const inboxItemAssetsFile = archive.has(
+    `${EXPORT_ROOT_DIR}/inbox-item-assets.json`,
+  );
   requireCondition(
     Boolean(inboxItemsFile) === Boolean(inboxItemAssetsFile),
     "missing_json",
@@ -475,7 +670,7 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
   );
 
   // v0.1.4 后的 additive 文件：旧 exportVersion=1 归档不存在 transcripts.json 时按空转录恢复。
-  const transcriptsFile = zip.file(`${EXPORT_ROOT_DIR}/transcripts.json`);
+  const transcriptsFile = archive.has(`${EXPORT_ROOT_DIR}/transcripts.json`);
   const transcriptsRaw = transcriptsFile
     ? await readJson<unknown>("transcripts.json")
     : [];
@@ -486,7 +681,7 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
   );
 
   // v0.1.5 后的 additive 文件：旧 exportVersion=1 归档不存在 fact-sources.json 时按空来源恢复。
-  const factSourcesFile = zip.file(`${EXPORT_ROOT_DIR}/fact-sources.json`);
+  const factSourcesFile = archive.has(`${EXPORT_ROOT_DIR}/fact-sources.json`);
   const factSourcesRaw = factSourcesFile
     ? await readJson<unknown>("fact-sources.json")
     : [];
@@ -497,10 +692,12 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
   );
 
   // M4 后的 additive 文件：stories 三件套。旧归档缺失时按空故事恢复。
-  const storiesFile = zip.file(`${EXPORT_ROOT_DIR}/stories.json`);
+  const storiesFile = archive.has(`${EXPORT_ROOT_DIR}/stories.json`);
   const storiesRaw = storiesFile ? await readJson<unknown>("stories.json") : [];
   requireCondition(Array.isArray(storiesRaw), "bad_json", "stories.json 必须是数组");
-  const storyParagraphsFile = zip.file(`${EXPORT_ROOT_DIR}/story-paragraphs.json`);
+  const storyParagraphsFile = archive.has(
+    `${EXPORT_ROOT_DIR}/story-paragraphs.json`,
+  );
   const storyParagraphsRaw = storyParagraphsFile
     ? await readJson<unknown>("story-paragraphs.json")
     : [];
@@ -509,7 +706,7 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     "bad_json",
     "story-paragraphs.json 必须是数组",
   );
-  const storySourcesFile = zip.file(`${EXPORT_ROOT_DIR}/story-sources.json`);
+  const storySourcesFile = archive.has(`${EXPORT_ROOT_DIR}/story-sources.json`);
   const storySourcesRaw = storySourcesFile
     ? await readJson<unknown>("story-sources.json")
     : [];
@@ -526,7 +723,9 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
   );
 
   // M5 后的 additive 文件：胶囊对话两件套。旧归档缺失时按空恢复。
-  const capsuleQuestionsFile = zip.file(`${EXPORT_ROOT_DIR}/capsule-questions.json`);
+  const capsuleQuestionsFile = archive.has(
+    `${EXPORT_ROOT_DIR}/capsule-questions.json`,
+  );
   const capsuleQuestionsRaw = capsuleQuestionsFile
     ? await readJson<unknown>("capsule-questions.json")
     : [];
@@ -535,7 +734,9 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     "bad_json",
     "capsule-questions.json 必须是数组",
   );
-  const capsuleRepliesFile = zip.file(`${EXPORT_ROOT_DIR}/capsule-replies.json`);
+  const capsuleRepliesFile = archive.has(
+    `${EXPORT_ROOT_DIR}/capsule-replies.json`,
+  );
   const capsuleRepliesRaw = capsuleRepliesFile
     ? await readJson<unknown>("capsule-replies.json")
     : [];
@@ -1541,42 +1742,8 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     }
   }
 
-  // 全部原件字节 + SHA-256 复核
-  const assetBuffers = new Map<string, Buffer>();
-  for (const entry of manifest.assets) {
-    requireCondition(
-      UUID_LIKE.test(entry.assetId),
-      "bad_manifest",
-      `assetId 非法: ${entry.assetId}`,
-    );
-    requireCondition(
-      typeof entry.relativePath === "string" &&
-        entry.relativePath.startsWith("originals/"),
-      "bad_manifest",
-      `素材 ${entry.assetId} 的 relativePath 非法`,
-    );
-    const file = zip.file(`${EXPORT_ROOT_DIR}/${entry.relativePath}`);
-    requireCondition(
-      file,
-      "missing_asset",
-      `manifest 引用的文件不存在: ${entry.relativePath}`,
-    );
-    const buf = await file!.async("nodebuffer");
-    requireCondition(
-      buf.byteLength === entry.bytes,
-      "hash_mismatch",
-      `${entry.relativePath}: 字节数不符`,
-    );
-    const sha = createHash("sha256").update(buf).digest("hex");
-    requireCondition(
-      sha === entry.sha256,
-      "hash_mismatch",
-      `${entry.relativePath}: SHA-256 不符（备份可能损坏）`,
-    );
-    assetBuffers.set(entry.assetId, buf);
-  }
-
   return {
+    archive,
     manifest,
     familyJson,
     peopleJson,
@@ -1588,7 +1755,6 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
     capsulesJson,
     inboxItemsJson,
     inboxItemAssetsJson,
-    assetBuffers,
     storiesJson,
     storyParagraphsJson,
     storySourcesJson,
@@ -1601,15 +1767,9 @@ async function loadAndVerifyZip(zipBuffer: Buffer, limits: RestoreLimits) {
  * 执行恢复。前置：目标实例业务数据为空；operatorUserId 为已存在用户
  * （通常是通过 /setup 新建的管理员），恢复内容的 created_by 指向该用户。
  */
-export async function restoreFromZip(
-  zipBuffer: Buffer,
-  operatorUserId: string,
-  opts: { limits?: RestoreLimits } = {},
-): Promise<RestoreReport> {
-  const limits = opts.limits ?? RESTORE_LIMITS;
+async function assertRestoreOperator(operatorUserId: string): Promise<void> {
   await assertRestoreTargetEmpty();
-  const db = getDb();
-  const operator = await db
+  const operator = await getDb()
     .select({
       id: userTable.id,
       role: userTable.role,
@@ -1630,8 +1790,16 @@ export async function restoreFromZip(
     "bad_operator",
     `operator 必须是当前干净实例中未禁用、尚未绑定的 setup 管理员: ${operatorUserId}`,
   );
+}
 
-  const data = await loadAndVerifyZip(zipBuffer, limits);
+async function restoreFromArchive(
+  archive: RestoreArchive,
+  archiveBytes: number,
+  operatorUserId: string,
+  limits: RestoreLimits,
+): Promise<RestoreReport> {
+  const db = getDb();
+  const data = await loadAndVerifyZip(archive, archiveBytes, limits);
   const {
     familyJson,
     peopleJson,
@@ -1643,7 +1811,6 @@ export async function restoreFromZip(
     capsulesJson,
     inboxItemsJson,
     inboxItemAssetsJson,
-    assetBuffers,
     storiesJson,
     storyParagraphsJson,
     storySourcesJson,
@@ -1671,18 +1838,39 @@ export async function restoreFromZip(
   const storageKeyByAsset = new Map<string, string>();
   try {
     for (const a of data.manifest.assets) {
-      const buffer = assetBuffers.get(a.assetId)!;
+      const file = await archive.openReadStream(
+        `${EXPORT_ROOT_DIR}/${a.relativePath}`,
+      );
+      requireCondition(
+        file,
+        "missing_asset",
+        `manifest 引用的文件不存在: ${a.relativePath}`,
+      );
       const ext = a.relativePath.split(".").pop() ?? "bin";
       const captured = parseDate(a.capturedAt);
       const imported = parseDate(a.importedAt) ?? now;
-      const { storageKey } = storage.putOriginal(
+      // The ZIP entry and destination are streamed while the storage layer
+      // calculates actual byte count and SHA-256. No archive-sized or
+      // original-sized Buffer is created by the file-based CLI path.
+      const streamed = await storage.putOriginalStream(
         familyId,
         a.assetId,
         ext,
-        buffer,
+        file,
         captured ?? imported,
       );
+      const { storageKey } = streamed;
       writtenKeys.push(storageKey);
+      requireCondition(
+        streamed.bytes === a.bytes,
+        "hash_mismatch",
+        `${a.relativePath}: 字节数不符`,
+      );
+      requireCondition(
+        streamed.sha256 === a.sha256,
+        "hash_mismatch",
+        `${a.relativePath}: SHA-256 不符（备份可能损坏）`,
+      );
       storageKeyByAsset.set(a.assetId, storageKey);
     }
 
@@ -2253,7 +2441,7 @@ export async function restoreFromZip(
 
   // 3) 审计留痕。recordAudit 自身为 best-effort，不会把已提交恢复改报为失败。
   await recordAudit(familyId, AUDIT_KINDS.restoreCompleted, operatorUserId, {
-    zipBytes: zipBuffer.byteLength,
+    zipBytes: archiveBytes,
     people: peopleJson.length,
     assets: data.manifest.assets.length,
     events: memoriesJson.length,
@@ -2292,12 +2480,66 @@ export async function restoreFromZip(
   };
 }
 
-/** CLI/测试用：从文件路径恢复 */
+/** 测试/内存调用方：复用同一流式 ZIP reader；调用方已经持有压缩包 Buffer。 */
+export async function restoreFromZip(
+  zipBuffer: Buffer,
+  operatorUserId: string,
+  opts: { limits?: RestoreLimits } = {},
+): Promise<RestoreReport> {
+  const limits = opts.limits ?? RESTORE_LIMITS;
+  await assertRestoreOperator(operatorUserId);
+  requireCondition(
+    zipBuffer.byteLength > 0 &&
+      zipBuffer.byteLength < limits.maxTotalUncompressedBytes,
+    "zip_too_large",
+    "ZIP 压缩包本身超出大小限制。",
+  );
+  let zipFile: ZipFile;
+  try {
+    zipFile = await openZipBuffer(zipBuffer);
+  } catch (error) {
+    throw zipFailure(error);
+  }
+  const archive = await createRestoreArchive(zipFile, limits);
+  try {
+    return await restoreFromArchive(
+      archive,
+      zipBuffer.byteLength,
+      operatorUserId,
+      limits,
+    );
+  } finally {
+    archive.close();
+  }
+}
+
+/** CLI/运维用：从文件句柄按需读取 ZIP，不把压缩包载入 JS heap。 */
 export async function restoreFromZipFile(
   zipPath: string,
   operatorUserId: string,
 ): Promise<RestoreReport> {
-  const { readFileSync } = await import("node:fs");
-  void statSync;
-  return restoreFromZip(readFileSync(zipPath), operatorUserId);
+  await assertRestoreOperator(operatorUserId);
+  const archiveBytes = statSync(zipPath).size;
+  requireCondition(
+    archiveBytes > 0 && archiveBytes < RESTORE_LIMITS.maxTotalUncompressedBytes,
+    "zip_too_large",
+    "ZIP 压缩包本身超出大小限制。",
+  );
+  let zipFile: ZipFile;
+  try {
+    zipFile = await openZipPath(zipPath);
+  } catch (error) {
+    throw zipFailure(error);
+  }
+  const archive = await createRestoreArchive(zipFile, RESTORE_LIMITS);
+  try {
+    return await restoreFromArchive(
+      archive,
+      archiveBytes,
+      operatorUserId,
+      RESTORE_LIMITS,
+    );
+  } finally {
+    archive.close();
+  }
 }

@@ -11,5 +11,10 @@ export default defineConfig({
   test: {
     include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
     environment: "node",
+    // Integration suites own process-global DATA_DIR/database singletons. A single
+    // worker keeps those boundaries deterministic and avoids native SQLite cleanup
+    // races when fork workers exit concurrently on Node 24.
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });

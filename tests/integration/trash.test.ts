@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { FamilyContext } from "@/lib/family/context";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-trash-"));

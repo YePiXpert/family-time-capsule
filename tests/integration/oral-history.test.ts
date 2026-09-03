@@ -168,6 +168,28 @@ describe("M5-A：匿名讲述链接", () => {
     expect(limited).toEqual({ ok: false, error: "rate_limited" });
   });
 
+  it("并发提交也只能有 5 条通过，限流键不保存 bearer token", async () => {
+    const created = createContributionRequest(context, {
+      recipientLabel: "舅舅",
+      promptText: "讲讲小时候最热闹的一天。",
+      topicKey: "childhood",
+    });
+    if (!created.ok) throw new Error("create failed");
+    const attempts = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        submitGuestText(created.token, `并发讲述 ${index + 1}`),
+      ),
+    );
+    expect(attempts.filter((result) => result.ok)).toHaveLength(5);
+    expect(attempts.filter((result) => !result.ok)).toHaveLength(15);
+
+    const limiterRows = getDb()
+      .select()
+      .from((await import("@/db/schema/auth")).rateLimit)
+      .all();
+    expect(limiterRows.some((row) => row.key.includes(created.token))).toBe(false);
+  });
+
   it("过期与关闭后 token 失效；错误 token 不可用", async () => {
     // 构造一个已过期的链接（now 参数取过去时刻）
     const expired = createContributionRequest(

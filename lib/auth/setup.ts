@@ -1,8 +1,11 @@
+import "server-only";
+
 import { count } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { safeTokenEqual } from "./token";
 import { getAuth } from "./auth";
+import { consumeSecurityRateLimit } from "@/lib/security/rate-limit";
 
 /**
  * 首次管理员初始化（docs/SECURITY.md 威胁模型）：
@@ -27,6 +30,7 @@ export type SetupFailure =
   | "not_configured"
   | "already_initialized"
   | "invalid_token"
+  | "rate_limited"
   | "invalid_input"
   | "creation_failed";
 
@@ -76,6 +80,13 @@ async function doSetup(input: SetupInput): Promise<SetupResult> {
   const expected = getExpectedSetupToken();
   if (!expected) return { ok: false, error: "not_configured" };
   if ((await countUsers()) > 0) return { ok: false, error: "already_initialized" };
+  const limit = consumeSecurityRateLimit({
+    scope: "setup",
+    subject: "instance",
+    limit: 10,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (!limit.allowed) return { ok: false, error: "rate_limited" };
   if (!validateSetupInput(input)) return { ok: false, error: "invalid_input" };
   if (!safeTokenEqual(input.token, expected)) {
     return { ok: false, error: "invalid_token" };

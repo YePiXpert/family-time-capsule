@@ -6,9 +6,10 @@
 
 ## 0. 铁律
 
-1. **先校验，后恢复**：任何写入前必须通过全部校验（§2）。
+1. **先预验，后入库**：结构、metadata 与引用在写文件前全部校验；每份原件在流式落盘时
+   复核实际字节数/SHA-256，全部通过后才开启数据库事务。任一失败删除此前文件（§2）。
 2. **绝不覆盖现存数据**：只允许恢复到「无 Family」的实例；目标非空 → 明确拒绝（`target_not_empty`）。
-3. **原件只增不改**：恢复的原件按原 assetId 落盘（`putOriginal`，已存在即报错）。
+3. **原件只增不改**：恢复的原件按原 assetId 落盘（`putOriginalStream`，已存在即报错）。
 4. **认证数据不恢复**：user/session/account 永不来自备份。
 
 ## 1. 恢复流程（已实现）
@@ -28,10 +29,12 @@ docker compose exec app node /app/ops/restore.mjs /path/to/backup.zip [--user <u
 CLI 内部执行顺序（对应 RH-004 要求 1–18）：
 
 1. 校验目标实例无 Family / 无 Person；2. 校验 operator 是未禁用、未绑定的 setup admin；
-3. 读取 ZIP；4. 校验 `exportVersion` 与 manifest；5. **ZIP 条目名 path traversal 校验**；
+3. 用 `stat` 检查压缩包本体大小，以文件句柄打开 ZIP 并枚举 Central Directory（不把压缩包
+载入 JS heap）；4. 校验重复/加密/压缩方法、条目名与解压限额；5. 校验 `exportVersion` 与 manifest；
 6. 校验全部实体 JSON、关系、家庭解锁年龄、显式 guardian/手工解锁、Contribution
-可见性/音频引用/可迁移 recorder provenance、Transcript 引用；7. **逐个复核原件 SHA-256**；8–16.
-全部预验通过后才写入原件文件（失败回滚删除）→
+可见性/音频引用/可迁移 recorder provenance、Transcript 引用；7. 结构预验通过后，
+**逐个打开 entry stream → 边写临时文件边复核字节数/SHA-256 → hard-link 原子发布**
+（失败回滚此前文件）；内存中不保留压缩包或完整解压原件；8–16. 然后
 单事务恢复 Family → Person → Asset → MemoryEvent → MemoryEventTag → InboxItem → InboxItemAsset →
 事件关联表 → Contribution → Fact → FactSource → Transcript → Capsule（含内容引用）；17. 在同一事务提交前执行
 **行数复核**（包括 InboxItem、InboxItemAsset、Transcript、FactSource、MemoryEventTag、事件素材/参与人关系，以及胶囊的事件/素材/
@@ -44,8 +47,10 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 | 校验 | 失败码 |
 | --- | --- |
 | 条目名逃逸导出根目录 / `..` / 盘符 / 反斜杠 | `unsafe_entry` |
+| ZIP 损坏、重复条目、加密条目或非 Store/Deflate 压缩方法 | `bad_zip` |
 | 条目数 > 200,000 | `too_many_entries` |
 | 单文件解压 > 2GB | `file_too_large` |
+| manifest/JSON metadata 单文件 > 64MB | `file_too_large` |
 | 总解压 > 25GB（zip bomb） | `zip_bomb` |
 | `exportVersion` 不在支持列表 | `unsupported_version` |
 | manifest/JSON 损坏、引用缺失（未知 person/event/asset） | `bad_manifest` / `bad_json` / `bad_refs` |
@@ -63,6 +68,8 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 | recorder Person/姓名快照/记录模式组合非法，或档案夹带本地 User id | `bad_provenance` |
 
 限额可通过 `restoreFromZip(buffer, userId, { limits })` 注入（运维/测试用）。
+CLI 的 `restoreFromZipFile` 先用 `stat` 执行压缩包本体上限检查，再由 yauzl 通过文件句柄
+随机访问 Central Directory 与所需条目；它不调用 `readFileSync` 读取整个压缩包。
 
 ### 2.1 收件箱归档的完整性与旧档兼容
 
@@ -137,15 +144,16 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 ## 6. 测试
 
 - `tests/integration/restore.test.ts`：A 建档（照片+音频+视频+文字+3 事件+讲述+事实+封存胶囊）
-  → 导出 → 空实例 B setup → restore → 全量比对（sha256/字节/occurredAt/关系/胶囊）；
-  外加 7 个恶意输入用例（篡改哈希/坏版本/路径穿越/malformed manifest/解压限额/非空目标/坏 operator）。
+  → 导出 → 空实例 B setup → 文件句柄 restore → 全量比对（sha256/字节/occurredAt/关系/胶囊）；
+  另覆盖不整包 `readFileSync`、文件路径哈希回滚/坏 ZIP，以及篡改哈希、坏版本、路径穿越、
+  malformed manifest、解压限额、重复/加密/未知压缩方法、非空目标和坏 operator。
 - `tests/roundtrip/restore-roundtrip.test.ts`（`npm run test:e2e` 末尾执行）：
   A 建档 → export → **销毁 A** → 干净 B → restore → **启动真实服务器** →
   登录 → 时间轴/详情核对 → 媒体字节+Range+401 → 导出 B → verify:export CLI 全绿。
 
-P0 收件箱完整性的计划验收覆盖（在相应用例落地并通过前，不作为已完成声明）：
+收件箱完整性的已实现验收覆盖：
 
-- 导出集成：断言两个 inbox 文件与 `fileCount = assetCount + 10`，逐行比对超过 100 字的
+- 导出集成：断言两个 inbox 文件与当前 manifest `fileCount`，逐行比对超过 100 字的
   待处理文字、待处理素材、`needs_review`、`discarded`、已确认文字及其素材关联。
 - 恢复集成：逐项比对上述条目的 ID、状态、完整正文、`memoryEventId`、时间与关联行；验证
   两个文件都缺失的旧归档可恢复、只缺一个会拒绝，以及悬空 event/item/asset 引用会拒绝。

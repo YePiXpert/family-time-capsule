@@ -7,17 +7,31 @@
  */
 import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { eq } from "drizzle-orm";
+import type { FamilyContext } from "../lib/family/context";
 
 const quick = process.argv.includes("--quick");
 const EVENT_COUNT = quick ? 1_000 : 10_000;
 const ASSET_COUNT = quick ? 5_000 : 50_000;
 
-process.env.DATA_DIR = process.env.BENCHMARK_DATA_DIR ?? `benchmark-data-${Date.now()}`;
+const ownsDataDir = !process.env.BENCHMARK_DATA_DIR;
+const benchmarkDataDir =
+  process.env.BENCHMARK_DATA_DIR ??
+  mkdtempSync(path.join(tmpdir(), "ftc-benchmark-"));
+process.env.DATA_DIR = benchmarkDataDir;
 process.env.INITIAL_SETUP_TOKEN = "benchmark-setup-token";
-process.env.AUTH_SECRET = "benchmark-secret";
+process.env.AUTH_SECRET =
+  process.env.AUTH_SECRET ?? "benchmark-auth-secret-0123456789abcdef";
+process.env.BETTER_AUTH_URL = process.env.BETTER_AUTH_URL ?? "http://localhost";
 
+let closeBenchmarkDatabase: (() => void) | undefined;
+
+try {
 const { closeDatabase, getDb } = await import("../db");
+closeBenchmarkDatabase = closeDatabase;
 const { performSetup } = await import("../lib/auth/setup");
 const { completeOnboarding } = await import("../lib/family/service");
 const { getTimelinePage } = await import("../lib/memories/service");
@@ -32,7 +46,6 @@ const { memoryEvent } = await import("../db/schema/memory");
 const { asset } = await import("../db/schema/asset");
 const { person } = await import("../db/schema/family");
 const { user } = await import("../db/schema/auth");
-import type { FamilyContext } from "../lib/family/context";
 
 const setup = await performSetup({
   token: "benchmark-setup-token",
@@ -180,5 +193,10 @@ bench("Story 素材收集（全年）", () => {
   collectTranscriptMaterial(familyId, period);
 });
 
-closeDatabase();
 console.log("基准完成。");
+} finally {
+  closeBenchmarkDatabase?.();
+  if (ownsDataDir) {
+    rmSync(benchmarkDataDir, { recursive: true, force: true });
+  }
+}

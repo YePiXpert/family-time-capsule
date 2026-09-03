@@ -54,7 +54,7 @@ export function InboxCard({
       : (cover?.originalFilename ?? "一段记忆").replace(/\.[a-z0-9]{1,8}$/i, ""));
 
   return (
-    <li className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
+    <article className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
       <div className="flex flex-col gap-4 sm:flex-row">
         {cover?.type === "image" && (
           <MediaImage
@@ -180,6 +180,6 @@ export function InboxCard({
           </form>}
         </div>
       </div>
-    </li>
+    </article>
   );
 }

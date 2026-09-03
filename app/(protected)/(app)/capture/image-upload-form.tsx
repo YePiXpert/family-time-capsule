@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { uploadWithProgress } from "@/components/upload-request";
 
 /**
  * 图片上传（Issue #005）：手机/电脑选择已有照片或现场拍摄均可——
@@ -8,8 +9,11 @@ import { useRef, useState } from "react";
  */
 
 type UploadResult = {
+  id: string;
+  file: File;
   filename: string;
-  status: "stored" | "duplicate" | "error";
+  status: "uploading" | "stored" | "duplicate" | "error";
+  progress: number;
   message?: string;
   assetId?: string;
   capturedAt?: string | null;
@@ -18,53 +22,67 @@ type UploadResult = {
 export function ImageUploadForm() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<UploadResult[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const uploading = results.some((result) => result.status === "uploading");
 
-  async function uploadOne(file: File): Promise<UploadResult> {
-    const form = new FormData();
-    form.append("file", file);
-    // File.lastModified 作为文件系统时间 fallback（#006 前）
-    form.append("lastModified", String(file.lastModified));
+  function updateResult(id: string, update: Partial<UploadResult>) {
+    setResults((current) =>
+      current.map((result) =>
+        result.id === id ? { ...result, ...update } : result,
+      ),
+    );
+  }
+
+  async function uploadOne(result: UploadResult) {
+    updateResult(result.id, { status: "uploading", progress: 0, message: undefined });
     try {
-      const res = await fetch("/api/upload/image", { method: "POST", body: form });
-      const data = await res.json();
+      const data = await uploadWithProgress(
+        "/api/upload/image",
+        result.file,
+        (progress) => updateResult(result.id, { progress }),
+      );
       if (data.status === "stored") {
-        return {
-          filename: file.name,
+        updateResult(result.id, {
           status: "stored",
+          progress: 100,
           assetId: data.assetId,
           capturedAt: data.capturedAt,
-        };
+        });
+        return;
       }
       if (data.status === "duplicate") {
-        return {
-          filename: file.name,
+        updateResult(result.id, {
           status: "duplicate",
+          progress: 100,
           message: data.message,
           assetId: data.existingAssetId,
-        };
+        });
+        return;
       }
-      return {
-        filename: file.name,
+      updateResult(result.id, {
         status: "error",
         message: data.message ?? "上传失败",
-      };
+      });
     } catch {
-      return { filename: file.name, status: "error", message: "网络错误，上传失败" };
+      updateResult(result.id, {
+        status: "error",
+        message: "网络错误，上传失败",
+      });
     }
   }
 
   async function onChange(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     if (files.length === 0) return;
-    setUploading(true);
-    const uploaded: UploadResult[] = [];
-    for (const file of files) {
-      uploaded.push(await uploadOne(file));
-    }
-    setResults((prev) => [...uploaded, ...prev]);
-    setUploading(false);
+    const pending = files.map((file, index) => ({
+      id: `${Date.now()}-${index}-${file.name}`,
+      file,
+      filename: file.name,
+      status: "uploading" as const,
+      progress: 0,
+    }));
+    setResults((current) => [...pending, ...current]);
     if (inputRef.current) inputRef.current.value = "";
+    for (const result of pending) await uploadOne(result);
   }
 
   return (
@@ -84,17 +102,37 @@ export function ImageUploadForm() {
           disabled={uploading}
         />
       </label>
-      {uploading && <p className="mt-3 text-sm text-foreground/60">上传中…</p>}
+      {uploading && (
+        <p className="mt-3 text-sm text-foreground/60" role="status">
+          正在逐份安全保存…
+        </p>
+      )}
 
-      <ul className="mt-4 flex flex-col gap-2" aria-label="上传结果">
-        {results.map((r, i) => (
+      <ul
+        className="mt-4 flex flex-col gap-2"
+        aria-label="上传结果"
+        aria-live="polite"
+        aria-busy={uploading}
+      >
+        {results.map((r) => (
           <li
-            key={`${r.filename}-${i}`}
+            key={r.id}
             className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg border border-foreground/10 px-4 py-3 text-sm"
           >
             <span className="max-w-[60%] truncate" title={r.filename}>
               {r.filename}
             </span>
+            {r.status === "uploading" && (
+              <span className="flex min-w-36 items-center gap-2 text-foreground/60">
+                <progress
+                  className="h-2 w-24 accent-accent"
+                  max={100}
+                  value={r.progress}
+                  aria-label={`${r.filename} 上传进度`}
+                />
+                {r.progress}%
+              </span>
+            )}
             {r.status === "stored" && (
               <span className="text-foreground/60">已保存，等待整理</span>
             )}
@@ -117,7 +155,16 @@ export function ImageUploadForm() {
               </span>
             )}
             {r.status === "error" && (
-              <span className="text-red-700 dark:text-red-400">{r.message}</span>
+              <span className="flex items-center gap-3 text-red-700 dark:text-red-400">
+                {r.message}
+                <button
+                  type="button"
+                  onClick={() => void uploadOne(r)}
+                  className="min-h-11 rounded-lg border border-current px-3 py-2 text-sm"
+                >
+                  重试
+                </button>
+              </span>
             )}
           </li>
         ))}

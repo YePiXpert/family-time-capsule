@@ -1,0 +1,153 @@
+name: Native mobile packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "mobile-build/**"
+    tags:
+      - "mobile-v*"
+
+concurrency:
+  group: native-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: React Native quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+        working-directory: mobile
+      - run: npm run typecheck
+        working-directory: mobile
+      - run: npm run lint
+        working-directory: mobile
+      - run: npm test
+        working-directory: mobile
+      - run: npx expo-doctor
+        working-directory: mobile
+      - run: npx expo export --platform android --output-dir dist-android
+        working-directory: mobile
+      - run: npx expo export --platform ios --output-dir dist-ios
+        working-directory: mobile
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+        working-directory: mobile
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --clean --no-install
+        working-directory: mobile
+        env:
+          CI: "1"
+      - name: Build installable standalone APK
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+        working-directory: mobile/android
+        env:
+          NODE_ENV: production
+      - name: Verify native Android package
+        run: |
+          APK=mobile/android/app/build/outputs/apk/release/app-release.apk
+          SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          APKSIGNER=$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print | sort -V | tail -1)
+          AAPT2=$(find "$SDK_ROOT/build-tools" -type f -name aapt2 -print | sort -V | tail -1)
+          test -n "$APKSIGNER"
+          test -n "$AAPT2"
+          SIGNATURE_REPORT=$("$APKSIGNER" verify --verbose "$APK")
+          echo "$SIGNATURE_REPORT"
+          echo "$SIGNATURE_REPORT" | grep -F 'Verified using v2 scheme (APK Signature Scheme v2): true'
+          "$AAPT2" dump badging "$APK" | grep -F "package: name='app.familytimecapsule.mobile'"
+          unzip -l "$APK" | grep -F 'assets/index.android.bundle'
+      - name: Name package
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk FamilyTimeCapsule-android.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-android-apk
+          path: FamilyTimeCapsule-android.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    name: iOS unsigned IPA
+    runs-on: macos-26
+    needs: quality
+    env:
+      # Expo SDK 57 requires Xcode >= 26.4. The macos-26 image includes this
+      # pinned stable toolchain while macos-15 currently tops out at 26.3.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Verify Xcode toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - run: npm ci
+        working-directory: mobile
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+        working-directory: mobile
+        env:
+          CI: "1"
+      - name: Install CocoaPods
+        run: npx pod-install ios
+        working-directory: mobile
+      - name: Create unsigned device archive
+        working-directory: mobile
+        run: |
+          WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
+          test -n "$WORKSPACE_PATH"
+          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
+          test -n "$SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE_PATH" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/FamilyTimeCapsule.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            archive
+      - name: Package unsigned IPA
+        working-directory: mobile
+        run: |
+          APP_PATH=$(find build/FamilyTimeCapsule.xcarchive/Products/Applications -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" = 'app.familytimecapsule.mobile'
+          test -f "$APP_PATH/main.jsbundle"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" build/ipa/Payload/
+          cd build/ipa
+          /usr/bin/zip -qry ../FamilyTimeCapsule-ios-unsigned.ipa Payload
+          /usr/bin/unzip -tq ../FamilyTimeCapsule-ios-unsigned.ipa
+      - uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-ios-unsigned-ipa
+          path: mobile/build/FamilyTimeCapsule-ios-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30

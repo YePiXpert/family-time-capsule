@@ -8,7 +8,9 @@
 
 - 一台长期在线的机器（家庭服务器 / NAS / VPS），已安装 Docker 与 Docker Compose；
 - 一个用于存放家庭数据的目录或 named volume 计划（Compose 逻辑名为 `capsule-data`；实际卷名通常带项目名前缀）；
-- 生成两个 secret：`AUTH_SECRET`（≥32 随机字符）与 `INITIAL_SETUP_TOKEN`（一次性初始化令牌）：
+- 生成两个 secret：`AUTH_SECRET`（≥32 随机字符）与 `INITIAL_SETUP_TOKEN`（一次性初始化令牌）；
+- 确定浏览器实际访问的唯一 origin，填入 `BETTER_AUTH_URL`：直连如
+  `http://192.168.1.20:3000`，反向代理如 `https://capsule.example.com`（不带路径/末尾 `/`）。
 
 ```bash
 openssl rand -base64 32   # → AUTH_SECRET
@@ -19,10 +21,15 @@ openssl rand -hex 16      # → INITIAL_SETUP_TOKEN
 
 ```bash
 git clone <你的仓库地址> family-time-capsule && cd family-time-capsule
-AUTH_SECRET=<上一步的值> INITIAL_SETUP_TOKEN=<上一步的值> docker compose up -d --build
+AUTH_SECRET=<上一步的值> \
+BETTER_AUTH_URL=http://192.168.1.20:3000 \
+INITIAL_SETUP_TOKEN=<上一步的值> \
+docker compose up -d --build --wait
 ```
 
-预期：`docker compose ps` 显示 `app` 为 `running (healthy)`（端口 3000）。
+预期：`docker compose ps` 显示 `app` 与 `worker` 均为 `running (healthy)`（端口 3000）。
+app 探测 `/api/health`；worker 不监听 HTTP，使用 PID 1 存活探针，队列级新鲜度另由
+持久化 heartbeat 记录。
 
 生产镜像只携带 Next standalone 运行文件及 `/app/ops/*.mjs` 运维产物；恢复、导出校验、
 部署冒烟和健康检查不依赖仓库里的 TypeScript 源码、`tsx` 或完整开发依赖。
@@ -34,14 +41,17 @@ docker compose logs --tail=100 app    # 看启动日志
 ```
 
 - `AUTH_SECRET` 缺失 → compose 会拒绝启动（设计如此）。
+- `BETTER_AUTH_URL` 缺失 → compose 会拒绝启动；与浏览器 origin 不一致 → 登录被
+  Better Auth 拒绝（`Invalid origin`）。反向代理必须填最终 HTTPS 地址。
 - better-sqlite3 构建失败 → 确认镜像为 `node:24-alpine` 且 Dockerfile 已装构建依赖（`python3 make g++`）。
 
 ### 可选 AI Provider 与 worker
 
 默认 `AI_PROVIDER=disabled`，app 与 worker 都不会访问外部 AI；worker 停止也不影响
 上传、Inbox、Timeline、Contribution、Capsule、导出或恢复。Compose 会启动独立
-`worker` service，但当前版本的 production handler registry 为空，不会实际发送、
-转录或分析家庭素材。
+`worker` service。production registry 已包含转录、图片理解、视频抽帧理解、事件 metadata
+建议和收件箱建议；只有同时配置 Provider/model 且管理员针对具体 capability 明确同意后，
+相应 handler 才会向外部发送已披露的内容。
 
 未来启用真实 handler 时，必须把完全相同的 `AI_PROVIDER`、`AI_BASE_URL`、
 `AI_API_KEY`、Provider label 和各 capability model 同时注入 app 与 worker。远程
@@ -208,7 +218,10 @@ console.log('snapshot ok');
 
 ```bash
 # 新机器：clone + 启动
-AUTH_SECRET=<新或原值> INITIAL_SETUP_TOKEN=<新一次性令牌> docker compose up -d --build
+AUTH_SECRET=<新或原值> \
+BETTER_AUTH_URL=https://新的实际访问地址 \
+INITIAL_SETUP_TOKEN=<新一次性令牌> \
+docker compose up -d --build --wait
 # 浏览器 /setup 创建管理员（认证不来自备份）
 # 把备份 ZIP 拷进容器可达位置后恢复：
 docker compose cp capsule-backup.zip app:/tmp/backup.zip
@@ -223,7 +236,7 @@ docker compose exec app node /app/ops/restore.mjs /tmp/backup.zip
 
 ```bash
 git pull
-docker compose up -d --build     # 数据库迁移在启动后首次连接时自动应用
+docker compose up -d --build --wait  # 数据库迁移在启动后首次连接时自动应用
 docker compose exec app node /app/ops/smoke-deployment.mjs
 ```
 

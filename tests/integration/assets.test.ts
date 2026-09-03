@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { afterAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 
@@ -221,6 +222,91 @@ describe("原件不可覆盖 / 衍生物独立", () => {
     ).toThrow(OriginalExistsError);
     // 原内容未被覆盖
     expect(storage.read(key).toString()).toBe("v1");
+  });
+
+  it("putOriginalStream 流式写入并返回实际字节数与 SHA-256", async () => {
+    const storage = getAssetStorage();
+    const assetId = "streamed-original-success";
+    const date = new Date("2026-09-03T12:00:00.000Z");
+    const bytes = Buffer.concat([
+      Buffer.from("streamed-original-"),
+      Buffer.alloc(128 * 1024, 0x5a),
+    ]);
+
+    const result = await storage.putOriginalStream(
+      familyId,
+      assetId,
+      "bin",
+      Readable.from([bytes.subarray(0, 17), bytes.subarray(17)]),
+      date,
+    );
+
+    expect(result).toEqual({
+      storageKey: buildOriginalStorageKey(familyId, assetId, "bin", date),
+      bytes: bytes.byteLength,
+      sha256: sha256Of(bytes),
+    });
+    expect(storage.read(result.storageKey)).toEqual(bytes);
+  });
+
+  it("putOriginalStream 对同 key 并发安全地拒绝覆盖", async () => {
+    const storage = getAssetStorage();
+    const assetId = "streamed-original-no-overwrite";
+    const date = new Date("2026-09-03T13:00:00.000Z");
+    const key = buildOriginalStorageKey(familyId, assetId, "bin", date);
+    const candidates = [
+      Buffer.from("stream-candidate-a"),
+      Buffer.from("stream-candidate-b"),
+    ];
+
+    const results = await Promise.allSettled(
+      candidates.map((candidate) =>
+        storage.putOriginalStream(
+          familyId,
+          assetId,
+          "bin",
+          Readable.from([candidate]),
+          date,
+        ),
+      ),
+    );
+
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === "rejected");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      reason: expect.any(OriginalExistsError),
+    });
+    expect(
+      candidates.some((candidate) => storage.read(key).equals(candidate)),
+    ).toBe(true);
+
+    const unreadSource = Readable.from([Buffer.from("must-not-be-consumed")]);
+    await expect(
+      storage.putOriginalStream(familyId, assetId, "bin", unreadSource, date),
+    ).rejects.toBeInstanceOf(OriginalExistsError);
+    expect(unreadSource.destroyed).toBe(true);
+  });
+
+  it("putOriginalStream 在来源流失败时清理目标与临时文件", async () => {
+    const storage = getAssetStorage();
+    const assetId = "streamed-original-source-error";
+    const date = new Date("2026-09-03T14:00:00.000Z");
+    const key = buildOriginalStorageKey(familyId, assetId, "bin", date);
+    const failingStream = Readable.from(
+      (async function* () {
+        yield Buffer.from("partial-bytes");
+        throw new Error("synthetic source failure");
+      })(),
+    );
+
+    await expect(
+      storage.putOriginalStream(familyId, assetId, "bin", failingStream, date),
+    ).rejects.toThrow("synthetic source failure");
+    expect(storage.exists(key)).toBe(false);
+    expect(listFiles(dataDir).filter((file) => file.includes(assetId))).toEqual([]);
   });
 
   it("derivative 与原件路径分离，互不覆盖", async () => {

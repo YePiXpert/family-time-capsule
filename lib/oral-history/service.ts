@@ -1,5 +1,7 @@
+import "server-only";
+
 import { randomBytes, createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   contributionRequest,
@@ -11,6 +13,7 @@ import { assertFamilyCapability } from "@/lib/authz/policy";
 import { createTextInboxItem, createInboxItemForAsset } from "@/lib/inbox/service";
 import { ingestImage, ingestMedia } from "@/lib/assets/ingest";
 import type { FamilyContext } from "@/lib/family/context";
+import { consumeSecurityRateLimit } from "@/lib/security/rate-limit";
 
 /**
  * 口述史收集服务（M5）：家人创建匿名讲述链接，访客凭 token 提交
@@ -321,19 +324,14 @@ export function resolveGuestRequest(
   return { ok: true, request: row };
 }
 
-function checkSubmissionRateLimit(requestId: string, now: Date): boolean {
-  const since = new Date(now.getTime() - 3_600_000);
-  const row = getDb()
-    .select({ value: sql<number>`count(*)` })
-    .from(contributionRequestSubmission)
-    .where(
-      and(
-        eq(contributionRequestSubmission.requestId, requestId),
-        gte(contributionRequestSubmission.createdAt, since),
-      ),
-    )
-    .get();
-  return Number(row?.value ?? 0) < SUBMISSIONS_PER_HOUR;
+function consumeSubmissionLimit(requestId: string, now: Date): boolean {
+  return consumeSecurityRateLimit({
+    scope: "guest-submit",
+    subject: requestId,
+    limit: SUBMISSIONS_PER_HOUR,
+    windowMs: 60 * 60 * 1000,
+    now,
+  }).allowed;
 }
 
 export type GuestSubmissionResult =
@@ -347,12 +345,12 @@ export async function submitGuestText(
 ): Promise<GuestSubmissionResult> {
   const resolved = resolveGuestRequest(token, now);
   if (!resolved.ok) return { ok: false, error: resolved.error };
+  if (!consumeSubmissionLimit(resolved.request.id, now)) {
+    return { ok: false, error: "rate_limited" };
+  }
   const trimmed = text.trim();
   if (trimmed.length < 1 || trimmed.length > MAX_SUBMISSION_TEXT_CHARS) {
     return { ok: false, error: "invalid_text" };
-  }
-  if (!checkSubmissionRateLimit(resolved.request.id, now)) {
-    return { ok: false, error: "rate_limited" };
   }
   const item = await createTextInboxItem(resolved.request.familyId, trimmed);
   return recordSubmission(resolved.request, item.id, now);
@@ -370,7 +368,7 @@ export async function submitGuestMedia(
 ): Promise<GuestSubmissionResult> {
   const resolved = resolveGuestRequest(token, now);
   if (!resolved.ok) return { ok: false, error: resolved.error };
-  if (!checkSubmissionRateLimit(resolved.request.id, now)) {
+  if (!consumeSubmissionLimit(resolved.request.id, now)) {
     return { ok: false, error: "rate_limited" };
   }
 

@@ -1,8 +1,41 @@
 # Changelog
 
-本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ P1 AI 整理员 → P2 家庭口述史。
+本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ **1.0 Family Archive**。
 
-## Unreleased（M5 + M6 — 口述史、胶囊对话、书籍与备份）
+## 1.0.0-rc.1 — Family Archive release candidate（2026-09-03）
+
+稳定版唯一外部门禁是 `docs/REAL_DEVICE_TEST.md` 的 iOS、Android、Windows/PWA
+实机记录；在该记录完成前不创建 `v1.0.0` tag。
+
+### 原生 iOS / Android 与离线同步
+
+- 新增 Expo SDK 57 + React Native 原生客户端（无 PWA/WebView）：设备 SQLite 保存
+  时间轴/人物/同步状态，Keychain/Keystore 保存会话，私有文件目录保存离线封面和
+  待补传原件。
+- 离线文字、照片和视频使用持久 outbox；文字由设备 UUID 在服务器幂等入箱，媒体使用
+  设备 `captureId` + 原件 SHA-256 幂等补传；完整分页快照成功前不清理旧离线行。
+- Better Auth 官方 bearer transport 复用现有可撤销 session；新增最小化
+  `/api/mobile/v1` 同步/文字捕获端点，所有家庭、角色和媒体可见性继续由服务器推导。
+- `.github/workflows/mobile-build.yml` 在 GitHub macOS/Linux runner 构建 unsigned IPA
+  和可侧载 APK；构建产物不包含真实家庭数据。
+
+### 发布、安全与恢复硬化
+
+- 上传改为 XHR 字节进度与失败重试；图片、音频、视频、Share Target 与匿名讲述媒体
+  在 `formData()` 前强制有限 `Content-Length`，50/200/500MB 上限不能被 chunked 绕过。
+- `/setup`（10 次/15 分钟/实例）与匿名讲述（5 次/小时/链接）使用 SQLite 原子持久化限流；
+  bearer token 只以 scope + SHA-256 subject 参与 key。
+- 新增全局 loading/error/not-found 恢复页、键盘焦点与 reduced-motion；移除构建期网络字体依赖。
+- 修复 onboarding 后 Router Cache 重定向循环、收件箱无效嵌套 `<li>` 导致的重复卡片，
+  以及 worker 继承 HTTP 探针而永久 unhealthy。
+- Compose 强制配置 `BETTER_AUTH_URL`，支持 `APP_PORT`；真实 Docker build/boot/health、
+  持久化、跨实例 restore 和从干净 0.1.3 镜像接管旧卷均已验证。
+- WebDAV 上传与回读哈希改为流式；恢复 CLI 改用 yauzl 文件句柄 reader，压缩包不再整包
+  载入 JS heap。原件以 entry stream 逐个验字节/SHA-256，经临时文件 + hard-link 原子发布；
+  重复/加密/未知压缩方法、路径逃逸和解压限额在写入前拒绝，失败清理所有已写原件。
+- 质量基线：455 个服务端 Vitest、32 个 Playwright、8 个移动端 Vitest、6 个生产
+  roundtrip 全绿；
+  lint/typecheck/webpack production build/audit/10k-event + 50k-asset benchmark 通过。
 
 ### 口述收集与胶囊对话（M5，migrations 0025/0026）
 
@@ -21,7 +54,7 @@
   设置页历史与一键重试。
 - PWA Share Target：系统分享的照片/视频/音频/文字/链接直达收件箱。
 
-## Unreleased（M4 — 搜索与故事完成）
+### 搜索与故事（M4）
 
 ### 全文搜索（M4-A，migration 0023）
 
@@ -37,9 +70,9 @@
 - `generate.story.v1` AI 起草（F#/C#/T# 别名 + 逐条来源校验）+ 无 AI 的离线组装路径。
 - 导出/恢复携带 edited/published 故事三件套；published 故事进入搜索索引。
 
-## Unreleased（M3 — AI memory organizer 完成）
+### AI memory organizer（M3）
 
-M3 全部四块（M3-D/E/F/G）落地，版本号仍保持 0.1.3（v1 发布时统一升 1.0.0）。
+M3 全部四块（M3-D/E/F/G）落地。
 
 ### 精确 FactSource locator（M3-D，migration 0021）
 
@@ -79,7 +112,7 @@ M3 全部四块（M3-D/E/F/G）落地，版本号仍保持 0.1.3（v1 发布时�
 - roundtrip 导出计数断言与当前 12 非媒体文件格式对齐（此前 roundtrip 在 CI 从未跑到）。
 - 生产 roundtrip 现在覆盖 edited transcript、确认事实 locator（quote + 时间段）、
   接受的标签与 date_only 精度的完整往返。
-- 单元/集成测试 381 通过，Playwright 29 通过，roundtrip 6 通过。
+- 当时的阶段基线为 381 个 Vitest、29 个 Playwright、6 个 roundtrip；当前发布基线见本节开头。
 
 ## 0.1.3 — Performance & Audit Hardening（2026-08-30）
 

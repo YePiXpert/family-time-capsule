@@ -75,11 +75,14 @@
 - **状态**：已接受
 - **决策**：
   1. storageKey = `originals/{familyId}/{yyyy}/{mm}/{assetId}.{ext}`（yyyy/mm 取 capturedAt，缺失用导入时间）；derivatives 同构但前缀为 `derivatives/{type}s/`。**上传原 filename 永不进入路径**，只作为展示名存 DB（清洗路径分隔符与控制字符）。
-  2. 原件不可覆盖在**存储层强制**：`putOriginal` 对已存在 key 抛 `OriginalExistsError`；写入走临时文件 + rename 原子落盘。衍生物可再生、允许覆盖。
+  2. 原件不可覆盖在**存储层强制**：`putOriginal` / `putOriginalStream` 对已存在 key 抛
+     `OriginalExistsError`；普通写入走临时文件 + rename，流式写入走独占临时文件 + hard-link
+     原子发布，竞争写入也不会替换目标。衍生物可再生、允许覆盖。
   3. key 安全是白名单而非黑名单：正则限定前缀与字符集、禁止 `..` 与 `//`，resolve 后必须仍在 DATA_DIR 内（纵深防御，主防御是 filename 根本不参与路径）。
   4. 去重以家庭为边界：unique `(familyId, sha256)`。跨家庭允许相同文件（隔离单位是 family，不是全局）。
   5. `person.avatar_asset_id` 在 P0 保持普通可空列（尚未使用）——SQLite 无法 ALTER 加 FK 约束，为未用功能重建 person 表不值得。
-  6. LocalFilesystemStorage 的 API 是同步的（better-sqlite3 风格，Node fs 本地写足够快）；大文件流式读取用 `createWebStream` 供媒体端点。
+  6. LocalFilesystemStorage 的普通小对象 API 保持同步；大文件读取用 `createWebStream`，恢复写入
+     用异步 `putOriginalStream`，边落盘边计算实际字节数与 SHA-256。
 - **PRD 偏差**：无。
 
 ## D-009（Issue #006）EXIF 时间缺失时区的解释策略
@@ -131,6 +134,24 @@
   3. 图标由 `scripts/make-icons.mjs` 纯 Node 生成（内置 PNG 编码器）：暖纸底 + 皮革色胶囊图形，与 globals.css 的低饱和档案基调一致；无 emoji、无卡通元素。
   4. 移动端 viewport：`viewport-fit=cover` + body 的 safe-area padding；上传控件不带 `capture` 属性——相册/拍摄由用户在系统选择器决定（Capture Anywhere，不强制现场拍摄）。
 - **PRD 偏差**：无（PRD §28 风格约束落实）。
+
+## D-018（1.0 RC）原生伴侣客户端：设备本地副本 + 家庭服务器同步
+
+- **日期**：2026-09-03
+- **状态**：已接受
+- **决策**：新增 Expo/React Native 原生伴侣客户端；设备使用 SQLite、私有文件目录与
+  Keychain/Keystore，不使用 WebView。Next.js 单体仍是权威档案、媒体处理、导出恢复和
+  AI worker 所在地。原生端通过 `/api/mobile/v1` 最小 DTO 与 Better Auth bearer session
+  同步，不接受客户端指定 familyId。
+- **同步**：读侧为完整 keyset 快照，全部分页成功后才清理设备旧行；写侧先落 durable
+  outbox，文字以设备 UUID 幂等，媒体以设备 UUID + 原件 SHA-256 幂等；同 ID 不同内容
+  返回冲突。安装包永不嵌入真实家庭数据。
+- **构建**：GitHub Actions 产出 debug-signed APK 和 unsigned iPhoneOS IPA；Apple 身份
+  凭据不进仓库，安装前由所有者自签/正式签名。
+- **理由**：原生相册、设备级安全存储和可靠离线写入是 PWA 壳无法等价提供的；保留服务器
+  权威层避免在手机中复制 better-sqlite3、ffmpeg、worker、恢复和权限状态机。
+- **PRD 偏差**：用户明确扩展 1.0 交付范围；原“仅为分享而重写原生端”的非目标改为
+  “不以设备端替换权威自托管档案”。
 
 ## D-013（RH-002）Live Photo 的 P0.1 语义：两个可合并的独立 Asset
 
@@ -191,7 +212,9 @@
 - **决策**：
   1. 恢复目标限定为「**无 Family** 的实例」（family/person 表为空即保证全业务为空）；用户表允许且通常需要已有 1 个通过 `/setup` 新建的管理员——恢复内容的所有 `created_by` 指向该 operator。理由：`asset.created_by_user_id` 为 NOT NULL FK，指向备份中的旧用户会违反引用完整性；而先 setup 再 restore 让认证凭据永不来自备份（密码哈希/secret 不随归档流转）。
   2. 恢复后 `/onboarding` 自动检测「实例已有家庭」→ 进入**绑定流**（选择自己是哪位 Person；孩子档案不可作为登录身份）→ 写入 `user.familyId/personId`。
-  3. 恢复写入顺序：先落盘全部原件（`putOriginal`，key 冲突即报错），后单事务写库；DB 失败 → 删除已写文件。事务提交后做行数复核，任何不一致 → 报错（文件已写但库回滚极小概率残留时，下一次恢复会因 target 非空或 key 冲突安全失败）。
+  3. 恢复写入顺序：结构/metadata/引用预验后，逐个 entry stream 经 `putOriginalStream`
+     验字节与 SHA-256 并原子发布；key 冲突或任一原件异常即删除此前文件。全部原件通过后
+     单事务写库，并在提交前做行数复核；DB/复核失败则事务回滚并删除已写文件。
   4. v0.1.1 明确禁止 merge restore（向已有数据的实例合并导入）。
   5. CLI 形态：`npm run restore -- backup.zip`（tsx 运行 TS、复用业务服务与校验；恢复是管理员运维操作，不需要 Web UI）。
 - **PRD 偏差**：无（PRD §15/§18 允许；docs/RESTORE.md 已同步）。
@@ -212,12 +235,16 @@
   Noto CJK（Docker 镜像已内置），避免几十 MB 的字体嵌入或新供应链依赖。
 - **后果**：PDF 文字不可选中（以图像页呈现）；阅读优先走 EPUB（原生文本）。
 
-## D-0xx（M7）上传/恢复的内存形态
-- **决策**：媒体回放与导出走流式；上传/恢复保持「上限内有界缓冲」
-  （50/200/500MB 上限 + Content-Length 预检），不做手写 multipart 流解析。
-- **理由**：手写多部分解析器解析不可信输入，引入的攻击面大于其收益；
-  上限内的缓冲对自托管单家庭负载是可接受的运维边界。
-- **后果**：部署建议 ≥2GB 内存；零拷贝上传列为未来独立安全评审项。
+## D-0xx（M7/M8）上传/恢复的内存形态
+- **决策**：媒体回放、导出、WebDAV PUT/GET 哈希走流式；上传保持「上限内有界缓冲」
+  （50/200/500MB 上限 + 所有入口 Content-Length 预检），不做手写 multipart 流解析。
+  恢复 CLI 用 yauzl 从文件句柄读取 Central Directory，逐个打开 entry stream，经临时文件
+  流式计算字节/SHA-256 后 hard-link 发布；不再把压缩 ZIP 或完整原件读入 JS heap。
+- **理由**：手写多部分或 ZIP 解析器处理不可信输入会扩大攻击面；采用成熟 reader 并显式
+  拒绝路径逃逸、重复、加密、未知压缩方法，同时限制条目数、单条/总解压量和 metadata 大小。
+- **后果**：CLI 内存随受限的 Central Directory 和单个 ≤64MB metadata 文件增长，而不随
+  压缩包或原件大小线性增长。`restoreFromZip(Buffer)` 仅保留给已经持有 Buffer 的测试/
+  程序化调用方；完全零拷贝 multipart 仍是未来独立安全评审项。
 
 ## D-0xx（M4）搜索分词
 - **决策**：FTS5 索引与查询两侧统一 CJK bigram 预分词（lib/search/tokenizer.ts），

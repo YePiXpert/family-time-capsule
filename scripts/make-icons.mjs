@@ -73,13 +73,13 @@ function inCircle(x, y, cx, cy, r) {
   return dx * dx + dy * dy <= r * r;
 }
 
-function drawIcon(size) {
+function drawIcon(size, transparent = false) {
   const rgba = Buffer.alloc(size * size * 4);
   const S = size / 512; // 以 512 为基准的比例
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const i = (y * size + x) * 4;
-      let color = BG;
+      let color = transparent ? [0, 0, 0, 0] : BG;
       // 胶囊主体：竖向圆角长条
       if (inRoundRect(x, y, size / 2, size / 2, 90 * S, 210 * S, 88 * S)) {
         color = CAPSULE;
@@ -87,7 +87,7 @@ function drawIcon(size) {
       // 胶囊分割线（纸色横线）
       if (inRoundRect(x, y, size / 2, size / 2, 90 * S, 210 * S, 88 * S) &&
           Math.abs(y - size / 2) < 7 * S) {
-        color = BG;
+        color = transparent ? [0, 0, 0, 0] : BG;
       }
       // 上部星点
       if (inCircle(x, y, size / 2, size / 2 - 105 * S, 26 * S)) color = DOT;
@@ -98,7 +98,7 @@ function drawIcon(size) {
       rgba[i] = color[0];
       rgba[i + 1] = color[1];
       rgba[i + 2] = color[2];
-      rgba[i + 3] = 255;
+      rgba[i + 3] = color[3] ?? 255;
     }
   }
   return encodePng(size, size, rgba);
@@ -107,4 +107,20 @@ function drawIcon(size) {
 writeFileSync(path.join(outDir, "icon-192.png"), drawIcon(192));
 writeFileSync(path.join(outDir, "icon-512.png"), drawIcon(512));
 writeFileSync(path.join(root, "public", "apple-touch-icon.png"), drawIcon(180));
+const mobileAssets = path.join(root, "mobile", "assets");
+mkdirSync(mobileAssets, { recursive: true });
+writeFileSync(path.join(mobileAssets, "icon.png"), drawIcon(1024));
+writeFileSync(
+  path.join(mobileAssets, "android-icon-background.png"),
+  drawIcon(1024),
+);
+writeFileSync(
+  path.join(mobileAssets, "android-icon-foreground.png"),
+  drawIcon(1024, true),
+);
+writeFileSync(
+  path.join(mobileAssets, "android-icon-monochrome.png"),
+  drawIcon(1024, true),
+);
+writeFileSync(path.join(mobileAssets, "splash-icon.png"), drawIcon(1024, true));
 console.log("icons written to public/icons/");

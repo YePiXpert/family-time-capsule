@@ -1,7 +1,10 @@
+import "server-only";
+
 import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { bearer } from "better-auth/plugins";
 import { and, count, eq, gt, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
@@ -45,6 +48,10 @@ function createAuth() {
       schema: { user, session, account, verification, rateLimit },
     }),
     secret: process.env.AUTH_SECRET || undefined,
+    // Native clients keep the session token in Keychain/Keystore and send it
+    // as an Authorization header. Browser sessions continue to use HttpOnly
+    // cookies; both transports resolve to the same revocable database session.
+    plugins: [bearer()],
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,

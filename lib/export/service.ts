@@ -1,3 +1,5 @@
+import "server-only";
+
 import { collectDurableStories } from "@/lib/stories/service";
 import { collectCapsuleDialogue } from "@/lib/capsules/dialogue";
 import { createWriteStream, statSync } from "node:fs";

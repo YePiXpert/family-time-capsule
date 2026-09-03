@@ -1,4 +1,7 @@
+import "server-only";
+
 import {
+  createWriteStream,
   createReadStream,
   existsSync,
   mkdirSync,
@@ -9,8 +12,11 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { link, mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { DATA_DIR, ensureDataDirs } from "@/lib/paths";
 
 /**
@@ -95,6 +101,10 @@ export interface PutResult {
   bytes: number;
 }
 
+export interface StreamPutResult extends PutResult {
+  sha256: string;
+}
+
 export interface AssetStorage {
   /** 写入原件；key 已存在时抛 OriginalExistsError（原件永不覆盖） */
   putOriginal(
@@ -104,6 +114,14 @@ export interface AssetStorage {
     data: Buffer,
     dateForPath: Date,
   ): PutResult;
+  /** 流式写入原件；同时计算实际字节数与 SHA-256。 */
+  putOriginalStream(
+    familyId: string,
+    assetId: string,
+    extension: string,
+    data: Readable,
+    dateForPath: Date,
+  ): Promise<StreamPutResult>;
   /** 写入衍生物；可再生，允许覆盖同 key */
   putDerivative(
     derivativeType: DerivativeType,
@@ -141,6 +159,60 @@ export class LocalFilesystemStorage implements AssetStorage {
     if (existsSync(target)) throw new OriginalExistsError(key);
     this.write(key, data);
     return { storageKey: key, bytes: data.byteLength };
+  }
+
+  async putOriginalStream(
+    familyId: string,
+    assetId: string,
+    extension: string,
+    data: Readable,
+    dateForPath: Date,
+  ): Promise<StreamPutResult> {
+    const key = buildOriginalStorageKey(
+      familyId,
+      assetId,
+      extension,
+      dateForPath,
+    );
+    const target = this.resolvePath(key);
+    const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
+    const hash = createHash("sha256");
+    let bytes = 0;
+    const verifier = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.byteLength;
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+
+    try {
+      if (existsSync(target)) throw new OriginalExistsError(key);
+      await mkdir(path.dirname(target), { recursive: true });
+      await pipeline(
+        data,
+        verifier,
+        createWriteStream(temporary, { flags: "wx" }),
+      );
+      // hard-link is an atomic no-overwrite publish on the same filesystem.
+      // A competing writer gets EEXIST instead of replacing an original.
+      await link(temporary, target);
+    } catch (error) {
+      // pipeline owns stream cleanup once started. Failures before it starts
+      // (for example an already-existing target or mkdir error) need the same
+      // explicit release so ZIP entry file descriptors cannot remain open.
+      if (!data.destroyed) data.destroy();
+      if (
+        (error as NodeJS.ErrnoException).code === "EEXIST" &&
+        existsSync(target)
+      ) {
+        throw new OriginalExistsError(key);
+      }
+      throw error;
+    } finally {
+      await unlink(temporary).catch(() => undefined);
+    }
+    return { storageKey: key, bytes, sha256: hash.digest("hex") };
   }
 
   putDerivative(

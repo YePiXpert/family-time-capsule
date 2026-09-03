@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAccountCapability } from "@/lib/authz/context";
 import { completeOnboarding } from "@/lib/family/service";
@@ -29,5 +30,9 @@ export async function onboardingAction(
           : "请检查填写内容：家庭名 1–50 字，孩子姓名 1–50 字，出生日期为有效日期。",
     };
   }
+  // The protected/app layouts derive authorization and redirect decisions from
+  // this binding. Purge their client Router Cache entries before navigating,
+  // otherwise the pre-onboarding redirect can race the new bound state.
+  revalidatePath("/", "layout");
   redirect("/");
 }

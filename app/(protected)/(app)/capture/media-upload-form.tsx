@@ -1,11 +1,15 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
+import { uploadWithProgress } from "@/components/upload-request";
 import { createTextAction } from "./actions";
 
 type UploadResult = {
+  id: string;
+  file: File;
   filename: string;
-  status: "stored" | "duplicate" | "error";
+  status: "uploading" | "stored" | "duplicate" | "error";
+  progress: number;
   message?: string;
   assetId?: string;
 };
@@ -17,43 +21,61 @@ const inputClass =
 export function MediaUploadForm({ kind }: { kind: "audio" | "video" }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [results, setResults] = useState<UploadResult[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const uploading = results.some((result) => result.status === "uploading");
+
+  function updateResult(id: string, update: Partial<UploadResult>) {
+    setResults((current) =>
+      current.map((result) =>
+        result.id === id ? { ...result, ...update } : result,
+      ),
+    );
+  }
+
+  async function uploadOne(result: UploadResult) {
+    updateResult(result.id, { status: "uploading", progress: 0, message: undefined });
+    try {
+      const data = await uploadWithProgress(
+        "/api/upload/media",
+        result.file,
+        (progress) => updateResult(result.id, { progress }),
+      );
+      if (data.status === "stored") {
+        updateResult(result.id, {
+          status: "stored",
+          progress: 100,
+          assetId: data.assetId,
+        });
+      } else if (data.status === "duplicate") {
+        updateResult(result.id, {
+          status: "duplicate",
+          progress: 100,
+          message: data.message,
+          assetId: data.existingAssetId,
+        });
+      } else {
+        updateResult(result.id, {
+          status: "error",
+          message: data.message ?? "上传失败",
+        });
+      }
+    } catch {
+      updateResult(result.id, { status: "error", message: "网络错误，上传失败" });
+    }
+  }
 
   async function onChange(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     if (files.length === 0) return;
-    setUploading(true);
-    const uploaded: UploadResult[] = [];
-    for (const file of files) {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("lastModified", String(file.lastModified));
-      try {
-        const res = await fetch("/api/upload/media", { method: "POST", body: form });
-        const data = await res.json();
-        if (data.status === "stored") {
-          uploaded.push({ filename: file.name, status: "stored", assetId: data.assetId });
-        } else if (data.status === "duplicate") {
-          uploaded.push({
-            filename: file.name,
-            status: "duplicate",
-            message: data.message,
-            assetId: data.existingAssetId,
-          });
-        } else {
-          uploaded.push({
-            filename: file.name,
-            status: "error",
-            message: data.message ?? "上传失败",
-          });
-        }
-      } catch {
-        uploaded.push({ filename: file.name, status: "error", message: "网络错误" });
-      }
-    }
-    setResults((prev) => [...uploaded, ...prev]);
-    setUploading(false);
+    const pending = files.map((file, index) => ({
+      id: `${Date.now()}-${index}-${file.name}`,
+      file,
+      filename: file.name,
+      status: "uploading" as const,
+      progress: 0,
+    }));
+    setResults((current) => [...pending, ...current]);
     if (inputRef.current) inputRef.current.value = "";
+    for (const result of pending) await uploadOne(result);
   }
 
   return (
@@ -77,16 +99,36 @@ export function MediaUploadForm({ kind }: { kind: "audio" | "video" }) {
           disabled={uploading}
         />
       </label>
-      {uploading && <p className="mt-3 text-sm text-foreground/60">上传中…</p>}
-      <ul className="mt-3 flex flex-col gap-2" aria-label="上传结果">
-        {results.map((r, i) => (
+      {uploading && (
+        <p className="mt-3 text-sm text-foreground/60" role="status">
+          正在逐份安全保存…
+        </p>
+      )}
+      <ul
+        className="mt-3 flex flex-col gap-2"
+        aria-label="上传结果"
+        aria-live="polite"
+        aria-busy={uploading}
+      >
+        {results.map((r) => (
           <li
-            key={`${r.filename}-${i}`}
+            key={r.id}
             className="flex flex-wrap items-center justify-between gap-x-4 rounded-lg border border-foreground/10 px-4 py-3 text-sm"
           >
             <span className="max-w-[60%] truncate" title={r.filename}>
               {r.filename}
             </span>
+            {r.status === "uploading" && (
+              <span className="flex min-w-36 items-center gap-2 text-foreground/60">
+                <progress
+                  className="h-2 w-24 accent-accent"
+                  max={100}
+                  value={r.progress}
+                  aria-label={`${r.filename} 上传进度`}
+                />
+                {r.progress}%
+              </span>
+            )}
             {r.status === "stored" && (
               <span className="text-foreground/60">已保存，等待整理</span>
             )}
@@ -94,7 +136,16 @@ export function MediaUploadForm({ kind }: { kind: "audio" | "video" }) {
               <span className="text-amber-700 dark:text-amber-400">{r.message}</span>
             )}
             {r.status === "error" && (
-              <span className="text-red-700 dark:text-red-400">{r.message}</span>
+              <span className="flex items-center gap-3 text-red-700 dark:text-red-400">
+                {r.message}
+                <button
+                  type="button"
+                  onClick={() => void uploadOne(r)}
+                  className="min-h-11 rounded-lg border border-current px-3 py-2 text-sm"
+                >
+                  重试
+                </button>
+              </span>
             )}
           </li>
         ))}
@@ -117,7 +168,11 @@ export function TextNoteForm() {
       {state?.saved && (
         <p className="text-sm text-accent">已收进收件箱。</p>
       )}
+      <label htmlFor="capture-text-note" className="text-sm font-medium">
+        文字内容
+      </label>
       <textarea
+        id="capture-text-note"
         name="text"
         required
         maxLength={5000}

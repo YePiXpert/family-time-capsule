@@ -1,3 +1,5 @@
+import "server-only";
+
 import { AI_CAPABILITIES, type AiCapability, type AiCapabilityMap } from "./types";
 import {
   createCapabilityMap,

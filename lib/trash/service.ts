@@ -1,3 +1,5 @@
+import "server-only";
+
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";

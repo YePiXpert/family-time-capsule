@@ -1,8 +1,9 @@
 import { getApiFamilyContext } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { ingestImage, ingestMedia } from "@/lib/assets/ingest";
+import { MAX_VIDEO_BYTES } from "@/lib/assets/validation";
 import { createInboxItemForAsset, createTextInboxItem } from "@/lib/inbox/service";
-import { isSameOrigin } from "@/lib/security/origin";
+import { isSameOrigin, requestBodySizeError } from "@/lib/security/origin";
 
 /**
  * POST /share —— PWA Share Target 的原生 multipart 入口（M6）。
@@ -24,6 +25,13 @@ export async function POST(request: Request) {
   }
   if (!hasFamilyCapability(context.role, "capture:create")) {
     return Response.json({ error: "forbidden" }, { status: 403 });
+  }
+  const sizeError = requestBodySizeError(request, MAX_VIDEO_BYTES);
+  if (sizeError) {
+    return Response.json(
+      { error: sizeError },
+      { status: sizeError === "too_large" ? 413 : 411 },
+    );
   }
 
   let form: FormData;

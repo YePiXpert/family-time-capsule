@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backupRun, type BackupRunRow } from "@/db/schema/backup";
@@ -76,7 +78,8 @@ export function resolveWebDavTarget(
   };
 }
 
-type WebDavFetch = (url: string, init: RequestInit) => Promise<Response>;
+type WebDavRequestInit = RequestInit & { duplex?: "half" };
+type WebDavFetch = (url: string, init: WebDavRequestInit) => Promise<Response>;
 
 export type BackupOutcome =
   | { ok: true; runId: string; strategy: "verified-upload" | "direct-upload"; sha256: string; bytes: number }
@@ -85,6 +88,60 @@ export type BackupOutcome =
 function authHeader(config: WebDavTargetConfig): Record<string, string> {
   const token = Buffer.from(`${config.username}:${config.password}`).toString("base64");
   return { authorization: `Basic ${token}` };
+}
+
+async function hashFile(filePath: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
+}
+
+function fileUploadInit(
+  filePath: string,
+  headers: Record<string, string>,
+  bytes: number,
+): WebDavRequestInit {
+  return {
+    method: "PUT",
+    headers: {
+      ...headers,
+      "content-type": "application/zip",
+      "content-length": String(bytes),
+    },
+    // Node fetch accepts a Node Readable when duplex is set. Keep the archive
+    // on disk instead of duplicating the whole ZIP in the JS heap.
+    body: createReadStream(filePath) as unknown as BodyInit,
+    duplex: "half",
+    redirect: "manual",
+  };
+}
+
+async function hashResponseBody(response: Response, maxBytes: number): Promise<{
+  sha256: string;
+  bytes: number;
+}> {
+  if (!response.body) throw new Error("empty response body");
+  const hash = createHash("sha256");
+  let bytes = 0;
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const buffer = Buffer.from(value);
+      bytes += buffer.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel("WebDAV verification response exceeds export size");
+        return { sha256: "", bytes };
+      }
+      hash.update(buffer);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { sha256: hash.digest("hex"), bytes };
 }
 
 /** 执行一次备份。fetch 可注入（测试 fake WebDAV）。 */
@@ -141,29 +198,18 @@ export async function runWebDavBackup(
   } catch (error) {
     return fail(`export_failed: ${(error as Error).message}`);
   }
-  const { readFileSync } = await import("node:fs");
-  const zipBuffer = readFileSync(exportResult.filePath);
-  const sha256 = createHash("sha256").update(zipBuffer).digest("hex");
-  const { unlinkSync } = await import("node:fs");
-  try {
-    unlinkSync(exportResult.filePath);
-  } catch {
-    // 临时导出文件清理失败不影响备份结果
-  }
-
   const base = target.config.baseUrl;
   const headers = authHeader(target.config);
   const tempUrl = `${base}${tempPath}`;
   const finalUrl = `${base}${finalPath}`;
 
   try {
+    const sha256 = await hashFile(exportResult.filePath);
     // 2) 上传到临时路径
-    const put = await fetchImpl(tempUrl, {
-      method: "PUT",
-      headers: { ...headers, "content-type": "application/zip" },
-      body: new Uint8Array(zipBuffer),
-      redirect: "manual",
-    });
+    const put = await fetchImpl(
+      tempUrl,
+      fileUploadInit(exportResult.filePath, headers, exportResult.bytes),
+    );
     if (put.status !== 200 && put.status !== 201 && put.status !== 204) {
       return fail(`temp_upload_failed: HTTP ${put.status}`);
     }
@@ -173,9 +219,11 @@ export async function runWebDavBackup(
     if (readBack.status !== 200) {
       return fail(`verify_read_failed: HTTP ${readBack.status}`);
     }
-    const readBytes = Buffer.from(await readBack.arrayBuffer());
-    const readSha = createHash("sha256").update(readBytes).digest("hex");
-    if (readSha !== sha256) {
+    const readBackHash = await hashResponseBody(readBack, exportResult.bytes);
+    if (
+      readBackHash.bytes !== exportResult.bytes ||
+      readBackHash.sha256 !== sha256
+    ) {
       return fail("verify_checksum_mismatch");
     }
 
@@ -190,12 +238,10 @@ export async function runWebDavBackup(
     if (move.status >= 400) {
       // MOVE 语义：很多实现要求 Destination 为完整 URL —— 已传；
       // 仍失败则降级直传（非原子，如实记录）
-      const directPut = await fetchImpl(finalUrl, {
-        method: "PUT",
-        headers: { ...headers, "content-type": "application/zip" },
-        body: new Uint8Array(zipBuffer),
-        redirect: "manual",
-      });
+      const directPut = await fetchImpl(
+        finalUrl,
+        fileUploadInit(exportResult.filePath, headers, exportResult.bytes),
+      );
       if (directPut.status !== 200 && directPut.status !== 201 && directPut.status !== 204) {
         return fail(`final_upload_failed: HTTP ${directPut.status}`);
       }
@@ -209,15 +255,19 @@ export async function runWebDavBackup(
       .set({
         status: "succeeded",
         sha256,
-        bytes: zipBuffer.byteLength,
+        bytes: exportResult.bytes,
         strategy,
         finishedAt: new Date(),
       })
       .where(eq(backupRun.id, runId))
       .run();
-    return { ok: true, runId, strategy, sha256, bytes: zipBuffer.byteLength };
+    return { ok: true, runId, strategy, sha256, bytes: exportResult.bytes };
   } catch (error) {
     return fail(`webdav_error: ${(error as Error).message}`);
+  } finally {
+    // buildFamilyExport creates an operational temporary. Upload paths reopen
+    // it as needed, then cleanup happens for every success/failure branch.
+    await unlink(exportResult.filePath).catch(() => undefined);
   }
 }
 

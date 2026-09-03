@@ -195,10 +195,30 @@ describe("M6：WebDAV 备份执行", () => {
 
   it("verified upload + 原子改名（MOVE 支持）", async () => {
     moveSupported = true;
-    const result = await runWebDavBackup(context, { env: env() });
+    const uploadBodies: unknown[] = [];
+    const result = await runWebDavBackup(context, {
+      env: env(),
+      fetchImpl: async (url, init) => {
+        if (init.method === "PUT") uploadBodies.push(init.body);
+        const response = await fetch(url, init);
+        if (init.method === "GET") {
+          // The production verifier must consume response.body incrementally.
+          // A regression to whole-response buffering fails this test directly.
+          Object.defineProperty(response, "arrayBuffer", {
+            value: () => {
+              throw new Error("arrayBuffer must not be used");
+            },
+          });
+        }
+        return response;
+      },
+    });
     if (!result.ok) throw new Error(result.error);
     expect(result.strategy).toBe("verified-upload");
     expect(result.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(uploadBodies.length).toBe(1);
+    expect(uploadBodies[0]).not.toBeInstanceOf(Uint8Array);
+    expect(Buffer.isBuffer(uploadBodies[0])).toBe(false);
 
     // 远端只有最终文件（临时已被 MOVE 消费）
     const keys = [...store.keys()];

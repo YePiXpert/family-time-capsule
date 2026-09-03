@@ -1,6 +1,6 @@
 # Family Time Capsule v1.0 Roadmap
 
-> **Status: IN PROGRESS**
+> **Status: 1.0.0-rc.1 — AUTOMATED GATES PASS; REAL-DEVICE GATE OPEN**
 >
 > Started: 2026-08-31
 > Baseline: `v0.1.3` at `5b341f6`
@@ -29,7 +29,9 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 
 ### Current progress after the initial audit
 
-- Application version intentionally remains `0.1.3`; no release tag exists.
+- Application version is `1.0.0-rc.1`; no stable release tag exists.
+- A React Native native companion now provides device SQLite/file offline storage,
+  Keychain/Keystore sessions, durable capture outbox and versioned server sync; it is not a WebView.
 - Schema now has **41 tables** and **29 forward migrations** (`0000`–`0028`); the FTS5
   `search_index` virtual table lives outside the relational schema.
 - M1 family roles, invitations, account lifecycle, guardians, `child_later` unlock, and
@@ -56,6 +58,11 @@ This is the minimum baseline. Every milestone must keep it green and add targete
   roundtrip (now covering edited transcripts, confirmed facts with locators,
   accepted tags and `date_only` precision), suggestion, cluster and video-analysis
   suites are present and passing.
+- 2026-09-03 release audit: lint/typecheck/build/audit pass; **455 server Vitest + 32
+  Playwright + 8 mobile Vitest + 6 production roundtrip** pass. A current Docker image was built and
+  exercised for app/worker health, persistence, export, cross-instance restore and
+  takeover of a volume produced by a clean `0.1.3` image. Original SHA-256 remained
+  byte-identical in both host-level drills.
 
 ### Working archive capabilities
 
@@ -74,7 +81,8 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 - Invite-only multi-account administration with admin/editor/contributor/viewer authorization.
 - Enforced private/parents/family/child_later policy with guardians and irreversible unlock.
 - Provider-neutral AI configuration, explicit per-capability consent, durable jobs, optional
-  worker, crash-safe leases/retry and status/cancel/retry UI; no real content handler yet.
+  worker, crash-safe leases/retry and status/cancel/retry UI; production handlers cover
+  transcription, image/video analysis and event/inbox metadata suggestions.
 
 ### Current schema domains
 
@@ -90,6 +98,9 @@ This is the minimum baseline. Every milestone must keep it green and add targete
   `ai_worker_heartbeat`.
 - AI derivatives/suggestions: `asset_transcript`, `asset_analysis`, `ai_suggestion`,
   `cluster_suggestion`, `fact_source`, `memory_event_tag`.
+- Stories/search: `story`, `story_paragraph`, `story_source`, rebuildable FTS5 `search_index`.
+- Participation/backup: `contribution_request`, `future_question`, `capsule_reply`, `backup_run`.
+- Trash lifecycle is represented by deletion/audit fields on durable domain tables.
 
 ## Invariants
 
@@ -104,67 +115,61 @@ Every milestone must preserve these rules:
 7. Core capture, inbox, timeline, contribution, capsule, export, and restore remain usable with no AI provider.
 8. Privacy and family authorization apply in services and entry points, not only in the UI.
 
-## Product Gaps
+## Remaining product gate
 
-- No Story model or weekly/monthly/yearly publishing workflow.（M4）
-- No full-text or semantic search.（M4）
-- No scoped contribution links, oral-history prompts, or interview workflow.（M5）
-- Capsules have no future questions, replies, or milestone trigger.（M5）
-- No PDF/EPUB books, WebDAV backup, or PWA Share Target.（M6）
-- No event/contribution/story trash and explicit purge lifecycle.（M7）
-- Upload status is coarse and has no byte progress or resumable behavior.（M7）
-- Inbox has no pagination; growing lists still need cursor pagination everywhere.（M7）
-- No completed accessibility audit or recorded real-device acceptance run.（M7–M8）
+- The automated responsive/PWA coverage is green, but there is no recorded run on real
+  iOS Safari/installed PWA, Android Chrome/installed PWA, and Windows Chrome/Edge with
+  device-originated HEIC/MOV/M4A and a large video. This is the only stable-release gate.
 
-## Architecture Gaps
+## Known architecture constraints
 
-- `contribution.transcript` is only a placeholder column; it lacks provenance, segments, edit protection, and export/restore support.
-- Facts have no normalized source relationship.
-- No Story/StoryParagraph/StorySource, tag, analysis, suggestion, embedding,
-  contribution-request, or interview schemas.
-- Inbox remains unbounded.
-- Timeline, inbox, capsules, and export contain repeated per-row array scans that will not scale to the v1 dataset.
-- Upload routes buffer complete files; export hashes complete files synchronously; restore retains the whole ZIP and all extracted originals in memory.
-- No 10k-event/50k-asset benchmark harness or `docs/PERFORMANCE.md`.
-- No explicit `server-only` data-access boundary for database and secret-bearing modules.
-- No global error/not-found/loading recovery surfaces.
+- Browser multipart parsing uses `formData()` after a mandatory finite `Content-Length`;
+  peak memory is bounded by the 50/200/500MB upload policy, not zero-copy.
+- The restore CLI uses a yauzl file-backed reader: the compressed archive and complete originals
+  do not enter the JS heap. Central-directory entries and one metadata JSON file (max 64MB) remain
+  bounded in memory; each original is streamed through byte/SHA-256 verification to atomic storage.
+- Semantic embeddings remain an optional non-goal until a real retrieval-quality need is
+  demonstrated; visibility-aware local FTS5 is the supported v1 search path.
+- First-run setup is serialized within the one-app-process supported Compose topology. Multiple
+  app replicas must not race an empty database until a database-level bootstrap claim is added.
 
-## Security Gaps
+## Residual security/operations decisions
 
-- No public-contribution token security model.
-- Real AI content handlers still require per-capability result/source/deletion threat reviews;
-  the consent, disclosure, secret and queue boundary is implemented.
-- No WebDAV SSRF/redirect/credential threat model.
-- Audit covers export/restore, invitations, account/guardian/unlock policy and AI consent/job
-  controls; trash/purge, WebDAV and backup audit remain.
-- Setup-specific brute-force protection and backup encryption remain documented backlog items.
-- Future search, stories, books and new capsule domains still need visibility/isolation tests.
-- No complete v1 security review or production-proxy CSP verification.
+- No known High/Critical finding remains. Invitation guessing has no low attempt threshold by
+  design: tokens have 256-bit entropy, atomic one-time claim, expiry/revocation and proxy-log
+  redaction; instance owners may add source-level DoS limits at the reverse proxy.
+- Portable ZIPs are integrity-protected, not encrypted. Off-site copies must use an encrypted
+  filesystem/container/tool; application-managed key recovery is outside v1.
+- CSP was verified on the production server. TLS/HSTS and redaction before proxy access-log
+  persistence remain deployment responsibilities.
 
-## Data Migration Risks
+## Upgrade safeguards and evidence
 
 Real `0.1.3` archives must be assumed to exist before any v1 migration.
 
 - Past migrations are immutable; only new forward migrations may be added.
-- Startup currently migrates automatically without first creating a WAL-consistent snapshot.
-- Existing `user.role` values default to `admin`; RBAC migration must preserve access and avoid locking out the current administrator.
-- Existing Contributions default to `family`; visibility migration must preserve that deterministic meaning while enforcing new policy.
-- The nullable `contribution.transcript` column must migrate without losing any non-null legacy value if transcripts move to a dedicated model.
-- Export version 1 currently omits transcripts and all future v1 durable domains.
+- Startup creates a WAL-consistent pre-migration snapshot before applying pending migrations.
+- Existing `user.role` and Contribution visibility backfills preserve the 0.1.3 administrator
+  and deterministic `family` meaning; upgrade tests assert both.
+- Legacy `contribution.transcript` data is preserved while edited transcript records use the
+  dedicated durable model.
+- Export version 1 is additive: current writers include v1 durable domains and the reader treats
+  files absent from older 0.1.x archives as empty domains.
 - User credentials are intentionally excluded from export; multi-user restore needs a safe invitation/rebinding procedure.
 - Confirmed Facts, user-edited transcripts, published Stories, sources, capsule questions/replies, and accepted contributions are durable data and must export/restore.
 - AI analyses, generated thumbnails, embeddings, and unedited machine output may be classified as rebuildable derivatives, but the classification must be documented.
 - FTS/embedding indexes must be rebuildable; provider/model changes must not mutate primary archive data.
-- New indexes and backfills must be tested at 50k assets/10k events for lock duration, disk growth, and restart behavior.
+- Indexes and list queries are exercised by the 50k-asset/10k-event benchmark.
 - Failed migration and rollback procedures must never rely on copying only the SQLite main file while WAL writes are active.
 
-Required safeguards:
+Implemented safeguards:
 
-1. Check in a true `0.1.3` database fixture before changing the schema substantially.
-2. Add a `0.1.3 -> HEAD` upgrade test and run it on every later migration.
-3. Create a WAL-consistent pre-migration snapshot and document restore/rollback.
-4. Test old export archives against the current reader and version all incompatible export changes.
-5. Verify row counts, relationships, hashes, timeline ordering, visibility, and export after every upgrade.
+1. A true `0.1.3` database fixture is checked in.
+2. `0.1.3 -> HEAD` upgrade, WAL snapshot and rollback behavior run in the integration suite.
+3. Old export archives remain readable; incompatible future changes must increment the format.
+4. Row counts, relationships, hashes, timeline ordering, visibility and post-upgrade export are asserted.
+5. A host-level Docker drill built clean 0.1.3, created data, replaced the container with the
+   current image on the same volume, then verified login/event/original/export.
 
 ## v1.0 Scope
 
@@ -192,7 +197,7 @@ v1 will not add:
 - A public family feed, community, likes, follows, comments, ads, or behavioral tracking.
 - SaaS billing or a public multi-tenant cloud.
 - Medical, feeding, diaper, or pregnancy-management features.
-- Native React Native/Flutter/Capacitor rewrites solely for sharing.
+- Replacing the self-hosted archive/worker/export stack with an on-device-only rewrite.
 - Automatic phone or chat-app scanning.
 - Blockchain/NFT features.
 - Microservices, Kubernetes, Redis, Kafka, or RabbitMQ without a demonstrated unavoidable need.
@@ -202,7 +207,7 @@ v1 will not add:
 
 ## Dependency-ordered Milestones
 
-### M0 — 0.2.x Contracts and upgrade safety — **IN PROGRESS**
+### M0 — 0.2.x Contracts and upgrade safety — **COMPLETE**
 
 - Reconcile documentation counts, paths, security backlog, and implemented claims.
 - Define durable-versus-derivative data policy and export-version evolution.
@@ -213,7 +218,7 @@ v1 will not add:
 
 Exit: contracts and fixtures exist; the current archive still passes the complete baseline.
 
-### M1 — 0.3.x Family authorization and security boundaries
+### M1 — 0.3.x Family authorization and security boundaries — **COMPLETE**
 
 - Implement admin/editor/contributor/viewer authorization in a centralized policy layer.
 - Add hashed, expiring, revocable, family-scoped invitations and invite-only account creation.
@@ -224,7 +229,7 @@ Exit: contracts and fixtures exist; the current archive still passes the complet
 
 Exit: multi-account family tests, role-escalation tests, IDOR tests, and visibility tests pass; public signup remains closed.
 
-### M2 — 0.4.x AI foundation and durable jobs — foundation complete
+### M2 — 0.4.x AI foundation and durable jobs — **COMPLETE**
 
 - Add capability-aware provider interfaces for text, vision, transcription, and embeddings.
 - Implement `NullMemoryAssistant` and deterministic offline fake providers.
@@ -312,32 +317,31 @@ Exit: PDF/EPUB portability, fake-WebDAV success/failure/retry, share-target secu
 - Add cursor pagination to Timeline and other growing lists; remove quadratic assembly and obvious N+1 behavior. ✅
   （Timeline/Inbox 均 keyset 游标；故事/回收站/搜索全部有界——见 PERFORMANCE.md 清单）
 - Replace large upload, hashing, export, and restore buffering with bounded-memory streaming/spooling. ✅
-  （媒体 Range 流式、导出 archiver 流式；上传/恢复为「上限内有界」并在 PERFORMANCE.md
-  如实声明；超限请求在 formData 缓冲前被 Content-Length 预检拒绝）
+  （媒体 Range、导出 archiver、WebDAV 哈希与文件路径恢复均流式；上传为「上限内有界」并在
+  PERFORMANCE.md 如实声明；超限请求在 formData 缓冲前被 Content-Length 预检拒绝）
 - Add indexes based on measured query plans and benchmark results. ✅（10k/50k 基准全绿）
 - Add Trash and explicit purge for MemoryEvent, Contribution, and Story; define Asset retention and backup semantics. ✅
   （migration 0028 + 回收站 UI + 确认式硬清除 + 素材引用守卫）
 - Add upload progress/status, empty/loading/error/retry states, and global error/not-found handling.
-  （部分：各增长页已有空态与错误提示；上传字节级进度延后——PWA 上传已有明确成功/失败反馈）
+  ✅（XHR 真实字节进度、失败重试、`aria-live`；全局 loading/error/not-found 恢复页）
 - Audit keyboard navigation, focus, labels, errors, contrast, media controls, and reduced motion; add critical accessibility smoke tests.
   （核心交互表单均带 aria-label/role/键盘可达；完整 WCAG 审计与 M8 真机记录一起收口）
 - Complete and publish `docs/PERFORMANCE.md` using 10k events and 50k asset metadata. ✅
 
 Exit: scale gates and accessibility smoke pass without weakening archive integrity. ✅
 
-### M8 — 1.0.0-rc Security, migration, and release hardening
+### M8 — 1.0.0-rc Security, migration, and release hardening — **AUTOMATED COMPLETE / DEVICE GATE OPEN**
 
-- Run the complete v1 security review: auth, roles, tokens, AI, privacy, CSP, CSRF, XSS, IDOR, media, upload, ZIP/restore, WebDAV, search, stories, capsules, audit, rate limits, logging, backup, and workers.
-- Fix all High/Critical findings; fix Medium findings or document a specific rationale and mitigation.
-- Upgrade a real `0.1.3` fixture and verify all data, relationships, hashes, timeline order, export, and restore.
-- Build the complete fictional-family integrity fixture required by the brief and perform destroy/restore verification.
-- Verify Docker build, boot, health, persistence, backup, restore, and upgrade on a supported host.
-- Execute and record desktop, iOS, Android, and installed-PWA manual acceptance.
-- Synchronize README, changelog, PRD, architecture, data model, security, decisions, issues, export/restore, deployment, real-device, and v1 topic docs.
+- Complete v1 security review and fix/document findings. ✅
+- Upgrade the real `0.1.3` fixture and verify relationships, hashes, order, export and restore. ✅
+- Run the complete fictional-family destroy/restore production roundtrip. ✅
+- Verify Docker build, boot, app/worker health, persistence, export, restore and upgrade. ✅
+- Execute and record desktop, iOS, Android, and installed-PWA manual acceptance. **Pending external devices.**
+- Synchronize release-facing documentation and exact evidence. ✅
 
 Exit: every release gate below is evidenced; version remains below `1.0.0` until then.
 
-### M9 — 1.0.0 Stable Family Archive
+### M9 — 1.0.0 Stable Family Archive — **WAITING FOR REAL DEVICES**
 
 - Set package version to `1.0.0` only after all gates pass.
 - Publish the final changelog and completion report with exact test/benchmark/deployment evidence.
@@ -378,7 +382,8 @@ Exit: every release gate below is evidenced; version remains below `1.0.0` until
 
 ### Product and UX
 
-- All acceptance-matrix rows below are complete.
+- All automated acceptance-matrix rows below are complete; the two real-device rows remain
+  deliberately open for stable release.
 - Core archive use remains functional with AI disabled and worker stopped.
 - Mobile, desktop, and PWA critical journeys pass with empty/error/loading/retry states.
 - Keyboard/focus/label/contrast/media/reduced-motion smoke checks pass.
@@ -397,35 +402,35 @@ Exit: every release gate below is evidenced; version remains below `1.0.0` until
 
 | Brief area | Current | v1 acceptance evidence | Milestone |
 | --- | --- | --- | --- |
-| Archive invariants (§2, §40) | Strong P0 base; scale gaps | Byte/hash/time invariants, immutable originals, derivative-only lists, long timeline | M7–M8 |
-| AI architecture/jobs (§4–5) | Foundation implemented; production handlers empty | Provider-neutral capabilities, Null/Fake providers, durable jobs, retry/failure UI, consent | M2 |
-| STT/vision/suggestions/clustering (§6–9) | Missing; placeholder transcript column | Edited transcript protection, analysis provenance, review flows, non-destructive clusters | M3 |
-| Fact lock (§8, §10) | Manual confirmed Facts; no sources | Normalized sources, AI cannot confirm, rejected suggestions excluded, quotations traceable | M3–M4 |
-| Weekly/monthly/yearly Stories (§10–11, §18) | Missing | Paragraph sources, draft/edit/publish, regeneration protection, weekly/monthly/yearly UX | M4 |
-| Search (§12) | Missing | Visibility-aware FTS and filters without AI; optional rebuildable semantic search | M4 |
-| Roles/invites (§13) | Implemented and enforced | Invite-only accounts, four enforced roles, no public signup or escalation | M1 |
-| Contribution visibility (§14) | Implemented across current consumers | Documented and enforced private/parents/family/child_later policy in all consumers | M1 |
-| Contribution links/oral history (§15–16) | Missing | Scoped token links, review queue, prompt/interview flow, anonymous isolation | M5 |
-| Capsules (§17) | Date/age works | Existing behavior preserved; future questions, replies, immutable old content | M5 |
-| Books (§19) | Missing | Portable PDF/EPUB with embedded derivatives and no auth-only URLs | M6 |
-| WebDAV backup (§20) | Missing | Verified temp upload/validation/rename, retry/history/CLI, safe credentials | M6 |
-| System Share Target (§21) | Missing | Supported inputs enter Inbox; platform limitations documented | M6 |
-| Trash/purge (§22) | Inbox discard only | Recoverable trash, explicit purge, Asset retention and backup semantics | M7 |
-| Performance (§23, §35) | No benchmark; bounded lists incomplete | 10k/50k evidence, cursor pagination, indexed/batched queries, bounded memory | M7 |
-| Upgrade and pre-migration backup (§24–25) | `0.1.3` fixture and consistent snapshot implemented; final v1 upgrade pending | `0.1.3 -> 1.0` test, consistent snapshot, rollback, old archive compatibility | M0, M8 |
-| Security/privacy/audit (§26–27) | Roles, visibility, CSP, invitations and AI foundation hardened; future domains pending | Full review, CSP, secret/privacy controls, expanded audit, no High/Critical | M1–M8 |
-| UX/accessibility (§28–29) | Basic responsive PWA | Progress/states, mobile/desktop/PWA journeys, WCAG smoke and real-device record | M7–M8 |
-| Quality/data-integrity fixture (§32–34, §40) | 197/24/6 baseline | All new suites plus complete fictional-family destroy/restore roundtrip | Every milestone, M8 |
-| Documentation/release (§36–43) | P0 docs with known drift | All named v1 docs current; exact final report; version/tag only after gates | M0, M8–M9 |
+| Archive invariants (§2, §40) | ✅ Complete | Byte/hash/time invariants, immutable originals, derivative-only lists, long timeline | M7–M8 |
+| AI architecture/jobs (§4–5) | ✅ Complete | Provider-neutral capabilities, production/Null/Fake providers, durable jobs, retry UI, consent | M2–M3 |
+| STT/vision/suggestions/clustering (§6–9) | ✅ Complete | Edited transcript protection, analysis provenance, review flows, non-destructive clusters | M3 |
+| Fact lock (§8, §10) | ✅ Complete | Normalized sources, AI cannot confirm, rejected suggestions excluded, quotations traceable | M3–M4 |
+| Weekly/monthly/yearly Stories (§10–11, §18) | ✅ Complete | Paragraph sources, lifecycle, regeneration protection, weekly/monthly/yearly UX | M4 |
+| Search (§12) | ✅ Complete | Visibility-aware local FTS5 and filters without AI | M4 |
+| Roles/invites (§13) | ✅ Complete | Invite-only accounts, four enforced roles, no public signup/escalation | M1 |
+| Contribution visibility (§14) | ✅ Complete | private/parents/family/child_later policy in every consumer | M1 |
+| Contribution links/oral history (§15–16) | ✅ Complete | Scoped token links, persistent limit, review queue, prompts, anonymous isolation | M5 |
+| Capsules (§17) | ✅ Complete | Date/age, future questions/replies, immutable sealed content | M5 |
+| Books (§19) | ✅ Complete | Portable PDF/EPUB, embedded media, no auth-only URLs | M6 |
+| WebDAV backup (§20) | ✅ Complete | Streamed verified upload/readback, rename/fallback, retry/history, safe credentials | M6–M8 |
+| System Share Target (§21) | ⚠️ Automated complete; real device pending | Inputs enter Inbox; installed-PWA behavior requires iOS/Android record | M6, M8 |
+| Trash/purge (§22) | ✅ Complete | Recoverable trash, explicit purge, reference guard and audit | M7 |
+| Performance (§23, §35) | ✅ Complete | 10k/50k evidence, cursor pagination, indexed/batched queries, documented bounds | M7–M8 |
+| Upgrade and pre-migration backup (§24–25) | ✅ Complete | Fixture + Docker takeover, consistent snapshot/rollback, old archive compatibility | M0, M8 |
+| Security/privacy/audit (§26–27) | ✅ Complete | Full review, CSP, secret/privacy controls, audit, no known High/Critical | M1–M8 |
+| UX/accessibility (§28–29) | ⚠️ Automated complete; real device pending | Progress/recovery/focus/reduced-motion green; real device record open | M7–M8 |
+| Quality/data-integrity fixture (§32–34, §40) | ✅ 455/32/8/6 | Complete fictional-family destroy/restore, mobile sync state machine, plus Docker restore/upgrade | Every milestone, M8 |
+| Documentation/release (§36–43) | ⚠️ RC complete | Release report current; stable version/tag waits for device evidence | M8–M9 |
 
 ## Known Current Warnings
 
-- README/CHANGELOG test counts lag behind the current suite（文档随 M8 发布同步）。
-- Inbox has no pagination.（M7）
-- Upload and restore memory behavior is unsafe for their documented maximum sizes.（M7）
-- Docker persistence has historical static-review evidence, not a recorded local Docker acceptance run.
-- `docs/REAL_DEVICE_TEST.md` has no completed iOS/Android/desktop record.
-- No git release tags exist yet.
+- `docs/REAL_DEVICE_TEST.md` has no completed iOS/Android/Windows or installed-PWA record;
+  device codecs, OS picker/share integration and a >200MB real video remain external evidence.
+- Restore keeps a bounded Central Directory index and one ≤64MB metadata JSON document in memory;
+  the production file-path CLI does not buffer the compressed ZIP or complete originals.
+- Multiple app replicas are not a supported first-setup topology; use the Compose one-app layout.
+- No git release tags exist yet; `v1.0.0` is prohibited before the device record is complete.
 - 本地开发机可能没有 ffmpeg：视频理解任务会以 `ffmpeg_unavailable` 非重试失败
   （Docker 镜像内置 ffmpeg；这是设计内的优雅降级，不是缺陷）。
 

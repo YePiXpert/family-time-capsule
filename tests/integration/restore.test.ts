@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import fs, {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -649,6 +655,51 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     return zip.generateAsync({ type: "nodebuffer" });
   }
 
+  function mutateZipEntryHeaders(
+    zipBuffer: Buffer,
+    entryName: string,
+    mutate: (header: {
+      buffer: Buffer;
+      flagsOffset: number;
+      methodOffset: number;
+      nameOffset: number;
+    }) => void,
+  ): Buffer {
+    const output = Buffer.from(zipBuffer);
+    const expectedName = Buffer.from(entryName);
+    let matches = 0;
+
+    for (let offset = 0; offset <= output.byteLength - 4; offset += 1) {
+      const signature = output.readUInt32LE(offset);
+      const isLocal = signature === 0x04034b50;
+      const isCentral = signature === 0x02014b50;
+      if (!isLocal && !isCentral) continue;
+
+      const fixedSize = isLocal ? 30 : 46;
+      const nameLengthOffset = offset + (isLocal ? 26 : 28);
+      if (nameLengthOffset + 2 > output.byteLength) continue;
+      const nameLength = output.readUInt16LE(nameLengthOffset);
+      const nameOffset = offset + fixedSize;
+      if (nameOffset + nameLength > output.byteLength) continue;
+      if (!output.subarray(nameOffset, nameOffset + nameLength).equals(expectedName)) {
+        continue;
+      }
+
+      mutate({
+        buffer: output,
+        flagsOffset: offset + (isLocal ? 6 : 8),
+        methodOffset: offset + (isLocal ? 8 : 10),
+        nameOffset,
+      });
+      matches += 1;
+    }
+
+    if (matches !== 2) {
+      throw new Error(`expected two ZIP headers for ${entryName}, found ${matches}`);
+    }
+    return output;
+  }
+
   async function freshB(dir: string) {
     process.env.DATA_DIR = dir;
     const m = await freshModules();
@@ -666,7 +717,7 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
   it("策略/可见性/音频/来源档案异常 → 预验拒绝且 filesWritten=0", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-policy-preflight-"));
     const { m, adminId } = await freshB(dir);
-    const putOriginal = vi.spyOn(m.storage.getAssetStorage(), "putOriginal");
+    const putOriginal = vi.spyOn(m.storage.getAssetStorage(), "putOriginalStream");
 
     const cases: Array<{
       code: string;
@@ -806,6 +857,109 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     // 无半恢复状态
     const families = await m.db.getDb().select().from((await import("@/db/schema/family")).family);
     expect(families).toHaveLength(0);
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("restoreFromZipFile 使用文件句柄读取，不整包 readFileSync", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-file-stream-"));
+    const { m, adminId } = await freshB(dir);
+    const readFileSpy = vi.spyOn(fs, "readFileSync");
+
+    const report = await m.restoreSvc.restoreFromZipFile(snapshot.zipPath, adminId);
+
+    const archiveReads = readFileSpy.mock.calls.filter(([target]) =>
+      typeof target === "string"
+        ? path.resolve(target) === path.resolve(snapshot.zipPath)
+        : false,
+    );
+    expect(archiveReads).toHaveLength(0);
+    expect(report.assets).toBe(snapshot.assets.length);
+    expect(report.filesWritten).toBe(snapshot.assets.length);
+
+    readFileSpy.mockRestore();
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("文件路径恢复遇到哈希不符或坏 ZIP 均不留下半恢复文件", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-file-rollback-"));
+    const { m, adminId } = await freshB(dir);
+    const archivePath = path.join(dir, "tampered.zip");
+    const tampered = await buildTamperedZip(async (zip) => {
+      const assetName = Object.keys(zip.files).find((name) =>
+        /originals\/(images|audio|video)\/[0-9a-f-]+\./.test(name),
+      )!;
+      const bytes = await zip.file(assetName)!.async("nodebuffer");
+      zip.file(assetName, Buffer.concat([bytes, Buffer.from("corrupt")]));
+    });
+    writeFileSync(archivePath, tampered);
+
+    await expect(
+      m.restoreSvc.restoreFromZipFile(archivePath, adminId),
+    ).rejects.toMatchObject({ code: "hash_mismatch" });
+    expect(await m.db.getDb().select().from(m.schema.family)).toHaveLength(0);
+    expect(existsSync(path.join(dir, "originals", snapshot.familyId))).toBe(false);
+
+    writeFileSync(archivePath, "this is not a zip archive");
+    await expect(
+      m.restoreSvc.restoreFromZipFile(archivePath, adminId),
+    ).rejects.toMatchObject({ code: "bad_zip" });
+    expect(await m.db.getDb().select().from(m.schema.family)).toHaveLength(0);
+    expect(existsSync(path.join(dir, "originals", snapshot.familyId))).toBe(false);
+
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("重复、加密与不支持压缩方法的 ZIP 条目在写文件前拒绝", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-zip-metadata-"));
+    const { m, adminId } = await freshB(dir);
+    const root = "family-time-capsule-export";
+    const putOriginal = vi.spyOn(m.storage.getAssetStorage(), "putOriginalStream");
+
+    const duplicateSource = await buildTamperedZip(async (zip) => {
+      zip.file(`${root}/duplicate-a.txt`, "a");
+      zip.file(`${root}/duplicate-b.txt`, "b");
+    });
+    const duplicate = mutateZipEntryHeaders(
+      duplicateSource,
+      `${root}/duplicate-b.txt`,
+      ({ buffer, nameOffset }) => {
+        Buffer.from(`${root}/duplicate-a.txt`).copy(buffer, nameOffset);
+      },
+    );
+
+    const encryptedSource = await buildTamperedZip(async (zip) => {
+      zip.file(`${root}/encrypted.bin`, "encrypted metadata probe");
+    });
+    const encrypted = mutateZipEntryHeaders(
+      encryptedSource,
+      `${root}/encrypted.bin`,
+      ({ buffer, flagsOffset }) => {
+        buffer.writeUInt16LE(buffer.readUInt16LE(flagsOffset) | 0x1, flagsOffset);
+      },
+    );
+
+    const compressionSource = await buildTamperedZip(async (zip) => {
+      zip.file(`${root}/unsupported.bin`, "compression metadata probe");
+    });
+    const unsupportedCompression = mutateZipEntryHeaders(
+      compressionSource,
+      `${root}/unsupported.bin`,
+      ({ buffer, methodOffset }) => buffer.writeUInt16LE(99, methodOffset),
+    );
+
+    for (const zipBuffer of [duplicate, encrypted, unsupportedCompression]) {
+      await expect(
+        m.restoreSvc.restoreFromZip(zipBuffer, adminId),
+      ).rejects.toMatchObject({ code: "bad_zip" });
+    }
+    expect(putOriginal).not.toHaveBeenCalled();
+    expect(await m.db.getDb().select().from(m.schema.family)).toHaveLength(0);
+    expect(existsSync(path.join(dir, "originals", snapshot.familyId))).toBe(false);
+
+    putOriginal.mockRestore();
     m.db.closeDatabase();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -1056,7 +1210,7 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
         updatedAt: now,
       },
     ]);
-    const putOriginal = vi.spyOn(m.storage.getAssetStorage(), "putOriginal");
+    const putOriginal = vi.spyOn(m.storage.getAssetStorage(), "putOriginalStream");
 
     for (const operatorId of ["viewer-operator", "disabled-admin-operator"]) {
       await expect(

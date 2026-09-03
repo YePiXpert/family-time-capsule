@@ -1,8 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
+import { uploadWithProgress } from "@/components/upload-request";
 import {
-  submitGuestMediaAction,
   submitGuestTextAction,
   type GuestSubmitState,
 } from "./actions";
@@ -56,25 +56,71 @@ export function GuestTextForm({ token }: { token: string }) {
 }
 
 export function GuestMediaForm({ token }: { token: string }) {
-  const [state, action, pending] = useActionState(submitGuestMediaAction, undefined);
-  const [lastModified, setLastModified] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [state, setState] = useState<GuestSubmitState>();
+  const [pending, setPending] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!file) {
+      setState({ error: "请选择要上传的文件。" });
+      return;
+    }
+    setPending(true);
+    setProgress(0);
+    setState(undefined);
+    try {
+      const response = await uploadWithProgress(
+        `/respond/${encodeURIComponent(token)}/upload`,
+        file,
+        setProgress,
+      );
+      if (response.success) {
+        setState({ success: true });
+        setFile(null);
+        if (inputRef.current) inputRef.current.value = "";
+      } else {
+        setState({ error: response.message ?? "上传失败，请检查文件格式。" });
+      }
+    } catch {
+      setState({ error: "网络错误，上传失败。请稍后重试。" });
+    } finally {
+      setPending(false);
+    }
+  }
+
   if (state?.success) return <Feedback state={state} />;
   return (
-    <form action={action} className="flex flex-col gap-2">
-      <input type="hidden" name="token" value={token} />
-      <input type="hidden" name="lastModified" value={lastModified} />
+    <form onSubmit={submit} className="flex flex-col gap-2">
+      <label htmlFor="guest-media" className="text-sm font-medium">
+        选择录音、照片或视频
+      </label>
       <input
+        ref={inputRef}
+        id="guest-media"
         type="file"
         name="file"
         required
         accept="audio/*,video/*,image/*"
-        aria-label="上传录音、照片或视频"
         className="text-sm"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          setLastModified(file ? String(file.lastModified) : "");
+          setFile(e.target.files?.[0] ?? null);
+          setState(undefined);
         }}
       />
+      {pending && (
+        <div className="flex items-center gap-3 text-sm text-foreground/60" role="status">
+          <progress
+            className="h-2 w-36 accent-accent"
+            max={100}
+            value={progress}
+            aria-label="访客媒体上传进度"
+          />
+          {progress}%
+        </div>
+      )}
       <button
         type="submit"
         disabled={pending}
