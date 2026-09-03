@@ -5,8 +5,6 @@ import {
   AppState,
   FlatList,
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -88,7 +86,7 @@ function ageLabel(ageDays: number | null): string | null {
   return `${years} 岁${months > 0 ? ` ${months} 个月` : ""}`;
 }
 
-function LoginScreen({
+function ServerConnectionForm({
   onLogin,
 }: {
   onLogin: (credentials: Credentials) => Promise<void>;
@@ -116,77 +114,66 @@ function LoginScreen({
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.fill}
-    >
-      <ScrollView
-        contentContainerStyle={styles.loginContainer}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.mark}>
-          <Text style={styles.markText}>时</Text>
-        </View>
-        <Text style={styles.loginTitle}>家庭时间胶囊</Text>
-        <Text style={styles.loginSubtitle}>
-          原生离线客户端。首次登录同步后，即使断网也能翻看回忆、继续记录。
-        </Text>
-        <View style={styles.formCard}>
-          <Text style={styles.label}>家庭服务器</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            onChangeText={setServerUrl}
-            placeholder="https://capsule.example.com"
-            placeholderTextColor="#A99A92"
-            style={styles.input}
-            value={serverUrl}
-          />
-          <Text style={styles.label}>邮箱</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            onChangeText={setEmail}
-            placeholder="name@example.com"
-            placeholderTextColor="#A99A92"
-            style={styles.input}
-            value={email}
-          />
-          <Text style={styles.label}>密码</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoComplete="current-password"
-            onChangeText={setPassword}
-            placeholder="家庭服务器密码"
-            placeholderTextColor="#A99A92"
-            secureTextEntry
-            style={styles.input}
-            value={password}
-          />
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          <Pressable
-            disabled={submitting}
-            onPress={submit}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.pressed,
-              submitting && styles.disabled,
-            ]}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.primaryButtonText}>登录并同步</Text>
-            )}
-          </Pressable>
-        </View>
-        <Text style={styles.securityNote}>
-          凭据只保存在系统 Keychain/Keystore；生产服务器请使用 HTTPS。
-        </Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    <View style={styles.connectionSection}>
+      <Text style={styles.connectionTitle}>连接家庭服务器（可选）</Text>
+      <Text style={styles.connectionText}>
+        不连接也可一直在本机记录。连接后才会上传待同步内容并下载家庭时间轴。
+      </Text>
+      <View style={styles.formCard}>
+        <Text style={styles.label}>家庭服务器</Text>
+        <TextInput
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          onChangeText={setServerUrl}
+          placeholder="https://capsule.example.com"
+          placeholderTextColor="#A99A92"
+          style={styles.input}
+          value={serverUrl}
+        />
+        <Text style={styles.label}>邮箱</Text>
+        <TextInput
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          onChangeText={setEmail}
+          placeholder="name@example.com"
+          placeholderTextColor="#A99A92"
+          style={styles.input}
+          value={email}
+        />
+        <Text style={styles.label}>密码</Text>
+        <TextInput
+          autoCapitalize="none"
+          autoComplete="current-password"
+          onChangeText={setPassword}
+          placeholder="家庭服务器密码"
+          placeholderTextColor="#A99A92"
+          secureTextEntry
+          style={styles.input}
+          value={password}
+        />
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        <Pressable
+          disabled={submitting}
+          onPress={submit}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            pressed && styles.pressed,
+            submitting && styles.disabled,
+          ]}
+        >
+          {submitting ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.primaryButtonText}>连接并同步</Text>
+          )}
+        </Pressable>
+      </View>
+      <Text style={styles.securityNote}>
+        凭据只保存在系统 Keychain/Keystore；生产服务器请使用 HTTPS。
+      </Text>
+    </View>
   );
 }
 
@@ -204,6 +191,11 @@ function TimelineCard({ item }: { item: LocalTimelineEvent }) {
         </View>
       )}
       <View style={styles.timelineBody}>
+        {item.source === "local" ? (
+          <Text style={styles.localBadge}>
+            {item.syncState === "synced" ? "本机保存 · 已同步" : "本机保存 · 待同步"}
+          </Text>
+        ) : null}
         <Text style={styles.timelineDate}>{dateLabel(item.occurredAt)}</Text>
         <Text numberOfLines={2} style={styles.timelineTitle}>
           {item.title}
@@ -230,11 +222,13 @@ function TimelineScreen({
   events,
   refreshing,
   pendingCount,
+  syncEnabled,
   onRefresh,
 }: {
   events: LocalTimelineEvent[];
   refreshing: boolean;
   pendingCount: number;
+  syncEnabled: boolean;
   onRefresh: () => void;
 }) {
   return (
@@ -245,14 +239,19 @@ function TimelineScreen({
       ListEmptyComponent={
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>本机还没有回忆</Text>
-          <Text style={styles.emptyText}>联网下拉同步，或先在“记录”里写下一刻。</Text>
+          <Text style={styles.emptyText}>
+            {syncEnabled
+              ? "下拉同步家庭时间轴，或先在“记录”里写下一刻。"
+              : "先在“记录”里写下一刻；需要时可在设置中开启同步。"}
+          </Text>
         </View>
       }
       ListHeaderComponent={
         pendingCount > 0 ? (
           <View style={styles.pendingBanner}>
             <Text style={styles.pendingBannerText}>
-              {pendingCount} 条记录安全保存在本机，联网后自动补传
+              {pendingCount} 条记录安全保存在本机，
+              {syncEnabled ? "联网后自动补传" : "开启同步后再补传"}
             </Text>
           </View>
         ) : null
@@ -270,12 +269,12 @@ function TimelineScreen({
 }
 
 function CaptureScreen({
-  canCapture,
   pendingCount,
+  syncEnabled,
   onQueued,
 }: {
-  canCapture: boolean;
   pendingCount: number;
+  syncEnabled: boolean;
   onQueued: () => Promise<void>;
 }) {
   const [text, setText] = useState("");
@@ -292,7 +291,11 @@ function CaptureScreen({
     try {
       await enqueueTextCapture(Crypto.randomUUID(), { text: value });
       setText("");
-      setMessage("已保存到本机，联网后进入家庭收件箱。");
+      setMessage(
+        syncEnabled
+          ? "已保存到本机，将同步到家庭收件箱。"
+          : "已保存到本机；可稍后在设置中开启同步。",
+      );
       try {
         await onQueued();
       } catch {
@@ -341,7 +344,11 @@ function CaptureScreen({
       // From this point the durable outbox owns the private file. A later UI
       // refresh failure must never make us delete an upload that is queued.
       unqueuedLocalUri = null;
-      setMessage("原件已复制到 App 本地空间，联网后补传。");
+      setMessage(
+        syncEnabled
+          ? "原件已保存到 App 本地空间，将自动补传。"
+          : "原件已保存到 App 本地空间；可稍后开启同步。",
+      );
       try {
         await onQueued();
       } catch {
@@ -355,21 +362,12 @@ function CaptureScreen({
     }
   };
 
-  if (!canCapture) {
-    return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyTitle}>当前账号为只读</Text>
-        <Text style={styles.emptyText}>管理员可在家庭服务器中开放记录权限。</Text>
-      </View>
-    );
-  }
-
   return (
     <ScrollView contentContainerStyle={styles.captureContainer}>
       <Text style={styles.sectionEyebrow}>离线也不会丢</Text>
       <Text style={styles.sectionTitle}>记录此刻</Text>
       <Text style={styles.sectionIntro}>
-        文字和原件先落在设备内，再进入家庭服务器收件箱。补传失败时会一直保留待办。
+        文字和原件始终先保存在设备内。开启同步后才会补传，失败也不会删除本机内容。
       </Text>
       <View style={styles.formCard}>
         <Text style={styles.label}>一句话、一段故事</Text>
@@ -432,9 +430,11 @@ function SettingsScreen({
   failedItems,
   onSync,
   onDiscardFailed,
-  onLogout,
+  onConnect,
+  onDisconnect,
+  onClearLocal,
 }: {
-  credentials: Credentials;
+  credentials: Credentials | null;
   family: Family | null;
   viewer: Viewer | null;
   lastSyncAt: string | null;
@@ -443,20 +443,36 @@ function SettingsScreen({
   failedItems: OutboxItem[];
   onSync: () => void;
   onDiscardFailed: () => void;
-  onLogout: () => void;
+  onConnect: (credentials: Credentials) => Promise<void>;
+  onDisconnect: () => void;
+  onClearLocal: () => void;
 }) {
   return (
     <ScrollView contentContainerStyle={styles.settingsContainer}>
       <Text style={styles.sectionEyebrow}>设备与同步</Text>
       <Text style={styles.sectionTitle}>{family?.name ?? "家庭时间胶囊"}</Text>
       <View style={styles.settingsCard}>
-        <SettingRow label="账号" value={viewer?.name ?? "已登录"} />
-        <SettingRow label="服务器" value={credentials.serverUrl} />
-        <SettingRow label="网络" value={online === false ? "离线" : "在线"} />
+        <SettingRow label="模式" value={credentials ? "本机 + 同步" : "仅本机"} />
+        {credentials ? (
+          <>
+            <SettingRow label="账号" value={viewer?.name ?? "等待同步"} />
+            <SettingRow label="服务器" value={credentials.serverUrl} />
+          </>
+        ) : null}
+        <SettingRow
+          label="同步网络"
+          value={!credentials ? "未启用" : online === false ? "离线" : "在线"}
+        />
         <SettingRow label="等待补传" value={`${pendingCount} 条`} />
         <SettingRow
           label="上次同步"
-          value={lastSyncAt ? dateLabel(lastSyncAt) : "尚未完成"}
+          value={
+            !credentials
+              ? "未连接服务器"
+              : lastSyncAt
+                ? dateLabel(lastSyncAt)
+                : "尚未完成"
+          }
         />
       </View>
       <View style={styles.privacyCard}>
@@ -465,9 +481,30 @@ function SettingsScreen({
           时间轴和成员元数据保存在 SQLite；离线封面及待上传原件保存在 App 私有目录；会话令牌保存在系统安全存储。构建产物不含真实家庭数据。
         </Text>
       </View>
-      <Pressable onPress={onSync} style={styles.secondaryButton}>
-        <Text style={styles.secondaryButtonText}>立即同步</Text>
-      </Pressable>
+      {credentials ? (
+        <>
+          <Pressable onPress={onSync} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>立即同步</Text>
+          </Pressable>
+          <Pressable
+            onPress={() =>
+              Alert.alert(
+                "断开家庭服务器？",
+                "本机记录和已下载的时间轴都会保留，之后可再次连接。",
+                [
+                  { text: "取消", style: "cancel" },
+                  { text: "确认断开", onPress: onDisconnect },
+                ],
+              )
+            }
+            style={styles.logoutButton}
+          >
+            <Text style={styles.logoutText}>断开家庭服务器</Text>
+          </Pressable>
+        </>
+      ) : (
+        <ServerConnectionForm onLogin={onConnect} />
+      )}
       {failedItems.length > 0 ? (
         <View style={styles.failedCard}>
           <Text style={styles.failedTitle}>
@@ -496,17 +533,17 @@ function SettingsScreen({
       <Pressable
         onPress={() =>
           Alert.alert(
-            "退出并清除本机数据？",
-            "家庭服务器里的数据不会删除。本机离线缓存和尚未补传的记录会被清除。",
+            "清除本机全部数据？",
+            "本机记录、原件、离线缓存和登录凭据都会永久删除；家庭服务器里的数据不会删除。",
             [
               { text: "取消", style: "cancel" },
-              { text: "退出并清除", style: "destructive", onPress: onLogout },
+              { text: "确认清除", style: "destructive", onPress: onClearLocal },
             ],
           )
         }
-        style={styles.logoutButton}
+        style={styles.clearButton}
       >
-        <Text style={styles.logoutText}>退出并清除本机数据</Text>
+        <Text style={styles.logoutText}>清除本机全部数据</Text>
       </Pressable>
     </ScrollView>
   );
@@ -525,10 +562,10 @@ function SettingRow({ label, value }: { label: string; value: string }) {
 
 function MainApp({
   credentials,
-  onSignedOut,
+  onCredentialsChanged,
 }: {
-  credentials: Credentials;
-  onSignedOut: () => void;
+  credentials: Credentials | null;
+  onCredentialsChanged: (credentials: Credentials | null) => void;
 }) {
   const network = Network.useNetworkState();
   const [tab, setTab] = useState<Tab>("timeline");
@@ -558,7 +595,7 @@ function MainApp({
   }, []);
 
   const runSync = useCallback(async () => {
-    if (syncInFlight.current) return;
+    if (!credentials || syncInFlight.current) return;
     syncInFlight.current = true;
     setSyncing(true);
     setSyncMessage(null);
@@ -596,7 +633,7 @@ function MainApp({
   useEffect(() => {
     const timer = setTimeout(() => {
       void reloadLocal()
-        .then(runSync)
+        .then(() => (credentials ? runSync() : undefined))
         .catch((reason) => {
           setSyncMessage(
             reason instanceof Error
@@ -606,25 +643,25 @@ function MainApp({
         });
     }, 0);
     return () => clearTimeout(timer);
-  }, [reloadLocal, runSync]);
+  }, [credentials, reloadLocal, runSync]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void runSync();
+      if (credentials && state === "active") void runSync();
     });
     return () => subscription.remove();
-  }, [runSync]);
+  }, [credentials, runSync]);
 
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {
-      if (state.isConnected) void runSync();
+      if (credentials && state.isConnected) void runSync();
     });
     return () => subscription.remove();
-  }, [runSync]);
+  }, [credentials, runSync]);
 
   const queued = async () => {
     await reloadLocal();
-    if (network.isConnected !== false) await runSync();
+    if (credentials && network.isConnected !== false) await runSync();
   };
 
   const discardFailed = () => {
@@ -660,11 +697,25 @@ function MainApp({
     );
   };
 
-  const logout = async () => {
-    await signOut(credentials);
+  const connect = async (next: Credentials) => {
+    await saveCredentials(next);
+    onCredentialsChanged(next);
+  };
+
+  const disconnect = async () => {
+    if (credentials) await signOut(credentials);
+    await clearCredentials();
+    onCredentialsChanged(null);
+    setSyncMessage("已断开服务器，本机数据保持不变。");
+  };
+
+  const clearLocal = async () => {
+    if (credentials) await signOut(credentials);
     await Promise.all([clearCredentials(), clearLocalArchive()]);
     clearLocalFiles();
-    onSignedOut();
+    onCredentialsChanged(null);
+    await reloadLocal();
+    setSyncMessage("本机数据已清除。");
   };
 
   return (
@@ -676,7 +727,10 @@ function MainApp({
             {family?.name ?? "时间胶囊"}
           </Text>
         </View>
-        <Pressable onPress={runSync} style={styles.syncChip}>
+        <Pressable
+          onPress={() => (credentials ? void runSync() : setTab("settings"))}
+          style={styles.syncChip}
+        >
           {syncing ? (
             <ActivityIndicator color={COLORS.sage} size="small" />
           ) : (
@@ -688,7 +742,13 @@ function MainApp({
             />
           )}
           <Text style={styles.syncChipText}>
-            {syncing ? "同步中" : network.isConnected === false ? "离线" : "已连接"}
+            {!credentials
+              ? "仅本机"
+              : syncing
+                ? "同步中"
+                : network.isConnected === false
+                  ? "离线"
+                  : "已连接"}
           </Text>
         </Pressable>
       </View>
@@ -703,15 +763,16 @@ function MainApp({
         {tab === "timeline" ? (
           <TimelineScreen
             events={events}
-            onRefresh={runSync}
+            onRefresh={() => void (credentials ? runSync() : reloadLocal())}
             pendingCount={outboxItems.length}
             refreshing={syncing}
+            syncEnabled={credentials !== null}
           />
         ) : tab === "capture" ? (
           <CaptureScreen
-            canCapture={viewer?.canCapture ?? false}
             onQueued={queued}
             pendingCount={outboxItems.length}
+            syncEnabled={credentials !== null}
           />
         ) : (
           <SettingsScreen
@@ -719,8 +780,10 @@ function MainApp({
             family={family}
             failedItems={outboxItems.filter((item) => item.attemptCount > 0)}
             lastSyncAt={lastSyncAt}
+            onClearLocal={() => void clearLocal()}
+            onConnect={connect}
+            onDisconnect={() => void disconnect()}
             onDiscardFailed={discardFailed}
-            onLogout={() => void logout()}
             onSync={runSync}
             online={network.isConnected ?? null}
             pendingCount={outboxItems.length}
@@ -788,13 +851,6 @@ export default function App() {
     void initialize();
   };
 
-  const loggedIn = async (next: Credentials) => {
-    await clearLocalArchive();
-    clearLocalFiles();
-    await saveCredentials(next);
-    setCredentials(next);
-  };
-
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
@@ -811,10 +867,11 @@ export default function App() {
               <Text style={styles.secondaryButtonText}>重试</Text>
             </Pressable>
           </View>
-        ) : credentials ? (
-          <MainApp credentials={credentials} onSignedOut={() => setCredentials(null)} />
         ) : (
-          <LoginScreen onLogin={loggedIn} />
+          <MainApp
+            credentials={credentials}
+            onCredentialsChanged={setCredentials}
+          />
         )}
       </SafeAreaView>
     </SafeAreaProvider>
@@ -832,26 +889,9 @@ const styles = StyleSheet.create({
     padding: 28,
     gap: 16,
   },
-  loginContainer: { flexGrow: 1, justifyContent: "center", padding: 24, gap: 14 },
-  mark: {
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 64,
-    height: 64,
-    borderRadius: 22,
-    backgroundColor: COLORS.coral,
-    transform: [{ rotate: "-4deg" }],
-  },
-  markText: { color: "#FFFFFF", fontSize: 30, fontWeight: "800" },
-  loginTitle: { color: COLORS.ink, fontSize: 30, fontWeight: "800", textAlign: "center" },
-  loginSubtitle: {
-    color: COLORS.muted,
-    fontSize: 15,
-    lineHeight: 23,
-    textAlign: "center",
-    marginBottom: 8,
-  },
+  connectionSection: { gap: 10, marginTop: 4 },
+  connectionTitle: { color: COLORS.ink, fontSize: 18, fontWeight: "800" },
+  connectionText: { color: COLORS.muted, fontSize: 13, lineHeight: 20 },
   formCard: {
     backgroundColor: COLORS.card,
     borderColor: COLORS.line,
@@ -952,6 +992,7 @@ const styles = StyleSheet.create({
   },
   coverPlaceholderText: { color: COLORS.coralDark, fontSize: 13, fontWeight: "700" },
   timelineBody: { padding: 16, gap: 6 },
+  localBadge: { color: COLORS.sage, fontSize: 11, fontWeight: "800" },
   timelineDate: { color: COLORS.coral, fontSize: 12, fontWeight: "800" },
   timelineTitle: { color: COLORS.ink, fontSize: 20, lineHeight: 27, fontWeight: "800" },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 9, marginTop: 3 },
@@ -1031,6 +1072,16 @@ const styles = StyleSheet.create({
   failedHint: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
   failedDiscardButton: { alignItems: "center", paddingVertical: 7 },
   logoutButton: { alignItems: "center", padding: 14 },
+  clearButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+    borderColor: "#D9AAA1",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 10,
+    paddingHorizontal: 18,
+  },
   logoutText: { color: "#A52C2C", fontSize: 14, fontWeight: "700" },
   tabBar: {
     flexDirection: "row",

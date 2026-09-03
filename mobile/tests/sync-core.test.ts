@@ -54,8 +54,7 @@ function dependencies(): SyncDependencies {
     uploadTextCapture: vi.fn(async () => undefined),
     uploadMediaCapture: vi.fn(async () => undefined),
     markOutboxFailure: vi.fn(async () => undefined),
-    removeOutboxItem: vi.fn(async () => undefined),
-    removeLocalFile: vi.fn(),
+    completeOutboxItem: vi.fn(async () => undefined),
     fetchSyncPage: vi.fn(async () => page()),
     applySyncPage: vi.fn(async () => undefined),
     cacheEventCover: vi.fn(async () => null),
@@ -78,17 +77,16 @@ describe("offline sync core", () => {
     expect(deps.listOutbox).not.toHaveBeenCalled();
   });
 
-  it("commits a media queue row before deleting the source file", async () => {
+  it("commits a media queue row while retaining the local original", async () => {
     const deps = dependencies();
     const order: string[] = [];
     vi.mocked(deps.listOutbox).mockResolvedValue([media("media-1")]);
     vi.mocked(deps.uploadMediaCapture).mockImplementation(async () => {
       order.push("uploaded");
     });
-    vi.mocked(deps.removeOutboxItem).mockImplementation(async () => {
+    vi.mocked(deps.completeOutboxItem).mockImplementation(async () => {
       order.push("committed");
     });
-    vi.mocked(deps.removeLocalFile).mockImplementation(() => order.push("deleted"));
 
     await expect(syncArchiveWithDependencies(credentials, deps)).resolves.toMatchObject({
       uploadedCount: 1,
@@ -99,7 +97,7 @@ describe("offline sync core", () => {
       "media-1",
       expect.objectContaining({ fileName: "media-1.jpg" }),
     );
-    expect(order).toEqual(["uploaded", "committed", "deleted"]);
+    expect(order).toEqual(["uploaded", "committed"]);
   });
 
   it("keeps ambiguous failures and never starts a destructive snapshot", async () => {
@@ -116,7 +114,7 @@ describe("offline sync core", () => {
       "network-1",
       "无法连接家庭服务器",
     );
-    expect(deps.removeOutboxItem).not.toHaveBeenCalled();
+    expect(deps.completeOutboxItem).not.toHaveBeenCalled();
     expect(deps.fetchSyncPage).not.toHaveBeenCalled();
   });
 
@@ -138,7 +136,7 @@ describe("offline sync core", () => {
       uploadedCount: 1,
       failedCount: 1,
     });
-    expect(deps.removeOutboxItem).toHaveBeenCalledWith("valid");
+    expect(deps.completeOutboxItem).toHaveBeenCalledWith("valid");
     expect(deps.finishSyncSnapshot).toHaveBeenCalledOnce();
   });
 

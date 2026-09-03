@@ -30,8 +30,7 @@ export type SyncDependencies = {
     payload: MediaCapturePayload,
   ) => Promise<void>;
   markOutboxFailure: (id: string, message: string) => Promise<void>;
-  removeOutboxItem: (id: string) => Promise<void>;
-  removeLocalFile: (uri: string) => void;
+  completeOutboxItem: (id: string) => Promise<void>;
   fetchSyncPage: (
     credentials: Credentials,
     cursor: string | null,
@@ -70,20 +69,13 @@ async function flushOutbox(
       if (item.kind === "text_capture") {
         const payload = item.payload as TextCapturePayload;
         await dependencies.uploadTextCapture(credentials, item.id, payload.text);
-        await dependencies.removeOutboxItem(item.id);
+        await dependencies.completeOutboxItem(item.id);
       } else {
         const payload = item.payload as MediaCapturePayload;
         await dependencies.uploadMediaCapture(credentials, item.id, payload);
-        // Commit the durable queue state before deleting its file. If the OS
-        // kills the app between these steps, an orphaned private cache file is
-        // preferable to an outbox row that can never be retried.
-        await dependencies.removeOutboxItem(item.id);
-        try {
-          dependencies.removeLocalFile(payload.localUri);
-        } catch {
-          // Upload and queue commit already succeeded. Stale private cache is
-          // safe to reclaim later and must not turn a success into a retry.
-        }
+        // The queue row is completed, while the original remains in the app's
+        // private library so a server connection never becomes data ownership.
+        await dependencies.completeOutboxItem(item.id);
       }
       uploadedCount += 1;
     } catch (error) {

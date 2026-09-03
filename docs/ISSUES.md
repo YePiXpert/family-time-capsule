@@ -3,7 +3,7 @@
 > 来源：PRD §22（路线）、§23（垂直切片）、§24（Issues）、§27（P0 DoD）。每个 Issue 的执行方式见 PRD §25（固定前缀）与 §26（PR 自检）。
 
 > 1.0 状态（2026-09-03）：M0–M7 与 M8 自动化/Docker 门禁完成，版本为
-> `1.0.0-rc.1`。稳定 `1.0.0` 只等待 `REAL_DEVICE_TEST.md` 的 iOS、Android、
+> `1.0.0-rc.2`。稳定 `1.0.0` 只等待 `REAL_DEVICE_TEST.md` 的 iOS、Android、
 > Windows/PWA 实测记录；未留档前不打稳定 tag。
 
 ## 状态

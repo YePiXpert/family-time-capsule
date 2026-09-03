@@ -1,6 +1,6 @@
 # Family Time Capsule v1.0 Roadmap
 
-> **Status: 1.0.0-rc.1 — AUTOMATED GATES PASS; REAL-DEVICE GATE OPEN**
+> **Status: 1.0.0-rc.2 — AUTOMATED GATES PASS; REAL-DEVICE GATE OPEN**
 >
 > Started: 2026-08-31
 > Baseline: `v0.1.3` at `5b341f6`
@@ -29,7 +29,7 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 
 ### Current progress after the initial audit
 
-- Application version is `1.0.0-rc.1`; no stable release tag exists.
+- Application version is `1.0.0-rc.2`; no stable release tag exists.
 - A React Native native companion now provides device SQLite/file offline storage,
   Keychain/Keystore sessions, durable capture outbox and versioned server sync; it is not a WebView.
 - Schema now has **41 tables** and **29 forward migrations** (`0000`–`0028`); the FTS5
@@ -58,8 +58,8 @@ This is the minimum baseline. Every milestone must keep it green and add targete
   roundtrip (now covering edited transcripts, confirmed facts with locators,
   accepted tags and `date_only` precision), suggestion, cluster and video-analysis
   suites are present and passing.
-- 2026-09-03 release audit: lint/typecheck/build/audit pass; **455 server Vitest + 32
-  Playwright + 8 mobile Vitest + 6 production roundtrip** pass. A current Docker image was built and
+- 2026-09-03 release audit: lint/typecheck/build/audit pass; **456 server Vitest + 32
+  Playwright + 10 mobile Vitest + 6 production roundtrip** pass. A current Docker image was built and
   exercised for app/worker health, persistence, export, cross-instance restore and
   takeover of a volume produced by a clean `0.1.3` image. Original SHA-256 remained
   byte-identical in both host-level drills.

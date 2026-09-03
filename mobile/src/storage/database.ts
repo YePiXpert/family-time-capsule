@@ -8,6 +8,11 @@ import type {
   SyncPage,
   TextCapturePayload,
 } from "../types";
+import {
+  mergeTimelineEvents,
+  type LocalCaptureRow,
+} from "./local-timeline";
+import { MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
 
 const DB_NAME = "family-time-capsule.sqlite";
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -19,49 +24,7 @@ function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
 export async function initializeLocalStore(): Promise<void> {
   const db = await getDatabase();
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-    CREATE TABLE IF NOT EXISTS meta (
-      key TEXT PRIMARY KEY NOT NULL,
-      value TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS people (
-      id TEXT PRIMARY KEY NOT NULL,
-      display_name TEXT NOT NULL,
-      relation_to_child TEXT,
-      is_child INTEGER NOT NULL,
-      birth_date TEXT,
-      updated_at TEXT NOT NULL,
-      seen_snapshot TEXT
-    );
-    CREATE TABLE IF NOT EXISTS timeline_event (
-      id TEXT PRIMARY KEY NOT NULL,
-      title TEXT NOT NULL,
-      occurred_at TEXT NOT NULL,
-      occurred_at_precision TEXT NOT NULL,
-      location_text TEXT,
-      child_person_id TEXT NOT NULL,
-      age_days INTEGER,
-      updated_at TEXT NOT NULL,
-      asset_count INTEGER NOT NULL,
-      participant_names_json TEXT NOT NULL,
-      cover_json TEXT,
-      local_cover_uri TEXT,
-      seen_snapshot TEXT
-    );
-    CREATE INDEX IF NOT EXISTS timeline_occurred_idx
-      ON timeline_event(occurred_at DESC, id DESC);
-    CREATE TABLE IF NOT EXISTS outbox (
-      id TEXT PRIMARY KEY NOT NULL,
-      kind TEXT NOT NULL CHECK(kind IN ('text_capture', 'media_capture')),
-      payload_json TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      attempt_count INTEGER NOT NULL DEFAULT 0,
-      last_error TEXT
-    );
-    CREATE INDEX IF NOT EXISTS outbox_created_idx ON outbox(created_at, id);
-  `);
+  await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
 }
 
 export async function getMeta(key: string): Promise<string | null> {
@@ -104,21 +67,26 @@ export async function getCachedViewer(): Promise<SyncPage["viewer"] | null> {
 
 export async function listTimeline(): Promise<LocalTimelineEvent[]> {
   const db = await getDatabase();
-  const rows = await db.getAllAsync<{
-    id: string;
-    title: string;
-    occurred_at: string;
-    occurred_at_precision: string;
-    location_text: string | null;
-    child_person_id: string;
-    age_days: number | null;
-    updated_at: string;
-    asset_count: number;
-    participant_names_json: string;
-    cover_json: string | null;
-    local_cover_uri: string | null;
-  }>("SELECT * FROM timeline_event ORDER BY occurred_at DESC, id DESC");
-  return rows.map((row) => ({
+  const [rows, localRows] = await Promise.all([
+    db.getAllAsync<{
+      id: string;
+      title: string;
+      occurred_at: string;
+      occurred_at_precision: string;
+      location_text: string | null;
+      child_person_id: string;
+      age_days: number | null;
+      updated_at: string;
+      asset_count: number;
+      participant_names_json: string;
+      cover_json: string | null;
+      local_cover_uri: string | null;
+    }>("SELECT * FROM timeline_event ORDER BY occurred_at DESC, id DESC"),
+    db.getAllAsync<LocalCaptureRow>(
+      "SELECT * FROM local_capture ORDER BY occurred_at DESC, id DESC",
+    ),
+  ]);
+  const serverEvents = rows.map((row) => ({
     id: row.id,
     title: row.title,
     occurredAt: row.occurred_at,
@@ -129,9 +97,14 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
     updatedAt: row.updated_at,
     assetCount: row.asset_count,
     participantNames: JSON.parse(row.participant_names_json) as string[],
-    cover: row.cover_json ? (JSON.parse(row.cover_json) as LocalTimelineEvent["cover"]) : null,
+    cover: row.cover_json
+      ? (JSON.parse(row.cover_json) as LocalTimelineEvent["cover"])
+      : null,
     localCoverUri: row.local_cover_uri,
+    source: "server" as const,
+    syncState: null,
   }));
+  return mergeTimelineEvents(serverEvents, localRows);
 }
 
 export async function applySyncPage(
@@ -247,29 +220,53 @@ export async function enqueueTextCapture(
   id: string,
   payload: TextCapturePayload,
 ): Promise<void> {
-  return enqueue(id, "text_capture", payload);
+  return enqueue(id, "text_capture", payload, payload.text, null, null);
 }
 
 export async function enqueueMediaCapture(
   id: string,
   payload: MediaCapturePayload,
 ): Promise<void> {
-  return enqueue(id, "media_capture", payload);
+  return enqueue(
+    id,
+    "media_capture",
+    payload,
+    payload.fileName,
+    payload.localUri,
+    payload.mediaType,
+  );
 }
 
 async function enqueue(
   id: string,
   kind: OutboxItem["kind"],
   payload: TextCapturePayload | MediaCapturePayload,
+  title: string,
+  localUri: string | null,
+  mediaType: MediaCapturePayload["mediaType"] | null,
 ): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync(
-    "INSERT INTO outbox(id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)",
-    id,
-    kind,
-    JSON.stringify(payload),
-    new Date().toISOString(),
-  );
+  const occurredAt = new Date().toISOString();
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      `INSERT INTO local_capture(
+        id, kind, title, occurred_at, local_uri, media_type, sync_state
+      ) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+      id,
+      kind,
+      title,
+      occurredAt,
+      localUri,
+      mediaType,
+    );
+    await tx.runAsync(
+      "INSERT INTO outbox(id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)",
+      id,
+      kind,
+      JSON.stringify(payload),
+      occurredAt,
+    );
+  });
 }
 
 export async function listOutbox(): Promise<OutboxItem[]> {
@@ -311,7 +308,21 @@ export async function markOutboxFailure(id: string, message: string): Promise<vo
 
 export async function removeOutboxItem(id: string): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync("DELETE FROM outbox WHERE id = ?", id);
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync("DELETE FROM outbox WHERE id = ?", id);
+    await tx.runAsync("DELETE FROM local_capture WHERE id = ?", id);
+  });
+}
+
+export async function completeOutboxItem(id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      "UPDATE local_capture SET sync_state = 'synced' WHERE id = ?",
+      id,
+    );
+    await tx.runAsync("DELETE FROM outbox WHERE id = ?", id);
+  });
 }
 
 export async function clearLocalArchive(): Promise<void> {
@@ -320,6 +331,7 @@ export async function clearLocalArchive(): Promise<void> {
     DELETE FROM timeline_event;
     DELETE FROM people;
     DELETE FROM outbox;
+    DELETE FROM local_capture;
     DELETE FROM meta;
   `);
 }

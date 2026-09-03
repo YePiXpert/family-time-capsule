@@ -1,6 +1,6 @@
 # 1.0 发布候选验收报告
 
-> 候选版本：`1.0.0-rc.1`
+> 候选版本：`1.0.0-rc.2`
 > 验收日期：2026-09-03
 > 结论：自动化与 Docker 门禁通过；稳定 `1.0.0` 等待真实设备记录。
 
@@ -9,11 +9,11 @@
 | 门禁 | 结果 |
 | --- | --- |
 | ESLint / TypeScript | 通过 |
-| Vitest | 64 files，455 tests，通过 |
+| Vitest | 65 files，456 tests，通过 |
 | Playwright production E2E | 32 tests，通过 |
 | Production disaster roundtrip | 6 tests，通过 |
 | Next.js production build | Next 16.3.3，webpack build，通过 |
-| React Native quality | 2 files / 8 tests；TypeScript / ESLint；Expo Doctor 21/21；iOS/Android Hermes bundle，全部通过 |
+| React Native quality | 3 files / 10 tests；TypeScript / ESLint；Expo Doctor 21/21；iOS/Android Hermes bundle，全部通过 |
 | Android native package | ARM64 Release，299 Gradle tasks；APK Signature v2 验证通过 |
 | GitHub native cloud build | run `33806978669` 全绿；Android APK 与 iPhoneOS unsigned IPA 已下载复验 |
 | Production dependency audit | `npm audit --omit=dev --audit-level=moderate`，0 vulnerabilities |

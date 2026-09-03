@@ -3,17 +3,16 @@ import * as Network from "expo-network";
 import { fetchSyncPage, uploadTextCapture } from "../api/client";
 import {
   applySyncPage,
+  completeOutboxItem,
   finishSyncSnapshot,
   listLocalCoverUris,
   listOutbox,
   markOutboxFailure,
-  removeOutboxItem,
   setLocalCoverUri,
 } from "../storage/database";
 import {
   cacheEventCover,
   pruneCachedCovers,
-  removeLocalFile,
   uploadMediaCapture,
 } from "../storage/files";
 import type { Credentials } from "../types";
@@ -32,8 +31,7 @@ export async function syncArchive(credentials: Credentials): Promise<SyncSummary
     uploadTextCapture,
     uploadMediaCapture,
     markOutboxFailure,
-    removeOutboxItem,
-    removeLocalFile,
+    completeOutboxItem,
     fetchSyncPage,
     applySyncPage,
     cacheEventCover,

@@ -58,6 +58,8 @@ export type SyncPage = {
 
 export type LocalTimelineEvent = TimelineEvent & {
   localCoverUri: string | null;
+  source: "server" | "local";
+  syncState: "pending" | "synced" | null;
 };
 
 export type TextCapturePayload = {

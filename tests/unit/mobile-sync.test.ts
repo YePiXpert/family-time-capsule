@@ -24,17 +24,16 @@ const api = vi.hoisted(() => {
 
 const database = vi.hoisted(() => ({
   applySyncPage: vi.fn(),
+  completeOutboxItem: vi.fn(),
   finishSyncSnapshot: vi.fn(),
   listOutbox: vi.fn(),
   listLocalCoverUris: vi.fn(),
   markOutboxFailure: vi.fn(),
-  removeOutboxItem: vi.fn(),
   setLocalCoverUri: vi.fn(),
 }));
 
 const files = vi.hoisted(() => ({
   cacheEventCover: vi.fn(),
-  removeLocalFile: vi.fn(),
   pruneCachedCovers: vi.fn(),
   uploadMediaCapture: vi.fn(),
 }));
@@ -117,17 +116,14 @@ describe("native offline sync state machine", () => {
     expect(api.fetchSyncPage).not.toHaveBeenCalled();
   });
 
-  it("deletes a media outbox row before deleting its private source file", async () => {
+  it("completes a media outbox row while retaining its private original", async () => {
     const order: string[] = [];
     database.listOutbox.mockResolvedValue([mediaItem("media-1")]);
     files.uploadMediaCapture.mockImplementation(async () => {
       order.push("server-confirmed");
     });
-    database.removeOutboxItem.mockImplementation(async () => {
+    database.completeOutboxItem.mockImplementation(async () => {
       order.push("queue-committed");
-    });
-    files.removeLocalFile.mockImplementation(() => {
-      order.push("file-deleted");
     });
 
     await expect(
@@ -141,19 +137,16 @@ describe("native offline sync state machine", () => {
       "media-1",
       expect.objectContaining({ fileName: "media-1.jpg" }),
     );
-    expect(order).toEqual(["server-confirmed", "queue-committed", "file-deleted"]);
+    expect(order).toEqual(["server-confirmed", "queue-committed"]);
   });
 
-  it("does not recreate a committed queue row when private cache cleanup fails", async () => {
+  it("does not delete the private original after the server accepts it", async () => {
     database.listOutbox.mockResolvedValue([mediaItem("media-cleanup")]);
-    files.removeLocalFile.mockImplementation(() => {
-      throw new Error("filesystem busy");
-    });
 
     await expect(
       syncArchiveWithDependencies(credentials, dependencies()),
     ).resolves.toMatchObject({ uploadedCount: 1, failedCount: 0 });
-    expect(database.removeOutboxItem).toHaveBeenCalledWith("media-cleanup");
+    expect(database.completeOutboxItem).toHaveBeenCalledWith("media-cleanup");
     expect(database.markOutboxFailure).not.toHaveBeenCalled();
   });
 
@@ -184,10 +177,8 @@ describe("native offline sync state machine", () => {
       "rejected",
       "服务器不支持这个原件格式。",
     );
-    expect(database.removeOutboxItem).toHaveBeenCalledTimes(1);
-    expect(database.removeOutboxItem).toHaveBeenCalledWith("valid");
-    expect(files.removeLocalFile).toHaveBeenCalledTimes(1);
-    expect(files.removeLocalFile).toHaveBeenCalledWith(valid.payload.localUri);
+    expect(database.completeOutboxItem).toHaveBeenCalledTimes(1);
+    expect(database.completeOutboxItem).toHaveBeenCalledWith("valid");
     expect(api.fetchSyncPage).toHaveBeenCalledOnce();
   });
 
@@ -211,7 +202,7 @@ describe("native offline sync state machine", () => {
     await expect(
       syncArchiveWithDependencies(credentials, dependencies()),
     ).resolves.toMatchObject({ uploadedCount: 0, failedCount: 1 });
-    expect(database.removeOutboxItem).not.toHaveBeenCalled();
+    expect(database.completeOutboxItem).not.toHaveBeenCalled();
     expect(database.applySyncPage).toHaveBeenCalledWith(
       expect.objectContaining({
         viewer: expect.objectContaining({ canCapture: false }),
@@ -241,7 +232,7 @@ describe("native offline sync state machine", () => {
       "text-1",
       "network unavailable",
     );
-    expect(database.removeOutboxItem).not.toHaveBeenCalled();
+    expect(database.completeOutboxItem).not.toHaveBeenCalled();
     expect(api.fetchSyncPage).not.toHaveBeenCalled();
   });
 
@@ -259,8 +250,7 @@ describe("native offline sync state machine", () => {
     ).rejects.toThrow("登录已过期");
     expect(files.uploadMediaCapture).toHaveBeenCalledOnce();
     expect(database.markOutboxFailure).toHaveBeenCalledOnce();
-    expect(database.removeOutboxItem).not.toHaveBeenCalled();
-    expect(files.removeLocalFile).not.toHaveBeenCalled();
+    expect(database.completeOutboxItem).not.toHaveBeenCalled();
     expect(api.fetchSyncPage).not.toHaveBeenCalled();
   });
 

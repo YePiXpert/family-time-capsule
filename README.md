@@ -1,6 +1,6 @@
 # Family Time Capsule
 
-**v1.0.0-rc.1 — Family Archive release candidate**
+**v1.0.0-rc.2 — Family Archive release candidate**
 
 A private, self-hosted family memory archive.
 
@@ -49,8 +49,8 @@ Original sources always come first.
 - **书籍**：已发布故事与年度事件导出 PDF/EPUB（媒体内嵌、无内部 URL）。
 - **远程备份**：WebDAV verified upload + 原子改名（凭据仅存环境变量）。
 - **系统分享**：PWA Share Target 直达收件箱。
-- **原生客户端**：React Native iOS/Android（无 WebView）；SQLite 离线时间轴、
-  Keychain/Keystore 凭据、私有文件缓存，以及断网文字/照片/视频补传队列。
+- **原生客户端**：React Native iOS/Android（无 WebView）；首次启动直接使用本机
+  SQLite/私有文件档案，家庭服务器同步完全可选，断开服务器也不删除本地记录和原件。
 - **回收站**：事件/讲述/故事软删除、恢复、确认式清除；素材引用守卫。
 
 ## 技术栈
@@ -84,7 +84,7 @@ npm run dev            # http://localhost:3000
 | --- | --- |
 | `npm run dev` | 开发服务器 |
 | `npm run lint` / `npm run typecheck` | 静态检查 |
-| `npm test` | Vitest 单元 + 集成测试（455 个） |
+| `npm test` | Vitest 单元 + 集成测试（456 个） |
 | `npm run test:e2e` | 32 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
 | `npm run verify:export <zip>` | 校验导出 ZIP 的 manifest 与全部原件 SHA-256 |
 
