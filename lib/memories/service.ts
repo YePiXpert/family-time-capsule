@@ -743,6 +743,7 @@ export async function getTimelinePage(
       and(
         eq(memoryEvent.familyId, familyId),
         eq(memoryEvent.status, "confirmed"),
+        isNull(memoryEvent.deletedAt),
         cursorFilter,
       ),
     )
