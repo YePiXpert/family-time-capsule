@@ -22,6 +22,10 @@ test("导出完整备份：ZIP 可下载、manifest 哈希全部可验证", asyn
 
   await page.goto("/inbox");
   const checkboxes = page.getByRole("checkbox");
+  // `locator.all()` snapshots the current DOM without waiting. Under the full
+  // CI load the streamed inbox can still be hydrating here, which previously
+  // selected only one row and left the merge form hidden forever.
+  await expect(checkboxes).toHaveCount(2);
   for (const box of await checkboxes.all()) await box.check();
   await page.getByLabel("合并事件标题").fill("出生那几天");
   await page.getByRole("button", { name: "合并" }).click();

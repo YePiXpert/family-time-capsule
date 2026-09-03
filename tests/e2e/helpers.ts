@@ -38,6 +38,14 @@ export async function login(page: Page) {
  */
 export async function bootstrapWorkspace(page: Page) {
   await page.goto("/setup");
+  // Playwright starts a fresh worker for a retry but deliberately keeps the
+  // project's isolated server/database alive. If the first attempt already
+  // completed setup, resume by logging in instead of waiting forever for the
+  // one-time setup form to reappear.
+  if (/\/login(?:\?|$)/u.test(page.url())) {
+    await ensureLogin(page);
+    return;
+  }
   await page.getByLabel("初始化令牌").fill(SETUP_TOKEN);
   await page.getByLabel("显示名称").fill(ADMIN.displayName);
   await page.getByLabel("邮箱（登录用）").fill(ADMIN.email);
