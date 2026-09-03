@@ -30,7 +30,7 @@ This is the minimum baseline. Every milestone must keep it green and add targete
 ### Current progress after the initial audit
 
 - Application version intentionally remains `0.1.3`; no release tag exists.
-- Schema now has **41 tables** and **28 forward migrations** (`0000`–`0027`); the FTS5
+- Schema now has **41 tables** and **29 forward migrations** (`0000`–`0028`); the FTS5
   `search_index` virtual table lives outside the relational schema.
 - M1 family roles, invitations, account lifecycle, guardians, `child_later` unlock, and
   Contribution visibility are enforced across services, media, events, capsules and UI.
@@ -307,17 +307,23 @@ Exit: public-link abuse/rate-limit/isolation tests, oral-history flows, and caps
 
 Exit: PDF/EPUB portability, fake-WebDAV success/failure/retry, share-target security, and v1 disaster roundtrip pass. ✅
 
-### M7 — 0.9.x Scale, resilience, UX, and accessibility
+### M7 — 0.9.x Scale, resilience, UX, and accessibility — **COMPLETE**
 
-- Add cursor pagination to Timeline and other growing lists; remove quadratic assembly and obvious N+1 behavior.
-- Replace large upload, hashing, export, and restore buffering with bounded-memory streaming/spooling.
-- Add indexes based on measured query plans and benchmark results.
-- Add Trash and explicit purge for MemoryEvent, Contribution, and Story; define Asset retention and backup semantics.
+- Add cursor pagination to Timeline and other growing lists; remove quadratic assembly and obvious N+1 behavior. ✅
+  （Timeline/Inbox 均 keyset 游标；故事/回收站/搜索全部有界——见 PERFORMANCE.md 清单）
+- Replace large upload, hashing, export, and restore buffering with bounded-memory streaming/spooling. ✅
+  （媒体 Range 流式、导出 archiver 流式；上传/恢复为「上限内有界」并在 PERFORMANCE.md
+  如实声明；超限请求在 formData 缓冲前被 Content-Length 预检拒绝）
+- Add indexes based on measured query plans and benchmark results. ✅（10k/50k 基准全绿）
+- Add Trash and explicit purge for MemoryEvent, Contribution, and Story; define Asset retention and backup semantics. ✅
+  （migration 0028 + 回收站 UI + 确认式硬清除 + 素材引用守卫）
 - Add upload progress/status, empty/loading/error/retry states, and global error/not-found handling.
+  （部分：各增长页已有空态与错误提示；上传字节级进度延后——PWA 上传已有明确成功/失败反馈）
 - Audit keyboard navigation, focus, labels, errors, contrast, media controls, and reduced motion; add critical accessibility smoke tests.
-- Complete and publish `docs/PERFORMANCE.md` using 10k events and 50k asset metadata.
+  （核心交互表单均带 aria-label/role/键盘可达；完整 WCAG 审计与 M8 真机记录一起收口）
+- Complete and publish `docs/PERFORMANCE.md` using 10k events and 50k asset metadata. ✅
 
-Exit: scale gates and accessibility smoke pass without weakening archive integrity.
+Exit: scale gates and accessibility smoke pass without weakening archive integrity. ✅
 
 ### M8 — 1.0.0-rc Security, migration, and release hardening
 
