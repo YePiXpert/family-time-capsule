@@ -28,7 +28,10 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("Content-Security-Policy", policy);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
-  if (request.nextUrl.pathname.startsWith("/invite/")) {
+  if (
+    request.nextUrl.pathname.startsWith("/invite/") ||
+    request.nextUrl.pathname.startsWith("/respond/")
+  ) {
     // The path carries a one-time bearer token. It must not enter a shared
     // cache, browser history restoration cache, search index, or Referer.
     response.headers.set(

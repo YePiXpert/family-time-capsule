@@ -179,3 +179,43 @@
 
 详细边界见 [AI_PRIVACY.md](./AI_PRIVACY.md) 和
 [AI_PROVIDERS.md](./AI_PROVIDERS.md)。
+
+## 13. v1 新增域的安全审计（M3–M7）
+
+### 全文搜索（M4）
+- `search_index` 是家庭隔离的 FTS5 derivative：MATCH 前强制 `family_id` 相等；
+  Contribution 命中按可见性策略**后过滤**（private/parents/child_later 对无关读者
+  不可见），隔离有集成测试覆盖。
+- 只索引 user_confirmed 事实与用户修订转录；rejected/ai_suggested 永不入索引。
+
+### 故事与 Quote Lock（M4）
+- 生成输入白名单（确认事实 + family 讲述 + 修订转录）在服务层强制；
+- 引文锁：quote 段落必须与来源当前文本逐字一致且不可编辑；叙述段禁止引号字符；
+- 再生保护：已编辑/已发布故事永不被 regenerate 覆盖。
+
+### 口述收集链接（M5）
+- token 256-bit、只存 SHA-256、枚举不可行；过期/关闭在解析时强制；
+- 访客页零家庭数据暴露（仅称呼与问题）；/respond/* 与 /invite/* 同样
+  no-store + noindex + no-referrer（proxy.ts）；
+- 限流 5 条/小时/链接；提交进收件箱审核，不直接发布。
+
+### 书籍生成（M6）
+- PDF/EPUB 媒体内嵌（DCTDecode / ZIP 条目），字节级测试确认无内部鉴权 URL；
+- 下载路由走 `authorizeApiFamilyRequest`；仅 published 故事可成书。
+
+### WebDAV 备份（M6）
+- SSRF 边界：仅 https（loopback http 例外）；`redirect: "manual"` 不跟随；
+  URL 内嵌凭据被拒绝；每次运行重新解析 env；
+- 凭据零泄漏：错误信息、backup_run 历史、客户端输出经测试验证。
+
+### PWA Share Target（M6）
+- POST /share 要求同源 + 会话 + capture:create，与普通上传同一授权面。
+
+### 回收站（M7）
+- 软删除行在导出/搜索/素材收集中一律过滤（跨家庭隔离有测试）；
+- 硬清除需显式确认并写审计；素材物理删除有全引用守卫。
+
+### CSP
+- 页面：proxy.ts 按 request nonce + `strict-dynamic`（生产无 unsafe-eval）；
+  API：`default-src 'none'`；sw.js 单独策略。
+

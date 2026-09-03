@@ -526,3 +526,94 @@ CREATE VIRTUAL TABLE search_index USING fts5(
   published Story（标题 + 段落）。
 - 中文支持：索引与查询两侧 bigram 预分词（`lib/search/tokenizer.ts`），≥2 字词/词组/
   英文单词走 FTS MATCH，单字中文回退 LIKE。
+
+## ContributionRequest / Submission（M5 已落地：`db/schema/oral-history.ts`，migration 0025）
+
+```ts
+type ContributionRequest = {
+  id: string
+  familyId: string          // FK → family
+  tokenHash: string         // 256-bit token 的 SHA-256（token 本体只在创建时返回一次）
+  recipientLabel: string    // 展示给访客的称呼（1–50 字），不暴露家庭数据
+  promptText: string        // 问题正文（1–500 字，来自问题库或自拟）
+  topicKey?: string | null  // 内置十主题 key；自拟为 null
+  status: "open" | "closed"
+  expiresAt: Date           // 过期即时失效
+  closedAt?: Date | null
+  closedByUserId?: string | null
+  createdByUserId: string
+  createdAt / updatedAt: Date
+}
+
+type ContributionRequestSubmission = {
+  id: string
+  familyId: string
+  requestId: string          // FK → contribution_request
+  inboxItemId: string        // FK → inbox_item：审核状态由收件箱派生，不冗余
+  createdAt: Date
+}
+```
+
+- 访客只能看到 recipientLabel + promptText；提交（文字/音频/照片/视频）落收件箱
+  审核队列，绝不直接发布。
+- 限流：每链接 5 条/小时；每家庭打开链接上限 20。
+- 运维状态：不进入 portable archive。
+
+## FutureQuestion / CapsuleReply（M5 已落地：`db/schema/capsule.ts`，migration 0026）
+
+```ts
+type FutureQuestion = {
+  id: string
+  familyId: string
+  capsuleId: string          // FK → capsule，cascade
+  questionText: string       // 1–500 字；draft 阶段可增删，封存即固化
+  createdByUserId: string
+  createdAt: Date
+}
+
+type CapsuleReply = {
+  id: string
+  familyId: string
+  questionId: string         // FK → future_question，cascade
+  capsuleId: string
+  authorPersonId?: string | null
+  text?: string | null       // ≤10000 字；与 assetId 至少其一
+  assetId?: string | null    // 可选录音/照片/视频原件
+  createdAt: Date
+}
+```
+
+- 回答仅在胶囊解锁后接受；回答是增量行，封存历史内容永不改变。
+- durable：`capsule-questions.json` / `capsule-replies.json` 随 archive 导出/恢复。
+
+## BackupRun（M6 已落地：`db/schema/backup.ts`，migration 0027）
+
+```ts
+type BackupRun = {
+  id: string
+  familyId: string
+  status: "pending" | "running" | "succeeded" | "failed"
+  remotePath: string         // 仅 host+path 会展示；凭据只存 env
+  bytes?: number | null
+  sha256?: string | null
+  strategy?: "verified-upload" | "direct-upload" | null
+  error?: string | null
+  attempts: number
+  triggeredByUserId?: string | null
+  startedAt: Date
+  finishedAt?: Date | null
+}
+```
+
+- WebDAV 凭据（WEBDAV_URL/USERNAME/PASSWORD）只从环境变量读取，不入库、
+  不导出、不下发客户端；错误信息经测试验证不含凭据。
+- 流程：verified export → 临时上传 → 回读 SHA-256 → 原子 MOVE（降级直传如实记录）。
+
+## Trash（M7 已落地：migration 0028）
+
+`memory_event`、`contribution`、`story` 各加可空 `deleted_at`：
+
+- 软删除行在列表/详情/导出/搜索/故事素材/胶囊引用中一律过滤（deletedAt IS NULL）；
+- 恢复 = 清除 deleted_at 并重建搜索索引；清除 = 硬删除（事件清除连带其讲述）；
+- 素材不因清除被连带物理删除：`purgeAssetIfUnreferenced` 仅在完全无引用
+  （事件/收件箱/胶囊/讲述音频/衍生物）时删除文件与行。

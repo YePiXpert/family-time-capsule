@@ -195,3 +195,33 @@
   4. v0.1.1 明确禁止 merge restore（向已有数据的实例合并导入）。
   5. CLI 形态：`npm run restore -- backup.zip`（tsx 运行 TS、复用业务服务与校验；恢复是管理员运维操作，不需要 Web UI）。
 - **PRD 偏差**：无（PRD §15/§18 允许；docs/RESTORE.md 已同步）。
+
+
+## D-0xx（M5）口述史「请求即会话」
+- **背景**：PRD 列出 InterviewPrompt/InterviewSession/Topic 三个模型。
+- **决策**：精简为 `contribution_request`（含 recipientLabel/promptText/topicKey）
+  + submission 关联收件箱条目；一次链接对应一位讲述人的一组问答。
+- **理由**：InterviewSession 的全部语义（谁、问什么、收到的内容、审核状态）
+  已由 request + inbox 条目完整承载；再建会话表会引入双写与状态漂移。
+- **后果**：少两张表、少一条状态机；AI follow-up 建议留待真实使用反馈后评估。
+
+## D-0xx（M6）PDF 生成的技术选型
+- **决策**：手写 PDF 封装（页面 = sharp SVG 排版 → JPEG → DCTDecode 直嵌），
+  不引入 PDF 库；EPUB 用 jszip 按 EPUB 3 规范生成。
+- **理由**：书籍只需要「页图序列」一种能力；CJK 排版交给 librsvg + 系统
+  Noto CJK（Docker 镜像已内置），避免几十 MB 的字体嵌入或新供应链依赖。
+- **后果**：PDF 文字不可选中（以图像页呈现）；阅读优先走 EPUB（原生文本）。
+
+## D-0xx（M7）上传/恢复的内存形态
+- **决策**：媒体回放与导出走流式；上传/恢复保持「上限内有界缓冲」
+  （50/200/500MB 上限 + Content-Length 预检），不做手写 multipart 流解析。
+- **理由**：手写多部分解析器解析不可信输入，引入的攻击面大于其收益；
+  上限内的缓冲对自托管单家庭负载是可接受的运维边界。
+- **后果**：部署建议 ≥2GB 内存；零拷贝上传列为未来独立安全评审项。
+
+## D-0xx（M4）搜索分词
+- **决策**：FTS5 索引与查询两侧统一 CJK bigram 预分词（lib/search/tokenizer.ts），
+  单字中文回退 LIKE。
+- **理由**：unicode61 不切中文；trigram 对 2 字词不命中；bigram 在索引与查询
+  两侧一致即可获得 ≥2 字词/词组/英文词的完整匹配。
+- **后果**：索引体积约为原文 token 数的 2 倍以内；重建为全量操作（秒级）。
