@@ -15,7 +15,7 @@
 | Next.js production build | Next 16.3.3，webpack build，通过 |
 | React Native quality | 3 files / 10 tests；TypeScript / ESLint；Expo Doctor 21/21；iOS/Android Hermes bundle，全部通过 |
 | Android native package | ARM64 Release，299 Gradle tasks；APK Signature v2 验证通过 |
-| GitHub native cloud build | run `33806978669` 全绿；Android APK 与 iPhoneOS unsigned IPA 已下载复验 |
+| GitHub native cloud build | run `33815649669` 全绿；Android APK 与 iPhoneOS unsigned IPA 已下载复验 |
 | Production dependency audit | `npm audit --omit=dev --audit-level=moderate`，0 vulnerabilities |
 | Mobile production dependency audit | `npm audit --omit=dev`，0 vulnerabilities |
 | Benchmark | 10,000 events + 50,000 assets，通过；数字见 `PERFORMANCE.md` |
@@ -31,25 +31,24 @@ Android 原生包在 GitHub Ubuntu runner 上执行 299 个 Gradle tasks 后生�
 ## 原生云构建证据
 
 GitHub Actions run
-[`33806978669`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33806978669)
-在分支 `mobile-build/1.0.0-rc.1-20260903`、提交
-`8c35c7b59520eac385d361689af0e8a3893dcd14` 上于 2026-09-03 完成，三个 job 均成功：
-React Native quality 1m14s、iOS unsigned IPA 5m19s、Android APK 11m03s（其中 299 个
-Gradle tasks 10m28s）。云端产物保留 30 天。
+[`33815649669`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33815649669)
+在唯一分支 `main`、提交 `db68224c08978c0d2362cb4ccf8143cec71aab86` 上于
+2026-09-03 完成，三个 job 均成功：React Native quality 6m05s（其中 Expo 外部检查
+等待约 5 分钟）、Android APK 10m24s、iOS unsigned IPA 10m28s。云端产物保留 30 天。
 
 | 云端产物 | 复验结果 |
 | --- | --- |
-| `FamilyTimeCapsule-android.apk` | 28,831,068 bytes；SHA-256 `da945d492298f275e7eb7f55bbc0057df3a4f391c10cd9560171a3c70531cd85` |
-| `FamilyTimeCapsule-ios-unsigned.ipa` | 7,950,219 bytes；SHA-256 `c2e6089d2b3b177b608b6950ecc1405279b6745399836f29bac574f4eb16a231` |
+| `FamilyTimeCapsule-android.apk` | 28,840,092 bytes；SHA-256 `c97b24efa3af361305a64933c841e8cd3b9d96fb8f165d3fde2089aefe34b296` |
+| `FamilyTimeCapsule-ios-unsigned.ipa` | 7,952,169 bytes；SHA-256 `382f36c50b816e5b8dbe3576f42eeff1ef3a5f45c5a527624167c7b91134be87` |
 
 APK 经 Android SDK 36 `apksigner` 与 `aapt2` 二次验证：APK Signature v2 有效，包名
-`app.familytimecapsule.mobile`，`versionName=1.0.0`，min/target SDK 24/36，仅含
+`app.familytimecapsule.mobile`，`versionName=1.0.0`、`versionCode=2`，min/target SDK 24/36，仅含
 `arm64-v8a`，包含 `libhermesvm.so`、`libexpo-sqlite.so`、`libreactnative.so` 与
 Hermes bytecode `assets/index.android.bundle`；声明相机权限，不含 `SYSTEM_ALERT_WINDOW`。
 它使用临时 debug key，适合直接侧载测试，不作为正式商店签名。
 
 IPA 经 `unzip -tq` 与解包二次验证：bundle id `app.familytimecapsule.mobile`，版本
-`1.0.0 (1)`，最低 iOS 16.4，平台为 `iphoneos`，主程序是 64-bit ARM64 Mach-O；包含
+`1.0.0 (2)`，最低 iOS 16.4，平台为 `iphoneos`，主程序是 64-bit ARM64 Mach-O；包含
 Hermes、React Native、Expo SQLite、Expo SecureStore 与 Hermes `main.jsbundle`，并带有
 相机/相册用途说明，确认不是 PWA/WebView 套壳。包内没有 `_CodeSignature` 或
 `embedded.mobileprovision`，因此必须用 Apple 开发者身份或设备自签方案签名后才能安装，
