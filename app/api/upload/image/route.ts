@@ -1,4 +1,5 @@
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
+import { MAX_IMAGE_BYTES } from "@/lib/assets/validation";
 import { ingestImage } from "@/lib/assets/ingest";
 import { createInboxItemForAsset } from "@/lib/inbox/service";
 import { isSameOrigin } from "@/lib/security/origin";
@@ -30,6 +31,13 @@ export async function POST(request: Request) {
     );
   }
   const { context } = authorization;
+
+  // M7：formData() 会缓冲整个请求体——解析前先按 Content-Length 拒绝超限，
+  // 避免为注定失败的请求付出整文件内存
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_IMAGE_BYTES) {
+    return Response.json({ error: "too_large" }, { status: 413 });
+  }
 
   let form: FormData;
   try {

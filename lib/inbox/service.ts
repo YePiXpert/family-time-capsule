@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import {
@@ -78,6 +78,86 @@ export async function createTextInboxItem(
   return rows[0];
 }
 
+export type InboxPage = {
+  entries: InboxEntry[];
+  nextCursor: string | null;
+};
+
+const INBOX_PAGE_SIZE_DEFAULT = 50;
+const INBOX_PAGE_SIZE_MAX = 200;
+
+function decodeInboxCursor(cursor: string | null | undefined): {
+  createdAtMs: number;
+  itemId: string;
+} | null {
+  if (!cursor) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
+      createdAtMs?: unknown;
+      itemId?: unknown;
+    };
+    if (
+      typeof decoded.createdAtMs !== "number" ||
+      typeof decoded.itemId !== "string"
+    ) {
+      return null;
+    }
+    return { createdAtMs: decoded.createdAtMs, itemId: decoded.itemId };
+  } catch {
+    return null;
+  }
+}
+
+function encodeInboxCursor(item: { createdAt: Date; id: string }): string {
+  return Buffer.from(
+    JSON.stringify({ createdAtMs: item.createdAt.getTime(), itemId: item.id }),
+    "utf8",
+  ).toString("base64url");
+}
+
+/**
+ * 收件箱分页（M7）：keyset（createdAt DESC, id DESC）。
+ * 不传 cursor 时等价于旧行为的第一页；兼容 listInbox 的全量语义的调用方
+ * （聚类/搜索重建）继续走 listInbox。
+ */
+export async function getInboxPage(
+  familyId: string,
+  statuses: InboxStatus[] = ["new", "needs_review", "processing"],
+  options: { cursor?: string | null; limit?: number } = {},
+): Promise<InboxPage> {
+  const db = getDb();
+  const limit = Math.min(
+    Math.max(options.limit ?? INBOX_PAGE_SIZE_DEFAULT, 1),
+    INBOX_PAGE_SIZE_MAX,
+  );
+  const cursor = decodeInboxCursor(options.cursor);
+  const cursorFilter = cursor
+    ? sql`(${inboxItem.createdAt}, ${inboxItem.id}) < (${Math.floor(cursor.createdAtMs / 1000)}, ${cursor.itemId})`
+    : undefined;
+  const items = await db
+    .select()
+    .from(inboxItem)
+    .where(
+      and(
+        eq(inboxItem.familyId, familyId),
+        inArray(inboxItem.status, statuses),
+        cursorFilter,
+      ),
+    )
+    .orderBy(desc(inboxItem.createdAt), desc(inboxItem.id))
+    .limit(limit + 1);
+
+  const hasMore = items.length > limit;
+  const page = hasMore ? items.slice(0, limit) : items;
+  const nextCursor = hasMore ? encodeInboxCursor(page[page.length - 1]) : null;
+  const entries = await assembleInboxEntries(db, familyId, page);
+  return { entries, nextCursor };
+}
+
+/**
+ * 全量开放条目（聚类/测试用）。分页 UI 请用 getInboxPage。
+ * 上限 500：超过时最旧的条目不再返回（聚类扫描本身也有上限）。
+ */
 export async function listInbox(
   familyId: string,
   statuses: InboxStatus[] = ["new", "needs_review", "processing"],
@@ -92,7 +172,16 @@ export async function listInbox(
         inArray(inboxItem.status, statuses),
       ),
     )
-    .orderBy(desc(inboxItem.createdAt));
+    .orderBy(desc(inboxItem.createdAt), desc(inboxItem.id))
+    .limit(500);
+  return assembleInboxEntries(db, familyId, items);
+}
+
+async function assembleInboxEntries(
+  db: ReturnType<typeof getDb>,
+  familyId: string,
+  items: InboxItemRow[],
+): Promise<InboxEntry[]> {
   if (items.length === 0) return [];
   const links = await db
     .select()

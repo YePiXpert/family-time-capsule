@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { and, eq, inArray } from "drizzle-orm";
 import { requireFamily } from "@/lib/family/context";
-import { listInbox } from "@/lib/inbox/service";
+import { getInboxPage } from "@/lib/inbox/service";
 import { getThumbnailMap } from "@/lib/assets/service";
 import { getDb } from "@/db";
 import { aiSuggestion } from "@/db/schema/suggestion";
@@ -24,12 +24,19 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "收件箱 · Family Time Capsule" };
 
-export default async function InboxPage() {
+export default async function InboxPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const context = await requireFamily();
   const { familyId, role } = context;
   const canReview = hasFamilyCapability(role, "inbox:review");
   const canAiReview = hasFamilyCapability(role, "ai:review");
-  const entries = await listInbox(familyId);
+  const params = await searchParams;
+  const cursorParam = typeof params.cursor === "string" ? params.cursor : null;
+  const page = await getInboxPage(familyId, undefined, { cursor: cursorParam });
+  const entries = page.entries;
   const family = await getFamily(familyId);
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
@@ -170,6 +177,17 @@ export default async function InboxPage() {
 
       {canReview && textSuggestAvailable && entries.length > 0 && (
         <InboxSuggestButton />
+      )}
+
+      {page.nextCursor && (
+        <div className="mt-6 text-center text-sm">
+          <Link
+            href={`/inbox?cursor=${page.nextCursor}`}
+            className="rounded-lg border border-foreground/20 px-4 py-2 transition-colors hover:border-accent"
+          >
+            下一页
+          </Link>
+        </div>
       )}
 
       {entries.length === 0 ? (

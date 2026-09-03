@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "verify:export": "node scripts/verify-export.mjs",
     "restore": "tsx scripts/restore.ts",
-    "search:rebuild": "tsx scripts/search-rebuild.ts",
+    "search:rebuild": "tsx --conditions=react-server scripts/search-rebuild.ts",
+    "benchmark": "tsx --conditions=react-server scripts/benchmark.mts",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test && vitest run --config vitest.roundtrip.config.ts"
   },
@@ -45,6 +46,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "ffprobe-static": "^3.1.0",
+    "server-only": "^0.0.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5",
