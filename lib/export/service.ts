@@ -307,6 +307,8 @@ export async function buildFamilyExport(
         md.push(`- 🎧 [录音：${safeAlt}](${rel})`);
       } else if (asset.type === "video") {
         md.push(`- 🎬 [视频：${safeAlt}](${rel})`);
+      } else if (asset.type === "document") {
+        md.push(`- 📄 [文档：${safeAlt}](${rel})`);
       }
     }
     for (const c of contributions.filter((c) => c.memoryEventId === e.id)) {

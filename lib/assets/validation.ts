@@ -117,7 +117,8 @@ export function classifyDeclaredUpload(
 function looksLikeSafeText(prefix: Buffer): boolean {
   if (prefix.includes(0)) return false;
   try {
-    new TextDecoder("utf-8", { fatal: true }).decode(prefix);
+    // The bounded prefix may end midway through a valid multi-byte sequence.
+    new TextDecoder("utf-8", { fatal: true }).decode(prefix, { stream: true });
     return true;
   } catch {
     return false;

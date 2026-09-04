@@ -74,3 +74,24 @@ export const asset = sqliteTable(
     index("asset_family_created_idx").on(t.familyId, t.createdAt),
   ],
 );
+
+/** Bounded, inert UTF-8 extraction for TXT/Markdown preview and local FTS. */
+export const documentText = sqliteTable(
+  "document_text",
+  {
+    id: text("id").primaryKey(),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => asset.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    truncated: integer("truncated", { mode: "boolean" }).notNull().default(false),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("document_text_asset_uidx").on(t.assetId),
+    index("document_text_family_idx").on(t.familyId, t.assetId),
+  ],
+);

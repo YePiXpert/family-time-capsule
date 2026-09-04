@@ -3,15 +3,18 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import type { Readable } from "node:stream";
-import { and, count, eq, inArray, lt, max, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, lt, max, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { asset } from "@/db/schema/asset";
+import { asset, documentText } from "@/db/schema/asset";
 import {
   importSession,
+  importSessionDefaultParticipant,
   importSessionItem,
   uploadSession,
 } from "@/db/schema/import";
 import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
+import { inboxItemParticipant } from "@/db/schema/inbox";
+import { person } from "@/db/schema/family";
 import {
   classifyDeclaredUpload,
   parseImageSize,
@@ -68,16 +71,28 @@ export type CreateImportSessionInput = {
   defaultTitle?: string | null;
   defaultOccurredAt?: Date | null;
   defaultLocationText?: string | null;
+  participantPersonIds?: string[];
 };
 
 export async function createImportSession(
   input: CreateImportSessionInput,
 ): Promise<ImportSessionRow> {
   const now = new Date();
-  return getDb()
-    .insert(importSession)
-    .values({
-      id: randomUUID(),
+  const id = randomUUID();
+  const participantIds = [...new Set(input.participantPersonIds ?? [])];
+  if (participantIds.length > 50) throw new UploadServiceError("invalid_participants", 400);
+  if (participantIds.length > 0) {
+    const valid = await getDb()
+      .select({ id: person.id })
+      .from(person)
+      .where(and(eq(person.familyId, input.familyId), inArray(person.id, participantIds)));
+    if (valid.length !== participantIds.length) {
+      throw new UploadServiceError("invalid_participants", 400);
+    }
+  }
+  return getDb().transaction((tx) => {
+    const session = tx.insert(importSession).values({
+      id,
       familyId: input.familyId,
       source: input.source,
       status: "collecting",
@@ -90,9 +105,20 @@ export async function createImportSession(
       createdByUserId: input.createdByUserId,
       createdAt: now,
       updatedAt: now,
-    })
-    .returning()
-    .get();
+    }).returning().get();
+    if (participantIds.length > 0) {
+      tx.insert(importSessionDefaultParticipant).values(
+        participantIds.map((personId) => ({
+          id: randomUUID(),
+          familyId: input.familyId,
+          importSessionId: id,
+          personId,
+          createdAt: now,
+        })),
+      ).run();
+    }
+    return session;
+  });
 }
 
 export type CreateUploadInput = {
@@ -105,6 +131,7 @@ export type CreateUploadInput = {
   lastModified: Date | null;
   source: "web" | "native" | "share";
   importSessionId: string | null;
+  clientFingerprint?: string | null;
 };
 
 function sameDeclaration(row: UploadSessionRow, input: CreateUploadInput): boolean {
@@ -116,6 +143,7 @@ function sameDeclaration(row: UploadSessionRow, input: CreateUploadInput): boole
     (row.lastModified?.getTime() ?? null) === (input.lastModified?.getTime() ?? null) &&
     row.source === input.source &&
     row.importSessionId === input.importSessionId
+    && row.clientFingerprint === (input.clientFingerprint ?? null)
   );
 }
 
@@ -213,6 +241,7 @@ export async function createUploadSession(
           totalBytes: input.totalBytes,
           receivedBytes: 0,
           lastModified: input.lastModified,
+          clientFingerprint: input.clientFingerprint ?? null,
           source: input.source,
           importSessionId: input.importSessionId,
           tempStorageKey,
@@ -295,17 +324,11 @@ async function reconcileUpload(row: UploadSessionRow): Promise<UploadSessionRow>
     diskBytes = await getAssetStorage().uploadPartSize(row.tempStorageKey);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await getDb()
-      .update(uploadSession)
-      .set({ status: "failed", errorCode: "temporary_file_missing", updatedAt: new Date() })
-      .where(eq(uploadSession.id, row.id));
+    await failUpload(row, "temporary_file_missing");
     throw new UploadServiceError("temporary_file_missing", 409, 0);
   }
   if (diskBytes > row.totalBytes) {
-    await getDb()
-      .update(uploadSession)
-      .set({ status: "failed", errorCode: "temporary_file_oversize", updatedAt: new Date() })
-      .where(eq(uploadSession.id, row.id));
+    await failUpload(row, "temporary_file_oversize");
     throw new UploadServiceError("temporary_file_oversize", 409, row.receivedBytes);
   }
   if (diskBytes === row.receivedBytes) return row;
@@ -315,6 +338,34 @@ async function reconcileUpload(row: UploadSessionRow): Promise<UploadSessionRow>
     .where(eq(uploadSession.id, row.id))
     .returning();
   return updated[0];
+}
+
+async function failUpload(row: UploadSessionRow, errorCode: string): Promise<void> {
+  const now = new Date();
+  getDb().transaction((tx) => {
+    tx.update(uploadSession)
+      .set({ status: "failed", errorCode, updatedAt: now })
+      .where(and(eq(uploadSession.id, row.id), ne(uploadSession.status, "completed")))
+      .run();
+    const item = tx
+      .select({ status: importSessionItem.status })
+      .from(importSessionItem)
+      .where(eq(importSessionItem.uploadSessionId, row.id))
+      .limit(1)
+      .get();
+    if (item && !["completed", "failed", "cancelled"].includes(item.status)) {
+      tx.update(importSessionItem)
+        .set({ status: "failed", errorCode, updatedAt: now })
+        .where(eq(importSessionItem.uploadSessionId, row.id))
+        .run();
+      if (row.importSessionId) {
+        tx.update(importSession)
+          .set({ failedCount: sql`${importSession.failedCount} + 1`, updatedAt: now })
+          .where(eq(importSession.id, row.importSessionId))
+          .run();
+      }
+    }
+  });
 }
 
 async function expireIfNeeded(row: UploadSessionRow): Promise<UploadSessionRow> {
@@ -422,22 +473,53 @@ async function inspectUpload(row: UploadSessionRow): Promise<{
   sha256: string;
   prefix: Buffer;
   bytes: number;
+  safeText: string | null;
+  invalidText: boolean;
 }> {
   const hash = createHash("sha256");
   const prefixChunks: Buffer[] = [];
   let prefixBytes = 0;
   let bytes = 0;
+  const textMime = row.declaredMime === "text/plain" || row.declaredMime === "text/markdown";
+  const decoder = textMime ? new TextDecoder("utf-8", { fatal: true }) : null;
+  let safeText = "";
+  let invalidText = false;
   for await (const value of getAssetStorage().createUploadReadStream(row.tempStorageKey)) {
     const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
     bytes += chunk.byteLength;
     hash.update(chunk);
+    if (decoder) {
+      if (chunk.includes(0)) invalidText = true;
+      try {
+        const decoded = decoder.decode(chunk, { stream: true });
+        if (safeText.length < 256 * 1024) {
+          safeText += decoded.slice(0, 256 * 1024 - safeText.length);
+        }
+      } catch {
+        invalidText = true;
+      }
+    }
     if (prefixBytes < VALIDATION_PREFIX_BYTES) {
       const take = Math.min(chunk.byteLength, VALIDATION_PREFIX_BYTES - prefixBytes);
       prefixChunks.push(chunk.subarray(0, take));
       prefixBytes += take;
     }
   }
-  return { sha256: hash.digest("hex"), prefix: Buffer.concat(prefixChunks), bytes };
+  if (decoder) {
+    try {
+      const tail = decoder.decode();
+      if (safeText.length < 256 * 1024) safeText += tail.slice(0, 256 * 1024 - safeText.length);
+    } catch {
+      invalidText = true;
+    }
+  }
+  return {
+    sha256: hash.digest("hex"),
+    prefix: Buffer.concat(prefixChunks),
+    bytes,
+    safeText: decoder && !invalidText ? safeText : null,
+    invalidText,
+  };
 }
 
 async function resolveMetadata(
@@ -538,6 +620,54 @@ function markImportItemCompleted(
     .run();
 }
 
+async function importDefaults(row: UploadSessionRow): Promise<{
+  title: string | null;
+  occurredAt: Date | null;
+  locationText: string | null;
+  participantPersonIds: string[];
+} | null> {
+  if (!row.importSessionId) return null;
+  const detail = await getImportSessionDetail(row.familyId, row.importSessionId);
+  if (!detail) return null;
+  return {
+    title: detail.session.defaultTitle,
+    occurredAt: detail.session.defaultOccurredAt,
+    locationText: detail.session.defaultLocationText,
+    participantPersonIds: detail.participantPersonIds,
+  };
+}
+
+function applyImportDefaults(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  familyId: string,
+  inboxItemId: string,
+  defaults: Awaited<ReturnType<typeof importDefaults>>,
+  now: Date,
+): void {
+  if (!defaults) return;
+  tx.update(inboxItem)
+    .set({
+      ...(defaults.title ? { draftTitle: defaults.title.slice(0, 100) } : {}),
+      ...(defaults.occurredAt ? { draftOccurredAt: defaults.occurredAt } : {}),
+      ...(defaults.locationText ? { draftLocationText: defaults.locationText } : {}),
+      updatedAt: now,
+    })
+    .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, inboxItemId)))
+    .run();
+  if (defaults.participantPersonIds.length > 0) {
+    tx.insert(inboxItemParticipant)
+      .values(defaults.participantPersonIds.map((personId) => ({
+        id: randomUUID(),
+        inboxItemId,
+        personId,
+        familyId,
+        createdAt: now,
+      })))
+      .onConflictDoNothing()
+      .run();
+  }
+}
+
 async function finalizeExisting(
   row: UploadSessionRow,
   existing: AssetRow,
@@ -547,6 +677,7 @@ async function finalizeExisting(
     throw new UploadServiceError("capture_id_conflict", 409, row.receivedBytes);
   }
   const now = new Date();
+  const defaults = inbox.status === "created" ? await importDefaults(row) : null;
   getDb().transaction((tx) => {
     tx.update(uploadSession)
       .set({
@@ -559,6 +690,7 @@ async function finalizeExisting(
       .where(eq(uploadSession.id, row.id))
       .run();
     markImportItemCompleted(tx, row, existing.id, inbox.item.id, now);
+    applyImportDefaults(tx, row.familyId, inbox.item.id, defaults, now);
   });
   await getAssetStorage().deleteUploadPart(row.tempStorageKey);
   return {
@@ -625,11 +757,12 @@ export async function completeUpload(
       inspected.bytes,
     );
     if (!validation.ok) {
-      await getDb()
-        .update(uploadSession)
-        .set({ status: "failed", errorCode: validation.error, updatedAt: new Date() })
-        .where(eq(uploadSession.id, row.id));
+      await failUpload(row, validation.error);
       throw new UploadServiceError(validation.error, 415, row.receivedBytes);
+    }
+    if (inspected.invalidText) {
+      await failUpload(row, "content_mismatch");
+      throw new UploadServiceError("content_mismatch", 415, row.receivedBytes);
     }
     const existing = await findOriginalBySha256(row.familyId, inspected.sha256);
     if (existing) return finalizeExisting(row, existing);
@@ -671,6 +804,7 @@ export async function completeUpload(
     }
 
     const now = new Date();
+    const defaults = await importDefaults(row);
     try {
       const stored = getDb().transaction((tx) => {
         const assetRow = tx
@@ -719,6 +853,22 @@ export async function completeUpload(
             createdAt: now,
           })
           .run();
+        if (
+          validation.value.type === "document" &&
+          inspected.safeText !== null
+        ) {
+          tx.insert(documentText)
+            .values({
+              id: randomUUID(),
+              familyId: row.familyId,
+              assetId: assetRow.id,
+              text: inspected.safeText,
+              truncated: inspected.bytes > Buffer.byteLength(inspected.safeText, "utf8"),
+              createdAt: now,
+            })
+            .run();
+        }
+        applyImportDefaults(tx, row.familyId, item.id, defaults, now);
         tx.update(uploadSession)
           .set({
             status: "completed",
@@ -828,4 +978,200 @@ export async function cleanupExpiredUploads(
     await withUploadLock(row.id, () => expireUpload(row, now));
   }
   return rows.length;
+}
+
+export type ImportSessionDetail = {
+  session: ImportSessionRow;
+  participantPersonIds: string[];
+  items: Array<{
+    item: typeof importSessionItem.$inferSelect;
+    upload: UploadSessionRow | null;
+  }>;
+};
+
+export async function getImportSessionDetail(
+  familyId: string,
+  importId: string,
+): Promise<ImportSessionDetail | null> {
+  const db = getDb();
+  const sessions = await db
+    .select()
+    .from(importSession)
+    .where(and(eq(importSession.familyId, familyId), eq(importSession.id, importId)))
+    .limit(1);
+  if (!sessions[0]) return null;
+  const [rows, participants] = await Promise.all([
+    db
+      .select({ item: importSessionItem, upload: uploadSession })
+      .from(importSessionItem)
+      .leftJoin(uploadSession, eq(uploadSession.id, importSessionItem.uploadSessionId))
+      .where(
+        and(
+          eq(importSessionItem.familyId, familyId),
+          eq(importSessionItem.importSessionId, importId),
+        ),
+      )
+      .orderBy(asc(importSessionItem.sortOrder)),
+    db
+      .select({ personId: importSessionDefaultParticipant.personId })
+      .from(importSessionDefaultParticipant)
+      .where(
+        and(
+          eq(importSessionDefaultParticipant.familyId, familyId),
+          eq(importSessionDefaultParticipant.importSessionId, importId),
+        ),
+      ),
+  ]);
+  return {
+    session: sessions[0],
+    participantPersonIds: participants.map((row) => row.personId),
+    items: rows,
+  };
+}
+
+type ImportCursor = { createdAtMs: number; id: string };
+
+function decodeImportCursor(cursor: string | null | undefined): ImportCursor | null {
+  if (!cursor) return null;
+  try {
+    const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as ImportCursor;
+    return Number.isSafeInteger(value.createdAtMs) && UUID_PATTERN.test(value.id) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+export async function listImportSessions(
+  familyId: string,
+  options: { cursor?: string | null; limit?: number } = {},
+): Promise<{ sessions: ImportSessionRow[]; nextCursor: string | null }> {
+  const limit = Math.max(1, Math.min(options.limit ?? 50, 100));
+  const cursor = decodeImportCursor(options.cursor);
+  const rows = await getDb()
+    .select()
+    .from(importSession)
+    .where(
+      cursor
+        ? and(
+            eq(importSession.familyId, familyId),
+            or(
+              lt(importSession.createdAt, new Date(cursor.createdAtMs)),
+              and(
+                eq(importSession.createdAt, new Date(cursor.createdAtMs)),
+                lt(importSession.id, cursor.id),
+              ),
+            ),
+          )
+        : eq(importSession.familyId, familyId),
+    )
+    .orderBy(desc(importSession.createdAt), desc(importSession.id))
+    .limit(limit + 1);
+  const hasMore = rows.length > limit;
+  const sessions = rows.slice(0, limit);
+  const last = sessions.at(-1);
+  return {
+    sessions,
+    nextCursor: hasMore && last
+      ? Buffer.from(JSON.stringify({ createdAtMs: last.createdAt.getTime(), id: last.id })).toString("base64url")
+      : null,
+  };
+}
+
+export async function setImportSessionUploading(
+  familyId: string,
+  importId: string,
+  uploading: boolean,
+): Promise<ImportSessionRow> {
+  const current = await getImportSessionDetail(familyId, importId);
+  if (!current) throw new UploadServiceError("not_found", 404);
+  if (["completed", "cancelled"].includes(current.session.status)) {
+    throw new UploadServiceError("import_session_closed", 409);
+  }
+  return getDb()
+    .update(importSession)
+    .set({ status: uploading ? "uploading" : "collecting", updatedAt: new Date() })
+    .where(and(eq(importSession.familyId, familyId), eq(importSession.id, importId)))
+    .returning()
+    .get();
+}
+
+export async function cancelImportSession(
+  familyId: string,
+  importId: string,
+): Promise<ImportSessionRow> {
+  const detail = await getImportSessionDetail(familyId, importId);
+  if (!detail) throw new UploadServiceError("not_found", 404);
+  if (detail.session.status === "completed") return detail.session;
+  const now = new Date();
+  const cancelled = getDb()
+    .update(importSession)
+    .set({ status: "cancelled", updatedAt: now })
+    .where(and(eq(importSession.familyId, familyId), eq(importSession.id, importId)))
+    .returning()
+    .get();
+  for (const row of detail.items) {
+    if (row.upload && row.item.status !== "completed") {
+      await cancelUpload(familyId, row.upload.id);
+    }
+  }
+  return cancelled;
+}
+
+export async function restartUpload(
+  familyId: string,
+  uploadId: string,
+): Promise<UploadSessionRow> {
+  return withUploadLock(uploadId, async () => {
+    const row = await sessionForFamily(familyId, uploadId);
+    if (row.status === "completed") return row;
+    if (ACTIVE_STATUSES.includes(row.status as (typeof ACTIVE_STATUSES)[number])) {
+      return reconcileUpload(row);
+    }
+    if (row.importSessionId) {
+      const parent = await getImportSessionDetail(familyId, row.importSessionId);
+      if (!parent || parent.session.status === "cancelled" || parent.session.status === "completed") {
+        throw new UploadServiceError("import_session_closed", 409);
+      }
+    }
+    await getAssetStorage().deleteUploadPart(row.tempStorageKey);
+    const key = await getAssetStorage().createUploadPart(row.id);
+    if (key !== row.tempStorageKey) throw new UploadServiceError("temporary_storage_error", 500);
+    const now = new Date();
+    return getDb().transaction((tx) => {
+      const updated = tx
+        .update(uploadSession)
+        .set({
+          status: "created",
+          receivedBytes: 0,
+          errorCode: null,
+          expiresAt: new Date(now.getTime() + UPLOAD_TTL_MS),
+          updatedAt: now,
+        })
+        .where(eq(uploadSession.id, row.id))
+        .returning()
+        .get();
+      const item = tx
+        .select({ status: importSessionItem.status })
+        .from(importSessionItem)
+        .where(eq(importSessionItem.uploadSessionId, row.id))
+        .limit(1)
+        .get();
+      if (item && item.status !== "completed") {
+        tx.update(importSessionItem)
+          .set({ status: "pending", errorCode: null, updatedAt: now })
+          .where(eq(importSessionItem.uploadSessionId, row.id))
+          .run();
+        if (item.status === "failed" && row.importSessionId) {
+          tx.update(importSession)
+            .set({ failedCount: sql`max(0, ${importSession.failedCount} - 1)`, updatedAt: now })
+            .where(eq(importSession.id, row.importSessionId))
+            .run();
+        }
+      }
+      return updated;
+    });
+  });
 }

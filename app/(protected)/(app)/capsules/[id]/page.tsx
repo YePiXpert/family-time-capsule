@@ -228,6 +228,7 @@ export default async function CapsuleDetailPage({
                       mimeType={asset.mimeType}
                       type={asset.type}
                       durationMs={asset.durationMs}
+                      bytes={asset.bytes}
                     />
                   ))}
                 </MediaGrid>

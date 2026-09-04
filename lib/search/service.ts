@@ -8,7 +8,7 @@ import "server-only";
 
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
-import { asset as assetTable } from "@/db/schema/asset";
+import { asset as assetTable, documentText as documentTextTable } from "@/db/schema/asset";
 import { contribution as contributionTable } from "@/db/schema/contribution";
 import { fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset, memoryEventParticipant } from "@/db/schema/memory";
@@ -37,7 +37,8 @@ export type SearchEntityType =
   | "fact"
   | "contribution"
   | "transcript"
-  | "story";
+  | "story"
+  | "document";
 
 type IndexRow = {
   original_text: string;
@@ -194,6 +195,36 @@ export function indexStory(row: {
   ]);
 }
 
+export function indexDocumentAssetsForEvent(
+  familyId: string,
+  eventId: string,
+  assetIds: string[],
+): void {
+  const db = getDb();
+  for (const assetId of assetIds) removeFromSearchIndex("document", assetId);
+  if (assetIds.length === 0) return;
+  const rows = db
+    .select({ id: documentTextTable.assetId, text: documentTextTable.text })
+    .from(documentTextTable)
+    .where(
+      and(
+        eq(documentTextTable.familyId, familyId),
+        inArray(documentTextTable.assetId, assetIds),
+      ),
+    )
+    .all();
+  insertIndexRows(db, rows.map((row) => ({
+    original_text: row.text,
+    family_id: familyId,
+    entity_type: "document" as const,
+    entity_id: row.id,
+    event_id: eventId,
+    visibility: "family",
+    author_person_id: null,
+    child_person_id: null,
+  })));
+}
+
 // ---- 全量重建 ----
 
 export function rebuildSearchIndex(): {
@@ -302,6 +333,29 @@ export function rebuildSearchIndex(): {
     ]);
   }
 
+  const documentRows = db
+    .select({
+      assetId: documentTextTable.assetId,
+      text: documentTextTable.text,
+      familyId: documentTextTable.familyId,
+      eventId: memoryEventAsset.memoryEventId,
+    })
+    .from(documentTextTable)
+    .innerJoin(memoryEventAsset, eq(memoryEventAsset.assetId, documentTextTable.assetId))
+    .innerJoin(memoryEvent, eq(memoryEvent.id, memoryEventAsset.memoryEventId))
+    .where(isNull(memoryEvent.deletedAt))
+    .all();
+  insertIndexRows(db, documentRows.map((row) => ({
+    original_text: row.text,
+    family_id: row.familyId,
+    entity_type: "document" as const,
+    entity_id: row.assetId,
+    event_id: row.eventId,
+    visibility: "family",
+    author_person_id: null,
+    child_person_id: null,
+  })));
+
   return {
     events: events.length,
     facts: confirmedFacts.length,
@@ -318,7 +372,7 @@ export type SearchParams = {
   dateFrom?: string; // YYYY-MM-DD（家庭时区外的粗粒度过滤按 UTC 日界）
   dateTo?: string;
   tag?: string;
-  mediaType?: "image" | "video" | "audio";
+  mediaType?: "image" | "video" | "audio" | "document";
   limit?: number;
 };
 
@@ -336,6 +390,7 @@ export type SearchResult = {
   contributions: Array<{ id: string; eventId: string; text: string; authorName: string | null }>;
   transcripts: Array<{ id: string; eventId: string; text: string }>;
   stories: Array<{ id: string; title: string; snippet: string }>;
+  documents: Array<{ id: string; eventId: string; filename: string; snippet: string }>;
   total: number;
 };
 
@@ -365,7 +420,7 @@ export function searchFamily(
   const db = getDb();
   const q = params.q.trim();
   if (!q) {
-    return { events: [], facts: [], contributions: [], transcripts: [], stories: [], total: 0 };
+    return { events: [], facts: [], contributions: [], transcripts: [], stories: [], documents: [], total: 0 };
   }
 
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
@@ -382,7 +437,7 @@ export function searchFamily(
   } else {
     const expr = ftsQueryExpression(q);
     if (!expr) {
-      return { events: [], facts: [], contributions: [], transcripts: [], stories: [], total: 0 };
+      return { events: [], facts: [], contributions: [], transcripts: [], stories: [], documents: [], total: 0 };
     }
     raw = db
       .all(
@@ -519,6 +574,7 @@ export function searchFamily(
     contributions: [],
     transcripts: [],
     stories: [],
+    documents: [],
     total: 0,
   };
 
@@ -613,6 +669,29 @@ export function searchFamily(
           }
         }
         break;
+      case "document":
+        if (result.documents.length < limit && hit.event_id) {
+          const document = db
+            .select({ filename: assetTable.originalFilename })
+            .from(assetTable)
+            .where(
+              and(
+                eq(assetTable.familyId, context.familyId),
+                eq(assetTable.id, hit.entity_id),
+                eq(assetTable.type, "document"),
+              ),
+            )
+            .get();
+          if (document) {
+            result.documents.push({
+              id: hit.entity_id,
+              eventId: hit.event_id,
+              filename: document.filename,
+              snippet,
+            });
+          }
+        }
+        break;
     }
   }
   result.total =
@@ -621,6 +700,7 @@ export function searchFamily(
     result.contributions.length +
     result.transcripts.length +
     result.stories.length;
+  result.total += result.documents.length;
   return result;
 }
 

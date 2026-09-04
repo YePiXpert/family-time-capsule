@@ -33,6 +33,7 @@ export default async function MorePage() {
         <SectionHeader title="档案管理" />
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {canReadBooks ? <QuickAction href="/books" icon="book" label="书籍与备份" description="年度成书、完整导出与远程备份" /> : null}
+          <QuickAction href="/imports" icon="upload" label="批量导入" description="查看并继续持久化导入批次" />
           <QuickAction href="/settings" icon="settings" label="设置" description="家庭、账号与高级设置" />
           {canWriteEvents ? <QuickAction href="/trash" icon="trash" label="回收站" description="恢复或清除已删除内容" /> : null}
         </div>

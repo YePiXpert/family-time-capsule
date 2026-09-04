@@ -16,6 +16,7 @@ const MEDIA_TYPES = [
   { value: "image", label: "照片" },
   { value: "video", label: "视频" },
   { value: "audio", label: "音频" },
+  { value: "document", label: "文档" },
 ] as const;
 
 export default async function SearchPage({
@@ -34,8 +35,8 @@ export default async function SearchPage({
   const dateTo = first("to") || undefined;
   const tag = first("tag") || undefined;
   const mediaType =
-    first("media") === "image" || first("media") === "video" || first("media") === "audio"
-      ? (first("media") as "image" | "video" | "audio")
+    first("media") === "image" || first("media") === "video" || first("media") === "audio" || first("media") === "document"
+      ? (first("media") as "image" | "video" | "audio" | "document")
       : undefined;
 
   const [people, tags] = await Promise.all([
@@ -119,7 +120,8 @@ export default async function SearchPage({
           <p className="text-sm text-foreground/60">
             共 {result.total} 条结果（事件 {result.events.length} · 确认事实{" "}
             {result.facts.length} · 家人讲述 {result.contributions.length} · 转录{" "}
-            {result.transcripts.length} · 故事 {result.stories.length}）
+            {result.transcripts.length} · 故事 {result.stories.length} · 文档{" "}
+            {result.documents.length}）
           </p>
 
           {result.events.length > 0 && (
@@ -194,6 +196,22 @@ export default async function SearchPage({
                       {st.title}
                     </Link>
                     <p className="mt-1 text-xs leading-5 text-foreground/50">{st.snippet}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.documents.length > 0 && (
+            <div>
+              <h2 className="text-base font-medium">文档正文</h2>
+              <ul className="mt-2 flex flex-col gap-2">
+                {result.documents.map((document) => (
+                  <li key={document.id} className="rounded-lg border border-foreground/10 px-4 py-2.5 text-sm">
+                    <Link href={`/memories/${document.eventId}`} className="font-medium hover:text-accent">
+                      {document.filename}
+                    </Link>
+                    <p className="mt-1 text-xs leading-5 text-foreground/50">{document.snippet}</p>
                   </li>
                 ))}
               </ul>

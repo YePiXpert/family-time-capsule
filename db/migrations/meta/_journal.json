@@ -225,6 +225,13 @@
       "when": 1788527636120,
       "tag": "0031_durable_import_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1788528826285,
+      "tag": "0032_batch_import_documents",
+      "breakpoints": true
     }
   ]
 }

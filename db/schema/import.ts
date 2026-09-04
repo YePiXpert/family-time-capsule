@@ -11,6 +11,7 @@ import { asset } from "./asset";
 import { user } from "./auth";
 import { family } from "./family";
 import { inboxItem } from "./inbox";
+import { person } from "./family";
 
 const createdAtColumn = () =>
   integer("created_at", { mode: "timestamp" })
@@ -64,6 +65,27 @@ export const importSession = sqliteTable(
   ],
 );
 
+export const importSessionDefaultParticipant = sqliteTable(
+  "import_session_default_participant",
+  {
+    id: text("id").primaryKey(),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    importSessionId: text("import_session_id")
+      .notNull()
+      .references(() => importSession.id, { onDelete: "cascade" }),
+    personId: text("person_id")
+      .notNull()
+      .references(() => person.id, { onDelete: "cascade" }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("import_default_participant_uidx").on(t.importSessionId, t.personId),
+    index("import_default_participant_family_idx").on(t.familyId, t.importSessionId),
+  ],
+);
+
 /** Server-owned transfer state. The storage key is generated, never supplied by a client. */
 export const uploadSession = sqliteTable(
   "upload_session",
@@ -79,6 +101,8 @@ export const uploadSession = sqliteTable(
     totalBytes: integer("total_bytes").notNull(),
     receivedBytes: integer("received_bytes").notNull().default(0),
     lastModified: integer("last_modified", { mode: "timestamp" }),
+    // Bounded SHA-256 over first/last slices, used only to re-match a local File.
+    clientFingerprint: text("client_fingerprint"),
     // web | native | share | guest
     source: text("source").notNull(),
     importSessionId: text("import_session_id").references(() => importSession.id, {

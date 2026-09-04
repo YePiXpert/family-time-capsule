@@ -17,13 +17,16 @@ afterAll(async () => {
 });
 
 const { getDb } = await import("@/db");
-const { asset } = await import("@/db/schema/asset");
+const { asset, documentText } = await import("@/db/schema/asset");
 const { session, user } = await import("@/db/schema/auth");
 const { family, person } = await import("@/db/schema/family");
 const { importSession, importSessionItem, uploadSession } = await import("@/db/schema/import");
-const { inboxItem } = await import("@/db/schema/inbox");
+const { inboxItem, inboxItemParticipant } = await import("@/db/schema/inbox");
 const { performSetup } = await import("@/lib/auth/setup");
 const { completeOnboarding } = await import("@/lib/family/service");
+const { confirmInboxEntry } = await import("@/lib/memories/service");
+const { getInboxEntry } = await import("@/lib/inbox/service");
+const { searchFamily } = await import("@/lib/search/service");
 const { getAssetStorage } = await import("@/lib/assets/storage");
 const { cancelUpload, cleanupExpiredUploads, createImportSession } = await import(
   "@/lib/imports/service"
@@ -368,6 +371,71 @@ describe("durable resumable upload protocol", () => {
     expect(
       (await getDb().select().from(importSession).where(eq(importSession.id, batch.id)))[0],
     ).toMatchObject({ totalCount: 1, completedCount: 1, failedCount: 0, status: "reviewing" });
+  });
+
+  it("applies batch defaults and indexes only safely extracted text after Inbox confirmation", async () => {
+    const boundAdmin = (
+      await getDb().select().from(user).where(eq(user.id, admin.id))
+    )[0];
+    const batch = await createImportSession({
+      familyId,
+      createdByUserId: admin.id,
+      source: "web",
+      defaultTitle: "家庭档案文字",
+      defaultOccurredAt: new Date("2026-08-08T08:08:00Z"),
+      defaultLocationText: "书房",
+      participantPersonIds: [boundAdmin.personId!],
+    });
+    const text = Buffer.from("外婆留下的安全文档关键词：桂花糕。", "utf8");
+    const created = await createUpload({
+      bytes: text.byteLength,
+      filename: "grandma.txt",
+      mime: "text/plain",
+      importSessionId: batch.id,
+    });
+    await patch(created.body.uploadId as string, 0, text);
+    const completed = await (await complete(created.body.uploadId as string)).json();
+    const extracted = (
+      await getDb().select().from(documentText).where(eq(documentText.assetId, completed.assetId))
+    )[0];
+    expect(extracted).toMatchObject({ text: text.toString("utf8"), truncated: false });
+    const entry = await getInboxEntry(familyId, completed.inboxItemId);
+    expect(entry?.item).toMatchObject({
+      draftTitle: "家庭档案文字",
+      draftLocationText: "书房",
+    });
+    expect(entry?.item.draftOccurredAt?.toISOString()).toBe("2026-08-08T08:08:00.000Z");
+    expect(
+      await getDb()
+        .select()
+        .from(inboxItemParticipant)
+        .where(eq(inboxItemParticipant.inboxItemId, completed.inboxItemId)),
+    ).toHaveLength(1);
+    expect(searchFamily({
+      familyId,
+      userId: admin.id,
+      userName: "爸爸",
+      role: "admin",
+      personId: boundAdmin.personId,
+      isGuardian: false,
+      accountEnabled: true,
+      familyTimezone: "Asia/Shanghai",
+      childLaterUnlockAge: 18,
+    }, { q: "桂花糕" }).documents).toHaveLength(0);
+    const confirmed = await confirmInboxEntry(familyId, entry!);
+    expect(confirmed.ok).toBe(true);
+    const hits = searchFamily({
+      familyId,
+      userId: admin.id,
+      userName: "爸爸",
+      role: "admin",
+      personId: boundAdmin.personId,
+      isGuardian: false,
+      accountEnabled: true,
+      familyTimezone: "Asia/Shanghai",
+      childLaterUnlockAge: 18,
+    }, { q: "桂花糕" });
+    expect(hits.documents).toMatchObject([{ id: completed.assetId, filename: "grandma.txt" }]);
   });
 
   it("recovers both directions of database/disk offset drift", async () => {

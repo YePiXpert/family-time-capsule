@@ -5,6 +5,7 @@ import { listPeople } from "@/lib/family/service";
 import { PageHeader } from "@/components/page-header";
 import { InlineNotice } from "@/components/inline-notice";
 import { CaptureEditor } from "./capture-editor";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export default async function CapturePage() {
         eyebrow="Capture"
         title="记录这一刻"
         description="一句话、一张照片或一段声音都够。原件会先安全进入收件箱，发生时间与导入时间始终分开保存。"
+        actions={canCapture ? <Link href="/imports" className="ui-button-secondary">批量导入</Link> : undefined}
       />
 
       {canCapture ? (

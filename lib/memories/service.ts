@@ -28,7 +28,7 @@ import {
 } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
 import type { AssetRow } from "@/lib/assets/service";
-import { indexMemoryEvent } from "@/lib/search/service";
+import { indexDocumentAssetsForEvent, indexMemoryEvent } from "@/lib/search/service";
 import { getInboxEntry, type InboxEntry } from "@/lib/inbox/service";
 
 /**
@@ -517,6 +517,7 @@ export async function confirmInboxEntry(
   });
 
   indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
+  indexDocumentAssetsForEvent(familyId, eventId, assetIds);
   return { ok: true, eventId };
 }
 
@@ -660,6 +661,7 @@ export async function mergeInboxEntries(
   });
 
   indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
+  indexDocumentAssetsForEvent(familyId, eventId, assetIds);
   return { ok: true, eventId };
 }
 

@@ -19,6 +19,7 @@ export async function POST(request: Request) {
     const source = body.source;
     const importSessionId = body.importSessionId;
     const lastModified = body.lastModified;
+    const clientFingerprint = body.clientFingerprint;
     if (
       !UUID_PATTERN.test(captureId) ||
       filename.length < 1 || filename.length > 200 ||
@@ -26,6 +27,8 @@ export async function POST(request: Request) {
       !["web", "native", "share"].includes(String(source)) ||
       !(importSessionId === null || (typeof importSessionId === "string" && UUID_PATTERN.test(importSessionId))) ||
       !(lastModified === null || (typeof lastModified === "number" && Number.isSafeInteger(lastModified) && lastModified > 0))
+      || !(clientFingerprint === undefined || clientFingerprint === null ||
+        (typeof clientFingerprint === "string" && /^[0-9a-f]{64}$/u.test(clientFingerprint)))
     ) {
       throw new UploadServiceError("invalid_input", 400);
     }
@@ -39,6 +42,7 @@ export async function POST(request: Request) {
       lastModified: lastModified === null ? null : new Date(lastModified as number),
       source: source as "web" | "native" | "share",
       importSessionId: importSessionId as string | null,
+      clientFingerprint: typeof clientFingerprint === "string" ? clientFingerprint : null,
     });
     const { session } = result;
     return uploadJson(

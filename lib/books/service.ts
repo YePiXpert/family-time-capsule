@@ -30,7 +30,7 @@ async function assetToPageImage(
   assetId: string,
 ): Promise<PageImage | null> {
   const asset = await getAsset(familyId, assetId);
-  if (!asset) return null;
+  if (!asset || asset.type !== "image") return null;
   const db = getDb();
   const { asset: assetTable } = await import("@/db/schema/asset");
   const { desc } = await import("drizzle-orm");

@@ -100,6 +100,13 @@ export function InboxCard({
             videoClassName={compact ? "aspect-video w-full object-cover" : "h-40 w-auto shrink-0 rounded-lg border border-line"}
           />
         )}
+        {cover?.type === "document" && (
+          <div className={compact ? "m-4 rounded-xl border border-line p-4" : "w-48 shrink-0 rounded-xl border border-line p-4"}>
+            <p className="break-words text-sm font-medium">{cover.originalFilename}</p>
+            <p className="mt-1 text-xs text-muted">{cover.mimeType} · {(cover.bytes / 1024).toFixed(1)} KB</p>
+            <a href={`/api/media/${cover.id}?download=1`} className="mt-3 inline-block text-xs underline underline-offset-2">下载原件</a>
+          </div>
+        )}
         <div className={`flex min-w-0 flex-1 flex-col gap-1.5 text-sm ${compact ? "p-4 pt-3" : ""}`}>
           <div className="flex flex-wrap items-baseline gap-x-3">
             <span className="truncate font-medium" title={cover?.originalFilename}>

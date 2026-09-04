@@ -36,7 +36,7 @@ export function filterNavigationByCapabilities(
   return items.filter((item) => allowed.has(item.capability));
 }
 
-const MORE_PREFIXES = ["/more", "/search", "/family", "/stories", "/requests", "/capsules", "/books", "/settings", "/trash"];
+const MORE_PREFIXES = ["/more", "/search", "/family", "/stories", "/requests", "/capsules", "/books", "/imports", "/settings", "/trash"];
 
 export function isNavigationItemActive(pathname: string, href: string, mobile = false): boolean {
   if (href === "/") return pathname === "/";

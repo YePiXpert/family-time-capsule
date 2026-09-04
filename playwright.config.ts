@@ -23,6 +23,7 @@ const specs = [
   { name: "rbac", files: ["rbac.spec.ts"], port: 3120 },
   { name: "invitations", files: ["invitations.spec.ts"], port: 3121 },
   { name: "inbox-draft", files: ["inbox-draft.spec.ts"], port: 3123 },
+  { name: "imports", files: ["imports.spec.ts"], port: 3124 },
   {
     name: "ai",
     files: ["ai.spec.ts"],

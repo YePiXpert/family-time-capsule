@@ -144,6 +144,7 @@ export function MediaBlock({
   mimeType,
   type,
   durationMs,
+  bytes,
   thumbAssetId,
 }: {
   assetId: string;
@@ -151,6 +152,7 @@ export function MediaBlock({
   mimeType: string;
   type: string;
   durationMs?: number | null;
+  bytes?: number | null;
   thumbAssetId?: string | null;
 }) {
   const [videoFailed, setVideoFailed] = useState(false);
@@ -185,22 +187,37 @@ export function MediaBlock({
       ) : type === "audio" ? (
         <audio controls preload="metadata" src={`/api/media/${assetId}`} className="w-full" />
       ) : (
-        <a
-          href={`/api/media/${assetId}?download=1`}
-          className="block rounded-lg border border-foreground/10 px-4 py-3 text-sm underline underline-offset-2"
-        >
-          {filename}
-        </a>
+        <div className="rounded-lg border border-foreground/10 px-4 py-3 text-sm">
+          <p className="font-medium">{filename}</p>
+          <p className="mt-1 text-xs text-muted">
+            {mimeType} {bytes ? `· ${(bytes / 1024).toFixed(bytes >= 1024 * 1024 ? 0 : 1)} KB` : ""}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {mimeType === "application/pdf" ? (
+              <a href={`/api/media/${assetId}`} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                在浏览器中打开 PDF
+              </a>
+            ) : null}
+            {(mimeType === "text/plain" || mimeType === "text/markdown") ? (
+              <a href={`/api/media/${assetId}/text-preview`} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                安全文本预览
+              </a>
+            ) : null}
+            <a href={`/api/media/${assetId}?download=1`} className="underline underline-offset-2">
+              下载原件
+            </a>
+          </div>
+        </div>
       )}
       <p className="mt-1 flex items-center gap-2 truncate text-xs text-foreground/40" title={filename}>
         <span className="truncate">{filename}</span>
         {durationMs ? <span>· {(durationMs / 1000).toFixed(1)} 秒</span> : null}
-        <a
+        {type !== "document" ? <a
           href={`/api/media/${assetId}?download=1`}
           className="shrink-0 underline underline-offset-2 hover:text-accent"
         >
           下载原件
-        </a>
+        </a> : null}
       </p>
     </div>
   );

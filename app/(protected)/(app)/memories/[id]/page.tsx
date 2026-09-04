@@ -306,6 +306,7 @@ export default async function MemoryEventPage({
                 mimeType={asset.mimeType}
                 type={asset.type}
                 durationMs={asset.durationMs}
+                bytes={asset.bytes}
                 thumbAssetId={thumbMap.get(asset.id)?.id ?? null}
               />
             ))}
