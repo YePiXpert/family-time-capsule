@@ -65,6 +65,7 @@ export class UploadServiceError extends Error {
 }
 
 export type CreateImportSessionInput = {
+  clientSessionId?: string;
   familyId: string;
   createdByUserId: string | null;
   source: "web" | "native" | "share" | "guest";
@@ -78,7 +79,10 @@ export async function createImportSession(
   input: CreateImportSessionInput,
 ): Promise<ImportSessionRow> {
   const now = new Date();
-  const id = randomUUID();
+  const id = input.clientSessionId ?? randomUUID();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) {
+    throw new UploadServiceError("invalid_session_id", 400);
+  }
   const participantIds = [...new Set(input.participantPersonIds ?? [])];
   if (participantIds.length > 50) throw new UploadServiceError("invalid_participants", 400);
   if (participantIds.length > 0) {
@@ -91,6 +95,23 @@ export async function createImportSession(
     }
   }
   return getDb().transaction((tx) => {
+    const existing = tx.select().from(importSession).where(eq(importSession.id, id)).get();
+    if (existing) {
+      if (existing.familyId !== input.familyId || existing.createdByUserId !== input.createdByUserId) {
+        throw new UploadServiceError("not_found", 404);
+      }
+      const existingParticipants = tx.select({ id: importSessionDefaultParticipant.personId })
+        .from(importSessionDefaultParticipant).where(eq(importSessionDefaultParticipant.importSessionId, id)).all()
+        .map((row) => row.id).sort();
+      if (existing.source !== input.source ||
+        existing.defaultTitle !== (input.defaultTitle?.trim().slice(0, 200) || null) ||
+        existing.defaultLocationText !== (input.defaultLocationText?.trim().slice(0, 200) || null) ||
+        (existing.defaultOccurredAt?.getTime() ?? null) !== (input.defaultOccurredAt ? Math.floor(input.defaultOccurredAt.getTime() / 1000) * 1000 : null) ||
+        JSON.stringify(existingParticipants) !== JSON.stringify([...participantIds].sort())) {
+        throw new UploadServiceError("import_session_conflict", 409);
+      }
+      return existing;
+    }
     const session = tx.insert(importSession).values({
       id,
       familyId: input.familyId,
@@ -118,7 +139,7 @@ export async function createImportSession(
       ).run();
     }
     return session;
-  });
+  }, { behavior: "immediate" });
 }
 
 export type CreateUploadInput = {

@@ -180,4 +180,9 @@ created → receiving → completing → completed
   document 文本在恢复后的重建、原生列表后续分页与文档展示、超过 50 个事件的周回顾及周记唯一性。
   这些是代码与自动化缺口，不能只归入真机人工验收。
 
+批次同步接口基础：`POST /api/imports` 可选 `clientSessionId`（设备生成的 UUID）。同一家庭、
+同一创建者和同一批次声明的重试返回原会话，不增加记录；其他家庭/创建者统一 404，
+来源、默认时间地点标题或参与人不一致返回 409。此接口能力已回归验证，原生 outbox 的
+批次关联上传及旧上传兼容接管仍待完成，不能据此宣称原生批次已完整进入 portable archive。
+
 最终 Definition of Done 尚未全部满足；系统分享、Files 和通知的真机记录仍未执行。

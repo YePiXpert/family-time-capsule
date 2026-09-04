@@ -32,6 +32,7 @@ const { cancelUpload, cleanupExpiredUploads, createImportSession } = await impor
   "@/lib/imports/service"
 );
 const { POST: createPost } = await import("@/app/api/uploads/route");
+const { POST: createImportPost } = await import("@/app/api/imports/route");
 const { HEAD: uploadHead, PATCH: uploadPatch } = await import(
   "@/app/api/uploads/[id]/route"
 );
@@ -168,6 +169,36 @@ async function complete(uploadId: string, token = adminToken) {
 }
 
 describe("durable resumable upload protocol", () => {
+  it("keeps native batch retry authorization and HTTP cache isolation", async () => {
+    const id = randomUUID();
+    const request = (token: string, clientSessionId: string = id) => new Request("http://localhost/api/imports", {
+      method: "POST", headers: auth(token, { "content-type": "application/json" }),
+      body: JSON.stringify({ clientSessionId, source: "native" }),
+    });
+    const first = await createImportPost(request(adminToken));
+    expect(first.status).toBe(201);
+    expect(first.headers.get("cache-control")).toBe("private, no-store");
+    expect(await first.json()).toMatchObject({ id });
+    expect(await (await createImportPost(request(adminToken))).json()).toMatchObject({ id });
+    expect((await createImportPost(request(foreignToken))).status).toBe(404);
+    expect((await createImportPost(request(viewerToken))).status).toBe(403);
+    expect((await createImportPost(request(adminToken, "../invalid"))).status).toBe(400);
+  });
+
+  it("creates one native batch under concurrent UUID retries and rejects conflicting ownership", async () => {
+    const input = {
+      clientSessionId: randomUUID(), familyId, createdByUserId: admin.id,
+      source: "native" as const, defaultTitle: "本机批次",
+    };
+    const sessions = await Promise.all(Array.from({ length: 8 }, () => createImportSession(input)));
+    expect(new Set(sessions.map((row) => row.id))).toEqual(new Set([input.clientSessionId]));
+    expect(getDb().select().from(importSession).where(eq(importSession.id, input.clientSessionId)).all()).toHaveLength(1);
+    await expect(createImportSession({ ...input, familyId: foreignFamilyId })).rejects.toMatchObject({ status: 404 });
+    await expect(createImportSession({ ...input, createdByUserId: randomUUID() })).rejects.toMatchObject({ status: 404 });
+    await expect(createImportSession({ ...input, source: "share" })).rejects.toMatchObject({ status: 409 });
+    await expect(createImportSession({ ...input, defaultTitle: "另一个批次" })).rejects.toMatchObject({ status: 409 });
+  });
+
   it("rejects symlinked upload parents and leaves without touching their targets", async () => {
     const { LocalFilesystemStorage } = await import("@/lib/assets/storage");
     const root = mkdtempSync(path.join(tmpdir(), "ftc-upload-links-"));

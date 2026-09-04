@@ -39,6 +39,10 @@ export async function POST(request: Request) {
       throw new UploadServiceError("invalid_input", 400);
     }
     const title = optionalString(body, "defaultTitle", 200);
+    const clientSessionId = optionalString(body, "clientSessionId", 36);
+    if (clientSessionId && !UUID_PATTERN.test(clientSessionId)) {
+      throw new UploadServiceError("invalid_session_id", 400);
+    }
     const location = optionalString(body, "defaultLocationText", 200);
     const participantPersonIds = optionalStringArray(body, "participantPersonIds", 50) ?? [];
     if (participantPersonIds.some((id) => !UUID_PATTERN.test(id))) {
@@ -48,6 +52,7 @@ export async function POST(request: Request) {
     if (!family) throw new UploadServiceError("not_found", 404);
     const occurredAt = optionalFamilyWallDate(body, "defaultOccurredAt", family.timezone);
     const session = await createImportSession({
+      clientSessionId: clientSessionId ?? undefined,
       familyId: authorization.context.familyId,
       createdByUserId: authorization.context.userId,
       source: source as "web" | "native" | "share",

@@ -104,7 +104,7 @@ npm run dev            # http://localhost:3000
 | --- | --- |
 | `npm run dev` | 开发服务器 |
 | `npm run lint` / `npm run typecheck` | 静态检查 |
-| `npm test` | Vitest 单元 + 集成测试（531 个） |
+| `npm test` | Vitest 单元 + 集成测试（533 个） |
 | `npm run test:e2e` | 39 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
 | `npm run verify:export <zip>` | 校验导出 ZIP 的 manifest 与全部原件 SHA-256 |
 
