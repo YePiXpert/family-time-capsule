@@ -4,12 +4,29 @@
 
 ## 1.1.0-alpha.1 — Capture Anywhere & Family Rhythm（开发中）
 
+- 新增顺序式 `/api/uploads` 续传协议与关系化 `UploadSession` / `ImportSession` / item 模型；
+  offset 冲突、重复 chunk、重启磁盘对账、幂等 complete、限额和有界过期清理均有自动化覆盖。
+- Web 新增三并发持久批量导入中心，支持暂停、恢复、取消、失败重试和刷新重选；PDF、TXT、
+  Markdown、RTF、DOCX 作为安全 document Asset 进入 Inbox、MemoryEvent、搜索、导出与恢复。
+- 原生端新增 Android SEND/SEND_MULTIPLE、正式 iOS Share Extension + App Group 及
+  Files/iCloud/DocumentsProvider 导入；分享项先复制到私有存储，离线/无服务器也能持久排队。
+- 通用家庭投递箱复用 Contribution Request 的 256-bit token hash、过期/撤销/限流模型；匿名
+  多文件/录音/文字形成 guest ImportSession bundle，始终先进入 Inbox，访客没有读取能力。
+- People、Stories、Capsules、Requests、Portals 和 ImportSessions 获得原生页面、最小移动 API、
+  capability 检查、cursor 分页与独立离线缓存；未到期胶囊内容不通过移动 API 泄露。
 - 新增按家庭时区和自定义周开始日唯一创建的 `ReviewPeriod`，Web 与原生端提供整理素材、选择
   已确认重点、补家人声音和生成周记草稿的四步回顾；无事件周也可完成和重开。
 - 无 AI 路径使用真实事件标题、日期、人物、地点和原话组装 Story，并保存逐段来源。显式 AI
   路径继续要求现有 capability/consent，只优化未编辑草稿表达、逐字保留引文，不自动发布。
 - 原生端用 Expo Notifications 调度可完全关闭的一次性本地提醒；仅用户主动开启时请求权限，
   锁屏固定通用文案，周期完成、时区/偏好变化和 App 重启时取消或重排。
+- portable archive v1 增量加入 Import/Portal/Review 八份关系文件和家庭周设置；导出流式重验
+  原件，恢复写入前验证完整关系图，document SHA 保持不变，入口丢弃 token 并强制 closed，
+  旧 rc.4 归档按安全默认值原地升级。移动生产依赖审计通过（0 vulnerabilities）。
+- 本地发布门禁：76 files / 525 个 Web Vitest、38 个 Playwright、6 个生产灾难恢复 roundtrip、
+  8 files / 44 个移动端测试；Next production build、Expo Doctor 21/21、双平台 Hermes export、
+  500 MiB 生成流续传峰值 RSS 增量 0.1 MiB、Docker app/worker health 与 volume down/up 均通过。
+  系统分享、Files/iCloud 和锁屏通知仍没有真实设备证据，本版本不声明 stable。
 
 ## 1.0.0-rc.4 — Cross-device correctness（2026-09-04）
 

@@ -21,6 +21,14 @@ family-time-capsule-export/
 ├── memories.json          MemoryEvent 数组（含 assetIds / participantPersonIds / tags 关系）
 ├── inbox-items.json       InboxItem 全量数组（含所有状态与完整原始文字）
 ├── inbox-item-assets.json InboxItem ↔ Asset 关联行全量数组
+├── import-sessions.json / import-session-default-participants.json / import-session-items.json
+│                           耐久导入批次、默认人物与逐项最终关系
+├── contribution-requests.json / contribution-request-submissions.json
+│                           口述问题/投递箱配置与普通请求提交关系（不含 token）
+├── contribution-portal-submissions.json
+│                           访客投递 bundle ↔ guest ImportSession
+├── review-periods.json / review-period-events.json
+│                           每周回顾周期与人工选择的重点事件
 ├── contributions.json     Contribution 数组（按家人的独立讲述）
 ├── facts.json             Fact 数组（已确认/否决的事实）
 ├── fact-sources.json      Fact 来源关联数组（每条 fact 必须有来源）
@@ -38,20 +46,21 @@ family-time-capsule-export/
 
 空目录以 `.keep` 占位，保证「没有内容的目录也存在」。
 
-认证与临时 capability 不属于家庭档案，明确不导出：`user`、`account`、`session`、
+认证、临时传输与 capability 不属于家庭档案，明确不导出：`user`、`account`、`session`、
 `verification`、`rate_limit`、`family_invitation`、邀请 token/hash/claim、密码哈希与
-setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立账号与 Person 绑定。
+setup token、`UploadSession`、临时上传文件、Share Extension 暂存与设备通知状态均不进入 ZIP。
+恢复后管理员通过新的邀请重新建立账号与 Person 绑定。
 
 ## manifest.json
 
 ```jsonc
 {
   "exportVersion": 1,
-  "appVersion": "0.1.0",          // 产生导出的应用版本（package.json version）
+  "appVersion": "1.1.0-alpha.1",  // 产生导出的应用版本（package.json version）
   "exportedAt": "2026-08-29T12:00:00.000Z",
   "familyId": "<uuid>",
   "familyName": "我们一家",
-  "fileCount": 19,                 // 固定 12 个非媒体文件 + 7 个原件（不含 .keep）
+  "fileCount": 32,                 // 固定 25 个非媒体文件 + 7 个原件（不含 .keep）
   "assetCount": 7,
   "assets": [
     {
@@ -78,9 +87,9 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 规则：
 
 - `assets` 只包含**原件**（derivativeType=null）；衍生物可再生，不入档。
-- 当前格式固定包含 12 个非媒体文件：manifest、family、people、memories、
-  inbox-items、inbox-item-assets、contributions、facts、fact-sources、transcripts、
-  capsules、timeline；因此 `fileCount = assetCount + 12`，`.keep` 不计数。
+- 1.1 当前格式固定包含上图 25 个非媒体文件；因此
+  `fileCount = assetCount + 25`，`.keep` 不计数。旧 v1 会根据实际成组文件数校验，不能
+  伪造当前格式的计数。
 - `capturedAt`/`importedAt` 为 UTC ISO-8601。
 - 增量字段缺失时的恢复端默认：`type` 按目录名（images/audio/video/documents）推断；
   `timeSource` 按 capturedAt 有无推断（有→embedded_metadata，无→import_time）；
@@ -88,8 +97,11 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 
 ## 实体 JSON 语义
 
-- `family.json`：`{ id, name, timezone, childLaterUnlockAge, createdAt, updatedAt }`。
+- `family.json`：`{ id, name, timezone, childLaterUnlockAge, weekStartsOn,
+  reviewReminderWeekday, reviewReminderLocalTime, remindPendingInbox,
+  remindPendingRequests, remindUpcomingCapsules, createdAt, updatedAt }`。
   `childLaterUnlockAge` 是 `child_later` 讲述的家庭自动解锁年龄；旧 v1 档案缺失时恢复为 18。
+  周设置旧档默认：周一开周、周日 19:30、三类提醒偏好开启；设备通知权限不在归档中。
 - `people.json`：`{ id, displayName, relationToChild, isChild, isGuardian,
   birthDate(YYYY-MM-DD|null), childLaterUnlockedAt, createdAt, updatedAt }`。
   `isGuardian` 是显式权限事实，绝不从称谓推断；`childLaterUnlockedAt` 是孩子档案不可逆的
@@ -113,19 +125,15 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
   身份，明确不导出；Person、姓名快照和记录模式构成可迁移的长期来源信息。
 - `facts.json`：`{ id, memoryEventId, statement, status, createdAt }`。
 - `fact-sources.json`：`{ id, factId, sourceType, sourceId, quote, startMs, endMs, createdAt }`。
+  `sourceType` ∈ `asset | asset_analysis | contribution | transcript | user_text`；
+  `asset_analysis` 的 sourceId 指向 durable Asset。`quote`（≤300）及 transcript 的
+  `startMs/endMs` 在事实确认时固化；旧归档缺 locator 时按 null 恢复。
 - `stories.json` / `story-paragraphs.json` / `story-sources.json`（M4 起，additive）：
   只含 durable 故事（`status='published'` 或 `editedAt != null`；纯 draft 不导出）。
   段落 `{ id, storyId, position, kind: narrative|quote, text }`；来源
-  `{ id, paragraphId, sourceType: fact|contribution|transcript|user_text, sourceId, quote }`。
+  `{ id, paragraphId, sourceType: fact|contribution|transcript|user_text|memory_event,
+  sourceId, quote }`。`memory_event` 是无 AI 周记结构化事件段的可追溯来源。
   恢复端校验来源引用存在、quote ≤300、user_text 无 sourceId；三件套必须同时存在或缺失。
-  - `sourceType` ∈ `asset | asset_analysis | contribution | transcript | user_text`（M3-D 起
-    增加 `asset_analysis`，其 `sourceId` 指向 durable 的 asset id）。
-  - `quote`（≤300 字）是创建时逐字验证过的引文；`startMs`/`endMs`（毫秒）是服务端从
-    transcript segment 推导的时间段。三个 locator 字段在事实确认时固化，均为可空。
-  - 旧归档缺这些字段时按 null 恢复（additive，exportVersion 仍为 1）。
-  每条 fact 必须有且仅有一行来源；`sourceType` 限定为 `asset|contribution|transcript|user_text`，
-  `sourceId` 在 `user_text` 时为 `null`，其余情况引用对应素材/讲述/转录行的 id。
-  这是事实锁的最小来源追踪，随家庭 archive 完整导出/恢复。
 - `transcripts.json`：`{ id, familyId, assetId, language, provider, model,
   rawTranscript, editedTranscript, segmentsJson, status, sourceSha256,
   createdByJobId, createdAt, updatedAt }`。同时导出机器原文与用户修订文本；
@@ -134,6 +142,17 @@ setup token 均不进入 ZIP。恢复后管理员通过新的邀请重新建立�
 - `capsules.json`：`{ id, title, unlockType, unlockValue, status, sealedAt, openedAt,
   memoryEventIds, assetIds, contributionIds }`。**无论是否到期/封存，内容引用始终完整**——
   封存是 UI 仪式，不是加密（PRD §15）。
+- `import-sessions.json` 保存来源、状态、计数、批次默认标题/发生时间/地点与时间戳；创建者
+  User ID 不导出。`import-session-default-participants.json` 保存同家庭 Person 关系；
+  `import-session-items.json` 保存不可变文件声明、captureId、排序、状态/错误以及最终
+  Asset/Inbox 引用。临时 `uploadSessionId` 不导出。
+- `contribution-requests.json` 保存 request/portal 的展示配置、目标 Person、有效期和限额开关，
+  但明确不含 token/hash、creator/closer User ID 或 live status。
+  `contribution-request-submissions.json` 保存普通回答与 Inbox 的关系；
+  `contribution-portal-submissions.json` 保存 portal、guest ImportSession、访客自填未确认称呼
+  和 bundle 状态。恢复时所有 request/portal 强制 closed，必须人工换发新 token。
+- `review-periods.json` 保存家庭周界、流程状态与可选 Story；`review-period-events.json` 保存
+  人工选择的 MemoryEvent。`selectedByUserId` 不导出，恢复后为空。
 
 确认文字条目的正文仍属于 `inbox-items.json`，并通过可空的 `memoryEventId` 关联到事件。
 事件详情把这些 `rawText` 显示为**无作者的原始文字记录**；系统不会为了显示正文而虚构
@@ -151,6 +170,9 @@ Contribution 或讲述者。合并到同一事件的多条文字也各自保留�
 - `fact-sources.json` 是 `exportVersion: 1` 上的另一项增量扩展。较早的 v1 归档可能不存在
   该文件；恢复端将其解释为“空来源”，仍可恢复。若归档存在该文件，必须是数组，每行
   `factId` 必须引用 `facts.json` 中的事实，`sourceType` 必须在限定白名单内。
+- 八份 1.1 关系文件（3 份 Import、3 份 Request/Portal、2 份 Review）是一个原子兼容组：
+  旧 v1/rc.4 归档八份都没有时恢复为空关系并采用安全默认值；当前归档八份都存在（可为空数组）。
+  只缺任意一份表示关系图不完整，恢复端必须在写原件前拒绝。
 
 ## timeline.md
 

@@ -31,14 +31,16 @@ CLI 内部执行顺序（对应 RH-004 要求 1–18）：
 1. 校验目标实例无 Family / 无 Person；2. 校验 operator 是未禁用、未绑定的 setup admin；
 3. 用 `stat` 检查压缩包本体大小，以文件句柄打开 ZIP 并枚举 Central Directory（不把压缩包
 载入 JS heap）；4. 校验重复/加密/压缩方法、条目名与解压限额；5. 校验 `exportVersion` 与 manifest；
-6. 校验全部实体 JSON、关系、家庭解锁年龄、显式 guardian/手工解锁、Contribution
-可见性/音频引用/可迁移 recorder provenance、Transcript 引用；7. 结构预验通过后，
+6. 校验全部实体 JSON、关系、家庭解锁年龄与周设置、显式 guardian/手工解锁、Contribution
+可见性/音频引用/可迁移 recorder provenance、Transcript、Import/Portal/Review/Story 引用；
+7. 结构预验通过后，
 **逐个打开 entry stream → 边写临时文件边复核字节数/SHA-256 → hard-link 原子发布**
 （失败回滚此前文件）；内存中不保留压缩包或完整解压原件；8–16. 然后
 单事务恢复 Family → Person → Asset → MemoryEvent → MemoryEventTag → InboxItem → InboxItemAsset →
-事件关联表 → Contribution → Fact → FactSource → Transcript → Capsule（含内容引用）；17. 在同一事务提交前执行
-**行数复核**（包括 InboxItem、InboxItemAsset、Transcript、FactSource、MemoryEventTag、事件素材/参与人关系，以及胶囊的事件/素材/
-讲述关系，均与导出逐项一致），复核通过才提交；
+ImportSession/Item/default participant → Contribution Request/Portal submissions → 事件关联表 →
+Contribution → Fact → FactSource → Transcript → Story/Source → ReviewPeriod/Event → Capsule；
+17. 在同一事务提交前执行**逐表行数复核**（包括上述 1.1 关系、事件素材/参与人关系与胶囊
+内容关系，均与导出逐项一致），复核通过才提交；
 18. 任一写入或复核失败：事务回滚并删除已写文件，**不存在半恢复数据库**。提交后的审计为
 best-effort，不会把已经成功提交的恢复改报为失败。
 
@@ -55,6 +57,7 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 | `exportVersion` 不在支持列表 | `unsupported_version` |
 | manifest/JSON 损坏、引用缺失（未知 person/event/asset） | `bad_manifest` / `bad_json` / `bad_refs` |
 | inbox 两个增量 JSON 只存在一个 | `missing_json` |
+| 八份 1.1 Import/Portal/Review JSON 只存在一部分 | `missing_json` |
 | 任何原件 SHA-256/字节数不符 | `hash_mismatch` |
 | 目标实例已有家庭数据 | `target_not_empty` |
 | operator 不存在、非 admin、已禁用或不是干净实例的未绑定 setup admin | `bad_operator` |
@@ -66,6 +69,8 @@ best-effort，不会把已经成功提交的恢复改报为失败。
 | FactSource 引用未知 factId 或 sourceType 不在白名单 | `bad_refs` / `bad_json` |
 | MemoryEvent tag 非字符串或长度非法 | `bad_json` |
 | recorder Person/姓名快照/记录模式组合非法，或档案夹带本地 User id | `bad_provenance` |
+| Import/Portal/Review 引用未知 session/person/asset/inbox/request/event/story | `bad_refs` |
+| request 夹带 token/hash/User ID/live status | `bad_json` / `bad_provenance` |
 
 限额可通过 `restoreFromZip(buffer, userId, { limits })` 注入（运维/测试用）。
 CLI 的 `restoreFromZipFile` 先用 `stat` 执行压缩包本体上限检查，再由 yauzl 通过文件句柄
@@ -116,6 +121,24 @@ CLI 的 `restoreFromZipFile` 先用 `stat` 执行压缩包本体上限检查，�
   在同一事务内复核 `memory_event_tag` 行数。旧 `exportVersion: 1` 归档若事件无 `tags`
   字段，按空标签处理。
 
+### 2.4 1.1 耐久关系图与 rc.4 兼容
+
+- `import-sessions.json`、`import-session-default-participants.json`、
+  `import-session-items.json`、`contribution-requests.json`、
+  `contribution-request-submissions.json`、`contribution-portal-submissions.json`、
+  `review-periods.json`、`review-period-events.json` 必须八份全有或全无。
+- 真正的旧 v1/rc.4 文件集八份都缺失时按空关系恢复；Family 缺少周设置时采用周一开周、
+  周日 19:30 和三类提醒开启的安全默认值。不会为旧数据补造 capturedAt 或其他事实。
+- 当前 1.1 档案在任何原件写入前校验 session/item、默认 Person、最终 Asset/Inbox、
+  request/submission、period/Story/Event 的完整关系。缺一份文件或一条引用即拒绝整个恢复。
+- UploadSession 与临时文件不恢复；ImportSessionItem 的 `uploadSessionId=null`，已完成的
+  Asset/Inbox 关系保持。ImportSession 创建者、published Story 发布者映射到 restore operator；
+  其他不可迁移 User ID 置空。
+- Contribution request/portal 的原 token/hash、创建/关闭 User 和 live status从不入档；
+  每条恢复为 `status=closed`、`tokenHash=null`、`closedAt=restore time`。提交 bundle 与访客
+  自填称呼保留，但入口绝不会意外继续有效。
+- document 原件与图片/音视频执行同一字节数/SHA-256 校验、原子写入与二次导出验证。
+
 ## 3. 哈希校验失败的处理
 
 单个原件不符 → **整个恢复拒绝**（比逐文件跳过更保守）：备份介质可疑时应换一份备份重试。
@@ -134,6 +157,8 @@ CLI 的 `restoreFromZipFile` 先用 `stat` 执行压缩包本体上限检查，�
 - `people.json` 全量恢复为 Person（含无账号成员），ID 原样保留。
 - 家庭 `childLaterUnlockAge`、Person 的显式 `isGuardian` 与不可逆
   `childLaterUnlockedAt` 按归档值精确恢复；旧 v1 档案使用 18 / false / null 默认值。
+- Family 周界和提醒偏好按归档值恢复；旧档使用 §2.4 的安全默认值。设备通知权限与调度 ID
+  不恢复，用户仍需在每台设备上主动开启。
 - Contribution 的 visibility、transcript、音频引用、recorder Person、姓名快照与记录模式
   原样恢复；旧实例的 `recordedByUserId` 不可迁移并始终恢复为 null。
 - 恢复完成后：管理员登录 → `/onboarding` 自动检测「实例已有家庭」→
@@ -150,6 +175,11 @@ CLI 的 `restoreFromZipFile` 先用 `stat` 执行压缩包本体上限检查，�
 - `tests/roundtrip/restore-roundtrip.test.ts`（`npm run test:e2e` 末尾执行）：
   A 建档 → export → **销毁 A** → 干净 B → restore → **启动真实服务器** →
   登录 → 时间轴/详情核对 → 媒体字节+Range+401 → 导出 B → verify:export CLI 全绿。
+
+1.1 增量覆盖还包括 document SHA、ImportSession/Item/default participant、request/portal
+submission、ReviewPeriod/Event/Story source 的 A→B→二次导出往返；断言 token/hash 不进入
+任一归档、恢复入口全部 closed，并验证八文件组缺一份时在写原件前失败。另用真实旧 v1 文件集
+证明 rc.4 数据和周设置默认值可原地升级。
 
 收件箱完整性的已实现验收覆盖：
 

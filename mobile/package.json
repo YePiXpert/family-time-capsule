@@ -41,7 +41,8 @@
     "vitest": "^4.1.11"
   },
   "overrides": {
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "query-string": "^9.5.1"
   },
   "scripts": {
     "start": "expo start",

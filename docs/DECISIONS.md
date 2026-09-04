@@ -270,16 +270,22 @@
   Noto CJK（Docker 镜像已内置），避免几十 MB 的字体嵌入或新供应链依赖。
 - **后果**：PDF 文字不可选中（以图像页呈现）；阅读优先走 EPUB（原生文本）。
 
-## D-0xx（M7/M8）上传/恢复的内存形态
-- **决策**：媒体回放、导出、WebDAV PUT/GET 哈希走流式；上传保持「上限内有界缓冲」
-  （50/200/500MB 上限 + 所有入口 Content-Length 预检），不做手写 multipart 流解析。
-  恢复 CLI 用 yauzl 从文件句柄读取 Central Directory，逐个打开 entry stream，经临时文件
-  流式计算字节/SHA-256 后 hard-link 发布；不再把压缩 ZIP 或完整原件读入 JS heap。
-- **理由**：手写多部分或 ZIP 解析器处理不可信输入会扩大攻击面；采用成熟 reader 并显式
-  拒绝路径逃逸、重复、加密、未知压缩方法，同时限制条目数、单条/总解压量和 metadata 大小。
-- **后果**：CLI 内存随受限的 Central Directory 和单个 ≤64MB metadata 文件增长，而不随
-  压缩包或原件大小线性增长。`restoreFromZip(Buffer)` 仅保留给已经持有 Buffer 的测试/
-  程序化调用方；完全零拷贝 multipart 仍是未来独立安全评审项。
+## D-022（1.1 M2/M8）大文件摄取与恢复均使用流式、有界路径
+
+- **日期**：2026-09-04
+- **状态**：已接受
+- **决策**：新 Web、原生和访客客户端使用顺序式 `/api/uploads`：`PATCH` 的原始二进制 body
+  直接写入服务器临时文件，每块默认 8 MiB，只能从服务器确认 offset 追加；complete 从文件流
+  计算 SHA-256、嗅探 MIME、读取 EXIF/ffprobe，再原子发布原件。旧 multipart API 只保留给
+  兼容小文件客户端，并继续在 `formData()` 前做 Content-Length 与类型/大小上限门禁。
+  媒体回放、archive 原件哈希、导出和 WebDAV PUT/GET 同样走流式。恢复 CLI 用 yauzl 文件句柄
+  读取 Central Directory，逐 entry stream 验字节/SHA-256，经临时文件 hard-link 原子发布。
+- **理由**：500MB 视频和百文件批次不能让 JS heap 随总文件量或单文件大小线性增长；原始
+  chunk 协议也避免手写 multipart 解析器。ZIP 仍由成熟 reader 解析，并显式拒绝路径逃逸、
+  重复、加密、未知压缩方法，同时限制条目数、单条/总解压量和 metadata 大小。
+- **后果**：新上传内存随单个固定 chunk 有界；实测 500 MiB 生成流峰值 RSS 增量 0.1 MiB。
+  CLI 内存随受限 Central Directory 和单个 ≤64MB metadata 文件增长，不随 ZIP/原件增长。
+  `restoreFromZip(Buffer)` 只保留给调用方已经持有 Buffer 的测试/程序化兼容入口。
 
 ## D-0xx（M4）搜索分词
 - **决策**：FTS5 索引与查询两侧统一 CJK bigram 预分词（lib/search/tokenizer.ts），

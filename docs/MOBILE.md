@@ -113,7 +113,7 @@ npx expo export --platform ios --output-dir dist-ios
 在 GitHub Actions 选择 **Native mobile packages** → **Run workflow**，或执行
 `gh workflow run mobile-build.yml --ref main`。手工构建只接受 `main`；`v*` tag 仅在
 其 SHA 属于当前 `origin/main` 历史时可发布。所有 job checkout 触发时的准确 SHA，不创建
-临时构建分支。工作流先跑 Expo Doctor、TypeScript、ESLint、39 tests 和 Android/iOS
+临时构建分支。工作流先跑 Expo Doctor、TypeScript、ESLint、44 tests 和 Android/iOS
 Hermes bundle，再并行构建：
 
 - `FamilyTimeCapsule-android-apk`：Release 模式、ARM64、内置 Hermes bundle，并以临时

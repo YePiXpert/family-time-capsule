@@ -10,6 +10,9 @@ concurrency:
   group: native-mobile-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: React Native quality
@@ -26,6 +29,7 @@ jobs:
             test "$GITHUB_REF" = "refs/heads/main"
           else
             test "$GITHUB_REF_TYPE" = "tag"
+            [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
             git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
           fi
       - uses: actions/setup-node@v5

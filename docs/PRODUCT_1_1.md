@@ -148,7 +148,7 @@ created → receiving → completing → completed
 | M5 家庭投递箱 | ✅ 复用 Contribution Request token、匿名续传、guest ImportSession/Inbox bundle、管理/本机 QR、暂停/撤销/换 token 与 rc.4 升级回归已实现 | ⏳ 真实浏览器录音/多文件及扫码需人工补验 |
 | M6 原生日常能力 | ✅ 原生 People/Stories/Capsules/Requests/ContributionPortals/ImportSessions 页面、最小移动 API、独立 cursor 缓存和 capability/锁定/隔离自动化已实现；CI `33891377198` 与云包 `33891401232` 全绿 | ⏳ 页面操作、离线重开、扫码和系统分享链接仍需真机人工补验 |
 | M7 每周回顾与本地提醒 | ✅ ReviewPeriod/重点关系、Web/原生四步流程、无 AI 来源草稿、显式同意 AI 优化与一次性本地隐私提醒已实现；上海/纽约 DST/幂等/viewer/拒权/重排自动化通过 | ⏳ 通知授权、锁屏显示、时区变化与系统调度仍需真机人工补验 |
-| M8 hardening 与 alpha release | ⏳ 未执行 | ⏳ 不创建 stable 标签 |
+| M8 hardening 与 alpha release | 🟡 portable 关系图、旧档默认值、二次导出、500 MiB RSS、依赖审计、Docker health/volume 门禁已通过；最终 main/tag CI 待发布步骤完成 | ⏳ 系统分享、Files/iCloud 与本地通知仍待人工；不创建 stable 标签 |
 
 每个里程碑只有在实现、自动化、包级检查与适用的真实设备证据分别记录后才可改变对应状态；
 “编译通过”“bundle 生成”或模拟器行为不能写成真实设备已验证。

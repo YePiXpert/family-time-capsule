@@ -116,6 +116,14 @@
 - **解析前大小闸门**：`/api/upload/image`、`/api/upload/media`、`/share` 与匿名讲述媒体
   在调用会物化请求体的 `formData()` 前强制有效、有限的 `Content-Length`；缺失、非法、
   chunked 或超限请求均拒绝，不能用传输编码绕过 50/200/500MB 上限。
+- **新大文件路径**：Web、原生与家庭投递箱优先使用 `/api/uploads` 顺序续传。`PATCH` 仅接受
+  原始二进制和准确 `Upload-Offset`/`Content-Length`，请求流直接追加到服务器生成的随机临时
+  路径；不得由客户端指定路径，也不使用 multipart/完整 `arrayBuffer()`。磁盘长度与数据库
+  offset 在锁内安全对账，complete 从磁盘流式哈希/嗅探/解析后原子发布；完成前临时文件无
+  HTTP 读取入口，失败不会留下半成品 Asset。active 数、临时总空间、单文件和清理批次均有界。
+- **document**：仅接受 PDF、TXT、Markdown、RTF、DOCX 白名单与对应魔数/结构；HTML/SVG
+  不作为可执行预览，Office 文件只下载不执行，文本预览与索引有字符上限且不会把任意二进制
+  强转文字。document 使用同一 SHA-256 去重、家庭隔离、媒体下载和引用清除守卫。
 - **路径安全**：原 filename 永不进入磁盘路径，只清洗后作展示名；storageKey 白名单校验（正则 + 无 `..` + resolve 边界）。恶意文件名 `../../abc.jpg` 无法逃逸存储根目录（集成测试覆盖）。
 - **媒体鉴权（无匿名 URL）**：`/data/**` 永不静态公开。唯一读取入口 `GET /api/media/[assetId]`：要求会话 + 家庭绑定 + Asset 属于该会话家庭，否则一律 404（不向跨家庭访问者暴露存在性）。响应带 `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff`、`Content-Disposition`（filename 剥离 `\r\n"`）。支持 Range（206/416）用于音频/视频回放。
 - **导出端点**：`GET /api/export` 需会话 + 家庭绑定；导出前重验全部原件 SHA-256，不符返回 409。导出文件落在 `$DATA_DIR/exports/`。
@@ -296,6 +304,16 @@
 ### 回收站（M7）
 - 软删除行在导出/搜索/素材收集中一律过滤（跨家庭隔离有测试）；
 - 硬清除需显式确认并写审计；素材物理删除有全引用守卫。
+
+### Portable archive / restore（1.1 M8）
+
+- 1.1 的 ImportSession/Item/default participant、Contribution Request/Portal submission、
+  ReviewPeriod/Event 和 document 原件进入 archive；导出原件 SHA-256 从文件流重算。
+- 八份 1.1 关系 JSON 必须全部存在或全部缺失。部分图、悬空 Asset/Inbox/Person/Event/Story
+  引用、跨家庭字段和非法状态在写任何原件前拒绝；事务提交前再次逐表复核行数。
+- UploadSession、临时文件、认证 User/session、原始 guest token/hash 与设备通知状态不导出。
+  恢复 request/portal 时强制 `closed`、`tokenHash=null`，所有登录归因映射到 restore operator，
+  不能意外复活访客入口或旧凭据。
 
 ### CSP
 - 页面：proxy.ts 按 request nonce + `strict-dynamic`（生产无 unsafe-eval）；

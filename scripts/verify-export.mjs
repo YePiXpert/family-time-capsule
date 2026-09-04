@@ -61,7 +61,24 @@ async function zipEntryExists(name) {
   return zip.file(`${ROOT}/${name}`) !== null;
 }
 
-const [familyJson, people, memories, contributions, facts, factSources, transcripts, capsules] = await Promise.all([
+const [
+  familyJson,
+  people,
+  memories,
+  contributions,
+  facts,
+  factSources,
+  transcripts,
+  capsules,
+  importSessions,
+  importDefaultParticipants,
+  importSessionItems,
+  contributionRequests,
+  requestSubmissions,
+  portalSubmissions,
+  reviewPeriods,
+  reviewPeriodEvents,
+] = await Promise.all([
   readJsonAsync("family.json"),
   readJsonAsync("people.json"),
   readJsonAsync("memories.json"),
@@ -70,6 +87,14 @@ const [familyJson, people, memories, contributions, facts, factSources, transcri
   readJsonAsync("fact-sources.json"),
   readJsonAsync("transcripts.json"),
   readJsonAsync("capsules.json"),
+  readJsonAsync("import-sessions.json"),
+  readJsonAsync("import-session-default-participants.json"),
+  readJsonAsync("import-session-items.json"),
+  readJsonAsync("contribution-requests.json"),
+  readJsonAsync("contribution-request-submissions.json"),
+  readJsonAsync("contribution-portal-submissions.json"),
+  readJsonAsync("review-periods.json"),
+  readJsonAsync("review-period-events.json"),
 ]);
 if (familyJson) ok(`family: ${familyJson.name} (${familyJson.timezone})`);
 
@@ -85,7 +110,8 @@ const hasDialogue = await zipEntryExists("capsule-questions.json");
 const expectedNonAssetCount =
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
   (hasStories ? 3 : 0) +
-  (hasDialogue ? 2 : 0);
+  (hasDialogue ? 2 : 0) +
+  (importSessions ? 8 : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
   fail("inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失");
 }
@@ -100,6 +126,19 @@ if (manifest.fileCount !== expectedFileCount) {
 const personIds = new Set((people ?? []).map((p) => p.id));
 const assetIds = new Set((manifest.assets ?? []).map((a) => a.assetId));
 const factIds = new Set((facts ?? []).map((f) => f.id));
+const eventIds = new Set((memories ?? []).map((m) => m.id));
+const inboxEntry = zip.file(`${ROOT}/inbox-items.json`);
+const inboxItemIds = new Set(
+  inboxEntry
+    ? JSON.parse(await inboxEntry.async("string")).map((item) => item.id)
+    : [],
+);
+const storyEntry = zip.file(`${ROOT}/stories.json`);
+const storyIds = new Set(
+  storyEntry
+    ? JSON.parse(await storyEntry.async("string")).map((story) => story.id)
+    : [],
+);
 if (people) ok(`people: ${people.length} 人`);
 if (memories) {
   for (const m of memories) {
@@ -133,7 +172,7 @@ if (factSources) {
   for (const s of factSources) {
     if (!factIds.has(s.factId))
       fail(`fact-sources: ${s.id} 引用未知 fact ${s.factId}`);
-    if (!["asset", "contribution", "transcript", "user_text"].includes(s.sourceType))
+    if (!["asset", "asset_analysis", "contribution", "transcript", "user_text"].includes(s.sourceType))
       fail(`fact-sources: ${s.id} 的 sourceType 非法 ${s.sourceType}`);
   }
   ok(`fact-sources: ${factSources.length} 条，引用完整`);
@@ -150,6 +189,48 @@ if (memories) {
   if (tagCount > 0) ok(`tags: ${tagCount} 个`);
 }
 if (transcripts) ok(`transcripts: ${transcripts.length} 条`);
+
+const importSessionIds = new Set((importSessions ?? []).map((session) => session.id));
+for (const link of importDefaultParticipants ?? []) {
+  if (!importSessionIds.has(link.importSessionId) || !personIds.has(link.personId))
+    fail(`import default participant ${link.id} 引用未知 session/person`);
+}
+for (const item of importSessionItems ?? []) {
+  if (!importSessionIds.has(item.importSessionId))
+    fail(`import item ${item.id} 引用未知 session`);
+  if (item.assetId && !assetIds.has(item.assetId))
+    fail(`import item ${item.id} 引用未知 asset`);
+  if (item.inboxItemId && !inboxItemIds.has(item.inboxItemId))
+    fail(`import item ${item.id} 引用未知 inbox item`);
+}
+const requestIds = new Set((contributionRequests ?? []).map((request) => request.id));
+for (const request of contributionRequests ?? []) {
+  if (
+    Object.hasOwn(request, "token") ||
+    Object.hasOwn(request, "tokenHash") ||
+    Object.hasOwn(request, "createdByUserId") ||
+    Object.hasOwn(request, "closedByUserId")
+  ) fail(`contribution request ${request.id} 泄露 token 或本地 User id`);
+}
+for (const submission of requestSubmissions ?? []) {
+  if (!requestIds.has(submission.requestId) || !inboxItemIds.has(submission.inboxItemId))
+    fail(`request submission ${submission.id} 引用不完整`);
+}
+for (const submission of portalSubmissions ?? []) {
+  if (!requestIds.has(submission.requestId) || !importSessionIds.has(submission.importSessionId))
+    fail(`portal submission ${submission.id} 引用不完整`);
+}
+const reviewPeriodIds = new Set((reviewPeriods ?? []).map((period) => period.id));
+for (const period of reviewPeriods ?? []) {
+  if (period.storyId && !storyIds.has(period.storyId))
+    fail(`review period ${period.id} 引用未知 story`);
+}
+for (const link of reviewPeriodEvents ?? []) {
+  if (!reviewPeriodIds.has(link.reviewPeriodId) || !eventIds.has(link.memoryEventId))
+    fail(`review period event ${link.id} 引用不完整`);
+}
+if (importSessions)
+  ok(`1.1 durable graph: ${importSessions.length} 个导入会话，关系完整且无 guest token`);
 
 // 原件哈希校验
 let verified = 0;

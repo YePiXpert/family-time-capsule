@@ -36,6 +36,20 @@ import {
   capsuleReply as capsuleReplyTable,
 } from "@/db/schema/capsule";
 import { user as userTable } from "@/db/schema/auth";
+import {
+  importSession as importSessionTable,
+  importSessionDefaultParticipant as importSessionDefaultParticipantTable,
+  importSessionItem as importSessionItemTable,
+} from "@/db/schema/import";
+import {
+  contributionPortalSubmission as contributionPortalSubmissionTable,
+  contributionRequest as contributionRequestTable,
+  contributionRequestSubmission as contributionRequestSubmissionTable,
+} from "@/db/schema/oral-history";
+import {
+  reviewPeriod as reviewPeriodTable,
+  reviewPeriodEvent as reviewPeriodEventTable,
+} from "@/db/schema/review";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { AUDIT_KINDS, recordAudit } from "@/lib/audit/service";
 import { isContributionVisibility } from "@/lib/authz/policy";
@@ -153,8 +167,112 @@ type FamilyArchiveRow = {
   name: string;
   timezone: string;
   childLaterUnlockAge?: number;
+  weekStartsOn?: number;
+  reviewReminderWeekday?: number;
+  reviewReminderLocalTime?: string;
+  remindPendingInbox?: boolean;
+  remindPendingRequests?: boolean;
+  remindUpcomingCapsules?: boolean;
   createdAt: string | null;
   updatedAt: string | null;
+};
+
+type ImportSessionArchiveRow = {
+  id: string;
+  source: string;
+  status: string;
+  totalCount: number;
+  completedCount: number;
+  failedCount: number;
+  defaultTitle: string | null;
+  defaultOccurredAt: string | null;
+  defaultLocationText: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ImportSessionDefaultParticipantArchiveRow = {
+  id: string;
+  importSessionId: string;
+  personId: string;
+  createdAt: string;
+};
+
+type ImportSessionItemArchiveRow = {
+  id: string;
+  importSessionId: string;
+  captureId: string;
+  filename: string | null;
+  declaredMime: string | null;
+  totalBytes: number | null;
+  lastModified: string | null;
+  clientFingerprint: string | null;
+  assetId: string | null;
+  inboxItemId: string | null;
+  status: string;
+  errorCode: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ContributionRequestArchiveRow = {
+  id: string;
+  kind: string;
+  title: string | null;
+  recipientLabel: string;
+  recipientPersonId: string | null;
+  promptText: string;
+  topicKey: string | null;
+  maxSubmissions: number;
+  maxFilesPerSubmission: number;
+  allowImages: boolean;
+  allowAudio: boolean;
+  allowVideo: boolean;
+  allowDocuments: boolean;
+  allowText: boolean;
+  allowBrowserRecording: boolean;
+  allowGuestName: boolean;
+  allowReuse: boolean;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ContributionRequestSubmissionArchiveRow = {
+  id: string;
+  requestId: string;
+  inboxItemId: string;
+  createdAt: string;
+};
+
+type ContributionPortalSubmissionArchiveRow = {
+  id: string;
+  requestId: string;
+  importSessionId: string;
+  guestDisplayName: string | null;
+  status: string;
+  completedAt: string | null;
+  createdAt: string;
+};
+
+type ReviewPeriodArchiveRow = {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  status: string;
+  storyId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ReviewPeriodEventArchiveRow = {
+  id: string;
+  reviewPeriodId: string;
+  memoryEventId: string;
+  createdAt: string;
 };
 
 type PersonArchiveRow = {
@@ -312,6 +430,11 @@ export type RestoreReport = {
   capsules: number;
   inboxItems: number;
   inboxItemAssets: number;
+  importSessions: number;
+  importSessionItems: number;
+  contributionRequests: number;
+  portalSubmissions: number;
+  reviewPeriods: number;
   filesWritten: number;
 };
 
@@ -757,6 +880,51 @@ async function loadAndVerifyZip(
     "capsule 对话两件套必须同时存在或同时缺失",
   );
 
+  // 1.1 durable graph: these eight files form one relational unit. Old v1
+  // archives omit all of them and restore with empty sessions/portals/reviews;
+  // a partial set is corruption and must fail before any original is written.
+  const durable11Names = [
+    "import-sessions.json",
+    "import-session-default-participants.json",
+    "import-session-items.json",
+    "contribution-requests.json",
+    "contribution-request-submissions.json",
+    "contribution-portal-submissions.json",
+    "review-periods.json",
+    "review-period-events.json",
+  ] as const;
+  const durable11Presence = durable11Names.map((name) =>
+    archive.has(`${EXPORT_ROOT_DIR}/${name}`),
+  );
+  const hasDurable11Files = durable11Presence.every(Boolean);
+  requireCondition(
+    hasDurable11Files || durable11Presence.every((present) => !present),
+    "missing_json",
+    "1.1 import/portal/review 关系文件必须全部存在或全部缺失",
+  );
+  const durable11Raw = new Map<string, unknown>();
+  for (const name of durable11Names) {
+    const value = hasDurable11Files ? await readJson<unknown>(name) : [];
+    requireCondition(Array.isArray(value), "bad_json", `${name} 必须是数组`);
+    durable11Raw.set(name, value);
+  }
+  const importSessionsRaw = durable11Raw.get("import-sessions.json") as unknown[];
+  const importDefaultParticipantsRaw = durable11Raw.get(
+    "import-session-default-participants.json",
+  ) as unknown[];
+  const importSessionItemsRaw = durable11Raw.get("import-session-items.json") as unknown[];
+  const contributionRequestsRaw = durable11Raw.get(
+    "contribution-requests.json",
+  ) as unknown[];
+  const contributionRequestSubmissionsRaw = durable11Raw.get(
+    "contribution-request-submissions.json",
+  ) as unknown[];
+  const contributionPortalSubmissionsRaw = durable11Raw.get(
+    "contribution-portal-submissions.json",
+  ) as unknown[];
+  const reviewPeriodsRaw = durable11Raw.get("review-periods.json") as unknown[];
+  const reviewPeriodEventsRaw = durable11Raw.get("review-period-events.json") as unknown[];
+
   const hasInboxFiles = Boolean(inboxItemsFile) && Boolean(inboxItemAssetsFile);
   const hasStoryFiles = Boolean(storiesFile);
   const hasDialogueFiles = Boolean(capsuleQuestionsFile);
@@ -767,10 +935,11 @@ async function loadAndVerifyZip(
     (transcriptsFile ? 1 : 0) +
     (factSourcesFile ? 1 : 0) +
     (hasStoryFiles ? 3 : 0) +
-    (hasDialogueFiles ? 2 : 0);
+    (hasDialogueFiles ? 2 : 0) +
+    (hasDurable11Files ? durable11Names.length : 0);
   requireCondition(
     manifest.fileCount === expectedFileCount,
-    hasInboxFiles || factSourcesFile || hasStoryFiles || hasDialogueFiles
+    hasInboxFiles || factSourcesFile || hasStoryFiles || hasDialogueFiles || hasDurable11Files
       ? "bad_manifest"
       : "missing_json",
     hasInboxFiles
@@ -806,6 +975,40 @@ async function loadAndVerifyZip(
     "bad_policy",
     "family.childLaterUnlockAge 必须是 1 到 100 的整数",
   );
+  requireCondition(
+    familyJson.weekStartsOn === undefined ||
+      (Number.isInteger(familyJson.weekStartsOn) &&
+        familyJson.weekStartsOn >= 0 &&
+        familyJson.weekStartsOn <= 6),
+    "bad_policy",
+    "family.weekStartsOn 必须是 0 到 6 的整数",
+  );
+  requireCondition(
+    familyJson.reviewReminderWeekday === undefined ||
+      (Number.isInteger(familyJson.reviewReminderWeekday) &&
+        familyJson.reviewReminderWeekday >= 0 &&
+        familyJson.reviewReminderWeekday <= 6),
+    "bad_policy",
+    "family.reviewReminderWeekday 必须是 0 到 6 的整数",
+  );
+  requireCondition(
+    familyJson.reviewReminderLocalTime === undefined ||
+      (typeof familyJson.reviewReminderLocalTime === "string" &&
+        /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(familyJson.reviewReminderLocalTime)),
+    "bad_policy",
+    "family.reviewReminderLocalTime 必须是有效的 HH:mm",
+  );
+  for (const [name, value] of [
+    ["remindPendingInbox", familyJson.remindPendingInbox],
+    ["remindPendingRequests", familyJson.remindPendingRequests],
+    ["remindUpcomingCapsules", familyJson.remindUpcomingCapsules],
+  ] as const) {
+    requireCondition(
+      value === undefined || typeof value === "boolean",
+      "bad_policy",
+      `family.${name} 必须是 boolean`,
+    );
+  }
   requireCondition(
     isOptionalArchiveDate(familyJson.createdAt) &&
       isOptionalArchiveDate(familyJson.updatedAt),
@@ -1301,7 +1504,6 @@ async function loadAndVerifyZip(
     "contribution",
     "transcript",
     "user_text",
-    "memory_event",
   ]);
   const factSourcesJson: Array<{
     id: string;
@@ -1475,6 +1677,7 @@ async function loadAndVerifyZip(
     "contribution",
     "transcript",
     "user_text",
+    "memory_event",
   ]);
   const storyIds = new Set<string>();
   const storiesJson: Array<{
@@ -1794,6 +1997,377 @@ async function loadAndVerifyZip(
     }
   }
 
+  const IMPORT_SOURCES = new Set(["web", "native", "share", "guest"]);
+  const IMPORT_STATUSES = new Set([
+    "collecting",
+    "uploading",
+    "reviewing",
+    "completed",
+    "cancelled",
+  ]);
+  const IMPORT_ITEM_STATUSES = new Set([
+    "pending",
+    "uploading",
+    "completed",
+    "failed",
+    "cancelled",
+  ]);
+  const importSessionIds = new Set<string>();
+  const importSessionsJson: ImportSessionArchiveRow[] = [];
+  for (const value of importSessionsRaw) {
+    requireCondition(isRecord(value), "bad_json", "import session 必须是对象");
+    const row = value;
+    requireCondition(
+      typeof row.id === "string" && UUID_LIKE.test(row.id) && !importSessionIds.has(row.id),
+      "bad_json",
+      `import session id 缺失或重复: ${String(row.id)}`,
+    );
+    importSessionIds.add(row.id);
+    requireCondition(
+      typeof row.source === "string" && IMPORT_SOURCES.has(row.source),
+      "bad_json",
+      `import session ${row.id} 的 source 非法`,
+    );
+    requireCondition(
+      typeof row.status === "string" && IMPORT_STATUSES.has(row.status),
+      "bad_json",
+      `import session ${row.id} 的 status 非法`,
+    );
+    const counts = [row.totalCount, row.completedCount, row.failedCount];
+    requireCondition(
+      counts.every((count) => Number.isSafeInteger(count) && (count as number) >= 0) &&
+        (row.completedCount as number) + (row.failedCount as number) <=
+          (row.totalCount as number),
+      "bad_json",
+      `import session ${row.id} 的计数非法`,
+    );
+    requireCondition(
+      (row.defaultTitle === null ||
+        (typeof row.defaultTitle === "string" && row.defaultTitle.length <= 200)) &&
+        (row.defaultLocationText === null ||
+          (typeof row.defaultLocationText === "string" &&
+            row.defaultLocationText.length <= 200)) &&
+        (row.defaultOccurredAt === null || parseDate(row.defaultOccurredAt) !== null),
+      "bad_json",
+      `import session ${row.id} 的批量默认值非法`,
+    );
+    requireCondition(
+      parseDate(row.createdAt) !== null && parseDate(row.updatedAt) !== null,
+      "bad_json",
+      `import session ${row.id} 的时间非法`,
+    );
+    requireCondition(
+      row.createdByUserId === undefined && row.familyId === undefined,
+      "bad_provenance",
+      `import session ${row.id} 不得携带本地 User/Family id`,
+    );
+    importSessionsJson.push(row as ImportSessionArchiveRow);
+  }
+
+  const importDefaultParticipantIds = new Set<string>();
+  const importDefaultParticipantPairs = new Set<string>();
+  const importDefaultParticipantsJson: ImportSessionDefaultParticipantArchiveRow[] = [];
+  for (const value of importDefaultParticipantsRaw) {
+    requireCondition(isRecord(value), "bad_json", "import default participant 必须是对象");
+    const row = value;
+    const pair = `${String(row.importSessionId)}\0${String(row.personId)}`;
+    requireCondition(
+      typeof row.id === "string" &&
+        UUID_LIKE.test(row.id) &&
+        !importDefaultParticipantIds.has(row.id) &&
+        typeof row.importSessionId === "string" &&
+        importSessionIds.has(row.importSessionId) &&
+        typeof row.personId === "string" &&
+        personIds.has(row.personId) &&
+        !importDefaultParticipantPairs.has(pair),
+      "bad_refs",
+      `import default participant ${String(row.id)} 的引用非法或重复`,
+    );
+    requireCondition(
+      parseDate(row.createdAt) !== null,
+      "bad_json",
+      `import default participant ${row.id} 的时间非法`,
+    );
+    importDefaultParticipantIds.add(row.id);
+    importDefaultParticipantPairs.add(pair);
+    importDefaultParticipantsJson.push(row as ImportSessionDefaultParticipantArchiveRow);
+  }
+
+  const importSessionItemIds = new Set<string>();
+  const importSessionCapturePairs = new Set<string>();
+  const importSessionItemsJson: ImportSessionItemArchiveRow[] = [];
+  for (const value of importSessionItemsRaw) {
+    requireCondition(isRecord(value), "bad_json", "import session item 必须是对象");
+    const row = value;
+    const capturePair = `${String(row.importSessionId)}\0${String(row.captureId)}`;
+    requireCondition(
+      typeof row.id === "string" && UUID_LIKE.test(row.id) && !importSessionItemIds.has(row.id),
+      "bad_json",
+      `import session item id 缺失或重复: ${String(row.id)}`,
+    );
+    requireCondition(
+      typeof row.importSessionId === "string" && importSessionIds.has(row.importSessionId),
+      "bad_refs",
+      `import session item ${row.id} 引用未知 session`,
+    );
+    requireCondition(
+      typeof row.captureId === "string" &&
+        row.captureId.length >= 1 &&
+        row.captureId.length <= 200 &&
+        !importSessionCapturePairs.has(capturePair),
+      "bad_json",
+      `import session item ${row.id} 的 captureId 非法或重复`,
+    );
+    requireCondition(
+      row.filename === null ||
+        (typeof row.filename === "string" && row.filename.length >= 1 && row.filename.length <= 255),
+      "bad_json",
+      `import session item ${row.id} 的 filename 非法`,
+    );
+    requireCondition(
+      row.declaredMime === null ||
+        (typeof row.declaredMime === "string" && row.declaredMime.length >= 1 && row.declaredMime.length <= 255),
+      "bad_json",
+      `import session item ${row.id} 的 declaredMime 非法`,
+    );
+    requireCondition(
+      row.totalBytes === null ||
+        (Number.isSafeInteger(row.totalBytes) && (row.totalBytes as number) > 0),
+      "bad_json",
+      `import session item ${row.id} 的 totalBytes 非法`,
+    );
+    requireCondition(
+      (row.lastModified === null || parseDate(row.lastModified) !== null) &&
+        (row.clientFingerprint === null ||
+          (typeof row.clientFingerprint === "string" && row.clientFingerprint.length <= 256)),
+      "bad_json",
+      `import session item ${row.id} 的文件匹配字段非法`,
+    );
+    requireCondition(
+      row.assetId === null || (typeof row.assetId === "string" && assetIds.has(row.assetId)),
+      "bad_refs",
+      `import session item ${row.id} 引用未知 asset`,
+    );
+    requireCondition(
+      row.inboxItemId === null ||
+        (typeof row.inboxItemId === "string" && inboxItemIds.has(row.inboxItemId)),
+      "bad_refs",
+      `import session item ${row.id} 引用未知 inbox item`,
+    );
+    requireCondition(
+      typeof row.status === "string" && IMPORT_ITEM_STATUSES.has(row.status),
+      "bad_json",
+      `import session item ${row.id} 的 status 非法`,
+    );
+    requireCondition(
+      row.errorCode === null ||
+        (typeof row.errorCode === "string" && row.errorCode.length <= 100),
+      "bad_json",
+      `import session item ${row.id} 的 errorCode 非法`,
+    );
+    requireCondition(
+      Number.isSafeInteger(row.sortOrder) &&
+        (row.sortOrder as number) >= 0 &&
+        parseDate(row.createdAt) !== null &&
+        parseDate(row.updatedAt) !== null,
+      "bad_json",
+      `import session item ${row.id} 的顺序或时间非法`,
+    );
+    requireCondition(
+      row.uploadSessionId === undefined && row.familyId === undefined,
+      "bad_provenance",
+      `import session item ${row.id} 不得携带临时 upload/family id`,
+    );
+    importSessionItemIds.add(row.id);
+    importSessionCapturePairs.add(capturePair);
+    importSessionItemsJson.push(row as ImportSessionItemArchiveRow);
+  }
+
+  const requestIds = new Set<string>();
+  const contributionRequestsJson: ContributionRequestArchiveRow[] = [];
+  for (const value of contributionRequestsRaw) {
+    requireCondition(isRecord(value), "bad_json", "contribution request 必须是对象");
+    const row = value;
+    requireCondition(
+      typeof row.id === "string" && UUID_LIKE.test(row.id) && !requestIds.has(row.id),
+      "bad_json",
+      `contribution request id 缺失或重复: ${String(row.id)}`,
+    );
+    requireCondition(row.kind === "request" || row.kind === "portal", "bad_json", `request ${row.id} kind 非法`);
+    requireCondition(
+      row.title === null ||
+        (typeof row.title === "string" && row.title.length >= 1 && row.title.length <= 100),
+      "bad_json",
+      `request ${row.id} title 非法`,
+    );
+    requireCondition(
+      typeof row.recipientLabel === "string" && row.recipientLabel.length >= 1 && row.recipientLabel.length <= 50 &&
+        typeof row.promptText === "string" && row.promptText.length >= 1 && row.promptText.length <= 500,
+      "bad_json",
+      `request ${row.id} 的访客文案非法`,
+    );
+    requireCondition(
+      row.recipientPersonId === null ||
+        (typeof row.recipientPersonId === "string" && personIds.has(row.recipientPersonId)),
+      "bad_refs",
+      `request ${row.id} 引用未知 person`,
+    );
+    requireCondition(
+      row.topicKey === null || (typeof row.topicKey === "string" && row.topicKey.length <= 100),
+      "bad_json",
+      `request ${row.id} topicKey 非法`,
+    );
+    requireCondition(
+      Number.isSafeInteger(row.maxSubmissions) &&
+        (row.maxSubmissions as number) >= 1 &&
+        (row.maxSubmissions as number) <= 1000 &&
+        Number.isSafeInteger(row.maxFilesPerSubmission) &&
+        (row.maxFilesPerSubmission as number) >= 0 &&
+        (row.maxFilesPerSubmission as number) <= 100,
+      "bad_json",
+      `request ${row.id} 限额非法`,
+    );
+    for (const field of [
+      "allowImages",
+      "allowAudio",
+      "allowVideo",
+      "allowDocuments",
+      "allowText",
+      "allowBrowserRecording",
+      "allowGuestName",
+      "allowReuse",
+    ] as const) {
+      requireCondition(typeof row[field] === "boolean", "bad_json", `request ${row.id} ${field} 非法`);
+    }
+    requireCondition(
+      parseDate(row.expiresAt) !== null &&
+        parseDate(row.createdAt) !== null &&
+        parseDate(row.updatedAt) !== null,
+      "bad_json",
+      `request ${row.id} 的时间非法`,
+    );
+    requireCondition(
+      row.tokenHash === undefined &&
+        row.token === undefined &&
+        row.status === undefined &&
+        row.createdByUserId === undefined &&
+        row.closedByUserId === undefined &&
+        row.familyId === undefined,
+      "bad_provenance",
+      `request ${row.id} 不得携带 token、live status 或本地 id`,
+    );
+    requestIds.add(row.id);
+    contributionRequestsJson.push(row as ContributionRequestArchiveRow);
+  }
+
+  const requestSubmissionIds = new Set<string>();
+  const contributionRequestSubmissionsJson: ContributionRequestSubmissionArchiveRow[] = [];
+  for (const value of contributionRequestSubmissionsRaw) {
+    requireCondition(isRecord(value), "bad_json", "request submission 必须是对象");
+    const row = value;
+    requireCondition(
+      typeof row.id === "string" && UUID_LIKE.test(row.id) && !requestSubmissionIds.has(row.id) &&
+        typeof row.requestId === "string" && requestIds.has(row.requestId) &&
+        typeof row.inboxItemId === "string" && inboxItemIds.has(row.inboxItemId),
+      "bad_refs",
+      `request submission ${String(row.id)} 的引用非法或重复`,
+    );
+    requireCondition(parseDate(row.createdAt) !== null, "bad_json", `request submission ${row.id} 时间非法`);
+    requestSubmissionIds.add(row.id);
+    contributionRequestSubmissionsJson.push(row as ContributionRequestSubmissionArchiveRow);
+  }
+
+  const portalSubmissionIds = new Set<string>();
+  const portalSubmissionImportIds = new Set<string>();
+  const contributionPortalSubmissionsJson: ContributionPortalSubmissionArchiveRow[] = [];
+  for (const value of contributionPortalSubmissionsRaw) {
+    requireCondition(isRecord(value), "bad_json", "portal submission 必须是对象");
+    const row = value;
+    requireCondition(
+      typeof row.id === "string" && UUID_LIKE.test(row.id) && !portalSubmissionIds.has(row.id) &&
+        typeof row.requestId === "string" && requestIds.has(row.requestId) &&
+        typeof row.importSessionId === "string" && importSessionIds.has(row.importSessionId) &&
+        !portalSubmissionImportIds.has(row.importSessionId),
+      "bad_refs",
+      `portal submission ${String(row.id)} 的引用非法或重复`,
+    );
+    requireCondition(
+      row.guestDisplayName === null ||
+        (typeof row.guestDisplayName === "string" && row.guestDisplayName.length >= 1 && row.guestDisplayName.length <= 50),
+      "bad_json",
+      `portal submission ${row.id} 的访客称呼非法`,
+    );
+    requireCondition(row.status === "collecting" || row.status === "completed", "bad_json", `portal submission ${row.id} status 非法`);
+    requireCondition(
+      (row.completedAt === null || parseDate(row.completedAt) !== null) && parseDate(row.createdAt) !== null,
+      "bad_json",
+      `portal submission ${row.id} 时间非法`,
+    );
+    portalSubmissionIds.add(row.id);
+    portalSubmissionImportIds.add(row.importSessionId);
+    contributionPortalSubmissionsJson.push(row as ContributionPortalSubmissionArchiveRow);
+  }
+
+  const REVIEW_STATUSES = new Set(["open", "in_progress", "completed"]);
+  const reviewPeriodIds = new Set<string>();
+  const reviewWindows = new Set<string>();
+  const reviewPeriodsJson: ReviewPeriodArchiveRow[] = [];
+  for (const value of reviewPeriodsRaw) {
+    requireCondition(isRecord(value), "bad_json", "review period 必须是对象");
+    const row = value;
+    const start = parseDate(row.periodStart);
+    const end = parseDate(row.periodEnd);
+    const window = `${String(row.periodStart)}\0${String(row.periodEnd)}`;
+    requireCondition(
+      typeof row.id === "string" && UUID_LIKE.test(row.id) && !reviewPeriodIds.has(row.id),
+      "bad_json",
+      `review period id 缺失或重复: ${String(row.id)}`,
+    );
+    requireCondition(start !== null && end !== null && end > start && !reviewWindows.has(window), "bad_json", `review period ${row.id} 周期非法或重复`);
+    requireCondition(typeof row.status === "string" && REVIEW_STATUSES.has(row.status), "bad_json", `review period ${row.id} status 非法`);
+    requireCondition(
+      row.storyId === null || (typeof row.storyId === "string" && storyIds.has(row.storyId)),
+      "bad_refs",
+      `review period ${row.id} 引用未知 story`,
+    );
+    requireCondition(
+      (row.startedAt === null || parseDate(row.startedAt) !== null) &&
+        (row.completedAt === null || parseDate(row.completedAt) !== null) &&
+        parseDate(row.createdAt) !== null &&
+        parseDate(row.updatedAt) !== null,
+      "bad_json",
+      `review period ${row.id} 时间非法`,
+    );
+    reviewPeriodIds.add(row.id);
+    reviewWindows.add(window);
+    reviewPeriodsJson.push(row as ReviewPeriodArchiveRow);
+  }
+
+  const reviewPeriodEventIds = new Set<string>();
+  const reviewEventPairs = new Set<string>();
+  const reviewPeriodEventsJson: ReviewPeriodEventArchiveRow[] = [];
+  for (const value of reviewPeriodEventsRaw) {
+    requireCondition(isRecord(value), "bad_json", "review period event 必须是对象");
+    const row = value;
+    const pair = `${String(row.reviewPeriodId)}\0${String(row.memoryEventId)}`;
+    requireCondition(
+      typeof row.id === "string" && UUID_LIKE.test(row.id) && !reviewPeriodEventIds.has(row.id) &&
+        typeof row.reviewPeriodId === "string" && reviewPeriodIds.has(row.reviewPeriodId) &&
+        typeof row.memoryEventId === "string" && eventIds.has(row.memoryEventId) &&
+        !reviewEventPairs.has(pair),
+      "bad_refs",
+      `review period event ${String(row.id)} 的引用非法或重复`,
+    );
+    requireCondition(
+      row.selectedByUserId === undefined && row.familyId === undefined && parseDate(row.createdAt) !== null,
+      "bad_provenance",
+      `review period event ${String(row.id)} 不得携带本地 id 且时间必须有效`,
+    );
+    reviewPeriodEventIds.add(row.id);
+    reviewEventPairs.add(pair);
+    reviewPeriodEventsJson.push(row as ReviewPeriodEventArchiveRow);
+  }
+
   return {
     archive,
     manifest,
@@ -1812,6 +2386,14 @@ async function loadAndVerifyZip(
     storySourcesJson,
     capsuleQuestionJson,
     capsuleReplyJson,
+    importSessionsJson,
+    importDefaultParticipantsJson,
+    importSessionItemsJson,
+    contributionRequestsJson,
+    contributionRequestSubmissionsJson,
+    contributionPortalSubmissionsJson,
+    reviewPeriodsJson,
+    reviewPeriodEventsJson,
   };
 }
 
@@ -1868,6 +2450,14 @@ async function restoreFromArchive(
     storySourcesJson,
     capsuleQuestionJson,
     capsuleReplyJson,
+    importSessionsJson,
+    importDefaultParticipantsJson,
+    importSessionItemsJson,
+    contributionRequestsJson,
+    contributionRequestSubmissionsJson,
+    contributionPortalSubmissionsJson,
+    reviewPeriodsJson,
+    reviewPeriodEventsJson,
   } = data;
 
   const storage = getAssetStorage();
@@ -1934,6 +2524,12 @@ async function restoreFromArchive(
           name: familyJson.name,
           timezone: familyJson.timezone || "Asia/Shanghai",
           childLaterUnlockAge: familyJson.childLaterUnlockAge ?? 18,
+          weekStartsOn: familyJson.weekStartsOn ?? 1,
+          reviewReminderWeekday: familyJson.reviewReminderWeekday ?? 0,
+          reviewReminderLocalTime: familyJson.reviewReminderLocalTime ?? "19:30",
+          remindPendingInbox: familyJson.remindPendingInbox ?? true,
+          remindPendingRequests: familyJson.remindPendingRequests ?? true,
+          remindUpcomingCapsules: familyJson.remindUpcomingCapsules ?? true,
           createdAt: parseDate(familyJson.createdAt) ?? now,
           updatedAt: parseDate(familyJson.updatedAt) ?? now,
         })
@@ -2068,6 +2664,129 @@ async function restoreFromArchive(
           .run();
       }
 
+      if (importSessionsJson.length > 0) {
+        tx.insert(importSessionTable)
+          .values(
+            importSessionsJson.map((session) => ({
+              id: session.id,
+              familyId,
+              source: session.source,
+              status: session.status,
+              totalCount: session.totalCount,
+              completedCount: session.completedCount,
+              failedCount: session.failedCount,
+              defaultTitle: session.defaultTitle,
+              defaultOccurredAt: parseDate(session.defaultOccurredAt),
+              defaultLocationText: session.defaultLocationText,
+              createdByUserId: operatorUserId,
+              createdAt: parseDate(session.createdAt)!,
+              updatedAt: parseDate(session.updatedAt)!,
+            })),
+          )
+          .run();
+      }
+      if (importDefaultParticipantsJson.length > 0) {
+        tx.insert(importSessionDefaultParticipantTable)
+          .values(
+            importDefaultParticipantsJson.map((link) => ({
+              id: link.id,
+              familyId,
+              importSessionId: link.importSessionId,
+              personId: link.personId,
+              createdAt: parseDate(link.createdAt)!,
+            })),
+          )
+          .run();
+      }
+      if (importSessionItemsJson.length > 0) {
+        tx.insert(importSessionItemTable)
+          .values(
+            importSessionItemsJson.map((item) => ({
+              id: item.id,
+              familyId,
+              importSessionId: item.importSessionId,
+              captureId: item.captureId,
+              filename: item.filename,
+              declaredMime: item.declaredMime,
+              totalBytes: item.totalBytes,
+              lastModified: parseDate(item.lastModified),
+              clientFingerprint: item.clientFingerprint,
+              uploadSessionId: null,
+              assetId: item.assetId,
+              inboxItemId: item.inboxItemId,
+              status: item.status,
+              errorCode: item.errorCode,
+              sortOrder: item.sortOrder,
+              createdAt: parseDate(item.createdAt)!,
+              updatedAt: parseDate(item.updatedAt)!,
+            })),
+          )
+          .run();
+      }
+      if (contributionRequestsJson.length > 0) {
+        tx.insert(contributionRequestTable)
+          .values(
+            contributionRequestsJson.map((request) => ({
+              id: request.id,
+              familyId,
+              tokenHash: null,
+              kind: request.kind,
+              title: request.title,
+              recipientLabel: request.recipientLabel,
+              recipientPersonId: request.recipientPersonId,
+              promptText: request.promptText,
+              topicKey: request.topicKey,
+              status: "closed",
+              maxSubmissions: request.maxSubmissions,
+              maxFilesPerSubmission: request.maxFilesPerSubmission,
+              allowImages: request.allowImages,
+              allowAudio: request.allowAudio,
+              allowVideo: request.allowVideo,
+              allowDocuments: request.allowDocuments,
+              allowText: request.allowText,
+              allowBrowserRecording: request.allowBrowserRecording,
+              allowGuestName: request.allowGuestName,
+              allowReuse: request.allowReuse,
+              expiresAt: parseDate(request.expiresAt)!,
+              closedAt: now,
+              closedByUserId: operatorUserId,
+              createdByUserId: operatorUserId,
+              createdAt: parseDate(request.createdAt)!,
+              updatedAt: now,
+            })),
+          )
+          .run();
+      }
+      if (contributionRequestSubmissionsJson.length > 0) {
+        tx.insert(contributionRequestSubmissionTable)
+          .values(
+            contributionRequestSubmissionsJson.map((submission) => ({
+              id: submission.id,
+              familyId,
+              requestId: submission.requestId,
+              inboxItemId: submission.inboxItemId,
+              createdAt: parseDate(submission.createdAt)!,
+            })),
+          )
+          .run();
+      }
+      if (contributionPortalSubmissionsJson.length > 0) {
+        tx.insert(contributionPortalSubmissionTable)
+          .values(
+            contributionPortalSubmissionsJson.map((submission) => ({
+              id: submission.id,
+              familyId,
+              requestId: submission.requestId,
+              importSessionId: submission.importSessionId,
+              guestDisplayName: submission.guestDisplayName,
+              status: submission.status,
+              completedAt: parseDate(submission.completedAt),
+              createdAt: parseDate(submission.createdAt)!,
+            })),
+          )
+          .run();
+      }
+
       const eventAssets = memoriesJson.flatMap((m) =>
         (m.assetIds ?? []).map((assetId) => ({
           id: randomUUID(),
@@ -2189,7 +2908,9 @@ async function restoreFromArchive(
               status: st.status,
               editedAt: st.editedAt ? new Date(st.editedAt) : null,
               publishedAt: st.publishedAt ? new Date(st.publishedAt) : null,
-              publishedByUserId: st.publishedByUserId,
+              // Archive User ids are never portable. Attribute a restored
+              // published story to the administrator performing the restore.
+              publishedByUserId: st.status === "published" ? operatorUserId : null,
               createdByJobId: null,
               createdAt: parseDate(st.createdAt) ?? now,
               updatedAt: parseDate(st.updatedAt) ?? parseDate(st.createdAt) ?? now,
@@ -2227,6 +2948,39 @@ async function restoreFromArchive(
             )
             .run();
         }
+      }
+
+      if (reviewPeriodsJson.length > 0) {
+        tx.insert(reviewPeriodTable)
+          .values(
+            reviewPeriodsJson.map((period) => ({
+              id: period.id,
+              familyId,
+              periodStart: parseDate(period.periodStart)!,
+              periodEnd: parseDate(period.periodEnd)!,
+              status: period.status,
+              storyId: period.storyId,
+              startedAt: parseDate(period.startedAt),
+              completedAt: parseDate(period.completedAt),
+              createdAt: parseDate(period.createdAt)!,
+              updatedAt: parseDate(period.updatedAt)!,
+            })),
+          )
+          .run();
+      }
+      if (reviewPeriodEventsJson.length > 0) {
+        tx.insert(reviewPeriodEventTable)
+          .values(
+            reviewPeriodEventsJson.map((link) => ({
+              id: link.id,
+              familyId,
+              reviewPeriodId: link.reviewPeriodId,
+              memoryEventId: link.memoryEventId,
+              selectedByUserId: null,
+              createdAt: parseDate(link.createdAt)!,
+            })),
+          )
+          .run();
       }
 
       if (capsulesJson.length > 0) {
@@ -2352,6 +3106,14 @@ async function restoreFromArchive(
         storySourceCount,
         capsuleQuestionCount,
         capsuleReplyCount,
+        importSessionCount,
+        importDefaultParticipantCount,
+        importSessionItemCount,
+        contributionRequestCount,
+        contributionRequestSubmissionCount,
+        contributionPortalSubmissionCount,
+        reviewPeriodCount,
+        reviewPeriodEventCount,
       ] = [
         tx
           .select({ value: count() })
@@ -2459,6 +3221,14 @@ async function restoreFromArchive(
           .from(capsuleReplyTable)
           .where(eq(capsuleReplyTable.familyId, familyId))
           .all(),
+        tx.select({ value: count() }).from(importSessionTable).where(eq(importSessionTable.familyId, familyId)).all(),
+        tx.select({ value: count() }).from(importSessionDefaultParticipantTable).where(eq(importSessionDefaultParticipantTable.familyId, familyId)).all(),
+        tx.select({ value: count() }).from(importSessionItemTable).where(eq(importSessionItemTable.familyId, familyId)).all(),
+        tx.select({ value: count() }).from(contributionRequestTable).where(eq(contributionRequestTable.familyId, familyId)).all(),
+        tx.select({ value: count() }).from(contributionRequestSubmissionTable).where(eq(contributionRequestSubmissionTable.familyId, familyId)).all(),
+        tx.select({ value: count() }).from(contributionPortalSubmissionTable).where(eq(contributionPortalSubmissionTable.familyId, familyId)).all(),
+        tx.select({ value: count() }).from(reviewPeriodTable).where(eq(reviewPeriodTable.familyId, familyId)).all(),
+        tx.select({ value: count() }).from(reviewPeriodEventTable).where(eq(reviewPeriodEventTable.familyId, familyId)).all(),
       ];
       const num = (rows: Array<{ value: number }>) =>
         Number(rows[0]?.value ?? 0);
@@ -2475,6 +3245,14 @@ async function restoreFromArchive(
         storySources: { actual: num(storySourceCount), expected: storySourcesJson.length },
         capsuleQuestions: { actual: num(capsuleQuestionCount), expected: capsuleQuestionJson.length },
         capsuleReplies: { actual: num(capsuleReplyCount), expected: capsuleReplyJson.length },
+        importSessions: { actual: num(importSessionCount), expected: importSessionsJson.length },
+        importDefaultParticipants: { actual: num(importDefaultParticipantCount), expected: importDefaultParticipantsJson.length },
+        importSessionItems: { actual: num(importSessionItemCount), expected: importSessionItemsJson.length },
+        contributionRequests: { actual: num(contributionRequestCount), expected: contributionRequestsJson.length },
+        contributionRequestSubmissions: { actual: num(contributionRequestSubmissionCount), expected: contributionRequestSubmissionsJson.length },
+        contributionPortalSubmissions: { actual: num(contributionPortalSubmissionCount), expected: contributionPortalSubmissionsJson.length },
+        reviewPeriods: { actual: num(reviewPeriodCount), expected: reviewPeriodsJson.length },
+        reviewPeriodEvents: { actual: num(reviewPeriodEventCount), expected: reviewPeriodEventsJson.length },
         transcripts: { actual: num(transcriptCount), expected: transcriptsJson.length },
         capsules: { actual: num(capsuleCount), expected: capsulesJson.length },
         inboxItems: { actual: num(inboxItemCount), expected: inboxItemsJson.length },
@@ -2522,6 +3300,11 @@ async function restoreFromArchive(
     capsules: capsulesJson.length,
     inboxItems: inboxItemsJson.length,
     inboxItemAssets: inboxItemAssetsJson.length,
+    importSessions: importSessionsJson.length,
+    importSessionItems: importSessionItemsJson.length,
+    contributionRequests: contributionRequestsJson.length,
+    portalSubmissions: contributionPortalSubmissionsJson.length,
+    reviewPeriods: reviewPeriodsJson.length,
   });
 
   // 4) 全文索引是可重建 derivative：恢复完成后整体重建（失败不阻断恢复本身）。
@@ -2545,6 +3328,11 @@ async function restoreFromArchive(
     capsules: capsulesJson.length,
     inboxItems: inboxItemsJson.length,
     inboxItemAssets: inboxItemAssetsJson.length,
+    importSessions: importSessionsJson.length,
+    importSessionItems: importSessionItemsJson.length,
+    contributionRequests: contributionRequestsJson.length,
+    portalSubmissions: contributionPortalSubmissionsJson.length,
+    reviewPeriods: reviewPeriodsJson.length,
     filesWritten: writtenKeys.length,
   };
 }

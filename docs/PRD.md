@@ -1317,8 +1317,9 @@ Original sources always come first.
 - `Asset.type=document` 正式启用，最低支持 PDF、TXT、Markdown、RTF、DOCX；HTML/SVG 不作为
   可执行预览，Office 文件只保存和下载，纯文本预览与搜索有严格长度/类型边界。
 
-核心关系使用外键或关系表。上述耐久数据、document 原件和新增关系必须进入 portable archive，
-旧 v1 归档缺失时使用安全默认值；原始 guest token、认证会话、通知权限和临时上传文件不导出。
+核心关系使用外键或关系表。上述耐久数据、document 原件和新增关系现已进入 portable archive；
+旧 v1/rc.4 归档缺失时使用安全默认值。原始 guest token、认证会话、通知权限、UploadSession
+与临时上传文件不导出。
 
 ## 32.3 安全与原件边界
 

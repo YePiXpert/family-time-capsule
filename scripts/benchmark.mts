@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
+import { Readable } from "node:stream";
 import type { FamilyContext } from "../lib/family/context";
 
 const quick = process.argv.includes("--quick");
@@ -46,6 +47,12 @@ const { memoryEvent } = await import("../db/schema/memory");
 const { asset } = await import("../db/schema/asset");
 const { person } = await import("../db/schema/family");
 const { user } = await import("../db/schema/auth");
+const {
+  RESUMABLE_CHUNK_BYTES,
+  appendUploadChunk,
+  cancelUpload,
+  createUploadSession,
+} = await import("../lib/imports/service");
 
 const setup = await performSetup({
   token: "benchmark-setup-token",
@@ -192,6 +199,48 @@ bench("Story 素材收集（全年）", () => {
   collectStoryMaterial(familyId, period);
   collectTranscriptMaterial(familyId, period);
 });
+
+// Generated constant-memory stream: validates the real resumable service path
+// without committing a giant fixture. Full mode writes exactly 500 MiB.
+const uploadBytes = (quick ? 32 : 500) * 1024 * 1024;
+const upload = await createUploadSession({
+  familyId,
+  userId: admin.id,
+  captureId: randomUUID(),
+  filename: "generated-500mb.mp4",
+  declaredMime: "video/mp4",
+  totalBytes: uploadBytes,
+  lastModified: null,
+  source: "web",
+  importSessionId: null,
+});
+const reusableChunk = Buffer.alloc(RESUMABLE_CHUNK_BYTES, 0x5a);
+const rssBefore = process.memoryUsage().rss;
+let peakRss = rssBefore;
+let offset = 0;
+const uploadStart = performance.now();
+while (offset < uploadBytes) {
+  const length = Math.min(RESUMABLE_CHUNK_BYTES, uploadBytes - offset);
+  const appended = await appendUploadChunk({
+    familyId,
+    uploadId: upload.session.id,
+    offset,
+    contentLength: length,
+    body: Readable.from([reusableChunk.subarray(0, length)]),
+  });
+  offset = appended.offset;
+  peakRss = Math.max(peakRss, process.memoryUsage().rss);
+}
+await cancelUpload(familyId, upload.session.id);
+const peakDeltaMiB = (peakRss - rssBefore) / 1024 / 1024;
+if (offset !== uploadBytes || peakDeltaMiB > 192) {
+  throw new Error(
+    `resumable memory bound failed: offset=${offset}, expected=${uploadBytes}, peak RSS delta=${peakDeltaMiB.toFixed(1)} MiB`,
+  );
+}
+console.log(
+  `续传生成流（${uploadBytes / 1024 / 1024} MiB，8 MiB chunks）: ${((performance.now() - uploadStart) / 1000).toFixed(1)} s；峰值 RSS 增量 ${peakDeltaMiB.toFixed(1)} MiB`,
+);
 
 console.log("基准完成。");
 } finally {

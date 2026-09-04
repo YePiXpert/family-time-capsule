@@ -6,9 +6,11 @@ data/
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+*.zip
 
 # Host/build state must not replace Linux dependencies or enter layer caches.
 node_modules/
+mobile/node_modules/
 .next/
 out/
 build/
@@ -31,6 +33,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+pnpm-lock.yaml
+pnpm-workspace.yaml
+mobile/dist-android/
+mobile/dist-ios/
+mobile/.expo/
+mobile/cloud-artifacts/
+mobile/android/
+mobile/ios/
 
 # Tests and local design research are not required in the runtime image.
 tests/

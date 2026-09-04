@@ -2,7 +2,7 @@ import "server-only";
 
 import { collectDurableStories } from "@/lib/stories/service";
 import { collectCapsuleDialogue } from "@/lib/capsules/dialogue";
-import { createWriteStream, statSync } from "node:fs";
+import { createReadStream, createWriteStream, statSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { ZipArchive } from "archiver";
@@ -27,6 +27,17 @@ import {
   capsuleEvent,
 } from "@/db/schema/capsule";
 import { factSource } from "@/db/schema/suggestion";
+import {
+  importSession,
+  importSessionDefaultParticipant,
+  importSessionItem,
+} from "@/db/schema/import";
+import {
+  contributionPortalSubmission,
+  contributionRequest,
+  contributionRequestSubmission,
+} from "@/db/schema/oral-history";
+import { reviewPeriod, reviewPeriodEvent } from "@/db/schema/review";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { getFamily } from "@/lib/family/service";
@@ -51,7 +62,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 17;
+export const EXPORT_NON_ASSET_FILE_COUNT = 25;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -98,6 +109,17 @@ function iso(d: Date | null | undefined): string | null {
   return d ? d.toISOString() : null;
 }
 
+async function hashOriginalFile(filePath: string): Promise<{ sha256: string; bytes: number }> {
+  const hash = createHash("sha256");
+  let bytes = 0;
+  for await (const value of createReadStream(filePath)) {
+    const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+    hash.update(chunk);
+    bytes += chunk.byteLength;
+  }
+  return { sha256: hash.digest("hex"), bytes };
+}
+
 export type ExportResult = {
   filePath: string;
   fileName: string;
@@ -114,7 +136,28 @@ export async function buildFamilyExport(
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
-  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets, inboxItemParticipants, transcripts, factSources, tags] = await Promise.all([
+  const [
+    people,
+    assets,
+    events,
+    contributions,
+    facts,
+    capsules,
+    inboxItems,
+    inboxItemAssets,
+    inboxItemParticipants,
+    transcripts,
+    factSources,
+    tags,
+    importSessions,
+    importDefaultParticipants,
+    importItems,
+    contributionRequests,
+    requestSubmissions,
+    portalSubmissions,
+    reviewPeriods,
+    reviewEvents,
+  ] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
     db
@@ -135,6 +178,23 @@ export async function buildFamilyExport(
     db.select().from(assetTranscriptTable).where(eq(assetTranscriptTable.familyId, familyId)),
     db.select().from(factSource).where(eq(factSource.familyId, familyId)),
     db.select().from(memoryEventTag).where(eq(memoryEventTag.familyId, familyId)),
+    db.select().from(importSession).where(eq(importSession.familyId, familyId)),
+    db
+      .select()
+      .from(importSessionDefaultParticipant)
+      .where(eq(importSessionDefaultParticipant.familyId, familyId)),
+    db.select().from(importSessionItem).where(eq(importSessionItem.familyId, familyId)),
+    db.select().from(contributionRequest).where(eq(contributionRequest.familyId, familyId)),
+    db
+      .select()
+      .from(contributionRequestSubmission)
+      .where(eq(contributionRequestSubmission.familyId, familyId)),
+    db
+      .select()
+      .from(contributionPortalSubmission)
+      .where(eq(contributionPortalSubmission.familyId, familyId)),
+    db.select().from(reviewPeriod).where(eq(reviewPeriod.familyId, familyId)),
+    db.select().from(reviewPeriodEvent).where(eq(reviewPeriodEvent.familyId, familyId)),
   ]);
 
   const eventIds = events.map((e) => e.id);
@@ -158,15 +218,14 @@ export async function buildFamilyExport(
   const assetRelPaths = new Map<string, string>();
   for (const a of assets) {
     if (a.derivativeType) continue; // 只导原件；衍生物可再生
-    const buffer = storage.read(a.storageKey);
-    const actual = createHash("sha256").update(buffer).digest("hex");
-    if (actual !== a.sha256) {
+    const actual = await hashOriginalFile(storage.resolvePath(a.storageKey));
+    if (actual.sha256 !== a.sha256 || actual.bytes !== a.bytes) {
       throw new ExportVerificationError({
         code: "checksum_mismatch",
         assetId: a.id,
         storageKey: a.storageKey,
         expected: a.sha256,
-        actual,
+        actual: actual.sha256,
       });
     }
     const rel = exportRelativePath(a.id, a.type, a.storageKey);
@@ -364,6 +423,12 @@ export async function buildFamilyExport(
       name: family.name,
       timezone: family.timezone,
       childLaterUnlockAge: family.childLaterUnlockAge,
+      weekStartsOn: family.weekStartsOn,
+      reviewReminderWeekday: family.reviewReminderWeekday,
+      reviewReminderLocalTime: family.reviewReminderLocalTime,
+      remindPendingInbox: family.remindPendingInbox,
+      remindPendingRequests: family.remindPendingRequests,
+      remindUpcomingCapsules: family.remindUpcomingCapsules,
       createdAt: iso(family.createdAt),
       updatedAt: iso(family.updatedAt),
     });
@@ -381,6 +446,98 @@ export async function buildFamilyExport(
     json("memories.json", memoriesJson);
     json("inbox-items.json", inboxItemsJson);
     json("inbox-item-assets.json", inboxItemAssetsJson);
+    json("import-sessions.json", importSessions.map((session) => ({
+      id: session.id,
+      source: session.source,
+      status: session.status,
+      totalCount: session.totalCount,
+      completedCount: session.completedCount,
+      failedCount: session.failedCount,
+      defaultTitle: session.defaultTitle,
+      defaultOccurredAt: iso(session.defaultOccurredAt),
+      defaultLocationText: session.defaultLocationText,
+      createdAt: iso(session.createdAt),
+      updatedAt: iso(session.updatedAt),
+    })));
+    json("import-session-default-participants.json", importDefaultParticipants.map((link) => ({
+      id: link.id,
+      importSessionId: link.importSessionId,
+      personId: link.personId,
+      createdAt: iso(link.createdAt),
+    })));
+    json("import-session-items.json", importItems.map((item) => ({
+      id: item.id,
+      importSessionId: item.importSessionId,
+      captureId: item.captureId,
+      filename: item.filename,
+      declaredMime: item.declaredMime,
+      totalBytes: item.totalBytes,
+      lastModified: iso(item.lastModified),
+      clientFingerprint: item.clientFingerprint,
+      assetId: item.assetId,
+      inboxItemId: item.inboxItemId,
+      status: item.status,
+      errorCode: item.errorCode,
+      sortOrder: item.sortOrder,
+      createdAt: iso(item.createdAt),
+      updatedAt: iso(item.updatedAt),
+    })));
+    json("contribution-requests.json", contributionRequests.map((request) => ({
+      id: request.id,
+      kind: request.kind,
+      title: request.title,
+      recipientLabel: request.recipientLabel,
+      recipientPersonId: request.recipientPersonId,
+      promptText: request.promptText,
+      topicKey: request.topicKey,
+      maxSubmissions: request.maxSubmissions,
+      maxFilesPerSubmission: request.maxFilesPerSubmission,
+      allowImages: request.allowImages,
+      allowAudio: request.allowAudio,
+      allowVideo: request.allowVideo,
+      allowDocuments: request.allowDocuments,
+      allowText: request.allowText,
+      allowBrowserRecording: request.allowBrowserRecording,
+      allowGuestName: request.allowGuestName,
+      allowReuse: request.allowReuse,
+      expiresAt: iso(request.expiresAt),
+      createdAt: iso(request.createdAt),
+      updatedAt: iso(request.updatedAt),
+      // tokenHash, creator/closer User ids and live status are instance-local.
+      // Every restored entry is deliberately closed until a user regenerates it.
+    })));
+    json("contribution-request-submissions.json", requestSubmissions.map((submission) => ({
+      id: submission.id,
+      requestId: submission.requestId,
+      inboxItemId: submission.inboxItemId,
+      createdAt: iso(submission.createdAt),
+    })));
+    json("contribution-portal-submissions.json", portalSubmissions.map((submission) => ({
+      id: submission.id,
+      requestId: submission.requestId,
+      importSessionId: submission.importSessionId,
+      guestDisplayName: submission.guestDisplayName,
+      status: submission.status,
+      completedAt: iso(submission.completedAt),
+      createdAt: iso(submission.createdAt),
+    })));
+    json("review-periods.json", reviewPeriods.map((period) => ({
+      id: period.id,
+      periodStart: iso(period.periodStart),
+      periodEnd: iso(period.periodEnd),
+      status: period.status,
+      storyId: period.storyId,
+      startedAt: iso(period.startedAt),
+      completedAt: iso(period.completedAt),
+      createdAt: iso(period.createdAt),
+      updatedAt: iso(period.updatedAt),
+    })));
+    json("review-period-events.json", reviewEvents.map((link) => ({
+      id: link.id,
+      reviewPeriodId: link.reviewPeriodId,
+      memoryEventId: link.memoryEventId,
+      createdAt: iso(link.createdAt),
+    })));
     json("contributions.json", contributions.map((c) => ({
       id: c.id,
       memoryEventId: c.memoryEventId,
@@ -415,7 +572,8 @@ export async function buildFamilyExport(
       startMs: s.startMs,
       endMs: s.endMs,
       createdAt: iso(s.createdAt),
-    })));    const storyBundle = collectDurableStories(familyId);
+    })));
+    const storyBundle = collectDurableStories(familyId);
     json("stories.json", storyBundle.stories.map((st) => ({
       id: st.id,
       kind: st.kind,
@@ -425,7 +583,6 @@ export async function buildFamilyExport(
       status: st.status,
       editedAt: st.editedAt ? iso(st.editedAt) : null,
       publishedAt: st.publishedAt ? iso(st.publishedAt) : null,
-      publishedByUserId: st.publishedByUserId,
       createdAt: iso(st.createdAt),
       updatedAt: iso(st.updatedAt),
     })));

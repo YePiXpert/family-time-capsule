@@ -1,6 +1,6 @@
 # Family Time Capsule
 
-**v1.0.0-rc.4 — Family Archive correctness release candidate**
+**v1.1.0-alpha.1 — Capture Anywhere & Family Rhythm**
 
 A private, self-hosted family memory archive.
 
@@ -18,8 +18,9 @@ Family members tell the story.
 Original sources always come first.
 
 > AI 默认关闭、始终可选；没有 API Key、Provider 或 worker 时，核心档案仍完整可用。
-> 当前是 1.0 发布候选版：自动化与 Docker 发布门禁已通过，稳定版仍等待
-> [真实设备验收](docs/REAL_DEVICE_TEST.md) 留档。
+> 当前是 1.1 alpha：自动化、Docker 与原生包级门禁通过后发布 prerelease；系统分享、
+> Files/iCloud/DocumentsProvider、通知和真实设备媒体行为仍必须按
+> [真实设备验收](docs/REAL_DEVICE_TEST.md) 留档，不能由编译结果代替。
 
 ---
 
@@ -35,6 +36,23 @@ Original sources always come first.
 - **多人视角**：同一件事，爸爸、妈妈、外婆各自独立讲述，互不覆盖。
 - **时间胶囊**：按日期或孩子年龄封存开启；封存是仪式不是加密——导出永远完整。
 - **完整导出**：ZIP 内含全部原件（哈希校验）+ JSON + 可读 Markdown，离开本系统一切仍可打开。
+
+### 1.1 alpha：随处收集与家庭节奏
+
+- **顺序式断点续传**：Web 与原生端按服务器 offset 续传，临时文件和 SHA-256 全程流式；
+  持久 ImportSession 支持三并发、暂停、刷新恢复、失败重试与已完成项去重。
+- **安全文档原件**：PDF/TXT/Markdown/RTF/DOCX 作为 document Asset 保存、下载、导出和恢复；
+  只预览受限纯文本/PDF，不执行 HTML、SVG、宏或任意二进制。
+- **系统分享与 Files**：Android SEND/SEND_MULTIPLE、iOS Share Extension + App Group、
+  Files/iCloud/DocumentsProvider 都先复制到私有存储；无服务器或离线时也不丢唯一原件。
+- **家庭投递箱**：亲友无需账号即可用可过期、可撤销、有限额的链接提交多文件、录音和文字；
+  token 只存 hash，所有内容始终先进入 Inbox。
+- **原生日常能力**：People、Stories、Capsules、Requests、Contribution Portals、Import Sessions
+  与 Weekly Review 使用原生页面和独立离线缓存，高频路径不再以浏览器为主入口。
+- **每周回顾**：按家庭时区完成整理、重点、家人声音和来源周记四步；无 AI 完整可用，
+  AI 只在明确同意后优化未编辑草稿。本地提醒可关闭且锁屏不显示私人正文。
+- **portable archive**：Import/Portal/Review 关系及 document 原件进入完整导出恢复；访客 token
+  与本地账号不导出，恢复后的投递入口默认关闭，旧 v1/rc.4 归档使用安全默认值。
 
 
 ### v1 新增（AI 整理 / 搜索 / 故事 / 口述史 / 书籍 / 备份）
@@ -86,8 +104,8 @@ npm run dev            # http://localhost:3000
 | --- | --- |
 | `npm run dev` | 开发服务器 |
 | `npm run lint` / `npm run typecheck` | 静态检查 |
-| `npm test` | Vitest 单元 + 集成测试（472 个） |
-| `npm run test:e2e` | 34 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
+| `npm test` | Vitest 单元 + 集成测试（525 个） |
+| `npm run test:e2e` | 38 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
 | `npm run verify:export <zip>` | 校验导出 ZIP 的 manifest 与全部原件 SHA-256 |
 
 原生客户端开发、设备数据边界和 GitHub 云构建 IPA/APK：
@@ -136,5 +154,6 @@ docker compose up -d --build --wait
 - [docs/REAL_DEVICE_TEST.md](docs/REAL_DEVICE_TEST.md) — 真实设备手工验收清单（正式录入前执行）
 - [docs/MOBILE.md](docs/MOBILE.md) — 原生客户端、本地数据、同步协议与云构建
 - [docs/RELEASE_1.0.md](docs/RELEASE_1.0.md) — 1.0 RC 自动化、Docker 与外部门禁报告
+- [docs/RELEASE_1_1.md](docs/RELEASE_1_1.md) — 1.1 alpha 自动化、云包与未完成真机门禁
 - [docs/EXPORT_FORMAT.md](docs/EXPORT_FORMAT.md) / [docs/RESTORE.md](docs/RESTORE.md) — 导出格式与恢复设计
 - [CHANGELOG.md](CHANGELOG.md) — 版本记录

@@ -1011,9 +1011,19 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       zip.remove("family-time-capsule-export/inbox-item-assets.json");
       zip.remove("family-time-capsule-export/fact-sources.json");
       zip.remove("family-time-capsule-export/transcripts.json");
+      for (const name of [
+        "import-sessions.json",
+        "import-session-default-participants.json",
+        "import-session-items.json",
+        "contribution-requests.json",
+        "contribution-request-submissions.json",
+        "contribution-portal-submissions.json",
+        "review-periods.json",
+        "review-period-events.json",
+      ]) zip.remove(`family-time-capsule-export/${name}`);
       const manifestFile = zip.file("family-time-capsule-export/manifest.json")!;
       const manifest = JSON.parse(await manifestFile.async("string"));
-      manifest.fileCount -= 4;
+      manifest.fileCount -= 12;
       zip.file(
         "family-time-capsule-export/manifest.json",
         JSON.stringify(manifest),
@@ -1021,6 +1031,12 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       const familyFile = zip.file("family-time-capsule-export/family.json")!;
       const familyJson = JSON.parse(await familyFile.async("string"));
       delete familyJson.childLaterUnlockAge;
+      delete familyJson.weekStartsOn;
+      delete familyJson.reviewReminderWeekday;
+      delete familyJson.reviewReminderLocalTime;
+      delete familyJson.remindPendingInbox;
+      delete familyJson.remindPendingRequests;
+      delete familyJson.remindUpcomingCapsules;
       zip.file(
         "family-time-capsule-export/family.json",
         JSON.stringify(familyJson),
@@ -1064,6 +1080,14 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     expect((await m.family.getFamily(snapshot.familyId))?.childLaterUnlockAge).toBe(
       18,
     );
+    expect(await m.family.getFamily(snapshot.familyId)).toMatchObject({
+      weekStartsOn: 1,
+      reviewReminderWeekday: 0,
+      reviewReminderLocalTime: "19:30",
+      remindPendingInbox: true,
+      remindPendingRequests: true,
+      remindUpcomingCapsules: true,
+    });
     expect(
       (await m.family.listPeople(snapshot.familyId)).every(
         (person) => !person.isGuardian && person.childLaterUnlockedAt === null,
@@ -1091,6 +1115,21 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     await expect(m.restoreSvc.restoreFromZip(buf, adminId)).rejects.toMatchObject({
       code: "missing_json",
     });
+    m.db.closeDatabase();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("1.1 关系图只缺一份文件 → 写原件前拒绝", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-partial-v11-"));
+    const { m, adminId } = await freshB(dir);
+    const buf = await buildTamperedZip(async (zip) => {
+      zip.remove("family-time-capsule-export/review-period-events.json");
+    });
+    await expect(m.restoreSvc.restoreFromZip(buf, adminId)).rejects.toMatchObject({
+      code: "missing_json",
+    });
+    expect(existsSync(path.join(dir, "originals", snapshot.familyId))).toBe(false);
+    expect(await m.db.getDb().select().from(m.schema.family)).toHaveLength(0);
     m.db.closeDatabase();
     rmSync(dir, { recursive: true, force: true });
   });

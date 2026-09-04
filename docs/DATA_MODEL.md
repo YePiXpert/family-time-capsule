@@ -21,7 +21,11 @@ Family ──┬── Person（真实家庭人物，不等于登录账号）
          ├── FamilyInvitation（邀请账号的短期 bearer capability）
          ├── Asset（原始素材 + 衍生物）
          ├── InboxItem（收件箱待整理项）
+         ├── UploadSession（有期限的临时传输状态）
+         ├── ImportSession / Item（耐久批量导入与来源关系）
          ├── MemoryEvent（核心：记忆事件）
+         ├── ContributionRequest / PortalSubmission（受限访客投递）
+         ├── ReviewPeriod / Event（每周回顾与人工重点）
          └── Capsule（时间胶囊）
 ```
 
@@ -32,10 +36,20 @@ type Family = {
   id: string            // UUID
   name: string          // 1–50 字
   timezone: string      // IANA 时区，默认 Asia/Shanghai；#006 起解释无时区的 EXIF 时间
+  childLaterUnlockAge: number
+  weekStartsOn: number              // 0=Sunday … 6=Saturday
+  reviewReminderWeekday: number     // 家庭时区中的提醒星期
+  reviewReminderLocalTime: string   // HH:mm 家庭墙钟
+  remindPendingInbox: boolean
+  remindPendingRequests: boolean
+  remindUpcomingCapsules: boolean
   createdAt: Date
   updatedAt: Date
 }
 ```
+
+周设置随 portable archive 往返；旧 v1/rc.4 归档缺失时安全默认成周一开周、周日 19:30，
+三类提醒偏好开启。系统通知权限与已调度 notification ID 只属于具体设备，不在 Family 中。
 
 ## Person（#003 已落地）
 
@@ -130,6 +144,68 @@ type Asset = {
 - `timeSource` 记录时间来源优先级：user_confirmed > embedded_metadata > file_metadata > import_time。
 - `sha256` 用于原件去重与导出校验；原件写入后不可覆盖。
 - 衍生物通过 `originalAssetId` + `derivativeType` 指回原件，可随时删除重建。
+
+## UploadSession / ImportSession（1.1 M2，migration 0031）
+
+```ts
+type UploadSession = {
+  id: string
+  familyId: string
+  userId?: string | null
+  captureId: string
+  filename: string
+  declaredMime: string
+  totalBytes: number
+  receivedBytes: number
+  lastModified?: Date | null
+  source: "web" | "native" | "share" | "guest"
+  importSessionId?: string | null
+  tempStorageKey: string
+  status: "created" | "uploading" | "completed" | "cancelled" | "failed" | "expired"
+  expiresAt: Date
+  finalAssetId?: string | null
+  finalInboxItemId?: string | null
+}
+
+type ImportSession = {
+  id: string
+  familyId: string
+  source: "web" | "native" | "share" | "guest"
+  status: "collecting" | "uploading" | "reviewing" | "completed" | "cancelled"
+  totalCount: number
+  completedCount: number
+  failedCount: number
+  defaultTitle?: string | null
+  defaultOccurredAt?: Date | null
+  defaultLocationText?: string | null
+  createdByUserId?: string | null
+}
+
+type ImportSessionItem = {
+  id: string
+  familyId: string
+  importSessionId: string
+  captureId: string
+  filename?: string | null
+  declaredMime?: string | null
+  totalBytes?: number | null
+  lastModified?: Date | null
+  clientFingerprint?: string | null
+  uploadSessionId?: string | null
+  assetId?: string | null
+  inboxItemId?: string | null
+  status: "pending" | "uploading" | "completed" | "failed" | "cancelled"
+  errorCode?: string | null
+  sortOrder: number
+}
+```
+
+- `UploadSession` 是服务器拥有的临时状态：路径使用随机 `tempStorageKey`，不接受客户端路径；
+  磁盘实际长度与数据库 offset 在加锁后安全对账。它会过期清理，不进入 portable archive。
+- `ImportSession` 是用户可见的耐久批次；默认人物使用
+  `import_session_default_participant` 关系表，item 通过外键关联 transfer、Asset 与 InboxItem。
+- 恢复时保留批次、声明、排序、最终 Asset/Inbox 关系和单项结果，但不恢复临时 transfer；
+  `uploadSessionId` 置空，创建者映射为恢复 operator。document 与其他完成原件保持原 SHA-256。
 
 ## InboxItem（#007 已落地：`db/schema/inbox.ts`）
 
@@ -578,8 +654,8 @@ type ContributionRequestSubmission = {
 - 访客只能看到 recipientLabel + promptText；提交（文字/音频/照片/视频）落收件箱
   审核队列，绝不直接发布。
 - 限流：每链接 5 条/小时；每家庭打开链接上限 20。
-- 普通口述请求仍是短期运维状态；1.1 portal 配置及 submission bundle 在 M8 进入 portable
-  archive，原 token/hash 不导出，恢复后一律 `closed` 且 `tokenHash=null`。
+- 1.1 已将 request/portal 配置及 submission bundle 纳入 portable archive；原 token/hash、
+  creator/closer User ID 与 live 状态不导出，恢复后一律 `closed` 且 `tokenHash=null`。
 - `recipientPersonId` 写入前必须验证 Person 属于请求的 family；它只关联邀请和人物主页，
   不改变匿名访客可见字段，也不把 Person 数据暴露给访客。
 
@@ -693,7 +769,8 @@ type ReviewPeriodEvent = {
 - `Family` 保存周开始日、提醒日/本地时间与三类提醒开关。设备权限和已调度 notification ID
   不是家庭数据，只存原生本机 meta，也不导出。
 - `ReviewPeriod.storyId` 指向同周期唯一来源周记。`story_source.sourceType=memory_event` 让结构化
-  事件段即使没有 Fact/Contribution 也可追溯；M8 portable archive 必须保存这些新行和关系。
+  事件段即使没有 Fact/Contribution 也可追溯；portable archive 已保存 period、人工重点关系
+  与 Story 来源，恢复前会拒绝悬空图。
 
 ## Trash（M7 已落地：migration 0028）
 
