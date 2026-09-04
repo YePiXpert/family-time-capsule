@@ -7,3 +7,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+# Repository workflow
+
+- Work and release only from `main`; do not create feature, fix, release, or temporary build branches.
+- Before starting, run `git checkout main`, `git pull --ff-only origin main`, and inspect `git status --short`.
+- Commit small, clear milestones and push them to `origin main` by default.
+- Do not create pull requests and never force-push.
+- After every push, inspect GitHub Actions; repair red CI directly on `main` and push again until it is green.
