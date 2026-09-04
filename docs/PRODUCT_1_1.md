@@ -146,8 +146,8 @@ created → receiving → completing → completed
 | M3 Web 批量导入/document | ✅ 三并发池、持久批次、document 原件/预览/检索自动化已实现 | ⏳ 浏览器 500MB/刷新重选仍需人工补验 |
 | M4 Android/iOS 系统分享与 Files | ✅ main CI `33886783602` 全绿；云包 run `33886793964` 三 job 全绿。独立复验 APK v2/versionCode 5/Hermes/SEND/SEND_MULTIPLE 与 IPA build 5/ARM64/appex/App Group；SHA-256：APK `8ae8304d…1ff11bf`、IPA `837e211e…131ffc` | ⏳ 必须用真实 Android/iPhone 验证，未宣称通过 |
 | M5 家庭投递箱 | ✅ 复用 Contribution Request token、匿名续传、guest ImportSession/Inbox bundle、管理/本机 QR、暂停/撤销/换 token 与 rc.4 升级回归已实现 | ⏳ 真实浏览器录音/多文件及扫码需人工补验 |
-| M6 原生日常能力 | ✅ 原生 People/Stories/Capsules/Requests/ContributionPortals/ImportSessions 页面、最小移动 API、独立 cursor 缓存和 capability/锁定/隔离自动化已实现 | ⏳ 页面操作、离线重开、扫码和系统分享链接仍需真机人工补验 |
-| M7 每周回顾与本地提醒 | ⏳ 未实现 | ⏳ 通知授权/锁屏/时区变化需人工补验 |
+| M6 原生日常能力 | ✅ 原生 People/Stories/Capsules/Requests/ContributionPortals/ImportSessions 页面、最小移动 API、独立 cursor 缓存和 capability/锁定/隔离自动化已实现；CI `33891377198` 与云包 `33891401232` 全绿 | ⏳ 页面操作、离线重开、扫码和系统分享链接仍需真机人工补验 |
+| M7 每周回顾与本地提醒 | ✅ ReviewPeriod/重点关系、Web/原生四步流程、无 AI 来源草稿、显式同意 AI 优化与一次性本地隐私提醒已实现；上海/纽约 DST/幂等/viewer/拒权/重排自动化通过 | ⏳ 通知授权、锁屏显示、时区变化与系统调度仍需真机人工补验 |
 | M8 hardening 与 alpha release | ⏳ 未执行 | ⏳ 不创建 stable 标签 |
 
 每个里程碑只有在实现、自动化、包级检查与适用的真实设备证据分别记录后才可改变对应状态；

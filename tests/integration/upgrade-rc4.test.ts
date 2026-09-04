@@ -55,6 +55,14 @@ describe("real v1.0.0-rc.4 database upgrade", () => {
         .toEqual({ kind: "request", title: null, status: "open", max_submissions: 5, allow_documents: 0 });
       expect(sqlite.prepare("SELECT request_id,inbox_item_id FROM contribution_request_submission WHERE id=?").get("submission-rc4"))
         .toEqual({ request_id: "request-rc4", inbox_item_id: "inbox-rc4" });
+      expect(sqlite.prepare("SELECT name,week_starts_on,review_reminder_weekday,review_reminder_local_time,remind_pending_inbox,remind_pending_requests,remind_upcoming_capsules FROM family WHERE id=?").get("family-rc4"))
+        .toEqual({
+          name: "rc.4 family", week_starts_on: 1, review_reminder_weekday: 0,
+          review_reminder_local_time: "19:30", remind_pending_inbox: 1,
+          remind_pending_requests: 1, remind_upcoming_capsules: 1,
+        });
+      expect(sqlite.prepare("SELECT family_id,person_id FROM user WHERE id=?").get("user-rc4"))
+        .toEqual({ family_id: "family-rc4", person_id: "person-rc4" });
       expect(sqlite.prepare('SELECT created_at FROM "__drizzle_migrations" ORDER BY created_at DESC LIMIT 1').pluck().get())
         .toBe(journal.entries.at(-1)?.when);
     } finally {

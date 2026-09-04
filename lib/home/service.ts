@@ -19,6 +19,7 @@ import {
   listContributionRequests,
 } from "@/lib/oral-history/service";
 import { listStories } from "@/lib/stories/service";
+import { getReviewOverview } from "@/lib/review/service";
 
 export type HomeMemoryDto = {
   id: string;
@@ -94,6 +95,13 @@ export type HomeDashboardDto = {
     pendingCount: number;
     isCreatedRequest: boolean;
   };
+  weeklyReview: {
+    key: string;
+    status: string;
+    confirmedCount: number;
+    pendingInboxCount: number;
+    storyId: string | null;
+  };
   isFirstUse: boolean;
 };
 
@@ -149,6 +157,7 @@ export async function getHomeDashboard(
     requests,
     resurfacing,
     milestoneEntries,
+    weeklyReview,
   ] =
     await Promise.all([
       countInbox(context.familyId),
@@ -159,6 +168,7 @@ export async function getHomeDashboard(
       Promise.resolve(listContributionRequests(context)),
       getResurfacing(context.familyId, family.timezone, now, 3),
       listMilestoneEntries(context.familyId, 4),
+      getReviewOverview(context),
     ]);
 
   const inboxCoverIds = inboxPage.entries
@@ -277,6 +287,13 @@ export async function getHomeDashboard(
           pendingCount: 0,
           isCreatedRequest: false,
         },
+    weeklyReview: {
+      key: weeklyReview.key,
+      status: weeklyReview.period.status,
+      confirmedCount: weeklyReview.events.length,
+      pendingInboxCount: weeklyReview.counts.inbox,
+      storyId: weeklyReview.period.storyId,
+    },
     isFirstUse: inboxCount === 0 && allRecent.length === 0,
   };
 }

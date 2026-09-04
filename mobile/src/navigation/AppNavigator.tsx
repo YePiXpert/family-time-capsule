@@ -26,8 +26,8 @@ import {
   RequestsScreen,
   StoriesScreen,
   StoryDetailScreen,
-  WeeklyReviewScreen,
 } from "../screens/LibraryScreens";
+import { WeeklyReviewScreen } from "../screens/WeeklyReviewScreen";
 import { colors } from "../theme";
 import type { MainTabParamList, RootStackParamList } from "./types";
 

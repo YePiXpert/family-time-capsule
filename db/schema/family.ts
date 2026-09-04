@@ -27,6 +27,13 @@ export const family = sqliteTable(
     timezone: text("timezone").notNull().default("Asia/Shanghai"),
     // `child_later` Contributions unlock automatically at this age.
     childLaterUnlockAge: integer("child_later_unlock_age").notNull().default(18),
+    // 0=Sunday … 6=Saturday. Week boundaries are interpreted in timezone.
+    weekStartsOn: integer("week_starts_on").notNull().default(1),
+    reviewReminderWeekday: integer("review_reminder_weekday").notNull().default(0),
+    reviewReminderLocalTime: text("review_reminder_local_time").notNull().default("19:30"),
+    remindPendingInbox: integer("remind_pending_inbox", { mode: "boolean" }).notNull().default(true),
+    remindPendingRequests: integer("remind_pending_requests", { mode: "boolean" }).notNull().default(true),
+    remindUpcomingCapsules: integer("remind_upcoming_capsules", { mode: "boolean" }).notNull().default(true),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -35,6 +42,10 @@ export const family = sqliteTable(
       "family_child_later_unlock_age_check",
       sql`typeof(${t.childLaterUnlockAge}) = 'integer' and ${t.childLaterUnlockAge} between 1 and 100`,
     ),
+    check("family_week_starts_on_check", sql`${t.weekStartsOn} between 0 and 6`),
+    check("family_review_reminder_weekday_check", sql`${t.reviewReminderWeekday} between 0 and 6`),
+    check("family_review_reminder_time_check", sql`${t.reviewReminderLocalTime} glob '[0-2][0-9]:[0-5][0-9]' and substr(${t.reviewReminderLocalTime}, 1, 2) between '00' and '23'`),
+    check("family_review_reminder_flags_check", sql`${t.remindPendingInbox} in (0, 1) and ${t.remindPendingRequests} in (0, 1) and ${t.remindUpcomingCapsules} in (0, 1)`),
   ],
 );
 

@@ -29,6 +29,7 @@ describe("product shell navigation", () => {
   it("places every requested secondary destination under more", () => {
     expect(SECONDARY_NAVIGATION.map((item) => item.href)).toEqual([
       "/search",
+      "/review",
       "/family",
       "/stories",
       "/requests",
@@ -50,10 +51,10 @@ describe("product shell navigation", () => {
   });
 
   it.each([
-    ["admin", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "家人", "故事", "口述史", "时间胶囊", "书籍与备份", "设置", "回收站"]],
-    ["editor", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "故事", "口述史", "时间胶囊", "书籍与备份", "设置", "回收站"]],
-    ["contributor", ["首页", "时间轴", "记录", "更多"], ["搜索", "口述史", "书籍与备份", "设置"]],
-    ["viewer", ["首页", "时间轴", "更多"], ["搜索", "书籍与备份", "设置"]],
+    ["admin", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "每周回顾", "家人", "故事", "口述史", "时间胶囊", "书籍与备份", "设置", "回收站"]],
+    ["editor", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "每周回顾", "故事", "口述史", "时间胶囊", "书籍与备份", "设置", "回收站"]],
+    ["contributor", ["首页", "时间轴", "记录", "更多"], ["搜索", "每周回顾", "口述史", "书籍与备份", "设置"]],
+    ["viewer", ["首页", "时间轴", "更多"], ["搜索", "每周回顾", "书籍与备份", "设置"]],
   ] as const)("filters %s navigation by durable capabilities", (role, primary, secondary) => {
     const capabilities = FAMILY_CAPABILITIES.filter((capability) =>
       hasFamilyCapability(role as FamilyRole, capability),

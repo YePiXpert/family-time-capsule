@@ -154,6 +154,13 @@ export type MobileHome = {
     pendingCount: number;
     isCreatedRequest: boolean;
   };
+  weeklyReview: {
+    key: string;
+    status: string;
+    confirmedCount: number;
+    pendingInboxCount: number;
+    storyId: string | null;
+  };
   isFirstUse: boolean;
 };
 
@@ -289,4 +296,46 @@ export type MobileLibraryMutationResult = {
   id?: string;
   token?: string;
   expiresAt?: string;
+};
+
+export type MobileReview = {
+  id: string;
+  key: string;
+  periodStart: string;
+  periodEnd: string;
+  status: "open" | "in_progress" | "completed";
+  storyId: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  canWrite: boolean;
+  preferences: {
+    timezone: string;
+    weekStartsOn: number;
+    reminderWeekday: number;
+    reminderLocalTime: string;
+    remindPendingInbox: boolean;
+    remindPendingRequests: boolean;
+    remindUpcomingCapsules: boolean;
+  };
+  counts: {
+    inbox: number;
+    needsReview: number;
+    duplicateSuggestions: number;
+    clusterSuggestions: number;
+    guestSubmissions: number;
+    failedImports: number;
+    pendingRequests: number;
+    upcomingCapsules: number;
+  };
+  reminderAt: string | null;
+  events: {
+    id: string;
+    title: string;
+    occurredAt: string;
+    locationText: string | null;
+    participantNames: string[];
+    milestoneType: string | null;
+    contributionCount: number;
+    selected: boolean;
+  }[];
 };

@@ -493,13 +493,6 @@ export function ImportSessionDetailScreen({ route }: ImportDetailProps) {
   </>}</DetailShell>;
 }
 
-export function WeeklyReviewScreen() {
-  return <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-    <Text style={sharedStyles.eyebrow}>Weekly rhythm</Text><Text style={sharedStyles.title}>每周回顾</Text>
-    <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>这个原生入口已经固定在导航中。周期、四步回顾、来源周记和本地隐私提醒将在下一里程碑接入同一页面。</Text></View>
-  </ScrollView>;
-}
-
 const styles = StyleSheet.create({
   list: { padding: 18, paddingBottom: 44, gap: 10 },
   emptyList: { flexGrow: 1, padding: 18 },

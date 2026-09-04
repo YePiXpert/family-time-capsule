@@ -19,6 +19,7 @@ export const PRIMARY_NAVIGATION: readonly NavigationItem[] = [
 
 export const SECONDARY_NAVIGATION: readonly NavigationItem[] = [
   { href: "/search", label: "搜索", icon: "search", capability: "archive:view" },
+  { href: "/review", label: "每周回顾", icon: "story", capability: "archive:view" },
   { href: "/family", label: "家人", icon: "people", capability: "family:manage" },
   { href: "/stories", label: "故事", icon: "story", capability: "story:write" },
   { href: "/requests", label: "口述史", icon: "microphone", capability: "contribution:create" },
@@ -36,7 +37,7 @@ export function filterNavigationByCapabilities(
   return items.filter((item) => allowed.has(item.capability));
 }
 
-const MORE_PREFIXES = ["/more", "/search", "/family", "/stories", "/requests", "/capsules", "/books", "/imports", "/settings", "/trash"];
+const MORE_PREFIXES = ["/more", "/search", "/review", "/family", "/stories", "/requests", "/capsules", "/books", "/imports", "/settings", "/trash"];
 
 export function isNavigationItemActive(pathname: string, href: string, mobile = false): boolean {
   if (href === "/") return pathname === "/";

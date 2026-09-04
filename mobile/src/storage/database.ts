@@ -11,6 +11,7 @@ import type {
   MobileLibraryPage,
   MobileMemory,
   MobileHome,
+  MobileReview,
   OutboxItem,
   Person,
   SyncPage,
@@ -111,13 +112,18 @@ export async function getMeta(key: string): Promise<string | null> {
   return row?.value ?? null;
 }
 
-async function setMeta(key: string, value: string): Promise<void> {
+export async function setMeta(key: string, value: string): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
     "INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     key,
     value,
   );
+}
+
+export async function deleteMeta(key: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM meta WHERE key = ?", key);
 }
 
 export async function cacheMobileHome(home: MobileHome): Promise<void> {
@@ -132,6 +138,17 @@ export async function getCachedMobileHome(): Promise<MobileHome | null> {
   } catch {
     return null;
   }
+}
+
+export async function cacheMobileReview(review: MobileReview): Promise<void> {
+  await setMeta("mobile_review", JSON.stringify(review));
+}
+
+export async function getCachedMobileReview(): Promise<MobileReview | null> {
+  const raw = await getMeta("mobile_review");
+  if (!raw) return null;
+  try { return JSON.parse(raw) as MobileReview; }
+  catch { return null; }
 }
 
 export async function cacheMobileLibraryPage(domain: MobileLibraryDomain, page: MobileLibraryPage): Promise<void> {

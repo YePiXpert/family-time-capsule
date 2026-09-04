@@ -281,6 +281,18 @@
 - 创建回答/投递链接时 token 只在当次响应和页面内存状态出现；二维码完全本机渲染、不调用外部
   服务。投递箱换发在事务内替换 hash，旧 token 立即失效。
 
+### 每周回顾与本地通知（1.1 M7）
+
+- `/api/mobile/v1/review` 从实时 Bearer binding 推导 family/role，响应 `private, no-store`；跨家庭
+  ReviewPeriod 统一 404，viewer 只读。重点只能关联同家庭、同周期、未删除且已确认的
+  MemoryEvent。
+- 无 AI 草稿先落地并逐段保存 `memory_event`/Fact/Contribution/Transcript 来源。AI 优化是单独
+  manual job：必须有 `ai:review`、文本 capability 和现有逐能力 consent；只改未人工编辑的 draft，
+  引文逐字复制并再次通过 Quote Lock，不能发布故事或确认事实。
+- 通知权限与系统 notification identifier 只存在设备 SQLite，不进入家庭 archive。默认关闭，
+  不自动请求；拒权不影响回顾。正文是固定通用文本，Android channel 设为 secret lock-screen
+  visibility，胶囊标题、人物名、照片和家人原话均不进入 notification content。
+
 ### 回收站（M7）
 - 软删除行在导出/搜索/素材收集中一律过滤（跨家庭隔离有测试）；
 - 硬清除需显式确认并写审计；素材物理删除有全引用守卫。

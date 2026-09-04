@@ -7,6 +7,7 @@ import {
   parseMobileInboxPage,
   parseMobileMemory,
   parseMobileSearchPage,
+  parseMobileReview,
   parseSyncPage,
   signIn,
   updateMobileContribution,
@@ -126,6 +127,7 @@ describe("native API client", () => {
       story: null,
       capsule: null,
       prompt: { text: "小时候最喜欢什么？", recipientLabel: null, pendingCount: 0, isCreatedRequest: false },
+      weeklyReview: { key: "2026-08-31", status: "open", confirmedCount: 2, pendingInboxCount: 1, storyId: null },
       isFirstUse: false,
     };
     const inbox = {
@@ -155,5 +157,21 @@ describe("native API client", () => {
     expect(() => parseMobileInboxPage({ ...inbox, entries: [{ ...inbox.entries[0], assets: [{ type: "executable" }] }] })).toThrowError(ApiError);
     expect(() => parseMobileMemory({ ...memory, contributions: [{ text: "missing policy fields" }] })).toThrowError(ApiError);
     expect(() => parseMobileSearchPage({ ...search, items: [{ ...search.items[0], type: "unknown" }] })).toThrowError(ApiError);
+  });
+
+  it("validates the bounded weekly review DTO", () => {
+    const value = {
+      id: "review-1", key: "2026-08-31",
+      periodStart: "2026-08-30T16:00:00.000Z", periodEnd: "2026-09-06T16:00:00.000Z",
+      status: "in_progress", storyId: null, startedAt: "2026-09-04T00:00:00.000Z", completedAt: null,
+      canWrite: true,
+      preferences: { timezone: "Asia/Shanghai", weekStartsOn: 1, reminderWeekday: 0, reminderLocalTime: "19:30", remindPendingInbox: true, remindPendingRequests: true, remindUpcomingCapsules: true },
+      counts: { inbox: 1, needsReview: 0, duplicateSuggestions: 0, clusterSuggestions: 0, guestSubmissions: 1, failedImports: 0, pendingRequests: 2, upcomingCapsules: 0 },
+      reminderAt: "2026-09-06T11:30:00.000Z",
+      events: [{ id: "event-1", title: "散步", occurredAt: "2026-09-02T02:00:00.000Z", locationText: null, participantNames: ["小满"], milestoneType: null, contributionCount: 0, selected: true }],
+    };
+    expect(parseMobileReview(value)).toEqual(value);
+    expect(() => parseMobileReview({ ...value, counts: { ...value.counts, inbox: -1 } })).toThrowError(ApiError);
+    expect(() => parseMobileReview({ ...value, events: [{ ...value.events[0], participantNames: "private" }] })).toThrowError(ApiError);
   });
 });

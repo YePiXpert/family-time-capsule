@@ -1301,6 +1301,7 @@ async function loadAndVerifyZip(
     "contribution",
     "transcript",
     "user_text",
+    "memory_event",
   ]);
   const factSourcesJson: Array<{
     id: string;
@@ -1644,7 +1645,8 @@ async function loadAndVerifyZip(
       const known =
         (ss.sourceType === "fact" && factIds.has(ss.sourceId as string)) ||
         (ss.sourceType === "contribution" && contributionIds.has(ss.sourceId as string)) ||
-        (ss.sourceType === "transcript" && transcriptIds.has(ss.sourceId as string));
+        (ss.sourceType === "transcript" && transcriptIds.has(ss.sourceId as string)) ||
+        (ss.sourceType === "memory_event" && eventIds.has(ss.sourceId as string));
       requireCondition(
         known,
         "bad_refs",

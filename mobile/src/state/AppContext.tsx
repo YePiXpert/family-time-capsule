@@ -12,6 +12,7 @@ import { AppState } from "react-native";
 import * as Network from "expo-network";
 import {
   fetchMobileHome,
+  fetchMobileReview,
   signOut,
 } from "../api/client";
 import {
@@ -20,6 +21,7 @@ import {
 } from "../auth/credentials";
 import {
   cacheMobileHome,
+  cacheMobileReview,
   clearLocalArchive,
   getCachedFamily,
   getCachedMobileHome,
@@ -44,6 +46,7 @@ import type {
   Person,
   Viewer,
 } from "../types";
+import { reconcileWeeklyReviewReminder } from "../notifications/review-reminders";
 
 type AppContextValue = {
   credentials: Credentials | null;
@@ -111,6 +114,14 @@ export function AppProvider({
     const nextHome = await fetchMobileHome(activeCredentials);
     await cacheMobileHome(nextHome);
     setHome(nextHome);
+    try {
+      const review = await fetchMobileReview(activeCredentials);
+      await cacheMobileReview(review);
+      await reconcileWeeklyReviewReminder(review);
+    } catch {
+      // Review is an independent versioned snapshot; retain its last cache if
+      // the endpoint is temporarily unavailable or the server is still 1.0.
+    }
   }, []);
 
   const runSync = useCallback(async () => {
@@ -213,10 +224,16 @@ export function AppProvider({
   }, [receiveSystemShares]);
 
   useEffect(() => {
+    const timer = setTimeout(() => void reconcileWeeklyReviewReminder(), 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void receiveSystemShares().then(() => (
-        credentials ? runSync() : undefined
-      ));
+      if (state === "active") void receiveSystemShares().then(async () => {
+        await reconcileWeeklyReviewReminder();
+        if (credentials) await runSync();
+      });
     });
     return () => subscription.remove();
   }, [credentials, receiveSystemShares, runSync]);

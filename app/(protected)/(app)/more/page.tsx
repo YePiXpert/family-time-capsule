@@ -23,6 +23,7 @@ export default async function MorePage() {
         <SectionHeader title="发现与讲述" />
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <QuickAction href="/search" icon="search" label="搜索" description="从记忆、讲述、标签与故事中寻找" />
+          <QuickAction href="/review" icon="story" label="每周回顾" description="整理本周素材、家人声音与故事草稿" />
           {canManageFamily ? <QuickAction href="/family" icon="people" label="家人" description="查看每个人参与的记忆与声音" /> : null}
           {canWriteStories ? <QuickAction href="/stories" icon="story" label="故事" description="阅读周记、月章与年度故事" /> : null}
           {canCreateContributions ? <QuickAction href="/requests" icon="microphone" label="口述史" description="向家人发起一个讲述问题" /> : null}

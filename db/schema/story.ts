@@ -106,7 +106,7 @@ export const storySource = sqliteTable(
     index("story_source_paragraph_idx").on(t.paragraphId),
     check(
       "story_source_type_check",
-      sql`${t.sourceType} in ('fact', 'contribution', 'transcript', 'user_text')`,
+      sql`${t.sourceType} in ('fact', 'contribution', 'transcript', 'user_text', 'memory_event')`,
     ),
   ],
 );

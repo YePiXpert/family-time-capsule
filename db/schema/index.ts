@@ -19,3 +19,4 @@ export * as storySchema from "./story";
 export * as oralHistorySchema from "./oral-history";
 export * as backupSchema from "./backup";
 export * as importSchema from "./import";
+export * as reviewSchema from "./review";

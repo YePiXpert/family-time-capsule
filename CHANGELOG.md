@@ -2,6 +2,15 @@
 
 本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ **1.0 Family Archive**。
 
+## 1.1.0-alpha.1 — Capture Anywhere & Family Rhythm（开发中）
+
+- 新增按家庭时区和自定义周开始日唯一创建的 `ReviewPeriod`，Web 与原生端提供整理素材、选择
+  已确认重点、补家人声音和生成周记草稿的四步回顾；无事件周也可完成和重开。
+- 无 AI 路径使用真实事件标题、日期、人物、地点和原话组装 Story，并保存逐段来源。显式 AI
+  路径继续要求现有 capability/consent，只优化未编辑草稿表达、逐字保留引文，不自动发布。
+- 原生端用 Expo Notifications 调度可完全关闭的一次性本地提醒；仅用户主动开启时请求权限，
+  锁屏固定通用文案，周期完成、时区/偏好变化和 App 重启时取消或重排。
+
 ## 1.0.0-rc.4 — Cross-device correctness（2026-09-04）
 
 本轮不增加产品领域、页面、AI、备份或导出格式；portable archive 继续使用 v1。重点修复

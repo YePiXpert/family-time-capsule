@@ -32,6 +32,7 @@
     },
     "plugins": [
       "./plugins/with-native-share-intake",
+      "expo-notifications",
       "expo-sqlite",
       "expo-document-picker",
       [

@@ -251,6 +251,18 @@
 - **后果**：日常读写不再以浏览器为主路径；离线阅读已打开内容可用。领域写入暂不建立第二套
   通用 outbox，离线时必须明确提示需要联网。口述/portal token 只在创建或换发响应出现，不持久化。
 
+## D-021（1.1 M7）家庭时区周期与设备一次性提醒
+
+- **日期**：2026-09-04
+- **状态**：已接受
+- **决策**：ReviewPeriod 以家庭本地周界持久化，唯一键覆盖 family/start/end；服务端把家庭
+  reminder weekday/time 解析成带 DST 的绝对时刻，原生端使用 Expo Notifications 的一次性
+  Date trigger，并保存 fingerprint + 系统 ID 做取消/重排。
+- **理由**：设备循环 weekly trigger 会按设备时区而非家庭时区漂移，也难以在完成周期后只取消
+  当前提醒。一次性绝对时刻可在家庭时区变化、App 重启和同步后安全收敛。
+- **后果**：默认不开权限，拒权不影响回顾；通知正文固定且不含私人资料。无 AI 周记永远先可用；
+  AI 优化是显式 manual job，只能替换未编辑 draft 的叙述，Quote Lock 引文原样保留。
+
 ## D-0xx（M6）PDF 生成的技术选型
 - **决策**：手写 PDF 封装（页面 = sharp SVG 排版 → JPEG → DCTDecode 直嵌），
   不引入 PDF 库；EPUB 用 jszip 按 EPUB 3 规范生成。

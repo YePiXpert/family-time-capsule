@@ -392,7 +392,7 @@ export type DraftParagraphPlan = {
   kind: "narrative" | "quote";
   text: string;
   sources: Array<{
-    sourceType: "fact" | "contribution" | "transcript";
+    sourceType: "fact" | "contribution" | "transcript" | "memory_event";
     sourceId: string;
     quote: string | null;
   }>;
@@ -482,7 +482,7 @@ function verifyQuoteLock(
 
 export function createStoryDraft(
   context: FamilyContext,
-  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string },
+  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string; period?: StoryPeriod },
   paragraphs: DraftParagraphPlan[],
 ): CreateDraftResult {
   try {
@@ -499,7 +499,7 @@ export function createStoryDraft(
   if (paragraphs.length > MAX_PARAGRAPHS_PER_STORY) {
     paragraphs = paragraphs.slice(0, MAX_PARAGRAPHS_PER_STORY);
   }
-  const period = periodForKind(input.kind, input.anchor);
+  const period = input.period ?? periodForKind(input.kind, input.anchor);
   const db = getDb();
 
   const storyId = randomUUID();
@@ -564,11 +564,11 @@ export type RegenerateResult =
  */
 export function regenerateOrCreateStory(
   context: FamilyContext,
-  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string },
+  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string; period?: StoryPeriod },
   paragraphs: DraftParagraphPlan[],
 ): RegenerateResult {
   const db = getDb();
-  const period = periodForKind(input.kind, input.anchor);
+  const period = input.period ?? periodForKind(input.kind, input.anchor);
   const existing = db
     .select()
     .from(story)

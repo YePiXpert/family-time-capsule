@@ -11,6 +11,7 @@ import type {
   MobileLibraryMutationResult,
   MobileLibraryPage,
   MobileMemory,
+  MobileReview,
   MobileMemoryAsset,
   MobileSearchPage,
   Person,
@@ -318,6 +319,11 @@ export function parseMobileHome(value: unknown): MobileHome {
     isString(value.capsule.title, 500) && isString(value.capsule.status, 32) &&
     isString(value.capsule.unlockType, 32) && isString(value.capsule.unlockValue, 200) &&
     typeof value.capsule.unlocked === "boolean"));
+  const validWeeklyReview = value && isRecord(value) && isRecord(value.weeklyReview) &&
+    isString(value.weeklyReview.key, 10) && isString(value.weeklyReview.status, 32) &&
+    Number.isSafeInteger(value.weeklyReview.confirmedCount) && Number(value.weeklyReview.confirmedCount) >= 0 &&
+    Number.isSafeInteger(value.weeklyReview.pendingInboxCount) && Number(value.weeklyReview.pendingInboxCount) >= 0 &&
+    isNullableString(value.weeklyReview.storyId, 128);
   if (
     !isRecord(value) ||
     !isRecord(value.family) ||
@@ -331,6 +337,7 @@ export function parseMobileHome(value: unknown): MobileHome {
     !validOnThisDay ||
     !validStory ||
     !validCapsule ||
+    !validWeeklyReview ||
     !isRecord(value.prompt) ||
     !isString(value.prompt.text, 1000) ||
     !isNullableString(value.prompt.recipientLabel, 200) ||
@@ -726,6 +733,55 @@ export async function mutateMobileLibraryItem(
     `/api/mobile/v1/library/${domain}/${encodeURIComponent(id)}`,
     { method: "PATCH", body: JSON.stringify(input) },
   ));
+}
+
+export function parseMobileReview(value: unknown): MobileReview {
+  const validCount = (entry: unknown) => Number.isSafeInteger(entry) && Number(entry) >= 0;
+  if (
+    !isRecord(value) || !isString(value.id, 128) || !isString(value.key, 10) ||
+    !isDateTime(value.periodStart) || !isDateTime(value.periodEnd) ||
+    !["open", "in_progress", "completed"].includes(String(value.status)) ||
+    !isNullableString(value.storyId, 128) || !isNullableString(value.startedAt, 64) ||
+    !isNullableString(value.completedAt, 64) || typeof value.canWrite !== "boolean" ||
+    !isRecord(value.preferences) || !isString(value.preferences.timezone, 100) ||
+    !Number.isSafeInteger(value.preferences.weekStartsOn) || !Number.isSafeInteger(value.preferences.reminderWeekday) ||
+    !isString(value.preferences.reminderLocalTime, 5) ||
+    typeof value.preferences.remindPendingInbox !== "boolean" ||
+    typeof value.preferences.remindPendingRequests !== "boolean" ||
+    typeof value.preferences.remindUpcomingCapsules !== "boolean" ||
+    !isRecord(value.counts) || ![
+      value.counts.inbox, value.counts.needsReview, value.counts.duplicateSuggestions,
+      value.counts.clusterSuggestions, value.counts.guestSubmissions, value.counts.failedImports,
+      value.counts.pendingRequests, value.counts.upcomingCapsules,
+    ].every(validCount) || (value.reminderAt !== null && !isDateTime(value.reminderAt)) ||
+    !Array.isArray(value.events) || value.events.length > 50 || !value.events.every((event) => (
+      isRecord(event) && isString(event.id, 128) && isString(event.title, 500) &&
+      isDateTime(event.occurredAt) && isNullableString(event.locationText, 500) &&
+      Array.isArray(event.participantNames) && event.participantNames.length <= 100 &&
+      event.participantNames.every((name) => isString(name, 200)) &&
+      isNullableString(event.milestoneType, 32) && validCount(event.contributionCount) &&
+      typeof event.selected === "boolean"
+    ))
+  ) throw new ApiError("服务器每周回顾返回了无效数据。", 502);
+  return value as MobileReview;
+}
+
+export async function fetchMobileReview(credentials: Credentials): Promise<MobileReview> {
+  return parseMobileReview(await requestMobileJson(credentials, "/api/mobile/v1/review"));
+}
+
+export async function mutateMobileReview(
+  credentials: Credentials,
+  input: Record<string, unknown>,
+): Promise<{ review: MobileReview; storyId?: string }> {
+  const value = await requestMobileJson(credentials, "/api/mobile/v1/review", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  if (!isRecord(value) || !isRecord(value.review) || (value.storyId !== undefined && !isString(value.storyId, 128))) {
+    throw new ApiError("服务器每周回顾写入结果无效。", 502);
+  }
+  return { review: parseMobileReview(value.review), ...(typeof value.storyId === "string" ? { storyId: value.storyId } : {}) };
 }
 
 export async function uploadTextCapture(

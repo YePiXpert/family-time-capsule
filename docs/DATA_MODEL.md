@@ -663,6 +663,38 @@ type BackupRun = {
 失败不会清空已有 DTO 或时间轴完整快照。口述史/portal 的原始 token 不写入缓存；本机持久
 `local_import_session` / `local_import_item` 仍负责无服务器时的 Share/Files 原件生命周期。
 
+## ReviewPeriod（1.1 M7，migration 0035）
+
+```ts
+type ReviewPeriod = {
+  id: string
+  familyId: string
+  periodStart: Date
+  periodEnd: Date
+  status: "open" | "in_progress" | "completed"
+  storyId?: string | null
+  startedAt?: Date | null
+  completedAt?: Date | null
+}
+
+type ReviewPeriodEvent = {
+  id: string
+  familyId: string
+  reviewPeriodId: string
+  memoryEventId: string
+  selectedByUserId?: string | null
+}
+```
+
+- `(familyId, periodStart, periodEnd)` 唯一；周期由 `Family.timezone + weekStartsOn` 的本地日历
+  计算，DST 周允许是 167/169 个真实小时。
+- `ReviewPeriodEvent` 是人工重点关系，`(reviewPeriodId, memoryEventId)` 唯一；服务层只允许同
+  家庭、同周期的 confirmed MemoryEvent。
+- `Family` 保存周开始日、提醒日/本地时间与三类提醒开关。设备权限和已调度 notification ID
+  不是家庭数据，只存原生本机 meta，也不导出。
+- `ReviewPeriod.storyId` 指向同周期唯一来源周记。`story_source.sourceType=memory_event` 让结构化
+  事件段即使没有 Fact/Contribution 也可追溯；M8 portable archive 必须保存这些新行和关系。
+
 ## Trash（M7 已落地：migration 0028）
 
 `memory_event`、`contribution`、`story` 各加可空 `deleted_at`：

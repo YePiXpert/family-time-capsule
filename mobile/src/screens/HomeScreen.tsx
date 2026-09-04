@@ -52,6 +52,13 @@ export function HomeScreen() {
         </Pressable>
       ) : null}
 
+      <Pressable onPress={() => navigation.navigate("WeeklyReview")} style={({ pressed }) => [styles.reviewCard, pressed && sharedStyles.pressed]}>
+        <Text style={sharedStyles.eyebrow}>每周回顾</Text>
+        <Text style={sharedStyles.cardTitle}>本周已留下 {home?.weeklyReview.confirmedCount ?? 0} 段</Text>
+        <Text style={sharedStyles.body}>还有 {home?.weeklyReview.pendingInboxCount ?? (home?.inbox.count ?? outbox.length)} 条待整理{home?.weeklyReview.storyId ? " · 周记草稿已生成" : ""}</Text>
+        <Text style={styles.link}>{home?.weeklyReview.status === "open" ? "开始" : "继续"}每周回顾 →</Text>
+      </Pressable>
+
       <Pressable onPress={() => navigation.navigate("Inbox")} style={({ pressed }) => [sharedStyles.card, pressed && sharedStyles.pressed]}>
         <View style={styles.sectionRow}><Text style={sharedStyles.cardTitle}>待整理收件箱</Text><Text style={styles.count}>{home?.inbox.count ?? outbox.length}</Text></View>
         {(home?.inbox.previews ?? []).slice(0, 3).map((item) => (
@@ -101,6 +108,7 @@ const styles = StyleSheet.create({
   quick: { flex: 1, minHeight: 64, borderRadius: 14, backgroundColor: colors.card, borderColor: colors.line, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 3 },
   quickLabel: { color: colors.coralDark, fontSize: 14, fontWeight: "800" },
   quickHint: { color: colors.muted, fontSize: 10 },
+  reviewCard: { backgroundColor: colors.softSage, borderColor: "#BED3C6", borderWidth: 1, borderRadius: 18, padding: 16, gap: 7 },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   count: { overflow: "hidden", minWidth: 28, textAlign: "center", color: "#FFFFFF", backgroundColor: colors.coral, borderRadius: 14, paddingHorizontal: 8, paddingVertical: 4, fontWeight: "800" },
   previewRow: { flexDirection: "row", alignItems: "center", gap: 10 },

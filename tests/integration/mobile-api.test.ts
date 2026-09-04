@@ -62,6 +62,9 @@ const { GET: libraryGet, POST: libraryPost } = await import(
 const { GET: libraryDetailGet, PATCH: libraryDetailPatch } = await import(
   "@/app/api/mobile/v1/library/[domain]/[id]/route"
 );
+const { GET: reviewGet, PATCH: reviewPatch } = await import(
+  "@/app/api/mobile/v1/review/route"
+);
 const { createImportSession } = await import("@/lib/imports/service");
 
 const email = "mobile@example.com";
@@ -802,6 +805,42 @@ describe("native mobile API", () => {
       expect(serialized).not.toContain(requestResult.token);
       expect(serialized).not.toContain(portalResult.token);
     }
+  });
+
+  it("serves a private no-store weekly review and enforces viewer/foreign write isolation", async () => {
+    const admin = (await getDb().select().from(user))[0]!;
+    const child = (await getDb().select().from(person).where(
+      (await import("drizzle-orm")).and(
+        (await import("drizzle-orm")).eq(person.familyId, admin.familyId!),
+        (await import("drizzle-orm")).eq(person.isChild, true),
+      ),
+    ))[0]!;
+    const eventId = randomUUID();
+    await getDb().insert(memoryEvent).values({
+      id: eventId, familyId: admin.familyId!, childPersonId: child.id,
+      title: "移动端每周重点", occurredAt: new Date("2026-09-03T02:00:00.000Z"),
+      occurredAtPrecision: "exact", status: "confirmed", createdAt: new Date(), updatedAt: new Date(),
+    });
+    const response = await reviewGet(bearerRequest("http://localhost/api/mobile/v1/review?period=2026-09-03", viewerToken));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const body = (await response.json()) as { id: string; key: string; canWrite: boolean; events: Array<{ id: string }> };
+    expect(body.canWrite).toBe(false);
+    expect(body.events.map((entry) => entry.id)).toContain(eventId);
+
+    const viewerDenied = await reviewPatch(mobileJsonRequest("http://localhost/api/mobile/v1/review", "PATCH", viewerToken, {
+      operation: "complete", reviewId: body.id, key: body.key,
+    }));
+    expect(viewerDenied.status).toBe(403);
+    const foreignHidden = await reviewPatch(mobileJsonRequest("http://localhost/api/mobile/v1/review", "PATCH", foreignToken, {
+      operation: "complete", reviewId: body.id, key: body.key,
+    }));
+    expect(foreignHidden.status).toBe(404);
+    const selected = await reviewPatch(mobileJsonRequest("http://localhost/api/mobile/v1/review", "PATCH", bearerToken, {
+      operation: "highlight", reviewId: body.id, key: body.key, eventId, selected: true,
+    }));
+    expect(selected.status).toBe(200);
+    await expect(selected.json()).resolves.toMatchObject({ review: { events: expect.arrayContaining([expect.objectContaining({ id: eventId, selected: true })]) } });
   });
 
   it("rejects mobile library writes for viewers, client family ids, and foreign-family details", async () => {

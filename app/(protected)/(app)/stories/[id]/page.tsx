@@ -36,6 +36,7 @@ const SOURCE_TYPE_LABEL: Record<string, string> = {
   contribution: "家人讲述",
   transcript: "录音文字",
   user_text: "家人补写",
+  memory_event: "家庭记忆",
 };
 
 export default async function StoryDetailPage({

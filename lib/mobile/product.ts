@@ -49,6 +49,7 @@ export async function getMobileHome(context: FamilyContext) {
     story: dashboard.recentStory ? { id: dashboard.recentStory.id, title: dashboard.recentStory.title, status: dashboard.recentStory.status } : null,
     capsule: dashboard.upcomingCapsule ? { id: dashboard.upcomingCapsule.id, title: dashboard.upcomingCapsule.title, status: dashboard.upcomingCapsule.status, unlockType: dashboard.upcomingCapsule.unlockType, unlockValue: dashboard.upcomingCapsule.unlockValue, unlocked: dashboard.upcomingCapsule.unlocked } : null,
     prompt: dashboard.familyPrompt,
+    weeklyReview: dashboard.weeklyReview,
     isFirstUse: dashboard.isFirstUse,
   };
 }

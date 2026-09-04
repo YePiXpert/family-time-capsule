@@ -8,6 +8,9 @@ import { AppNavigator } from "./src/navigation/AppNavigator";
 import { initializeLocalStore } from "./src/storage/database";
 import { colors, sharedStyles } from "./src/theme";
 import type { Credentials } from "./src/types";
+import { configureNotificationPresentation } from "./src/notifications/review-reminders";
+
+configureNotificationPresentation();
 
 export default function App() {
   const [ready, setReady] = useState(false);

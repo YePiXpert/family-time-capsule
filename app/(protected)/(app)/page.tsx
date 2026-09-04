@@ -122,6 +122,14 @@ export default async function HomePage() {
         </div>
       )}
 
+      <Link href={`/review/${dashboard.weeklyReview.key}`} className="mt-8 block rounded-2xl border border-accent/30 bg-accent-soft p-5 transition-colors hover:border-accent sm:p-6">
+        <p className="page-eyebrow">每周回顾</p>
+        <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <div><h2 className="text-xl font-semibold">本周已留下 {dashboard.weeklyReview.confirmedCount} 段</h2><p className="mt-1 text-sm text-muted">还有 {dashboard.weeklyReview.pendingInboxCount} 条待整理{dashboard.weeklyReview.storyId ? " · 周记草稿已生成" : ""}</p></div>
+          <span className="ui-button-primary">{dashboard.weeklyReview.status === "open" ? "开始每周回顾" : dashboard.weeklyReview.status === "completed" ? "查看本周回顾" : "继续每周回顾"}</span>
+        </div>
+      </Link>
+
       {dashboard.isFirstUse ? (
         <section className="mt-10 rounded-2xl border border-accent/25 bg-accent-soft p-5 sm:p-6">
           <SectionHeader
