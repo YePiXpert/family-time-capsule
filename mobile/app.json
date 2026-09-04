@@ -48,6 +48,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "读取所选素材的可靠创建时间，避免把导入时间误作拍摄时间。",
+          "savePhotosPermission": "允许将明确选择保存的素材写入系统相册。",
+          "granularPermissions": ["photo", "video"]
+        }
+      ],
+      [
         "expo-audio",
         {
           "microphonePermission": "录制要保存到家庭时间胶囊的家庭声音。",

@@ -49,14 +49,17 @@ export function CaptureScreen() {
     }
   };
 
-  const queuePickedAssets = async (assets: ImagePicker.ImagePickerAsset[]) => {
+  const queuePickedAssets = async (
+    assets: ImagePicker.ImagePickerAsset[],
+    source: "camera" | "library",
+  ) => {
     let success = 0;
     const failures: string[] = [];
     for (const asset of assets) {
       const id = Crypto.randomUUID();
       let privateUri: string | null = null;
       try {
-        const payload = await preservePickedMedia(asset, id);
+        const payload = await preservePickedMedia(asset, id, source);
         privateUri = payload.localUri;
         await enqueueMediaCapture(id, payload);
         privateUri = null;
@@ -100,7 +103,9 @@ export function CaptureScreen() {
             quality: 1,
             videoQuality: ImagePicker.UIImagePickerControllerQualityType.High,
           });
-      if (!result.canceled) await queuePickedAssets(result.assets);
+      if (!result.canceled) {
+        await queuePickedAssets(result.assets, mode === "library" ? "library" : "camera");
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "无法保存所选素材。");
     } finally {

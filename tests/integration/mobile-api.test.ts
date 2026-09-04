@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -126,6 +126,7 @@ function mobileUploadRequest(input: {
   filename: string;
   mimeType: string;
   bytes: Buffer;
+  lastModified?: number | null;
 }): Request {
   const form = new FormData();
   form.append(
@@ -135,7 +136,9 @@ function mobileUploadRequest(input: {
     }),
   );
   form.append("filename", input.filename);
-  form.append("lastModified", "1788422400000");
+  if (input.lastModified !== null) {
+    form.append("lastModified", String(input.lastModified ?? 1_788_422_400_000));
+  }
   if (input.captureId) form.append("captureId", input.captureId);
   return new Request(`http://localhost/api/upload/${input.endpoint}`, {
     method: "POST",
@@ -804,6 +807,36 @@ describe("native mobile API", () => {
     expect(recovered?.assets[0]?.originalFilename).toBe(
       "interrupted-before-inbox.jpg",
     );
+  });
+
+  it("keeps a native library PNG without reliable file time in needs_review", async () => {
+    const familyId = (await getDb().select().from(user))[0]!.familyId!;
+    const bytes = readFileSync(path.join(process.cwd(), "tests/fixtures/sample.png"));
+    const captureId = "ca65d36f-2d48-47da-8fa8-6d1f60dc9a20";
+    const response = await imageUploadPost(
+      mobileUploadRequest({
+        endpoint: "image",
+        token: bearerToken,
+        captureId,
+        filename: "wechat-screenshot-no-exif.png",
+        mimeType: "image/png",
+        bytes,
+        lastModified: null,
+      }),
+    );
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "stored",
+      capturedAt: null,
+      timeSource: "import_time",
+    });
+    const entry = await getInboxEntry(familyId, captureId);
+    expect(entry?.item.status).toBe("needs_review");
+    expect(entry?.assets[0]).toMatchObject({
+      capturedAt: null,
+      timeSource: "import_time",
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
   });
 
   it("rejects native multipart uploads without a bearer session", async () => {

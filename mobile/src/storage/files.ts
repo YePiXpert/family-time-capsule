@@ -1,6 +1,8 @@
 import { Directory, File, Paths, UploadType } from "expo-file-system";
 import type { ImagePickerAsset } from "expo-image-picker";
+import { Asset as MediaLibraryAsset } from "expo-media-library";
 import { ApiError } from "../api/client";
+import { resolveReliableMediaTime, type MediaCaptureSource } from "../media/capture-time";
 import type { Credentials, MediaCapturePayload, TimelineEvent } from "../types";
 
 const capturesDirectory = new Directory(Paths.document, "captures");
@@ -20,6 +22,7 @@ function safeExtension(asset: ImagePickerAsset): string {
 export async function preservePickedMedia(
   asset: ImagePickerAsset,
   id: string,
+  source: Extract<MediaCaptureSource, "camera" | "library">,
 ): Promise<MediaCapturePayload> {
   ensureDirectories();
   const extension = safeExtension(asset);
@@ -30,8 +33,20 @@ export async function preservePickedMedia(
     fileName: asset.fileName?.slice(0, 200) || `capture-${id}.${extension}`,
     mimeType:
       asset.mimeType || (asset.type === "video" ? "video/mp4" : "image/jpeg"),
-    lastModified: Date.now(),
+    lastModified: await resolveReliableMediaTime(
+      source,
+      asset.assetId,
+      async (assetId) => {
+        const libraryAsset = new MediaLibraryAsset(assetId);
+        const [creationTime, modificationTime] = await Promise.all([
+          libraryAsset.getCreationTime(),
+          libraryAsset.getModificationTime(),
+        ]);
+        return { creationTime, modificationTime };
+      },
+    ),
     mediaType: asset.type === "video" ? "video" : "image",
+    source,
   };
 }
 
@@ -50,6 +65,7 @@ export async function preserveRecordedAudio(
     mimeType: extension.toLowerCase() === "webm" ? "audio/webm" : "audio/mp4",
     lastModified: Date.now(),
     mediaType: "audio",
+    source: "recorder",
   };
 }
 
@@ -71,7 +87,9 @@ export async function uploadMediaCapture(
       parameters: {
         captureId,
         filename: payload.fileName,
-        lastModified: String(payload.lastModified),
+        ...(payload.lastModified === null
+          ? {}
+          : { lastModified: String(payload.lastModified) }),
       },
       headers: {
         authorization: `Bearer ${credentials.token}`,

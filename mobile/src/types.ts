@@ -71,8 +71,9 @@ export type MediaCapturePayload = {
   localUri: string;
   fileName: string;
   mimeType: string;
-  lastModified: number;
+  lastModified: number | null;
   mediaType: "image" | "video" | "audio";
+  source: "camera" | "library" | "recorder";
 };
 
 export type OutboxItem = {

@@ -80,6 +80,7 @@ function mediaItem(
       mimeType: "image/jpeg",
       lastModified: 1_788_422_400_000,
       mediaType: "image",
+      source: "library",
     },
     createdAt: "2026-09-03T19:00:00.000Z",
     attemptCount: 0,
