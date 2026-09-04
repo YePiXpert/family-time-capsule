@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { uploadWithProgress } from "@/components/upload-request";
 import { Icon } from "@/components/ui/icons";
@@ -21,6 +21,10 @@ type CaptureFile = {
 
 const fieldClass =
   "min-h-11 w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
+
+const subscribeToHydration = () => () => {};
+const getClientHydrationSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
 
 function fileKind(file: File): "image" | "audio" | "video" | null {
   if (file.type.startsWith("image/")) return "image";
@@ -43,6 +47,11 @@ export function CaptureEditor({
 }) {
   const router = useRouter();
   const mixedInputRef = useRef<HTMLInputElement>(null);
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot,
+  );
   const [files, setFiles] = useState<CaptureFile[]>([]);
   const [text, setText] = useState("");
   const [title, setTitle] = useState("");
@@ -228,37 +237,46 @@ export function CaptureEditor({
             <button
               type="button"
               className="ui-button-secondary"
+              disabled={!hydrated}
               onClick={() => mixedInputRef.current?.click()}
             >
               选择多份素材
             </button>
-            <input
-              ref={mixedInputRef}
-              type="file"
-              accept="image/*,audio/*,video/*"
-              multiple
-              className="sr-only"
-              onChange={onFileInput}
-            />
+            {hydrated ? (
+              <input
+                ref={mixedInputRef}
+                type="file"
+                accept="image/*,audio/*,video/*"
+                multiple
+                className="sr-only"
+                onChange={onFileInput}
+              />
+            ) : null}
           </div>
 
           <div className="grid grid-cols-3 gap-2" aria-label="按类型选择">
             <section id="photo" aria-label="照片">
               <label className="ui-button-secondary w-full cursor-pointer gap-2 px-2">
                 <Icon name="image" size={18} /> 照片
-                <input type="file" accept="image/*" multiple className="sr-only" onChange={onFileInput} />
+                {hydrated ? (
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={onFileInput} />
+                ) : null}
               </label>
             </section>
             <section id="audio" aria-label="录音">
               <label className="ui-button-secondary w-full cursor-pointer gap-2 px-2">
                 <Icon name="audio" size={18} /> 录音
-                <input type="file" accept="audio/*" multiple className="sr-only" onChange={onFileInput} />
+                {hydrated ? (
+                  <input type="file" accept="audio/*" multiple className="sr-only" onChange={onFileInput} />
+                ) : null}
               </label>
             </section>
             <section id="media" aria-label="视频">
               <label className="ui-button-secondary w-full cursor-pointer gap-2 px-2">
                 <Icon name="video" size={18} /> 视频
-                <input type="file" accept="video/*" multiple className="sr-only" onChange={onFileInput} />
+                {hydrated ? (
+                  <input type="file" accept="video/*" multiple className="sr-only" onChange={onFileInput} />
+                ) : null}
               </label>
             </section>
           </div>
