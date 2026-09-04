@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: web · mobile quality · build
+  web-quality:
+    name: web-quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -31,6 +31,19 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  mobile-quality:
+    name: mobile-quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+        working-directory: mobile
       - run: npm test
         working-directory: mobile
       - run: npm run typecheck
@@ -39,17 +52,22 @@ jobs:
         working-directory: mobile
       - run: npm run doctor
         working-directory: mobile
+      - run: npx expo export --platform android --output-dir dist-android
+        working-directory: mobile
+      - run: npx expo export --platform ios --output-dir dist-ios
+        working-directory: mobile
 
-  e2e:
-    name: e2e · restore-roundtrip
+  e2e-restore-roundtrip:
+    name: e2e-restore-roundtrip
     runs-on: ubuntu-latest
-    needs: quality
+    needs: web-quality
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
