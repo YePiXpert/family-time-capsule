@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  constants,
   createWriteStream,
   createReadStream,
   existsSync,
@@ -12,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { link, mkdir, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable, Transform } from "node:stream";
@@ -51,6 +52,9 @@ export class OriginalExistsError extends Error {
 }
 
 const KEY_PATTERN = /^(originals|derivatives)\/[a-z0-9][a-z0-9/_.-]*$/i;
+const UPLOAD_KEY_PATTERN = /^uploads\/[0-9a-f-]{36}\.part$/u;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 /** 扩展名白名单化：只允许 1–8 位小写字母数字，其余一律替换为 bin */
 export function sanitizeExtension(ext: string | undefined): string {
@@ -137,6 +141,25 @@ export interface AssetStorage {
   delete(key: string): void;
   /** 绝对路径（仅内部/测试/导出用，业务层不得持久化） */
   resolvePath(key: string): string;
+  /** Create an empty, mode-0600 resumable partial under a server-owned key. */
+  createUploadPart(uploadId: string): Promise<string>;
+  uploadPartSize(key: string): Promise<number>;
+  appendUploadPart(
+    key: string,
+    offset: number,
+    contentLength: number,
+    data: Readable,
+  ): Promise<{ bytes: number; replayed: boolean }>;
+  createUploadReadStream(key: string): Readable;
+  resolveUploadPath(key: string): string;
+  promoteUploadPart(
+    key: string,
+    familyId: string,
+    assetId: string,
+    extension: string,
+    dateForPath: Date,
+  ): Promise<PutResult>;
+  deleteUploadPart(key: string): Promise<void>;
 }
 
 export class LocalFilesystemStorage implements AssetStorage {
@@ -273,6 +296,156 @@ export class LocalFilesystemStorage implements AssetStorage {
     return resolved;
   }
 
+  async createUploadPart(uploadId: string): Promise<string> {
+    if (!UUID_PATTERN.test(uploadId)) throw new StorageKeyError(uploadId);
+    const key = `uploads/${uploadId}.part`;
+    const target = this.resolveUploadPath(key);
+    await mkdir(path.dirname(target), { recursive: true });
+    const handle = await open(
+      target,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+      0o600,
+    );
+    await handle.close();
+    return key;
+  }
+
+  async uploadPartSize(key: string): Promise<number> {
+    const target = this.resolveUploadPath(key);
+    const info = await lstat(target);
+    if (!info.isFile() || info.isSymbolicLink()) throw new StorageKeyError(key);
+    return info.size;
+  }
+
+  /**
+   * Append one bounded chunk. A fully repeated range is byte-compared against
+   * disk and acknowledged without growing the file. Partial overlap is refused
+   * so a retry can never splice two different payloads together.
+   */
+  async appendUploadPart(
+    key: string,
+    offset: number,
+    contentLength: number,
+    data: Readable,
+  ): Promise<{ bytes: number; replayed: boolean }> {
+    const target = this.resolveUploadPath(key);
+    const actual = await this.uploadPartSize(key);
+    if (offset > actual || offset < 0 || contentLength <= 0) {
+      throw new UploadOffsetError(actual);
+    }
+    if (offset < actual && offset + contentLength > actual) {
+      throw new UploadOffsetError(actual);
+    }
+
+    const noFollow = constants.O_NOFOLLOW ?? 0;
+    const handle = await open(target, constants.O_RDWR | noFollow);
+    let consumed = 0;
+    try {
+      if (offset < actual) {
+        for await (const value of data) {
+          const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+          consumed += chunk.byteLength;
+          if (consumed > contentLength) throw new UploadLengthError();
+          const disk = Buffer.allocUnsafe(chunk.byteLength);
+          const read = await handle.read(
+            disk,
+            0,
+            chunk.byteLength,
+            offset + consumed - chunk.byteLength,
+          );
+          if (read.bytesRead !== chunk.byteLength || !disk.equals(chunk)) {
+            throw new UploadReplayMismatchError(actual);
+          }
+        }
+        if (consumed !== contentLength) throw new UploadLengthError();
+        return { bytes: actual, replayed: true };
+      }
+
+      try {
+        for await (const value of data) {
+          const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+          consumed += chunk.byteLength;
+          if (consumed > contentLength) throw new UploadLengthError();
+          let written = 0;
+          while (written < chunk.byteLength) {
+            const result = await handle.write(
+              chunk,
+              written,
+              chunk.byteLength - written,
+              offset + consumed - chunk.byteLength + written,
+            );
+            written += result.bytesWritten;
+          }
+        }
+        if (consumed !== contentLength) throw new UploadLengthError();
+        await handle.sync();
+      } catch (error) {
+        // The database still points at the old offset. Restore that exact disk
+        // boundary before another request is allowed to recover the session.
+        await handle.truncate(offset);
+        await handle.sync();
+        throw error;
+      }
+      return { bytes: offset + consumed, replayed: false };
+    } finally {
+      if (!data.destroyed) data.destroy();
+      await handle.close();
+    }
+  }
+
+  createUploadReadStream(key: string): Readable {
+    return createReadStream(this.resolveUploadPath(key));
+  }
+
+  resolveUploadPath(key: string): string {
+    if (!UPLOAD_KEY_PATTERN.test(key) || key.includes("..")) {
+      throw new StorageKeyError(key);
+    }
+    const resolved = path.resolve(this.root, key);
+    const uploadsRoot = path.resolve(this.root, "uploads") + path.sep;
+    if (!resolved.startsWith(uploadsRoot)) throw new StorageKeyError(key);
+    return resolved;
+  }
+
+  async promoteUploadPart(
+    key: string,
+    familyId: string,
+    assetId: string,
+    extension: string,
+    dateForPath: Date,
+  ): Promise<PutResult> {
+    const source = this.resolveUploadPath(key);
+    const sourceInfo = await lstat(source);
+    if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink()) {
+      throw new StorageKeyError(key);
+    }
+    const storageKey = buildOriginalStorageKey(
+      familyId,
+      assetId,
+      extension,
+      dateForPath,
+    );
+    const target = this.resolvePath(storageKey);
+    await mkdir(path.dirname(target), { recursive: true });
+    try {
+      // Both trees are inside DATA_DIR, so hard-linking is an atomic,
+      // no-overwrite promotion and never copies the payload through JS heap.
+      await link(source, target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new OriginalExistsError(storageKey);
+      }
+      throw error;
+    }
+    return { storageKey, bytes: sourceInfo.size };
+  }
+
+  async deleteUploadPart(key: string): Promise<void> {
+    await unlink(this.resolveUploadPath(key)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
+
   private write(key: string, data: Buffer): void {
     const target = this.resolvePath(key);
     mkdirSync(path.dirname(target), { recursive: true });
@@ -280,6 +453,27 @@ export class LocalFilesystemStorage implements AssetStorage {
     const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
     writeFileSync(tmp, data);
     renameSync(tmp, target);
+  }
+}
+
+export class UploadOffsetError extends Error {
+  constructor(readonly actualOffset: number) {
+    super("upload offset does not match disk");
+    this.name = "UploadOffsetError";
+  }
+}
+
+export class UploadLengthError extends Error {
+  constructor() {
+    super("upload body length does not match Content-Length");
+    this.name = "UploadLengthError";
+  }
+}
+
+export class UploadReplayMismatchError extends Error {
+  constructor(readonly actualOffset: number) {
+    super("replayed upload bytes do not match disk");
+    this.name = "UploadReplayMismatchError";
   }
 }
 

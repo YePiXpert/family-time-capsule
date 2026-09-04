@@ -37,12 +37,12 @@ const EXIF_PICK = [
 ] as const;
 
 /** 从图片字节中提取内嵌拍摄时间；无 EXIF 或格式异常返回 null（不抛错） */
-export async function extractEmbeddedTime(
-  buffer: Buffer,
+async function extractEmbeddedTimeFromSource(
+  source: Buffer | string,
 ): Promise<EmbeddedTime | null> {
   let tags: Record<string, unknown> | undefined;
   try {
-    tags = await parseExif(buffer, {
+    tags = await parseExif(source, {
       pick: [...EXIF_PICK],
       reviveValues: false, // 保持原始字符串，时区解释由我们控制
       tiff: true,
@@ -74,6 +74,19 @@ export async function extractEmbeddedTime(
     return { wallTime, offset: null, raw, sourceTag: primary };
   }
   return { wallTime, offset, raw, sourceTag: primary };
+}
+
+export async function extractEmbeddedTime(
+  buffer: Buffer,
+): Promise<EmbeddedTime | null> {
+  return extractEmbeddedTimeFromSource(buffer);
+}
+
+/** exifr performs ranged file reads, so resumable finalize never buffers the image. */
+export async function extractEmbeddedTimeFromFile(
+  absolutePath: string,
+): Promise<EmbeddedTime | null> {
+  return extractEmbeddedTimeFromSource(absolutePath);
 }
 
 /** 某一时刻（UTC ms）在指定 IANA 时区的偏移（毫秒） */

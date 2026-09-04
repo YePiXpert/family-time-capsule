@@ -16,6 +16,7 @@ import {
   type AiJobRuntimeIdentity,
 } from "@/lib/ai/jobs";
 import type { ContributionAccessTransaction } from "@/lib/authz/contribution-access";
+import { cleanupExpiredUploads } from "@/lib/imports/service";
 import {
   AiJobHandlerError,
   AiJobRegistry,
@@ -117,6 +118,8 @@ function safeFailure(error: unknown): { code: string; retryable: boolean } {
 export async function runAiWorkerOnce(
   options: AiWorkerOptions = {},
 ): Promise<AiWorkerOnceResult> {
+  // Upload cleanup is local, bounded, and independent of AI availability.
+  await cleanupExpiredUploads({ limit: 25 });
   const workerId = options.workerId ?? randomUUID();
   const assistant = options.assistant ?? createMemoryAssistant();
   const registry = options.registry ?? createProductionAiJobRegistry();

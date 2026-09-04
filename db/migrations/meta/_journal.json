@@ -218,6 +218,13 @@
       "when": 1788487618027,
       "tag": "0030_resurfacing_milestones",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1788527636120,
+      "tag": "0031_durable_import_sessions",
+      "breakpoints": true
     }
   ]
 }

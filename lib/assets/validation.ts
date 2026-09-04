@@ -8,6 +8,7 @@
 export const MAX_IMAGE_BYTES = 50 * 1024 * 1024; // 50MB
 export const MAX_AUDIO_BYTES = 200 * 1024 * 1024; // 200MB
 export const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // 500MB
+export const MAX_DOCUMENT_BYTES = 200 * 1024 * 1024; // 独立于音视频限制
 
 /** P0 图片白名单：常见手机/相机格式 */
 export const IMAGE_MIME_WHITELIST: Set<string> = new Set([
@@ -45,6 +46,16 @@ export const VIDEO_MIME_WHITELIST: Set<string> = new Set([
   "video/3gpp",
 ] as const);
 
+/** Documents are archived as inert originals. HTML/SVG are intentionally absent. */
+export const DOCUMENT_MIME_WHITELIST: Set<string> = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "text/rtf",
+  "application/rtf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+] as const);
+
 const MIME_TO_EXTENSION: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -70,7 +81,86 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   "video/webm": "webm",
   "video/x-matroska": "mkv",
   "video/3gpp": "3gp",
+  "application/pdf": "pdf",
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "text/rtf": "rtf",
+  "application/rtf": "rtf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
 };
+
+export type UploadAssetType = "image" | "audio" | "video" | "document";
+
+export function normalizeUploadMime(declaredMime: string): string {
+  return declaredMime.split(";", 1)[0].trim().toLowerCase();
+}
+
+export function classifyDeclaredUpload(
+  declaredMime: string,
+): { type: UploadAssetType; mimeType: string; extension: string; maxBytes: number } | null {
+  const mimeType = normalizeUploadMime(declaredMime);
+  if (IMAGE_MIME_WHITELIST.has(mimeType)) {
+    return { type: "image", mimeType, extension: MIME_TO_EXTENSION[mimeType] ?? "bin", maxBytes: MAX_IMAGE_BYTES };
+  }
+  if (AUDIO_MIME_WHITELIST.has(mimeType)) {
+    return { type: "audio", mimeType, extension: MIME_TO_EXTENSION[mimeType] ?? "bin", maxBytes: MAX_AUDIO_BYTES };
+  }
+  if (VIDEO_MIME_WHITELIST.has(mimeType)) {
+    return { type: "video", mimeType, extension: MIME_TO_EXTENSION[mimeType] ?? "bin", maxBytes: MAX_VIDEO_BYTES };
+  }
+  if (DOCUMENT_MIME_WHITELIST.has(mimeType)) {
+    return { type: "document", mimeType, extension: MIME_TO_EXTENSION[mimeType] ?? "bin", maxBytes: MAX_DOCUMENT_BYTES };
+  }
+  return null;
+}
+
+function looksLikeSafeText(prefix: Buffer): boolean {
+  if (prefix.includes(0)) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(prefix);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Validate a complete file using only its trusted length and a small prefix. */
+export function validateUploadPrefix(
+  prefix: Buffer,
+  declaredMime: string,
+  totalBytes: number,
+): { ok: true; value: NonNullable<ReturnType<typeof classifyDeclaredUpload>> } | { ok: false; error: UploadValidationFailure } {
+  if (totalBytes <= 0) return { ok: false, error: "empty" };
+  const declared = classifyDeclaredUpload(declaredMime);
+  if (!declared) return { ok: false, error: "mime_not_allowed" };
+  if (totalBytes > declared.maxBytes) return { ok: false, error: "too_large" };
+
+  if (declared.type === "image") {
+    const sniffed = sniffImageMime(prefix);
+    const family = (mime: string) => mime === "image/heif" ? "image/heic" : mime;
+    if (!sniffed || family(sniffed) !== family(declared.mimeType)) {
+      return { ok: false, error: "content_mismatch" };
+    }
+  } else if (declared.type === "audio" || declared.type === "video") {
+    const sniffed = sniffAudioMime(prefix) ?? sniffVideoMime(prefix);
+    if (!sniffed) return { ok: false, error: "content_mismatch" };
+    if (
+      sniffFamily(sniffed) !== declared.type &&
+      !sameContainerFamily(declared.mimeType, sniffed)
+    ) {
+      return { ok: false, error: "content_mismatch" };
+    }
+  } else {
+    const mime = declared.mimeType;
+    const matches =
+      (mime === "application/pdf" && prefix.subarray(0, 5).toString("ascii") === "%PDF-") ||
+      (mime.endsWith("wordprocessingml.document") && prefix.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))) ||
+      ((mime === "text/rtf" || mime === "application/rtf") && prefix.subarray(0, 5).toString("ascii") === "{\\rtf") ||
+      ((mime === "text/plain" || mime === "text/markdown") && looksLikeSafeText(prefix));
+    if (!matches) return { ok: false, error: "content_mismatch" };
+  }
+  return { ok: true, value: declared };
+}
 
 /** 按内容前几个字节判断真实图片类型；无法识别返回 null */
 export function sniffImageMime(buffer: Buffer): string | null {

@@ -15,6 +15,8 @@ export type DataDirs = {
   originals: string;
   derivatives: string;
   exports: string;
+  /** Resumable partials are private transport state, never media. */
+  uploads: string;
 };
 
 const DERIVATIVE_SUBDIRS = [
@@ -30,6 +32,7 @@ export function ensureDataDirs(root: string = DATA_DIR): DataDirs {
     originals: path.join(root, "originals"),
     derivatives: path.join(root, "derivatives"),
     exports: path.join(root, "exports"),
+    uploads: path.join(root, "uploads"),
   };
   for (const dir of Object.values(dirs)) {
     mkdirSync(dir, { recursive: true });
