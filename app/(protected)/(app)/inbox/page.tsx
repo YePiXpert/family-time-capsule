@@ -212,6 +212,7 @@ export default async function InboxPage({
         <InboxBoard
           entries={withSuggestions}
           canReview={canReview}
+          timezone={timezone}
           people={people.map((person) => ({
             id: person.id,
             displayName: person.displayName,

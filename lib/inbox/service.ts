@@ -491,6 +491,69 @@ export async function updateInboxDraft(
   return getInboxEntry(familyId, itemId);
 }
 
+/**
+ * Seed metadata collected during “先收进来” for every item in one transaction.
+ * Existing human drafts win field-by-field, which also makes re-importing an
+ * already edited native item safe.
+ */
+export async function seedInboxDrafts(
+  familyId: string,
+  itemIds: string[],
+  patch: InboxDraftPatch,
+): Promise<boolean> {
+  const ids = [...new Set(itemIds)];
+  if (ids.length === 0) return false;
+  const entries = await Promise.all(ids.map((id) => getInboxEntry(familyId, id)));
+  if (
+    entries.some(
+      (entry) =>
+        !entry || !["new", "needs_review", "processing"].includes(entry.item.status),
+    )
+  ) {
+    return false;
+  }
+  const title = patch.title?.trim() || null;
+  const locationText = patch.locationText?.trim().slice(0, 200) || null;
+  if ((title?.length ?? 0) > 100) return false;
+  if (patch.occurredAt && Number.isNaN(patch.occurredAt.getTime())) return false;
+  const participantIds = [...new Set(patch.participantPersonIds ?? [])];
+  if (participantIds.length > 50) return false;
+  if (participantIds.length > 0) {
+    const valid = await getDb()
+      .select({ id: personTable.id })
+      .from(personTable)
+      .where(and(eq(personTable.familyId, familyId), inArray(personTable.id, participantIds)));
+    if (valid.length !== participantIds.length) return false;
+  }
+
+  const now = new Date();
+  getDb().transaction((tx) => {
+    for (const entry of entries as InboxEntry[]) {
+      tx.update(inboxItem)
+        .set({
+          draftTitle: entry.item.draftTitle ?? title,
+          draftOccurredAt: entry.item.draftOccurredAt ?? patch.occurredAt ?? null,
+          draftLocationText: entry.item.draftLocationText ?? locationText,
+          updatedAt: now,
+        })
+        .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, entry.item.id)))
+        .run();
+      if (entry.participantPersonIds.length === 0 && participantIds.length > 0) {
+        tx.insert(inboxItemParticipant)
+          .values(participantIds.map((personId) => ({
+            id: randomUUID(),
+            inboxItemId: entry.item.id,
+            personId,
+            familyId,
+            createdAt: now,
+          })))
+          .run();
+      }
+    }
+  });
+  return true;
+}
+
 /** 收件箱内修正时间：委托 Asset 更新（user_confirmed），条目状态转 new */
 export async function setInboxItemAssetTime(
   familyId: string,

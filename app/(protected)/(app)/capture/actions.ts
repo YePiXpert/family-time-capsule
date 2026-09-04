@@ -2,9 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireFamilyCapability } from "@/lib/authz/context";
-import { createTextInboxItem } from "@/lib/inbox/service";
-import { getInboxEntry } from "@/lib/inbox/service";
-import { getFamily } from "@/lib/family/service";
+import { createTextInboxItem, getInboxEntry, seedInboxDrafts } from "@/lib/inbox/service";
 import { defaultTitle, confirmInboxEntry, mergeInboxEntries } from "@/lib/memories/service";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 
@@ -56,24 +54,35 @@ export async function finalizeCaptureAction(
   if (itemIds.length === 0) {
     return { ok: false, error: "请写一句话或选择至少一份素材。" };
   }
-  if (input.mode === "inbox") {
-    revalidatePath("/");
-    revalidatePath("/inbox");
-    return { ok: true, destination: "inbox", itemCount: itemIds.length };
-  }
-
   let occurredAt: Date | undefined;
   if (input.occurredAtWall.trim()) {
-    const family = await getFamily(context.familyId);
     try {
       const wall = input.occurredAtWall.trim();
       occurredAt = zonedWallTimeToUtc(
         wall.length === 16 ? `${wall}:00` : wall,
-        family?.timezone ?? context.familyTimezone,
+        context.familyTimezone,
       );
     } catch {
       return { ok: false, error: "发生时间格式不正确；素材已经安全留在收件箱。" };
     }
+  }
+
+  if (input.mode === "inbox") {
+    const saved = await seedInboxDrafts(context.familyId, itemIds, {
+      title: input.title,
+      occurredAt,
+      locationText: input.locationText,
+      participantPersonIds: input.participantPersonIds,
+    });
+    if (!saved) {
+      return {
+        ok: false,
+        error: "内容已安全留在收件箱，但草稿信息未能保存，请刷新后重试。",
+      };
+    }
+    revalidatePath("/");
+    revalidatePath("/inbox");
+    return { ok: true, destination: "inbox", itemCount: itemIds.length };
   }
 
   const firstEntry = await getInboxEntry(context.familyId, itemIds[0]!);

@@ -27,7 +27,7 @@ if (!okSetup.ok) throw new Error("setup failed");
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
 const { person: personTable } = await import("@/db/schema/family");
-const { completeOnboarding, addPerson } = await import("@/lib/family/service");
+const { completeOnboarding, addPerson, listPeople } = await import("@/lib/family/service");
 const { ingestImage } = await import("@/lib/assets/ingest");
 const { getAsset } = await import("@/lib/assets/service");
 const {
@@ -38,6 +38,7 @@ const {
   setInboxItemAssetTime,
   discardInboxItem,
   updateInboxDraft,
+  seedInboxDrafts,
 } = await import("@/lib/inbox/service");
 const { confirmInboxEntry, getMemoryEventDetail } = await import(
   "@/lib/memories/service"
@@ -55,6 +56,7 @@ const onboarding = await completeOnboarding(adminUserId, {
 });
 if (!onboarding.ok) throw new Error("onboarding failed");
 const familyId = onboarding.familyId;
+const childPersonId = (await listPeople(familyId)).find((person) => person.isChild)!.id;
 const OTHER_FAMILY = "fam-inbox-other";
 
 const fixtures = path.join(__dirname, "..", "fixtures");
@@ -229,6 +231,47 @@ describe("收件箱工作流（#007）", () => {
     const unchanged = await getInboxEntry(familyId, item.id);
     expect(unchanged?.item.draftTitle).toBeNull();
     expect(unchanged?.participantPersonIds).toEqual([]);
+  });
+
+  it("跨客户端补种草稿时保留已有人工字段，并给新条目保存全部字段", async () => {
+    const grandmother = await addPerson(familyId, {
+      displayName: "奶奶",
+      relationToChild: "奶奶",
+    });
+    if (!grandmother.ok) throw new Error("person creation failed");
+    const nativeItem = await createTextInboxItem(familyId, "原生端先整理");
+    const webItem = await createTextInboxItem(familyId, "Web 端先收进来");
+    const nativeTime = new Date("2026-08-12T10:30:00.000Z");
+    await updateInboxDraft(familyId, nativeItem.id, {
+      title: "原生标题",
+      occurredAt: nativeTime,
+      locationText: "原生地点",
+      participantPersonIds: [grandmother.personId],
+    });
+
+    const webTime = new Date("2026-08-13T11:45:00.000Z");
+    await expect(seedInboxDrafts(familyId, [nativeItem.id, webItem.id], {
+      title: "Web 标题",
+      occurredAt: webTime,
+      locationText: "Web 地点",
+      participantPersonIds: [childPersonId],
+    })).resolves.toBe(true);
+
+    const nativeDraft = await getInboxEntry(familyId, nativeItem.id);
+    expect(nativeDraft?.item).toMatchObject({
+      draftTitle: "原生标题",
+      draftLocationText: "原生地点",
+    });
+    expect(nativeDraft?.item.draftOccurredAt?.toISOString()).toBe(nativeTime.toISOString());
+    expect(nativeDraft?.participantPersonIds).toEqual([grandmother.personId]);
+
+    const webDraft = await getInboxEntry(familyId, webItem.id);
+    expect(webDraft?.item).toMatchObject({
+      draftTitle: "Web 标题",
+      draftLocationText: "Web 地点",
+    });
+    expect(webDraft?.item.draftOccurredAt?.toISOString()).toBe(webTime.toISOString());
+    expect(webDraft?.participantPersonIds).toEqual([childPersonId]);
   });
 
   it("家庭隔离：他家庭看不到本家庭条目", async () => {

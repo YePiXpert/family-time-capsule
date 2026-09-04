@@ -14,6 +14,7 @@ const inputClass =
 export type InboxEntryDto = {
   item: InboxItemRow;
   assets: AssetRow[];
+  participantPersonIds: string[];
   coverThumbAssetId?: string | null;
   suggestionChips?: InboxSuggestionChipDto[];
   suggestedTitle?: string;
@@ -31,10 +32,12 @@ export function InboxBoard({
   entries,
   canReview,
   people,
+  timezone,
 }: {
   entries: InboxEntryDto[];
   canReview: boolean;
   people: InboxPersonOption[];
+  timezone: string;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"grid" | "list">("grid");
@@ -136,12 +139,14 @@ export function InboxBoard({
                 <InboxCard
                   item={entry.item}
                   assets={entry.assets}
+                  participantPersonIds={entry.participantPersonIds}
                   coverThumbAssetId={entry.coverThumbAssetId ?? null}
                   canReview={canReview}
                   suggestionChips={entry.suggestionChips}
                   suggestedTitle={entry.suggestedTitle}
                   suggestedOccurredWall={entry.suggestedOccurredWall}
                   people={people}
+                  timezone={timezone}
                   compact={view === "grid"}
                 />
               </div>

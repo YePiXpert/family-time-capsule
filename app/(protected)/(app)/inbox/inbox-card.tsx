@@ -8,6 +8,7 @@ import { confirmAction, discardAction, editTimeAction } from "./actions";
 import { InboxSuggestionChips, type InboxSuggestionChipDto } from "./inbox-suggestion-ui";
 import type { InboxPersonOption } from "./inbox-board";
 import { StatusBadge } from "@/components/status-badge";
+import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 
 const TIME_SOURCE_LABEL: Record<string, string> = {
   user_confirmed: "你确认的时间",
@@ -19,27 +20,35 @@ const TIME_SOURCE_LABEL: Record<string, string> = {
 const inputClass =
   "rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
 
-function formatDateTime(date: Date | null | undefined, fallback = "—"): string {
+function formatDateTime(
+  date: Date | null | undefined,
+  timeZone: string,
+  fallback = "—",
+): string {
   if (!date) return fallback;
   return new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone,
   }).format(date);
 }
 
 export function InboxCard({
   item,
   assets,
+  participantPersonIds,
   coverThumbAssetId = null,
   canReview,
   suggestionChips = [],
   suggestedTitle,
   suggestedOccurredWall,
   people,
+  timezone,
   compact,
 }: {
   item: InboxItemRow;
   assets: AssetRow[];
+  participantPersonIds: string[];
   coverThumbAssetId?: string | null;
   canReview: boolean;
   suggestionChips?: InboxSuggestionChipDto[];
@@ -47,6 +56,7 @@ export function InboxCard({
   /** AI 建议的事件发生时间（家庭时区 datetime-local 值），仅预填 */
   suggestedOccurredWall?: string;
   people: InboxPersonOption[];
+  timezone: string;
   compact: boolean;
 }) {
   const [timeState, timeAction, timePending] = useActionState(editTimeAction, undefined);
@@ -54,7 +64,8 @@ export function InboxCard({
   const [confirmState, confirmActionRun, confirmPending] = useActionState(confirmAction, undefined);
   const cover = assets[0];
   const defaultTitle =
-    suggestedTitle ??
+    item.draftTitle?.trim() ||
+    suggestedTitle ||
     (item.kind === "text" && item.rawText
       ? item.rawText.trim().slice(0, 30)
       : (cover?.originalFilename ?? "一段记忆").replace(/\.[a-z0-9]{1,8}$/i, ""));
@@ -100,11 +111,11 @@ export function InboxCard({
             )}
           </div>
           <p className="text-foreground/70">
-            拍摄时间：{formatDateTime(cover?.capturedAt ?? null)}
+            拍摄时间：{formatDateTime(cover?.capturedAt ?? null, timezone)}
             （{TIME_SOURCE_LABEL[cover?.timeSource ?? "import_time"]}）
           </p>
           <p className="text-foreground/50">
-            导入时间：{formatDateTime(cover?.importedAt ?? null)} ·{" "}
+            导入时间：{formatDateTime(cover?.importedAt ?? null, timezone)} ·{" "}
             {cover ? `${cover.width ?? "?"}×${cover.height ?? "?"}` : ""}
           </p>
 
@@ -132,11 +143,13 @@ export function InboxCard({
             <input
               type="datetime-local"
               name="occurredAt"
-              defaultValue={suggestedOccurredWall}
+              defaultValue={item.draftOccurredAt
+                ? utcToZonedWallTimeInput(item.draftOccurredAt, timezone)
+                : suggestedOccurredWall}
               aria-label="发生时间（可选）"
               className={`${inputClass} min-h-11 w-full`}
             />
-            <input type="text" name="locationText" maxLength={200} placeholder="地点（可选）" aria-label="事件地点" className={`${inputClass} min-h-11 w-full`} />
+            <input type="text" name="locationText" defaultValue={item.draftLocationText ?? ""} maxLength={200} placeholder="地点（可选）" aria-label="事件地点" className={`${inputClass} min-h-11 w-full`} />
             {people.length > 0 ? (
               <details className="rounded-lg border border-line px-3">
                 <summary className="min-h-11 py-2.5">选择人物</summary>
@@ -144,7 +157,7 @@ export function InboxCard({
                   <legend className="sr-only">参与人物</legend>
                   {people.map((person) => (
                     <label key={person.id} className="flex min-h-11 items-center gap-2 text-sm">
-                      <input type="checkbox" name="participantPersonIds" value={person.id} defaultChecked={person.isChild} className="h-5 w-5 accent-accent" />
+                      <input type="checkbox" name="participantPersonIds" value={person.id} defaultChecked={participantPersonIds.length > 0 ? participantPersonIds.includes(person.id) : person.isChild} className="h-5 w-5 accent-accent" />
                       {person.displayName}
                     </label>
                   ))}
