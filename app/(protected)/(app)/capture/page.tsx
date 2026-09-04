@@ -22,22 +22,22 @@ export default async function CapturePage() {
 
       {canCapture ? (
         <>
-          <section aria-label="照片" className="mt-10">
+          <section id="photo" aria-label="照片" className="mt-10 scroll-mt-24">
             <h2 className="text-lg font-medium">照片</h2>
             <ImageUploadForm />
           </section>
 
-          <section aria-label="录音" className="mt-10">
+          <section id="audio" aria-label="录音" className="mt-10 scroll-mt-24">
             <h2 className="text-lg font-medium">录音</h2>
             <MediaUploadForm kind="audio" />
           </section>
 
-          <section aria-label="视频" className="mt-10">
+          <section id="media" aria-label="视频和导入" className="mt-10 scroll-mt-24">
             <h2 className="text-lg font-medium">视频</h2>
             <MediaUploadForm kind="video" />
           </section>
 
-          <section aria-label="文字" className="mt-10">
+          <section id="text" aria-label="文字" className="mt-10 scroll-mt-24">
             <h2 className="text-lg font-medium">文字</h2>
             <TextNoteForm />
           </section>

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import {
@@ -433,6 +433,14 @@ export async function discardInboxItem(
 }
 
 export async function countInbox(familyId: string): Promise<number> {
-  const entries = await listInbox(familyId);
-  return entries.length;
+  const row = await getDb()
+    .select({ value: count() })
+    .from(inboxItem)
+    .where(
+      and(
+        eq(inboxItem.familyId, familyId),
+        inArray(inboxItem.status, ["new", "needs_review", "processing"]),
+      ),
+    );
+  return Number(row[0]?.value ?? 0);
 }

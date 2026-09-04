@@ -465,6 +465,48 @@ select {
   box-shadow: 0 24px 60px rgb(20 16 12 / 24%);
 }
 
+.home-hero {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1.5rem;
+}
+
+.home-avatar {
+  display: flex;
+  width: 4.25rem;
+  height: 4.25rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 2px solid var(--surface-raised);
+  border-radius: 1.25rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--line);
+  font-size: 1.65rem;
+  font-weight: 700;
+}
+
+.paper-feature-card {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 1rem 1rem 1rem 0.35rem;
+  background: var(--surface);
+  padding: 1.25rem;
+  box-shadow: 5px 6px 0 var(--surface-muted);
+  transition: border-color 160ms ease;
+}
+
+.paper-feature-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
 @media (min-width: 640px) {
   .page-container { padding: 3rem 2rem 4rem; }
   .memory-card-media { width: 10rem; }
