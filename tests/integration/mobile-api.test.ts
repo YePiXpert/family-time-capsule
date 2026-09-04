@@ -622,9 +622,11 @@ describe("native mobile API", () => {
     );
     const entry = await getInboxEntry(admin.familyId!, item.id);
     expect(entry).toBeDefined();
-    expect(await confirmInboxEntry(admin.familyId!, entry!)).toMatchObject({
+    const confirmed = await confirmInboxEntry(admin.familyId!, entry!);
+    expect(confirmed).toMatchObject({
       ok: true,
     });
+    if (!confirmed.ok) throw new Error("mobile sync event setup failed");
 
     const response = await syncGet(
       new Request("http://localhost/api/mobile/v1/sync?limit=50", {
@@ -638,7 +640,7 @@ describe("native mobile API", () => {
       family: { name: string };
       viewer: { canCapture: boolean };
       people: unknown[];
-      events: Array<{ title: string; occurredAt: string }>;
+      events: Array<{ id: string; title: string; occurredAt: string; captureIds: string[] }>;
     };
     expect(body.apiVersion).toBe(1);
     expect(body.family.name).toBe("小满家");
@@ -649,6 +651,10 @@ describe("native mobile API", () => {
     );
     expect(nativeEvent).toBeDefined();
     expect(new Date(nativeEvent!.occurredAt).toString()).not.toBe("Invalid Date");
+    expect(nativeEvent).toMatchObject({
+      id: confirmed.eventId,
+      captureIds: [item.id],
+    });
   });
 
   it("queues offline text idempotently and rejects an id reused for other content", async () => {

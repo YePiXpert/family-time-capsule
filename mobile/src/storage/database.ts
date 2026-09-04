@@ -30,10 +30,38 @@ export async function initializeLocalStore(): Promise<void> {
   const definition = await db.getFirstAsync<{ sql: string | null }>(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'local_capture'",
   );
-  if (definition?.sql && !definition.sql.includes("'audio'")) {
+  const localCaptureColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(local_capture)",
+  );
+  const localCaptureColumnNames = new Set(
+    localCaptureColumns.map((column) => column.name),
+  );
+  const requiresLocalCaptureMigration = Boolean(
+    definition?.sql && (
+      !definition.sql.includes("'audio'") ||
+      !definition.sql.includes("'archived'") ||
+      !localCaptureColumnNames.has("inbox_item_id") ||
+      !localCaptureColumnNames.has("memory_event_id")
+    ),
+  );
+  if (requiresLocalCaptureMigration) {
+    const mediaTypeExpression = localCaptureColumnNames.has("media_type")
+      ? "media_type"
+      : "NULL";
+    const syncStateExpression = localCaptureColumnNames.has("sync_state")
+      ? "CASE WHEN sync_state = 'synced' THEN 'inbox' WHEN sync_state IN ('pending', 'inbox', 'archived') THEN sync_state ELSE 'pending' END"
+      : "'pending'";
+    const inboxItemIdExpression = localCaptureColumnNames.has("inbox_item_id")
+      ? "inbox_item_id"
+      : localCaptureColumnNames.has("sync_state")
+        ? "CASE WHEN sync_state = 'synced' THEN id ELSE NULL END"
+        : "NULL";
+    const memoryEventIdExpression = localCaptureColumnNames.has("memory_event_id")
+      ? "memory_event_id"
+      : "NULL";
     await db.withExclusiveTransactionAsync(async (tx) => {
       await tx.execAsync(`
-        ALTER TABLE local_capture RENAME TO local_capture_before_audio;
+        ALTER TABLE local_capture RENAME TO local_capture_before_lifecycle;
         DROP INDEX IF EXISTS local_capture_occurred_idx;
         CREATE TABLE local_capture (
           id TEXT PRIMARY KEY NOT NULL,
@@ -42,12 +70,18 @@ export async function initializeLocalStore(): Promise<void> {
           occurred_at TEXT NOT NULL,
           local_uri TEXT,
           media_type TEXT CHECK(media_type IN ('image', 'video', 'audio') OR media_type IS NULL),
-          sync_state TEXT NOT NULL DEFAULT 'pending' CHECK(sync_state IN ('pending', 'synced'))
+          inbox_item_id TEXT,
+          memory_event_id TEXT,
+          sync_state TEXT NOT NULL DEFAULT 'pending' CHECK(sync_state IN ('pending', 'inbox', 'archived'))
         );
-        INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, sync_state)
-          SELECT id, kind, title, occurred_at, local_uri, media_type, sync_state
-          FROM local_capture_before_audio;
-        DROP TABLE local_capture_before_audio;
+        INSERT INTO local_capture(
+          id, kind, title, occurred_at, local_uri, media_type,
+          inbox_item_id, memory_event_id, sync_state
+        )
+          SELECT id, kind, title, occurred_at, local_uri, ${mediaTypeExpression},
+            ${inboxItemIdExpression}, ${memoryEventIdExpression}, ${syncStateExpression}
+          FROM local_capture_before_lifecycle;
+        DROP TABLE local_capture_before_lifecycle;
         CREATE INDEX local_capture_occurred_idx
           ON local_capture(occurred_at DESC, id DESC);
       `);
@@ -181,7 +215,7 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
       local_cover_uri: string | null;
     }>("SELECT * FROM timeline_event ORDER BY occurred_at DESC, id DESC"),
     db.getAllAsync<LocalCaptureRow>(
-      "SELECT * FROM local_capture ORDER BY occurred_at DESC, id DESC",
+      "SELECT * FROM local_capture WHERE sync_state <> 'archived' ORDER BY occurred_at DESC, id DESC",
     ),
   ]);
   const serverEvents = rows.map((row) => ({
@@ -196,6 +230,7 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
     updatedAt: row.updated_at,
     assetCount: row.asset_count,
     participantNames: JSON.parse(row.participant_names_json) as string[],
+    captureIds: [],
     cover: row.cover_json
       ? (JSON.parse(row.cover_json) as LocalTimelineEvent["cover"])
       : null,
@@ -204,6 +239,40 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
     syncState: null,
   }));
   return mergeTimelineEvents(serverEvents, localRows);
+}
+
+export type LocalMemoryMedia = {
+  captureId: string;
+  title: string;
+  localUri: string;
+  mediaType: "image" | "video" | "audio";
+};
+
+export async function listLocalMemoryMedia(
+  memoryEventId: string,
+): Promise<LocalMemoryMedia[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    title: string;
+    local_uri: string;
+    media_type: LocalMemoryMedia["mediaType"];
+  }>(
+    `SELECT id, title, local_uri, media_type
+     FROM local_capture
+     WHERE sync_state = 'archived'
+       AND memory_event_id = ?
+       AND local_uri IS NOT NULL
+       AND media_type IS NOT NULL
+     ORDER BY occurred_at, id`,
+    memoryEventId,
+  );
+  return rows.map((row) => ({
+    captureId: row.id,
+    title: row.title,
+    localUri: row.local_uri,
+    mediaType: row.media_type,
+  }));
 }
 
 export async function applySyncPage(
@@ -271,6 +340,18 @@ export async function applySyncPage(
         event.cover ? JSON.stringify(event.cover) : null,
         snapshotId,
       );
+      if (event.captureIds.length > 0) {
+        const placeholders = event.captureIds.map(() => "?").join(", ");
+        await tx.runAsync(
+          `UPDATE local_capture
+           SET sync_state = 'archived', memory_event_id = ?
+           WHERE inbox_item_id IN (${placeholders})
+              OR (inbox_item_id IS NULL AND id IN (${placeholders}))`,
+          event.id,
+          ...event.captureIds,
+          ...event.captureIds,
+        );
+      }
     }
   });
   await Promise.all([
@@ -293,6 +374,25 @@ export async function finishSyncSnapshot(
       "DELETE FROM people WHERE seen_snapshot IS NULL OR seen_snapshot <> ?",
       snapshotId,
     );
+    await tx.runAsync(`
+      UPDATE timeline_event
+      SET local_cover_uri = (
+        SELECT local_capture.local_uri
+        FROM local_capture
+        WHERE local_capture.memory_event_id = timeline_event.id
+          AND local_capture.media_type = 'image'
+          AND local_capture.local_uri IS NOT NULL
+        ORDER BY local_capture.occurred_at, local_capture.id
+        LIMIT 1
+      )
+      WHERE EXISTS (
+        SELECT 1
+        FROM local_capture
+        WHERE local_capture.memory_event_id = timeline_event.id
+          AND local_capture.media_type = 'image'
+          AND local_capture.local_uri IS NOT NULL
+      )
+    `);
     await tx.runAsync(
       "INSERT INTO meta(key, value) VALUES ('last_sync_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       serverTime,
@@ -415,15 +515,39 @@ export async function removeOutboxItem(id: string): Promise<void> {
   });
 }
 
-export async function completeOutboxItem(id: string): Promise<void> {
+export async function completeOutboxItem(
+  id: string,
+  inboxItemId: string,
+): Promise<void> {
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async (tx) => {
     await tx.runAsync(
-      "UPDATE local_capture SET sync_state = 'synced' WHERE id = ?",
+      `UPDATE local_capture
+       SET sync_state = 'inbox', inbox_item_id = ?
+       WHERE id = ? AND sync_state = 'pending'`,
+      inboxItemId,
       id,
     );
     await tx.runAsync("DELETE FROM outbox WHERE id = ?", id);
   });
+}
+
+export async function archiveLocalCaptures(
+  inboxItemIds: string[],
+  memoryEventId: string,
+): Promise<void> {
+  if (inboxItemIds.length === 0) return;
+  const db = await getDatabase();
+  const placeholders = inboxItemIds.map(() => "?").join(", ");
+  await db.runAsync(
+    `UPDATE local_capture
+     SET sync_state = 'archived', memory_event_id = ?
+     WHERE inbox_item_id IN (${placeholders})
+        OR (inbox_item_id IS NULL AND id IN (${placeholders}))`,
+    memoryEventId,
+    ...inboxItemIds,
+    ...inboxItemIds,
+  );
 }
 
 export async function clearLocalArchive(): Promise<void> {

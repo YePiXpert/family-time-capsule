@@ -73,7 +73,7 @@ export async function uploadMediaCapture(
   credentials: Credentials,
   captureId: string,
   payload: MediaCapturePayload,
-): Promise<void> {
+): Promise<string> {
   const file = new File(payload.localUri);
   if (!file.exists) throw new Error("本地原件已不存在。");
   const endpoint = payload.mediaType === "image" ? "image" : "media";
@@ -112,6 +112,20 @@ export async function uploadMediaCapture(
                 : `媒体上传失败（${result.status}）。`;
     throw new ApiError(message, result.status);
   }
+  let body: unknown;
+  try {
+    body = JSON.parse(result.body);
+  } catch {
+    throw new ApiError("服务器媒体上传结果无效。", 502);
+  }
+  if (
+    !body ||
+    typeof body !== "object" ||
+    typeof (body as { inboxItemId?: unknown }).inboxItemId !== "string"
+  ) {
+    throw new ApiError("服务器媒体上传结果无效。", 502);
+  }
+  return (body as { inboxItemId: string }).inboxItemId;
 }
 
 export function removeLocalFile(uri: string): void {

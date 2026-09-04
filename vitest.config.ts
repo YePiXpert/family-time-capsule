@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "server-only": path.resolve(__dirname, "tests/mocks/server-only.ts"),
+      "expo-sqlite": path.resolve(__dirname, "tests/mocks/expo-sqlite.ts"),
       "@": path.resolve(__dirname, "."),
     },
   },

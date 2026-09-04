@@ -94,6 +94,8 @@ beforeEach(() => {
   database.listLocalCoverUris.mockResolvedValue([]);
   api.fetchSyncPage.mockResolvedValue(syncPage());
   files.cacheEventCover.mockResolvedValue(null);
+  api.uploadTextCapture.mockImplementation(async (_credentials, id) => id);
+  files.uploadMediaCapture.mockImplementation(async (_credentials, id) => id);
 });
 
 describe("native offline sync state machine", () => {
@@ -122,6 +124,7 @@ describe("native offline sync state machine", () => {
     database.listOutbox.mockResolvedValue([mediaItem("media-1")]);
     files.uploadMediaCapture.mockImplementation(async () => {
       order.push("server-confirmed");
+      return "inbox-media-1";
     });
     database.completeOutboxItem.mockImplementation(async () => {
       order.push("queue-committed");
@@ -138,6 +141,10 @@ describe("native offline sync state machine", () => {
       "media-1",
       expect.objectContaining({ fileName: "media-1.jpg" }),
     );
+    expect(database.completeOutboxItem).toHaveBeenCalledWith(
+      "media-1",
+      "inbox-media-1",
+    );
     expect(order).toEqual(["server-confirmed", "queue-committed"]);
   });
 
@@ -147,7 +154,10 @@ describe("native offline sync state machine", () => {
     await expect(
       syncArchiveWithDependencies(credentials, dependencies()),
     ).resolves.toMatchObject({ uploadedCount: 1, failedCount: 0 });
-    expect(database.completeOutboxItem).toHaveBeenCalledWith("media-cleanup");
+    expect(database.completeOutboxItem).toHaveBeenCalledWith(
+      "media-cleanup",
+      "media-cleanup",
+    );
     expect(database.markOutboxFailure).not.toHaveBeenCalled();
   });
 
@@ -164,6 +174,7 @@ describe("native offline sync state machine", () => {
         if (payload.fileName === "rejected.jpg") {
           throw new api.ApiError("服务器不支持这个原件格式。", 415);
         }
+        return _captureId;
       },
     );
 
@@ -179,7 +190,7 @@ describe("native offline sync state machine", () => {
       "服务器不支持这个原件格式。",
     );
     expect(database.completeOutboxItem).toHaveBeenCalledTimes(1);
-    expect(database.completeOutboxItem).toHaveBeenCalledWith("valid");
+    expect(database.completeOutboxItem).toHaveBeenCalledWith("valid", "valid");
     expect(api.fetchSyncPage).toHaveBeenCalledOnce();
   });
 
@@ -283,6 +294,7 @@ describe("native offline sync state machine", () => {
           updatedAt: "2026-09-03T00:00:00.000Z",
           assetCount: 1,
           participantNames: [],
+          captureIds: [],
           cover: {
             assetId: "asset-1",
             mediaAssetId: "thumb-1",

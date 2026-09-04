@@ -23,14 +23,14 @@ export type SyncDependencies = {
     credentials: Credentials,
     id: string,
     text: string,
-  ) => Promise<void>;
+  ) => Promise<string>;
   uploadMediaCapture: (
     credentials: Credentials,
     captureId: string,
     payload: MediaCapturePayload,
-  ) => Promise<void>;
+  ) => Promise<string>;
   markOutboxFailure: (id: string, message: string) => Promise<void>;
-  completeOutboxItem: (id: string) => Promise<void>;
+  completeOutboxItem: (id: string, inboxItemId: string) => Promise<void>;
   fetchSyncPage: (
     credentials: Credentials,
     cursor: string | null,
@@ -68,14 +68,14 @@ async function flushOutbox(
     try {
       if (item.kind === "text_capture") {
         const payload = item.payload as TextCapturePayload;
-        await dependencies.uploadTextCapture(credentials, item.id, payload.text);
-        await dependencies.completeOutboxItem(item.id);
+        const inboxItemId = await dependencies.uploadTextCapture(credentials, item.id, payload.text);
+        await dependencies.completeOutboxItem(item.id, inboxItemId);
       } else {
         const payload = item.payload as MediaCapturePayload;
-        await dependencies.uploadMediaCapture(credentials, item.id, payload);
+        const inboxItemId = await dependencies.uploadMediaCapture(credentials, item.id, payload);
         // The queue row is completed, while the original remains in the app's
         // private library so a server connection never becomes data ownership.
-        await dependencies.completeOutboxItem(item.id);
+        await dependencies.completeOutboxItem(item.id, inboxItemId);
       }
       uploadedCount += 1;
     } catch (error) {

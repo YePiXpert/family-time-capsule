@@ -7,7 +7,9 @@ export type LocalCaptureRow = {
   occurred_at: string;
   local_uri: string | null;
   media_type: "image" | "video" | "audio" | null;
-  sync_state: "pending" | "synced";
+  inbox_item_id: string | null;
+  memory_event_id: string | null;
+  sync_state: "pending" | "inbox" | "archived";
 };
 
 export function toLocalTimelineEvent(row: LocalCaptureRow): LocalTimelineEvent {
@@ -24,11 +26,12 @@ export function toLocalTimelineEvent(row: LocalCaptureRow): LocalTimelineEvent {
     updatedAt: row.occurred_at,
     assetCount: isMedia ? 1 : 0,
     participantNames: [],
+    captureIds: [row.inbox_item_id ?? row.id],
     cover: null,
     localCoverUri:
       isMedia && row.media_type === "image" ? row.local_uri : null,
     source: "local",
-    syncState: row.sync_state,
+    syncState: row.sync_state === "archived" ? null : row.sync_state,
   };
 }
 
@@ -36,7 +39,12 @@ export function mergeTimelineEvents(
   serverEvents: LocalTimelineEvent[],
   localRows: LocalCaptureRow[],
 ): LocalTimelineEvent[] {
-  return [...serverEvents, ...localRows.map(toLocalTimelineEvent)].sort((a, b) =>
+  return [
+    ...serverEvents,
+    ...localRows
+      .filter((row) => row.sync_state !== "archived")
+      .map(toLocalTimelineEvent),
+  ].sort((a, b) =>
     a.occurredAt === b.occurredAt
       ? b.id.localeCompare(a.id)
       : b.occurredAt.localeCompare(a.occurredAt),

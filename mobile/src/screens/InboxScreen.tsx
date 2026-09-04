@@ -7,6 +7,7 @@ import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
 import type { MobileInboxEntry } from "../types";
 import { inputDateTime } from "../utils/format";
+import { archiveLocalCaptures } from "../storage/database";
 
 export function InboxScreen() {
   const navigation = useNavigation<AppNavigation>();
@@ -78,6 +79,7 @@ export function InboxScreen() {
     setError(null);
     try {
       const memoryEventId = await confirmMobileInbox(credentials, id);
+      await archiveLocalCaptures([id], memoryEventId);
       setEntries((current) => current.filter((entry) => entry.id !== id));
       setEditing(null);
       await runSync();
@@ -99,6 +101,7 @@ export function InboxScreen() {
     try {
       const ids = [...selected];
       const memoryEventId = await mergeMobileInbox(credentials, ids, mergeTitle.trim());
+      await archiveLocalCaptures(ids, memoryEventId);
       setEntries((current) => current.filter((entry) => !selected.has(entry.id)));
       setSelected(new Set());
       setMergeTitle("");

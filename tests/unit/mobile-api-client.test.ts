@@ -42,6 +42,7 @@ function validPage(): SyncPage {
         updatedAt: "2026-09-03T19:00:00.000Z",
         assetCount: 1,
         participantNames: ["妈妈"],
+        captureIds: ["capture-1"],
         cover: {
           assetId: "asset-1",
           mediaAssetId: "thumb-1",
@@ -110,6 +111,13 @@ describe("native mobile API client boundaries", () => {
   it.each([
     ["wrong version", { ...validPage(), apiVersion: 2 }],
     ["missing family", { ...validPage(), family: undefined }],
+    [
+      "missing capture links",
+      {
+        ...validPage(),
+        events: [{ ...validPage().events[0], captureIds: undefined }],
+      },
+    ],
     [
       "invalid cover path",
       {

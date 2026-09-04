@@ -38,6 +38,7 @@ export type TimelineEvent = {
   updatedAt: string;
   assetCount: number;
   participantNames: string[];
+  captureIds: string[];
   cover: null | {
     assetId: string;
     mediaAssetId: string;
@@ -60,7 +61,7 @@ export type SyncPage = {
 export type LocalTimelineEvent = TimelineEvent & {
   localCoverUri: string | null;
   source: "server" | "local";
-  syncState: "pending" | "synced" | null;
+  syncState: "pending" | "inbox" | null;
 };
 
 export type TextCapturePayload = {

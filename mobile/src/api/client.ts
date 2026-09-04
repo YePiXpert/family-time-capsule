@@ -135,6 +135,9 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
     Array.isArray(value.participantNames) &&
     value.participantNames.length <= 1000 &&
     value.participantNames.every((name) => isString(name, 200)) &&
+    Array.isArray(value.captureIds) &&
+    value.captureIds.length <= 1000 &&
+    value.captureIds.every((id) => isString(id, 128)) &&
     validCover
   );
 }
@@ -614,7 +617,7 @@ export async function uploadTextCapture(
   credentials: Credentials,
   id: string,
   text: string,
-): Promise<void> {
+): Promise<string> {
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -638,4 +641,14 @@ export async function uploadTextCapture(
       response.status,
     );
   }
+  let result: unknown;
+  try {
+    result = await response.json();
+  } catch {
+    throw new ApiError("服务器文字上传结果无效。", 502);
+  }
+  if (!isRecord(result) || !isString(result.inboxItemId, 128)) {
+    throw new ApiError("服务器文字上传结果无效。", 502);
+  }
+  return result.inboxItemId;
 }

@@ -66,8 +66,8 @@ function dependencies(): SyncDependencies {
     isConnected: vi.fn(async () => true),
     createSnapshotId: vi.fn(() => "snapshot-1"),
     listOutbox: vi.fn(async () => []),
-    uploadTextCapture: vi.fn(async () => undefined),
-    uploadMediaCapture: vi.fn(async () => undefined),
+    uploadTextCapture: vi.fn(async (_credentials, id) => id),
+    uploadMediaCapture: vi.fn(async (_credentials, id) => id),
     markOutboxFailure: vi.fn(async () => undefined),
     completeOutboxItem: vi.fn(async () => undefined),
     fetchSyncPage: vi.fn(async () => page()),
@@ -98,6 +98,7 @@ describe("offline sync core", () => {
     vi.mocked(deps.listOutbox).mockResolvedValue([media("media-1")]);
     vi.mocked(deps.uploadMediaCapture).mockImplementation(async () => {
       order.push("uploaded");
+      return "inbox-media-1";
     });
     vi.mocked(deps.completeOutboxItem).mockImplementation(async () => {
       order.push("committed");
@@ -112,6 +113,10 @@ describe("offline sync core", () => {
       "media-1",
       expect.objectContaining({ fileName: "media-1.jpg" }),
     );
+    expect(deps.completeOutboxItem).toHaveBeenCalledWith(
+      "media-1",
+      "inbox-media-1",
+    );
     expect(order).toEqual(["uploaded", "committed"]);
   });
 
@@ -124,7 +129,7 @@ describe("offline sync core", () => {
       "recording-1",
       expect.objectContaining({ mediaType: "audio", mimeType: "audio/mp4" }),
     );
-    expect(deps.completeOutboxItem).toHaveBeenCalledWith("recording-1");
+    expect(deps.completeOutboxItem).toHaveBeenCalledWith("recording-1", "recording-1");
   });
 
   it("keeps ambiguous failures and never starts a destructive snapshot", async () => {
@@ -156,6 +161,7 @@ describe("offline sync core", () => {
         if (captureId === "unsupported") {
           throw new ApiError("不支持的原件", 415);
         }
+        return captureId;
       },
     );
 
@@ -163,7 +169,7 @@ describe("offline sync core", () => {
       uploadedCount: 1,
       failedCount: 1,
     });
-    expect(deps.completeOutboxItem).toHaveBeenCalledWith("valid");
+    expect(deps.completeOutboxItem).toHaveBeenCalledWith("valid", "valid");
     expect(deps.finishSyncSnapshot).toHaveBeenCalledOnce();
   });
 

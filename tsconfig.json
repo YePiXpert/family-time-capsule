@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "expo-sqlite": ["./tests/mocks/expo-sqlite.ts"]
     }
   },
   "include": [

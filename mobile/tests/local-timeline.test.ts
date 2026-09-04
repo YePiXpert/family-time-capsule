@@ -15,6 +15,8 @@ describe("local-first timeline", () => {
         occurred_at: "2026-09-03T21:00:00.000Z",
         local_uri: "file:///captures/capture-1.jpg",
         media_type: "image",
+        inbox_item_id: null,
+        memory_event_id: null,
         sync_state: "pending",
       }),
     ).toMatchObject({
@@ -39,6 +41,7 @@ describe("local-first timeline", () => {
       updatedAt: "2026-09-02T21:00:00.000Z",
       assetCount: 0,
       participantNames: [],
+      captureIds: [],
       cover: null,
       localCoverUri: null,
       source: "server",
@@ -53,11 +56,46 @@ describe("local-first timeline", () => {
         occurred_at: "2026-09-03T21:00:00.000Z",
         local_uri: null,
         media_type: null,
-        sync_state: "synced",
+        inbox_item_id: "local-1",
+        memory_event_id: null,
+        sync_state: "inbox",
       },
     ]);
 
     expect(result.map((event) => event.id)).toEqual(["local:local-1", "server-1"]);
-    expect(result[0]).toMatchObject({ source: "local", syncState: "synced" });
+    expect(result[0]).toMatchObject({ source: "local", syncState: "inbox" });
+  });
+
+  it("hides an archived local capture when its formal memory is present", () => {
+    const serverEvent: LocalTimelineEvent = {
+      id: "memory-1",
+      title: "正式记忆",
+      occurredAt: "2026-09-03T21:00:00.000Z",
+      occurredAtPrecision: "exact",
+      locationText: null,
+      childPersonId: "child-1",
+      ageDays: null,
+      ageLabel: null,
+      updatedAt: "2026-09-03T21:00:00.000Z",
+      assetCount: 1,
+      participantNames: [],
+      captureIds: ["capture-1"],
+      cover: null,
+      localCoverUri: "file:///captures/capture-1.jpg",
+      source: "server",
+      syncState: null,
+    };
+    const result = mergeTimelineEvents([serverEvent], [{
+      id: "capture-1",
+      kind: "media_capture",
+      title: "本机原件",
+      occurred_at: "2026-09-03T21:00:00.000Z",
+      local_uri: "file:///captures/capture-1.jpg",
+      media_type: "image",
+      sync_state: "archived",
+      inbox_item_id: "capture-1",
+      memory_event_id: "memory-1",
+    }]);
+    expect(result.map((event) => event.id)).toEqual(["memory-1"]);
   });
 });

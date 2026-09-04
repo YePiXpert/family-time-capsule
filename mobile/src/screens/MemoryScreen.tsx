@@ -6,7 +6,12 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { fetchMobileMemory } from "../api/client";
 import { useApp } from "../state/AppContext";
 import type { RootStackParamList } from "../navigation/types";
-import { cacheMemoryDetail, getCachedMemoryDetail } from "../storage/database";
+import {
+  cacheMemoryDetail,
+  getCachedMemoryDetail,
+  listLocalMemoryMedia,
+  type LocalMemoryMedia,
+} from "../storage/database";
 import { colors, sharedStyles } from "../theme";
 import type { MobileMemory, MobileMemoryAsset } from "../types";
 import { dateLabel } from "../utils/format";
@@ -16,6 +21,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Memory">;
 export function MemoryScreen({ route }: Props) {
   const { credentials, events, family, online } = useApp();
   const [memory, setMemory] = useState<MobileMemory | null>(null);
+  const [localMedia, setLocalMedia] = useState<LocalMemoryMedia[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const summary = events.find((event) => event.id === route.params.id);
@@ -23,7 +29,11 @@ export function MemoryScreen({ route }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const cached = await getCachedMemoryDetail(route.params.id);
+    const [cached, archivedMedia] = await Promise.all([
+      getCachedMemoryDetail(route.params.id),
+      listLocalMemoryMedia(route.params.id),
+    ]);
+    setLocalMedia(archivedMedia);
     if (cached) setMemory(cached);
     if (credentials && online !== false) {
       try {
@@ -47,10 +57,13 @@ export function MemoryScreen({ route }: Props) {
   const title = memory?.title ?? summary?.title ?? "记忆详情";
   const occurredAt = memory?.occurredAt ?? summary?.occurredAt;
   const localCover = summary?.localCoverUri ?? null;
+  const useLocalMedia = online === false || !credentials;
   return (
     <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-      {localCover ? <Image source={{ uri: localCover }} style={styles.cover} /> : null}
-      {memory?.assets.map((asset) => <MemoryMedia asset={asset} credentials={credentials} key={asset.id} />)}
+      {localCover && !(useLocalMedia && localMedia.some((asset) => asset.mediaType === "image")) ? <Image source={{ uri: localCover }} style={styles.cover} /> : null}
+      {useLocalMedia
+        ? localMedia.map((asset) => <LocalMemoryMediaView asset={asset} key={asset.captureId} />)
+        : memory?.assets.map((asset) => <MemoryMedia asset={asset} credentials={credentials} key={asset.id} />)}
       <View style={styles.heading}>
         <Text style={sharedStyles.eyebrow}>阅读记忆</Text>
         <Text style={sharedStyles.title}>{title}</Text>
@@ -81,14 +94,27 @@ function MemoryMedia({ asset, credentials }: { asset: MobileMemoryAsset; credent
   return <View style={sharedStyles.card}><Text style={styles.author}>{asset.filename}</Text><AudioMedia credentials={credentials} path={asset.mediaPath} /></View>;
 }
 
+function LocalMemoryMediaView({ asset }: { asset: LocalMemoryMedia }) {
+  const source = { uri: asset.localUri };
+  if (asset.mediaType === "image") {
+    return <Image accessibilityLabel={asset.title} resizeMode="cover" source={source} style={styles.galleryImage} />;
+  }
+  if (asset.mediaType === "video") return <VideoMedia source={source} />;
+  return <View style={sharedStyles.card}><Text style={styles.author}>{asset.title}</Text><AudioSourceMedia source={source} /></View>;
+}
+
 function AudioMedia({ credentials, path }: { credentials: ReturnType<typeof useApp>["credentials"]; path: string }) {
   const source = useMemo(() => sourceFor(credentials, path), [credentials, path]);
+  return <AudioSourceMedia source={source} />;
+}
+
+function AudioSourceMedia({ source }: { source: { uri: string; headers?: Record<string, string> } | null }) {
   const player = useAudioPlayer(source);
   const status = useAudioPlayerStatus(player);
   return <Pressable accessibilityRole="button" onPress={() => status.playing ? player.pause() : player.play()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{status.playing ? "暂停声音" : "播放声音"}</Text></Pressable>;
 }
 
-function VideoMedia({ source }: { source: { uri: string; headers: Record<string, string> } }) {
+function VideoMedia({ source }: { source: { uri: string; headers?: Record<string, string> } }) {
   const player = useVideoPlayer(source);
   return <VideoView contentFit="contain" nativeControls player={player} style={styles.video} />;
 }

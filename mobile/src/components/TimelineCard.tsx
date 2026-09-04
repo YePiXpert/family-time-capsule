@@ -32,7 +32,7 @@ export function TimelineCard({
       <View style={styles.body}>
         {item.source === "local" ? (
           <Text style={styles.localBadge}>
-            {item.syncState === "synced" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
+            {item.syncState === "inbox" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
           </Text>
         ) : null}
         <Text style={styles.date}>{dateLabel(item.occurredAt, timeZone)}</Text>

@@ -1,5 +1,8 @@
 import "server-only";
 
+import { and, eq, inArray } from "drizzle-orm";
+import { getDb } from "@/db";
+import { inboxItem } from "@/db/schema/inbox";
 import type { FamilyRole } from "@/lib/authz/policy";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { getFamily, listPeople } from "@/lib/family/service";
@@ -43,6 +46,7 @@ export type MobileTimelineEventDto = {
   updatedAt: string;
   assetCount: number;
   participantNames: string[];
+  captureIds: string[];
   cover: null | {
     assetId: string;
     mediaAssetId: string;
@@ -79,6 +83,23 @@ export async function getMobileSyncPage(input: {
     }),
   ]);
   if (!family) throw new Error("authorized family is unavailable");
+  const eventIds = timeline.entries.map((entry) => entry.event.id);
+  const captureRows = eventIds.length > 0
+    ? await getDb()
+        .select({ id: inboxItem.id, memoryEventId: inboxItem.memoryEventId })
+        .from(inboxItem)
+        .where(and(
+          eq(inboxItem.familyId, input.familyId),
+          inArray(inboxItem.memoryEventId, eventIds),
+        ))
+    : [];
+  const captureIdsByEventId = new Map<string, string[]>();
+  for (const row of captureRows) {
+    if (!row.memoryEventId) continue;
+    const ids = captureIdsByEventId.get(row.memoryEventId) ?? [];
+    ids.push(row.id);
+    captureIdsByEventId.set(row.memoryEventId, ids);
+  }
 
   return {
     apiVersion: MOBILE_API_VERSION,
@@ -120,6 +141,7 @@ export async function getMobileSyncPage(input: {
         updatedAt: entry.event.updatedAt.toISOString(),
         assetCount: entry.assetCount,
         participantNames: entry.participantNames,
+        captureIds: captureIdsByEventId.get(entry.event.id) ?? [],
         cover:
           entry.coverAssetId && mediaAssetId
             ? {
