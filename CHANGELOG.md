@@ -2,6 +2,46 @@
 
 本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ **1.0 Family Archive**。
 
+## 1.0.0-rc.4 — Cross-device correctness（2026-09-04）
+
+本轮不增加产品领域、页面、AI、备份或导出格式；portable archive 继续使用 v1。重点修复
+rc.3 审计中发现的跨端时间、草稿、媒体来源、本机生命周期与角色体验问题。
+
+### 时间、素材来源与跨端草稿
+
+- 原生 Inbox、Memory 编辑与合并统一发送家庭墙钟 `occurredAtWall`；服务端只按当前家庭的
+  IANA timezone 转 UTC，客户端不再用裸 `toISOString().slice()` 或设备时区解释。
+- 年龄差、出生当天 / 第 N 天 / 满月 / 百天统一按家庭本地日历日计算，覆盖上海、设备与
+  家庭时区不一致、午夜边界及纽约 DST 跳变。
+- 相机与相册来源分离；现场拍摄可使用现场时间，相册素材只有从 MediaLibrary 取得可靠创建
+  时间时才上传 `lastModified`。无 EXIF、QuickTime creation_time 或可靠文件时间的导入保持
+  `capturedAt=null`、`timeSource=import_time` 并进入 `needs_review`，不再以选择时间冒充拍摄时间。
+- Web“先收进来”保存标题、家庭墙钟、地点和人物草稿；Web/native 打开与确认均回填同一组
+  字段，人工草稿优先于 AI 建议和文件名 fallback。
+
+### 本机对账、权限与入口稳定性
+
+- `local_capture` 使用 `pending → inbox → archived` 生命周期并保存可选 `memoryEventId`；单条
+  确认和多项合并后隐藏独立本机卡片、保留原件，并可继续作为正式事件的离线媒体。确认响应
+  丢失后的重试会从同步快照恢复关联，不生成重复时间轴事件。
+- Web 导航按 capability 过滤，同时保留全部服务端授权；已连接且无 capture 权限的原生账号
+  进入明确只读状态，不创建注定失败的 outbox。Inbox 将查看与 review 分开，viewer 不显示
+  修改、合并或确认动作；纯本机模式仍可记录。
+- 原生首页四个记录入口分别聚焦文字、启动相机、定位录音和打开相册；故事、胶囊、问题及
+  story 搜索结果打开准确内容或明确标注“在 Web 打开”。Memory 页支持文字讲述新增/本人编辑、
+  作者和可见性，并避免封面重复。
+- Web 移除未实现的 `⌘K` 提示，将伪“相关记忆”改名为“最近记忆”；默认记忆阅读不预取
+  转录、AI 分析/jobs、建议、修订和审计来源，显式打开档案或编辑时才加载。
+
+### 发布门禁
+
+- 本地干净安装后通过 70 files / 491 个 Web 单元与集成测试、36 个 production Playwright、
+  6 个 production disaster roundtrip，以及 6 files / 30 个移动端测试。
+- Web lint/typecheck/Next 16.3.3 production build、mobile TypeScript/ESLint、Expo Doctor 21/21、
+  Android/iOS Hermes bundle 与 Docker app/worker health + deployment smoke 均通过。
+- 本轮未 push，因此没有 rc.4 GitHub CI 或原生 APK/IPA 云构建；真实设备项目仍全部待人工，
+  不创建 stable tag。
+
 ## 1.0.0-rc.3 — Everyday family product（2026-09-04）
 
 这一候选版不改变私人、自托管、单家庭优先的档案边界，重点把现有能力整理成可每天使用的

@@ -119,7 +119,11 @@ async function acceptAndLogin(
   await page.getByLabel("密码").fill(account.password);
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
-  await expect(page.getByText(account.displayName, { exact: true }).first()).toBeVisible();
+  await expect(
+    page
+      .getByRole("complementary", { name: "应用导航" })
+      .getByText(account.displayName, { exact: false }),
+  ).toBeVisible();
   return { context, page };
 }
 
@@ -186,7 +190,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
       viewer.page
         .getByRole("navigation", { name: "一级导航" })
         .getByRole("link", { name: "记录" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     const deniedViewerUpload = await viewer.page.request.post(
       "/api/upload/image",
       {

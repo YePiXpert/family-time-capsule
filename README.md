@@ -1,6 +1,6 @@
 # Family Time Capsule
 
-**v1.0.0-rc.3 — Family Archive product release candidate**
+**v1.0.0-rc.4 — Family Archive correctness release candidate**
 
 A private, self-hosted family memory archive.
 

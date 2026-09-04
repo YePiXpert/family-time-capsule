@@ -772,14 +772,22 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     const detailHtml = await detail.text();
     expect(detailHtml).toContain(expect_.eventDate); // 2026年8月10日 09:30
     expect(detailHtml).toContain(expect_.ageLabel);
-
-    // M3 durable：用户修订的转录、确认事实及其 locator 引文、接受的标签全部回来
-    expect(detailHtml).toContain(expect_.editedTranscript);
     expect(detailHtml).toContain(expect_.factStatement);
-    expect(detailHtml).toContain(expect_.factQuote); // fact_source.locator quote
-    expect(detailHtml).toContain("00:31–00:37"); // segment 时间段
+    expect(detailHtml).not.toContain(expect_.editedTranscript);
+    expect(detailHtml).not.toContain(expect_.factQuote);
+
+    // M3 durable：重档案资料默认不读取；显式打开档案后，修订转录、locator 与标签全部回来。
+    const archiveDetail = await fetch(
+      `${BASE}/memories/${expect_.photoEventId}?mode=archive`,
+      { headers: { cookie } },
+    );
+    expect(archiveDetail.status).toBe(200);
+    const archiveHtml = await archiveDetail.text();
+    expect(archiveHtml).toContain(expect_.editedTranscript);
+    expect(archiveHtml).toContain(expect_.factQuote); // fact_source.locator quote
+    expect(archiveHtml).toContain("00:31–00:37"); // segment 时间段
     for (const tag of expect_.tags) {
-      expect(detailHtml).toContain(tag);
+      expect(archiveHtml).toContain(tag);
     }
 
     // 已确认文字以无作者的原始来源记录显示，正文不截断，也不伪造 Contribution。

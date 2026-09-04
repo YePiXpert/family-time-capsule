@@ -3,7 +3,7 @@
   "description": "Native offline-first iOS and Android client for Family Time Capsule.",
   "license": "UNLICENSED",
   "private": true,
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0-rc.4",
   "main": "index.ts",
   "dependencies": {
     "@react-navigation/bottom-tabs": "^7.18.18",
@@ -15,7 +15,6 @@
     "expo-crypto": "~57.0.2",
     "expo-file-system": "~57.0.6",
     "expo-image-picker": "~57.0.15",
-    "expo-media-library": "~57.0.4",
     "expo-media-library": "~57.0.4",
     "expo-network": "~57.0.1",
     "expo-secure-store": "~57.0.3",
