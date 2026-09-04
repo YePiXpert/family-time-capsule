@@ -65,30 +65,45 @@ public final class FamilyShareIntakeModule: Module {
       includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
 
     for batch in batches where UUID(uuidString: batch.lastPathComponent) != nil {
+      guard batch.resolvingSymlinksInPath().path == inbox.resolvingSymlinksInPath()
+        .appendingPathComponent(batch.lastPathComponent).path else { continue }
       let sourceManifest = batch.appendingPathComponent("manifest.json")
       guard let sourceData = try? Data(contentsOf: sourceManifest, options: .mappedIfSafe),
             var manifest = try? JSONSerialization.jsonObject(with: sourceData) as? [String: Any],
-            let items = manifest["items"] as? [[String: Any]] else { continue }
-      if manifest["complete"] as? Bool != true {
-        let values = try? sourceManifest.resourceValues(forKeys: [.contentModificationDateKey])
-        if Date().timeIntervalSince(values?.contentModificationDate ?? Date()) < 2 { continue }
-      }
+            manifest["manifestId"] as? String == batch.lastPathComponent,
+            let items = manifest["items"] as? [[String: Any]], items.count <= 100 else { continue }
+      let complete = manifest["complete"] as? Bool == true
 
       var localItems: [[String: Any]] = []
       var allCopied = true
       for item in items {
-        guard item["kind"] as? String == "file",
-              let relativePath = item["relativePath"] as? String,
-              !relativePath.contains(".."), relativePath.hasPrefix("items/") else {
+        guard item["kind"] as? String == "file" else {
           localItems.append(item)
           continue
         }
+        guard let relativePath = item["relativePath"] as? String,
+              let captureId = item["captureId"] as? String,
+              UUID(uuidString: captureId) != nil,
+              relativePath.range(of: "^items/[a-zA-Z0-9-]+\\.[a-z0-9]{1,8}$", options: .regularExpression) != nil else {
+          allCopied = false
+          break
+        }
         var localItem = item
         let source = batch.appendingPathComponent(relativePath)
-        let captureId = item["captureId"] as? String ?? UUID().uuidString.lowercased()
+        guard source.deletingPathExtension().lastPathComponent == captureId,
+              source.resolvingSymlinksInPath().path == inbox.resolvingSymlinksInPath()
+                .appendingPathComponent(batch.lastPathComponent).appendingPathComponent(relativePath).path,
+              (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+          allCopied = false
+          break
+        }
         let ext = source.pathExtension.isEmpty ? "bin" : source.pathExtension
         let destination = try capturesDirectory().appendingPathComponent("\(captureId).\(ext)")
         do {
+          guard destination.resolvingSymlinksInPath().path == destination.deletingLastPathComponent()
+            .resolvingSymlinksInPath().appendingPathComponent(destination.lastPathComponent).path else {
+            throw InvalidManifestIdException()
+          }
           if !FileManager.default.fileExists(atPath: destination.path) {
             let temporary = destination.deletingLastPathComponent()
               .appendingPathComponent(".\(destination.lastPathComponent).part")
@@ -111,9 +126,13 @@ public final class FamilyShareIntakeModule: Module {
       if !FileManager.default.fileExists(atPath: destination.path) {
         let data = try JSONSerialization.data(withJSONObject: manifest)
         try data.write(to: destination, options: [.atomic, .completeFileProtection])
+        // Only this newly written snapshot owns all completed shared items.
+        // An older local snapshot may still be waiting for the JS/SQLite ack.
+        if complete { try? FileManager.default.removeItem(at: batch) }
       }
-      // The app-private copies and durable local manifest now own the handoff.
-      try? FileManager.default.removeItem(at: batch)
+      // Partial snapshots remain in the App Group: the extension may still be
+      // copying a slow provider, or may have exited after preserving some files.
+      // Replaying a later snapshot adds only unseen capture IDs in SQLite.
     }
   }
 }

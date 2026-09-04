@@ -162,6 +162,12 @@ created → receiving → completing → completed
   写事务内重验配额。故障注入验证清理失败后原件 SHA 不变且 complete 可重试。
 - `647eb61`：整批声明在上传前持久化，刷新可以展示未开始上传的项；重复声明幂等，
   取消覆盖无 UploadSession 的项。100 文件全部创建上传失败后刷新仍保留完整队列的浏览器测试通过。
+- iOS 后续修复：部分共享批次不再按两秒超时删除；旧本机快照待 SQLite 确认时保留共享目录，
+  后续快照复用 capture ID 接管。文件接管验证 UUID 与符号链接边界；扩展保持具体 UTI，
+  不再回退为整份视频/音频 Data。移动测试通过，真实扩展中断与恢复仍待设备验收。
+  实现依据为 [Apple App Group 数据共享](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/ExtensionScenarios.html)、
+  [NSItemProvider 文件副本生命周期](https://developer.apple.com/documentation/foundation/nsitemprovider/loadfilerepresentation(fortypeidentifier:completionhandler:))
+  和 [Expo SDK 57 DocumentPicker](https://docs.expo.dev/versions/v57.0.0/sdk/document-picker/)。
 - 后续仍须修复并验证：原生部分 manifest 接管和进程中断恢复、原生批次与服务器关系同步、
   document 文本在恢复后的重建、原生列表后续分页与文档展示、超过 50 个事件的周回顾及周记唯一性。
   这些是代码与自动化缺口，不能只归入真机人工验收。

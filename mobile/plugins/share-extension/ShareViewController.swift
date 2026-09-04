@@ -91,20 +91,21 @@ final class ShareViewController: SLComposeServiceViewController {
         }
         return
       }
-      provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, dataError in
-        do {
-          guard let data else { throw dataError ?? error ?? ShareError.unreadableItem }
-          completion(try self.copyFileValue(data, provider: provider, type: type, index: index))
-        } catch {
-          completion(self.errorItem(index: index, message: error.localizedDescription))
-        }
-      }
+      // Large video/audio must stay file-backed even if the provider fails.
+      completion(self.errorItem(index: index, message: error?.localizedDescription ?? "unreadable_file"))
     }
   }
 
   private func preferredType(for provider: NSItemProvider) -> UTType? {
     let candidates: [UTType] = [.image, .movie, .audio, .pdf, .plainText, .rtf, .url, .data]
-    return candidates.first { provider.hasItemConformingToTypeIdentifier($0.identifier) }
+    for candidate in candidates {
+      if let concrete = provider.registeredTypeIdentifiers.compactMap({ UTType($0) })
+        .first(where: { $0.conforms(to: candidate) }) {
+        // Text and URL use loadItem; media retain the provider's concrete UTI.
+        return candidate == .plainText || candidate == .url ? candidate : concrete
+      }
+    }
+    return nil
   }
 
   private func textValue(_ value: NSSecureCoding?) -> String? {
@@ -128,8 +129,10 @@ final class ShareViewController: SLComposeServiceViewController {
     let captureId = UUID().uuidString.lowercased()
     let suppliedName = provider.suggestedName?.components(separatedBy: CharacterSet(charactersIn: "/\\")).last
     let sourceExtension = (value as? URL)?.pathExtension
-    let ext = safeExtension(sourceExtension ?? type.preferredFilenameExtension ?? "bin")
-    let filename = String((suppliedName ?? "shared-\(index).\(ext)").prefix(200))
+    let ext = safeExtension(sourceExtension?.isEmpty == false ? sourceExtension! : type.preferredFilenameExtension ?? "bin")
+    let baseName = suppliedName ?? "shared-\(index)"
+    let filename = (baseName as NSString).pathExtension.isEmpty
+      ? "\(String(baseName.prefix(190))).\(ext)" : String(baseName.prefix(200))
     let destination = itemDirectory.appendingPathComponent("\(captureId).\(ext)")
     let temporary = itemDirectory.appendingPathComponent(".\(captureId).part")
     try? FileManager.default.removeItem(at: temporary)
