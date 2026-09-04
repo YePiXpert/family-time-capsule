@@ -65,7 +65,10 @@ class FamilyShareIntakeModule : Module() {
     intent.putExtra(HANDLED_EXTRA, true)
     val copy = Intent(intent)
     copyExecutor.execute {
-      try { processIntent(copy) } finally {
+      // Storage failure must not escape the executor and terminate the app.
+      // Already committed receipts are recovered by the next intake pass.
+      runCatching { processIntent(copy) }
+      runCatching {
         sendEvent("onPendingShares", emptyMap<String, Any>())
       }
     }
