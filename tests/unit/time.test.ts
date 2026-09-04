@@ -5,6 +5,7 @@ import {
   embeddedTimeToUtc,
   extractEmbeddedTime,
   parseOffsetMinutes,
+  utcToZonedWallTimeInput,
   zonedWallTimeToUtc,
 } from "@/lib/metadata/time";
 
@@ -28,6 +29,24 @@ describe("zonedWallTimeToUtc", () => {
       "2026-01-01T15:00:00.000Z",
     );
   });
+
+  it("纽约 DST 跳转后仍按当时偏移解释墙钟时间", () => {
+    expect(
+      zonedWallTimeToUtc("2026-03-08T03:30:00", "America/New_York").toISOString(),
+    ).toBe("2026-03-08T07:30:00.000Z");
+  });
+
+  it("拒绝纽约 DST 春季不存在的墙钟时间", () => {
+    expect(() =>
+      zonedWallTimeToUtc("2026-03-08T02:30:00", "America/New_York"),
+    ).toThrow(/invalid wall time/u);
+  });
+
+  it("纽约 DST 秋季重复时间稳定选择较早的时刻", () => {
+    expect(
+      zonedWallTimeToUtc("2026-11-01T01:30:00", "America/New_York").toISOString(),
+    ).toBe("2026-11-01T05:30:00.000Z");
+  });
 });
 
 describe("parseOffsetMinutes", () => {
@@ -39,6 +58,14 @@ describe("parseOffsetMinutes", () => {
     expect(parseOffsetMinutes("0800")).toBeNull();
     expect(parseOffsetMinutes("+25:00")).toBeNull();
     expect(parseOffsetMinutes("+08:99")).toBeNull();
+  });
+});
+
+describe("utcToZonedWallTimeInput", () => {
+  it("同一 UTC 时刻按家庭时区回填且跨午夜不漂移", () => {
+    const instant = new Date("2026-09-01T16:30:00.000Z");
+    expect(utcToZonedWallTimeInput(instant, "Asia/Shanghai")).toBe("2026-09-02T00:30");
+    expect(utcToZonedWallTimeInput(instant, "America/New_York")).toBe("2026-09-01T12:30");
   });
 });
 

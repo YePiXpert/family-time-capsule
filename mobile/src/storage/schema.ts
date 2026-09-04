@@ -22,6 +22,7 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
     location_text TEXT,
     child_person_id TEXT NOT NULL,
     age_days INTEGER,
+    age_label TEXT,
     updated_at TEXT NOT NULL,
     asset_count INTEGER NOT NULL,
     participant_names_json TEXT NOT NULL,

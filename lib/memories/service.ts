@@ -18,6 +18,7 @@ import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { asset as assetTable } from "@/db/schema/asset";
 import { person as personTable } from "@/db/schema/family";
+import { family as familyTable } from "@/db/schema/family";
 import { inboxItem } from "@/db/schema/inbox";
 import {
   memoryEvent,
@@ -221,7 +222,7 @@ export async function updateMemoryEvent(
     .limit(1);
   const ageDays =
     childBirth[0]?.birthDate != null
-      ? computeAgeDays(childBirth[0].birthDate, occurredAt)
+      ? computeAgeDays(childBirth[0].birthDate, occurredAt, await familyTimezone(familyId))
       : null;
 
   const now = new Date();
@@ -315,12 +316,39 @@ export function defaultTitle(entry: InboxEntry): string {
 }
 
 /** 满天数快照：出生前为负；展示层永远现算（#009） */
-export function computeAgeDays(birthDate: string, at: Date): number | null {
+export function computeAgeDays(
+  birthDate: string,
+  at: Date,
+  timeZone: string,
+): number | null {
   const birth = new Date(`${birthDate}T00:00:00Z`);
   if (Number.isNaN(birth.getTime())) return null;
-  const atDay = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
+  let dateParts: Intl.DateTimeFormatPart[];
+  try {
+    dateParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(at);
+  } catch {
+    return null;
+  }
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(dateParts.find((part) => part.type === type)?.value);
+  const atDay = Date.UTC(value("year"), value("month") - 1, value("day"));
   const birthDay = birth.getTime();
   return Math.floor((atDay - birthDay) / 86_400_000);
+}
+
+async function familyTimezone(familyId: string): Promise<string> {
+  const row = await getDb()
+    .select({ timezone: familyTable.timezone })
+    .from(familyTable)
+    .where(eq(familyTable.id, familyId))
+    .limit(1);
+  if (!row[0]) throw new Error("family timezone is unavailable");
+  return row[0].timezone;
 }
 
 async function getChildPersonId(familyId: string): Promise<string | null> {
@@ -433,7 +461,7 @@ export async function confirmInboxEntry(
     .limit(1);
   const ageDays =
     childBirth[0]?.birthDate != null
-      ? computeAgeDays(childBirth[0].birthDate, occurredAt)
+      ? computeAgeDays(childBirth[0].birthDate, occurredAt, await familyTimezone(familyId))
       : null;
 
   db.transaction((tx) => {
@@ -556,7 +584,7 @@ export async function mergeInboxEntries(
     .limit(1);
   const ageDays =
     childBirth[0]?.birthDate != null
-      ? computeAgeDays(childBirth[0].birthDate, occurredAt)
+      ? computeAgeDays(childBirth[0].birthDate, occurredAt, await familyTimezone(familyId))
       : null;
   const participantIds = new Set<string>([
     childPersonId,

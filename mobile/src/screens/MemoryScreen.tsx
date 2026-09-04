@@ -9,12 +9,12 @@ import type { RootStackParamList } from "../navigation/types";
 import { cacheMemoryDetail, getCachedMemoryDetail } from "../storage/database";
 import { colors, sharedStyles } from "../theme";
 import type { MobileMemory, MobileMemoryAsset } from "../types";
-import { ageLabel, dateLabel } from "../utils/format";
+import { dateLabel } from "../utils/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Memory">;
 
 export function MemoryScreen({ route }: Props) {
-  const { credentials, events, online } = useApp();
+  const { credentials, events, family, online } = useApp();
   const [memory, setMemory] = useState<MobileMemory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export function MemoryScreen({ route }: Props) {
       <View style={styles.heading}>
         <Text style={sharedStyles.eyebrow}>阅读记忆</Text>
         <Text style={sharedStyles.title}>{title}</Text>
-        {occurredAt ? <Text style={styles.date}>{dateLabel(occurredAt)}{ageLabel(memory?.ageDays ?? summary?.ageDays ?? null) ? ` · ${ageLabel(memory?.ageDays ?? summary?.ageDays ?? null)}` : ""}</Text> : null}
+        {occurredAt ? <Text style={styles.date}>{dateLabel(occurredAt, family?.timezone)}{memory?.ageLabel ?? summary?.ageLabel ? ` · ${memory?.ageLabel ?? summary?.ageLabel}` : ""}</Text> : null}
         {memory?.locationText ?? summary?.locationText ? <Text style={sharedStyles.intro}>地点 · {memory?.locationText ?? summary?.locationText}</Text> : null}
         <Text style={styles.sync}>{memory ? (online === false ? "本机缓存 · 当前离线" : "详情已同步到本机") : "读取中"}</Text>
       </View>

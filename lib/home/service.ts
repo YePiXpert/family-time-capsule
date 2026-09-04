@@ -97,13 +97,17 @@ export type HomeDashboardDto = {
   isFirstUse: boolean;
 };
 
-function mapMemory(entry: TimelineEntry, childBirthDate: string | null): HomeMemoryDto {
+function mapMemory(
+  entry: TimelineEntry,
+  childBirthDate: string | null,
+  timezone: string,
+): HomeMemoryDto {
   return {
     id: entry.event.id,
     title: entry.event.title,
     occurredAt: entry.event.occurredAt,
     ageLabel: childBirthDate
-      ? formatAgeLabel(childBirthDate, entry.event.occurredAt)
+      ? formatAgeLabel(childBirthDate, entry.event.occurredAt, timezone)
       : null,
     locationText: entry.event.locationText,
     participantNames: entry.participantNames,
@@ -188,14 +192,14 @@ export async function getHomeDashboard(
     ? await getThumbnailMap(context.familyId, [avatarAsset.id])
     : new Map();
   const allRecent = timelinePage.entries.map((entry) =>
-    mapMemory(entry, child?.birthDate ?? null),
+    mapMemory(entry, child?.birthDate ?? null, family.timezone),
   );
   const resurfacingGroups = resurfacing.groups.map((group) => ({
     kind: group.kind,
     label: group.label,
     targetDate: group.targetDate,
     memories: group.entries.map((entry) =>
-      mapMemory(entry, child?.birthDate ?? null),
+      mapMemory(entry, child?.birthDate ?? null, family.timezone),
     ),
   }));
   const onThisDay =
@@ -219,7 +223,7 @@ export async function getHomeDashboard(
           displayName: child.displayName,
           birthDate: child.birthDate,
           currentAgeLabel: child.birthDate
-            ? formatAgeLabel(child.birthDate, now)
+            ? formatAgeLabel(child.birthDate, now, family.timezone)
             : null,
           avatar: avatarAsset
             ? {
@@ -236,7 +240,7 @@ export async function getHomeDashboard(
     onThisDay,
     resurfacing: resurfacingGroups,
     milestones: milestoneEntries.map((entry) =>
-      mapMemory(entry, child?.birthDate ?? null),
+      mapMemory(entry, child?.birthDate ?? null, family.timezone),
     ),
     recentStory: recentStory
       ? {

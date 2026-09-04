@@ -6,6 +6,8 @@ import { getThumbnailMap } from "@/lib/assets/service";
 import { getHomeDashboard } from "@/lib/home/service";
 import { getInboxPage, type InboxEntry } from "@/lib/inbox/service";
 import { getMemoryEventDetail } from "@/lib/memories/service";
+import { formatAgeLabel } from "@/lib/memories/age";
+import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { searchFamily } from "@/lib/search/service";
 
 function mediaPath(assetId: string): string {
@@ -72,6 +74,11 @@ async function mapMobileInboxEntries(
       title: inboxTitle(entry),
       rawText: entry.item.rawText,
       occurredAt: entry.item.draftOccurredAt?.toISOString() ?? entry.assets[0]?.capturedAt?.toISOString() ?? null,
+      occurredAtWall: entry.item.draftOccurredAt
+        ? utcToZonedWallTimeInput(entry.item.draftOccurredAt, context.familyTimezone)
+        : entry.assets[0]?.capturedAt
+          ? utcToZonedWallTimeInput(entry.assets[0].capturedAt, context.familyTimezone)
+          : null,
       locationText: entry.item.draftLocationText,
       participantPersonIds: entry.participantPersonIds,
       createdAt: entry.item.createdAt.toISOString(),
@@ -101,12 +108,17 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
   ]);
   if (!detail) return null;
   const thumbnails = await getThumbnailMap(context.familyId, detail.assets.map((asset) => asset.id));
+  const child = detail.participants.find((person) => person.id === detail.event.childPersonId);
   return {
     id: detail.event.id,
     title: detail.event.title,
     occurredAt: detail.event.occurredAt.toISOString(),
+    occurredAtWall: utcToZonedWallTimeInput(detail.event.occurredAt, context.familyTimezone),
     occurredAtPrecision: detail.event.occurredAtPrecision,
     ageDays: detail.event.ageDays,
+    ageLabel: child?.birthDate
+      ? formatAgeLabel(child.birthDate, detail.event.occurredAt, context.familyTimezone)
+      : null,
     locationText: detail.event.locationText,
     milestoneType: detail.event.milestoneType,
     isPinned: detail.event.isPinned,

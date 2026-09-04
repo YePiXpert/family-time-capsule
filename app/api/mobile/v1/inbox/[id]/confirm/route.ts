@@ -1,7 +1,7 @@
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { getInboxEntry } from "@/lib/inbox/service";
 import { confirmInboxEntry } from "@/lib/memories/service";
-import { asRecord, mobileJson, mobileRequestError, optionalDate, optionalString, optionalStringArray, readMobileJson } from "@/lib/mobile/http";
+import { asRecord, mobileJson, mobileRequestError, optionalFamilyWallDate, optionalString, optionalStringArray, readMobileJson } from "@/lib/mobile/http";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const authorization = await authorizeApiFamilyRequest(request.headers, "inbox:review");
@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (!entry) return mobileJson({ error: "not_found" }, { status: 404 });
     const result = await confirmInboxEntry(authorization.context.familyId, entry, {
       title: optionalString(body, "title", 100) ?? undefined,
-      occurredAt: optionalDate(body, "occurredAt") ?? undefined,
+      occurredAt: optionalFamilyWallDate(body, "occurredAtWall", authorization.context.familyTimezone) ?? undefined,
       locationText: optionalString(body, "locationText", 200),
       participantPersonIds: optionalStringArray(body, "participantPersonIds"),
     });

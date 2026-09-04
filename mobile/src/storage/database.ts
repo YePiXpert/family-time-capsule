@@ -53,6 +53,12 @@ export async function initializeLocalStore(): Promise<void> {
       `);
     });
   }
+  const timelineColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(timeline_event)",
+  );
+  if (!timelineColumns.some((column) => column.name === "age_label")) {
+    await db.execAsync("ALTER TABLE timeline_event ADD COLUMN age_label TEXT");
+  }
 }
 
 export async function getMeta(key: string): Promise<string | null> {
@@ -167,6 +173,7 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
       location_text: string | null;
       child_person_id: string;
       age_days: number | null;
+      age_label: string | null;
       updated_at: string;
       asset_count: number;
       participant_names_json: string;
@@ -185,6 +192,7 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
     locationText: row.location_text,
     childPersonId: row.child_person_id,
     ageDays: row.age_days,
+    ageLabel: row.age_label,
     updatedAt: row.updated_at,
     assetCount: row.asset_count,
     participantNames: JSON.parse(row.participant_names_json) as string[],
@@ -229,9 +237,9 @@ export async function applySyncPage(
       await tx.runAsync(
         `INSERT INTO timeline_event(
           id, title, occurred_at, occurred_at_precision, location_text,
-          child_person_id, age_days, updated_at, asset_count,
+          child_person_id, age_days, age_label, updated_at, asset_count,
           participant_names_json, cover_json, local_cover_uri, seen_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
         ON CONFLICT(id) DO UPDATE SET
           title = excluded.title,
           occurred_at = excluded.occurred_at,
@@ -239,6 +247,7 @@ export async function applySyncPage(
           location_text = excluded.location_text,
           child_person_id = excluded.child_person_id,
           age_days = excluded.age_days,
+          age_label = excluded.age_label,
           updated_at = excluded.updated_at,
           asset_count = excluded.asset_count,
           participant_names_json = excluded.participant_names_json,
@@ -255,6 +264,7 @@ export async function applySyncPage(
         event.locationText,
         event.childPersonId,
         event.ageDays,
+        event.ageLabel,
         event.updatedAt,
         event.assetCount,
         JSON.stringify(event.participantNames),

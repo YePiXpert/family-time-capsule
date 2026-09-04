@@ -278,6 +278,7 @@ describe("native offline sync state machine", () => {
           locationText: null,
           childPersonId: "child-1",
           ageDays: 1,
+          ageLabel: "第 1 天",
           updatedAt: "2026-09-03T00:00:00.000Z",
           assetCount: 1,
           participantNames: [],

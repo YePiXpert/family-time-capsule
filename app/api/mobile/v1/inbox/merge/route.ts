@@ -1,7 +1,7 @@
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { getInboxEntry } from "@/lib/inbox/service";
 import { defaultTitle, mergeInboxEntries } from "@/lib/memories/service";
-import { asRecord, mobileJson, mobileRequestError, optionalDate, optionalString, optionalStringArray, readMobileJson } from "@/lib/mobile/http";
+import { asRecord, mobileJson, mobileRequestError, optionalFamilyWallDate, optionalString, optionalStringArray, readMobileJson } from "@/lib/mobile/http";
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiFamilyRequest(request.headers, "inbox:review");
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const participants = optionalStringArray(body, "participantPersonIds") ?? [...new Set(entries.flatMap((entry) => entry?.participantPersonIds ?? []))];
     const result = await mergeInboxEntries(authorization.context.familyId, itemIds, {
       title,
-      occurredAt: optionalDate(body, "occurredAt") ?? undefined,
+      occurredAt: optionalFamilyWallDate(body, "occurredAtWall", authorization.context.familyTimezone) ?? undefined,
       locationText: optionalString(body, "locationText", 200) ?? first.item.draftLocationText,
       participantPersonIds: participants,
     });

@@ -34,6 +34,7 @@ export type TimelineEvent = {
   locationText: string | null;
   childPersonId: string;
   ageDays: number | null;
+  ageLabel: string | null;
   updatedAt: string;
   assetCount: number;
   participantNames: string[];
@@ -144,6 +145,7 @@ export type MobileInboxEntry = {
   title: string;
   rawText: string | null;
   occurredAt: string | null;
+  occurredAtWall: string | null;
   locationText: string | null;
   participantPersonIds: string[];
   createdAt: string;
@@ -169,8 +171,10 @@ export type MobileMemory = {
   id: string;
   title: string;
   occurredAt: string;
+  occurredAtWall: string;
   occurredAtPrecision: string;
   ageDays: number | null;
+  ageLabel: string | null;
   locationText: string | null;
   childPersonId: string;
   participantPersonIds: string[];
@@ -207,7 +211,7 @@ export type MobileSearchPage = {
 
 export type InboxDraftPatch = {
   title?: string | null;
-  occurredAt?: string | null;
+  occurredAtWall?: string | null;
   locationText?: string | null;
   participantPersonIds?: string[];
 };

@@ -38,6 +38,7 @@ function validPage(): SyncPage {
         locationText: "公园",
         childPersonId: "child-1",
         ageDays: 942,
+        ageLabel: "2 岁 6 个月",
         updatedAt: "2026-09-03T19:00:00.000Z",
         assetCount: 1,
         participantNames: ["妈妈"],

@@ -232,7 +232,7 @@ export default async function MemoryEventPage({
   const latestSuggestionJob = suggestionJobs[0];
 
   const child = participants.find((p) => p.id === event.childPersonId);
-  const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt);
+  const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt, timezone);
   const contributionAuthors =
     context.role === "admin" || context.role === "editor"
       ? people

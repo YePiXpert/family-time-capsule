@@ -6,7 +6,7 @@ import { useApp } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
 import type { MobileInboxEntry } from "../types";
-import { dateLabel, inputDateTime } from "../utils/format";
+import { inputDateTime } from "../utils/format";
 
 export function InboxScreen() {
   const navigation = useNavigation<AppNavigation>();
@@ -43,7 +43,7 @@ export function InboxScreen() {
   const beginEdit = (entry: MobileInboxEntry) => {
     setEditing(entry);
     setTitle(entry.title);
-    setOccurredAt(inputDateTime(entry.occurredAt));
+    setOccurredAt(inputDateTime(entry.occurredAtWall));
     setLocation(entry.locationText ?? "");
     setParticipants(new Set(entry.participantPersonIds));
     setError(null);
@@ -51,8 +51,7 @@ export function InboxScreen() {
 
   const saveEdit = async () => {
     if (!credentials || !editing) return;
-    const parsed = occurredAt ? new Date(occurredAt) : null;
-    if (occurredAt && Number.isNaN(parsed?.getTime())) {
+    if (occurredAt && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u.test(occurredAt)) {
       setError("时间格式无效，请使用 2026-09-04T18:30。");
       return;
     }
@@ -60,7 +59,7 @@ export function InboxScreen() {
     try {
       const updated = await patchMobileInbox(credentials, editing.id, {
         title,
-        occurredAt: parsed?.toISOString() ?? null,
+        occurredAtWall: occurredAt || null,
         locationText: location,
         participantPersonIds: [...participants],
       });
@@ -138,7 +137,7 @@ export function InboxScreen() {
         const source = image ? { uri: `${credentials.serverUrl}${image.thumbnailPath ?? image.mediaPath}`, headers: { authorization: `Bearer ${credentials.token}` } } : null;
         return <View key={entry.id} style={styles.entry}>
           {source ? <Image source={source} style={styles.thumbnail} /> : <View style={styles.thumbnailPlaceholder}><Text style={styles.kind}>{entry.kind === "text" ? "文字" : entry.assets[0]?.type === "audio" ? "录音" : "素材"}</Text></View>}
-          <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAt ? dateLabel(entry.occurredAt) : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text><View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry.id)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View></View>
+          <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text><View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry.id)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View></View>
         </View>;
       })}
       {loading ? <ActivityIndicator color={colors.coral} /> : null}

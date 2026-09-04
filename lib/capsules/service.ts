@@ -128,7 +128,7 @@ export function isCapsuleUnlocked(
   }
   if (row.unlockType === "age") {
     if (!childBirthDate) return false;
-    const { years } = calendarDiff(childBirthDate, now);
+    const { years } = calendarDiff(childBirthDate, now, familyTimezone);
     return years >= Number(row.unlockValue);
   }
   return false;

@@ -35,6 +35,7 @@ describe("local-first timeline", () => {
       locationText: null,
       childPersonId: "child-1",
       ageDays: null,
+      ageLabel: null,
       updatedAt: "2026-09-02T21:00:00.000Z",
       assetCount: 0,
       participantNames: [],

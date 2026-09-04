@@ -70,7 +70,7 @@ export default async function ResurfacingPage() {
                       id={entry.event.id}
                       title={entry.event.title}
                       dateLabel={formatter.format(entry.event.occurredAt)}
-                      ageLabel={child?.birthDate ? formatAgeLabel(child.birthDate, entry.event.occurredAt) : null}
+                      ageLabel={child?.birthDate ? formatAgeLabel(child.birthDate, entry.event.occurredAt, family.timezone) : null}
                       location={entry.event.locationText}
                       people={entry.participantNames}
                       assetCount={entry.assetCount}

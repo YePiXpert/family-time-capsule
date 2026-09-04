@@ -1,5 +1,7 @@
 import "server-only";
 
+import { zonedWallTimeToUtc } from "@/lib/metadata/time";
+
 const MAX_JSON_BYTES = 64 * 1024;
 
 export function mobileJson(body: unknown, init: ResponseInit = {}): Response {
@@ -94,4 +96,18 @@ export function optionalDate(
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw new MobileRequestError("invalid_input", 400);
   return date;
+}
+
+export function optionalFamilyWallDate(
+  record: Record<string, unknown>,
+  key: string,
+  timeZone: string,
+): Date | null | undefined {
+  const value = optionalString(record, key, 19);
+  if (value === undefined || value === null) return value;
+  try {
+    return zonedWallTimeToUtc(value.length === 16 ? `${value}:00` : value, timeZone);
+  } catch {
+    throw new MobileRequestError("invalid_input", 400);
+  }
 }

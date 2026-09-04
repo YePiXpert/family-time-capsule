@@ -1,16 +1,18 @@
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
 import type { LocalTimelineEvent } from "../types";
-import { ageLabel, dateLabel } from "../utils/format";
+import { dateLabel } from "../utils/format";
 
 export function TimelineCard({
   item,
   onPress,
+  timeZone,
 }: {
   item: LocalTimelineEvent;
   onPress: () => void;
+  timeZone?: string;
 }) {
-  const age = ageLabel(item.ageDays);
+  const age = item.ageLabel;
   return (
     <Pressable
       accessibilityHint={item.source === "server" ? "打开记忆详情" : "查看本机同步状态"}
@@ -33,7 +35,7 @@ export function TimelineCard({
             {item.syncState === "synced" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
           </Text>
         ) : null}
-        <Text style={styles.date}>{dateLabel(item.occurredAt)}</Text>
+        <Text style={styles.date}>{dateLabel(item.occurredAt, timeZone)}</Text>
         <Text numberOfLines={2} style={styles.title}>{item.title}</Text>
         <View style={styles.meta}>
           {age ? <Text style={styles.age}>{age}</Text> : null}

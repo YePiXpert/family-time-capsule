@@ -181,9 +181,9 @@ describe("时间与年龄工具", () => {
   });
 
   it("computeAgeDays 边界", () => {
-    expect(computeAgeDays("2026-08-10", new Date("2026-08-10T00:00:00Z"))).toBe(0);
-    expect(computeAgeDays("2026-08-10", new Date("2026-08-09T23:00:00Z"))).toBe(-1);
-    expect(computeAgeDays("2026-08-10", new Date("2026-11-18T00:00:00Z"))).toBe(100);
-    expect(computeAgeDays("bad-date", new Date())).toBeNull();
+    expect(computeAgeDays("2026-08-10", new Date("2026-08-10T00:00:00Z"), "UTC")).toBe(0);
+    expect(computeAgeDays("2026-08-10", new Date("2026-08-09T23:00:00Z"), "UTC")).toBe(-1);
+    expect(computeAgeDays("2026-08-10", new Date("2026-11-18T00:00:00Z"), "UTC")).toBe(100);
+    expect(computeAgeDays("bad-date", new Date(), "UTC")).toBeNull();
   });
 });

@@ -73,7 +73,7 @@ export function HomeScreen() {
       ) : recent.slice(0, 4).map((memory) => (
         <Pressable key={memory.id} onPress={() => navigation.navigate("Memory", { id: memory.id })} style={({ pressed }) => [styles.memoryRow, pressed && sharedStyles.pressed]}>
           {mediaSource(memory.coverPath) ? <Image source={mediaSource(memory.coverPath)!} style={styles.memoryCover} /> : <View style={styles.memoryCoverPlaceholder} />}
-          <View style={styles.grow}><Text style={styles.itemTitle}>{memory.title}</Text><Text style={styles.meta}>{dateLabel(memory.occurredAt)}{memory.ageLabel ? ` · ${memory.ageLabel}` : ""}</Text></View>
+          <View style={styles.grow}><Text style={styles.itemTitle}>{memory.title}</Text><Text style={styles.meta}>{dateLabel(memory.occurredAt, home?.family.timezone ?? family?.timezone)}{memory.ageLabel ? ` · ${memory.ageLabel}` : ""}</Text></View>
         </Pressable>
       ))}
 

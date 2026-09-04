@@ -314,7 +314,7 @@ describe("native mobile API", () => {
         editorToken,
         {
           title: "原生端整理完成",
-          occurredAt,
+          occurredAtWall: "2026-09-01T16:30",
           locationText: "外婆家",
           participantPersonIds: [editorPersonId],
         },
@@ -327,6 +327,7 @@ describe("native mobile API", () => {
         id: item.id,
         title: "原生端整理完成",
         occurredAt,
+        occurredAtWall: "2026-09-01T16:30",
         locationText: "外婆家",
         participantPersonIds: [editorPersonId],
       },
@@ -355,6 +356,7 @@ describe("native mobile API", () => {
       id: confirmedBody.memoryEventId,
       title: "原生端整理完成",
       occurredAt,
+      occurredAtWall: "2026-09-01T16:30",
       locationText: "外婆家",
       participantPersonIds: expect.arrayContaining([childId, editorPersonId]),
       sourceNotes: [{ text: "需要整理的原生文字" }],
@@ -373,6 +375,7 @@ describe("native mobile API", () => {
         {
           itemIds: [first.id, second.id],
           title: "原生端合并记忆",
+          occurredAtWall: "2026-09-01T23:55",
           participantPersonIds: [editorPersonId],
         },
       ),
@@ -414,7 +417,11 @@ describe("native mobile API", () => {
         `http://localhost/api/mobile/v1/memories/${mergedBody.memoryEventId}`,
         "PATCH",
         editorToken,
-        { title: "原生端合并后修改", locationText: "植物园" },
+        {
+          title: "原生端合并后修改",
+          occurredAtWall: "2026-09-02T00:05",
+          locationText: "植物园",
+        },
       ),
       { params: Promise.resolve({ id: mergedBody.memoryEventId }) },
     );
@@ -422,6 +429,8 @@ describe("native mobile API", () => {
     await expect(edited.json()).resolves.toMatchObject({
       id: mergedBody.memoryEventId,
       title: "原生端合并后修改",
+      occurredAt: "2026-09-01T16:05:00.000Z",
+      occurredAtWall: "2026-09-02T00:05",
       locationText: "植物园",
     });
 

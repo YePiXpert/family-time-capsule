@@ -98,14 +98,15 @@ describe("native API client", () => {
     const inbox = {
       entries: [{
         id: "inbox-1", kind: "text", status: "new", title: "待整理", rawText: "正文",
-        occurredAt: null, locationText: null, participantPersonIds: [],
+        occurredAt: null, occurredAtWall: null, locationText: null, participantPersonIds: [],
         createdAt: "2026-09-01T00:00:00.000Z", assets: [],
       }],
       nextCursor: null,
     };
     const memory = {
       id: "memory-1", title: "散步", occurredAt: "2026-09-01T00:00:00.000Z",
-      occurredAtPrecision: "exact", ageDays: 700, locationText: null,
+      occurredAtWall: "2026-09-01T08:00", occurredAtPrecision: "exact", ageDays: 700,
+      ageLabel: "1 岁 11 个月", locationText: null,
       childPersonId: "child-1", participantPersonIds: ["child-1"],
       participants: [{ id: "child-1", displayName: "小满", relationToChild: null, isChild: true }],
       sourceNotes: [{ id: "note-1", text: "正文" }],

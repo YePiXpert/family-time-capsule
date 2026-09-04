@@ -61,6 +61,10 @@ function isDateTime(value: unknown): value is string {
   return isString(value, 64) && !Number.isNaN(Date.parse(value));
 }
 
+function isWallDateTime(value: unknown): value is string {
+  return isString(value, 19) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/u.test(value);
+}
+
 function isPath(value: unknown): value is string {
   return isString(value, 512) && value.startsWith("/api/");
 }
@@ -124,6 +128,7 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
     isNullableString(value.locationText, 500) &&
     isString(value.childPersonId, 128) &&
     (value.ageDays === null || Number.isSafeInteger(value.ageDays)) &&
+    isNullableString(value.ageLabel, 100) &&
     isDateTime(value.updatedAt) &&
     Number.isSafeInteger(value.assetCount) &&
     Number(value.assetCount) >= 0 &&
@@ -182,6 +187,7 @@ function isInboxEntry(value: unknown): value is MobileInboxEntry {
     isString(value.title, 500) &&
     isNullableString(value.rawText, 5000) &&
     (value.occurredAt === null || isDateTime(value.occurredAt)) &&
+    (value.occurredAtWall === null || isWallDateTime(value.occurredAtWall)) &&
     isNullableString(value.locationText, 200) &&
     Array.isArray(value.participantPersonIds) &&
     value.participantPersonIds.length <= 50 &&
@@ -224,8 +230,10 @@ export function parseMobileMemory(value: unknown): MobileMemory {
     !isString(value.id, 128) ||
     !isString(value.title, 500) ||
     !isDateTime(value.occurredAt) ||
+    !isWallDateTime(value.occurredAtWall) ||
     !isString(value.occurredAtPrecision, 32) ||
     (value.ageDays !== null && !Number.isSafeInteger(value.ageDays)) ||
+    !isNullableString(value.ageLabel, 100) ||
     !isNullableString(value.locationText, 200) ||
     !isString(value.childPersonId, 128) ||
     !Array.isArray(value.participantPersonIds) ||

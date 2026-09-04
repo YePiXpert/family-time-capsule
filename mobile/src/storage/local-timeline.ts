@@ -20,6 +20,7 @@ export function toLocalTimelineEvent(row: LocalCaptureRow): LocalTimelineEvent {
     locationText: null,
     childPersonId: "local",
     ageDays: null,
+    ageLabel: null,
     updatedAt: row.occurred_at,
     assetCount: isMedia ? 1 : 0,
     participantNames: [],

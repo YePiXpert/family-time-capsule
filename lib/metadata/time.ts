@@ -76,8 +76,6 @@ export async function extractEmbeddedTime(
   return { wallTime, offset, raw, sourceTag: primary };
 }
 
-const OFFSET_CACHE = new Map<string, number>();
-
 /** 某一时刻（UTC ms）在指定 IANA 时区的偏移（毫秒） */
 function timezoneOffsetMs(instant: Date, timeZone: string): number {
   const dtf = new Intl.DateTimeFormat("en-US", {
@@ -93,24 +91,84 @@ function timezoneOffsetMs(instant: Date, timeZone: string): number {
 }
 
 /**
- * 把「时区内的墙钟时间」折算成 UTC 时刻（两遍法处理 DST 边界）：
- * 先把墙钟当作 UTC 求出该时区当时的偏移，再减回偏移。
+ * 把「时区内的墙钟时间」折算成 UTC 时刻。DST 重复小时稳定选择较早时刻；
+ * DST 跳时产生的不存在墙钟值会被拒绝，避免悄悄漂移到另一小时。
  */
 export function zonedWallTimeToUtc(
   wallTime: string, // YYYY-MM-DDTHH:mm:ss
   timeZone: string,
 ): Date {
-  const asUtc = new Date(`${wallTime}Z`);
-  if (Number.isNaN(asUtc.getTime())) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/u.exec(
+    wallTime,
+  );
+  if (!match) {
     throw new Error(`invalid wall time: ${wallTime}`);
   }
-  const cacheKey = `${wallTime}|${timeZone}`;
-  let offset = OFFSET_CACHE.get(cacheKey);
-  if (offset === undefined) {
-    offset = timezoneOffsetMs(asUtc, timeZone);
-    OFFSET_CACHE.set(cacheKey, offset);
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw = "00"] = match;
+  const parts = {
+    year: Number(yearRaw),
+    month: Number(monthRaw),
+    day: Number(dayRaw),
+    hour: Number(hourRaw),
+    minute: Number(minuteRaw),
+    second: Number(secondRaw),
+  };
+  const asUtcMs = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  const normalized = new Date(asUtcMs);
+  if (
+    normalized.getUTCFullYear() !== parts.year ||
+    normalized.getUTCMonth() + 1 !== parts.month ||
+    normalized.getUTCDate() !== parts.day ||
+    normalized.getUTCHours() !== parts.hour ||
+    normalized.getUTCMinutes() !== parts.minute ||
+    normalized.getUTCSeconds() !== parts.second
+  ) {
+    throw new Error(`invalid wall time: ${wallTime}`);
   }
-  return new Date(asUtc.getTime() - offset);
+
+  // A wall time can be close to a DST transition. Discover every offset in a
+  // wide window, then retain only instants that round-trip to the exact input.
+  // A spring-forward gap has no candidate; a fall-back overlap has two and we
+  // deliberately choose the earlier instant for a stable contract.
+  const offsets = new Set<number>();
+  for (let hours = -36; hours <= 36; hours += 3) {
+    offsets.add(timezoneOffsetMs(new Date(asUtcMs + hours * 3_600_000), timeZone));
+  }
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const candidates = [...offsets]
+    .map((offset) => new Date(asUtcMs - offset))
+    .filter((candidate) => {
+      const candidateParts = formatter.formatToParts(candidate);
+      const value = (type: Intl.DateTimeFormatPartTypes) =>
+        Number(candidateParts.find((part) => part.type === type)?.value);
+      return (
+        value("year") === parts.year &&
+        value("month") === parts.month &&
+        value("day") === parts.day &&
+        value("hour") === parts.hour &&
+        value("minute") === parts.minute &&
+        value("second") === parts.second
+      );
+    })
+    .sort((a, b) => a.getTime() - b.getTime());
+  if (!candidates[0]) throw new Error(`invalid wall time: ${wallTime}`);
+  return candidates[0];
 }
 
 /** 形如 +08:00 的偏移字符串 → 分钟数；非法返回 null */
@@ -131,7 +189,7 @@ export function utcToZonedWallTimeInput(date: Date, timeZone: string): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
   const hour = get("hour") === "24" ? "00" : get("hour");

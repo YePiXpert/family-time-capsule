@@ -282,7 +282,7 @@ export async function buildFamilyExport(
       lastMonth = month;
     }
     md.push(`### ${e.title}`);
-    const age = formatAgeLabel(child?.birthDate, e.occurredAt);
+    const age = formatAgeLabel(child?.birthDate, e.occurredAt, tz);
     const participantNames = eventParticipantLinks
       .filter((l) => l.memoryEventId === e.id)
       .map((l) => personById.get(l.personId)?.displayName)
