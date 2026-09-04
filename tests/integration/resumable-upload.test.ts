@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, truncateSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, truncateSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, count, eq, sql } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-resumable-"));
 process.env.DATA_DIR = dataDir;
@@ -168,6 +168,53 @@ async function complete(uploadId: string, token = adminToken) {
 }
 
 describe("durable resumable upload protocol", () => {
+  it("enforces active quota for concurrent creation and restarting cancelled uploads", async () => {
+    const { createUploadSession, restartUpload, MAX_ACTIVE_UPLOADS_PER_FAMILY } = await import("@/lib/imports/service");
+    const quotaFamily = randomUUID();
+    await getDb().insert(family).values({
+      id: quotaFamily, name: "Quota", timezone: "UTC", createdAt: new Date(), updatedAt: new Date(),
+    });
+    const create = () => createUploadSession({
+      familyId: quotaFamily, userId: admin.id, captureId: randomUUID(),
+      filename: "quota.png", declaredMime: "image/png", totalBytes: PNG.length,
+      lastModified: null, source: "web", importSessionId: null,
+    });
+    const cancelled = await create();
+    await cancelUpload(quotaFamily, cancelled.session.id);
+    const results = await Promise.allSettled(Array.from({ length: 30 }, create));
+    const accepted = results.filter((result) => result.status === "fulfilled");
+    expect(accepted).toHaveLength(MAX_ACTIVE_UPLOADS_PER_FAMILY);
+    for (const result of results) {
+      if (result.status === "rejected") expect(result.reason.code).toBe("too_many_active_uploads");
+    }
+    await expect(restartUpload(quotaFamily, cancelled.session.id))
+      .rejects.toMatchObject({ code: "too_many_active_uploads" });
+    for (const result of accepted) await cancelUpload(quotaFamily, result.value.session.id);
+    expect((await restartUpload(quotaFamily, cancelled.session.id)).status).toBe("created");
+    await cancelUpload(quotaFamily, cancelled.session.id);
+  });
+
+  it("preserves a committed original when temporary cleanup fails", async () => {
+    const bytes = Buffer.concat([PNG, Buffer.from("cleanup-failure-regression")]);
+    const created = await createUpload({ bytes: bytes.length });
+    const id = created.body.uploadId as string;
+    expect((await patch(id, 0, bytes)).status).toBe(204);
+    const { completeUpload } = await import("@/lib/imports/service");
+    const cleanup = vi.spyOn(getAssetStorage(), "deleteUploadPart")
+      .mockRejectedValueOnce(new Error("injected unlink failure"));
+    try {
+      await expect(completeUpload(familyId, id)).rejects.toThrow("injected unlink failure");
+    } finally {
+      cleanup.mockRestore();
+    }
+    const row = getDb().select().from(asset).where(eq(asset.id, id)).get()!;
+    expect(readFileSync(getAssetStorage().resolvePath(row.storageKey))).toEqual(bytes);
+    const retried = await completeUpload(familyId, id);
+    expect(retried.assetId).toBe(id);
+    expect(retried.inboxItemId).toBe(created.captureId);
+    expect(retried.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+  });
+
   it("finishes five chunks, resumes after HEAD, and makes complete idempotent", async () => {
     const created = await createUpload({});
     expect(created.response.status).toBe(201);

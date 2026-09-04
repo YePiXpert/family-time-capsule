@@ -148,6 +148,26 @@ function sameDeclaration(row: UploadSessionRow, input: CreateUploadInput): boole
   );
 }
 
+function assertUploadQuota(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  familyId: string,
+  totalBytes: number,
+): void {
+  const usage = tx.select({
+    active: count(),
+    bytes: sql<number>`coalesce(sum(${uploadSession.totalBytes}), 0)`,
+  }).from(uploadSession).where(and(
+    eq(uploadSession.familyId, familyId),
+    inArray(uploadSession.status, [...ACTIVE_STATUSES]),
+  )).get();
+  if ((usage?.active ?? 0) >= MAX_ACTIVE_UPLOADS_PER_FAMILY) {
+    throw new UploadServiceError("too_many_active_uploads", 429);
+  }
+  if ((usage?.bytes ?? 0) + totalBytes > MAX_TEMP_BYTES_PER_FAMILY) {
+    throw new UploadServiceError("temporary_storage_quota", 413);
+  }
+}
+
 export async function createUploadSession(
   input: CreateUploadInput,
 ): Promise<{ session: UploadSessionRow; existing: boolean }> {
@@ -230,6 +250,8 @@ export async function createUploadSession(
   const now = new Date();
   try {
     const row = db.transaction((tx) => {
+      // Recheck under the SQLite write reservation after asynchronous file creation.
+      assertUploadQuota(tx, input.familyId, input.totalBytes);
       const created = tx
         .insert(uploadSession)
         .values({
@@ -335,7 +357,7 @@ export async function createUploadSession(
         }
       }
       return created;
-    });
+    }, { behavior: "immediate" });
     return { session: row, existing: false };
   } catch (error) {
     await getAssetStorage().deleteUploadPart(tempStorageKey);
@@ -859,8 +881,9 @@ export async function completeUpload(
 
     const now = new Date();
     const defaults = await importDefaults(row);
+    let stored: { assetRow: AssetRow; item: typeof inboxItem.$inferSelect };
     try {
-      const stored = getDb().transaction((tx) => {
+      stored = getDb().transaction((tx) => {
         const assetRow = tx
           .insert(asset)
           .values({
@@ -936,20 +959,22 @@ export async function completeUpload(
         markImportItemCompleted(tx, row, assetRow.id, item.id, now);
         return { assetRow, item };
       });
-      await getAssetStorage().deleteUploadPart(row.tempStorageKey);
-      return {
-        status: "stored",
-        assetId: stored.assetRow.id,
-        inboxItemId: stored.item.id,
-        sha256: stored.assetRow.sha256,
-        bytes: stored.assetRow.bytes,
-      };
     } catch (error) {
       getAssetStorage().delete(storageKey);
       const raced = await findOriginalBySha256(row.familyId, inspected.sha256);
       if (raced) return finalizeExisting(row, raced);
       throw error;
     }
+    // The original is committed now. A failed temporary unlink must never
+    // enter rollback; a repeated complete can retry that cleanup safely.
+    await getAssetStorage().deleteUploadPart(row.tempStorageKey);
+    return {
+      status: "stored",
+      assetId: stored.assetRow.id,
+      inboxItemId: stored.item.id,
+      sha256: stored.assetRow.sha256,
+      bytes: stored.assetRow.bytes,
+    };
   });
 }
 
@@ -1029,7 +1054,12 @@ export async function cleanupExpiredUploads(
     )
     .limit(limit);
   for (const row of rows) {
-    await withUploadLock(row.id, () => expireUpload(row, now));
+    await withUploadLock(row.id, async () => {
+      const current = await sessionForFamily(row.familyId, row.id);
+      if (["created", "uploading", "failed"].includes(current.status) && current.expiresAt < now) {
+        await expireUpload(current, now);
+      }
+    });
   }
   return rows.length;
 }
@@ -1195,6 +1225,7 @@ export async function restartUpload(
     if (key !== row.tempStorageKey) throw new UploadServiceError("temporary_storage_error", 500);
     const now = new Date();
     return getDb().transaction((tx) => {
+      assertUploadQuota(tx, familyId, row.totalBytes);
       const updated = tx
         .update(uploadSession)
         .set({
@@ -1226,6 +1257,6 @@ export async function restartUpload(
         }
       }
       return updated;
-    });
+    }, { behavior: "immediate" });
   });
 }
