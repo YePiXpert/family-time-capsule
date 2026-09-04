@@ -16,6 +16,8 @@ function validPage(): SyncPage {
       name: "妈妈",
       role: "admin",
       canCapture: true,
+      canReviewInbox: true,
+      canCreateContributions: true,
       canEditEvents: true,
     },
     family: { id: "family-1", name: "小满家", timezone: "Asia/Shanghai" },

@@ -16,6 +16,8 @@ export type MobileViewerDto = {
   name: string;
   role: FamilyRole;
   canCapture: boolean;
+  canReviewInbox: boolean;
+  canCreateContributions: boolean;
   canEditEvents: boolean;
 };
 
@@ -109,6 +111,8 @@ export async function getMobileSyncPage(input: {
       name: input.userName,
       role: input.role,
       canCapture: hasFamilyCapability(input.role, "capture:create"),
+      canReviewInbox: hasFamilyCapability(input.role, "inbox:review"),
+      canCreateContributions: hasFamilyCapability(input.role, "contribution:create"),
       canEditEvents: hasFamilyCapability(input.role, "event:write"),
     },
     family: {

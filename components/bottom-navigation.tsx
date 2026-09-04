@@ -2,15 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PRIMARY_NAVIGATION, isNavigationItemActive } from "./navigation-items";
+import { PRIMARY_NAVIGATION, filterNavigationByCapabilities, isNavigationItemActive } from "./navigation-items";
 import { Icon } from "./ui/icons";
+import type { FamilyCapability } from "@/lib/authz/policy";
 
-export function BottomNavigation({ inboxCount }: { inboxCount: number }) {
+export function BottomNavigation({ inboxCount, capabilities }: { inboxCount: number; capabilities: readonly FamilyCapability[] }) {
   const pathname = usePathname();
+  const navigation = filterNavigationByCapabilities(PRIMARY_NAVIGATION, capabilities);
   return (
     <nav aria-label="一级导航" className="bottom-navigation lg:hidden">
-      <div className="bottom-navigation-inner">
-        {PRIMARY_NAVIGATION.map((item) => {
+      <div
+        className="bottom-navigation-inner"
+        style={{ gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))` }}
+      >
+        {navigation.map((item) => {
           const active = isNavigationItemActive(pathname, item.href, true);
           return (
             <Link

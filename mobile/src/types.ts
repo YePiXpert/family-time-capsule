@@ -8,6 +8,8 @@ export type Viewer = {
   name: string;
   role: "admin" | "editor" | "contributor" | "viewer";
   canCapture: boolean;
+  canReviewInbox: boolean;
+  canCreateContributions: boolean;
   canEditEvents: boolean;
 };
 

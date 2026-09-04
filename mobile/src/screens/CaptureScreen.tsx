@@ -13,9 +13,11 @@ import { enqueueMediaCapture, enqueueTextCapture } from "../storage/database";
 import { preservePickedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
 import { colors, sharedStyles } from "../theme";
 import type { MediaCapturePayload } from "../types";
+import { resolveNativeCaptureAccess } from "../authz/product-access";
 
 export function CaptureScreen() {
-  const { credentials, outbox, queued } = useApp();
+  const { credentials, outbox, queued, viewer } = useApp();
+  const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,6 +33,10 @@ export function CaptureScreen() {
   };
 
   const saveText = async () => {
+    if (captureAccess === "readonly") {
+      setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
+      return;
+    }
     const value = text.trim();
     if (!value || value.length > 5000) {
       setMessage("请输入 1–5000 字。");
@@ -53,6 +59,7 @@ export function CaptureScreen() {
     assets: ImagePicker.ImagePickerAsset[],
     source: "camera" | "library",
   ) => {
+    if (captureAccess === "readonly") return;
     let success = 0;
     const failures: string[] = [];
     for (const asset of assets) {
@@ -78,6 +85,10 @@ export function CaptureScreen() {
   };
 
   const pickMedia = async (mode: "photo" | "video" | "library") => {
+    if (captureAccess === "readonly") {
+      setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
@@ -114,6 +125,10 @@ export function CaptureScreen() {
   };
 
   const toggleRecording = async () => {
+    if (captureAccess === "readonly") {
+      setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
+      return;
+    }
     if (recording) {
       setBusy(true);
       try {
@@ -165,6 +180,22 @@ export function CaptureScreen() {
       setMessage(error instanceof Error ? error.message : "无法开始录音。");
     }
   };
+
+  if (captureAccess === "readonly") {
+    return (
+      <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
+        <Text style={sharedStyles.eyebrow}>只读模式</Text>
+        <Text style={sharedStyles.title}>记录此刻</Text>
+        <View style={sharedStyles.warning}>
+          <Text style={sharedStyles.warningText}>当前家庭角色只有查看权限。这里不会创建无法同步的本机待传记录；断开服务器后仍可使用纯本机记录。</Text>
+        </View>
+        <View style={sharedStyles.card}>
+          <Text style={sharedStyles.cardTitle}>已有本机待传记录</Text>
+          <Text style={sharedStyles.body}>{outbox.length > 0 ? `${outbox.length} 份既有记录仍安全保留，权限恢复后可继续同步。` : "没有等待补传的素材。"}</Text>
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>

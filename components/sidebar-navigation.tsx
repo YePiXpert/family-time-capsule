@@ -2,12 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PRIMARY_NAVIGATION, SECONDARY_NAVIGATION, isNavigationItemActive } from "./navigation-items";
+import { PRIMARY_NAVIGATION, SECONDARY_NAVIGATION, filterNavigationByCapabilities, isNavigationItemActive } from "./navigation-items";
 import { Icon } from "./ui/icons";
 import { LogoutButton } from "./logout-button";
+import type { FamilyCapability, FamilyRole } from "@/lib/authz/policy";
 
-export function SidebarNavigation({ familyName, inboxCount, userName }: { familyName: string; inboxCount: number; userName: string }) {
+const ROLE_LABELS: Record<FamilyRole, string> = {
+  admin: "管理员",
+  editor: "整理者",
+  contributor: "贡献者",
+  viewer: "只读成员",
+};
+
+export function SidebarNavigation({ familyName, inboxCount, userName, role, capabilities }: { familyName: string; inboxCount: number; userName: string; role: FamilyRole; capabilities: readonly FamilyCapability[] }) {
   const pathname = usePathname();
+  const primaryNavigation = filterNavigationByCapabilities(PRIMARY_NAVIGATION, capabilities);
+  const secondaryNavigation = filterNavigationByCapabilities(SECONDARY_NAVIGATION, capabilities);
   return (
     <aside className="sidebar-navigation" aria-label="应用导航">
       <div className="px-5 pb-5 pt-7">
@@ -23,7 +33,7 @@ export function SidebarNavigation({ familyName, inboxCount, userName }: { family
       </Link>
       <nav aria-label="一级导航" className="mt-5 px-3">
         <ul className="space-y-1">
-          {PRIMARY_NAVIGATION.filter((item) => item.href !== "/more").map((item) => {
+          {primaryNavigation.filter((item) => item.href !== "/more").map((item) => {
             const active = isNavigationItemActive(pathname, item.href);
             return (
               <li key={item.href}>
@@ -41,7 +51,7 @@ export function SidebarNavigation({ familyName, inboxCount, userName }: { family
       <nav aria-label="更多功能" className="min-h-0 flex-1 overflow-y-auto px-3 pb-5">
         <p className="px-3 pb-2 text-xs font-medium tracking-widest text-faint">更多</p>
         <ul className="space-y-0.5">
-          {SECONDARY_NAVIGATION.filter((item) => item.href !== "/search").map((item) => {
+          {secondaryNavigation.filter((item) => item.href !== "/search").map((item) => {
             const active = isNavigationItemActive(pathname, item.href);
             return (
               <li key={item.href}>
@@ -55,7 +65,7 @@ export function SidebarNavigation({ familyName, inboxCount, userName }: { family
         </ul>
       </nav>
       <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-4">
-        <span className="truncate text-sm text-muted">{userName}</span>
+        <span className="min-w-0 truncate text-sm text-muted">{userName} · {ROLE_LABELS[role]}</span>
         <LogoutButton />
       </div>
     </aside>

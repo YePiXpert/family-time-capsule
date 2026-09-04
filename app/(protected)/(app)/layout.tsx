@@ -2,6 +2,9 @@ import { requireFamily } from "@/lib/family/context";
 import { getFamily } from "@/lib/family/service";
 import { countInbox } from "@/lib/inbox/service";
 import { AppShell } from "@/components/app-shell";
+import { FAMILY_CAPABILITIES, hasFamilyCapability } from "@/lib/authz/policy";
+
+export const dynamic = "force-dynamic";
 
 /**
  * (app) 组：所有依赖家庭数据的页面。
@@ -14,15 +17,22 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { familyId, userName } = await requireFamily();
+  const { familyId, userName, role } = await requireFamily();
+  const capabilities = FAMILY_CAPABILITIES.filter((capability) =>
+    hasFamilyCapability(role, capability),
+  );
   const [family, inboxCount] = await Promise.all([
     getFamily(familyId),
-    countInbox(familyId),
+    hasFamilyCapability(role, "inbox:review")
+      ? countInbox(familyId)
+      : Promise.resolve(0),
   ]);
   return (
     <AppShell
       familyName={family?.name ?? "家庭档案"}
       inboxCount={inboxCount}
+      role={role}
+      capabilities={capabilities}
       userName={userName}
     >
       {children}

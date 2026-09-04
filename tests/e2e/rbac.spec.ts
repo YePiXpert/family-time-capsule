@@ -150,8 +150,15 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   await page.goto("/capture");
   await expect(page.getByText("当前账号是只读角色")).toBeVisible();
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "一级导航" }).getByText("记录"))
-    .toBeVisible();
+  const primaryNavigation = page.getByRole("navigation", { name: "一级导航" });
+  await expect(primaryNavigation.getByText("记录", { exact: true })).toHaveCount(0);
+  await expect(primaryNavigation.getByText("收件箱", { exact: true })).toHaveCount(0);
+  await page.goto("/more");
+  await expect(page.locator('a[href="/family"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/stories"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/requests"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/capsules"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/search"]').first()).toBeVisible();
   await page.goto("/family");
   await expect(page.getByRole("heading", { name: "家人" })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加家人" })).toHaveCount(0);

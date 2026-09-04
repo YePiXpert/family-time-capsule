@@ -91,6 +91,8 @@ function isViewer(value: unknown): value is Viewer {
       String(value.role),
     ) &&
     typeof value.canCapture === "boolean" &&
+    typeof value.canReviewInbox === "boolean" &&
+    typeof value.canCreateContributions === "boolean" &&
     typeof value.canEditEvents === "boolean"
   );
 }

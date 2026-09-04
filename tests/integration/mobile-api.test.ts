@@ -61,6 +61,7 @@ const email = "mobile@example.com";
 const password = "a-long-mobile-test-password";
 let bearerToken = "";
 let editorToken = "";
+let contributorToken = "";
 let viewerToken = "";
 let foreignToken = "";
 let editorPersonId = "";
@@ -91,7 +92,7 @@ function bearerRequest(url: string, token: string): Request {
 async function addSessionPrincipal(input: {
   familyId: string;
   personId: string;
-  role: "admin" | "editor" | "viewer";
+  role: "admin" | "editor" | "contributor" | "viewer";
   suffix: string;
 }): Promise<string> {
   const now = new Date();
@@ -183,7 +184,7 @@ describe("native mobile API", () => {
     expect(bearerToken.length).toBeGreaterThan(20);
   });
 
-  it("derives admin, editor, viewer and foreign-family access from live bearer bindings", async () => {
+  it("derives every family role and foreign-family access from live bearer bindings", async () => {
     const admin = (await getDb().select().from(user))[0]!;
     const editorPerson = await addPerson(admin.familyId!, {
       displayName: "舅舅",
@@ -193,7 +194,11 @@ describe("native mobile API", () => {
       displayName: "朋友",
       relationToChild: "朋友",
     });
-    if (!editorPerson.ok || !viewerPerson.ok) throw new Error("people setup failed");
+    const contributorPerson = await addPerson(admin.familyId!, {
+      displayName: "姑姑",
+      relationToChild: "姑姑",
+    });
+    if (!editorPerson.ok || !viewerPerson.ok || !contributorPerson.ok) throw new Error("people setup failed");
     editorPersonId = editorPerson.personId;
     viewerPersonId = viewerPerson.personId;
     editorToken = await addSessionPrincipal({
@@ -201,6 +206,12 @@ describe("native mobile API", () => {
       personId: editorPersonId,
       role: "editor",
       suffix: "mobile-editor",
+    });
+    contributorToken = await addSessionPrincipal({
+      familyId: admin.familyId!,
+      personId: contributorPerson.personId,
+      role: "contributor",
+      suffix: "mobile-contributor",
     });
     viewerToken = await addSessionPrincipal({
       familyId: admin.familyId!,
@@ -247,12 +258,14 @@ describe("native mobile API", () => {
       suffix: "mobile-foreign-admin",
     });
 
-    const [adminHome, editorHome, viewerHome] = await Promise.all([
+    const [adminHome, editorHome, contributorHome, viewerHome] = await Promise.all([
       homeGet(bearerRequest("http://localhost/api/mobile/v1/home", bearerToken)),
       homeGet(bearerRequest("http://localhost/api/mobile/v1/home", editorToken)),
+      homeGet(bearerRequest("http://localhost/api/mobile/v1/home", contributorToken)),
       homeGet(bearerRequest("http://localhost/api/mobile/v1/home", viewerToken)),
     ]);
-    expect([adminHome.status, editorHome.status, viewerHome.status]).toEqual([
+    expect([adminHome.status, editorHome.status, contributorHome.status, viewerHome.status]).toEqual([
+      200,
       200,
       200,
       200,
@@ -264,10 +277,27 @@ describe("native mobile API", () => {
     await expect(editorHome.json()).resolves.toMatchObject({
       capabilities: { canCapture: true },
     });
+    await expect(contributorHome.json()).resolves.toMatchObject({
+      capabilities: { canCapture: true },
+    });
     await expect(viewerHome.json()).resolves.toMatchObject({
       capabilities: { canCapture: false },
     });
     expect(viewerHome.headers.get("cache-control")).toBe("private, no-store");
+
+    const syncViewers = await Promise.all(
+      [bearerToken, editorToken, contributorToken, viewerToken].map(async (token) => {
+        const response = await syncGet(bearerRequest("http://localhost/api/mobile/v1/sync", token));
+        expect(response.status).toBe(200);
+        return (await response.json()) as { viewer: Record<string, unknown> };
+      }),
+    );
+    expect(syncViewers.map((body) => body.viewer)).toEqual([
+      expect.objectContaining({ role: "admin", canCapture: true, canReviewInbox: true, canCreateContributions: true, canEditEvents: true }),
+      expect.objectContaining({ role: "editor", canCapture: true, canReviewInbox: true, canCreateContributions: true, canEditEvents: true }),
+      expect.objectContaining({ role: "contributor", canCapture: true, canReviewInbox: false, canCreateContributions: true, canEditEvents: false }),
+      expect.objectContaining({ role: "viewer", canCapture: false, canReviewInbox: false, canCreateContributions: false, canEditEvents: false }),
+    ]);
   });
 
   it("pages, edits and confirms inbox entries while viewer and cross-family writes fail closed", async () => {
@@ -288,6 +318,16 @@ describe("native mobile API", () => {
     expect(pageBody.entries).toHaveLength(1);
     expect(pageBody.nextCursor).toBeTruthy();
 
+    const viewerPage = await inboxGet(
+      bearerRequest("http://localhost/api/mobile/v1/inbox?limit=50", viewerToken),
+    );
+    expect(viewerPage.status).toBe(200);
+    await expect(viewerPage.json()).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ id: item.id, title: "需要整理的原生文字" }),
+      ]),
+    });
+
     const viewerDenied = await inboxPatch(
       mobileJsonRequest(
         `http://localhost/api/mobile/v1/inbox/${item.id}`,
@@ -298,6 +338,16 @@ describe("native mobile API", () => {
       { params: Promise.resolve({ id: item.id }) },
     );
     expect(viewerDenied.status).toBe(403);
+    const contributorDenied = await inboxPatch(
+      mobileJsonRequest(
+        `http://localhost/api/mobile/v1/inbox/${item.id}`,
+        "PATCH",
+        contributorToken,
+        { title: "贡献者越权整理" },
+      ),
+      { params: Promise.resolve({ id: item.id }) },
+    );
+    expect(contributorDenied.status).toBe(403);
     const foreignDenied = await inboxPatch(
       mobileJsonRequest(
         `http://localhost/api/mobile/v1/inbox/${item.id}`,

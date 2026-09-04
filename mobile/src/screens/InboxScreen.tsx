@@ -8,10 +8,12 @@ import { colors, sharedStyles } from "../theme";
 import type { MobileInboxEntry } from "../types";
 import { inputDateTime } from "../utils/format";
 import { archiveLocalCaptures } from "../storage/database";
+import { canReviewMobileInbox } from "../authz/product-access";
 
 export function InboxScreen() {
   const navigation = useNavigation<AppNavigation>();
-  const { credentials, people, runSync } = useApp();
+  const { credentials, people, runSync, viewer } = useApp();
+  const canReview = canReviewMobileInbox(viewer);
   const [entries, setEntries] = useState<MobileInboxEntry[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -51,7 +53,7 @@ export function InboxScreen() {
   };
 
   const saveEdit = async () => {
-    if (!credentials || !editing) return;
+    if (!credentials || !editing || !canReview) return;
     if (occurredAt && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u.test(occurredAt)) {
       setError("时间格式无效，请使用 2026-09-04T18:30。");
       return;
@@ -74,7 +76,7 @@ export function InboxScreen() {
   };
 
   const confirm = async (id: string) => {
-    if (!credentials) return;
+    if (!credentials || !canReview) return;
     setLoading(true);
     setError(null);
     try {
@@ -92,7 +94,8 @@ export function InboxScreen() {
   };
 
   const merge = async () => {
-    if (!credentials || selected.size < 2 || !mergeTitle.trim()) {
+    if (!credentials || !canReview) return;
+    if (selected.size < 2 || !mergeTitle.trim()) {
       setError("请选择至少两项，并填写合并后的标题。");
       return;
     }
@@ -120,12 +123,12 @@ export function InboxScreen() {
 
   return (
     <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-      <View><Text style={sharedStyles.eyebrow}>从素材到记忆</Text><Text style={sharedStyles.title}>收件箱</Text><Text style={sharedStyles.intro}>先修改标题、时间、人物与地点，再单条确认或多选合并。</Text></View>
+      <View><Text style={sharedStyles.eyebrow}>从素材到记忆</Text><Text style={sharedStyles.title}>收件箱</Text><Text style={sharedStyles.intro}>{canReview ? "先修改标题、时间、人物与地点，再单条确认或多选合并。" : "当前家庭角色可查看待整理素材，但不能修改、合并或确认。"}</Text></View>
       {error ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.inlineButton}><Text style={styles.link}>重试</Text></Pressable></View> : null}
 
-      {selected.size >= 2 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>合并 {selected.size} 项</Text><TextInput onChangeText={setMergeTitle} placeholder="合并后的记忆标题" style={sharedStyles.input} value={mergeTitle} /><Pressable disabled={loading} onPress={() => void merge()} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>合并并确认入档</Text></Pressable></View> : null}
+      {canReview && selected.size >= 2 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>合并 {selected.size} 项</Text><TextInput onChangeText={setMergeTitle} placeholder="合并后的记忆标题" style={sharedStyles.input} value={mergeTitle} /><Pressable disabled={loading} onPress={() => void merge()} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>合并并确认入档</Text></Pressable></View> : null}
 
-      {editing ? <View style={sharedStyles.card}>
+      {canReview && editing ? <View style={sharedStyles.card}>
         <View style={styles.between}><Text style={sharedStyles.cardTitle}>修改待整理素材</Text><Pressable onPress={() => setEditing(null)} style={styles.inlineButton}><Text style={styles.link}>收起</Text></Pressable></View>
         <Text style={sharedStyles.label}>标题</Text><TextInput onChangeText={setTitle} style={sharedStyles.input} value={title} />
         <Text style={sharedStyles.label}>发生时间</Text><TextInput autoCapitalize="none" onChangeText={setOccurredAt} placeholder="2026-09-04T18:30" style={sharedStyles.input} value={occurredAt} />
@@ -140,7 +143,7 @@ export function InboxScreen() {
         const source = image ? { uri: `${credentials.serverUrl}${image.thumbnailPath ?? image.mediaPath}`, headers: { authorization: `Bearer ${credentials.token}` } } : null;
         return <View key={entry.id} style={styles.entry}>
           {source ? <Image source={source} style={styles.thumbnail} /> : <View style={styles.thumbnailPlaceholder}><Text style={styles.kind}>{entry.kind === "text" ? "文字" : entry.assets[0]?.type === "audio" ? "录音" : "素材"}</Text></View>}
-          <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text><View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry.id)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View></View>
+          <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text>{canReview ? <View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry.id)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View> : null}</View>
         </View>;
       })}
       {loading ? <ActivityIndicator color={colors.coral} /> : null}
