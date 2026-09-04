@@ -123,13 +123,14 @@ export async function createImportSession(
 
 export type CreateUploadInput = {
   familyId: string;
-  userId: string;
+  /** Guest portal transfers have no authenticated principal. */
+  userId: string | null;
   captureId: string;
   filename: string;
   declaredMime: string;
   totalBytes: number;
   lastModified: Date | null;
-  source: "web" | "native" | "share";
+  source: "web" | "native" | "share" | "guest";
   importSessionId: string | null;
   clientFingerprint?: string | null;
 };
@@ -253,32 +254,85 @@ export async function createUploadSession(
         .returning()
         .get();
       if (input.importSessionId) {
+        const declaredItem = tx
+          .select()
+          .from(importSessionItem)
+          .where(and(
+            eq(importSessionItem.importSessionId, input.importSessionId),
+            eq(importSessionItem.captureId, input.captureId),
+          ))
+          .limit(1)
+          .get();
+        if (declaredItem?.uploadSessionId || declaredItem?.status === "completed" || declaredItem?.status === "cancelled") {
+          throw new UploadServiceError("capture_id_conflict", 409);
+        }
+        if (declaredItem?.filename !== null && declaredItem?.filename !== undefined && (
+          declaredItem.filename !== sanitizeDisplayFilename(input.filename) ||
+          declaredItem.declaredMime !== declaration.mimeType ||
+          declaredItem.totalBytes !== input.totalBytes ||
+          (declaredItem.lastModified?.getTime() ?? null) !== (input.lastModified?.getTime() ?? null) ||
+          declaredItem.clientFingerprint !== (input.clientFingerprint ?? null)
+        )) {
+          throw new UploadServiceError("capture_id_conflict", 409);
+        }
         const order = tx
           .select({ value: max(importSessionItem.sortOrder) })
           .from(importSessionItem)
           .where(eq(importSessionItem.importSessionId, input.importSessionId))
           .get()?.value;
-        tx.insert(importSessionItem)
-          .values({
-            id: randomUUID(),
-            familyId: input.familyId,
-            importSessionId: input.importSessionId,
-            captureId: input.captureId,
-            uploadSessionId: id,
-            status: "pending",
-            sortOrder: (order ?? -1) + 1,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .run();
-        tx.update(importSession)
-          .set({
-            totalCount: sql`${importSession.totalCount} + 1`,
-            status: "uploading",
-            updatedAt: now,
-          })
-          .where(eq(importSession.id, input.importSessionId))
-          .run();
+        if (declaredItem) {
+          tx.update(importSessionItem)
+            .set({
+              uploadSessionId: id,
+              filename: sanitizeDisplayFilename(input.filename),
+              declaredMime: declaration.mimeType,
+              totalBytes: input.totalBytes,
+              lastModified: input.lastModified,
+              clientFingerprint: input.clientFingerprint ?? null,
+              status: "pending",
+              errorCode: null,
+              updatedAt: now,
+            })
+            .where(eq(importSessionItem.id, declaredItem.id))
+            .run();
+          tx.update(importSession)
+            .set({
+              ...(declaredItem.status === "failed"
+                ? { failedCount: sql`max(0, ${importSession.failedCount} - 1)` }
+                : {}),
+              status: "uploading",
+              updatedAt: now,
+            })
+            .where(eq(importSession.id, input.importSessionId))
+            .run();
+        } else {
+          tx.insert(importSessionItem)
+            .values({
+              id: randomUUID(),
+              familyId: input.familyId,
+              importSessionId: input.importSessionId,
+              captureId: input.captureId,
+              filename: sanitizeDisplayFilename(input.filename),
+              declaredMime: declaration.mimeType,
+              totalBytes: input.totalBytes,
+              lastModified: input.lastModified,
+              clientFingerprint: input.clientFingerprint ?? null,
+              uploadSessionId: id,
+              status: "pending",
+              sortOrder: (order ?? -1) + 1,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .run();
+          tx.update(importSession)
+            .set({
+              totalCount: sql`${importSession.totalCount} + 1`,
+              status: "uploading",
+              updatedAt: now,
+            })
+            .where(eq(importSession.id, input.importSessionId))
+            .run();
+        }
       }
       return created;
     });

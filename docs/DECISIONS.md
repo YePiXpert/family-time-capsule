@@ -228,6 +228,17 @@
   已由 request + inbox 条目完整承载；再建会话表会引入双写与状态漂移。
 - **后果**：少两张表、少一条状态机；AI follow-up 建议留待真实使用反馈后评估。
 
+## D-019（1.1 M5）投递箱复用 Contribution Request capability
+- **日期**：2026-09-04
+- **状态**：已接受
+- **决策**：`contribution_request.kind` 区分一次口述问题与通用 portal，两者复用同一套高熵
+  token、hash、过期/暂停/撤销、匿名限流和 Inbox 审核。一次 portal 访问新增一个
+  `ContributionPortalSubmission`，并以 guest `ImportSession` + 关系化 items 承载文字与多原件。
+- **理由**：另建匿名 token 子系统会形成更弱或漂移的第二授权面；ImportSession 已提供批次、
+  单项错误和断点续传语义，不应再复制上传状态机。
+- **后果**：访客从没有读取能力；称呼只作未确认 provenance。portable archive 恢复 portal
+  配置时丢弃 token/hash 并强制 closed，必须由家庭成员主动换发新链接。
+
 ## D-0xx（M6）PDF 生成的技术选型
 - **决策**：手写 PDF 封装（页面 = sharp SVG 排版 → JPEG → DCTDecode 直嵌），
   不引入 PDF 库；EPUB 用 jszip 按 EPUB 3 规范生成。

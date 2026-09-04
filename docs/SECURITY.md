@@ -241,6 +241,22 @@
 - SQLite 原子持久化限流 5 条/小时/链接，20 路并发最多成功 5 条；
   文字与媒体提交都进收件箱审核，不直接发布。
 
+### 家庭投递箱（1.1 M5）
+- 通用 portal 是同一张 `contribution_request` 表的 `kind=portal`，继续使用 256-bit token
+  与 SHA-256-only 存储；支持过期、暂停、撤销、换 token、提交次数/文件数/类型限制，旧
+  token 在同一事务换新后立即失效。最多 20 个 active portal/家庭。
+- `/contribute/*` 返回 `private, no-store`、`noindex, nofollow, noarchive` 与
+  `no-referrer`。应用与审计不记录原 token；反向代理必须像 `/invite/*` 一样在写 access
+  log 前把 `/contribute/<token>` 及子路径整体改写为 `/contribute/[redacted]`。
+- 匿名查找 subject 和提交限流 subject 落库前再次 SHA-256；公开 DTO 只含家庭展示名、标题、
+  说明与允许项，不含 family/person/user id。所有写请求要求同源，JSON 声明先做
+  Content-Length 门禁；二进制只走顺序续传，不使用 multipart/`arrayBuffer()`。
+- 每次访问形成 guest ImportSession bundle。文字和每个文件声明先持久化，失败项可针对同一
+  captureId 重建 transfer；所有项目完成前 bundle 不能封口。完成项只创建一个 Asset 和一个
+  InboxItem，匿名端没有媒体读取、搜索或枚举端点。
+- 访客称呼只存在 bundle 并始终标记“访客填写，未经确认”；目标 Person 只是 Inbox 建议关系。
+  Asset 的 `createdByUserId` 仍归因于 portal 创建者这一真实家庭账号，访客从不获得或冒充它。
+
 ### 书籍生成（M6）
 - PDF/EPUB 媒体内嵌（DCTDecode / ZIP 条目），字节级测试确认无内部鉴权 URL；
 - 下载路由走 `authorizeApiFamilyRequest`；仅 published 故事可成书。

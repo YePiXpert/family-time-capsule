@@ -547,12 +547,18 @@ CREATE VIRTUAL TABLE search_index USING fts5(
 type ContributionRequest = {
   id: string
   familyId: string          // FK → family
-  tokenHash: string         // 256-bit token 的 SHA-256（token 本体只在创建时返回一次）
+  tokenHash: string | null  // 256-bit token 的 SHA-256；恢复后的 closed portal 为 null
+  kind: "request" | "portal"
+  title?: string | null     // portal 展示标题
   recipientLabel: string    // 展示给访客的称呼（1–50 字），不暴露家庭数据
   recipientPersonId?: string | null // migration 0030；可选同家庭 Person，用于人物主页聚合
   promptText: string        // 问题正文（1–500 字，来自问题库或自拟）
   topicKey?: string | null  // 内置十主题 key；自拟为 null
-  status: "open" | "closed"
+  status: "open" | "paused" | "closed"
+  maxSubmissions: number
+  maxFilesPerSubmission: number
+  allowImages / allowAudio / allowVideo / allowDocuments: boolean
+  allowText / allowBrowserRecording / allowGuestName / allowReuse: boolean
   expiresAt: Date           // 过期即时失效
   closedAt?: Date | null
   closedByUserId?: string | null
@@ -572,9 +578,33 @@ type ContributionRequestSubmission = {
 - 访客只能看到 recipientLabel + promptText；提交（文字/音频/照片/视频）落收件箱
   审核队列，绝不直接发布。
 - 限流：每链接 5 条/小时；每家庭打开链接上限 20。
-- 运维状态：不进入 portable archive。
+- 普通口述请求仍是短期运维状态；1.1 portal 配置及 submission bundle 在 M8 进入 portable
+  archive，原 token/hash 不导出，恢复后一律 `closed` 且 `tokenHash=null`。
 - `recipientPersonId` 写入前必须验证 Person 属于请求的 family；它只关联邀请和人物主页，
   不改变匿名访客可见字段，也不把 Person 数据暴露给访客。
+
+### ContributionPortalSubmission（1.1 M5，migration 0033）
+
+```ts
+type ContributionPortalSubmission = {
+  id: string
+  familyId: string
+  requestId: string          // FK → kind=portal 的 contribution_request
+  importSessionId: string    // UNIQUE FK → guest ImportSession
+  guestDisplayName?: string | null // 访客填写、未经确认，不是 Person FK
+  status: "collecting" | "completed"
+  completedAt?: Date | null
+  createdAt: Date
+}
+```
+
+- 一个 submission 是一次多素材 bundle；文字与文件通过 `ImportSessionItem` 关系表关联，
+  每份原件仍各自进入 Inbox。
+- `ImportSessionItem` 为文件声明保留 filename、declaredMime、totalBytes、lastModified 与可选
+  clientFingerprint；即使 transfer 建立失败也能在同一 captureId 下验证重试，声明变化返回冲突。
+- migration 0033 在重建 `contribution_request` 前显式保存并恢复既有
+  `contribution_request_submission`；真实 rc.4 前缀升级测试同时执行 integrity/FK check，
+  防止 SQLite 事务内 `PRAGMA foreign_keys=OFF` 无效导致级联丢行。
 
 ## FutureQuestion / CapsuleReply（M5 已落地：`db/schema/capsule.ts`，migration 0026）
 

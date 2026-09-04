@@ -10,6 +10,7 @@ import {
 import { user } from "./auth";
 import { family, person } from "./family";
 import { inboxItem } from "./inbox";
+import { importSession } from "./import";
 
 /**
  * 口述史收集（M5，PRD §15–16：Contribution Request / 匿名讲述链接）。
@@ -38,7 +39,12 @@ export const contributionRequest = sqliteTable(
     familyId: text("family_id")
       .notNull()
       .references(() => family.id, { onDelete: "cascade" }),
-    tokenHash: text("token_hash").notNull(),
+    /** Restored portal configurations deliberately have no live bearer token. */
+    tokenHash: text("token_hash"),
+    // request | portal
+    kind: text("kind").notNull().default("request"),
+    /** Portal-only public title. Request rows continue to use promptText. */
+    title: text("title"),
     /** 展示给访客的称呼（如「外婆」）；不暴露任何家庭内部数据 */
     recipientLabel: text("recipient_label").notNull(),
     /** 可选关联家庭 Person；匿名页面仍只显示上面的称呼与问题。 */
@@ -49,8 +55,20 @@ export const contributionRequest = sqliteTable(
     promptText: text("prompt_text").notNull(),
     /** 内置问题库的 topic key；自拟问题为 null */
     topicKey: text("topic_key"),
-    // open | closed
+    // open | paused | closed
     status: text("status").notNull().default("open"),
+    maxSubmissions: integer("max_submissions").notNull().default(5),
+    maxFilesPerSubmission: integer("max_files_per_submission").notNull().default(10),
+    allowImages: integer("allow_images", { mode: "boolean" }).notNull().default(true),
+    allowAudio: integer("allow_audio", { mode: "boolean" }).notNull().default(true),
+    allowVideo: integer("allow_video", { mode: "boolean" }).notNull().default(true),
+    allowDocuments: integer("allow_documents", { mode: "boolean" }).notNull().default(false),
+    allowText: integer("allow_text", { mode: "boolean" }).notNull().default(true),
+    allowBrowserRecording: integer("allow_browser_recording", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    allowGuestName: integer("allow_guest_name", { mode: "boolean" }).notNull().default(false),
+    allowReuse: integer("allow_reuse", { mode: "boolean" }).notNull().default(true),
     expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
     closedAt: integer("closed_at", { mode: "timestamp" }),
     closedByUserId: text("closed_by_user_id").references(() => user.id, {
@@ -68,9 +86,10 @@ export const contributionRequest = sqliteTable(
     index("contribution_request_person_idx").on(t.familyId, t.recipientPersonId),
     check(
       "contribution_request_token_hash_check",
-      sql`length(${t.tokenHash}) = 64`,
+      sql`${t.tokenHash} is null or length(${t.tokenHash}) = 64`,
     ),
-    check("contribution_request_status_check", sql`${t.status} in ('open', 'closed')`),
+    check("contribution_request_kind_check", sql`${t.kind} in ('request', 'portal')`),
+    check("contribution_request_status_check", sql`${t.status} in ('open', 'paused', 'closed')`),
     check(
       "contribution_request_label_check",
       sql`length(${t.recipientLabel}) between 1 and 50`,
@@ -78,6 +97,14 @@ export const contributionRequest = sqliteTable(
     check(
       "contribution_request_prompt_check",
       sql`length(${t.promptText}) between 1 and 500`,
+    ),
+    check(
+      "contribution_request_title_check",
+      sql`${t.title} is null or length(${t.title}) between 1 and 100`,
+    ),
+    check(
+      "contribution_request_limits_check",
+      sql`${t.maxSubmissions} between 1 and 1000 and ${t.maxFilesPerSubmission} between 0 and 100`,
     ),
   ],
 );
@@ -107,3 +134,42 @@ export const contributionRequestSubmission = sqliteTable(
 export type ContributionRequestRow = typeof contributionRequest.$inferSelect;
 export type ContributionRequestSubmissionRow =
   typeof contributionRequestSubmission.$inferSelect;
+
+/** One guest visit/bundle. Its text and files are related through ImportSessionItem. */
+export const contributionPortalSubmission = sqliteTable(
+  "contribution_portal_submission",
+  {
+    id: text("id").primaryKey(),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    requestId: text("request_id")
+      .notNull()
+      .references(() => contributionRequest.id, { onDelete: "cascade" }),
+    importSessionId: text("import_session_id")
+      .notNull()
+      .references(() => importSession.id, { onDelete: "cascade" }),
+    /** Visitor-provided and always unverified; never treated as a Person relation. */
+    guestDisplayName: text("guest_display_name"),
+    // collecting | completed
+    status: text("status").notNull().default("collecting"),
+    completedAt: integer("completed_at", { mode: "timestamp" }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("contribution_portal_submission_import_uidx").on(t.importSessionId),
+    index("contribution_portal_submission_request_idx").on(t.requestId, t.createdAt),
+    index("contribution_portal_submission_family_idx").on(t.familyId, t.createdAt),
+    check(
+      "contribution_portal_submission_status_check",
+      sql`${t.status} in ('collecting', 'completed')`,
+    ),
+    check(
+      "contribution_portal_submission_name_check",
+      sql`${t.guestDisplayName} is null or length(${t.guestDisplayName}) between 1 and 50`,
+    ),
+  ],
+);
+
+export type ContributionPortalSubmissionRow =
+  typeof contributionPortalSubmission.$inferSelect;

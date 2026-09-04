@@ -232,6 +232,20 @@
       "when": 1788528826285,
       "tag": "0032_batch_import_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1788533084485,
+      "tag": "0033_contribution_portals",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1788535100480,
+      "tag": "0034_portal_file_declarations",
+      "breakpoints": true
     }
   ]
 }

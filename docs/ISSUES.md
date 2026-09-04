@@ -38,10 +38,10 @@
 
 | Issue | 标题 | 范围 | 状态 |
 | --- | --- | --- | --- |
-| #019 | Resumable upload protocol | 顺序 chunk、offset 恢复、幂等 complete、流式哈希/落盘、限额和清理 | ⏳ 待实现（M2） |
-| #020 | Persistent import sessions and document assets | ImportSession/Item 关系模型、批次恢复、document 安全摄取与 portable archive | ⏳ 待实现（M2–M3） |
-| #021 | Native share extension and file intake | Android SEND/MULTIPLE、iOS Share Extension/App Group、Files 导入、本机接管 | ⏳ 待实现（M4；真机待人工） |
-| #022 | Family contribution portal | 复用安全 token 的匿名多素材投递箱、管理、二维码、Inbox bundle | ⏳ 待实现（M5） |
+| #019 | Resumable upload protocol | 顺序 chunk、offset 恢复、幂等 complete、流式哈希/落盘、限额和清理 | ✅ M2 完成；main CI `33878541261` 全绿 |
+| #020 | Persistent import sessions and document assets | ImportSession/Item 关系模型、批次恢复、document 安全摄取与 portable archive | 🟡 M2–M3 摄取/UI 完成；portable archive 在 M8 收口 |
+| #021 | Native share extension and file intake | Android SEND/MULTIPLE、iOS Share Extension/App Group、Files 导入、本机接管 | 🟡 M4 包级完成；云 run `33886793964` 全绿，真机待人工 |
+| #022 | Family contribution portal | 复用安全 token 的匿名多素材投递箱、管理、二维码、Inbox bundle | 🟡 M5 自动化完成；浏览器录音/多文件人工验收与 M8 archive 待收口 |
 | #023 | Native daily feature parity | 家人、故事、胶囊、口述史、投递箱与导入会话的原生读写/离线缓存 | ⏳ 待实现（M6） |
 | #024 | Weekly review and local reminders | 家庭时区 ReviewPeriod、四步回顾、有来源周记、本地隐私提醒 | ⏳ 待实现（M7） |
 | #025 | 1.1 alpha hardening and release | 性能/安全/导出恢复/Docker/旧卷升级、原生包与 prerelease 自动化 | ⏳ 待实现（M8） |

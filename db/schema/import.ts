@@ -155,6 +155,12 @@ export const importSessionItem = sqliteTable(
       .notNull()
       .references(() => importSession.id, { onDelete: "cascade" }),
     captureId: text("capture_id").notNull(),
+    /** Immutable declaration retained even when transfer setup initially fails. */
+    filename: text("filename"),
+    declaredMime: text("declared_mime"),
+    totalBytes: integer("total_bytes"),
+    lastModified: integer("last_modified", { mode: "timestamp" }),
+    clientFingerprint: text("client_fingerprint"),
     uploadSessionId: text("upload_session_id").references(() => uploadSession.id, {
       onDelete: "set null",
     }),

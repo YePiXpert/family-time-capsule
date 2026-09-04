@@ -26,6 +26,7 @@ export default async function MorePage() {
           {canManageFamily ? <QuickAction href="/family" icon="people" label="家人" description="查看每个人参与的记忆与声音" /> : null}
           {canWriteStories ? <QuickAction href="/stories" icon="story" label="故事" description="阅读周记、月章与年度故事" /> : null}
           {canCreateContributions ? <QuickAction href="/requests" icon="microphone" label="口述史" description="向家人发起一个讲述问题" /> : null}
+          {canCreateContributions ? <QuickAction href="/contributions" icon="upload" label="家庭投递箱" description="请家人无需账号提交原件与文字" /> : null}
           {canWriteCapsules ? <QuickAction href="/capsules" icon="capsule" label="时间胶囊" description="封存此刻，等待未来开启" /> : null}
         </div>
       </section>

@@ -221,6 +221,7 @@ export function createContributionRequest(
       id,
       familyId: context.familyId,
       tokenHash: hashRequestToken(token),
+      kind: "request",
       recipientLabel: label,
       recipientPersonId: input.recipientPersonId ?? null,
       promptText: prompt,
@@ -284,7 +285,10 @@ export function listContributionRequests(
   const rows = db
     .select()
     .from(contributionRequest)
-    .where(eq(contributionRequest.familyId, context.familyId))
+    .where(and(
+      eq(contributionRequest.familyId, context.familyId),
+      eq(contributionRequest.kind, "request"),
+    ))
     .orderBy(desc(contributionRequest.createdAt))
     .limit(100)
     .all();
@@ -330,7 +334,10 @@ export function resolveGuestRequest(
   const row = getDb()
     .select()
     .from(contributionRequest)
-    .where(eq(contributionRequest.tokenHash, hashRequestToken(token)))
+    .where(and(
+      eq(contributionRequest.kind, "request"),
+      eq(contributionRequest.tokenHash, hashRequestToken(token)),
+    ))
     .limit(1)
     .get();
   if (!row) return { ok: false, error: "not_found" };
