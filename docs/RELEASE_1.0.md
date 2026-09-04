@@ -19,7 +19,7 @@
 | 完整导出 / 恢复 | production E2E 下载并以独立 CLI 校验 ZIP；A→销毁→B 恢复、媒体 Range、二次导出 6/6 通过 |
 | GitHub CI | main run [`33867341620`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33867341620)：`web-quality`、`mobile-quality`、`e2e-restore-roundtrip` 全绿 |
 | Android/iOS native package | main run [`33868382857`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33868382857)：React Native quality、Android APK、iOS unsigned IPA 全绿；真机安装待执行 |
-| 依赖 audit / benchmark | rc.4 重跑时 npm 官方 bulk audit POST 超时，未形成新 audit 结论；rc.3 的 audit / benchmark 证据继续保留 |
+| 依赖 audit / benchmark | 服务端 production dependencies：0；mobile：已知 `decode-uri-component` 链 7 moderate、上游暂无修复；benchmark 沿用 rc.3 证据 |
 
 自动化覆盖家庭 IANA 时区墙钟与 DST、家庭日历日年龄、相册无可靠时间待复核、Web/native
 Inbox 草稿往返、本机 capture 归档对账与重启/响应丢失恢复、四角色 capability、story 目标、
