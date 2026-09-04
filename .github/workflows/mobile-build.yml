@@ -224,6 +224,7 @@ jobs:
             FamilyTimeCapsule-android.apk \
             FamilyTimeCapsule-ios-unsigned.ipa \
             SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$GITHUB_REF_NAME" \
             --notes-file RELEASE_NOTES.md \
