@@ -140,12 +140,17 @@ type InboxItem = {
   kind: "text" | "asset" | "bundle"   // bundle = 多 asset 合并项（#010）
   status: "new" | "processing" | "needs_review" | "confirmed" | "discarded"
   rawText?: string           // kind=text 的正文
+  draftTitle?: string        // 用户整理中的标题草稿
+  draftOccurredAt?: Date     // 用户整理中的发生时间；不改写 Asset.capturedAt/importedAt
+  draftLocationText?: string // 用户整理中的地点草稿
   createdAt: Date
   updatedAt: Date
 }
 ```
 
 - Asset 关联走 **inbox_item_asset** 关联表（inboxItemId + assetId + familyId），不塞 JSON。
+- migration 0029 增加 **inbox_item_participant** 关系表；标题、发生时间、人物和地点的快速
+  修改会耐久保存为收件箱草稿，确认或合并时仍统一调用现有记忆 service 完成验证与入档。
 - 上传后一律先进收件箱；`timeSource=import_time`（缺少真实时间）的条目自动标 `needs_review`。
 - 废弃（discarded）只改条目状态，**Asset 原件永远保留**。
 - PRD 中的 `suggested*` / `aiResultJson` 是 AI 时代字段，P0 未建列（NullMemoryAssistant 不产出建议），P1 接 AI 时再迁移加入。
@@ -164,12 +169,21 @@ type MemoryEvent = {
   coverAssetId?: string       // FK → asset（set null）
   status: "draft" | "confirmed" | "hidden"   // 确认后默认 confirmed
   ageDays?: number            // 满天数快照（展示永远现算，见 lib/memories/age.ts）
+  milestoneType?: "first_time" | "growth" | "family" | "learning" | "celebration" | "other"
+  isPinned: boolean           // 仅影响节点/首页展示，不改变事件身份或档案语义
   createdAt: Date
   updatedAt: Date
 }
 ```
 
 **关系表**（不塞 JSON）：`memory_event_asset`（event↔asset）、`memory_event_participant`（event↔person，参与人默认含孩子本人）。确认收件箱条目 = 一个事务里建事件 + 建关系 + InboxItem 置 confirmed；Assets 只关联不复制。
+
+### 重新遇见与成长节点（migration 0030）
+
+成长节点仍是普通 `MemoryEvent`，只增加可选展示分类 `milestoneType` 和 `isPinned`；内置模板
+不会创建第二套事件，也不承载喂奶、睡眠等高频照护数据。家庭回顾按 Family IANA 时区从
+confirmed、`deletedAt IS NULL` 的事件计算同月同日、一个月前、百天前与一年前，不新增持久表。
+portable archive v1 以可选字段携带节点信息；旧归档缺字段时恢复为 `null / false`。
 
 ### memory_event_revision（v0.1.3 已落地）
 
@@ -535,6 +549,7 @@ type ContributionRequest = {
   familyId: string          // FK → family
   tokenHash: string         // 256-bit token 的 SHA-256（token 本体只在创建时返回一次）
   recipientLabel: string    // 展示给访客的称呼（1–50 字），不暴露家庭数据
+  recipientPersonId?: string | null // migration 0030；可选同家庭 Person，用于人物主页聚合
   promptText: string        // 问题正文（1–500 字，来自问题库或自拟）
   topicKey?: string | null  // 内置十主题 key；自拟为 null
   status: "open" | "closed"
@@ -558,6 +573,8 @@ type ContributionRequestSubmission = {
   审核队列，绝不直接发布。
 - 限流：每链接 5 条/小时；每家庭打开链接上限 20。
 - 运维状态：不进入 portable archive。
+- `recipientPersonId` 写入前必须验证 Person 属于请求的 family；它只关联邀请和人物主页，
+  不改变匿名访客可见字段，也不把 Person 数据暴露给访客。
 
 ## FutureQuestion / CapsuleReply（M5 已落地：`db/schema/capsule.ts`，migration 0026）
 

@@ -63,6 +63,10 @@ type Expectation = {
     kind: string;
     status: string;
     rawText: string | null;
+    draftTitle: string | null;
+    draftOccurredAt: string | null;
+    draftLocationText: string | null;
+    participantPersonIds: string[];
     memoryEventId: string | null;
     createdAt: string;
     updatedAt: string;
@@ -197,7 +201,10 @@ beforeAll(async () => {
       "这是一条超过一百个字符、仍然等待整理的文字记录，用来验证生产构建下的导出、销毁、恢复和再次导出都不会截断内容。".repeat(
         3,
       );
-    await m.inbox.createTextInboxItem(on.familyId, pendingTextBody);
+    const pendingTextItem = await m.inbox.createTextInboxItem(
+      on.familyId,
+      pendingTextBody,
+    );
     await m.inbox.createInboxItemForAsset(on.familyId, stored.asset);
     await m.inbox.createInboxItemForAsset(on.familyId, {
       ...stored.asset,
@@ -233,6 +240,18 @@ beforeAll(async () => {
     const people = await m.family.listPeople(on.familyId);
     const dad = people.find((p) => p.displayName === "爸爸")!;
     const child = people.find((p) => p.isChild)!;
+    const draftOccurredAt = new Date("2026-08-12T09:15:00.000Z");
+    const draft = await m.inbox.updateInboxDraft(
+      on.familyId,
+      pendingTextItem.id,
+      {
+        title: "还没整理的树影",
+        occurredAt: draftOccurredAt,
+        locationText: "家里窗边",
+        participantPersonIds: [dad.id, grandma.personId],
+      },
+    );
+    if (!draft) throw new Error("inbox draft failed");
     const { eq } = await import("drizzle-orm");
     await m.db
       .getDb()
@@ -513,11 +532,24 @@ beforeAll(async () => {
         kind: inboxRow.kind,
         status: inboxRow.status,
         rawText: inboxRow.rawText,
+        draftTitle: inboxRow.draftTitle,
+        draftOccurredAt: inboxRow.draftOccurredAt?.toISOString() ?? null,
+        draftLocationText: inboxRow.draftLocationText,
+        participantPersonIds: [] as string[],
         memoryEventId: inboxRow.memoryEventId,
         createdAt: inboxRow.createdAt.toISOString(),
         updatedAt: inboxRow.updatedAt.toISOString(),
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
+    const inboxParticipants = await m.db
+      .getDb()
+      .select()
+      .from(m.schemaInbox.inboxItemParticipant);
+    for (const inboxRow of inboxItems) {
+      inboxRow.participantPersonIds = inboxParticipants
+        .filter((link) => link.inboxItemId === inboxRow.id)
+        .map((link) => link.personId);
+    }
     const inboxItemAssets = (
       await m.db.getDb().select().from(m.schemaInbox.inboxItemAsset)
     )
@@ -604,11 +636,24 @@ beforeAll(async () => {
         kind: inboxRow.kind,
         status: inboxRow.status,
         rawText: inboxRow.rawText,
+        draftTitle: inboxRow.draftTitle,
+        draftOccurredAt: inboxRow.draftOccurredAt?.toISOString() ?? null,
+        draftLocationText: inboxRow.draftLocationText,
+        participantPersonIds: [] as string[],
         memoryEventId: inboxRow.memoryEventId,
         createdAt: inboxRow.createdAt.toISOString(),
         updatedAt: inboxRow.updatedAt.toISOString(),
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
+    const restoredInboxParticipants = await m.db
+      .getDb()
+      .select()
+      .from(m.schemaInbox.inboxItemParticipant);
+    for (const inboxRow of restoredInboxItems) {
+      inboxRow.participantPersonIds = restoredInboxParticipants
+        .filter((link) => link.inboxItemId === inboxRow.id)
+        .map((link) => link.personId);
+    }
     const restoredInboxItemAssets = (
       await m.db.getDb().select().from(m.schemaInbox.inboxItemAsset)
     )
@@ -747,7 +792,7 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     for (const line of expect_.confirmedTextBody.split("\n")) {
       expect(textDetailHtml).toContain(line);
     }
-    expect(textDetailHtml).toContain("未标注讲述者");
+    expect(textDetailHtml).toContain("这段记忆");
     // accepted occurredAt suggestion 的 durable 结果：date_only 事件不显示时分
     expect(textDetailHtml).toContain(expect_.textEventDateOnly);
     expect(textDetailHtml).not.toMatch(/2026年8月10日\s*\d{1,2}:\d{2}/);

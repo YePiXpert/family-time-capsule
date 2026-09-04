@@ -2,6 +2,53 @@
 
 本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ **1.0 Family Archive**。
 
+## 1.0.0-rc.3 — Everyday family product（2026-09-04）
+
+这一候选版不改变私人、自托管、单家庭优先的档案边界，重点把现有能力整理成可每天使用的
+Web 与原生产品。portable archive 继续使用 v1，旧归档仍可恢复；AI 继续默认关闭且只提供
+待人工确认的建议。
+
+### 产品壳与家庭首页
+
+- Web 受保护区域统一为首页、时间轴、记录、收件箱、更多五个一级入口；桌面使用响应式
+  侧栏，小屏使用安全区底部导航，记录入口突出并显示收件箱数量。
+- 静态介绍首页替换为集中 service 查询的真实家庭仪表盘：家庭/孩子年龄、快速记录、待整理
+  预览、最近记忆、回顾、故事、胶囊、口述问题和首次使用引导均可操作。
+- 建立 AppShell、PageHeader、导航、EmptyState、MemoryCard、MediaGrid、StatusBadge、
+  QuickAction、SectionHeader、ConfirmDialog、InlineNotice 与 Skeleton 组件；使用本地 SVG、
+  44px 点击目标、可见焦点和 reduced-motion。
+
+### Web 核心流程与重新遇见
+
+- 统一记录页支持文字、多文件照片/音频/视频、拖放、逐文件状态，以及“先收进来”和
+  “整理并保存”；收件箱支持图片网格/列表、草稿字段、多选合并与确认进度。
+- 时间轴增加图片优先卡片、年月跳转及人物/媒体/标签过滤；记忆详情默认阅读，编辑档案与
+  来源、SHA-256、任务和历史等技术信息显式分层。
+- migration 0029 保存收件箱标题/时间/地点/人物草稿；migration 0030 为 `MemoryEvent`
+  增加可选成长节点类型与置顶，并让口述史请求可关联同家庭 Person。
+- 新增家庭时区的“这一天 / 一个月前 / 百天前 / 一年前”，以及人物主页的参与记忆、
+  亲口讲述、共同记忆、口述史和发起问题；软删除内容不会进入首页、回顾和搜索。
+
+### 原生闭环与高级能力入口
+
+- Expo SDK 57 客户端拆分为 React Navigation 7 页面与状态模块，五项原生底栏与 Web 对齐。
+  原生端可离线写文字、拍照/视频、直接录音、相册多选；原件先复制到私有目录，单条失败
+  不阻塞 outbox，同 `captureId` 重试保持幂等。
+- 原生首页、分页收件箱、字段修改、单条确认、多选合并、可离线记忆详情、媒体播放、搜索
+  和同步状态形成“记录 → 整理 → 入档 → 阅读 → 时间轴”闭环。
+- 移动 API 全部使用实时 Bearer session 推导 family/role/Person，不接受 `familyId`，复用
+  capability、Contribution visibility 与软删除规则，并统一返回 `private, no-store` 最小 DTO。
+- 故事使用封面卡片与阅读模式，胶囊显示封存/倒计时/开启状态，口述史按处理状态分区；
+  新增“书籍与备份”入口，把故事/年度 PDF、EPUB、完整导出和 WebDAV 放在自然路径中。
+
+### 质量基线
+
+- 68 个文件 / 472 个服务端 Vitest、34 个 Playwright 场景、14 个移动端 Vitest 与
+  6 个 production disaster roundtrip；lint、typecheck、Next production build、Expo Doctor、
+  Android/iOS bundle 与 Docker 持久化门禁纳入发布验收。
+- 稳定 `1.0.0` 仍以 `docs/REAL_DEVICE_TEST.md` 的真实 iOS、Android 与桌面记录为外部门禁；
+  本次不创建 stable tag。
+
 ## 1.0.0-rc.1 — Family Archive release candidate（2026-09-03）
 
 稳定版唯一外部门禁是 `docs/REAL_DEVICE_TEST.md` 的 iOS、Android、Windows/PWA

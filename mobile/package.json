@@ -3,7 +3,7 @@
   "description": "Native offline-first iOS and Android client for Family Time Capsule.",
   "license": "UNLICENSED",
   "private": true,
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "main": "index.ts",
   "dependencies": {
     "@react-navigation/bottom-tabs": "^7.18.18",

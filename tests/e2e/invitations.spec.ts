@@ -240,7 +240,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
     await contributor.page.goto("/inbox");
     await expect(contributor.page.getByText(note)).toBeVisible();
     await expect(
-      contributor.page.getByText("整理与确认由管理员或编辑完成"),
+      contributor.page.getByText("确认入档由管理员或编辑完成", { exact: false }),
     ).toBeVisible();
     await expect(
       contributor.page.getByRole("button", { name: "确认进入时间轴" }),

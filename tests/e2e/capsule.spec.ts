@@ -47,7 +47,9 @@ test("封存未到期：内容隐藏", async ({ page }) => {
 
   // 列表显示已封存未到时间
   await page.goto("/capsules");
-  await expect(page.getByText("已封存 · 未到时间")).toBeVisible();
+  const sealedCapsule = page.getByRole("link", { name: /写给十八岁的你/ });
+  await expect(sealedCapsule.getByText("已封存", { exact: true })).toBeVisible();
+  await expect(sealedCapsule.getByText(/大约还有/)).toBeVisible();
 });
 
 test("到期胶囊：可开启，内容重现", async ({ page }) => {

@@ -1,6 +1,6 @@
 # Family Time Capsule
 
-**v1.0.0-rc.2 — Family Archive release candidate**
+**v1.0.0-rc.3 — Family Archive product release candidate**
 
 A private, self-hosted family memory archive.
 
@@ -27,9 +27,11 @@ Original sources always come first.
 
 - **私人认证**：无公开注册；首次部署凭 `INITIAL_SETUP_TOKEN` 初始化管理员。
 - **家庭与人物**：Person ≠ User——女儿、外公、外婆没有账号也完整存在于记忆里。
+- **每日首页**：使用真实家庭、孩子年龄、待整理素材、最近记忆、故事、胶囊与口述问题；空家庭直接引导留下第一条记忆。
 - **原件档案**：照片/音频/视频/文字事后上传；SHA-256 去重；**原件永不覆盖**；EXIF 保留真实拍摄时间（`capturedAt` 与 `importedAt` 永不混淆）。
-- **收件箱**：新内容先整理再入档；可修正时间（修正后 `timeSource=user_confirmed`）、多选合并成一件事。
-- **时间轴**：按真实发生时间排序，显示孩子当时的年龄；晚上传的旧照片不会跑到今天。
+- **记录与收件箱**：文字、多文件照片/音频/视频可先收进来或直接整理；收件箱支持草稿字段、多选合并和确认入档。
+- **时间轴与回顾**：按真实发生时间排序，显示孩子当时年龄；可按年月、人物、媒体与标签筛选，并重新遇见同日、月前、百天前和一年前的片段。
+- **成长节点与人物主页**：节点仍是 `MemoryEvent`，可选类型和置顶；家人主页汇集共同记忆、亲口讲述与口述史问题。
 - **多人视角**：同一件事，爸爸、妈妈、外婆各自独立讲述，互不覆盖。
 - **时间胶囊**：按日期或孩子年龄封存开启；封存是仪式不是加密——导出永远完整。
 - **完整导出**：ZIP 内含全部原件（哈希校验）+ JSON + 可读 Markdown，离开本系统一切仍可打开。
@@ -49,8 +51,8 @@ Original sources always come first.
 - **书籍**：已发布故事与年度事件导出 PDF/EPUB（媒体内嵌、无内部 URL）。
 - **远程备份**：WebDAV verified upload + 原子改名（凭据仅存环境变量）。
 - **系统分享**：PWA Share Target 直达收件箱。
-- **原生客户端**：React Native iOS/Android（无 WebView）；首次启动直接使用本机
-  SQLite/私有文件档案，家庭服务器同步完全可选，断开服务器也不删除本地记录和原件。
+- **Web 与原生产品壳**：首页、时间轴、记录、收件箱、更多五个一级入口；桌面侧栏与移动底栏均可达，搜索是全局动作。
+- **原生客户端**：React Native iOS/Android（无 WebView）；本机可闭环完成记录、修改、合并、确认、详情与时间轴。支持直接录音、拍照/视频、相册多选和离线 outbox；家庭服务器同步完全可选，断开或失败都不删除本地记录和原件。
 - **回收站**：事件/讲述/故事软删除、恢复、确认式清除；素材引用守卫。
 
 ## 技术栈
@@ -84,8 +86,8 @@ npm run dev            # http://localhost:3000
 | --- | --- |
 | `npm run dev` | 开发服务器 |
 | `npm run lint` / `npm run typecheck` | 静态检查 |
-| `npm test` | Vitest 单元 + 集成测试（456 个） |
-| `npm run test:e2e` | 32 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
+| `npm test` | Vitest 单元 + 集成测试（472 个） |
+| `npm run test:e2e` | 34 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
 | `npm run verify:export <zip>` | 校验导出 ZIP 的 manifest 与全部原件 SHA-256 |
 
 原生客户端开发、设备数据边界和 GitHub 云构建 IPA/APK：

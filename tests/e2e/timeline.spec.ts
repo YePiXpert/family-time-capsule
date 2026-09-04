@@ -59,3 +59,17 @@ test("375px 五项导航无横向滚动且搜索可用键盘打开", async ({ pa
   await expect(page).toHaveURL(/\/search$/);
   await expect(page.getByRole("heading", { name: "搜索" })).toBeVisible();
 });
+
+test("记忆回顾与人物主页可以从产品界面进入", async ({ page }) => {
+  await ensureLogin(page);
+
+  await page.goto("/memories/resurfacing");
+  await expect(page.getByRole("heading", { name: "记忆回顾" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "浏览完整时间轴" })).toBeVisible();
+
+  await page.goto("/family");
+  await page.getByRole("link", { name: `查看小满的人物主页` }).click();
+  await expect(page.getByRole("heading", { name: "小满" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "成长记忆" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "亲口讲述", exact: true })).toBeVisible();
+});

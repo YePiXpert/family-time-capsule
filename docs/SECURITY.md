@@ -61,13 +61,17 @@
 - 原生端把 token 存在系统 Keychain/Keystore，绝不放 SQLite、文件、日志、GitHub Actions
   或 IPA/APK。Bearer 不是浏览器自动附带的 ambient credential，因此移动写入 API 不依赖
   Cookie CSRF；伪造/过期 token 返回 401，已停用/非法绑定 fail closed。
-- `/api/mobile/v1/sync`、`home`、`inbox`、`memories` 与 `search` 只返回界面所需 DTO，
+- `/api/mobile/v1/sync`、`home`、`inbox`、`inbox/:id/confirm`、`inbox/merge`、
+  `memories`、`search` 与 `contributions` 只返回界面所需 DTO，
   不返回邮箱、哈希、storageKey、审计详情、metadataJson 或内部 AI 数据；响应统一
   `Cache-Control: private, no-store`，媒体继续走既有可见性鉴权端点。
 - 移动收件箱/记忆/讲述写入从实时 Bearer session 推导 family、role、Person 与 guardian，
   请求体不接受 `familyId`。viewer 写入 403，跨家庭 ID 读写 404；Contribution 继续执行
   private/parents/family/child_later 和作者本人编辑策略。软删除事件在主页、详情、搜索和讲述
   查询中均按不存在处理，即使 FTS derivative 尚残留旧行也会用主表二次过滤。
+- 口述史请求关联 `recipientPersonId` 时在写入前验证目标属于当前家庭；人物主页也先用
+  `(familyId, personId)` 定位，再按当前查看者实时过滤讲述可见性。首页和家庭时区回顾仅查询
+  confirmed 且未软删除事件，删除内容不会因旧索引、卡片聚合或日期匹配重新出现。
 
 ## 4. 密码存储
 
@@ -137,8 +141,8 @@
 
 ## 11. 删除与审计日志
 
-- 事件、讲述与故事进入回收站时只写 `deletedAt/deletedBy`；普通列表、搜索、导出与
-  故事素材收集全部排除软删除行。恢复会清除删除标记。
+- 事件、讲述与故事进入回收站时只写 `deletedAt/deletedBy`；普通列表、首页、回顾、搜索、
+  导出与故事素材收集全部排除软删除行。恢复会清除删除标记。
 - 硬清除必须由有权限的用户提交显式确认；素材只有在全引用守卫确认没有事件、收件箱、
   讲述、胶囊回复等引用时才可物理删除。跨家庭目标始终拒绝。
 - 完整导出与恢复完成会写 family-scoped 审计条目；邀请、账号角色/禁用、guardian、
