@@ -87,6 +87,19 @@ function dependencies(): SyncDependencies {
 beforeEach(() => vi.restoreAllMocks());
 
 describe("offline sync core", () => {
+  it("passes text batch provenance and retains failed captures for retry", async () => {
+    const deps = dependencies();
+    vi.mocked(deps.listOutbox).mockResolvedValue([{
+      id: "text-1", kind: "text_capture", payload: { text: "家人的话", importSessionId: "batch-1" },
+      createdAt: "2026-09-03T19:00:00.000Z", attemptCount: 0, lastError: null,
+    }]);
+    vi.mocked(deps.uploadTextCapture).mockRejectedValueOnce(new ApiError("retry", 503));
+    await expect(syncArchiveWithDependencies(credentials, deps)).rejects.toThrow("retry");
+    expect(deps.uploadTextCapture).toHaveBeenCalledWith(credentials, "text-1", "家人的话", "batch-1");
+    expect(deps.completeOutboxItem).not.toHaveBeenCalled();
+    await syncArchiveWithDependencies(credentials, deps);
+    expect(deps.completeOutboxItem).toHaveBeenCalled();
+  });
   it("does not touch the queue while definitely offline", async () => {
     const deps = dependencies();
     vi.mocked(deps.isConnected).mockResolvedValue(false);

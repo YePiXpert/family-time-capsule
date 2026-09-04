@@ -206,40 +206,26 @@ export type IdempotentTextCaptureResult =
  * it goes offline, so retrying after an ambiguous network failure cannot
  * create duplicate family memories.
  */
-export async function createTextInboxItemIdempotent(
+export function createTextInboxItemIdempotent(
   familyId: string,
   rawText: string,
   itemId: string,
-): Promise<IdempotentTextCaptureResult> {
+): IdempotentTextCaptureResult {
   const db = getDb();
   const now = new Date();
-  const inserted = await db
-    .insert(inboxItem)
-    .values({
-      id: itemId,
-      familyId,
-      kind: "text",
-      status: "new",
-      rawText,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({ target: inboxItem.id })
-    .returning();
-  if (inserted[0]) return { status: "created", item: inserted[0] };
+  return db.transaction((tx) => {
+    const inserted = tx.insert(inboxItem).values({
+      id: itemId, familyId, kind: "text", status: "new", rawText, createdAt: now, updatedAt: now,
+    }).onConflictDoNothing({ target: inboxItem.id }).returning().get();
+    if (inserted) return { status: "created", item: inserted };
 
-  const existing = await db
-    .select()
-    .from(inboxItem)
-    .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, itemId)))
-    .limit(1);
-  if (
-    existing[0]?.kind === "text" &&
-    existing[0].rawText === rawText
-  ) {
-    return { status: "existing", item: existing[0] };
-  }
-  return { status: "conflict" };
+    const existing = tx.select().from(inboxItem)
+      .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, itemId))).limit(1).get();
+    if (existing?.kind === "text" && existing.rawText === rawText) {
+      return { status: "existing", item: existing };
+    }
+    return { status: "conflict" };
+  });
 }
 
 export type InboxPage = {

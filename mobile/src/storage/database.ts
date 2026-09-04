@@ -706,7 +706,7 @@ export async function listOutbox(): Promise<OutboxItem[]> {
     kind: row.kind,
     payload: {
       ...JSON.parse(row.payload_json),
-      ...(row.kind === "media_capture" && row.import_session_id ? { importSessionId: row.import_session_id } : {}),
+      ...(row.import_session_id ? { importSessionId: row.import_session_id } : {}),
     } as OutboxItem["payload"],
     createdAt: row.created_at,
     attemptCount: row.attempt_count,

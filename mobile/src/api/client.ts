@@ -788,7 +788,14 @@ export async function uploadTextCapture(
   credentials: Credentials,
   id: string,
   text: string,
+  importSessionId?: string,
 ): Promise<string> {
+  if (importSessionId) {
+    const batch = await requestMobileJson(credentials, "/api/imports", {
+      method: "POST", body: JSON.stringify({ clientSessionId: importSessionId, source: "share" }),
+    });
+    if (!isRecord(batch) || batch.id !== importSessionId) throw new ApiError("服务器批次结果无效。", 502);
+  }
   let response: Response;
   try {
     response = await fetchWithTimeout(
@@ -800,7 +807,7 @@ export async function uploadTextCapture(
         authorization: `Bearer ${credentials.token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ id, text }),
+      body: JSON.stringify({ id, text, ...(importSessionId ? { importSessionId } : {}) }),
       },
     );
   } catch {

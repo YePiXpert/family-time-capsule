@@ -36,7 +36,7 @@ import {
   type TimeSource,
 } from "@/lib/assets/service";
 import { getFamily } from "@/lib/family/service";
-import { createInboxItemForAssetIdempotent } from "@/lib/inbox/service";
+import { createInboxItemForAssetIdempotent, createTextInboxItemIdempotent, type IdempotentTextCaptureResult } from "@/lib/inbox/service";
 import {
   embeddedTimeToUtc,
   extractEmbeddedTimeFromFile,
@@ -155,6 +155,41 @@ export type CreateUploadInput = {
   importSessionId: string | null;
   clientFingerprint?: string | null;
 };
+
+/** Text capture and batch provenance commit together, including legacy retries. */
+export function createImportedTextCapture(
+  familyId: string, userId: string, importId: string, captureId: string, text: string,
+): IdempotentTextCaptureResult {
+  return getDb().transaction((tx) => {
+    const parent = tx.select().from(importSession).where(and(eq(importSession.familyId, familyId), eq(importSession.id, importId))).get();
+    if (!parent || parent.createdByUserId !== userId) throw new UploadServiceError("not_found", 404);
+    if (!["native", "share"].includes(parent.source)) throw new UploadServiceError("import_session_conflict", 409);
+    const memberships = tx.select().from(importSessionItem).where(and(eq(importSessionItem.familyId, familyId), eq(importSessionItem.captureId, captureId))).all();
+    if (memberships.some((item) => item.importSessionId !== importId)) throw new UploadServiceError("capture_id_conflict", 409);
+    const item = memberships[0];
+    if (item && (item.assetId || item.uploadSessionId || item.filename || item.status === "cancelled" ||
+      (item.inboxItemId && item.inboxItemId !== captureId))) throw new UploadServiceError("capture_id_conflict", 409);
+    if (item?.status !== "completed" && ["completed", "cancelled"].includes(parent.status)) {
+      throw new UploadServiceError("import_session_closed", 409);
+    }
+    const result = createTextInboxItemIdempotent(familyId, text, captureId);
+    if (result.status === "conflict" || item?.status === "completed") return result;
+    const now = new Date();
+    if (item) {
+      tx.update(importSessionItem).set({ inboxItemId: result.item.id, status: "completed", errorCode: null, updatedAt: now })
+        .where(eq(importSessionItem.id, item.id)).run();
+    } else {
+      const order = tx.select({ value: max(importSessionItem.sortOrder) }).from(importSessionItem)
+        .where(eq(importSessionItem.importSessionId, importId)).get()?.value ?? -1;
+      tx.insert(importSessionItem).values({ id: randomUUID(), familyId, importSessionId: importId,
+        captureId, inboxItemId: result.item.id, status: "completed", sortOrder: order + 1, createdAt: now, updatedAt: now }).run();
+    }
+    tx.update(importSession).set({ totalCount: parent.totalCount + (item ? 0 : 1),
+      completedCount: parent.completedCount + 1, failedCount: parent.failedCount - (item?.status === "failed" ? 1 : 0),
+      status: "reviewing", updatedAt: now }).where(eq(importSession.id, importId)).run();
+    return result;
+  }, { behavior: "immediate" });
+}
 
 /** Persist the whole queue before reserving bounded active transfers. */
 export function declareImportItems(familyId: string, importId: string, input: unknown): void {

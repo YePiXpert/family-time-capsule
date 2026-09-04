@@ -69,6 +69,7 @@ export type LocalTimelineEvent = TimelineEvent & {
 
 export type TextCapturePayload = {
   text: string;
+  importSessionId?: string;
 };
 
 export type MediaCapturePayload = {

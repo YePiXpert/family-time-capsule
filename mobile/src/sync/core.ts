@@ -23,6 +23,7 @@ export type SyncDependencies = {
     credentials: Credentials,
     id: string,
     text: string,
+    importSessionId?: string,
   ) => Promise<string>;
   uploadMediaCapture: (
     credentials: Credentials,
@@ -70,7 +71,9 @@ async function flushOutbox(
     try {
       if (item.kind === "text_capture") {
         const payload = item.payload as TextCapturePayload;
-        const inboxItemId = await dependencies.uploadTextCapture(credentials, item.id, payload.text);
+        const inboxItemId = payload.importSessionId
+          ? await dependencies.uploadTextCapture(credentials, item.id, payload.text, payload.importSessionId)
+          : await dependencies.uploadTextCapture(credentials, item.id, payload.text);
         await dependencies.completeOutboxItem(item.id, inboxItemId);
       } else {
         const payload = item.payload as MediaCapturePayload;

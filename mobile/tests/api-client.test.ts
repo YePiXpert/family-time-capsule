@@ -11,6 +11,7 @@ import {
   parseSyncPage,
   signIn,
   updateMobileContribution,
+  uploadTextCapture,
 } from "../src/api/client";
 import type { SyncPage } from "../src/types";
 
@@ -38,6 +39,26 @@ function validPage(): SyncPage {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("native API client", () => {
+  it("persists the share batch before submitting its text", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "batch-1" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ inboxItemId: "capture-1" })));
+    vi.stubGlobal("fetch", fetch);
+    await expect(uploadTextCapture({ serverUrl: "https://archive.example", token: "session" }, "capture-1", "家人的话", "batch-1")).resolves.toBe("capture-1");
+    expect(fetch).toHaveBeenNthCalledWith(1, "https://archive.example/api/imports", expect.objectContaining({
+      body: JSON.stringify({ clientSessionId: "batch-1", source: "share" }),
+    }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "https://archive.example/api/mobile/v1/captures/text", expect.objectContaining({
+      body: JSON.stringify({ id: "capture-1", text: "家人的话", importSessionId: "batch-1" }),
+    }));
+  });
+
+  it("does not submit text when its batch cannot be persisted", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 409 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(uploadTextCapture({ serverUrl: "https://archive.example", token: "session" }, "capture-1", "家人的话", "batch-1")).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("normalizes self-hosted HTTP(S) addresses only", () => {
     expect(normalizeServerUrl(" capsule.example.com/ ")).toBe(
       "https://capsule.example.com",

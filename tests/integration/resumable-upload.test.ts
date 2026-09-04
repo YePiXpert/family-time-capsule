@@ -33,6 +33,7 @@ const { cancelUpload, cleanupExpiredUploads, createImportSession } = await impor
 );
 const { POST: createPost } = await import("@/app/api/uploads/route");
 const { POST: createImportPost } = await import("@/app/api/imports/route");
+const { POST: createTextPost } = await import("@/app/api/mobile/v1/captures/text/route");
 const { HEAD: uploadHead, PATCH: uploadPatch } = await import(
   "@/app/api/uploads/[id]/route"
 );
@@ -169,6 +170,53 @@ async function complete(uploadId: string, token = adminToken) {
 }
 
 describe("durable resumable upload protocol", () => {
+  it("groups retried system-share text in one batch and rolls back an unsuccessful membership write", async () => {
+    const owner = getDb().select().from(session).where(eq(session.token, adminToken)).get()!.userId;
+    const batch = await createImportSession({ familyId, createdByUserId: owner, source: "share" });
+    const captureId = randomUUID();
+    const request = (token = adminToken, text = "https://example.test/family-story", id: string = captureId) => new Request("http://localhost/api/mobile/v1/captures/text", {
+      method: "POST", headers: auth(token, { "content-type": "application/json" }),
+      body: JSON.stringify({ id, text, importSessionId: batch.id }),
+    });
+    const responses = await Promise.all(Array.from({ length: 5 }, () => createTextPost(request())));
+    expect(responses.filter((response) => response.status === 201)).toHaveLength(1);
+    expect(responses.every((response) => response.ok)).toBe(true);
+    expect(responses[0].headers.get("cache-control")).toBe("private, no-store");
+    expect(getDb().select().from(importSession).where(eq(importSession.id, batch.id)).get()).toMatchObject({ totalCount: 1, completedCount: 1 });
+    expect(getDb().select().from(importSessionItem).where(eq(importSessionItem.importSessionId, batch.id)).all()).toMatchObject([{ inboxItemId: captureId, assetId: null, status: "completed" }]);
+    expect((await createTextPost(request(adminToken, "不同内容"))).status).toBe(409);
+    expect((await createTextPost(request(viewerToken))).status).toBe(403);
+    expect((await createTextPost(request(foreignToken))).status).toBe(404);
+    const interruptedId = randomUUID();
+    getDb().run(sql`CREATE TEMP TRIGGER reject_text_membership BEFORE INSERT ON import_session_item BEGIN SELECT RAISE(ABORT, 'injected membership failure'); END`);
+    try {
+      expect((await createTextPost(request(adminToken, "不会留下半成品", interruptedId))).status).toBe(500);
+    } finally {
+      getDb().run(sql`DROP TRIGGER reject_text_membership`);
+    }
+    expect(getDb().select().from(inboxItem).where(eq(inboxItem.id, interruptedId)).get()).toBeUndefined();
+  });
+
+  it("adopts old ungrouped text without duplicating Inbox or allowing a second batch", async () => {
+    const { createTextInboxItemIdempotent } = await import("@/lib/inbox/service");
+    const { createImportedTextCapture } = await import("@/lib/imports/service");
+    const captureId = randomUUID();
+    createTextInboxItemIdempotent(familyId, "外婆留下的话", captureId);
+    const batch = await createImportSession({ familyId, createdByUserId: admin.id, source: "share" });
+    expect(createImportedTextCapture(familyId, admin.id, batch.id, captureId, "外婆留下的话").status).toBe("existing");
+    expect(createImportedTextCapture(familyId, admin.id, batch.id, captureId, "外婆留下的话").status).toBe("existing");
+    expect(getDb().select().from(importSession).where(eq(importSession.id, batch.id)).get()).toMatchObject({ totalCount: 1, completedCount: 1 });
+    const other = await createImportSession({ familyId, createdByUserId: admin.id, source: "share" });
+    expect(() => createImportedTextCapture(familyId, admin.id, other.id, captureId, "外婆留下的话")).toThrow("capture_id_conflict");
+    expect(() => createImportedTextCapture(familyId, randomUUID(), batch.id, randomUUID(), "无权写入")).toThrow("not_found");
+    const { buildFamilyExport } = await import("@/lib/export/service");
+    const { default: JSZip } = await import("jszip");
+    const archive = await buildFamilyExport(familyId);
+    const zip = await JSZip.loadAsync(readFileSync(archive.filePath));
+    const items = JSON.parse(await zip.file("family-time-capsule-export/import-session-items.json")!.async("string"));
+    expect(items).toEqual(expect.arrayContaining([expect.objectContaining({ importSessionId: batch.id, inboxItemId: captureId, assetId: null, status: "completed" })]));
+  });
+
   it("adopts an interrupted native upload into its device batch without restarting bytes", async () => {
     const bytes = Buffer.concat([PNG, Buffer.from("native-batch")]);
     const created = await createUpload({ bytes: bytes.length });
