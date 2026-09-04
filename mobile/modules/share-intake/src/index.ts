@@ -1,4 +1,5 @@
 import { requireOptionalNativeModule } from "expo-modules-core";
+import { Platform } from "react-native";
 
 export type NativeShareItem = {
   externalId: string;
@@ -23,9 +24,16 @@ export type NativeShareManifest = {
 type NativeModule = {
   consumePendingAsync(): Promise<string>;
   acknowledgeAsync(manifestId: string): Promise<void>;
+  addListener(event: "onPendingShares", listener: () => void): { remove(): void };
 };
 
 const nativeModule = requireOptionalNativeModule<NativeModule>("FamilyShareIntake");
+
+export function subscribeToPendingNativeShares(listener: () => void): () => void {
+  if (!nativeModule || Platform.OS !== "android") return () => {};
+  const subscription = nativeModule.addListener("onPendingShares", listener);
+  return () => subscription.remove();
+}
 
 export async function consumePendingNativeShares(): Promise<NativeShareManifest[]> {
   if (!nativeModule) return [];

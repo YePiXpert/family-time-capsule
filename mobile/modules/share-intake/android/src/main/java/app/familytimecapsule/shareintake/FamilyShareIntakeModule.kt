@@ -4,6 +4,7 @@ import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.AtomicFile
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONArray
@@ -22,6 +23,7 @@ class FamilyShareIntakeModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("FamilyShareIntake")
+    Events("onPendingShares")
 
     OnNewIntent { intent ->
       scheduleIntent(intent)
@@ -62,13 +64,27 @@ class FamilyShareIntakeModule : Module() {
     if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) return
     intent.putExtra(HANDLED_EXTRA, true)
     val copy = Intent(intent)
-    copyExecutor.execute { processIntent(copy) }
+    copyExecutor.execute {
+      try { processIntent(copy) } finally {
+        sendEvent("onPendingShares", emptyMap<String, Any>())
+      }
+    }
   }
 
   private fun processIntent(intent: Intent) {
     val context = appContext.reactContext ?: return
     val manifestId = UUID.randomUUID().toString()
     val items = JSONArray()
+    val createdAt = Instant.now().toString()
+    fun persist(complete: Boolean) {
+      writeManifest(context.filesDir, manifestId, JSONObject().apply {
+        put("manifestId", manifestId)
+        put("source", "share")
+        put("createdAt", createdAt)
+        put("complete", complete)
+        put("items", items)
+      })
+    }
     val uris = linkedSetOf<Uri>()
 
     @Suppress("DEPRECATION")
@@ -86,8 +102,16 @@ class FamilyShareIntakeModule : Module() {
       if (uri.scheme == "http" || uri.scheme == "https") {
         items.put(textItem("uri-$index", uri.toString()))
       } else {
-        items.put(copyUri(manifestId, index, uri, intent.type))
+        val slot = items.length()
+        val result = copyUri(manifestId, index, uri, intent.type) { declaration ->
+          items.put(declaration)
+          // A completed private file always has a durable declaration, even if
+          // the process dies between the file rename and the next manifest write.
+          persist(false)
+        }
+        if (items.length() == slot) items.put(result) else items.put(slot, result)
       }
+      persist(false)
     }
     val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
     if (!text.isNullOrEmpty() && items.length() < MAX_SHARE_ITEMS) {
@@ -95,17 +119,20 @@ class FamilyShareIntakeModule : Module() {
     }
     if (items.length() == 0) return
 
-    val manifest = JSONObject().apply {
-      put("manifestId", manifestId)
-      put("source", "share")
-      put("createdAt", Instant.now().toString())
-      put("complete", true)
-      put("items", items)
+    persist(true)
+  }
+
+  private fun writeManifest(root: File, manifestId: String, manifest: JSONObject) {
+    val directory = File(root, "share-intake/manifests").apply { mkdirs() }
+    val file = AtomicFile(File(directory, "$manifestId.json"))
+    val output = file.startWrite()
+    try {
+      output.write(manifest.toString().toByteArray(Charsets.UTF_8))
+      file.finishWrite(output)
+    } catch (error: Throwable) {
+      file.failWrite(output)
+      throw error
     }
-    val directory = File(context.filesDir, "share-intake/manifests").apply { mkdirs() }
-    val temporary = File(directory, "$manifestId.json.part")
-    temporary.writeText(manifest.toString(), Charsets.UTF_8)
-    if (!temporary.renameTo(File(directory, "$manifestId.json"))) temporary.delete()
   }
 
   private fun textItem(externalId: String, text: String) = JSONObject().apply {
@@ -115,7 +142,7 @@ class FamilyShareIntakeModule : Module() {
     put("text", text.take(5000))
   }
 
-  private fun copyUri(manifestId: String, index: Int, uri: Uri, fallbackMime: String?): JSONObject {
+  private fun copyUri(manifestId: String, index: Int, uri: Uri, fallbackMime: String?, beforeCopy: (JSONObject) -> Unit): JSONObject {
     val context = requireNotNull(appContext.reactContext)
     val resolver = context.contentResolver
     val externalId = "item-$index"
@@ -129,15 +156,7 @@ class FamilyShareIntakeModule : Module() {
       val destination = File(context.filesDir, "captures/$captureId$extension")
       destination.parentFile?.mkdirs()
       val temporary = File(destination.parentFile, ".${destination.name}.$manifestId.part")
-      resolver.openInputStream(uri).use { input ->
-        requireNotNull(input) { "unreadable_uri" }
-        FileOutputStream(temporary).use { output -> input.copyTo(output, 64 * 1024) }
-      }
-      if (!temporary.renameTo(destination)) {
-        temporary.delete()
-        throw IllegalStateException("copy_failed")
-      }
-      JSONObject().apply {
+      val declaration = JSONObject().apply {
         put("externalId", externalId)
         put("captureId", captureId)
         put("kind", "file")
@@ -146,6 +165,19 @@ class FamilyShareIntakeModule : Module() {
         put("mimeType", mime)
         put("mediaType", mediaType)
       }
+      beforeCopy(declaration)
+      resolver.openInputStream(uri).use { input ->
+        requireNotNull(input) { "unreadable_uri" }
+        FileOutputStream(temporary).use { output ->
+          input.copyTo(output, 64 * 1024)
+          output.fd.sync()
+        }
+      }
+      if (!temporary.renameTo(destination)) {
+        temporary.delete()
+        throw IllegalStateException("copy_failed")
+      }
+      declaration
     } catch (error: Throwable) {
       JSONObject().apply {
         put("externalId", externalId)

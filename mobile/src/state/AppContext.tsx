@@ -35,6 +35,7 @@ import {
 import { clearLocalFiles, removeLocalFile } from "../storage/files";
 import { syncArchive } from "../sync/sync";
 import { drainNativeShareIntake } from "../native/intake";
+import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
 import type {
   Credentials,
@@ -89,6 +90,7 @@ export function AppProvider({
   const [message, setMessage] = useState<string | null>(null);
   const syncInFlight = useRef(false);
   const intakeInFlight = useRef(false);
+  const intakeAgain = useRef(false);
 
   const reloadLocal = useCallback(async () => {
     const [nextEvents, nextFamily, nextViewer, nextPeople, nextOutbox, nextSyncAt, cachedHome] =
@@ -159,20 +161,26 @@ export function AppProvider({
   }, [credentials, network.isConnected, reloadLocal, runSync]);
 
   const receiveSystemShares = useCallback(async () => {
-    if (intakeInFlight.current) return;
+    if (intakeInFlight.current) {
+      intakeAgain.current = true;
+      return;
+    }
     intakeInFlight.current = true;
     try {
-      const access = resolveNativeCaptureAccess(Boolean(credentials), viewer);
-      const result = await drainNativeShareIntake(access !== "readonly");
-      if (result.manifests === 0) return;
-      await reloadLocal();
-      if (result.retainedReadonly > 0) {
-        setMessage("已保全系统分享的本机副本；当前家庭角色只读，未创建待同步项目。");
-      } else {
-        const failed = result.failed > 0 ? `；${result.failed} 项复制失败，其他项目不受影响` : "";
-        setMessage(`已接管 ${result.queued} 项系统分享并保存到本机${failed}。`);
-        if (credentials && network.isConnected !== false && result.queued > 0) await runSync();
-      }
+      do {
+        intakeAgain.current = false;
+        const access = resolveNativeCaptureAccess(Boolean(credentials), viewer);
+        const result = await drainNativeShareIntake(access !== "readonly");
+        if (result.manifests === 0) continue;
+        await reloadLocal();
+        if (result.retainedReadonly > 0) {
+          setMessage("已保全系统分享的本机副本；当前家庭角色只读，未创建待同步项目。");
+        } else {
+          const failed = result.failed > 0 ? `；${result.failed} 项复制失败，其他项目不受影响` : "";
+          setMessage(`已接管 ${result.queued} 项系统分享并保存到本机${failed}。`);
+          if (credentials && network.isConnected !== false && result.queued > 0) await runSync();
+        }
+      } while (intakeAgain.current);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "系统分享仍保留在本机，稍后会再次接管。");
     } finally {
@@ -222,6 +230,10 @@ export function AppProvider({
     const timer = setTimeout(() => void receiveSystemShares(), 0);
     return () => clearTimeout(timer);
   }, [receiveSystemShares]);
+
+  useEffect(() => subscribeToPendingNativeShares(() => {
+    void receiveSystemShares();
+  }), [receiveSystemShares]);
 
   useEffect(() => {
     const timer = setTimeout(() => void reconcileWeeklyReviewReminder(), 0);

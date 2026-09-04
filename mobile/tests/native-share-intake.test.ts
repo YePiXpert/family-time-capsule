@@ -47,7 +47,7 @@ describe("native system share intake", () => {
     const kotlin = source("modules/share-intake/android/src/main/java/app/familytimecapsule/shareintake/FamilyShareIntakeModule.kt");
     expect(kotlin).toContain("resolver.openInputStream(uri)");
     expect(kotlin).toContain("input.copyTo(output, 64 * 1024)");
-    expect(kotlin).toContain("items.put(copyUri");
+    expect(kotlin).toContain("val result = copyUri");
     expect(kotlin).toContain("HANDLED_EXTRA");
   });
 
