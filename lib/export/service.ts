@@ -11,7 +11,7 @@ import pkg from "../../package.json";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { person as personTable } from "@/db/schema/family";
-import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
+import { inboxItem, inboxItemAsset, inboxItemParticipant } from "@/db/schema/inbox";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import { assetTranscript as assetTranscriptTable } from "@/db/schema/transcript";
 import {
@@ -114,7 +114,7 @@ export async function buildFamilyExport(
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
-  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets, transcripts, factSources, tags] = await Promise.all([
+  const [people, assets, events, contributions, facts, capsules, inboxItems, inboxItemAssets, inboxItemParticipants, transcripts, factSources, tags] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
     db
@@ -131,6 +131,7 @@ export async function buildFamilyExport(
     db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
     db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
     db.select().from(inboxItemAsset).where(eq(inboxItemAsset.familyId, familyId)),
+    db.select().from(inboxItemParticipant).where(eq(inboxItemParticipant.familyId, familyId)),
     db.select().from(assetTranscriptTable).where(eq(assetTranscriptTable.familyId, familyId)),
     db.select().from(factSource).where(eq(factSource.familyId, familyId)),
     db.select().from(memoryEventTag).where(eq(memoryEventTag.familyId, familyId)),
@@ -243,6 +244,12 @@ export async function buildFamilyExport(
     kind: item.kind,
     status: item.status,
     rawText: item.rawText,
+    draftTitle: item.draftTitle,
+    draftOccurredAt: iso(item.draftOccurredAt),
+    draftLocationText: item.draftLocationText,
+    participantPersonIds: inboxItemParticipants
+      .filter((link) => link.inboxItemId === item.id)
+      .map((link) => link.personId),
     memoryEventId: item.memoryEventId,
     createdAt: iso(item.createdAt),
     updatedAt: iso(item.updatedAt),

@@ -46,11 +46,16 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
     title TEXT NOT NULL,
     occurred_at TEXT NOT NULL,
     local_uri TEXT,
-    media_type TEXT CHECK(media_type IN ('image', 'video') OR media_type IS NULL),
+    media_type TEXT CHECK(media_type IN ('image', 'video', 'audio') OR media_type IS NULL),
     sync_state TEXT NOT NULL DEFAULT 'pending' CHECK(sync_state IN ('pending', 'synced'))
   );
   CREATE INDEX IF NOT EXISTS local_capture_occurred_idx
     ON local_capture(occurred_at DESC, id DESC);
+  CREATE TABLE IF NOT EXISTS memory_detail (
+    id TEXT PRIMARY KEY NOT NULL,
+    detail_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 
   INSERT OR IGNORE INTO local_capture(
     id, kind, title, occurred_at, local_uri, media_type, sync_state

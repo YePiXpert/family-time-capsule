@@ -33,8 +33,11 @@ const { contribution: contributionTable } = await import(
   "@/db/schema/contribution"
 );
 const { eq } = await import("drizzle-orm");
-const { inboxItem: inboxItemTable, inboxItemAsset: inboxItemAssetTable } =
-  await import("@/db/schema/inbox");
+const {
+  inboxItem: inboxItemTable,
+  inboxItemAsset: inboxItemAssetTable,
+  inboxItemParticipant: inboxItemParticipantTable,
+} = await import("@/db/schema/inbox");
 const { completeOnboarding, addPerson, listPeople } = await import(
   "@/lib/family/service"
 );
@@ -44,6 +47,7 @@ const {
   createTextInboxItem,
   discardInboxItem,
   getInboxEntry,
+  updateInboxDraft,
 } = await import("@/lib/inbox/service");
 const { confirmInboxEntry, mergeInboxEntries } = await import("@/lib/memories/service");
 const { createContribution, addFact } = await import("@/lib/contributions/service");
@@ -142,6 +146,13 @@ const people = await listPeople(familyId);
 const grandma = people.find((p) => p.displayName === "外婆")!;
 const dad = people.find((p) => p.displayName === "爸爸")!;
 const child = people.find((p) => p.isChild)!;
+const draftOccurredAt = new Date("2026-08-12T09:15:00.000Z");
+await updateInboxDraft(familyId, pendingTextItem.id, {
+  title: "还没整理的树影",
+  occurredAt: draftOccurredAt,
+  locationText: "家里窗边",
+  participantPersonIds: [dad.id, grandma.id],
+});
 const manualUnlockAt = new Date("2035-02-28T16:00:00.000Z");
 await db
   .update(familyTable)
@@ -291,11 +302,21 @@ describe("完整导出（#014）", () => {
         kind: item.kind,
         status: item.status,
         rawText: item.rawText,
+        draftTitle: item.draftTitle,
+        draftOccurredAt: item.draftOccurredAt?.toISOString() ?? null,
+        draftLocationText: item.draftLocationText,
+        participantPersonIds: [] as string[],
         memoryEventId: item.memoryEventId,
         createdAt: item.createdAt.toISOString(),
         updatedAt: item.updatedAt.toISOString(),
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
+    const inboxParticipants = await db.select().from(inboxItemParticipantTable);
+    for (const item of expectedInboxItems) {
+      item.participantPersonIds = inboxParticipants
+        .filter((link) => link.inboxItemId === item.id)
+        .map((link) => link.personId);
+    }
     const expectedInboxItemAssets = (await db.select().from(inboxItemAssetTable))
       .map((link) => ({
         id: link.id,
@@ -323,6 +344,10 @@ describe("完整导出（#014）", () => {
       kind: "text",
       status: "new",
       rawText: LONG_PENDING_TEXT,
+      draftTitle: "还没整理的树影",
+      draftOccurredAt: draftOccurredAt.toISOString(),
+      draftLocationText: "家里窗边",
+      participantPersonIds: [dad.id, grandma.id],
       memoryEventId: null,
     });
     expect(LONG_PENDING_TEXT.length).toBeGreaterThan(100);

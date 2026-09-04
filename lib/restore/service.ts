@@ -8,7 +8,7 @@ import yauzl, { type Entry, type ZipFile } from "yauzl";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { family as familyTable, person as personTable } from "@/db/schema/family";
-import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
+import { inboxItem, inboxItemAsset, inboxItemParticipant } from "@/db/schema/inbox";
 import {
   contribution as contributionTable,
   fact as factTable,
@@ -131,6 +131,10 @@ type InboxItemArchiveRow = {
   kind: string;
   status: string;
   rawText: string | null;
+  draftTitle?: string | null;
+  draftOccurredAt?: string | null;
+  draftLocationText?: string | null;
+  participantPersonIds?: string[];
   memoryEventId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1068,6 +1072,32 @@ async function loadAndVerifyZip(
       `inbox item ${item.id} 的 rawText 非法`,
     );
     requireCondition(
+      item.draftTitle === undefined || item.draftTitle === null ||
+        (typeof item.draftTitle === "string" && item.draftTitle.length <= 100),
+      "bad_json",
+      `inbox item ${item.id} 的草稿标题非法`,
+    );
+    requireCondition(
+      item.draftLocationText === undefined || item.draftLocationText === null ||
+        (typeof item.draftLocationText === "string" && item.draftLocationText.length <= 200),
+      "bad_json",
+      `inbox item ${item.id} 的草稿地点非法`,
+    );
+    requireCondition(
+      item.draftOccurredAt === undefined || item.draftOccurredAt === null ||
+        (typeof item.draftOccurredAt === "string" && parseDate(item.draftOccurredAt) !== null),
+      "bad_json",
+      `inbox item ${item.id} 的草稿时间非法`,
+    );
+    requireCondition(
+      item.participantPersonIds === undefined ||
+        (Array.isArray(item.participantPersonIds) &&
+          item.participantPersonIds.length <= 50 &&
+          item.participantPersonIds.every((personId) => typeof personId === "string" && personIds.has(personId))),
+      "bad_refs",
+      `inbox item ${item.id} 的草稿人物非法`,
+    );
+    requireCondition(
       item.memoryEventId === null || typeof item.memoryEventId === "string",
       "bad_json",
       `inbox item ${item.id} 的 memoryEventId 非法`,
@@ -1093,6 +1123,10 @@ async function loadAndVerifyZip(
       kind: item.kind,
       status: item.status,
       rawText: item.rawText,
+      draftTitle: (item.draftTitle ?? null) as string | null,
+      draftOccurredAt: (item.draftOccurredAt ?? null) as string | null,
+      draftLocationText: (item.draftLocationText ?? null) as string | null,
+      participantPersonIds: (item.participantPersonIds ?? []) as string[],
       memoryEventId: item.memoryEventId,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
@@ -1977,12 +2011,27 @@ async function restoreFromArchive(
               kind: item.kind,
               status: item.status,
               rawText: item.rawText,
+              draftTitle: item.draftTitle,
+              draftOccurredAt: parseDate(item.draftOccurredAt ?? null),
+              draftLocationText: item.draftLocationText,
               memoryEventId: item.memoryEventId,
               createdAt: parseDate(item.createdAt)!,
               updatedAt: parseDate(item.updatedAt)!,
             })),
           )
           .run();
+        const inboxParticipants = inboxItemsJson.flatMap((item) =>
+          (item.participantPersonIds ?? []).map((personId) => ({
+            id: randomUUID(),
+            inboxItemId: item.id,
+            personId,
+            familyId: item.familyId,
+            createdAt: parseDate(item.updatedAt) ?? now,
+          })),
+        );
+        if (inboxParticipants.length > 0) {
+          tx.insert(inboxItemParticipant).values(inboxParticipants).run();
+        }
       }
 
       if (inboxItemAssetsJson.length > 0) {

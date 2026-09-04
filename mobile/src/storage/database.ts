@@ -3,6 +3,8 @@ import type {
   Family,
   LocalTimelineEvent,
   MediaCapturePayload,
+  MobileMemory,
+  MobileHome,
   OutboxItem,
   Person,
   SyncPage,
@@ -25,6 +27,32 @@ function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 export async function initializeLocalStore(): Promise<void> {
   const db = await getDatabase();
   await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
+  const definition = await db.getFirstAsync<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'local_capture'",
+  );
+  if (definition?.sql && !definition.sql.includes("'audio'")) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.execAsync(`
+        ALTER TABLE local_capture RENAME TO local_capture_before_audio;
+        DROP INDEX IF EXISTS local_capture_occurred_idx;
+        CREATE TABLE local_capture (
+          id TEXT PRIMARY KEY NOT NULL,
+          kind TEXT NOT NULL CHECK(kind IN ('text_capture', 'media_capture')),
+          title TEXT NOT NULL,
+          occurred_at TEXT NOT NULL,
+          local_uri TEXT,
+          media_type TEXT CHECK(media_type IN ('image', 'video', 'audio') OR media_type IS NULL),
+          sync_state TEXT NOT NULL DEFAULT 'pending' CHECK(sync_state IN ('pending', 'synced'))
+        );
+        INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, sync_state)
+          SELECT id, kind, title, occurred_at, local_uri, media_type, sync_state
+          FROM local_capture_before_audio;
+        DROP TABLE local_capture_before_audio;
+        CREATE INDEX local_capture_occurred_idx
+          ON local_capture(occurred_at DESC, id DESC);
+      `);
+    });
+  }
 }
 
 export async function getMeta(key: string): Promise<string | null> {
@@ -45,6 +73,20 @@ async function setMeta(key: string, value: string): Promise<void> {
   );
 }
 
+export async function cacheMobileHome(home: MobileHome): Promise<void> {
+  await setMeta("mobile_home", JSON.stringify(home));
+}
+
+export async function getCachedMobileHome(): Promise<MobileHome | null> {
+  const raw = await getMeta("mobile_home");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as MobileHome;
+  } catch {
+    return null;
+  }
+}
+
 export async function getCachedFamily(): Promise<Family | null> {
   const raw = await getMeta("family");
   if (!raw) return null;
@@ -60,6 +102,55 @@ export async function getCachedViewer(): Promise<SyncPage["viewer"] | null> {
   if (!raw) return null;
   try {
     return JSON.parse(raw) as SyncPage["viewer"];
+  } catch {
+    return null;
+  }
+}
+
+export async function listCachedPeople(): Promise<Person[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    display_name: string;
+    relation_to_child: string | null;
+    is_child: number;
+    birth_date: string | null;
+    updated_at: string;
+  }>("SELECT * FROM people ORDER BY is_child DESC, display_name");
+  return rows.map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    relationToChild: row.relation_to_child,
+    isChild: row.is_child === 1,
+    birthDate: row.birth_date,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function cacheMemoryDetail(detail: MobileMemory): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO memory_detail(id, detail_json, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       detail_json = excluded.detail_json,
+       updated_at = excluded.updated_at`,
+    detail.id,
+    JSON.stringify(detail),
+    detail.updatedAt,
+  );
+}
+
+export async function getCachedMemoryDetail(
+  id: string,
+): Promise<MobileMemory | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ detail_json: string }>(
+    "SELECT detail_json FROM memory_detail WHERE id = ?",
+    id,
+  );
+  if (!row) return null;
+  try {
+    return JSON.parse(row.detail_json) as MobileMemory;
   } catch {
     return null;
   }
@@ -332,6 +423,7 @@ export async function clearLocalArchive(): Promise<void> {
     DELETE FROM people;
     DELETE FROM outbox;
     DELETE FROM local_capture;
+    DELETE FROM memory_detail;
     DELETE FROM meta;
   `);
 }

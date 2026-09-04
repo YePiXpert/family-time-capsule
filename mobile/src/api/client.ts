@@ -1,5 +1,13 @@
 import type {
   Credentials,
+  InboxDraftPatch,
+  MobileHome,
+  MobileInboxAsset,
+  MobileInboxEntry,
+  MobileInboxPage,
+  MobileMemory,
+  MobileMemoryAsset,
+  MobileSearchPage,
   Person,
   SyncPage,
   TimelineEvent,
@@ -51,6 +59,23 @@ function isNullableString(value: unknown, max = 5000): value is string | null {
 
 function isDateTime(value: unknown): value is string {
   return isString(value, 64) && !Number.isNaN(Date.parse(value));
+}
+
+function isPath(value: unknown): value is string {
+  return isString(value, 512) && value.startsWith("/api/");
+}
+
+function isNullablePath(value: unknown): value is string | null {
+  return value === null || isPath(value);
+}
+
+function hasCursor(
+  value: unknown,
+): value is Record<string, unknown> & { nextCursor: string | null } {
+  return (
+    isRecord(value) &&
+    (value.nextCursor === null || isString(value.nextCursor, 1024))
+  );
 }
 
 function isViewer(value: unknown): value is Viewer {
@@ -133,6 +158,192 @@ export function parseSyncPage(value: unknown): SyncPage {
     throw new ApiError("服务器移动 API 返回了无效数据。", 502);
   }
   return value as SyncPage;
+}
+
+function isInboxAsset(value: unknown): value is MobileInboxAsset {
+  return (
+    isRecord(value) &&
+    isString(value.id, 128) &&
+    ["image", "video", "audio"].includes(String(value.type)) &&
+    isString(value.filename, 500) &&
+    isString(value.mimeType, 200) &&
+    (value.capturedAt === null || isDateTime(value.capturedAt)) &&
+    isPath(value.mediaPath) &&
+    isNullablePath(value.thumbnailPath)
+  );
+}
+
+function isInboxEntry(value: unknown): value is MobileInboxEntry {
+  return (
+    isRecord(value) &&
+    isString(value.id, 128) &&
+    ["text", "asset"].includes(String(value.kind)) &&
+    isString(value.status, 32) &&
+    isString(value.title, 500) &&
+    isNullableString(value.rawText, 5000) &&
+    (value.occurredAt === null || isDateTime(value.occurredAt)) &&
+    isNullableString(value.locationText, 200) &&
+    Array.isArray(value.participantPersonIds) &&
+    value.participantPersonIds.length <= 50 &&
+    value.participantPersonIds.every((id) => isString(id, 128)) &&
+    isDateTime(value.createdAt) &&
+    Array.isArray(value.assets) &&
+    value.assets.length <= 100 &&
+    value.assets.every(isInboxAsset)
+  );
+}
+
+export function parseMobileInboxPage(value: unknown): MobileInboxPage {
+  if (
+    !hasCursor(value) ||
+    !Array.isArray(value.entries) ||
+    value.entries.length > 50 ||
+    !value.entries.every(isInboxEntry)
+  ) {
+    throw new ApiError("服务器收件箱返回了无效数据。", 502);
+  }
+  return value as MobileInboxPage;
+}
+
+function isMemoryAsset(value: unknown): value is MobileMemoryAsset {
+  return (
+    isRecord(value) &&
+    isString(value.id, 128) &&
+    ["image", "video", "audio"].includes(String(value.type)) &&
+    isString(value.filename, 500) &&
+    isString(value.mimeType, 200) &&
+    (value.durationMs === null || Number.isSafeInteger(value.durationMs)) &&
+    isPath(value.mediaPath) &&
+    isNullablePath(value.thumbnailPath)
+  );
+}
+
+export function parseMobileMemory(value: unknown): MobileMemory {
+  if (
+    !isRecord(value) ||
+    !isString(value.id, 128) ||
+    !isString(value.title, 500) ||
+    !isDateTime(value.occurredAt) ||
+    !isString(value.occurredAtPrecision, 32) ||
+    (value.ageDays !== null && !Number.isSafeInteger(value.ageDays)) ||
+    !isNullableString(value.locationText, 200) ||
+    !isString(value.childPersonId, 128) ||
+    !Array.isArray(value.participantPersonIds) ||
+    !value.participantPersonIds.every((id) => isString(id, 128)) ||
+    !Array.isArray(value.participants) ||
+    !value.participants.every(
+      (person) =>
+        isRecord(person) &&
+        isString(person.id, 128) &&
+        isString(person.displayName, 200) &&
+        isNullableString(person.relationToChild, 100) &&
+        typeof person.isChild === "boolean",
+    ) ||
+    !Array.isArray(value.sourceNotes) ||
+    !value.sourceNotes.every(
+      (note) => isRecord(note) && isString(note.id, 128) && isString(note.text),
+    ) ||
+    !Array.isArray(value.assets) ||
+    value.assets.length > 200 ||
+    !value.assets.every(isMemoryAsset) ||
+    !Array.isArray(value.contributions) ||
+    !value.contributions.every(
+      (contribution) =>
+        isRecord(contribution) &&
+        isString(contribution.id, 128) &&
+        isString(contribution.authorPersonId, 128) &&
+        isString(contribution.authorName, 200) &&
+        isString(contribution.text) &&
+        ["private", "parents", "family", "child_later"].includes(
+          String(contribution.visibility),
+        ) &&
+        typeof contribution.canEdit === "boolean" &&
+        isNullablePath(contribution.audioPath),
+    ) ||
+    !isDateTime(value.updatedAt)
+  ) {
+    throw new ApiError("服务器记忆详情返回了无效数据。", 502);
+  }
+  return value as MobileMemory;
+}
+
+export function parseMobileHome(value: unknown): MobileHome {
+  const validChild = value && isRecord(value) && (value.child === null || (
+    isRecord(value.child) &&
+    isString(value.child.id, 128) &&
+    isString(value.child.displayName, 200) &&
+    isNullableString(value.child.currentAgeLabel, 100) &&
+    isNullablePath(value.child.avatarPath)
+  ));
+  const validInbox = value && isRecord(value) && isRecord(value.inbox) &&
+    Number.isSafeInteger(value.inbox.count) && Number(value.inbox.count) >= 0 &&
+    Array.isArray(value.inbox.previews) && value.inbox.previews.length <= 10 &&
+    value.inbox.previews.every((preview) =>
+      isRecord(preview) && isString(preview.id, 128) &&
+      isString(preview.title, 500) && isString(preview.status, 32) &&
+      isNullablePath(preview.mediaPath));
+  const validRecent = value && isRecord(value) && Array.isArray(value.recentMemories) &&
+    value.recentMemories.length <= 10 && value.recentMemories.every((memory) =>
+      isRecord(memory) && isString(memory.id, 128) && isString(memory.title, 500) &&
+      isDateTime(memory.occurredAt) && isNullableString(memory.ageLabel, 100) &&
+      isNullablePath(memory.coverPath));
+  const validOnThisDay = value && isRecord(value) && Array.isArray(value.onThisDay) &&
+    value.onThisDay.length <= 10 && value.onThisDay.every((memory) =>
+      isRecord(memory) && isString(memory.id, 128) && isString(memory.title, 500) &&
+      isDateTime(memory.occurredAt));
+  const validStory = value && isRecord(value) && (value.story === null || (
+    isRecord(value.story) && isString(value.story.id, 128) &&
+    isString(value.story.title, 500) && isString(value.story.status, 32)));
+  const validCapsule = value && isRecord(value) && (value.capsule === null || (
+    isRecord(value.capsule) && isString(value.capsule.id, 128) &&
+    isString(value.capsule.title, 500) && isString(value.capsule.status, 32) &&
+    isString(value.capsule.unlockType, 32) && isString(value.capsule.unlockValue, 200) &&
+    typeof value.capsule.unlocked === "boolean"));
+  if (
+    !isRecord(value) ||
+    !isRecord(value.family) ||
+    !isString(value.family.name, 500) ||
+    !isString(value.family.timezone, 100) ||
+    !validChild ||
+    !isRecord(value.capabilities) ||
+    typeof value.capabilities.canCapture !== "boolean" ||
+    !validInbox ||
+    !validRecent ||
+    !validOnThisDay ||
+    !validStory ||
+    !validCapsule ||
+    !isRecord(value.prompt) ||
+    !isString(value.prompt.text, 1000) ||
+    !isNullableString(value.prompt.recipientLabel, 200) ||
+    !Number.isSafeInteger(value.prompt.pendingCount) ||
+    typeof value.prompt.isCreatedRequest !== "boolean" ||
+    typeof value.isFirstUse !== "boolean"
+  ) {
+    throw new ApiError("服务器首页返回了无效数据。", 502);
+  }
+  return value as MobileHome;
+}
+
+export function parseMobileSearchPage(value: unknown): MobileSearchPage {
+  if (
+    !hasCursor(value) ||
+    !Array.isArray(value.items) ||
+    value.items.length > 50 ||
+    !value.items.every(
+      (item) =>
+        isRecord(item) &&
+        ["memory", "fact", "contribution", "transcript", "story"].includes(
+          String(item.type),
+        ) &&
+        isString(item.id, 128) &&
+        (item.eventId === null || isString(item.eventId, 128)) &&
+        isString(item.title, 500) &&
+        isString(item.snippet, 5000),
+    )
+  ) {
+    throw new ApiError("服务器搜索返回了无效数据。", 502);
+  }
+  return value as MobileSearchPage;
 }
 
 export function normalizeServerUrl(value: string): string {
@@ -240,6 +451,155 @@ export async function fetchSyncPage(
     throw new ApiError("服务器移动 API 返回了无效数据。", 502);
   }
   return parseSyncPage(body);
+}
+
+async function requestMobileJson(
+  credentials: Credentials,
+  path: string,
+  init: RequestInit = {},
+): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${credentials.serverUrl}${path}`, {
+      ...init,
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${credentials.token}`,
+        ...(init.body ? { "content-type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+  } catch {
+    throw new ApiError("无法连接家庭服务器，本机资料不受影响。", 0);
+  }
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    if (response.ok) throw new ApiError("服务器返回了无效数据。", 502);
+  }
+  if (!response.ok) {
+    const message =
+      response.status === 401
+        ? "登录已过期，请重新登录。"
+        : response.status === 403
+          ? "当前账号没有执行这个操作的权限。"
+          : response.status === 404
+            ? "这份家庭资料不存在或已经移除。"
+            : "家庭服务器暂时无法完成这个操作。";
+    throw new ApiError(message, response.status);
+  }
+  return body;
+}
+
+export async function fetchMobileHome(
+  credentials: Credentials,
+): Promise<MobileHome> {
+  return parseMobileHome(
+    await requestMobileJson(credentials, "/api/mobile/v1/home"),
+  );
+}
+
+export async function fetchMobileInbox(
+  credentials: Credentials,
+  cursor: string | null = null,
+): Promise<MobileInboxPage> {
+  const query = new URLSearchParams({ limit: "25" });
+  if (cursor) query.set("cursor", cursor);
+  return parseMobileInboxPage(
+    await requestMobileJson(
+      credentials,
+      `/api/mobile/v1/inbox?${query.toString()}`,
+    ),
+  );
+}
+
+export async function patchMobileInbox(
+  credentials: Credentials,
+  id: string,
+  patch: InboxDraftPatch,
+): Promise<MobileInboxEntry> {
+  const result = await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/inbox/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+  if (!isRecord(result) || !isInboxEntry(result.entry)) {
+    throw new ApiError("服务器收件箱返回了无效数据。", 502);
+  }
+  return result.entry;
+}
+
+export async function confirmMobileInbox(
+  credentials: Credentials,
+  id: string,
+): Promise<string> {
+  const result = await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/inbox/${encodeURIComponent(id)}/confirm`,
+    { method: "POST", body: "{}" },
+  );
+  if (!isRecord(result) || !isString(result.memoryEventId, 128)) {
+    throw new ApiError("服务器确认结果无效。", 502);
+  }
+  return result.memoryEventId;
+}
+
+export async function mergeMobileInbox(
+  credentials: Credentials,
+  itemIds: string[],
+  title: string,
+): Promise<string> {
+  const result = await requestMobileJson(
+    credentials,
+    "/api/mobile/v1/inbox/merge",
+    { method: "POST", body: JSON.stringify({ itemIds, title }) },
+  );
+  if (!isRecord(result) || !isString(result.memoryEventId, 128)) {
+    throw new ApiError("服务器合并结果无效。", 502);
+  }
+  return result.memoryEventId;
+}
+
+export async function fetchMobileMemory(
+  credentials: Credentials,
+  id: string,
+): Promise<MobileMemory> {
+  return parseMobileMemory(
+    await requestMobileJson(
+      credentials,
+      `/api/mobile/v1/memories/${encodeURIComponent(id)}`,
+    ),
+  );
+}
+
+export async function patchMobileMemory(
+  credentials: Credentials,
+  id: string,
+  patch: InboxDraftPatch,
+): Promise<MobileMemory> {
+  return parseMobileMemory(
+    await requestMobileJson(
+      credentials,
+      `/api/mobile/v1/memories/${encodeURIComponent(id)}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
+    ),
+  );
+}
+
+export async function searchMobile(
+  credentials: Credentials,
+  queryText: string,
+  cursor: string | null = null,
+): Promise<MobileSearchPage> {
+  const query = new URLSearchParams({ q: queryText, limit: "25" });
+  if (cursor) query.set("cursor", cursor);
+  return parseMobileSearchPage(
+    await requestMobileJson(
+      credentials,
+      `/api/mobile/v1/search?${query.toString()}`,
+    ),
+  );
 }
 
 export async function uploadTextCapture(

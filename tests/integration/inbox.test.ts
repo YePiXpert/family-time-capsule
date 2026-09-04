@@ -26,7 +26,8 @@ if (!okSetup.ok) throw new Error("setup failed");
 
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
-const { completeOnboarding } = await import("@/lib/family/service");
+const { person: personTable } = await import("@/db/schema/family");
+const { completeOnboarding, addPerson } = await import("@/lib/family/service");
 const { ingestImage } = await import("@/lib/assets/ingest");
 const { getAsset } = await import("@/lib/assets/service");
 const {
@@ -36,7 +37,11 @@ const {
   getInboxEntry,
   setInboxItemAssetTime,
   discardInboxItem,
+  updateInboxDraft,
 } = await import("@/lib/inbox/service");
+const { confirmInboxEntry, getMemoryEventDetail } = await import(
+  "@/lib/memories/service"
+);
 
 const db = getDb();
 const adminUserId = (await db.select({ id: userTable.id }).from(userTable))[0].id;
@@ -158,9 +163,77 @@ describe("收件箱工作流（#007）", () => {
     expect(entry?.assets).toHaveLength(0);
   });
 
+  it("整理草稿保存标题、时间、人物和地点，确认时不覆盖原始正文", async () => {
+    const aunt = await addPerson(familyId, {
+      displayName: "姑姑",
+      relationToChild: "姑姑",
+    });
+    if (!aunt.ok) throw new Error("person creation failed");
+    const originalText = "傍晚和姑姑一起在窗边看云。";
+    const item = await createTextInboxItem(familyId, originalText);
+    const occurredAt = new Date("2026-08-12T10:30:00.000Z");
+
+    const draft = await updateInboxDraft(familyId, item.id, {
+      title: "窗边看云",
+      occurredAt,
+      locationText: "家里窗边",
+      participantPersonIds: [aunt.personId],
+    });
+    expect(draft?.item).toMatchObject({
+      rawText: originalText,
+      draftTitle: "窗边看云",
+      draftLocationText: "家里窗边",
+    });
+    expect(draft?.item.draftOccurredAt?.toISOString()).toBe(occurredAt.toISOString());
+    expect(draft?.participantPersonIds).toEqual([aunt.personId]);
+
+    const confirmed = await confirmInboxEntry(familyId, draft!);
+    if (!confirmed.ok) throw new Error(`confirm failed: ${confirmed.error}`);
+    const detail = await getMemoryEventDetail(familyId, confirmed.eventId);
+    expect(detail?.event).toMatchObject({
+      title: "窗边看云",
+      locationText: "家里窗边",
+    });
+    expect(detail?.event.occurredAt.toISOString()).toBe(occurredAt.toISOString());
+    expect(detail?.participants.map((person) => person.id)).toContain(aunt.personId);
+    expect(detail?.sourceNotes[0]?.rawText).toBe(originalText);
+    await expect(confirmInboxEntry(familyId, draft!)).resolves.toEqual(confirmed);
+    await expect(
+      updateInboxDraft(familyId, item.id, { title: "确认后不能再改" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("整理草稿拒绝跨家庭人物且保持原值不变", async () => {
+    await db.run(
+      sql`INSERT OR IGNORE INTO family (id, name, timezone, created_at, updated_at) VALUES (${OTHER_FAMILY}, '别人家', 'Asia/Shanghai', 0, 0)`,
+    );
+    await db
+      .insert(personTable)
+      .values({
+        id: "other-family-person",
+        familyId: OTHER_FAMILY,
+        displayName: "别人家的成员",
+        isChild: false,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })
+      .onConflictDoNothing()
+      .run();
+    const item = await createTextInboxItem(familyId, "保持原样");
+    await expect(
+      updateInboxDraft(familyId, item.id, {
+        title: "不应写入",
+        participantPersonIds: ["other-family-person"],
+      }),
+    ).resolves.toBeUndefined();
+    const unchanged = await getInboxEntry(familyId, item.id);
+    expect(unchanged?.item.draftTitle).toBeNull();
+    expect(unchanged?.participantPersonIds).toEqual([]);
+  });
+
   it("家庭隔离：他家庭看不到本家庭条目", async () => {
     await db.run(
-      sql`INSERT INTO family (id, name, timezone, created_at, updated_at) VALUES (${OTHER_FAMILY}, '别人家', 'Asia/Shanghai', 0, 0)`,
+      sql`INSERT OR IGNORE INTO family (id, name, timezone, created_at, updated_at) VALUES (${OTHER_FAMILY}, '别人家', 'Asia/Shanghai', 0, 0)`,
     );
     const entries = await listInbox(familyId);
     expect(entries.length).toBeGreaterThan(0);

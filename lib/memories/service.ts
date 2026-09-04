@@ -70,7 +70,13 @@ export async function updateMemoryEvent(
   const rows = await db
     .select()
     .from(memoryEvent)
-    .where(and(eq(memoryEvent.familyId, familyId), eq(memoryEvent.id, eventId)))
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.id, eventId),
+        isNull(memoryEvent.deletedAt),
+      ),
+    )
     .limit(1);
   const current = rows[0];
   if (!current) return { ok: false, error: "not_found" };
@@ -244,6 +250,7 @@ export function defaultOccurredAt(assets: AssetRow[], rawTextItem?: { createdAt:
 
 /** 默认标题：文本取正文截断；素材取展示名去扩展名 */
 export function defaultTitle(entry: InboxEntry): string {
+  if (entry.item.draftTitle?.trim()) return entry.item.draftTitle.trim();
   if (entry.item.kind === "text" && entry.item.rawText) {
     const text = entry.item.rawText.trim();
     return text.length > 30 ? `${text.slice(0, 30)}…` : text;
@@ -295,13 +302,41 @@ export async function confirmInboxEntry(
   entry: InboxEntry,
   opts: ConfirmOptions = {},
 ): Promise<ConfirmResult> {
+  const liveEntry = await getInboxEntry(familyId, entry.item.id);
+  if (!liveEntry) return { ok: false, error: "not_found" };
+  if (
+    liveEntry.item.status === "confirmed" &&
+    liveEntry.item.memoryEventId
+  ) {
+    return { ok: true, eventId: liveEntry.item.memoryEventId };
+  }
+  if (!["new", "needs_review", "processing"].includes(liveEntry.item.status)) {
+    return { ok: false, error: "not_found" };
+  }
+  const requestedAssetIds = [...new Set(entry.assets.map((asset) => asset.id))];
+  let confirmedAssets = liveEntry.assets;
+  if (requestedAssetIds.length > 0) {
+    confirmedAssets = await getDb()
+      .select()
+      .from(assetTable)
+      .where(
+        and(
+          eq(assetTable.familyId, familyId),
+          inArray(assetTable.id, requestedAssetIds),
+        ),
+      );
+    if (confirmedAssets.length !== requestedAssetIds.length) {
+      return { ok: false, error: "invalid" };
+    }
+  }
+  entry = { ...liveEntry, assets: confirmedAssets };
   const childPersonId = await getChildPersonId(familyId);
   if (!childPersonId) return { ok: false, error: "no_child" };
 
   const title = (opts.title ?? defaultTitle(entry)).trim();
   if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
 
-  const occurredAt = opts.occurredAt ?? defaultOccurredAt(entry.assets, entry.item);
+  const occurredAt = opts.occurredAt ?? entry.item.draftOccurredAt ?? defaultOccurredAt(entry.assets, entry.item);
   const precision = opts.occurredAtPrecision ?? "exact";
 
   const db = getDb();
@@ -310,7 +345,7 @@ export async function confirmInboxEntry(
 
   // 参与人默认：孩子本人
   const participantIds = new Set<string>([childPersonId]);
-  for (const pid of opts.participantPersonIds ?? []) participantIds.add(pid);
+  for (const pid of opts.participantPersonIds ?? entry.participantPersonIds) participantIds.add(pid);
   // 校验参与者都属于本家庭
   const validParticipants = await db
     .select({ id: personTable.id })
@@ -325,7 +360,9 @@ export async function confirmInboxEntry(
   if ([...participantIds].some((personId) => !validIds.has(personId))) {
     return { ok: false, error: "invalid" };
   }
-  const locationText = opts.locationText?.trim().slice(0, 200) || null;
+  const locationText = (opts.locationText === undefined
+    ? entry.item.draftLocationText
+    : opts.locationText)?.trim().slice(0, 200) || null;
 
   // cover 必须来自本事件的 assets
   const assetIds = entry.assets.map((a) => a.id);
@@ -429,6 +466,9 @@ export async function mergeInboxEntries(
   for (const itemId of itemIds) {
     const entry = await getInboxEntry(familyId, itemId);
     if (!entry) return { ok: false, error: "not_found" };
+    if (!["new", "needs_review", "processing"].includes(entry.item.status)) {
+      return { ok: false, error: "not_found" };
+    }
     entries.push(entry);
     for (const a of entry.assets) {
       if (!seenAssets.has(a.id)) {

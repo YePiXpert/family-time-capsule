@@ -35,6 +35,24 @@ export async function preservePickedMedia(
   };
 }
 
+/** Copy a completed recorder file before it can be reclaimed by the OS. */
+export async function preserveRecordedAudio(
+  sourceUri: string,
+  id: string,
+): Promise<MediaCapturePayload> {
+  ensureDirectories();
+  const extension = sourceUri.match(/\.([a-z0-9]{1,8})(?:\?|$)/iu)?.[1] ?? "m4a";
+  const destination = new File(capturesDirectory, `${id}.${extension}`);
+  await new File(sourceUri).copy(destination, { overwrite: false });
+  return {
+    localUri: destination.uri,
+    fileName: `voice-${id}.${extension}`,
+    mimeType: extension.toLowerCase() === "webm" ? "audio/webm" : "audio/mp4",
+    lastModified: Date.now(),
+    mediaType: "audio",
+  };
+}
+
 export async function uploadMediaCapture(
   credentials: Credentials,
   captureId: string,

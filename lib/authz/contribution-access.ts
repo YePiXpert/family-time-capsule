@@ -192,6 +192,7 @@ export function getVisibleContributionInTransaction(
       and(
         eq(contribution.id, contributionId),
         eq(memoryEvent.familyId, snapshot.principal.familyId),
+        isNull(memoryEvent.deletedAt),
         // M7 Trash：软删除的讲述按不存在处理
         isNull(contribution.deletedAt),
         visibilityPredicate(snapshot),
@@ -210,6 +211,7 @@ async function queryVisibleContributions(
   if (options.contributionIds?.length === 0) return [];
   const conditions: SQL[] = [
     eq(memoryEvent.familyId, snapshot.principal.familyId),
+    isNull(memoryEvent.deletedAt),
     visibilityPredicate(snapshot),
   ];
   if (options.memoryEventId) {

@@ -6,7 +6,7 @@ import "server-only";
  * 授权语义由调用方保证：searchFamily 必须传入 requireFamily() 的 FamilyContext。
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { contribution as contributionTable } from "@/db/schema/contribution";
@@ -393,9 +393,24 @@ export function searchFamily(
   }
 
   // 可见性后过滤（contribution 行按家庭策略逐行判断，绝不泄漏）
-  const childPersonIds = new Set(
+  const matchedEventIds = new Set(
     raw.map((r) => r.event_id).filter(Boolean) as string[],
   );
+  const activeEventRows = matchedEventIds.size > 0
+    ? db
+        .select({ id: memoryEvent.id, childPersonId: memoryEvent.childPersonId })
+        .from(memoryEvent)
+        .where(
+          and(
+            eq(memoryEvent.familyId, context.familyId),
+            isNull(memoryEvent.deletedAt),
+            inArray(memoryEvent.id, [...matchedEventIds]),
+          ),
+        )
+        .all()
+    : [];
+  const activeEventIds = new Set(activeEventRows.map((event) => event.id));
+  const childPersonIds = new Set(activeEventRows.map((event) => event.childPersonId));
   const unlockedByChild = new Map<string, boolean>();
   if (childPersonIds.size > 0) {
     const childRows = db
@@ -413,20 +428,61 @@ export function searchFamily(
     }
   }
   const eventChildById = new Map(
-    db
-      .select({ id: memoryEvent.id, childPersonId: memoryEvent.childPersonId })
-      .from(memoryEvent)
-      .where(
-        and(
-          eq(memoryEvent.familyId, context.familyId),
-          inArray(memoryEvent.id, [...childPersonIds]),
-        ),
-      )
-      .all()
+    activeEventRows
       .map((e) => [e.id, e.childPersonId]),
   );
 
+  const storyHitIds = raw
+    .filter((row) => row.entity_type === "story")
+    .map((row) => row.entity_id);
+  const activeStoryIds = new Set(
+    storyHitIds.length > 0
+      ? db
+          .select({ id: storyTable.id })
+          .from(storyTable)
+          .where(
+            and(
+              eq(storyTable.familyId, context.familyId),
+              eq(storyTable.status, "published"),
+              isNull(storyTable.deletedAt),
+              inArray(storyTable.id, storyHitIds),
+            ),
+          )
+          .all()
+          .map((story) => story.id)
+      : [],
+  );
+  const contributionHitIds = raw
+    .filter((row) => row.entity_type === "contribution")
+    .map((row) => row.entity_id);
+  const activeContributionIds = new Set(
+    contributionHitIds.length > 0
+      ? db
+          .select({ id: contributionTable.id })
+          .from(contributionTable)
+          .innerJoin(memoryEvent, eq(memoryEvent.id, contributionTable.memoryEventId))
+          .where(
+            and(
+              eq(memoryEvent.familyId, context.familyId),
+              isNull(memoryEvent.deletedAt),
+              isNull(contributionTable.deletedAt),
+              inArray(contributionTable.id, contributionHitIds),
+            ),
+          )
+          .all()
+          .map((contribution) => contribution.id)
+      : [],
+  );
+
   const visible: RawHit[] = raw.filter((r) => {
+    if (r.event_id && !activeEventIds.has(r.event_id)) return false;
+    if (r.entity_type === "story" && !activeStoryIds.has(r.entity_id)) return false;
+    if (
+      r.entity_type === "contribution" &&
+      !activeContributionIds.has(r.entity_id)
+    ) {
+      return false;
+    }
     if (r.entity_type !== "contribution") return true;
     const childId = r.event_id ? eventChildById.get(r.event_id) : undefined;
     return canViewContribution(r.visibility as ContributionVisibility, {
@@ -486,14 +542,22 @@ export function searchFamily(
           const event = db
             .select({ occurredAt: memoryEvent.occurredAt })
             .from(memoryEvent)
-            .where(eq(memoryEvent.id, hit.entity_id))
+            .where(
+              and(
+                eq(memoryEvent.id, hit.entity_id),
+                eq(memoryEvent.familyId, context.familyId),
+                isNull(memoryEvent.deletedAt),
+              ),
+            )
             .get();
-          result.events.push({
-            id: hit.entity_id,
-            title: hit.original_text,
-            occurredAt: event?.occurredAt.toISOString() ?? "",
-            snippet,
-          });
+          if (event) {
+            result.events.push({
+              id: hit.entity_id,
+              title: hit.original_text,
+              occurredAt: event.occurredAt.toISOString(),
+              snippet,
+            });
+          }
         }
         break;
       case "fact":
@@ -531,7 +595,14 @@ export function searchFamily(
           const storyRow = db
             .select({ title: storyTable.title })
             .from(storyTable)
-            .where(eq(storyTable.id, hit.entity_id))
+            .where(
+              and(
+                eq(storyTable.id, hit.entity_id),
+                eq(storyTable.familyId, context.familyId),
+                eq(storyTable.status, "published"),
+                isNull(storyTable.deletedAt),
+              ),
+            )
             .get();
           if (storyRow) {
             result.stories.push({

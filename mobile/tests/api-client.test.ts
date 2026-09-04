@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   normalizeServerUrl,
+  parseMobileHome,
+  parseMobileInboxPage,
+  parseMobileMemory,
+  parseMobileSearchPage,
   parseSyncPage,
   signIn,
 } from "../src/api/client";
@@ -76,5 +80,46 @@ describe("native API client", () => {
     ]) {
       expect(() => parseSyncPage(invalid)).toThrowError(ApiError);
     }
+  });
+
+  it("validates the product home, inbox, memory and search DTO boundaries", () => {
+    const home = {
+      family: { name: "小满家", timezone: "Asia/Shanghai" },
+      child: { id: "child-1", displayName: "小满", currentAgeLabel: "2 岁", avatarPath: null },
+      capabilities: { canCapture: true },
+      inbox: { count: 1, previews: [{ id: "inbox-1", title: "待整理", status: "new", mediaPath: null }] },
+      recentMemories: [{ id: "memory-1", title: "散步", occurredAt: "2026-09-01T00:00:00.000Z", ageLabel: "2 岁", coverPath: null }],
+      onThisDay: [],
+      story: null,
+      capsule: null,
+      prompt: { text: "小时候最喜欢什么？", recipientLabel: null, pendingCount: 0, isCreatedRequest: false },
+      isFirstUse: false,
+    };
+    const inbox = {
+      entries: [{
+        id: "inbox-1", kind: "text", status: "new", title: "待整理", rawText: "正文",
+        occurredAt: null, locationText: null, participantPersonIds: [],
+        createdAt: "2026-09-01T00:00:00.000Z", assets: [],
+      }],
+      nextCursor: null,
+    };
+    const memory = {
+      id: "memory-1", title: "散步", occurredAt: "2026-09-01T00:00:00.000Z",
+      occurredAtPrecision: "exact", ageDays: 700, locationText: null,
+      childPersonId: "child-1", participantPersonIds: ["child-1"],
+      participants: [{ id: "child-1", displayName: "小满", relationToChild: null, isChild: true }],
+      sourceNotes: [{ id: "note-1", text: "正文" }],
+      assets: [{ id: "audio-1", type: "audio", filename: "voice.m4a", mimeType: "audio/mp4", durationMs: 1000, mediaPath: "/api/media/audio-1", thumbnailPath: null }],
+      contributions: [], updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const search = { items: [{ type: "memory", id: "memory-1", eventId: "memory-1", title: "散步", snippet: "散步" }], nextCursor: null };
+    expect(parseMobileHome(home)).toEqual(home);
+    expect(parseMobileInboxPage(inbox)).toEqual(inbox);
+    expect(parseMobileMemory(memory)).toEqual(memory);
+    expect(parseMobileSearchPage(search)).toEqual(search);
+    expect(() => parseMobileHome({ ...home, inbox: { count: -1, previews: [] } })).toThrowError(ApiError);
+    expect(() => parseMobileInboxPage({ ...inbox, entries: [{ ...inbox.entries[0], assets: [{ type: "executable" }] }] })).toThrowError(ApiError);
+    expect(() => parseMobileMemory({ ...memory, contributions: [{ text: "missing policy fields" }] })).toThrowError(ApiError);
+    expect(() => parseMobileSearchPage({ ...search, items: [{ ...search.items[0], type: "unknown" }] })).toThrowError(ApiError);
   });
 });

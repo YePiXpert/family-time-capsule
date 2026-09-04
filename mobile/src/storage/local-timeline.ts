@@ -6,7 +6,7 @@ export type LocalCaptureRow = {
   title: string;
   occurred_at: string;
   local_uri: string | null;
-  media_type: "image" | "video" | null;
+  media_type: "image" | "video" | "audio" | null;
   sync_state: "pending" | "synced";
 };
 

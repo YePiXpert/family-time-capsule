@@ -46,6 +46,19 @@ function media(id: string): OutboxItem & {
   };
 }
 
+function audio(id: string): ReturnType<typeof media> {
+  return {
+    ...media(id),
+    payload: {
+      localUri: `file:///captures/${id}.m4a`,
+      fileName: `${id}.m4a`,
+      mimeType: "audio/mp4",
+      lastModified: 1,
+      mediaType: "audio",
+    },
+  };
+}
+
 function dependencies(): SyncDependencies {
   return {
     isConnected: vi.fn(async () => true),
@@ -98,6 +111,18 @@ describe("offline sync core", () => {
       expect.objectContaining({ fileName: "media-1.jpg" }),
     );
     expect(order).toEqual(["uploaded", "committed"]);
+  });
+
+  it("uploads a direct recording with the same idempotent capture id", async () => {
+    const deps = dependencies();
+    vi.mocked(deps.listOutbox).mockResolvedValue([audio("recording-1")]);
+    await expect(syncArchiveWithDependencies(credentials, deps)).resolves.toMatchObject({ uploadedCount: 1 });
+    expect(deps.uploadMediaCapture).toHaveBeenCalledWith(
+      credentials,
+      "recording-1",
+      expect.objectContaining({ mediaType: "audio", mimeType: "audio/mp4" }),
+    );
+    expect(deps.completeOutboxItem).toHaveBeenCalledWith("recording-1");
   });
 
   it("keeps ambiguous failures and never starts a destructive snapshot", async () => {

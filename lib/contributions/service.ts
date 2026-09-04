@@ -131,6 +131,7 @@ export async function createContribution(
         and(
           eq(memoryEvent.id, input.memoryEventId),
           eq(memoryEvent.familyId, familyId),
+          isNull(memoryEvent.deletedAt),
         ),
       )
       .limit(1)

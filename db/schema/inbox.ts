@@ -1,6 +1,7 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { asset } from "./asset";
 import { family } from "./family";
+import { person } from "./family";
 import { memoryEvent } from "./memory";
 
 /**
@@ -32,6 +33,10 @@ export const inboxItem = sqliteTable(
     status: text("status").notNull().default("new"),
     // kind=text 时的正文
     rawText: text("raw_text"),
+    // 收件箱整理草稿；确认时复制进 MemoryEvent，不改变原件 metadata。
+    draftTitle: text("draft_title"),
+    draftOccurredAt: integer("draft_occurred_at", { mode: "timestamp" }),
+    draftLocationText: text("draft_location_text"),
     // 确认/合并后对应的事件；保留原始收件箱正文作为无作者来源记录
     memoryEventId: text("memory_event_id").references(() => memoryEvent.id, {
       onDelete: "set null",
@@ -43,6 +48,27 @@ export const inboxItem = sqliteTable(
     index("inbox_family_status_idx").on(t.familyId, t.status),
     index("inbox_family_created_idx").on(t.familyId, t.createdAt),
     index("inbox_family_event_idx").on(t.familyId, t.memoryEventId),
+  ],
+);
+
+export const inboxItemParticipant = sqliteTable(
+  "inbox_item_participant",
+  {
+    id: text("id").primaryKey(),
+    inboxItemId: text("inbox_item_id")
+      .notNull()
+      .references(() => inboxItem.id, { onDelete: "cascade" }),
+    personId: text("person_id")
+      .notNull()
+      .references(() => person.id, { onDelete: "cascade" }),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    uniqueIndex("inbox_item_participant_unique_idx").on(t.inboxItemId, t.personId),
+    index("inbox_item_participant_family_idx").on(t.familyId, t.inboxItemId),
   ],
 );
 

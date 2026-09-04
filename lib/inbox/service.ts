@@ -7,7 +7,9 @@ import { asset as assetTable } from "@/db/schema/asset";
 import {
   inboxItem,
   inboxItemAsset,
+  inboxItemParticipant,
 } from "@/db/schema/inbox";
+import { person as personTable } from "@/db/schema/family";
 import type { AssetRow } from "@/lib/assets/service";
 
 /**
@@ -27,6 +29,7 @@ export type InboxItemRow = typeof inboxItem.$inferSelect;
 export type InboxEntry = {
   item: InboxItemRow;
   assets: AssetRow[];
+  participantPersonIds: string[];
 };
 
 export type IdempotentAssetCaptureResult =
@@ -359,12 +362,24 @@ async function assembleInboxEntries(
       ? await db.select().from(assetTable).where(inArray(assetTable.id, assetIds))
       : [];
   const assetById = new Map(assets.map((a) => [a.id, a]));
+  const participantLinks = await db
+    .select({ inboxItemId: inboxItemParticipant.inboxItemId, personId: inboxItemParticipant.personId })
+    .from(inboxItemParticipant)
+    .where(
+      and(
+        eq(inboxItemParticipant.familyId, familyId),
+        inArray(inboxItemParticipant.inboxItemId, items.map((item) => item.id)),
+      ),
+    );
   return items.map((item) => ({
     item,
     assets: links
       .filter((l) => l.inboxItemId === item.id)
       .map((l) => assetById.get(l.assetId))
       .filter((a): a is AssetRow => Boolean(a)),
+    participantPersonIds: participantLinks
+      .filter((link) => link.inboxItemId === item.id)
+      .map((link) => link.personId),
   }));
 }
 
@@ -395,7 +410,85 @@ export async function getInboxEntry(
             ),
           )
       : [];
-  return { item: rows[0], assets };
+  const participantLinks = await db
+    .select({ personId: inboxItemParticipant.personId })
+    .from(inboxItemParticipant)
+    .where(
+      and(
+        eq(inboxItemParticipant.familyId, familyId),
+        eq(inboxItemParticipant.inboxItemId, itemId),
+      ),
+    );
+  return {
+    item: rows[0],
+    assets,
+    participantPersonIds: participantLinks.map((link) => link.personId),
+  };
+}
+
+export type InboxDraftPatch = {
+  title?: string | null;
+  occurredAt?: Date | null;
+  locationText?: string | null;
+  participantPersonIds?: string[];
+};
+
+export async function updateInboxDraft(
+  familyId: string,
+  itemId: string,
+  patch: InboxDraftPatch,
+): Promise<InboxEntry | undefined> {
+  const db = getDb();
+  const entry = await getInboxEntry(familyId, itemId);
+  if (!entry || !["new", "needs_review", "processing"].includes(entry.item.status)) {
+    return undefined;
+  }
+  const title = patch.title === undefined ? entry.item.draftTitle : patch.title?.trim() || null;
+  const locationText = patch.locationText === undefined
+    ? entry.item.draftLocationText
+    : patch.locationText?.trim().slice(0, 200) || null;
+  if (title && title.length > 100) return undefined;
+  if (patch.occurredAt && Number.isNaN(patch.occurredAt.getTime())) return undefined;
+  const participantIds = patch.participantPersonIds === undefined
+    ? entry.participantPersonIds
+    : [...new Set(patch.participantPersonIds)];
+  if (participantIds.length > 50) return undefined;
+  if (participantIds.length > 0) {
+    const valid = await db
+      .select({ id: personTable.id })
+      .from(personTable)
+      .where(and(eq(personTable.familyId, familyId), inArray(personTable.id, participantIds)));
+    if (valid.length !== participantIds.length) return undefined;
+  }
+  const now = new Date();
+  db.transaction((tx) => {
+    tx.update(inboxItem)
+      .set({
+        draftTitle: title,
+        draftOccurredAt: patch.occurredAt === undefined ? entry.item.draftOccurredAt : patch.occurredAt,
+        draftLocationText: locationText,
+        updatedAt: now,
+      })
+      .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, itemId)))
+      .run();
+    if (patch.participantPersonIds !== undefined) {
+      tx.delete(inboxItemParticipant)
+        .where(and(eq(inboxItemParticipant.familyId, familyId), eq(inboxItemParticipant.inboxItemId, itemId)))
+        .run();
+      if (participantIds.length > 0) {
+        tx.insert(inboxItemParticipant)
+          .values(participantIds.map((personId) => ({
+            id: randomUUID(),
+            inboxItemId: itemId,
+            personId,
+            familyId,
+            createdAt: now,
+          })))
+          .run();
+      }
+    }
+  });
+  return getInboxEntry(familyId, itemId);
 }
 
 /** 收件箱内修正时间：委托 Asset 更新（user_confirmed），条目状态转 new */

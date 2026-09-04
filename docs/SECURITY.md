@@ -61,8 +61,13 @@
 - 原生端把 token 存在系统 Keychain/Keystore，绝不放 SQLite、文件、日志、GitHub Actions
   或 IPA/APK。Bearer 不是浏览器自动附带的 ambient credential，因此移动写入 API 不依赖
   Cookie CSRF；伪造/过期 token 返回 401，已停用/非法绑定 fail closed。
-- `/api/mobile/v1/sync` 只返回界面所需 DTO，不返回邮箱、哈希、storageKey、审计详情、
-  metadataJson 或内部 AI 数据；媒体继续走既有可见性鉴权端点。
+- `/api/mobile/v1/sync`、`home`、`inbox`、`memories` 与 `search` 只返回界面所需 DTO，
+  不返回邮箱、哈希、storageKey、审计详情、metadataJson 或内部 AI 数据；响应统一
+  `Cache-Control: private, no-store`，媒体继续走既有可见性鉴权端点。
+- 移动收件箱/记忆/讲述写入从实时 Bearer session 推导 family、role、Person 与 guardian，
+  请求体不接受 `familyId`。viewer 写入 403，跨家庭 ID 读写 404；Contribution 继续执行
+  private/parents/family/child_later 和作者本人编辑策略。软删除事件在主页、详情、搜索和讲述
+  查询中均按不存在处理，即使 FTS derivative 尚残留旧行也会用主表二次过滤。
 
 ## 4. 密码存储
 

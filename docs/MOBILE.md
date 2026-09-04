@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | 本机记录、时间轴、人物、同步状态 | SQLite；本机记录独立保留 | 连接后同步的家庭档案 |
 | 离线封面 | App 私有文件目录 | 权威原件/衍生物 |
-| 刚选择的照片/视频 | 立即复制到 App 私有目录并进入本机时间轴；服务端确认后仍保留本机原件 | 开启同步后进入收件箱 |
+| 刚拍摄/选择的照片、视频与直接录音 | 立即复制到 App 私有目录并进入本机时间轴；服务端确认后仍保留本机原件 | 开启同步后进入收件箱 |
 | 本机文字 | SQLite 本机时间轴 + outbox | 开启同步后进入收件箱 |
 | 会话令牌 | Keychain/Keystore | 可撤销的 session 行 |
 | 真实家庭数据 | 不写入 IPA/APK | 不写入源码或构建产物 |
@@ -21,12 +21,24 @@
 原件 SHA-256，同一个 `captureId` 重试同一原件会返回成功，重用 ID 上传不同内容则返回
 409。即使网络在服务器落盘后中断，下一次补传也会补建收件箱关联而不会产生第二条待办。
 
-当前原生端覆盖：免登录本机模式、设置页可选邮箱密码连接、完整时间轴/人物离线副本、
-离线图片封面、离线文字记录、现场拍照、相册照片/视频本地保全与补传、自动/手动同步、
-保留数据断开服务器，以及独立二次确认的本机全量清除。设置页会列出失败待办与错误/
-尝试次数，可立即重试或在二次确认后放弃；单条
-不受支持的素材不会阻塞后续待办和时间轴拉取。新记录仍进入现有服务器收件箱，由完整
-Web 工作台完成校时、合并和确认入档。
+当前原生端使用 React Navigation 7 的 Native Stack + Bottom Tabs，一级入口固定为首页、
+时间轴、记录、收件箱、更多。`App.tsx` 只负责本机数据库/凭据启动和根组合，页面、导航、
+应用状态、API 与存储各自独立。原生端覆盖：
+
+- 真实家庭首页、快速记录、待整理预览、最近记忆和回顾入口；
+- 可离线浏览的时间轴与封面，卡片可进入记忆详情；详情缓存阅读数据，并用 Bearer Range
+  请求播放图片、视频与音频；
+- 离线文字、现场拍照/拍视频、直接录音、相册照片与视频多选；每份成功素材分别复制进
+  App 私有目录并形成独立 outbox，某一份失败不会撤销其他已保全原件；
+- 收件箱 cursor 分页、标题/时间/人物/地点修改、单条确认、多选合并；确认后可直接阅读
+  记忆并回到同步后的时间轴；
+- 原生搜索，以及更多页到家人、故事、口述史、胶囊、书籍/备份、设置和回收站的入口；
+- 自动/手动同步、失败状态与重试、保留数据断开服务器，以及二次确认的本机全量清除。
+
+本地 schema 向前兼容 rc.2：首次启动会原地扩展 `local_capture.media_type` 以支持 `audio`，
+保留已有文字、照片、视频、outbox 和同步状态。直接录音停止后先复制到 `captures/` 私有目录，
+随后才入队；同步成功只删除 outbox 行，不删除该原件。单条不受支持的素材不会阻塞后续待办
+和时间轴拉取。
 
 ## 本地开发检查
 
@@ -71,5 +83,14 @@ Apple 证书属于个人/组织身份，仓库不会内置。要让 Actions 直�
 - `/api/upload/image`、`/api/upload/media`：支持同一 Bearer session 的原生 multipart 补传；
   可携带设备 `captureId`，结合原件 SHA-256 提供重试幂等与冲突检测。
 - `/api/media/:assetId`：同一权限/可见性检查下下载离线封面。
+- `GET /api/mobile/v1/home`：集中 service 查询后的最小家庭首页 DTO。
+- `GET /api/mobile/v1/inbox`、`PATCH /api/mobile/v1/inbox/:id`、
+  `POST /api/mobile/v1/inbox/:id/confirm`、`POST /api/mobile/v1/inbox/merge`：收件箱分页与整理闭环。
+- `GET|PATCH /api/mobile/v1/memories/:id`：按软删除、家庭和角色策略读取/修改记忆。
+- `GET /api/mobile/v1/search`：cursor 分页搜索；索引残留也会以当前软删除与可见性状态二次过滤。
+- `POST /api/mobile/v1/memories/:id/contributions`、
+  `PATCH /api/mobile/v1/contributions/:id`：复用现有作者、visibility 与 capability 服务。
 
-API 不接受客户端提供 `familyId`，始终从实时 session → User binding 推导家庭和角色。
+所有移动响应均为 `Cache-Control: private, no-store`。API 不接受客户端提供 `familyId`，
+始终从实时 session → User binding 推导家庭、角色、Person 和 guardian 状态；viewer 只能读取，
+editor/admin 才能整理收件箱和修改事件。跨家庭目标统一按不存在处理。

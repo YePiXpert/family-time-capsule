@@ -43,8 +43,17 @@
         "expo-image-picker",
         {
           "photosPermission": "选择要保存到家庭时间胶囊的照片或视频。",
-          "cameraPermission": "拍摄要保存到家庭时间胶囊的照片。",
-          "microphonePermission": false
+          "cameraPermission": "拍摄要保存到家庭时间胶囊的照片或视频。",
+          "microphonePermission": "录制要保存到家庭时间胶囊的视频声音。"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "录制要保存到家庭时间胶囊的家庭声音。",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
         }
       ]
     ]
