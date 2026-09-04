@@ -108,7 +108,9 @@ function withShareExtensionTarget(config) {
       buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "16.4";
       buildSettings.MARKETING_VERSION = `"${config.version ?? "1.0.0"}"`;
       buildSettings.PRODUCT_BUNDLE_IDENTIFIER = `"${EXTENSION_BUNDLE_ID}"`;
-      buildSettings.PRODUCT_MODULE_NAME = "$(PRODUCT_NAME:c99extidentifier)";
+      // The colon expression must remain a single quoted pbxproj scalar;
+      // CocoaPods' Nanaimo parser rejects the unquoted form emitted by node-xcode.
+      buildSettings.PRODUCT_MODULE_NAME = '"$(PRODUCT_NAME:c99extidentifier)"';
       buildSettings.SKIP_INSTALL = "YES";
       buildSettings.SWIFT_VERSION = "5.0";
       buildSettings.TARGETED_DEVICE_FAMILY = '"1,2"';
