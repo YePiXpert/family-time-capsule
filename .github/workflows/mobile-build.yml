@@ -31,7 +31,7 @@ jobs:
         working-directory: mobile
       - run: npm test
         working-directory: mobile
-      - run: npx expo-doctor
+      - run: npm run doctor
         working-directory: mobile
       - run: npx expo export --platform android --output-dir dist-android
         working-directory: mobile

@@ -37,7 +37,7 @@ jobs:
         working-directory: mobile
       - run: npm run lint
         working-directory: mobile
-      - run: npx expo-doctor
+      - run: npm run doctor
         working-directory: mobile
 
   e2e:
