@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.familytimecapsule'
+version = '1.1.0-alpha.1'
+
+android {
+  namespace "app.familytimecapsule.shareintake"
+  defaultConfig {
+    versionCode 1
+    versionName '1.1.0-alpha.1'
+  }
+}

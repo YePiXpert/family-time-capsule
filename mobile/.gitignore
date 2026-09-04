@@ -41,3 +41,4 @@ yarn-error.*
 /ios
 /android
 /cloud-artifacts/
+/modules/*/android/build/

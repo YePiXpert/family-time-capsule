@@ -30,6 +30,7 @@ const database = vi.hoisted(() => ({
   listLocalCoverUris: vi.fn(),
   markOutboxFailure: vi.fn(),
   setLocalCoverUri: vi.fn(),
+  updateMediaUploadState: vi.fn(),
 }));
 
 const files = vi.hoisted(() => ({
@@ -143,12 +144,33 @@ describe("native offline sync state machine", () => {
       credentials,
       "media-1",
       expect.objectContaining({ fileName: "media-1.jpg" }),
+      expect.any(Function),
     );
     expect(database.completeOutboxItem).toHaveBeenCalledWith(
       "media-1",
       "inbox-media-1",
     );
     expect(order).toEqual(["server-confirmed", "queue-committed"]);
+  });
+
+  it("persists server-confirmed chunk offsets before completing the queue row", async () => {
+    database.listOutbox.mockResolvedValue([mediaItem("media-resume")]);
+    files.uploadMediaCapture.mockImplementation(async (_credentials, _id, _payload, onProgress) => {
+      await onProgress("upload-1", 8 * 1024 * 1024);
+      return "inbox-media-resume";
+    });
+
+    await syncArchiveWithDependencies(credentials, dependencies());
+
+    expect(database.updateMediaUploadState).toHaveBeenCalledWith(
+      "media-resume",
+      "upload-1",
+      8 * 1024 * 1024,
+    );
+    expect(database.completeOutboxItem).toHaveBeenCalledWith(
+      "media-resume",
+      "inbox-media-resume",
+    );
   });
 
   it("does not delete the private original after the server accepts it", async () => {

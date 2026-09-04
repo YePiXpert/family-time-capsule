@@ -3,6 +3,7 @@ import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -10,8 +11,8 @@ import {
   useAudioRecorder,
 } from "expo-audio";
 import { useApp } from "../state/AppContext";
-import { enqueueMediaCapture, enqueueTextCapture } from "../storage/database";
-import { preservePickedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
+import { enqueueMediaCapture, enqueueTextCapture, ingestLocalImportSession } from "../storage/database";
+import { preservePickedDocument, preservePickedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
 import { colors, sharedStyles } from "../theme";
 import type { MediaCapturePayload } from "../types";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
@@ -131,6 +132,71 @@ export function CaptureScreen() {
     }
   }, [captureAccess, queuePickedAssets]);
 
+  const pickFiles = useCallback(async () => {
+    if (captureAccess === "readonly") {
+      setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    const sessionId = Crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        multiple: true,
+        copyToCacheDirectory: true,
+        type: [
+          "image/*", "video/*", "audio/*", "application/pdf", "text/plain",
+          "text/markdown", "text/rtf", "application/rtf",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ],
+      });
+      if (result.canceled) return;
+      const items = [];
+      let copied = 0;
+      for (const [index, asset] of result.assets.entries()) {
+        const captureId = Crypto.randomUUID();
+        let privateUri: string | null = null;
+        try {
+          const payload = await preservePickedDocument(asset, captureId);
+          privateUri = payload.localUri;
+          items.push({
+            externalId: `picker-${index}`,
+            captureId,
+            kind: "file" as const,
+            localUri: payload.localUri,
+            payload,
+          });
+          copied += 1;
+          privateUri = null;
+        } catch (error) {
+          if (privateUri) removeLocalFile(privateUri);
+          items.push({
+            externalId: `picker-${index}`,
+            captureId,
+            kind: "error" as const,
+            error: error instanceof Error ? error.message : "copy_failed",
+          });
+        }
+      }
+      const saved = await ingestLocalImportSession({
+        id: sessionId,
+        source: "files",
+        createdAt,
+        items,
+        queue: true,
+      });
+      if (saved.queued > 0) await finishQueue();
+      setMessage(saved.failed > 0
+        ? `已把 ${copied} 份原件复制到 App 私有目录；${saved.failed} 项失败。`
+        : `已从 Files 复制 ${copied} 份原件，可离线保留。`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "无法从 Files 导入。");
+    } finally {
+      setBusy(false);
+    }
+  }, [captureAccess, finishQueue]);
+
   const toggleRecording = async () => {
     if (captureAccess === "readonly") {
       setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
@@ -243,6 +309,7 @@ export function CaptureScreen() {
         <Action label="拍视频" hint="保留原片" disabled={busy || recording} onPress={() => void pickMedia("video")} />
         <Action label={recording ? "完成录音" : "直接录音"} hint={recording ? "保存原声" : "麦克风"} disabled={busy} primary={recording} onPress={() => void toggleRecording()} />
         <Action label="从相册导入" hint="可多选" disabled={busy || recording} onPress={() => void pickMedia("library")} />
+        <Action label="从 Files 导入" hint="文档与录音" disabled={busy || recording} onPress={() => void pickFiles()} />
       </View>
       {busy ? <ActivityIndicator color={colors.coral} /> : null}
       {message ? <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>{message}</Text></View> : null}

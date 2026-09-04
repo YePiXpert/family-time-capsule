@@ -1,8 +1,8 @@
 # 原生 iOS / Android 客户端
 
-> 当前候选版本：`1.0.0-rc.4`；Expo 商店展示版本保持 `1.0.0`，原生 iOS build / Android
-> versionCode 为 `4`，以便从上一候选包升级安装。本地与 main CI 的 Expo bundle 已通过；
-> build run `33868382857` 已生成并复验 rc.4 APK/unsigned IPA，真实设备安装尚未执行。
+> 当前开发版本：`1.1.0-alpha.1`；Expo 商店展示版本为 `1.1.0`，原生 iOS build / Android
+> versionCode 为 `5`。`v1.0.0-rc.4` 的包级证据保持冻结；1.1 Share Extension 与系统分享
+> 正在按 alpha 里程碑重新构建验证，真实设备安装和分享验收尚未执行。
 
 `mobile/` 是 Expo SDK 57 + React Native 的原生客户端。它渲染 UIKit/Android View
 对应的原生组件，使用原生 SQLite、Keychain/Keystore 和文件系统模块，**不是 PWA，
@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | 本机记录、时间轴、人物、同步状态 | SQLite；本机记录独立保留 | 连接后同步的家庭档案 |
 | 离线封面 | App 私有文件目录 | 权威原件/衍生物 |
-| 刚拍摄/选择的照片、视频与直接录音 | 立即复制到 App 私有目录并进入本机时间轴；服务端确认后仍保留本机原件 | 开启同步后进入收件箱 |
+| 刚拍摄/选择/系统分享的照片、视频、录音与安全文档 | 立即复制到 App 私有目录并进入本机 ImportSession/outbox；服务端确认后仍保留本机原件 | 开启同步后进入收件箱 |
 | 本机文字 | SQLite 本机时间轴 + outbox | 开启同步后进入收件箱 |
 | 会话令牌 | Keychain/Keystore | 可撤销的 session 行 |
 | 真实家庭数据 | 不写入 IPA/APK | 不写入源码或构建产物 |
@@ -42,6 +42,13 @@ MediaLibrary 返回可靠创建时间时才上传 `lastModified`，权限受限�
   请求播放图片、视频与音频；
 - 离线文字、现场拍照/拍视频、直接录音、相册照片与视频多选；每份成功素材分别复制进
   App 私有目录并形成独立 outbox，某一份失败不会撤销其他已保全原件；
+- Android 接收 `SEND`/`SEND_MULTIPLE`，逐项复制授权的 `content://`；iOS 正式 Share
+  Extension 只向共享 App Group 写原件和原子 manifest，主 App 再接管，扩展不持服务器凭据；
+- Files/iCloud Drive/DocumentsProvider 支持图片、音视频、PDF、TXT、Markdown、RTF、DOCX
+  多选。来源时间不可靠时保持 `null`，HTML/SVG 不作为可执行文档接收；
+- 系统分享和 Files 批次持久化为本地 ImportSession/Item，使用
+  `received → copied → queued → uploading → inbox → archived` 状态；manifest id/item id 重放
+  幂等，viewer 已连接时保全副本但不生成注定失败的 outbox；
 - 收件箱 cursor 分页、标题/时间/人物/地点修改、单条确认、多选合并；确认后可直接阅读
   记忆并回到同步后的时间轴；Web 与原生共用并回填同一组人工草稿；
 - 原生搜索；story 结果、首页故事/胶囊/问题打开准确 Web 路径并明确标注；
@@ -50,12 +57,12 @@ MediaLibrary 返回可靠创建时间时才上传 `lastModified`，权限受限�
 - 在线角色按服务端 capability 工作：viewer 可读但不能记录/review，且不会生成不可同步
   outbox；纯本机未连接模式仍允许记录。
 
-本地 schema 向前兼容 rc.3：首次启动会原地补充 capture 生命周期与可选
-`memory_event_id`，保留已有文字、照片、视频、音频、outbox、同步状态和原件。直接录音停止后
+本地 schema 向前兼容 rc.4：首次启动会原地补充 document 与 ImportSession 生命周期，保留
+已有文字、照片、视频、音频、outbox、同步状态和原件。直接录音停止后
 先复制到 `captures/` 私有目录，随后才入队；同步成功只删除 outbox 行，不删除该原件。单条
 不受支持的素材不会阻塞后续待办和时间轴拉取。
 
-移动端自动化现有 6 个测试文件 / 30 个场景，覆盖本机数据库启动、五项导航、四种记录 intent、
+移动端自动化现有 7 个测试文件 / 39 个场景，覆盖本机数据库启动、五项导航、四种记录 intent、
 媒体时间来源、离线原件、草稿、分页整理、角色只读、capture 归档对账、合并、App 重启、响应
 丢失后的幂等恢复、story 目标路由与 Contribution API。相机/相册系统权限、真实音频焦点、
 系统杀进程后的文件行为、签名包安装与真实网络切换仍须按 `REAL_DEVICE_TEST.md` 在
@@ -81,15 +88,17 @@ npx expo export --platform ios --output-dir dist-ios
 ## GitHub 云构建 IPA / APK
 
 在 GitHub Actions 选择 **Native mobile packages** → **Run workflow**，或执行
-`gh workflow run mobile-build.yml --ref main`。手工构建只接受 `main`；`mobile-v*` tag 仅在
+`gh workflow run mobile-build.yml --ref main`。手工构建只接受 `main`；`v*` tag 仅在
 其 SHA 属于当前 `origin/main` 历史时可发布。所有 job checkout 触发时的准确 SHA，不创建
-临时构建分支。工作流先跑 Expo Doctor、TypeScript、ESLint、30 tests 和 Android/iOS
+临时构建分支。工作流先跑 Expo Doctor、TypeScript、ESLint、39 tests 和 Android/iOS
 Hermes bundle，再并行构建：
 
 - `FamilyTimeCapsule-android-apk`：Release 模式、ARM64、内置 Hermes bundle，并以临时
-  debug key 签名的可直接侧载 APK；每次云运行的 key 可能不同，覆盖安装失败时先卸载
+  debug key 签名的可直接侧载 APK；工作流额外验证 SEND/SEND_MULTIPLE filters。每次云运行的 key 可能不同，覆盖安装失败时先卸载
   旧测试包。正式分发应改接长期 release keystore。
-- `FamilyTimeCapsule-ios-unsigned-ipa`：真实 iPhoneOS Release archive 打出的未签名 IPA。
+- `FamilyTimeCapsule-ios-unsigned-ipa`：真实 iPhoneOS Release archive 打出的未签名 IPA，内含
+  独立 `app.familytimecapsule.mobile.share` Share Extension；主 App/扩展 App Group 与 ARM64
+  device slice 均由工作流检查。
   它不能直接装机；可用自己的 Apple Development/Distribution 证书与 provisioning
   profile 重签，或交给 AltStore/Sideloadly 等自签安装流程。无需把家庭数据或密码上传
   到 Actions。
@@ -116,8 +125,9 @@ Apple 证书属于个人/组织身份，仓库不会内置。要让 Actions 直�
 - `GET /api/mobile/v1/sync?cursor=&limit=50`：Bearer 鉴权的最小化家庭/人物/时间轴 DTO；
   `Cache-Control: private, no-store`。
 - `POST /api/mobile/v1/captures/text`：`{ id, text }`，按家庭和设备 UUID 幂等入箱。
-- `/api/upload/image`、`/api/upload/media`：支持同一 Bearer session 的原生 multipart 补传；
-  可携带设备 `captureId`，结合原件 SHA-256 提供重试幂等与冲突检测。
+- `POST/HEAD/PATCH /api/uploads/*` 与 `complete/retry`：原生端优先采用 8MB 有界分块续传，
+  每块后把服务端 offset 写回 SQLite；可携带设备 `captureId`，结合原件 SHA-256 提供重试
+  幂等与冲突检测。旧 `/api/upload/image`、`/api/upload/media` 仅保留小文件兼容。
 - `/api/media/:assetId`：同一权限/可见性检查下下载离线封面。
 - `GET /api/mobile/v1/home`：集中 service 查询后的最小家庭首页 DTO。
 - `GET /api/mobile/v1/inbox`、`PATCH /api/mobile/v1/inbox/:id`、

@@ -32,6 +32,8 @@ import {
 } from "../storage/database";
 import { clearLocalFiles, removeLocalFile } from "../storage/files";
 import { syncArchive } from "../sync/sync";
+import { drainNativeShareIntake } from "../native/intake";
+import { resolveNativeCaptureAccess } from "../authz/product-access";
 import type {
   Credentials,
   Family,
@@ -83,6 +85,7 @@ export function AppProvider({
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const syncInFlight = useRef(false);
+  const intakeInFlight = useRef(false);
 
   const reloadLocal = useCallback(async () => {
     const [nextEvents, nextFamily, nextViewer, nextPeople, nextOutbox, nextSyncAt, cachedHome] =
@@ -144,6 +147,28 @@ export function AppProvider({
     if (credentials && network.isConnected !== false) await runSync();
   }, [credentials, network.isConnected, reloadLocal, runSync]);
 
+  const receiveSystemShares = useCallback(async () => {
+    if (intakeInFlight.current) return;
+    intakeInFlight.current = true;
+    try {
+      const access = resolveNativeCaptureAccess(Boolean(credentials), viewer);
+      const result = await drainNativeShareIntake(access !== "readonly");
+      if (result.manifests === 0) return;
+      await reloadLocal();
+      if (result.retainedReadonly > 0) {
+        setMessage("已保全系统分享的本机副本；当前家庭角色只读，未创建待同步项目。");
+      } else {
+        const failed = result.failed > 0 ? `；${result.failed} 项复制失败，其他项目不受影响` : "";
+        setMessage(`已接管 ${result.queued} 项系统分享并保存到本机${failed}。`);
+        if (credentials && network.isConnected !== false && result.queued > 0) await runSync();
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "系统分享仍保留在本机，稍后会再次接管。");
+    } finally {
+      intakeInFlight.current = false;
+    }
+  }, [credentials, network.isConnected, reloadLocal, runSync, viewer]);
+
   const connect = useCallback(async (nextCredentials: Credentials) => {
     await saveCredentials(nextCredentials);
     setCredentials(nextCredentials);
@@ -183,11 +208,18 @@ export function AppProvider({
   }, [credentials, reloadLocal, runSync]);
 
   useEffect(() => {
+    const timer = setTimeout(() => void receiveSystemShares(), 0);
+    return () => clearTimeout(timer);
+  }, [receiveSystemShares]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
-      if (credentials && state === "active") void runSync();
+      if (state === "active") void receiveSystemShares().then(() => (
+        credentials ? runSync() : undefined
+      ));
     });
     return () => subscription.remove();
-  }, [credentials, runSync]);
+  }, [credentials, receiveSystemShares, runSync]);
 
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {

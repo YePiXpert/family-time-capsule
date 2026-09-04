@@ -71,6 +71,7 @@ function dependencies(): SyncDependencies {
     listOutbox: vi.fn(async () => []),
     uploadTextCapture: vi.fn(async (_credentials, id) => id),
     uploadMediaCapture: vi.fn(async (_credentials, id) => id),
+    updateMediaUploadState: vi.fn(async () => undefined),
     markOutboxFailure: vi.fn(async () => undefined),
     completeOutboxItem: vi.fn(async () => undefined),
     fetchSyncPage: vi.fn(async () => page()),
@@ -115,6 +116,7 @@ describe("offline sync core", () => {
       credentials,
       "media-1",
       expect.objectContaining({ fileName: "media-1.jpg" }),
+      expect.any(Function),
     );
     expect(deps.completeOutboxItem).toHaveBeenCalledWith(
       "media-1",
@@ -131,6 +133,7 @@ describe("offline sync core", () => {
       credentials,
       "recording-1",
       expect.objectContaining({ mediaType: "audio", mimeType: "audio/mp4" }),
+      expect.any(Function),
     );
     expect(deps.completeOutboxItem).toHaveBeenCalledWith("recording-1", "recording-1");
   });

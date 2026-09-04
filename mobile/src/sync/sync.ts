@@ -9,6 +9,7 @@ import {
   listOutbox,
   markOutboxFailure,
   setLocalCoverUri,
+  updateMediaUploadState,
 } from "../storage/database";
 import {
   cacheEventCover,
@@ -30,6 +31,7 @@ export async function syncArchive(credentials: Credentials): Promise<SyncSummary
     listOutbox,
     uploadTextCapture,
     uploadMediaCapture,
+    updateMediaUploadState,
     markOutboxFailure,
     completeOutboxItem,
     fetchSyncPage,

@@ -76,8 +76,32 @@ export type MediaCapturePayload = {
   fileName: string;
   mimeType: string;
   lastModified: number | null;
-  mediaType: "image" | "video" | "audio";
-  source: "camera" | "library" | "recorder";
+  mediaType: "image" | "video" | "audio" | "document";
+  source: "camera" | "library" | "recorder" | "files" | "system_share";
+  uploadId?: string;
+  uploadOffset?: number;
+};
+
+export type LocalImportSource = "files" | "share";
+
+export type LocalImportIntakeItem = {
+  externalId: string;
+  captureId: string;
+  kind: "file" | "text" | "error";
+  payload?: MediaCapturePayload | TextCapturePayload;
+  localUri?: string;
+  error?: string;
+};
+
+export type LocalImportSession = {
+  id: string;
+  source: LocalImportSource;
+  status: "collecting" | "uploading" | "reviewing" | "completed" | "cancelled";
+  totalCount: number;
+  completedCount: number;
+  failedCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type OutboxItem = {
@@ -135,7 +159,7 @@ export type MobileHome = {
 
 export type MobileInboxAsset = {
   id: string;
-  type: "image" | "video" | "audio";
+  type: "image" | "video" | "audio" | "document";
   filename: string;
   mimeType: string;
   capturedAt: string | null;
@@ -164,7 +188,7 @@ export type MobileInboxPage = {
 
 export type MobileMemoryAsset = {
   id: string;
-  type: "image" | "video" | "audio";
+  type: "image" | "video" | "audio" | "document";
   filename: string;
   mimeType: string;
   durationMs: number | null;

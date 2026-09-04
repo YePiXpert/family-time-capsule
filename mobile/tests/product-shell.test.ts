@@ -15,9 +15,16 @@ describe("native product shell", () => {
   });
 
   it("persists direct audio captures and memory detail without weakening old media", () => {
-    expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("'image', 'video', 'audio'");
+    expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("'image', 'video', 'audio', 'document'");
     expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("CREATE TABLE IF NOT EXISTS memory_detail");
     expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("CREATE TABLE IF NOT EXISTS outbox");
+  });
+
+  it("persists share and Files intake as relational sessions with explicit ownership states", () => {
+    expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("CREATE TABLE IF NOT EXISTS local_import_session");
+    expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("CREATE TABLE IF NOT EXISTS local_import_item");
+    expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("'received', 'copied', 'queued', 'uploading', 'inbox', 'archived'");
+    expect(MOBILE_LOCAL_SCHEMA_SQL).toContain("UNIQUE(import_session_id, external_id)");
   });
 
   it("keeps server-provided family wall time independent of the device timezone", () => {

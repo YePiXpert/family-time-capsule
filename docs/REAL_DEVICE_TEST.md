@@ -158,6 +158,24 @@
 - [ ] 服务器删除/恢复一个事件后完成同步，本机列表相应消失/重现；
 - [ ] 退出前有未补传数据时出现明确警告；确认退出只清除本机数据，服务器档案不受影响。
 
+### I. 1.1 系统分享与 Files（尚无真机证据）
+
+- [ ] Android 冷启动与 App 已运行时分别分享单张照片、五张照片、M4A、PDF、纯文字和 URL；
+  `SEND_MULTIPLE` 中一项失败不撤销其他已复制项；
+- [ ] Android `content://` 原件在来源 App 收回临时权限后仍能打开，来源文件未被修改或删除；
+- [ ] iOS 分享扩展在照片、语音备忘录、Files 和 Safari 中可见；多选图片、视频、音频、PDF、
+  文字和 URL 分别复制到 App Group，扩展界面退出后主 App 能原子接管；
+- [ ] iOS 在复制中途强制结束扩展，再打开主 App；已完成复制仍在，部分 manifest 可重放；
+- [ ] 同一 iOS manifest 重放、App 被杀后再次激活均不创建重复 outbox；
+- [ ] Files/iCloud Drive/Android DocumentsProvider 多选导入外部录音、PDF、TXT、Markdown、
+  RTF 和 DOCX；无法信任来源时间时服务器保持 `capturedAt=null`；
+- [ ] 断网且未配置服务器时完成上述分享/Files 导入，杀进程重启后本机 ImportSession、outbox
+  和原件仍在；恢复网络后逐项续传并只进入 Inbox；
+- [ ] viewer 已连接时分享原件得到明确只读提示，不生成 outbox；断开服务器后可由仍保留的
+  manifest 进入纯本机队列；
+- [ ] 对账 `received → copied → queued → uploading → inbox → archived`，正式事件出现后本机
+  原件仍存在，时间轴不显示第二条临时记录。
+
 ## 验收结论模板
 
 ```text

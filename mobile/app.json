@@ -31,7 +31,9 @@
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
+      "./plugins/with-native-share-intake",
       "expo-sqlite",
+      "expo-document-picker",
       [
         "expo-secure-store",
         {

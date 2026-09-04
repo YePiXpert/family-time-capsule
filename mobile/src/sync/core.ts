@@ -28,7 +28,9 @@ export type SyncDependencies = {
     credentials: Credentials,
     captureId: string,
     payload: MediaCapturePayload,
+    onProgress: (uploadId: string, uploadOffset: number) => Promise<void>,
   ) => Promise<string>;
+  updateMediaUploadState: (id: string, uploadId: string, uploadOffset: number) => Promise<void>;
   markOutboxFailure: (id: string, message: string) => Promise<void>;
   completeOutboxItem: (id: string, inboxItemId: string) => Promise<void>;
   fetchSyncPage: (
@@ -72,7 +74,16 @@ async function flushOutbox(
         await dependencies.completeOutboxItem(item.id, inboxItemId);
       } else {
         const payload = item.payload as MediaCapturePayload;
-        const inboxItemId = await dependencies.uploadMediaCapture(credentials, item.id, payload);
+        const inboxItemId = await dependencies.uploadMediaCapture(
+          credentials,
+          item.id,
+          payload,
+          (uploadId, uploadOffset) => dependencies.updateMediaUploadState(
+            item.id,
+            uploadId,
+            uploadOffset,
+          ),
+        );
         // The queue row is completed, while the original remains in the app's
         // private library so a server connection never becomes data ownership.
         await dependencies.completeOutboxItem(item.id, inboxItemId);

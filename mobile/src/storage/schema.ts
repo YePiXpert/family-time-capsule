@@ -47,13 +47,44 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
     title TEXT NOT NULL,
     occurred_at TEXT NOT NULL,
     local_uri TEXT,
-    media_type TEXT CHECK(media_type IN ('image', 'video', 'audio') OR media_type IS NULL),
+    media_type TEXT CHECK(media_type IN ('image', 'video', 'audio', 'document') OR media_type IS NULL),
     inbox_item_id TEXT,
     memory_event_id TEXT,
     sync_state TEXT NOT NULL DEFAULT 'pending' CHECK(sync_state IN ('pending', 'inbox', 'archived'))
   );
   CREATE INDEX IF NOT EXISTS local_capture_occurred_idx
     ON local_capture(occurred_at DESC, id DESC);
+  CREATE TABLE IF NOT EXISTS local_import_session (
+    id TEXT PRIMARY KEY NOT NULL,
+    source TEXT NOT NULL CHECK(source IN ('files', 'share')),
+    status TEXT NOT NULL DEFAULT 'collecting'
+      CHECK(status IN ('collecting', 'uploading', 'reviewing', 'completed', 'cancelled')),
+    total_count INTEGER NOT NULL DEFAULT 0,
+    completed_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS local_import_session_updated_idx
+    ON local_import_session(updated_at DESC, id DESC);
+  CREATE TABLE IF NOT EXISTS local_import_item (
+    id TEXT PRIMARY KEY NOT NULL,
+    import_session_id TEXT NOT NULL REFERENCES local_import_session(id) ON DELETE CASCADE,
+    capture_id TEXT NOT NULL UNIQUE,
+    external_id TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    intake_state TEXT NOT NULL DEFAULT 'received'
+      CHECK(intake_state IN ('received', 'copied', 'queued', 'uploading', 'inbox', 'archived')),
+    local_uri TEXT,
+    inbox_item_id TEXT,
+    memory_event_id TEXT,
+    error_code TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(import_session_id, external_id)
+  );
+  CREATE INDEX IF NOT EXISTS local_import_item_session_idx
+    ON local_import_item(import_session_id, sort_order, id);
   CREATE TABLE IF NOT EXISTS memory_detail (
     id TEXT PRIMARY KEY NOT NULL,
     detail_json TEXT NOT NULL,

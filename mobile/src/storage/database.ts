@@ -2,6 +2,9 @@ import * as SQLite from "expo-sqlite";
 import type {
   Family,
   LocalTimelineEvent,
+  LocalImportIntakeItem,
+  LocalImportSession,
+  LocalImportSource,
   MediaCapturePayload,
   MobileMemory,
   MobileHome,
@@ -39,6 +42,7 @@ export async function initializeLocalStore(): Promise<void> {
   const requiresLocalCaptureMigration = Boolean(
     definition?.sql && (
       !definition.sql.includes("'audio'") ||
+      !definition.sql.includes("'document'") ||
       !definition.sql.includes("'archived'") ||
       !localCaptureColumnNames.has("inbox_item_id") ||
       !localCaptureColumnNames.has("memory_event_id")
@@ -69,7 +73,7 @@ export async function initializeLocalStore(): Promise<void> {
           title TEXT NOT NULL,
           occurred_at TEXT NOT NULL,
           local_uri TEXT,
-          media_type TEXT CHECK(media_type IN ('image', 'video', 'audio') OR media_type IS NULL),
+          media_type TEXT CHECK(media_type IN ('image', 'video', 'audio', 'document') OR media_type IS NULL),
           inbox_item_id TEXT,
           memory_event_id TEXT,
           sync_state TEXT NOT NULL DEFAULT 'pending' CHECK(sync_state IN ('pending', 'inbox', 'archived'))
@@ -245,7 +249,7 @@ export type LocalMemoryMedia = {
   captureId: string;
   title: string;
   localUri: string;
-  mediaType: "image" | "video" | "audio";
+  mediaType: "image" | "video" | "audio" | "document";
 };
 
 export async function listLocalMemoryMedia(
@@ -438,6 +442,178 @@ export async function enqueueMediaCapture(
   );
 }
 
+export async function ingestLocalImportSession(input: {
+  id: string;
+  source: LocalImportSource;
+  createdAt: string;
+  items: LocalImportIntakeItem[];
+  queue: boolean;
+}): Promise<{ queued: number; failed: number }> {
+  const db = await getDatabase();
+  let queued = 0;
+  let failed = 0;
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      `INSERT OR IGNORE INTO local_import_session(
+        id, source, status, total_count, completed_count, failed_count, created_at, updated_at
+      ) VALUES (?, ?, 'collecting', ?, 0, 0, ?, ?)`,
+      input.id,
+      input.source,
+      input.items.length,
+      input.createdAt,
+      input.createdAt,
+    );
+    for (const [index, item] of input.items.entries()) {
+      const now = new Date().toISOString();
+      const inserted = await tx.runAsync(
+        `INSERT OR IGNORE INTO local_import_item(
+          id, import_session_id, capture_id, external_id, sort_order,
+          intake_state, local_uri, error_code, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'received', ?, ?, ?, ?)`,
+        `${input.id}:${item.externalId}`,
+        input.id,
+        item.captureId,
+        item.externalId,
+        index,
+        item.localUri ?? null,
+        item.error?.slice(0, 160) ?? null,
+        input.createdAt,
+        now,
+      );
+      if (item.kind === "error" || !item.payload) {
+        if (inserted.changes > 0) failed += 1;
+        continue;
+      }
+      await tx.runAsync(
+        `UPDATE local_import_item
+         SET intake_state = 'copied', local_uri = ?, updated_at = ?
+         WHERE capture_id = ? AND intake_state = 'received'`,
+        item.localUri ?? null,
+        now,
+        item.captureId,
+      );
+      if (!input.queue) continue;
+      const intake = await tx.getFirstAsync<{ intake_state: string }>(
+        "SELECT intake_state FROM local_import_item WHERE capture_id = ?",
+        item.captureId,
+      );
+      if (intake?.intake_state !== "copied") continue;
+      const existing = await tx.getFirstAsync<{ value: number }>(
+        "SELECT count(*) AS value FROM outbox WHERE id = ?",
+        item.captureId,
+      );
+      if ((existing?.value ?? 0) > 0) continue;
+      const kind = item.kind === "text" ? "text_capture" : "media_capture";
+      const title = item.kind === "text"
+        ? (item.payload as TextCapturePayload).text
+        : (item.payload as MediaCapturePayload).fileName;
+      const mediaPayload = item.kind === "file" ? item.payload as MediaCapturePayload : null;
+      await tx.runAsync(
+        `INSERT OR IGNORE INTO local_capture(
+          id, kind, title, occurred_at, local_uri, media_type, sync_state
+        ) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+        item.captureId,
+        kind,
+        title,
+        input.createdAt,
+        mediaPayload?.localUri ?? null,
+        mediaPayload?.mediaType ?? null,
+      );
+      await tx.runAsync(
+        "INSERT OR IGNORE INTO outbox(id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)",
+        item.captureId,
+        kind,
+        JSON.stringify(item.payload),
+        input.createdAt,
+      );
+      await tx.runAsync(
+        `UPDATE local_import_item
+         SET intake_state = 'queued', error_code = NULL, updated_at = ?
+         WHERE capture_id = ? AND intake_state IN ('received', 'copied')`,
+        now,
+        item.captureId,
+      );
+      queued += 1;
+    }
+    const totals = await tx.getFirstAsync<{ total: number; failed: number; queued: number }>(
+      `SELECT count(*) AS total,
+        sum(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS failed,
+        sum(CASE WHEN intake_state IN ('queued', 'uploading', 'inbox', 'archived') THEN 1 ELSE 0 END) AS queued
+       FROM local_import_item WHERE import_session_id = ?`,
+      input.id,
+    );
+    const nextStatus = input.queue && (totals?.queued ?? 0) > 0 ? "uploading" : "collecting";
+    await tx.runAsync(
+      `UPDATE local_import_session
+       SET status = ?, total_count = ?, failed_count = ?, updated_at = ?
+       WHERE id = ?`,
+      nextStatus,
+      totals?.total ?? input.items.length,
+      totals?.failed ?? failed,
+      new Date().toISOString(),
+      input.id,
+    );
+  });
+  return { queued, failed };
+}
+
+export async function listLocalImportSessions(): Promise<LocalImportSession[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    source: LocalImportSource;
+    status: LocalImportSession["status"];
+    total_count: number;
+    completed_count: number;
+    failed_count: number;
+    created_at: string;
+    updated_at: string;
+  }>("SELECT * FROM local_import_session ORDER BY updated_at DESC, id DESC");
+  return rows.map((row) => ({
+    id: row.id,
+    source: row.source,
+    status: row.status,
+    totalCount: row.total_count,
+    completedCount: row.completed_count,
+    failedCount: row.failed_count,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function updateMediaUploadState(
+  id: string,
+  uploadId: string,
+  uploadOffset: number,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const row = await tx.getFirstAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM outbox WHERE id = ? AND kind = 'media_capture'",
+      id,
+    );
+    if (!row) return;
+    const payload = JSON.parse(row.payload_json) as MediaCapturePayload;
+    payload.uploadId = uploadId;
+    payload.uploadOffset = uploadOffset;
+    await tx.runAsync(
+      "UPDATE outbox SET payload_json = ?, last_error = NULL WHERE id = ?",
+      JSON.stringify(payload),
+      id,
+    );
+    await tx.runAsync(
+      `UPDATE local_import_item SET intake_state = 'uploading', updated_at = ?
+       WHERE capture_id = ? AND intake_state IN ('queued', 'uploading')`,
+      new Date().toISOString(),
+      id,
+    );
+    await tx.runAsync(
+      `UPDATE local_import_item SET error_code = NULL WHERE capture_id = ?`,
+      id,
+    );
+  });
+}
+
 async function enqueue(
   id: string,
   kind: OutboxItem["kind"],
@@ -500,11 +676,33 @@ export async function getOutboxCount(): Promise<number> {
 
 export async function markOutboxFailure(id: string, message: string): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync(
-    "UPDATE outbox SET attempt_count = attempt_count + 1, last_error = ? WHERE id = ?",
-    message.slice(0, 300),
-    id,
-  );
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      "UPDATE outbox SET attempt_count = attempt_count + 1, last_error = ? WHERE id = ?",
+      message.slice(0, 300),
+      id,
+    );
+    await tx.runAsync(
+      `UPDATE local_import_item
+       SET intake_state = 'queued', error_code = ?, updated_at = ?
+       WHERE capture_id = ? AND intake_state = 'uploading'`,
+      message.slice(0, 160),
+      new Date().toISOString(),
+      id,
+    );
+    await tx.runAsync(
+      `UPDATE local_import_session
+       SET status = 'reviewing',
+         failed_count = (
+           SELECT count(*) FROM local_import_item
+           WHERE import_session_id = local_import_session.id AND error_code IS NOT NULL
+         ),
+         updated_at = ?
+       WHERE id IN (SELECT import_session_id FROM local_import_item WHERE capture_id = ?)`,
+      new Date().toISOString(),
+      id,
+    );
+  });
 }
 
 export async function removeOutboxItem(id: string): Promise<void> {
@@ -529,6 +727,32 @@ export async function completeOutboxItem(
       id,
     );
     await tx.runAsync("DELETE FROM outbox WHERE id = ?", id);
+    await tx.runAsync(
+      `UPDATE local_import_item
+       SET intake_state = 'inbox', inbox_item_id = ?, updated_at = ?
+       WHERE capture_id = ? AND intake_state IN ('queued', 'uploading')`,
+      inboxItemId,
+      new Date().toISOString(),
+      id,
+    );
+    await tx.runAsync(
+      `UPDATE local_import_session
+       SET completed_count = (
+         SELECT count(*) FROM local_import_item
+         WHERE import_session_id = local_import_session.id
+           AND intake_state IN ('inbox', 'archived')
+       ),
+       status = CASE WHEN NOT EXISTS (
+         SELECT 1 FROM local_import_item
+         WHERE import_session_id = local_import_session.id
+           AND intake_state IN ('received', 'copied', 'queued', 'uploading')
+           AND error_code IS NULL
+       ) THEN 'reviewing' ELSE status END,
+       updated_at = ?
+       WHERE id IN (SELECT import_session_id FROM local_import_item WHERE capture_id = ?)`,
+      new Date().toISOString(),
+      id,
+    );
   });
 }
 
@@ -548,6 +772,38 @@ export async function archiveLocalCaptures(
     ...inboxItemIds,
     ...inboxItemIds,
   );
+  await db.runAsync(
+    `UPDATE local_import_item
+     SET intake_state = 'archived', memory_event_id = ?, updated_at = ?
+     WHERE inbox_item_id IN (${placeholders})
+        OR (inbox_item_id IS NULL AND capture_id IN (${placeholders}))`,
+    memoryEventId,
+    new Date().toISOString(),
+    ...inboxItemIds,
+    ...inboxItemIds,
+  );
+  await db.runAsync(
+    `UPDATE local_import_session
+     SET completed_count = (
+       SELECT count(*) FROM local_import_item
+       WHERE import_session_id = local_import_session.id
+         AND intake_state IN ('inbox', 'archived')
+     ),
+     status = CASE WHEN NOT EXISTS (
+       SELECT 1 FROM local_import_item
+       WHERE import_session_id = local_import_session.id
+         AND intake_state <> 'archived' AND error_code IS NULL
+     ) THEN 'completed' ELSE status END,
+     updated_at = ?
+     WHERE id IN (
+       SELECT import_session_id FROM local_import_item
+       WHERE inbox_item_id IN (${placeholders})
+          OR (inbox_item_id IS NULL AND capture_id IN (${placeholders}))
+     )`,
+    new Date().toISOString(),
+    ...inboxItemIds,
+    ...inboxItemIds,
+  );
 }
 
 export async function clearLocalArchive(): Promise<void> {
@@ -557,6 +813,8 @@ export async function clearLocalArchive(): Promise<void> {
     DELETE FROM people;
     DELETE FROM outbox;
     DELETE FROM local_capture;
+    DELETE FROM local_import_item;
+    DELETE FROM local_import_session;
     DELETE FROM memory_detail;
     DELETE FROM meta;
   `);

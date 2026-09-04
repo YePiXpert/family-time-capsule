@@ -92,6 +92,10 @@ jobs:
           echo "$SIGNATURE_REPORT" | grep -F 'Verified using v2 scheme (APK Signature Scheme v2): true'
           "$AAPT2" dump badging "$APK" | grep -F "package: name='app.familytimecapsule.mobile'"
           "$AAPT2" dump badging "$APK" | grep -F "versionCode='$EXPECTED_VERSION_CODE'"
+          MANIFEST_REPORT=$("$AAPT2" dump xmltree "$APK" --file AndroidManifest.xml)
+          echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND'
+          echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND_MULTIPLE'
+          echo "$MANIFEST_REPORT" | grep -F 'application/pdf'
           unzip -l "$APK" | grep -F 'assets/index.android.bundle'
       - name: Name package
         run: cp mobile/android/app/build/outputs/apk/release/app-release.apk FamilyTimeCapsule-android.apk
@@ -158,6 +162,16 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" = 'app.familytimecapsule.mobile'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")" = "$EXPECTED_BUILD_NUMBER"
           test -f "$APP_PATH/main.jsbundle"
+          APPEX_PATH=$(find "$APP_PATH/PlugIns" -maxdepth 1 -name '*.appex' -print -quit)
+          test -n "$APPEX_PATH"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX_PATH/Info.plist")" = 'app.familytimecapsule.mobile.share'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APPEX_PATH/Info.plist")" = "$EXPECTED_BUILD_NUMBER"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' ios/app/app.entitlements)" = 'group.app.familytimecapsule.mobile.share'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' ios/FamilyShareExtension/FamilyShareExtension.entitlements)" = 'group.app.familytimecapsule.mobile.share'
+          APP_EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")
+          APPEX_EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APPEX_PATH/Info.plist")
+          lipo -archs "$APP_PATH/$APP_EXECUTABLE" | tr ' ' '\n' | grep -Fx arm64
+          lipo -archs "$APPEX_PATH/$APPEX_EXECUTABLE" | tr ' ' '\n' | grep -Fx arm64
           mkdir -p build/ipa/Payload
           cp -R "$APP_PATH" build/ipa/Payload/
           cd build/ipa
@@ -169,3 +183,44 @@ jobs:
           path: mobile/build/FamilyTimeCapsule-ios-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    name: GitHub mobile prerelease
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [android, ios]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: FamilyTimeCapsule-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify and publish packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -f release-assets/FamilyTimeCapsule-android.apk
+          test -f release-assets/FamilyTimeCapsule-ios-unsigned.ipa
+          cd release-assets
+          sha256sum FamilyTimeCapsule-android.apk FamilyTimeCapsule-ios-unsigned.ipa > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            RELEASE_KIND=(--prerelease)
+          else
+            RELEASE_KIND=()
+          fi
+          printf '%s\n' \
+            'Native packages generated from the tagged origin/main history.' \
+            '' \
+            'The iOS IPA is unsigned. Real-device acceptance has not been completed and is not claimed by this release.' \
+            > RELEASE_NOTES.md
+          gh release create "$GITHUB_REF_NAME" \
+            FamilyTimeCapsule-android.apk \
+            FamilyTimeCapsule-ios-unsigned.ipa \
+            SHA256SUMS.txt \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md \
+            "${RELEASE_KIND[@]}"
