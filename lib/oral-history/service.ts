@@ -9,6 +9,7 @@ import {
   type ContributionRequestRow,
 } from "@/db/schema/oral-history";
 import { inboxItem } from "@/db/schema/inbox";
+import { person } from "@/db/schema/family";
 import { assertFamilyCapability } from "@/lib/authz/policy";
 import { createTextInboxItem, createInboxItemForAsset } from "@/lib/inbox/service";
 import { ingestImage, ingestMedia } from "@/lib/assets/ingest";
@@ -159,6 +160,7 @@ export function createContributionRequest(
     recipientLabel: string;
     promptText: string;
     topicKey?: string | null;
+    recipientPersonId?: string | null;
     ttlDays?: number;
   },
   now: Date = new Date(),
@@ -183,6 +185,20 @@ export function createContributionRequest(
   const ttlDays = Math.min(Math.max(input.ttlDays ?? DEFAULT_REQUEST_TTL_DAYS, 1), 365);
 
   const db = getDb();
+  if (input.recipientPersonId) {
+    const recipient = db
+      .select({ id: person.id })
+      .from(person)
+      .where(
+        and(
+          eq(person.id, input.recipientPersonId),
+          eq(person.familyId, context.familyId),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (!recipient) return { ok: false, error: "invalid_person" };
+  }
   const openCount = db
     .select({ value: sql<number>`count(*)` })
     .from(contributionRequest)
@@ -206,6 +222,7 @@ export function createContributionRequest(
       familyId: context.familyId,
       tokenHash: hashRequestToken(token),
       recipientLabel: label,
+      recipientPersonId: input.recipientPersonId ?? null,
       promptText: prompt,
       topicKey: input.topicKey ?? null,
       status: "open",

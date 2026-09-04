@@ -6,6 +6,7 @@ import {
   listContributionRequests,
 } from "@/lib/oral-history/service";
 import { CloseRequestButton, RequestCreateForm } from "./request-ui";
+import { listPeople } from "@/lib/family/service";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,20 @@ const STATUS_LABEL: Record<string, string> = {
   closed: "已关闭",
 };
 
-export default async function RequestsPage() {
+export default async function RequestsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ personId?: string | string[] }>;
+}) {
   const context = await requireFamily();
   const canCreate = hasFamilyCapability(context.role, "contribution:create");
   const requests = listContributionRequests(context);
+  const people = await listPeople(context.familyId);
+  const query = await searchParams;
+  const requestedPersonId =
+    typeof query.personId === "string" && people.some((person) => person.id === query.personId)
+      ? query.personId
+      : undefined;
   const topics = PROMPT_LIBRARY.map((t) => ({
     key: t.key,
     label: t.label,
@@ -42,7 +53,15 @@ export default async function RequestsPage() {
         >
           <h2 className="text-base font-medium">新的提问</h2>
           <div className="mt-3">
-            <RequestCreateForm topics={topics} />
+            <RequestCreateForm
+              topics={topics}
+              people={people.map((person) => ({
+                id: person.id,
+                displayName: person.displayName,
+                relationToChild: person.relationToChild,
+              }))}
+              defaultPersonId={requestedPersonId}
+            />
           </div>
           <details className="mt-4">
             <summary className="cursor-pointer text-sm text-foreground/60">

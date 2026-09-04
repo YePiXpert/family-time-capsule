@@ -202,6 +202,8 @@ export default async function HomePage() {
                     location={memory.locationText}
                     people={memory.participantNames}
                     assetCount={memory.assetCount}
+                    milestoneType={memory.milestoneType}
+                    isPinned={memory.isPinned}
                     cover={memory.cover}
                     compact
                   />
@@ -214,8 +216,8 @@ export default async function HomePage() {
             <SectionHeader
               title="这一天"
               description="重新遇见发生在同月同日的家庭片段"
-              actionLabel="浏览更早记忆"
-              actionHref="/timeline"
+              actionLabel="打开记忆回顾"
+              actionHref="/memories/resurfacing"
             />
             {dashboard.onThisDay.length > 0 ? (
               <div
@@ -232,6 +234,8 @@ export default async function HomePage() {
                     location={memory.locationText}
                     people={memory.participantNames}
                     assetCount={memory.assetCount}
+                    milestoneType={memory.milestoneType}
+                    isPinned={memory.isPinned}
                     cover={memory.cover}
                     compact
                   />
@@ -240,14 +244,50 @@ export default async function HomePage() {
             ) : (
               <div className="mt-3">
                 <QuickAction
-                  href={dashboard.canCapture ? "/capture" : "/timeline"}
+                  href="/memories/resurfacing"
                   icon="spark"
                   label="今天还没有历史回声"
                   description={
-                    dashboard.canCapture
-                      ? "留下今天，明年它会在这里重新出现"
-                      : "继续浏览家庭时间轴"
+                    "看看一个月前、百天前和一年前，也可以留下今天"
                   }
+                />
+              </div>
+            )}
+          </section>
+
+          <section aria-label="成长节点">
+            <SectionHeader
+              title="成长节点"
+              description="置顶与特别标记的家庭时刻"
+              actionLabel={dashboard.milestones.length > 0 ? "查看时间轴" : "标记一段记忆"}
+              actionHref={dashboard.milestones.length > 0 ? "/timeline" : dashboard.recentMemories[0] ? `/memories/${dashboard.recentMemories[0].id}?mode=edit` : "/capture"}
+            />
+            {dashboard.milestones.length > 0 ? (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {dashboard.milestones.map((memory) => (
+                  <MemoryCard
+                    key={memory.id}
+                    id={memory.id}
+                    title={memory.title}
+                    dateLabel={dateFormatter.format(memory.occurredAt)}
+                    ageLabel={memory.ageLabel}
+                    location={memory.locationText}
+                    people={memory.participantNames}
+                    assetCount={memory.assetCount}
+                    milestoneType={memory.milestoneType}
+                    isPinned={memory.isPinned}
+                    cover={memory.cover}
+                    compact
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3">
+                <QuickAction
+                  href={dashboard.recentMemories[0] ? `/memories/${dashboard.recentMemories[0].id}?mode=edit` : "/capture"}
+                  icon="spark"
+                  label="标记第一次、成长或家庭时刻"
+                  description="节点仍是一段普通记忆；模板可选，不增加额外记录负担"
                 />
               </div>
             )}

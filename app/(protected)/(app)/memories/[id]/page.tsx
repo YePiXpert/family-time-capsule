@@ -46,6 +46,7 @@ import { listJobsForEntity } from "@/lib/ai/jobs";
 import { factSource, type FactSourceRow } from "@/db/schema/suggestion";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
+import { StatusBadge } from "@/components/status-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -275,6 +276,23 @@ export default async function MemoryEventPage({
       </section>
 
       <div className="mt-8">
+        {event.milestoneType || event.isPinned ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {event.isPinned ? <StatusBadge tone="accent">置顶记忆</StatusBadge> : null}
+            {event.milestoneType ? (
+              <StatusBadge tone="success">
+                {{
+                  first_time: "第一次",
+                  growth: "成长节点",
+                  family: "家庭时刻",
+                  learning: "学会了",
+                  celebration: "值得庆祝",
+                  other: "值得记住",
+                }[event.milestoneType] ?? "成长节点"}
+              </StatusBadge>
+            ) : null}
+          </div>
+        ) : null}
         <PageHeader
           backHref="/timeline"
           backLabel="返回时间轴"
@@ -349,7 +367,7 @@ export default async function MemoryEventPage({
           <h2 className="text-lg font-medium">相关记忆</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {relatedEntries.map((entry) => (
-              <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(entry.event.occurredAt)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
+              <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(entry.event.occurredAt)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} milestoneType={entry.event.milestoneType} isPinned={entry.event.isPinned} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
             ))}
           </div>
         </section>

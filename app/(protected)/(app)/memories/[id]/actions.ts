@@ -17,7 +17,7 @@ import {
 } from "@/lib/authz/contribution-access";
 import { getFamily } from "@/lib/family/service";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
-import { updateMemoryEvent } from "@/lib/memories/service";
+import { isMilestoneType, updateMemoryEvent } from "@/lib/memories/service";
 import {
   addFact,
   createContribution,
@@ -83,6 +83,11 @@ export async function editEventAction(
     .getAll("participantPersonIds")
     .map((v) => String(v))
     .filter(Boolean);
+  const milestoneRaw = String(formData.get("milestoneType") ?? "");
+  if (milestoneRaw && !isMilestoneType(milestoneRaw)) {
+    return { error: "成长节点类型无效。" };
+  }
+  const milestoneType = isMilestoneType(milestoneRaw) ? milestoneRaw : null;
 
   const result = await updateMemoryEvent(familyId, eventId, userId, {
     title,
@@ -92,6 +97,8 @@ export async function editEventAction(
     coverAssetId,
     childPersonId,
     participantPersonIds: participants,
+    milestoneType,
+    isPinned: formData.has("isPinned"),
   });
   if (!result.ok) {
     return {
@@ -107,6 +114,8 @@ export async function editEventAction(
   }
   revalidatePath(`/memories/${eventId}`);
   revalidatePath("/timeline");
+  revalidatePath("/");
+  revalidatePath("/memories/resurfacing");
   return { saved: true };
 }
 

@@ -44,6 +44,10 @@ export const memoryEvent = sqliteTable(
     }),
     // draft | confirmed | hidden
     status: text("status").notNull().default("confirmed"),
+    // 可选成长节点展示信息；事件本体仍然是 MemoryEvent。
+    // first_time | growth | family | learning | celebration | other
+    milestoneType: text("milestone_type"),
+    isPinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
     // 展示快照（冗余）：child.birthDate + occurredAt 计算的满天数；
     // 时间轴展示仍按 birthDate 现算，快照仅用于导出与核对（#009）
     ageDays: integer("age_days"),
@@ -63,6 +67,12 @@ export const memoryEvent = sqliteTable(
       t.id,
     ),
     index("memory_child_idx").on(t.childPersonId),
+    index("memory_family_milestone_idx").on(
+      t.familyId,
+      t.isPinned,
+      t.milestoneType,
+      t.occurredAt,
+    ),
   ],
 );
 

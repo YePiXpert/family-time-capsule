@@ -211,6 +211,8 @@ export async function buildFamilyExport(
     locationText: e.locationText,
     coverAssetId: e.coverAssetId,
     status: e.status,
+    milestoneType: e.milestoneType,
+    isPinned: e.isPinned,
     ageDays: e.ageDays,
     createdAt: iso(e.createdAt),
     updatedAt: iso(e.updatedAt),

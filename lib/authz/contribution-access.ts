@@ -206,7 +206,11 @@ export function getVisibleContributionInTransaction(
 
 async function queryVisibleContributions(
   snapshot: ContributionAccessSnapshot,
-  options: { memoryEventId?: string; contributionIds?: readonly string[] },
+  options: {
+    memoryEventId?: string;
+    contributionIds?: readonly string[];
+    authorPersonId?: string;
+  },
 ): Promise<VisibleContributionDto[]> {
   if (options.contributionIds?.length === 0) return [];
   const conditions: SQL[] = [
@@ -219,6 +223,9 @@ async function queryVisibleContributions(
   }
   if (options.contributionIds) {
     conditions.push(inArray(contribution.id, [...options.contributionIds]));
+  }
+  if (options.authorPersonId) {
+    conditions.push(eq(contribution.authorPersonId, options.authorPersonId));
   }
   const rows = await getDb()
     .select({
@@ -286,6 +293,13 @@ export function listVisibleContributionsForFamily(
   snapshot: ContributionAccessSnapshot,
 ): Promise<VisibleContributionDto[]> {
   return queryVisibleContributions(snapshot, {});
+}
+
+export function listVisibleContributionsByAuthor(
+  snapshot: ContributionAccessSnapshot,
+  authorPersonId: string,
+): Promise<VisibleContributionDto[]> {
+  return queryVisibleContributions(snapshot, { authorPersonId });
 }
 
 export function listVisibleContributionsByIds(

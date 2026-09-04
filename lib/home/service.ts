@@ -8,7 +8,12 @@ import { listCapsules } from "@/lib/capsules/service";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { countInbox, getInboxPage, type InboxStatus } from "@/lib/inbox/service";
 import { formatAgeLabel } from "@/lib/memories/age";
-import { getTimelinePage, type TimelineEntry } from "@/lib/memories/service";
+import {
+  getTimelinePage,
+  listMilestoneEntries,
+  type TimelineEntry,
+} from "@/lib/memories/service";
+import { getResurfacing, type ResurfacingKind } from "@/lib/memories/resurfacing";
 import {
   PROMPT_LIBRARY,
   listContributionRequests,
@@ -23,6 +28,8 @@ export type HomeMemoryDto = {
   locationText: string | null;
   participantNames: string[];
   assetCount: number;
+  milestoneType: string | null;
+  isPinned: boolean;
   cover: null | {
     assetId: string;
     type: string | null;
@@ -56,6 +63,13 @@ export type HomeDashboardDto = {
   inbox: { count: number; previews: HomeInboxPreviewDto[] };
   recentMemories: HomeMemoryDto[];
   onThisDay: HomeMemoryDto[];
+  resurfacing: Array<{
+    kind: ResurfacingKind;
+    label: string;
+    targetDate: string;
+    memories: HomeMemoryDto[];
+  }>;
+  milestones: HomeMemoryDto[];
   recentStory: null | {
     id: string;
     title: string;
@@ -94,6 +108,8 @@ function mapMemory(entry: TimelineEntry, childBirthDate: string | null): HomeMem
     locationText: entry.event.locationText,
     participantNames: entry.participantNames,
     assetCount: entry.assetCount,
+    milestoneType: entry.event.milestoneType,
+    isPinned: entry.event.isPinned,
     cover: entry.coverAssetId
       ? {
           assetId: entry.coverAssetId,
@@ -103,21 +119,6 @@ function mapMemory(entry: TimelineEntry, childBirthDate: string | null): HomeMem
         }
       : null,
   };
-}
-
-function localMonthDay(value: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: timezone,
-  }).format(value);
-}
-
-function localYear(value: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    timeZone: timezone,
-  }).format(value);
 }
 
 /**
@@ -135,7 +136,16 @@ export async function getHomeDashboard(
   if (!family) throw new Error("authorized family is unavailable");
   const child = people.find((person) => person.isChild) ?? null;
   const snapshot = createContributionAccessSnapshot(context, now);
-  const [inboxCount, inboxPage, timelinePage, stories, capsules, requests] =
+  const [
+    inboxCount,
+    inboxPage,
+    timelinePage,
+    stories,
+    capsules,
+    requests,
+    resurfacing,
+    milestoneEntries,
+  ] =
     await Promise.all([
       countInbox(context.familyId),
       getInboxPage(context.familyId, undefined, { limit: 4 }),
@@ -143,6 +153,8 @@ export async function getHomeDashboard(
       listStories(context.familyId),
       listCapsules(snapshot, child?.birthDate ?? null),
       Promise.resolve(listContributionRequests(context)),
+      getResurfacing(context.familyId, family.timezone, now, 3),
+      listMilestoneEntries(context.familyId, 4),
     ]);
 
   const inboxCoverIds = inboxPage.entries
@@ -178,15 +190,16 @@ export async function getHomeDashboard(
   const allRecent = timelinePage.entries.map((entry) =>
     mapMemory(entry, child?.birthDate ?? null),
   );
-  const todayMonthDay = localMonthDay(now, family.timezone);
-  const todayYear = localYear(now, family.timezone);
-  const onThisDay = allRecent
-    .filter(
-      (memory) =>
-        localMonthDay(memory.occurredAt, family.timezone) === todayMonthDay &&
-        localYear(memory.occurredAt, family.timezone) !== todayYear,
-    )
-    .slice(0, 3);
+  const resurfacingGroups = resurfacing.groups.map((group) => ({
+    kind: group.kind,
+    label: group.label,
+    targetDate: group.targetDate,
+    memories: group.entries.map((entry) =>
+      mapMemory(entry, child?.birthDate ?? null),
+    ),
+  }));
+  const onThisDay =
+    resurfacingGroups.find((group) => group.kind === "on_this_day")?.memories ?? [];
   const recentStory = [...stories].sort(
     (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
   )[0];
@@ -221,6 +234,10 @@ export async function getHomeDashboard(
     inbox: { count: inboxCount, previews: inboxPreviews },
     recentMemories: allRecent.slice(0, 6),
     onThisDay,
+    resurfacing: resurfacingGroups,
+    milestones: milestoneEntries.map((entry) =>
+      mapMemory(entry, child?.birthDate ?? null),
+    ),
     recentStory: recentStory
       ? {
           id: recentStory.id,

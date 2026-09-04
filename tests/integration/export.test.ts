@@ -49,7 +49,7 @@ const {
   getInboxEntry,
   updateInboxDraft,
 } = await import("@/lib/inbox/service");
-const { confirmInboxEntry, mergeInboxEntries } = await import("@/lib/memories/service");
+const { confirmInboxEntry, mergeInboxEntries, updateMemoryEvent } = await import("@/lib/memories/service");
 const { createContribution, addFact } = await import("@/lib/contributions/service");
 const {
   createCapsule,
@@ -104,6 +104,10 @@ for (let i = 1; i <= 5; i++) {
 }
 const merged = await mergeInboxEntries(familyId, items, { title: "八月的一次出游" });
 if (!merged.ok) throw new Error("merge failed");
+await updateMemoryEvent(familyId, merged.eventId, adminUserId, {
+  milestoneType: "family",
+  isPinned: true,
+});
 
 const audio = await ingestMedia({
   familyId,
@@ -239,6 +243,10 @@ describe("完整导出（#014）", () => {
     expect(familyJson.name).toBe("我们一家");
     expect(familyJson.childLaterUnlockAge).toBe(21);
     expect(peopleJson.length).toBeGreaterThanOrEqual(3);
+    expect(memories.find((memory: { id: string }) => memory.id === merged.eventId)).toMatchObject({
+      milestoneType: "family",
+      isPinned: true,
+    });
     expect(peopleJson.find((p: { id: string }) => p.id === dad.id)).toMatchObject({
       isGuardian: true,
       childLaterUnlockedAt: null,

@@ -1,7 +1,19 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { isNull, and, asc, desc, eq, inArray, sql, gte, lt } from "drizzle-orm";
+import {
+  isNull,
+  isNotNull,
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  sql,
+  gte,
+  lt,
+  or,
+} from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { asset as assetTable } from "@/db/schema/asset";
@@ -25,6 +37,34 @@ import { getInboxEntry, type InboxEntry } from "@/lib/inbox/service";
 
 export type MemoryEventRow = typeof memoryEvent.$inferSelect;
 export type PersonRow = typeof personTable.$inferSelect;
+
+export const MILESTONE_TYPES = [
+  "first_time",
+  "growth",
+  "family",
+  "learning",
+  "celebration",
+  "other",
+] as const;
+
+export type MilestoneType = (typeof MILESTONE_TYPES)[number];
+
+export const MILESTONE_TEMPLATES: ReadonlyArray<{
+  type: MilestoneType;
+  label: string;
+  prompt: string;
+}> = [
+  { type: "first_time", label: "第一次", prompt: "第一次做到了一件什么事？" },
+  { type: "growth", label: "成长", prompt: "最近发现了怎样的变化？" },
+  { type: "learning", label: "学会了", prompt: "学会了什么新本领？" },
+  { type: "family", label: "家庭时刻", prompt: "一家人共同经历了什么？" },
+  { type: "celebration", label: "庆祝", prompt: "今天在庆祝什么？" },
+  { type: "other", label: "值得记住", prompt: "为什么想把这一刻特别留下？" },
+];
+
+export function isMilestoneType(value: unknown): value is MilestoneType {
+  return typeof value === "string" && MILESTONE_TYPES.includes(value as MilestoneType);
+}
 
 export type MemoryEventDetail = {
   event: MemoryEventRow;
@@ -54,6 +94,8 @@ export type EditMemoryEventPatch = {
   coverAssetId?: string | null;
   participantPersonIds?: string[];
   childPersonId?: string;
+  milestoneType?: MilestoneType | null;
+  isPinned?: boolean;
 };
 
 export type EditResult =
@@ -93,6 +135,15 @@ export async function updateMemoryEvent(
         ? null
         : patch.locationText.trim().slice(0, 200) || null
       : current.locationText;
+  const milestoneType =
+    patch.milestoneType !== undefined ? patch.milestoneType : current.milestoneType;
+  if (milestoneType !== null && !isMilestoneType(milestoneType)) {
+    return { ok: false, error: "invalid" };
+  }
+  if (patch.isPinned !== undefined && typeof patch.isPinned !== "boolean") {
+    return { ok: false, error: "invalid" };
+  }
+  const isPinned = patch.isPinned ?? current.isPinned;
 
   // childPersonId：如提供，必须仍是本家庭的孩子 Person
   let childPersonId = current.childPersonId;
@@ -190,6 +241,8 @@ export async function updateMemoryEvent(
           coverAssetId: current.coverAssetId,
           childPersonId: current.childPersonId,
           participantPersonIds: participantIdsBefore,
+          milestoneType: current.milestoneType,
+          isPinned: current.isPinned,
           ageDays: current.ageDays,
         }),
         createdAt: now,
@@ -204,6 +257,8 @@ export async function updateMemoryEvent(
         locationText,
         coverAssetId,
         childPersonId,
+        milestoneType,
+        isPinned,
         ageDays,
         lastEditedByUserId: editorUserId,
         updatedAt: now,
@@ -691,6 +746,8 @@ export type EventRevision = {
     coverAssetId: string | null;
     childPersonId: string;
     participantPersonIds: string[];
+    milestoneType?: string | null;
+    isPinned?: boolean;
     ageDays: number | null;
   };
 };
@@ -749,6 +806,155 @@ export type TimelinePage = {
   entries: TimelineEntry[];
   nextCursor: string | null;
 };
+
+/**
+ * Hydrate a bounded event set into card-ready data with batch queries. This is
+ * shared by the timeline, resurfacing and milestone read models so none of
+ * those pages performs per-memory lookups.
+ */
+export async function hydrateTimelineEntries(
+  familyId: string,
+  events: MemoryEventRow[],
+): Promise<TimelineEntry[]> {
+  if (events.length === 0) return [];
+  const db = getDb();
+  const eventIds = events.map((event) => event.id);
+
+  const [assetLinks, coverAssets, participantLinks, tagRows] = await Promise.all([
+    db
+      .select({
+        memoryEventId: memoryEventAsset.memoryEventId,
+        assetId: memoryEventAsset.assetId,
+        type: assetTable.type,
+        mimeType: assetTable.mimeType,
+      })
+      .from(memoryEventAsset)
+      .innerJoin(assetTable, eq(memoryEventAsset.assetId, assetTable.id))
+      .where(
+        and(
+          eq(memoryEventAsset.familyId, familyId),
+          eq(assetTable.familyId, familyId),
+          inArray(memoryEventAsset.memoryEventId, eventIds),
+        ),
+      )
+      .orderBy(asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id)),
+    (() => {
+      const coverIds = [
+        ...new Set(
+          events
+            .map((event) => event.coverAssetId)
+            .filter((id): id is string => id !== null),
+        ),
+      ];
+      return coverIds.length > 0
+        ? db
+            .select({
+              id: assetTable.id,
+              type: assetTable.type,
+              mimeType: assetTable.mimeType,
+            })
+            .from(assetTable)
+            .where(
+              and(
+                eq(assetTable.familyId, familyId),
+                inArray(assetTable.id, coverIds),
+              ),
+            )
+        : Promise.resolve([]);
+    })(),
+    db
+      .select({
+        memoryEventId: memoryEventParticipant.memoryEventId,
+        personId: memoryEventParticipant.personId,
+        displayName: personTable.displayName,
+      })
+      .from(memoryEventParticipant)
+      .innerJoin(personTable, eq(memoryEventParticipant.personId, personTable.id))
+      .where(
+        and(
+          eq(memoryEventParticipant.familyId, familyId),
+          eq(personTable.familyId, familyId),
+          inArray(memoryEventParticipant.memoryEventId, eventIds),
+        ),
+      )
+      .orderBy(asc(memoryEventParticipant.createdAt), asc(memoryEventParticipant.id)),
+    db
+      .select({
+        memoryEventId: memoryEventTag.memoryEventId,
+        tag: memoryEventTag.tag,
+      })
+      .from(memoryEventTag)
+      .where(
+        and(
+          eq(memoryEventTag.familyId, familyId),
+          inArray(memoryEventTag.memoryEventId, eventIds),
+        ),
+      )
+      .orderBy(asc(memoryEventTag.tag)),
+  ]);
+
+  const assetLinksByEvent = new Map<string, typeof assetLinks>();
+  for (const link of assetLinks) {
+    const links = assetLinksByEvent.get(link.memoryEventId) ?? [];
+    links.push(link);
+    assetLinksByEvent.set(link.memoryEventId, links);
+  }
+  const coverById = new Map(coverAssets.map((asset) => [asset.id, asset]));
+  const participantNamesByEvent = new Map<string, string[]>();
+  for (const link of participantLinks) {
+    const names = participantNamesByEvent.get(link.memoryEventId) ?? [];
+    names.push(link.displayName);
+    participantNamesByEvent.set(link.memoryEventId, names);
+  }
+  const tagsByEvent = new Map<string, string[]>();
+  for (const row of tagRows) {
+    const tags = tagsByEvent.get(row.memoryEventId) ?? [];
+    tags.push(row.tag);
+    tagsByEvent.set(row.memoryEventId, tags);
+  }
+  const coverIdsForThumb = [
+    ...new Set(
+      events
+        .map((event) => {
+          if (event.coverAssetId) return event.coverAssetId;
+          return assetLinksByEvent
+            .get(event.id)
+            ?.find((link) => link.type === "image")?.assetId;
+        })
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const { getThumbnailMap } = await import("@/lib/assets/service");
+  const thumbByOriginal = await getThumbnailMap(familyId, coverIdsForThumb);
+
+  return events.map((event): TimelineEntry => {
+    const links = assetLinksByEvent.get(event.id) ?? [];
+    const fallbackImage = links.find((link) => link.type === "image");
+    const fallbackAsset = fallbackImage ?? links[0];
+    const coverId = event.coverAssetId ?? fallbackImage?.assetId ?? null;
+    const explicitCover = coverId ? coverById.get(coverId) : undefined;
+    const linkedCover = coverId
+      ? links.find((link) => link.assetId === coverId)
+      : undefined;
+    return {
+      event,
+      coverAssetId: coverId,
+      coverAssetType:
+        explicitCover?.type ?? linkedCover?.type ?? fallbackAsset?.type ?? null,
+      coverAssetMime:
+        explicitCover?.mimeType ??
+        linkedCover?.mimeType ??
+        fallbackAsset?.mimeType ??
+        null,
+      coverThumbAssetId: coverId
+        ? (thumbByOriginal.get(coverId)?.id ?? null)
+        : null,
+      assetCount: links.length,
+      participantNames: participantNamesByEvent.get(event.id) ?? [],
+      tags: tagsByEvent.get(event.id) ?? [],
+    };
+  });
+}
 
 function encodeTimelineCursor(event: MemoryEventRow): string {
   const payload: TimelineCursorPayload = {
@@ -861,147 +1067,62 @@ export async function getTimelinePage(
   const hasMore = eventRows.length > limit;
   const events = hasMore ? eventRows.slice(0, limit) : eventRows;
   if (events.length === 0) return { entries: [], nextCursor: null };
-  const eventIds = events.map((event) => event.id);
-
-  const assetLinks = await db
-    .select({
-      memoryEventId: memoryEventAsset.memoryEventId,
-      assetId: memoryEventAsset.assetId,
-      type: assetTable.type,
-      mimeType: assetTable.mimeType,
-    })
-    .from(memoryEventAsset)
-    .innerJoin(assetTable, eq(memoryEventAsset.assetId, assetTable.id))
-    .where(
-      and(
-        eq(memoryEventAsset.familyId, familyId),
-        eq(assetTable.familyId, familyId),
-        inArray(memoryEventAsset.memoryEventId, eventIds),
-      ),
-    )
-    .orderBy(asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id));
-  const assetLinksByEvent = new Map<string, typeof assetLinks>();
-  for (const link of assetLinks) {
-    const links = assetLinksByEvent.get(link.memoryEventId) ?? [];
-    links.push(link);
-    assetLinksByEvent.set(link.memoryEventId, links);
-  }
-
-  const coverAssetIds = [
-    ...new Set(
-      events
-        .map((event) => event.coverAssetId)
-        .filter((id): id is string => id !== null),
-    ),
-  ];
-  const coverAssets =
-    coverAssetIds.length > 0
-      ? await db
-          .select({
-            id: assetTable.id,
-            type: assetTable.type,
-            mimeType: assetTable.mimeType,
-          })
-          .from(assetTable)
-          .where(
-            and(
-              eq(assetTable.familyId, familyId),
-              inArray(assetTable.id, coverAssetIds),
-            ),
-          )
-      : [];
-  const coverById = new Map(coverAssets.map((asset) => [asset.id, asset]));
-
-  const participantLinks = await db
-    .select({
-      memoryEventId: memoryEventParticipant.memoryEventId,
-      personId: memoryEventParticipant.personId,
-      displayName: personTable.displayName,
-    })
-    .from(memoryEventParticipant)
-    .innerJoin(personTable, eq(memoryEventParticipant.personId, personTable.id))
-    .where(
-      and(
-        eq(memoryEventParticipant.familyId, familyId),
-        eq(personTable.familyId, familyId),
-        inArray(memoryEventParticipant.memoryEventId, eventIds),
-      ),
-    )
-    .orderBy(
-      asc(memoryEventParticipant.createdAt),
-      asc(memoryEventParticipant.id),
-    );
-  const participantNamesByEvent = new Map<string, string[]>();
-  for (const link of participantLinks) {
-    const names = participantNamesByEvent.get(link.memoryEventId) ?? [];
-    names.push(link.displayName);
-    participantNamesByEvent.set(link.memoryEventId, names);
-  }
-
-  const tagRows = await db
-    .select({ memoryEventId: memoryEventTag.memoryEventId, tag: memoryEventTag.tag })
-    .from(memoryEventTag)
-    .where(
-      and(
-        eq(memoryEventTag.familyId, familyId),
-        inArray(memoryEventTag.memoryEventId, eventIds),
-      ),
-    )
-    .orderBy(asc(memoryEventTag.tag));
-  const tagsByEvent = new Map<string, string[]>();
-  for (const row of tagRows) {
-    const tags = tagsByEvent.get(row.memoryEventId) ?? [];
-    tags.push(row.tag);
-    tagsByEvent.set(row.memoryEventId, tags);
-  }
-
-  const coverIdsForThumb = [
-    ...new Set(
-      events
-        .map((event) => {
-          if (event.coverAssetId) return event.coverAssetId;
-          return assetLinksByEvent
-            .get(event.id)
-            ?.find((link) => link.type === "image")?.assetId;
-        })
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
-  const { getThumbnailMap } = await import("@/lib/assets/service");
-  const thumbByOriginal = await getThumbnailMap(familyId, coverIdsForThumb);
-
-  const entries = events.map((event): TimelineEntry => {
-    const links = assetLinksByEvent.get(event.id) ?? [];
-    const fallbackImage = links.find((link) => link.type === "image");
-    const fallbackAsset = fallbackImage ?? links[0];
-    const coverId = event.coverAssetId ?? fallbackImage?.assetId ?? null;
-    const explicitCover = coverId ? coverById.get(coverId) : undefined;
-    const linkedCover = coverId
-      ? links.find((link) => link.assetId === coverId)
-      : undefined;
-    return {
-      event,
-      coverAssetId: coverId,
-      coverAssetType:
-        explicitCover?.type ?? linkedCover?.type ?? fallbackAsset?.type ?? null,
-      coverAssetMime:
-        explicitCover?.mimeType ??
-        linkedCover?.mimeType ??
-        fallbackAsset?.mimeType ??
-        null,
-      coverThumbAssetId: coverId
-        ? (thumbByOriginal.get(coverId)?.id ?? null)
-        : null,
-      assetCount: links.length,
-      participantNames: participantNamesByEvent.get(event.id) ?? [],
-      tags: tagsByEvent.get(event.id) ?? [],
-    };
-  });
+  const entries = await hydrateTimelineEntries(familyId, events);
 
   return {
     entries,
     nextCursor: hasMore ? encodeTimelineCursor(events.at(-1)!) : null,
   };
+}
+
+/** Pinned memories first, then newest milestones. */
+export async function listMilestoneEntries(
+  familyId: string,
+  limit = 6,
+): Promise<TimelineEntry[]> {
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 24);
+  const events = await getDb()
+    .select()
+    .from(memoryEvent)
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.status, "confirmed"),
+        isNull(memoryEvent.deletedAt),
+        or(eq(memoryEvent.isPinned, true), isNotNull(memoryEvent.milestoneType)),
+      ),
+    )
+    .orderBy(desc(memoryEvent.isPinned), desc(memoryEvent.occurredAt), desc(memoryEvent.id))
+    .limit(safeLimit);
+  return hydrateTimelineEntries(familyId, events);
+}
+
+/** Family-scoped, soft-delete-safe batch lookup for secondary read models. */
+export async function getTimelineEntriesByIds(
+  familyId: string,
+  eventIds: readonly string[],
+): Promise<TimelineEntry[]> {
+  const ids = [...new Set(eventIds)].slice(0, 100);
+  if (ids.length === 0) return [];
+  const rows = await getDb()
+    .select()
+    .from(memoryEvent)
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.status, "confirmed"),
+        isNull(memoryEvent.deletedAt),
+        inArray(memoryEvent.id, ids),
+      ),
+    );
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return hydrateTimelineEntries(
+    familyId,
+    ids.flatMap((id) => {
+      const row = byId.get(id);
+      return row ? [row] : [];
+    }),
+  );
 }
 
 export type TimelineFacets = { tags: string[]; years: number[] };

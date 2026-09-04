@@ -8,7 +8,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { user } from "./auth";
-import { family } from "./family";
+import { family, person } from "./family";
 import { inboxItem } from "./inbox";
 
 /**
@@ -41,6 +41,10 @@ export const contributionRequest = sqliteTable(
     tokenHash: text("token_hash").notNull(),
     /** 展示给访客的称呼（如「外婆」）；不暴露任何家庭内部数据 */
     recipientLabel: text("recipient_label").notNull(),
+    /** 可选关联家庭 Person；匿名页面仍只显示上面的称呼与问题。 */
+    recipientPersonId: text("recipient_person_id").references(() => person.id, {
+      onDelete: "set null",
+    }),
     /** 问题正文（来自内置问题库或家人自拟） */
     promptText: text("prompt_text").notNull(),
     /** 内置问题库的 topic key；自拟问题为 null */
@@ -61,6 +65,7 @@ export const contributionRequest = sqliteTable(
   (t) => [
     uniqueIndex("contribution_request_token_hash_uidx").on(t.tokenHash),
     index("contribution_request_family_idx").on(t.familyId, t.status),
+    index("contribution_request_person_idx").on(t.familyId, t.recipientPersonId),
     check(
       "contribution_request_token_hash_check",
       sql`length(${t.tokenHash}) = 64`,

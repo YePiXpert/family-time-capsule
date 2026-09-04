@@ -128,7 +128,7 @@ export default async function TimelinePage({
               <ol className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, coverThumbAssetId, assetCount, participantNames }) => (
                   <li key={event.id} className="min-w-0">
-                    <MemoryCard id={event.id} title={event.title} dateLabel={dateFormatter.format(event.occurredAt)} ageLabel={child?.birthDate ? formatAgeLabel(child.birthDate, event.occurredAt) : undefined} location={event.locationText} people={participantNames} assetCount={assetCount} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
+                    <MemoryCard id={event.id} title={event.title} dateLabel={dateFormatter.format(event.occurredAt)} ageLabel={child?.birthDate ? formatAgeLabel(child.birthDate, event.occurredAt) : undefined} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
                   </li>
                 ))}
               </ol>

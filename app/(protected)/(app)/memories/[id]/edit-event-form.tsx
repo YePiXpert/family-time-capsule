@@ -15,6 +15,16 @@ const PRECISION_LABEL: Record<string, string> = {
   date_only: "只记得日期",
 };
 
+const MILESTONE_OPTIONS = [
+  { value: "", label: "普通记忆（不标记节点）", prompt: "" },
+  { value: "first_time", label: "第一次", prompt: "第一次做到了一件什么事？" },
+  { value: "growth", label: "成长", prompt: "最近发现了怎样的变化？" },
+  { value: "learning", label: "学会了", prompt: "学会了什么新本领？" },
+  { value: "family", label: "家庭时刻", prompt: "一家人共同经历了什么？" },
+  { value: "celebration", label: "庆祝", prompt: "今天在庆祝什么？" },
+  { value: "other", label: "值得记住", prompt: "为什么想把这一刻特别留下？" },
+] as const;
+
 /**
  * 事件编辑（RH-003）：标题 / 时间 / 精度 / 地点 / 封面 / 参与人 / 孩子档案。
  * 修改保存后：时间轴按新 occurredAt 重排，年龄按 birthDate 现算；
@@ -154,6 +164,43 @@ export function EditEventForm({
         </div>
       </fieldset>
 
+      <fieldset className="rounded-xl border border-line p-3">
+        <legend className="px-1 text-sm font-medium">成长节点（可选）</legend>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <label className="flex flex-col gap-1 text-sm">
+            节点类型
+            <select
+              name="milestoneType"
+              defaultValue={event.milestoneType ?? ""}
+              className={inputClass}
+            >
+              {MILESTONE_OPTIONS.map((option) => (
+                <option key={option.value || "none"} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="isPinned"
+              defaultChecked={event.isPinned}
+              className="h-4 w-4"
+            />
+            在节点中置顶
+          </label>
+        </div>
+        <details className="mt-2 text-xs leading-5 text-muted">
+          <summary className="min-h-11 cursor-pointer py-3 font-medium">看看可选记录提示</summary>
+          <ul className="space-y-1 pb-1">
+            {MILESTONE_OPTIONS.slice(1).map((option) => (
+              <li key={option.value}>· {option.label}：{option.prompt}</li>
+            ))}
+          </ul>
+        </details>
+      </fieldset>
+
       <label className="flex flex-col gap-1 text-sm">
         封面素材
         <select
@@ -171,7 +218,7 @@ export function EditEventForm({
       </label>
 
       <p className="text-xs leading-5 text-foreground/45">
-        修改这里只改变「这件事」的时间与内容；照片自身的拍摄时间在收件箱/素材层单独管理。
+        节点只是这段 MemoryEvent 的展示标记，不会建立另一套记录；修改事件也不会改变照片自身的拍摄或导入时间。
       </p>
 
       <div className="flex items-center gap-3">

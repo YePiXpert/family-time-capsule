@@ -50,7 +50,14 @@ type Snapshot = {
     createdAt: string;
     updatedAt: string;
   }>;
-  events: Array<{ id: string; title: string; occurredAt: string; assetIds: string[] }>;
+  events: Array<{
+    id: string;
+    title: string;
+    occurredAt: string;
+    milestoneType: string | null;
+    isPinned: boolean;
+    assetIds: string[];
+  }>;
   contributions: Array<{
     id: string;
     memoryEventId: string;
@@ -224,6 +231,10 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     };
     // 3+ 事件（照片事件 ×2 + 合并的 A/V 事件 + 文字事件）
     const e1 = await confirm(photo.asset.id, "出生后的第一天");
+    await m.memories.updateMemoryEvent(familyId, e1, adminId, {
+      milestoneType: "first_time",
+      isPinned: true,
+    });
     const avItem = await m.inbox.createInboxItemForAsset(familyId, { id: audio.asset.id } as never);
     const vItem = await m.inbox.createInboxItemForAsset(familyId, { id: video.asset.id } as never);
     const merged = await m.memories.mergeInboxEntries(familyId, [avItem.id, vItem.id], {
@@ -354,6 +365,8 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
         id: e.id,
         title: e.title,
         occurredAt: e.occurredAt.toISOString(),
+        milestoneType: e.milestoneType,
+        isPinned: e.isPinned,
         assetIds: [],
       })),
       contributions: contributionRows
@@ -500,12 +513,22 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     const detailChecks = await Promise.all(
       snapshot.events.map(async (e) => {
         const d = await m.memories.getMemoryEventDetail(snapshot.familyId, e.id);
-        return d ? { id: e.id, at: d.event.occurredAt.toISOString(), title: d.event.title } : null;
+        return d
+          ? {
+              id: e.id,
+              at: d.event.occurredAt.toISOString(),
+              title: d.event.title,
+              milestoneType: d.event.milestoneType,
+              isPinned: d.event.isPinned,
+            }
+          : null;
       }),
     );
     for (let i = 0; i < snapshot.events.length; i++) {
       expect(detailChecks[i]!.at).toBe(snapshot.events[i].occurredAt);
       expect(detailChecks[i]!.title).toBe(snapshot.events[i].title);
+      expect(detailChecks[i]!.milestoneType).toBe(snapshot.events[i].milestoneType);
+      expect(detailChecks[i]!.isPinned).toBe(snapshot.events[i].isPinned);
     }
     // 合并事件的素材关系恢复（2 份 A/V）
     const avDetail = await m.memories.getMemoryEventDetail(

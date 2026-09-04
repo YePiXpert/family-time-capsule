@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { closeRequestAction, createRequestAction } from "./actions";
 
 const inputClass =
@@ -8,10 +8,19 @@ const inputClass =
 
 export function RequestCreateForm({
   topics,
+  people,
+  defaultPersonId,
 }: {
   topics: Array<{ key: string; label: string; questions: string[] }>;
+  people: Array<{ id: string; displayName: string; relationToChild: string | null }>;
+  defaultPersonId?: string;
 }) {
   const [state, action, pending] = useActionState(createRequestAction, undefined);
+  const initialPerson = people.find((person) => person.id === defaultPersonId);
+  const [personId, setPersonId] = useState(initialPerson?.id ?? "");
+  const [recipientLabel, setRecipientLabel] = useState(
+    initialPerson?.relationToChild || initialPerson?.displayName || "",
+  );
 
   if (state?.token) {
     const url = `${window.location.origin}/respond/${state.token}`;
@@ -31,12 +40,36 @@ export function RequestCreateForm({
   return (
     <form action={action} className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
+        <select
+          name="recipientPersonId"
+          aria-label="关联家人"
+          className={`${inputClass} min-w-32`}
+          value={personId}
+          onChange={(event) => {
+            const nextId = event.target.value;
+            setPersonId(nextId);
+            const selected = people.find((person) => person.id === nextId);
+            if (selected) {
+              setRecipientLabel(selected.relationToChild || selected.displayName);
+            }
+          }}
+        >
+          <option value="">不关联人物</option>
+          {people.map((person) => (
+            <option key={person.id} value={person.id}>
+              {person.displayName}
+              {person.relationToChild ? ` · ${person.relationToChild}` : ""}
+            </option>
+          ))}
+        </select>
         <input
           name="recipientLabel"
           required
           maxLength={50}
           placeholder="称呼，如：外婆"
           aria-label="家人的称呼"
+          value={recipientLabel}
+          onChange={(event) => setRecipientLabel(event.target.value)}
           className={`${inputClass} min-w-32 flex-1`}
         />
         <select name="topicKey" aria-label="话题" className={inputClass} defaultValue="custom">

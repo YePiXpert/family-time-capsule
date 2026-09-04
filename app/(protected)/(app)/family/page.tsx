@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { AddPersonForm } from "./add-person-form";
@@ -37,7 +38,13 @@ export default async function FamilyPage() {
           >
             <div className="min-w-0">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-medium">{p.displayName}</span>
+                <Link
+                  href={`/family/${p.id}`}
+                  className="font-medium underline-offset-4 hover:underline"
+                  aria-label={`查看${p.displayName}的人物主页`}
+                >
+                  {p.displayName}
+                </Link>
                 {p.relationToChild && (
                   <span className="text-sm text-foreground/60">
                     {p.relationToChild}
@@ -49,6 +56,12 @@ export default async function FamilyPage() {
                   </span>
                 )}
               </div>
+              <Link
+                href={`/family/${p.id}`}
+                className="mt-2 inline-flex min-h-11 items-center text-sm font-medium text-accent underline-offset-4 hover:underline"
+              >
+                查看共同记忆与讲述
+              </Link>
               <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-foreground/50">
                 {p.isChild && <span>孩子</span>}
                 {p.birthDate && <span>生于 {p.birthDate}</span>}

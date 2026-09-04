@@ -609,6 +609,8 @@ async function loadAndVerifyZip(
       locationText?: string | null;
       coverAssetId?: string | null;
       status?: string;
+      milestoneType?: string | null;
+      isPinned?: boolean;
       ageDays?: number | null;
       createdAt?: string | null;
       updatedAt?: string | null;
@@ -1030,6 +1032,20 @@ async function loadAndVerifyZip(
           m.tags.every((t) => typeof t === "string" && t.length > 0 && t.length <= 50)),
       "bad_json",
       `事件 ${m.id} 的 tags 非法`,
+    );
+    requireCondition(
+      m.milestoneType === undefined ||
+        m.milestoneType === null ||
+        ["first_time", "growth", "family", "learning", "celebration", "other"].includes(
+          m.milestoneType,
+        ),
+      "bad_json",
+      `事件 ${m.id} 的 milestoneType 非法`,
+    );
+    requireCondition(
+      m.isPinned === undefined || typeof m.isPinned === "boolean",
+      "bad_json",
+      `事件 ${m.id} 的 isPinned 非法`,
     );
     for (const pid of m.participantPersonIds ?? []) {
       requireCondition(personIds.has(pid), "bad_refs", `事件 ${m.id} 引用未知参与人 ${pid}`);
@@ -1989,6 +2005,8 @@ async function restoreFromArchive(
               locationText: m.locationText ?? null,
               coverAssetId: m.coverAssetId ?? null,
               status: m.status ?? "confirmed",
+              milestoneType: m.milestoneType ?? null,
+              isPinned: m.isPinned ?? false,
               ageDays: m.ageDays ?? null,
               lastEditedByUserId: null,
               createdAt: parseDate(m.createdAt) ?? now,
