@@ -47,15 +47,27 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await expect(page.getByRole("heading", { name: "外婆哼的歌" })).toBeVisible();
   await expect(page.locator("audio").first()).toBeVisible();
 
-  // 回到收件箱确认视频条目（MOV 不可解码 → 显示安全保存占位）
+  // 回到收件箱确认视频条目。浏览器是否把这个最小 MOV fixture 判为
+  // 可播放取决于 Chromium/系统编解码器，因此显式触发媒体错误来验证
+  // 产品的确定性降级路径，而不是把编解码器探测结果当成断言前提。
   await page.goto("/inbox");
   const videoCard = page.locator("li", { hasText: "第一次翻身" });
   await videoCard.getByLabel("事件标题").fill("第一次翻身");
   await videoCard.getByRole("button", { name: "确认进入时间轴" }).click();
   await expect(page.getByRole("heading", { name: "第一次翻身" })).toBeVisible();
-  await expect(
-    page.getByText("原件已安全保存，当前浏览器可能无法直接预览").first(),
-  ).toBeVisible();
+  const fallback = page
+    .getByText("原件已安全保存，当前浏览器可能无法直接预览")
+    .first();
+  if ((await fallback.count()) === 0) {
+    // If the browser has not already rejected the MOV, exercise the same
+    // HTMLMediaElement error event that an unsupported codec produces. Query
+    // and dispatch in one browser task so a concurrent native error cannot
+    // remove the <video> between a locator check and dispatch.
+    await page.evaluate(() => {
+      document.querySelector("video")?.dispatchEvent(new Event("error"));
+    });
+  }
+  await expect(fallback).toBeVisible();
 
   // 最后确认文字条目
   await page.goto("/inbox");
