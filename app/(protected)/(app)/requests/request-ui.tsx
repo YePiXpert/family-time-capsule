@@ -114,7 +114,7 @@ export function CloseRequestButton({ requestId }: { requestId: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-foreground/15 px-2 py-0.5 text-xs text-foreground/60 hover:border-red-500/40 disabled:opacity-50"
+        className="min-h-11 rounded-lg border border-foreground/15 px-3 py-2 text-xs text-foreground/60 hover:border-red-500/40 disabled:opacity-50"
       >
         {pending ? "关闭中…" : "关闭链接"}
       </button>

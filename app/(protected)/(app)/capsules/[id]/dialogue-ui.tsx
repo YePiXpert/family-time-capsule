@@ -9,7 +9,7 @@ import {
 } from "./dialogue-actions";
 
 const inputClass =
-  "rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
+  "min-h-11 rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
 
 function Feedback({ state }: { state: DialogueActionState | undefined }) {
   if (!state) return null;
@@ -48,7 +48,7 @@ export function AddQuestionForm({ capsuleId }: { capsuleId: string }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded border border-foreground/15 px-2 py-1 text-xs hover:border-accent disabled:opacity-50"
+          className="min-h-11 rounded border border-foreground/15 px-3 py-2 text-xs hover:border-accent disabled:opacity-50"
         >
           {pending ? "添加中…" : "添加问题"}
         </button>
@@ -73,7 +73,7 @@ export function RemoveQuestionButton({
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-foreground/10 px-2 py-0.5 text-xs text-foreground/50 hover:border-red-500/40 disabled:opacity-50"
+        className="min-h-11 rounded border border-foreground/10 px-3 py-2 text-xs text-foreground/50 hover:border-red-500/40 disabled:opacity-50"
       >
         删除
       </button>
@@ -114,7 +114,7 @@ export function ReplyForm({
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-foreground px-3 py-1.5 text-xs text-background transition-opacity disabled:opacity-50"
+          className="min-h-11 rounded-lg bg-foreground px-3 py-2 text-xs text-background transition-opacity disabled:opacity-50"
         >
           {pending ? "提交中…" : "回答"}
         </button>

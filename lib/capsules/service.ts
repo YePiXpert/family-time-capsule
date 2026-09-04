@@ -69,6 +69,52 @@ export function dateUnlockInstant(
   return zonedWallTimeToUtc(`${unlockValue}T00:00:00`, familyTimezone);
 }
 
+export function capsuleUnlockInstant(
+  row: Pick<CapsuleRow, "unlockType" | "unlockValue">,
+  childBirthDate: string | null,
+  familyTimezone: string,
+): Date | null {
+  if (row.unlockType === "date") {
+    return isValidDateString(row.unlockValue)
+      ? dateUnlockInstant(row.unlockValue, familyTimezone)
+      : null;
+  }
+  if (row.unlockType !== "age" || !childBirthDate) return null;
+  const age = Number(row.unlockValue);
+  if (!Number.isInteger(age)) return null;
+  const birth = new Date(`${childBirthDate}T00:00:00Z`);
+  if (Number.isNaN(birth.getTime())) return null;
+  const targetYear = birth.getUTCFullYear() + age;
+  const month = birth.getUTCMonth() + 1;
+  const day = Math.min(
+    birth.getUTCDate(),
+    new Date(Date.UTC(targetYear, month, 0)).getUTCDate(),
+  );
+  const date = `${targetYear}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return dateUnlockInstant(date, familyTimezone);
+}
+
+export function capsuleCountdownLabel(
+  row: Pick<CapsuleRow, "status" | "unlockType" | "unlockValue">,
+  childBirthDate: string | null,
+  familyTimezone: string,
+  now = new Date(),
+): string {
+  if (row.status === "opened") return "已经开启";
+  if (row.status === "draft") return "等待封存";
+  const unlockAt = capsuleUnlockInstant(row, childBirthDate, familyTimezone);
+  if (!unlockAt) return "等待开启条件";
+  const days = Math.ceil((unlockAt.getTime() - now.getTime()) / 86_400_000);
+  if (days <= 0) return "现在可以开启";
+  if (days === 1) return "明天可以开启";
+  if (days < 60) return `还有 ${days} 天`;
+  const months = Math.max(2, Math.round(days / 30.44));
+  if (months < 24) return `大约还有 ${months} 个月`;
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return rest === 0 ? `大约还有 ${years} 年` : `大约还有 ${years} 年 ${rest} 个月`;
+}
+
 export function isCapsuleUnlocked(
   row: Pick<CapsuleRow, "unlockType" | "unlockValue" | "status">,
   childBirthDate: string | null,
@@ -268,7 +314,11 @@ export async function addCapsuleContribution(
   );
 }
 
-export type CapsuleListItem = CapsuleRow & { unlocked: boolean; itemCount: number };
+export type CapsuleListItem = CapsuleRow & {
+  unlocked: boolean;
+  itemCount: number;
+  countdownLabel: string;
+};
 
 export async function listCapsules(
   snapshot: ContributionAccessSnapshot,
@@ -297,6 +347,12 @@ export async function listCapsules(
   return rows.map((row) => ({
     ...row,
     unlocked: isCapsuleUnlocked(
+      row,
+      childBirthDate,
+      snapshot.principal.familyTimezone,
+      snapshot.evaluatedAt,
+    ),
+    countdownLabel: capsuleCountdownLabel(
       row,
       childBirthDate,
       snapshot.principal.familyTimezone,

@@ -6,6 +6,9 @@ import { listCapsules } from "@/lib/capsules/service";
 import { CreateCapsuleForm } from "./create-capsule-form";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { createContributionAccessSnapshot } from "@/lib/authz/contribution-access";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -32,47 +35,53 @@ export default async function CapsulesPage() {
   );
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <h1 className="text-2xl font-semibold">胶囊</h1>
-      <p className="mt-2 text-sm leading-6 text-foreground/60">
-        封存此刻，等未来开启。封存后正文在到达条件前不会显示，
-        但备份与导出永远完整（这是仪式，不是加密）。
-      </p>
+    <main className="page-container max-w-5xl">
+      <PageHeader
+        eyebrow="For the future"
+        title="时间胶囊"
+        description="把此刻的记忆和想说的话放进去，按日期或孩子年龄等待未来开启。完整备份始终保留封存内容，避免珍贵资料意外丢失。"
+      />
 
-      <section aria-label="胶囊列表" className="mt-8 flex flex-col gap-3">
+      <section aria-label="胶囊列表" className="mt-8 grid gap-4 sm:grid-cols-2">
         {items.length === 0 && (
-          <p className="text-sm text-foreground/50">还没有胶囊。</p>
+          <div className="sm:col-span-2">
+            <EmptyState
+              icon="capsule"
+              title="还没有写给未来的胶囊"
+              description="可以先创建一个草稿，慢慢放入记忆、家人的话和想留给未来的问题。"
+              action={canWrite ? "在下方创建胶囊" : "浏览家庭记忆"}
+              actionHref={canWrite ? "#create-capsule" : "/timeline"}
+            />
+          </div>
         )}
         {items.map((c) => (
           <Link
             key={c.id}
             href={`/capsules/${c.id}`}
-            className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-xl border border-foreground/10 bg-foreground/[0.02] px-4 py-4 transition-colors hover:border-accent/50"
+            className="group flex min-h-52 flex-col justify-between rounded-2xl border border-line bg-surface p-5 transition-colors hover:border-accent/50"
           >
-            <div className="flex min-w-0 flex-col">
-              <span className="font-medium">{c.title}</span>
-              <span className="text-sm text-foreground/60">
-                {unlockLabel(c.unlockType, c.unlockValue)} · {c.itemCount} 份内容
-              </span>
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <StatusBadge tone={c.status === "opened" ? "success" : c.unlocked ? "accent" : "neutral"}>
+                  {STATUS_LABEL[c.status] ?? c.status}
+                </StatusBadge>
+                <span className="text-xs font-medium text-accent">{c.countdownLabel}</span>
+              </div>
+              <h2 className="mt-6 text-xl font-semibold leading-7">{c.title}</h2>
+              <p className="mt-2 text-sm text-muted">
+                {unlockLabel(c.unlockType, c.unlockValue)}
+              </p>
             </div>
-            <span
-              className={`rounded border px-2 py-0.5 text-xs ${
-                c.status === "opened"
-                  ? "border-accent/50 text-accent"
-                  : c.status === "sealed"
-                    ? "border-foreground/20 text-foreground/60"
-                    : "border-foreground/10 text-foreground/50"
-              }`}
-            >
-              {STATUS_LABEL[c.status] ?? c.status}
-              {c.status === "sealed" && (c.unlocked ? " · 可开启" : " · 未到时间")}
+            <span className="mt-6 inline-flex min-h-11 items-center justify-between border-t border-line pt-3 text-sm font-semibold text-accent">
+              {c.status === "opened" ? "重新打开" : c.status === "draft" ? "继续准备" : c.unlocked ? "开启胶囊" : "查看封存状态"}
+              <span>{c.itemCount} 份内容</span>
             </span>
           </Link>
         ))}
       </section>
 
       {canWrite && (
-        <section aria-label="创建胶囊" className="mt-10">
+        <section id="create-capsule" aria-label="创建胶囊" className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6">
           <h2 className="text-lg font-medium">创建胶囊</h2>
           <CreateCapsuleForm />
         </section>

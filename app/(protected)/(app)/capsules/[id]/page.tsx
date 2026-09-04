@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
 import { listPeople } from "@/lib/family/service";
-import { getCapsuleDetail } from "@/lib/capsules/service";
+import { capsuleCountdownLabel, getCapsuleDetail } from "@/lib/capsules/service";
 import { listMemoryEvents } from "@/lib/memories/service";
 import { CapsuleActions } from "./capsule-actions";
 import { AddQuestionForm, ReplyForm, RemoveQuestionButton } from "./dialogue-ui";
@@ -13,6 +13,11 @@ import {
   createContributionAccessSnapshot,
   listVisibleContributionsForFamily,
 } from "@/lib/authz/contribution-access";
+import { EmptyState } from "@/components/empty-state";
+import { MediaBlock } from "@/components/media-view";
+import { MediaGrid } from "@/components/media-grid";
+import { PageHeader } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +49,7 @@ export default async function CapsuleDetailPage({
   );
   if (!detail) notFound();
 
-  const { capsule, events, contributions, unlocked } = detail;
+  const { capsule, events, assets, contributions, unlocked } = detail;
   const locked = capsule.status === "sealed" && !unlocked;
   const dialogue = await getCapsuleDialogue(familyId, capsule.id);
   const eventOptions =
@@ -75,21 +80,32 @@ export default async function CapsuleDetailPage({
       : [];
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <Link href="/capsules" className="text-sm text-foreground/60 hover:text-foreground">
-        ← 胶囊
-      </Link>
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight">{capsule.title}</h1>
-      <p className="mt-2 text-sm text-foreground/70">
-        {capsule.unlockType === "date"
-          ? `${capsule.unlockValue} 开启`
-          : `孩子 ${capsule.unlockValue} 岁开启`}{" "}
-        · {STATUS_LABEL[capsule.status] ?? capsule.status}
-        {capsule.sealedAt &&
-          ` · 封存于 ${new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(capsule.sealedAt)}`}
-        {capsule.openedAt &&
-          ` · 开启于 ${new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(capsule.openedAt)}`}
-      </p>
+    <main className="page-container max-w-4xl">
+      <PageHeader
+        backHref="/capsules"
+        backLabel="返回时间胶囊"
+        eyebrow="写给未来"
+        title={capsule.title}
+        description={capsule.unlockType === "date" ? `${capsule.unlockValue} 开启` : `孩子 ${capsule.unlockValue} 岁开启`}
+      />
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <StatusBadge tone={capsule.status === "opened" ? "success" : unlocked ? "accent" : "neutral"}>
+          {STATUS_LABEL[capsule.status] ?? capsule.status}
+        </StatusBadge>
+        <strong className="text-sm text-accent">
+          {capsuleCountdownLabel(capsule, childBirthDate, timezone)}
+        </strong>
+        {capsule.sealedAt ? (
+          <span className="text-xs text-muted">
+            封存于 {new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(capsule.sealedAt)}
+          </span>
+        ) : null}
+        {capsule.openedAt ? (
+          <span className="text-xs text-muted">
+            开启于 {new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(capsule.openedAt)}
+          </span>
+        ) : null}
+      </div>
 
       {canWrite && (
         <CapsuleActions
@@ -153,7 +169,9 @@ export default async function CapsuleDetailPage({
                       )}
                       {r.assetId && (
                         <p className="mt-1 text-xs text-foreground/50">
-                          （附带一份媒体，见 /api/media/{r.assetId}）
+                          <a href={`/api/media/${r.assetId}`} className="ui-text-link min-h-11">
+                            查看或播放这份回答附件
+                          </a>
                         </p>
                       )}
                     </li>
@@ -189,10 +207,33 @@ export default async function CapsuleDetailPage({
       ) : (
         <section aria-label="胶囊内容" className="mt-10 flex flex-col gap-6">
           {events.length === 0 && contributions.length === 0 && (
-            <p className="text-sm text-foreground/50">
-              {capsule.status === "draft" ? "还没有放入内容。" : "（空）"}
-            </p>
+            <EmptyState
+              icon="capsule"
+              title={capsule.status === "draft" ? "胶囊还在等待内容" : "这个胶囊没有留下内容"}
+              description={capsule.status === "draft" ? "从上方选择一段记忆或一句家人的话，再决定何时封存。" : "仍可以回到家庭时间轴继续阅读其他记忆。"}
+              action={capsule.status === "draft" ? "浏览可选记忆" : "打开时间轴"}
+              actionHref="/timeline"
+            />
           )}
+          {assets.length > 0 ? (
+            <div>
+              <h2 className="text-sm font-medium text-muted">留给未来的影像与声音</h2>
+              <div className="mt-2">
+                <MediaGrid label="胶囊媒体">
+                  {assets.map((asset) => (
+                    <MediaBlock
+                      key={asset.id}
+                      assetId={asset.id}
+                      filename={asset.originalFilename}
+                      mimeType={asset.mimeType}
+                      type={asset.type}
+                      durationMs={asset.durationMs}
+                    />
+                  ))}
+                </MediaGrid>
+              </div>
+            </div>
+          ) : null}
           {events.length > 0 && (
             <div>
               <h2 className="text-sm font-medium text-foreground/60">记忆事件</h2>

@@ -116,7 +116,7 @@ export function CapsuleActions({
           <button
             type="submit"
             disabled={sealPending}
-            className="mt-3 rounded-lg bg-foreground px-4 py-2 text-sm text-background transition-opacity disabled:opacity-50"
+            className="mt-3 min-h-11 rounded-lg bg-foreground px-4 py-2 text-sm text-background transition-opacity disabled:opacity-50"
           >
             {sealPending ? "封存中…" : "封存胶囊"}
           </button>
@@ -139,7 +139,7 @@ export function CapsuleActions({
           <button
             type="submit"
             disabled={openPending || !unlocked}
-            className="mt-3 rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent disabled:opacity-40"
+            className="mt-3 min-h-11 rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent disabled:opacity-40"
           >
             {openPending ? "开启中…" : "开启胶囊"}
           </button>

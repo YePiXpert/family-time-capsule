@@ -21,12 +21,12 @@ export const SECONDARY_NAVIGATION: readonly NavigationItem[] = [
   { href: "/stories", label: "故事", icon: "story" },
   { href: "/requests", label: "口述史", icon: "microphone" },
   { href: "/capsules", label: "时间胶囊", icon: "capsule" },
-  { href: "/settings/backup", label: "书籍与备份", icon: "book" },
+  { href: "/books", label: "书籍与备份", icon: "book" },
   { href: "/settings", label: "设置", icon: "settings" },
   { href: "/trash", label: "回收站", icon: "trash" },
 ];
 
-const MORE_PREFIXES = ["/more", "/search", "/family", "/stories", "/requests", "/capsules", "/settings", "/trash"];
+const MORE_PREFIXES = ["/more", "/search", "/family", "/stories", "/requests", "/capsules", "/books", "/settings", "/trash"];
 
 export function isNavigationItemActive(pathname: string, href: string, mobile = false): boolean {
   if (href === "/") return pathname === "/";

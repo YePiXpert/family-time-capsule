@@ -42,6 +42,7 @@ const {
   getCompleteCapsuleDetailForDisasterExport,
   listCapsules,
   isCapsuleUnlocked,
+  capsuleCountdownLabel,
 } = await import("@/lib/capsules/service");
 const { createContributionAccessSnapshot } = await import(
   "@/lib/authz/contribution-access"
@@ -144,6 +145,16 @@ describe("解锁判定", () => {
     expect(isCapsuleUnlocked(draft, CHILD_BIRTH, TZ, NOW)).toBe(false);
     const opened = { unlockType: "date", unlockValue: "2999-01-01", status: "opened" };
     expect(isCapsuleUnlocked(opened, CHILD_BIRTH, TZ, NOW)).toBe(true);
+    expect(capsuleCountdownLabel(draft, CHILD_BIRTH, TZ, NOW)).toBe("等待封存");
+    expect(capsuleCountdownLabel(opened, CHILD_BIRTH, TZ, NOW)).toBe("已经开启");
+    expect(
+      capsuleCountdownLabel(
+        { unlockType: "date", unlockValue: "2026-08-30", status: "sealed" },
+        CHILD_BIRTH,
+        TZ,
+        NOW,
+      ),
+    ).toBe("明天可以开启");
   });
 });
 

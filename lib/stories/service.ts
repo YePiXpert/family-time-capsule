@@ -1,11 +1,12 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { isNull, and, asc, eq, gte, inArray, lt } from "drizzle-orm";
+import { isNull, and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
 import { assetTranscript } from "@/db/schema/transcript";
+import { asset } from "@/db/schema/asset";
 import {
   story,
   storyParagraph,
@@ -74,12 +75,54 @@ export type StoryDetail = {
   paragraphs: Array<StoryParagraphRow & { sources: StorySourceRow[] }>;
 };
 
-export async function listStories(familyId: string): Promise<
-  Array<StoryRow & { paragraphCount: number }>
-> {
+export type StoryListItem = StoryRow & {
+  paragraphCount: number;
+  cover: null | {
+    assetId: string;
+    mimeType: string;
+    thumbAssetId: string | null;
+  };
+};
+
+export async function listStories(familyId: string): Promise<StoryListItem[]> {
   const db = getDb();
   const rows = db
-    .select()
+    .select({
+      row: story,
+      coverAssetId: sql<string | null>`coalesce(
+        (
+          select cover_event.cover_asset_id
+          from memory_event cover_event
+          inner join asset cover_asset
+            on cover_asset.id = cover_event.cover_asset_id
+           and cover_asset.family_id = ${familyId}
+           and cover_asset.type = 'image'
+          where cover_event.family_id = ${familyId}
+            and cover_event.deleted_at is null
+            and cover_event.occurred_at >= ${story.periodStart}
+            and cover_event.occurred_at < ${story.periodEnd}
+          order by cover_event.occurred_at desc
+          limit 1
+        ),
+        (
+          select cover_link.asset_id
+          from memory_event cover_event
+          inner join memory_event_asset cover_link
+            on cover_link.memory_event_id = cover_event.id
+           and cover_link.family_id = ${familyId}
+          inner join asset cover_asset
+            on cover_asset.id = cover_link.asset_id
+           and cover_asset.family_id = ${familyId}
+           and cover_asset.type = 'image'
+          where cover_event.family_id = ${familyId}
+            and cover_event.deleted_at is null
+            and cover_event.occurred_at >= ${story.periodStart}
+            and cover_event.occurred_at < ${story.periodEnd}
+          order by cover_event.occurred_at desc, cover_link.created_at asc
+          limit 1
+        )
+      )`,
+    })
     .from(story)
     .where(and(eq(story.familyId, familyId), isNull(story.deletedAt)))
     .orderBy(asc(story.periodStart), asc(story.createdAt))
@@ -92,7 +135,7 @@ export async function listStories(familyId: string): Promise<
     .where(
       inArray(
         storyParagraph.storyId,
-        rows.map((r) => r.id),
+        rows.map(({ row }) => row.id),
       ),
     )
     .all();
@@ -100,7 +143,32 @@ export async function listStories(familyId: string): Promise<
   for (const row of counts) {
     countByStory.set(row.storyId, (countByStory.get(row.storyId) ?? 0) + 1);
   }
-  return rows.map((r) => ({ ...r, paragraphCount: countByStory.get(r.id) ?? 0 }));
+  const coverIds = rows
+    .map((item) => item.coverAssetId)
+    .filter((id): id is string => Boolean(id));
+  const coverRows = coverIds.length > 0
+    ? await db
+        .select({ id: asset.id, mimeType: asset.mimeType })
+        .from(asset)
+        .where(and(eq(asset.familyId, familyId), inArray(asset.id, coverIds)))
+    : [];
+  const coverById = new Map(coverRows.map((row) => [row.id, row]));
+  const { getThumbnailMap } = await import("@/lib/assets/service");
+  const thumbnails = await getThumbnailMap(familyId, coverIds);
+  return rows.map(({ row, coverAssetId }) => {
+    const cover = coverAssetId ? coverById.get(coverAssetId) : undefined;
+    return {
+      ...row,
+      paragraphCount: countByStory.get(row.id) ?? 0,
+      cover: cover
+        ? {
+            assetId: cover.id,
+            mimeType: cover.mimeType,
+            thumbAssetId: thumbnails.get(cover.id)?.id ?? null,
+          }
+        : null,
+    };
+  });
 }
 
 export async function getStory(

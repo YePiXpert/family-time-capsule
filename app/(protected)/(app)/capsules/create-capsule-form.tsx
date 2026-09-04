@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { createCapsuleAction } from "./actions";
 
 const inputClass =
-  "rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
+  "min-h-11 rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
 
 export function CreateCapsuleForm() {
   const [state, formAction, pending] = useActionState(createCapsuleAction, undefined);
@@ -61,7 +61,7 @@ export function CreateCapsuleForm() {
       <button
         type="submit"
         disabled={pending}
-        className="self-start rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50"
+        className="min-h-11 self-start rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50"
       >
         {pending ? "创建中…" : "创建胶囊"}
       </button>

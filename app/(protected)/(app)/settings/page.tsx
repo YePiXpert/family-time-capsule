@@ -5,6 +5,7 @@ import { getFamily } from "@/lib/family/service";
 import { getAppVersion } from "@/lib/export/service";
 import { listRecentAudit } from "@/lib/audit/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
+import { PageHeader } from "@/components/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +43,12 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
   ]);
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <h1 className="text-2xl font-semibold">设置</h1>
+    <main className="page-container max-w-4xl">
+      <PageHeader
+        eyebrow="Family settings"
+        title="设置"
+        description="管理家庭成员与账号；外部 AI、完整导出、WebDAV 和审计记录集中在高级档案设置中。"
+      />
 
       {searchParams?.accountRoleUpdated === "1" && (
         <p
@@ -109,45 +114,40 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
             )}
           </div>
         )}
-        {canReviewAi && (
-          <div className="mt-3">
-            <Link
-              href="/settings/ai"
-              className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
-              AI 整理与隐私
-            </Link>
-          </div>
-        )}
       </section>
 
-      {canExport && <section aria-label="备份与导出" className="mt-10">
-        <h2 className="text-lg font-medium">备份与导出</h2>
+      {(canExport || canReviewAi) && <section aria-label="高级档案设置" className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6">
+        <h2 className="text-lg font-medium">高级档案设置</h2>
         <p className="mt-1 text-sm leading-6 text-foreground/60">
-          完整导出包含全部原件（SHA-256 校验）、记忆事件、家人视角、事实与胶囊——
-          即使胶囊尚未到开启时间。ZIP 解压后无需本系统即可阅读 Markdown、播放媒体。
+          完整导出、远程备份和 AI Provider 都是可选的管理能力；日常记录、整理、阅读和搜索不依赖它们。
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <a
+          {canExport ? <a
             href="/api/export"
             className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm text-background transition-opacity hover:opacity-90"
           >
-            导出完整备份（ZIP）
-          </a>
-          <Link
+            导出完整备份 ZIP
+          </a> : null}
+          {canExport ? <Link
             href="/settings/backup"
             className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent"
           >
-            WebDAV 远程备份
-          </Link>
+            管理 WebDAV 远程备份
+          </Link> : null}
+          {canReviewAi ? <Link
+            href="/settings/ai"
+            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent"
+          >
+            AI 整理与隐私
+          </Link> : null}
         </div>
         <p className="mt-2 text-xs text-foreground/45">
-          导出较大时需要等待一会儿；导出过程会重新校验每个原件的哈希。
+          完整导出会重新校验每份原件；API Key 与 WebDAV 凭据只存在部署环境，不写入家庭备份。
         </p>
       </section>}
 
-      {canViewAudit && <section aria-label="最近操作" className="mt-10">
-        <h2 className="text-lg font-medium">最近操作</h2>
+      {canViewAudit && <section aria-label="安全与审计记录" className="mt-10">
+        <h2 className="text-lg font-medium">安全与审计记录</h2>
         {auditEntries.length === 0 ? (
           <p className="mt-2 text-sm text-foreground/50">暂无导出/恢复记录。</p>
         ) : (

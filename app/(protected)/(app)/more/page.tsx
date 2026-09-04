@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "更多 · Family Time Capsule" };
 
 export default async function MorePage() {
   const { role } = await requireFamily();
-  const canBackup = hasFamilyCapability(role, "archive:export");
+  const canReadBooks = hasFamilyCapability(role, "archive:view");
   return (
     <main className="page-container">
       <PageHeader title="更多" description="家人讲述、成品与档案管理都在这里。" />
@@ -27,7 +27,7 @@ export default async function MorePage() {
       <section className="mt-10">
         <SectionHeader title="档案管理" />
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {canBackup ? <QuickAction href="/settings/backup" icon="book" label="书籍与备份" description="成书、完整导出与远程备份" /> : null}
+          {canReadBooks ? <QuickAction href="/books" icon="book" label="书籍与备份" description="年度成书、完整导出与远程备份" /> : null}
           <QuickAction href="/settings" icon="settings" label="设置" description="家庭、账号与高级设置" />
           <QuickAction href="/trash" icon="trash" label="回收站" description="恢复或清除已删除内容" />
         </div>

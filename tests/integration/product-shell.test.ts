@@ -27,7 +27,7 @@ describe("product shell navigation", () => {
       "/stories",
       "/requests",
       "/capsules",
-      "/settings/backup",
+      "/books",
       "/settings",
       "/trash",
     ]);

@@ -14,7 +14,7 @@ import {
 } from "./actions";
 
 const inputClass =
-  "rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
+  "min-h-11 rounded-lg border border-foreground/15 bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-accent";
 
 const KIND_OPTIONS = [
   { value: "weekly", label: "周记" },
@@ -54,12 +54,13 @@ export function StoryCreateForms({ canAi }: { canAi: boolean }) {
   return (
     <section
       aria-label="生成故事草稿"
-      className="mt-6 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4"
+      id="new-story"
+      className="mt-8 rounded-2xl border border-line bg-surface p-5 sm:p-6"
     >
       <h2 className="text-base font-medium">新的故事</h2>
       <p className="mt-1 text-xs leading-5 text-foreground/50">
-        离线组装只使用本地已确认内容（事实 + 家人讲述 + 人工修订转录），不需要 AI；
-        AI 起草会由 worker 异步生成，同样只基于已确认来源。
+        “直接组装”只使用这台家庭服务器上已确认的内容，不需要 AI；
+        也可以手动选择 AI 起草，生成后仍由家人审阅和发布。
       </p>
       <div className="mt-3 flex flex-wrap items-start gap-3">
         <form action={offlineAction} className="flex flex-wrap items-center gap-2">
@@ -81,9 +82,9 @@ export function StoryCreateForms({ canAi }: { canAi: boolean }) {
           <button
             type="submit"
             disabled={offlinePending}
-            className="rounded-lg bg-foreground px-3 py-1.5 text-xs text-background transition-opacity disabled:opacity-50"
+            className="min-h-11 rounded-lg bg-foreground px-4 py-2 text-sm text-background transition-opacity disabled:opacity-50"
           >
-            {offlinePending ? "组装中…" : "离线组装草稿"}
+            {offlinePending ? "组装中…" : "直接组装草稿"}
           </button>
           <Feedback state={offlineState} />
         </form>
@@ -94,7 +95,7 @@ export function StoryCreateForms({ canAi }: { canAi: boolean }) {
             <button
               type="submit"
               disabled={aiPending}
-              className="rounded-lg border border-foreground/20 px-3 py-1.5 text-xs transition-colors hover:border-accent disabled:opacity-50"
+              className="min-h-11 rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent disabled:opacity-50"
             >
               {aiPending ? "请求中…" : "AI 起草本周"}
             </button>
@@ -124,7 +125,7 @@ export function RegenerateButton({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg border border-foreground/20 px-3 py-1.5 text-xs transition-colors hover:border-accent disabled:opacity-50"
+        className="min-h-11 rounded-lg border border-foreground/20 px-3 py-2 text-xs transition-colors hover:border-accent disabled:opacity-50"
       >
         {pending ? "再生成中…" : "重新生成草稿"}
       </button>
@@ -155,7 +156,7 @@ export function TitleEditForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg border border-foreground/20 px-3 py-1.5 text-xs transition-colors hover:border-accent disabled:opacity-50"
+        className="min-h-11 rounded-lg border border-foreground/20 px-3 py-2 text-xs transition-colors hover:border-accent disabled:opacity-50"
       >
         {pending ? "保存中…" : "改标题"}
       </button>
@@ -202,7 +203,7 @@ export function ParagraphEditor({
             <button
               type="submit"
               disabled={editPending}
-              className="self-start rounded border border-foreground/15 px-2 py-1 text-xs hover:border-accent disabled:opacity-50"
+              className="min-h-11 self-start rounded border border-foreground/15 px-3 py-2 text-xs hover:border-accent disabled:opacity-50"
             >
               {editPending ? "保存中…" : "保存段落"}
             </button>
@@ -220,7 +221,7 @@ export function ParagraphEditor({
         <button
           type="submit"
           disabled={deletePending}
-          className="self-start rounded border border-foreground/10 px-2 py-1 text-xs text-foreground/60 hover:border-red-500/40 disabled:opacity-50"
+          className="min-h-11 self-start rounded border border-foreground/10 px-3 py-2 text-xs text-foreground/60 hover:border-red-500/40 disabled:opacity-50"
         >
           {deletePending ? "删除中…" : "删除段落"}
         </button>
@@ -248,7 +249,7 @@ export function AddParagraphForm({ storyId }: { storyId: string }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded border border-foreground/15 px-2 py-1 text-xs hover:border-accent disabled:opacity-50"
+          className="min-h-11 rounded border border-foreground/15 px-3 py-2 text-xs hover:border-accent disabled:opacity-50"
         >
           {pending ? "添加中…" : "添加段落"}
         </button>
@@ -266,7 +267,7 @@ export function PublishForm({ storyId }: { storyId: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-foreground px-3 py-1.5 text-xs text-background transition-opacity disabled:opacity-50"
+        className="min-h-11 rounded-lg bg-foreground px-3 py-2 text-xs text-background transition-opacity disabled:opacity-50"
       >
         {pending ? "发布中…" : "发布故事"}
       </button>

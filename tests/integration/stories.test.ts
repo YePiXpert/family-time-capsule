@@ -176,6 +176,10 @@ describe("M4：Story 生命周期", () => {
     if (!detail) throw new Error("detail missing");
     expect(detail.story.status).toBe("draft");
     expect(detail.paragraphs.length).toBe(2);
+    const listCard = (await listStories(familyId)).find(
+      (story) => story.id === created.storyId,
+    );
+    expect(listCard?.cover).toMatchObject({ mimeType: "image/jpeg" });
     const narrative = detail.paragraphs.find((p) => p.kind === "narrative")!;
     expect(narrative.text).toBe("小满出生时体重六斤八两。");
     expect(narrative.sources[0].sourceType).toBe("fact");
