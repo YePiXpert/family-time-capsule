@@ -168,6 +168,35 @@ async function complete(uploadId: string, token = adminToken) {
 }
 
 describe("durable resumable upload protocol", () => {
+  it("persists 100 declarations before upload, replays idempotently, and cancels untouched items", async () => {
+    const { declareImportItems, getImportSessionDetail, cancelImportSession } = await import("@/lib/imports/service");
+    const batch = await createImportSession({ familyId, createdByUserId: admin.id, source: "web" });
+    const declarations = Array.from({ length: 100 }, (_, index) => ({
+      captureId: randomUUID(), filename: `queued-${index}.png`, declaredMime: "image/png",
+      totalBytes: PNG.length, lastModified: 1780000000123,
+      clientFingerprint: createHash("sha256").update(String(index)).digest("hex"),
+    }));
+    declareImportItems(familyId, batch.id, declarations);
+    declareImportItems(familyId, batch.id, declarations);
+    let detail = (await getImportSessionDetail(familyId, batch.id))!;
+    expect(detail.session.totalCount).toBe(100);
+    expect(detail.items).toHaveLength(100);
+    expect(detail.items.every(({ upload }) => upload === null)).toBe(true);
+    expect(detail.items[99].item.filename).toBe("queued-99.png");
+    expect(() => declareImportItems(foreignFamilyId, batch.id, declarations)).toThrow("not_found");
+    expect(() => declareImportItems(familyId, batch.id, [{ ...declarations[0], totalBytes: 9 }])).toThrow("capture_id_conflict");
+    const { createUploadSession } = await import("@/lib/imports/service");
+    const created = await createUploadSession({
+      ...declarations[0], familyId, userId: admin.id, source: "web", importSessionId: batch.id,
+      lastModified: new Date(declarations[0].lastModified),
+    });
+    expect(created.session.importSessionId).toBe(batch.id);
+    await cancelImportSession(familyId, batch.id);
+    detail = (await getImportSessionDetail(familyId, batch.id))!;
+    expect(detail.items.every(({ item }) => item.status === "cancelled")).toBe(true);
+    expect(detail.session.failedCount).toBe(0);
+  });
+
   it("enforces active quota for concurrent creation and restarting cancelled uploads", async () => {
     const { createUploadSession, restartUpload, MAX_ACTIVE_UPLOADS_PER_FAMILY } = await import("@/lib/imports/service");
     const quotaFamily = randomUUID();

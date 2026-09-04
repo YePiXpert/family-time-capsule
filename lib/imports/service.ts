@@ -135,13 +135,67 @@ export type CreateUploadInput = {
   clientFingerprint?: string | null;
 };
 
+/** Persist the whole queue before reserving bounded active transfers. */
+export function declareImportItems(familyId: string, importId: string, input: unknown): void {
+  if (!Array.isArray(input) || input.length < 1 || input.length > 100) {
+    throw new UploadServiceError("invalid_items", 400);
+  }
+  const declarations = input.map((value) => {
+    if (!value || typeof value !== "object") throw new UploadServiceError("invalid_items", 400);
+    const item = value as Record<string, unknown>;
+    if (typeof item.captureId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(item.captureId) ||
+        typeof item.filename !== "string" || item.filename.length > 255 || !item.filename.trim() ||
+        typeof item.declaredMime !== "string" || item.declaredMime.length > 200 ||
+        typeof item.totalBytes !== "number" || !Number.isSafeInteger(item.totalBytes) || item.totalBytes < 0 ||
+        (item.lastModified !== null && (typeof item.lastModified !== "number" || !Number.isSafeInteger(item.lastModified) || item.lastModified < 0 || item.lastModified > 8640000000000000)) ||
+        typeof item.clientFingerprint !== "string" || !/^[0-9a-f]{64}$/u.test(item.clientFingerprint)) {
+      throw new UploadServiceError("invalid_items", 400);
+    }
+    const type = classifyDeclaredUpload(item.declaredMime);
+    return {
+      captureId: item.captureId, filename: sanitizeDisplayFilename(item.filename),
+      declaredMime: type?.mimeType ?? item.declaredMime,
+      totalBytes: item.totalBytes,
+      lastModified: item.lastModified === null ? null : new Date(Math.floor((item.lastModified as number) / 1000) * 1000),
+      clientFingerprint: item.clientFingerprint,
+      errorCode: !type ? "mime_not_allowed" : item.totalBytes === 0 ? "invalid_total_bytes" : item.totalBytes > type.maxBytes ? "too_large" : null,
+    };
+  });
+  getDb().transaction((tx) => {
+    const parent = tx.select().from(importSession).where(and(eq(importSession.familyId, familyId), eq(importSession.id, importId))).get();
+    if (!parent) throw new UploadServiceError("not_found", 404);
+    if (["completed", "cancelled"].includes(parent.status)) throw new UploadServiceError("import_session_closed", 409);
+    let order = tx.select({ value: max(importSessionItem.sortOrder) }).from(importSessionItem).where(eq(importSessionItem.importSessionId, importId)).get()?.value ?? -1;
+    let added = 0;
+    let failed = 0;
+    const now = new Date();
+    for (const declaration of declarations) {
+      const existing = tx.select().from(importSessionItem).where(and(eq(importSessionItem.importSessionId, importId), eq(importSessionItem.captureId, declaration.captureId))).get();
+      if (existing) {
+        if (existing.filename !== declaration.filename || existing.declaredMime !== declaration.declaredMime || existing.totalBytes !== declaration.totalBytes || existing.clientFingerprint !== declaration.clientFingerprint || (existing.lastModified?.getTime() ?? null) !== (declaration.lastModified?.getTime() ?? null)) {
+          throw new UploadServiceError("capture_id_conflict", 409);
+        }
+        continue;
+      }
+      if (parent.totalCount + ++added > 1000) throw new UploadServiceError("too_many_items", 413);
+      if (declaration.errorCode) failed++;
+      tx.insert(importSessionItem).values({
+        ...declaration, id: randomUUID(), familyId, importSessionId: importId,
+        status: declaration.errorCode ? "failed" : "pending", sortOrder: ++order,
+        createdAt: now, updatedAt: now,
+      }).run();
+    }
+    tx.update(importSession).set({ totalCount: parent.totalCount + added, failedCount: parent.failedCount + failed, updatedAt: now }).where(eq(importSession.id, importId)).run();
+  }, { behavior: "immediate" });
+}
+
 function sameDeclaration(row: UploadSessionRow, input: CreateUploadInput): boolean {
   return (
     row.userId === input.userId &&
     row.filename === sanitizeDisplayFilename(input.filename) &&
     row.declaredMime === classifyDeclaredUpload(input.declaredMime)?.mimeType &&
     row.totalBytes === input.totalBytes &&
-    (row.lastModified?.getTime() ?? null) === (input.lastModified?.getTime() ?? null) &&
+    (row.lastModified?.getTime() ?? null) === (input.lastModified ? Math.floor(input.lastModified.getTime() / 1000) * 1000 : null) &&
     row.source === input.source &&
     row.importSessionId === input.importSessionId
     && row.clientFingerprint === (input.clientFingerprint ?? null)
@@ -292,7 +346,7 @@ export async function createUploadSession(
           declaredItem.filename !== sanitizeDisplayFilename(input.filename) ||
           declaredItem.declaredMime !== declaration.mimeType ||
           declaredItem.totalBytes !== input.totalBytes ||
-          (declaredItem.lastModified?.getTime() ?? null) !== (input.lastModified?.getTime() ?? null) ||
+          (declaredItem.lastModified?.getTime() ?? null) !== (input.lastModified ? Math.floor(input.lastModified.getTime() / 1000) * 1000 : null) ||
           declaredItem.clientFingerprint !== (input.clientFingerprint ?? null)
         )) {
           throw new UploadServiceError("capture_id_conflict", 409);
@@ -1201,6 +1255,12 @@ export async function cancelImportSession(
       await cancelUpload(familyId, row.upload.id);
     }
   }
+  getDb().transaction((tx) => {
+    tx.update(importSessionItem).set({ status: "cancelled", errorCode: null, updatedAt: now })
+      .where(and(eq(importSessionItem.importSessionId, importId), ne(importSessionItem.status, "completed"))).run();
+    tx.update(importSession).set({ failedCount: 0, updatedAt: now }).where(eq(importSession.id, importId)).run();
+  });
+  cancelled.failedCount = 0;
   return cancelled;
 }
 

@@ -34,6 +34,8 @@ export default async function ImportDetailPage({ params }: { params: Promise<{ i
     items: detail.items.map(({ item, upload }) => ({
       id: item.id, captureId: item.captureId, status: item.status, errorCode: item.errorCode,
       sortOrder: item.sortOrder, assetId: item.assetId, inboxItemId: item.inboxItemId,
+      filename: item.filename, totalBytes: item.totalBytes,
+      lastModified: item.lastModified?.getTime() ?? null, clientFingerprint: item.clientFingerprint,
       upload: upload ? {
         id: upload.id, filename: upload.filename, declaredMime: upload.declaredMime,
         totalBytes: upload.totalBytes, receivedBytes: upload.receivedBytes,

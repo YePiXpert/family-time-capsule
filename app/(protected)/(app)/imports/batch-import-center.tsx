@@ -41,6 +41,10 @@ export type ImportSessionDto = {
     sortOrder: number;
     assetId: string | null;
     inboxItemId: string | null;
+    filename: string | null;
+    totalBytes: number | null;
+    lastModified: number | null;
+    clientFingerprint: string | null;
     upload: ServerUpload | null;
   }>;
 };
@@ -144,18 +148,19 @@ export function BatchImportCenter({
     setMessage(null);
     const additions: LocalItem[] = [];
     for (const file of files) {
+      const feature = await fingerprint(file);
+      if ([...localItems, ...additions].some((item) => item.fingerprint === feature)) continue;
       if (!mimeFor(file)) {
         additions.push({
-          key: crypto.randomUUID(), captureId: crypto.randomUUID(), file, fingerprint: "",
+          key: crypto.randomUUID(), captureId: crypto.randomUUID(), file, fingerprint: feature,
           uploadId: null, offset: 0, status: "failed", error: "不支持这种文件格式。",
         });
         continue;
       }
-      const feature = await fingerprint(file);
       const matched = serverItems.find((item) => {
-        const upload = item.upload;
-        return upload && upload.filename === file.name && upload.totalBytes === file.size &&
-          upload.lastModified === file.lastModified && upload.clientFingerprint === feature;
+        const declaration = item.upload ?? item;
+        return declaration.filename === file.name && declaration.totalBytes === file.size &&
+          declaration.lastModified === Math.floor(file.lastModified / 1000) * 1000 && declaration.clientFingerprint === feature;
       });
       additions.push({
         key: crypto.randomUUID(),
@@ -292,9 +297,20 @@ export function BatchImportCenter({
     pausedRef.current = false;
     try {
       const id = await ensureSession();
-      await fetch(`/api/imports/${id}`, {
+      for (let offset = 0; offset < localItems.length; offset += 25) {
+        await jsonResponse(await fetch(`/api/imports/${id}`, {
+          method: "PATCH", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "declare", items: localItems.slice(offset, offset + 25).map((item) => ({
+            captureId: item.captureId, filename: item.file.name,
+            declaredMime: mimeFor(item.file) ?? item.file.type ?? "application/octet-stream",
+            totalBytes: item.file.size, lastModified: item.file.lastModified,
+            clientFingerprint: item.fingerprint,
+          })) }),
+        }));
+      }
+      await jsonResponse(await fetch(`/api/imports/${id}`, {
         method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "resume" }),
-      });
+      }));
       const candidates = localItems.filter((item) => item.status !== "completed");
       await runBoundedImportPool(candidates, 3, async (candidate) => {
         if (!pausedRef.current) await uploadOne(candidate, id);
@@ -313,10 +329,14 @@ export function BatchImportCenter({
     setPaused(true);
     for (const controller of controllers.current) controller.abort();
     if (session) {
-      await fetch(`/api/imports/${session.id}`, {
-        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "pause" }),
-      });
-      await refresh(session.id);
+      try {
+        await jsonResponse(await fetch(`/api/imports/${session.id}`, {
+          method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "pause" }),
+        }));
+        await refresh(session.id);
+      } catch {
+        setMessage("本页已暂停；服务器尚未确认暂停，请联网后重试。");
+      }
     }
   }
 
@@ -327,12 +347,16 @@ export function BatchImportCenter({
     }
     pausedRef.current = true;
     for (const controller of controllers.current) controller.abort();
-    await fetch(`/api/imports/${session.id}`, {
-      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "cancel" }),
-    });
-    await refresh(session.id);
     setPaused(true);
-    setMessage("未完成的临时文件已取消；已完成原件不会回滚或删除。");
+    try {
+      await jsonResponse(await fetch(`/api/imports/${session.id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "cancel" }),
+      }));
+      await refresh(session.id);
+      setMessage("未完成的临时文件已取消；已完成原件不会回滚或删除。");
+    } catch {
+      setMessage("服务器尚未确认取消；本页已暂停，请联网后重试。");
+    }
   }
 
   const serverCompleted = session?.completedCount ?? 0;
@@ -404,7 +428,7 @@ export function BatchImportCenter({
               </li>;
             })}
             {localItems.length === 0 ? visibleItems.map((item) => <li key={item.id} className="rounded-xl border border-line px-3 py-3 text-sm">
-              <div className="flex items-center justify-between gap-3"><span className="truncate">{item.upload?.filename ?? item.captureId}</span><span className="shrink-0 text-xs text-muted">{item.status === "completed" ? "已入箱" : `${item.upload?.receivedBytes ?? 0}/${item.upload?.totalBytes ?? 0}`}</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="truncate">{item.upload?.filename ?? item.filename ?? item.captureId}</span><span className="shrink-0 text-xs text-muted">{item.status === "completed" ? "已入箱" : `${item.upload?.receivedBytes ?? 0}/${item.upload?.totalBytes ?? item.totalBytes ?? 0}`}</span></div>
               {item.errorCode ? <p className="mt-1 text-xs text-danger">{item.errorCode}</p> : null}
             </li>) : null}
           </ul>

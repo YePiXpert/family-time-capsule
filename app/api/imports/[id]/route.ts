@@ -2,6 +2,7 @@ import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { uploadError, uploadJson, UUID_PATTERN } from "@/lib/imports/http";
 import {
   cancelImportSession,
+  declareImportItems,
   getImportSessionDetail,
   setImportSessionUploading,
   UploadServiceError,
@@ -35,6 +36,10 @@ function dto(detail: NonNullable<Awaited<ReturnType<typeof getImportSessionDetai
       sortOrder: item.sortOrder,
       assetId: item.assetId,
       inboxItemId: item.inboxItemId,
+      filename: item.filename,
+      totalBytes: item.totalBytes,
+      lastModified: item.lastModified?.getTime() ?? null,
+      clientFingerprint: item.clientFingerprint,
       upload: upload ? {
         id: upload.id,
         filename: upload.filename,
@@ -68,6 +73,10 @@ export async function PATCH(request: Request, context: Context) {
     if (!UUID_PATTERN.test(id)) throw new UploadServiceError("not_found", 404);
     const body = asRecord(await readMobileJson(request));
     const action = body.action;
+    if (action === "declare") {
+      declareImportItems(authorization.context.familyId, id, body.items);
+      return uploadJson({ id });
+    }
     const session = action === "cancel"
       ? await cancelImportSession(authorization.context.familyId, id)
       : action === "pause" || action === "resume"

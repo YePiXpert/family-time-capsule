@@ -3,6 +3,26 @@ import { ensureBootstrap } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
+test("100 项队列在首个上传前持久化，失败后刷新仍可看到全部文件", async ({ page }) => {
+  await ensureBootstrap(page);
+  await page.goto("/imports");
+  await page.route("**/api/uploads", (route) => route.abort("failed"));
+  await page.getByLabel("选择多份文件").setInputFiles(Array.from({ length: 100 }, (_, index) => ({
+    name: `durable-queue-${index}.txt`, mimeType: "text/plain", buffer: Buffer.from(`家庭文字 ${index}`),
+  })));
+  await expect(page.getByText("durable-queue-99.txt", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "开始导入" }).click();
+  await expect(page.getByText(/本轮可上传项已处理/)).toBeVisible({ timeout: 30_000 });
+  const id = new URL(page.url()).pathname.split("/").at(-1);
+  const response = await page.request.get(`/api/imports/${id}`);
+  const detail = await response.json();
+  expect(detail.session.totalCount).toBe(100);
+  expect(detail.items).toHaveLength(100);
+  expect(detail.items.every((item: { upload: unknown }) => item.upload === null)).toBe(true);
+  await page.reload();
+  await expect(page.getByText("durable-queue-99.txt", { exact: true })).toBeVisible();
+});
+
 test("批量导入：文档与照片逐项续传、刷新后保留服务器进度并进入 Inbox", async ({ page }) => {
   await ensureBootstrap(page);
   await page.goto("/imports");
