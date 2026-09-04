@@ -5,6 +5,7 @@ import {
 } from "../../modules/share-intake/src";
 import { ingestLocalImportSession } from "../storage/database";
 import { normalizeNativeShareManifest } from "./intake-core";
+import { recoverPickerIntake } from "./picker-intake";
 
 function isPrivateCaptureUri(uri: string): boolean {
   const captureRoot = `${Paths.document.uri.replace(/\/$/u, "")}/captures/`;
@@ -17,10 +18,11 @@ export async function drainNativeShareIntake(queue: boolean): Promise<{
   failed: number;
   retainedReadonly: number;
 }> {
+  const recovered = await recoverPickerIntake(queue);
   const manifests = await consumePendingNativeShares();
-  let accepted = 0;
-  let queued = 0;
-  let failed = 0;
+  let accepted = recovered.manifests;
+  let queued = recovered.queued;
+  let failed = recovered.failed;
   for (const manifest of manifests) {
     const normalized = normalizeNativeShareManifest(manifest, (uri) => {
       if (!isPrivateCaptureUri(uri)) return false;

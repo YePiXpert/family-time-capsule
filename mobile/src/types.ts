@@ -85,6 +85,7 @@ export type MediaCapturePayload = {
 export type LocalImportSource = "files" | "share";
 
 export type LocalImportIntakeItem = {
+  sortOrder?: number;
   externalId: string;
   captureId: string;
   kind: "file" | "text" | "error";

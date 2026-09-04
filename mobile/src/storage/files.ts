@@ -75,19 +75,14 @@ export async function preserveRecordedAudio(
 export async function preservePickedDocument(
   asset: DocumentPickerAsset,
   id: string,
+  beforeCopy?: (payload: MediaCapturePayload) => void,
 ): Promise<MediaCapturePayload> {
   ensureDirectories();
   const classification = classifyImportedFile(asset.name, asset.mimeType);
   if (!classification) throw new Error("只支持照片、音频、视频、PDF、TXT、Markdown、RTF 或 DOCX。");
   const extension = asset.name.match(/\.([a-z0-9]{1,8})$/iu)?.[1]?.toLowerCase() ?? "bin";
   const destination = new File(capturesDirectory, `${id}.${extension}`);
-  try {
-    await new File(asset.uri).copy(destination, { overwrite: false });
-  } catch (error) {
-    if (destination.exists) destination.delete();
-    throw error;
-  }
-  return {
+  const payload: MediaCapturePayload = {
     localUri: destination.uri,
     fileName: asset.name.slice(0, 200) || `document-${id}.${extension}`,
     mimeType: classification.mimeType,
@@ -97,6 +92,16 @@ export async function preservePickedDocument(
     mediaType: classification.mediaType,
     source: "files",
   };
+  beforeCopy?.(payload);
+  const temporary = new File(capturesDirectory, `.${id}.part`);
+  try {
+    await new File(asset.uri).copy(temporary, { overwrite: false });
+    await temporary.move(destination, { overwrite: false });
+  } catch (error) {
+    if (temporary.exists) temporary.delete();
+    throw error;
+  }
+  return payload;
 }
 
 type UploadProgress = (uploadId: string, uploadOffset: number) => Promise<void>;
@@ -240,6 +245,8 @@ export function removeLocalFile(uri: string): void {
 }
 
 export function clearLocalFiles(): void {
+  const receipts = new Directory(Paths.document, "picker-intake");
+  if (receipts.exists) receipts.delete();
   if (capturesDirectory.exists) capturesDirectory.delete();
   if (coversDirectory.exists) coversDirectory.delete();
 }

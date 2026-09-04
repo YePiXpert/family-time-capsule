@@ -168,6 +168,14 @@ created → receiving → completing → completed
   实现依据为 [Apple App Group 数据共享](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/ExtensionScenarios.html)、
   [NSItemProvider 文件副本生命周期](https://developer.apple.com/documentation/foundation/nsitemprovider/loadfilerepresentation(fortypeidentifier:completionhandler:))
   和 [Expo SDK 57 DocumentPicker](https://docs.expo.dev/versions/v57.0.0/sdk/document-picker/)。
+- Android 后续修复：每份文件复制前用 AtomicFile 保存接管声明，文件落盘同步后再重命名；
+  前台收到分享通过 Expo 原生事件接管，接管期间的新通知会再次排队检查。
+  Files 导入使用逐项不可变恢复凭据和临时文件重命名，逐项 SQLite 提交后才清理凭据；
+  启动恢复复用 capture/session ID、校验本机路径、保留 `lastModified=null`，viewer 不入 outbox。
+  依据 [Android 接收分享](https://developer.android.com/training/sharing/receive)、
+  [Expo 模块事件](https://docs.expo.dev/modules/module-api/#sending-events) 与
+  [SDK 57 FileSystem](https://docs.expo.dev/versions/v57.0.0/sdk/filesystem/)。
+  移动自动化为 10 files / 50 tests；系统级杀进程与来源 App 兼容性仍须真机验收。
 - 后续仍须修复并验证：原生部分 manifest 接管和进程中断恢复、原生批次与服务器关系同步、
   document 文本在恢复后的重建、原生列表后续分页与文档展示、超过 50 个事件的周回顾及周记唯一性。
   这些是代码与自动化缺口，不能只归入真机人工验收。

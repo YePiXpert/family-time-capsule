@@ -516,7 +516,7 @@ export async function ingestLocalImportSession(input: {
         input.id,
         item.captureId,
         item.externalId,
-        index,
+        item.sortOrder ?? index,
         item.localUri ?? null,
         item.error?.slice(0, 160) ?? null,
         input.createdAt,

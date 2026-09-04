@@ -13,8 +13,9 @@ import {
 import { useApp } from "../state/AppContext";
 import { enqueueMediaCapture, enqueueTextCapture, ingestLocalImportSession } from "../storage/database";
 import { preservePickedDocument, preservePickedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
+import { beginPickerReceipt, finishPickerReceipt } from "../native/picker-intake";
 import { colors, sharedStyles } from "../theme";
-import type { MediaCapturePayload } from "../types";
+import type { LocalImportIntakeItem, MediaCapturePayload } from "../types";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
 import type { AppNavigation, MainTabParamList } from "../navigation/types";
 
@@ -152,43 +153,47 @@ export function CaptureScreen() {
         ],
       });
       if (result.canceled) return;
-      const items = [];
       let copied = 0;
+      let failed = 0;
+      let queued = 0;
       for (const [index, asset] of result.assets.entries()) {
         const captureId = Crypto.randomUUID();
-        let privateUri: string | null = null;
+        let item: LocalImportIntakeItem;
         try {
-          const payload = await preservePickedDocument(asset, captureId);
-          privateUri = payload.localUri;
-          items.push({
+          const payload = await preservePickedDocument(asset, captureId, (prepared) => {
+            beginPickerReceipt({ sessionId, createdAt, captureId, index, payload: prepared });
+          });
+          item = {
             externalId: `picker-${index}`,
             captureId,
+            sortOrder: index,
             kind: "file" as const,
             localUri: payload.localUri,
             payload,
-          });
+          };
           copied += 1;
-          privateUri = null;
         } catch (error) {
-          if (privateUri) removeLocalFile(privateUri);
-          items.push({
+          item = {
             externalId: `picker-${index}`,
             captureId,
+            sortOrder: index,
             kind: "error" as const,
             error: error instanceof Error ? error.message : "copy_failed",
-          });
+          };
+        }
+        let committed = false;
+        try {
+          const saved = await ingestLocalImportSession({ id: sessionId, source: "files", createdAt, items: [item], queue: true });
+          queued += saved.queued;
+          failed += saved.failed;
+          committed = true;
+        } finally {
+          finishPickerReceipt(captureId, committed);
         }
       }
-      const saved = await ingestLocalImportSession({
-        id: sessionId,
-        source: "files",
-        createdAt,
-        items,
-        queue: true,
-      });
-      if (saved.queued > 0) await finishQueue();
-      setMessage(saved.failed > 0
-        ? `已把 ${copied} 份原件复制到 App 私有目录；${saved.failed} 项失败。`
+      if (queued > 0) await finishQueue();
+      setMessage(failed > 0
+        ? `已把 ${copied} 份原件复制到 App 私有目录；${failed} 项失败。`
         : `已从 Files 复制 ${copied} 份原件，可离线保留。`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "无法从 Files 导入。");
