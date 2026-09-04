@@ -395,28 +395,31 @@ export async function generateReviewStory(
     )].map((eventId) => ({ sourceType: "memory_event" as const, sourceId: eventId, quote: null }));
     return { ...plan, sources: [...plan.sources, ...eventSources] };
   });
-  const created = createStoryDraft(context, {
-    kind: "weekly",
-    anchor: period.periodStart,
-    period: storyPeriod,
-    title: `${formatter.format(period.periodStart)}这一周的家庭周记`,
-  }, [...eventPlans, ...voicePlans]);
-  if (!created.ok) return { ok: false, error: "no_events" };
-  const claimed = await getDb().update(reviewPeriod).set({ storyId: created.storyId, status: "in_progress", startedAt: period.startedAt ?? new Date(), updatedAt: new Date() }).where(and(
-    eq(reviewPeriod.id, reviewId), eq(reviewPeriod.familyId, context.familyId), isNull(reviewPeriod.storyId),
-  )).returning({ storyId: reviewPeriod.storyId });
-  if (claimed[0]?.storyId === created.storyId) {
-    return { ok: true, storyId: created.storyId, existing: false };
-  }
-  // A concurrent idempotent request won the claim. Remove this untouched
-  // orphan immediately; the winning source-linked draft remains canonical.
-  await getDb().delete(story).where(and(eq(story.id, created.storyId), eq(story.familyId, context.familyId)));
-  const winner = (await getDb().select({ storyId: reviewPeriod.storyId }).from(reviewPeriod).where(and(
-    eq(reviewPeriod.id, reviewId), eq(reviewPeriod.familyId, context.familyId),
-  )).limit(1))[0]?.storyId;
-  return winner
-    ? { ok: true, storyId: winner, existing: true }
-    : { ok: false, error: "not_found" };
+  return getDb().transaction((tx) => {
+    const current = tx.select().from(reviewPeriod).where(and(
+      eq(reviewPeriod.id, reviewId), eq(reviewPeriod.familyId, context.familyId),
+    )).get();
+    if (!current) return { ok: false as const, error: "not_found" as const };
+    if (current.storyId) {
+      const existing = tx.select({ id: story.id }).from(story).where(and(
+        eq(story.id, current.storyId), eq(story.familyId, context.familyId), isNull(story.deletedAt),
+      )).get();
+      if (existing) return { ok: true as const, storyId: existing.id, existing: true };
+    }
+    // The nested draft transaction is a savepoint on this same connection.
+    // Story, sources and period ownership commit together, including replacement
+    // of a soft-deleted draft; a crash cannot leave an unclaimed new story.
+    const created = createStoryDraft(context, {
+      kind: "weekly",
+      anchor: period.periodStart,
+      period: storyPeriod,
+      title: `${formatter.format(period.periodStart)}这一周的家庭周记`,
+    }, [...eventPlans, ...voicePlans]);
+    if (!created.ok) return { ok: false as const, error: "no_events" as const };
+    tx.update(reviewPeriod).set({ storyId: created.storyId, status: "in_progress", startedAt: current.startedAt ?? new Date(), updatedAt: new Date() })
+      .where(eq(reviewPeriod.id, reviewId)).run();
+    return { ok: true as const, storyId: created.storyId, existing: false };
+  }, { behavior: "immediate" });
 }
 
 export type ReviewStoryOptimizationResult =

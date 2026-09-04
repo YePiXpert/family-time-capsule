@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import type { FamilyContext } from "@/lib/family/context";
 import type { AiJobRuntimeIdentity } from "@/lib/ai/jobs";
@@ -19,7 +20,7 @@ afterAll(async () => {
 
 const { getDb } = await import("@/db");
 const { user } = await import("@/db/schema/auth");
-const { storySource } = await import("@/db/schema/story");
+const { story, storySource } = await import("@/db/schema/story");
 const { reviewPeriod, reviewPeriodEvent } = await import("@/db/schema/review");
 const { performSetup } = await import("@/lib/auth/setup");
 const { completeOnboarding, getUserBinding } = await import("@/lib/family/service");
@@ -149,5 +150,37 @@ describe("weekly family review", () => {
     const overview = await getReviewOverview(viewer, "2026-09-02");
     expect(overview.events.length).toBeGreaterThan(0);
     await expect(setReviewProgress(viewer, overview.period.id, "complete")).rejects.toThrow("story:write");
+  });
+
+  it("claims one draft under concurrent requests and replaces a soft-deleted draft", async () => {
+    await makeMemory("十月的散步", "2026-10-06T02:00:00.000Z");
+    const review = await getReviewOverview(context, "2026-10-06");
+    const results = await Promise.all(Array.from({ length: 8 }, () => generateReviewStory(context, review.period.id)));
+    expect(results.every((result) => result.ok)).toBe(true);
+    const ids = results.map((result) => result.ok ? result.storyId : "");
+    expect(new Set(ids).size).toBe(1);
+    await getDb().update(story).set({ deletedAt: new Date() }).where(eq(story.id, ids[0]));
+    const replacement = await generateReviewStory(context, review.period.id);
+    expect(replacement.ok).toBe(true);
+    if (!replacement.ok) return;
+    expect(replacement.storyId).not.toBe(ids[0]);
+    expect(await generateReviewStory(context, review.period.id)).toEqual({ ...replacement, existing: true });
+    expect(getDb().select().from(story).where(eq(story.id, ids[0])).get()?.deletedAt).not.toBeNull();
+  });
+
+  it("rolls back the draft and all sources if period ownership cannot commit", async () => {
+    await makeMemory("十一月的散步", "2026-11-03T02:00:00.000Z");
+    const review = await getReviewOverview(context, "2026-11-03");
+    const beforeStories = getDb().select().from(story).all().length;
+    const beforeSources = getDb().select().from(storySource).all().length;
+    getDb().run(sql`CREATE TEMP TRIGGER reject_review_claim BEFORE UPDATE OF story_id ON review_period BEGIN SELECT RAISE(ABORT, 'injected claim failure'); END`);
+    try {
+      await expect(generateReviewStory(context, review.period.id)).rejects.toThrow("injected claim failure");
+    } finally {
+      getDb().run(sql`DROP TRIGGER reject_review_claim`);
+    }
+    expect(getDb().select().from(story).all()).toHaveLength(beforeStories);
+    expect(getDb().select().from(storySource).all()).toHaveLength(beforeSources);
+    expect(getDb().select().from(reviewPeriod).where(eq(reviewPeriod.id, review.period.id)).get()?.storyId).toBeNull();
   });
 });
