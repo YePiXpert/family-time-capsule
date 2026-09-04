@@ -2,9 +2,14 @@
 
 > 来源：PRD §22（路线）、§23（垂直切片）、§24（Issues）、§27（P0 DoD）。每个 Issue 的执行方式见 PRD §25（固定前缀）与 §26（PR 自检）。
 
-> 1.0 状态（2026-09-03）：M0–M7 与 M8 自动化/Docker 门禁完成，版本为
-> `1.0.0-rc.2`。稳定 `1.0.0` 只等待 `REAL_DEVICE_TEST.md` 的 iOS、Android、
-> Windows/PWA 实测记录；未留档前不打稳定 tag。
+> 1.0 状态（2026-09-04）：`v1.0.0-rc.4` 已从
+> `main@c7347cd2cacb9b5151ee372302c3bdd1f5c365b8` 固化为 GitHub prerelease；重新触发的
+> 原生 run `33874450257` 三个 job 全绿并完成独立包级复验。Web 基线为 70 files / 491
+> tests、36 Playwright、6 production roundtrip；mobile 为 6 files / 30 tests。
+> 真实设备验收仍未执行，因此不创建 stable `v1.0.0`。
+
+> 当前开发线：`1.1.0-alpha.1` — **Capture Anywhere & Family Rhythm**。详细产品边界和
+> 验收状态见 [`PRODUCT_1_1.md`](./PRODUCT_1_1.md)。
 
 ## 状态
 
@@ -28,6 +33,18 @@
 | #016 | PWA polish | ✅ 已完成（2026-08-29，manifest + 生成式图标（暖纸/皮革色）、standalone 可安装、viewport-fit + safe-area、极简离线壳（SW 只缓存离线提示页，/api/** 永不缓存）） |
 | #017 | Security audit | ✅ 已完成（2026-08-29，双家庭全资源隔离专项测试（Asset/Inbox/Event/Contribution/Fact/Capsule/Export）；**发现并修复 High 级 IDOR 写入**（contribution/fact 先写后校验 → 先校验后写）；导出 Markdown 转义加固；docs/SECURITY.md 全面重写含审计结论） |
 | #018 | Playwright critical regression suite | ✅ 已完成（2026-08-29，8 条关键路径全覆盖：setup→家庭、旧照片时间链路、5 合 1、音视频文字回放、多视角、胶囊锁/开、导出哈希验证、登出不可访问 + 冷启动回顾 + 伪装文件拒绝；全套 lint/typecheck/126 单测/build/19 e2e 全绿） |
+
+## 1.1 Capture Anywhere & Family Rhythm
+
+| Issue | 标题 | 范围 | 状态 |
+| --- | --- | --- | --- |
+| #019 | Resumable upload protocol | 顺序 chunk、offset 恢复、幂等 complete、流式哈希/落盘、限额和清理 | ⏳ 待实现（M2） |
+| #020 | Persistent import sessions and document assets | ImportSession/Item 关系模型、批次恢复、document 安全摄取与 portable archive | ⏳ 待实现（M2–M3） |
+| #021 | Native share extension and file intake | Android SEND/MULTIPLE、iOS Share Extension/App Group、Files 导入、本机接管 | ⏳ 待实现（M4；真机待人工） |
+| #022 | Family contribution portal | 复用安全 token 的匿名多素材投递箱、管理、二维码、Inbox bundle | ⏳ 待实现（M5） |
+| #023 | Native daily feature parity | 家人、故事、胶囊、口述史、投递箱与导入会话的原生读写/离线缓存 | ⏳ 待实现（M6） |
+| #024 | Weekly review and local reminders | 家庭时区 ReviewPeriod、四步回顾、有来源周记、本地隐私提醒 | ⏳ 待实现（M7） |
+| #025 | 1.1 alpha hardening and release | 性能/安全/导出恢复/Docker/旧卷升级、原生包与 prerelease 自动化 | ⏳ 待实现（M8） |
 
 ## v0.1.3 Performance & Audit Hardening（2026-08-30 完成）
 

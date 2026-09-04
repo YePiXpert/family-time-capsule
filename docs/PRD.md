@@ -1284,3 +1284,55 @@ Original sources always come first.
 8. **完整导出是 MVP 功能。**
 9. **第一阶段只服务一个家庭，不做 SaaS。**
 10. **产品寿命按 18 年以上设计，而不是按“宝宝 App”设计。**
+
+---
+
+# 32. 1.1 Capture Anywhere & Family Rhythm（附录）
+
+本附录扩展 1.0 家庭档案，不删除或改写前述历史需求。详细架构、状态机和逐里程碑证据见
+[`PRODUCT_1_1.md`](./PRODUCT_1_1.md)。
+
+## 32.1 产品承诺
+
+1. 用户明确选择的照片、音频、视频、文字和安全文档可从 Web、系统分享或 Files 进入档案；
+   不自动扫描整个系统相册。
+2. Web 与原生使用持久 ImportSession 和顺序式断点续传；新大文件路径不得把完整文件物化到
+   JS heap，失败、刷新、断网或进程重启后可以从服务器确认 offset 恢复。
+3. 家人无需账号即可通过有期限、可撤销、有限额的投递链接贡献；所有访客内容先进入 Inbox，
+   永不直接进入时间轴。
+4. 高频家人、故事、胶囊、口述史、投递箱、导入与每周回顾在原生端可完成，服务器继续作为
+   权威档案与安全策略执行者。
+5. 每周回顾在无 AI 时完整可用并生成有来源的 Story 草稿；AI 默认关闭、显式同意后也只能
+   优化表达，不确认事实、不自动发布、不覆盖人工编辑。
+
+## 32.2 新耐久数据
+
+- `UploadSession`：家庭/用户/capture 身份、声明文件信息、服务器确认 offset、随机临时存储键、
+  状态、期限和最终 Asset/Inbox 结果。
+- `ImportSession` / `ImportSessionItem`：来源、批次状态、计数、默认整理字段，以及每项与
+  capture/upload/Asset/Inbox 的外键关系。
+- `ContributionPortal` 及 submission 关系：复用 Contribution Request 的 256-bit token hash、
+  过期/撤销/限流/no-store/noindex/no-referrer 安全基线。
+- `ReviewPeriod`：家庭时区周界、流程状态、唯一 Story 草稿、开始/完成时间；同家庭同周期唯一。
+- `Asset.type=document` 正式启用，最低支持 PDF、TXT、Markdown、RTF、DOCX；HTML/SVG 不作为
+  可执行预览，Office 文件只保存和下载，纯文本预览与搜索有严格长度/类型边界。
+
+核心关系使用外键或关系表。上述耐久数据、document 原件和新增关系必须进入 portable archive，
+旧 v1 归档缺失时使用安全默认值；原始 guest token、认证会话、通知权限和临时上传文件不导出。
+
+## 32.3 安全与原件边界
+
+- 原件永不覆盖、重编码替换或静默删除；临时上传 complete 前不可经 HTTP 读取，失败不留下
+  半成品 Asset，取消只清理未完成临时文件。
+- `capturedAt`、`occurredAt` 与 `importedAt` 继续严格分离；系统分享或复制时刻不是可靠来源时间。
+- 所有新 API 从实时 session/token scope 推导家庭和 capability，不接受客户端 familyId；
+  跨家庭目标统一 404，viewer/contributor 遵守现有能力表。
+- Share Extension 只向 App Group 复制文件与 manifest，不持有服务器 token、不直接复杂同步；
+  Android 只读取 Intent 临时授权的 URI。任一端在另一份持久副本接管前不得删除唯一原件。
+- 未到期胶囊正文不得经移动 API 泄露；通知默认不显示私人标题、照片或原话。
+
+## 32.4 发布条件
+
+`1.1.0-alpha.1` 只有在 #019–#025 的自动化、Docker、导出恢复、Android APK、含正式
+Share Extension 的 unsigned IPA 和最终 main CI 全绿后才创建 prerelease tag。真实设备清单
+必须如实保持独立状态；本轮不创建 stable `v1.0.0` 或 `v1.1.0` 标签。
