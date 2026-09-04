@@ -138,6 +138,9 @@ CLI 的 `restoreFromZipFile` 先用 `stat` 执行压缩包本体上限检查，�
   每条恢复为 `status=closed`、`tokenHash=null`、`closedAt=restore time`。提交 bundle 与访客
   自填称呼保留，但入口绝不会意外继续有效。
 - document 原件与图片/音视频执行同一字节数/SHA-256 校验、原子写入与二次导出验证。
+- TXT/Markdown 的安全文本在恢复原件流中重新提取，并与素材关系同事务写入；不依赖备份中的派生文本。
+  提取最多 256 Ki UTF-16 代码单元，仍检查后续全部字节的 UTF-8 有效性及 NUL；无效内容不建立文本预览/索引。
+  PDF、Office、RTF、HTML/SVG 不走纯文本提取，原件保持不变。
 
 ## 3. 哈希校验失败的处理
 

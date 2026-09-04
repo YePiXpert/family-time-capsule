@@ -7,6 +7,8 @@ import fs, {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 /**
@@ -115,6 +117,8 @@ type Snapshot = {
 };
 
 let snapshot: Snapshot;
+let restoredDocumentId: string;
+const DOCUMENT_BODY = "外婆的桂花糕手记，保留原话与文档搜索。";
 
 /** 在指定 DATA_DIR 上取得一套全新模块（含 db/storage/auth 单例） */
 async function freshModules() {
@@ -220,6 +224,13 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     if (photo.status !== "stored" || audio.status !== "stored" || video.status !== "stored") {
       throw new Error("ingest A failed");
     }
+    const uploads = await import("@/lib/imports/service");
+    const bytes = Buffer.from(DOCUMENT_BODY);
+    const transfer = await uploads.createUploadSession({ familyId, userId: adminId, captureId: randomUUID(),
+      filename: "外婆手记.md", declaredMime: "text/markdown", totalBytes: bytes.length, lastModified: null, source: "web", importSessionId: null });
+    await uploads.appendUploadChunk({ familyId, uploadId: transfer.session.id, offset: 0, contentLength: bytes.length, body: Readable.from([bytes]) });
+    const document = await uploads.completeUpload(familyId, transfer.session.id);
+    restoredDocumentId = document.assetId;
 
     const confirm = async (assetId: string, title: string) => {
       const item = await m.inbox.createInboxItemForAsset(familyId, { id: assetId } as never);
@@ -318,7 +329,9 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     const factSourceRows = await db.select().from(m.schema.factSource);
     const tagRows = await db.select().from(m.schema.memoryEventTag);
     const storage = m.storage.getAssetStorage();
-    const assets = [photo.asset, audio.asset, video.asset].map((a) => ({
+    const assetSchema = (await import("@/db/schema/asset")).asset;
+    const documentAsset = db.select().from(assetSchema).where(eq(assetSchema.id, restoredDocumentId)).get()!;
+    const assets = [photo.asset, audio.asset, video.asset, documentAsset].map((a) => ({
       id: a.id,
       sha256: a.sha256,
       bytes: a.bytes,
@@ -446,6 +459,10 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(report.capsules).toBe(1);
     expect(report.inboxItems).toBe(snapshot.inboxItems.length);
     expect(report.inboxItemAssets).toBe(snapshot.inboxItemAssets.length);
+    const documentSchema = await import("@/db/schema/asset");
+    const { eq: equalDocument } = await import("drizzle-orm");
+    expect(db.select().from(documentSchema.documentText).where(equalDocument(documentSchema.documentText.assetId, restoredDocumentId)).get())
+      .toMatchObject({ text: DOCUMENT_BODY, truncated: false, familyId: snapshot.familyId });
 
     // 3) 家庭 / 成员
     const family = await m.family.getFamily(snapshot.familyId);

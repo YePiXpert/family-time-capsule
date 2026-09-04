@@ -177,7 +177,7 @@ created → receiving → completing → completed
   [SDK 57 FileSystem](https://docs.expo.dev/versions/v57.0.0/sdk/filesystem/)。
   移动自动化为 10 files / 50 tests；系统级杀进程与来源 App 兼容性仍须真机验收。
 - 后续仍须修复并验证：原生部分 manifest 接管和进程中断恢复、原生批次与服务器关系同步、
-  document 文本在恢复后的重建、原生列表后续分页与文档展示、超过 50 个事件的周回顾及周记唯一性。
+  原生列表后续分页与文档展示、超过 50 个事件的周回顾及周记唯一性。
   这些是代码与自动化缺口，不能只归入真机人工验收。
 
 批次同步接口基础：`POST /api/imports` 可选 `clientSessionId`（设备生成的 UUID）。同一家庭、
@@ -189,4 +189,14 @@ created → receiving → completing → completed
 重试不重复计数，关系写入失败回滚新 Inbox，旧未分组文字可以补关联，导出保留该关系。
 原生批次的完整声明、暂停/继续/取消与服务器对账仍需继续验收，不能据此宣称所有原生批次能力已完成。
 
+文档恢复后续修复：TXT/Markdown 安全文本从 SHA 校验的原件流重建，和素材同事务保存，
+随后重建全文索引；上传与恢复共用有界 UTF-8 提取器。自动化覆盖无效尾部、NUL、
+跨 chunk 字符和恢复后原文/原件一致性，不把 Office/PDF/HTML/SVG 当作纯文本解析。
+
 最终 Definition of Done 尚未全部满足；系统分享、Files 和通知的真机记录仍未执行。
+
+2026-09-04 CI 外部阻塞：run `33929925897`（`2676f64`）的 web-quality 与 mobile-quality
+成功，但 e2e-restore-roundtrip job `101206962545` 未获得 runner、没有执行步骤。
+GitHub check annotation 原文："The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"。
+需仓库所有者处理账户 Billing 后重新运行失败任务，不能把此 run 记为全绿。
+独立原生构建 `33929298468`（`3a1d177`）的 React Native quality、Android APK、iOS unsigned IPA 全部成功；不代表真机验收。

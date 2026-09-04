@@ -6,6 +6,7 @@ import type { Readable } from "node:stream";
 import { and, asc, count, desc, eq, inArray, lt, max, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset, documentText } from "@/db/schema/asset";
+import { documentTextCollector } from "@/lib/assets/document-text";
 import {
   importSession,
   importSessionDefaultParticipant,
@@ -721,45 +722,25 @@ async function inspectUpload(row: UploadSessionRow): Promise<{
   const prefixChunks: Buffer[] = [];
   let prefixBytes = 0;
   let bytes = 0;
-  const textMime = row.declaredMime === "text/plain" || row.declaredMime === "text/markdown";
-  const decoder = textMime ? new TextDecoder("utf-8", { fatal: true }) : null;
-  let safeText = "";
-  let invalidText = false;
+  const collector = documentTextCollector(row.declaredMime);
   for await (const value of getAssetStorage().createUploadReadStream(row.tempStorageKey)) {
     const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
     bytes += chunk.byteLength;
     hash.update(chunk);
-    if (decoder) {
-      if (chunk.includes(0)) invalidText = true;
-      try {
-        const decoded = decoder.decode(chunk, { stream: true });
-        if (safeText.length < 256 * 1024) {
-          safeText += decoded.slice(0, 256 * 1024 - safeText.length);
-        }
-      } catch {
-        invalidText = true;
-      }
-    }
+    collector.write(chunk);
     if (prefixBytes < VALIDATION_PREFIX_BYTES) {
       const take = Math.min(chunk.byteLength, VALIDATION_PREFIX_BYTES - prefixBytes);
       prefixChunks.push(chunk.subarray(0, take));
       prefixBytes += take;
     }
   }
-  if (decoder) {
-    try {
-      const tail = decoder.decode();
-      if (safeText.length < 256 * 1024) safeText += tail.slice(0, 256 * 1024 - safeText.length);
-    } catch {
-      invalidText = true;
-    }
-  }
+  const extracted = collector.finish();
   return {
     sha256: hash.digest("hex"),
     prefix: Buffer.concat(prefixChunks),
     bytes,
-    safeText: decoder && !invalidText ? safeText : null,
-    invalidText,
+    safeText: extracted.text,
+    invalidText: extracted.invalid,
   };
 }
 

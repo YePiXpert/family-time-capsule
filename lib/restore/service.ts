@@ -6,7 +6,8 @@ import { Readable } from "node:stream";
 import { count, eq } from "drizzle-orm";
 import yauzl, { type Entry, type ZipFile } from "yauzl";
 import { getDb } from "@/db";
-import { asset as assetTable } from "@/db/schema/asset";
+import { asset as assetTable, documentText } from "@/db/schema/asset";
+import { documentTextCollector } from "@/lib/assets/document-text";
 import { family as familyTable, person as personTable } from "@/db/schema/family";
 import { inboxItem, inboxItemAsset, inboxItemParticipant } from "@/db/schema/inbox";
 import {
@@ -2478,6 +2479,7 @@ async function restoreFromArchive(
   // 1) 先写文件（DB 失败时回滚删除）；storageKey 以 putOriginal 实际返回为准
   const writtenKeys: string[] = [];
   const storageKeyByAsset = new Map<string, string>();
+  const textByAsset = new Map<string, { text: string; truncated: boolean }>();
   try {
     for (const a of data.manifest.assets) {
       const file = await archive.openReadStream(
@@ -2491,6 +2493,13 @@ async function restoreFromArchive(
       const ext = a.relativePath.split(".").pop() ?? "bin";
       const captured = parseDate(a.capturedAt);
       const imported = parseDate(a.importedAt) ?? now;
+      const collector = documentTextCollector((a.type ?? typeFromPath(a.relativePath)) === "document" ? a.mimeType : "");
+      async function* collectDocument() {
+        for await (const chunk of file!) {
+          collector.write(chunk);
+          yield chunk;
+        }
+      }
       // The ZIP entry and destination are streamed while the storage layer
       // calculates actual byte count and SHA-256. No archive-sized or
       // original-sized Buffer is created by the file-based CLI path.
@@ -2498,7 +2507,7 @@ async function restoreFromArchive(
         familyId,
         a.assetId,
         ext,
-        file,
+        Readable.from(collectDocument()),
         captured ?? imported,
       );
       const { storageKey } = streamed;
@@ -2514,6 +2523,8 @@ async function restoreFromArchive(
         `${a.relativePath}: SHA-256 不符（备份可能损坏）`,
       );
       storageKeyByAsset.set(a.assetId, storageKey);
+      const extracted = collector.finish();
+      if (extracted.text !== null) textByAsset.set(a.assetId, { text: extracted.text, truncated: extracted.truncated });
     }
 
     // 2) DB 事务恢复全部业务表
@@ -2588,6 +2599,10 @@ async function restoreFromArchive(
             }),
           )
           .run();
+      }
+
+      for (const [assetId, extracted] of textByAsset) {
+        tx.insert(documentText).values({ id: randomUUID(), familyId, assetId, ...extracted, createdAt: now }).run();
       }
 
       if (memoriesJson.length > 0) {
