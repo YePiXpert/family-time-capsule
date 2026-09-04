@@ -29,7 +29,7 @@ test("批量导入：文档与照片逐项续传、刷新后保留服务器进�
   await expect(page.getByText("已入箱").first()).toBeVisible();
 
   await page.getByRole("link", { name: "去收件箱整理" }).click();
-  await expect(page.getByText("batch-photo.png")).toBeVisible();
-  await expect(page.getByText("note-one.txt")).toBeVisible();
-  await expect(page.getByText("archive.pdf")).toBeVisible();
+  for (const filename of ["batch-photo.png", "note-one.txt", "archive.pdf"]) {
+    await expect(page.getByRole("article").filter({ hasText: filename }).first()).toBeVisible();
+  }
 });

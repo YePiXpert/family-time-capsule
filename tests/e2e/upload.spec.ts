@@ -15,18 +15,27 @@ test("上传照片：保存成功、重复明确提示、收件箱可见、未�
   const file = path.join(__dirname, "..", "fixtures", "sample-exif.jpg");
   const input = page.locator('section[aria-label="照片"] input[type="file"]');
   let releaseResponse: (() => void) | undefined;
+  let markRequestStarted: (() => void) | undefined;
   const responseGate = new Promise<void>((resolve) => {
     releaseResponse = resolve;
   });
+  const requestStarted = new Promise<void>((resolve) => {
+    markRequestStarted = resolve;
+  });
   await page.route("**/api/upload/image", async (route) => {
+    markRequestStarted?.();
     await responseGate;
     await route.continue();
   });
   await input.setInputFiles(file);
-  await expect(
-    page.getByRole("progressbar", { name: "sample-exif.jpg 上传进度" }),
-  ).toBeVisible();
-  releaseResponse?.();
+  await requestStarted;
+  try {
+    await expect(
+      page.getByRole("progressbar", { name: "sample-exif.jpg 上传进度" }),
+    ).toBeVisible();
+  } finally {
+    releaseResponse?.();
+  }
   await expect(page.getByText("已保存，等待整理")).toBeVisible();
   await page.unroute("**/api/upload/image");
 
