@@ -1,4 +1,7 @@
 import { requireFamily } from "@/lib/family/context";
+import { getFamily } from "@/lib/family/service";
+import { countInbox } from "@/lib/inbox/service";
+import { AppShell } from "@/components/app-shell";
 
 /**
  * (app) 组：所有依赖家庭数据的页面。
@@ -11,6 +14,14 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireFamily();
-  return <>{children}</>;
+  const { familyId } = await requireFamily();
+  const [family, inboxCount] = await Promise.all([
+    getFamily(familyId),
+    countInbox(familyId),
+  ]);
+  return (
+    <AppShell familyName={family?.name ?? "家庭档案"} inboxCount={inboxCount}>
+      {children}
+    </AppShell>
+  );
 }
