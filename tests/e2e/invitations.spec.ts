@@ -166,7 +166,9 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
     invitedContexts.push(viewer.context);
 
     await viewer.page.goto("/settings");
-    await expect(viewer.page.getByText(FAMILY.name, { exact: true })).toBeVisible();
+    await expect(
+      viewer.page.getByLabel("家庭", { exact: true }).getByText(FAMILY.name, { exact: true }),
+    ).toBeVisible();
     await expect(
       viewer.page.getByText(VIEWER.displayName, { exact: true }).first(),
     ).toBeVisible();
@@ -184,7 +186,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
       viewer.page
         .getByRole("navigation", { name: "一级导航" })
         .getByRole("link", { name: "记录" }),
-    ).toHaveCount(0);
+    ).toBeVisible();
     const deniedViewerUpload = await viewer.page.request.post(
       "/api/upload/image",
       {
@@ -210,7 +212,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
 
     await contributor.page.goto("/settings");
     await expect(
-      contributor.page.getByText(FAMILY.name, { exact: true }),
+      contributor.page.getByLabel("家庭", { exact: true }).getByText(FAMILY.name, { exact: true }),
     ).toBeVisible();
     await expect(
       contributor.page

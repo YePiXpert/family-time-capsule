@@ -2,6 +2,7 @@ export type UploadResponse = {
   status?: "stored" | "duplicate" | "error";
   message?: string;
   assetId?: string;
+  inboxItemId?: string;
   existingAssetId?: string;
   capturedAt?: string | null;
   success?: true;

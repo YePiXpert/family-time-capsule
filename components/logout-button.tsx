@@ -21,7 +21,7 @@ export function LogoutButton() {
           router.refresh();
         });
       }}
-      className="text-sm text-foreground/60 transition-colors hover:text-foreground disabled:opacity-50"
+      className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm text-muted transition-colors hover:bg-surface-muted hover:text-foreground disabled:opacity-50"
     >
       退出
     </button>

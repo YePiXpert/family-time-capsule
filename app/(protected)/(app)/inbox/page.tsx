@@ -13,7 +13,9 @@ import {
   listAiProcessingConsents,
 } from "@/lib/ai/jobs";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
-import { getFamily } from "@/lib/family/service";
+import { getFamily, listPeople } from "@/lib/family/service";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { InboxBoard } from "./inbox-board";
 import { InboxSuggestButton } from "./inbox-suggestion-ui";
 import { ClusterSuggestionPanel } from "./cluster-suggestion-ui";
@@ -37,7 +39,10 @@ export default async function InboxPage({
   const cursorParam = typeof params.cursor === "string" ? params.cursor : null;
   const page = await getInboxPage(familyId, undefined, { cursor: cursorParam });
   const entries = page.entries;
-  const family = await getFamily(familyId);
+  const [family, people] = await Promise.all([
+    getFamily(familyId),
+    listPeople(familyId),
+  ]);
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
   // 收件箱封面优先用缩略图（避免列表加载全尺寸原件）
@@ -163,13 +168,15 @@ export default async function InboxPage({
   });
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <h1 className="text-2xl font-semibold">收件箱</h1>
-      <p className="mt-2 text-sm leading-6 text-foreground/60">
-        {canReview
-          ? "新内容先在这里整理：确认真实时间后进入时间轴。勾选多项可以合并成一件事。"
-          : "这里列出尚待整理的内容；当前角色可以查看，但整理与确认由管理员或编辑完成。"}
-      </p>
+    <main className="page-container">
+      <PageHeader
+        eyebrow="Inbox"
+        title="收件箱"
+        description={canReview
+          ? "把零散素材整理成值得重看的记忆。确认前可以补标题、时间、人物和地点，多份素材也能合成同一件事。"
+          : "这里是尚待整理的家庭内容；当前账号可以查看，确认入档由管理员或编辑完成。"}
+        actions={entries.length > 0 ? <span className="status-badge status-badge-warning">{entries.length}{page.nextCursor ? "+" : ""} 待整理</span> : undefined}
+      />
 
       {canReview && entries.length > 0 && (
         <ClusterSuggestionPanel suggestions={clusters} />
@@ -191,15 +198,26 @@ export default async function InboxPage({
       )}
 
       {entries.length === 0 ? (
-        <div className="mt-10 rounded-xl border border-dashed border-foreground/20 p-8 text-center text-sm text-foreground/50">
-          没有待整理的内容。去
-          <Link href="/capture" className="mx-1 underline underline-offset-2">
-            记录
-          </Link>
-          页上传照片、录音或写下一段话。
+        <div className="mt-8">
+          <EmptyState
+            icon="inbox"
+            title="收件箱已经整理好了"
+            description="下一次拍照、录音或写下一句话时，它们会先安全出现在这里。"
+            action={canReview ? "记录第一条新内容" : undefined}
+            actionHref={canReview ? "/capture" : undefined}
+          />
+          <p className="sr-only">没有待整理的内容</p>
         </div>
       ) : (
-        <InboxBoard entries={withSuggestions} canReview={canReview} />
+        <InboxBoard
+          entries={withSuggestions}
+          canReview={canReview}
+          people={people.map((person) => ({
+            id: person.id,
+            displayName: person.displayName,
+            isChild: person.isChild,
+          }))}
+        />
       )}
     </main>
   );

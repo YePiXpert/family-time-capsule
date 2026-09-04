@@ -151,7 +151,7 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   await expect(page.getByText("当前账号是只读角色")).toBeVisible();
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "一级导航" }).getByText("记录"))
-    .toHaveCount(0);
+    .toBeVisible();
   await page.goto("/family");
   await expect(page.getByRole("heading", { name: "家人" })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加家人" })).toHaveCount(0);

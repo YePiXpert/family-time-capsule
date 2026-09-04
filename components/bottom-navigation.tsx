@@ -8,7 +8,7 @@ import { Icon } from "./ui/icons";
 export function BottomNavigation({ inboxCount }: { inboxCount: number }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="主要导航" className="bottom-navigation lg:hidden">
+    <nav aria-label="一级导航" className="bottom-navigation lg:hidden">
       <div className="bottom-navigation-inner">
         {PRIMARY_NAVIGATION.map((item) => {
           const active = isNavigationItemActive(pathname, item.href, true);

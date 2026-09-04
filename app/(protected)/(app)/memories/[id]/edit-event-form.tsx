@@ -27,6 +27,7 @@ export function EditEventForm({
   participantIds,
   defaultWallTime,
   timezone,
+  initiallyOpen = false,
 }: {
   event: MemoryEventRow;
   people: PersonRow[];
@@ -34,9 +35,10 @@ export function EditEventForm({
   participantIds: string[];
   defaultWallTime: string; // datetime-local（家庭时区）
   timezone: string;
+  initiallyOpen?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(editEventAction, undefined);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const children = people.filter((p) => p.isChild);
 
   if (!open) {
@@ -44,7 +46,7 @@ export function EditEventForm({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-sm text-foreground/60 underline underline-offset-2 hover:text-foreground"
+        className="ui-button-secondary"
       >
         修改这件事
       </button>

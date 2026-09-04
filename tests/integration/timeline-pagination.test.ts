@@ -20,9 +20,11 @@ if (!setup.ok) throw new Error("setup failed");
 
 const { closeDatabase, getDb } = await import("@/db");
 const { user } = await import("@/db/schema/auth");
-const { memoryEvent } = await import("@/db/schema/memory");
+const { memoryEvent, memoryEventAsset, memoryEventParticipant } = await import("@/db/schema/memory");
+const { asset } = await import("@/db/schema/asset");
+const { memoryEventTag } = await import("@/db/schema/suggestion");
 const { completeOnboarding, listPeople } = await import("@/lib/family/service");
-const { getTimelinePage } = await import("@/lib/memories/service");
+const { getTimelineFacets, getTimelinePage } = await import("@/lib/memories/service");
 
 const db = getDb();
 const admin = (await db.select({ id: user.id }).from(user))[0]!;
@@ -132,5 +134,58 @@ describe("timeline keyset pagination", () => {
     expect(
       plan.some((step) => step.detail.includes("USE TEMP B-TREE")),
     ).toBe(false);
+  });
+
+  it("filters by date, person, media and tag without leaving the family scope", async () => {
+    const now = new Date();
+    await db.insert(asset).values({
+      id: "timeline-filter-image",
+      familyId,
+      type: "image",
+      originalFilename: "filter.jpg",
+      mimeType: "image/jpeg",
+      bytes: 10,
+      sha256: "f".repeat(64),
+      storageKey: "originals/filter.jpg",
+      capturedAt: new Date(base),
+      importedAt: now,
+      timeSource: "user_confirmed",
+      createdByUserId: admin.id,
+      createdAt: now,
+    });
+    await db.insert(memoryEventAsset).values({
+      id: "timeline-filter-asset-link",
+      familyId,
+      memoryEventId: "page-event-002",
+      assetId: "timeline-filter-image",
+      createdAt: now,
+    });
+    await db.insert(memoryEventParticipant).values({
+      id: "timeline-filter-person-link",
+      familyId,
+      memoryEventId: "page-event-002",
+      personId: child.id,
+      createdAt: now,
+    });
+    await db.insert(memoryEventTag).values({
+      id: "timeline-filter-tag-link",
+      familyId,
+      memoryEventId: "page-event-002",
+      tag: "第一次",
+      createdAt: now,
+    });
+
+    const page = await getTimelinePage(familyId, {
+      personId: child.id,
+      mediaType: "image",
+      tag: "第一次",
+      occurredFrom: new Date(base - 1000),
+      occurredBefore: new Date(base + 1000),
+    });
+    expect(page.entries.map((entry) => entry.event.id)).toEqual(["page-event-002"]);
+    expect(page.entries[0]?.tags).toEqual(["第一次"]);
+    const facets = await getTimelineFacets(familyId);
+    expect(facets.tags).toEqual(["第一次"]);
+    expect(facets.years).toContain(2030);
   });
 });

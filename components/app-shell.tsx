@@ -4,10 +4,10 @@ import { BottomNavigation } from "./bottom-navigation";
 import { SidebarNavigation } from "./sidebar-navigation";
 import { Icon } from "./ui/icons";
 
-export function AppShell({ children, familyName, inboxCount }: { children: ReactNode; familyName: string; inboxCount: number }) {
+export function AppShell({ children, familyName, inboxCount, userName }: { children: ReactNode; familyName: string; inboxCount: number; userName: string }) {
   return (
     <div className="app-shell">
-      <SidebarNavigation familyName={familyName} inboxCount={inboxCount} />
+      <SidebarNavigation familyName={familyName} inboxCount={inboxCount} userName={userName} />
       <header className="mobile-app-header lg:hidden">
         <Link href="/" className="min-w-0 rounded-md py-1">
           <span className="block text-[10px] font-semibold tracking-[0.16em] text-accent">家庭时间胶囊</span>

@@ -51,6 +51,8 @@ const onboarding = await completeOnboarding(adminUserId, {
 });
 if (!onboarding.ok) throw new Error("onboarding failed");
 const familyId = onboarding.familyId;
+const people = await (await import("@/lib/family/service")).listPeople(familyId);
+const dad = people.find((person) => !person.isChild)!;
 const OTHER_FAMILY = "fam-merge-other";
 
 const fixtures = path.join(__dirname, "..", "fixtures");
@@ -104,6 +106,8 @@ describe("多选合并（#010）", () => {
 
     const result = await mergeInboxEntries(familyId, itemIds, {
       title: "八月的一次出游",
+      locationText: "杭州西湖",
+      participantPersonIds: [dad.id],
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -118,6 +122,8 @@ describe("多选合并（#010）", () => {
     expect(detail.event.occurredAt.toISOString()).toBe("2026-08-08T02:00:00.000Z");
     // 封面默认选图片
     expect(detail.event.coverAssetId).toBeTruthy();
+    expect(detail.event.locationText).toBe("杭州西湖");
+    expect(detail.participants.map((person) => person.id)).toContain(dad.id);
     expect(detail.sourceNotes.map((note) => note.rawText).sort()).toEqual(
       ["那天出去玩了一下午。", "回家路上她一直看着窗外。"].sort(),
     );

@@ -101,6 +101,11 @@ export async function confirmAction(
   const itemId = String(formData.get("itemId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   const occurredWall = String(formData.get("occurredAt") ?? "").trim();
+  const locationText = String(formData.get("locationText") ?? "").trim();
+  const participantPersonIds = formData
+    .getAll("participantPersonIds")
+    .map(String)
+    .filter(Boolean);
 
   const entry = await getInboxEntry(familyId, itemId);
   if (!entry) return { error: "条目不存在。", itemId };
@@ -121,6 +126,8 @@ export async function confirmAction(
   const result = await confirmInboxEntry(familyId, entry, {
     title: title || undefined,
     occurredAt,
+    locationText,
+    participantPersonIds,
   });
   if (!result.ok) {
     return {
@@ -146,13 +153,18 @@ export async function mergeAction(
   _prev: InboxActionState | undefined,
   formData: FormData,
 ): Promise<InboxActionState> {
-  const { familyId } = await requireFamilyCapability("inbox:review");
+  const { familyId, userId } = await requireFamilyCapability("inbox:review");
   const itemIds = formData
     .getAll("itemIds")
     .map((v) => String(v))
     .filter(Boolean);
   const title = String(formData.get("title") ?? "").trim();
   const occurredWall = String(formData.get("occurredAt") ?? "").trim();
+  const locationText = String(formData.get("locationText") ?? "").trim();
+  const participantPersonIds = formData
+    .getAll("participantPersonIds")
+    .map(String)
+    .filter(Boolean);
 
   let occurredAt: Date | undefined;
   if (occurredWall) {
@@ -170,6 +182,8 @@ export async function mergeAction(
   const result = await mergeInboxEntries(familyId, itemIds, {
     title,
     occurredAt,
+    locationText,
+    participantPersonIds,
   });
   if (!result.ok) {
     return {
@@ -179,6 +193,11 @@ export async function mergeAction(
           : "合并失败：至少选择两个条目，标题 1–100 字。",
     };
   }
+  await Promise.all(
+    itemIds.map((itemId) =>
+      settlePendingSuggestions(familyId, userId, itemId, "accepted"),
+    ),
+  );
   revalidatePath("/inbox");
   revalidatePath("/timeline");
   redirect(`/memories/${result.eventId}`);

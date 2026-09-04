@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { isNull, and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { isNull, and, asc, desc, eq, inArray, sql, gte, lt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { asset as assetTable } from "@/db/schema/asset";
@@ -13,6 +13,7 @@ import {
   memoryEventParticipant,
   memoryEventRevision,
 } from "@/db/schema/memory";
+import { memoryEventTag } from "@/db/schema/suggestion";
 import type { AssetRow } from "@/lib/assets/service";
 import { indexMemoryEvent } from "@/lib/search/service";
 import { getInboxEntry, type InboxEntry } from "@/lib/inbox/service";
@@ -275,6 +276,7 @@ export type ConfirmOptions = {
   title?: string;
   occurredAt?: Date;
   occurredAtPrecision?: "exact" | "approximate" | "date_only";
+  locationText?: string | null;
   participantPersonIds?: string[];
   coverAssetId?: string;
 };
@@ -320,6 +322,10 @@ export async function confirmInboxEntry(
       ),
     );
   const validIds = new Set(validParticipants.map((p) => p.id));
+  if ([...participantIds].some((personId) => !validIds.has(personId))) {
+    return { ok: false, error: "invalid" };
+  }
+  const locationText = opts.locationText?.trim().slice(0, 200) || null;
 
   // cover 必须来自本事件的 assets
   const assetIds = entry.assets.map((a) => a.id);
@@ -347,7 +353,7 @@ export async function confirmInboxEntry(
         title,
         occurredAt,
         occurredAtPrecision: precision,
-        locationText: null,
+        locationText,
         coverAssetId,
         status: "confirmed",
         ageDays,
@@ -397,6 +403,8 @@ export async function confirmInboxEntry(
 export type MergeOptions = {
   title: string;
   occurredAt?: Date;
+  locationText?: string | null;
+  participantPersonIds?: string[];
   coverAssetId?: string;
 };
 
@@ -455,6 +463,25 @@ export async function mergeInboxEntries(
     childBirth[0]?.birthDate != null
       ? computeAgeDays(childBirth[0].birthDate, occurredAt)
       : null;
+  const participantIds = new Set<string>([
+    childPersonId,
+    ...(opts.participantPersonIds ?? []),
+  ]);
+  if (participantIds.size > 50) return { ok: false, error: "invalid" };
+  const validParticipants = await db
+    .select({ id: personTable.id })
+    .from(personTable)
+    .where(
+      and(
+        eq(personTable.familyId, familyId),
+        inArray(personTable.id, [...participantIds]),
+      ),
+    );
+  const validParticipantIds = new Set(validParticipants.map((row) => row.id));
+  if ([...participantIds].some((personId) => !validParticipantIds.has(personId))) {
+    return { ok: false, error: "invalid" };
+  }
+  const locationText = opts.locationText?.trim().slice(0, 200) || null;
 
   db.transaction((tx) => {
     tx.insert(memoryEvent)
@@ -465,7 +492,7 @@ export async function mergeInboxEntries(
         title,
         occurredAt,
         occurredAtPrecision: "exact",
-        locationText: null,
+        locationText,
         coverAssetId,
         status: "confirmed",
         ageDays,
@@ -487,13 +514,15 @@ export async function mergeInboxEntries(
         .run();
     }
     tx.insert(memoryEventParticipant)
-      .values({
-        id: randomUUID(),
-        memoryEventId: eventId,
-        personId: childPersonId,
-        familyId,
-        createdAt: now,
-      })
+      .values(
+        [...validParticipantIds].map((personId) => ({
+          id: randomUUID(),
+          memoryEventId: eventId,
+          personId,
+          familyId,
+          createdAt: now,
+        })),
+      )
       .run();
     // 涉及的全部条目都确认掉
     tx.update(inboxItem)
@@ -664,6 +693,7 @@ export type TimelineEntry = {
   coverThumbAssetId: string | null;
   assetCount: number;
   participantNames: string[];
+  tags: string[];
 };
 
 const DEFAULT_TIMELINE_PAGE_SIZE = 25;
@@ -730,7 +760,15 @@ function timelinePageSize(value: number | undefined): number {
  */
 export async function getTimelinePage(
   familyId: string,
-  options: { cursor?: string | null; limit?: number } = {},
+  options: {
+    cursor?: string | null;
+    limit?: number;
+    personId?: string | null;
+    mediaType?: "image" | "audio" | "video" | null;
+    tag?: string | null;
+    occurredFrom?: Date | null;
+    occurredBefore?: Date | null;
+  } = {},
 ): Promise<TimelinePage> {
   const db = getDb();
   const limit = timelinePageSize(options.limit);
@@ -746,6 +784,34 @@ export async function getTimelinePage(
         eq(memoryEvent.familyId, familyId),
         eq(memoryEvent.status, "confirmed"),
         isNull(memoryEvent.deletedAt),
+        options.personId
+          ? sql`exists (
+              select 1 from memory_event_participant timeline_person
+              where timeline_person.family_id = ${familyId}
+                and timeline_person.memory_event_id = ${memoryEvent.id}
+                and timeline_person.person_id = ${options.personId}
+            )`
+          : undefined,
+        options.mediaType
+          ? sql`exists (
+              select 1 from memory_event_asset timeline_link
+              inner join asset timeline_asset on timeline_asset.id = timeline_link.asset_id
+              where timeline_link.family_id = ${familyId}
+                and timeline_asset.family_id = ${familyId}
+                and timeline_link.memory_event_id = ${memoryEvent.id}
+                and timeline_asset.type = ${options.mediaType}
+            )`
+          : undefined,
+        options.tag
+          ? sql`exists (
+              select 1 from memory_event_tag timeline_tag
+              where timeline_tag.family_id = ${familyId}
+                and timeline_tag.memory_event_id = ${memoryEvent.id}
+                and timeline_tag.tag = ${options.tag}
+            )`
+          : undefined,
+        options.occurredFrom ? gte(memoryEvent.occurredAt, options.occurredFrom) : undefined,
+        options.occurredBefore ? lt(memoryEvent.occurredAt, options.occurredBefore) : undefined,
         cursorFilter,
       ),
     )
@@ -832,6 +898,23 @@ export async function getTimelinePage(
     participantNamesByEvent.set(link.memoryEventId, names);
   }
 
+  const tagRows = await db
+    .select({ memoryEventId: memoryEventTag.memoryEventId, tag: memoryEventTag.tag })
+    .from(memoryEventTag)
+    .where(
+      and(
+        eq(memoryEventTag.familyId, familyId),
+        inArray(memoryEventTag.memoryEventId, eventIds),
+      ),
+    )
+    .orderBy(asc(memoryEventTag.tag));
+  const tagsByEvent = new Map<string, string[]>();
+  for (const row of tagRows) {
+    const tags = tagsByEvent.get(row.memoryEventId) ?? [];
+    tags.push(row.tag);
+    tagsByEvent.set(row.memoryEventId, tags);
+  }
+
   const coverIdsForThumb = [
     ...new Set(
       events
@@ -871,11 +954,51 @@ export async function getTimelinePage(
         : null,
       assetCount: links.length,
       participantNames: participantNamesByEvent.get(event.id) ?? [],
+      tags: tagsByEvent.get(event.id) ?? [],
     };
   });
 
   return {
     entries,
     nextCursor: hasMore ? encodeTimelineCursor(events.at(-1)!) : null,
+  };
+}
+
+export type TimelineFacets = { tags: string[]; years: number[] };
+
+/** Family-scoped filter vocabulary for the timeline controls. */
+export async function getTimelineFacets(familyId: string): Promise<TimelineFacets> {
+  const db = getDb();
+  const [tagRows, yearRows] = await Promise.all([
+    db
+      .selectDistinct({ tag: memoryEventTag.tag })
+      .from(memoryEventTag)
+      .innerJoin(memoryEvent, eq(memoryEventTag.memoryEventId, memoryEvent.id))
+      .where(
+        and(
+          eq(memoryEventTag.familyId, familyId),
+          eq(memoryEvent.familyId, familyId),
+          eq(memoryEvent.status, "confirmed"),
+          isNull(memoryEvent.deletedAt),
+        ),
+      )
+      .orderBy(asc(memoryEventTag.tag)),
+    db
+      .selectDistinct({
+        year: sql<number>`cast(strftime('%Y', ${memoryEvent.occurredAt}, 'unixepoch') as integer)`,
+      })
+      .from(memoryEvent)
+      .where(
+        and(
+          eq(memoryEvent.familyId, familyId),
+          eq(memoryEvent.status, "confirmed"),
+          isNull(memoryEvent.deletedAt),
+        ),
+      )
+      .orderBy(desc(memoryEvent.occurredAt)),
+  ]);
+  return {
+    tags: tagRows.map((row) => row.tag),
+    years: yearRows.map((row) => Number(row.year)).filter(Number.isSafeInteger),
   };
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
-import { getMemoryEventDetail, listEventRevisions } from "@/lib/memories/service";
+import { getMemoryEventDetail, getTimelinePage, listEventRevisions } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { listFacts } from "@/lib/contributions/service";
 import {
@@ -12,6 +12,9 @@ import {
 } from "@/lib/authz/contribution-access";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { MediaBlock } from "@/components/media-view";
+import { MediaGrid } from "@/components/media-grid";
+import { MemoryCard } from "@/components/memory-card";
+import { PageHeader } from "@/components/page-header";
 import {
   getAiRuntimeDisclosure,
   listAiProcessingConsents,
@@ -57,8 +60,10 @@ const TIME_SOURCE_LABEL: Record<string, string> = {
 
 export default async function MemoryEventPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ mode?: string | string[] }>;
 }) {
   const context = await requireFamily();
   const { familyId } = context;
@@ -71,6 +76,8 @@ export default async function MemoryEventPage({
   const canRequestTranscription = hasFamilyCapability(context.role, "ai:review");
   const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
+  const query = await searchParams;
+  const editMode = canWriteEvent && query.mode === "edit";
   const [detail, family, people, contributions, facts, revisions, suggestions, tags] = await Promise.all([
     getMemoryEventDetail(familyId, id),
     getFamily(familyId),
@@ -225,7 +232,6 @@ export default async function MemoryEventPage({
 
   const child = participants.find((p) => p.id === event.childPersonId);
   const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt);
-  const cover = assets.find((a) => a.id === event.coverAssetId) ?? assets[0];
   const contributionAuthors =
     context.role === "admin" || context.role === "editor"
       ? people
@@ -239,46 +245,59 @@ export default async function MemoryEventPage({
   const videoJobByAssetId = new Map(
     videoAssetIds.map((assetId, index) => [assetId, videoJobs[index]]),
   );
+  const relatedPage = await getTimelinePage(familyId, { limit: 5 });
+  const relatedEntries = relatedPage.entries.filter((entry) => entry.event.id !== id).slice(0, 4);
+  const visibleFacts = editMode
+    ? facts
+    : facts.filter((fact) => fact.status === "user_confirmed");
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
-      <Link href="/timeline" className="text-sm text-foreground/60 hover:text-foreground">
-        ← 时间轴
-      </Link>
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight">{event.title}</h1>
-      <p className="mt-2 flex flex-wrap items-baseline gap-x-3 text-sm text-foreground/70">
-        <span>
-          {new Intl.DateTimeFormat("zh-CN", {
-            dateStyle: "long",
-            timeStyle:
-              event.occurredAtPrecision === "date_only" ? undefined : "short",
-            timeZone: timezone,
-          }).format(event.occurredAt)}
-        </span>
-        {ageLabel && <span className="text-accent">{ageLabel}</span>}
-      </p>
-
-      <section aria-label="参与人物" className="mt-4 text-sm text-foreground/70">
-        参与：
-        {participants.map((p, i) => (
-          <span key={p.id}>
-            {i > 0 && " / "}
-            {p.displayName}
-            {p.id === event.childPersonId ? "（孩子）" : ""}
-          </span>
-        ))}
+    <main className="page-container max-w-5xl">
+      <section aria-label="原始资料" className="overflow-hidden rounded-2xl border border-line bg-surface p-2 sm:p-3">
+        <h2 className="mb-2 px-1 text-sm font-semibold">影像与声音 <span aria-hidden="true" className="font-normal text-muted">· </span><span className="font-normal text-muted">原始资料（{assets.length}）</span></h2>
+        {assets.length === 0 ? (
+          <div className="flex min-h-40 items-center justify-center text-sm text-muted">这条文字记忆没有媒体素材。</div>
+        ) : (
+          <MediaGrid label="记忆影像与声音">
+            {assets.map((asset) => (
+              <MediaBlock
+                key={asset.id}
+                assetId={asset.id}
+                filename={asset.originalFilename}
+                mimeType={asset.mimeType}
+                type={asset.type}
+                durationMs={asset.durationMs}
+                thumbAssetId={thumbMap.get(asset.id)?.id ?? null}
+              />
+            ))}
+          </MediaGrid>
+        )}
       </section>
 
-      {event.locationText && (
-        <p className="mt-2 text-sm text-foreground/70">{event.locationText}</p>
-      )}
+      <div className="mt-8">
+        <PageHeader
+          backHref="/timeline"
+          backLabel="返回时间轴"
+          eyebrow={editMode ? "Archive editing" : "Family memory"}
+          title={event.title}
+          description={
+            <span className="flex flex-wrap gap-x-3 gap-y-1">
+              <span>{new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeStyle: event.occurredAtPrecision === "date_only" ? undefined : "short", timeZone: timezone }).format(event.occurredAt)}</span>
+              {ageLabel ? <span className="text-accent">{ageLabel}</span> : null}
+              {event.locationText ? <span>· {event.locationText}</span> : null}
+            </span>
+          }
+          actions={canWriteEvent ? (
+            <Link href={editMode ? `/memories/${event.id}` : `/memories/${event.id}?mode=edit`} className={editMode ? "ui-button-secondary" : "ui-button-primary"}>
+              {editMode ? "返回阅读记忆" : "编辑档案"}
+            </Link>
+          ) : undefined}
+        />
+        <section aria-label="参与人物" className="mt-4 text-sm text-muted">与 {participants.map((person) => `${person.displayName}${person.id === event.childPersonId ? "（孩子）" : ""}`).join("、")} 一起</section>
+      </div>
 
-      {canWriteEvent && (
-        <div className="mt-3">
-          <TrashEventButton eventId={event.id} />
-        </div>
-      )}
-      {canWriteEvent && <div className="mt-4">
+      {canWriteEvent ? <section aria-label="编辑档案" className={editMode ? "mt-6 rounded-2xl border border-accent/40 bg-accent-soft/40 p-4" : "mt-4"}>
+        {editMode ? <h2 className="font-semibold">编辑档案</h2> : null}
         <EditEventForm
           event={event}
           people={people}
@@ -286,14 +305,16 @@ export default async function MemoryEventPage({
           participantIds={participants.map((p) => p.id)}
           defaultWallTime={utcToZonedWallTimeInput(event.occurredAt, timezone)}
           timezone={timezone}
+          initiallyOpen={editMode}
         />
-      </div>}
+        {editMode ? <div className="mt-4"><TrashEventButton eventId={event.id} /></div> : null}
+      </section> : null}
 
       {sourceNotes.length > 0 && (
         <section aria-label="原始文字记录" className="mt-8">
-          <h2 className="text-lg font-medium">文字记录（{sourceNotes.length}）</h2>
+          <h2 className="text-lg font-medium">这段记忆</h2>
           <p className="mt-1 text-sm leading-6 text-foreground/60">
-            确认收件箱内容时保留的原始文字；未标注讲述者。
+            当时写下的原话，作为这段记忆的一部分保留下来。
           </p>
           <div className="mt-3 flex flex-col gap-3">
             {sourceNotes.map((note) => (
@@ -310,31 +331,34 @@ export default async function MemoryEventPage({
         </section>
       )}
 
-      <section aria-label="原始资料" className="mt-8">
-        <h2 className="text-lg font-medium">原始资料（{assets.length}）</h2>
-        {assets.length === 0 ? (
-          <p className="mt-2 text-sm text-foreground/50">无关联素材。</p>
-        ) : (
-          <div className="mt-3 flex flex-col gap-4">
-            {assets.map((a) => (
-              <MediaBlock
-                key={a.id}
-                assetId={a.id}
-                filename={a.originalFilename}
-                mimeType={a.mimeType}
-                type={a.type}
-                durationMs={a.durationMs}
-                thumbAssetId={thumbMap.get(a.id)?.id ?? null}
-              />
+      <section aria-label="家人讲述" className="mt-10">
+        <h2 className="text-lg font-medium">家人讲述</h2>
+        <p className="mt-1 text-sm leading-6 text-muted">同一件事可以有不同视角，每个人的讲述彼此独立、不会相互覆盖。</p>
+        <div className="mt-3 flex flex-col gap-3">
+          {contributions.length > 0 ? contributions.map((contribution) => (
+            <ContributionBlock key={contribution.id} contribution={contribution} canEdit={contribution.canEdit} />
+          )) : <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">还没有家人补充讲述。</p>}
+        </div>
+        {canCreateContribution && contributionAuthors.length > 0 ? <AddContributionForm memoryEventId={event.id} people={contributionAuthors} /> : null}
+      </section>
+
+      <FactSection memoryEventId={event.id} facts={visibleFacts} factSources={factSources} sourceLabels={factSourceLabels} canWrite={canWriteEvent} />
+
+      {relatedEntries.length > 0 ? (
+        <section aria-label="相关记忆" className="mt-10">
+          <h2 className="text-lg font-medium">相关记忆</h2>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {relatedEntries.map((entry) => (
+              <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(entry.event.occurredAt)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
             ))}
           </div>
-        )}
-        {cover && (
-          <p className="mt-3 text-xs text-foreground/45">
-            封面：{cover.originalFilename}
-          </p>
-        )}
-      </section>
+        </section>
+      ) : null}
+
+      <details className="mt-10 rounded-2xl border border-line bg-surface" open={editMode}>
+        <summary className="min-h-14 px-5 py-4 text-lg font-semibold">档案信息</summary>
+        <div className="border-t border-line px-4 pb-5 sm:px-5">
+          <p className="mt-4 text-sm leading-6 text-muted">原件校验、时间来源、转录与 AI 建议都保留在这里；这些资料默认不会打断阅读。</p>
 
       {avAssetIdsArray.length > 0 && (
         <section aria-label="转录" className="mt-10">
@@ -413,42 +437,12 @@ export default async function MemoryEventPage({
         </section>
       )}
 
-      <section aria-label="家人视角" className="mt-10">
-        <h2 className="text-lg font-medium">家人视角</h2>
-        <p className="mt-1 text-sm leading-6 text-foreground/50">
-          每个人留下自己独立的讲述，互不覆盖；没有账号的家人（祖辈）也可以被记录。
-        </p>
-        <div className="mt-3 flex flex-col gap-3">
-          {contributions.map((c) => (
-            <ContributionBlock
-              key={c.id}
-              contribution={c}
-              canEdit={c.canEdit}
-            />
-          ))}
-        </div>
-        {canCreateContribution && contributionAuthors.length > 0 && (
-          <AddContributionForm
-            memoryEventId={event.id}
-            people={contributionAuthors}
-          />
-        )}
-      </section>
-
       <SuggestionSection
         memoryEventId={event.id}
         suggestions={suggestions}
         tags={tags}
         latestJob={latestSuggestionJob}
         canRequest={canRequestTranscription && textAvailable}
-        canWrite={canWriteEvent}
-      />
-
-      <FactSection
-        memoryEventId={event.id}
-        facts={facts}
-        factSources={factSources}
-        sourceLabels={factSourceLabels}
         canWrite={canWriteEvent}
       />
 
@@ -495,8 +489,8 @@ export default async function MemoryEventPage({
         </section>
       )}
 
-      <section aria-label="素材 metadata" className="mt-10">
-        <h2 className="text-lg font-medium">档案信息</h2>
+      <section aria-label="原件校验信息" className="mt-10">
+        <h2 className="text-lg font-medium">原件校验</h2>
         <dl className="mt-2 grid gap-x-8 gap-y-1 text-xs text-foreground/50 sm:grid-cols-2">
           {assets.map((a) => (
             <div key={a.id} className="flex flex-col border-t border-foreground/5 py-1">
@@ -518,6 +512,8 @@ export default async function MemoryEventPage({
           ))}
         </dl>
       </section>
+        </div>
+      </details>
     </main>
   );
 }

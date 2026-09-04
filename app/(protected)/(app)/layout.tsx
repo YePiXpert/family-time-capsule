@@ -14,13 +14,17 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { familyId } = await requireFamily();
+  const { familyId, userName } = await requireFamily();
   const [family, inboxCount] = await Promise.all([
     getFamily(familyId),
     countInbox(familyId),
   ]);
   return (
-    <AppShell familyName={family?.name ?? "家庭档案"} inboxCount={inboxCount}>
+    <AppShell
+      familyName={family?.name ?? "家庭档案"}
+      inboxCount={inboxCount}
+      userName={userName}
+    >
       {children}
     </AppShell>
   );

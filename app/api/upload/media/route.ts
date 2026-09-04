@@ -103,6 +103,7 @@ export async function POST(request: Request) {
         {
           status: "duplicate",
           existingAssetId: existingAsset.id,
+          inboxItemId: existingCapture.item.id,
           existingFilename: existingAsset.originalFilename,
           message: "设备记录已接收，未重复保存。",
         },
@@ -129,6 +130,7 @@ export async function POST(request: Request) {
         { status: 415 },
       );
     case "duplicate":
+      let duplicateInboxItemId: string | undefined;
       if (captureId) {
         const inbox = createInboxItemForAssetIdempotent(
           context.familyId,
@@ -138,17 +140,20 @@ export async function POST(request: Request) {
         if (inbox.status === "conflict") {
           return Response.json({ error: "capture_id_conflict" }, { status: 409 });
         }
+        duplicateInboxItemId = inbox.item.id;
       }
       return Response.json(
         {
           status: "duplicate",
           existingAssetId: result.existing.id,
           existingFilename: result.existing.originalFilename,
+          inboxItemId: duplicateInboxItemId,
           message: "已存在相同原件（SHA-256 一致），未重复保存。",
         },
         { status: 200 },
       );
     case "stored":
+      let storedInboxItemId: string;
       if (captureId) {
         const inbox = createInboxItemForAssetIdempotent(
           context.familyId,
@@ -158,13 +163,16 @@ export async function POST(request: Request) {
         if (inbox.status === "conflict") {
           return Response.json({ error: "capture_id_conflict" }, { status: 409 });
         }
+        storedInboxItemId = inbox.item.id;
       } else {
-        await createInboxItemForAsset(context.familyId, result.asset);
+        const inbox = await createInboxItemForAsset(context.familyId, result.asset);
+        storedInboxItemId = inbox.id;
       }
       return Response.json(
         {
           status: "stored",
           assetId: result.asset.id,
+          inboxItemId: storedInboxItemId,
           type: result.asset.type,
           durationMs: result.asset.durationMs,
           capturedAt: result.asset.capturedAt?.toISOString() ?? null,

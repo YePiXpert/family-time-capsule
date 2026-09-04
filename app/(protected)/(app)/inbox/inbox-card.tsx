@@ -6,6 +6,8 @@ import type { InboxItemRow } from "@/lib/inbox/service";
 import { MediaImage, MediaVideo } from "@/components/media-view";
 import { confirmAction, discardAction, editTimeAction } from "./actions";
 import { InboxSuggestionChips, type InboxSuggestionChipDto } from "./inbox-suggestion-ui";
+import type { InboxPersonOption } from "./inbox-board";
+import { StatusBadge } from "@/components/status-badge";
 
 const TIME_SOURCE_LABEL: Record<string, string> = {
   user_confirmed: "你确认的时间",
@@ -33,6 +35,8 @@ export function InboxCard({
   suggestionChips = [],
   suggestedTitle,
   suggestedOccurredWall,
+  people,
+  compact,
 }: {
   item: InboxItemRow;
   assets: AssetRow[];
@@ -42,6 +46,8 @@ export function InboxCard({
   suggestedTitle?: string;
   /** AI 建议的事件发生时间（家庭时区 datetime-local 值），仅预填 */
   suggestedOccurredWall?: string;
+  people: InboxPersonOption[];
+  compact: boolean;
 }) {
   const [timeState, timeAction, timePending] = useActionState(editTimeAction, undefined);
   const [discardState, discardActionRun, discardPending] = useActionState(discardAction, undefined);
@@ -54,16 +60,16 @@ export function InboxCard({
       : (cover?.originalFilename ?? "一段记忆").replace(/\.[a-z0-9]{1,8}$/i, ""));
 
   return (
-    <article className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
-      <div className="flex flex-col gap-4 sm:flex-row">
+    <article className="h-full overflow-hidden rounded-xl border border-line bg-surface">
+      <div className={compact ? "flex h-full flex-col" : "flex flex-col gap-4 p-4 sm:flex-row"}>
         {cover?.type === "image" && (
           <MediaImage
             assetId={cover.id}
             filename={cover.originalFilename}
             mimeType={cover.mimeType}
             thumbAssetId={coverThumbAssetId}
-            className="h-32 w-32 shrink-0"
-            imgClassName="h-32 w-32 shrink-0 rounded-lg border border-foreground/10 object-cover"
+            className={compact ? "aspect-[4/3] w-full" : "h-40 w-48 shrink-0"}
+            imgClassName={compact ? "aspect-[4/3] w-full object-cover" : "h-40 w-48 shrink-0 rounded-lg border border-line object-cover"}
           />
         )}
         {cover?.type === "audio" && (
@@ -71,7 +77,7 @@ export function InboxCard({
             controls
             preload="metadata"
             src={`/api/media/${cover.id}`}
-            className="mt-2 w-full sm:w-80"
+            className={compact ? "m-4 mt-16 w-[calc(100%-2rem)]" : "mt-2 w-full sm:w-80"}
           />
         )}
         {cover?.type === "video" && (
@@ -79,22 +85,18 @@ export function InboxCard({
             assetId={cover.id}
             filename={cover.originalFilename}
             mimeType={cover.mimeType}
-            className="h-32 w-48 shrink-0"
-            videoClassName="h-32 w-auto shrink-0 rounded-lg border border-foreground/10"
+            className={compact ? "aspect-video w-full" : "h-40 w-48 shrink-0"}
+            videoClassName={compact ? "aspect-video w-full object-cover" : "h-40 w-auto shrink-0 rounded-lg border border-line"}
           />
         )}
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm">
+        <div className={`flex min-w-0 flex-1 flex-col gap-1.5 text-sm ${compact ? "p-4 pt-3" : ""}`}>
           <div className="flex flex-wrap items-baseline gap-x-3">
             <span className="truncate font-medium" title={cover?.originalFilename}>
               {cover?.originalFilename ?? item.rawText?.slice(0, 40)}
             </span>
-            <span className="rounded border border-foreground/15 px-1.5 py-0.5 text-xs text-foreground/60">
-              {item.kind === "text" ? "文字" : cover?.type === "image" ? "照片" : cover?.type}
-            </span>
+            <StatusBadge>{item.kind === "text" ? "文字" : cover?.type === "image" ? "照片" : cover?.type}</StatusBadge>
             {item.status === "needs_review" && (
-              <span className="rounded border border-amber-600/40 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-400">
-                缺少时间
-              </span>
+              <StatusBadge tone="warning">待校时</StatusBadge>
             )}
           </div>
           <p className="text-foreground/70">
@@ -106,28 +108,17 @@ export function InboxCard({
             {cover ? `${cover.width ?? "?"}×${cover.height ?? "?"}` : ""}
           </p>
 
-          {canReview && <form action={timeAction} className="mt-2 flex flex-wrap items-center gap-2">
-            <input type="hidden" name="itemId" value={item.id} />
-            <input
-              type="datetime-local"
-              name="capturedAt"
-              required
-              className={inputClass}
-              aria-label="修改真实时间"
-            />
-            <button
-              type="submit"
-              disabled={timePending}
-              className="rounded-lg border border-foreground/20 px-3 py-1.5 text-xs transition-colors hover:border-accent disabled:opacity-50"
-            >
-              {timePending ? "保存中…" : "修改时间"}
-            </button>
-            {timeState?.error && timeState.itemId === item.id && (
-              <span className="text-xs text-red-700 dark:text-red-400">{timeState.error}</span>
-            )}
-          </form>}
+          {canReview && cover ? <details className="mt-2 rounded-lg border border-line px-3 py-2">
+            <summary className="min-h-11 py-2 text-sm font-medium">修正素材拍摄时间</summary>
+            <form action={timeAction} className="flex flex-wrap items-center gap-2 pb-2">
+              <input type="hidden" name="itemId" value={item.id} />
+              <input type="datetime-local" name="capturedAt" required className={`${inputClass} min-h-11 flex-1`} aria-label="修改真实时间" />
+              <button type="submit" disabled={timePending} className="ui-button-secondary">{timePending ? "保存中…" : "修改时间"}</button>
+              {timeState?.error && timeState.itemId === item.id ? <span className="text-xs text-red-700 dark:text-red-400">{timeState.error}</span> : null}
+            </form>
+          </details> : null}
 
-          {canReview && <form action={confirmActionRun} className="mt-3 flex flex-wrap items-center gap-2">
+          {canReview && <form action={confirmActionRun} className="mt-3 grid gap-2">
             <input type="hidden" name="itemId" value={item.id} />
             <input
               type="text"
@@ -136,19 +127,34 @@ export function InboxCard({
               maxLength={100}
               placeholder="这件事的标题"
               aria-label="事件标题"
-              className={`${inputClass} min-w-40 flex-1`}
+              className={`${inputClass} min-h-11 w-full`}
             />
             <input
               type="datetime-local"
               name="occurredAt"
               defaultValue={suggestedOccurredWall}
               aria-label="发生时间（可选）"
-              className={inputClass}
+              className={`${inputClass} min-h-11 w-full`}
             />
+            <input type="text" name="locationText" maxLength={200} placeholder="地点（可选）" aria-label="事件地点" className={`${inputClass} min-h-11 w-full`} />
+            {people.length > 0 ? (
+              <details className="rounded-lg border border-line px-3">
+                <summary className="min-h-11 py-2.5">选择人物</summary>
+                <fieldset className="pb-2">
+                  <legend className="sr-only">参与人物</legend>
+                  {people.map((person) => (
+                    <label key={person.id} className="flex min-h-11 items-center gap-2 text-sm">
+                      <input type="checkbox" name="participantPersonIds" value={person.id} defaultChecked={person.isChild} className="h-5 w-5 accent-accent" />
+                      {person.displayName}
+                    </label>
+                  ))}
+                </fieldset>
+              </details>
+            ) : null}
             <button
               type="submit"
               disabled={confirmPending}
-              className="rounded-lg bg-foreground px-3 py-1.5 text-xs text-background transition-opacity disabled:opacity-50"
+              className="ui-button-primary w-full"
             >
               {confirmPending ? "整理中…" : "确认进入时间轴"}
             </button>

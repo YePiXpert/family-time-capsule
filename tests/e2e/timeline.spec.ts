@@ -41,3 +41,21 @@ test("事件详情页展示素材与参与人", async ({ page }) => {
   await expect(page.getByText("原始资料（1）")).toBeVisible();
   await expect(page.getByText("小满（孩子）")).toBeVisible();
 });
+
+test("375px 五项导航无横向滚动且搜索可用键盘打开", async ({ page }) => {
+  await ensureLogin(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/");
+
+  const navigation = page.getByRole("navigation", { name: "一级导航" });
+  await expect(navigation.getByRole("link")).toHaveCount(5);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+  ).toBe(true);
+
+  const search = page.getByRole("link", { name: "搜索家庭记忆" });
+  await search.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/search$/);
+  await expect(page.getByRole("heading", { name: "搜索" })).toBeVisible();
+});

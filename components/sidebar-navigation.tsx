@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PRIMARY_NAVIGATION, SECONDARY_NAVIGATION, isNavigationItemActive } from "./navigation-items";
 import { Icon } from "./ui/icons";
+import { LogoutButton } from "./logout-button";
 
-export function SidebarNavigation({ familyName, inboxCount }: { familyName: string; inboxCount: number }) {
+export function SidebarNavigation({ familyName, inboxCount, userName }: { familyName: string; inboxCount: number; userName: string }) {
   const pathname = usePathname();
   return (
     <aside className="sidebar-navigation" aria-label="应用导航">
@@ -20,7 +21,7 @@ export function SidebarNavigation({ familyName, inboxCount }: { familyName: stri
         <span>搜索家庭记忆</span>
         <span className="ml-auto text-xs text-faint">⌘ K</span>
       </Link>
-      <nav aria-label="主要功能" className="mt-5 px-3">
+      <nav aria-label="一级导航" className="mt-5 px-3">
         <ul className="space-y-1">
           {PRIMARY_NAVIGATION.filter((item) => item.href !== "/more").map((item) => {
             const active = isNavigationItemActive(pathname, item.href);
@@ -53,6 +54,10 @@ export function SidebarNavigation({ familyName, inboxCount }: { familyName: stri
           })}
         </ul>
       </nav>
+      <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-4">
+        <span className="truncate text-sm text-muted">{userName}</span>
+        <LogoutButton />
+      </div>
     </aside>
   );
 }

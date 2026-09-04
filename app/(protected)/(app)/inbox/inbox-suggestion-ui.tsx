@@ -45,13 +45,14 @@ export function InboxSuggestionChips({
   if (suggestions.length === 0) return null;
 
   return (
-    <div
+    <details
       className="mt-2 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-xs"
       aria-label="AI 整理建议"
     >
-      <p className="text-foreground/50">
-        AI 建议（预填到上方表单，确认前可修改）：
-      </p>
+      <summary className="min-h-11 py-2 font-medium text-foreground/60">
+        AI 生成 · 未确认（{suggestions.length}）
+      </summary>
+      <p className="text-foreground/50">仅作表单预填，确认前可以修改或不用：</p>
       <ul className="mt-1 flex flex-wrap gap-2">
         {suggestions.map((s) => (
           <li
@@ -85,7 +86,7 @@ export function InboxSuggestionChips({
           {state.error}
         </p>
       )}
-    </div>
+    </details>
   );
 }
 
