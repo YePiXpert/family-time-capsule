@@ -169,6 +169,101 @@ async function complete(uploadId: string, token = adminToken) {
 }
 
 describe("durable resumable upload protocol", () => {
+  it("adopts an interrupted native upload into its device batch without restarting bytes", async () => {
+    const bytes = Buffer.concat([PNG, Buffer.from("native-batch")]);
+    const created = await createUpload({ bytes: bytes.length });
+    const id = created.body.uploadId as string;
+    expect((await patch(id, 0, bytes.subarray(0, 8))).status).toBe(204);
+    const row = getDb().select().from(uploadSession).where(eq(uploadSession.id, id)).get()!;
+    const batch = await createImportSession({ familyId, createdByUserId: row.userId, source: "native" });
+    const { createUploadSession, getImportSessionDetail } = await import("@/lib/imports/service");
+    const input = { ...row, source: "native" as const, importSessionId: batch.id };
+    const adopted = await createUploadSession(input);
+    expect(adopted.session).toMatchObject({ id, receivedBytes: 8, importSessionId: batch.id });
+    expect((await createUploadSession(input)).session.id).toBe(id);
+    expect((await patch(id, 8, bytes.subarray(8))).status).toBe(204);
+    expect((await complete(id)).status).toBeLessThan(300);
+    const detail = (await getImportSessionDetail(familyId, batch.id))!;
+    expect(detail.session).toMatchObject({ totalCount: 1, completedCount: 1, failedCount: 0 });
+    expect(detail.items).toHaveLength(1);
+    expect(detail.items[0].item).toMatchObject({ status: "completed", uploadSessionId: id, inboxItemId: created.captureId });
+  });
+
+  it("adopts a completed legacy transfer once without creating another asset or inbox item", async () => {
+    const bytes = Buffer.concat([PNG, Buffer.from("completed-legacy-batch")]);
+    const created = await createUpload({ bytes: bytes.length });
+    const id = created.body.uploadId as string;
+    await patch(id, 0, bytes);
+    await complete(id);
+    const row = getDb().select().from(uploadSession).where(eq(uploadSession.id, id)).get()!;
+    const batch = await createImportSession({ familyId, createdByUserId: row.userId, source: "native" });
+    const { createUploadSession, getImportSessionDetail } = await import("@/lib/imports/service");
+    const assetCount = getDb().select({ n: count() }).from(asset).get()!.n;
+    const inboxCount = getDb().select({ n: count() }).from(inboxItem).get()!.n;
+    await createUploadSession({ ...row, source: "native", importSessionId: batch.id });
+    await createUploadSession({ ...row, source: "native", importSessionId: batch.id });
+    const detail = (await getImportSessionDetail(familyId, batch.id))!;
+    expect(detail.session).toMatchObject({ totalCount: 1, completedCount: 1 });
+    expect(detail.items[0].item).toMatchObject({ assetId: row.finalAssetId, inboxItemId: row.finalInboxItemId });
+    expect(getDb().select({ n: count() }).from(asset).get()!.n).toBe(assetCount);
+    expect(getDb().select({ n: count() }).from(inboxItem).get()!.n).toBe(inboxCount);
+    const { buildFamilyExport } = await import("@/lib/export/service");
+    const { default: JSZip } = await import("jszip");
+    const archive = await buildFamilyExport(familyId);
+    const zip = await JSZip.loadAsync(readFileSync(archive.filePath));
+    const sessions = JSON.parse(await zip.file("family-time-capsule-export/import-sessions.json")!.async("string"));
+    const items = JSON.parse(await zip.file("family-time-capsule-export/import-session-items.json")!.async("string"));
+    expect(sessions).toEqual(expect.arrayContaining([expect.objectContaining({ id: batch.id, completedCount: 1 })]));
+    expect(items).toEqual(expect.arrayContaining([expect.objectContaining({ importSessionId: batch.id, assetId: row.finalAssetId, inboxItemId: row.finalInboxItemId })]));
+  });
+
+  it("refuses legacy adoption by a different creator or with a changed declaration", async () => {
+    const created = await createUpload({});
+    const row = getDb().select().from(uploadSession).where(eq(uploadSession.id, created.body.uploadId)).get()!;
+    const batch = await createImportSession({ familyId, createdByUserId: admin.id, source: "native" });
+    const { createUploadSession } = await import("@/lib/imports/service");
+    await expect(createUploadSession({ ...row, source: "native", importSessionId: batch.id })).rejects.toMatchObject({ status: 404 });
+    const own = await createImportSession({ familyId, createdByUserId: row.userId, source: "native" });
+    await expect(createUploadSession({ ...row, source: "native", importSessionId: own.id, filename: "changed.png" })).rejects.toMatchObject({ status: 409 });
+    expect(getDb().select().from(uploadSession).where(eq(uploadSession.id, row.id)).get()?.importSessionId).toBeNull();
+    await cancelUpload(familyId, row.id);
+  });
+
+  it("serializes batch adoption with an in-flight completion so counters cannot miss the asset", async () => {
+    const bytes = Buffer.concat([PNG, Buffer.from("concurrent-native-adoption")]);
+    const created = await createUpload({ bytes: bytes.length });
+    const id = created.body.uploadId as string;
+    await patch(id, 0, bytes);
+    const row = getDb().select().from(uploadSession).where(eq(uploadSession.id, id)).get()!;
+    const batch = await createImportSession({ familyId, createdByUserId: row.userId, source: "native" });
+    const { createUploadSession, completeUpload, getImportSessionDetail } = await import("@/lib/imports/service");
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    const storage = getAssetStorage();
+    const promote = storage.promoteUploadPart.bind(storage);
+    const spy = vi.spyOn(storage, "promoteUploadPart").mockImplementationOnce(async (...args) => {
+      started();
+      await gate;
+      return promote(...args);
+    });
+    try {
+      const completing = completeUpload(familyId, id);
+      await entered;
+      const adopting = createUploadSession({ ...row, source: "native", importSessionId: batch.id });
+      release();
+      await Promise.all([completing, adopting]);
+    } finally {
+      release();
+      spy.mockRestore();
+    }
+    const detail = (await getImportSessionDetail(familyId, batch.id))!;
+    expect(detail.session).toMatchObject({ totalCount: 1, completedCount: 1 });
+    expect(detail.items[0].item).toMatchObject({ status: "completed", inboxItemId: created.captureId });
+    expect(detail.items[0].item.assetId).not.toBeNull();
+  });
+
   it("keeps native batch retry authorization and HTTP cache isolation", async () => {
     const id = randomUUID();
     const request = (token: string, clientSessionId: string = id) => new Request("http://localhost/api/imports", {

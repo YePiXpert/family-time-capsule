@@ -129,6 +129,7 @@ async function confirmedOffset(
     method: "HEAD",
     headers: { authorization: `Bearer ${credentials.token}` },
   });
+  if (response.status === 410) return { offset: 0, status: "expired" };
   if (!response.ok) throw uploadError(response.status, "无法查询上传进度");
   return {
     offset: Number(response.headers.get("upload-offset") ?? 0),
@@ -146,7 +147,19 @@ export async function uploadMediaCapture(
   if (!file.exists) throw new Error("本地原件已不存在。");
   const totalBytes = file.size;
   if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) throw new Error("本地原件为空或大小无效。");
-  let uploadId = payload.uploadId;
+  if (payload.importSessionId) {
+    const response = await fetch(`${credentials.serverUrl}/api/imports`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ clientSessionId: payload.importSessionId, source: payload.source === "system_share" ? "share" : "native" }),
+    });
+    if (!response.ok) throw uploadError(response.status, "无法同步导入批次");
+    const batch = await response.json() as { id?: string };
+    if (batch.id !== payload.importSessionId) throw new ApiError("服务器批次结果无效。", 502);
+  }
+  // Repeat creation for batches to attach an older ungrouped transfer as well.
+  // The server checks the full immutable declaration before adding that relation.
+  let uploadId = payload.importSessionId ? undefined : payload.uploadId;
   let offset = payload.uploadOffset ?? 0;
   if (uploadId) {
     try {
@@ -181,7 +194,7 @@ export async function uploadMediaCapture(
         totalBytes,
         lastModified: payload.lastModified,
         source: payload.source === "system_share" ? "share" : "native",
-        importSessionId: null,
+        importSessionId: payload.importSessionId ?? null,
       }),
     });
     if (!response.ok) throw uploadError(response.status, "无法创建上传");
@@ -197,6 +210,14 @@ export async function uploadMediaCapture(
     await onProgress(uploadId, offset);
     if (created.status === "completed" && typeof created.inboxItemId === "string") {
       return created.inboxItemId;
+    }
+    if (["failed", "expired", "cancelled"].includes(created.status ?? "")) {
+      const retry = await fetch(`${credentials.serverUrl}/api/uploads/${uploadId}/retry`, {
+        method: "POST", headers: { authorization: `Bearer ${credentials.token}` },
+      });
+      if (!retry.ok) throw uploadError(retry.status, "无法恢复上传");
+      const body = await retry.json() as { uploadOffset?: number };
+      offset = Number(body.uploadOffset ?? 0);
     }
   }
   await onProgress(uploadId, offset);

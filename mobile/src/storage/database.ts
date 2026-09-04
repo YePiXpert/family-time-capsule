@@ -697,11 +697,17 @@ export async function listOutbox(): Promise<OutboxItem[]> {
     created_at: string;
     attempt_count: number;
     last_error: string | null;
-  }>("SELECT * FROM outbox ORDER BY created_at, id");
+    import_session_id: string | null;
+  }>(`SELECT o.*, i.import_session_id FROM outbox o
+      LEFT JOIN local_import_item i ON i.capture_id = o.id
+      ORDER BY o.created_at, o.id`);
   return rows.map((row) => ({
     id: row.id,
     kind: row.kind,
-    payload: JSON.parse(row.payload_json) as OutboxItem["payload"],
+    payload: {
+      ...JSON.parse(row.payload_json),
+      ...(row.kind === "media_capture" && row.import_session_id ? { importSessionId: row.import_session_id } : {}),
+    } as OutboxItem["payload"],
     createdAt: row.created_at,
     attemptCount: row.attempt_count,
     lastError: row.last_error,

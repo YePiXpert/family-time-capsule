@@ -80,6 +80,8 @@ export type MediaCapturePayload = {
   source: "camera" | "library" | "recorder" | "files" | "system_share";
   uploadId?: string;
   uploadOffset?: number;
+  /** Derived from the relational local_import_item when flushing the outbox. */
+  importSessionId?: string;
 };
 
 export type LocalImportSource = "files" | "share";

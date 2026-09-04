@@ -266,11 +266,19 @@ export async function createUploadSession(
     )
     .limit(1);
   if (existing[0]) {
-    if (!sameDeclaration(existing[0], input)) {
-      throw new UploadServiceError("capture_id_conflict", 409, existing[0].receivedBytes);
-    }
-    const recovered = await reconcileUpload(existing[0]);
-    return { session: recovered, existing: true };
+    return withUploadLock(existing[0].id, async () => {
+      let row = await sessionForFamily(input.familyId, existing[0].id);
+      if (row.importSessionId === null && input.importSessionId &&
+        ["native", "share"].includes(input.source) &&
+        sameDeclaration({ ...row, importSessionId: input.importSessionId }, input)) {
+        row = adoptNativeUpload(row, input.importSessionId);
+      }
+      if (!sameDeclaration(row, input)) {
+        throw new UploadServiceError("capture_id_conflict", 409, row.receivedBytes);
+      }
+      const recovered = await reconcileUpload(row);
+      return { session: recovered, existing: true };
+    });
   }
 
   const occupiedCapture = await db
@@ -451,6 +459,53 @@ export async function createUploadSession(
     }
     throw error;
   }
+}
+
+/** Upgrade a device transfer created before native batches were synchronized. */
+function adoptNativeUpload(previous: UploadSessionRow, importId: string): UploadSessionRow {
+  return getDb().transaction((tx) => {
+    const row = tx.select().from(uploadSession).where(eq(uploadSession.id, previous.id)).get()!;
+    const parent = tx.select().from(importSession).where(and(eq(importSession.id, importId), eq(importSession.familyId, row.familyId))).get();
+    if (!parent || parent.createdByUserId !== row.userId) throw new UploadServiceError("not_found", 404);
+    if (row.importSessionId === importId) return row;
+    if (row.importSessionId || parent.source !== row.source) throw new UploadServiceError("capture_id_conflict", 409);
+    if (["completed", "cancelled"].includes(parent.status)) throw new UploadServiceError("import_session_closed", 409);
+    const declared = tx.select().from(importSessionItem).where(and(
+      eq(importSessionItem.importSessionId, importId), eq(importSessionItem.captureId, row.captureId),
+    )).get();
+    if (declared && (declared.uploadSessionId || ["completed", "cancelled"].includes(declared.status) ||
+      (declared.filename !== null && (declared.filename !== row.filename || declared.declaredMime !== row.declaredMime ||
+        declared.totalBytes !== row.totalBytes || declared.clientFingerprint !== row.clientFingerprint ||
+        (declared.lastModified?.getTime() ?? null) !== (row.lastModified?.getTime() ?? null))))) {
+      throw new UploadServiceError("capture_id_conflict", 409);
+    }
+    const completed = row.status === "completed";
+    if (completed && (!row.finalAssetId || !row.finalInboxItemId)) throw new UploadServiceError("invalid_completed_session", 409);
+    const failed = ["failed", "expired", "cancelled"].includes(row.status);
+    const now = new Date();
+    const values = {
+      uploadSessionId: row.id, filename: row.filename, declaredMime: row.declaredMime,
+      totalBytes: row.totalBytes, lastModified: row.lastModified, clientFingerprint: row.clientFingerprint,
+      assetId: row.finalAssetId, inboxItemId: row.finalInboxItemId,
+      status: completed ? "completed" : failed ? "failed" : "pending",
+      errorCode: row.errorCode, updatedAt: now,
+    };
+    if (declared) tx.update(importSessionItem).set(values).where(eq(importSessionItem.id, declared.id)).run();
+    else {
+      const order = tx.select({ value: max(importSessionItem.sortOrder) }).from(importSessionItem)
+        .where(eq(importSessionItem.importSessionId, importId)).get()?.value ?? -1;
+      tx.insert(importSessionItem).values({ ...values, id: randomUUID(), familyId: row.familyId,
+        importSessionId: importId, captureId: row.captureId, sortOrder: order + 1, createdAt: now }).run();
+    }
+    tx.update(importSession).set({
+      totalCount: parent.totalCount + (declared ? 0 : 1),
+      completedCount: parent.completedCount + (completed ? 1 : 0),
+      failedCount: parent.failedCount + (failed ? 1 : 0) - (declared?.status === "failed" ? 1 : 0),
+      status: completed ? "reviewing" : "uploading", updatedAt: now,
+    }).where(eq(importSession.id, importId)).run();
+    return tx.update(uploadSession).set({ importSessionId: importId, updatedAt: now })
+      .where(eq(uploadSession.id, row.id)).returning().get();
+  }, { behavior: "immediate" });
 }
 
 async function sessionForFamily(
