@@ -115,7 +115,7 @@ final class ShareViewController: SLComposeServiceViewController {
   }
 
   private func copyFileValue(
-    _ value: NSSecureCoding?,
+    _ value: Any?,
     provider: NSItemProvider,
     type: UTType,
     index: Int
