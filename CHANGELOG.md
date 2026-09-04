@@ -39,8 +39,13 @@ rc.3 审计中发现的跨端时间、草稿、媒体来源、本机生命周期
   6 个 production disaster roundtrip，以及 6 files / 30 个移动端测试。
 - Web lint/typecheck/Next 16.3.3 production build、mobile TypeScript/ESLint、Expo Doctor 21/21、
   Android/iOS Hermes bundle 与 Docker app/worker health + deployment smoke 均通过。
-- 本轮未 push，因此没有 rc.4 GitHub CI 或原生 APK/IPA 云构建；真实设备项目仍全部待人工，
-  不创建 stable tag。
+- `main@f16bc3ac3d46599a946fc87e9021eceef711b7e1` 的 CI run `33867341620` 三个独立 job
+  （Web、mobile、E2E/恢复）全绿；原生 build run `33868382857` 的 quality、Android APK、
+  iOS unsigned IPA 全绿。
+- 下载复验的 APK 为 35,584,431 bytes / SHA-256
+  `67d2b4c3d3d1afa5b9c859801912d2432650a85721549558605f2858c0098345`；unsigned IPA 为
+  9,196,386 bytes / SHA-256 `c9e7f0d8d10982b5aca723f0ec7e5be930f2d6925bf58b64e7d4a404fc88989a`。
+  真实设备项目仍全部待人工，不创建 stable tag。
 
 ## 1.0.0-rc.3 — Everyday family product（2026-09-04）
 

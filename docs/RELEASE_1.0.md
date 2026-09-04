@@ -2,8 +2,8 @@
 
 > 候选版本：`1.0.0-rc.4`
 > 验收日期：2026-09-04
-> 结论：本地自动化、Expo bundle 与 Docker 门禁通过；GitHub CI、rc.4 原生云包和真实设备
-> 人工记录尚未执行，稳定 `1.0.0` 继续等待外部证据。
+> 结论：本地自动化、Expo bundle、Docker、main GitHub CI 与 rc.4 原生云包均通过；真实
+> 设备人工记录尚未执行，稳定 `1.0.0` 继续等待外部证据。
 
 ## 自动化证据
 
@@ -17,10 +17,9 @@
 | React Native quality | 6 files / 30 tests；TypeScript / ESLint；Expo Doctor 21/21；iOS/Android Hermes bundle，全部通过 |
 | Docker | 当前 rc.4 镜像 build、app/worker health、部署 smoke，通过 |
 | 完整导出 / 恢复 | production E2E 下载并以独立 CLI 校验 ZIP；A→销毁→B 恢复、媒体 Range、二次导出 6/6 通过 |
-| GitHub CI | 未运行：本轮按要求没有 push 或 PR |
-| Android/iOS native package | rc.4 本地 Hermes bundle 通过；APK/IPA 云构建与真实设备安装待执行 |
-| 上一候选版云构建 | run `33815649669` 全绿；build 2 的 Android APK 与 iPhoneOS unsigned IPA 已下载复验 |
-| 依赖 audit / benchmark | 本轮未重跑；rc.3 已记录证据继续保留，不作为 rc.4 新证据 |
+| GitHub CI | main run [`33867341620`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33867341620)：`web-quality`、`mobile-quality`、`e2e-restore-roundtrip` 全绿 |
+| Android/iOS native package | main run [`33868382857`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33868382857)：React Native quality、Android APK、iOS unsigned IPA 全绿；真机安装待执行 |
+| 依赖 audit / benchmark | rc.4 重跑时 npm 官方 bulk audit POST 超时，未形成新 audit 结论；rc.3 的 audit / benchmark 证据继续保留 |
 
 自动化覆盖家庭 IANA 时区墙钟与 DST、家庭日历日年龄、相册无可靠时间待复核、Web/native
 Inbox 草稿往返、本机 capture 归档对账与重启/响应丢失恢复、四角色 capability、story 目标、
@@ -28,36 +27,36 @@ Inbox 草稿往返、本机 capture 归档对账与重启/响应丢失恢复、�
 完整虚构家庭 destroy/restore、公开注册、限流、媒体 Range、AI consent/jobs、WebDAV、回收站
 和导出负例。
 
-上一候选版 Android 原生包在 GitHub Ubuntu runner 上执行 299 个 Gradle tasks 后生成，并在下载后再次
-使用 Android SDK 36 验证。它使用临时 debug key 的 APK Signature v2；正式商店分发仍需
-长期 release keystore。精确包信息与哈希见下节。
+以上 CI 与云包均来自唯一开发/发布分支 `main` 的提交
+`f16bc3ac3d46599a946fc87e9021eceef711b7e1`。Android 原生包在 GitHub Ubuntu runner
+生成，并在下载后再次使用 Android SDK 36 验证；它使用临时 debug key 的 APK Signature
+v2，正式商店分发仍需长期 release keystore。精确包信息与哈希见下节。
 
 ## 原生构建证据
 
-rc.4 在本地通过 Expo Doctor 21/21，以及 Android（1050 modules）和 iOS（1055 modules）
-Hermes export；`mobile/app.json` 的商店展示版本保持 `1.0.0`，iOS buildNumber 与 Android
-versionCode 已递增为 `4`。本轮按要求没有 push，因此没有触发新的 GitHub CI 或云端
-APK/IPA；以下保留上一候选版 build 2 的已复验证据，不能当作 rc.4 云构建或真机验收。
+rc.4 在本地和 GitHub 均通过 Expo Doctor 21/21，以及 Android（1050 modules）和 iOS
+（1055 modules）Hermes export；`mobile/app.json` 的商店展示版本保持 `1.0.0`，iOS
+buildNumber 与 Android versionCode 均为 `4`。
 
 GitHub Actions run
-[`33815649669`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33815649669)
-在唯一分支 `main`、提交 `db68224c08978c0d2362cb4ccf8143cec71aab86` 上于
-2026-09-03 完成，三个 job 均成功：React Native quality 6m05s（其中 Expo 外部检查
-等待约 5 分钟）、Android APK 10m24s、iOS unsigned IPA 10m28s。云端产物保留 30 天。
+[`33868382857`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33868382857)
+于 2026-09-04 从 `main`、提交 `f16bc3ac3d46599a946fc87e9021eceef711b7e1`
+手工触发，没有创建临时分支或 tag。三个 job 均成功：React Native quality 6m15s、Android
+APK 13m11s、iOS unsigned IPA 13m00s。云端产物保留 30 天。
 
 | 云端产物 | 复验结果 |
 | --- | --- |
-| `FamilyTimeCapsule-android.apk` | 28,840,092 bytes；SHA-256 `c97b24efa3af361305a64933c841e8cd3b9d96fb8f165d3fde2089aefe34b296` |
-| `FamilyTimeCapsule-ios-unsigned.ipa` | 7,952,169 bytes；SHA-256 `382f36c50b816e5b8dbe3576f42eeff1ef3a5f45c5a527624167c7b91134be87` |
+| `FamilyTimeCapsule-android.apk` | 35,584,431 bytes；SHA-256 `67d2b4c3d3d1afa5b9c859801912d2432650a85721549558605f2858c0098345` |
+| `FamilyTimeCapsule-ios-unsigned.ipa` | 9,196,386 bytes；SHA-256 `c9e7f0d8d10982b5aca723f0ec7e5be930f2d6925bf58b64e7d4a404fc88989a` |
 
 APK 经 Android SDK 36 `apksigner` 与 `aapt2` 二次验证：APK Signature v2 有效，包名
-`app.familytimecapsule.mobile`，`versionName=1.0.0`、`versionCode=2`，min/target SDK 24/36，仅含
+`app.familytimecapsule.mobile`，`versionName=1.0.0`、`versionCode=4`，min/target SDK 24/36，仅含
 `arm64-v8a`，包含 `libhermesvm.so`、`libexpo-sqlite.so`、`libreactnative.so` 与
 Hermes bytecode `assets/index.android.bundle`；声明相机权限，不含 `SYSTEM_ALERT_WINDOW`。
 它使用临时 debug key，适合直接侧载测试，不作为正式商店签名。
 
 IPA 经 `unzip -tq` 与解包二次验证：bundle id `app.familytimecapsule.mobile`，版本
-`1.0.0 (2)`，最低 iOS 16.4，平台为 `iphoneos`，主程序是 64-bit ARM64 Mach-O；包含
+`1.0.0 (4)`，最低 iOS 16.4，平台为 `iphoneos`，主程序是 64-bit ARM64 Mach-O；包含
 Hermes、React Native、Expo SQLite、Expo SecureStore 与 Hermes `main.jsbundle`，并带有
 相机/相册用途说明，确认不是 PWA/WebView 套壳。包内没有 `_CodeSignature` 或
 `embedded.mobileprovision`，因此必须用 Apple 开发者身份或设备自签方案签名后才能安装，
@@ -67,10 +66,10 @@ Hermes、React Native、Expo SQLite、Expo SecureStore 与 Hermes `main.jsbundle
 
 2026-09-04 在 Linux / Docker Compose / Node 24 Alpine 镜像上从 rc.4 当前工作树执行：
 
-- 独立 `ftcrc4` project 从 Dockerfile 完整构建；`app` 与 `worker` 均 healthy；部署 smoke
+- 独立 `ftcrc4-main-ci` project 从 Dockerfile 完整构建；`app` 与 `worker` 均 healthy；部署 smoke
   验证登录页、manifest、数据库健康、匿名媒体 401、ffmpeg/ffprobe 与 `/data` 可写全部通过。
 - 健康端点返回 `{"ok":true,"db":"ok","version":"1.0.0-rc.4"}`。验收后仅删除本轮临时
-  `ftcrc4` 容器、网络和测试卷。
+  `ftcrc4-main-ci` 容器、网络和测试卷。
 
 上一候选版 2026-09-03 的完整虚构家庭持久化、跨实例恢复与旧卷接管证据继续保留：
 

@@ -1,8 +1,8 @@
 # 1.0.0-rc.4 跨端正确性与发布前稳定性
 
-> 状态：rc.4 本地自动化、双平台 Expo bundle 与 Docker smoke 完成；GitHub CI、rc.4
-> APK/IPA 云构建和真实设备稳定版门禁待外部执行
-> 基线：`main` / `0133b646b45dbacd5a4d82b3ef0f2c8fcada34fa` / `1.0.0-rc.3`
+> 状态：rc.4 本地自动化、双平台 Expo bundle、Docker smoke、main GitHub CI 与 rc.4
+> APK/IPA 云构建完成；真实设备稳定版门禁待人工执行
+> 发布证据源：`main` / `f16bc3ac3d46599a946fc87e9021eceef711b7e1` / `1.0.0-rc.4`
 > 目标：不扩展 rc.3 产品范围，只收敛跨端数据正确性、权限体验、本机记录生命周期和真实设备发布前稳定性。
 
 ## 不可破坏边界
@@ -73,7 +73,7 @@ Web 移动布局与原生端共享五个一级入口：
 | M4 | 本机 capture 生命周期、正式事件对账、合并与响应丢失恢复 | ✅ `336f30a` |
 | M5 | Web/原生 capability 导航、只读记录与 Inbox review 分层 | ✅ `74aa6b3` |
 | M6 | 精确入口、story 打开、原生 Contribution、阅读页延迟档案查询 | ✅ `cd6c376` |
-| M7 | 版本 `1.0.0-rc.4`、本地全量自动化、Expo bundle、Docker smoke、导出/恢复校验 | ✅ 本地门禁完成；GitHub CI、云包与真机待执行 |
+| M7 | 版本 `1.0.0-rc.4`、本地全量自动化、Expo bundle、Docker smoke、导出/恢复校验 | ✅ main CI `33867341620` 与原生 build `33868382857` 全绿；真机待执行 |
 
 rc.4 没有改变 portable archive 主格式，也没有新增页面、产品领域、AI、备份或导出格式。
 真实设备项目只能记录自动化和 bundle 证据；没有实际硬件证据的复选框不得代填，也不得据此创建 stable tag。

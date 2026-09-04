@@ -1,8 +1,8 @@
 # 原生 iOS / Android 客户端
 
 > 当前候选版本：`1.0.0-rc.4`；Expo 商店展示版本保持 `1.0.0`，原生 iOS build / Android
-> versionCode 为 `4`，以便从上一候选包升级安装。本地 Expo bundle 已通过；rc.4 APK/IPA
-> 云构建与真实设备安装尚未执行。
+> versionCode 为 `4`，以便从上一候选包升级安装。本地与 main CI 的 Expo bundle 已通过；
+> build run `33868382857` 已生成并复验 rc.4 APK/unsigned IPA，真实设备安装尚未执行。
 
 `mobile/` 是 Expo SDK 57 + React Native 的原生客户端。它渲染 UIKit/Android View
 对应的原生组件，使用原生 SQLite、Keychain/Keystore 和文件系统模块，**不是 PWA，
@@ -69,7 +69,7 @@ npm ci
 npm test
 npm run typecheck
 npm run lint
-npx expo-doctor
+npm run doctor
 npx expo export --platform android --output-dir dist-android
 npx expo export --platform ios --output-dir dist-ios
 ```
@@ -80,11 +80,11 @@ npx expo export --platform ios --output-dir dist-ios
 
 ## GitHub 云构建 IPA / APK
 
-在 GitHub Actions 选择 **Native mobile packages** → **Run workflow**。也可推送
-`mobile-v*` tag 触发。工作流先跑 Expo Doctor、TypeScript、ESLint 和 Android/iOS
+在 GitHub Actions 选择 **Native mobile packages** → **Run workflow**，或执行
+`gh workflow run mobile-build.yml --ref main`。手工构建只接受 `main`；`mobile-v*` tag 仅在
+其 SHA 属于当前 `origin/main` 历史时可发布。所有 job checkout 触发时的准确 SHA，不创建
+临时构建分支。工作流先跑 Expo Doctor、TypeScript、ESLint、30 tests 和 Android/iOS
 Hermes bundle，再并行构建：
-
-本轮按要求未 push、未打 tag，因此下面描述的是可执行流程，不代表 rc.4 已产生云端包。
 
 - `FamilyTimeCapsule-android-apk`：Release 模式、ARM64、内置 Hermes bundle，并以临时
   debug key 签名的可直接侧载 APK；每次云运行的 key 可能不同，覆盖安装失败时先卸载
@@ -93,6 +93,19 @@ Hermes bundle，再并行构建：
   它不能直接装机；可用自己的 Apple Development/Distribution 证书与 provisioning
   profile 重签，或交给 AltStore/Sideloadly 等自签安装流程。无需把家庭数据或密码上传
   到 Actions。
+
+rc.4 云构建 run [`33868382857`](https://github.com/YePiXpert/family-time-capsule/actions/runs/33868382857)
+来自 `main@f16bc3ac3d46599a946fc87e9021eceef711b7e1`，React Native quality、Android APK、
+iOS unsigned IPA 三个 job 全绿，产物保留 30 天。下载后复验结果：
+
+| 产物 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `FamilyTimeCapsule-android.apk` | 35,584,431 | `67d2b4c3d3d1afa5b9c859801912d2432650a85721549558605f2858c0098345` |
+| `FamilyTimeCapsule-ios-unsigned.ipa` | 9,196,386 | `c9e7f0d8d10982b5aca723f0ec7e5be930f2d6925bf58b64e7d4a404fc88989a` |
+
+APK ZIP、v2 签名、package `app.familytimecapsule.mobile`、`versionCode=4` 与 Hermes HBC
+均通过；IPA ZIP、bundle ID `app.familytimecapsule.mobile`、`buildNumber=4` 与 Hermes HBC
+均通过。这里是自动化包证据，不代表真实 iOS/Android 安装或权限行为已经验收。
 
 Apple 证书属于个人/组织身份，仓库不会内置。要让 Actions 直接产出已签 IPA，需由所有者
 把 `.p12`、密码、provisioning profile 和 Team ID 配为 GitHub Encrypted Secrets，再增加
