@@ -5,7 +5,9 @@ import {
   createWriteStream,
   createReadStream,
   existsSync,
+  lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -301,6 +303,7 @@ export class LocalFilesystemStorage implements AssetStorage {
     const key = `uploads/${uploadId}.part`;
     const target = this.resolveUploadPath(key);
     await mkdir(path.dirname(target), { recursive: true });
+    this.resolveUploadPath(key);
     const handle = await open(
       target,
       constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
@@ -394,7 +397,11 @@ export class LocalFilesystemStorage implements AssetStorage {
   }
 
   createUploadReadStream(key: string): Readable {
-    return createReadStream(this.resolveUploadPath(key));
+    const target = this.resolveUploadPath(key);
+    return createReadStream(target, {
+      fd: openSync(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)),
+      autoClose: true,
+    });
   }
 
   resolveUploadPath(key: string): string {
@@ -404,6 +411,17 @@ export class LocalFilesystemStorage implements AssetStorage {
     const resolved = path.resolve(this.root, key);
     const uploadsRoot = path.resolve(this.root, "uploads") + path.sep;
     if (!resolved.startsWith(uploadsRoot)) throw new StorageKeyError(key);
+    // O_NOFOLLOW protects the leaf only; reject a substituted parent too.
+    for (const [target, directory] of [[path.dirname(resolved), true], [resolved, false]] as const) {
+      try {
+        const info = lstatSync(target);
+        if (info.isSymbolicLink() || (directory ? !info.isDirectory() : !info.isFile())) {
+          throw new StorageKeyError(key);
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
     return resolved;
   }
 

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, truncateSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmdirSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, count, eq, sql } from "drizzle-orm";
@@ -168,6 +168,35 @@ async function complete(uploadId: string, token = adminToken) {
 }
 
 describe("durable resumable upload protocol", () => {
+  it("rejects symlinked upload parents and leaves without touching their targets", async () => {
+    const { LocalFilesystemStorage } = await import("@/lib/assets/storage");
+    const root = mkdtempSync(path.join(tmpdir(), "ftc-upload-links-"));
+    const outside = mkdtempSync(path.join(tmpdir(), "ftc-upload-outside-"));
+    try {
+      const storage = new LocalFilesystemStorage(root);
+      const id = randomUUID();
+      const key = `uploads/${id}.part`;
+      const target = path.join(outside, `${id}.part`);
+      writeFileSync(target, "must remain intact");
+      rmdirSync(path.join(root, "uploads"));
+      symlinkSync(outside, path.join(root, "uploads"), "dir");
+      await expect(storage.createUploadPart(id)).rejects.toThrow("unsafe storage key");
+      await expect(storage.uploadPartSize(key)).rejects.toThrow("unsafe storage key");
+      await expect(storage.deleteUploadPart(key)).rejects.toThrow("unsafe storage key");
+      expect(() => storage.createUploadReadStream(key)).toThrow("unsafe storage key");
+      rmSync(path.join(root, "uploads"));
+      await storage.createUploadPart(id);
+      rmSync(path.join(root, key));
+      symlinkSync(target, path.join(root, key), "file");
+      expect(() => storage.createUploadReadStream(key)).toThrow("unsafe storage key");
+      await expect(storage.deleteUploadPart(key)).rejects.toThrow("unsafe storage key");
+      expect(readFileSync(target, "utf8")).toBe("must remain intact");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it("persists 100 declarations before upload, replays idempotently, and cancels untouched items", async () => {
     const { declareImportItems, getImportSessionDetail, cancelImportSession } = await import("@/lib/imports/service");
     const batch = await createImportSession({ familyId, createdByUserId: admin.id, source: "web" });
