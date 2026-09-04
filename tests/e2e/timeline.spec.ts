@@ -40,6 +40,10 @@ test("事件详情页展示素材与参与人", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "八月中旬的一个上午" })).toBeVisible();
   await expect(page.getByText("原始资料（1）")).toBeVisible();
   await expect(page.getByText("小满（孩子）")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "原件校验" })).toHaveCount(0);
+  await page.getByRole("link", { name: "查看档案信息" }).click();
+  await expect(page).toHaveURL(/\?mode=archive$/);
+  await expect(page.getByRole("heading", { name: "原件校验" })).toBeVisible();
 });
 
 test("375px 五项导航无横向滚动且搜索可用键盘打开", async ({ page }) => {

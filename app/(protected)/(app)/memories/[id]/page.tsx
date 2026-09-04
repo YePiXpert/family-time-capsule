@@ -47,6 +47,10 @@ import { factSource, type FactSourceRow } from "@/db/schema/suggestion";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { StatusBadge } from "@/components/status-badge";
+import {
+  loadMemoryArchiveData,
+  resolveMemoryPageMode,
+} from "@/lib/memories/read-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -78,16 +82,14 @@ export default async function MemoryEventPage({
   const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
   const query = await searchParams;
-  const editMode = canWriteEvent && query.mode === "edit";
-  const [detail, family, people, contributions, facts, revisions, suggestions, tags] = await Promise.all([
+  const pageMode = resolveMemoryPageMode(query.mode, canWriteEvent);
+  const editMode = pageMode === "edit";
+  const [detail, family, people, contributions, facts] = await Promise.all([
     getMemoryEventDetail(familyId, id),
     getFamily(familyId),
     listPeople(familyId),
     listVisibleContributionsForEvent(contributionAccess, id),
     listFacts(familyId, id),
-    canViewAudit ? listEventRevisions(familyId, id) : Promise.resolve([]),
-    listPendingSuggestions(familyId, "memory_event", id),
-    listEventTags(familyId, id),
   ]);
   if (!detail) notFound();
 
@@ -127,60 +129,96 @@ export default async function MemoryEventPage({
     .filter((a) => a.type === "video" && a.originalAssetId === null)
     .map((a) => a.id);
 
-  const [
-    contributionAudioAssets,
-    transcripts,
-    jobs,
-    analyses,
-    imageJobs,
-    videoJobs,
-    disclosure,
-    consents,
-    factSources,
-    suggestionJobs,
-  ] = await Promise.all([
-    Promise.all(
-      contributionAudioAssetIds.map((id) => getAsset(familyId, id)),
-    ),
-    getTranscriptsForAssets(familyId, avAssetIdsArray),
-    Promise.all(
-      avAssetIdsArray.map((assetId) =>
-        getLatestTranscriptionJobForAsset(familyId, assetId),
+  const archiveData = await loadMemoryArchiveData(pageMode, async () => {
+    const [
+      contributionAudioAssets,
+      transcripts,
+      jobs,
+      analyses,
+      imageJobs,
+      videoJobs,
+      disclosure,
+      consents,
+      factSources,
+      suggestionJobs,
+      revisions,
+      suggestions,
+      tags,
+    ] = await Promise.all([
+      Promise.all(
+        contributionAudioAssetIds.map((assetId) => getAsset(familyId, assetId)),
       ),
-    ),
-    getAnalysesForAssets(familyId, [...imageAssetIds, ...videoAssetIds]),
-    Promise.all(
-      imageAssetIds.map((assetId) =>
-        getLatestImageAnalysisJobForAsset(familyId, assetId),
+      getTranscriptsForAssets(familyId, avAssetIdsArray),
+      Promise.all(
+        avAssetIdsArray.map((assetId) =>
+          getLatestTranscriptionJobForAsset(familyId, assetId),
+        ),
       ),
-    ),
-    Promise.all(
-      videoAssetIds.map((assetId) =>
-        getLatestVideoAnalysisJobForAsset(familyId, assetId),
+      getAnalysesForAssets(familyId, [...imageAssetIds, ...videoAssetIds]),
+      Promise.all(
+        imageAssetIds.map((assetId) =>
+          getLatestImageAnalysisJobForAsset(familyId, assetId),
+        ),
       ),
-    ),
-    Promise.resolve(getAiRuntimeDisclosure()),
-    canRequestTranscription
-      ? listAiProcessingConsents(context)
-      : Promise.resolve([] as AiConsentDto[]),
-    facts.length > 0
-      ? getDb()
-          .select()
-          .from(factSource)
-          .where(
-            and(
-              eq(factSource.familyId, familyId),
-              inArray(
-                factSource.factId,
-                facts.map((f) => f.id),
+      Promise.all(
+        videoAssetIds.map((assetId) =>
+          getLatestVideoAnalysisJobForAsset(familyId, assetId),
+        ),
+      ),
+      Promise.resolve(getAiRuntimeDisclosure()),
+      canRequestTranscription
+        ? listAiProcessingConsents(context)
+        : Promise.resolve([] as AiConsentDto[]),
+      facts.length > 0
+        ? getDb()
+            .select()
+            .from(factSource)
+            .where(
+              and(
+                eq(factSource.familyId, familyId),
+                inArray(
+                  factSource.factId,
+                  facts.map((fact) => fact.id),
+                ),
               ),
-            ),
-          )
-      : Promise.resolve([] as FactSourceRow[]),
-    canRequestTranscription
-      ? listJobsForEntity(context, "memory_event", id)
-      : Promise.resolve([] as AiJobSummary[]),
-  ]);
+            )
+        : Promise.resolve([] as FactSourceRow[]),
+      canRequestTranscription
+        ? listJobsForEntity(context, "memory_event", id)
+        : Promise.resolve([] as AiJobSummary[]),
+      canViewAudit ? listEventRevisions(familyId, id) : Promise.resolve([]),
+      listPendingSuggestions(familyId, "memory_event", id),
+      listEventTags(familyId, id),
+    ]);
+    return {
+      contributionAudioAssets,
+      transcripts,
+      jobs,
+      analyses,
+      imageJobs,
+      videoJobs,
+      disclosure,
+      consents,
+      factSources,
+      suggestionJobs,
+      revisions,
+      suggestions,
+      tags,
+    };
+  });
+  const contributionAudioAssets = archiveData?.contributionAudioAssets ?? [];
+  const transcripts = archiveData?.transcripts ?? new Map<string, never>();
+  const jobs = archiveData?.jobs ?? [];
+  const analyses = archiveData?.analyses ?? new Map<string, never>();
+  const imageJobs = archiveData?.imageJobs ?? [];
+  const videoJobs = archiveData?.videoJobs ?? [];
+  const disclosure = archiveData?.disclosure ?? null;
+  const consents = archiveData?.consents ?? [];
+  const factSources = archiveData?.factSources ?? [];
+  const suggestionJobs = archiveData?.suggestionJobs ?? [];
+  const revisions = archiveData?.revisions ?? [];
+  const suggestions = archiveData?.suggestions ?? [];
+  const tags = archiveData?.tags ?? [];
   const assetById = new Map(
     [...assets, ...contributionAudioAssets.filter((a): a is NonNullable<typeof contributionAudioAssets[number]> => Boolean(a))].map((a) => [
       a.id,
@@ -213,19 +251,19 @@ export default async function MemoryEventPage({
   }
   const transcriptionConsent = consents.find((c) => c.capability === "transcription");
   const transcriptionAvailable =
-    disclosure.valid &&
+    disclosure?.valid === true &&
     disclosure.capabilities?.transcription?.available === true &&
     (disclosure.external === false || transcriptionConsent?.enabled === true);
 
   const visionConsent = consents.find((c) => c.capability === "vision");
   const visionAvailable =
-    disclosure.valid &&
+    disclosure?.valid === true &&
     disclosure.capabilities?.vision?.available === true &&
     (disclosure.external === false || visionConsent?.enabled === true);
 
   const textConsent = consents.find((c) => c.capability === "text");
   const textAvailable =
-    disclosure.valid &&
+    disclosure?.valid === true &&
     disclosure.capabilities?.text?.available === true &&
     (disclosure.external === false || textConsent?.enabled === true);
 
@@ -363,8 +401,8 @@ export default async function MemoryEventPage({
       <FactSection memoryEventId={event.id} facts={visibleFacts} factSources={factSources} sourceLabels={factSourceLabels} canWrite={canWriteEvent} />
 
       {relatedEntries.length > 0 ? (
-        <section aria-label="相关记忆" className="mt-10">
-          <h2 className="text-lg font-medium">相关记忆</h2>
+        <section aria-label="最近记忆" className="mt-10">
+          <h2 className="text-lg font-medium">最近记忆</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {relatedEntries.map((entry) => (
               <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(entry.event.occurredAt)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} milestoneType={entry.event.milestoneType} isPinned={entry.event.isPinned} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
@@ -373,9 +411,10 @@ export default async function MemoryEventPage({
         </section>
       ) : null}
 
-      <details className="mt-10 rounded-2xl border border-line bg-surface" open={editMode}>
+      {archiveData ? <details className="mt-10 rounded-2xl border border-line bg-surface" open>
         <summary className="min-h-14 px-5 py-4 text-lg font-semibold">档案信息</summary>
         <div className="border-t border-line px-4 pb-5 sm:px-5">
+          <Link href={`/memories/${event.id}`} className="mt-4 inline-flex text-sm font-medium text-accent underline-offset-4 hover:underline">关闭档案信息</Link>
           <p className="mt-4 text-sm leading-6 text-muted">原件校验、时间来源、转录与 AI 建议都保留在这里；这些资料默认不会打断阅读。</p>
 
       {avAssetIdsArray.length > 0 && (
@@ -531,7 +570,7 @@ export default async function MemoryEventPage({
         </dl>
       </section>
         </div>
-      </details>
+      </details> : <Link href={`/memories/${event.id}?mode=archive`} className="ui-button-secondary mt-10">查看档案信息</Link>}
     </main>
   );
 }

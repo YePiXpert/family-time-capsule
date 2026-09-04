@@ -36,6 +36,7 @@ describe("native product shell", () => {
       id: `${role}-user`,
       name: role,
       role,
+      personId: `${role}-person`,
       canCapture,
       canReviewInbox,
       canCreateContributions: role !== "viewer",

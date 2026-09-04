@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -14,8 +15,11 @@ import { preservePickedMedia, preserveRecordedAudio, removeLocalFile } from "../
 import { colors, sharedStyles } from "../theme";
 import type { MediaCapturePayload } from "../types";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
+import type { AppNavigation, MainTabParamList } from "../navigation/types";
 
 export function CaptureScreen() {
+  const navigation = useNavigation<AppNavigation>();
+  const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
   const { credentials, outbox, queued, viewer } = useApp();
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -23,14 +27,17 @@ export function CaptureScreen() {
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const textInputRef = useRef<TextInput>(null);
+  const actionAreaY = useRef(0);
 
-  const finishQueue = async () => {
+  const finishQueue = useCallback(async () => {
     try {
       await queued();
     } catch {
       setMessage("已安全保存到本机；状态暂未刷新，重启后仍会保留。");
     }
-  };
+  }, [queued]);
 
   const saveText = async () => {
     if (captureAccess === "readonly") {
@@ -55,7 +62,7 @@ export function CaptureScreen() {
     }
   };
 
-  const queuePickedAssets = async (
+  const queuePickedAssets = useCallback(async (
     assets: ImagePicker.ImagePickerAsset[],
     source: "camera" | "library",
   ) => {
@@ -82,9 +89,9 @@ export function CaptureScreen() {
         ? `已保全 ${success} 份原件；${failures.length} 份未能保存：${failures[0]}`
         : `已把 ${success} 份原件复制到 App 私有目录。`,
     );
-  };
+  }, [captureAccess, finishQueue]);
 
-  const pickMedia = async (mode: "photo" | "video" | "library") => {
+  const pickMedia = useCallback(async (mode: "photo" | "video" | "library") => {
     if (captureAccess === "readonly") {
       setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
       return;
@@ -122,7 +129,7 @@ export function CaptureScreen() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [captureAccess, queuePickedAssets]);
 
   const toggleRecording = async () => {
     if (captureAccess === "readonly") {
@@ -181,9 +188,29 @@ export function CaptureScreen() {
     }
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      const intent = route.params?.intent;
+      if (!intent) return undefined;
+      const timer = setTimeout(() => {
+        if (intent === "text") {
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+          textInputRef.current?.focus();
+        } else if (intent === "audio") {
+          scrollRef.current?.scrollTo({ y: actionAreaY.current, animated: true });
+          setMessage("录音区域已就绪，点“直接录音”开始。");
+        } else {
+          void pickMedia(intent);
+        }
+        navigation.setParams({ intent: undefined, requestKey: undefined });
+      }, 50);
+      return () => clearTimeout(timer);
+    }, [navigation, pickMedia, route.params?.intent]),
+  );
+
   if (captureAccess === "readonly") {
     return (
-      <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
+      <ScrollView contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
         <Text style={sharedStyles.eyebrow}>只读模式</Text>
         <Text style={sharedStyles.title}>记录此刻</Text>
         <View style={sharedStyles.warning}>
@@ -198,20 +225,20 @@ export function CaptureScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
+    <ScrollView contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
       <Text style={sharedStyles.eyebrow}>离线也不会丢</Text>
       <Text style={sharedStyles.title}>记录此刻</Text>
       <Text style={sharedStyles.intro}>每一份文字和原件都先写入设备。同步失败不会删除本机内容。</Text>
       <View style={sharedStyles.card}>
         <Text style={sharedStyles.label}>一句话、一段故事</Text>
-        <TextInput multiline onChangeText={setText} placeholder="今天发生了什么？" style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
+        <TextInput multiline onChangeText={setText} placeholder="今天发生了什么？" ref={textInputRef} style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
         <Text style={styles.counter}>{text.length} / 5000</Text>
         <Pressable disabled={busy || recording} onPress={() => void saveText()} style={({ pressed }) => [sharedStyles.primaryButton, pressed && sharedStyles.pressed, (busy || recording) && sharedStyles.disabled]}>
           <Text style={sharedStyles.primaryText}>保存文字</Text>
         </Pressable>
       </View>
 
-      <View style={styles.actionGrid}>
+      <View onLayout={(event) => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.actionGrid}>
         <Action label="拍照片" hint="保留原图" disabled={busy || recording} onPress={() => void pickMedia("photo")} />
         <Action label="拍视频" hint="保留原片" disabled={busy || recording} onPress={() => void pickMedia("video")} />
         <Action label={recording ? "完成录音" : "直接录音"} hint={recording ? "保存原声" : "麦克风"} disabled={busy} primary={recording} onPress={() => void toggleRecording()} />

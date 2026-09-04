@@ -23,6 +23,7 @@ export async function GET(request: Request) {
     userId: context.userId,
     userName: context.userName,
     role: context.role,
+    personId: context.personId,
     cursor,
     limit,
   });

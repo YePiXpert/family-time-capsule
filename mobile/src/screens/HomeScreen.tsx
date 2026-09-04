@@ -1,9 +1,10 @@
 import { useNavigation } from "@react-navigation/native";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useApp } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
 import { dateLabel } from "../utils/format";
+import { HOME_CAPTURE_ACTIONS, homeWebPath } from "../navigation/intents";
 
 export function HomeScreen() {
   const navigation = useNavigation<AppNavigation>();
@@ -19,6 +20,17 @@ export function HomeScreen() {
     path && credentials
       ? { uri: `${credentials.serverUrl}${path}`, headers: { authorization: `Bearer ${credentials.token}` } }
       : null;
+  const openWebPath = async (path: string) => {
+    if (!credentials) {
+      navigation.navigate("Settings");
+      return;
+    }
+    try {
+      await Linking.openURL(`${credentials.serverUrl}${path}`);
+    } catch {
+      Alert.alert("无法打开 Web", "请检查系统浏览器设置后重试。");
+    }
+  };
 
   return (
     <ScrollView
@@ -38,13 +50,8 @@ export function HomeScreen() {
       </View>
 
       <View style={styles.quickRow}>
-        {[
-          ["文字", "写下一刻"],
-          ["拍照", "保留原片"],
-          ["录音", "留下声音"],
-          ["导入", "相册多选"],
-        ].map(([label, hint]) => (
-          <Pressable accessibilityRole="button" key={label} onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.quick, pressed && sharedStyles.pressed]}>
+        {HOME_CAPTURE_ACTIONS.map(({ label, hint, intent }) => (
+          <Pressable accessibilityRole="button" key={intent} onPress={() => navigation.navigate("Capture", { intent, requestKey: Date.now() })} style={({ pressed }) => [styles.quick, pressed && sharedStyles.pressed]}>
             <Text style={styles.quickLabel}>{label}</Text><Text style={styles.quickHint}>{hint}</Text>
           </Pressable>
         ))}
@@ -69,7 +76,7 @@ export function HomeScreen() {
 
       <View style={styles.sectionRow}><Text style={sharedStyles.cardTitle}>最近记忆</Text><Pressable onPress={() => navigation.navigate("Timeline")}><Text style={styles.link}>查看时间轴</Text></Pressable></View>
       {recent.length === 0 ? (
-        <Pressable onPress={() => navigation.navigate("Capture")} style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>从第一条记忆开始</Text><Text style={sharedStyles.body}>写一句话、拍一张照片或录下一段声音。</Text></Pressable>
+        <Pressable onPress={() => navigation.navigate("Capture", { intent: "text", requestKey: Date.now() })} style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>从第一条记忆开始</Text><Text style={sharedStyles.body}>写一句话、拍一张照片或录下一段声音。</Text></Pressable>
       ) : recent.slice(0, 4).map((memory) => (
         <Pressable key={memory.id} onPress={() => navigation.navigate("Memory", { id: memory.id })} style={({ pressed }) => [styles.memoryRow, pressed && sharedStyles.pressed]}>
           {mediaSource(memory.coverPath) ? <Image source={mediaSource(memory.coverPath)!} style={styles.memoryCover} /> : <View style={styles.memoryCoverPlaceholder} />}
@@ -82,14 +89,14 @@ export function HomeScreen() {
         <Text style={sharedStyles.body}>{home?.onThisDay[0]?.title ?? "还没有往年同日记忆，去时间轴看看已经保存的日子。"}</Text>
       </Pressable>
 
-      <Pressable onPress={() => home?.story ? navigation.navigate("More") : navigation.navigate("More")} style={sharedStyles.card}>
-        <Text style={sharedStyles.cardTitle}>最近故事</Text><Text style={sharedStyles.body}>{home?.story?.title ?? "把一段时间里的记忆串成故事。"}</Text>
+      <Pressable onPress={() => home?.story ? void openWebPath(homeWebPath("story", home.story.id)) : navigation.navigate("More")} style={sharedStyles.card}>
+        <Text style={sharedStyles.cardTitle}>最近故事</Text><Text style={sharedStyles.body}>{home?.story?.title ?? "把一段时间里的记忆串成故事。"}</Text>{home?.story ? <Text style={styles.link}>在 Web 打开 →</Text> : null}
       </Pressable>
-      <Pressable onPress={() => navigation.navigate("More")} style={sharedStyles.card}>
-        <Text style={sharedStyles.cardTitle}>时间胶囊</Text><Text style={sharedStyles.body}>{home?.capsule?.title ?? "没有即将开启的胶囊，随时可以封存一段心意。"}</Text>
+      <Pressable onPress={() => home?.capsule ? void openWebPath(homeWebPath("capsule", home.capsule.id)) : navigation.navigate("More")} style={sharedStyles.card}>
+        <Text style={sharedStyles.cardTitle}>时间胶囊</Text><Text style={sharedStyles.body}>{home?.capsule?.title ?? "没有即将开启的胶囊，随时可以封存一段心意。"}</Text>{home?.capsule ? <Text style={styles.link}>在 Web 打开 →</Text> : null}
       </Pressable>
-      <Pressable onPress={() => navigation.navigate("More")} style={sharedStyles.card}>
-        <Text style={sharedStyles.cardTitle}>问问家人</Text><Text style={sharedStyles.body}>{home?.prompt.text ?? "今天最想替孩子记住什么？"}</Text>
+      <Pressable onPress={() => home ? void openWebPath(homeWebPath("prompt", null)) : navigation.navigate("More")} style={sharedStyles.card}>
+        <Text style={sharedStyles.cardTitle}>问问家人</Text><Text style={sharedStyles.body}>{home?.prompt.text ?? "今天最想替孩子记住什么？"}</Text>{home ? <Text style={styles.link}>在 Web 打开 →</Text> : null}
       </Pressable>
     </ScrollView>
   );

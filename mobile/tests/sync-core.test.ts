@@ -16,6 +16,7 @@ function page(nextCursor: string | null = null): SyncPage {
       id: "user-1",
       name: "妈妈",
       role: "admin",
+      personId: "person-1",
       canCapture: true,
       canReviewInbox: true,
       canCreateContributions: true,

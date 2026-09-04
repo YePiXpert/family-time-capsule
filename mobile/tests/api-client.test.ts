@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  createMobileContribution,
   normalizeServerUrl,
   parseMobileHome,
   parseMobileInboxPage,
@@ -8,6 +9,7 @@ import {
   parseMobileSearchPage,
   parseSyncPage,
   signIn,
+  updateMobileContribution,
 } from "../src/api/client";
 import type { SyncPage } from "../src/types";
 
@@ -19,6 +21,7 @@ function validPage(): SyncPage {
       id: "user-1",
       name: "妈妈",
       role: "admin",
+      personId: "person-1",
       canCapture: true,
       canReviewInbox: true,
       canCreateContributions: true,
@@ -68,11 +71,39 @@ describe("native API client", () => {
     });
   });
 
+  it("creates and edits text contributions through the existing mobile APIs", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ contributionId: "contribution-1" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "updated", memoryEventId: "memory-1" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    const credentials = { serverUrl: "https://capsule.example.com", token: "native-session" };
+
+    await expect(createMobileContribution(credentials, "memory-1", {
+      authorPersonId: "person-1",
+      text: "我的讲述",
+      visibility: "family",
+    })).resolves.toBe("contribution-1");
+    await expect(updateMobileContribution(credentials, "contribution-1", "修改后的讲述")).resolves.toBe("memory-1");
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "https://capsule.example.com/api/mobile/v1/memories/memory-1/contributions",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ authorPersonId: "person-1", text: "我的讲述", visibility: "family" }) }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "https://capsule.example.com/api/mobile/v1/contributions/contribution-1",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ text: "修改后的讲述" }) }),
+    );
+  });
+
   it("validates a complete sync page before local mutation", () => {
     expect(parseSyncPage(validPage())).toEqual(validPage());
     for (const invalid of [
       { ...validPage(), apiVersion: 2 },
       { ...validPage(), family: undefined },
+      { ...validPage(), viewer: { ...validPage().viewer, personId: undefined } },
       { ...validPage(), serverTime: "not-a-date" },
       { ...validPage(), nextCursor: "" },
       {

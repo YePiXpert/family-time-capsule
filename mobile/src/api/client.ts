@@ -2,6 +2,7 @@ import type {
   Credentials,
   InboxDraftPatch,
   MobileHome,
+  MobileContributionInput,
   MobileInboxAsset,
   MobileInboxEntry,
   MobileInboxPage,
@@ -90,6 +91,7 @@ function isViewer(value: unknown): value is Viewer {
     ["admin", "editor", "contributor", "viewer"].includes(
       String(value.role),
     ) &&
+    isNullableString(value.personId, 128) &&
     typeof value.canCapture === "boolean" &&
     typeof value.canReviewInbox === "boolean" &&
     typeof value.canCreateContributions === "boolean" &&
@@ -598,6 +600,38 @@ export async function patchMobileMemory(
       { method: "PATCH", body: JSON.stringify(patch) },
     ),
   );
+}
+
+export async function createMobileContribution(
+  credentials: Credentials,
+  memoryEventId: string,
+  input: MobileContributionInput,
+): Promise<string> {
+  const result = await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/memories/${encodeURIComponent(memoryEventId)}/contributions`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  if (!isRecord(result) || !isString(result.contributionId, 128)) {
+    throw new ApiError("服务器讲述创建结果无效。", 502);
+  }
+  return result.contributionId;
+}
+
+export async function updateMobileContribution(
+  credentials: Credentials,
+  contributionId: string,
+  text: string,
+): Promise<string> {
+  const result = await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/contributions/${encodeURIComponent(contributionId)}`,
+    { method: "PATCH", body: JSON.stringify({ text }) },
+  );
+  if (!isRecord(result) || !isString(result.memoryEventId, 128)) {
+    throw new ApiError("服务器讲述修改结果无效。", 502);
+  }
+  return result.memoryEventId;
 }
 
 export async function searchMobile(

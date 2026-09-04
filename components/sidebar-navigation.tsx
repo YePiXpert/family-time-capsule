@@ -29,7 +29,6 @@ export function SidebarNavigation({ familyName, inboxCount, userName, role, capa
       <Link href="/search" className="sidebar-search mx-4">
         <Icon name="search" size={19} />
         <span>搜索家庭记忆</span>
-        <span className="ml-auto text-xs text-faint">⌘ K</span>
       </Link>
       <nav aria-label="一级导航" className="mt-5 px-3">
         <ul className="space-y-1">

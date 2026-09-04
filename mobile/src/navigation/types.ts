@@ -4,6 +4,7 @@ import type {
 } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { CaptureIntent } from "./intents";
 
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
@@ -15,7 +16,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Timeline: undefined;
-  Capture: undefined;
+  Capture: { intent?: CaptureIntent; requestKey?: number } | undefined;
   Inbox: undefined;
   More: undefined;
 };

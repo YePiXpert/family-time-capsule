@@ -293,10 +293,10 @@ describe("native mobile API", () => {
       }),
     );
     expect(syncViewers.map((body) => body.viewer)).toEqual([
-      expect.objectContaining({ role: "admin", canCapture: true, canReviewInbox: true, canCreateContributions: true, canEditEvents: true }),
-      expect.objectContaining({ role: "editor", canCapture: true, canReviewInbox: true, canCreateContributions: true, canEditEvents: true }),
-      expect.objectContaining({ role: "contributor", canCapture: true, canReviewInbox: false, canCreateContributions: true, canEditEvents: false }),
-      expect.objectContaining({ role: "viewer", canCapture: false, canReviewInbox: false, canCreateContributions: false, canEditEvents: false }),
+      expect.objectContaining({ role: "admin", personId: admin.personId, canCapture: true, canReviewInbox: true, canCreateContributions: true, canEditEvents: true }),
+      expect.objectContaining({ role: "editor", personId: editorPersonId, canCapture: true, canReviewInbox: true, canCreateContributions: true, canEditEvents: true }),
+      expect.objectContaining({ role: "contributor", personId: contributorPerson.personId, canCapture: true, canReviewInbox: false, canCreateContributions: true, canEditEvents: false }),
+      expect.objectContaining({ role: "viewer", personId: viewerPersonId, canCapture: false, canReviewInbox: false, canCreateContributions: false, canEditEvents: false }),
     ]);
   });
 

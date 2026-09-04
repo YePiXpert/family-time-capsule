@@ -15,6 +15,7 @@ export type MobileViewerDto = {
   id: string;
   name: string;
   role: FamilyRole;
+  personId: string | null;
   canCapture: boolean;
   canReviewInbox: boolean;
   canCreateContributions: boolean;
@@ -73,6 +74,7 @@ export async function getMobileSyncPage(input: {
   userId: string;
   userName: string;
   role: FamilyRole;
+  personId?: string | null;
   cursor?: string | null;
   limit?: number;
 }): Promise<MobileSyncPageDto> {
@@ -110,6 +112,7 @@ export async function getMobileSyncPage(input: {
       id: input.userId,
       name: input.userName,
       role: input.role,
+      personId: input.personId ?? null,
       canCapture: hasFamilyCapability(input.role, "capture:create"),
       canReviewInbox: hasFamilyCapability(input.role, "inbox:review"),
       canCreateContributions: hasFamilyCapability(input.role, "contribution:create"),

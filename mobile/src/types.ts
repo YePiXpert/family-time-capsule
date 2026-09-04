@@ -7,6 +7,7 @@ export type Viewer = {
   id: string;
   name: string;
   role: "admin" | "editor" | "contributor" | "viewer";
+  personId: string | null;
   canCapture: boolean;
   canReviewInbox: boolean;
   canCreateContributions: boolean;
@@ -171,6 +172,12 @@ export type MobileMemoryAsset = {
   thumbnailPath: string | null;
 };
 
+export type MobileContributionVisibility =
+  | "private"
+  | "parents"
+  | "family"
+  | "child_later";
+
 export type MobileMemory = {
   id: string;
   title: string;
@@ -195,7 +202,7 @@ export type MobileMemory = {
     authorPersonId: string;
     authorName: string;
     text: string;
-    visibility: "private" | "parents" | "family" | "child_later";
+    visibility: MobileContributionVisibility;
     canEdit: boolean;
     audioPath: string | null;
   }[];
@@ -218,4 +225,10 @@ export type InboxDraftPatch = {
   occurredAtWall?: string | null;
   locationText?: string | null;
   participantPersonIds?: string[];
+};
+
+export type MobileContributionInput = {
+  authorPersonId: string;
+  text: string;
+  visibility: MobileContributionVisibility;
 };

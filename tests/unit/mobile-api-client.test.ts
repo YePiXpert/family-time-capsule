@@ -15,6 +15,7 @@ function validPage(): SyncPage {
       id: "user-1",
       name: "妈妈",
       role: "admin",
+      personId: "person-1",
       canCapture: true,
       canReviewInbox: true,
       canCreateContributions: true,
@@ -113,6 +114,13 @@ describe("native mobile API client boundaries", () => {
   it.each([
     ["wrong version", { ...validPage(), apiVersion: 2 }],
     ["missing family", { ...validPage(), family: undefined }],
+    [
+      "missing viewer person binding",
+      {
+        ...validPage(),
+        viewer: { ...validPage().viewer, personId: undefined },
+      },
+    ],
     [
       "missing capture links",
       {
