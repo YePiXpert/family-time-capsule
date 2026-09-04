@@ -6,6 +6,9 @@ import type {
   LocalImportSession,
   LocalImportSource,
   MediaCapturePayload,
+  MobileLibraryDetail,
+  MobileLibraryDomain,
+  MobileLibraryPage,
   MobileMemory,
   MobileHome,
   OutboxItem,
@@ -129,6 +132,28 @@ export async function getCachedMobileHome(): Promise<MobileHome | null> {
   } catch {
     return null;
   }
+}
+
+export async function cacheMobileLibraryPage(domain: MobileLibraryDomain, page: MobileLibraryPage): Promise<void> {
+  await setMeta(`library_page:${domain}`, JSON.stringify(page));
+}
+
+export async function getCachedMobileLibraryPage(domain: MobileLibraryDomain): Promise<MobileLibraryPage | null> {
+  const raw = await getMeta(`library_page:${domain}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as MobileLibraryPage; }
+  catch { return null; }
+}
+
+export async function cacheMobileLibraryDetail(domain: MobileLibraryDomain, detail: MobileLibraryDetail): Promise<void> {
+  await setMeta(`library_detail:${domain}:${detail.id}`, JSON.stringify(detail));
+}
+
+export async function getCachedMobileLibraryDetail(domain: MobileLibraryDomain, id: string): Promise<MobileLibraryDetail | null> {
+  const raw = await getMeta(`library_detail:${domain}:${id}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as MobileLibraryDetail; }
+  catch { return null; }
 }
 
 export async function getCachedFamily(): Promise<Family | null> {

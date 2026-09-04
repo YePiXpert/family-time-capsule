@@ -11,6 +11,20 @@ export type RootStackParamList = {
   Memory: { id: string };
   Search: undefined;
   Settings: undefined;
+  People: undefined;
+  PersonDetail: { id: string };
+  Stories: undefined;
+  StoryDetail: { id: string };
+  Capsules: undefined;
+  CapsuleDetail: { id: string };
+  Requests: undefined;
+  RequestDetail: { id: string };
+  RequestCreate: { personId?: string } | undefined;
+  ContributionPortals: undefined;
+  ContributionPortalDetail: { id: string; token?: string };
+  ImportSessions: undefined;
+  ImportSessionDetail: { id: string };
+  WeeklyReview: undefined;
 };
 
 export type MainTabParamList = {

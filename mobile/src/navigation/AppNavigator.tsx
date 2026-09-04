@@ -12,6 +12,22 @@ import { MoreScreen } from "../screens/MoreScreen";
 import { MemoryScreen } from "../screens/MemoryScreen";
 import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
+import {
+  CapsuleDetailScreen,
+  CapsulesScreen,
+  ContributionPortalDetailScreen,
+  ContributionPortalsScreen,
+  ImportSessionDetailScreen,
+  ImportSessionsScreen,
+  PeopleScreen,
+  PersonDetailScreen,
+  RequestCreateScreen,
+  RequestDetailScreen,
+  RequestsScreen,
+  StoriesScreen,
+  StoryDetailScreen,
+  WeeklyReviewScreen,
+} from "../screens/LibraryScreens";
 import { colors } from "../theme";
 import type { MainTabParamList, RootStackParamList } from "./types";
 
@@ -71,6 +87,20 @@ export function AppNavigator() {
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "记忆" }} />
         <Stack.Screen component={SearchScreen} name="Search" options={{ title: "搜索" }} />
         <Stack.Screen component={SettingsScreen} name="Settings" options={{ title: "设置" }} />
+        <Stack.Screen component={PeopleScreen} name="People" options={{ title: "家人" }} />
+        <Stack.Screen component={PersonDetailScreen} name="PersonDetail" options={{ title: "人物" }} />
+        <Stack.Screen component={StoriesScreen} name="Stories" options={{ title: "故事" }} />
+        <Stack.Screen component={StoryDetailScreen} name="StoryDetail" options={{ title: "故事" }} />
+        <Stack.Screen component={CapsulesScreen} name="Capsules" options={{ title: "时间胶囊" }} />
+        <Stack.Screen component={CapsuleDetailScreen} name="CapsuleDetail" options={{ title: "时间胶囊" }} />
+        <Stack.Screen component={RequestsScreen} name="Requests" options={{ title: "口述史" }} />
+        <Stack.Screen component={RequestDetailScreen} name="RequestDetail" options={{ title: "口述史问题" }} />
+        <Stack.Screen component={RequestCreateScreen} name="RequestCreate" options={{ title: "发起问题" }} />
+        <Stack.Screen component={ContributionPortalsScreen} name="ContributionPortals" options={{ title: "家庭投递箱" }} />
+        <Stack.Screen component={ContributionPortalDetailScreen} name="ContributionPortalDetail" options={{ title: "家庭投递箱" }} />
+        <Stack.Screen component={ImportSessionsScreen} name="ImportSessions" options={{ title: "导入会话" }} />
+        <Stack.Screen component={ImportSessionDetailScreen} name="ImportSessionDetail" options={{ title: "导入进度" }} />
+        <Stack.Screen component={WeeklyReviewScreen} name="WeeklyReview" options={{ title: "每周回顾" }} />
       </Stack.Navigator>
     </NavigationContainer>
   </View>;

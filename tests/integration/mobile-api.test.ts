@@ -56,6 +56,13 @@ const { POST: contributionPost } = await import(
 const { PATCH: contributionPatch } = await import(
   "@/app/api/mobile/v1/contributions/[id]/route"
 );
+const { GET: libraryGet, POST: libraryPost } = await import(
+  "@/app/api/mobile/v1/library/[domain]/route"
+);
+const { GET: libraryDetailGet, PATCH: libraryDetailPatch } = await import(
+  "@/app/api/mobile/v1/library/[domain]/[id]/route"
+);
+const { createImportSession } = await import("@/lib/imports/service");
 
 const email = "mobile@example.com";
 const password = "a-long-mobile-test-password";
@@ -662,6 +669,185 @@ describe("native mobile API", () => {
     );
     const searchBody = (await search.json()) as { items: Array<{ id: string }> };
     expect(searchBody.items.some((event) => event.id === confirmed.eventId)).toBe(false);
+  });
+
+  it("serves isolated, cursor-paged native family domains without leaking guest tokens", async () => {
+    const admin = (await getDb().select().from(user))[0]!;
+    const familyId = admin.familyId!;
+    const event = (await getDb().select().from(memoryEvent).where(
+      (await import("drizzle-orm")).and(
+        (await import("drizzle-orm")).eq(memoryEvent.familyId, familyId),
+        (await import("drizzle-orm")).isNull(memoryEvent.deletedAt),
+      ),
+    ))[0]!;
+
+    const requestCreated = await libraryPost(
+      mobileJsonRequest("http://localhost/api/mobile/v1/library/requests", "POST", bearerToken, {
+        recipientLabel: "外婆",
+        promptText: "小时候最难忘的一顿饭是什么？",
+      }),
+      { params: Promise.resolve({ domain: "requests" }) },
+    );
+    expect(requestCreated.status).toBe(201);
+    const requestResult = (await requestCreated.json()) as { id: string; token: string };
+    expect(requestResult.token).toHaveLength(43);
+
+    const storyCreated = await libraryPost(
+      mobileJsonRequest("http://localhost/api/mobile/v1/library/stories", "POST", bearerToken, {
+        anchor: "2026-09-04T12:00:00.000Z",
+      }),
+      { params: Promise.resolve({ domain: "stories" }) },
+    );
+    expect(storyCreated.status).toBe(201);
+    const storyResult = (await storyCreated.json()) as { id: string };
+    const storyDetail = await libraryDetailGet(
+      bearerRequest(`http://localhost/api/mobile/v1/library/stories/${storyResult.id}`, viewerToken),
+      { params: Promise.resolve({ domain: "stories", id: storyResult.id }) },
+    );
+    expect(storyDetail.status).toBe(200);
+    await expect(storyDetail.json()).resolves.toMatchObject({
+      id: storyResult.id,
+      status: "draft",
+      canWrite: false,
+      paragraphs: expect.arrayContaining([
+        expect.objectContaining({ sources: expect.any(Array) }),
+      ]),
+    });
+
+    const portalCreated = await libraryPost(
+      mobileJsonRequest("http://localhost/api/mobile/v1/library/portals", "POST", bearerToken, {
+        title: "旧照片征集",
+        description: "请把原始照片和当时的故事一起留下。",
+      }),
+      { params: Promise.resolve({ domain: "portals" }) },
+    );
+    expect(portalCreated.status).toBe(201);
+    const portalResult = (await portalCreated.json()) as { id: string; token: string };
+    expect(portalResult.token).toHaveLength(43);
+
+    const capsuleCreated = await libraryPost(
+      mobileJsonRequest("http://localhost/api/mobile/v1/library/capsules", "POST", bearerToken, {
+        title: "明年再看",
+        unlockType: "date",
+        unlockValue: "2099-01-01",
+      }),
+      { params: Promise.resolve({ domain: "capsules" }) },
+    );
+    const capsuleResult = (await capsuleCreated.json()) as { id: string };
+    expect(capsuleCreated.status).toBe(201);
+    expect((await libraryDetailPatch(
+      mobileJsonRequest(`http://localhost/api/mobile/v1/library/capsules/${capsuleResult.id}`, "PATCH", bearerToken, { operation: "add_event", eventId: event.id }),
+      { params: Promise.resolve({ domain: "capsules", id: capsuleResult.id }) },
+    )).status).toBe(200);
+    expect((await libraryDetailPatch(
+      mobileJsonRequest(`http://localhost/api/mobile/v1/library/capsules/${capsuleResult.id}`, "PATCH", bearerToken, { operation: "seal" }),
+      { params: Promise.resolve({ domain: "capsules", id: capsuleResult.id }) },
+    )).status).toBe(200);
+
+    const importRow = await createImportSession({
+      familyId,
+      createdByUserId: admin.id,
+      source: "native",
+      defaultTitle: "原生 Files 导入",
+    });
+
+    for (const domain of ["people", "stories", "capsules", "requests", "portals", "imports"] as const) {
+      const response = await libraryGet(
+        bearerRequest(`http://localhost/api/mobile/v1/library/${domain}?limit=1`, viewerToken),
+        { params: Promise.resolve({ domain }) },
+      );
+      expect(response.status, domain).toBe(200);
+      expect(response.headers.get("cache-control"), domain).toBe("private, no-store");
+      const body = (await response.json()) as { items: Record<string, unknown>[]; nextCursor: string | null };
+      expect(body.items.length, domain).toBeLessThanOrEqual(1);
+      expect(JSON.stringify(body)).not.toContain(requestResult.token);
+      expect(JSON.stringify(body)).not.toContain(portalResult.token);
+    }
+
+    const firstPeople = await libraryGet(
+      bearerRequest("http://localhost/api/mobile/v1/library/people?limit=1", viewerToken),
+      { params: Promise.resolve({ domain: "people" }) },
+    );
+    const firstPeopleBody = (await firstPeople.json()) as { items: Array<{ id: string }>; nextCursor: string };
+    expect(firstPeopleBody.nextCursor).toBeTruthy();
+    const secondPeople = await libraryGet(
+      bearerRequest(`http://localhost/api/mobile/v1/library/people?limit=1&cursor=${encodeURIComponent(firstPeopleBody.nextCursor)}`, viewerToken),
+      { params: Promise.resolve({ domain: "people" }) },
+    );
+    const secondPeopleBody = (await secondPeople.json()) as { items: Array<{ id: string }> };
+    expect(secondPeopleBody.items[0]?.id).not.toBe(firstPeopleBody.items[0]?.id);
+
+    const locked = await libraryDetailGet(
+      bearerRequest(`http://localhost/api/mobile/v1/library/capsules/${capsuleResult.id}`, viewerToken),
+      { params: Promise.resolve({ domain: "capsules", id: capsuleResult.id }) },
+    );
+    expect(locked.status).toBe(200);
+    await expect(locked.json()).resolves.toMatchObject({
+      id: capsuleResult.id,
+      unlocked: false,
+      events: [],
+      assets: [],
+      contributions: [],
+      canWrite: false,
+    });
+
+    for (const [domain, id] of [["requests", requestResult.id], ["portals", portalResult.id], ["imports", importRow.id]] as const) {
+      const detail = await libraryDetailGet(
+        bearerRequest(`http://localhost/api/mobile/v1/library/${domain}/${id}`, viewerToken),
+        { params: Promise.resolve({ domain, id }) },
+      );
+      expect(detail.status, domain).toBe(200);
+      expect(detail.headers.get("cache-control"), domain).toBe("private, no-store");
+      const serialized = JSON.stringify(await detail.json());
+      expect(serialized).not.toContain(requestResult.token);
+      expect(serialized).not.toContain(portalResult.token);
+    }
+  });
+
+  it("rejects mobile library writes for viewers, client family ids, and foreign-family details", async () => {
+    const admin = (await getDb().select().from(user))[0]!;
+    const ownPerson = (await listPeople(admin.familyId!))[0]!;
+    for (const domain of ["people", "stories", "capsules", "requests", "portals", "imports"] as const) {
+      const denied = await libraryPost(
+        mobileJsonRequest(`http://localhost/api/mobile/v1/library/${domain}`, "POST", viewerToken, {}),
+        { params: Promise.resolve({ domain }) },
+      );
+      expect(denied.status, domain).toBe(403);
+    }
+    const familyIdRejected = await libraryPost(
+      mobileJsonRequest("http://localhost/api/mobile/v1/library/people", "POST", bearerToken, {
+        familyId: admin.familyId,
+        displayName: "不应创建",
+        relationToChild: "测试",
+      }),
+      { params: Promise.resolve({ domain: "people" }) },
+    );
+    expect(familyIdRejected.status).toBe(400);
+    await expect(familyIdRejected.json()).resolves.toEqual({ error: "family_id_not_accepted" });
+
+    const foreignRead = await libraryDetailGet(
+      bearerRequest(`http://localhost/api/mobile/v1/library/people/${ownPerson.id}`, foreignToken),
+      { params: Promise.resolve({ domain: "people", id: ownPerson.id }) },
+    );
+    expect(foreignRead.status).toBe(404);
+    const foreignWrite = await libraryDetailPatch(
+      mobileJsonRequest(`http://localhost/api/mobile/v1/library/people/${ownPerson.id}`, "PATCH", foreignToken, {
+        displayName: "跨家庭改名",
+        relationToChild: "无",
+        birthDate: "",
+      }),
+      { params: Promise.resolve({ domain: "people", id: ownPerson.id }) },
+    );
+    expect(foreignWrite.status).toBe(404);
+    const viewerWrite = await libraryDetailPatch(
+      mobileJsonRequest(`http://localhost/api/mobile/v1/library/people/${ownPerson.id}`, "PATCH", viewerToken, {
+        displayName: "viewer 改名",
+        relationToChild: "无",
+        birthDate: "",
+      }),
+      { params: Promise.resolve({ domain: "people", id: ownPerson.id }) },
+    );
+    expect(viewerWrite.status).toBe(403);
   });
 
   it("returns a minimized timeline snapshot through Authorization bearer", async () => {

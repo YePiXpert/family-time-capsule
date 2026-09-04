@@ -656,6 +656,13 @@ type BackupRun = {
   不导出、不下发客户端；错误信息经测试验证不含凭据。
 - 流程：verified export → 临时上传 → 回读 SHA-256 → 原子 MOVE（降级直传如实记录）。
 
+## 原生领域离线缓存（1.1 M6，本机 SQLite）
+
+人物、故事、胶囊、口述问题、家庭投递箱和服务器 ImportSession 不复制一套本机领域模型；它们
+以有版本的最小列表/详情 DTO 存入 `meta` key，由服务器关系表继续作为权威来源。各领域独立更新，
+失败不会清空已有 DTO 或时间轴完整快照。口述史/portal 的原始 token 不写入缓存；本机持久
+`local_import_session` / `local_import_item` 仍负责无服务器时的 Share/Files 原件生命周期。
+
 ## Trash（M7 已落地：migration 0028）
 
 `memory_event`、`contribution`、`story` 各加可空 `deleted_at`：

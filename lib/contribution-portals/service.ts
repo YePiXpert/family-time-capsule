@@ -198,7 +198,7 @@ export function createContributionPortal(
 
 export function listContributionPortals(context: FamilyContext): ContributionPortalSummary[] {
   try {
-    assertFamilyCapability(context.role, "contribution:create");
+    assertFamilyCapability(context.role, "archive:view");
   } catch {
     return [];
   }

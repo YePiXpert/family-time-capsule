@@ -256,3 +256,37 @@ export type MobileContributionInput = {
   text: string;
   visibility: MobileContributionVisibility;
 };
+
+export type MobileLibraryDomain =
+  | "people"
+  | "stories"
+  | "capsules"
+  | "requests"
+  | "portals"
+  | "imports";
+
+export type MobileLibraryItem = {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  status: string | null;
+  updatedAt: string;
+  meta: Record<string, string | number | boolean | null>;
+};
+
+export type MobileLibraryPage = {
+  items: MobileLibraryItem[];
+  nextCursor: string | null;
+};
+
+export type MobileLibraryDetail = Record<string, unknown> & {
+  id: string;
+  title: string;
+};
+
+export type MobileLibraryMutationResult = {
+  success?: boolean;
+  id?: string;
+  token?: string;
+  expiresAt?: string;
+};

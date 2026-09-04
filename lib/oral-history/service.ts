@@ -277,7 +277,7 @@ export function listContributionRequests(
   context: FamilyContext,
 ): RequestWithStats[] {
   try {
-    assertFamilyCapability(context.role, "contribution:create");
+    assertFamilyCapability(context.role, "archive:view");
   } catch {
     return [];
   }

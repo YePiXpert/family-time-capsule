@@ -24,14 +24,14 @@ export function homeWebPath(
 
 export type MobileSearchTarget =
   | { kind: "memory"; id: string }
-  | { kind: "web"; path: string }
+  | { kind: "story"; id: string }
   | null;
 
 export function resolveSearchTarget(
   item: Pick<MobileSearchPage["items"][number], "type" | "id" | "eventId">,
 ): MobileSearchTarget {
   if (item.type === "story") {
-    return { kind: "web", path: `/stories/${encodeURIComponent(item.id)}` };
+    return { kind: "story", id: item.id };
   }
   return item.eventId ? { kind: "memory", id: item.eventId } : null;
 }

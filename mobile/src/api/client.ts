@@ -6,6 +6,10 @@ import type {
   MobileInboxAsset,
   MobileInboxEntry,
   MobileInboxPage,
+  MobileLibraryDetail,
+  MobileLibraryDomain,
+  MobileLibraryMutationResult,
+  MobileLibraryPage,
   MobileMemory,
   MobileMemoryAsset,
   MobileSearchPage,
@@ -647,6 +651,81 @@ export async function searchMobile(
       `/api/mobile/v1/search?${query.toString()}`,
     ),
   );
+}
+
+function parseMobileLibraryPage(value: unknown): MobileLibraryPage {
+  if (!hasCursor(value) || !Array.isArray(value.items) || value.items.length > 50 || !value.items.every((item) => (
+    isRecord(item) && isString(item.id, 128) && isString(item.title, 500) &&
+    isNullableString(item.subtitle, 1_000) && isNullableString(item.status, 64) &&
+    isDateTime(item.updatedAt) && isRecord(item.meta)
+  ))) {
+    throw new ApiError("服务器家庭资料列表无效。", 502);
+  }
+  return value as MobileLibraryPage;
+}
+
+function parseMobileLibraryDetail(value: unknown): MobileLibraryDetail {
+  if (!isRecord(value) || !isString(value.id, 128) || !isString(value.title, 500)) {
+    throw new ApiError("服务器家庭资料详情无效。", 502);
+  }
+  return value as MobileLibraryDetail;
+}
+
+export async function fetchMobileLibraryPage(
+  credentials: Credentials,
+  domain: MobileLibraryDomain,
+  cursor: string | null = null,
+): Promise<MobileLibraryPage> {
+  const query = new URLSearchParams({ limit: "25" });
+  if (cursor) query.set("cursor", cursor);
+  return parseMobileLibraryPage(await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/library/${domain}?${query.toString()}`,
+  ));
+}
+
+export async function fetchMobileLibraryDetail(
+  credentials: Credentials,
+  domain: MobileLibraryDomain,
+  id: string,
+): Promise<MobileLibraryDetail> {
+  return parseMobileLibraryDetail(await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/library/${domain}/${encodeURIComponent(id)}`,
+  ));
+}
+
+function parseLibraryMutation(value: unknown): MobileLibraryMutationResult {
+  if (!isRecord(value)) throw new ApiError("服务器写入结果无效。", 502);
+  if (value.id !== undefined && !isString(value.id, 128)) throw new ApiError("服务器写入结果无效。", 502);
+  if (value.token !== undefined && !isString(value.token, 256)) throw new ApiError("服务器写入结果无效。", 502);
+  if (value.expiresAt !== undefined && !isDateTime(value.expiresAt)) throw new ApiError("服务器写入结果无效。", 502);
+  return value as MobileLibraryMutationResult;
+}
+
+export async function createMobileLibraryItem(
+  credentials: Credentials,
+  domain: MobileLibraryDomain,
+  input: Record<string, unknown>,
+): Promise<MobileLibraryMutationResult> {
+  return parseLibraryMutation(await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/library/${domain}`,
+    { method: "POST", body: JSON.stringify(input) },
+  ));
+}
+
+export async function mutateMobileLibraryItem(
+  credentials: Credentials,
+  domain: MobileLibraryDomain,
+  id: string,
+  input: Record<string, unknown>,
+): Promise<MobileLibraryMutationResult> {
+  return parseLibraryMutation(await requestMobileJson(
+    credentials,
+    `/api/mobile/v1/library/${domain}/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  ));
 }
 
 export async function uploadTextCapture(

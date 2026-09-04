@@ -1,14 +1,16 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { family, person } from "@/db/schema/family";
 import {
+  assertFamilyCapability,
   isFamilyRole,
   type FamilyRole,
 } from "@/lib/authz/policy";
+import type { FamilyContext } from "@/lib/family/context";
 
 /**
  * 家庭域服务（Issue #003）。
@@ -266,6 +268,31 @@ export async function addPerson(
     updatedAt: now,
   });
   return { ok: true, personId };
+}
+
+export async function updatePerson(
+  context: FamilyContext,
+  personId: string,
+  input: AddPersonInput,
+): Promise<{ ok: true } | { ok: false; error: "forbidden" | "invalid" | "not_found" }> {
+  try {
+    assertFamilyCapability(context.role, "family:manage");
+  } catch {
+    return { ok: false, error: "forbidden" };
+  }
+  if (!validateAddPersonInput(input)) return { ok: false, error: "invalid" };
+  const existing = await getDb().select({ id: person.id }).from(person).where(and(
+    eq(person.id, personId),
+    eq(person.familyId, context.familyId),
+  )).limit(1);
+  if (!existing[0]) return { ok: false, error: "not_found" };
+  await getDb().update(person).set({
+    displayName: input.displayName.trim(),
+    relationToChild: input.relationToChild?.trim() || null,
+    birthDate: input.birthDate?.trim() || null,
+    updatedAt: new Date(),
+  }).where(and(eq(person.id, personId), eq(person.familyId, context.familyId)));
+  return { ok: true };
 }
 
 /**

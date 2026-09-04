@@ -51,7 +51,18 @@ MediaLibrary 返回可靠创建时间时才上传 `lastModified`，权限受限�
   幂等，viewer 已连接时保全副本但不生成注定失败的 outbox；
 - 收件箱 cursor 分页、标题/时间/人物/地点修改、单条确认、多选合并；确认后可直接阅读
   记忆并回到同步后的时间轴；Web 与原生共用并回填同一组人工草稿；
-- 原生搜索；story 结果、首页故事/胶囊/问题打开准确 Web 路径并明确标注；
+- 家人列表/详情、共同记忆、可见讲述与口述问题；管理员可新增、编辑人物；
+- 故事列表/阅读/来源记忆跳转、无 AI 的本周草稿、标题/人工段落编辑与发布；
+- 胶囊列表/倒计时/锁定安全详情、创建、添加记忆、封存与到期打开；未到期移动 DTO
+  始终返回空 events/assets/contributions；
+- 口述史问题创建、回答状态和关闭；创建成功当次以可选择文字和系统 Share 提供回答链接；
+- 家庭投递箱创建、二维码、系统分享、提交计数、Inbox 跳转、暂停/开放/延长/撤销和 token
+  换发；明文 token 不进入 SQLite，换发后旧 token 立即失效；
+- 服务器与本机 ImportSession 进度；服务器批次支持暂停/继续/失败项重试/取消未完成项，
+  本机 Share/Files 批次在无服务器时仍可见；
+- 上述领域分别使用 cursor 页与详情 cache；打开时先呈现最后一次成功数据，单域刷新失败不会
+  清空其他页面或完整时间轴；所有离线写操作明确提示需要联网，不伪装成功；
+- 原生搜索；story 结果、首页故事/胶囊/问题直接进入对应原生页面；
 - 记忆页可新增文字讲述、选择允许的作者与可见性，并修改自己的讲述；封面不会与媒体列表重复；
 - 自动/手动同步、失败状态与重试、保留数据断开服务器，以及二次确认的本机全量清除。
 - 在线角色按服务端 capability 工作：viewer 可读但不能记录/review，且不会生成不可同步
@@ -62,7 +73,7 @@ MediaLibrary 返回可靠创建时间时才上传 `lastModified`，权限受限�
 先复制到 `captures/` 私有目录，随后才入队；同步成功只删除 outbox 行，不删除该原件。单条
 不受支持的素材不会阻塞后续待办和时间轴拉取。
 
-移动端自动化现有 7 个测试文件 / 39 个场景，覆盖本机数据库启动、五项导航、四种记录 intent、
+移动端自动化现有 7 个测试文件 / 39 个场景，覆盖本机数据库启动、原生详情导航、四种记录 intent、
 媒体时间来源、离线原件、草稿、分页整理、角色只读、capture 归档对账、合并、App 重启、响应
 丢失后的幂等恢复、story 目标路由与 Contribution API。相机/相册系统权限、真实音频焦点、
 系统杀进程后的文件行为、签名包安装与真实网络切换仍须按 `REAL_DEVICE_TEST.md` 在
@@ -136,6 +147,9 @@ Apple 证书属于个人/组织身份，仓库不会内置。要让 Actions 直�
 - `GET /api/mobile/v1/search`：cursor 分页搜索；索引残留也会以当前软删除与可见性状态二次过滤。
 - `POST /api/mobile/v1/memories/:id/contributions`、
   `PATCH /api/mobile/v1/contributions/:id`：复用现有作者、visibility 与 capability 服务。
+- `GET|POST /api/mobile/v1/library/:domain`、`GET|PATCH .../:id`：`people|stories|capsules|
+  requests|portals|imports` 的最小 cursor DTO 和原生读写；所有领域复用现有 service，胶囊锁定、
+  Contribution visibility、软删除与 family scope 不在 route 内另造规则。
 
 所有移动响应均为 `Cache-Control: private, no-store`。API 不接受客户端提供 `familyId`，
 始终从实时 session → User binding 推导家庭、角色、Person 和 guardian 状态；viewer 只能读取，

@@ -239,6 +239,18 @@
 - **后果**：访客从没有读取能力；称呼只作未确认 provenance。portable archive 恢复 portal
   配置时丢弃 token/hash 并强制 closed，必须由家庭成员主动换发新链接。
 
+## D-020（1.1 M6）原生日常领域使用最小 DTO 与独立缓存
+
+- **日期**：2026-09-04
+- **状态**：已接受
+- **决策**：People、Stories、Capsules、Requests、ContributionPortals 与 ImportSessions 通过
+  `/api/mobile/v1/library/*` 提供 cursor 列表和详情 DTO；route 只负责编解码/鉴权，继续调用既有
+  service。原生 SQLite 按领域缓存最后一次成功 DTO，不复制服务器关系模型。
+- **理由**：把整套 Web 数据图同步到设备会扩大锁定内容、Contribution visibility 和删除语义
+  漂移的风险；独立 cache 允许一个领域失败时保留其他离线阅读和时间轴安全快照。
+- **后果**：日常读写不再以浏览器为主路径；离线阅读已打开内容可用。领域写入暂不建立第二套
+  通用 outbox，离线时必须明确提示需要联网。口述/portal token 只在创建或换发响应出现，不持久化。
+
 ## D-0xx（M6）PDF 生成的技术选型
 - **决策**：手写 PDF 封装（页面 = sharp SVG 排版 → JPEG → DCTDecode 直嵌），
   不引入 PDF 库；EPUB 用 jszip 按 EPUB 3 规范生成。

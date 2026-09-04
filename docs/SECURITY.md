@@ -271,6 +271,16 @@
 ### PWA Share Target（M6）
 - POST /share 要求同源 + 会话 + capture:create，与普通上传同一授权面。
 
+### 原生日常领域 API（1.1 M6）
+- `/api/mobile/v1/library/*` 只接受 Bearer session，从实时 User binding 推导 family/role/person；
+  request body 出现 `familyId` 会被拒绝，目标资源的读写均先做 family scope，跨家庭统一 404。
+- viewer 可读取最小 DTO，但所有写入在解析业务 body 前以 capability 拒绝；列表使用 cursor，响应
+  一律 `private, no-store`。页面缓存只保存 DTO，不缓存口述史或投递箱明文 token。
+- 未到期胶囊详情不下发 event/asset/contribution；Person 讲述继续走统一 Contribution visibility，
+  admin 身份不会旁路 private/parents/child_later 策略。
+- 创建回答/投递链接时 token 只在当次响应和页面内存状态出现；二维码完全本机渲染、不调用外部
+  服务。投递箱换发在事务内替换 hash，旧 token 立即失效。
+
 ### 回收站（M7）
 - 软删除行在导出/搜索/素材收集中一律过滤（跨家庭隔离有测试）；
 - 硬清除需显式确认并写审计；素材物理删除有全引用守卫。
