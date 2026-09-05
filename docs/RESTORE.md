@@ -239,3 +239,22 @@ ReviewPeriod/人工精选沿用 1.1 模块；BookProject 的 draftKey/status 及
 1.2 原生离线阅读缓存及用户阅读/播放进度属于设备缓存，不属于家庭编辑成果；不进入完整
 归档恢复。Collection/BookProject 的人工说明、顺序、来源、版式和版本仍按既有九个新增
 元数据文件完整恢复；阅读 ZIP 仅为精选出版物，不能输入恢复工具代替 portable archive。
+
+### 1.2 旧卷与恢复门禁的复现
+
+锁定安装根/mobile 依赖，运行 `node --conditions=react-server --import tsx scripts/verify-upgrade12.mts`。
+脚本用 `git archive v1.1.0-alpha.1` 在独立 `/tmp/ftc-upgrade12-matrix-*` 目录执行旧版
+fixture/export 代码；不切换分支，不构建/发布旧 App。它验证 1.1 五原件卷升级、WAL 一致
+迁移前快照、故意失败迁移回滚、旧版实际导出恢复到 1.2 及再导出，新模块安全默认为空。
+原始 tag、独立路径和逐原件 SHA 记录在 `/tmp/ftc-m8-upgrade-report.json`。
+
+Production disaster roundtrip 另外销毁源目录，再恢复包含 Collection/BookProject 的 1.2
+完整档案：相册手工顺序、说明、32 页手工文字、焦点版式、来源和版本快照，九模块二次导出
+逐项相同。预览/转码是可重建衍生物，恢复后可换预览 ID；原件 SHA 与核心来源外键不变。
+
+Docker 验证脚本 `scripts/verify-docker12.mts` 仅用于明确的虚构 smoke 卷：需要先将上述
+`volume11` 复制到 `ftc-12-upgrade-smoke` 并由 `ftc-12-final:local` 启动
+`ftc-12-upgrade-app`（3198）；脚本创建独立 `ftc-12-restore-smoke` / app（3197）。
+用 `FTC_UPGRADE_REPORT` 指向与该旧卷同次生成的报告，避免混用不同 fixture 的来源 ID。
+恢复前故意移除 book-chapters.json 验证写入前拒绝，再恢复完整档案并二次导出全部编辑模块。
+不要将脚本卷名或端口替换为真实家庭实例；测试残留仅清理这些明确创建的 smoke 卷。

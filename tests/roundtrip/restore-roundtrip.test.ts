@@ -26,6 +26,9 @@ const read = (name: string) => readFileSync(path.join(fixtures, name));
 
 type Expectation = {
   zipPath: string;
+  albumId: string;
+  bookId: string;
+  editingModules: Record<string, unknown>;
   familyId: string;
   familyUnlockAge: number;
   eventTitle: string;
@@ -752,9 +755,95 @@ beforeAll(async () => {
     expect(new Set(inboxItems.map((inboxRow) => inboxRow.status))).toEqual(
       new Set(["new", "needs_review", "confirmed", "discarded"]),
     );
+    // 1.2 durable edits travel through the same destructive disaster roundtrip.
+    const binding = await m.family.getUserBinding(adminId);
+    const context = {
+      ...binding,
+      userId: adminId,
+      userName: "虚构爸爸",
+      familyId: binding.familyId!,
+      familyTimezone: binding.familyTimezone!,
+      childLaterUnlockAge: binding.childLaterUnlockAge!,
+    };
+    const collections = await import("@/lib/collections/service"),
+      books = await import("@/lib/books/projects/service"),
+      selection = await import("@/lib/books/projects/select"),
+      { defaultBookLayout } = await import("@/mobile/src/books/types");
+    const albumId = collections.createCollection(
+        context,
+        "虚构出生第一周",
+        "chapter",
+      ),
+      sectionId = randomUUID();
+    collections.saveCollection(context, albumId, 1, {
+      ...collections.getCollection(context, albumId),
+      description: "灾难后仍保留的人工说明",
+      coverAssetId: stored.asset.id,
+      sections: [{ id: sectionId, title: "窗边与出生" }],
+      items: [textEvent.eventId, ev.eventId].map((memoryEventId, i) => ({
+        id: randomUUID(),
+        memoryEventId,
+        sectionId,
+        caption: `手工顺序 ${i + 1}`,
+      })),
+    });
+    const bookId = books.createBookProject(
+      context,
+      "虚构可恢复成长年册",
+      "growth",
+      "family",
+    );
+    let book = selection.addBookSelections(context, bookId, 1, [
+      { kind: "collection", id: albumId },
+    ]);
+    book = books.saveBookProject(context, bookId, book.revision, {
+      ...book,
+      subtitle: "完整恢复保留人工副标题",
+      blocks: [
+        ...book.blocks,
+        ...Array.from({ length: 32 }, (_, i) => ({
+          id: randomUUID(),
+          chapterId: book.chapters[0]!.id,
+          kind: "text" as const,
+          text: `虚构第 ${i + 1} 页手工成长记述`,
+          caption: `人工说明 ${i}`,
+          layout: {
+            ...defaultBookLayout(),
+            breakBefore: true,
+            focus: [
+              { x: 0.2, y: 0.8 },
+              { x: 0.5, y: 0.5 },
+              { x: 0.5, y: 0.5 },
+              { x: 0.5, y: 0.5 },
+            ],
+          },
+          sourceIds: book.blocks[0]!.sourceIds,
+        })),
+      ],
+    });
+    books.saveBookVersion(context, bookId, book.revision);
     const zip = await m.exportSvc.buildFamilyExport(on.familyId);
+    const JSZip = (await import("jszip")).default,
+      initial = await JSZip.loadAsync(readFileSync(zip.filePath)),
+      editingModules: Record<string, unknown> = {};
+    for (const name of [
+      "collections",
+      "collection-sections",
+      "collection-items",
+      "book-projects",
+      "book-chapters",
+      "book-blocks",
+      "book-source-refs",
+      "book-block-sources",
+      "book-revisions",
+    ]) {
+      const entry = initial.file(`family-time-capsule-export/${name}.json`);
+      expect(entry, name).toBeTruthy();
+      editingModules[name] = JSON.parse(await entry!.async("string"));
+    }
     expect_ = {
       zipPath: zip.filePath,
+      albumId, bookId, editingModules,
       familyId: on.familyId,
       familyUnlockAge: 21,
       eventTitle: "出生后的第一天",
@@ -1060,6 +1149,45 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     expect(anon.status).toBe(401);
   });
 
+  it("恢复后的 production 相册/年册 API 保留顺序、人工版式、版本和来源，私密讲述不进入家庭阅读清单", async () => {
+    const album = await fetch(`${BASE}/api/collections/${expect_.albumId}`, {
+      headers: { cookie },
+    });
+    expect(album.status).toBe(200);
+    const doc = await album.json();
+    expect(
+      doc.items.map((i: { memoryEventId: string }) => i.memoryEventId),
+    ).toEqual([expect_.confirmedTextEventId, expect_.photoEventId]);
+    expect(doc.items.map((i: { caption: string }) => i.caption)).toEqual([
+      "手工顺序 1",
+      "手工顺序 2",
+    ]);
+    const book = await fetch(`${BASE}/api/books/projects/${expect_.bookId}`, {
+      headers: { cookie },
+    });
+    expect(book.status).toBe(200);
+    const project = await book.json();
+    expect(project.subtitle).toBe("完整恢复保留人工副标题");
+    expect(
+      project.blocks.filter((b: { text: string }) =>
+        b.text.startsWith("虚构第 "),
+      ),
+    ).toHaveLength(32);
+    expect(project.blocks.at(-1).layout.focus[0]).toEqual({ x: 0.2, y: 0.8 });
+    expect(project.versions.length).toBeGreaterThan(0);
+    expect(project.blockedBlockIds).toEqual([]);
+    const reading = await fetch(`${BASE}/api/reading/book/${expect_.bookId}`, {
+      headers: { cookie },
+    });
+    expect(reading.status).toBe(200);
+    const text = await reading.text();
+    for (const privateText of expect_.contributions
+      .filter((c) => c.visibility !== "family")
+      .map((c) => c.rawText)
+      .filter(Boolean))
+      expect(text).not.toContain(privateText);
+  });
+
   it("导出 B 并独立校验（verify:export 全绿，哈希与源一致）", async () => {
     const res = await fetch(`${BASE}/api/export`, { headers: { cookie } });
     expect(res.status).toBe(200);
@@ -1071,6 +1199,20 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       await zip.file("family-time-capsule-export/manifest.json")!.async("string"),
     );
     expect(manifest.familyId).toBe(expect_.familyId);
+    for (const [name, original] of Object.entries(expect_.editingModules))
+      expect(
+        JSON.parse(
+          await zip
+            .file(`family-time-capsule-export/${name}.json`)!
+            .async("string"),
+        ),
+        name,
+      ).toEqual(original);
+    expect(
+      Object.keys(zip.files).some((name) =>
+        /reading-download|book-render-job|device-token/.test(name),
+      ),
+    ).toBe(false);
     // 自洽校验：manifest.fileCount = 原件数 + 当前 portable metadata 文件集。
     // ZIP 另含 5 个空 .keep 占位（stories/ + originals/*），不计入 fileCount。
     const zipFileNames = Object.entries(zip.files)

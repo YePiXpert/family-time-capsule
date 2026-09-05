@@ -1,6 +1,7 @@
 # 1.2.0-alpha.1 开发与发布记录
 
-状态：开发中，尚未发布。不代表 M1–M8 已完成，不代表 stable 或真实设备验收。
+状态：M1–M8 功能与本地门禁完成；发布提交准备中，等待对应 SHA 完整 CI 后创建 prerelease。
+不代表 stable 或真实设备验收。历史切片记录保留下方，最终结果以末尾发布记录为准。
 
 ## 基线
 
@@ -188,3 +189,42 @@ M8 完整独立旧卷/恢复、最终云原生构建与 prerelease 尚未完成�
 修复构建顺序和 ZIP 按钮选择器后，production book-projects **3/3 passed**，包含真实
 worker PDF/EPUB/ZIP 下载及 ZIP 解压后 offline browser 阅读。其余全量场景 **43/43**
 在首次运行通过（全量 45/46 中另有两个 book-projects 场景）；最终 M8 再执行完整门禁。
+
+## M8 独立升级、恢复与 Docker 证据
+
+- 离线提交 `6211993440381a31c7048b3dd9dd64d714b7cc20` 的
+  [CI 33946382625](https://github.com/YePiXpert/family-time-capsule/actions/runs/33946382625) 三 job 全绿。
+- 独立 `git archive` 使用已发布 1.1 source
+  `c885217e23c1fa1f26364a0b1e9dfd88d5e1c415`，执行其旧 schema/导出代码生成五张虚构图片
+  和五条记忆；没有重新构建旧 App 来替代新开发。1.1 卷 → 1.2 原地迁移、迁移前 WAL
+  快照、注入失败迁移回滚、1.1 实际导出 → 空 1.2 恢复 → 二次导出全部通过。
+  `/tmp/ftc-m8-upgrade-report.json` 记录独立目录和五份原件 SHA；CI 增加该复现脚本。
+- disaster roundtrip 扩为 **7 tests**：销毁源目录，完整恢复并真实 production 登录、读取
+  相册顺序与人工说明、32 页手写块/焦点/来源/版本；九个新增元数据模块二次导出逐项一致。
+  私密讲述不进入恢复后的家庭阅读清单，设备 token/任务/阅读缓存不恢复。
+- Docker image `sha256:4aa7c205b6734fdcd57e4b5f09e61c0c0db585794de597dfc478471dfc56db67`
+  （`ftc-12-final:local`）构建通过。独立 `ftc-12-upgrade-smoke` 承接旧卷后 app/worker
+  smoke 通过，健康返回 `1.2.0-alpha.1`；字体、ffmpeg/ffprobe 和匿名媒体 401 检查通过。
+- Docker 实际排版 **64 blocks / PDF 66 pages / 200767 bytes**，中文可提取，66 页均经
+  Poppler 渲染并查看 contact sheet；EPUB **13861 bytes**，EPUBCheck **0 errors/warnings**；
+  精选 ZIP **11831 bytes**。EPUB/ZIP job 的 pages 表示内容文档/章节数，不等于纸张页数。
+- 独立 `ftc-12-restore-smoke` 先拒绝缺 book-chapters.json 的备份，family 表仍为空；随后
+  完整恢复、成员绑定、API 读取及二次导出九模块逐项相同，五份原件逐一下载 SHA 不变。
+  预览衍生物恢复后可重建，不要求它们的临时 ID 与源卷相同。
+- Docker 验证脚本调试期间修复了重启就绪等待、恢复成员选择器，以及 fixture 报告与旧卷
+  必须同次生成的测试参数；没有将失败尝试记作通过，也没有放宽核心编辑/原件断言。
+- 最终原生工作流继续检查 Android SEND/SEND_MULTIPLE/PDF Intent、APK 签名 v2/包名/
+  versionCode，并补齐展示 versionName；iOS 主程序和 appex 的包名/buildNumber/展示版本、
+  双 App Group 与 arm64。真实设备执行仍未验证，等 tag run 取得包级实际结果。
+
+最终本地根 lint/typecheck/test/build/build:ops 再次全部通过（**86 files / 584 tests**）；
+Mobile lint/typecheck/test（**19 files / 77 tests**）、Doctor **21/21**、双平台 Expo export
+再次通过，双端 Hermes 约 **3.8 MB**。根/mobile npm audit 再次均 **0 漏洞**。
+最终真实出版性能重复测量见 PERFORMANCE：PDF **2400 ms / renderer RSS 270397440 bytes**，
+EPUB **2455 ms / 265490432 bytes**，Poppler **1379 ms / 21049344 bytes**；编排 Node
+**114515968 bytes**。实际流式 SHA/转换/渲染，非 mock 吞吐；浏览器/ffmpeg 未在此基准测量。
+
+最终 production **46/46 passed**，disaster roundtrip **7/7 passed**，无跳过/放宽断言。
+根/mobile package 与 lock 均为 **1.2.0-alpha.1**，原生展示 **1.2.0**；iOS buildNumber
+和 Android versionCode 均在原来的 **5** 上递增为 **6**。最终提交按要求使用
+`chore(release): prepare 1.2.0-alpha.1`；待该 SHA 完整 main CI 通过后创建不可移动标签。

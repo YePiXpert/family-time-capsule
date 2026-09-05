@@ -90,6 +90,7 @@ jobs:
         run: |
           APK=mobile/android/app/build/outputs/apk/release/app-release.apk
           EXPECTED_VERSION_CODE=$(node -p "require('./mobile/app.json').expo.android.versionCode")
+          EXPECTED_VERSION=$(node -p "require('./mobile/app.json').expo.version")
           SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
           APKSIGNER=$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print | sort -V | tail -1)
           AAPT2=$(find "$SDK_ROOT/build-tools" -type f -name aapt2 -print | sort -V | tail -1)
@@ -100,6 +101,7 @@ jobs:
           echo "$SIGNATURE_REPORT" | grep -F 'Verified using v2 scheme (APK Signature Scheme v2): true'
           "$AAPT2" dump badging "$APK" | grep -F "package: name='app.familytimecapsule.mobile'"
           "$AAPT2" dump badging "$APK" | grep -F "versionCode='$EXPECTED_VERSION_CODE'"
+          "$AAPT2" dump badging "$APK" | grep -F "versionName='$EXPECTED_VERSION'"
           MANIFEST_REPORT=$("$AAPT2" dump xmltree "$APK" --file AndroidManifest.xml)
           echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND'
           echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND_MULTIPLE'
@@ -166,14 +168,17 @@ jobs:
         run: |
           APP_PATH=$(find build/FamilyTimeCapsule.xcarchive/Products/Applications -maxdepth 1 -name '*.app' -print -quit)
           EXPECTED_BUILD_NUMBER=$(node -p "require('./app.json').expo.ios.buildNumber")
+          EXPECTED_VERSION=$(node -p "require('./app.json').expo.version")
           test -n "$APP_PATH"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" = 'app.familytimecapsule.mobile'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")" = "$EXPECTED_BUILD_NUMBER"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist")" = "$EXPECTED_VERSION"
           test -f "$APP_PATH/main.jsbundle"
           APPEX_PATH=$(find "$APP_PATH/PlugIns" -maxdepth 1 -name '*.appex' -print -quit)
           test -n "$APPEX_PATH"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPEX_PATH/Info.plist")" = 'app.familytimecapsule.mobile.share'
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APPEX_PATH/Info.plist")" = "$EXPECTED_BUILD_NUMBER"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APPEX_PATH/Info.plist")" = "$EXPECTED_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' ios/app/app.entitlements)" = 'group.app.familytimecapsule.mobile.share'
           test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' ios/FamilyShareExtension/FamilyShareExtension.entitlements)" = 'group.app.familytimecapsule.mobile.share'
           APP_EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")
@@ -200,6 +205,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@v8
         with:
           pattern: FamilyTimeCapsule-*
@@ -224,6 +232,13 @@ jobs:
             '' \
             'The iOS IPA is unsigned. Real-device acceptance has not been completed and is not claimed by this release.' \
             > RELEASE_NOTES.md
+          NOTES_VERSION="${GITHUB_REF_NAME#v}"
+          NOTES_VERSION="${NOTES_VERSION%%-*}"
+          NOTES_VERSION="${NOTES_VERSION%.*}"
+          NOTES_PATH="../docs/RELEASE_NOTES_${NOTES_VERSION//./_}.md"
+          if [ -f "$NOTES_PATH" ]; then
+            cp "$NOTES_PATH" RELEASE_NOTES.md
+          fi
           gh release create "$GITHUB_REF_NAME" \
             FamilyTimeCapsule-android.apk \
             FamilyTimeCapsule-ios-unsigned.ipa \

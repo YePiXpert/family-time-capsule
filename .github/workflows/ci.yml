@@ -69,6 +69,8 @@ jobs:
     needs: web-quality
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -84,3 +86,6 @@ jobs:
       # Playwright（10 个独立 project）+ 灾难恢复 roundtrip（真实服务器 boot）
       - run: npx playwright test
       - run: npx vitest run --config vitest.roundtrip.config.ts
+
+      - name: Isolated 1.1 volume upgrade and legacy archive restore
+        run: node --conditions=react-server --import tsx scripts/verify-upgrade12.mts

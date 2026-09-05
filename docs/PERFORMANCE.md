@@ -108,3 +108,10 @@ Node 峰值采样 RSS 154181632 bytes；ffmpeg 峰值采样 RSS 199008256 bytes�
 离线测试使用实际 Node 文件流/SQLite 和 Expo API 适配器：实际读取 1 MiB 照片与 2 MiB
 声音测试字节，观察到最大 SHA readBytes 请求 65536 字节。测试适配器不是设备吞吐/RSS
 测量，不把进度 mock 或 Node 资源冒充 Android/iOS/browser/ffmpeg 资源。
+
+最终 1.2 模板的独立重复测量（无并行 build/排版）：同一 5000×3600、167132 字节虚构压缩
+原件，60 块图文生成 62 页 PDF。实际 PDF 2400 ms、采样 renderer RSS 270397440 bytes、
+输出 1514842 bytes；EPUB 2455 ms、renderer RSS 265490432 bytes、输出 963611 bytes。
+编排 Node RSS 114515968 bytes；Poppler 全页渲染 1379 ms、子进程 RSS 21049344 bytes。
+Linux /proc 每 20 ms 采样，非操作系统硬峰值；原件流式 SHA 前后相同。不是手机/浏览器或
+ffmpeg 基准，这次二者资源字段明确为 null；虚构色块压缩率不代表真实家庭视频或照片库。
