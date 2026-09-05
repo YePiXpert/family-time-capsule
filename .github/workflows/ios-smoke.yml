@@ -40,6 +40,13 @@ jobs:
       - name: Install CocoaPods
         working-directory: mobile
         run: npx pod-install ios
+      - uses: actions/cache/restore@v4
+        id: simulator-cache
+        with:
+          path: mobile/build/simulator
+          key: ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}-${{ github.sha }}
+          restore-keys: |
+            ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}-
       - name: Boot isolated iPhone simulator
         run: |
           mkdir -p ios-smoke-results
@@ -59,6 +66,7 @@ jobs:
           xcrun simctl bootstatus "$SIMULATOR_ID" -b
           xcrun simctl addmedia "$SIMULATOR_ID" mobile/assets/icon.png
       - name: Build Release app for simulator
+        id: simulator-build
         working-directory: mobile
         env:
           NODE_ENV: production
@@ -74,6 +82,32 @@ jobs:
             build > ../ios-smoke-results/build.log 2>&1
           APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
           test -f "$APP_PATH/main.jsbundle"
+      - name: Sign simulator app with Keychain entitlements
+        working-directory: mobile
+        run: |
+          python3 - <<'PY'
+          import plistlib, subprocess
+          from pathlib import Path
+          products = Path('build/simulator/Build/Products/Release-iphonesimulator')
+          app = next(products.glob('*.app'))
+          targets = [(extension, Path('ios/FamilyShareExtension/FamilyShareExtension.entitlements'))
+                     for extension in app.glob('PlugIns/*.appex')]
+          targets.append((app, Path('ios/app/app.entitlements')))
+          for bundle, source in targets:
+              info = plistlib.loads((bundle / 'Info.plist').read_bytes())
+              entitlements = plistlib.loads(source.read_bytes())
+              # An unsigned simulator executable cannot access Keychain (-34018).
+              # This ad-hoc identity is only for the isolated simulator, never a device release.
+              identifier = 'SIMULATOR.' + info['CFBundleIdentifier']
+              entitlements['application-identifier'] = identifier
+              entitlements['com.apple.developer.team-identifier'] = 'SIMULATOR'
+              entitlements['keychain-access-groups'] = [identifier]
+              path = Path('../ios-smoke-results') / (info['CFBundleIdentifier'] + '.entitlements')
+              path.write_bytes(plistlib.dumps(entitlements))
+              subprocess.run(['codesign', '--force', '--sign', '-', '--entitlements', str(path), str(bundle)], check=True)
+              subprocess.run(['codesign', '--verify', '--strict', str(bundle)], check=True)
+          PY
+          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
           xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
       - name: Install pinned Maestro
         run: |
@@ -116,3 +150,8 @@ jobs:
           name: ios-smoke-${{ github.sha }}
           path: ios-smoke-results
           retention-days: 14
+      - uses: actions/cache/save@v4
+        if: always() && steps.simulator-build.outcome == 'success' && steps.simulator-cache.outputs.cache-hit != 'true'
+        with:
+          path: mobile/build/simulator
+          key: ${{ steps.simulator-cache.outputs.cache-primary-key }}
