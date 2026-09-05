@@ -1,0 +1,12 @@
+appId: app.familytimecapsule.mobile
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: home-capture-audio
+- assertVisible: "录音区域已就绪，点“直接录音”开始。"
+- tapOn: "直接录音.*"
+- assertVisible: "完成录音.*"
+- tapOn: "完成录音.*"
+- assertVisible: "录音原件已复制到 App 私有目录。"
+- takeScreenshot: home-audio

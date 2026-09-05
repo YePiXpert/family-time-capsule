@@ -1,0 +1,14 @@
+appId: app.familytimecapsule.mobile
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: home-capture-photo
+# The simulator has no camera; the app must remain usable after rejection.
+- assertVisible:
+    id: capture-title
+- tapOn:
+    id: tab-home
+- assertVisible:
+    id: home-capture-photo
+- takeScreenshot: home-photo

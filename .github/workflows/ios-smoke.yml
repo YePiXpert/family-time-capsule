@@ -1,0 +1,118 @@
+name: iOS simulator smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  home-navigation:
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CI: "1"
+      MAESTRO_CLI_NO_ANALYTICS: "1"
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: "180000"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify main-only source
+        run: test "$GITHUB_REF" = refs/heads/main
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+        working-directory: mobile
+      - name: Generate iOS project
+        working-directory: mobile
+        run: npx expo prebuild --platform ios --clean --no-install
+      - name: Install CocoaPods
+        working-directory: mobile
+        run: npx pod-install ios
+      - name: Boot isolated iPhone simulator
+        run: |
+          mkdir -p ios-smoke-results
+          xcrun simctl list devices available --json > ios-smoke-results/devices.json
+          SIMULATOR_ID=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('ios-smoke-results/devices.json').read_text())
+          phones = [d for runtime, devices in data['devices'].items() if '.iOS-' in runtime
+                    for d in devices if d['isAvailable'] and d['name'].startswith('iPhone')]
+          assert phones, 'No available iPhone simulator'
+          print(phones[0]['udid'])
+          PY
+          )
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$SIMULATOR_ID"
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          xcrun simctl addmedia "$SIMULATOR_ID" mobile/assets/icon.png
+      - name: Build Release app for simulator
+        working-directory: mobile
+        env:
+          NODE_ENV: production
+        run: |
+          WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
+          test -n "$WORKSPACE_PATH"
+          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
+          test -n "$SCHEME"
+          xcodebuild -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" \
+            -configuration Release -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO \
+            build > ../ios-smoke-results/build.log 2>&1
+          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
+          test -f "$APP_PATH/main.jsbundle"
+          xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
+      - name: Install pinned Maestro
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/mobile-dev-inc/Maestro/releases/download/cli-2.10.0/maestro.zip \
+            -o "$RUNNER_TEMP/maestro.zip"
+          python3 - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          package = Path(os.environ['RUNNER_TEMP']) / 'maestro.zip'
+          assert hashlib.sha256(package.read_bytes()).hexdigest() == '29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991'
+          PY
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP/maestro-cli"
+          echo "$RUNNER_TEMP/maestro-cli/maestro/bin" >> "$GITHUB_PATH"
+      - name: Exercise home entries in Release app
+        run: |
+          maestro --device "$SIMULATOR_ID" test mobile/.maestro \
+            --format junit --output ios-smoke-results/junit.xml \
+            --test-output-dir ios-smoke-results/maestro
+      - name: Collect simulator diagnostics
+        if: always()
+        run: |
+          mkdir -p ios-smoke-results/crashes
+          if [ -n "${SIMULATOR_ID:-}" ]; then
+            xcrun simctl io "$SIMULATOR_ID" screenshot ios-smoke-results/final-screen.png || true
+            xcrun simctl spawn "$SIMULATOR_ID" log show --last 20m --style compact \
+              --predicate 'process == "app"' > ios-smoke-results/app.log 2>&1 || true
+          fi
+          python3 - <<'PY'
+          import shutil
+          from pathlib import Path
+          reports = Path.home() / 'Library/Logs/DiagnosticReports'
+          for report in reports.glob('app*'):
+              if report.is_file():
+                  shutil.copy2(report, Path('ios-smoke-results/crashes') / report.name)
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-smoke-${{ github.sha }}
+          path: ios-smoke-results
+          retention-days: 14

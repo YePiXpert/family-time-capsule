@@ -343,11 +343,11 @@ export function CaptureScreen() {
   return (
     <ScrollView contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
       <Text style={sharedStyles.eyebrow}>离线也不会丢</Text>
-      <Text style={sharedStyles.title}>记录此刻</Text>
+      <Text testID="capture-title" style={sharedStyles.title}>记录此刻</Text>
       <Text style={sharedStyles.intro}>每一份文字和原件都先写入设备。同步失败不会删除本机内容。</Text>
       <View style={sharedStyles.card}>
         <Text style={sharedStyles.label}>一句话、一段故事</Text>
-        <TextInput multiline onChangeText={setText} placeholder="今天发生了什么？" ref={textInputRef} style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
+        <TextInput testID="capture-text" multiline onChangeText={setText} placeholder="今天发生了什么？" ref={textInputRef} style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
         <Text style={styles.counter}>{text.length} / 5000</Text>
         <Pressable disabled={busy || recording} onPress={() => void saveText()} style={({ pressed }) => [sharedStyles.primaryButton, pressed && sharedStyles.pressed, (busy || recording) && sharedStyles.disabled]}>
           <Text style={sharedStyles.primaryText}>保存文字</Text>

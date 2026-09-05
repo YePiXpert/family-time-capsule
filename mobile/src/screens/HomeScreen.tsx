@@ -40,19 +40,19 @@ export function HomeScreen() {
 
       <View style={styles.quickRow}>
         {HOME_CAPTURE_ACTIONS.map(({ label, hint, intent }) => (
-          <Pressable accessibilityRole="button" key={intent} onPress={() => navigation.navigate("Capture", { intent, requestKey: Date.now() })} style={({ pressed }) => [styles.quick, pressed && sharedStyles.pressed]}>
+          <Pressable accessibilityRole="button" testID={`home-capture-${intent}`} key={intent} onPress={() => navigation.navigate("Capture", { intent, requestKey: Date.now() })} style={({ pressed }) => [styles.quick, pressed && sharedStyles.pressed]}>
             <Text style={styles.quickLabel}>{label}</Text><Text style={styles.quickHint}>{hint}</Text>
           </Pressable>
         ))}
       </View>
 
       {!credentials ? (
-        <Pressable onPress={() => navigation.navigate("Settings")} style={sharedStyles.notice}>
+        <Pressable testID="home-settings" onPress={() => navigation.navigate("Settings")} style={sharedStyles.notice}>
           <Text style={sharedStyles.noticeText}>当前仅保存在本机。点此连接自己的家庭服务器；已有本机记录不会被清空。</Text>
         </Pressable>
       ) : null}
 
-      <Pressable onPress={() => navigation.navigate("WeeklyReview")} style={({ pressed }) => [styles.reviewCard, pressed && sharedStyles.pressed]}>
+      <Pressable testID="home-weekly-review" onPress={() => navigation.navigate("WeeklyReview")} style={({ pressed }) => [styles.reviewCard, pressed && sharedStyles.pressed]}>
         <Text style={sharedStyles.eyebrow}>每周回顾</Text>
         <Text style={sharedStyles.cardTitle}>本周已留下 {home?.weeklyReview.confirmedCount ?? 0} 段</Text>
         <Text style={sharedStyles.body}>还有 {home?.weeklyReview.pendingInboxCount ?? (home?.inbox.count ?? outbox.length)} 条待整理{home?.weeklyReview.storyId ? " · 周记草稿已生成" : ""}</Text>

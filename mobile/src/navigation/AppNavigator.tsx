@@ -68,6 +68,7 @@ function MainTabs() {
     tabBarActiveTintColor: colors.coralDark,
     tabBarInactiveTintColor: colors.muted,
     tabBarHideOnKeyboard: true,
+    tabBarButtonTestID: `tab-${route.name.toLowerCase()}`,
     tabBarStyle: { height: 64, paddingTop: 5, paddingBottom: 6, backgroundColor: colors.card, borderTopColor: colors.line },
     tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
     tabBarIcon: ({ focused }) => <View style={[styles.icon, route.name === "Capture" && styles.captureIcon, focused && route.name !== "Capture" && styles.activeIcon]}><Text style={[styles.iconText, route.name === "Capture" && styles.captureIconText]}>{tabMeta[route.name][1]}</Text></View>,

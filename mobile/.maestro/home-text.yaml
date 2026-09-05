@@ -1,0 +1,23 @@
+appId: app.familytimecapsule.mobile
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: home-capture-text
+- tapOn:
+    id: home-capture-text
+- assertVisible:
+    id: capture-title
+- tapOn:
+    id: capture-text
+- inputText: "iOS home smoke"
+- hideKeyboard
+- tapOn: "保存文字"
+- assertVisible: "文字已保存到本机，可稍后连接服务器。"
+- tapOn:
+    id: tab-home
+- tapOn:
+    id: home-capture-text
+- assertVisible:
+    id: capture-title
+- takeScreenshot: home-text

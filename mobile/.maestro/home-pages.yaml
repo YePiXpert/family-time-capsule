@@ -1,0 +1,18 @@
+appId: app.familytimecapsule.mobile
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: home-settings
+- assertVisible: "设备与同步"
+- tapOn: "返回"
+- tapOn:
+    id: home-weekly-review
+- assertVisible: "暂时无法打开回顾"
+- assertVisible: "连接家庭服务器后可开始每周回顾。"
+- tapOn: "返回"
+- tapOn:
+    id: tab-capture
+- assertVisible:
+    id: capture-title
+- takeScreenshot: home-pages

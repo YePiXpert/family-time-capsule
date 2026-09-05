@@ -1,0 +1,14 @@
+appId: app.familytimecapsule.mobile
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: home-capture-library
+- tapOn: "Cancel|取消"
+- assertVisible:
+    id: capture-title
+- tapOn:
+    id: tab-home
+- assertVisible:
+    id: home-capture-library
+- takeScreenshot: home-library
