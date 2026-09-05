@@ -25,6 +25,7 @@ export type RootStackParamList = {
   ImportSessions: undefined;
   ImportSessionDetail: { id: string };
   WeeklyReview: undefined;
+  Calendar: undefined;
 };
 
 export type MainTabParamList = {

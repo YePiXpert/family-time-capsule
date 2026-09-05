@@ -1337,3 +1337,11 @@ Original sources always come first.
 `1.1.0-alpha.1` 只有在 #019–#025 的自动化、Docker、导出恢复、Android APK、含正式
 Share Extension 的 unsigned IPA 和最终 main CI 全绿后才创建 prerelease tag。真实设备清单
 必须如实保持独立状态；本轮不创建 stable `v1.0.0` 或 `v1.1.0` 标签。
+
+# 33. 1.2 家庭记忆馆与成长年册（附录）
+
+执行范围与证据见 [PRODUCT_1_2.md](./PRODUCT_1_2.md)。统一 Collection 组织已确认记忆，
+提供日历、精确日历年龄与媒体阅读；持久 BookProject 区分选材/版式/出版版本，交付照片相册、
+图文成长册、家人来信三模板。可搜索中文 PDF、有效 EPUB 和精选离线包均重验读者范围与来源。
+原生实际提供整理、阅读和基础编辑；全部新增耐久编辑关系完整导出恢复，原件保持不可覆盖。
+不重写 1.1 上传同步，不引入公开社交、S3、新加密协议或付费印刷。发布仅为 prerelease。

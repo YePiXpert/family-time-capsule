@@ -27,6 +27,7 @@ import {
   StoriesScreen,
   StoryDetailScreen,
 } from "../screens/LibraryScreens";
+import { CalendarScreen } from "../screens/CalendarScreen";
 import { WeeklyReviewScreen } from "../screens/WeeklyReviewScreen";
 import { colors } from "../theme";
 import type { MainTabParamList, RootStackParamList } from "./types";
@@ -100,6 +101,7 @@ export function AppNavigator() {
         <Stack.Screen component={ContributionPortalDetailScreen} name="ContributionPortalDetail" options={{ title: "家庭投递箱" }} />
         <Stack.Screen component={ImportSessionsScreen} name="ImportSessions" options={{ title: "导入会话" }} />
         <Stack.Screen component={ImportSessionDetailScreen} name="ImportSessionDetail" options={{ title: "导入进度" }} />
+        <Stack.Screen component={CalendarScreen} name="Calendar" options={{ title: "记忆日历" }} />
         <Stack.Screen component={WeeklyReviewScreen} name="WeeklyReview" options={{ title: "每周回顾" }} />
       </Stack.Navigator>
     </NavigationContainer>

@@ -68,7 +68,7 @@ export default async function MemoryEventPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ mode?: string | string[] }>;
+  searchParams: Promise<{ mode?: string | string[]; returnTo?: string }>;
 }) {
   const context = await requireFamily();
   const { familyId } = context;
@@ -82,6 +82,8 @@ export default async function MemoryEventPage({
   const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
   const query = await searchParams;
+  const returnTo = typeof query.returnTo === "string" && /^\/timeline(?:\/calendar)?(?:[?#]|$)/.test(query.returnTo) && !/[\\\r\n]/.test(query.returnTo) ? query.returnTo : "/timeline";
+  const returnQuery = `returnTo=${encodeURIComponent(returnTo)}`;
   const pageMode = resolveMemoryPageMode(query.mode, canWriteEvent);
   const editMode = pageMode === "edit";
   const [detail, family, people, contributions, facts] = await Promise.all([
@@ -333,7 +335,7 @@ export default async function MemoryEventPage({
           </div>
         ) : null}
         <PageHeader
-          backHref="/timeline"
+          backHref={returnTo}
           backLabel="返回时间轴"
           eyebrow={editMode ? "Archive editing" : "Family memory"}
           title={event.title}
@@ -345,7 +347,7 @@ export default async function MemoryEventPage({
             </span>
           }
           actions={canWriteEvent ? (
-            <Link href={editMode ? `/memories/${event.id}` : `/memories/${event.id}?mode=edit`} className={editMode ? "ui-button-secondary" : "ui-button-primary"}>
+            <Link href={editMode ? `/memories/${event.id}?${returnQuery}` : `/memories/${event.id}?mode=edit&${returnQuery}`} className={editMode ? "ui-button-secondary" : "ui-button-primary"}>
               {editMode ? "返回阅读记忆" : "编辑档案"}
             </Link>
           ) : undefined}

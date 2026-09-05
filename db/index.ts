@@ -49,6 +49,17 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
 
   const sqlite = new Database(options.databasePath);
   try {
+    const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+    sqlite.function("family_date", { deterministic: true }, (seconds: number, timezone: string) => {
+      let formatter = dateFormatters.get(timezone);
+      if (!formatter) {
+        formatter = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" });
+        dateFormatters.set(timezone, formatter);
+      }
+      const parts = formatter.formatToParts(new Date(seconds * 1000));
+      const get = (key: string) => parts.find(p => p.type === key)!.value;
+      return `${get("year")}-${get("month")}-${get("day")}`;
+    });
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("foreign_keys = ON");
     // Multi-process app/worker writes wait briefly for the current IMMEDIATE

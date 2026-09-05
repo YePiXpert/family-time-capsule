@@ -19,7 +19,7 @@ describe("formatAgeLabel / calendarDiff", () => {
   });
 
   it("满月 / 百天", () => {
-    expect(formatAgeLabel("2026-08-10", new Date("2026-09-09T00:00:00Z"), "UTC")).toBe("满月");
+    expect(formatAgeLabel("2026-08-10", new Date("2026-09-10T00:00:00Z"), "UTC")).toBe("满月");
     expect(formatAgeLabel("2026-08-10", new Date("2026-11-18T00:00:00Z"), "UTC")).toBe("百天");
   });
 
@@ -42,11 +42,11 @@ describe("formatAgeLabel / calendarDiff", () => {
       months: 0,
       days: 30,
     });
-    // 8/31 → 9/30：0 年 0 月 30 天
+    // 月末周年向目标月最后一天收敛：8/31 → 9/30 是一个日历月
     expect(calendarDiff("2026-08-31", new Date("2026-09-30T00:00:00Z"), "UTC")).toEqual({
       years: 0,
-      months: 0,
-      days: 30,
+      months: 1,
+      days: 0,
     });
   });
 

@@ -3,6 +3,8 @@ import "server-only";
 import { randomUUID, createHash } from "node:crypto";
 import { isNull, and, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "@/db";
+import { family } from "@/db/schema/family";
+import { calendarRange } from "@/lib/memories/calendar-range";
 import { memoryEvent } from "@/db/schema/memory";
 import { getAsset } from "@/lib/assets/service";
 import { getAssetStorage } from "@/lib/assets/storage";
@@ -138,14 +140,16 @@ export async function generateYearBook(
   format: BookFormat,
   familyName: string,
 ): Promise<BookResult> {
-  const start = new Date(Date.UTC(year, 0, 1));
-  const end = new Date(Date.UTC(year + 1, 0, 1));
+  const familyRow = getDb().select().from(family).where(eq(family.id, familyId)).get();
+  if (!familyRow) return { ok: false, error: "family_not_found" };
+  const { from: start, before: end } = calendarRange(String(year), familyRow.timezone);
   const events = getDb()
     .select()
     .from(memoryEvent)
     .where(
       and(
         eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.status, "confirmed"),
         isNull(memoryEvent.deletedAt),
         gte(memoryEvent.occurredAt, start),
         lt(memoryEvent.occurredAt, end),
@@ -185,7 +189,7 @@ export async function generateYearBook(
         { kind: "heading", text: event.title },
         {
           kind: "body",
-          text: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "UTC" })
+          text: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: familyRow.timezone })
             .format(event.occurredAt),
         },
       ];
@@ -216,7 +220,7 @@ export async function generateYearBook(
     const paras: Paragraph[] = [
       {
         kind: "body",
-        text: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: "UTC" })
+        text: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: familyRow.timezone })
           .format(event.occurredAt),
       },
     ];

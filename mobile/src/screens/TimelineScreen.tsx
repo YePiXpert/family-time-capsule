@@ -1,5 +1,5 @@
 import { useNavigation } from "@react-navigation/native";
-import { Alert, FlatList, RefreshControl, Text, View } from "react-native";
+import { Alert, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
 import { useApp } from "../state/AppContext";
 import { TimelineCard } from "../components/TimelineCard";
 import type { AppNavigation } from "../navigation/types";
@@ -14,7 +14,7 @@ export function TimelineScreen() {
       data={events}
       keyExtractor={(item) => item.id}
       ListEmptyComponent={<View style={sharedStyles.empty}><Text style={sharedStyles.emptyTitle}>本机还没有回忆</Text><Text style={sharedStyles.emptyText}>先去“记录”写下一刻；连接服务器后，这里也会保留可离线浏览的家庭时间轴。</Text></View>}
-      ListHeaderComponent={outbox.length > 0 ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{outbox.length} 份记录安全留在本机，{credentials ? "联网后会继续补传" : "连接服务器后再补传"}。</Text></View> : null}
+      ListHeaderComponent={<View style={{gap:12, padding:8}}><Pressable onPress={() => navigation.navigate("Calendar")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>日历 · 按年龄找记忆</Text></Pressable>{outbox.length > 0 ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{outbox.length} 份记录安全留在本机，{credentials ? "联网后会继续补传" : "连接服务器后再补传"}。</Text></View> : null}</View>}
       refreshControl={<RefreshControl refreshing={syncing} tintColor={colors.coral} onRefresh={() => void (credentials ? runSync() : reloadLocal())} />}
       renderItem={({ item }) => <TimelineCard item={item} timeZone={item.source === "server" ? family?.timezone : undefined} onPress={() => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : Alert.alert("本机记录", item.syncState === "inbox" ? "这份原件已送达收件箱，整理确认后会成为正式记忆。" : "这份原件仍在本机，联网后会继续补传。") } />}
       style={sharedStyles.screen}

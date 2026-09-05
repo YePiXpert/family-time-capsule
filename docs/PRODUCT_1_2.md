@@ -1,0 +1,43 @@
+# 1.2.0-alpha.1 家庭记忆馆与成长年册
+
+状态：开发中。基线 `99ac692ec7bd5c91ca499d3c71cd6cedf4afcd10`；不替换已发布 1.1。
+
+真实记忆 → Collection 整理 → 日历/年龄/媒体阅读 → BookProject 持续编辑 →
+可搜索 PDF / EPUB / 精选离线阅读包 → portable archive 完整迁移。
+
+## 实施边界
+
+- 复用现有上传、同步、ImportSession、ReviewPeriod、Story 和授权服务；AI 默认关闭。
+- Story 保存叙述；Collection 用 album/chapter 区分组织；BookProject 保存选材、版式和版本。
+- CollectionSection 仅一层，CollectionItem 的事件来源使用外键；同册同来源唯一。
+- BookChapter、BookBlock、BookSourceRef、BookRevision 是耐久编辑数据，核心来源关系使用外键。
+- revision 乐观锁：冲突返回 409，客户端保留未保存输入；来源更新只提示，不覆盖编辑。
+- 阅读、计数、封面及选材使用当前 FamilyContext。家庭阅读版只接受预定读者范围可见来源。
+- 日/月/年使用家庭时区半开区间；月龄按日历周年锚点，月末向目标月份最后一天收敛。
+- 渲染与媒体任务独立于 AI；后台有界处理，下载时重验来源与权限，旧产物失效。
+- PDF 比较 PDFKit 的字体/流式文本能力与 Chromium 的 CSS 分页能力后再定；正文不得栅格化。
+- 原生主动下载存独立 server/account/family 缓存；清理绝不触碰原件、intake 或 outbox。
+- 精选阅读包无在线依赖，明确可保存转发且无法远程收回；它不是管理员完整备份。
+- 新增耐久数据成组导出，声明存在却缺文件/关系时在写入前拒绝；旧档使用空模块默认值。
+
+## 交付与证据
+
+| 里程碑 | 状态 | 门禁 |
+| --- | --- | --- |
+| M1 章节/主题相册 | 待实现 | 五事件双相册，排序/软删除/恢复，原件 SHA 不变 |
+| M2 日历/年龄 | 开发中 | 跨午夜/跨年/DST/闰日/月末，Web/原生过滤与日期变更 |
+| M3 媒体阅读 | 待实现 | 按需播放器/衍生物、权限收紧、失败降级 |
+| M4 编辑年册 | 待实现 | 三模板、持久编辑/重开/冲突、来源漂移 |
+| M5 出版 | 待实现 | 30+ 页真实文本提取/逐页渲染、EPUB 标准校验 |
+| M6 回顾作品 | 待实现 | 月/年/自选范围、草稿幂等、不改写人工编辑 |
+| M7 离线收藏 | 待实现 | 主动下载/配额/清理、权限拒绝与断网区分 |
+| M8 恢复/发布 | 待实现 | 独立目录/卷升级、旧档恢复、二次导出、失败回滚 |
+
+五个主导航保持首页、时间轴、记录、收件箱、更多。相册和日历放时间轴内，书架为二级页面。
+沿用暖纸张设计系统；375/768/1024/1440px、键盘与触控验证使用虚构家庭。
+
+最终运行根 lint/typecheck/test/build、production E2E/disaster roundtrip、mobile
+ test/typecheck/lint/doctor、Android/iOS export、出版/权限/离线专项、依赖审计、
+Docker app/worker smoke、独立卷升级恢复。main 对应 SHA 完整 CI 全绿后才能创建不可移动
+`v1.2.0-alpha.1`；最终 tag workflow 产出 APK、unsigned IPA、SHA256SUMS 和 prerelease。
+真实设备项目保持未验证，包级检查不能代填。

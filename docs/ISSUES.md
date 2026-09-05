@@ -109,3 +109,16 @@ Auth → Family/Person → Asset Upload → metadata/hash → Inbox
 [x] 关键 E2E 全绿（当前 31 Playwright + 6 production roundtrip）
 [x] docs 与代码一致
 ```
+
+## 1.2 家庭记忆馆与成长年册（开发中）
+
+- [ ] M1 统一 Collection 章节/相册，Web/原生编辑、来源和完整恢复。
+- [ ] M2 家庭时区日历、年龄定位、一致过滤与稳定分页。
+- [ ] M3 全屏照片与家人声音阅读、按需媒体衍生物。
+- [ ] M4 BookProject 三模板、持久编辑、来源及版本快照。
+- [ ] M5 可搜索 PDF、有效 EPUB、独立有界 BookRenderJob。
+- [ ] M6 月/年/自选范围回顾与幂等作品草稿。
+- [ ] M7 原生主动离线收藏与无在线依赖精选阅读包。
+- [ ] M8 独立卷升级/恢复/回滚、全部门禁与 1.2 alpha prerelease。
+
+验收口径见 [PRODUCT_1_2.md](./PRODUCT_1_2.md)，状态必须来自实际运行。

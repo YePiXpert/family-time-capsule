@@ -236,7 +236,7 @@ describe("完整导出（#014）", () => {
     const timelineMd = await zip.file(`${root}/timeline.md`)!.async("string");
 
     expect(manifest.exportVersion).toBe(1);
-    expect(manifest.appVersion).toBe("1.1.0-alpha.1");
+    expect(manifest.appVersion).toBe(JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")).version);
     expect(manifest.familyId).toBe(familyId);
     expect(manifest.fileCount).toBe(manifest.assets.length + 25);
     expect(result.fileCount).toBe(manifest.fileCount);

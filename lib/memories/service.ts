@@ -1,4 +1,7 @@
 import "server-only";
+import type { FamilyContext } from "@/lib/family/context";
+import { isLiveFamilyPrincipal } from "@/lib/authz/principal";
+import { createContributionAccessSnapshot, readableAssetPredicate } from "@/lib/authz/contribution-access";
 
 import { randomUUID } from "node:crypto";
 import {
@@ -845,9 +848,11 @@ export type TimelinePage = {
 export async function hydrateTimelineEntries(
   familyId: string,
   events: MemoryEventRow[],
+  context?: FamilyContext,
 ): Promise<TimelineEntry[]> {
   if (events.length === 0) return [];
   const db = getDb();
+  const readable = context ? readableAssetPredicate(createContributionAccessSnapshot(context), sql`${assetTable.id}`) : undefined;
   const eventIds = events.map((event) => event.id);
 
   const [assetLinks, coverAssets, participantLinks, tagRows] = await Promise.all([
@@ -865,6 +870,7 @@ export async function hydrateTimelineEntries(
           eq(memoryEventAsset.familyId, familyId),
           eq(assetTable.familyId, familyId),
           inArray(memoryEventAsset.memoryEventId, eventIds),
+          readable,
         ),
       )
       .orderBy(asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id)),
@@ -888,6 +894,7 @@ export async function hydrateTimelineEntries(
               and(
                 eq(assetTable.familyId, familyId),
                 inArray(assetTable.id, coverIds),
+                readable,
               ),
             )
         : Promise.resolve([]);
@@ -946,7 +953,7 @@ export async function hydrateTimelineEntries(
     ...new Set(
       events
         .map((event) => {
-          if (event.coverAssetId) return event.coverAssetId;
+          if (event.coverAssetId && coverById.has(event.coverAssetId)) return event.coverAssetId;
           return assetLinksByEvent
             .get(event.id)
             ?.find((link) => link.type === "image")?.assetId;
@@ -961,7 +968,7 @@ export async function hydrateTimelineEntries(
     const links = assetLinksByEvent.get(event.id) ?? [];
     const fallbackImage = links.find((link) => link.type === "image");
     const fallbackAsset = fallbackImage ?? links[0];
-    const coverId = event.coverAssetId ?? fallbackImage?.assetId ?? null;
+    const coverId = (event.coverAssetId && coverById.has(event.coverAssetId) ? event.coverAssetId : null) ?? fallbackImage?.assetId ?? null;
     const explicitCover = coverId ? coverById.get(coverId) : undefined;
     const linkedCover = coverId
       ? links.find((link) => link.assetId === coverId)
@@ -1035,17 +1042,21 @@ function timelinePageSize(value: number | undefined): number {
  * keeps request cost proportional to one page even after decades of events.
  */
 export async function getTimelinePage(
-  familyId: string,
+  scope: string | FamilyContext,
   options: {
     cursor?: string | null;
     limit?: number;
     personId?: string | null;
-    mediaType?: "image" | "audio" | "video" | null;
+    mediaType?: "image" | "audio" | "video" | "document" | null;
     tag?: string | null;
     occurredFrom?: Date | null;
     occurredBefore?: Date | null;
   } = {},
 ): Promise<TimelinePage> {
+  const context = typeof scope === "string" ? undefined : scope;
+  const familyId = typeof scope === "string" ? scope : scope.familyId;
+  if (context && !(await isLiveFamilyPrincipal(context))) throw new Error("forbidden");
+  const readableMedia = context ? readableAssetPredicate(createContributionAccessSnapshot(context), sql`timeline_asset.id`) : sql`1`;
   const db = getDb();
   const limit = timelinePageSize(options.limit);
   const cursor = decodeTimelineCursor(options.cursor);
@@ -1076,6 +1087,7 @@ export async function getTimelinePage(
                 and timeline_asset.family_id = ${familyId}
                 and timeline_link.memory_event_id = ${memoryEvent.id}
                 and timeline_asset.type = ${options.mediaType}
+                and ${readableMedia}
             )`
           : undefined,
         options.tag
@@ -1097,7 +1109,7 @@ export async function getTimelinePage(
   const hasMore = eventRows.length > limit;
   const events = hasMore ? eventRows.slice(0, limit) : eventRows;
   if (events.length === 0) return { entries: [], nextCursor: null };
-  const entries = await hydrateTimelineEntries(familyId, events);
+  const entries = await hydrateTimelineEntries(familyId, events, context);
 
   return {
     entries,
@@ -1158,7 +1170,7 @@ export async function getTimelineEntriesByIds(
 export type TimelineFacets = { tags: string[]; years: number[] };
 
 /** Family-scoped filter vocabulary for the timeline controls. */
-export async function getTimelineFacets(familyId: string): Promise<TimelineFacets> {
+export async function getTimelineFacets(familyId: string, timezone = "UTC"): Promise<TimelineFacets> {
   const db = getDb();
   const [tagRows, yearRows] = await Promise.all([
     db
@@ -1176,7 +1188,7 @@ export async function getTimelineFacets(familyId: string): Promise<TimelineFacet
       .orderBy(asc(memoryEventTag.tag)),
     db
       .selectDistinct({
-        year: sql<number>`cast(strftime('%Y', ${memoryEvent.occurredAt}, 'unixepoch') as integer)`,
+        year: sql<number>`cast(substr(family_date(${memoryEvent.occurredAt}, ${timezone}), 1, 4) as integer)`,
       })
       .from(memoryEvent)
       .where(

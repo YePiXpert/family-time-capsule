@@ -830,3 +830,13 @@ export async function uploadTextCapture(
   }
   return result.inboxItemId;
 }
+
+export async function fetchMobileCalendar(credentials: Credentials, params: Record<string, string>): Promise<import('../types').MobileCalendar> {
+  const body = await requestMobileJson(credentials, `/api/mobile/v1/calendar?${new URLSearchParams(params)}`);
+  if (!isRecord(body) || !isString(body.month, 7) || !isString(body.timezone, 100) || !Array.isArray(body.days) || body.days.length > 31 || !Array.isArray(body.entries) || body.entries.length > 30 || !isNullableString(body.nextCursor) || !Array.isArray(body.people) || !Array.isArray(body.ages)) throw new ApiError('日历数据无效。', 502);
+  for (const day of body.days) if (!isRecord(day) || !isString(day.date, 10) || !Number.isSafeInteger(day.count) || (day.count as number) < 0 || !Array.isArray(day.covers) || day.covers.length > 3 || day.covers.some(c => !isRecord(c) || !isString(c.assetId, 128) || !isString(c.eventId, 128))) throw new ApiError('日历数据无效。', 502);
+  for (const row of body.entries) if (!isRecord(row) || !isString(row.id, 128) || !isString(row.title) || !isDateTime(row.occurredAt) || !isString(row.date, 10)) throw new ApiError('日历数据无效。', 502);
+  for (const row of body.people) if (!isRecord(row) || !isString(row.id, 128) || !isString(row.name, 100)) throw new ApiError('日历数据无效。', 502);
+  for (const row of body.ages) if (!isRecord(row) || !isString(row.label, 100) || !isString(row.date, 10)) throw new ApiError('日历数据无效。', 502);
+  return body as import('../types').MobileCalendar;
+}

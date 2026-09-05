@@ -533,3 +533,28 @@ export async function canReadContributionAsset(
       getContributionAssetAccessInTransaction(tx, snapshot, assetId).readable,
   );
 }
+
+/** Batch-query equivalent of the media root policy, for counts and cover selection. */
+export function readableAssetPredicate(snapshot: ContributionAccessSnapshot, assetId: SQL): SQL {
+  const p = snapshot.principal;
+  const hidden = getDb().select({ id: contribution.audioAssetId }).from(contribution)
+    .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
+    .leftJoin(eventChild, and(eq(memoryEvent.childPersonId, eventChild.id), eq(eventChild.familyId, memoryEvent.familyId)))
+    .innerJoin(viewerUser, eq(viewerUser.id, p.userId))
+    .innerJoin(viewerFamily, eq(viewerFamily.id, viewerUser.familyId))
+    .leftJoin(viewerPerson, and(eq(viewerPerson.id, viewerUser.personId), eq(viewerPerson.familyId, viewerUser.familyId)))
+    .where(or(ne(memoryEvent.familyId, p.familyId), isNull(eventChild.id), not(sql`coalesce(${visibilityPredicate(snapshot)}, 0)`)));
+  return sql`exists (select 1 from user live_user where live_user.id = ${p.userId}
+      and live_user.family_id = ${p.familyId} and live_user.role = ${p.role} and live_user.disabled_at is null)
+    and exists (select 1 from asset root_asset where root_asset.id = ${assetId} and root_asset.family_id = ${p.familyId})
+    and not exists (
+      with recursive ancestors(id, parent_id) as (
+        select id, original_asset_id from asset where id = ${assetId} and family_id = ${p.familyId}
+        union select a.id, a.original_asset_id from asset a join ancestors on a.id = ancestors.parent_id where a.family_id = ${p.familyId}
+      ), descendants(id) as (
+        select id from ancestors where parent_id is null
+        union select a.id from asset a join descendants on a.original_asset_id = descendants.id where a.family_id = ${p.familyId}
+      ) select 1 where not exists (select 1 from descendants)
+        or exists (select 1 from descendants where id in (${hidden}))
+    )`;
+}

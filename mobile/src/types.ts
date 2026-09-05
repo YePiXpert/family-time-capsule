@@ -343,3 +343,13 @@ export type MobileReview = {
     selected: boolean;
   }[];
 };
+
+export type MobileCalendar = {
+  month: string;
+  timezone: string;
+  days: { date: string; count: number; covers: { date: string; eventId: string; assetId: string }[] }[];
+  entries: { id: string; title: string; occurredAt: string; date: string }[];
+  nextCursor: string | null;
+  people: { id: string; name: string }[];
+  ages: { label: string; date: string }[];
+};

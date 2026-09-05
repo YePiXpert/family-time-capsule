@@ -77,3 +77,33 @@ test("记忆回顾与人物主页可以从产品界面进入", async ({ page }) 
   await expect(page.getByRole("heading", { name: "成长记忆" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "亲口讲述", exact: true })).toBeVisible();
 });
+
+test("日历选择、键盘定位、改日期与返回位置保留（虚构家庭）", async ({ page }) => {
+  await ensureLogin(page);
+  await page.goto('/timeline/calendar?month=2026-08');
+  await expect(page.getByRole('heading', {name:'记忆日历', exact:true})).toBeVisible();
+  const day=page.getByRole('link', {name:'2026-08-10，1 条记忆',exact:true});
+  await day.focus(); await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/date=2026-08-10/);
+  await page.getByRole('link',{name:/八月中旬的一个上午/}).click();
+  await expect(page.getByText('出生当天')).toBeVisible();
+  await page.getByRole('button',{name:'修改这件事'}).click();
+  const form=page.locator('form[aria-label="编辑事件"]');
+  await form.getByLabel(/真实发生时间/).fill('2026-08-11T00:30');
+  await form.getByRole('button',{name:'保存修改'}).click();
+  await expect(page.getByText('已保存。时间轴与年龄已更新。')).toBeVisible();
+  await page.getByRole('link',{name:'返回时间轴'}).click();
+  await expect(page).toHaveURL(/date=2026-08-10.*#memory-/);
+  await expect(page.getByRole('link',{name:'2026-08-10，0 条记忆',exact:true})).toBeVisible();
+  await expect(page.getByRole('link',{name:'2026-08-11，1 条记忆',exact:true})).toBeVisible();
+  for(const width of [375,768,1024,1440]) {
+    await page.setViewportSize({width,height:900});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({path:`test-results/calendar-fictional-${width}.png`,fullPage:true});
+  }
+  await page.getByRole('link',{name:'满月',exact:true}).click();
+  await expect(page).toHaveURL(/month=2026-09.*date=2026-09-10/);
+  const response=await page.request.get('/api/mobile/v1/calendar?month=2026-08&date=2026-08-11');
+  expect(response.status()).toBe(200);
+  expect((await response.json()).entries).toEqual(expect.arrayContaining([expect.objectContaining({title:'八月中旬的一个上午',date:'2026-08-11'})]));
+});
