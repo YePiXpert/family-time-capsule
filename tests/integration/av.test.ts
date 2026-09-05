@@ -185,3 +185,52 @@ describe("文字摄取（#011）", () => {
     expect(storage.read(detail.assets[0].storageKey).equals(variant)).toBe(true);
   });
 });
+
+
+describe("media HTTP byte ranges", () => {
+  async function readRange(range: string) {
+    const { randomUUID } = await import("node:crypto");
+    const { session } = await import("@/db/schema/auth");
+    const token = randomUUID();
+    db.insert(session).values({
+      id: randomUUID(), userId: adminUserId, token,
+      expiresAt: new Date(Date.now() + 3600000),
+    }).run();
+    const stored = await ingestMedia({
+      familyId, createdByUserId: adminUserId, kind: "audio",
+      filename: "range.wav", declaredMime: "audio/wav", buffer: WAV,
+    });
+    if (stored.status === "rejected") throw Error("ingest failed");
+    const assetId = stored.status === "stored" ? stored.asset.id : stored.existing.id;
+    const { GET } = await import("@/app/api/media/[assetId]/route");
+    return GET(new Request(`http://localhost/api/media/${assetId}`, {
+      headers: { authorization: `Bearer ${token}`, range },
+    }), { params: Promise.resolve({ assetId }) });
+  }
+
+  it.each([
+    ["bytes=-32", WAV.length - 32, WAV.length - 1],
+    ["bytes=-999999999999999999999999", 0, WAV.length - 1],
+    ["bytes=0-31", 0, 31],
+    ["bytes=32-", 32, WAV.length - 1],
+    ["bytes=32-999999999999999999999999", 32, WAV.length - 1],
+  ])("returns the exact bytes for %s", async (range, start, end) => {
+    const response = await readRange(String(range));
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe(`bytes ${start}-${end}/${WAV.length}`);
+    expect(response.headers.get("content-length")).toBe(String(Number(end) - Number(start) + 1));
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(WAV.subarray(Number(start), Number(end) + 1));
+  });
+
+  it.each(["bytes=-0", "bytes=40-20", `bytes=${WAV.length}-`, "bytes=999999999999999999999999-"])("rejects unsatisfiable %s", async (range) => {
+    const response = await readRange(range);
+    expect(response.status).toBe(416);
+    expect(response.headers.get("content-range")).toBe(`bytes */${WAV.length}`);
+  });
+
+  it.each(["bytes=-", "bytes=0-1,4-5", "invalid-bytes=0-1", "bytes=0-1junk"])("ignores unsupported or malformed %s", async (range) => {
+    const response = await readRange(range);
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(WAV);
+  });
+});

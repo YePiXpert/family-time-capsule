@@ -60,16 +60,22 @@ export async function GET(
 
   const absPath = storage.resolvePath(row.storageKey);
   const rangeHeader = request.headers.get("range");
-  const match = rangeHeader ? /bytes=(\d*)-(\d*)/.exec(rangeHeader) : null;
+  // Only handle one complete byte range. Ignore unsupported/malformed Range
+  // headers instead of interpreting one substring as the requested range.
+  const match = rangeHeader ? /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim()) : null;
 
-  if (match) {
-    const start = match[1] ? Number(match[1]) : 0;
-    const end = match[2] ? Math.min(Number(match[2]), row.bytes - 1) : row.bytes - 1;
+  if (match && (match[1] || match[2])) {
+    // BigInt also handles valid decimal ranges larger than Number.MAX_SAFE_INTEGER.
+    const size = BigInt(row.bytes);
+    const suffix = !match[1];
+    const first = BigInt(match[1] || "0");
+    const last = match[2] ? BigInt(match[2]) : size - BigInt(1);
+    const start = suffix ? (last >= size ? BigInt(0) : size - last) : first;
+    const end = suffix || last >= size ? size - BigInt(1) : last;
     if (
-      Number.isNaN(start) ||
-      Number.isNaN(end) ||
+      size === BigInt(0) ||
       start > end ||
-      start >= row.bytes
+      start >= size
     ) {
       return new Response("Range Not Satisfiable", {
         status: 416,
@@ -77,13 +83,13 @@ export async function GET(
       });
     }
     const stream = Readable.toWeb(
-      createReadStream(absPath, { start, end }),
+      createReadStream(absPath, { start: Number(start), end: Number(end) }),
     ) as ReadableStream<Uint8Array>;
     return new Response(stream, {
       status: 206,
       headers: {
         ...baseHeaders,
-        "Content-Length": String(end - start + 1),
+        "Content-Length": String(end - start + BigInt(1)),
         "Content-Range": `bytes ${start}-${end}/${row.bytes}`,
         "Accept-Ranges": "bytes",
       },
