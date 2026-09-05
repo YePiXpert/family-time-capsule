@@ -5,6 +5,7 @@ import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
 
 const nativeEntries = [
+  ["家庭书架", "Books", "选材、阅读并调整可持续编辑的作品"],
   ["家人", "People", "人物主页、共同记忆与独立讲述"],
   ["故事", "Stories", "阅读、编辑和发布家庭故事"],
   ["口述史", "Requests", "发起问题并查看回答状态"],
@@ -42,7 +43,7 @@ export function MoreScreen() {
     <Text style={sharedStyles.eyebrow}>仅在 Web 完成的高级操作</Text>
     {webEntries.map(([label, path, hint]) => <Pressable key={label} onPress={() => void openWeb(path)} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>{label}</Text><Text style={styles.hint}>{hint}</Text></View><Text style={styles.arrow}>›</Text></Pressable>)}
     <Pressable onPress={() => navigation.navigate("Settings")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>设置</Text><Text style={styles.hint}>服务器、同步与本机数据</Text></View><Text style={styles.arrow}>›</Text></Pressable>
-    <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>家人、故事、胶囊、口述史、投递箱和导入会话均以原生页面为日常主路径。只有恢复、远程备份、成书排版、账号安全和复杂审计继续使用 Web。</Text></View>
+    <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>家人、故事、胶囊、口述史、投递箱和导入会话均以原生页面为日常主路径。只有恢复、远程备份、精细成书排版、账号安全和复杂审计继续使用 Web。</Text></View>
   </ScrollView>;
 }
 

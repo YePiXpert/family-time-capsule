@@ -1,3 +1,4 @@
+import { BookShelf } from "@/components/book-editor";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
@@ -32,10 +33,12 @@ export default async function BooksPage() {
     <main className="page-container max-w-5xl">
       <PageHeader
         eyebrow="Keep & share"
-        title="书籍与备份"
-        description="故事和年度回顾可以做成离线阅读的 PDF 或 EPUB；完整家庭备份则用于迁移与灾难恢复，两者各有用途。"
+        title="成长年册与书架"
+        description="从记忆、相册和故事中选材，保存每一次人工编辑，慢慢做成一本属于家人的书。"
       />
 
+      <BookShelf />
+      <details className="mt-10"><summary className="min-h-11 cursor-pointer py-2">已有故事与年份的快速导出</summary>
       <section className="mt-10" aria-label="年度回顾成书">
         <SectionHeader
           title="年度回顾"
@@ -95,6 +98,7 @@ export default async function BooksPage() {
         )}
       </section>
 
+      </details>
       {canExport ? (
         <section className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6" aria-label="完整家庭备份">
           <SectionHeader title="完整家庭备份" description="用于迁移和灾难恢复，包含原件与可验证的档案数据" />

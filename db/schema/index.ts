@@ -24,3 +24,5 @@ export * as reviewSchema from "./review";
 export * as collectionSchema from "./collection";
 
 export * from "./media-job";
+
+export * from "./book";

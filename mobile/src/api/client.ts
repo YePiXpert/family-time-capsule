@@ -867,3 +867,27 @@ export async function fetchMediaDerivations(credentials: Credentials, assetId: s
   if(transcript!==null && (!isRecord(transcript)||!isString(transcript.text,2_000_000)||typeof transcript.edited!=='boolean'||!Array.isArray(transcript.segments)||!transcript.segments.every(s=>isRecord(s)&&typeof s.startSeconds==='number'&&Number.isFinite(s.startSeconds)&&s.startSeconds>=0&&typeof s.endSeconds==='number'&&Number.isFinite(s.endSeconds)&&s.endSeconds>s.startSeconds&&isString(s.text,10000)))) throw new ApiError('转录信息无效。',502);
   return body as unknown as {jobs: import('../media/types').MediaDerivation[]; transcript: import('../media/types').ReaderTranscript|null};
 }
+
+export async function fetchBooks(credentials: Credentials, deleted=false,cursor=''): Promise<import('../books/types').BookPage> {
+  const value=await requestMobileJson(credentials,`/api/books/projects?deleted=${deleted?'1':'0'}&cursor=${encodeURIComponent(cursor)}`);
+  if(!isRecord(value)||!Array.isArray(value.entries)||!hasCursor(value))throw new Error('书架响应无效');
+  return value as import('../books/types').BookPage;
+}
+export async function fetchBook(credentials: Credentials,id:string):Promise<import('../books/types').BookDetail>{
+  const value=await requestMobileJson(credentials,`/api/books/projects/${encodeURIComponent(id)}`);
+  if(!isRecord(value)||!Array.isArray(value.chapters)||!Array.isArray(value.blocks)||!Array.isArray(value.sources)||!isRecord(value.sourceStates))throw new Error('作品响应无效');
+  return value as import('../books/types').BookDetail;
+}
+export async function createNativeBook(credentials: Credentials,title:string,template:import('../books/types').BookTemplate,audience:import('../books/types').BookAudience):Promise<string>{
+  const value=await requestMobileJson(credentials,'/api/books/projects',{method:'POST',body:JSON.stringify({title,template,audience})});
+  if(!isRecord(value)||!isString(value.id,128))throw new Error('作品响应无效');return value.id;
+}
+export async function mutateBook(credentials:Credentials,id:string,input:Record<string,unknown>):Promise<import('../books/types').BookDetail>{
+  try {return await requestMobileJson(credentials,`/api/books/projects/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(input)}) as import('../books/types').BookDetail;}
+  catch(e){if(e instanceof ApiError&&e.status===409)throw new ApiError('其他家人已保存修改。你的输入仍保留，请复制需要的文字，再重新载入核对。',409);throw e;}
+}
+export type BookMaterials={entries:{id:string;title:string;kind:'memory'|'collection'|'story'}[];nextCursor:string|null};
+export async function fetchBookMaterials(credentials:Credentials,kind:string,audience:string,cursor=''):Promise<BookMaterials>{
+  const value=await requestMobileJson(credentials,`/api/books/projects/materials?${new URLSearchParams({kind,audience,cursor})}`);
+  if(!isRecord(value)||!Array.isArray(value.entries)||!hasCursor(value))throw new Error('选材响应无效');return value as BookMaterials;
+}

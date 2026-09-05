@@ -25,6 +25,8 @@ export type RootStackParamList = {
   ImportSessions: undefined;
   ImportSessionDetail: { id: string };
   WeeklyReview: undefined;
+  Books: undefined;
+  BookDetail: {id:string};
   Calendar: undefined;
   Collections: {eventIds?:string[]} | undefined;
   CollectionDetail: {id:string};

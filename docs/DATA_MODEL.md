@@ -798,3 +798,17 @@ manual/time 排序、revision、updatedAt 和 deletedAt。`collection_section` �
 queued/running/succeeded/failed、输出 Asset FK、错误码和全局 lease。处理前后重读实时身份与
 来源可见性。输出仍是现有 Asset 衍生物；沿用档案只导出原件、恢复后按需重建衍生物的语义，
 不把可再生输出混成人工编辑。MediaJob/lease 不导出恢复。
+
+## 1.2 可编辑年册（migration 0038）
+
+BookProject 独立于 Story/Collection，保存标题、副标题、模板、读者范围、A4/A5、日期范围、
+封面原件 FK、ownerPersonId、状态、draftKey、revision 与删除时间。私人作品按当前人物所有权
+隔离，家庭版按家庭可见来源选材。读者范围不能直接切换，以免把私人整理直接发布给家庭。
+BookChapter 为可排序浅层章节；BookBlock 保存文字/图片/双图/拼图/引文/日期与校验后的
+layoutJson（分页、完整显示/裁切、四个焦点）。BookSourceRef 使用 MemoryEvent、Asset、
+Contribution、Story、Collection 外键；BookBlockSource 保存块内来源顺序。
+
+修改通过 revision 原子保存整图，最多 50 章、500 块、2000 来源、50 万文本字符。
+BookRevision 保存明确操作产生的不可变快照，自动保存只推进当前编辑。删除当前块不删除
+SourceRef，历史版本仍可校验来源；永久清除来源后 FK 置空，历史阅读按持久 FK 墓碑撤下内容。
+来源漂移只提示，不覆盖人工文字。缺失、低清、空块/空章、长文给出编辑提醒。

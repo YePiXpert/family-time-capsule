@@ -76,3 +76,23 @@ Android/iOS 安装及含唯一资料的旧包升级、系统分享 Intent/appex/
 
 BookProject、可搜索 PDF/EPUB 出版、回顾作品、原生主动离线收藏及最终发布门禁仍待完成。
 这些结果不代表 1.2 已发布，也不代填 Android/iOS 真机、旧包升级及系统分享验收。
+
+## 可编辑年册切片（本地门禁通过，尚非发布）
+
+- 权限 SQL 关联修复 `0779a30`；其 CI `33938913770` 发现媒体 E2E 对异步列表/上传顺序
+  的错误假设。修复 `497e88c` 后 [CI 33939884902](https://github.com/YePiXpert/family-time-capsule/actions/runs/33939884902)
+  三 job 全绿；未放宽断言或增加重试次数。
+- migration 0038：BookProject/Chapter/Block/SourceRef/BlockSource/Revision；三模板、真实选材、
+  当前自动保存/明确版本快照、缺失/低清/空页/长文提醒、源变化提示、私人/家庭读者隔离。
+- Web `/books`、`/books/[id]`、`/books/[id]/versions/[revision]`；原生更多 → Books/BookDetail，
+  实际阅读、选材和基础编辑。原生精细焦点排版仍在 Web；主动离线收藏待 M7。
+- 六文件年册模块纳入 portable manifest/verifier/restore，当前 metadata 文件数 34。
+  独立目录恢复/二次导出保持来源、顺序、手工文字、焦点、历史版本与原件 SHA；
+  坏关系/缺文件在写入前拒绝。所引用的删除记录保留墓碑，未引用的回收站内容沿用既有语义。
+- 根 lint/typecheck/test/build/build:ops 通过：83 files / 570 tests。
+- Production 全套 **44 passed**，disaster roundtrip **6 passed**。年册生产交互覆盖 32 页虚构
+  内容、真实选材、排序、保存重开、冲突保留及 375/768/1440px；截图已检查，无真实家人照片。
+  这不是 PDF 分页或印刷质量验收，出版门禁留待 M5。
+- Mobile test/typecheck/lint 通过：15 files / 66 tests；新年册组件交互 3 passed。
+  Doctor 21/21；Android/iOS Expo export 各约 3.6 MB Hermes，输出在独立临时目录。
+- 本切片主干提交与 CI 待 push 后核对；可搜索 PDF/EPUB、回顾作品、原生离线及最终发布仍待完成。

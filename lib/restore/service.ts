@@ -1,3 +1,5 @@
+import { BOOK_FILES } from "@/lib/books/projects/portable.mjs";
+import { parseBookArchive, restoreBookArchive } from "@/lib/books/projects/archive";
 import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
 import { parseCollectionArchive, restoreCollectionArchive } from "@/lib/collections/archive";
 import "server-only";
@@ -138,7 +140,7 @@ type Manifest = {
   appVersion?: string;
   familyId: string;
   fileCount: number;
-  modules?: { collections?: number };
+  modules?: { collections?: number; bookProjects?: number };
   assetCount: number;
   assets: ManifestAsset[];
 };
@@ -305,6 +307,7 @@ type ContributionArchiveRow = {
   editedText?: string | null;
   audioAssetId?: string | null;
   visibility?: string;
+  deletedAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -439,6 +442,9 @@ export type RestoreReport = {
   contributionRequests: number;
   portalSubmissions: number;
   reviewPeriods: number;
+  bookProjects: number;
+  bookBlocks: number;
+  bookRevisions: number;
   collections: number;
   collectionSections: number;
   collectionItems: number;
@@ -937,6 +943,11 @@ async function loadAndVerifyZip(
   const hasCollections = collectionPresence.every(Boolean);
   requireCondition(hasCollections || collectionPresence.every(p => !p), "missing_json", "相册关系三件套不完整");
   requireCondition(manifest.modules?.collections === undefined || (manifest.modules.collections === 1 && hasCollections), "missing_json", "声明的相册模块缺失或不支持");
+  const bookPresence = BOOK_FILES.map(name => archive.has(`${EXPORT_ROOT_DIR}/${name}`));
+  const hasBooks = bookPresence.every(Boolean);
+  requireCondition(hasBooks || bookPresence.every(p=>!p), "missing_json", "年册关系文件不完整");
+  requireCondition(manifest.modules?.bookProjects === undefined || (manifest.modules.bookProjects === 1 && hasBooks), "missing_json", "声明的年册模块缺失或不支持");
+  const bookRaw = hasBooks ? await Promise.all(BOOK_FILES.map(name=>readJson<unknown>(name))) : [[],[],[],[],[],[]];
   const collectionRaw = hasCollections ? await Promise.all(COLLECTION_FILES.map(name => readJson<unknown>(name))) : [[],[],[]];
 
   const hasInboxFiles = Boolean(inboxItemsFile) && Boolean(inboxItemAssetsFile);
@@ -950,7 +961,7 @@ async function loadAndVerifyZip(
     (factSourcesFile ? 1 : 0) +
     (hasStoryFiles ? 3 : 0) +
     (hasDialogueFiles ? 2 : 0) +
-    (hasDurable11Files ? durable11Names.length : 0) + (hasCollections ? COLLECTION_FILES.length : 0);
+    (hasDurable11Files ? durable11Names.length : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
   requireCondition(
     manifest.fileCount === expectedFileCount,
     hasInboxFiles || factSourcesFile || hasStoryFiles || hasDialogueFiles || hasDurable11Files
@@ -1415,6 +1426,7 @@ async function loadAndVerifyZip(
   );
   const contributionIds = new Set<string>();
   for (const c of contributionsJson) {
+    requireCondition(isOptionalArchiveDate(c.deletedAt), "bad_json", "讲述删除时间无效");
     requireCondition(isRecord(c), "bad_json", "contribution 必须是对象");
     requireCondition(
       typeof c.id === "string" &&
@@ -1702,6 +1714,7 @@ async function loadAndVerifyZip(
     periodEnd: string;
     title: string;
     status: string;
+    deletedAt: string | null;
     editedAt: string | null;
     publishedAt: string | null;
     publishedByUserId: string | null;
@@ -1745,7 +1758,7 @@ async function loadAndVerifyZip(
       `story ${st.id} 的可空字段非法`,
     );
     requireCondition(
-      isOptionalArchiveDate(st.createdAt) && isOptionalArchiveDate(st.updatedAt),
+      isOptionalArchiveDate(st.deletedAt) && isOptionalArchiveDate(st.createdAt) && isOptionalArchiveDate(st.updatedAt),
       "bad_json",
       `story ${st.id} 的时间字段非法`,
     );
@@ -1756,6 +1769,7 @@ async function loadAndVerifyZip(
       periodEnd: st.periodEnd as string,
       title: st.title as string,
       status: st.status as string,
+      deletedAt: (st.deletedAt ?? null) as string | null,
       editedAt: (st.editedAt ?? null) as string | null,
       publishedAt: (st.publishedAt ?? null) as string | null,
       publishedByUserId: (st.publishedByUserId ?? null) as string | null,
@@ -2387,7 +2401,12 @@ async function loadAndVerifyZip(
   try { collectionGraph = parseCollectionArchive(collectionRaw[0], collectionRaw[1], collectionRaw[2], manifest.familyId, new Set(memoriesJson.map(m => m.id)), assetIds); }
   catch { throw new RestoreError("bad_refs", "相册编辑关系图无效"); }
 
+  let bookGraph;
+  try { bookGraph = parseBookArchive(bookRaw, manifest.familyId, { memory: new Set(memoriesJson.map(m=>m.id)), asset: assetIds, person: new Set(peopleJson.map(p=>p.id)), contribution: new Set(contributionsJson.map(c=>c.id)), story: storyIds, collection: new Set(collectionGraph.collections.map(c=>c.id)) }); }
+  catch { throw new RestoreError("bad_refs", "年册编辑与历史版本关系图无效"); }
+
   return {
+    bookGraph,
     collectionGraph,
     archive,
     manifest,
@@ -2455,6 +2474,7 @@ async function restoreFromArchive(
   const db = getDb();
   const data = await loadAndVerifyZip(archive, archiveBytes, limits);
   const {
+    bookGraph,
     collectionGraph,
     familyJson,
     peopleJson,
@@ -2870,6 +2890,7 @@ async function restoreFromArchive(
               visibility: c.visibility ?? "family",
               createdAt: parseDate(c.createdAt) ?? now,
               updatedAt: parseDate(c.updatedAt) ?? parseDate(c.createdAt) ?? now,
+              deletedAt: parseDate(c.deletedAt),
             })),
           )
           .run();
@@ -2942,6 +2963,7 @@ async function restoreFromArchive(
               periodEnd: new Date(st.periodEnd),
               title: st.title,
               status: st.status,
+              deletedAt: parseDate(st.deletedAt),
               editedAt: st.editedAt ? new Date(st.editedAt) : null,
               publishedAt: st.publishedAt ? new Date(st.publishedAt) : null,
               // Archive User ids are never portable. Attribute a restored
@@ -3020,6 +3042,7 @@ async function restoreFromArchive(
       }
 
       restoreCollectionArchive(tx, collectionGraph, familyId);
+      restoreBookArchive(tx, bookGraph, familyId);
 
       if (capsulesJson.length > 0) {
         tx.insert(capsuleTable)
@@ -3343,6 +3366,9 @@ async function restoreFromArchive(
     contributionRequests: contributionRequestsJson.length,
     portalSubmissions: contributionPortalSubmissionsJson.length,
     reviewPeriods: reviewPeriodsJson.length,
+    bookProjects: bookGraph.projects.length,
+    bookBlocks: bookGraph.blocks.length,
+    bookRevisions: bookGraph.revisions.length,
     collections: collectionGraph.collections.length,
     collectionSections: collectionGraph.sections.length,
     collectionItems: collectionGraph.items.length,
@@ -3374,6 +3400,9 @@ async function restoreFromArchive(
     contributionRequests: contributionRequestsJson.length,
     portalSubmissions: contributionPortalSubmissionsJson.length,
     reviewPeriods: reviewPeriodsJson.length,
+    bookProjects: bookGraph.projects.length,
+    bookBlocks: bookGraph.blocks.length,
+    bookRevisions: bookGraph.revisions.length,
     collections: collectionGraph.collections.length,
     collectionSections: collectionGraph.sections.length,
     collectionItems: collectionGraph.items.length,

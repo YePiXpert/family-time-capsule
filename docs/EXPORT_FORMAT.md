@@ -189,10 +189,23 @@ Contribution 或讲述者。合并到同一事件的多条文字也各自保留�
 ## 1.2 相册模块（增量）
 
 新增 `collections.json`、`collection-sections.json`、`collection-items.json`，manifest 声明
-`modules.collections=1`。当前非媒体文件数为 28（原 25 + 相册 3）；三份文件始终成组存在，
+`modules.collections=1`。相册切片非媒体文件数为 28（原 25 + 相册 3；年册模块见下节）；三份文件始终成组存在，
 数组为空也保留。旧 1.1 档没有模块声明且三文件全无时，恢复为空相册。
 
 完整保存 Collection 的类型、标题、说明、封面、日期范围、排序方式、revision、时间戳/墓碑，
 Section 的名称/顺序，以及 Item 的事件 FK、小节 FK、手写说明/顺序。包含被删除相册的编辑。
 被相册引用的软删除事件连同 `deletedAt` 进入完整备份，恢复后仍不可日常阅读；不会把丢失来源
 静默变成新的已确认记忆。不存在认证 User、登录/分享 token 或临时任务。
+
+## 1.2 BookProject 持久编辑模块
+
+新增六文件：`book-projects.json`、`book-chapters.json`、`book-blocks.json`、
+`book-source-refs.json`、`book-block-sources.json`、`book-revisions.json`。
+manifest 声明 `modules.bookProjects=1`，当前非媒体文件共 **34**（原 28 + 年册 6）。
+文件组始终完整，空家庭也导出空数组。原件、排序、说明、layoutJson、来源与历史快照保留；
+不导出渲染/转换任务、登录 token、设备授权或本机下载缓存。
+
+被年册来源引用的软删除记忆/讲述/故事，以及故事引用的讲述与事实所属事件，会以删除时间
+一并导出，以闭合关系图。未被耐久编辑引用的回收站内容沿用既有排除语义。
+永久清除的来源以 SourceRef 的空 FK 为墓碑；历史 JSON 可保留当时的来源标识，但阅读以
+持久 FK 为准。每个历史来源必须仍对应同一作品的 SourceRef，不能凭空放入缺失关系。

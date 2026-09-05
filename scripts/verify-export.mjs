@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { BOOK_FILES, validateBookArchive } from "../lib/books/projects/portable.mjs";
 import { COLLECTION_FILES, validateCollectionArchive } from "../lib/collections/portable.mjs";
 // 校验 family-time-capsule 导出 ZIP（docs/RESTORE.md §1）：
 //   npm run verify:export <zip路径>
@@ -113,11 +114,16 @@ const hasCollections = collectionPresence.every(Boolean);
 if (!hasCollections && collectionPresence.some(Boolean)) fail("相册关系三件套不完整");
 if (manifest.modules?.collections !== undefined && (manifest.modules.collections !== 1 || !hasCollections)) fail("声明的相册模块缺失或不支持");
 const collectionGraph = hasCollections ? await Promise.all(COLLECTION_FILES.map(name => readJsonAsync(name))) : [[],[],[]];
+const bookPresence = await Promise.all(BOOK_FILES.map(name=>zipEntryExists(name)));
+const hasBooks = bookPresence.every(Boolean);
+if(!hasBooks && bookPresence.some(Boolean)) fail("年册关系文件不完整");
+if(manifest.modules?.bookProjects !== undefined && (manifest.modules.bookProjects !== 1 || !hasBooks)) fail("声明的年册模块缺失或不支持");
+const bookGraph = hasBooks ? await Promise.all(BOOK_FILES.map(name=>readJsonAsync(name))) : [[],[],[],[],[],[]];
 const expectedNonAssetCount =
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
   (hasStories ? 3 : 0) +
   (hasDialogue ? 2 : 0) +
-  (importSessions ? 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0);
+  (importSessions ? 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
   fail("inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失");
 }
@@ -136,6 +142,8 @@ const eventIds = new Set((memories ?? []).map((m) => m.id));
 try { validateCollectionArchive(...collectionGraph, manifest.familyId, eventIds, assetIds); ok("相册关系图校验通过"); }
 catch { fail("相册编辑关系图无效"); }
 
+try { validateBookArchive(bookGraph, manifest.familyId, { memory:eventIds, asset:assetIds, person:personIds, contribution:new Set((contributions??[]).map(c=>c.id)), story:new Set(((await readJsonAsync("stories.json"))??[]).map(s=>s.id)), collection:new Set(collectionGraph[0].map(c=>c.id)) }); ok("年册编辑与历史版本关系图校验通过"); }
+catch { fail("年册编辑与历史版本关系图无效"); }
 const inboxEntry = zip.file(`${ROOT}/inbox-items.json`);
 const inboxItemIds = new Set(
   inboxEntry

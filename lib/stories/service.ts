@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { isNull, and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { isNull, or, and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
@@ -841,7 +841,7 @@ export function isStoryDurable(row: StoryRow): boolean {
 }
 
 /** 供导出/重建使用：收集 durable 故事及其段落与来源。 */
-export function collectDurableStories(familyId: string): {
+export function collectDurableStories(familyId: string, retainedIds: string[] = []): {
   stories: StoryRow[];
   paragraphs: StoryParagraphRow[];
   sources: StorySourceRow[];
@@ -850,9 +850,9 @@ export function collectDurableStories(familyId: string): {
   const stories = db
     .select()
     .from(story)
-    .where(and(eq(story.familyId, familyId), isNull(story.deletedAt)))
+    .where(and(eq(story.familyId, familyId),or(isNull(story.deletedAt),inArray(story.id,retainedIds))))
     .all()
-    .filter(isStoryDurable);
+    .filter(s => isStoryDurable(s) || retainedIds.includes(s.id));
   if (stories.length === 0) return { stories: [], paragraphs: [], sources: [] };
   const paragraphs = db
     .select()

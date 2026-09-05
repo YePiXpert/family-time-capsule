@@ -267,6 +267,13 @@
       "when": 1788570935068,
       "tag": "0037_media_derivations",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1788573088610,
+      "tag": "0038_book_projects",
+      "breakpoints": true
     }
   ]
 }

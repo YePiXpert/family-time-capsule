@@ -1078,7 +1078,7 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       .map(([name]) => name);
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 28);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 34);
 
     // M4 durable：已发布故事 + 段落 + 来源（含逐字引文）往返
     const restoredStories = JSON.parse(

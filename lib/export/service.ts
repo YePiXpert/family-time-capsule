@@ -1,4 +1,6 @@
 import "server-only";
+import { collectBookArchive, collectBookSourceClosure } from "@/lib/books/projects/archive";
+import { BOOK_FILES } from "@/lib/books/projects/portable.mjs";
 import { collectCollectionArchive } from "@/lib/collections/archive";
 import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
 
@@ -64,7 +66,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 25 + COLLECTION_FILES.length;
+export const EXPORT_NON_ASSET_FILE_COUNT = 25 + COLLECTION_FILES.length + BOOK_FILES.length;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -136,6 +138,8 @@ export async function buildFamilyExport(
 ): Promise<ExportResult> {
   const db = getDb();
   const collectionGraph = collectCollectionArchive(familyId);
+  const bookGraph = collectBookArchive(familyId);
+  const bookClosure = collectBookSourceClosure(familyId);
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
@@ -169,10 +173,10 @@ export async function buildFamilyExport(
       .where(
         and(
           eq(memoryEventTable.familyId, familyId),
-          or(isNull(memoryEventTable.deletedAt), sql`exists (select 1 from collection_item ci where ci.memory_event_id = ${memoryEventTable.id} and ci.family_id = ${familyId})`),
+          or(isNull(memoryEventTable.deletedAt), inArray(memoryEventTable.id,bookClosure.events), sql`exists (select 1 from collection_item ci where ci.memory_event_id=${memoryEventTable.id} and ci.family_id=${familyId})`),
         ),
       ),
-    listCompleteFamilyContributionsForDisasterExport(db, familyId),
+    listCompleteFamilyContributionsForDisasterExport(db, familyId, bookClosure.contributions),
     listFamilyFacts(db, familyId),
     db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
     db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
@@ -392,7 +396,7 @@ export async function buildFamilyExport(
 
   const manifest = {
     exportVersion: EXPORT_VERSION,
-    modules: { collections: 1 },
+    modules: { collections: 1, bookProjects: 1 },
     appVersion: getAppVersion(),
     exportedAt: new Date().toISOString(),
     familyId,
@@ -526,6 +530,7 @@ export async function buildFamilyExport(
       completedAt: iso(submission.completedAt),
       createdAt: iso(submission.createdAt),
     })));
+    for (const [index, rows] of Object.values(bookGraph).entries()) json(BOOK_FILES[index], rows);
     json("collections.json", collectionGraph.collections);
     json("collection-sections.json", collectionGraph.sections);
     json("collection-items.json", collectionGraph.items);
@@ -562,6 +567,7 @@ export async function buildFamilyExport(
       visibility: c.visibility,
       createdAt: iso(c.createdAt),
       updatedAt: iso(c.updatedAt),
+      deletedAt: iso(c.deletedAt),
     })));
     json("facts.json", facts.map((f) => ({
       id: f.id,
@@ -581,7 +587,7 @@ export async function buildFamilyExport(
       endMs: s.endMs,
       createdAt: iso(s.createdAt),
     })));
-    const storyBundle = collectDurableStories(familyId);
+    const storyBundle = collectDurableStories(familyId, bookClosure.stories);
     json("stories.json", storyBundle.stories.map((st) => ({
       id: st.id,
       kind: st.kind,
@@ -593,6 +599,7 @@ export async function buildFamilyExport(
       publishedAt: st.publishedAt ? iso(st.publishedAt) : null,
       createdAt: iso(st.createdAt),
       updatedAt: iso(st.updatedAt),
+      deletedAt: iso(st.deletedAt),
     })));
     json("story-paragraphs.json", storyBundle.paragraphs.map((pp) => ({
       id: pp.id,
@@ -692,6 +699,7 @@ export async function buildFamilyExport(
 async function listCompleteFamilyContributionsForDisasterExport(
   db: ReturnType<typeof getDb>,
   familyId: string,
+  retainedIds: string[] = [],
 ) {
   return db
     .select({ contribution: contributionTable })
@@ -700,7 +708,7 @@ async function listCompleteFamilyContributionsForDisasterExport(
     .where(
       and(
         eq(memoryEventTable.familyId, familyId),
-        isNull(contributionTable.deletedAt),
+        or(isNull(contributionTable.deletedAt),inArray(contributionTable.id,retainedIds)),
       ),
     )
     .then((rows) => rows.map((r) => r.contribution));

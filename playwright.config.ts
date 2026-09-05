@@ -10,6 +10,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 
 const specs = [
+  { name: "book-projects", files: ["book-projects.spec.ts"], port: 3127 },
   { name: "auth", files: ["auth.spec.ts", "pwa.spec.ts"], port: 3110 },
   { name: "upload", files: ["upload.spec.ts"], port: 3111 },
   { name: "av", files: ["av.spec.ts"], port: 3112 },
