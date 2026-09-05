@@ -46,6 +46,7 @@ export type BookSourceState = {
   label: string;
   occurredAt: string | null;
   authoredAt?: string | null;
+  capturedAt?: string | null;
   ageLabel: string | null;
   author: string | null;
   asset: {

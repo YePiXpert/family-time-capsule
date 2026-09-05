@@ -1,5 +1,5 @@
 import type { BookDetail } from "@/mobile/src/books/types";
-export const BOOK_TEMPLATE_VERSION = "1.2-layout-2";
+export const BOOK_TEMPLATE_VERSION = "1.2-layout-3";
 export const BOOK_RENDER_LIMITS = {
   pages: 200,
   outputBytes: 256 * 1024 * 1024,
@@ -13,6 +13,15 @@ export type RenderInput = {
   book: BookDetail;
   format: BookRenderFormat;
   fontPath: string;
+  media?: {
+    id: string;
+    path: string;
+    bytes: number;
+    type: string;
+    mimeType: string;
+    filename: string;
+    label: string;
+  }[];
   images: Record<
     string,
     { path: string; bytes: number; width: number | null; height: number | null }

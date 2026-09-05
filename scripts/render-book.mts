@@ -50,7 +50,7 @@ try {
     const pages =
       input.format === "pdf"
         ? await renderBookPdf(input, outputPath, progress)
-        : input.format === "epub"
+        : (input.format === "epub" || input.format === "reading_zip")
           ? await renderBookEpub(input, outputPath, progress)
           : (() => {
               throw new Error("unsupported_format");

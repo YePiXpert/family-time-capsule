@@ -1,4 +1,4 @@
-// @ts-expect-error Node types are supplied by Vitest at runtime, not the Expo app bundle.
+/// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { normalizeNativeShareManifest } from "../src/native/intake-core";

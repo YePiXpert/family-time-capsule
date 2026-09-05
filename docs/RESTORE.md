@@ -235,3 +235,7 @@ migration 0039 的 BookRenderJob/BookRenderLease 属于临时处理状态，不�
 ReviewPeriod/人工精选沿用 1.1 模块；BookProject 的 draftKey/status 及六文件编辑图一起恢复。
 恢复后的相同日期范围、读者和模板继续返回同一 active 草稿。独立目录测试已比较恢复前后
 编辑图、完成状态和精选数量，并执行二次导出；临时排版任务仍不恢复。
+
+1.2 原生离线阅读缓存及用户阅读/播放进度属于设备缓存，不属于家庭编辑成果；不进入完整
+归档恢复。Collection/BookProject 的人工说明、顺序、来源、版式和版本仍按既有九个新增
+元数据文件完整恢复；阅读 ZIP 仅为精选出版物，不能输入恢复工具代替 portable archive。

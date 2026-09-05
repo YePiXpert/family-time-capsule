@@ -1,9 +1,13 @@
 import { ZipArchive } from "archiver";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
 import type { BookBlock } from "@/mobile/src/books/types";
 import { renderBookImage } from "./images";
-import type { RenderInput, RenderProgress } from "./types";
+import {
+  BOOK_RENDER_LIMITS,
+  type RenderInput,
+  type RenderProgress,
+} from "./types";
 /** XML/HTML text is escaped, never interpreted as a template or script. */
 export function escapeBookText(value: string) {
   return value
@@ -23,6 +27,8 @@ export async function renderBookEpub(
   outputPath: string,
   progress: RenderProgress,
 ): Promise<number> {
+  const reading = input.format === "reading_zip",
+    html: string[] = [];
   const book = input.book,
     zip = new ZipArchive({ zlib: { level: 6 } }),
     output = createWriteStream(outputPath, { flags: "wx" }),
@@ -51,25 +57,33 @@ export async function renderBookEpub(
       block,
       slot,
     );
-    zip.append(bytes, { name: `OEBPS/${href}` });
+    zip.append(bytes, { name: `${reading ? "" : "OEBPS/"}${href}` });
     assets.push({ id, href, type: "image/jpeg" });
     return `<figure><img src="${href}" alt="${escapeBookText(caption || "作品照片")}"/>${caption ? `<figcaption>${escapeBookText(caption)}</figcaption>` : ""}</figure>`;
   }
   try {
-    zip.append("application/epub+zip", { name: "mimetype", store: true });
-    append(
-      "META-INF/container.xml",
-      '<?xml version="1.0" encoding="UTF-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
-    );
-    append("OEBPS/style.css", style);
+    if (!reading) {
+      zip.append("application/epub+zip", { name: "mimetype", store: true });
+      append(
+        "META-INF/container.xml",
+        '<?xml version="1.0" encoding="UTF-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
+      );
+    }
+    append(reading ? "style.css" : "OEBPS/style.css", style);
     let cover = `<section class="cover"><p>${book.audience === "family" ? "家庭可读版" : "私人阅读版"}</p><h1>${escapeBookText(book.title)}</h1><p>${escapeBookText(book.subtitle)}</p><p>${escapeBookText([book.startDate, book.endDate].filter(Boolean).join(" — "))}</p>`;
     if (book.coverAssetId) cover += await image(book.coverAssetId, "封面照片");
     cover +=
       '<p class="notice">音视频请在作品或精选阅读包中播放。本 EPUB 不是完整可恢复备份。</p></section>';
-    append("OEBPS/cover.xhtml", xhtml(book.title, cover));
+    if (reading) {
+      cover = cover.replace(
+        "音视频请在作品或精选阅读包中播放。本 EPUB 不是完整可恢复备份。",
+        "精选阅读包：包含本次允许导出的内容，接收者可以保存或转发，下载副本无法远程收回。这不是完整可恢复备份。音视频能否播放取决于本机编解码器，也可用本地播放器打开。",
+      );
+      html.push(cover);
+    } else append("OEBPS/cover.xhtml", xhtml(book.title, cover));
     spine.push({ id: "cover", href: "cover.xhtml", title: "封面" });
     for (const [index, chapter] of book.chapters.entries()) {
-      let body = `<section class="chapter ${book.template}"><h1>${escapeBookText(chapter.title)}</h1>`;
+      let body = `<section id="chapter-${index}" class="chapter ${book.template}"><h1>${escapeBookText(chapter.title)}</h1>`;
       const blocks = book.blocks.filter((b) => b.chapterId === chapter.id);
       if (!blocks.length) body += "<p>本章尚未选入内容。</p>";
       for (const block of blocks) {
@@ -119,8 +133,11 @@ export async function renderBookEpub(
         if (block.kind === "quote" && author)
           body += `<p>—— ${escapeBookText(author)}</p>`;
         if (block.kind === "quote") {
-          const authored = block.sourceIds.map(id => book.sourceStates[id]?.authoredAt).find(Boolean);
-          if (authored) body += `<p class="source">讲述于 ${escapeBookText(new Intl.DateTimeFormat("zh-CN", {timeZone: book.timezone, dateStyle: "long"}).format(new Date(authored)))}</p>`;
+          const authored = block.sourceIds
+            .map((id) => book.sourceStates[id]?.authoredAt)
+            .find(Boolean);
+          if (authored)
+            body += `<p class="source">讲述于 ${escapeBookText(new Intl.DateTimeFormat("zh-CN", { timeZone: book.timezone, dateStyle: "long" }).format(new Date(authored)))}</p>`;
         }
         if (block.caption)
           body += `<p class="source">${escapeBookText(block.caption)}</p>`;
@@ -137,12 +154,72 @@ export async function renderBookEpub(
       body += "</section>";
       const id = `chapter-${index}`,
         href = `${id}.xhtml`;
-      append(`OEBPS/${href}`, xhtml(chapter.title, body));
+      if (reading) html.push(body);
+      else append(`OEBPS/${href}`, xhtml(chapter.title, body));
       spine.push({ id, href, title: chapter.title });
       progress(
         10 + Math.floor(((index + 1) / Math.max(1, book.chapters.length)) * 80),
         index + 1,
       );
+    }
+    if (reading) {
+      const media = input.media ?? [];
+      if (
+        media.length > 500 ||
+        media.reduce((sum, m) => sum + m.bytes, 0) >
+          BOOK_RENDER_LIMITS.outputBytes - 16 * 1024 * 1024
+      )
+        throw new Error("output_limit_exceeded");
+      const extensions: Record<string, string> = {
+        "video/mp4": "mp4",
+        "video/quicktime": "mov",
+        "video/webm": "webm",
+        "audio/mpeg": "mp3",
+        "audio/mp4": "m4a",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/ogg": "ogg",
+        "audio/webm": "webm",
+        "application/pdf": "pdf",
+        "text/plain": "txt",
+        "text/markdown": "md",
+        "application/rtf": "rtf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+          "docx",
+      };
+      if (media.length)
+        html.push(
+          '<section class="chapter"><h2>随册媒体与文档</h2><p>仅包括当前读者允许阅读的来源媒体。播放器按需加载。</p>',
+        );
+      for (const [index, m] of media.entries()) {
+        const href = `media/attachment-${index}.${extensions[m.mimeType] ?? "bin"}`;
+        zip.append(createReadStream(m.path), { name: href });
+        html.push(
+          `<figure><figcaption>${escapeBookText(m.label)} · ${escapeBookText(m.filename)}</figcaption>${m.type === "audio" ? `<audio controls="controls" preload="none" src="${href}"></audio>` : m.type === "video" ? `<video controls="controls" preload="none" src="${href}"></video>` : ""}<p><a href="${href}" download="download">保存媒体副本</a></p></figure>`,
+        );
+      }
+      if (media.length) html.push("</section>");
+      const sources = Object.values(book.sourceStates).map(
+        (s) =>
+          `${s.label}${s.occurredAt ? ` · ${new Intl.DateTimeFormat("zh-CN", { timeZone: book.timezone, dateStyle: "long" }).format(new Date(s.occurredAt))}` : ""}`,
+      );
+      html.push(
+        `<section class="chapter"><h2>来源</h2><ul>${sources.map((s) => `<li>${escapeBookText(s)}</li>`).join("")}</ul></section>`,
+      );
+      const toc = `<nav aria-label="目录"><h2>目录</h2><ol>${book.chapters.map((c, i) => `<li><a href="#chapter-${i}">${escapeBookText(c.title)}</a></li>`).join("")}</ol></nav>`;
+      append(
+        "index.html",
+        `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file: data:; media-src file:; style-src file:; base-uri 'none'; form-action 'none'"><title>${escapeBookText(book.title)} · 精选阅读包</title><link rel="stylesheet" href="style.css"></head><body>${html[0]}${toc}${html.slice(1).join("\n")}</body></html>`,
+      );
+      append("sources.txt", sources.join("\n"));
+      append(
+        "阅读说明.txt",
+        "精选阅读包。解压后用浏览器打开 index.html，无需登录或网络。音视频格式支持由本机决定。接收者可以保存、转发，下载副本无法远程收回。这不是完整可恢复备份。完整备份请由家庭管理员另行导出。",
+      );
+      await zip.finalize();
+      await complete;
+      progress(95, book.chapters.length);
+      return book.chapters.length;
     }
     append(
       "OEBPS/nav.xhtml",

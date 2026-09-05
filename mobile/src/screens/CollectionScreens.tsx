@@ -1,3 +1,4 @@
+import { ReadingDownloadButton } from "../reading/DownloadButton";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -234,7 +235,7 @@ export function CollectionDetailScreen({
     setStatus("有未保存修改");
   }
   async function save(operation = "save") {
-    if (!credentials || !doc) return;
+    if (!credentials || !doc || busy) return false;
     setBusy(true);
     try {
       const next = await mutateCollection(credentials, doc.id, {
@@ -246,8 +247,10 @@ export function CollectionDetailScreen({
       dirty.current = false;
       setStatus("已保存；源记忆和原件不受影响。");
       setError("");
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -290,6 +293,7 @@ export function CollectionDetailScreen({
       contentContainerStyle={s.content}
       keyboardShouldPersistTaps="handled"
     >
+      {!doc.deletedAt ? <ReadingDownloadButton kind="collection" id={doc.id} prepare={async () => dirty.current ? await save() : true} /> : null}
       <Text style={s.title}>{doc.title}</Text>
       {doc.canWrite && !doc.deletedAt ? (
         <Button

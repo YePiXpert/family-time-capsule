@@ -828,3 +828,7 @@ BookProject.draftKey 保存范围/读者/模板/私人拥有者摘要；同家�
 完成后允许新草稿，若已有另一 active 草稿则拒绝重新激活旧稿。复制显式分配新作品/章/块/来源
 关系 ID，保留目标来源外键与人工文字，复制不继承 draftKey。无需新增平行 Review 模型。
 BookSourceState.authoredAt 是派生讲述日期；occurredAt 始终指来源记忆日期，不持久复制时间事实。
+
+原生 `reading_download` / `reading_binding` 是独立设备 SQLite 缓存索引，存清单、已完成
+文件、配额与当前用户阅读进度，连接凭据仅存摘要；服务器不增加家庭持久编辑表。
+BookRenderJob 增加已定义格式 `reading_zip` 的真实执行路径，仍为临时任务，排除家庭恢复。

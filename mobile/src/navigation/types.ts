@@ -27,6 +27,8 @@ export type RootStackParamList = {
   WeeklyReview: undefined;
   Books: undefined;
   BookReview: undefined;
+  ReadingDownloads: undefined;
+  OfflineReading: {key:string};
   BookDetail: {id:string};
   Calendar: undefined;
   Collections: {eventIds?:string[]} | undefined;

@@ -2,6 +2,7 @@ import { createElement, useEffect } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CollectionDetail } from '../src/collections/types';
+vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
 const mocks=vi.hoisted(()=>({get:vi.fn(),list:vi.fn(),mutate:vi.fn(),navigate:vi.fn(),credentials:{serverUrl:'https://fictional.example.test',token:'fictional-component-token'}}));
 vi.mock('react-native',()=>({ActivityIndicator:'ActivityIndicator',Image:'Image',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',TextInput:'TextInput',View:'View',StyleSheet:{create:(s:unknown)=>s},Alert:{alert:vi.fn()}}));
 vi.mock('@react-navigation/native',()=>({useFocusEffect:(fn:()=>void|(()=>void))=>useEffect(fn,[fn])}));

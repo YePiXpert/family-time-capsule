@@ -223,8 +223,9 @@ export function createBookSourceResolver(
               available: true,
               changed: false,
               label: row.originalFilename,
-              occurredAt: row.capturedAt?.toISOString() ?? null,
-              ageLabel: null,
+              occurredAt: resolve("memory",event.id).state.occurredAt,
+              capturedAt: row.capturedAt?.toISOString() ?? null,
+              ageLabel: resolve("memory",event.id).state.ageLabel,
               author: null,
               asset: {
                 id: row.id,

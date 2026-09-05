@@ -2,6 +2,7 @@ import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultBookLayout, type BookDetail } from "../src/books/types";
+vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   list: vi.fn(),

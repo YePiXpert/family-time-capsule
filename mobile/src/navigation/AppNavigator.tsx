@@ -1,3 +1,4 @@
+import { ReadingDownloadsScreen, OfflineReadingScreen } from "../screens/ReadingScreens";
 import { BookReviewScreen } from "../screens/BookReviewScreen";
 import { NavigationContainer, type Theme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -106,6 +107,8 @@ export function AppNavigator() {
         <Stack.Screen component={ImportSessionDetailScreen} name="ImportSessionDetail" options={{ title: "导入进度" }} />
         <Stack.Screen component={CollectionsScreen} name="Collections" options={{title:"相册与章节"}} />
         <Stack.Screen component={CollectionDetailScreen} name="CollectionDetail" options={{title:"相册"}} />
+        <Stack.Screen component={ReadingDownloadsScreen} name="ReadingDownloads" options={{title:"离线收藏"}} />
+        <Stack.Screen component={OfflineReadingScreen} name="OfflineReading" options={{title:"离线阅读"}} />
         <Stack.Screen component={BookReviewScreen} name="BookReview" options={{title:"月度与年度回顾"}} />
         <Stack.Screen component={BooksScreen} name="Books" options={{title:"家庭书架"}} />
         <Stack.Screen component={BookDetailScreen} name="BookDetail" options={{title:"家庭作品"}} />

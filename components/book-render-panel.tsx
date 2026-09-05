@@ -60,7 +60,7 @@ export function BookRenderPanel({
     const timer = setInterval(() => void load(), 1500);
     return () => clearInterval(timer);
   }, [active, load]);
-  async function start(format: "pdf" | "epub") {
+  async function start(format: "pdf" | "epub" | "reading_zip") {
     setBusy(true);
     setError("");
     try {
@@ -98,7 +98,9 @@ export function BookRenderPanel({
         可调整字号。后台排版期间可以继续记录，低清照片不会变成高清原图。
       </p>
       {error ? <p role="alert">{error}</p> : null}
+      <p className="my-3 text-sm text-muted">精选阅读包解压后直接打开 index.html，无需登录或网络。接收者可以保存或转发，下载副本无法远程收回；它不是完整可恢复备份。</p>
       <div className="my-3 flex flex-wrap gap-3">
+        <button className="ui-button-primary" disabled={busy} onClick={()=>void start("reading_zip")}>生成精选阅读包 ZIP</button>
         <button
           className="ui-button-primary"
           disabled={busy}
@@ -126,7 +128,7 @@ export function BookRenderPanel({
         {jobs.map((job) => (
           <li key={job.id} className="rounded-xl border border-line p-4">
             <p>
-              版本 {job.revision} · {job.format.toUpperCase()} ·{" "}
+              版本 {job.revision} · {(job.format === "reading_zip" ? "精选阅读包 ZIP" : job.format.toUpperCase())} ·{" "}
               {
                 {
                   queued: "等待后台排版",
@@ -161,7 +163,7 @@ export function BookRenderPanel({
                     className="ui-button-primary"
                     href={`/api/books/renders/${job.id}/download`}
                   >
-                    下载 {job.format.toUpperCase()}
+                    下载 {(job.format === "reading_zip" ? "精选阅读包 ZIP" : job.format.toUpperCase())}
                   </a>
                   {job.format === "pdf" ? (
                     <a

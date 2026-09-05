@@ -118,7 +118,7 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
 });
 
 test("生产 worker 完成 PDF/EPUB，浏览器可预览下载并清理产物", async ({
-  page,
+  page, browser,
 }) => {
   await ensureBootstrap(page);
   await page.goto("/books");
@@ -127,9 +127,9 @@ test("生产 worker 完成 PDF/EPUB，浏览器可预览下载并清理产物", 
     page.getByRole("heading", { name: "虚构家庭的成长年册", exact: true }),
   ).toBeVisible();
   const panel = page.getByRole("region", { name: "出版与下载" });
-  for (const format of ["PDF", "EPUB"]) {
+  for (const format of ["PDF", "EPUB", "精选阅读包 ZIP"]) {
     await panel
-      .getByRole("button", { name: `生成 ${format}`, exact: true })
+      .getByRole("button", { name: format === "精选阅读包 ZIP" ? "生成精选阅读包 ZIP" : `生成 ${format}`, exact: true })
       .click();
     await expect(panel.getByText(/等待后台排版/)).toBeVisible();
     const worker = spawn(process.execPath, [".next/ops/worker.mjs", "--once"], {
@@ -164,7 +164,15 @@ test("生产 worker 完成 PDF/EPUB，浏览器可预览下载并清理产物", 
     await link.click();
     const file = await download;
     expect(await file.failure()).toBeNull();
-    expect(file.suggestedFilename().endsWith(`.${format.toLowerCase()}`)).toBe(true);
+    expect(file.suggestedFilename().endsWith(`.${format === "精选阅读包 ZIP" ? "zip" : format.toLowerCase()}`)).toBe(true);
+    if(format === "精选阅读包 ZIP") {
+      const {mkdtemp,mkdir,writeFile,readFile,rm}=await import("node:fs/promises"),{tmpdir}=await import("node:os"),{pathToFileURL}=await import("node:url"),JSZip=(await import("jszip")).default;
+      const dir=await mkdtemp(path.join(tmpdir(),"ftc-production-reading-")),zip=await JSZip.loadAsync(await readFile((await file.path())!));
+      const offline=await browser.newContext({offline:true});try{
+        for(const entry of Object.values(zip.files)){if(entry.dir)continue;const target=path.join(dir,entry.name);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,await entry.async("nodebuffer"));}
+        const reader=await offline.newPage(),network:string[]=[];reader.on("request",r=>{if(/^https?:/.test(r.url()))network.push(r.url());});await reader.goto(pathToFileURL(path.join(dir,"index.html")).href);await expect(reader.getByRole("heading",{name:"虚构家庭的成长年册",exact:true})).toBeVisible();await expect(reader.getByText(/第 32 页虚构家书/)).toBeVisible();expect(network).toEqual([]);
+      }finally{await offline.close();await rm(dir,{recursive:true,force:true});}
+    }
   }
   await expect(
     panel.getByRole("link", { name: "打开 PDF 预览" }),

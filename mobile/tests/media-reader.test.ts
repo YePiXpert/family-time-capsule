@@ -30,3 +30,9 @@ it('distinguishes revoked access from network failure, preserves local reading, 
   mocks.get.mockRejectedValue(Object.assign(new Error('offline'),{status:0}));await press('重新加载');expect(JSON.stringify(tree!.toJSON())).toContain('检查网络后重试');
   await press('下一份');expect(mocks.active).toBe(1);expect(tree!.root.findAll(n=>String(n.type)==='Text'&&String(n.props.children).includes('带真实时间段'))).toHaveLength(0);
 });
+
+it('restores local voice progress and transcript without requesting remote media',async()=>{
+ mocks.seek.mockResolvedValue(undefined);const onPosition=vi.fn();
+ await act(async()=>{tree=create(createElement(NativeMediaReader,{credentials:null,onPosition,assets:[{id:'cached',type:'audio',filename:'已下载虚构声音',mimeType:'audio/wav',localUri:'file:///reader-downloads/fictional.wav',initialSeconds:8,localTranscript:{text:'有时间戳的原话',edited:false,segments:[{startSeconds:3,endSeconds:5,text:'真实三秒原话'}]}}]}));});
+ await press('打开阅读器：已下载虚构声音');expect(mocks.seek).toHaveBeenCalledWith(8);expect(mocks.get).not.toHaveBeenCalled();expect(mocks.play).not.toHaveBeenCalled();await press('3.0 秒 · 真实三秒原话');expect(mocks.seek).toHaveBeenCalledWith(3);await press('关闭阅读器');expect(onPosition).toHaveBeenCalledWith('cached',12);
+});

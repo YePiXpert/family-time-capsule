@@ -362,3 +362,16 @@ Published Story 的 Contribution/MemoryEvent/Transcript/Fact 及 FactSource 依�
 - PDF/EPUB 中没有鉴权 URL/token；PDF 不假装能播放音视频。用户导出的副本可保存/转发，
   已下载文件无法远程撤回。原生导出独占临时文件，下载被拒绝或不完整时不进入系统导出。
 - 集成覆盖真实跨家庭管理员会话的列表/创建/状态/下载 404，以及旧 PDF/EPUB 的来源变更拒绝。
+
+### 1.2 精选阅读包与原生缓存
+
+`/api/reading/identity`、`/api/reading/{book|collection}/:id` 与文件端点每次使用当前
+FamilyContext。清单按作品目标读者过滤，文件端点要求当前清单 digest 和素材成员关系，
+再调用既有媒体授权及 Range 路径。共享声音变私密会同时使 ZIP 旧下载和清单文件失效。
+
+ZIP 只含转义后的内置 HTML/CSS、允许的媒体和来源文字；file:// 无 fetch、脚本、CDN、
+在线字体或 API 依赖。产物再次按读者和来源校验；接收者可保存/转发，无法远程收回已下载
+副本。不是完整备份，不改变管理员完整导出的授权语义。
+
+原生 reader-downloads 与原件/outbox 分离；缓存按服务器/账号/家庭隔离，联网发现失权则
+移除缓存。设备断网不能立即获知撤权；这不是额外加密协议，也不承诺抵御已控制设备者。

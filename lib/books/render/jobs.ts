@@ -29,6 +29,7 @@ import {
   getBookProject,
   getBookVersion,
 } from "../projects/service";
+import { collectBookReadingMedia } from "../projects/media";
 import {
   bookSourceTarget,
   createBookSourceResolver,
@@ -49,7 +50,7 @@ function artifactPath(job: Job) {
     `${job.id}-${job.attempt}.${job.format === "reading_zip" ? "zip" : job.format}`,
   );
 }
-function renderState(context: FamilyContext, id: string, revision: number) {
+function renderState(context: FamilyContext, id: string, revision: number, format: BookRenderFormat) {
   const book = getBookVersion(context, id, revision);
   if (book.blockedBlockIds.length)
     throw new BookError("source_unavailable", 409);
@@ -86,6 +87,7 @@ function renderState(context: FamilyContext, id: string, revision: number) {
       book.timezone,
       book.coverAssetId,
       fingerprints,
+      format === "reading_zip" ? collectBookReadingMedia(context, book).map(m=>[m.asset.id,m.fingerprint,m.state]) : null,
     ]),
   };
 }
@@ -110,7 +112,7 @@ function status(context: FamilyContext, row: Job) {
     try {
       downloadable =
         row.templateVersion === BOOK_TEMPLATE_VERSION &&
-        renderState(context, row.projectId, row.revision).digest ===
+        renderState(context, row.projectId, row.revision, row.format).digest ===
         row.sourceDigest;
     } catch {
       /* Live sources can be unavailable. */
@@ -160,12 +162,12 @@ export function requestBookRender(
   if (
     !Number.isSafeInteger(revision) ||
     revision < 1 ||
-    !["pdf", "epub"].includes(format)
+    !["pdf", "epub", "reading_zip"].includes(format)
   )
     throw new BookError("invalid_render");
   return getDb().transaction((tx) => {
     ensureBookRenderVersion(context, id, revision);
-    const { book, digest } = renderState(context, id, revision);
+    const { book, digest } = renderState(context, id, revision, format);
     const key = sourceFingerprint([
       id,
       revision,
@@ -229,7 +231,7 @@ export async function changeBookRender(
       throw new BookError("invalid_job_state", 409);
     if (
       row.templateVersion !== BOOK_TEMPLATE_VERSION ||
-      renderState(context, row.projectId, row.revision).digest !==
+      renderState(context, row.projectId, row.revision, row.format).digest !==
         row.sourceDigest
     )
       throw new BookError("source_changed", 409);
@@ -275,7 +277,7 @@ export async function readableBookArtifact(context: FamilyContext, id: string) {
   if (row.status !== "succeeded") throw new BookError("render_not_ready", 409);
   if (
     row.templateVersion !== BOOK_TEMPLATE_VERSION ||
-    renderState(context, row.projectId, row.revision).digest !==
+    renderState(context, row.projectId, row.revision, row.format).digest !==
       row.sourceDigest
   )
     throw new BookError("source_changed", 409);
@@ -293,7 +295,7 @@ async function buildInput(
   context: FamilyContext,
   row: Job,
 ): Promise<RenderInput> {
-  const state = renderState(context, row.projectId, row.revision);
+  const state = renderState(context, row.projectId, row.revision, row.format);
   if (
     state.digest !== row.sourceDigest ||
     row.templateVersion !== BOOK_TEMPLATE_VERSION
@@ -323,6 +325,7 @@ async function buildInput(
   return {
     book: state.book,
     images,
+    media: row.format === "reading_zip" ? collectBookReadingMedia(context,state.book).map(m=>({id:m.asset.id,path:getAssetStorage().resolvePath(m.asset.storageKey),bytes:m.asset.bytes,type:m.asset.type,mimeType:m.asset.mimeType,filename:m.asset.originalFilename,label:m.state.label})) : [],
     format: row.format,
     fontPath: path.join(
       process.cwd(),
@@ -590,7 +593,7 @@ export async function runBookWorkerOnce(
       userName: "",
     };
     if (
-      renderState(live, job.projectId, job.revision).digest !== job.sourceDigest
+      renderState(live, job.projectId, job.revision, job.format).digest !== job.sourceDigest
     )
       throw new Error("source_changed");
     const file = artifactPath(job);
@@ -613,7 +616,7 @@ export async function runBookWorkerOnce(
       )
         throw new Error("worker_interrupted");
       if (
-        renderState(live, job.projectId, job.revision).digest !==
+        renderState(live, job.projectId, job.revision, job.format).digest !==
         job.sourceDigest
       )
         throw new Error("source_changed");

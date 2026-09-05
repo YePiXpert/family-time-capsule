@@ -18,7 +18,7 @@
     "restore": "tsx scripts/restore.ts",
     "search:rebuild": "tsx --conditions=react-server scripts/search-rebuild.ts",
     "benchmark": "tsx --conditions=react-server scripts/benchmark.mts",
-    "pretest:e2e": "npm run build",
+    "pretest:e2e": "npm run build && npm run build:ops",
     "test:e2e": "playwright test && vitest run --config vitest.roundtrip.config.ts"
   },
   "dependencies": {

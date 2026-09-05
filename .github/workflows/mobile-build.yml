@@ -36,7 +36,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      # Native offline tests stream real files through the shared SQLite driver.
+      - run: npm ci
       - run: npm ci
         working-directory: mobile
       - run: npm run typecheck

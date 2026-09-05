@@ -118,7 +118,7 @@ Auth → Family/Person → Asset Upload → metadata/hash → Inbox
 - [ ] M4 BookProject 三模板、Web/原生选材编辑、自动保存、来源/版本快照及完整恢复已实现；本地完整门禁通过，出版/离线整合待后续。
 - [ ] M5 可搜索 PDF、EPUBCheck 通过的 EPUB、独立有界 BookRenderJob 和 Web/原生出版已实现；阅读包与最终全量发布整合待 M7/M8。
 - [ ] M6 月/年/自选范围回顾与幂等作品草稿已实现；Web/原生、日期联动、独立恢复与本地全量门禁通过，最终发布整合待 M7/M8。
-- [ ] M7 原生主动离线收藏与无在线依赖精选阅读包。
+- [x] M7 原生主动离线收藏与无在线依赖精选阅读包；实际流式文件/SQLite、断网/失权、清缓存原件不变和 file:// 浏览器验证。
 - [ ] M8 独立卷升级/恢复/回滚、全部门禁与 1.2 alpha prerelease。
 
 验收口径见 [PRODUCT_1_2.md](./PRODUCT_1_2.md)，状态必须来自实际运行。

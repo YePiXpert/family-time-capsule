@@ -21,6 +21,8 @@ import { exportOriginalCopy } from "./export-original";
 import { sharedStyles as s } from "../theme";
 export type NativeReaderAsset = ReaderAsset & {
   localUri?: string;
+  localTranscript?: ReaderTranscript | null;
+  initialSeconds?: number;
   thumbnailPath?: string | null;
 };
 function Button({
@@ -60,7 +62,9 @@ function mediaSource(
 export function NativeMediaReader({
   assets,
   credentials,
+  onPosition,
 }: {
+  onPosition?: (assetId: string, seconds: number) => void;
   assets: NativeReaderAsset[];
   credentials: Credentials | null;
 }) {
@@ -142,6 +146,7 @@ export function NativeMediaReader({
                 continuous={continuous}
                 toggleContinuous={() => setContinuous((v) => !v)}
                 onEnded={ended}
+                onPosition={onPosition}
               />
             ) : null}
           </ScrollView>
@@ -156,7 +161,9 @@ function Active({
   continuous,
   toggleContinuous,
   onEnded,
+  onPosition,
 }: {
+  onPosition?: (assetId: string, seconds: number) => void;
   item: NativeReaderAsset;
   credentials: Credentials | null;
   continuous: boolean;
@@ -164,7 +171,9 @@ function Active({
   onEnded: () => void;
 }) {
   const [jobs, setJobs] = useState<MediaDerivation[]>([]),
-    [transcript, setTranscript] = useState<ReaderTranscript | null>(null),
+    [transcript, setTranscript] = useState<ReaderTranscript | null>(
+      item.localTranscript ?? null,
+    ),
     [error, setError] = useState(""),
     [denied, setDenied] = useState(false),
     [original, setOriginal] = useState(false),
@@ -288,6 +297,10 @@ function Active({
           <Video
             key={`${selectedId}-${retry}`}
             source={source}
+            initialSeconds={item.initialSeconds}
+            onPosition={
+              onPosition ? (seconds) => onPosition(item.id, seconds) : undefined
+            }
             poster={
               preview?.outputAssetId
                 ? mediaSource(credentials, item, preview.outputAssetId)
@@ -302,9 +315,17 @@ function Active({
             toggleContinuous={toggleContinuous}
             onEnded={onEnded}
             transcript={transcript}
+            initialSeconds={item.initialSeconds}
+            onPosition={
+              onPosition ? (seconds) => onPosition(item.id, seconds) : undefined
+            }
           />
         ) : (
-          <Text style={s.body}>文档请在来源记忆中下载阅读。</Text>
+          <Text style={s.body}>
+            {item.localUri
+              ? "文档已下载，使用下方导出按钮在本机应用中阅读。"
+              : "文档请在来源记忆中下载阅读。"}
+          </Text>
         )
       ) : null}
       {!item.localUri && ["video", "audio"].includes(item.type) ? (
@@ -359,7 +380,11 @@ function Audio({
   toggleContinuous,
   onEnded,
   transcript,
+  initialSeconds = 0,
+  onPosition,
 }: {
+  initialSeconds?: number;
+  onPosition?: (seconds: number) => void;
   source: PlaybackSource;
   continuous: boolean;
   toggleContinuous: () => void;
@@ -371,6 +396,21 @@ function Audio({
   const [seek, setSeek] = useState(""),
     [error, setError] = useState(""),
     [speed, setSpeed] = useState(1);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (status.isLoaded && !restored.current) {
+      restored.current = true;
+      if (initialSeconds > 0)
+        void player
+          .seekTo(Math.min(initialSeconds, status.duration))
+          .catch(() => setError("无法恢复播放位置，可手动定位。"));
+    }
+  }, [initialSeconds, player, status.isLoaded, status.duration]);
+  usePlaybackProgress(
+    status.currentTime,
+    status.isLoaded && (initialSeconds === 0 || status.currentTime > 0),
+    onPosition,
+  );
   const finish = useRef(false),
     autoStarted = useRef(false);
   useEffect(() => {
@@ -457,15 +497,40 @@ function Audio({
 function Video({
   source,
   poster,
+  initialSeconds = 0,
+  onPosition,
 }: {
+  initialSeconds?: number;
+  onPosition?: (seconds: number) => void;
   source: PlaybackSource;
   poster: PlaybackSource | null;
 }) {
-  const player = useVideoPlayer(source);
+  const player = useVideoPlayer(source, (player) => {
+    player.timeUpdateEventInterval = 1;
+  });
+  const time = useEvent(player, "timeUpdate", {
+    currentTime: 0,
+    currentLiveTimestamp: null,
+    currentOffsetFromLive: null,
+    bufferedPosition: 0,
+  });
+  const restored = useRef(false);
   const { status, error } = useEvent(player, "statusChange", {
     status: player.status,
     error: undefined,
   });
+  useEffect(() => {
+    if (status === "readyToPlay" && !restored.current) {
+      restored.current = true;
+      if (initialSeconds > 0)
+        player.seekBy(Math.min(initialSeconds, player.duration) - player.currentTime);
+    }
+  }, [status, player, initialSeconds]);
+  usePlaybackProgress(
+    time.currentTime,
+    status === "readyToPlay" && (initialSeconds === 0 || time.currentTime > 0),
+    onPosition,
+  );
   return (
     <>
       {status === "loading" ? (
@@ -490,5 +555,34 @@ function Video({
         style={{ width: "100%", height: 340 }}
       />
     </>
+  );
+}
+
+/** Persist bounded updates and the final observed position without restarting playback. */
+function usePlaybackProgress(
+  seconds: number,
+  ready: boolean,
+  save?: (seconds: number) => void,
+) {
+  const latest = useRef({ seconds: 0, ready: false, save });
+  const last = useRef(-1);
+  useEffect(() => {
+    latest.current = { seconds, ready, save };
+    if (
+      ready &&
+      Number.isFinite(seconds) &&
+      seconds >= 0 &&
+      Math.abs(seconds - last.current) >= 2
+    ) {
+      last.current = seconds;
+      save?.(seconds);
+    }
+  }, [seconds, ready, save]);
+  useEffect(
+    () => () => {
+      const v = latest.current;
+      if (v.ready) v.save?.(v.seconds);
+    },
+    [],
   );
 }

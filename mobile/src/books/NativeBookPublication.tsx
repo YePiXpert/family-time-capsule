@@ -65,7 +65,7 @@ export function NativeBookPublication({
       <Text style={s.secondaryText}>{label}</Text>
     </Pressable>
   );
-  function start(format: "pdf" | "epub") {
+  function start(format: "pdf" | "epub" | "reading_zip") {
     void perform(async () => {
       const revision = await prepare();
       if (revision !== null)
@@ -89,11 +89,13 @@ export function NativeBookPublication({
       ) : null}
       {button("生成 PDF", () => start("pdf"))}
       {button("生成 EPUB", () => start("epub"))}
+      {button("生成精选阅读包 ZIP", () => start("reading_zip"))}
+      <Text style={s.body}>阅读包解压后打开 index.html，无需登录或网络。</Text>
       {button("刷新出版任务", () => void load())}
       {jobs.map((job) => (
         <View key={job.id} style={s.notice}>
           <Text style={s.label}>
-            {job.format.toUpperCase()} · 版本 {job.revision}
+            {(job.format === "reading_zip" ? "精选阅读包 ZIP" : job.format.toUpperCase())} · 版本 {job.revision}
           </Text>
           <Text accessibilityLiveRegion="polite">
             {

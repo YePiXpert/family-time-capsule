@@ -1,3 +1,4 @@
+import { ReadingDownloadButton } from "../reading/DownloadButton";
 import { NativeBookPublication } from "../books/NativeBookPublication";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, usePreventRemove } from "@react-navigation/native";
@@ -477,6 +478,7 @@ export function BookDetailScreen({
           />
         </View>
       ) : null}
+      {!book.deletedAt ? <ReadingDownloadButton kind="book" id={id} prepare={async () => { setOperation(true); try { return await save() && sequence.current === savedSequence.current; } finally { setOperation(false); } }} /> : null}
       {credentials && !book.deletedAt ? (
         <NativeBookPublication credentials={credentials} id={id} audience={book.audience}
           prepare={async () => {

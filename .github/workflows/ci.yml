@@ -30,6 +30,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils epubcheck
+      - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: npm run build
 
@@ -42,7 +43,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      # Offline cache tests use real Node streams and the root SQLite driver.
+      - run: npm ci
       - run: npm ci
         working-directory: mobile
       - run: npm test

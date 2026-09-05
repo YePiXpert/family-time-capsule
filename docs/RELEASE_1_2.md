@@ -157,3 +157,34 @@ BookProject、可搜索 PDF/EPUB 出版、回顾作品、原生主动离线收�
   真机触控、安全区和系统行为仍未验收。
 
 本里程碑尚未包含主动离线收藏、精选 ZIP 阅读包或最终旧卷升级/回滚与发布；不创建提前发布 tag。
+
+## 离线收藏切片（非最终发布）
+
+- 回顾提交 `f549d414164137d5ced9277fa88fcd0076f68ac4` 的
+  [CI 33944333371](https://github.com/YePiXpert/family-time-capsule/actions/runs/33944333371) 三 job 全绿。
+- M7 原生详情主动下载、容量确认、独立缓存 SQLite/目录、当前连接 512 MiB/全机 1 GiB
+  配额、暂停/继续/重试/清理、章节/播放进度；“更多”进入离线收藏，仍为五个一级标签。
+- 读者清单/文件 digest 与实时 FamilyContext 校验；新版本、删除、失权撤下旧缓存和当前
+  阅读页。401/403/404/409 与断网/503 分别处理，离线无法立即获知远程撤权。
+- reading_zip 真实 worker，原件流式随册媒体、自包含转义 HTML/CSS/来源，file:// 不依赖
+  网络、fetch 或登录。仍是精选阅读包，接收者可保存/转发，不可远程收回，不是完整备份。
+- 素材来源的发生时间改为事件时间，单独保留 capturedAt；声音署名保留 authoredAt。
+  出版模板 `1.2-layout-3`，幂等摘要包含随册媒体和声音权限变化。
+- 根 lint/typecheck/test/build/build:ops 通过：**86 files / 584 tests**；其中新增 4 项
+  实际 ZIP、文件 Range/读者隔离/跨家庭/失权 API、离线 Chromium 图文/CSS/脚本转义。
+- Mobile lint/typecheck/test 通过：**19 files / 77 tests**，Doctor **21/21**；
+  Android/iOS Expo export 成功，各约 **3.8 MB** Hermes。依赖审计根/mobile **0 漏洞**。
+- 原生新增 3 项真实流式文件与 SQLite 场景、3 项组件交互、1 项本地声音定位；
+  64 KiB 增量校验、暂停后跳过已完成文件、独立 SQLite 重开恢复进度、清缓存原件 SHA
+  和 outbox 不变、账号/家庭/服务器隔离、配额、损坏重试和下载并发互斥均通过。
+  Expo/React Native host 使用测试适配器，不能冒充真机吞吐或系统级验收。
+- disaster roundtrip **6 passed**。第一次本地 production 全量 **45 passed / 1 failed**：
+  在 Next build 前构建的 ops 被 build 清除；已将 pretest:e2e 固定为 build 后 build:ops。
+  补建后针对出版重跑又发现 ZIP 按钮文字选择器多一个空格，已修正为实际可访问名称，
+  未跳过测试或降低断言。最终重验结果随后补记。
+
+M8 完整独立旧卷/恢复、最终云原生构建与 prerelease 尚未完成；不提前打 tag。
+
+修复构建顺序和 ZIP 按钮选择器后，production book-projects **3/3 passed**，包含真实
+worker PDF/EPUB/ZIP 下载及 ZIP 解压后 offline browser 阅读。其余全量场景 **43/43**
+在首次运行通过（全量 45/46 中另有两个 book-projects 场景）；最终 M8 再执行完整门禁。

@@ -98,3 +98,13 @@ Node 峰值采样 RSS 154181632 bytes；ffmpeg 峰值采样 RSS 199008256 bytes�
 不填入推算值；以上不是 mock 数值，也不是 OS 精确峰值。渲染器 Node 堆限制 384 MiB，
 仍需考虑 sharp/fontkit 原生内存；部署可另设容器内存上限。单任务并发、180s 超时、200 页、
 256 MiB 输出以及每家庭 2 GiB 缓存限制不会被 AI 关闭而停用。
+
+### 原生阅读下载（1.2）
+
+清单最多 500 文件、8 MiB 元数据；下载前按完整容量预留配额，单连接 512 MiB/全机 1 GiB，
+100 份上限。一份活动下载，逐文件传输；60 秒无进展暂停报错，超过声明字节数立即停止。
+64 KiB FileHandle 增量 SHA、每 8 块让出 JS；8 块一组阅读，不初始化整册所有 AV 播放器。
+
+离线测试使用实际 Node 文件流/SQLite 和 Expo API 适配器：实际读取 1 MiB 照片与 2 MiB
+声音测试字节，观察到最大 SHA readBytes 请求 65536 字节。测试适配器不是设备吞吐/RSS
+测量，不把进度 mock 或 Node 资源冒充 Android/iOS/browser/ffmpeg 资源。

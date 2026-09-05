@@ -116,6 +116,7 @@ export function AppProvider({
     const nextHome = await fetchMobileHome(activeCredentials);
     await cacheMobileHome(nextHome);
     setHome(nextHome);
+    void import("../reading/native").then(({revalidateReadingDownloads}) => revalidateReadingDownloads(activeCredentials)).catch(() => {});
     try {
       const review = await fetchMobileReview(activeCredentials);
       await cacheMobileReview(review);
