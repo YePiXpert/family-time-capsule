@@ -120,7 +120,7 @@ Auth → Family/Person → Asset Upload → metadata/hash → Inbox
 - [x] M6 月/年/自选日期回顾、人工精选、幂等未完成草稿及新资料提示。
 - [x] M7 原生主动离线收藏、配额/重试/清理与自包含 ZIP；断网/失权区分、原件不变。
 - [x] M8 独立目录及 Docker 旧卷升级、旧档恢复、完整编辑二次导出和失败回滚。
-- [ ] 最终 main SHA 全量 CI、不可移动 v1.2.0-alpha.1 tag、APK/unsigned IPA/SHA256SUMS prerelease。
+- [x] 最终 main SHA 全量 CI、不可移动 v1.2.0-alpha.1 tag、APK/unsigned IPA/SHA256SUMS prerelease；run 33947248450 / 33947701020 全绿，发布附件逐一下载校验。
 - [ ] 真实设备项目：见 REAL_DEVICE_TEST，包级自动化不代填。
 
 验收证据见 [RELEASE_1_2.md](./RELEASE_1_2.md)，范围见 [PRODUCT_1_2.md](./PRODUCT_1_2.md)。

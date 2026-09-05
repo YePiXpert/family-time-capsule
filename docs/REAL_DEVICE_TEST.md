@@ -194,3 +194,8 @@
 - [ ] iOS/Android 375px、小平板、安全区、长标题、触控和屏幕阅读器焦点。
 
 自动化文件/SQLite/组件与浏览器验证不代填这些系统级验收；不建议卸载含唯一资料的旧包。
+
+1.2.0-alpha.1 包级自动化记录：tag run 33947701020 全绿；APK 实际 manifest 的 1.2.0/6、
+分享 SEND/SEND_MULTIPLE/PDF、v2 签名通过；unsigned IPA 的主程序/appex 1.2.0/6、arm64
+和构建 entitlements App Group 检查通过。附件 SHA 与 SHA256SUMS 相同。以上为包级结果，
+不勾选上方任何真实设备项目。

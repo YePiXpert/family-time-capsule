@@ -1,6 +1,7 @@
 # 1.2.0-alpha.1 开发与发布记录
 
-状态：M1–M8 功能与本地门禁完成；发布提交准备中，等待对应 SHA 完整 CI 后创建 prerelease。
+状态：**v1.2.0-alpha.1 prerelease 已于 2026-09-05 05:48:02 UTC 发布**；M1–M8 功能、
+完整 main CI、标签原生构建及下载附件校验完成。
 不代表 stable 或真实设备验收。历史切片记录保留下方，最终结果以末尾发布记录为准。
 
 ## 基线
@@ -228,3 +229,49 @@ EPUB **2455 ms / 265490432 bytes**，Poppler **1379 ms / 21049344 bytes**；编�
 根/mobile package 与 lock 均为 **1.2.0-alpha.1**，原生展示 **1.2.0**；iOS buildNumber
 和 Android versionCode 均在原来的 **5** 上递增为 **6**。最终提交按要求使用
 `chore(release): prepare 1.2.0-alpha.1`；待该 SHA 完整 main CI 通过后创建不可移动标签。
+
+## 最终标签与发布流水线
+
+- 发布准备提交：`7be689c11c66a0f9d52f6bc9a285f33c9ccdc553`
+  (`chore(release): prepare 1.2.0-alpha.1`)，已 push origin/main。
+- 精确对应 main SHA 的 [CI 33947248450](https://github.com/YePiXpert/family-time-capsule/actions/runs/33947248450)
+  全部 success：web-quality、mobile-quality、e2e-restore-roundtrip（包括真实旧卷兼容脚本）。
+- 全绿之后创建并 push `v1.2.0-alpha.1`，不可移动 annotated tag object
+  `8a8abfb5d1dfa299e8ab4bf90ac313537535c037`，peeled SHA 为上述发布提交。
+- [Native mobile packages 33947701020](https://github.com/YePiXpert/family-time-capsule/actions/runs/33947701020)
+  已由该标签触发并全部 success（quality、Android APK、iOS unsigned IPA、GitHub mobile prerelease）。
+
+
+### 已发布附件与实际包级校验
+
+[GitHub prerelease v1.2.0-alpha.1](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.2.0-alpha.1)，
+`isPrerelease=true`、`isDraft=false`。附件在创建时上传，未替换附件或移动标签。
+
+| 附件 | 字节 | SHA256 |
+| --- | ---: | --- |
+| [FamilyTimeCapsule-android.apk](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.2.0-alpha.1/FamilyTimeCapsule-android.apk) | 39782541 | `c441cfe1799685bbd5ac916bbdc6bcb03d992d42a9daf0f85e0d7c6bd6bcb362` |
+| [FamilyTimeCapsule-ios-unsigned.ipa](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.2.0-alpha.1/FamilyTimeCapsule-ios-unsigned.ipa) | 10178028 | `79596b692cba3633f9a482ce17bf99756ac24716fefaaf7253b00b6660afde15` |
+| [SHA256SUMS.txt](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.2.0-alpha.1/SHA256SUMS.txt) | 197 | 下载后两项逐一校验通过 |
+
+- 直接读取发布 APK 的 binary AndroidManifest：包名 `app.familytimecapsule.mobile`，
+  versionName **1.2.0**、versionCode **6**；SEND、SEND_MULTIPLE、PDF MIME 均存在，
+  Hermes bundle 和 APK v2 signing block 存在。云端 `apksigner verify` 的 v2 校验为 true。
+- 直接解开发布 IPA：主程序 `app.familytimecapsule.mobile` 与分享扩展
+  `app.familytimecapsule.mobile.share`，两者 `CFBundleShortVersionString=1.2.0`、
+  `CFBundleVersion=6`，Mach-O 均为 **arm64**；main.jsbundle 存在，扩展为
+  `com.apple.share-services`。没有主程序 `_CodeSignature`，确认是 unsigned device 包。
+- iOS 云端 archive success；主程序与 appex 的生成 entitlements 均检查 App Group
+  `group.app.familytimecapsule.mobile.share`。unsigned 包尚需使用者签名部署；这不是 App Store
+  安装包，也不能将生成 entitlements 的检查冒充真实签名后的设备权限验收。
+- 两项发布二进制下载后采用增量 SHA256 读取，逐一与发布 SHA256SUMS 比较一致。
+  实际结果已记录，不使用 mock 包、估计大小或预填设备结论。
+
+### 尚未验证的真实设备项目
+
+Android/iOS 含唯一资料的旧包升级、实际分享接收、Files/相册权限、音视频硬件解码/方向、
+触控缩放与安全区、前后台/杀进程后的离线下载与播放、清缓存不伤原件/outbox、本地通知。
+本地文件/SQLite/组件、production browser 与包级验证均不代填上述项目。
+APK 为测试签名包，IPA 为 unsigned 包；不宣称已验证无损升级，不建议卸载含唯一资料的旧包。
+
+本次发布证据补记使用 main 的后续文档提交；发布二进制仍精确来自不可移动标签所指
+`7be689c11c66a0f9d52f6bc9a285f33c9ccdc553`。
