@@ -381,3 +381,50 @@ it("enforces disk and reservation quotas, retries corrupt transfers and prevents
   expect(await native.nativeReadingStore.get(entry.key)).toBeNull();
   expect(() => downloadKey(scope, "book", "../../outbox")).toThrow();
 });
+
+
+it("device erasure stops active downloads and clears every scope, binding and orphaned file", async () => {
+  const { scope } = await native.resolveReadingScope(credentials);
+  const transport = native.nativeReadingTransport(credentials, scope);
+  const entry = await native.readingDownloads.queue(scope, manifest, transport);
+  const other = await native.resolveReadingScope({ ...credentials, serverUrl: "https://other.example.test" });
+  const otherEntry = await native.readingDownloads.queue(other.scope, manifest, transport);
+  const orphan = path.join(root, "reader-downloads", "orphaned.partial");
+  mkdirSync(path.dirname(orphan), { recursive: true });
+  writeFileSync(orphan, "partial private media");
+  state.delay = 2;
+  const running = native.readingDownloads.resume(scope, entry.key, transport);
+  while (!state.downloads.length) await new Promise((resolve) => setTimeout(resolve, 1));
+  const removed = vi.fn();
+  const unsubscribe = native.readingDownloads.subscribe(removed);
+  const clearing = native.clearAllReadingDownloads();
+  await expect(native.readingDownloads.queue(scope, manifest, transport)).rejects.toThrow("正在清理");
+  await Promise.all([running, clearing]);
+  unsubscribe();
+  expect(state.aborts).toBeGreaterThan(0);
+  expect(removed).toHaveBeenCalledWith(entry.key);
+  expect(removed).toHaveBeenCalledWith(otherEntry.key);
+  expect(await native.nativeReadingStore.list()).toEqual([]);
+  expect(existsSync(path.join(root, "reader-downloads"))).toBe(false);
+  await expect(native.resolveReadingScope(credentials, { offline: true })).rejects.toThrow("在线验证");
+  await expect(native.resolveReadingScope({ ...credentials, serverUrl: "https://other.example.test" }, { offline: true })).rejects.toThrow("在线验证");
+  // The reading layer leaves original erasure to the existing full-device flow.
+  expect(existsSync(path.join(root, "captures", "only-original.jpg"))).toBe(true);
+  await native.clearAllReadingDownloads();
+  const fresh = await native.resolveReadingScope(credentials);
+  expect((await native.readingDownloads.queue(fresh.scope, manifest, transport)).state).toBe("queued");
+});
+
+it("device erasure drains an in-flight identity response so it cannot restore a deleted binding", async () => {
+  let complete!: () => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => {
+    complete = () => resolve(Response.json({ userId: user, familyId: family }));
+  })));
+  const identity = native.resolveReadingScope(credentials);
+  while (!complete) await new Promise((resolve) => setTimeout(resolve, 1));
+  const clearing = native.clearAllReadingDownloads();
+  complete();
+  await Promise.allSettled([identity, clearing]);
+  expect(await native.nativeReadingStore.list()).toEqual([]);
+  await expect(native.resolveReadingScope(credentials, { offline: true })).rejects.toThrow("在线验证");
+});

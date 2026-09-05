@@ -312,7 +312,7 @@ export function OfflineReadingScreen({
         ...progress.current,
         media: { ...progress.current.media, [assetId]: seconds },
       };
-      void readingDownloads.saveProgress(key, progress.current);
+      void readingDownloads.saveProgress(key, progress.current).catch(() => {});
     },
     [key],
   );
@@ -320,7 +320,7 @@ export function OfflineReadingScreen({
     setChapter(ch);
     setPage(pg);
     progress.current = { ...progress.current, chapter: ch, page: pg };
-    void readingDownloads.saveProgress(key, progress.current);
+    void readingDownloads.saveProgress(key, progress.current).catch(() => {});
     scroll.current?.scrollTo({ y: 0, animated: false });
   }
   if (!entry)

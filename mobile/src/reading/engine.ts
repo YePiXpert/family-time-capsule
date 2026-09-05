@@ -212,6 +212,54 @@ export class ReadingDownloads {
   } | null = null;
   private listeners = new Set<(removedKey?: string) => void>();
   private liveBytes = 0;
+  private resetting = false;
+  private operations = new Set<Promise<unknown>>();
+
+  /** Serialize device-wide erasure against every in-flight cache operation. */
+  withCacheOperation<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.resetting)
+      return Promise.reject(new ReadingError("正在清理本机阅读数据，请稍后重试。"));
+    const work = Promise.resolve().then(() => {
+      if (this.resetting) throw new ReadingError("正在清理本机阅读数据，请稍后重试。");
+      return fn();
+    });
+    this.operations.add(work);
+    return work.finally(() => { this.operations.delete(work); });
+  }
+
+  async clearAll(cleanup: () => Promise<void>): Promise<void> {
+    if (this.resetting) throw new ReadingError("正在清理本机阅读数据，请稍后重试。");
+    this.resetting = true;
+    try {
+      this.active?.controller.abort();
+      await Promise.allSettled([...this.operations]);
+      const entries = await this.store.list();
+      await cleanup();
+      entries.forEach((entry) => this.emit(entry.key));
+      this.emit();
+    } finally {
+      this.resetting = false;
+    }
+  }
+
+  queue(scope: ReadingScope, manifest: ReadingManifest, transport: ReadingTransport) {
+    return this.withCacheOperation(() => this.queueEntry(scope, manifest, transport));
+  }
+  pause(key: string) {
+    return this.withCacheOperation(() => this.pauseEntry(key));
+  }
+  remove(key: string, transport: ReadingTransport) {
+    return this.withCacheOperation(() => this.removeEntry(key, transport));
+  }
+  resume(scope: ReadingScope, key: string, transport: ReadingTransport) {
+    return this.withCacheOperation(() => this.resumeEntry(scope, key, transport));
+  }
+  revalidate(scope: ReadingScope, key: string, transport: ReadingTransport) {
+    return this.withCacheOperation(() => this.revalidateEntry(scope, key, transport));
+  }
+  saveProgress(key: string, value: ReadingProgress) {
+    return this.withCacheOperation(() => this.saveEntryProgress(key, value));
+  }
   constructor(readonly store: ReadingStore) {}
   subscribe(fn: (removedKey?: string) => void) {
     this.listeners.add(fn);
@@ -225,7 +273,7 @@ export class ReadingDownloads {
   transferProgress(key: string) {
     return this.active?.key === key ? this.liveBytes : 0;
   }
-  async queue(
+  private async queueEntry(
     scope: ReadingScope,
     manifest: ReadingManifest,
     transport: ReadingTransport,
@@ -255,7 +303,7 @@ export class ReadingDownloads {
     this.emit();
     return entry;
   }
-  async pause(key: string) {
+  private async pauseEntry(key: string) {
     if (this.active?.key === key) {
       this.active.controller.abort();
       await this.active.done;
@@ -267,13 +315,13 @@ export class ReadingDownloads {
       }
     }
   }
-  async remove(key: string, transport: ReadingTransport) {
+  private async removeEntry(key: string, transport: ReadingTransport) {
     if (this.active?.key === key) await this.pause(key);
     await transport.removeDirectory(key);
     await this.store.remove(key);
     this.emit(key);
   }
-  async resume(scope: ReadingScope, key: string, transport: ReadingTransport) {
+  private async resumeEntry(scope: ReadingScope, key: string, transport: ReadingTransport) {
     if (this.active)
       throw new ReadingError("另一份阅读内容正在下载，请先暂停它。");
     const entry = await this.store.get(key);
@@ -281,6 +329,7 @@ export class ReadingDownloads {
       throw new ReadingError("下载不存在。", 404);
     if (this.active)
       throw new ReadingError("另一份阅读内容正在下载，请先暂停它。");
+    if (this.resetting) throw new ReadingError("正在清理本机阅读数据，请稍后重试。");
     const controller = new AbortController();
     let finish!: () => void;
     const done = new Promise<void>((resolve) => {
@@ -366,7 +415,7 @@ export class ReadingDownloads {
       finish();
     }
   }
-  async revalidate(
+  private async revalidateEntry(
     scope: ReadingScope,
     key: string,
     transport: ReadingTransport,
@@ -394,7 +443,7 @@ export class ReadingDownloads {
       throw e;
     }
   }
-  async saveProgress(key: string, value: ReadingProgress) {
+  private async saveEntryProgress(key: string, value: ReadingProgress) {
     if (
       !Number.isSafeInteger(value.chapter) ||
       value.chapter < 0 ||

@@ -48,6 +48,7 @@ import type {
   Viewer,
 } from "../types";
 import { reconcileWeeklyReviewReminder } from "../notifications/review-reminders";
+import { clearAllReadingDownloads, revalidateReadingDownloads } from "../reading/native";
 
 type AppContextValue = {
   credentials: Credentials | null;
@@ -91,6 +92,9 @@ export function AppProvider({
   const syncInFlight = useRef(false);
   const intakeInFlight = useRef(false);
   const intakeAgain = useRef(false);
+  const clearingLocal = useRef(false);
+  const syncDone = useRef<Promise<void> | null>(null);
+  const intakeDone = useRef<Promise<void> | null>(null);
 
   const reloadLocal = useCallback(async () => {
     const [nextEvents, nextFamily, nextViewer, nextPeople, nextOutbox, nextSyncAt, cachedHome] =
@@ -116,7 +120,7 @@ export function AppProvider({
     const nextHome = await fetchMobileHome(activeCredentials);
     await cacheMobileHome(nextHome);
     setHome(nextHome);
-    void import("../reading/native").then(({revalidateReadingDownloads}) => revalidateReadingDownloads(activeCredentials)).catch(() => {});
+    void revalidateReadingDownloads(activeCredentials).catch(() => {});
     try {
       const review = await fetchMobileReview(activeCredentials);
       await cacheMobileReview(review);
@@ -128,8 +132,10 @@ export function AppProvider({
   }, []);
 
   const runSync = useCallback(async () => {
-    if (!credentials || syncInFlight.current) return;
+    if (!credentials || syncInFlight.current || clearingLocal.current) return;
     syncInFlight.current = true;
+    let finish!: () => void;
+    syncDone.current = new Promise<void>((resolve) => { finish = resolve; });
     setSyncing(true);
     setMessage(null);
     try {
@@ -152,6 +158,8 @@ export function AppProvider({
       } finally {
         setSyncing(false);
         syncInFlight.current = false;
+        syncDone.current = null;
+        finish();
       }
     }
   }, [credentials, refreshHome, reloadLocal]);
@@ -162,11 +170,14 @@ export function AppProvider({
   }, [credentials, network.isConnected, reloadLocal, runSync]);
 
   const receiveSystemShares = useCallback(async () => {
+    if (clearingLocal.current) return;
     if (intakeInFlight.current) {
       intakeAgain.current = true;
       return;
     }
     intakeInFlight.current = true;
+    let finish!: () => void;
+    intakeDone.current = new Promise<void>((resolve) => { finish = resolve; });
     try {
       do {
         intakeAgain.current = false;
@@ -181,15 +192,18 @@ export function AppProvider({
           setMessage(`已接管 ${result.queued} 项系统分享并保存到本机${failed}。`);
           if (credentials && network.isConnected !== false && result.queued > 0) await runSync();
         }
-      } while (intakeAgain.current);
+      } while (intakeAgain.current && !clearingLocal.current);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "系统分享仍保留在本机，稍后会再次接管。");
     } finally {
       intakeInFlight.current = false;
+      intakeDone.current = null;
+      finish();
     }
   }, [credentials, network.isConnected, reloadLocal, runSync, viewer]);
 
   const connect = useCallback(async (nextCredentials: Credentials) => {
+    if (clearingLocal.current) return;
     await saveCredentials(nextCredentials);
     setCredentials(nextCredentials);
   }, []);
@@ -202,12 +216,26 @@ export function AppProvider({
   }, [credentials]);
 
   const clearLocal = useCallback(async () => {
-    if (credentials) await signOut(credentials);
-    await Promise.all([clearCredentials(), clearLocalArchive()]);
-    clearLocalFiles();
-    setCredentials(null);
-    await reloadLocal();
-    setMessage("本机资料已清除。");
+    if (clearingLocal.current) return;
+    clearingLocal.current = true;
+    setSyncing(true);
+    try {
+      // Let already-started archive/intake writes settle before erasing their
+      // results. The reading reset aborts transfers and drains identity writes.
+      await Promise.all([syncDone.current, intakeDone.current]);
+      if (credentials) await signOut(credentials);
+      await clearAllReadingDownloads();
+      await Promise.all([clearCredentials(), clearLocalArchive()]);
+      clearLocalFiles();
+      setCredentials(null);
+      await reloadLocal();
+      setMessage("本机资料已清除。");
+    } catch (error) {
+      setMessage(error instanceof Error ? `清理未完成：${error.message}` : "清理未完成，请重试。");
+    } finally {
+      clearingLocal.current = false;
+      setSyncing(false);
+    }
   }, [credentials, reloadLocal]);
 
   const discardFailed = useCallback(async () => {

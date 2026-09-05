@@ -251,71 +251,73 @@ export async function resolveReadingScope(
   credentials: Credentials,
   options: { offline?: boolean } = {},
 ): Promise<{ scope: ReadingScope; online: boolean }> {
-  const serverUrl = credentials.serverUrl.replace(/\/+$/, ""),
-    credentialHash = await hash(JSON.stringify([serverUrl, credentials.token]));
-  const previous = await (
-    await db()
-  ).getFirstAsync<{ scope_json: string }>(
-    "SELECT scope_json FROM reading_binding WHERE credential_hash=?",
-    credentialHash,
-  );
-  if (options.offline) {
-    if (previous)
-      return { scope: JSON.parse(previous.scope_json), online: false };
-    throw new ReadingError("请先用此账号在线验证一次，再离线阅读下载。", 0);
-  }
-  try {
-    const identity = await request(credentials, "/api/reading/identity");
-    if (
-      typeof identity?.userId !== "string" ||
-      typeof identity.familyId !== "string"
-    )
-      throw new ReadingError("阅读账号响应无效。", 502);
-    const scope = {
-      key: await hash(
-        JSON.stringify([serverUrl, identity.userId, identity.familyId]),
-      ),
-      serverUrl,
-      userId: identity.userId,
-      familyId: identity.familyId,
-    };
-    if (previous) {
-      const old = JSON.parse(previous.scope_json) as ReadingScope;
-      if (old.key !== scope.key) {
-        const transport = nativeReadingTransport(credentials, old);
-        for (const row of await nativeReadingStore.list(old.key))
-          await readingDownloads.remove(row.key, transport);
-      }
-    }
-    await (
+  return readingDownloads.withCacheOperation(async () => {
+    const serverUrl = credentials.serverUrl.replace(/\/+$/, ""),
+      credentialHash = await hash(JSON.stringify([serverUrl, credentials.token]));
+    const previous = await (
       await db()
-    ).runAsync(
-      "INSERT INTO reading_binding VALUES(?,?) ON CONFLICT(credential_hash) DO UPDATE SET scope_json=excluded.scope_json",
+    ).getFirstAsync<{ scope_json: string }>(
+      "SELECT scope_json FROM reading_binding WHERE credential_hash=?",
       credentialHash,
-      JSON.stringify(scope),
     );
-    return { scope, online: true };
-  } catch (e) {
-    if (e instanceof ReadingError && e.status === 0 && previous)
-      return { scope: JSON.parse(previous.scope_json), online: false };
-    if (
-      e instanceof ReadingError &&
-      [401, 403, 404].includes(e.status) &&
-      previous
-    ) {
-      const old = JSON.parse(previous.scope_json) as ReadingScope;
-      const transport = nativeReadingTransport(credentials, old);
-      for (const row of await nativeReadingStore.list(old.key))
-        await readingDownloads.remove(row.key, transport);
+    if (options.offline) {
+      if (previous)
+        return { scope: JSON.parse(previous.scope_json), online: false };
+      throw new ReadingError("请先用此账号在线验证一次，再离线阅读下载。", 0);
+    }
+    try {
+      const identity = await request(credentials, "/api/reading/identity");
+      if (
+        typeof identity?.userId !== "string" ||
+        typeof identity.familyId !== "string"
+      )
+        throw new ReadingError("阅读账号响应无效。", 502);
+      const scope = {
+        key: await hash(
+          JSON.stringify([serverUrl, identity.userId, identity.familyId]),
+        ),
+        serverUrl,
+        userId: identity.userId,
+        familyId: identity.familyId,
+      };
+      if (previous) {
+        const old = JSON.parse(previous.scope_json) as ReadingScope;
+        if (old.key !== scope.key) {
+          const transport = nativeReadingTransport(credentials, old);
+          for (const row of await nativeReadingStore.list(old.key))
+            await readingDownloads.remove(row.key, transport);
+        }
+      }
       await (
         await db()
       ).runAsync(
-        "DELETE FROM reading_binding WHERE credential_hash=?",
+        "INSERT INTO reading_binding VALUES(?,?) ON CONFLICT(credential_hash) DO UPDATE SET scope_json=excluded.scope_json",
         credentialHash,
+        JSON.stringify(scope),
       );
+      return { scope, online: true };
+    } catch (e) {
+      if (e instanceof ReadingError && e.status === 0 && previous)
+        return { scope: JSON.parse(previous.scope_json), online: false };
+      if (
+        e instanceof ReadingError &&
+        [401, 403, 404].includes(e.status) &&
+        previous
+      ) {
+        const old = JSON.parse(previous.scope_json) as ReadingScope;
+        const transport = nativeReadingTransport(credentials, old);
+        for (const row of await nativeReadingStore.list(old.key))
+          await readingDownloads.remove(row.key, transport);
+        await (
+          await db()
+        ).runAsync(
+          "DELETE FROM reading_binding WHERE credential_hash=?",
+          credentialHash,
+        );
+      }
+      throw e;
     }
-    throw e;
-  }
+  });
 }
 export function nativeReadingTransport(
   credentials: Credentials,
@@ -463,4 +465,14 @@ export async function clearReadingScope(
   const transport = nativeReadingTransport(credentials, scope);
   for (const entry of await nativeReadingStore.list(scope.key))
     await readingDownloads.remove(entry.key, transport);
+}
+
+/** Device reset includes all servers/accounts, bindings and orphaned/partial files. */
+export async function clearAllReadingDownloads() {
+  await readingDownloads.clearAll(async () => {
+    await FS.deleteAsync(root(), { idempotent: true });
+    await (await db()).withExclusiveTransactionAsync(async (tx) => {
+      await tx.execAsync("DELETE FROM reading_download; DELETE FROM reading_binding;");
+    });
+  });
 }
