@@ -71,7 +71,7 @@ async function press(text: string) {
     (n) =>
       String(n.type) === "Pressable" &&
       n.findAll((c) => String(c.type) === "Text" && c.props.children === text)
-        .length,
+        .length > 0,
   )[0]!;
   expect(button).toBeTruthy();
   expect(button.props.disabled).not.toBe(true);

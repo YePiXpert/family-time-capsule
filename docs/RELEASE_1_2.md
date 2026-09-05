@@ -125,3 +125,9 @@ BookProject、可搜索 PDF/EPUB 出版、回顾作品、原生主动离线收�
 
 本切片 push 对应 SHA/CI 将在下一里程碑记录。M6 回顾作品、M7 离线、M8 完整发布门禁
 未完成，尚未创建 `v1.2.0-alpha.1`，不宣称 stable 或旧包无损升级已验收。
+
+出版提交 `22250cc968960accfff5c16182ebb7092714181f` 已 push；CI `33943168055` 的 web-quality
+通过，mobile-quality 发现新增测试的 `findAll` 谓词返回 `number | false`，不能满足严格 boolean。
+此前本地异步 typecheck 的失败未及时核对，因此上节 Mobile typecheck“通过”应以本修复后结果
+为准。已显式比较 `length > 0`，本地 Mobile typecheck、2 项出版交互、lint 再次全部通过；
+未改断言内容。修复提交后核对新的完整 CI，不把旧 run 记为全绿。
