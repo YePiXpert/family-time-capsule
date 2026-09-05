@@ -98,11 +98,11 @@ test("照片阅读器保持原图比例，键盘翻页、缩放和关闭返回�
   await ensureBootstrap(page);await page.goto('/capture');
   const files=await Promise.all(['#d2b89b','#aec0b5'].map(async(background,i)=>({name:`虚构家庭照片${i+1}.jpg`,mimeType:'image/jpeg',buffer:await sharp({create:{width:900,height:600,channels:3,background}}).jpeg().toBuffer()})));
   await page.locator('section[aria-label="照片"] input[type="file"]').setInputFiles(files);await expect(page.getByText('已保存，等待整理')).toHaveCount(2);
-  await page.goto('/inbox');for(const box of await page.getByRole('checkbox').all())await box.check();await page.getByLabel('合并事件标题').fill('虚构家庭的两张照片');await page.getByRole('button',{name:'合并',exact:true}).click();
-  const open=page.getByRole('button',{name:'打开阅读器：虚构家庭照片1.jpg'});await open.click();const dialog=page.getByRole('dialog',{name:'媒体阅读器'});await expect(dialog).toBeVisible();
+  await page.goto('/inbox');await expect(page.getByRole('checkbox')).toHaveCount(2);for(const box of await page.getByRole('checkbox').all())await box.check();await page.getByLabel('合并事件标题').fill('虚构家庭的两张照片');await page.getByRole('button',{name:'合并',exact:true}).click();
+  const openers=page.getByRole('button',{name:/打开阅读器：虚构家庭照片/});await expect(openers).toHaveCount(2);const names=await openers.evaluateAll(nodes=>nodes.map(n=>n.getAttribute('aria-label')!.replace('打开阅读器：','')));expect(new Set(names)).toEqual(new Set(['虚构家庭照片1.jpg','虚构家庭照片2.jpg']));const open=openers.first();await open.click();const dialog=page.getByRole('dialog',{name:'媒体阅读器'});await expect(dialog).toBeVisible();
   const photo=dialog.getByRole('img');await expect(photo).toBeVisible();expect(await photo.evaluate(node=>getComputedStyle(node).objectFit)).toBe('contain');
   await dialog.getByRole('button',{name:'放大',exact:true}).click();expect(await photo.evaluate(node=>(node as HTMLElement).style.width)).toBe('150%');
-  await page.keyboard.press('ArrowRight');await expect(dialog.getByRole('heading',{name:'虚构家庭照片2.jpg'})).toBeVisible();await page.keyboard.press('ArrowLeft');await expect(dialog.getByRole('heading',{name:'虚构家庭照片1.jpg'})).toBeVisible();
+  await page.keyboard.press('ArrowRight');await expect(dialog.getByRole('heading',{name:names[1]})).toBeVisible();await page.keyboard.press('ArrowLeft');await expect(dialog.getByRole('heading',{name:names[0]})).toBeVisible();
   for(const width of [375,768,1440]){await page.setViewportSize({width,height:900});await dialog.getByRole('button',{name:'适合屏幕',exact:true}).click();expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);await page.screenshot({path:`test-results/media-reader-fictional-${width}.png`});}
   await page.keyboard.press('Escape');await expect(dialog).not.toBeVisible();await expect(open).toBeFocused();await expect(page.locator('audio,video')).toHaveCount(0);
 });
