@@ -69,6 +69,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      # Shared calendar utilities resolve the installed Expo TypeScript base.
+      - run: npm ci
+        working-directory: mobile
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       # Playwright（10 个独立 project）+ 灾难恢复 roundtrip（真实服务器 boot）
