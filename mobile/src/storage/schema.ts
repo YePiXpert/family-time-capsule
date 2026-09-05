@@ -1,3 +1,13 @@
+export const MEMORY_DETAIL_SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS memory_detail (
+    scope TEXT NOT NULL,
+    id TEXT NOT NULL,
+    detail_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (scope, id)
+  );
+`;
+
 export const MOBILE_LOCAL_SCHEMA_SQL = `
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
@@ -85,11 +95,7 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS local_import_item_session_idx
     ON local_import_item(import_session_id, sort_order, id);
-  CREATE TABLE IF NOT EXISTS memory_detail (
-    id TEXT PRIMARY KEY NOT NULL,
-    detail_json TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-  );
+  ${MEMORY_DETAIL_SCHEMA_SQL}
 
   INSERT OR IGNORE INTO local_capture(
     id, kind, title, occurred_at, local_uri, media_type, sync_state

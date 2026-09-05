@@ -21,7 +21,7 @@ import {
   mergeTimelineEvents,
   type LocalCaptureRow,
 } from "./local-timeline";
-import { MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
+import { MEMORY_DETAIL_SCHEMA_SQL, MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
 
 const DB_NAME = "family-time-capsule.sqlite";
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -34,6 +34,14 @@ function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 export async function initializeLocalStore(): Promise<void> {
   const db = await getDatabase();
   await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
+  const memoryColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(memory_detail)");
+  if (!memoryColumns.some((column) => column.name === "scope")) {
+    // Legacy server responses have no proven owner. Discard only this
+    // replaceable cache; locally captured originals and outbox rows stay intact.
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.execAsync(`DROP TABLE memory_detail; ${MEMORY_DETAIL_SCHEMA_SQL}`);
+    });
+  }
   const definition = await db.getFirstAsync<{ sql: string | null }>(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'local_capture'",
   );
@@ -213,13 +221,14 @@ export async function listCachedPeople(): Promise<Person[]> {
   }));
 }
 
-export async function cacheMemoryDetail(detail: MobileMemory): Promise<void> {
+export async function cacheMemoryDetail(scope: string, detail: MobileMemory): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
-    `INSERT INTO memory_detail(id, detail_json, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
+    `INSERT INTO memory_detail(scope, id, detail_json, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(scope, id) DO UPDATE SET
        detail_json = excluded.detail_json,
        updated_at = excluded.updated_at`,
+    scope,
     detail.id,
     JSON.stringify(detail),
     detail.updatedAt,
@@ -227,11 +236,13 @@ export async function cacheMemoryDetail(detail: MobileMemory): Promise<void> {
 }
 
 export async function getCachedMemoryDetail(
+  scope: string,
   id: string,
 ): Promise<MobileMemory | null> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<{ detail_json: string }>(
-    "SELECT detail_json FROM memory_detail WHERE id = ?",
+    "SELECT detail_json FROM memory_detail WHERE scope = ? AND id = ?",
+    scope,
     id,
   );
   if (!row) return null;
@@ -240,6 +251,11 @@ export async function getCachedMemoryDetail(
   } catch {
     return null;
   }
+}
+
+export async function removeCachedMemoryDetail(scope: string, id: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM memory_detail WHERE scope = ? AND id = ?", scope, id);
 }
 
 export async function listTimeline(): Promise<LocalTimelineEvent[]> {

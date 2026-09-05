@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import {
   createMobileContribution,
+  ApiError,
   fetchMobileMemory,
   updateMobileContribution,
 } from "../api/client";
@@ -12,6 +14,7 @@ import type { RootStackParamList } from "../navigation/types";
 import {
   cacheMemoryDetail,
   getCachedMemoryDetail,
+  removeCachedMemoryDetail,
   listLocalMemoryMedia,
   type LocalMemoryMedia,
 } from "../storage/database";
@@ -22,6 +25,7 @@ import {
   eligibleContributionAuthors,
   shouldRenderStandaloneCover,
 } from "../memories/presentation";
+import { memoryCacheScope } from "../memories/cache-scope";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Memory">;
 
@@ -39,7 +43,15 @@ function visibilityLabel(value: MobileContributionVisibility): string {
   return CONTRIBUTION_VISIBILITIES.find((option) => option.value === value)?.label ?? value;
 }
 
-export function MemoryScreen({ route, navigation }: Props) {
+export function MemoryScreen(props: Props) {
+  const { credentials, viewer, family } = useApp();
+  const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
+  // Remount before rendering after an account/event change, including any
+  // private text already held in state or in an editing control.
+  return <MemoryDetailScreen key={JSON.stringify([scope, props.route.params.id])} {...props} cacheScope={scope} />;
+}
+
+function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheScope: string | null }) {
   const { credentials, events, family, online, people, viewer } = useApp();
   const [memory, setMemory] = useState<MobileMemory | null>(null);
   const [localMedia, setLocalMedia] = useState<LocalMemoryMedia[]>([]);
@@ -51,44 +63,61 @@ export function MemoryScreen({ route, navigation }: Props) {
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
   const [editingContributionText, setEditingContributionText] = useState("");
   const [savingContribution, setSavingContribution] = useState(false);
+  const requestVersion = useRef(0);
   const summary = events.find((event) => event.id === route.params.id);
 
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
     setError(null);
-    const [cached, archivedMedia] = await Promise.all([
-      getCachedMemoryDetail(route.params.id),
-      listLocalMemoryMedia(route.params.id),
-    ]);
-    setLocalMedia(archivedMedia);
-    if (cached) setMemory(cached);
-    if (credentials && online !== false) {
-      try {
-        const next = await fetchMobileMemory(credentials, route.params.id);
-        await cacheMemoryDetail(next);
-        setMemory(next);
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "无法更新记忆详情。");
+    try {
+      const [cached, archivedMedia] = await Promise.all([
+        cacheScope ? getCachedMemoryDetail(cacheScope, route.params.id) : null,
+        listLocalMemoryMedia(route.params.id),
+      ]);
+      if (version !== requestVersion.current) return;
+      setLocalMedia(archivedMedia);
+      if (credentials && online !== false) {
+        try {
+          const next = await fetchMobileMemory(credentials, route.params.id);
+          if (version !== requestVersion.current) return;
+          if (cacheScope) await cacheMemoryDetail(cacheScope, next);
+          if (version !== requestVersion.current) return;
+          setMemory(next);
+        } catch (reason) {
+          if (version !== requestVersion.current) return;
+          if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
+            setMemory(null);
+            if (cacheScope) await removeCachedMemoryDetail(cacheScope, route.params.id);
+          } else {
+            setMemory(cached);
+          }
+          if (version === requestVersion.current)
+            setError(reason instanceof Error ? reason.message : "无法更新记忆详情。");
+        }
+      } else {
+        setMemory(cached);
+        if (!cached) setError("当前离线；这份记忆还没有在本机打开过。");
       }
-    } else if (!cached) {
-      setError("当前离线；这份记忆还没有在本机打开过。");
+    } catch (reason) {
+      if (version === requestVersion.current)
+        setError(reason instanceof Error ? reason.message : "无法读取记忆详情。");
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
     }
-    setLoading(false);
-  }, [credentials, online, route.params.id]);
+  }, [credentials, online, route.params.id, cacheScope]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => void load(), 0);
-    return () => clearTimeout(timer);
-  }, [load]);
+  useFocusEffect(useCallback(() => {
+    void load();
+    return () => { requestVersion.current += 1; };
+  }, [load]));
 
   const contributionAuthors = eligibleContributionAuthors(viewer, people);
   const effectiveAuthorPersonId = authorPersonId || contributionAuthors[0]?.id || "";
 
   const refreshMemory = async () => {
     if (!credentials) return;
-    const next = await fetchMobileMemory(credentials, route.params.id);
-    await cacheMemoryDetail(next);
-    setMemory(next);
+    await load();
   };
 
   const addContribution = async () => {
