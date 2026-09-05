@@ -3,7 +3,7 @@
   "description": "Native offline-first iOS and Android client for Family Time Capsule.",
   "license": "UNLICENSED",
   "private": true,
-  "version": "1.2.0-alpha.1",
+  "version": "1.2.0-alpha.2",
   "main": "index.ts",
   "dependencies": {
     "@noble/hashes": "2.0.1",

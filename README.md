@@ -1,6 +1,9 @@
 # Family Time Capsule
 
-**v1.2.0-alpha.1 — 家庭记忆馆与成长年册（prerelease）**
+**v1.2.0-alpha.2 — 家庭记忆馆与成长年册（prerelease）**
+
+本次修复录音初始化、媒体 Range 请求、私人详情缓存隔离与本机清空；详见
+[发布说明](docs/RELEASE_NOTES_1_2.md)。
 
 A private, self-hosted family memory archive.
 
@@ -18,7 +21,7 @@ Family members tell the story.
 Original sources always come first.
 
 > AI 默认关闭、始终可选；没有 API Key、Provider 或 worker 时，核心档案仍完整可用。
-> 当前是 1.1 alpha：自动化、Docker 与原生包级门禁通过后发布 prerelease；系统分享、
+> 当前是 1.2 alpha：自动化、Docker 与原生包级门禁通过后发布 prerelease；系统分享、
 > Files/iCloud/DocumentsProvider、通知和真实设备媒体行为仍必须按
 > [真实设备验收](docs/REAL_DEVICE_TEST.md) 留档，不能由编译结果代替。
 
