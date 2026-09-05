@@ -3,7 +3,7 @@
   "description": "Native offline-first iOS and Android client for Family Time Capsule.",
   "license": "UNLICENSED",
   "private": true,
-  "version": "1.2.0-alpha.2",
+  "version": "1.2.0-alpha.3",
   "main": "index.ts",
   "dependencies": {
     "@noble/hashes": "2.0.1",
@@ -49,6 +49,7 @@
     "query-string": "^9.5.1"
   },
   "scripts": {
+    "postinstall": "node scripts/patch-navigation-query-string.cjs",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
