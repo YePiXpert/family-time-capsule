@@ -549,7 +549,7 @@ export function readableAssetPredicate(snapshot: ContributionAccessSnapshot, ass
     and exists (select 1 from asset root_asset where root_asset.id = ${assetId} and root_asset.family_id = ${p.familyId})
     and not exists (
       with recursive ancestors(id, parent_id) as (
-        select id, original_asset_id from asset where id = ${assetId} and family_id = ${p.familyId}
+        select permission_seed.id, permission_seed.original_asset_id from asset permission_seed where permission_seed.id = ${assetId} and permission_seed.family_id = ${p.familyId}
         union select a.id, a.original_asset_id from asset a join ancestors on a.id = ancestors.parent_id where a.family_id = ${p.familyId}
       ), descendants(id) as (
         select id from ancestors where parent_id is null

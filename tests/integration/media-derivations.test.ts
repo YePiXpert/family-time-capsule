@@ -328,6 +328,11 @@ it("tightened contribution permission denies previously issued derivative URLs a
   expect(() => requestMediaDerivation(context, source.id, "waveform")).toThrow(
     "source_unavailable",
   );
+  // A public sibling must remain visible when the outer SQL table is named asset.
+  const publicAudio=await original('audio','audio/wav',Buffer.concat([readFileSync(path.join(root,'synthetic.wav')),Buffer.from('public-sibling')]));
+  getDb().insert(contribution).values({id:randomUUID(),memoryEventId:eventId,authorPersonId:authorId,audioAssetId:publicAudio.id,visibility:'family',rawText:'公开的虚构家人声音'}).run();
+  expect((await getPersonProfile(context,authorId))?.voices.map(v=>v.assetId)).toEqual([publicAudio.id]);
+
 });
 it("bounded derivative stream rejects overflow without publishing a partial file", async () => {
   const storage = getAssetStorage(),
