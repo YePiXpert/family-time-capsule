@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { MediaReader } from "@/components/media-reader";
 import { notFound } from "next/navigation";
 import { EmptyState } from "@/components/empty-state";
 import { MemoryCard } from "@/components/memory-card";
@@ -114,6 +115,7 @@ export default async function PersonProfilePage({
         </section>
       ) : null}
 
+      {profile.voices.length ? <section className="mt-10" aria-label="家人的声音"><h2 className="mb-3 text-xl">家人的声音 · 最近 {profile.voices.length} 段</h2><MediaReader assets={profile.voices.map(voice=>({id:voice.assetId,type:"audio",filename:voice.memoryTitle,mimeType:voice.mimeType,durationMs:voice.durationMs,author:profile.person.displayName,dateLabel:dateFormatter.format(voice.createdAt)}))}/><ul className="mt-3">{profile.voices.map(voice=><li key={voice.id}><Link className="ui-text-link inline-flex min-h-11 items-center" href={`/memories/${voice.memoryEventId}`}>回到来源：{voice.memoryTitle}</Link></li>)}</ul></section>:null}
       <section className="mt-10" aria-label="参与的记忆">
         <SectionHeader
           title={profile.person.isChild ? "成长记忆" : "参与的记忆"}

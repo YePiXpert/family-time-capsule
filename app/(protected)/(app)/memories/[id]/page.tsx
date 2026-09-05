@@ -11,8 +11,7 @@ import {
   listVisibleContributionsForEvent,
 } from "@/lib/authz/contribution-access";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
-import { MediaBlock } from "@/components/media-view";
-import { MediaGrid } from "@/components/media-grid";
+import { MediaReader } from "@/components/media-reader";
 import { MemoryCard } from "@/components/memory-card";
 import { CollectionSelection } from "@/components/collection-selection";
 import { PageHeader } from "@/components/page-header";
@@ -300,20 +299,7 @@ export default async function MemoryEventPage({
         {assets.length === 0 ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-muted">这条文字记忆没有媒体素材。</div>
         ) : (
-          <MediaGrid label="记忆影像与声音">
-            {assets.map((asset) => (
-              <MediaBlock
-                key={asset.id}
-                assetId={asset.id}
-                filename={asset.originalFilename}
-                mimeType={asset.mimeType}
-                type={asset.type}
-                durationMs={asset.durationMs}
-                bytes={asset.bytes}
-                thumbAssetId={thumbMap.get(asset.id)?.id ?? null}
-              />
-            ))}
-          </MediaGrid>
+          <MediaReader assets={assets.map(asset => ({ id: asset.id, filename: asset.originalFilename, mimeType: asset.mimeType, type: asset.type, durationMs: asset.durationMs, thumbnailId: thumbMap.get(asset.id)?.id ?? null, dateLabel: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone }).format(event.occurredAt) }))} />
         )}
       </section>
 
@@ -397,7 +383,7 @@ export default async function MemoryEventPage({
         <p className="mt-1 text-sm leading-6 text-muted">同一件事可以有不同视角，每个人的讲述彼此独立、不会相互覆盖。</p>
         <div className="mt-3 flex flex-col gap-3">
           {contributions.length > 0 ? contributions.map((contribution) => (
-            <ContributionBlock key={contribution.id} contribution={contribution} canEdit={contribution.canEdit} />
+            <ContributionBlock key={contribution.id} contribution={contribution} dateLabel={new Intl.DateTimeFormat("zh-CN",{dateStyle:"long",timeZone:timezone}).format(contribution.createdAt)} canEdit={contribution.canEdit} />
           )) : <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">还没有家人补充讲述。</p>}
         </div>
         {canCreateContribution && contributionAuthors.length > 0 ? <AddContributionForm memoryEventId={event.id} people={contributionAuthors} /> : null}

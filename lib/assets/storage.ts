@@ -137,6 +137,16 @@ export interface AssetStorage {
     data: Buffer,
     dateForPath: Date,
   ): PutResult;
+  /** Bounded stream, SHA-256 and atomic publication under a new derivative key. */
+  putDerivativeStream(
+    derivativeType: DerivativeType,
+    familyId: string,
+    assetId: string,
+    extension: string,
+    data: Readable,
+    dateForPath: Date,
+    maxBytes: number,
+  ): Promise<StreamPutResult>;
   read(key: string): Buffer;
   createWebStream(key: string): ReadableStream<Uint8Array>;
   exists(key: string): boolean;
@@ -179,7 +189,12 @@ export class LocalFilesystemStorage implements AssetStorage {
     data: Buffer,
     dateForPath: Date,
   ): PutResult {
-    const key = buildOriginalStorageKey(familyId, assetId, extension, dateForPath);
+    const key = buildOriginalStorageKey(
+      familyId,
+      assetId,
+      extension,
+      dateForPath,
+    );
     const target = this.resolvePath(key);
     if (existsSync(target)) throw new OriginalExistsError(key);
     this.write(key, data);
@@ -199,6 +214,38 @@ export class LocalFilesystemStorage implements AssetStorage {
       extension,
       dateForPath,
     );
+    return this.putStream(key, data);
+  }
+
+  async putDerivativeStream(
+    kind: DerivativeType,
+    familyId: string,
+    assetId: string,
+    extension: string,
+    data: Readable,
+    dateForPath: Date,
+    maxBytes: number,
+  ): Promise<StreamPutResult> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1)
+      throw new Error("invalid derivative limit");
+    return this.putStream(
+      buildDerivativeStorageKey(
+        kind,
+        familyId,
+        assetId,
+        extension,
+        dateForPath,
+      ),
+      data,
+      maxBytes,
+    );
+  }
+
+  private async putStream(
+    key: string,
+    data: Readable,
+    maxBytes = Number.MAX_SAFE_INTEGER,
+  ): Promise<StreamPutResult> {
     const target = this.resolvePath(key);
     const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
     const hash = createHash("sha256");
@@ -206,6 +253,10 @@ export class LocalFilesystemStorage implements AssetStorage {
     const verifier = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         bytes += chunk.byteLength;
+        if (bytes > maxBytes) {
+          callback(new Error("derivative_output_limit"));
+          return;
+        }
         hash.update(chunk);
         callback(null, chunk);
       },
@@ -265,7 +316,9 @@ export class LocalFilesystemStorage implements AssetStorage {
 
   createWebStream(key: string): ReadableStream<Uint8Array> {
     const target = this.resolvePath(key);
-    return Readable.toWeb(createReadStream(target)) as ReadableStream<Uint8Array>;
+    return Readable.toWeb(
+      createReadStream(target),
+    ) as ReadableStream<Uint8Array>;
   }
 
   exists(key: string): boolean {
@@ -412,10 +465,16 @@ export class LocalFilesystemStorage implements AssetStorage {
     const uploadsRoot = path.resolve(this.root, "uploads") + path.sep;
     if (!resolved.startsWith(uploadsRoot)) throw new StorageKeyError(key);
     // O_NOFOLLOW protects the leaf only; reject a substituted parent too.
-    for (const [target, directory] of [[path.dirname(resolved), true], [resolved, false]] as const) {
+    for (const [target, directory] of [
+      [path.dirname(resolved), true],
+      [resolved, false],
+    ] as const) {
       try {
         const info = lstatSync(target);
-        if (info.isSymbolicLink() || (directory ? !info.isDirectory() : !info.isFile())) {
+        if (
+          info.isSymbolicLink() ||
+          (directory ? !info.isDirectory() : !info.isFile())
+        ) {
           throw new StorageKeyError(key);
         }
       } catch (error) {
@@ -459,9 +518,11 @@ export class LocalFilesystemStorage implements AssetStorage {
   }
 
   async deleteUploadPart(key: string): Promise<void> {
-    await unlink(this.resolveUploadPath(key)).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") throw error;
-    });
+    await unlink(this.resolveUploadPath(key)).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code !== "ENOENT") throw error;
+      },
+    );
   }
 
   private write(key: string, data: Buffer): void {

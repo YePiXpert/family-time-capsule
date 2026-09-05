@@ -25,6 +25,7 @@ import * as storySchema from "./schema/story";
 import * as oralHistorySchema from "./schema/oral-history";
 import * as backupSchema from "./schema/backup";
 import * as importSchema from "./schema/import";
+import * as mediaJobSchema from "./schema/media-job";
 import * as collectionSchema from "./schema/collection";
 import * as reviewSchema from "./schema/review";
 
@@ -88,6 +89,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...importSchema,
         ...reviewSchema,
         ...collectionSchema,
+        ...mediaJobSchema,
         ...auditSchema,
       },
     });

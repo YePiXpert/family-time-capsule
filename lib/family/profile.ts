@@ -1,11 +1,13 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { asset } from "@/db/schema/asset";
 import { getDb } from "@/db";
 import { person as personTable } from "@/db/schema/family";
 import {
   createContributionAccessSnapshot,
   listVisibleContributionsByAuthor,
+  readableAssetPredicate,
 } from "@/lib/authz/contribution-access";
 import type { FamilyContext } from "@/lib/family/context";
 import {
@@ -32,6 +34,15 @@ export type PersonProfile = {
   participatingMemories: TimelineEntry[];
   sharedWithChildren: TimelineEntry[];
   narratives: PersonNarrative[];
+  voices: {
+    id: string;
+    assetId: string;
+    memoryEventId: string;
+    memoryTitle: string;
+    createdAt: Date;
+    durationMs: number | null;
+    mimeType: string;
+  }[];
   oralHistoryRequests: RequestWithStats[];
 };
 
@@ -57,16 +68,34 @@ export async function getPersonProfile(
 
   const snapshot = createContributionAccessSnapshot(context);
   const [timeline, visibleNarratives, requests] = await Promise.all([
-    getTimelinePage(context.familyId, { personId, limit: 24 }),
+    getTimelinePage(context, { personId, limit: 24 }),
     listVisibleContributionsByAuthor(snapshot, personId),
     Promise.resolve(listContributionRequests(context)),
   ]);
   const recentNarratives = [...visibleNarratives]
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     .slice(0, 12);
+  const voiceNarratives = [...visibleNarratives]
+    .filter((row) => row.audioAssetId)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 24);
+  const voiceIds = voiceNarratives.map((row) => row.audioAssetId!);
+  const voiceAssets = voiceIds.length
+    ? getDb()
+        .select()
+        .from(asset)
+        .where(
+          and(
+            eq(asset.familyId, context.familyId),
+            inArray(asset.id, voiceIds),
+            readableAssetPredicate(snapshot, sql`${asset.id}`),
+          ),
+        )
+        .all()
+    : [];
   const narrativeEvents = await getTimelineEntriesByIds(
     context.familyId,
-    recentNarratives.map((row) => row.memoryEventId),
+    [...recentNarratives, ...voiceNarratives].map((row) => row.memoryEventId),
   );
   const eventById = new Map(
     narrativeEvents.map((entry) => [entry.event.id, entry.event]),
@@ -78,6 +107,23 @@ export async function getPersonProfile(
     sharedWithChildren: timeline.entries.filter(
       (entry) => entry.event.childPersonId !== personId,
     ),
+    voices: voiceNarratives.flatMap((row) => {
+      const source = voiceAssets.find((a) => a.id === row.audioAssetId),
+        event = eventById.get(row.memoryEventId);
+      return source && event
+        ? [
+            {
+              id: row.id,
+              assetId: source.id,
+              memoryEventId: event.id,
+              memoryTitle: event.title,
+              createdAt: row.createdAt,
+              durationMs: source.durationMs,
+              mimeType: source.mimeType,
+            },
+          ]
+        : [];
+    }),
     narratives: recentNarratives.flatMap((row) => {
       const event = eventById.get(row.memoryEventId);
       const text = row.editedText ?? row.rawText ?? row.transcript;

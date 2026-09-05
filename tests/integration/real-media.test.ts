@@ -266,16 +266,27 @@ describe("无内嵌时间的 fallback（timeSource 正确性）", () => {
     expect(b.asset.capturedAt?.toISOString()).toBe("2026-08-21T09:00:00.000Z");
   });
 
-  it("MOV 无内嵌时间 → import_time（ffprobe 缺失不影响）", async () => {
+  it("MOV 有内嵌时间 → embedded_metadata（真实 fixture 时间不伪造）", async () => {
     const result = await ingestFixture({
       kind: "video",
-      filename: "no-time.mov",
+      filename: "embedded-time.mov",
       declaredMime: "video/quicktime",
       bytes: fixture("sample.mov"),
       lastModified: null,
     });
     if (result.status !== "stored") throw new Error("store failed");
-    expect(result.asset.timeSource).toBe("import_time");
+    expect(result.asset.timeSource).toBe("embedded_metadata");
+    expect(result.asset.capturedAt?.toISOString()).toBe("2026-08-15T05:00:00.000Z");
+  });
+  it("ffprobe 缺失时 MOV 原件仍可保存且不伪造 capturedAt", async () => {
+    const previous = process.env.FFPROBE_PATH;
+    process.env.FFPROBE_PATH = path.join(dataDir, "ftc-deliberately-missing-ffprobe");
+    try {
+      const result = await ingestFixture({kind:"video",filename:"missing-probe.mov",declaredMime:"video/quicktime",bytes:Buffer.concat([fixture("sample.mov"),Buffer.from("missing-probe")]),lastModified:null});
+      if(result.status!=="stored")throw new Error("store failed");
+      expect(result.asset.timeSource).toBe("import_time");
+      expect(result.asset.capturedAt).toBeNull();
+    } finally { if(previous===undefined)delete process.env.FFPROBE_PATH;else process.env.FFPROBE_PATH=previous; }
   });
 });
 

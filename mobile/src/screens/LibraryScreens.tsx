@@ -1,3 +1,4 @@
+import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useCallback, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -384,7 +385,7 @@ function DetailShell({ domain, id, children }: { domain: MobileLibraryDomain; id
 
 type PersonDetailProps = NativeStackScreenProps<RootStackParamList, "PersonDetail">;
 export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
-  const { viewer } = useApp();
+  const { viewer, credentials } = useApp();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [relation, setRelation] = useState("");
@@ -392,6 +393,7 @@ export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
   return <DetailShell domain="people" id={route.params.id}>{(detail, controls) => {
     const memories = records(detail.memories);
     const narratives = records(detail.narratives);
+    const voices = records(detail.voices);
     const requests = records(detail.requests);
     const beginEdit = () => { setName(detail.title); setRelation(stringValue(detail.relationToChild) ?? ""); setBirthDate(stringValue(detail.birthDate) ?? ""); setEditing(true); };
     return <>
@@ -404,6 +406,7 @@ export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
         <Pressable disabled={controls.busy} onPress={() => void controls.mutate({ displayName: name, relationToChild: relation, birthDate }).then((result) => result && setEditing(false))} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>保存人物</Text></Pressable>
       </View> : <Pressable onPress={beginEdit} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>编辑人物</Text></Pressable> : null}
       <Section title={`共同记忆 · ${memories.length}`}>{memories.map((entry) => <Pressable key={stringValue(entry.id)} onPress={() => navigation.navigate("Memory", { id: stringValue(entry.id) ?? "" })} style={styles.compactRow}><Text style={styles.itemTitle}>{stringValue(entry.title)}</Text><Text style={styles.meta}>{stringValue(entry.occurredAt) ? dateLabel(stringValue(entry.occurredAt)!) : ""}</Text></Pressable>)}</Section>
+      {voices.length ? <Section title={`家人的声音 · 最近 ${voices.length} 段`}><NativeMediaReader credentials={credentials} assets={voices.map(voice=>({id:stringValue(voice.assetId)!,type:"audio",filename:stringValue(voice.memoryTitle)||"家人的声音",mimeType:stringValue(voice.mimeType)||"audio/mp4",author:detail.title,dateLabel:stringValue(voice.createdAt)?dateLabel(stringValue(voice.createdAt)!):undefined}))}/>{voices.map(voice=><Pressable key={stringValue(voice.id)} style={sharedStyles.secondaryButton} onPress={()=>navigation.navigate("Memory",{id:stringValue(voice.memoryEventId)!})}><Text style={sharedStyles.secondaryText}>回到来源：{stringValue(voice.memoryTitle)}</Text></Pressable>)}</Section>:null}
       <Section title={`独立讲述 · ${narratives.length}`}>{narratives.map((entry) => <View key={stringValue(entry.id)} style={styles.quote}><Text style={sharedStyles.body}>{stringValue(entry.text)}</Text><Text style={styles.meta}>{stringValue(entry.memoryTitle)}</Text></View>)}</Section>
       <Section title={`口述史问题 · ${requests.length}`}>{requests.map((entry) => <View key={stringValue(entry.id)} style={styles.compactRow}><Text style={styles.itemTitle}>{stringValue(entry.promptText)}</Text><Text style={styles.meta}>{statusLabel(stringValue(entry.status))}</Text></View>)}</Section>
     </>;

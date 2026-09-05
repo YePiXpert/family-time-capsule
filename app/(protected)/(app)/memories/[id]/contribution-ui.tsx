@@ -1,4 +1,5 @@
 "use client";
+import { MediaReader } from "@/components/media-reader";
 
 import { useActionState } from "react";
 import type { PersonRow } from "@/lib/memories/service";
@@ -86,10 +87,12 @@ export function AddContributionForm({
 
 /** 单条视角：显示 + 行内编辑（只影响这一行） */
 export function ContributionBlock({
+  dateLabel,
   contribution,
   canEdit,
 }: {
   contribution: VisibleContributionDto;
+  dateLabel?: string;
   canEdit: boolean;
 }) {
   const [state, formAction, pending] = useActionState(editContributionAction, undefined);
@@ -116,6 +119,7 @@ export function ContributionBlock({
         </p>
       )}
       <p className="mt-2 whitespace-pre-wrap leading-7">{text}</p>
+      {contribution.audioAssetId ? <MediaReader assets={[{id:contribution.audioAssetId,type:"audio",filename:"家人的声音",mimeType:"audio/mp4",author:contribution.authorName,dateLabel}]} />:null}
       {canEdit && <form action={formAction} className="mt-3 flex flex-col gap-2">
         <input type="hidden" name="contributionId" value={contribution.id} />
         <input

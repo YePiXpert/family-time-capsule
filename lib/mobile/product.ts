@@ -143,6 +143,7 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
       text: contribution.editedText ?? contribution.rawText ?? contribution.transcript ?? "",
       visibility: contribution.visibility,
       canEdit: contribution.canEdit,
+      createdAt: contribution.createdAt.toISOString(),
       audioPath: contribution.audioAssetId ? mediaPath(contribution.audioAssetId) : null,
     })),
     updatedAt: detail.event.updatedAt.toISOString(),

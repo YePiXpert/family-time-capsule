@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { ensureBootstrap } from "./helpers";
 
 // Slice 3（PRD §23）：音频/视频/文字；FFmpeg 不可用时上传仍工作
@@ -45,7 +46,14 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await audioCard.getByRole("button", { name: "确认进入时间轴" }).click();
   await expect(page).toHaveURL(/\/memories\//);
   await expect(page.getByRole("heading", { name: "外婆哼的歌" })).toBeVisible();
+  await expect(page.locator("audio")).toHaveCount(0);
+  await page.getByRole("button",{name:"打开阅读器：外婆哼的歌.wav"}).click();
   await expect(page.locator("audio").first()).toBeVisible();
+  await page.getByRole("combobox",{name:"播放速度"}).selectOption("1.5");
+  await expect.poll(()=>page.locator("audio").evaluate((node:HTMLAudioElement)=>node.playbackRate)).toBe(1.5);
+  await page.getByRole("button",{name:"关闭阅读器"}).click();
+  await expect(page.locator("audio")).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"打开阅读器：外婆哼的歌.wav"})).toBeFocused();
 
   // 回到收件箱确认视频条目。浏览器是否把这个最小 MOV fixture 判为
   // 可播放取决于 Chromium/系统编解码器，因此显式触发媒体错误来验证
@@ -55,6 +63,7 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await videoCard.getByLabel("事件标题").fill("第一次翻身");
   await videoCard.getByRole("button", { name: "确认进入时间轴" }).click();
   await expect(page.getByRole("heading", { name: "第一次翻身" })).toBeVisible();
+  await page.getByRole("button",{name:"打开阅读器：第一次翻身.MOV"}).click();
   const fallback = page
     .getByText("原件已安全保存，当前浏览器可能无法直接预览")
     .first();
@@ -82,4 +91,18 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await expect(page.getByRole("link", { name: /外婆哼的歌/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /第一次翻身/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /自己站起来了/ })).toBeVisible();
+});
+
+
+test("照片阅读器保持原图比例，键盘翻页、缩放和关闭返回位置",async({page})=>{
+  await ensureBootstrap(page);await page.goto('/capture');
+  const files=await Promise.all(['#d2b89b','#aec0b5'].map(async(background,i)=>({name:`虚构家庭照片${i+1}.jpg`,mimeType:'image/jpeg',buffer:await sharp({create:{width:900,height:600,channels:3,background}}).jpeg().toBuffer()})));
+  await page.locator('section[aria-label="照片"] input[type="file"]').setInputFiles(files);await expect(page.getByText('已保存，等待整理')).toHaveCount(2);
+  await page.goto('/inbox');for(const box of await page.getByRole('checkbox').all())await box.check();await page.getByLabel('合并事件标题').fill('虚构家庭的两张照片');await page.getByRole('button',{name:'合并',exact:true}).click();
+  const open=page.getByRole('button',{name:'打开阅读器：虚构家庭照片1.jpg'});await open.click();const dialog=page.getByRole('dialog',{name:'媒体阅读器'});await expect(dialog).toBeVisible();
+  const photo=dialog.getByRole('img');await expect(photo).toBeVisible();expect(await photo.evaluate(node=>getComputedStyle(node).objectFit)).toBe('contain');
+  await dialog.getByRole('button',{name:'放大',exact:true}).click();expect(await photo.evaluate(node=>(node as HTMLElement).style.width)).toBe('150%');
+  await page.keyboard.press('ArrowRight');await expect(dialog.getByRole('heading',{name:'虚构家庭照片2.jpg'})).toBeVisible();await page.keyboard.press('ArrowLeft');await expect(dialog.getByRole('heading',{name:'虚构家庭照片1.jpg'})).toBeVisible();
+  for(const width of [375,768,1440]){await page.setViewportSize({width,height:900});await dialog.getByRole('button',{name:'适合屏幕',exact:true}).click();expect(await dialog.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);await page.screenshot({path:`test-results/media-reader-fictional-${width}.png`});}
+  await page.keyboard.press('Escape');await expect(dialog).not.toBeVisible();await expect(open).toBeFocused();await expect(page.locator('audio,video')).toHaveCount(0);
 });

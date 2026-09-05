@@ -791,3 +791,10 @@ manual/time 排序、revision、updatedAt 和 deletedAt。`collection_section` �
 保存整份有界编辑图时，在同一 SQLite 事务内重验当前 FamilyContext、revision 和所有来源。
 批量任意一项无效则不写入；409 保留客户端输入。删除/恢复只改 Collection 墓碑，不改事件、讲述或原件。
 列表计数、封面、来源标题使用当前可见事件/素材；来源软删除时显示缺失，不销毁相册编辑关系。
+
+### 1.2 MediaJob（migration 0037，非耐久编辑数据）
+
+原件 FK + kind(preview/transcode/waveform) 唯一；requestedBy 使用真实用户 FK。
+queued/running/succeeded/failed、输出 Asset FK、错误码和全局 lease。处理前后重读实时身份与
+来源可见性。输出仍是现有 Asset 衍生物；沿用档案只导出原件、恢复后按需重建衍生物的语义，
+不把可再生输出混成人工编辑。MediaJob/lease 不导出恢复。

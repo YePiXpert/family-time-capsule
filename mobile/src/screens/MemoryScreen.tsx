@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { NativeMediaReader } from "../media/NativeMediaReader";
 import {
   createMobileContribution,
   fetchMobileMemory,
@@ -17,7 +16,7 @@ import {
   type LocalMemoryMedia,
 } from "../storage/database";
 import { colors, sharedStyles } from "../theme";
-import type { MobileContributionVisibility, MobileMemory, MobileMemoryAsset } from "../types";
+import type { MobileContributionVisibility, MobileMemory } from "../types";
 import { dateLabel } from "../utils/format";
 import {
   eligibleContributionAuthors,
@@ -150,9 +149,7 @@ export function MemoryScreen({ route, navigation }: Props) {
   return (
     <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
       {showStandaloneCover ? <Image source={{ uri: localCover! }} style={styles.cover} /> : null}
-      {useLocalMedia
-        ? localMedia.map((asset) => <LocalMemoryMediaView asset={asset} key={asset.captureId} />)
-        : memory?.assets.map((asset) => <MemoryMedia asset={asset} credentials={credentials} key={asset.id} />)}
+      <NativeMediaReader credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone):undefined})) ?? [])} />
       <View style={styles.heading}>
         <Text style={sharedStyles.eyebrow}>阅读记忆</Text>
         <Text style={sharedStyles.title}>{title}</Text>
@@ -167,48 +164,11 @@ export function MemoryScreen({ route, navigation }: Props) {
       {loading && !memory ? <ActivityIndicator color={colors.coral} /> : null}
 
       {(memory?.sourceNotes.length ?? 0) > 0 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>当时写下的</Text>{memory!.sourceNotes.map((note) => <Text key={note.id} style={styles.story}>{note.text}</Text>)}</View> : null}
-      {(memory?.contributions.length ?? 0) > 0 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>家人讲述</Text>{memory!.contributions.map((contribution) => <View key={contribution.id} style={styles.contribution}><View style={styles.contributionHeading}><Text style={styles.author}>{contribution.authorName}</Text><Text style={styles.visibility}>{visibilityLabel(contribution.visibility)}</Text></View>{editingContributionId === contribution.id ? <><TextInput multiline onChangeText={setEditingContributionText} style={[sharedStyles.input, styles.contributionInput]} textAlignVertical="top" value={editingContributionText} /><View style={styles.buttonRow}><Pressable disabled={savingContribution} onPress={() => setEditingContributionId(null)} style={[sharedStyles.secondaryButton, styles.grow]}><Text style={sharedStyles.secondaryText}>取消</Text></Pressable><Pressable disabled={savingContribution} onPress={() => void saveContribution()} style={[sharedStyles.primaryButton, styles.grow]}><Text style={sharedStyles.primaryText}>保存修改</Text></Pressable></View></> : <><Text style={styles.story}>{contribution.text}</Text>{contribution.canEdit ? <Pressable onPress={() => { setEditingContributionId(contribution.id); setEditingContributionText(contribution.text); }} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>修改我的讲述</Text></Pressable> : null}</>}{contribution.audioPath ? <AudioMedia credentials={credentials} path={contribution.audioPath} /> : null}</View>)}</View> : null}
+      {(memory?.contributions.length ?? 0) > 0 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>家人讲述</Text>{memory!.contributions.map((contribution) => <View key={contribution.id} style={styles.contribution}><View style={styles.contributionHeading}><Text style={styles.author}>{contribution.authorName}</Text><Text style={styles.visibility}>{visibilityLabel(contribution.visibility)}</Text></View>{editingContributionId === contribution.id ? <><TextInput multiline onChangeText={setEditingContributionText} style={[sharedStyles.input, styles.contributionInput]} textAlignVertical="top" value={editingContributionText} /><View style={styles.buttonRow}><Pressable disabled={savingContribution} onPress={() => setEditingContributionId(null)} style={[sharedStyles.secondaryButton, styles.grow]}><Text style={sharedStyles.secondaryText}>取消</Text></Pressable><Pressable disabled={savingContribution} onPress={() => void saveContribution()} style={[sharedStyles.primaryButton, styles.grow]}><Text style={sharedStyles.primaryText}>保存修改</Text></Pressable></View></> : <><Text style={styles.story}>{contribution.text}</Text>{contribution.canEdit ? <Pressable onPress={() => { setEditingContributionId(contribution.id); setEditingContributionText(contribution.text); }} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>修改我的讲述</Text></Pressable> : null}</>}{contribution.audioPath ? <NativeMediaReader credentials={credentials} assets={[{id:contribution.audioPath.split('/').at(-1)!,type:'audio',filename:'家人的声音',mimeType:'audio/mp4',author:contribution.authorName,dateLabel:contribution.createdAt?dateLabel(contribution.createdAt,family?.timezone):undefined}]} /> : null}</View>)}</View> : null}
       {credentials && contributionAuthors.length > 0 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>补充文字讲述</Text><Text style={sharedStyles.label}>作者</Text><View style={styles.chips}>{contributionAuthors.map((person) => <Pressable key={person.id} onPress={() => setAuthorPersonId(person.id)} style={[styles.chip, effectiveAuthorPersonId === person.id && styles.chipActive]}><Text style={effectiveAuthorPersonId === person.id ? styles.chipTextActive : styles.chipText}>{person.displayName}</Text></Pressable>)}</View><Text style={sharedStyles.label}>可见范围</Text><View style={styles.chips}>{CONTRIBUTION_VISIBILITIES.map((option) => <Pressable key={option.value} onPress={() => setVisibility(option.value)} style={[styles.chip, visibility === option.value && styles.chipActive]}><Text style={visibility === option.value ? styles.chipTextActive : styles.chipText}>{option.label}</Text></Pressable>)}</View><TextInput multiline onChangeText={setContributionText} placeholder="写下你的视角……" style={[sharedStyles.input, styles.contributionInput]} textAlignVertical="top" value={contributionText} /><Text style={styles.counter}>{contributionText.length} / 5000</Text><Pressable disabled={savingContribution} onPress={() => void addContribution()} style={[sharedStyles.primaryButton, savingContribution && sharedStyles.disabled]}><Text style={sharedStyles.primaryText}>保存这段讲述</Text></Pressable></View> : null}
       {(memory?.participants.length ?? summary?.participantNames.length ?? 0) > 0 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>在场的人</Text><Text style={sharedStyles.body}>{memory ? memory.participants.map((person) => person.displayName).join(" · ") : summary?.participantNames.join(" · ")}</Text></View> : null}
     </ScrollView>
   );
-}
-
-function sourceFor(credentials: ReturnType<typeof useApp>["credentials"], path: string) {
-  return credentials ? { uri: `${credentials.serverUrl}${path}`, headers: { authorization: `Bearer ${credentials.token}` } } : null;
-}
-
-function MemoryMedia({ asset, credentials }: { asset: MobileMemoryAsset; credentials: ReturnType<typeof useApp>["credentials"] }) {
-  const source = sourceFor(credentials, asset.mediaPath);
-  if (!source) return null;
-  if (asset.type === "image") return <Image accessibilityLabel={asset.filename} resizeMode="cover" source={source} style={styles.galleryImage} />;
-  if (asset.type === "video") return <VideoMedia source={source} />;
-  return <View style={sharedStyles.card}><Text style={styles.author}>{asset.filename}</Text><AudioMedia credentials={credentials} path={asset.mediaPath} /></View>;
-}
-
-function LocalMemoryMediaView({ asset }: { asset: LocalMemoryMedia }) {
-  const source = { uri: asset.localUri };
-  if (asset.mediaType === "image") {
-    return <Image accessibilityLabel={asset.title} resizeMode="cover" source={source} style={styles.galleryImage} />;
-  }
-  if (asset.mediaType === "video") return <VideoMedia source={source} />;
-  return <View style={sharedStyles.card}><Text style={styles.author}>{asset.title}</Text><AudioSourceMedia source={source} /></View>;
-}
-
-function AudioMedia({ credentials, path }: { credentials: ReturnType<typeof useApp>["credentials"]; path: string }) {
-  const source = useMemo(() => sourceFor(credentials, path), [credentials, path]);
-  return <AudioSourceMedia source={source} />;
-}
-
-function AudioSourceMedia({ source }: { source: { uri: string; headers?: Record<string, string> } | null }) {
-  const player = useAudioPlayer(source);
-  const status = useAudioPlayerStatus(player);
-  return <Pressable accessibilityRole="button" onPress={() => status.playing ? player.pause() : player.play()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{status.playing ? "暂停声音" : "播放声音"}</Text></Pressable>;
-}
-
-function VideoMedia({ source }: { source: { uri: string; headers?: Record<string, string> } }) {
-  const player = useVideoPlayer(source);
-  return <VideoView contentFit="contain" nativeControls player={player} style={styles.video} />;
 }
 
 const styles = StyleSheet.create({

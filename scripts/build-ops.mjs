@@ -40,7 +40,7 @@ await build({
   treeShaking: true,
   // Native addon resolution must remain relative to the final image's traced
   // node_modules. Everything else is bundled into the four CLI artifacts.
-  external: ["better-sqlite3"],
+  external: ["better-sqlite3", "sharp"],
   // Some transitive CommonJS libraries (archiver/lazystream) retain dynamic
   // built-in requires after bundling. Provide Node's real require in the ESM
   // wrapper so the production artifact can load them without shipping sources.

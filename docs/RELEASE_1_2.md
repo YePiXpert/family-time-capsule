@@ -51,3 +51,28 @@ Android/iOS 安装及含唯一资料的旧包升级、系统分享 Intent/appex/
   Doctor 21/21；Android/iOS Expo export 通过。真机触控及安全区仍未验证。
 - 375/768/1024/1440px 虚构家庭页面截图检查通过，键盘排序、并发冲突和恢复有交互断言。
 - 日历提交后的完整 CI `33933984509`（`32bcabf`）全绿；相册提交对应 run 待 push 后核对。
+
+## 媒体阅读切片（本地门禁通过，尚非发布）
+
+- 相册里程碑 `8ad023e4b02507875f7a3bf24ce5b01c401517b4` 已 push，
+  [CI 33935554186](https://github.com/YePiXpert/family-time-capsule/actions/runs/33935554186) 全绿。
+- Web/native 记忆详情：图片阅读器、前后切换/页码、缩放/原图按需加载、关闭返回，
+  当前音视频播放器、倍速/进度、主动连续音频、真实转录点句定位与失败重试。
+  人物主页最近声音列表保留作者/日期及来源跳转；原生支持主动导出原件副本。
+- 非 AI MediaJob（0037）：预览、视频兼容版、最多前五分钟波形；队列/租约/超时/输出限额、
+  固定格式转换参数、流式哈希与原子完成。来源授权收紧后旧衍生 URL 不能绕过读取。
+- 原件恢复 SHA 相同；可再生预览不进入旧有完整档案，恢复后重建 SHA 相同；任务不恢复。
+- 根 lint/typecheck/test/build/build:ops 通过：82 files / 564 tests。
+- Production 全套 43 passed；disaster roundtrip 6 passed。
+- Mobile test/typecheck/lint 通过：14 files / 63 tests；Doctor 21/21；Android/iOS Expo export
+  生成约 3.6 MB Hermes bundle。expo-sharing 57.0.18 安装审计 0 漏洞。
+- 媒体真实集成 6 场景通过：转换/方向/流式读取 SHA、并发、取消、缺编解码器重试、旧 URL
+  权限拒绝、独立目录恢复重建。原生媒体真实组件交互 2 场景通过。
+- 新的系统 ffprobe 检出既有 MOV fixture 的真实内嵌日期；修正原先依赖缺 ffprobe 的测试，
+  分别严格断言真实日期和明确缺工具时 capturedAt=null。
+- 375/768/1440px 虚构照片阅读截图检查，键盘持续翻页/焦点返回有 production 断言。
+- 实际文件转换性能数据见 PERFORMANCE 的 1.2 节，Node RSS 与 ffmpeg 子进程单独记录；
+  未把 mock、浏览器或真实手机资源混入测量。
+
+BookProject、可搜索 PDF/EPUB 出版、回顾作品、原生主动离线收藏及最终发布门禁仍待完成。
+这些结果不代表 1.2 已发布，也不代填 Android/iOS 真机、旧包升级及系统分享验收。

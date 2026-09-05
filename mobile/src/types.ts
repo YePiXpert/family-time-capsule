@@ -240,6 +240,7 @@ export type MobileMemory = {
     visibility: MobileContributionVisibility;
     canEdit: boolean;
     audioPath: string | null;
+    createdAt?: string;
   }[];
   updatedAt: string;
 };

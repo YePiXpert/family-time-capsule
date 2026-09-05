@@ -150,6 +150,7 @@ export async function getMobileLibraryDetail(
       memories: profile.participatingMemories.slice(0, 24).map((entry) => ({
         id: entry.event.id, title: entry.event.title, occurredAt: entry.event.occurredAt.toISOString(),
       })),
+      voices: profile.voices.map(voice => ({ ...voice, createdAt: voice.createdAt.toISOString() })),
       narratives: profile.narratives.map((entry) => ({
         id: entry.id, memoryEventId: entry.memoryEventId, memoryTitle: entry.memoryTitle,
         text: entry.text, visibility: entry.visibility,
