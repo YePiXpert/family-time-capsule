@@ -23,6 +23,7 @@ const errorMessages: Record<string, string> = {
   book_too_large: "作品超过当前编辑上限，请分成两册继续整理。",
   invalid_cover: "请从作品中当前可见的照片选择封面。",
   book_deleted: "作品已移入回收站。",
+  draft_exists: "这个范围已有另一份进行中的草稿，请先完成或整理那一份。",
   audience_locked: "作品读者范围不能直接切换。请按目标读者范围重新选材。",
 };
 async function request<T>(
@@ -91,6 +92,7 @@ export function BookShelf() {
   }
   return (
     <section aria-label="成长年册书架" className="mt-6">
+      <Link href="/books/review" className="ui-button-secondary mb-5">月度、年度与出生第一周回顾</Link>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl">我的作品</h2>
         <button
@@ -210,6 +212,7 @@ export function BookShelf() {
   );
 }
 export function BookEditor({ id }: { id: string }) {
+  const router = useRouter();
   const [book, setBook] = useState<BookDetail | null>(null),
     [error, setError] = useState(""),
     [status, setStatus] = useState(""),
@@ -338,6 +341,7 @@ export function BookEditor({ id }: { id: string }) {
         "PATCH",
         { operation, revision: serverRevision.current, ...extra },
       );
+      if (operation === "copy") { router.push(`/books/${next.id}`); return; }
       accept(next);
       setStatus(operation === "snapshot" ? "已保存版本快照。" : "已保存。");
     } catch (e) {
@@ -471,6 +475,8 @@ export function BookEditor({ id }: { id: string }) {
             >
               保存版本快照
             </button>
+            <button className="ui-button-secondary" disabled={busy} onClick={() => void operation("copy")}>复制成新册</button>
+            <button className="ui-button-secondary" disabled={busy} onClick={() => void operation(book.status === "finished" ? "reopen" : "finish")}>{book.status === "finished" ? "重新列为正在制作" : "标记制作完成"}</button>
           </>
         ) : null}
       </div>

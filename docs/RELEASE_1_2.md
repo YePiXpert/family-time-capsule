@@ -131,3 +131,29 @@ BookProject、可搜索 PDF/EPUB 出版、回顾作品、原生主动离线收�
 此前本地异步 typecheck 的失败未及时核对，因此上节 Mobile typecheck“通过”应以本修复后结果
 为准。已显式比较 `length > 0`，本地 Mobile typecheck、2 项出版交互、lint 再次全部通过；
 未改断言内容。修复提交后核对新的完整 CI，不把旧 run 记为全绿。
+
+## 回顾作品切片（本地门禁通过，尚非发布）
+
+- 出版类型修复 `12351c42331d26fe6e02818ec762b89cc0fcd513` 的
+  [CI 33943415940](https://github.com/YePiXpert/family-time-capsule/actions/runs/33943415940) 三 job 全绿。
+- Web `/books/review`、原生 BookReview：月/年/1–366 天自选日期，出生第一周、首月、前百天/
+  出生百天；真实记忆、成长节点、家人讲述、已发布周记和故事选材，分页和人工精选。
+- 复用 ReviewPeriod/ReviewPeriodEvent；相同范围/读者/模板恢复同一未完成 BookProject。
+  年度预建 12 个月章节，无记忆的月份不编故事。可显式追加素材、复制新册、标记完成/重开；
+  并发冲突保留输入，不重写旧稿。相册草稿仅建立现有确认记忆的关系。
+- 首页只有本月回顾和最多三份实际正在制作的作品。新记忆按发生日期提示可加入，
+  私密/父母/延后可见讲述与未到期胶囊仍按目标读者过滤。每次批量选材原子校验。
+- 修复讲述日期语义：记忆发生日期与 `authoredAt` 分开，署名可显示“讲述于”；
+  月份归组按来源记忆发生时间或故事范围，避免最近写下的旧事被归到上传/讲述月份。
+  模板版本更新到 `1.2-layout-2`，旧产物下载会重新验证版本与来源。
+- 根 lint/typecheck/test/build/build:ops 全部通过：**85 files / 580 tests**。
+  Production **46 passed**，disaster roundtrip **6 passed**；Mobile **17 files / 70 tests**，
+  typecheck/lint 通过，Doctor **21/21**，Android/iOS Expo export 均成功（约 3.6 MB Hermes）。
+- 新增 6 项真实回顾集成，包含 31 条同刻事件的稳定 cursor、封存/软删除计数排除、跨家庭 API
+  拒绝、私密来信原子拒绝、五记忆相册排序重开、日期变化、复制/完成与独立恢复。
+  恢复后 draftKey、人工精选、编辑图保持一致，重复建立仍返回原有未完成作品。
+- 新增 2 项原生组件交互；production 出生第一周 → 精选 → 草稿编辑 → 恢复同稿 → 明确复制
+  → 改日期 → 回顾/日历同步，通过键盘触发并检查 375/768/1440px 虚构家庭截图。
+  真机触控、安全区和系统行为仍未验收。
+
+本里程碑尚未包含主动离线收藏、精选 ZIP 阅读包或最终旧卷升级/回滚与发布；不创建提前发布 tag。

@@ -820,3 +820,11 @@ BookRenderJob 是可再生任务：关联 Family、BookProject、请求账号，
 尝试次数、租约、页数、字节数、SHA 和错误代码。BookRenderLease 单例跨 app/worker 限制并发，
 兼容年度/故事 URL 同样取得此租约。两表与产物不进入 portable archive；导出使用的 BookRevision
 是耐久快照，继续进入年册六文件模块。当前格式接受 PDF/EPUB，reading_zip 留待离线模块。
+
+### 1.2 回顾作品关联
+
+月/年/自选回顾复用 ReviewPeriod 的家庭时区半开区间和 ReviewPeriodEvent 人工精选。
+BookProject.draftKey 保存范围/读者/模板/私人拥有者摘要；同家庭 active 且未删除的草稿唯一。
+完成后允许新草稿，若已有另一 active 草稿则拒绝重新激活旧稿。复制显式分配新作品/章/块/来源
+关系 ID，保留目标来源外键与人工文字，复制不继承 draftKey。无需新增平行 Review 模型。
+BookSourceState.authoredAt 是派生讲述日期；occurredAt 始终指来源记忆日期，不持久复制时间事实。

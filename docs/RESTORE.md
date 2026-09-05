@@ -229,3 +229,9 @@ A→B→二次导出后逐行/原件 SHA 相等；缺模块、声明缺失、悬
 migration 0039 的 BookRenderJob/BookRenderLease 属于临时处理状态，不列入 manifest。
 `book-renders/` 仅是可再生产物；完整迁移恢复 BookProject 的版本快照和原件后重新排版，
 不恢复旧下载任务、租约或登录 token。原生临时导出副本也不是家庭档案的一部分。
+
+### 1.2 回顾草稿恢复
+
+ReviewPeriod/人工精选沿用 1.1 模块；BookProject 的 draftKey/status 及六文件编辑图一起恢复。
+恢复后的相同日期范围、读者和模板继续返回同一 active 草稿。独立目录测试已比较恢复前后
+编辑图、完成状态和精选数量，并执行二次导出；临时排版任务仍不恢复。

@@ -214,6 +214,8 @@ export async function renderBookPdf(
             gap(6);
             text(`—— ${author}`, 10, { align: "right" });
           }
+          const authored = block.sourceIds.map(id => book.sourceStates[id]?.authoredAt).find(Boolean);
+          if (authored) text(`讲述于 ${new Intl.DateTimeFormat("zh-CN", {timeZone: book.timezone, dateStyle: "long"}).format(new Date(authored))}`, 9, {align: "right"});
           text(dateText(block), 9, { align: "right" });
         } else text(block.text, book.template === "photos" ? 10 : 11);
         if (block.caption) {

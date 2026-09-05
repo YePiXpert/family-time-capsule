@@ -8,6 +8,8 @@ import {
 } from "@/lib/mobile/http";
 import {
   BookError,
+  copyBookProject,
+  setBookFinished,
   getBookProject,
   getBookVersion,
   saveBookProject,
@@ -50,6 +52,8 @@ export async function PATCH(request: Request, { params }: Route) {
       throw new BookError("invalid_revision");
     const { id } = await params,
       revision = Number(body.revision);
+    if (body.operation === "copy") return mobileJson(copyBookProject(auth.context, id, revision));
+    if (body.operation === "finish" || body.operation === "reopen") return mobileJson(setBookFinished(auth.context, id, revision, body.operation === "finish"));
     if (body.operation === "save")
       return mobileJson(saveBookProject(auth.context, id, revision, body.edit));
     if (body.operation === "add")

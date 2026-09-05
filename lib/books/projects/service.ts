@@ -581,3 +581,39 @@ export function ensureBookRenderVersion(context:FamilyContext,id:string,revision
   return getBookVersion(context,id,revision);
  });
 }
+
+/** Explicit copy keeps manual edits and source FKs, but gets independent graph IDs and no draft key. */
+export function copyBookProject(context: FamilyContext, id: string, revision: number) {
+  return getDb().transaction(() => {
+    assertBookContext(context, true);
+    const doc = getBookProject(context, id);
+    if (doc.revision !== revision) throw new BookError("revision_conflict", 409);
+    if (doc.deletedAt) throw new BookError("book_deleted", 409);
+    if (doc.blockedBlockIds.length) throw new BookError("source_unavailable", 409);
+    const used = new Set(doc.blocks.flatMap(b => b.sourceIds));
+    if (doc.coverAssetId) for (const ref of doc.sources) if (ref.assetId === doc.coverAssetId) used.add(ref.id);
+    const sources = doc.sources.filter(ref => used.has(ref.id));
+    const chapterIds = new Map(doc.chapters.map(c => [c.id, randomUUID()])), sourceIds = new Map(sources.map(s => [s.id, randomUUID()]));
+    const title = `${doc.title.slice(0, 190)} · 副本`, copyId = createBookProject(context, title, doc.template, doc.audience);
+    const copy = saveBookProject(context, copyId, 1, { ...doc, title,
+      chapters: doc.chapters.map(c => ({ ...c, id: chapterIds.get(c.id)! })),
+      sources: sources.map(s => ({ ...s, id: sourceIds.get(s.id)! })),
+      blocks: doc.blocks.map(b => ({ ...b, id: randomUUID(), chapterId: chapterIds.get(b.chapterId)!, sourceIds: b.sourceIds.map(id => sourceIds.get(id)!) })),
+    });
+    saveBookVersion(context, copyId, copy.revision);
+    return getBookProject(context, copyId);
+  });
+}
+export function setBookFinished(context: FamilyContext, id: string, revision: number, finished: boolean) {
+  return getDb().transaction(tx => {
+    assertBookContext(context, true);
+    const row = project(context,id);
+    if (row.deletedAt) throw new BookError("book_deleted",409);
+    if (row.revision !== revision) throw new BookError("revision_conflict",409);
+    if (!finished && row.draftKey && tx.select().from(bookProject).where(and(eq(bookProject.familyId,context.familyId),eq(bookProject.draftKey,row.draftKey),eq(bookProject.status,"active"),isNull(bookProject.deletedAt),sql`${bookProject.id}!=${id}`)).get())
+      throw new BookError("draft_exists",409);
+    tx.update(bookProject).set({status:finished?"finished":"active",revision:revision+1,updatedAt:new Date()}).where(eq(bookProject.id,id)).run();
+    saveBookVersion(context,id,revision+1);
+    return getBookProject(context,id);
+  });
+}

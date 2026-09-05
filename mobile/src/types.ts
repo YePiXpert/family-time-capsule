@@ -158,6 +158,8 @@ export type MobileHome = {
     pendingCount: number;
     isCreatedRequest: boolean;
   };
+  monthlyReview?: {month:string;startDate:string;endDate:string;count:number};
+  activeBooks?: {id:string;title:string;subtitle:string}[];
   weeklyReview: {
     key: string;
     status: string;

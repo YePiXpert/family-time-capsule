@@ -70,6 +70,8 @@ export function HomeScreen() {
         {(home?.inbox.count ?? outbox.length) === 0 ? <Text style={sharedStyles.body}>这里已经整理完了。记录的新素材会先来到这里。</Text> : <Text style={styles.link}>去修改、合并或确认 →</Text>}
       </Pressable>
 
+      <Pressable accessibilityRole="button" style={sharedStyles.card} onPress={()=>navigation.navigate("BookReview")}><Text style={sharedStyles.cardTitle}>本月回顾</Text><Text style={sharedStyles.body}>{home?.monthlyReview ? `${home.monthlyReview.count} 段记忆，挑出想装进年册的时刻` : "查看月度与年度作品素材"}</Text></Pressable>
+      {(home?.activeBooks??[]).length ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>正在制作的作品</Text>{home!.activeBooks!.map(book=><Pressable key={book.id} accessibilityRole="button" style={sharedStyles.secondaryButton} onPress={()=>navigation.navigate("BookDetail",{id:book.id})}><Text style={sharedStyles.secondaryText}>{book.title}</Text></Pressable>)}</View> : null}
       <View style={styles.sectionRow}><Text style={sharedStyles.cardTitle}>最近记忆</Text><Pressable onPress={() => navigation.navigate("Timeline")}><Text style={styles.link}>查看时间轴</Text></Pressable></View>
       {recent.length === 0 ? (
         <Pressable onPress={() => navigation.navigate("Capture", { intent: "text", requestKey: Date.now() })} style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>从第一条记忆开始</Text><Text style={sharedStyles.body}>写一句话、拍一张照片或录下一段声音。</Text></Pressable>

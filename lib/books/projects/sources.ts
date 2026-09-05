@@ -281,7 +281,7 @@ export function createBookSourceResolver(
                 ...event.state,
                 label: `${author.displayName}的讲述`,
                 author: author.displayName,
-                occurredAt: original.createdAt.toISOString(),
+                authoredAt: original.createdAt.toISOString(),
               },
               fingerprint: sourceFingerprint(original),
               text:

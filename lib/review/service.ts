@@ -18,6 +18,7 @@ import { assertFamilyCapability } from "@/lib/authz/policy";
 import type { FamilyContext } from "@/lib/family/context";
 import { getTimelinePage } from "@/lib/memories/service";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
+import { addCalendarDays, parseCalendarDate } from "@/mobile/src/utils/calendar";
 import {
   collectStoryMaterial,
   collectTranscriptMaterial,
@@ -115,23 +116,33 @@ export async function getOrCreateReviewPeriod(
   const window = input.anchorDate
     ? reviewWindowForDate(input.anchorDate, config.timezone, config.weekStartsOn)
     : reviewWindowForInstant(input.now ?? new Date(), config.timezone, config.weekStartsOn);
-  const now = input.now ?? new Date();
-  await getDb().insert(reviewPeriod).values({
-    id: randomUUID(),
-    familyId: context.familyId,
-    periodStart: window.start,
-    periodEnd: window.end,
-    status: "open",
-    createdAt: now,
-    updatedAt: now,
+  return ensureReviewPeriod(context, window, input.now ?? new Date());
+}
+
+function ensureReviewPeriod(context: FamilyContext, window: ReviewWindow, now: Date) {
+  const db = getDb();
+  db.insert(reviewPeriod).values({
+    id: randomUUID(), familyId: context.familyId, periodStart: window.start, periodEnd: window.end,
+    status: "open", createdAt: now, updatedAt: now,
   }).onConflictDoNothing().run();
-  const period = await getDb().select().from(reviewPeriod).where(and(
-    eq(reviewPeriod.familyId, context.familyId),
-    eq(reviewPeriod.periodStart, window.start),
-    eq(reviewPeriod.periodEnd, window.end),
-  )).limit(1);
-  if (!period[0]) throw new Error("review_period_unavailable");
-  return { period: period[0], window };
+  const period = db.select().from(reviewPeriod).where(and(
+    eq(reviewPeriod.familyId, context.familyId), eq(reviewPeriod.periodStart, window.start), eq(reviewPeriod.periodEnd, window.end),
+  )).get();
+  if (!period) throw new Error("review_period_unavailable");
+  return {period, window};
+}
+
+/** Month/year/custom reviews use the same persisted period and highlight relations. */
+export function getOrCreateRangeReviewPeriod(context: FamilyContext, startDate: string, endDate: string) {
+  assertFamilyCapability(context.role, "archive:view");
+  parseCalendarDate(startDate); parseCalendarDate(endDate);
+  if (endDate < startDate) throw new Error("invalid_review_date");
+  const before = addCalendarDays(endDate, 1);
+  return ensureReviewPeriod(context, {
+    key: startDate, endDate: before,
+    start: zonedWallTimeToUtc(`${startDate}T00:00:00`, context.familyTimezone),
+    end: zonedWallTimeToUtc(`${before}T00:00:00`, context.familyTimezone),
+  }, new Date());
 }
 
 export type ReviewPreferences = {

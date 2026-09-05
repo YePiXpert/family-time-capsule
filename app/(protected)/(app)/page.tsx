@@ -130,6 +130,10 @@ export default async function HomePage() {
         </div>
       </Link>
 
+      <section className="mt-8" aria-label="正在制作与本月回顾">
+        <Link className="ui-button-secondary" href={`/books/review?${new URLSearchParams({startDate:dashboard.monthlyReview.startDate,endDate:dashboard.monthlyReview.endDate})}`}>本月回顾 · {dashboard.monthlyReview.count} 段记忆</Link>
+        {dashboard.activeBooks.length ? <div className="mt-5"><h2 className="text-xl">正在制作的作品</h2><ul className="mt-3 grid gap-3 sm:grid-cols-3">{dashboard.activeBooks.map(book=><li key={book.id}><Link className="block rounded-2xl border border-line p-4 break-words" href={`/books/${book.id}`}>{book.title}</Link></li>)}</ul></div> : null}
+      </section>
       {dashboard.isFirstUse ? (
         <section className="mt-10 rounded-2xl border border-accent/25 bg-accent-soft p-5 sm:p-6">
           <SectionHeader

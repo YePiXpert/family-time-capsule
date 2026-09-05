@@ -118,6 +118,10 @@ export async function renderBookEpub(
           .find(Boolean);
         if (block.kind === "quote" && author)
           body += `<p>—— ${escapeBookText(author)}</p>`;
+        if (block.kind === "quote") {
+          const authored = block.sourceIds.map(id => book.sourceStates[id]?.authoredAt).find(Boolean);
+          if (authored) body += `<p class="source">讲述于 ${escapeBookText(new Intl.DateTimeFormat("zh-CN", {timeZone: book.timezone, dateStyle: "long"}).format(new Date(authored)))}</p>`;
+        }
         if (block.caption)
           body += `<p class="source">${escapeBookText(block.caption)}</p>`;
         const labels = [

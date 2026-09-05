@@ -172,3 +172,38 @@ test("生产 worker 完成 PDF/EPUB，浏览器可预览下载并清理产物", 
   await panel.getByRole("button", { name: "清理此下载产物" }).first().click();
   await expect(panel.getByText(/已取消/)).toBeVisible();
 });
+
+test("出生第一周回顾 → 人工精选 → 幂等年册草稿 → 明确复制，改日期后回顾与日历同步", async ({page}) => {
+  await ensureBootstrap(page);
+  const shelf=await(await page.request.get('/api/books/projects')).json();
+  const sourceBook=await(await page.request.get(`/api/books/projects/${shelf.entries[0].id}`)).json();
+  const sourceIds=sourceBook.sources.filter((s:{kind:string})=>s.kind==='memory').map((s:{memoryEventId:string})=>s.memoryEventId);
+  expect(sourceIds.length).toBe(2);
+  for(const [i,id] of sourceIds.entries()){
+    const response=await page.request.patch(`/api/mobile/v1/memories/${id}`,{data:{occurredAtWall:`2026-08-${11+i}T08:00`,occurredAtPrecision:'exact'}});expect(response.status()).toBe(200);
+  }
+  await page.goto('/books/review');
+  await page.getByRole('button',{name:'出生第一周',exact:true}).click();
+  await expect(page.getByText(/2 段记忆 · 人工精选 0 段/)).toBeVisible();
+  await page.getByRole('button',{name:'设为人工精选',exact:true}).first().click();
+  await expect(page.getByText(/2 段记忆 · 人工精选 1 段/)).toBeVisible();
+  for(const width of [375,768,1440]){
+    await page.setViewportSize({width,height:1000});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+    await page.screenshot({path:`test-results/fictional-book-review-${width}.png`,fullPage:true});
+  }
+  await page.getByRole('button',{name:'建立可编辑年册草稿',exact:true}).focus();await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);const draftUrl=page.url();
+  await page.getByLabel('副标题',{exact:true}).fill('虚构第一周手工整理，继续保存');
+  await page.getByRole('button',{name:'保存当前编辑',exact:true}).click();
+  await expect(page.getByText('已自动保存，可以随时重开。')).toBeVisible();
+  await page.goto('/books/review?startDate=2026-08-10&endDate=2026-08-16');
+  await expect(page.getByText(/还有 1 段当前范围的记忆尚未选入/)).toBeVisible();
+  await page.getByRole('button',{name:'恢复同一草稿',exact:true}).click();await expect(page).toHaveURL(draftUrl);
+  await expect(page.getByLabel('副标题',{exact:true})).toHaveValue('虚构第一周手工整理，继续保存');
+  await page.getByRole('button',{name:'复制成新册',exact:true}).click();await expect(page).not.toHaveURL(draftUrl);await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
+  await expect(page.getByLabel('副标题',{exact:true})).toHaveValue('虚构第一周手工整理，继续保存');
+  const moved=await page.request.patch(`/api/mobile/v1/memories/${sourceIds[0]}`,{data:{occurredAtWall:'2026-09-10T08:00',occurredAtPrecision:'exact'}});expect(moved.status()).toBe(200);
+  await page.goto('/books/review?startDate=2026-08-10&endDate=2026-08-16');await expect(page.getByText(/1 段记忆 · 人工精选/)).toBeVisible();
+  await page.goto('/timeline/calendar?month=2026-09');await expect(page.getByRole('link',{name:'2026-09-10，1 条记忆',exact:true})).toBeVisible();
+});

@@ -203,8 +203,8 @@ export function addBookSelections(
       } else {
         if (already("story", selected.id)) continue;
         const sourceId = ref("story", selected.id),
-          chapter = randomUUID();
-        doc.chapters.push({ id: chapter, title: state.state.label });
+          chapter = chapterId || randomUUID();
+        if (!chapterId) doc.chapters.push({ id: chapter, title: state.state.label });
         const paragraphs = getDb()
           .select()
           .from(storyParagraph)

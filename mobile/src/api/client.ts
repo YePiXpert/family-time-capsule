@@ -338,6 +338,8 @@ export function parseMobileHome(value: unknown): MobileHome {
     !validStory ||
     !validCapsule ||
     !validWeeklyReview ||
+    (value.monthlyReview !== undefined && (!isRecord(value.monthlyReview) || !isString(value.monthlyReview.month,7) || !isString(value.monthlyReview.startDate,10) || !isString(value.monthlyReview.endDate,10) || !Number.isSafeInteger(value.monthlyReview.count) || Number(value.monthlyReview.count)<0)) ||
+    (value.activeBooks !== undefined && (!Array.isArray(value.activeBooks) || !value.activeBooks.every(b=>isRecord(b)&&isString(b.id,128)&&isString(b.title,200)&&isString(b.subtitle,500)))) ||
     !isRecord(value.prompt) ||
     !isString(value.prompt.text, 1000) ||
     !isNullableString(value.prompt.recipientLabel, 200) ||
@@ -914,4 +916,13 @@ export async function startBookRender(credentials:Credentials,id:string,revision
 }
 export async function changeBookRender(credentials:Credentials,id:string,operation:'retry'|'cancel'|'remove') {
   await requestMobileJson(credentials,`/api/books/renders/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({operation})});
+}
+
+export async function fetchBookReview(credentials:Credentials,params:Record<string,string>):Promise<import('../books/review-types').BookReview> {
+  const value=await requestMobileJson(credentials,`/api/books/review?${new URLSearchParams(params)}`);
+  if(!isRecord(value)||!Array.isArray(value.materials)||!Array.isArray(value.months)||typeof value.total!=="number"||!hasCursor(value))throw new ApiError("回顾响应无效。",502);
+  return value as import('../books/review-types').BookReview;
+}
+export async function mutateBookReview(credentials:Credentials,input:Record<string,unknown>):Promise<{id?:string;existing?:boolean}> {
+  return await requestMobileJson(credentials,"/api/books/review",{method:"POST",body:JSON.stringify(input)}) as {id?:string;existing?:boolean};
 }

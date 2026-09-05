@@ -134,6 +134,7 @@ export function BooksScreen({
       keyboardShouldPersistTaps="handled"
     >
       <Text style={s.title}>家庭书架</Text>
+      <Button title="月度、年度与出生第一周回顾" onPress={()=>navigation.navigate("BookReview")} />
       <Text style={s.body}>从已有记忆选材，留下可持续编辑的家庭作品。</Text>
       {error ? (
         <Text accessibilityRole="alert" style={s.error}>
@@ -339,13 +340,11 @@ export function BookDetailScreen({
     setOperation(true);
     try {
       if (!(await save())) return;
-      accept(
-        await mutateBook(credentials, id, {
-          operation: op,
-          revision: current.current!.revision,
-          ...extra,
-        }),
-      );
+      const next = await mutateBook(credentials, id, {
+        operation: op, revision: current.current!.revision, ...extra,
+      });
+      if (op === "copy") navigation.replace("BookDetail", {id:next.id});
+      else accept(next);
       if (op === "add") {
         setSelecting(false);
         setSelected([]);
@@ -506,6 +505,8 @@ export function BookDetailScreen({
               } else setEditing(true);
             }}
           />
+          <Button title="复制成新册" disabled={busy} onPress={()=>void act("copy")} />
+          <Button title={book.status==="finished"?"重新列为正在制作":"标记制作完成"} disabled={busy} onPress={()=>void act(book.status==="finished"?"reopen":"finish")} />
           <Button
             title="保存版本快照"
             disabled={busy}

@@ -1,4 +1,5 @@
 import "server-only";
+import { getBookHome } from "@/lib/books/projects/review";
 
 import type { FamilyContext } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
@@ -51,7 +52,7 @@ export type HomeInboxPreviewDto = {
   };
 };
 
-export type HomeDashboardDto = {
+export type HomeDashboardDto = ReturnType<typeof getBookHome> & {
   family: { id: string; name: string; timezone: string };
   child: null | {
     id: string;
@@ -226,6 +227,7 @@ export async function getHomeDashboard(
   const fallbackPrompt = PROMPT_LIBRARY[0]?.questions[0] ?? "今天想问家人一个什么问题？";
 
   return {
+    ...getBookHome(context, now),
     family: { id: family.id, name: family.name, timezone: family.timezone },
     child: child
       ? {
