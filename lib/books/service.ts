@@ -1,5 +1,11 @@
 import "server-only";
 
+import type { FamilyContext } from "@/lib/family/context";
+import { assertBookContext, BookError } from "./projects/service";
+import {
+  createBookSourceResolver,
+  sourceFingerprint,
+} from "./projects/sources";
 import { randomUUID, createHash } from "node:crypto";
 import { isNull, and, eq, gte, lt } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -10,13 +16,17 @@ import { getAsset } from "@/lib/assets/service";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { getStory } from "@/lib/stories/service";
 import { renderParagraphsToPdf } from "./pdf";
-import { renderEpub, type EpubBook, type EpubChapter } from "./epub";
+import {
+  renderLegacyEpubIsolated,
+  assertCompatibilityRenderBudget,
+} from "./render/jobs";
+import { type EpubBook, type EpubChapter } from "./epub";
 import type { PageImage, Paragraph } from "./layout";
 
 /**
  * 书籍服务（M6）：从已发布故事或某一年的事件生成 PDF/EPUB。
  *
- * - 图像使用专用 JPEG derivative（缩略图或原图经 sharp 转 JPEG）内嵌——
+ * - 图像从原件经有界 sharp 转换为版面 JPEG 内嵌——
  *   绝不引用 /api/media 等内部鉴权 URL；
  * - 只读已发布/确认内容；导出的书是即时生成的产物，不属于 archive 格式。
  */
@@ -31,36 +41,23 @@ async function assetToPageImage(
   familyId: string,
   assetId: string,
 ): Promise<PageImage | null> {
+  assertCompatibilityRenderBudget();
   const asset = await getAsset(familyId, assetId);
   if (!asset || asset.type !== "image") return null;
-  const db = getDb();
-  const { asset: assetTable } = await import("@/db/schema/asset");
-  const { desc } = await import("drizzle-orm");
-  // 优先缩略图（小、快），否则原图
-  const thumb = db
-    .select()
-    .from(assetTable)
-    .where(
-      and(
-        eq(assetTable.familyId, familyId),
-        eq(assetTable.originalAssetId, assetId),
-        eq(assetTable.derivativeType, "thumbnail"),
-      ),
-    )
-    .orderBy(desc(assetTable.createdAt))
-    .limit(1)
-    .get();
-  const sourceKey = thumb?.storageKey ?? asset.storageKey;
 
   try {
     const storage = getAssetStorage();
-    const buffer = storage.read(sourceKey);
+
     const sharp = (await import("sharp")).default;
-    const jpeg = await sharp(buffer)
+    const jpeg = await sharp(storage.resolvePath(asset.storageKey), {
+      limitInputPixels: 64_000_000,
+    })
+      .timeout({ seconds: 30 })
       .rotate()
-      .resize({ width: 1000, withoutEnlargement: true })
-      .jpeg({ quality: 82 })
+      .resize({ width: 2400, withoutEnlargement: true })
+      .jpeg({ quality: 90 })
       .toBuffer();
+    assertCompatibilityRenderBudget();
     const meta = await sharp(jpeg).metadata();
     const width = meta.width ?? 1000;
     const height = meta.height ?? 1000;
@@ -68,7 +65,8 @@ async function assetToPageImage(
       dataUri: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
       aspectRatio: width / height,
     };
-  } catch {
+  } catch (e) {
+    if (e instanceof BookError) throw e;
     return null; // 单图失败不阻断整本书
   }
 }
@@ -80,6 +78,7 @@ export async function generateStoryBook(
   storyId: string,
   format: BookFormat,
   familyName: string,
+  context?: FamilyContext,
 ): Promise<BookResult> {
   const detail = await getStory(familyId, storyId);
   if (!detail) return { ok: false, error: "story_not_found" };
@@ -87,6 +86,21 @@ export async function generateStoryBook(
     return { ok: false, error: "story_not_published" };
   }
 
+  const verify = () => {
+    if (!context) return "";
+    assertBookContext(context);
+    const resolved = createBookSourceResolver(context, "family")(
+      "story",
+      storyId,
+    );
+    if (!resolved.state.available)
+      throw new BookError("source_unavailable", 409);
+    return resolved.fingerprint;
+  };
+  const digest = verify();
+  const recheck = () => {
+    if (verify() !== digest) throw new BookError("source_changed", 409);
+  };
   const title = detail.story.title;
   if (format === "pdf") {
     const paragraphs: Paragraph[] = [
@@ -98,6 +112,7 @@ export async function generateStoryBook(
       ),
     ];
     const buffer = await renderParagraphsToPdf(paragraphs);
+    recheck();
     return {
       ok: true,
       buffer,
@@ -123,7 +138,8 @@ export async function generateStoryBook(
     language: "zh-CN",
     chapters,
   };
-  const buffer = await renderEpub(book, randomUUID());
+  const buffer = await renderLegacyEpubIsolated(book, randomUUID());
+  recheck();
   return {
     ok: true,
     buffer,
@@ -139,10 +155,20 @@ export async function generateYearBook(
   year: number,
   format: BookFormat,
   familyName: string,
+  context?: FamilyContext,
 ): Promise<BookResult> {
-  const familyRow = getDb().select().from(family).where(eq(family.id, familyId)).get();
+  const familyRow = getDb()
+    .select()
+    .from(family)
+    .where(eq(family.id, familyId))
+    .get();
   if (!familyRow) return { ok: false, error: "family_not_found" };
-  const { from: start, before: end } = calendarRange(String(year), familyRow.timezone);
+  const { from: start, before: end } = calendarRange(
+    String(year),
+    familyRow.timezone,
+  );
+  if (context) assertBookContext(context);
+  const resolver = context ? createBookSourceResolver(context, "family") : null;
   const events = getDb()
     .select()
     .from(memoryEvent)
@@ -156,11 +182,39 @@ export async function generateYearBook(
       ),
     )
     .orderBy(memoryEvent.occurredAt)
-    .all();
+    .all()
+    .filter((e) => !resolver || resolver("memory", e.id).state.available);
   if (events.length === 0) {
     return { ok: false, error: "no_events" };
   }
 
+  const verify = () => {
+    if (!context) return "";
+    assertBookContext(context);
+    const resolve = createBookSourceResolver(context, "family");
+    return sourceFingerprint(
+      events.map((e) => {
+        const memory = resolve("memory", e.id);
+        if (!memory.state.available)
+          throw new BookError("source_unavailable", 409);
+        const image = e.coverAssetId ? resolve("asset", e.coverAssetId) : null;
+        return [
+          e.id,
+          memory.fingerprint,
+          image?.state.available,
+          image?.fingerprint,
+        ];
+      }),
+    );
+  };
+  const digest = verify(),
+    recheck = () => {
+      if (verify() !== digest) throw new BookError("source_changed", 409);
+    };
+  const allowedCover = (assetId: string | null) =>
+    assetId && (!resolver || resolver("asset", assetId).state.available)
+      ? assetId
+      : null;
   const title = `${familyName} · ${year}`;
   const filenameBase = `${sanitizeFilename(title)}`;
 
@@ -175,22 +229,26 @@ export async function generateYearBook(
       image: import("./pdf").PdfPageImage | null;
     }> = [];
     const { layoutPages } = await import("./layout");
-    const coverAssetId = events[0].coverAssetId ?? null;
-    const cover = coverAssetId ? await assetToPageImage(familyId, coverAssetId) : null;
+    const coverAssetId = allowedCover(events[0].coverAssetId);
+    const cover = coverAssetId
+      ? await assetToPageImage(familyId, coverAssetId)
+      : null;
     const titlePages = layoutPages(paragraphs, cover);
     for (const p of titlePages) {
       pageInputs.push({ paragraphs: p.paragraphs, image: p.image });
     }
     for (const event of events) {
-      const image = event.coverAssetId
-        ? await assetToPageImage(familyId, event.coverAssetId)
+      const image = allowedCover(event.coverAssetId)
+        ? await assetToPageImage(familyId, event.coverAssetId!)
         : null;
       const eventParas: Paragraph[] = [
         { kind: "heading", text: event.title },
         {
           kind: "body",
-          text: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: familyRow.timezone })
-            .format(event.occurredAt),
+          text: new Intl.DateTimeFormat("zh-CN", {
+            dateStyle: "long",
+            timeZone: familyRow.timezone,
+          }).format(event.occurredAt),
         },
       ];
       if (event.locationText) {
@@ -203,6 +261,7 @@ export async function generateYearBook(
     }
     const { renderPdf } = await import("./pdf");
     const buffer = await renderPdf(pageInputs);
+    recheck();
     return {
       ok: true,
       buffer,
@@ -214,14 +273,16 @@ export async function generateYearBook(
   // EPUB：每事件一章（含封面图）
   const chapters: EpubChapter[] = [];
   for (const event of events) {
-    const image = event.coverAssetId
-      ? await assetToPageImage(familyId, event.coverAssetId)
+    const image = allowedCover(event.coverAssetId)
+      ? await assetToPageImage(familyId, event.coverAssetId!)
       : null;
     const paras: Paragraph[] = [
       {
         kind: "body",
-        text: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: familyRow.timezone })
-          .format(event.occurredAt),
+        text: new Intl.DateTimeFormat("zh-CN", {
+          dateStyle: "long",
+          timeZone: familyRow.timezone,
+        }).format(event.occurredAt),
       },
     ];
     if (event.locationText) {
@@ -229,8 +290,14 @@ export async function generateYearBook(
     }
     chapters.push({ title: event.title, paragraphs: paras, image });
   }
-  const book: EpubBook = { title, author: familyName, language: "zh-CN", chapters };
-  const buffer = await renderEpub(book, randomUUID());
+  const book: EpubBook = {
+    title,
+    author: familyName,
+    language: "zh-CN",
+    chapters,
+  };
+  const buffer = await renderLegacyEpubIsolated(book, randomUUID());
+  recheck();
   return {
     ok: true,
     buffer,

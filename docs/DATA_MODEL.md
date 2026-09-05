@@ -812,3 +812,11 @@ Contribution、Story、Collection 外键；BookBlockSource 保存块内来源顺
 BookRevision 保存明确操作产生的不可变快照，自动保存只推进当前编辑。删除当前块不删除
 SourceRef，历史版本仍可校验来源；永久清除来源后 FK 置空，历史阅读按持久 FK 墓碑撤下内容。
 来源漂移只提示，不覆盖人工文字。缺失、低清、空块/空章、长文给出编辑提醒。
+
+## 1.2 出版任务（migration 0039）
+
+BookRenderJob 是可再生任务：关联 Family、BookProject、请求账号，记录作品 revision、模板版本、
+格式、读者范围、实时来源摘要与幂等键；状态 queued/running/succeeded/failed/cancelled，含进度、
+尝试次数、租约、页数、字节数、SHA 和错误代码。BookRenderLease 单例跨 app/worker 限制并发，
+兼容年度/故事 URL 同样取得此租约。两表与产物不进入 portable archive；导出使用的 BookRevision
+是耐久快照，继续进入年册六文件模块。当前格式接受 PDF/EPUB，reading_zip 留待离线模块。

@@ -28,6 +28,7 @@ vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
   usePreventRemove: vi.fn(),
 }));
+vi.mock("../src/books/export-publication", () => ({ exportPublication: vi.fn() }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "new-fictional-block" }));
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => ({ credentials: mocks.credentials }),
@@ -38,6 +39,7 @@ vi.mock("../src/api/client", () => ({
   mutateBook: mocks.mutate,
   fetchBookMaterials: mocks.materials,
   createNativeBook: mocks.create,
+  fetchBookRenders: async () => [],
 }));
 const { BooksScreen, BookDetailScreen } =
   await import("../src/screens/BookScreens");

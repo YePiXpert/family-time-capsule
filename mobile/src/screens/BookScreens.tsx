@@ -1,3 +1,4 @@
+import { NativeBookPublication } from "../books/NativeBookPublication";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -476,6 +477,14 @@ export function BookDetailScreen({
             disabled={busy || saving}
           />
         </View>
+      ) : null}
+      {credentials && !book.deletedAt ? (
+        <NativeBookPublication credentials={credentials} id={id} audience={book.audience}
+          prepare={async () => {
+            setOperation(true);
+            try { return await save() && sequence.current === savedSequence.current ? current.current!.revision : null; }
+            finally { setOperation(false); }
+          }} />
       ) : null}
       {canEdit ? (
         <>

@@ -304,3 +304,16 @@
   SQLite `family_date` 函数按家庭时区提取，年度出版的筛选与正文日期不再使用 UTC。
 - Web 日历的筛选及日期保存在 URL；进入记忆保留经过站内白名单校验的返回地址和条目锚点。
   原生日历保留页面状态，重获焦点刷新服务器；401/403 与网络故障分开呈现。
+
+## 1.2 出版排版选择：PDFKit + 独立 Node 进程
+
+比较 PDFKit（MIT、fontkit 嵌字/子集、Unicode linebreak、流式输出）与 Chromium HTML/CSS
+print renderer（成熟 CSS 分页，但需额外浏览器运行时、字体与网络/脚本隔离）。本轮选择
+PDFKit 0.20.2：版式是有限的章/块模型，无需执行用户 HTML；自托管 Alpine 镜像可继续使用
+现有 Node/sharp 环境，正文写成 PDF 字体文本，图片才进行版面适配转换。
+
+采用未修改的 Noto Sans CJK SC Regular，SIL OFL 1.1，版本来源和 SHA 随资源提交。
+实际验证：34 页 A5 虚构图文册中文提取、全部页面渲染及文字边界检查通过；A4 长文自动分页、
+页数上限和缺字失败也有真实集成验证，EPUBCheck 通过。Docker Alpine 的真实队列同样完成
+中文 PDF 和 EPUB。主路径由 BookRenderJob 调度独立进程，限制并发、Node 堆、超时、页数与输出容量；
+下载重验来源范围。Node 堆限制不等同于整个原生进程 RSS 硬上限，需另测子进程资源。

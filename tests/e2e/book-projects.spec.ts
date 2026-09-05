@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap } from "./helpers";
+import path from "node:path";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { defaultBookLayout } from "../../mobile/src/books/types";
 import type { BookDetail } from "../../mobile/src/books/types";
@@ -21,7 +23,7 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
   }
   await page.goto("/books");
   await page.getByLabel("作品名称").fill("虚构家庭的成长年册");
-  await page.getByRole("radio", {name:"图文成长册"}).check();
+  await page.getByRole("radio", { name: "图文成长册" }).check();
   await page.getByRole("button", { name: "建立可编辑作品" }).click();
   await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
   const url = page.url(),
@@ -30,7 +32,9 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
   await page.getByRole("checkbox", { name: "虚构家庭片段 1" }).check();
   await page.getByRole("checkbox", { name: "虚构家庭片段 2" }).check();
   await page.getByRole("button", { name: "加入所选 2 项来源" }).click();
-  await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveCount(4);
+  await expect(
+    page.getByRole("textbox", { name: "正文", exact: true }),
+  ).toHaveCount(4);
   await page
     .getByRole("textbox", { name: "正文", exact: true })
     .nth(1)
@@ -42,9 +46,9 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
   await page.getByRole("button", { name: "保存当前编辑" }).click();
   await expect(page.getByText("已自动保存，可以随时重开。")).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("textbox", { name: "正文", exact: true }).nth(2)).toHaveValue(
-    "手工整理：窗边的第一封家书。",
-  );
+  await expect(
+    page.getByRole("textbox", { name: "正文", exact: true }).nth(2),
+  ).toHaveValue("手工整理：窗边的第一封家书。");
   let doc = (await (
     await page.request.get(`/api/books/projects/${id}`)
   ).json()) as BookDetail;
@@ -68,7 +72,9 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
   });
   expect(response.status()).toBe(200);
   await page.reload();
-  await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveCount(32);
+  await expect(
+    page.getByRole("textbox", { name: "正文", exact: true }),
+  ).toHaveCount(32);
   await page.getByRole("button", { name: "保存版本快照" }).click();
   await expect(page.getByText("已保存版本快照。")).toBeVisible();
   await page.getByRole("button", { name: "预览作品" }).click();
@@ -103,8 +109,66 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
     .first()
     .fill("冲突时必须保留的本地输入");
   await page.getByRole("button", { name: "保存当前编辑" }).click();
-  await expect(page.getByRole("alert").filter({hasText:"其他家人已修改这份作品"})).toContainText("你的输入仍保留");
-  await expect(page.getByRole("textbox", { name: "正文", exact: true }).first()).toHaveValue(
-    "冲突时必须保留的本地输入",
-  );
+  await expect(
+    page.getByRole("alert").filter({ hasText: "其他家人已修改这份作品" }),
+  ).toContainText("你的输入仍保留");
+  await expect(
+    page.getByRole("textbox", { name: "正文", exact: true }).first(),
+  ).toHaveValue("冲突时必须保留的本地输入");
+});
+
+test("生产 worker 完成 PDF/EPUB，浏览器可预览下载并清理产物", async ({
+  page,
+}) => {
+  await ensureBootstrap(page);
+  await page.goto("/books");
+  await page.getByRole("link", { name: /虚构家庭的成长年册/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "虚构家庭的成长年册", exact: true }),
+  ).toBeVisible();
+  const panel = page.getByRole("region", { name: "出版与下载" });
+  for (const format of ["PDF", "EPUB"]) {
+    await panel
+      .getByRole("button", { name: `生成 ${format}`, exact: true })
+      .click();
+    await expect(panel.getByText(/等待后台排版/)).toBeVisible();
+    const worker = spawn(process.execPath, [".next/ops/worker.mjs", "--once"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        DATA_DIR: path.join(process.cwd(), "data", "e2e-book-projects"),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let log = "";
+    worker.stdout.on("data", (c) => {
+      log += c.toString();
+    });
+    worker.stderr.on("data", (c) => {
+      log += c.toString();
+    });
+    const done = new Promise<number | null>((resolve, reject) => {
+      worker.once("error", reject);
+      worker.once("close", resolve);
+    });
+    expect((await page.request.get("/api/mobile/v1/home")).status()).toBe(200);
+    expect(await done, log).toBe(0);
+    expect(log).toContain("[book-worker] succeeded");
+    await panel.getByRole("button", { name: "刷新出版状态" }).click();
+    const link = panel.getByRole("link", {
+      name: `下载 ${format}`,
+      exact: true,
+    });
+    await expect(link).toBeVisible();
+    const download = page.waitForEvent("download");
+    await link.click();
+    const file = await download;
+    expect(await file.failure()).toBeNull();
+    expect(file.suggestedFilename().endsWith(`.${format.toLowerCase()}`)).toBe(true);
+  }
+  await expect(
+    panel.getByRole("link", { name: "打开 PDF 预览" }),
+  ).toBeVisible();
+  await panel.getByRole("button", { name: "清理此下载产物" }).first().click();
+  await expect(panel.getByText(/已取消/)).toBeVisible();
 });

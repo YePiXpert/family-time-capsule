@@ -22,7 +22,7 @@ RUN npm run build:ops
 FROM node:24-alpine AS runner
 WORKDIR /app
 # FFmpeg 是增强能力（视频封面/波形/转码），不是核心硬依赖（PRD §19）；
-# Noto CJK 供 PDF 书籍排版（sharp/librsvg 渲染中文页面）
+# Noto CJK 保留既有衍生物字体；可搜索 PDF 使用 resources/fonts 中的嵌入许可字体。
 RUN apk add --no-cache ffmpeg libc6-compat font-noto-cjk \
   && addgroup -S --gid 1001 nodejs \
   && adduser -S --uid 1001 --ingroup nodejs nextjs
@@ -39,6 +39,7 @@ USER nextjs
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
+COPY --from=build --chown=nextjs:nodejs /app/resources/fonts ./resources/fonts
 # 运行时自动迁移需要 migration 文件（db/index.ts 在首次连接时执行）
 COPY --from=build --chown=nextjs:nodejs /app/db/migrations ./db/migrations
 # 冒烟、导出校验、恢复与健康检查的可复现运行时产物。

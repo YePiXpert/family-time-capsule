@@ -29,7 +29,7 @@ jobs:
         working-directory: mobile
       - run: npm run lint
       - run: npm run typecheck
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils epubcheck
       - run: npm test
       - run: npm run build
 
@@ -75,6 +75,7 @@ jobs:
         working-directory: mobile
       - run: npm run build
       - run: npx playwright install --with-deps chromium
+      - run: npm run build:ops
       # Playwright（10 个独立 project）+ 灾难恢复 roundtrip（真实服务器 boot）
       - run: npx playwright test
       - run: npx vitest run --config vitest.roundtrip.config.ts

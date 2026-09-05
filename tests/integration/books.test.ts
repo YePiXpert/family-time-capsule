@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -155,6 +156,7 @@ describe("M6：故事书 PDF/EPUB", () => {
     // 内部鉴权 URL 绝不出现
     expect(text).not.toContain("/api/media");
     expect(pdf.filename.endsWith(".pdf")).toBe(true);
+    const output=path.join(dataDir,'legacy-story.pdf');writeFileSync(output,bytes);const extracted=spawnSync('pdftotext',[output,'-'],{encoding:'utf8'});expect(extracted.status,extracted.stderr).toBe(0);expect(extracted.stdout.replace(/\s/g,'')).toContain('出生的那一周');
   });
 
   it("EPUB：mimetype 首位不压缩、OPF/nav/章节齐全、媒体内嵌", async () => {
@@ -177,6 +179,7 @@ describe("M6：故事书 PDF/EPUB", () => {
     expect(chapter).toContain("出生的那一周");
     expect(chapter).not.toContain("/api/media");
     expect(epub.filename.endsWith(".epub")).toBe(true);
+    const output=path.join(dataDir,'legacy-story.epub');writeFileSync(output,epub.buffer);const checked=spawnSync('epubcheck',[output],{encoding:'utf8'});expect(checked.status,checked.stdout+checked.stderr).toBe(0);
   });
 
   it("未发布故事拒绝成书", async () => {

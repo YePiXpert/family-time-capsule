@@ -1,3 +1,6 @@
+import { withCompatibilityRender } from "@/lib/books/render/jobs";
+import { BookError } from "@/lib/books/projects/service";
+import { mobileRequestError } from "@/lib/mobile/http";
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { getFamily } from "@/lib/family/service";
 import { generateYearBook } from "@/lib/books/service";
@@ -28,22 +31,31 @@ export async function GET(
   const url = new URL(request.url);
   const format = url.searchParams.get("format") === "epub" ? "epub" : "pdf";
 
-  const family = await getFamily(context.familyId);
-  const result = await generateYearBook(
-    context.familyId,
-    year,
-    format,
-    family?.name ?? "家庭",
-  );
-  if (!result.ok) {
-    return Response.json({ error: result.error }, { status: 400 });
-  }
+  try {
+    const family = await getFamily(context.familyId);
+    const result = await withCompatibilityRender(() =>
+      generateYearBook(
+        context.familyId,
+        year,
+        format,
+        family?.name ?? "家庭",
+        context,
+      ),
+    );
+    if (!result.ok) {
+      return Response.json({ error: result.error }, { status: 400 });
+    }
 
-  return new Response(new Uint8Array(result.buffer), {
-    headers: {
-      "content-type": result.contentType,
-      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
-      "cache-control": "no-store",
-    },
-  });
+    return new Response(new Uint8Array(result.buffer), {
+      headers: {
+        "content-type": result.contentType,
+        "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+        "cache-control": "no-store",
+      },
+    });
+  } catch (e) {
+    return e instanceof BookError
+      ? Response.json({ error: e.code }, { status: e.status })
+      : mobileRequestError(e);
+  }
 }

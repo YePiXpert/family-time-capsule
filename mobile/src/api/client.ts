@@ -891,3 +891,27 @@ export async function fetchBookMaterials(credentials:Credentials,kind:string,aud
   const value=await requestMobileJson(credentials,`/api/books/projects/materials?${new URLSearchParams({kind,audience,cursor})}`);
   if(!isRecord(value)||!Array.isArray(value.entries)||!hasCursor(value))throw new Error('选材响应无效');return value as BookMaterials;
 }
+
+function parseBookRender(value: unknown): import('../books/render-types').BookRenderStatus {
+  if (!isRecord(value) || !isString(value.id,128) || !isString(value.projectId,128)
+      || !['pdf','epub','reading_zip'].includes(String(value.format))
+      || !['family','personal'].includes(String(value.audience))
+      || !['queued','running','succeeded','failed','cancelled'].includes(String(value.status))
+      || typeof value.progress !== 'number' || !Number.isFinite(value.progress) || value.progress < 0 || value.progress > 100
+      || typeof value.revision !== 'number' || !Number.isSafeInteger(value.revision)
+      || !(value.bytes === null || typeof value.bytes === 'number' && Number.isSafeInteger(value.bytes) && value.bytes >= 0)
+      || !isNullableString(value.errorCode,200) || typeof value.downloadable !== 'boolean')
+    throw new ApiError('出版任务响应无效。',502);
+  return value as unknown as import('../books/render-types').BookRenderStatus;
+}
+export async function fetchBookRenders(credentials: Credentials,id:string) {
+  const value = await requestMobileJson(credentials,`/api/books/projects/${encodeURIComponent(id)}/renders`);
+  if (!isRecord(value) || !Array.isArray(value.jobs)) throw new ApiError('出版列表响应无效。',502);
+  return value.jobs.map(parseBookRender);
+}
+export async function startBookRender(credentials:Credentials,id:string,revision:number,format:import('../books/render-types').BookRenderStatus['format']) {
+  return parseBookRender(await requestMobileJson(credentials,`/api/books/projects/${encodeURIComponent(id)}/renders`,{method:'POST',body:JSON.stringify({revision,format})}));
+}
+export async function changeBookRender(credentials:Credentials,id:string,operation:'retry'|'cancel'|'remove') {
+  await requestMobileJson(credentials,`/api/books/renders/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({operation})});
+}

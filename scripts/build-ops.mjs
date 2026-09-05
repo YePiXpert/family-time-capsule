@@ -17,6 +17,7 @@ await build({
   entryPoints: {
     // Resolve from this script rather than the caller's current directory;
     // every entry remains inside the checked-out project.
+    "render-book": path.join(rootDir, "scripts", "render-book.mts"),
     healthcheck: path.join(rootDir, "scripts", "healthcheck.mjs"),
     worker: path.join(rootDir, "jobs", "worker.ts"),
     restore: path.join(rootDir, "scripts", "restore.ts"),

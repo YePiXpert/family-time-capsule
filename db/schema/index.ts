@@ -26,3 +26,5 @@ export * as collectionSchema from "./collection";
 export * from "./media-job";
 
 export * from "./book";
+
+export * from "./book-render-job";

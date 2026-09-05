@@ -1,4 +1,5 @@
 "use client";
+import { BookRenderPanel } from "./book-render-panel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -953,6 +954,7 @@ export function BookEditor({ id }: { id: string }) {
       ) : (
         <BookPreview book={book} />
       )}
+      {!book.deletedAt ? <BookRenderPanel id={id} audience={book.audience} prepare={async()=>{setOperationBusy(true);try{return await save()?serverRevision.current:null;}finally{setOperationBusy(false);}}}/> : null}
       <section className="my-8" aria-label="保存的版本">
         <h2 className="text-lg">保存的版本</h2>
         <p className="my-2 text-sm text-muted">

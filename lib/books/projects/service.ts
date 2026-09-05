@@ -570,3 +570,14 @@ export function newBookSource(
     label: "",
   };
 }
+
+/** Export captures an immutable revision without changing any user's editing. */
+export function ensureBookRenderVersion(context:FamilyContext,id:string,revision:number){
+ return getDb().transaction(tx=>{
+  assertBookContext(context);const row=project(context,id);
+  if(row.deletedAt)throw new BookError('book_deleted',404);
+  const existing=tx.select().from(bookRevision).where(and(eq(bookRevision.projectId,id),eq(bookRevision.revision,revision))).get();
+  if(!existing){if(row.revision!==revision)throw new BookError('revision_conflict',409);tx.insert(bookRevision).values({id:randomUUID(),familyId:context.familyId,projectId:id,revision,snapshotJson:JSON.stringify(persistedEdit(id))}).run();}
+  return getBookVersion(context,id,revision);
+ });
+}

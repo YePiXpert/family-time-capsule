@@ -96,3 +96,32 @@ BookProject、可搜索 PDF/EPUB 出版、回顾作品、原生主动离线收�
 - Mobile test/typecheck/lint 通过：15 files / 66 tests；新年册组件交互 3 passed。
   Doctor 21/21；Android/iOS Expo export 各约 3.6 MB Hermes，输出在独立临时目录。
 - 本切片主干提交与 CI 待 push 后核对；可搜索 PDF/EPUB、回顾作品、原生离线及最终发布仍待完成。
+
+## 出版切片（本地门禁通过，尚非发布）
+
+- 年册提交 `c6392504019e5872abe47b692cb8c278a7253dfe` 的
+  [CI 33940479011](https://github.com/YePiXpert/family-time-capsule/actions/runs/33940479011) 全绿。
+- migration 0039：有界 BookRenderJob、共享租约、取消/重试/单调进度、版本与来源幂等、
+  原子产物、下载实时重验。渲染由独立 Node 进程处理，与 AI 启用无关。
+- PDFKit 替换整页 JPEG PDF 主路径；OFL Noto CJK 嵌字，A4/A5、封面/目录/页码/章分页、
+  混排和长文，原件适配图片。旧年度/故事 PDF/EPUB URL 保持成功时二进制兼容行为。
+- Web 年册页和原生 BookDetail 接入出版进度、取消、重试、下载/系统副本导出。
+  手机下载被拒绝或不完整时不导出，仅清理本次临时文件。主动离线收藏仍待 M7。
+- 根 lint/typecheck/test/build/build:ops 通过；最新全套根 **84 files / 574 tests**。
+  Production **45 passed**，disaster roundtrip **6 passed**。新增跨家庭真实管理员会话 API
+  检查四种出版端点均 404；来源删改/权限收紧后旧产物拒绝读取。
+- 实际 32 块虚构图文内容生成 **34 页 PDF / 751322 bytes**，中文提取、全部页面 Poppler
+  渲染、文字边界及联系表视觉检查通过；EPUB **473199 bytes**，EPUBCheck 无错误/警告。
+  A4 长文自动分页、超 200 页失败、缺字失败、真正子进程取消/重试均有执行断言。
+- Mobile **16 files / 68 tests**，typecheck/lint 通过；Doctor **21/21**，Android/iOS Expo export
+  成功，根与 mobile npm audit 均 **0 vulnerabilities**。无真实设备验收结论。
+- 独立 Docker 卷 `ftc-m5-publication-smoke`：Alpine 镜像 app health/login/匿名鉴权与 worker
+  smoke 通过；实际队列生成 3 页中文 PDF（75780 bytes）及 EPUB（2949 bytes），宿主再次
+  提取中文、渲染并 EPUBCheck 通过。镜像本地 ID `sha256:c6a1e841fee591dd7f9a41cae0f437770fd9d731772e2f1bf83368692c13d1a6`。
+  这不是旧卷升级或最终发布镜像验收；M8 仍需完整升级/回滚与恢复矩阵。
+- 真实流式原件/转换/排版性能见 PERFORMANCE，Node、渲染子进程、Poppler 分开记录。
+  发现并修复 PDF 页脚导致物理页数翻倍、bundle 默认 Helvetica 动态加载以及 CI 缺少 ops
+  构建等确定性问题；没有放宽断言来通过。
+
+本切片 push 对应 SHA/CI 将在下一里程碑记录。M6 回顾作品、M7 离线、M8 完整发布门禁
+未完成，尚未创建 `v1.2.0-alpha.1`，不宣称 stable 或旧包无损升级已验收。

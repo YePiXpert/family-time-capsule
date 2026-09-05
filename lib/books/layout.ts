@@ -3,7 +3,7 @@ import "server-only";
 /**
  * 书籍排版（M6）：CJK/拉丁混排的换行与分页（纯逻辑，供 PDF/EPUB 共用）。
  *
- * PDF 页面经 SVG 渲染：文本由本模块折行；图像在页内按宽度适配、限高。
+ * 兼容下载的段落布局输入；PDFKit 再以嵌入字体排版可搜索正文和适配图片。
  */
 
 export type Paragraph = {
