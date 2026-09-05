@@ -1,14 +1,15 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import {
+  AudioModule,
+  type AudioRecorder,
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
-  useAudioRecorder,
 } from "expo-audio";
 import { useApp } from "../state/AppContext";
 import { enqueueMediaCapture, enqueueTextCapture, ingestLocalImportSession } from "../storage/database";
@@ -24,7 +25,9 @@ export function CaptureScreen() {
   const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
   const { credentials, outbox, queued, viewer } = useApp();
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderRef = useRef<AudioRecorder | null>(null);
+  const mountedRef = useRef(false);
+  const recordingBusyRef = useRef(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -32,6 +35,30 @@ export function CaptureScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const textInputRef = useRef<TextInput>(null);
   const actionAreaY = useRef(0);
+
+  const releaseRecorder = useCallback(async () => {
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    try {
+      recorder?.release();
+    } finally {
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+        interruptionMode: "doNotMix",
+        shouldPlayInBackground: false,
+        shouldRouteThroughEarpiece: false,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (recorderRef.current) void releaseRecorder().catch(() => {});
+    };
+  }, [releaseRecorder]);
 
   const finishQueue = useCallback(async () => {
     try {
@@ -207,18 +234,17 @@ export function CaptureScreen() {
       setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
       return;
     }
-    if (recording) {
-      setBusy(true);
-      try {
+    if (recordingBusyRef.current) return;
+    recordingBusyRef.current = true;
+    setBusy(true);
+    setMessage(null);
+    let audioModeEnabled = false;
+    let started = false;
+    try {
+      if (recording) {
+        const recorder = recorderRef.current;
+        if (!recorder) throw new Error("录音已中断，请重新开始。");
         await recorder.stop();
-        setRecording(false);
-        await setAudioModeAsync({
-          allowsRecording: false,
-          playsInSilentMode: true,
-          interruptionMode: "doNotMix",
-          shouldPlayInBackground: false,
-          shouldRouteThroughEarpiece: false,
-        });
         if (!recorder.uri) throw new Error("没有读取到录音文件。");
         const id = Crypto.randomUUID();
         let privateUri: string | null = null;
@@ -233,29 +259,48 @@ export function CaptureScreen() {
         }
         setMessage("录音原件已复制到 App 私有目录。");
         await finishQueue();
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "无法保存录音。");
-      } finally {
-        setBusy(false);
+      } else {
+        const permission = await requestRecordingPermissionsAsync();
+        if (!mountedRef.current) return;
+        if (!permission.granted) throw new Error("需要麦克风权限才能直接录音。");
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+          interruptionMode: "doNotMix",
+          shouldPlayInBackground: false,
+          shouldRouteThroughEarpiece: false,
+        });
+        audioModeEnabled = true;
+        if (!mountedRef.current) return;
+        // Native construction can throw (including AVAudioRecorder on iOS).
+        // Keep it out of render and create it only after permission/session setup.
+        const preset = RecordingPresets.HIGH_QUALITY;
+        // eslint-disable-next-line import/namespace -- Expo exposes this typed constructor through requireNativeModule.
+        const recorder = new AudioModule.AudioRecorder({
+          ...preset,
+          ...(Platform.OS === "ios" ? preset.ios : Platform.OS === "android" ? preset.android : preset.web),
+          isMeteringEnabled: false,
+        });
+        recorderRef.current = recorder;
+        await recorder.prepareToRecordAsync();
+        if (!mountedRef.current) return;
+        recorder.record();
+        started = true;
+        setRecording(true);
+        setMessage("正在录音，点“完成录音”后才会写入私有目录。");
       }
-      return;
-    }
-    try {
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) throw new Error("需要麦克风权限才能直接录音。");
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-        interruptionMode: "doNotMix",
-        shouldPlayInBackground: false,
-        shouldRouteThroughEarpiece: false,
-      });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setRecording(true);
-      setMessage("正在录音，点“完成录音”后才会写入私有目录。");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "无法开始录音。");
+      setMessage(error instanceof Error ? error.message : recording ? "无法保存录音。" : "无法开始录音。");
+    } finally {
+      if (!started) {
+        if (recorderRef.current || audioModeEnabled) {
+          // Cleanup must not replace a saved-file message or escape the handler.
+          await releaseRecorder().catch(() => {});
+        }
+        if (mountedRef.current) setRecording(false);
+      }
+      recordingBusyRef.current = false;
+      if (mountedRef.current) setBusy(false);
     }
   };
 
