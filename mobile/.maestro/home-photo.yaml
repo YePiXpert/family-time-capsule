@@ -5,9 +5,13 @@ appId: app.familytimecapsule.mobile
 - tapOn:
     id: home-capture-photo
 # The simulator has no camera; the app must remain usable after rejection.
-- assertVisible: "当前设备无法使用相机，请从相册导入。"
 - assertVisible:
     id: capture-title
+- scrollUntilVisible:
+    element: "当前设备无法使用相机，请从相册导入。"
+    direction: DOWN
+- assertVisible: "当前设备无法使用相机，请从相册导入。"
+- takeScreenshot: home-photo-unavailable
 - tapOn:
     id: tab-home
 - assertVisible:
