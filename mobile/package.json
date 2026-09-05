@@ -49,7 +49,7 @@
     "query-string": "^9.5.1"
   },
   "scripts": {
-    "postinstall": "node scripts/patch-navigation-query-string.cjs",
+    "postinstall": "node scripts/patch-navigation-query-string.cjs && node scripts/patch-image-picker-camera.cjs",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

@@ -127,6 +127,17 @@ it("keeps capture usable when microphone permission is denied", async () => {
   expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
 });
 
+it("offers library import and remains usable when the native camera is unavailable", async () => {
+  mocks.camera.mockRejectedValueOnce(Object.assign(new Error("The requested camera is unavailable"), {
+    code: "ERR_CAMERA_UNAVAILABLE",
+  }));
+  await render("photo");
+  expect(JSON.stringify(tree!.toJSON())).toContain("当前设备无法使用相机，请从相册导入。");
+  expect(mocks.enqueueMedia).not.toHaveBeenCalled();
+  await press("从相册导入");
+  expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
+});
+
 it.each(["constructor", "prepare", "record"] as const)("contains %s failure and can retry recording", async (step) => {
   mocks[step].mockImplementationOnce(() => { throw new Error("录音设备不可用"); });
   await render();

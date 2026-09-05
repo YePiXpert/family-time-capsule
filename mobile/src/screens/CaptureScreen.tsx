@@ -154,7 +154,11 @@ export function CaptureScreen() {
         await queuePickedAssets(result.assets, mode === "library" ? "library" : "camera");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "无法保存所选素材。");
+      const cameraUnavailable = error !== null && typeof error === "object" &&
+        "code" in error && error.code === "ERR_CAMERA_UNAVAILABLE";
+      setMessage(cameraUnavailable
+        ? "当前设备无法使用相机，请从相册导入。"
+        : error instanceof Error ? error.message : "无法保存所选素材。");
     } finally {
       setBusy(false);
     }

@@ -13,7 +13,7 @@ concurrency:
 jobs:
   home-navigation:
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       CI: "1"
@@ -44,9 +44,9 @@ jobs:
         id: simulator-cache
         with:
           path: mobile/build/simulator
-          key: ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}-${{ github.sha }}
+          key: ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**', 'mobile/scripts/**') }}-${{ github.sha }}
           restore-keys: |
-            ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}-
+            ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**', 'mobile/scripts/**') }}-
       - name: Boot isolated iPhone simulator
         run: |
           mkdir -p ios-smoke-results
