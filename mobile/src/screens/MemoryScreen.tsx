@@ -40,7 +40,7 @@ function visibilityLabel(value: MobileContributionVisibility): string {
   return CONTRIBUTION_VISIBILITIES.find((option) => option.value === value)?.label ?? value;
 }
 
-export function MemoryScreen({ route }: Props) {
+export function MemoryScreen({ route, navigation }: Props) {
   const { credentials, events, family, online, people, viewer } = useApp();
   const [memory, setMemory] = useState<MobileMemory | null>(null);
   const [localMedia, setLocalMedia] = useState<LocalMemoryMedia[]>([]);
@@ -160,6 +160,8 @@ export function MemoryScreen({ route }: Props) {
         {memory?.locationText ?? summary?.locationText ? <Text style={sharedStyles.intro}>地点 · {memory?.locationText ?? summary?.locationText}</Text> : null}
         <Text style={styles.sync}>{memory ? (online === false ? "本机缓存 · 当前离线" : "详情已同步到本机") : "读取中"}</Text>
       </View>
+
+      {credentials && viewer?.canEditEvents?<Pressable onPress={()=>navigation.navigate("Collections",{eventIds:[route.params.id]})} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加入相册 / 章节</Text></Pressable>:null}
 
       {error ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.retry}><Text style={styles.link}>重试</Text></Pressable></View> : null}
       {loading && !memory ? <ActivityIndicator color={colors.coral} /> : null}

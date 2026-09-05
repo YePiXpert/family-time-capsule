@@ -780,3 +780,14 @@ type ReviewPeriodEvent = {
 - 恢复 = 清除 deleted_at 并重建搜索索引；清除 = 硬删除（事件清除连带其讲述）；
 - 素材不因清除被连带物理删除：`purgeAssetIfUnreferenced` 仅在完全无引用
   （事件/收件箱/胶囊/讲述音频/衍生物）时删除文件与行。
+
+## Collection（1.2，migration 0036）
+
+统一 `collection.kind=album|chapter` 保存标题、简介、原件封面 FK、可选本地开始/结束日期、
+manual/time 排序、revision、updatedAt 和 deletedAt。`collection_section` 仅一层，最多 20 个
+有序小节；`collection_item` 最多 500 项，保存 MemoryEvent FK、可选 Section FK、位置和手写说明。
+同相册/事件唯一；同一事件可属于多个相册。清除事件时 FK 置空，保留用户说明和位置。
+
+保存整份有界编辑图时，在同一 SQLite 事务内重验当前 FamilyContext、revision 和所有来源。
+批量任意一项无效则不写入；409 保留客户端输入。删除/恢复只改 Collection 墓碑，不改事件、讲述或原件。
+列表计数、封面、来源标题使用当前可见事件/素材；来源软删除时显示缺失，不销毁相册编辑关系。

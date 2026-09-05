@@ -7,6 +7,7 @@ import { formatAgeLabel } from "@/lib/memories/age";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { CollectionSelection } from "@/components/collection-selection";
 import { MemoryCard } from "@/components/memory-card";
 
 export const dynamic = "force-dynamic";
@@ -99,7 +100,7 @@ export default async function TimelinePage({
     <main className="page-container">
       <PageHeader eyebrow="Timeline" title="时光轴" description={`${child?.displayName ?? "孩子"}的成长记忆按真实发生时间排列；晚上传的旧照片仍会回到它属于的那一天。`} />
 
-      <nav aria-label="时间轴浏览方式" className="mt-4 flex gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link></nav>
+      <nav aria-label="时间轴浏览方式" className="mt-4 flex gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link><Link href="/collections" className="ui-button-secondary">相册</Link></nav>
 
       <section aria-label="筛选时间轴" className="mt-6 rounded-2xl border border-line bg-surface p-4">
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" action="/timeline">
@@ -111,6 +112,8 @@ export default async function TimelinePage({
           <div className="flex gap-2 sm:col-span-2 lg:col-span-5"><button type="submit" className="ui-button-primary">查看</button>{hasFilters ? <Link href="/timeline" className="ui-button-secondary">清除筛选</Link> : null}</div>
         </form>
       </section>
+
+      <CollectionSelection memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} />
 
       {entries.length === 0 ? (
         <div className="mt-8">

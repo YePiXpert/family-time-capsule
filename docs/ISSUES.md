@@ -112,7 +112,7 @@ Auth → Family/Person → Asset Upload → metadata/hash → Inbox
 
 ## 1.2 家庭记忆馆与成长年册（开发中）
 
-- [ ] M1 统一 Collection 章节/相册，Web/原生编辑、来源和完整恢复。
+- [ ] M1 统一 Collection：Web/原生编辑、阅读、来源和完整恢复已实现并通过本地门禁；月份草稿与组合验收待回顾里程碑。
 - [ ] M2 家庭时区日历、年龄定位、一致过滤与稳定分页。
 - [ ] M3 全屏照片与家人声音阅读、按需媒体衍生物。
 - [ ] M4 BookProject 三模板、持久编辑、来源及版本快照。

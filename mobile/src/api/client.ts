@@ -840,3 +840,22 @@ export async function fetchMobileCalendar(credentials: Credentials, params: Reco
   for (const row of body.ages) if (!isRecord(row) || !isString(row.label, 100) || !isString(row.date, 10)) throw new ApiError('日历数据无效。', 502);
   return body as import('../types').MobileCalendar;
 }
+
+export async function fetchCollections(credentials:Credentials,deleted=false,cursor=''):Promise<import('../collections/types').CollectionPage>{
+  const value=await requestMobileJson(credentials,`/api/collections?deleted=${deleted?'1':'0'}&cursor=${encodeURIComponent(cursor)}`);
+  if(!isRecord(value)||!Array.isArray(value.entries)||!isNullableString(value.nextCursor)||typeof value.canWrite!=='boolean')throw new ApiError('相册数据无效。',502);
+  return value as import('../collections/types').CollectionPage;
+}
+export async function fetchCollection(credentials:Credentials,id:string):Promise<import('../collections/types').CollectionDetail>{
+  const value=await requestMobileJson(credentials,`/api/collections/${encodeURIComponent(id)}`);
+  if(!isRecord(value)||!isString(value.title)||!Array.isArray(value.items)||!Array.isArray(value.sections)||!Number.isSafeInteger(value.revision))throw new ApiError('相册数据无效。',502);
+  return value as import('../collections/types').CollectionDetail;
+}
+export async function createNativeCollection(credentials:Credentials,title:string,kind:'album'|'chapter'){
+  const value=await requestMobileJson(credentials,'/api/collections',{method:'POST',body:JSON.stringify({title,kind})});
+  if(!isRecord(value)||!isString(value.id,128))throw new ApiError('相册数据无效。',502);return value.id;
+}
+export async function mutateCollection(credentials:Credentials,id:string,input:Record<string,unknown>):Promise<import('../collections/types').CollectionDetail>{
+  try{return await requestMobileJson(credentials,`/api/collections/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(input)}) as import('../collections/types').CollectionDetail;}
+  catch(error){if(error instanceof ApiError && error.status===409)throw new ApiError('其他家人已修改相册。你的输入仍保留，请复制需要保留的内容后重新读取。',409);throw error;}
+}

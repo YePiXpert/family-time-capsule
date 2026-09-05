@@ -318,3 +318,14 @@
 ### CSP
 - 页面：proxy.ts 按 request nonce + `strict-dynamic`（生产无 unsafe-eval）；
   API：`default-src 'none'`；sw.js 单独策略。
+
+### 1.2 相册与日历
+
+- Collection 列表/详情/计数/封面/选择均接受当前 FamilyContext；相册读写事务重验 live
+  user/family/person/role/guardian/timezone。admin 不能绕过 private 讲述及其素材树权限。
+- 写入 API 检查来源、编辑 capability、同源与有界 JSON；核心来源为 FK，批量保存全成或全败。
+  相册清除/恢复不执行事件或素材删除，revision 冲突为 409。
+- 日历与时间轴的媒体筛选和封面选择共用查询内原件/衍生物树权限；实际媒体下载继续实时鉴权。
+  日历只统计 confirmed、未软删除事件；设备时区不参与服务器分桶。
+- 相册模块备份保留编辑和墓碑；共享纯验证器在恢复文件写入前拒绝缺文件、跨家庭、悬空引用
+  或位置/版本/字段非法。认证和设备授权不进入档案。

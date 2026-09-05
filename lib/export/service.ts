@@ -1,4 +1,6 @@
 import "server-only";
+import { collectCollectionArchive } from "@/lib/collections/archive";
+import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
 
 import { collectDurableStories } from "@/lib/stories/service";
 import { collectCapsuleDialogue } from "@/lib/capsules/dialogue";
@@ -6,7 +8,7 @@ import { createReadStream, createWriteStream, statSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { ZipArchive } from "archiver";
-import { isNull, and, eq, inArray } from "drizzle-orm";
+import { isNull, and, eq, inArray, or, sql } from "drizzle-orm";
 import pkg from "../../package.json";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
@@ -62,7 +64,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 25;
+export const EXPORT_NON_ASSET_FILE_COUNT = 25 + COLLECTION_FILES.length;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -133,6 +135,7 @@ export async function buildFamilyExport(
   opts: { actorUserId?: string | null } = {},
 ): Promise<ExportResult> {
   const db = getDb();
+  const collectionGraph = collectCollectionArchive(familyId);
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
@@ -166,7 +169,7 @@ export async function buildFamilyExport(
       .where(
         and(
           eq(memoryEventTable.familyId, familyId),
-          isNull(memoryEventTable.deletedAt),
+          or(isNull(memoryEventTable.deletedAt), sql`exists (select 1 from collection_item ci where ci.memory_event_id = ${memoryEventTable.id} and ci.family_id = ${familyId})`),
         ),
       ),
     listCompleteFamilyContributionsForDisasterExport(db, familyId),
@@ -270,6 +273,7 @@ export async function buildFamilyExport(
     locationText: e.locationText,
     coverAssetId: e.coverAssetId,
     status: e.status,
+        deletedAt: iso(e.deletedAt),
     milestoneType: e.milestoneType,
     isPinned: e.isPinned,
     ageDays: e.ageDays,
@@ -388,6 +392,7 @@ export async function buildFamilyExport(
 
   const manifest = {
     exportVersion: EXPORT_VERSION,
+    modules: { collections: 1 },
     appVersion: getAppVersion(),
     exportedAt: new Date().toISOString(),
     familyId,
@@ -521,6 +526,9 @@ export async function buildFamilyExport(
       completedAt: iso(submission.completedAt),
       createdAt: iso(submission.createdAt),
     })));
+    json("collections.json", collectionGraph.collections);
+    json("collection-sections.json", collectionGraph.sections);
+    json("collection-items.json", collectionGraph.items);
     json("review-periods.json", reviewPeriods.map((period) => ({
       id: period.id,
       periodStart: iso(period.periodStart),

@@ -166,3 +166,11 @@ Apple 证书属于个人/组织身份，仓库不会内置。要让 Actions 直�
 所有移动响应均为 `Cache-Control: private, no-store`。API 不接受客户端提供 `familyId`，
 始终从实时 session → User binding 推导家庭、角色、Person 和 guardian 状态；viewer 只能读取，
 editor/admin 才能整理收件箱和修改事件。跨家庭目标统一按不存在处理。
+
+## 1.2 开发中的阅读整理
+
+时间轴新增 Calendar 与 Collections 二级入口，一级导航仍为五项。原生 Calendar 提供家庭时区
+月历、年龄定位、人物/文档等媒体/标签筛选、当天来源与 cursor 后续；重新聚焦刷新服务器。
+Collections/CollectionDetail 提供真实相册列表、时间轴多选加入、章节小节、改名/简介/日期、
+封面、手工说明、上移/下移及保存重开、删除/恢复。记忆详情可加入相册。
+这些写入目前需要联网；冲突保留本次输入。主动离线收藏和年册仍在后续里程碑实现。

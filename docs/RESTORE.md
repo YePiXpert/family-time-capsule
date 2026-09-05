@@ -198,3 +198,15 @@ submission、ReviewPeriod/Event/Story source 的 A→B→二次导出往返；�
 - `exportVersion` 升级只做增量字段；恢复端对缺失字段取默认值
   （如 `type` 由目录推断、`timeSource` 按 capturedAt 推断、文件名回退 assetId.ext）。
 - merge-into-existing、ID 重映射、增量导入均在 backlog，需先定义安全合并语义。
+
+## 1.2 Collection 图
+
+三文件模块全有或全无；manifest 声明 `modules.collections=1` 后缺一份或全缺均拒绝。
+独立 verifier 与恢复预验共用纯图校验：同家庭、唯一 ID、字段白名单、日期/版本/排序、
+Section/Item 所属、事件和原件引用、同册同来源去重、连续位置及容量边界。
+校验在写任何原件前执行；三张表随同一恢复事务插入并逐表复核行数。
+
+独立目录自动化验证真实生成的五份图片、两个相册、排序/手工说明、软删除来源、重启和
+A→B→二次导出后逐行/原件 SHA 相等；缺模块、声明缺失、悬空来源在写原件前拒绝。
+1.1 migration 前缀构造的独立 SQLite 文件可原地升级至 0036，WAL 一致快照保留；注入迁移失败
+后旧数据/迁移账本回滚且连接释放。生产 Docker 卷与完整 1.1 原版导出验证仍以最终门禁记录为准。

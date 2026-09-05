@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { COLLECTION_FILES, validateCollectionArchive } from "../lib/collections/portable.mjs";
 // 校验 family-time-capsule 导出 ZIP（docs/RESTORE.md §1）：
 //   npm run verify:export <zip路径>
 // 检查 manifest 版本、每个原件的存在/字节数/SHA-256、必需 JSON 可解析、引用完整性。
@@ -107,11 +108,16 @@ const hasInboxItems = Boolean(zip.file(`${ROOT}/inbox-items.json`));
 const hasInboxItemAssets = Boolean(zip.file(`${ROOT}/inbox-item-assets.json`));
 const hasStories = await zipEntryExists("stories.json");
 const hasDialogue = await zipEntryExists("capsule-questions.json");
+const collectionPresence = await Promise.all(COLLECTION_FILES.map(name => zipEntryExists(name)));
+const hasCollections = collectionPresence.every(Boolean);
+if (!hasCollections && collectionPresence.some(Boolean)) fail("相册关系三件套不完整");
+if (manifest.modules?.collections !== undefined && (manifest.modules.collections !== 1 || !hasCollections)) fail("声明的相册模块缺失或不支持");
+const collectionGraph = hasCollections ? await Promise.all(COLLECTION_FILES.map(name => readJsonAsync(name))) : [[],[],[]];
 const expectedNonAssetCount =
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
   (hasStories ? 3 : 0) +
   (hasDialogue ? 2 : 0) +
-  (importSessions ? 8 : 0);
+  (importSessions ? 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
   fail("inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失");
 }
@@ -127,6 +133,9 @@ const personIds = new Set((people ?? []).map((p) => p.id));
 const assetIds = new Set((manifest.assets ?? []).map((a) => a.assetId));
 const factIds = new Set((facts ?? []).map((f) => f.id));
 const eventIds = new Set((memories ?? []).map((m) => m.id));
+try { validateCollectionArchive(...collectionGraph, manifest.familyId, eventIds, assetIds); ok("相册关系图校验通过"); }
+catch { fail("相册编辑关系图无效"); }
+
 const inboxEntry = zip.file(`${ROOT}/inbox-items.json`);
 const inboxItemIds = new Set(
   inboxEntry

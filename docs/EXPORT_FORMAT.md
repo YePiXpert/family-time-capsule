@@ -185,3 +185,14 @@ Contribution 或讲述者。合并到同一事件的多条文字也各自保留�
 
 - 导出时：服务端**重读磁盘重算 SHA-256** 并与数据库比对，不符则整个导出失败（HTTP 409）。
 - 导出后：`npm run verify:export <zip路径>` 独立校验 manifest 与 ZIP 内容（见 RESTORE.md）。
+
+## 1.2 相册模块（增量）
+
+新增 `collections.json`、`collection-sections.json`、`collection-items.json`，manifest 声明
+`modules.collections=1`。当前非媒体文件数为 28（原 25 + 相册 3）；三份文件始终成组存在，
+数组为空也保留。旧 1.1 档没有模块声明且三文件全无时，恢复为空相册。
+
+完整保存 Collection 的类型、标题、说明、封面、日期范围、排序方式、revision、时间戳/墓碑，
+Section 的名称/顺序，以及 Item 的事件 FK、小节 FK、手写说明/顺序。包含被删除相册的编辑。
+被相册引用的软删除事件连同 `deletedAt` 进入完整备份，恢复后仍不可日常阅读；不会把丢失来源
+静默变成新的已确认记忆。不存在认证 User、登录/分享 token 或临时任务。

@@ -253,6 +253,13 @@
       "when": 1788537003247,
       "tag": "0035_weekly_review",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1788568629527,
+      "tag": "0036_collections",
+      "breakpoints": true
     }
   ]
 }

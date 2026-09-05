@@ -14,6 +14,7 @@ import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { MediaBlock } from "@/components/media-view";
 import { MediaGrid } from "@/components/media-grid";
 import { MemoryCard } from "@/components/memory-card";
+import { CollectionSelection } from "@/components/collection-selection";
 import { PageHeader } from "@/components/page-header";
 import {
   getAiRuntimeDisclosure,
@@ -352,6 +353,7 @@ export default async function MemoryEventPage({
             </Link>
           ) : undefined}
         />
+        <CollectionSelection memories={[{id:event.id,title:event.title}]} />
         <section aria-label="参与人物" className="mt-4 text-sm text-muted">与 {participants.map((person) => `${person.displayName}${person.id === event.childPersonId ? "（孩子）" : ""}`).join("、")} 一起</section>
       </div>
 

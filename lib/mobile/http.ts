@@ -10,7 +10,7 @@ export function mobileJson(body: unknown, init: ResponseInit = {}): Response {
   return Response.json(body, { ...init, headers });
 }
 
-export async function readMobileJson(request: Request): Promise<unknown> {
+export async function readMobileJson(request: Request, maxBytes = MAX_JSON_BYTES): Promise<unknown> {
   if (!request.headers.get("content-type")?.startsWith("application/json")) {
     throw new MobileRequestError("invalid_content_type", 415);
   }
@@ -22,7 +22,7 @@ export async function readMobileJson(request: Request): Promise<unknown> {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_JSON_BYTES) throw new MobileRequestError("too_large", 413);
+    if (total > maxBytes) throw new MobileRequestError("too_large", 413);
     chunks.push(value);
   }
   const bytes = new Uint8Array(total);

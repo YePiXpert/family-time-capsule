@@ -82,6 +82,7 @@ export default async function CalendarPage({
         >
           日历
         </Link>
+        <Link className="ui-button-secondary" href="/collections">相册</Link>
       </nav>
       <form
         className="mt-6 grid gap-3 sm:grid-cols-3"

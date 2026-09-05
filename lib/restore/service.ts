@@ -1,3 +1,5 @@
+import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
+import { parseCollectionArchive, restoreCollectionArchive } from "@/lib/collections/archive";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -136,6 +138,7 @@ type Manifest = {
   appVersion?: string;
   familyId: string;
   fileCount: number;
+  modules?: { collections?: number };
   assetCount: number;
   assets: ManifestAsset[];
 };
@@ -436,6 +439,9 @@ export type RestoreReport = {
   contributionRequests: number;
   portalSubmissions: number;
   reviewPeriods: number;
+  collections: number;
+  collectionSections: number;
+  collectionItems: number;
   filesWritten: number;
 };
 
@@ -730,6 +736,7 @@ async function loadAndVerifyZip(
       title: string;
       occurredAt: string | null;
       occurredAtPrecision?: string;
+      deletedAt?: string | null;
       locationText?: string | null;
       coverAssetId?: string | null;
       status?: string;
@@ -926,6 +933,12 @@ async function loadAndVerifyZip(
   const reviewPeriodsRaw = durable11Raw.get("review-periods.json") as unknown[];
   const reviewPeriodEventsRaw = durable11Raw.get("review-period-events.json") as unknown[];
 
+  const collectionPresence = COLLECTION_FILES.map((name) => archive.has(`${EXPORT_ROOT_DIR}/${name}`));
+  const hasCollections = collectionPresence.every(Boolean);
+  requireCondition(hasCollections || collectionPresence.every(p => !p), "missing_json", "相册关系三件套不完整");
+  requireCondition(manifest.modules?.collections === undefined || (manifest.modules.collections === 1 && hasCollections), "missing_json", "声明的相册模块缺失或不支持");
+  const collectionRaw = hasCollections ? await Promise.all(COLLECTION_FILES.map(name => readJson<unknown>(name))) : [[],[],[]];
+
   const hasInboxFiles = Boolean(inboxItemsFile) && Boolean(inboxItemAssetsFile);
   const hasStoryFiles = Boolean(storiesFile);
   const hasDialogueFiles = Boolean(capsuleQuestionsFile);
@@ -937,7 +950,7 @@ async function loadAndVerifyZip(
     (factSourcesFile ? 1 : 0) +
     (hasStoryFiles ? 3 : 0) +
     (hasDialogueFiles ? 2 : 0) +
-    (hasDurable11Files ? durable11Names.length : 0);
+    (hasDurable11Files ? durable11Names.length : 0) + (hasCollections ? COLLECTION_FILES.length : 0);
   requireCondition(
     manifest.fileCount === expectedFileCount,
     hasInboxFiles || factSourcesFile || hasStoryFiles || hasDialogueFiles || hasDurable11Files
@@ -1254,6 +1267,7 @@ async function loadAndVerifyZip(
     for (const pid of m.participantPersonIds ?? []) {
       requireCondition(personIds.has(pid), "bad_refs", `事件 ${m.id} 引用未知参与人 ${pid}`);
     }
+    requireCondition(m.deletedAt === undefined || m.deletedAt === null || (typeof m.deletedAt === "string" && parseDate(m.deletedAt) !== null), "bad_json", "invalid memory deletedAt");
     for (const aid of m.assetIds ?? []) {
       requireCondition(assetIds.has(aid), "bad_refs", `事件 ${m.id} 引用未知素材 ${aid}`);
     }
@@ -2369,7 +2383,12 @@ async function loadAndVerifyZip(
     reviewPeriodEventsJson.push(row as ReviewPeriodEventArchiveRow);
   }
 
+  let collectionGraph;
+  try { collectionGraph = parseCollectionArchive(collectionRaw[0], collectionRaw[1], collectionRaw[2], manifest.familyId, new Set(memoriesJson.map(m => m.id)), assetIds); }
+  catch { throw new RestoreError("bad_refs", "相册编辑关系图无效"); }
+
   return {
+    collectionGraph,
     archive,
     manifest,
     familyJson,
@@ -2436,6 +2455,7 @@ async function restoreFromArchive(
   const db = getDb();
   const data = await loadAndVerifyZip(archive, archiveBytes, limits);
   const {
+    collectionGraph,
     familyJson,
     peopleJson,
     memoriesJson,
@@ -2618,6 +2638,7 @@ async function restoreFromArchive(
               locationText: m.locationText ?? null,
               coverAssetId: m.coverAssetId ?? null,
               status: m.status ?? "confirmed",
+              deletedAt: parseDate(m.deletedAt),
               milestoneType: m.milestoneType ?? null,
               isPinned: m.isPinned ?? false,
               ageDays: m.ageDays ?? null,
@@ -2998,6 +3019,8 @@ async function restoreFromArchive(
           .run();
       }
 
+      restoreCollectionArchive(tx, collectionGraph, familyId);
+
       if (capsulesJson.length > 0) {
         tx.insert(capsuleTable)
           .values(
@@ -3320,6 +3343,9 @@ async function restoreFromArchive(
     contributionRequests: contributionRequestsJson.length,
     portalSubmissions: contributionPortalSubmissionsJson.length,
     reviewPeriods: reviewPeriodsJson.length,
+    collections: collectionGraph.collections.length,
+    collectionSections: collectionGraph.sections.length,
+    collectionItems: collectionGraph.items.length,
   });
 
   // 4) 全文索引是可重建 derivative：恢复完成后整体重建（失败不阻断恢复本身）。
@@ -3348,6 +3374,9 @@ async function restoreFromArchive(
     contributionRequests: contributionRequestsJson.length,
     portalSubmissions: contributionPortalSubmissionsJson.length,
     reviewPeriods: reviewPeriodsJson.length,
+    collections: collectionGraph.collections.length,
+    collectionSections: collectionGraph.sections.length,
+    collectionItems: collectionGraph.items.length,
     filesWritten: writtenKeys.length,
   };
 }

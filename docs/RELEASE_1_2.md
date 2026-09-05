@@ -34,3 +34,20 @@ Expo export 均生成约 3.5 MB Hermes bundle。新增 renderer 仅用于组件�
 Android/iOS 安装及含唯一资料的旧包升级、系统分享 Intent/appex/App Group、相册/Files、
 音视频解码/方向、触控缩放、安全区、断网杀进程、下载清理不伤原件/outbox、本地通知。
 无签名凭据时只可交付 unsigned/test 包，不能据此宣称无损升级已验证。
+
+## 相册与章节切片（本地门禁通过）
+
+- Web `/collections`、`/collections/[id]`；原生 Collections/CollectionDetail。
+- 时间轴多选、记忆详情加入，手动/时间排序、小节、说明、封面、日期范围、阅读模式、
+  乐观锁冲突保留输入、删除恢复。大于 30 个相册可继续分页，时间轴指定相册可直接恢复。
+- migration 0036；三个 Collection 模块文件纳入 manifest、verifier 和事务恢复。
+  软删除来源保留 tombstone；不导出 token 或临时任务。
+- 独立生成五个虚构 JPEG 原件，双相册整理/删除恢复/重开，原件数量与 SHA 不变；
+  完整档案恢复到新目录再导出，关系、顺序、说明及 SHA 相同。
+- 实际 0035 schema 前缀升级到 0036；注入失败迁移验证回滚。并非宣称真实用户 1.1 卷已验收。
+- 根 lint/typecheck/test/build 通过：81 files / 557 tests。
+- Production 相册 E2E 2 passed；disaster roundtrip 6 passed。
+- Mobile test/typecheck/lint 通过：13 files / 61 tests；相册真实组件交互 2 passed。
+  Doctor 21/21；Android/iOS Expo export 通过。真机触控及安全区仍未验证。
+- 375/768/1024/1440px 虚构家庭页面截图检查通过，键盘排序、并发冲突和恢复有交互断言。
+- 日历提交后的完整 CI `33933984509`（`32bcabf`）全绿；相册提交对应 run 待 push 后核对。
