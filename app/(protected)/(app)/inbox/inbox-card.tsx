@@ -1,7 +1,7 @@
 "use client";
 import { readableName } from "@/lib/naming";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { InboxItemRow } from "@/lib/inbox/service";
 import { MediaImage, MediaVideo } from "@/components/media-view";
@@ -10,6 +10,7 @@ import { InboxSuggestionChips, type InboxSuggestionChipDto } from "./inbox-sugge
 import type { InboxPersonOption } from "./inbox-board";
 import { StatusBadge } from "@/components/status-badge";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
+import { NameReviewControl } from "@/components/name-review";
 
 const TIME_SOURCE_LABEL: Record<string, string> = {
   user_confirmed: "你确认的时间",
@@ -72,6 +73,7 @@ export function InboxCard({
     durationMs: cover?.durationMs, assetCount: assets.length, timezone,
   });
   const defaultTitle = name.text;
+  const [titleEdit, setTitleEdit] = useState<{ text: string; revision: number } | null>(null);
 
   return (
     <article className="h-full overflow-hidden rounded-xl border border-line bg-surface">
@@ -146,12 +148,16 @@ export function InboxCard({
           </details> : null}
 
           {suggestedTitle ? <p className="text-xs text-muted">AI 建议：{suggestedTitle}（采用前不会替换标题）</p> : null}
+          {canReview ? <NameReviewControl kind="inbox_item" id={item.id} /> : null}
+          {canReview && cover ? <NameReviewControl kind="asset" id={cover.id} /> : null}
           {canReview && <form action={confirmActionRun} className="mt-3 grid gap-2">
             <input type="hidden" name="itemId" value={item.id} />
+            <input type="hidden" name="titleRevision" value={titleEdit?.revision ?? item.titleRevision} />
             <input
               type="text"
               name="title"
-              defaultValue={defaultTitle}
+              value={titleEdit?.text ?? defaultTitle}
+              onChange={event => setTitleEdit({ text: event.target.value, revision: titleEdit?.revision ?? item.titleRevision })}
               maxLength={100}
               placeholder="这件事的标题"
               aria-label="事件标题"

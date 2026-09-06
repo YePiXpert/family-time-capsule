@@ -87,3 +87,35 @@ test("原生草稿在 Web 不修改直接确认后保持一致", async ({ page }
   await expect(page.getByText("外婆家的阳台")).toBeVisible();
   await expect(page.locator('section[aria-label="参与人物"]')).toContainText("外婆");
 });
+
+test("人工名称在 Web 与移动 API 间同步，并拒绝过期的确认表单", async ({ page }) => {
+  await ensureLogin(page);
+  const id = randomUUID();
+  expect((await page.request.post("/api/mobile/v1/captures/text", { data: { id, text: "命名版本冲突测试的完整原文" } })).status()).toBe(201);
+  await page.goto("/inbox");
+  const card = page.locator("article").filter({ hasText: "命名版本冲突测试的完整原文" });
+  await card.getByLabel("事件标题").fill("我还没确认的草稿");
+  await card.getByText("修改标题与审核 AI 建议", { exact: true }).click();
+  await card.getByLabel("人工标题", { exact: true }).fill("另一处保存的名称");
+  await card.getByRole("button", { name: "保存人工名称" }).click();
+  await expect(card.getByLabel("人工标题", { exact: true })).toHaveValue("另一处保存的名称");
+  await expect.poll(async () => {
+    const review = await page.request.get(`/api/mobile/v1/names?kind=inbox_item&id=${id}`);
+    return (await review.json()).target.revision;
+  }).toBe(1);
+  await card.getByRole("button", { name: "确认进入时间轴" }).click();
+  await expect(card.getByText("名称已被另一处修改，本次输入已保留，请核对后再确认。")).toBeVisible();
+  await expect(card.getByLabel("事件标题")).toHaveValue("我还没确认的草稿");
+  await page.reload();
+  await expect(card.getByLabel("事件标题")).toHaveValue("另一处保存的名称");
+  await card.getByRole("button", { name: "确认进入时间轴" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "另一处保存的名称" })).toBeVisible();
+  const eventId = new URL(page.url()).pathname.split("/").pop()!;
+  await page.getByText("修改标题与审核 AI 建议", { exact: true }).click();
+  await page.getByLabel("人工标题", { exact: true }).fill("归档后修改的名称");
+  await page.getByRole("button", { name: "保存人工名称" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "归档后修改的名称" })).toBeVisible();
+  const detail = await page.request.get(`/api/mobile/v1/memories/${eventId}`);
+  expect(await detail.json()).toMatchObject({ title: "归档后修改的名称", titleSource: "manual", titleRevision: 1 });
+  await expect(page.getByText("命名版本冲突测试的完整原文", { exact: true })).toBeVisible();
+});

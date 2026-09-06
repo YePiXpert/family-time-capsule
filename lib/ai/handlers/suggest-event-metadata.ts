@@ -612,6 +612,7 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
               status: "pending" as const,
               createdByJobId: lease.jobId,
               sourceFingerprint,
+              targetRevision: eventRow.titleRevision,
               createdAt: now,
               resolvedAt: null,
               resolvedByUserId: null,

@@ -26,14 +26,13 @@ import {
 export type InboxActionState = { error?: string; itemId?: string };
 
 /**
- * 条目确认/丢弃后，其 pending 建议随之落定：
- * 确认 = 已被用户采用（accepted，audit 记录），丢弃 = 不再相关（rejected）。
+ * 丢弃条目使未处理建议失效；归档确认不代表采用任意 AI 字段。
  */
 async function settlePendingSuggestions(
   familyId: string,
   userId: string,
   inboxItemId: string,
-  status: "accepted" | "rejected",
+  status: "rejected",
 ): Promise<void> {
   const db = getDb();
   const now = new Date();
@@ -97,7 +96,7 @@ export async function confirmAction(
   _prev: InboxActionState | undefined,
   formData: FormData,
 ): Promise<InboxActionState> {
-  const { familyId, userId } = await requireFamilyCapability("inbox:review");
+  const { familyId } = await requireFamilyCapability("inbox:review");
   const itemId = String(formData.get("itemId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   const occurredWall = String(formData.get("occurredAt") ?? "").trim();
@@ -125,6 +124,7 @@ export async function confirmAction(
 
   const result = await confirmInboxEntry(familyId, entry, {
     title: title || undefined,
+    expectedTitleRevision: formData.has("titleRevision") ? Number(formData.get("titleRevision")) : undefined,
     occurredAt,
     locationText,
     participantPersonIds,
@@ -134,12 +134,11 @@ export async function confirmAction(
       error:
         result.error === "no_child"
           ? "家庭还没有孩子档案，请先在「家人」页补充。"
-          : "确认失败，请检查标题（1–100 字）。",
+          : result.error === "conflict" ? "名称已被另一处修改，本次输入已保留，请核对后再确认。" : "确认失败，请检查标题（1–100 字）。",
       itemId,
     };
   }
-  // 用户已亲自确认 → 本条目的 pending AI 建议视为已采用（含预填的 occurredAt）
-  await settlePendingSuggestions(familyId, userId, itemId, "accepted");
+  // Each AI field requires its own explicit, versioned review.
   revalidatePath("/inbox");
   revalidatePath("/timeline");
   redirect(`/memories/${result.eventId}`);
@@ -153,7 +152,7 @@ export async function mergeAction(
   _prev: InboxActionState | undefined,
   formData: FormData,
 ): Promise<InboxActionState> {
-  const { familyId, userId } = await requireFamilyCapability("inbox:review");
+  const { familyId } = await requireFamilyCapability("inbox:review");
   const itemIds = formData
     .getAll("itemIds")
     .map((v) => String(v))
@@ -193,11 +192,6 @@ export async function mergeAction(
           : "合并失败：至少选择两个条目，标题 1–100 字。",
     };
   }
-  await Promise.all(
-    itemIds.map((itemId) =>
-      settlePendingSuggestions(familyId, userId, itemId, "accepted"),
-    ),
-  );
   revalidatePath("/inbox");
   revalidatePath("/timeline");
   redirect(`/memories/${result.eventId}`);

@@ -867,6 +867,20 @@ export async function changeAiConsent(credentials: Credentials, capability: impo
   return parseAiSettings(await requestMobileJson(credentials, "/api/mobile/v1/ai/settings", { method: "POST", body: JSON.stringify({ capability, operation, configurationId }) }));
 }
 
+export function parseNameReview(value: unknown): import("../names/types").NameReview {
+  const revision = (number: unknown) => Number.isSafeInteger(number) && Number(number) >= 0;
+  if (!isRecord(value) || !isRecord(value.target) || !["asset", "inbox_item", "memory_event"].includes(String(value.target.kind)) || !isString(value.target.id, 128) || !isNullableString(value.target.text, 100) || !isString(value.target.source, 32) || !revision(value.target.revision) || !Array.isArray(value.suggestions) || value.suggestions.length > 50 || !value.suggestions.every(row => isRecord(row) && isString(row.id, 128) && isString(row.title, 100) && ["pending", "accepted", "rejected", "undone"].includes(String(row.status)) && revision(row.revision) && (row.targetRevision === null || revision(row.targetRevision)) && typeof row.valid === "boolean" && typeof row.canUndo === "boolean")) throw new ApiError("服务器名称审核数据无效。", 502);
+  return value as import("../names/types").NameReview;
+}
+
+export async function fetchNameReview(credentials: Credentials, kind: import("../names/types").NameKind, id: string) {
+  return parseNameReview(await requestMobileJson(credentials, `/api/mobile/v1/names?${new URLSearchParams({ kind, id })}`));
+}
+
+export async function mutateNameReview(credentials: Credentials, input: Record<string, unknown>) {
+  return parseNameReview(await requestMobileJson(credentials, "/api/mobile/v1/names", { method: "POST", body: JSON.stringify(input) }));
+}
+
 export async function fetchMobileInbox(
   credentials: Credentials,
   cursor: string | null = null,

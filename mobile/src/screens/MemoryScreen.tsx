@@ -26,6 +26,7 @@ import {
   shouldRenderStandaloneCover,
 } from "../memories/presentation";
 import { memoryCacheScope } from "../memories/cache-scope";
+import { NameEditor } from "../names/NameEditor";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Memory">;
 
@@ -188,6 +189,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
       </View>
 
       {credentials && viewer?.canEditEvents?<Pressable onPress={()=>navigation.navigate("Collections",{eventIds:[route.params.id]})} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加入相册 / 章节</Text></Pressable>:null}
+      {memory ? <NameEditor kind="memory_event" id={memory.id} onSaved={() => void load()} /> : null}
 
       {error ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.retry}><Text style={styles.link}>重试</Text></Pressable></View> : null}
       {loading && !memory ? <ActivityIndicator color={colors.coral} /> : null}

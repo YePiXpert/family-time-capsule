@@ -1169,4 +1169,44 @@ describe("native mobile API", () => {
       expect((await disabled.json()).capabilities.find((row: { capability: string }) => row.capability === "text").consented).toBe(false);
     } finally { vi.unstubAllEnvs(); }
   });
+  it("shares versioned title adoption with Web, retaining edits and denying stale or unauthorized writes", async () => {
+    const { GET, POST } = await import("@/app/api/mobile/v1/names/route");
+    const { aiSuggestion } = await import("@/db/schema/suggestion");
+    const { enqueueAiJob, claimNextAiJob, completeAiJob } = await import("@/lib/ai/jobs");
+    const { DeterministicFakeMemoryAssistant } = await import("@/lib/ai/fake");
+    const admin = (await getDb().select().from(user))[0]!;
+    const item = await createTextInboxItem(admin.familyId!, "用于双端命名的完整正文");
+    const confirmed = await confirmInboxEntry(admin.familyId!, (await getInboxEntry(admin.familyId!, item.id))!, { title: "旧的手工标题" });
+    if (!confirmed.ok) throw new Error("fixture confirm failed");
+    const url = "http://localhost/api/mobile/v1/names";
+    const target = { kind: "memory_event", id: confirmed.eventId, revision: 0 };
+    const query = `${url}?kind=memory_event&id=${confirmed.eventId}`;
+    expect((await GET(new Request(query))).status).toBe(401);
+    expect((await GET(bearerRequest(query, foreignToken))).status).toBe(404);
+    const initial = await GET(bearerRequest(query, bearerToken));
+    expect(initial.status).toBe(200);
+    expect(initial.headers.get("cache-control")).toBe("private, no-store");
+    expect(await initial.json()).toMatchObject({ target: { text: "旧的手工标题", source: "manual", revision: 0 }, suggestions: [] });
+    const runtime = new DeterministicFakeMemoryAssistant();
+    const queued = enqueueAiJob({ familyId: admin.familyId!, requestedByUserId: admin.id, jobType: "test.names.api", entityType: "memory_event", entityId: target.id, requiredCapability: "text", triggerMode: "manual", sources: [{ kind: "memory_event", id: target.id }] }, { runtime });
+    const lease = claimNextAiJob("names-api-worker", { runtime });
+    if (!queued.ok || !lease || !completeAiJob(lease, { runtime }).ok) throw new Error("fixture job failed");
+    const suggestionId = randomUUID();
+    getDb().insert(aiSuggestion).values({ id: suggestionId, familyId: admin.familyId!, entityType: "memory_event", entityId: target.id, suggestionType: "title", valueJson: JSON.stringify({ title: "窗边读书的午后" }), targetRevision: 0, provider: runtime.provider.id, model: runtime.capabilities.text.model!, sourceFingerprint: "f".repeat(64), createdByJobId: queued.jobId }).run();
+    const adopt = { ...target, operation: "accept", suggestionId, suggestionRevision: 0, editedTitle: "修订后采用的名称" };
+    expect((await POST(mobileJsonRequest(url, "POST", viewerToken, adopt))).status).toBe(403);
+    expect((await POST(mobileJsonRequest(url, "POST", foreignToken, adopt))).status).toBe(404);
+    const adopted = await POST(mobileJsonRequest(url, "POST", editorToken, adopt));
+    expect(adopted.status).toBe(200);
+    expect(await adopted.json()).toMatchObject({ target: { text: adopt.editedTitle, source: "manual", revision: 1 }, suggestions: [{ status: "accepted", revision: 1, canUndo: true }] });
+    expect((await POST(mobileJsonRequest(url, "POST", bearerToken, { ...target, operation: "rename", title: "过期表单" }))).status).toBe(409);
+    const undo = await POST(mobileJsonRequest(url, "POST", bearerToken, { ...target, revision: 1, operation: "undo", suggestionId, suggestionRevision: 1 }));
+    expect(undo.status).toBe(200);
+    const restored = await undo.json();
+    expect(restored).toMatchObject({ target: { text: "旧的手工标题", source: "manual", revision: 2 }, suggestions: [{ status: "undone", revision: 2, canUndo: false }] });
+    expect(JSON.stringify(restored)).not.toContain("previousNameJson");
+    const detail = await memoryGet(bearerRequest(`http://localhost/api/mobile/v1/memories/${target.id}`, bearerToken), { params: Promise.resolve({ id: target.id }) });
+    expect(JSON.stringify(await detail.json())).toContain("旧的手工标题");
+  });
+
 });

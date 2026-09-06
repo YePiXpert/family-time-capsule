@@ -14,6 +14,7 @@ import { enqueueAiJob, type AiJobServiceDependencies } from "@/lib/ai/jobs";
 import { updateMemoryEvent } from "@/lib/memories/service";
 import type { FamilyContext } from "@/lib/family/context";
 import type { AiSuggestionRow } from "@/db/schema/suggestion";
+import { reviewTitleSuggestion } from "@/lib/names/service";
 
 export type SuggestionRequestResult =
   | { ok: true; jobId: string; created: boolean }
@@ -113,6 +114,14 @@ export async function resolveSuggestion(
   }
   if (suggestion.entityType !== "memory_event") {
     return { ok: false, error: "invalid_entity" };
+  }
+  if (suggestion.suggestionType === "title") {
+    const result = await reviewTitleSuggestion(familyId, userId, {
+      suggestionId, suggestionRevision: suggestion.revision, targetKind: "memory_event",
+      targetId: suggestion.entityId, targetRevision: suggestion.targetRevision ?? 0,
+      operation: action, ...(editedValue === undefined ? {} : { editedTitle: editedValue }),
+    });
+    return result.ok ? { ok: true } : result;
   }
 
   const now = new Date();
@@ -488,6 +497,14 @@ export async function resolveInboxSuggestion(
   if (!suggestion) return { ok: false, error: "not_found" };
   if (suggestion.status !== "pending") return { ok: false, error: "already_resolved" };
   if (suggestion.entityType !== "inbox_item") return { ok: false, error: "invalid_entity" };
+  if (suggestion.suggestionType === "title") {
+    const result = await reviewTitleSuggestion(familyId, userId, {
+      suggestionId, suggestionRevision: suggestion.revision, targetKind: "inbox_item",
+      targetId: suggestion.entityId, targetRevision: suggestion.targetRevision ?? 0,
+      operation: action, ...(editedValue === undefined ? {} : { editedTitle: editedValue }),
+    });
+    return result.ok ? { ok: true } : result;
+  }
 
   const now = new Date();
 

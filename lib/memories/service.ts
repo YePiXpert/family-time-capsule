@@ -93,6 +93,7 @@ export type MemoryEventDetail = {
  */
 export type EditMemoryEventPatch = {
   title?: string;
+  expectedTitleRevision?: number;
   occurredAt?: Date;
   occurredAtPrecision?: "exact" | "approximate" | "date_only";
   locationText?: string | null;
@@ -105,7 +106,7 @@ export type EditMemoryEventPatch = {
 
 export type EditResult =
   | { ok: true; event: MemoryEventRow }
-  | { ok: false; error: "not_found" | "invalid" | "bad_person" | "bad_cover" };
+  | { ok: false; error: "not_found" | "invalid" | "bad_person" | "bad_cover" | "conflict" };
 
 export async function updateMemoryEvent(
   familyId: string,
@@ -127,6 +128,7 @@ export async function updateMemoryEvent(
     .limit(1);
   const current = rows[0];
   if (!current) return { ok: false, error: "not_found" };
+  if (patch.expectedTitleRevision !== undefined && patch.expectedTitleRevision !== current.titleRevision) return { ok: false, error: "conflict" };
 
   const title = patch.title !== undefined ? patch.title.trim() : current.title;
   if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
@@ -230,7 +232,9 @@ export async function updateMemoryEvent(
       : null;
 
   const now = new Date();
-  db.transaction((tx) => {
+  const committed = db.transaction((tx) => {
+    const live = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, eventId), eq(memoryEvent.familyId, familyId), isNull(memoryEvent.deletedAt))).get();
+    if (!live || live.titleRevision !== current.titleRevision || live.updatedAt.getTime() !== current.updatedAt.getTime()) return false;
     // 编辑前快照（v0.1.3）：与本次修改同事务写入，保证可追溯
     tx.insert(memoryEventRevision)
       .values({
@@ -291,7 +295,9 @@ export async function updateMemoryEvent(
         )
         .run();
     }
+    return true;
   });
+  if (!committed) return { ok: false, error: "conflict" };
 
   indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
   const updated = await getMemoryEventDetail(familyId, eventId);
@@ -372,6 +378,7 @@ async function getChildPersonId(familyId: string): Promise<string | null> {
 }
 
 export type ConfirmOptions = {
+  expectedTitleRevision?: number;
   title?: string;
   occurredAt?: Date;
   occurredAtPrecision?: "exact" | "approximate" | "date_only";
@@ -382,7 +389,7 @@ export type ConfirmOptions = {
 
 export type ConfirmResult =
   | { ok: true; eventId: string }
-  | { ok: false; error: "not_found" | "no_child" | "invalid" };
+  | { ok: false; error: "not_found" | "no_child" | "invalid" | "conflict" };
 
 /**
  * 确认收件箱条目为 MemoryEvent（事务）：
@@ -405,6 +412,7 @@ export async function confirmInboxEntry(
   if (!["new", "needs_review", "processing"].includes(liveEntry.item.status)) {
     return { ok: false, error: "not_found" };
   }
+  if (opts.expectedTitleRevision !== undefined && opts.expectedTitleRevision !== liveEntry.item.titleRevision) return { ok: false, error: "conflict" };
   const requestedAssetIds = [...new Set(entry.assets.map((asset) => asset.id))];
   let confirmedAssets = liveEntry.assets;
   if (requestedAssetIds.length > 0) {
@@ -425,7 +433,8 @@ export async function confirmInboxEntry(
   const childPersonId = await getChildPersonId(familyId);
   if (!childPersonId) return { ok: false, error: "no_child" };
 
-  const title = (opts.title ?? defaultTitle(entry, await familyTimezone(familyId))).trim();
+  const fallbackTitle = defaultTitle(entry, await familyTimezone(familyId));
+  const title = (opts.title ?? fallbackTitle).trim();
   if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
 
   const occurredAt = opts.occurredAt ?? entry.item.draftOccurredAt ?? defaultOccurredAt(entry.assets, entry.item);
@@ -473,14 +482,18 @@ export async function confirmInboxEntry(
       ? computeAgeDays(childBirth[0].birthDate, occurredAt, await familyTimezone(familyId))
       : null;
 
-  db.transaction((tx) => {
+  const committed = db.transaction((tx): ConfirmResult => {
+    const current = tx.select().from(inboxItem).where(and(eq(inboxItem.id, entry.item.id), eq(inboxItem.familyId, familyId))).get();
+    if (current?.status === "confirmed" && current.memoryEventId) return { ok: true, eventId: current.memoryEventId };
+    if (!current || !["new", "needs_review", "processing"].includes(current.status)) return { ok: false, error: "not_found" };
+    if (current.titleRevision !== entry.item.titleRevision || current.updatedAt.getTime() !== entry.item.updatedAt.getTime()) return { ok: false, error: "conflict" };
     tx.insert(memoryEvent)
       .values({
         id: eventId,
         familyId,
         childPersonId,
         title,
-        titleSource: opts.title !== undefined ? "manual" : entry.item.draftTitle ? entry.item.titleSource : "rule_generated",
+        titleSource: title !== fallbackTitle ? "manual" : entry.item.draftTitle ? entry.item.titleSource : "rule_generated",
         occurredAt,
         occurredAtPrecision: precision,
         locationText,
@@ -524,7 +537,9 @@ export async function confirmInboxEntry(
         ),
       )
       .run();
-  });
+    return { ok: true, eventId };
+  }, { behavior: "immediate" });
+  if (!committed.ok || committed.eventId !== eventId) return committed;
 
   indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
   indexDocumentAssetsForEvent(familyId, eventId, assetIds);

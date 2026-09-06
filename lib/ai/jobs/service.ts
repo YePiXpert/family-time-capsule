@@ -518,6 +518,31 @@ function externalConsentMatches(
   );
 }
 
+/** Recheck a completed result before preview/adoption. Durable adopted edits
+ * are reviewed without this gate, so disabling AI never removes manual work. */
+export function completedAiResultIsCurrent(
+  tx: Transaction,
+  job: typeof aiJob.$inferSelect,
+  reviewerUserId: string,
+): boolean {
+  if (job.status !== "completed" || job.cancelRequestedAt !== null) return false;
+  if (job.providerExternal) {
+    const runtime = runtimeIdentity({});
+    if (!currentRuntimeMatches(job, runtime) || !externalConsentMatches(tx, job, runtime!)) return false;
+  }
+  const now = new Date();
+  const requester = getLiveActor(tx, job.familyId, job.requestedByUserId, "ai:review", now);
+  const reviewer = getLiveActor(tx, job.familyId, reviewerUserId, "ai:review", now);
+  if (!requester || !reviewer) return false;
+  const stored = normalizeStoredSources(tx.select({ kind: aiJobSource.sourceKind, id: aiJobSource.sourceId, sha256: aiJobSource.sourceSha256 })
+    .from(aiJobSource).where(eq(aiJobSource.jobId, job.id)).orderBy(asc(aiJobSource.sourceKind), asc(aiJobSource.sourceId)).all());
+  if (!stored?.length) return false;
+  return [requester, reviewer].every(actor => {
+    const hydrated = hydrateSources(tx, actor.snapshot, stored, job.triggerMode === "automatic" ? "automatic" : "manual");
+    return hydrated.ok && hydrated.visibility === job.contentVisibility && sourcesEqual(hydrated.sources, stored);
+  });
+}
+
 export type AiConsentMutationResult =
   | { ok: true; consentVersion: number }
   | { ok: false; error: "forbidden" | "invalid_input" | "not_enabled" };

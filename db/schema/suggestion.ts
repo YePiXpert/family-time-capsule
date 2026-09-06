@@ -33,6 +33,12 @@ export const aiSuggestion = sqliteTable(
     status: text("status").notNull().default("pending"),
     createdByJobId: text("created_by_job_id"),
     sourceFingerprint: text("source_fingerprint").notNull(),
+    revision: integer("revision").notNull().default(0),
+    /** Null for legacy suggestions whose target version cannot be proven. */
+    targetRevision: integer("target_revision"),
+    appliedRevision: integer("applied_revision"),
+    previousNameJson: text("previous_name_json"),
+    undoneAt: integer("undone_at", { mode: "timestamp" }),
     createdAt: createdAtColumn(),
     resolvedAt: integer("resolved_at", { mode: "timestamp" }),
     resolvedByUserId: text("resolved_by_user_id"),

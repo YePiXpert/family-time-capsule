@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { NameReviewControl } from "@/components/name-review";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
@@ -344,6 +345,7 @@ export default async function MemoryEventPage({
         <section aria-label="参与人物" className="mt-4 text-sm text-muted">与 {participants.map((person) => `${person.displayName}${person.id === event.childPersonId ? "（孩子）" : ""}`).join("、")} 一起</section>
       </div>
 
+      {canWriteEvent ? <NameReviewControl kind="memory_event" id={event.id} /> : null}
       {canWriteEvent ? <section aria-label="编辑档案" className={editMode ? "mt-6 rounded-2xl border border-accent/40 bg-accent-soft/40 p-4" : "mt-4"}>
         {editMode ? <h2 className="font-semibold">编辑档案</h2> : null}
         <EditEventForm

@@ -414,6 +414,7 @@ export async function getInboxEntry(
 
 export type InboxDraftPatch = {
   title?: string | null;
+  expectedTitleRevision?: number;
   occurredAt?: Date | null;
   locationText?: string | null;
   participantPersonIds?: string[];
@@ -429,6 +430,7 @@ export async function updateInboxDraft(
   if (!entry || !["new", "needs_review", "processing"].includes(entry.item.status)) {
     return undefined;
   }
+  if (patch.expectedTitleRevision !== undefined && patch.expectedTitleRevision !== entry.item.titleRevision) return undefined;
   const title = patch.title === undefined ? entry.item.draftTitle : patch.title?.trim() || null;
   const locationText = patch.locationText === undefined
     ? entry.item.draftLocationText
@@ -447,7 +449,9 @@ export async function updateInboxDraft(
     if (valid.length !== participantIds.length) return undefined;
   }
   const now = new Date();
-  db.transaction((tx) => {
+  const committed = db.transaction((tx) => {
+    const live = tx.select().from(inboxItem).where(and(eq(inboxItem.id, itemId), eq(inboxItem.familyId, familyId))).get();
+    if (!live || live.status !== entry.item.status || live.titleRevision !== entry.item.titleRevision || live.updatedAt.getTime() !== entry.item.updatedAt.getTime()) return false;
     tx.update(inboxItem)
       .set({
         draftTitle: title,
@@ -475,7 +479,9 @@ export async function updateInboxDraft(
           .run();
       }
     }
+    return true;
   });
+  if (!committed) return undefined;
   return getInboxEntry(familyId, itemId);
 }
 
