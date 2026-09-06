@@ -27,6 +27,10 @@
   已接受写入后拒绝静默回滚；维护门禁；12 项真实 bash + 假 docker 的工具测试并入 CI。
 - 文档：QUICKSTART_SELFHOST、OPERATIONS、UPGRADE、BACKUP_RESTORE、APP_FIRST_RUN、
   RELEASE_1_3；PRODUCT_1_3 基线与需求对照。真实 VPS/真机端到端验收仍未完成，见 RELEASE_1_3。
+- 发布：v1.3.0-alpha.1 prerelease（tag 788d4da，工作流 run 34018258107 全绿）；
+  附件 APK / unsigned IPA / 运维脚本包 / release-manifest.json / SHA256SUMS；
+  服务器镜像 ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.1
+  （digest sha256:4a3064b5…，linux/amd64，匿名可拉取）。
 
 ## 1.2.0-alpha.4 — 界面与操作体验优化（2026-09-06）
 

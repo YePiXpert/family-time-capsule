@@ -55,8 +55,9 @@
 - ftc 工具用假 docker 测试；**真实 Docker 环境的 install/upgrade/backup
   实机演练待补**。支持平台先按脚本声明（Debian 12/13、Ubuntu 22.04/24.04
   x86_64），未经实测的 ARM/其他平台未承诺。
-- 镜像 ghcr.io 发布与 digest 固定流程待 M7 发行阶段执行；当前部署示例
-  使用 tag。
+- ~~镜像 ghcr.io 发布与 digest 固定流程待 M7 发行阶段执行。~~ 已完成：
+  `ghcr.io/yepixpert/family-time-capsule@sha256:4a3064b5b65ef00133e90fa458c676812210577e39f677bb9a27d3a3aea01a6a`
+  （linux/amd64，匿名可拉取，2026-09-06 验证）。
 - Android 发行签名仍未固定（历史测试包为 debug 签名）；iOS 无证书，只能
   产出明确标注的 unsigned IPA。升级覆盖安装需同签名，构建号递增不能解决
   签名不兼容。
