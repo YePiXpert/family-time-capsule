@@ -18,6 +18,7 @@ import {
   aiJob,
   aiJobAttempt,
   aiJobSource,
+  aiJobDependency,
   aiProcessingConsent,
   aiWorkerHeartbeat,
 } from "@/db/schema/ai-job";
@@ -27,6 +28,7 @@ import { user as userTable } from "@/db/schema/auth";
 import { contribution } from "@/db/schema/contribution";
 import { family as familyTable, person as personTable } from "@/db/schema/family";
 import { memoryEvent } from "@/db/schema/memory";
+import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
 import { createMemoryAssistant } from "@/lib/ai/server";
 import { readAiCapabilityChecks } from "@/lib/ai/diagnostics";
 import {
@@ -149,7 +151,7 @@ function isCapability(value: unknown): value is AiCapability {
 }
 
 function isSourceKind(value: unknown): value is AiJobSourceKind {
-  return value === "asset" || value === "contribution" || value === "memory_event";
+  return value === "asset" || value === "contribution" || value === "memory_event" || value === "inbox_item";
 }
 
 function validPositiveInteger(value: unknown, maximum: number): value is number {
@@ -310,6 +312,16 @@ function hydrateSources(
 
   const hydrated: HydratedSource[] = [];
   for (const reference of sorted) {
+    if (reference.kind === "inbox_item") {
+      const row = tx.select().from(inboxItem).where(and(eq(inboxItem.id, reference.id), eq(inboxItem.familyId, snapshot.principal.familyId))).get();
+      if (!row || !["new", "needs_review", "processing", "confirmed"].includes(row.status)) return { ok: false, error: "source_forbidden_or_not_found" };
+      if (row.status === "confirmed" && (!row.memoryEventId || !tx.select({ id: memoryEvent.id }).from(memoryEvent).where(and(eq(memoryEvent.id, row.memoryEventId), eq(memoryEvent.familyId, row.familyId), isNull(memoryEvent.deletedAt))).get())) return { ok: false, error: "source_forbidden_or_not_found" };
+      const links = tx.select({ id: inboxItemAsset.assetId }).from(inboxItemAsset).where(eq(inboxItemAsset.inboxItemId, row.id)).orderBy(asc(inboxItemAsset.assetId)).all();
+      // Confirmation changes status/updatedAt, not the underlying evidence.
+      // Title edits are fenced separately by targetRevision.
+      hydrated.push({ kind: reference.kind, id: row.id, visibility: "family", sha256: hashCanonical({ rawText: row.rawText, assets: links.map(link => link.id) }) });
+      continue;
+    }
     if (reference.kind === "asset") {
       const row = tx
         .select()
@@ -410,6 +422,7 @@ function hydrateSources(
         and(
           eq(memoryEvent.id, reference.id),
           eq(memoryEvent.familyId, snapshot.principal.familyId),
+          isNull(memoryEvent.deletedAt),
         ),
       )
       .limit(1)
@@ -525,10 +538,14 @@ export function completedAiResultIsCurrent(
   tx: Transaction,
   job: typeof aiJob.$inferSelect,
   reviewerUserId: string,
+  options: AiJobServiceDependencies = {},
+  visited = new Set<string>(),
 ): boolean {
+  if (visited.has(job.id) || visited.size >= 100) return false;
+  visited.add(job.id);
   if (job.status !== "completed" || job.cancelRequestedAt !== null) return false;
   if (job.providerExternal) {
-    const runtime = runtimeIdentity({});
+    const runtime = runtimeIdentity(options);
     if (!currentRuntimeMatches(job, runtime) || !externalConsentMatches(tx, job, runtime!)) return false;
   }
   const now = new Date();
@@ -538,10 +555,22 @@ export function completedAiResultIsCurrent(
   const stored = normalizeStoredSources(tx.select({ kind: aiJobSource.sourceKind, id: aiJobSource.sourceId, sha256: aiJobSource.sourceSha256 })
     .from(aiJobSource).where(eq(aiJobSource.jobId, job.id)).orderBy(asc(aiJobSource.sourceKind), asc(aiJobSource.sourceId)).all());
   if (!stored?.length) return false;
-  return [requester, reviewer].every(actor => {
+  const ownSourcesCurrent = [requester, reviewer].every(actor => {
     const hydrated = hydrateSources(tx, actor.snapshot, stored, job.triggerMode === "automatic" ? "automatic" : "manual");
     return hydrated.ok && hydrated.visibility === job.contentVisibility && sourcesEqual(hydrated.sources, stored);
   });
+  if (!ownSourcesCurrent) return false;
+  return dependencyRows(tx, job.id).every(parent => completedAiResultIsCurrent(tx, parent, reviewerUserId, options, new Set(visited)));
+}
+
+function dependencyRows(tx: Transaction, jobId: string) {
+  return tx.select({ parent: aiJob }).from(aiJobDependency).innerJoin(aiJob, eq(aiJob.id, aiJobDependency.dependsOnJobId)).where(eq(aiJobDependency.jobId, jobId)).orderBy(asc(aiJob.id)).all().map(row => row.parent);
+}
+
+function targetRevision(tx: Transaction, entityType: string, entityId: string): number | null {
+  if (entityType === "inbox_item") return tx.select({ revision: inboxItem.titleRevision }).from(inboxItem).where(eq(inboxItem.id, entityId)).get()?.revision ?? null;
+  if (entityType === "memory_event") return tx.select({ revision: memoryEvent.titleRevision }).from(memoryEvent).where(eq(memoryEvent.id, entityId)).get()?.revision ?? null;
+  return null;
 }
 
 export type AiConsentMutationResult =
@@ -892,6 +921,8 @@ function validEnqueueInput(input: EnqueueAiJobInput): boolean {
       (Number.isSafeInteger(input.priority) && input.priority >= 0 && input.priority <= 100)) &&
     (input.maxAttempts === undefined || validPositiveInteger(input.maxAttempts, 20)) &&
     (input.availableAt === undefined || !Number.isNaN(input.availableAt.getTime())) &&
+    (input.generation === undefined || isOpaqueEntityId(input.generation)) &&
+    (input.dependencies === undefined || (Array.isArray(input.dependencies) && input.dependencies.length <= 20 && new Set(input.dependencies).size === input.dependencies.length && input.dependencies.every(isOpaqueEntityId))) &&
     Array.isArray(input.sources) &&
     input.sources.length >= 1 &&
     input.sources.length <= 50 &&
@@ -931,6 +962,19 @@ export function enqueueAiJob(
       );
       if (!hydrated.ok) return { ok: false, error: hydrated.error } as const;
 
+      const dependencies = [...(input.dependencies ?? [])].sort();
+      for (const id of dependencies) {
+        const parent = tx.select().from(aiJob).where(eq(aiJob.id, id)).get();
+        if (!parent || parent.familyId !== input.familyId || parent.requestedByUserId !== actor.id || !currentRuntimeMatches(parent, runtime) || !externalConsentMatches(tx, parent, runtime)) return { ok: false, error: "invalid_input" } as const;
+        // Bound graph depth/work and require every prerequisite source to be
+        // explicitly included in this stage's authorized evidence snapshot.
+        const ancestors = tx.all<{ id: string }>(sql`WITH RECURSIVE ancestors(id) AS (SELECT ${id} UNION SELECT d.depends_on_job_id FROM ai_job_dependency d JOIN ancestors a ON d.job_id = a.id) SELECT id FROM ancestors LIMIT 101`);
+        if (ancestors.length > 20) return { ok: false, error: "invalid_input" } as const;
+        const sources = tx.select().from(aiJobSource).where(eq(aiJobSource.jobId, id)).all();
+        if (!sources.length || sources.some(source => !hydrated.sources.some(current => current.kind === source.sourceKind && current.id === source.sourceId && current.sha256 === source.sourceSha256))) return { ok: false, error: "source_forbidden_or_not_found" } as const;
+      }
+      const revision = targetRevision(tx, input.entityType, input.entityId);
+
       let consentVersion: number | null = null;
       if (runtime.provider.external) {
         const consent = tx
@@ -965,6 +1009,9 @@ export function enqueueAiJob(
       const maxAttempts = input.maxAttempts ?? 5;
       const idempotencyKey = hashCanonical({
         familyId: input.familyId,
+        dependencies,
+        generation: input.generation ?? null,
+        targetRevision: revision,
         requestedByUserId: input.requestedByUserId,
         jobType: input.jobType,
         entityType: input.entityType,
@@ -1006,6 +1053,8 @@ export function enqueueAiJob(
         const normalizedStored = normalizeStoredSources(stored);
         const same =
           existing.requestedByUserId === input.requestedByUserId &&
+          existing.targetRevision === revision &&
+          JSON.stringify(dependencyRows(tx, existing.id).map(row => row.id)) === JSON.stringify(dependencies) &&
           existing.jobType === input.jobType &&
           existing.entityType === input.entityType &&
           existing.entityId === input.entityId &&
@@ -1034,6 +1083,7 @@ export function enqueueAiJob(
           jobType: input.jobType,
           entityType: input.entityType,
           entityId: input.entityId,
+          targetRevision: revision,
           requiredCapability: input.requiredCapability,
           providerId: runtime.provider.id,
         configurationId: runtime.provider.configurationId ?? "",
@@ -1064,6 +1114,7 @@ export function enqueueAiJob(
           })),
         )
         .run();
+      if (dependencies.length) tx.insert(aiJobDependency).values(dependencies.map(id => ({ jobId, dependsOnJobId: id }))).run();
       return { ok: true, jobId, created: true } as const;
     },
     { behavior: "immediate" },
@@ -1190,6 +1241,7 @@ function leaseFromRow(
     jobType: row.jobType,
     entityType: row.entityType,
     entityId: row.entityId,
+    targetRevision: row.targetRevision,
     requiredCapability: row.requiredCapability,
     providerId: row.providerId,
     model: row.model,
@@ -1261,6 +1313,8 @@ function inspectRunningJob(
   if (!externalConsentMatches(tx, row, runtime!)) {
     return { ok: false, error: "consent_changed" };
   }
+  if (row.targetRevision !== null && targetRevision(tx, row.entityType, row.entityId) !== row.targetRevision) return { ok: false, error: "source_changed" };
+  if (!dependencyRows(tx, row.id).every(parent => completedAiResultIsCurrent(tx, parent, row.requestedByUserId, { runtime: runtime! }))) return { ok: false, error: "source_changed" };
   const stored = tx
     .select({
       kind: aiJobSource.sourceKind,
@@ -1344,6 +1398,12 @@ export function claimNextAiJob(
   return database(options).transaction(
     (tx) => {
       recoverExpiredJobsInTransaction(tx, now);
+      // Terminal prerequisites pause descendants without issuing a request or
+      // consuming an attempt. Keep immutable history; explicit retry clones it.
+      tx.run(sql`WITH RECURSIVE blocked(id) AS (
+        SELECT id FROM ai_job WHERE status IN ('failed', 'cancelled')
+        UNION SELECT d.job_id FROM ai_job_dependency d JOIN blocked b ON d.depends_on_job_id = b.id
+      ) UPDATE ai_job SET status = 'cancelled', last_error_code = 'dependency_failed', finished_at = ${epochSeconds(now)}, updated_at = ${epochSeconds(now)} WHERE status = 'pending' AND id IN (SELECT id FROM blocked)`);
       const claimed = tx.get<{ id: string }>(sql`
         UPDATE ${aiJob}
         SET status = 'running',
@@ -1360,6 +1420,7 @@ export function claimNextAiJob(
             AND available_at <= ${epochSeconds(now)}
             AND cancel_requested_at is null
             AND attempts < max_attempts
+            AND NOT EXISTS (SELECT 1 FROM ai_job_dependency d JOIN ai_job parent ON parent.id = d.depends_on_job_id WHERE d.job_id = ai_job.id AND parent.status <> 'completed')
           ORDER BY priority DESC, available_at ASC, created_at ASC, id ASC
           LIMIT 1
         )
@@ -1621,7 +1682,16 @@ export type RetryAiJobResult =
  * Terminal jobs remain immutable. Retry clones the current trusted source
  * snapshot into a new job; the old attempt stays available for audit/history.
  */
-export function retryAiJob(
+class DependencyRetryError extends Error {
+  constructor(readonly result: RetryAiJobResult) { super("AI dependency retry unavailable"); }
+}
+
+export function retryAiJob(context: FamilyContext, jobId: string, options: AiJobServiceDependencies & { now?: Date } = {}): RetryAiJobResult {
+  try { return retryAiJobUnchecked(context, jobId, options); }
+  catch (error) { if (error instanceof DependencyRetryError) return error.result; throw error; }
+}
+
+function retryAiJobUnchecked(
   context: FamilyContext,
   jobId: string,
   options: AiJobServiceDependencies & { now?: Date } = {},
@@ -1713,8 +1783,25 @@ export function retryAiJob(
         consentVersion = consent.consentVersion;
       }
 
+      const dependencies: string[] = [];
+      for (const parent of dependencyRows(tx, old.id)) {
+        if (parent.status === "completed") {
+          if (!completedAiResultIsCurrent(tx, parent, actor.id, options)) throw new DependencyRetryError({ ok: false, error: "source_forbidden_or_not_found" });
+          dependencies.push(parent.id);
+        } else if (parent.status === "pending" || parent.status === "running") {
+          dependencies.push(parent.id);
+        } else {
+          const retried = retryAiJobUnchecked(context, parent.id, options);
+          if (!retried.ok) throw new DependencyRetryError(retried);
+          dependencies.push(retried.jobId);
+        }
+      }
+      dependencies.sort();
+      const revision = targetRevision(tx, old.entityType, old.entityId);
       const idempotencyKey = hashCanonical({
         retryOfJobId: old.id,
+        dependencies,
+        targetRevision: revision,
         requestedByUserId: actor.id,
         providerId: runtime.provider.id,
         configurationId: runtime.provider.configurationId ?? "",
@@ -1749,6 +1836,7 @@ export function retryAiJob(
           jobType: old.jobType,
           entityType: old.entityType,
           entityId: old.entityId,
+          targetRevision: revision,
           requiredCapability: old.requiredCapability,
           providerId: runtime.provider.id,
         configurationId: runtime.provider.configurationId ?? "",
@@ -1782,6 +1870,7 @@ export function retryAiJob(
       // A manual retry can carry proven successful video frames into its new
       // lease. Changed requester/configuration/consent/source never inherits them.
       const previousSources = normalizeStoredSources(tx.select({ kind: aiJobSource.sourceKind, id: aiJobSource.sourceId, sha256: aiJobSource.sourceSha256 }).from(aiJobSource).where(eq(aiJobSource.jobId, old.id)).orderBy(asc(aiJobSource.sourceKind), asc(aiJobSource.sourceId)).all());
+      if (dependencies.length) tx.insert(aiJobDependency).values(dependencies.map(id => ({ jobId: newJobId, dependsOnJobId: id }))).run();
       if (old.jobType === "analyze.asset_video.v1" && old.requestedByUserId === actor.id && currentRuntimeMatches(old, runtime) && old.consentVersion === consentVersion && old.contentVisibility === hydrated.visibility && previousSources && sourcesEqual(previousSources, hydrated.sources)) {
         const frames = tx.select().from(aiVideoFrame).where(eq(aiVideoFrame.jobId, old.id)).all();
         if (frames.length) tx.insert(aiVideoFrame).values(frames.map(frame => ({ ...frame, jobId: newJobId }))).run();
@@ -1846,6 +1935,10 @@ export function requestAiJobCancellation(
         })
         .where(eq(aiJob.id, job.id))
         .run();
+      for (const parent of dependencyRows(tx, job.id)) {
+        const otherConsumer = tx.select({ id: aiJob.id }).from(aiJobDependency).innerJoin(aiJob, eq(aiJob.id, aiJobDependency.jobId)).where(and(eq(aiJobDependency.dependsOnJobId, parent.id), ne(aiJob.id, job.id), or(eq(aiJob.status, "pending"), eq(aiJob.status, "running")), isNull(aiJob.cancelRequestedAt))).get();
+        if (!otherConsumer) requestAiJobCancellation(context, parent.id, options);
+      }
       tx.insert(auditLog)
         .values(
           requiredAuditValues(

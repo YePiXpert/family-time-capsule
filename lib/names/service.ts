@@ -14,6 +14,7 @@ import { getContributionAssetAccessInTransaction, type ContributionAccessTransac
 import { indexMemoryEvent } from "@/lib/search/service";
 import { completedAiResultIsCurrent } from "@/lib/ai/jobs/service";
 import { nameSource } from "@/lib/naming";
+import { inboxEvidenceFingerprint } from "@/lib/ai/inbox-evidence";
 
 export type NameTargetKind = "asset" | "inbox_item" | "memory_event";
 export type NameReviewResult = { ok: true; targetKind: NameTargetKind; targetId: string; revision: number; suggestionRevision?: number }
@@ -72,6 +73,17 @@ async function principalForNames(familyId: string, userId: string): Promise<Live
 function validRevision(value: unknown): value is number { return Number.isSafeInteger(value) && Number(value) >= 0; }
 function validName(value: unknown): value is string { return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 100 && !/[\u0000-\u001f\u007f]/u.test(value); }
 
+function jobTargetsName(tx: Tx, job: typeof aiJob.$inferSelect, kind: NameTargetKind, id: string, fingerprint: string | null): boolean {
+  if (job.jobType === "suggest.inbox_item.v1") {
+    // Legacy unversioned suggestions cannot prove the context they used.
+    if (job.targetRevision === null || fingerprint !== inboxEvidenceFingerprint(tx, job.familyId, job.entityId)) return false;
+    const item = tx.select().from(inboxItem).where(and(eq(inboxItem.id, job.entityId), eq(inboxItem.familyId, job.familyId))).get();
+    if (!item || item.titleRevision !== job.targetRevision) return false;
+    if (kind === "memory_event") return item.status === "confirmed" && item.memoryEventId === id;
+  }
+  return job.entityType === kind && job.entityId === id;
+}
+
 export async function getNameReview(familyId: string, userId: string, kind: NameTargetKind, id: string) {
   const principal = await principalForNames(familyId, userId);
   if (!principal) return null;
@@ -84,7 +96,7 @@ export async function getNameReview(familyId: string, userId: string, kind: Name
       const job = row.createdByJobId ? tx.select().from(aiJob).where(and(eq(aiJob.id, row.createdByJobId), eq(aiJob.familyId, familyId))).get() : null;
       // Unprovable pending provenance and restricted context never become a
       // public title preview. Accepted canonical names remain durable edits.
-      if ((row.status === "pending" && (!job || !completedAiResultIsCurrent(tx, job, userId) || job.entityType !== kind || job.entityId !== id || row.provider !== job.providerId || row.model !== job.model)) || (job && job.contentVisibility !== "family" && kind !== "asset")) return [];
+      if ((row.status === "pending" && (!job || !completedAiResultIsCurrent(tx, job, userId) || !jobTargetsName(tx, job, kind, id, row.sourceFingerprint) || row.provider !== job.providerId || row.model !== job.model)) || (job && job.contentVisibility !== "family" && kind !== "asset")) return [];
       let title: unknown;
       try { title = JSON.parse(row.valueJson).title; } catch { return []; }
       if (!validName(title)) return [];
@@ -147,7 +159,7 @@ export async function reviewTitleSuggestion(familyId: string, userId: string, in
     if (suggestion.targetRevision === null || suggestion.targetRevision !== target.revision) return { ok: false, error: "stale_suggestion" };
     const job = suggestion.createdByJobId ? tx.select().from(aiJob).where(and(eq(aiJob.id, suggestion.createdByJobId), eq(aiJob.familyId, familyId))).get() : null;
     if (job?.contentVisibility !== undefined && job.contentVisibility !== "family" && target.kind !== "asset") return { ok: false, error: "private_context" };
-    if (!job || job.entityType !== target.kind || job.entityId !== target.id || suggestion.provider !== job.providerId || suggestion.model !== job.model || !completedAiResultIsCurrent(tx, job, userId)) return { ok: false, error: "stale_suggestion" };
+    if (!job || !jobTargetsName(tx, job, target.kind, target.id, suggestion.sourceFingerprint) || suggestion.provider !== job.providerId || suggestion.model !== job.model || !completedAiResultIsCurrent(tx, job, userId)) return { ok: false, error: "stale_suggestion" };
     let proposed: unknown;
     try { proposed = JSON.parse(suggestion.valueJson).title; } catch { return { ok: false, error: "invalid_input" }; }
     const title = input.editedTitle ?? proposed;

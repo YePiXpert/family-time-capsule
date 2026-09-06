@@ -1,4 +1,7 @@
 const MESSAGES: Record<string, string> = {
+  dependency_failed: "前面的分析或转录未完成，命名已暂停。重试会保留成功步骤。",
+  insufficient_evidence: "现有资料不足以给出可靠建议，请补充文字或清晰语音。",
+  organizer_batch_limit: "一次最多整理 10 份素材，请减少本次选择。",
   video_duration_limit: "这段视频超过 2 分钟，暂不支持 AI 整理。原件仍可播放。",
   video_too_large: "视频超过 128 MiB，暂不支持 AI 整理。原件仍可播放。",
   video_duration_unknown: "无法可靠读取视频时长，未发送给 AI。",

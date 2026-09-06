@@ -106,6 +106,7 @@ export const aiJob = sqliteTable(
     contentVisibility: text("content_visibility").notNull(),
     status: text("status").notNull(),
     payloadJson: text("payload_json").notNull(),
+    targetRevision: integer("target_revision"),
     outputJson: text("output_json"),
     idempotencyKey: text("idempotency_key").notNull(),
     priority: integer("priority").notNull().default(50),
@@ -246,7 +247,7 @@ export const aiJobSource = sqliteTable(
     index("ai_job_source_lookup_idx").on(table.sourceKind, table.sourceId),
     check(
       "ai_job_source_kind_check",
-      sql`${table.sourceKind} in ('asset', 'contribution', 'memory_event')`,
+      sql`${table.sourceKind} in ('asset', 'contribution', 'memory_event', 'inbox_item')`,
     ),
     check(
       "ai_job_source_sha_check",
@@ -331,3 +332,13 @@ export const aiWorkerHeartbeat = sqliteTable(
     ),
   ],
 );
+
+/** A persisted acyclic dependency graph within the existing leased queue. */
+export const aiJobDependency = sqliteTable("ai_job_dependency", {
+  jobId: text("job_id").notNull().references(() => aiJob.id, { onDelete: "cascade" }),
+  dependsOnJobId: text("depends_on_job_id").notNull().references(() => aiJob.id, { onDelete: "restrict" }),
+}, table => [
+  primaryKey({ columns: [table.jobId, table.dependsOnJobId] }),
+  index("ai_job_dependency_parent_idx").on(table.dependsOnJobId),
+  check("ai_job_dependency_distinct", sql`${table.jobId} <> ${table.dependsOnJobId}`),
+]);

@@ -24,7 +24,7 @@ const { user: userTable } = await import("@/db/schema/auth");
 const { aiSuggestion } = await import("@/db/schema/suggestion");
 const { clusterSuggestion } = await import("@/db/schema/clusters");
 const { asset: assetTable } = await import("@/db/schema/asset");
-const { inboxItemAsset } = await import("@/db/schema/inbox");
+const { inboxItem, inboxItemAsset } = await import("@/db/schema/inbox");
 const { memoryEvent, memoryEventAsset } = await import("@/db/schema/memory");
 const { performSetup } = await import("@/lib/auth/setup");
 const { completeOnboarding, getUserBinding } = await import("@/lib/family/service");
@@ -94,7 +94,7 @@ const INTERNAL_RUNTIME: AiJobRuntimeIdentity = {
   provider: { id: "test-provider", displayName: "Test", external: false },
   capabilities: {
     text: { available: true, model: "test-text-v1", reason: "configured" },
-    vision: { available: false, model: null, reason: "not_configured" },
+    vision: { available: true, model: "test-vision-v1", reason: "configured" },
     transcription: { available: false, model: null, reason: "not_configured" },
     embeddings: { available: false, model: null, reason: "not_configured" },
   },
@@ -140,6 +140,9 @@ async function makePhotoInboxItem(n: number, filename: string) {
   });
   if (stored.status !== "stored") throw new Error("ingest failed");
   const item = await createInboxItemForAsset(familyId, stored.asset);
+  // This suite verifies review of explicit date evidence. A filename/date
+  // alone is no longer sufficient to ask a text model to describe a photo.
+  getDb().update(inboxItem).set({ rawText: "文字备注：2026年8月20日在海边，8月21日整理照片。" }).where(eq(inboxItem.id, item.id)).run();
   return { item, assetId: stored.asset.id };
 }
 
@@ -306,13 +309,13 @@ describe("M3-E：收件箱 occurred_at 建议", () => {
     });
     expect(first.requested).toBeGreaterThan(0);
 
-    // 101/102 仍有 pending 建议 → 跳过；103 的唯一建议已被 reject
-    // （没有 pending 了）→ 允许重新请求
+    // 101/102 有待审核建议；103 已在上一调用进入真实前置队列。
+    // 重复点击不把正在等待分析的任务再计为一次请求。
     const again = await requestInboxSuggestionsBatch(adminContext, {
       runtime: INTERNAL_RUNTIME,
     });
-    expect(again.requested).toBe(1);
-    expect(again.skipped).toBe(2);
+    expect(again.requested).toBe(0);
+    expect(again.skipped).toBe(3);
   });
 });
 

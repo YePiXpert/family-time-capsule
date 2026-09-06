@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { aiSuggestion, memoryEventTag } from "@/db/schema/suggestion";
@@ -14,6 +14,9 @@ import { enqueueAiJob, type AiJobServiceDependencies } from "@/lib/ai/jobs";
 import { updateMemoryEvent } from "@/lib/memories/service";
 import type { FamilyContext } from "@/lib/family/context";
 import type { AiSuggestionRow } from "@/db/schema/suggestion";
+import { assetAnalysis } from "@/db/schema/analysis";
+import { assetTranscript } from "@/db/schema/transcript";
+import { completedAiResultIsCurrent } from "@/lib/ai/jobs/service";
 import { reviewTitleSuggestion } from "@/lib/names/service";
 
 export type SuggestionRequestResult =
@@ -329,73 +332,58 @@ export async function listEventTags(
 
 const BATCH_CAP = 20;
 
+class OrganizerEnqueueError extends Error {
+  constructor(readonly result: SuggestionRequestResult) { super("organizer unavailable"); }
+}
+
 export function requestInboxItemSuggestions(
   context: FamilyContext,
   inboxItemId: string,
   options: AiJobServiceDependencies & { now?: Date } = {},
 ): SuggestionRequestResult {
+  try { assertFamilyCapability(context.role, "ai:review"); }
+  catch { return { ok: false, error: "forbidden" }; }
+  const db = options.database ?? getDb();
   try {
-    assertFamilyCapability(context.role, "ai:review");
-  } catch {
-    return { ok: false, error: "forbidden" };
+    return db.transaction(tx => {
+      const item = tx.select().from(inboxItem).where(and(eq(inboxItem.id, inboxItemId), eq(inboxItem.familyId, context.familyId))).get();
+      if (!item) return { ok: false, error: "inbox_item_not_found" };
+      if (!["new", "needs_review", "processing"].includes(item.status)) return { ok: false, error: "inbox_item_closed" };
+      const originals = tx.select({ asset: assetTable }).from(inboxItemAsset).innerJoin(assetTable, eq(assetTable.id, inboxItemAsset.assetId)).where(and(eq(inboxItemAsset.inboxItemId, item.id), eq(assetTable.familyId, context.familyId), isNull(assetTable.originalAssetId))).all().map(row => row.asset);
+      if (originals.length > 10) return { ok: false, error: "organizer_batch_limit" };
+      if (!originals.length && !item.rawText?.trim()) return { ok: false, error: "insufficient_evidence" };
+      const dependencies: string[] = [];
+      for (const asset of originals) {
+        const stage = asset.type === "image" ? { jobType: "analyze.asset_image.v1", capability: "vision" as const }
+          : asset.type === "video" ? { jobType: "analyze.asset_video.v1", capability: "vision" as const }
+          : asset.type === "audio" ? { jobType: "transcribe.asset.v1", capability: "transcription" as const } : null;
+        if (!stage) continue;
+        const evidence = stage.capability === "vision" ? tx.select().from(assetAnalysis).where(eq(assetAnalysis.assetId, asset.id)).get() : tx.select().from(assetTranscript).where(eq(assetTranscript.assetId, asset.id)).get();
+        const producer = evidence?.createdByJobId ? tx.select().from(aiJob).where(eq(aiJob.id, evidence.createdByJobId)).get() : null;
+        if (producer && producer.requestedByUserId === context.userId && producer.jobType === stage.jobType && evidence?.sourceSha256 === asset.sha256 && completedAiResultIsCurrent(tx, producer, context.userId, options)) {
+          dependencies.push(producer.id);
+          continue;
+        }
+        let result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: stage.jobType, entityType: "asset", entityId: asset.id, requiredCapability: stage.capability, triggerMode: "manual", sources: [{ kind: "asset", id: asset.id }] }, options);
+        if (!result.ok) throw new OrganizerEnqueueError(result);
+        // A completed operational row without its normalized evidence is not
+        // a successful stage to reuse (e.g. deliberate analysis cleanup).
+        if (tx.select().from(aiJob).where(eq(aiJob.id, result.jobId)).get()?.status === "completed") {
+          result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: stage.jobType, entityType: "asset", entityId: asset.id, requiredCapability: stage.capability, triggerMode: "manual", sources: [{ kind: "asset", id: asset.id }], generation: result.jobId }, options);
+          if (!result.ok) throw new OrganizerEnqueueError(result);
+        }
+        dependencies.push(result.jobId);
+      }
+      const manualTranscripts = originals.map(asset => ({ id: asset.id, edited: tx.select({ text: assetTranscript.editedTranscript }).from(assetTranscript).where(eq(assetTranscript.assetId, asset.id)).get()?.text ?? null })).sort((a, b) => a.id.localeCompare(b.id));
+      const generation = createHash("sha256").update(JSON.stringify({ promptVersion: "organizer-inbox-v2", manualTranscripts })).digest("hex");
+      const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.inbox_item.v1", entityType: "inbox_item", entityId: item.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation, sources: [{ kind: "inbox_item", id: item.id }, ...originals.map(asset => ({ kind: "asset" as const, id: asset.id }))] }, options);
+      if (!result.ok) throw new OrganizerEnqueueError(result);
+      return result;
+    }, { behavior: "immediate" });
+  } catch (error) {
+    if (error instanceof OrganizerEnqueueError) return error.result;
+    throw error;
   }
-
-  const db = getDb();
-  const item = db
-    .select({ id: inboxItem.id, status: inboxItem.status })
-    .from(inboxItem)
-    .where(
-      and(
-        eq(inboxItem.id, inboxItemId),
-        eq(inboxItem.familyId, context.familyId),
-      ),
-    )
-    .get();
-  if (!item) return { ok: false, error: "inbox_item_not_found" };
-  if (!["new", "needs_review", "processing"].includes(item.status)) {
-    return { ok: false, error: "inbox_item_closed" };
-  }
-
-  const links = db
-    .select({ assetId: inboxItemAsset.assetId })
-    .from(inboxItemAsset)
-    .where(eq(inboxItemAsset.inboxItemId, inboxItemId))
-    .all();
-  const assetIds = links.map((l) => l.assetId);
-
-  const originalAssetIds =
-    assetIds.length > 0
-      ? db
-          .select({ id: assetTable.id })
-          .from(assetTable)
-          .where(
-            and(
-              eq(assetTable.familyId, context.familyId),
-              inArray(assetTable.id, assetIds),
-              isNull(assetTable.originalAssetId),
-            ),
-          )
-          .all()
-          .map((r) => r.id)
-      : [];
-
-  if (originalAssetIds.length === 0) {
-    return { ok: false, error: "inbox_item_has_no_assets" };
-  }
-
-  return enqueueAiJob(
-    {
-      familyId: context.familyId,
-      requestedByUserId: context.userId,
-      jobType: "suggest.inbox_item.v1",
-      entityType: "inbox_item",
-      entityId: inboxItemId,
-      requiredCapability: "text",
-      triggerMode: "manual",
-      sources: originalAssetIds.map((id) => ({ kind: "asset", id })),
-    },
-    options,
-  );
 }
 
 export type InboxBatchResult = {

@@ -1,4 +1,5 @@
 import "server-only";
+import { aiSuggestion } from "@/db/schema/suggestion";
 import { readableName } from "@/lib/naming";
 import type { FamilyContext } from "@/lib/family/context";
 import { isLiveFamilyPrincipal } from "@/lib/authz/principal";
@@ -529,7 +530,7 @@ export async function confirmInboxEntry(
       )
       .run();
     tx.update(inboxItem)
-      .set({ status: "confirmed", memoryEventId: eventId, updatedAt: now })
+      .set({ status: "confirmed", memoryEventId: eventId, titleRevision: title !== fallbackTitle ? current.titleRevision + 1 : current.titleRevision, updatedAt: now })
       .where(
         and(
           eq(inboxItem.familyId, familyId),
@@ -537,6 +538,9 @@ export async function confirmInboxEntry(
         ),
       )
       .run();
+    // Pending suggestions follow the persisted inbox→event relation. A title
+    // edited during confirmation is a new source version and remains protected.
+    if (title === fallbackTitle) tx.update(aiSuggestion).set({ entityType: "memory_event", entityId: eventId, targetRevision: 0 }).where(and(eq(aiSuggestion.familyId, familyId), eq(aiSuggestion.entityType, "inbox_item"), eq(aiSuggestion.entityId, entry.item.id), eq(aiSuggestion.status, "pending"), eq(aiSuggestion.targetRevision, current.titleRevision))).run();
     return { ok: true, eventId };
   }, { behavior: "immediate" });
   if (!committed.ok || committed.eventId !== eventId) return committed;

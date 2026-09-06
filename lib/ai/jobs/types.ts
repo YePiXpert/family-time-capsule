@@ -11,7 +11,7 @@ export const AI_JOB_STATUSES = [
 
 export type AiJobStatus = (typeof AI_JOB_STATUSES)[number];
 export type AiJobTriggerMode = "manual" | "automatic";
-export type AiJobSourceKind = "asset" | "contribution" | "memory_event";
+export type AiJobSourceKind = "asset" | "contribution" | "memory_event" | "inbox_item";
 
 export type AiJobSourceReference = Readonly<{
   kind: AiJobSourceKind;
@@ -36,6 +36,7 @@ export type AiJobLease = Readonly<{
   leaseGeneration: number;
   leaseExpiresAt: Date;
   workerId: string;
+  targetRevision?: number | null;
 }>;
 
 /**
@@ -55,6 +56,10 @@ export type EnqueueAiJobInput = Readonly<{
   maxAttempts?: number;
   availableAt?: Date;
   sources: readonly AiJobSourceReference[];
+  /** Existing same-family jobs that must finish before this stage can run. */
+  dependencies?: readonly string[];
+  /** Explicit regeneration identity, derived by the service from prior work. */
+  generation?: string;
 }>;
 
 export type EnqueueAiJobResult =
