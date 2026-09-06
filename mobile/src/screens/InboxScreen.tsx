@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { confirmMobileInbox, fetchMobileInbox, mergeMobileInbox, patchMobileInbox } from "../api/client";
+import { memoryCacheScope } from "../memories/cache-scope";
+import { ApiError, confirmMobileInbox, fetchMobileInbox, mergeMobileInbox, patchMobileInbox } from "../api/client";
 import { DateTimeField } from "../components/DateTimeField";
 import { useApp } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
@@ -10,11 +11,19 @@ import type { InboxDraftPatch, MobileInboxEntry } from "../types";
 import { inputDateTime } from "../utils/format";
 import { archiveLocalCaptures } from "../storage/database";
 import { canReviewMobileInbox } from "../authz/product-access";
+import { TranscriptEditor } from "../transcripts/TranscriptEditor";
+import { NativeMediaReader } from "../media/NativeMediaReader";
 import { NameEditor } from "../names/NameEditor";
 
 export function InboxScreen() {
+  const { credentials, viewer, family } = useApp();
+  return <InboxContent key={memoryCacheScope(credentials, viewer?.id, family?.id)} />;
+}
+
+function InboxContent() {
   const navigation = useNavigation<AppNavigation>();
   const { credentials, people, runSync, viewer } = useApp();
+  const generation = useRef(0);
   const canReview = canReviewMobileInbox(viewer);
   const [entries, setEntries] = useState<MobileInboxEntry[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -26,24 +35,29 @@ export function InboxScreen() {
   const [occurredAt, setOccurredAt] = useState<string | null>(null);
   const [location, setLocation] = useState("");
   const [participants, setParticipants] = useState<Set<string>>(new Set());
+  const [reading, setReading] = useState<string | null>(null);
   const [mergeTitle, setMergeTitle] = useState("");
 
   const load = useCallback(async (nextCursor: string | null = null) => {
     if (!credentials) return;
+    const request = ++generation.current;
     setLoading(true);
     setError(null);
     try {
       const page = await fetchMobileInbox(credentials, nextCursor);
+      if (request !== generation.current) return;
       setEntries((current) => nextCursor ? [...current, ...page.entries.filter((item) => !current.some((old) => old.id === item.id))] : page.entries);
       setCursor(page.nextCursor);
     } catch (reason) {
+      if (request !== generation.current) return;
+      if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) { setEntries([]); setEditing(null); setReading(null); setSelected(new Set()); }
       setError(reason instanceof Error ? reason.message : "无法读取收件箱。");
     } finally {
-      setLoading(false);
+      if (request === generation.current) setLoading(false);
     }
   }, [credentials]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void load(); return () => { generation.current++; }; }, [load]));
 
   const beginEdit = (entry: MobileInboxEntry) => {
     setEditing(entry);
@@ -55,7 +69,8 @@ export function InboxScreen() {
   };
 
   const saveEdit = async () => {
-    if (!credentials || !editing || !canReview) return;
+    if (!credentials || !editing || !canReview || loading) return;
+    const request = ++generation.current;
     setLoading(true);
     try {
       const updated = await patchMobileInbox(credentials, editing.id, {
@@ -64,12 +79,15 @@ export function InboxScreen() {
         locationText: location,
         participantPersonIds: [...participants],
       });
+      if (request !== generation.current) return;
       setEntries((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
       setEditing(null);
     } catch (reason) {
+      if (request !== generation.current) return;
+      if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) { setEntries([]); setEditing(null); setReading(null); setSelected(new Set()); }
       setError(reason instanceof Error ? reason.message : "修改失败。");
     } finally {
-      setLoading(false);
+      if (request === generation.current) setLoading(false);
     }
   };
 
@@ -79,7 +97,8 @@ export function InboxScreen() {
    * 不存在只确认旧草稿的路径。
    */
   const confirm = async (entry: MobileInboxEntry) => {
-    if (!credentials || !canReview) return;
+    if (!credentials || !canReview || loading) return;
+    const request = ++generation.current;
     let draft: InboxDraftPatch | undefined;
     if (editing && editing.id === entry.id) {
       draft = {
@@ -93,20 +112,26 @@ export function InboxScreen() {
     setError(null);
     try {
       const memoryEventId = await confirmMobileInbox(credentials, entry.id, draft);
+      if (request !== generation.current) return;
       await archiveLocalCaptures([entry.id], memoryEventId);
+      if (request !== generation.current) return;
       setEntries((current) => current.filter((item) => item.id !== entry.id));
       setEditing(null);
       await runSync();
+      if (request !== generation.current) return;
       navigation.navigate("Memory", { id: memoryEventId });
     } catch (reason) {
+      if (request !== generation.current) return;
+      if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) { setEntries([]); setEditing(null); setReading(null); setSelected(new Set()); }
       setError(reason instanceof Error ? reason.message : "确认失败。");
     } finally {
-      setLoading(false);
+      if (request === generation.current) setLoading(false);
     }
   };
 
   const merge = async () => {
-    if (!credentials || !canReview) return;
+    if (!credentials || !canReview || loading) return;
+    const request = ++generation.current;
     if (selected.size < 2 || !mergeTitle.trim()) {
       setError("请选择至少两项，并填写合并后的标题。");
       return;
@@ -116,16 +141,21 @@ export function InboxScreen() {
     try {
       const ids = [...selected];
       const memoryEventId = await mergeMobileInbox(credentials, ids, mergeTitle.trim());
+      if (request !== generation.current) return;
       await archiveLocalCaptures(ids, memoryEventId);
+      if (request !== generation.current) return;
       setEntries((current) => current.filter((entry) => !selected.has(entry.id)));
       setSelected(new Set());
       setMergeTitle("");
       await runSync();
+      if (request !== generation.current) return;
       navigation.navigate("Memory", { id: memoryEventId });
     } catch (reason) {
+      if (request !== generation.current) return;
+      if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) { setEntries([]); setEditing(null); setReading(null); setSelected(new Set()); }
       setError(reason instanceof Error ? reason.message : "合并失败。");
     } finally {
-      setLoading(false);
+      if (request === generation.current) setLoading(false);
     }
   };
 
@@ -156,7 +186,7 @@ export function InboxScreen() {
         return <View key={entry.id}><View style={styles.entry}>
           {source ? <Image source={source} style={styles.thumbnail} /> : <View style={styles.thumbnailPlaceholder}><Text style={styles.kind}>{entry.kind === "text" ? "文字" : entry.assets[0]?.type === "audio" ? "录音" : "素材"}</Text></View>}
           <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text>{canReview ? <View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View> : null}</View>
-        </View>{canReview ? <NameEditor kind="inbox_item" id={entry.id} onSaved={() => void load()} /> : null}</View>;
+        </View><Pressable onPress={() => setReading(reading === entry.id ? null : entry.id)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{reading === entry.id ? "收起素材" : "查看素材与全文"}</Text></Pressable>{reading === entry.id ? <View>{entry.rawText ? <Text selectable style={sharedStyles.body}>{entry.rawText}</Text> : null}<NativeMediaReader credentials={credentials} assets={entry.assets} />{entry.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <TranscriptEditor key={asset.id} assetId={asset.id} label={asset.filename} />)}</View> : null}{canReview ? <NameEditor kind="inbox_item" id={entry.id} onSaved={() => void load()} /> : null}</View>;
       })}
       {loading ? <ActivityIndicator color={colors.coral} /> : null}
       {cursor && !loading ? <Pressable onPress={() => void load(cursor)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加载更多</Text></Pressable> : null}

@@ -226,7 +226,7 @@ export async function setFactStatusAction(
   return {};
 }
 
-export type TranscriptActionState = { error?: string; success?: string };
+export type TranscriptActionState = { error?: string; success?: string; savedRevision?: number };
 
 export type ImageAnalysisActionState = { error?: string; success?: string };
 
@@ -334,19 +334,22 @@ export async function editTranscriptAction(
   const assetId = String(formData.get("assetId") ?? "");
   const memoryEventId = String(formData.get("memoryEventId") ?? "");
   const text = String(formData.get("editedText") ?? "");
-  const result = saveEditedTranscript(context, assetId, text);
+  const revision = formData.get("revision");
+  if (typeof revision !== "string" || (revision !== "none" && !/^\d+$/.test(revision))) return { error: "请重新载入转录，核对版本后再保存。" };
+  const result = saveEditedTranscript(context, assetId, text, { expectedRevision: revision === "none" ? null : Number(revision) });
   if (!result.ok) {
+    if (result.error === "conflict") revalidatePath(`/memories/${memoryEventId}`);
     return {
       error:
-        result.error === "invalid"
-          ? "修订内容需为 1–200,000 字。"
+        result.error === "conflict" ? "转录已在另一端更新。本次没有覆盖，输入已保留，请核对最新版本。" : result.error === "invalid"
+          ? "修订内容不能超过 200,000 字。"
           : result.error === "not_found"
             ? "素材不存在。"
             : "保存失败：权限已变化。",
     };
   }
   revalidatePath(`/memories/${memoryEventId}`);
-  return { success: "修订已保存。" };
+  return { success: "修订已保存。", savedRevision: revision === "none" ? 0 : Number(revision) + 1 };
 }
 
 export type SuggestionActionState = { error?: string; success?: string };

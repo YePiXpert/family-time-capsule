@@ -203,9 +203,9 @@ function Active({
       } catch (e) {
         if (!alive) return;
         const status = (e as { status?: number }).status;
-        setDenied(status === 403 || status === 404);
+        setDenied(status === 401 || status === 403 || status === 404);
         setError(
-          status === 403 || status === 404
+          status === 401 || status === 403 || status === 404
             ? "来源已删除或当前没有阅读权限。"
             : "无法连接服务器，请检查网络后重试。",
         );

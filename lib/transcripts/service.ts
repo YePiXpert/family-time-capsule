@@ -3,12 +3,13 @@ import "server-only";
 import { indexEditedTranscript } from "@/lib/search/service";
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { aiJob } from "@/db/schema/ai-job";
 import { assetTranscript } from "@/db/schema/transcript";
-import { assertFamilyCapability } from "@/lib/authz/policy";
+import { assertFamilyCapability, hasFamilyCapability, isFamilyRole } from "@/lib/authz/policy";
+import { user } from "@/db/schema/auth";
 import {
   createContributionAccessSnapshot,
   getContributionAssetAccessInTransaction,
@@ -36,7 +37,7 @@ export type TranscriptRequestResult =
 
 export type EditTranscriptResult =
   | { ok: true }
-  | { ok: false; error: "invalid" | "not_found" | "forbidden" };
+  | { ok: false; error: "invalid" | "not_found" | "forbidden" | "conflict" };
 
 function validateAssetForTranscription(asset: typeof assetTable.$inferSelect): {
   ok: true;
@@ -176,6 +177,7 @@ export function saveEditedTranscript(
   context: FamilyContext,
   assetId: string,
   text: string,
+  options: { expectedRevision?: number | null } = {},
 ): EditTranscriptResult {
   try {
     assertFamilyCapability(context.role, "event:write");
@@ -184,11 +186,13 @@ export function saveEditedTranscript(
   }
 
   const trimmed = text.trim();
-  if (trimmed.length < 1 || trimmed.length > MAX_EDITED_TRANSCRIPT_CHARS) {
+  if (trimmed.length > MAX_EDITED_TRANSCRIPT_CHARS || (options.expectedRevision !== undefined && options.expectedRevision !== null && (!Number.isSafeInteger(options.expectedRevision) || options.expectedRevision < 0))) {
     return { ok: false, error: "invalid" };
   }
 
   const result = getDb().transaction((tx) => {
+    const actor = tx.select().from(user).where(and(eq(user.id, context.userId), eq(user.familyId, context.familyId), isNull(user.disabledAt))).get();
+    if (!actor || !isFamilyRole(actor.role) || !hasFamilyCapability(actor.role, "event:write") || !getContributionAssetAccessInTransaction(tx, createContributionAccessSnapshot(context), assetId).readable) return { ok: false, error: "forbidden" } as const;
     const asset = tx
       .select()
       .from(assetTable)
@@ -201,6 +205,7 @@ export function saveEditedTranscript(
       .limit(1)
       .get();
     if (!asset) return { ok: false, error: "not_found" } as const;
+    if (asset.originalAssetId !== null || !["audio", "video"].includes(asset.type)) return { ok: false, error: "invalid" } as const;
 
     const existing = tx
       .select()
@@ -214,15 +219,17 @@ export function saveEditedTranscript(
       .limit(1)
       .get();
 
+    if (options.expectedRevision !== undefined && (existing?.revision ?? null) !== options.expectedRevision) return { ok: false, error: "conflict" } as const;
     const now = new Date();
     if (existing) {
       tx.update(assetTranscript)
         .set({
           editedTranscript: trimmed,
+          revision: existing.revision + 1,
           status: "user_edited",
           updatedAt: now,
         })
-        .where(eq(assetTranscript.id, existing.id))
+        .where(and(eq(assetTranscript.id, existing.id), eq(assetTranscript.revision, existing.revision)))
         .run();
     } else {
       tx.insert(assetTranscript)
@@ -231,8 +238,8 @@ export function saveEditedTranscript(
           familyId: context.familyId,
           assetId,
           language: null,
-          provider: "",
-          model: "",
+          provider: "manual",
+          model: "manual",
           rawTranscript: "",
           editedTranscript: trimmed,
           segmentsJson: null,
@@ -245,7 +252,7 @@ export function saveEditedTranscript(
         .run();
     }
     return { ok: true } as const;
-  });
+  }, { behavior: "immediate" });
   if (result.ok) {
     const row = getDb()
       .select()
@@ -269,4 +276,3 @@ export function saveEditedTranscript(
   }
   return result;
 }
-

@@ -335,6 +335,7 @@ function organizerMediaStages(tx: ContributionAccessTransaction, context: Family
           : asset.type === "audio" ? { jobType: "transcribe.asset.v1", capability: "transcription" as const } : null;
         if (!stage) continue;
         const evidence = stage.capability === "vision" ? tx.select().from(assetAnalysis).where(eq(assetAnalysis.assetId, asset.id)).get() : tx.select().from(assetTranscript).where(eq(assetTranscript.assetId, asset.id)).get();
+        if (stage.capability === "transcription" && evidence && "editedTranscript" in evidence && evidence.editedTranscript !== null) continue;
         const producer = evidence?.createdByJobId ? tx.select().from(aiJob).where(eq(aiJob.id, evidence.createdByJobId)).get() : null;
         if (producer && producer.requestedByUserId === context.userId && producer.jobType === stage.jobType && evidence?.sourceSha256 === asset.sha256 && completedAiResultIsCurrent(tx, producer, context.userId, options)) {
           dependencies.push(producer.id);

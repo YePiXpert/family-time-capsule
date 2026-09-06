@@ -42,7 +42,9 @@ vi.mock("@react-native-community/datetimepicker", () => ({
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => appContext,
 }));
-vi.mock("../src/api/client", () => ({
+vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
+vi.mock("../src/api/client", async original => ({
+  ...await original<object>(),
   confirmMobileInbox: mocks.confirmInbox,
   fetchMobileInbox: mocks.fetchInbox,
   mergeMobileInbox: mocks.mergeInbox,

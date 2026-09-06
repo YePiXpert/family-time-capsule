@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -281,6 +281,18 @@ describe("transcription end-to-end", () => {
     });
   });
 
+  it("uses durable transcript revisions, preserves clear edits, and rejects stale actor privileges", async () => {
+    const audio = await ingestAudio("人工转录版本.wav");
+    expect(saveEditedTranscript(adminContext(), audio.id, "最初的人工文字", { expectedRevision: null })).toEqual({ ok: true });
+    const first = getDb().select().from(assetTranscript).where(eq(assetTranscript.assetId, audio.id)).get()!;
+    expect(first).toMatchObject({ revision: 0, editedTranscript: "最初的人工文字", provider: "manual", model: "manual" });
+    expect(saveEditedTranscript(adminContext(), audio.id, "另一端的过期文字", { expectedRevision: null })).toEqual({ ok: false, error: "conflict" });
+    expect(saveEditedTranscript(adminContext(), audio.id, "", { expectedRevision: 0 })).toEqual({ ok: true });
+    expect(saveEditedTranscript(adminContext(), audio.id, "过期文字不能覆盖清空", { expectedRevision: 0 })).toEqual({ ok: false, error: "conflict" });
+    expect(getDb().select().from(assetTranscript).where(eq(assetTranscript.assetId, audio.id)).get()).toMatchObject({ revision: 1, editedTranscript: "", status: "user_edited" });
+    expect(saveEditedTranscript({ ...contributorContext(), role: "admin" }, audio.id, "伪造角色", { expectedRevision: 1 })).toEqual({ ok: false, error: "forbidden" });
+  });
+
   it("export contains transcripts.json and restore reproduces raw+edited", async () => {
     const audioAsset = await ingestAudio("导出恢复.wav");
     const enqueued = requestTranscription(adminContext(), audioAsset.id, { runtime: INTERNAL_RUNTIME });
@@ -310,6 +322,7 @@ describe("transcription end-to-end", () => {
     expect(ours.rawTranscript).toContain("Deterministic fake transcript");
     expect(ours.editedTranscript).toBe("恢复后仍应看到的人工修订。");
     expect(ours.status).toBe("user_edited");
+    expect(ours.revision).toBe(1);
 
     // Restore into a fresh empty instance
     const restoreDir = mkdtempSync(path.join(tmpdir(), "ftc-transcription-restore-"));
@@ -345,8 +358,39 @@ describe("transcription end-to-end", () => {
     expect(restored!.rawTranscript).toBe(ours.rawTranscript);
     expect(restored!.editedTranscript).toBe("恢复后仍应看到的人工修订。");
     expect(restored!.status).toBe("user_edited");
+    expect(restored!.revision).toBe(ours.revision);
+    // The manual-only row and its intentional empty edit survive the same archive.
+    const manualRow = transcriptsJson.find((t: { provider: string }) => t.provider === "manual");
+    expect(manualRow).toMatchObject({ editedTranscript: "", revision: 1 });
+    expect(m.db.getDb().select().from(m.transcript.assetTranscript).where(eq(m.transcript.assetTranscript.id, manualRow.id)).get()).toMatchObject({ editedTranscript: "", revision: 1, provider: "manual" });
 
+    const reexport = await (await import("@/lib/export/service")).buildFamilyExport(familyId);
+    const secondZip = await JSZip.loadAsync(readFileSync(reexport.filePath));
+    expect(JSON.parse(await secondZip.file("family-time-capsule-export/transcripts.json")!.async("string"))).toEqual(transcriptsJson);
     m.db.closeDatabase();
+
+    // A pre-revision archive from the manual editor used empty provider/model.
+    const legacyRows = transcriptsJson.map((row: Record<string, unknown>) => {
+      const legacy = { ...row }; delete legacy.revision;
+      if (legacy.provider === "manual") { legacy.provider = ""; legacy.model = ""; }
+      return legacy;
+    });
+    zip.file("family-time-capsule-export/transcripts.json", JSON.stringify(legacyRows));
+    const legacyPath = path.join(restoreDir, "legacy-transcript.zip");
+    writeFileSync(legacyPath, await zip.generateAsync({ type: "nodebuffer" }));
+    const legacyDir = mkdtempSync(path.join(tmpdir(), "ftc-transcription-legacy-"));
+    process.env.DATA_DIR = legacyDir; vi.resetModules();
+    const legacyDb = await import("@/db");
+    try {
+      const setup = await (await import("@/lib/auth/setup")).performSetup({ token: "transcription-setup-token", displayName: "旧档恢复", email: "legacy@example.com", password: "legacy-password-long-enough" });
+      expect(setup.ok).toBe(true);
+      const legacyAdmin = legacyDb.getDb().select().from((await import("@/db/schema/auth")).user).get()!;
+      await (await import("@/lib/restore/service")).restoreFromZipFile(legacyPath, legacyAdmin.id);
+      const rows = legacyDb.getDb().select().from((await import("@/db/schema/transcript")).assetTranscript).all();
+      expect(rows).toHaveLength(transcriptsJson.length);
+      expect(rows.every(row => row.revision === 0)).toBe(true);
+      expect(rows.find(row => row.id === manualRow.id)).toMatchObject({ editedTranscript: "", provider: "manual", model: "manual" });
+    } finally { legacyDb.closeDatabase(); rmSync(legacyDir, { recursive: true, force: true }); }
     rmSync(restoreDir, { recursive: true, force: true });
     process.env.DATA_DIR = dataDir;
   });

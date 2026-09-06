@@ -1209,4 +1209,46 @@ describe("native mobile API", () => {
     expect(JSON.stringify(await detail.json())).toContain("旧的手工标题");
   });
 
+  it("reads and revises transcripts with live authorization and compare-and-swap, without false segments", async () => {
+    const { eq } = await import("drizzle-orm");
+    const { asset } = await import("@/db/schema/asset");
+    const { assetTranscript } = await import("@/db/schema/transcript");
+    const { GET, POST } = await import("@/app/api/mobile/v1/transcripts/[id]/route");
+    const admin = (await getDb().select().from(user)).find(row => row.email === email)!;
+    const captureId = randomUUID();
+    const bytes = readFileSync(path.join(process.cwd(), "tests/fixtures/sample.wav"));
+    // Distinct PCM sample, so this fixture exercises a new original rather than deduplication.
+    bytes[bytes.length - 1] ^= 1;
+    const uploaded = await mediaUploadPost(mobileUploadRequest({ endpoint: "media", token: bearerToken, captureId, filename: "transcript-review.wav", mimeType: "audio/wav", bytes }));
+    expect(uploaded.status).toBe(201);
+    const entry = await getInboxEntry(admin.familyId!, captureId);
+    const original = entry!.assets[0]!;
+    const params = { params: Promise.resolve({ id: original.id }) };
+    const url = `http://localhost/api/mobile/v1/transcripts/${original.id}`;
+    const read = (token = bearerToken) => GET(bearerRequest(url, token), params);
+    const write = (body: Record<string, unknown>, token = bearerToken) => POST(mobileJsonRequest(url, "POST", token, body), params);
+    await expect((await read()).json()).resolves.toEqual({ assetId: original.id, canEdit: true, transcript: null });
+    expect((await write({ text: "缺版本" })).status).toBe(400);
+    expect((await write({ text: "不能写入", revision: null }, viewerToken)).status).toBe(403);
+    expect((await read(foreignToken)).status).toBe(404);
+    expect((await write({ text: "跨家庭", revision: null }, foreignToken)).status).toBe(403);
+    getDb().insert(assetTranscript).values({ id: randomUUID(), familyId: admin.familyId!, assetId: original.id, provider: "fake", model: "fixture", rawTranscript: "原始机器文字", segmentsJson: JSON.stringify([{ startSeconds: 0, endSeconds: 1, text: "原始机器文字" }]), sourceSha256: original.sha256 }).run();
+    await expect((await read(viewerToken)).json()).resolves.toMatchObject({ canEdit: false, transcript: { revision: 0, edited: false, segments: [{ startSeconds: 0, endSeconds: 1, text: "原始机器文字" }] } });
+    const edited = await write({ text: "人工修订全文", revision: 0 }, editorToken);
+    expect(edited.status).toBe(200);
+    await expect(edited.json()).resolves.toMatchObject({ transcript: { text: "人工修订全文", edited: true, revision: 1, segments: [] } });
+    expect((await write({ text: "过期覆盖", revision: 0 })).status).toBe(409);
+    const cleared = await write({ text: "", revision: 1 });
+    expect(cleared.status).toBe(200);
+    await expect(cleared.json()).resolves.toMatchObject({ transcript: { text: "", edited: true, revision: 2, segments: [] } });
+    expect(getDb().select().from(asset).where(eq(asset.id, original.id)).get()).toMatchObject({ sha256: original.sha256, storageKey: original.storageKey, originalFilename: original.originalFilename });
+    const actor = getDb().select().from(session).where(eq(session.token, editorToken)).get()!;
+    getDb().update(user).set({ role: "viewer" }).where(eq(user.id, actor.userId)).run();
+    try { expect((await write({ text: "已撤回编辑权限", revision: 2 }, editorToken)).status).toBe(403); }
+    finally { getDb().update(user).set({ role: "editor" }).where(eq(user.id, actor.userId)).run(); }
+    getDb().update(user).set({ disabledAt: new Date() }).where(eq(user.id, actor.userId)).run();
+    try { expect([401, 403]).toContain((await read(editorToken)).status); }
+    finally { getDb().update(user).set({ disabledAt: null }).where(eq(user.id, actor.userId)).run(); }
+  });
+
 });

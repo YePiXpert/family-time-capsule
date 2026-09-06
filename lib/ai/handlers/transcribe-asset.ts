@@ -2,7 +2,7 @@ import { shortVideoError, SHORT_VIDEO_MAX_MS } from "@/lib/ai/media-limits";
 import { extractVideoAudio } from "@/lib/media/ffmpeg";
 import { probeMedia } from "@/lib/metadata/ffprobe";
 import { randomUUID } from "node:crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
 import { assetTranscript } from "@/db/schema/transcript";
@@ -126,6 +126,7 @@ export const transcribeAssetHandler: AiJobHandler = async ({
             provider: result.provenance.providerId,
             model: result.provenance.model,
             rawTranscript: result.text,
+            revision: sql`${assetTranscript.revision} + 1`,
             segmentsJson,
             sourceSha256: asset.sha256,
             createdByJobId: lease.jobId,

@@ -211,7 +211,7 @@ export default async function MemoryEventPage({
     };
   });
   const contributionAudioAssets = archiveData?.contributionAudioAssets ?? [];
-  const transcripts = archiveData?.transcripts ?? new Map<string, never>();
+  const transcripts = archiveData?.transcripts ?? await getTranscriptsForAssets(familyId, avAssetIdsArray);
   const jobs = archiveData?.jobs ?? [];
   const analyses = archiveData?.analyses ?? new Map<string, never>();
   const imageJobs = archiveData?.imageJobs ?? [];
@@ -405,12 +405,6 @@ export default async function MemoryEventPage({
         </section>
       ) : null}
 
-      {archiveData ? <details className="mt-10 rounded-2xl border border-line bg-surface" open>
-        <summary className="min-h-14 px-5 py-4 text-lg font-semibold">档案信息</summary>
-        <div className="border-t border-line px-4 pb-5 sm:px-5">
-          <Link href={`/memories/${event.id}`} className="mt-4 inline-flex text-sm font-medium text-accent underline-offset-4 hover:underline">关闭档案信息</Link>
-          <p className="mt-4 text-sm leading-6 text-muted">原件校验、时间来源、转录与 AI 建议都保留在这里；这些资料默认不会打断阅读。</p>
-
       {avAssetIdsArray.length > 0 && (
         <section aria-label="转录" className="mt-10">
           <h2 className="text-lg font-medium">转录</h2>
@@ -436,6 +430,12 @@ export default async function MemoryEventPage({
           </div>
         </section>
       )}
+
+      {archiveData ? <details className="mt-10 rounded-2xl border border-line bg-surface" open>
+        <summary className="min-h-14 px-5 py-4 text-lg font-semibold">档案信息</summary>
+        <div className="border-t border-line px-4 pb-5 sm:px-5">
+          <Link href={`/memories/${event.id}`} className="mt-4 inline-flex text-sm font-medium text-accent underline-offset-4 hover:underline">关闭档案信息</Link>
+          <p className="mt-4 text-sm leading-6 text-muted">原件校验、时间来源、转录与 AI 建议都保留在这里；这些资料默认不会打断阅读。</p>
 
       {imageAssetIds.length > 0 && (
         <section aria-label="AI 图像理解" className="mt-10">

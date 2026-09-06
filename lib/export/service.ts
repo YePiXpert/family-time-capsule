@@ -639,6 +639,7 @@ export async function buildFamilyExport(
       model: t.model,
       rawTranscript: t.rawTranscript,
       editedTranscript: t.editedTranscript,
+      revision: t.revision,
       segmentsJson: t.segmentsJson,
       status: t.status,
       sourceSha256: t.sourceSha256,

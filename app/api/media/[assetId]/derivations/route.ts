@@ -54,7 +54,7 @@ async function handle(
         ? {
             text: transcript.editedTranscript ?? transcript.rawTranscript,
             edited: transcript.editedTranscript !== null,
-            segments: parseReaderSegments(transcript.segmentsJson),
+            segments: transcript.editedTranscript === null ? parseReaderSegments(transcript.segmentsJson) : [],
           }
         : null,
     });

@@ -1281,3 +1281,21 @@ export async function fetchBookReview(credentials:Credentials,params:Record<stri
 export async function mutateBookReview(credentials:Credentials,input:Record<string,unknown>):Promise<{id?:string;existing?:boolean}> {
   return await requestMobileJson(credentials,"/api/books/review",{method:"POST",body:JSON.stringify(input)}) as {id?:string;existing?:boolean};
 }
+
+
+export function parseTranscriptReview(value: unknown): import("../transcripts/types").TranscriptReview {
+  if (!isRecord(value) || !isString(value.assetId, 128) || typeof value.canEdit !== "boolean") throw new ApiError("转录信息无效。", 502);
+  const row = value.transcript;
+  if (row !== null && (!isRecord(row) || !isString(row.text, 2_000_000) || typeof row.edited !== "boolean" || !Number.isSafeInteger(row.revision) || Number(row.revision) < 0 || !Array.isArray(row.segments) || row.segments.length > 5000 || (row.edited && row.segments.length !== 0) || !row.segments.every(s => isRecord(s) && typeof s.startSeconds === "number" && Number.isFinite(s.startSeconds) && s.startSeconds >= 0 && typeof s.endSeconds === "number" && Number.isFinite(s.endSeconds) && s.endSeconds > s.startSeconds && isString(s.text, 10000)))) throw new ApiError("转录信息无效。", 502);
+  return value as unknown as import("../transcripts/types").TranscriptReview;
+}
+export async function fetchTranscriptReview(credentials: Credentials, assetId: string) {
+  const result = parseTranscriptReview(await requestMobileJson(credentials, `/api/mobile/v1/transcripts/${encodeURIComponent(assetId)}`));
+  if (result.assetId !== assetId) throw new ApiError("转录素材不匹配。", 502);
+  return result;
+}
+export async function saveTranscriptReview(credentials: Credentials, assetId: string, text: string, revision: number | null) {
+  const result = parseTranscriptReview(await requestMobileJson(credentials, `/api/mobile/v1/transcripts/${encodeURIComponent(assetId)}`, { method: "POST", body: JSON.stringify({ text, revision }) }));
+  if (result.assetId !== assetId) throw new ApiError("转录素材不匹配。", 502);
+  return result;
+}

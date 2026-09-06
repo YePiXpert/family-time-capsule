@@ -201,7 +201,7 @@ export const suggestInboxItemHandler: AiJobHandler = async ({ lease, assistant, 
   }
   const transcriptsByAsset = new Map<string, typeof transcripts>();
   for (const t of transcripts) {
-    if (!t.createdByJobId || !dependencyIds.has(t.createdByJobId) || t.sourceSha256 !== originals.find(asset => asset.id === t.assetId)?.sha256) continue;
+    if ((t.editedTranscript === null && (!t.createdByJobId || !dependencyIds.has(t.createdByJobId))) || t.sourceSha256 !== originals.find(asset => asset.id === t.assetId)?.sha256) continue;
     const list = transcriptsByAsset.get(t.assetId) ?? [];
     list.push(t);
     transcriptsByAsset.set(t.assetId, list);

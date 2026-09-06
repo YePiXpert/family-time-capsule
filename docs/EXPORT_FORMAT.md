@@ -135,10 +135,10 @@ setup token、`UploadSession`、临时上传文件、Share Extension 暂存与�
   sourceId, quote }`。`memory_event` 是无 AI 周记结构化事件段的可追溯来源。
   恢复端校验来源引用存在、quote ≤300、user_text 无 sourceId；三件套必须同时存在或缺失。
 - `transcripts.json`：`{ id, familyId, assetId, language, provider, model,
-  rawTranscript, editedTranscript, segmentsJson, status, sourceSha256,
+  rawTranscript, editedTranscript, revision, segmentsJson, status, sourceSha256,
   createdByJobId, createdAt, updatedAt }`。同时导出机器原文与用户修订文本；
   恢复后的新实例不会自动恢复 AI 处理同意，因此 rawTranscript 可作为可重建
-  衍生，而 editedTranscript 是耐久家庭资料。
+  衍生，而 editedTranscript 是耐久家庭资料。`revision` 缺省为 0；空字符串修订原样保留。旧手动转录的空 provider/model 恢复为 `manual`。
 - `capsules.json`：`{ id, title, unlockType, unlockValue, status, sealedAt, openedAt,
   memoryEventIds, assetIds, contributionIds }`。**无论是否到期/封存，内容引用始终完整**——
   封存是 UI 仪式，不是加密（PRD §15）。

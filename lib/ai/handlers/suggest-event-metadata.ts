@@ -319,7 +319,7 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
 
   let transcriptSerial = 0;
   for (const t of transcripts) {
-    if (!t.createdByJobId || !dependencies.has(t.createdByJobId) || t.sourceSha256 !== originalAssets.find(asset => asset.id === t.assetId)?.sha256) continue;
+    if ((t.editedTranscript === null && (!t.createdByJobId || !dependencies.has(t.createdByJobId))) || t.sourceSha256 !== originalAssets.find(asset => asset.id === t.assetId)?.sha256) continue;
     transcriptSerial += 1;
     const alias = `T${transcriptSerial}`;
     const fullText = trunc(

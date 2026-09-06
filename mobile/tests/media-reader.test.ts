@@ -23,8 +23,8 @@ it('creates only the active player, controls real audio UI and releases it on im
   await press('下一份');expect(mocks.active).toBe(0);await press('放大');const photo=tree!.root.findAll(n=>String(n.type)==='Image'&&n.props.accessibilityLabel==='虚构合照').at(-1)!;expect(photo.props.style.width).toBeGreaterThan(375);
   await press('下一份');expect(mocks.active).toBe(1);await press('关闭阅读器');expect(mocks.active).toBe(0);
 });
-it('distinguishes revoked access from network failure, preserves local reading, and never invents transcript seeking',async()=>{
-  mocks.get.mockRejectedValue(Object.assign(new Error('revoked'),{status:403}));
+it.each([401,403,404])('distinguishes revoked access %s from network failure, preserves local reading, and never invents transcript seeking',async(status)=>{
+  mocks.get.mockRejectedValue(Object.assign(new Error('revoked'),{status}));
   await act(async()=>{tree=create(createElement(NativeMediaReader,{credentials:{serverUrl:'https://fictional.example.test',token:'fictional-test-token'},assets:[{id:'remote',type:'audio',filename:'服务器声音',mimeType:'audio/wav'},{id:'local',type:'audio',filename:'本机声音',mimeType:'audio/wav',localUri:'file:///fictional-original.wav'}]}));});
   await press('打开阅读器：服务器声音');expect(JSON.stringify(tree!.toJSON())).toContain('当前没有阅读权限');expect(mocks.active).toBe(0);
   mocks.get.mockRejectedValue(Object.assign(new Error('offline'),{status:0}));await press('重新加载');expect(JSON.stringify(tree!.toJSON())).toContain('检查网络后重试');

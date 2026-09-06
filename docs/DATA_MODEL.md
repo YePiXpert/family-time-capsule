@@ -303,6 +303,7 @@ type AssetTranscript = {
   model: string           // 实际使用的模型
   rawTranscript: string   // 机器转录原文，可重建
   editedTranscript?: string // 用户修订后的耐久文本
+  revision: number       // 0046，旧库默认 0；人工/机器更新递增
   segmentsJson?: string   // JSON [{startSeconds,endSeconds,text}]
   status: "machine" | "user_edited"
   sourceSha256: string    // 处理时 asset.sha256 的快照
@@ -313,6 +314,8 @@ type AssetTranscript = {
 ```
 
 - 每 asset 最多一行 transcript；rerun 时 UPSERT，但永不覆盖 `editedTranscript`。
+- 人工编辑带 expectedRevision，在即时事务中复核当前角色、素材可见性与版本；冲突不写入。空字符串是人工清空，不能回退为机器文本。人工修订后隐藏未对齐的机器 segments。
+- 手动创建转录的 provider/model 为 `manual`；没有 AI 配置也可修订。
 - `status='machine'` 表示当前显示的是机器文本；一旦用户保存修订，`status='user_edited'` 且后续 AI rerun 保持该状态。
 - 旧 `contribution.transcript` 列是占位且未使用的，新表是权威来源。
 

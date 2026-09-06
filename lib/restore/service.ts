@@ -333,6 +333,7 @@ type TranscriptArchiveRow = {
   model: string;
   rawTranscript: string;
   editedTranscript?: string | null;
+  revision?: number;
   segmentsJson?: string | null;
   status?: string;
   sourceSha256: string;
@@ -1657,12 +1658,12 @@ async function loadAndVerifyZip(
       `transcript ${t.id} 引用未知素材 ${String(t.assetId)}`,
     );
     requireCondition(
-      typeof t.provider === "string" && t.provider.length > 0,
+      typeof t.provider === "string" && (t.provider.length > 0 || (t.status === "user_edited" && typeof t.editedTranscript === "string")),
       "bad_json",
       `transcript ${t.id} 的 provider 非法`,
     );
     requireCondition(
-      typeof t.model === "string" && t.model.length > 0,
+      typeof t.model === "string" && (t.model.length > 0 || (t.status === "user_edited" && typeof t.editedTranscript === "string")),
       "bad_json",
       `transcript ${t.id} 的 model 非法`,
     );
@@ -1699,6 +1700,7 @@ async function loadAndVerifyZip(
       "bad_json",
       `transcript ${t.id} 的时间字段非法`,
     );
+    requireCondition(t.revision === undefined || (Number.isSafeInteger(t.revision) && Number(t.revision) >= 0), "bad_json", `transcript ${t.id} 的 revision 非法`);
     transcriptsJson.push({
       id: t.id as string,
       familyId: t.familyId as string,
@@ -1707,10 +1709,11 @@ async function loadAndVerifyZip(
         t.language === undefined || t.language === null
           ? null
           : (t.language as string),
-      provider: t.provider as string,
-      model: t.model as string,
+      provider: (t.provider || "manual") as string,
+      model: (t.model || "manual") as string,
       rawTranscript: t.rawTranscript as string,
       editedTranscript: (t.editedTranscript ?? null) as string | null,
+      revision: Number(t.revision ?? 0),
       segmentsJson: (t.segmentsJson ?? null) as string | null,
       status: (t.status ?? "machine") as string,
       sourceSha256: t.sourceSha256 as string,
@@ -2991,6 +2994,7 @@ async function restoreFromArchive(
               model: t.model,
               rawTranscript: t.rawTranscript,
               editedTranscript: t.editedTranscript,
+              revision: t.revision ?? 0,
               segmentsJson: t.segmentsJson,
               status: t.status,
               sourceSha256: t.sourceSha256,

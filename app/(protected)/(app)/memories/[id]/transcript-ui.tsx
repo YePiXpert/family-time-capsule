@@ -1,7 +1,7 @@
 "use client";
 
 import { aiJobFailureMessage } from "@/lib/ai/job-messages";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { AssetTranscriptRow } from "@/db/schema/transcript";
 import { aiJob } from "@/db/schema/ai-job";
@@ -132,12 +132,7 @@ export function TranscriptSection({
     requestTranscriptionAction,
     undefined,
   );
-  const [editState, editAction, editing] = useActionState(
-    editTranscriptAction,
-    undefined,
-  );
-
-  const busy = requesting || editing;
+  const busy = requesting;
 
   return (
     <article className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4">
@@ -174,13 +169,30 @@ export function TranscriptSection({
         </form>
       )}
 
-      {canEdit && transcript && (
+      {canEdit ? <TranscriptEditor asset={asset} memoryEventId={memoryEventId} transcript={transcript} /> : null}
+
+    </article>
+  );
+}
+
+
+function TranscriptEditor({ asset, memoryEventId, transcript }: { asset: AssetRow; memoryEventId: string; transcript: AssetTranscriptRow | undefined }) {
+  const [draft, setDraft] = useState({ text: transcript?.editedTranscript ?? transcript?.rawTranscript ?? "", revision: transcript?.revision ?? null });
+  const [editState, editAction, editing] = useActionState(async (previous: import("./actions").TranscriptActionState | undefined, formData: FormData) => {
+    const result = await editTranscriptAction(previous, formData);
+    if (result.savedRevision !== undefined) setDraft(current => current.revision === (formData.get("revision") === "none" ? null : Number(formData.get("revision"))) ? { ...current, revision: result.savedRevision! } : current);
+    return result;
+  }, undefined);
+  return (
         <form action={editAction} className="mt-4 flex flex-col gap-2">
+          <input type="hidden" name="revision" value={draft.revision ?? "none"} />
           <input type="hidden" name="assetId" value={asset.id} />
           <input type="hidden" name="memoryEventId" value={memoryEventId} />
+          {(transcript?.revision ?? null) !== draft.revision ? <p className="text-sm text-muted">转录已有新版本；当前输入和原编辑版本已保留。<button type="button" className="ui-button-secondary" onClick={() => setDraft({ text: transcript?.editedTranscript ?? transcript?.rawTranscript ?? "", revision: transcript?.revision ?? null })}>载入最新转录</button></p> : null}
           <textarea
             name="editedText"
-            defaultValue={transcript.editedTranscript ?? transcript.rawTranscript}
+            value={draft.text}
+            onChange={event => setDraft({ ...draft, text: event.target.value })}
             rows={4}
             maxLength={200_000}
             className={inputClass}
@@ -188,7 +200,7 @@ export function TranscriptSection({
           />
           <button
             type="submit"
-            disabled={busy}
+            disabled={editing || (transcript?.revision ?? null) !== draft.revision}
             className="self-start rounded-lg border border-foreground/15 px-3 py-1.5 text-xs transition-colors hover:border-accent disabled:opacity-50"
           >
             {editing ? "保存中…" : "保存修订"}
@@ -204,7 +216,5 @@ export function TranscriptSection({
             </p>
           )}
         </form>
-      )}
-    </article>
   );
 }

@@ -37,6 +37,7 @@ export const assetTranscript = sqliteTable(
     model: text("model").notNull(),
     rawTranscript: text("raw_transcript").notNull(),
     editedTranscript: text("edited_transcript"),
+    revision: integer("revision").notNull().default(0),
     segmentsJson: text("segments_json"),
     status: text("status").notNull().default("machine"),
     sourceSha256: text("source_sha256").notNull(),

@@ -55,6 +55,32 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await expect(page.locator("audio")).toHaveCount(0);
   await expect(page.getByRole("button",{name:"打开阅读器：外婆哼的歌.wav"})).toBeFocused();
 
+  // Actual cookie-authenticated mobile API and Web form share transcript revisions.
+  const eventId = page.url().split("/").at(-1)!;
+  const detail = await (await page.request.get(`/api/mobile/v1/memories/${eventId}`)).json();
+  const transcriptUrl = `/api/mobile/v1/transcripts/${detail.assets[0].id}`;
+  const seed = await page.request.post(transcriptUrl, { data: { text: "最初听到的歌词", revision: null }, headers: { origin: new URL(page.url()).origin } });
+  expect(seed.status()).toBe(200);
+  await page.reload();
+  const transcriptInput = page.getByRole("textbox", { name: "修订 外婆哼的歌.wav 的转录" });
+  await transcriptInput.fill("网页里正在修订的歌词");
+  const other = await page.request.post(transcriptUrl, { data: { text: "另一端的新修订", revision: 0 }, headers: { origin: new URL(page.url()).origin } });
+  expect(other.status()).toBe(200);
+  await page.getByRole("button", { name: "保存修订", exact: true }).click();
+  await expect(page.getByText("转录已在另一端更新。本次没有覆盖，输入已保留，请核对最新版本。")).toBeVisible();
+  await expect(transcriptInput).toHaveValue("网页里正在修订的歌词");
+  await page.getByRole("button", { name: "载入最新转录" }).click();
+  await expect(transcriptInput).toHaveValue("另一端的新修订");
+  await transcriptInput.fill("核对后的歌词");
+  await page.getByRole("button", { name: "保存修订", exact: true }).click();
+  await expect(page.getByText("修订已保存。", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存修订", exact: true })).toBeEnabled();
+  await transcriptInput.fill("");
+  await page.getByRole("button", { name: "保存修订", exact: true }).click();
+  await expect(page.getByText("转录已由你清空", { exact: true })).toBeVisible();
+  const mobileTranscript = await (await page.request.get(transcriptUrl)).json();
+  expect(mobileTranscript.transcript).toEqual({ text: "", edited: true, revision: 3, segments: [] });
+
   // 回到收件箱确认视频条目。浏览器是否把这个最小 MOV fixture 判为
   // 可播放取决于 Chromium/系统编解码器，因此显式触发媒体错误来验证
   // 产品的确定性降级路径，而不是把编解码器探测结果当成断言前提。
