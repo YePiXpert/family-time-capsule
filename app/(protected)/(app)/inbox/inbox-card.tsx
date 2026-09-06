@@ -112,7 +112,7 @@ export function InboxCard({
         )}
         <div className={`flex min-w-0 flex-1 flex-col gap-1.5 text-sm ${compact ? "p-4 pt-3" : ""}`}>
           <div className="flex flex-wrap items-baseline gap-x-3">
-            <span className="truncate font-medium" title={cover?.originalFilename}>
+            <span className="whitespace-pre-wrap break-words font-medium" title={cover?.originalFilename}>
               {name.text}
             </span>
             <StatusBadge>{item.kind === "text" ? "文字" : cover?.type === "image" ? "照片" : cover?.type}</StatusBadge>
@@ -123,7 +123,7 @@ export function InboxCard({
           {cover && cover.type !== "document" ? (
             <p className="break-words text-xs text-muted">原件：<span>{cover.originalFilename}</span></p>
           ) : null}
-          {item.rawText ? (
+          {item.rawText && item.rawText !== name.text ? (
             <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-foreground/80">{item.rawText}</p>
           ) : null}
           <p className="text-foreground/70">
@@ -199,7 +199,6 @@ export function InboxCard({
             <InboxSuggestionChips suggestions={suggestionChips} />
           )}
 
-          {suggestedTitle ? <p className="text-xs text-muted">AI 建议：{suggestedTitle}（采用前不会替换标题）</p> : null}
           {canReview && <form action={discardActionRun} className="mt-1">
             <input type="hidden" name="itemId" value={item.id} />
             <button
