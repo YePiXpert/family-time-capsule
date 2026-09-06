@@ -29,7 +29,9 @@ class AiConfigurationTests(unittest.TestCase):
                 file = Path(directory) / "env"
                 original = "AUTH_SECRET=keep-this-auth-secret\nBETTER_AUTH_URL=https://test.example\nAI_PROVIDER=disabled\n"
                 ai.atomic_write(file, ai.update_environment(original, {"AI_API_KEY": value}))
-                self.assertEqual(file.stat().st_mode & 0o777, 0o600)
+                if os.name == "posix":
+                    # 0600 是 Linux 生产的硬性要求；Windows 开发机 NTFS 不呈现真实位。
+                    self.assertEqual(file.stat().st_mode & 0o777, 0o600)
                 self.assertTrue(file.read_text().startswith(original))
                 result = subprocess.run(["docker", "compose", "-f", str(ROOT / "docker-compose.yml"), "--env-file", str(file), "config", "--format", "json"], capture_output=True, text=True, env=env)
                 self.assertEqual(result.returncode, 0)
@@ -94,7 +96,8 @@ class AiConfigurationTests(unittest.TestCase):
                 installation.change({"AI_PROVIDER": "disabled"})
             recovery = root / "state/ai-recovery.json"
             self.assertTrue(recovery.exists())
-            self.assertEqual(recovery.stat().st_mode & 0o777, 0o600)
+            if os.name == "posix":
+                self.assertEqual(recovery.stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

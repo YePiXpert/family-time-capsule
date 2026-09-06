@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# ftc upgrade —— 升级（M6）：预检 → 拉取 → 停写快照 → 迁移 → 验证 → 开放。
+# ftc upgrade —— 升级（M6/M0-V）：预检 → 拉取 → 停写快照 → 迁移 → 验证 → 开放。
 # 四类失败的处置：
 #   A 拉取/预检失败   旧版继续运行，无数据动作。
 #   B 迁移前失败      恢复旧服务状态，不动数据库。
 #   C 迁移后未开放前  允许用已验证快照 + 旧镜像恢复（rollback --to）。
 #   D 已开放接受写入  拒绝静默回滚（rollback 会要求显式数据决策）。
+# 版本规则（M0-V）：目标版本必须能从发布注册表（lib/releases.json）解析——
+# digest 固定引用必须配 --version；未注册版本拒绝；迁移路径按注册表
+# sequence/纪元判断，不用 sort -V，也不从 digest 截取版本。
 set -euo pipefail
 
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
@@ -13,11 +16,15 @@ source "$LIB_DIR/common.sh"
 
 CHECK_ONLY=0
 TARGET_IMAGE=""
+TARGET_VERSION_FLAG=""
+ALLOW_NONSTABLE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) CHECK_ONLY=1; shift ;;
     --image) TARGET_IMAGE="$2"; shift 2 ;;
-    --help|-h) sed -n '2,9p' "$0"; exit 0 ;;
+    --version) TARGET_VERSION_FLAG="$2"; shift 2 ;;
+    --allow-nonstable-target) ALLOW_NONSTABLE=1; shift ;;
+    --help|-h) sed -n '2,12p' "$0"; exit 0 ;;
     *) die "未知参数：$1" 2 ;;
   esac
 done
@@ -26,19 +33,41 @@ load_env || die "尚未安装。" 2
 CURRENT_VERSION="$(state_get current_version || echo unknown)"
 CURRENT_DEPLOYMENT="$(state_get current_deployment || echo unknown)"
 TARGET_IMAGE="${TARGET_IMAGE:-$FTC_IMAGE}"
-TARGET_VERSION="$(printf '%s' "$TARGET_IMAGE" | sed -E 's/.*://')"
+
+# ---------------------------------------------------- 目标版本解析（注册表）
+if ! RESOLVED="$(resolve_release "$TARGET_IMAGE" "$TARGET_VERSION_FLAG")"; then
+  die "无法从发布注册表解析目标版本（镜像 $TARGET_IMAGE）。
+  $RESOLVED
+  digest 固定引用请加 --version <注册表内版本>；未知版本需先登记 lib/releases.json。" 26
+fi
+TARGET_VERSION="$(printf '%s' "$RESOLVED" | "$(ftc_python)" -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+TARGET_CHANNEL="$(printf '%s' "$RESOLVED" | "$(ftc_python)" -c 'import json,sys; print(json.load(sys.stdin)["channel"])')"
+
+# 迁移路径校验：当前版本未知（极老安装）时给出明确指引，而不是静默放行。
+ALLOW_FLAG=""
+[[ $ALLOW_NONSTABLE -eq 1 ]] && ALLOW_FLAG="1"
+if [[ "$CURRENT_VERSION" != "unknown" ]]; then
+  TRANSITION="$(assert_release_transition "$CURRENT_VERSION" "$TARGET_VERSION" "$TARGET_IMAGE" "$ALLOW_FLAG")"
+else
+  warn "当前安装没有记录版本（state/current_version 缺失）；无法核对迁移白名单。"
+  warn "如该实例来自探索期，请先用 ftc status 确认数据卷归属，再带 --version 重试。"
+  die "拒绝在版本未知的情况下升级。" 26
+fi
+FROM_CHANNEL="$(printf '%s' "$TRANSITION" | "$(ftc_python)" -c 'import json,sys; print(json.load(sys.stdin)["from"]["channel"])')"
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
   cat <<EOF
 升级计划（只读，不执行）
-  当前版本     $CURRENT_VERSION（部署 $CURRENT_DEPLOYMENT）
+  当前版本     $CURRENT_VERSION（$FROM_CHANNEL 通道，部署 $CURRENT_DEPLOYMENT）
   当前镜像     $FTC_IMAGE
   目标镜像     $TARGET_IMAGE
-  目标版本     $TARGET_VERSION
+  目标版本     $TARGET_VERSION（$TARGET_CHANNEL 通道）
+  迁移判定     按注册表 sequence/纪元白名单通过（不用 sort -V，不从 digest 截取）
   停机说明     升级需要维护窗口：停写 → 快照 → 迁移 → 验证，期间服务不可用（不承诺零停机）。
   回退策略     迁移完成且开放写入前可用已验证快照回退；开放后回退需显式数据决策。
 风险提示
-  - prerelease 通道保持 prerelease；stable 不会自动升级到 alpha。
+  - 通道纪律：stable 只沿 stable 升级；去往 development/candidate 需 --allow-nonstable-target。
+  - 探索期（0.1.x / 1.x alpha / rc.1~rc.4）可升级到正式 1.0 主线；反向不允许。
   - 磁盘不足会直接中止，不会删除旧备份腾空间。
 EOF
   exit 0
@@ -102,7 +131,7 @@ if [[ $VERIFY_OK -ne 1 ]]; then
   可选恢复路径（二选一，均需人工确认）：
   1) ftc rollback --to $ROLLBACK_DEPLOYMENT --snapshot "$(basename "$LAST_SNAP")"
      —— 用已验证快照 + 旧镜像恢复（会丢弃迁移后的数据库状态）。
-  2) 排查后重跑 ftc upgrade --image $TARGET_IMAGE（继续尝试新版本）。
+  2) 排查后重跑 ftc upgrade --image $TARGET_IMAGE --version $TARGET_VERSION（继续尝试新版本）。
 快照：$LAST_SNAP
 EOF
   exit 14
@@ -117,5 +146,5 @@ phase_set "upgrade-open"
 sleep 3
 mark_accepted_writes
 phase_clear
-note "升级完成：$CURRENT_VERSION → $TARGET_VERSION（部署 $NEW_DEPLOYMENT）。已开放写入。"
+note "升级完成：$CURRENT_VERSION → $TARGET_VERSION（$TARGET_CHANNEL 通道，部署 $NEW_DEPLOYMENT）。已开放写入。"
 note "从现在起回退需要显式数据决策（ftc rollback 会说明可能丢失的写入）。"

@@ -2,7 +2,10 @@
 """Project-scoped AI configuration. Secrets travel through files/stdin, never argv."""
 import argparse
 import contextlib
-import fcntl
+try:
+    import fcntl
+except ImportError:  # pragma: no cover — 仅 Windows 开发机；生产环境是 Linux
+    fcntl = None
 import getpass
 import json
 import os
@@ -37,14 +40,18 @@ def atomic_write(path, content):
         raise OperationError("配置文件不得为符号链接。")
     fd, temporary = tempfile.mkstemp(prefix=".ftc-ai-", dir=path.parent)
     try:
-        os.fchmod(fd, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+        except AttributeError:  # Windows 开发机无 fchmod；生产环境是 Linux
+            os.chmod(temporary, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        temporary = None
     finally:
-        if os.path.exists(temporary):
+        if temporary is not None and os.path.exists(temporary):
             os.unlink(temporary)
 
 
@@ -232,10 +239,18 @@ class Installation:
         self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
         with open(self.state / "ai.lock", "w") as lock:
             os.chmod(lock.name, 0o600)
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise OperationError("另一个 AI 配置操作正在运行。") from None
+            if fcntl is not None:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    raise OperationError("另一个 AI 配置操作正在运行。") from None
+            else:
+                import msvcrt
+
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                except OSError:
+                    raise OperationError("另一个 AI 配置操作正在运行。") from None
             yield
 
 

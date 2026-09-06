@@ -36,7 +36,8 @@ STAGING="$(mktemp -d "$FTC_BACKUP_DIR/.restore-XXXXXX")"
 trap 'rm -rf "$STAGING"; ftc_unlock restore' EXIT
 tar -xzf "$SNAP" -C "$STAGING"
 [[ -f "$STAGING/manifest.json" && -f "$STAGING/data.tar" ]] || die "包结构不完整（缺少 manifest 或 data.tar）。" 22
-KIND="$(python3 -c 'import json;print(json.load(open("'"$STAGING"'/manifest.json"))["kind"])' 2>/dev/null || echo unknown)"
+PY="$(ftc_python)"
+KIND="$("$PY" -c 'import json;print(json.load(open("'"$STAGING"'/manifest.json"))["kind"])' 2>/dev/null || echo unknown)"
 [[ "$KIND" == "ftc-instance-snapshot" ]] || die "这不是实例快照（kind=$KIND）。便携家庭档案请走应用内恢复流程。" 22
 tar -tf "$STAGING/data.tar" | grep -E '(^\.\./|^/|^$$)' && die "数据包存在绝对路径或路径穿越，拒绝。" 22 || true
 

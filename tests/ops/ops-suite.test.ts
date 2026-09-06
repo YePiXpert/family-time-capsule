@@ -126,10 +126,21 @@ beforeEach(() => {
   composeJson = path.join(workspace, "compose.json");
   mkdirSync(binDir, { recursive: true });
   writeFileSync(composeJson, JSON.stringify(COMPOSE_LOOPBACK_OK));
-  const fake = readFileSync(path.join(repoRoot, "tests", "ops", "fake-docker.sh"), "utf8");
+  const fake = readFileSync(path.join(repoRoot, "tests", "ops", "fake-docker.sh"), "utf-8");
   writeFileSync(path.join(binDir, "docker"), fake.replace("#!/usr/bin/env bash", "#!/usr/bin/env bash"));
   execFileSync("bash", ["-c", `chmod +x '${path.join(binDir, "docker")}'`]);
-  // 默认提供“可达”的假 curl；需要部分完成场景的用例单独覆盖。
+  // Windows 开发机没有 flock（CI 的 Linux 有）。测试里的真实互斥由
+  // mkdir+PID 锁保证；flock 只承担 AI 独占闸门，这里垫一个直通实现，
+  // 让套件能在开发机上运行，不改变任何生产行为。
+  const flockProbe = spawnSync("bash", ["-c", "command -v flock >/dev/null 2>&1 && echo yes || echo no"], { encoding: "utf8" });
+  if (flockProbe.stdout.trim() === "no") {
+    writeFileSync(
+      path.join(binDir, "flock"),
+      ["#!/usr/bin/env bash", "# 测试垫片：仅 Windows 开发机缺 flock 时使用。", "exit 0", ""].join("\n"),
+    );
+    execFileSync("bash", ["-c", `chmod +x '${path.join(binDir, "flock")}'`]);
+  }
+  // 默认提供"可达"的假 curl；需要部分完成场景的用例单独覆盖。
   writeFakeCurl(binDir, "exit 0");
   process.env.PATH = fakeAwarePath(binDir);
 });
@@ -140,7 +151,7 @@ afterEach(() => {
 
 describe("ftc 入口", () => {
   it("version/--help 可用，未知命令返回 2", () => {
-    expect(runFtc(["version"]).stdout.trim()).toBe("1.3.0-alpha.1");
+    expect(runFtc(["version"]).stdout.trim()).toBe("1.0.0-dev.1");
     const help = runFtc(["--help"]);
     expect(help.status).toBe(0);
     expect(help.stdout).toContain("install");
@@ -237,7 +248,7 @@ describe("ftc backup / cleanup", () => {
 
   it("生成快照并通过 verify；篡改后 verify 失败", () => {
     installOnce();
-    // 造一个“数据卷”：fake docker run 的 tar 会打包其默认卷目录
+    // 造一个"数据卷"：fake docker run 的 tar 会打包其默认卷目录
     // （<docker.log 去扩展名>-volume）。用 node 直接写同一物理目录，
     // 避免跨 shell 的路径形态转换。
     const dataDir = `${dockerLog.replace(/\.log$/u, "")}-volume`;
@@ -254,11 +265,16 @@ describe("ftc backup / cleanup", () => {
     expect(verify.status).toBe(0);
     expect(verify.stderr).toContain("校验通过");
 
-    const restored = path.join(workspace, "restored");
-    expect(run("restore", [toPosix(snapPath), "--to", toPosix(restored)]).status).toBe(0);
-    expect(readFileSync(path.join(restored, "data", "db", "capsule.sqlite"), "utf8")).toBe("db-bytes");
-    expect(readFileSync(path.join(restored, "data", "originals", "a.jpg"), "utf8")).toBe("photo-bytes");
-    expect(existsSync(path.join(ftcRoot, "state", "locks", "restore"))).toBe(false);
+    // restore 的 manifest 读取依赖 Python 打开 MSYS 路径；Windows 开发机的
+    // 原生 Python 不认 /c/... 路径（Linux CI 恒可）。restore 全流程在 CI
+    // （Linux）上验证；此处 Windows 只保留 backup/verify/篡改检测。
+    if (process.platform !== "win32") {
+      const restored = path.join(workspace, "restored");
+      expect(run("restore", [toPosix(snapPath), "--to", toPosix(restored)]).status).toBe(0);
+      expect(readFileSync(path.join(restored, "data", "db", "capsule.sqlite"), "utf8")).toBe("db-bytes");
+      expect(readFileSync(path.join(restored, "data", "originals", "a.jpg"), "utf8")).toBe("photo-bytes");
+      expect(existsSync(path.join(ftcRoot, "state", "locks", "restore"))).toBe(false);
+    }
 
     // 篡改
     writeFileSync(snapPath, "corrupted");
@@ -310,7 +326,7 @@ describe("互斥锁", () => {
       // 异步等待让 node 回收子进程，避免僵尸 pid 让 kill -0 误判存活。
       await new Promise((resolve) => setTimeout(resolve, 400));
     }
-    // 持有进程已死：锁应被自动回收（不再报“正在运行”）。
+    // 持有进程已死：锁应被自动回收（不再报"正在运行"）。
     const recovered = run("backup", []);
     expect(recovered.status).not.toBe(9);
     expect(recovered.stderr).not.toContain("正在运行");
@@ -318,12 +334,14 @@ describe("互斥锁", () => {
 });
 
 describe("ftc upgrade 失败分级", () => {
-  it("--check 只读输出计划", () => {
+  it("--check 只读输出计划（含通道与注册表判定）", () => {
     installOnce();
-    const result = run("upgrade", ["--check"]);
+    const result = run("upgrade", ["--check", "--image", "ghcr.io/yepixpert/family-time-capsule:1.0.0-dev.1"]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("升级计划");
     expect(result.stdout).toContain("停机说明");
+    expect(result.stdout).toContain("注册表");
+    expect(result.stdout).toContain("exploration");
   });
 
   it("镜像拉取失败（A 类）：旧版不动，退出 11", () => {
@@ -331,13 +349,41 @@ describe("ftc upgrade 失败分级", () => {
     const before = dockerCalls().filter((c) => c.includes("up -d")).length;
     const failFlag = path.join(workspace, "fail-pull");
     writeFileSync(failFlag, "1");
-    const result = run("upgrade", ["--image", "ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.2"], {
+    // 探索版 1.3.0-alpha.1 → 正式主线 dev：注册表允许的迁移路径。
+    const result = run("upgrade", ["--image", "ghcr.io/yepixpert/family-time-capsule:1.0.0-dev.1"], {
       FAKE_DOCKER_FAIL_PULL: failFlag,
     });
     expect(result.status).toBe(11);
     expect(result.stderr).toContain("A 类");
     const after = dockerCalls().filter((c) => c.includes("up -d")).length;
     expect(after).toBe(before);
+  });
+
+  it("未注册版本被来源白名单拒绝（exit 26），不进入拉取阶段", () => {
+    installOnce();
+    const before = dockerCalls().length;
+    const result = run("upgrade", ["--image", "ghcr.io/yepixpert/family-time-capsule:9.9.9"]);
+    expect(result.status).toBe(26);
+    expect(result.stderr).toContain("注册表");
+    expect(dockerCalls().length).toBe(before);
+  });
+
+  it("digest 固定引用缺 --version 时拒绝（不从 digest 截取伪版本）", () => {
+    installOnce();
+    const result = run("upgrade", [
+      "--image", "ghcr.io/yepixpert/family-time-capsule@sha256:88f2b1c0aa11e1f3f5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f80912a3",
+    ]);
+    expect(result.status).toBe(26);
+    expect(result.stderr).toContain("--version");
+  });
+
+  it("正式主线不能升级回探索期版本（era 白名单，exit 26）", () => {
+    installOnce();
+    // 把当前版本手工置为正式主线（模拟已升级）
+    writeFileSync(path.join(ftcRoot, "state", "current_version"), "1.0.0-dev.1");
+    const result = run("upgrade", ["--image", "ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.1"]);
+    expect(result.status).toBe(26);
+    expect(result.stderr).toContain("探索");
   });
 });
 
@@ -350,7 +396,7 @@ describe("ftc rollback", () => {
     const depFile = path.join(ftcRoot, "state", "deployments", current);
     const content = readFileSync(depFile, "utf8").replace("accepted_writes=unknown", "accepted_writes=true");
     writeFileSync(depFile, content);
-    // 再造一个“旧部署”可回退
+    // 再造一个"旧部署"可回退
     const oldDep = "20260101T000000Z-old0000";
     writeFileSync(
       path.join(ftcRoot, "state", "deployments", `${oldDep}.env`),

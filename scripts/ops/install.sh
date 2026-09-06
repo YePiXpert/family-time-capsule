@@ -11,6 +11,7 @@ DOMAIN=""
 MODE=""
 PORT=""
 IMAGE=""
+VERSION_FLAG=""
 SKIP_HTTPS_CHECK=0
 ASSUME_YES=0
 while [[ $# -gt 0 ]]; do
@@ -19,6 +20,7 @@ while [[ $# -gt 0 ]]; do
     --mode) MODE="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --image) IMAGE="$2"; shift 2 ;;
+    --version) VERSION_FLAG="$2"; shift 2 ;;
     --skip-https-check) SKIP_HTTPS_CHECK=1; shift ;;
     --yes) ASSUME_YES=1; shift ;;
     --help|-h)
@@ -40,7 +42,8 @@ if [[ "${FTC_SKIP_ROOT_CHECK:-0}" != "1" ]]; then
   [[ $EUID -eq 0 ]] || die "请以 root 运行（sudo）。"
 fi
 require_cmd docker
-require_cmd python3
+# Python 解释器按 ftc_python 规则解析（python3 优先，兼容开发机 python）。
+ftc_python >/dev/null
 
 if ! docker info >/dev/null 2>&1; then
   cat >&2 <<'EOF'
@@ -85,15 +88,23 @@ if [[ -z "$PORT" && "$MODE" == "loopback" ]]; then
 fi
 if [[ -z "$IMAGE" ]]; then
   if [[ $ASSUME_YES -eq 1 ]]; then die "非交互模式必须提供 --image（固定版本的已验证镜像）。" 2; fi
-  read -r -p "应用镜像（默认 ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.1）：" IMAGE
-  IMAGE="${IMAGE:-ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.1}"
+  read -r -p "应用镜像（默认 ghcr.io/yepixpert/family-time-capsule:1.0.0-dev.1）：" IMAGE
+  IMAGE="${IMAGE:-ghcr.io/yepixpert/family-time-capsule:1.0.0-dev.1}"
 fi
+
+# M0-V：版本只来自注册表/显式声明；未登记的镜像一律拒绝安装。
+if ! RESOLVED="$(resolve_release "$IMAGE" "$VERSION_FLAG")"; then
+  die "无法从发布注册表解析镜像版本（$IMAGE）：digest 引用需 --version；未知版本需先登记 lib/releases.json。" 26
+fi
+INSTALL_VERSION="$(printf '%s' "$RESOLVED" | "$(ftc_python)" -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+INSTALL_CHANNEL="$(printf '%s' "$RESOLVED" | "$(ftc_python)" -c 'import json,sys; print(json.load(sys.stdin)["channel"])')"
 
 cat <<EOF
 
 安装计划
   模式          $MODE
   域名          $DOMAIN
+  版本          $INSTALL_VERSION（$INSTALL_CHANNEL 通道，来自发布注册表）
   环回端口      ${PORT:-（caddy 模式不使用）}
   镜像          $IMAGE
   安装根目录    $FTC_ROOT
@@ -171,8 +182,8 @@ if command -v curl >/dev/null 2>&1; then
   fi
   if curl -fsS --max-time 15 "https://$DOMAIN/api/bootstrap" >/dev/null 2>&1; then HTTPS_OK=1; fi
 fi
-record_deployment "$(new_deployment_id)" "${FTC_TOOL_VERSION}" "$FTC_IMAGE"
-state_set current_version "$FTC_TOOL_VERSION"
+record_deployment "$(new_deployment_id)" "$INSTALL_VERSION" "$FTC_IMAGE"
+state_set current_version "$INSTALL_VERSION"
 state_set install_mode "$MODE"
 phase_clear
 

@@ -31,6 +31,29 @@ jobs:
             test "$GITHUB_REF_TYPE" = "tag"
             [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
             git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+      - name: Validate release tag against registry
+        if: github.event_name == 'push'
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${REF_NAME#v}"
+          export VERSION REF_NAME
+          python3 - <<'PY'
+          import json, os, sys
+          version, ref = os.environ["VERSION"], os.environ["REF_NAME"]
+          registry = json.load(open("scripts/ops/lib/releases.json"))
+          entry = next((r for r in registry["releases"] if r["version"] == version), None)
+          if entry is None:
+              print(f"tag {ref} 未登记于 scripts/ops/lib/releases.json（来源白名单），拒绝构建。")
+              sys.exit(1)
+          if entry.get("tag") != ref:
+              print(f"注册表中 {version} 的 tag 字段与 {ref} 不一致。")
+              sys.exit(1)
+          if entry["channel"] == "stable" and not os.path.exists("docs/release-1.0/STABLE_READINESS.md"):
+              print("stable 通道发布需要 docs/release-1.0/STABLE_READINESS.md（发布门禁全部通过后才会创建）。")
+              sys.exit(1)
+          print(f"registry channel: {entry['channel']}")
+          PY
           fi
       - uses: actions/setup-node@v5
         with:
@@ -312,10 +335,19 @@ jobs:
           PY
           python3 -m json.tool release-manifest.json >/dev/null
           echo "manifest image: $IMAGE_REF"
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            RELEASE_KIND=(--prerelease)
-          else
+          # 通道判定来自发布注册表，不用“是否带连字符”猜测：
+          # stable → 正式 Release；development/candidate/exploration → prerelease。
+          CHANNEL="$(python3 -c '
+          import json, os
+          version = os.environ["GITHUB_REF_NAME"][1:]
+          registry = json.load(open("scripts/ops/lib/releases.json"))
+          entry = next(r for r in registry["releases"] if r["version"] == version)
+          print(entry["channel"])
+          ')"
+          if [[ "$CHANNEL" == "stable" ]]; then
             RELEASE_KIND=()
+          else
+            RELEASE_KIND=(--prerelease)
           fi
           printf '%s\n' \
             'Native packages generated from the tagged origin/main history.' \
