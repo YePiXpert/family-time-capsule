@@ -28,7 +28,7 @@ export async function login(page: Page) {
   await page.goto("/login");
   await page.getByLabel("邮箱").fill(ADMIN.email);
   await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
   await expectInApp(page);
 }
 
@@ -58,7 +58,7 @@ export async function bootstrapWorkspace(page: Page) {
 
   await page.getByLabel("邮箱").fill(ADMIN.email);
   await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
 
   await expect(page).toHaveURL(/\/onboarding/);
   await page.getByLabel("家庭名称").fill(FAMILY.name);
@@ -97,7 +97,7 @@ export async function ensureLogin(page: Page) {
   }
   await page.getByLabel("邮箱").fill(ADMIN.email);
   await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
   await expectInApp(page);
 }
 

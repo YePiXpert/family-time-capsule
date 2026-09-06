@@ -55,7 +55,7 @@ test("B2: 正确 token 完成初始化并登录进入 onboarding", async ({ page
   // 登录 → 尚无家庭，进入 /onboarding
   await page.getByLabel("邮箱").fill(ADMIN.email);
   await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
 
   await expect(page).toHaveURL(/\/onboarding/);
 
@@ -113,7 +113,7 @@ test("D: 退出登录后受保护页面跳回 /login", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("邮箱").fill(ADMIN.email);
   await page.getByLabel("密码").fill(ADMIN.password);
-  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
 
   // 退出
