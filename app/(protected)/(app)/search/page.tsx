@@ -3,6 +3,12 @@ import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { listPeople } from "@/lib/family/service";
 import { searchFamily } from "@/lib/search/service";
+import {
+  expandNaturalLanguageQuery,
+  planToSearchParams,
+} from "@/lib/search/natural-language";
+import { createMemoryAssistant } from "@/lib/ai/server";
+import { listAiProcessingConsents } from "@/lib/ai/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +50,34 @@ export default async function SearchPage({
     listAllTags(context.familyId),
   ]);
 
+  // M7 自然语言辅助检索：仅当用户显式提交 mode=natural、文本能力可用
+  // 且家庭已同意外部文字处理时才调用模型；模型只把描述转换成受限检索
+  // 条件，命中结果仍来自本地 FTS + 权限过滤。
+  const naturalMode = first("mode") === "natural" && q.length > 0;
+  let naturalNote: string | null = null;
+  let effectiveSearchParams: Parameters<typeof searchFamily>[1] = { q, personId, dateFrom, dateTo, tag, mediaType };
+  if (naturalMode) {
+    const assistant = createMemoryAssistant();
+    const consents = listAiProcessingConsents(context);
+    const textConsented = consents.some(
+      (row) => row.capability === "text" && row.enabled,
+    );
+    if (!assistant.supports("text")) {
+      naturalNote = "AI 文字能力未配置；已按原句关键词直接检索。";
+    } else if (!textConsented) {
+      naturalNote = "家庭尚未同意外部文字处理；已按原句关键词直接检索（可在「我的 → AI 与隐私」开启）。";
+    } else {
+      const expansion = await expandNaturalLanguageQuery(assistant, q);
+      if (expansion.ok) {
+        effectiveSearchParams = planToSearchParams(context, expansion.plan);
+        naturalNote = `AI 转换的检索条件：${expansion.terms.join(" / ")}${expansion.plan.year ? ` · ${expansion.plan.year}${expansion.plan.month ? ` 年 ${expansion.plan.month} 月` : ""}` : ""}${expansion.plan.mediaType ? ` · ${MEDIA_TYPES.find((m) => m.value === expansion.plan.mediaType)?.label ?? ""}` : ""}。结果仍来自本地索引并按权限过滤。`;
+      } else {
+        naturalNote = "AI 无法把这句话转换成可靠的检索条件；已按原句关键词直接检索。";
+      }
+    }
+  }
   const result = q
-    ? searchFamily(context, { q, personId, dateFrom, dateTo, tag, mediaType })
+    ? searchFamily(context, effectiveSearchParams)
     : null;
 
   return (
@@ -54,6 +86,12 @@ export default async function SearchPage({
       <p className="mt-2 text-sm leading-6 text-foreground/60">
         全文搜索运行在本地数据库上，不依赖任何 AI；结果按家庭隔离并遵守讲述可见性。
       </p>
+
+      {naturalNote ? (
+        <p role="status" className="mt-4 rounded-xl border border-accent/25 bg-accent-soft p-3 text-sm leading-6">
+          {naturalNote}
+        </p>
+      ) : null}
 
       <form method="get" className="mt-6 flex flex-col gap-3" aria-label="搜索表单">
         <div className="flex flex-wrap gap-2">
@@ -72,6 +110,15 @@ export default async function SearchPage({
             className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
           >
             搜索
+          </button>
+          <button
+            type="submit"
+            name="mode"
+            value="natural"
+            className="rounded-lg border border-accent/40 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10"
+            aria-label="自然语言辅助检索：先把这句话转换成受限检索条件，再查本地索引"
+          >
+            用一句话找
           </button>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
