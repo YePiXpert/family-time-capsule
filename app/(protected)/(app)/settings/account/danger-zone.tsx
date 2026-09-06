@@ -22,7 +22,7 @@ export function ExportStepUpPanel({ needsStepUp }: { needsStepUp: boolean }) {
   );
   if (!needsStepUp || state?.exportReady) {
     return (
-      <div className="flex flex-col gap-2">
+      <section aria-label="完整导出" className="flex flex-col gap-2">
         <a
           href="/api/export"
           className="inline-flex min-h-11 items-center justify-center rounded-lg bg-foreground px-4 py-2.5 text-sm text-background transition-opacity hover:opacity-90"
@@ -32,11 +32,11 @@ export function ExportStepUpPanel({ needsStepUp }: { needsStepUp: boolean }) {
         <p className="text-xs text-foreground/55">
           {state?.exportReady ? "密码复核已通过（10 分钟内有效）。" : "密码复核在近期已完成。"}
         </p>
-      </div>
+      </section>
     );
   }
   return (
-    <form action={formAction} className="flex flex-col gap-2">
+    <form aria-label="完整导出" action={formAction} className="flex flex-col gap-2">
       <p className="text-sm leading-6 text-foreground/70">
         完整导出是高敏操作，需要 10 分钟内的登录或密码复核。若刚登录不久，直接下载即可。
       </p>
