@@ -337,8 +337,10 @@ describe("image analysis end-to-end", () => {
     const manifest = JSON.parse(
       await zip.file(`${root}/manifest.json`)!.async("string"),
     );
+    expect(manifest.modules.nameReviews).toBe(1);
+    expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
     expect(manifest.fileCount).toBe(
-      manifest.assets.length + 34,
+      manifest.assets.length + 35,
     );
 
     const files = Object.keys(zip.files).filter((n) =>
