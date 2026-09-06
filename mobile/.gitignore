@@ -42,3 +42,6 @@ yarn-error.*
 /android
 /cloud-artifacts/
 /modules/*/android/build/
+
+# test artifacts
+test-results/
