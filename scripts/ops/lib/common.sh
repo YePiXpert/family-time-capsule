@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-FTC_TOOL_VERSION="$(cat "${FTC_LIB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/VERSION" 2>/dev/null || echo unknown)"
+FTC_TOOL_VERSION="$(cat "${FTC_LIB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/../VERSION" 2>/dev/null || echo unknown)"
 FTC_PROJECT_NAME="${FTC_PROJECT_NAME:-family-time-capsule}"
 FTC_ROOT="${FTC_ROOT:-/opt/family-time-capsule}"
 # 归一化路径形态（Windows 风格 C:\... 与 POSIX /c/... 都能工作）。
@@ -61,7 +61,7 @@ die() {
 ensure_layout() {
   mkdir -p "$FTC_CONFIG_DIR" "$FTC_RELEASES_DIR" "$FTC_STATE_DIR" \
     "$FTC_BACKUP_DIR" "$FTC_LOG_DIR" "$FTC_LOCK_DIR" "$FTC_DEPLOYMENTS_DIR"
-  chmod 700 "$FTC_CONFIG_DIR" "$FTC_STATE_DIR"
+  chmod 700 "$FTC_CONFIG_DIR" "$FTC_STATE_DIR" "$FTC_BACKUP_DIR"
 }
 
 state_get() {

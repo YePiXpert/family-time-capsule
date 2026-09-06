@@ -33,10 +33,10 @@ const fs = require("node:fs");
 const dir = process.env.DATA_DIR || "/data";
 const dbFile = fs.readdirSync(dir + "/db").find((f) => f.endsWith(".sqlite"));
 const db = new DatabaseSync(dir + "/db/" + dbFile, { readOnly: true });
-const tables = db.prepare("select name from sqlite_master where type=\"table\"").all().map((r) => r.name);
+const tables = db.prepare("select name from sqlite_master where type = ?").all("table").map((r) => r.name);
 let pendingJobs = null;
 if (tables.includes("ai_job")) {
-  pendingJobs = db.prepare("select count(*) as n from ai_job where status in (\"queued\",\"running\")").get().n;
+  pendingJobs = db.prepare("select count(*) as n from ai_job where status in (?, ?)").get("queued", "running").n;
 }
 console.log(JSON.stringify({ ok: true, pendingJobs }));
 '

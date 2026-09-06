@@ -78,6 +78,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck && shellcheck --severity=error scripts/ops/*.sh scripts/ops/ftc scripts/ops/lib/*.sh
       - name: ftc 工具套件测试（真实 bash + 假 docker）
         run: npm run test:ops
+        env:
+          FTC_REQUIRE_COMPOSE: "1"
 
   e2e-restore-roundtrip:
     name: e2e-restore-roundtrip

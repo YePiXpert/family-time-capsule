@@ -39,6 +39,7 @@ case "${1:-}" in
     fi
     exit 0 ;;
   run)
+    [[ -f "${FAKE_DOCKER_FAIL_PACK:-}" ]] && exit 1
     shift
     # 命名卷映射到本机目录（默认自动创建，可用 FTC_FAKE_VOLUME_HOST 指定）。
     volume_host="${FTC_FAKE_VOLUME_HOST:-${FAKE_DOCKER_LOG%.log}-volume}"
@@ -49,6 +50,7 @@ case "${1:-}" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --rm) shift ;;
+        --user|--network) shift 2 ;;
         -v)
           spec="$2"
           if [[ "$spec" =~ ^[A-Za-z]: ]]; then

@@ -157,6 +157,7 @@ describe("ftc install", () => {
     expect(existsSync(path.join(ftcRoot, "releases", "current", "compose.yml"))).toBe(true);
     const deployments = readdirSync(path.join(ftcRoot, "state", "deployments"));
     expect(deployments.length).toBe(1);
+    expect(readFileSync(path.join(ftcRoot, "state", "current_version"), "utf8")).toBe("1.3.0-alpha.1");
     // 令牌不进日志
     const token = readFileSync(path.join(ftcRoot, "config", "initial-setup-token"), "utf8").trim();
     for (const line of dockerCalls()) {
@@ -197,7 +198,8 @@ describe("ftc install", () => {
   });
 
   it("外部 HTTPS 不可达时只报部分完成（exit 3），不宣称成功", () => {
-    writeFakeCurl(binDir, "exit 1");
+    // 环回 HTTP 成功不能代替公网 HTTPS 验收。
+    writeFakeCurl(binDir, '[[ "$*" == *"http://127.0.0.1:"* ]]');
     const result = run("install", [
       "--yes", "--domain", "capsule.example.com", "--mode", "loopback",
       "--image", "ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.1",
@@ -205,9 +207,34 @@ describe("ftc install", () => {
     expect(result.status).toBe(3);
     expect(result.stderr).toContain("部分完成");
   });
+
+  it("健康检查失败时即使跳过 HTTPS 也不能报告安装成功", () => {
+    const marker = path.join(workspace, "health-failure");
+    writeFileSync(marker, "1");
+    const result = run("install", [
+      "--yes", "--domain", "capsule.example.com", "--mode", "loopback",
+      "--image", "ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.1", "--skip-https-check",
+    ], { FAKE_DOCKER_FAIL_HEALTHCHECK: marker });
+    expect(result.status).toBe(13);
+  });
 });
 
 describe("ftc backup / cleanup", () => {
+  it("打包失败后恢复服务，保留失败阶段且释放操作锁", () => {
+    installOnce();
+    const marker = path.join(workspace, "pack-failure");
+    writeFileSync(marker, "1");
+    const result = run("backup", [], { FAKE_DOCKER_FAIL_PACK: marker });
+    expect(result.status).toBe(23);
+    const calls = dockerCalls();
+    const stop = calls.findIndex((c) => c.includes("stop app worker"));
+    expect(stop).toBeGreaterThan(-1);
+    expect(calls.slice(stop + 1).some((c) => c.includes("up -d --wait"))).toBe(true);
+    expect(existsSync(path.join(ftcRoot, "state", "locks", "backup"))).toBe(false);
+    expect(readFileSync(path.join(ftcRoot, "state", "phase"), "utf8")).toBe("backup-pack");
+    expect(readdirSync(path.join(ftcRoot, "backups"))).toEqual([]);
+  });
+
   it("生成快照并通过 verify；篡改后 verify 失败", () => {
     installOnce();
     // 造一个“数据卷”：fake docker run 的 tar 会打包其默认卷目录

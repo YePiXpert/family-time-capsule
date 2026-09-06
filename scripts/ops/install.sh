@@ -113,6 +113,7 @@ else
   INITIAL_SETUP_TOKEN="$(generate_secret)"
   {
     printf 'BETTER_AUTH_URL=https://%s\n' "$DOMAIN"
+    printf 'FTC_DOMAIN=%s\n' "$DOMAIN"
     printf 'FTC_IMAGE=%s\n' "$IMAGE"
     printf 'FTC_PROJECT_NAME=%s\n' "$FTC_PROJECT_NAME"
     printf 'FTC_DATA_VOLUME=%s\n' "$FTC_DATA_VOLUME"
@@ -163,11 +164,12 @@ fi
 HTTPS_OK=0
 if command -v curl >/dev/null 2>&1; then
   if [[ "$MODE" == "loopback" ]]; then
-    PROBE="http://127.0.0.1:${FTC_LOOPBACK_PORT:-$PORT}/api/bootstrap"
-  else
-    PROBE="https://$DOMAIN/api/bootstrap"
+    if ! curl -fsS --max-time 15 "http://127.0.0.1:${FTC_LOOPBACK_PORT:-$PORT}/api/bootstrap" >/dev/null 2>&1; then
+      SMOKE_OK=0
+      warn "环回 API 检查未通过。"
+    fi
   fi
-  if curl -fsS --max-time 15 "$PROBE" >/dev/null 2>&1; then HTTPS_OK=1; fi
+  if curl -fsS --max-time 15 "https://$DOMAIN/api/bootstrap" >/dev/null 2>&1; then HTTPS_OK=1; fi
 fi
 record_deployment "$(new_deployment_id)" "${FTC_TOOL_VERSION}" "$FTC_IMAGE"
 state_set current_version "$FTC_TOOL_VERSION"
@@ -184,6 +186,7 @@ cat <<EOF
 EOF
 if [[ $SMOKE_OK -ne 1 ]]; then
   warn "容器内健康检查未通过：请运行 ftc doctor。"
+  exit 13
 fi
 if [[ $HTTPS_OK -ne 1 && $SKIP_HTTPS_CHECK -ne 1 ]]; then
   warn "外部 HTTPS 尚未就绪（DNS/防火墙/证书可能仍需配置）。本次只能算部分完成，不算成功。"

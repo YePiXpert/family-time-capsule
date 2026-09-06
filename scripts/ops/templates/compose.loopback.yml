@@ -13,7 +13,9 @@ services:
       INITIAL_SETUP_TOKEN: ${INITIAL_SETUP_TOKEN:-}
       AI_PROVIDER: ${AI_PROVIDER:-disabled}
     volumes:
-      - ${FTC_DATA_VOLUME:?}:/data
+      - capsule-data:/data
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
     healthcheck:
       test: ["CMD", "node", "/app/ops/healthcheck.mjs"]
       interval: 30s
@@ -35,12 +37,15 @@ services:
       DATA_DIR: /data
       AI_PROVIDER: ${AI_PROVIDER:-disabled}
     volumes:
-      - ${FTC_DATA_VOLUME:?}:/data
+      - capsule-data:/data
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
     depends_on:
       app:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  ${FTC_DATA_VOLUME:?}:
+  capsule-data:
+    name: ${FTC_DATA_VOLUME:?}
     external: true

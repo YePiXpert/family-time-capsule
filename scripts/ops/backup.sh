@@ -4,6 +4,7 @@
 # 快照含账号与敏感配置：单独保管，绝不当作家庭阅读包分享；未加密存储时不承诺端到端加密。
 # 用法：backup.sh [verify <snapshot-file>]
 set -euo pipefail
+umask 077
 
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
 # shellcheck source=lib/common.sh
@@ -33,17 +34,29 @@ SNAP="$FTC_BACKUP_DIR/ftc-snapshot-$ID.tar.gz"
 STAGING="$FTC_BACKUP_DIR/.staging-$ID"
 mkdir -p "$STAGING"
 
+# 停写后任何失败都必须尝试恢复服务；成功路径仍等待健康检查完成。
+RESTART_NEEDED=0
+backup_exit() {
+  local code=$?
+  if [[ $RESTART_NEEDED -eq 1 ]]; then
+    compose_cmd up -d --wait >/dev/null 2>&1 || warn "服务恢复失败，请运行 ftc start。"
+  fi
+  rm -rf "$STAGING"
+  ftc_unlock backup
+  exit "$code"
+}
+trap backup_exit EXIT
+
 phase_set "backup-stop-write"
-compose_cmd stop app worker >/dev/null 2>&1 || true
+RESTART_NEEDED=1
+compose_cmd stop app worker >/dev/null || die "无法停止写入，取消备份。" 23
 
 phase_set "backup-pack"
 # 用应用镜像自身打包（busybox tar），避免引入新镜像源。
-docker run --rm \
+docker run --rm --user 0:0 --network none \
   -v "$FTC_DATA_VOLUME:/data:ro" \
   -v "$STAGING:/stage" \
   "${FTC_IMAGE:?}" sh -c 'tar -cf /stage/data.tar -C /data .' || {
-    compose_cmd up -d >/dev/null 2>&1 || true
-    rm -rf "$STAGING"
     die "数据卷打包失败；服务已尝试恢复启动。" 23
 }
 
@@ -72,6 +85,7 @@ bash "$0" verify "$SNAP"
 
 phase_set "backup-restart"
 compose_cmd up -d --wait >/dev/null
+RESTART_NEEDED=0
 phase_clear
 
 # 保留策略：仅清理本工具创建的旧快照，且绝不删除最后一个可用副本。
