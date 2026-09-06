@@ -1,5 +1,6 @@
 "use client";
 
+import { aiJobFailureMessage } from "@/lib/ai/job-messages";
 import { useActionState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { AssetAnalysisRow } from "@/db/schema/analysis";
@@ -23,7 +24,7 @@ function StatusLabel({
   if (job?.status === "failed") {
     return (
       <span className="rounded-full border border-red-800/30 px-3 py-1 text-xs text-red-800 dark:text-red-300">
-        失败可重试
+        {aiJobFailureMessage(job.lastErrorCode)}
       </span>
     );
   }

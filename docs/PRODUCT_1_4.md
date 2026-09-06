@@ -84,3 +84,15 @@
 - production build、运维工具 bundle、真实灾难 roundtrip 7 项通过。
   root typecheck/lint 通过（保留已有 invitation-flow warning）。
 - 尚需完成本机编辑救援和后续整理数据的导出恢复；此处不是 M7 最终验收。
+
+### 短视频音轨切片（2026-09-06）
+
+- 既有转录队列现在支持 MP4/MOV/WebM 视频音轨，使用本地受限 WAV 提取，
+  正确 MIME/扩展名；图像与音轨分别授权。视频处理仅手动，最长 120 秒、
+  原件 128 MiB，外发 WAV 至多 4 MiB。原件不修改。
+- ffmpeg/ffprobe 限制输入格式与协议，拒绝素材内播放列表；ffprobe 输出有界。
+  空转录显示“未识别到清晰语音”；人工修订不显示未经对齐的机器分段时间戳。
+- 21 项专项（6 文件）、root 全量 660 项（95 文件）、typecheck、lint、
+  production build 通过。含真实 120 秒 ffmpeg 音轨、真实 DB/worker 和本地
+  HTTP 陷阱零请求验证。没有 live Provider 调用。
+- 视频逐帧检查点、前置分析→命名衔接和双端批量整理仍在后续 M4/M5 范围内。

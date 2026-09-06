@@ -1,3 +1,4 @@
+import { shortVideoError } from "@/lib/ai/media-limits";
 import "server-only";
 
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -173,6 +174,9 @@ export function requestVideoAnalysis(
   if (asset.type !== "video") {
     return { ok: false, error: "unsupported_asset_type" };
   }
+
+  const limitError = shortVideoError(asset);
+  if (limitError) return { ok: false, error: limitError };
 
   const snapshot = createContributionAccessSnapshot(context, options.now);
   const access = getDb().transaction((tx) =>

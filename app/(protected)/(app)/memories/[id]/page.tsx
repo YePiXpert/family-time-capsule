@@ -466,7 +466,7 @@ export default async function MemoryEventPage({
         <section aria-label="AI 视频理解" className="mt-10">
           <h2 className="text-lg font-medium">AI 视频理解</h2>
           <p className="mt-1 text-sm leading-6 text-foreground/50">
-            服务器从视频抽取少量代表帧送 AI 分析；结果为未确认参考，可随时重新生成，不进入导出归档。
+            手动处理最长 2 分钟、128 MiB 内的视频。只发送少量画面预览；可另选音轨转写。原视频始终保留，结果为未确认建议。
           </p>
           <div className="mt-3 flex flex-col gap-3">
             {videoAssetIds.map((assetId) => {

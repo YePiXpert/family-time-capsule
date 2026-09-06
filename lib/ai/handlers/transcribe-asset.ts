@@ -1,3 +1,6 @@
+import { shortVideoError, SHORT_VIDEO_MAX_MS } from "@/lib/ai/media-limits";
+import { extractVideoAudio } from "@/lib/media/ffmpeg";
+import { probeMedia } from "@/lib/metadata/ffprobe";
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -58,22 +61,37 @@ export const transcribeAssetHandler: AiJobHandler = async ({
   if (asset.type !== "audio" && asset.type !== "video") {
     throw new AiJobHandlerError("unsupported_asset_type", false);
   }
-  if (!isAcceptedAudioMimeType(asset.mimeType)) {
+  if (asset.type === "audio" && !isAcceptedAudioMimeType(asset.mimeType)) {
     throw new AiJobHandlerError("unsupported_media_type", false);
   }
-  if (asset.bytes > AI_INPUT_LIMITS.maxAudioBytes) {
+  if (asset.type === "audio" && asset.bytes > AI_INPUT_LIMITS.maxAudioBytes) {
     throw new AiJobHandlerError("audio_too_large", false);
   }
 
   const storage = getAssetStorage();
-  const buffer = storage.read(asset.storageKey);
-  const bytes = new Uint8Array(buffer);
+  let bytes: Uint8Array;
+  let mimeType = asset.mimeType as AiAudioInput["mimeType"];
+  if (asset.type === "video") {
+    if (lease.triggerMode !== "manual") throw new AiJobHandlerError("video_requires_manual_request", false);
+    const error = shortVideoError(asset);
+    if (error) throw new AiJobHandlerError(error, false);
+    const absPath = storage.resolvePath(asset.storageKey);
+    const probe = await probeMedia(absPath);
+    if (!probe || probe.durationMs === null || probe.durationMs <= 0) throw new AiJobHandlerError("video_duration_unknown", false);
+    if (probe.durationMs > SHORT_VIDEO_MAX_MS) throw new AiJobHandlerError("video_duration_limit", false);
+    const streams = (probe.raw as { streams?: { codec_type?: string }[] }).streams;
+    if (!streams?.some(stream => stream.codec_type === "audio")) throw new AiJobHandlerError("video_has_no_audio", false);
+    const extracted = await extractVideoAudio(absPath, signal);
+    if (extracted.status !== "ok") throw new AiJobHandlerError(extracted.status === "unavailable" ? "ffmpeg_unavailable" : extracted.status === "aborted" ? "ai_aborted" : "audio_extraction_failed", false);
+    bytes = extracted.bytes; mimeType = "audio/wav";
+  } else bytes = new Uint8Array(storage.read(asset.storageKey));
+  const extension: Record<AiAudioInput["mimeType"], string> = { "audio/flac": "flac", "audio/m4a": "m4a", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/webm": "webm" };
 
   const result = await assistant.transcribeAudio({
     audio: {
       bytes,
-      fileName: "audio.mp3",
-      mimeType: asset.mimeType as AiAudioInput["mimeType"],
+      fileName: `audio.${extension[mimeType]}`,
+      mimeType,
     },
     signal,
   });

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { SHORT_VIDEO_AUDIO_MAX_BYTES } from "@/lib/ai/media-limits";
 import { spawn } from "node:child_process";
 
 /**
@@ -66,6 +67,9 @@ function extractFrameAt(
       [
         "-v",
         "quiet",
+        "-nostdin",
+        "-protocol_whitelist", "file,pipe",
+        "-format_whitelist", "mov,matroska,webm",
         "-ss",
         atSeconds.toFixed(3),
         "-i",
@@ -169,4 +173,36 @@ export async function extractVideoFrames(
 /** 测试专用：清除“二进制不可用”记忆。 */
 export function resetFfmpegUnavailableCacheForTests(): void {
   unavailableBinary = undefined;
+}
+
+/** Bounded local audio extraction for explicitly requested short videos.
+ * No original writes, metadata, inherited filename, network protocols or
+ * playlists. Only the first audio track becomes mono 16 kHz PCM in memory. */
+export function extractVideoAudio(absPath: string, signal: AbortSignal): Promise<
+  { status: "ok"; bytes: Uint8Array } | { status: "unavailable" | "failed" | "aborted" }
+> {
+  return new Promise(resolve => {
+    if (signal.aborted) { resolve({ status: "aborted" }); return; }
+    const child = spawn(/* turbopackIgnore: true */ ffmpegBinary(), [
+      "-v", "quiet", "-nostdin", "-protocol_whitelist", "file,pipe", "-format_whitelist", "mov,matroska,webm",
+      "-i", absPath, "-map", "0:a:0", "-vn", "-map_metadata", "-1", "-t", "120", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1",
+    ], { windowsHide: true });
+    const chunks: Buffer[] = [];
+    let total = 0, settled = false;
+    const done = (result: { status: "ok"; bytes: Uint8Array } | { status: "unavailable" | "failed" | "aborted" }) => {
+      if (settled) return;
+      settled = true; clearTimeout(timeout); signal.removeEventListener("abort", abort); resolve(result);
+    };
+    const abort = () => { child.kill("SIGKILL"); done({ status: "aborted" }); };
+    const timeout = setTimeout(() => { child.kill("SIGKILL"); done({ status: "failed" }); }, 30_000);
+    timeout.unref();
+    signal.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk: Buffer) => {
+      total += chunk.byteLength;
+      if (total > SHORT_VIDEO_AUDIO_MAX_BYTES) { child.kill("SIGKILL"); done({ status: "failed" }); return; }
+      chunks.push(chunk);
+    });
+    child.on("error", (error: NodeJS.ErrnoException) => done({ status: error.code === "ENOENT" ? "unavailable" : "failed" }));
+    child.on("close", code => done(code === 0 && total > 44 ? { status: "ok", bytes: new Uint8Array(Buffer.concat(chunks)) } : { status: "failed" }));
+  });
 }

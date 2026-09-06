@@ -1,3 +1,4 @@
+import { shortVideoError } from "@/lib/ai/media-limits";
 import "server-only";
 import { indexEditedTranscript } from "@/lib/search/service";
 
@@ -45,6 +46,10 @@ function validateAssetForTranscription(asset: typeof assetTable.$inferSelect): {
   }
   if (asset.type !== "audio" && asset.type !== "video") {
     return { ok: false, error: "unsupported_asset_type" };
+  }
+  if (asset.type === "video") {
+    const error = shortVideoError(asset);
+    return error ? { ok: false, error } : { ok: true };
   }
   if (!ACCEPTED_AUDIO_MIME_TYPES.has(asset.mimeType)) {
     return { ok: false, error: "unsupported_media_type" };

@@ -43,6 +43,8 @@ function runFfprobe(absPath: string): Promise<ProbeExecution> {
       [
         "-v",
         "quiet",
+        "-protocol_whitelist", "file,pipe",
+        "-format_whitelist", "mov,matroska,webm,mp3,wav,flac,ogg,aac",
         "-print_format",
         "json",
         "-show_format",
@@ -52,6 +54,7 @@ function runFfprobe(absPath: string): Promise<ProbeExecution> {
       { windowsHide: true },
     );
     let stdout = "";
+    let stdoutBytes = 0;
     let settled = false;
     const done = (value: ProbeExecution) => {
       if (settled) return;
@@ -59,7 +62,10 @@ function runFfprobe(absPath: string): Promise<ProbeExecution> {
       clearTimeout(timeout);
       resolve(value);
     };
-    child.stdout.on("data", (chunk) => {
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.byteLength;
+      if (stdoutBytes > 2 * 1024 * 1024) { child.kill("SIGKILL"); done({ status: "failed" }); return; }
+      if (settled) return;
       stdout += chunk;
     });
     child.on("error", (error: NodeJS.ErrnoException) =>

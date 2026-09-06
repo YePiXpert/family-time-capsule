@@ -1,5 +1,7 @@
 "use server";
 
+import { aiJobFailureMessage } from "@/lib/ai/job-messages";
+
 import { revalidatePath } from "next/cache";
 import { requireFamilyCapability } from "@/lib/authz/context";
 import {
@@ -283,7 +285,7 @@ export async function requestVideoAnalysisAction(
                 ? "当前未配置视觉分析能力。"
                 : result.error === "capability_not_consented"
                   ? "请先由管理员在「设置 › AI」开启视觉分析外部处理同意。"
-                  : "请求失败，请重试。",
+                  : aiJobFailureMessage(result.error),
     };
   }
   revalidatePath(`/memories/${memoryEventId}`);
@@ -316,7 +318,7 @@ export async function requestTranscriptionAction(
                     ? "当前未配置转录能力。"
                     : result.error === "capability_not_consented"
                       ? "请先由管理员在「设置 › AI」开启转录外部处理同意。"
-                      : "请求失败，请重试。",
+                      : aiJobFailureMessage(result.error),
     };
   }
   revalidatePath(`/memories/${memoryEventId}`);

@@ -1,5 +1,6 @@
 "use client";
 
+import { aiJobFailureMessage } from "@/lib/ai/job-messages";
 import { useActionState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
 import type { AssetTranscriptRow } from "@/db/schema/transcript";
@@ -35,7 +36,7 @@ function StatusLabel({
   if (job?.status === "failed") {
     return (
       <span className="rounded-full border border-red-800/30 px-3 py-1 text-xs text-red-800 dark:text-red-300">
-        失败可重试
+        {aiJobFailureMessage(job.lastErrorCode)}
       </span>
     );
   }
@@ -67,10 +68,10 @@ function TranscriptText({
 }) {
   if (!transcript) return null;
   const text = transcript.editedTranscript ?? transcript.rawTranscript;
-  if (!text) return null;
+
   return (
     <p className="mt-3 whitespace-pre-wrap leading-7 text-foreground/90">
-      {text}
+      {text || (transcript.editedTranscript === null ? "未识别到清晰语音" : "转录已由你清空")}
     </p>
   );
 }
@@ -80,7 +81,7 @@ function TranscriptSegments({
 }: {
   transcript: AssetTranscriptRow | undefined;
 }) {
-  if (!transcript?.segmentsJson) return null;
+  if (!transcript?.segmentsJson || transcript.editedTranscript !== null) return null;
   let segments: Array<{ startSeconds: number; endSeconds: number; text: string }> = [];
   try {
     const parsed = JSON.parse(transcript.segmentsJson);

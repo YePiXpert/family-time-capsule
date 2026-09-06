@@ -245,7 +245,7 @@ describe("transcribe.asset.v1 handler", () => {
     const imageAsset = makeAsset({ type: "image", mimeType: "image/jpeg" });
     const videoUnsupported = makeAsset({
       type: "video",
-      mimeType: "video/quicktime",
+      mimeType: "video/x-msvideo",
     });
     const tooLarge = makeAsset({ bytes: 26 * 1024 * 1024 });
 
