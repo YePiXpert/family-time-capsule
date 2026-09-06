@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { ApiError, fetchNameReview, mutateNameReview, parseNameReview } from "../api/client";
@@ -8,14 +8,14 @@ import { deleteMeta, getMeta, setMeta } from "../storage/database";
 import { sharedStyles } from "../theme";
 import { NAME_SOURCE_LABELS, type NameKind, type NameReview } from "./types";
 
-export function NameEditor({ kind, id, onSaved }: { kind: NameKind; id: string; onSaved?: () => void }) {
+export function NameEditor({ kind, id, onSaved, refreshVersion = 0 }: { kind: NameKind; id: string; onSaved?: () => void; refreshVersion?: number }) {
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope || !viewer?.canEditEvents) return null;
-  return <Editor key={JSON.stringify([scope, kind, id])} kind={kind} id={id} scope={scope} onSaved={onSaved} />;
+  return <Editor key={JSON.stringify([scope, kind, id])} kind={kind} id={id} scope={scope} onSaved={onSaved} refreshVersion={refreshVersion} />;
 }
 
-function Editor({ kind, id, scope, onSaved }: { kind: NameKind; id: string; scope: string; onSaved?: () => void }) {
+function Editor({ kind, id, scope, onSaved, refreshVersion }: { kind: NameKind; id: string; scope: string; onSaved?: () => void; refreshVersion?: number }) {
   const { credentials, online, runSync } = useApp();
   const [opened, setOpened] = useState(false);
   const [review, setReview] = useState<NameReview | null>(null);
@@ -26,6 +26,7 @@ function Editor({ kind, id, scope, onSaved }: { kind: NameKind; id: string; scop
   const [error, setError] = useState<string | null>(null);
   const version = useRef(0);
   const touched = useRef(false);
+  const lastRefresh = useRef(refreshVersion);
   const cacheKey = `name-review:${scope}:${kind}:${id}`;
   const load = useCallback(async () => {
     if (!opened) return;
@@ -72,6 +73,9 @@ function Editor({ kind, id, scope, onSaved }: { kind: NameKind; id: string; scop
       if (request === version.current) setError(reason instanceof ApiError && reason.status === 409 ? "另一端已修改名称或建议，本次没有覆盖。输入已保留，请刷新核对。" : reason instanceof Error ? reason.message : "名称未保存。");
     } finally { if (request === version.current) setBusy(false); }
   };
+  useEffect(() => {
+    if (lastRefresh.current !== refreshVersion) { lastRefresh.current = refreshVersion; void load(); }
+  }, [load, refreshVersion]);
   const disabled = busy || !verified || online === false;
   return <View style={sharedStyles.card}>
     <Pressable onPress={() => setOpened(!opened)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{kind === "asset" ? "素材展示名" : "标题与 AI 建议"}</Text></Pressable>

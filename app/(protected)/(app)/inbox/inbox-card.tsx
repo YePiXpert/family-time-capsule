@@ -10,6 +10,8 @@ import { InboxSuggestionChips, type InboxSuggestionChipDto } from "./inbox-sugge
 import type { InboxPersonOption } from "./inbox-board";
 import { StatusBadge } from "@/components/status-badge";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
+import { TranscriptReviewControl } from "@/components/transcript-review";
+import { OrganizerControl } from "@/components/organizer-control";
 import { NameReviewControl } from "@/components/name-review";
 
 const TIME_SOURCE_LABEL: Record<string, string> = {
@@ -148,7 +150,8 @@ export function InboxCard({
           </details> : null}
 
           {suggestedTitle ? <p className="text-xs text-muted">AI 建议：{suggestedTitle}（采用前不会替换标题）</p> : null}
-          {canReview ? <NameReviewControl kind="inbox_item" id={item.id} /> : null}
+          {canReview ? <OrganizerControl kind="inbox_item" id={item.id} /> : null}
+          {assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <TranscriptReviewControl key={asset.id} assetId={asset.id} label={asset.originalFilename} />)}
           {canReview && cover ? <NameReviewControl kind="asset" id={cover.id} /> : null}
           {canReview && <form action={confirmActionRun} className="mt-3 grid gap-2">
             <input type="hidden" name="itemId" value={item.id} />

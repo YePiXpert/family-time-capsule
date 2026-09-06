@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { ApiError, fetchTranscriptReview, parseTranscriptReview, saveTranscriptReview } from "../api/client";
@@ -8,14 +8,14 @@ import { deleteMeta, getMeta, setMeta } from "../storage/database";
 import { sharedStyles as s } from "../theme";
 import type { TranscriptReview } from "./types";
 
-export function TranscriptEditor({ assetId, label, onSaved }: { assetId: string; label: string; onSaved?: () => void }) {
+export function TranscriptEditor({ assetId, label, onSaved, refreshVersion = 0 }: { assetId: string; label: string; onSaved?: () => void; refreshVersion?: number }) {
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope) return null;
-  return <Editor key={JSON.stringify([scope, assetId])} assetId={assetId} label={label} scope={scope} onSaved={onSaved} />;
+  return <Editor key={JSON.stringify([scope, assetId])} assetId={assetId} label={label} scope={scope} onSaved={onSaved} refreshVersion={refreshVersion} />;
 }
 
-function Editor({ assetId, label, scope, onSaved }: { assetId: string; label: string; scope: string; onSaved?: () => void }) {
+function Editor({ assetId, label, scope, onSaved, refreshVersion }: { assetId: string; label: string; scope: string; onSaved?: () => void; refreshVersion?: number }) {
   const { credentials, online } = useApp();
   const [opened, setOpened] = useState(false);
   const [review, setReview] = useState<TranscriptReview | null>(null);
@@ -25,6 +25,7 @@ function Editor({ assetId, label, scope, onSaved }: { assetId: string; label: st
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
   const touched = useRef(false);
+  const lastRefresh = useRef(refreshVersion);
   const cacheKey = `transcript-review:${scope}:${assetId}`;
   const show = (next: TranscriptReview | null) => {
     setReview(next);
@@ -78,6 +79,9 @@ function Editor({ assetId, label, scope, onSaved }: { assetId: string; label: st
       if (request === generation.current) setError(reason instanceof ApiError && reason.status === 409 ? "转录已在另一端更新，输入已保留。请刷新并核对两个版本。" : reason instanceof Error ? reason.message : "转录未保存。");
     } finally { if (request === generation.current) setBusy(false); }
   };
+  useEffect(() => {
+    if (lastRefresh.current !== refreshVersion) { lastRefresh.current = refreshVersion; void load(); }
+  }, [load, refreshVersion]);
   const stale = review !== null && draft.revision !== (review.transcript?.revision ?? null);
   const disabled = busy || !verified || online === false;
   return <View style={s.card}>

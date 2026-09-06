@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { NAME_SOURCE_LABELS, type NameKind, type NameReview } from "@/mobile/src/names/types";
 
-export function NameReviewControl({ kind, id }: { kind: NameKind; id: string }) {
+export function NameReviewControl({ kind, id, refreshVersion = 0 }: { kind: NameKind; id: string; refreshVersion?: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [review, setReview] = useState<NameReview | null>(null);
@@ -25,7 +25,7 @@ export function NameReviewControl({ kind, id }: { kind: NameKind; id: string }) 
       setReview(value); if (!touched.current) setTitle(value.target.text ?? ""); setError(null);
     }).catch(reason => { if (request === generation.current) setError(reason.message); });
     return () => { requests.current++; };
-  }, [kind, id, open, refresh]);
+  }, [kind, id, open, refresh, refreshVersion]);
 
   const mutate = async (input: Record<string, unknown>) => {
     if (!review || busy) return;

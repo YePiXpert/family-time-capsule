@@ -297,3 +297,53 @@ it("does not reinterpret an old single-item name as the title of a newly merged 
   expect((await getNameReview(familyId, actor.id, "memory_event", merged.eventId))?.suggestions).toHaveLength(0);
   expect(getDb().select().from(memoryEvent).where(eq(memoryEvent.id, merged.eventId)).get()?.title).toBe("人工确认的多素材记忆");
 });
+
+it("exposes persisted steps and actual suggestions, retries only failed work, and bounds explicit regeneration", async () => {
+  const { getOrganizerReview, mutateOrganizer } = await import("@/lib/ai/organizer/service");
+  const { ai, text, vision } = assistant(); const p = await photo();
+  const target = { kind: "inbox_item" as const, id: p.item.id }, options = { runtime: ai };
+  const queued = mutateOrganizer(context, target, "name", undefined, options);
+  expect(queued.ok).toBe(true); if (!queued.ok) throw new Error(queued.error);
+  expect(mutateOrganizer(context, target, "name", undefined, options)).toMatchObject({ ok: true, jobId: queued.jobId });
+  expect((await getOrganizerReview(context, target, options))?.tasks[0]).toMatchObject({ state: "waiting_analysis", active: true, steps: [{ label: "看图", status: "pending" }, { label: "生成标题建议", status: "pending" }] });
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" });
+  expect((await getOrganizerReview(context, target, options))?.tasks[0].state).toBe("waiting_naming");
+  text.mockResolvedValueOnce({ text: "invalid json", finishReason: "stop", provenance: { providerId: ai.provider.id, providerName: ai.provider.displayName, model: ai.capabilities.text.model! } });
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "failed" });
+  const failed = (await getOrganizerReview(context, target, options))!.tasks[0];
+  expect(failed).toMatchObject({ state: "failed", canRetry: true, steps: [{ label: "看图", status: "completed" }, { label: "生成标题建议", status: "failed" }] });
+  const retried = mutateOrganizer(context, target, "retry", failed.id, options); expect(retried.ok).toBe(true);
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" });
+  expect(vision).toHaveBeenCalledOnce();
+  const ready = (await getOrganizerReview(context, target, options))!;
+  expect(ready.tasks[0]).toMatchObject({ state: "ready", canRegenerate: true });
+  expect(ready.names?.suggestions[0]).toMatchObject({ title: "窗边摆着一盆绿色植物", valid: true });
+  const regen = mutateOrganizer(context, target, "regenerate", ready.tasks[0].id, options); expect(regen.ok).toBe(true);
+  const duplicate = mutateOrganizer(context, target, "regenerate", ready.tasks[0].id, options); expect(duplicate).toMatchObject({ ok: true, jobId: regen.ok ? regen.jobId : "" });
+  expect(getDb().select().from(aiSuggestion).where(eq(aiSuggestion.id, ready.names!.suggestions[0].id)).get()?.status).toBe("rejected");
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" });
+  expect(vision).toHaveBeenCalledOnce(); expect(text).toHaveBeenCalledTimes(3);
+  const entry = await getInboxEntry(familyId, p.item.id);
+  const confirmed = await confirmInboxEntry(familyId, entry!); if (!confirmed.ok) throw new Error(confirmed.error);
+  const moved = await getOrganizerReview(context, { kind: "memory_event", id: confirmed.eventId }, options);
+  expect(moved?.tasks.some(task => task.id === (regen.ok ? regen.jobId : ""))).toBe(true);
+  expect(moved?.names?.suggestions.some(row => row.valid && row.status === "pending")).toBe(true);
+});
+
+it("keeps cancellation scoped to the selected target and rejects stale privileges", async () => {
+  const { getOrganizerReview, mutateOrganizer } = await import("@/lib/ai/organizer/service");
+  const { ai } = assistant(); const id = textItem(), other = textItem();
+  const options = { runtime: ai }, target = { kind: "inbox_item" as const, id };
+  const queued = mutateOrganizer(context, target, "name", undefined, options); if (!queued.ok) throw new Error(queued.error);
+  expect(mutateOrganizer(context, { kind: "inbox_item", id: other }, "cancel", queued.jobId, options)).toEqual({ ok: false, error: "not_found" });
+  expect(job(queued.jobId!).status).toBe("pending");
+  const backupAdmin = randomUUID();
+  getDb().insert(user).values({ id: backupAdmin, name: "备用管理员", email: `${backupAdmin}@fixture.invalid`, emailVerified: false, role: "admin", familyId, createdAt: new Date(), updatedAt: new Date() }).run();
+  getDb().update(user).set({ role: "viewer" }).where(eq(user.id, context.userId)).run();
+  try {
+    expect(await getOrganizerReview(context, target, options)).toBeNull();
+    expect(mutateOrganizer(context, target, "cancel", queued.jobId, options)).toEqual({ ok: false, error: "forbidden" });
+  } finally { getDb().update(user).set({ role: "admin" }).where(eq(user.id, context.userId)).run(); }
+  expect(mutateOrganizer(context, target, "cancel", queued.jobId, options).ok).toBe(true);
+  expect((await getOrganizerReview(context, target, options))?.tasks[0]).toMatchObject({ state: "cancelled", active: false, canRetry: true });
+});

@@ -568,6 +568,18 @@ function dependencyRows(tx: Transaction, jobId: string) {
   return tx.select({ parent: aiJob }).from(aiJobDependency).innerJoin(aiJob, eq(aiJob.id, aiJobDependency.dependsOnJobId)).where(eq(aiJobDependency.jobId, jobId)).orderBy(asc(aiJob.id)).all().map(row => row.parent);
 }
 
+/** Read-only review fence, including private sources and current actor bindings.
+ * Old operational status may be inspected after consent/configuration changes;
+ * this does not authorize reuse, adoption, retry, or any external request. */
+export function aiJobSourcesAreReadable(tx: Transaction, context: FamilyContext, job: typeof aiJob.$inferSelect): boolean {
+  if (job.familyId !== context.familyId) return false;
+  const actor = getLiveActor(tx, context.familyId, context.userId, "ai:review", new Date());
+  if (!actor) return false;
+  const stored = normalizeStoredSources(tx.select({ kind: aiJobSource.sourceKind, id: aiJobSource.sourceId, sha256: aiJobSource.sourceSha256 }).from(aiJobSource).where(eq(aiJobSource.jobId, job.id)).orderBy(asc(aiJobSource.sourceKind), asc(aiJobSource.sourceId)).all());
+  if (!stored?.length) return false;
+  return hydrateSources(tx, actor.snapshot, stored, "manual").ok;
+}
+
 function targetRevision(tx: Transaction, entityType: string, entityId: string): number | null {
   if (entityType === "inbox_item") return tx.select({ revision: inboxItem.titleRevision }).from(inboxItem).where(eq(inboxItem.id, entityId)).get()?.revision ?? null;
   if (entityType === "memory_event") return tx.select({ revision: memoryEvent.titleRevision }).from(memoryEvent).where(eq(memoryEvent.id, entityId)).get()?.revision ?? null;

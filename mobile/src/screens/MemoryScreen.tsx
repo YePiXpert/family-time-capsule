@@ -26,8 +26,7 @@ import {
   shouldRenderStandaloneCover,
 } from "../memories/presentation";
 import { memoryCacheScope } from "../memories/cache-scope";
-import { TranscriptEditor } from "../transcripts/TranscriptEditor";
-import { NameEditor } from "../names/NameEditor";
+import { OrganizerPanel } from "../ai/OrganizerPanel";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Memory">;
 
@@ -181,7 +180,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
     <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
       {showStandaloneCover ? <Image source={{ uri: localCover! }} style={styles.cover} /> : null}
       <NativeMediaReader credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone):undefined})) ?? [])} />
-      {memory?.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <TranscriptEditor key={asset.id} assetId={asset.id} label={asset.filename} onSaved={() => void load()} />)}
+      {memory?.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} onSaved={() => void load()} />)}
       <View style={styles.heading}>
         <Text style={sharedStyles.eyebrow}>阅读记忆</Text>
         <Text style={sharedStyles.title}>{title}</Text>
@@ -191,7 +190,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
       </View>
 
       {credentials && viewer?.canEditEvents?<Pressable onPress={()=>navigation.navigate("Collections",{eventIds:[route.params.id]})} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加入相册 / 章节</Text></Pressable>:null}
-      {memory ? <NameEditor kind="memory_event" id={memory.id} onSaved={() => void load()} /> : null}
+      {memory ? <OrganizerPanel kind="memory_event" id={memory.id} onSaved={() => void load()} /> : null}
 
       {error ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.retry}><Text style={styles.link}>重试</Text></Pressable></View> : null}
       {loading && !memory ? <ActivityIndicator color={colors.coral} /> : null}

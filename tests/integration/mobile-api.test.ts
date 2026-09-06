@@ -1251,4 +1251,39 @@ describe("native mobile API", () => {
     finally { getDb().update(user).set({ disabledAt: null }).where(eq(user.id, actor.userId)).run(); }
   });
 
+  it("serves the real organizer route with persisted requests, cancellation, retry and actual results", async () => {
+    const { GET, POST } = await import("@/app/api/mobile/v1/ai/organizer/route");
+    const server = await import("@/lib/ai/server");
+    const { DeterministicFakeMemoryAssistant } = await import("@/lib/ai/fake");
+    const { runAiWorkerOnce } = await import("@/jobs/runtime");
+    const admin = (await getDb().select().from(user)).find(row => row.email === email)!;
+    const item = await createTextInboxItem(admin.familyId!, "窗边给绿植浇水的上午。");
+    const target = { kind: "inbox_item", id: item.id };
+    const url = "http://localhost/api/mobile/v1/ai/organizer";
+    const read = (token = bearerToken) => GET(bearerRequest(`${url}?${new URLSearchParams(target)}`, token));
+    const write = (operation: string, jobId?: string, token = bearerToken) => POST(mobileJsonRequest(url, "POST", token, { ...target, operation, jobId }));
+    expect((await read(viewerToken)).status).toBe(403);
+    expect((await read(foreignToken)).status).toBe(404);
+    expect((await write("name", undefined, viewerToken)).status).toBe(403);
+    expect((await write("name")).status).toBe(409);
+    await expect((await read()).json()).resolves.toMatchObject({ target, tasks: [], settings: { configured: false } });
+    const ai = new DeterministicFakeMemoryAssistant();
+    const runtime = vi.spyOn(server, "createMemoryAssistant").mockReturnValue(ai);
+    vi.spyOn(ai, "generateText").mockResolvedValue({ text: JSON.stringify({ title: "窗边浇水的上午", locationText: null, tags: ["绿植"], personNames: [], facts: [] }), finishReason: "stop", provenance: { providerId: ai.provider.id, providerName: ai.provider.displayName, model: ai.capabilities.text.model! } });
+    try {
+      const start = await write("name"); expect(start.status).toBe(200);
+      const initial = await start.json(); expect(initial.tasks[0]).toMatchObject({ state: "waiting_naming", canCancel: true });
+      const duplicate = await (await write("name")).json(); expect(duplicate.tasks).toHaveLength(1); expect(duplicate.tasks[0].id).toBe(initial.tasks[0].id);
+      const cancelled = await write("cancel", initial.tasks[0].id); expect(cancelled.status).toBe(200);
+      await expect(cancelled.json()).resolves.toMatchObject({ tasks: [{ state: "cancelled", canRetry: true }] });
+      const retry = await write("retry", initial.tasks[0].id); expect(retry.status).toBe(200);
+      expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" });
+      const ready = await (await read()).json();
+      expect(ready.tasks[0]).toMatchObject({ state: "ready", canRegenerate: true });
+      expect(ready.names.suggestions[0]).toMatchObject({ title: "窗边浇水的上午", valid: true });
+      expect(ready.transcripts).toEqual([]);
+      expect((await write("cancel", "foreign-job")).status).toBe(404);
+    } finally { runtime.mockRestore(); }
+  });
+
 });

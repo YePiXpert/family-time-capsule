@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { OrganizerControl } from "./organizer-control";
 import { useRouter } from "next/navigation";
 import { ApiError, parseTranscriptReview } from "@/mobile/src/api/client";
 import type { TranscriptReview } from "@/mobile/src/transcripts/types";
@@ -52,7 +53,7 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
     } finally { if (request === generation.current) setBusy(false); }
   };
   const stale = review !== null && draft.revision !== (review.transcript?.revision ?? null);
-  return <details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { if (event.currentTarget.open) { setBusy(true); setVerified(false); void load(); } else { generation.current++; } }}>
+  return <><OrganizerControl kind="asset" id={assetId} reviewNames={false} /><details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { if (event.currentTarget.open) { setBusy(true); setVerified(false); void load(); } else { generation.current++; } }}>
     <summary className="min-h-11 cursor-pointer py-2">转录全文与修订 · {label}</summary>
     {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
     {review ? <div className="grid gap-3">
@@ -66,5 +67,5 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
       </> : null}
     </div> : <p>展开后读取全文。</p>}
     <button type="button" className="ui-button-secondary my-2" disabled={busy} onClick={() => { setError(null); setBusy(true); setVerified(false); void load(); }}>刷新转录</button>
-  </details>;
+  </details></>;
 }

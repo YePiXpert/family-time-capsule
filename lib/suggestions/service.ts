@@ -57,7 +57,7 @@ export async function listPendingSuggestions(
 export function requestEventSuggestions(
   context: FamilyContext,
   memoryEventId: string,
-  options: AiJobServiceDependencies & { now?: Date } = {},
+  options: AiJobServiceDependencies & { now?: Date; regenerateFrom?: string } = {},
 ): SuggestionRequestResult {
   try { assertFamilyCapability(context.role, "ai:review"); }
   catch { return { ok: false, error: "forbidden" }; }
@@ -77,7 +77,7 @@ export function requestEventSuggestions(
       const sources = [{ kind: "memory_event" as const, id: event.id }, ...originals.map(asset => ({ kind: "asset" as const, id: asset.id })), ...notes.map(row => ({ kind: "inbox_item" as const, id: row.id })), ...contributions.map(row => ({ kind: "contribution" as const, id: row.id }))];
       if (sources.length > 50) return { ok: false, error: "organizer_context_limit" };
       const { dependencies, generation } = organizerMediaStages(tx, context, originals, "organizer-event-v2", options);
-      const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.event_metadata.v1", entityType: "memory_event", entityId: event.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation, sources }, options);
+      const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.event_metadata.v1", entityType: "memory_event", entityId: event.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation: options.regenerateFrom ? `${generation}:regenerate:${options.regenerateFrom}` : generation, sources }, options);
       if (!result.ok) throw new OrganizerEnqueueError(result);
       return result;
     }, { behavior: "immediate" });
@@ -359,7 +359,7 @@ function organizerMediaStages(tx: ContributionAccessTransaction, context: Family
 export function requestInboxItemSuggestions(
   context: FamilyContext,
   inboxItemId: string,
-  options: AiJobServiceDependencies & { now?: Date } = {},
+  options: AiJobServiceDependencies & { now?: Date; regenerateFrom?: string } = {},
 ): SuggestionRequestResult {
   try { assertFamilyCapability(context.role, "ai:review"); }
   catch { return { ok: false, error: "forbidden" }; }
@@ -373,7 +373,7 @@ export function requestInboxItemSuggestions(
       if (originals.length > 10) return { ok: false, error: "organizer_batch_limit" };
       if (!originals.length && !item.rawText?.trim()) return { ok: false, error: "insufficient_evidence" };
       const { dependencies, generation } = organizerMediaStages(tx, context, originals, "organizer-inbox-v2", options);
-      const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.inbox_item.v1", entityType: "inbox_item", entityId: item.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation, sources: [{ kind: "inbox_item", id: item.id }, ...originals.map(asset => ({ kind: "asset" as const, id: asset.id }))] }, options);
+      const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.inbox_item.v1", entityType: "inbox_item", entityId: item.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation: options.regenerateFrom ? `${generation}:regenerate:${options.regenerateFrom}` : generation, sources: [{ kind: "inbox_item", id: item.id }, ...originals.map(asset => ({ kind: "asset" as const, id: asset.id }))] }, options);
       if (!result.ok) throw new OrganizerEnqueueError(result);
       return result;
     }, { behavior: "immediate" });
@@ -390,7 +390,7 @@ export type InboxBatchResult = {
 
 export function requestInboxSuggestionsBatch(
   context: FamilyContext,
-  options: AiJobServiceDependencies & { now?: Date } = {},
+  options: AiJobServiceDependencies & { now?: Date; regenerateFrom?: string } = {},
 ): InboxBatchResult {
   try {
     assertFamilyCapability(context.role, "ai:review");

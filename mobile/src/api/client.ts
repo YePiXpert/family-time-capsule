@@ -36,6 +36,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -839,7 +840,7 @@ async function requestMobileJson(
           : response.status === 404
             ? "这份家庭资料不存在或已经移除。"
             : "家庭服务器暂时无法完成这个操作。";
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, isRecord(body) && typeof body.error === "string" && /^[a-z_]{1,80}$/.test(body.error) ? body.error : undefined);
   }
   return body;
 }
@@ -1298,4 +1299,29 @@ export async function saveTranscriptReview(credentials: Credentials, assetId: st
   const result = parseTranscriptReview(await requestMobileJson(credentials, `/api/mobile/v1/transcripts/${encodeURIComponent(assetId)}`, { method: "POST", body: JSON.stringify({ text, revision }) }));
   if (result.assetId !== assetId) throw new ApiError("转录素材不匹配。", 502);
   return result;
+}
+
+
+export function parseOrganizerReview(value: unknown): import("../ai/organizer-types").OrganizerReview {
+  if (!isRecord(value) || !isRecord(value.target) || !["asset", "inbox_item", "memory_event"].includes(String(value.target.kind)) || !isString(value.target.id, 128) || !Array.isArray(value.tasks) || value.tasks.length > 10 || !Array.isArray(value.transcripts)) throw new ApiError("整理结果格式无效。", 502);
+  parseAiSettings(value.settings);
+  if (value.names !== null) {
+    const names = parseNameReview(value.names);
+    if (names.target.kind !== value.target.kind || names.target.id !== value.target.id) throw new ApiError("整理对象不匹配。", 502);
+  }
+  for (const task of value.tasks) {
+    if (!isRecord(task) || !isString(task.id, 128) || !["waiting_analysis", "analyzing", "waiting_naming", "naming", "ready", "insufficient", "failed", "cancelled", "cancelling"].includes(String(task.state)) || !isString(task.message, 500) || ![task.active, task.canCancel, task.canRetry, task.canRegenerate].every(flag => typeof flag === "boolean") || !Array.isArray(task.steps) || task.steps.length > 21 || !task.steps.every(step => isRecord(step) && isString(step.label, 100) && ["pending", "running", "completed", "failed", "cancelled"].includes(String(step.status)))) throw new ApiError("整理步骤格式无效。", 502);
+  }
+  if (value.transcripts.length > 1000 || !value.transcripts.every(row => isRecord(row) && isString(row.assetId, 128) && isString(row.text, 2_000_000) && typeof row.edited === "boolean" && Number.isSafeInteger(row.revision) && Number(row.revision) >= 0)) throw new ApiError("转录格式无效。", 502);
+  return value as unknown as import("../ai/organizer-types").OrganizerReview;
+}
+export async function fetchOrganizerReview(credentials: Credentials, target: import("../ai/organizer-types").OrganizerTarget) {
+  const review = parseOrganizerReview(await requestMobileJson(credentials, `/api/mobile/v1/ai/organizer?${new URLSearchParams(target)}`));
+  if (review.target.kind !== target.kind || review.target.id !== target.id) throw new ApiError("整理对象不匹配。", 502);
+  return review;
+}
+export async function mutateOrganizerReview(credentials: Credentials, target: import("../ai/organizer-types").OrganizerTarget, operation: import("../ai/organizer-types").OrganizerOperation, jobId?: string) {
+  const review = parseOrganizerReview(await requestMobileJson(credentials, "/api/mobile/v1/ai/organizer", { method: "POST", body: JSON.stringify({ ...target, operation, jobId }) }));
+  if (review.target.kind !== target.kind || review.target.id !== target.id) throw new ApiError("整理对象不匹配。", 502);
+  return review;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { OrganizerControl } from "@/components/organizer-control";
 import { aiJobFailureMessage } from "@/lib/ai/job-messages";
 import { useActionState, useState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
@@ -142,6 +143,7 @@ export function TranscriptSection({
         <StatusLabel transcript={transcript} job={job} />
       </header>
 
+      {canEdit ? <OrganizerControl kind="asset" id={asset.id} reviewNames={false} /> : null}
       <TranscriptText transcript={transcript} />
       <TranscriptSegments transcript={transcript} />
 

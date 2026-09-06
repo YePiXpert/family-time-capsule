@@ -11,9 +11,8 @@ import type { InboxDraftPatch, MobileInboxEntry } from "../types";
 import { inputDateTime } from "../utils/format";
 import { archiveLocalCaptures } from "../storage/database";
 import { canReviewMobileInbox } from "../authz/product-access";
-import { TranscriptEditor } from "../transcripts/TranscriptEditor";
+import { OrganizerPanel } from "../ai/OrganizerPanel";
 import { NativeMediaReader } from "../media/NativeMediaReader";
-import { NameEditor } from "../names/NameEditor";
 
 export function InboxScreen() {
   const { credentials, viewer, family } = useApp();
@@ -186,7 +185,7 @@ function InboxContent() {
         return <View key={entry.id}><View style={styles.entry}>
           {source ? <Image source={source} style={styles.thumbnail} /> : <View style={styles.thumbnailPlaceholder}><Text style={styles.kind}>{entry.kind === "text" ? "文字" : entry.assets[0]?.type === "audio" ? "录音" : "素材"}</Text></View>}
           <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text>{canReview ? <View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View> : null}</View>
-        </View><Pressable onPress={() => setReading(reading === entry.id ? null : entry.id)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{reading === entry.id ? "收起素材" : "查看素材与全文"}</Text></Pressable>{reading === entry.id ? <View>{entry.rawText ? <Text selectable style={sharedStyles.body}>{entry.rawText}</Text> : null}<NativeMediaReader credentials={credentials} assets={entry.assets} />{entry.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <TranscriptEditor key={asset.id} assetId={asset.id} label={asset.filename} />)}</View> : null}{canReview ? <NameEditor kind="inbox_item" id={entry.id} onSaved={() => void load()} /> : null}</View>;
+        </View><Pressable onPress={() => setReading(reading === entry.id ? null : entry.id)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{reading === entry.id ? "收起素材" : "查看素材与全文"}</Text></Pressable>{reading === entry.id ? <View>{entry.rawText ? <Text selectable style={sharedStyles.body}>{entry.rawText}</Text> : null}<NativeMediaReader credentials={credentials} assets={entry.assets} />{entry.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} />)}</View> : null}{canReview ? <OrganizerPanel kind="inbox_item" id={entry.id} onSaved={() => void load()} /> : null}</View>;
       })}
       {loading ? <ActivityIndicator color={colors.coral} /> : null}
       {cursor && !loading ? <Pressable onPress={() => void load(cursor)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加载更多</Text></Pressable> : null}
