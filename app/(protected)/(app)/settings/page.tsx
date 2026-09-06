@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireFamily } from "@/lib/family/context";
+import { requireFamily, requireCurrentSessionId } from "@/lib/family/context";
 import { getFamily } from "@/lib/family/service";
 import { getAppVersion } from "@/lib/export/service";
 import { listRecentAudit } from "@/lib/audit/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
+import { hasRecentAuth } from "@/lib/auth/step-up";
 import { PageHeader } from "@/components/page-header";
+import { DangerZone, ExportStepUpPanel } from "./account/danger-zone";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +39,8 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
   const canInvite = hasFamilyCapability(role, "account:invite");
   const canManageAccounts = hasFamilyCapability(role, "account:manage");
   const canReviewAi = hasFamilyCapability(role, "ai:review");
+  const currentSessionId = await requireCurrentSessionId();
+  const exportNeedsStepUp = canExport && !hasRecentAuth(currentSessionId);
   const [family, auditEntries] = await Promise.all([
     getFamily(familyId),
     canViewAudit ? listRecentAudit(familyId, 10) : Promise.resolve([]),
@@ -136,12 +140,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
           完整导出、远程备份和 AI Provider 都是可选的管理能力；日常记录、整理、阅读和搜索不依赖它们。
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          {canExport ? <a
-            href="/api/export"
-            className="inline-flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm text-background transition-opacity hover:opacity-90"
-          >
-            导出完整备份 ZIP
-          </a> : null}
+          {canExport ? <ExportStepUpPanel needsStepUp={exportNeedsStepUp} /> : null}
           {canExport ? <Link
             href="/settings/backup"
             className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent"
@@ -159,6 +158,8 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
           完整导出会重新校验每份原件；API Key 与 WebDAV 凭据只存在部署环境，不写入家庭备份。
         </p>
       </section>}
+
+      <DangerZone isOwner={role === "owner"} />
 
       {canViewAudit && <section aria-label="安全与审计记录" className="mt-10">
         <h2 className="text-lg font-medium">安全与审计记录</h2>

@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { ensureBootstrap, ensureLogin } from "./helpers";
+import { grantExportStepUp } from "./helpers/export-step-up";
 
 // Slice 6（PRD §23）：完整导出 → manifest/哈希/媒体验证
 // RH-006：本 spec 自包含（独立 DATA_DIR，自行 bootstrap）
@@ -41,7 +42,8 @@ test("导出完整备份：ZIP 可下载、manifest 哈希全部可验证", asyn
   await page.getByRole("button", { name: "封存胶囊" }).click();
   await expect(page.getByText("已封存", { exact: false }).first()).toBeVisible();
 
-  // 导出并验证
+  // 导出并验证（先完成 ID-10 密码复核）
+  await grantExportStepUp(page);
   const resp = await page.request.get("/api/export");
   expect(resp.status()).toBe(200);
   expect(resp.headers()["content-type"]).toBe("application/zip");
@@ -99,6 +101,7 @@ test("导出完整备份：ZIP 可下载、manifest 哈希全部可验证", asyn
 
 test("导出的 ZIP 可被 verify:export CLI 校验（同字节）", async ({ page }) => {
   await ensureLogin(page);
+  await grantExportStepUp(page);
   const resp = await page.request.get("/api/export");
   expect(resp.status()).toBe(200);
   const zipBuffer = Buffer.from(await resp.body());

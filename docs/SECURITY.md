@@ -400,3 +400,20 @@ challenge 只存 verification 表（2 分钟过期、单次消费）；rpID/orig
 并写审计（`account.recovery_token_issued` / `account.recovery_password_reset`）。
 `/recover/[token]` 页面按 IP 限流（15 分钟 5 次）；本实例不提供任何公开
 "忘记密码"HTTP 通道。
+
+## 18. 成员生命周期、删号与 step-up（M2-c，migration 0049）
+
+**step-up 近期重新认证**：`session.recent_auth_at` 记录最近一次密码复核；
+完整导出（`/api/export`）要求 10 分钟窗口内的复核，否则 403 `step_up_required`。
+密码复核先验证凭据再落时间戳，错误密码不产生任何状态。所有权移交（M2-a）、
+关闭两步验证/重生成恢复码（M2-b）在各自服务内要求当前密码，属同等强度。
+
+**移出/退出家庭**：均解绑 `familyId/personId` 并立刻删除该账号全部会话
+（含原生 bearer），后续同步即刻停止；人物记录、讲述与贡献保留在家庭档案。
+离线已缓存到成员设备的副本无法远程抹除——权限缩小≠远程销毁，UI 如实声明。
+
+**删除自己的账号**：需当前密码 + 输入确认语。凭据全撤（credential 密码、
+通行密钥、两步验证、全部会话），账号身份匿名化（`deleted-<id>@deleted.invalid`、
+"已删除账号"、永久停用且不可再登录/恢复）。讲述、胶囊、AI 任务等以
+RESTRICT 外键引用 user 行，为保档案完整性保留占位行而非物理删除——
+满足平台删号要求（凭据与个人身份信息消失）同时不破坏家庭档案。

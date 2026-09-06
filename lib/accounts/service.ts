@@ -3,7 +3,13 @@ import "server-only";
 import { and, asc, eq, isNull, ne, or, inArray} from "drizzle-orm";
 import { getDb } from "@/db";
 import { auditLog } from "@/db/schema/audit";
-import { account as accountTable, session, user as userTable } from "@/db/schema/auth";
+import {
+  account as accountTable,
+  passkey as passkeyTable,
+  session,
+  twoFactor as twoFactorTable,
+  user as userTable,
+} from "@/db/schema/auth";
 import { person } from "@/db/schema/family";
 import {
   assertFamilyCapability,
@@ -672,4 +678,225 @@ export function revokeOtherSessions(
       .run();
     return { ok: true } as const;
   });
+}
+
+
+// ------------------------------------------------------- 成员生命周期（M2-c）
+
+export type MemberLifecycleError =
+  | "forbidden"
+  | "not_found"
+  | "owner_transfer_required"
+  | "last_admin"
+  | "invalid_password"
+  | "already_bound";
+
+export type MemberLifecycleResult =
+  | { ok: true }
+  | { ok: false; error: MemberLifecycleError };
+
+function unbindAndRevoke(tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0], targetUserId: string, now: Date) {
+  tx.update(userTable)
+    .set({ familyId: null, personId: null, updatedAt: now })
+    .where(eq(userTable.id, targetUserId))
+    .run();
+  tx.delete(session).where(eq(session.userId, targetUserId)).run();
+}
+
+/** 管理员把成员移出家庭：解绑+会话撤销；人物与讲述保留（归属家庭档案）。 */
+export function removeFamilyMember(
+  context: FamilyContext,
+  targetUserId: string,
+): MemberLifecycleResult {
+  assertFamilyCapability(context.role, "account:manage");
+  const db = getDb();
+  try {
+    return db.transaction((tx) => {
+      const actor = tx
+        .select({ id: userTable.id, role: userTable.role })
+        .from(userTable)
+        .where(
+          and(
+            eq(userTable.id, context.userId),
+            eq(userTable.familyId, context.familyId),
+            inArray(userTable.role, ADMIN_CLASS_ROLES),
+            isNull(userTable.disabledAt),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (!actor) return { ok: false, error: "forbidden" } as const;
+      const target = tx
+        .select({ id: userTable.id, role: userTable.role, disabledAt: userTable.disabledAt })
+        .from(userTable)
+        .where(and(eq(userTable.id, targetUserId), eq(userTable.familyId, context.familyId)))
+        .get();
+      if (!target) return { ok: false, error: "not_found" } as const;
+      if (target.role === "owner") {
+        return { ok: false, error: "owner_transfer_required" } as const;
+      }
+      if (targetUserId === context.userId) {
+        return { ok: false, error: "forbidden" } as const;
+      }
+      if (target.role === "admin" && !tx
+        .select({ id: userTable.id })
+        .from(userTable)
+        .where(
+          and(
+            eq(userTable.familyId, context.familyId),
+            inArray(userTable.role, ADMIN_CLASS_ROLES),
+            isNull(userTable.disabledAt),
+            ne(userTable.id, targetUserId),
+          ),
+        )
+        .limit(1)
+        .get()) {
+        return { ok: false, error: "last_admin" } as const;
+      }
+      const now = new Date();
+      unbindAndRevoke(tx, targetUserId, now);
+      tx.insert(auditLog)
+        .values(requiredAuditValues(context.familyId, "account.removed", context.userId, { targetUserId }, now))
+        .run();
+      return { ok: true } as const;
+    });
+  } catch (error) {
+    if (isLastAdminConstraintError(error)) return { ok: false, error: "last_admin" };
+    throw error;
+  }
+}
+
+/** 成员主动退出家庭：解绑+会话撤销；可用邀请重新加入。 */
+export function leaveFamily(context: FamilyContext): MemberLifecycleResult {
+  const db = getDb();
+  try {
+    return db.transaction((tx) => {
+      const self = tx
+        .select({ id: userTable.id, role: userTable.role })
+        .from(userTable)
+        .where(
+          and(
+            eq(userTable.id, context.userId),
+            eq(userTable.familyId, context.familyId),
+            isNull(userTable.disabledAt),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (!self) return { ok: false, error: "forbidden" } as const;
+      if (self.role === "owner") {
+        return { ok: false, error: "owner_transfer_required" } as const;
+      }
+      const leavingAdmin = ADMIN_CLASS_ROLES.includes(self.role as FamilyRole);
+      if (leavingAdmin && !tx
+        .select({ id: userTable.id })
+        .from(userTable)
+        .where(
+          and(
+            eq(userTable.familyId, context.familyId),
+            inArray(userTable.role, ADMIN_CLASS_ROLES),
+            isNull(userTable.disabledAt),
+            ne(userTable.id, context.userId),
+          ),
+        )
+        .limit(1)
+        .get()) {
+        return { ok: false, error: "last_admin" } as const;
+      }
+      const now = new Date();
+      unbindAndRevoke(tx, context.userId, now);
+      tx.insert(auditLog)
+        .values(requiredAuditValues(context.familyId, "account.left", context.userId, {}, now))
+        .run();
+      return { ok: true } as const;
+    });
+  } catch (error) {
+    if (isLastAdminConstraintError(error)) return { ok: false, error: "last_admin" };
+    throw error;
+  }
+}
+
+/**
+ * 删除自己的账号（ID-14，Apple 平台删号要求）。
+ * 档案完整性优先于物理删除：讲述/胶囊/AI 任务等以 RESTRICT 引用 user 行,
+ * 因此删除 = 凭据全撤（密码/通行密钥/两步验证/会话）+ 身份匿名化 + 永久停用,
+ * 保留的行只是归档引用与审计占位,不再是可登录主体。人物与讲述不级联删除。
+ */
+export async function deleteOwnAccount(
+  context: FamilyContext,
+  currentPassword: string,
+): Promise<MemberLifecycleResult> {
+  if (typeof currentPassword !== "string" || currentPassword.length === 0) {
+    return { ok: false, error: "invalid_password" };
+  }
+  if (!(await verifyCurrentPassword(context.userId, currentPassword))) {
+    return { ok: false, error: "invalid_password" };
+  }
+  const db = getDb();
+  try {
+    return db.transaction((tx) => {
+      const self = tx
+        .select({ id: userTable.id, role: userTable.role, disabledAt: userTable.disabledAt })
+        .from(userTable)
+        .where(
+          and(
+            eq(userTable.id, context.userId),
+            eq(userTable.familyId, context.familyId),
+          ),
+        )
+        .limit(1)
+        .get();
+      if (!self) return { ok: false, error: "forbidden" } as const;
+      if (self.role === "owner") {
+        return { ok: false, error: "owner_transfer_required" } as const;
+      }
+      if (ADMIN_CLASS_ROLES.includes(self.role as FamilyRole)) {
+        if (!tx
+          .select({ id: userTable.id })
+          .from(userTable)
+          .where(
+            and(
+              eq(userTable.familyId, context.familyId),
+              inArray(userTable.role, ADMIN_CLASS_ROLES),
+              isNull(userTable.disabledAt),
+              ne(userTable.id, context.userId),
+            ),
+          )
+          .limit(1)
+          .get()) {
+          return { ok: false, error: "last_admin" } as const;
+        }
+      }
+      const now = new Date();
+      const familyIdForAudit = context.familyId;
+      tx.delete(session).where(eq(session.userId, context.userId)).run();
+      tx.delete(accountTable)
+        .where(and(eq(accountTable.userId, context.userId), eq(accountTable.providerId, "credential")))
+        .run();
+      tx.delete(passkeyTable).where(eq(passkeyTable.userId, context.userId)).run();
+      tx.delete(twoFactorTable).where(eq(twoFactorTable.userId, context.userId)).run();
+      const replacementEmail = `deleted-${self.id}@deleted.invalid`;
+      tx.update(userTable)
+        .set({
+          name: "已删除账号",
+          email: replacementEmail,
+          image: null,
+          familyId: null,
+          personId: null,
+          twoFactorEnabled: false,
+          disabledAt: now,
+          disabledByUserId: null,
+          updatedAt: now,
+        })
+        .where(eq(userTable.id, context.userId))
+        .run();
+      tx.insert(auditLog)
+        .values(requiredAuditValues(familyIdForAudit, "account.deleted", context.userId, { targetUserId: context.userId }, now))
+        .run();
+      return { ok: true } as const;
+    });
+  } catch (error) {
+    if (isLastAdminConstraintError(error)) return { ok: false, error: "last_admin" };
+    throw error;
+  }
 }

@@ -31,7 +31,8 @@ export function VerifyForm() {
       );
       return;
     }
-    // 验证通过即建立会话；整页跳转确保新会话 cookie 生效
+    // 验证通过即建立会话；整页跳转确保新会话 cookie 在客户端状态之外生效
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = "/";
   }
 

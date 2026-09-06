@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { addFamilyMember, ensureBootstrap, ensureLogin } from "./helpers";
+import { grantExportStepUp } from "./helpers/export-step-up";
 
 /**
  * 完整用户旅程（RH-006 保留）：
@@ -55,6 +56,7 @@ test("完整旅程：从初始化到导出与登出", async ({ page }) => {
   await expect(page.getByText("内容已封存。", { exact: false }).first()).toBeVisible();
 
   // 6) 导出 + 哈希验证
+  await grantExportStepUp(page);
   const resp = await page.request.get("/api/export");
   expect(resp.status()).toBe(200);
   const zipBuffer = Buffer.from(await resp.body());

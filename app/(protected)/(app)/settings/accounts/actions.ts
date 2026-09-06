@@ -7,6 +7,7 @@ import {
   changeFamilyAccountRole,
   disableFamilyAccount,
   enableFamilyAccount,
+  removeFamilyMember,
   transferOwnership,
   type AccountMutationError,
 } from "@/lib/accounts/service";
@@ -114,4 +115,27 @@ export async function transferOwnershipAction(
   }
   revalidateAccountAdministration();
   return { success: "所有权已移交；你现在是管理员，新所有者已就位。" };
+}
+
+/** 把成员移出家庭（ID-13）：解绑并撤销其会话；人物与讲述保留。 */
+export async function removeMemberAction(
+  targetUserId: string,
+  _previous: AccountFormState | undefined,
+  _formData: FormData,
+): Promise<AccountFormState> {
+  void _previous;
+  void _formData;
+  const context = await requireFamilyCapability("account:manage");
+  const result = removeFamilyMember(context, targetUserId);
+  if (!result.ok) {
+    const message: Record<string, string> = {
+      forbidden: "你的管理员权限已经变化，本次操作未执行。",
+      not_found: "账号不存在或不属于当前家庭。",
+      owner_transfer_required: "所有者不能被移出家庭；请先完成所有权移交。",
+      last_admin: "家庭必须保留至少一名可用管理员。",
+    };
+    return { error: message[result.error] ?? "操作未执行。" };
+  }
+  revalidateAccountAdministration();
+  return { success: "成员已移出家庭；其讲述与人物记录保留在家庭档案中。" };
 }

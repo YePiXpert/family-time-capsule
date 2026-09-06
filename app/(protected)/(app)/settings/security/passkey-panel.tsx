@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { startRegistration } from "@simplewebauthn/browser";
 import type { PasskeyListItem } from "@/lib/auth/passkey-service";
 
 const dateFormatter = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" });

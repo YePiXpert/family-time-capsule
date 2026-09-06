@@ -87,6 +87,8 @@ export const session = sqliteTable("session", {
   expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
+  // step-up（ID-10）：最近一次密码复核时间；高敏操作要求在窗口内。
+  recentAuthAt: integer("recent_auth_at", { mode: "timestamp" }),
   createdAt: createdAtColumn(),
   updatedAt: updatedAtColumn(),
 });

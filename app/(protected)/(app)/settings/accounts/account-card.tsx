@@ -6,6 +6,7 @@ import {
   changeAccountRoleAction,
   disableAccountAction,
   enableAccountAction,
+  removeMemberAction,
   transferOwnershipAction,
 } from "./actions";
 
@@ -52,6 +53,7 @@ export function AccountCard({
     account.disabledAt ? enableAccountAction : disableAccountAction
   ).bind(null, account.id);
   const transferAction = transferOwnershipAction.bind(null, account.id);
+  const removeAction = removeMemberAction.bind(null, account.id);
   const [roleState, roleFormAction, rolePending] = useActionState(
     roleAction,
     undefined,
@@ -62,6 +64,10 @@ export function AccountCard({
   );
   const [transferState, transferFormAction, transferPending] = useActionState(
     transferAction,
+    undefined,
+  );
+  const [removeState, removeFormAction, removePending] = useActionState(
+    removeAction,
     undefined,
   );
   const isOwnerAccount = account.role === "owner";
@@ -207,6 +213,20 @@ export function AccountCard({
           )}
           <ResultMessage state={accountState} />
         </form>
+
+        {!isOwnerAccount && !account.isCurrentUser ? (
+          <form action={removeFormAction} className="flex flex-col gap-2 sm:items-end">
+            <button
+              type="submit"
+              disabled={removePending}
+              className="min-h-11 rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {removePending ? "移出中…" : "移出家庭"}
+            </button>
+            <p className="text-xs text-foreground/55">解除登录与家庭绑定；讲述保留</p>
+            <ResultMessage state={removeState} />
+          </form>
+        ) : null}
       </div>
     </li>
   );

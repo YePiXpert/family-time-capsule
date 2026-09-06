@@ -3,7 +3,6 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
-import { getAuth } from "./auth";
 
 /**
  * 两步验证（ID-6/ID-8）服务封装：

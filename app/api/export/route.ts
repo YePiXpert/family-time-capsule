@@ -1,6 +1,8 @@
 import { createReadStream } from "node:fs";
 import { Readable } from "node:stream";
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
+import { requireCurrentSessionId } from "@/lib/family/context";
+import { hasRecentAuth } from "@/lib/auth/step-up";
 import { buildFamilyExport, ExportVerificationError } from "@/lib/export/service";
 
 /**
@@ -20,6 +22,15 @@ export async function GET(request: Request) {
     );
   }
   const { context } = authorization;
+
+  // step-up（ID-10）：完整导出是高敏操作，要求 10 分钟内的密码复核。
+  const sessionId = await requireCurrentSessionId();
+  if (!hasRecentAuth(sessionId)) {
+    return Response.json(
+      { error: "step_up_required", message: "导出前请先在设置中确认当前密码。" },
+      { status: 403 },
+    );
+  }
 
   let result;
   try {

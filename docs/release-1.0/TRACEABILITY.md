@@ -28,10 +28,9 @@
 | ID-6/8 | lib/auth/(auth|passkey|two-factor-service).ts、db/schema/auth.ts(0048)、app/(protected)/(app)/settings/security、app/login/two-factor | tests/integration/two-factor.test.ts、strong-auth.test.ts、tests/e2e/security.spec.ts |
 | ID-7 | scripts/account-recovery.ts、lib/auth/account-recovery.ts、app/recover/[token] | tests/integration/strong-auth.test.ts(恢复)、tests/e2e/security.spec.ts(页面闭环) |
 | ID-9 | app/(protected)/(app)/settings/sessions、lib/auth/account-recovery.ts | tests/integration/ownership.test.ts、strong-auth.test.ts |
-| ID-10 | 未实现 | — |
+| ID-10 | lib/auth/step-up.ts、db/migrations/0049、app/api/export/route.ts、settings/account/danger-zone.tsx | tests/integration/member-lifecycle.test.ts（step-up 组）、export/journey e2e 经 grantExportStepUp |
 | ID-11/12 | lib/authz/(context/principal/contribution-access).ts | tests/integration/isolation.test.ts、media-access.test.ts、contribution-visibility.test.ts |
-| ID-13 | lib/accounts | tests/integration/accounts.test.ts |
-| ID-14 | 未实现 | — |
+| ID-13/14 | lib/accounts/service.ts（removeFamilyMember/leaveFamily/deleteOwnAccount）、settings/account/、settings/accounts/account-card | tests/integration/member-lifecycle.test.ts、accounts.test.ts |
 | ID-15 | lib/trash | tests/integration/trash.test.ts |
 | ID-16/17 | 未实现 | — |
 | ID-18 | db/schema/family.ts(person/guardian 关系) | tests/integration/onboarding-guardian.test.ts |
