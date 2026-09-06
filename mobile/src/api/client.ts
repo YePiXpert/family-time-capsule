@@ -885,11 +885,13 @@ export async function patchMobileInbox(
 export async function confirmMobileInbox(
   credentials: Credentials,
   id: string,
+  draft?: InboxDraftPatch,
 ): Promise<string> {
   const result = await requestMobileJson(
     credentials,
     `/api/mobile/v1/inbox/${encodeURIComponent(id)}/confirm`,
-    { method: "POST", body: "{}" },
+    // 确认携带当前未单独保存的编辑字段，服务端在同一事务里保存并确认。
+    { method: "POST", body: JSON.stringify(draft ?? {}) },
   );
   if (!isRecord(result) || !isString(result.memoryEventId, 128)) {
     throw new ApiError("服务器确认结果无效。", 502);

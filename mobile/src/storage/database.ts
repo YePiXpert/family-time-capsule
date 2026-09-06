@@ -885,3 +885,98 @@ export async function clearLocalArchive(): Promise<void> {
 }
 
 export type { Person };
+
+export type LocalCaptureDetail = {
+  captureId: string;
+  kind: "text_capture" | "media_capture";
+  title: string;
+  occurredAt: string;
+  localUri: string | null;
+  mediaType: "image" | "video" | "audio" | "document" | null;
+  fileName: string | null;
+  mimeType: string | null;
+  inboxItemId: string | null;
+  memoryEventId: string | null;
+  syncState: "pending" | "inbox" | "archived";
+  text: string | null;
+};
+
+/** 单条本机记录详情（时间轴点击本机条目直接阅读，不要求联网）。 */
+export async function getLocalCaptureDetail(
+  captureId: string,
+): Promise<LocalCaptureDetail | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{
+    id: string;
+    kind: "text_capture" | "media_capture";
+    title: string;
+    occurred_at: string;
+    local_uri: string | null;
+    media_type: "image" | "video" | "audio" | "document" | null;
+    inbox_item_id: string | null;
+    memory_event_id: string | null;
+    sync_state: "pending" | "inbox" | "archived";
+  }>(
+    "SELECT * FROM local_capture WHERE id = ? LIMIT 1",
+    captureId,
+  );
+  if (!row) return null;
+  let text: string | null = null;
+  let fileName: string | null = null;
+  let mimeType: string | null = null;
+  if (row.kind === "text_capture") {
+    const outboxRow = await db.getFirstAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM outbox WHERE id = ? AND kind = 'text_capture' LIMIT 1",
+      captureId,
+    );
+    if (outboxRow) {
+      try {
+        const payload = JSON.parse(outboxRow.payload_json) as { text?: unknown };
+        if (typeof payload.text === "string") text = payload.text;
+      } catch {
+        text = null;
+      }
+    }
+  } else {
+    const outboxRow = await db.getFirstAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM outbox WHERE id = ? AND kind = 'media_capture' LIMIT 1",
+      captureId,
+    );
+    if (outboxRow) {
+      try {
+        const payload = JSON.parse(outboxRow.payload_json) as {
+          fileName?: unknown;
+          mimeType?: unknown;
+        };
+        if (typeof payload.fileName === "string") fileName = payload.fileName;
+        if (typeof payload.mimeType === "string") mimeType = payload.mimeType;
+      } catch {
+        fileName = null;
+      }
+    }
+  }
+  return {
+    captureId: row.id,
+    kind: row.kind,
+    title: row.title,
+    occurredAt: row.occurred_at,
+    localUri: row.local_uri,
+    mediaType: row.media_type,
+    fileName,
+    mimeType,
+    inboxItemId: row.inbox_item_id,
+    memoryEventId: row.memory_event_id,
+    syncState: row.sync_state,
+    text,
+  };
+}
+
+/**
+ * 移除一条本机记录条目（不删除本机原件文件）。
+ * 用于原件已丢失的残留记录，或用户明确选择只移除条目的场景。
+ */
+export async function removeLocalCaptureRecord(captureId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
+  await db.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
+}

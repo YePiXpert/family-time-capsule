@@ -208,10 +208,14 @@ export function AppProvider({
     }
   }, [credentials, refreshAccount, refreshHome, reloadLocal]);
 
+  /**
+   * 保存完成即返回：只等待本机数据刷新，同步在后台单独运行。
+   * 大视频的补传不会阻塞下一条文字的保存交互。
+   */
   const queued = useCallback(async () => {
     await reloadLocal();
     if (credentials && !needsOnboardingRef.current && network.isConnected !== false) {
-      await runSync();
+      void runSync().catch(() => {});
     }
   }, [credentials, network.isConnected, reloadLocal, runSync]);
 

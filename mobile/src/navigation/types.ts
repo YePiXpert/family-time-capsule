@@ -34,6 +34,7 @@ export type RootStackParamList = {
   Collections: {eventIds?:string[]} | undefined;
   CollectionDetail: {id:string};
   InviteFamily: undefined;
+  LocalCapture: { captureId: string };
 };
 
 export type MainTabParamList = {

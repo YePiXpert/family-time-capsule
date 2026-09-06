@@ -34,6 +34,7 @@ import { BooksScreen, BookDetailScreen } from "../screens/BookScreens";
 import { CalendarScreen } from "../screens/CalendarScreen";
 import { WeeklyReviewScreen } from "../screens/WeeklyReviewScreen";
 import { InviteFamilyScreen } from "../screens/InviteFamilyScreen";
+import { LocalCaptureDetailScreen } from "../screens/LocalCaptureDetailScreen";
 import { colors } from "../theme";
 import type { MainTabParamList, RootStackParamList } from "./types";
 
@@ -117,6 +118,7 @@ export function AppNavigator() {
         <Stack.Screen component={CalendarScreen} name="Calendar" options={{ title: "记忆日历" }} />
         <Stack.Screen component={WeeklyReviewScreen} name="WeeklyReview" options={{ title: "每周回顾" }} />
         <Stack.Screen component={InviteFamilyScreen} name="InviteFamily" options={{ title: "邀请家人加入" }} />
+        <Stack.Screen component={LocalCaptureDetailScreen} name="LocalCapture" options={{ title: "本机记录" }} />
       </Stack.Navigator>
     </NavigationContainer>
   </View>;

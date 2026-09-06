@@ -2,10 +2,11 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { confirmMobileInbox, fetchMobileInbox, mergeMobileInbox, patchMobileInbox } from "../api/client";
+import { DateTimeField } from "../components/DateTimeField";
 import { useApp } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
-import type { MobileInboxEntry } from "../types";
+import type { InboxDraftPatch, MobileInboxEntry } from "../types";
 import { inputDateTime } from "../utils/format";
 import { archiveLocalCaptures } from "../storage/database";
 import { canReviewMobileInbox } from "../authz/product-access";
@@ -21,7 +22,7 @@ export function InboxScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<MobileInboxEntry | null>(null);
   const [title, setTitle] = useState("");
-  const [occurredAt, setOccurredAt] = useState("");
+  const [occurredAt, setOccurredAt] = useState<string | null>(null);
   const [location, setLocation] = useState("");
   const [participants, setParticipants] = useState<Set<string>>(new Set());
   const [mergeTitle, setMergeTitle] = useState("");
@@ -46,7 +47,7 @@ export function InboxScreen() {
   const beginEdit = (entry: MobileInboxEntry) => {
     setEditing(entry);
     setTitle(entry.title);
-    setOccurredAt(inputDateTime(entry.occurredAtWall));
+    setOccurredAt(entry.occurredAtWall ? inputDateTime(entry.occurredAtWall) : null);
     setLocation(entry.locationText ?? "");
     setParticipants(new Set(entry.participantPersonIds));
     setError(null);
@@ -54,15 +55,11 @@ export function InboxScreen() {
 
   const saveEdit = async () => {
     if (!credentials || !editing || !canReview) return;
-    if (occurredAt && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u.test(occurredAt)) {
-      setError("时间格式无效，请使用 2026-09-04T18:30。");
-      return;
-    }
     setLoading(true);
     try {
       const updated = await patchMobileInbox(credentials, editing.id, {
         title,
-        occurredAtWall: occurredAt || null,
+        occurredAtWall: occurredAt,
         locationText: location,
         participantPersonIds: [...participants],
       });
@@ -75,14 +72,28 @@ export function InboxScreen() {
     }
   };
 
-  const confirm = async (id: string) => {
+  /**
+   * 确认入档。若正在编辑这一条，则把屏幕上尚未单独保存的
+   * 标题/时间/人物/地点一并提交，服务端在同一事务中保存并确认；
+   * 不存在只确认旧草稿的路径。
+   */
+  const confirm = async (entry: MobileInboxEntry) => {
     if (!credentials || !canReview) return;
+    let draft: InboxDraftPatch | undefined;
+    if (editing && editing.id === entry.id) {
+      draft = {
+        title,
+        occurredAtWall: occurredAt,
+        locationText: location,
+        participantPersonIds: [...participants],
+      };
+    }
     setLoading(true);
     setError(null);
     try {
-      const memoryEventId = await confirmMobileInbox(credentials, id);
-      await archiveLocalCaptures([id], memoryEventId);
-      setEntries((current) => current.filter((entry) => entry.id !== id));
+      const memoryEventId = await confirmMobileInbox(credentials, entry.id, draft);
+      await archiveLocalCaptures([entry.id], memoryEventId);
+      setEntries((current) => current.filter((item) => item.id !== entry.id));
       setEditing(null);
       await runSync();
       navigation.navigate("Memory", { id: memoryEventId });
@@ -131,10 +142,10 @@ export function InboxScreen() {
       {canReview && editing ? <View style={sharedStyles.card}>
         <View style={styles.between}><Text style={sharedStyles.cardTitle}>修改待整理素材</Text><Pressable onPress={() => setEditing(null)} style={styles.inlineButton}><Text style={styles.link}>收起</Text></Pressable></View>
         <Text style={sharedStyles.label}>标题</Text><TextInput onChangeText={setTitle} style={sharedStyles.input} value={title} />
-        <Text style={sharedStyles.label}>发生时间</Text><TextInput autoCapitalize="none" onChangeText={setOccurredAt} placeholder="2026-09-04T18:30" style={sharedStyles.input} value={occurredAt} />
+        <Text style={sharedStyles.label}>发生时间</Text><DateTimeField onChange={setOccurredAt} value={occurredAt} />
         <Text style={sharedStyles.label}>地点</Text><TextInput onChangeText={setLocation} placeholder="可不填" style={sharedStyles.input} value={location} />
         <Text style={sharedStyles.label}>人物</Text><View style={styles.peopleWrap}>{people.map((person) => <Pressable key={person.id} onPress={() => setParticipants((current) => { const next = new Set(current); if (next.has(person.id)) next.delete(person.id); else next.add(person.id); return next; })} style={[styles.personChip, participants.has(person.id) && styles.personChipActive]}><Text style={[styles.personText, participants.has(person.id) && styles.personTextActive]}>{person.displayName}</Text></Pressable>)}</View>
-        <View style={styles.buttonRow}><Pressable disabled={loading} onPress={() => void saveEdit()} style={[sharedStyles.secondaryButton, styles.grow]}><Text style={sharedStyles.secondaryText}>保存修改</Text></Pressable><Pressable disabled={loading} onPress={() => void confirm(editing.id)} style={[sharedStyles.primaryButton, styles.grow]}><Text style={sharedStyles.primaryText}>确认入档</Text></Pressable></View>
+        <View style={styles.buttonRow}><Pressable disabled={loading} onPress={() => void saveEdit()} style={[sharedStyles.secondaryButton, styles.grow]}><Text style={sharedStyles.secondaryText}>保存修改</Text></Pressable><Pressable disabled={loading} onPress={() => void confirm(editing)} style={[sharedStyles.primaryButton, styles.grow]}><Text style={sharedStyles.primaryText}>确认入档</Text></Pressable></View>
       </View> : null}
 
       {entries.length === 0 && !loading ? <View style={sharedStyles.empty}><Text style={sharedStyles.emptyTitle}>收件箱已经整理完</Text><Text style={sharedStyles.emptyText}>新记录同步后会先来到这里，不会自动确认事实或合并。</Text></View> : entries.map((entry) => {
@@ -143,7 +154,7 @@ export function InboxScreen() {
         const source = image ? { uri: `${credentials.serverUrl}${image.thumbnailPath ?? image.mediaPath}`, headers: { authorization: `Bearer ${credentials.token}` } } : null;
         return <View key={entry.id} style={styles.entry}>
           {source ? <Image source={source} style={styles.thumbnail} /> : <View style={styles.thumbnailPlaceholder}><Text style={styles.kind}>{entry.kind === "text" ? "文字" : entry.assets[0]?.type === "audio" ? "录音" : "素材"}</Text></View>}
-          <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text>{canReview ? <View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry.id)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View> : null}</View>
+          <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text>{canReview ? <View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View> : null}</View>
         </View>;
       })}
       {loading ? <ActivityIndicator color={colors.coral} /> : null}

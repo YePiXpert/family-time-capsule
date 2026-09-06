@@ -2,7 +2,10 @@
   "expo": {
     "name": "家庭时间胶囊",
     "slug": "family-time-capsule",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "scheme": "familytimecapsule",
     "version": "1.2.0",
     "orientation": "portrait",
@@ -22,7 +25,9 @@
     "android": {
       "package": "app.familytimecapsule.mobile",
       "versionCode": 10,
-      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#FAF8F4",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -55,7 +60,10 @@
         {
           "photosPermission": "读取所选素材的可靠创建时间，避免把导入时间误作拍摄时间。",
           "savePhotosPermission": "允许将明确选择保存的素材写入系统相册。",
-          "granularPermissions": ["photo", "video"]
+          "granularPermissions": [
+            "photo",
+            "video"
+          ]
         }
       ],
       [
@@ -66,7 +74,8 @@
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

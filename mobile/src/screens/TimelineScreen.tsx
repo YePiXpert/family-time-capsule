@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import {
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -115,12 +114,7 @@ export function TimelineScreen() {
                   )
                 : item.source === "server"
                   ? navigation.navigate("Memory", { id: item.id })
-                  : Alert.alert(
-                      "本机记录",
-                      item.syncState === "inbox"
-                        ? "这份原件已送达收件箱，整理确认后会成为正式记忆。"
-                        : "这份原件仍在本机，联网后会继续补传。",
-                    )
+                  : navigation.navigate("LocalCapture", { captureId: item.id })
             }
           />
         </View>

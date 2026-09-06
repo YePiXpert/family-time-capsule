@@ -314,3 +314,12 @@ export async function cacheEventCover(
   }
   return destination.uri;
 }
+
+/** 本机原件是否存在（详情页直接打开合法本机副本前的检查）。 */
+export function localFileExists(uri: string): boolean {
+  try {
+    return new File(uri).exists;
+  } catch {
+    return false;
+  }
+}
