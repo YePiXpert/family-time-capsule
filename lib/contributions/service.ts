@@ -292,6 +292,65 @@ export async function listContributions(
 
 // ---------- Fact（P0：用户手工添加/确认） ----------
 
+/**
+ * 家人页「最近补充」：本家庭最近的家人讲述(事件级 feed)。
+ * 出于最小披露原则,这里只列 visibility='family' 的行——私密(parents/private/
+ * child_later)讲述不在聚合里出现,作者本人仍可在事件详情内查看自己的版本。
+ */
+export async function listRecentFamilyContributions(
+  familyId: string,
+  limit = 6,
+): Promise<
+  Array<{
+    id: string;
+    memoryEventId: string;
+    eventTitle: string;
+    authorName: string;
+    authorRelation: string | null;
+    hasAudio: boolean;
+    preview: string;
+    createdAt: Date;
+  }>
+> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: contribution.id,
+      memoryEventId: contribution.memoryEventId,
+      eventTitle: memoryEvent.title,
+      authorName: personTable.displayName,
+      authorRelation: personTable.relationToChild,
+      audioAssetId: contribution.audioAssetId,
+      rawText: contribution.rawText,
+      editedText: contribution.editedText,
+      transcript: contribution.transcript,
+      createdAt: contribution.createdAt,
+    })
+    .from(contribution)
+    .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
+    .innerJoin(personTable, eq(contribution.authorPersonId, personTable.id))
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(contribution.visibility, "family"),
+        isNull(contribution.deletedAt),
+        isNull(memoryEvent.deletedAt),
+      ),
+    )
+    .orderBy(asc(memoryEvent.occurredAt), asc(contribution.createdAt))
+    .limit(limit * 4); // 取宽一点,再从旧到新裁剪最新 N 条
+  return rows.slice(-limit).reverse().map((row) => ({
+    id: row.id,
+    memoryEventId: row.memoryEventId,
+    eventTitle: row.eventTitle,
+    authorName: row.authorName,
+    authorRelation: row.authorRelation,
+    hasAudio: row.audioAssetId !== null,
+    preview: (row.editedText ?? row.rawText ?? row.transcript ?? "").slice(0, 80),
+    createdAt: row.createdAt,
+  }));
+}
+
 export async function addFact(
   familyId: string,
   memoryEventId: string,

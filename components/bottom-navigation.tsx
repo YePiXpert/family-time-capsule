@@ -6,7 +6,7 @@ import { PRIMARY_NAVIGATION, filterNavigationByCapabilities, isNavigationItemAct
 import { Icon } from "./ui/icons";
 import type { FamilyCapability } from "@/lib/authz/policy";
 
-export function BottomNavigation({ inboxCount, capabilities }: { inboxCount: number; capabilities: readonly FamilyCapability[] }) {
+export function BottomNavigation({ capabilities }: { capabilities: readonly FamilyCapability[] }) {
   const pathname = usePathname();
   const navigation = filterNavigationByCapabilities(PRIMARY_NAVIGATION, capabilities);
   return (
@@ -26,7 +26,6 @@ export function BottomNavigation({ inboxCount, capabilities }: { inboxCount: num
             >
               <span className="relative">
                 <Icon name={item.icon} size={item.emphasis ? 27 : 23} />
-                {item.href === "/inbox" && inboxCount > 0 ? <span className="nav-count nav-count-mobile" aria-label={`${inboxCount} 条待整理`}>{inboxCount > 99 ? "99+" : inboxCount}</span> : null}
               </span>
               <span>{item.label}</span>
             </Link>

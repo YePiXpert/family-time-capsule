@@ -7,7 +7,6 @@ import { colors, sharedStyles } from "../theme";
 const nativeEntries = [
   ["离线收藏", "ReadingDownloads", "下载相册和作品，断网阅读并管理容量"],
   ["家庭书架", "Books", "选材、阅读并调整可持续编辑的作品"],
-  ["家人", "People", "人物主页、共同记忆与独立讲述"],
   ["故事", "Stories", "阅读、编辑和发布家庭故事"],
   ["口述史", "Requests", "发起问题并查看回答状态"],
   ["时间胶囊", "Capsules", "创建、封存和到期打开"],

@@ -20,12 +20,16 @@ export function TimelineScreen() {
     credentials,
     events,
     family,
+    home,
     outbox,
     syncing,
     runSync,
     reloadLocal,
     viewer,
   } = useApp();
+  // 收件箱不再是主导航(M1):「记忆」页头部保留整理入口,数量来自最近一次同步。
+  const inboxCount = home?.inbox.count ?? 0;
+  const canReviewInbox = viewer?.canReviewInbox ?? false;
   return (
     <FlatList
       contentContainerStyle={
@@ -45,6 +49,16 @@ export function TimelineScreen() {
       }
       ListHeaderComponent={
         <View style={{ gap: 12, padding: 8 }}>
+          {canReviewInbox && credentials ? (
+            <Pressable
+              onPress={() => navigation.navigate("Inbox")}
+              style={sharedStyles.secondaryButton}
+            >
+              <Text style={sharedStyles.secondaryText}>
+                待整理{inboxCount > 0 ? ` · ${inboxCount > 99 ? "99+" : inboxCount} 条素材等确认` : " · 收件箱已经整理完"}
+              </Text>
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={() => navigation.navigate("Collections")}
             style={sharedStyles.secondaryButton}

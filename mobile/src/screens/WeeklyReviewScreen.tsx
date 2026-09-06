@@ -119,7 +119,7 @@ export function WeeklyReviewScreen({ navigation }: Props) {
     {review.canWrite ? <Pressable disabled={busy} onPress={() => void mutate({ operation: review.status === "completed" ? "reopen" : review.status === "open" ? "start" : "complete" })} style={[sharedStyles.primaryButton, busy && sharedStyles.disabled]}><Text style={sharedStyles.primaryText}>{review.status === "completed" ? "重新打开本周" : review.status === "open" ? "开始本周回顾" : "完成本周回顾"}</Text></Pressable> : <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>当前账号只读。已有缓存可离线查看，但不会生成写入或 outbox。</Text></View>}
 
     <Step number="1" title="整理本周素材" description="新内容仍先经过收件箱人工确认；建议不会自动合并或确认事实。">
-      <View style={styles.metricGrid}>{COUNT_LABELS.map(([key, label]) => <Pressable key={key} onPress={() => key === "failedImports" ? navigation.navigate("ImportSessions") : navigation.navigate("MainTabs", { screen: "Inbox" })} style={styles.metric}><Text style={styles.metricValue}>{review.counts[key]}</Text><Text style={styles.metricLabel}>{label}</Text></Pressable>)}</View>
+      <View style={styles.metricGrid}>{COUNT_LABELS.map(([key, label]) => <Pressable key={key} onPress={() => key === "failedImports" ? navigation.navigate("ImportSessions") : navigation.navigate("Inbox")} style={styles.metric}><Text style={styles.metricValue}>{review.counts[key]}</Text><Text style={styles.metricLabel}>{label}</Text></Pressable>)}</View>
     </Step>
 
     <Step number="2" title="选择本周重点" description="这里只列出已确认 MemoryEvent；点开记忆补标题、地点、人物或成长节点。">

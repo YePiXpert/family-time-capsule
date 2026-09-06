@@ -19,7 +19,7 @@ export function AppShell({ children, familyName, inboxCount, userName, role, cap
         </Link>
       </header>
       <div className="app-shell-content">{children}</div>
-      <BottomNavigation capabilities={capabilities} inboxCount={inboxCount} />
+      <BottomNavigation capabilities={capabilities} />
     </div>
   );
 }

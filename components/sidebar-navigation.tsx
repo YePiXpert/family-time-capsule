@@ -47,8 +47,8 @@ export function SidebarNavigation({ familyName, inboxCount, userName, role, capa
         </ul>
       </nav>
       <div className="mx-5 my-5 border-t border-line" />
-      <nav aria-label="更多功能" className="min-h-0 flex-1 overflow-y-auto px-3 pb-5">
-        <p className="px-3 pb-2 text-xs font-medium tracking-widest text-faint">更多</p>
+      <nav aria-label="整理与更多" className="min-h-0 flex-1 overflow-y-auto px-3 pb-5">
+        <p className="px-3 pb-2 text-xs font-medium tracking-widest text-faint">整理与更多</p>
         <ul className="space-y-0.5">
           {secondaryNavigation.filter((item) => item.href !== "/search").map((item) => {
             const active = isNavigationItemActive(pathname, item.href);
@@ -57,6 +57,7 @@ export function SidebarNavigation({ familyName, inboxCount, userName, role, capa
                 <Link href={item.href} aria-current={active ? "page" : undefined} className={`sidebar-nav-item sidebar-nav-item-secondary ${active ? "is-active" : ""}`}>
                   <Icon name={item.icon} size={19} />
                   <span>{item.label}</span>
+                  {item.href === "/inbox" && inboxCount > 0 ? <span className="nav-count ml-auto" aria-label={`${inboxCount} 条待整理`}>{inboxCount > 99 ? "99+" : inboxCount}</span> : null}
                 </Link>
               </li>
             );

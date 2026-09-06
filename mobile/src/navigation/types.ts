@@ -11,7 +11,7 @@ export type RootStackParamList = {
   Memory: { id: string };
   Search: undefined;
   Settings: undefined;
-  People: undefined;
+  Inbox: undefined;
   PersonDetail: { id: string };
   Stories: undefined;
   StoryDetail: { id: string };
@@ -37,15 +37,17 @@ export type RootStackParamList = {
   LocalCapture: { captureId: string };
 };
 
+// 正式 1.0 五个一级入口(M1):今天/记忆/记录/家人/我的。
+// 收件箱不再是主导航:从「今天」卡片与「记忆」页头部进入,栈内保留深链。
 export type MainTabParamList = {
   Home: undefined;
   Timeline: undefined;
   Capture: { intent?: CaptureIntent; requestKey?: number } | undefined;
-  Inbox: undefined;
+  People: undefined;
   More: undefined;
 };
 
-export const TAB_ROUTES = ["Home", "Timeline", "Capture", "Inbox", "More"] as const;
+export const TAB_ROUTES = ["Home", "Timeline", "Capture", "People", "More"] as const;
 
 export type AppNavigation = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList>,

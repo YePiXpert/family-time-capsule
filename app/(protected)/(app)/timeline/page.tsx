@@ -3,6 +3,8 @@ import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getTimelineFacets, getTimelinePage } from "@/lib/memories/service";
+import { countInbox } from "@/lib/inbox/service";
+import { hasFamilyCapability } from "@/lib/authz/policy";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { PageHeader } from "@/components/page-header";
@@ -12,7 +14,7 @@ import { MemoryCard } from "@/components/memory-card";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "时光轴 · Family Time Capsule" };
+export const metadata: Metadata = { title: "记忆 · Family Time Capsule" };
 
 type TimelineParams = Record<string, string | string[] | undefined>;
 
@@ -62,12 +64,14 @@ export default async function TimelinePage({
   searchParams: Promise<TimelineParams>;
 }) {
   const context = await requireFamily();
-  const { familyId } = context;
+  const { familyId, role } = context;
   const params = await searchParams;
-  const [family, people, facets] = await Promise.all([
+  const canReviewInbox = hasFamilyCapability(role, "inbox:review");
+  const [family, people, facets, inboxCount] = await Promise.all([
     getFamily(familyId),
     listPeople(familyId),
     getTimelineFacets(familyId, context.familyTimezone),
+    canReviewInbox ? countInbox(familyId) : Promise.resolve(0),
   ]);
   const timezone = family?.timezone ?? "Asia/Shanghai";
   const range = rangeFor(params, timezone);
@@ -100,9 +104,9 @@ export default async function TimelinePage({
 
   return (
     <main className="page-container">
-      <PageHeader eyebrow="Timeline" title="时光轴" description={`${child?.displayName ?? "孩子"}的成长记忆按真实发生时间排列；晚上传的旧照片仍会回到它属于的那一天。`} />
+      <PageHeader eyebrow="Memories" title="记忆" description={`${child?.displayName ?? "孩子"}的成长记忆按真实发生时间排列;晚上传的旧照片仍会回到它属于的那一天。资料先安全收进待整理,确认后成为可读记忆——查看与整理永远不互相阻塞。`} />
 
-      <nav aria-label="时间轴浏览方式" className="mt-4 flex gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link><Link href="/collections" className="ui-button-secondary">相册</Link></nav>
+      <nav aria-label="记忆浏览方式" className="mt-4 flex flex-wrap gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link><Link href="/collections" className="ui-button-secondary">相册</Link>{canReviewInbox ? <Link href="/inbox" className="ui-button-secondary">待整理{inboxCount > 0 ? ` · ${inboxCount > 99 ? "99+" : inboxCount} 条` : ""}</Link> : null}</nav>
 
       <section aria-label="筛选时间轴" className="mt-6 rounded-2xl border border-line bg-surface p-4">
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" action="/timeline">

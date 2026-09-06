@@ -173,7 +173,7 @@ export default async function InboxPage({
     <main className="page-container">
       <PageHeader
         eyebrow="Inbox"
-        title="收件箱"
+        title="待整理"
         description={canReview
           ? "把零散素材整理成值得重看的记忆。确认前可以补标题、时间、人物和地点，多份素材也能合成同一件事。"
           : "这里是尚待整理的家庭内容；当前账号可以查看，确认入档由管理员或编辑完成。"}

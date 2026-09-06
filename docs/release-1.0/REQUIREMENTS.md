@@ -22,13 +22,13 @@
 
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| NAV-1 | 五个一级入口:今天/记忆/记录/家人/我的 | Web 与原生一致;无第六主导航 | 未实现(现为 首页/时间轴/记录/收件箱/更多) | components/navigation-items.ts; mobile/src/navigation/AppNavigator.tsx |
-| NAV-2 | 收件箱下沉为整理入口,保留旧路由与深链重定向 | /inbox 及原生 tab 不 404 | 未实现 | app/(protected)/(app)/inbox |
-| NAV-3 | 今天:真实近期记忆+继续草稿+一个回顾入口;空家庭引导第一条 | 不造假回忆 | 部分实现(首页已有真实内容与空态;缺"继续草稿"入口) | app/(protected)/(app)/page.tsx |
-| NAV-4 | 记忆:资料库/时间轴/日历/相册/搜索/人物筛选;资料与记忆可切换视图 | 切换不是审核门 | 部分实现(时间轴/日历/搜索/人物已有;缺"资料库视图"总开关) | /timeline /search /family |
+| NAV-1 | 五个一级入口:今天/记忆/记录/家人/我的 | Web 与原生一致;无第六主导航 | 自动化通过(2026-09-06 M1 落地) | components/navigation-items.ts; mobile/src/navigation/AppNavigator.tsx |
+| NAV-2 | 收件箱下沉为整理入口,保留旧路由与深链重定向 | /inbox 及原生栈路由不 404 | 自动化通过(M1:二级导航首位+记忆页内+原生栈路由) | app/(protected)/(app)/inbox; mobile stack Inbox |
+| NAV-3 | 今天:真实近期记忆+继续草稿+一个回顾入口;空家庭引导第一条 | 不造假回忆 | 自动化通过(M1:待整理与草稿卡+每周回顾卡) | app/(protected)/(app)/page.tsx |
+| NAV-4 | 记忆:资料库/时间轴/日历/相册/搜索/人物筛选;资料与记忆可切换视图 | 切换不是审核门 | 部分实现(M1:时间线/日历/相册/待整理切换;全量资料库视图待 M3) | /timeline |
 | NAV-5 | 记录:图文音混合编辑器,持久保存中断状态 | 杀进程后恢复 | 部分实现(原生 capture 本机持久;Web capture 持久草稿待核) | mobile/src/screens/CaptureScreen.tsx; /capture |
-| NAV-6 | 家人:最近补充/人物/原声/问题/邀请;非管理员无维护菜单 | 角色过滤 | 部分实现(家人页=/family 人物;缺"最近补充"聚合) | app/(protected)/(app)/family |
-| NAV-7 | 我的:同步/下载/隐私/账号/救援/作品/高级设置 | 归拢入口 | 未实现(现"更多"页结构不同) | app/(protected)/(app)/more |
+| NAV-6 | 家人:最近补充/人物/原声/问题/邀请;非管理员无维护菜单 | 角色过滤 | 自动化通过(M1:最近补充 feed+三入口;管理按钮角色过滤) | app/(protected)/(app)/family |
+| NAV-7 | 我的:同步/下载/隐私/账号/救援/作品/高级设置 | 归拢入口 | 自动化通过(M1:Web 四分组;原生 More=我的) | app/(protected)/(app)/more |
 | NAV-8 | 记忆卡/资料卡/播放器/日期控件/错误与加载状态统一设计系统 | 无平行 UI 框架 | 自动化通过(设计系统+组件已统一) | design-system/ components/ |
 | NAV-9 | 小屏/平板/桌面;大字/系统字体缩放/读屏/键盘/44px 触控/深浅色/reduced-motion | a11y 检查 | 部分实现(响应式已有;reduced-motion/读屏待核验) | components/ |
 | NAV-10 | 中文默认;结构支持国际化;界面不混代码术语 | 术语审查 | 部分实现(全中文已做到;无 i18n 框架——单语可接受) | 全部 UI |

@@ -154,7 +154,8 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   await expect(primaryNavigation.getByText("记录", { exact: true })).toHaveCount(0);
   await expect(primaryNavigation.getByText("收件箱", { exact: true })).toHaveCount(0);
   await page.goto("/more");
-  await expect(page.locator('a[href="/family"]')).toHaveCount(0);
+  // 正式 1.0 IA:家人是一级入口(浏览对全员开放),但 viewer 的「我的」页
+  // 不出现故事/口述史/胶囊等写入入口;/family 页内的管理控件另行断言隐藏。
   await expect(page.locator('a[href="/stories"]')).toHaveCount(0);
   await expect(page.locator('a[href="/requests"]')).toHaveCount(0);
   await expect(page.locator('a[href="/capsules"]')).toHaveCount(0);
@@ -162,6 +163,7 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   await page.goto("/family");
   await expect(page.getByRole("heading", { name: "家人" })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加家人" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "邀请家人加入" })).toHaveCount(0);
   await page.goto("/settings");
   await expect(page.getByRole("link", { name: /导出完整备份/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "最近操作" })).toHaveCount(0);

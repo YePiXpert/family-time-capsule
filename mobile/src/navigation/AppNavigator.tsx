@@ -52,17 +52,16 @@ const navigationTheme: Theme = {
   },
 };
 
+// 正式 1.0 一级入口(M1):今天/记忆/记录/家人/我的;收件箱入栈为整理页。
 const tabMeta = {
-  Home: ["首页", "⌂"],
-  Timeline: ["时间轴", "◷"],
+  Home: ["今天", "⌂"],
+  Timeline: ["记忆", "◷"],
   Capture: ["记录", "+"],
-  Inbox: ["收件箱", "▣"],
-  More: ["更多", "•••"],
+  People: ["家人", "☺"],
+  More: ["我的", "•••"],
 } as const;
 
 function MainTabs() {
-  const { home, outbox } = useApp();
-  const inboxCount = home?.inbox.count ?? outbox.length;
   return <Tabs.Navigator screenOptions={({ route }) => ({
     headerStyle: { backgroundColor: colors.paper },
     headerShadowVisible: false,
@@ -79,7 +78,7 @@ function MainTabs() {
     <Tabs.Screen component={HomeScreen} name="Home" />
     <Tabs.Screen component={TimelineScreen} name="Timeline" />
     <Tabs.Screen component={CaptureScreen} name="Capture" options={{ tabBarLabelStyle: { color: colors.coralDark, fontSize: 11, fontWeight: "800" } }} />
-    <Tabs.Screen component={InboxScreen} name="Inbox" options={{ tabBarBadge: inboxCount > 0 ? Math.min(inboxCount, 99) : undefined, tabBarBadgeStyle: { backgroundColor: colors.coral, color: "#FFFFFF", fontSize: 10 } }} />
+    <Tabs.Screen component={PeopleScreen} name="People" />
     <Tabs.Screen component={MoreScreen} name="More" />
   </Tabs.Navigator>;
 }
@@ -95,7 +94,7 @@ export function AppNavigator() {
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "记忆" }} />
         <Stack.Screen component={SearchScreen} name="Search" options={{ title: "搜索" }} />
         <Stack.Screen component={SettingsScreen} name="Settings" options={{ title: "设置" }} />
-        <Stack.Screen component={PeopleScreen} name="People" options={{ title: "家人" }} />
+        <Stack.Screen component={InboxScreen} name="Inbox" options={{ title: "待整理" }} />
         <Stack.Screen component={PersonDetailScreen} name="PersonDetail" options={{ title: "人物" }} />
         <Stack.Screen component={StoriesScreen} name="Stories" options={{ title: "故事" }} />
         <Stack.Screen component={StoryDetailScreen} name="StoryDetail" options={{ title: "故事" }} />

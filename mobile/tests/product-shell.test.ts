@@ -10,7 +10,7 @@ import type { Viewer } from "../src/types";
 
 describe("native product shell", () => {
   it("keeps exactly five primary destinations with capture in the center", () => {
-    expect(TAB_ROUTES).toEqual(["Home", "Timeline", "Capture", "Inbox", "More"]);
+    expect(TAB_ROUTES).toEqual(["Home", "Timeline", "Capture", "People", "More"]);
     expect(TAB_ROUTES[2]).toBe("Capture");
   });
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
+import { listRecentFamilyContributions } from "@/lib/contributions/service";
 import { AddPersonForm } from "./add-person-form";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import {
@@ -17,9 +18,10 @@ export const metadata: Metadata = { title: "家人 · Family Time Capsule" };
 export default async function FamilyPage() {
   const { familyId, role } = await requireFamily();
   const canManageFamily = hasFamilyCapability(role, "family:manage");
-  const [family, people] = await Promise.all([
+  const [family, people, recentContributions] = await Promise.all([
     getFamily(familyId),
     listPeople(familyId),
+    listRecentFamilyContributions(familyId, 5),
   ]);
 
   return (
@@ -30,7 +32,53 @@ export default async function FamilyPage() {
         祖辈、孩子都可以先出现在记忆里，以后再开账号。
       </p>
 
-      <section aria-label="成员列表" className="mt-8 flex flex-col gap-3">
+      <nav aria-label="家人相关入口" className="mt-6 grid gap-3 sm:grid-cols-3">
+        <Link href="/requests" className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4 transition-colors hover:border-accent/50">
+          <span className="font-medium">问题与原声</span>
+          <span className="mt-1 block text-sm text-foreground/60">向家人发起口述史问题，收集他们的讲述与声音</span>
+        </Link>
+        <Link href="/contributions" className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4 transition-colors hover:border-accent/50">
+          <span className="font-medium">家庭投递箱</span>
+          <span className="mt-1 block text-sm text-foreground/60">请没有账号的家人提交旧照片、录音与文字</span>
+        </Link>
+        {canManageFamily ? (
+          <Link href="/settings/invitations" className="rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4 transition-colors hover:border-accent/50">
+            <span className="font-medium">邀请家人加入</span>
+            <span className="mt-1 block text-sm text-foreground/60">生成可撤销的邀请链接或二维码</span>
+          </Link>
+        ) : null}
+      </nav>
+
+      {recentContributions.length > 0 ? (
+        <section aria-label="最近补充" className="mt-10">
+          <h2 className="text-lg font-medium">最近补充</h2>
+          <p className="mt-1 text-sm leading-6 text-foreground/60">
+            家人最近留下的讲述；私密讲述只对本人与授权范围可见，不在这里出现。
+          </p>
+          <ul className="mt-3 flex flex-col gap-2">
+            {recentContributions.map((item) => (
+              <li key={item.id}>
+                <Link
+                  href={`/memories/${item.memoryEventId}`}
+                  className="block rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4 transition-colors hover:border-accent/50"
+                >
+                  <span className="text-sm text-foreground/60">
+                    {item.authorName}
+                    {item.authorRelation ? ` · ${item.authorRelation}` : ""}
+                    {item.hasAudio ? " · 含原声" : ""} 补充于「{item.eventTitle}」
+                  </span>
+                  {item.preview ? (
+                    <span className="mt-1 block truncate text-sm">{item.preview}</span>
+                  ) : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section aria-label="成员列表" className="mt-10 flex flex-col gap-3">
+        <h2 className="text-lg font-medium">人物</h2>
         {people.map((p) => (
           <div
             key={p.id}

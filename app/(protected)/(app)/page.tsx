@@ -12,7 +12,7 @@ import { requireFamily } from "@/lib/family/context";
 import { getHomeDashboard } from "@/lib/home/service";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "首页 · Family Time Capsule" };
+export const metadata: Metadata = { title: "今天 · Family Time Capsule" };
 
 const INBOX_STATUS_LABEL: Record<string, string> = {
   new: "待整理",
@@ -307,8 +307,9 @@ export default async function HomePage() {
         <aside className="min-w-0 space-y-8" aria-label="家庭待办与成品">
           <section>
             <SectionHeader
-              title="待整理"
-              actionLabel="进入收件箱"
+              title="待整理与草稿"
+              description="没收完的素材和没写完的草稿都在这里等着继续"
+              actionLabel="继续整理"
               actionHref="/inbox"
               trailing={
                 <StatusBadge
