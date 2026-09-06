@@ -200,7 +200,13 @@ export function BookReviewEditor({
         </label>
         <button
           className="ui-button-secondary"
-          onClick={() => apply({ startDate: start, endDate: end })}
+          onClick={() => {
+            if (start > end) {
+              setError(errors.invalid_date_range);
+              return;
+            }
+            apply({ startDate: start, endDate: end });
+          }}
         >
           查看日期范围
         </button>

@@ -100,20 +100,20 @@ export function BookRenderPanel({
       {error ? <p role="alert">{error}</p> : null}
       <p className="my-3 text-sm text-muted">精选阅读包解压后直接打开 index.html，无需登录或网络。接收者可以保存或转发，下载副本无法远程收回；它不是完整可恢复备份。</p>
       <div className="my-3 flex flex-wrap gap-3">
-        <button className="ui-button-primary" disabled={busy} onClick={()=>void start("reading_zip")}>生成精选阅读包 ZIP</button>
+        <button className="ui-button-primary" disabled={busy} onClick={()=>void start("reading_zip")}>{busy ? "正在提交…" : "生成精选阅读包 ZIP"}</button>
         <button
           className="ui-button-primary"
           disabled={busy}
           onClick={() => void start("pdf")}
         >
-          生成 PDF
+          {busy ? "正在提交…" : "生成 PDF"}
         </button>
         <button
           className="ui-button-secondary"
           disabled={busy}
           onClick={() => void start("epub")}
         >
-          生成 EPUB
+          {busy ? "正在提交…" : "生成 EPUB"}
         </button>
         <button className="ui-button-secondary" onClick={() => void load()}>
           刷新出版状态
@@ -139,8 +139,12 @@ export function BookRenderPanel({
                 }[job.status]
               }
             </p>
-            {job.status === "running" ? (
-              <progress aria-label="排版进度" max={100} value={job.progress} />
+            {["queued", "running"].includes(job.status) ? (
+              <progress
+                aria-label="排版进度"
+                max={100}
+                value={job.status === "running" ? job.progress : undefined}
+              />
             ) : null}
             {job.bytes ? (
               <p className="text-sm text-muted">

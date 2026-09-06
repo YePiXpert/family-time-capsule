@@ -310,6 +310,11 @@ export function BookEditor({ id }: { id: string }) {
     return () => clearTimeout(timer);
   }, [sequence, paused, busy, save]);
   useEffect(() => {
+    return () => {
+      if (editSequence.current !== savedSequence.current) void save();
+    };
+  }, [save]);
+  useEffect(() => {
     const warn = (e: BeforeUnloadEvent) => {
       if (editSequence.current !== savedSequence.current) {
         e.preventDefault();
@@ -325,7 +330,9 @@ export function BookEditor({ id }: { id: string }) {
     setBook(next);
     editSequence.current++;
     setSequence(editSequence.current);
-    setStatus("有修改，正在等待保存…");
+    setStatus(
+      paused ? "自动保存已暂停，请点「重试保存」。" : "有修改，正在等待保存…",
+    );
   }
   async function operation(
     operation: string,
@@ -904,13 +911,26 @@ export function BookEditor({ id }: { id: string }) {
                           </button>
                           <button
                             className="ui-button-secondary"
-                            onClick={() =>
-                              update({
-                                blocks: book.blocks.filter(
-                                  (b) => b.id !== block.id,
-                                ),
-                              })
-                            }
+                            onClick={() => {
+                              const kindLabel = {
+                                text: "文字",
+                                image: "单图",
+                                double: "双图",
+                                collage: "小型拼图",
+                                quote: "引文",
+                                date: "日期 / 年龄",
+                              }[block.kind];
+                              if (
+                                window.confirm(
+                                  `移除内容块（${kindLabel}）？来源记忆不会删除。`,
+                                )
+                              )
+                                update({
+                                  blocks: book.blocks.filter(
+                                    (b) => b.id !== block.id,
+                                  ),
+                                });
+                            }}
                           >
                             删除内容块
                           </button>
@@ -972,6 +992,12 @@ export function BookEditor({ id }: { id: string }) {
               <Link
                 className="ui-text-link inline-flex min-h-11 items-center"
                 href={`/books/${id}/versions/${version.revision}`}
+                onNavigate={(e) => {
+                  if (editSequence.current !== savedSequence.current) {
+                    e.preventDefault();
+                    setError("请先保存修改，再打开保存的版本。");
+                  }
+                }}
               >
                 修订 {version.revision} ·{" "}
                 {new Intl.DateTimeFormat("zh-CN", {

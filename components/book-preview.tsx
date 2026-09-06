@@ -10,6 +10,11 @@ const warnings = {
   empty_block: "内容块为空。",
   empty_chapter: "有章节尚未加入内容。",
 };
+const blockingWarningCodes = new Set([
+  "missing_source",
+  "empty_chapter",
+  "empty_block",
+]);
 export function BookPreview({ book }: { book: BookDetail }) {
   const date = (value: string) =>
     new Intl.DateTimeFormat("zh-CN", {
@@ -57,6 +62,20 @@ export function BookPreview({ book }: { book: BookDetail }) {
           </p>
         ) : null}
       </article>
+      {book.warnings.some((w) => w.blockId === null) ? (
+        <div role="alert" className="my-5 space-y-2">
+          {book.warnings
+            .filter((w) => w.blockId === null)
+            .map((w) => (
+              <p
+                key={w.code}
+                className="inline-notice inline-notice-danger text-sm"
+              >
+                {warnings[w.code]}
+              </p>
+            ))}
+        </div>
+      ) : null}
       <nav
         aria-label="作品目录"
         className="my-6 rounded-2xl border border-line p-5"
@@ -185,7 +204,14 @@ export function BookPreview({ book }: { book: BookDetail }) {
                   {book.warnings
                     .filter((w) => w.blockId === block.id)
                     .map((w) => (
-                      <p key={w.code} className="text-sm text-muted">
+                      <p
+                        key={w.code}
+                        className={`inline-notice text-sm ${
+                          blockingWarningCodes.has(w.code)
+                            ? "inline-notice-danger"
+                            : "inline-notice-warning"
+                        }`}
+                      >
                         {warnings[w.code]}
                       </p>
                     ))}
