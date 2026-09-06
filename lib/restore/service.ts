@@ -2488,7 +2488,7 @@ async function assertRestoreOperator(operatorUserId: string): Promise<void> {
   const operatorRow = operator[0];
   requireCondition(
     Boolean(operatorRow) &&
-      operatorRow.role === "admin" &&
+      (operatorRow.role === "owner" || operatorRow.role === "admin") &&
       operatorRow.disabledAt === null &&
       operatorRow.familyId === null &&
       operatorRow.personId === null,

@@ -12,6 +12,7 @@ import {
   lte,
   ne,
   or,
+  inArray,
 } from "drizzle-orm";
 import { getDb } from "@/db";
 import { auditLog } from "@/db/schema/audit";
@@ -23,6 +24,7 @@ import { runWithInvitationProvisioningCapability } from "@/lib/auth/provisioning
 import {
   isFamilyRole,
   type FamilyRole,
+  ADMIN_CLASS_ROLES,
 } from "@/lib/authz/policy";
 
 const TOKEN_BYTES = 32;
@@ -187,7 +189,7 @@ async function isFamilyAdmin(
       and(
         eq(userTable.id, actorUserId),
         eq(userTable.familyId, familyId),
-        eq(userTable.role, "admin"),
+        inArray(userTable.role, ADMIN_CLASS_ROLES),
         isNull(userTable.disabledAt),
       ),
     )
@@ -277,7 +279,7 @@ export async function reconcileFamilyInvitationProvisioning(
         and(
           eq(userTable.id, actorUserId),
           eq(userTable.familyId, familyId),
-          eq(userTable.role, "admin"),
+          inArray(userTable.role, ADMIN_CLASS_ROLES),
           isNull(userTable.disabledAt),
           or(
             isNull(userTable.personId),
@@ -301,7 +303,8 @@ export async function reconcileFamilyInvitationProvisioning(
 export async function createFamilyInvitation(
   input: CreateInvitationInput,
 ): Promise<CreateInvitationResult> {
-  if (!isFamilyRole(input.role)) {
+  if (!isFamilyRole(input.role) || input.role === "owner") {
+    // owner 只经所有权移交产生，不能通过邀请授予。
     return { ok: false, error: "invalid_input" };
   }
 
@@ -335,7 +338,7 @@ export async function createFamilyInvitation(
           and(
             eq(userTable.id, input.actorUserId),
             eq(userTable.familyId, input.familyId),
-            eq(userTable.role, "admin"),
+            inArray(userTable.role, ADMIN_CLASS_ROLES),
             isNull(userTable.disabledAt),
             or(
               isNull(userTable.personId),
@@ -474,7 +477,7 @@ export async function revokeFamilyInvitation(input: {
           and(
             eq(userTable.id, input.actorUserId),
             eq(userTable.familyId, input.familyId),
-            eq(userTable.role, "admin"),
+            inArray(userTable.role, ADMIN_CLASS_ROLES),
             isNull(userTable.disabledAt),
             or(
               isNull(userTable.personId),

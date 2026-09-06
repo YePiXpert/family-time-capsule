@@ -294,6 +294,6 @@ describe("POST /api/mobile/v1/onboarding（App 内建立家庭）", () => {
     expect(meBody.family.id).toBe(body.familyId);
     expect(meBody.family.name).toBe(ONBOARDING.familyName);
     expect(meBody.family.timezone).toBe(ONBOARDING.timezone);
-    expect(meBody.account.role).toBe("admin");
+    expect(meBody.account.role).toBe("owner");
   });
 });

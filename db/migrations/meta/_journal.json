@@ -330,6 +330,13 @@
       "when": 1788695199074,
       "tag": "0046_transcript_revision",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1788700000000,
+      "tag": "0047_owner_role",
+      "breakpoints": true
     }
   ]
 }

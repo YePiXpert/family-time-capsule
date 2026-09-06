@@ -76,7 +76,7 @@ describe("onboarding：创建家庭与人物", () => {
     const binding = await getUserBinding(userId);
     expect(binding.familyId).toBe(result.familyId);
     expect(binding.personId).toBeTruthy();
-    expect(binding.role).toBe("admin");
+    expect(binding.role).toBe("owner");
 
     const people = await listPeople(result.familyId);
     expect(people).toHaveLength(2);
@@ -99,7 +99,8 @@ describe("onboarding：创建家庭与人物", () => {
     const db = getDb();
     let failure: unknown;
     try {
-      db.run(sql`UPDATE user SET role = 'owner' WHERE id = ${userId}`);
+      // owner 自 M2 起是合法角色；未知角色用 superadmin 验证守卫仍然拒绝。
+      db.run(sql`UPDATE user SET role = 'superadmin' WHERE id = ${userId}`);
     } catch (error) {
       failure = error;
     }
@@ -107,7 +108,7 @@ describe("onboarding：创建家庭与人物", () => {
     const cause = (failure as Error & { cause?: { code?: string; message?: string } })
       .cause;
     expect(cause?.code).toBe("SQLITE_CONSTRAINT_TRIGGER");
-    await expect(getUserBinding(userId)).resolves.toMatchObject({ role: "admin" });
+    await expect(getUserBinding(userId)).resolves.toMatchObject({ role: "owner" });
   });
 
   it("已绑定后重复 onboarding 被拒绝", async () => {

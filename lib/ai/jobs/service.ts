@@ -90,7 +90,7 @@ type Transaction = ContributionAccessTransaction;
 type LiveActor = Readonly<{
   id: string;
   familyId: string;
-  role: "admin" | "editor" | "contributor" | "viewer";
+  role: "owner" | "admin" | "editor" | "contributor" | "viewer";
   snapshot: ContributionAccessSnapshot;
 }>;
 
@@ -910,7 +910,7 @@ export function getAiOperationalStatus(context: FamilyContext, dependencies: AiJ
       valid: runtime !== null, configured: runtime !== null && runtime.provider.id !== "disabled",
       configurationId: runtime?.provider.configurationId ?? null,
       provider: runtime?.provider.displayName ?? null, external: runtime?.provider.external ?? false,
-      canConfigure: actor.role === "admin", workerAvailable,
+      canConfigure: actor.role === "owner" || actor.role === "admin", workerAvailable,
       capabilities: (["text", "vision", "transcription"] as const).map(capability => {
         const model = runtimeModel(runtime, capability);
         const consent = consents.find(row => row.capability === capability);

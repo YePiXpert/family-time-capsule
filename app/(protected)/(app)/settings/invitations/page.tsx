@@ -17,6 +17,7 @@ export const metadata: Metadata = {
 };
 
 const ROLE_LABEL = {
+  owner: "所有者",
   admin: "管理员",
   editor: "编辑者",
   contributor: "贡献者",

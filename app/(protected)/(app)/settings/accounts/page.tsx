@@ -15,6 +15,7 @@ export const metadata: Metadata = {
 
 export default async function AccountsPage() {
   const context = await requireFamilyCapability("account:manage");
+  const viewerIsOwner = context.role === "owner";
   let accounts;
   try {
     accounts = await listFamilyAccounts(context);
@@ -43,7 +44,7 @@ export default async function AccountsPage() {
 
       <ul className="mt-8 flex flex-col gap-4">
         {accounts.map((account) => (
-          <AccountCard key={account.id} account={account} />
+          <AccountCard key={account.id} account={account} viewerIsOwner={viewerIsOwner} />
         ))}
       </ul>
     </main>

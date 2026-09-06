@@ -1,6 +1,6 @@
 import "server-only";
 
-import { count } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { user as userTable } from "@/db/schema/auth";
 import { safeTokenEqual } from "./token";
@@ -105,5 +105,11 @@ async function doSetup(input: SetupInput): Promise<SetupResult> {
   }
   // 以数据库为准确认创建成功（不依赖响应形态）
   if ((await countUsers()) !== 1) return { ok: false, error: "creation_failed" };
+  // M2：首个管理员是家庭所有者（owner）；后续账号只能经邀请成为普通角色。
+  getDb()
+    .update(userTable)
+    .set({ role: "owner", updatedAt: new Date() })
+    .where(eq(userTable.role, "admin"))
+    .run();
   return { ok: true };
 }

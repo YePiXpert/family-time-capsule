@@ -32,6 +32,17 @@ export async function requireSession(): Promise<SessionUser> {
   };
 }
 
+/**
+ * 当前请求的完整会话行（含 better-auth session.id）。
+ * 用于“活动设备”页标记当前会话、撤销其他会话时保护自己。
+ */
+export async function requireCurrentSessionId(): Promise<string> {
+  const requestHeaders = await headers();
+  const session = await getAuth().api.getSession({ headers: requestHeaders });
+  if (!session) redirect("/login");
+  return session.session.id;
+}
+
 export type FamilyContext = {
   userId: string;
   userName: string;

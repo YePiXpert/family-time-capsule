@@ -7,6 +7,7 @@ import {
   changeFamilyAccountRole,
   disableFamilyAccount,
   enableFamilyAccount,
+  transferOwnership,
   type AccountMutationError,
 } from "@/lib/accounts/service";
 
@@ -31,6 +32,10 @@ function errorMessage(error: AccountMutationError): string {
       return "不能停用当前正在使用的账号。";
     case "last_admin":
       return "家庭必须保留至少一名可用管理员。请先把另一账号设为管理员。";
+    case "owner_transfer_required":
+      return "所有者账号不能这样直接修改；请先在“所有权”中完成移交。";
+    case "password_required":
+      return "需要重新输入当前密码完成认证。";
   }
 }
 
@@ -82,4 +87,31 @@ export async function changeAccountRoleAction(
     redirect("/settings?accountRoleUpdated=1");
   }
   return { success: "账号角色已更新。" };
+}
+
+/**
+ * 所有权移交（M2）：要求当前 owner 重新输入密码（近期重新认证），
+ * 目标必须是已启用的 admin 成员；原子交换后原 owner 变为 admin。
+ */
+export async function transferOwnershipAction(
+  targetUserId: string,
+  _previous: AccountFormState | undefined,
+  formData: FormData,
+): Promise<AccountFormState> {
+  void _previous;
+  const context = await requireFamilyCapability("family:transfer");
+  const password = String(formData.get("currentPassword") ?? "");
+  if (!password) return { error: errorMessage("password_required") };
+  const result = await transferOwnership({ context, targetUserId, currentPassword: password });
+  if (!result.ok) {
+    const message =
+      result.error === "invalid_target"
+        ? "移交目标必须是本家庭已启用的管理员账号。"
+        : result.error === "password_required"
+          ? "需要重新输入当前密码完成认证。"
+          : errorMessage(result.error);
+    return { error: message };
+  }
+  revalidateAccountAdministration();
+  return { success: "所有权已移交；你现在是管理员，新所有者已就位。" };
 }

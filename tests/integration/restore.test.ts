@@ -1315,7 +1315,8 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       .from(m.schema.user)
       .where((await import("drizzle-orm")).eq(m.schema.user.id, adminId));
     expect(setupAdmin[0]).toMatchObject({
-      role: "admin",
+      // M2：setup 建立的首个管理员现在是所有者（owner）。
+      role: "owner",
       familyId: null,
       personId: null,
       disabledAt: null,

@@ -13,6 +13,7 @@ import { factSource } from "@/db/schema/suggestion";
 import { AUDIT_KINDS, requiredAuditValues } from "@/lib/audit/service";
 import {
   hasFamilyCapability,
+  isAdminClassRole,
   isContributionVisibility,
   isFamilyRole,
 } from "@/lib/authz/policy";
@@ -154,7 +155,7 @@ export async function createContribution(
 
     const recordingOwnWords = actor.personId === author.id;
     const mayRecordOnBehalf =
-      (actor.role === "admin" || actor.role === "editor") &&
+      (isAdminClassRole(actor.role) || actor.role === "editor") &&
       author.boundUserId === null;
     if (!recordingOwnWords && !mayRecordOnBehalf) {
       return { ok: false, error: "author_not_allowed" } as const;

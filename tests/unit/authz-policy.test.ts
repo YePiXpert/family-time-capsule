@@ -22,12 +22,15 @@ const baseViewer: ContributionViewer = {
 };
 
 describe("family role capabilities", () => {
-  it("accepts exactly the four durable roles", () => {
-    for (const role of ["admin", "editor", "contributor", "viewer"]) {
+  it("accepts exactly the five durable roles (M2 adds owner)", () => {
+    for (const role of ["owner", "admin", "editor", "contributor", "viewer"]) {
       expect(isFamilyRole(role)).toBe(true);
     }
-    expect(isFamilyRole("owner")).toBe(false);
+    expect(isFamilyRole("superadmin")).toBe(false);
     expect(isFamilyRole(null)).toBe(false);
+    // owner ⊇ admin，唯一多出的能力是 family:transfer。
+    expect(hasFamilyCapability("owner", "family:transfer")).toBe(true);
+    expect(hasFamilyCapability("admin", "family:transfer")).toBe(false);
   });
 
   it("keeps administration and disaster export admin-only", () => {

@@ -6,9 +6,11 @@ import {
   changeAccountRoleAction,
   disableAccountAction,
   enableAccountAction,
+  transferOwnershipAction,
 } from "./actions";
 
 const ROLE_LABEL = {
+  owner: "所有者",
   admin: "管理员",
   editor: "编辑者",
   contributor: "贡献者",
@@ -38,11 +40,18 @@ function ResultMessage({
   );
 }
 
-export function AccountCard({ account }: { account: FamilyAccountDto }) {
+export function AccountCard({
+  account,
+  viewerIsOwner,
+}: {
+  account: FamilyAccountDto;
+  viewerIsOwner: boolean;
+}) {
   const roleAction = changeAccountRoleAction.bind(null, account.id);
   const stateAction = (
     account.disabledAt ? enableAccountAction : disableAccountAction
   ).bind(null, account.id);
+  const transferAction = transferOwnershipAction.bind(null, account.id);
   const [roleState, roleFormAction, rolePending] = useActionState(
     roleAction,
     undefined,
@@ -51,6 +60,11 @@ export function AccountCard({ account }: { account: FamilyAccountDto }) {
     stateAction,
     undefined,
   );
+  const [transferState, transferFormAction, transferPending] = useActionState(
+    transferAction,
+    undefined,
+  );
+  const isOwnerAccount = account.role === "owner";
 
   return (
     <li className="rounded-2xl border border-foreground/10 bg-foreground/[0.02] p-5 sm:p-6">
@@ -97,8 +111,8 @@ export function AccountCard({ account }: { account: FamilyAccountDto }) {
             <select
               id={`role-${account.id}`}
               name="role"
-              defaultValue={account.role}
-              disabled={rolePending}
+              defaultValue={account.role === "owner" ? "admin" : account.role}
+              disabled={rolePending || isOwnerAccount}
               className={`${inputClass} min-w-0 flex-1`}
             >
               <option value="viewer">查看者 · 只读</option>
@@ -108,19 +122,59 @@ export function AccountCard({ account }: { account: FamilyAccountDto }) {
             </select>
             <button
               type="submit"
-              disabled={rolePending}
+              disabled={rolePending || isOwnerAccount}
               className="min-h-11 shrink-0 rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               {rolePending ? "保存中…" : "保存角色"}
             </button>
           </div>
-          {account.isCurrentUser && (
+          {isOwnerAccount ? (
+            <p className="text-xs leading-5 text-foreground/55">
+              所有者角色只能通过“移交所有权”变化，不能在角色下拉中直接修改。
+            </p>
+          ) : account.isCurrentUser ? (
             <p className="text-xs leading-5 text-foreground/55">
               若把自己改为非管理员，将立即离开此管理页；家庭必须另有可用管理员。
             </p>
-          )}
+          ) : null}
           <ResultMessage state={roleState} />
         </form>
+
+        {viewerIsOwner && account.role === "admin" && !account.disabledAt ? (
+          <form
+            action={transferFormAction}
+            className="flex flex-col gap-2 border-t border-foreground/10 pt-4 sm:col-span-2"
+          >
+            <label
+              htmlFor={`transfer-password-${account.id}`}
+              className="text-sm font-medium"
+            >
+              移交所有权给这位管理员
+            </label>
+            <p className="text-xs leading-5 text-foreground/55">
+              移交后你成为管理员，对方成为所有者；需要输入你当前的密码确认。
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                id={`transfer-password-${account.id}`}
+                name="currentPassword"
+                type="password"
+                autoComplete="current-password"
+                disabled={transferPending}
+                className={`${inputClass} min-w-0 flex-1`}
+                placeholder="当前密码"
+              />
+              <button
+                type="submit"
+                disabled={transferPending}
+                className="min-h-11 shrink-0 rounded-lg border border-accent/40 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {transferPending ? "移交中…" : "确认移交所有权"}
+              </button>
+            </div>
+            <ResultMessage state={transferState} />
+          </form>
+        ) : null}
 
         <form action={accountFormAction} className="flex flex-col gap-2 sm:items-end">
           <button

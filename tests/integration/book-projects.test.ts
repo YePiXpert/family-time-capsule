@@ -242,6 +242,8 @@ it("family selection rejects private sources atomically; personal projects are i
     userId: otherUser,
     userName: "妈妈",
     personId: mom,
+    // M2：主账号现在是 owner;这位“另一位管理员”按其真实 DB 角色构造上下文。
+    role: "admin" as const,
     isGuardian: true,
   };
   expect(() => books.getBookProject(ctx, personalId)).toThrow("not_found");

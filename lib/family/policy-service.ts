@@ -1,11 +1,13 @@
 import "server-only";
 
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, inArray} from "drizzle-orm";
 import { getDb } from "@/db";
 import { auditLog } from "@/db/schema/audit";
 import { user as userTable } from "@/db/schema/auth";
 import { family, person } from "@/db/schema/family";
-import { assertFamilyCapability } from "@/lib/authz/policy";
+import { assertFamilyCapability,
+  ADMIN_CLASS_ROLES,
+} from "@/lib/authz/policy";
 import type { FamilyContext } from "@/lib/family/context";
 import { AUDIT_KINDS, requiredAuditValues } from "@/lib/audit/service";
 
@@ -38,7 +40,7 @@ export function setPersonGuardian(
         and(
           eq(userTable.id, context.userId),
           eq(userTable.familyId, context.familyId),
-          eq(userTable.role, "admin"),
+          inArray(userTable.role, ADMIN_CLASS_ROLES),
           isNull(userTable.disabledAt),
           or(
             isNull(userTable.personId),
@@ -101,7 +103,7 @@ export function setChildLaterUnlockAge(
         and(
           eq(userTable.id, context.userId),
           eq(userTable.familyId, context.familyId),
-          eq(userTable.role, "admin"),
+          inArray(userTable.role, ADMIN_CLASS_ROLES),
           isNull(userTable.disabledAt),
           or(
             isNull(userTable.personId),
@@ -158,7 +160,7 @@ export function manuallyUnlockChildLater(
         and(
           eq(userTable.id, context.userId),
           eq(userTable.familyId, context.familyId),
-          eq(userTable.role, "admin"),
+          inArray(userTable.role, ADMIN_CLASS_ROLES),
           isNull(userTable.disabledAt),
           or(
             isNull(userTable.personId),

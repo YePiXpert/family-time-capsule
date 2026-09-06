@@ -35,7 +35,7 @@ const family = await completeOnboarding(actor.id, { familyName: "虚构整理", 
 if (!family.ok) throw new Error("fixture family failed");
 const familyId = family.familyId;
 const binding = await getUserBinding(actor.id);
-const context: FamilyContext = { userId: actor.id, userName: actor.name, familyId, personId: binding.personId, role: "admin", accountEnabled: true, isGuardian: true, familyTimezone: "Asia/Shanghai", childLaterUnlockAge: 18 };
+const context: FamilyContext = { userId: actor.id, userName: actor.name, familyId, personId: binding.personId, role: binding.role, accountEnabled: true, isGuardian: true, familyTimezone: "Asia/Shanghai", childLaterUnlockAge: 18 };
 function assistant() {
   const ai = new DeterministicFakeMemoryAssistant();
   const text = vi.spyOn(ai, "generateText").mockImplementation(async input => {
@@ -343,7 +343,7 @@ it("keeps cancellation scoped to the selected target and rejects stale privilege
   try {
     expect(await getOrganizerReview(context, target, options)).toBeNull();
     expect(mutateOrganizer(context, target, "cancel", queued.jobId, options)).toEqual({ ok: false, error: "forbidden" });
-  } finally { getDb().update(user).set({ role: "admin" }).where(eq(user.id, context.userId)).run(); }
+  } finally { getDb().update(user).set({ role: "owner" }).where(eq(user.id, context.userId)).run(); }
   expect(mutateOrganizer(context, target, "cancel", queued.jobId, options).ok).toBe(true);
   expect((await getOrganizerReview(context, target, options))?.tasks[0]).toMatchObject({ state: "cancelled", active: false, canRetry: true });
 });

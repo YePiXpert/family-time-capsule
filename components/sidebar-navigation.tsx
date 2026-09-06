@@ -8,6 +8,7 @@ import { LogoutButton } from "./logout-button";
 import type { FamilyCapability, FamilyRole } from "@/lib/authz/policy";
 
 const ROLE_LABELS: Record<FamilyRole, string> = {
+  owner: "所有者",
   admin: "管理员",
   editor: "整理者",
   contributor: "贡献者",

@@ -25,6 +25,7 @@ import { colors, sharedStyles } from "../theme";
 import type { BootstrapInfo, Credentials, InvitationPreview } from "../types";
 
 const ROLE_LABELS: Record<string, string> = {
+  owner: "所有者",
   admin: "管理员",
   editor: "编辑",
   contributor: "记录者",

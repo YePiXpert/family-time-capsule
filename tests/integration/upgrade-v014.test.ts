@@ -445,8 +445,9 @@ describe("real 0014 family invitation archive upgrade", () => {
           .all(),
       ).toEqual([
         {
+          // 0047：升级到 HEAD 后,最早的 admin 被提升为 owner。
           id: "admin-v014",
-          role: "admin",
+          role: "owner",
           family_id: "family-v014",
           person_id: "parent-v014",
           disabled_at: null,

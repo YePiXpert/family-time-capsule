@@ -157,8 +157,9 @@ describe.sequential("family account administration", () => {
       expect.arrayContaining([primaryAdmin.id, secondaryAdminId, editorId]),
     );
     expect(accounts.map((account) => account.id)).not.toContain(foreignUserId);
+    // M2：performSetup 建立的首个管理员现在是所有者（owner）。
     expect(accounts.find((account) => account.id === primaryAdmin.id))
-      .toMatchObject({ isCurrentUser: true, role: "admin" });
+      .toMatchObject({ isCurrentUser: true, role: "owner" });
   });
 
   it("changes a role and writes the required audit in the same transaction", () => {

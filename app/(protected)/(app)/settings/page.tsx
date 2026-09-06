@@ -114,6 +114,14 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
             )}
           </div>
         )}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link
+            href="/settings/sessions"
+            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            活动设备与会话
+          </Link>
+        </div>
       </section>
 
       {(canExport || canReviewAi) && <section aria-label="高级档案设置" className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6">

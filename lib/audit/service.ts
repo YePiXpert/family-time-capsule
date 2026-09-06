@@ -26,6 +26,8 @@ export const AUDIT_KINDS = {
   accountDisabled: "account.disabled",
   accountEnabled: "account.enabled",
   accountRoleChanged: "account.role_changed",
+  ownershipTransferred: "account.ownership_transferred",
+  sessionsRevoked: "account.sessions_revoked",
   contributionRecordedOnBehalf: "contribution.recorded_on_behalf",
   guardianChanged: "person.guardian_changed",
   childLaterPolicyChanged: "child_later.policy_changed",

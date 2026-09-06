@@ -7,7 +7,14 @@
  * in the server-only authorization service.
  */
 
+/**
+ * 正式 1.0(M2):owner 是唯一的家庭所有权持有者。
+ * owner ⊇ admin,另持 family:transfer(所有权移交);日常管理两者等价,
+ * 避免“每个管理员都能解散/移交家庭”的歧义。历史安装由迁移 0047 把最早的
+ * admin 提升为 owner;新实例首个管理员直接以 owner 建立。
+ */
 export const FAMILY_ROLES = [
+  "owner",
   "admin",
   "editor",
   "contributor",
@@ -25,6 +32,7 @@ export const FAMILY_CAPABILITIES = [
   "contribution:create",
   "capsule:write",
   "family:manage",
+  "family:transfer",
   "account:manage",
   "account:invite",
   "archive:export",
@@ -37,7 +45,10 @@ export const FAMILY_CAPABILITIES = [
 export type FamilyCapability = (typeof FAMILY_CAPABILITIES)[number];
 
 const ROLE_CAPABILITIES: Readonly<Record<FamilyRole, ReadonlySet<FamilyCapability>>> = {
-  admin: new Set(FAMILY_CAPABILITIES),
+  owner: new Set(FAMILY_CAPABILITIES),
+  admin: new Set(
+    FAMILY_CAPABILITIES.filter((capability) => capability !== "family:transfer"),
+  ),
   editor: new Set([
     "archive:view",
     "capture:create",
@@ -58,6 +69,13 @@ const ROLE_CAPABILITIES: Readonly<Record<FamilyRole, ReadonlySet<FamilyCapabilit
 
 export function isFamilyRole(value: unknown): value is FamilyRole {
   return typeof value === "string" && FAMILY_ROLES.includes(value as FamilyRole);
+}
+
+/** 管理类角色：owner ∪ admin。SQL actor 复核与“最后一个管理员”守卫共用。 */
+export const ADMIN_CLASS_ROLES: readonly FamilyRole[] = ["owner", "admin"];
+
+export function isAdminClassRole(role: FamilyRole): boolean {
+  return ADMIN_CLASS_ROLES.includes(role);
 }
 
 export function hasFamilyCapability(
@@ -175,7 +193,7 @@ export function canCreateContributionForPerson(input: {
   ) {
     return false;
   }
-  if (input.role === "admin" || input.role === "editor") return true;
+  if (input.role === "owner" || input.role === "admin" || input.role === "editor") return true;
   return (
     input.userPersonId !== null &&
     input.userPersonId === input.authorPersonId

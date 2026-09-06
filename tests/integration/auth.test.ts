@@ -83,7 +83,8 @@ describe("首次初始化（setup）", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].email).toBe("admin@example.com");
     expect(rows[0].name).toBe("爸爸");
-    expect(rows[0].role).toBe("admin");
+    // M2：首个管理员现在以 owner 建立。
+    expect(rows[0].role).toBe("owner");
     expect(rows[0].createdAt).toBeInstanceOf(Date);
     expect(rows[0].updatedAt).toBeInstanceOf(Date);
   });
