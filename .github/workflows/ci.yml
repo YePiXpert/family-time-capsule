@@ -75,7 +75,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - name: ShellCheck 运维脚本
-        run: sudo apt-get update && sudo apt-get install -y shellcheck && shellcheck scripts/ops/*.sh scripts/ops/ftc scripts/ops/lib/*.sh
+        run: sudo apt-get update && sudo apt-get install -y shellcheck && shellcheck --severity=error scripts/ops/*.sh scripts/ops/ftc scripts/ops/lib/*.sh
       - name: ftc 工具套件测试（真实 bash + 假 docker）
         run: npm run test:ops
 

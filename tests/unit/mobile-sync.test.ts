@@ -346,6 +346,7 @@ describe("native offline sync state machine", () => {
       eventCount: 1,
       uploadedCount: 0,
       failedCount: 0,
+      skippedUploadCount: 0,
       syncedAt: "2026-09-03T20:01:00.000Z",
     });
     expect(api.fetchSyncPage).toHaveBeenNthCalledWith(1, credentials, null);
