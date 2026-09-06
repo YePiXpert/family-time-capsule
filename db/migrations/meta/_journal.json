@@ -309,6 +309,13 @@
       "when": 1788689084302,
       "tag": "0043_title_suggestion_review",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1788692130661,
+      "tag": "0044_video_frame_checkpoints",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { aiJob } from "./ai-job";
 import { asset } from "./asset";
 import { family } from "./family";
 
@@ -55,3 +56,20 @@ export const assetAnalysis = sqliteTable(
 );
 
 export type AssetAnalysisRow = typeof assetAnalysis.$inferSelect;
+
+/** Ephemeral normalized frame checkpoints, fenced by the existing job lease.
+ * No image bytes, prompt, credentials or raw provider errors are stored. */
+export const aiVideoFrame = sqliteTable("ai_video_frame", {
+  jobId: text("job_id").notNull().references(() => aiJob.id, { onDelete: "cascade" }),
+  frameIndex: integer("frame_index").notNull(),
+  atMs: integer("at_ms").notNull(),
+  frameSha256: text("frame_sha256").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  description: text("description").notNull(),
+  ocrText: text("ocr_text"),
+  createdAt: createdAtColumn(),
+}, table => [
+  primaryKey({ columns: [table.jobId, table.frameIndex] }),
+  check("ai_video_frame_bounds", sql`typeof(${table.frameIndex}) = 'integer' and ${table.frameIndex} between 0 and 5 and typeof(${table.atMs}) = 'integer' and ${table.atMs} between 0 and 120000 and length(${table.description}) between 1 and 4000 and (${table.ocrText} is null or length(${table.ocrText}) <= 2000)`),
+  check("ai_video_frame_identity", sql`length(${table.frameSha256}) = 64 and ${table.frameSha256} not glob '*[^0-9a-f]*' and length(${table.promptVersion}) between 1 and 64`),
+]);

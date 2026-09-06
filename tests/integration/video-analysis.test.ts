@@ -151,26 +151,12 @@ function linkAsset(eventId: string, assetId: string): void {
     .run();
 }
 
+const { enqueueAiJob, claimNextAiJob } = await import("@/lib/ai/jobs");
 function makeLease(entityId: string) {
-  return {
-    jobId: randomUUID(),
-    familyId,
-    jobType: "analyze.asset_video.v1" as const,
-    entityType: "asset" as const,
-    entityId,
-    requiredCapability: "vision" as const,
-    providerId: "test-provider",
-    model: "test-vision-v1",
-    providerExternal: false,
-    consentVersion: null,
-    triggerMode: "manual" as const,
-    contentVisibility: "family" as const,
-    requestedByUserId: adminId,
-    attemptNumber: 1,
-    leaseGeneration: 1,
-    leaseExpiresAt: new Date(Date.now() + 60_000),
-    workerId: "test-worker",
-  };
+  const queued = enqueueAiJob({ familyId, requestedByUserId: adminId, jobType: `test.video.${randomUUID()}`, entityType: "asset", entityId, requiredCapability: "vision", triggerMode: "manual", sources: [{ kind: "asset", id: entityId }] }, { runtime: VISION_RUNTIME });
+  const lease = claimNextAiJob("test-worker", { runtime: VISION_RUNTIME });
+  if (!queued.ok || !lease || lease.jobId !== queued.jobId) throw new Error("fixture fenced lease failed");
+  return lease;
 }
 
 const fakeJpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]);

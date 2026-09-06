@@ -2,6 +2,7 @@ export {
   AI_CONSENT_DISCLOSURE_VERSION,
   DEFAULT_AI_JOB_LEASE_MS,
   claimNextAiJob,
+  checkpointAiJob,
   completeAiJob,
   enableAiProcessingConsent,
   enqueueAiJob,

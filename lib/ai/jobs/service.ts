@@ -1,3 +1,4 @@
+import { aiVideoFrame } from "@/db/schema/analysis";
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
@@ -1457,6 +1458,25 @@ export type AiJobFinalizeResult<T> =
   | { ok: true; value: T }
   | Exclude<AiExecutionValidation, { ok: true }>;
 
+/** Persist a normalized successful stage without finishing the parent job. */
+export function checkpointAiJob<T>(
+  lease: AiJobLease,
+  effect: (tx: Transaction) => T,
+  options: AiJobServiceDependencies & { now?: Date } = {},
+): AiJobFinalizeResult<T> {
+  const now = options.now ?? new Date();
+  return database(options).transaction(tx => {
+    const validation = inspectRunningJob(tx, lease, runtimeIdentity(options), now);
+    if (!validation.ok) {
+      terminateInvalidLease(tx, lease, validation.error, now);
+      return validation;
+    }
+    const value = effect(tx);
+    if (value !== null && typeof value === "object" && "then" in value && typeof value.then === "function") throw new Error("AI checkpoint effect must be synchronous");
+    return { ok: true, value } as const;
+  }, { behavior: "immediate" });
+}
+
 export function finalizeAiJob<T>(
   lease: AiJobLease,
   effect: (tx: Transaction, context: AiJobFinalizeContext) => T,
@@ -1759,6 +1779,13 @@ export function retryAiJob(
           })),
         )
         .run();
+      // A manual retry can carry proven successful video frames into its new
+      // lease. Changed requester/configuration/consent/source never inherits them.
+      const previousSources = normalizeStoredSources(tx.select({ kind: aiJobSource.sourceKind, id: aiJobSource.sourceId, sha256: aiJobSource.sourceSha256 }).from(aiJobSource).where(eq(aiJobSource.jobId, old.id)).orderBy(asc(aiJobSource.sourceKind), asc(aiJobSource.sourceId)).all());
+      if (old.jobType === "analyze.asset_video.v1" && old.requestedByUserId === actor.id && currentRuntimeMatches(old, runtime) && old.consentVersion === consentVersion && old.contentVisibility === hydrated.visibility && previousSources && sourcesEqual(previousSources, hydrated.sources)) {
+        const frames = tx.select().from(aiVideoFrame).where(eq(aiVideoFrame.jobId, old.id)).all();
+        if (frames.length) tx.insert(aiVideoFrame).values(frames.map(frame => ({ ...frame, jobId: newJobId }))).run();
+      }
       tx.insert(auditLog)
         .values(
           requiredAuditValues(

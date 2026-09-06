@@ -1,12 +1,13 @@
 import { shortVideoError, SHORT_VIDEO_MAX_MS } from "@/lib/ai/media-limits";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset as assetTable } from "@/db/schema/asset";
-import { assetAnalysis } from "@/db/schema/analysis";
+import { aiVideoFrame, assetAnalysis } from "@/db/schema/analysis";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { extractVideoFrames, type ExtractedFrame } from "@/lib/media/ffmpeg";
 import { probeMedia } from "@/lib/metadata/ffprobe";
+import { checkpointAiJob } from "@/lib/ai/jobs";
 import { AiJobHandlerError, type AiJobHandler } from "@/jobs/types";
 
 /**
@@ -22,6 +23,7 @@ import { AiJobHandlerError, type AiJobHandler } from "@/jobs/types";
  */
 
 const MAX_FRAMES = 6;
+const FRAME_PROMPT_VERSION = "bounded-video-v2";
 const MAX_DESCRIPTION_CHARS = 4_000;
 const MAX_OCR_CHARS = 2_000;
 
@@ -138,7 +140,17 @@ export function createAnalyzeAssetVideoHandler(
     // 逐帧 vision 分析（帧是临时输入，分析完即弃）
     const frameResults: { atSeconds: number; analysis: FrameAnalysis }[] = [];
     let provenance: { providerId: string; model: string } | null = null;
-    for (const frame of extraction.frames) {
+    for (const [frameIndex, frame] of extraction.frames.entries()) {
+      if (frameIndex >= MAX_FRAMES || !Number.isFinite(frame.atSeconds) || frame.atSeconds < 0 || frame.atSeconds * 1000 > SHORT_VIDEO_MAX_MS) throw new AiJobHandlerError("frame_extraction_failed", false);
+      const atMs = Math.round(frame.atSeconds * 1000);
+      const frameSha256 = createHash("sha256").update(frame.bytes).digest("hex");
+      const saved = checkpointAiJob(lease, tx => tx.select().from(aiVideoFrame).where(and(eq(aiVideoFrame.jobId, lease.jobId), eq(aiVideoFrame.frameIndex, frameIndex), eq(aiVideoFrame.atMs, atMs), eq(aiVideoFrame.frameSha256, frameSha256), eq(aiVideoFrame.promptVersion, FRAME_PROMPT_VERSION))).get(), { runtime: assistant });
+      if (!saved.ok) throw new AiJobHandlerError(saved.error, false);
+      if (saved.value) {
+        frameResults.push({ atSeconds: frame.atSeconds, analysis: { description: saved.value.description, ocrText: saved.value.ocrText } });
+        provenance = { providerId: lease.providerId, model: lease.model };
+        continue;
+      }
       const result = await assistant.analyzeImage({
         image: { bytes: frame.bytes, mimeType: "image/jpeg" },
         prompt: FRAME_PROMPT,
@@ -148,7 +160,13 @@ export function createAnalyzeAssetVideoHandler(
         providerId: result.provenance.providerId,
         model: result.provenance.model,
       };
-      frameResults.push({ atSeconds: frame.atSeconds, analysis: parseFrameText(result.text) });
+      if (result.provenance.providerId !== lease.providerId || result.provenance.model !== lease.model) throw new AiJobHandlerError("bad_provider_output", false);
+      const parsed = parseFrameText(result.text);
+      const analysis = { description: parsed.description.slice(0, MAX_DESCRIPTION_CHARS), ocrText: parsed.ocrText?.slice(0, MAX_OCR_CHARS) ?? null };
+      if (!analysis.description.trim()) throw new AiJobHandlerError("bad_provider_output", false);
+      const stored = checkpointAiJob(lease, tx => tx.insert(aiVideoFrame).values({ jobId: lease.jobId, frameIndex, atMs, frameSha256, promptVersion: FRAME_PROMPT_VERSION, ...analysis }).onConflictDoUpdate({ target: [aiVideoFrame.jobId, aiVideoFrame.frameIndex], set: { atMs, frameSha256, promptVersion: FRAME_PROMPT_VERSION, ...analysis } }).run(), { runtime: assistant });
+      if (!stored.ok) throw new AiJobHandlerError(stored.error, false);
+      frameResults.push({ atSeconds: frame.atSeconds, analysis });
     }
 
     const descriptionParts = frameResults.map(

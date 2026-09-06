@@ -840,3 +840,7 @@ BookRenderJob 增加已定义格式 `reading_zip` 的真实执行路径，仍为
 不能据此替换标题。采用与目标改名在同一事务更新；忽略和撤销保留墓碑。
 只有版本化标题审核记录进入 portable archive，待审建议和 ai_job 仍属于
 实例运行状态。原件字节、原文件名与 storageKey 不参与名称修改。
+
+迁移 0044 的 `ai_video_frame` 是实例运行检查点，关联 `ai_job`；每帧记录
+时间点、哈希、promptVersion 和受限机器描述/OCR。它不属于 portable archive。
+检查点读写受现有租约检查约束；配置、授权或来源变化后不能复用或回填。

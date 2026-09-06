@@ -16,7 +16,7 @@ const { performSetup } = await import("@/lib/auth/setup");
 const { completeOnboarding } = await import("@/lib/family/service");
 const { ingestMedia } = await import("@/lib/assets/ingest");
 const { getAssetStorage } = await import("@/lib/assets/storage");
-const { enqueueAiJob } = await import("@/lib/ai/jobs");
+const { enqueueAiJob, retryAiJob, requestAiJobCancellation } = await import("@/lib/ai/jobs");
 const { runAiWorkerOnce } = await import("@/jobs/runtime");
 const { DeterministicFakeMemoryAssistant } = await import("@/lib/ai/fake");
 const { extractVideoAudio, extractVideoFrames } = await import("@/lib/media/ffmpeg");
@@ -27,9 +27,9 @@ const actor = getDb().select().from(user).get()!;
 const family = await completeOnboarding(actor.id, { familyName: "虚构视频", timezone: "Asia/Shanghai", childDisplayName: "孩子", childBirthDate: "2020-01-01", selfDisplayName: "管理员", selfRelationToChild: "家人", selfIsGuardian: true });
 if (!family.ok) throw new Error("fixture family failed");
 const familyId = family.familyId;
-function video(seconds: number, audio = true): string {
+function video(seconds: number, audio = true, frameRate = 1): string {
   const file = path.join(dir, `${randomUUID()}.mp4`);
-  const result = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=red:s=32x32:r=1", ...(audio ? ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000"] : []), "-t", String(seconds), "-c:v", "mpeg4", ...(audio ? ["-c:a", "aac"] : []), "-metadata", "comment=must-not-leave-original", "-y", file], { timeout: 30_000 });
+  const result = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", `color=c=red:s=32x32:r=${frameRate}`, ...(audio ? ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000"] : []), "-t", String(seconds), "-c:v", "mpeg4", ...(audio ? ["-c:a", "aac"] : []), "-metadata", "comment=must-not-leave-original", "-y", file], { timeout: 30_000 });
   if (result.status !== 0) throw new Error(`ffmpeg fixture failed: ${result.stderr.toString()}`);
   return file;
 }
@@ -89,4 +89,57 @@ it("rejects playlists without reading their referenced input and honors cancella
     const cancelled = new AbortController(); cancelled.abort();
     expect(await extractVideoAudio(file, cancelled.signal)).toMatchObject({ status: "aborted" });
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+it("persists successful frames across a failed job, reconnect and explicit retry", async () => {
+  const { aiVideoFrame, assetAnalysis } = await import("@/db/schema/analysis");
+  const { AiProviderError } = await import("@/lib/ai/errors");
+  const { getLiveFamilyPrincipal } = await import("@/lib/authz/principal");
+  const original = await ingest(video(3, true, 10));
+  const assistant = new DeterministicFakeMemoryAssistant();
+  const originalAnalyze = assistant.analyzeImage.bind(assistant);
+  let count = 0;
+  const calls = vi.spyOn(assistant, "analyzeImage").mockImplementation(async input => {
+    count++;
+    if (count === 2) throw new AiProviderError({ capability: "vision", code: "ai_timeout", message: "fictional timeout", retryable: false });
+    return originalAnalyze(input);
+  });
+  const queued = enqueueAiJob({ familyId, requestedByUserId: actor.id, jobType: "analyze.asset_video.v1", entityType: "asset", entityId: original.id, requiredCapability: "vision", triggerMode: "manual", sources: [{ kind: "asset", id: original.id }] }, { runtime: assistant });
+  if (!queued.ok) throw new Error("fixture queue failed");
+  expect(await runAiWorkerOnce({ assistant })).toMatchObject({ status: "failed", errorCode: "ai_timeout" });
+  expect(getDb().select().from(aiVideoFrame).where(eq(aiVideoFrame.jobId, queued.jobId)).all()).toHaveLength(1);
+  closeDatabase();
+  const context = { ...await getLiveFamilyPrincipal(actor.id, familyId), userName: "虚构管理员" };
+  const retried = retryAiJob(context, queued.jobId, { runtime: assistant });
+  if (!retried.ok) throw new Error("fixture retry failed");
+  expect(getDb().select().from(aiVideoFrame).where(eq(aiVideoFrame.jobId, retried.jobId)).all()).toHaveLength(1);
+  expect(await runAiWorkerOnce({ assistant })).toMatchObject({ status: "completed" });
+  expect(calls).toHaveBeenCalledTimes(4);
+  const changedRuntime = { provider: { ...assistant.provider, configurationId: "rotated-fixture" }, capabilities: assistant.capabilities };
+  const changed = retryAiJob(context, queued.jobId, { runtime: changedRuntime });
+  if (!changed.ok) throw new Error("fixture changed-config retry failed");
+  expect(getDb().select().from(aiVideoFrame).where(eq(aiVideoFrame.jobId, changed.jobId)).all()).toEqual([]);
+  expect(requestAiJobCancellation(context, changed.jobId).ok).toBe(true);
+  expect(getDb().select().from(aiVideoFrame).where(eq(aiVideoFrame.jobId, retried.jobId)).all()).toHaveLength(3);
+  expect(getDb().select().from(assetAnalysis).where(eq(assetAnalysis.assetId, original.id)).get()).toMatchObject({ analyzedVia: "video_frames", sourceSha256: original.sha256, createdByJobId: retried.jobId });
+});
+
+it("does not checkpoint a frame whose result arrives after cancellation", async () => {
+  const { aiVideoFrame, assetAnalysis } = await import("@/db/schema/analysis");
+  const { aiJob } = await import("@/db/schema/ai-job");
+  const { getLiveFamilyPrincipal } = await import("@/lib/authz/principal");
+  const original = await ingest(video(4, true, 10));
+  const context = { ...await getLiveFamilyPrincipal(actor.id, familyId), userName: "虚构管理员" };
+  const assistant = new DeterministicFakeMemoryAssistant();
+  const analyze = assistant.analyzeImage.bind(assistant);
+  const queued = enqueueAiJob({ familyId, requestedByUserId: actor.id, jobType: "analyze.asset_video.v1", entityType: "asset", entityId: original.id, requiredCapability: "vision", triggerMode: "manual", sources: [{ kind: "asset", id: original.id }] }, { runtime: assistant });
+  if (!queued.ok) throw new Error("fixture queue failed");
+  vi.spyOn(assistant, "analyzeImage").mockImplementation(async input => {
+    expect(requestAiJobCancellation(context, queued.jobId).ok).toBe(true);
+    return analyze(input);
+  });
+  expect(await runAiWorkerOnce({ assistant })).toMatchObject({ status: "failed", errorCode: "cancel_requested" });
+  expect(getDb().select().from(aiJob).where(eq(aiJob.id, queued.jobId)).get()?.status).toBe("cancelled");
+  expect(getDb().select().from(aiVideoFrame).where(eq(aiVideoFrame.jobId, queued.jobId)).all()).toEqual([]);
+  expect(getDb().select().from(assetAnalysis).where(eq(assetAnalysis.assetId, original.id)).all()).toEqual([]);
 });
