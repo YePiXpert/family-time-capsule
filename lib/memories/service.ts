@@ -680,7 +680,7 @@ export async function mergeInboxEntries(
       .run();
     // 涉及的全部条目都确认掉
     tx.update(inboxItem)
-      .set({ status: "confirmed", memoryEventId: eventId, updatedAt: now })
+      .set({ status: "confirmed", memoryEventId: eventId, titleRevision: sql`${inboxItem.titleRevision} + 1`, updatedAt: now })
       .where(
         and(
           eq(inboxItem.familyId, familyId),

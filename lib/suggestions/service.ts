@@ -4,11 +4,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { aiSuggestion, memoryEventTag } from "@/db/schema/suggestion";
-import { memoryEvent, memoryEventParticipant } from "@/db/schema/memory";
+import { memoryEvent, memoryEventAsset, memoryEventParticipant } from "@/db/schema/memory";
 import { person as personTable } from "@/db/schema/family";
 import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
 import { asset as assetTable } from "@/db/schema/asset";
 import { aiJob } from "@/db/schema/ai-job";
+import { contribution } from "@/db/schema/contribution";
+import type { ContributionAccessTransaction } from "@/lib/authz/contribution-access";
 import { assertFamilyCapability } from "@/lib/authz/policy";
 import { enqueueAiJob, type AiJobServiceDependencies } from "@/lib/ai/jobs";
 import { updateMemoryEvent } from "@/lib/memories/service";
@@ -57,40 +59,29 @@ export function requestEventSuggestions(
   memoryEventId: string,
   options: AiJobServiceDependencies & { now?: Date } = {},
 ): SuggestionRequestResult {
+  try { assertFamilyCapability(context.role, "ai:review"); }
+  catch { return { ok: false, error: "forbidden" }; }
+  const db = options.database ?? getDb();
   try {
-    assertFamilyCapability(context.role, "ai:review");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-
-  const event = getDb()
-    .select({ id: memoryEvent.id })
-    .from(memoryEvent)
-    .where(
-      and(
-        eq(memoryEvent.id, memoryEventId),
-        eq(memoryEvent.familyId, context.familyId),
-      ),
-    )
-    .limit(1)
-    .get();
-  if (!event) {
-    return { ok: false, error: "event_not_found" };
-  }
-
-  return enqueueAiJob(
-    {
-      familyId: context.familyId,
-      requestedByUserId: context.userId,
-      jobType: "suggest.event_metadata.v1",
-      entityType: "memory_event",
-      entityId: memoryEventId,
-      requiredCapability: "text",
-      triggerMode: "manual",
-      sources: [{ kind: "memory_event", id: memoryEventId }],
-    },
-    options,
-  );
+    return db.transaction(tx => {
+      const event = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, memoryEventId), eq(memoryEvent.familyId, context.familyId), isNull(memoryEvent.deletedAt))).get();
+      if (!event) return { ok: false, error: "event_not_found" };
+      const contributions = tx.select({ id: contribution.id, audioAssetId: contribution.audioAssetId }).from(contribution).where(and(eq(contribution.memoryEventId, event.id), eq(contribution.visibility, "family"))).all();
+      const linkedIds = tx.select({ id: memoryEventAsset.assetId }).from(memoryEventAsset).where(eq(memoryEventAsset.memoryEventId, event.id)).all().map(row => row.id);
+      const selectedIds = [...new Set([...linkedIds, ...contributions.flatMap(row => row.audioAssetId ? [row.audioAssetId] : [])])];
+      const originals = selectedIds.length ? tx.select().from(assetTable).where(and(inArray(assetTable.id, selectedIds), eq(assetTable.familyId, context.familyId), isNull(assetTable.originalAssetId))).all() : [];
+      if (originals.length > 10) return { ok: false, error: "organizer_batch_limit" };
+      const notes = tx.select({ id: inboxItem.id }).from(inboxItem).where(and(eq(inboxItem.memoryEventId, event.id), eq(inboxItem.familyId, context.familyId), eq(inboxItem.status, "confirmed"))).all();
+      // Public event suggestions use only family-visible contributions. The
+      // queue snapshots those exact rows and rechecks visibility before I/O.
+      const sources = [{ kind: "memory_event" as const, id: event.id }, ...originals.map(asset => ({ kind: "asset" as const, id: asset.id })), ...notes.map(row => ({ kind: "inbox_item" as const, id: row.id })), ...contributions.map(row => ({ kind: "contribution" as const, id: row.id }))];
+      if (sources.length > 50) return { ok: false, error: "organizer_context_limit" };
+      const { dependencies, generation } = organizerMediaStages(tx, context, originals, "organizer-event-v2", options);
+      const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.event_metadata.v1", entityType: "memory_event", entityId: event.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation, sources }, options);
+      if (!result.ok) throw new OrganizerEnqueueError(result);
+      return result;
+    }, { behavior: "immediate" });
+  } catch (error) { if (error instanceof OrganizerEnqueueError) return error.result; throw error; }
 }
 
 export async function resolveSuggestion(
@@ -336,22 +327,7 @@ class OrganizerEnqueueError extends Error {
   constructor(readonly result: SuggestionRequestResult) { super("organizer unavailable"); }
 }
 
-export function requestInboxItemSuggestions(
-  context: FamilyContext,
-  inboxItemId: string,
-  options: AiJobServiceDependencies & { now?: Date } = {},
-): SuggestionRequestResult {
-  try { assertFamilyCapability(context.role, "ai:review"); }
-  catch { return { ok: false, error: "forbidden" }; }
-  const db = options.database ?? getDb();
-  try {
-    return db.transaction(tx => {
-      const item = tx.select().from(inboxItem).where(and(eq(inboxItem.id, inboxItemId), eq(inboxItem.familyId, context.familyId))).get();
-      if (!item) return { ok: false, error: "inbox_item_not_found" };
-      if (!["new", "needs_review", "processing"].includes(item.status)) return { ok: false, error: "inbox_item_closed" };
-      const originals = tx.select({ asset: assetTable }).from(inboxItemAsset).innerJoin(assetTable, eq(assetTable.id, inboxItemAsset.assetId)).where(and(eq(inboxItemAsset.inboxItemId, item.id), eq(assetTable.familyId, context.familyId), isNull(assetTable.originalAssetId))).all().map(row => row.asset);
-      if (originals.length > 10) return { ok: false, error: "organizer_batch_limit" };
-      if (!originals.length && !item.rawText?.trim()) return { ok: false, error: "insufficient_evidence" };
+function organizerMediaStages(tx: ContributionAccessTransaction, context: FamilyContext, originals: (typeof assetTable.$inferSelect)[], promptVersion: string, options: AiJobServiceDependencies) {
       const dependencies: string[] = [];
       for (const asset of originals) {
         const stage = asset.type === "image" ? { jobType: "analyze.asset_image.v1", capability: "vision" as const }
@@ -375,7 +351,27 @@ export function requestInboxItemSuggestions(
         dependencies.push(result.jobId);
       }
       const manualTranscripts = originals.map(asset => ({ id: asset.id, edited: tx.select({ text: assetTranscript.editedTranscript }).from(assetTranscript).where(eq(assetTranscript.assetId, asset.id)).get()?.text ?? null })).sort((a, b) => a.id.localeCompare(b.id));
-      const generation = createHash("sha256").update(JSON.stringify({ promptVersion: "organizer-inbox-v2", manualTranscripts })).digest("hex");
+      const generation = createHash("sha256").update(JSON.stringify({ promptVersion, manualTranscripts })).digest("hex");
+      return { dependencies, generation };
+}
+
+export function requestInboxItemSuggestions(
+  context: FamilyContext,
+  inboxItemId: string,
+  options: AiJobServiceDependencies & { now?: Date } = {},
+): SuggestionRequestResult {
+  try { assertFamilyCapability(context.role, "ai:review"); }
+  catch { return { ok: false, error: "forbidden" }; }
+  const db = options.database ?? getDb();
+  try {
+    return db.transaction(tx => {
+      const item = tx.select().from(inboxItem).where(and(eq(inboxItem.id, inboxItemId), eq(inboxItem.familyId, context.familyId))).get();
+      if (!item) return { ok: false, error: "inbox_item_not_found" };
+      if (!["new", "needs_review", "processing"].includes(item.status)) return { ok: false, error: "inbox_item_closed" };
+      const originals = tx.select({ asset: assetTable }).from(inboxItemAsset).innerJoin(assetTable, eq(assetTable.id, inboxItemAsset.assetId)).where(and(eq(inboxItemAsset.inboxItemId, item.id), eq(assetTable.familyId, context.familyId), isNull(assetTable.originalAssetId))).all().map(row => row.asset);
+      if (originals.length > 10) return { ok: false, error: "organizer_batch_limit" };
+      if (!originals.length && !item.rawText?.trim()) return { ok: false, error: "insufficient_evidence" };
+      const { dependencies, generation } = organizerMediaStages(tx, context, originals, "organizer-inbox-v2", options);
       const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.inbox_item.v1", entityType: "inbox_item", entityId: item.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation, sources: [{ kind: "inbox_item", id: item.id }, ...originals.map(asset => ({ kind: "asset" as const, id: asset.id }))] }, options);
       if (!result.ok) throw new OrganizerEnqueueError(result);
       return result;

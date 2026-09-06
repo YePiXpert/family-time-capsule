@@ -15,6 +15,7 @@ import { indexMemoryEvent } from "@/lib/search/service";
 import { completedAiResultIsCurrent } from "@/lib/ai/jobs/service";
 import { nameSource } from "@/lib/naming";
 import { inboxEvidenceFingerprint } from "@/lib/ai/inbox-evidence";
+import { eventEvidenceFingerprint } from "@/lib/ai/event-evidence";
 
 export type NameTargetKind = "asset" | "inbox_item" | "memory_event";
 export type NameReviewResult = { ok: true; targetKind: NameTargetKind; targetId: string; revision: number; suggestionRevision?: number }
@@ -74,6 +75,7 @@ function validRevision(value: unknown): value is number { return Number.isSafeIn
 function validName(value: unknown): value is string { return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 100 && !/[\u0000-\u001f\u007f]/u.test(value); }
 
 function jobTargetsName(tx: Tx, job: typeof aiJob.$inferSelect, kind: NameTargetKind, id: string, fingerprint: string | null): boolean {
+  if (job.jobType === "suggest.event_metadata.v1" && fingerprint !== eventEvidenceFingerprint(tx, job.familyId, job.entityId, job.id)) return false;
   if (job.jobType === "suggest.inbox_item.v1") {
     // Legacy unversioned suggestions cannot prove the context they used.
     if (job.targetRevision === null || fingerprint !== inboxEvidenceFingerprint(tx, job.familyId, job.entityId)) return false;

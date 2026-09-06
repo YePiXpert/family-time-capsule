@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { AiJobRuntimeIdentity } from "@/lib/ai/jobs";
 import type { MemoryAssistant } from "@/lib/ai/types";
 
@@ -20,6 +20,7 @@ afterAll(async () => {
 
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
+const { contribution } = await import("@/db/schema/contribution");
 const { person } = await import("@/db/schema/family");
 const { aiSuggestion, factSource } = await import("@/db/schema/suggestion");
 const { memoryEvent, memoryEventParticipant } = await import("@/db/schema/memory");
@@ -193,12 +194,13 @@ async function runSuggestionJob(
     {
       familyId,
       requestedByUserId,
+      generation: randomUUID(),
       jobType: "suggest.event_metadata.v1",
       entityType: "memory_event",
       entityId: eventId,
       requiredCapability: "text",
       triggerMode: "manual",
-      sources: [{ kind: "memory_event", id: eventId }],
+      sources: [{ kind: "memory_event", id: eventId }, ...getDb().select({ id: contribution.id }).from(contribution).where(and(eq(contribution.memoryEventId, eventId), eq(contribution.visibility, "family"))).all().map(row => ({ kind: "contribution" as const, id: row.id }))],
     },
     { runtime: INTERNAL_RUNTIME },
   );
@@ -332,78 +334,15 @@ describe("source-linked AI suggestions (M3-C)", () => {
 
   it("rerun replaces pending suggestions", async () => {
     const eventId = makeEvent();
-    const firstLease = {
-      jobId: randomUUID(),
-      familyId,
-      jobType: "suggest.event_metadata.v1",
-      entityType: "memory_event",
-      entityId: eventId,
-      requiredCapability: "text" as const,
-      providerId: "test-provider",
-      model: "test-text-v1",
-      providerExternal: false,
-      consentVersion: null,
-      triggerMode: "manual" as const,
-      contentVisibility: "family" as const,
-      requestedByUserId: admin!.id,
-      attemptNumber: 1,
-      leaseGeneration: 1,
-      leaseExpiresAt: new Date(Date.now() + 60_000),
-      workerId: "test-worker",
-    };
-    const first = await suggestEventMetadataHandler({
-      lease: firstLease,
-      assistant: makeAssistant({
-        title: "第一次",
-        locationText: null,
-        tags: [],
-        personNames: [],
-        facts: [],
-      }) as unknown as MemoryAssistant,
-      signal: new AbortController().signal,
-    });
-    getDb().transaction((tx) =>
-      first.commit(tx, {
-        jobId: firstLease.jobId,
-        familyId,
-        entityType: "memory_event",
-        entityId: eventId,
-        requestedByUserId: admin!.id,
-        attemptNumber: 1,
-      }),
-    );
-
+    await runSuggestionJob(eventId, { title: "第一版整理名称", locationText: null, tags: [], personNames: [], facts: [] });
     let pending = await listPendingSuggestions(familyId, "memory_event", eventId);
     expect(pending.length).toBe(1);
     const firstId = pending[0].id;
-
-    const secondLease = { ...firstLease, jobId: randomUUID() };
-    const second = await suggestEventMetadataHandler({
-      lease: secondLease,
-      assistant: makeAssistant({
-        title: "第二次",
-        locationText: null,
-        tags: [],
-        personNames: [],
-        facts: [],
-      }) as unknown as MemoryAssistant,
-      signal: new AbortController().signal,
-    });
-    getDb().transaction((tx) =>
-      second.commit(tx, {
-        jobId: secondLease.jobId,
-        familyId,
-        entityType: "memory_event",
-        entityId: eventId,
-        requestedByUserId: admin!.id,
-        attemptNumber: 1,
-      }),
-    );
-
+    await runSuggestionJob(eventId, { title: "第二版整理名称", locationText: null, tags: [], personNames: [], facts: [] });
     pending = await listPendingSuggestions(familyId, "memory_event", eventId);
     expect(pending.length).toBe(1);
     expect(pending[0].id).not.toBe(firstId);
-    expect(pending[0].valueJson).toContain("第二次");
+    expect(pending[0].valueJson).toContain("第二版整理名称");
   });
 
   it("does not send private contributions to AI", async () => {
@@ -439,7 +378,7 @@ describe("source-linked AI suggestions (M3-C)", () => {
         entityId: eventId,
         requiredCapability: "text",
         triggerMode: "manual",
-        sources: [{ kind: "memory_event", id: eventId }],
+        sources: [{ kind: "memory_event", id: eventId }, ...getDb().select({ id: contribution.id }).from(contribution).where(and(eq(contribution.memoryEventId, eventId), eq(contribution.visibility, "family"))).all().map(row => ({ kind: "contribution" as const, id: row.id }))],
       },
       { runtime: INTERNAL_RUNTIME },
     );
@@ -457,7 +396,7 @@ describe("source-linked AI suggestions (M3-C)", () => {
     });
 
     const prompt = (assistant.generateText as ReturnType<typeof vi.fn>).mock.calls[0][0]
-      .messages[0].content as string;
+      .messages.map((m: { content: string }) => m.content).join("\n") as string;
     expect(prompt).toContain("公开内容");
     expect(prompt).not.toContain("私密内容");
   });

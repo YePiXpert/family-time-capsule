@@ -21,7 +21,8 @@ const { ingestImage, ingestMedia } = await import("@/lib/assets/ingest");
 const { getAssetStorage } = await import("@/lib/assets/storage");
 const { createInboxItemForAsset, getInboxEntry } = await import("@/lib/inbox/service");
 const { confirmInboxEntry } = await import("@/lib/memories/service");
-const { requestInboxItemSuggestions } = await import("@/lib/suggestions/service");
+const { requestInboxItemSuggestions, requestEventSuggestions } = await import("@/lib/suggestions/service");
+const { listReviewableSuggestions } = await import("@/lib/suggestions/access");
 const { getNameReview, renameTarget, reviewTitleSuggestion } = await import("@/lib/names/service");
 const { enqueueAiJob, claimNextAiJob, completeAiJob, failAiJob, retryAiJob, requestAiJobCancellation } = await import("@/lib/ai/jobs");
 const { runAiWorkerOnce } = await import("@/jobs/runtime");
@@ -40,7 +41,7 @@ function assistant() {
   const text = vi.spyOn(ai, "generateText").mockImplementation(async input => {
     const prompt = JSON.stringify(input.messages);
     for (const secret of [familyId, actor.id, "不应外发的孩子名", "不应外发的管理员名", "IMG_"]) expect(prompt).not.toContain(secret);
-    return { text: JSON.stringify({ title: "窗边摆着一盆绿色植物", occurredAt: null, timePrecision: "approximate", personNames: [], tags: ["绿植"] }), finishReason: "stop", provenance: { providerId: ai.provider.id, providerName: ai.provider.displayName, model: ai.capabilities.text.model! } };
+    return { text: JSON.stringify({ title: "窗边摆着一盆绿色植物", locationText: null, facts: [], occurredAt: null, timePrecision: "approximate", personNames: [], tags: ["绿植"] }), finishReason: "stop", provenance: { providerId: ai.provider.id, providerName: ai.provider.displayName, model: ai.capabilities.text.model! } };
   });
   const vision = vi.spyOn(ai, "analyzeImage").mockResolvedValue({ text: "【描述】窗边摆着绿色植物。\n【图中文字】", finishReason: "stop", provenance: { providerId: ai.provider.id, providerName: ai.provider.displayName, model: ai.capabilities.vision.model! } });
   return { ai, text, vision };
@@ -75,6 +76,7 @@ it("persists image→naming across a DB restart, deduplicates clicks, and follow
   const review = await getNameReview(familyId, actor.id, "memory_event", confirmed.eventId);
   expect(review?.suggestions).toHaveLength(1); expect(review?.suggestions[0].valid).toBe(true);
   const suggestion = review!.suggestions[0];
+  expect(listReviewableSuggestions(familyId, actor.id, "memory_event", confirmed.eventId).map(row => row.suggestionType)).toEqual(expect.arrayContaining(["title", "tag"]));
   expect(await reviewTitleSuggestion(familyId, actor.id, { suggestionId: suggestion.id, suggestionRevision: suggestion.revision, targetKind: "memory_event", targetId: confirmed.eventId, targetRevision: review!.target.revision, operation: "accept" })).toMatchObject({ ok: true });
   expect(getDb().select().from(memoryEvent).where(eq(memoryEvent.id, confirmed.eventId)).get()?.title).toBe("窗边摆着一盆绿色植物");
   expect(getDb().select().from(asset).where(eq(asset.id, p.original.id)).get()).toEqual(p.original);
@@ -234,4 +236,64 @@ it("never guesses picture content from filename/date when no valid analysis exis
   expect(enqueueAiJob({ familyId, requestedByUserId: actor.id, jobType: "suggest.inbox_item.v1", entityType: "inbox_item", entityId: p.item.id, requiredCapability: "text", triggerMode: "manual", sources: [{ kind: "asset", id: p.original.id }] }, { runtime: ai }).ok).toBe(true);
   expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "failed", errorCode: "insufficient_evidence" });
   expect(text).not.toHaveBeenCalled();
+});
+
+
+it("filters legacy, unauthorized and stale pending fields consistently for the old Web cards", async () => {
+  const { ai } = assistant(); const id = textItem();
+  expect(requestInboxItemSuggestions(context, id, { runtime: ai }).ok).toBe(true);
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" });
+  expect(listReviewableSuggestions(familyId, actor.id, "inbox_item", id).map(row => row.suggestionType)).toEqual(["title", "tag"]);
+  const viewer = randomUUID();
+  getDb().insert(user).values({ id: viewer, name: "viewer", email: `${viewer}@fixture.invalid`, emailVerified: false, role: "viewer", familyId, createdAt: new Date(), updatedAt: new Date() }).run();
+  expect(listReviewableSuggestions(familyId, viewer, "inbox_item", id)).toHaveLength(0);
+  expect((await renameTarget(familyId, actor.id, { kind: "inbox_item", id, revision: 0, title: "人工名称" })).ok).toBe(true);
+  expect(listReviewableSuggestions(familyId, actor.id, "inbox_item", id)).toHaveLength(0);
+  getDb().insert(aiSuggestion).values({ id: randomUUID(), familyId, entityType: "inbox_item", entityId: id, suggestionType: "title", valueJson: JSON.stringify({ title: "无法证明来源的旧建议" }), provider: ai.provider.id, model: ai.capabilities.text.model!, status: "pending", targetRevision: 1, sourceFingerprint: "0".repeat(64) }).run();
+  expect(listReviewableSuggestions(familyId, actor.id, "inbox_item", id)).toHaveLength(0);
+});
+
+
+it("runs archived photo/text through the same stages and does not expose private contributions", async () => {
+  const { ai, text, vision } = assistant(); const p = await photo();
+  getDb().update(inboxItem).set({ rawText: "照片的原始备注：今天给窗边绿植浇水。" }).where(eq(inboxItem.id, p.item.id)).run();
+  const confirmed = await confirmInboxEntry(familyId, (await getInboxEntry(familyId, p.item.id))!); if (!confirmed.ok) throw new Error(confirmed.error);
+  const { createContribution } = await import("@/lib/contributions/service");
+  for (const visibility of ["private", "family"] as const) expect((await createContribution(familyId, { memoryEventId: confirmed.eventId, authorPersonId: binding.personId!, recordedByUserId: actor.id, rawText: visibility === "private" ? "私密文字绝不能成为公开标题" : "公开讲述：给绿色植物浇水。", visibility })).ok).toBe(true);
+  const queued = requestEventSuggestions(context, confirmed.eventId, { runtime: ai }); if (!queued.ok) throw new Error(queued.error);
+  expect(requestEventSuggestions(context, confirmed.eventId, { runtime: ai })).toEqual({ ...queued, created: false });
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" }); expect(text).not.toHaveBeenCalled();
+  closeDatabase();
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed", jobId: queued.jobId });
+  const prompt = JSON.stringify(text.mock.calls[0][0].messages);
+  expect(prompt).toContain("照片的原始备注"); expect(prompt).toContain("公开讲述"); expect(prompt).toContain("窗边摆着绿色植物"); expect(prompt).not.toContain("私密文字绝不能成为公开标题");
+  expect((await getNameReview(familyId, actor.id, "memory_event", confirmed.eventId))?.suggestions[0].valid).toBe(true);
+  expect(vision).toHaveBeenCalledOnce();
+});
+
+it("fences a contribution that becomes private while the text request is in flight", async () => {
+  const { ai, text } = assistant(); const id = textItem();
+  const confirmed = await confirmInboxEntry(familyId, (await getInboxEntry(familyId, id))!); if (!confirmed.ok) throw new Error(confirmed.error);
+  const { createContribution } = await import("@/lib/contributions/service");
+  const { contribution } = await import("@/db/schema/contribution");
+  const made = await createContribution(familyId, { memoryEventId: confirmed.eventId, authorPersonId: binding.personId!, recordedByUserId: actor.id, rawText: "最初公开的讲述", visibility: "family" }); expect(made.ok).toBe(true);
+  expect(requestEventSuggestions(context, confirmed.eventId, { runtime: ai }).ok).toBe(true);
+  text.mockImplementationOnce(async () => {
+    getDb().update(contribution).set({ visibility: "private" }).where(eq(contribution.memoryEventId, confirmed.eventId)).run();
+    return { text: JSON.stringify({ title: "现在私密的内容", locationText: null, occurredAt: null, tags: [], personNames: [], facts: [] }), finishReason: "stop", provenance: { providerId: ai.provider.id, providerName: ai.provider.displayName, model: ai.capabilities.text.model! } };
+  });
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "discarded", errorCode: "source_changed" });
+  expect(listReviewableSuggestions(familyId, actor.id, "memory_event", confirmed.eventId)).toHaveLength(0);
+  expect(getDb().select().from(aiSuggestion).where(eq(aiSuggestion.entityId, confirmed.eventId)).all()).toHaveLength(0);
+});
+
+it("does not reinterpret an old single-item name as the title of a newly merged memory", async () => {
+  const { ai, text } = assistant(); const a = textItem(); const b = textItem();
+  expect(requestInboxItemSuggestions(context, a, { runtime: ai }).ok).toBe(true);
+  const { mergeInboxEntries } = await import("@/lib/memories/service");
+  const merged = await mergeInboxEntries(familyId, [a, b], { title: "人工确认的多素材记忆" }); if (!merged.ok) throw new Error(merged.error);
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "idle" });
+  expect(text).not.toHaveBeenCalled();
+  expect((await getNameReview(familyId, actor.id, "memory_event", merged.eventId))?.suggestions).toHaveLength(0);
+  expect(getDb().select().from(memoryEvent).where(eq(memoryEvent.id, merged.eventId)).get()?.title).toBe("人工确认的多素材记忆");
 });

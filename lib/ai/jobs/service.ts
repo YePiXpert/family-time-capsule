@@ -27,7 +27,7 @@ import { auditLog } from "@/db/schema/audit";
 import { user as userTable } from "@/db/schema/auth";
 import { contribution } from "@/db/schema/contribution";
 import { family as familyTable, person as personTable } from "@/db/schema/family";
-import { memoryEvent } from "@/db/schema/memory";
+import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
 import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
 import { createMemoryAssistant } from "@/lib/ai/server";
 import { readAiCapabilityChecks } from "@/lib/ai/diagnostics";
@@ -442,6 +442,7 @@ function hydrateSources(
         occurredAtPrecision: row.occurredAtPrecision,
         locationText: row.locationText,
         coverAssetId: row.coverAssetId,
+        assets: tx.select({ id: memoryEventAsset.assetId }).from(memoryEventAsset).where(eq(memoryEventAsset.memoryEventId, row.id)).orderBy(asc(memoryEventAsset.assetId)).all(),
         status: row.status,
         updatedAt: iso(row.updatedAt),
       }),

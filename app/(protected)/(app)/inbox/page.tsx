@@ -5,6 +5,7 @@ import { requireFamily } from "@/lib/family/context";
 import { getInboxPage } from "@/lib/inbox/service";
 import { getThumbnailMap } from "@/lib/assets/service";
 import { getDb } from "@/db";
+import { pendingSuggestionIsCurrent } from "@/lib/suggestions/access";
 import { aiSuggestion } from "@/db/schema/suggestion";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { listPendingClusterSuggestions } from "@/lib/clusters/service";
@@ -77,7 +78,8 @@ export default async function InboxPage({
       occurredWall?: string;
     }
   >();
-  for (const row of suggestionRows) {
+  const safeSuggestions = getDb().transaction(tx => suggestionRows.filter(row => pendingSuggestionIsCurrent(tx, row, context.userId)));
+  for (const row of safeSuggestions) {
     const bucket = suggestionsByItem.get(row.entityId) ?? {
       chips: [] as InboxSuggestionChipDto[],
     };

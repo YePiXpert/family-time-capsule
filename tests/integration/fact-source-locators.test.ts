@@ -18,6 +18,7 @@ afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
+const { enqueueAiJob, claimNextAiJob, finalizeAiJob, completeAiJob } = await import("@/lib/ai/jobs");
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
 const { person } = await import("@/db/schema/family");
@@ -66,8 +67,8 @@ const INTERNAL_RUNTIME: AiJobRuntimeIdentity = {
   provider: { id: "test-provider", displayName: "Test", external: false },
   capabilities: {
     text: { available: true, model: "test-text-v1", reason: "configured" },
-    vision: { available: false, model: null, reason: "not_configured" },
-    transcription: { available: false, model: null, reason: "not_configured" },
+    vision: { available: true, model: "vision-v1", reason: "configured" },
+    transcription: { available: true, model: "stt-v1", reason: "configured" },
     embeddings: { available: false, model: null, reason: "not_configured" },
   },
 };
@@ -93,25 +94,31 @@ function makeAssistant(payload: unknown): MemoryAssistant {
 }
 
 function makeLease(entityId: string) {
-  return {
-    jobId: randomUUID(),
-    familyId,
-    jobType: "suggest.event_metadata.v1" as const,
-    entityType: "memory_event" as const,
-    entityId,
-    requiredCapability: "text" as const,
-    providerId: "test-provider",
-    model: "test-text-v1",
-    providerExternal: false,
-    consentVersion: null,
-    triggerMode: "manual" as const,
-    contentVisibility: "family" as const,
-    requestedByUserId: adminId,
-    attemptNumber: 1,
-    leaseGeneration: 1,
-    leaseExpiresAt: new Date(Date.now() + 60_000),
-    workerId: "test-worker",
-  };
+  const links = getDb().select().from(memoryEventAsset).where(eq(memoryEventAsset.memoryEventId, entityId)).all();
+  const dependencies: string[] = [];
+  for (const link of links) {
+    const transcript = getDb().select().from(assetTranscript).where(eq(assetTranscript.assetId, link.assetId)).get();
+    const analysis = getDb().select().from(assetAnalysis).where(eq(assetAnalysis.assetId, link.assetId)).get();
+    const evidence = transcript ?? analysis;
+    if (!evidence) continue;
+    if (evidence.createdByJobId) { dependencies.push(evidence.createdByJobId); continue; }
+    const stage = enqueueAiJob({ familyId, requestedByUserId: adminId, jobType: transcript ? "transcribe.asset.v1" : "analyze.asset_image.v1", entityType: "asset", entityId: link.assetId, requiredCapability: transcript ? "transcription" : "vision", triggerMode: "manual", sources: [{ kind: "asset", id: link.assetId }] }, { runtime: INTERNAL_RUNTIME });
+    if (!stage.ok) throw new Error(stage.error);
+    const lease = claimNextAiJob("locator-fixture-stage", { runtime: INTERNAL_RUNTIME });
+    if (!lease || lease.jobId !== stage.jobId) throw new Error("fixture stage lease missing");
+    // Normalized deterministic fixture result, attached through an actual
+    // fenced queue stage. Media decoding is covered in media integration suites.
+    expect(finalizeAiJob(lease, tx => {
+      if (transcript) tx.update(assetTranscript).set({ createdByJobId: stage.jobId, provider: INTERNAL_RUNTIME.provider.id }).where(eq(assetTranscript.id, transcript.id)).run();
+      else tx.update(assetAnalysis).set({ createdByJobId: stage.jobId, provider: INTERNAL_RUNTIME.provider.id }).where(eq(assetAnalysis.id, analysis!.id)).run();
+    }, { runtime: INTERNAL_RUNTIME }).ok).toBe(true);
+    dependencies.push(stage.jobId);
+  }
+  const queued = enqueueAiJob({ familyId, requestedByUserId: adminId, jobType: "suggest.event_metadata.v1", entityType: "memory_event", entityId, requiredCapability: "text", triggerMode: "manual", generation: randomUUID(), dependencies, sources: [{ kind: "memory_event", id: entityId }, ...links.map(link => ({ kind: "asset" as const, id: link.assetId }))] }, { runtime: INTERNAL_RUNTIME });
+  if (!queued.ok) throw new Error(queued.error);
+  const lease = claimNextAiJob("locator-fixture-naming", { runtime: INTERNAL_RUNTIME });
+  if (!lease || lease.jobId !== queued.jobId) throw new Error("fixture naming lease missing");
+  return lease;
 }
 
 const child = getDb()
@@ -207,16 +214,7 @@ async function runHandler(eventId: string, payload: unknown) {
     assistant: makeAssistant(payload) as unknown as MemoryAssistant,
     signal: new AbortController().signal,
   });
-  getDb().transaction((tx) =>
-    result.commit(tx, {
-      jobId: lease.jobId,
-      familyId,
-      entityType: "memory_event",
-      entityId: eventId,
-      requestedByUserId: adminId,
-      attemptNumber: 1,
-    }),
-  );
+  expect(finalizeAiJob(lease, (tx, context) => result.commit(tx, context), { runtime: INTERNAL_RUNTIME }).ok).toBe(true);
 }
 
 describe("M3-D：精确 FactSource locator", () => {
@@ -280,7 +278,7 @@ describe("M3-D：精确 FactSource locator", () => {
       })
       .run();
 
-    // 从实际 prompt 中发现黑板.jpg 的别名（A#），避免依赖 DB 返回顺序
+    // 从视觉描述发现图片别名（A#），不依赖 DB 顺序或外发文件名
     const probeLease = makeLease(eventId);
     const probeAssistant = makeAssistant({
       title: null,
@@ -295,8 +293,10 @@ describe("M3-D：精确 FactSource locator", () => {
       signal: new AbortController().signal,
     });
     const probePrompt = (probeAssistant.generateText as ReturnType<typeof vi.fn>).mock
-      .calls[0][0].messages[0].content as string;
-    const imageAliasMatch = probePrompt.match(/\[(A\d+)\] 素材 黑板\.jpg/);
+      .calls[0][0].messages.map((m: { content: string }) => m.content).join("\n") as string;
+    const imageAliasMatch = probePrompt.match(/\[(A\d+)\][^\[]*一块写满日期/);
+    expect(probePrompt).not.toContain("黑板.jpg");
+    expect(completeAiJob(probeLease, { runtime: INTERNAL_RUNTIME }).ok).toBe(true);
     if (!imageAliasMatch) throw new Error("image alias not found in prompt");
     const imageAlias = imageAliasMatch[1];
 
@@ -384,7 +384,7 @@ describe("M3-D：精确 FactSource locator", () => {
     });
 
     const prompt = (assistant.generateText as ReturnType<typeof vi.fn>).mock.calls[0][0]
-      .messages[0].content as string;
+      .messages.map((m: { content: string }) => m.content).join("\n") as string;
     // prompt 只出现别名，绝不出现内部 UUID
     expect(prompt).not.toMatch(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,

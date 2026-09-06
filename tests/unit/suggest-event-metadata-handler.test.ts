@@ -16,6 +16,7 @@ afterAll(async () => {
   rmSync(dataDir, { recursive: true, force: true });
 });
 
+const { enqueueAiJob, claimNextAiJob, finalizeAiJob } = await import("@/lib/ai/jobs");
 const { getDb } = await import("@/db");
 const { aiSuggestion, factSource } = await import("@/db/schema/suggestion");
 const { fact } = await import("@/db/schema/contribution");
@@ -139,6 +140,14 @@ function makeContribution(
 }
 
 function makeLease(entityId: string): import("@/lib/ai/jobs").AiJobLease {
+  if (getDb().select().from(memoryEvent).where(eq(memoryEvent.id, entityId)).get()) {
+    const runtime = makeAssistant({}) as unknown as import("@/lib/ai/types").MemoryAssistant;
+    const queued = enqueueAiJob({ familyId, requestedByUserId: admin!.id, jobType: "suggest.event_metadata.v1", entityType: "memory_event", entityId, requiredCapability: "text", triggerMode: "manual", sources: [{ kind: "memory_event", id: entityId }, ...getDb().select({ id: contribution.id }).from(contribution).where(and(eq(contribution.memoryEventId, entityId), eq(contribution.visibility, "family"))).all().map(row => ({ kind: "contribution" as const, id: row.id }))] }, { runtime });
+    if (!queued.ok) throw new Error(queued.error);
+    const lease = claimNextAiJob("handler-fixture-worker", { runtime });
+    if (!lease || lease.jobId !== queued.jobId) throw new Error("fixture lease failed");
+    return lease;
+  }
   return {
     jobId: randomUUID(),
     familyId,
@@ -193,16 +202,7 @@ function commitResult(
   result: Awaited<ReturnType<typeof suggestEventMetadataHandler>>,
   lease: import("@/lib/ai/jobs").AiJobLease,
 ) {
-  getDb().transaction((tx) =>
-    result.commit(tx, {
-      jobId: lease.jobId,
-      familyId: lease.familyId,
-      entityType: lease.entityType,
-      entityId: lease.entityId,
-      requestedByUserId: lease.requestedByUserId,
-      attemptNumber: lease.attemptNumber,
-    }),
-  );
+  expect(finalizeAiJob(lease, (tx, context) => result.commit(tx, context), { runtime: makeAssistant({}) as unknown as import("@/lib/ai/types").MemoryAssistant }).ok).toBe(true);
 }
 
 describe("suggest.event_metadata.v1 handler", () => {
@@ -294,7 +294,7 @@ describe("suggest.event_metadata.v1 handler", () => {
         assistant: assistant as unknown as import("@/lib/ai/types").MemoryAssistant,
         signal: new AbortController().signal,
       }),
-    ).rejects.toMatchObject({ code: "bad_provider_output", retryable: true });
+    ).rejects.toMatchObject({ code: "bad_provider_output", retryable: false });
   });
 
   it("drops unknown person names instead of creating invalid refs", async () => {
@@ -344,7 +344,7 @@ describe("suggest.event_metadata.v1 handler", () => {
     commitResult(result, lease);
 
     expect(assistant.generateText).toHaveBeenCalledTimes(1);
-    const prompt = assistant.generateText.mock.calls[0][0].messages[0].content as string;
+    const prompt = assistant.generateText.mock.calls[0][0].messages.map((m: { content: string }) => m.content).join("\n") as string;
     expect(prompt.length).toBeLessThan(30_000);
 
     const suggestions = getDb()
@@ -393,7 +393,7 @@ describe("suggest.event_metadata.v1 handler", () => {
       signal: new AbortController().signal,
     });
 
-    const prompt = assistant.generateText.mock.calls[0][0].messages[0].content as string;
+    const prompt = assistant.generateText.mock.calls[0][0].messages.map((m: { content: string }) => m.content).join("\n") as string;
     expect(prompt).toContain("公开内容");
     expect(prompt).not.toContain("私密内容");
   });

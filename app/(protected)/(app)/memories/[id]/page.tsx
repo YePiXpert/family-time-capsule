@@ -1,3 +1,4 @@
+import { listReviewableSuggestions } from "@/lib/suggestions/access";
 import type { Metadata } from "next";
 import { NameReviewControl } from "@/components/name-review";
 import Link from "next/link";
@@ -40,7 +41,6 @@ import { SuggestionSection } from "./suggestion-ui";
 import { TrashEventButton } from "../../trash/trash-ui";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import {
-  listPendingSuggestions,
   listEventTags,
 } from "@/lib/suggestions/service";
 import { listJobsForEntity } from "@/lib/ai/jobs";
@@ -191,7 +191,7 @@ export default async function MemoryEventPage({
         ? listJobsForEntity(context, "memory_event", id)
         : Promise.resolve([] as AiJobSummary[]),
       canViewAudit ? listEventRevisions(familyId, id) : Promise.resolve([]),
-      listPendingSuggestions(familyId, "memory_event", id),
+      Promise.resolve(listReviewableSuggestions(familyId, context.userId, "memory_event", id)),
       listEventTags(familyId, id),
     ]);
     return {
