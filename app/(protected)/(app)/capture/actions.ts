@@ -46,14 +46,6 @@ export async function finalizeCaptureAction(
   );
   const text = input.text.trim();
   if (text.length > 5000) return { ok: false, error: "文字最多 5000 字。" };
-  const itemIds = [...new Set(input.itemIds.filter(Boolean))];
-  if (text) {
-    const item = await createTextInboxItem(context.familyId, text);
-    itemIds.push(item.id);
-  }
-  if (itemIds.length === 0) {
-    return { ok: false, error: "请写一句话或选择至少一份素材。" };
-  }
   let occurredAt: Date | undefined;
   if (input.occurredAtWall.trim()) {
     try {
@@ -65,6 +57,14 @@ export async function finalizeCaptureAction(
     } catch {
       return { ok: false, error: "发生时间格式不正确；素材已经安全留在收件箱。" };
     }
+  }
+  const itemIds = [...new Set(input.itemIds.filter(Boolean))];
+  if (text) {
+    const item = await createTextInboxItem(context.familyId, text);
+    itemIds.push(item.id);
+  }
+  if (itemIds.length === 0) {
+    return { ok: false, error: "请写一句话或选择至少一份素材。" };
   }
 
   if (input.mode === "inbox") {

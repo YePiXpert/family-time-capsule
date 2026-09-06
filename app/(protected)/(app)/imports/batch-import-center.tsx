@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/icons";
+import { describeUploadError } from "@/components/upload-request";
 import { runBoundedImportPool } from "@/lib/imports/pool";
 
 type PersonOption = { id: string; displayName: string; isChild: boolean };
@@ -318,7 +319,8 @@ export function BatchImportCenter({
       await refresh(id);
       if (!pausedRef.current) setMessage("本轮可上传项已处理；成功原件已进入收件箱，失败项可单独重试。");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "import_failed");
+      console.error("[imports] start failed", error);
+      setMessage(describeUploadError(error));
     } finally {
       setWorking(false);
     }
@@ -366,6 +368,16 @@ export function BatchImportCenter({
   const needsFiles = initial && initial.items.some((item) => item.status !== "completed") && localItems.length === 0;
   const closed = session?.status === "cancelled" || session?.status === "completed";
   const visibleItems = useMemo(() => [...serverItems].sort((a, b) => a.sortOrder - b.sortOrder), [serverItems]);
+  const hasUnfinishedFiles = localItems.some((item) => item.status !== "completed");
+
+  useEffect(() => {
+    if (!hasUnfinishedFiles) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnfinishedFiles]);
 
   return (
     <div className="mt-8 space-y-6">
@@ -424,7 +436,7 @@ export function BatchImportCenter({
               const progress = item.file.size > 0 ? Math.round(item.offset / item.file.size * 100) : 0;
               return <li key={item.key} className="rounded-xl border border-line px-3 py-3 text-sm">
                 <div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate" title={item.file.name}>{item.file.name}</span><span className="shrink-0 text-xs text-muted">{readableBytes(item.file.size)} · {item.status === "completed" ? "已入箱" : `${progress}%`}</span></div>
-                {item.error ? <p className="mt-1 text-xs text-danger">{item.error}</p> : null}
+                {item.error ? <p className="mt-1 text-xs text-danger">{describeUploadError(item.error)}</p> : null}
               </li>;
             })}
             {localItems.length === 0 ? visibleItems.map((item) => <li key={item.id} className="rounded-xl border border-line px-3 py-3 text-sm">

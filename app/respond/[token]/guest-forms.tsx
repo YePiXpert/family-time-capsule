@@ -110,6 +110,22 @@ export function GuestMediaForm({ token }: { token: string }) {
           setState(undefined);
         }}
       />
+      {file && !pending ? (
+        <p className="flex flex-wrap items-center gap-3 text-sm text-foreground/70">
+          <span className="min-w-0 truncate">已选择：{file.name}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setFile(null);
+              if (inputRef.current) inputRef.current.value = "";
+              setState(undefined);
+            }}
+            className="min-h-9 rounded-lg border border-foreground/20 px-3 text-xs"
+          >
+            移除
+          </button>
+        </p>
+      ) : null}
       {pending && (
         <div className="flex items-center gap-3 text-sm text-foreground/60" role="status">
           <progress

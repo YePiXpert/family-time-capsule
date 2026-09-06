@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { runBoundedImportPool } from "@/lib/imports/pool";
+import { describeUploadError } from "@/components/upload-request";
 
 type UploadDescriptor = {
   captureId: string;
@@ -53,6 +54,15 @@ function declaredMime(file: File): string {
             : "application/octet-stream";
 }
 
+function readableBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function isVoiceMemo(file: File): boolean {
+  return file.name.startsWith("family-voice-") && file.type.startsWith("audio/");
+}
+
 async function json(response: Response): Promise<Record<string, unknown>> {
   const value = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) throw new Error(typeof value?.error === "string" ? value.error : `request_${response.status}`);
@@ -65,6 +75,7 @@ export function GuestContributionForm(props: Props) {
   const [guestName, setGuestName] = useState("");
   const [items, setItems] = useState<ItemState[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const [working, setWorking] = useState(false);
   const [recording, setRecording] = useState(false);
   const [retryableCaptureIds, setRetryableCaptureIds] = useState<Set<string>>(() => new Set());
@@ -147,7 +158,24 @@ export function GuestContributionForm(props: Props) {
       `/contribute/${encodeURIComponent(props.token)}/submissions/${id}/complete`,
       { method: "POST" },
     ));
+    setFiles([]);
+    setText("");
+    setItems([]);
+    setSubmitted(true);
     setMessage("已经收到。所有内容会先进入家人的收件箱，整理确认后才进入时间轴。");
+  }
+
+  function submitAnother() {
+    setSubmitted(false);
+    setMessage(null);
+    setItems([]);
+    setFiles([]);
+    setText("");
+    submissionId.current = null;
+    descriptors.current.clear();
+    fileByCapture.current.clear();
+    declarationByCapture.current.clear();
+    setRetryableCaptureIds(new Set());
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -207,7 +235,8 @@ export function GuestContributionForm(props: Props) {
         setMessage("部分项目尚未完成；已成功的原件不会回滚，可重试失败项。");
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "提交失败，请稍后重试。");
+      console.error("[contribute] submit failed", error);
+      setMessage(describeUploadError(error));
     } finally {
       setWorking(false);
     }
@@ -245,7 +274,10 @@ export function GuestContributionForm(props: Props) {
     const results = await runBoundedImportPool(failed, 3, async (descriptor) => uploadOne(descriptor));
     if (failed.length === failedCaptureIds.length && results.every((result) => result.status === "fulfilled")) {
       try { await finishSubmission(submissionId.current); }
-      catch (error) { setMessage(error instanceof Error ? error.message : "提交尚未完成。"); }
+      catch (error) {
+        console.error("[contribute] complete failed", error);
+        setMessage(describeUploadError(error));
+      }
     } else {
       setMessage("仍有项目失败；服务器已有进度会保留，可以继续重试。");
     }
@@ -262,7 +294,11 @@ export function GuestContributionForm(props: Props) {
       recordingStream.current?.getTracks().forEach((track) => track.stop());
       const mime = active.mimeType || "audio/webm";
       const recorded = new File(recordingChunks.current, `family-voice-${Date.now()}.webm`, { type: mime });
-      setFiles((current) => [...current, recorded].slice(0, props.maxFiles));
+      if (files.length >= props.maxFiles) {
+        setMessage(`最多 ${props.maxFiles} 份；这份录音没有加入，可先移除已有文件。`);
+      } else {
+        setFiles((current) => [...current, recorded]);
+      }
       recorder.current = null;
       recordingStream.current = null;
       recordingChunks.current = [];
@@ -287,6 +323,18 @@ export function GuestContributionForm(props: Props) {
 
   const hasRetryable = items.some((item) => item.status === "failed" && retryableCaptureIds.has(item.captureId));
 
+  if (submitted) {
+    return (
+      <div className="mt-6 flex flex-col gap-4">
+        {message ? <p role="status" className="rounded-lg border border-line bg-foreground/[0.03] p-3 text-sm">{message}</p> : null}
+        <button type="button" onClick={submitAnother}
+          className="min-h-11 self-start rounded-lg border border-foreground/20 px-4 py-2 text-sm">
+          再提交一份
+        </button>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={submit} className="mt-6 flex flex-col gap-5">
       {props.allowGuestName ? (
@@ -309,9 +357,17 @@ export function GuestContributionForm(props: Props) {
           选择文件（最多 {props.maxFiles} 份）
           <input type="file" multiple accept={accept} disabled={working}
             onChange={(event) => {
-              const selected = Array.from(event.target.files ?? []).slice(0, props.maxFiles);
-              setFiles(selected);
+              const selected = Array.from(event.target.files ?? []);
+              const merged = [...files];
+              let dropped = 0;
+              for (const file of selected) {
+                if (merged.length >= props.maxFiles) { dropped += 1; continue; }
+                if (merged.some((existing) => existing.name === file.name && existing.size === file.size)) continue;
+                merged.push(file);
+              }
+              setFiles(merged);
               setItems([]);
+              if (dropped > 0) setMessage(`最多 ${props.maxFiles} 份；多出的 ${dropped} 份没有加入。`);
             }} className="text-sm font-normal" />
           <span className="text-xs font-normal text-muted">每份原件单独续传；失败不会撤销已经完成的项目。</span>
         </label>
@@ -322,13 +378,27 @@ export function GuestContributionForm(props: Props) {
           {recording ? "停止并保留录音" : "直接录音"}
         </button>
       ) : null}
+      {files.length > 0 && items.length === 0 ? (
+        <ul className="space-y-2" aria-label="已选择的文件">
+          {files.map((file, index) => (
+            <li key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 text-sm">
+              <span className="min-w-0">
+                <span className="block truncate">{isVoiceMemo(file) ? "语音备忘录" : file.name}</span>
+                <span className="text-xs text-muted">{file.type || "未知类型"} · {readableBytes(file.size)}</span>
+              </span>
+              <button type="button" disabled={working} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
+                className="min-h-9 shrink-0 rounded-lg border border-foreground/20 px-3 text-xs disabled:opacity-50">移除</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {items.length > 0 ? (
         <ul className="space-y-2" aria-label="上传进度">
           {items.map((item) => (
             <li key={item.captureId} className="rounded-lg border border-line p-3 text-sm">
               <div className="flex justify-between gap-3"><span className="truncate">{item.name}</span><span>{item.status === "completed" ? "完成" : item.status === "failed" ? "失败" : `${Math.round(item.uploaded / Math.max(1, item.size) * 100)}%`}</span></div>
               <progress className="mt-2 h-2 w-full accent-accent" max={item.size} value={item.uploaded} />
-              {item.error ? <p role="alert" className="mt-1 text-xs text-red-700">{item.error}</p> : null}
+              {item.error ? <p role="alert" className="mt-1 text-xs text-red-700">{describeUploadError(item.error)}</p> : null}
             </li>
           ))}
         </ul>

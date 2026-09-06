@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useSyncExternalStore, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { uploadWithProgress } from "@/components/upload-request";
 import { Icon } from "@/components/ui/icons";
@@ -62,7 +63,7 @@ export function CaptureEditor({
   );
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState<
-    | { tone: "success" | "warning" | "danger"; text: string }
+    | { tone: "success" | "warning" | "danger"; text: string; href?: string; hrefLabel?: string }
     | undefined
   >();
   const [finalizing, startTransition] = useTransition();
@@ -174,9 +175,12 @@ export function CaptureEditor({
         return;
       }
       setText("");
+      setFiles([]);
       setNotice({
         tone: "success",
         text: `已收进收件箱。共 ${result.itemCount} 份内容，可以继续记录，也可以稍后整理。`,
+        href: "/inbox",
+        hrefLabel: "去收件箱整理",
       });
     });
   }
@@ -323,7 +327,19 @@ export function CaptureEditor({
           </section>
         ) : null}
 
-        {notice ? <InlineNotice tone={notice.tone}>{notice.text}</InlineNotice> : null}
+        {notice ? (
+          <InlineNotice tone={notice.tone}>
+            {notice.text}
+            {notice.href && notice.hrefLabel ? (
+              <>
+                {" "}
+                <Link href={notice.href} className="font-medium text-accent underline underline-offset-2">
+                  {notice.hrefLabel}
+                </Link>
+              </>
+            ) : null}
+          </InlineNotice>
+        ) : null}
       </div>
 
       <aside className="min-w-0">
