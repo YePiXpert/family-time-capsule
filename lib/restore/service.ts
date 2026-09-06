@@ -1,3 +1,4 @@
+import { parseNameReviews } from "@/lib/names/archive";
 import { BOOK_FILES } from "@/lib/books/projects/portable.mjs";
 import { parseBookArchive, restoreBookArchive } from "@/lib/books/projects/archive";
 import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
@@ -31,7 +32,7 @@ import {
   capsuleContribution,
   capsuleEvent,
 } from "@/db/schema/capsule";
-import { factSource, memoryEventTag } from "@/db/schema/suggestion";
+import { aiSuggestion, factSource, memoryEventTag } from "@/db/schema/suggestion";
 import {
   story as storyTable,
   storyParagraph as storyParagraphTable,
@@ -149,7 +150,7 @@ type Manifest = {
   appVersion?: string;
   familyId: string;
   fileCount: number;
-  modules?: { collections?: number; bookProjects?: number };
+  modules?: { collections?: number; bookProjects?: number; nameReviews?: number };
   assetCount: number;
   assets: ManifestAsset[];
 };
@@ -836,6 +837,10 @@ async function loadAndVerifyZip(
     "transcripts.json 必须是数组",
   );
 
+  const nameReviewsFile = archive.has(`${EXPORT_ROOT_DIR}/name-reviews.json`);
+  requireCondition(manifest.modules?.nameReviews === undefined || (manifest.modules.nameReviews === 1 && nameReviewsFile), "missing_json", "名称审核模块缺失或不支持");
+  const nameReviewsRaw = nameReviewsFile ? await readJson<unknown>("name-reviews.json") : [];
+
   // v0.1.5 后的 additive 文件：旧 exportVersion=1 归档不存在 fact-sources.json 时按空来源恢复。
   const factSourcesFile = archive.has(`${EXPORT_ROOT_DIR}/fact-sources.json`);
   const factSourcesRaw = factSourcesFile
@@ -971,7 +976,7 @@ async function loadAndVerifyZip(
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
     (transcriptsFile ? 1 : 0) +
-    (factSourcesFile ? 1 : 0) +
+    (factSourcesFile ? 1 : 0) + (nameReviewsFile ? 1 : 0) +
     (hasStoryFiles ? 3 : 0) +
     (hasDialogueFiles ? 2 : 0) +
     (hasDurable11Files ? durable11Names.length : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
@@ -2424,7 +2429,12 @@ async function loadAndVerifyZip(
   try { bookGraph = parseBookArchive(bookRaw, manifest.familyId, { memory: new Set(memoriesJson.map(m=>m.id)), asset: assetIds, person: new Set(peopleJson.map(p=>p.id)), contribution: new Set(contributionsJson.map(c=>c.id)), story: storyIds, collection: new Set(collectionGraph.collections.map(c=>c.id)) }); }
   catch { throw new RestoreError("bad_refs", "年册编辑与历史版本关系图无效"); }
 
+  let nameReviews;
+  try { nameReviews = parseNameReviews(nameReviewsRaw, new Map(memoriesJson.map(row => [row.id, row.titleRevision ?? 0])), new Map(inboxItemsJson.map(row => [row.id, row.titleRevision ?? 0]))); }
+  catch { throw new RestoreError("bad_refs", "名称审核版本或目标关系无效"); }
+
   return {
+    nameReviews,
     bookGraph,
     collectionGraph,
     archive,
@@ -2493,6 +2503,7 @@ async function restoreFromArchive(
   const db = getDb();
   const data = await loadAndVerifyZip(archive, archiveBytes, limits);
   const {
+    nameReviews,
     bookGraph,
     collectionGraph,
     familyJson,
@@ -2936,6 +2947,19 @@ async function restoreFromArchive(
           )
           .run();
       }
+
+      if (nameReviews.length > 0) {
+        tx.insert(aiSuggestion).values(nameReviews.map(row => ({
+          id: row.id, familyId, entityType: row.entityType, entityId: row.entityId, suggestionType: "title",
+          valueJson: JSON.stringify({ title: row.title }), provider: row.provider, model: row.model, sourceFingerprint: row.sourceFingerprint,
+          status: row.status, revision: row.revision, targetRevision: row.targetRevision, appliedRevision: row.appliedRevision,
+          previousNameJson: row.previousName ? JSON.stringify(row.previousName) : null, createdByJobId: null,
+          createdAt: new Date(row.createdAt), resolvedAt: new Date(row.resolvedAt), undoneAt: row.undoneAt ? new Date(row.undoneAt) : null,
+          resolvedByUserId: row.resolvedByUserId,
+        }))).run();
+      }
+
+      requireCondition(tx.select({ value: count() }).from(aiSuggestion).where(eq(aiSuggestion.familyId, familyId)).get()?.value === nameReviews.length, "bad_refs", "名称审核恢复数量不一致");
 
       if (factSourcesJson.length > 0) {
         tx.insert(factSource)

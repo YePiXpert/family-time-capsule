@@ -7,7 +7,7 @@ import { fact } from "./contribution";
 /**
  * AI Suggestion + Fact Source + MemoryEvent Tag（Issue #M3-C）。
  *
- * - ai_suggestion 是运维/可重建状态：只保存当前待审建议与接受/拒绝墓碑，不进入 portable archive。
+ * - ai_suggestion 保存待审建议；版本化标题采用/拒绝/撤销墓碑属于耐久家庭资料，进入 portable archive。待审结果与任务不导出。
  * - fact_source 是耐久家庭资料：每条 fact（含手工创建）必须有来源，导出/恢复必须保留。
  * - memory_event_tag 是耐久家庭资料：事件标签，导出/恢复必须保留。
  */

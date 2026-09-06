@@ -1,3 +1,4 @@
+import { collectNameReviews, parseNameReviews } from "@/lib/names/archive";
 import "server-only";
 import { collectBookArchive, collectBookSourceClosure } from "@/lib/books/projects/archive";
 import { BOOK_FILES } from "@/lib/books/projects/portable.mjs";
@@ -66,7 +67,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 25 + COLLECTION_FILES.length + BOOK_FILES.length;
+export const EXPORT_NON_ASSET_FILE_COUNT = 26 + COLLECTION_FILES.length + BOOK_FILES.length;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -205,6 +206,9 @@ export async function buildFamilyExport(
   ]);
 
   const eventIds = events.map((e) => e.id);
+  // Capture review records before opening the ZIP and reject an inconsistent
+  // title snapshot rather than emitting an archive that cannot be restored.
+  const nameReviews = parseNameReviews(collectNameReviews(familyId, new Set(eventIds), new Set(inboxItems.map(item => item.id))), new Map(events.map(event => [event.id, event.titleRevision])), new Map(inboxItems.map(item => [item.id, item.titleRevision])));
   const [eventAssetLinks, eventParticipantLinks, capsuleEventLinks, capsuleAssetLinks, capsuleContributionLinks] =
     await Promise.all([
       eventIds.length
@@ -403,7 +407,7 @@ export async function buildFamilyExport(
 
   const manifest = {
     exportVersion: EXPORT_VERSION,
-    modules: { collections: 1, bookProjects: 1 },
+    modules: { collections: 1, bookProjects: 1, nameReviews: 1 },
     appVersion: getAppVersion(),
     exportedAt: new Date().toISOString(),
     familyId,
@@ -583,6 +587,7 @@ export async function buildFamilyExport(
       status: f.status,
       createdAt: iso(f.createdAt),
     })));
+    json("name-reviews.json", nameReviews);
     json("fact-sources.json", factSources.map((s) => ({
       id: s.id,
       factId: s.factId,

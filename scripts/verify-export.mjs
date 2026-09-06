@@ -119,9 +119,11 @@ const hasBooks = bookPresence.every(Boolean);
 if(!hasBooks && bookPresence.some(Boolean)) fail("年册关系文件不完整");
 if(manifest.modules?.bookProjects !== undefined && (manifest.modules.bookProjects !== 1 || !hasBooks)) fail("声明的年册模块缺失或不支持");
 const bookGraph = hasBooks ? await Promise.all(BOOK_FILES.map(name=>readJsonAsync(name))) : [[],[],[],[],[],[]];
+const hasNameReviews = await zipEntryExists("name-reviews.json");
+if (manifest.modules?.nameReviews !== undefined && (manifest.modules.nameReviews !== 1 || !hasNameReviews)) fail("声明的名称审核模块缺失或不支持");
 const expectedNonAssetCount =
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
-  (hasStories ? 3 : 0) +
+  (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) +
   (hasDialogue ? 2 : 0) +
   (importSessions ? 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
@@ -150,6 +152,11 @@ const inboxItemIds = new Set(
     ? JSON.parse(await inboxEntry.async("string")).map((item) => item.id)
     : [],
 );
+if (hasNameReviews) {
+  const reviews = await readJsonAsync("name-reviews.json");
+  if (!Array.isArray(reviews) || reviews.some(row => !row || !["accepted", "rejected"].includes(row.status) || !Number.isSafeInteger(row.revision) || row.revision < 1 || !(row.entityType === "memory_event" ? eventIds : row.entityType === "inbox_item" ? inboxItemIds : new Set()).has(row.entityId))) fail("名称审核墓碑或目标关系无效");
+  else ok(`名称审核：${reviews.length} 条，目标关系完整（详细版本校验由恢复预检执行）`);
+}
 const storyEntry = zip.file(`${ROOT}/stories.json`);
 const storyIds = new Set(
   storyEntry

@@ -1048,7 +1048,9 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       ]) zip.remove(`family-time-capsule-export/${name}`);
       const manifestFile = zip.file("family-time-capsule-export/manifest.json")!;
       const manifest = JSON.parse(await manifestFile.async("string"));
-      manifest.fileCount -= 12;
+      zip.remove("family-time-capsule-export/name-reviews.json");
+      delete manifest.modules.nameReviews;
+      manifest.fileCount -= 13;
       zip.file(
         "family-time-capsule-export/manifest.json",
         JSON.stringify(manifest),

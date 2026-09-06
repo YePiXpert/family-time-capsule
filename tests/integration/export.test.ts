@@ -238,8 +238,10 @@ describe("完整导出（#014）", () => {
     expect(manifest.exportVersion).toBe(1);
     expect(manifest.appVersion).toBe(JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")).version);
     expect(manifest.familyId).toBe(familyId);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 34);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 35);
     expect(result.fileCount).toBe(manifest.fileCount);
+    expect(manifest.modules.nameReviews).toBe(1);
+    expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
     expect(familyJson.name).toBe("我们一家");
     expect(familyJson.childLaterUnlockAge).toBe(21);
     expect(peopleJson.length).toBeGreaterThanOrEqual(3);

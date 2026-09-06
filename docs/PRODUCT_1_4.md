@@ -74,3 +74,13 @@
   连接切换后的旧结果丢弃、冲突输入保留）。production build 通过。
 - 待续：已采用/忽略墓碑进入 portable archive、本机编辑救援、多媒体持久编排、
   自动策略与用量。完整 M1/M4–M8 尚未宣称完成；没有创建 v1.4.0 标签。
+
+### 名称导出恢复切片（2026-09-06）
+
+- `name-reviews.json` 随模块声明保存版本化标题采用、忽略和撤销；恢复前验证
+  目标/版本，排除未处理任务、consent 与 Key。旧档缺字段保留 canonical 标题。
+- 21 项真实导出/恢复专项通过；新实例再次导出后的审核记录和事件逐项一致，
+  原件 bytes/SHA/storageKey/文件名不变。恢复后撤销仍执行版本校验。
+- production build、运维工具 bundle、真实灾难 roundtrip 7 项通过。
+  root typecheck/lint 通过（保留已有 invitation-flow warning）。
+- 尚需完成本机编辑救援和后续整理数据的导出恢复；此处不是 M7 最终验收。

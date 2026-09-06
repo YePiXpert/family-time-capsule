@@ -832,3 +832,11 @@ BookSourceState.authoredAt 是派生讲述日期；occurredAt 始终指来源记
 原生 `reading_download` / `reading_binding` 是独立设备 SQLite 缓存索引，存清单、已完成
 文件、配额与当前用户阅读进度，连接凭据仅存摘要；服务器不增加家庭持久编辑表。
 BookRenderJob 增加已定义格式 `reading_zip` 的真实执行路径，仍为临时任务，排除家庭恢复。
+
+### v1.4 名称审核版本
+
+迁移 0043 为 `ai_suggestion` 添加 `revision`、`target_revision`、
+`applied_revision`、`previous_name_json`、`undone_at`。旧建议目标版本为 NULL，
+不能据此替换标题。采用与目标改名在同一事务更新；忽略和撤销保留墓碑。
+只有版本化标题审核记录进入 portable archive，待审建议和 ai_job 仍属于
+实例运行状态。原件字节、原文件名与 storageKey 不参与名称修改。
