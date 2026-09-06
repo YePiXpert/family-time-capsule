@@ -32,6 +32,7 @@ _redact() {
   sed -E \
     -e 's/(INITIAL_SETUP_TOKEN[=: ]+)[^ ]+/\1[REDACTED]/g' \
     -e 's/(AUTH_SECRET[=: ]+)[^ ]+/\1[REDACTED]/g' \
+    -e 's/(AI_API_KEY[=: ]+).*/\1[REDACTED]/g' \
     -e 's/(token=)[A-Za-z0-9._-]+/\1[REDACTED]/g' \
     -e 's/(Authorization: Bearer )[A-Za-z0-9._-]+/\1[REDACTED]/g' \
     -e 's#/invite/[A-Za-z0-9_-]+#/invite/[REDACTED]#g' \
@@ -93,6 +94,12 @@ ftc_lock() {
   local name="${1:-global}"
   local dir="$FTC_LOCK_DIR/$name"
   mkdir -p "$FTC_LOCK_DIR"
+  # AI configuration takes the exclusive side of this gate. Other operations
+  # share it, including nested upgrade -> backup, while retaining their locks.
+  require_cmd flock
+  exec {FTC_AI_GUARD_FD}> "$FTC_STATE_DIR/ai.lock"
+  chmod 600 "$FTC_STATE_DIR/ai.lock"
+  flock -s -n "$FTC_AI_GUARD_FD" || die "AI 配置操作正在运行，请稍后重试。" 9
   if mkdir "$dir" 2>/dev/null; then
     printf '%s\n' "$$" > "$dir/pid"
     trap 'ftc_unlock '"$name"' || true' EXIT
@@ -119,6 +126,10 @@ ftc_unlock() {
   if [[ "$holder_pid" == "$$" ]]; then
     rm -rf "$dir"
   fi
+  if [[ -n "${FTC_AI_GUARD_FD:-}" ]]; then
+    exec {FTC_AI_GUARD_FD}>&-
+    unset FTC_AI_GUARD_FD
+  fi
 }
 
 # ---------------------------------------------------------------- 环境与命令
@@ -133,7 +144,7 @@ load_env() {
   fi
   # 只读取 KEY=VALUE 行；绝不 eval 文件内容。
   while IFS='=' read -r key value; do
-    [[ -z "$key" || "$key" == \#* ]] && continue
+    [[ -z "$key" || "$key" == \#* || "$key" == AI_* ]] && continue
     case "$key" in
       *[!A-Za-z0-9_]*|'') continue ;;
     esac
@@ -142,7 +153,10 @@ load_env() {
   chmod 600 "$FTC_ENV_FILE" 2>/dev/null || true
 }
 
-compose() {
+compose() (
+  # AI dotenv values must be interpreted once, by Compose, never shell-expanded.
+  local ai_key
+  while IFS= read -r ai_key; do unset "$ai_key"; done < <(compgen -v AI_ || true)
   # Compose v2 优先（docker compose），回退独立二进制。
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -151,7 +165,7 @@ compose() {
   else
     die "未检测到 Docker Compose v2（docker compose）。" 127
   fi
-}
+)
 
 compose_file_active() {
   local file="$FTC_RELEASES_DIR/current/compose.yml"
@@ -272,6 +286,9 @@ ftc $FTC_TOOL_VERSION —— Family Time Capsule 自托管运维工具
 
 命令：
   install                       首次安装/二次检查（绝不覆盖已有数据）
+  ai configure / status         AI 部署配置与运行中容器核对
+  ai test --capability text|vision|transcription  内置样本能力检测（可能消耗额度）
+  ai disable / recover          关闭 AI / 恢复中断的配置操作
   status                        运行版本、容器、健康、磁盘与备份概览
   doctor                        深度诊断（配置、端口、HTTPS、worker 心跳）
   version                       工具与部署版本

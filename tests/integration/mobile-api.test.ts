@@ -2,7 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-mobile-api-"));
 process.env.DATA_DIR = dataDir;
@@ -36,6 +38,7 @@ const { POST: textCapturePost } = await import(
 const { POST: imageUploadPost } = await import("@/app/api/upload/image/route");
 const { POST: mediaUploadPost } = await import("@/app/api/upload/media/route");
 const { GET: homeGet } = await import("@/app/api/mobile/v1/home/route");
+const { GET: aiSettingsGet, POST: aiSettingsPost } = await import("@/app/api/mobile/v1/ai/settings/route");
 const { GET: inboxGet } = await import("@/app/api/mobile/v1/inbox/route");
 const { PATCH: inboxPatch } = await import(
   "@/app/api/mobile/v1/inbox/[id]/route"
@@ -1138,5 +1141,32 @@ describe("native mobile API", () => {
       new Request("http://localhost/api/mobile/v1/sync"),
     );
     expect(response.status).toBe(401);
+  });
+
+  it("exposes real AI consent and diagnostics without credentials, rejecting stale disclosure and non-admin writes", async () => {
+    const url = "http://localhost/api/mobile/v1/ai/settings";
+    vi.stubEnv("AI_PROVIDER", "openai-compatible");
+    vi.stubEnv("AI_BASE_URL", "https://no-network-used.invalid/v1");
+    vi.stubEnv("AI_API_KEY", "must-never-leave-server");
+    vi.stubEnv("AI_MODEL", "fictional-text");
+    try {
+      expect((await aiSettingsGet(new Request(url))).status).toBe(401);
+      const response = await aiSettingsGet(bearerRequest(url, bearerToken));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      const status = await response.json();
+      expect(status).toMatchObject({ configured: true, canConfigure: true, workerAvailable: false });
+      expect(status.capabilities.find((row: { capability: string }) => row.capability === "text")).toMatchObject({ consented: false, check: { state: "untested" } });
+      expect(JSON.stringify(status)).not.toContain("must-never-leave-server");
+      const input = { operation: "enable", capability: "text", configurationId: status.configurationId };
+      expect((await aiSettingsPost(mobileJsonRequest(url, "POST", editorToken, input))).status).toBe(403);
+      expect((await aiSettingsPost(mobileJsonRequest(url, "POST", bearerToken, { ...input, configurationId: "outdated" }))).status).toBe(409);
+      const enabled = await aiSettingsPost(mobileJsonRequest(url, "POST", bearerToken, input));
+      expect(enabled.status).toBe(200);
+      expect((await enabled.json()).capabilities.find((row: { capability: string }) => row.capability === "text").consented).toBe(true);
+      const disabled = await aiSettingsPost(mobileJsonRequest(url, "POST", bearerToken, { operation: "disable", capability: "text" }));
+      expect(disabled.status).toBe(200);
+      expect((await disabled.json()).capabilities.find((row: { capability: string }) => row.capability === "text").consented).toBe(false);
+    } finally { vi.unstubAllEnvs(); }
   });
 });

@@ -852,6 +852,21 @@ export async function fetchMobileHome(
   );
 }
 
+export function parseAiSettings(value: unknown): import("../ai/types").AiSettings {
+  if (!isRecord(value) || ![value.valid, value.configured, value.external, value.canConfigure, value.workerAvailable].every(flag => typeof flag === "boolean") || !isNullableString(value.configurationId, 128) || !isNullableString(value.provider, 100) || !Array.isArray(value.capabilities) || value.capabilities.length !== 3 || new Set(value.capabilities.map(row => isRecord(row) ? row.capability : null)).size !== 3 || !value.capabilities.every(row => isRecord(row) && ["text", "vision", "transcription"].includes(String(row.capability)) && isNullableString(row.model, 256) && typeof row.available === "boolean" && typeof row.consented === "boolean" && isRecord(row.check) && ["untested", "passed", "failed"].includes(String(row.check.state)) && (row.check.testedAt === null || isDateTime(row.check.testedAt)) && isNullableString(row.check.code, 64))) {
+    throw new ApiError("服务器 AI 状态无效，请升级配套服务端。", 502);
+  }
+  return value as import("../ai/types").AiSettings;
+}
+
+export async function fetchAiSettings(credentials: Credentials) {
+  return parseAiSettings(await requestMobileJson(credentials, "/api/mobile/v1/ai/settings"));
+}
+
+export async function changeAiConsent(credentials: Credentials, capability: import("../ai/types").OrganizerCapability, operation: "enable" | "disable", configurationId: string | null) {
+  return parseAiSettings(await requestMobileJson(credentials, "/api/mobile/v1/ai/settings", { method: "POST", body: JSON.stringify({ capability, operation, configurationId }) }));
+}
+
 export async function fetchMobileInbox(
   credentials: Credentials,
   cursor: string | null = null,

@@ -37,6 +37,8 @@ export type AiProviderDescriptor = Readonly<{
   displayName: string;
   /** Whether calls can leave the Family Time Capsule process. */
   external: boolean;
+  /** Non-secret deployment identity; endpoint/config changes invalidate existing consent/jobs. */
+  configurationId?: string;
 }>;
 
 export type AiProvenance = Readonly<{

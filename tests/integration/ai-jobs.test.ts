@@ -32,6 +32,7 @@ const { completeOnboarding, getUserBinding } = await import(
   "@/lib/family/service"
 );
 const {
+  listAiProcessingConsents,
   claimNextAiJob,
   completeAiJob,
   enableAiProcessingConsent,
@@ -908,4 +909,18 @@ describe.sequential("durable AI jobs and consent", () => {
         .all(),
     ).toHaveLength(0);
   });
+  it("invalidates consent and queued writes when endpoint identity changes with the same models", () => {
+    const now = new Date("2026-09-01T12:00:00Z");
+    const original = { ...EXTERNAL_RUNTIME, provider: { ...EXTERNAL_RUNTIME.provider, configurationId: "deployment-a" } };
+    const changed = { ...original, provider: { ...original.provider, configurationId: "deployment-b" } };
+    expect(enableAiProcessingConsent(adminContext, { capability: "text", allowAutomaticFamilyContent: false }, { runtime: original, now }).ok).toBe(true);
+    const input = { ...internalInput(stableContributionId, admin.id), sources: [{ kind: "memory_event" as const, id: eventId }] };
+    const queued = enqueueAiJob(input, { runtime: original, now });
+    if (!queued.ok) throw new Error("identity test not queued");
+    expect(listAiProcessingConsents(adminContext, { runtime: changed }).find(row => row.capability === "text")?.enabled).toBe(false);
+    expect(enqueueAiJob({ ...input, entityId: "new-endpoint" }, { runtime: changed, now }).ok).toBe(false);
+    expect(claimNextAiJob("identity-worker", { runtime: changed, now })).toBeNull();
+    expect(getDb().select().from(aiJob).where(eq(aiJob.id, queued.jobId)).get()).toMatchObject({ status: "cancelled", lastErrorCode: "configuration_changed" });
+  });
+
 });

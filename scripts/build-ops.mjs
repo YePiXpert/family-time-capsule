@@ -2,7 +2,7 @@
 // Build the production-only operational CLIs as self-contained ESM bundles.
 // The runner image copies only these emitted files; it does not need TS sources,
 // tsx, or the repository's private/local state.
-import { rm } from "node:fs/promises";
+import { rm, copyFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -18,6 +18,7 @@ await build({
     // Resolve from this script rather than the caller's current directory;
     // every entry remains inside the checked-out project.
     "render-book": path.join(rootDir, "scripts", "render-book.mts"),
+    "ai-diagnostics": path.join(rootDir, "scripts", "ai-diagnostics.mts"),
     healthcheck: path.join(rootDir, "scripts", "healthcheck.mjs"),
     worker: path.join(rootDir, "jobs", "worker.ts"),
     restore: path.join(rootDir, "scripts", "restore.ts"),
@@ -52,3 +53,5 @@ const require = __createRequire(import.meta.url);`,
   },
   logLevel: "info",
 });
+
+await copyFile(path.join(rootDir, "resources/ai/smoke.wav"), path.join(outDir, "ai-smoke.wav"));

@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""Project-scoped AI configuration. Secrets travel through files/stdin, never argv."""
+import argparse
+import contextlib
+import fcntl
+import getpass
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import uuid
+from urllib.parse import urlsplit
+
+AI_KEYS = (
+    "AI_CONFIGURATION_ID", "AI_PROVIDER", "AI_BASE_URL", "AI_API_KEY", "AI_PROVIDER_LABEL", "AI_MODEL",
+    "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL", "AI_EMBEDDING_MODEL", "AI_REQUEST_TIMEOUT_MS",
+    "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER",
+    "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT",
+)
+
+
+class OperationError(Exception):
+    pass
+
+
+class SafeArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise OperationError("参数无效。用法：ftc ai configure|status|disable|recover 或 ftc ai test --capability text|vision|transcription。")
+
+
+def atomic_write(path, content):
+    path = Path(path)
+    if path.is_symlink():
+        raise OperationError("配置文件不得为符号链接。")
+    fd, temporary = tempfile.mkstemp(prefix=".ftc-ai-", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def encode_value(value):
+    if not isinstance(value, str) or len(value) > 4096 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise OperationError("配置值过长或包含换行/控制字符，未写入。")
+    # Double-quoted dotenv: escape backslashes/quotes and Compose dollar interpolation.
+    return '"' + value.replace('\\', '\\\\').replace('"', '\\"').replace('$', '$$') + '"'
+
+
+def update_environment(original, values):
+    if set(values) - set(AI_KEYS):
+        raise OperationError("只允许更新 AI 配置。")
+    # Existing AUTH_SECRET and all non-AI lines are preserved byte for byte.
+    lines = original.splitlines(keepends=True)
+    kept = [line for line in lines if line.split("=", 1)[0].strip() not in values]
+    result = "".join(kept)
+    if result and not result.endswith("\n"):
+        result += "\n"
+    return result + "".join(f"{key}={encode_value(value)}\n" for key, value in values.items())
+
+
+def update_template(original):
+    lines = original.splitlines(keepends=True)
+    result = []
+    service = None
+    updated = set()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        match = re.fullmatch(r"  ([a-zA-Z0-9_-]+):\s*\n?", line)
+        if match:
+            service = match.group(1)
+        result.append(line)
+        index += 1
+        if service not in ("app", "worker") or line.strip() != "environment:":
+            continue
+        if not line.startswith("    environment:"):
+            raise OperationError("有效模板使用未知 environment 格式，请保留文件并人工审查。")
+        while index < len(lines) and (lines[index].startswith("      ") or not lines[index].strip()):
+            if lines[index].strip().split(":", 1)[0] not in AI_KEYS:
+                result.append(lines[index])
+            index += 1
+        for key in AI_KEYS:
+            default = "disabled" if key == "AI_PROVIDER" else ""
+            result.append(f"      {key}: ${{{key}:-{default}}}\n")
+        updated.add(service)
+    if updated != {"app", "worker"}:
+        raise OperationError("有效模板缺少 app/worker 环境块，未执行重建。")
+    return "".join(result)
+
+
+def validate_configuration(values):
+    for value in values.values():
+        encode_value(value)
+        if value.strip() != value:
+            raise OperationError("配置值首尾不能有空白。")
+    url = urlsplit(values["AI_BASE_URL"])
+    if not url.hostname or url.username or url.password or url.query or url.fragment:
+        raise OperationError("endpoint 必须是无账号、查询或片段的绝对地址。")
+    loopback = url.hostname in ("localhost", "::1") or bool(re.fullmatch(r"127(?:\.\d{1,3}){3}", url.hostname))
+    if url.scheme != "https" and not (url.scheme == "http" and loopback):
+        raise OperationError("公网 endpoint 必须使用 HTTPS；不跳过证书校验。")
+    if not values["AI_API_KEY"] or not any(values[key] for key in ("AI_MODEL", "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL")):
+        raise OperationError("需要 Key 和至少一项能力模型。")
+    for key in ("AI_MODEL", "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL"):
+        if len(values[key]) > 256:
+            raise OperationError("模型名称过长。")
+    if len(values["AI_PROVIDER_LABEL"]) > 100:
+        raise OperationError("服务名称过长。")
+    for key, choices in {
+        "AI_TOKEN_PARAMETER": ("max_tokens", "max_completion_tokens"),
+        "AI_TEMPERATURE_SUPPORTED": ("true", "false"),
+        "AI_JSON_MODE": ("json_object", "prompt_only"),
+        "AI_TRANSCRIPTION_FORMAT": ("json", "verbose_json", "text"),
+    }.items():
+        if values[key] not in choices:
+            raise OperationError("能力协议选项无效。")
+
+
+class Installation:
+    def __init__(self, root):
+        self.root = Path(root).resolve()
+        self.env_file = self.root / "config/env"
+        self.compose_file = self.root / "releases/current/compose.yml"
+        self.state = self.root / "state"
+        if not self.env_file.is_file() or not self.compose_file.is_file():
+            raise OperationError("未找到本项目安装；先运行 ftc install。")
+        self.process_env = {key: value for key, value in os.environ.items() if key not in AI_KEYS}
+        # The existing tool writes a simple project identifier. Never evaluate the env file.
+        project = re.search(r"^FTC_PROJECT_NAME=([a-z0-9][a-z0-9_-]*)$", self.env_file.read_text(), re.M)
+        if not project:
+            raise OperationError("缺少有效的项目名，拒绝猜测容器归属。")
+        self.compose = ["docker", "compose", "-p", project.group(1), "-f", str(self.compose_file), "--env-file", str(self.env_file)]
+
+    def run(self, args, stdin=None, timeout=120, allow_diagnostic_failure=False):
+        try:
+            result = subprocess.run(self.compose + args, input=stdin, capture_output=True, text=True, env=self.process_env, timeout=timeout, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            raise OperationError("本项目容器操作不可用或超时。") from None
+        if result.returncode and not allow_diagnostic_failure:
+            # Compose errors can echo dotenv values. Never emit raw stderr/stdout.
+            raise OperationError("本项目容器操作失败；请检查配置、配套镜像和健康状态。原始输出已隐藏以保护凭据。")
+        return result.stdout
+
+    def effective_config(self):
+        try:
+            config = json.loads(self.run(["config", "--format", "json"]))
+            services = config["services"]
+            app = services["app"]["environment"]
+            worker = services["worker"]["environment"]
+            if any(str(app.get(key) or "") != str(worker.get(key) or "") for key in AI_KEYS):
+                raise OperationError("app 与 worker 的 AI 配置不一致。")
+            return {key: str(app.get(key) or "").replace("$$", "$") for key in AI_KEYS}
+        except (KeyError, ValueError, TypeError):
+            raise OperationError("无法读取本项目的有效容器配置。") from None
+
+    def status(self):
+        expected = json.dumps(self.effective_config())
+        rows = {}
+        for service in ("app", "worker"):
+            try:
+                rows[service] = json.loads(self.run(["exec", "-T", service, "node", "/app/ops/ai-diagnostics.mjs", "status", "--check-effective"], expected))
+            except (ValueError, TypeError):
+                raise OperationError("容器未返回有效 AI 状态；请升级 app/worker 为配套版本。") from None
+        if {key: value for key, value in rows["app"].items() if key != "workerAvailable"} != {key: value for key, value in rows["worker"].items() if key != "workerAvailable"}:
+            raise OperationError("运行中的 app/worker 状态不一致。")
+        row = rows["app"]
+        print("app / worker 有效 AI 配置：一致（已分别进入运行中的容器核对）")
+        print("AI：" + ("已配置；仍需家庭同意" if row.get("enabled") else "已关闭"))
+        print("密钥已配置" if row.get("keyConfigured") else "密钥未配置")
+        for key in ("endpoint", "provider", "models", "requestTimeoutMs", "maxRequestBytes", "maxResponseBytes", "tokenParameter", "temperatureSupported", "jsonMode", "transcriptionFormat"):
+            if key in row:
+                print(f"{key}: {json.dumps(row[key], ensure_ascii=False)}")
+        print("worker 心跳：" + ("可用" if row.get("workerAvailable") else "不可用或尚未上报"))
+        for capability, check in row.get("checks", {}).items():
+            print(f"{capability} 检测：{check['state']}")
+        return row
+
+    def recreate(self):
+        self.run(["up", "-d", "--no-deps", "--force-recreate", "--wait", "--wait-timeout", "90", "app", "worker"])
+        self.run(["exec", "-T", "app", "node", "/app/ops/healthcheck.mjs"])
+        if not self.status().get("workerAvailable"):
+            raise OperationError("worker 未上报有效心跳；AI 配置操作未通过健康检查。")
+
+    def change(self, values):
+        original_env = self.env_file.read_text()
+        original_compose = self.compose_file.read_text()
+        new_env = update_environment(original_env, {**values, "AI_CONFIGURATION_ID": str(uuid.uuid4())})
+        new_compose = update_template(original_compose)
+        recovery = self.state / "ai-recovery.json"
+        if recovery.exists():
+            raise OperationError("存在未完成 AI 配置操作；先执行 ftc ai recover。")
+        atomic_write(recovery, json.dumps({"env": original_env, "compose": original_compose}))
+        try:
+            atomic_write(self.env_file, new_env)
+            atomic_write(self.compose_file, new_compose)
+            self.effective_config()
+            self.recreate()
+        except BaseException:
+            atomic_write(self.env_file, original_env)
+            atomic_write(self.compose_file, original_compose)
+            try:
+                self.run(["up", "-d", "--no-deps", "--force-recreate", "--wait", "--wait-timeout", "90", "app", "worker"])
+                recovery.unlink()
+            except OperationError:
+                print("已恢复原配置文件，旧服务健康尚未恢复；执行 ftc ai recover。", file=sys.stderr)
+            raise
+        recovery.unlink()
+        print("配置与健康检查完成。AUTH_SECRET、数据卷及反向代理保持原值。")
+
+    def recover(self):
+        recovery = self.state / "ai-recovery.json"
+        if not recovery.is_file():
+            raise OperationError("没有待恢复的 AI 配置事务。")
+        values = json.loads(recovery.read_text())
+        atomic_write(self.env_file, values["env"])
+        atomic_write(self.compose_file, values["compose"])
+        self.run(["up", "-d", "--no-deps", "--force-recreate", "--wait", "--wait-timeout", "90", "app", "worker"])
+        recovery.unlink()
+        print("已恢复配置操作之前的文件与服务。")
+
+    @contextlib.contextmanager
+    def lock(self):
+        self.state.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with open(self.state / "ai.lock", "w") as lock:
+            os.chmod(lock.name, 0o600)
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise OperationError("另一个 AI 配置操作正在运行。") from None
+            yield
+
+
+def configure_input():
+    if not sys.stdin.isatty():
+        raise OperationError("配置需要真实终端，Key 只允许隐藏输入。")
+    values = {key: "" for key in AI_KEYS}
+    values.update({"AI_PROVIDER": "openai-compatible", "AI_REQUEST_TIMEOUT_MS": "30000", "AI_MAX_REQUEST_BYTES": "33554432", "AI_MAX_RESPONSE_BYTES": "4194304"})
+    print("配置发生在此 VPS；不会继承开发工具的模型登录。Key 隐藏输入，不进入参数或 history。")
+    for key, prompt, default in (
+        ("AI_BASE_URL", "endpoint（如 https://provider.example/v1）", ""),
+        ("AI_PROVIDER_LABEL", "接收服务名称", "我的 AI 服务"),
+        ("AI_MODEL", "文字模型（空白关闭此能力）", ""),
+        ("AI_VISION_MODEL", "视觉模型（空白关闭此能力）", ""),
+        ("AI_TRANSCRIPTION_MODEL", "转写模型（空白关闭此能力）", ""),
+        ("AI_TOKEN_PARAMETER", "token 参数 max_completion_tokens / max_tokens", "max_completion_tokens"),
+        ("AI_TEMPERATURE_SUPPORTED", "模型支持 temperature：true / false", "true"),
+        ("AI_JSON_MODE", "文字 JSON 模式 json_object / prompt_only", "json_object"),
+        ("AI_TRANSCRIPTION_FORMAT", "转写格式 json / verbose_json / text", "json"),
+    ):
+        values[key] = input(f"{prompt}" + (f" [{default}]" if default else "") + "：") or default
+    if not sys.stdin.isatty():
+        raise OperationError("Key 只允许在终端隐藏输入；不从命令参数或普通管道读取。")
+    values["AI_API_KEY"] = getpass.getpass("API Key（隐藏）：")
+    validate_configuration(values)
+    print("将更新本项目有效模板并重建 app/worker，短暂中断服务；不发送模型请求。")
+    return values
+
+
+def main():
+    parser = SafeArgumentParser(description="ftc ai：配置、只读状态、内置样本能力检测、关闭与失败恢复")
+    parser.add_argument("command", choices=("configure", "status", "test", "disable", "recover"))
+    parser.add_argument("--capability", choices=("text", "vision", "transcription"))
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        raise OperationError("存在不支持的参数。Key 必须在交互终端隐藏输入，不能放进命令参数。")
+    install = Installation(os.environ.get("FTC_ROOT", "/opt/family-time-capsule"))
+    if args.command == "status":
+        install.status()
+        return
+    if args.command == "test":
+        if not args.capability:
+            raise OperationError("用法：ftc ai test --capability text|vision|transcription")
+        print("注意：仅发送内置非私人测试样本，最多一次模型请求，可能消耗额度。", flush=True)
+        # The helper sanitizes output; never print raw compose errors.
+        result = json.loads(install.run(["exec", "-T", "app", "node", "/app/ops/ai-diagnostics.mjs", "test", args.capability], allow_diagnostic_failure=True))
+        if not isinstance(result, dict) or type(result.get("passed")) is not bool or result.get("capability") != args.capability:
+            raise OperationError("容器未返回有效能力检测结果。")
+        print(f"{args.capability}：" + ("测试通过" if result["passed"] else "测试失败"))
+        if not result["passed"]:
+            code = result.get("code", "capability_test_failed")
+            allowed = {"ai_aborted", "ai_capability_unavailable", "ai_configuration_invalid", "ai_input_invalid", "ai_network_error", "ai_provider_http_error", "ai_response_invalid", "ai_response_too_large", "ai_timeout", "capability_test_failed"}
+            safe_code = code if isinstance(code, str) and code in allowed else "capability_test_failed"
+            status = result.get("httpStatus")
+            suffix = f"，HTTP {status}" if type(status) is int and 400 <= status <= 599 else ""
+            raise OperationError(f"检测失败：{safe_code}{suffix}。未自动重试；超时请求可能已计费。")
+        print("用量：" + (json.dumps({key: value for key, value in result["usage"].items() if key in ("inputTokens", "outputTokens", "totalTokens") and type(value) is int and value >= 0}) if isinstance(result.get("usage"), dict) else "未知"))
+        return
+    with install.lock():
+        if args.command == "recover":
+            install.recover()
+        elif args.command == "configure":
+            install.change(configure_input())
+        else:
+            print("关闭后不再启动 AI 请求；已发出的远端请求不能保证撤回。媒体和出版任务仍运行。")
+            install.change({"AI_PROVIDER": "disabled"})
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OperationError, OSError, ValueError, EOFError, KeyboardInterrupt) as error:
+        print("[ftc:error] " + (str(error) if isinstance(error, OperationError) else "操作未完成；配置值不会进入错误日志。"), file=sys.stderr)
+        sys.exit(1)

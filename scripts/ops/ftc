@@ -12,7 +12,7 @@ run_sub() {
 }
 
 case "${1:-}" in
-  install|status|doctor|deploy|upgrade|backup|restore|rollback|logs|stop|start|cleanup|setup-info)
+  ai|install|status|doctor|deploy|upgrade|backup|restore|rollback|logs|stop|start|cleanup|setup-info)
     run_sub "$1" "${@:2}" ;;
   version)
     cat "$HERE/VERSION" ;;

@@ -7,6 +7,7 @@ import { exportRescuePackage, restoreRescuePackage } from "../rescue/device";
 import { colors, sharedStyles } from "../theme";
 import type { MediaCapturePayload, OutboxItem } from "../types";
 import { dateLabel } from "../utils/format";
+import { AiSettingsSection } from "../ai/AiSettingsSection";
 
 export function SettingsScreen() {
   const {
@@ -117,6 +118,7 @@ export function SettingsScreen() {
       </View>
     ) : null}
 
+    <AiSettingsSection />
     <Text style={sharedStyles.eyebrow}>本机救援包</Text>
     <View style={sharedStyles.card}>
       <Text style={sharedStyles.body}>把尚未同步的本机记录（文字全文、原件与校验清单）导出为一个 ZIP，通过系统分享保存到 App 之外。它只包含你自己的本机资料，不含任何登录凭据，也不是完整家庭备份。</Text>

@@ -599,6 +599,7 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
       id: "openai-compatible",
       displayName: config.providerLabel,
       external: true,
+      configurationId: config.configurationId,
     });
     this.capabilities = config.capabilities;
   }

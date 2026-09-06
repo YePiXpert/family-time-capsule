@@ -27,6 +27,7 @@ import { contribution } from "@/db/schema/contribution";
 import { family as familyTable, person as personTable } from "@/db/schema/family";
 import { memoryEvent } from "@/db/schema/memory";
 import { createMemoryAssistant } from "@/lib/ai/server";
+import { readAiCapabilityChecks } from "@/lib/ai/diagnostics";
 import {
   AI_CAPABILITIES,
   type AiCapability,
@@ -450,6 +451,7 @@ function currentRuntimeMatches(
     runtime !== null &&
     model !== null &&
     runtime.provider.id === job.providerId &&
+    (runtime.provider.configurationId ?? "") === job.configurationId &&
     runtime.provider.external === job.providerExternal &&
     model === job.model
   );
@@ -501,6 +503,7 @@ function externalConsentMatches(
           eq(aiProcessingConsent.capability, job.requiredCapability),
           eq(aiProcessingConsent.enabled, true),
           eq(aiProcessingConsent.providerId, runtime.provider.id),
+          eq(aiProcessingConsent.configurationId, runtime.provider.configurationId ?? ""),
           eq(aiProcessingConsent.providerName, runtime.provider.displayName),
           eq(aiProcessingConsent.model, job.model),
           eq(aiProcessingConsent.disclosureVersion, AI_CONSENT_DISCLOSURE_VERSION),
@@ -524,6 +527,7 @@ export function enableAiProcessingConsent(
   input: {
     capability: AiCapability;
     allowAutomaticFamilyContent: boolean;
+    configurationId?: string;
   },
   options: AiJobServiceDependencies & { now?: Date } = {},
 ): AiConsentMutationResult {
@@ -536,6 +540,7 @@ export function enableAiProcessingConsent(
     !runtime ||
     !runtime.provider.external ||
     model === null ||
+    ((!options.runtime || input.configurationId !== undefined) && input.configurationId !== runtime.provider.configurationId) ||
     typeof input.allowAutomaticFamilyContent !== "boolean"
   ) {
     return { ok: false, error: "invalid_input" };
@@ -568,6 +573,7 @@ export function enableAiProcessingConsent(
         enabled: true,
         allowAutomaticFamilyContent: input.allowAutomaticFamilyContent,
         providerId: runtime.provider.id,
+        configurationId: runtime.provider.configurationId ?? "",
         providerName: runtime.provider.displayName,
         model,
         disclosureVersion: AI_CONSENT_DISCLOSURE_VERSION,
@@ -606,6 +612,7 @@ export function enableAiProcessingConsent(
             {
               capability: input.capability,
               providerId: runtime.provider.id,
+        configurationId: runtime.provider.configurationId ?? "",
               model,
               consentVersion,
               allowAutomaticFamilyContent: input.allowAutomaticFamilyContent,
@@ -743,6 +750,7 @@ export type AiConsentDto = Readonly<{
   enabled: boolean;
   allowAutomaticFamilyContent: boolean;
   providerId: string | null;
+  configurationId?: string;
   providerName: string | null;
   model: string | null;
   disclosureVersion: number;
@@ -754,6 +762,7 @@ export type AiConsentDto = Readonly<{
 export type AiRuntimeDisclosure = Readonly<{
   valid: boolean;
   providerId: string | null;
+  configurationId?: string;
   providerName: string | null;
   external: boolean;
   capabilities: AiCapabilityMap | null;
@@ -799,6 +808,7 @@ export function listAiProcessingConsents(
         allowAutomaticFamilyContent:
           aiProcessingConsent.allowAutomaticFamilyContent,
         providerId: aiProcessingConsent.providerId,
+        configurationId: aiProcessingConsent.configurationId,
         providerName: aiProcessingConsent.providerName,
         model: aiProcessingConsent.model,
         disclosureVersion: aiProcessingConsent.disclosureVersion,
@@ -812,9 +822,34 @@ export function listAiProcessingConsents(
       .all()
       .flatMap((row) =>
         isCapability(row.capability)
-          ? [{ ...row, capability: row.capability }]
+          ? [{ ...row, enabled: row.enabled && row.configurationId === (runtimeIdentity(dependencies)?.provider.configurationId ?? ""), capability: row.capability }]
           : [],
       );
+  });
+}
+
+/** Same read-only operational summary for Web and mobile; no deployment secrets. */
+export function getAiOperationalStatus(context: FamilyContext, dependencies: AiJobServiceDependencies = {}) {
+  const now = new Date();
+  return database(dependencies).transaction((tx) => {
+    const actor = getLiveActor(tx, context.familyId, context.userId, "ai:review", now);
+    if (!actor) return null;
+    const runtime = runtimeIdentity(dependencies);
+    const consents = tx.select().from(aiProcessingConsent).where(eq(aiProcessingConsent.familyId, context.familyId)).all();
+    const checks = readAiCapabilityChecks();
+    const workerAvailable = Boolean(tx.select({ id: aiWorkerHeartbeat.workerId }).from(aiWorkerHeartbeat).where(and(sql`${aiWorkerHeartbeat.lastSeenAt} >= ${epochSeconds(now) - 90}`, ne(aiWorkerHeartbeat.status, "stopping"))).get());
+    return {
+      valid: runtime !== null, configured: runtime !== null && runtime.provider.id !== "disabled",
+      configurationId: runtime?.provider.configurationId ?? null,
+      provider: runtime?.provider.displayName ?? null, external: runtime?.provider.external ?? false,
+      canConfigure: actor.role === "admin", workerAvailable,
+      capabilities: (["text", "vision", "transcription"] as const).map(capability => {
+        const model = runtimeModel(runtime, capability);
+        const consent = consents.find(row => row.capability === capability);
+        const consented = Boolean(runtime && (!runtime.provider.external || (consent?.enabled && consent.providerId === runtime.provider.id && consent.configurationId === (runtime.provider.configurationId ?? "") && consent.model === model)));
+        return { capability, model, available: model !== null, consented, check: checks[capability] };
+      }),
+    };
   });
 }
 
@@ -881,6 +916,7 @@ export function enqueueAiJob(
               eq(aiProcessingConsent.capability, input.requiredCapability),
               eq(aiProcessingConsent.enabled, true),
               eq(aiProcessingConsent.providerId, runtime.provider.id),
+          eq(aiProcessingConsent.configurationId, runtime.provider.configurationId ?? ""),
               eq(aiProcessingConsent.providerName, runtime.provider.displayName),
               eq(aiProcessingConsent.model, model),
               eq(
@@ -909,6 +945,7 @@ export function enqueueAiJob(
         entityId: input.entityId,
         requiredCapability: input.requiredCapability,
         providerId: runtime.provider.id,
+        configurationId: runtime.provider.configurationId ?? "",
         providerExternal: runtime.provider.external,
         model,
         consentVersion,
@@ -973,6 +1010,7 @@ export function enqueueAiJob(
           entityId: input.entityId,
           requiredCapability: input.requiredCapability,
           providerId: runtime.provider.id,
+        configurationId: runtime.provider.configurationId ?? "",
           model,
           providerExternal: runtime.provider.external,
           consentVersion,
@@ -1611,6 +1649,7 @@ export function retryAiJob(
               eq(aiProcessingConsent.capability, old.requiredCapability),
               eq(aiProcessingConsent.enabled, true),
               eq(aiProcessingConsent.providerId, runtime.provider.id),
+          eq(aiProcessingConsent.configurationId, runtime.provider.configurationId ?? ""),
               eq(aiProcessingConsent.providerName, runtime.provider.displayName),
               eq(aiProcessingConsent.model, model),
               eq(
@@ -1633,6 +1672,7 @@ export function retryAiJob(
         retryOfJobId: old.id,
         requestedByUserId: actor.id,
         providerId: runtime.provider.id,
+        configurationId: runtime.provider.configurationId ?? "",
         providerExternal: runtime.provider.external,
         model,
         consentVersion,
@@ -1666,6 +1706,7 @@ export function retryAiJob(
           entityId: old.entityId,
           requiredCapability: old.requiredCapability,
           providerId: runtime.provider.id,
+        configurationId: runtime.provider.configurationId ?? "",
           model,
           providerExternal: runtime.provider.external,
           consentVersion,

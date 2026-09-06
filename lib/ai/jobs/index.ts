@@ -8,6 +8,7 @@ export {
   failAiJob,
   finalizeAiJob,
   getAiRuntimeDisclosure,
+  getAiOperationalStatus,
   listAiProcessingConsents,
   listJobsForEntity,
   listRecentAiJobs,

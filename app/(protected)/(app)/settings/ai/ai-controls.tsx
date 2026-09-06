@@ -34,9 +34,11 @@ function Feedback({
 export function AiConsentControls({
   capability,
   enabled,
+  configurationId,
 }: {
   capability: AiCapability;
   enabled: boolean;
+  configurationId: string;
 }) {
   const [enableState, enableAction, enabling] = useActionState(
     enableAiConsentAction,
@@ -65,6 +67,7 @@ export function AiConsentControls({
 
   return (
     <form action={enableAction} className="mt-4">
+      <input type="hidden" name="configurationId" value={configurationId} />
       <input type="hidden" name="capability" value={capability} />
       <label className="flex max-w-xl cursor-pointer items-start gap-3 rounded-lg border border-foreground/10 p-3 text-sm leading-6">
         <input

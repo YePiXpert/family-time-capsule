@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 
 import { AI_CAPABILITIES, type AiCapability, type AiCapabilityMap } from "./types";
 import {
@@ -56,6 +57,7 @@ export type DisabledAiProviderConfig = Readonly<{
 export type OpenAiCompatibleConfig = Readonly<{
   kind: "openai-compatible";
   baseUrl: string;
+  configurationId: string;
   apiKey: AiSecret;
   providerLabel: string;
   models: AiModels;
@@ -270,6 +272,12 @@ export function loadAiProviderConfig(
   return Object.freeze({
     kind: "openai-compatible",
     baseUrl,
+    configurationId: createHash("sha256").update(JSON.stringify({ baseUrl, models, providerLabel,
+      revision: optionalModel(env, "AI_CONFIGURATION_ID"),
+      tokenParameter: env.AI_TOKEN_PARAMETER ?? "max_completion_tokens",
+      jsonMode: env.AI_JSON_MODE ?? "json_object", transcriptionFormat: env.AI_TRANSCRIPTION_FORMAT ?? "json",
+      temperatureSupported: env.AI_TEMPERATURE_SUPPORTED ?? "true",
+    })).digest("hex"),
     apiKey: new AiSecret(apiKeyValue),
     providerLabel,
     models,

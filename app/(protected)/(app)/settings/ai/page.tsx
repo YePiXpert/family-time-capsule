@@ -6,6 +6,7 @@ import { AI_CAPABILITIES, type AiCapability } from "@/lib/ai/types";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import {
   getAiRuntimeDisclosure,
+  getAiOperationalStatus,
   listAiProcessingConsents,
   listRecentAiJobs,
 } from "@/lib/ai/jobs";
@@ -48,6 +49,7 @@ export default async function AiSettingsPage() {
   if (!hasFamilyCapability(context.role, "ai:review")) notFound();
   const canConfigure = hasFamilyCapability(context.role, "ai:configure");
   const disclosure = getAiRuntimeDisclosure();
+  const operational = getAiOperationalStatus(context);
   const [consents, jobs] = await Promise.all([
     canConfigure ? listAiProcessingConsents(context) : Promise.resolve([]),
     Promise.resolve(listRecentAiJobs(context, 30)),
@@ -66,7 +68,7 @@ export default async function AiSettingsPage() {
       </Link>
       <h1 className="mt-4 text-2xl font-semibold">AI 整理与隐私</h1>
       <p className="mt-2 max-w-2xl text-sm leading-7 text-foreground/65">
-        AI 只是整理员。关闭 Provider 或停止 worker 不影响上传、收件箱、事件、时间轴、讲述、胶囊、导出与恢复。
+        AI 只是整理员。关闭 AI 不影响保存、查看、播放和同步。服务器后台进程继续处理媒体与出版任务。
       </p>
 
       {!disclosure.valid ? (
@@ -85,7 +87,7 @@ export default async function AiSettingsPage() {
         <section className="mt-8 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-5">
           <h2 className="font-medium">当前未配置 AI Provider</h2>
           <p className="mt-1 text-sm leading-6 text-foreground/60">
-            这是安全的默认状态。需要时由部署管理员通过环境变量配置；API Key 不会写入数据库、页面或备份。
+            这是安全的默认状态。需要时由部署管理员在 VPS 运行 ftc ai configure；API Key 不进入页面或家庭导出。
           </p>
         </section>
       ) : (
@@ -104,6 +106,10 @@ export default async function AiSettingsPage() {
         </section>
       )}
 
+      {operational?.configured && <p role="status" className="mt-4 text-sm text-foreground/65">
+        {operational.workerAvailable ? "后台处理服务可用" : "后台处理服务不可用，请联系部署管理员；仍可保存、查看和播放原件。"}
+      </p>}
+
       {disclosure.valid && disclosure.capabilities && (
         <section aria-label="AI 能力与同意" className="mt-10">
           <h2 className="text-lg font-medium">能力与外部处理同意</h2>
@@ -114,6 +120,7 @@ export default async function AiSettingsPage() {
             {AI_CAPABILITIES.map((capability) => {
               const status = disclosure.capabilities![capability];
               const consent = consentByCapability.get(capability);
+              const live = operational?.capabilities.find(row => row.capability === capability);
               return (
                 <article
                   key={capability}
@@ -128,7 +135,7 @@ export default async function AiSettingsPage() {
                     </div>
                     <span className="rounded-full border border-foreground/10 px-3 py-1 text-xs text-foreground/65">
                       {status.available
-                        ? consent?.enabled || !disclosure.external
+                        ? live?.consented || consent?.enabled || !disclosure.external
                           ? "可使用"
                           : "等待同意"
                         : "未配置"}
@@ -139,12 +146,17 @@ export default async function AiSettingsPage() {
                       Model：{status.model}
                     </p>
                   )}
+                  {status.available && live && <p className="mt-2 text-sm text-foreground/65">
+                    能力检测：{live.check.state === "passed" ? "测试通过" : live.check.state === "failed" ? "测试失败" : "尚未测试"}
+                    {live.check.code ? `（${live.check.code}）` : ""}。由部署管理员运行 ftc ai test --capability {capability}，只发送内置测试样本，可能消耗额度。
+                  </p>}
                   {canConfigure &&
                     disclosure.external &&
                     status.available && (
                       <AiConsentControls
                         capability={capability}
                         enabled={consent?.enabled === true}
+                        configurationId={operational?.configurationId ?? ""}
                       />
                     )}
                 </article>

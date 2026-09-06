@@ -31,6 +31,7 @@ export const aiProcessingConsent = sqliteTable(
       .notNull()
       .default(false),
     providerId: text("provider_id"),
+    configurationId: text("configuration_id").notNull().default(""),
     providerName: text("provider_name"),
     model: text("model"),
     disclosureVersion: integer("disclosure_version").notNull(),
@@ -96,6 +97,7 @@ export const aiJob = sqliteTable(
     entityId: text("entity_id").notNull(),
     requiredCapability: text("required_capability").notNull(),
     providerId: text("provider_id").notNull(),
+    configurationId: text("configuration_id").notNull().default(""),
     model: text("model").notNull(),
     providerExternal: integer("provider_external", { mode: "boolean" })
       .notNull(),

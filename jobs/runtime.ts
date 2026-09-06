@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { AiError, AiProviderError } from "@/lib/ai/errors";
+import { AiConfigurationError, AiError, AiProviderError } from "@/lib/ai/errors";
 import { createMemoryAssistant } from "@/lib/ai/server";
 import type { MemoryAssistant } from "@/lib/ai/types";
 import {
@@ -121,7 +121,14 @@ export async function runAiWorkerOnce(
   // Upload cleanup is local, bounded, and independent of AI availability.
   await cleanupExpiredUploads({ limit: 25 });
   const workerId = options.workerId ?? randomUUID();
-  const assistant = options.assistant ?? createMemoryAssistant();
+  let assistant: MemoryAssistant;
+  try {
+    assistant = options.assistant ?? createMemoryAssistant();
+  } catch (error) {
+    if (!(error instanceof AiConfigurationError)) throw error;
+    safeHeartbeat(options.queue ?? DEFAULT_QUEUE, { workerId, workerVersion: WORKER_VERSION, status: "idle" });
+    return { status: "idle", jobId: null, errorCode: "ai_configuration_invalid" };
+  }
   const registry = options.registry ?? createProductionAiJobRegistry();
   const queue = options.queue ?? DEFAULT_QUEUE;
   const leaseMs = options.leaseMs ?? 60_000;

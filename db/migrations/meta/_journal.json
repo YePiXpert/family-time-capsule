@@ -295,6 +295,13 @@
       "when": 1788685111443,
       "tag": "0041_readable_names",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1788687113341,
+      "tag": "0042_ai_configuration_identity",
+      "breakpoints": true
     }
   ]
 }

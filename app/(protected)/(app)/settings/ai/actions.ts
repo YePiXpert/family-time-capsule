@@ -31,6 +31,7 @@ export async function enableAiConsentAction(
   if (!selected) return { error: "AI 能力类型无效。" };
   const result = enableAiProcessingConsent(context, {
     capability: selected,
+    configurationId: String(formData.get("configurationId") ?? ""),
     allowAutomaticFamilyContent:
       formData.get("allowAutomaticFamilyContent") === "yes",
   });

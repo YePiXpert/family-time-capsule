@@ -17,6 +17,7 @@ services:
       INITIAL_SETUP_TOKEN: ${INITIAL_SETUP_TOKEN:-}
       # 对外地址（反向代理 + HTTPS 时设置），例如：
       # BETTER_AUTH_URL: https://capsule.example.com
+      AI_CONFIGURATION_ID: ${AI_CONFIGURATION_ID:-}
       AI_PROVIDER: ${AI_PROVIDER:-disabled}
       AI_BASE_URL: ${AI_BASE_URL:-}
       AI_API_KEY: ${AI_API_KEY:-}
@@ -28,6 +29,10 @@ services:
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-}
       AI_MAX_REQUEST_BYTES: ${AI_MAX_REQUEST_BYTES:-}
       AI_MAX_RESPONSE_BYTES: ${AI_MAX_RESPONSE_BYTES:-}
+      AI_TOKEN_PARAMETER: ${AI_TOKEN_PARAMETER:-}
+      AI_TEMPERATURE_SUPPORTED: ${AI_TEMPERATURE_SUPPORTED:-}
+      AI_JSON_MODE: ${AI_JSON_MODE:-}
+      AI_TRANSCRIPTION_FORMAT: ${AI_TRANSCRIPTION_FORMAT:-}
     volumes:
       # 原件、衍生物、导出与数据库全部落在这个卷里，重建容器不丢数据
       - capsule-data:/data
@@ -53,6 +58,7 @@ services:
       retries: 3
     environment:
       DATA_DIR: /data
+      AI_CONFIGURATION_ID: ${AI_CONFIGURATION_ID:-}
       AI_PROVIDER: ${AI_PROVIDER:-disabled}
       AI_BASE_URL: ${AI_BASE_URL:-}
       AI_API_KEY: ${AI_API_KEY:-}
@@ -64,6 +70,10 @@ services:
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-}
       AI_MAX_REQUEST_BYTES: ${AI_MAX_REQUEST_BYTES:-}
       AI_MAX_RESPONSE_BYTES: ${AI_MAX_RESPONSE_BYTES:-}
+      AI_TOKEN_PARAMETER: ${AI_TOKEN_PARAMETER:-}
+      AI_TEMPERATURE_SUPPORTED: ${AI_TEMPERATURE_SUPPORTED:-}
+      AI_JSON_MODE: ${AI_JSON_MODE:-}
+      AI_TRANSCRIPTION_FORMAT: ${AI_TRANSCRIPTION_FORMAT:-}
       AI_WORKER_POLL_MS: ${AI_WORKER_POLL_MS:-1000}
     volumes:
       - capsule-data:/data
