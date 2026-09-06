@@ -87,7 +87,7 @@ describe("OpenAI-compatible MemoryAssistant", () => {
     expect(request).toEqual({
       model: "text-test-model",
       messages: [{ role: "user", content: "offline fixture" }],
-      max_tokens: 100,
+      max_completion_tokens: 100,
       temperature: 0,
       response_format: { type: "json_object" },
     });
@@ -147,6 +147,45 @@ describe("OpenAI-compatible MemoryAssistant", () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 
+  it.each(["json", "verbose_json", "text"])("accepts explicit %s transcription without inventing timestamps", async (format) => {
+    const fetch = vi.fn<AiFetch>(async (_url, init) => {
+      expect((init!.body as FormData).get("response_format")).toBe(format);
+      return format === "text" ? new Response("hello family", { headers: { "content-type": "text/plain" } }) : jsonResponse({ text: "hello family" });
+    });
+    const result = await createAssistant(fetch, { AI_TRANSCRIPTION_FORMAT: format }).transcribeAudio({ audio: { bytes: new Uint8Array([1]), mimeType: "audio/wav", fileName: "private.wav" } });
+    expect(result).toMatchObject({ text: "hello family", segments: [], durationSeconds: null });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an empty transcript as no clear speech, while still rejecting missing or non-string text", async () => {
+    for (const body of [{ text: "" }, {}, { text: 42 }]) {
+      const promise = createAssistant(async () => jsonResponse(body)).transcribeAudio({ audio: { bytes: new Uint8Array([1]), mimeType: "audio/wav", fileName: "audio.wav" } });
+      if (body.text === "") await expect(promise).resolves.toMatchObject({ text: "", segments: [] });
+      else await expect(promise).rejects.toMatchObject({ code: "ai_response_invalid", retryable: false });
+    }
+  });
+
+  it("uses the selected legacy token parameter and omits unsupported parameters in one request", async () => {
+    const fetch = vi.fn<AiFetch>(async (_url, init) => {
+      const body = JSON.parse(String(init!.body));
+      expect(body.max_tokens).toBe(64);
+      expect(body).not.toHaveProperty("max_completion_tokens");
+      expect(body).not.toHaveProperty("temperature");
+      expect(body).not.toHaveProperty("response_format");
+      return jsonResponse({ choices: [{ message: { content: '{"title":"hello"}' }, finish_reason: "stop" }] });
+    });
+    await createAssistant(fetch, { AI_TOKEN_PARAMETER: "max_tokens", AI_TEMPERATURE_SUPPORTED: "false", AI_JSON_MODE: "prompt_only" }).generateText({ messages: [{ role: "user", content: "Return JSON" }], temperature: 0, maxOutputTokens: 64, responseFormat: "json" });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
+  it.each(["length", "content_filter", "tool_calls"])("rejects %s even if some text arrived", async (finishReason) => {
+    await expect(createAssistant(async () => jsonResponse({ choices: [{ message: { content: "truncated" }, finish_reason: finishReason }] })).generateText({ messages: [{ role: "user", content: "hello" }] })).rejects.toMatchObject({ code: "ai_response_invalid", retryable: false });
+  });
+
+  it("rejects model refusal without exposing provider content", async () => {
+    await expect(createAssistant(async () => jsonResponse({ choices: [{ message: { content: "text", refusal: "private provider details" } }] })).generateText({ messages: [{ role: "user", content: "hello" }] })).rejects.toMatchObject({ code: "ai_response_invalid", retryable: false });
+  });
+
   it("uses a neutral multipart file name and validates transcript metadata", async () => {
     let sentForm: FormData | null = null;
     const fetch: AiFetch = async (_input, init) => {
@@ -172,7 +211,7 @@ describe("OpenAI-compatible MemoryAssistant", () => {
     expect(sentForm).not.toBeNull();
     const form = sentForm as unknown as FormData;
     expect(form.get("model")).toBe("speech-test-model");
-    expect(form.get("response_format")).toBe("verbose_json");
+    expect(form.get("response_format")).toBe("json");
     expect(form.get("language")).toBe("zh");
     const file = form.get("file") as Blob & { name?: string };
     expect(file).toBeInstanceOf(Blob);
@@ -287,7 +326,7 @@ describe("OpenAI-compatible MemoryAssistant", () => {
     await vi.advanceTimersByTimeAsync(51);
     await expect(settled).resolves.toMatchObject({
       code: "ai_timeout",
-      retryable: true,
+      retryable: false,
     });
   });
 

@@ -49,10 +49,16 @@ describe("AI provider configuration", () => {
     }
   });
 
-  it("refuses orphaned settings instead of silently enabling or ignoring AI", () => {
-    expect(() =>
-      loadAiProviderConfig({ AI_API_KEY: "must-not-be-used" }),
-    ).toThrow(AiConfigurationError);
+  it("keeps AI disabled with residual settings, including invalid endpoint/model parameters", () => {
+    expect(loadAiProviderConfig({ AI_API_KEY: "must-not-be-used", AI_BASE_URL: "invalid", AI_REQUEST_TIMEOUT_MS: "broken" }).kind).toBe("disabled");
+    expect(loadAiProviderConfig({ ...BASE_ENV, AI_PROVIDER: "disabled" }).kind).toBe("disabled");
+  });
+
+  it("normalizes root and duplicate version suffixes without changing custom administrator paths", () => {
+    for (const base of ["https://ai.example.test", "https://ai.example.test/v1/v1/"]) {
+      expect(loadAiProviderConfig({ ...BASE_ENV, AI_BASE_URL: base })).toMatchObject({ baseUrl: "https://ai.example.test/v1" });
+    }
+    expect(loadAiProviderConfig({ ...BASE_ENV, AI_BASE_URL: "https://ai.example.test/proxy/api" })).toMatchObject({ baseUrl: "https://ai.example.test/proxy/api" });
   });
 
   it("detects each model capability independently with no fallback", () => {

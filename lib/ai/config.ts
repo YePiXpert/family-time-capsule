@@ -10,19 +10,6 @@ import { AiConfigurationError } from "./errors";
 import { assertAiServerRuntime } from "./server-runtime";
 
 const REDACTED = "[REDACTED]";
-const PROVIDER_VARIABLES = [
-  "AI_BASE_URL",
-  "AI_API_KEY",
-  "AI_MODEL",
-  "AI_VISION_MODEL",
-  "AI_TRANSCRIPTION_MODEL",
-  "AI_EMBEDDING_MODEL",
-  "AI_PROVIDER_LABEL",
-  "AI_REQUEST_TIMEOUT_MS",
-  "AI_MAX_REQUEST_BYTES",
-  "AI_MAX_RESPONSE_BYTES",
-] as const;
-
 const CLIENT_SECRET_VARIABLES = [
   "NEXT_PUBLIC_AI_API_KEY",
   "NEXT_PUBLIC_OPENAI_API_KEY",
@@ -76,6 +63,10 @@ export type OpenAiCompatibleConfig = Readonly<{
   requestTimeoutMs: number;
   maxRequestBytes: number;
   maxResponseBytes: number;
+  tokenParameter: "max_tokens" | "max_completion_tokens";
+  temperatureSupported: boolean;
+  jsonMode: "json_object" | "prompt_only";
+  transcriptionFormat: "json" | "verbose_json" | "text";
 }>;
 
 export type AiProviderConfig =
@@ -193,7 +184,8 @@ function normalizeBaseUrl(value: string): string {
     );
   }
 
-  url.pathname = url.pathname.replace(/\/+$/u, "");
+  url.pathname = url.pathname.replace(/\/+$/u, "").replace(/(?:\/v1){2,}$/u, "/v1");
+  if (!url.pathname || url.pathname === "/") url.pathname = "/v1";
   return url.href.replace(/\/$/u, "");
 }
 
@@ -208,16 +200,11 @@ function assertNoClientSecretVariables(env: AiEnvironment): void {
   }
 }
 
-function assertNoOrphanedProviderVariables(env: AiEnvironment): void {
-  const orphan = PROVIDER_VARIABLES.find(
-    (variable) => env[variable] !== undefined && env[variable] !== "",
-  );
-  if (orphan !== undefined) {
-    throw new AiConfigurationError(
-      `${orphan} is set while AI_PROVIDER is disabled or unset.`,
-      orphan,
-    );
-  }
+function option<T extends string>(env: AiEnvironment, key: string, choices: readonly T[], fallback: T): T {
+  const value = env[key];
+  if (!value) return fallback;
+  if (!choices.includes(value as T)) throw new AiConfigurationError(`${key} is invalid.`, key);
+  return value as T;
 }
 
 export function loadAiProviderConfig(
@@ -233,7 +220,7 @@ export function loadAiProviderConfig(
     provider === "disabled" ||
     provider === "none"
   ) {
-    assertNoOrphanedProviderVariables(env);
+    // Disabling wins over stale or malformed provider settings. Core use stays available.
     return Object.freeze({
       kind: "disabled",
       capabilities: createCapabilityMap(NO_AI_MODELS, "disabled"),
@@ -301,6 +288,10 @@ export function loadAiProviderConfig(
       4096,
       100 * 1024 * 1024,
     ),
+    tokenParameter: option(env, "AI_TOKEN_PARAMETER", ["max_tokens", "max_completion_tokens"], "max_completion_tokens"),
+    temperatureSupported: option(env, "AI_TEMPERATURE_SUPPORTED", ["true", "false"], "true") === "true",
+    jsonMode: option(env, "AI_JSON_MODE", ["json_object", "prompt_only"], "json_object"),
+    transcriptionFormat: option(env, "AI_TRANSCRIPTION_FORMAT", ["json", "verbose_json", "text"], "json"),
     maxResponseBytes: parseInteger(
       env,
       "AI_MAX_RESPONSE_BYTES",

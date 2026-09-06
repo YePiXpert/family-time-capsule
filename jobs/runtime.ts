@@ -51,7 +51,7 @@ export type AiWorkerQueue = Readonly<{
     lease: AiJobLease,
     errorCode: string,
     retryable: boolean,
-    options: { runtime: AiJobRuntimeIdentity },
+    options: { runtime: AiJobRuntimeIdentity; retryAfterMs?: number },
   ) => AiExecutionValidation;
   heartbeat: (input: {
     workerId: string;
@@ -102,12 +102,12 @@ function safeHeartbeat(
   }
 }
 
-function safeFailure(error: unknown): { code: string; retryable: boolean } {
+function safeFailure(error: unknown): { code: string; retryable: boolean; retryAfterMs?: number } {
   if (error instanceof AiJobHandlerError) {
     return { code: error.code, retryable: error.retryable };
   }
   if (error instanceof AiProviderError) {
-    return { code: error.code, retryable: error.retryable };
+    return { code: error.code, retryable: error.retryable, ...(error.retryAfterMs == null ? {} : { retryAfterMs: error.retryAfterMs }) };
   }
   if (error instanceof AiError) {
     return { code: error.code, retryable: false };
@@ -207,7 +207,7 @@ export async function runAiWorkerOnce(
   } catch (error) {
     clearInterval(timer);
     const failure = safeFailure(error);
-    queue.fail(activeLease, failure.code, failure.retryable, { runtime });
+    queue.fail(activeLease, failure.code, failure.retryable, { runtime, ...(failure.retryAfterMs === undefined ? {} : { retryAfterMs: failure.retryAfterMs }) });
     return {
       status: "failed",
       jobId: activeLease.jobId,

@@ -608,6 +608,22 @@ describe.sequential("durable AI jobs and consent", () => {
     ).toEqual({ ok: false, error: "cancel_requested" });
   });
 
+  it("persists Retry-After and does not reclaim a rate-limited request before its deadline", () => {
+    const now = new Date("2026-08-31T04:30:00.000Z");
+    const queued = enqueueAiJob(internalInput(stableContributionId, admin.id), { runtime: INTERNAL_RUNTIME, now });
+    if (!queued.ok) throw new Error("job not queued");
+    const lease = claimNextAiJob("retry-after-worker", { runtime: INTERNAL_RUNTIME, now });
+    if (!lease || lease.jobId !== queued.jobId) throw new Error("job not claimed");
+    expect(failAiJob(lease, "ai_provider_http_error", true, { runtime: INTERNAL_RUNTIME, now, retryAfterMs: 120_000 })).toEqual({ ok: true });
+    const row = getDb().select().from(aiJob).where(eq(aiJob.id, queued.jobId)).get()!;
+    expect(row.availableAt.getTime()).toBe(now.getTime() + 120_000);
+    expect(claimNextAiJob("too-early", { runtime: INTERNAL_RUNTIME, now: new Date(now.getTime() + 119_000) })).toBeNull();
+    const next = claimNextAiJob("after-deadline", { runtime: INTERNAL_RUNTIME, now: new Date(now.getTime() + 120_000) });
+    expect(next?.jobId).toBe(queued.jobId);
+    if (!next) throw new Error("missing lease");
+    expect(completeAiJob(next, { runtime: INTERNAL_RUNTIME, now: new Date(now.getTime() + 120_000) })).toEqual({ ok: true });
+  });
+
   it("fences expired leases and retries only within max attempts", () => {
     const now = new Date("2026-08-31T05:00:00.000Z");
     const queued = enqueueAiJob(

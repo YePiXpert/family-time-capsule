@@ -69,6 +69,13 @@ function retryableHttpStatus(status: number): boolean {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
+function retryAfterMs(response: Response): number | null {
+  const raw = response.headers.get("retry-after");
+  if (!raw) return null;
+  const ms = /^\d+$/u.test(raw) ? Number(raw) * 1000 : Date.parse(raw) - Date.now();
+  return Number.isFinite(ms) && ms >= 0 ? Math.min(ms, 24 * 60 * 60 * 1000) : null;
+}
+
 function responseContentTypeIsJson(response: Response): boolean {
   const raw = response.headers.get("content-type");
   if (raw === null) return false;
@@ -80,8 +87,10 @@ async function readBoundedJson(
   response: Response,
   capability: AiCapability,
   maxBytes: number,
+  plainText = false,
 ): Promise<unknown> {
-  if (!responseContentTypeIsJson(response)) {
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (plainText ? contentType !== "text/plain" : !responseContentTypeIsJson(response)) {
     void response.body?.cancel();
     throw new AiProviderError({
       capability,
@@ -166,6 +175,7 @@ async function readBoundedJson(
       requestId: safeRequestId(response),
     });
   }
+  if (plainText) return { text };
   try {
     return JSON.parse(text) as unknown;
   } catch {
@@ -264,6 +274,9 @@ function parseChatResponse(
   if (!isObject(choice) || !isObject(choice.message)) {
     throw responseError(capability, "AI provider choice was invalid.");
   }
+  if (choice.message.refusal || ["length", "content_filter", "tool_calls", "function_call"].includes(String(choice.finish_reason))) {
+    throw responseError(capability, "AI provider refused or did not finish the requested output.");
+  }
   const text = readChatText(choice.message.content, capability);
   const finishReason = choice.finish_reason;
   if (
@@ -317,7 +330,7 @@ function parseTranscriptionResponse(
   fallbackModel: string,
   provenanceFor: (model: string) => AiProvenance,
 ): TranscribeAudioResult {
-  if (!isObject(value) || typeof value.text !== "string" || value.text.length === 0) {
+  if (!isObject(value) || typeof value.text !== "string") {
     throw responseError("transcription", "AI transcript text was missing.");
   }
   if (
@@ -481,11 +494,12 @@ class OpenAiCompatibleTransport {
           code: "ai_provider_http_error",
           message: `AI provider returned HTTP ${response.status}.`,
           retryable: retryableHttpStatus(response.status),
+          retryAfterMs: response.status === 429 || response.status === 503 ? retryAfterMs(response) : null,
           status: response.status,
           requestId: safeRequestId(response),
         });
       }
-      return readBoundedJson(response, capability, this.#config.maxResponseBytes);
+      return readBoundedJson(response, capability, this.#config.maxResponseBytes, capability === "transcription" && this.#config.transcriptionFormat === "text");
     })();
 
     try {
@@ -497,8 +511,8 @@ class OpenAiCompatibleTransport {
           throw new AiProviderError({
             capability,
             code: "ai_timeout",
-            message: "AI provider request timed out.",
-            retryable: true,
+            message: "AI provider request timed out; remote billing or completion is uncertain.",
+            retryable: false,
           });
         }
         throw new AiProviderError({
@@ -512,8 +526,8 @@ class OpenAiCompatibleTransport {
         throw new AiProviderError({
           capability,
           code: "ai_timeout",
-          message: "AI provider request timed out.",
-          retryable: true,
+          message: "AI provider request timed out; remote billing or completion is uncertain.",
+          retryable: false,
         });
       }
       // Do not attach or stringify the transport error: custom fetch
@@ -618,11 +632,11 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
         messages: input.messages.map((message) => ({ ...message })),
         ...(input.maxOutputTokens === undefined
           ? {}
-          : { max_tokens: input.maxOutputTokens }),
-        ...(input.temperature === undefined
+          : { [this.#config.tokenParameter]: input.maxOutputTokens }),
+        ...(input.temperature === undefined || !this.#config.temperatureSupported
           ? {}
           : { temperature: input.temperature }),
-        ...(input.responseFormat === "json"
+        ...(input.responseFormat === "json" && this.#config.jsonMode === "json_object"
           ? { response_format: { type: "json_object" } }
           : {}),
       },
@@ -665,7 +679,7 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
         ],
         ...(input.maxOutputTokens === undefined
           ? {}
-          : { max_tokens: input.maxOutputTokens }),
+          : { [this.#config.tokenParameter]: input.maxOutputTokens }),
       },
       input.signal,
     );
@@ -684,7 +698,7 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
     validateTranscribeAudioInput(input);
     const form = new FormData();
     form.set("model", model);
-    form.set("response_format", "verbose_json");
+    form.set("response_format", this.#config.transcriptionFormat);
     if (input.language !== undefined) form.set("language", input.language);
     if (input.prompt !== undefined) form.set("prompt", input.prompt);
     const fileBytes = new Uint8Array(input.audio.bytes);

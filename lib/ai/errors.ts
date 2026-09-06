@@ -78,6 +78,7 @@ export class AiProviderError extends AiError {
   readonly retryable: boolean;
   readonly status: number | null;
   readonly requestId: string | null;
+  readonly retryAfterMs: number | null;
 
   constructor(options: {
     capability: AiCapability;
@@ -91,6 +92,7 @@ export class AiProviderError extends AiError {
     retryable: boolean;
     status?: number | null;
     requestId?: string | null;
+    retryAfterMs?: number | null;
   }) {
     super(options.code, options.message);
     this.name = "AiProviderError";
@@ -98,6 +100,7 @@ export class AiProviderError extends AiError {
     this.retryable = options.retryable;
     this.status = options.status ?? null;
     this.requestId = options.requestId ?? null;
+    this.retryAfterMs = options.retryAfterMs ?? null;
   }
 
   override toJSON(): Readonly<{
@@ -108,6 +111,7 @@ export class AiProviderError extends AiError {
     retryable: boolean;
     status: number | null;
     requestId: string | null;
+    retryAfterMs: number | null;
   }> {
     return {
       ...super.toJSON(),
@@ -115,6 +119,7 @@ export class AiProviderError extends AiError {
       retryable: this.retryable,
       status: this.status,
       requestId: this.requestId,
+      retryAfterMs: this.retryAfterMs,
     };
   }
 }

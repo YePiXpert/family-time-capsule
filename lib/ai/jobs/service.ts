@@ -1465,7 +1465,7 @@ export function failAiJob(
   lease: AiJobLease,
   errorCode: string,
   retryable: boolean,
-  options: AiJobServiceDependencies & { now?: Date } = {},
+  options: AiJobServiceDependencies & { now?: Date; retryAfterMs?: number } = {},
 ): AiExecutionValidation {
   if (!isSafeOperationalCode(errorCode)) {
     throw new Error("AI job error code is unsafe");
@@ -1486,7 +1486,7 @@ export function failAiJob(
         .set({
           status,
           availableAt: willRetry
-            ? new Date(now.getTime() + retryDelayMs(row.attempts))
+            ? new Date(now.getTime() + Math.max(retryDelayMs(row.attempts), Number.isFinite(options.retryAfterMs) ? Math.min(Math.max(options.retryAfterMs!, 0), 86_400_000) : 0))
             : row.availableAt,
           leaseOwner: null,
           leaseExpiresAt: null,

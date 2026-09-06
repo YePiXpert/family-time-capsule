@@ -100,8 +100,8 @@ Fake 输出永远不得进入生产档案或伪装成用户确认内容。
 
 启用适配器时至少要明确配置一个能力模型。模型之间没有继承关系，也不会请求
 `/models` 后猜测能力；这可避免把“能生成文本”错误等同于“能看图/转录/生成
-向量”。关闭时如果残留非空 provider 设置，启动配置解析会失败，而不是静默
-忽略一个可能被误以为已经生效的配置。
+向量”。关闭优先于残留 provider 设置；旧 endpoint、Key 或无效参数不会阻止核心应用启动。
+配置存在不等于家庭授权，也不表示能力检测已经通过。
 
 示例（只展示占位符，绝不提交真实值）：
 
@@ -192,3 +192,29 @@ service 与 app 共享 `/data` 和同一组 AI 环境变量。worker 停止、Pr
 - [Vector embeddings](https://developers.openai.com/api/docs/guides/embeddings)
 
 隐私、同意、可见性与尚未完成的业务门禁见 [AI_PRIVACY.md](./AI_PRIVACY.md)。
+
+## 1.4 协议契约（2026-09-06）
+
+明确配置一组 endpoint/Key 和各能力模型，无厂商/模型自动切换，也不轮流尝试参数。
+
+| 配置 | 支持值与默认值 |
+| --- | --- |
+| AI_TOKEN_PARAMETER | `max_completion_tokens`（默认）；旧兼容服务可显式选 `max_tokens` |
+| AI_TEMPERATURE_SUPPORTED | `true`（默认）/ `false`；false 时不发送 temperature |
+| AI_JSON_MODE | `json_object`（默认）/ `prompt_only`；两者仍执行应用结果 schema 验证 |
+| AI_TRANSCRIPTION_FORMAT | `json`（默认）/ `verbose_json` / `text`；按实际模型明确选择 |
+
+根 endpoint 自动规范为 `/v1`，重复尾部 `/v1/v1` 合并，管理员自定义路径保留。
+转写 `text` 模式只接受有界 UTF-8 `text/plain`；JSON 模式要求 string text，
+可为空（无清晰语音）。没有 segments 时只保留全文，不生成假时间戳。
+截断、拒绝、工具调用和非 JSON 错误均拒绝。超时的远端执行/计费不确定，
+不自动重试；429/503 的有效 Retry-After 进入持久队列退避，上限一天。
+
+官方依据（已实际读取，未照搬任何商业模型名）：
+[Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、
+[图片输入](https://developers.openai.com/api/docs/guides/images-vision)、
+[转写](https://developers.openai.com/api/docs/guides/speech-to-text)。
+官方说明 max_tokens 已弃用；verbose_json 和时间戳只适用于支持的转写模型。
+
+验证：确定性 Provider 单测、实际 loopback HTTP（文字/图片/multipart 转写、
+重定向与 429），无外部费用。尚无专用凭据，真实 Provider 组合未验证。
