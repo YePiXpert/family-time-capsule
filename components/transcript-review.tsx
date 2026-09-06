@@ -10,7 +10,7 @@ export function TranscriptReviewControl(props: { assetId: string; label: string 
 }
 function Control({ assetId, label }: { assetId: string; label: string }) {
   const router = useRouter();
-  const [opened, setOpened] = useState(false), [review, setReview] = useState<TranscriptReview | null>(null), [draft, setDraft] = useState({ text: "", revision: null as number | null }), [busy, setBusy] = useState(false), [verified, setVerified] = useState(false), [error, setError] = useState<string | null>(null), [success, setSuccess] = useState(false);
+  const [review, setReview] = useState<TranscriptReview | null>(null), [draft, setDraft] = useState({ text: "", revision: null as number | null }), [busy, setBusy] = useState(false), [verified, setVerified] = useState(false), [error, setError] = useState<string | null>(null), [success, setSuccess] = useState(false);
   const generation = useRef(0), touched = useRef(false);
   const endpoint = `/api/mobile/v1/transcripts/${encodeURIComponent(assetId)}`;
   const load = useCallback(async () => {
@@ -28,7 +28,7 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
       setError(reason instanceof Error ? reason.message : "无法读取转录。");
     } finally { if (request === generation.current) setBusy(false); }
   }, [endpoint]);
-  useEffect(() => { const requests = generation; if (opened) void load(); return () => { requests.current++; }; }, [opened, load]);
+  useEffect(() => { const requests = generation; return () => { requests.current++; }; }, []);
   const save = async () => {
     if (!verified || busy || !review?.canEdit) return;
     const request = ++generation.current;
@@ -52,7 +52,7 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
     } finally { if (request === generation.current) setBusy(false); }
   };
   const stale = review !== null && draft.revision !== (review.transcript?.revision ?? null);
-  return <details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpened(event.currentTarget.open); if (event.currentTarget.open) { setBusy(true); setVerified(false); } }}>
+  return <details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { if (event.currentTarget.open) { setBusy(true); setVerified(false); void load(); } else { generation.current++; } }}>
     <summary className="min-h-11 cursor-pointer py-2">转录全文与修订 · {label}</summary>
     {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
     {review ? <div className="grid gap-3">
