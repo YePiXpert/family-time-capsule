@@ -1,4 +1,5 @@
 import * as SQLite from "expo-sqlite";
+import { readableName } from "../utils/naming";
 import type { SyncConsent,
   Family,
   LocalTimelineEvent,
@@ -103,6 +104,19 @@ export async function initializeLocalStore(): Promise<void> {
       `);
     });
   }
+  // Keep the complete local source after the transient upload queue is removed.
+  const namingColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(local_capture)");
+  for (const [column, definition] of [
+    ["payload_json", "TEXT"], ["title_source", "TEXT NOT NULL DEFAULT 'legacy_unknown'"],
+    ["title_revision", "INTEGER NOT NULL DEFAULT 0"],
+  ]) {
+    if (!namingColumns.some((entry) => entry.name === column)) {
+      await db.execAsync(`ALTER TABLE local_capture ADD COLUMN ${column} ${definition}`);
+    }
+  }
+  await db.runAsync(`UPDATE local_capture SET payload_json = (
+    SELECT payload_json FROM outbox WHERE outbox.id = local_capture.id
+  ) WHERE payload_json IS NULL AND EXISTS (SELECT 1 FROM outbox WHERE outbox.id = local_capture.id)`);
   const timelineColumns = await db.getAllAsync<{ name: string }>(
     "PRAGMA table_info(timeline_event)",
   );
@@ -483,7 +497,7 @@ export async function enqueueTextCapture(
   id: string,
   payload: TextCapturePayload,
 ): Promise<void> {
-  return enqueue(id, "text_capture", payload, payload.text, null, null);
+  return enqueue(id, "text_capture", payload, null, null);
 }
 
 export async function enqueueMediaCapture(
@@ -494,7 +508,6 @@ export async function enqueueMediaCapture(
     id,
     "media_capture",
     payload,
-    payload.fileName,
     payload.localUri,
     payload.mediaType,
   );
@@ -510,6 +523,7 @@ export async function ingestLocalImportSession(input: {
   const db = await getDatabase();
   let queued = 0;
   let failed = 0;
+  const timezone = (await getCachedFamily())?.timezone ?? "UTC";
   await db.withExclusiveTransactionAsync(async (tx) => {
     await tx.runAsync(
       `INSERT OR IGNORE INTO local_import_session(
@@ -562,20 +576,19 @@ export async function ingestLocalImportSession(input: {
       );
       if ((existing?.value ?? 0) > 0) continue;
       const kind = item.kind === "text" ? "text_capture" : "media_capture";
-      const title = item.kind === "text"
-        ? (item.payload as TextCapturePayload).text
-        : (item.payload as MediaCapturePayload).fileName;
+      const title = captureName(kind, item.payload, timezone);
       const mediaPayload = item.kind === "file" ? item.payload as MediaCapturePayload : null;
       await tx.runAsync(
         `INSERT OR IGNORE INTO local_capture(
-          id, kind, title, occurred_at, local_uri, media_type, sync_state
-        ) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+          id, kind, title, occurred_at, local_uri, media_type, payload_json, title_source, sync_state
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'rule_generated', 'pending')`,
         item.captureId,
         kind,
         title,
         input.createdAt,
         mediaPayload?.localUri ?? null,
         mediaPayload?.mediaType ?? null,
+        JSON.stringify(item.payload),
       );
       await tx.runAsync(
         "INSERT OR IGNORE INTO outbox(id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)",
@@ -672,27 +685,36 @@ export async function updateMediaUploadState(
   });
 }
 
+function captureName(kind: OutboxItem["kind"], payload: TextCapturePayload | MediaCapturePayload, timezone: string): string {
+  if (kind === "text_capture") return readableName({ text: (payload as TextCapturePayload).text }).text;
+  const media = payload as MediaCapturePayload;
+  return readableName({ mediaType: media.mediaType, originalFilename: media.fileName,
+    capturedAt: media.source === "camera" || media.source === "recorder" ? media.lastModified : null,
+    timeSource: "user_confirmed", timezone }).text;
+}
+
 async function enqueue(
   id: string,
   kind: OutboxItem["kind"],
   payload: TextCapturePayload | MediaCapturePayload,
-  title: string,
   localUri: string | null,
   mediaType: MediaCapturePayload["mediaType"] | null,
 ): Promise<void> {
   const db = await getDatabase();
   const occurredAt = new Date().toISOString();
+  const title = captureName(kind, payload, (await getCachedFamily())?.timezone ?? "UTC");
   await db.withExclusiveTransactionAsync(async (tx) => {
     await tx.runAsync(
       `INSERT INTO local_capture(
-        id, kind, title, occurred_at, local_uri, media_type, sync_state
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+        id, kind, title, occurred_at, local_uri, media_type, payload_json, title_source, sync_state
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'rule_generated', 'pending')`,
       id,
       kind,
       title,
       occurredAt,
       localUri,
       mediaType,
+      JSON.stringify(payload),
     );
     await tx.runAsync(
       "INSERT INTO outbox(id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)",
@@ -926,10 +948,10 @@ export async function getLocalCaptureDetail(
   let mimeType: string | null = null;
   if (row.kind === "text_capture") {
     const outboxRow = await db.getFirstAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM outbox WHERE id = ? AND kind = 'text_capture' LIMIT 1",
+      "SELECT payload_json FROM local_capture WHERE id = ? AND kind = 'text_capture' LIMIT 1",
       captureId,
     );
-    if (outboxRow) {
+    if (outboxRow?.payload_json) {
       try {
         const payload = JSON.parse(outboxRow.payload_json) as { text?: unknown };
         if (typeof payload.text === "string") text = payload.text;
@@ -939,10 +961,10 @@ export async function getLocalCaptureDetail(
     }
   } else {
     const outboxRow = await db.getFirstAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM outbox WHERE id = ? AND kind = 'media_capture' LIMIT 1",
+      "SELECT payload_json FROM local_capture WHERE id = ? AND kind = 'media_capture' LIMIT 1",
       captureId,
     );
-    if (outboxRow) {
+    if (outboxRow?.payload_json) {
       try {
         const payload = JSON.parse(outboxRow.payload_json) as {
           fileName?: unknown;
@@ -1067,11 +1089,12 @@ export async function insertRestoredTextCapture(input: {
   const payload: TextCapturePayload = { text: input.text };
   await db.withExclusiveTransactionAsync(async (tx) => {
     await tx.runAsync(
-      `INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, sync_state)
-       VALUES (?, 'text_capture', ?, ?, NULL, NULL, 'pending')`,
+      `INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, payload_json, sync_state)
+       VALUES (?, 'text_capture', ?, ?, NULL, NULL, ?, 'pending')`,
       input.captureId,
       input.title,
       input.occurredAt,
+      JSON.stringify(payload),
     );
     await tx.runAsync(
       "INSERT INTO outbox(id, kind, payload_json, created_at) VALUES (?, 'text_capture', ?, ?)",
@@ -1102,13 +1125,14 @@ export async function insertRestoredMediaCapture(input: {
   };
   await db.withExclusiveTransactionAsync(async (tx) => {
     await tx.runAsync(
-      `INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, sync_state)
-       VALUES (?, 'media_capture', ?, ?, ?, ?, 'pending')`,
+      `INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, payload_json, sync_state)
+       VALUES (?, 'media_capture', ?, ?, ?, ?, ?, 'pending')`,
       input.captureId,
       input.title,
       input.occurredAt,
       input.localUri,
       input.mediaType,
+      JSON.stringify(payload),
     );
     await tx.runAsync(
       "INSERT INTO outbox(id, kind, payload_json, created_at) VALUES (?, 'media_capture', ?, ?)",
@@ -1143,7 +1167,7 @@ export async function listPendingRescueItems(): Promise<PendingRescueItem[]> {
     media_type: string | null;
     payload_json: string | null;
   }>(
-    `SELECT l.id, l.kind, l.title, l.occurred_at, l.local_uri, l.media_type, o.payload_json
+    `SELECT l.id, l.kind, l.title, l.occurred_at, l.local_uri, l.media_type, COALESCE(l.payload_json, o.payload_json) AS payload_json
      FROM local_capture l LEFT JOIN outbox o ON o.id = l.id
      WHERE l.sync_state <> 'archived'
      ORDER BY l.occurred_at DESC, l.id DESC`,

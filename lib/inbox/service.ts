@@ -451,6 +451,8 @@ export async function updateInboxDraft(
     tx.update(inboxItem)
       .set({
         draftTitle: title,
+        titleSource: patch.title !== undefined ? "manual" : entry.item.titleSource,
+        titleRevision: patch.title !== undefined ? sql`${inboxItem.titleRevision} + 1` : entry.item.titleRevision,
         draftOccurredAt: patch.occurredAt === undefined ? entry.item.draftOccurredAt : patch.occurredAt,
         draftLocationText: locationText,
         updatedAt: now,

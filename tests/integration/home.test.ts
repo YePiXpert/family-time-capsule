@@ -85,7 +85,7 @@ describe("real family dashboard", () => {
     const withInbox = await getHomeDashboard(context);
     expect(withInbox.inbox.count).toBe(1);
     expect(withInbox.inbox.previews).toEqual([
-      expect.objectContaining({ id: item.id, title: "第一次从真实数据首页看到这句话。" }),
+      expect.objectContaining({ id: item.id, title: "第一次从真实数据首页看到这句话" }),
     ]);
     expect(withInbox.isFirstUse).toBe(false);
 

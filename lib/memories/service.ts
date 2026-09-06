@@ -1,4 +1,5 @@
 import "server-only";
+import { readableName } from "@/lib/naming";
 import type { FamilyContext } from "@/lib/family/context";
 import { isLiveFamilyPrincipal } from "@/lib/authz/principal";
 import { createContributionAccessSnapshot, readableAssetPredicate } from "@/lib/authz/contribution-access";
@@ -239,6 +240,8 @@ export async function updateMemoryEvent(
         editedByUserId: editorUserId,
         snapshotJson: JSON.stringify({
           title: current.title,
+          titleSource: current.titleSource,
+          titleRevision: current.titleRevision,
           occurredAt: current.occurredAt.toISOString(),
           occurredAtPrecision: current.occurredAtPrecision,
           locationText: current.locationText,
@@ -256,6 +259,8 @@ export async function updateMemoryEvent(
     tx.update(memoryEvent)
       .set({
         title,
+        titleSource: patch.title !== undefined ? "manual" : current.titleSource,
+        titleRevision: patch.title !== undefined ? sql`${memoryEvent.titleRevision} + 1` : current.titleRevision,
         occurredAt,
         occurredAtPrecision: precision,
         locationText,
@@ -307,15 +312,16 @@ export function defaultOccurredAt(assets: AssetRow[], rawTextItem?: { createdAt:
   return rawTextItem?.createdAt ?? new Date();
 }
 
-/** 默认标题：文本取正文截断；素材取展示名去扩展名 */
-export function defaultTitle(entry: InboxEntry): string {
-  if (entry.item.draftTitle?.trim()) return entry.item.draftTitle.trim();
-  if (entry.item.kind === "text" && entry.item.rawText) {
-    const text = entry.item.rawText.trim();
-    return text.length > 30 ? `${text.slice(0, 30)}…` : text;
-  }
-  const first = entry.assets[0]?.originalFilename ?? "一段记忆";
-  return first.replace(/\.[a-z0-9]{1,8}$/i, "");
+/** Shared fallback; original filenames are preserved separately. */
+export function defaultTitle(entry: InboxEntry, timezone = "UTC"): string {
+  return readableName({
+    title: entry.item.draftTitle, source: entry.item.titleSource,
+    revision: entry.item.titleRevision, text: entry.item.rawText,
+    mediaType: entry.assets[0]?.type, originalFilename: entry.assets[0]?.originalFilename,
+    capturedAt: entry.item.draftOccurredAt ?? entry.assets[0]?.capturedAt,
+    timeSource: entry.item.draftOccurredAt ? "user_confirmed" : entry.assets[0]?.timeSource,
+    durationMs: entry.assets[0]?.durationMs, assetCount: entry.assets.length, timezone,
+  }).text;
 }
 
 /** 满天数快照：出生前为负；展示层永远现算（#009） */
@@ -419,7 +425,7 @@ export async function confirmInboxEntry(
   const childPersonId = await getChildPersonId(familyId);
   if (!childPersonId) return { ok: false, error: "no_child" };
 
-  const title = (opts.title ?? defaultTitle(entry)).trim();
+  const title = (opts.title ?? defaultTitle(entry, await familyTimezone(familyId))).trim();
   if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
 
   const occurredAt = opts.occurredAt ?? entry.item.draftOccurredAt ?? defaultOccurredAt(entry.assets, entry.item);
@@ -474,6 +480,7 @@ export async function confirmInboxEntry(
         familyId,
         childPersonId,
         title,
+        titleSource: opts.title !== undefined ? "manual" : entry.item.draftTitle ? entry.item.titleSource : "rule_generated",
         occurredAt,
         occurredAtPrecision: precision,
         locationText,
@@ -617,6 +624,7 @@ export async function mergeInboxEntries(
         familyId,
         childPersonId,
         title,
+        titleSource: "manual",
         occurredAt,
         occurredAtPrecision: "exact",
         locationText,

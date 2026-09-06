@@ -35,6 +35,8 @@ export const inboxItem = sqliteTable(
     rawText: text("raw_text"),
     // 收件箱整理草稿；确认时复制进 MemoryEvent，不改变原件 metadata。
     draftTitle: text("draft_title"),
+    titleSource: text("title_source").notNull().default("legacy_unknown"),
+    titleRevision: integer("title_revision").notNull().default(0),
     draftOccurredAt: integer("draft_occurred_at", { mode: "timestamp" }),
     draftLocationText: text("draft_location_text"),
     // 确认/合并后对应的事件；保留原始收件箱正文作为无作者来源记录

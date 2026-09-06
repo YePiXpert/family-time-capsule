@@ -1,4 +1,5 @@
 import "server-only";
+import { defaultTitle } from "@/lib/memories/service";
 import { getBookHome } from "@/lib/books/projects/review";
 
 import type { FamilyContext } from "@/lib/family/context";
@@ -180,7 +181,7 @@ export async function getHomeDashboard(
     const preferred =
       entry.assets.find((asset) => asset.type === "image") ?? entry.assets[0];
     const rawTitle =
-      entry.item.rawText?.trim() || preferred?.originalFilename || "待整理素材";
+      defaultTitle(entry, context.familyTimezone);
     return {
       id: entry.item.id,
       title: rawTitle.length > 46 ? `${rawTitle.slice(0, 46)}…` : rawTitle,

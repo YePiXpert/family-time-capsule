@@ -288,6 +288,13 @@
       "when": 1788665359949,
       "tag": "0040_instance_meta",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1788685111443,
+      "tag": "0041_readable_names",
+      "breakpoints": true
     }
   ]
 }

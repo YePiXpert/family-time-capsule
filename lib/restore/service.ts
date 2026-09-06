@@ -3,6 +3,7 @@ import { parseBookArchive, restoreBookArchive } from "@/lib/books/projects/archi
 import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
 import { parseCollectionArchive, restoreCollectionArchive } from "@/lib/collections/archive";
 import "server-only";
+import { NAME_SOURCES, nameSource } from "@/lib/naming";
 
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
@@ -117,6 +118,11 @@ export class RestoreError extends Error {
   }
 }
 
+function validateArchiveName(source: unknown, revision: unknown): void {
+  requireCondition(source === undefined || NAME_SOURCES.includes(source as typeof NAME_SOURCES[number]), "bad_json", "名称来源非法");
+  requireCondition(revision === undefined || (Number.isSafeInteger(revision) && Number(revision) >= 0), "bad_json", "名称版本非法");
+}
+
 type ManifestAsset = {
   assetId: string;
   relativePath: string;
@@ -128,6 +134,9 @@ type ManifestAsset = {
   // v0.1.1 增量字段（旧导出可能缺失）
   type?: string;
   originalFilename?: string;
+  displayName?: string | null;
+  nameSource?: string;
+  nameRevision?: number;
   timeSource?: string;
   width?: number | null;
   height?: number | null;
@@ -152,6 +161,8 @@ type InboxItemArchiveRow = {
   status: string;
   rawText: string | null;
   draftTitle?: string | null;
+  titleSource?: string;
+  titleRevision?: number;
   draftOccurredAt?: string | null;
   draftLocationText?: string | null;
   participantPersonIds?: string[];
@@ -740,6 +751,8 @@ async function loadAndVerifyZip(
       id: string;
       childPersonId: string;
       title: string;
+      titleSource?: string;
+      titleRevision?: number;
       occurredAt: string | null;
       occurredAtPrecision?: string;
       deletedAt?: string | null;
@@ -1046,6 +1059,8 @@ async function loadAndVerifyZip(
   const assetPaths = new Set<string>();
   for (const entry of manifest.assets) {
     requireCondition(isRecord(entry), "bad_manifest", "manifest asset 必须是对象");
+    validateArchiveName(entry.nameSource, entry.nameRevision);
+    requireCondition(entry.displayName === undefined || entry.displayName === null || (typeof entry.displayName === "string" && entry.displayName.length <= 100), "bad_json", "素材展示名非法");
     requireCondition(
       typeof entry.assetId === "string" &&
         UUID_LIKE.test(entry.assetId) &&
@@ -1216,6 +1231,7 @@ async function loadAndVerifyZip(
       `memory event id 非法或重复: ${String(m.id)}`,
     );
     eventIds.add(m.id);
+    validateArchiveName(m.titleSource, m.titleRevision);
     requireCondition(
       typeof m.title === "string" && m.title.length > 0,
       "bad_json",
@@ -1362,6 +1378,7 @@ async function loadAndVerifyZip(
       "bad_json",
       `inbox item ${item.id} 的时间非法`,
     );
+    validateArchiveName(item.titleSource, item.titleRevision);
     inboxItemsJson.push({
       id: item.id,
       familyId: item.familyId,
@@ -1369,6 +1386,8 @@ async function loadAndVerifyZip(
       status: item.status,
       rawText: item.rawText,
       draftTitle: (item.draftTitle ?? null) as string | null,
+      titleSource: nameSource(item.titleSource),
+      titleRevision: (item.titleRevision ?? 0) as number,
       draftOccurredAt: (item.draftOccurredAt ?? null) as string | null,
       draftLocationText: (item.draftLocationText ?? null) as string | null,
       participantPersonIds: (item.participantPersonIds ?? []) as string[],
@@ -2620,6 +2639,9 @@ async function restoreFromArchive(
                 familyId,
                 type,
                 originalFilename: a.originalFilename ?? `${a.assetId}.${ext}`,
+                displayName: a.displayName ?? null,
+                nameSource: nameSource(a.nameSource),
+                nameRevision: a.nameRevision ?? 0,
                 mimeType: a.mimeType,
                 bytes: a.bytes,
                 sha256: a.sha256,
@@ -2653,6 +2675,8 @@ async function restoreFromArchive(
               familyId,
               childPersonId: m.childPersonId,
               title: m.title,
+              titleSource: nameSource(m.titleSource),
+              titleRevision: m.titleRevision ?? 0,
               occurredAt: parseDate(m.occurredAt) ?? now,
               occurredAtPrecision: m.occurredAtPrecision ?? "exact",
               locationText: m.locationText ?? null,
@@ -2684,6 +2708,8 @@ async function restoreFromArchive(
               status: item.status,
               rawText: item.rawText,
               draftTitle: item.draftTitle,
+              titleSource: nameSource(item.titleSource),
+              titleRevision: item.titleRevision ?? 0,
               draftOccurredAt: parseDate(item.draftOccurredAt ?? null),
               draftLocationText: item.draftLocationText,
               memoryEventId: item.memoryEventId,

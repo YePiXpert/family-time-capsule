@@ -1,21 +1,18 @@
 import "server-only";
+import { readableName } from "@/lib/naming";
 
 import type { FamilyContext } from "@/lib/family/context";
 import { createContributionAccessSnapshot, listVisibleContributionsForEvent } from "@/lib/authz/contribution-access";
 import { getThumbnailMap } from "@/lib/assets/service";
 import { getHomeDashboard } from "@/lib/home/service";
 import { getInboxPage, type InboxEntry } from "@/lib/inbox/service";
-import { getMemoryEventDetail } from "@/lib/memories/service";
+import { defaultTitle, getMemoryEventDetail } from "@/lib/memories/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { searchFamily } from "@/lib/search/service";
 
 function mediaPath(assetId: string): string {
   return `/api/media/${encodeURIComponent(assetId)}`;
-}
-
-function inboxTitle(entry: InboxEntry): string {
-  return entry.item.draftTitle?.trim() || entry.item.rawText?.trim().slice(0, 100) || entry.assets[0]?.originalFilename || "待整理素材";
 }
 
 export async function getMobileHome(context: FamilyContext) {
@@ -74,7 +71,9 @@ async function mapMobileInboxEntries(
       id: entry.item.id,
       kind: entry.item.kind,
       status: entry.item.status,
-      title: inboxTitle(entry),
+      title: defaultTitle(entry, context.familyTimezone),
+      titleSource: entry.item.draftTitle ? entry.item.titleSource : "rule_generated",
+      titleRevision: entry.item.titleRevision,
       rawText: entry.item.rawText,
       occurredAt: entry.item.draftOccurredAt?.toISOString() ?? entry.assets[0]?.capturedAt?.toISOString() ?? null,
       occurredAtWall: entry.item.draftOccurredAt
@@ -89,6 +88,9 @@ async function mapMobileInboxEntries(
         id: asset.id,
         type: asset.type,
         filename: asset.originalFilename,
+        displayName: readableName({ title: asset.displayName, source: asset.nameSource, mediaType: asset.type, originalFilename: asset.originalFilename, capturedAt: asset.capturedAt, timeSource: asset.timeSource, durationMs: asset.durationMs, timezone: context.familyTimezone }).text,
+        nameSource: asset.displayName ? asset.nameSource : "rule_generated",
+        nameRevision: asset.nameRevision,
         mimeType: asset.mimeType,
         capturedAt: asset.capturedAt?.toISOString() ?? null,
         mediaPath: mediaPath(asset.id),
@@ -115,6 +117,8 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
   return {
     id: detail.event.id,
     title: detail.event.title,
+    titleSource: detail.event.titleSource,
+    titleRevision: detail.event.titleRevision,
     occurredAt: detail.event.occurredAt.toISOString(),
     occurredAtWall: utcToZonedWallTimeInput(detail.event.occurredAt, context.familyTimezone),
     occurredAtPrecision: detail.event.occurredAtPrecision,
@@ -133,6 +137,9 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
       id: asset.id,
       type: asset.type,
       filename: asset.originalFilename,
+        displayName: readableName({ title: asset.displayName, source: asset.nameSource, mediaType: asset.type, originalFilename: asset.originalFilename, capturedAt: asset.capturedAt, timeSource: asset.timeSource, durationMs: asset.durationMs, timezone: context.familyTimezone }).text,
+        nameSource: asset.displayName ? asset.nameSource : "rule_generated",
+        nameRevision: asset.nameRevision,
       mimeType: asset.mimeType,
       durationMs: asset.durationMs,
       mediaPath: mediaPath(asset.id),

@@ -35,6 +35,9 @@ export const asset = sqliteTable(
     type: text("type").notNull(),
     // 上传时的文件名，仅作展示；绝不参与磁盘路径
     originalFilename: text("original_filename").notNull(),
+    displayName: text("display_name"),
+    nameSource: text("name_source").notNull().default("legacy_unknown"),
+    nameRevision: integer("name_revision").notNull().default(0),
     mimeType: text("mime_type").notNull(),
     bytes: integer("bytes").notNull(),
     sha256: text("sha256").notNull(),

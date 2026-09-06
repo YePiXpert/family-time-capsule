@@ -84,6 +84,18 @@ async function makeEvent(title: string): Promise<{ eventId: string; assetId: str
 }
 
 describe("事件编辑（RH-003）", () => {
+  it("persists manual provenance and monotonically increasing title revision without changing originals", async () => {
+    const { eventId, assetId } = await makeEvent("IMG_1234");
+    const original = await getAsset(familyId, assetId);
+    expect((await getMemoryEventDetail(familyId, eventId))!.event).toMatchObject({ titleSource: "manual", titleRevision: 0 });
+    await updateMemoryEvent(familyId, eventId, adminUserId, { title: "窗边的花" });
+    await updateMemoryEvent(familyId, eventId, adminUserId, { title: "午后的花" });
+    expect((await getMemoryEventDetail(familyId, eventId))!.event).toMatchObject({ title: "午后的花", titleSource: "manual", titleRevision: 2 });
+    expect(await getAsset(familyId, assetId)).toEqual(original);
+    const revisions = await listEventRevisions(familyId, eventId);
+    expect(revisions).toEqual(expect.arrayContaining([expect.objectContaining({ snapshot: expect.objectContaining({ title: "窗边的花", titleSource: "manual", titleRevision: 1 }) })]));
+  });
+
   it("8/10 事件改为 8/11：occurredAt 更新、时间轴跟随、年龄重算、编辑者记录", async () => {
     const { eventId, assetId } = await makeEvent("出生后的第一天");
     const before = (await getMemoryEventDetail(familyId, eventId))!;

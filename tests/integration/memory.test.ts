@@ -142,7 +142,7 @@ describe("确认收件箱 → MemoryEvent（#008）", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const detail = (await getMemoryEventDetail(familyId, result.eventId))!;
-    expect(detail.event.title).toBe(rawText);
+    expect(detail.event.title).toBe("小满今天会翻身了");
     expect(detail.assets).toHaveLength(0);
     expect(detail.sourceNotes).toEqual([
       expect.objectContaining({ id: item.id, rawText }),

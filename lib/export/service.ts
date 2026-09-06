@@ -248,6 +248,9 @@ export async function buildFamilyExport(
       // v0.1.1 起的增量字段（exportVersion 仍为 1，旧导出缺失时恢复端取默认值）
       type: a.type,
       originalFilename: a.originalFilename,
+      displayName: a.displayName,
+      nameSource: a.nameSource,
+      nameRevision: a.nameRevision,
       timeSource: a.timeSource,
       width: a.width,
       height: a.height,
@@ -272,6 +275,8 @@ export async function buildFamilyExport(
     id: e.id,
     childPersonId: e.childPersonId,
     title: e.title,
+    titleSource: e.titleSource,
+    titleRevision: e.titleRevision,
     occurredAt: iso(e.occurredAt),
     occurredAtPrecision: e.occurredAtPrecision,
     locationText: e.locationText,
@@ -314,6 +319,8 @@ export async function buildFamilyExport(
     status: item.status,
     rawText: item.rawText,
     draftTitle: item.draftTitle,
+    titleSource: item.titleSource,
+    titleRevision: item.titleRevision,
     draftOccurredAt: iso(item.draftOccurredAt),
     draftLocationText: item.draftLocationText,
     participantPersonIds: inboxItemParticipants

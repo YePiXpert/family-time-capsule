@@ -922,7 +922,7 @@ describe("native mobile API", () => {
     expect(body.viewer.canCapture).toBe(true);
     expect(body.people.length).toBeGreaterThanOrEqual(4);
     const nativeEvent = body.events.find(
-      (event) => event.title === "第一次在原生客户端看到时间轴。",
+      (event) => event.title === "第一次在原生客户端看到时间轴",
     );
     expect(nativeEvent).toBeDefined();
     expect(new Date(nativeEvent!.occurredAt).toString()).not.toBe("Invalid Date");

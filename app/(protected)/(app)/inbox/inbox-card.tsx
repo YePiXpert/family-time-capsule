@@ -1,4 +1,5 @@
 "use client";
+import { readableName } from "@/lib/naming";
 
 import { useActionState } from "react";
 import type { AssetRow } from "@/lib/assets/service";
@@ -63,12 +64,14 @@ export function InboxCard({
   const [discardState, discardActionRun, discardPending] = useActionState(discardAction, undefined);
   const [confirmState, confirmActionRun, confirmPending] = useActionState(confirmAction, undefined);
   const cover = assets[0];
-  const defaultTitle =
-    item.draftTitle?.trim() ||
-    suggestedTitle ||
-    (item.kind === "text" && item.rawText
-      ? item.rawText.trim().slice(0, 30)
-      : (cover?.originalFilename ?? "一段记忆").replace(/\.[a-z0-9]{1,8}$/i, ""));
+  const name = readableName({
+    title: item.draftTitle, source: item.titleSource, revision: item.titleRevision,
+    text: item.rawText, mediaType: cover?.type, originalFilename: cover?.originalFilename,
+    capturedAt: item.draftOccurredAt ?? cover?.capturedAt,
+    timeSource: item.draftOccurredAt ? "user_confirmed" : cover?.timeSource,
+    durationMs: cover?.durationMs, assetCount: assets.length, timezone,
+  });
+  const defaultTitle = name.text;
 
   return (
     <article className="h-full overflow-hidden rounded-xl border border-line bg-surface">
@@ -110,7 +113,7 @@ export function InboxCard({
         <div className={`flex min-w-0 flex-1 flex-col gap-1.5 text-sm ${compact ? "p-4 pt-3" : ""}`}>
           <div className="flex flex-wrap items-baseline gap-x-3">
             <span className="truncate font-medium" title={cover?.originalFilename}>
-              {cover?.originalFilename ?? item.rawText?.slice(0, 40)}
+              {name.text}
             </span>
             <StatusBadge>{item.kind === "text" ? "文字" : cover?.type === "image" ? "照片" : cover?.type}</StatusBadge>
             {item.status === "needs_review" && (
@@ -136,6 +139,7 @@ export function InboxCard({
             </form>
           </details> : null}
 
+          {suggestedTitle ? <p className="text-xs text-muted">AI 建议：{suggestedTitle}（采用前不会替换标题）</p> : null}
           {canReview && <form action={confirmActionRun} className="mt-3 grid gap-2">
             <input type="hidden" name="itemId" value={item.id} />
             <input
@@ -189,6 +193,7 @@ export function InboxCard({
             <InboxSuggestionChips suggestions={suggestionChips} />
           )}
 
+          {suggestedTitle ? <p className="text-xs text-muted">AI 建议：{suggestedTitle}（采用前不会替换标题）</p> : null}
           {canReview && <form action={discardActionRun} className="mt-1">
             <input type="hidden" name="itemId" value={item.id} />
             <button

@@ -55,6 +55,8 @@ type Snapshot = {
   events: Array<{
     id: string;
     title: string;
+    titleSource: string;
+    titleRevision: number;
     occurredAt: string;
     milestoneType: string | null;
     isPinned: boolean;
@@ -377,6 +379,8 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       events: events.map((e) => ({
         id: e.id,
         title: e.title,
+        titleSource: e.titleSource,
+        titleRevision: e.titleRevision,
         occurredAt: e.occurredAt.toISOString(),
         milestoneType: e.milestoneType,
         isPinned: e.isPinned,
@@ -535,6 +539,8 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
               id: e.id,
               at: d.event.occurredAt.toISOString(),
               title: d.event.title,
+              titleSource: d.event.titleSource,
+              titleRevision: d.event.titleRevision,
               milestoneType: d.event.milestoneType,
               isPinned: d.event.isPinned,
             }
@@ -544,6 +550,8 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     for (let i = 0; i < snapshot.events.length; i++) {
       expect(detailChecks[i]!.at).toBe(snapshot.events[i].occurredAt);
       expect(detailChecks[i]!.title).toBe(snapshot.events[i].title);
+      expect(detailChecks[i]!.titleSource).toBe(snapshot.events[i].titleSource);
+      expect(detailChecks[i]!.titleRevision).toBe(snapshot.events[i].titleRevision);
       expect(detailChecks[i]!.milestoneType).toBe(snapshot.events[i].milestoneType);
       expect(detailChecks[i]!.isPinned).toBe(snapshot.events[i].isPinned);
     }

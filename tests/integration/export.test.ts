@@ -311,6 +311,8 @@ describe("完整导出（#014）", () => {
         status: item.status,
         rawText: item.rawText,
         draftTitle: item.draftTitle,
+        titleSource: item.titleSource,
+        titleRevision: item.titleRevision,
         draftOccurredAt: item.draftOccurredAt?.toISOString() ?? null,
         draftLocationText: item.draftLocationText,
         participantPersonIds: [] as string[],

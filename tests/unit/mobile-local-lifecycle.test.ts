@@ -10,6 +10,10 @@ const {
   clearLocalArchive,
   completeOutboxItem,
   enqueueMediaCapture,
+  enqueueTextCapture,
+  getLocalCaptureDetail,
+  listPendingRescueItems,
+  keepOutboxItemLocal,
   finishSyncSnapshot,
   getOutboxCount,
   initializeLocalStore,
@@ -123,6 +127,23 @@ describe.sequential("native capture lifecycle", () => {
     await clearLocalArchive();
   }
 
+  it("keeps full local text and original media metadata after queue completion or keep-local", async () => {
+    await resetStore();
+    const text = "今天在公园玩。" + "后来我们一起回家。".repeat(30);
+    await enqueueTextCapture("text-durable", { text });
+    await completeOutboxItem("text-durable", "text-inbox");
+    expect(await getLocalCaptureDetail("text-durable")).toMatchObject({ title: "今天在公园玩", text });
+    await enqueuePhoto("photo-durable");
+    await keepOutboxItemLocal("photo-durable");
+    expect(await getLocalCaptureDetail("photo-durable")).toMatchObject({ title: "照片 · 时间待补充", fileName: "photo-durable.jpg" });
+    expect(await listPendingRescueItems()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ captureId: "text-durable", text }),
+      expect.objectContaining({ captureId: "photo-durable", fileName: "photo-durable.jpg" }),
+    ]));
+    await initializeLocalStore();
+    expect(await getLocalCaptureDetail("text-durable")).toMatchObject({ title: "今天在公园玩", text });
+  });
+
   it("moves pending to inbox to archived and keeps exactly one formal card after restart", async () => {
     await resetStore();
     await enqueuePhoto("capture-1");
@@ -165,7 +186,7 @@ describe.sequential("native capture lifecycle", () => {
     expect(await listLocalMemoryMedia("memory-1")).toEqual([
       {
         captureId: "capture-1",
-        title: "capture-1.jpg",
+        title: "照片 · 时间待补充",
         localUri: "file:///captures/capture-1.jpg",
         mediaType: "image",
       },
