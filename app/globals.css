@@ -12,7 +12,7 @@
   --surface-raised: #ffffff;
   --surface-muted: #f2eee7;
   --muted: #6f6860;
-  --faint: #8b8379;
+  --faint: #766f65;
   --line: #ded7ce;
   --accent-soft: #efe2d6;
   --success: #496b58;
@@ -178,7 +178,7 @@ select {
   flex-direction: column;
   gap: 0.2rem;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
@@ -454,7 +454,7 @@ select {
 }
 
 .confirm-dialog::backdrop {
-  background: rgb(24 20 17 / 55%);
+  background: color-mix(in oklab, var(--foreground) 55%, transparent);
 }
 
 .confirm-dialog-panel {
@@ -462,7 +462,7 @@ select {
   border-radius: 1.25rem;
   background: var(--surface-raised);
   padding: 1.5rem;
-  box-shadow: 0 24px 60px rgb(20 16 12 / 24%);
+  box-shadow: 0 24px 60px color-mix(in oklab, var(--foreground) 24%, transparent);
 }
 
 .home-hero {

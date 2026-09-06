@@ -102,7 +102,6 @@ export default async function HomePage() {
             description="先留下，细节可以稍后整理"
           />
           <div
-            id="quick-capture-title"
             className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4"
           >
             <QuickAction href="/capture#text" icon="edit" label="写一句" />
@@ -126,7 +125,10 @@ export default async function HomePage() {
         <p className="page-eyebrow">每周回顾</p>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div><h2 className="text-xl font-semibold">本周已留下 {dashboard.weeklyReview.confirmedCount} 段</h2><p className="mt-1 text-sm text-muted">还有 {dashboard.weeklyReview.pendingInboxCount} 条待整理{dashboard.weeklyReview.storyId ? " · 周记草稿已生成" : ""}</p></div>
-          <span className="ui-button-primary">{dashboard.weeklyReview.status === "open" ? "开始每周回顾" : dashboard.weeklyReview.status === "completed" ? "查看本周回顾" : "继续每周回顾"}</span>
+          <span className="inline-flex items-center text-sm font-semibold text-accent">
+            {dashboard.weeklyReview.status === "open" ? "开始每周回顾" : dashboard.weeklyReview.status === "completed" ? "查看本周回顾" : "继续每周回顾"}
+            <Icon name="chevron-right" size={17} className="ml-1" />
+          </span>
         </div>
       </Link>
 
@@ -201,7 +203,6 @@ export default async function HomePage() {
               </div>
             ) : (
               <div
-                id="recent-memory-title"
                 className="mt-3 grid gap-3 md:grid-cols-2"
               >
                 {dashboard.recentMemories.map((memory) => (
@@ -233,7 +234,6 @@ export default async function HomePage() {
             />
             {dashboard.onThisDay.length > 0 ? (
               <div
-                id="on-this-day-title"
                 className="mt-3 grid gap-3 md:grid-cols-2"
               >
                 {dashboard.onThisDay.map((memory) => (
@@ -258,10 +258,8 @@ export default async function HomePage() {
                 <QuickAction
                   href="/memories/resurfacing"
                   icon="spark"
-                  label="今天还没有历史回声"
-                  description={
-                    "看看一个月前、百天前和一年前，也可以留下今天"
-                  }
+                  label="看看往年的今天"
+                  description="今天还没有历史回声，看看一个月前、百天前和一年前，也可以留下今天"
                 />
               </div>
             )}
@@ -271,8 +269,8 @@ export default async function HomePage() {
             <SectionHeader
               title="成长节点"
               description="置顶与特别标记的家庭时刻"
-              actionLabel={dashboard.milestones.length > 0 ? "查看时间轴" : "标记一段记忆"}
-              actionHref={dashboard.milestones.length > 0 ? "/timeline" : dashboard.recentMemories[0] ? `/memories/${dashboard.recentMemories[0].id}?mode=edit` : "/capture"}
+              actionLabel={dashboard.milestones.length > 0 ? "查看时间轴" : dashboard.canCapture ? "标记一段记忆" : "浏览时间轴"}
+              actionHref={dashboard.milestones.length > 0 ? "/timeline" : dashboard.canCapture ? (dashboard.recentMemories[0] ? `/memories/${dashboard.recentMemories[0].id}?mode=edit` : "/capture") : "/timeline"}
             />
             {dashboard.milestones.length > 0 ? (
               <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -296,9 +294,9 @@ export default async function HomePage() {
             ) : (
               <div className="mt-3">
                 <QuickAction
-                  href={dashboard.recentMemories[0] ? `/memories/${dashboard.recentMemories[0].id}?mode=edit` : "/capture"}
+                  href={dashboard.canCapture ? (dashboard.recentMemories[0] ? `/memories/${dashboard.recentMemories[0].id}?mode=edit` : "/capture") : "/timeline"}
                   icon="spark"
-                  label="标记第一次、成长或家庭时刻"
+                  label={dashboard.canCapture ? "标记第一次、成长或家庭时刻" : "看看家人的成长节点"}
                   description="节点仍是一段普通记忆；模板可选，不增加额外记录负担"
                 />
               </div>
@@ -356,7 +354,7 @@ export default async function HomePage() {
                           </span>
                         </div>
                       )}
-                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-background/90 px-2 py-0.5 text-[10px] font-semibold text-foreground">
+                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-background/90 px-2 py-0.5 text-[11px] font-semibold text-foreground">
                         {INBOX_STATUS_LABEL[preview.status] ?? "待整理"}
                       </span>
                     </div>

@@ -33,28 +33,33 @@ describe("product shell navigation", () => {
       "/family",
       "/stories",
       "/requests",
+      "/contributions",
       "/capsules",
       "/books",
+      "/imports",
       "/settings",
       "/trash",
     ]);
   });
 
-  it("maps memory reading to timeline and secondary routes to more on mobile", () => {
-    expect(isNavigationItemActive("/memories/event-1", "/timeline", true)).toBe(
+  it("maps memory reading to timeline and secondary routes to more on every surface", () => {
+    expect(isNavigationItemActive("/memories/event-1", "/timeline")).toBe(
       true,
     );
-    expect(isNavigationItemActive("/stories/story-1", "/more", true)).toBe(
+    expect(isNavigationItemActive("/stories/story-1", "/more")).toBe(
       true,
     );
-    expect(isNavigationItemActive("/capture", "/more", true)).toBe(false);
+    expect(isNavigationItemActive("/contributions/new", "/more")).toBe(
+      true,
+    );
+    expect(isNavigationItemActive("/capture", "/more")).toBe(false);
   });
 
   it.each([
-    ["admin", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "每周回顾", "家人", "故事", "口述史", "时间胶囊", "书籍与备份", "设置", "回收站"]],
-    ["editor", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "每周回顾", "故事", "口述史", "时间胶囊", "书籍与备份", "设置", "回收站"]],
-    ["contributor", ["首页", "时间轴", "记录", "更多"], ["搜索", "每周回顾", "口述史", "书籍与备份", "设置"]],
-    ["viewer", ["首页", "时间轴", "更多"], ["搜索", "每周回顾", "书籍与备份", "设置"]],
+    ["admin", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "每周回顾", "家人", "故事", "口述史", "家庭投递箱", "时间胶囊", "书籍与备份", "批量导入", "设置", "回收站"]],
+    ["editor", ["首页", "时间轴", "记录", "收件箱", "更多"], ["搜索", "每周回顾", "故事", "口述史", "家庭投递箱", "时间胶囊", "书籍与备份", "批量导入", "设置", "回收站"]],
+    ["contributor", ["首页", "时间轴", "记录", "更多"], ["搜索", "每周回顾", "口述史", "家庭投递箱", "书籍与备份", "批量导入", "设置"]],
+    ["viewer", ["首页", "时间轴", "更多"], ["搜索", "每周回顾", "书籍与备份", "批量导入", "设置"]],
   ] as const)("filters %s navigation by durable capabilities", (role, primary, secondary) => {
     const capabilities = FAMILY_CAPABILITIES.filter((capability) =>
       hasFamilyCapability(role as FamilyRole, capability),

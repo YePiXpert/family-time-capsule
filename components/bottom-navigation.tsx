@@ -16,7 +16,7 @@ export function BottomNavigation({ inboxCount, capabilities }: { inboxCount: num
         style={{ gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))` }}
       >
         {navigation.map((item) => {
-          const active = isNavigationItemActive(pathname, item.href, true);
+          const active = isNavigationItemActive(pathname, item.href);
           return (
             <Link
               key={item.href}

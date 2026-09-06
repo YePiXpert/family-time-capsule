@@ -23,8 +23,10 @@ export const SECONDARY_NAVIGATION: readonly NavigationItem[] = [
   { href: "/family", label: "家人", icon: "people", capability: "family:manage" },
   { href: "/stories", label: "故事", icon: "story", capability: "story:write" },
   { href: "/requests", label: "口述史", icon: "microphone", capability: "contribution:create" },
+  { href: "/contributions", label: "家庭投递箱", icon: "upload", capability: "contribution:create" },
   { href: "/capsules", label: "时间胶囊", icon: "capsule", capability: "capsule:write" },
   { href: "/books", label: "书籍与备份", icon: "book", capability: "archive:view" },
+  { href: "/imports", label: "批量导入", icon: "upload", capability: "archive:view" },
   { href: "/settings", label: "设置", icon: "settings", capability: "archive:view" },
   { href: "/trash", label: "回收站", icon: "trash", capability: "event:write" },
 ];
@@ -37,12 +39,12 @@ export function filterNavigationByCapabilities(
   return items.filter((item) => allowed.has(item.capability));
 }
 
-const MORE_PREFIXES = ["/more", "/search", "/review", "/family", "/stories", "/requests", "/capsules", "/books", "/imports", "/settings", "/trash"];
+const MORE_PREFIXES = ["/more", "/search", "/review", "/family", "/stories", "/requests", "/contributions", "/capsules", "/books", "/imports", "/settings", "/trash"];
 
-export function isNavigationItemActive(pathname: string, href: string, mobile = false): boolean {
+export function isNavigationItemActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
-  if (mobile && href === "/timeline" && pathname.startsWith("/memories/")) return true;
-  if (mobile && href === "/more") return MORE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  if (href === "/timeline" && pathname.startsWith("/memories/")) return true;
+  if (href === "/more") return MORE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   if (href === "/settings") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
