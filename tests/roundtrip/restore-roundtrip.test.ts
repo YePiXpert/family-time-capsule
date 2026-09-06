@@ -67,6 +67,8 @@ type Expectation = {
     status: string;
     rawText: string | null;
     draftTitle: string | null;
+    titleSource: string;
+    titleRevision: number;
     draftOccurredAt: string | null;
     draftLocationText: string | null;
     participantPersonIds: string[];
@@ -725,6 +727,8 @@ beforeAll(async () => {
         status: inboxRow.status,
         rawText: inboxRow.rawText,
         draftTitle: inboxRow.draftTitle,
+        titleSource: inboxRow.titleSource,
+        titleRevision: inboxRow.titleRevision,
         draftOccurredAt: inboxRow.draftOccurredAt?.toISOString() ?? null,
         draftLocationText: inboxRow.draftLocationText,
         participantPersonIds: [] as string[],
@@ -926,6 +930,8 @@ beforeAll(async () => {
         status: inboxRow.status,
         rawText: inboxRow.rawText,
         draftTitle: inboxRow.draftTitle,
+        titleSource: inboxRow.titleSource,
+        titleRevision: inboxRow.titleRevision,
         draftOccurredAt: inboxRow.draftOccurredAt?.toISOString() ?? null,
         draftLocationText: inboxRow.draftLocationText,
         participantPersonIds: [] as string[],
