@@ -21,10 +21,20 @@ Anthropic 或任何特定 SDK：
         ▼         ▼          ▼            ▼
       text      vision  transcription  embeddings
         │         │          │            │
-        ├─────────┴──────────┴────────────┤
-        ▼                                 ▼
-Null / Deterministic Fake       OpenAI-compatible adapter
+   ┌───────┬─────┴──┐   ┌───┴────┐
+   ▼       ▼        ▼   ▼        
+ CPA/Luna CPA/Luna  MiMo-V2.5-ASR（M6 双路由）
+ (dual)  (dual)     chat/completions + input_audio
+   │       │        │   │
+   ├───────┴────────┴───┴────────────┤
+   ▼                                 ▼
+Null / Deterministic Fake       OpenAI-compatible adapter + MimoAsrTranscriber
 ```
+
+M6 双路由（`AI_PROVIDER=dual`）：文字/图片/embeddings → 主通道（CPA，
+默认 `gpt-5.6-luna`）；语音转写 → MiMo（默认 `mimo-v2.5-asr`）。
+任务、同意与披露按**能力**解析实际接收方（`capabilities[*].providerId/
+providerName/configurationId`），因此换语音 Key 不会波及文字能力的历史同意。
 
 能力接口分别是：
 

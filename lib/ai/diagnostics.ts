@@ -6,12 +6,34 @@ import sharp from "sharp";
 import { loadAiProviderConfig, type AiEnvironment } from "./config";
 import type { MemoryAssistant } from "./types";
 
-export const AI_ENV_KEYS = ["AI_CONFIGURATION_ID", "AI_PROVIDER", "AI_BASE_URL", "AI_API_KEY", "AI_PROVIDER_LABEL", "AI_MODEL", "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL", "AI_EMBEDDING_MODEL", "AI_REQUEST_TIMEOUT_MS", "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER", "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT"] as const;
+export const AI_ENV_KEYS = ["AI_CONFIGURATION_ID", "AI_PROVIDER", "AI_BASE_URL", "AI_API_KEY", "AI_PROVIDER_LABEL", "AI_MODEL", "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL", "AI_EMBEDDING_MODEL", "AI_REQUEST_TIMEOUT_MS", "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER", "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT", "ASR_CONFIGURATION_ID", "ASR_BASE_URL", "ASR_API_KEY", "ASR_PROVIDER_LABEL", "ASR_MODEL", "ASR_LANGUAGE", "ASR_REQUEST_TIMEOUT_MS", "ASR_MAX_REQUEST_BYTES", "ASR_MAX_RESPONSE_BYTES"] as const;
 
 /** No key or key digest. Used inside each running container. Never calls a model. */
 export function aiConfigurationStatus(env: AiEnvironment = process.env) {
   const config = loadAiProviderConfig(env);
   if (config.kind === "disabled") return { enabled: false, configured: false, keyConfigured: Boolean(env.AI_API_KEY) };
+  if (config.kind === "dual-route") {
+    const { primary, asr } = config;
+    return {
+      enabled: true, configured: true, keyConfigured: true,
+      provider: "dual-route",
+      primary: {
+        configurationId: primary.configurationId,
+        endpoint: primary.baseUrl, provider: primary.providerLabel, models: primary.models,
+        requestTimeoutMs: primary.requestTimeoutMs, maxRequestBytes: primary.maxRequestBytes,
+        maxResponseBytes: primary.maxResponseBytes, tokenParameter: primary.tokenParameter,
+        temperatureSupported: primary.temperatureSupported, jsonMode: primary.jsonMode,
+        transcriptionFormat: primary.transcriptionFormat,
+      },
+      asr: {
+        configurationId: asr.configurationId,
+        endpoint: asr.baseUrl, provider: asr.providerLabel, model: asr.model,
+        language: asr.language, requestTimeoutMs: asr.requestTimeoutMs,
+        maxRequestBytes: asr.maxRequestBytes, maxResponseBytes: asr.maxResponseBytes,
+      },
+      capabilities: config.capabilities,
+    };
+  }
   return {
     enabled: true, configured: true, keyConfigured: true,
     configurationId: config.configurationId,

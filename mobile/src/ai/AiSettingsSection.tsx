@@ -82,10 +82,12 @@ function SettingsContent({ scope }: { scope: string }) {
         if (mutation === version.current) setError(reason instanceof Error ? reason.message : "授权未保存，请刷新状态后重试。");
       } finally { if (mutation === version.current) setBusy(false); }
     };
-    const model = status.capabilities.find(row => row.capability === capability)?.model;
+    const capabilityRow = status.capabilities.find(row => row.capability === capability);
+    const model = capabilityRow?.model;
+    const receiver = capabilityRow?.receiver ?? status.provider;
     Alert.alert(enabled ? "关闭这项外部处理？" : `允许${labels[capability]}？`, enabled
       ? "等待中的相关 AI 任务会取消，已发出的远端请求不能保证撤回。记录、同步与其他后台任务仍可使用。"
-      : `接收服务：${status.provider}\n模型：${model}\n会发送：${content[capability]}。\n仅适用于有权家人手动选中的内容，从确认后起效，不补处理历史资料，不自动确认人物、时间或合并。服务可能收费，可随时在此关闭。`,
+      : `接收服务：${receiver}\n模型：${model}\n会发送：${content[capability]}。\n仅适用于有权家人手动选中的内容，从确认后起效，不补处理历史资料，不自动确认人物、时间或合并。服务可能收费，可随时在此关闭。`,
     [{ text: "取消", style: "cancel" }, { text: enabled ? "确认关闭" : "同意手动处理", onPress: () => void apply() }]);
   };
 
@@ -96,7 +98,7 @@ function SettingsContent({ scope }: { scope: string }) {
     {error ? <Text accessibilityRole="alert" style={sharedStyles.warningText}>{error}</Text> : null}
     {status?.capabilities.map(row => <View key={row.capability}>
       <Text style={sharedStyles.body}>{labels[row.capability]} · {!row.available ? "未配置" : row.consented ? "已同意" : "等待同意"}</Text>
-      {row.available ? <Text style={sharedStyles.body}>模型：{row.model} · {row.check.state === "passed" ? "测试通过" : row.check.state === "failed" ? "测试失败" : "尚未测试"}</Text> : null}
+      {row.available ? <Text style={sharedStyles.body}>{row.receiver ? `接收服务：${row.receiver} · ` : ""}模型：{row.model} · {row.check.state === "passed" ? "测试通过" : row.check.state === "failed" ? "测试失败" : "尚未测试"}</Text> : null}
       {row.available && status.canConfigure && status.external ? <Pressable disabled={!verified || busy || online === false} onPress={() => confirm(row.capability, row.consented)} style={[sharedStyles.secondaryButton, (!verified || busy || online === false) && sharedStyles.disabled]}><Text style={sharedStyles.secondaryText}>{row.consented ? "关闭这项外部处理" : "查看并同意手动处理"}</Text></Pressable> : null}
     </View>)}
     <Text style={sharedStyles.body}>配置与能力检测由部署管理员在 VPS 使用 ftc ai 完成。App 不保存模型 Key，也不继承开发工具的模型账号。</Text>

@@ -21,8 +21,20 @@ ftc ai disable
 默认目录 `/opt/family-time-capsule`，配置在 `config/env`，有效模板在
 `releases/current/compose.yml`。工具需要 Python 3、Docker Compose v2 和 flock。
 
-configure 中文引导 endpoint、接收服务名称、三种模型与有限协议选项；
-某项模型留空只关闭那项能力。不预选商业模型，不自动更换供应商。
+configure 中文引导路由模式与 endpoint、接收服务名称、模型与有限协议选项。
+
+**正式 1.0 默认双路由（M6）**：`dual` 模式下文字与图片走你的 CPA
+（默认模型 `gpt-5.6-luna`，Base URL 可用官方兼容地址或第三方兼容端点），
+语音转写走 MiMo（默认端点 `https://api.xiaomimimo.com/v1`，默认模型
+`mimo-v2.5-asr`，语种 auto/zh/en）。两条路由的 Base URL、Key、模型与
+部署身份相互独立：只改一条路由的配置不会让另一条的历史同意失效。
+MiMo 采用小米官方 ASR 契约（`chat/completions` + `input_audio`，`api-key`
+认证头），仅接受 mp3/wav；其它音频格式会在转写前经 ffmpeg 转成有界 WAV
+（原件不动）。MiMo 响应不含逐句时间戳，转录层只提供全文，不虚构定位。
+
+`single` 模式保留单一 OpenAI 兼容端点（含 `/audio/transcriptions` 转写），
+供确实只有一套端点的部署使用。某项模型留空只关闭那项能力；
+不自动更换供应商。
 Key 只在真实终端隐藏输入，不支持 `--key`、普通管道或把 Key 写入命令历史。
 公网 endpoint 必须 HTTPS，仅 loopback 允许 HTTP。不绕过证书，不跟随重定向。
 

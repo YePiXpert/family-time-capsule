@@ -24,6 +24,14 @@ export type AiCapabilityStatus = Readonly<{
   available: boolean;
   model: string | null;
   reason: AiCapabilityReason;
+  /**
+   * M6 双路由：该能力实际接收服务的身份。单通道运行时缺省，
+   * 任务/同意/披露按能力解析时回退到聚合 provider 描述符。
+   */
+  providerId?: string;
+  providerName?: string;
+  /** 分能力部署身份：只改另一条路由的配置时，本能力的同意不失效。 */
+  configurationId?: string;
 }>;
 
 export type AiCapabilityMap = Readonly<

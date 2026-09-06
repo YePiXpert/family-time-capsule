@@ -143,6 +143,42 @@ function runtimeModel(
     : null;
 }
 
+/**
+ * M6 双路由：按能力解析实际接收方。单通道运行时没有分能力覆盖，
+ * 回退到聚合 provider 描述符（行为与历史版本一致）。
+ */
+function capabilityProvider(
+  runtime: AiJobRuntimeIdentity | null,
+  capability: AiCapability,
+): {
+  id: string;
+  displayName: string;
+  external: boolean;
+  configurationId: string;
+} {
+  const fallback = {
+    id: runtime?.provider.id ?? "",
+    displayName: runtime?.provider.displayName ?? "",
+    external: runtime?.provider.external ?? false,
+    configurationId: runtime?.provider.configurationId ?? "",
+  };
+  const status = runtime?.capabilities[capability];
+  if (
+    status?.providerId !== undefined &&
+    isSafeProviderLabel(status.providerId, 100) &&
+    (status.providerName === undefined ||
+      isSafeProviderLabel(status.providerName, 100))
+  ) {
+    return {
+      id: status.providerId,
+      displayName: status.providerName ?? fallback.displayName,
+      external: fallback.external,
+      configurationId: status.configurationId ?? fallback.configurationId,
+    };
+  }
+  return fallback;
+}
+
 function isCapability(value: unknown): value is AiCapability {
   return (
     typeof value === "string" &&
@@ -459,15 +495,20 @@ function currentRuntimeMatches(
   job: typeof aiJob.$inferSelect,
   runtime: AiJobRuntimeIdentity | null,
 ): boolean {
-  const model = isCapability(job.requiredCapability)
-    ? runtimeModel(runtime, job.requiredCapability)
+  const capability = isCapability(job.requiredCapability)
+    ? job.requiredCapability
     : null;
+  const model = capability !== null ? runtimeModel(runtime, capability) : null;
+  const provider =
+    capability !== null ? capabilityProvider(runtime, capability) : null;
   return (
     runtime !== null &&
+    capability !== null &&
     model !== null &&
-    runtime.provider.id === job.providerId &&
-    (runtime.provider.configurationId ?? "") === job.configurationId &&
-    runtime.provider.external === job.providerExternal &&
+    provider !== null &&
+    provider.id === job.providerId &&
+    provider.configurationId === job.configurationId &&
+    provider.external === job.providerExternal &&
     model === job.model
   );
 }
@@ -508,6 +549,9 @@ function externalConsentMatches(
   runtime: AiJobRuntimeIdentity,
 ): boolean {
   if (!job.providerExternal) return job.consentVersion === null;
+  const provider = isCapability(job.requiredCapability)
+    ? capabilityProvider(runtime, job.requiredCapability)
+    : { id: runtime.provider.id, displayName: runtime.provider.displayName, external: runtime.provider.external, configurationId: runtime.provider.configurationId ?? "" };
   return Boolean(
     tx
       .select({ id: aiProcessingConsent.id })
@@ -517,9 +561,9 @@ function externalConsentMatches(
           eq(aiProcessingConsent.familyId, job.familyId),
           eq(aiProcessingConsent.capability, job.requiredCapability),
           eq(aiProcessingConsent.enabled, true),
-          eq(aiProcessingConsent.providerId, runtime.provider.id),
-          eq(aiProcessingConsent.configurationId, runtime.provider.configurationId ?? ""),
-          eq(aiProcessingConsent.providerName, runtime.provider.displayName),
+          eq(aiProcessingConsent.providerId, provider.id),
+          eq(aiProcessingConsent.configurationId, provider.configurationId),
+          eq(aiProcessingConsent.providerName, provider.displayName),
           eq(aiProcessingConsent.model, job.model),
           eq(aiProcessingConsent.disclosureVersion, AI_CONSENT_DISCLOSURE_VERSION),
           eq(aiProcessingConsent.consentVersion, job.consentVersion ?? -1),
@@ -604,11 +648,15 @@ export function enableAiProcessingConsent(
   const model = isCapability(input.capability)
     ? runtimeModel(runtime, input.capability)
     : null;
+  const provider = isCapability(input.capability)
+    ? capabilityProvider(runtime, input.capability)
+    : null;
   if (
     !runtime ||
     !runtime.provider.external ||
+    !provider ||
     model === null ||
-    ((!options.runtime || input.configurationId !== undefined) && input.configurationId !== runtime.provider.configurationId) ||
+    ((!options.runtime || input.configurationId !== undefined) && input.configurationId !== provider.configurationId) ||
     typeof input.allowAutomaticFamilyContent !== "boolean"
   ) {
     return { ok: false, error: "invalid_input" };
@@ -640,9 +688,9 @@ export function enableAiProcessingConsent(
         capability: input.capability,
         enabled: true,
         allowAutomaticFamilyContent: input.allowAutomaticFamilyContent,
-        providerId: runtime.provider.id,
-        configurationId: runtime.provider.configurationId ?? "",
-        providerName: runtime.provider.displayName,
+        providerId: provider.id,
+        configurationId: provider.configurationId,
+        providerName: provider.displayName,
         model,
         disclosureVersion: AI_CONSENT_DISCLOSURE_VERSION,
         consentVersion,
@@ -679,8 +727,8 @@ export function enableAiProcessingConsent(
             actor.id,
             {
               capability: input.capability,
-              providerId: runtime.provider.id,
-        configurationId: runtime.provider.configurationId ?? "",
+              providerId: provider.id,
+              configurationId: provider.configurationId,
               model,
               consentVersion,
               allowAutomaticFamilyContent: input.allowAutomaticFamilyContent,
@@ -890,7 +938,7 @@ export function listAiProcessingConsents(
       .all()
       .flatMap((row) =>
         isCapability(row.capability)
-          ? [{ ...row, enabled: row.enabled && row.configurationId === (runtimeIdentity(dependencies)?.provider.configurationId ?? ""), capability: row.capability }]
+          ? [{ ...row, enabled: row.enabled && row.configurationId === capabilityProvider(runtimeIdentity(dependencies), row.capability).configurationId, capability: row.capability }]
           : [],
       );
   });
@@ -913,9 +961,12 @@ export function getAiOperationalStatus(context: FamilyContext, dependencies: AiJ
       canConfigure: actor.role === "owner" || actor.role === "admin", workerAvailable,
       capabilities: (["text", "vision", "transcription"] as const).map(capability => {
         const model = runtimeModel(runtime, capability);
+        const provider = capabilityProvider(runtime, capability);
         const consent = consents.find(row => row.capability === capability);
-        const consented = Boolean(runtime && (!runtime.provider.external || (consent?.enabled && consent.providerId === runtime.provider.id && consent.configurationId === (runtime.provider.configurationId ?? "") && consent.model === model)));
-        return { capability, model, available: model !== null, consented, check: checks[capability] };
+        const consented = Boolean(runtime && (!runtime.provider.external || (consent?.enabled && consent.providerId === provider.id && consent.configurationId === provider.configurationId && consent.model === model)));
+        const receiver = runtime?.capabilities[capability]?.providerName ?? runtime?.provider.displayName ?? null;
+        const capabilityConfigurationId = provider.configurationId;
+        return { capability, model, available: model !== null, consented, check: checks[capability], receiver, configurationId: capabilityConfigurationId };
       }),
     };
   });
@@ -989,7 +1040,10 @@ export function enqueueAiJob(
       const revision = targetRevision(tx, input.entityType, input.entityId);
 
       let consentVersion: number | null = null;
-      if (runtime.provider.external) {
+      const enqueueProvider = isCapability(input.requiredCapability)
+        ? capabilityProvider(runtime, input.requiredCapability)
+        : null;
+      if (runtime.provider.external && enqueueProvider) {
         const consent = tx
           .select()
           .from(aiProcessingConsent)
@@ -998,9 +1052,9 @@ export function enqueueAiJob(
               eq(aiProcessingConsent.familyId, input.familyId),
               eq(aiProcessingConsent.capability, input.requiredCapability),
               eq(aiProcessingConsent.enabled, true),
-              eq(aiProcessingConsent.providerId, runtime.provider.id),
-          eq(aiProcessingConsent.configurationId, runtime.provider.configurationId ?? ""),
-              eq(aiProcessingConsent.providerName, runtime.provider.displayName),
+              eq(aiProcessingConsent.providerId, enqueueProvider.id),
+          eq(aiProcessingConsent.configurationId, enqueueProvider.configurationId),
+              eq(aiProcessingConsent.providerName, enqueueProvider.displayName),
               eq(aiProcessingConsent.model, model),
               eq(
                 aiProcessingConsent.disclosureVersion,
@@ -1030,8 +1084,8 @@ export function enqueueAiJob(
         entityType: input.entityType,
         entityId: input.entityId,
         requiredCapability: input.requiredCapability,
-        providerId: runtime.provider.id,
-        configurationId: runtime.provider.configurationId ?? "",
+        providerId: enqueueProvider ? enqueueProvider.id : runtime.provider.id,
+        configurationId: enqueueProvider ? enqueueProvider.configurationId : runtime.provider.configurationId ?? "",
         providerExternal: runtime.provider.external,
         model,
         consentVersion,
@@ -1767,7 +1821,10 @@ function retryAiJobUnchecked(
       }
 
       let consentVersion: number | null = null;
-      if (runtime.provider.external) {
+      const retryProvider = isCapability(old.requiredCapability)
+        ? capabilityProvider(runtime, old.requiredCapability)
+        : null;
+      if (runtime.provider.external && retryProvider) {
         const consent = tx
           .select()
           .from(aiProcessingConsent)
@@ -1776,9 +1833,9 @@ function retryAiJobUnchecked(
               eq(aiProcessingConsent.familyId, old.familyId),
               eq(aiProcessingConsent.capability, old.requiredCapability),
               eq(aiProcessingConsent.enabled, true),
-              eq(aiProcessingConsent.providerId, runtime.provider.id),
-          eq(aiProcessingConsent.configurationId, runtime.provider.configurationId ?? ""),
-              eq(aiProcessingConsent.providerName, runtime.provider.displayName),
+              eq(aiProcessingConsent.providerId, retryProvider.id),
+          eq(aiProcessingConsent.configurationId, retryProvider.configurationId),
+              eq(aiProcessingConsent.providerName, retryProvider.displayName),
               eq(aiProcessingConsent.model, model),
               eq(
                 aiProcessingConsent.disclosureVersion,
@@ -1816,8 +1873,8 @@ function retryAiJobUnchecked(
         dependencies,
         targetRevision: revision,
         requestedByUserId: actor.id,
-        providerId: runtime.provider.id,
-        configurationId: runtime.provider.configurationId ?? "",
+        providerId: retryProvider ? retryProvider.id : runtime.provider.id,
+        configurationId: retryProvider ? retryProvider.configurationId : runtime.provider.configurationId ?? "",
         providerExternal: runtime.provider.external,
         model,
         consentVersion,
@@ -1851,8 +1908,8 @@ function retryAiJobUnchecked(
           entityId: old.entityId,
           targetRevision: revision,
           requiredCapability: old.requiredCapability,
-          providerId: runtime.provider.id,
-        configurationId: runtime.provider.configurationId ?? "",
+          providerId: retryProvider ? retryProvider.id : runtime.provider.id,
+          configurationId: retryProvider ? retryProvider.configurationId : runtime.provider.configurationId ?? "",
           model,
           providerExternal: runtime.provider.external,
           consentVersion,

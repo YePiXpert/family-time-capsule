@@ -22,6 +22,8 @@ AI_KEYS = (
     "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL", "AI_EMBEDDING_MODEL", "AI_REQUEST_TIMEOUT_MS",
     "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER",
     "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT",
+    "ASR_CONFIGURATION_ID", "ASR_BASE_URL", "ASR_API_KEY", "ASR_PROVIDER_LABEL", "ASR_MODEL",
+    "ASR_LANGUAGE", "ASR_REQUEST_TIMEOUT_MS", "ASR_MAX_REQUEST_BYTES", "ASR_MAX_RESPONSE_BYTES",
 )
 
 
@@ -122,6 +124,17 @@ def validate_configuration(values):
             raise OperationError("模型名称过长。")
     if len(values["AI_PROVIDER_LABEL"]) > 100:
         raise OperationError("服务名称过长。")
+    if values["AI_PROVIDER"] == "dual":
+        asr_url = urlsplit(values["ASR_BASE_URL"] or "https://api.xiaomimimo.com/v1")
+        if not asr_url.hostname or asr_url.username or asr_url.password or asr_url.query or asr_url.fragment:
+            raise OperationError("MiMo 语音 endpoint 必须是无账号、查询或片段的绝对地址。")
+        asr_loopback = asr_url.hostname in ("localhost", "::1") or bool(re.fullmatch(r"127(?:\.\d{1,3}){3}", asr_url.hostname))
+        if asr_url.scheme != "https" and not (asr_url.scheme == "http" and asr_loopback):
+            raise OperationError("公网语音 endpoint 必须使用 HTTPS；不跳过证书校验。")
+        if not values["ASR_API_KEY"] or not values["ASR_MODEL"]:
+            raise OperationError("双路由需要 MiMo 语音 Key 与模型。")
+        if values["ASR_LANGUAGE"] not in ("auto", "zh", "en"):
+            raise OperationError("ASR_LANGUAGE 只能是 auto / zh / en。")
     for key, choices in {
         "AI_TOKEN_PARAMETER": ("max_tokens", "max_completion_tokens"),
         "AI_TEMPERATURE_SUPPORTED": ("true", "false"),
@@ -200,7 +213,7 @@ class Installation:
     def change(self, values):
         original_env = self.env_file.read_text()
         original_compose = self.compose_file.read_text()
-        new_env = update_environment(original_env, {**values, "AI_CONFIGURATION_ID": str(uuid.uuid4())})
+        new_env = update_environment(original_env, {**values, "AI_CONFIGURATION_ID": str(uuid.uuid4()), "ASR_CONFIGURATION_ID": str(uuid.uuid4())})
         new_compose = update_template(original_compose)
         recovery = self.state / "ai-recovery.json"
         if recovery.exists():
@@ -258,23 +271,41 @@ def configure_input():
     if not sys.stdin.isatty():
         raise OperationError("配置需要真实终端，Key 只允许隐藏输入。")
     values = {key: "" for key in AI_KEYS}
-    values.update({"AI_PROVIDER": "openai-compatible", "AI_REQUEST_TIMEOUT_MS": "30000", "AI_MAX_REQUEST_BYTES": "33554432", "AI_MAX_RESPONSE_BYTES": "4194304"})
+    values.update({"AI_REQUEST_TIMEOUT_MS": "30000", "AI_MAX_REQUEST_BYTES": "33554432", "AI_MAX_RESPONSE_BYTES": "4194304"})
     print("配置发生在此 VPS；不会继承开发工具的模型登录。Key 隐藏输入，不进入参数或 history。")
+    print("推荐路由（1.0 默认）：文字与图片走你的 CPA（gpt-5.6-luna），语音转写走 MiMo（mimo-v2.5-asr）。")
+    mode = ""
+    while mode not in ("dual", "single"):
+        mode = input("路由模式：dual=双路由（推荐）/ single=单一兼容端点（关闭请用 ftc ai disable） [dual]：") or "dual"
+    values["AI_PROVIDER"] = "dual" if mode == "dual" else "openai-compatible"
     for key, prompt, default in (
-        ("AI_BASE_URL", "endpoint（如 https://provider.example/v1）", ""),
+        ("AI_BASE_URL", "CPA/兼容端点（如 https://provider.example/v1）", ""),
         ("AI_PROVIDER_LABEL", "接收服务名称", "我的 AI 服务"),
-        ("AI_MODEL", "文字模型（空白关闭此能力）", ""),
-        ("AI_VISION_MODEL", "视觉模型（空白关闭此能力）", ""),
-        ("AI_TRANSCRIPTION_MODEL", "转写模型（空白关闭此能力）", ""),
+        ("AI_MODEL", "文字模型" + ("（回车用默认 gpt-5.6-luna）" if mode == "dual" else "（空白关闭此能力）"), "gpt-5.6-luna" if mode == "dual" else ""),
+        ("AI_VISION_MODEL", "视觉模型" + ("（回车同文字模型）" if mode == "dual" else "（空白关闭此能力）"), "gpt-5.6-luna" if mode == "dual" else ""),
         ("AI_TOKEN_PARAMETER", "token 参数 max_completion_tokens / max_tokens", "max_completion_tokens"),
         ("AI_TEMPERATURE_SUPPORTED", "模型支持 temperature：true / false", "true"),
         ("AI_JSON_MODE", "文字 JSON 模式 json_object / prompt_only", "json_object"),
-        ("AI_TRANSCRIPTION_FORMAT", "转写格式 json / verbose_json / text", "json"),
     ):
         values[key] = input(f"{prompt}" + (f" [{default}]" if default else "") + "：") or default
+    if mode == "single":
+        for key, prompt, default in (
+            ("AI_TRANSCRIPTION_MODEL", "转写模型（空白关闭此能力）", ""),
+            ("AI_TRANSCRIPTION_FORMAT", "转写格式 json / verbose_json / text", "json"),
+        ):
+            values[key] = input(f"{prompt}" + (f" [{default}]" if default else "") + "：") or default
     if not sys.stdin.isatty():
         raise OperationError("Key 只允许在终端隐藏输入；不从命令参数或普通管道读取。")
-    values["AI_API_KEY"] = getpass.getpass("API Key（隐藏）：")
+    values["AI_API_KEY"] = getpass.getpass("文字/图片端点 API Key（隐藏）：")
+    if mode == "dual":
+        for key, prompt, default in (
+            ("ASR_BASE_URL", "MiMo 语音端点", "https://api.xiaomimimo.com/v1"),
+            ("ASR_PROVIDER_LABEL", "语音接收服务名称", "MiMo 语音识别"),
+            ("ASR_MODEL", "语音模型", "mimo-v2.5-asr"),
+            ("ASR_LANGUAGE", "语种 auto / zh / en", "auto"),
+        ):
+            values[key] = input(f"{prompt}" + (f" [{default}]" if default else "") + "：") or default
+        values["ASR_API_KEY"] = getpass.getpass("MiMo 语音 API Key（隐藏）：")
     validate_configuration(values)
     print("将更新本项目有效模板并重建 app/worker，短暂中断服务；不发送模型请求。")
     return values

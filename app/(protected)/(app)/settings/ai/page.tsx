@@ -143,6 +143,7 @@ export default async function AiSettingsPage() {
                   </div>
                   {status.model && (
                     <p className="mt-3 text-xs text-foreground/50">
+                      {status.providerName ? `接收服务：${status.providerName} · ` : ""}
                       Model：{status.model}
                     </p>
                   )}
@@ -156,7 +157,7 @@ export default async function AiSettingsPage() {
                       <AiConsentControls
                         capability={capability}
                         enabled={consent?.enabled === true}
-                        configurationId={operational?.configurationId ?? ""}
+                        configurationId={status.configurationId ?? operational?.configurationId ?? ""}
                       />
                     )}
                 </article>

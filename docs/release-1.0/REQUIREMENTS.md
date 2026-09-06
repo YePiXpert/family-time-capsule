@@ -112,10 +112,10 @@
 
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| AI-1 | 默认路由:文字+图片→CPA→gpt-5.6-luna;语音→MiMo mimo-v2.5-asr | 两路独立BaseURL/Key/模型 | 未实现(现为单 openai-compatible 通道) | lib/ai/config.ts |
+| AI-1 | 默认路由:文字+图片→CPA→gpt-5.6-luna;语音→MiMo mimo-v2.5-asr | 两路独立BaseURL/Key/模型 | 自动化通过(M6 dual 配置+默认模型+分能力绑定;真实链路见 BLK-1/2) | lib/ai/config.ts; lib/ai/dual-route.ts; tests/unit/ai-dual-route-*.test.ts |
 | AI-2 | Luna 支持官方兼容地址+管理员可改第三方BaseURL | Responses/Chat Completions 按能力profile | 部分实现(Chat Completions 有;Responses 未验证) | lib/ai/openai-compatible.ts |
 | AI-3 | CPA 只支持文字时如实降级,不假装视觉可用 | 用非私人测试图实测理解 | 部分实现(能力测试有 text/vision/transcription;需按新双路由重构) | scripts/ai-diagnostics.mts |
-| AI-4 | MiMo 按小米官方ASR契约实现,不默认OpenAI transcriptions端点 | 音频编码/时长/分段/时间戳核验 | 未实现 | — |
+| AI-4 | MiMo 按小米官方ASR契约实现,不默认OpenAI transcriptions端点 | 音频编码/时长/分段/时间戳核验 | 自动化通过(M6:chat/completions+input_audio+api-key;mp3/wav直传其余转WAV;无时戳不虚构;真实契约 BLK-2) | lib/ai/mimo-asr.ts; tests/unit/ai-mimo-asr.test.ts |
 | AI-5 | 普通成员只见"文字与图片整理/语音转写";高级配置显地址与模型 | 分能力授权 | 自动化通过 | settings/ai; mobile ai/settings |
 | AI-6 | ftc ai configure/status/test/disable;服务端安全存Key;重建不丢配置;status不偷发付费请求 | 已有,需扩双路由 | 自动化通过 | scripts/ops/lib/ai.py |
 | AI-7 | 规则命名不接模型也有友好名;保留originalFilename | 三名称分离 | 自动化通过 | lib/naming; lib/names |
@@ -130,11 +130,11 @@
 | AI-16 | AI晚到不覆盖人工标题;采用才提交修订 | 修改后采用/忽略/撤销/重生成/批量 | 自动化通过 | tests/integration/suggestions |
 | AI-17 | 不编造"第一次/出院/亲属身份/健康判断";无真实时间不补造日期 | sourceRef+引文 | 自动化通过 | facts/source-refs |
 | AI-18 | 私密上下文不传播到家庭公共标题;索引/缓存随权限变化 | 派生权限 | 自动化通过 | visibility post-filter |
-| AI-19 | AI默认关闭;分能力内容告知(→谁/用途/保留未知/关闭) | 上传VPS与送CPA/MiMo分环节告知 | 自动化通过(告知文案需按双路由更新) | lib/ai/capabilities |
+| AI-19 | AI默认关闭;分能力内容告知(→谁/用途/保留未知/关闭方式) | 上传VPS与送CPA/MiMo分环节告知 | 自动化通过(M6:能力卡与移动端显示分能力接收服务) | settings/ai; mobile/src/ai |
 | AI-20 | 自动新素材/历史回填/访客资料分开授权 | 不当同意全量 | 自动化通过 | ai_processing_consent |
 | AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 部分实现(重试/取消有;每日配额未实现) | lib/ai/jobs |
 | AI-22 | 文件名/OCR/转录是数据不是指令;不取URL/执行命令/读无关上下文 | 提示注入防护 | 部分实现(无系统声明与注入测试) | validation |
-| AI-23 | Luna文字/Luna图片/MiMo语音三个独立live测试;fake/集成/live分层 | 无凭据不勾选真实链路 | 部分实现(单通道测试有;双路由live测试未做) | ftc ai test |
+| AI-23 | Luna文字/Luna图片/MiMo语音三个独立live测试;fake/集成/live分层 | 无凭据不勾选真实链路 | 部分实现(M6:testAiCapability 经工厂自动走 MiMo;真实凭据 BLK-1/2) | scripts/ai-diagnostics.mts; ftc ai test |
 | AI-24 | 不把开发Agent登录态当产品凭据;不放进App | 审查 | 自动化通过(NEXT_PUBLIC key 显式拒绝) | lib/ai/config |
 
 ## FIND — 找回、辅助选材与回顾(M7,白皮书 §9)

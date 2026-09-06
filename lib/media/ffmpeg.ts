@@ -206,3 +206,52 @@ export function extractVideoAudio(absPath: string, signal: AbortSignal): Promise
     child.on("close", code => done(code === 0 && total > 44 ? { status: "ok", bytes: new Uint8Array(Buffer.concat(chunks)) } : { status: "failed" }));
   });
 }
+
+
+/**
+ * M6：把音频原件转成 16kHz 单声道 WAV（MiMo ASR 只接受 mp3/wav；
+ * mp3 原样直传，其余格式由此转换）。有界：时长上限与输出字节上限，
+ * 任一超限返回 failed，绝不静默截断。
+ */
+export const CONVERT_AUDIO_MAX_SECONDS = 600;
+export const CONVERT_AUDIO_MAX_BYTES = 64 * 1024 * 1024;
+const AUDIO_INPUT_FORMAT_WHITELIST =
+  "wav,mp3,flac,ogg,matroska,webm,mov,mp4,m4a,aac,adts,3gp,amr";
+
+export function convertAudioToWav(
+  absPath: string,
+  signal: AbortSignal,
+): Promise<
+  | { status: "ok"; bytes: Uint8Array; durationSeconds: number | null }
+  | { status: "unavailable" | "too_long" | "too_large" | "failed" | "aborted" }
+> {
+  return new Promise(resolve => {
+    if (signal.aborted) { resolve({ status: "aborted" }); return; }
+    const child = spawn(/* turbopackIgnore: true */ ffmpegBinary(), [
+      "-v", "quiet", "-nostdin", "-protocol_whitelist", "file,pipe", "-format_whitelist", AUDIO_INPUT_FORMAT_WHITELIST,
+      "-i", absPath, "-map", "0:a:0", "-vn", "-map_metadata", "-1",
+      "-t", String(CONVERT_AUDIO_MAX_SECONDS), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1",
+    ], { windowsHide: true });
+    const chunks: Buffer[] = [];
+    let total = 0, settled = false;
+    const done = (
+      result:
+        | { status: "ok"; bytes: Uint8Array; durationSeconds: number | null }
+        | { status: "unavailable" | "too_long" | "too_large" | "failed" | "aborted" },
+    ) => {
+      if (settled) return;
+      settled = true; clearTimeout(timeout); signal.removeEventListener("abort", abort); resolve(result);
+    };
+    const abort = () => { child.kill("SIGKILL"); done({ status: "aborted" }); };
+    const timeout = setTimeout(() => { child.kill("SIGKILL"); done({ status: "failed" }); }, 120_000);
+    timeout.unref();
+    signal.addEventListener("abort", abort, { once: true });
+    child.stdout.on("data", (chunk: Buffer) => {
+      total += chunk.byteLength;
+      if (total > CONVERT_AUDIO_MAX_BYTES) { child.kill("SIGKILL"); done({ status: "too_large" }); return; }
+      chunks.push(chunk);
+    });
+    child.on("error", (error: NodeJS.ErrnoException) => done({ status: error.code === "ENOENT" ? "unavailable" : "failed" }));
+    child.on("close", code => done(code === 0 && total > 44 ? { status: "ok", bytes: new Uint8Array(Buffer.concat(chunks)), durationSeconds: null } : { status: "failed" }));
+  });
+}

@@ -6,6 +6,7 @@ import {
   OpenAiCompatibleMemoryAssistant,
   type OpenAiCompatibleDependencies,
 } from "./openai-compatible";
+import { DualRouteMemoryAssistant } from "./dual-route";
 import type { MemoryAssistant } from "./types";
 
 export {
@@ -13,17 +14,24 @@ export {
   configuredModel,
   loadAiProviderConfig,
   summarizeAiConfiguration,
+  DEFAULT_ASR_BASE_URL,
+  DEFAULT_PRIMARY_MODEL,
+  DEFAULT_ASR_MODEL,
   type AiConfigurationSummary,
   type AiEnvironment,
   type AiProviderConfig,
   type DisabledAiProviderConfig,
   type OpenAiCompatibleConfig,
+  type MimoAsrConfig,
+  type DualRouteConfig,
 } from "./config";
 export {
   OpenAiCompatibleMemoryAssistant,
   type AiFetch,
   type OpenAiCompatibleDependencies,
 } from "./openai-compatible";
+export { DualRouteMemoryAssistant } from "./dual-route";
+export { MimoAsrTranscriber } from "./mimo-asr";
 
 /**
  * Runtime factory. Merely constructing an assistant performs no network I/O.
@@ -35,5 +43,8 @@ export function createMemoryAssistant(
 ): MemoryAssistant {
   const config = loadAiProviderConfig(env);
   if (config.kind === "disabled") return new NullMemoryAssistant();
+  if (config.kind === "dual-route") {
+    return new DualRouteMemoryAssistant(config, dependencies);
+  }
   return new OpenAiCompatibleMemoryAssistant(config, dependencies);
 }

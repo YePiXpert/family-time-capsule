@@ -1,5 +1,5 @@
 import { shortVideoError, SHORT_VIDEO_MAX_MS } from "@/lib/ai/media-limits";
-import { extractVideoAudio } from "@/lib/media/ffmpeg";
+import { convertAudioToWav, extractVideoAudio } from "@/lib/media/ffmpeg";
 import { probeMedia } from "@/lib/metadata/ffprobe";
 import { randomUUID } from "node:crypto";
 import { eq, and, sql } from "drizzle-orm";
@@ -85,6 +85,32 @@ export const transcribeAssetHandler: AiJobHandler = async ({
     if (extracted.status !== "ok") throw new AiJobHandlerError(extracted.status === "unavailable" ? "ffmpeg_unavailable" : extracted.status === "aborted" ? "ai_aborted" : "audio_extraction_failed", false);
     bytes = extracted.bytes; mimeType = "audio/wav";
   } else bytes = new Uint8Array(storage.read(asset.storageKey));
+
+  // M6 双路由：MiMo ASR 只接受 mp3/wav。音频原件保持不动，
+  // 非 mp3/wav 先经 ffmpeg 转成有界 WAV 再送转写；失败给出可读错误
+  // 而不是静默降级或截断。
+  if (
+    assistant.provider.id === "dual-route" &&
+    mimeType !== "audio/mpeg" &&
+    mimeType !== "audio/wav"
+  ) {
+    const converted = await convertAudioToWav(storage.resolvePath(asset.storageKey), signal);
+    if (converted.status !== "ok") {
+      throw new AiJobHandlerError(
+        converted.status === "unavailable"
+          ? "ffmpeg_unavailable"
+          : converted.status === "aborted"
+            ? "ai_aborted"
+            : converted.status === "too_large"
+              ? "audio_too_large"
+              : converted.status === "too_long"
+                ? "audio_too_large"
+                : "audio_conversion_failed",
+        false,
+      );
+    }
+    bytes = converted.bytes; mimeType = "audio/wav";
+  }
   const extension: Record<AiAudioInput["mimeType"], string> = { "audio/flac": "flac", "audio/m4a": "m4a", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/webm": "webm" };
 
   const result = await assistant.transcribeAudio({

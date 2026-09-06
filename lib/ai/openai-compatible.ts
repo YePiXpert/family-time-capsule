@@ -425,13 +425,24 @@ function extensionForAudio(mimeType: TranscribeAudioInput["audio"]["mimeType"]):
   }
 }
 
-class OpenAiCompatibleTransport {
+/**
+ * Shared HTTP transport for OpenAI-compatible JSON endpoints.
+ * M6：MiMo ASR 适配器复用同一传输层（超时/中止/错误映射/有界读取），
+ * 仅端点路径与认证头不同（MiMo 文档主推 api-key 头）。
+ */
+export class OpenAiCompatibleTransport {
   readonly #config: OpenAiCompatibleConfig;
   readonly #fetch: AiFetch;
+  readonly #authHeaders: Readonly<Record<string, string>> | null;
 
-  constructor(config: OpenAiCompatibleConfig, dependencies: OpenAiCompatibleDependencies) {
+  constructor(
+    config: OpenAiCompatibleConfig,
+    dependencies: OpenAiCompatibleDependencies,
+    authHeaders?: Readonly<Record<string, string>>,
+  ) {
     this.#config = config;
     this.#fetch = dependencies.fetch ?? globalThis.fetch.bind(globalThis);
+    this.#authHeaders = authHeaders ?? null;
   }
 
   #endpoint(path: string): string {
@@ -441,7 +452,9 @@ class OpenAiCompatibleTransport {
   #headers(contentType: boolean): Headers {
     const headers = new Headers({
       accept: "application/json",
-      authorization: `Bearer ${this.#config.apiKey.revealForProvider()}`,
+      ...(this.#authHeaders ?? {
+        authorization: `Bearer ${this.#config.apiKey.revealForProvider()}`,
+      }),
     });
     if (contentType) headers.set("content-type", "application/json");
     return headers;

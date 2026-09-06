@@ -71,13 +71,42 @@ export type OpenAiCompatibleConfig = Readonly<{
   transcriptionFormat: "json" | "verbose_json" | "text";
 }>;
 
+/**
+ * M6 语音路由：MiMo-V2.5-ASR（小米官方 OpenAI 兼容契约）。
+ * - 端点是 chat/completions + input_audio（data URL Base64），不是
+ *   /audio/transcriptions multipart；
+ * - 认证头 api-key；响应文本在 choices[0].message.content；
+ * - 仅接受 mp3 与 wav；响应不含逐段时间戳（转写层不得虚构 segments）。
+ */
+export type MimoAsrConfig = Readonly<{
+  kind: "mimo-asr";
+  baseUrl: string;
+  configurationId: string;
+  apiKey: AiSecret;
+  providerLabel: string;
+  model: string;
+  language: "auto" | "zh" | "en";
+  requestTimeoutMs: number;
+  maxRequestBytes: number;
+  maxResponseBytes: number;
+}>;
+
+/** M6 双路由：文字/图片（含 embeddings）走 CPA，语音转写走 MiMo。 */
+export type DualRouteConfig = Readonly<{
+  kind: "dual-route";
+  primary: OpenAiCompatibleConfig;
+  asr: MimoAsrConfig;
+  capabilities: AiCapabilityMap;
+}>;
+
 export type AiProviderConfig =
   | DisabledAiProviderConfig
-  | OpenAiCompatibleConfig;
+  | OpenAiCompatibleConfig
+  | DualRouteConfig;
 
 export type AiConfigurationSummary = Readonly<{
   enabled: boolean;
-  providerId: "disabled" | "openai-compatible";
+  providerId: "disabled" | "openai-compatible" | "dual-route";
   providerName: string;
   capabilities: AiCapabilityMap;
 }>;
@@ -191,6 +220,97 @@ function normalizeBaseUrl(value: string): string {
   return url.href.replace(/\/$/u, "");
 }
 
+/** M6：MiMo 官方 ASR 端点（chat/completions 契约）的默认地址。 */
+export const DEFAULT_ASR_BASE_URL = "https://api.xiaomimimo.com/v1";
+/** M6：Goal 固定的两条默认模型路由。 */
+export const DEFAULT_PRIMARY_MODEL = "gpt-5.6-luna";
+export const DEFAULT_ASR_MODEL = "mimo-v2.5-asr";
+
+function normalizeAsrBaseUrl(value: string): string {
+  // 与主路由同一套安全规则，但变量名指向 ASR_*。
+  try {
+    const checked = normalizeBaseUrl(value);
+    return checked;
+  } catch (error) {
+    if (error instanceof AiConfigurationError) {
+      throw new AiConfigurationError(
+        error.message.replace("AI_BASE_URL", "ASR_BASE_URL"),
+        "ASR_BASE_URL",
+      );
+    }
+    throw error;
+  }
+}
+
+function loadAsrChannel(env: AiEnvironment): MimoAsrConfig {
+  const baseUrl = normalizeAsrBaseUrl(
+    env.ASR_BASE_URL && env.ASR_BASE_URL !== ""
+      ? env.ASR_BASE_URL
+      : DEFAULT_ASR_BASE_URL,
+  );
+  const apiKeyRaw = requireNonEmpty(env, "ASR_API_KEY");
+  if (apiKeyRaw.length > 4096) {
+    throw new AiConfigurationError("ASR_API_KEY is too long.", "ASR_API_KEY");
+  }
+  const model = optionalModel(env, "ASR_MODEL") ?? DEFAULT_ASR_MODEL;
+  const providerLabel =
+    env.ASR_PROVIDER_LABEL && env.ASR_PROVIDER_LABEL !== ""
+      ? env.ASR_PROVIDER_LABEL
+      : "MiMo 语音识别";
+  if (
+    providerLabel.trim() !== providerLabel ||
+    providerLabel.length === 0 ||
+    providerLabel.length > 100 ||
+    /[\u0000-\u001f\u007f]/u.test(providerLabel)
+  ) {
+    throw new AiConfigurationError(
+      "ASR_PROVIDER_LABEL is invalid.",
+      "ASR_PROVIDER_LABEL",
+    );
+  }
+  const language = option(env, "ASR_LANGUAGE", ["auto", "zh", "en"], "auto");
+  return Object.freeze({
+    kind: "mimo-asr",
+    baseUrl,
+    configurationId: createHash("sha256")
+      .update(
+        JSON.stringify({
+          baseUrl,
+          model,
+          providerLabel,
+          language,
+          revision: optionalModel(env, "ASR_CONFIGURATION_ID"),
+        }),
+      )
+      .digest("hex"),
+    apiKey: new AiSecret(apiKeyRaw),
+    providerLabel,
+    model,
+    language,
+    requestTimeoutMs: parseInteger(
+      env,
+      "ASR_REQUEST_TIMEOUT_MS",
+      DEFAULT_AI_REQUEST_TIMEOUT_MS,
+      50,
+      600_000,
+    ),
+    maxRequestBytes: parseInteger(
+      env,
+      "ASR_MAX_REQUEST_BYTES",
+      48 * 1024 * 1024,
+      4096,
+      160 * 1024 * 1024,
+    ),
+    maxResponseBytes: parseInteger(
+      env,
+      "ASR_MAX_RESPONSE_BYTES",
+      DEFAULT_AI_MAX_RESPONSE_BYTES,
+      1024,
+      16 * 1024 * 1024,
+    ),
+  });
+}
+
 function assertNoClientSecretVariables(env: AiEnvironment): void {
   for (const variable of CLIENT_SECRET_VARIABLES) {
     if (env[variable] !== undefined) {
@@ -209,33 +329,10 @@ function option<T extends string>(env: AiEnvironment, key: string, choices: read
   return value as T;
 }
 
-export function loadAiProviderConfig(
-  env: AiEnvironment = process.env,
-): AiProviderConfig {
-  assertAiServerRuntime();
-  assertNoClientSecretVariables(env);
-
-  const provider = env.AI_PROVIDER;
-  if (
-    provider === undefined ||
-    provider === "" ||
-    provider === "disabled" ||
-    provider === "none"
-  ) {
-    // Disabling wins over stale or malformed provider settings. Core use stays available.
-    return Object.freeze({
-      kind: "disabled",
-      capabilities: createCapabilityMap(NO_AI_MODELS, "disabled"),
-    });
-  }
-
-  if (provider !== "openai-compatible") {
-    throw new AiConfigurationError(
-      "AI_PROVIDER must be 'disabled', 'none', or 'openai-compatible'.",
-      "AI_PROVIDER",
-    );
-  }
-
+function loadPrimaryChannel(
+  env: AiEnvironment,
+  defaultModels: boolean,
+): OpenAiCompatibleConfig {
   const baseUrl = normalizeBaseUrl(requireNonEmpty(env, "AI_BASE_URL"));
   const apiKeyValue = requireNonEmpty(env, "AI_API_KEY");
   if (apiKeyValue.length > 4096) {
@@ -243,9 +340,13 @@ export function loadAiProviderConfig(
   }
 
   const models: AiModels = Object.freeze({
-    text: optionalModel(env, "AI_MODEL"),
-    vision: optionalModel(env, "AI_VISION_MODEL"),
-    transcription: optionalModel(env, "AI_TRANSCRIPTION_MODEL"),
+    text: optionalModel(env, "AI_MODEL") ?? (defaultModels ? DEFAULT_PRIMARY_MODEL : null),
+    vision:
+      optionalModel(env, "AI_VISION_MODEL") ??
+      (defaultModels ? optionalModel(env, "AI_MODEL") ?? DEFAULT_PRIMARY_MODEL : null),
+    transcription: defaultModels
+      ? null // 双路由下语音固定走 MiMo，主通道不承接转写。
+      : optionalModel(env, "AI_TRANSCRIPTION_MODEL"),
     embeddings: optionalModel(env, "AI_EMBEDDING_MODEL"),
   });
   if (AI_CAPABILITIES.every((capability) => models[capability] === null)) {
@@ -310,6 +411,88 @@ export function loadAiProviderConfig(
   });
 }
 
+/** 为能力状态标注实际接收方（双路由同意/任务绑定用）。 */
+function withReceiver(
+  status: AiCapabilityMap[AiCapability],
+  receiver: { id: string; label: string; configurationId: string },
+): AiCapabilityMap[AiCapability] {
+  if (!status.available) return status;
+  return Object.freeze({
+    ...status,
+    providerId: receiver.id,
+    providerName: receiver.label,
+    configurationId: receiver.configurationId,
+  });
+}
+
+function loadDualRouteConfig(env: AiEnvironment): DualRouteConfig {
+  const primary = loadPrimaryChannel(env, true);
+  const asr = loadAsrChannel(env);
+  const primaryCapabilities = createCapabilityMap(primary.models, "not_configured");
+  const capabilities = Object.freeze({
+    text: withReceiver(primaryCapabilities.text, {
+      id: "openai-compatible",
+      label: primary.providerLabel,
+      configurationId: primary.configurationId,
+    }),
+    vision: withReceiver(primaryCapabilities.vision, {
+      id: "openai-compatible",
+      label: primary.providerLabel,
+      configurationId: primary.configurationId,
+    }),
+    embeddings: withReceiver(primaryCapabilities.embeddings, {
+      id: "openai-compatible",
+      label: primary.providerLabel,
+      configurationId: primary.configurationId,
+    }),
+    transcription: Object.freeze({
+      available: true,
+      model: asr.model,
+      reason: "configured" as const,
+      providerId: "mimo-asr",
+      providerName: asr.providerLabel,
+      configurationId: asr.configurationId,
+    }),
+  }) as AiCapabilityMap;
+  return Object.freeze({ kind: "dual-route", primary, asr, capabilities });
+}
+
+export function loadAiProviderConfig(
+  env: AiEnvironment = process.env,
+): AiProviderConfig {
+  assertAiServerRuntime();
+  assertNoClientSecretVariables(env);
+
+  const provider = env.AI_PROVIDER;
+  if (
+    provider === undefined ||
+    provider === "" ||
+    provider === "disabled" ||
+    provider === "none"
+  ) {
+    // Disabling wins over stale or malformed provider settings. Core use stays available.
+    return Object.freeze({
+      kind: "disabled",
+      capabilities: createCapabilityMap(NO_AI_MODELS, "disabled"),
+    });
+  }
+
+  if (provider === "dual") {
+    // M6 双路由：文字/图片/embeddings 走 CPA（默认 gpt-5.6-luna），
+    // 语音转写走 MiMo（默认 mimo-v2.5-asr）。
+    return loadDualRouteConfig(env);
+  }
+
+  if (provider !== "openai-compatible") {
+    throw new AiConfigurationError(
+      "AI_PROVIDER must be 'disabled', 'none', 'openai-compatible', or 'dual'.",
+      "AI_PROVIDER",
+    );
+  }
+
+  return loadPrimaryChannel(env, false);
+}
+
 export function summarizeAiConfiguration(
   config: AiProviderConfig,
 ): AiConfigurationSummary {
@@ -318,6 +501,14 @@ export function summarizeAiConfiguration(
       enabled: false,
       providerId: "disabled",
       providerName: "Disabled",
+      capabilities: config.capabilities,
+    });
+  }
+  if (config.kind === "dual-route") {
+    return Object.freeze({
+      enabled: true,
+      providerId: "dual-route",
+      providerName: `${config.primary.providerLabel} + ${config.asr.providerLabel}`,
       capabilities: config.capabilities,
     });
   }
