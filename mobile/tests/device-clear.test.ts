@@ -11,12 +11,18 @@ vi.mock("../src/storage/database", () => ({
   cacheMobileHome: vi.fn(), cacheMobileReview: vi.fn(), clearLocalArchive: mocks.clearArchive,
   getCachedFamily: async () => null, getCachedMobileHome: async () => null, getCachedViewer: async () => null,
   getMeta: async () => null, listCachedPeople: async () => [], listOutbox: async () => [], listTimeline: async () => [],
-  removeOutboxItem: vi.fn(),
+  removeOutboxItem: vi.fn(), setMeta: vi.fn(),
 }));
 vi.mock("../src/storage/files", () => ({ clearLocalFiles: mocks.clearFiles, removeLocalFile: vi.fn() }));
 vi.mock("../src/reading/native", () => ({ clearAllReadingDownloads: mocks.clearReading, revalidateReadingDownloads: async () => {} }));
 vi.mock("../src/auth/credentials", () => ({ clearCredentials: mocks.clearCredentials, saveCredentials: vi.fn() }));
-vi.mock("../src/api/client", () => ({ fetchMobileHome: async () => null, fetchMobileReview: async () => null, signOut: async () => {} }));
+vi.mock("../src/api/client", () => ({
+  ApiError: class ApiError extends Error {
+    constructor(message: string, readonly status: number) { super(message); this.name = "ApiError"; }
+  },
+  fetchMobileHome: async () => null, fetchMobileReview: async () => null, signOut: async () => {},
+  fetchMe: async () => ({ status: "ready" }), submitOnboarding: async () => {},
+}));
 vi.mock("../src/native/intake", () => ({ drainNativeShareIntake: async () => ({ manifests: 0 }) }));
 vi.mock("../../mobile/modules/share-intake/src", () => ({ subscribeToPendingNativeShares: () => () => {} }));
 vi.mock("../src/notifications/review-reminders", () => ({ reconcileWeeklyReviewReminder: async () => {} }));

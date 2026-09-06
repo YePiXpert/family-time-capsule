@@ -356,3 +356,35 @@ export type MobileCalendar = {
   people: { id: string; name: string }[];
   ages: { label: string; date: string }[];
 };
+
+export type BootstrapSetupState = "available" | "completed" | "unconfigured";
+
+/** GET /api/bootstrap 的最小实例识别信息（1.3）。 */
+export type BootstrapInfo = {
+  product: string;
+  apiVersion: number;
+  instanceId: string;
+  setup: { state: BootstrapSetupState };
+};
+
+/** GET /api/mobile/v1/me 的账号与家庭状态（1.3）。 */
+export type MobileMe =
+  | { status: "needsOnboarding"; user: { id: string; displayName: string; email: string }; account: { role: string } }
+  | {
+      status: "ready";
+      user: { id: string; displayName: string; email: string };
+      account: { role: string; personId: string | null; isGuardian: boolean };
+      family: { id: string; name: string; timezone: string };
+    }
+  | { status: "revoked" };
+
+/** POST /api/mobile/v1/onboarding 的输入（与服务端 OnboardingInput 对齐）。 */
+export type OnboardingInput = {
+  familyName: string;
+  timezone: string;
+  childDisplayName: string;
+  childBirthDate: string;
+  selfDisplayName: string;
+  selfRelationToChild: string;
+  selfIsGuardian: boolean;
+};

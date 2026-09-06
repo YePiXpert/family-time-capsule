@@ -13,7 +13,10 @@ import * as Network from "expo-network";
 import {
   fetchMobileHome,
   fetchMobileReview,
+  fetchMe,
   signOut,
+  submitOnboarding,
+  ApiError,
 } from "../api/client";
 import {
   clearCredentials,
@@ -31,6 +34,7 @@ import {
   listOutbox,
   listTimeline,
   removeOutboxItem,
+  setMeta,
 } from "../storage/database";
 import { clearLocalFiles, removeLocalFile } from "../storage/files";
 import { syncArchive } from "../sync/sync";
@@ -43,6 +47,8 @@ import type {
   LocalTimelineEvent,
   MediaCapturePayload,
   MobileHome,
+  MobileMe,
+  OnboardingInput,
   OutboxItem,
   Person,
   Viewer,
@@ -62,11 +68,17 @@ type AppContextValue = {
   online: boolean | null;
   syncing: boolean;
   message: string | null;
+  /** 首次欢迎页是否已处理：null 表示还在读取本机状态。 */
+  welcomeSeen: boolean | null;
+  /** 账号已建立但尚未建立/绑定家庭：登录不算失败，应继续初始化。 */
+  needsOnboarding: boolean;
   reloadLocal: () => Promise<void>;
   runSync: () => Promise<void>;
   queued: () => Promise<void>;
   connect: (credentials: Credentials) => Promise<void>;
   disconnect: () => Promise<void>;
+  setWelcomeSeen: () => Promise<void>;
+  completeOnboarding: (input: OnboardingInput) => Promise<void>;
   clearLocal: () => Promise<void>;
   discardFailed: () => Promise<void>;
   dismissMessage: () => void;
@@ -89,15 +101,18 @@ export function AppProvider({
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [welcomeSeen, setWelcomeSeenState] = useState<boolean | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const syncInFlight = useRef(false);
   const intakeInFlight = useRef(false);
   const intakeAgain = useRef(false);
   const clearingLocal = useRef(false);
+  const needsOnboardingRef = useRef(false);
   const syncDone = useRef<Promise<void> | null>(null);
   const intakeDone = useRef<Promise<void> | null>(null);
 
   const reloadLocal = useCallback(async () => {
-    const [nextEvents, nextFamily, nextViewer, nextPeople, nextOutbox, nextSyncAt, cachedHome] =
+    const [nextEvents, nextFamily, nextViewer, nextPeople, nextOutbox, nextSyncAt, cachedHome, welcomeDone] =
       await Promise.all([
         listTimeline(),
         getCachedFamily(),
@@ -106,6 +121,7 @@ export function AppProvider({
         listOutbox(),
         getMeta("last_sync_at"),
         getCachedMobileHome(),
+        getMeta("welcome_done"),
       ]);
     setEvents(nextEvents);
     setFamily(nextFamily);
@@ -114,6 +130,24 @@ export function AppProvider({
     setOutbox(nextOutbox);
     setLastSyncAt(nextSyncAt);
     setHome(cachedHome);
+    setWelcomeSeenState(welcomeDone === "1");
+  }, []);
+
+  /** 刷新账号与家庭状态；needsOnboarding 时暂停自动同步，等待用户建家庭。 */
+  const refreshAccount = useCallback(async (activeCredentials: Credentials) => {
+    try {
+      const me: MobileMe = await fetchMe(activeCredentials);
+      const pending = me.status === "needsOnboarding";
+      if (pending !== needsOnboardingRef.current) {
+        needsOnboardingRef.current = pending;
+        setNeedsOnboarding(pending);
+      }
+      if (pending) {
+        setMessage("账号已建立，请先完成家庭初始化。");
+      }
+    } catch {
+      // 网络或会话问题时维持现状：同步路径已有各自的错误提示。
+    }
   }, []);
 
   const refreshHome = useCallback(async (activeCredentials: Credentials) => {
@@ -151,6 +185,16 @@ export function AppProvider({
         : "";
       setMessage(`已同步 ${summary.eventCount} 段回忆${uploaded}${retained}。`);
     } catch (error) {
+      // 无家庭绑定的账号在此被服务端拒绝（401）；用 /me 区分“待初始化”
+      // 与“会话失效”，避免把新账号误报成登录已过期。
+      const status = error instanceof ApiError ? error.status : -1;
+      if (status === 401) {
+        await refreshAccount(credentials);
+        if (needsOnboardingRef.current) {
+          await reloadLocal();
+          return;
+        }
+      }
       setMessage(error instanceof Error ? error.message : "同步失败，本机资料不受影响。");
     } finally {
       try {
@@ -162,11 +206,13 @@ export function AppProvider({
         finish();
       }
     }
-  }, [credentials, refreshHome, reloadLocal]);
+  }, [credentials, refreshAccount, refreshHome, reloadLocal]);
 
   const queued = useCallback(async () => {
     await reloadLocal();
-    if (credentials && network.isConnected !== false) await runSync();
+    if (credentials && !needsOnboardingRef.current && network.isConnected !== false) {
+      await runSync();
+    }
   }, [credentials, network.isConnected, reloadLocal, runSync]);
 
   const receiveSystemShares = useCallback(async () => {
@@ -206,14 +252,33 @@ export function AppProvider({
     if (clearingLocal.current) return;
     await saveCredentials(nextCredentials);
     setCredentials(nextCredentials);
-  }, []);
+    // 先判定账号是否还要建家庭，避免凭证一建立就触发注定失败的同步。
+    await refreshAccount(nextCredentials);
+  }, [refreshAccount]);
 
   const disconnect = useCallback(async () => {
     if (credentials) await signOut(credentials);
     await clearCredentials();
     setCredentials(null);
+    needsOnboardingRef.current = false;
+    setNeedsOnboarding(false);
     setMessage("已断开服务器，本机资料保持不变。");
   }, [credentials]);
+
+  const setWelcomeSeen = useCallback(async () => {
+    await setMeta("welcome_done", "1");
+    setWelcomeSeenState(true);
+  }, []);
+
+  /** App 内建立家庭；成功后立即开始第一次同步。 */
+  const completeOnboarding = useCallback(async (input: OnboardingInput) => {
+    if (!credentials) throw new Error("尚未登录。");
+    await submitOnboarding(credentials, input);
+    needsOnboardingRef.current = false;
+    setNeedsOnboarding(false);
+    setMessage("家庭已建立，开始同步家庭资料。");
+    await runSync();
+  }, [credentials, runSync]);
 
   const clearLocal = useCallback(async () => {
     if (clearingLocal.current) return;
@@ -228,6 +293,8 @@ export function AppProvider({
       await Promise.all([clearCredentials(), clearLocalArchive()]);
       clearLocalFiles();
       setCredentials(null);
+      needsOnboardingRef.current = false;
+      setNeedsOnboarding(false);
       await reloadLocal();
       setMessage("本机资料已清除。");
     } catch (error) {
@@ -250,7 +317,9 @@ export function AppProvider({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      void reloadLocal().then(() => (credentials ? runSync() : undefined));
+      void reloadLocal().then(() =>
+        credentials && !needsOnboardingRef.current ? runSync() : undefined,
+      );
     }, 0);
     return () => clearTimeout(timer);
   }, [credentials, reloadLocal, runSync]);
@@ -273,7 +342,7 @@ export function AppProvider({
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void receiveSystemShares().then(async () => {
         await reconcileWeeklyReviewReminder();
-        if (credentials) await runSync();
+        if (credentials && !needsOnboardingRef.current) await runSync();
       });
     });
     return () => subscription.remove();
@@ -281,7 +350,7 @@ export function AppProvider({
 
   useEffect(() => {
     const subscription = Network.addNetworkStateListener((state) => {
-      if (credentials && state.isConnected) void runSync();
+      if (credentials && !needsOnboardingRef.current && state.isConnected) void runSync();
     });
     return () => subscription.remove();
   }, [credentials, runSync]);
@@ -298,18 +367,23 @@ export function AppProvider({
     online: network.isConnected ?? null,
     syncing,
     message,
+    welcomeSeen,
+    needsOnboarding,
     reloadLocal,
     runSync,
     queued,
     connect,
     disconnect,
+    setWelcomeSeen,
+    completeOnboarding,
     clearLocal,
     discardFailed,
     dismissMessage: () => setMessage(null),
   }), [
-    clearLocal, connect, credentials, disconnect, discardFailed, events,
-    family, home, lastSyncAt, message, network.isConnected, outbox, people,
-    queued, reloadLocal, runSync, syncing, viewer,
+    clearLocal, completeOnboarding, connect, credentials, disconnect,
+    discardFailed, events, family, home, lastSyncAt, message,
+    needsOnboarding, network.isConnected, outbox, people, queued,
+    reloadLocal, runSync, setWelcomeSeen, syncing, viewer, welcomeSeen,
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

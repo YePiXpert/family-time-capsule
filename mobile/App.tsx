@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { StatusBar } from "expo-status-bar";
 import { AppProvider } from "./src/state/AppContext";
+import { AppRoot } from "./src/AppRoot";
 import { loadCredentials } from "./src/auth/credentials";
-import { AppNavigator } from "./src/navigation/AppNavigator";
 import { initializeLocalStore } from "./src/storage/database";
 import { colors, sharedStyles } from "./src/theme";
 import type { Credentials } from "./src/types";
@@ -35,8 +34,7 @@ export default function App() {
   }, [initialize]);
 
   return <SafeAreaProvider>
-    <StatusBar style="dark" />
-    {!ready ? <View style={styles.center}><ActivityIndicator color={colors.coral} size="large" /></View> : startupError ? <View style={styles.error}><Text style={sharedStyles.emptyTitle}>本机资料暂时无法打开</Text><Text style={sharedStyles.error}>{startupError}</Text><Pressable onPress={() => { setReady(false); void initialize(); }} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>重试</Text></Pressable></View> : <AppProvider initialCredentials={credentials}><AppNavigator /></AppProvider>}
+    {!ready ? <View style={styles.center}><ActivityIndicator color={colors.coral} size="large" /></View> : startupError ? <View style={styles.error}><Text style={sharedStyles.emptyTitle}>本机资料暂时无法打开</Text><Text style={sharedStyles.error}>{startupError}</Text><Pressable onPress={() => { setReady(false); void initialize(); }} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>重试</Text></Pressable></View> : <AppProvider initialCredentials={credentials}><AppRoot /></AppProvider>}
   </SafeAreaProvider>;
 }
 

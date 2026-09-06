@@ -1,4 +1,5 @@
 import type {
+  BootstrapInfo,
   Credentials,
   InboxDraftPatch,
   MobileHome,
@@ -10,10 +11,12 @@ import type {
   MobileLibraryDomain,
   MobileLibraryMutationResult,
   MobileLibraryPage,
+  MobileMe,
   MobileMemory,
   MobileReview,
   MobileMemoryAsset,
   MobileSearchPage,
+  OnboardingInput,
   Person,
   SyncPage,
   TimelineEvent,
@@ -446,6 +449,163 @@ export async function signOut(credentials: Credentials): Promise<void> {
   } catch {
     // Local sign-out must remain available while the server is offline.
   }
+}
+
+function isBootstrapInfo(value: unknown): value is BootstrapInfo {
+  if (!isRecord(value)) return false;
+  if (!isString(value.product, 100)) return false;
+  if (typeof value.apiVersion !== "number") return false;
+  if (!isString(value.instanceId, 128)) return false;
+  const setup = value.setup;
+  if (!isRecord(setup)) return false;
+  return ["available", "completed", "unconfigured"].includes(String(setup.state));
+}
+
+/** 探测一个地址是否是本产品的自托管实例（GET /api/bootstrap）。 */
+export async function fetchBootstrap(
+  serverValue: string,
+): Promise<{ serverUrl: string; info: BootstrapInfo }> {
+  const serverUrl = normalizeServerUrl(serverValue);
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${serverUrl}/api/bootstrap`, {
+      headers: { accept: "application/json" },
+    });
+  } catch {
+    throw new ApiError("无法连接家庭空间，请检查地址和网络。", 0);
+  }
+  if (!response.ok) {
+    throw new ApiError(
+      response.status === 503
+        ? "服务暂时不可用，可能正在启动或维护，请稍后再试。"
+        : "该地址无法作为家庭空间使用，请核对后重试。",
+      response.status,
+    );
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!isBootstrapInfo(body)) {
+    throw new ApiError("该地址不是家庭时间胶囊服务，请核对后重试。", 502);
+  }
+  return { serverUrl, info: body };
+}
+
+export type BootstrapSetupInput = {
+  token: string;
+  displayName: string;
+  email: string;
+  password: string;
+};
+
+/** App 内创建首个管理员（POST /api/bootstrap/setup）。 */
+export async function bootstrapSetup(
+  serverUrl: string,
+  input: BootstrapSetupInput,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${serverUrl}/api/bootstrap/setup`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    throw new ApiError("无法连接家庭空间，请检查地址和网络。", 0);
+  }
+  if (response.ok) return;
+  const code = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  const error = code && typeof code.error === "string" ? code.error : "";
+  if (response.status === 403 || error === "invalid_token") {
+    throw new ApiError("初始化令牌不正确。", response.status);
+  }
+  if (error === "already_initialized") {
+    throw new ApiError("该家庭空间已完成初始化，请直接登录。", response.status);
+  }
+  if (response.status === 429 || error === "rate_limited") {
+    throw new ApiError("尝试过于频繁，请 15 分钟后再试。", response.status);
+  }
+  if (error === "invalid_input") {
+    throw new ApiError("请检查填写内容：称呼 1–50 字，邮箱格式正确，密码至少 10 位。", response.status);
+  }
+  if (error === "not_configured") {
+    throw new ApiError("该服务器未配置初始化令牌，请先在服务器上设置。", response.status);
+  }
+  throw new ApiError("初始化失败，请稍后重试。", response.status);
+}
+
+function isMobileMe(value: unknown): value is MobileMe {
+  if (!isRecord(value)) return false;
+  if (!["needsOnboarding", "ready", "revoked"].includes(String(value.status))) {
+    return false;
+  }
+  return true;
+}
+
+/** 账号与家庭状态（GET /api/mobile/v1/me）。401 表示会话已失效。 */
+export async function fetchMe(credentials: Credentials): Promise<MobileMe> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${credentials.serverUrl}/api/mobile/v1/me`, {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${credentials.token}`,
+      },
+    });
+  } catch {
+    throw new ApiError("无法连接家庭服务器，本地数据不受影响。", 0);
+  }
+  if (response.status === 401) {
+    throw new ApiError("登录已过期，请重新登录。", 401);
+  }
+  if (!response.ok) {
+    throw new ApiError("暂时无法获取账号状态，请稍后再试。", response.status);
+  }
+  const body = await response.json().catch(() => null);
+  if (!isMobileMe(body)) {
+    throw new ApiError("服务器返回了无效数据。", 502);
+  }
+  return body;
+}
+
+/** App 内建立家庭（POST /api/mobile/v1/onboarding）。 */
+export async function submitOnboarding(
+  credentials: Credentials,
+  input: OnboardingInput,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${credentials.serverUrl}/api/mobile/v1/onboarding`,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${credentials.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
+      },
+    );
+  } catch {
+    throw new ApiError("无法连接家庭服务器，请检查网络后重试。", 0);
+  }
+  if (response.ok) return;
+  const code = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  const error = code && typeof code.error === "string" ? code.error : "";
+  if (error === "already_bound") {
+    throw new ApiError("该账号已有家庭，无需重复建立。", response.status);
+  }
+  if (error === "invalid_input") {
+    throw new ApiError("请检查填写内容：家庭名与称呼 1–50 字，出生日期为有效日期。", response.status);
+  }
+  if (response.status === 401) {
+    throw new ApiError("登录已过期，请重新登录。", 401);
+  }
+  throw new ApiError("建立家庭失败，请稍后重试。", response.status);
 }
 
 export async function fetchSyncPage(
