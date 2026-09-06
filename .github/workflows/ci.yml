@@ -63,6 +63,22 @@ jobs:
       - run: npx expo export --platform ios --output-dir dist-ios
         working-directory: mobile
 
+  ops-quality:
+    name: ops-quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: ShellCheck 运维脚本
+        run: sudo apt-get update && sudo apt-get install -y shellcheck && shellcheck scripts/ops/*.sh scripts/ops/ftc scripts/ops/lib/*.sh
+      - name: ftc 工具套件测试（真实 bash + 假 docker）
+        run: npm run test:ops
+
   e2e-restore-roundtrip:
     name: e2e-restore-roundtrip
     runs-on: ubuntu-latest

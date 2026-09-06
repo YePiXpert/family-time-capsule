@@ -1,0 +1,28 @@
+# Family Time Capsule — 自动 HTTPS 反向代理（新机器模式）。
+# {$FTC_DOMAIN} 由 env 注入；证书由 Caddy 自动申请与续期。
+# 注意：本文件不启用 access log，携带令牌的 /invite、/contribute、/respond
+# 请求行不会落盘（默认 Caddy 只输出运行日志到 stderr）。
+{$FTC_DOMAIN} {
+	encode zstd gzip
+
+	# 上传边界：允许大媒体；续传由 reverse_proxy 透传 Range/PATCH。
+	request_body {
+		max_size 512MB
+	}
+
+	reverse_proxy app:3000 {
+		transport http {
+			response_header_timeout 300s
+			read_timeout 600s
+			write_timeout 600s
+		}
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

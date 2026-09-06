@@ -1,0 +1,46 @@
+name: ${FTC_PROJECT_NAME}
+
+services:
+  app:
+    image: ${FTC_IMAGE:?请在 env 设置已验证的 FTC_IMAGE（含 digest）}
+    # 已有反向代理的机器：只绑定环回地址，由外部代理转发。
+    ports:
+      - "127.0.0.1:${FTC_LOOPBACK_PORT:?请在 env 设置 FTC_LOOPBACK_PORT}:3000"
+    environment:
+      DATA_DIR: /data
+      AUTH_SECRET: ${AUTH_SECRET:?请在 env 设置 AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?请设置为最终 https 地址}
+      INITIAL_SETUP_TOKEN: ${INITIAL_SETUP_TOKEN:-}
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
+    volumes:
+      - ${FTC_DATA_VOLUME:?}:/data
+    healthcheck:
+      test: ["CMD", "node", "/app/ops/healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  worker:
+    image: ${FTC_IMAGE:?}
+    command: ["node", "/app/ops/worker.mjs"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.kill(1, 0)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    environment:
+      DATA_DIR: /data
+      AI_PROVIDER: ${AI_PROVIDER:-disabled}
+    volumes:
+      - ${FTC_DATA_VOLUME:?}:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ${FTC_DATA_VOLUME:?}:
+    external: true
