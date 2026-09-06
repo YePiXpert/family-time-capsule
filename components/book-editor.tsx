@@ -220,7 +220,11 @@ export function BookEditor({ id }: { id: string }) {
     [paused, setPaused] = useState(false),
     [sequence, setSequence] = useState(0),
     [reading, setReading] = useState(false),
-    [operationBusy, setOperationBusy] = useState(false);
+    [operationBusy, setOperationBusy] = useState(false),
+    [dragBlockId, setDragBlockId] = useState<string | null>(null),
+    [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(
+      null,
+    );
   const current = useRef<BookDetail | null>(null),
     editSequence = useRef(0),
     savedSequence = useRef(0),
@@ -378,12 +382,21 @@ export function BookEditor({ id }: { id: string }) {
     [blocks[index], blocks[next]] = [blocks[next]!, blocks[index]!];
     update({ blocks });
   }
+  function reorderBlock(sourceId: string, targetId: string, after: boolean) {
+    if (!book || sourceId === targetId) return;
+    const source = book.blocks.find((b) => b.id === sourceId),
+      target = book.blocks.find((b) => b.id === targetId);
+    if (!source || !target || source.chapterId !== target.chapterId) return;
+    const blocks = book.blocks.filter((b) => b.id !== sourceId);
+    let index = blocks.findIndex((b) => b.id === targetId);
+    if (after) index++;
+    blocks.splice(index, 0, source);
+    update({ blocks });
+  }
   async function preview() {
     setOperationBusy(true);
     try {
       if (!(await save())) return;
-      const next = await request<BookDetail>(`/api/books/projects/${id}`);
-      accept(next);
       setReading(true);
     } catch (e) {
       setError((e as Error).message);
@@ -488,7 +501,9 @@ export function BookEditor({ id }: { id: string }) {
         ) : null}
       </div>
       {canEdit && !reading ? (
-        <fieldset disabled={operationBusy}>
+        <div className="xl:grid xl:grid-cols-2 xl:items-start xl:gap-6">
+          <div className="min-w-0">
+            <fieldset disabled={operationBusy}>
           <section
             aria-label="作品信息"
             className="grid gap-4 rounded-2xl border border-line bg-surface p-4 sm:grid-cols-2"
@@ -662,9 +677,59 @@ export function BookEditor({ id }: { id: string }) {
                     return (
                       <article
                         key={block.id}
-                        className="my-4 space-y-3 rounded-xl border border-line bg-surface p-4"
+                        className={`my-4 space-y-3 rounded-xl border border-line bg-surface p-4 ${
+                          dropHint?.id === block.id
+                            ? dropHint.after
+                              ? "border-b-2 border-b-accent"
+                              : "border-t-2 border-t-accent"
+                            : ""
+                        }`}
                         aria-label={`内容块 ${index + 1}`}
+                        onDragOver={(e) => {
+                          const source = book.blocks.find(
+                            (b) => b.id === dragBlockId,
+                          );
+                          if (
+                            !source ||
+                            source.chapterId !== block.chapterId ||
+                            dragBlockId === block.id
+                          )
+                            return;
+                          e.preventDefault();
+                          const rect = e.currentTarget.getBoundingClientRect(),
+                            after = e.clientY > rect.top + rect.height / 2;
+                          if (dropHint?.id !== block.id || dropHint.after !== after)
+                            setDropHint({ id: block.id, after });
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const sourceId =
+                            dragBlockId ?? e.dataTransfer.getData("text/plain");
+                          if (sourceId && dropHint)
+                            reorderBlock(sourceId, dropHint.id, dropHint.after);
+                          setDragBlockId(null);
+                          setDropHint(null);
+                        }}
                       >
+                        <div>
+                          <span
+                            className="inline-flex min-h-8 cursor-grab items-center gap-1 text-sm text-muted select-none"
+                            draggable
+                            aria-label={`拖拽排序内容块 ${index + 1}`}
+                            title="拖拽调整顺序"
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("text/plain", block.id);
+                              e.dataTransfer.effectAllowed = "move";
+                              setDragBlockId(block.id);
+                            }}
+                            onDragEnd={() => {
+                              setDragBlockId(null);
+                              setDropHint(null);
+                            }}
+                          >
+                            ≡ 拖拽排序
+                          </span>
+                        </div>
                         {blocked ? (
                           <p>
                             来源当前不可见，原有编辑仍保存在服务器。可以移除此块，暂不能修改来源。
@@ -909,6 +974,33 @@ export function BookEditor({ id }: { id: string }) {
                           >
                             内容下移
                           </button>
+                          <label className="flex min-h-11 w-full items-center gap-2 text-sm sm:w-72">
+                            移动到章节
+                            <select
+                              className={field}
+                              value=""
+                              onChange={(e) => {
+                                const targetId = e.target.value;
+                                if (!targetId || targetId === block.chapterId)
+                                  return;
+                                update({
+                                  blocks: [
+                                    ...book.blocks.filter(
+                                      (b) => b.id !== block.id,
+                                    ),
+                                    { ...block, chapterId: targetId },
+                                  ],
+                                });
+                              }}
+                            >
+                              <option value="">选择章节…</option>
+                              {book.chapters.map((c, i) => (
+                                <option key={c.id} value={c.id}>
+                                  {i + 1}. {c.title}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           <button
                             className="ui-button-secondary"
                             onClick={() => {
@@ -976,7 +1068,15 @@ export function BookEditor({ id }: { id: string }) {
               添加章节
             </button>
           </section>
-        </fieldset>
+            </fieldset>
+          </div>
+          <aside
+            aria-label="实时预览"
+            className="sticky top-4 hidden max-h-[calc(100vh-2rem)] overflow-y-auto xl:block"
+          >
+            <BookPreview book={book} />
+          </aside>
+        </div>
       ) : (
         <BookPreview book={book} />
       )}
