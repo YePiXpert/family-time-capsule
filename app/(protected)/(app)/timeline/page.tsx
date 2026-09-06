@@ -44,7 +44,7 @@ function rangeFor(params: TimelineParams, timezone: string) {
 
 function queryHref(params: TimelineParams, patch: Record<string, string | undefined>) {
   const next = new URLSearchParams();
-  for (const key of ["person", "media", "tag", "month", "year", "cursor"]) {
+  for (const key of ["person", "media", "tag", "month", "year", "collection", "cursor"]) {
     const current = value(params, key);
     if (current) next.set(key, current);
   }
@@ -87,14 +87,16 @@ export default async function TimelinePage({
   const entries = timelinePage.entries;
   const child = people.find((person) => person.isChild);
   const dateFormatter = new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone });
+  const monthFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", timeZone: timezone });
   const groups = new Map<string, typeof entries>();
   for (const entry of entries) {
-    const month = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", timeZone: timezone }).format(entry.event.occurredAt);
+    const month = monthFormatter.format(entry.event.occurredAt);
     const list = groups.get(month) ?? [];
     list.push(entry);
     groups.set(month, list);
   }
-  const hasFilters = ["person", "media", "tag", "month", "year"].some((key) => value(params, key));
+  const hasFilters = ["person", "media", "tag", "month", "year", "collection"].some((key) => value(params, key));
+  const monthActive = /^\d{4}-(0[1-9]|1[0-2])$/.test(value(params, "month"));
 
   return (
     <main className="page-container">
@@ -104,16 +106,15 @@ export default async function TimelinePage({
 
       <section aria-label="筛选时间轴" className="mt-6 rounded-2xl border border-line bg-surface p-4">
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" action="/timeline">
+          <input type="hidden" name="collection" value={value(params, "collection")} />
           <label className="text-sm font-medium">跳到月份<input type="month" name="month" defaultValue={value(params, "month")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3" /></label>
-          <label className="text-sm font-medium">跳到年份<select name="year" defaultValue={value(params, "year")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">全部年份</option>{facets.years.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label>
+          <label className="text-sm font-medium">跳到年份<select name="year" defaultValue={monthActive ? "" : value(params, "year")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">全部年份</option>{facets.years.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label>
           <label className="text-sm font-medium">人物<select name="person" defaultValue={personId ?? ""} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有家人</option>{people.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select></label>
           <label className="text-sm font-medium">媒体<select name="media" defaultValue={mediaType ?? ""} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有类型</option><option value="image">照片</option><option value="video">视频</option><option value="audio">录音</option><option value="document">文档</option></select></label>
           <label className="text-sm font-medium">标签<select name="tag" defaultValue={value(params, "tag")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有标签</option>{facets.tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-5"><button type="submit" className="ui-button-primary">查看</button>{hasFilters ? <Link href="/timeline" className="ui-button-secondary">清除筛选</Link> : null}</div>
         </form>
       </section>
-
-      <CollectionSelection memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} />
 
       {entries.length === 0 ? (
         <div className="mt-8">
@@ -128,6 +129,7 @@ export default async function TimelinePage({
         </div>
       ) : (
         <div className="mt-8 space-y-10">
+          <CollectionSelection memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} />
           {[...groups.entries()].map(([month, list]) => (
             <section key={month} aria-label={month}>
               <div className="flex items-center gap-3"><h2 className="text-sm font-semibold tracking-[0.16em] text-muted">{month}</h2><span className="h-px flex-1 bg-line" /></div>

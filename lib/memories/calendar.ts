@@ -66,12 +66,12 @@ export async function getCalendarMonth(
   }>(sql`
     with days(day, lo, hi) as (values ${intervals}), candidates as (
       select days.day as date, e.id as eventId,
-        coalesce((select id from asset thumb where thumb.original_asset_id = ba.id and thumb.family_id = ${context.familyId} and thumb.derivative_type = 'thumbnail' order by thumb.created_at desc, thumb.id desc limit 1), ba.id) as assetId,
+        (select id from asset thumb where thumb.original_asset_id = ba.id and thumb.family_id = ${context.familyId} and thumb.derivative_type = 'thumbnail' order by thumb.created_at desc, thumb.id desc limit 1) as assetId,
         row_number() over (partition by days.day order by e.occurred_at desc, e.id desc) as position
       from days join memory_event e on e.occurred_at >= days.lo and e.occurred_at < days.hi
       join asset ba on ba.id = e.cover_asset_id
       where ${predicate} and ba.type = 'image' and ${readable}
-    ) select date, eventId, assetId from candidates where position <= 3 order by date, position`);
+    ) select date, eventId, assetId from candidates where position <= 3 and assetId is not null order by date, position`);
   return {
     month,
     timezone: context.familyTimezone,

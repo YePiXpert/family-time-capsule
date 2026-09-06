@@ -54,8 +54,9 @@ export function MediaReader({ assets }: { assets: ReaderAsset[] }) {
                   assetId={asset.id}
                   mimeType={asset.mimeType}
                   thumbAssetId={asset.thumbnailId}
-                  imgClassName="max-h-72 w-full object-contain"
+                  imgClassName="aspect-[4/3] w-full object-contain"
                   alt={asset.filename}
+                  loading="lazy"
                 />
               ) : (
                 <span className="block py-8 text-center text-accent">

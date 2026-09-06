@@ -52,6 +52,7 @@ export function MediaImage({
   className = "",
   imgClassName = "",
   alt,
+  loading,
 }: {
   assetId: string;
   filename?: string;
@@ -61,6 +62,7 @@ export function MediaImage({
   className?: string;
   imgClassName?: string;
   alt?: string;
+  loading?: "eager" | "lazy";
 }) {
   const heicLike = mimeType === "image/heic" || mimeType === "image/heif";
   const [failed, setFailed] = useState(false);
@@ -92,6 +94,8 @@ export function MediaImage({
     <img
       src={src}
       alt={alt ?? filename ?? ""}
+      loading={loading}
+      decoding="async"
       className={imgClassName}
       onError={() => {
         if (thumbAssetId && !thumbFailed) setThumbFailed(true); // 缩略图坏了 → 试原件

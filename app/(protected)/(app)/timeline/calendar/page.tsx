@@ -41,8 +41,13 @@ export default async function CalendarPage({
       filters,
       value("cursor"),
     );
-  } catch {
-    notFound();
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      ["invalid_month", "invalid_cursor"].includes(error.message)
+    )
+      notFound();
+    throw error;
   }
   const people = await listPeople(context.familyId);
   const child = people.find((p) => p.isChild && p.birthDate);
@@ -225,6 +230,11 @@ export default async function CalendarPage({
                     alt="当天记忆封面"
                   />
                 </span>
+              ) : day.count ? (
+                <span
+                  aria-hidden="true"
+                  className="mt-1 block h-8 rounded bg-foreground/5 sm:h-14"
+                />
               ) : null}
             </Link>
           ))}

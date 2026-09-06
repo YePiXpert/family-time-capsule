@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { purgeTrashAction, restoreTrashAction, trashEventAction } from "./actions";
 
 export function TrashEntryActions({ kind, id }: { kind: string; id: string }) {
@@ -36,14 +37,14 @@ export function TrashEntryActions({ kind, id }: { kind: string; id: string }) {
           <button
             type="submit"
             disabled={purgePending}
-            className="rounded-lg border border-red-700/30 px-3 py-1.5 text-xs text-red-700 transition-colors hover:border-red-700/60 disabled:opacity-50 dark:text-red-400"
+            className="rounded-lg border border-red-700/30 px-3 py-1.5 text-xs text-danger transition-colors hover:border-red-700/60 disabled:opacity-50"
           >
             {purgePending ? "清除中…" : "彻底清除"}
           </button>
         </form>
       </div>
       {restoreState?.error && (
-        <p role="alert" className="text-xs text-red-700 dark:text-red-400">
+        <p role="alert" className="text-xs text-danger">
           {restoreState.error}
         </p>
       )}
@@ -53,7 +54,7 @@ export function TrashEntryActions({ kind, id }: { kind: string; id: string }) {
         </p>
       )}
       {purgeState?.error && (
-        <p role="alert" className="text-xs text-red-700 dark:text-red-400">
+        <p role="alert" className="text-xs text-danger">
           {purgeState.error}
         </p>
       )}
@@ -68,27 +69,31 @@ export function TrashEntryActions({ kind, id }: { kind: string; id: string }) {
 
 /** 事件详情页删除按钮 */
 export function TrashEventButton({ eventId }: { eventId: string }) {
-  const [state, action, pending] = useActionState(trashEventAction, undefined);
+  const [state, action] = useActionState(trashEventAction, undefined);
   return (
-    <form action={action} className="inline">
-      <input type="hidden" name="eventId" value={eventId} />
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg border border-foreground/10 px-3 py-1.5 text-xs text-foreground/60 transition-colors hover:border-red-500/40 disabled:opacity-50"
-      >
-        {pending ? "移入中…" : "移到回收站"}
-      </button>
+    <div className="inline">
+      <ConfirmDialog
+        triggerLabel="移到回收站"
+        title="移到回收站？"
+        description="这条记忆会移到回收站，不会立刻删除；之后可以在回收站页面随时恢复它。"
+        confirmLabel="移到回收站"
+        destructive
+        onConfirm={() => {
+          const formData = new FormData();
+          formData.set("eventId", eventId);
+          action(formData);
+        }}
+      />
       {state?.message && (
         <span role="status" className="ml-2 text-xs text-foreground/60">
           {state.message}
         </span>
       )}
       {state?.error && (
-        <span role="alert" className="ml-2 text-xs text-red-700 dark:text-red-400">
+        <span role="alert" className="ml-2 text-xs text-danger">
           {state.error}
         </span>
       )}
-    </form>
+    </div>
   );
 }

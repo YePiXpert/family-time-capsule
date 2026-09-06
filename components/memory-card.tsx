@@ -31,7 +31,7 @@ export function MemoryCard({ id, title, dateLabel, ageLabel, location, people = 
     <Link href={href ?? `/memories/${id}`} className={`memory-card ${compact ? "memory-card-compact" : ""}`}>
       <div className="memory-card-media">
         {cover?.type === "image" || (cover && !cover.type) ? (
-          <MediaImage assetId={cover.assetId} mimeType={cover.mimeType} thumbAssetId={cover.thumbAssetId} alt="" className="h-full w-full" imgClassName="h-full w-full object-cover" />
+          <MediaImage assetId={cover.assetId} mimeType={cover.mimeType} thumbAssetId={cover.thumbAssetId} alt="" className="h-full w-full" imgClassName="h-full w-full object-cover" loading="lazy" />
         ) : (
           <span className="memory-card-placeholder"><Icon name={cover?.type === "audio" ? "audio" : cover?.type === "video" ? "video" : "archive"} size={28} /></span>
         )}

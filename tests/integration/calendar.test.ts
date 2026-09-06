@@ -219,6 +219,24 @@ describe("calendar real database and API", () => {
         assetId: aid,
       })
       .run();
+    const thumbOfCover = randomUUID();
+    db.insert(asset)
+      .values({
+        id: thumbOfCover,
+        familyId: context.familyId,
+        type: "image",
+        mimeType: "image/webp",
+        bytes: 1,
+        sha256: "d".repeat(64),
+        storageKey: `derivatives/${thumbOfCover}.webp`,
+        originalFilename: "cover-thumb.webp",
+        importedAt: new Date(),
+        timeSource: "import_time",
+        createdByUserId: admin.id,
+        originalAssetId: derived,
+        derivativeType: "thumbnail",
+      })
+      .run();
     db.update(memoryEvent)
       .set({ coverAssetId: derived })
       .where(eq(memoryEvent.id, "new-year"))
@@ -261,6 +279,11 @@ describe("calendar real database and API", () => {
         (d) => d.covers,
       ),
     ).toHaveLength(1);
+    expect(
+      (await getCalendarMonth(context, "2026-01")).days.flatMap(
+        (d) => d.covers,
+      )[0]?.assetId,
+    ).toBe(thumbOfCover);
     expect(
       (await getTimelinePage(context, { mediaType: "image" })).entries.map(
         (e) => e.coverAssetId,

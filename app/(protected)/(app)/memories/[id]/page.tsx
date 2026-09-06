@@ -82,16 +82,17 @@ export default async function MemoryEventPage({
   const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
   const query = await searchParams;
-  const returnTo = typeof query.returnTo === "string" && /^\/timeline(?:\/calendar)?(?:[?#]|$)/.test(query.returnTo) && !/[\\\r\n]/.test(query.returnTo) ? query.returnTo : "/timeline";
+  const returnTo = typeof query.returnTo === "string" && /^\/(?:timeline(?:\/calendar)?|memories|collections|review|search|capsules|stories)(?:[?#]|$)/.test(query.returnTo) && !/[\\\r\n]/.test(query.returnTo) ? query.returnTo : "/timeline";
   const returnQuery = `returnTo=${encodeURIComponent(returnTo)}`;
   const pageMode = resolveMemoryPageMode(query.mode, canWriteEvent);
   const editMode = pageMode === "edit";
-  const [detail, family, people, contributions, facts] = await Promise.all([
+  const [detail, family, people, contributions, facts, relatedPage] = await Promise.all([
     getMemoryEventDetail(familyId, id),
     getFamily(familyId),
     listPeople(familyId),
     listVisibleContributionsForEvent(contributionAccess, id),
     listFacts(familyId, id),
+    getTimelinePage(familyId, { limit: 5 }),
   ]);
   if (!detail) notFound();
 
@@ -286,11 +287,11 @@ export default async function MemoryEventPage({
   const videoJobByAssetId = new Map(
     videoAssetIds.map((assetId, index) => [assetId, videoJobs[index]]),
   );
-  const relatedPage = await getTimelinePage(familyId, { limit: 5 });
   const relatedEntries = relatedPage.entries.filter((entry) => entry.event.id !== id).slice(0, 4);
   const visibleFacts = editMode
     ? facts
     : facts.filter((fact) => fact.status === "user_confirmed");
+  const assetDateFormatter = new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone });
 
   return (
     <main className="page-container max-w-5xl">
@@ -299,7 +300,7 @@ export default async function MemoryEventPage({
         {assets.length === 0 ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-muted">这条文字记忆没有媒体素材。</div>
         ) : (
-          <MediaReader assets={assets.map(asset => ({ id: asset.id, filename: asset.originalFilename, mimeType: asset.mimeType, type: asset.type, durationMs: asset.durationMs, thumbnailId: thumbMap.get(asset.id)?.id ?? null, dateLabel: new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone }).format(event.occurredAt) }))} />
+          <MediaReader assets={assets.map(asset => ({ id: asset.id, filename: asset.originalFilename, mimeType: asset.mimeType, type: asset.type, durationMs: asset.durationMs, thumbnailId: thumbMap.get(asset.id)?.id ?? null, dateLabel: assetDateFormatter.format(asset.capturedAt ?? event.occurredAt) }))} />
         )}
       </section>
 
