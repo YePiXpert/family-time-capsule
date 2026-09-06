@@ -27,6 +27,7 @@ vi.mock("../src/api/client", () => ({
   ApiError: class ApiError extends Error {
     constructor(message: string, readonly status: number) { super(message); this.name = "ApiError"; }
   },
+  fetchBootstrap: async (serverUrl: string) => ({ serverUrl, info: { instanceId: "instance-1" } }),
   fetchMobileHome: async () => null, fetchMobileReview: async () => null, signOut: mocks.signOut,
   fetchMe: mocks.fetchMe, submitOnboarding: mocks.submitOnboarding,
 }));
@@ -46,7 +47,7 @@ function Probe() {
 }
 
 let tree: ReactTestRenderer | undefined;
-const credentials = { serverUrl: "https://example.test", token: "fictional-session" };
+const credentials = { serverUrl: "https://example.test", token: "fictional-session", instanceId: "instance-1" };
 const summary = { uploadedCount: 0, failedCount: 0, eventCount: 0 };
 
 beforeEach(() => {
@@ -59,7 +60,9 @@ beforeEach(() => {
     account: { role: "admin", personId: null, isGuardian: true },
     family: { id: "family-1", name: "小满家", timezone: "Asia/Shanghai" },
   });
-  mocks.submitOnboarding.mockResolvedValue(undefined);
+  mocks.submitOnboarding.mockImplementation(async () => {
+    mocks.fetchMe.mockResolvedValue({ status: "ready", user: { id: "user-1" }, family: { id: "family-1" } });
+  });
 });
 afterEach(async () => {
   if (tree) await act(() => tree!.unmount());
@@ -75,7 +78,7 @@ async function open(initial: typeof credentials | null = credentials) {
 }
 
 it("账号待初始化时连接不触发注定失败的同步；建家庭后立即同步", async () => {
-  mocks.fetchMe.mockResolvedValue({ status: "needsOnboarding" });
+  mocks.fetchMe.mockResolvedValue({ status: "needsOnboarding", user: { id: "user-1", displayName: "妈妈", email: "a@b.c" }, account: { role: "admin" } });
   await open(null);
   await act(async () => { await app.connect(credentials); });
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });

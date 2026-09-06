@@ -11,6 +11,7 @@ import {
 import { AppState } from "react-native";
 import * as Network from "expo-network";
 import {
+  fetchBootstrap,
   fetchMobileHome,
   fetchMobileReview,
   fetchMe,
@@ -124,6 +125,7 @@ export function AppProvider({
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [syncConsent, setSyncConsentState] = useState<SyncConsent | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [accountFamilyId, setAccountFamilyId] = useState<string | null>(null);
   const syncInFlight = useRef(false);
   const intakeInFlight = useRef(false);
   const intakeAgain = useRef(false);
@@ -133,10 +135,13 @@ export function AppProvider({
   const userIdRef = useRef<string | null>(null);
   const familyIdRef = useRef<string | null>(null);
   const destGenRef = useRef(0);
+  const connecting = useRef(false);
+  const credentialsRef = useRef(initialCredentials);
   const syncDone = useRef<Promise<void> | null>(null);
   const intakeDone = useRef<Promise<void> | null>(null);
 
   const reloadLocal = useCallback(async () => {
+    const generation = destGenRef.current;
     const [
       nextEvents,
       nextFamily,
@@ -158,6 +163,7 @@ export function AppProvider({
       getMeta("welcome_done"),
       getSyncConsent(),
     ]);
+    if (generation !== destGenRef.current) return;
     setEvents(nextEvents);
     setFamily(nextFamily);
     setViewer(nextViewer);
@@ -170,35 +176,29 @@ export function AppProvider({
     setSyncConsentState(consent);
   }, []);
 
-  /** 刷新账号与家庭状态；needsOnboarding 时暂停自动同步，等待用户建家庭。 */
+  /** Only called after verifying the configured instance, before each upload pass. */
   const refreshAccount = useCallback(async (activeCredentials: Credentials) => {
-    try {
-      const me: MobileMe = await fetchMe(activeCredentials);
-      const pending = me.status === "needsOnboarding";
-      if (pending !== needsOnboardingRef.current) {
-        needsOnboardingRef.current = pending;
-        setNeedsOnboarding(pending);
-      }
-      if (me.status === "needsOnboarding") {
-        if (userIdRef.current !== me.user.id) {
-          userIdRef.current = me.user.id;
-          setUserId(me.user.id);
-        }
-        familyIdRef.current = null;
-        setMessage("账号已建立，请先完成家庭初始化。");
-        return;
-      }
-      if (me.status === "ready") {
-        if (userIdRef.current !== me.user.id) {
-          userIdRef.current = me.user.id;
-          setUserId(me.user.id);
-        }
-        familyIdRef.current = me.family.id;
-      }
-    } catch {
-      // 网络或会话问题时维持现状：同步路径已有各自的错误提示。
+    const generation = destGenRef.current;
+    const me: MobileMe = await fetchMe(activeCredentials);
+    if (generation !== destGenRef.current || activeCredentials !== credentialsRef.current) return null;
+    if (me.status === "revoked") throw new ApiError("当前账号授权已撤回，请重新连接。", 403);
+    const nextFamilyId = me.status === "ready" ? me.family.id : null;
+    const destination = JSON.stringify([activeCredentials.serverUrl, activeCredentials.instanceId, me.user.id, nextFamilyId]);
+    const previous = await getActiveDestination();
+    if (generation !== destGenRef.current) return null;
+    if (previous !== destination) {
+      await clearServerCaches();
+      await setActiveDestination(destination);
+      if (generation !== destGenRef.current) return null;
+      await reloadLocal();
     }
-  }, []);
+    userIdRef.current = me.user.id; setUserId(me.user.id);
+    familyIdRef.current = nextFamilyId; setAccountFamilyId(nextFamilyId);
+    needsOnboardingRef.current = me.status === "needsOnboarding";
+    setNeedsOnboarding(needsOnboardingRef.current);
+    if (me.status === "needsOnboarding") setMessage("账号已建立，请先完成家庭初始化。");
+    return me;
+  }, [reloadLocal]);
 
   /**
    * 上传授权门（M4）：没有针对当前目的地（serverUrl + 账号）的明确同意时，
@@ -207,22 +207,29 @@ export function AppProvider({
   const authorizeUpload = useCallback((item: OutboxItem): boolean => {
     const consent = consentRef.current;
     const activeUser = userIdRef.current;
-    if (!consent || !activeUser || !credentials) return false;
+    const credentials = credentialsRef.current;
+    if (!consent || !activeUser || !credentials?.instanceId || connecting.current) return false;
+    if (consent.instanceId !== credentials.instanceId || consent.familyId !== familyIdRef.current) return false;
     if (consent.serverUrl !== credentials.serverUrl) return false;
     if (consent.userId !== activeUser) return false;
     if (consent.scope === "all") return true;
     if (consent.scope === "selected") return consent.ids.includes(item.id);
     return false;
-  }, [credentials]);
+  }, []);
 
   const refreshHome = useCallback(async (activeCredentials: Credentials) => {
+    const generation = destGenRef.current;
     const nextHome = await fetchMobileHome(activeCredentials);
+    if (generation !== destGenRef.current) return;
     await cacheMobileHome(nextHome);
+    if (generation !== destGenRef.current) return;
     setHome(nextHome);
     void revalidateReadingDownloads(activeCredentials).catch(() => {});
     try {
       const review = await fetchMobileReview(activeCredentials);
+      if (generation !== destGenRef.current) return;
       await cacheMobileReview(review);
+      if (generation !== destGenRef.current) return;
       await reconcileWeeklyReviewReminder(review);
     } catch {
       // Review is an independent versioned snapshot; retain its last cache if
@@ -231,21 +238,44 @@ export function AppProvider({
   }, []);
 
   const runSync = useCallback(async () => {
-    if (!credentials || syncInFlight.current || clearingLocal.current) return;
+    if (!credentials || credentials !== credentialsRef.current || syncInFlight.current || clearingLocal.current || connecting.current) return;
     syncInFlight.current = true;
     const generation = destGenRef.current;
     let finish!: () => void;
     syncDone.current = new Promise<void>((resolve) => { finish = resolve; });
     setSyncing(true);
     setMessage(null);
+    let activeCredentials = credentials;
     try {
-      const summary = await syncArchive(credentials, {
+      const bootstrap = await fetchBootstrap(credentials.serverUrl);
+      if (generation !== destGenRef.current) return;
+      if (credentials.instanceId && credentials.instanceId !== bootstrap.info.instanceId) {
+        destGenRef.current++;
+        credentialsRef.current = null; setCredentials(null);
+        userIdRef.current = null; setUserId(null);
+        familyIdRef.current = null; setAccountFamilyId(null);
+        await clearCredentials(); await clearServerCaches(); await reloadLocal();
+        setMessage("这个地址的服务器实例已变化，请重新连接并核对家庭。本机原件仍保留。");
+        return;
+      }
+      if (!credentials.instanceId) {
+        const verifiedCredentials = { ...credentials, instanceId: bootstrap.info.instanceId };
+        await saveCredentials(verifiedCredentials);
+        if (generation !== destGenRef.current) return;
+        credentialsRef.current = verifiedCredentials; setCredentials(verifiedCredentials);
+        activeCredentials = verifiedCredentials;
+      }
+      const me = await refreshAccount(activeCredentials);
+      if (!me || me.status !== "ready" || generation !== destGenRef.current) return;
+      const summary = await syncArchive(activeCredentials, {
+        isCurrent: () => generation === destGenRef.current && activeCredentials === credentialsRef.current,
         authorizeUpload: (item) => Promise.resolve(authorizeUpload(item)),
       });
       // 同步期间切换了连接：丢弃旧目的地的结果，不写新视图的缓存。
       if (generation !== destGenRef.current) return;
       try {
-        await refreshHome(credentials);
+        await refreshHome(activeCredentials);
+        if (generation !== destGenRef.current) return;
       } catch {
         // A committed timeline remains useful if this optional dashboard read fails.
       }
@@ -263,16 +293,23 @@ export function AppProvider({
       // 与“会话失效”，避免把新账号误报成登录已过期。
       const status = error instanceof ApiError ? error.status : -1;
       if (status === 401) {
-        await refreshAccount(credentials);
+        await refreshAccount(activeCredentials).catch(() => null);
+        if (generation !== destGenRef.current) return;
         if (needsOnboardingRef.current) {
           await reloadLocal();
           return;
         }
       }
+      if (status === 401 || status === 403) {
+        userIdRef.current = null; setUserId(null);
+        familyIdRef.current = null; setAccountFamilyId(null);
+        await clearServerCaches();
+        if (generation !== destGenRef.current) return;
+      }
       setMessage(error instanceof Error ? error.message : "同步失败，本机资料不受影响。");
     } finally {
       try {
-        await reloadLocal();
+        if (generation === destGenRef.current) await reloadLocal();
       } finally {
         setSyncing(false);
         syncInFlight.current = false;
@@ -333,32 +370,55 @@ export function AppProvider({
    * 旧目的地的服务器缓存，绝不把 A 家庭的缓存泄露给 B 连接。
    */
   const connect = useCallback(async (nextCredentials: Credentials) => {
-    if (clearingLocal.current) return;
-    await saveCredentials(nextCredentials);
-    setCredentials(nextCredentials);
-    destGenRef.current += 1;
-    await refreshAccount(nextCredentials);
-    const destination = `${nextCredentials.serverUrl}|${userIdRef.current ?? ""}`;
-    const previous = await getActiveDestination();
-    if (previous && previous !== destination) {
-      await clearServerCaches();
+    if (clearingLocal.current || connecting.current) throw new Error("正在完成上一次连接操作，请稍后再试。");
+    connecting.current = true;
+    const generation = ++destGenRef.current;
+    try {
+      const { serverUrl, info } = await fetchBootstrap(nextCredentials.serverUrl);
+      const verified = { ...nextCredentials, serverUrl, instanceId: info.instanceId };
+      const me = await fetchMe(verified);
+      if (me.status === "revoked") throw new ApiError("当前账号授权已撤回，请重新连接。", 403);
+      // All old writes must finish before clearing caches and activating B.
+      await syncDone.current;
+      if (generation !== destGenRef.current) return;
+      const destination = JSON.stringify([serverUrl, info.instanceId, me.user.id, me.status === "ready" ? me.family.id : null]);
+      const previous = await getActiveDestination();
+      if (previous !== destination) await clearServerCaches();
+      try {
+        await setActiveDestination(destination);
+        await saveCredentials(verified);
+      } catch (error) {
+        credentialsRef.current = null; setCredentials(null);
+        await clearCredentials();
+        await reloadLocal();
+        throw error;
+      }
+      userIdRef.current = me.user.id; setUserId(me.user.id);
+      familyIdRef.current = me.status === "ready" ? me.family.id : null;
+      setAccountFamilyId(familyIdRef.current);
+      needsOnboardingRef.current = me.status === "needsOnboarding";
+      setNeedsOnboarding(needsOnboardingRef.current);
+      credentialsRef.current = verified; setCredentials(verified);
       await reloadLocal();
-    }
-    await setActiveDestination(destination);
-  }, [refreshAccount, reloadLocal]);
+    } finally { connecting.current = false; }
+  }, [reloadLocal]);
 
   const disconnect = useCallback(async () => {
-    if (credentials) await signOut(credentials);
-    await clearCredentials();
+    if (clearingLocal.current || connecting.current) throw new Error("正在完成连接或清理操作，请稍后再试。");
+    connecting.current = true;
     destGenRef.current += 1;
-    setCredentials(null);
-    needsOnboardingRef.current = false;
-    setNeedsOnboarding(false);
-    userIdRef.current = null;
-    setUserId(null);
-    familyIdRef.current = null;
-    setMessage("已断开服务器，本机资料保持不变。");
-  }, [credentials]);
+    const previous = credentialsRef.current;
+    credentialsRef.current = null; setCredentials(null);
+    try {
+      await syncDone.current;
+      await clearCredentials();
+      if (previous) await signOut(previous);
+      needsOnboardingRef.current = false; setNeedsOnboarding(false);
+      userIdRef.current = null; setUserId(null);
+      familyIdRef.current = null; setAccountFamilyId(null);
+      setMessage("已断开服务器，本机资料保持不变。");
+    } finally { connecting.current = false; }
+  }, []);
 
   const setWelcomeSeen = useCallback(async () => {
     await setMeta("welcome_done", "1");
@@ -367,8 +427,10 @@ export function AppProvider({
 
   /** App 内建立家庭；成功后立即开始第一次同步。 */
   const completeOnboarding = useCallback(async (input: OnboardingInput) => {
-    if (!credentials) throw new Error("尚未登录。");
+    if (!credentials || connecting.current) throw new Error("尚未登录或正在切换连接。");
+    const generation = destGenRef.current;
     await submitOnboarding(credentials, input);
+    if (generation !== destGenRef.current) return;
     needsOnboardingRef.current = false;
     setNeedsOnboarding(false);
     setMessage("家庭已建立，开始同步家庭资料。");
@@ -380,8 +442,10 @@ export function AppProvider({
     scope: SyncConsent["scope"],
     ids?: string[],
   ) => {
-    if (!credentials) return;
+    const generation = destGenRef.current;
+    if (connecting.current || credentials !== credentialsRef.current || !credentials?.instanceId || !userIdRef.current || !familyIdRef.current) { setMessage("请先联网核对实例、账号与家庭，再授权同步。"); return; }
     const consent: SyncConsent = {
+      instanceId: credentials.instanceId,
       serverUrl: credentials.serverUrl,
       userId: userIdRef.current ?? "",
       familyId: familyIdRef.current,
@@ -390,6 +454,7 @@ export function AppProvider({
       decidedAt: new Date().toISOString(),
     };
     await setSyncConsent(consent);
+    if (generation !== destGenRef.current) return;
     consentRef.current = consent;
     setSyncConsentState(consent);
     setMessage(
@@ -419,7 +484,9 @@ export function AppProvider({
 
   const clearLocal = useCallback(async () => {
     if (clearingLocal.current) return;
+    if (connecting.current) { setMessage("正在完成连接操作，请稍后再清理。"); return; }
     clearingLocal.current = true;
+    destGenRef.current++;
     setSyncing(true);
     try {
       // Let already-started archive/intake writes settle before erasing their
@@ -429,12 +496,12 @@ export function AppProvider({
       await clearAllReadingDownloads();
       await Promise.all([clearCredentials(), clearLocalArchive()]);
       clearLocalFiles();
-      setCredentials(null);
+      credentialsRef.current = null; setCredentials(null);
       needsOnboardingRef.current = false;
       setNeedsOnboarding(false);
       userIdRef.current = null;
       setUserId(null);
-      familyIdRef.current = null;
+      familyIdRef.current = null; setAccountFamilyId(null);
       consentRef.current = null;
       setSyncConsentState(null);
       await reloadLocal();
@@ -448,16 +515,17 @@ export function AppProvider({
   }, [credentials, reloadLocal]);
 
   useEffect(() => {
+    const generation = destGenRef.current;
+    let active = true;
     const timer = setTimeout(() => {
       void reloadLocal().then(async () => {
-        if (!credentials || needsOnboardingRef.current) return;
-        // 启动即恢复账号状态（userId/家庭），授权门与上传判定依赖它。
-        await refreshAccount(credentials);
+        if (!active || generation !== destGenRef.current || !credentials || needsOnboardingRef.current || connecting.current) return;
+        // The sync path verifies the instance and current account before uploading.
         await runSync();
       });
     }, 0);
-    return () => clearTimeout(timer);
-  }, [credentials, refreshAccount, reloadLocal, runSync]);
+    return () => { active = false; clearTimeout(timer); };
+  }, [credentials, reloadLocal, runSync]);
 
   useEffect(() => {
     const timer = setTimeout(() => void receiveSystemShares(), 0);
@@ -501,9 +569,11 @@ export function AppProvider({
     return !(
       syncConsent !== null &&
       syncConsent.serverUrl === credentials.serverUrl &&
-      syncConsent.userId === userId
+      syncConsent.userId === userId &&
+      Boolean(credentials.instanceId) && syncConsent.instanceId === credentials.instanceId &&
+      syncConsent.familyId === accountFamilyId
     );
-  }, [credentials, needsOnboarding, outbox.length, syncConsent, userId]);
+  }, [accountFamilyId, credentials, needsOnboarding, outbox.length, syncConsent, userId]);
 
   const value = useMemo<AppContextValue>(() => ({
     credentials,

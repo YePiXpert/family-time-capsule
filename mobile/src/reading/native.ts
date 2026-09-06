@@ -253,7 +253,7 @@ export async function resolveReadingScope(
 ): Promise<{ scope: ReadingScope; online: boolean }> {
   return readingDownloads.withCacheOperation(async () => {
     const serverUrl = credentials.serverUrl.replace(/\/+$/, ""),
-      credentialHash = await hash(JSON.stringify([serverUrl, credentials.token]));
+      credentialHash = await hash(JSON.stringify([serverUrl, ...(credentials.instanceId ? [credentials.instanceId] : []), credentials.token]));
     const previous = await (
       await db()
     ).getFirstAsync<{ scope_json: string }>(
@@ -274,7 +274,7 @@ export async function resolveReadingScope(
         throw new ReadingError("阅读账号响应无效。", 502);
       const scope = {
         key: await hash(
-          JSON.stringify([serverUrl, identity.userId, identity.familyId]),
+          JSON.stringify([serverUrl, ...(credentials.instanceId ? [credentials.instanceId] : []), identity.userId, identity.familyId]),
         ),
         serverUrl,
         userId: identity.userId,

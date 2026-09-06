@@ -428,3 +428,20 @@ it("device erasure drains an in-flight identity response so it cannot restore a 
   expect(await native.nativeReadingStore.list()).toEqual([]);
   await expect(native.resolveReadingScope(credentials, { offline: true })).rejects.toThrow("在线验证");
 });
+
+it("separates instances at the same URL and preserves previously verified offline downloads", async () => {
+  const first = { ...credentials, instanceId: "original-instance" };
+  const second = { ...credentials, instanceId: "replacement-instance" };
+  const { scope } = await native.resolveReadingScope(first);
+  const transport = native.nativeReadingTransport(first, scope);
+  const entry = await native.readingDownloads.queue(scope, manifest, transport);
+  await native.readingDownloads.resume(scope, entry.key, transport);
+  await expect(native.resolveReadingScope(second, { offline: true })).rejects.toThrow("在线验证");
+  const other = await native.resolveReadingScope(second);
+  expect(other.scope.key).not.toBe(scope.key);
+  expect(await native.nativeReadingStore.list(other.scope.key)).toEqual([]);
+  const offline = await native.resolveReadingScope(first, { offline: true });
+  expect(offline.scope.key).toBe(scope.key);
+  expect((await native.nativeReadingStore.get(entry.key))?.state).toBe("ready");
+  expect(existsSync(path.join(root, "captures", "only-original.jpg"))).toBe(true);
+});

@@ -1014,10 +1014,12 @@ export async function getSyncConsent(): Promise<SyncConsent | null> {
   try {
     const parsed = JSON.parse(raw) as SyncConsent;
     if (
+      (parsed.instanceId !== undefined && (typeof parsed.instanceId !== "string" || !parsed.instanceId || parsed.instanceId.length > 128)) ||
+      (parsed.familyId !== null && typeof parsed.familyId !== "string") ||
       typeof parsed.serverUrl !== "string" ||
       typeof parsed.userId !== "string" ||
       !["all", "selected", "local"].includes(parsed.scope) ||
-      !Array.isArray(parsed.ids)
+      !Array.isArray(parsed.ids) || parsed.ids.some((id) => typeof id !== "string")
     ) {
       return null;
     }

@@ -11,7 +11,13 @@ export async function loadCredentials(): Promise<Credentials | null> {
     if (typeof value.serverUrl !== "string" || typeof value.token !== "string") {
       return null;
     }
-    return { serverUrl: value.serverUrl, token: value.token };
+    if (value.instanceId !== undefined && (
+      typeof value.instanceId !== "string" || !value.instanceId || value.instanceId.length > 128
+    )) return null;
+    return {
+      serverUrl: value.serverUrl, token: value.token,
+      ...(value.instanceId ? { instanceId: value.instanceId } : {}),
+    };
   } catch {
     return null;
   }

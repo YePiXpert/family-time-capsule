@@ -11,6 +11,6 @@ export function memoryCacheScope(
 ): string | null {
   if (!credentials) return null;
   return bytesToHex(sha256(utf8ToBytes(JSON.stringify([
-    credentials.serverUrl.replace(/\/+$/, ""), credentials.token, userId, familyId,
+    credentials.serverUrl.replace(/\/+$/, ""), ...(credentials.instanceId ? [credentials.instanceId] : []), credentials.token, userId, familyId,
   ]))));
 }

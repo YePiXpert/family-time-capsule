@@ -23,8 +23,9 @@ vi.mock("../src/api/client", () => ({
   ApiError: class ApiError extends Error {
     constructor(message: string, readonly status: number) { super(message); this.name = "ApiError"; }
   },
+  fetchBootstrap: async (serverUrl: string) => ({ serverUrl, info: { instanceId: "instance-1" } }),
   fetchMobileHome: async () => null, fetchMobileReview: async () => null, signOut: async () => {},
-  fetchMe: async () => ({ status: "ready" }), submitOnboarding: async () => {},
+  fetchMe: async () => ({ status: "ready", user: { id: "user-1" }, family: { id: "family-1" } }), submitOnboarding: async () => {},
 }));
 vi.mock("../src/native/intake", () => ({ drainNativeShareIntake: async () => ({ manifests: 0 }) }));
 vi.mock("../../mobile/modules/share-intake/src", () => ({ subscribeToPendingNativeShares: () => () => {} }));
@@ -38,7 +39,7 @@ function Probe() {
   return null;
 }
 let tree: ReactTestRenderer | undefined;
-const credentials = { serverUrl: "https://example.test", token: "fictional-session" };
+const credentials = { serverUrl: "https://example.test", token: "fictional-session", instanceId: "instance-1" };
 const summary = { uploadedCount: 0, failedCount: 0, eventCount: 0 };
 beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers(); mocks.sync.mockResolvedValue(summary); });
 afterEach(async () => { if (tree) await act(() => tree!.unmount()); tree = undefined; vi.useRealTimers(); });

@@ -59,13 +59,14 @@ it("reads the same session's offline cache without a network request", async () 
   expect(output()).toContain("A_PRIVATE_ONLY");
   expect(mocks.fetch).not.toHaveBeenCalled();
 });
-it.each(["session", "user", "family", "server", "disconnect"])("hides cached and rendered private text when %s changes", async (field) => {
+it.each(["session", "user", "family", "server", "instance", "disconnect"])("hides cached and rendered private text when %s changes", async (field) => {
   await open();
   expect(output()).toContain("A_PRIVATE_ONLY");
   if (field === "session") mocks.credentials = { ...mocks.credentials!, token: "B-session" };
   if (field === "user") mocks.user = "B";
   if (field === "family") mocks.family = "another-family";
   if (field === "server") mocks.credentials = { ...mocks.credentials!, serverUrl: "https://other.test" };
+  if (field === "instance") mocks.credentials = { ...mocks.credentials!, instanceId: "another-instance" };
   if (field === "disconnect") mocks.credentials = null;
   await act(async () => { tree!.update(render()); });
   expect(output()).not.toContain("A_PRIVATE_ONLY");

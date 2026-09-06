@@ -1,4 +1,6 @@
 export type Credentials = {
+  /** Missing only on older installations until the first online identity check. */
+  instanceId?: string;
   serverUrl: string;
   token: string;
 };
@@ -420,9 +422,10 @@ export type InvitationCreateResult = {
  * - scope "all"：目的地允许上传全部本机待传记录；
  * - scope "selected"：仅上传 ids 中的记录；
  * - scope "local"：明确选择仅保留本机（不等于暂停，暂停用另一个标志）。
- * 目的地 = serverUrl + 账号；切换实例/账号/家庭后需重新核对。
+ * 目的地 = serverUrl + instanceId + 账号 + 家庭；切换实例/账号/家庭后需重新核对。
  */
 export type SyncConsent = {
+  instanceId?: string;
   serverUrl: string;
   userId: string;
   familyId: string | null;

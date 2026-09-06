@@ -25,6 +25,7 @@ import {
 export type { SyncSummary } from "./core";
 
 export type SyncArchiveOptions = {
+  isCurrent?: () => boolean;
   /** 上传授权门（M4）：未授权目的地的待传项保留在本机。 */
   authorizeUpload?: (item: OutboxItem) => Promise<boolean>;
 };
@@ -38,6 +39,7 @@ export async function syncArchive(
     createSnapshotId: () => Crypto.randomUUID(),
     listOutbox,
     authorizeUpload: options.authorizeUpload,
+    isCurrent: options.isCurrent,
     uploadTextCapture,
     uploadMediaCapture,
     updateMediaUploadState,
