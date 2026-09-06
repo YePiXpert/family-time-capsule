@@ -15,7 +15,6 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
   const endpoint = `/api/mobile/v1/transcripts/${encodeURIComponent(assetId)}`;
   const load = useCallback(async () => {
     const request = ++generation.current;
-    setBusy(true); setVerified(false);
     try {
       const response = await fetch(endpoint, { cache: "no-store" });
       if (!response.ok) throw new ApiError("无法读取转录，请检查登录和权限。", response.status);
@@ -53,7 +52,7 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
     } finally { if (request === generation.current) setBusy(false); }
   };
   const stale = review !== null && draft.revision !== (review.transcript?.revision ?? null);
-  return <details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => setOpened(event.currentTarget.open)}>
+  return <details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpened(event.currentTarget.open); if (event.currentTarget.open) { setBusy(true); setVerified(false); } }}>
     <summary className="min-h-11 cursor-pointer py-2">转录全文与修订 · {label}</summary>
     {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
     {review ? <div className="grid gap-3">
@@ -66,6 +65,6 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
         {success ? <p role="status">修订已保存。</p> : null}
       </> : null}
     </div> : <p>展开后读取全文。</p>}
-    <button type="button" className="ui-button-secondary my-2" disabled={busy} onClick={() => { setError(null); void load(); }}>刷新转录</button>
+    <button type="button" className="ui-button-secondary my-2" disabled={busy} onClick={() => { setError(null); setBusy(true); setVerified(false); void load(); }}>刷新转录</button>
   </details>;
 }
