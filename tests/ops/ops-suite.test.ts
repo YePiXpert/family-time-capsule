@@ -254,7 +254,7 @@ describe("ftc backup / cleanup", () => {
 });
 
 describe("互斥锁", () => {
-  it("锁被存活进程持有时退出 9；进程死亡后锁自动回收并继续", () => {
+  it("锁被存活进程持有时退出 9；进程死亡后锁自动回收并继续", async () => {
     // 用 bash 自己占锁并写入它的 $$，保证 kill -0 在同一 pid 命名空间可见。
     const lockDir = toPosix(path.join(ftcRoot, "state", "locks", "backup"));
     const holderScript = path.join(workspace, "hold-lock.sh");
@@ -274,7 +274,8 @@ describe("互斥锁", () => {
       expect(blocked.stderr).toContain("正在运行");
     } finally {
       holder.kill("SIGKILL");
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+      // 异步等待让 node 回收子进程，避免僵尸 pid 让 kill -0 误判存活。
+      await new Promise((resolve) => setTimeout(resolve, 400));
     }
     // 持有进程已死：锁应被自动回收（不再报“正在运行”）。
     const recovered = run("backup", []);

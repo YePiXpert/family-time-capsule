@@ -68,7 +68,7 @@ tar -czf "$SNAP" -C "$STAGING" manifest.json env data.tar
 rm -rf "$STAGING"
 
 phase_set "backup-verify"
-"$0" verify "$SNAP"
+bash "$0" verify "$SNAP"
 
 phase_set "backup-restart"
 compose_cmd up -d --wait >/dev/null

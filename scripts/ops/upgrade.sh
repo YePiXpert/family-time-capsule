@@ -63,7 +63,7 @@ fi
 phase_set "upgrade-snapshot"
 note "进入维护窗口：停止写入并生成一致性快照。"
 SNAP_ID="$(new_deployment_id)"
-if ! "$LIB_DIR/../backup.sh" >/dev/null; then
+if ! bash "$LIB_DIR/../backup.sh" >/dev/null; then
   phase_set "upgrade-recover-old"
   compose_cmd up -d --wait >/dev/null 2>&1 || true
   phase_clear

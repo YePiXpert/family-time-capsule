@@ -36,7 +36,7 @@ fi
 # 恢复旧镜像本身（不回数据库）只对“从未接受写入”的部署是安全的。
 if [[ "$ACCEPTED" == "true" && $FORCE_DATA_DECISION -ne 1 ]]; then
   CURRENT_SNAP="$(ls -1t "$FTC_BACKUP_DIR"/ftc-snapshot-*.tar.gz 2>/dev/null | head -1 || true)"
-  "$LIB_DIR/../backup.sh" >/dev/null 2>&1 || warn "无法生成回退前快照，继续前请人工备份。"
+  bash "$LIB_DIR/../backup.sh" >/dev/null 2>&1 || warn "无法生成回退前快照，继续前请人工备份。"
   cat >&2 <<EOF
 [ftc:error] 当前部署（$CURRENT_DEPLOYMENT）已经对外开放并接受过写入。
 直接回滚数据库会丢失其后的全部新资料，本工具拒绝静默执行。

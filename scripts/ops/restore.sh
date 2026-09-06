@@ -29,7 +29,7 @@ ftc_lock restore
 ensure_layout
 
 # 1 校验整包
-"$LIB_DIR/../backup.sh" verify "$SNAP"
+bash "$LIB_DIR/../backup.sh" verify "$SNAP"
 
 # 2 staging 解压 + 路径安全检查
 STAGING="$(mktemp -d "$FTC_BACKUP_DIR/.restore-XXXXXX")"
