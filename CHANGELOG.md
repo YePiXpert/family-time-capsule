@@ -2,6 +2,32 @@
 
 本项目的版本路线：**P0 可信私人时间轴**（0.1.0）→ **Real-world Hardening**（0.1.1）→ **Verification Hardening**（0.1.2）→ **Performance & Audit Hardening**（0.1.3）→ **1.0 Family Archive**。
 
+## 1.3.0-alpha.1 — 从部署到全家使用（2026-09-06）
+
+- 首次启动（M1）：App 欢迎页四入口（创建我的家庭/加入家人的家庭/仅本机记录/已有账号登录）；
+  `GET /api/bootstrap` 实例识别与稳定 instanceId（迁移 0040）；`POST /api/bootstrap/setup`
+  在 App 内完成首个管理员初始化（复用 performSetup 门禁）；`GET /api/mobile/v1/me` 区分
+  待初始化/就绪/失效，未建家庭的账号不再被误报"登录已过期"；`POST /api/mobile/v1/onboarding`
+  在 App 内建立家庭并立即同步。
+- 邀请注册（M2）：公开只读 `GET /api/invitations/preview`（不消耗邀请）与
+  `POST /api/invitations/accept`（原子接受、幂等恢复、访客 token 不可用）；
+  `POST /api/mobile/v1/invitations` 由管理员在 App 内创建一次性邀请，本地二维码、
+  系统分享与显式复制；受邀人扫码/粘贴链接 → 预览确认 → 注册 → 自动登录加入同一家庭。
+- 本机即存即看（M3）：本机记录详情页直接阅读图片/视频/音频/文字（不要求联网、上传或整理），
+  文件缺失如实报错并提供移除残留记录的恢复入口；保存/同步/整理状态分离展示；
+  保存完成不再等待整条同步；收件箱"确认"携带当前未保存的编辑在同一事务提交；
+  发生时间改用平台日期时间控件并支持"待补时间"。
+- 同步授权与救援（M4）：首次连接需明确授权上传目的地（全部/部分/仅本机），网络恢复与
+  前后台切换不可绕过；切换实例/账号清空服务器侧缓存并重新授权（代际栅栏防旧结果写入新视图）；
+  失败操作拆分"保留本机"（不删原件）与"删除"（独立确认）；本机救援包导出/恢复
+  （SHA-256 清单、防篡改与路径穿越、恢复默认仅本机）。
+- 运维工具（M5/M6）：`scripts/ops/ftc` 套件（install/deploy/status/doctor/setup-info/logs/
+  stop/start/backup/restore/upgrade/rollback/cleanup）与共享库；两种网络模式（Caddy 自动
+  HTTPS / 环回 + Nginx 片段）；停写一致性快照与校验；升级 A/B/C/D 失败分级处置；
+  已接受写入后拒绝静默回滚；维护门禁；12 项真实 bash + 假 docker 的工具测试并入 CI。
+- 文档：QUICKSTART_SELFHOST、OPERATIONS、UPGRADE、BACKUP_RESTORE、APP_FIRST_RUN、
+  RELEASE_1_3；PRODUCT_1_3 基线与需求对照。真实 VPS/真机端到端验收仍未完成，见 RELEASE_1_3。
+
 ## 1.2.0-alpha.4 — 界面与操作体验优化（2026-09-06）
 
 - 首页与导航：小字对比度提升至 WCAG AA；底部导航补上「家庭投递箱」高亮，移动端与
