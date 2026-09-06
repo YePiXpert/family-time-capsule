@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import sharp from "sharp";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AiJobRuntimeIdentity } from "@/lib/ai/jobs";
+import type { AnalyzeImageInput } from "@/lib/ai/types";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-image-analysis-"));
 process.env.DATA_DIR = dataDir;
@@ -158,6 +160,33 @@ async function ingestPhoto(filename: string) {
 }
 
 describe("image analysis end-to-end", () => {
+  it("the actual worker sends only a sanitized preview while preserving original bytes and provenance", async () => {
+    const original = await ingestPhoto("原件名称保持.jpg");
+    const { getAssetStorage } = await import("@/lib/assets/storage");
+    const storage = getAssetStorage();
+    const before = storage.read(original.storageKey);
+    expect((await sharp(before).metadata()).exif).toBeDefined();
+    const sent: Uint8Array[] = [];
+    class PreviewAssistant extends DeterministicFakeMemoryAssistant {
+      override async analyzeImage(input: AnalyzeImageInput) {
+        sent.push(input.image.bytes);
+        return super.analyzeImage(input);
+      }
+    }
+    const queued = requestImageAnalysis(adminContext(), original.id, { runtime: INTERNAL_RUNTIME });
+    expect(queued.ok).toBe(true);
+    expect((await runAiWorkerOnce({ assistant: new PreviewAssistant() })).status).toBe("completed");
+    expect(sent).toHaveLength(1);
+    const metadata = await sharp(sent[0]).metadata();
+    expect(metadata.exif).toBeUndefined();
+    expect(metadata.width).toBeLessThanOrEqual(1600);
+    expect(metadata.height).toBeLessThanOrEqual(1600);
+    expect(createHash("sha256").update(storage.read(original.storageKey)).digest("hex")).toBe(original.sha256);
+    expect(storage.read(original.storageKey)).toEqual(before);
+    const { asset } = await import("@/db/schema/asset");
+    expect(getDb().select().from(asset).where(eq(asset.id, original.id)).get()).toMatchObject({ originalFilename: "原件名称保持.jpg", storageKey: original.storageKey, sha256: original.sha256 });
+  });
+
   it("enqueue → worker → row exists; rerun replaces", async () => {
     const imageAsset = await ingestPhoto("集成测试.jpg");
 
@@ -184,7 +213,7 @@ describe("image analysis end-to-end", () => {
       .get();
     expect(row).toBeTruthy();
     expect(row!.description).toContain("Deterministic fake image analysis");
-    expect(row!.analyzedVia).toBe("original");
+    expect(row!.analyzedVia).toBe("thumbnail");
 
     const rerun = requestImageAnalysis(adminContext(), imageAsset.id, {
       runtime: INTERNAL_RUNTIME,
