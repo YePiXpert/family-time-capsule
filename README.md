@@ -1,8 +1,8 @@
 # Family Time Capsule
 
-**v1.2.0-alpha.3 — 家庭记忆馆与成长年册（prerelease）**
+**v1.2.0-alpha.4 — 家庭记忆馆与成长年册（prerelease）**
 
-本次修复首页快捷入口触发的原生闪退，并保留 alpha.2 的全部修复；详见
+本次集中优化 Web 与移动端的界面与操作体验，并保留 alpha.3 的全部修复；详见
 [发布说明](docs/RELEASE_NOTES_1_2.md)。
 
 A private, self-hosted family memory archive.
