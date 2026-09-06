@@ -40,7 +40,7 @@ import { TranscriptSection } from "./transcript-ui";
 import { ImageAnalysisSection } from "./analysis-ui";
 import { SuggestionSection } from "./suggestion-ui";
 import { TrashEventButton } from "../../trash/trash-ui";
-import { hasFamilyCapability } from "@/lib/authz/policy";
+import { hasFamilyCapability, isAdminClassRole } from "@/lib/authz/policy";
 import {
   listEventTags,
 } from "@/lib/suggestions/service";
@@ -277,7 +277,7 @@ export default async function MemoryEventPage({
   const child = participants.find((p) => p.id === event.childPersonId);
   const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt, timezone);
   const contributionAuthors =
-    context.role === "admin" || context.role === "editor"
+    isAdminClassRole(context.role) || context.role === "editor"
       ? people
       : people.filter((p) => p.id === context.personId);
   const jobByAssetId = new Map(
