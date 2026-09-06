@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
@@ -60,11 +60,20 @@ const child = getDb()
   .get();
 if (!child) throw new Error("child missing");
 
-function sha(value: string): string {
+// Each valid JPEG has a distinct COM segment, retaining the deduplication
+// constraint while exercising real decoding and metadata removal.
+function imageBytes(): Buffer {
+  const jpeg = readFileSync(path.join(process.cwd(), "tests/fixtures/sample.jpg"));
+  const comment = Buffer.from(randomUUID());
+  const marker = Buffer.from([0xff, 0xfe, 0, comment.length + 2]);
+  return Buffer.concat([jpeg.subarray(0, 2), marker, comment, jpeg.subarray(2)]);
+}
+
+function sha(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function writeAssetFile(storageKey: string, content: string): void {
+function writeAssetFile(storageKey: string, content: Buffer): void {
   const targetPath = getAssetStorage().resolvePath(storageKey);
   mkdirSync(path.dirname(targetPath), { recursive: true });
   writeFileSync(targetPath, Buffer.from(content));
@@ -74,7 +83,7 @@ function makeAsset(
   overrides: Partial<typeof asset.$inferInsert> = {},
 ): { id: string; storageKey: string; sha256: string } {
   const id = randomUUID();
-  const content = `fake image bytes for analysis ${randomUUID()}`;
+  const content = imageBytes();
   const sha256 = sha(content);
   const date = new Date("2026-08-31T00:00:00.000Z");
   const storageKey = `originals/${familyId}/${date.getFullYear()}/${String(
@@ -130,7 +139,7 @@ function makeLease(entityId: string): import("@/lib/ai/jobs").AiJobLease {
 const assistant = new DeterministicFakeMemoryAssistant({ seed: "handler-test" });
 
 describe("analyze.asset_image.v1 handler", () => {
-  it("commits a machine analysis on happy path (original)", async () => {
+  it("commits a machine analysis using a sanitized preview of the original", async () => {
     const { id } = makeAsset();
     const lease = makeLease(id);
     const result = await analyzeAssetImageHandler({
@@ -157,7 +166,7 @@ describe("analyze.asset_image.v1 handler", () => {
     expect(row).toBeTruthy();
     expect(row!.description).toContain("Deterministic fake image analysis");
     expect(row!.ocrText).toBeNull();
-    expect(row!.analyzedVia).toBe("original");
+    expect(row!.analyzedVia).toBe("thumbnail");
     expect(row!.createdByJobId).toBe(lease.jobId);
     expect(row!.sourceSha256).toBe(
       getDb().select({ sha256: asset.sha256 }).from(asset).where(eq(asset.id, id)).get()!.sha256,
@@ -173,7 +182,7 @@ describe("analyze.asset_image.v1 handler", () => {
       .get()!;
 
     const derivativeId = randomUUID();
-    const derivativeContent = `thumbnail bytes for heic ${randomUUID()}`;
+    const derivativeContent = imageBytes();
     const derivativeSha256 = sha(derivativeContent);
     const date = new Date("2026-08-31T00:00:00.000Z");
     const derivativeStorageKey = `derivatives/thumbnails/${familyId}/${date.getFullYear()}/${String(
