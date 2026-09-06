@@ -116,6 +116,7 @@ export type AccountMutationError =
   | "cannot_disable_self"
   | "last_admin"
   | "owner_transfer_required"
+  | "child_role_not_allowed"
   | "password_required";
 
 export type AccountMutationResult =
@@ -361,8 +362,13 @@ export function changeFamilyAccountRole(
       if (!actor) return { ok: false, error: "forbidden" } as const;
 
       const target = tx
-        .select({ role: userTable.role, disabledAt: userTable.disabledAt })
+        .select({
+          role: userTable.role,
+          disabledAt: userTable.disabledAt,
+          personIsChild: person.isChild,
+        })
         .from(userTable)
+        .leftJoin(person, eq(person.id, userTable.personId))
         .where(
           and(
             eq(userTable.id, targetUserId),
@@ -377,6 +383,10 @@ export function changeFamilyAccountRole(
       if (target.role === "owner") {
         // owner 的角色只能通过所有权移交变化;此处明确拒绝并给出指引。
         return { ok: false, error: "owner_transfer_required" } as const;
+      }
+      if (target.personIsChild === true && (nextRole === "admin" || nextRole === "editor")) {
+        // ID-16：孩子本人账号永远不能拥有管理/编辑权限（提权路径全部封死）。
+        return { ok: false, error: "child_role_not_allowed" } as const;
       }
       if (target.role === nextRole) return { ok: true } as const;
 

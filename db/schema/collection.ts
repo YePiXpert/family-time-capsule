@@ -6,8 +6,10 @@ import {
   sqliteTable,
   text,
   uniqueIndex,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 import { family } from "./family";
+import { user } from "./auth";
 import { memoryEvent } from "./memory";
 import { asset } from "./asset";
 const created = () =>
@@ -86,5 +88,38 @@ export const collectionItem = sqliteTable(
       t.memoryEventId,
     ),
     index("collection_item_order_idx").on(t.collectionId, t.position),
+  ],
+);
+
+/**
+ * 访客限定阅读链接（M2-d，ID-5）：与投递箱（contribution_request，只提交）
+ * 相对的只读 scope。令牌 256-bit 只存 SHA-256；撤销/过期即时生效；
+ * 范围仅限单一相册（collection）；浏览留痕。
+ */
+export const guestReadGrant = sqliteTable(
+  "guest_read_grant",
+  {
+    id: text("id").primaryKey(),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    collectionId: text("collection_id")
+      .notNull()
+      .references(() => collection.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    title: text("title").notNull(),
+    createdByUserId: text("created_by_user_id").references((): AnySQLiteColumn => user.id, {
+      onDelete: "set null",
+    }),
+    expiresAt: integer("expires_at", { mode: "timestamp" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+    viewCount: integer("view_count").notNull().default(0),
+    lastViewedAt: integer("last_viewed_at", { mode: "timestamp" }),
+    createdAt: created(),
+    updatedAt: updated(),
+  },
+  (t) => [
+    index("guest_read_grant_family_idx").on(t.familyId, t.createdAt),
+    index("guest_read_grant_collection_idx").on(t.collectionId),
   ],
 );

@@ -110,11 +110,14 @@ export function CreateInvitationForm({
               {member.relationToChild
                 ? ` · ${member.relationToChild}`
                 : ""}
+              {member.isChild ? " · 孩子本人" : ""}
             </option>
           ))}
         </select>
         <span className="text-xs font-normal leading-5 text-foreground/60">
           Person 是现实中的家人；账号只是登录身份。没有账号的家人档案仍会保留。
+          为「孩子本人」开通账号需由在册监护人发起，且只能是查看者或贡献者；
+          开通不会解锁「留给孩子将来」的内容。
         </span>
       </label>
 

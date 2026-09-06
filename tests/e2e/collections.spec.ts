@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import path from 'node:path';
 import { ensureBootstrap } from './helpers';
 test('真实相册编辑：多选、章节、顺序、重开、冲突与删除恢复',async({page})=>{
   await ensureBootstrap(page);
@@ -38,4 +39,77 @@ test('相册选择跨越第一页，并能直接恢复时间轴指定的旧相�
   await page.goto(`/timeline?collection=${outside}`);
   await expect(page.getByRole('combobox',{name:'目标相册',exact:true})).toHaveValue(outside);
   await expect(page.getByRole('combobox',{name:'目标相册',exact:true}).locator(`option[value="${outside}"]`)).toHaveCount(1);
+});
+
+test('访客限定阅读链接：只读单册、范围外媒体 404、收回即失效（M2-d ID-5）', async ({ page, browser }) => {
+  await ensureBootstrap(page);
+  // 自备一条带照片的记忆 + 一本相册
+  await page.goto('/capture');
+  await page
+    .locator('section[aria-label="照片"] input[type="file"]')
+    .setInputFiles(path.join(__dirname, '..', 'fixtures', 'sample-exif.jpg'));
+  await expect(page.getByText('已保存，等待整理')).toBeVisible();
+  await page.goto('/capture');
+  await page.getByLabel('写下这一刻').fill('虚构记录：给外婆的相册素材。');
+  await page.getByLabel('标题', { exact: true }).fill('阳光下的午后');
+  await page.getByLabel('发生时间', { exact: true }).fill('2026-08-15T15:00');
+  await page.getByRole('button', { name: /先收进来/ }).click();
+  await expect(page.getByText('已收进收件箱')).toBeVisible();
+  await page.goto('/inbox');
+  const checkboxes = page.getByRole('checkbox');
+  await expect(checkboxes).toHaveCount(2);
+  for (const box of await checkboxes.all()) await box.check();
+  await page.getByLabel('合并事件标题').fill('阳光下的午后');
+  await page.getByRole('button', { name: '合并' }).click();
+  await expect(page.getByRole('heading', { name: '阳光下的午后' })).toBeVisible();
+  await page.goto('/collections');
+  await page.getByLabel('名称', { exact: true }).fill('给外婆的只读相册');
+  await page.getByRole('button', { name: '新建相册 / 章节', exact: true }).click();
+  await expect(page).toHaveURL(/\/collections\/[\w-]+$/);
+  const collectionUrl = page.url();
+  await page.getByRole('link', { name: '从时间轴多选记忆' }).click();
+  await page.getByLabel('阳光下的午后', { exact: true }).check();
+  await page.getByRole('button', { name: /加入所选/ }).click();
+  await page.getByRole('link', { name: '打开相册', exact: true }).click();
+
+  // 生成只读链接
+  await page.goto(collectionUrl);
+  await page.getByLabel('有效期').selectOption('7');
+  await page.getByRole('button', { name: '生成只读链接' }).click();
+  const pathText = await page.locator('code').first().textContent();
+  expect(pathText).toMatch(/^\/view\/[A-Za-z0-9_-]+$/);
+  const viewPath = pathText!.trim();
+
+  // 无会话访客上下文：能打开、能看到内容；越权媒体 404
+  const guestContext = await browser.newContext();
+  try {
+    const guest = await guestContext.newPage();
+    await guest.goto(viewPath);
+    await expect(guest.getByRole('heading', { name: '给外婆的只读相册' })).toBeVisible();
+    await expect(guest.getByRole('heading', { name: '阳光下的午后' })).toBeVisible();
+    const img = guest.locator('img').first();
+    await expect(img).toBeVisible();
+    const src = await img.getAttribute('src');
+    expect(src).toMatch(/^\/api\/media\/[\w-]+\?grant=/);
+    // 相册内媒体可流式读取
+    const inScope = await guest.request.get(src!);
+    expect(inScope.status()).toBe(200);
+    // 范围外（不存在的资产）与无 grant 参数都被拒绝
+    expect((await guest.request.get('/api/media/not-an-asset')).status()).toBe(401);
+    expect((await guest.request.get('/api/media/not-an-asset?grant=bad-token-000000')).status()).toBe(401);
+  } finally {
+    await guestContext.close();
+  }
+
+  // 收回后访客立即失效
+  await page.getByRole('button', { name: '收回链接' }).click();
+  await expect(page.getByText('已收回').first()).toBeVisible();
+  const guestContext2 = await browser.newContext();
+  try {
+    const guest2 = await guestContext2.newPage();
+    const gone = await guest2.goto(viewPath);
+    expect(gone?.status()).toBe(404);
+  } finally {
+    await guestContext2.close();
+  }
 });

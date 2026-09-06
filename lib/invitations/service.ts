@@ -57,7 +57,14 @@ export type CreateInvitationResult =
       token: string;
       expiresAt: Date;
     }
-  | { ok: false; error: InvitationAdminFailure | "person_unavailable" };
+  | {
+      ok: false;
+      error:
+        | InvitationAdminFailure
+        | "person_unavailable"
+        | "child_role_not_allowed"
+        | "guardian_consent_required";
+    };
 
 export type InvitationStatus =
   | "active"
@@ -83,6 +90,7 @@ export type InvitationPersonCandidate = {
   id: string;
   displayName: string;
   relationToChild: string | null;
+  isChild: boolean;
 };
 
 export type PublicInvitation =
@@ -128,6 +136,20 @@ type ClaimedInvitation = {
 
 class FinalizeInvitationError extends Error {}
 class InvitationAuthorizationError extends Error {}
+class InvitationChildRoleError extends Error {
+  constructor() {
+    super("child person cannot be invited with an administrative role");
+    this.name = "InvitationChildRoleError";
+  }
+}
+
+class InvitationGuardianConsentError extends Error {
+  constructor() {
+    super("child account binding requires an enabled guardian");
+    this.name = "InvitationGuardianConsentError";
+  }
+}
+
 class InvitationPersonUnavailableError extends Error {}
 
 function normalizeEmail(value: string): string {
@@ -353,9 +375,14 @@ export async function createFamilyInvitation(
         .get();
       if (!actor) throw new InvitationAuthorizationError();
 
+      let childBinding = false;
       if (personId) {
         const candidate = tx
-          .select({ id: person.id, boundUserId: userTable.id })
+          .select({
+            id: person.id,
+            boundUserId: userTable.id,
+            isChild: person.isChild,
+          })
           .from(person)
           .leftJoin(userTable, eq(userTable.personId, person.id))
           .where(
@@ -365,6 +392,33 @@ export async function createFamilyInvitation(
           .get();
         if (!candidate || candidate.boundUserId !== null) {
           throw new InvitationPersonUnavailableError();
+        }
+        if (candidate.isChild) {
+          // ID-16/SEC-5：孩子本人的账号绑定是监护决策——
+          // 只允许观察/贡献角色（绝无管理权），且必须由在册监护人发起；
+          // 绑定不解锁 child_later（解锁只经监护人手工触发，不按年龄）。
+          childBinding = true;
+          if (input.role === "admin" || input.role === "editor") {
+            throw new InvitationChildRoleError();
+          }
+          const consentingGuardian = tx
+            .select({ id: userTable.id, guardianPersonId: person.id })
+            .from(userTable)
+            .innerJoin(person, eq(person.id, userTable.personId))
+            .where(
+              and(
+                eq(userTable.id, input.actorUserId),
+                eq(userTable.familyId, input.familyId),
+                isNull(userTable.disabledAt),
+                eq(person.familyId, input.familyId),
+                eq(person.isGuardian, true),
+              ),
+            )
+            .limit(1)
+            .get();
+          if (!consentingGuardian) {
+            throw new InvitationGuardianConsentError();
+          }
         }
       }
 
@@ -398,6 +452,23 @@ export async function createFamilyInvitation(
           createdAt: now,
         })
         .run();
+      if (childBinding) {
+        // 监护授权留痕（SEC-5）：谁为孩子开通了账号、以什么角色。
+        tx.insert(auditLog)
+          .values({
+            id: randomUUID(),
+            familyId: input.familyId,
+            kind: "person.child_account_invited",
+            actorUserId: input.actorUserId,
+            detailJson: JSON.stringify({
+              personId,
+              role: input.role,
+              invitationId,
+            }),
+            createdAt: now,
+          })
+          .run();
+      }
     });
   } catch (error) {
     if (error instanceof InvitationAuthorizationError) {
@@ -405,6 +476,12 @@ export async function createFamilyInvitation(
     }
     if (error instanceof InvitationPersonUnavailableError) {
       return { ok: false, error: "person_unavailable" };
+    }
+    if (error instanceof InvitationChildRoleError) {
+      return { ok: false, error: "child_role_not_allowed" };
+    }
+    if (error instanceof InvitationGuardianConsentError) {
+      return { ok: false, error: "guardian_consent_required" };
     }
     return { ok: false, error: "invalid_input" };
   }
@@ -452,6 +529,7 @@ export async function listInvitationPersonCandidates(
       id: person.id,
       displayName: person.displayName,
       relationToChild: person.relationToChild,
+      isChild: person.isChild,
     })
     .from(person)
     .leftJoin(userTable, eq(userTable.personId, person.id))

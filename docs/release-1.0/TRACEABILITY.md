@@ -24,7 +24,7 @@
 | ID-1/2/19 | db/schema/family.ts、lib/authz/policy.ts | tests/unit/authz-policy.test.ts |
 | ID-3 | app/api/bootstrap、lib/auth/setup.ts、lib/instance/service | tests/integration/bootstrap-flow.test.ts、signup-gate.test.ts、setup-rate-limit.test.ts |
 | ID-4 | lib/invitations/service.ts、app/(protected)/(app)/settings/invitations | tests/integration/invitation-flow.test.ts、invitations.test.ts |
-| ID-5 | lib/contribution-portals | tests/integration/contribution-portals.test.ts |
+| ID-5 | lib/contribution-portals、lib/family/read-grants.ts、app/view/[token]、app/api/media（grant 分支） | tests/integration/contribution-portals.test.ts、read-grants.test.ts、tests/e2e/collections.spec.ts（访客链接） |
 | ID-6/8 | lib/auth/(auth|passkey|two-factor-service).ts、db/schema/auth.ts(0048)、app/(protected)/(app)/settings/security、app/login/two-factor | tests/integration/two-factor.test.ts、strong-auth.test.ts、tests/e2e/security.spec.ts |
 | ID-7 | scripts/account-recovery.ts、lib/auth/account-recovery.ts、app/recover/[token] | tests/integration/strong-auth.test.ts(恢复)、tests/e2e/security.spec.ts(页面闭环) |
 | ID-9 | app/(protected)/(app)/settings/sessions、lib/auth/account-recovery.ts | tests/integration/ownership.test.ts、strong-auth.test.ts |

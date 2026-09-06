@@ -45,9 +45,13 @@ export async function createInvitationAction(
     const message =
       result.error === "person_unavailable"
         ? "所选家人不属于当前家庭，或已经绑定账号。"
-        : result.error === "forbidden"
-          ? "只有家庭管理员可以创建邀请。"
-          : "邀请信息无效，请检查邮箱和有效期。";
+        : result.error === "child_role_not_allowed"
+          ? "孩子本人的账号只能是查看者或贡献者。"
+          : result.error === "guardian_consent_required"
+            ? "为孩子开通账号必须由在册监护人本人操作。"
+            : result.error === "forbidden"
+              ? "只有家庭管理员可以创建邀请。"
+              : "邀请信息无效，请检查邮箱和有效期。";
     return { error: message };
   }
   revalidatePath("/settings/invitations");

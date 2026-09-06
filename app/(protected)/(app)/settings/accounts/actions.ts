@@ -35,6 +35,8 @@ function errorMessage(error: AccountMutationError): string {
       return "家庭必须保留至少一名可用管理员。请先把另一账号设为管理员。";
     case "owner_transfer_required":
       return "所有者账号不能这样直接修改；请先在“所有权”中完成移交。";
+    case "child_role_not_allowed":
+      return "孩子本人的账号只能是查看者或贡献者，不能授予管理或编辑权限。";
     case "password_required":
       return "需要重新输入当前密码完成认证。";
   }

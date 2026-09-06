@@ -7,6 +7,10 @@ import {
 } from "@/lib/authz/contribution-access";
 import { getAssetByIdUnchecked } from "@/lib/assets/ingest";
 import { getAssetStorage } from "@/lib/assets/storage";
+import {
+  readGrantIncludesAsset,
+  resolveReadGrant,
+} from "@/lib/family/read-grants";
 
 /**
  * GET /api/media/[assetId] —— 唯一合法的媒体读取入口（Issue #005/#011）。
@@ -25,11 +29,26 @@ export async function GET(
     request.headers,
     "archive:view",
   );
+  const row = await getAssetByIdUnchecked(assetId);
+
   if (!authorization.ok) {
-    return new Response(
-      authorization.status === 401 ? "Unauthorized" : "Forbidden",
-      { status: authorization.status },
-    );
+    // 访客限定阅读（ID-5）：无会话时允许「授权相册范围内的资产」经
+    // ?grant=<token> 只读访问；范围之外的请求与不存在同答（404）。
+    const grantToken = new URL(request.url).searchParams.get("grant");
+    const grant = grantToken ? resolveReadGrant(grantToken) : null;
+    const allowed =
+      grant !== null &&
+      row !== undefined &&
+      row !== null &&
+      row.familyId === grant.familyId &&
+      readGrantIncludesAsset(grant, assetId);
+    if (!allowed || !row) {
+      return new Response(
+        authorization.status === 401 ? "Unauthorized" : "Forbidden",
+        { status: authorization.status },
+      );
+    }
+    return streamAsset(request, row, { guest: true });
   }
   const { context } = authorization;
 
@@ -38,17 +57,24 @@ export async function GET(
     return new Response("Not Found", { status: 404 });
   }
 
-  const row = await getAssetByIdUnchecked(assetId);
   if (!row || row.familyId !== context.familyId) {
     return new Response("Not Found", { status: 404 });
   }
+  return streamAsset(request, row, { guest: false });
+}
 
+async function streamAsset(
+  request: Request,
+  row: NonNullable<Awaited<ReturnType<typeof getAssetByIdUnchecked>>>,
+  options: { guest: boolean },
+): Promise<Response> {
   const storage = getAssetStorage();
   if (!storage.exists(row.storageKey)) {
     return new Response("Not Found", { status: 404 });
   }
 
-  const download = new URL(request.url).searchParams.get("download") === "1";
+  const download =
+    !options.guest && new URL(request.url).searchParams.get("download") === "1";
   const displayFilename = row.originalFilename.replace(/[\r\n"]/g, "_");
   const baseHeaders: Record<string, string> = {
     "Content-Type": row.mimeType,

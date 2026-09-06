@@ -351,6 +351,13 @@
       "when": 1788870000000,
       "tag": "0049_session_recent_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1788876000000,
+      "tag": "0050_guest_read_grants",
+      "breakpoints": true
     }
   ]
 }

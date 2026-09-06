@@ -8,9 +8,9 @@
 
 | 状态 | 数量 | 说明 |
 | --- | --- | --- |
-| 自动化通过 | 85 | 有实现+自动化测试,但多数尚未过"真实场景"验收 |
-| 部分实现 | 22 | 有代码但缺关键面(见各行) |
-| 未实现 | 12 | 无落点 |
+| 自动化通过 | 88 | 有实现+自动化测试,但多数尚未过"真实场景"验收 |
+| 部分实现 | 21 | 有代码但缺关键面(见各行) |
+| 未实现 | 11 | 无落点 |
 | 待核验 | 9 | 可能已有实现,需逐项核对 |
 | 真实场景通过 | 3 | 有真实环境演示证据 |
 | 外部阻塞 | 6 | 工程就绪,等外部输入 |
@@ -39,11 +39,11 @@
 
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| ID-1 | Instance/User/AuthIdentity/FamilyMembership/Person/Guardian/GuestGrant 分离 | 数据模型核对 | 部分实现(缺 Guardian/Consent 与 membership 状态机) | db/schema/family.ts |
+| ID-1 | Instance/User/AuthIdentity/FamilyMembership/Person/Guardian/GuestGrant 分离 | 数据模型核对 | 部分实现(M2-d 后:Person/Guardian/GuestGrant(投递箱+限定阅读 0050)齐备且监护授权留痕;AuthIdentity 多身份与显式 membership 状态机仍以 user 单行承载——停用/解绑/删除语义等价,见 SECURITY §18) | db/schema/(family|collection|oral-history).ts |
 | ID-2 | 角色 owner/admin/editor/contributor/viewer/guest | owner 缺失 | 部分实现(现有 admin/editor/contributor/viewer) | lib/authz/policy.ts |
 | ID-3 | 首用闭环:创建家庭→HTTPS核实→一次性初始化→登录→建家庭人物 | bootstrap 零隐私 | 自动化通过 | app/api/bootstrap; tests/integration/bootstrap-flow |
 | ID-4 | 邀请:高熵链接/二维码、预览不消耗、原子claim、角色服务端验证 | 过期/撤销/重放不越权 | 自动化通过 | lib/invitations; tests/integration/invitation-flow |
-| ID-5 | 访客提交/限定阅读独立 scope,只存hash,限时限次可撤销 | scope 不可互换 | 部分实现(投递箱有;限定阅读链接未实现) | lib/contribution-portals |
+| ID-5 | 访客提交/限定阅读独立 scope,只存hash,限时限次可撤销 | scope 不可互换 | 自动化通过(2026-09-07 M2-d:投递箱(只提交)+限定阅读链接(只读单一相册,0050;令牌只存哈希;可过期/收回即时失效;媒体按相册范围裁决;访客强制 inline 不能批量下载)) | lib/family/read-grants.ts; app/view/[token] |
 | ID-6 | 密码+Passkey;管理员 TOTP+恢复码 | 成熟实现 | 自动化通过(2026-09-07 M2-b:better-auth twoFactor(TOTP+恢复码,AEAD 加密存储)+@simplewebauthn Passkey 注册/登录;原生 App 二步验证暂需网页完成,如实标注) | lib/auth/(auth|passkey).ts; app/settings/security; tests/e2e/security.spec.ts |
 | ID-7 | 无邮件时的本机受审计恢复 CLI | 不开公开重置后门 | 自动化通过(2026-09-07 M2-b:npm run recover-account 仅主机本地;令牌 256-bit 只存哈希 15 分钟;重置即撤销全部会话;无 HTTP 签发入口) | scripts/account-recovery.ts; lib/auth/account-recovery.ts |
 | ID-8 | 恢复码一次显示、hash保存、原子单次使用 | 不能误删最后路径 | 自动化通过(2026-09-07 M2-b:恢复码以实例 AUTH_SECRET 派生密钥 AEAD 加密存储(非明文/非哈希——成熟组件语义,如实登记);生成即替换旧列表;每码单次使用;登录第二腿可作废) | lib/auth/two-factor-service.ts; tests/integration/two-factor.test.ts |
@@ -54,7 +54,7 @@
 | ID-13 | 成员生命周期:暂停/退出/移除/角色变更停止后续同步 | 离线副本撤权说明 | 自动化通过(2026-09-07 M2-c:停用/恢复/角色调整已有;新增移出家庭+自助退出,均解绑并即刻撤销全部会话停止后续同步;离线已缓存副本无法远程抹除已在 UI/文档如实声明) | lib/accounts/service.ts; settings/accounts; tests/integration/member-lifecycle |
 | ID-14 | App 内删除账号+关联内容处理;人物记录不级联误删 | Apple 删号要求 | 自动化通过(2026-09-07 M2-c:密码+确认语双确认;凭据全撤(密码/通行密钥/两步验证/会话)+身份匿名化(邮件→deleted-*.invalid)+永久停用;讲述/胶囊/AI 任务等 RESTRICT 引用保留行以保档案完整,人物不级联删除;已下载副本不可召回如实声明) | lib/accounts/service.ts; settings/account |
 | ID-15 | 跨作者内容删除影响预览/合法保留说明/删除完成状态 | 引用守卫 | 自动化通过(回收站+素材引用守卫) | lib/trash |
-| ID-16 | 孩子本人账号绑定、监护权变更、范围审阅与导出 | 不按年龄自动解锁 | 未实现 | — |
+| ID-16 | 孩子本人账号绑定、监护权变更、范围审阅与导出 | 不按年龄自动解锁 | 自动化通过(2026-09-07 M2-d:孩子绑定邀请只允许 viewer/contributor 且必须由在册监护人发起,监护授权审计 person.child_account_invited;日后改角色同样封死 admin/editor;绑定不解锁 child_later(解锁仅监护人手工);监护权变更 M1 已有+审计;孩子以所授角色在应用内审阅,完整导出仍是管理员能力,如实登记) | lib/invitations/service.ts; tests/integration/child-account.test.ts |
 | ID-17 | 所有权移交/可信接管:通知/等待/撤销/离线运维交接包 | 不自动推断死亡 | 未实现 | — |
 | ID-18 | 多孩子/双胞胎/多监护人/历史称呼可表达 | 非唯一"妈妈"字段 | 自动化通过 | person 模型+关系 |
 | ID-19 | 祖辈记忆允许无 childPersonId;年龄展示用真实生日+家庭时区 | 不强制事件挂孩子 | 自动化通过 | lib/memories/age.ts |
