@@ -25,7 +25,7 @@ const webEntries = [
 
 export function MoreScreen() {
   const navigation = useNavigation<AppNavigation>();
-  const { credentials } = useApp();
+  const { credentials, viewer } = useApp();
   const openWeb = async (path: string) => {
     if (!credentials) {
       navigation.navigate("Settings");
@@ -40,6 +40,7 @@ export function MoreScreen() {
   return <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
     <Text style={sharedStyles.eyebrow}>家庭档案的其他部分</Text><Text style={sharedStyles.title}>更多</Text>
     <Pressable onPress={() => navigation.navigate("Search")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>搜索</Text><Text style={styles.hint}>在原生 App 中查找记忆与讲述</Text></View><Text style={styles.arrow}>›</Text></Pressable>
+    {credentials && viewer?.role === "admin" ? <Pressable onPress={() => navigation.navigate("InviteFamily")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>邀请家人加入</Text><Text style={styles.hint}>生成二维码或一次性链接，家人用自己的账号加入</Text></View><Text style={styles.arrow}>›</Text></Pressable> : null}
     {nativeEntries.map(([label, route, hint]) => <Pressable key={label} onPress={() => navigation.navigate(route)} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>{label}</Text><Text style={styles.hint}>{hint}</Text></View><Text style={styles.arrow}>›</Text></Pressable>)}
     <Text style={sharedStyles.eyebrow}>仅在 Web 完成的高级操作</Text>
     {webEntries.map(([label, path, hint]) => <Pressable key={label} onPress={() => void openWeb(path)} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>{label}</Text><Text style={styles.hint}>{hint}</Text></View><Text style={styles.arrow}>›</Text></Pressable>)}

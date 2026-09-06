@@ -33,6 +33,7 @@ export type RootStackParamList = {
   Calendar: undefined;
   Collections: {eventIds?:string[]} | undefined;
   CollectionDetail: {id:string};
+  InviteFamily: undefined;
 };
 
 export type MainTabParamList = {

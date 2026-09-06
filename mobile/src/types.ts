@@ -388,3 +388,29 @@ export type OnboardingInput = {
   selfRelationToChild: string;
   selfIsGuardian: boolean;
 };
+
+/** GET /api/invitations/preview 的受限预览信息（1.3）。 */
+export type InvitationPreview =
+  | { status: "invalid" }
+  | {
+      status: "active" | "claimed" | "expired" | "revoked" | "used";
+      familyName: string;
+      role: string;
+      email: string | null;
+      personName: string | null;
+      expiresAt: string;
+    };
+
+export type InvitationCreateInput = {
+  role: "admin" | "editor" | "contributor" | "viewer";
+  expiresInDays: number;
+  email?: string;
+  personId?: string;
+};
+
+export type InvitationCreateResult = {
+  invitationId: string;
+  token: string;
+  invitePath: string;
+  expiresAt: string;
+};

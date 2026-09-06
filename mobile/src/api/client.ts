@@ -2,6 +2,9 @@ import type {
   BootstrapInfo,
   Credentials,
   InboxDraftPatch,
+  InvitationCreateInput,
+  InvitationCreateResult,
+  InvitationPreview,
   MobileHome,
   MobileContributionInput,
   MobileInboxAsset,
@@ -571,7 +574,7 @@ export async function fetchMe(credentials: Credentials): Promise<MobileMe> {
   return body;
 }
 
-/** App 内建立家庭（POST /api/mobile/v1/onboarding）。 */
+/** 建立家庭（POST /api/mobile/v1/onboarding）。 */
 export async function submitOnboarding(
   credentials: Credentials,
   input: OnboardingInput,
@@ -606,6 +609,167 @@ export async function submitOnboarding(
     throw new ApiError("登录已过期，请重新登录。", 401);
   }
   throw new ApiError("建立家庭失败，请稍后重试。", response.status);
+}
+
+export type ParsedInviteLink = { serverUrl: string; token: string };
+
+/**
+ * 解析完整邀请链接（https://…/invite/<token> 或白名单深链
+ * familytimecapsule://join?server=<origin>&token=<token>）。
+ * 只取 origin，绝不携带 query/fragment/凭据。
+ */
+export function parseInviteLink(value: string): ParsedInviteLink | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol === "familytimecapsule:") {
+      if (url.host !== "join") return null;
+      const server = url.searchParams.get("server") ?? "";
+      const token = url.searchParams.get("token") ?? "";
+      if (!/^https:\/\/[^\s/?#@]+$/u.test(server) || !token) return null;
+      return { serverUrl: server, token };
+    }
+    if (!/^https?:\/\//iu.test(trimmed)) return null;
+    if (url.username || url.password || url.search) return null;
+    const match = /^\/invite\/([A-Za-z0-9_-]+)\/?$/u.exec(url.pathname);
+    const token = match?.[1];
+    if (!token) return null;
+    return { serverUrl: url.origin, token };
+  } catch {
+    return null;
+  }
+}
+
+function isInvitationPreview(value: unknown): value is InvitationPreview {
+  if (!isRecord(value)) return false;
+  const status = String(value.status);
+  if (!["invalid", "active", "claimed", "expired", "revoked", "used"].includes(status)) {
+    return false;
+  }
+  if (status === "invalid") return true;
+  return isString(value.familyName, 100) && isString(value.role, 20);
+}
+
+/** 受邀人查看邀请（GET /api/invitations/preview，不消耗邀请）。 */
+export async function previewInvitation(
+  serverUrl: string,
+  token: string,
+): Promise<InvitationPreview> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${serverUrl}/api/invitations/preview?token=${encodeURIComponent(token)}`,
+      { headers: { accept: "application/json" } },
+    );
+  } catch {
+    throw new ApiError("无法连接家庭空间，请检查地址和网络。", 0);
+  }
+  if (!response.ok) {
+    throw new ApiError("暂时无法查看邀请，请稍后再试。", response.status);
+  }
+  const body = await response.json().catch(() => null);
+  if (!isInvitationPreview(body)) {
+    throw new ApiError("服务器返回了无效数据。", 502);
+  }
+  return body;
+}
+
+export type AcceptInvitationInput = {
+  token: string;
+  displayName: string;
+  email: string;
+  password: string;
+};
+
+/** 受邀人注册并加入家庭（POST /api/invitations/accept）。 */
+export async function acceptInvitation(
+  serverUrl: string,
+  input: AcceptInvitationInput,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${serverUrl}/api/invitations/accept`, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    throw new ApiError("无法连接家庭空间，请检查地址和网络。", 0);
+  }
+  if (response.ok) return;
+  const code = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  const error = code && typeof code.error === "string" ? code.error : "";
+  if (error === "invalid_input") {
+    throw new ApiError("请检查填写内容：称呼 1–50 字，邮箱格式正确，密码至少 10 位。", response.status);
+  }
+  if (error === "invalid_or_unavailable") {
+    throw new ApiError("邀请已过期、已撤销、已使用，或正在被接受。", response.status);
+  }
+  if (error === "email_mismatch") {
+    throw new ApiError("此邀请限定了另一个邮箱，请使用邀请中指定的邮箱。", response.status);
+  }
+  if (error === "account_exists") {
+    throw new ApiError("该邮箱已有账号，请直接登录。", response.status);
+  }
+  if (error === "person_unavailable") {
+    throw new ApiError("邀请绑定的家人档案已关联账号，请联系家庭管理员。", response.status);
+  }
+  throw new ApiError("注册失败，请稍后重试。", response.status);
+}
+
+/** 在 App 内创建账号邀请（POST /api/mobile/v1/invitations）。 */
+export async function createInvitation(
+  credentials: Credentials,
+  input: InvitationCreateInput,
+): Promise<InvitationCreateResult> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${credentials.serverUrl}/api/mobile/v1/invitations`,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${credentials.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
+      },
+    );
+  } catch {
+    throw new ApiError("无法连接家庭服务器，请检查网络后重试。", 0);
+  }
+  if (response.ok) {
+    const body = (await response.json().catch(() => null)) as unknown;
+    if (
+      isRecord(body) &&
+      isString(body.token, 512) &&
+      isString(body.invitePath, 1024) &&
+      isString(body.invitationId, 128) &&
+      isString(body.expiresAt, 64)
+    ) {
+      return {
+        invitationId: body.invitationId,
+        token: body.token,
+        invitePath: body.invitePath,
+        expiresAt: body.expiresAt,
+      };
+    }
+    throw new ApiError("服务器返回了无效数据。", 502);
+  }
+  const code = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  const error = code && typeof code.error === "string" ? code.error : "";
+  if (response.status === 403 || error === "forbidden") {
+    throw new ApiError("只有家庭管理员可以创建邀请。", response.status);
+  }
+  if (error === "person_unavailable") {
+    throw new ApiError("所选家人不属于当前家庭，或已经绑定账号。", response.status);
+  }
+  if (response.status === 401) {
+    throw new ApiError("登录已过期，请重新登录。", 401);
+  }
+  throw new ApiError("创建邀请失败，请稍后重试。", response.status);
 }
 
 export async function fetchSyncPage(

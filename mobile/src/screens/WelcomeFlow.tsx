@@ -10,15 +10,40 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import {
   ApiError,
+  acceptInvitation,
   bootstrapSetup,
   fetchBootstrap,
+  parseInviteLink,
+  previewInvitation,
   signIn,
 } from "../api/client";
 import { useApp } from "../state/AppContext";
 import { colors, sharedStyles } from "../theme";
-import type { BootstrapInfo, Credentials } from "../types";
+import type { BootstrapInfo, Credentials, InvitationPreview } from "../types";
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "管理员",
+  editor: "编辑",
+  contributor: "记录者",
+  viewer: "只读家人",
+};
+
+const PREVIEW_STATUS_LABELS: Record<string, string> = {
+  claimed: "正在被接受",
+  expired: "已过期",
+  revoked: "已撤销",
+  used: "已被使用",
+};
+
+function formatExpiry(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 /**
  * 首次启动引导（1.3）：创建我的家庭 / 加入家人的家庭 / 暂时只在本机记录，
@@ -36,7 +61,7 @@ export function WelcomeFlow() {
       <ScrollView contentContainerStyle={[sharedStyles.content, { flexGrow: 1 }]}>
         {step === "welcome" ? <WelcomeStep onChoose={setStep} /> : null}
         {step === "create" ? <CreateFamilyStep onBack={() => setStep("welcome")} /> : null}
-        {step === "join" ? <JoinFamilyStep onBack={() => setStep("welcome")} onLogin={() => setStep("login")} /> : null}
+        {step === "join" ? <JoinFamilyStep onBack={() => setStep("welcome")} /> : null}
         {step === "login" ? <LoginStep onBack={() => setStep("welcome")} /> : null}
       </ScrollView>
     </View>
@@ -241,31 +266,87 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
 }
 
 /**
- * M1 的加入家庭入口：解析完整邀请链接并确认目标服务器。
- * App 内直接接受邀请注册在后续版本提供；当前引导用浏览器打开
- * 邀请页完成注册，再回来登录（诚实标注，不假装已支持）。
+ * 加入家庭（M2）：粘贴或扫码完整邀请链接 → 只读预览确认目标家庭 →
+ * 在 App 内注册账号（原子接受邀请）→ 自动登录并绑定同一家庭。
  */
-function JoinFamilyStep({ onBack, onLogin }: { onBack: () => void; onLogin: () => void }) {
+function JoinFamilyStep({ onBack }: { onBack: () => void }) {
+  const { connect } = useApp();
   const [link, setLink] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const origin = useMemo(() => {
-    const trimmed = link.trim();
-    if (!/^https?:\/\//iu.test(trimmed)) return null;
-    try {
-      const url = new URL(trimmed);
-      if (url.username || url.password) return null;
-      return url.origin;
-    } catch {
-      return null;
+  const [scanning, setScanning] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [invite, setInvite] = useState<{ serverUrl: string; token: string } | null>(null);
+  const [preview, setPreview] = useState<InvitationPreview | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const startCheck = async (value: string) => {
+    const parsed = parseInviteLink(value);
+    if (!parsed) {
+      setError("邀请链接必须以 https:// 开头并指向 /invite/… 路径。");
+      setInvite(null);
+      setPreview(null);
+      return;
     }
-  }, [link]);
+    setError(null);
+    setInvite(parsed);
+    setChecking(true);
+    try {
+      setPreview(await previewInvitation(parsed.serverUrl, parsed.token));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "无法查看邀请。");
+      setPreview(null);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const startScan = async () => {
+    if (!permission?.granted) {
+      const asked = await requestPermission();
+      if (!asked.granted) {
+        setError("需要相机权限才能扫码；也可以直接粘贴邀请链接。");
+        return;
+      }
+    }
+    setScanning(true);
+  };
+
+  const submit = async () => {
+    if (!invite || preview?.status !== "active") return;
+    if (!displayName.trim() || !email.trim() || !password) {
+      setError("请填写称呼、邮箱和密码。");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await acceptInvitation(invite.serverUrl, {
+        token: invite.token,
+        displayName,
+        email,
+        password,
+      });
+      const credentials = await signIn(invite.serverUrl, email, password);
+      await connect(credentials);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "注册失败，请稍后重试。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const active = preview?.status === "active";
   return (
     <View style={{ gap: 12 }}>
       <BackButton onBack={onBack} />
       <StepHeader
         eyebrow="加入家人的家庭"
         title="使用家人发来的邀请"
-        intro="粘贴家人分享的完整邀请链接（https 开头），我们会显示将要连接的家庭空间。"
+        intro="粘贴家人分享的完整邀请链接，或扫描家人在 App 中展示的二维码。"
       />
       <TextInput
         autoCapitalize="none"
@@ -280,20 +361,69 @@ function JoinFamilyStep({ onBack, onLogin }: { onBack: () => void; onLogin: () =
         style={[sharedStyles.input, styles.linkInput]}
         value={link}
       />
-      {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
-      {origin ? (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>将连接的家庭空间</Text>
-          <Text style={sharedStyles.body}>{origin}</Text>
-          <Text style={sharedStyles.warning}>
-            当前版本的 App 尚不能直接在应用内完成受邀注册。请在手机的浏览器中打开同一个邀请链接完成注册，然后回到这里登录。
-          </Text>
-          <Pressable onPress={onLogin} style={sharedStyles.primaryButton}>
-            <Text style={sharedStyles.primaryText}>我已注册，去登录</Text>
-          </Pressable>
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <Pressable
+          disabled={checking}
+          onPress={() => void startCheck(link)}
+          style={[sharedStyles.primaryButton, { flex: 1 }]}
+        >
+          {checking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>查看邀请</Text>}
+        </Pressable>
+        <Pressable onPress={() => void startScan()} style={[sharedStyles.secondaryButton, { flex: 1 }]}>
+          <Text style={sharedStyles.secondaryText}>{scanning ? "正在扫码…" : "扫描二维码"}</Text>
+        </Pressable>
+      </View>
+      {scanning ? (
+        <View style={styles.cameraBox}>
+          <CameraView
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={(event) => {
+              setScanning(false);
+              setLink(event.data);
+              void startCheck(event.data);
+            }}
+            style={styles.camera}
+          />
+          <Text style={styles.note}>对准家人 App 中展示的邀请二维码</Text>
         </View>
-      ) : link.trim() ? (
-        <Text style={sharedStyles.error}>邀请链接必须以 https:// 开头，且不能包含账号信息。</Text>
+      ) : null}
+      {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
+
+      {invite && preview && preview.status !== "invalid" ? (
+        <View style={sharedStyles.card}>
+          <Text style={sharedStyles.cardTitle}>将加入：{preview.familyName}</Text>
+          <Text style={sharedStyles.body}>
+            身份：{ROLE_LABELS[preview.role] ?? preview.role}
+            {preview.personName ? `（关联家人档案：${preview.personName}）` : ""}
+          </Text>
+          <Text style={sharedStyles.body}>
+            {preview.status === "active"
+              ? `有效期至 ${formatExpiry(preview.expiresAt)}`
+              : `邀请状态：${PREVIEW_STATUS_LABELS[preview.status]}，不能再使用。`}
+          </Text>
+          {preview.email ? (
+            <Text style={sharedStyles.warning}>此邀请限定了邮箱 {preview.email}。</Text>
+          ) : null}
+        </View>
+      ) : null}
+      {preview?.status === "invalid" ? (
+        <Text style={sharedStyles.error}>邀请链接无效，请向家人重新获取。</Text>
+      ) : null}
+
+      {invite && active ? (
+        <View style={sharedStyles.card}>
+          <Text style={sharedStyles.cardTitle}>设置你的账号</Text>
+          <Text style={sharedStyles.label}>你的称呼</Text>
+          <TextInput onChangeText={setDisplayName} placeholder="例如：爸爸" style={sharedStyles.input} value={displayName} />
+          <Text style={sharedStyles.label}>邮箱（用于登录）</Text>
+          <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" onChangeText={setEmail} placeholder="dad@example.com" style={sharedStyles.input} value={email} />
+          <Text style={sharedStyles.label}>密码（至少 10 位）</Text>
+          <TextInput autoCapitalize="none" autoComplete="new-password" onChangeText={setPassword} placeholder="至少 10 位" secureTextEntry style={sharedStyles.input} value={password} />
+          <Pressable disabled={submitting} onPress={() => void submit()} style={sharedStyles.primaryButton}>
+            {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>注册并加入家庭</Text>}
+          </Pressable>
+          <Text style={styles.note}>注册成功后会自动登录；该邮箱已有账号时请改用“已有账号登录”。</Text>
+        </View>
       ) : null}
     </View>
   );
@@ -430,5 +560,7 @@ const styles = StyleSheet.create({
   plainLink: { color: colors.coralDark, fontSize: 15, fontWeight: "700" },
   note: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
   linkInput: { minHeight: 72, textAlignVertical: "top" },
+  cameraBox: { gap: 8 },
+  camera: { height: 240, borderRadius: 12, overflow: "hidden" },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
 });

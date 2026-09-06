@@ -13,6 +13,8 @@
     "expo": "~57.0.20",
     "expo-asset": "~57.0.4",
     "expo-audio": "~57.0.4",
+    "expo-camera": "~57.0.4",
+    "expo-clipboard": "~57.0.1",
     "expo-crypto": "~57.0.2",
     "expo-document-picker": "~57.0.1",
     "expo-file-system": "~57.0.6",

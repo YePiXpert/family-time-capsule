@@ -14,6 +14,7 @@ const appState = vi.hoisted(() => ({
 
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
+  Share: { share: vi.fn() },
   Switch: "Switch", Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
 }));
@@ -23,16 +24,27 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => appState,
 }));
-vi.mock("../src/api/client", () => ({
-  ApiError: class ApiError extends Error {
-    constructor(message: string, readonly status: number) { super(message); this.name = "ApiError"; }
-  },
-  fetchBootstrap: vi.fn(),
-  bootstrapSetup: vi.fn(),
-  signIn: vi.fn(),
+vi.mock("expo-camera", () => ({
+  CameraView: "CameraView",
+  useCameraPermissions: () => [
+    { granted: true, canAskAgain: true },
+    async () => ({ granted: true }),
+  ],
 }));
+vi.mock("../src/api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/api/client")>();
+  return {
+    ...actual,
+    fetchBootstrap: vi.fn(),
+    bootstrapSetup: vi.fn(),
+    signIn: vi.fn(),
+    previewInvitation: vi.fn(),
+    acceptInvitation: vi.fn(),
+  };
+});
 
 const { WelcomeFlow, OnboardingGate } = await import("../src/screens/WelcomeFlow");
+const { previewInvitation, acceptInvitation, signIn } = await import("../src/api/client");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let tree: ReactTestRenderer | undefined;
@@ -42,10 +54,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function flattenText(value: unknown): string {
+  if (Array.isArray(value)) return value.map(flattenText).join("");
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  return "";
+}
+
 function textOf(): string {
   return currentTree().root
     .findAll((node) => String(node.type) === "Text")
-    .map((node) => String(node.props.children))
+    .map((node) => flattenText(node.props.children))
     .join("\n");
 }
 
@@ -65,6 +83,19 @@ function press(label: string) {
     );
   if (!target) throw new Error(`button not found: ${label}`);
   act(() => { target.props.onPress(); });
+}
+
+async function pressAsync(label: string) {
+  const root = currentTree().root;
+  const target = root
+    .findAll((node) => String(node.type) === "Pressable")
+    .find((node) =>
+      node
+        .findAll((child) => String(child.type) === "Text")
+        .some((child) => String(child.props.children).includes(label)),
+    );
+  if (!target) throw new Error(`button not found: ${label}`);
+  await act(async () => { await target.props.onPress(); });
 }
 
 function setInput(placeholder: string, value: string) {
@@ -95,15 +126,83 @@ describe("首次启动欢迎页", () => {
     expect(appState.setWelcomeSeen).toHaveBeenCalledOnce();
     expect(appState.connect).not.toHaveBeenCalled();
   });
+});
 
-  it("加入家庭入口解析完整邀请链接并显示目标空间；拒绝非 https 链接", () => {
+describe("加入家庭（受邀注册）", () => {
+  beforeEach(() => { appState.credentials = null; });
+
+  it("拒绝非 https 或非 /invite/ 路径的链接", async () => {
     act(() => { tree = create(createElement(WelcomeFlow)); });
     press("加入家人的家庭");
-    setInput("https://capsule.example.com/invite/…", "https://capsule.example.com/invite/abc123");
-    expect(textOf()).toContain("https://capsule.example.com");
-
     setInput("https://capsule.example.com/invite/…", "javascript:alert(1)");
+    await pressAsync("查看邀请");
     expect(textOf()).toContain("必须以 https:// 开头");
+    expect(previewInvitation).not.toHaveBeenCalled();
+
+    setInput("https://capsule.example.com/invite/…", "https://capsule.example.com/other/path");
+    await pressAsync("查看邀请");
+    expect(textOf()).toContain("必须以 https:// 开头");
+    expect(previewInvitation).not.toHaveBeenCalled();
+  });
+
+  it("粘贴有效邀请后展示家庭预览，注册成功即自动登录连接", async () => {
+    vi.mocked(previewInvitation).mockResolvedValue({
+      status: "active",
+      familyName: "小满家",
+      role: "contributor",
+      email: null,
+      personName: null,
+      expiresAt: "2026-09-13T00:00:00.000Z",
+    });
+    vi.mocked(acceptInvitation).mockResolvedValue(undefined);
+    vi.mocked(signIn).mockResolvedValue({ serverUrl: "https://capsule.example.com", token: "member-session" });
+
+    act(() => { tree = create(createElement(WelcomeFlow)); });
+    press("加入家人的家庭");
+    setInput("https://capsule.example.com/invite/…", "https://capsule.example.com/invite/abcdefgh23456789");
+    await pressAsync("查看邀请");
+    expect(previewInvitation).toHaveBeenCalledWith(
+      "https://capsule.example.com",
+      "abcdefgh23456789",
+    );
+    expect(textOf()).toContain("将加入：小满家");
+    expect(textOf()).toContain("记录者");
+
+    setInput("例如：爸爸", "爸爸");
+    setInput("dad@example.com", "dad@example.com");
+    setInput("至少 10 位", "a-long-password");
+    await pressAsync("注册并加入家庭");
+    expect(acceptInvitation).toHaveBeenCalledWith(
+      "https://capsule.example.com",
+      {
+        token: "abcdefgh23456789",
+        displayName: "爸爸",
+        email: "dad@example.com",
+        password: "a-long-password",
+      },
+    );
+    expect(appState.connect).toHaveBeenCalledWith({
+      serverUrl: "https://capsule.example.com",
+      token: "member-session",
+    });
+  });
+
+  it("已使用/过期邀请不能注册", async () => {
+    vi.mocked(previewInvitation).mockResolvedValue({
+      status: "used",
+      familyName: "小满家",
+      role: "viewer",
+      email: null,
+      personName: null,
+      expiresAt: "2026-09-13T00:00:00.000Z",
+    });
+    act(() => { tree = create(createElement(WelcomeFlow)); });
+    press("加入家人的家庭");
+    setInput("https://capsule.example.com/invite/…", "https://capsule.example.com/invite/abcdefgh23456789");
+    await pressAsync("查看邀请");
+    expect(textOf()).toContain("不能再使用");
+    expect(textOf()).not.toContain("注册并加入家庭");
+    expect(acceptInvitation).not.toHaveBeenCalled();
   });
 });
 

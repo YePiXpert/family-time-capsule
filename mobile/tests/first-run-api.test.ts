@@ -180,3 +180,63 @@ describe("submitOnboarding（建立家庭）", () => {
     await expect(submitOnboarding(CREDENTIALS, input)).rejects.toThrow("已有家庭");
   });
 });
+
+describe("parseInviteLink（邀请链接解析）", () => {
+  it("接受完整 https 邀请链接（含尾斜杠），只取 origin 与 token", async () => {
+    const { parseInviteLink } = await import("../src/api/client");
+    expect(parseInviteLink("https://capsule.example.com/invite/abcdefgh23456789")).toEqual({
+      serverUrl: "https://capsule.example.com",
+      token: "abcdefgh23456789",
+    });
+    expect(parseInviteLink("https://capsule.example.com/invite/abcdefgh23456789/")).toEqual({
+      serverUrl: "https://capsule.example.com",
+      token: "abcdefgh23456789",
+    });
+  });
+
+  it("拒绝夹带 query/userinfo/非 invite 路径与其他 scheme", async () => {
+    const { parseInviteLink } = await import("../src/api/client");
+    expect(parseInviteLink("https://capsule.example.com/invite/token?x=1")).toBeNull();
+    expect(parseInviteLink("https://user:pass@capsule.example.com/invite/token")).toBeNull();
+    expect(parseInviteLink("https://capsule.example.com/other/token")).toBeNull();
+    expect(parseInviteLink("javascript:alert(1)")).toBeNull();
+    expect(parseInviteLink("not a url")).toBeNull();
+  });
+
+  it("仅接受 join 白名单深链，且 server 必须是 https origin", async () => {
+    const { parseInviteLink } = await import("../src/api/client");
+    expect(parseInviteLink("familytimecapsule://join?server=https%3A%2F%2Fcapsule.example.com&token=tok123")).toEqual({
+      serverUrl: "https://capsule.example.com",
+      token: "tok123",
+    });
+    expect(parseInviteLink("familytimecapsule://other?server=https://a.b&token=tok")).toBeNull();
+    expect(parseInviteLink("familytimecapsule://join?server=http://a.b&token=tok")).toBeNull();
+    expect(parseInviteLink("familytimecapsule://join?server=https://a.b/path&token=tok")).toBeNull();
+  });
+});
+
+describe("previewInvitation / acceptInvitation", () => {
+  it("预览与接受的错误映射", async () => {
+    const { previewInvitation, acceptInvitation } = await import("../src/api/client");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ status: "active", familyName: "小满家", role: "viewer", email: null, personName: null, expiresAt: "2026-09-13T00:00:00.000Z" }),
+        ),
+      ),
+    );
+    await expect(previewInvitation("https://capsule.example", "tok")).resolves.toMatchObject({
+      status: "active",
+      familyName: "小满家",
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "account_exists" }), { status: 409 })),
+    );
+    await expect(
+      acceptInvitation("https://capsule.example", { token: "tok", displayName: "爸爸", email: "a@b.com", password: "long-enough" }),
+    ).rejects.toThrow("该邮箱已有账号");
+  });
+});
