@@ -197,11 +197,56 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  release:
-    name: GitHub mobile prerelease
+  docker-image:
+    name: Server image (linux/amd64)
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [android, ios]
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.refs.outputs.image }}
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve image name and tags
+        id: refs
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/family-time-capsule"
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Log in to ghcr
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.VERSION }}
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Record pushed digest
+        id: digest
+        run: |
+          DIGEST="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          test -n "$DIGEST"
+          echo "$IMAGE@$DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: GitHub prerelease (packages + ops + manifest)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [android, ios, docker-image]
     permissions:
       contents: write
     steps:
@@ -213,15 +258,60 @@ jobs:
           pattern: FamilyTimeCapsule-*
           path: release-assets
           merge-multiple: true
-      - name: Verify and publish packages
+      - name: Package ops toolkit
+        run: |
+          test -x scripts/ops/ftc
+          bash scripts/ops/ftc version
+          VERSION="${GITHUB_REF_NAME#v}"
+          zip -qry "release-assets/family-time-capsule-ops-$VERSION.zip" scripts/ops
+      - name: Verify assets and build release manifest
         env:
           GH_TOKEN: ${{ github.token }}
+          IMAGE_REF: ${{ needs.docker-image.outputs.image }}@${{ needs.docker-image.outputs.digest }}
         run: |
+          set -eu
           test -f release-assets/FamilyTimeCapsule-android.apk
           test -f release-assets/FamilyTimeCapsule-ios-unsigned.ipa
+          ls release-assets/family-time-capsule-ops-*.zip >/dev/null
           cd release-assets
-          sha256sum FamilyTimeCapsule-android.apk FamilyTimeCapsule-ios-unsigned.ipa > SHA256SUMS.txt
+          sha256sum FamilyTimeCapsule-android.apk FamilyTimeCapsule-ios-unsigned.ipa family-time-capsule-ops-*.zip > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
+          VERSION="${GITHUB_REF_NAME#v}"
+          APK_SHA=$(sha256sum FamilyTimeCapsule-android.apk | cut -d" " -f1)
+          IPA_SHA=$(sha256sum FamilyTimeCapsule-ios-unsigned.ipa | cut -d" " -f1)
+          OPS_FILE=$(basename "$(ls family-time-capsule-ops-*.zip | head -1)")
+          OPS_SHA=$(sha256sum "$OPS_FILE" | cut -d" " -f1)
+          python3 - "$VERSION" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$IMAGE_REF" "$APK_SHA" "$IPA_SHA" "$OPS_FILE" "$OPS_SHA" > release-manifest.json <<'PY'
+          import json, sys
+          version, tag, sha, image, apk, ipa, ops_file, ops = sys.argv[1:9]
+          print(json.dumps({
+              "version": version,
+              "tag": tag,
+              "gitSha": sha,
+              "image": {"ref": image, "platforms": ["linux/amd64"],
+                        "note": "app/worker 共用同一镜像；部署建议固定 digest"},
+              "packages": {
+                  "android-apk": {"file": "FamilyTimeCapsule-android.apk", "sha256": apk,
+                                  "signing": "test-key", "note": "同签名才能覆盖升级；真机验收未完成"},
+                  "ios-ipa": {"file": "FamilyTimeCapsule-ios-unsigned.ipa", "sha256": ipa,
+                              "signing": "unsigned", "note": "需自行签名后部署"},
+                  "ops-scripts": {"file": ops_file, "sha256": ops},
+              },
+              "api": {"added": [
+                  "GET /api/bootstrap",
+                  "POST /api/bootstrap/setup",
+                  "GET /api/mobile/v1/me",
+                  "POST /api/mobile/v1/onboarding",
+                  "GET /api/invitations/preview",
+                  "POST /api/invitations/accept",
+                  "POST /api/mobile/v1/invitations",
+              ]},
+              "migrations": ["0040_instance_meta.sql"],
+              "verification": "自动化测试与 CI 全绿；真实 VPS/真机端到端验收未完成，不以本 manifest 替代",
+          }, ensure_ascii=False, indent=2))
+          PY
+          python3 -m json.tool release-manifest.json >/dev/null
+          echo "manifest image: $IMAGE_REF"
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             RELEASE_KIND=(--prerelease)
           else
@@ -242,6 +332,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             FamilyTimeCapsule-android.apk \
             FamilyTimeCapsule-ios-unsigned.ipa \
+            family-time-capsule-ops-*.zip \
+            release-manifest.json \
             SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
