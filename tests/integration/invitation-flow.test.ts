@@ -18,7 +18,7 @@ afterAll(async () => {
 
 const { getDb } = await import("@/db");
 const { session, user } = await import("@/db/schema/auth");
-const { family, person } = await import("@/db/schema/family");
+const family = (await import("@/db/schema/family")).family;
 const { performSetup } = await import("@/lib/auth/setup");
 const { completeOnboarding, addPerson } = await import("@/lib/family/service");
 const { GET: previewGet } = await import("@/app/api/invitations/preview/route");

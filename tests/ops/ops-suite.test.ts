@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -262,7 +262,7 @@ describe("互斥锁", () => {
       holderScript,
       ["#!/usr/bin/env bash", `mkdir -p '${lockDir}'`, `echo $BASHPID > '${lockDir}/pid'`, "sleep 10", ""].join("\n"),
     );
-    const holder = require("node:child_process").spawn("bash", [holderScript], { stdio: "ignore" });
+    const holder = spawn("bash", [holderScript], { stdio: "ignore" });
     try {
       // 等占锁脚本写入 pid。
       const pidFile = path.join(ftcRoot, "state", "locks", "backup", "pid");
@@ -314,7 +314,7 @@ describe("ftc rollback", () => {
     const current = deployments[0];
     // 手工标记为已接受写入（模拟开放服务后）
     const depFile = path.join(ftcRoot, "state", "deployments", current);
-    let content = readFileSync(depFile, "utf8").replace("accepted_writes=unknown", "accepted_writes=true");
+    const content = readFileSync(depFile, "utf8").replace("accepted_writes=unknown", "accepted_writes=true");
     writeFileSync(depFile, content);
     // 再造一个“旧部署”可回退
     const oldDep = "20260101T000000Z-old0000";

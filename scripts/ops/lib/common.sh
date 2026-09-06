@@ -178,10 +178,15 @@ audit_compose_ports() {
     die "docker compose config 解析失败，已中止。"
   local offending=""
   if python3 -c 'print(1)' >/dev/null 2>&1; then
-    offending="$(compose -p "$FTC_PROJECT_NAME" -f "$file" --env-file "$FTC_ENV_FILE" config --format json 2>/dev/null | python3 - <<'PY'
+    local compose_json
+    compose_json="$(mktemp)"
+    trap 'rm -f "$compose_json"' RETURN
+    compose -p "$FTC_PROJECT_NAME" -f "$file" --env-file "$FTC_ENV_FILE" config --format json >"$compose_json" 2>/dev/null
+    offending="$(python3 - "$compose_json" <<'PY'
 import json, sys
 try:
-    cfg = json.load(sys.stdin)
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        cfg = json.load(fh)
 except Exception:
     sys.exit(0)
 services = cfg.get("services", {}) or {}
