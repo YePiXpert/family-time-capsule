@@ -8,9 +8,9 @@
 
 | 状态 | 数量 | 说明 |
 | --- | --- | --- |
-| 自动化通过 | 78 | 有实现+自动化测试,但多数尚未过"真实场景"验收 |
+| 自动化通过 | 82 | 有实现+自动化测试,但多数尚未过"真实场景"验收 |
 | 部分实现 | 23 | 有代码但缺关键面(见各行) |
-| 未实现 | 14 | 无落点 |
+| 未实现 | 13 | 无落点 |
 | 待核验 | 9 | 可能已有实现,需逐项核对 |
 | 真实场景通过 | 3 | 有真实环境演示证据 |
 | 外部阻塞 | 6 | 工程就绪,等外部输入 |
@@ -44,10 +44,10 @@
 | ID-3 | 首用闭环:创建家庭→HTTPS核实→一次性初始化→登录→建家庭人物 | bootstrap 零隐私 | 自动化通过 | app/api/bootstrap; tests/integration/bootstrap-flow |
 | ID-4 | 邀请:高熵链接/二维码、预览不消耗、原子claim、角色服务端验证 | 过期/撤销/重放不越权 | 自动化通过 | lib/invitations; tests/integration/invitation-flow |
 | ID-5 | 访客提交/限定阅读独立 scope,只存hash,限时限次可撤销 | scope 不可互换 | 部分实现(投递箱有;限定阅读链接未实现) | lib/contribution-portals |
-| ID-6 | 密码+Passkey;管理员 TOTP+恢复码 | 成熟实现 | 未实现(仅邮箱密码;无 TOTP/恢复码/Passkey) | lib/auth/auth.ts |
-| ID-7 | 无邮件时的本机受审计恢复 CLI | 不开公开重置后门 | 未实现 | — |
-| ID-8 | 恢复码一次显示、hash保存、原子单次使用 | 不能误删最后路径 | 未实现 | — |
-| ID-9 | 活动设备列表、撤销其他会话、改密后失效重入不删本机原件 | 会话管理 | 部分实现(better-auth 会话有;设备列表UI/撤销其他会话未做) | session 表 |
+| ID-6 | 密码+Passkey;管理员 TOTP+恢复码 | 成熟实现 | 自动化通过(2026-09-07 M2-b:better-auth twoFactor(TOTP+恢复码,AEAD 加密存储)+@simplewebauthn Passkey 注册/登录;原生 App 二步验证暂需网页完成,如实标注) | lib/auth/(auth|passkey).ts; app/settings/security; tests/e2e/security.spec.ts |
+| ID-7 | 无邮件时的本机受审计恢复 CLI | 不开公开重置后门 | 自动化通过(2026-09-07 M2-b:npm run recover-account 仅主机本地;令牌 256-bit 只存哈希 15 分钟;重置即撤销全部会话;无 HTTP 签发入口) | scripts/account-recovery.ts; lib/auth/account-recovery.ts |
+| ID-8 | 恢复码一次显示、hash保存、原子单次使用 | 不能误删最后路径 | 自动化通过(2026-09-07 M2-b:恢复码以实例 AUTH_SECRET 派生密钥 AEAD 加密存储(非明文/非哈希——成熟组件语义,如实登记);生成即替换旧列表;每码单次使用;登录第二腿可作废) | lib/auth/two-factor-service.ts; tests/integration/two-factor.test.ts |
+| ID-9 | 活动设备列表、撤销其他会话、改密后失效重入不删本机原件 | 会话管理 | 自动化通过(M2-a 设备列表/撤销其他;M2-b 恢复令牌重置密码即撤销全部会话) | settings/sessions; lib/auth/account-recovery.ts |
 | ID-10 | 高敏操作(导出/重置认证/改密钥/转所有权/销毁)要求近期重新认证 | step-up auth | 未实现 | — |
 | ID-11 | 对象级受众:仅自己/指定成员/家庭;角色+对象双检查 | 默认拒绝 | 自动化通过 | lib/authz/*; tests/integration/isolation |
 | ID-12 | 派生内容读者 ≤ 全部来源共同允许范围 | 撤权后派生下架 | 自动化通过(缩略图/描述/转录/搜索已覆盖) | lib/authz/contribution-access |
@@ -173,7 +173,7 @@
 | OPS-2 | upgrade --check/upgrade/rollback;A/B/C/D失败分级 | 已有;故障注入测试 | 自动化通过 | upgrade.sh; ops tests |
 | OPS-3 | backup/backup verify/restore/cleanup --dry-run | — | 自动化通过 | backup.sh 等 |
 | OPS-4 | ftc ai configure/status/test/disable | 双路由扩展中 | 自动化通过 | ai.py |
-| OPS-5 | 仅主机本地的账号恢复与配置迁移CLI | 未实现(=ID-7) | 未实现 | — |
+| OPS-5 | 仅主机本地的账号恢复与配置迁移CLI | 账号恢复已落地;配置迁移待 M10 交接包 | 部分实现(2026-09-07 M2-b:npm run recover-account;配置迁移随 BKP-10) | scripts/account-recovery.ts |
 | OPS-6 | Debian/Ubuntu+CPU架构实测声明;不把amd64写成arm64 | 现仅linux/amd64 | 自动化通过(诚实声明) | install.sh 平台提示 |
 | OPS-7 | 已装Docker复用;缺依赖授权安装;不动防火墙 | — | 自动化通过 | install.sh |
 | OPS-8 | 新机Caddy HTTPS;已有OpenResty/Nginx环回+审查代理片段;不抢80/443 | — | 自动化通过 | templates |

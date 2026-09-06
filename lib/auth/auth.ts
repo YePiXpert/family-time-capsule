@@ -4,13 +4,14 @@ import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { bearer } from "better-auth/plugins";
+import { bearer, twoFactor } from "better-auth/plugins";
 import { and, count, eq, gt, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   account,
   rateLimit,
   session,
+  twoFactor as twoFactorTable,
   user,
   verification,
 } from "@/db/schema/auth";
@@ -19,6 +20,7 @@ import {
   getInvitationProvisioningCapability,
   recordInvitationProvisionedUser,
 } from "./provisioning-capability";
+import { passkeyPlugin } from "./passkey";
 
 /**
  * 会话策略（docs/SECURITY.md）：
@@ -45,13 +47,22 @@ function createAuth() {
   return betterAuth({
     database: drizzleAdapter(getDb(), {
       provider: "sqlite",
-      schema: { user, session, account, verification, rateLimit },
+      schema: { user, session, account, verification, rateLimit, twoFactor: twoFactorTable },
     }),
     secret: process.env.AUTH_SECRET || undefined,
     // Native clients keep the session token in Keychain/Keystore and send it
     // as an Authorization header. Browser sessions continue to use HttpOnly
     // cookies; both transports resolve to the same revocable database session.
-    plugins: [bearer()],
+    plugins: [
+      bearer(),
+      // ID-6/ID-8：TOTP 两步验证 + 恢复码（密钥/恢复码以实例 AUTH_SECRET
+      // 派生密钥 AEAD 加密存储；启用/禁用/重生成恢复码都要求当前密码）。
+      twoFactor({
+        issuer: process.env.APP_NAME ?? "家庭时间胶囊",
+        // 恢复码仅一次显示由客户端保证；服务端每次生成即替换旧列表。
+      }),
+      passkeyPlugin(),
+    ],
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
@@ -73,6 +84,9 @@ function createAuth() {
           window: 10,
           max: Number(process.env.AUTH_SIGNIN_RATE_LIMIT_MAX ?? 3),
         },
+        // 两步验证码暴力破解防护（插件另有账号级 failed/locked 计数）
+        "/two-factor/verify-totp": { window: 60, max: 8 },
+        "/two-factor/verify-backup-code": { window: 60, max: 5 },
       },
     },
     session: {

@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "verify:export": "node scripts/verify-export.mjs",
     "restore": "tsx scripts/restore.ts",
+    "recover-account": "tsx --conditions=react-server scripts/account-recovery.ts",
     "search:rebuild": "tsx --conditions=react-server scripts/search-rebuild.ts",
     "benchmark": "tsx --conditions=react-server scripts/benchmark.mts",
     "pretest:e2e": "npm run build && npm run build:ops",
@@ -23,6 +24,8 @@
     "test:ops": "vitest run --config vitest.ops.config.ts"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.1",
     "archiver": "^8.0.0",
     "better-auth": "^1.7.2",
     "better-sqlite3": "^12.11.1",

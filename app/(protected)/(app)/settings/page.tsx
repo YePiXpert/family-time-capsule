@@ -116,6 +116,12 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
         )}
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
+            href="/settings/security"
+            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            账号安全（两步验证 / 通行密钥）
+          </Link>
+          <Link
             href="/settings/sessions"
             className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >

@@ -375,3 +375,28 @@ ZIP 只含转义后的内置 HTML/CSS、允许的媒体和来源文字；file://
 
 原生 reader-downloads 与原件/outbox 分离；缓存按服务器/账号/家庭隔离，联网发现失权则
 移除缓存。设备断网不能立即获知撤权；这不是额外加密协议，也不承诺抵御已控制设备者。
+
+## 17. 强认证与本机账号恢复（M2-b，migration 0048）
+
+**两步验证（TOTP）与恢复码**：better-auth `twoFactor` 插件承载。密钥与恢复码用
+`AUTH_SECRET` 派生密钥做 xchacha20poly1305 AEAD 加密后落 `two_factor` 表（非明文、
+非哈希——成熟组件语义，恢复码校验为解密后常量时间比较，每次使用原子移除）。
+恢复码只在启用/重新生成的响应里完整出现一次。启用/禁用/重生成均要求当前密码；
+`/two-factor/verify-totp`、`/two-factor/verify-backup-code` 有独立限流，插件另有
+账号级失败计数与锁定。已知边界（如实声明）：手机 App 暂不支持两步验证第二腿，
+启用 TOTP 的账号需先在网页登录。
+
+**通行密钥（WebAuthn）**：`@simplewebauthn/server` 实现（better-auth 1.7 未内置）。
+注册/移除要求已登录会话；登录为 usernameless 公开端点，验证断言后经 better-auth
+internalAdapter 建立与密码登录同构的数据库会话（因此停用账号门禁同样生效）。
+challenge 只存 verification 表（2 分钟过期、单次消费）；rpID/origin 取自
+`BETTER_AUTH_URL`，不接受请求头伪造；断言强制 counter 前进与 rpID 匹配。
+`/passkey/authenticate/*` 有独立限流。
+
+**本机账号恢复**（无邮件部署的自救路径）：仅部署者在服务器本机运行
+`npm run recover-account -- --email <账号> [--origin https://域名]`（显式 `DATA_DIR`）。
+令牌 256-bit 随机、只存 SHA-256、15 分钟有效、每账号同时至多一个（签发即替换）、
+使用是原子单次消费（`DELETE ... RETURNING` 抢占），成功后立刻撤销该账号全部会话
+并写审计（`account.recovery_token_issued` / `account.recovery_password_reset`）。
+`/recover/[token]` 页面按 IP 限流（15 分钟 5 次）；本实例不提供任何公开
+"忘记密码"HTTP 通道。

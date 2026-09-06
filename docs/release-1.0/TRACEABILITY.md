@@ -25,8 +25,9 @@
 | ID-3 | app/api/bootstrap、lib/auth/setup.ts、lib/instance/service | tests/integration/bootstrap-flow.test.ts、signup-gate.test.ts、setup-rate-limit.test.ts |
 | ID-4 | lib/invitations/service.ts、app/(protected)/(app)/settings/invitations | tests/integration/invitation-flow.test.ts、invitations.test.ts |
 | ID-5 | lib/contribution-portals | tests/integration/contribution-portals.test.ts |
-| ID-6/7/8 | 未实现 | — |
-| ID-9 | better-auth session 表 | 待补设备管理测试 |
+| ID-6/8 | lib/auth/(auth|passkey|two-factor-service).ts、db/schema/auth.ts(0048)、app/(protected)/(app)/settings/security、app/login/two-factor | tests/integration/two-factor.test.ts、strong-auth.test.ts、tests/e2e/security.spec.ts |
+| ID-7 | scripts/account-recovery.ts、lib/auth/account-recovery.ts、app/recover/[token] | tests/integration/strong-auth.test.ts(恢复)、tests/e2e/security.spec.ts(页面闭环) |
+| ID-9 | app/(protected)/(app)/settings/sessions、lib/auth/account-recovery.ts | tests/integration/ownership.test.ts、strong-auth.test.ts |
 | ID-10 | 未实现 | — |
 | ID-11/12 | lib/authz/(context/principal/contribution-access).ts | tests/integration/isolation.test.ts、media-access.test.ts、contribution-visibility.test.ts |
 | ID-13 | lib/accounts | tests/integration/accounts.test.ts |
