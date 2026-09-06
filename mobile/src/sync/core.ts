@@ -12,6 +12,8 @@ export type SyncSummary = {
   eventCount: number;
   uploadedCount: number;
   failedCount: number;
+  /** 因未获目的地授权而保留在本机的记录数（M4）。 */
+  skippedUploadCount: number;
   syncedAt: string;
 };
 
@@ -19,6 +21,11 @@ export type SyncDependencies = {
   isConnected: () => Promise<boolean | null | undefined>;
   createSnapshotId: () => string;
   listOutbox: () => Promise<OutboxItem[]>;
+  /**
+   * 上传授权门（M4）：返回 false 的待传项保持本机，不算失败也不阻塞
+   * 家庭资料下载。缺省视为全部允许（兼容旧测试装配）。
+   */
+  authorizeUpload?: (item: OutboxItem) => Promise<boolean>;
   uploadTextCapture: (
     credentials: Credentials,
     id: string,
@@ -63,11 +70,16 @@ function mustStopOutboxFlush(error: unknown): boolean {
 async function flushOutbox(
   credentials: Credentials,
   dependencies: SyncDependencies,
-): Promise<{ uploadedCount: number; failedCount: number }> {
+): Promise<{ uploadedCount: number; failedCount: number; skippedCount: number }> {
   const items = await dependencies.listOutbox();
   let uploadedCount = 0;
   let failedCount = 0;
+  let skippedCount = 0;
   for (const item of items) {
+    if (dependencies.authorizeUpload && !(await dependencies.authorizeUpload(item))) {
+      skippedCount += 1;
+      continue;
+    }
     try {
       if (item.kind === "text_capture") {
         const payload = item.payload as TextCapturePayload;
@@ -103,7 +115,7 @@ async function flushOutbox(
       failedCount += 1;
     }
   }
-  return { uploadedCount, failedCount };
+  return { uploadedCount, failedCount, skippedCount };
 }
 
 export async function syncArchiveWithDependencies(
@@ -114,7 +126,7 @@ export async function syncArchiveWithDependencies(
     throw new Error("当前离线，已保留本地数据。");
   }
 
-  const { uploadedCount, failedCount } = await flushOutbox(
+  const { uploadedCount, failedCount, skippedCount } = await flushOutbox(
     credentials,
     dependencies,
   );
@@ -145,5 +157,5 @@ export async function syncArchiveWithDependencies(
   } catch {
     // Cache cleanup is best-effort and never invalidates a committed snapshot.
   }
-  return { eventCount, uploadedCount, failedCount, syncedAt: serverTime };
+  return { eventCount, uploadedCount, failedCount, skippedUploadCount: skippedCount, syncedAt: serverTime };
 }

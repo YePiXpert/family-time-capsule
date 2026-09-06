@@ -1,5 +1,5 @@
 import * as SQLite from "expo-sqlite";
-import type {
+import type { SyncConsent,
   Family,
   LocalTimelineEvent,
   LocalImportIntakeItem,
@@ -979,4 +979,203 @@ export async function removeLocalCaptureRecord(captureId: string): Promise<void>
   const db = await getDatabase();
   await db.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
   await db.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
+}
+
+// ===== M4：同步授权、目的地隔离与失败操作拆分 =====
+
+const SYNC_CONSENT_KEY = "sync_consent";
+const ACTIVE_DEST_KEY = "active_dest";
+
+export async function getSyncConsent(): Promise<SyncConsent | null> {
+  const raw = await getMeta(SYNC_CONSENT_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as SyncConsent;
+    if (
+      typeof parsed.serverUrl !== "string" ||
+      typeof parsed.userId !== "string" ||
+      !["all", "selected", "local"].includes(parsed.scope) ||
+      !Array.isArray(parsed.ids)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function setSyncConsent(consent: SyncConsent): Promise<void> {
+  await setMeta(SYNC_CONSENT_KEY, JSON.stringify(consent));
+}
+
+export async function getActiveDestination(): Promise<string | null> {
+  return getMeta(ACTIVE_DEST_KEY);
+}
+
+export async function setActiveDestination(destination: string): Promise<void> {
+  await setMeta(ACTIVE_DEST_KEY, destination);
+}
+
+/**
+ * 切换实例/账号后清理“来自服务器”的缓存：时间轴、人物、family/viewer、
+ * 首页/回顾与库缓存、记忆详情缓存。绝不触碰本机记录（local_capture、
+ * outbox、原件目录）——它们属于设备主人，不随连接切换删除。
+ */
+export async function clearServerCaches(): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM timeline_event");
+  await db.runAsync("DELETE FROM people");
+  await db.runAsync("DELETE FROM memory_detail");
+  await db.runAsync(
+    "DELETE FROM meta WHERE key IN ('mobile_home', 'mobile_review', 'family', 'viewer', 'last_sync_at')",
+  );
+  await db.runAsync("DELETE FROM meta WHERE key LIKE 'library_%'");
+}
+
+/** 仅保留在本机：移除待传队列项，保留 local_capture 与原件文件。 */
+export async function keepOutboxItemLocal(itemId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM outbox WHERE id = ?", itemId);
+}
+
+/** 彻底删除一条本机记录（含原件文件由调用方处理）。 */
+export async function deleteLocalCaptureRecord(captureId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
+  await db.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
+}
+
+/** 救援包恢复：captureId 是否已存在（幂等导入）。 */
+export async function captureRecordExists(captureId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ id: string }>(
+    "SELECT id FROM local_capture WHERE id = ? LIMIT 1",
+    captureId,
+  );
+  return Boolean(row);
+}
+
+/** 救援包恢复：忠实保留原 title/occurredAt，恢复后默认仅本机（pending）。 */
+export async function insertRestoredTextCapture(input: {
+  captureId: string;
+  title: string;
+  occurredAt: string;
+  text: string;
+}): Promise<void> {
+  const db = await getDatabase();
+  const payload: TextCapturePayload = { text: input.text };
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      `INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, sync_state)
+       VALUES (?, 'text_capture', ?, ?, NULL, NULL, 'pending')`,
+      input.captureId,
+      input.title,
+      input.occurredAt,
+    );
+    await tx.runAsync(
+      "INSERT INTO outbox(id, kind, payload_json, created_at) VALUES (?, 'text_capture', ?, ?)",
+      input.captureId,
+      JSON.stringify(payload),
+      input.occurredAt,
+    );
+  });
+}
+
+export async function insertRestoredMediaCapture(input: {
+  captureId: string;
+  title: string;
+  occurredAt: string;
+  fileName: string;
+  mimeType: string;
+  mediaType: MediaCapturePayload["mediaType"];
+  localUri: string;
+}): Promise<void> {
+  const db = await getDatabase();
+  const payload: MediaCapturePayload = {
+    localUri: input.localUri,
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    lastModified: null,
+    mediaType: input.mediaType,
+    source: "files",
+  };
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      `INSERT INTO local_capture(id, kind, title, occurred_at, local_uri, media_type, sync_state)
+       VALUES (?, 'media_capture', ?, ?, ?, ?, 'pending')`,
+      input.captureId,
+      input.title,
+      input.occurredAt,
+      input.localUri,
+      input.mediaType,
+    );
+    await tx.runAsync(
+      "INSERT INTO outbox(id, kind, payload_json, created_at) VALUES (?, 'media_capture', ?, ?)",
+      input.captureId,
+      JSON.stringify(payload),
+      input.occurredAt,
+    );
+  });
+}
+
+/** 救援包导出用的未入档记录清单（含载荷中的文字/文件名）。 */
+export type PendingRescueItem = {
+  captureId: string;
+  kind: "text_capture" | "media_capture";
+  title: string;
+  occurredAt: string;
+  localUri: string | null;
+  mediaType: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  text: string | null;
+};
+
+export async function listPendingRescueItems(): Promise<PendingRescueItem[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    kind: "text_capture" | "media_capture";
+    title: string;
+    occurred_at: string;
+    local_uri: string | null;
+    media_type: string | null;
+    payload_json: string | null;
+  }>(
+    `SELECT l.id, l.kind, l.title, l.occurred_at, l.local_uri, l.media_type, o.payload_json
+     FROM local_capture l LEFT JOIN outbox o ON o.id = l.id
+     WHERE l.sync_state <> 'archived'
+     ORDER BY l.occurred_at DESC, l.id DESC`,
+  );
+  return rows.map((row) => {
+    let fileName: string | null = null;
+    let mimeType: string | null = null;
+    let text: string | null = null;
+    try {
+      const payload = row.payload_json
+        ? (JSON.parse(row.payload_json) as {
+            text?: unknown; fileName?: unknown; mimeType?: unknown;
+          })
+        : null;
+      if (payload) {
+        if (typeof payload.text === "string") text = payload.text;
+        if (typeof payload.fileName === "string") fileName = payload.fileName;
+        if (typeof payload.mimeType === "string") mimeType = payload.mimeType;
+      }
+    } catch {
+      // 残缺载荷按纯元数据处理
+    }
+    return {
+      captureId: row.id,
+      kind: row.kind,
+      title: row.title,
+      occurredAt: row.occurred_at,
+      localUri: row.local_uri,
+      mediaType: row.media_type,
+      fileName,
+      mimeType,
+      text,
+    };
+  });
 }

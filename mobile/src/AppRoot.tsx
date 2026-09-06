@@ -4,17 +4,19 @@ import { StatusBar } from "expo-status-bar";
 import { useApp } from "./state/AppContext";
 import { AppNavigator } from "./navigation/AppNavigator";
 import { OnboardingGate, WelcomeFlow } from "./screens/WelcomeFlow";
+import { SyncConsentScreen } from "./screens/SyncConsentScreen";
 import { colors } from "./theme";
 
 /**
  * 启动门禁（1.3）：
  * 1. 已有有效凭据但账号未建家庭 → 初始化门（登录不再被误判失败）；
- * 2. 无凭据且未处理过欢迎页 → 首次启动引导；
- * 3. 其余（含已登录用户升级）→ 直接进入主界面。
+ * 2. 有待传记录但目的地未获上传授权 → 同步授权门（M4）；
+ * 3. 无凭据且未处理过欢迎页 → 首次启动引导；
+ * 4. 其余（含已登录用户升级）→ 直接进入主界面。
  * welcomeSeen 为 null 表示本机状态仍在读取，短暂显示加载态避免闪屏。
  */
 export function AppRoot() {
-  const { credentials, welcomeSeen, needsOnboarding } = useApp();
+  const { credentials, welcomeSeen, needsOnboarding, awaitingSyncConsent } = useApp();
   const insets = useSafeAreaInsets();
   const body = (() => {
     if (welcomeSeen === null) {
@@ -25,6 +27,7 @@ export function AppRoot() {
       );
     }
     if (credentials && needsOnboarding) return <OnboardingGate />;
+    if (credentials && awaitingSyncConsent) return <SyncConsentScreen />;
     if (!credentials && !welcomeSeen) return <WelcomeFlow />;
     return <AppNavigator />;
   })();

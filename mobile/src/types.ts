@@ -414,3 +414,19 @@ export type InvitationCreateResult = {
   invitePath: string;
   expiresAt: string;
 };
+
+/**
+ * 首次同步授权（M4）：上传本机记录前，用户对“目的地”的明确同意。
+ * - scope "all"：目的地允许上传全部本机待传记录；
+ * - scope "selected"：仅上传 ids 中的记录；
+ * - scope "local"：明确选择仅保留本机（不等于暂停，暂停用另一个标志）。
+ * 目的地 = serverUrl + 账号；切换实例/账号/家庭后需重新核对。
+ */
+export type SyncConsent = {
+  serverUrl: string;
+  userId: string;
+  familyId: string | null;
+  scope: "all" | "selected" | "local";
+  ids: string[];
+  decidedAt: string;
+};

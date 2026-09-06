@@ -16,7 +16,7 @@ import {
   pruneCachedCovers,
   uploadMediaCapture,
 } from "../storage/files";
-import type { Credentials } from "../types";
+import type { Credentials, OutboxItem } from "../types";
 import {
   syncArchiveWithDependencies,
   type SyncSummary,
@@ -24,11 +24,20 @@ import {
 
 export type { SyncSummary } from "./core";
 
-export async function syncArchive(credentials: Credentials): Promise<SyncSummary> {
+export type SyncArchiveOptions = {
+  /** 上传授权门（M4）：未授权目的地的待传项保留在本机。 */
+  authorizeUpload?: (item: OutboxItem) => Promise<boolean>;
+};
+
+export async function syncArchive(
+  credentials: Credentials,
+  options: SyncArchiveOptions = {},
+): Promise<SyncSummary> {
   return syncArchiveWithDependencies(credentials, {
     isConnected: async () => (await Network.getNetworkStateAsync()).isConnected,
     createSnapshotId: () => Crypto.randomUUID(),
     listOutbox,
+    authorizeUpload: options.authorizeUpload,
     uploadTextCapture,
     uploadMediaCapture,
     updateMediaUploadState,

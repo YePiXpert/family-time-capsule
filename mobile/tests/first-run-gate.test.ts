@@ -16,6 +16,9 @@ vi.mock("../src/storage/database", () => ({
   getMeta: async (key: string) => (key === "welcome_done" ? "1" : null),
   listCachedPeople: async () => [], listOutbox: async () => [], listTimeline: async () => [],
   removeOutboxItem: vi.fn(), setMeta: vi.fn(),
+  getSyncConsent: async () => null, setSyncConsent: vi.fn(),
+  getActiveDestination: async () => null, setActiveDestination: vi.fn(),
+  clearServerCaches: vi.fn(), deleteLocalCaptureRecord: vi.fn(),
 }));
 vi.mock("../src/storage/files", () => ({ clearLocalFiles: vi.fn(), removeLocalFile: vi.fn() }));
 vi.mock("../src/reading/native", () => ({ clearAllReadingDownloads: vi.fn(), revalidateReadingDownloads: async () => {} }));
@@ -50,7 +53,12 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
   mocks.sync.mockResolvedValue(summary);
-  mocks.fetchMe.mockResolvedValue({ status: "ready" });
+  mocks.fetchMe.mockResolvedValue({
+    status: "ready",
+    user: { id: "user-1", displayName: "妈妈", email: "a@b.c" },
+    account: { role: "admin", personId: null, isGuardian: true },
+    family: { id: "family-1", name: "小满家", timezone: "Asia/Shanghai" },
+  });
   mocks.submitOnboarding.mockResolvedValue(undefined);
 });
 afterEach(async () => {
@@ -93,13 +101,22 @@ it("同步返回 401 时用 /me 区分“待初始化”与“会话失效”", 
 
   // 会话仍在但账号未建家庭：不再误报“登录已过期”。
   mocks.sync.mockRejectedValueOnce(new ApiError("登录已过期，请重新登录。", 401));
-  mocks.fetchMe.mockResolvedValue({ status: "needsOnboarding" });
+  mocks.fetchMe.mockResolvedValue({
+    status: "needsOnboarding",
+    user: { id: "user-1", displayName: "妈妈", email: "a@b.c" },
+    account: { role: "admin" },
+  });
   await act(async () => { await app.runSync(); });
   expect(app.needsOnboarding).toBe(true);
   expect(app.message).toContain("完成家庭初始化");
 
   // 真正的会话失效保持原有提示。
-  mocks.fetchMe.mockResolvedValue({ status: "ready" });
+  mocks.fetchMe.mockResolvedValue({
+    status: "ready",
+    user: { id: "user-1", displayName: "妈妈", email: "a@b.c" },
+    account: { role: "admin", personId: null, isGuardian: true },
+    family: { id: "family-1", name: "小满家", timezone: "Asia/Shanghai" },
+  });
   mocks.sync.mockRejectedValueOnce(new ApiError("登录已过期，请重新登录。", 401));
   await act(async () => { await app.runSync(); });
   expect(app.message).toContain("登录已过期");

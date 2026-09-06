@@ -26,15 +26,21 @@ import {
   cacheMobileHome,
   cacheMobileReview,
   clearLocalArchive,
+  clearServerCaches,
+  deleteLocalCaptureRecord,
+  getActiveDestination,
   getCachedFamily,
   getCachedMobileHome,
   getCachedViewer,
   getMeta,
+  getSyncConsent,
   listCachedPeople,
   listOutbox,
   listTimeline,
   removeOutboxItem,
+  setActiveDestination,
   setMeta,
+  setSyncConsent,
 } from "../storage/database";
 import { clearLocalFiles, removeLocalFile } from "../storage/files";
 import { syncArchive } from "../sync/sync";
@@ -51,6 +57,7 @@ import type {
   OnboardingInput,
   OutboxItem,
   Person,
+  SyncConsent,
   Viewer,
 } from "../types";
 import { reconcileWeeklyReviewReminder } from "../notifications/review-reminders";
@@ -72,6 +79,10 @@ type AppContextValue = {
   welcomeSeen: boolean | null;
   /** 账号已建立但尚未建立/绑定家庭：登录不算失败，应继续初始化。 */
   needsOnboarding: boolean;
+  /** 当前目的地的同步授权；null 表示尚未授权（有待传记录时会弹出授权门）。 */
+  syncConsent: SyncConsent | null;
+  awaitingSyncConsent: boolean;
+  userId: string | null;
   reloadLocal: () => Promise<void>;
   runSync: () => Promise<void>;
   queued: () => Promise<void>;
@@ -79,8 +90,16 @@ type AppContextValue = {
   disconnect: () => Promise<void>;
   setWelcomeSeen: () => Promise<void>;
   completeOnboarding: (input: OnboardingInput) => Promise<void>;
+  /** 授权上传目的地：scope all/selected/local（M4）。 */
+  grantSyncConsent: (
+    scope: SyncConsent["scope"],
+    ids?: string[],
+  ) => Promise<void>;
+  /** 仅保留在本机：移除待传项，保留记录与原件。 */
+  keepOutboxItemLocal: (itemId: string) => Promise<void>;
+  /** 彻底删除一条本机记录（含原件），调用方必须先取得明确确认。 */
+  deleteOutboxCapture: (item: OutboxItem) => Promise<void>;
   clearLocal: () => Promise<void>;
-  discardFailed: () => Promise<void>;
   dismissMessage: () => void;
 };
 
@@ -103,26 +122,42 @@ export function AppProvider({
   const [message, setMessage] = useState<string | null>(null);
   const [welcomeSeen, setWelcomeSeenState] = useState<boolean | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [syncConsent, setSyncConsentState] = useState<SyncConsent | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const syncInFlight = useRef(false);
   const intakeInFlight = useRef(false);
   const intakeAgain = useRef(false);
   const clearingLocal = useRef(false);
   const needsOnboardingRef = useRef(false);
+  const consentRef = useRef<SyncConsent | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  const familyIdRef = useRef<string | null>(null);
+  const destGenRef = useRef(0);
   const syncDone = useRef<Promise<void> | null>(null);
   const intakeDone = useRef<Promise<void> | null>(null);
 
   const reloadLocal = useCallback(async () => {
-    const [nextEvents, nextFamily, nextViewer, nextPeople, nextOutbox, nextSyncAt, cachedHome, welcomeDone] =
-      await Promise.all([
-        listTimeline(),
-        getCachedFamily(),
-        getCachedViewer(),
-        listCachedPeople(),
-        listOutbox(),
-        getMeta("last_sync_at"),
-        getCachedMobileHome(),
-        getMeta("welcome_done"),
-      ]);
+    const [
+      nextEvents,
+      nextFamily,
+      nextViewer,
+      nextPeople,
+      nextOutbox,
+      nextSyncAt,
+      cachedHome,
+      welcomeDone,
+      consent,
+    ] = await Promise.all([
+      listTimeline(),
+      getCachedFamily(),
+      getCachedViewer(),
+      listCachedPeople(),
+      listOutbox(),
+      getMeta("last_sync_at"),
+      getCachedMobileHome(),
+      getMeta("welcome_done"),
+      getSyncConsent(),
+    ]);
     setEvents(nextEvents);
     setFamily(nextFamily);
     setViewer(nextViewer);
@@ -131,6 +166,8 @@ export function AppProvider({
     setLastSyncAt(nextSyncAt);
     setHome(cachedHome);
     setWelcomeSeenState(welcomeDone === "1");
+    consentRef.current = consent;
+    setSyncConsentState(consent);
   }, []);
 
   /** 刷新账号与家庭状态；needsOnboarding 时暂停自动同步，等待用户建家庭。 */
@@ -142,13 +179,41 @@ export function AppProvider({
         needsOnboardingRef.current = pending;
         setNeedsOnboarding(pending);
       }
-      if (pending) {
+      if (me.status === "needsOnboarding") {
+        if (userIdRef.current !== me.user.id) {
+          userIdRef.current = me.user.id;
+          setUserId(me.user.id);
+        }
+        familyIdRef.current = null;
         setMessage("账号已建立，请先完成家庭初始化。");
+        return;
+      }
+      if (me.status === "ready") {
+        if (userIdRef.current !== me.user.id) {
+          userIdRef.current = me.user.id;
+          setUserId(me.user.id);
+        }
+        familyIdRef.current = me.family.id;
       }
     } catch {
       // 网络或会话问题时维持现状：同步路径已有各自的错误提示。
     }
   }, []);
+
+  /**
+   * 上传授权门（M4）：没有针对当前目的地（serverUrl + 账号）的明确同意时，
+   * 任何待传项都不上传；家庭资料下载不受影响。
+   */
+  const authorizeUpload = useCallback((item: OutboxItem): boolean => {
+    const consent = consentRef.current;
+    const activeUser = userIdRef.current;
+    if (!consent || !activeUser || !credentials) return false;
+    if (consent.serverUrl !== credentials.serverUrl) return false;
+    if (consent.userId !== activeUser) return false;
+    if (consent.scope === "all") return true;
+    if (consent.scope === "selected") return consent.ids.includes(item.id);
+    return false;
+  }, [credentials]);
 
   const refreshHome = useCallback(async (activeCredentials: Credentials) => {
     const nextHome = await fetchMobileHome(activeCredentials);
@@ -168,12 +233,17 @@ export function AppProvider({
   const runSync = useCallback(async () => {
     if (!credentials || syncInFlight.current || clearingLocal.current) return;
     syncInFlight.current = true;
+    const generation = destGenRef.current;
     let finish!: () => void;
     syncDone.current = new Promise<void>((resolve) => { finish = resolve; });
     setSyncing(true);
     setMessage(null);
     try {
-      const summary = await syncArchive(credentials);
+      const summary = await syncArchive(credentials, {
+        authorizeUpload: (item) => Promise.resolve(authorizeUpload(item)),
+      });
+      // 同步期间切换了连接：丢弃旧目的地的结果，不写新视图的缓存。
+      if (generation !== destGenRef.current) return;
       try {
         await refreshHome(credentials);
       } catch {
@@ -183,8 +253,12 @@ export function AppProvider({
       const retained = summary.failedCount > 0
         ? `；${summary.failedCount} 条未被接受，仍在本机`
         : "";
-      setMessage(`已同步 ${summary.eventCount} 段回忆${uploaded}${retained}。`);
+      const skipped = summary.skippedUploadCount > 0
+        ? `；${summary.skippedUploadCount} 条按你的选择保留在本机`
+        : "";
+      setMessage(`已同步 ${summary.eventCount} 段回忆${uploaded}${retained}${skipped}。`);
     } catch (error) {
+      if (generation !== destGenRef.current) return;
       // 无家庭绑定的账号在此被服务端拒绝（401）；用 /me 区分“待初始化”
       // 与“会话失效”，避免把新账号误报成登录已过期。
       const status = error instanceof ApiError ? error.status : -1;
@@ -206,7 +280,7 @@ export function AppProvider({
         finish();
       }
     }
-  }, [credentials, refreshAccount, refreshHome, reloadLocal]);
+  }, [authorizeUpload, credentials, refreshAccount, refreshHome, reloadLocal]);
 
   /**
    * 保存完成即返回：只等待本机数据刷新，同步在后台单独运行。
@@ -240,7 +314,9 @@ export function AppProvider({
         } else {
           const failed = result.failed > 0 ? `；${result.failed} 项复制失败，其他项目不受影响` : "";
           setMessage(`已接管 ${result.queued} 项系统分享并保存到本机${failed}。`);
-          if (credentials && network.isConnected !== false && result.queued > 0) await runSync();
+          if (credentials && !needsOnboardingRef.current && network.isConnected !== false && result.queued > 0) {
+            void runSync().catch(() => {});
+          }
         }
       } while (intakeAgain.current && !clearingLocal.current);
     } catch (error) {
@@ -252,20 +328,35 @@ export function AppProvider({
     }
   }, [credentials, network.isConnected, reloadLocal, runSync, viewer]);
 
+  /**
+   * 连接（或切换）一个目的地：记录目的地标识；切换实例/账号时先清掉
+   * 旧目的地的服务器缓存，绝不把 A 家庭的缓存泄露给 B 连接。
+   */
   const connect = useCallback(async (nextCredentials: Credentials) => {
     if (clearingLocal.current) return;
     await saveCredentials(nextCredentials);
     setCredentials(nextCredentials);
-    // 先判定账号是否还要建家庭，避免凭证一建立就触发注定失败的同步。
+    destGenRef.current += 1;
     await refreshAccount(nextCredentials);
-  }, [refreshAccount]);
+    const destination = `${nextCredentials.serverUrl}|${userIdRef.current ?? ""}`;
+    const previous = await getActiveDestination();
+    if (previous && previous !== destination) {
+      await clearServerCaches();
+      await reloadLocal();
+    }
+    await setActiveDestination(destination);
+  }, [refreshAccount, reloadLocal]);
 
   const disconnect = useCallback(async () => {
     if (credentials) await signOut(credentials);
     await clearCredentials();
+    destGenRef.current += 1;
     setCredentials(null);
     needsOnboardingRef.current = false;
     setNeedsOnboarding(false);
+    userIdRef.current = null;
+    setUserId(null);
+    familyIdRef.current = null;
     setMessage("已断开服务器，本机资料保持不变。");
   }, [credentials]);
 
@@ -284,6 +375,48 @@ export function AppProvider({
     await runSync();
   }, [credentials, runSync]);
 
+  /** 记录用户对当前目的地的上传授权（M4）。 */
+  const grantSyncConsent = useCallback(async (
+    scope: SyncConsent["scope"],
+    ids?: string[],
+  ) => {
+    if (!credentials) return;
+    const consent: SyncConsent = {
+      serverUrl: credentials.serverUrl,
+      userId: userIdRef.current ?? "",
+      familyId: familyIdRef.current,
+      scope,
+      ids: scope === "selected" ? (ids ?? []) : [],
+      decidedAt: new Date().toISOString(),
+    };
+    await setSyncConsent(consent);
+    consentRef.current = consent;
+    setSyncConsentState(consent);
+    setMessage(
+      scope === "local"
+        ? "已选择仅保留本机；这些记录不会上传，原件不受影响。"
+        : "已同意向该家庭同步本机记录。",
+    );
+    if (scope !== "local") await runSync();
+  }, [credentials, runSync]);
+
+  /** 仅保留在本机：移除待传队列项，保留记录与原件。 */
+  const keepItemLocal = useCallback(async (itemId: string) => {
+    await removeOutboxItem(itemId);
+    await reloadLocal();
+    setMessage("这条记录已改为仅保留本机；原件没有被删除。");
+  }, [reloadLocal]);
+
+  /** 彻底删除一条本机记录（含原件）；调用方必须已经取得明确确认。 */
+  const deleteOutboxCapture = useCallback(async (item: OutboxItem) => {
+    if (item.kind === "media_capture") {
+      removeLocalFile((item.payload as MediaCapturePayload).localUri);
+    }
+    await deleteLocalCaptureRecord(item.id);
+    await reloadLocal();
+    setMessage("这条本机记录及其原件已删除。");
+  }, [reloadLocal]);
+
   const clearLocal = useCallback(async () => {
     if (clearingLocal.current) return;
     clearingLocal.current = true;
@@ -299,6 +432,11 @@ export function AppProvider({
       setCredentials(null);
       needsOnboardingRef.current = false;
       setNeedsOnboarding(false);
+      userIdRef.current = null;
+      setUserId(null);
+      familyIdRef.current = null;
+      consentRef.current = null;
+      setSyncConsentState(null);
       await reloadLocal();
       setMessage("本机资料已清除。");
     } catch (error) {
@@ -309,24 +447,17 @@ export function AppProvider({
     }
   }, [credentials, reloadLocal]);
 
-  const discardFailed = useCallback(async () => {
-    for (const item of outbox.filter((entry) => entry.attemptCount > 0)) {
-      await removeOutboxItem(item.id);
-      if (item.kind === "media_capture") {
-        removeLocalFile((item.payload as MediaCapturePayload).localUri);
-      }
-    }
-    await reloadLocal();
-  }, [outbox, reloadLocal]);
-
   useEffect(() => {
     const timer = setTimeout(() => {
-      void reloadLocal().then(() =>
-        credentials && !needsOnboardingRef.current ? runSync() : undefined,
-      );
+      void reloadLocal().then(async () => {
+        if (!credentials || needsOnboardingRef.current) return;
+        // 启动即恢复账号状态（userId/家庭），授权门与上传判定依赖它。
+        await refreshAccount(credentials);
+        await runSync();
+      });
     }, 0);
     return () => clearTimeout(timer);
-  }, [credentials, reloadLocal, runSync]);
+  }, [credentials, refreshAccount, reloadLocal, runSync]);
 
   useEffect(() => {
     const timer = setTimeout(() => void receiveSystemShares(), 0);
@@ -359,6 +490,21 @@ export function AppProvider({
     return () => subscription.remove();
   }, [credentials, runSync]);
 
+  /**
+   * 授权门（M4，派生值）：有待传记录、账号就绪，且当前目的地
+   * （serverUrl + 账号）没有匹配的授权时显示授权界面。
+   */
+  const awaitingSyncConsent = useMemo(() => {
+    if (!credentials || needsOnboarding || !userId || outbox.length === 0) {
+      return false;
+    }
+    return !(
+      syncConsent !== null &&
+      syncConsent.serverUrl === credentials.serverUrl &&
+      syncConsent.userId === userId
+    );
+  }, [credentials, needsOnboarding, outbox.length, syncConsent, userId]);
+
   const value = useMemo<AppContextValue>(() => ({
     credentials,
     family,
@@ -373,6 +519,9 @@ export function AppProvider({
     message,
     welcomeSeen,
     needsOnboarding,
+    syncConsent,
+    awaitingSyncConsent,
+    userId,
     reloadLocal,
     runSync,
     queued,
@@ -380,14 +529,17 @@ export function AppProvider({
     disconnect,
     setWelcomeSeen,
     completeOnboarding,
+    grantSyncConsent,
+    keepOutboxItemLocal: keepItemLocal,
+    deleteOutboxCapture,
     clearLocal,
-    discardFailed,
     dismissMessage: () => setMessage(null),
   }), [
-    clearLocal, completeOnboarding, connect, credentials, disconnect,
-    discardFailed, events, family, home, lastSyncAt, message,
-    needsOnboarding, network.isConnected, outbox, people, queued,
-    reloadLocal, runSync, setWelcomeSeen, syncing, viewer, welcomeSeen,
+    awaitingSyncConsent, clearLocal, completeOnboarding, connect, credentials,
+    deleteOutboxCapture, disconnect, events, family, grantSyncConsent, home,
+    keepItemLocal, lastSyncAt, message, needsOnboarding, network.isConnected,
+    outbox, people, queued, reloadLocal, runSync, setWelcomeSeen,
+    syncConsent, syncing, userId, viewer, welcomeSeen,
   ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

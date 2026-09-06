@@ -12,6 +12,9 @@ vi.mock("../src/storage/database", () => ({
   getCachedFamily: async () => null, getCachedMobileHome: async () => null, getCachedViewer: async () => null,
   getMeta: async () => null, listCachedPeople: async () => [], listOutbox: async () => [], listTimeline: async () => [],
   removeOutboxItem: vi.fn(), setMeta: vi.fn(),
+  getSyncConsent: async () => null, setSyncConsent: vi.fn(),
+  getActiveDestination: async () => null, setActiveDestination: vi.fn(),
+  clearServerCaches: vi.fn(), deleteLocalCaptureRecord: vi.fn(),
 }));
 vi.mock("../src/storage/files", () => ({ clearLocalFiles: mocks.clearFiles, removeLocalFile: vi.fn() }));
 vi.mock("../src/reading/native", () => ({ clearAllReadingDownloads: mocks.clearReading, revalidateReadingDownloads: async () => {} }));
