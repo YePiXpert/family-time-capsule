@@ -120,6 +120,12 @@ export function InboxCard({
               <StatusBadge tone="warning">待校时</StatusBadge>
             )}
           </div>
+          {cover && cover.type !== "document" ? (
+            <p className="break-words text-xs text-muted">原件：<span>{cover.originalFilename}</span></p>
+          ) : null}
+          {item.rawText ? (
+            <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-foreground/80">{item.rawText}</p>
+          ) : null}
           <p className="text-foreground/70">
             拍摄时间：{formatDateTime(cover?.capturedAt ?? null, timezone)}
             （{TIME_SOURCE_LABEL[cover?.timeSource ?? "import_time"]}）
