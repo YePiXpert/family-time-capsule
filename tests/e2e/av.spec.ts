@@ -62,6 +62,7 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   const seed = await page.request.post(transcriptUrl, { data: { text: "最初听到的歌词", revision: null }, headers: { origin: new URL(page.url()).origin } });
   expect(seed.status()).toBe(200);
   await page.reload();
+  await page.getByText("转录全文与修订 · 外婆哼的歌.wav", { exact: true }).click();
   const transcriptInput = page.getByRole("textbox", { name: "修订 外婆哼的歌.wav 的转录" });
   await transcriptInput.fill("网页里正在修订的歌词");
   const other = await page.request.post(transcriptUrl, { data: { text: "另一端的新修订", revision: 0 }, headers: { origin: new URL(page.url()).origin } });

@@ -35,6 +35,7 @@ import { getAsset } from "@/lib/assets/service";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
 import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
+import { TranscriptReviewControl } from "@/components/transcript-review";
 import { TranscriptSection } from "./transcript-ui";
 import { ImageAnalysisSection } from "./analysis-ui";
 import { SuggestionSection } from "./suggestion-ui";
@@ -211,7 +212,7 @@ export default async function MemoryEventPage({
     };
   });
   const contributionAudioAssets = archiveData?.contributionAudioAssets ?? [];
-  const transcripts = archiveData?.transcripts ?? await getTranscriptsForAssets(familyId, avAssetIdsArray);
+  const transcripts = archiveData?.transcripts ?? new Map<string, never>();
   const jobs = archiveData?.jobs ?? [];
   const analyses = archiveData?.analyses ?? new Map<string, never>();
   const imageJobs = archiveData?.imageJobs ?? [];
@@ -415,7 +416,7 @@ export default async function MemoryEventPage({
             {avAssetIdsArray.map((assetId) => {
               const asset = assetById.get(assetId);
               if (!asset) return null;
-              return (
+              return !archiveData ? <TranscriptReviewControl key={assetId} assetId={assetId} label={asset.originalFilename} /> : (
                 <TranscriptSection
                   key={assetId}
                   memoryEventId={event.id}

@@ -157,3 +157,5 @@
 - 已有人工转录直接作为命名依据，不为起名再次外发音频。必要 revision 与人工全文进入 portable archive；旧档缺 revision 使用 0，旧手动转录空 provider/model 安全恢复为 manual。
 - 真实 bearer/SQLite API 验证版本冲突、清空、跨家庭与撤权；原生组件验证离线、冲突和连接切换。Provider 仍为确定性 fake，尚无 live Provider 或真机验证。
 - 本地验收：root 96 文件 / 679 项、mobile 33 文件 / 166 项通过；双端 typecheck/lint 与 production build 通过（root 保留既有 invitation-flow warning）。收件箱生产 E2E 3 项、音视频/转录冲突及照片阅读器 E2E 2 项通过；真实旧库升级、迁移失败回滚、旧档恢复/二次导出通过。浏览器发现的转录入口隐藏问题已修复，普通记忆阅读页可直接手动记录及修订全文。
+
+- CI `34032413513` 揭示普通记忆 HTML 预载长转录违反既有性能门禁。已保留直接入口并改为展开后通过授权 API 读取全文；未修改恢复断言。本地 production build、音视频/转录冲突 E2E 2 项、disaster roundtrip 7 项通过。
