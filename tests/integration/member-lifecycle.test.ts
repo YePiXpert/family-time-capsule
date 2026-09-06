@@ -302,6 +302,12 @@ describe("删除自己的账号（ID-14）", () => {
 describe("step-up 近期重新认证（ID-10）", () => {
   it("无标记为 false；密码复核成功后窗口内 true；错误密码不落标记", async () => {
     const sessionId = makeSession(ownerUser.id);
+    // 刚登录的会话本身就满足近期认证——倒拨创建时间模拟超过窗口的旧会话
+    getDb()
+      .update(sessionTable)
+      .set({ createdAt: new Date(Date.now() - 11 * 60 * 1000) })
+      .where(eq(sessionTable.id, sessionId))
+      .run();
     expect(hasRecentAuth(sessionId)).toBe(false);
     const wrong = await markRecentAuth(sessionId, "wrong-password-000000");
     expect(wrong).toBe(false);

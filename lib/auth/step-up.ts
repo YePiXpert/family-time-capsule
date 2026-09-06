@@ -14,7 +14,11 @@ import { session as sessionTable, user as userTable } from "@/db/schema/auth";
 
 export const RECENT_AUTH_WINDOW_MS = 10 * 60 * 1000;
 
-/** 当前会话是否已完成近期密码复核（窗口内）。 */
+/**
+ * 当前会话是否已满足近期认证（窗口内）。
+ * 刚完成的登录本身就是密码证明：会话创建时间在窗口内同样满足；
+ * 超过窗口的会话需要一次显式密码复核（recent_auth_at）。
+ */
 export function hasRecentAuth(
   sessionId: string,
   windowMs = RECENT_AUTH_WINDOW_MS,
@@ -22,6 +26,7 @@ export function hasRecentAuth(
   const row = getDb()
     .select({
       recentAuthAt: sessionTable.recentAuthAt,
+      createdAt: sessionTable.createdAt,
       disabledAt: userTable.disabledAt,
     })
     .from(sessionTable)
@@ -30,8 +35,9 @@ export function hasRecentAuth(
     .limit(1)
     .all()[0];
   if (!row || row.disabledAt !== null) return false;
-  if (!row.recentAuthAt) return false;
-  return Date.now() - row.recentAuthAt.getTime() <= windowMs;
+  const evidence = row.recentAuthAt ?? row.createdAt;
+  if (!evidence) return false;
+  return Date.now() - evidence.getTime() <= windowMs;
 }
 
 /** 密码复核成功后标记本会话为「近期已认证」；失败不落时间戳。 */

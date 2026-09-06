@@ -38,7 +38,7 @@ export function ExportStepUpPanel({ needsStepUp }: { needsStepUp: boolean }) {
   return (
     <form action={formAction} className="flex flex-col gap-2">
       <p className="text-sm leading-6 text-foreground/70">
-        完整导出是高敏操作，请先确认当前密码（复核 10 分钟内有效）。
+        完整导出是高敏操作，需要 10 分钟内的登录或密码复核。若刚登录不久，直接下载即可。
       </p>
       <div className="flex flex-col gap-2 sm:flex-row">
         <input
