@@ -69,7 +69,7 @@ export function TrashEntryActions({ kind, id }: { kind: string; id: string }) {
 
 /** 事件详情页删除按钮 */
 export function TrashEventButton({ eventId }: { eventId: string }) {
-  const [state, action] = useActionState(trashEventAction, undefined);
+  const [state, action, pending] = useActionState(trashEventAction, undefined);
   return (
     <div className="inline">
       <ConfirmDialog
@@ -84,6 +84,11 @@ export function TrashEventButton({ eventId }: { eventId: string }) {
           action(formData);
         }}
       />
+      {pending && (
+        <span role="status" className="ml-2 text-xs text-foreground/60">
+          移入中…
+        </span>
+      )}
       {state?.message && (
         <span role="status" className="ml-2 text-xs text-foreground/60">
           {state.message}
