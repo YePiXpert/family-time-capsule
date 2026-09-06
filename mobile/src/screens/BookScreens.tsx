@@ -228,7 +228,8 @@ export function BookDetailScreen({
       "memory" | "collection" | "story"
     >("memory"),
     [materials, setMaterials] = useState<BookMaterials | null>(null),
-    [selected, setSelected] = useState<string[]>([]);
+    [selected, setSelected] = useState<string[]>([]),
+    [coverPicker, setCoverPicker] = useState(false);
   const current = useRef(book),
     sequence = useRef(0),
     savedSequence = useRef(0),
@@ -612,18 +613,33 @@ export function BookDetailScreen({
             }
           />
           <Button
-            title="清除封面照片"
+            title={`封面：${imageRefs.find((r) => r.assetId === book.coverAssetId)?.label ?? "未设置"}${coverPicker ? " ∨" : " ›"}`}
             disabled={busy}
-            onPress={() => update({ coverAssetId: null })}
+            onPress={() => setCoverPicker(!coverPicker)}
           />
-          {imageRefs.map((r) => (
-            <Button
-              key={r.id}
-              title={`封面：${r.label}`}
-              disabled={busy}
-              onPress={() => update({ coverAssetId: r.assetId })}
-            />
-          ))}
+          {coverPicker ? (
+            <View style={{ gap: 5 }}>
+              <Button
+                title={`${book.coverAssetId ? "" : "✓ "}无封面（默认）`}
+                disabled={busy}
+                onPress={() => {
+                  update({ coverAssetId: null });
+                  setCoverPicker(false);
+                }}
+              />
+              {imageRefs.map((r) => (
+                <Button
+                  key={r.id}
+                  title={`${book.coverAssetId === r.assetId ? "✓ " : ""}${r.label}`}
+                  disabled={busy}
+                  onPress={() => {
+                    update({ coverAssetId: r.assetId });
+                    setCoverPicker(false);
+                  }}
+                />
+              ))}
+            </View>
+          ) : null}
           <Button
             title="添加章节"
             disabled={busy || book.chapters.length >= 50}
