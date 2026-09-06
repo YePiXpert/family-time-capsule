@@ -46,6 +46,10 @@ logs/        预留
   请参考模板中的 `$ftc_loggable` 过滤。
 - app 只在内部网络（caddy 模式）或 127.0.0.1（loopback 模式）可达；
   worker 无任何端口。
+- app/worker 显式禁用 Watchtower 自动更新，升级由 `ftc upgrade` 执行快照与验证。
+- 已有反代须覆盖 `Host` 与 `X-Forwarded-Host` 为当前站点域名，避免继承客户端
+  伪造的转发头。1Panel/OpenResty 还须检查继承的 Lua/WAF 请求日志；只关闭
+  Nginx access log 不一定会关闭 WAF 对邀请路径、请求体的记录。
 - 权限：容器以固定 UID 1001 运行；不要用 `chmod -R 777` 解决问题。
 
 ## 维护门禁

@@ -52,9 +52,12 @@
 - 本轮全部验证来自单测/集成/组件测试与 CI；**尚未在真实 VPS + 真机完成
   端到端演示**（两账号注册共享、离线重开、换家庭隔离、救援恢复、旧数据
   升级、迁移失败处理等场景的设备级证据待补）。
-- ftc 工具用假 docker 测试；**真实 Docker 环境的 install/upgrade/backup
-  实机演练待补**。支持平台先按脚本声明（Debian 12/13、Ubuntu 22.04/24.04
-  x86_64），未经实测的 ARM/其他平台未承诺。
+- 2026-09-06 已在 Debian 13 x86_64、Docker 26.1.5、Compose 2.26.1 上完成
+  loopback 安装 + 现有 OpenResty HTTPS 接入、app/worker 健康检查、停写快照、
+  隔离恢复与 SQLite integrity_check。恢复出的独立容器已验证管理员初始化、
+  登录、建家庭、文字/图片上传及邀请第二个账号加入同一家庭。
+  Compose 两种模板增加真实 CLI 配置解析测试（无需 daemon）；upgrade/rollback、
+  Caddy 自动 HTTPS、其他系统与真机流程仍待实机演练。
 - ~~镜像 ghcr.io 发布与 digest 固定流程待 M7 发行阶段执行。~~ 已完成：
   `ghcr.io/yepixpert/family-time-capsule@sha256:4a3064b5b65ef00133e90fa458c676812210577e39f677bb9a27d3a3aea01a6a`
   （linux/amd64，匿名可拉取，2026-09-06 验证）。

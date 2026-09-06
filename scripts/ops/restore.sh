@@ -33,7 +33,7 @@ bash "$LIB_DIR/../backup.sh" verify "$SNAP"
 
 # 2 staging 解压 + 路径安全检查
 STAGING="$(mktemp -d "$FTC_BACKUP_DIR/.restore-XXXXXX")"
-trap 'rm -rf "$STAGING"' EXIT
+trap 'rm -rf "$STAGING"; ftc_unlock restore' EXIT
 tar -xzf "$SNAP" -C "$STAGING"
 [[ -f "$STAGING/manifest.json" && -f "$STAGING/data.tar" ]] || die "包结构不完整（缺少 manifest 或 data.tar）。" 22
 KIND="$(python3 -c 'import json;print(json.load(open("'"$STAGING"'/manifest.json"))["kind"])' 2>/dev/null || echo unknown)"

@@ -254,6 +254,12 @@ describe("ftc backup / cleanup", () => {
     expect(verify.status).toBe(0);
     expect(verify.stderr).toContain("校验通过");
 
+    const restored = path.join(workspace, "restored");
+    expect(run("restore", [toPosix(snapPath), "--to", toPosix(restored)]).status).toBe(0);
+    expect(readFileSync(path.join(restored, "data", "db", "capsule.sqlite"), "utf8")).toBe("db-bytes");
+    expect(readFileSync(path.join(restored, "data", "originals", "a.jpg"), "utf8")).toBe("photo-bytes");
+    expect(existsSync(path.join(ftcRoot, "state", "locks", "restore"))).toBe(false);
+
     // 篡改
     writeFileSync(snapPath, "corrupted");
     const corrupted = run("backup", ["verify", toPosix(snapPath)]);
