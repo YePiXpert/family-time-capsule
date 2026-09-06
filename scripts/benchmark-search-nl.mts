@@ -123,7 +123,8 @@ const report = {
   fakeAssistantFailedClosed: `${fakeFailedClosed}/${queries.length}`,
   note: "理想计划是模型正确转换时的上限；真实模型 Recall@K 需授权 Key 后在同一脚本上运行（BLK-1/BLK-8）。",
 };
-console.log(asJson ? JSON.stringify(report, null, 2) : require("node:util").inspect(report, { depth: 4 }));
+if (asJson) console.log(JSON.stringify(report, null, 2));
+else console.log(report);
 
 if (!process.env.DATA_DIR) {
   closeDatabase();
