@@ -131,6 +131,7 @@ export function BatchImportCenter({
   const [working, setWorking] = useState(false);
   const [paused, setPaused] = useState(initial?.session.status === "collecting" && Boolean(initial));
   const [message, setMessage] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const pausedRef = useRef(paused);
   const controllers = useRef(new Set<AbortController>());
 
@@ -403,10 +404,32 @@ export function BatchImportCenter({
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-dashed border-line bg-surface p-6 text-center">
+      <section
+        className={`rounded-2xl border border-dashed p-6 text-center transition-colors ${
+          dragging ? "border-accent bg-accent-soft" : "border-line bg-surface"
+        }`}
+        onDragEnter={(event) => {
+          if (working) return;
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragOver={(event) => {
+          if (working) return;
+          event.preventDefault();
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget === event.target) setDragging(false);
+        }}
+        onDrop={(event) => {
+          if (working) return;
+          event.preventDefault();
+          setDragging(false);
+          void selectFiles(Array.from(event.dataTransfer.files));
+        }}
+      >
         <Icon name="upload" size={28} className="mx-auto text-accent" />
         <h2 className="mt-3 font-semibold">选择照片、录音、视频或文档</h2>
-        <p className="mt-2 text-sm leading-6 text-muted">支持 PDF、TXT、Markdown、RTF、DOCX；HTML 与 SVG 不会作为文档接收。</p>
+        <p className="mt-2 text-sm leading-6 text-muted">多选文件，或拖到这里。支持 PDF、TXT、Markdown、RTF、DOCX；HTML 与 SVG 不会作为文档接收。</p>
         <label className="ui-button-primary mt-4 cursor-pointer">
           {needsFiles ? "重新选择同一文件继续" : "选择多份文件"}
           <input type="file" multiple accept={ACCEPT} className="sr-only" onChange={(event) => {
