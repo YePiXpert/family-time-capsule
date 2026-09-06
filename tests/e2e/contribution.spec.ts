@@ -117,5 +117,5 @@ test("匿名家人通过专用端点上传媒体，提交只进入收件箱", as
   await page.goto("/requests");
   await expect(page.getByText("已收到 1 条")).toBeVisible();
   await page.goto("/inbox");
-  await expect(page.getByText("外公的歌.wav")).toBeVisible();
+  await expect(page.getByText("外公的歌.wav", { exact: true })).toBeVisible();
 });
