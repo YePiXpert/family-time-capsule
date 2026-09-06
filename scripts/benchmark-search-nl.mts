@@ -20,16 +20,16 @@ const dataDir = process.env.DATA_DIR ?? mkdtempSync(path.join(tmpdir(), "ftc-nlb
 process.env.DATA_DIR = dataDir;
 process.env.AUTH_SECRET ??= "nlbench-secret-0123456789abcdef";
 
-const { getDb, closeDatabase } = await import("../db/index.ts");
-const { family: familyTable, person: personTable } = await import("../db/schema/family.ts");
-const { memoryEvent } = await import("../db/schema/memory.ts");
-const { user: userTable } = await import("../db/schema/auth.ts");
-const { indexMemoryEvent, searchFamily } = await import("../lib/search/service.ts");
-const { DeterministicFakeMemoryAssistant } = await import("../lib/ai/fake.ts");
+const { getDb, closeDatabase } = await import("../db/index");
+const { family: familyTable, person: personTable } = await import("../db/schema/family");
+const { memoryEvent } = await import("../db/schema/memory");
+const { user: userTable } = await import("../db/schema/auth");
+const { indexMemoryEvent, searchFamily } = await import("../lib/search/service");
+const { DeterministicFakeMemoryAssistant } = await import("../lib/ai/fake");
 const {
   expandNaturalLanguageQuery,
   planToSearchParams,
-} = await import("../lib/search/natural-language.ts");
+} = await import("../lib/search/natural-language");
 
 const now = new Date();
 const familyId = "nlbench-family";
@@ -43,7 +43,7 @@ const childPersonId = "child-1";
 
 const context = {
   userId, userName: "评测", familyId, personId: null,
-  role: "owner" as const, accountEnabled: true, isGuardian: false,
+  role: "owner" as const, accountEnabled: true as const, isGuardian: false,
   familyTimezone: "Asia/Shanghai", childLaterUnlockAge: 18,
 };
 
@@ -60,7 +60,7 @@ const seeds: Seed[] = [
 for (const seed of seeds) {
   db.insert(memoryEvent).values({
     id: seed.id, familyId, title: seed.title, childPersonId,
-    occurredAt: new Date(seed.date), timezone: "Asia/Shanghai",
+    occurredAt: new Date(seed.date),
     createdAt: now, updatedAt: now,
   }).run();
   indexMemoryEvent({ id: seed.id, familyId, title: `${seed.title} ${seed.text}`, childPersonId });

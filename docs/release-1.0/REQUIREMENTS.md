@@ -57,7 +57,7 @@
 | ID-16 | 孩子本人账号绑定、监护权变更、范围审阅与导出 | 不按年龄自动解锁 | 自动化通过(2026-09-07 M2-d:孩子绑定邀请只允许 viewer/contributor 且必须由在册监护人发起,监护授权审计 person.child_account_invited;日后改角色同样封死 admin/editor;绑定不解锁 child_later(解锁仅监护人手工);监护权变更 M1 已有+审计;孩子以所授角色在应用内审阅,完整导出仍是管理员能力,如实登记) | lib/invitations/service.ts; tests/integration/child-account.test.ts |
 | ID-17 | 所有权移交/可信接管:通知/等待/撤销/离线运维交接包 | 不自动推断死亡 | 未实现 | — |
 | ID-18 | 多孩子/双胞胎/多监护人/历史称呼可表达 | 非唯一"妈妈"字段 | 自动化通过 | person 模型+关系 |
-| ID-19 | 祖辈记忆允许无 childPersonId;年龄展示用真实生日+家庭时区 | 不强制事件挂孩子 | 自动化通过 | lib/memories/age.ts |
+| ID-19 | 祖辈记忆允许无 childPersonId;年龄展示用真实生日+家庭时区 | 不强制事件挂孩子 | 部分实现(2026-09-07 核验:memory_event.child_person_id 仍为 NOT NULL,祖辈无孩子事件需 SQLite 表重建迁移;列入 M3 缺口) | db/schema/memory.ts |
 
 ## CAP — 资料库、混合记录与媒体原件(M3,白皮书 §7,§21)
 
