@@ -281,6 +281,13 @@
       "when": 1788578467543,
       "tag": "0039_book_render_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1788665359949,
+      "tag": "0040_instance_meta",
+      "breakpoints": true
     }
   ]
 }

@@ -28,3 +28,5 @@ export * from "./media-job";
 export * from "./book";
 
 export * from "./book-render-job";
+
+export * as instanceSchema from "./instance";
