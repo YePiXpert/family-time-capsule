@@ -79,5 +79,6 @@ test("系统分享先保全混合收件，刷新后选已有草稿只组成一�
   await expect(page.getByRole("link", { name: "继续这件事" })).toBeVisible();
   await expect(page.getByRole("button", { name: "加入新草稿", exact: true })).toHaveCount(0);
   await page.goto(originalHref!);
-  await expect(page.getByRole("link", { name: "下载原件" })).toBeVisible();
+  // 资料详情页同时有媒体阅读器内链接与按钮样式的“下载原件”，指向同一原件；断言其可见即可。
+  await expect(page.getByRole("link", { name: "下载原件" }).first()).toBeVisible();
 });
