@@ -1,13 +1,14 @@
-import { useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { searchMobile } from "../api/client";
+import { ApiError, searchMobile, type MobileSearchFilterInput } from "../api/client";
 import { useApp } from "../state/AppContext";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
 import type { MobileSearchPage } from "../types";
 import { resolveSearchTarget } from "../navigation/intents";
-import { offlineSearch, type OfflineSearchResult } from "../search/offline-search";
+import { memoryCacheScope } from "../memories/cache-scope";
+import { offlineSearch, type OfflineSearchFilters, type OfflineSearchResult } from "../search/offline-search";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Search">;
 
@@ -19,21 +20,63 @@ type DisplayItem = {
   open: (() => void) | null;
 };
 
+type MediaFilter = "all" | "image" | "video" | "audio" | "document";
+
+const MEDIA_OPTIONS: { value: MediaFilter; label: string }[] = [
+  { value: "all", label: "全部类型" },
+  { value: "image", label: "照片" },
+  { value: "video", label: "视频" },
+  { value: "audio", label: "音频" },
+  { value: "document", label: "文档" },
+];
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/u;
+const QUERY_MAX = 100;
+
 /**
- * 搜索（FIND-2）：联网时优先完整服务器搜索；离线或服务器不可达时自动
- * 改为「仅搜索这台设备已保存的内容」，并明确告知范围——没搜到不代表
- * 家庭档案里没有。点击结果只打开这台设备真正能打开的内容；缓存原件
- * 已被清理时如实说明需要联网重新获取。
+ * 搜索（FIND-2，正式 1.0 正确性重写）：
+ * - 请求代际：每次新查询/筛选递增代数，旧请求（含分页）结果一律丢弃；
+ *   卸载后不写状态；写回前重新核对连接与授权范围仍与发起时一致。
+ * - 错误分类：只有真实网络不可达才自动降级本机内容；401/403/400/429/5xx
+ *   按各自语义提示，并提供明确的「只搜本机」入口，绝不把权限失败伪装成断网。
+ * - 离线筛选：人物/日期范围/媒体类型与在线语义一致。
  */
 export function SearchScreen({ navigation }: Props) {
-  const { credentials, online, viewer, family } = useApp();
+  const { credentials, online, viewer, family, people } = useApp();
   const [query, setQuery] = useState("");
+  const [activeQuery, setActiveQuery] = useState("");
+  const [activeFiltersKey, setActiveFiltersKey] = useState("");
+  const [personId, setPersonId] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>("all");
   const [items, setItems] = useState<DisplayItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeText, setNoticeText] = useState<string | null>(null);
+
+  // 请求代际与连接快照：所有异步写回前都要复核。
+  const generationRef = useRef(0);
+  const mountedRef = useRef(true);
+  const credentialsRef = useRef(credentials);
+  const viewerIdRef = useRef(viewer?.id);
+  const familyIdRef = useRef(family?.id);
+  const onlineRef = useRef<boolean | null>(online);
+  useEffect(() => {
+    credentialsRef.current = credentials;
+    viewerIdRef.current = viewer?.id;
+    familyIdRef.current = family?.id;
+    onlineRef.current = online;
+  });
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  const currentScopeKey = () =>
+    memoryCacheScope(credentialsRef.current, viewerIdRef.current ?? undefined, familyIdRef.current ?? undefined) ?? "local";
+
+  /** 分页只追加到同一查询、同一筛选：筛选变化后必须重新搜索。 */
+  const filtersKey = () => JSON.stringify([personId, dateFrom, dateTo, mediaFilter]);
 
   const serverItem = (item: MobileSearchPage["items"][number]): DisplayItem => {
     const target = resolveSearchTarget(item);
@@ -54,7 +97,7 @@ export function SearchScreen({ navigation }: Props) {
 
   const localItem = (item: OfflineSearchResult): DisplayItem => {
     if (item.kind === "memory") {
-      const canOpen = online !== false || item.hasDetail === true;
+      const canOpen = onlineRef.current !== false || item.hasDetail === true;
       return {
         key: `memory:${item.id}`,
         kindLabel: "记忆",
@@ -66,6 +109,7 @@ export function SearchScreen({ navigation }: Props) {
       };
     }
     if (item.kind === "local") {
+      // 本机记录属于这台设备的主人，与家庭档案分开标注，不静默并入。
       return {
         key: `local:${item.id}`,
         kindLabel: "本机记录",
@@ -83,63 +127,130 @@ export function SearchScreen({ navigation }: Props) {
     };
   };
 
-  const searchLocal = async (q: string, reason: "offline" | "no-credentials" | "server-unreachable") => {
-    const local = await offlineSearch({ credentials, userId: viewer?.id, familyId: family?.id, query: q });
+  const offlineFilters = (): OfflineSearchFilters => {
+    const selected = people.find((person) => person.id === personId);
+    return {
+      person: selected?.displayName,
+      dateFrom: DATE.test(dateFrom) ? dateFrom : undefined,
+      dateTo: DATE.test(dateTo) ? dateTo : undefined,
+      mediaType: mediaFilter === "all" ? undefined : mediaFilter,
+    };
+  };
+
+  const apiFilters = (): MobileSearchFilterInput => {
+    const selected = people.find((person) => person.id === personId);
+    return {
+      personId: selected?.id,
+      dateFrom: DATE.test(dateFrom) ? dateFrom : undefined,
+      dateTo: DATE.test(dateTo) ? dateTo : undefined,
+      mediaType: mediaFilter === "all" ? undefined : mediaFilter,
+    };
+  };
+
+  const searchLocal = async (
+    generation: number,
+    scopeKey: string,
+    q: string,
+    reason: "offline" | "no-credentials" | "server-unreachable" | "manual",
+  ) => {
+    const local = await offlineSearch({
+      credentials: credentialsRef.current,
+      userId: viewerIdRef.current,
+      familyId: familyIdRef.current,
+      query: q,
+      filters: offlineFilters(),
+    });
+    if (!mountedRef.current || generation !== generationRef.current || scopeKey !== currentScopeKey()) return;
     setItems(local.map(localItem));
     setCursor(null);
     setNotice(
       reason === "offline" ? "当前离线，仅搜索这台设备已保存的内容。"
         : reason === "no-credentials" ? "尚未连接家庭服务器，仅搜索这台设备已保存的内容。"
-          : "无法连接服务器，已改为仅搜索这台设备已保存的内容。",
+          : reason === "manual" ? "以下结果只来自这台设备已保存的内容。"
+            : "无法连接服务器，已改为仅搜索这台设备已保存的内容。",
     );
   };
 
-  const search = async (nextCursor: string | null = null) => {
-    const q = query.trim();
-    if (!q) return;
-    if (nextCursor === null) {
-      setNotice(null);
-      setNoticeText(null);
-    }
+  const runSearch = async (generation: number, q: string, mode: "new" | "more", moreCursor: string | null) => {
+    const scopeKey = currentScopeKey();
     setLoading(true);
     setError(null);
     try {
-      if (!credentials) {
-        await searchLocal(q, "no-credentials");
+      if (!credentialsRef.current) {
+        await searchLocal(generation, scopeKey, q, "no-credentials");
         return;
       }
-      if (online === false) {
-        if (nextCursor === null) await searchLocal(q, "offline");
+      if (onlineRef.current === false) {
+        if (mode === "new") await searchLocal(generation, scopeKey, q, "offline");
         return;
       }
-      const page = await searchMobile(credentials, q, nextCursor);
-      if (nextCursor === null) setNotice(null);
-      setItems((current) => nextCursor ? [...current, ...page.items.map(serverItem)] : page.items.map(serverItem));
+      const page = await searchMobile(credentialsRef.current, q, moreCursor, apiFilters());
+      if (!mountedRef.current || generation !== generationRef.current || scopeKey !== currentScopeKey()) return;
+      if (mode === "new") {
+        setNotice(null);
+        setItems(page.items.map(serverItem));
+      } else {
+        setItems((current) => [...current, ...page.items.map(serverItem)]);
+      }
       setCursor(page.nextCursor);
     } catch (reason) {
-      if (nextCursor === null) {
-        const message = reason instanceof Error ? reason.message : "搜索失败。";
-        if (online !== true) {
-          // 服务器不可达：自动退回本机内容，不让用户误以为档案不存在。
-          await searchLocal(q, "server-unreachable");
-          setError(null);
-          return;
-        }
-        setError(message);
-      } else {
-        setError(reason instanceof Error ? reason.message : "加载失败。");
+      if (!mountedRef.current || generation !== generationRef.current || scopeKey !== currentScopeKey()) return;
+      if (mode === "new" && reason instanceof ApiError && reason.status === 0) {
+        // 真实网络不可达（DNS/超时/连接失败）：自动降级为合法本机内容。
+        await searchLocal(generation, scopeKey, q, "server-unreachable");
+        setError(null);
+        return;
       }
+      const message = reason instanceof ApiError ? classifyError(reason) : (reason instanceof Error ? reason.message : "搜索失败。");
+      setError(message);
     } finally {
-      setLoading(false);
+      if (mountedRef.current && generation === generationRef.current) setLoading(false);
     }
   };
+
+  const startSearch = () => {
+    const q = query.trim().slice(0, QUERY_MAX);
+    if (!q) return;
+    const generation = ++generationRef.current;
+    setActiveQuery(q);
+    setActiveFiltersKey(filtersKey());
+    setItems([]);
+    setCursor(null);
+    setNotice(null);
+    setNoticeText(null);
+    setError(null);
+    void runSearch(generation, q, "new", null);
+  };
+
+  const loadMore = () => {
+    if (!cursor || loading) return;
+    void runSearch(generationRef.current, activeQuery, "more", cursor);
+  };
+
+  const searchDeviceOnly = () => {
+    const q = activeQuery || query.trim().slice(0, QUERY_MAX);
+    if (!q) return;
+    const generation = ++generationRef.current;
+    setActiveQuery(q);
+    setItems([]);
+    setCursor(null);
+    setNoticeText(null);
+    setError(null);
+    setLoading(true);
+    void (async () => {
+      await searchLocal(generation, currentScopeKey(), q, "manual");
+      if (mountedRef.current && generation === generationRef.current) setLoading(false);
+    })();
+  };
+
+  const peopleChips = [{ id: null, displayName: "全部人物" }, ...people.map((person) => ({ id: person.id, displayName: person.displayName }))];
 
   return <View style={sharedStyles.screen}>
     <View style={styles.searchBar}>
       <TextInput
         accessibilityLabel="搜索家庭记忆"
         onChangeText={setQuery}
-        onSubmitEditing={() => void search()}
+        onSubmitEditing={startSearch}
         placeholder="搜索记忆、讲述或故事"
         returnKeyType="search"
         style={[sharedStyles.input, styles.input]}
@@ -148,31 +259,87 @@ export function SearchScreen({ navigation }: Props) {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="开始搜索"
-        onPress={() => void search()}
+        onPress={startSearch}
         style={sharedStyles.primaryButton}
       >
         <Text style={sharedStyles.primaryText}>搜索</Text>
       </Pressable>
     </View>
+    <ScrollView horizontal accessibilityLabel="筛选人物" contentContainerStyle={styles.chipRow} showsHorizontalScrollIndicator={false}>
+      {peopleChips.map((chip) => (
+        <Pressable
+          key={chip.id ?? "all"}
+          accessibilityRole="button"
+          accessibilityLabel={`筛选人物：${chip.displayName}`}
+          accessibilityState={{ selected: personId === chip.id }}
+          onPress={() => setPersonId(chip.id)}
+          style={[styles.chip, (personId ?? null) === chip.id && styles.chipActive]}
+        >
+          <Text style={[styles.chipText, (personId ?? null) === chip.id && styles.chipTextActive]}>{chip.displayName}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+    <ScrollView horizontal accessibilityLabel="筛选媒体类型" contentContainerStyle={styles.chipRow} showsHorizontalScrollIndicator={false}>
+      {MEDIA_OPTIONS.map((option) => (
+        <Pressable
+          key={option.value}
+          accessibilityRole="button"
+          accessibilityLabel={`筛选类型：${option.label}`}
+          accessibilityState={{ selected: mediaFilter === option.value }}
+          onPress={() => setMediaFilter(option.value)}
+          style={[styles.chip, mediaFilter === option.value && styles.chipActive]}
+        >
+          <Text style={[styles.chipText, mediaFilter === option.value && styles.chipTextActive]}>{option.label}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+    <View style={styles.dateRow}>
+      <TextInput
+        accessibilityLabel="日期范围起点（年-月-日，可留空）"
+        onChangeText={setDateFrom}
+        placeholder="开始日期 2020-01-01"
+        style={[sharedStyles.input, styles.dateInput]}
+        value={dateFrom}
+      />
+      <Text style={styles.dateSeparator}>至</Text>
+      <TextInput
+        accessibilityLabel="日期范围终点（年-月-日，可留空）"
+        onChangeText={setDateTo}
+        placeholder="结束日期 2026-12-31"
+        style={[sharedStyles.input, styles.dateInput]}
+        value={dateTo}
+      />
+    </View>
     {notice ? <Text style={styles.notice}>{notice}</Text> : null}
     {noticeText ? <Text style={styles.noticeText}>{noticeText}</Text> : null}
-    {error ? <Text style={[sharedStyles.error, styles.error]}>{error}</Text> : null}
+    {error ? (
+      <View style={styles.errorBox}>
+        <Text style={[sharedStyles.error, styles.errorText]}>{error}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="只搜索这台设备已保存的内容" onPress={searchDeviceOnly} style={sharedStyles.secondaryButton}>
+          <Text style={sharedStyles.secondaryText}>只搜本机内容</Text>
+        </Pressable>
+      </View>
+    ) : null}
     <FlatList
       contentContainerStyle={items.length === 0 ? { flexGrow: 1 } : styles.list}
       data={items}
       keyExtractor={(item) => item.key}
       ListEmptyComponent={!loading ? (
         <View style={sharedStyles.empty}>
-          <Text style={sharedStyles.emptyTitle}>{query ? "没有找到相关内容" : "找回一段家庭记忆"}</Text>
+          <Text style={sharedStyles.emptyTitle}>{activeQuery ? "没有找到相关内容" : "找回一段家庭记忆"}</Text>
           <Text style={sharedStyles.emptyText}>
             {notice ? "这台设备上没有已保存的相关内容；联网后可以搜索完整家庭档案。" : "输入人物、地点、标题或讲述中的字词。"}
           </Text>
         </View>
       ) : null}
       ListFooterComponent={loading ? <ActivityIndicator color={colors.coral} /> : cursor ? (
-        <Pressable accessibilityRole="button" onPress={() => void search(cursor)} style={sharedStyles.secondaryButton}>
-          <Text style={sharedStyles.secondaryText}>加载更多</Text>
-        </Pressable>
+        filtersKey() === activeFiltersKey ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="加载更多" onPress={loadMore} style={sharedStyles.secondaryButton}>
+            <Text style={sharedStyles.secondaryText}>加载更多</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.staleHint}>筛选已变化，点击「搜索」查看新结果。</Text>
+        )
       ) : null}
       renderItem={({ item }) => (
         <Pressable
@@ -191,12 +358,32 @@ export function SearchScreen({ navigation }: Props) {
   </View>;
 }
 
+/** 按真实请求错误分类（§4.2）：不凭 online 标志猜测错误性质。 */
+function classifyError(error: ApiError): string {
+  if (error.status === 401) return "登录已过期，请重新登录后再搜索家庭档案。";
+  if (error.status === 403) return "当前账号没有搜索这个家庭档案的权限。";
+  if (error.status === 400) return error.message || "搜索请求的内容无效，请调整关键词或筛选后重试。";
+  if (error.status === 429) return "搜索请求过于频繁，请稍后再试。";
+  if (error.status >= 500) return "服务器暂时无法完成搜索，请稍后再试。";
+  return error.message || "搜索失败。";
+}
+
 const styles = StyleSheet.create({
   searchBar: { flexDirection: "row", gap: 8, padding: 14, borderBottomColor: colors.line, borderBottomWidth: 1 },
   input: { flex: 1 },
+  chipRow: { flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingTop: 10 },
+  chip: { borderColor: colors.line, borderRadius: 16, borderWidth: 1, minHeight: 48, justifyContent: "center", paddingHorizontal: 14 },
+  chipActive: { backgroundColor: colors.softSage, borderColor: colors.sage },
+  chipText: { color: colors.ink, fontSize: 14 },
+  chipTextActive: { color: colors.sage, fontWeight: "700" },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingTop: 10 },
+  dateInput: { flex: 1 },
+  dateSeparator: { color: colors.ink, fontSize: 14 },
+  staleHint: { color: colors.muted, fontSize: 12, lineHeight: 18, padding: 4, textAlign: "center" },
   list: { padding: 14, paddingBottom: 36, gap: 10 },
-  error: { padding: 14 },
-  notice: { backgroundColor: colors.softSage, color: colors.sage, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8 },
-  noticeText: { color: colors.warning, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8 },
+  notice: { backgroundColor: colors.softSage, color: colors.sage, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8, marginTop: 10 },
+  noticeText: { color: colors.warning, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8, marginTop: 10 },
+  errorBox: { paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
+  errorText: { padding: 0 },
   kind: { color: colors.coral, fontSize: 11, fontWeight: "800" },
 });

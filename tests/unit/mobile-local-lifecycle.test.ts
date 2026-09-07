@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SyncPage, TimelineEvent } from "../../mobile/src/types";
+import type { Credentials, SyncPage, TimelineEvent } from "../../mobile/src/types";
 import { getRawMockDatabase } from "../mocks/expo-sqlite";
 
 const raw = getRawMockDatabase();
@@ -20,6 +20,10 @@ const {
   listLocalMemoryMedia,
   listTimeline,
 } = await import("../../mobile/src/storage/database");
+const { memoryCacheScope } = await import("../../mobile/src/memories/cache-scope");
+
+const credentials = { serverUrl: "https://lifecycle.example.test", token: "tok", instanceId: "inst" } as Credentials;
+const scope = () => memoryCacheScope(credentials, "user-1", "family-1")!;
 
 function serverEvent(
   id: string,
@@ -102,7 +106,7 @@ describe.sequential("native capture lifecycle", () => {
 
     await initializeLocalStore();
 
-    expect(await listTimeline()).toEqual([
+    expect(await listTimeline(scope())).toEqual([
       expect.objectContaining({
         id: "local:legacy-capture",
         syncState: "inbox",
@@ -147,13 +151,13 @@ describe.sequential("native capture lifecycle", () => {
   it("moves pending to inbox to archived and keeps exactly one formal card after restart", async () => {
     await resetStore();
     await enqueuePhoto("capture-1");
-    expect(await listTimeline()).toEqual([
+    expect(await listTimeline(scope())).toEqual([
       expect.objectContaining({ id: "local:capture-1", syncState: "pending" }),
     ]);
 
     await completeOutboxItem("capture-1", "inbox-1");
     expect(await getOutboxCount()).toBe(0);
-    expect(await listTimeline()).toEqual([
+    expect(await listTimeline(scope())).toEqual([
       expect.objectContaining({
         id: "local:capture-1",
         syncState: "inbox",
@@ -162,10 +166,10 @@ describe.sequential("native capture lifecycle", () => {
     ]);
 
     await archiveLocalCaptures(["inbox-1"], "memory-1");
-    await applySyncPage(syncPage([serverEvent("memory-1", ["inbox-1"])]), "snapshot-1");
+    await applySyncPage(credentials, syncPage([serverEvent("memory-1", ["inbox-1"])]), "snapshot-1");
     await finishSyncSnapshot("snapshot-1", "2026-09-04T02:00:00.000Z");
 
-    expect(await listTimeline()).toEqual([
+    expect(await listTimeline(scope())).toEqual([
       expect.objectContaining({
         id: "memory-1",
         source: "server",
@@ -193,7 +197,7 @@ describe.sequential("native capture lifecycle", () => {
     ]);
 
     await initializeLocalStore();
-    expect((await listTimeline()).map((event) => event.id)).toEqual(["memory-1"]);
+    expect((await listTimeline(scope())).map((event) => event.id)).toEqual(["memory-1"]);
   });
 
   it("recovers a lost confirm response from sync and reconciles a multi-item merge", async () => {
@@ -204,10 +208,10 @@ describe.sequential("native capture lifecycle", () => {
     await completeOutboxItem("capture-b", "inbox-b");
 
     const event = serverEvent("memory-merged", ["inbox-a", "inbox-b"]);
-    await applySyncPage(syncPage([event]), "snapshot-2");
+    await applySyncPage(credentials, syncPage([event]), "snapshot-2");
     await finishSyncSnapshot("snapshot-2", "2026-09-04T02:00:00.000Z");
 
-    expect((await listTimeline()).map((item) => item.id)).toEqual([
+    expect((await listTimeline(scope())).map((item) => item.id)).toEqual([
       "memory-merged",
     ]);
     expect(
@@ -235,12 +239,13 @@ describe.sequential("native capture lifecycle", () => {
     await resetStore();
     await archiveLocalCaptures(["server-only-inbox"], "server-only-memory");
     await applySyncPage(
+      credentials,
       syncPage([serverEvent("server-only-memory", ["server-only-inbox"])]),
       "snapshot-3",
     );
     await finishSyncSnapshot("snapshot-3", "2026-09-04T02:00:00.000Z");
 
-    expect((await listTimeline()).map((event) => event.id)).toEqual([
+    expect((await listTimeline(scope())).map((event) => event.id)).toEqual([
       "server-only-memory",
     ]);
   });

@@ -121,5 +121,5 @@ it("drops unowned legacy detail caches while preserving local captures and pendi
   await store.initializeLocalStore();
   expect(await store.getCachedMemoryDetail(scope(), memory.id)).toBeNull();
   expect(await store.getOutboxCount()).toBe(1);
-  expect(await store.listTimeline()).toEqual([expect.objectContaining({ title: "不可替代的本机原文" })]);
+  expect(await store.listTimeline(null)).toEqual([expect.objectContaining({ title: "不可替代的本机原文" })]);
 });

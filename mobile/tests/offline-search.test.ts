@@ -4,11 +4,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { Credentials } from "../src/types";
 
 /**
- * FIND-2 / M7-b 原生离线搜索：
+ * FIND-2 / M7-b 原生离线搜索（正式 1.0 投影式重写）：
  * - 只搜这台设备已保存/缓存的内容，范围明确；
- * - 索引按 (serverUrl, instanceId, token, userId, familyId) scope 隔离；
- * - 撤权/换号/清缓存后，对应家庭的搜索结果必须消失；
- * - 本机记录属于设备主人，始终可搜。
+ * - 缓存逐行 scope 隔离（timeline_event.scope），不再依赖换号清空；
+ * - 只投影允许展示字段：token/内部路径/整个 JSON 绝不参与匹配或摘要；
+ * - 损坏 JSON 单行跳过；筛选与去重；稳定排序。
  */
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -63,69 +63,165 @@ beforeEach(async () => {
   }
 });
 
-async function seedFamilyA() {
+async function seedTimeline(scope: string, id: string, title: string, occurredAt: string, participants: string[] = [], location: string | null = null) {
   const db = await getDatabase();
   await db.runAsync(
-    `INSERT INTO timeline_event (id, title, occurred_at, occurred_at_precision, location_text, child_person_id, age_days, age_label, updated_at, asset_count, participant_names_json, cover_json, local_cover_uri, seen_snapshot)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    "memory-1", "公园的下午", "2026-09-01T00:00:00.000Z", "exact", "朝阳公园", null, null, null, "2026-09-01T00:00:00.000Z", 3,
-    JSON.stringify(["外婆", "小满"]), "{}", null, 1,
-  );
-  await db.runAsync(
-    `INSERT INTO memory_detail (scope, id, detail_json, updated_at) VALUES (?, ?, ?, ?)`,
-    scopeA, "memory-1",
-    JSON.stringify({ title: "公园的下午", locationText: "朝阳公园", sourceNotes: "外婆说那天风很舒服，孩子一直笑。", participants: [] }),
-    "2026-09-01T00:00:00.000Z",
-  );
-  await db.runAsync(
-    `INSERT INTO memory_detail (scope, id, detail_json, updated_at) VALUES (?, ?, ?, ?)`,
-    scopeA, "memory-private",
-    JSON.stringify({ title: "私密事件", sourceNotes: "只属于 A 家庭的私密讲述：夜里发烧的记录。", participants: [] }),
-    "2026-09-02T00:00:00.000Z",
-  );
-  await db.runAsync(
-    `INSERT INTO memory_detail (scope, id, detail_json, updated_at) VALUES (?, ?, ?, ?)`,
-    scopeB, "memory-b1",
-    JSON.stringify({ title: "B 家庭的秘密", sourceNotes: "夜里发烧的记录也出现在 B。", participants: [] }),
-    "2026-09-02T00:00:00.000Z",
-  );
-  await db.runAsync(
-    `INSERT INTO local_capture (id, kind, title, occurred_at, local_uri, media_type, inbox_item_id, memory_event_id, sync_state, payload_json, title_source, title_revision)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    "capture-1", "text_capture", "买菜路上的随手记", "2026-09-03T00:00:00.000Z", null, null, null, null, "pending",
-    JSON.stringify({ text: "楼下的桂花开了，买了一条鱼。" }), "legacy_unknown", 0,
+    `INSERT INTO timeline_event (id, scope, title, occurred_at, occurred_at_precision, location_text, child_person_id, age_days, age_label, updated_at, asset_count, participant_names_json, cover_json, local_cover_uri, seen_snapshot)
+     VALUES (?, ?, ?, ?, 'exact', ?, NULL, NULL, NULL, ?, 1, ?, '{}', NULL, 1)`,
+    id, scope, title, occurredAt, location, occurredAt, JSON.stringify(participants),
   );
 }
 
-async function seedReadingDownload(scopeKey: string, key: string, title: string, manifestText: string) {
+async function seedDetail(scope: string, id: string, detail: Record<string, unknown>, updatedAt = "2026-09-01T00:00:00.000Z") {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO memory_detail (scope, id, detail_json, updated_at) VALUES (?, ?, ?, ?)`,
+    scope, id, JSON.stringify({ id, occurredAt: updatedAt, participants: [], ...detail }), updatedAt,
+  );
+}
+
+async function seedLocalCapture(input: {
+  id: string; title: string; occurredAt: string; payload: Record<string, unknown>;
+  mediaType?: string | null; memoryEventId?: string | null; syncState?: string;
+}) {
+  const db = await getDatabase();
+  await db.runAsync(
+    `INSERT INTO local_capture (id, kind, title, occurred_at, local_uri, media_type, inbox_item_id, memory_event_id, sync_state, payload_json, title_source, title_revision)
+     VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, 'legacy_unknown', 0)`,
+    input.id, input.mediaType ? "media_capture" : "text_capture", input.title, input.occurredAt,
+    input.mediaType ?? null, input.memoryEventId ?? null, input.syncState ?? "pending", JSON.stringify(input.payload),
+  );
+}
+
+async function seedReadingDownload(scopeKey: string, key: string, title: string, manifest: Record<string, unknown>) {
   const db = await getDatabase();
   await db.runAsync(
     `INSERT INTO reading_download (key, scope, kind, id, title, state, reserved_bytes, stored_bytes, error, updated_at, manifest_json, completed_json, progress_json)
      VALUES (?, ?, 'collection', ?, ?, 'completed', 1, 1, NULL, 1, ?, '{}', '{}')`,
-    key, scopeKey, key.replace(/.*-/, ""), title, JSON.stringify({ title, blocks: [{ text: manifestText }] }),
+    key, scopeKey, key.replace(/.*-/, ""), title, JSON.stringify(manifest),
   );
 }
 
-it("离线搜索找到本机已保存的记忆、深文本与人物名，且严格按 scope 隔离", async () => {
+async function seedFamilyA() {
+  await seedTimeline(scopeA, "memory-1", "公园的下午", "2026-09-01T00:00:00.000Z", ["外婆", "小满"], "朝阳公园");
+  await seedDetail(scopeA, "memory-1", { title: "公园的下午", locationText: "朝阳公园", sourceNotes: [{ id: "n1", text: "外婆说那天风很舒服，孩子一直笑。" }] });
+  await seedDetail(scopeA, "memory-private", { title: "私密事件", sourceNotes: [{ id: "n2", text: "只属于 A 家庭的私密讲述：夜里发烧的记录。" }] });
+  await seedDetail(scopeB, "memory-b1", { title: "B 家庭的秘密", sourceNotes: [{ id: "n3", text: "夜里发烧的记录也出现在 B。" }] });
+  await seedLocalCapture({ id: "capture-1", title: "买菜路上的随手记", occurredAt: "2026-09-03T00:00:00.000Z", payload: { text: "楼下的桂花开了，买了一条鱼。" } });
+}
+
+it("离线搜索找到本机已保存的记忆、深文本与人物名，且严格按逐行 scope 隔离", async () => {
   await seedFamilyA();
-  // 标题命中
   const byTitle = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "公园的下午" });
   expect(byTitle.filter((item) => item.kind === "memory" && item.id === "memory-1").length).toBeGreaterThan(0);
-  // 详情深文本命中（讲述原文）
   const byDeepText = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "夜里发烧" });
   expect(byDeepText.map((item) => item.id)).toContain("memory-private");
   expect(byDeepText.map((item) => item.id)).not.toContain("memory-b1");
-  // 人物名命中（通过时间轴参与人）
   const byPerson = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "外婆" });
   expect(byPerson.map((item) => item.id)).toContain("memory-1");
-  // 本机记录命中
   const byLocal = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "桂花" });
   expect(byLocal.map((item) => item.id)).toContain("capture-1");
   expect(byLocal.find((item) => item.id === "capture-1")!.kind).toBe("local");
-  // 换成 B 家庭的 scope：A 的记忆一概不可见，只剩设备主人的本机记录
-  const asB = await offlineSearch({ credentials: credentialsB, userId: "user-b", familyId: "family-b", query: "夜里发烧" });
-  expect(asB.map((item) => item.id)).toContain("memory-b1");
-  expect(asB.map((item) => item.id)).not.toContain("memory-private");
+  // 逐行 scope：B 的时间轴行即使留在库里也不可见；A 换号后看不到 A 行。
+  await seedTimeline(scopeB, "memory-b-timeline", "B 的时间轴事件", "2026-08-01T00:00:00.000Z");
+  await seedTimeline("", "legacy-row", "无归属的旧行", "2026-07-01T00:00:00.000Z");
+  const asB = await offlineSearch({ credentials: credentialsB, userId: "user-b", familyId: "family-b", query: "时间轴事件" });
+  expect(asB.map((item) => item.id)).toContain("memory-b-timeline");
+  const asA = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "时间轴事件" });
+  expect(asA.map((item) => item.id)).not.toContain("memory-b-timeline");
+  const noOwner = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "无归属" });
+  expect(noOwner.map((item) => item.id)).not.toContain("legacy-row");
+});
+
+it("内部字段（token/路径/storageKey/JSON 结构）不参与匹配，也不出现在摘要里", async () => {
+  await seedDetail(scopeA, "memory-internal", {
+    title: "内部字段隔离",
+    sourceNotes: [{ id: "n1", text: "正常的讲述内容：海边的风。" }],
+    assets: [{ id: "asset-1", type: "image", filename: "IMG_2046.jpg", mediaPath: "/data/originals/secret-path-9f2c", thumbnailPath: null }],
+    contributions: [{ id: "c1", authorName: "妈妈", text: "上传令牌是 sk-secret-token-value 吗", visibility: "family", canEdit: false, audioPath: null }],
+  });
+  await seedLocalCapture({
+    id: "capture-path", title: "本机路径记录", occurredAt: "2026-09-04T00:00:00.000Z",
+    payload: { text: "正文内容不含路径", localUri: "file:///data/user/0/private/dir/photo.jpg", fileName: "随手拍.jpg", mimeType: "image/jpeg" },
+    mediaType: "image",
+  });
+  // 素材显示名可搜
+  const byFilename = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "IMG_2046" });
+  expect(byFilename.map((item) => item.id)).toContain("memory-internal");
+  // 内部路径不可搜
+  const byPath = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "secret-path-9f2c" });
+  expect(byPath.map((item) => item.id)).not.toContain("memory-internal");
+  // 讲述正文里的令牌字样按原话可搜（它是用户内容，不是内部字段泄露），
+  // 但摘要只来自展示字段，不含 JSON 结构。
+  const byToken = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "sk-secret-token-value" });
+  const tokenHit = byToken.find((item) => item.id === "memory-internal");
+  expect(tokenHit).toBeDefined();
+  expect(tokenHit!.snippet).not.toContain("{");
+  expect(tokenHit!.snippet).not.toContain("mediaPath");
+  // 本机记录的 file:/// 路径不可搜
+  const byLocalUri = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "file:///data/user/0" });
+  expect(byLocalUri.map((item) => item.id)).not.toContain("capture-path");
+  // 本机记录按文件显示名可搜
+  const byLocalName = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "随手拍" });
+  expect(byLocalName.map((item) => item.id)).toContain("capture-path");
+});
+
+it("损坏的 JSON 缓存单行跳过，不影响其余结果", async () => {
+  const db = await getDatabase();
+  await seedDetail(scopeA, "memory-good", { title: "完好的记忆", sourceNotes: [{ id: "n1", text: "海边捡贝壳" }] });
+  await db.runAsync(
+    `INSERT INTO memory_detail (scope, id, detail_json, updated_at) VALUES (?, ?, ?, ?)`,
+    scopeA, "memory-broken", "{this is not valid json", "2026-09-02T00:00:00.000Z",
+  );
+  await seedLocalCapture({ id: "capture-broken", title: "损坏的本机记录", occurredAt: "2026-09-04T00:00:00.000Z", payload: { text: "海边" } });
+  await db.runAsync(`UPDATE local_capture SET payload_json = '{broken' WHERE id = 'capture-broken'`);
+  const hits = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "海边" });
+  expect(hits.map((item) => item.id)).toContain("memory-good");
+  expect(hits.map((item) => item.id)).not.toContain("memory-broken");
+  expect(hits.map((item) => item.id)).not.toContain("capture-broken");
+});
+
+it("人物/日期/媒体类型筛选与去重、hasDetail 语义", async () => {
+  await seedTimeline(scopeA, "memory-x", "雪天的火车", "2026-01-15T00:00:00.000Z", ["外公"], "哈尔滨");
+  await seedDetail(scopeA, "memory-x", {
+    title: "雪天的火车", sourceNotes: [], assets: [{ id: "a1", type: "video", filename: "train.mov", mediaPath: "/x", thumbnailPath: null }],
+  });
+  await seedTimeline(scopeA, "memory-y", "夏天的海边", "2026-07-20T00:00:00.000Z", ["外婆"]);
+  // 人物筛选：外公参与的记忆才出现
+  const byGrandpa = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "记忆", filters: { person: "外公" } });
+  // 「记忆」不命中任何展示字段——换成宽泛词验证人物过滤
+  const broad = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "的", filters: { person: "外公" } });
+  expect(broad.map((item) => item.id)).toContain("memory-x");
+  expect(broad.map((item) => item.id)).not.toContain("memory-y");
+  expect(byGrandpa).toHaveLength(0);
+  // 日期范围
+  const winter = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "的", filters: { dateFrom: "2026-01-01", dateTo: "2026-02-28" } });
+  expect(winter.map((item) => item.id)).toContain("memory-x");
+  expect(winter.map((item) => item.id)).not.toContain("memory-y");
+  // 媒体类型：只有 memory-x 的详情携带 video 素材
+  const video = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "的", filters: { mediaType: "video" } });
+  expect(video.map((item) => item.id)).toContain("memory-x");
+  expect(video.map((item) => item.id)).not.toContain("memory-y");
+  // hasDetail：时间轴命中 + 详情存在（即使详情没命中关键词）→ 可打开
+  const byTimeline = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "夏天的海边" });
+  const y = byTimeline.find((item) => item.id === "memory-y");
+  expect(y?.hasDetail).toBe(false);
+  await seedDetail(scopeA, "memory-y", { title: "夏天的海边" });
+  const byTimelineAgain = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "夏天的海边" });
+  expect(byTimelineAgain.find((item) => item.id === "memory-y")?.hasDetail).toBe(true);
+  // 去重：已归档本机记录指向的服务器记忆已在结果中 → 不重复出现
+  await seedLocalCapture({
+    id: "capture-archived", title: "雪天的火车（本机副本）", occurredAt: "2026-01-15T00:00:00.000Z",
+    payload: { text: "雪天" }, memoryEventId: "memory-x", syncState: "archived",
+  });
+  const dedup = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "雪天" });
+  const ids = dedup.map((item) => item.id);
+  expect(ids).toContain("memory-x");
+  expect(ids).not.toContain("capture-archived");
+  // 稳定排序：记忆按发生时间倒序
+  const ordered = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "的" });
+  const memoryOrder = ordered.filter((item) => item.kind === "memory").map((item) => item.id);
+  expect(memoryOrder.indexOf("memory-y")).toBeLessThan(memoryOrder.indexOf("memory-x"));
 });
 
 it("没有 scope（未连接）时仍可搜索本机记录", async () => {
@@ -135,12 +231,18 @@ it("没有 scope（未连接）时仍可搜索本机记录", async () => {
   expect(noServer.every((item) => item.kind === "local")).toBe(true);
 });
 
-it("已下载的相册/作品按阅读 scope 命中；其他 scope 不出现", async () => {
+it("已下载的相册/作品按阅读 scope 命中（只搜投影字段）；其他 scope 不出现", async () => {
   await seedFamilyA();
   const readingScopeKey = hash(JSON.stringify([credentialsA.serverUrl, credentialsA.instanceId, userA, familyA]));
   const otherScopeKey = hash(JSON.stringify([credentialsA.serverUrl, credentialsA.instanceId, "user-x", "family-x"]));
-  await seedReadingDownload(readingScopeKey, `${readingScopeKey}/collection-album-1`, "外婆的相册", "那年夏天我们在海边捡贝壳");
-  await seedReadingDownload(otherScopeKey, `${otherScopeKey}/collection-album-2`, "别人的相册", "那年夏天我们在海边捡贝壳");
+  const manifest = {
+    schemaVersion: 1, kind: "collection", id: "album-1", revision: 1, digest: "abc", userId: "user-a", familyId: "family-a",
+    title: "外婆的相册", subtitle: "", timezone: "Asia/Shanghai",
+    chapters: [{ id: "ch1", title: "第一章", blocks: [{ id: "b1", kind: "text", text: "那年夏天我们在海边捡贝壳", caption: "", images: [] }] }],
+    media: [], bytes: 1,
+  };
+  await seedReadingDownload(readingScopeKey, `${readingScopeKey}/collection-album-1`, "外婆的相册", manifest);
+  await seedReadingDownload(otherScopeKey, `${otherScopeKey}/collection-album-2`, "别人的相册", manifest);
   const db = await getDatabase();
   await db.runAsync(
     `INSERT INTO reading_binding (credential_hash, scope_json) VALUES (?, ?)`,
@@ -151,6 +253,9 @@ it("已下载的相册/作品按阅读 scope 命中；其他 scope 不出现", a
   const reading = hits.filter((item) => item.kind === "reading");
   expect(reading.map((item) => item.title)).toContain("外婆的相册");
   expect(reading.map((item) => item.title)).not.toContain("别人的相册");
+  // manifest 内部字段（digest/userId）不参与匹配
+  const byDigest = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "digest-abc" });
+  expect(byDigest.filter((item) => item.kind === "reading")).toHaveLength(0);
 });
 
 it("撤权/换目的地（clearServerCaches）后记忆索引消失，本机记录保留", async () => {
@@ -160,8 +265,15 @@ it("撤权/换目的地（clearServerCaches）后记忆索引消失，本机记�
   expect(afterSwitch.filter((item) => item.kind === "memory")).toHaveLength(0);
   const localStill = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "桂花" });
   expect(localStill.map((item) => item.id)).toContain("capture-1");
-  // 清除本机全部数据后本机记录也消失
   await clearLocalArchive();
   const afterClear = await offlineSearch({ credentials: null, query: "桂花" });
   expect(afterClear).toHaveLength(0);
+});
+
+it("查询长度与结果数量有界", async () => {
+  await seedFamilyA();
+  const longQuery = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "海".repeat(300) });
+  expect(longQuery).toHaveLength(0);
+  const capped = await offlineSearch({ credentials: credentialsA, userId: userA, familyId: familyA, query: "的", limit: 999 });
+  expect(capped.length).toBeLessThanOrEqual(50);
 });

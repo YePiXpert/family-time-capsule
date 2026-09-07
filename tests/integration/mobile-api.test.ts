@@ -21,7 +21,7 @@ afterAll(async () => {
 const { getDb } = await import("@/db");
 const { session, user } = await import("@/db/schema/auth");
 const { family, person } = await import("@/db/schema/family");
-const { memoryEvent } = await import("@/db/schema/memory");
+const { memoryEvent, memoryEventParticipant } = await import("@/db/schema/memory");
 const { performSetup } = await import("@/lib/auth/setup");
 const { getAuth } = await import("@/lib/auth/auth");
 const { addPerson, completeOnboarding, listPeople } = await import(
@@ -1288,6 +1288,56 @@ describe("native mobile API", () => {
       expect(ready.transcripts).toEqual([]);
       expect((await write("cancel", "foreign-job")).status).toBe(404);
     } finally { runtime.mockRestore(); }
+  });
+
+  it("applies person/date/media filters on the mobile search route and binds cursors to them", async () => {
+    const admin = (await getDb().select().from(user)).find(row => row.email === email)!;
+    const grandpa = await addPerson(admin.familyId!, { displayName: "筛选外公", isChild: false });
+    if (!grandpa.ok) throw new Error("person setup failed");
+    const base = {
+      familyId: admin.familyId!,
+      titleSource: "manual",
+      status: "confirmed",
+    };
+    const now = new Date();
+    const events = [
+      { id: randomUUID(), title: "筛选冬天的雪", occurredAt: new Date("2026-01-20T10:00:00.000Z"), participant: grandpa.personId },
+      { id: randomUUID(), title: "筛选夏天的海", occurredAt: new Date("2026-07-20T10:00:00.000Z"), participant: null },
+    ];
+    for (const event of events) {
+      getDb().insert(memoryEvent).values({ ...base, id: event.id, title: event.title, occurredAt: event.occurredAt, createdAt: now, updatedAt: now }).run();
+      if (event.participant) {
+        getDb().insert(memoryEventParticipant).values({ id: randomUUID(), familyId: admin.familyId!, memoryEventId: event.id, personId: event.participant, createdAt: now }).run();
+      }
+    }
+    const { indexMemoryEvent } = await import("@/lib/search/service");
+    const { eq } = await import("drizzle-orm");
+    for (const event of events) {
+      const row = getDb().select().from(memoryEvent).where(eq(memoryEvent.id, event.id)).get();
+      indexMemoryEvent(row!);
+    }
+    const url = "http://localhost/api/mobile/v1/search";
+    const search = async (params: Record<string, string>) =>
+      (await (await searchGet(bearerRequest(`${url}?${new URLSearchParams({ q: "筛选", limit: "1", ...params })}`, bearerToken))).json()) as {
+        items: { id: string }[]; nextCursor: string | null;
+      };
+    // 人物筛选：只有外公参与的事件
+    const byPerson = await search({ personId: grandpa.personId });
+    expect(byPerson.items.map((item) => item.id)).toEqual([events[0]!.id]);
+    // 日期范围
+    const byDate = await search({ dateFrom: "2026-06-01", dateTo: "2026-08-31" });
+    expect(byDate.items.map((item) => item.id)).toEqual([events[1]!.id]);
+    // 分页：limit 1 时有下一页；换筛选后旧游标失效回到第一页语义
+    const paged = await search({});
+    expect(paged.items).toHaveLength(1);
+    expect(paged.nextCursor).not.toBeNull();
+    const nextPage = await search({ cursor: paged.nextCursor! });
+    expect(nextPage.items.map((item) => item.id)).not.toContain(paged.items[0]!.id);
+    const staleCursor = await search({ personId: grandpa.personId, cursor: paged.nextCursor! });
+    expect(staleCursor.items.map((item) => item.id)).toEqual([events[0]!.id]);
+    // 非法筛选值被忽略而不是 500
+    const invalid = await search({ mediaType: "executable", dateFrom: "不是日期", personId: "../etc/passwd" });
+    expect(invalid.items.length).toBeGreaterThan(0);
   });
 
 });

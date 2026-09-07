@@ -1005,13 +1005,25 @@ export async function updateMobileContribution(
   return result.memoryEventId;
 }
 
+export type MobileSearchFilterInput = {
+  personId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  mediaType?: "image" | "video" | "audio" | "document";
+};
+
 export async function searchMobile(
   credentials: Credentials,
   queryText: string,
   cursor: string | null = null,
+  filters: MobileSearchFilterInput = {},
 ): Promise<MobileSearchPage> {
   const query = new URLSearchParams({ q: queryText, limit: "25" });
   if (cursor) query.set("cursor", cursor);
+  if (filters.personId) query.set("personId", filters.personId);
+  if (filters.dateFrom) query.set("dateFrom", filters.dateFrom);
+  if (filters.dateTo) query.set("dateTo", filters.dateTo);
+  if (filters.mediaType) query.set("mediaType", filters.mediaType);
   return parseMobileSearchPage(
     await requestMobileJson(
       credentials,

@@ -9,6 +9,7 @@ export const LOCAL_DRAFT_SCHEMA_SQL = `
 export const TIMELINE_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS timeline_event (
     id TEXT PRIMARY KEY NOT NULL,
+    scope TEXT NOT NULL,
     title TEXT NOT NULL,
     occurred_at TEXT NOT NULL,
     occurred_at_precision TEXT NOT NULL,
@@ -25,6 +26,8 @@ export const TIMELINE_SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS timeline_occurred_idx
     ON timeline_event(occurred_at DESC, id DESC);
+  CREATE INDEX IF NOT EXISTS timeline_scope_idx
+    ON timeline_event(scope, occurred_at DESC);
 `;
 
 export const MEMORY_DETAIL_SCHEMA_SQL = `
@@ -47,6 +50,7 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
   );
   CREATE TABLE IF NOT EXISTS people (
     id TEXT PRIMARY KEY NOT NULL,
+    scope TEXT NOT NULL,
     display_name TEXT NOT NULL,
     relation_to_child TEXT,
     is_child INTEGER NOT NULL,
@@ -54,6 +58,7 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
     updated_at TEXT NOT NULL,
     seen_snapshot TEXT
   );
+  CREATE INDEX IF NOT EXISTS people_scope_idx ON people(scope);
   ${TIMELINE_SCHEMA_SQL}
   CREATE TABLE IF NOT EXISTS outbox (
     id TEXT PRIMARY KEY NOT NULL,

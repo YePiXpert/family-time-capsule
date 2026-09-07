@@ -55,7 +55,7 @@ export async function syncArchive(
     markOutboxFailure,
     completeOutboxItem,
     fetchSyncPage,
-    applySyncPage,
+    applySyncPage: (credentials, page, snapshotId) => applySyncPage(credentials, page, snapshotId),
     cacheEventCover,
     setLocalCoverUri,
     finishSyncSnapshot,

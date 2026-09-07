@@ -1,6 +1,7 @@
 import * as SQLite from "expo-sqlite";
 import { readableName } from "../utils/naming";
 import type { SyncConsent,
+  Credentials,
   Family,
   LocalTimelineEvent,
   LocalImportIntakeItem,
@@ -22,6 +23,7 @@ import {
   mergeTimelineEvents,
   type LocalCaptureRow,
 } from "./local-timeline";
+import { memoryCacheScope } from "../memories/cache-scope";
 import { LOCAL_DRAFT_SCHEMA_SQL, TIMELINE_SCHEMA_SQL, MEMORY_DETAIL_SCHEMA_SQL, MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
 
 const DB_NAME = "family-time-capsule.sqlite";
@@ -34,6 +36,19 @@ export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
 export async function initializeLocalStore(): Promise<void> {
   const db = await getDatabase();
+  // §4.4 归属边界：timeline/people 缓存逐行 scope，读路径按 scope 过滤，
+  // 不再依赖「换号时通常会清空」。旧安装无 scope 列：在 schema SQL 之前
+  // 补列并把旧行置为空串——旧行无法证明属于哪个账号，在任何 scope 下都
+  // 不可见，由下一次成功同步的 finishSyncSnapshot（seen_snapshot 不匹配）
+  // 清掉；只处理可重建缓存，绝不触碰本机记录。（此迁移必须先于
+  // MOBILE_LOCAL_SCHEMA_SQL：新 schema 里的 scope 索引引用该列。）
+  for (const table of ["timeline_event", "people"]) {
+    const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+    if (columns.length > 0 && !columns.some((column) => column.name === "scope")) {
+      await db.execAsync(`ALTER TABLE ${table} ADD COLUMN scope TEXT`);
+      await db.runAsync(`UPDATE ${table} SET scope = '' WHERE scope IS NULL`);
+    }
+  }
   await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
   await db.execAsync(LOCAL_DRAFT_SCHEMA_SQL);
   const memoryColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(memory_detail)");
@@ -132,9 +147,9 @@ export async function initializeLocalStore(): Promise<void> {
         ALTER TABLE timeline_event RENAME TO timeline_event_before_optional_anchor;
         DROP INDEX IF EXISTS timeline_occurred_idx;
         ${TIMELINE_SCHEMA_SQL}
-        INSERT INTO timeline_event (id,title,occurred_at,occurred_at_precision,location_text,child_person_id,
+        INSERT INTO timeline_event (id,scope,title,occurred_at,occurred_at_precision,location_text,child_person_id,
           age_days,age_label,updated_at,asset_count,participant_names_json,cover_json,local_cover_uri,seen_snapshot)
-        SELECT id,title,occurred_at,occurred_at_precision,location_text,child_person_id,
+        SELECT id,scope,title,occurred_at,occurred_at_precision,location_text,child_person_id,
           age_days,age_label,updated_at,asset_count,participant_names_json,cover_json,local_cover_uri,seen_snapshot
         FROM timeline_event_before_optional_anchor;
         DROP TABLE timeline_event_before_optional_anchor;
@@ -233,8 +248,9 @@ export async function getCachedViewer(): Promise<SyncPage["viewer"] | null> {
   }
 }
 
-export async function listCachedPeople(): Promise<Person[]> {
+export async function listCachedPeople(scope: string | null): Promise<Person[]> {
   const db = await getDatabase();
+  if (!scope) return [];
   const rows = await db.getAllAsync<{
     id: string;
     display_name: string;
@@ -242,7 +258,7 @@ export async function listCachedPeople(): Promise<Person[]> {
     is_child: number;
     birth_date: string | null;
     updated_at: string;
-  }>("SELECT * FROM people ORDER BY is_child DESC, display_name");
+  }>("SELECT * FROM people WHERE scope = ? ORDER BY is_child DESC, display_name", scope);
   return rows.map((row) => ({
     id: row.id,
     displayName: row.display_name,
@@ -290,24 +306,26 @@ export async function removeCachedMemoryDetail(scope: string, id: string): Promi
   await db.runAsync("DELETE FROM memory_detail WHERE scope = ? AND id = ?", scope, id);
 }
 
-export async function listTimeline(): Promise<LocalTimelineEvent[]> {
+export async function listTimeline(scope: string | null): Promise<LocalTimelineEvent[]> {
   const db = await getDatabase();
   const [rows, localRows] = await Promise.all([
-    db.getAllAsync<{
-      id: string;
-      title: string;
-      occurred_at: string;
-      occurred_at_precision: string;
-      location_text: string | null;
-      child_person_id: string | null;
-      age_days: number | null;
-      age_label: string | null;
-      updated_at: string;
-      asset_count: number;
-      participant_names_json: string;
-      cover_json: string | null;
-      local_cover_uri: string | null;
-    }>("SELECT * FROM timeline_event ORDER BY occurred_at DESC, id DESC"),
+    scope
+      ? db.getAllAsync<{
+          id: string;
+          title: string;
+          occurred_at: string;
+          occurred_at_precision: string;
+          location_text: string | null;
+          child_person_id: string | null;
+          age_days: number | null;
+          age_label: string | null;
+          updated_at: string;
+          asset_count: number;
+          participant_names_json: string;
+          cover_json: string | null;
+          local_cover_uri: string | null;
+        }>("SELECT * FROM timeline_event WHERE scope = ? ORDER BY occurred_at DESC, id DESC", scope)
+      : Promise.resolve([]),
     db.getAllAsync<LocalCaptureRow>(
       `SELECT * FROM local_capture WHERE sync_state <> 'archived' AND NOT EXISTS (
         SELECT 1 FROM local_draft d, json_each(json_extract(d.snapshot_json, '$.content.items')) i
@@ -374,17 +392,22 @@ export async function listLocalMemoryMedia(
 }
 
 export async function applySyncPage(
+  credentials: Credentials,
   page: SyncPage,
   snapshotId: string,
 ): Promise<void> {
   const db = await getDatabase();
+  // §4.4：缓存行携带拥有者 scope，读路径按 scope 过滤。
+  const scope = memoryCacheScope(credentials, page.viewer.id, page.family.id);
+  if (!scope) throw new Error("同步页缺少账号信息，无法归属缓存。");
   await db.withExclusiveTransactionAsync(async (tx) => {
     for (const person of page.people) {
       await tx.runAsync(
         `INSERT INTO people(
-          id, display_name, relation_to_child, is_child, birth_date, updated_at, seen_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          id, scope, display_name, relation_to_child, is_child, birth_date, updated_at, seen_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
+          scope = excluded.scope,
           display_name = excluded.display_name,
           relation_to_child = excluded.relation_to_child,
           is_child = excluded.is_child,
@@ -392,6 +415,7 @@ export async function applySyncPage(
           updated_at = excluded.updated_at,
           seen_snapshot = excluded.seen_snapshot`,
         person.id,
+        scope,
         person.displayName,
         person.relationToChild,
         person.isChild ? 1 : 0,
@@ -403,11 +427,12 @@ export async function applySyncPage(
     for (const event of page.events) {
       await tx.runAsync(
         `INSERT INTO timeline_event(
-          id, title, occurred_at, occurred_at_precision, location_text,
+          id, scope, title, occurred_at, occurred_at_precision, location_text,
           child_person_id, age_days, age_label, updated_at, asset_count,
           participant_names_json, cover_json, local_cover_uri, seen_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
         ON CONFLICT(id) DO UPDATE SET
+          scope = excluded.scope,
           title = excluded.title,
           occurred_at = excluded.occurred_at,
           occurred_at_precision = excluded.occurred_at_precision,
@@ -425,6 +450,7 @@ export async function applySyncPage(
           END,
           seen_snapshot = excluded.seen_snapshot`,
         event.id,
+        scope,
         event.title,
         event.occurredAt,
         event.occurredAtPrecision,

@@ -244,6 +244,7 @@ describe("native offline sync state machine", () => {
     ).resolves.toMatchObject({ uploadedCount: 0, failedCount: 1 });
     expect(database.completeOutboxItem).not.toHaveBeenCalled();
     expect(database.applySyncPage).toHaveBeenCalledWith(
+      credentials,
       expect.objectContaining({
         viewer: expect.objectContaining({ canCapture: false }),
       }),

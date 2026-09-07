@@ -167,18 +167,36 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
 
 type MobileSearchItem = { type: string; id: string; eventId: string | null; title: string; snippet: string };
 
-function searchCursor(value: string | null, query: string): number {
+export type MobileSearchFilters = {
+  personId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  mediaType?: "image" | "video" | "audio" | "document";
+};
+
+function searchCursor(value: string | null, query: string, filters: MobileSearchFilters): number {
   if (!value) return 0;
   try {
-    const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { q?: unknown; offset?: unknown };
-    return decoded.q === query && Number.isSafeInteger(decoded.offset) && Number(decoded.offset) >= 0 ? Number(decoded.offset) : 0;
+    const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      q?: unknown; offset?: unknown; f?: unknown;
+    };
+    if (decoded.q !== query) return 0;
+    // 分页期间筛选变化时游标失效（回到第一页语义），不混入旧筛选结果。
+    if (JSON.stringify(decoded.f ?? {}) !== JSON.stringify(filters)) return 0;
+    return Number.isSafeInteger(decoded.offset) && Number(decoded.offset) >= 0 ? Number(decoded.offset) : 0;
   } catch {
     return 0;
   }
 }
 
-export function getMobileSearch(context: FamilyContext, query: string, cursor: string | null, limit: number) {
-  const result = searchFamily(context, { q: query, limit: 100 });
+export function getMobileSearch(
+  context: FamilyContext,
+  query: string,
+  cursor: string | null,
+  limit: number,
+  filters: MobileSearchFilters = {},
+) {
+  const result = searchFamily(context, { q: query, limit: 100, ...filters });
   const items: MobileSearchItem[] = [
     ...result.events.map((item) => ({ type: "memory", id: item.id, eventId: item.id, title: item.title, snippet: item.snippet })),
     ...result.facts.map((item) => ({ type: "fact", id: item.id, eventId: item.eventId, title: item.statement, snippet: item.statement })),
@@ -186,12 +204,14 @@ export function getMobileSearch(context: FamilyContext, query: string, cursor: s
     ...result.transcripts.map((item) => ({ type: "transcript", id: item.id, eventId: item.eventId, title: "录音转录", snippet: item.text })),
     ...result.stories.map((item) => ({ type: "story", id: item.id, eventId: null, title: item.title, snippet: item.snippet })),
   ];
-  const offset = searchCursor(cursor, query);
+  const offset = searchCursor(cursor, query, filters);
   const safeLimit = Math.min(Math.max(limit, 1), 50);
   const page = items.slice(offset, offset + safeLimit);
   const nextOffset = offset + page.length;
   return {
     items: page,
-    nextCursor: nextOffset < items.length ? Buffer.from(JSON.stringify({ q: query, offset: nextOffset }), "utf8").toString("base64url") : null,
+    nextCursor: nextOffset < items.length
+      ? Buffer.from(JSON.stringify({ q: query, offset: nextOffset, f: filters }), "utf8").toString("base64url")
+      : null,
   };
 }

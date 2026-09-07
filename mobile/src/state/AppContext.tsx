@@ -44,6 +44,7 @@ import {
   setSyncConsent,
 } from "../storage/database";
 import { clearLocalFiles, removeLocalFile } from "../storage/files";
+import { memoryCacheScope } from "../memories/cache-scope";
 import { syncArchive } from "../sync/sync";
 import { drainNativeShareIntake } from "../native/intake";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
@@ -145,6 +146,7 @@ export function AppProvider({
 
   const reloadLocal = useCallback(async () => {
     const generation = destGenRef.current;
+    const cacheScope = memoryCacheScope(credentialsRef.current, userIdRef.current ?? undefined, familyIdRef.current ?? undefined);
     const [
       nextEvents,
       nextFamily,
@@ -157,10 +159,10 @@ export function AppProvider({
       consent,
       displayModeValue,
     ] = await Promise.all([
-      listTimeline(),
+      listTimeline(cacheScope),
       getCachedFamily(),
       getCachedViewer(),
-      listCachedPeople(),
+      listCachedPeople(cacheScope),
       listOutbox(),
       getMeta("last_sync_at"),
       getCachedMobileHome(),

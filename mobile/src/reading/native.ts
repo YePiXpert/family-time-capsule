@@ -4,7 +4,7 @@ import { File } from "expo-file-system";
 import { CryptoDigestAlgorithm, digestStringAsync } from "expo-crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
 import type { Credentials } from "../types";
-import { READING_LIMITS, type ReadingKind, type ReadingMedia } from "./types";
+import { READING_LIMITS, type ReadingKind, type ReadingManifest, type ReadingMedia } from "./types";
 import {
   ReadingDownloads,
   ReadingError,
@@ -479,14 +479,16 @@ export async function clearAllReadingDownloads() {
 
 /**
  * 离线搜索（FIND-2/M7-b）：在当前 scope 已下载的相册/作品里做有界文本匹配。
- * 只读 reading_download 的标题与 manifest（含正文块、媒体标题与转录），
- * 不联网、不下载额外内容；scope 未在线验证过时返回空。
+ * 只把 manifest 中允许展示的字段（标题、章节标题、正文/图注、来源标签、
+ * 媒体显示名、转录文本）解析为投影后参与匹配——绝不对整份 manifest JSON
+ * 做子串搜索或摘录，损坏的 manifest 单行跳过；不联网、不下载额外内容；
+ * scope 未在线验证过时返回空。
  */
 export async function searchReadingDownloadsOffline(
   credentials: Credentials,
-  matches: (fields: { title: string; manifestJson: string }) => boolean,
+  foldedQuery: string,
   limit: number,
-): Promise<{ key: string; kind: string; id: string; title: string }[]> {
+): Promise<{ key: string; kind: string; id: string; title: string; matchedText: string | null }[]> {
   let scopeKey: string | null = null;
   try {
     const { scope } = await resolveReadingScope(credentials, { offline: true });
@@ -504,12 +506,47 @@ export async function searchReadingDownloadsOffline(
     "SELECT key,kind,id,title,manifest_json FROM reading_download WHERE scope=? ORDER BY updated_at DESC LIMIT 100",
     scopeKey,
   );
-  const found: { key: string; kind: string; id: string; title: string }[] = [];
+  const found: { key: string; kind: string; id: string; title: string; matchedText: string | null }[] = [];
   for (const row of rows) {
-    if (matches({ title: row.title, manifestJson: row.manifest_json })) {
-      found.push({ key: row.key, kind: row.kind, id: row.id, title: row.title });
+    const matchedText = matchReadingManifest(row.title, row.manifest_json, foldedQuery);
+    if (matchedText !== null) {
+      found.push({ key: row.key, kind: row.kind, id: row.id, title: row.title, matchedText });
       if (found.length >= limit) break;
     }
   }
   return found;
+}
+
+/** manifest → 允许展示字段投影；返回命中的展示文本（标题命中返回 null 以外的空串）。 */
+function matchReadingManifest(title: string, manifestJson: string, foldedQuery: string): string | null {
+  if (title.toLowerCase().includes(foldedQuery)) return title;
+  let manifest: ReadingManifest;
+  try {
+    manifest = JSON.parse(manifestJson) as ReadingManifest;
+  } catch {
+    return null;
+  }
+  if (!manifest || typeof manifest !== "object" || !Array.isArray(manifest.chapters)) return null;
+  const fields: string[] = [];
+  if (typeof manifest.subtitle === "string" && manifest.subtitle) fields.push(manifest.subtitle);
+  for (const chapter of manifest.chapters) {
+    if (typeof chapter?.title === "string" && chapter.title) fields.push(chapter.title);
+    for (const block of Array.isArray(chapter?.blocks) ? chapter.blocks : []) {
+      if (typeof block?.text === "string" && block.text) fields.push(block.text);
+      if (typeof block?.caption === "string" && block.caption) fields.push(block.caption);
+      for (const label of Array.isArray(block?.sourceLabels) ? block.sourceLabels : []) {
+        if (typeof label === "string" && label) fields.push(label);
+      }
+    }
+  }
+  for (const media of Array.isArray(manifest.media) ? manifest.media : []) {
+    if (typeof media?.filename === "string" && media.filename) fields.push(media.filename);
+    if (media?.transcript && typeof media.transcript.text === "string" && media.transcript.text) {
+      fields.push(media.transcript.text);
+    }
+  }
+  for (const field of fields) {
+    if (field.toLowerCase().includes(foldedQuery)) return field;
+  }
+  return null;
 }

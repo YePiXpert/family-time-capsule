@@ -48,7 +48,11 @@ export type SyncDependencies = {
     credentials: Credentials,
     cursor: string | null,
   ) => Promise<SyncPage>;
-  applySyncPage: (page: SyncPage, snapshotId: string) => Promise<void>;
+  applySyncPage: (
+    credentials: Credentials,
+    page: SyncPage,
+    snapshotId: string,
+  ) => Promise<void>;
   cacheEventCover: (
     credentials: Credentials,
     event: TimelineEvent,
@@ -151,7 +155,7 @@ export async function syncArchiveWithDependencies(
     assertCurrent(dependencies);
     const page = await dependencies.fetchSyncPage(credentials, cursor);
     assertCurrent(dependencies);
-    await dependencies.applySyncPage(page, snapshotId);
+    await dependencies.applySyncPage(credentials, page, snapshotId);
     serverTime = page.serverTime;
     eventCount += page.events.length;
 
