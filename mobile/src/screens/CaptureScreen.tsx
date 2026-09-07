@@ -20,8 +20,7 @@ import { useApp } from "../state/AppContext";
 import { ingestLocalImportSession, getLocalCaptureDetail, type LocalCaptureDetail } from "../storage/database";
 import { preservePickedDocument, preservePickedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
 import { beginPickerReceipt, finishPickerReceipt } from "../native/picker-intake";
-import { DateTimeField } from "../components/DateTimeField";
-import { utcToZonedWallTimeInput, zonedWallTimeToUtc } from "../utils/wall-time";
+import { PrecisionDateTimeField } from "../components/PrecisionDateTimeField";
 import { usePersistentDraft } from "../drafts/use-draft";
 import { colors, sharedStyles } from "../theme";
 import type { LocalImportIntakeItem, MediaCapturePayload } from "../types";
@@ -420,9 +419,14 @@ export function CaptureScreen() {
       {capsuleDraft.draft ? <View style={sharedStyles.card}>
         <Text style={sharedStyles.cardTitle}>这一件事</Text>
         <TextInput accessibilityLabel="记忆标题" placeholder="标题（可选）" value={capsuleDraft.draft.content.title} maxLength={100} editable={capsuleDraft.draft.status === "editing"} onChangeText={title => changeDraft({ title })} style={sharedStyles.input} />
-        <Text style={sharedStyles.body}>发生时间：{capsuleDraft.draft.content.occurredAt ?? "时间待补"}</Text>
-        <DateTimeField value={capsuleDraft.draft.content.occurredAt ? utcToZonedWallTimeInput(new Date(capsuleDraft.draft.content.occurredAt), recordingTimezone) : ""} onChange={value => { try { changeDraft({ occurredAt: value ? zonedWallTimeToUtc(value.length === 16 ? `${value}:00` : value, recordingTimezone).toISOString() : null }); } catch { setMessage("时间格式不正确。"); } }} />
-        <Action label="就是现在" hint="确认此刻发生" disabled={capsuleDraft.draft.status !== "editing"} onPress={() => changeDraft({ occurredAt: new Date().toISOString() })} />
+        <Text style={sharedStyles.label}>发生时间</Text>
+        <PrecisionDateTimeField
+          occurredAt={capsuleDraft.draft.content.occurredAt}
+          precision={capsuleDraft.draft.content.occurredAtPrecision}
+          timezone={recordingTimezone}
+          onChange={({ occurredAt, precision: occurredAtPrecision }) => changeDraft({ occurredAt, occurredAtPrecision })}
+        />
+        <Action label="就是现在" hint="确认此刻发生（精确时间）" disabled={capsuleDraft.draft.status !== "editing"} onPress={() => changeDraft({ occurredAt: new Date().toISOString(), occurredAtPrecision: "exact" })} />
         <Text style={sharedStyles.label}>参与人物</Text>
         {(people ?? []).map(person => <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked: capsuleDraft.draft!.content.participantIds.includes(person.id) }} style={sharedStyles.secondaryButton} onPress={() => { const ids = capsuleDraft.draft!.content.participantIds; changeDraft({ participantIds: ids.includes(person.id) ? ids.filter(id => id !== person.id) : [...ids, person.id] }); }}><Text>{capsuleDraft.draft!.content.participantIds.includes(person.id) ? "已选 · " : ""}{person.displayName}</Text></Pressable>)}
         {capsuleDraft.draft.content.items.map((item, index) => {

@@ -4,9 +4,9 @@
 
 ## 基线
 
-- baseline: 7970009（origin/main；87137a0 FIND-5 的测试收窄修复，CI 待核对）
+- baseline: 11c54db（origin/main，§9 AI-21/AI-2/换址 Key 确认；CI 运行中）
 - 开发版本: 1.0.0-dev.1（不变）
-- 工作树: §9 改动（AI-21/AI-2/换址 Key 确认，0060），待提交
+- 工作树: §6 收尾（移动端六档精度时间输入），待提交
 
 ## 当前任务
 
@@ -34,12 +34,14 @@
 - §9 后：tsc（根+mobile）clean、eslint clean、ai-quota 8/8、
   ai-openai-compatible 28/28、ai-jobs+inbox-suggestions 18/18、
   迁移敏感 4 文件 6/6、ops 套件 31 过 3 跳（docker 用例本机跳过，CI 跑）
+- §6 收尾后：mobile tsc clean、capture-screen 14/14（含精度切换两用例）、
+  mobile 全量 238/238
 
 ## 下一个具体动作
 
-1. 核对 7970009 与本提交 CI，红则修
+1. 核对 11c54db 与本提交 CI，红则修
 2. §5 收尾：移动端私密 UI/私密上传通道；AI 上下文与阅读包对私密事件引用
-3. §6 收尾：移动端时间输入 UI 适配月/年/未知
+3. §6 剩余小项：导出/书籍/回顾文案按精度呈现核验、DST/跨年专项
 4. §10–§13 按 REQUIREMENTS 剩余项
 
 ## 外部阻塞

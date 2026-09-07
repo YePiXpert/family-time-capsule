@@ -11,6 +11,13 @@ const mocks = vi.hoisted(() => ({
   preserveAudio: vi.fn(), removeFile: vi.fn(), queued: vi.fn(),
   setParams: vi.fn(), focus: vi.fn(), scrollTo: vi.fn(),
   route: { params: {} as { intent?: string } },
+  draft: {
+    id: "draft-id", status: "editing", serverRevision: 0,
+    content: {
+      text: "", title: "", items: [] as unknown[], participantIds: [] as string[],
+      occurredAt: null as string | null, occurredAtPrecision: "exact" as const,
+    },
+  },
 }));
 vi.mock("react-native", () => ({
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
@@ -64,9 +71,13 @@ vi.mock("../src/storage/files", () => ({
 vi.mock("../src/native/picker-intake", () => ({ beginPickerReceipt: vi.fn(), finishPickerReceipt: vi.fn() }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
 vi.mock("../src/components/DateTimeField", () => ({ DateTimeField: "DateTimeField" }));
+vi.mock("@react-native-community/datetimepicker", () => ({
+  DateTimePickerAndroid: { open: vi.fn() },
+  default: "DateTimePicker",
+}));
 vi.mock("../src/drafts/use-draft", () => ({
   usePersistentDraft: () => ({
-    draft: { id: "draft-id", status: "editing", serverRevision: 0, content: { text: "", title: "", items: mocks.items, participantIds: [], occurredAt: null } },
+    draft: mocks.draft,
     drafts: [], saved: true, error: null,
     change: mocks.enqueueText, addOriginal: mocks.enqueueMedia, save: vi.fn(),
     create: vi.fn(), resume: vi.fn(), discard: vi.fn(), retry: vi.fn(),
@@ -78,6 +89,8 @@ let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
+  mocks.draft.content.occurredAt = null;
+  mocks.draft.content.occurredAtPrecision = "exact";
   mocks.route.params = {};
   mocks.permission.mockResolvedValue({ granted: true });
   mocks.cameraPermission.mockResolvedValue({ granted: true });
@@ -205,4 +218,29 @@ it("does not create a recorder if unmounted while waiting for permission", async
   await act(async () => { grant({ granted: true }); });
   expect(mocks.constructor).not.toHaveBeenCalled();
   expect(mocks.audioMode).not.toHaveBeenCalled();
+});
+
+it("精度切换到「到月」把锚点收细为该月首日（§6）", async () => {
+  const { zonedWallTimeToUtc } = await import("../src/utils/wall-time");
+  mocks.draft.content.occurredAt = "2026-03-15T04:30:00.000Z";
+  await render("text");
+  await press("到月");
+  expect(mocks.enqueueText).toHaveBeenCalledWith({
+    occurredAt: expect.any(String),
+    occurredAtPrecision: "month",
+  });
+  const call = mocks.enqueueText.mock.calls.at(-1)![0] as { occurredAt: string };
+  // 无论本机时区：锚点折算后应是 2026-03 的首日墙钟（组件用本机时区折算）。
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  expect(call.occurredAt).toBe(zonedWallTimeToUtc("2026-03-01T00:00:00", timezone).toISOString());
+});
+
+it("精度切到「不详」清空发生时间且不写锚点（§6）", async () => {
+  mocks.draft.content.occurredAt = "2026-03-15T04:30:00.000Z";
+  await render("text");
+  await press("不详");
+  expect(mocks.enqueueText).toHaveBeenCalledWith({
+    occurredAt: null,
+    occurredAtPrecision: "unknown",
+  });
 });
