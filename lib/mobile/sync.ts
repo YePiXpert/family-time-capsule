@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { inboxItem } from "@/db/schema/inbox";
 import type { FamilyRole } from "@/lib/authz/policy";
 import { hasFamilyCapability } from "@/lib/authz/policy";
+import type { FamilyContext } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getTimelinePage } from "@/lib/memories/service";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
@@ -70,18 +71,16 @@ export type MobileSyncPageDto = {
 };
 
 export async function getMobileSyncPage(input: {
-  familyId: string;
-  userId: string;
-  userName: string;
-  role: FamilyRole;
-  personId?: string | null;
+  context: FamilyContext;
   cursor?: string | null;
   limit?: number;
 }): Promise<MobileSyncPageDto> {
+  // §5：同步页按请求者实时裁决事件可见性——私密/指定读者事件只进入
+  // 有权读者的设备缓存。
   const [family, people, timeline] = await Promise.all([
-    getFamily(input.familyId),
-    listPeople(input.familyId),
-    getTimelinePage(input.familyId, {
+    getFamily(input.context.familyId),
+    listPeople(input.context.familyId),
+    getTimelinePage(input.context, {
       cursor: input.cursor,
       limit: input.limit,
     }),
@@ -93,7 +92,7 @@ export async function getMobileSyncPage(input: {
         .select({ id: inboxItem.id, memoryEventId: inboxItem.memoryEventId })
         .from(inboxItem)
         .where(and(
-          eq(inboxItem.familyId, input.familyId),
+          eq(inboxItem.familyId, input.context.familyId),
           inArray(inboxItem.memoryEventId, eventIds),
         ))
     : [];
@@ -109,14 +108,14 @@ export async function getMobileSyncPage(input: {
     apiVersion: MOBILE_API_VERSION,
     serverTime: new Date().toISOString(),
     viewer: {
-      id: input.userId,
-      name: input.userName,
-      role: input.role,
-      personId: input.personId ?? null,
-      canCapture: hasFamilyCapability(input.role, "capture:create"),
-      canReviewInbox: hasFamilyCapability(input.role, "inbox:review"),
-      canCreateContributions: hasFamilyCapability(input.role, "contribution:create"),
-      canEditEvents: hasFamilyCapability(input.role, "event:write"),
+      id: input.context.userId,
+      name: input.context.userName,
+      role: input.context.role,
+      personId: input.context.personId,
+      canCapture: hasFamilyCapability(input.context.role, "capture:create"),
+      canReviewInbox: hasFamilyCapability(input.context.role, "inbox:review"),
+      canCreateContributions: hasFamilyCapability(input.context.role, "contribution:create"),
+      canEditEvents: hasFamilyCapability(input.context.role, "event:write"),
     },
     family: {
       id: family.id,

@@ -146,7 +146,19 @@ describe("weekly family review", () => {
   });
 
   it("keeps viewers read-only", async () => {
-    const viewer: FamilyContext = { ...context, role: "viewer" };
+    // 真实的 viewer 账号（伪造 role 的快照会被实时主体复核拒绝）。
+    const viewerId = "review-viewer-user";
+    getDb().insert(user).values({
+      id: viewerId, name: "只读家人", email: "viewer@review.example.test", emailVerified: true,
+      role: "viewer", familyId: context.familyId, createdAt: new Date(), updatedAt: new Date(),
+    }).run();
+    const viewerBinding = await getUserBinding(viewerId);
+    if (!viewerBinding.familyTimezone || viewerBinding.childLaterUnlockAge === null) throw new Error("viewer binding failed");
+    const viewer: FamilyContext = {
+      userId: viewerId, userName: "只读家人", familyId: viewerBinding.familyId!, personId: viewerBinding.personId,
+      role: viewerBinding.role, accountEnabled: viewerBinding.accountEnabled, isGuardian: viewerBinding.isGuardian,
+      familyTimezone: viewerBinding.familyTimezone, childLaterUnlockAge: viewerBinding.childLaterUnlockAge,
+    };
     const overview = await getReviewOverview(viewer, "2026-09-02");
     expect(overview.events.length).toBeGreaterThan(0);
     await expect(setReviewProgress(viewer, overview.period.id, "complete")).rejects.toThrow("story:write");

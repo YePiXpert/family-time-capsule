@@ -74,6 +74,8 @@ export async function POST(request: Request) {
   }
 
   const lastModifiedRaw = Number(form.get("lastModified"));
+  // §5：显式 private 上传不进入全家可见的收件箱/资料库窗口。
+  const visibility = form.get("visibility") === "private" ? "private" : "family";
   const buffer = Buffer.from(await file.arrayBuffer());
   if (captureId) {
     const existingCapture = await getInboxEntry(context.familyId, captureId);
@@ -104,6 +106,7 @@ export async function POST(request: Request) {
     filename,
     declaredMime: file.type,
     buffer,
+    visibility,
     clientLastModifiedMs: Number.isFinite(lastModifiedRaw) && lastModifiedRaw > 0
       ? lastModifiedRaw
       : null,
@@ -139,7 +142,23 @@ export async function POST(request: Request) {
         { status: 200 },
       );
     case "stored":
-      // 新内容一律先进收件箱（#007），不直接进 Timeline
+      // 新内容一律先进收件箱（#007），不直接进 Timeline；
+      // 私密上传（§5）例外：不经过全家可见的收件箱窗口。
+      if (visibility === "private") {
+        return Response.json(
+          {
+            status: "stored",
+            assetId: result.asset.id,
+            inboxItemId: null,
+            capturedAt: result.asset.capturedAt?.toISOString() ?? null,
+            importedAt: result.asset.importedAt.toISOString(),
+            timeSource: result.asset.timeSource,
+            width: result.asset.width,
+            height: result.asset.height,
+          },
+          { status: 201 },
+        );
+      }
       let storedInboxItemId: string;
       if (captureId) {
         const inbox = createInboxItemForAssetIdempotent(

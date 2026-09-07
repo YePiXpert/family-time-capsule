@@ -19,11 +19,7 @@ export async function GET(request: Request) {
   const limit = Number.isSafeInteger(rawLimit) ? rawLimit : 50;
   const { context } = authorization;
   const page = await getMobileSyncPage({
-    familyId: context.familyId,
-    userId: context.userId,
-    userName: context.userName,
-    role: context.role,
-    personId: context.personId,
+    context,
     cursor,
     limit,
   });

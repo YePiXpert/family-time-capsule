@@ -18,6 +18,8 @@ export const draft = sqliteTable("draft", {
   locationText: text("location_text").notNull().default(""),
   participantIdsJson: text("participant_ids_json").notNull().default("[]"),
   visibility: text("visibility").notNull().default("family"),
+  /** §5 members 可见性的显式读者（用户 ID 数组 JSON）。 */
+  readerUserIdsJson: text("reader_user_ids_json").notNull().default("[]"),
   coverItemId: text("cover_item_id"),
   status: text("status").notNull().default("editing"),
   revision: integer("revision").notNull().default(0),

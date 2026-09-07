@@ -10,45 +10,45 @@
 
 ## 当前任务
 
-P0-§5 私密记忆（下一个）：对象读者模型（仅自己/指定成员/家庭）+ publishDraft
-非 family 可见性 + 全链路隔离。
+P1-§6 日期精度（下一个）：unknown/year/month/date/instant 全链路。
 
 ## 已完成需求 ID
 
-- §4（FIND-2 正确性与隔离）代码完成待验证→自动化通过（本地）：
-  - §4.1 请求代际：SearchScreen generation+卸载守卫+写回前复核 scope/连接；
-    筛选变化不分页混页（T01/T02 场景有组件测试）。
-  - §4.2 错误分类：ApiError.status 0/401/403/400/429/5xx 各自语义；
-    仅 status 0 自动降级；429/5xx/401 提供显式「只搜本机」入口。
-  - §4.3 投影式离线搜索：detail_json/payload_json/manifest 整串 LIKE 与
-    excerpt 全部移除；只搜展示字段；损坏 JSON 单行跳过。
-  - §4.4 归属边界：timeline_event/people 补逐行 scope 列（迁移先行于
-    schema SQL,旧行回填 '' 不可见,由下次快照清理）；applySyncPage 写入
-    scope；listTimeline/listCachedPeople/offlineSearch 按 scope 过滤；
-    本机记录保持「本机记录」标注不并入家庭结果。
-  - §4.5 离线筛选：person/dateFrom/dateTo/mediaType 与在线 API 语义一致
-    （服务端移动搜索路由新增同款筛选参数,游标绑定筛选）；信息不足诚实
-    不显示；查询/扫描/结果有界；去重+稳定排序；hasDetail=scope 内可读详情。
-
-## 正在修改的文件
-
-（§4 已收敛,见 git log）
+- §4（FIND-2 正确性与隔离，3e00b37，CI 绿）：请求代际/错误分类/投影式
+  离线搜索/timeline+people 逐行 scope/离线筛选+去重+稳定排序。
+- §5 核心（本提交）：0057 读者模型——memory_event.visibility(family/members/
+  private)+created_by_user_id+memory_event_reader 表；asset.visibility
+  (family/private)+去重索引只约束 family 原件；policy canViewMemoryEvent/
+  canManageEventVisibility（管理员非旁路，作者缺失 fail closed）；
+  event-access SQL 谓词+事务内活性复核；getTimelinePage/ByIds/Milestones/
+  详情/搜索/日历/回顾/resurfacing/移动同步按读者裁决；updateMemoryEvent
+  编辑前置可读；updateMemoryEventVisibility（titleRevision 并发令牌）；
+  draft 模型 members+readerUserIds；publishDraft 非 family 直接成事件
+  （私密不进收件箱）；上传路由 visibility=private（无收件箱窗口）；
+  findOriginalBySha256 按查看者过滤（重复上传不能探测私密原件）；
+  Web 捕获编辑器三档读者+成员选择+私密直传。T07/T08/T09 集成测试 4/4。
 
 ## 已跑命令与结果
 
-- mobile: vitest 236/236、tsc clean、eslint clean
-- root: tsc clean、lint(仅既有 warning)、tests/unit 219/219、
-  tests/integration/mobile-api 21/21（含新增筛选路由测试）、
-  tests/integration/search 通过
+- root: tsc clean、lint 仅既有 warning、tests/unit 219/219、
+  integration 76/85 文件通过（9 个失败文件均为本地环境缺 ffmpeg/
+  epubcheck/poppler-CJK/symlink/chmod/EPERM——干净 main 同样失败，
+  CI Linux 有工具链；其中 migration/assets/upgrade-v013/review 的
+  真回归已修复）
+- mobile: 236/236、tsc/eslint clean
 
 ## 未完成测试
 
-- §4 真机飞行模式/设备级验收（继承 FIND-2 真实场景项）
+- §5 移动端：私密/指定成员 UI 入口、私密原件上传通道（本轮移动端
+  非 family 草稿的原件保留本机，如实提示）；大文件私密断点续传。
+- §5 派生面收尾：AI 上下文来源（organizer/story 生成的事件级过滤待
+  逐个核验）、阅读包/作品对私密事件的引用策略、导出文案说明。
+- 本地环境失败件待 CI 验证。
 
 ## 下一个具体动作
 
-开始 §5：读 lib/authz/*、contribution visibility、memory_event 读路径,
-设计 memory_event 级 visibility + 读者模型与迁移 0057。
+P1-§6：Draft 模型允许 occurredAt 精度 unknown/year/month（不再强填
+发生时刻），事件查询/排序/日历/年龄按精度语义处理，迁移兼容旧行。
 
 ## 外部阻塞
 

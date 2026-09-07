@@ -7,7 +7,7 @@ import { createContributionAccessSnapshot, listVisibleContributionsForEvent } fr
 import { getThumbnailMap } from "@/lib/assets/service";
 import { getHomeDashboard } from "@/lib/home/service";
 import { getInboxPage, type InboxEntry } from "@/lib/inbox/service";
-import { defaultTitle, getMemoryEventDetail } from "@/lib/memories/service";
+import { defaultTitle, getVisibleMemoryEventDetail } from "@/lib/memories/service";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { searchFamily } from "@/lib/search/service";
@@ -116,7 +116,7 @@ export async function getMobileInboxEntry(
 
 export async function getMobileMemory(context: FamilyContext, eventId: string) {
   const [detail, contributions] = await Promise.all([
-    getMemoryEventDetail(context.familyId, eventId),
+    getVisibleMemoryEventDetail(context, eventId),
     listVisibleContributionsForEvent(createContributionAccessSnapshot(context), eventId),
   ]);
   if (!detail) return null;

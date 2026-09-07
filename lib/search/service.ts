@@ -11,7 +11,7 @@ import { getDb, type AppDatabase } from "@/db";
 import { asset as assetTable, documentText as documentTextTable } from "@/db/schema/asset";
 import { contribution as contributionTable } from "@/db/schema/contribution";
 import { fact as factTable } from "@/db/schema/contribution";
-import { memoryEvent, memoryEventAsset, memoryEventParticipant } from "@/db/schema/memory";
+import { memoryEvent, memoryEventAsset, memoryEventParticipant, memoryEventReader } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
 import { inboxItem } from "@/db/schema/inbox";
 import { assetTranscript } from "@/db/schema/transcript";
@@ -83,11 +83,15 @@ export function indexMemoryEvent(event: {
   familyId: string;
   title: string;
   childPersonId: string | null;
+  /** §5：非 family 事件没有家庭收件箱聚合，正文由发布方显式提供。 */
+  text?: string;
 }): void {
   removeFromSearchIndex("memory_event", event.id);
   insertIndexRows(getDb(), [
     {
-      original_text: eventSearchText(getDb(), event),
+      original_text: event.text !== undefined
+        ? [event.title, event.text].join("\n")
+        : eventSearchText(getDb(), event),
       family_id: event.familyId,
       entity_type: "memory_event",
       entity_id: event.id,
@@ -458,18 +462,53 @@ export function searchFamily(
   );
   const activeEventRows = matchedEventIds.size > 0
     ? db
-        .select({ id: memoryEvent.id, childPersonId: memoryEvent.childPersonId })
-        .from(memoryEvent)
-        .where(
-          and(
-            eq(memoryEvent.familyId, context.familyId),
-            isNull(memoryEvent.deletedAt),
-            inArray(memoryEvent.id, [...matchedEventIds]),
-          ),
-        )
-        .all()
+      .select({ id: memoryEvent.id, childPersonId: memoryEvent.childPersonId, visibility: memoryEvent.visibility, createdByUserId: memoryEvent.createdByUserId })
+      .from(memoryEvent)
+      .where(
+        and(
+          eq(memoryEvent.familyId, context.familyId),
+          isNull(memoryEvent.deletedAt),
+          inArray(memoryEvent.id, [...matchedEventIds]),
+        ),
+      )
+      .all()
     : [];
-  const activeEventIds = new Set(activeEventRows.map((event) => event.id));
+  // §5 对象级读者：非 family 事件按作者/显式读者裁决；作者缺失 fail closed。
+  const restrictedEventIds = new Set(
+    activeEventRows
+      .filter((event) => event.visibility !== "family")
+      .map((event) => event.id),
+  );
+  const visibleRestrictedEventIds = new Set<string>();
+  if (restrictedEventIds.size > 0) {
+    const readerRows = db
+      .select({ memoryEventId: memoryEventReader.memoryEventId, userId: memoryEventReader.userId })
+      .from(memoryEventReader)
+      .where(
+        and(
+          eq(memoryEventReader.familyId, context.familyId),
+          inArray(memoryEventReader.memoryEventId, [...restrictedEventIds]),
+        ),
+      )
+      .all();
+    const readersByEvent = new Map<string, Set<string>>();
+    for (const row of readerRows) {
+      const set = readersByEvent.get(row.memoryEventId) ?? new Set<string>();
+      set.add(row.userId);
+      readersByEvent.set(row.memoryEventId, set);
+    }
+    for (const event of activeEventRows) {
+      if (event.visibility === "family") continue;
+      const isAuthor = event.createdByUserId !== null && event.createdByUserId === context.userId;
+      const isReader = event.visibility === "members" && (readersByEvent.get(event.id)?.has(context.userId) ?? false);
+      if (isAuthor || isReader) visibleRestrictedEventIds.add(event.id);
+    }
+  }
+  const activeEventIds = new Set(
+    activeEventRows
+      .filter((event) => event.visibility === "family" || visibleRestrictedEventIds.has(event.id))
+      .map((event) => event.id),
+  );
   const childPersonIds = new Set(activeEventRows.map((event) => event.childPersonId).filter((id): id is string => id !== null));
   const unlockedByChild = new Map<string, boolean>();
   if (childPersonIds.size > 0) {

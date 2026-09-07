@@ -429,8 +429,9 @@ describe("原件不可覆盖 / 衍生物独立", () => {
              AND name = 'asset_family_sha_idx'`,
     )) as Array<{ sql: string }>;
     expect(definitions).toHaveLength(1);
+    // §5：去重只约束家庭共享原件（private 原件按上传者并存）。
     expect(definitions[0]!.sql).toMatch(
-      /WHERE\s+"asset"\."original_asset_id"\s+is\s+null$/i,
+      /WHERE\s+original_asset_id\s+is\s+null\s+AND\s+visibility\s*=\s*'family'$/i,
     );
 
     const plan = (await db.all(
@@ -439,7 +440,8 @@ describe("原件不可覆盖 / 衍生物独立", () => {
             FROM asset
            WHERE family_id = ${familyId}
              AND sha256 = ${sha256Of(PNG_BYTES)}
-             AND original_asset_id IS NULL`,
+             AND original_asset_id IS NULL
+             AND visibility = 'family'`,
     )) as Array<{ detail: string }>;
     expect(plan.some((step) => step.detail.includes("asset_family_sha_idx"))).toBe(
       true,

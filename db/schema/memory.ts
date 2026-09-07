@@ -45,6 +45,10 @@ export const memoryEvent = sqliteTable(
     }),
     // draft | confirmed | hidden
     status: text("status").notNull().default("confirmed"),
+    // 正式 1.0 §5 对象级读者：family=全家 | members=作者+指定读者 | private=仅作者。
+    // 旧事件迁移为 family；createdByUserId 为空且非 family 时 fail closed。
+    visibility: text("visibility").notNull().default("family"),
+    createdByUserId: text("created_by_user_id"),
     // 可选成长节点展示信息；事件本体仍然是 MemoryEvent。
     // first_time | growth | family | learning | celebration | other
     milestoneType: text("milestone_type"),
@@ -118,6 +122,31 @@ export const memoryEventParticipant = sqliteTable(
   (t) => [
     index("memory_participant_event_idx").on(t.memoryEventId),
     index("memory_participant_person_idx").on(t.personId),
+  ],
+);
+
+/**
+ * 指定读者（正式 1.0 §5）：members 可见性事件的显式读者清单。
+ * 参与人物不是读者；照片里出现妈妈不等于授权妈妈阅读。
+ */
+export const memoryEventReader = sqliteTable(
+  "memory_event_reader",
+  {
+    id: text("id").primaryKey(),
+    familyId: text("family_id")
+      .notNull()
+      .references(() => family.id, { onDelete: "cascade" }),
+    memoryEventId: text("memory_event_id")
+      .notNull()
+      .references(() => memoryEvent.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: createdAtColumn(),
+  },
+  (t) => [
+    index("memory_event_reader_event_idx").on(t.memoryEventId),
+    index("memory_event_reader_user_idx").on(t.userId),
   ],
 );
 

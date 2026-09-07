@@ -26,6 +26,7 @@ import {
   isContributionVisibility,
   type ContributionVisibility,
 } from "./policy";
+import { eventVisibilityCondition, type EventAccessSnapshot } from "./event-access";
 import {
   familyLocalDate,
   principalFromFamilyContext,
@@ -82,6 +83,19 @@ export function createContributionAccessSnapshot(
     principal,
     evaluatedAt,
     familyLocalDate: familyLocalDate(evaluatedAt, principal.familyTimezone),
+  };
+}
+
+/** §5：资产裁决同时需要事件读者快照（private 原件经可读事件开放）。 */
+function eventSnapshotOf(snapshot: ContributionAccessSnapshot): EventAccessSnapshot {
+  return {
+    principal: {
+      userId: snapshot.principal.userId,
+      familyId: snapshot.principal.familyId,
+      role: snapshot.principal.role,
+      accountEnabled: snapshot.principal.accountEnabled,
+    },
+    evaluatedAt: snapshot.evaluatedAt,
   };
 }
 
@@ -462,45 +476,51 @@ export function getContributionAssetAccessInTransaction(
   }
 
   const familyAssetIds = familyAssets.map((row) => row.id);
+  const rootRow = tx
+    .select({ visibility: asset.visibility, createdByUserId: asset.createdByUserId })
+    .from(asset)
+    .where(and(inArray(asset.id, familyAssetIds), isNull(asset.originalAssetId)))
+    .limit(1)
+    .get();
   const assetReferencePredicate = sql`${contribution.audioAssetId} in (
     select value from json_each(${JSON.stringify(familyAssetIds)})
   )`;
   const hiddenReference = tx
-      .select({ id: contribution.id })
-      .from(contribution)
-      .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
-      .leftJoin(
-        eventChild,
-        and(
-          eq(memoryEvent.childPersonId, eventChild.id),
-          eq(eventChild.familyId, memoryEvent.familyId),
+    .select({ id: contribution.id })
+    .from(contribution)
+    .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
+    .leftJoin(
+      eventChild,
+      and(
+        eq(memoryEvent.childPersonId, eventChild.id),
+        eq(eventChild.familyId, memoryEvent.familyId),
+      ),
+    )
+    .innerJoin(viewerUser, eq(viewerUser.id, principal.userId))
+    .innerJoin(viewerFamily, eq(viewerFamily.id, viewerUser.familyId))
+    .leftJoin(
+      viewerPerson,
+      and(
+        eq(viewerUser.personId, viewerPerson.id),
+        eq(viewerPerson.familyId, viewerUser.familyId),
+      ),
+    )
+    .where(
+      and(
+        // One JSON parameter avoids SQLite's host-variable ceiling even if
+        // a corrupt/historical derivative tree contains thousands of rows.
+        assetReferencePredicate,
+        or(
+          ne(memoryEvent.familyId, principal.familyId),
+          and(isNotNull(memoryEvent.childPersonId), isNull(eventChild.id)),
+          // SQL NOT NULL is still NULL. Coalesce makes corrupted/missing
+          // policy joins and unbound principals fail closed instead of
+          // accidentally treating an unknown result as visible.
+          not(sql`coalesce(${visibilityPredicate(snapshot)}, 0)`),
         ),
-      )
-      .innerJoin(viewerUser, eq(viewerUser.id, principal.userId))
-      .innerJoin(viewerFamily, eq(viewerFamily.id, viewerUser.familyId))
-      .leftJoin(
-        viewerPerson,
-        and(
-          eq(viewerUser.personId, viewerPerson.id),
-          eq(viewerPerson.familyId, viewerUser.familyId),
-        ),
-      )
-      .where(
-        and(
-          // One JSON parameter avoids SQLite's host-variable ceiling even if
-          // a corrupt/historical derivative tree contains thousands of rows.
-          assetReferencePredicate,
-          or(
-            ne(memoryEvent.familyId, principal.familyId),
-            and(isNotNull(memoryEvent.childPersonId), isNull(eventChild.id)),
-            // SQL NOT NULL is still NULL. Coalesce makes corrupted/missing
-            // policy joins and unbound principals fail closed instead of
-            // accidentally treating an unknown result as visible.
-            not(sql`coalesce(${visibilityPredicate(snapshot)}, 0)`),
-          ),
-        ),
-      )
-      .limit(1)
+      ),
+    )
+    .limit(1)
     .get();
   if (hiddenReference) {
     return { readable: false, automaticEligible: false };
@@ -521,6 +541,36 @@ export function getContributionAssetAccessInTransaction(
     )
     .limit(1)
     .get();
+
+  // §5 私密原件：仅上传者、可读事件引用或既有讲述引用开放读取；
+  // 自动外发处理一律不适用（不是全家庭可见的根）。
+  if (rootRow && rootRow.visibility === "private") {
+    if (rootRow.createdByUserId === principal.userId) {
+      return { readable: true, automaticEligible: false };
+    }
+    const visibleEventReference = tx
+      .select({ id: memoryEvent.id })
+      .from(memoryEvent)
+      .where(
+        and(
+          eq(memoryEvent.familyId, principal.familyId),
+          isNull(memoryEvent.deletedAt),
+          sql`exists (select 1 from memory_event_asset pea where pea.memory_event_id = ${memoryEvent.id} and pea.family_id = ${principal.familyId} and pea.asset_id in (select value from json_each(${JSON.stringify(familyAssetIds)})))`,
+          eventVisibilityCondition(eventSnapshotOf(snapshot), sql`memory_event`),
+        ),
+      )
+      .limit(1)
+      .get();
+    if (visibleEventReference) return { readable: true, automaticEligible: false };
+    const anyReference = tx
+      .select({ id: contribution.id })
+      .from(contribution)
+      .where(assetReferencePredicate)
+      .limit(1)
+      .get();
+    if (anyReference) return { readable: true, automaticEligible: false };
+    return { readable: false, automaticEligible: false };
+  }
   return { readable: true, automaticEligible: !restrictedReference };
 }
 
@@ -545,6 +595,7 @@ export function readableAssetPredicate(snapshot: ContributionAccessSnapshot, ass
     .innerJoin(viewerFamily, eq(viewerFamily.id, viewerUser.familyId))
     .leftJoin(viewerPerson, and(eq(viewerPerson.id, viewerUser.personId), eq(viewerPerson.familyId, viewerUser.familyId)))
     .where(or(ne(memoryEvent.familyId, p.familyId), and(isNotNull(memoryEvent.childPersonId), isNull(eventChild.id)), not(sql`coalesce(${visibilityPredicate(snapshot)}, 0)`)));
+  const visibleEvent = eventVisibilityCondition(eventSnapshotOf(snapshot), sql.raw("pred_event"));
   return sql`exists (select 1 from user live_user where live_user.id = ${p.userId}
       and live_user.family_id = ${p.familyId} and live_user.role = ${p.role} and live_user.disabled_at is null)
     and exists (select 1 from asset root_asset where root_asset.id = ${assetId} and root_asset.family_id = ${p.familyId})
@@ -557,5 +608,35 @@ export function readableAssetPredicate(snapshot: ContributionAccessSnapshot, ass
         union select a.id from asset a join descendants on a.original_asset_id = descendants.id where a.family_id = ${p.familyId}
       ) select 1 where not exists (select 1 from descendants)
         or exists (select 1 from descendants where id in (${hidden}))
+    )
+    and exists (
+      with recursive ancestors(id, parent_id) as (
+        select permission_seed.id, permission_seed.original_asset_id from asset permission_seed where permission_seed.id = ${assetId} and permission_seed.family_id = ${p.familyId}
+        union select a.id, a.original_asset_id from asset a join ancestors on a.id = ancestors.parent_id where a.family_id = ${p.familyId}
+      ), descendants(id) as (
+        select id from ancestors where parent_id is null
+        union select a.id from asset a join descendants on a.original_asset_id = descendants.id where a.family_id = ${p.familyId}
+      ), root_permission(root_id, uploader_id, root_visibility) as (
+        select root_asset_permission.id, root_asset_permission.created_by_user_id, root_asset_permission.visibility
+        from asset root_asset_permission
+        join ancestors root_ancestor on root_ancestor.id = root_asset_permission.id
+        where root_ancestor.parent_id is null and root_asset_permission.family_id = ${p.familyId}
+      )
+      select 1 from root_permission
+      where root_visibility = 'family'
+         or uploader_id = ${p.userId}
+         or exists (
+           select 1 from memory_event_asset pred_link
+           inner join memory_event pred_event on pred_event.id = pred_link.memory_event_id
+           where pred_link.asset_id in (select id from descendants)
+             and pred_link.family_id = ${p.familyId}
+             and pred_event.family_id = ${p.familyId}
+             and pred_event.deleted_at is null
+             and ${visibleEvent}
+         )
+         or exists (
+           select 1 from contribution pred_contribution
+           where pred_contribution.audio_asset_id in (select id from descendants)
+         )
     )`;
 }

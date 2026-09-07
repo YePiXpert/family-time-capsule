@@ -30,7 +30,8 @@ it("upgrades a 0052 database with adopted/rejected naming history and preserves 
     db.close();
     const options = { databasePath, migrationsFolder: folder, snapshotDirectory: path.join(dir, "snapshots") };
     db = openDatabaseConnection(options).sqlite;
-    expect(db.prepare("select * from asset").get()).toEqual({ ...assetBefore, participant_ids_json: "[]", metadata_revision: 0 });
+    // 0057：asset 增加 visibility 列（默认 family，历史素材语义不变）。
+    expect(db.prepare("select * from asset").get()).toEqual({ ...assetBefore, participant_ids_json: "[]", metadata_revision: 0, visibility: "family" });
     expect(db.prepare("select * from ai_suggestion order by id").all()).toEqual(reviewsBefore);
     expect(db.pragma("foreign_key_list(ai_suggestion)")).toEqual(keys);
     expect(db.prepare("select name from sqlite_schema where type='index' and tbl_name='ai_suggestion' order by name").all()).toEqual(indexes);

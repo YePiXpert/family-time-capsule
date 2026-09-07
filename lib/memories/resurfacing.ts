@@ -99,6 +99,7 @@ export async function getResurfacing(
   timezone: string,
   now = new Date(),
   perGroup = 4,
+  context?: import("@/lib/family/context").FamilyContext,
 ): Promise<ResurfacingResult> {
   const todayParts = localDateParts(now, timezone);
   const today = formatDateOnly(todayParts);
@@ -114,6 +115,13 @@ export async function getResurfacing(
     const date = shiftDays(todayParts, offset);
     return `${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
   });
+  // §5：自动回顾同样按对象级读者裁决，不把私密事件推给无权读者。
+  const visibleEvent = context
+    ? (await import("@/lib/authz/event-access")).eventVisibilityCondition(
+        (await import("@/lib/authz/event-access")).createEventAccessSnapshot(context),
+        sql`memory_event`,
+      )
+    : undefined;
   const candidates = await getDb()
     .select()
     .from(memoryEvent)
@@ -123,6 +131,7 @@ export async function getResurfacing(
         eq(memoryEvent.status, "confirmed"),
         isNull(memoryEvent.deletedAt),
         lt(memoryEvent.occurredAt, now),
+        visibleEvent,
         or(
           ...exactRanges.map((range) =>
             and(
@@ -193,7 +202,7 @@ export async function getResurfacing(
         .map((event) => [event.id, event] as const),
     ).values(),
   ];
-  const hydrated = await hydrateTimelineEntries(familyId, uniqueEvents);
+  const hydrated = await hydrateTimelineEntries(familyId, uniqueEvents, context);
   const hydratedById = new Map(hydrated.map((entry) => [entry.event.id, entry]));
   const groups = groupRows.map(({ rows, ...group }) => ({
     ...group,

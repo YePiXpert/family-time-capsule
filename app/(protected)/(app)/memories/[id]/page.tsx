@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
-import { getMemoryEventDetail, getTimelinePage, listEventRevisions } from "@/lib/memories/service";
+import { getVisibleMemoryEventDetail, getTimelinePage, listEventRevisions } from "@/lib/memories/service";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { listFacts } from "@/lib/contributions/service";
 import {
@@ -89,12 +89,12 @@ export default async function MemoryEventPage({
   const pageMode = resolveMemoryPageMode(query.mode, canWriteEvent);
   const editMode = pageMode === "edit";
   const [detail, family, people, contributions, facts, relatedPage] = await Promise.all([
-    getMemoryEventDetail(familyId, id),
+    getVisibleMemoryEventDetail(context, id),
     getFamily(familyId),
     listPeople(familyId),
     listVisibleContributionsForEvent(contributionAccess, id),
     listFacts(familyId, id),
-    getTimelinePage(familyId, { limit: 5 }),
+    getTimelinePage(context, { limit: 5 }),
   ]);
   if (!detail) notFound();
 

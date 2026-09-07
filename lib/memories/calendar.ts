@@ -7,6 +7,10 @@ import {
   createContributionAccessSnapshot,
   readableAssetPredicate,
 } from "@/lib/authz/contribution-access";
+import {
+  createEventAccessSnapshot,
+  eventVisibilityCondition,
+} from "@/lib/authz/event-access";
 import { addCalendarDays, calendarDate } from "@/mobile/src/utils/calendar";
 import { calendarRange } from "./calendar-range";
 
@@ -22,7 +26,13 @@ export function browsePredicate(
     createContributionAccessSnapshot(context),
     sql`ba.id`,
   );
+  // §5：日历同样按对象级读者裁决，私密事件不进入他人日历计数或列表。
+  const visibleEvent = eventVisibilityCondition(
+    createEventAccessSnapshot(context),
+    sql.raw("e"),
+  );
   return sql`e.family_id = ${context.familyId} and e.status = 'confirmed' and e.deleted_at is null
+    and ${visibleEvent}
     ${filters.person ? sql`and exists (select 1 from memory_event_participant p where p.memory_event_id = e.id and p.family_id = ${context.familyId} and p.person_id = ${filters.person})` : sql``}
     ${filters.tag ? sql`and exists (select 1 from memory_event_tag t where t.memory_event_id = e.id and t.family_id = ${context.familyId} and t.tag = ${filters.tag})` : sql``}
     ${media ? sql`and exists (select 1 from memory_event_asset ma join asset ba on ba.id = ma.asset_id where ma.memory_event_id = e.id and ma.family_id = ${context.familyId} and ba.family_id = ${context.familyId} and ba.type = ${media} and ${readable})` : sql``}`;

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset } from "@/db/schema/asset";
 import {
@@ -37,6 +37,8 @@ export type StoreOriginalInput = {
   height?: number | null;
   durationMs?: number | null;
   metadataJson?: unknown;
+  /** §5：private 原件只对上传者与可读引用开放，不进入全家庭资料库。 */
+  visibility?: "family" | "private";
 };
 
 export type DuplicateFound = {
@@ -61,6 +63,7 @@ export function sha256Of(buffer: Buffer): string {
 export async function findOriginalBySha256(
   familyId: string,
   sha256: string,
+  viewerUserId?: string,
 ): Promise<AssetRow | undefined> {
   const db = getDb();
   const rows = await db
@@ -71,6 +74,11 @@ export async function findOriginalBySha256(
         eq(asset.familyId, familyId),
         eq(asset.sha256, sha256),
         isNull(asset.originalAssetId),
+        // §5 去重与授权分离：他人的私密原件不参与匹配，重复上传无法
+        // 探测其存在，也不会把私密原件当作“已存在”返回给无关用户。
+        viewerUserId
+          ? sql`(${asset.visibility} = 'family' or ${asset.createdByUserId} = ${viewerUserId})`
+          : eq(asset.visibility, "family"),
       ),
     )
     .orderBy(desc(asset.createdAt))
@@ -112,7 +120,7 @@ export async function storeOriginal(
   input: StoreOriginalInput,
 ): Promise<StoreOriginalResult> {
   const sha256 = sha256Of(input.buffer);
-  const existing = await findOriginalBySha256(input.familyId, sha256);
+  const existing = await findOriginalBySha256(input.familyId, sha256, input.createdByUserId);
   if (existing) return { status: "duplicate", existing: existing };
 
   const storage = getAssetStorage();
@@ -152,6 +160,7 @@ export async function storeOriginal(
             ? null
             : JSON.stringify(input.metadataJson),
         createdByUserId: input.createdByUserId,
+        visibility: input.visibility === "private" ? "private" : "family",
         originalAssetId: null,
         derivativeType: null,
         createdAt: new Date(),

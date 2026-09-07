@@ -41,16 +41,26 @@ it("upgrades a real 0050 database without cascading away references, defaults or
     db.close();
     const options = { databasePath, migrationsFolder: folder, snapshotDirectory: path.join(dir, "snapshots") };
     db = openDatabaseConnection(options).sqlite;
-    expect(tables.map(t => db.prepare(`SELECT * FROM ${t}`).all())).toEqual(before);
+    // 0057 读者模型：memory_event 增加 visibility='family' 与
+    // created_by_user_id=NULL 的行级默认；旧行数据本身不变。
+    const beforeWithReaderDefaults = before.map((rows, i) =>
+      tables[i] === "memory_event"
+        ? (rows as Array<Record<string, unknown>>).map(row => ({ ...row, visibility: "family", created_by_user_id: null }))
+        : rows);
+    expect(tables.map(t => db.prepare(`SELECT * FROM ${t}`).all())).toEqual(beforeWithReaderDefaults);
     expect(db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='index' AND tbl_name='memory_event' ORDER BY name").all()).toEqual(indexes);
     expect(db.pragma("foreign_key_list(memory_event)")).toEqual(foreignKeys);
-    expect(db.pragma("table_info(memory_event)")).toEqual(columns.map(c => c.name === "child_person_id" ? {...c,notnull:0} : c));
+    expect(db.pragma("table_info(memory_event)")).toEqual([
+      ...columns.map(c => c.name === "child_person_id" ? {...c,notnull:0} : c),
+      expect.objectContaining({ name: "visibility", notnull: 1, dflt_value: "'family'" }),
+      expect.objectContaining({ name: "created_by_user_id", notnull: 0, dflt_value: null }),
+    ]);
     expect(db.pragma("foreign_keys", {simple:true})).toBe(1);
     expect(db.pragma("foreign_key_check")).toEqual([]);
     db.exec(`INSERT INTO memory_event(id,family_id,child_person_id,title,occurred_at,created_at,updated_at) VALUES ('grandparent','family',NULL,'祖辈记忆',100,2,3)`);
     expect(() => db.exec(`UPDATE memory_event SET child_person_id='missing' WHERE id='grandparent'`)).toThrow();
     db.close(); db = openDatabaseConnection(options).sqlite;
     expect(db.prepare("SELECT child_person_id FROM memory_event WHERE id='grandparent'").get()).toEqual({child_person_id:null});
-    expect(tables.map(t => db.prepare(`SELECT * FROM ${t} ${t === 'memory_event' ? "WHERE id='event'" : ''}`).all())).toEqual(before);
+    expect(tables.map(t => db.prepare(`SELECT * FROM ${t} ${t === 'memory_event' ? "WHERE id='event'" : ''}`).all())).toEqual(beforeWithReaderDefaults);
   } finally { if (db.open) db.close(); rmSync(dir, {recursive:true,force:true}); }
 });

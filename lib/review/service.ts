@@ -274,7 +274,7 @@ export async function getReviewOverview(
   const config = await familyReviewConfig(context.familyId);
   if (!config) throw new Error("family_not_found");
   const [timeline, selectedRows, inboxCounts, clusters, guest, failed, pendingRequests, sealedCapsules, child] = await Promise.all([
-    getTimelinePage(context.familyId, { occurredFrom: period.periodStart, occurredBefore: period.periodEnd, limit: 50 }),
+    getTimelinePage(context, { occurredFrom: period.periodStart, occurredBefore: period.periodEnd, limit: 50 }),
     getDb().select({ eventId: reviewPeriodEvent.memoryEventId }).from(reviewPeriodEvent).where(and(
       eq(reviewPeriodEvent.familyId, context.familyId), eq(reviewPeriodEvent.reviewPeriodId, period.id),
     )),
@@ -377,7 +377,7 @@ export async function generateReviewStory(
   const selected = await getDb().select({ eventId: reviewPeriodEvent.memoryEventId }).from(reviewPeriodEvent).where(and(
     eq(reviewPeriodEvent.familyId, context.familyId), eq(reviewPeriodEvent.reviewPeriodId, reviewId),
   ));
-  const timeline = await getTimelinePage(context.familyId, {
+  const timeline = await getTimelinePage(context, {
     occurredFrom: period.periodStart, occurredBefore: period.periodEnd, limit: 50,
   });
   const chosen = selected.length
@@ -456,7 +456,7 @@ export async function requestReviewStoryOptimization(
   const selected = await getDb().select({ id: reviewPeriodEvent.memoryEventId }).from(reviewPeriodEvent).where(and(
     eq(reviewPeriodEvent.familyId, context.familyId), eq(reviewPeriodEvent.reviewPeriodId, reviewId),
   ));
-  const sourceIds = selected.length ? selected.map((row) => row.id) : (await getTimelinePage(context.familyId, {
+  const sourceIds = selected.length ? selected.map((row) => row.id) : (await getTimelinePage(context, {
     occurredFrom: period.periodStart, occurredBefore: period.periodEnd, limit: 50,
   })).entries.map((entry) => entry.event.id);
   const queued = enqueueAiJob({

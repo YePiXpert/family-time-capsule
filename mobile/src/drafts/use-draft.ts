@@ -93,7 +93,9 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     const row = current.current;
     if (!row || failure.current) throw new Error("本机草稿尚未保存，请检查存储空间。");
     if (publish && !row.content.occurredAt) throw new Error("请先确认发生时间；不确定时可以先保留草稿。");
-    if (publish && row.content.visibility !== "family") throw new Error("仅自己可见的内容先保留草稿。");
+    if (publish && row.content.visibility !== "family" && row.content.items.some(item => !item.assetId)) {
+      throw new Error("私密/指定成员的素材本轮先保留在本机；文字-only 的私密记忆可以直接创建。");
+    }
     const next = { ...row, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
     await write(next);
     if (publish || syncIntent) await queueDraftOriginals(next);

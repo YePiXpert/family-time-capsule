@@ -1,5 +1,8 @@
 import { getDraft } from "@/lib/drafts/service";
 import type { Metadata } from "next";
+import { and, eq, isNull } from "drizzle-orm";
+import { getDb } from "@/db";
+import { user } from "@/db/schema/auth";
 import { requireFamily } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { listPeople } from "@/lib/family/service";
@@ -19,6 +22,11 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
   const canCapture = hasFamilyCapability(role, "capture:create");
   const canArchive = hasFamilyCapability(role, "inbox:review");
   const people = canCapture ? await listPeople(familyId) : [];
+  // §5：指定读者按家庭账号（用户）选择；参与人物不是读者。
+  const memberRows = canCapture
+    ? await getDb().select({ id: user.id, name: user.name }).from(user)
+        .where(and(eq(user.familyId, familyId), isNull(user.disabledAt)))
+    : [];
 
   return (
     <main className="page-container">
@@ -40,6 +48,7 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
             displayName: person.displayName,
             isChild: person.isChild,
           }))}
+          members={memberRows}
         />
       ) : (
         <div className="mt-8">

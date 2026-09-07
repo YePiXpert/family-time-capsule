@@ -6,6 +6,11 @@ export type DraftItem = {
   caption: string;
   preservationState?: "missing";
 };
+/**
+ * 正式 1.0 §5 对象级读者：family=全家；members=作者+指定成员（按用户 ID）；
+ * private=仅作者。参与人物不是读者。
+ */
+export type DraftVisibility = "family" | "members" | "private";
 export type DraftContent = {
   title: string;
   text: string;
@@ -13,7 +18,9 @@ export type DraftContent = {
   occurredAtPrecision: "exact" | "approximate" | "date_only";
   locationText: string;
   participantIds: string[];
-  visibility: "family" | "private";
+  visibility: DraftVisibility;
+  /** members 可见性时的显式读者（用户 ID，最多 20 人，服务端按家庭校验）。 */
+  readerUserIds: string[];
   coverItemId: string | null;
   items: DraftItem[];
 };
@@ -27,7 +34,7 @@ export type Draft = DraftContent & {
   updatedAt: string;
 };
 export function emptyDraftContent(): DraftContent {
-  return { title: "", text: "", occurredAt: null, occurredAtPrecision: "exact", locationText: "", participantIds: [], visibility: "family", coverItemId: null, items: [] };
+  return { title: "", text: "", occurredAt: null, occurredAtPrecision: "exact", locationText: "", participantIds: [], visibility: "family", readerUserIds: [], coverItemId: null, items: [] };
 }
 export function parseDraftContent(value: unknown): DraftContent {
   const invalid = () => { throw new Error("invalid_draft"); };
@@ -54,6 +61,15 @@ export function parseDraftContent(value: unknown): DraftContent {
   const occurredAt = v.occurredAt === null ? null : string(v.occurredAt, 32);
   if (occurredAt !== null && (!/^\d{4}-\d\d-\d\dT/u.test(occurredAt) || !Number.isFinite(Date.parse(occurredAt)))) return invalid();
   if (!["exact", "approximate", "date_only"].includes(String(v.occurredAtPrecision))) return invalid();
-  if (v.visibility !== "family" && v.visibility !== "private") return invalid();
-  return { title: string(v.title, 100), text: string(v.text, 5000), occurredAt, occurredAtPrecision: v.occurredAtPrecision as DraftContent["occurredAtPrecision"], locationText: string(v.locationText, 200), participantIds, visibility: v.visibility, coverItemId, items };
+  // 兼容历史草稿载荷：旧客户端没有 readerUserIds 字段，按空清单处理。
+  if (v.visibility !== "family" && v.visibility !== "members" && v.visibility !== "private") return invalid();
+  const visibility = v.visibility as DraftVisibility;
+  const readerUserIds = v.readerUserIds === undefined || v.readerUserIds === null
+    ? []
+    : Array.isArray(v.readerUserIds) && v.readerUserIds.length <= 20
+      ? v.readerUserIds.map(id)
+      : invalid();
+  if (new Set(readerUserIds).size !== readerUserIds.length) return invalid();
+  if (visibility !== "members" && readerUserIds.length > 0) return invalid();
+  return { title: string(v.title, 100), text: string(v.text, 5000), occurredAt, occurredAtPrecision: v.occurredAtPrecision as DraftContent["occurredAtPrecision"], locationText: string(v.locationText, 200), participantIds, visibility, readerUserIds, coverItemId, items };
 }

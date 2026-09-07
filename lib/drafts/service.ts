@@ -7,7 +7,7 @@ import { asset } from "@/db/schema/asset";
 import { user } from "@/db/schema/auth";
 import { person } from "@/db/schema/family";
 import { inboxItem, inboxItemAsset, inboxItemParticipant } from "@/db/schema/inbox";
-import { memoryEvent, memoryEventAsset, memoryEventParticipant } from "@/db/schema/memory";
+import { memoryEvent, memoryEventAsset, memoryEventParticipant, memoryEventReader } from "@/db/schema/memory";
 import type { FamilyContext } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { createContributionAccessSnapshot, getContributionAssetAccessInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
@@ -29,7 +29,9 @@ function owned(context: FamilyContext, id: string) {
 }
 function hydrate(tx: ContributionAccessTransaction, row: typeof draft.$inferSelect): Draft {
   const items = tx.select().from(draftItem).where(eq(draftItem.draftId, row.id)).orderBy(asc(draftItem.sortOrder)).all();
-  return { ...parseDraftContent({ ...row, participantIds: JSON.parse(row.participantIdsJson), items: items.map(item => ({ ...item, ...(!item.assetId && !item.localCaptureRef ? { preservationState: "missing" } : {}) })) }), id: row.id, revision: row.revision, mutationId: row.mutationId, status: row.status as Draft["status"], memoryEventId: row.memoryEventId, createdAt: row.createdAt, updatedAt: row.updatedAt };
+  let readerUserIds: string[] = [];
+  try { readerUserIds = JSON.parse(row.readerUserIdsJson ?? "[]") as string[]; } catch { readerUserIds = []; }
+  return { ...parseDraftContent({ ...row, participantIds: JSON.parse(row.participantIdsJson), readerUserIds, items: items.map(item => ({ ...item, ...(!item.assetId && !item.localCaptureRef ? { preservationState: "missing" } : {}) })) }), id: row.id, revision: row.revision, mutationId: row.mutationId, status: row.status as Draft["status"], memoryEventId: row.memoryEventId, createdAt: row.createdAt, updatedAt: row.updatedAt };
 }
 export function listDrafts(context: FamilyContext): Draft[] {
   return getDb().transaction(tx => {
@@ -48,6 +50,11 @@ export function getDraft(context: FamilyContext, id: string): Draft {
 function validateReferences(tx: ContributionAccessTransaction, context: FamilyContext, content: DraftContent, draftId: string) {
   const people = content.participantIds.length ? tx.select({ id: person.id }).from(person).where(and(eq(person.familyId, context.familyId), inArray(person.id, content.participantIds))).all() : [];
   if (people.length !== content.participantIds.length) throw new DraftError("invalid_person");
+  // §5：指定读者必须是本家庭的在册用户；参与人物不是读者。
+  if (content.readerUserIds.length > 0) {
+    const readers = tx.select({ id: user.id }).from(user).where(and(eq(user.familyId, context.familyId), inArray(user.id, content.readerUserIds), isNull(user.disabledAt))).all();
+    if (readers.length !== new Set(content.readerUserIds).size) throw new DraftError("invalid_reader");
+  }
   const snapshot = createContributionAccessSnapshot(context);
   for (const item of content.items) {
     if (item.assetId) {
@@ -71,7 +78,7 @@ export function saveDraft(context: FamilyContext, id: string, expectedRevision: 
     if ((current?.revision ?? 0) !== expectedRevision) throw new DraftError("revision_conflict", 409);
     validateReferences(tx, context, content, id);
     const now = new Date().toISOString();
-    const fields = { authorUserId: context.userId, authorPersonId: context.personId, authorName: context.userName, title: content.title, text: content.text, occurredAt: content.occurredAt, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText, participantIdsJson: JSON.stringify(content.participantIds), visibility: content.visibility, coverItemId: content.coverItemId, revision: expectedRevision + 1, mutationId, updatedAt: now };
+    const fields = { authorUserId: context.userId, authorPersonId: context.personId, authorName: context.userName, title: content.title, text: content.text, occurredAt: content.occurredAt, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText, participantIdsJson: JSON.stringify(content.participantIds), visibility: content.visibility, readerUserIdsJson: JSON.stringify(content.readerUserIds), coverItemId: content.coverItemId, revision: expectedRevision + 1, mutationId, updatedAt: now };
     if (current) tx.update(draft).set(fields).where(owned(context, id)).run();
     else tx.insert(draft).values({ ...fields, id, familyId: context.familyId, authorUserId: context.userId, createdAt: now }).run();
     tx.delete(draftItem).where(eq(draftItem.draftId, id)).run();
@@ -105,26 +112,39 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     if (row.status !== "editing" || row.revision !== expectedRevision) throw new DraftError("revision_conflict", 409);
     const content = hydrate(tx, row);
     validateReferences(tx, context, content, id);
-    // A private draft cannot be silently widened into today's family-wide event model.
-    if (content.visibility !== "family") throw new DraftError("private_publication_unavailable", 409);
+    // §5：私密/指定读者草稿现在直接发布为对应可见性的记忆事件；
+    // 挂在家庭收件箱上的聚合仍要求 family（收件箱是全家评审面）。
+    if (row.inboxItemId && content.visibility !== "family") throw new DraftError("already_shared", 409);
     if (!content.occurredAt) throw new DraftError("occurred_at_required");
     if (!content.text.trim() && !content.items.length) throw new DraftError("empty_draft");
     if (content.items.some(item => !item.assetId)) throw new DraftError("originals_pending", 409);
     const eventId = randomUUID(), now = new Date();
     const title = content.title.trim() || content.text.trim().slice(0, 60) || "一段家庭记忆";
     const coverAssetId = content.items.find(item => item.id === content.coverItemId)?.assetId ?? content.items[0]?.assetId ?? null;
-    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: new Date(content.occurredAt), occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
+    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: new Date(content.occurredAt), occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
     for (const [sortOrder, item] of content.items.entries()) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder, caption: item.caption, createdAt: now }).run();
     for (const personId of content.participantIds) tx.insert(memoryEventParticipant).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, personId, createdAt: now }).run();
-    if (row.inboxItemId) tx.update(inboxItem).set({ status: "confirmed", memoryEventId: eventId, updatedAt: now }).where(eq(inboxItem.id, row.inboxItemId)).run();
-    else if (content.text.trim()) tx.insert(inboxItem).values({ id: randomUUID(), familyId: context.familyId, kind: "text", rawText: content.text, status: "confirmed", memoryEventId: eventId, createdAt: now, updatedAt: now }).run();
+    if (content.visibility === "members") {
+      for (const userId of content.readerUserIds) tx.insert(memoryEventReader).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, userId, createdAt: now }).run();
+    }
+    if (row.inboxItemId) {
+      tx.update(inboxItem).set({ status: "confirmed", memoryEventId: eventId, updatedAt: now }).where(eq(inboxItem.id, row.inboxItemId)).run();
+    } else if (content.visibility === "family" && content.text.trim()) {
+      // 私密事件不进入全家可见的收件箱记录。
+      tx.insert(inboxItem).values({ id: randomUUID(), familyId: context.familyId, kind: "text", rawText: content.text, status: "confirmed", memoryEventId: eventId, createdAt: now, updatedAt: now }).run();
+    }
     tx.update(draft).set({ status: "published", memoryEventId: eventId, revision: row.revision + 1, updatedAt: now.toISOString() }).where(owned(context, id)).run();
     return hydrate(tx, tx.select().from(draft).where(owned(context, id)).get()!);
   }, { behavior: "immediate" });
   // Derived indexing is retryable. No AI/network operation enters the save transaction.
   if (published.memoryEventId) {
     const event = getDb().select().from(memoryEvent).where(eq(memoryEvent.id, published.memoryEventId)).get();
-    if (event) { indexMemoryEvent(event); indexDocumentAssetsForEvent(context.familyId, event.id, published.items.flatMap(i => i.assetId ? [i.assetId] : [])); }
+    if (event) {
+      // 非 family 事件没有家庭收件箱聚合，正文随事件一并索引（读取侧有
+      // 实时读者裁决，索引本身不构成泄漏面）。
+      indexMemoryEvent(published.visibility === "family" ? event : { ...event, text: published.text });
+      indexDocumentAssetsForEvent(context.familyId, event.id, published.items.flatMap(i => i.assetId ? [i.assetId] : []));
+    }
   }
   return published;
 }

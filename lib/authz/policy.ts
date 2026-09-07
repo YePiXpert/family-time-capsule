@@ -124,6 +124,71 @@ export function isContributionVisibility(
   );
 }
 
+export const EVENT_VISIBILITIES = ["family", "members", "private"] as const;
+
+export type EventVisibility = (typeof EVENT_VISIBILITIES)[number];
+
+export function isEventVisibility(value: unknown): value is EventVisibility {
+  return (
+    typeof value === "string" &&
+    EVENT_VISIBILITIES.includes(value as EventVisibility)
+  );
+}
+
+export type EventViewer = {
+  /** The viewer and event have already been proven to share a family. */
+  role: FamilyRole;
+  userId: string;
+  /** Disabled accounts are rejected even if an old session cookie remains. */
+  accountEnabled: boolean;
+};
+
+/**
+ * 正式 1.0 §5 对象级读者裁决（纯函数，所有读路径共用）：
+ * - family：有 archive:view 即可读（历史事件语义）；
+ * - members：仅作者与显式读者清单中的用户；
+ * - private：仅作者。
+ * 管理员/owner 不是旁路——他们与普通成员走同一裁决；完整灾备导出走
+ * 独立的 canExportCompleteDisasterArchive 通道。作者缺失（历史数据无法
+ * 可靠恢复）时非 family 一律拒绝，绝不伪造作者。
+ */
+export function canViewMemoryEvent(
+  visibility: EventVisibility,
+  authorUserId: string | null,
+  readerUserIds: ReadonlySet<string>,
+  viewer: EventViewer,
+): boolean {
+  if (!viewer.accountEnabled || !hasFamilyCapability(viewer.role, "archive:view")) {
+    return false;
+  }
+  const isAuthor = authorUserId !== null && authorUserId === viewer.userId;
+  switch (visibility) {
+    case "family":
+      return true;
+    case "members":
+      return isAuthor || readerUserIds.has(viewer.userId);
+    case "private":
+      return isAuthor;
+  }
+}
+
+/** 读者与可见性管理仅归作者；读取不授予编辑，编辑不授予扩大读者。 */
+export function canManageEventVisibility(
+  visibility: EventVisibility,
+  authorUserId: string | null,
+  viewer: EventViewer,
+): boolean {
+  if (!viewer.accountEnabled) return false;
+  const isAuthor = authorUserId !== null && authorUserId === viewer.userId;
+  switch (visibility) {
+    case "family":
+      return hasFamilyCapability(viewer.role, "event:write");
+    case "members":
+    case "private":
+      return isAuthor && hasFamilyCapability(viewer.role, "event:write");
+  }
+}
+
 export type ContributionViewer = {
   /** The viewer and contribution have already been proven to share a family. */
   role: FamilyRole;

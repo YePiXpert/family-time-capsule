@@ -5,6 +5,16 @@ import { readableName } from "@/lib/naming";
 import type { FamilyContext } from "@/lib/family/context";
 import { isLiveFamilyPrincipal } from "@/lib/authz/principal";
 import { createContributionAccessSnapshot, readableAssetPredicate } from "@/lib/authz/contribution-access";
+import {
+  createEventAccessSnapshot,
+  eventVisibilityCondition,
+} from "@/lib/authz/event-access";
+import {
+  canViewMemoryEvent,
+  isEventVisibility,
+  type EventVisibility,
+  type FamilyRole,
+} from "@/lib/authz/policy";
 
 import { randomUUID } from "node:crypto";
 import {
@@ -30,6 +40,7 @@ import {
   memoryEvent,
   memoryEventAsset,
   memoryEventParticipant,
+  memoryEventReader,
   memoryEventRevision,
 } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
@@ -115,6 +126,7 @@ export async function updateMemoryEvent(
   eventId: string,
   editorUserId: string,
   patch: EditMemoryEventPatch,
+  viewer?: { role: FamilyRole; accountEnabled: boolean },
 ): Promise<EditResult> {
   const db = getDb();
   const rows = await db
@@ -130,6 +142,25 @@ export async function updateMemoryEvent(
     .limit(1);
   const current = rows[0];
   if (!current) return { ok: false, error: "not_found" };
+  // §5：编辑以可读为前提；读取不授予扩大读者，但不允许编辑不可见事件。
+  if (!isEventVisibility(current.visibility)) return { ok: false, error: "not_found" };
+  if (current.visibility !== "family") {
+    const readers = new Set(
+      (await db
+        .select({ userId: memoryEventReader.userId })
+        .from(memoryEventReader)
+        .where(eq(memoryEventReader.memoryEventId, eventId)))
+        .map((row) => row.userId),
+    );
+    const allowed = viewer
+      ? canViewMemoryEvent(current.visibility, current.createdByUserId, readers, {
+          role: viewer.role,
+          userId: editorUserId,
+          accountEnabled: viewer.accountEnabled,
+        })
+      : editorUserId === current.createdByUserId;
+    if (!allowed) return { ok: false, error: "not_found" };
+  }
   if (patch.expectedTitleRevision !== undefined && patch.expectedTitleRevision !== current.titleRevision) return { ok: false, error: "conflict" };
 
   const title = patch.title !== undefined ? patch.title.trim() : current.title;
@@ -775,6 +806,107 @@ export async function getMemoryEventDetail(  familyId: string,
   return { event: events[0], assets, participants, sourceNotes };
 }
 
+/**
+ * §5 详情读取裁决：先按对象级读者实时核验，再取详情。不可见等同不存在。
+ */
+export async function getVisibleMemoryEventDetail(
+  context: FamilyContext,
+  eventId: string,
+): Promise<MemoryEventDetail | undefined> {
+  const { getVisibleMemoryEventInTransaction } = await import("@/lib/authz/event-access");
+  const visible = getDb().transaction((tx) =>
+    getVisibleMemoryEventInTransaction(
+      tx,
+      { principal: {
+        userId: context.userId,
+        familyId: context.familyId,
+        role: context.role,
+        accountEnabled: context.accountEnabled,
+      }, evaluatedAt: new Date() },
+      eventId,
+    ),
+  );
+  if (!visible) return undefined;
+  return getMemoryEventDetail(context.familyId, eventId);
+}
+
+export type EventVisibilityUpdateResult =
+  | { ok: true; visibility: EventVisibility; readerUserIds: string[] }
+  | { ok: false; error: "not_found" | "forbidden" | "invalid" | "conflict" };
+
+/**
+ * §5 读者与可见性管理：仅作者（family 事件为 event:write 能力者）可改。
+ * - 扩大读者（private→members/family）需要显式调用本函数，不存在静默放宽；
+ * - 缩小读者后立即重建搜索索引，派生阅读物按各自 revision/权限版本失效；
+ * - 冲突用 expectedRevision（title_revision）防止覆盖他人并发编辑。
+ */
+export async function updateMemoryEventVisibility(
+  context: FamilyContext,
+  eventId: string,
+  visibility: unknown,
+  readerUserIds: readonly string[],
+  expectedRevision: number,
+): Promise<EventVisibilityUpdateResult> {
+  if (!isEventVisibility(visibility)) return { ok: false, error: "invalid" };
+  if (readerUserIds.length > 20) return { ok: false, error: "invalid" };
+  const { getVisibleMemoryEventInTransaction, canManageEventVisibilityInTransaction } =
+    await import("@/lib/authz/event-access");
+  const snapshot = {
+    principal: {
+      userId: context.userId,
+      familyId: context.familyId,
+      role: context.role,
+      accountEnabled: context.accountEnabled,
+    },
+    evaluatedAt: new Date(),
+  };
+  const db = getDb();
+  const committed = db.transaction((tx): EventVisibilityUpdateResult => {
+    if (!canManageEventVisibilityInTransaction(tx, snapshot, eventId)) {
+      return { ok: false, error: "forbidden" };
+    }
+    const row = tx.select().from(memoryEvent).where(
+      and(eq(memoryEvent.familyId, context.familyId), eq(memoryEvent.id, eventId), isNull(memoryEvent.deletedAt)),
+    ).get();
+    if (!row) return { ok: false, error: "not_found" };
+    if (row.titleRevision !== expectedRevision) return { ok: false, error: "conflict" };
+    const readers = [...new Set(readerUserIds)];
+    if (readers.length > 0) {
+      const valid = tx.select({ id: userTable.id }).from(userTable).where(
+        and(eq(userTable.familyId, context.familyId), inArray(userTable.id, readers), isNull(userTable.disabledAt)),
+      ).all();
+      if (valid.length !== readers.length) return { ok: false, error: "invalid" };
+    }
+    if (visibility !== "members" && readers.length > 0) return { ok: false, error: "invalid" };
+    const now = new Date();
+    // titleRevision 是事件的并发令牌：可见性/读者变更同样递增，防止与
+    // 内容编辑互相覆盖。
+    tx.update(memoryEvent).set({ visibility, updatedAt: now, titleRevision: expectedRevision + 1 }).where(eq(memoryEvent.id, eventId)).run();
+    tx.delete(memoryEventReader).where(eq(memoryEventReader.memoryEventId, eventId)).run();
+    if (visibility === "members") {
+      tx.insert(memoryEventReader).values(
+        readers.map((userId) => ({
+          id: randomUUID(),
+          familyId: context.familyId,
+          memoryEventId: eventId,
+          userId,
+          createdAt: now,
+        })),
+      ).run();
+    }
+    return { ok: true, visibility, readerUserIds: readers };
+  }, { behavior: "immediate" });
+  if (committed.ok) {
+    // 索引按新可见性重建；搜索查询侧同时有实时裁决，双保险。
+    const event = db.select().from(memoryEvent).where(eq(memoryEvent.id, eventId)).get();
+    if (event) {
+      const sourceDraft = db.select({ text: draft.text }).from(draft).where(eq(draft.memoryEventId, eventId)).get();
+      indexMemoryEvent(event.visibility === "family" ? event : { ...event, text: sourceDraft?.text ?? "" });
+    }
+  }
+  return committed;
+}
+
 export async function listMemoryEvents(
   familyId: string,
   limit = 100,
@@ -1087,6 +1219,11 @@ export async function getTimelinePage(
   const familyId = typeof scope === "string" ? scope : scope.familyId;
   if (context && !(await isLiveFamilyPrincipal(context))) throw new Error("forbidden");
   const readableMedia = context ? readableAssetPredicate(createContributionAccessSnapshot(context), sql`timeline_asset.id`) : sql`1`;
+  // §5 对象级读者：带上下文的读取按事件可见性过滤；无上下文（内部作业的
+  // 家庭级数据准备）沿用旧行为，但那些路径不得直接面向未裁决的读者。
+  const visibleEvent = context
+    ? eventVisibilityCondition(createEventAccessSnapshot(context), sql`memory_event`)
+    : sql`1`;
   const db = getDb();
   const limit = timelinePageSize(options.limit);
   const cursor = decodeTimelineCursor(options.cursor);
@@ -1101,6 +1238,7 @@ export async function getTimelinePage(
         eq(memoryEvent.familyId, familyId),
         eq(memoryEvent.status, "confirmed"),
         isNull(memoryEvent.deletedAt),
+        visibleEvent,
         options.personId
           ? sql`exists (
               select 1 from memory_event_participant timeline_person
@@ -1149,9 +1287,11 @@ export async function getTimelinePage(
 
 /** Pinned memories first, then newest milestones. */
 export async function listMilestoneEntries(
-  familyId: string,
+  scope: string | FamilyContext,
   limit = 6,
 ): Promise<TimelineEntry[]> {
+  const context = typeof scope === "string" ? undefined : scope;
+  const familyId = typeof scope === "string" ? scope : scope.familyId;
   const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 24);
   const events = await getDb()
     .select()
@@ -1161,19 +1301,24 @@ export async function listMilestoneEntries(
         eq(memoryEvent.familyId, familyId),
         eq(memoryEvent.status, "confirmed"),
         isNull(memoryEvent.deletedAt),
+        context
+          ? eventVisibilityCondition(createEventAccessSnapshot(context), sql`memory_event`)
+          : undefined,
         or(eq(memoryEvent.isPinned, true), isNotNull(memoryEvent.milestoneType)),
       ),
     )
     .orderBy(desc(memoryEvent.isPinned), desc(memoryEvent.occurredAt), desc(memoryEvent.id))
     .limit(safeLimit);
-  return hydrateTimelineEntries(familyId, events);
+  return hydrateTimelineEntries(familyId, events, context);
 }
 
 /** Family-scoped, soft-delete-safe batch lookup for secondary read models. */
 export async function getTimelineEntriesByIds(
-  familyId: string,
+  scope: string | FamilyContext,
   eventIds: readonly string[],
 ): Promise<TimelineEntry[]> {
+  const context = typeof scope === "string" ? undefined : scope;
+  const familyId = typeof scope === "string" ? scope : scope.familyId;
   const ids = [...new Set(eventIds)].slice(0, 100);
   if (ids.length === 0) return [];
   const rows = await getDb()
@@ -1185,6 +1330,9 @@ export async function getTimelineEntriesByIds(
         eq(memoryEvent.status, "confirmed"),
         isNull(memoryEvent.deletedAt),
         inArray(memoryEvent.id, ids),
+        context
+          ? eventVisibilityCondition(createEventAccessSnapshot(context), sql`memory_event`)
+          : undefined,
       ),
     );
   const byId = new Map(rows.map((row) => [row.id, row]));
@@ -1194,6 +1342,7 @@ export async function getTimelineEntriesByIds(
       const row = byId.get(id);
       return row ? [row] : [];
     }),
+    context,
   );
 }
 

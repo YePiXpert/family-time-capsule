@@ -25,3 +25,22 @@ export async function uploadDraftOriginal(file: File, captureId: string): Promis
   if (!complete.ok) throw new Error("服务器尚未确认原件保存成功，请重试。");
   return complete.json();
 }
+
+/**
+ * §5 私密原件直传：带 visibility=private，服务端不进入全家可见的
+ * 收件箱/资料库窗口。大文件的断点续传通道暂不支持私密标记（如实限制）。
+ */
+export async function uploadDraftOriginalPrivate(file: File): Promise<UploadResponse> {
+  const endpoint = file.type.startsWith("image/") ? "/api/upload/image" : "/api/upload/media";
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("filename", file.name);
+  if (file.lastModified > 0) form.append("lastModified", String(file.lastModified));
+  form.append("visibility", "private");
+  const response = await fetch(endpoint, { method: "POST", body: form, signal: AbortSignal.timeout(120000) });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body || (body.status !== "stored" && body.status !== "duplicate")) {
+    throw new Error(body?.message ?? "私密原件上传未完成，本机原件仍保留。");
+  }
+  return { status: body.status, assetId: body.assetId ?? body.existingAssetId ?? null, inboxItemId: body.inboxItemId ?? null, message: body.message };
+}

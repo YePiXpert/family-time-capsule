@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- Local preserved blobs must be previewed without uploading them to an image optimizer. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { uploadDraftOriginal } from "@/lib/drafts/browser-upload";
+import { uploadDraftOriginal, uploadDraftOriginalPrivate } from "@/lib/drafts/browser-upload";
 import { emptyDraftContent, type Draft, type DraftContent } from "@/lib/drafts/model";
 import { listBrowserDrafts, readBrowserOriginal, writeBrowserDraft, type BrowserDraft, type BrowserOriginal } from "@/lib/drafts/browser-store";
 import { zonedWallTimeToUtc, utcToZonedWallTimeInput } from "@/lib/metadata/time";
@@ -15,13 +15,13 @@ async function requestDraft(id: string, path: string, body: unknown, method = "P
   const response = await fetch(`/api/mobile/v1/drafts/${id}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
   const result = await response.json();
   if (!response.ok) {
-    const errors: Record<string, string> = { revision_conflict: "另一台设备已修改这份草稿，请核对服务器草稿；本机内容已保留。", originals_pending: "还有原件未送达，请稍后重试。", occurred_at_required: "请确认发生时间后再创建记忆。", private_publication_unavailable: "这份草稿仅自己可见，请先保留草稿。", forbidden: "当前账号权限已改变，内容仍保存在本机。", draft_closed: "服务器上的草稿已经完成或放弃，请核对后继续。" };
+    const errors: Record<string, string> = { revision_conflict: "另一台设备已修改这份草稿，请核对服务器草稿；本机内容已保留。", originals_pending: "还有原件未送达，请稍后重试。", occurred_at_required: "请确认发生时间后再创建记忆。", invalid_reader: "指定的成员已不在本家庭，请重新选择读者。", forbidden: "当前账号权限已改变，内容仍保存在本机。", draft_closed: "服务器上的草稿已经完成或放弃，请核对后继续。" };
     throw new Error(errors[result.error] ?? "服务器未能接收，本机草稿仍在，可以重试。");
   }
   return result;
 }
 
-export function PersistentCaptureEditor({ people, canArchive, scope, timezone, initialServerDraft }: { people: Person[]; canArchive: boolean; scope: string; timezone: string; initialServerDraft?: Draft }) {
+export function PersistentCaptureEditor({ people, members, canArchive, scope, timezone, initialServerDraft }: { people: Person[]; members: { id: string; name: string }[]; canArchive: boolean; scope: string; timezone: string; initialServerDraft?: Draft }) {
   const [draft, setDraft] = useState<BrowserDraft | null>(null);
   const [drafts, setDrafts] = useState<BrowserDraft[]>([]);
   const [serverDrafts, setServerDrafts] = useState<Draft[]>([]);
@@ -206,7 +206,7 @@ export function PersistentCaptureEditor({ people, canArchive, scope, timezone, i
     const row = current.current;
     if (!row) return;
     if (publish && !row.content.occurredAt) { setNotice("请确认发生时间后再创建记忆；也可以先保留草稿。"); return; }
-    if (publish && row.content.visibility === "private") { setNotice("仅自己可见的内容可以先保留草稿。"); return; }
+    if (publish && row.content.visibility === "members" && row.content.readerUserIds.length === 0) { setNotice("请先选择可以阅读这件事的家人，或改回全家/仅自己。"); return; }
     try {
       await store({ ...row, status: publish ? "queued" : "editing", revision: row.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() });
       setNotice(publish ? "本机已保存，正在后台创建记忆。可以离开页面，重开后可继续。" : "本机已保存，正在尝试送往服务器。可以离开页面。");
@@ -265,7 +265,9 @@ export function PersistentCaptureEditor({ people, canArchive, scope, timezone, i
       <button type="button" className={button} onClick={() => change({ occurredAt: new Date().toISOString() })}>就是现在</button>
       <label className="block">地点<input className={field} value={content.locationText} maxLength={200} onChange={e => change({ locationText: e.target.value })} /></label>
       <fieldset><legend>人物</legend>{people.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.participantIds.includes(p.id)} onChange={e => change({ participantIds: e.target.checked ? [...content.participantIds, p.id] : content.participantIds.filter(id => id !== p.id) })} />{p.displayName}</label>)}</fieldset>
-      <label className="block">保存后的读者<select className={field} value={content.visibility} onChange={e => change({ visibility: e.target.value as DraftContent["visibility"] })}><option value="family">全家</option><option value="private">仅自己（先保留草稿）</option></select></label>
+      <label className="block">保存后的读者<select className={field} value={content.visibility} onChange={e => change({ visibility: e.target.value as DraftContent["visibility"], ...(e.target.value === "members" ? {} : { readerUserIds: [] }) })}><option value="family">全家</option><option value="members">指定成员</option><option value="private">仅自己</option></select></label>
+      {content.visibility === "members" && <fieldset><legend>可以选择这件事的家人</legend>{members.map(m => <label key={m.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.readerUserIds.includes(m.id)} onChange={e => change({ readerUserIds: e.target.checked ? [...content.readerUserIds, m.id] : content.readerUserIds.filter(id => id !== m.id) })} />{m.name}</label>)}</fieldset>}
+      {content.visibility !== "family" && <p className="text-sm text-ink-muted">新上传的素材只对这里的读者可见；原本就已全家共享的素材不会因此变成私密，仍可在资料库被家人看到。</p>}
     </fieldset>
     <div className="flex flex-wrap gap-3"><button className={button} disabled={syncing || !!diskError || recording || draft.status === "published"} onClick={() => void save(false, true)}>先收进来，交给家人整理</button><button className={button} disabled={syncing || !!diskError || recording || draft.status === "published"} onClick={() => void save(false)}>保留草稿，稍后继续</button>{canArchive && <button className="ui-button-primary min-h-11" disabled={syncing || !!diskError || recording || draft.status === "published"} onClick={() => void save(true)}>{draft.status === "queued" ? "重试创建记忆" : "保存为一条记忆"}</button>}{draft.status === "queued" && <button className={button} disabled={syncing} onClick={() => void store({ ...draft, status: "editing", revision: draft.revision + 1 }).catch(() => {})}>继续编辑</button>}<button className={button} disabled={syncing || draft.status === "published"} onClick={() => void discard()}>放弃这份草稿</button></div>
   </div>;

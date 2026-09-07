@@ -173,12 +173,12 @@ export async function getHomeDashboard(
     await Promise.all([
       countInbox(context.familyId),
       getInboxPage(context.familyId, undefined, { limit: 4 }),
-      getTimelinePage(context.familyId, { limit: 50 }),
+      getTimelinePage(context, { limit: 50 }),
       listStories(context.familyId),
       listCapsules(snapshot, child?.birthDate ?? null),
       Promise.resolve(listContributionRequests(context)),
-      getResurfacing(context.familyId, family.timezone, now, 3),
-      listMilestoneEntries(context.familyId, 4),
+      getResurfacing(context.familyId, family.timezone, now, 3, context),
+      listMilestoneEntries(context, 4),
       getReviewOverview(context),
       listRecentVoiceContributions(context.familyId, 3),
     ]);

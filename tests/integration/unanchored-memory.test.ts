@@ -62,7 +62,7 @@ it("grandparent recording: no child onboarding, mixed sources, HTTP, permissions
   expect((await getHomeDashboard(context)).recentMemories[0].ageLabel).toBeNull();
   expect(searchFamily(context, { q: "年轻" }).events.map(e => e.id)).toContain(id);
   expect(createBookSourceResolver(context, "personal")("memory", id).state).toMatchObject({ available: true, ageLabel: null });
-  expect((await getMobileSyncPage(context)).events.find(e => e.id === id)?.ageLabel).toBeNull();
+  expect((await getMobileSyncPage({ context })).events.find(e => e.id === id)?.ageLabel).toBeNull();
 
   const secret = await createContribution(familyId, { memoryEventId: id, authorPersonId: binding.personId!, recordedByUserId: actor.id, rawText: "私密船票", visibility: "private" });
   expect(secret.ok).toBe(true);

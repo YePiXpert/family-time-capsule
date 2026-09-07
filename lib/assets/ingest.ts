@@ -39,6 +39,8 @@ export type IngestImageInput = {
   buffer: Buffer;
   /** 浏览器 File.lastModified（文件系统时间），作为 file_metadata 级 fallback */
   clientLastModifiedMs?: number | null;
+  /** §5：private 原件只对上传者与可读引用开放。 */
+  visibility?: "family" | "private";
 };
 
 export type IngestImageResult =
@@ -54,6 +56,8 @@ export type IngestMediaInput = {
   declaredMime: string;
   buffer: Buffer;
   clientLastModifiedMs?: number | null;
+  /** §5：private 原件只对上传者与可读引用开放。 */
+  visibility?: "family" | "private";
 };
 
 export type IngestMediaResult = IngestImageResult;
@@ -76,7 +80,7 @@ export async function ingestMedia(input: IngestMediaInput): Promise<IngestMediaR
   // 先查重（SHA-256），重复则不落盘
   const sha256 = sha256Of(input.buffer);
   const { findOriginalBySha256 } = await import("./service");
-  const existing = await findOriginalBySha256(input.familyId, sha256);
+  const existing = await findOriginalBySha256(input.familyId, sha256, input.createdByUserId);
   if (existing) return { status: "duplicate", existing };
 
   const storage = getAssetStorage();
@@ -141,6 +145,7 @@ export async function ingestMedia(input: IngestMediaInput): Promise<IngestMediaR
         durationMs: probe?.durationMs ?? null,
         metadataJson: Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null,
         createdByUserId: input.createdByUserId,
+        visibility: input.visibility === "private" ? "private" : "family",
         originalAssetId: null,
         derivativeType: null,
         createdAt: new Date(),
@@ -151,7 +156,7 @@ export async function ingestMedia(input: IngestMediaInput): Promise<IngestMediaR
     storage.delete(storageKey);
     const code = (error as { code?: string }).code ?? "";
     if (code.startsWith("SQLITE_CONSTRAINT_UNIQUE")) {
-      const canonical = await findOriginalBySha256(input.familyId, sha256);
+      const canonical = await findOriginalBySha256(input.familyId, sha256, input.createdByUserId);
       if (canonical) return { status: "duplicate", existing: canonical };
     }
     throw error;
@@ -183,6 +188,7 @@ export async function ingestImage(
   const result = await storeOriginal({
     familyId: input.familyId,
     createdByUserId: input.createdByUserId,
+    visibility: input.visibility,
     type: "image",
     originalFilename: input.filename,
     mimeType,

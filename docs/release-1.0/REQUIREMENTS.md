@@ -63,7 +63,7 @@
 
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| CAP-1 | 统一持久 Draft:文字/附件引用/顺序/封面/日期精度/人物/读者/目的地 | 新建/继续/自动保存/放弃/恢复 | 部分实现(0052 Draft/DraftItem、IndexedDB/SQLite 聚合与 HTTP 幂等保存、排序封面/导出恢复已有；跨设备继续与授权媒体阅读已接入；M3-D 0056 intake 目的地(新草稿/仅资料库)Web/原生/系统分享均可选择并持久恢复；私密事件读者与事件日期精度仍待补) | lib/drafts; mobile/src/drafts; lib/inbox; lib/imports/intake.ts |
+| CAP-1 | 统一持久 Draft:文字/附件引用/顺序/封面/日期精度/人物/读者/目的地 | 新建/继续/自动保存/放弃/恢复 | 部分实现(0052 Draft/DraftItem、IndexedDB/SQLite 聚合与 HTTP 幂等保存、排序封面/导出恢复已有；跨设备继续与授权媒体阅读已接入；M3-D 0056 intake 目的地可选并持久恢复；0057 私密事件读者模型落地——draft visibility family/members/private+readerUserIds、publishDraft 直接产出对应可见性事件、Web 编辑器三档读者+成员选择+私密直传(visibility=private 不入收件箱/资料库窗口)、时间轴/详情/搜索/日历/回顾/同步/媒体/资料库全链路按对象读者实时裁决(T07/T08/T09 集成测试)；事件日期精度仍待补；移动端私密 UI 与大文件私密断点续传待补) | lib/drafts; lib/authz/event-access.ts; mobile/src/drafts; tests/integration/private-memory.test.ts |
 | CAP-2 | 保存即得可读记忆;日期精度 unknown/approx/date/month/year | 不用假instant | 部分实现(现有事件精度仅 exact/approximate/date_only；Draft 允许时间待补，unknown/month/year 事件展示与查询仍需补齐) | lib/metadata/time.ts |
 | CAP-3 | 批量导入先是资料,不一文件一事件,不强制审核 | 500张≠500日记 | 自动化通过(M3-C：import session→原件库立即可看，30张不创建事件、5张组成一件事) | lib/imports; tests/e2e/asset-library.spec.ts |
 | CAP-4 | 本机提交顺序:暂存→复制校验→原子落盘→DB+outbox→反馈 | 任一步退出可对账 | 自动化通过 | mobile/src/storage/files.ts; mobile/tests |

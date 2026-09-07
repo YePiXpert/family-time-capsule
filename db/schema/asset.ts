@@ -60,6 +60,10 @@ export const asset = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
 
+    // 正式 1.0 §5：family=家庭共享（默认，历史素材语义不变）；
+    // private=仅上传者与通过引用它的可读对象（私密记忆/讲述）可见。
+    visibility: text("visibility").notNull().default("family"),
+
     // 衍生物 → 原件（自引用）；原件两列为 null
     originalAssetId: text("original_asset_id").references(
       (): AnySQLiteColumn => asset.id,
@@ -71,11 +75,15 @@ export const asset = sqliteTable(
     createdAt: createdAtColumn(),
   },
   (t) => [
-    // 仅原件按家庭 + SHA-256 精确去重；不同原件可产生字节相同的衍生物。
-    // 跨家庭仍允许相同原件（数据隔离边界是 family）。
+    // 仅家庭共享原件按家庭 + SHA-256 精确去重；不同成员的私密原件允许
+    // 同字节并存（重复上传不能探测他人私密原件的存在）。跨家庭仍允许
+    // 相同原件（数据隔离边界是 family）。
     uniqueIndex("asset_family_sha_idx")
       .on(t.familyId, t.sha256)
-      .where(sql`${t.originalAssetId} is null`),
+      .where(sql`${t.originalAssetId} is null and ${t.visibility} = 'family'`),
+    index("asset_private_owner_sha_idx")
+      .on(t.familyId, t.createdByUserId, t.sha256)
+      .where(sql`${t.originalAssetId} is null and ${t.visibility} = 'private'`),
     index("asset_family_created_idx").on(t.familyId, t.createdAt),
   ],
 );

@@ -534,6 +534,7 @@ beforeAll(async () => {
       importedAt: new Date("2026-08-13T00:00:00.000Z"),
       timeSource: "import_time",
       createdByUserId: adminId,
+      visibility: "family",
       createdAt: new Date("2026-08-13T00:00:00.000Z"),
     }).run();
     const documentInbox = await m.inbox.createInboxItemForAsset(on.familyId, {
@@ -554,6 +555,7 @@ beforeAll(async () => {
       durationMs: null,
       metadataJson: null,
       createdByUserId: adminId,
+      visibility: "family",
       originalAssetId: null,
       derivativeType: null,
       createdAt: new Date("2026-08-13T00:00:00.000Z"),

@@ -436,8 +436,9 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
            WHERE type = 'index'
              AND name = 'asset_family_sha_idx'`,
     )) as Array<{ sql: string }>;
+        // §5：去重只约束家庭共享原件（private 原件按上传者并存）。
     expect(assetIndexSql[0]!.sql).toMatch(
-      /WHERE\s+"asset"\."original_asset_id"\s+is\s+null$/i,
+      /WHERE\s+original_asset_id\s+is\s+null\s+AND\s+visibility\s*=\s*'family'$/i,
     );
 
     let duplicateOriginalError: unknown;
