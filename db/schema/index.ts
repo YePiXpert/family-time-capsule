@@ -32,3 +32,4 @@ export * from "./book-render-job";
 export * as instanceSchema from "./instance";
 
 export * as draftSchema from "./draft";
+export * as resurfacingSchema from "./resurfacing";

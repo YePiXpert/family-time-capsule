@@ -10,35 +10,39 @@
 
 ## 当前任务
 
-推送 §5+§6（网络中断重试中）；随后 §7 Web 播放器文字按钮。
+推送全部本地提交（网络中断持续重试中）并核对 CI。随后 §8 剩余
+（相似照片特征持久缓存 FIND-5）与 §9。
+
+## 外部阻塞（当前）
+
+- 本机网络 HTTPS 全面中断（GitHub 与 example.com 均 TLS 握手失败），
+  push 与 CI 检查被阻塞；本地提交如下，网络恢复后按序推送：
+  - ddf93f2 §5 私密记忆核心
+  - 3b1949f §6 日期精度
+  - 3a8ea18 §7 播放文字按钮（本地 av e2e 2/2）
+  - （本提交）§8 FIND-9 回顾屏蔽
 
 ## 已完成需求 ID
 
-- §4（FIND-2 正确性与隔离，3e00b37，CI 绿）
-- §5 核心（ddf93f2）：读者模型/资产私密/全链路裁决（详见上一版记录）
-- §6（本提交）：六档日期精度。共享 mobile/src/utils/occurred-precision.ts
-  （formatOccurredLabel/anchorFromPrecisionInput/precisionHasDay 等）；
-  draft 模型+publishDraft 支持 unknown 无时间保存；日历天级视图排除
-  非到日精度、月精度入 rough 列表；时间轴/搜索日期筛选排除 unknown；
-  年龄按精度省略；Web 捕获编辑器+编辑表单六档选择；移动 dateLabel
-  精度感知。tests/unit/date-precision 4 + tests/integration/date-precision 5。
+- §4（3e00b37，CI 绿）；§5 核心（ddf93f2）；§6（3b1949f）；§7（3a8ea18）
+- §8 FIND-9（本提交）：0058 resurfacing_preference（event/person/
+  date_range/pause 按用户）；getResurfacing 按当前用户过滤自动推荐
+  （含 on_this_day），hasHistory 不受暂停影响；Web 回顾页偏好面板
+  （暂停/恢复/屏蔽人物/屏蔽日期/逐卡暂不推荐/取消屏蔽）；
+  resurfacing-preferences 服务（实时用户校验+家庭归属+日期合法性）。
+  tests/integration/resurfacing-blocks.test.ts 4/4（T13）。
 
 ## 已跑命令与结果
 
-- §6 后：root tsc clean、unit+drafts+calendar 228 通过、mobile 236 通过
-- §5 提交前全量见上一版记录
-
-## 未完成测试
-
-- §6 剩余：移动端时间输入 UI、导出/书籍/回顾精度呈现、DST/跨年专项
-- §5 剩余：移动端私密 UI/上传、AI 上下文与阅读包派生面、撤权后离线
-  缓存失效（待 §11 同步权限版本）
-- 本地环境失败件（ffmpeg/epubcheck/poppler-CJK 等）待 CI 验证
+- §8 后：tsc clean、resurfacing-blocks 4/4；此前 unit 223、mobile 236、
+  av e2e 2/2、private-memory 4/4、date-precision 9/9 全绿
 
 ## 下一个具体动作
 
-1. git push（网络恢复后）并核对 ddf93f2+§6 SHA 的 CI
-2. §7：MediaReader 文字播放按钮（真实事件驱动状态）
+1. git push（网络恢复）→ 核对 ddf93f2/3b1949f/3a8ea18/本提交 的 CI，
+   红则按纪律修复
+2. §8 剩余：dHash 特征持久缓存（clusters）
+3. §9 AI 限额与双路由配置
 
 ## 外部阻塞
 

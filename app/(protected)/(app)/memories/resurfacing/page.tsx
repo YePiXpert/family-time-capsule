@@ -8,6 +8,8 @@ import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { formatAgeLabel } from "@/lib/memories/age";
 import { getResurfacing } from "@/lib/memories/resurfacing";
+import { listResurfacingPreferences } from "@/lib/memories/resurfacing-preferences";
+import { blockDateRangeAction, blockEventAction, blockPersonAction, pauseResurfacingAction, unblockAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "记忆回顾 · Family Time Capsule" };
@@ -19,7 +21,12 @@ export default async function ResurfacingPage() {
     listPeople(context.familyId),
   ]);
   if (!family) throw new Error("authorized family is unavailable");
-  const result = await getResurfacing(context.familyId, family.timezone, new Date(), 8);
+  const [result, preferences] = await Promise.all([
+    getResurfacing(context.familyId, family.timezone, new Date(), 8, context),
+    listResurfacingPreferences(context),
+  ]);
+  const paused = preferences.some((preference) => preference.kind === "pause");
+  const blockedEventIds = new Set(preferences.filter((p) => p.kind === "event").map((p) => p.targetKey));
   const child = people.find((person) => person.isChild);
   const formatter = new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "long",
@@ -37,6 +44,50 @@ export default async function ResurfacingPage() {
         actions={<Link href="/timeline" className="ui-button-secondary">浏览完整时间轴</Link>}
       />
 
+      <section aria-labelledby="resurfacing-preferences" className="mt-6 rounded-xl border border-line bg-surface p-4">
+        <h2 id="resurfacing-preferences" className="text-base font-semibold">回顾偏好（只影响你自己的自动回顾）</h2>
+        <p className="mt-1 text-sm text-muted">屏蔽不会删除任何内容，也不影响搜索和主动打开；其他家人不受影响。</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <form action={pauseResurfacingAction}>
+            <button className="ui-button-secondary" type="submit">{paused ? "回顾已暂停" : "暂停回顾"}</button>
+          </form>
+          {paused ? (
+            <form action={unblockAction}>
+              <input type="hidden" name="preferenceId" value={preferences.find((p) => p.kind === "pause")!.id} />
+              <button className="ui-button-secondary" type="submit">恢复回顾</button>
+            </form>
+          ) : null}
+          <form action={blockDateRangeAction} className="flex flex-wrap items-center gap-2">
+            <label className="text-sm">不再推荐这段时间
+              <input type="date" name="dateFrom" required className="ml-2 min-h-11 rounded-lg border border-line px-2" aria-label="屏蔽开始日期" />
+              至
+              <input type="date" name="dateTo" className="min-h-11 rounded-lg border border-line px-2" aria-label="屏蔽结束日期（可留空）" />
+            </label>
+            <button className="ui-button-secondary" type="submit">屏蔽日期</button>
+          </form>
+          <form action={blockPersonAction} className="flex items-center gap-2">
+            <label className="text-sm">不再推荐某个人物
+              <select name="personId" className="ml-2 min-h-11 rounded-lg border border-line px-2" aria-label="选择要屏蔽的人物">
+                {people.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}
+              </select>
+            </label>
+            <button className="ui-button-secondary" type="submit">屏蔽人物</button>
+          </form>
+        </div>
+        {preferences.length > 0 ? (
+          <ul className="mt-3 space-y-1 text-sm text-muted">
+            {preferences.map((preference) => (
+              <li key={preference.id} className="flex items-center gap-3">
+                <span>{preference.kind === "pause" ? "已暂停回顾" : preference.kind === "event" ? "暂不推荐某件事" : preference.kind === "person" ? "已屏蔽某人物" : `已屏蔽 ${preference.dateFrom} ~ ${preference.dateTo ?? preference.dateFrom}`}</span>
+                <form action={unblockAction}>
+                  <input type="hidden" name="preferenceId" value={preference.id} />
+                  <button className="ui-text-link" type="submit">取消</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
       {!result.hasHistory ? (
         <div className="mt-8">
           <EmptyState
@@ -65,6 +116,7 @@ export default async function ResurfacingPage() {
               {group.entries.length > 0 ? (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {group.entries.map((entry) => (
+                    <div key={entry.event.id} className="space-y-2">
                     <MemoryCard
                       key={entry.event.id}
                       id={entry.event.id}
@@ -83,6 +135,11 @@ export default async function ResurfacingPage() {
                         thumbAssetId: entry.coverThumbAssetId,
                       } : null}
                     />
+                      <form action={blockEventAction} className="text-sm">
+                        <input type="hidden" name="eventId" value={entry.event.id} />
+                        <button type="submit" className="ui-text-link">暂不推荐这件事</button>
+                      </form>
+                    </div>
                   ))}
                 </div>
               ) : (

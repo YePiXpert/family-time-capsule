@@ -150,8 +150,61 @@ export async function getResurfacing(
     .limit(160);
 
   const safeLimit = Math.min(Math.max(Math.floor(perGroup), 1), 12);
+  // §8 FIND-9：当前用户的屏蔽偏好只作用于自动回顾——事件、人物、日期
+  // 范围与全局暂停；不影响 hasHistory 与主动浏览/搜索。
+  const blockedEvents = new Set<string>();
+  const blockedPeople = new Set<string>();
+  const blockedRanges: Array<{ from: string; to: string }> = [];
+  let paused = false;
+  if (context) {
+    const { resurfacingPreference } = await import("@/db/schema/resurfacing");
+    const { eq, and: andEq } = await import("drizzle-orm");
+    const { getDb } = await import("@/db");
+    const preferences = getDb()
+      .select()
+      .from(resurfacingPreference)
+      .where(
+        andEq(
+          eq(resurfacingPreference.familyId, familyId),
+          eq(resurfacingPreference.userId, context.userId),
+        ),
+      )
+      .all();
+    for (const preference of preferences) {
+      if (preference.kind === "pause") paused = true;
+      else if (preference.kind === "event") blockedEvents.add(preference.targetKey);
+      else if (preference.kind === "person") blockedPeople.add(preference.targetKey);
+      else if (preference.kind === "date_range" && preference.dateFrom && preference.dateTo) {
+        blockedRanges.push({ from: preference.dateFrom, to: preference.dateTo });
+      }
+    }
+  }
+  const participantByEvent = new Map<string, Set<string>>();
+  if (blockedPeople.size > 0 && candidates.length > 0) {
+    const rows = getDb()
+      .select({ memoryEventId: sql<string>`memory_event_id`, personId: sql<string>`person_id` })
+      .from(sql`memory_event_participant`)
+      .where(sql`memory_event_id in (${sql.join(candidates.map((event) => sql`${event.id}`), sql`, `)})`)
+      .all();
+    for (const row of rows) {
+      const set = participantByEvent.get(row.memoryEventId) ?? new Set<string>();
+      set.add(row.personId);
+      participantByEvent.set(row.memoryEventId, set);
+    }
+  }
+  const visibleCandidates = candidates.filter((event) => {
+    if (blockedEvents.has(event.id)) return false;
+    const people = participantByEvent.get(event.id);
+    if (people && [...blockedPeople].some((personId) => people.has(personId))) return false;
+    if (blockedRanges.length > 0) {
+      const localDate = eventLocalDate(event, timezone);
+      if (blockedRanges.some((range) => localDate >= range.from && localDate <= range.to)) return false;
+    }
+    return true;
+  });
+  const effectiveCandidates = paused ? [] : visibleCandidates;
   const byDate = new Map<string, MemoryEventRow[]>();
-  for (const event of candidates) {
+  for (const event of effectiveCandidates) {
     const date = eventLocalDate(event, timezone);
     const rows = byDate.get(date) ?? [];
     rows.push(event);
@@ -183,7 +236,7 @@ export async function getResurfacing(
     },
   ];
   const todayMonthDay = today.slice(5);
-  const onThisDayRows = candidates.filter((event) => {
+  const onThisDayRows = effectiveCandidates.filter((event) => {
     const local = eventLocalDate(event, timezone);
     return local.slice(5) === todayMonthDay && local.slice(0, 4) !== today.slice(0, 4);
   });
@@ -214,6 +267,8 @@ export async function getResurfacing(
   return {
     today,
     groups,
-    hasHistory: groups.some((group) => group.entries.length > 0),
+    // hasHistory 表示家庭是否有可回顾的内容，与当前用户的屏蔽/暂停无关
+    //（暂停回顾不等于家庭没有历史，首页空状态引导不因此误触发）。
+    hasHistory: candidates.length > 0,
   };
 }
