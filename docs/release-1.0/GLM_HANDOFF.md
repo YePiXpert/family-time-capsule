@@ -6,7 +6,7 @@ baseline:
 8388ecb7a58508996302d17f9aa4116665ef34a9
 
 final:
-fae5206 (fix(books): make pdf page-limit failure deterministic —— 8ac7208 的 CI 修复)
+7f63f1a (fix(contribute): correct re-record file count; prefetch cluster thumbnails —— 复查修复)
 
 completed:
 
@@ -77,6 +77,9 @@ CI:
 - 90f91db fix(a11y) GLM-C — success
 - 8ac7208 feat(library) GLM-D — failure（见下）
 - fae5206 fix(books) — success（修复 8ac7208 的 CI 失败）
+- da25f14 docs(release-1.0) — success
+- 7f63f1a fix(contribute) — success（本轮自查修复：贡献向导重录计数把新旧录音叠加，
+  maxFiles=1 且已有录音时会错误拒绝重录；收件箱缩略图预取补上非首位图片原件）
 
 REQUIREMENTS changed:
 - NAV-11 未实现 → 部分实现（双端简洁模式与贡献向导自动化通过，Web 播放文字按钮与真机
