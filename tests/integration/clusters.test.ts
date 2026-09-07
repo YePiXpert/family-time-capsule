@@ -262,6 +262,7 @@ describe("相似特征持久缓存（FIND-5：来源哈希/算法版本/失效�
       buffer: noise,
       clientLastModifiedMs: null,
     });
+    if (storedNoise.status !== "stored") throw new Error("store failed for 噪声.jpg");
     const noiseItem = await createInboxItemForAsset(familyId, storedNoise.asset);
     const r = await ingestVariant("缓存R.jpg", Buffer.from([6]));
 
