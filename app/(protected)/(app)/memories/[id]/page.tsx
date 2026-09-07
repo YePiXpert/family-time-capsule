@@ -7,7 +7,7 @@ import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getVisibleMemoryEventDetail, getTimelinePage, listEventRevisions } from "@/lib/memories/service";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
-import { formatOccurredLabel, precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
+import { formatOccurredDateLabel, formatOccurredLabel, precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
 import { listFacts } from "@/lib/contributions/service";
 import {
   createContributionAccessSnapshot,
@@ -402,7 +402,7 @@ export default async function MemoryEventPage({
           <h2 className="text-lg font-medium">最近记忆</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {relatedEntries.map((entry) => (
-              <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={formatOccurredLabel(entry.event.occurredAtPrecision as OccurredAtPrecision, entry.event.occurredAt, timezone)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} milestoneType={entry.event.milestoneType} isPinned={entry.event.isPinned} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
+              <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={formatOccurredDateLabel(entry.event.occurredAtPrecision as OccurredAtPrecision, entry.event.occurredAt, timezone)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} milestoneType={entry.event.milestoneType} isPinned={entry.event.isPinned} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
             ))}
           </div>
         </section>

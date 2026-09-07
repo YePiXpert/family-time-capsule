@@ -60,6 +60,27 @@ export function formatOccurredLabel(
   occurredAt: string | Date,
   timezone: string,
 ): string {
+  return formatOccurredImpl(precision, occurredAt, timezone, false);
+}
+
+/**
+ * 卡片等紧凑场景：只到「日」，不带时分——exact/approximate 也不显示
+ * 时间（列表卡片保持原有日级设计；完整时刻在详情页展示）。
+ */
+export function formatOccurredDateLabel(
+  precision: OccurredAtPrecision,
+  occurredAt: string | Date,
+  timezone: string,
+): string {
+  return formatOccurredImpl(precision, occurredAt, timezone, true);
+}
+
+function formatOccurredImpl(
+  precision: OccurredAtPrecision,
+  occurredAt: string | Date,
+  timezone: string,
+  dayOnly: boolean,
+): string {
   if (precision === "unknown") return "时间不确定";
   const utc = typeof occurredAt === "string" ? new Date(occurredAt) : occurredAt;
   if (Number.isNaN(utc.getTime())) return "时间不确定";
@@ -77,6 +98,7 @@ export function formatOccurredLabel(
     case "approximate":
       return `大约 ${year}年${Number(month)}月${Number(day)}日`;
     case "exact": {
+      if (dayOnly) return `${year}年${Number(month)}月${Number(day)}日`;
       const hour = readPart(parts, "hour").padStart(2, "0");
       const minute = readPart(parts, "minute").padStart(2, "0");
       return `${year}年${Number(month)}月${Number(day)}日 ${hour}:${minute}`;

@@ -6,7 +6,7 @@ import { getTimelineFacets, getTimelinePage } from "@/lib/memories/service";
 import { countInbox } from "@/lib/inbox/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
-import { formatOccurredLabel, precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
+import { formatOccurredDateLabel, precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -140,7 +140,7 @@ export default async function TimelinePage({
               <ol className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, coverThumbAssetId, assetCount, participantNames }) => (
                   <li key={event.id} className="min-w-0">
-                    <MemoryCard id={event.id} title={event.title} dateLabel={formatOccurredLabel(event.occurredAtPrecision as OccurredAtPrecision, event.occurredAt, timezone)} ageLabel={precisionHasDay(event.occurredAtPrecision as OccurredAtPrecision) ? formatPersonAgeLabel(people.find(p => p.id === event.childPersonId), event.occurredAt, timezone) : null} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
+                    <MemoryCard id={event.id} title={event.title} dateLabel={formatOccurredDateLabel(event.occurredAtPrecision as OccurredAtPrecision, event.occurredAt, timezone)} ageLabel={precisionHasDay(event.occurredAtPrecision as OccurredAtPrecision) ? formatPersonAgeLabel(people.find(p => p.id === event.childPersonId), event.occurredAt, timezone) : null} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
                   </li>
                 ))}
               </ol>
