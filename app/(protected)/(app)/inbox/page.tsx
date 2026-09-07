@@ -46,10 +46,18 @@ export default async function InboxPage({
   ]);
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
-  // 收件箱封面优先用缩略图（避免列表加载全尺寸原件）
+  // 收件箱封面优先用缩略图（避免列表加载全尺寸原件）。
+  // 相似候选成员可能选中的是首个图片原件而非 assets[0]，一并预取。
   const thumbMap = await getThumbnailMap(
     familyId,
-    entries.map((e) => e.assets[0]?.id).filter((id): id is string => Boolean(id)),
+    [
+      ...new Set(
+        entries.flatMap((e) => [
+          e.assets[0]?.id,
+          e.assets.find((a) => a.type === "image")?.id,
+        ]),
+      ),
+    ].filter((id): id is string => Boolean(id)),
   );
 
   // M3-E：按条目聚合 pending 建议并预填（title / occurredAt）

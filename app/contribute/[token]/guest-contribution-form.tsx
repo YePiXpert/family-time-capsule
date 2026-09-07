@@ -319,7 +319,8 @@ export function GuestContributionForm(props: Props) {
       recordingStream.current?.getTracks().forEach((track) => track.stop());
       const mime = active.mimeType || "audio/webm";
       const recorded = new File(recordingChunks.current, `family-voice-${Date.now()}.webm`, { type: mime });
-      const totalCount = (recordedFile ? 1 : 0) + pickedFiles.length + 1;
+      // 重录会替换上一段录音，而不是叠加：总数按 挑选文件 + 这一段 计算。
+      const totalCount = pickedFiles.length + 1;
       if (totalCount > props.maxFiles) {
         setMessage(`最多 ${props.maxFiles} 份；这段录音没有加入，可先移除已选文件。`);
       } else {
