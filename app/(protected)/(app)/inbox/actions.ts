@@ -19,6 +19,7 @@ import {
   resolveInboxSuggestion,
 } from "@/lib/suggestions/service";
 import {
+  addClusterMembersToCollection,
   resolveClusterSuggestion,
   scanInboxClusters,
 } from "@/lib/clusters/service";
@@ -234,7 +235,7 @@ export async function resolveInboxSuggestionAction(
   return {};
 }
 
-export type ClusterActionState = { error?: string; eventId?: string };
+export type ClusterActionState = { error?: string; message?: string; eventId?: string };
 
 /** M3-F：本地（无 AI）聚类扫描——时间邻近 / 感知相似 / Live Photo 配对 */
 export async function scanClustersAction(
@@ -254,7 +255,7 @@ export async function scanClustersAction(
   };
 }
 
-/** M3-F：接受分簇 → 走既有合并流程创建/合并 MemoryEvent；忽略 → 永不自动执行 */
+/** M3-F：接受分簇 → 合并；全部保留 → dismiss；加入相册 → 引用原件不移出收件箱 */
 export async function resolveClusterAction(
   _prev: ClusterActionState | undefined,
   formData: FormData,
@@ -264,6 +265,28 @@ export async function resolveClusterAction(
   const action = String(formData.get("action") ?? "");
   const titleOverride = String(formData.get("title") ?? "").trim();
   const selectedIds = formData.getAll("member").map((value) => String(value));
+
+  if (action === "add_album") {
+    const albumChoice = String(formData.get("albumChoice") ?? "");
+    const newAlbumTitle = String(formData.get("newAlbumTitle") ?? "").trim();
+    const result = await addClusterMembersToCollection(context, suggestionId, {
+      collectionId: albumChoice && albumChoice !== "__new" ? albumChoice : undefined,
+      newCollectionTitle: albumChoice === "__new" ? newAlbumTitle : undefined,
+      selectedIds: selectedIds.length > 0 ? selectedIds : undefined,
+    });
+    revalidatePath("/inbox");
+    if (!result.ok) {
+      if (result.error === "invalid_album") {
+        return { error: "请选择一个相册，或填写新相册名称。" };
+      }
+      if (result.error === "album_failed") {
+        return { error: "相册不存在、已删除或没有权限编辑。" };
+      }
+      return { error: "分簇建议不存在、已处理或成员已变化。" };
+    }
+    return { message: `已把选中的 ${result.addedAssets} 份素材加入相册（收件箱条目保留，可继续合并或全部保留）。` };
+  }
+
   if (action !== "accept" && action !== "dismiss") {
     return { error: "未知操作。" };
   }

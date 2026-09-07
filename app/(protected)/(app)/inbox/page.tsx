@@ -9,6 +9,7 @@ import { pendingSuggestionIsCurrent } from "@/lib/suggestions/access";
 import { aiSuggestion } from "@/db/schema/suggestion";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { listPendingClusterSuggestions } from "@/lib/clusters/service";
+import { listCollections } from "@/lib/collections/service";
 import {
   getAiRuntimeDisclosure,
   listAiProcessingConsents,
@@ -128,6 +129,12 @@ export default async function InboxPage({
   const clusterRows = canReview
     ? await listPendingClusterSuggestions(familyId)
     : [];
+  // FIND-5：候选卡内嵌「加入相册」——只列相册（章节不在此入口出现）
+  const albums = canReview
+    ? (await listCollections(context)).entries
+        .filter((entry) => entry.kind === "album")
+        .map((entry) => ({ id: entry.id, title: entry.title }))
+    : [];
   const clusters: ClusterSuggestionDto[] = [];
   for (const row of clusterRows) {
     let ids: string[] = [];
@@ -199,7 +206,7 @@ export default async function InboxPage({
       />
 
       {canReview && entries.length > 0 && (
-        <ClusterSuggestionPanel suggestions={clusters} />
+        <ClusterSuggestionPanel suggestions={clusters} albums={albums} />
       )}
 
       {canReview && textSuggestAvailable && entries.length > 0 && (

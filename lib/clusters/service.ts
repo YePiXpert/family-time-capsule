@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
+  clusterFeatureCache,
   clusterSuggestion,
   type ClusterSuggestionRow,
 } from "@/db/schema/clusters";
@@ -12,6 +13,11 @@ import { assertFamilyCapability } from "@/lib/authz/policy";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { listInbox, type InboxEntry } from "@/lib/inbox/service";
 import { mergeInboxEntries, defaultTitle } from "@/lib/memories/service";
+import {
+  addAssetsToCollection,
+  createCollection,
+  getCollection,
+} from "@/lib/collections/service";
 import type { FamilyContext } from "@/lib/family/context";
 import type { AssetRow } from "@/lib/assets/service";
 
@@ -19,7 +25,9 @@ import type { AssetRow } from "@/lib/assets/service";
  * 本地无 AI 的收件箱分簇建议（M3-D / FIND-5）。
  *
  * - 不依赖任何外部 AI，AI 完全禁用时仍可运行；
- * - 只读 Asset 原件并在内存计算，不写入任何感知哈希；
+ * - 感知哈希按「来源字节哈希 + 算法版本」持久缓存（cluster_feature_cache）：
+ *   原件不可变所以条目不会因内容变化失效，算法升级换版本号整体重算；
+ *   缓存只存派生特征，读写失败都不影响扫描正确性；
  * - 所有建议均为 pending，用户显式接受后才调用已有 merge 流程；
  * - 「字节完全相同（SHA-256 一致）」与「画面看起来很相似（感知哈希接近）」
  *   是两个概念：理由文本分开表述，UI 不把相似候选叫“重复照片”；
@@ -43,6 +51,12 @@ const MAX_SCAN_ITEMS = 200;
 const MAX_SCAN_IMAGES = 500;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const SIMILAR_HASH_THRESHOLD = 5;
+
+/**
+ * 特征缓存算法版本：dHash 9×8 位串 + 64×64 清晰度参考分。
+ * 换算法（尺寸/灰度/评分方式）必须换版本字符串，旧行整体作废重算。
+ */
+const FEATURE_ALGORITHM = "dhash-9x8+focus-64-v1";
 
 const IMAGE_HASH_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const LIVE_PHOTO_IMAGE_MIMES = new Set(["image/heic", "image/heif", "image/jpeg"]);
@@ -71,7 +85,7 @@ function memberKey(kind: ClusterKind, ids: string[]): string {
 /**
  * dHash：9×8 灰度图，每行 8 个位，共 64 位。
  * 64 位拆成两个 32 位半段（hi/lo），避免依赖 BigInt 字面量。
- * 感知哈希只在内存中计算，绝不写回 asset 行或文件。
+ * 结果可进 cluster_feature_cache（按 sha256+算法版本），绝不写回 asset 行或文件。
  */
 async function computeDhash(buffer: Buffer): Promise<string | null> {
   try {
@@ -140,6 +154,86 @@ function hammingDistance(leftHex: string, rightHex: string): number {
     }
   }
   return count;
+}
+
+type CachedFeature = { dhash: string; focusScore: number | null };
+
+function isValidDhash(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{16}$/u.test(value);
+}
+
+/** 读当前算法版本的缓存特征；损坏行（非法位串）当作未命中，扫描时重算覆写。 */
+function loadFeatureCache(sha256s: string[]): Map<string, CachedFeature> {
+  const cache = new Map<string, CachedFeature>();
+  if (sha256s.length === 0) return cache;
+  try {
+    const rows = getDb()
+      .select({
+        sha256: clusterFeatureCache.sha256,
+        dhash: clusterFeatureCache.dhash,
+        focusScore: clusterFeatureCache.focusScore,
+      })
+      .from(clusterFeatureCache)
+      .where(
+        and(
+          eq(clusterFeatureCache.algorithm, FEATURE_ALGORITHM),
+          inArray(clusterFeatureCache.sha256, sha256s),
+        ),
+      )
+      .all();
+    for (const row of rows) {
+      if (isValidDhash(row.dhash)) {
+        cache.set(row.sha256, {
+          dhash: row.dhash,
+          focusScore: row.focusScore ?? null,
+        });
+      }
+    }
+  } catch {
+    // 缓存读失败按全部未命中处理，本次扫描直接读原件
+  }
+  return cache;
+}
+
+function persistFeature(sha256: string, feature: CachedFeature): void {
+  try {
+    getDb()
+      .insert(clusterFeatureCache)
+      .values({
+        sha256,
+        algorithm: FEATURE_ALGORITHM,
+        dhash: feature.dhash,
+        focusScore: feature.focusScore,
+        createdAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [clusterFeatureCache.sha256, clusterFeatureCache.algorithm],
+        set: { dhash: feature.dhash, focusScore: feature.focusScore },
+      })
+      .run();
+  } catch {
+    // 写缓存失败只损失下次扫描的加速，不影响本次结果
+  }
+}
+
+/**
+ * 清理旧算法版本与孤儿行（sha256 已无任何 asset 引用）。
+ * 只在本次扫描写入过新行时执行，纯加速数据可随时删，失败留待下次。
+ */
+function cleanupFeatureCache(): void {
+  try {
+    const db = getDb();
+    db.delete(clusterFeatureCache)
+      .where(sql`${clusterFeatureCache.algorithm} <> ${FEATURE_ALGORITHM}`)
+      .run();
+    db.delete(clusterFeatureCache)
+      .where(
+        sql`${clusterFeatureCache.sha256} not in (select sha256 from asset)`,
+      )
+      .run();
+  } catch {
+    // 清理失败不影响扫描
+  }
 }
 
 class UnionFind {
@@ -318,8 +412,25 @@ async function buildSimilarMediaGroups(
   const storage = getAssetStorage();
   const imageAssets = itemImages(entries);
 
+  // 先查持久缓存：命中的图片不再读原件；未命中的读原件计算并写回缓存。
+  // 同一次扫描内同 SHA 的图片也共享结果（字节相同的原件只有一份数据）。
+  const featureCache = loadFeatureCache([
+    ...new Set(imageAssets.map((item) => item.asset.sha256)),
+  ]);
+  let persisted = 0;
+
   const hashes = new Map<string, HashedItem>();
   for (const item of imageAssets) {
+    const cached = featureCache.get(item.asset.sha256);
+    if (cached) {
+      hashes.set(item.asset.id, {
+        entry: item.entry,
+        asset: item.asset,
+        hash: cached.dhash,
+        focusScore: cached.focusScore,
+      });
+      continue;
+    }
     try {
       const buffer = storage.read(item.asset.storageKey);
       const [hash, focusScore] = await Promise.all([
@@ -327,12 +438,22 @@ async function buildSimilarMediaGroups(
         computeImageFocusScore(buffer),
       ]);
       if (hash) {
-        hashes.set(item.asset.id, { entry: item.entry, asset: item.asset, hash, focusScore });
+        const feature = { dhash: hash, focusScore };
+        hashes.set(item.asset.id, {
+          entry: item.entry,
+          asset: item.asset,
+          hash,
+          focusScore,
+        });
+        featureCache.set(item.asset.sha256, feature);
+        persistFeature(item.asset.sha256, feature);
+        persisted++;
       }
     } catch {
       // 单张图片读取/哈希失败不影响整体扫描
     }
   }
+  if (persisted > 0) cleanupFeatureCache();
 
   const uf = new UnionFind();
   const byEntry = [...hashes.values()].reduce(
@@ -686,4 +807,88 @@ function buildDefaultClusterTitle(members: InboxEntry[]): string {
     return firstAsset.originalFilename.replace(/\.[^.]+$/u, "");
   }
   return defaultTitle(members[0]);
+}
+
+export type AddClusterToCollectionResult =
+  | { ok: true; collectionId: string; addedAssets: number }
+  | {
+      ok: false;
+      error:
+        | "not_found"
+        | "already_resolved"
+        | "invalid_members"
+        | "items_changed"
+        | "invalid_album"
+        | "album_failed";
+    };
+
+/**
+ * 把分簇候选（可只勾选部分成员，至少 1 个）的原件直接加入相册（FIND-5）。
+ * - 相册引用原件不产生复制（CAP-11），加入相册不合并、不移出收件箱，
+ *   建议保持 pending——用户之后仍可合并或全部保留；
+ * - collectionId 与 newCollectionTitle 二选一：前者加入已有相册，
+ *   后者先创建再全部加入；都没有返回 invalid_album。
+ */
+export async function addClusterMembersToCollection(
+  context: FamilyContext,
+  suggestionId: string,
+  options: { collectionId?: string; newCollectionTitle?: string; selectedIds?: string[] } = {},
+): Promise<AddClusterToCollectionResult> {
+  assertFamilyCapability(context.role, "inbox:review");
+  const { familyId } = context;
+  const db = getDb();
+
+  const row = db
+    .select()
+    .from(clusterSuggestion)
+    .where(
+      and(
+        eq(clusterSuggestion.id, suggestionId),
+        eq(clusterSuggestion.familyId, familyId),
+      ),
+    )
+    .get();
+  if (!row) return { ok: false, error: "not_found" };
+  if (row.status !== "pending") return { ok: false, error: "already_resolved" };
+
+  let itemIds: string[];
+  try {
+    itemIds = JSON.parse(row.inboxItemIdsJson) as string[];
+  } catch {
+    return { ok: false, error: "invalid_members" };
+  }
+  if (options.selectedIds && options.selectedIds.length > 0) {
+    const valid = options.selectedIds.filter((id) => itemIds.includes(id));
+    if (valid.length === 0) return { ok: false, error: "invalid_members" };
+    itemIds = valid;
+  }
+
+  const entries = (await listInbox(familyId, ["new", "needs_review", "processing"])).filter(
+    (entry) => itemIds.includes(entry.item.id),
+  );
+  if (entries.length !== itemIds.length || entries.length === 0) {
+    return { ok: false, error: "items_changed" };
+  }
+  const assetIds = [...new Set(entries.flatMap((entry) => entry.assets.map((a) => a.id)))];
+  if (assetIds.length === 0) return { ok: false, error: "items_changed" };
+
+  let collectionId = options.collectionId?.trim() ?? "";
+  if (!collectionId) {
+    const title = options.newCollectionTitle?.trim() ?? "";
+    if (!title) return { ok: false, error: "invalid_album" };
+    try {
+      collectionId = createCollection(context, title);
+    } catch {
+      return { ok: false, error: "album_failed" };
+    }
+  }
+
+  try {
+    const detail = getCollection(context, collectionId);
+    addAssetsToCollection(context, collectionId, detail.revision, assetIds);
+  } catch {
+    return { ok: false, error: "album_failed" };
+  }
+
+  return { ok: true, collectionId, addedAssets: assetIds.length };
 }

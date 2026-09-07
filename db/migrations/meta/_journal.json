@@ -414,6 +414,13 @@
       "when": 1788876000008,
       "tag": "0058_resurfacing_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1788876000009,
+      "tag": "0059_cluster_feature_cache",
+      "breakpoints": true
     }
   ]
 }

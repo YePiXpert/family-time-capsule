@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { MediaImage } from "@/components/media-view";
 import {
   scanClustersAction,
@@ -37,17 +36,22 @@ export type ClusterSuggestionDto = {
   members: ClusterMemberDto[];
 };
 
+export type ClusterAlbumDto = { id: string; title: string };
+
 /**
  * FIND-5 相似照片候选面板：
  * - 只说「这些照片看起来很相似」或「字节完全相同」，绝不叫“重复照片”；
  * - Live Photo 的图片与视频是一次拍摄的两部分，不会被当成相似重复；
- * - 候选组可以全部保留、勾选几份合并成一段记忆、或去资料库加入相册；
+ * - 候选组可以全部保留、勾选几份合并成一段记忆、或直接把勾选的原件
+ *   加入相册（相册只引用原件，收件箱条目保留，不算处理完成）；
  * - 本轮不提供任何删除操作，系统永远不会自动删除照片。
  */
 export function ClusterSuggestionPanel({
   suggestions,
+  albums,
 }: {
   suggestions: ClusterSuggestionDto[];
+  albums: ClusterAlbumDto[];
 }) {
   const [scanState, scanActionRun, scanPending] = useActionState(
     scanClustersAction,
@@ -91,7 +95,7 @@ export function ClusterSuggestionPanel({
       {suggestions.length > 0 && (
         <ul className="mt-4 flex flex-col gap-3" aria-label="相似照片候选列表">
           {suggestions.map((s) => (
-            <ClusterRow key={s.id} cluster={s} />
+            <ClusterRow key={s.id} cluster={s} albums={albums} />
           ))}
         </ul>
       )}
@@ -99,11 +103,18 @@ export function ClusterSuggestionPanel({
   );
 }
 
-function ClusterRow({ cluster }: { cluster: ClusterSuggestionDto }) {
+function ClusterRow({
+  cluster,
+  albums,
+}: {
+  cluster: ClusterSuggestionDto;
+  albums: ClusterAlbumDto[];
+}) {
   const [state, action, pending] = useActionState(
     resolveClusterAction,
     undefined as ClusterActionState | undefined,
   );
+  const [albumChoice, setAlbumChoice] = useState("");
   const isLivePhoto = cluster.kind === "live_photo_pair";
   const isSimilar = cluster.kind === "similar_media";
   const isExact = cluster.reasonText.includes("字节完全相同");
@@ -187,21 +198,56 @@ function ClusterRow({ cluster }: { cluster: ClusterSuggestionDto }) {
           全部保留（不作处理）
         </button>
         {isSimilar ? (
-          <Link
-            href="/library"
-            className="min-h-11 rounded-lg border border-foreground/15 px-3 py-1.5 text-xs text-foreground/60 transition-colors hover:border-accent"
-          >
-            去资料库加入相册
-          </Link>
+          <>
+            <select
+              name="albumChoice"
+              value={albumChoice}
+              onChange={(event) => setAlbumChoice(event.target.value)}
+              aria-label="选择要加入的相册"
+              className={`${inputClass} max-w-44`}
+            >
+              <option value="">选择相册…</option>
+              {albums.map((album) => (
+                <option key={album.id} value={album.id}>
+                  {album.title}
+                </option>
+              ))}
+              <option value="__new">新建相册…</option>
+            </select>
+            {albumChoice === "__new" ? (
+              <input
+                type="text"
+                name="newAlbumTitle"
+                maxLength={100}
+                placeholder="新相册名称"
+                aria-label="新相册名称"
+                className={`${inputClass} max-w-44`}
+              />
+            ) : null}
+            <button
+              type="submit"
+              name="action"
+              value="add_album"
+              disabled={pending}
+              className="min-h-11 rounded-lg border border-foreground/15 px-3 py-1.5 text-xs text-foreground/60 transition-colors hover:border-accent disabled:opacity-50"
+            >
+              把选中的加入相册
+            </button>
+          </>
         ) : null}
         {state?.error && (
           <span className="text-xs text-red-700 dark:text-red-400">
             {state.error}
           </span>
         )}
+        {state?.message && (
+          <span role="status" className="text-xs text-foreground/70">
+            {state.message}
+          </span>
+        )}
       </form>
       <p className="mt-1 text-xs leading-5 text-foreground/40">
-        勾选框决定哪些成员合并；至少选择两份。这里没有删除操作，原件始终保留。
+        勾选框决定哪些成员参与；合并至少选两份，加入相册只引用原件（收件箱条目保留，之后仍可合并）。这里没有删除操作，原件始终保留。
       </p>
     </li>
   );
