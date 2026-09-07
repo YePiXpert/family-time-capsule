@@ -6,6 +6,7 @@ import { uploadDraftOriginal, uploadDraftOriginalPrivate } from "@/lib/drafts/br
 import { emptyDraftContent, type Draft, type DraftContent } from "@/lib/drafts/model";
 import { listBrowserDrafts, readBrowserOriginal, writeBrowserDraft, type BrowserDraft, type BrowserOriginal } from "@/lib/drafts/browser-store";
 import { zonedWallTimeToUtc, utcToZonedWallTimeInput } from "@/lib/metadata/time";
+import { anchorFromPrecisionInput, formatOccurredLabel, type OccurredAtPrecision } from "@/lib/metadata/precision";
 
 type Person = { id: string; displayName: string; isChild: boolean };
 const field = "min-h-11 w-full rounded-xl border border-line bg-surface px-3 py-2 text-base";
@@ -205,7 +206,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
   async function save(publish: boolean, review = false) {
     const row = current.current;
     if (!row) return;
-    if (publish && !row.content.occurredAt) { setNotice("请确认发生时间后再创建记忆；也可以先保留草稿。"); return; }
+    if (publish && !row.content.occurredAt && row.content.occurredAtPrecision !== "unknown") { setNotice("请确认发生时间，或选择「时间记不得了」；也可以先保留草稿。"); return; }
     if (publish && row.content.visibility === "members" && row.content.readerUserIds.length === 0) { setNotice("请先选择可以阅读这件事的家人，或改回全家/仅自己。"); return; }
     try {
       await store({ ...row, status: publish ? "queued" : "editing", revision: row.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() });
@@ -238,6 +239,20 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
   }
   if (!draft) return <p role="status" className="mt-8">{diskError || "正在打开本机草稿…"}</p>;
   const content = draft.content, editable = draft.status === "editing" && !syncing;
+  const occurredInput = () => {
+    if (!content.occurredAt) return "";
+    const wall = utcToZonedWallTimeInput(new Date(content.occurredAt), timezone);
+    if (content.occurredAtPrecision === "month") return wall.slice(0, 7);
+    if (content.occurredAtPrecision === "year") return wall.slice(0, 4);
+    if (content.occurredAtPrecision === "date_only") return wall.slice(0, 10);
+    return wall.slice(0, 16);
+  };
+  const setOccurredInput = (value: string) => {
+    try {
+      const anchor = anchorFromPrecisionInput({ precision: content.occurredAtPrecision, wall: value, timezone, toUtc: zonedWallTimeToUtc });
+      change({ occurredAt: anchor ? anchor.toISOString() : null });
+    } catch { setNotice("时间格式不正确。"); }
+  };
   return <div className="mt-8 space-y-6">
     <div className="flex flex-wrap gap-3"><button className={button} disabled={syncing || !!diskError} onClick={() => void create()}>新建一件事</button><Link href="/inbox" className={button}>整理以前收到的内容</Link></div>
     <details><summary className="min-h-11 cursor-pointer">继续草稿（{drafts.filter(d => d.status === "editing" || d.status === "queued").length}）</summary>
@@ -261,8 +276,12 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
         </li>;
       })}</ol>
       <label className="block">标题<input className={field} value={content.title} maxLength={100} onChange={e => change({ title: e.target.value })} /></label>
-      <label className="block">发生时间<input type="datetime-local" className={field} value={content.occurredAt ? utcToZonedWallTimeInput(new Date(content.occurredAt), timezone).slice(0, 16) : ""} onChange={e => { try { change({ occurredAt: e.target.value ? zonedWallTimeToUtc(`${e.target.value}:00`, timezone).toISOString() : null }); } catch { setNotice("时间格式不正确。"); } }} /></label>
-      <button type="button" className={button} onClick={() => change({ occurredAt: new Date().toISOString() })}>就是现在</button>
+      <div className="block space-y-2">
+        <label className="block">时间记得多清楚<select className={field} value={content.occurredAtPrecision} onChange={e => change({ occurredAtPrecision: e.target.value as OccurredAtPrecision, ...(e.target.value === "unknown" ? { occurredAt: null } : {}) })}><option value="exact">精确到分</option><option value="approximate">大致时间</option><option value="date_only">只记得日期</option><option value="month">只记得年月</option><option value="year">只记得年份</option><option value="unknown">时间记不得了</option></select></label>
+        {content.occurredAtPrecision !== "unknown" && <label className="block">{content.occurredAtPrecision === "month" ? "年月（如 1988-05）" : content.occurredAtPrecision === "year" ? "年份（如 1988）" : "发生时间"}<input type={content.occurredAtPrecision === "month" ? "month" : content.occurredAtPrecision === "year" ? "text" : "datetime-local"} inputMode={content.occurredAtPrecision === "year" ? "numeric" : undefined} placeholder={content.occurredAtPrecision === "year" ? "1988" : undefined} className={field} value={occurredInput()} onChange={e => setOccurredInput(e.target.value)} /></label>}
+        {content.occurredAtPrecision === "exact" && <button type="button" className={button} onClick={() => change({ occurredAt: new Date().toISOString() })}>就是现在</button>}
+        <p className="text-sm text-ink-muted">{content.occurredAtPrecision === "unknown" ? "不填时间也照常保存；这条记忆会标注「时间不确定」，不会被放进某个编造的日期。" : content.occurredAt && content.occurredAtPrecision !== "exact" && content.occurredAtPrecision !== "approximate" ? formatOccurredLabel(content.occurredAtPrecision, content.occurredAt, timezone) : ""}</p>
+      </div>
       <label className="block">地点<input className={field} value={content.locationText} maxLength={200} onChange={e => change({ locationText: e.target.value })} /></label>
       <fieldset><legend>人物</legend>{people.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.participantIds.includes(p.id)} onChange={e => change({ participantIds: e.target.checked ? [...content.participantIds, p.id] : content.participantIds.filter(id => id !== p.id) })} />{p.displayName}</label>)}</fieldset>
       <label className="block">保存后的读者<select className={field} value={content.visibility} onChange={e => change({ visibility: e.target.value as DraftContent["visibility"], ...(e.target.value === "members" ? {} : { readerUserIds: [] }) })}><option value="family">全家</option><option value="members">指定成员</option><option value="private">仅自己</option></select></label>

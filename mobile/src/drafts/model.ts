@@ -1,4 +1,5 @@
 /** Shared Web/native wire contract. A draft owns references, never original bytes. */
+import { isOccurredAtPrecision } from "../utils/occurred-precision";
 export type DraftItem = {
   id: string;
   assetId: string | null;
@@ -14,8 +15,12 @@ export type DraftVisibility = "family" | "members" | "private";
 export type DraftContent = {
   title: string;
   text: string;
+  /**
+   * UTC 锚点（排序/分组用）。按 §6：month/year 精度锚点为该期首日；
+   * unknown 精度为 null（服务端用创建时刻做内部锚点，永不显示为发生时间）。
+   */
   occurredAt: string | null;
-  occurredAtPrecision: "exact" | "approximate" | "date_only";
+  occurredAtPrecision: "exact" | "approximate" | "date_only" | "month" | "year" | "unknown";
   locationText: string;
   participantIds: string[];
   visibility: DraftVisibility;
@@ -60,7 +65,9 @@ export function parseDraftContent(value: unknown): DraftContent {
   if (coverItemId && !items.some(i => i.id === coverItemId)) return invalid();
   const occurredAt = v.occurredAt === null ? null : string(v.occurredAt, 32);
   if (occurredAt !== null && (!/^\d{4}-\d\d-\d\dT/u.test(occurredAt) || !Number.isFinite(Date.parse(occurredAt)))) return invalid();
-  if (!["exact", "approximate", "date_only"].includes(String(v.occurredAtPrecision))) return invalid();
+  if (!isOccurredAtPrecision(v.occurredAtPrecision)) return invalid();
+  // §6：缺锚点在保存阶段允许（旧草稿如此）；发布时按精度裁决——
+  // 非 unknown 必须有时间，unknown 由服务端以创建时刻做内部锚点。
   // 兼容历史草稿载荷：旧客户端没有 readerUserIds 字段，按空清单处理。
   if (v.visibility !== "family" && v.visibility !== "members" && v.visibility !== "private") return invalid();
   const visibility = v.visibility as DraftVisibility;

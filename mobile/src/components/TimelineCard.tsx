@@ -35,7 +35,7 @@ export function TimelineCard({
             {item.syncState === "inbox" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
           </Text>
         ) : null}
-        <Text style={styles.date}>{dateLabel(item.occurredAt, timeZone)}</Text>
+        <Text style={styles.date}>{dateLabel(item.occurredAt, timeZone, item.occurredAtPrecision)}</Text>
         <Text numberOfLines={2} style={styles.title}>{item.title}</Text>
         <View style={styles.meta}>
           {age ? <Text style={styles.age}>{age}</Text> : null}

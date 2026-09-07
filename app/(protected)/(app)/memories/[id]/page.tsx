@@ -7,6 +7,7 @@ import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getVisibleMemoryEventDetail, getTimelinePage, listEventRevisions } from "@/lib/memories/service";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
+import { formatOccurredLabel, precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
 import { listFacts } from "@/lib/contributions/service";
 import {
   createContributionAccessSnapshot,
@@ -275,7 +276,8 @@ export default async function MemoryEventPage({
   const latestSuggestionJob = suggestionJobs[0];
 
   const child = people.find((p) => p.id === event.childPersonId);
-  const ageLabel = formatPersonAgeLabel(child, event.occurredAt, timezone);
+  // §6：月/年/未知精度没有真实日期，年龄显示省略而不是算出假天数。
+  const ageLabel = precisionHasDay(event.occurredAtPrecision as OccurredAtPrecision) ? formatPersonAgeLabel(child, event.occurredAt, timezone) : null;
   const contributionAuthors =
     isAdminClassRole(context.role) || context.role === "editor"
       ? people
@@ -331,7 +333,7 @@ export default async function MemoryEventPage({
           title={event.title}
           description={
             <span className="flex flex-wrap gap-x-3 gap-y-1">
-              <span>{new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeStyle: event.occurredAtPrecision === "date_only" ? undefined : "short", timeZone: timezone }).format(event.occurredAt)}</span>
+              <span>{formatOccurredLabel(event.occurredAtPrecision as OccurredAtPrecision, event.occurredAt, timezone)}</span>
               {ageLabel ? <span className="text-accent">{ageLabel}</span> : null}
               {event.locationText ? <span>· {event.locationText}</span> : null}
             </span>
@@ -400,7 +402,7 @@ export default async function MemoryEventPage({
           <h2 className="text-lg font-medium">最近记忆</h2>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {relatedEntries.map((entry) => (
-              <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: timezone }).format(entry.event.occurredAt)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} milestoneType={entry.event.milestoneType} isPinned={entry.event.isPinned} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
+              <MemoryCard key={entry.event.id} id={entry.event.id} title={entry.event.title} dateLabel={formatOccurredLabel(entry.event.occurredAtPrecision as OccurredAtPrecision, entry.event.occurredAt, timezone)} location={entry.event.locationText} people={entry.participantNames} assetCount={entry.assetCount} milestoneType={entry.event.milestoneType} isPinned={entry.event.isPinned} compact cover={entry.coverAssetId ? { assetId: entry.coverAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime ?? "application/octet-stream", thumbAssetId: entry.coverThumbAssetId } : null} />
             ))}
           </div>
         </section>

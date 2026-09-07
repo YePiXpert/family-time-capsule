@@ -115,13 +115,17 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     // §5：私密/指定读者草稿现在直接发布为对应可见性的记忆事件；
     // 挂在家庭收件箱上的聚合仍要求 family（收件箱是全家评审面）。
     if (row.inboxItemId && content.visibility !== "family") throw new DraftError("already_shared", 409);
-    if (!content.occurredAt) throw new DraftError("occurred_at_required");
+    const eventId = randomUUID(), now = new Date();
+    // §6 日期精度：非 unknown 必须有时间锚点；unknown 用创建时刻做内部
+    // 排序锚点（永不显示为发生时间，不参与日期筛选/年龄）。
+    if (!content.occurredAt && content.occurredAtPrecision !== "unknown") throw new DraftError("occurred_at_required");
+    const anchor = content.occurredAt ? new Date(content.occurredAt) : now;
+    if (Number.isNaN(anchor.getTime())) throw new DraftError("invalid_draft");
     if (!content.text.trim() && !content.items.length) throw new DraftError("empty_draft");
     if (content.items.some(item => !item.assetId)) throw new DraftError("originals_pending", 409);
-    const eventId = randomUUID(), now = new Date();
     const title = content.title.trim() || content.text.trim().slice(0, 60) || "一段家庭记忆";
     const coverAssetId = content.items.find(item => item.id === content.coverItemId)?.assetId ?? content.items[0]?.assetId ?? null;
-    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: new Date(content.occurredAt), occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
+    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
     for (const [sortOrder, item] of content.items.entries()) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder, caption: item.caption, createdAt: now }).run();
     for (const personId of content.participantIds) tx.insert(memoryEventParticipant).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, personId, createdAt: now }).run();
     if (content.visibility === "members") {

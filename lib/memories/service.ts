@@ -108,7 +108,7 @@ export type EditMemoryEventPatch = {
   title?: string;
   expectedTitleRevision?: number;
   occurredAt?: Date;
-  occurredAtPrecision?: "exact" | "approximate" | "date_only";
+  occurredAtPrecision?: "exact" | "approximate" | "date_only" | "month" | "year" | "unknown";
   locationText?: string | null;
   coverAssetId?: string | null;
   participantPersonIds?: string[];
@@ -395,7 +395,7 @@ export type ConfirmOptions = {
   expectedTitleRevision?: number;
   title?: string;
   occurredAt?: Date;
-  occurredAtPrecision?: "exact" | "approximate" | "date_only";
+  occurredAtPrecision?: "exact" | "approximate" | "date_only" | "month" | "year" | "unknown";
   locationText?: string | null;
   participantPersonIds?: string[];
   coverAssetId?: string;
@@ -1268,6 +1268,10 @@ export async function getTimelinePage(
           : undefined,
         options.occurredFrom ? gte(memoryEvent.occurredAt, options.occurredFrom) : undefined,
         options.occurredBefore ? lt(memoryEvent.occurredAt, options.occurredBefore) : undefined,
+        // §6：unknown 的锚点是创建时刻，不能参与发生日期范围筛选。
+        (options.occurredFrom || options.occurredBefore)
+          ? sql`${memoryEvent.occurredAtPrecision} <> 'unknown'`
+          : undefined,
         cursorFilter,
       ),
     )

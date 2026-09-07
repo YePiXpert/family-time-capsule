@@ -13,6 +13,9 @@ const PRECISION_LABEL: Record<string, string> = {
   exact: "精确到分",
   approximate: "大致时间",
   date_only: "只记得日期",
+  month: "只记得年月",
+  year: "只记得年份",
+  unknown: "时间记不得了",
 };
 
 const MILESTONE_OPTIONS = [
@@ -93,13 +96,17 @@ export function EditEventForm({
 
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-sm">
-          真实发生时间（{timezone}）
+          真实发生时间（{timezone}；按所选精度填写）
           <input
             name="occurredAt"
             type="datetime-local"
             defaultValue={defaultWallTime}
             className={inputClass}
           />
+          <span className="text-xs text-ink-muted">
+            选「只记得年月/年份/时间记不得了」时：这里分别填 年-月（如 1988-05）、
+            年份（如 1988）或留空；系统不会编造具体日期。
+          </span>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           时间精度

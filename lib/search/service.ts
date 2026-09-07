@@ -804,7 +804,7 @@ function filterEventIds(
 
   if ((params.dateFrom || params.dateTo) && ids.size > 0) {
     const events = db
-      .select({ id: memoryEvent.id, occurredAt: memoryEvent.occurredAt })
+      .select({ id: memoryEvent.id, occurredAt: memoryEvent.occurredAt, precision: memoryEvent.occurredAtPrecision })
       .from(memoryEvent)
       .where(
         and(eq(memoryEvent.familyId, familyId), inArray(memoryEvent.id, [...ids])),
@@ -814,7 +814,9 @@ function filterEventIds(
     const to = params.dateTo ? new Date(`${params.dateTo}T23:59:59.999Z`) : null;
     ids = new Set(
       events
-        .filter((e: { id: string; occurredAt: Date }) => {
+        .filter((e: { id: string; occurredAt: Date; precision: string }) => {
+          // §6：unknown 的锚点是创建时刻，不参与发生日期筛选。
+          if (e.precision === "unknown") return false;
           if (from && e.occurredAt < from) return false;
           if (to && e.occurredAt > to) return false;
           return true;

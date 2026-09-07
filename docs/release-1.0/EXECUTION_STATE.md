@@ -10,45 +10,35 @@
 
 ## 当前任务
 
-P1-§6 日期精度（下一个）：unknown/year/month/date/instant 全链路。
+推送 §5+§6（网络中断重试中）；随后 §7 Web 播放器文字按钮。
 
 ## 已完成需求 ID
 
-- §4（FIND-2 正确性与隔离，3e00b37，CI 绿）：请求代际/错误分类/投影式
-  离线搜索/timeline+people 逐行 scope/离线筛选+去重+稳定排序。
-- §5 核心（本提交）：0057 读者模型——memory_event.visibility(family/members/
-  private)+created_by_user_id+memory_event_reader 表；asset.visibility
-  (family/private)+去重索引只约束 family 原件；policy canViewMemoryEvent/
-  canManageEventVisibility（管理员非旁路，作者缺失 fail closed）；
-  event-access SQL 谓词+事务内活性复核；getTimelinePage/ByIds/Milestones/
-  详情/搜索/日历/回顾/resurfacing/移动同步按读者裁决；updateMemoryEvent
-  编辑前置可读；updateMemoryEventVisibility（titleRevision 并发令牌）；
-  draft 模型 members+readerUserIds；publishDraft 非 family 直接成事件
-  （私密不进收件箱）；上传路由 visibility=private（无收件箱窗口）；
-  findOriginalBySha256 按查看者过滤（重复上传不能探测私密原件）；
-  Web 捕获编辑器三档读者+成员选择+私密直传。T07/T08/T09 集成测试 4/4。
+- §4（FIND-2 正确性与隔离，3e00b37，CI 绿）
+- §5 核心（ddf93f2）：读者模型/资产私密/全链路裁决（详见上一版记录）
+- §6（本提交）：六档日期精度。共享 mobile/src/utils/occurred-precision.ts
+  （formatOccurredLabel/anchorFromPrecisionInput/precisionHasDay 等）；
+  draft 模型+publishDraft 支持 unknown 无时间保存；日历天级视图排除
+  非到日精度、月精度入 rough 列表；时间轴/搜索日期筛选排除 unknown；
+  年龄按精度省略；Web 捕获编辑器+编辑表单六档选择；移动 dateLabel
+  精度感知。tests/unit/date-precision 4 + tests/integration/date-precision 5。
 
 ## 已跑命令与结果
 
-- root: tsc clean、lint 仅既有 warning、tests/unit 219/219、
-  integration 76/85 文件通过（9 个失败文件均为本地环境缺 ffmpeg/
-  epubcheck/poppler-CJK/symlink/chmod/EPERM——干净 main 同样失败，
-  CI Linux 有工具链；其中 migration/assets/upgrade-v013/review 的
-  真回归已修复）
-- mobile: 236/236、tsc/eslint clean
+- §6 后：root tsc clean、unit+drafts+calendar 228 通过、mobile 236 通过
+- §5 提交前全量见上一版记录
 
 ## 未完成测试
 
-- §5 移动端：私密/指定成员 UI 入口、私密原件上传通道（本轮移动端
-  非 family 草稿的原件保留本机，如实提示）；大文件私密断点续传。
-- §5 派生面收尾：AI 上下文来源（organizer/story 生成的事件级过滤待
-  逐个核验）、阅读包/作品对私密事件的引用策略、导出文案说明。
-- 本地环境失败件待 CI 验证。
+- §6 剩余：移动端时间输入 UI、导出/书籍/回顾精度呈现、DST/跨年专项
+- §5 剩余：移动端私密 UI/上传、AI 上下文与阅读包派生面、撤权后离线
+  缓存失效（待 §11 同步权限版本）
+- 本地环境失败件（ffmpeg/epubcheck/poppler-CJK 等）待 CI 验证
 
 ## 下一个具体动作
 
-P1-§6：Draft 模型允许 occurredAt 精度 unknown/year/month（不再强填
-发生时刻），事件查询/排序/日历/年龄按精度语义处理，迁移兼容旧行。
+1. git push（网络恢复后）并核对 ddf93f2+§6 SHA 的 CI
+2. §7：MediaReader 文字播放按钮（真实事件驱动状态）
 
 ## 外部阻塞
 

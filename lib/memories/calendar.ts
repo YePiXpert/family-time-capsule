@@ -60,10 +60,14 @@ export async function getCalendarMonth(
     sql`, `,
   );
   const predicate = browsePredicate(context, filters);
+  // §6：天级计数/封面只包含真实到日的事件；month/year/unknown 的锚点是
+  // 排序锚点，进入某一天等于编造日期。月精度的事件单独归入 rough 列表
+  // （“这个月，日期待补充”）；year/unknown 不进月视图，经时间轴/搜索可找到。
+  const dayLevel = sql`e.occurred_at_precision in ('exact','approximate','date_only')`;
   const counts = getDb().all<{ date: string; count: number }>(sql`
     with days(day, lo, hi) as (values ${intervals})
     select days.day as date, count(e.id) as count from days left join memory_event e
-      on e.occurred_at >= days.lo and e.occurred_at < days.hi and ${predicate}
+      on e.occurred_at >= days.lo and e.occurred_at < days.hi and ${predicate} and ${dayLevel}
     group by days.day order by days.day`);
   const readable = readableAssetPredicate(
     createContributionAccessSnapshot(context),
@@ -80,8 +84,15 @@ export async function getCalendarMonth(
         row_number() over (partition by days.day order by e.occurred_at desc, e.id desc) as position
       from days join memory_event e on e.occurred_at >= days.lo and e.occurred_at < days.hi
       join asset ba on ba.id = e.cover_asset_id
-      where ${predicate} and ba.type = 'image' and ${readable}
+      where ${predicate} and ${dayLevel} and ba.type = 'image' and ${readable}
     ) select date, eventId, assetId from candidates where position <= 3 and assetId is not null order by date, position`);
+  const monthFrom = calendarRange(dates[0]!, context.familyTimezone);
+  const monthBefore = calendarRange(dates.at(-1)!, context.familyTimezone);
+  const rough = getDb().all<{ id: string; title: string; occurredAt: number; precision: string }>(sql`
+    select e.id, e.title, e.occurred_at as occurredAt, e.occurred_at_precision as precision from memory_event e
+    where ${predicate} and e.occurred_at_precision = 'month'
+      and e.occurred_at >= ${monthFrom.from.getTime() / 1000} and e.occurred_at < ${monthBefore.before.getTime() / 1000}
+    order by e.occurred_at desc, e.id desc limit 50`);
   return {
     month,
     timezone: context.familyTimezone,
@@ -89,6 +100,7 @@ export async function getCalendarMonth(
       ...day,
       covers: covers.filter((cover) => cover.date === day.date),
     })),
+    rough,
   };
 }
 
@@ -121,6 +133,8 @@ export async function getBrowsePage(
   }>(sql`
     select e.id, e.title, e.occurred_at as occurredAt from memory_event e
     where ${browsePredicate(context, filters)} and e.occurred_at >= ${range.from.getTime() / 1000} and e.occurred_at < ${range.before.getTime() / 1000}
+      -- §6：某一天的真实事件只含到日精度；锚点不是日期的精度不冒充
+      and e.occurred_at_precision in ('exact','approximate','date_only')
       ${after ? sql`and (e.occurred_at, e.id) < (${after.at}, ${after.id})` : sql``}
     order by e.occurred_at desc, e.id desc limit 31`);
   const entries = rows

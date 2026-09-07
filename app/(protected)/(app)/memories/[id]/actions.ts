@@ -35,7 +35,7 @@ export type ContributionFormState = { error?: string };
 
 export type EditEventFormState = { error?: string; saved?: boolean };
 
-const PRECISIONS = ["exact", "approximate", "date_only"] as const;
+const PRECISIONS = ["exact", "approximate", "date_only", "month", "year", "unknown"] as const;
 
 /**
  * 编辑记忆事件（RH-003）。
@@ -53,25 +53,37 @@ export async function editEventAction(
   const family = await getFamily(familyId);
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
+  // §6：按精度解析锚点。month 读 "YYYY-MM"，year 读 "YYYY"；unknown 不
+  // 提供时间（保留原锚点用于排序，显示永不冒充发生时间）。
   let occurredAt: Date | undefined;
+  let precision: string | undefined;
+  const precisionInput = String(formData.get("occurredAtPrecision") ?? "");
+  precision = PRECISIONS.includes(precisionInput as (typeof PRECISIONS)[number])
+    ? precisionInput
+    : undefined;
   const wall = String(formData.get("occurredAt") ?? "").trim();
-  if (wall) {
+  if (precision === "unknown") {
+    occurredAt = undefined;
+  } else if (wall) {
     try {
-      occurredAt = zonedWallTimeToUtc(
-        wall.length === 16 ? `${wall}:00` : wall,
-        timezone,
-      );
+      if (precision === "month" && /^\d{4}-\d{2}$/u.test(wall)) {
+        occurredAt = zonedWallTimeToUtc(`${wall}-01T00:00:00`, timezone);
+      } else if (precision === "year" && /^\d{4}$/u.test(wall)) {
+        occurredAt = zonedWallTimeToUtc(`${wall}-01-01T00:00:00`, timezone);
+      } else if (precision === "month" || precision === "year") {
+        return { error: "时间格式不正确。" };
+      } else {
+        occurredAt = zonedWallTimeToUtc(
+          wall.length === 16 ? `${wall}:00` : wall,
+          timezone,
+        );
+      }
     } catch {
       return { error: "时间格式不正确。" };
     }
   }
 
-  const precisionInput = String(formData.get("occurredAtPrecision") ?? "");
-  const occurredAtPrecision = PRECISIONS.includes(
-    precisionInput as (typeof PRECISIONS)[number],
-  )
-    ? (precisionInput as (typeof PRECISIONS)[number])
-    : undefined;
+  const occurredAtPrecision = precision as (typeof PRECISIONS)[number] | undefined;
 
   const locationRaw = String(formData.get("locationText") ?? "").trim();
 
