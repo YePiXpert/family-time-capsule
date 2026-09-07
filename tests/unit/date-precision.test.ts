@@ -45,3 +45,32 @@ describe("§6 日期精度纯函数", () => {
     expect(anchorFromPrecisionInput({ precision: "month", wall: "not-a-month", timezone: "Asia/Shanghai", toUtc })).toBeNull();
   });
 });
+
+describe("§6 DST 与跨年专项", () => {
+  it("DST 时区的月/年锚点按该期首日的当时偏移换算", () => {
+    const toUtc = zonedWallTimeToUtc;
+    // 纽约 1988-07-01 处于 EDT（UTC-4）；1988-01-01 处于 EST（UTC-5）
+    expect(anchorFromPrecisionInput({ precision: "month", wall: "1988-07", timezone: "America/New_York", toUtc })?.toISOString()).toBe("1988-07-01T04:00:00.000Z");
+    expect(anchorFromPrecisionInput({ precision: "year", wall: "1988", timezone: "America/New_York", toUtc })?.toISOString()).toBe("1988-01-01T05:00:00.000Z");
+  });
+
+  it("DST 秋季回拨日的墙钟照实显示，月锚点往返不漂移", () => {
+    // 2026-11-01 01:30 是纽约秋季回拨的重复小时；换算取较早时刻（EDT）
+    const anchor = zonedWallTimeToUtc("2026-11-01T01:30:00", "America/New_York");
+    expect(anchor.toISOString()).toBe("2026-11-01T05:30:00.000Z");
+    expect(formatOccurredLabel("exact", anchor, "America/New_York")).toBe("2026年11月1日 01:30");
+    const monthAnchor = anchorFromPrecisionInput({ precision: "month", wall: "2026-11", timezone: "America/New_York", toUtc: zonedWallTimeToUtc })!;
+    expect(formatOccurredLabel("month", monthAnchor, "America/New_York")).toBe("2026年11月");
+  });
+
+  it("跨年排序与显示：12月月锚点排在次年1月之前，家庭时区归属不漂移", () => {
+    const toUtc = zonedWallTimeToUtc;
+    const december = anchorFromPrecisionInput({ precision: "month", wall: "2025-12", timezone: "Asia/Shanghai", toUtc })!;
+    const january = anchorFromPrecisionInput({ precision: "date_only", wall: "2026-01-05", timezone: "Asia/Shanghai", toUtc })!;
+    expect(december.getTime()).toBeLessThan(january.getTime());
+    // 上海 2025-12-01 00:00 = UTC 2025-11-30T16:00：UTC 上年末不漂成次年
+    expect(december.toISOString()).toBe("2025-11-30T16:00:00.000Z");
+    expect(formatOccurredLabel("month", december, "Asia/Shanghai")).toBe("2025年12月");
+    expect(formatOccurredLabel("date_only", january, "Asia/Shanghai")).toBe("2026年1月5日");
+  });
+});
