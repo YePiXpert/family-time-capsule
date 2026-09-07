@@ -25,10 +25,10 @@
 按 SemVer 优先级比较:
 
 ```
-1.0.0  <  1.0.0-rc.5  <  1.1.0-alpha.1  <  1.3.0-alpha.1
+1.0.0-rc.5  <  1.0.0  <  1.1.0-alpha.1  <  1.3.0-alpha.1
 ```
 
-即:标准 SemVer 认为 `1.0.0` **小于**所有探索期 1.x prerelease。因此:
+即:标准 SemVer 认为 `1.0.0` **小于**探索期 1.1/1.2/1.3 prerelease。因此:
 
 - **禁止**用 `sort -V`、npm semver 比较或任何 SemVer 优先级判断
   "探索版 → 正式 1.0" 这条合法升级路径;
@@ -42,7 +42,7 @@
 | productVersion | 对外产品版本(root/mobile `package.json`、`expo.version`) | 终点 `1.0.0`;开发期 `1.0.0-dev.N` |
 | releaseSequence | 发布注册表中的单调递增序号 | 探索期 1~14,正式主线从 15 起,永不回退、永不归零 |
 | Android versionCode / iOS buildNumber | 原生包构建号 | 只增不减:当前 12(历史最高为 11);高于所有已发行构建 |
-| DB migration 编号 | `db/migrations/00NN_*.sql` | 独立延续(当前至 0046),不因产品版本归一而归零 |
+| DB migration 编号 | `db/migrations/00NN_*.sql` | 独立延续(当前至 0051),不因产品版本归一而归零 |
 | API schemaVersion / 导出格式版本 | 协议与归档兼容承诺 | 独立延续;正式 1.0 不得破坏对探索期归档的恢复能力 |
 
 `+build.N` 之类的 build metadata 不参与任何版本比较,也不能用来改变优先级。

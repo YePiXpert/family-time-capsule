@@ -32,7 +32,6 @@ export const memoryEvent = sqliteTable(
       .notNull()
       .references(() => family.id, { onDelete: "cascade" }),
     childPersonId: text("child_person_id")
-      .notNull()
       .references(() => person.id),
     title: text("title").notNull(),
     titleSource: text("title_source").notNull().default("legacy_unknown"),

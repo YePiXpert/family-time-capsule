@@ -494,7 +494,7 @@ export function OnboardingGate() {
   }, []);
 
   const submit = async () => {
-    if (!/^\d{4}-\d{2}-\d{2}$/u.test(childBirthDate.trim())) {
+    if (childBirthDate.trim() && !/^\d{4}-\d{2}-\d{2}$/u.test(childBirthDate.trim())) {
       setError("孩子的出生日期请按 2026-09-02 这样的格式填写。");
       return;
     }
@@ -523,14 +523,14 @@ export function OnboardingGate() {
         <StepHeader
           eyebrow="初始化家庭"
           title="建立你的家庭"
-          intro={`以 ${credentials?.serverUrl ?? "家庭空间"} 管理员身份创建家庭、孩子和你的档案。家庭时区：${timezone}。`}
+          intro={`以 ${credentials?.serverUrl ?? "家庭空间"} 管理员身份创建家庭和你的档案，孩子资料可稍后补充。家庭时区：${timezone}。`}
         />
         <View style={sharedStyles.card}>
           <Text style={sharedStyles.label}>家庭名称</Text>
           <TextInput onChangeText={setFamilyName} placeholder="例如：河边的小满家" style={sharedStyles.input} value={familyName} />
-          <Text style={sharedStyles.label}>孩子的称呼</Text>
+          <Text style={sharedStyles.label}>孩子的称呼（可跳过）</Text>
           <TextInput onChangeText={setChildDisplayName} placeholder="例如：小满" style={sharedStyles.input} value={childDisplayName} />
-          <Text style={sharedStyles.label}>孩子的出生日期</Text>
+          <Text style={sharedStyles.label}>孩子的出生日期（可稍后补充）</Text>
           <TextInput onChangeText={setChildBirthDate} placeholder="2026-09-02" style={sharedStyles.input} value={childBirthDate} />
           <Text style={sharedStyles.label}>你的称呼</Text>
           <TextInput onChangeText={setSelfDisplayName} placeholder="例如：妈妈" style={sharedStyles.input} value={selfDisplayName} />

@@ -176,6 +176,12 @@ export function InboxCard({
               className={`${inputClass} min-h-11 w-full`}
             />
             <input type="text" name="locationText" defaultValue={item.draftLocationText ?? ""} maxLength={200} placeholder="地点（可选）" aria-label="事件地点" className={`${inputClass} min-h-11 w-full`} />
+            <label className="text-sm">年龄参考人物（可选）
+              <select name="childPersonId" defaultValue="" className={`${inputClass} min-h-11 w-full`}>
+                <option value="">不显示人物年龄</option>
+                {people.map(person => <option key={person.id} value={person.id}>{person.displayName}</option>)}
+              </select>
+            </label>
             {people.length > 0 ? (
               <details className="rounded-lg border border-line px-3">
                 <summary className="min-h-11 py-2.5">选择人物</summary>
@@ -183,7 +189,7 @@ export function InboxCard({
                   <legend className="sr-only">参与人物</legend>
                   {people.map((person) => (
                     <label key={person.id} className="flex min-h-11 items-center gap-2 text-sm">
-                      <input type="checkbox" name="participantPersonIds" value={person.id} defaultChecked={participantPersonIds.length > 0 ? participantPersonIds.includes(person.id) : person.isChild} className="h-5 w-5 accent-accent" />
+                      <input type="checkbox" name="participantPersonIds" value={person.id} defaultChecked={participantPersonIds.includes(person.id)} className="h-5 w-5 accent-accent" />
                       {person.displayName}
                     </label>
                   ))}

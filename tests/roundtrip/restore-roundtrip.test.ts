@@ -204,6 +204,7 @@ beforeAll(async () => {
     const item = await m.inbox.createInboxItemForAsset(on.familyId, stored.asset);
     const entry = (await m.inbox.getInboxEntry(on.familyId, item.id))!;
     const ev = await m.memories.confirmInboxEntry(on.familyId, entry, {
+      childPersonId: (await m.family.listPeople(on.familyId)).find(p => p.isChild)!.id,
       title: "出生后的第一天",
     });
     if (!ev.ok) throw new Error("confirm failed");

@@ -751,7 +751,7 @@ async function loadAndVerifyZip(
   const memoriesJson = await readJson<
     Array<{
       id: string;
-      childPersonId: string;
+      childPersonId: string | null;
       title: string;
       titleSource?: string;
       titleRevision?: number;
@@ -1163,7 +1163,6 @@ async function loadAndVerifyZip(
 
   requireCondition(Array.isArray(peopleJson), "bad_json", "people.json 必须是数组");
   const personIds = new Set<string>();
-  const childPersonIds = new Set<string>();
   for (const p of peopleJson) {
     requireCondition(isRecord(p), "bad_json", "person 必须是对象");
     requireCondition(
@@ -1221,7 +1220,6 @@ async function loadAndVerifyZip(
       `person ${p.id} 的时间字段非法`,
     );
     personIds.add(p.id);
-    if (isChild) childPersonIds.add(p.id);
   }
   requireCondition(
     Array.isArray(memoriesJson),
@@ -1244,9 +1242,9 @@ async function loadAndVerifyZip(
       `memories: 事件 ${m.id} 缺少标题`,
     );
     requireCondition(
-      childPersonIds.has(m.childPersonId),
+      m.childPersonId === null || personIds.has(m.childPersonId),
       "bad_refs",
-      `memories: 事件 ${m.id} 引用未知或非 child Person ${m.childPersonId}`,
+      `memories: 事件 ${m.id} 引用未知 Person ${m.childPersonId}`,
     );
     requireCondition(
       parseDate(m.occurredAt) !== null &&
@@ -2897,7 +2895,7 @@ async function restoreFromArchive(
       }
 
       const participants = memoriesJson.flatMap((m) => {
-        const ids = new Set([m.childPersonId, ...(m.participantPersonIds ?? [])]);
+        const ids = new Set(m.participantPersonIds ?? (m.childPersonId ? [m.childPersonId] : []));
         return [...ids].map((personId) => ({
           id: randomUUID(),
           memoryEventId: m.id,

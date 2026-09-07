@@ -159,12 +159,13 @@ export function validateOnboardingInput(input: OnboardingInput): boolean {
   if (familyName.length < 1 || familyName.length > 50) return false;
   if (!isValidTimezone(input.timezone)) return false;
   const childName = input.childDisplayName.trim();
-  if (childName.length < 1 || childName.length > 50) return false;
-  if (!isValidDateString(input.childBirthDate)) return false;
+  if (childName.length > 50) return false;
+  if (childName && input.childBirthDate && !isValidDateString(input.childBirthDate)) return false;
+  if (!childName && input.childBirthDate) return false;
   const selfName = input.selfDisplayName.trim();
   if (selfName.length < 1 || selfName.length > 50) return false;
   const relation = input.selfRelationToChild.trim();
-  if (relation.length < 1 || relation.length > 20) return false;
+  if (relation.length > 20) return false;
   return true;
 }
 
@@ -199,20 +200,20 @@ export async function completeOnboarding(
       .run();
     tx.insert(person)
       .values([
-        {
+        ...(input.childDisplayName.trim() ? [{
           id: childPersonId,
           familyId,
           displayName: input.childDisplayName.trim(),
           isChild: true,
-          birthDate: input.childBirthDate,
+          birthDate: input.childBirthDate || null,
           createdAt: now,
           updatedAt: now,
-        },
+        }] : []),
         {
           id: selfPersonId,
           familyId,
           displayName: input.selfDisplayName.trim(),
-          relationToChild: input.selfRelationToChild.trim(),
+          relationToChild: input.selfRelationToChild.trim() || null,
           isChild: false,
           isGuardian: input.selfIsGuardian === true,
           createdAt: now,

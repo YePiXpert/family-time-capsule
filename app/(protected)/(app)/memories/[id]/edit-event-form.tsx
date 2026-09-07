@@ -49,7 +49,7 @@ export function EditEventForm({
 }) {
   const [state, formAction, pending] = useActionState(editEventAction, undefined);
   const [open, setOpen] = useState(initiallyOpen);
-  const children = people.filter((p) => p.isChild);
+  const children = people;
 
   if (!open) {
     return (
@@ -130,12 +130,13 @@ export function EditEventForm({
 
       {children.length > 0 && (
         <label className="flex flex-col gap-1 text-sm">
-          孩子档案（时间轴年龄按此孩子的生日计算）
+          年龄参考人物（可选，不改变参与人）
           <select
             name="childPersonId"
-            defaultValue={event.childPersonId}
+            defaultValue={event.childPersonId ?? ""}
             className={inputClass}
           >
+            <option value="">不显示人物年龄</option>
             {children.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.displayName}

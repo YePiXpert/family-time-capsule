@@ -20,7 +20,7 @@ export function toLocalTimelineEvent(row: LocalCaptureRow): LocalTimelineEvent {
     occurredAt: row.occurred_at,
     occurredAtPrecision: "exact",
     locationText: null,
-    childPersonId: "local",
+    childPersonId: null,
     ageDays: null,
     ageLabel: null,
     updatedAt: row.occurred_at,

@@ -128,13 +128,12 @@ export async function confirmAction(
     occurredAt,
     locationText,
     participantPersonIds,
+    childPersonId: String(formData.get("childPersonId") ?? "") || null,
   });
   if (!result.ok) {
     return {
       error:
-        result.error === "no_child"
-          ? "家庭还没有孩子档案，请先在「家人」页补充。"
-          : result.error === "conflict" ? "名称已被另一处修改，本次输入已保留，请核对后再确认。" : "确认失败，请检查标题（1–100 字）。",
+        result.error === "conflict" ? "名称已被另一处修改，本次输入已保留，请核对后再确认。" : "确认失败，请检查标题（1–100 字）。",
       itemId,
     };
   }
@@ -183,13 +182,12 @@ export async function mergeAction(
     occurredAt,
     locationText,
     participantPersonIds,
+    childPersonId: String(formData.get("childPersonId") ?? "") || null,
   });
   if (!result.ok) {
     return {
       error:
-        result.error === "no_child"
-          ? "家庭还没有孩子档案。"
-          : "合并失败：至少选择两个条目，标题 1–100 字。",
+         "合并失败：至少选择两个条目，标题 1–100 字。",
     };
   }
   revalidatePath("/inbox");

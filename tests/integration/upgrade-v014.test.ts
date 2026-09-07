@@ -402,7 +402,7 @@ function assertSnapshotParity(
 }
 
 describe("real 0014 family invitation archive upgrade", () => {
-  it("upgrades through HEAD without losing claims, sessions, legacy words, or restore state", () => {
+  it("upgrades through HEAD without losing claims, sessions, legacy words, or restore state", async () => {
     const workDir = mkdtempSync(path.join(tmpdir(), "ftc-upgrade-v014-"));
     const databasePath = path.join(workDir, "capsule.sqlite");
     let sqlite = new Database(databasePath);
@@ -425,7 +425,11 @@ describe("real 0014 family invitation archive upgrade", () => {
       // Drizzle migrator discover and apply 0015 from the real migration ledger.
       sqlite = new Database(databasePath);
       sqlite.pragma("foreign_keys = ON");
-      migrate(drizzle(sqlite), { migrationsFolder: MIGRATIONS_DIR });
+      const { runMigrationsWithPreMigrationSnapshot } = await import("@/db/migration-safety");
+      runMigrationsWithPreMigrationSnapshot({ sqlite, migrationsFolder: MIGRATIONS_DIR,
+        snapshotDirectory: path.join(workDir, "snapshots"),
+        runMigrations: () => migrate(drizzle(sqlite), { migrationsFolder: MIGRATIONS_DIR }),
+      });
 
       expect(
         sqlite

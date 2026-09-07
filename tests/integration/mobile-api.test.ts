@@ -315,8 +315,6 @@ describe("native mobile API", () => {
 
   it("pages, edits and confirms inbox entries while viewer and cross-family writes fail closed", async () => {
     const admin = (await getDb().select().from(user))[0]!;
-    const people = await listPeople(admin.familyId!);
-    const childId = people.find((entry) => entry.isChild)!.id;
     const item = await createTextInboxItem(admin.familyId!, "需要整理的原生文字");
     await createTextInboxItem(admin.familyId!, "分页中的另一条素材");
 
@@ -424,7 +422,9 @@ describe("native mobile API", () => {
       occurredAt,
       occurredAtWall: "2026-09-01T16:30",
       locationText: "外婆家",
-      participantPersonIds: expect.arrayContaining([childId, editorPersonId]),
+      participantPersonIds: [editorPersonId],
+      childPersonId: null,
+      ageLabel: null,
       sourceNotes: [{ text: "需要整理的原生文字" }],
     });
   });
@@ -698,13 +698,17 @@ describe("native mobile API", () => {
     const requestResult = (await requestCreated.json()) as { id: string; token: string };
     expect(requestResult.token).toHaveLength(43);
 
+    // Seed dated material explicitly; suite execution date must not select an empty week.
+    const { createContribution } = await import("@/lib/contributions/service");
+    await getDb().update(memoryEvent).set({ occurredAt: new Date("2026-09-04T12:00:00.000Z") }).where((await import("drizzle-orm")).eq(memoryEvent.id, event.id));
+    expect((await createContribution(familyId, { memoryEventId: event.id, authorPersonId: admin.personId!, recordedByUserId: admin.id, rawText: "虚构家庭本周一起做饭。", visibility: "family" })).ok).toBe(true);
     const storyCreated = await libraryPost(
       mobileJsonRequest("http://localhost/api/mobile/v1/library/stories", "POST", bearerToken, {
         anchor: "2026-09-04T12:00:00.000Z",
       }),
       { params: Promise.resolve({ domain: "stories" }) },
     );
-    expect(storyCreated.status).toBe(201);
+    expect(storyCreated.status, await storyCreated.clone().text()).toBe(201);
     const storyResult = (await storyCreated.json()) as { id: string };
     const storyDetail = await libraryDetailGet(
       bearerRequest(`http://localhost/api/mobile/v1/library/stories/${storyResult.id}`, viewerToken),

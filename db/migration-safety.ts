@@ -218,10 +218,19 @@ export function runMigrationsWithPreMigrationSnapshot(options: {
     );
   }
 
+  const rebuild = state.pending.some((migration) => migration.sql.some((statement) => statement.includes("ftc:foreign-key-rebuild")));
+  const legacyAlterTable = options.sqlite.pragma("legacy_alter_table", { simple: true });
+  const foreignKeys = options.sqlite.pragma("foreign_keys", { simple: true });
+  if (rebuild) options.sqlite.pragma("foreign_keys = OFF");
   try {
     options.runMigrations();
   } catch (error) {
     throw new DatabaseMigrationError(error, snapshotPath);
+  } finally {
+    if (rebuild) {
+      options.sqlite.pragma(`foreign_keys = ${foreignKeys ? "ON" : "OFF"}`);
+      options.sqlite.pragma(`legacy_alter_table = ${legacyAlterTable ? "ON" : "OFF"}`);
+    }
   }
 
   return {

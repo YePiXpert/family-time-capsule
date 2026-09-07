@@ -52,13 +52,12 @@ export function OnboardingForm({ defaultDisplayName }: { defaultDisplayName: str
         </select>
       </label>
       <fieldset className="mt-2 flex flex-col gap-4 rounded-xl border border-foreground/10 p-4">
-        <legend className="px-1 text-sm font-medium">孩子档案</legend>
+        <legend className="px-1 text-sm font-medium">孩子档案（可跳过）</legend>
         <label className="flex flex-col gap-1.5 text-sm">
           孩子姓名
           <input
             name="childDisplayName"
             type="text"
-            required
             maxLength={50}
             className={inputClass}
             placeholder="例如：小满"
@@ -69,7 +68,6 @@ export function OnboardingForm({ defaultDisplayName }: { defaultDisplayName: str
           <input
             name="childBirthDate"
             type="date"
-            required
             className={inputClass}
           />
         </label>
@@ -88,11 +86,10 @@ export function OnboardingForm({ defaultDisplayName }: { defaultDisplayName: str
           />
         </label>
         <label className="flex flex-col gap-1.5 text-sm">
-          对孩子的称谓
+          家庭称谓（可选）
           <input
             name="selfRelationToChild"
             type="text"
-            required
             maxLength={20}
             list="relation-choices"
             className={inputClass}

@@ -16,6 +16,7 @@ test("创建 8/10 事件 → 修改为 8/11 → 时间轴移动、年龄变化",
   await expect(page.getByText("已保存，等待整理")).toBeVisible();
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("八月中旬的一个上午");
+  await page.getByLabel("年龄参考人物（可选）").selectOption({ label: "小满" });
   await page.getByRole("button", { name: "确认进入时间轴" }).click();
 
   // 初始：8/10 + 出生当天

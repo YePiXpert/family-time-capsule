@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getMemoryEventDetail, getTimelinePage, listEventRevisions } from "@/lib/memories/service";
-import { formatAgeLabel } from "@/lib/memories/age";
+import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { listFacts } from "@/lib/contributions/service";
 import {
   createContributionAccessSnapshot,
@@ -274,8 +274,8 @@ export default async function MemoryEventPage({
 
   const latestSuggestionJob = suggestionJobs[0];
 
-  const child = participants.find((p) => p.id === event.childPersonId);
-  const ageLabel = formatAgeLabel(child?.birthDate, event.occurredAt, timezone);
+  const child = people.find((p) => p.id === event.childPersonId);
+  const ageLabel = formatPersonAgeLabel(child, event.occurredAt, timezone);
   const contributionAuthors =
     isAdminClassRole(context.role) || context.role === "editor"
       ? people
@@ -343,7 +343,7 @@ export default async function MemoryEventPage({
           ) : undefined}
         />
         <CollectionSelection memories={[{id:event.id,title:event.title}]} />
-        <section aria-label="参与人物" className="mt-4 text-sm text-muted">与 {participants.map((person) => `${person.displayName}${person.id === event.childPersonId ? "（孩子）" : ""}`).join("、")} 一起</section>
+        <section aria-label="参与人物" className="mt-4 text-sm text-muted">与 {participants.map((person) => person.displayName).join("、")} 一起</section>
       </div>
 
       {canWriteEvent ? <OrganizerControl kind="memory_event" id={event.id} /> : null}

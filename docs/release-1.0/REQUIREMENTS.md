@@ -4,17 +4,17 @@
 > 本清单是需求唯一 ID 来源;状态必须由真实代码/自动化/场景证据支撑,禁止"文件存在=完成"。
 > 初始基线:2026-09-06,基于 acea745 探索报告 + 白皮书 1–29 章 + GOAL_FORMAL_1_0.txt。
 
-## 状态统计(基线)
+## 状态统计（2026-09-07 M3-A 核对）
 
-| 状态 | 数量 | 说明 |
-| --- | --- | --- |
-| 自动化通过 | 88 | 有实现+自动化测试,但多数尚未过"真实场景"验收 |
-| 部分实现 | 21 | 有代码但缺关键面(见各行) |
-| 未实现 | 11 | 无落点 |
-| 待核验 | 9 | 可能已有实现,需逐项核对 |
-| 真实场景通过 | 3 | 有真实环境演示证据 |
-| 外部阻塞 | 6 | 工程就绪,等外部输入 |
-| 明确非产品范围 | 8 | 白皮书/Goal 明确排除 |
+统计以下有 ID 的需求行，说明括号不改变状态；明确非产品范围的附录不重复计数。
+
+| 状态 | 数量 |
+| --- | --- |
+| 自动化通过 | 114 |
+| 部分实现 | 31 |
+| 未实现 | 9 |
+| 明确非产品范围 | 1 |
+| 外部阻塞 | 2 |
 
 ---
 
@@ -40,7 +40,7 @@
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
 | ID-1 | Instance/User/AuthIdentity/FamilyMembership/Person/Guardian/GuestGrant 分离 | 数据模型核对 | 部分实现(M2-d 后:Person/Guardian/GuestGrant(投递箱+限定阅读 0050)齐备且监护授权留痕;AuthIdentity 多身份与显式 membership 状态机仍以 user 单行承载——停用/解绑/删除语义等价,见 SECURITY §18) | db/schema/(family|collection|oral-history).ts |
-| ID-2 | 角色 owner/admin/editor/contributor/viewer/guest | owner 缺失 | 部分实现(现有 admin/editor/contributor/viewer) | lib/authz/policy.ts |
+| ID-2 | 角色 owner/admin/editor/contributor/viewer/guest | owner 缺失 | 自动化通过(M2-a 核验：owner/admin/editor/contributor/viewer；guest 用独立 scope grant) | lib/authz/policy.ts; db/migrations/0047_owner_role.sql; tests/integration/ownership.test.ts |
 | ID-3 | 首用闭环:创建家庭→HTTPS核实→一次性初始化→登录→建家庭人物 | bootstrap 零隐私 | 自动化通过 | app/api/bootstrap; tests/integration/bootstrap-flow |
 | ID-4 | 邀请:高熵链接/二维码、预览不消耗、原子claim、角色服务端验证 | 过期/撤销/重放不越权 | 自动化通过 | lib/invitations; tests/integration/invitation-flow |
 | ID-5 | 访客提交/限定阅读独立 scope,只存hash,限时限次可撤销 | scope 不可互换 | 自动化通过(2026-09-07 M2-d:投递箱(只提交)+限定阅读链接(只读单一相册,0050;令牌只存哈希;可过期/收回即时失效;媒体按相册范围裁决;访客强制 inline 不能批量下载)) | lib/family/read-grants.ts; app/view/[token] |
@@ -55,9 +55,9 @@
 | ID-14 | App 内删除账号+关联内容处理;人物记录不级联误删 | Apple 删号要求 | 自动化通过(2026-09-07 M2-c:密码+确认语双确认;凭据全撤(密码/通行密钥/两步验证/会话)+身份匿名化(邮件→deleted-*.invalid)+永久停用;讲述/胶囊/AI 任务等 RESTRICT 引用保留行以保档案完整,人物不级联删除;已下载副本不可召回如实声明) | lib/accounts/service.ts; settings/account |
 | ID-15 | 跨作者内容删除影响预览/合法保留说明/删除完成状态 | 引用守卫 | 自动化通过(回收站+素材引用守卫) | lib/trash |
 | ID-16 | 孩子本人账号绑定、监护权变更、范围审阅与导出 | 不按年龄自动解锁 | 自动化通过(2026-09-07 M2-d:孩子绑定邀请只允许 viewer/contributor 且必须由在册监护人发起,监护授权审计 person.child_account_invited;日后改角色同样封死 admin/editor;绑定不解锁 child_later(解锁仅监护人手工);监护权变更 M1 已有+审计;孩子以所授角色在应用内审阅,完整导出仍是管理员能力,如实登记) | lib/invitations/service.ts; tests/integration/child-account.test.ts |
-| ID-17 | 所有权移交/可信接管:通知/等待/撤销/离线运维交接包 | 不自动推断死亡 | 未实现 | — |
+| ID-17 | 所有权移交/可信接管:通知/等待/撤销/离线运维交接包 | 不自动推断死亡 | 部分实现(M2-a 所有权移交、密码确认和审计已有；通知/等待/撤销及维护交接包仍待补) | lib/accounts/service.ts; tests/integration/ownership.test.ts |
 | ID-18 | 多孩子/双胞胎/多监护人/历史称呼可表达 | 非唯一"妈妈"字段 | 自动化通过 | person 模型+关系 |
-| ID-19 | 祖辈记忆允许无 childPersonId;年龄展示用真实生日+家庭时区 | 不强制事件挂孩子 | 部分实现(2026-09-07 核验:memory_event.child_person_id 仍为 NOT NULL,祖辈无孩子事件需 SQLite 表重建迁移;列入 M3 缺口) | db/schema/memory.ts |
+| ID-19 | 祖辈记忆允许无 childPersonId;年龄展示用真实生日+家庭时区 | 不强制事件挂孩子 | 自动化通过(M3-A：0051 可空年龄锚点；无孩子建家庭、创建/编辑/搜索/导出恢复；参与人独立；真机待 BLK-7) | tests/integration/unanchored-memory.test.ts; optional-anchor-migration.test.ts; mobile/tests/optional-anchor.test.ts |
 
 ## CAP — 资料库、混合记录与媒体原件(M3,白皮书 §7,§21)
 
@@ -102,7 +102,7 @@
 | FAM-1 | 补一句/补素材/请家人讲一段;独立Contribution保留作者/原文/来源 | 不冒充作者 | 自动化通过 | lib/contributions |
 | FAM-2 | 轻评论/回应;无热榜/签到/排行/已读压力 | 不做社交压力 | 自动化通过(无此类功能) | — |
 | FAM-3 | 免账号贡献页一屏:问题/录音/重听/提交 | 大字/字幕/读屏/标点 | 自动化通过 | /contribute/[token] |
-| FAM-4 | 访客默认只提交不读库;限定阅读独立授权在线可撤销 | token 分 scope | 部分实现(投递有;限定阅读未实现=ID-5) | lib/contribution-portals |
+| FAM-4 | 访客默认只提交不读库;限定阅读独立授权在线可撤销 | token 分 scope | 自动化通过(M2-d 核验：投递与限定相册阅读 scope 独立，过期和撤销即时生效) | lib/family/read-grants.ts; tests/integration/read-grants.test.ts |
 | FAM-5 | 投递箱多文件/限额/过期/暂停/撤销;审核通过挂到正确事件 | 不默认AI外发 | 自动化通过 | contribution_portal_submission |
 | FAM-6 | 提醒:本机通知+可选SMTP摘要;概括文案无私人照片;订阅/取消/时区/静默/频率 | 无权限不影响核心 | 部分实现(本机通知有;SMTP邮件摘要未实现) | mobile/src/notifications |
 | FAM-7 | 问题来自真实内容;可跳过/静音/关闭;不显示整理债务 | 无38项待办压力 | 自动化通过 | oral-history requests |
@@ -143,8 +143,8 @@
 | --- | --- | --- | --- | --- |
 | FIND-1 | 统一索引:记忆/素材描述/OCR/转录/讲述/故事/相册/作品文本;可重建 | 权限复核 | 自动化通过 | lib/search; search:rebuild |
 | FIND-2 | 关键词/人物/日期/媒体/标签筛选无AI可用;离线对合法缓存可用 | 不下发无授权索引 | 部分实现(在线筛选有;离线搜索未实现——原生搜索需连接) | SearchScreen |
-| FIND-3 | 自然语言查询:Luna生成受限校验的检索条件→FTS返回来源卡 | 不执行模型SQL;不凭记忆答 | 未实现 | — |
-| FIND-4 | NL 检索对关键词基线报告 Recall@K/误召回 | 不冒称CLIP | 未实现(评测脚本) | — |
+| FIND-3 | 自然语言查询:Luna生成受限校验的检索条件→FTS返回来源卡 | 不执行模型SQL;不凭记忆答 | 自动化通过(M7-a 已有受限计划、关键词/人物/时间映射与 Web 来源卡；真实 Luna 检索质量未验收) | lib/search/natural-language.ts; tests/unit/search-natural-language.test.ts |
+| FIND-4 | NL 检索对关键词基线报告 Recall@K/误召回 | 不冒称CLIP | 部分实现(M7-a 合成关键词基线/理想计划上限脚本已存在；尚非真实模型对比评测，fake 只验证失败关闭) | scripts/benchmark-search-nl.mts; BLK-1/8 仅影响真实评测 |
 | FIND-5 | 近似照片:感知hash/时间/批次候选组+清晰度建议;不识别人脸;不自动删 | Live Photo不误合并 | 部分实现(本地分簇有;感知hash待核验) | lib/clusters |
 | FIND-6 | 相关记忆按时间/人物/标签/相册解释理由;不足少显示 | 不伪装算法相关 | 自动化通过(resurfacing 按真实日期) | lib/memories/resurfacing |
 | FIND-7 | 年/月/日/年龄浏览;全屏;倍速;真实转录定位;返回保留筛选位置 | 不全量预载 | 自动化通过 | calendar; transcripts |
@@ -208,7 +208,7 @@
 | SEC-2 | 默认拒绝/逐对象鉴权/CSRF/scope限流/最小日志/秘密轮换/任务限额/隔离解码/依赖审计/出站检查 | — | 自动化通过(主体);依赖审计待办 | lib/security; CI |
 | SEC-3 | 不把自托管写成E2EE;美国VPS/CPA/MiMo不同接收边界;未知保留标注未知 | 文案审查 | 部分实现(单通道告知有;双路由文案更新中) | docs/AI_PRIVACY.md |
 | SEC-4 | 不新增人脸/声纹识别/健康诊断/成长预测/声音克隆 | — | 自动化通过(无此类代码) | — |
-| SEC-5 | 儿童监护授权有记录;称呼不自动证明监护权 | =ID-16 | 未实现 | — |
+| SEC-5 | 儿童监护授权有记录;称呼不自动证明监护权 | =ID-16 | 自动化通过(M2-d 核验：绑定邀请仅由已登记监护人发起，留审计记录) | lib/invitations/service.ts; tests/integration/child-account.test.ts |
 | SEC-6 | 发布前核验隐私/儿童数据/跨境/平台删号;提供导出/删号/第三方清单/联系渠道 | 法律审核外部 | 外部阻塞 | — |
 | SEC-7 | 许可台账:代码/模型/字体/图标/音乐/素材独立 | — | 未实现(部分字体已带OFL) | resources/fonts |
 | SEC-8 | Android长期签名;iOS正式渠道/证书/AppGroup/分享扩展 | keystore未固定;iOS unsigned | 外部阻塞 | mobile-build.yml |

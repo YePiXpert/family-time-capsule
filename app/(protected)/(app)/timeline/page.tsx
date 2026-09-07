@@ -5,7 +5,7 @@ import { getFamily, listPeople } from "@/lib/family/service";
 import { getTimelineFacets, getTimelinePage } from "@/lib/memories/service";
 import { countInbox } from "@/lib/inbox/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
-import { formatAgeLabel } from "@/lib/memories/age";
+import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -89,7 +89,6 @@ export default async function TimelinePage({
     occurredBefore: range.before,
   });
   const entries = timelinePage.entries;
-  const child = people.find((person) => person.isChild);
   const dateFormatter = new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone });
   const monthFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", timeZone: timezone });
   const groups = new Map<string, typeof entries>();
@@ -104,7 +103,7 @@ export default async function TimelinePage({
 
   return (
     <main className="page-container">
-      <PageHeader eyebrow="Memories" title="记忆" description={`${child?.displayName ?? "孩子"}的成长记忆按真实发生时间排列;晚上传的旧照片仍会回到它属于的那一天。资料先安全收进待整理,确认后成为可读记忆——查看与整理永远不互相阻塞。`} />
+      <PageHeader eyebrow="Memories" title="记忆" description="全家人的记忆按真实发生时间排列，晚上传的旧照片仍会回到它属于的那一天。" />
 
       <nav aria-label="记忆浏览方式" className="mt-4 flex flex-wrap gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link><Link href="/collections" className="ui-button-secondary">相册</Link>{canReviewInbox ? <Link href="/inbox" className="ui-button-secondary">待整理{inboxCount > 0 ? ` · ${inboxCount > 99 ? "99+" : inboxCount} 条` : ""}</Link> : null}</nav>
 
@@ -140,7 +139,7 @@ export default async function TimelinePage({
               <ol className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, coverThumbAssetId, assetCount, participantNames }) => (
                   <li key={event.id} className="min-w-0">
-                    <MemoryCard id={event.id} title={event.title} dateLabel={dateFormatter.format(event.occurredAt)} ageLabel={child?.birthDate ? formatAgeLabel(child.birthDate, event.occurredAt, timezone) : undefined} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
+                    <MemoryCard id={event.id} title={event.title} dateLabel={dateFormatter.format(event.occurredAt)} ageLabel={formatPersonAgeLabel(people.find(p => p.id === event.childPersonId), event.occurredAt, timezone)} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
                   </li>
                 ))}
               </ol>

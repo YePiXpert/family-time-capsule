@@ -86,7 +86,7 @@ export type MemoryEventDetail = {
 /**
  * 编辑记忆事件（RH-003）。
  * 允许修改：title / occurredAt / occurredAtPrecision / locationText /
- * coverAsset / participants / childPersonId（须为本家庭的孩子 Person）。
+ * coverAsset / participants / childPersonId（可空，须为本家庭 Person）。
  * 不可修改：importedAt（Asset 层语义）、Asset.capturedAt（与 Event occurredAt 是两回事，
  * 编辑事件绝不联动改素材时间）。
  * 安全：family/event/person/asset 所有权逐项校验（防 IDOR）；
@@ -100,7 +100,7 @@ export type EditMemoryEventPatch = {
   locationText?: string | null;
   coverAssetId?: string | null;
   participantPersonIds?: string[];
-  childPersonId?: string;
+  childPersonId?: string | null;
   milestoneType?: MilestoneType | null;
   isPinned?: boolean;
 };
@@ -153,25 +153,10 @@ export async function updateMemoryEvent(
   }
   const isPinned = patch.isPinned ?? current.isPinned;
 
-  // childPersonId：如提供，必须仍是本家庭的孩子 Person
-  let childPersonId = current.childPersonId;
-  if (patch.childPersonId !== undefined && patch.childPersonId !== current.childPersonId) {
-    const child = await db
-      .select({ id: personTable.id })
-      .from(personTable)
-      .where(
-        and(
-          eq(personTable.familyId, familyId),
-          eq(personTable.id, patch.childPersonId),
-          eq(personTable.isChild, true),
-        ),
-      )
-      .limit(1);
-    if (!child[0]) return { ok: false, error: "bad_person" };
-    childPersonId = patch.childPersonId;
-  }
+  const childPersonId = patch.childPersonId === undefined ? current.childPersonId : patch.childPersonId;
+  if (!await validAgeAnchor(familyId, childPersonId)) return { ok: false, error: "bad_person" };
 
-  // participants：全部必须属于本家庭（含新孩子本人）
+  // participants：全部必须属于本家庭；与年龄锚点分别编辑。
   const existingParticipantRows = await db
     .select({ personId: memoryEventParticipant.personId })
     .from(memoryEventParticipant)
@@ -180,7 +165,7 @@ export async function updateMemoryEvent(
   let participantIds: string[];
   if (patch.participantPersonIds !== undefined) {
     if (patch.participantPersonIds.length > 50) return { ok: false, error: "invalid" };
-    const wanted = [...new Set([childPersonId, ...patch.participantPersonIds])];
+    const wanted = [...new Set(patch.participantPersonIds)];
     const valid = await db
       .select({ id: personTable.id })
       .from(personTable)
@@ -197,7 +182,6 @@ export async function updateMemoryEvent(
     participantIds = wanted;
   } else {
     participantIds = [...participantIdsBefore];
-    if (!participantIds.includes(childPersonId)) participantIds.unshift(childPersonId);
   }
 
   // cover：如提供，必须属于本家庭（不强制属于本事件——允许把库里任一照片设为封面）
@@ -222,7 +206,7 @@ export async function updateMemoryEvent(
   }
 
   // ageDays 快照按（可能新的）孩子生日与 occurredAt 重算
-  const childBirth = await db
+  const childBirth = childPersonId === null ? [] : await db
     .select({ birthDate: personTable.birthDate })
     .from(personTable)
     .where(eq(personTable.id, childPersonId))
@@ -284,7 +268,7 @@ export async function updateMemoryEvent(
       tx.delete(memoryEventParticipant)
         .where(eq(memoryEventParticipant.memoryEventId, eventId))
         .run();
-      tx.insert(memoryEventParticipant)
+      if (participantIds.length > 0) tx.insert(memoryEventParticipant)
         .values(
           participantIds.map((personId) => ({
             id: randomUUID(),
@@ -367,18 +351,15 @@ async function familyTimezone(familyId: string): Promise<string> {
   return row[0].timezone;
 }
 
-async function getChildPersonId(familyId: string): Promise<string | null> {
-  const db = getDb();
-  const rows = await db
-    .select({ id: personTable.id })
-    .from(personTable)
-    .where(and(eq(personTable.familyId, familyId), eq(personTable.isChild, true)))
-    .orderBy(asc(personTable.createdAt))
-    .limit(1);
-  return rows[0]?.id ?? null;
+/** An age anchor is explicit and independent of participation. */
+async function validAgeAnchor(familyId: string, id: string | null): Promise<boolean> {
+  if (id === null) return true;
+  return !!getDb().select({ id: personTable.id }).from(personTable)
+    .where(and(eq(personTable.familyId, familyId), eq(personTable.id, id))).get();
 }
 
 export type ConfirmOptions = {
+  childPersonId?: string | null;
   expectedTitleRevision?: number;
   title?: string;
   occurredAt?: Date;
@@ -390,7 +371,7 @@ export type ConfirmOptions = {
 
 export type ConfirmResult =
   | { ok: true; eventId: string }
-  | { ok: false; error: "not_found" | "no_child" | "invalid" | "conflict" };
+  | { ok: false; error: "not_found" | "invalid" | "conflict" };
 
 /**
  * 确认收件箱条目为 MemoryEvent（事务）：
@@ -431,8 +412,8 @@ export async function confirmInboxEntry(
     }
   }
   entry = { ...liveEntry, assets: confirmedAssets };
-  const childPersonId = await getChildPersonId(familyId);
-  if (!childPersonId) return { ok: false, error: "no_child" };
+  const childPersonId = opts.childPersonId ?? null;
+  if (!await validAgeAnchor(familyId, childPersonId)) return { ok: false, error: "invalid" };
 
   const fallbackTitle = defaultTitle(entry, await familyTimezone(familyId));
   const title = (opts.title ?? fallbackTitle).trim();
@@ -445,8 +426,8 @@ export async function confirmInboxEntry(
   const eventId = randomUUID();
   const now = new Date();
 
-  // 参与人默认：孩子本人
-  const participantIds = new Set<string>([childPersonId]);
+  // 不从年龄锚点推断参与人。
+  const participantIds = new Set<string>();
   for (const pid of opts.participantPersonIds ?? entry.participantPersonIds) participantIds.add(pid);
   // 校验参与者都属于本家庭
   const validParticipants = await db
@@ -473,7 +454,7 @@ export async function confirmInboxEntry(
       ? opts.coverAssetId
       : (entry.assets.find((a) => a.type === "image")?.id ?? entry.assets[0]?.id ?? null);
 
-  const childBirth = await db
+  const childBirth = childPersonId === null ? [] : await db
     .select({ birthDate: personTable.birthDate })
     .from(personTable)
     .where(eq(personTable.id, childPersonId))
@@ -518,7 +499,7 @@ export async function confirmInboxEntry(
         )
         .run();
     }
-    tx.insert(memoryEventParticipant)
+    if (validIds.size > 0) tx.insert(memoryEventParticipant)
       .values(
         [...validIds].map((personId) => ({
           id: randomUUID(),
@@ -551,6 +532,7 @@ export async function confirmInboxEntry(
 }
 
 export type MergeOptions = {
+  childPersonId?: string | null;
   title: string;
   occurredAt?: Date;
   locationText?: string | null;
@@ -591,8 +573,8 @@ export async function mergeInboxEntries(
     }
   }
 
-  const childPersonId = await getChildPersonId(familyId);
-  if (!childPersonId) return { ok: false, error: "no_child" };
+  const childPersonId = opts.childPersonId ?? null;
+  if (!await validAgeAnchor(familyId, childPersonId)) return { ok: false, error: "invalid" };
 
   const occurredAt =
     opts.occurredAt ??
@@ -607,7 +589,7 @@ export async function mergeInboxEntries(
   const eventId = randomUUID();
   const now = new Date();
 
-  const childBirth = await db
+  const childBirth = childPersonId === null ? [] : await db
     .select({ birthDate: personTable.birthDate })
     .from(personTable)
     .where(eq(personTable.id, childPersonId))
@@ -616,10 +598,7 @@ export async function mergeInboxEntries(
     childBirth[0]?.birthDate != null
       ? computeAgeDays(childBirth[0].birthDate, occurredAt, await familyTimezone(familyId))
       : null;
-  const participantIds = new Set<string>([
-    childPersonId,
-    ...(opts.participantPersonIds ?? []),
-  ]);
+  const participantIds = new Set<string>(opts.participantPersonIds ?? []);
   if (participantIds.size > 50) return { ok: false, error: "invalid" };
   const validParticipants = await db
     .select({ id: personTable.id })
@@ -667,7 +646,7 @@ export async function mergeInboxEntries(
         )
         .run();
     }
-    tx.insert(memoryEventParticipant)
+    if (validParticipantIds.size > 0) tx.insert(memoryEventParticipant)
       .values(
         [...validParticipantIds].map((personId) => ({
           id: randomUUID(),
@@ -804,7 +783,7 @@ export type EventRevision = {
     occurredAtPrecision: string;
     locationText: string | null;
     coverAssetId: string | null;
-    childPersonId: string;
+    childPersonId: string | null;
     participantPersonIds: string[];
     milestoneType?: string | null;
     isPinned?: boolean;

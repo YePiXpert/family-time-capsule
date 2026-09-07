@@ -21,7 +21,7 @@
 
 | ID | 代码 | 测试 |
 | --- | --- | --- |
-| ID-1/2/19 | db/schema/family.ts、lib/authz/policy.ts | tests/unit/authz-policy.test.ts |
+| ID-1/2 | db/schema/family.ts、lib/authz/policy.ts | tests/unit/authz-policy.test.ts |
 | ID-3 | app/api/bootstrap、lib/auth/setup.ts、lib/instance/service | tests/integration/bootstrap-flow.test.ts、signup-gate.test.ts、setup-rate-limit.test.ts |
 | ID-4 | lib/invitations/service.ts、app/(protected)/(app)/settings/invitations | tests/integration/invitation-flow.test.ts、invitations.test.ts |
 | ID-5 | lib/contribution-portals、lib/family/read-grants.ts、app/view/[token]、app/api/media（grant 分支） | tests/integration/contribution-portals.test.ts、read-grants.test.ts、tests/e2e/collections.spec.ts（访客链接） |
@@ -32,7 +32,9 @@
 | ID-11/12 | lib/authz/(context/principal/contribution-access).ts | tests/integration/isolation.test.ts、media-access.test.ts、contribution-visibility.test.ts |
 | ID-13/14 | lib/accounts/service.ts（removeFamilyMember/leaveFamily/deleteOwnAccount）、settings/account/、settings/accounts/account-card | tests/integration/member-lifecycle.test.ts、accounts.test.ts |
 | ID-15 | lib/trash | tests/integration/trash.test.ts |
-| ID-16/17 | 未实现 | — |
+| ID-16 | lib/invitations/service.ts（监护人核验与孩子绑定） | tests/integration/child-account.test.ts |
+| ID-17 | lib/accounts/service.ts（所有权移交；等待通知/交接包未齐） | tests/integration/ownership.test.ts |
+| ID-19 | db/migrations/0051_optional_memory_anchor.sql、db/migration-safety.ts、lib/memories、lib/authz/contribution-access.ts、lib/restore、mobile/src/storage | tests/integration/optional-anchor-migration.test.ts、unanchored-memory.test.ts、tests/e2e/inbox-draft.spec.ts、mobile/tests/optional-anchor.test.ts |
 | ID-18 | db/schema/family.ts(person/guardian 关系) | tests/integration/onboarding-guardian.test.ts |
 
 ## CAP — 资料与媒体
@@ -83,7 +85,7 @@
 
 | ID | 代码 | 测试 |
 | --- | --- | --- |
-| AI-1/2/3/4 | lib/ai/config.ts、openai-compatible.ts(重构目标) | tests/unit/ai-config.test.ts(重构后扩展) |
+| AI-1/2/3/4 | lib/ai/config.ts、dual-route.ts、mimo-asr.ts、openai-compatible.ts | tests/unit/ai-dual-route-config.test.ts、ai-dual-route-assistant.test.ts、ai-mimo-asr.test.ts |
 | AI-5 | app/(protected)/(app)/settings/ai、app/api/mobile/v1/ai/settings | tests/integration/ai-settings、tests/e2e/ai.spec.ts |
 | AI-6 | scripts/ops/lib/ai.py、scripts/ai-diagnostics.mts | tests/ops/ai-config.test.ts |
 | AI-7/15/16 | lib/naming.ts、lib/names | tests/integration/name-review.test.ts、naming 单测 |
@@ -107,7 +109,8 @@
 | --- | --- | --- |
 | FIND-1 | lib/search/(service/tokenizer).ts、db/migrations/0023 | tests/integration/search.test.ts |
 | FIND-2 | app/(protected)/(app)/search、app/api/mobile/v1/search | tests/e2e(搜索项目) |
-| FIND-3/4 | 未实现 | — |
+| FIND-3 | lib/search/natural-language.ts、app/(protected)/(app)/search/page.tsx | tests/unit/search-natural-language.test.ts |
+| FIND-4 | scripts/benchmark-search-nl.mts（关键词基线与理想上限，不是真实模型测评） | fake 失败关闭；真实模型对比未完成 |
 | FIND-5 | lib/clusters | tests/integration(clusters) |
 | FIND-6 | lib/memories/resurfacing | tests/integration/resurfacing.test.ts |
 | FIND-7 | lib/memories/calendar、mobile CalendarScreen | tests/integration/calendar.test.ts |

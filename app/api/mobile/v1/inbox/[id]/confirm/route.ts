@@ -15,6 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       occurredAt: optionalFamilyWallDate(body, "occurredAtWall", authorization.context.familyTimezone) ?? undefined,
       locationText: optionalString(body, "locationText", 200),
       participantPersonIds: optionalStringArray(body, "participantPersonIds"),
+      childPersonId: optionalString(body, "childPersonId", 128),
     });
     if (!result.ok) return mobileJson({ error: result.error }, { status: result.error === "not_found" ? 404 : 400 });
     return mobileJson({ status: "confirmed", memoryEventId: result.eventId }, { status: 201 });

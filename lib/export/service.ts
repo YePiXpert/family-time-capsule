@@ -44,7 +44,7 @@ import {
 } from "@/db/schema/oral-history";
 import { reviewPeriod, reviewPeriodEvent } from "@/db/schema/review";
 import { getAssetStorage } from "@/lib/assets/storage";
-import { formatAgeLabel } from "@/lib/memories/age";
+import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { getFamily } from "@/lib/family/service";
 
 /**
@@ -266,7 +266,6 @@ export async function buildFamilyExport(
   // 2) 组织导出数据
   const personById = new Map(people.map((p) => [p.id, p]));
   const eventsSorted = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
-  const child = people.find((p) => p.isChild);
 
   const tagsByEvent = new Map<string, string[]>();
   for (const t of tags) {
@@ -347,7 +346,7 @@ export async function buildFamilyExport(
   const dt = (d: Date, style: Intl.DateTimeFormatOptions = { dateStyle: "long", timeZone: tz }) =>
     new Intl.DateTimeFormat("zh-CN", style).format(d);
   const md: string[] = [];
-  md.push(`# ${family.name} · 成长时间轴`);
+  md.push(`# ${family.name} · 家庭记忆时间轴`);
   md.push("");
   md.push(`> 由 Family Time Capsule 导出于 ${dt(new Date(), { dateStyle: "full", timeZone: tz })} · 共 ${eventsSorted.length} 个事件`);
   md.push("");
@@ -360,7 +359,7 @@ export async function buildFamilyExport(
       lastMonth = month;
     }
     md.push(`### ${e.title}`);
-    const age = formatAgeLabel(child?.birthDate, e.occurredAt, tz);
+    const age = formatPersonAgeLabel(e.childPersonId ? personById.get(e.childPersonId) : null, e.occurredAt, tz);
     const participantNames = eventParticipantLinks
       .filter((l) => l.memoryEventId === e.id)
       .map((l) => personById.get(l.personId)?.displayName)

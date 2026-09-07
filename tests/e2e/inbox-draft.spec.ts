@@ -119,3 +119,33 @@ test("人工名称在 Web 与移动 API 间同步，并拒绝过期的确认表�
   expect(await detail.json()).toMatchObject({ title: "归档后修改的名称", titleSource: "manual", titleRevision: 1 });
   await expect(page.getByText("命名版本冲突测试的完整原文", { exact: true })).toBeVisible();
 });
+
+test("祖辈记忆不绑定孩子：创建、重开编辑、搜索和日历均显示真实日期", async ({ page }) => {
+  await ensureLogin(page);
+  await page.goto("/capture");
+  await page.getByLabel("写下这一刻").fill("外公年轻时候在江边划船的故事。");
+  await page.getByLabel("标题", { exact: true }).fill("外公讲年轻时候的故事");
+  await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
+  await page.getByRole("button", { name: /先收进来/u }).click();
+  await expect(page.getByText("已收进收件箱")).toBeVisible();
+  await page.goto("/inbox");
+  const card = page.locator("article").filter({ hasText: "外公年轻时候在江边划船的故事" });
+  await expect(card.getByLabel("年龄参考人物（可选）")).toHaveValue("");
+  await card.getByRole("button", { name: "确认进入时间轴" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "外公讲年轻时候的故事" })).toBeVisible();
+  const memoryUrl = page.url();
+  await expect(page.locator("main")).not.toContainText(/出生前|个月|出生当天/);
+  await page.getByRole("button", { name: "修改这件事" }).click();
+  const form = page.getByRole("form", { name: "编辑事件" });
+  await expect(form.locator('[name="childPersonId"]')).toHaveValue("");
+  await form.getByLabel("标题", { exact: true }).fill("外公江边划船的故事");
+  await form.getByRole("button", { name: /保存修改/ }).click();
+  await expect(page.getByText("已保存。时间轴与年龄已更新。")).toBeVisible();
+  await page.goto(memoryUrl);
+  await expect(page.getByRole("heading", { level: 1, name: "外公江边划船的故事" })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(/出生前|个月|出生当天/);
+  await page.goto("/search?q=" + encodeURIComponent("江边划船"));
+  await expect(page.getByRole("link", { name: /外公江边划船的故事/ }).first()).toBeVisible();
+  await page.goto("/timeline/calendar?month=1980-08&date=1980-08-12");
+  await expect(page.getByRole("link", { name: /外公江边划船的故事/ })).toBeVisible();
+});

@@ -7,7 +7,7 @@ import type { FamilyRole } from "@/lib/authz/policy";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getTimelinePage } from "@/lib/memories/service";
-import { formatAgeLabel } from "@/lib/memories/age";
+import { formatPersonAgeLabel } from "@/lib/memories/age";
 
 export const MOBILE_API_VERSION = 1;
 
@@ -43,7 +43,7 @@ export type MobileTimelineEventDto = {
   occurredAt: string;
   occurredAtPrecision: string;
   locationText: string | null;
-  childPersonId: string;
+  childPersonId: string | null;
   ageDays: number | null;
   ageLabel: string | null;
   updatedAt: string;
@@ -133,7 +133,7 @@ export async function getMobileSyncPage(input: {
     })),
     events: timeline.entries.map((entry) => {
       const mediaAssetId = entry.coverThumbAssetId ?? entry.coverAssetId;
-      const childBirthDate = people.find((person) => person.id === entry.event.childPersonId)?.birthDate;
+      const anchor = people.find((person) => person.id === entry.event.childPersonId);
       return {
         id: entry.event.id,
         title: entry.event.title,
@@ -142,9 +142,7 @@ export async function getMobileSyncPage(input: {
         locationText: entry.event.locationText,
         childPersonId: entry.event.childPersonId,
         ageDays: entry.event.ageDays,
-        ageLabel: childBirthDate
-          ? formatAgeLabel(childBirthDate, entry.event.occurredAt, family.timezone)
-          : null,
+        ageLabel: formatPersonAgeLabel(anchor, entry.event.occurredAt, family.timezone),
         updatedAt: entry.event.updatedAt.toISOString(),
         assetCount: entry.assetCount,
         participantNames: entry.participantNames,

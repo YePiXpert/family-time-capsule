@@ -1,3 +1,24 @@
+export const TIMELINE_SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS timeline_event (
+    id TEXT PRIMARY KEY NOT NULL,
+    title TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    occurred_at_precision TEXT NOT NULL,
+    location_text TEXT,
+    child_person_id TEXT,
+    age_days INTEGER,
+    age_label TEXT,
+    updated_at TEXT NOT NULL,
+    asset_count INTEGER NOT NULL,
+    participant_names_json TEXT NOT NULL,
+    cover_json TEXT,
+    local_cover_uri TEXT,
+    seen_snapshot TEXT
+  );
+  CREATE INDEX IF NOT EXISTS timeline_occurred_idx
+    ON timeline_event(occurred_at DESC, id DESC);
+`;
+
 export const MEMORY_DETAIL_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS memory_detail (
     scope TEXT NOT NULL,
@@ -24,24 +45,7 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
     updated_at TEXT NOT NULL,
     seen_snapshot TEXT
   );
-  CREATE TABLE IF NOT EXISTS timeline_event (
-    id TEXT PRIMARY KEY NOT NULL,
-    title TEXT NOT NULL,
-    occurred_at TEXT NOT NULL,
-    occurred_at_precision TEXT NOT NULL,
-    location_text TEXT,
-    child_person_id TEXT NOT NULL,
-    age_days INTEGER,
-    age_label TEXT,
-    updated_at TEXT NOT NULL,
-    asset_count INTEGER NOT NULL,
-    participant_names_json TEXT NOT NULL,
-    cover_json TEXT,
-    local_cover_uri TEXT,
-    seen_snapshot TEXT
-  );
-  CREATE INDEX IF NOT EXISTS timeline_occurred_idx
-    ON timeline_event(occurred_at DESC, id DESC);
+  ${TIMELINE_SCHEMA_SQL}
   CREATE TABLE IF NOT EXISTS outbox (
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL CHECK(kind IN ('text_capture', 'media_capture')),

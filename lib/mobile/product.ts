@@ -1,4 +1,5 @@
 import "server-only";
+import { listPeople } from "@/lib/family/service";
 import { readableName } from "@/lib/naming";
 
 import type { FamilyContext } from "@/lib/family/context";
@@ -7,7 +8,7 @@ import { getThumbnailMap } from "@/lib/assets/service";
 import { getHomeDashboard } from "@/lib/home/service";
 import { getInboxPage, type InboxEntry } from "@/lib/inbox/service";
 import { defaultTitle, getMemoryEventDetail } from "@/lib/memories/service";
-import { formatAgeLabel } from "@/lib/memories/age";
+import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { searchFamily } from "@/lib/search/service";
 
@@ -113,7 +114,7 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
   ]);
   if (!detail) return null;
   const thumbnails = await getThumbnailMap(context.familyId, detail.assets.map((asset) => asset.id));
-  const child = detail.participants.find((person) => person.id === detail.event.childPersonId);
+  const child = (await listPeople(context.familyId)).find((person) => person.id === detail.event.childPersonId);
   return {
     id: detail.event.id,
     title: detail.event.title,
@@ -123,9 +124,7 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
     occurredAtWall: utcToZonedWallTimeInput(detail.event.occurredAt, context.familyTimezone),
     occurredAtPrecision: detail.event.occurredAtPrecision,
     ageDays: detail.event.ageDays,
-    ageLabel: child?.birthDate
-      ? formatAgeLabel(child.birthDate, detail.event.occurredAt, context.familyTimezone)
-      : null,
+    ageLabel: formatPersonAgeLabel(child, detail.event.occurredAt, context.familyTimezone),
     locationText: detail.event.locationText,
     milestoneType: detail.event.milestoneType,
     isPinned: detail.event.isPinned,

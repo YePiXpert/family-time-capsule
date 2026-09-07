@@ -19,6 +19,9 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
   await page.goto("/inbox");
   await expect(page.getByText("照片内嵌时间")).toBeVisible();
   await page.getByLabel("事件标题").fill("八月中旬的一个上午");
+  await page.getByLabel("年龄参考人物（可选）").selectOption({ label: "小满" });
+  await page.getByText("选择人物", { exact: true }).click();
+  await page.getByRole("checkbox", { name: "小满", exact: true }).check();
   await page.getByRole("button", { name: "确认进入时间轴" }).click();
 
   // 跳转到事件详情：真实时间 8 月 10 日 + 出生当天（孩子生日 2026-08-10）
@@ -39,7 +42,7 @@ test("事件详情页展示素材与参与人", async ({ page }) => {
   await page.getByRole("link", { name: /八月中旬的一个上午/ }).click();
   await expect(page.getByRole("heading", { name: "八月中旬的一个上午" })).toBeVisible();
   await expect(page.getByText("原始资料（1）")).toBeVisible();
-  await expect(page.getByText("小满（孩子）")).toBeVisible();
+  await expect(page.getByRole("region", { name: "参与人物" }).getByText(/小满/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "原件校验" })).toHaveCount(0);
   await page.getByRole("link", { name: "查看档案信息" }).click();
   await expect(page).toHaveURL(/\?mode=archive$/);

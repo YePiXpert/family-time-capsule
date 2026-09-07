@@ -26,7 +26,7 @@ if (!okSetup.ok) throw new Error("setup failed");
 
 const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
-const { addPerson, completeOnboarding } = await import("@/lib/family/service");
+const { addPerson, completeOnboarding, listPeople } = await import("@/lib/family/service");
 const { ingestImage } = await import("@/lib/assets/ingest");
 const { getAsset } = await import("@/lib/assets/service");
 const {
@@ -82,7 +82,7 @@ describe("确认收件箱 → MemoryEvent（#008）", () => {
     const { asset, item } = await ingestAndInbox(1);
     // EXIF: 2026-08-10T09:30 上海 → 01:30Z；导入发生在之后
     const entry = (await getInboxEntry(familyId, item.id))!;
-    const result = await confirmInboxEntry(familyId, entry, { title: "第一次笑" });
+    const result = await confirmInboxEntry(familyId, entry, { title: "第一次笑", childPersonId: (await listPeople(familyId)).find(p => p.isChild)!.id });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -102,7 +102,7 @@ describe("确认收件箱 → MemoryEvent（#008）", () => {
     expect(assetRow?.id).toBe(asset.id);
   });
 
-  it("多 Asset 默认取最早 capturedAt，参与人含孩子", async () => {
+  it("多 Asset 默认取最早 capturedAt，不推断参与人或年龄锚点", async () => {
     await addPerson(familyId, { displayName: "妈妈", relationToChild: "妈妈" });
     const a = await ingestAndInbox(2);
     const b = await ingestAndInbox(3);
@@ -129,9 +129,9 @@ describe("确认收件箱 → MemoryEvent（#008）", () => {
     const detail = (await getMemoryEventDetail(familyId, result.eventId))!;
     expect(detail.event.occurredAt.toISOString()).toBe("2026-08-05T00:00:00.000Z");
     expect(detail.assets).toHaveLength(2);
-    // 参与者只有孩子（妈妈传空也至少有孩子）
-    expect(detail.participants).toHaveLength(1);
-    expect(detail.participants[0].isChild).toBe(true);
+    expect(detail.participants).toHaveLength(0);
+    expect(detail.event.childPersonId).toBeNull();
+    expect(detail.event.ageDays).toBeNull();
   });
 
   it("文本条目确认：标题取正文，occurredAt 兜底条目创建时间", async () => {

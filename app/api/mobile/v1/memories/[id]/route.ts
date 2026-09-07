@@ -33,6 +33,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       occurredAtPrecision: precision as "exact" | "approximate" | "date_only" | undefined,
       locationText: optionalString(body, "locationText", 200),
       participantPersonIds: optionalStringArray(body, "participantPersonIds"),
+      childPersonId: optionalString(body, "childPersonId", 128),
       milestoneType,
       isPinned: isPinned as boolean | undefined,
     });

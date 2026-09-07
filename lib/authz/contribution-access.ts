@@ -108,6 +108,7 @@ function visibilityPredicate(snapshot: ContributionAccessSnapshot): SQL {
     inArray(contribution.visibility, ["parents", "child_later"]),
   );
   const childLaterUnlocked = and(
+    eq(eventChild.isChild, true),
     eq(contribution.visibility, "child_later"),
     or(
       and(
@@ -172,7 +173,7 @@ export function getVisibleContributionInTransaction(
         eq(authorPerson.familyId, memoryEvent.familyId),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       eventChild,
       and(
         eq(memoryEvent.childPersonId, eventChild.id),
@@ -242,7 +243,7 @@ async function queryVisibleContributions(
         eq(authorPerson.familyId, memoryEvent.familyId),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       eventChild,
       and(
         eq(memoryEvent.childPersonId, eventChild.id),
@@ -491,7 +492,7 @@ export function getContributionAssetAccessInTransaction(
           assetReferencePredicate,
           or(
             ne(memoryEvent.familyId, principal.familyId),
-            isNull(eventChild.id),
+            and(isNotNull(memoryEvent.childPersonId), isNull(eventChild.id)),
             // SQL NOT NULL is still NULL. Coalesce makes corrupted/missing
             // policy joins and unbound principals fail closed instead of
             // accidentally treating an unknown result as visible.
@@ -543,7 +544,7 @@ export function readableAssetPredicate(snapshot: ContributionAccessSnapshot, ass
     .innerJoin(viewerUser, eq(viewerUser.id, p.userId))
     .innerJoin(viewerFamily, eq(viewerFamily.id, viewerUser.familyId))
     .leftJoin(viewerPerson, and(eq(viewerPerson.id, viewerUser.personId), eq(viewerPerson.familyId, viewerUser.familyId)))
-    .where(or(ne(memoryEvent.familyId, p.familyId), isNull(eventChild.id), not(sql`coalesce(${visibilityPredicate(snapshot)}, 0)`)));
+    .where(or(ne(memoryEvent.familyId, p.familyId), and(isNotNull(memoryEvent.childPersonId), isNull(eventChild.id)), not(sql`coalesce(${visibilityPredicate(snapshot)}, 0)`)));
   return sql`exists (select 1 from user live_user where live_user.id = ${p.userId}
       and live_user.family_id = ${p.familyId} and live_user.role = ${p.role} and live_user.disabled_at is null)
     and exists (select 1 from asset root_asset where root_asset.id = ${assetId} and root_asset.family_id = ${p.familyId})

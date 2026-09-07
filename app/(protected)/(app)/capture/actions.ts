@@ -109,9 +109,7 @@ export async function finalizeCaptureAction(
     return {
       ok: false,
       error:
-        result.error === "no_child"
-          ? "请先补充孩子档案；素材仍安全留在收件箱。"
-          : "无法直接入档，请到收件箱检查标题、时间和人物。",
+         "无法直接入档，请到收件箱检查标题、时间和人物。",
     };
   }
   revalidatePath("/");

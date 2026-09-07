@@ -388,7 +388,7 @@ describe("完整导出（#014）", () => {
     expect(capsules[0].status).toBe("sealed");
 
     // timeline.md：相对路径引用 + 事件 + 讲述
-    expect(timelineMd).toContain("# 我们一家 · 成长时间轴");
+    expect(timelineMd).toContain("# 我们一家 · 家庭记忆时间轴");
     expect(timelineMd).toContain("### 八月的一次出游");
     expect(timelineMd).toMatch(/\!\[[^\]]*\]\(originals\/images\/[0-9a-f-]+\.jpg\)/);
     expect(timelineMd).toContain("originals/audio/");

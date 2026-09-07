@@ -79,7 +79,7 @@ export async function editEventAction(
   const coverAssetId = coverRaw === "" ? undefined : coverRaw;
 
   const childRaw = String(formData.get("childPersonId") ?? "");
-  const childPersonId = childRaw === "" ? undefined : childRaw;
+  const childPersonId = childRaw === "" ? null : childRaw;
 
   const participants = formData
     .getAll("participantPersonIds")

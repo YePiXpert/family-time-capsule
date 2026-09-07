@@ -101,11 +101,16 @@ export async function getPersonProfile(
     narrativeEvents.map((entry) => [entry.event.id, entry.event]),
   );
 
+  const sharedIds = new Set(getDb().all<{ id: string }>(sql`
+    select distinct link.memory_event_id as id from memory_event_participant link
+    join person child on child.id=link.person_id and child.family_id=link.family_id
+    where link.family_id=${context.familyId} and child.is_child=1 and child.id<>${personId}
+  `).map(row => row.id));
   return {
     person: target[0],
     participatingMemories: timeline.entries,
     sharedWithChildren: timeline.entries.filter(
-      (entry) => entry.event.childPersonId !== personId,
+      (entry) => sharedIds.has(entry.event.id),
     ),
     voices: voiceNarratives.flatMap((row) => {
       const source = voiceAssets.find((a) => a.id === row.audioAssetId),

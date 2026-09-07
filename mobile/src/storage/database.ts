@@ -22,7 +22,7 @@ import {
   mergeTimelineEvents,
   type LocalCaptureRow,
 } from "./local-timeline";
-import { MEMORY_DETAIL_SCHEMA_SQL, MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
+import { TIMELINE_SCHEMA_SQL, MEMORY_DETAIL_SCHEMA_SQL, MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
 
 const DB_NAME = "family-time-capsule.sqlite";
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -122,6 +122,23 @@ export async function initializeLocalStore(): Promise<void> {
   );
   if (!timelineColumns.some((column) => column.name === "age_label")) {
     await db.execAsync("ALTER TABLE timeline_event ADD COLUMN age_label TEXT");
+  }
+  const anchorColumn = (await db.getAllAsync<{ name: string; notnull: number }>("PRAGMA table_info(timeline_event)"))
+    .find(column => column.name === "child_person_id");
+  if (anchorColumn?.notnull) {
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      await tx.execAsync(`
+        ALTER TABLE timeline_event RENAME TO timeline_event_before_optional_anchor;
+        DROP INDEX IF EXISTS timeline_occurred_idx;
+        ${TIMELINE_SCHEMA_SQL}
+        INSERT INTO timeline_event (id,title,occurred_at,occurred_at_precision,location_text,child_person_id,
+          age_days,age_label,updated_at,asset_count,participant_names_json,cover_json,local_cover_uri,seen_snapshot)
+        SELECT id,title,occurred_at,occurred_at_precision,location_text,child_person_id,
+          age_days,age_label,updated_at,asset_count,participant_names_json,cover_json,local_cover_uri,seen_snapshot
+        FROM timeline_event_before_optional_anchor;
+        DROP TABLE timeline_event_before_optional_anchor;
+      `);
+    });
   }
 }
 
@@ -281,7 +298,7 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
       occurred_at: string;
       occurred_at_precision: string;
       location_text: string | null;
-      child_person_id: string;
+      child_person_id: string | null;
       age_days: number | null;
       age_label: string | null;
       updated_at: string;

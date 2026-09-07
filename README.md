@@ -1,46 +1,46 @@
 # Family Time Capsule
 
-**v1.2.0-alpha.4 — 家庭记忆馆与成长年册（prerelease）**
+**1.0.0-dev.1 / 正式 1.0 开发中**
 
-本次集中优化 Web 与移动端的界面与操作体验，并保留 alpha.3 的全部修复；详见
-[发布说明](docs/RELEASE_NOTES_1_2.md)。
+随手留一刻，全家能看懂；AI 帮忙整理，原件始终属于你。
+
+需求、自动化证据与真实验收分别记录于 [正式 1.0 追踪文档](docs/release-1.0/REQUIREMENTS.md)、
+[验收清单](docs/release-1.0/ACCEPTANCE.md) 和 [外部阻塞](docs/release-1.0/BLOCKERS.md)。
 
 A private, self-hosted family memory archive.
-
-随处记录，统一归档。
 
 照片可以来自系统相机，声音可以来自语音备忘录，
 视频可以几个月后再补录，文字可以从聊天里复制。
 
 本项目不要求你在「正确的 App」里记录人生。
 它只负责把散落在不同地方的真实素材，
-整理成一条可以保存几十年的家庭成长时间线。
+整理成一条可以保存几十年的家庭记忆时间线。
 
 AI helps organize memories.
 Family members tell the story.
 Original sources always come first.
 
 > AI 默认关闭、始终可选；没有 API Key、Provider 或 worker 时，核心档案仍完整可用。
-> 当前是 1.2 alpha：自动化、Docker 与原生包级门禁通过后发布 prerelease；系统分享、
+> 当前是正式 1.0 开发期：自动化、Docker 与原生包级门禁通过后发布 prerelease；系统分享、
 > Files/iCloud/DocumentsProvider、通知和真实设备媒体行为仍必须按
 > [真实设备验收](docs/REAL_DEVICE_TEST.md) 留档，不能由编译结果代替。
 
 ---
 
-## 功能一览（v1.0）
+## 已有功能
 
 - **私人认证**：无公开注册；首次部署凭 `INITIAL_SETUP_TOKEN` 初始化管理员。
 - **家庭与人物**：Person ≠ User——女儿、外公、外婆没有账号也完整存在于记忆里。
 - **每日首页**：使用真实家庭、孩子年龄、待整理素材、最近记忆、故事、胶囊与口述问题；空家庭直接引导留下第一条记忆。
 - **原件档案**：照片/音频/视频/文字事后上传；SHA-256 去重；**原件永不覆盖**；EXIF 保留真实拍摄时间（`capturedAt` 与 `importedAt` 永不混淆）。
 - **记录与收件箱**：文字、多文件照片/音频/视频可先收进来或直接整理；收件箱支持草稿字段、多选合并和确认入档。
-- **时间轴与回顾**：按真实发生时间排序，显示孩子当时年龄；可按年月、人物、媒体与标签筛选，并重新遇见同日、月前、百天前和一年前的片段。
+- **时间轴与回顾**：按真实发生时间排序，可选人物年龄参考，不绑定人物时只显示日期；可按年月、人物、媒体与标签筛选，并重新遇见同日、月前、百天前和一年前的片段。
 - **成长节点与人物主页**：节点仍是 `MemoryEvent`，可选类型和置顶；家人主页汇集共同记忆、亲口讲述与口述史问题。
 - **多人视角**：同一件事，爸爸、妈妈、外婆各自独立讲述，互不覆盖。
 - **时间胶囊**：按日期或孩子年龄封存开启；封存是仪式不是加密——导出永远完整。
 - **完整导出**：ZIP 内含全部原件（哈希校验）+ JSON + 可读 Markdown，离开本系统一切仍可打开。
 
-### 1.2 alpha：把家庭经历整理成可以带走的作品
+### 把家庭经历整理成可以带走的作品
 
 从已确认记忆建立相册/章节，手工排序、说明和封面；通过家庭时区日历、年龄定位和媒体
 阅读器浏览。Web/原生书架支持照片相册、图文成长册、家人来信三模板，选材、持久编辑、
@@ -51,7 +51,7 @@ Original sources always come first.
 版本和原件 SHA。核心流程无需 AI。详细边界、实际验证和未验收真机项目见
 [RELEASE_1_2](docs/RELEASE_1_2.md)。这是预发布版本，unsigned/test 包不代表真机无损升级已验证。
 
-### 1.1 alpha：随处收集与家庭节奏
+### 随处收集与家庭节奏
 
 - **顺序式断点续传**：Web 与原生端按服务器 offset 续传，临时文件和 SHA-256 全程流式；
   持久 ImportSession 支持三并发、暂停、刷新恢复、失败重试与已完成项去重。
@@ -84,7 +84,7 @@ Original sources always come first.
 - **书籍**：Web/原生可编辑年册与三种模板，后台生成中文可搜索 PDF、可重排 EPUB；已发布故事与年度事件的旧下载 URL 继续兼容（媒体内嵌、无内部 URL）。
 - **远程备份**：WebDAV verified upload + 原子改名（凭据仅存环境变量）。
 - **系统分享**：PWA Share Target 直达收件箱。
-- **Web 与原生产品壳**：首页、时间轴、记录、收件箱、更多五个一级入口；桌面侧栏与移动底栏均可达，搜索是全局动作。
+- **Web 与原生产品壳**：今天、记忆、记录、家人、我的五个一级入口；桌面侧栏与移动底栏均可达，搜索是全局动作。
 - **离线收藏与精选阅读包**：原生主动下载相册/作品，容量确认、暂停续读、失败重试和缓存清理；按连接隔离且联网复核权限。精选 ZIP 解压即读，包含允许的媒体与来源，无登录和在线依赖；它不是完整备份，下载副本无法远程收回。
 - **原生客户端**：React Native iOS/Android（无 WebView）；本机可闭环完成记录、修改、合并、确认、详情与时间轴。支持直接录音、拍照/视频、相册多选和离线 outbox；家庭服务器同步完全可选，断开或失败都不删除本地记录和原件。
 - **回收站**：事件/讲述/故事软删除、恢复、确认式清除；素材引用守卫。
@@ -110,7 +110,7 @@ npm run dev            # http://localhost:3000
 1. 在 `.env` 中设置 `INITIAL_SETUP_TOKEN`（一次性令牌）与 `AUTH_SECRET`；
 2. 访问 `/setup`，凭令牌创建第一个管理员账号；
 3. 初始化完成后 `/setup` 永久失效（即使令牌仍在），之后用 `/login` 登录；
-4. 首次登录进入 `/onboarding`：创建家庭、孩子档案，并绑定自己。
+4. 首次登录进入 `/onboarding`：创建家庭并绑定自己，孩子档案可跳过。
 
 详见 [docs/SECURITY.md](docs/SECURITY.md)。
 
@@ -120,8 +120,8 @@ npm run dev            # http://localhost:3000
 | --- | --- |
 | `npm run dev` | 开发服务器 |
 | `npm run lint` / `npm run typecheck` | 静态检查 |
-| `npm test` | Vitest 单元 + 集成测试（542 个） |
-| `npm run test:e2e` | 39 个 Playwright 场景 + 6 个生产灾难恢复 roundtrip（会先 build） |
+| `npm test` | Vitest 单元 + 集成测试 |
+| `npm run test:e2e` | Playwright 场景 + 生产灾难恢复 roundtrip（会先 build） |
 | `npm run verify:export <zip>` | 校验导出 ZIP 的 manifest 与全部原件 SHA-256 |
 
 原生客户端开发、设备数据边界和 GitHub 云构建 IPA/APK：
@@ -160,7 +160,8 @@ docker compose up -d --build --wait
 
 ## 文档
 
-- [docs/PRD.md](docs/PRD.md) — 产品计划书（唯一需求来源）
+- [正式 1.0 REQUIREMENTS](docs/release-1.0/REQUIREMENTS.md) — 当前需求唯一来源
+- [docs/PRD.md](docs/PRD.md) — 探索期产品计划书
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 技术架构与存储约定
 - [docs/DATA_MODEL.md](docs/DATA_MODEL.md) — 核心数据模型
 - [docs/SECURITY.md](docs/SECURITY.md) — 安全基线与威胁模型（含 #017 / RH-010 审计结论）

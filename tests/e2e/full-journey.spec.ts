@@ -24,6 +24,7 @@ test("完整旅程：从初始化到导出与登出", async ({ page }) => {
   // 2) 收件箱确认
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("八月中旬的一个上午");
+  await page.getByLabel("年龄参考人物（可选）").selectOption({ label: "小满" });
   await page.getByRole("button", { name: "确认进入时间轴" }).click();
   await expect(page.getByText("出生当天")).toBeVisible();
 

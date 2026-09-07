@@ -137,7 +137,7 @@ describe("重新遇见与人物主页", () => {
     const child = people.find((person) => person.isChild)!;
     const eventId = await makeMemory("外婆教我们包饺子", "2026-08-20T02:00:00.000Z");
     await updateMemoryEvent(context.familyId, eventId, admin.id, {
-      participantPersonIds: [grandmaResult.personId],
+      participantPersonIds: [grandmaResult.personId, child.id],
     });
     const contribution = await createContribution(context.familyId, {
       memoryEventId: eventId,
@@ -157,7 +157,7 @@ describe("重新遇见与人物主页", () => {
     const profile = await getPersonProfile(context, grandmaResult.personId);
     expect(profile?.person.displayName).toBe("外婆");
     expect(profile?.participatingMemories.map((entry) => entry.event.id)).toContain(eventId);
-    expect(profile?.sharedWithChildren.map((entry) => entry.event.childPersonId)).toContain(child.id);
+    expect(profile?.sharedWithChildren.map((entry) => entry.event.id)).toContain(eventId);
     expect(profile?.narratives[0]).toMatchObject({
       memoryEventId: eventId,
       text: "小时候过年，饺子要包到午夜。",

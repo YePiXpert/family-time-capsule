@@ -12,6 +12,18 @@ export function calendarDiff(birthDate: string, at: Date, timeZone: string) {
   return calendarAge(birthDate, calendarDate(at, timeZone));
 }
 
+/** No anchor or reliable birthday means date-only presentation. Adults use years. */
+export function formatPersonAgeLabel(
+  person: { birthDate: string | null; isChild: boolean } | null | undefined,
+  at: Date,
+  timeZone: string,
+): string | null {
+  if (!person?.birthDate || computeAgeDays(person.birthDate, at, timeZone) === null) return null;
+  if (person.isChild) return formatAgeLabel(person.birthDate, at, timeZone) || null;
+  const { years } = calendarDiff(person.birthDate, at, timeZone);
+  return years >= 0 ? `${years} 岁` : null;
+}
+
 /**
  * 人类可读年龄：
  * 出生前 N 天 / 出生当天 / 第 N 天（<100 天）/ N 岁M 个月 / N 岁

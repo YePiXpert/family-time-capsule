@@ -142,7 +142,7 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
     isDateTime(value.occurredAt) &&
     isString(value.occurredAtPrecision, 32) &&
     isNullableString(value.locationText, 500) &&
-    isString(value.childPersonId, 128) &&
+    (value.childPersonId === null || isString(value.childPersonId, 128)) &&
     (value.ageDays === null || Number.isSafeInteger(value.ageDays)) &&
     isNullableString(value.ageLabel, 100) &&
     isDateTime(value.updatedAt) &&
@@ -254,7 +254,7 @@ export function parseMobileMemory(value: unknown): MobileMemory {
     (value.ageDays !== null && !Number.isSafeInteger(value.ageDays)) ||
     !isNullableString(value.ageLabel, 100) ||
     !isNullableString(value.locationText, 200) ||
-    !isString(value.childPersonId, 128) ||
+    !(value.childPersonId === null || isString(value.childPersonId, 128)) ||
     !Array.isArray(value.participantPersonIds) ||
     !value.participantPersonIds.every((id) => isString(id, 128)) ||
     !Array.isArray(value.participants) ||

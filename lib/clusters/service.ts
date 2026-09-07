@@ -539,9 +539,7 @@ export async function resolveClusterSuggestion(
     return {
       ok: false,
       error:
-        mergeResult.error === "no_child"
-          ? "no_child"
-          : mergeResult.error === "not_found"
+        mergeResult.error === "not_found"
             ? "items_changed"
             : "merge_failed",
     };

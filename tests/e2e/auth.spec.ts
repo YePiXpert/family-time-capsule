@@ -64,7 +64,7 @@ test("B2: 正确 token 完成初始化并登录进入 onboarding", async ({ page
   await page.getByLabel("孩子姓名").fill("小满");
   await page.getByLabel("出生日期（时间轴按它计算成长年龄）").fill("2026-08-10");
   await page.getByLabel("显示名称").fill("爸爸");
-  await page.getByLabel("对孩子的称谓").fill("爸爸");
+  await page.getByLabel("家庭称谓（可选）").fill("爸爸");
   await page.getByRole("button", { name: "创建家庭" }).click();
 
   // 进入受保护首页

@@ -77,7 +77,7 @@ export function indexMemoryEvent(event: {
   id: string;
   familyId: string;
   title: string;
-  childPersonId: string;
+  childPersonId: string | null;
 }): void {
   removeFromSearchIndex("memory_event", event.id);
   insertIndexRows(getDb(), [
@@ -465,7 +465,7 @@ export function searchFamily(
         .all()
     : [];
   const activeEventIds = new Set(activeEventRows.map((event) => event.id));
-  const childPersonIds = new Set(activeEventRows.map((event) => event.childPersonId));
+  const childPersonIds = new Set(activeEventRows.map((event) => event.childPersonId).filter((id): id is string => id !== null));
   const unlockedByChild = new Map<string, boolean>();
   if (childPersonIds.size > 0) {
     const childRows = db

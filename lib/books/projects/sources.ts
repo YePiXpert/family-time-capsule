@@ -18,7 +18,7 @@ import {
 } from "@/lib/authz/contribution-access";
 import { getCollection } from "@/lib/collections/service";
 import { isCapsuleUnlocked } from "@/lib/capsules/service";
-import { formatAgeLabel } from "@/lib/memories/age";
+import { formatPersonAgeLabel } from "@/lib/memories/age";
 import type {
   BookAudience,
   BookSourceKind,
@@ -140,7 +140,7 @@ export function createBookSourceResolver(
           )
           .get();
         if (row && !closedCapsule("memory", id)) {
-          const child = db
+          const child = row.childPersonId === null ? undefined : db
             .select()
             .from(person)
             .where(
@@ -175,8 +175,8 @@ export function createBookSourceResolver(
               label: row.title,
               occurredAt: row.occurredAt.toISOString(),
               ageLabel: child?.birthDate
-                ? formatAgeLabel(
-                    child.birthDate,
+                ? formatPersonAgeLabel(
+                    child,
                     row.occurredAt,
                     context.familyTimezone,
                   )

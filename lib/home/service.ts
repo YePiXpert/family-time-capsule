@@ -9,7 +9,7 @@ import { getAsset, getThumbnailMap } from "@/lib/assets/service";
 import { listCapsules } from "@/lib/capsules/service";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { countInbox, getInboxPage, type InboxStatus } from "@/lib/inbox/service";
-import { formatAgeLabel } from "@/lib/memories/age";
+import { formatAgeLabel, formatPersonAgeLabel } from "@/lib/memories/age";
 import {
   getTimelinePage,
   listMilestoneEntries,
@@ -109,16 +109,14 @@ export type HomeDashboardDto = ReturnType<typeof getBookHome> & {
 
 function mapMemory(
   entry: TimelineEntry,
-  childBirthDate: string | null,
+  people: Awaited<ReturnType<typeof listPeople>>,
   timezone: string,
 ): HomeMemoryDto {
   return {
     id: entry.event.id,
     title: entry.event.title,
     occurredAt: entry.event.occurredAt,
-    ageLabel: childBirthDate
-      ? formatAgeLabel(childBirthDate, entry.event.occurredAt, timezone)
-      : null,
+    ageLabel: formatPersonAgeLabel(people.find(p => p.id === entry.event.childPersonId), entry.event.occurredAt, timezone),
     locationText: entry.event.locationText,
     participantNames: entry.participantNames,
     assetCount: entry.assetCount,
@@ -204,14 +202,14 @@ export async function getHomeDashboard(
     ? await getThumbnailMap(context.familyId, [avatarAsset.id])
     : new Map();
   const allRecent = timelinePage.entries.map((entry) =>
-    mapMemory(entry, child?.birthDate ?? null, family.timezone),
+    mapMemory(entry, people, family.timezone),
   );
   const resurfacingGroups = resurfacing.groups.map((group) => ({
     kind: group.kind,
     label: group.label,
     targetDate: group.targetDate,
     memories: group.entries.map((entry) =>
-      mapMemory(entry, child?.birthDate ?? null, family.timezone),
+      mapMemory(entry, people, family.timezone),
     ),
   }));
   const onThisDay =
@@ -253,7 +251,7 @@ export async function getHomeDashboard(
     onThisDay,
     resurfacing: resurfacingGroups,
     milestones: milestoneEntries.map((entry) =>
-      mapMemory(entry, child?.birthDate ?? null, family.timezone),
+      mapMemory(entry, people, family.timezone),
     ),
     recentStory: recentStory
       ? {

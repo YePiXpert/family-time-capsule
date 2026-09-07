@@ -37,7 +37,7 @@ export type TimelineEvent = {
   occurredAt: string;
   occurredAtPrecision: string;
   locationText: string | null;
-  childPersonId: string;
+  childPersonId: string | null;
   ageDays: number | null;
   ageLabel: string | null;
   updatedAt: string;
@@ -226,7 +226,7 @@ export type MobileMemory = {
   ageDays: number | null;
   ageLabel: string | null;
   locationText: string | null;
-  childPersonId: string;
+  childPersonId: string | null;
   participantPersonIds: string[];
   participants: {
     id: string;
@@ -261,6 +261,7 @@ export type MobileSearchPage = {
 };
 
 export type InboxDraftPatch = {
+  childPersonId?: string | null;
   title?: string | null;
   occurredAtWall?: string | null;
   locationText?: string | null;

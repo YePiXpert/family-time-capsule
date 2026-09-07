@@ -102,7 +102,7 @@ export function InboxBoard({
               <select
                 name="participantPersonIds"
                 multiple
-                defaultValue={people.filter((person) => person.isChild).map((person) => person.id)}
+                defaultValue={[]}
                 className={`${inputClass} mt-1 min-h-11 w-full`}
                 aria-label="合并事件人物"
               >

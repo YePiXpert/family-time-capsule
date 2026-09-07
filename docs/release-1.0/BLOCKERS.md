@@ -30,3 +30,8 @@
    (CI 已强制:stable 通道 tag 需要 `docs/release-1.0/STABLE_READINESS.md`)。
 3. 发行说明必须如实写明"unsigned/test-key/未实测"边界,如既往 alpha 所做。
 4. 每个 BLK 解除后:先在 ACCEPTANCE.md 登记证据,再更新本文件状态。
+
+## 2026-09-07 M3-A 复核
+
+BLK-1～8 均未解除。祖辈场景使用合成原音与 fake AI 自动化，不计真实 CPA/MiMo 或真机通过。
+统一 Draft、资料库、简化模式、离线搜索与运维补缺仍属内部任务，继续按 REQUIREMENTS 推进。

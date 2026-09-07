@@ -83,7 +83,7 @@ test("导出完整备份：ZIP 可下载、manifest 哈希全部可验证", asyn
 
   // timeline.md 存在且引用相对路径
   const timeline = await zip.file(`${root}/timeline.md`)!.async("string");
-  expect(timeline).toContain("成长时间轴");
+  expect(timeline).toContain("家庭记忆时间轴");
   expect(timeline).toMatch(/originals\/(images|audio|video)\//);
 
   // 封存胶囊内容在导出中完整

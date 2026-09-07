@@ -78,7 +78,7 @@ async function makeEvent(title: string): Promise<{ eventId: string; assetId: str
   if (stored.status !== "stored") throw new Error("store failed");
   const item = await createInboxItemForAsset(familyId, stored.asset);
   const entry = (await getInboxEntry(familyId, item.id))!;
-  const result = await confirmInboxEntry(familyId, entry, { title });
+  const result = await confirmInboxEntry(familyId, entry, { title, childPersonId: (await listPeople(familyId)).find(p => p.isChild)!.id });
   if (!result.ok) throw new Error("confirm failed");
   return { eventId: result.eventId, assetId: stored.asset.id };
 }
@@ -154,7 +154,7 @@ describe("事件编辑（RH-003）", () => {
     });
     expect(bad).toEqual({ ok: false, error: "bad_person" });
 
-    // 本家庭成员（外婆 + 爸爸）→ 成功，且孩子自动保留
+    // 本家庭成员（外婆 + 爸爸）→ 成功，不从年龄锚点推断参与者
     const people = await listPeople(familyId);
     const dad = people.find((p) => p.relationToChild === "爸爸")!;
     const child = people.find((p) => p.isChild)!;
@@ -164,10 +164,11 @@ describe("事件编辑（RH-003）", () => {
     expect(ok.ok).toBe(true);
     const detail = (await getMemoryEventDetail(familyId, eventId))!;
     const ids = detail.participants.map((p) => p.id).sort();
-    expect(ids).toEqual([child.id, dad.id, grandma.personId].sort());
+    expect(ids).toEqual([dad.id, grandma.personId].sort());
+    expect(detail.event.childPersonId).toBe(child.id);
   });
 
-  it("childPersonId 只能换成同家庭的孩子 Person", async () => {
+  it("年龄锚点只能换成同家庭 Person", async () => {
     const { eventId } = await makeEvent("第二个孩子的事件");
     const bad = await updateMemoryEvent(familyId, eventId, adminUserId, {
       childPersonId: "not-a-child",
@@ -258,10 +259,8 @@ describe("事件编辑（RH-003）", () => {
     // 编辑者记录正确
     expect(revisions[0].editedByUserId).toBe(adminUserId);
     expect(revisions[0].editorName).toBe("爸爸");
-    // 参与人快照包含孩子
-    const people = await listPeople(familyId);
-    const child = people.find((p) => p.isChild)!;
-    expect(revisions[1].snapshot.participantPersonIds).toContain(child.id);
+    expect(revisions[1].snapshot.participantPersonIds).toEqual([]);
+    expect(revisions[1].snapshot.childPersonId).toBeTruthy();
   });
 
   it("编辑历史跨家庭隔离", async () => {
