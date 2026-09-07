@@ -11,6 +11,20 @@ const deadline = setTimeout(
   () => process.exit(124),
   BOOK_RENDER_LIMITS.timeoutMs,
 );
+const toErrorCode = (e: unknown) =>
+  e instanceof Error && /^[a-z_]+(?:_U[0-9A-F]+)?$/.test(e.message)
+    ? e.message
+    : "render_failed";
+// 兜底：任何从异步栈逃逸的异常也按单行协议输出并退出，
+// 不让未捕获栈迹撑爆父进程的 stderr 预算（会被误判 invalid_worker_output）。
+process.on("uncaughtException", (e) => {
+  try {
+    process.stdout.write(JSON.stringify({ error: toErrorCode(e) }) + "\n");
+  } catch {
+    // stdout 已不可用则只能退出
+  }
+  process.exit(1);
+});
 try {
   if (
     !inputPath ||
@@ -60,10 +74,7 @@ try {
     );
   }
 } catch (e) {
-  const code =
-    e instanceof Error && /^[a-z_]+(?:_U[0-9A-F]+)?$/.test(e.message)
-      ? e.message
-      : "render_failed";
+  const code = toErrorCode(e);
   process.stdout.write(JSON.stringify({ error: code }) + "\n");
   process.exitCode = 1;
 } finally {

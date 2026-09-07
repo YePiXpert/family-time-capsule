@@ -31,14 +31,19 @@ export async function renderLegacyPages(
   pdf.pipe(out);
   pdf.on("error", (e) => out.destroy(e));
   let count = 0;
+  let pageOverflow = false;
+  // 与 render/pdf.ts 相同：事件回调里不抛出，由循环检查点统一抛出。
   pdf.on("pageAdded", () => {
-    if (++count > BOOK_RENDER_LIMITS.pages)
-      throw new Error("page_limit_exceeded");
+    if (++count > BOOK_RENDER_LIMITS.pages) pageOverflow = true;
   });
+  const ensureWithinPageLimit = () => {
+    if (pageOverflow) throw new Error("page_limit_exceeded");
+  };
   pdf.font(fontPath);
   const normalized = checkedPdfText(pdf);
   try {
     for (const page of pages) {
+      ensureWithinPageLimit();
       pdf.addPage();
       if (page.image) {
         if (
@@ -68,6 +73,7 @@ export async function renderLegacyPages(
         pdf.moveDown(0.3);
       }
     }
+    ensureWithinPageLimit();
     const final = count;
     for (let i = 0; i < final; i++) {
       pdf.switchToPage(i);

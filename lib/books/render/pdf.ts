@@ -35,15 +35,24 @@ export async function renderBookPdf(
   pdf.pipe(output);
   pdf.on("error", (e) => output.destroy(e));
   let pages = 0;
+  let pageOverflow = false;
+  // 不在 pageAdded 回调里抛出：该回调可能发生在 pdfkit 的异步冲刷栈上，
+  // 异常会逃逸成 uncaughtException（stderr 栈迹超预算后被误判为
+  // invalid_worker_output）。这里只记录溢出，由下方同步检查点统一抛出。
   pdf.on("pageAdded", () => {
     pages++;
-    if (pages > BOOK_RENDER_LIMITS.pages)
-      throw new Error("page_limit_exceeded");
+    if (pages > BOOK_RENDER_LIMITS.pages) {
+      pageOverflow = true;
+      return;
+    }
     progress(
       Math.min(90, 5 + Math.floor((pages / BOOK_RENDER_LIMITS.pages) * 80)),
       pages,
     );
   });
+  function ensureWithinPageLimit() {
+    if (pageOverflow) throw new Error("page_limit_exceeded");
+  }
   pdf.font(input.fontPath);
   const normalized = checkedPdfText(pdf);
   const width = () => pdf.page.width - margin * 2,
@@ -53,6 +62,7 @@ export async function renderBookPdf(
     size = 11,
     options: PDFKit.Mixins.TextOptions = {},
   ) {
+    ensureWithinPageLimit();
     if (!value.trim()) return;
     pdf
       .fillColor("#302924")
@@ -270,8 +280,11 @@ export async function renderBookPdf(
       pdf.page.margins.bottom = priorBottom;
     }
     if (pages !== finalPages) throw new Error("unexpected_pagination");
+    ensureWithinPageLimit();
     pdf.end();
     await complete;
+    // 冲刷阶段也可能补页；溢出同样按页数上限失败，而不是产出超限 PDF。
+    ensureWithinPageLimit();
     progress(95, finalPages);
     return finalPages;
   } catch (e) {
