@@ -6,7 +6,7 @@ baseline:
 8388ecb7a58508996302d17f9aa4116665ef34a9
 
 final:
-8ac7208 (feat(library): add non-destructive similar-photo suggestions)
+fae5206 (fix(books): make pdf page-limit failure deterministic —— 8ac7208 的 CI 修复)
 
 completed:
 
@@ -75,7 +75,8 @@ CI:
 - d55d2b6 feat(accessibility) GLM-A — success
 - 3d81ee6 feat(mobile) GLM-B — success
 - 90f91db fix(a11y) GLM-C — success
-- 8ac7208 feat(library) GLM-D — 运行中，推送后核查；如红按仓库纪律在 main 上修复
+- 8ac7208 feat(library) GLM-D — failure（见下）
+- fae5206 fix(books) — success（修复 8ac7208 的 CI 失败）
 
 REQUIREMENTS changed:
 - NAV-11 未实现 → 部分实现（双端简洁模式与贡献向导自动化通过，Web 播放文字按钮与真机
@@ -85,6 +86,13 @@ REQUIREMENTS changed:
 - FIND-5 补充 GLM-D（仍为部分实现：感知哈希只在内存、真机大数据量待验）
 - CAP-1/CAP-6 同步 M3-D intake 去向；ACCEPTANCE D/E 场景与场景 17 证据更新（均为自动化
   证据，未标真实场景通过）
+
+CI 修复说明（8ac7208 → fae5206）：web-quality 的 book-publication「excessive pages」用例期望
+`page_limit_exceeded` 却得到 `invalid_worker_output`。根因是 `pdf.on("pageAdded")` 监听器内直接
+throw：回调落在 pdfkit 异步冲刷栈上时异常逃逸为 uncaughtException，长栈迹撑爆父进程 8KB
+stderr 预算后错误码被误判。与 GLM-D 改动无代码交集（新增测试文件加大并行负载使潜在竞态显
+形）。修复：两处渲染器改为记录溢出标志并由同步检查点统一抛出；render-book worker 增加
+uncaughtException 兜底，任何逃逸异常都按单行协议输出。
 
 known limitations:
 - 简洁模式 Web 端音频/视频播放仍用浏览器原生控件（无「播放/暂停」文字按钮）；原生
