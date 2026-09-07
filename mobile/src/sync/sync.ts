@@ -1,3 +1,4 @@
+import { syncLocalIntake } from "../native/intake-sync";
 import { canUploadDraftOriginal } from "../drafts/store";
 import { syncLocalDrafts } from "../drafts/sync";
 import * as Crypto from "expo-crypto";
@@ -38,7 +39,7 @@ export async function syncArchive(
   options: SyncArchiveOptions = {},
 ): Promise<SyncSummary> {
   return syncArchiveWithDependencies(credentials, {
-    afterUpload: () => syncLocalDrafts(credentials, options),
+    afterUpload: async () => { await syncLocalDrafts(credentials, options); await syncLocalIntake(credentials, options); },
     isConnected: async () => (await Network.getNetworkStateAsync()).isConnected,
     createSnapshotId: () => Crypto.randomUUID(),
     listOutbox,

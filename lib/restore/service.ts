@@ -202,6 +202,8 @@ type FamilyArchiveRow = {
 };
 
 type ImportSessionArchiveRow = {
+  intakeDestination?: "pending" | "draft" | "library";
+  intakeDraftId?: string | null;
   id: string;
   source: string;
   status: string;
@@ -2128,6 +2130,9 @@ async function loadAndVerifyZip(
       "bad_provenance",
       `import session ${row.id} 不得携带本地 User/Family id`,
     );
+    requireCondition((row.intakeDestination === undefined || ["pending", "draft", "library"].includes(String(row.intakeDestination))) &&
+      (row.intakeDraftId === undefined || row.intakeDraftId === null || (typeof row.intakeDraftId === "string" && /^[\w-]{1,128}$/u.test(row.intakeDraftId))) &&
+      (!row.intakeDraftId || row.intakeDestination === "draft"), "bad_json", "收件去向非法");
     importSessionsJson.push(row as ImportSessionArchiveRow);
   }
 
@@ -2448,6 +2453,8 @@ async function loadAndVerifyZip(
   try {
     const rawDrafts = archive.has(`${EXPORT_ROOT_DIR}/drafts.json`) ? await readJson<unknown>("drafts.json") : [];
     drafts = parseDraftArchive(rawDrafts, { inbox: new Set(inboxItemsJson.map(i => i.id)), assets: assetIds, events: new Set(memoriesJson.map(m => m.id)), people: new Set(peopleJson.map(p => p.id)) });
+    const draftIds = new Set(drafts.map(row => row.id));
+    requireCondition(importSessionsJson.every(row => !row.intakeDraftId || draftIds.has(row.intakeDraftId)), "bad_json", "收件引用的草稿不存在");
   } catch { throw new RestoreError("bad_refs", "草稿聚合与原件引用无效"); }
 
   requireCondition(manifest.modules?.assetDeletions === undefined || (manifest.modules.assetDeletions === 1 && archive.has(`${EXPORT_ROOT_DIR}/asset-deletions.json`)), "missing_json", "声明的原件删除记录缺失或不支持");
@@ -2796,6 +2803,8 @@ async function restoreFromArchive(
               id: session.id,
               familyId,
               source: session.source,
+              intakeDestination: session.intakeDestination ?? "pending",
+              intakeRevision: session.intakeDestination && session.intakeDestination !== "pending" ? 1 : 0,
               status: session.status,
               totalCount: session.totalCount,
               completedCount: session.completedCount,
@@ -2932,6 +2941,7 @@ async function restoreFromArchive(
         tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: null, authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
         for (const [sortOrder, item] of row.items.entries()) tx.insert(draftItem).values({ ...item, draftId: row.id, sortOrder }).run();
       }
+      for (const row of importSessionsJson) if (row.intakeDraftId) tx.update(importSessionTable).set({ intakeDraftId: row.intakeDraftId }).where(eq(importSessionTable.id, row.id)).run();
 
       const participants = memoriesJson.flatMap((m) => {
         const ids = new Set(m.participantPersonIds ?? (m.childPersonId ? [m.childPersonId] : []));

@@ -46,6 +46,8 @@ export function HomeScreen() {
         ))}
       </View>
 
+      <Pressable accessibilityRole="button" onPress={() => navigation.navigate("ImportSessions")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>收到的内容 · 继续分享或文件导入</Text></Pressable>
+
       {!credentials ? (
         <Pressable testID="home-settings" onPress={() => navigation.navigate("Settings")} style={sharedStyles.notice}>
           <Text style={sharedStyles.noticeText}>当前仅保存在本机。点此连接自己的家庭服务器；已有本机记录不会被清空。</Text>

@@ -318,7 +318,8 @@ export function BatchImportCenter({
         if (!pausedRef.current) await uploadOne(candidate, id);
       });
       await refresh(id);
-      if (!pausedRef.current) setMessage("本轮可上传项已处理；成功原件已进入收件箱，失败项可单独重试。");
+      if (!pausedRef.current) setMessage("本轮可上传项已处理；成功原件已进入资料库，失败项可单独重试。");
+      router.refresh();
     } catch (error) {
       console.error("[imports] start failed", error);
       setMessage(describeUploadError(error));

@@ -475,6 +475,8 @@ export async function buildFamilyExport(
     json("import-sessions.json", importSessions.map((session) => ({
       id: session.id,
       source: session.source,
+      intakeDestination: session.intakeDestination,
+      intakeDraftId: session.intakeDraftId,
       status: session.status,
       totalCount: session.totalCount,
       completedCount: session.completedCount,

@@ -1,3 +1,5 @@
+import { recordLocalIntakeDraft } from "../native/intake-store";
+import { listLocalDrafts } from "../drafts/store";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import type { ReaderAsset } from "../media/types";
 import { requestMobileJson } from "../api/client";
@@ -36,6 +38,7 @@ export function CaptureScreen() {
   const [message, setMessage] = useState<string | null>(null);
   const capsuleDraft = usePersistentDraft(draftScope, captureAccess !== "readonly", credentials);
   const { addOriginal, change: changeDraft } = capsuleDraft;
+  const currentDraftId = capsuleDraft.draft?.id;
   const [originals, setOriginals] = useState<Record<string, LocalCaptureDetail>>({});
   useEffect(() => {
     let active = true;
@@ -62,6 +65,17 @@ export function CaptureScreen() {
     }).catch(e => { if (active) setMessage(e.message); });
     return () => { active = false; };
   }, [route.params?.draftId, credentials, localDraftReady, continueLibraryDraft, navigation]);
+  const resumeLocalDraft = capsuleDraft.resume;
+  useEffect(() => {
+    const id = route.params?.localDraftId;
+    if (!id || !localDraftReady) return;
+    let active = true;
+    void listLocalDrafts(draftScope).then(async rows => {
+      const row = rows.find(draft => draft.id === id);
+      if (active && row) { await resumeLocalDraft(row); if (active) navigation.setParams({ localDraftId: undefined }); }
+    }).catch(e => { if (active) setMessage(e.message); });
+    return () => { active = false; };
+  }, [route.params?.localDraftId, draftScope, localDraftReady, resumeLocalDraft, navigation]);
   const sendDraft = async (publish: boolean, intent?: "draft" | "review") => {
     try {
       await capsuleDraft.save(publish, intent);
@@ -222,7 +236,7 @@ export function CaptureScreen() {
         let item: LocalImportIntakeItem;
         try {
           const payload = await preservePickedDocument(asset, captureId, (prepared) => {
-            beginPickerReceipt({ sessionId, createdAt, captureId, index, payload: prepared });
+            beginPickerReceipt({ sessionId, createdAt, captureId, index, payload: prepared, scope: draftScope });
           });
           item = {
             externalId: `picker-${index}`,
@@ -244,7 +258,7 @@ export function CaptureScreen() {
         }
         let committed = false;
         try {
-          const saved = await ingestLocalImportSession({ id: sessionId, source: "files", createdAt, items: [item], queue: false });
+          const saved = await ingestLocalImportSession({ id: sessionId, source: "files", createdAt, items: [item], queue: false, scope: draftScope });
           queued += saved.queued;
           failed += saved.failed;
           committed = true;
@@ -253,6 +267,7 @@ export function CaptureScreen() {
           finishPickerReceipt(captureId, committed);
         }
       }
+      if (copied > 0 && currentDraftId) await recordLocalIntakeDraft(sessionId, draftScope, currentDraftId);
       if (queued > 0) await finishQueue();
       setMessage(failed > 0
         ? `已把 ${copied} 份原件复制到 App 私有目录；${failed} 项失败。`
@@ -262,7 +277,7 @@ export function CaptureScreen() {
     } finally {
       setBusy(false);
     }
-  }, [captureAccess, finishQueue, addOriginal]);
+  }, [captureAccess, finishQueue, addOriginal, draftScope, currentDraftId]);
 
   const toggleRecording = async () => {
     if (captureAccess === "readonly") {

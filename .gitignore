@@ -58,3 +58,8 @@ next-env.d.ts
 
 # Python operational helpers
 __pycache__/
+
+# debug session artifacts / stray package manager files
+*.zip
+/pnpm-lock.yaml
+/pnpm-workspace.yaml

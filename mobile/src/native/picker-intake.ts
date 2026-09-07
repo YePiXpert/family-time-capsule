@@ -38,8 +38,8 @@ export async function recoverPickerIntake(queue: boolean) {
     totals.manifests++;
     totals.queued += result.queued;
     totals.failed += result.failed;
-    if (queue) file.delete();
-    else totals.retainedReadonly++;
+    file.delete();
+    if (!queue) totals.retainedReadonly++;
   }
   return totals;
 }

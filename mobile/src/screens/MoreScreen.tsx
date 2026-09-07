@@ -11,7 +11,7 @@ const nativeEntries = [
   ["口述史", "Requests", "发起问题并查看回答状态"],
   ["时间胶囊", "Capsules", "创建、封存和到期打开"],
   ["家庭投递箱", "ContributionPortals", "创建安全链接并查看访客提交"],
-  ["导入会话", "ImportSessions", "查看、继续或取消批量导入"],
+  ["收到的内容", "ImportSessions", "继续系统分享、文件导入，加入草稿或仅存资料库"],
   ["每周回顾", "WeeklyReview", "整理本周素材与家人声音"],
 ] as const;
 

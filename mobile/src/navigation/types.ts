@@ -24,6 +24,7 @@ export type RootStackParamList = {
   RequestCreate: { personId?: string } | undefined;
   ContributionPortals: undefined;
   ContributionPortalDetail: { id: string; token?: string };
+  LocalIntake: { id: string };
   ImportSessions: undefined;
   ImportSessionDetail: { id: string };
   WeeklyReview: undefined;
@@ -44,7 +45,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Timeline: undefined;
-  Capture: { intent?: CaptureIntent; requestKey?: number; draftId?: string } | undefined;
+  Capture: { intent?: CaptureIntent; requestKey?: number; draftId?: string; localDraftId?: string } | undefined;
   People: undefined;
   More: undefined;
 };

@@ -53,3 +53,31 @@ test("批量导入：文档与照片逐项续传、刷新后保留服务器进�
     await expect(page.getByRole("article").filter({ hasText: filename }).first()).toBeVisible();
   }
 });
+
+test("系统分享先保全混合收件，刷新后选已有草稿只组成一件事", async ({ page }) => {
+  await ensureBootstrap(page);
+  await page.goto("/capture");
+  const content = { title: "继续拜访外公", text: "原来的半句话", occurredAt: null, occurredAtPrecision: "exact", locationText: "", participantIds: [], visibility: "family", coverItemId: null, items: [] };
+  const draftId = crypto.randomUUID();
+  expect((await page.request.put(`/api/mobile/v1/drafts/${draftId}`, { data: { expectedRevision: 0, mutationId: crypto.randomUUID(), content } })).ok()).toBe(true);
+  const response = await page.request.post("/share", { maxRedirects: 0, multipart: { text: "分享进来的后半个故事", files: { name: "分享家书.txt", mimeType: "text/plain", buffer: Buffer.from("家书的完整原件") } } });
+  expect(response.status()).toBe(303);
+  const url = response.headers().location!;
+  await page.goto(url);
+  await expect(page.getByText("分享进来的后半个故事", { exact: true })).toBeVisible();
+  const originalLink = page.getByRole("link", { name: /^打开：/ });
+  await expect(originalLink).toHaveCount(1);
+  const originalHref = await originalLink.getAttribute("href");
+  await page.reload();
+  await page.getByRole("button", { name: "加入草稿：继续拜访外公", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/capture\\?draft=${draftId}`));
+  const draft = await (await page.request.get(`/api/mobile/v1/drafts/${draftId}`)).json();
+  expect(draft.text).toBe("原来的半句话\n\n分享进来的后半个故事");
+  expect(draft.items).toHaveLength(1);
+  expect(draft.status).toBe("editing");
+  await page.goto(url);
+  await expect(page.getByRole("link", { name: "继续这件事" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "加入新草稿", exact: true })).toHaveCount(0);
+  await page.goto(originalHref!);
+  await expect(page.getByRole("link", { name: "下载原件" })).toBeVisible();
+});

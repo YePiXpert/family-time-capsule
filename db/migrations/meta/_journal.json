@@ -393,6 +393,13 @@
       "when": 1788876000005,
       "tag": "0055_asset_deletion_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1788876000006,
+      "tag": "0056_intake_destination",
+      "breakpoints": true
     }
   ]
 }

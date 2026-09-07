@@ -1,0 +1,36 @@
+import { expect, it, vi } from "vitest";
+import { getRawMockDatabase } from "../../tests/mocks/expo-sqlite";
+vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
+const mocks = vi.hoisted(() => ({ request: vi.fn() }));
+vi.mock("../src/api/client", () => ({ requestMobileJson: mocks.request, ApiError: class ApiError extends Error {} }));
+const { initializeLocalStore, ingestLocalImportSession, setActiveDestination } = await import("../src/storage/database");
+const { chooseLocalIntake } = await import("../src/native/intake-store");
+const { listLocalDrafts, saveLocalDraft } = await import("../src/drafts/store");
+const { syncLocalIntake } = await import("../src/native/intake-sync");
+it("links a delivered native Draft without appending again, retries lost acknowledgments and blocks late account results", async () => {
+  await initializeLocalStore();
+  const scope = JSON.stringify(["https://fixture.invalid", "instance", "account", "family"]);
+  await setActiveDestination(scope);
+  await ingestLocalImportSession({ id: "sync-intake", scope, source: "share", createdAt: "2026-09-07T00:00:00Z", queue: false, items: [{ externalId: "text", captureId: "sync-text", kind: "text", payload: { text: "已经加入草稿的原话" } }] });
+  await chooseLocalIntake({ id: "sync-intake", scope, expectedRevision: 0, destination: "draft", draftId: "sync-draft", mutationId: "choose" });
+  const credentials = { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "fictional-token" };
+  const options = { authorizeUpload: async () => true };
+  await syncLocalIntake(credentials, options);
+  expect(mocks.request).not.toHaveBeenCalled(); // text not yet authorized/delivered in the Draft
+  const row = (await listLocalDrafts(scope))[0]!;
+  await saveLocalDraft({ ...row, revision: 2, serverRevision: 3, syncedRevision: 2 }, 1);
+  await syncLocalIntake(credentials, { authorizeUpload: async () => false });
+  expect(mocks.request).not.toHaveBeenCalled();
+  mocks.request.mockResolvedValueOnce({ id: "sync-intake" }).mockImplementationOnce(async () => { await setActiveDestination("other"); return { destination: "draft", draftId: "sync-draft" }; });
+  await expect(syncLocalIntake(credentials, options)).rejects.toThrow("连接已切换");
+  expect(getRawMockDatabase().prepare("select server_revision from local_intake_choice where session_id='sync-intake'").get()).toEqual({ server_revision: 0 });
+  await setActiveDestination(scope);
+  mocks.request.mockReset();
+  mocks.request.mockResolvedValueOnce({ id: "sync-intake" }).mockResolvedValueOnce({ destination: "draft", draftId: "sync-draft" });
+  await syncLocalIntake(credentials, options);
+  expect(JSON.parse(mocks.request.mock.calls[1]![2].body)).toMatchObject({ operation: "record", destination: "draft", draftId: "sync-draft" });
+  expect((await listLocalDrafts(scope))[0]?.content.text).toBe("已经加入草稿的原话");
+  expect(getRawMockDatabase().prepare("select server_revision from local_intake_choice where session_id='sync-intake'").get()).toEqual({ server_revision: 1 });
+  await syncLocalIntake(credentials, options);
+  expect(mocks.request).toHaveBeenCalledTimes(2);
+});

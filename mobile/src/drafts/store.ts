@@ -1,3 +1,4 @@
+import type { SQLiteDatabase } from "expo-sqlite";
 import { getDatabase } from "../storage/database";
 import { parseDraftContent, emptyDraftContent, type DraftContent } from "./model";
 import type { MediaCapturePayload } from "../types";
@@ -20,9 +21,12 @@ export async function createLocalDraft(scope: string, id: string, mutationId: st
   return row;
 }
 export async function saveLocalDraft(row: LocalDraft, expectedRevision: number, original?: { id: string; payload: MediaCapturePayload }): Promise<void> {
-  parseDraftContent(row.content);
   const db = await getDatabase();
-  await db.withExclusiveTransactionAsync(async tx => {
+  await db.withExclusiveTransactionAsync(tx => saveLocalDraftInTransaction(tx, row, expectedRevision, original));
+}
+export async function saveLocalDraftInTransaction(tx: SQLiteDatabase, row: LocalDraft, expectedRevision: number, original?: { id: string; payload: MediaCapturePayload }): Promise<void> {
+  parseDraftContent(row.content);
+
     const live = await tx.getFirstAsync<{ revision: number }>("SELECT revision FROM local_draft WHERE scope=? AND id=?", row.scope, row.id);
     if ((live?.revision ?? 0) !== expectedRevision) throw new Error("草稿已在另一处修改，请重新打开；本次输入尚未保存。");
     if (original) {
@@ -39,12 +43,14 @@ export async function saveLocalDraft(row: LocalDraft, expectedRevision: number, 
     if (row.status === "editing" || row.status === "discarded") {
       const others = await tx.getAllAsync<{ snapshot_json: string }>("SELECT snapshot_json FROM local_draft WHERE scope=? AND id<>?", row.scope, row.id);
       const needed = new Set(others.flatMap(other => { const d = JSON.parse(other.snapshot_json) as LocalDraft; return d.status === "queued" ? d.content.items.map(item => item.localCaptureRef) : []; }));
-      for (const item of row.content.items) if (item.localCaptureRef && !needed.has(item.localCaptureRef)) await tx.runAsync("DELETE FROM outbox WHERE id=?", item.localCaptureRef);
+      for (const item of row.content.items) if (item.localCaptureRef && !needed.has(item.localCaptureRef)) await tx.runAsync(`DELETE FROM outbox WHERE id=? AND NOT EXISTS (
+        SELECT 1 FROM local_import_item i JOIN local_intake_choice c ON c.session_id=i.import_session_id
+        WHERE i.capture_id=outbox.id AND c.destination='library' AND c.scope=?)`, item.localCaptureRef, row.scope);
     }
     await tx.runAsync(`INSERT INTO local_draft(scope,id,snapshot_json,revision,updated_at) VALUES(?,?,?,?,?)
       ON CONFLICT(scope,id) DO UPDATE SET snapshot_json=excluded.snapshot_json,revision=excluded.revision,updated_at=excluded.updated_at`, row.scope, row.id, JSON.stringify(row), row.revision, row.updatedAt);
-  });
 }
+
 export async function queueDraftOriginals(row: LocalDraft): Promise<void> {
   if (row.content.visibility !== "family") throw new Error("私密原件保留在本机，尚未发送。");
   const db = await getDatabase();
@@ -65,7 +71,13 @@ export async function canUploadDraftOriginal(captureId: string, activeScope: str
   const references = await db.getAllAsync<{ scope: string }>(`SELECT DISTINCT d.scope FROM local_draft d,
     json_each(json_extract(d.snapshot_json, '$.content.items')) i
     WHERE json_extract(i.value, '$.localCaptureRef') = ?`, captureId);
-  return references.length === 0 || references.every(row => row.scope === activeScope);
+  if (references.some(row => row.scope !== activeScope)) return false;
+  const receipt = await db.getFirstAsync<{ scope: string | null; destination: string | null }>(`SELECT c.scope,c.destination
+    FROM local_import_item i LEFT JOIN local_intake_choice c ON c.session_id=i.import_session_id WHERE i.capture_id=?`, captureId);
+  if (!receipt) return true;
+  // Old unbound receipts and newly received shares never inherit "sync all".
+  if (receipt.scope !== activeScope && !(receipt.scope === "local" && references.length > 0)) return false;
+  return references.length > 0 || receipt.destination === "library";
 }
 
 /** The explicit destination choice moves only references; it never copies the originals. */
@@ -79,6 +91,7 @@ export async function bindLocalDraft(id: string, targetScope: string): Promise<L
     if (await tx.getFirstAsync("SELECT id FROM local_draft WHERE scope=? AND id=?", targetScope, id)) throw new Error("该家庭已有同一草稿，请先核对。");
     const row = JSON.parse(source.snapshot_json) as LocalDraft;
     bound = { ...row, scope: targetScope, status: "editing", revision: row.revision + 1, updatedAt: new Date().toISOString() };
+    await tx.runAsync("UPDATE local_intake_choice SET scope=?,revision=revision+1 WHERE scope='local' AND draft_id=? AND destination='draft'", targetScope, id);
     await tx.runAsync("UPDATE local_draft SET scope=?,snapshot_json=?,revision=?,updated_at=? WHERE scope='local' AND id=?", targetScope, JSON.stringify(bound), bound.revision, bound.updatedAt, id);
   });
   return bound!;

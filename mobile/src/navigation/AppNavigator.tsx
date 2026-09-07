@@ -1,3 +1,4 @@
+import { LocalIntakeScreen } from "../screens/LocalIntakeScreen";
 import { AssetLibraryScreen, AssetDetailScreen } from "../screens/AssetLibraryScreen";
 import { ReadingDownloadsScreen, OfflineReadingScreen } from "../screens/ReadingScreens";
 import { BookReviewScreen } from "../screens/BookReviewScreen";
@@ -108,6 +109,7 @@ export function AppNavigator() {
         <Stack.Screen component={RequestCreateScreen} name="RequestCreate" options={{ title: "发起问题" }} />
         <Stack.Screen component={ContributionPortalsScreen} name="ContributionPortals" options={{ title: "家庭投递箱" }} />
         <Stack.Screen component={ContributionPortalDetailScreen} name="ContributionPortalDetail" options={{ title: "家庭投递箱" }} />
+        <Stack.Screen component={LocalIntakeScreen} name="LocalIntake" options={{ title: "收到的内容" }} />
         <Stack.Screen component={ImportSessionsScreen} name="ImportSessions" options={{ title: "导入会话" }} />
         <Stack.Screen component={ImportSessionDetailScreen} name="ImportSessionDetail" options={{ title: "导入进度" }} />
         <Stack.Screen component={CollectionsScreen} name="Collections" options={{title:"相册与章节"}} />

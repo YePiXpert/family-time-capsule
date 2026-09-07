@@ -1,3 +1,4 @@
+import { recoverCopiedIntakeCaptures } from "./intake-recovery";
 import { File, Paths } from "expo-file-system";
 import {
   acknowledgeNativeShare,
@@ -12,13 +13,16 @@ function isPrivateCaptureUri(uri: string): boolean {
   return uri.startsWith(captureRoot) && !uri.slice(captureRoot.length).includes("/");
 }
 
-export async function drainNativeShareIntake(queue: boolean): Promise<{
+export async function drainNativeShareIntake(scope: string): Promise<{
   manifests: number;
   queued: number;
   failed: number;
   retainedReadonly: number;
+  recovered: number;
+  recoveryPending: number;
 }> {
-  const recovered = await recoverPickerIntake(queue);
+  const prior = await recoverCopiedIntakeCaptures(`${Paths.document.uri.replace(/\/$/u, "")}/captures`, uri => new File(uri).exists);
+  const recovered = await recoverPickerIntake(false);
   const manifests = await consumePendingNativeShares();
   let accepted = recovered.manifests;
   let queued = recovered.queued;
@@ -36,19 +40,22 @@ export async function drainNativeShareIntake(queue: boolean): Promise<{
     const result = await ingestLocalImportSession({
       ...normalized,
       source: "share",
-      queue,
+      queue: false,
+      scope,
     });
     accepted += 1;
     queued += result.queued;
     failed += result.failed;
-    // In read-only mode the durable manifest stays available. If the device is
-    // disconnected later, the already-copied originals can then be queued.
-    if (queue) await acknowledgeNativeShare(manifest.manifestId);
+    // The SQLite receipt now owns every preserved reference, including text.
+    // Acknowledging the native manifest does not authorize an upload.
+    await acknowledgeNativeShare(manifest.manifestId);
   }
   return {
+    recovered: prior.recovered,
+    recoveryPending: prior.unavailable,
     manifests: accepted,
     queued,
     failed,
-    retainedReadonly: queue ? 0 : accepted,
+    retainedReadonly: accepted,
   };
 }

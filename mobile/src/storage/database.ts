@@ -541,6 +541,7 @@ export async function ingestLocalImportSession(input: {
   createdAt: string;
   items: LocalImportIntakeItem[];
   queue: boolean;
+  scope?: string;
 }): Promise<{ queued: number; failed: number }> {
   const db = await getDatabase();
   let queued = 0;
@@ -557,6 +558,7 @@ export async function ingestLocalImportSession(input: {
       input.createdAt,
       input.createdAt,
     );
+    await tx.runAsync("INSERT OR IGNORE INTO local_intake_choice(session_id,scope) VALUES(?,?)", input.id, input.scope ?? "local");
     for (const [index, item] of input.items.entries()) {
       const now = new Date().toISOString();
       const inserted = await tx.runAsync(
@@ -586,17 +588,9 @@ export async function ingestLocalImportSession(input: {
         now,
         item.captureId,
       );
-      if (!input.queue) continue;
-      const intake = await tx.getFirstAsync<{ intake_state: string }>(
-        "SELECT intake_state FROM local_import_item WHERE capture_id = ?",
-        item.captureId,
-      );
-      if (intake?.intake_state !== "copied") continue;
-      const existing = await tx.getFirstAsync<{ value: number }>(
-        "SELECT count(*) AS value FROM outbox WHERE id = ?",
-        item.captureId,
-      );
-      if ((existing?.value ?? 0) > 0) continue;
+      // Local preservation and upload consent are separate transactions in
+      // the user's workflow. Files must be addressable by a Draft even when
+      // no outbox entry is authorized (including a viewer receiving a share).
       const kind = item.kind === "text" ? "text_capture" : "media_capture";
       const title = captureName(kind, item.payload, timezone);
       const mediaPayload = item.kind === "file" ? item.payload as MediaCapturePayload : null;
@@ -612,6 +606,17 @@ export async function ingestLocalImportSession(input: {
         mediaPayload?.mediaType ?? null,
         JSON.stringify(item.payload),
       );
+      if (!input.queue) continue;
+      const intake = await tx.getFirstAsync<{ intake_state: string }>(
+        "SELECT intake_state FROM local_import_item WHERE capture_id = ?",
+        item.captureId,
+      );
+      if (intake?.intake_state !== "copied") continue;
+      const existing = await tx.getFirstAsync<{ value: number }>(
+        "SELECT count(*) AS value FROM outbox WHERE id = ?",
+        item.captureId,
+      );
+      if ((existing?.value ?? 0) > 0) continue;
       await tx.runAsync(
         "INSERT OR IGNORE INTO outbox(id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)",
         item.captureId,
@@ -650,7 +655,7 @@ export async function ingestLocalImportSession(input: {
   return { queued, failed };
 }
 
-export async function listLocalImportSessions(): Promise<LocalImportSession[]> {
+export async function listLocalImportSessions(scope?: string): Promise<LocalImportSession[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<{
     id: string;
@@ -661,7 +666,8 @@ export async function listLocalImportSessions(): Promise<LocalImportSession[]> {
     failed_count: number;
     created_at: string;
     updated_at: string;
-  }>("SELECT * FROM local_import_session ORDER BY updated_at DESC, id DESC");
+  }>(`SELECT s.* FROM local_import_session s LEFT JOIN local_intake_choice c ON c.session_id=s.id
+    WHERE ? IS NULL OR c.scope=? OR c.scope='local' OR c.scope IS NULL ORDER BY s.updated_at DESC,s.id DESC`, scope ?? null, scope ?? null);
   return rows.map((row) => ({
     id: row.id,
     source: row.source,

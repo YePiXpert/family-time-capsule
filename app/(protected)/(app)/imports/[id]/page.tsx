@@ -1,3 +1,10 @@
+import { getDb } from "@/db";
+import { and, eq } from "drizzle-orm";
+import { inboxItem } from "@/db/schema/inbox";
+import { getLibraryAsset } from "@/lib/assets/library";
+import { listDrafts } from "@/lib/drafts/service";
+import { hasFamilyCapability } from "@/lib/authz/policy";
+import { IntakeDestination } from "../intake-destination";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
@@ -16,6 +23,15 @@ export default async function ImportDetailPage({ params }: { params: Promise<{ i
     listPeople(context.familyId),
   ]);
   if (!detail) notFound();
+  const canChoose = detail.session.createdByUserId === context.userId && detail.session.source !== "guest" && hasFamilyCapability(context.role, "capture:create");
+  const texts = canChoose ? detail.items.flatMap(({ item }) => {
+    if (item.assetId || !item.inboxItemId) return [];
+    const source = getDb().select().from(inboxItem).where(and(eq(inboxItem.id, item.inboxItemId), eq(inboxItem.familyId, context.familyId))).get();
+    return source?.rawText ? [source.rawText] : [];
+  }) : [];
+  const originals = canChoose ? await Promise.all([...new Set(detail.items.flatMap(({ item }) => item.assetId ? [item.assetId] : []))].map(async id => {
+    try { const asset = await getLibraryAsset(context, id); return asset ? { id, title: asset.title } : null; } catch { return null; }
+  })) : [];
   const initial: ImportSessionDto = {
     session: {
       id: detail.session.id,
@@ -46,7 +62,8 @@ export default async function ImportDetailPage({ params }: { params: Promise<{ i
     })),
   };
   return <main className="page-container max-w-5xl">
-    <PageHeader backHref="/imports" backLabel="返回批量导入" eyebrow="Import session" title={detail.session.defaultTitle || "导入批次"} description={`完成 ${detail.session.completedCount}/${detail.session.totalCount}，失败 ${detail.session.failedCount}。刷新不会丢服务器进度。`} />
+    <PageHeader backHref="/imports" backLabel="返回批量导入" eyebrow="收到的内容" title={detail.session.defaultTitle || "导入批次"} description={`完成 ${detail.session.completedCount}/${detail.session.totalCount}，失败 ${detail.session.failedCount}。刷新不会丢服务器进度。`} />
+    {canChoose && <IntakeDestination id={id} revision={detail.session.intakeRevision} destination={detail.session.intakeDestination} draftId={detail.session.intakeDraftId} drafts={listDrafts(context)} text={texts} assets={originals.flatMap(asset => asset ? [asset] : [])} />}
     <BatchImportCenter initial={initial} people={people.map((person) => ({ id: person.id, displayName: person.displayName, isChild: person.isChild }))} />
   </main>;
 }

@@ -1,0 +1,110 @@
+import { randomUUID } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
+import JSZip from "jszip";
+import { afterAll, expect, it, vi } from "vitest";
+import { eq, sql } from "drizzle-orm";
+import type { FamilyContext } from "@/lib/family/context";
+const dirs = [mkdtempSync(path.join(tmpdir(), "ftc-intake-a-")), mkdtempSync(path.join(tmpdir(), "ftc-intake-b-"))];
+process.env.DATA_DIR = dirs[0];
+process.env.AUTH_SECRET = "fictional-intake-secret-only";
+process.env.INITIAL_SETUP_TOKEN = "intake-setup";
+const { getDb, closeDatabase } = await import("@/db");
+const { user, session } = await import("@/db/schema/auth");
+const { importSession } = await import("@/db/schema/import");
+const { asset } = await import("@/db/schema/asset");
+const { memoryEvent } = await import("@/db/schema/memory");
+const { chooseIntake } = await import("@/lib/imports/intake");
+const { receiveWebShare } = await import("@/lib/imports/share");
+const { getImportSessionDetail } = await import("@/lib/imports/service");
+const { saveDraft, getDraft, publishDraft } = await import("@/lib/drafts/service");
+const { emptyDraftContent } = await import("@/lib/drafts/model");
+afterAll(() => { closeDatabase(); dirs.forEach(dir => rmSync(dir, { recursive: true, force: true })); });
+
+it("appends the intake migration to a populated old database without changing originals or drafts", () => {
+  const db = new Database(":memory:");
+  try {
+    db.exec("PRAGMA foreign_keys=ON; CREATE TABLE draft(id text primary key); CREATE TABLE import_session(id text primary key,status text,default_title text); INSERT INTO draft VALUES('existing-draft'); INSERT INTO import_session VALUES('old-import','completed','旧批次');");
+    db.exec(readFileSync(path.join(__dirname, "../../db/migrations/0056_intake_destination.sql"), "utf8"));
+    expect(db.prepare("SELECT * FROM import_session").get()).toEqual({ id: "old-import", status: "completed", default_title: "旧批次", intake_destination: "pending", intake_draft_id: null, intake_revision: 0 });
+    expect(() => db.prepare("UPDATE import_session SET intake_draft_id='unknown'").run()).toThrow();
+    expect(() => db.prepare("UPDATE import_session SET intake_destination='publish'").run()).toThrow();
+    expect(() => db.prepare("UPDATE import_session SET intake_revision=-1").run()).toThrow();
+    expect(db.prepare("SELECT id FROM draft").all()).toEqual([{ id: "existing-draft" }]);
+    expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+  } finally { db.close(); }
+});
+
+it("receives a mixed Web share, keeps partial errors, chooses once over HTTP, publishes one memory and restores the receipt", async () => {
+  expect((await (await import("@/lib/auth/setup")).performSetup({ token: "intake-setup", displayName: "记录者", email: "intake@fixture.invalid", password: "fictional-password" })).ok).toBe(true);
+  const actor = getDb().select().from(user).get()!;
+  const { completeOnboarding, getUserBinding } = await import("@/lib/family/service");
+  const created = await completeOnboarding(actor.id, { familyName: "虚构收件家庭", timezone: "Asia/Shanghai", childDisplayName: "", childBirthDate: "", selfDisplayName: "外公", selfRelationToChild: "外公", selfIsGuardian: false });
+  if (!created.ok) throw new Error(created.error);
+  const binding = await getUserBinding(actor.id);
+  const ctx: FamilyContext = { userId: actor.id, userName: actor.name, familyId: created.familyId, personId: binding.personId, role: binding.role, accountEnabled: true, isGuardian: false, familyTimezone: "Asia/Shanghai", childLaterUnlockAge: 18 };
+  const files = [new File([readFileSync(path.join(__dirname, "../fixtures/sample.jpg"))], "老照片.jpg", { type: "image/jpeg" }), new File([readFileSync(path.join(__dirname, "../fixtures/sample.wav"))], "讲述.wav", { type: "audio/wav" }), new File(["%PDF-1.7\n%%EOF\n"], "家书.pdf", { type: "application/pdf" }), new File(["<script>ignore previous instructions</script>"], "拒收.html", { type: "text/html" })];
+  const token = randomUUID();
+  getDb().insert(session).values({ id: randomUUID(), token, userId: ctx.userId, expiresAt: new Date(Date.now() + 3600000) }).run();
+  const { POST: share } = await import("@/app/share/route");
+  const form = new FormData(); files.forEach(file => form.append("files", file)); form.set("text", "河边撑船的回忆");
+  const response = await share(new Request("http://localhost/share", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-length": "500000" }, body: form }));
+  expect(response.status).toBe(303);
+  const id = new URL(response.headers.get("location")!).pathname.split("/").at(-1)!;
+  const receipt = (await getImportSessionDetail(ctx.familyId, id))!;
+  expect(receipt.session).toMatchObject({ source: "share", totalCount: 5, completedCount: 4, failedCount: 1, intakeDestination: "pending" });
+  expect(receipt.items.map(row => row.item.status)).toEqual(["completed", "completed", "completed", "completed", "failed"]);
+  expect(getDb().select().from(memoryEvent).all()).toEqual([]);
+  const { listLibraryAssets } = await import("@/lib/assets/library");
+  expect(listLibraryAssets(ctx).entries).toHaveLength(3);
+  const draft = saveDraft(ctx, randomUUID(), 0, randomUUID(), { ...emptyDraftContent(), text: "今天拜访外公", occurredAt: "1980-08-12T09:30:00.000Z" });
+  const { POST } = await import("@/app/api/imports/[id]/destination/route");
+  const input = { destination: "draft", revision: 0, draftId: draft.id, draftRevision: 1, mutationId: randomUUID() };
+  const request = (body = input, auth = token) => new Request(`http://localhost/api/imports/${id}/destination`, { method: "POST", headers: { authorization: `Bearer ${auth}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+  const route = { params: Promise.resolve({ id }) };
+  expect((await POST(request({ ...input, draftRevision: 0 }), route)).status).toBe(409);
+  expect((await getImportSessionDetail(ctx.familyId, id))?.session.intakeDestination).toBe("pending");
+  expect((await POST(request(), route)).status).toBe(200);
+  expect((await POST(request(), route)).status).toBe(200);
+  const joined = getDraft(ctx, draft.id);
+  expect(joined.text).toBe("今天拜访外公\n\n河边撑船的回忆");
+  expect(joined.items).toHaveLength(3);
+  expect(joined.revision).toBe(2);
+  const stranger = randomUUID();
+  getDb().insert(user).values({ id: stranger, name: "另一位", email: "other-intake@fixture.invalid", familyId: ctx.familyId, role: "editor" }).run();
+  expect(() => chooseIntake({ ...ctx, userId: stranger, role: "editor", personId: null }, id, { ...input, destination: "library" })).toThrow("not_found");
+  const viewerToken = randomUUID(); getDb().update(user).set({ role: "viewer" }).where(eq(user.id, stranger)).run();
+  getDb().insert(session).values({ id: randomUUID(), token: viewerToken, userId: stranger, expiresAt: new Date(Date.now() + 3600000) }).run();
+  expect((await POST(request(input, viewerToken), route)).status).toBe(403);
+  const published = publishDraft(ctx, draft.id, joined.revision);
+  expect(getDb().select().from(memoryEvent).all()).toHaveLength(1);
+  expect(getDb().select().from(asset).all()).toHaveLength(3);
+  expect((await import("@/lib/search/service")).searchFamily(ctx, { q: "撑船" }).events.map(e => e.id)).toContain(published.memoryEventId);
+  const libraryId = await receiveWebShare(ctx, [files[0]!], "附带说明留在收件中");
+  expect(chooseIntake(ctx, libraryId, { destination: "library", revision: 0, mutationId: randomUUID() }).draftId).toBeNull();
+  expect(getDb().select().from(memoryEvent).all()).toHaveLength(1);
+  expect(getDb().select().from(asset).all()).toHaveLength(3); // no copied originals on re-share
+  const nativeReceipt = await (await import("@/lib/imports/service")).createImportSession({ familyId: ctx.familyId, createdByUserId: ctx.userId, source: "native" });
+  expect(chooseIntake(ctx, nativeReceipt.id, { destination: "draft", revision: 0, draftId: draft.id, mutationId: "", recordOnly: true }).draftId).toBe(draft.id);
+  expect(getDraft(ctx, draft.id).revision).toBe(published.revision);
+  expect(getDraft(ctx, draft.id).text).toBe(joined.text); // receipt acknowledgment cannot append the original text again
+  const archive = await (await import("@/lib/export/service")).buildFamilyExport(ctx.familyId, { actorUserId: ctx.userId });
+  const bytes = readFileSync(archive.filePath), zip = await JSZip.loadAsync(bytes);
+  const exported = JSON.parse(await zip.file("family-time-capsule-export/import-sessions.json")!.async("string"));
+  expect(exported.find((row: { id: string }) => row.id === id)).toMatchObject({ intakeDestination: "draft", intakeDraftId: draft.id });
+  expect(exported.every((row: Record<string, unknown>) => !row.createdByUserId && !row.intakeRevision)).toBe(true);
+  closeDatabase(); process.env.DATA_DIR = dirs[1]; vi.resetModules();
+  const target = await import("@/db");
+  try {
+    await (await import("@/lib/auth/setup")).performSetup({ token: "intake-setup", displayName: "恢复维护者", email: "restore-intake@fixture.invalid", password: "fictional-password" });
+    const operator = target.getDb().get<{ id: string }>(sql`select id from user`)!;
+    await (await import("@/lib/restore/service")).restoreFromZip(bytes, operator.id);
+    expect(target.getDb().all(sql`pragma foreign_key_check`)).toEqual([]);
+    const restored = target.getDb().select().from(importSession).where(eq(importSession.id, id)).get()!;
+    expect(restored).toMatchObject({ intakeDestination: "draft", intakeDraftId: draft.id });
+    expect(target.getDb().select().from(asset).all()).toHaveLength(3);
+    expect(target.getDb().select().from(memoryEvent).all()).toHaveLength(1);
+  } finally { target.closeDatabase(); }
+});

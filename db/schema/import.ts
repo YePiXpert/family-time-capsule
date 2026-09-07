@@ -1,3 +1,4 @@
+import { draft } from "./draft";
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -38,6 +39,9 @@ export const importSession = sqliteTable(
     totalCount: integer("total_count").notNull().default(0),
     completedCount: integer("completed_count").notNull().default(0),
     failedCount: integer("failed_count").notNull().default(0),
+    intakeDestination: text("intake_destination").notNull().default("pending"),
+    intakeDraftId: text("intake_draft_id").references(() => draft.id, { onDelete: "set null" }),
+    intakeRevision: integer("intake_revision").notNull().default(0),
     defaultTitle: text("default_title"),
     defaultOccurredAt: integer("default_occurred_at", { mode: "timestamp" }),
     defaultLocationText: text("default_location_text"),

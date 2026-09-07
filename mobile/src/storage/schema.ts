@@ -108,6 +108,14 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS local_import_item_session_idx
     ON local_import_item(import_session_id, sort_order, id);
+  CREATE TABLE IF NOT EXISTS local_intake_choice (
+    session_id TEXT PRIMARY KEY NOT NULL REFERENCES local_import_session(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL,
+    destination TEXT NOT NULL DEFAULT 'pending' CHECK(destination IN ('pending','draft','library')),
+    draft_id TEXT,
+    revision INTEGER NOT NULL DEFAULT 0,
+    server_revision INTEGER NOT NULL DEFAULT 0
+  );
   ${MEMORY_DETAIL_SCHEMA_SQL}
 
   INSERT OR IGNORE INTO local_capture(

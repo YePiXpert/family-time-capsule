@@ -2,6 +2,7 @@ import { classifyImportedFile } from "../storage/import-policy";
 import type { LocalImportIntakeItem, MediaCapturePayload } from "../types";
 
 export type PickerReceipt = {
+  scope?: string;
   sessionId: string;
   createdAt: string;
   captureId: string;
@@ -12,7 +13,7 @@ export type PickerReceipt = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function recoverPickerReceipt(value: unknown, root: string, exists: (uri: string) => boolean): {
-  id: string; createdAt: string; items: LocalImportIntakeItem[];
+  scope?: string; id: string; createdAt: string; items: LocalImportIntakeItem[];
 } | null {
   if (!value || typeof value !== "object") return null;
   const receipt = value as PickerReceipt;
@@ -32,5 +33,5 @@ export function recoverPickerReceipt(value: unknown, root: string, exists: (uri:
       ? { kind: "file", localUri: payload.localUri, payload }
       : { kind: "error", error: "copy_interrupted" }),
   };
-  return { id: receipt.sessionId, createdAt: receipt.createdAt, items: [item] };
+  return { ...(typeof receipt.scope === "string" ? { scope: receipt.scope } : {}), id: receipt.sessionId, createdAt: receipt.createdAt, items: [item] };
 }

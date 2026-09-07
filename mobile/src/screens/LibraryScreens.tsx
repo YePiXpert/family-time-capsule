@@ -257,17 +257,22 @@ export function ImportSessionsScreen() {
 }
 
 function LocalImportSessions() {
+  const { credentials, userId, family } = useApp();
+  const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
+  const [error, setError] = useState<string | null>(null);
   const navigation = useNavigation<Navigation>();
-  const [sessions, setSessions] = useState<Awaited<ReturnType<typeof listLocalImportSessions>>>([]);
+  const [sessionState, setSessionState] = useState<{ scope: string; rows: Awaited<ReturnType<typeof listLocalImportSessions>> }>({ scope: "", rows: [] });
+  const sessions = sessionState.scope === scope ? sessionState.rows : [];
   useFocusEffect(useCallback(() => {
     let active = true;
-    void listLocalImportSessions().then((rows) => { if (active) setSessions(rows); });
+    void listLocalImportSessions(scope).then((rows) => { if (active) { setSessionState({ scope, rows }); setError(null); } }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
-  }, []));
+  }, [scope]));
+  if (error) return <Text accessibilityRole="alert" style={sharedStyles.error}>{error}</Text>;
   if (sessions.length === 0) return <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>通过系统分享或 Files 选入的原件会先形成本机会话；即使没有服务器也会保留。</Text></View>;
   return <View style={sharedStyles.card}>
-    <Text style={sharedStyles.cardTitle}>本机接管 · {sessions.length}</Text>
-    {sessions.slice(0, 8).map((session) => <View key={session.id} style={styles.compactRow}><Text style={styles.itemTitle}>{session.source === "share" ? "系统分享" : "Files / DocumentsProvider"}</Text><Text style={styles.meta}>{statusLabel(session.status)} · {session.completedCount}/{session.totalCount}{session.failedCount ? ` · ${session.failedCount} 项需重试` : ""}</Text></View>)}
+    <Text style={sharedStyles.cardTitle}>收到的内容 · {sessions.length}</Text>
+    {sessions.map((session) => <Pressable accessibilityRole="button" onPress={() => navigation.navigate("LocalIntake", { id: session.id })} key={session.id} style={sharedStyles.secondaryButton}><Text style={styles.itemTitle}>{session.source === "share" ? "系统分享" : "文件导入"}</Text><Text style={styles.meta}>{statusLabel(session.status)} · {session.completedCount}/{session.totalCount}{session.failedCount ? ` · ${session.failedCount} 项需重试` : ""}</Text></Pressable>)}
     <Pressable onPress={() => navigation.navigate("MainTabs", { screen: "Capture", params: { intent: "library", requestKey: Date.now() } })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>从 Files 继续导入</Text></Pressable>
   </View>;
 }

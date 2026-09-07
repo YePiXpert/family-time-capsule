@@ -161,6 +161,7 @@ const inboxItemIds = new Set(
     ? JSON.parse(await inboxEntry.async("string")).map((item) => item.id)
     : [],
 );
+const intakeDraftIds = new Set();
 if (hasDrafts) {
   const drafts = await readJsonAsync("drafts.json");
   const ids = new Set(), itemIds = new Set();
@@ -168,7 +169,7 @@ if (hasDrafts) {
     if (!Array.isArray(drafts)) throw new Error();
     for (const row of drafts) {
       if (!row || typeof row.id !== "string" || ids.has(row.id) || Object.hasOwn(row, "authorUserId") || Object.hasOwn(row, "familyId") || !["editing", "published", "discarded"].includes(row.status) || !["family", "private"].includes(row.visibility)) throw new Error();
-      ids.add(row.id);
+      ids.add(row.id); intakeDraftIds.add(row.id);
       if ((row.authorPersonId !== null && !personIds.has(row.authorPersonId)) || (row.inboxItemId !== null && !inboxItemIds.has(row.inboxItemId)) || (row.memoryEventId !== null && (!eventIds.has(row.memoryEventId) || row.status !== "published"))) throw new Error();
       if (!Array.isArray(row.participantIds) || row.participantIds.some(id => !personIds.has(id)) || !Array.isArray(row.items)) throw new Error();
       for (const item of row.items) {
@@ -243,6 +244,10 @@ if (memories) {
 if (transcripts) ok(`transcripts: ${transcripts.length} 条`);
 
 const importSessionIds = new Set((importSessions ?? []).map((session) => session.id));
+for (const receipt of importSessions ?? []) {
+  if ((receipt.intakeDestination !== undefined && !["pending", "draft", "library"].includes(receipt.intakeDestination)) ||
+    (receipt.intakeDraftId != null && (receipt.intakeDestination !== "draft" || !intakeDraftIds.has(receipt.intakeDraftId)))) fail(`import session ${receipt.id} 的收件去向或草稿引用无效`);
+}
 for (const link of importDefaultParticipants ?? []) {
   if (!importSessionIds.has(link.importSessionId) || !personIds.has(link.personId))
     fail(`import default participant ${link.id} 引用未知 session/person`);

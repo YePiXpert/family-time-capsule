@@ -47,7 +47,6 @@ import { clearLocalFiles, removeLocalFile } from "../storage/files";
 import { syncArchive } from "../sync/sync";
 import { drainNativeShareIntake } from "../native/intake";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
-import { resolveNativeCaptureAccess } from "../authz/product-access";
 import type {
   Credentials,
   Family,
@@ -342,19 +341,14 @@ export function AppProvider({
     try {
       do {
         intakeAgain.current = false;
-        const access = resolveNativeCaptureAccess(Boolean(credentials), viewer);
-        const result = await drainNativeShareIntake(access !== "readonly");
-        if (result.manifests === 0) continue;
+        const scope = await getActiveDestination() ?? "local";
+        const result = await drainNativeShareIntake(scope);
+        if (result.manifests === 0 && !result.recovered && !result.recoveryPending) continue;
         await reloadLocal();
-        if (result.retainedReadonly > 0) {
-          setMessage("已保全系统分享的本机副本；当前家庭角色只读，未创建待同步项目。");
-        } else {
-          const failed = result.failed > 0 ? `；${result.failed} 项复制失败，其他项目不受影响` : "";
-          setMessage(`已接管 ${result.queued} 项系统分享并保存到本机${failed}。`);
-          if (credentials && !needsOnboardingRef.current && network.isConnected !== false && result.queued > 0) {
-            void runSync().catch(() => {});
-          }
-        }
+        const recoveryNotice = `${result.recovered ? `已找回 ${result.recovered} 份本机资料，尚未上传。` : ""}${result.recoveryPending ? `有 ${result.recoveryPending} 份旧资料暂时无法打开，请核对本机文件。` : ""}`;
+        const failed = result.failed > 0 ? ` ${result.failed} 项复制失败，请打开收件核对。` : "";
+        setMessage(`${result.manifests ? "分享内容已保存在本机。打开“收到的内容”，可加入草稿或仅存资料库。" : ""}${failed}${recoveryNotice}`);
+
       } while (intakeAgain.current && !clearingLocal.current);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "系统分享仍保留在本机，稍后会再次接管。");
@@ -363,7 +357,7 @@ export function AppProvider({
       intakeDone.current = null;
       finish();
     }
-  }, [credentials, network.isConnected, reloadLocal, runSync, viewer]);
+  }, [reloadLocal]);
 
   /**
    * 连接（或切换）一个目的地：记录目的地标识；切换实例/账号时先清掉
