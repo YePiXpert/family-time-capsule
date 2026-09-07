@@ -47,6 +47,11 @@ import {
 import { reviewPeriod, reviewPeriodEvent } from "@/db/schema/review";
 import { getAssetStorage } from "@/lib/assets/storage";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
+import {
+  formatOccurredLabel,
+  precisionHasDay,
+  type OccurredAtPrecision,
+} from "@/lib/metadata/precision";
 import { getFamily } from "@/lib/family/service";
 
 /**
@@ -355,27 +360,7 @@ export async function buildFamilyExport(
   md.push("");
   md.push(`> 由 Family Time Capsule 导出于 ${dt(new Date(), { dateStyle: "full", timeZone: tz })} · 共 ${eventsSorted.length} 个事件`);
   md.push("");
-  let lastMonth = "";
-  for (const e of eventsSorted) {
-    const month = dt(e.occurredAt, { year: "numeric", month: "long", timeZone: tz });
-    if (month !== lastMonth) {
-      md.push(`## ${month}`);
-      md.push("");
-      lastMonth = month;
-    }
-    md.push(`### ${e.title}`);
-    const age = formatPersonAgeLabel(e.childPersonId ? personById.get(e.childPersonId) : null, e.occurredAt, tz);
-    const participantNames = eventParticipantLinks
-      .filter((l) => l.memoryEventId === e.id)
-      .map((l) => personById.get(l.personId)?.displayName)
-      .filter(Boolean)
-      .join("、");
-    md.push(
-      `${dt(e.occurredAt, { dateStyle: "long", timeStyle: "short", timeZone: tz })}` +
-        (age ? ` · ${age}` : "") +
-        (participantNames ? ` · ${participantNames}` : ""),
-    );
-    md.push("");
+  const renderEventBody = (e: (typeof eventsSorted)[number]): void => {
     for (const link of eventAssetLinks.filter((l) => l.memoryEventId === e.id)) {
       const asset = assets.find((a) => a.id === link.assetId);
       if (!asset || asset.derivativeType) continue;
@@ -407,6 +392,57 @@ export async function buildFamilyExport(
       for (const f of eventFacts) md.push(`- ${f.statement}`);
     }
     md.push("");
+  };
+
+  let lastMonth = "";
+  const undated: typeof eventsSorted = [];
+  for (const e of eventsSorted) {
+    // unknown 的锚点是创建时刻：按月分组会伪造发生月份，单独归入「时间不确定」。
+    if (e.occurredAtPrecision === "unknown") {
+      undated.push(e);
+      continue;
+    }
+    const month = dt(e.occurredAt, { year: "numeric", month: "long", timeZone: tz });
+    if (month !== lastMonth) {
+      md.push(`## ${month}`);
+      md.push("");
+      lastMonth = month;
+    }
+    md.push(`### ${e.title}`);
+    // 年龄只在到日或更精确时给出（月/年锚点的“年龄”会是编造值）。
+    const age = precisionHasDay(e.occurredAtPrecision as OccurredAtPrecision)
+      ? formatPersonAgeLabel(e.childPersonId ? personById.get(e.childPersonId) : null, e.occurredAt, tz)
+      : null;
+    const participantNames = eventParticipantLinks
+      .filter((l) => l.memoryEventId === e.id)
+      .map((l) => personById.get(l.personId)?.displayName)
+      .filter(Boolean)
+      .join("、");
+    md.push(
+      `${formatOccurredLabel(e.occurredAtPrecision as OccurredAtPrecision, e.occurredAt, tz)}` +
+        (age ? ` · ${age}` : "") +
+        (participantNames ? ` · ${participantNames}` : ""),
+    );
+    md.push("");
+    renderEventBody(e);
+  }
+  // 时间不确定的事件：锚点是创建时刻，不进任何月份分组，也不显示编造日期。
+  if (undated.length > 0) {
+    md.push(`## 时间不确定`);
+    md.push("");
+    for (const e of undated) {
+      md.push(`### ${e.title}`);
+      const participantNames = eventParticipantLinks
+        .filter((l) => l.memoryEventId === e.id)
+        .map((l) => personById.get(l.personId)?.displayName)
+        .filter(Boolean)
+        .join("、");
+      md.push(
+        `时间不确定` + (participantNames ? ` · ${participantNames}` : ""),
+      );
+      md.push("");
+      renderEventBody(e);
+    }
   }
 
   const manifest = {

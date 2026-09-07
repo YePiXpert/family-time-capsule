@@ -108,6 +108,8 @@ await updateMemoryEvent(familyId, merged.eventId, adminUserId, {
   milestoneType: "family",
   isPinned: true,
 });
+// §6：导出文案按精度呈现——「八月的一次出游」只有月精度，外婆的歌时间不详。
+await updateMemoryEvent(familyId, merged.eventId, adminUserId, { occurredAtPrecision: "month" });
 
 const audio = await ingestMedia({
   familyId,
@@ -123,6 +125,7 @@ const audioItem = await createInboxItemForAsset(familyId, audio.asset);
 const audioEntry = (await getInboxEntry(familyId, audioItem.id))!;
 const audioEvent = await confirmInboxEntry(familyId, audioEntry, { title: "外婆的歌" });
 if (!audioEvent.ok) throw new Error("confirm failed");
+await updateMemoryEvent(familyId, audioEvent.eventId, adminUserId, { occurredAtPrecision: "unknown" });
 
 const LONG_PENDING_TEXT =
   "这是一条仍在收件箱里等待整理的长文字记录，用来确认导出和恢复不会只保留标题或前一百个字符。".repeat(
@@ -393,6 +396,11 @@ describe("完整导出（#014）", () => {
     expect(timelineMd).toMatch(/\!\[[^\]]*\]\(originals\/images\/[0-9a-f-]+\.jpg\)/);
     expect(timelineMd).toContain("originals/audio/");
     expect(timelineMd).toContain("外婆说：");
+    // §6：按精度呈现——月精度事件不带日/时；unknown 事件单独成节且无编造日期
+    expect(timelineMd).toMatch(/### 八月的一次出游\n+2026年8月/);
+    expect(timelineMd).not.toMatch(/### 八月的一次出游\n+\d{4}年\d{1,2}月\d{1,2}日/);
+    expect(timelineMd).toContain("## 时间不确定");
+    expect(timelineMd).toMatch(/### 外婆的歌\n+时间不确定/);
 
     // manifest 每个原件：文件存在 + SHA-256 实际可验证
     for (const entry of manifest.assets) {

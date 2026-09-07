@@ -5,6 +5,7 @@ import { and, count, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { capsule } from "@/db/schema/capsule";
 import { capsuleUnlockInstant } from "@/lib/capsules/service";
+import { formatOccurredDateLabel, type OccurredAtPrecision } from "@/lib/metadata/precision";
 import { clusterSuggestion } from "@/db/schema/clusters";
 import { contribution } from "@/db/schema/contribution";
 import { family, person } from "@/db/schema/family";
@@ -385,10 +386,19 @@ export async function generateReviewStory(
     : timeline.entries;
   if (chosen.length === 0) return { ok: false, error: "no_events" };
   const eventIds = new Set(chosen.map((entry) => entry.event.id));
-  const formatter = new Intl.DateTimeFormat("zh-CN", { timeZone: context.familyTimezone, month: "long", day: "numeric" });
+  // §6：回顾素材的日期按精度呈现（到日级即可）；月/年/不详不伪造日子。
+  const eventDateLabel = (entry: (typeof chosen)[number]): string =>
+    formatOccurredDateLabel(
+      entry.event.occurredAtPrecision as OccurredAtPrecision,
+      entry.event.occurredAt,
+      context.familyTimezone,
+    );
+  // 周记标题仍用周期起始日的「N月N日」——周期本身是真实日期。
+  const weekLabel = (start: Date): string =>
+    new Intl.DateTimeFormat("zh-CN", { timeZone: context.familyTimezone, month: "long", day: "numeric" }).format(start);
   const eventPlans: DraftParagraphPlan[] = [...chosen].reverse().map((entry) => ({
     kind: "narrative",
-    text: `${formatter.format(entry.event.occurredAt)} · ${entry.event.title} · 人物：${entry.participantNames.join("、") || "未标注"}${entry.event.locationText ? ` · 地点：${entry.event.locationText}` : ""}`,
+    text: `${eventDateLabel(entry)} · ${entry.event.title} · 人物：${entry.participantNames.join("、") || "未标注"}${entry.event.locationText ? ` · 地点：${entry.event.locationText}` : ""}`,
     sources: [{ sourceType: "memory_event", sourceId: entry.event.id, quote: null }],
   }));
   const storyPeriod = { start: period.periodStart, end: period.periodEnd };
@@ -424,7 +434,7 @@ export async function generateReviewStory(
       kind: "weekly",
       anchor: period.periodStart,
       period: storyPeriod,
-      title: `${formatter.format(period.periodStart)}这一周的家庭周记`,
+      title: `${weekLabel(period.periodStart)}这一周的家庭周记`,
     }, [...eventPlans, ...voicePlans]);
     if (!created.ok) return { ok: false as const, error: "no_events" as const };
     tx.update(reviewPeriod).set({ storyId: created.storyId, status: "in_progress", startedAt: current.startedAt ?? new Date(), updatedAt: new Date() })

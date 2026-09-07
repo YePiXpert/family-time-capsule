@@ -3,6 +3,10 @@ import "server-only";
 import type { FamilyContext } from "@/lib/family/context";
 import { assertBookContext, BookError } from "./projects/service";
 import {
+  formatOccurredLabel,
+  type OccurredAtPrecision,
+} from "@/lib/metadata/precision";
+import {
   createBookSourceResolver,
   sourceFingerprint,
 } from "./projects/sources";
@@ -245,10 +249,12 @@ export async function generateYearBook(
         { kind: "heading", text: event.title },
         {
           kind: "body",
-          text: new Intl.DateTimeFormat("zh-CN", {
-            dateStyle: "long",
-            timeZone: familyRow.timezone,
-          }).format(event.occurredAt),
+          // §6：书籍文案按精度呈现，不伪造日/时。
+          text: formatOccurredLabel(
+            event.occurredAtPrecision as OccurredAtPrecision,
+            event.occurredAt,
+            familyRow.timezone,
+          ),
         },
       ];
       if (event.locationText) {
@@ -279,10 +285,11 @@ export async function generateYearBook(
     const paras: Paragraph[] = [
       {
         kind: "body",
-        text: new Intl.DateTimeFormat("zh-CN", {
-          dateStyle: "long",
-          timeZone: familyRow.timezone,
-        }).format(event.occurredAt),
+        text: formatOccurredLabel(
+          event.occurredAtPrecision as OccurredAtPrecision,
+          event.occurredAt,
+          familyRow.timezone,
+        ),
       },
     ];
     if (event.locationText) {
