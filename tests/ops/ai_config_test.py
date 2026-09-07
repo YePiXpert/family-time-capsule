@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("ftc_ai", ROOT / "scripts/ops/lib/ai.py")
@@ -98,6 +99,70 @@ class AiConfigurationTests(unittest.TestCase):
             self.assertTrue(recovery.exists())
             if os.name == "posix":
                 self.assertEqual(recovery.stat().st_mode & 0o777, 0o600)
+
+
+class BaseUrlChangeConfirmationTests(unittest.TestCase):
+    """换 BaseURL 的 Key 确认（AI-2）：换服务商必须显式 confirm。"""
+
+    def installation(self, current):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "config").mkdir()
+            (root / "releases/current").mkdir(parents=True)
+            (root / "state").mkdir()
+            (root / "config/env").write_text("FTC_PROJECT_NAME=ftc-test\nAUTH_SECRET=keep\n")
+            (root / "releases/current/compose.yml").write_text((ROOT / "scripts/ops/templates/compose.loopback.yml").read_text())
+            install = ai.Installation(root)
+            install.effective_config = lambda: current
+            yield install
+
+    def base_values(self):
+        values = {key: "" for key in ai.AI_KEYS}
+        values.update({"AI_PROVIDER": "dual", "AI_BASE_URL": "https://new-provider.example/v1", "AI_API_KEY": "k", "AI_MODEL": "m"})
+        return values
+
+    def test_same_host_needs_no_confirmation(self):
+        for install in self.installation({"AI_BASE_URL": "https://old.example/v1"}):
+            with mock.patch("builtins.input", side_effect=AssertionError("input must not be called")):
+                ai.confirm_base_url_change(install, {**self.base_values(), "AI_BASE_URL": "https://old.example/v2"})
+
+    def test_changed_host_requires_typed_confirm(self):
+        for install in self.installation({"AI_BASE_URL": "https://old.example/v1"}):
+            with mock.patch("builtins.input", return_value="confirm"):
+                ai.confirm_base_url_change(install, self.base_values())
+            with mock.patch("builtins.input", return_value="yes"):
+                with self.assertRaises(ai.OperationError):
+                    ai.confirm_base_url_change(install, self.base_values())
+
+    def test_unreadable_current_config_skips_confirmation(self):
+        def unavailable():
+            raise ai.OperationError("不可用")
+        for install in self.installation({}):
+            install.effective_config = unavailable
+            with mock.patch("builtins.input", side_effect=AssertionError("input must not be called")):
+                ai.confirm_base_url_change(install, self.base_values())
+
+    def test_asr_host_change_confirmed_only_in_dual_mode(self):
+        for install in self.installation({
+            "AI_BASE_URL": "https://same.example/v1",
+            "ASR_BASE_URL": "https://old-asr.example/v1",
+        }):
+            values = {**self.base_values(), "AI_BASE_URL": "https://same.example/v1", "ASR_BASE_URL": "https://new-asr.example/v1"}
+            with mock.patch("builtins.input", return_value="confirm"):
+                ai.confirm_base_url_change(install, values)
+            single = {**values, "AI_PROVIDER": "openai-compatible"}
+            with mock.patch("builtins.input", side_effect=AssertionError("input must not be called")):
+                ai.confirm_base_url_change(install, single)
+
+    def test_quota_and_profile_values_are_validated(self):
+        values = {key: "" for key in ai.AI_KEYS}
+        values.update({"AI_PROVIDER": "dual", "AI_BASE_URL": "https://x.example/v1", "AI_API_KEY": "k", "AI_MODEL": "m", "ASR_API_KEY": "a", "ASR_MODEL": "m2"})
+        ai.validate_configuration(values)
+        with self.assertRaises(ai.OperationError):
+            ai.validate_configuration({**values, "AI_TEXT_PROFILE": "grpc"})
+        with self.assertRaises(ai.OperationError):
+            ai.validate_configuration({**values, "AI_DAILY_MAX_REQUESTS": "-3"})
+        ai.validate_configuration({**values, "AI_TEXT_PROFILE": "responses", "AI_DAILY_MAX_REQUESTS": "500"})
 
 
 if __name__ == "__main__":

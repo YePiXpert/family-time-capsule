@@ -261,6 +261,61 @@ function readChatText(value: unknown, capability: AiCapability): string {
   throw responseError(capability, "AI provider text content was missing.");
 }
 
+/**
+ * AI-2 Responses API（POST /responses）响应解析：
+ * output 是消息条目数组；文本在 type="message" 条目的 output_text 分段里，
+ * 拒绝以 refusal 分段或 status="incomplete" 呈现。usage 键名为
+ * input_tokens/output_tokens（parseUsage 已兼容）。
+ */
+function parseResponsesResponse(
+  value: unknown,
+  capability: "text" | "vision",
+  fallbackModel: string,
+  provenanceFor: (model: string) => AiProvenance,
+): GenerateTextResult | AnalyzeImageResult {
+  if (!isObject(value) || !Array.isArray(value.output) || value.output.length === 0) {
+    throw responseError(capability, "AI provider responses output was missing.");
+  }
+  if (value.status === "incomplete" || value.incomplete_details !== undefined) {
+    throw responseError(capability, "AI provider refused or did not finish the requested output.");
+  }
+  const texts: string[] = [];
+  for (const item of value.output) {
+    if (!isObject(item)) {
+      throw responseError(capability, "AI provider response output item was invalid.");
+    }
+    if (item.type !== "message") continue;
+    if (!Array.isArray(item.content)) {
+      throw responseError(capability, "AI provider response message content was invalid.");
+    }
+    for (const part of item.content) {
+      if (!isObject(part)) {
+        throw responseError(capability, "AI provider response content part was invalid.");
+      }
+      if (part.type === "refusal" || typeof part.refusal === "string") {
+        throw responseError(capability, "AI provider refused or did not finish the requested output.");
+      }
+      if (part.type === "output_text") {
+        if (typeof part.text !== "string" || part.text.length === 0) {
+          throw responseError(capability, "AI provider text content was invalid.");
+        }
+        texts.push(part.text);
+      }
+    }
+  }
+  if (texts.length === 0) {
+    throw responseError(capability, "AI provider text content was missing.");
+  }
+  const model = readResponseModel(value.model, fallbackModel, capability);
+  const usage = parseUsage(value.usage, capability);
+  return Object.freeze({
+    text: texts.join(""),
+    finishReason: typeof value.status === "string" ? value.status : null,
+    provenance: provenanceFor(model),
+    ...(usage === undefined ? {} : { usage }),
+  });
+}
+
 function parseChatResponse(
   value: unknown,
   capability: "text" | "vision",
@@ -638,6 +693,37 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
   async generateText(input: GenerateTextInput): Promise<GenerateTextResult> {
     const model = this.#model("text");
     validateGenerateTextInput(input);
+    if (this.#config.textProfile === "responses") {
+      // AI-2：Responses API——input 消息数组 + max_output_tokens；
+      // JSON 模式经 text.format 表达（无该能力的端点可配 prompt_only 降级）。
+      const value = await this.#transport.postJson(
+        "text",
+        "responses",
+        {
+          model,
+          input: input.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          ...(input.maxOutputTokens === undefined
+            ? {}
+            : { max_output_tokens: input.maxOutputTokens }),
+          ...(input.temperature === undefined || !this.#config.temperatureSupported
+            ? {}
+            : { temperature: input.temperature }),
+          ...(input.responseFormat === "json" && this.#config.jsonMode === "json_object"
+            ? { text: { format: { type: "json_object" } } }
+            : {}),
+        },
+        input.signal,
+      );
+      return parseResponsesResponse(
+        value,
+        "text",
+        model,
+        this.#provenance.bind(this),
+      ) as GenerateTextResult;
+    }
     const value = await this.#transport.postJson(
       "text",
       "chat/completions",
@@ -672,6 +758,35 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
       input.image.bytes.byteOffset,
       input.image.bytes.byteLength,
     ).toString("base64");
+    const dataUrl = `data:${input.image.mimeType};base64,${base64}`;
+    if (this.#config.visionProfile === "responses") {
+      const value = await this.#transport.postJson(
+        "vision",
+        "responses",
+        {
+          model,
+          input: [
+            {
+              role: "user",
+              content: [
+                { type: "input_text", text: input.prompt },
+                { type: "input_image", image_url: dataUrl },
+              ],
+            },
+          ],
+          ...(input.maxOutputTokens === undefined
+            ? {}
+            : { max_output_tokens: input.maxOutputTokens }),
+        },
+        input.signal,
+      );
+      return parseResponsesResponse(
+        value,
+        "vision",
+        model,
+        this.#provenance.bind(this),
+      ) as AnalyzeImageResult;
+    }
     const value = await this.#transport.postJson(
       "vision",
       "chat/completions",
@@ -685,7 +800,7 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
               {
                 type: "image_url",
                 image_url: {
-                  url: `data:${input.image.mimeType};base64,${base64}`,
+                  url: dataUrl,
                 },
               },
             ],

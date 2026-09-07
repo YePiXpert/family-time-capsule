@@ -71,6 +71,10 @@ export const transcribeAssetHandler: AiJobHandler = async ({
   const storage = getAssetStorage();
   let bytes: Uint8Array;
   let mimeType = asset.mimeType as AiAudioInput["mimeType"];
+  // 已知时长用于每日音频限额（AI-21）；未知就传 undefined，绝不估算。
+  let durationSeconds: number | undefined;
+  const knownSeconds = (ms: number | null): number | undefined =>
+    ms !== null && Number.isFinite(ms) && ms > 0 ? ms / 1000 : undefined;
   if (asset.type === "video") {
     if (lease.triggerMode !== "manual") throw new AiJobHandlerError("video_requires_manual_request", false);
     const error = shortVideoError(asset);
@@ -84,7 +88,11 @@ export const transcribeAssetHandler: AiJobHandler = async ({
     const extracted = await extractVideoAudio(absPath, signal);
     if (extracted.status !== "ok") throw new AiJobHandlerError(extracted.status === "unavailable" ? "ffmpeg_unavailable" : extracted.status === "aborted" ? "ai_aborted" : "audio_extraction_failed", false);
     bytes = extracted.bytes; mimeType = "audio/wav";
-  } else bytes = new Uint8Array(storage.read(asset.storageKey));
+    durationSeconds = knownSeconds(probe.durationMs);
+  } else {
+    bytes = new Uint8Array(storage.read(asset.storageKey));
+    durationSeconds = knownSeconds(asset.durationMs);
+  }
 
   // M6 双路由：MiMo ASR 只接受 mp3/wav。音频原件保持不动，
   // 非 mp3/wav 先经 ffmpeg 转成有界 WAV 再送转写；失败给出可读错误
@@ -120,6 +128,7 @@ export const transcribeAssetHandler: AiJobHandler = async ({
       mimeType,
     },
     signal,
+    ...(durationSeconds === undefined ? {} : { durationSeconds }),
   });
 
   return {

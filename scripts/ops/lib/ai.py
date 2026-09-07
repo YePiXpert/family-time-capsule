@@ -22,6 +22,8 @@ AI_KEYS = (
     "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL", "AI_EMBEDDING_MODEL", "AI_REQUEST_TIMEOUT_MS",
     "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER",
     "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT",
+    "AI_TEXT_PROFILE", "AI_VISION_PROFILE",
+    "AI_DAILY_MAX_REQUESTS", "AI_DAILY_MAX_IMAGES", "AI_DAILY_MAX_AUDIO_SECONDS",
     "ASR_CONFIGURATION_ID", "ASR_BASE_URL", "ASR_API_KEY", "ASR_PROVIDER_LABEL", "ASR_MODEL",
     "ASR_LANGUAGE", "ASR_REQUEST_TIMEOUT_MS", "ASR_MAX_REQUEST_BYTES", "ASR_MAX_RESPONSE_BYTES",
 )
@@ -140,9 +142,14 @@ def validate_configuration(values):
         "AI_TEMPERATURE_SUPPORTED": ("true", "false"),
         "AI_JSON_MODE": ("json_object", "prompt_only"),
         "AI_TRANSCRIPTION_FORMAT": ("json", "verbose_json", "text"),
+        "AI_TEXT_PROFILE": ("", "responses", "chat_completions"),
+        "AI_VISION_PROFILE": ("", "responses", "chat_completions"),
     }.items():
         if values[key] not in choices:
             raise OperationError("能力协议选项无效。")
+    for key in ("AI_DAILY_MAX_REQUESTS", "AI_DAILY_MAX_IMAGES", "AI_DAILY_MAX_AUDIO_SECONDS"):
+        if values[key] and not re.fullmatch(r"\d{1,10}", values[key]):
+            raise OperationError("每日限额必须是不超过 10 位的非负整数（0=不限）。")
 
 
 class Installation:
@@ -196,7 +203,7 @@ class Installation:
         print("app / worker 有效 AI 配置：一致（已分别进入运行中的容器核对）")
         print("AI：" + ("已配置；仍需家庭同意" if row.get("enabled") else "已关闭"))
         print("密钥已配置" if row.get("keyConfigured") else "密钥未配置")
-        for key in ("endpoint", "provider", "models", "requestTimeoutMs", "maxRequestBytes", "maxResponseBytes", "tokenParameter", "temperatureSupported", "jsonMode", "transcriptionFormat"):
+        for key in ("endpoint", "provider", "models", "requestTimeoutMs", "maxRequestBytes", "maxResponseBytes", "tokenParameter", "temperatureSupported", "jsonMode", "transcriptionFormat", "textProfile", "visionProfile", "dailyQuota"):
             if key in row:
                 print(f"{key}: {json.dumps(row[key], ensure_ascii=False)}")
         print("worker 心跳：" + ("可用" if row.get("workerAvailable") else "不可用或尚未上报"))
@@ -267,6 +274,36 @@ class Installation:
             yield
 
 
+def confirm_base_url_change(install, values):
+    """换 BaseURL 的 Key 确认（AI-2）：地址换到别家时，明确告知 Key 会发给
+    新地址并要求输入 confirm。旧 Key 若属于原服务商，继续使用只会被新
+    服务商收到——这必须是一次显式决定，不能静默发生。"""
+    try:
+        current = install.effective_config()
+    except OperationError:
+        return  # 首次配置或容器状态暂不可读：没有旧地址可比，不做确认
+    changes = []
+    checks = [("AI_BASE_URL", values["AI_BASE_URL"])]
+    if values["AI_PROVIDER"] == "dual":
+        checks.append(("ASR_BASE_URL", values["ASR_BASE_URL"]))
+    for key, new_url in checks:
+        old_url = current.get(key) or ""
+        if not old_url or not new_url:
+            continue
+        old_host = urlsplit(old_url).hostname
+        new_host = urlsplit(new_url).hostname
+        if old_host and new_host and old_host != new_host:
+            changes.append((key, old_host, new_host))
+    if not changes:
+        return
+    for key, old_host, new_host in changes:
+        print(f"{key} 将从 {old_host} 改为 {new_host}。")
+    print("你输入的 API Key 会随每个模型请求发送到新地址；若旧 Key 属于原服务商，请改用新服务商的 Key。")
+    reply = input("确认把 Key 发送到新地址请输入 confirm：")
+    if reply.strip() != "confirm":
+        raise OperationError("未确认新地址，未做任何更改。")
+
+
 def configure_input():
     if not sys.stdin.isatty():
         raise OperationError("配置需要真实终端，Key 只允许隐藏输入。")
@@ -286,6 +323,11 @@ def configure_input():
         ("AI_TOKEN_PARAMETER", "token 参数 max_completion_tokens / max_tokens", "max_completion_tokens"),
         ("AI_TEMPERATURE_SUPPORTED", "模型支持 temperature：true / false", "true"),
         ("AI_JSON_MODE", "文字 JSON 模式 json_object / prompt_only", "json_object"),
+        ("AI_TEXT_PROFILE", "文字 API 形态 responses（官方 Luna 地址）/ chat_completions（第三方兼容）", "chat_completions"),
+        ("AI_VISION_PROFILE", "视觉 API 形态 responses / chat_completions", "chat_completions"),
+        ("AI_DAILY_MAX_REQUESTS", "每日请求上限（0=不限）", "0"),
+        ("AI_DAILY_MAX_IMAGES", "每日送分析图片上限（0=不限）", "0"),
+        ("AI_DAILY_MAX_AUDIO_SECONDS", "每日送转写音频秒数上限（0=不限）", "0"),
     ):
         values[key] = input(f"{prompt}" + (f" [{default}]" if default else "") + "：") or default
     if mode == "single":
@@ -344,7 +386,9 @@ def main():
         if args.command == "recover":
             install.recover()
         elif args.command == "configure":
-            install.change(configure_input())
+            values = configure_input()
+            confirm_base_url_change(install, values)
+            install.change(values)
         else:
             print("关闭后不再启动 AI 请求；已发出的远端请求不能保证撤回。媒体和出版任务仍运行。")
             install.change({"AI_PROVIDER": "disabled"})

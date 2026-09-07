@@ -120,6 +120,11 @@ export type TranscribeAudioInput = Readonly<{
   language?: string;
   prompt?: string;
   signal?: AbortSignal;
+  /**
+   * 已知时长（秒）：调用方从资产元数据/探测给出，用于每日音频时长限额。
+   * 缺省表示未知——限额按 0 秒计（请求数仍计），显示层如实呈现未知。
+   */
+  durationSeconds?: number;
 }>;
 
 export type TranscriptSegment = Readonly<{

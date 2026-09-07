@@ -421,3 +421,141 @@ describe("OpenAI-compatible MemoryAssistant", () => {
     });
   });
 });
+
+describe("Responses API profile (AI-2)", () => {
+  it("text profile=responses posts to /responses and parses output_text parts", async () => {
+    const calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
+    const fetch: AiFetch = async (input, init) => {
+      calls.push({ input, init });
+      return jsonResponse({
+        model: "provider-resolved-text-model",
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              { type: "output_text", text: '{"answer":' },
+              { type: "output_text", text: "42}" },
+            ],
+          },
+        ],
+        usage: { input_tokens: 9, output_tokens: 4, total_tokens: 13 },
+      });
+    };
+    const assistant = createAssistant(fetch, { AI_TEXT_PROFILE: "responses" });
+
+    const result = await assistant.generateText({
+      messages: [
+        { role: "system", content: "be terse" },
+        { role: "user", content: "offline fixture" },
+      ],
+      maxOutputTokens: 100,
+      temperature: 0,
+      responseFormat: "json",
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0]?.input)).toBe("https://compatible.example.test/v1/responses");
+    const body = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>;
+    expect(body.model).toBe("text-test-model");
+    expect(body.input).toEqual([
+      { role: "system", content: "be terse" },
+      { role: "user", content: "offline fixture" },
+    ]);
+    expect(body.max_output_tokens).toBe(100);
+    expect(body.temperature).toBe(0);
+    expect(body).toMatchObject({ text: { format: { type: "json_object" } } });
+    expect(body.response_format).toBeUndefined();
+    expect(body.max_completion_tokens).toBeUndefined();
+    expect(result.text).toBe('{"answer":42}');
+    expect(result.usage).toEqual({ inputTokens: 9, outputTokens: 4, totalTokens: 13 });
+    expect(result.provenance.model).toBe("provider-resolved-text-model");
+  });
+
+  it("refusal parts and incomplete status are rejections, never content", async () => {
+    const refusal = createAssistant(
+      async () =>
+        jsonResponse({
+          status: "completed",
+          output: [{ type: "message", content: [{ type: "refusal", refusal: "no" }] }],
+        }),
+      { AI_TEXT_PROFILE: "responses" },
+    );
+    await expect(
+      refusal.generateText({ messages: [{ role: "user", content: "fixture" }] }),
+    ).rejects.toMatchObject({ code: "ai_response_invalid" });
+
+    const incomplete = createAssistant(
+      async () =>
+        jsonResponse({
+          status: "incomplete",
+          output: [{ type: "message", content: [{ type: "output_text", text: "partial" }] }],
+        }),
+      { AI_TEXT_PROFILE: "responses" },
+    );
+    await expect(
+      incomplete.generateText({ messages: [{ role: "user", content: "fixture" }] }),
+    ).rejects.toMatchObject({ code: "ai_response_invalid" });
+
+    const noText = createAssistant(
+      async () => jsonResponse({ status: "completed", output: [{ type: "message", content: [] }] }),
+      { AI_TEXT_PROFILE: "responses" },
+    );
+    await expect(
+      noText.generateText({ messages: [{ role: "user", content: "fixture" }] }),
+    ).rejects.toMatchObject({ code: "ai_response_invalid" });
+  });
+
+  it("vision profile=responses sends input_text + input_image parts", async () => {
+    const calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
+    const fetch: AiFetch = async (input, init) => {
+      calls.push({ input, init });
+      return jsonResponse({
+        status: "completed",
+        output: [
+          { type: "message", content: [{ type: "output_text", text: "a red circle" }] },
+        ],
+      });
+    };
+    const assistant = createAssistant(fetch, {
+      AI_TEXT_PROFILE: "responses",
+      AI_VISION_PROFILE: "responses",
+    });
+
+    const result = await assistant.analyzeImage({
+      image: { bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png" },
+      prompt: "describe",
+      maxOutputTokens: 64,
+    });
+
+    expect(String(calls[0]?.input)).toBe("https://compatible.example.test/v1/responses");
+    const body = JSON.parse(String(calls[0]?.init?.body)) as {
+      input: { role: string; content: { type: string }[] }[];
+      max_output_tokens: number;
+    };
+    expect(body.input[0]?.content.map((part) => part.type)).toEqual([
+      "input_text",
+      "input_image",
+    ]);
+    expect(body.max_output_tokens).toBe(64);
+    expect(result.text).toBe("a red circle");
+  });
+
+  it("text stays on chat/completions by default and rejects invalid profile values", async () => {
+    const calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
+    const assistant = createAssistant(async (input, init) => {
+      calls.push({ input, init });
+      return jsonResponse({
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+      });
+    });
+    await assistant.generateText({ messages: [{ role: "user", content: "fixture" }] });
+    expect(String(calls[0]?.input)).toBe(
+      "https://compatible.example.test/v1/chat/completions",
+    );
+
+    expect(() =>
+      createAssistant(async () => jsonResponse({}), { AI_TEXT_PROFILE: "grpc" }),
+    ).toThrowError(/AI_TEXT_PROFILE/);
+  });
+});

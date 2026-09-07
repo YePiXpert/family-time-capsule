@@ -342,3 +342,31 @@ export const aiJobDependency = sqliteTable("ai_job_dependency", {
   index("ai_job_dependency_parent_idx").on(table.dependsOnJobId),
   check("ai_job_dependency_distinct", sql`${table.jobId} <> ${table.dependsOnJobId}`),
 ]);
+
+/**
+ * AI 每日限额用量（正式 1.0 §9 / AI-21）：部署级、按 UTC 日计数。
+ * 计数与限额裁决在同一条 UPDATE 内原子完成（lib/ai/quota.ts）；
+ * 纯运维可重建数据，不进入 portable family archive。
+ */
+export const aiDailyUsage = sqliteTable(
+  "ai_daily_usage",
+  {
+    day: text("day").primaryKey(),
+    requests: integer("requests").notNull().default(0),
+    images: integer("images").notNull().default(0),
+    audioSeconds: integer("audio_seconds").notNull().default(0),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (table) => [
+    check(
+      "ai_daily_usage_day_check",
+      sql`${table.day} glob '????-??-??' and ${table.day} not glob '*[^0-9-]*'`,
+    ),
+    check(
+      "ai_daily_usage_counts_check",
+      sql`typeof(${table.requests}) = 'integer' and ${table.requests} >= 0 and typeof(${table.images}) = 'integer' and ${table.images} >= 0 and typeof(${table.audioSeconds}) = 'integer' and ${table.audioSeconds} >= 0`,
+    ),
+  ],
+);

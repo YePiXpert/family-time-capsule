@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { loadAiProviderConfig, type AiEnvironment } from "./config";
 import type { MemoryAssistant } from "./types";
 
-export const AI_ENV_KEYS = ["AI_CONFIGURATION_ID", "AI_PROVIDER", "AI_BASE_URL", "AI_API_KEY", "AI_PROVIDER_LABEL", "AI_MODEL", "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL", "AI_EMBEDDING_MODEL", "AI_REQUEST_TIMEOUT_MS", "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER", "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT", "ASR_CONFIGURATION_ID", "ASR_BASE_URL", "ASR_API_KEY", "ASR_PROVIDER_LABEL", "ASR_MODEL", "ASR_LANGUAGE", "ASR_REQUEST_TIMEOUT_MS", "ASR_MAX_REQUEST_BYTES", "ASR_MAX_RESPONSE_BYTES"] as const;
+export const AI_ENV_KEYS = ["AI_CONFIGURATION_ID", "AI_PROVIDER", "AI_BASE_URL", "AI_API_KEY", "AI_PROVIDER_LABEL", "AI_MODEL", "AI_VISION_MODEL", "AI_TRANSCRIPTION_MODEL", "AI_EMBEDDING_MODEL", "AI_REQUEST_TIMEOUT_MS", "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER", "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT", "AI_TEXT_PROFILE", "AI_VISION_PROFILE", "AI_DAILY_MAX_REQUESTS", "AI_DAILY_MAX_IMAGES", "AI_DAILY_MAX_AUDIO_SECONDS", "ASR_CONFIGURATION_ID", "ASR_BASE_URL", "ASR_API_KEY", "ASR_PROVIDER_LABEL", "ASR_MODEL", "ASR_LANGUAGE", "ASR_REQUEST_TIMEOUT_MS", "ASR_MAX_REQUEST_BYTES", "ASR_MAX_RESPONSE_BYTES"] as const;
 
 /** No key or key digest. Used inside each running container. Never calls a model. */
 export function aiConfigurationStatus(env: AiEnvironment = process.env) {
@@ -24,6 +24,7 @@ export function aiConfigurationStatus(env: AiEnvironment = process.env) {
         maxResponseBytes: primary.maxResponseBytes, tokenParameter: primary.tokenParameter,
         temperatureSupported: primary.temperatureSupported, jsonMode: primary.jsonMode,
         transcriptionFormat: primary.transcriptionFormat,
+        textProfile: primary.textProfile, visionProfile: primary.visionProfile,
       },
       asr: {
         configurationId: asr.configurationId,
@@ -32,6 +33,11 @@ export function aiConfigurationStatus(env: AiEnvironment = process.env) {
         maxRequestBytes: asr.maxRequestBytes, maxResponseBytes: asr.maxResponseBytes,
       },
       capabilities: config.capabilities,
+      dailyQuota: {
+        maxRequests: env.AI_DAILY_MAX_REQUESTS ?? "",
+        maxImages: env.AI_DAILY_MAX_IMAGES ?? "",
+        maxAudioSeconds: env.AI_DAILY_MAX_AUDIO_SECONDS ?? "",
+      },
     };
   }
   return {
@@ -42,6 +48,12 @@ export function aiConfigurationStatus(env: AiEnvironment = process.env) {
     maxResponseBytes: config.maxResponseBytes, tokenParameter: config.tokenParameter,
     temperatureSupported: config.temperatureSupported, jsonMode: config.jsonMode,
     transcriptionFormat: config.transcriptionFormat,
+    textProfile: config.textProfile, visionProfile: config.visionProfile,
+    dailyQuota: {
+      maxRequests: env.AI_DAILY_MAX_REQUESTS ?? "",
+      maxImages: env.AI_DAILY_MAX_IMAGES ?? "",
+      maxAudioSeconds: env.AI_DAILY_MAX_AUDIO_SECONDS ?? "",
+    },
   };
 }
 

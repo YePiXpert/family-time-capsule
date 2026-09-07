@@ -138,6 +138,8 @@ export class MimoAsrTranscriber {
         temperatureSupported: false,
         jsonMode: "prompt_only",
         transcriptionFormat: "json",
+        textProfile: "chat_completions",
+        visionProfile: "chat_completions",
       },
       dependencies as OpenAiCompatibleDependencies,
       { "api-key": config.apiKey.revealForProvider() },

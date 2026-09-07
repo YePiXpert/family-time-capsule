@@ -113,7 +113,7 @@
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
 | AI-1 | 默认路由:文字+图片→CPA→gpt-5.6-luna;语音→MiMo mimo-v2.5-asr | 两路独立BaseURL/Key/模型 | 自动化通过(M6 dual 配置+默认模型+分能力绑定;真实链路见 BLK-1/2) | lib/ai/config.ts; lib/ai/dual-route.ts; tests/unit/ai-dual-route-*.test.ts |
-| AI-2 | Luna 支持官方兼容地址+管理员可改第三方BaseURL | Responses/Chat Completions 按能力profile | 部分实现(Chat Completions 有;Responses 未验证) | lib/ai/openai-compatible.ts |
+| AI-2 | Luna 支持官方兼容地址+管理员可改第三方BaseURL | Responses/Chat Completions 按能力profile | 自动化通过(AI_TEXT_PROFILE/AI_VISION_PROFILE 按能力选 API 形态——responses=/responses 端点(input 消息数组+max_output_tokens+text.format JSON 模式,input_image 视觉分段),chat_completions=传统端点;拒绝分段/incomplete 状态如实映射,不伪装内容;配置进 configurationId 指纹,ops configure 提示项+diagnostics status 展示;换 BaseURL 主机时需终端输入 confirm 显式确认 Key 发往新地址,未确认不做任何更改。单元 28/28+Python 5 项) | lib/ai/openai-compatible.ts; lib/ai/config.ts; scripts/ops/lib/ai.py |
 | AI-3 | CPA 只支持文字时如实降级,不假装视觉可用 | 用非私人测试图实测理解 | 部分实现(能力测试有 text/vision/transcription;需按新双路由重构) | scripts/ai-diagnostics.mts |
 | AI-4 | MiMo 按小米官方ASR契约实现,不默认OpenAI transcriptions端点 | 音频编码/时长/分段/时间戳核验 | 自动化通过(M6:chat/completions+input_audio+api-key;mp3/wav直传其余转WAV;无时戳不虚构;真实契约 BLK-2) | lib/ai/mimo-asr.ts; tests/unit/ai-mimo-asr.test.ts |
 | AI-5 | 普通成员只见"文字与图片整理/语音转写";高级配置显地址与模型 | 分能力授权 | 自动化通过 | settings/ai; mobile ai/settings |
@@ -132,7 +132,7 @@
 | AI-18 | 私密上下文不传播到家庭公共标题;索引/缓存随权限变化 | 派生权限 | 自动化通过 | visibility post-filter |
 | AI-19 | AI默认关闭;分能力内容告知(→谁/用途/保留未知/关闭方式) | 上传VPS与送CPA/MiMo分环节告知 | 自动化通过(M6:能力卡与移动端显示分能力接收服务) | settings/ai; mobile/src/ai |
 | AI-20 | 自动新素材/历史回填/访客资料分开授权 | 不当同意全量 | 自动化通过 | ai_processing_consent |
-| AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 部分实现(重试/取消有;每日配额未实现) | lib/ai/jobs |
+| AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 自动化通过(§9:AI_DAILY_MAX_REQUESTS/_IMAGES/_AUDIO_SECONDS 部署级限额,0/缺省=不限;0060 ai_daily_usage 按 UTC 日计数,单条条件 UPDATE 原子裁决并发不双越;worker 在请求发出前预扣,失败请求也计入;超限 AiQuotaExceededError→failAiJob retryable+retryAfterMs 到日界自动顺延;音频时长仅已知时计入(TranscribeAudioInput.durationSeconds 由处理器从资产元数据/探测传入),未知按 0 秒不估算,ops test 用量未知显示"未知") | lib/ai/quota.ts; jobs/runtime.ts; db/migrations/0060_ai_daily_usage.sql |
 | AI-22 | 文件名/OCR/转录是数据不是指令;不取URL/执行命令/读无关上下文 | 提示注入防护 | 部分实现(M3-C：原件起名明确不可信数据边界、严格 title schema/拒绝 URL/晚到结果守卫及专项测试；其余 AI 链路仍须统一扫查) | lib/ai/handlers/suggest-asset-name.ts; tests/integration/asset-name.test.ts |
 | AI-23 | Luna文字/Luna图片/MiMo语音三个独立live测试;fake/集成/live分层 | 无凭据不勾选真实链路 | 部分实现(M6:testAiCapability 经工厂自动走 MiMo;真实凭据 BLK-1/2) | scripts/ai-diagnostics.mts; ftc ai test |
 | AI-24 | 不把开发Agent登录态当产品凭据;不放进App | 审查 | 自动化通过(NEXT_PUBLIC key 显式拒绝) | lib/ai/config |

@@ -1,9 +1,19 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { AiConfigurationError, AiError, AiProviderError } from "@/lib/ai/errors";
+import {
+  AiConfigurationError,
+  AiError,
+  AiProviderError,
+  AiQuotaExceededError,
+} from "@/lib/ai/errors";
 import { createMemoryAssistant } from "@/lib/ai/server";
 import type { MemoryAssistant } from "@/lib/ai/types";
+import {
+  loadAiDailyQuotaLimits,
+  withDailyQuota,
+  type AiDailyQuotaLimits,
+} from "@/lib/ai/quota";
 import {
   claimNextAiJob,
   failAiJob,
@@ -82,6 +92,8 @@ export type AiWorkerOptions = Readonly<{
   registry?: AiJobRegistry;
   queue?: AiWorkerQueue;
   leaseMs?: number;
+  /** 覆盖每日限额（测试用）；缺省读环境变量，全部为 0 时不启用限额。 */
+  quotaLimits?: AiDailyQuotaLimits;
 }>;
 
 function runtimeIdentity(assistant: MemoryAssistant): AiJobRuntimeIdentity {
@@ -109,6 +121,10 @@ function safeFailure(error: unknown): { code: string; retryable: boolean; retryA
   if (error instanceof AiProviderError) {
     return { code: error.code, retryable: error.retryable, ...(error.retryAfterMs == null ? {} : { retryAfterMs: error.retryAfterMs }) };
   }
+  if (error instanceof AiQuotaExceededError) {
+    // 请求未发出即被拒：按可重试调度到下一个 UTC 日界，不烧尝试次数语义之外的路径。
+    return { code: error.code, retryable: true, retryAfterMs: error.retryAfterMs };
+  }
   if (error instanceof AiError) {
     return { code: error.code, retryable: false };
   }
@@ -122,13 +138,24 @@ export async function runAiWorkerOnce(
   await cleanupExpiredUploads({ limit: 25 });
   const workerId = options.workerId ?? randomUUID();
   let assistant: MemoryAssistant;
+  let quotaLimits: AiDailyQuotaLimits;
   try {
     assistant = options.assistant ?? createMemoryAssistant();
+    quotaLimits = options.quotaLimits ?? loadAiDailyQuotaLimits();
   } catch (error) {
     if (!(error instanceof AiConfigurationError)) throw error;
     safeHeartbeat(options.queue ?? DEFAULT_QUEUE, { workerId, workerVersion: WORKER_VERSION, status: "idle" });
     return { status: "idle", jobId: null, errorCode: "ai_configuration_invalid" };
   }
+  // 每日限额（AI-21）：只在配置了任一限额时启用包装；请求发出前原子预扣，
+  // 超限抛 AiQuotaExceededError → failAiJob 以 retryAfterMs 调度到日界。
+  const quotaActive =
+    quotaLimits.maxRequests > 0 ||
+    quotaLimits.maxImages > 0 ||
+    quotaLimits.maxAudioSeconds > 0;
+  const effectiveAssistant = quotaActive
+    ? withDailyQuota(assistant, quotaLimits)
+    : assistant;
   const registry = options.registry ?? createProductionAiJobRegistry();
   const queue = options.queue ?? DEFAULT_QUEUE;
   const leaseMs = options.leaseMs ?? 60_000;
@@ -180,7 +207,7 @@ export async function runAiWorkerOnce(
   try {
     const prepared = await handler({
       lease: activeLease,
-      assistant,
+      assistant: effectiveAssistant,
       signal: controller.signal,
     });
     clearInterval(timer);

@@ -4,43 +4,43 @@
 
 ## 基线
 
-- baseline: d2c9e5b（origin/main，CI 34163836531 success——修复 verify-upgrade12
-  快照断言后 CI 全绿）
+- baseline: 7970009（origin/main；87137a0 FIND-5 的测试收窄修复，CI 待核对）
 - 开发版本: 1.0.0-dev.1（不变）
-- 工作树: 即将提交 §8 剩余（FIND-5 持久缓存+内嵌加相册，0059）
+- 工作树: §9 改动（AI-21/AI-2/换址 Key 确认，0060），待提交
 
 ## 当前任务
 
-§8 剩余已完成实现与测试（clusters 集成 7/7、迁移敏感 5 文件 8/8、
-collections/inbox 10/10、tsc/eslint 干净）。提交推送并核对 CI 后进入 §9。
+§9 三件套已实现并本地验证完毕，提交推送核对 CI。随后按 GLM_HANDOFF
+顺序进入 §5/§6 收尾或 §10–§13。
 
 ## 已完成需求 ID
 
 - §4（3e00b37）；§5 核心（ddf93f2）；§6（3b1949f）；§7（3a8ea18）；
-  §8 FIND-9（b53b020）
-- §8 剩余 FIND-5（本提交）：
-  - 0059 cluster_feature_cache：dHash+清晰度按「来源 SHA+算法版本」落库，
-    命中免读原件；损坏位串按未命中重算覆写；旧算法版本与孤儿行随写清理；
-    缓存读写失败不影响扫描正确性（原件不可变故内容永不失效）
-  - 候选卡内嵌「加入相册」：复用勾选成员，选已有相册或新建；
-    相册只引用原件（CAP-11），不移出收件箱、建议保持待处理；
-    resolveClusterAction 增加 add_album 分支 + 服务层
-    addClusterMembersToCollection（含 not_found/already_resolved/items_changed/
-    invalid_album/album_failed 错误路径）
-  - journal when 需保持单调递增（0059=1788876000009），否则
-    upgrade-v013/asset-library-migration 台账断言失败（已验证修复）
+  §8 FIND-9（b53b020）；§8 FIND-5 剩余（87137a0+7970009：dHash 持久缓存
+  0059 + 候选卡内嵌加相册）
+- §9（本提交）：
+  - AI-21 每日限额：AI_DAILY_MAX_REQUESTS/_IMAGES/_AUDIO_SECONDS（0=不限），
+    0060 ai_daily_usage 单条条件 UPDATE 原子裁决；worker 请求前预扣，
+    超限 ai_quota_exceeded + retryAfterMs 到 UTC 日界自动顺延；
+    音频时长仅已知时计入（durationSeconds 由 transcribe-asset 传入）
+  - AI-2 Responses profile：AI_TEXT_PROFILE/AI_VISION_PROFILE
+    （responses|chat_completions），/responses 端点+output_text 解析+
+    refusal/incomplete 如实拒绝；配置进 configurationId 与 diagnostics
+  - 换 BaseURL Key 确认：ops configure 主机变更时须输入 confirm，
+    未确认零更改；新变量进 AI_KEYS/模板/env.example/校验
 
 ## 已跑命令与结果
 
-- §8 剩余后：tsc clean、eslint clean、clusters 7/7、fresh-db/upgrade-1-2/
-  upgrade-v013/asset-library-migration/intake-destination 8/8、
-  collections+inbox 10/10
+- §9 后：tsc（根+mobile）clean、eslint clean、ai-quota 8/8、
+  ai-openai-compatible 28/28、ai-jobs+inbox-suggestions 18/18、
+  迁移敏感 4 文件 6/6、ops 套件 31 过 3 跳（docker 用例本机跳过，CI 跑）
 
 ## 下一个具体动作
 
-1. 提交推送 FIND-5，核对 CI
-2. §9：AI-21 每日限额、AI-2 Responses profile、换 BaseURL 的 Key 确认流程
-3. §5/§6 收尾项（移动端私密 UI、移动端时间输入精度适配等，见 GLM_HANDOFF）
+1. 核对 7970009 与本提交 CI，红则修
+2. §5 收尾：移动端私密 UI/私密上传通道；AI 上下文与阅读包对私密事件引用
+3. §6 收尾：移动端时间输入 UI 适配月/年/未知
+4. §10–§13 按 REQUIREMENTS 剩余项
 
 ## 外部阻塞
 

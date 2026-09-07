@@ -69,6 +69,14 @@ export type OpenAiCompatibleConfig = Readonly<{
   temperatureSupported: boolean;
   jsonMode: "json_object" | "prompt_only";
   transcriptionFormat: "json" | "verbose_json" | "text";
+  /**
+   * AI-2：按能力选择 API 形态。responses=OpenAI Responses 端点
+   * （/responses，input 消息数组 + max_output_tokens）；chat_completions=
+   * 传统 /chat/completions。Luna 官方地址用 Responses，第三方兼容地址
+   * 通常只有 Chat Completions——由管理员按端点能力配置。
+   */
+  textProfile: "responses" | "chat_completions";
+  visionProfile: "responses" | "chat_completions";
 }>;
 
 /**
@@ -378,6 +386,8 @@ function loadPrimaryChannel(
       tokenParameter: env.AI_TOKEN_PARAMETER ?? "max_completion_tokens",
       jsonMode: env.AI_JSON_MODE ?? "json_object", transcriptionFormat: env.AI_TRANSCRIPTION_FORMAT ?? "json",
       temperatureSupported: env.AI_TEMPERATURE_SUPPORTED ?? "true",
+      textProfile: env.AI_TEXT_PROFILE ?? "chat_completions",
+      visionProfile: env.AI_VISION_PROFILE ?? "chat_completions",
     })).digest("hex"),
     apiKey: new AiSecret(apiKeyValue),
     providerLabel,
@@ -401,6 +411,8 @@ function loadPrimaryChannel(
     temperatureSupported: option(env, "AI_TEMPERATURE_SUPPORTED", ["true", "false"], "true") === "true",
     jsonMode: option(env, "AI_JSON_MODE", ["json_object", "prompt_only"], "json_object"),
     transcriptionFormat: option(env, "AI_TRANSCRIPTION_FORMAT", ["json", "verbose_json", "text"], "json"),
+    textProfile: option(env, "AI_TEXT_PROFILE", ["responses", "chat_completions"], "chat_completions"),
+    visionProfile: option(env, "AI_VISION_PROFILE", ["responses", "chat_completions"], "chat_completions"),
     maxResponseBytes: parseInteger(
       env,
       "AI_MAX_RESPONSE_BYTES",

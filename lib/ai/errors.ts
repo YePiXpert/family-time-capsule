@@ -7,6 +7,7 @@ export type AiErrorCode =
   | "ai_input_invalid"
   | "ai_network_error"
   | "ai_provider_http_error"
+  | "ai_quota_exceeded"
   | "ai_response_invalid"
   | "ai_response_too_large"
   | "ai_timeout";
@@ -48,6 +49,48 @@ export class AiInputError extends AiError {
   constructor(message: string) {
     super("ai_input_invalid", message);
     this.name = "AiInputError";
+  }
+}
+
+/**
+ * 每日限额已耗尽（AI-21）。请求未发出即被拒绝，retryAfterMs 指向
+ * 下一个 UTC 日界；调用方按可重试调度，而不是伪装成提供方错误。
+ */
+export class AiQuotaExceededError extends AiError {
+  readonly retryAfterMs: number;
+  readonly exceeded: readonly {
+    resource: "requests" | "images" | "audio_seconds";
+    used: number;
+    limit: number;
+  }[];
+
+  constructor(options: {
+    message: string;
+    retryAfterMs: number;
+    exceeded: readonly {
+      resource: "requests" | "images" | "audio_seconds";
+      used: number;
+      limit: number;
+    }[];
+  }) {
+    super("ai_quota_exceeded", options.message);
+    this.name = "AiQuotaExceededError";
+    this.retryAfterMs = options.retryAfterMs;
+    this.exceeded = options.exceeded;
+  }
+
+  override toJSON(): Readonly<{
+    name: string;
+    code: AiErrorCode;
+    message: string;
+    retryAfterMs: number;
+    exceeded: readonly {
+      resource: "requests" | "images" | "audio_seconds";
+      used: number;
+      limit: number;
+    }[];
+  }> {
+    return { ...super.toJSON(), retryAfterMs: this.retryAfterMs, exceeded: this.exceeded };
   }
 }
 
