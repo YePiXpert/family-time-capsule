@@ -156,7 +156,12 @@ class BaseUrlChangeConfirmationTests(unittest.TestCase):
 
     def test_quota_and_profile_values_are_validated(self):
         values = {key: "" for key in ai.AI_KEYS}
-        values.update({"AI_PROVIDER": "dual", "AI_BASE_URL": "https://x.example/v1", "AI_API_KEY": "k", "AI_MODEL": "m", "ASR_API_KEY": "a", "ASR_MODEL": "m2"})
+        values.update({
+            "AI_PROVIDER": "dual", "AI_BASE_URL": "https://x.example/v1", "AI_API_KEY": "k", "AI_MODEL": "m",
+            "ASR_API_KEY": "a", "ASR_MODEL": "m2", "ASR_LANGUAGE": "auto",
+            "AI_TOKEN_PARAMETER": "max_completion_tokens", "AI_TEMPERATURE_SUPPORTED": "true",
+            "AI_JSON_MODE": "json_object", "AI_TRANSCRIPTION_FORMAT": "json",
+        })
         ai.validate_configuration(values)
         with self.assertRaises(ai.OperationError):
             ai.validate_configuration({**values, "AI_TEXT_PROFILE": "grpc"})
