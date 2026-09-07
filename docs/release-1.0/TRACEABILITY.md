@@ -108,7 +108,7 @@
 | ID | 代码 | 测试 |
 | --- | --- | --- |
 | FIND-1 | lib/search/(service/tokenizer).ts、db/migrations/0023 | tests/integration/search.test.ts |
-| FIND-2 | app/(protected)/(app)/search、app/api/mobile/v1/search | tests/e2e(搜索项目) |
+| FIND-2 | app/(protected)/(app)/search、app/api/mobile/v1/search、mobile/src/search/offline-search.ts、mobile/src/screens/SearchScreen.tsx、mobile/src/reading/native.ts(searchReadingDownloadsOffline) | tests/e2e(搜索项目)、mobile/tests/offline-search.test.ts、search-offline-screen.test.ts |
 | FIND-3 | lib/search/natural-language.ts、app/(protected)/(app)/search/page.tsx | tests/unit/search-natural-language.test.ts |
 | FIND-4 | scripts/benchmark-search-nl.mts（关键词基线与理想上限，不是真实模型测评） | fake 失败关闭；真实模型对比未完成 |
 | FIND-5 | lib/clusters | tests/integration(clusters) |

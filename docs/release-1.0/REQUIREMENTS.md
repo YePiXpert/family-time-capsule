@@ -142,7 +142,7 @@
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
 | FIND-1 | 统一索引:记忆/素材描述/OCR/转录/讲述/故事/相册/作品文本;可重建 | 权限复核 | 自动化通过 | lib/search; search:rebuild |
-| FIND-2 | 关键词/人物/日期/媒体/标签筛选无AI可用;离线对合法缓存可用 | 不下发无授权索引 | 部分实现(在线筛选有;离线搜索未实现——原生搜索需连接) | SearchScreen |
+| FIND-2 | 关键词/人物/日期/媒体/标签筛选无AI可用;离线对合法缓存可用 | 不下发无授权索引 | 部分实现(GLM-B:原生离线搜索已落地——仅搜本机已保存内容[timeline/memory 详情缓存/本机记录/已下载相册作品],索引按 scope(serverUrl+instanceId+token+userId+familyId)与阅读 scope 双重隔离,撤权/换号/清缓存即失效;离线自动降级并明确告知搜索范围,只剩索引的内容如实提示需联网;真机飞行模式与日期筛选离线化待验) | mobile/src/search/offline-search.ts; mobile/src/screens/SearchScreen.tsx |
 | FIND-3 | 自然语言查询:Luna生成受限校验的检索条件→FTS返回来源卡 | 不执行模型SQL;不凭记忆答 | 自动化通过(M7-a 已有受限计划、关键词/人物/时间映射与 Web 来源卡；真实 Luna 检索质量未验收) | lib/search/natural-language.ts; tests/unit/search-natural-language.test.ts |
 | FIND-4 | NL 检索对关键词基线报告 Recall@K/误召回 | 不冒称CLIP | 部分实现(M7-a 合成关键词基线/理想计划上限脚本已存在；尚非真实模型对比评测，fake 只验证失败关闭) | scripts/benchmark-search-nl.mts; BLK-1/8 仅影响真实评测 |
 | FIND-5 | 近似照片:感知hash/时间/批次候选组+清晰度建议;不识别人脸;不自动删 | Live Photo不误合并 | 部分实现(本地分簇有;感知hash待核验) | lib/clusters |

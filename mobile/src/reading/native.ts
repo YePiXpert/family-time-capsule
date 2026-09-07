@@ -476,3 +476,40 @@ export async function clearAllReadingDownloads() {
     });
   });
 }
+
+/**
+ * 离线搜索（FIND-2/M7-b）：在当前 scope 已下载的相册/作品里做有界文本匹配。
+ * 只读 reading_download 的标题与 manifest（含正文块、媒体标题与转录），
+ * 不联网、不下载额外内容；scope 未在线验证过时返回空。
+ */
+export async function searchReadingDownloadsOffline(
+  credentials: Credentials,
+  matches: (fields: { title: string; manifestJson: string }) => boolean,
+  limit: number,
+): Promise<{ key: string; kind: string; id: string; title: string }[]> {
+  let scopeKey: string | null = null;
+  try {
+    const { scope } = await resolveReadingScope(credentials, { offline: true });
+    scopeKey = scope.key;
+  } catch {
+    return [];
+  }
+  const rows = await (await db()).getAllAsync<{
+    key: string;
+    kind: string;
+    id: string;
+    title: string;
+    manifest_json: string;
+  }>(
+    "SELECT key,kind,id,title,manifest_json FROM reading_download WHERE scope=? ORDER BY updated_at DESC LIMIT 100",
+    scopeKey,
+  );
+  const found: { key: string; kind: string; id: string; title: string }[] = [];
+  for (const row of rows) {
+    if (matches({ title: row.title, manifestJson: row.manifest_json })) {
+      found.push({ key: row.key, kind: row.kind, id: row.id, title: row.title });
+      if (found.length >= limit) break;
+    }
+  }
+  return found;
+}
