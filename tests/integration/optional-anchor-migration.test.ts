@@ -6,7 +6,10 @@ import Database from "better-sqlite3";
 import { expect, it } from "vitest";
 import { openDatabaseConnection } from "@/db";
 
-it("upgrades a real 0050 database without cascading away references, defaults or indexes; restart is idempotent", () => {
+// 真实数据库整库升级：共享 CI runner 的文件 I/O 明显慢于默认 5s 预算
+//（本地 ~1.4s，见 vitest.ops.config.ts 对重型套件的同类先例），按工作量
+// 给出显式超时；断言与验证内容不变。
+it("upgrades a real 0050 database without cascading away references, defaults or indexes; restart is idempotent", { timeout: 60_000 }, () => {
   const dir = mkdtempSync(path.join(tmpdir(), "ftc-anchor-upgrade-"));
   const databasePath = path.join(dir, "capsule.sqlite");
   let db = new Database(databasePath);

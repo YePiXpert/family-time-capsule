@@ -18,14 +18,14 @@ function seed11(file:string){
   sqlite.prepare('INSERT INTO memory_event(id,family_id,child_person_id,title,occurred_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run('event','family','child','虚构旧记忆',1788000000,1000,1000);
   sqlite.close();
 }
-it('upgrades an isolated real 1.1 SQLite file in place, preserves old rows and creates a pre-migration snapshot',()=>{
+it('upgrades an isolated real 1.1 SQLite file in place, preserves old rows and creates a pre-migration snapshot',{timeout:60_000},()=>{
   const root=mkdtempSync(path.join(tmpdir(),'ftc-upgrade12-'));const file=path.join(root,'capsule.sqlite'),snapshots=path.join(root,'snapshots');
   try{seed11(file);const old=new Database(file);const before=old.prepare('select * from memory_event').all();old.close();const connection=openDatabaseConnection({databasePath:file,migrationsFolder:migrations,snapshotDirectory:snapshots});
     expect(connection.sqlite.prepare('select * from memory_event').all()).toEqual(before.map(row => ({ ...(row as Record<string, unknown>), title_source: 'legacy_unknown', title_revision: 0 })));expect(connection.sqlite.prepare('select count(*) as n from collection').get()).toEqual({n:0});expect(connection.sqlite.pragma('foreign_key_check')).toEqual([]);connection.sqlite.close();
     const files=readdirSync(snapshots);expect(files.length).toBe(1);const snapshot=new Database(path.join(snapshots,files[0]!));expect(snapshot.prepare('select * from memory_event').all()).toEqual(before);expect(snapshot.prepare("select name from sqlite_schema where name='collection'").all()).toEqual([]);snapshot.close();
   }finally{rmSync(root,{recursive:true,force:true});}
 });
-it('rolls back a failing 1.2 migration and releases the old volume for recovery',()=>{
+it('rolls back a failing 1.2 migration and releases the old volume for recovery',{timeout:60_000},()=>{
   const root=mkdtempSync(path.join(tmpdir(),'ftc-upgrade12-fail-'));const file=path.join(root,'capsule.sqlite'),broken=path.join(root,'migrations'),snapshots=path.join(root,'snapshots');
   try{seed11(file);mkdirSync(path.join(broken,'meta'),{recursive:true});for(const entry of journal.entries)copyFileSync(path.join(migrations,`${entry.tag}.sql`),path.join(broken,`${entry.tag}.sql`));copyFileSync(path.join(migrations,'meta/_journal.json'),path.join(broken,'meta/_journal.json'));
     const last=journal.entries.find((e:{idx:number})=>e.idx===36);const sqlPath=path.join(broken,`${last.tag}.sql`);writeFileSync(sqlPath,readFileSync(sqlPath,'utf8')+'\n--> statement-breakpoint\nINSERT INTO nonexistent_table VALUES(1);');
