@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  items: [] as unknown[],
   constructor: vi.fn(), permission: vi.fn(), audioMode: vi.fn(),
   prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
   cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(),
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   route: { params: {} as { intent?: string } },
 }));
 vi.mock("react-native", () => ({
-  ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
+  Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
   Platform: { OS: "ios", select: (v: { ios: unknown }) => v.ios },
@@ -54,13 +55,23 @@ vi.mock("expo-image-picker", () => ({
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: vi.fn() }));
 vi.mock("../src/storage/database", () => ({
   enqueueTextCapture: mocks.enqueueText, enqueueMediaCapture: mocks.enqueueMedia,
-  ingestLocalImportSession: vi.fn(),
+  ingestLocalImportSession: vi.fn(), getLocalCaptureDetail: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("../src/storage/files", () => ({
   preservePickedMedia: mocks.preserveMedia, preserveRecordedAudio: mocks.preserveAudio,
   preservePickedDocument: vi.fn(), removeLocalFile: mocks.removeFile,
 }));
 vi.mock("../src/native/picker-intake", () => ({ beginPickerReceipt: vi.fn(), finishPickerReceipt: vi.fn() }));
+vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
+vi.mock("../src/components/DateTimeField", () => ({ DateTimeField: "DateTimeField" }));
+vi.mock("../src/drafts/use-draft", () => ({
+  usePersistentDraft: () => ({
+    draft: { id: "draft-id", status: "editing", serverRevision: 0, content: { text: "", title: "", items: mocks.items, participantIds: [], occurredAt: null } },
+    drafts: [], saved: true, error: null,
+    change: mocks.enqueueText, addOriginal: mocks.enqueueMedia, save: vi.fn(),
+    create: vi.fn(), resume: vi.fn(), discard: vi.fn(), retry: vi.fn(),
+  }),
+}));
 const { CaptureScreen } = await import("../src/screens/CaptureScreen");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
@@ -103,15 +114,15 @@ it.each(["text", "photo", "library"])("opens %s and saves without initializing a
   await render(intent);
   if (intent === "text") {
     expect(mocks.focus).toHaveBeenCalledOnce();
-    const input = tree!.root.findByType("TextInput" as never);
+    const input = tree!.root.findAllByType("TextInput" as never)[0]!;
     await act(() => input.props.onChangeText("今天一起散步"));
-    await press("保存文字");
-    expect(mocks.enqueueText).toHaveBeenCalledWith("capture-id", { text: "今天一起散步" });
+    await press("保留整件事草稿");
+    expect(mocks.enqueueText).toHaveBeenCalledWith({ text: "今天一起散步" });
   } else {
     expect(intent === "photo" ? mocks.camera : mocks.library).toHaveBeenCalledOnce();
     expect(mocks.enqueueMedia).toHaveBeenCalledWith("capture-id", { localUri: "file:///private/photo.jpg" });
   }
-  expect(mocks.queued).toHaveBeenCalledOnce();
+  if (intent !== "text") expect(mocks.queued).toHaveBeenCalledOnce();
   expect(mocks.constructor).not.toHaveBeenCalled();
   expect(mocks.permission).not.toHaveBeenCalled();
   expect(mocks.audioMode).not.toHaveBeenCalled();

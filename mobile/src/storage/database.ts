@@ -22,12 +22,12 @@ import {
   mergeTimelineEvents,
   type LocalCaptureRow,
 } from "./local-timeline";
-import { TIMELINE_SCHEMA_SQL, MEMORY_DETAIL_SCHEMA_SQL, MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
+import { LOCAL_DRAFT_SCHEMA_SQL, TIMELINE_SCHEMA_SQL, MEMORY_DETAIL_SCHEMA_SQL, MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
 
 const DB_NAME = "family-time-capsule.sqlite";
 let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
-function getDatabase(): Promise<SQLite.SQLiteDatabase> {
+export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   databasePromise ??= SQLite.openDatabaseAsync(DB_NAME);
   return databasePromise;
 }
@@ -35,6 +35,7 @@ function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 export async function initializeLocalStore(): Promise<void> {
   const db = await getDatabase();
   await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
+  await db.execAsync(LOCAL_DRAFT_SCHEMA_SQL);
   const memoryColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(memory_detail)");
   if (!memoryColumns.some((column) => column.name === "scope")) {
     // Legacy server responses have no proven owner. Discard only this
@@ -308,7 +309,11 @@ export async function listTimeline(): Promise<LocalTimelineEvent[]> {
       local_cover_uri: string | null;
     }>("SELECT * FROM timeline_event ORDER BY occurred_at DESC, id DESC"),
     db.getAllAsync<LocalCaptureRow>(
-      "SELECT * FROM local_capture WHERE sync_state <> 'archived' ORDER BY occurred_at DESC, id DESC",
+      `SELECT * FROM local_capture WHERE sync_state <> 'archived' AND NOT EXISTS (
+        SELECT 1 FROM local_draft d, json_each(json_extract(d.snapshot_json, '$.content.items')) i
+        WHERE json_extract(i.value, '$.localCaptureRef') = local_capture.id
+          AND json_extract(d.snapshot_json, '$.status') <> 'discarded'
+      ) ORDER BY occurred_at DESC, id DESC`,
     ),
   ]);
   const serverEvents = rows.map((row) => ({
@@ -915,6 +920,7 @@ export async function clearLocalArchive(): Promise<void> {
     DELETE FROM timeline_event;
     DELETE FROM people;
     DELETE FROM outbox;
+    DELETE FROM local_draft;
     DELETE FROM local_capture;
     DELETE FROM local_import_item;
     DELETE FROM local_import_session;
@@ -1016,8 +1022,15 @@ export async function getLocalCaptureDetail(
  */
 export async function removeLocalCaptureRecord(captureId: string): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
-  await db.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
+  await db.withExclusiveTransactionAsync(async tx => {
+    const reference = await tx.getFirstAsync<{ id: string }>(`SELECT d.id FROM local_draft d,
+      json_each(json_extract(d.snapshot_json, '$.content.items')) i
+      WHERE json_extract(i.value, '$.localCaptureRef') = ?
+      AND json_extract(d.snapshot_json, '$.status') IN ('editing', 'queued') LIMIT 1`, captureId);
+    if (reference) throw new Error("这份原件仍在草稿中，请先从草稿移除引用。");
+    await tx.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
+    await tx.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
+  });
 }
 
 // ===== M4：同步授权、目的地隔离与失败操作拆分 =====
@@ -1083,8 +1096,15 @@ export async function keepOutboxItemLocal(itemId: string): Promise<void> {
 /** 彻底删除一条本机记录（含原件文件由调用方处理）。 */
 export async function deleteLocalCaptureRecord(captureId: string): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
-  await db.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
+  await db.withExclusiveTransactionAsync(async tx => {
+    const reference = await tx.getFirstAsync<{ id: string }>(`SELECT d.id FROM local_draft d,
+      json_each(json_extract(d.snapshot_json, '$.content.items')) i
+      WHERE json_extract(i.value, '$.localCaptureRef') = ?
+      AND json_extract(d.snapshot_json, '$.status') IN ('editing', 'queued') LIMIT 1`, captureId);
+    if (reference) throw new Error("这份原件仍在草稿中，请先从草稿移除引用。");
+    await tx.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
+    await tx.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
+  });
 }
 
 /** 救援包恢复：captureId 是否已存在（幂等导入）。 */

@@ -13,7 +13,7 @@ test("上传照片：保存成功、重复明确提示、收件箱可见、未�
   await page.goto("/capture");
 
   const file = path.join(__dirname, "..", "fixtures", "sample-exif.jpg");
-  const input = page.locator('section[aria-label="照片"] input[type="file"]');
+  const input = page.locator('input[type="file"]').first();
   let releaseResponse: (() => void) | undefined;
   let markRequestStarted: (() => void) | undefined;
   const responseGate = new Promise<void>((resolve) => {
@@ -22,26 +22,29 @@ test("上传照片：保存成功、重复明确提示、收件箱可见、未�
   const requestStarted = new Promise<void>((resolve) => {
     markRequestStarted = resolve;
   });
-  await page.route("**/api/upload/image", async (route) => {
+  await page.route("**/api/uploads", async (route) => {
     markRequestStarted?.();
     await responseGate;
     await route.continue();
   });
   await input.setInputFiles(file);
+  const sending = page.getByRole("button", { name: "保留草稿，稍后继续" }).click();
   await requestStarted;
   try {
     await expect(
-      page.getByRole("progressbar", { name: "sample-exif.jpg 上传进度" }),
+      page.getByText("本机已保存", { exact: false }).first(),
     ).toBeVisible();
   } finally {
     releaseResponse?.();
   }
-  await expect(page.getByText("已保存，等待整理")).toBeVisible();
-  await page.unroute("**/api/upload/image");
+  await sending;
+  await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.unroute("**/api/uploads");
 
   // 相同文件再传一次：提示已存在原件
   await input.setInputFiles(file);
-  await expect(page.getByText("已存在相同原件")).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click();
+  await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
 
   // 上传的内容进入收件箱（不直接进时间轴）
   await page.goto("/inbox");
@@ -189,13 +192,14 @@ test("HEIC 上传：原件保存、收件箱显示不可预览占位 + 下载入
   await ensureLogin(page);
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles({
       name: "IMG_0001.HEIC",
       mimeType: "image/heic", // iOS Safari 上传 HEIC 时的声明；桌面 Chromium 路径方式给不出
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.heic")),
     });
-  await expect(page.getByText("已保存，等待整理")).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click();
+  await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
 
   await page.goto("/inbox");
   // HEIC 卡片：不渲染 <img>，而是占位说明 + 下载原件

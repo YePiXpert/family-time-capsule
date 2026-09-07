@@ -474,10 +474,10 @@ export function AppProvider({
 
   /** 彻底删除一条本机记录（含原件）；调用方必须已经取得明确确认。 */
   const deleteOutboxCapture = useCallback(async (item: OutboxItem) => {
+    await deleteLocalCaptureRecord(item.id);
     if (item.kind === "media_capture") {
       removeLocalFile((item.payload as MediaCapturePayload).localUri);
     }
-    await deleteLocalCaptureRecord(item.id);
     await reloadLocal();
     setMessage("这条本机记录及其原件已删除。");
   }, [reloadLocal]);

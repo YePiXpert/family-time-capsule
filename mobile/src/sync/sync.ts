@@ -1,7 +1,10 @@
+import { canUploadDraftOriginal } from "../drafts/store";
+import { syncLocalDrafts } from "../drafts/sync";
 import * as Crypto from "expo-crypto";
 import * as Network from "expo-network";
 import { fetchSyncPage, uploadTextCapture } from "../api/client";
 import {
+  getActiveDestination,
   applySyncPage,
   completeOutboxItem,
   finishSyncSnapshot,
@@ -35,10 +38,15 @@ export async function syncArchive(
   options: SyncArchiveOptions = {},
 ): Promise<SyncSummary> {
   return syncArchiveWithDependencies(credentials, {
+    afterUpload: () => syncLocalDrafts(credentials, options),
     isConnected: async () => (await Network.getNetworkStateAsync()).isConnected,
     createSnapshotId: () => Crypto.randomUUID(),
     listOutbox,
-    authorizeUpload: options.authorizeUpload,
+    authorizeUpload: async item => {
+      const scope = await getActiveDestination();
+      if (!scope || !await canUploadDraftOriginal(item.id, scope)) return false;
+      return options.authorizeUpload ? options.authorizeUpload(item) : true;
+    },
     isCurrent: options.isCurrent,
     uploadTextCapture,
     uploadMediaCapture,
@@ -53,4 +61,5 @@ export async function syncArchive(
     listLocalCoverUris,
     pruneCachedCovers,
   });
+
 }

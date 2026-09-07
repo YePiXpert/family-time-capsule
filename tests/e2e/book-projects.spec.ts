@@ -12,9 +12,9 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
   for (let i = 1; i <= 2; i++) {
     await page.goto("/capture");
     await page
-      .getByPlaceholder("今天想留下什么话？写给未来的她，或只是记下此刻。")
+      .getByPlaceholder("写一句话，也可以继续加照片和录音。")
       .fill(`虚构素材 ${i}：我们在窗边读了一封信。`);
-    await page.getByRole("button", { name: "写一段话" }).click();
+    await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
     await expect(page.getByText("已收进收件箱。")).toBeVisible();
     await page.goto("/inbox");
     await page.getByLabel("事件标题").fill(`虚构家庭片段 ${i}`);

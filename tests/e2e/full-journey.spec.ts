@@ -17,9 +17,9 @@ test("完整旅程：从初始化到导出与登出", async ({ page }) => {
   // 1) 上传旧照片（EXIF 8/10）
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await expect(page.getByText("已保存，等待整理")).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
 
   // 2) 收件箱确认
   await page.goto("/inbox");

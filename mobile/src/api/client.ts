@@ -201,7 +201,7 @@ function isInboxEntry(value: unknown): value is MobileInboxEntry {
   return (
     isRecord(value) &&
     isString(value.id, 128) &&
-    ["text", "asset"].includes(String(value.kind)) &&
+    ["text", "asset", "bundle"].includes(String(value.kind)) &&
     isString(value.status, 32) &&
     isString(value.title, 500) &&
     isNullableString(value.rawText, 5000) &&
@@ -806,7 +806,7 @@ export async function fetchSyncPage(
   return parseSyncPage(body);
 }
 
-async function requestMobileJson(
+export async function requestMobileJson(
   credentials: Credentials,
   path: string,
   init: RequestInit = {},

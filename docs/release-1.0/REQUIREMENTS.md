@@ -4,14 +4,14 @@
 > 本清单是需求唯一 ID 来源;状态必须由真实代码/自动化/场景证据支撑,禁止"文件存在=完成"。
 > 初始基线:2026-09-06,基于 acea745 探索报告 + 白皮书 1–29 章 + GOAL_FORMAL_1_0.txt。
 
-## 状态统计（2026-09-07 M3-A 核对）
+## 状态统计（2026-09-07 M3-B 工作中复核）
 
 统计以下有 ID 的需求行，说明括号不改变状态；明确非产品范围的附录不重复计数。
 
 | 状态 | 数量 |
 | --- | --- |
-| 自动化通过 | 114 |
-| 部分实现 | 31 |
+| 自动化通过 | 113 |
+| 部分实现 | 32 |
 | 未实现 | 9 |
 | 明确非产品范围 | 1 |
 | 外部阻塞 | 2 |
@@ -26,7 +26,7 @@
 | NAV-2 | 收件箱下沉为整理入口,保留旧路由与深链重定向 | /inbox 及原生栈路由不 404 | 自动化通过(M1:二级导航首位+记忆页内+原生栈路由) | app/(protected)/(app)/inbox; mobile stack Inbox |
 | NAV-3 | 今天:真实近期记忆+继续草稿+一个回顾入口;空家庭引导第一条 | 不造假回忆 | 自动化通过(M1:待整理与草稿卡+每周回顾卡) | app/(protected)/(app)/page.tsx |
 | NAV-4 | 记忆:资料库/时间轴/日历/相册/搜索/人物筛选;资料与记忆可切换视图 | 切换不是审核门 | 部分实现(M1:时间线/日历/相册/待整理切换;全量资料库视图待 M3) | /timeline |
-| NAV-5 | 记录:图文音混合编辑器,持久保存中断状态 | 杀进程后恢复 | 部分实现(原生 capture 本机持久;Web capture 持久草稿待核) | mobile/src/screens/CaptureScreen.tsx; /capture |
+| NAV-5 | 记录:图文音混合编辑器,持久保存中断状态 | 杀进程后恢复 | 部分实现(M3-B 双端聚合持久化已接入；Web 离线关页恢复通过；私密记忆读者与真机验收待补) | mobile/src/screens/CaptureScreen.tsx; /capture |
 | NAV-6 | 家人:最近补充/人物/原声/问题/邀请;非管理员无维护菜单 | 角色过滤 | 自动化通过(M1:最近补充 feed+三入口;管理按钮角色过滤) | app/(protected)/(app)/family |
 | NAV-7 | 我的:同步/下载/隐私/账号/救援/作品/高级设置 | 归拢入口 | 自动化通过(M1:Web 四分组;原生 More=我的) | app/(protected)/(app)/more |
 | NAV-8 | 记忆卡/资料卡/播放器/日期控件/错误与加载状态统一设计系统 | 无平行 UI 框架 | 自动化通过(设计系统+组件已统一) | design-system/ components/ |
@@ -63,8 +63,8 @@
 
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| CAP-1 | 统一持久 Draft:文字/附件引用/顺序/封面/日期精度/人物/读者/目的地 | 新建/继续/自动保存/放弃/恢复 | 部分实现(原生 local_capture 持久;Web 收件箱草稿字段有;统一Draft模型未做) | mobile/src/storage; lib/inbox |
-| CAP-2 | 保存即得可读记忆;日期精度 unknown/approx/date/month/year | 不用假instant | 自动化通过(时间精度模型已有) | lib/metadata/time.ts |
+| CAP-1 | 统一持久 Draft:文字/附件引用/顺序/封面/日期精度/人物/读者/目的地 | 新建/继续/自动保存/放弃/恢复 | 部分实现(0052 Draft/DraftItem、IndexedDB/SQLite 聚合与 HTTP 幂等保存、排序封面/导出恢复已有；跨设备继续与授权媒体阅读已接入；私密事件读者、intake 选择与事件日期精度仍待补) | lib/drafts; mobile/src/drafts; lib/inbox |
+| CAP-2 | 保存即得可读记忆;日期精度 unknown/approx/date/month/year | 不用假instant | 部分实现(现有事件精度仅 exact/approximate/date_only；Draft 允许时间待补，unknown/month/year 事件展示与查询仍需补齐) | lib/metadata/time.ts |
 | CAP-3 | 批量导入先是资料,不一文件一事件,不强制审核 | 500张≠500日记 | 自动化通过(import session→inbox) | lib/imports |
 | CAP-4 | 本机提交顺序:暂存→复制校验→原子落盘→DB+outbox→反馈 | 任一步退出可对账 | 自动化通过 | mobile/src/storage/files.ts; mobile/tests |
 | CAP-5 | 本机照片点开大图/视频/录音播放/文字全文;AI/登录不挡查看 | 缺文件诚实报错+恢复入口 | 自动化通过 | mobile/src/screens/LocalCaptureDetailScreen |

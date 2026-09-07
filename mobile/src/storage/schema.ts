@@ -1,3 +1,11 @@
+export const LOCAL_DRAFT_SCHEMA_SQL = `
+ CREATE TABLE IF NOT EXISTS local_draft (
+   id TEXT NOT NULL, scope TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+   revision INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(scope,id)
+ );
+ CREATE INDEX IF NOT EXISTS local_draft_scope_updated_idx ON local_draft(scope,updated_at DESC);
+`;
+
 export const TIMELINE_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS timeline_event (
     id TEXT PRIMARY KEY NOT NULL,
@@ -30,6 +38,7 @@ export const MEMORY_DETAIL_SCHEMA_SQL = `
 `;
 
 export const MOBILE_LOCAL_SCHEMA_SQL = `
+  ${LOCAL_DRAFT_SCHEMA_SQL}
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
   CREATE TABLE IF NOT EXISTS meta (

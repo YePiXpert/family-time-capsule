@@ -20,10 +20,10 @@ test("上传 5 张照片合并为一个事件", async ({ page }) => {
 
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(files);
-  await expect(page.getByText("已保存，等待整理").first()).toBeVisible();
-  await expect(page.getByText("已保存，等待整理")).toHaveCount(5);
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
 
   // 收件箱全选 → 合并
   await page.goto("/inbox");
@@ -48,21 +48,21 @@ test("HEIC + MOV 合并为一个事件（Live Photo 组合，RH-002）", async (
   await ensureLogin(page);
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles({
       name: "IMG_0002.HEIC",
       mimeType: "image/heic",
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.heic")),
     });
-  await expect(page.getByText("已保存，等待整理").first()).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
   await page
-    .locator('section[aria-label="视频"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles({
       name: "IMG_0002.MOV",
       mimeType: "video/quicktime",
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.mov")),
     });
-  await expect(page.getByText("已保存，等待整理").nth(1)).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
 
   await page.goto("/inbox");
   const checkboxes = page.getByRole("checkbox");

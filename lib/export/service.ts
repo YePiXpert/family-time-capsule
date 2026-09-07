@@ -1,3 +1,4 @@
+import { collectDraftArchive } from "@/lib/drafts/archive";
 import { collectNameReviews, parseNameReviews } from "@/lib/names/archive";
 import "server-only";
 import { collectBookArchive, collectBookSourceClosure } from "@/lib/books/projects/archive";
@@ -67,7 +68,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 26 + COLLECTION_FILES.length + BOOK_FILES.length;
+export const EXPORT_NON_ASSET_FILE_COUNT = 27 + COLLECTION_FILES.length + BOOK_FILES.length;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -291,7 +292,8 @@ export async function buildFamilyExport(
     ageDays: e.ageDays,
     createdAt: iso(e.createdAt),
     updatedAt: iso(e.updatedAt),
-    assetIds: eventAssetLinks.filter((l) => l.memoryEventId === e.id).map((l) => l.assetId),
+    assetIds: eventAssetLinks.filter((l) => l.memoryEventId === e.id).sort((a, b) => a.sortOrder - b.sortOrder).map((l) => l.assetId),
+    assetCaptions: Object.fromEntries(eventAssetLinks.filter((l) => l.memoryEventId === e.id).map(l => [l.assetId, l.caption])),
     participantPersonIds: eventParticipantLinks
       .filter((l) => l.memoryEventId === e.id)
       .map((l) => l.personId),
@@ -406,7 +408,7 @@ export async function buildFamilyExport(
 
   const manifest = {
     exportVersion: EXPORT_VERSION,
-    modules: { collections: 1, bookProjects: 1, nameReviews: 1 },
+    modules: { collections: 1, bookProjects: 1, nameReviews: 1, drafts: 1 },
     appVersion: getAppVersion(),
     exportedAt: new Date().toISOString(),
     familyId,
@@ -463,6 +465,7 @@ export async function buildFamilyExport(
       updatedAt: iso(p.updatedAt),
     })));
     json("memories.json", memoriesJson);
+    json("drafts.json", collectDraftArchive(familyId, new Set(eventIds)));
     json("inbox-items.json", inboxItemsJson);
     json("inbox-item-assets.json", inboxItemAssetsJson);
     json("import-sessions.json", importSessions.map((session) => ({

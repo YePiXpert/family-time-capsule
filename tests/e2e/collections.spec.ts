@@ -46,9 +46,9 @@ test('访客限定阅读链接：只读单册、范围外媒体 404、收回即�
   // 自备一条带照片的记忆 + 一本相册
   await page.goto('/capture');
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, '..', 'fixtures', 'sample-exif.jpg'));
-  await expect(page.getByText('已保存，等待整理')).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
   await page.goto('/capture');
   await page.getByLabel('写下这一刻').fill('虚构记录：给外婆的相册素材。');
   await page.getByLabel('标题', { exact: true }).fill('阳光下的午后');

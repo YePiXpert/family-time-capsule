@@ -1,4 +1,5 @@
 import "server-only";
+import { draft, draftItem } from "@/db/schema/draft";
 import { aiSuggestion } from "@/db/schema/suggestion";
 import { readableName } from "@/lib/naming";
 import type { FamilyContext } from "@/lib/family/context";
@@ -415,6 +416,13 @@ export async function confirmInboxEntry(
   const childPersonId = opts.childPersonId ?? null;
   if (!await validAgeAnchor(familyId, childPersonId)) return { ok: false, error: "invalid" };
 
+  const aggregate = getDb().select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, entry.item.id))).get();
+  const aggregateItems = aggregate ? getDb().select().from(draftItem).where(eq(draftItem.draftId, aggregate.id)).all().sort((a,b) => a.sortOrder - b.sortOrder) : [];
+  if (aggregate) {
+    const order = new Map(aggregateItems.map(i => [i.assetId, i.sortOrder]));
+    entry.assets.sort((a,b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    opts = { coverAssetId: aggregateItems.find(i => i.id === aggregate.coverItemId)?.assetId ?? undefined, ...opts };
+  }
   const fallbackTitle = defaultTitle(entry, await familyTimezone(familyId));
   const title = (opts.title ?? fallbackTitle).trim();
   if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
@@ -489,7 +497,9 @@ export async function confirmInboxEntry(
     if (assetIds.length > 0) {
       tx.insert(memoryEventAsset)
         .values(
-          assetIds.map((assetId) => ({
+          assetIds.map((assetId, sortOrder) => ({
+            sortOrder,
+            caption: aggregateItems.find(i => i.assetId === assetId)?.caption ?? "",
             id: randomUUID(),
             memoryEventId: eventId,
             assetId,
@@ -519,6 +529,7 @@ export async function confirmInboxEntry(
         ),
       )
       .run();
+    if (aggregate) tx.update(draft).set({ status: "published", memoryEventId: eventId, title, occurredAt: occurredAt.toISOString(), participantIdsJson: JSON.stringify([...participantIds]), revision: sql`${draft.revision} + 1`, updatedAt: now.toISOString() }).where(eq(draft.id, aggregate.id)).run();
     // Pending suggestions follow the persisted inbox→event relation. A title
     // edited during confirmation is a new source version and remains protected.
     if (title === fallbackTitle) tx.update(aiSuggestion).set({ entityType: "memory_event", entityId: eventId, targetRevision: 0 }).where(and(eq(aiSuggestion.familyId, familyId), eq(aiSuggestion.entityType, "inbox_item"), eq(aiSuggestion.entityId, entry.item.id), eq(aiSuggestion.status, "pending"), eq(aiSuggestion.targetRevision, current.titleRevision))).run();
@@ -551,6 +562,7 @@ export async function mergeInboxEntries(
   itemIds: string[],
   opts: MergeOptions,
 ): Promise<ConfirmResult> {
+  itemIds = [...new Set(itemIds)];
   if (itemIds.length < 2) return { ok: false, error: "invalid" };
   const title = opts.title.trim();
   if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
@@ -615,7 +627,11 @@ export async function mergeInboxEntries(
   }
   const locationText = opts.locationText?.trim().slice(0, 200) || null;
 
-  db.transaction((tx) => {
+  const committed = db.transaction((tx): boolean => {
+    for (const entry of entries) {
+      const live = tx.select().from(inboxItem).where(and(eq(inboxItem.id, entry.item.id), eq(inboxItem.familyId, familyId))).get();
+      if (!live || !["new", "needs_review", "processing"].includes(live.status) || live.titleRevision !== entry.item.titleRevision || live.updatedAt.getTime() !== entry.item.updatedAt.getTime()) return false;
+    }
     tx.insert(memoryEvent)
       .values({
         id: eventId,
@@ -636,7 +652,8 @@ export async function mergeInboxEntries(
     if (assetIds.length > 0) {
       tx.insert(memoryEventAsset)
         .values(
-          assetIds.map((assetId) => ({
+          assetIds.map((assetId, sortOrder) => ({
+            sortOrder,
             id: randomUUID(),
             memoryEventId: eventId,
             assetId,
@@ -667,7 +684,11 @@ export async function mergeInboxEntries(
         ),
       )
       .run();
-  });
+    tx.update(draft).set({ status: "published", memoryEventId: eventId, revision: sql`${draft.revision} + 1`, mutationId: randomUUID(), updatedAt: now.toISOString() })
+      .where(and(eq(draft.familyId, familyId), inArray(draft.inboxItemId, itemIds), eq(draft.status, "editing"))).run();
+    return true;
+  }, { behavior: "immediate" });
+  if (!committed) return { ok: false, error: "conflict" };
 
   indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
   indexDocumentAssetsForEvent(familyId, eventId, assetIds);
@@ -694,7 +715,7 @@ export async function getMemoryEventDetail(  familyId: string,
   const assetLinks = await db
     .select({ assetId: memoryEventAsset.assetId })
     .from(memoryEventAsset)
-    .where(eq(memoryEventAsset.memoryEventId, eventId));
+    .where(eq(memoryEventAsset.memoryEventId, eventId)).orderBy(asc(memoryEventAsset.sortOrder), asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id));
   const assets =
     assetLinks.length > 0
       ? await db
@@ -708,6 +729,9 @@ export async function getMemoryEventDetail(  familyId: string,
           )
           .orderBy(asc(assetTable.capturedAt), asc(assetTable.createdAt))
       : [];
+
+  const assetOrder = new Map(assetLinks.map((link, index) => [link.assetId, index]));
+  assets.sort((a, b) => assetOrder.get(a.id)! - assetOrder.get(b.id)!);
 
   const participantLinks = await db
     .select({ personId: memoryEventParticipant.personId })
@@ -738,7 +762,7 @@ export async function getMemoryEventDetail(  familyId: string,
       and(
         eq(inboxItem.familyId, familyId),
         eq(inboxItem.memoryEventId, eventId),
-        eq(inboxItem.kind, "text"),
+        isNotNull(inboxItem.rawText),
       ),
     )
     .orderBy(asc(inboxItem.createdAt));

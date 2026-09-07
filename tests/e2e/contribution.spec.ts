@@ -13,9 +13,9 @@ test("同一事件的多人视角独立保存与显示", async ({ page }) => {
   // 自建一个事件（上传 EXIF 照片并确认）
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await expect(page.getByText("已保存，等待整理")).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("外婆哼的歌");
   await page.getByRole("button", { name: "确认进入时间轴" }).click();

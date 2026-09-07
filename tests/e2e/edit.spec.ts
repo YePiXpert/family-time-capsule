@@ -11,9 +11,9 @@ test("创建 8/10 事件 → 修改为 8/11 → 时间轴移动、年龄变化",
   // 上传 EXIF 8/10 照片并确认成事件
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await expect(page.getByText("已保存，等待整理")).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("八月中旬的一个上午");
   await page.getByLabel("年龄参考人物（可选）").selectOption({ label: "小满" });

@@ -1,3 +1,5 @@
+import { parseDraftArchive } from "@/lib/drafts/archive";
+import { draft, draftItem } from "@/db/schema/draft";
 import { parseNameReviews } from "@/lib/names/archive";
 import { BOOK_FILES } from "@/lib/books/projects/portable.mjs";
 import { parseBookArchive, restoreBookArchive } from "@/lib/books/projects/archive";
@@ -150,7 +152,7 @@ type Manifest = {
   appVersion?: string;
   familyId: string;
   fileCount: number;
-  modules?: { collections?: number; bookProjects?: number; nameReviews?: number };
+  modules?: { collections?: number; bookProjects?: number; nameReviews?: number; drafts?: number };
   assetCount: number;
   assets: ManifestAsset[];
 };
@@ -767,6 +769,7 @@ async function loadAndVerifyZip(
       createdAt?: string | null;
       updatedAt?: string | null;
       assetIds?: string[];
+      assetCaptions?: Record<string, string>;
       participantPersonIds?: string[];
       tags?: string[];
     }>
@@ -977,7 +980,7 @@ async function loadAndVerifyZip(
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
     (transcriptsFile ? 1 : 0) +
-    (factSourcesFile ? 1 : 0) + (nameReviewsFile ? 1 : 0) +
+    (factSourcesFile ? 1 : 0) + (nameReviewsFile ? 1 : 0) + (archive.has(`${EXPORT_ROOT_DIR}/drafts.json`) ? 1 : 0) +
     (hasStoryFiles ? 3 : 0) +
     (hasDialogueFiles ? 2 : 0) +
     (hasDurable11Files ? durable11Names.length : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
@@ -1267,6 +1270,7 @@ async function loadAndVerifyZip(
       "bad_json",
       `事件 ${m.id} 的 assetIds 非法`,
     );
+    requireCondition(m.assetCaptions === undefined || (m.assetCaptions !== null && typeof m.assetCaptions === "object" && !Array.isArray(m.assetCaptions) && Object.entries(m.assetCaptions).every(([id, caption]) => (m.assetIds ?? []).includes(id) && typeof caption === "string" && caption.length <= 2000)), "bad_json", `事件 ${m.id} 素材说明无效`);
     requireCondition(
       m.coverAssetId === undefined ||
         m.coverAssetId === null ||
@@ -2430,12 +2434,20 @@ async function loadAndVerifyZip(
   try { bookGraph = parseBookArchive(bookRaw, manifest.familyId, { memory: new Set(memoriesJson.map(m=>m.id)), asset: assetIds, person: new Set(peopleJson.map(p=>p.id)), contribution: new Set(contributionsJson.map(c=>c.id)), story: storyIds, collection: new Set(collectionGraph.collections.map(c=>c.id)) }); }
   catch { throw new RestoreError("bad_refs", "年册编辑与历史版本关系图无效"); }
 
+  requireCondition(manifest.modules?.drafts === undefined || (manifest.modules.drafts === 1 && archive.has(`${EXPORT_ROOT_DIR}/drafts.json`)), "missing_json", "声明的草稿模块缺失或不支持");
+  let drafts;
+  try {
+    const rawDrafts = archive.has(`${EXPORT_ROOT_DIR}/drafts.json`) ? await readJson<unknown>("drafts.json") : [];
+    drafts = parseDraftArchive(rawDrafts, { inbox: new Set(inboxItemsJson.map(i => i.id)), assets: assetIds, events: new Set(memoriesJson.map(m => m.id)), people: new Set(peopleJson.map(p => p.id)) });
+  } catch { throw new RestoreError("bad_refs", "草稿聚合与原件引用无效"); }
+
   let nameReviews;
   try { nameReviews = parseNameReviews(nameReviewsRaw, new Map(memoriesJson.map(row => [row.id, row.titleRevision ?? 0])), new Map(inboxItemsJson.map(row => [row.id, row.titleRevision ?? 0]))); }
   catch { throw new RestoreError("bad_refs", "名称审核版本或目标关系无效"); }
 
   return {
     nameReviews,
+    drafts,
     bookGraph,
     collectionGraph,
     archive,
@@ -2505,6 +2517,7 @@ async function restoreFromArchive(
   const data = await loadAndVerifyZip(archive, archiveBytes, limits);
   const {
     nameReviews,
+    drafts,
     bookGraph,
     collectionGraph,
     familyJson,
@@ -2882,16 +2895,23 @@ async function restoreFromArchive(
       }
 
       const eventAssets = memoriesJson.flatMap((m) =>
-        (m.assetIds ?? []).map((assetId) => ({
+        (m.assetIds ?? []).map((assetId, sortOrder) => ({
           id: randomUUID(),
           memoryEventId: m.id,
           assetId,
+          sortOrder,
+          caption: m.assetCaptions?.[assetId] ?? "",
           familyId,
           createdAt: now,
         })),
       );
       if (eventAssets.length > 0) {
         tx.insert(memoryEventAsset).values(eventAssets).run();
+      }
+
+      for (const row of drafts) {
+        tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: null, authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
+        for (const [sortOrder, item] of row.items.entries()) tx.insert(draftItem).values({ ...item, draftId: row.id, sortOrder }).run();
       }
 
       const participants = memoriesJson.flatMap((m) => {

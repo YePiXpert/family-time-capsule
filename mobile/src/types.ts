@@ -184,7 +184,7 @@ export type MobileInboxAsset = {
 
 export type MobileInboxEntry = {
   id: string;
-  kind: "text" | "asset";
+  kind: "text" | "asset" | "bundle";
   status: string;
   title: string;
   rawText: string | null;

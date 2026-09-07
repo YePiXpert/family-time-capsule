@@ -13,13 +13,13 @@ test("导出完整备份：ZIP 可下载、manifest 哈希全部可验证", asyn
   // 自备内容：一张 EXIF 照片 + 一段 WAV，确认成一个事件，并封存一个胶囊
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await expect(page.getByText("已保存，等待整理").first()).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
   await page
-    .locator('section[aria-label="录音"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample.wav"));
-  await expect(page.getByText("已保存，等待整理").nth(1)).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
 
   await page.goto("/inbox");
   const checkboxes = page.getByRole("checkbox");

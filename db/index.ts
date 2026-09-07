@@ -29,6 +29,7 @@ import * as bookSchema from "./schema/book";
 import * as bookRenderSchema from "./schema/book-render-job";
 import * as mediaJobSchema from "./schema/media-job";
 import * as collectionSchema from "./schema/collection";
+import * as draftSchema from "./schema/draft";
 import * as reviewSchema from "./schema/review";
 
 /**
@@ -90,6 +91,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...backupSchema,
         ...importSchema,
         ...reviewSchema,
+        ...draftSchema,
         ...collectionSchema,
         ...mediaJobSchema,
         ...bookSchema,

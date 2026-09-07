@@ -1,5 +1,6 @@
 import "server-only";
 
+import { draft, draftItem } from "@/db/schema/draft";
 import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -396,6 +397,12 @@ export async function getInboxEntry(
             ),
           )
       : [];
+  const aggregate = db.select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId))).get();
+  if (aggregate) {
+    const order = db.select().from(draftItem).where(eq(draftItem.draftId, aggregate.id)).all();
+    const ranks = new Map(order.map(i => [i.assetId, i.sortOrder]));
+    assets.sort((a, b) => (ranks.get(a.id) ?? 0) - (ranks.get(b.id) ?? 0));
+  }
   const participantLinks = await db
     .select({ personId: inboxItemParticipant.personId })
     .from(inboxItemParticipant)
@@ -479,6 +486,7 @@ export async function updateInboxDraft(
           .run();
       }
     }
+    tx.update(draft).set({ title: title ?? "", occurredAt: (patch.occurredAt === undefined ? entry.item.draftOccurredAt : patch.occurredAt)?.toISOString() ?? null, locationText: locationText ?? "", participantIdsJson: JSON.stringify(participantIds), revision: sql`${draft.revision} + 1`, mutationId: randomUUID(), updatedAt: now.toISOString() }).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId), eq(draft.status, "editing"))).run();
     return true;
   });
   if (!committed) return undefined;
@@ -574,12 +582,15 @@ export async function discardInboxItem(
   itemId: string,
 ): Promise<boolean> {
   const db = getDb();
-  const rows = await db
-    .update(inboxItem)
-    .set({ status: "discarded", updatedAt: new Date() })
-    .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, itemId)))
-    .returning();
-  return rows.length > 0;
+  return db.transaction(tx => {
+    const now = new Date();
+    const rows = tx.update(inboxItem).set({ status: "discarded", updatedAt: now })
+      .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, itemId), inArray(inboxItem.status, ["new", "needs_review", "processing"]))).returning().all();
+    if (!rows.length) return false;
+    tx.update(draft).set({ status: "discarded", revision: sql`${draft.revision} + 1`, mutationId: randomUUID(), updatedAt: now.toISOString() })
+      .where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId), eq(draft.status, "editing"))).run();
+    return true;
+  }, { behavior: "immediate" });
 }
 
 export async function countInbox(familyId: string): Promise<number> {

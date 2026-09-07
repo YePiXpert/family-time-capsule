@@ -237,8 +237,8 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
         .getByRole("link", { name: "记录" }),
     ).toBeVisible();
     const note = "贡献者通过邀请写下的真实文字";
-    await contributor.page.getByPlaceholder("今天想留下什么话？写给未来的她，或只是记下此刻。").fill(note);
-    await contributor.page.getByRole("button", { name: "写一段话" }).click();
+    await contributor.page.getByPlaceholder("写一句话，也可以继续加照片和录音。").fill(note);
+    await contributor.page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
     await expect(contributor.page.getByText("已收进收件箱。")).toBeVisible();
 
     await contributor.page.goto("/inbox");

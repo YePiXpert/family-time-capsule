@@ -1,6 +1,7 @@
+import { draft } from "@/db/schema/draft";
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { sql, and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { asset } from "@/db/schema/asset";
 import { user } from "@/db/schema/auth";
@@ -53,6 +54,7 @@ function setTargetName(tx: Tx, principal: LiveFamilyPrincipal, target: Target, t
     tx.update(asset).set({ displayName: text, nameSource: source, nameRevision: revision }).where(and(eq(asset.id, target.id), eq(asset.familyId, principal.familyId), eq(asset.nameRevision, target.revision))).run();
   } else if (target.kind === "inbox_item") {
     tx.update(inboxItem).set({ draftTitle: text, titleSource: source, titleRevision: revision, updatedAt: now }).where(and(eq(inboxItem.id, target.id), eq(inboxItem.familyId, principal.familyId), eq(inboxItem.titleRevision, target.revision))).run();
+    tx.update(draft).set({ title: text ?? "", revision: sql`${draft.revision} + 1`, mutationId: randomUUID(), updatedAt: now.toISOString() }).where(and(eq(draft.familyId, principal.familyId), eq(draft.inboxItemId, target.id), eq(draft.status, "editing"))).run();
   } else {
     const event = tx.select().from(memoryEvent).where(eq(memoryEvent.id, target.id)).get()!;
     const participants = tx.select({ id: memoryEventParticipant.personId }).from(memoryEventParticipant).where(eq(memoryEventParticipant.memoryEventId, target.id)).all();

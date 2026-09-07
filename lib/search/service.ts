@@ -13,6 +13,7 @@ import { contribution as contributionTable } from "@/db/schema/contribution";
 import { fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset, memoryEventParticipant } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
+import { inboxItem } from "@/db/schema/inbox";
 import { assetTranscript } from "@/db/schema/transcript";
 import { story as storyTable, storyParagraph as storyParagraphTable } from "@/db/schema/story";
 import { person as personTable } from "@/db/schema/family";
@@ -73,6 +74,10 @@ export function removeFromSearchIndex(
 
 // ---- 单实体索引挂钩（服务层写入路径调用） ----
 
+function eventSearchText(db: Db, event: { id: string; familyId: string; title: string }): string {
+  const notes = db.select({ text: inboxItem.rawText }).from(inboxItem).where(and(eq(inboxItem.familyId, event.familyId), eq(inboxItem.memoryEventId, event.id))).all();
+  return [event.title, ...notes.map(note => note.text || "")].join("\n");
+}
 export function indexMemoryEvent(event: {
   id: string;
   familyId: string;
@@ -82,7 +87,7 @@ export function indexMemoryEvent(event: {
   removeFromSearchIndex("memory_event", event.id);
   insertIndexRows(getDb(), [
     {
-      original_text: event.title,
+      original_text: eventSearchText(getDb(), event),
       family_id: event.familyId,
       entity_type: "memory_event",
       entity_id: event.id,
@@ -245,7 +250,7 @@ export function rebuildSearchIndex(): {
   insertIndexRows(
     db,
     events.map((e) => ({
-      original_text: e.title,
+      original_text: eventSearchText(db, e),
       family_id: e.familyId,
       entity_type: "memory_event" as const,
       entity_id: e.id,
@@ -596,7 +601,7 @@ export function searchFamily(
       case "memory_event":
         if (result.events.length < limit) {
           const event = db
-            .select({ occurredAt: memoryEvent.occurredAt })
+            .select({ occurredAt: memoryEvent.occurredAt, title: memoryEvent.title })
             .from(memoryEvent)
             .where(
               and(
@@ -609,7 +614,7 @@ export function searchFamily(
           if (event) {
             result.events.push({
               id: hit.entity_id,
-              title: hit.original_text,
+              title: event.title,
               occurredAt: event.occurredAt.toISOString(),
               snippet,
             });

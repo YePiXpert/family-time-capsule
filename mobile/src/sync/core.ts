@@ -20,6 +20,7 @@ export type SyncSummary = {
 export type SyncDependencies = {
   /** Stop writes from a superseded connection, including late upload replies. */
   isCurrent?: () => boolean;
+  afterUpload?: () => Promise<void>;
   isConnected: () => Promise<boolean | null | undefined>;
   createSnapshotId: () => string;
   listOutbox: () => Promise<OutboxItem[]>;
@@ -140,6 +141,8 @@ export async function syncArchiveWithDependencies(
     credentials,
     dependencies,
   );
+  await dependencies.afterUpload?.();
+  assertCurrent(dependencies);
   const snapshotId = dependencies.createSnapshotId();
   let cursor: string | null = null;
   let eventCount = 0;

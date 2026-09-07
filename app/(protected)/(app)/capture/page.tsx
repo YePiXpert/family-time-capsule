@@ -4,7 +4,7 @@ import { hasFamilyCapability } from "@/lib/authz/policy";
 import { listPeople } from "@/lib/family/service";
 import { PageHeader } from "@/components/page-header";
 import { InlineNotice } from "@/components/inline-notice";
-import { CaptureEditor } from "./capture-editor";
+import { PersistentCaptureEditor } from "./persistent-capture-editor";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "记录 · Family Time Capsule" };
 
 export default async function CapturePage() {
-  const { familyId, role } = await requireFamily();
+  const { familyId, role, userId, familyTimezone } = await requireFamily();
   const canCapture = hasFamilyCapability(role, "capture:create");
   const canArchive = hasFamilyCapability(role, "inbox:review");
   const people = canCapture ? await listPeople(familyId) : [];
@@ -22,12 +22,14 @@ export default async function CapturePage() {
       <PageHeader
         eyebrow="Capture"
         title="记录这一刻"
-        description="一句话、一张照片或一段声音都够。原件会先安全进入收件箱，发生时间与导入时间始终分开保存。"
+        description="围绕一件事写文字、加照片和录音。草稿自动保存在本机，明天还能继续。"
         actions={canCapture ? <Link href="/imports" className="ui-button-secondary">批量导入</Link> : undefined}
       />
 
       {canCapture ? (
-        <CaptureEditor
+        <PersistentCaptureEditor
+          scope={`${userId}:${familyId}`}
+          timezone={familyTimezone}
           canArchive={canArchive}
           people={people.map((person) => ({
             id: person.id,

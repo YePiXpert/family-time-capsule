@@ -11,9 +11,9 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
   // 上传一张 EXIF 拍摄于 2026-08-10 09:30 +08:00 的照片
   await page.goto("/capture");
   await page
-    .locator('section[aria-label="照片"] input[type="file"]')
+    .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif-offset.jpg"));
-  await expect(page.getByText("已保存，等待整理")).toBeVisible();
+  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
 
   // 收件箱确认（EXIF 照片显示拍摄时间 8 月 10 日）
   await page.goto("/inbox");

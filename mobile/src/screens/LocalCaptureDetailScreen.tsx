@@ -66,7 +66,7 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
           text: "确认移除",
           style: "destructive",
           onPress: () => {
-            void removeLocalCaptureRecord(captureId).then(() => load());
+            void removeLocalCaptureRecord(captureId).then(() => load()).catch(error => Alert.alert("尚未移除", error instanceof Error ? error.message : "请重试。"));
           },
         },
       ],

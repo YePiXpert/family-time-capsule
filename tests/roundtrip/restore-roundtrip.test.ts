@@ -1229,7 +1229,7 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       .map(([name]) => name);
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 35);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 36);
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zipFileNames).toContain("family-time-capsule-export/name-reviews.json");
 

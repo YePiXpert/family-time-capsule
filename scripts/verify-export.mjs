@@ -121,9 +121,11 @@ if(manifest.modules?.bookProjects !== undefined && (manifest.modules.bookProject
 const bookGraph = hasBooks ? await Promise.all(BOOK_FILES.map(name=>readJsonAsync(name))) : [[],[],[],[],[],[]];
 const hasNameReviews = await zipEntryExists("name-reviews.json");
 if (manifest.modules?.nameReviews !== undefined && (manifest.modules.nameReviews !== 1 || !hasNameReviews)) fail("声明的名称审核模块缺失或不支持");
+const hasDrafts = await zipEntryExists("drafts.json");
+if (manifest.modules?.drafts !== undefined && (manifest.modules.drafts !== 1 || !hasDrafts)) fail("声明的草稿模块缺失或不支持");
 const expectedNonAssetCount =
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
-  (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) +
+  (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) + (hasDrafts ? 1 : 0) +
   (hasDialogue ? 2 : 0) +
   (importSessions ? 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
@@ -152,6 +154,25 @@ const inboxItemIds = new Set(
     ? JSON.parse(await inboxEntry.async("string")).map((item) => item.id)
     : [],
 );
+if (hasDrafts) {
+  const drafts = await readJsonAsync("drafts.json");
+  const ids = new Set(), itemIds = new Set();
+  try {
+    if (!Array.isArray(drafts)) throw new Error();
+    for (const row of drafts) {
+      if (!row || typeof row.id !== "string" || ids.has(row.id) || Object.hasOwn(row, "authorUserId") || Object.hasOwn(row, "familyId") || !["editing", "published", "discarded"].includes(row.status) || !["family", "private"].includes(row.visibility)) throw new Error();
+      ids.add(row.id);
+      if ((row.authorPersonId !== null && !personIds.has(row.authorPersonId)) || (row.inboxItemId !== null && !inboxItemIds.has(row.inboxItemId)) || (row.memoryEventId !== null && (!eventIds.has(row.memoryEventId) || row.status !== "published"))) throw new Error();
+      if (!Array.isArray(row.participantIds) || row.participantIds.some(id => !personIds.has(id)) || !Array.isArray(row.items)) throw new Error();
+      for (const item of row.items) {
+        if (!item || typeof item.id !== "string" || itemIds.has(item.id) || (item.assetId !== null && !assetIds.has(item.assetId))) throw new Error();
+        itemIds.add(item.id);
+      }
+      if (row.coverItemId !== null && !row.items.some(item => item.id === row.coverItemId)) throw new Error();
+    }
+    ok(`草稿：${drafts.length} 件，作者、封面与素材引用完整（详细字段校验由恢复预检执行）`);
+  } catch { fail("草稿或素材引用无效"); }
+}
 if (hasNameReviews) {
   const reviews = await readJsonAsync("name-reviews.json");
   if (!Array.isArray(reviews) || reviews.some(row => !row || !["accepted", "rejected"].includes(row.status) || !Number.isSafeInteger(row.revision) || row.revision < 1 || !(row.entityType === "memory_event" ? eventIds : row.entityType === "inbox_item" ? inboxItemIds : new Set()).has(row.entityId))) fail("名称审核墓碑或目标关系无效");

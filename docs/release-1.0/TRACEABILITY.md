@@ -11,7 +11,7 @@
 | NAV-1/2/7 | components/navigation-items.ts、app/(protected)/(app)/layout.tsx、mobile/src/navigation/AppNavigator.tsx | tests/integration/product-shell.test.ts、mobile/tests/navigation-runtime.test.ts(重构后更新) |
 | NAV-3 | app/(protected)/(app)/page.tsx、lib/home | tests/integration/home.test.ts |
 | NAV-4 | app/(protected)/(app)/timeline、lib/memories/calendar | tests/integration/calendar.test.ts、timeline-pagination.test.ts |
-| NAV-5 | app/(protected)/(app)/capture、mobile/src/screens/CaptureScreen.tsx | mobile/tests/local-*、tests/e2e/inbox-draft.spec.ts |
+| NAV-5 | app/(protected)/(app)/capture、mobile/src/screens/CaptureScreen.tsx | mobile/tests/local-*、persistent-draft.test.ts、draft-sync.test.ts；tests/e2e/inbox-draft.spec.ts、persistent-draft.spec.ts |
 | NAV-6 | app/(protected)/(app)/family/[id]、lib/family | tests/integration/onboarding-guardian.test.ts |
 | NAV-8 | design-system/、components/ui | lint/typecheck |
 | NAV-9 | components/ | 待补 a11y 检查(REL 条目) |
@@ -41,8 +41,8 @@
 
 | ID | 代码 | 测试 |
 | --- | --- | --- |
-| CAP-1 | mobile/src/storage/(database/schema/files).ts、lib/inbox | mobile/tests/local-lifecycle.test.ts、tests/e2e/inbox-draft.spec.ts |
-| CAP-2 | lib/metadata/time.ts、db/schema/asset.ts | tests/unit/time.test.ts |
+| CAP-1 | db/schema/draft.ts、lib/drafts、mobile/src/drafts；收件箱提交适配 | tests/integration/persistent-draft.test.ts、tests/e2e/persistent-draft.spec.ts、mobile/tests/persistent-draft.test.ts、draft-sync.test.ts；私密读者/intake 选择仍部分实现 |
+| CAP-2 | lib/metadata/time.ts、db/schema/asset.ts、lib/drafts/model.ts | tests/unit/time.test.ts；事件 unknown/month/year 未闭环，不再记为自动化通过 |
 | CAP-3 | lib/imports/service.ts | tests/integration/imports.test.ts |
 | CAP-4 | mobile/src/storage/files.ts(preserve*) | mobile/tests/native-share-intake.test.ts |
 | CAP-5 | mobile/src/screens/LocalCaptureDetailScreen.tsx | mobile/tests/local-detail.test.ts |
