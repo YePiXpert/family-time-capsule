@@ -31,17 +31,21 @@ const { user: userTable } = await import("@/db/schema/auth");
 const { addPerson, completeOnboarding, listPeople } = await import(
   "@/lib/family/service"
 );
-const { ingestImage } = await import("@/lib/assets/ingest");
+const { ingestImage, ingestMedia } = await import("@/lib/assets/ingest");
 const { createInboxItemForAsset, getInboxEntry } = await import("@/lib/inbox/service");
 const { confirmInboxEntry } = await import("@/lib/memories/service");
 const {
   createContribution,
   updateContributionText,
   listContributions,
+  listRecentVoiceContributions,
   addFact,
   listFacts,
   setFactStatus,
 } = await import("@/lib/contributions/service");
+const { contribution: contributionTable } = await import(
+  "@/db/schema/contribution"
+);
 
 const db = getDb();
 const adminUserId = (await db.select({ id: userTable.id }).from(userTable))[0].id;
@@ -294,5 +298,61 @@ describe("Fact（P0 手工）", () => {
     // 其他家庭不能加 fact 到别人的事件
     expect(await addFact(OTHER_FAMILY, eventId, "x")).toBeUndefined();
     expect(await listFacts(OTHER_FAMILY, eventId)).toHaveLength(0);
+  });
+});
+
+describe("简洁首页「听听家人的声音」（NAV-11）", () => {
+  it("只列家庭可见的带原声讲述；私密与其他家庭不进入聚合", async () => {
+    const eventId = await makeEvent(6);
+    const stored = await ingestMedia({
+      familyId,
+      createdByUserId: adminUserId,
+      kind: "audio",
+      filename: "爸爸的话.wav",
+      declaredMime: "audio/wav",
+      buffer: readFileSync(path.join(fixtures, "sample.wav")),
+      clientLastModifiedMs: null,
+    });
+    if (stored.status !== "stored") throw new Error("audio store failed");
+    const people = await listPeople(familyId);
+    const dad = people.find((p) => p.relationToChild === "爸爸")!;
+
+    const familyVoice = await createContribution(familyId, {
+      memoryEventId: eventId,
+      authorPersonId: dad.id,
+      recordedByUserId: adminUserId,
+      rawText: "给家里人听的一段话。",
+      visibility: "family",
+    });
+    if (!familyVoice.ok) throw new Error("family voice failed");
+    const privateVoice = await createContribution(familyId, {
+      memoryEventId: eventId,
+      authorPersonId: dad.id,
+      recordedByUserId: adminUserId,
+      rawText: "只写给自己的一段话。",
+      visibility: "private",
+    });
+    if (!privateVoice.ok) throw new Error("private voice failed");
+    db.update(contributionTable)
+      .set({ audioAssetId: stored.asset.id })
+      .where(eq(contributionTable.id, familyVoice.contributionId))
+      .run();
+    db.update(contributionTable)
+      .set({ audioAssetId: stored.asset.id })
+      .where(eq(contributionTable.id, privateVoice.contributionId))
+      .run();
+
+    const voices = await listRecentVoiceContributions(familyId, 3);
+    const ids = voices.map((v) => v.id);
+    expect(ids).toContain(familyVoice.contributionId);
+    expect(ids).not.toContain(privateVoice.contributionId);
+    const voice = voices.find((v) => v.id === familyVoice.contributionId)!;
+    expect(voice.authorName).toBe("爸爸");
+    expect(voice.memoryEventId).toBe(eventId);
+    expect(voice.audioAssetId).toBe(stored.asset.id);
+    expect(voice.audioMimeType).toContain("audio");
+
+    // 家庭隔离：别的家庭一个都搜不到
+    await expect(listRecentVoiceContributions(OTHER_FAMILY, 3)).resolves.toHaveLength(0);
   });
 });

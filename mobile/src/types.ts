@@ -145,6 +145,13 @@ export type MobileHome = {
     coverPath: string | null;
   }[];
   onThisDay: { id: string; title: string; occurredAt: string }[];
+  voices?: {
+    id: string;
+    memoryEventId: string;
+    eventTitle: string;
+    authorName: string;
+    audioPath: string;
+  }[];
   story: null | { id: string; title: string; status: string };
   capsule: null | {
     id: string;

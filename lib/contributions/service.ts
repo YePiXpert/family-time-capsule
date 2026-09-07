@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { indexContribution, indexFactIfConfirmed } from "@/lib/search/service";
 import { auditLog } from "@/db/schema/audit";
@@ -10,6 +10,7 @@ import { person as personTable } from "@/db/schema/family";
 import { memoryEvent } from "@/db/schema/memory";
 import { contribution, fact } from "@/db/schema/contribution";
 import { factSource } from "@/db/schema/suggestion";
+import { asset as assetTable } from "@/db/schema/asset";
 import { AUDIT_KINDS, requiredAuditValues } from "@/lib/audit/service";
 import {
   hasFamilyCapability,
@@ -350,6 +351,67 @@ export async function listRecentFamilyContributions(
     preview: (row.editedText ?? row.rawText ?? row.transcript ?? "").slice(0, 80),
     createdAt: row.createdAt,
   }));
+}
+
+/**
+ * 简洁模式首页「听听家人的声音」：最近的带原声家人讲述。
+ * 与 listRecentFamilyContributions 相同的最小披露口径——只包含
+ * visibility='family' 且事件未删除的讲述；音频原件照常经 /api/media 鉴权播放。
+ */
+export async function listRecentVoiceContributions(
+  familyId: string,
+  limit = 3,
+): Promise<
+  Array<{
+    id: string;
+    memoryEventId: string;
+    eventTitle: string;
+    authorName: string;
+    audioAssetId: string;
+    audioMimeType: string;
+    createdAt: Date;
+  }>
+> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: contribution.id,
+      memoryEventId: contribution.memoryEventId,
+      eventTitle: memoryEvent.title,
+      authorName: personTable.displayName,
+      audioAssetId: contribution.audioAssetId,
+      audioMimeType: assetTable.mimeType,
+      createdAt: contribution.createdAt,
+    })
+    .from(contribution)
+    .innerJoin(memoryEvent, eq(contribution.memoryEventId, memoryEvent.id))
+    .innerJoin(personTable, eq(contribution.authorPersonId, personTable.id))
+    .innerJoin(assetTable, eq(contribution.audioAssetId, assetTable.id))
+    .where(
+      and(
+        eq(memoryEvent.familyId, familyId),
+        eq(contribution.visibility, "family"),
+        isNotNull(contribution.audioAssetId),
+        isNull(contribution.deletedAt),
+        isNull(memoryEvent.deletedAt),
+      ),
+    )
+    .orderBy(desc(contribution.createdAt))
+    .limit(limit);
+  // isNotNull 已过滤，但列类型仍可空；这里收窄，避免调用方处理 null。
+  return rows.flatMap((row) =>
+    row.audioAssetId
+      ? [{
+          id: row.id,
+          memoryEventId: row.memoryEventId,
+          eventTitle: row.eventTitle,
+          authorName: row.authorName,
+          audioAssetId: row.audioAssetId,
+          audioMimeType: row.audioMimeType,
+          createdAt: row.createdAt,
+        }]
+      : [],
+  );
 }
 
 export async function addFact(

@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
 import { QuickAction } from "@/components/quick-action";
 import { SectionHeader } from "@/components/section-header";
+import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { requireFamily } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
+import { getDisplayMode } from "@/lib/display-mode.server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "我的 · Family Time Capsule" };
@@ -11,15 +13,39 @@ export const metadata: Metadata = { title: "我的 · Family Time Capsule" };
 /**
  * 正式 1.0「我的」页(M1):同步与保全、下载与作品、隐私、账号与高级设置。
  * 面向「这一个成员自己」的入口;家庭公共内容(记忆/家人)不在一级导航之外重复。
+ * 大字简洁显示时只保留日常入口;高级页面路由不变,返回标准显示即可使用。
  */
 export default async function MorePage() {
   const { role } = await requireFamily();
+  const displayMode = await getDisplayMode();
   const canReadBooks = hasFamilyCapability(role, "archive:view");
   const canManageFamily = hasFamilyCapability(role, "family:manage");
   const canWriteStories = hasFamilyCapability(role, "story:write");
   const canCreateContributions = hasFamilyCapability(role, "contribution:create");
   const canWriteCapsules = hasFamilyCapability(role, "capsule:write");
   const canWriteEvents = hasFamilyCapability(role, "event:write");
+
+  if (displayMode === "simple") {
+    return (
+      <main className="page-container">
+        <PageHeader title="我的" description="这里只保留最常用的几项。" />
+        <section className="mt-8" aria-label="显示方式">
+          <SectionHeader title="显示方式" description="想看完整功能时，回到标准显示即可。" />
+          <div className="mt-3">
+            <DisplayModeToggle mode={displayMode} />
+          </div>
+        </section>
+        <section className="mt-10" aria-label="常用入口">
+          <SectionHeader title="常用入口" />
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <QuickAction href="/timeline" icon="timeline" label="照片和回忆" description="按时间看家里的照片" />
+            <QuickAction href="/family" icon="people" label="家人" description="看看每位家人" />
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="page-container">
       <PageHeader title="我的" description="你的同步、下载、隐私、账号与家庭保全都在这里。" />
@@ -37,6 +63,13 @@ export default async function MorePage() {
         <SectionHeader title="隐私" description="AI 外发授权与可见范围" />
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <QuickAction href="/settings/ai" icon="spark" label="AI 与隐私" description="分能力的处理授权、接收方与关闭方式" />
+        </div>
+      </section>
+
+      <section className="mt-10" aria-label="显示方式">
+        <SectionHeader title="显示方式" description="长辈用这台设备时，可以切换到更大更简单的界面" />
+        <div className="mt-3">
+          <DisplayModeToggle mode={displayMode} />
         </div>
       </section>
 

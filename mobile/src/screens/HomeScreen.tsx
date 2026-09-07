@@ -5,10 +5,13 @@ import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
 import { dateLabel } from "../utils/format";
 import { HOME_CAPTURE_ACTIONS } from "../navigation/intents";
+import { SimpleHomeScreen } from "./SimpleHomeScreen";
 
 export function HomeScreen() {
   const navigation = useNavigation<AppNavigation>();
-  const { credentials, family, home, events, outbox, syncing, runSync } = useApp();
+  const { credentials, family, home, events, outbox, syncing, runSync, displayMode } = useApp();
+  // 大字简洁显示（长辈阅读）：同一账号与权限，换一个只保留日常四件事的首页。
+  if (displayMode === "simple") return <SimpleHomeScreen />;
   const recent = home?.recentMemories ?? events.filter((event) => event.source === "server").slice(0, 4).map((event) => ({
     id: event.id,
     title: event.title,

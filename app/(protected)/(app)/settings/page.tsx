@@ -7,6 +7,8 @@ import { listRecentAudit } from "@/lib/audit/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { hasRecentAuth } from "@/lib/auth/step-up";
 import { PageHeader } from "@/components/page-header";
+import { DisplayModeToggle } from "@/components/display-mode-toggle";
+import { getDisplayMode } from "@/lib/display-mode.server";
 import { DangerZone, ExportStepUpPanel } from "./account/danger-zone";
 
 export const dynamic = "force-dynamic";
@@ -41,9 +43,10 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
   const canReviewAi = hasFamilyCapability(role, "ai:review");
   const currentSessionId = await requireCurrentSessionId();
   const exportNeedsStepUp = canExport && !hasRecentAuth(currentSessionId);
-  const [family, auditEntries] = await Promise.all([
+  const [family, auditEntries, displayMode] = await Promise.all([
     getFamily(familyId),
     canViewAudit ? listRecentAudit(familyId, 10) : Promise.resolve([]),
+    getDisplayMode(),
   ]);
 
   return (
@@ -70,6 +73,16 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
           你的管理员权限已经变化，账号管理页已关闭，本次没有执行任何修改。
         </p>
       )}
+
+      <section aria-label="显示" className="mt-8">
+        <h2 className="text-lg font-medium">显示</h2>
+        <p className="mt-1 text-sm text-muted">
+          标准显示或大字简洁显示；这只改变这一台设备上的界面大小和入口数量，不影响任何权限。
+        </p>
+        <div className="mt-3">
+          <DisplayModeToggle mode={displayMode} />
+        </div>
+      </section>
 
       <section aria-label="家庭" className="mt-8">
         <h2 className="text-lg font-medium">家庭</h2>

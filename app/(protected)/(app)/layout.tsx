@@ -3,6 +3,7 @@ import { getFamily } from "@/lib/family/service";
 import { countInbox } from "@/lib/inbox/service";
 import { AppShell } from "@/components/app-shell";
 import { FAMILY_CAPABILITIES, hasFamilyCapability } from "@/lib/authz/policy";
+import { getDisplayMode } from "@/lib/display-mode.server";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +22,12 @@ export default async function AppLayout({
   const capabilities = FAMILY_CAPABILITIES.filter((capability) =>
     hasFamilyCapability(role, capability),
   );
-  const [family, inboxCount] = await Promise.all([
+  const [family, inboxCount, displayMode] = await Promise.all([
     getFamily(familyId),
     hasFamilyCapability(role, "inbox:review")
       ? countInbox(familyId)
       : Promise.resolve(0),
+    getDisplayMode(),
   ]);
   return (
     <AppShell
@@ -34,6 +36,7 @@ export default async function AppLayout({
       role={role}
       capabilities={capabilities}
       userName={userName}
+      displayMode={displayMode}
     >
       {children}
     </AppShell>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { runBoundedImportPool } from "@/lib/imports/pool";
 import { describeUploadError } from "@/components/upload-request";
 
@@ -69,8 +69,16 @@ async function json(response: Response): Promise<Record<string, unknown>> {
   return value ?? {};
 }
 
+/**
+ * 免账号贡献表单（NAV-11/FAM-3 长辈路径）：
+ * 问题（页面标题区）→ 录音 → 重听 → 提交；文字与照片始终是可选补充，
+ * 不给长辈增加整理步骤。提交成功后明确「已经收到」，可以再说一段。
+ */
 export function GuestContributionForm(props: Props) {
-  const [files, setFiles] = useState<File[]>([]);
+  const [pickedFiles, setPickedFiles] = useState<File[]>([]);
+  const [recordedFile, setRecordedFile] = useState<File | null>(null);
+  const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
+  const [recordedConfirmed, setRecordedConfirmed] = useState(false);
   const [text, setText] = useState("");
   const [guestName, setGuestName] = useState("");
   const [items, setItems] = useState<ItemState[]>([]);
@@ -86,6 +94,12 @@ export function GuestContributionForm(props: Props) {
   const fileByCapture = useRef(new Map<string, File>());
   const declarationByCapture = useRef(new Map<string, FileDeclaration>());
   const submissionId = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    };
+  }, [recordedUrl]);
 
   const accept = useMemo(() => [
     props.allowImages ? "image/*" : "",
@@ -158,18 +172,28 @@ export function GuestContributionForm(props: Props) {
       `/contribute/${encodeURIComponent(props.token)}/submissions/${id}/complete`,
       { method: "POST" },
     ));
-    setFiles([]);
+    setPickedFiles([]);
+    discardRecording();
+    setRecordedConfirmed(false);
     setText("");
     setItems([]);
     setSubmitted(true);
-    setMessage("已经收到。所有内容会先进入家人的收件箱，整理确认后才进入时间轴。");
+    setMessage("已经收到，谢谢！所有内容会先进入家人的收件箱，整理确认后才进入时间轴。");
+  }
+
+  function discardRecording() {
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl(null);
+    setRecordedFile(null);
+    setRecordedConfirmed(false);
   }
 
   function submitAnother() {
     setSubmitted(false);
     setMessage(null);
     setItems([]);
-    setFiles([]);
+    setPickedFiles([]);
+    discardRecording();
     setText("");
     submissionId.current = null;
     descriptors.current.clear();
@@ -180,8 +204,9 @@ export function GuestContributionForm(props: Props) {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!text.trim() && files.length === 0) {
-      setMessage("请写一段话或选择至少一份文件。");
+    const allFiles = recordedFile && recordedConfirmed ? [recordedFile, ...pickedFiles] : pickedFiles;
+    if (!text.trim() && allFiles.length === 0) {
+      setMessage(props.allowRecording ? "请先录一段话，或写下一段文字。" : "请写一段话或选择至少一份文件。");
       return;
     }
     setWorking(true);
@@ -191,7 +216,7 @@ export function GuestContributionForm(props: Props) {
     declarationByCapture.current.clear();
     setRetryableCaptureIds(new Set());
     try {
-      const declarations = files.map((file) => {
+      const declarations = allFiles.map((file) => {
         const captureId = crypto.randomUUID();
         fileByCapture.current.set(captureId, file);
         return {
@@ -205,8 +230,8 @@ export function GuestContributionForm(props: Props) {
       for (const declaration of declarations) declarationByCapture.current.set(declaration.captureId, declaration);
       setItems(declarations.map((entry, index) => ({
         captureId: entry.captureId,
-        name: files[index].name,
-        size: files[index].size,
+        name: allFiles[index].name,
+        size: allFiles[index].size,
         uploaded: 0,
         status: "pending",
         error: null,
@@ -294,10 +319,14 @@ export function GuestContributionForm(props: Props) {
       recordingStream.current?.getTracks().forEach((track) => track.stop());
       const mime = active.mimeType || "audio/webm";
       const recorded = new File(recordingChunks.current, `family-voice-${Date.now()}.webm`, { type: mime });
-      if (files.length >= props.maxFiles) {
-        setMessage(`最多 ${props.maxFiles} 份；这份录音没有加入，可先移除已有文件。`);
+      const totalCount = (recordedFile ? 1 : 0) + pickedFiles.length + 1;
+      if (totalCount > props.maxFiles) {
+        setMessage(`最多 ${props.maxFiles} 份；这段录音没有加入，可先移除已选文件。`);
       } else {
-        setFiles((current) => [...current, recorded]);
+        if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+        setRecordedUrl(URL.createObjectURL(recorded));
+        setRecordedFile(recorded);
+        setRecordedConfirmed(false);
       }
       recorder.current = null;
       recordingStream.current = null;
@@ -329,14 +358,96 @@ export function GuestContributionForm(props: Props) {
         {message ? <p role="status" className="rounded-lg border border-line bg-foreground/[0.03] p-3 text-sm">{message}</p> : null}
         <button type="button" onClick={submitAnother}
           className="min-h-11 self-start rounded-lg border border-foreground/20 px-4 py-2 text-sm">
-          再提交一份
+          再说一段
         </button>
       </div>
     );
   }
 
   return (
-    <form onSubmit={submit} className="mt-6 flex flex-col gap-5">
+    <form onSubmit={submit} className="mt-6 flex flex-col gap-6">
+      {props.allowRecording ? (
+        <fieldset className="rounded-xl border border-line p-4" aria-label="录音">
+          <legend className="px-1 text-sm font-semibold">① 回答问题，录一段话</legend>
+          <p aria-live="polite" className="mt-1 text-sm text-muted">
+            {recording ? "正在录音……" : recordedFile
+              ? recordedConfirmed ? "这段录音已经准备好，可以在下面提交。"
+                : "先听一听这段录音，满意再提交。"
+              : "按一下按钮开始，再按一下结束。"}
+          </p>
+          {recording ? (
+            <button type="button" onClick={() => void toggleRecording()} disabled={working}
+              className="mt-3 min-h-14 self-start rounded-xl border border-red-700/40 bg-red-700/10 px-6 py-3 text-base font-semibold">
+              停止录音
+            </button>
+          ) : (
+            <button type="button" onClick={() => void toggleRecording()} disabled={working}
+              className="mt-3 min-h-14 self-start rounded-xl border border-foreground/20 px-6 py-3 text-base font-semibold">
+              {recordedFile ? "重新录一段" : "开始录音"}
+            </button>
+          )}
+          {recordedFile && recordedUrl && !recording ? (
+            <div className="mt-4 flex flex-col gap-3">
+              <audio controls preload="metadata" src={recordedUrl} aria-label="刚录下的这段录音" className="w-full" />
+              <div className="flex flex-wrap gap-3">
+                <button type="button" onClick={() => setRecordedConfirmed(true)} disabled={recordedConfirmed}
+                  className="min-h-12 rounded-xl bg-foreground px-5 py-2.5 text-base font-medium text-background disabled:opacity-60">
+                  {recordedConfirmed ? "已保留这段录音" : "就用这段录音"}
+                </button>
+                <button type="button" onClick={() => discardRecording()} disabled={working}
+                  className="min-h-12 rounded-xl border border-foreground/20 px-5 py-2.5 text-base">
+                  不要这段，重新想
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </fieldset>
+      ) : null}
+
+      {props.allowText ? (
+        <fieldset className="rounded-xl border border-line p-4" aria-label="补充文字">
+          <legend className="px-1 text-sm font-semibold">{props.allowRecording ? "② 也可以补一句话" : "留下一段话"}</legend>
+          <textarea value={text} onChange={(event) => setText(event.target.value)} rows={4} maxLength={10_000}
+            aria-label="补充的话（可选）"
+            className="mt-2 w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 font-normal" />
+        </fieldset>
+      ) : null}
+
+      {props.maxFiles > 0 ? (
+        <fieldset className="rounded-xl border border-line p-4" aria-label="补充文件">
+          <legend className="px-1 text-sm font-semibold">{props.allowRecording ? "③ 还可以补几张照片（可选）" : `选择文件（最多 ${props.maxFiles} 份）`}</legend>
+          <input type="file" multiple accept={accept} disabled={working} aria-label="选择要补充的文件"
+            onChange={(event) => {
+              const selected = Array.from(event.target.files ?? []);
+              const merged = [...pickedFiles];
+              let dropped = 0;
+              for (const file of selected) {
+                const totalCount = (recordedFile && recordedConfirmed ? 1 : 0) + merged.length + 1;
+                if (totalCount > props.maxFiles) { dropped += 1; continue; }
+                if (merged.some((existing) => existing.name === file.name && existing.size === file.size)) continue;
+                merged.push(file);
+              }
+              setPickedFiles(merged);
+              setItems([]);
+              if (dropped > 0) setMessage(`最多 ${props.maxFiles} 份；多出的 ${dropped} 份没有加入。`);
+            }} className="mt-2 text-sm font-normal" />
+          {pickedFiles.length > 0 && items.length === 0 ? (
+            <ul className="mt-3 space-y-2" aria-label="已选择的文件">
+              {pickedFiles.map((file, index) => (
+                <li key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 text-sm">
+                  <span className="min-w-0">
+                    <span className="block truncate">{isVoiceMemo(file) ? "语音备忘录" : file.name}</span>
+                    <span className="text-xs text-muted">{file.type || "未知类型"} · {readableBytes(file.size)}</span>
+                  </span>
+                  <button type="button" disabled={working} onClick={() => setPickedFiles((current) => current.filter((_, i) => i !== index))}
+                    className="min-h-9 shrink-0 rounded-lg border border-foreground/20 px-3 text-xs disabled:opacity-50">移除</button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </fieldset>
+      ) : null}
+
       {props.allowGuestName ? (
         <label className="flex flex-col gap-2 text-sm font-medium">
           你的称呼（可选）
@@ -345,53 +456,7 @@ export function GuestContributionForm(props: Props) {
           <span className="text-xs font-normal text-muted">会标记为“访客填写，未经确认”。</span>
         </label>
       ) : null}
-      {props.allowText ? (
-        <label className="flex flex-col gap-2 text-sm font-medium">
-          留下一段话（可选）
-          <textarea value={text} onChange={(event) => setText(event.target.value)} rows={5} maxLength={10_000}
-            className="rounded-lg border border-foreground/15 bg-background px-3 py-2 font-normal" />
-        </label>
-      ) : null}
-      {props.maxFiles > 0 ? (
-        <label className="flex flex-col gap-2 text-sm font-medium">
-          选择文件（最多 {props.maxFiles} 份）
-          <input type="file" multiple accept={accept} disabled={working}
-            onChange={(event) => {
-              const selected = Array.from(event.target.files ?? []);
-              const merged = [...files];
-              let dropped = 0;
-              for (const file of selected) {
-                if (merged.length >= props.maxFiles) { dropped += 1; continue; }
-                if (merged.some((existing) => existing.name === file.name && existing.size === file.size)) continue;
-                merged.push(file);
-              }
-              setFiles(merged);
-              setItems([]);
-              if (dropped > 0) setMessage(`最多 ${props.maxFiles} 份；多出的 ${dropped} 份没有加入。`);
-            }} className="text-sm font-normal" />
-          <span className="text-xs font-normal text-muted">每份原件单独续传；失败不会撤销已经完成的项目。</span>
-        </label>
-      ) : null}
-      {props.allowRecording ? (
-        <button type="button" onClick={() => void toggleRecording()} disabled={working}
-          className="min-h-11 self-start rounded-lg border border-foreground/20 px-4 py-2 text-sm">
-          {recording ? "停止并保留录音" : "直接录音"}
-        </button>
-      ) : null}
-      {files.length > 0 && items.length === 0 ? (
-        <ul className="space-y-2" aria-label="已选择的文件">
-          {files.map((file, index) => (
-            <li key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 text-sm">
-              <span className="min-w-0">
-                <span className="block truncate">{isVoiceMemo(file) ? "语音备忘录" : file.name}</span>
-                <span className="text-xs text-muted">{file.type || "未知类型"} · {readableBytes(file.size)}</span>
-              </span>
-              <button type="button" disabled={working} onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
-                className="min-h-9 shrink-0 rounded-lg border border-foreground/20 px-3 text-xs disabled:opacity-50">移除</button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+
       {items.length > 0 ? (
         <ul className="space-y-2" aria-label="上传进度">
           {items.map((item) => (
@@ -403,14 +468,15 @@ export function GuestContributionForm(props: Props) {
           ))}
         </ul>
       ) : null}
+
       <div className="flex flex-wrap gap-3">
         <button type="submit" disabled={working || recording}
-          className="min-h-11 rounded-lg bg-foreground px-5 py-2 text-sm font-medium text-background disabled:opacity-50">
+          className="min-h-14 rounded-xl bg-foreground px-6 py-3 text-base font-medium text-background disabled:opacity-50">
           {working ? "正在安全保存…" : "提交给家人"}
         </button>
         {hasRetryable ? (
           <button type="button" onClick={() => void retryFailed()} disabled={working}
-            className="min-h-11 rounded-lg border border-foreground/20 px-4 py-2 text-sm disabled:opacity-50">重试失败项</button>
+            className="min-h-12 rounded-xl border border-foreground/20 px-4 py-2.5 text-base disabled:opacity-50">重试失败项</button>
         ) : null}
       </div>
       {message ? <p role="status" className="rounded-lg border border-line bg-foreground/[0.03] p-3 text-sm">{message}</p> : null}

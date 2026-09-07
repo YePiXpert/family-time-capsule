@@ -15,7 +15,7 @@
 | NAV-6 | app/(protected)/(app)/family/[id]、lib/family | tests/integration/onboarding-guardian.test.ts |
 | NAV-8 | design-system/、components/ui | lint/typecheck |
 | NAV-9 | components/ | 待补 a11y 检查(REL 条目) |
-| NAV-11 | 未实现 | — |
+| NAV-11 | lib/display-mode(.server).ts、app/(protected)/(app)/(simple-home/page/layout/more/settings)、components/(display-mode-toggle/app-shell/bottom-navigation/sidebar-navigation)、app/contribute/[token]/guest-contribution-form.tsx、mobile/src/(screens/SimpleHomeScreen.tsx、components/DisplayModeCard.tsx、state/AppContext display_mode) | tests/e2e/simple-mode.spec.ts、contribute-wizard.spec.ts、tests/integration/contribution.test.ts(声音聚合)、mobile/tests/display-mode.test.ts |
 
 ## ID — 身份与权限
 

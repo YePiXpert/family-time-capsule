@@ -63,7 +63,12 @@ const tabMeta = {
   More: ["我的", "•••"],
 } as const;
 
+// 大字简洁显示(长辈阅读)下的标签:更大的字与更直白的动词。
+const simpleTabLabel = (route: keyof typeof tabMeta) => (route === "Capture" ? "说几句" : tabMeta[route][0]);
+
 function MainTabs() {
+  const { displayMode } = useApp();
+  const simple = displayMode === "simple";
   return <Tabs.Navigator screenOptions={({ route }) => ({
     headerStyle: { backgroundColor: colors.paper },
     headerShadowVisible: false,
@@ -72,14 +77,14 @@ function MainTabs() {
     tabBarInactiveTintColor: colors.muted,
     tabBarHideOnKeyboard: true,
     tabBarButtonTestID: `tab-${route.name.toLowerCase()}`,
-    tabBarStyle: { height: 64, paddingTop: 5, paddingBottom: 6, backgroundColor: colors.card, borderTopColor: colors.line },
-    tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
+    tabBarStyle: { height: simple ? 76 : 64, paddingTop: 5, paddingBottom: simple ? 8 : 6, backgroundColor: colors.card, borderTopColor: colors.line },
+    tabBarLabelStyle: { fontSize: simple ? 14 : 11, fontWeight: "700" },
     tabBarIcon: ({ focused }) => <View style={[styles.icon, route.name === "Capture" && styles.captureIcon, focused && route.name !== "Capture" && styles.activeIcon]}><Text style={[styles.iconText, route.name === "Capture" && styles.captureIconText]}>{tabMeta[route.name][1]}</Text></View>,
-    title: tabMeta[route.name][0],
+    title: simple ? simpleTabLabel(route.name) : tabMeta[route.name][0],
   })}>
     <Tabs.Screen component={HomeScreen} name="Home" />
     <Tabs.Screen component={TimelineScreen} name="Timeline" />
-    <Tabs.Screen component={CaptureScreen} name="Capture" options={{ tabBarLabelStyle: { color: colors.coralDark, fontSize: 11, fontWeight: "800" } }} />
+    <Tabs.Screen component={CaptureScreen} name="Capture" options={{ tabBarLabelStyle: { color: colors.coralDark, fontSize: simple ? 14 : 11, fontWeight: "800" } }} />
     <Tabs.Screen component={PeopleScreen} name="People" />
     <Tabs.Screen component={MoreScreen} name="More" />
   </Tabs.Navigator>;

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
+import { getDisplayMode } from "@/lib/display-mode.server";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,9 +33,12 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // 设备级显示偏好（标准/大字简洁）。在根布局读取可以避免任何闪烁；
+  // 这只是 UI 密度选择，不影响权限，也让登录页等公共页保持一致缩放。
+  const displayMode = await getDisplayMode();
   return (
-    <html lang="zh-CN" className="h-full antialiased">
+    <html lang="zh-CN" className="h-full antialiased" data-display-mode={displayMode}>
       <body className="min-h-full flex flex-col">
         {children}
         <ServiceWorkerRegistrar />

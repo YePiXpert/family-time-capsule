@@ -6,7 +6,7 @@ import { PRIMARY_NAVIGATION, filterNavigationByCapabilities, isNavigationItemAct
 import { Icon } from "./ui/icons";
 import type { FamilyCapability } from "@/lib/authz/policy";
 
-export function BottomNavigation({ capabilities }: { capabilities: readonly FamilyCapability[] }) {
+export function BottomNavigation({ capabilities, simpleMode = false }: { capabilities: readonly FamilyCapability[]; simpleMode?: boolean }) {
   const pathname = usePathname();
   const navigation = filterNavigationByCapabilities(PRIMARY_NAVIGATION, capabilities);
   return (
@@ -17,6 +17,8 @@ export function BottomNavigation({ capabilities }: { capabilities: readonly Fami
       >
         {navigation.map((item) => {
           const active = isNavigationItemActive(pathname, item.href);
+          // 简洁模式用更直白的动词，避免「记录」这类抽象名词。
+          const label = simpleMode && item.href === "/capture" ? "说几句" : item.label;
           return (
             <Link
               key={item.href}
@@ -25,9 +27,9 @@ export function BottomNavigation({ capabilities }: { capabilities: readonly Fami
               className={`bottom-nav-item ${item.emphasis ? "bottom-nav-item-emphasis" : ""} ${active ? "is-active" : ""}`}
             >
               <span className="relative">
-                <Icon name={item.icon} size={item.emphasis ? 27 : 23} />
+                <Icon name={item.icon} size={item.emphasis ? (simpleMode ? 30 : 27) : simpleMode ? 26 : 23} />
               </span>
-              <span>{item.label}</span>
+              <span>{label}</span>
             </Link>
           );
         })}

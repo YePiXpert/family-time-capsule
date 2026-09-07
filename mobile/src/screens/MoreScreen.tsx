@@ -3,6 +3,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useApp } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
+import { DisplayModeCard } from "../components/DisplayModeCard";
 
 const nativeEntries = [
   ["离线收藏", "ReadingDownloads", "下载相册和作品，断网阅读并管理容量"],
@@ -24,7 +25,7 @@ const webEntries = [
 
 export function MoreScreen() {
   const navigation = useNavigation<AppNavigation>();
-  const { credentials, viewer } = useApp();
+  const { credentials, viewer, displayMode } = useApp();
   const openWeb = async (path: string) => {
     if (!credentials) {
       navigation.navigate("Settings");
@@ -36,8 +37,19 @@ export function MoreScreen() {
       Alert.alert("无法打开", "请检查服务器地址或系统浏览器设置。");
     }
   };
+  // 大字简洁显示：只保留日常入口与显示切换；高级页面路由不变，切回标准显示即可使用。
+  if (displayMode === "simple") {
+    return <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
+      <Text style={sharedStyles.eyebrow}>我的</Text><Text style={sharedStyles.title}>我的</Text>
+      <DisplayModeCard />
+      <Pressable onPress={() => navigation.navigate("Timeline")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>照片和回忆</Text><Text style={styles.hint}>按时间看家里的照片</Text></View><Text style={styles.arrow}>›</Text></Pressable>
+      <Pressable onPress={() => navigation.navigate("People")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>家人</Text><Text style={styles.hint}>看看每位家人</Text></View><Text style={styles.arrow}>›</Text></Pressable>
+      <Pressable onPress={() => navigation.navigate("Settings")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>设置</Text><Text style={styles.hint}>连接家庭服务器</Text></View><Text style={styles.arrow}>›</Text></Pressable>
+    </ScrollView>;
+  }
   return <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
     <Text style={sharedStyles.eyebrow}>家庭档案的其他部分</Text><Text style={sharedStyles.title}>更多</Text>
+    <DisplayModeCard />
     <Pressable onPress={() => navigation.navigate("Search")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>搜索</Text><Text style={styles.hint}>在原生 App 中查找记忆与讲述</Text></View><Text style={styles.arrow}>›</Text></Pressable>
     {credentials && viewer?.role === "admin" ? <Pressable onPress={() => navigation.navigate("InviteFamily")} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>邀请家人加入</Text><Text style={styles.hint}>生成二维码或一次性链接，家人用自己的账号加入</Text></View><Text style={styles.arrow}>›</Text></Pressable> : null}
     {nativeEntries.map(([label, route, hint]) => <Pressable key={label} onPress={() => navigation.navigate(route)} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}><View style={styles.grow}><Text style={styles.title}>{label}</Text><Text style={styles.hint}>{hint}</Text></View><Text style={styles.arrow}>›</Text></Pressable>)}

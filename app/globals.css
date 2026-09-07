@@ -96,6 +96,59 @@ body {
   }
 }
 
+/*
+ * 大字简洁显示（长辈阅读，NAV-11）。
+ * 根字号放大让所有 rem 尺寸一起变大；常用控件再增高一档，
+ * 底部导航字号加大。只改布局密度，不隐藏权限、不改信息架构。
+ */
+[data-display-mode="simple"],
+[data-display-mode="simple"] body {
+  font-size: 18.5px;
+}
+
+[data-display-mode="simple"] .app-shell-content {
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
+[data-display-mode="simple"] .bottom-navigation-inner,
+[data-display-mode="simple"] .bottom-nav-item {
+  min-height: 5.5rem;
+}
+
+[data-display-mode="simple"] .bottom-nav-item {
+  gap: 0.35rem;
+  font-size: 1rem;
+}
+
+[data-display-mode="simple"] .mobile-app-header {
+  min-height: 4.5rem;
+}
+
+[data-display-mode="simple"] .icon-button {
+  width: 3rem;
+  height: 3rem;
+}
+
+[data-display-mode="simple"] .ui-button-primary,
+[data-display-mode="simple"] .ui-button-secondary,
+[data-display-mode="simple"] .ui-button-danger,
+[data-display-mode="simple"] .ui-text-link {
+  font-size: 1.05rem;
+}
+
+[data-display-mode="simple"] .ui-button-primary,
+[data-display-mode="simple"] .ui-button-secondary,
+[data-display-mode="simple"] .ui-button-danger {
+  min-height: 3.25rem;
+}
+
+@media (min-width: 1024px) {
+  [data-display-mode="simple"] .sidebar-nav-item {
+    min-height: 3rem;
+    font-size: 1.05rem;
+  }
+}
+
 /* 异形屏 safe-area（PWA/standalone） */
 body {
   padding-left: env(safe-area-inset-left);

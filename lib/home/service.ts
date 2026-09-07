@@ -9,6 +9,7 @@ import { getAsset, getThumbnailMap } from "@/lib/assets/service";
 import { listCapsules } from "@/lib/capsules/service";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { countInbox, getInboxPage, type InboxStatus } from "@/lib/inbox/service";
+import { listRecentVoiceContributions } from "@/lib/contributions/service";
 import { formatAgeLabel, formatPersonAgeLabel } from "@/lib/memories/age";
 import {
   getTimelinePage,
@@ -82,6 +83,15 @@ export type HomeDashboardDto = ReturnType<typeof getBookHome> & {
     periodStart: Date;
     periodEnd: Date;
   };
+  voices: Array<{
+    id: string;
+    memoryEventId: string;
+    eventTitle: string;
+    authorName: string;
+    audioAssetId: string;
+    audioMimeType: string;
+    createdAt: Date;
+  }>;
   upcomingCapsule: null | {
     id: string;
     title: string;
@@ -158,6 +168,7 @@ export async function getHomeDashboard(
     resurfacing,
     milestoneEntries,
     weeklyReview,
+    voices,
   ] =
     await Promise.all([
       countInbox(context.familyId),
@@ -169,6 +180,7 @@ export async function getHomeDashboard(
       getResurfacing(context.familyId, family.timezone, now, 3),
       listMilestoneEntries(context.familyId, 4),
       getReviewOverview(context),
+      listRecentVoiceContributions(context.familyId, 3),
     ]);
 
   const inboxCoverIds = inboxPage.entries
@@ -264,6 +276,7 @@ export async function getHomeDashboard(
           periodEnd: recentStory.periodEnd,
         }
       : null,
+    voices,
     upcomingCapsule: upcomingCapsule
       ? {
           id: upcomingCapsule.id,

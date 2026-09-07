@@ -10,6 +10,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { Icon } from "@/components/ui/icons";
 import { requireFamily } from "@/lib/family/context";
 import { getHomeDashboard } from "@/lib/home/service";
+import { getDisplayMode } from "@/lib/display-mode.server";
+import { SimpleHome } from "./simple-home";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "今天 · Family Time Capsule" };
@@ -43,7 +45,13 @@ function capsuleUnlockLabel(capsule: NonNullable<Dashboard["upcomingCapsule"]>) 
 
 export default async function HomePage() {
   const context = await requireFamily();
-  const dashboard = await getHomeDashboard(context);
+  const [dashboard, displayMode] = await Promise.all([
+    getHomeDashboard(context),
+    getDisplayMode(),
+  ]);
+  if (displayMode === "simple") {
+    return <SimpleHome dashboard={dashboard} />;
+  }
   const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
     dateStyle: "long",
     timeZone: dashboard.family.timezone,

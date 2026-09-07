@@ -77,6 +77,9 @@ type AppContextValue = {
   message: string | null;
   /** 首次欢迎页是否已处理：null 表示还在读取本机状态。 */
   welcomeSeen: boolean | null;
+  /** 设备级显示偏好（标准/大字简洁）；null 表示还在读取。切换账号不改变它。 */
+  displayMode: "standard" | "simple" | null;
+  setDisplayMode: (mode: "standard" | "simple") => Promise<void>;
   /** 账号已建立但尚未建立/绑定家庭：登录不算失败，应继续初始化。 */
   needsOnboarding: boolean;
   /** 当前目的地的同步授权；null 表示尚未授权（有待传记录时会弹出授权门）。 */
@@ -121,6 +124,7 @@ export function AppProvider({
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [welcomeSeen, setWelcomeSeenState] = useState<boolean | null>(null);
+  const [displayMode, setDisplayModeState] = useState<"standard" | "simple" | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [syncConsent, setSyncConsentState] = useState<SyncConsent | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -151,6 +155,7 @@ export function AppProvider({
       cachedHome,
       welcomeDone,
       consent,
+      displayModeValue,
     ] = await Promise.all([
       listTimeline(),
       getCachedFamily(),
@@ -161,6 +166,7 @@ export function AppProvider({
       getCachedMobileHome(),
       getMeta("welcome_done"),
       getSyncConsent(),
+      getMeta("display_mode"),
     ]);
     if (generation !== destGenRef.current) return;
     setEvents(nextEvents);
@@ -171,6 +177,7 @@ export function AppProvider({
     setLastSyncAt(nextSyncAt);
     setHome(cachedHome);
     setWelcomeSeenState(welcomeDone === "1");
+    setDisplayModeState(displayModeValue === "simple" ? "simple" : "standard");
     consentRef.current = consent;
     setSyncConsentState(consent);
   }, []);
@@ -419,6 +426,12 @@ export function AppProvider({
     setWelcomeSeenState(true);
   }, []);
 
+  /** 设备级显示偏好：只写本机 meta，不进入任何账号/家庭状态。 */
+  const setDisplayMode = useCallback(async (mode: "standard" | "simple") => {
+    await setMeta("display_mode", mode);
+    setDisplayModeState(mode);
+  }, []);
+
   /** App 内建立家庭；成功后立即开始第一次同步。 */
   const completeOnboarding = useCallback(async (input: OnboardingInput) => {
     if (!credentials || connecting.current) throw new Error("尚未登录或正在切换连接。");
@@ -582,6 +595,7 @@ export function AppProvider({
     syncing,
     message,
     welcomeSeen,
+    displayMode,
     needsOnboarding,
     syncConsent,
     awaitingSyncConsent,
@@ -592,6 +606,7 @@ export function AppProvider({
     connect,
     disconnect,
     setWelcomeSeen,
+    setDisplayMode,
     completeOnboarding,
     grantSyncConsent,
     keepOutboxItemLocal: keepItemLocal,
@@ -600,9 +615,9 @@ export function AppProvider({
     dismissMessage: () => setMessage(null),
   }), [
     awaitingSyncConsent, clearLocal, completeOnboarding, connect, credentials,
-    deleteOutboxCapture, disconnect, events, family, grantSyncConsent, home,
-    keepItemLocal, lastSyncAt, message, needsOnboarding, network.isConnected,
-    outbox, people, queued, reloadLocal, runSync, setWelcomeSeen,
+    deleteOutboxCapture, disconnect, displayMode, events, family, grantSyncConsent,
+    home, keepItemLocal, lastSyncAt, message, needsOnboarding, network.isConnected,
+    outbox, people, queued, reloadLocal, runSync, setDisplayMode, setWelcomeSeen,
     syncConsent, syncing, userId, viewer, welcomeSeen,
   ]);
 
