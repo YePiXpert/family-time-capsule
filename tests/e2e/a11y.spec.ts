@@ -23,9 +23,9 @@ test("仅用键盘完成登录（Tab/Enter）", async ({ page }) => {
   }
 
   const email = page.getByLabel("邮箱");
-  const password = page.getByLabel("密码");
   await email.focus();
   await page.keyboard.type("admin@example.com");
+  // Tab 进入密码框后继续只用键盘
   await page.keyboard.press("Tab");
   await page.keyboard.type("e2e-admin-password");
   await page.keyboard.press("Tab");

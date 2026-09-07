@@ -145,7 +145,7 @@
 | FIND-2 | 关键词/人物/日期/媒体/标签筛选无AI可用;离线对合法缓存可用 | 不下发无授权索引 | 部分实现(GLM-B:原生离线搜索已落地——仅搜本机已保存内容[timeline/memory 详情缓存/本机记录/已下载相册作品],索引按 scope(serverUrl+instanceId+token+userId+familyId)与阅读 scope 双重隔离,撤权/换号/清缓存即失效;离线自动降级并明确告知搜索范围,只剩索引的内容如实提示需联网;真机飞行模式与日期筛选离线化待验) | mobile/src/search/offline-search.ts; mobile/src/screens/SearchScreen.tsx |
 | FIND-3 | 自然语言查询:Luna生成受限校验的检索条件→FTS返回来源卡 | 不执行模型SQL;不凭记忆答 | 自动化通过(M7-a 已有受限计划、关键词/人物/时间映射与 Web 来源卡；真实 Luna 检索质量未验收) | lib/search/natural-language.ts; tests/unit/search-natural-language.test.ts |
 | FIND-4 | NL 检索对关键词基线报告 Recall@K/误召回 | 不冒称CLIP | 部分实现(M7-a 合成关键词基线/理想计划上限脚本已存在；尚非真实模型对比评测，fake 只验证失败关闭) | scripts/benchmark-search-nl.mts; BLK-1/8 仅影响真实评测 |
-| FIND-5 | 近似照片:感知hash/时间/批次候选组+清晰度建议;不识别人脸;不自动删 | Live Photo不误合并 | 部分实现(本地分簇有;感知hash待核验) | lib/clusters |
+| FIND-5 | 近似照片:感知hash/时间/批次候选组+清晰度建议;不识别人脸;不自动删 | Live Photo不误合并 | 部分实现(GLM-D:dHash 候选组理由可解释——哈希距离/拍摄时间差/尺寸方向/同一导入批次;字节完全相同(SHA-256 一致)与画面相似严格分开表述,UI 不叫“重复照片”;清晰度仅为“细节最多”提示;Live Photo 组件说明且不当作相似重复;操作为勾选合并/全部保留/去资料库加入相册,无任何删除;按勾选成员合并已支持。感知哈希仍只在内存计算不落库;真机大数据量待验) | lib/clusters/service.ts; app/(protected)/(app)/inbox/cluster-suggestion-ui.tsx |
 | FIND-6 | 相关记忆按时间/人物/标签/相册解释理由;不足少显示 | 不伪装算法相关 | 自动化通过(resurfacing 按真实日期) | lib/memories/resurfacing |
 | FIND-7 | 年/月/日/年龄浏览;全屏;倍速;真实转录定位;返回保留筛选位置 | 不全量预载 | 自动化通过 | calendar; transcripts |
 | FIND-8 | 周/月/年精选、来源周记、原片短回顾;预览后发布;无AI模板成稿 | 许可清楚 | 自动化通过 | lib/review; books/review |

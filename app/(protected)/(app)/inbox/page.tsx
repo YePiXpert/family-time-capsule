@@ -128,21 +128,31 @@ export default async function InboxPage({
     } catch {
       continue;
     }
-    const memberLabels = ids.flatMap((id) => {
+    const members = ids.flatMap((id) => {
       const entry = entryById.get(id);
       if (!entry) return [];
+      const asset =
+        entry.assets.find((candidate) => candidate.type === "image") ??
+        entry.assets[0];
       const label =
         entry.assets[0]?.originalFilename ??
         entry.item.rawText?.trim().slice(0, 16) ??
         "条目";
-      return [label.replace(/\.[a-z0-9]{1,8}$/i, "")];
+      return [{
+        inboxItemId: id,
+        label: label.replace(/\.[a-z0-9]{1,8}$/i, ""),
+        assetId: asset?.id ?? null,
+        thumbAssetId: asset ? (thumbMap.get(asset.id)?.id ?? null) : null,
+        mimeType: asset?.mimeType ?? null,
+      }];
     });
-    if (memberLabels.length < 2) continue; // 成员已不在收件箱 → 由扫描清理
+    if (members.length < 2) continue; // 成员已不在收件箱 → 由扫描清理
     clusters.push({
       id: row.id,
       kind: row.kind,
       reasonText: row.reasonText,
-      memberLabels,
+      memberLabels: members.map((member) => member.label),
+      members,
     });
   }
 

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   clusterSuggestion,
@@ -16,11 +16,14 @@ import type { FamilyContext } from "@/lib/family/context";
 import type { AssetRow } from "@/lib/assets/service";
 
 /**
- * 本地无 AI 的收件箱分簇建议（M3-D）。
+ * 本地无 AI 的收件箱分簇建议（M3-D / FIND-5）。
  *
  * - 不依赖任何外部 AI，AI 完全禁用时仍可运行；
  * - 只读 Asset 原件并在内存计算，不写入任何感知哈希；
- * - 所有建议均为 pending，用户显式接受后才调用已有 merge 流程。
+ * - 所有建议均为 pending，用户显式接受后才调用已有 merge 流程；
+ * - 「字节完全相同（SHA-256 一致）」与「画面看起来很相似（感知哈希接近）」
+ *   是两个概念：理由文本分开表述，UI 不把相似候选叫“重复照片”；
+ * - 不识别人脸、绝不建议删除照片；清晰度只是提示，不自动选择。
  */
 
 export type ClusterKind = "time_proximity" | "similar_media" | "live_photo_pair";
@@ -96,6 +99,30 @@ async function computeDhash(buffer: Buffer): Promise<string | null> {
       (hi >>> 0).toString(16).padStart(8, "0") +
       (lo >>> 0).toString(16).padStart(8, "0")
     );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 清晰度参考分：64×64 灰度的标准差（细节越多分越高）。
+ * 只用于“哪一张细节最多”的提示，绝不用来自动选择或删除。
+ */
+export async function computeImageFocusScore(buffer: Buffer): Promise<number | null> {
+  try {
+    const sharp = (await import("sharp")).default;
+    const { data } = await sharp(buffer)
+      .greyscale()
+      .resize(64, 64, { fit: "fill" })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const pixels = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    let sum = 0;
+    for (const value of pixels) sum += value;
+    const mean = sum / pixels.length;
+    let variance = 0;
+    for (const value of pixels) variance += (value - mean) ** 2;
+    return Math.sqrt(variance / pixels.length);
   } catch {
     return null;
   }
@@ -205,20 +232,102 @@ function buildTimeProximityGroups(entries: InboxEntry[]): Map<string, InboxEntry
   return groups;
 }
 
+export type HashedItem = {
+  entry: InboxEntry;
+  asset: AssetRow;
+  hash: string;
+  focusScore: number | null;
+};
+
+function formatSpan(ms: number): string {
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))} 秒`;
+  if (ms < 3_600_000) return `${formatMinutes(ms)} 分钟`;
+  return `${Math.round(ms / 3_600_000)} 小时`;
+}
+
+/** 同一导入批次（import_session_item）→ 批次来源标签，用于解释“为什么放在一起”。 */
+function sharedImportBatches(assetIds: string[]): string[] {
+  if (assetIds.length === 0) return [];
+  const rows = getDb().all<{ source: string }>(sql`
+    select distinct s.source from import_session_item i
+    join import_session s on s.id = i.import_session_id
+    where i.asset_id in (${sql.join(assetIds.map((id) => sql`${id}`), sql`, `)})
+    group by i.import_session_id
+    having count(distinct i.asset_id) >= 2
+  `);
+  return rows.map((row) => row.source);
+}
+
+/**
+ * 组装“相似候选”的可解释理由。
+ * 字节完全相同（SHA-256 一致）与画面相似严格分开表述；
+ * 依据只陈述事实（哈希距离/时间/尺寸/批次），不给“删除哪张”的建议。
+ */
+export function describeSimilarGroup(items: HashedItem[]): string {
+  const images = items.filter((item) => isImageForHash(item.asset));
+  const shas = new Set(images.map((item) => item.asset.sha256));
+  const parts: string[] = [];
+
+  if (images.length >= 2 && shas.size === 1) {
+    parts.push("字节完全相同（SHA-256 一致）");
+  } else {
+    parts.push("画面看起来很相似");
+  }
+
+  let maxPairDistance = 0;
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const distance = hammingDistance(items[i].hash, items[j].hash);
+      if (distance > maxPairDistance) maxPairDistance = distance;
+    }
+  }
+  parts.push(`感知哈希距离 ≤${Math.max(1, maxPairDistance)}`);
+
+  const times = images
+    .map((item) => effectiveCapturedAt(item.asset).getTime())
+    .filter((value) => Number.isFinite(value));
+  if (times.length >= 2) {
+    const span = Math.max(...times) - Math.min(...times);
+    if (span <= 24 * 3_600_000) parts.push(`拍摄时间相差 ${formatSpan(span)}`);
+  }
+
+  const sizeKeys = new Set(
+    images.map((item) => `${item.asset.width ?? "?"}×${item.asset.height ?? "?"}`),
+  );
+  if (images.length >= 2 && sizeKeys.size === 1 && ![...sizeKeys][0].includes("?")) {
+    parts.push("尺寸与方向相同");
+  }
+
+  const batches = sharedImportBatches(images.map((item) => item.asset.id));
+  if (batches.length > 0) parts.push("来自同一导入批次");
+
+  const scored = images
+    .filter((item) => item.focusScore !== null)
+    .sort((a, b) => (b.focusScore ?? 0) - (a.focusScore ?? 0));
+  if (scored.length >= 2 && (scored[0].focusScore ?? 0) > (scored[scored.length - 1].focusScore ?? 0)) {
+    parts.push(`其中「${scored[0].asset.originalFilename}」细节最多，可优先查看`);
+  }
+
+  return parts.join(" · ");
+}
+
 async function buildSimilarMediaGroups(
   entries: InboxEntry[],
-): Promise<Map<string, InboxEntry[]>> {
-  const groups = new Map<string, InboxEntry[]>();
+): Promise<Map<string, { members: InboxEntry[]; reason: string }>> {
+  const groups = new Map<string, { members: InboxEntry[]; reason: string }>();
   const storage = getAssetStorage();
   const imageAssets = itemImages(entries);
 
-  const hashes = new Map<string, { entry: InboxEntry; asset: AssetRow; hash: string }>();
+  const hashes = new Map<string, HashedItem>();
   for (const item of imageAssets) {
     try {
       const buffer = storage.read(item.asset.storageKey);
-      const hash = await computeDhash(buffer);
+      const [hash, focusScore] = await Promise.all([
+        computeDhash(buffer),
+        computeImageFocusScore(buffer),
+      ]);
       if (hash) {
-        hashes.set(item.asset.id, { entry: item.entry, asset: item.asset, hash });
+        hashes.set(item.asset.id, { entry: item.entry, asset: item.asset, hash, focusScore });
       }
     } catch {
       // 单张图片读取/哈希失败不影响整体扫描
@@ -233,7 +342,7 @@ async function buildSimilarMediaGroups(
       map.set(item.entry.item.id, list);
       return map;
     },
-    new Map<string, { entry: InboxEntry; asset: AssetRow; hash: string }[]>(),
+    new Map<string, HashedItem[]>(),
   );
 
   for (const items of byEntry.values()) {
@@ -271,7 +380,12 @@ async function buildSimilarMediaGroups(
     const members = entries.filter((e) => memberIds.includes(e.item.id));
     if (members.length < 2) continue;
     const key = memberKey("similar_media", memberIds);
-    groups.set(key, members);
+    groups.set(key, {
+      members,
+      reason: describeSimilarGroup(
+        [...hashes.values()].filter((item) => memberIds.includes(item.entry.item.id)),
+      ),
+    });
   }
   return groups;
 }
@@ -408,15 +522,15 @@ export async function scanInboxClusters(
     }
   }
 
-  const groups = new Map<string, { kind: ClusterKind; members: InboxEntry[] }>();
+  const groups = new Map<string, { kind: ClusterKind; members: InboxEntry[]; reason?: string }>();
 
   for (const [key, members] of buildTimeProximityGroups(cappedEntries)) {
     groups.set(key, { kind: "time_proximity", members });
   }
 
   const similarGroups = await buildSimilarMediaGroups(cappedEntries);
-  for (const [key, members] of similarGroups) {
-    groups.set(key, { kind: "similar_media", members });
+  for (const [key, { members, reason }] of similarGroups) {
+    groups.set(key, { kind: "similar_media", members, reason });
   }
 
   for (const [key, members] of buildLivePhotoGroups(cappedEntries)) {
@@ -425,7 +539,7 @@ export async function scanInboxClusters(
 
   let created = 0;
   const now = new Date();
-  for (const { kind, members } of groups.values()) {
+  for (const { kind, members, reason } of groups.values()) {
     const ids = sortedIds(members.map((m) => m.item.id));
     const key = memberKey(kind, ids);
     if (existing.has(key)) continue;
@@ -437,7 +551,7 @@ export async function scanInboxClusters(
         familyId,
         kind,
         inboxItemIdsJson: JSON.stringify(ids),
-        reasonText: buildReasonText(kind, members),
+        reasonText: reason ?? buildReasonText(kind, members),
         status: "pending",
         createdAt: now,
         resolvedAt: null,
@@ -471,6 +585,8 @@ export async function resolveClusterSuggestion(
   suggestionId: string,
   action: "accept" | "dismiss",
   titleOverride?: string,
+  /** 接受时可只合并选中的成员（至少 2 个）；缺省合并全部。 */
+  selectedIds?: string[],
 ): Promise<ResolveClusterResult> {
   assertFamilyCapability(context.role, "inbox:review");
   const { familyId, userId } = context;
@@ -494,6 +610,12 @@ export async function resolveClusterSuggestion(
     itemIds = JSON.parse(row.inboxItemIdsJson) as string[];
   } catch {
     return { ok: false, error: "invalid_members" };
+  }
+
+  if (action === "accept" && selectedIds) {
+    const valid = selectedIds.filter((id) => itemIds.includes(id));
+    if (valid.length < 2) return { ok: false, error: "too_few_members" };
+    itemIds = valid;
   }
 
   const now = new Date();

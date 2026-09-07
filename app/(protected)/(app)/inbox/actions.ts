@@ -263,6 +263,7 @@ export async function resolveClusterAction(
   const suggestionId = String(formData.get("suggestionId") ?? "");
   const action = String(formData.get("action") ?? "");
   const titleOverride = String(formData.get("title") ?? "").trim();
+  const selectedIds = formData.getAll("member").map((value) => String(value));
   if (action !== "accept" && action !== "dismiss") {
     return { error: "未知操作。" };
   }
@@ -271,9 +272,13 @@ export async function resolveClusterAction(
     suggestionId,
     action,
     titleOverride || undefined,
+    action === "accept" ? selectedIds : undefined,
   );
   revalidatePath("/inbox");
   if (!result.ok) {
+    if (result.error === "too_few_members") {
+      return { error: "至少选择两份再合并。" };
+    }
     return { error: "分簇建议不存在、已处理或成员已变化。" };
   }
   if (result.eventId) {
