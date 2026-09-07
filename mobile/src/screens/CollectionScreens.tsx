@@ -182,7 +182,7 @@ export function CollectionsScreen({
           ) : null}
           <Text style={s.cardTitle}>{c.title}</Text>
           <Text style={s.body}>
-            {c.count} 条可见记忆 · {c.kind === "album" ? "主题相册" : "章节"}
+            {c.count} 份可见内容 · {c.kind === "album" ? "主题相册" : "章节"}
           </Text>
           <Text style={s.body}>{c.description}</Text>
         </Pressable>
@@ -490,15 +490,15 @@ export function CollectionDetailScreen({
             <>
               <Pressable
                 onPress={() =>
-                  navigation.navigate("Memory", { id: item.memoryEventId! })
+                  item.assetId ? navigation.navigate("AssetDetail", { id: item.assetId }) : navigation.navigate("Memory", { id: item.memoryEventId! })
                 }
               >
                 <Text style={s.cardTitle}>{item.source.title}</Text>
                 <Text style={s.body}>
-                  {new Intl.DateTimeFormat("zh-CN", {
+                  {item.source.occurredAt ? new Intl.DateTimeFormat("zh-CN", {
                     dateStyle: "long",
                     timeZone: doc.timezone,
-                  }).format(new Date(item.source.occurredAt))}
+                  }).format(new Date(item.source.occurredAt)) : "时间待补"}
                 </Text>
               </Pressable>
               {item.source.previewAssetId && credentials ? (

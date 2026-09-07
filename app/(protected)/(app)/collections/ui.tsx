@@ -163,7 +163,7 @@ export function CollectionsClient() {
               <div className="p-4">
                 <p className="text-sm text-muted">
                   {c.kind === "chapter" ? "章节" : "主题相册"} · {c.count}{" "}
-                  条可见记忆
+                  份可见内容
                 </p>
                 <h2 className="break-words text-xl">{c.title}</h2>
                 <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-muted">
@@ -303,7 +303,7 @@ export function CollectionEditor({ id }: { id: string }) {
         <>
           <p className="text-sm text-muted">
             版本 {doc.revision} · {doc.items.filter((i) => i.source).length}{" "}
-            条可见记忆{doc.deletedAt ? " · 在回收站中" : ""}
+            份可见内容{doc.deletedAt ? " · 在回收站中" : ""}
           </p>
           {doc.canWrite && !doc.deletedAt ? (
             <button
@@ -529,15 +529,15 @@ export function CollectionEditor({ id }: { id: string }) {
                     <>
                       <Link
                         className="ui-text-link break-words text-lg"
-                        href={`/memories/${item.memoryEventId}`}
+                        href={item.assetId ? `/library/${item.assetId}` : `/memories/${item.memoryEventId}`}
                       >
                         {item.source.title}
                       </Link>
                       <p className="text-sm text-muted">
-                        {new Intl.DateTimeFormat("zh-CN", {
+                        {item.source.occurredAt ? new Intl.DateTimeFormat("zh-CN", {
                           dateStyle: "long",
                           timeZone: doc.timezone,
-                        }).format(new Date(item.source.occurredAt))}
+                        }).format(new Date(item.source.occurredAt)) : "时间待补"}
                       </p>
                       {item.source.previewAssetId ? (
                         <Image

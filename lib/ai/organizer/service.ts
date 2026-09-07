@@ -10,13 +10,13 @@ import { assetTranscript } from "@/db/schema/transcript";
 import { createContributionAccessSnapshot, getContributionAssetAccessInTransaction, type ContributionAccessTransaction as Tx } from "@/lib/authz/contribution-access";
 import type { FamilyContext } from "@/lib/family/context";
 import { getNameReview } from "@/lib/names/service";
-import { requestEventSuggestions, requestInboxItemSuggestions } from "@/lib/suggestions/service";
+import { requestEventSuggestions, requestInboxItemSuggestions, requestAssetNameSuggestion } from "@/lib/suggestions/service";
 import { requestTranscription } from "@/lib/transcripts/service";
 import { aiJobSourcesAreReadable, getAiOperationalStatus, requestAiJobCancellation, retryAiJob, type AiJobServiceDependencies } from "@/lib/ai/jobs/service";
 import { aiJobFailureMessage } from "@/lib/ai/job-messages";
 import type { OrganizerReview, OrganizerTarget, OrganizerTask, OrganizerOperation } from "@/mobile/src/ai/organizer-types";
 
-const namingTypes = ["suggest.inbox_item.v1", "suggest.event_metadata.v1"];
+const namingTypes = ["suggest.asset_name.v1", "suggest.inbox_item.v1", "suggest.event_metadata.v1"];
 const supportedTypes = [...namingTypes, "transcribe.asset.v1"];
 function targetExists(tx: Tx, context: FamilyContext, target: OrganizerTarget): boolean {
   if (target.kind === "memory_event") return Boolean(tx.select({ id: memoryEvent.id }).from(memoryEvent).where(and(eq(memoryEvent.id, target.id), eq(memoryEvent.familyId, context.familyId), isNull(memoryEvent.deletedAt))).get());
@@ -26,7 +26,7 @@ function targetExists(tx: Tx, context: FamilyContext, target: OrganizerTarget): 
     return ids.every(row => getContributionAssetAccessInTransaction(tx, createContributionAccessSnapshot(context), row.id).readable);
   }
   const original = tx.select().from(asset).where(and(eq(asset.id, target.id), eq(asset.familyId, context.familyId), isNull(asset.originalAssetId))).get();
-  return Boolean(original && ["audio", "video"].includes(original.type) && getContributionAssetAccessInTransaction(tx, createContributionAccessSnapshot(context), target.id).readable);
+  return Boolean(original && getContributionAssetAccessInTransaction(tx, createContributionAccessSnapshot(context), target.id).readable);
 }
 function targetJobs(tx: Tx, context: FamilyContext, target: OrganizerTarget) {
   const linked = target.kind === "memory_event" ? tx.select({ id: inboxItem.id }).from(inboxItem).where(and(eq(inboxItem.familyId, context.familyId), eq(inboxItem.memoryEventId, target.id), eq(inboxItem.status, "confirmed"))).all().map(row => row.id) : [];
@@ -67,7 +67,7 @@ export function mutateOrganizer(context: FamilyContext, target: OrganizerTarget,
     if (!targetExists(tx, context, target)) return { ok: false, error: "not_found" };
     const jobs = targetJobs(tx, context, target);
     if (operation === "name") {
-      if (target.kind === "asset") return { ok: false, error: "invalid_input" };
+      if (target.kind === "asset") return requestAssetNameSuggestion(context, target.id, options);
       return target.kind === "inbox_item" ? requestInboxItemSuggestions(context, target.id, options) : requestEventSuggestions(context, target.id, options);
     }
     if (operation === "transcribe") return target.kind === "asset" ? requestTranscription(context, target.id, options) : { ok: false, error: "invalid_input" };
@@ -75,9 +75,9 @@ export function mutateOrganizer(context: FamilyContext, target: OrganizerTarget,
     if (!job) return { ok: false, error: "not_found" };
     if (operation === "cancel") return requestAiJobCancellation(context, job.id, options);
     if (operation === "retry") return retryAiJob(context, job.id, options);
-    if (operation !== "regenerate" || job.status !== "completed" || !namingTypes.includes(job.jobType) || target.kind === "asset") return { ok: false, error: "invalid_input" };
+    if (operation !== "regenerate" || job.status !== "completed" || !namingTypes.includes(job.jobType)) return { ok: false, error: "invalid_input" };
     // An explicit repeat is bounded to this prior job; duplicate taps reuse it.
-    const result = target.kind === "inbox_item" ? requestInboxItemSuggestions(context, target.id, { ...options, regenerateFrom: job.id }) : requestEventSuggestions(context, target.id, { ...options, regenerateFrom: job.id });
+    const result = target.kind === "asset" ? requestAssetNameSuggestion(context, target.id, { ...options, regenerateFrom: job.id }) : target.kind === "inbox_item" ? requestInboxItemSuggestions(context, target.id, { ...options, regenerateFrom: job.id }) : requestEventSuggestions(context, target.id, { ...options, regenerateFrom: job.id });
     if (result.ok) tx.update(aiSuggestion).set({ status: "rejected", revision: sql`${aiSuggestion.revision} + 1`, resolvedByUserId: context.userId, resolvedAt: new Date() }).where(and(eq(aiSuggestion.createdByJobId, job.id), eq(aiSuggestion.familyId, context.familyId), eq(aiSuggestion.status, "pending"))).run();
     return result;
   }, { behavior: "immediate" });

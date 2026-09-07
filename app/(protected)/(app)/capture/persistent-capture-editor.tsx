@@ -21,7 +21,7 @@ async function requestDraft(id: string, path: string, body: unknown, method = "P
   return result;
 }
 
-export function PersistentCaptureEditor({ people, canArchive, scope, timezone }: { people: Person[]; canArchive: boolean; scope: string; timezone: string }) {
+export function PersistentCaptureEditor({ people, canArchive, scope, timezone, initialServerDraft }: { people: Person[]; canArchive: boolean; scope: string; timezone: string; initialServerDraft?: Draft }) {
   const [draft, setDraft] = useState<BrowserDraft | null>(null);
   const [drafts, setDrafts] = useState<BrowserDraft[]>([]);
   const [serverDrafts, setServerDrafts] = useState<Draft[]>([]);
@@ -90,6 +90,20 @@ export function PersistentCaptureEditor({ people, canArchive, scope, timezone }:
         } catch { /* Offline continuation retains the last durable local snapshot. */ }
       }
       if (!active) return;
+      if (initialServerDraft) {
+        const existing = rows.find(row => row.id === initialServerDraft.id);
+        if (initialServerDraft.items.some(item => !item.assetId && !existing?.content.items.find(local => local.id === item.id)?.localCaptureRef)) {
+          setNotice("这份草稿还有素材留在原设备，请先在那里完成上传。已收到的原件仍可从资料库打开。"); setDrafts(rows); return;
+        }
+        if (!existing || existing.revision === existing.syncedRevision) {
+          const revision = (existing?.revision ?? 0) + 1;
+          const row: BrowserDraft = { id: initialServerDraft.id, scope, content: { ...initialServerDraft, items: initialServerDraft.items.map(item => ({ ...item, localCaptureRef: existing?.content.items.find(i => i.id === item.id)?.localCaptureRef ?? null })) }, revision, serverRevision: initialServerDraft.revision, syncedRevision: revision, mutationId: crypto.randomUUID(), status: initialServerDraft.status, memoryEventId: initialServerDraft.memoryEventId, updatedAt: initialServerDraft.updatedAt };
+          await writeBrowserDraft(row, existing?.revision ?? 0);
+          current.current = row; committed.current = row.revision; setDraft(row); setSaved(true); await refreshList(); return;
+        }
+        current.current = existing; committed.current = existing.revision; setDraft(existing); setSaved(true);
+        setNotice("这份草稿还有本机修改，请先核对后再同步。服务器新加入的资料引用仍保留。"); setDrafts(rows); return;
+      }
       setDrafts(rows);
       const existing = rows.find(row => row.status === "editing" || row.status === "queued");
       if (existing) { current.current = existing; committed.current = existing.revision; setDraft(existing); setSaved(true); }
@@ -97,7 +111,7 @@ export function PersistentCaptureEditor({ people, canArchive, scope, timezone }:
     }).catch(error => setDiskError(message(error)));
     void fetch("/api/mobile/v1/drafts").then(r => r.ok ? r.json() : null).then(body => { if (active && body) setServerDrafts(body.drafts); }).catch(() => {});
     return () => { active = false; mounted.current = false; recorder.current?.stop(); recordingStream.current?.getTracks().forEach(track => track.stop()); };
-  }, [scope, create]);
+  }, [scope, create, initialServerDraft, refreshList]);
 
   useEffect(() => {
     let active = true;
@@ -208,7 +222,9 @@ export function PersistentCaptureEditor({ people, canArchive, scope, timezone }:
     if (syncing || failed.current) return;
     const existing = (await listBrowserDrafts(scope)).find(d => d.id === row.id);
     if (existing && existing.revision !== existing.syncedRevision) { setNotice("本机还有未送达的修改，请先继续本机草稿，避免覆盖。"); return; }
-    const local: BrowserDraft = { id: row.id, scope, content: row, revision: (existing?.revision ?? 0) + 1, serverRevision: row.revision, syncedRevision: (existing?.revision ?? 0) + 1, mutationId: crypto.randomUUID(), status: "editing", memoryEventId: row.memoryEventId, updatedAt: row.updatedAt };
+    if (row.status !== "editing") throw new Error("这份草稿已提交或关闭，请刷新后核对。");
+    if (row.items.some(item => !item.assetId)) throw new Error("这份草稿还有素材留在原设备，请先在那里完成上传。");
+    const local: BrowserDraft = { id: row.id, scope, content: { ...row, items: row.items.map(item => ({ ...item, localCaptureRef: null })) }, revision: (existing?.revision ?? 0) + 1, serverRevision: row.revision, syncedRevision: (existing?.revision ?? 0) + 1, mutationId: crypto.randomUUID(), status: "editing", memoryEventId: row.memoryEventId, updatedAt: row.updatedAt };
     await writeBrowserDraft(local, existing?.revision ?? 0); await resume(local); await refreshList();
   }
   async function discard() {

@@ -59,6 +59,7 @@ export function TimelineScreen() {
               </Text>
             </Pressable>
           ) : null}
+          <Pressable accessibilityRole="button" onPress={() => navigation.navigate("AssetLibrary")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>资料 · 所有照片、声音与文档</Text></Pressable>
           <Pressable
             onPress={() => navigation.navigate("Collections")}
             style={sharedStyles.secondaryButton}

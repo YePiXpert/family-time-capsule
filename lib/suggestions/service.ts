@@ -538,3 +538,17 @@ export async function resolveInboxSuggestion(
 
   return { ok: true };
 }
+
+export function requestAssetNameSuggestion(context: FamilyContext, assetId: string, options: AiJobServiceDependencies & { regenerateFrom?: string } = {}): SuggestionRequestResult {
+  try { assertFamilyCapability(context.role, "ai:review"); } catch { return { ok: false, error: "forbidden" }; }
+  try {
+    return (options.database ?? getDb()).transaction(tx => {
+      const original = tx.select().from(assetTable).where(and(eq(assetTable.id, assetId), eq(assetTable.familyId, context.familyId), isNull(assetTable.originalAssetId))).get();
+      if (!original) return { ok: false as const, error: "asset_not_found" };
+      const { dependencies, generation } = organizerMediaStages(tx, context, [original], "asset-name-v1", options);
+      const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.asset_name.v1", entityType: "asset", entityId: original.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation: `${generation}:${original.nameRevision}:${original.metadataRevision}:${options.regenerateFrom ?? ""}`, sources: [{ kind: "asset", id: original.id }] }, options);
+      if (!result.ok) throw new OrganizerEnqueueError(result);
+      return result;
+    }, { behavior: "immediate" });
+  } catch (error) { if (error instanceof OrganizerEnqueueError) return error.result; throw error; }
+}

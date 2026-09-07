@@ -1,3 +1,4 @@
+import { assetDeletion } from "@/db/schema/asset-deletion";
 import { collectDraftArchive } from "@/lib/drafts/archive";
 import { collectNameReviews, parseNameReviews } from "@/lib/names/archive";
 import "server-only";
@@ -68,7 +69,7 @@ import { getFamily } from "@/lib/family/service";
 export const EXPORT_VERSION = 1;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 27 + COLLECTION_FILES.length + BOOK_FILES.length;
+export const EXPORT_NON_ASSET_FILE_COUNT = 28 + COLLECTION_FILES.length + BOOK_FILES.length;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -209,7 +210,7 @@ export async function buildFamilyExport(
   const eventIds = events.map((e) => e.id);
   // Capture review records before opening the ZIP and reject an inconsistent
   // title snapshot rather than emitting an archive that cannot be restored.
-  const nameReviews = parseNameReviews(collectNameReviews(familyId, new Set(eventIds), new Set(inboxItems.map(item => item.id))), new Map(events.map(event => [event.id, event.titleRevision])), new Map(inboxItems.map(item => [item.id, item.titleRevision])));
+  const nameReviews = parseNameReviews(collectNameReviews(familyId, new Set(eventIds), new Set(inboxItems.map(item => item.id)), new Set(assets.map(a => a.id))), new Map(events.map(event => [event.id, event.titleRevision])), new Map(inboxItems.map(item => [item.id, item.titleRevision])), new Map(assets.map(a => [a.id, a.nameRevision])));
   const [eventAssetLinks, eventParticipantLinks, capsuleEventLinks, capsuleAssetLinks, capsuleContributionLinks] =
     await Promise.all([
       eventIds.length
@@ -256,6 +257,8 @@ export async function buildFamilyExport(
       displayName: a.displayName,
       nameSource: a.nameSource,
       nameRevision: a.nameRevision,
+      participantPersonIds: JSON.parse(a.participantIdsJson),
+      metadataRevision: a.metadataRevision,
       timeSource: a.timeSource,
       width: a.width,
       height: a.height,
@@ -408,7 +411,7 @@ export async function buildFamilyExport(
 
   const manifest = {
     exportVersion: EXPORT_VERSION,
-    modules: { collections: 1, bookProjects: 1, nameReviews: 1, drafts: 1 },
+    modules: { collections: 1, bookProjects: 1, nameReviews: 1, drafts: 1, assetDeletions: 1 },
     appVersion: getAppVersion(),
     exportedAt: new Date().toISOString(),
     familyId,
@@ -465,6 +468,7 @@ export async function buildFamilyExport(
       updatedAt: iso(p.updatedAt),
     })));
     json("memories.json", memoriesJson);
+    json("asset-deletions.json", db.select({ assetId: assetDeletion.assetId, sha256: assetDeletion.sha256, deletedAt: assetDeletion.deletedAt }).from(assetDeletion).where(eq(assetDeletion.familyId, familyId)).all());
     json("drafts.json", collectDraftArchive(familyId, new Set(eventIds)));
     json("inbox-items.json", inboxItemsJson);
     json("inbox-item-assets.json", inboxItemAssetsJson);

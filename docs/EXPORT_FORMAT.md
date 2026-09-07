@@ -247,3 +247,11 @@ BookRenderJob `reading_zip` 与 PDF/EPUB 使用相同版本、目标读者、并
 租约和设备授权不导出。恢复的审核记录不带原任务 ID，不会触发历史外发。
 旧档缺模块按空审核记录处理；缺名称来源/版本使用 legacy_unknown / 0，
 保留既有标题，不按 IMG 或 UUID 模式推断其来源。
+
+## 正式 1.0 开发期资料库与删除记录（0053–0055）
+
+原件的 `participantPersonIds` 和 `metadataRevision` 随 manifest.assets 保存；人物引用必须属于归档人物集合。相册项允许 nullable `assetId`，与 `memoryEventId` 二选一；引用原件无需制造事件。旧档无这些字段时采用空人物/0版本/无直接原件引用。
+
+`name-reviews.json` 增加 asset 类型，保留人工采用/拒绝/撤销记录。`asset-deletions.json` 由 `modules.assetDeletions=1` 声明，每行只含 `{assetId,sha256,deletedAt}`；不含存储路径、操作账户或密钥。已删除 ID 不得同时出现在 manifest 原件中。恢复保留记录，绝不复建被删除原件或从该文件执行磁盘清理。旧档没有删除模块时按空记录处理；不能推断旧快照之后没有发生删除或撤权。
+
+当前完整档固定非原件文件数为 **37**，包含持久 `drafts.json` 与删除记录。独立 verifier 和恢复预检按存在的完整模块计算，兼容旧档。历史快照的后续删除/撤权 reconciliation 仍在正式 1.0 运维阶段处理。

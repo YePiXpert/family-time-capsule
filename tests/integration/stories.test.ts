@@ -488,6 +488,6 @@ describe("M4：Story 生命周期", () => {
     );
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
-    expect(manifest.fileCount).toBe(manifest.assets.length + 36);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 37);
   });
 });

@@ -1,3 +1,4 @@
+import { suggestAssetNameHandler } from "@/lib/ai/handlers/suggest-asset-name";
 import { isSafeJobType } from "@/lib/ai/jobs/validation";
 import { transcribeAssetHandler } from "@/lib/ai/handlers/transcribe-asset";
 import { analyzeAssetImageHandler } from "@/lib/ai/handlers/analyze-asset-image";
@@ -41,6 +42,7 @@ export function createProductionAiJobRegistry(): AiJobRegistry {
     .register("analyze.asset_video.v1", analyzeAssetVideoHandler)
     .register("suggest.event_metadata.v1", suggestEventMetadataHandler)
     .register("suggest.inbox_item.v1", suggestInboxItemHandler)
+    .register("suggest.asset_name.v1", suggestAssetNameHandler)
     .register("generate.story.v1", generateStoryHandler)
     .register("optimize.review_story.v1", optimizeReviewStoryHandler);
 }

@@ -1,3 +1,5 @@
+import { asset } from "@/db/schema/asset";
+import { readableName } from "@/lib/naming";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -128,20 +130,24 @@ export function getCollection(
       createContributionAccessSnapshot(context),
       sql`a.id`,
     );
+    const directIds = items.flatMap(item => item.assetId ? [item.assetId] : []);
+    const directAssets = directIds.length ? tx.select().from(asset).where(and(eq(asset.familyId, context.familyId), inArray(asset.id, directIds), isNull(asset.originalAssetId), readableAssetPredicate(createContributionAccessSnapshot(context), sql`${asset.id}`))).all() : [];
     const covers = tx.all<{
       id: string;
       mediaId: string;
     }>(sql`select a.id,coalesce((select id from asset t where t.original_asset_id=a.id and t.family_id=${context.familyId} and t.derivative_type='thumbnail' order by t.created_at desc,t.id desc limit 1),a.id) as mediaId
-      from asset a where a.id in (select value from json_each(${JSON.stringify([row.coverAssetId, ...events.map((e) => e.coverAssetId)].filter(Boolean))})) and ${readable}
-      and exists (select 1 from memory_event_asset ma where ma.family_id=${context.familyId} and (ma.asset_id=a.id or ma.asset_id=a.original_asset_id) and ma.memory_event_id in (select value from json_each(${JSON.stringify(events.map((e) => e.id))})))`);
+      from asset a where a.id in (select value from json_each(${JSON.stringify([row.coverAssetId, ...events.map((e) => e.coverAssetId), ...directIds].filter(Boolean))})) and ${readable}
+      and (a.id in (select value from json_each(${JSON.stringify(directIds)})) or exists (select 1 from memory_event_asset ma where ma.family_id=${context.familyId} and (ma.asset_id=a.id or ma.asset_id=a.original_asset_id) and ma.memory_event_id in (select value from json_each(${JSON.stringify(events.map((e) => e.id))}))))`);
     const coverMap = new Map(covers.map((a) => [a.id, a.mediaId]));
     const eventMap = new Map(events.map((e) => [e.id, e]));
     const mapped = items.map((item) => {
       const event = item.memoryEventId
         ? eventMap.get(item.memoryEventId)
         : undefined;
+      const original = directAssets.find(a => a.id === item.assetId);
       return {
         id: item.id,
+        assetId: item.assetId,
         memoryEventId: item.memoryEventId,
         sectionId: item.sectionId,
         caption: item.caption,
@@ -157,7 +163,13 @@ export function getCollection(
                 ? (coverMap.get(event.coverAssetId) ?? null)
                 : null,
             }
-          : null,
+          : original ? {
+              title: readableName({ title: original.displayName, source: original.nameSource, mediaType: original.type, originalFilename: original.originalFilename, capturedAt: original.capturedAt, timeSource: original.timeSource, durationMs: original.durationMs, timezone: context.familyTimezone }).text,
+              occurredAt: ["embedded_metadata", "user_confirmed"].includes(original.timeSource) ? original.capturedAt?.toISOString() ?? "" : "",
+              coverAssetId: original.type === "image" ? original.id : null,
+              previewAssetId: original.type === "image" ? coverMap.get(original.id) ?? original.id : null,
+              mediaType: original.type, mimeType: original.mimeType,
+            } : null,
       };
     });
 
@@ -225,7 +237,7 @@ export function listCollections(
     ids = page.map((r) => r.id);
   const counts = ids.length
     ? getDb().all<{ id: string; count: number }>(
-        sql`select ci.collection_id as id,count(*) as count from collection_item ci join memory_event e on e.id=ci.memory_event_id where ci.collection_id in (select value from json_each(${JSON.stringify(ids)})) and ci.family_id=${context.familyId} and e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null group by ci.collection_id`,
+        sql`select ci.collection_id as id,count(*) as count from collection_item ci left join memory_event e on e.id=ci.memory_event_id where ci.collection_id in (select value from json_each(${JSON.stringify(ids)})) and ci.family_id=${context.familyId} and ((e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null) or (ci.asset_id is not null and ${readableAssetPredicate(createContributionAccessSnapshot(context), sql`ci.asset_id`)})) group by ci.collection_id`,
       )
     : [];
   const readable = readableAssetPredicate(
@@ -235,7 +247,7 @@ export function listCollections(
   const covers = ids.length
     ? getDb().all<{ id: string; assetId: string }>(
         sql`select c.id,coalesce((select id from asset t where t.original_asset_id=a.id and t.family_id=${context.familyId} and t.derivative_type='thumbnail' order by t.created_at desc,t.id desc limit 1),a.id) as assetId from collection c join asset a on a.id=c.cover_asset_id where c.id in (select value from json_each(${JSON.stringify(ids)})) and c.family_id=${context.familyId} and ${readable}
-        and exists(select 1 from collection_item ci join memory_event e on e.id=ci.memory_event_id join memory_event_asset ma on ma.memory_event_id=e.id where ci.collection_id=c.id and ci.family_id=${context.familyId} and e.family_id=${context.familyId} and ma.family_id=${context.familyId} and ma.asset_id=a.id and e.status='confirmed' and e.deleted_at is null)`,
+        and (exists(select 1 from collection_item ci where ci.collection_id=c.id and ci.family_id=${context.familyId} and ci.asset_id=a.id) or exists(select 1 from collection_item ci join memory_event e on e.id=ci.memory_event_id join memory_event_asset ma on ma.memory_event_id=e.id where ci.collection_id=c.id and ci.family_id=${context.familyId} and e.family_id=${context.familyId} and ma.family_id=${context.familyId} and ma.asset_id=a.id and e.status='confirmed' and e.deleted_at is null))`,
       )
     : [];
   const last = page.at(-1);
@@ -297,6 +309,12 @@ export function saveCollection(
           .all()
       : [];
     for (const item of edit.items) {
+      if (item.assetId) {
+        const original = tx.select({ id: asset.id }).from(asset).where(and(eq(asset.id, item.assetId), eq(asset.familyId, context.familyId), isNull(asset.originalAssetId), readableAssetPredicate(createContributionAccessSnapshot(context), sql`${asset.id}`))).get();
+        const retained = previous.some(p => p.id === item.id && p.assetId === item.assetId);
+        if (!original && !retained) throw new CollectionError("source_unavailable", 404);
+        continue;
+      }
       const source = sources.find((e) => e.id === item.memoryEventId);
       const existing = previous.find(
         (p) => p.id === item.id && p.memoryEventId === item.memoryEventId,
@@ -315,7 +333,7 @@ export function saveCollection(
       );
       const cover =
         tx.get(sql`select a.id from asset a where a.id=${edit.coverAssetId} and a.original_asset_id is null and a.type='image' and ${readable}
-        and exists(select 1 from memory_event_asset ma join memory_event e on e.id=ma.memory_event_id where ma.asset_id=a.id and ma.family_id=${context.familyId} and e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null and e.id in (select value from json_each(${JSON.stringify(ids)})))`);
+        and (a.id in (select value from json_each(${JSON.stringify(edit.items.flatMap(i => i.assetId ? [i.assetId] : []))})) or exists(select 1 from memory_event_asset ma join memory_event e on e.id=ma.memory_event_id where ma.asset_id=a.id and ma.family_id=${context.familyId} and e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null and e.id in (select value from json_each(${JSON.stringify(ids)}))))`);
       if (!cover) throw new CollectionError("invalid_cover");
     }
     tx.delete(collectionItem).where(eq(collectionItem.collectionId, id)).run();
@@ -383,4 +401,14 @@ export function setCollectionDeleted(
       .run();
   });
   return getCollection(context, id);
+}
+
+/** Add originals directly; no event or copy is created for an album item. */
+export function addAssetsToCollection(context: FamilyContext, id: string, revision: number, assetIds: string[]) {
+  if (!Array.isArray(assetIds) || !assetIds.length || assetIds.length > 200 || assetIds.some(id => typeof id !== "string")) throw new CollectionError("invalid_input");
+  return getDb().transaction(() => {
+    const current = getCollection(context, id);
+    const items = [...current.items, ...[...new Set(assetIds)].filter(id => !current.items.some(item => item.assetId === id)).map(assetId => ({ id: randomUUID(), memoryEventId: null, assetId, sectionId: null, caption: "" }))];
+    return saveCollection(context, id, revision, { ...current, items });
+  }, { behavior: "immediate" });
 }

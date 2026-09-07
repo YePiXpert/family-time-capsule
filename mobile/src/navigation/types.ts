@@ -10,6 +10,8 @@ export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
   Memory: { id: string };
   Search: undefined;
+  AssetLibrary: undefined;
+  AssetDetail: { id: string };
   Settings: undefined;
   Inbox: undefined;
   PersonDetail: { id: string };
@@ -42,7 +44,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Timeline: undefined;
-  Capture: { intent?: CaptureIntent; requestKey?: number } | undefined;
+  Capture: { intent?: CaptureIntent; requestKey?: number; draftId?: string } | undefined;
   People: undefined;
   More: undefined;
 };

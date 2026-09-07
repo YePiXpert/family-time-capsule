@@ -204,6 +204,12 @@ export function getReadingManifest(
               ) || a.id.localeCompare(b.id),
           );
         const blocks: ReadingBlock[] = items.flatMap((item) => {
+          if (item.assetId) {
+            const source = resolve("asset", item.assetId);
+            if (!source.state.available) return [];
+            addMedia(item.assetId);
+            return [{ id: item.id, kind: "text" as const, text: source.text, caption: item.caption, images: media.get(item.assetId)?.type === "image" ? [item.assetId] : [], layout: defaultBookLayout(), sourceLabels: [source.state.label], dateLabel: date(source.state.occurredAt), author: null, memoryEventId: null }];
+          }
           const source = resolve("memory", item.memoryEventId);
           if (!source.state.available) return [];
           const assets = getDb().all<{

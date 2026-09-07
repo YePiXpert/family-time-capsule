@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | NAV-1/2/7 | components/navigation-items.ts、app/(protected)/(app)/layout.tsx、mobile/src/navigation/AppNavigator.tsx | tests/integration/product-shell.test.ts、mobile/tests/navigation-runtime.test.ts(重构后更新) |
 | NAV-3 | app/(protected)/(app)/page.tsx、lib/home | tests/integration/home.test.ts |
-| NAV-4 | app/(protected)/(app)/timeline、lib/memories/calendar | tests/integration/calendar.test.ts、timeline-pagination.test.ts |
+| NAV-4 | app/(protected)/(app)/library、lib/assets/library.ts、mobile/src/screens/AssetLibraryScreen.tsx；timeline/calendar | tests/integration/asset-library.test.ts、asset-library-migration.test.ts；tests/e2e/asset-library.spec.ts；mobile/tests/asset-library-screen.test.ts |
 | NAV-5 | app/(protected)/(app)/capture、mobile/src/screens/CaptureScreen.tsx | mobile/tests/local-*、persistent-draft.test.ts、draft-sync.test.ts；tests/e2e/inbox-draft.spec.ts、persistent-draft.spec.ts |
 | NAV-6 | app/(protected)/(app)/family/[id]、lib/family | tests/integration/onboarding-guardian.test.ts |
 | NAV-8 | design-system/、components/ui | lint/typecheck |
@@ -54,7 +54,7 @@
 | CAP-11 | db/schema/collection.ts(collection_item 引用) | tests/integration/collections.test.ts |
 | CAP-12 | lib/assets/service.ts(hash 复用) | tests/integration/isolation.test.ts |
 | CAP-13 | lib/imports | 部分未实现 |
-| CAP-15 | lib/assets/storage.ts | tests/integration/assets.test.ts |
+| CAP-15 | lib/assets/storage.ts、lib/assets/deletion.ts、0055_asset_deletion_receipts.sql | tests/integration/asset-deletion.test.ts：HTTP/权限/引用守卫/磁盘失败/重启/导出恢复；M9 旧快照 reconciliation 仍待补 |
 
 ## SYNC — 同步
 
@@ -100,7 +100,7 @@
 | AI-18 | lib/authz/contribution-access | tests/integration/contribution-visibility.test.ts |
 | AI-19/20 | db/schema/ai-job(consent)、lib/ai/capabilities | tests/e2e/ai.spec.ts |
 | AI-21 | lib/ai/jobs/service.ts(配额待补) | — |
-| AI-22 | lib/ai/validation.ts | 待补注入测试 |
+| AI-22 | lib/ai/validation.ts、lib/ai/handlers/suggest-asset-name.ts | tests/integration/asset-name.test.ts：OCR 注入、URL/晚到建议拒绝；全部链路统一专项仍待补 |
 | AI-23 | scripts/ai-diagnostics.mts、ftc ai test | live 凭据外部阻塞 |
 
 ## FIND — 检索与回顾
@@ -148,3 +148,9 @@
 | SEC-7 | resources/fonts(OFL)、待补全台账 | — |
 | REL-1 | 全部 | 见 ACCEPTANCE.md |
 | REL-5 | .github/workflows/ci.yml | CI 本身 |
+
+## M3-C 原件资料库补充（2026-09-07）
+
+0053 增加资料人物/metadata revision 与相册 asset 引用；0054 重建 ai_suggestion 增加 asset 类型并保留旧审核历史；0055 保存原件删除记录和本地清理进度。asset-library-migration.test.ts 用真实 0052 数据库验证升级，不清库、不修改旧迁移。
+
+资料补标题复用 NameReview；AI 起名复用既有 CPA/Luna + MiMo/ASR 任务依赖、按证据生成并需人工采用。新增 asset-name.test.ts 覆盖恶意 OCR、禁止 URL、审核导出与晚到结果；不代表真实 provider 验收。原生组件测试覆盖 30 份资料/5 份引用、未整理录音阅读、时间人物修改、显式删除与账号切换晚到响应。

@@ -1,3 +1,4 @@
+import { readableName } from "@/lib/naming";
 import "server-only";
 import { createHash } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -209,23 +210,22 @@ export function createBookSourceResolver(
         const narrow =
           audience === "family" &&
           db.get(
-            sql`select c.id from contribution c join memory_event e on e.id=c.memory_event_id where e.family_id=${context.familyId} and c.audio_asset_id in (${assetDescendants(id)}) and c.deleted_at is null and c.visibility!='family' limit 1`,
+            sql`select c.id from contribution c join memory_event e on e.id=c.memory_event_id where e.family_id=${context.familyId} and c.audio_asset_id in (${assetDescendants(id)}) and c.visibility!='family' limit 1`,
           );
         if (
           row &&
-          event &&
           !narrow &&
           !closedCapsule("asset", id) &&
-          resolve("memory", event.id).state.available
+          (!event || resolve("memory", event.id).state.available)
         )
           result = {
             state: {
               available: true,
               changed: false,
-              label: row.originalFilename,
-              occurredAt: resolve("memory",event.id).state.occurredAt,
-              capturedAt: row.capturedAt?.toISOString() ?? null,
-              ageLabel: resolve("memory",event.id).state.ageLabel,
+              label: readableName({ title: row.displayName, source: row.nameSource, mediaType: row.type, originalFilename: row.originalFilename, capturedAt: row.capturedAt, timeSource: row.timeSource, timezone: context.familyTimezone }).text,
+              occurredAt: event ? resolve("memory",event.id).state.occurredAt : ["user_confirmed", "embedded_metadata"].includes(row.timeSource) ? row.capturedAt?.toISOString() ?? null : null,
+              capturedAt: ["user_confirmed", "embedded_metadata"].includes(row.timeSource) ? row.capturedAt?.toISOString() ?? null : null,
+              ageLabel: event ? resolve("memory",event.id).state.ageLabel : null,
               author: null,
               asset: {
                 id: row.id,
@@ -245,11 +245,11 @@ export function createBookSourceResolver(
               row.sha256,
               row.width,
               row.height,
-              event.id,
+              event?.id ?? null, row.nameRevision, row.metadataRevision,
             ]),
             text: "",
             images: row.type === "image" ? [id] : [],
-            eventId: event.id,
+            eventId: event?.id ?? null,
           };
       } else if (kind === "contribution") {
         const row = db.transaction((tx) =>

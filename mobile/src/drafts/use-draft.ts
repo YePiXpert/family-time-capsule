@@ -113,15 +113,20 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
   }, [write, reload]);
   const retry = useCallback(async () => { failure.current = false; if (current.current) await write(current.current); }, [write]);
   const bind = useCallback(async (id: string) => { await writes.current; const row = await bindLocalDraft(id, scope); await resume(row); await reload(); }, [scope, resume, reload]);
-  const continueServer = useCallback(async (remote: Draft) => {
+  const continueServer = useCallback(async (remote: Draft, isCurrent: () => boolean = () => true) => {
     await writes.current;
+    if (!isCurrent()) return;
+    if (remote.status !== "editing") throw new Error("这份草稿已提交或关闭，请刷新后核对。");
     if (failure.current) throw new Error("请先处理本机保存错误。");
     const existing = (await listLocalDrafts(scope)).find(d => d.id === remote.id);
     if (existing && existing.revision !== existing.syncedRevision) throw new Error("本机有未送达的修改，请先继续本机草稿，避免覆盖。");
     if (remote.items.some(item => !item.assetId)) throw new Error("这份草稿还有素材留在原设备，请先在那里完成上传。");
     const nextRevision = (existing?.revision ?? 0) + 1;
     const row: LocalDraft = { id: remote.id, scope, content: { ...parseDraftContent(remote), items: remote.items.map(item => ({ ...item, localCaptureRef: null })) }, status: "editing", revision: nextRevision, syncedRevision: nextRevision, serverRevision: remote.revision, mutationId: Crypto.randomUUID(), memoryEventId: null, updatedAt: remote.updatedAt };
-    await saveLocalDraft(row, existing?.revision ?? 0); await resume(row); await reload();
+    if (!isCurrent()) return;
+    await saveLocalDraft(row, existing?.revision ?? 0);
+    if (!isCurrent()) return;
+    await resume(row); if (isCurrent()) await reload();
   }, [scope, resume, reload]);
   return { reopen, continueServer, serverDrafts: serverState.scope === scope ? serverState.drafts : [], bind, unboundDrafts, draft: draft?.scope === scope ? draft : null, drafts: drafts.filter(d => d.scope === scope), error, saved, change, addOriginal, save, create, resume, discard, retry, reload };
 }

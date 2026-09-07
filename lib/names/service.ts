@@ -1,3 +1,4 @@
+import { assetNameEvidence } from "@/lib/ai/asset-name-evidence";
 import { draft } from "@/db/schema/draft";
 import "server-only";
 import { randomUUID } from "node:crypto";
@@ -77,6 +78,7 @@ function validRevision(value: unknown): value is number { return Number.isSafeIn
 function validName(value: unknown): value is string { return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 100 && !/[\u0000-\u001f\u007f]/u.test(value); }
 
 function jobTargetsName(tx: Tx, job: typeof aiJob.$inferSelect, kind: NameTargetKind, id: string, fingerprint: string | null): boolean {
+  if (job.jobType === "suggest.asset_name.v1" && fingerprint !== assetNameEvidence(tx, job.familyId, job.entityId).fingerprint) return false;
   if (job.jobType === "suggest.event_metadata.v1" && fingerprint !== eventEvidenceFingerprint(tx, job.familyId, job.entityId, job.id)) return false;
   if (job.jobType === "suggest.inbox_item.v1") {
     // Legacy unversioned suggestions cannot prove the context they used.

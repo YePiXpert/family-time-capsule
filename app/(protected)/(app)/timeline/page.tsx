@@ -105,7 +105,7 @@ export default async function TimelinePage({
     <main className="page-container">
       <PageHeader eyebrow="Memories" title="记忆" description="全家人的记忆按真实发生时间排列，晚上传的旧照片仍会回到它属于的那一天。" />
 
-      <nav aria-label="记忆浏览方式" className="mt-4 flex flex-wrap gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link><Link href="/collections" className="ui-button-secondary">相册</Link>{canReviewInbox ? <Link href="/inbox" className="ui-button-secondary">待整理{inboxCount > 0 ? ` · ${inboxCount > 99 ? "99+" : inboxCount} 条` : ""}</Link> : null}</nav>
+      <nav aria-label="记忆浏览方式" className="mt-4 flex flex-wrap gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href="/library" className="ui-button-secondary">资料</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link><Link href="/collections" className="ui-button-secondary">相册</Link>{canReviewInbox ? <Link href="/inbox" className="ui-button-secondary">待整理{inboxCount > 0 ? ` · ${inboxCount > 99 ? "99+" : inboxCount} 条` : ""}</Link> : null}</nav>
 
       <section aria-label="筛选时间轴" className="mt-6 rounded-2xl border border-line bg-surface p-4">
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" action="/timeline">

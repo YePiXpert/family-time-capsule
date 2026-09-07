@@ -1,3 +1,5 @@
+import { assetDeletion } from "@/db/schema/asset-deletion";
+import { parseAssetDeletions } from "@/lib/assets/deletion-portable.mjs";
 import { parseDraftArchive } from "@/lib/drafts/archive";
 import { draft, draftItem } from "@/db/schema/draft";
 import { parseNameReviews } from "@/lib/names/archive";
@@ -140,6 +142,8 @@ type ManifestAsset = {
   displayName?: string | null;
   nameSource?: string;
   nameRevision?: number;
+  participantPersonIds?: string[];
+  metadataRevision?: number;
   timeSource?: string;
   width?: number | null;
   height?: number | null;
@@ -152,7 +156,7 @@ type Manifest = {
   appVersion?: string;
   familyId: string;
   fileCount: number;
-  modules?: { collections?: number; bookProjects?: number; nameReviews?: number; drafts?: number };
+  modules?: { collections?: number; bookProjects?: number; nameReviews?: number; drafts?: number; assetDeletions?: number };
   assetCount: number;
   assets: ManifestAsset[];
 };
@@ -980,7 +984,7 @@ async function loadAndVerifyZip(
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
     (transcriptsFile ? 1 : 0) +
-    (factSourcesFile ? 1 : 0) + (nameReviewsFile ? 1 : 0) + (archive.has(`${EXPORT_ROOT_DIR}/drafts.json`) ? 1 : 0) +
+    (factSourcesFile ? 1 : 0) + (nameReviewsFile ? 1 : 0) + (archive.has(`${EXPORT_ROOT_DIR}/asset-deletions.json`) ? 1 : 0) + (archive.has(`${EXPORT_ROOT_DIR}/drafts.json`) ? 1 : 0) +
     (hasStoryFiles ? 3 : 0) +
     (hasDialogueFiles ? 2 : 0) +
     (hasDurable11Files ? durable11Names.length : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
@@ -1223,6 +1227,11 @@ async function loadAndVerifyZip(
       `person ${p.id} 的时间字段非法`,
     );
     personIds.add(p.id);
+  }
+  for (const original of manifest.assets) {
+    const ids = original.participantPersonIds ?? [];
+    requireCondition(Array.isArray(ids) && ids.length <= 50 && new Set(ids).size === ids.length && ids.every(id => personIds.has(id)), "bad_manifest", "素材人物引用非法");
+    requireCondition(original.metadataRevision === undefined || (Number.isSafeInteger(original.metadataRevision) && original.metadataRevision >= 0), "bad_manifest", "素材元数据版本非法");
   }
   requireCondition(
     Array.isArray(memoriesJson),
@@ -2441,12 +2450,18 @@ async function loadAndVerifyZip(
     drafts = parseDraftArchive(rawDrafts, { inbox: new Set(inboxItemsJson.map(i => i.id)), assets: assetIds, events: new Set(memoriesJson.map(m => m.id)), people: new Set(peopleJson.map(p => p.id)) });
   } catch { throw new RestoreError("bad_refs", "草稿聚合与原件引用无效"); }
 
+  requireCondition(manifest.modules?.assetDeletions === undefined || (manifest.modules.assetDeletions === 1 && archive.has(`${EXPORT_ROOT_DIR}/asset-deletions.json`)), "missing_json", "声明的原件删除记录缺失或不支持");
+  let assetDeletions;
+  try { assetDeletions = parseAssetDeletions(archive.has(`${EXPORT_ROOT_DIR}/asset-deletions.json`) ? await readJson<unknown>("asset-deletions.json") : [], assetIds); }
+  catch { throw new RestoreError("bad_refs", "原件删除记录无效"); }
+
   let nameReviews;
-  try { nameReviews = parseNameReviews(nameReviewsRaw, new Map(memoriesJson.map(row => [row.id, row.titleRevision ?? 0])), new Map(inboxItemsJson.map(row => [row.id, row.titleRevision ?? 0]))); }
+  try { nameReviews = parseNameReviews(nameReviewsRaw, new Map(memoriesJson.map(row => [row.id, row.titleRevision ?? 0])), new Map(inboxItemsJson.map(row => [row.id, row.titleRevision ?? 0])), new Map(manifest.assets.map(row => [row.assetId, row.nameRevision ?? 0]))); }
   catch { throw new RestoreError("bad_refs", "名称审核版本或目标关系无效"); }
 
   return {
     nameReviews,
+    assetDeletions,
     drafts,
     bookGraph,
     collectionGraph,
@@ -2517,6 +2532,7 @@ async function restoreFromArchive(
   const data = await loadAndVerifyZip(archive, archiveBytes, limits);
   const {
     nameReviews,
+    assetDeletions,
     drafts,
     bookGraph,
     collectionGraph,
@@ -2667,6 +2683,8 @@ async function restoreFromArchive(
                 displayName: a.displayName ?? null,
                 nameSource: nameSource(a.nameSource),
                 nameRevision: a.nameRevision ?? 0,
+                participantIdsJson: JSON.stringify(a.participantPersonIds ?? []),
+                metadataRevision: a.metadataRevision ?? 0,
                 mimeType: a.mimeType,
                 bytes: a.bytes,
                 sha256: a.sha256,
@@ -2909,6 +2927,7 @@ async function restoreFromArchive(
         tx.insert(memoryEventAsset).values(eventAssets).run();
       }
 
+      if (assetDeletions.length) tx.insert(assetDeletion).values(assetDeletions.map(row => ({ ...row, familyId, requestedByUserId: null, storageKeysJson: "[]", cleanedAt: new Date().toISOString() }))).run();
       for (const row of drafts) {
         tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: null, authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
         for (const [sortOrder, item] of row.items.entries()) tx.insert(draftItem).values({ ...item, draftId: row.id, sortOrder }).run();

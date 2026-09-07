@@ -5,11 +5,8 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
   collection,
-  collectionItem,
   guestReadGrant,
 } from "@/db/schema/collection";
-import { asset } from "@/db/schema/asset";
-import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
 import { auditLog } from "@/db/schema/audit";
 import { assertFamilyCapability } from "@/lib/authz/policy";
 import type { FamilyContext } from "@/lib/family/context";
@@ -225,69 +222,35 @@ export type ReadGrantEntryDto = {
   assets: { assetId: string; mimeType: string; type: string }[];
 };
 
-/** 相册条目 = 记忆事件；资产经 memory_event_asset 归入范围。 */
+/** Family-only original metadata follows the same scope and visibility as bytes. */
 export function listReadGrantEntries(grant: ResolvedReadGrant): ReadGrantEntryDto[] {
-  const db = getDb();
-  const events = db
-    .select({
-      eventId: memoryEvent.id,
-      title: memoryEvent.title,
-      caption: collectionItem.caption,
-      position: collectionItem.position,
-    })
-    .from(collectionItem)
-    .innerJoin(memoryEvent, eq(memoryEvent.id, collectionItem.memoryEventId))
-    .where(
-      and(
-        eq(collectionItem.collectionId, grant.collectionId),
-        eq(collectionItem.familyId, grant.familyId),
-      ),
-    )
-    .orderBy(collectionItem.position)
-    .all();
-  return events.map((event) => ({
-    eventId: event.eventId,
-    title: event.title,
-    caption: event.caption ?? "",
-    assets: db
-      .select({
-        assetId: asset.id,
-        mimeType: asset.mimeType,
-        type: asset.type,
-      })
-      .from(memoryEventAsset)
-      .innerJoin(asset, eq(asset.id, memoryEventAsset.assetId))
-      .where(
-        and(
-          eq(memoryEventAsset.memoryEventId, event.eventId),
-          eq(memoryEventAsset.familyId, grant.familyId),
-        ),
-      )
-      .all(),
-  }));
+  const rows = getDb().all<{ id: string; eventId: string | null; assetId: string | null; title: string; caption: string }>(sql`
+    select ci.id,ci.memory_event_id eventId,ci.asset_id assetId,coalesce(e.title,a.display_name,'家人分享的资料') title,ci.caption
+    from collection_item ci left join memory_event e on e.id=ci.memory_event_id and e.family_id=${grant.familyId} and e.deleted_at is null and e.status='confirmed'
+    left join asset a on a.id=ci.asset_id and a.family_id=${grant.familyId}
+    where ci.collection_id=${grant.collectionId} and ci.family_id=${grant.familyId} and (e.id is not null or a.id is not null)
+      and exists(select 1 from guest_read_grant g join collection col on col.id=g.collection_id where g.id=${grant.grantId} and g.family_id=${grant.familyId} and col.family_id=${grant.familyId} and g.collection_id=${grant.collectionId} and g.revoked_at is null and (g.expires_at is null or g.expires_at>unixepoch()) and col.deleted_at is null) order by ci.position`);
+  return rows.flatMap(row => {
+    const assets = getDb().all<{ assetId: string; mimeType: string; type: string }>(sql`select a.id assetId,a.mime_type mimeType,a.type from asset a where a.family_id=${grant.familyId} and (a.id=${row.assetId} or a.id in (select asset_id from memory_event_asset where memory_event_id=${row.eventId} and family_id=${grant.familyId}))`)
+      .filter(a => readGrantIncludesAsset(grant, a.assetId));
+    return row.assetId && !assets.length ? [] : [{ eventId: row.eventId ?? row.id, title: row.title, caption: row.caption, assets }];
+  });
 }
 
-/** 访客媒体访问：资产必须属于授权相册里的记忆事件（范围隔离唯一裁决点）。 */
-export function readGrantIncludesAsset(
-  grant: ResolvedReadGrant,
-  assetId: string,
-): boolean {
-  if (typeof assetId !== "string" || assetId.length === 0) return false;
-  const row = getDb()
-    .select({ assetId: memoryEventAsset.assetId })
-    .from(collectionItem)
-    .innerJoin(
-      memoryEventAsset,
-      eq(memoryEventAsset.memoryEventId, collectionItem.memoryEventId),
+/** Scope never widens when an original is also referenced by a private contribution. */
+export function readGrantIncludesAsset(grant: ResolvedReadGrant, assetId: string): boolean {
+  if (typeof assetId !== "string" || !assetId.length) return false;
+  return Boolean(getDb().get(sql`
+    with recursive ancestors(id,parent) as (
+      select id,original_asset_id from asset where id=${assetId} and family_id=${grant.familyId}
+      union select a.id,a.original_asset_id from asset a join ancestors p on a.id=p.parent where a.family_id=${grant.familyId}
+    ), root(id) as (select id from ancestors where parent is null), tree(id) as (
+      select id from root union select a.id from asset a join tree t on a.original_asset_id=t.id where a.family_id=${grant.familyId}
     )
-    .where(
-      and(
-        eq(collectionItem.collectionId, grant.collectionId),
-        eq(collectionItem.familyId, grant.familyId),
-        eq(memoryEventAsset.assetId, assetId),
-      ),
-    )
-    .limit(1)
-    .all()[0];
-  return row?.assetId === assetId;
+    select 1 from root where
+      exists(select 1 from guest_read_grant g join collection col on col.id=g.collection_id where g.id=${grant.grantId} and g.family_id=${grant.familyId} and g.collection_id=${grant.collectionId} and col.family_id=${grant.familyId} and g.revoked_at is null and (g.expires_at is null or g.expires_at>unixepoch()) and col.deleted_at is null)
+      and exists(select 1 from collection_item ci left join memory_event e on e.id=ci.memory_event_id and e.family_id=${grant.familyId} and e.deleted_at is null and e.status='confirmed'
+        where ci.collection_id=${grant.collectionId} and ci.family_id=${grant.familyId} and (ci.asset_id=root.id or (e.id is not null and exists(select 1 from memory_event_asset ma where ma.memory_event_id=e.id and ma.family_id=${grant.familyId} and ma.asset_id=root.id))))
+      and not exists(select 1 from contribution c join memory_event e on e.id=c.memory_event_id where c.audio_asset_id in (select id from tree) and (coalesce(c.visibility,'')<>'family' or e.family_id<>${grant.familyId}))
+  `));
 }

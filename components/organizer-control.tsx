@@ -7,10 +7,10 @@ import { parseOrganizerReview } from "@/mobile/src/api/client";
 import { aiJobFailureMessage } from "@/lib/ai/job-messages";
 import type { OrganizerTarget, OrganizerReview, OrganizerOperation } from "@/mobile/src/ai/organizer-types";
 
-export function OrganizerControl(props: OrganizerTarget & { reviewNames?: boolean }) {
+export function OrganizerControl(props: OrganizerTarget & { reviewNames?: boolean; assetOperation?: "name" | "transcribe" }) {
   return <Control key={JSON.stringify([props.kind, props.id])} {...props} />;
 }
-function Control({ kind, id, reviewNames = true }: OrganizerTarget & { reviewNames?: boolean }) {
+function Control({ kind, id, reviewNames = true, assetOperation = "transcribe" }: OrganizerTarget & { reviewNames?: boolean; assetOperation?: "name" | "transcribe" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false), [review, setReview] = useState<OrganizerReview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [refreshVersion, setRefreshVersion] = useState(0);
   const generation = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | null>(null), previous = useRef("");
@@ -48,18 +48,19 @@ function Control({ kind, id, reviewNames = true }: OrganizerTarget & { reviewNam
     } catch (reason) { if (request === generation.current) setError(reason instanceof Error ? reason.message : "整理请求未完成。"); }
     finally { if (request === generation.current) setBusy(false); }
   };
-  const capability = review?.settings.capabilities.find(row => row.capability === (kind === "asset" ? "transcription" : "text"));
+  const transcription = kind === "asset" && assetOperation === "transcribe";
+  const capability = review?.settings.capabilities.find(row => row.capability === (transcription ? "transcription" : "text"));
   const active = review?.tasks.some(task => task.active);
   return <div className="my-3">
     <details className="rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setBusy(false); }}>
-      <summary className="min-h-11 cursor-pointer py-2">{kind === "asset" ? "转成文字" : "AI 帮我起名"}</summary>
+      <summary className="min-h-11 cursor-pointer py-2">{transcription ? "转成文字" : "AI 帮我起名"}</summary>
       <p className="my-2 text-muted">仅处理你选择的素材，原件可随时查看。标题、人物、时间和合并均由你确认。</p>
       {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
       {review ? <>
         <p className="my-2">{!review.settings.configured ? "AI 未配置" : !capability?.available ? "所需模型未配置" : !capability.consented ? "等待管理员同意外部处理" : `${review.settings.provider} · ${capability.model}`}</p>
         {review.settings.configured && !review.settings.workerAvailable ? <p>后台暂不可用，任务会保留等待；记录与播放仍可使用。</p> : null}
         <Link href="/settings/ai" className="underline">查看 AI 设置、检测与授权</Link>
-        <button type="button" className="ui-button-primary my-2" disabled={busy || active || !capability?.available || !capability.consented} onClick={() => void mutate(kind === "asset" ? "transcribe" : "name")}>{kind === "asset" ? "开始转成文字" : "生成标题建议"}</button>
+        <button type="button" className="ui-button-primary my-2" disabled={busy || active || !capability?.available || !capability.consented} onClick={() => void mutate(transcription ? "transcribe" : "name")}>{transcription ? "开始转成文字" : "生成标题建议"}</button>
         {review.tasks.map((task, index) => <div key={task.id} className="my-2 rounded-lg border border-line p-3">
           <p role="status">{task.message}</p>
           <ol className="my-2 list-inside list-decimal text-muted">{task.steps.map((step, i) => <li key={i}>{step.label} · {({ pending: "等待中", running: "处理中", completed: "完成", failed: "失败", cancelled: "已取消" })[step.status]}</li>)}</ol>

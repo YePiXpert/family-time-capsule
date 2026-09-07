@@ -525,7 +525,7 @@ beforeAll(async () => {
       familyId: on.familyId,
       type: "document",
       originalFilename: "外婆的家书.pdf",
-      displayName: null, nameSource: "legacy_unknown", nameRevision: 0,
+      displayName: null, nameSource: "legacy_unknown", nameRevision: 0, participantIdsJson: "[]", metadataRevision: 0,
       mimeType: "application/pdf",
       bytes: documentBytes.byteLength,
       sha256: createHash("sha256").update(documentBytes).digest("hex"),
@@ -541,7 +541,7 @@ beforeAll(async () => {
       familyId: on.familyId,
       type: "document",
       originalFilename: "外婆的家书.pdf",
-      displayName: null, nameSource: "legacy_unknown", nameRevision: 0,
+      displayName: null, nameSource: "legacy_unknown", nameRevision: 0, participantIdsJson: "[]", metadataRevision: 0,
       mimeType: "application/pdf",
       bytes: documentBytes.byteLength,
       sha256: createHash("sha256").update(documentBytes).digest("hex"),
@@ -1229,7 +1229,7 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       .map(([name]) => name);
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 36);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 37);
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zipFileNames).toContain("family-time-capsule-export/name-reviews.json");
 

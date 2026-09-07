@@ -833,7 +833,9 @@ export async function requestMobileJson(
   }
   if (!response.ok) {
     const message =
-      response.status === 401
+      isRecord(body) && body.error === "asset_in_use"
+        ? "这份原件仍被草稿、记忆、相册或作品使用。请先移除相关引用。"
+        : response.status === 401
         ? "登录已过期，请重新登录。"
         : response.status === 403
           ? "当前账号没有执行这个操作的权限。"

@@ -1,3 +1,4 @@
+import { AssetLibraryScreen, AssetDetailScreen } from "../screens/AssetLibraryScreen";
 import { ReadingDownloadsScreen, OfflineReadingScreen } from "../screens/ReadingScreens";
 import { BookReviewScreen } from "../screens/BookReviewScreen";
 import { NavigationContainer, type Theme } from "@react-navigation/native";
@@ -92,6 +93,8 @@ export function AppNavigator() {
       <Stack.Navigator screenOptions={{ headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" } }}>
         <Stack.Screen component={MainTabs} name="MainTabs" options={{ headerShown: false }} />
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "记忆" }} />
+        <Stack.Screen component={AssetLibraryScreen} name="AssetLibrary" options={{ title: "资料库" }} />
+        <Stack.Screen component={AssetDetailScreen} name="AssetDetail" options={{ title: "资料" }} />
         <Stack.Screen component={SearchScreen} name="Search" options={{ title: "搜索" }} />
         <Stack.Screen component={SettingsScreen} name="Settings" options={{ title: "设置" }} />
         <Stack.Screen component={InboxScreen} name="Inbox" options={{ title: "待整理" }} />

@@ -327,7 +327,13 @@ export class LocalFilesystemStorage implements AssetStorage {
 
   delete(key: string): void {
     const target = this.resolvePath(key);
-    if (existsSync(target)) unlinkSync(target);
+    try {
+      unlinkSync(target);
+    } catch (error) {
+      // existsSync also returns false for inaccessible paths. Only an actual
+      // ENOENT is an idempotent success; permissions/I/O failures must surface.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
     // 清掉因此变空的 yyyy/mm 目录（尽力而为，失败忽略）
     let dir = path.dirname(target);
     for (let i = 0; i < 3; i++) {

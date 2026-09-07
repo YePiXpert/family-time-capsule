@@ -10,6 +10,7 @@ export type CollectionEdit = {
   items: {
     id: string;
     memoryEventId: string | null;
+    assetId?: string | null;
     sectionId: string | null;
     caption: string;
   }[];
@@ -25,6 +26,8 @@ export type CollectionDetail = Omit<CollectionEdit, "items"> & {
     source: {
       title: string;
       occurredAt: string;
+      mediaType?: string;
+      mimeType?: string;
       coverAssetId: string | null;
       previewAssetId: string | null;
     } | null;

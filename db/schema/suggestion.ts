@@ -48,7 +48,7 @@ export const aiSuggestion = sqliteTable(
     index("ai_suggestion_entity_status_idx").on(t.entityType, t.entityId, t.status),
     check(
       "ai_suggestion_entity_type_check",
-      sql`${t.entityType} in ('memory_event', 'inbox_item')`,
+      sql`${t.entityType} in ('memory_event', 'inbox_item', 'asset')`,
     ),
     check(
       "ai_suggestion_type_check",

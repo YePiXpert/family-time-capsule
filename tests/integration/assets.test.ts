@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -477,4 +477,17 @@ describe("storage key 安全", () => {
     const resolved = storage.resolvePath("originals/fam/2026/08/a.png");
     expect(resolved.startsWith(path.resolve(dataDir))).toBe(true);
   });
+});
+
+it.skipIf(process.getuid?.() === 0)("inaccessible originals report deletion failure, while missing originals are idempotent", () => {
+  const storage = getAssetStorage();
+  const original = storage.putOriginal("deletion-permission-fixture", "unreadable-original", "txt", Buffer.from("fixture original"), new Date("1980-01-01T00:00:00Z"));
+  const directory = path.dirname(storage.resolvePath(original.storageKey));
+  try {
+    chmodSync(directory, 0);
+    expect(() => storage.delete(original.storageKey)).toThrow();
+  } finally { chmodSync(directory, 0o700); }
+  expect(storage.exists(original.storageKey)).toBe(true);
+  storage.delete(original.storageKey);
+  expect(() => storage.delete(original.storageKey)).not.toThrow();
 });

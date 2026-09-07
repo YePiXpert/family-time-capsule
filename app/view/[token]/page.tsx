@@ -53,13 +53,12 @@ export default async function GuestViewPage(
                 <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {entry.assets.map((item) => (
                     <li key={item.assetId} className="overflow-hidden rounded-xl border border-foreground/10 bg-background">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`/api/media/${item.assetId}?grant=${encodeURIComponent(token)}`}
-                        alt={entry.title}
-                        loading="lazy"
-                        className="h-40 w-full object-cover"
-                      />
+                      {item.type === "image" ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={`/api/media/${item.assetId}?grant=${encodeURIComponent(token)}`} alt={entry.title} loading="lazy" className="h-40 w-full object-cover" />
+                      ) : item.type === "audio" ? <audio aria-label={entry.title} controls preload="none" src={`/api/media/${item.assetId}?grant=${encodeURIComponent(token)}`} className="w-full" />
+                        : item.type === "video" ? <video aria-label={entry.title} controls preload="metadata" src={`/api/media/${item.assetId}?grant=${encodeURIComponent(token)}`} className="w-full" />
+                        : <a className="ui-button-secondary min-h-11" href={`/api/media/${item.assetId}?grant=${encodeURIComponent(token)}`}>打开文档</a>}
                     </li>
                   ))}
                 </ul>

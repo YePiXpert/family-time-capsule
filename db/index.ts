@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { DATA_DIR } from "@/lib/paths";
 import { runMigrationsWithPreMigrationSnapshot } from "./migration-safety";
+import * as assetDeletionSchema from "./schema/asset-deletion";
 import * as assetSchema from "./schema/asset";
 import * as aiJobSchema from "./schema/ai-job";
 import * as auditSchema from "./schema/audit";
@@ -76,6 +77,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...authSchema,
         ...familySchema,
         ...assetSchema,
+        ...assetDeletionSchema,
         ...aiJobSchema,
         ...inboxSchema,
         ...invitationSchema,

@@ -61,6 +61,10 @@ export function validateCollectionEdit(input: unknown): CollectionEdit {
     )
       throw new CollectionError("invalid_item");
     items.add(item.id);
+    if (item.assetId != null) {
+      if (item.memoryEventId !== null || !text(item.assetId, 128, 1) || sources.has(`asset:${item.assetId}`)) throw new CollectionError("duplicate_source");
+      sources.add(`asset:${item.assetId}`);
+    }
     if (item.memoryEventId !== null) {
       if (!text(item.memoryEventId, 128, 1) || sources.has(item.memoryEventId))
         throw new CollectionError("duplicate_source");
@@ -79,7 +83,8 @@ export function validateCollectionEdit(input: unknown): CollectionEdit {
       id,
       title: title.trim(),
     })),
-    items: value.items.map(({ id, memoryEventId, sectionId, caption }) => ({
+    items: value.items.map(({ id, memoryEventId, assetId, sectionId, caption }) => ({
+      assetId: assetId ?? null,
       id,
       memoryEventId,
       sectionId,

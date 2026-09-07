@@ -5,7 +5,7 @@ import { aiSuggestion } from "@/db/schema/suggestion";
 import { NAME_SOURCES, nameSource } from "@/lib/naming";
 
 export type ArchivedNameReview = {
-  id: string; entityType: "memory_event" | "inbox_item"; entityId: string;
+  id: string; entityType: "memory_event" | "inbox_item" | "asset"; entityId: string;
   title: string; provider: string; model: string; sourceFingerprint: string;
   status: "accepted" | "rejected"; revision: number; targetRevision: number | null;
   appliedRevision: number | null; previousName: { text: string | null; source: string } | null;
@@ -14,9 +14,9 @@ export type ArchivedNameReview = {
 
 /** Adopted edits and deliberate rejection/undo tombstones are family data.
  * Pending results, provider secrets, consent and job state are not portable. */
-export function collectNameReviews(familyId: string, events: Set<string>, inbox: Set<string>): ArchivedNameReview[] {
+export function collectNameReviews(familyId: string, events: Set<string>, inbox: Set<string>, assets = new Set<string>()): ArchivedNameReview[] {
   return getDb().select().from(aiSuggestion).where(and(eq(aiSuggestion.familyId, familyId), eq(aiSuggestion.suggestionType, "title"), ne(aiSuggestion.status, "pending"), gt(aiSuggestion.revision, 0))).all()
-    .filter(row => (row.entityType === "memory_event" ? events : row.entityType === "inbox_item" ? inbox : new Set()).has(row.entityId))
+    .filter(row => (row.entityType === "memory_event" ? events : row.entityType === "inbox_item" ? inbox : row.entityType === "asset" ? assets : new Set()).has(row.entityId))
     .map(row => ({ id: row.id, entityType: row.entityType as ArchivedNameReview["entityType"], entityId: row.entityId,
       title: JSON.parse(row.valueJson).title, provider: row.provider, model: row.model, sourceFingerprint: row.sourceFingerprint,
       status: row.status as ArchivedNameReview["status"], revision: row.revision, targetRevision: row.targetRevision,
@@ -32,13 +32,13 @@ const revision = (value: unknown): value is number => Number.isSafeInteger(value
 const date = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T/u.test(value) && Number.isFinite(Date.parse(value));
 function check(value: unknown): asserts value { if (!value) throw new Error("invalid name review archive"); }
 
-export function parseNameReviews(value: unknown, events: Map<string, number>, inbox: Map<string, number>): ArchivedNameReview[] {
+export function parseNameReviews(value: unknown, events: Map<string, number>, inbox: Map<string, number>, assets = new Map<string, number>()): ArchivedNameReview[] {
   check(Array.isArray(value));
   const ids = new Set<string>();
   return value.map(row => {
     check(record(row) && id(row.id) && !ids.has(row.id)); ids.add(row.id);
-    check((row.entityType === "memory_event" || row.entityType === "inbox_item") && id(row.entityId));
-    const targetRevision = (row.entityType === "memory_event" ? events : inbox).get(row.entityId);
+    check(["memory_event", "inbox_item", "asset"].includes(String(row.entityType)) && id(row.entityId));
+    const targetRevision = (row.entityType === "memory_event" ? events : row.entityType === "inbox_item" ? inbox : assets).get(row.entityId);
     check(targetRevision !== undefined);
     check(text(row.title, 100) && text(row.provider, 100) && text(row.model, 256));
     check(typeof row.sourceFingerprint === "string" && /^[0-9a-f]{64}$/u.test(row.sourceFingerprint));
@@ -54,7 +54,7 @@ export function parseNameReviews(value: unknown, events: Map<string, number>, in
       check(row.undoneAt === null || (row.revision >= 2 && row.appliedRevision < targetRevision));
     } else check(row.appliedRevision === null && row.previousName === null);
     // Explicit projection: unknown archive keys can never become operational state.
-    return { id: row.id, entityType: row.entityType, entityId: row.entityId, title: row.title, provider: row.provider, model: row.model, sourceFingerprint: row.sourceFingerprint,
+    return { id: row.id, entityType: row.entityType as ArchivedNameReview["entityType"], entityId: row.entityId, title: row.title, provider: row.provider, model: row.model, sourceFingerprint: row.sourceFingerprint,
       status: row.status, revision: row.revision, targetRevision: row.targetRevision as number | null, appliedRevision: row.appliedRevision as number | null,
       previousName: row.previousName === null ? null : { text: (row.previousName as { text: string | null }).text, source: nameSource((row.previousName as { source: string }).source) },
       createdAt: row.createdAt, resolvedAt: row.resolvedAt, undoneAt: row.undoneAt as string | null, resolvedByUserId: row.resolvedByUserId as string | null };

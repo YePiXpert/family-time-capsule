@@ -4,14 +4,14 @@
 > 本清单是需求唯一 ID 来源;状态必须由真实代码/自动化/场景证据支撑,禁止"文件存在=完成"。
 > 初始基线:2026-09-06,基于 acea745 探索报告 + 白皮书 1–29 章 + GOAL_FORMAL_1_0.txt。
 
-## 状态统计（2026-09-07 M3-B 工作中复核）
+## 状态统计（2026-09-07 M3-C 资料库复核）
 
 统计以下有 ID 的需求行，说明括号不改变状态；明确非产品范围的附录不重复计数。
 
 | 状态 | 数量 |
 | --- | --- |
-| 自动化通过 | 113 |
-| 部分实现 | 32 |
+| 自动化通过 | 114 |
+| 部分实现 | 31 |
 | 未实现 | 9 |
 | 明确非产品范围 | 1 |
 | 外部阻塞 | 2 |
@@ -25,7 +25,7 @@
 | NAV-1 | 五个一级入口:今天/记忆/记录/家人/我的 | Web 与原生一致;无第六主导航 | 自动化通过(2026-09-06 M1 落地) | components/navigation-items.ts; mobile/src/navigation/AppNavigator.tsx |
 | NAV-2 | 收件箱下沉为整理入口,保留旧路由与深链重定向 | /inbox 及原生栈路由不 404 | 自动化通过(M1:二级导航首位+记忆页内+原生栈路由) | app/(protected)/(app)/inbox; mobile stack Inbox |
 | NAV-3 | 今天:真实近期记忆+继续草稿+一个回顾入口;空家庭引导第一条 | 不造假回忆 | 自动化通过(M1:待整理与草稿卡+每周回顾卡) | app/(protected)/(app)/page.tsx |
-| NAV-4 | 记忆:资料库/时间轴/日历/相册/搜索/人物筛选;资料与记忆可切换视图 | 切换不是审核门 | 部分实现(M1:时间线/日历/相册/待整理切换;全量资料库视图待 M3) | /timeline |
+| NAV-4 | 记忆:资料库/时间轴/日历/相册/搜索/人物筛选;资料与记忆可切换视图 | 切换不是审核门 | 自动化通过(M3-C：Web/原生全量原件库，不要求事件/AI/已整理；筛选分页、打开、组合草稿与直接相册引用) | /library; mobile/src/screens/AssetLibraryScreen.tsx |
 | NAV-5 | 记录:图文音混合编辑器,持久保存中断状态 | 杀进程后恢复 | 部分实现(M3-B 双端聚合持久化已接入；Web 离线关页恢复通过；私密记忆读者与真机验收待补) | mobile/src/screens/CaptureScreen.tsx; /capture |
 | NAV-6 | 家人:最近补充/人物/原声/问题/邀请;非管理员无维护菜单 | 角色过滤 | 自动化通过(M1:最近补充 feed+三入口;管理按钮角色过滤) | app/(protected)/(app)/family |
 | NAV-7 | 我的:同步/下载/隐私/账号/救援/作品/高级设置 | 归拢入口 | 自动化通过(M1:Web 四分组;原生 More=我的) | app/(protected)/(app)/more |
@@ -65,7 +65,7 @@
 | --- | --- | --- | --- | --- |
 | CAP-1 | 统一持久 Draft:文字/附件引用/顺序/封面/日期精度/人物/读者/目的地 | 新建/继续/自动保存/放弃/恢复 | 部分实现(0052 Draft/DraftItem、IndexedDB/SQLite 聚合与 HTTP 幂等保存、排序封面/导出恢复已有；跨设备继续与授权媒体阅读已接入；私密事件读者、intake 选择与事件日期精度仍待补) | lib/drafts; mobile/src/drafts; lib/inbox |
 | CAP-2 | 保存即得可读记忆;日期精度 unknown/approx/date/month/year | 不用假instant | 部分实现(现有事件精度仅 exact/approximate/date_only；Draft 允许时间待补，unknown/month/year 事件展示与查询仍需补齐) | lib/metadata/time.ts |
-| CAP-3 | 批量导入先是资料,不一文件一事件,不强制审核 | 500张≠500日记 | 自动化通过(import session→inbox) | lib/imports |
+| CAP-3 | 批量导入先是资料,不一文件一事件,不强制审核 | 500张≠500日记 | 自动化通过(M3-C：import session→原件库立即可看，30张不创建事件、5张组成一件事) | lib/imports; tests/e2e/asset-library.spec.ts |
 | CAP-4 | 本机提交顺序:暂存→复制校验→原子落盘→DB+outbox→反馈 | 任一步退出可对账 | 自动化通过 | mobile/src/storage/files.ts; mobile/tests |
 | CAP-5 | 本机照片点开大图/视频/录音播放/文字全文;AI/登录不挡查看 | 缺文件诚实报错+恢复入口 | 自动化通过 | mobile/src/screens/LocalCaptureDetailScreen |
 | CAP-6 | 入口:相机/相册/麦克风/Files、SEND/SEND_MULTIPLE、iOS分享扩展、Web拖放/PWA分享 | 扩展不用服务器Key;receipt可重放 | 自动化通过 | modules/share-intake; app/share |
@@ -73,11 +73,11 @@
 | CAP-8 | Live Photo 图+视频配对保留 | 不去重丢组件 | 自动化通过 | tests/integration/live-photo |
 | CAP-9 | EXIF/XMP/sidecar 保留;方向/HDR/HEVC降级/无EXIF/iCloud按需 | capturedAt≠importedAt | 自动化通过 | lib/metadata; tests/integration/exif |
 | CAP-10 | 文档不执行HTML/宏 | 受限预览 | 自动化通过 | lib/assets/document-text |
-| CAP-11 | 资料可多处引用;移除相册项不删原件 | 引用计数 | 自动化通过 | collection items |
+| CAP-11 | 资料可多处引用;移除相册项不删原件 | 引用计数 | 自动化通过(M3-C：相册直接引用原件；移除引用不删原件；离线阅读与访客链接复核权限) | lib/collections; lib/reading; lib/family/read-grants |
 | CAP-12 | hash 去重与授权分离;不泄露他人文件存在性 | 跨家庭不侧信道 | 自动化通过 | tests/integration/isolation |
 | CAP-13 | 旧文件夹/Takeout/sidecar 显式导入+预览+冲突处理 | 不自动镜像全云图库 | 部分实现(文件夹导入有;Takeout/sidecar 元数据未接) | lib/imports |
 | CAP-14 | Immich/Nextcloud 明确导入路径或受控只读适配 | 不写他方数据库 | 明确非产品范围(1.0 提供导出/文件夹路径,适配器后续) | docs |
-| CAP-15 | 原件字节不可覆盖;授权删除不受阻 | SHA 不变 vs 可删除 | 自动化通过 | lib/assets/storage |
+| CAP-15 | 原件字节不可覆盖;授权删除不受阻 | SHA 不变 vs 可删除 | 自动化通过(M3-C：原件 SHA 不变；管理员/原上传编辑者显式删除；使用中拒绝；磁盘失败持久重试；删除记录可导出恢复) | lib/assets/deletion.ts; tests/integration/asset-deletion.test.ts |
 
 ## SYNC — 授权同步、续传与冲突(M4,白皮书 §20)
 
@@ -133,7 +133,7 @@
 | AI-19 | AI默认关闭;分能力内容告知(→谁/用途/保留未知/关闭方式) | 上传VPS与送CPA/MiMo分环节告知 | 自动化通过(M6:能力卡与移动端显示分能力接收服务) | settings/ai; mobile/src/ai |
 | AI-20 | 自动新素材/历史回填/访客资料分开授权 | 不当同意全量 | 自动化通过 | ai_processing_consent |
 | AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 部分实现(重试/取消有;每日配额未实现) | lib/ai/jobs |
-| AI-22 | 文件名/OCR/转录是数据不是指令;不取URL/执行命令/读无关上下文 | 提示注入防护 | 部分实现(无系统声明与注入测试) | validation |
+| AI-22 | 文件名/OCR/转录是数据不是指令;不取URL/执行命令/读无关上下文 | 提示注入防护 | 部分实现(M3-C：原件起名明确不可信数据边界、严格 title schema/拒绝 URL/晚到结果守卫及专项测试；其余 AI 链路仍须统一扫查) | lib/ai/handlers/suggest-asset-name.ts; tests/integration/asset-name.test.ts |
 | AI-23 | Luna文字/Luna图片/MiMo语音三个独立live测试;fake/集成/live分层 | 无凭据不勾选真实链路 | 部分实现(M6:testAiCapability 经工厂自动走 MiMo;真实凭据 BLK-1/2) | scripts/ai-diagnostics.mts; ftc ai test |
 | AI-24 | 不把开发Agent登录态当产品凭据;不放进App | 审查 | 自动化通过(NEXT_PUBLIC key 显式拒绝) | lib/ai/config |
 
@@ -195,7 +195,7 @@
 | BKP-5 | 保留策略只清过期非唯一副本;容量不足告警不停备份 | — | 自动化通过 | cleanup.sh |
 | BKP-6 | 检查分级:生成/上传/结构校验/原件校验/隔离恢复通过 | — | 自动化通过 | roundtrip tests |
 | BKP-7 | 升级真实维护状态机覆盖app写API/上传finalize/worker | 不靠sleep证明 | 自动化通过(维护503+停容器) | maintenance profile |
-| BKP-8 | 旧备份恢复重新应用已知撤权/删除记录 | tombstone 重放 | 部分实现(软删除恢复有;restore后撤权重放未核) | lib/restore |
+| BKP-8 | 旧备份恢复重新应用已知撤权/删除记录 | tombstone 重放 | 部分实现(M3-C 原件删除记录可导出恢复；旧快照后的撤权/删除 reconciliation 仍待 M9) | lib/restore; lib/assets/deletion.ts |
 | BKP-9 | restore默认新目录/卷;结构/哈希/关系切换前完成;失败无半恢复 | — | 自动化通过 | restore.sh; scripts/restore.ts |
 | BKP-10 | 离线交接包:版本/数据位置/校验/域名迁移/管理员恢复/密钥指引 | 密钥与阅读包分开 | 未实现 | — |
 | BKP-11 | 禁止 docker system prune/volume prune/down -v/含糊 rm -rf | — | 自动化通过(never present) | scripts/ops |
@@ -235,7 +235,7 @@
 | REL-2 | 性能目标:提交反馈p95<1s;万记忆/十万素材;大文件内存有界 | 实测非mock | 部分实现(benchmark脚本有;报告未出) | scripts/benchmark* |
 | REL-3 | 泄露/静默覆盖/唯一原件丢失零容忍测试集 | — | 自动化通过 | isolation/merge tests |
 | REL-4 | ~200样本命名/修订/转写/检索评测 | 模型置信度不作真值 | 未实现 | — |
-| REL-5 | 仓库全门禁:lint/typecheck/test/build/E2E/roundtrip/mobile/ops/依赖/secret/Docker/升级恢复/出版/权限/AI | 不删门禁换绿 | 自动化通过(CI 全绿于 0ea0473 前) | .github/workflows/ci.yml |
+| REL-5 | 仓库全门禁:lint/typecheck/test/build/E2E/roundtrip/mobile/ops/依赖/secret/Docker/升级恢复/出版/权限/AI | 不删门禁换绿 | 自动化通过(06b78da 双工作流全绿；每个后续里程碑按新 SHA 重验) | .github/workflows/ci.yml |
 | REL-6 | release readiness 清单;非prerelease v1.0.0;不可移动tag;digest镜像;SHA256SUMS;manifest | 仅门禁后 | 部分实现(机制已建;门禁未全过) | mobile-build.yml; releases.json |
 | REL-7 | 候选构建按唯一SHA核对CI与产物 | — | 自动化通过(tag 构建链) | mobile-build.yml |
 | REL-8 | 外部阻塞如实记录,不伪造stable | — | 自动化通过(BLOCKERS.md) | docs/release-1.0/BLOCKERS.md |

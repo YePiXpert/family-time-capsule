@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { parseAssetDeletions } from "../lib/assets/deletion-portable.mjs";
 import { BOOK_FILES, validateBookArchive } from "../lib/books/projects/portable.mjs";
 import { COLLECTION_FILES, validateCollectionArchive } from "../lib/collections/portable.mjs";
 // 校验 family-time-capsule 导出 ZIP（docs/RESTORE.md §1）：
@@ -123,9 +124,11 @@ const hasNameReviews = await zipEntryExists("name-reviews.json");
 if (manifest.modules?.nameReviews !== undefined && (manifest.modules.nameReviews !== 1 || !hasNameReviews)) fail("声明的名称审核模块缺失或不支持");
 const hasDrafts = await zipEntryExists("drafts.json");
 if (manifest.modules?.drafts !== undefined && (manifest.modules.drafts !== 1 || !hasDrafts)) fail("声明的草稿模块缺失或不支持");
+const hasAssetDeletions = await zipEntryExists("asset-deletions.json");
+if (manifest.modules?.assetDeletions !== undefined && (manifest.modules.assetDeletions !== 1 || !hasAssetDeletions)) fail("声明的原件删除记录缺失或不支持");
 const expectedNonAssetCount =
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
-  (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) + (hasDrafts ? 1 : 0) +
+  (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) + (hasDrafts ? 1 : 0) + (hasAssetDeletions ? 1 : 0) +
   (hasDialogue ? 2 : 0) +
   (importSessions ? 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
@@ -141,6 +144,10 @@ if (manifest.fileCount !== expectedFileCount) {
 // 引用完整性
 const personIds = new Set((people ?? []).map((p) => p.id));
 const assetIds = new Set((manifest.assets ?? []).map((a) => a.assetId));
+try { parseAssetDeletions(hasAssetDeletions ? await readJsonAsync("asset-deletions.json") : [], assetIds); ok("原件删除记录有效"); } catch { fail("原件删除记录无效"); }
+for (const a of manifest.assets ?? []) {
+  if (a.participantPersonIds !== undefined && (!Array.isArray(a.participantPersonIds) || a.participantPersonIds.some(id => !personIds.has(id)))) fail("素材人物引用无效");
+}
 const factIds = new Set((facts ?? []).map((f) => f.id));
 const eventIds = new Set((memories ?? []).map((m) => m.id));
 try { validateCollectionArchive(...collectionGraph, manifest.familyId, eventIds, assetIds); ok("相册关系图校验通过"); }
@@ -175,7 +182,7 @@ if (hasDrafts) {
 }
 if (hasNameReviews) {
   const reviews = await readJsonAsync("name-reviews.json");
-  if (!Array.isArray(reviews) || reviews.some(row => !row || !["accepted", "rejected"].includes(row.status) || !Number.isSafeInteger(row.revision) || row.revision < 1 || !(row.entityType === "memory_event" ? eventIds : row.entityType === "inbox_item" ? inboxItemIds : new Set()).has(row.entityId))) fail("名称审核墓碑或目标关系无效");
+  if (!Array.isArray(reviews) || reviews.some(row => !row || !["accepted", "rejected"].includes(row.status) || !Number.isSafeInteger(row.revision) || row.revision < 1 || !(row.entityType === "memory_event" ? eventIds : row.entityType === "inbox_item" ? inboxItemIds : row.entityType === "asset" ? assetIds : new Set()).has(row.entityId))) fail("名称审核墓碑或目标关系无效");
   else ok(`名称审核：${reviews.length} 条，目标关系完整（详细版本校验由恢复预检执行）`);
 }
 const storyEntry = zip.file(`${ROOT}/stories.json`);

@@ -1,16 +1,14 @@
+import { deleteLibraryAsset } from "@/lib/assets/deletion";
+import { AssetLibraryError } from "@/lib/assets/library";
 import "server-only";
 
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
-import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
+import { memoryEvent } from "@/db/schema/memory";
 import { story, storyParagraph } from "@/db/schema/story";
-import { asset as assetTable } from "@/db/schema/asset";
-import { inboxItemAsset } from "@/db/schema/inbox";
-import { capsuleAsset, capsuleReply } from "@/db/schema/capsule";
 import { assertFamilyCapability } from "@/lib/authz/policy";
 import { recordAudit } from "@/lib/audit/service";
-import { getAssetStorage } from "@/lib/assets/storage";
 import type { FamilyContext } from "@/lib/family/context";
 
 /**
@@ -389,56 +387,12 @@ export function listTrash(context: FamilyContext): TrashEntry[] {
  */
 export function purgeAssetIfUnreferenced(context: FamilyContext, assetId: string): { ok: true; deleted: boolean } | { ok: false; error: string } {
   try {
-    assertFamilyCapability(context.role, "event:write");
-  } catch {
-    return { ok: false, error: "forbidden" };
+    const result = deleteLibraryAsset(context, assetId, true);
+    return result.cleanupPending ? { ok: false, error: "storage_cleanup_pending" } : { ok: true, deleted: true };
+  } catch (error) {
+    if (error instanceof AssetLibraryError) return error.code === "asset_in_use" ? { ok: true, deleted: false } : { ok: false, error: error.code };
+    throw error;
   }
-  const db = getDb();
-  const asset = db
-    .select()
-    .from(assetTable)
-    .where(and(eq(assetTable.id, assetId), eq(assetTable.familyId, context.familyId)))
-    .get();
-  if (!asset) return { ok: false, error: "not_found" };
-
-  const referenced =
-    db.select({ id: memoryEventAsset.id }).from(memoryEventAsset).where(eq(memoryEventAsset.assetId, assetId)).limit(1).get() ||
-    db.select({ id: inboxItemAsset.id }).from(inboxItemAsset).where(eq(inboxItemAsset.assetId, assetId)).limit(1).get() ||
-    db.select({ id: capsuleAsset.id }).from(capsuleAsset).where(eq(capsuleAsset.assetId, assetId)).limit(1).get() ||
-    db.select({ id: capsuleReply.id }).from(capsuleReply).where(eq(capsuleReply.assetId, assetId)).limit(1).get() ||
-    db
-      .select({ id: contributionTable.id })
-      .from(contributionTable)
-      .where(eq(contributionTable.audioAssetId, assetId))
-      .limit(1)
-      .get() ||
-    // 原件被衍生物指向 / 衍生物指回原件，任一方向都算引用
-    db.select({ id: assetTable.id }).from(assetTable).where(eq(assetTable.originalAssetId, assetId)).limit(1).get();
-  if (referenced) {
-    return { ok: true, deleted: false };
-  }
-
-  const storage = getAssetStorage();
-  const derivatives = db
-    .select()
-    .from(assetTable)
-    .where(eq(assetTable.originalAssetId, assetId))
-    .all();
-  for (const derivative of derivatives) {
-    try {
-      storage.delete(derivative.storageKey);
-    } catch {
-      // 尽力而为
-    }
-    db.delete(assetTable).where(eq(assetTable.id, derivative.id)).run();
-  }
-  try {
-    storage.delete(asset.storageKey);
-  } catch {
-    // 尽力而为
-  }
-  db.delete(assetTable).where(eq(assetTable.id, assetId)).run();
-  return { ok: true, deleted: true };
 }
 
 export const TRASH_KINDS: readonly TrashKind[] = ["memory_event", "contribution", "story"];

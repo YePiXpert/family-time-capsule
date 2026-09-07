@@ -11,6 +11,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const specs = [
   { name: "persistent-draft", files: ["persistent-draft.spec.ts"], port: 3129 },
+  { name: "asset-library", files: ["asset-library.spec.ts"], port: 3130 },
   { name: "book-projects", files: ["book-projects.spec.ts"], port: 3127 },
   { name: "auth", files: ["auth.spec.ts", "pwa.spec.ts"], port: 3110 },
   { name: "upload", files: ["upload.spec.ts"], port: 3111 },

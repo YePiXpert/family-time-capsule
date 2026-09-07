@@ -79,6 +79,7 @@ export const collectionItem = sqliteTable(
     memoryEventId: text("memory_event_id").references(() => memoryEvent.id, {
       onDelete: "set null",
     }),
+    assetId: text("asset_id").references(() => asset.id, { onDelete: "set null" }),
     caption: text("caption").notNull().default(""),
     position: integer("position").notNull(),
   },
@@ -87,6 +88,8 @@ export const collectionItem = sqliteTable(
       t.collectionId,
       t.memoryEventId,
     ),
+    uniqueIndex("collection_item_asset_uidx").on(t.collectionId, t.assetId),
+    check("collection_item_one_source", sql`${t.assetId} is null or ${t.memoryEventId} is null`),
     index("collection_item_order_idx").on(t.collectionId, t.position),
   ],
 );

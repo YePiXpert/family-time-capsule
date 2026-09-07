@@ -45,7 +45,7 @@ export function filterNavigationByCapabilities(
 const MORE_PREFIXES = ["/more", "/search", "/review", "/stories", "/requests", "/contributions", "/capsules", "/books", "/imports", "/settings", "/trash"];
 
 // 「记忆」聚合了时间轴/日历/相册与整理入口(收件箱);这些路径都让记忆 tab 保持激活。
-const MEMORIES_PREFIXES = ["/timeline", "/memories", "/collections", "/inbox"];
+const MEMORIES_PREFIXES = ["/library", "/timeline", "/memories", "/collections", "/inbox"];
 
 export function isNavigationItemActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";

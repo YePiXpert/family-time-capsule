@@ -195,12 +195,17 @@ export async function runAiWorkerOnce(
     let finalized: FinalizeResult;
     try {
       finalized = queue.finalize(activeLease, prepared.commit, { runtime });
-    } catch {
-      queue.fail(activeLease, "local_commit_failed", true, { runtime });
+    } catch (error) {
+      // A source revision/permission guard is terminal; retrying would spend
+      // another provider call on evidence the author has deliberately changed.
+      const failure = error instanceof AiJobHandlerError
+        ? safeFailure(error)
+        : { code: "local_commit_failed", retryable: true };
+      queue.fail(activeLease, failure.code, failure.retryable, { runtime });
       return {
         status: "failed",
         jobId: activeLease.jobId,
-        errorCode: "local_commit_failed",
+        errorCode: failure.code,
       };
     }
     if (!finalized.ok) {

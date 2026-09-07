@@ -1,3 +1,4 @@
+import { getDraft } from "@/lib/drafts/service";
 import type { Metadata } from "next";
 import { requireFamily } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
@@ -11,8 +12,10 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "记录 · Family Time Capsule" };
 
-export default async function CapturePage() {
-  const { familyId, role, userId, familyTimezone } = await requireFamily();
+export default async function CapturePage({ searchParams }: { searchParams: Promise<{ draft?: string }> }) {
+  const context = await requireFamily();
+  const { familyId, role, userId, familyTimezone } = context;
+  const query = await searchParams;
   const canCapture = hasFamilyCapability(role, "capture:create");
   const canArchive = hasFamilyCapability(role, "inbox:review");
   const people = canCapture ? await listPeople(familyId) : [];
@@ -28,6 +31,7 @@ export default async function CapturePage() {
 
       {canCapture ? (
         <PersistentCaptureEditor
+          initialServerDraft={canCapture && query.draft ? getDraft(context, query.draft) : undefined}
           scope={`${userId}:${familyId}`}
           timezone={familyTimezone}
           canArchive={canArchive}

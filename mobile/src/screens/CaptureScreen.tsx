@@ -33,6 +33,7 @@ export function CaptureScreen() {
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
   const draftScope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [message, setMessage] = useState<string | null>(null);
   const capsuleDraft = usePersistentDraft(draftScope, captureAccess !== "readonly", credentials);
   const { addOriginal, change: changeDraft } = capsuleDraft;
   const [originals, setOriginals] = useState<Record<string, LocalCaptureDetail>>({});
@@ -51,6 +52,16 @@ export function CaptureScreen() {
     })).then(rows => { if (active) setRemoteMedia({ scope: draftScope, assets: Object.fromEntries(rows.flatMap(row => row ? [[row.id, row]] : [])) }); });
     return () => { active = false; };
   }, [credentials, draftScope, capsuleDraft.draft?.content.items]);
+  const continueLibraryDraft = capsuleDraft.continueServer, localDraftReady = Boolean(capsuleDraft.draft?.id);
+  useEffect(() => {
+    const id = route.params?.draftId;
+    if (!id || !credentials || !localDraftReady) return;
+    let active = true;
+    void requestMobileJson(credentials, `/api/mobile/v1/drafts/${encodeURIComponent(id)}`).then(async body => {
+      if (active) { await continueLibraryDraft(body as import("../drafts/model").Draft, () => active); if (active) navigation.setParams({ draftId: undefined }); }
+    }).catch(e => { if (active) setMessage(e.message); });
+    return () => { active = false; };
+  }, [route.params?.draftId, credentials, localDraftReady, continueLibraryDraft, navigation]);
   const sendDraft = async (publish: boolean, intent?: "draft" | "review") => {
     try {
       await capsuleDraft.save(publish, intent);
@@ -69,7 +80,6 @@ export function CaptureScreen() {
   const setText = (text: string) => changeDraft({ text });
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const textInputRef = useRef<TextInput>(null);
   const actionAreaY = useRef(0);
