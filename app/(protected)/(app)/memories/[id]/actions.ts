@@ -56,9 +56,8 @@ export async function editEventAction(
   // §6：按精度解析锚点。month 读 "YYYY-MM"，year 读 "YYYY"；unknown 不
   // 提供时间（保留原锚点用于排序，显示永不冒充发生时间）。
   let occurredAt: Date | undefined;
-  let precision: string | undefined;
   const precisionInput = String(formData.get("occurredAtPrecision") ?? "");
-  precision = PRECISIONS.includes(precisionInput as (typeof PRECISIONS)[number])
+  const precision: string | undefined = PRECISIONS.includes(precisionInput as (typeof PRECISIONS)[number])
     ? precisionInput
     : undefined;
   const wall = String(formData.get("occurredAt") ?? "").trim();

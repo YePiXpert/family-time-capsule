@@ -161,7 +161,12 @@ function ActiveMedia({
     [zoom, setZoom] = useState(1),
     [speed, setSpeed] = useState(1),
     [loading, setLoading] = useState(true),
-    [retry, setRetry] = useState(0);
+    [retry, setRetry] = useState(0),
+    // §7：播放文字按钮只反映真实媒体元素事件，绝不假装播放成功。
+    [playing, setPlaying] = useState(false),
+    [ended, setEnded] = useState(false),
+    [position, setPosition] = useState(0),
+    [duration, setDuration] = useState(0);
   const player = useRef<HTMLMediaElement | null>(null);
   useEffect(() => {
     let alive = true,
@@ -235,6 +240,51 @@ function ActiveMedia({
     transcode = jobs.find((j) => j.kind === "transcode"),
     waveform = jobs.find((j) => j.kind === "waveform");
   const source = `/api/media/${encodeURIComponent(original ? asset.id : asset.type === "image" ? preview?.outputAssetId || asset.thumbnailId || asset.id : transcode?.outputAssetId || asset.id)}`;
+  // 资源切换时重置播放状态（渲染期派生重置：媒体元素随 key 重挂载，
+  // 旧资源的 playing/ended/进度不得冒充新资源的状态）。
+  const [resetSource, setResetSource] = useState(source);
+  if (resetSource !== source) {
+    setResetSource(source);
+    setPlaying(false);
+    setEnded(false);
+    setPosition(0);
+    setDuration(0);
+  }
+  function requestPlay() {
+    const media = player.current;
+    if (!media) return;
+    media.playbackRate = speed;
+    media
+      .play()
+      .then(() => {
+        setPlaying(true);
+        setEnded(false);
+      })
+      .catch(() => {
+        // 浏览器策略拒绝、解码失败或网络错误：如实提示，不假装已播放。
+        setPlaying(false);
+        setMessage("这次没有开始播放（可能是浏览器限制或加载失败），请再点一次。");
+      });
+  }
+  function requestPause() {
+    const media = player.current;
+    if (!media) return;
+    media.pause();
+    setPlaying(false);
+  }
+  function requestReplay() {
+    const media = player.current;
+    if (!media) return;
+    media.currentTime = 0;
+    setPosition(0);
+    requestPlay();
+  }
+  function formatClock(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+    const m = Math.floor(seconds / 60);
+    const sec = Math.floor(seconds % 60);
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  }
   function seek(seconds: number) {
     const media = player.current;
     if (media && Number.isFinite(media.duration) && seconds <= media.duration) {
@@ -339,9 +389,22 @@ function ActiveMedia({
               onWaiting={() => setLoading(true)}
               onLoadedData={() => setLoading(false)}
               onCanPlay={() => setLoading(false)}
+              onPlay={() => {
+                setPlaying(true);
+                setEnded(false);
+              }}
+              onPause={() => setPlaying(false)}
+              onEnded={() => {
+                setPlaying(false);
+                setEnded(true);
+                onEnded();
+              }}
+              onTimeUpdate={(e) => setPosition(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
               onError={() => {
                 setLoading(false);
                 setFailed(true);
+                setPlaying(false);
               }}
             />
           ) : (
@@ -354,19 +417,84 @@ function ActiveMedia({
               preload="metadata"
               src={source}
               className="w-full"
-              onLoadedMetadata={() => {
+              onLoadedMetadata={(e) => {
                 setLoading(false);
+                setDuration(e.currentTarget.duration);
                 if (player.current) player.current.playbackRate = speed;
               }}
+              onPlay={() => {
+                setPlaying(true);
+                setEnded(false);
+              }}
+              onPause={() => setPlaying(false)}
+              onEnded={() => {
+                setPlaying(false);
+                setEnded(true);
+                onEnded();
+              }}
+              onTimeUpdate={(e) => setPosition(e.currentTarget.currentTime)}
               onError={() => {
                 setLoading(false);
                 setFailed(true);
+                setPlaying(false);
               }}
-              onEnded={onEnded}
               autoPlay={continuous}
             />
           )}
           {loading ? <p role="status">正在加载媒体…</p> : null}
+          <div className="my-3 flex flex-wrap items-center gap-3">
+            {/* §7 文字播放控件：状态来自真实媒体事件；失败如实提示。 */}
+            <button
+              type="button"
+              className="ui-button-secondary min-h-12"
+              onClick={requestPlay}
+              disabled={playing || failed}
+              aria-label={playing ? "正在播放" : "播放"}
+            >
+              播放
+            </button>
+            <button
+              type="button"
+              className="ui-button-secondary min-h-12"
+              onClick={requestPause}
+              disabled={!playing}
+              aria-label="暂停"
+            >
+              暂停
+            </button>
+            <button
+              type="button"
+              className="ui-button-secondary min-h-12"
+              onClick={requestReplay}
+              disabled={failed || (!ended && position === 0 && !playing)}
+              aria-label="重新播放"
+            >
+              重新播放
+            </button>
+            <span aria-live="polite" className="text-sm">
+              {playing ? "正在播放" : ended ? "播放完毕" : "已暂停"}
+              {duration > 0 ? ` · ${formatClock(position)} / ${formatClock(duration)}` : ""}
+            </span>
+            <label className="flex min-h-11 flex-1 basis-56 items-center gap-2 text-sm">
+              进度
+              <input
+                type="range"
+                className="min-h-11 w-full"
+                min={0}
+                max={Number.isFinite(duration) && duration > 0 ? duration : 0}
+                step={0.1}
+                value={Math.min(position, Number.isFinite(duration) ? duration : 0)}
+                disabled={failed || !duration}
+                aria-label="播放进度（左右方向键微调）"
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setPosition(next);
+                  const media = player.current;
+                  if (media && Number.isFinite(next)) media.currentTime = next;
+                }}
+              />
+            </label>
+          </div>
           <div className="my-3 flex flex-wrap items-center gap-3">
             <label>
               播放速度{" "}

@@ -52,6 +52,23 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await expect(page.locator("audio").first()).toBeVisible();
   await page.getByRole("combobox",{name:"播放速度"}).selectOption("1.5");
   await expect.poll(()=>page.locator("audio").evaluate((node:HTMLAudioElement)=>node.playbackRate)).toBe(1.5);
+
+  // §7 T11：文字播放按钮反映真实媒体状态，失败不假装播放。
+  const audioNode = page.locator("audio").first();
+  await expect(page.getByText("已暂停")).toBeVisible();
+  await page.getByRole("button", { name: "播放", exact: true }).click();
+  await expect(page.getByText("正在播放")).toBeVisible();
+  await expect.poll(() => audioNode.evaluate((node: HTMLAudioElement) => !node.paused && !node.ended)).toBe(true);
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  await expect(page.getByText("已暂停")).toBeVisible();
+  await expect.poll(() => audioNode.evaluate((node: HTMLAudioElement) => node.paused)).toBe(true);
+  // 跳到结尾自然播完 → 「播放完毕」，重新播放可再来一次
+  await audioNode.evaluate((node: HTMLAudioElement) => { node.currentTime = Math.max(0, node.duration - 0.05); });
+  await page.getByRole("button", { name: "播放", exact: true }).click();
+  await expect(page.getByText("播放完毕"), "真实 ended 事件后显示播放完毕").toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "重新播放", exact: true }).click();
+  await expect(page.getByText("正在播放")).toBeVisible();
+
   await page.getByRole("button",{name:"关闭阅读器"}).click();
   await expect(page.locator("audio")).toHaveCount(0);
   await expect(page.getByRole("button",{name:"打开阅读器：外婆哼的歌.wav"})).toBeFocused();
