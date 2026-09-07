@@ -41,12 +41,12 @@
 
 | ID | 代码 | 测试 |
 | --- | --- | --- |
-| CAP-1 | db/schema/draft.ts、lib/drafts、mobile/src/drafts；收件箱提交适配 | tests/integration/persistent-draft.test.ts、tests/e2e/persistent-draft.spec.ts、mobile/tests/persistent-draft.test.ts、draft-sync.test.ts；私密读者/intake 选择仍部分实现 |
+| CAP-1 | db/schema/draft.ts、lib/drafts、mobile/src/drafts；收件箱提交适配 | tests/integration/persistent-draft.test.ts、tests/e2e/persistent-draft.spec.ts、mobile/tests/persistent-draft.test.ts、draft-sync.test.ts；intake 目的地已接入（0056：tests/integration/intake-destination.test.ts、mobile/tests/intake-draft.test.ts）；私密事件读者仍部分实现 |
 | CAP-2 | lib/metadata/time.ts、db/schema/asset.ts、lib/drafts/model.ts | tests/unit/time.test.ts；事件 unknown/month/year 未闭环，不再记为自动化通过 |
 | CAP-3 | lib/imports/service.ts | tests/integration/imports.test.ts |
 | CAP-4 | mobile/src/storage/files.ts(preserve*) | mobile/tests/native-share-intake.test.ts |
 | CAP-5 | mobile/src/screens/LocalCaptureDetailScreen.tsx | mobile/tests/local-detail.test.ts |
-| CAP-6 | modules/share-intake、app/share/route.ts、mobile/src/native/intake.ts | mobile/tests/share-intake-events.test.ts |
+| CAP-6 | modules/share-intake、app/share/route.ts、lib/imports/share.ts、app/api/imports/[id]/destination/route.ts、mobile/src/native/intake.ts | mobile/tests/share-intake-events.test.ts、intake-screen.test.ts、intake-sync.test.ts；tests/e2e/imports.spec.ts（系统分享组草稿/资料库去向） |
 | CAP-7 | lib/assets/validation.ts、lib/imports/http.ts | tests/unit/media-validation.test.ts、tests/integration/ingest.test.ts |
 | CAP-8 | lib/assets/ingest.ts(live photo 配对) | tests/integration/live-photo.test.ts |
 | CAP-9 | lib/metadata/(ffprobe/time).ts、exif | tests/integration/exif.test.ts、real-media.test.ts |
@@ -154,3 +154,7 @@
 0053 增加资料人物/metadata revision 与相册 asset 引用；0054 重建 ai_suggestion 增加 asset 类型并保留旧审核历史；0055 保存原件删除记录和本地清理进度。asset-library-migration.test.ts 用真实 0052 数据库验证升级，不清库、不修改旧迁移。
 
 资料补标题复用 NameReview；AI 起名复用既有 CPA/Luna + MiMo/ASR 任务依赖、按证据生成并需人工采用。新增 asset-name.test.ts 覆盖恶意 OCR、禁止 URL、审核导出与晚到结果；不代表真实 provider 验收。原生组件测试覆盖 30 份资料/5 份引用、未整理录音阅读、时间人物修改、显式删除与账号切换晚到响应。
+
+## M3-D intake 去向补充（2026-09-07）
+
+0056 为 import session 增加 intake 目的地（draft/library）与 revision。Web `/imports/[id]` 提供去向选择面板（新草稿/仅存资料库），`app/api/imports/[id]/destination` 服务端裁决；系统分享（`/share`）先保全原件再选去向，加入已有草稿只组成一件事。原生端 intake store/recovery/sync（mobile/src/native/intake-store.ts、intake-recovery.ts、intake-sync.ts）持久化去向选择并随同步上传。集成/原生/e2e 测试见 CAP-1/CAP-6 行；导出恢复包含 intake 关系。

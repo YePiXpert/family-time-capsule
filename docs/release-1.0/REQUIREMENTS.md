@@ -4,7 +4,7 @@
 > 本清单是需求唯一 ID 来源;状态必须由真实代码/自动化/场景证据支撑,禁止"文件存在=完成"。
 > 初始基线:2026-09-06,基于 acea745 探索报告 + 白皮书 1–29 章 + GOAL_FORMAL_1_0.txt。
 
-## 状态统计（2026-09-07 M3-C 资料库复核）
+## 状态统计（2026-09-07 M3-D intake 去向复核）
 
 统计以下有 ID 的需求行，说明括号不改变状态；明确非产品范围的附录不重复计数。
 
@@ -63,12 +63,12 @@
 
 | ID | 需求 | 验收要点 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
-| CAP-1 | 统一持久 Draft:文字/附件引用/顺序/封面/日期精度/人物/读者/目的地 | 新建/继续/自动保存/放弃/恢复 | 部分实现(0052 Draft/DraftItem、IndexedDB/SQLite 聚合与 HTTP 幂等保存、排序封面/导出恢复已有；跨设备继续与授权媒体阅读已接入；私密事件读者、intake 选择与事件日期精度仍待补) | lib/drafts; mobile/src/drafts; lib/inbox |
+| CAP-1 | 统一持久 Draft:文字/附件引用/顺序/封面/日期精度/人物/读者/目的地 | 新建/继续/自动保存/放弃/恢复 | 部分实现(0052 Draft/DraftItem、IndexedDB/SQLite 聚合与 HTTP 幂等保存、排序封面/导出恢复已有；跨设备继续与授权媒体阅读已接入；M3-D 0056 intake 目的地(新草稿/仅资料库)Web/原生/系统分享均可选择并持久恢复；私密事件读者与事件日期精度仍待补) | lib/drafts; mobile/src/drafts; lib/inbox; lib/imports/intake.ts |
 | CAP-2 | 保存即得可读记忆;日期精度 unknown/approx/date/month/year | 不用假instant | 部分实现(现有事件精度仅 exact/approximate/date_only；Draft 允许时间待补，unknown/month/year 事件展示与查询仍需补齐) | lib/metadata/time.ts |
 | CAP-3 | 批量导入先是资料,不一文件一事件,不强制审核 | 500张≠500日记 | 自动化通过(M3-C：import session→原件库立即可看，30张不创建事件、5张组成一件事) | lib/imports; tests/e2e/asset-library.spec.ts |
 | CAP-4 | 本机提交顺序:暂存→复制校验→原子落盘→DB+outbox→反馈 | 任一步退出可对账 | 自动化通过 | mobile/src/storage/files.ts; mobile/tests |
 | CAP-5 | 本机照片点开大图/视频/录音播放/文字全文;AI/登录不挡查看 | 缺文件诚实报错+恢复入口 | 自动化通过 | mobile/src/screens/LocalCaptureDetailScreen |
-| CAP-6 | 入口:相机/相册/麦克风/Files、SEND/SEND_MULTIPLE、iOS分享扩展、Web拖放/PWA分享 | 扩展不用服务器Key;receipt可重放 | 自动化通过 | modules/share-intake; app/share |
+| CAP-6 | 入口:相机/相册/麦克风/Files、SEND/SEND_MULTIPLE、iOS分享扩展、Web拖放/PWA分享 | 扩展不用服务器Key;receipt可重放 | 自动化通过(M3-D:系统分享收件可选去向——加入已有草稿只组成一件事或仅存资料库,刷新后仍可改选;原生 intake store/recovery/sync 持久化) | modules/share-intake; app/share; lib/imports/share.ts |
 | CAP-7 | 格式:JPEG/PNG/HEIC、MOV/MP4、M4A/MP3/WAV、安全PDF/文本/文档 | MIME/魔数/大小/炸弹/穿越防护 | 自动化通过 | lib/assets/validation; tests/integration |
 | CAP-8 | Live Photo 图+视频配对保留 | 不去重丢组件 | 自动化通过 | tests/integration/live-photo |
 | CAP-9 | EXIF/XMP/sidecar 保留;方向/HDR/HEVC降级/无EXIF/iCloud按需 | capturedAt≠importedAt | 自动化通过 | lib/metadata; tests/integration/exif |

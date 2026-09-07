@@ -91,7 +91,7 @@ M3-B 持久聚合子里程碑（2026-09-07）：新增 0052 持久 Draft/DraftIt
 
 本次验证：根 109 文件/733 测试；原生 38 文件/201 测试；Web 56 E2E 与 7 导出恢复往返；34 ops；双端 lint/typecheck、Web build、Expo Doctor 21/21、Android/iOS Hermes export。真实旧版 `1.1.0-alpha.1` 卷升级、故障回滚、旧导出恢复后二次导出通过。隔离 Docker app/worker/volume/migration/restart/health、草稿重启恢复/发布幂等/导出到独立卷恢复通过，5 份原件升级前后 SHA 一致且数量不变；恢复外键检查为空。镜像 `ftc-formal-m3b:local`，image ID `sha256:4c7387f6bf7f4d40acba98b8e3ee8906657abc772f3e0ae7c83c7a7311aecc1a`。运行报告 `/tmp/ftc-m3b-docker-report.json`、`/tmp/ftc-m8-upgrade-report.json`，本地日志 `/tmp/ftc-m3b-gate-*.log`。
 
-NAV-5/CAP-1 仍为部分实现：私密事件读者、分享 intake 目的地选择、完整日期精度与服务器记忆混合编辑继续推进。原生 SQLite 重开及 Hermes 构建不能代替真机杀进程/签名分发验收；不据此标记 M3 完成或解除 BLK-1～8。
+NAV-5/CAP-1 仍为部分实现：私密事件读者、完整日期精度与服务器记忆混合编辑继续推进（M3-D 已落地 intake 目的地选择：系统分享/导入批次可选加入草稿或仅存资料库，e2e/集成/原生测试通过，真机待验）。原生 SQLite 重开及 Hermes 构建不能代替真机杀进程/签名分发验收；不据此标记 M3 完成或解除 BLK-1～8。
 
 ## M3-C 资料库（2026-09-07）
 
