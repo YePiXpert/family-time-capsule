@@ -6,7 +6,7 @@ baseline:
 8388ecb7a58508996302d17f9aa4116665ef34a9
 
 final:
-7f63f1a (fix(contribute): correct re-record file count; prefetch cluster thumbnails —— 复查修复)
+9c7e3c8 (fix(tests): match timeout budget to real-database migration tests —— 第二次 CI 修复)
 
 completed:
 
@@ -80,6 +80,11 @@ CI:
 - da25f14 docs(release-1.0) — success
 - 7f63f1a fix(contribute) — success（本轮自查修复：贡献向导重录计数把新旧录音叠加，
   maxFiles=1 且已有录音时会错误拒绝重录；收件箱缩略图预取补上非首位图片原件）
+- 5190a5f docs — failure→由 9c7e3c8 修复：三个真实数据库迁移测试（optional-anchor-
+  migration、upgrade-1-2×2）在共享 runner 上超 vitest 默认 5s（本地 ~1.4s，同套件在
+  7f63f1a 全绿），负载性超时暴露；按工作量给显式 60s（与 ops 配置既有做法一致），
+  断言不变
+- 9c7e3c8 fix(tests) — success
 
 REQUIREMENTS changed:
 - NAV-11 未实现 → 部分实现（双端简洁模式与贡献向导自动化通过，Web 播放文字按钮与真机
