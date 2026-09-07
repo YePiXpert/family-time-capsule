@@ -30,7 +30,7 @@
 | NAV-6 | 家人:最近补充/人物/原声/问题/邀请;非管理员无维护菜单 | 角色过滤 | 自动化通过(M1:最近补充 feed+三入口;管理按钮角色过滤) | app/(protected)/(app)/family |
 | NAV-7 | 我的:同步/下载/隐私/账号/救援/作品/高级设置 | 归拢入口 | 自动化通过(M1:Web 四分组;原生 More=我的) | app/(protected)/(app)/more |
 | NAV-8 | 记忆卡/资料卡/播放器/日期控件/错误与加载状态统一设计系统 | 无平行 UI 框架 | 自动化通过(设计系统+组件已统一) | design-system/ components/ |
-| NAV-9 | 小屏/平板/桌面;大字/系统字体缩放/读屏/键盘/44px 触控/深浅色/reduced-motion | a11y 检查 | 部分实现(响应式已有;reduced-motion/读屏待核验) | components/ |
+| NAV-9 | 小屏/平板/桌面;大字/系统字体缩放/读屏/键盘/44px 触控/深浅色/reduced-motion | a11y 检查 | 部分实现(GLM-C:reduced-motion Web 全局压制并有 e2e 断言;键盘登录/主导航/上移下移(既有)可用;底部导航≥44px;共享文字样式去掉固定行高使系统大字号不裁剪并有回归测试;首页/我的/搜索/同步横幅补 accessibilityRole/Label;原生无自定义动画。真机读屏/系统大字号实测与全站 icon 审查仍待补) | components/; mobile/src/theme.ts; tests/e2e/a11y.spec.ts |
 | NAV-10 | 中文默认;结构支持国际化;界面不混代码术语 | 术语审查 | 部分实现(全中文已做到;无 i18n 框架——单语可接受) | 全部 UI |
 | NAV-11 | 长辈阅读/贡献模式只保留必要动作 | 不能空按钮拼凑 | 部分实现(GLM-A:双端设备级「大字简洁显示」——标准/简洁由用户主动选择并按设备持久；简洁首页只留最近的照片/最近的故事/听听家人的声音/我也说几句且空状态如实；复杂入口隐藏但路由与权限不变、可随时返回标准；贡献向导收口为问题→录音→重听→提交、成功后可再说一段；Web 播放文字按钮与真机长辈任务仍待补) | lib/display-mode.ts; app/(protected)/(app)/simple-home.tsx; mobile/src/screens/SimpleHomeScreen.tsx; app/contribute/[token]/guest-contribution-form.tsx |
 | NAV-12 | 虚构/合成示例素材;真实儿童照片不进 Git | fixture 审查 | 自动化通过(tests/fixtures 全部生成) | tests/fixtures/ |

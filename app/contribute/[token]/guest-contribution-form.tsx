@@ -440,7 +440,7 @@ export function GuestContributionForm(props: Props) {
                     <span className="text-xs text-muted">{file.type || "未知类型"} · {readableBytes(file.size)}</span>
                   </span>
                   <button type="button" disabled={working} onClick={() => setPickedFiles((current) => current.filter((_, i) => i !== index))}
-                    className="min-h-9 shrink-0 rounded-lg border border-foreground/20 px-3 text-xs disabled:opacity-50">移除</button>
+                    className="min-h-11 shrink-0 rounded-lg border border-foreground/20 px-3 text-xs disabled:opacity-50">移除</button>
                 </li>
               ))}
             </ul>

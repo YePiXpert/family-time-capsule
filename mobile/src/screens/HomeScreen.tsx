@@ -49,22 +49,22 @@ export function HomeScreen() {
         ))}
       </View>
 
-      <Pressable accessibilityRole="button" onPress={() => navigation.navigate("ImportSessions")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>收到的内容 · 继续分享或文件导入</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="收到的内容" onPress={() => navigation.navigate("ImportSessions")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>收到的内容 · 继续分享或文件导入</Text></Pressable>
 
       {!credentials ? (
-        <Pressable testID="home-settings" onPress={() => navigation.navigate("Settings")} style={sharedStyles.notice}>
+        <Pressable testID="home-settings" accessibilityRole="button" accessibilityLabel="连接家庭服务器" onPress={() => navigation.navigate("Settings")} style={sharedStyles.notice}>
           <Text style={sharedStyles.noticeText}>当前仅保存在本机。点此连接自己的家庭服务器；已有本机记录不会被清空。</Text>
         </Pressable>
       ) : null}
 
-      <Pressable testID="home-weekly-review" onPress={() => navigation.navigate("WeeklyReview")} style={({ pressed }) => [styles.reviewCard, pressed && sharedStyles.pressed]}>
+      <Pressable testID="home-weekly-review" accessibilityRole="button" accessibilityLabel="每周回顾" onPress={() => navigation.navigate("WeeklyReview")} style={({ pressed }) => [styles.reviewCard, pressed && sharedStyles.pressed]}>
         <Text style={sharedStyles.eyebrow}>每周回顾</Text>
         <Text style={sharedStyles.cardTitle}>本周已留下 {home?.weeklyReview.confirmedCount ?? 0} 段</Text>
         <Text style={sharedStyles.body}>还有 {home?.weeklyReview.pendingInboxCount ?? (home?.inbox.count ?? outbox.length)} 条待整理{home?.weeklyReview.storyId ? " · 周记草稿已生成" : ""}</Text>
         <Text style={styles.link}>{home?.weeklyReview.status === "open" ? "开始" : "继续"}每周回顾 →</Text>
       </Pressable>
 
-      <Pressable onPress={() => navigation.navigate("Inbox")} style={({ pressed }) => [sharedStyles.card, pressed && sharedStyles.pressed]}>
+      <Pressable accessibilityRole="button" accessibilityLabel="待整理收件箱" onPress={() => navigation.navigate("Inbox")} style={({ pressed }) => [sharedStyles.card, pressed && sharedStyles.pressed]}>
         <View style={styles.sectionRow}><Text style={sharedStyles.cardTitle}>待整理收件箱</Text><Text style={styles.count}>{home?.inbox.count ?? outbox.length}</Text></View>
         {(home?.inbox.previews ?? []).slice(0, 3).map((item) => (
           <View key={item.id} style={styles.previewRow}>
@@ -75,30 +75,30 @@ export function HomeScreen() {
         {(home?.inbox.count ?? outbox.length) === 0 ? <Text style={sharedStyles.body}>这里已经整理完了。记录的新素材会先来到这里。</Text> : <Text style={styles.link}>去修改、合并或确认 →</Text>}
       </Pressable>
 
-      <Pressable accessibilityRole="button" style={sharedStyles.card} onPress={()=>navigation.navigate("BookReview")}><Text style={sharedStyles.cardTitle}>本月回顾</Text><Text style={sharedStyles.body}>{home?.monthlyReview ? `${home.monthlyReview.count} 段记忆，挑出想装进年册的时刻` : "查看月度与年度作品素材"}</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="本月回顾" style={sharedStyles.card} onPress={()=>navigation.navigate("BookReview")}><Text style={sharedStyles.cardTitle}>本月回顾</Text><Text style={sharedStyles.body}>{home?.monthlyReview ? `${home.monthlyReview.count} 段记忆，挑出想装进年册的时刻` : "查看月度与年度作品素材"}</Text></Pressable>
       {(home?.activeBooks??[]).length ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>正在制作的作品</Text>{home!.activeBooks!.map(book=><Pressable key={book.id} accessibilityRole="button" style={sharedStyles.secondaryButton} onPress={()=>navigation.navigate("BookDetail",{id:book.id})}><Text style={sharedStyles.secondaryText}>{book.title}</Text></Pressable>)}</View> : null}
-      <View style={styles.sectionRow}><Text style={sharedStyles.cardTitle}>最近记忆</Text><Pressable onPress={() => navigation.navigate("Timeline")}><Text style={styles.link}>查看时间轴</Text></Pressable></View>
+      <View style={styles.sectionRow}><Text style={sharedStyles.cardTitle}>最近记忆</Text><Pressable accessibilityRole="button" accessibilityLabel="查看时间轴" onPress={() => navigation.navigate("Timeline")}><Text style={styles.link}>查看时间轴</Text></Pressable></View>
       {recent.length === 0 ? (
-        <Pressable onPress={() => navigation.navigate("Capture", { intent: "text", requestKey: Date.now() })} style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>从第一条记忆开始</Text><Text style={sharedStyles.body}>写一句话、拍一张照片或录下一段声音。</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="从第一条记忆开始" onPress={() => navigation.navigate("Capture", { intent: "text", requestKey: Date.now() })} style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>从第一条记忆开始</Text><Text style={sharedStyles.body}>写一句话、拍一张照片或录下一段声音。</Text></Pressable>
       ) : recent.slice(0, 4).map((memory) => (
-        <Pressable key={memory.id} onPress={() => navigation.navigate("Memory", { id: memory.id })} style={({ pressed }) => [styles.memoryRow, pressed && sharedStyles.pressed]}>
+        <Pressable key={memory.id} accessibilityRole="button" accessibilityLabel={`打开记忆：${memory.title}`} onPress={() => navigation.navigate("Memory", { id: memory.id })} style={({ pressed }) => [styles.memoryRow, pressed && sharedStyles.pressed]}>
           {mediaSource(memory.coverPath) ? <Image source={mediaSource(memory.coverPath)!} style={styles.memoryCover} /> : <View style={styles.memoryCoverPlaceholder} />}
           <View style={styles.grow}><Text style={styles.itemTitle}>{memory.title}</Text><Text style={styles.meta}>{dateLabel(memory.occurredAt, home?.family.timezone ?? family?.timezone)}{memory.ageLabel ? ` · ${memory.ageLabel}` : ""}</Text></View>
         </Pressable>
       ))}
 
-      <Pressable onPress={() => home?.onThisDay[0] ? navigation.navigate("Memory", { id: home.onThisDay[0].id }) : navigation.navigate("Timeline")} style={sharedStyles.card}>
+      <Pressable accessibilityRole="button" accessibilityLabel="这一天" onPress={() => home?.onThisDay[0] ? navigation.navigate("Memory", { id: home.onThisDay[0].id }) : navigation.navigate("Timeline")} style={sharedStyles.card}>
         <Text style={sharedStyles.cardTitle}>这一天</Text>
         <Text style={sharedStyles.body}>{home?.onThisDay[0]?.title ?? "还没有往年同日记忆，去时间轴看看已经保存的日子。"}</Text>
       </Pressable>
 
-      <Pressable onPress={() => home?.story ? navigation.navigate("StoryDetail", { id: home.story.id }) : navigation.navigate("Stories")} style={sharedStyles.card}>
+      <Pressable accessibilityRole="button" accessibilityLabel="最近故事" onPress={() => home?.story ? navigation.navigate("StoryDetail", { id: home.story.id }) : navigation.navigate("Stories")} style={sharedStyles.card}>
         <Text style={sharedStyles.cardTitle}>最近故事</Text><Text style={sharedStyles.body}>{home?.story?.title ?? "把一段时间里的记忆串成故事。"}</Text><Text style={styles.link}>原生打开 →</Text>
       </Pressable>
-      <Pressable onPress={() => home?.capsule ? navigation.navigate("CapsuleDetail", { id: home.capsule.id }) : navigation.navigate("Capsules")} style={sharedStyles.card}>
+      <Pressable accessibilityRole="button" accessibilityLabel="时间胶囊" onPress={() => home?.capsule ? navigation.navigate("CapsuleDetail", { id: home.capsule.id }) : navigation.navigate("Capsules")} style={sharedStyles.card}>
         <Text style={sharedStyles.cardTitle}>时间胶囊</Text><Text style={sharedStyles.body}>{home?.capsule?.title ?? "没有即将开启的胶囊，随时可以封存一段心意。"}</Text><Text style={styles.link}>原生打开 →</Text>
       </Pressable>
-      <Pressable onPress={() => navigation.navigate("Requests")} style={sharedStyles.card}>
+      <Pressable accessibilityRole="button" accessibilityLabel="问问家人" onPress={() => navigation.navigate("Requests")} style={sharedStyles.card}>
         <Text style={sharedStyles.cardTitle}>问问家人</Text><Text style={sharedStyles.body}>{home?.prompt.text ?? "今天最想替孩子记住什么？"}</Text><Text style={styles.link}>原生打开 →</Text>
       </Pressable>
     </ScrollView>

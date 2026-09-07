@@ -27,15 +27,15 @@ function FallbackTile({
       className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border border-foreground/10 bg-foreground/[0.03] p-3 text-center ${className}`}
     >
       <span className="text-xs font-medium">{label}</span>
-      <span className="text-[11px] leading-4 text-foreground/50">{FALLBACK_TEXT}</span>
+      <span className="text-xs text-foreground/50">{FALLBACK_TEXT}</span>
       <a
         href={`/api/media/${assetId}?download=1`}
-        className="text-[11px] underline underline-offset-2 hover:text-accent"
+        className="text-xs underline underline-offset-2 hover:text-accent"
       >
         下载 / 打开原件
       </a>
       {filename && (
-        <span className="max-w-full truncate text-[11px] text-foreground/40" title={filename}>
+        <span className="max-w-full truncate text-xs text-foreground/40" title={filename}>
           {filename}
         </span>
       )}

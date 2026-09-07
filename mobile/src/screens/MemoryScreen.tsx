@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   buttonRow: { flexDirection: "row", gap: 8 },
   grow: { flex: 1 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  chip: { minHeight: 42, justifyContent: "center", borderColor: colors.line, borderRadius: 21, borderWidth: 1, paddingHorizontal: 12 },
+  chip: { minHeight: 48, justifyContent: "center", borderColor: colors.line, borderRadius: 21, borderWidth: 1, paddingHorizontal: 12 },
   chipActive: { backgroundColor: colors.softSage, borderColor: colors.sage },
   chipText: { color: colors.muted, fontSize: 12, fontWeight: "700" },
   chipTextActive: { color: colors.sage, fontSize: 12, fontWeight: "800" },

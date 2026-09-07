@@ -29,6 +29,7 @@ const specs = [
   { name: "imports", files: ["imports.spec.ts"], port: 3124 },
   { name: "simple-mode", files: ["simple-mode.spec.ts"], port: 3131 },
   { name: "contribute-wizard", files: ["contribute-wizard.spec.ts"], port: 3132 },
+  { name: "a11y", files: ["a11y.spec.ts"], port: 3133 },
   { name: "collections", files: ["collections.spec.ts"], port: 3126 },
   { name: "review", files: ["review.spec.ts"], port: 3125 },
   { name: "security", files: ["security.spec.ts"], port: 3128 },

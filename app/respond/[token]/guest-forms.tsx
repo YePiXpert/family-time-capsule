@@ -120,7 +120,7 @@ export function GuestMediaForm({ token }: { token: string }) {
               if (inputRef.current) inputRef.current.value = "";
               setState(undefined);
             }}
-            className="min-h-9 rounded-lg border border-foreground/20 px-3 text-xs"
+            className="min-h-11 rounded-lg border border-foreground/20 px-3 text-xs"
           >
             移除
           </button>

@@ -14,7 +14,7 @@
 | NAV-5 | app/(protected)/(app)/capture、mobile/src/screens/CaptureScreen.tsx | mobile/tests/local-*、persistent-draft.test.ts、draft-sync.test.ts；tests/e2e/inbox-draft.spec.ts、persistent-draft.spec.ts |
 | NAV-6 | app/(protected)/(app)/family/[id]、lib/family | tests/integration/onboarding-guardian.test.ts |
 | NAV-8 | design-system/、components/ui | lint/typecheck |
-| NAV-9 | components/ | 待补 a11y 检查(REL 条目) |
+| NAV-9 | components/、app/globals.css(reduced-motion)、mobile/src/theme.ts(无固定行高)、mobile/src/(screens|navigation|components) accessibilityRole/Label | tests/e2e/a11y.spec.ts（键盘登录/减少动态/触控目标）、mobile/tests/a11y-regression.test.ts（行高/触控/角色） |
 | NAV-11 | lib/display-mode(.server).ts、app/(protected)/(app)/(simple-home/page/layout/more/settings)、components/(display-mode-toggle/app-shell/bottom-navigation/sidebar-navigation)、app/contribute/[token]/guest-contribution-form.tsx、mobile/src/(screens/SimpleHomeScreen.tsx、components/DisplayModeCard.tsx、state/AppContext display_mode) | tests/e2e/simple-mode.spec.ts、contribute-wizard.spec.ts、tests/integration/contribution.test.ts(声音聚合)、mobile/tests/display-mode.test.ts |
 
 ## ID — 身份与权限

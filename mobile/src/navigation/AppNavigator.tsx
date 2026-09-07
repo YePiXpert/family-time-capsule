@@ -94,7 +94,7 @@ export function AppNavigator() {
   const insets = useSafeAreaInsets();
   const { message, dismissMessage } = useApp();
   return <View style={styles.fill}>
-    {message ? <Pressable accessibilityHint="点按收起" onPress={dismissMessage} style={[styles.banner, { paddingTop: Math.max(insets.top, 8) }]}><Text numberOfLines={2} style={styles.bannerText}>{message}</Text></Pressable> : null}
+    {message ? <Pressable accessibilityRole="button" accessibilityLabel="同步提示，点按收起" accessibilityHint="点按收起" onPress={dismissMessage} style={[styles.banner, { paddingTop: Math.max(insets.top, 8) }]}><Text numberOfLines={2} accessibilityLiveRegion="polite" style={styles.bannerText}>{message}</Text></Pressable> : null}
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator screenOptions={{ headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" } }}>
         <Stack.Screen component={MainTabs} name="MainTabs" options={{ headerShown: false }} />

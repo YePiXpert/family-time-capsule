@@ -363,7 +363,7 @@ export default async function HomePage() {
                           </span>
                         </div>
                       )}
-                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-background/90 px-2 py-0.5 text-[11px] font-semibold text-foreground">
+                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-background/90 px-2 py-0.5 text-xs font-semibold text-foreground">
                         {INBOX_STATUS_LABEL[preview.status] ?? "待整理"}
                       </span>
                     </div>
