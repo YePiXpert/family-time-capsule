@@ -77,6 +77,11 @@ export function CaptureScreen() {
   }, [route.params?.localDraftId, draftScope, localDraftReady, resumeLocalDraft, navigation]);
   const sendDraft = async (publish: boolean, intent?: "draft" | "review") => {
     try {
+      const content = capsuleDraft.draft?.content;
+      if (publish && content?.visibility === "members" && content.readerUserIds.length === 0) {
+        setMessage("请先选择可以阅读这件事的家人，或改回全家/仅自己。");
+        return;
+      }
       await capsuleDraft.save(publish, intent);
       setMessage("本机已保存，网络工作会在后台继续。");
       const row = capsuleDraft.draft;
@@ -444,7 +449,35 @@ export function CaptureScreen() {
             </View>
           </View>;
         })}
-        <Text style={sharedStyles.body}>保存后的读者：全家。草稿文字在正式保存前仅自己可见。</Text>
+        <Text style={sharedStyles.label}>保存后的读者</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+          {([["family", "全家"], ["members", "指定成员"], ["private", "仅自己"]] as const).map(([value, label]) => {
+            const active = capsuleDraft.draft!.content.visibility === value;
+            return (
+              <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: active }} onPress={() => changeDraft(value === "members" ? { visibility: value } : { visibility: value, readerUserIds: [] })} style={[sharedStyles.secondaryButton, { opacity: active ? 1 : 0.65, borderColor: active ? colors.coral : colors.muted }]}>
+                <Text style={active ? sharedStyles.secondaryText : { color: colors.muted, fontSize: 14 }}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {capsuleDraft.draft.content.visibility === "members" ? <>
+          <Text style={sharedStyles.label}>可以选择这件事的家人</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {(people ?? []).map(person => {
+              const checked = capsuleDraft.draft!.content.readerUserIds.includes(person.id);
+              return (
+                <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => { const ids = capsuleDraft.draft!.content.readerUserIds; changeDraft({ readerUserIds: checked ? ids.filter(id => id !== person.id) : [...ids, person.id] }); }} style={[sharedStyles.secondaryButton, { opacity: checked ? 1 : 0.65 }]}>
+                  <Text style={checked ? sharedStyles.secondaryText : { color: colors.muted, fontSize: 14 }}>{checked ? `已选 · ${person.displayName}` : person.displayName}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </> : null}
+        <Text style={{ color: colors.muted, fontSize: 12 }}>
+          {capsuleDraft.draft.content.visibility === "family"
+            ? "草稿文字在正式保存前仅自己可见；保存后全家可读。"
+            : "新上传的素材只对所选读者可见；已全家共享的素材不会因此变私密。带新素材的此类草稿本轮先留本机，仅文字可直接创建。"}
+        </Text>
         {(!credentials || viewer?.canEditEvents) && <Action label="保存为一条记忆" hint="先写入本机，再同步到已授权家庭" disabled={busy || recording || !!capsuleDraft.error || capsuleDraft.draft.status === "published"} onPress={() => void sendDraft(true)} />}
         {credentials && family && <View style={styles.actionGrid}>
           <Action label={`发送草稿到${family.name}`} hint="暂不创建记忆，可以换设备继续" disabled={busy || recording || capsuleDraft.draft.status !== "editing"} onPress={() => void sendDraft(false, "draft")} />

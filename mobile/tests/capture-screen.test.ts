@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     content: {
       text: "", title: "", items: [] as unknown[], participantIds: [] as string[],
       occurredAt: null as string | null, occurredAtPrecision: "exact" as const,
+      visibility: "family" as "family" | "members" | "private", readerUserIds: [] as string[],
     },
   },
 }));
@@ -32,7 +33,10 @@ vi.mock("@react-navigation/native", () => ({
 }));
 const navigation = { setParams: mocks.setParams };
 vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({ credentials: null, viewer: null, outbox: [], queued: mocks.queued }),
+  useApp: () => ({
+    credentials: null, viewer: null, outbox: [], queued: mocks.queued,
+    people: [{ id: "person-1", displayName: "妈妈" }, { id: "person-2", displayName: "外公" }],
+  }),
 }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "capture-id" }));
 vi.mock("expo-audio", () => {
@@ -91,6 +95,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   mocks.draft.content.occurredAt = null;
   mocks.draft.content.occurredAtPrecision = "exact";
+  mocks.draft.content.visibility = "family";
+  mocks.draft.content.readerUserIds = [];
   mocks.route.params = {};
   mocks.permission.mockResolvedValue({ granted: true });
   mocks.cameraPermission.mockResolvedValue({ granted: true });
@@ -243,4 +249,24 @@ it("精度切到「不详」清空发生时间且不写锚点（§6）", async (
     occurredAt: null,
     occurredAtPrecision: "unknown",
   });
+});
+
+it("三档读者选择：切档清空读者（§5）", async () => {
+  await render("text");
+  await press("仅自己");
+  expect(mocks.enqueueText).toHaveBeenCalledWith({ visibility: "private", readerUserIds: [] });
+  await press("全家");
+  expect(mocks.enqueueText).toHaveBeenCalledWith({ visibility: "family", readerUserIds: [] });
+});
+
+it("成员档读者多选与发布守卫（§5）", async () => {
+  mocks.draft.content.visibility = "members";
+  await render("text");
+  await press("妈妈");
+  expect(mocks.enqueueText).toHaveBeenCalledWith({ readerUserIds: ["person-1"] });
+  // readerUserIds 未回写（仍空）→ 发布被拦并给出可读原因
+  mocks.enqueueText.mockClear();
+  await press("保存为一条记忆");
+  expect(mocks.enqueueText).not.toHaveBeenCalled();
+  expect(JSON.stringify(tree!.toJSON())).toContain("请先选择可以阅读这件事的家人");
 });
