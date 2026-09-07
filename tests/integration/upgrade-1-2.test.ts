@@ -21,7 +21,9 @@ function seed11(file:string){
 it('upgrades an isolated real 1.1 SQLite file in place, preserves old rows and creates a pre-migration snapshot',{timeout:60_000},()=>{
   const root=mkdtempSync(path.join(tmpdir(),'ftc-upgrade12-'));const file=path.join(root,'capsule.sqlite'),snapshots=path.join(root,'snapshots');
   try{seed11(file);const old=new Database(file);const before=old.prepare('select * from memory_event').all();old.close();const connection=openDatabaseConnection({databasePath:file,migrationsFolder:migrations,snapshotDirectory:snapshots});
-    expect(connection.sqlite.prepare('select * from memory_event').all()).toEqual(before.map(row => ({ ...(row as Record<string, unknown>), title_source: 'legacy_unknown', title_revision: 0 })));expect(connection.sqlite.prepare('select count(*) as n from collection').get()).toEqual({n:0});expect(connection.sqlite.pragma('foreign_key_check')).toEqual([]);connection.sqlite.close();
+    // 0057 读者模型：memory_event 增加 visibility='family' 与
+    // created_by_user_id=NULL 行级默认；旧行数据本身不变。
+    expect(connection.sqlite.prepare('select * from memory_event').all()).toEqual(before.map(row => ({ ...(row as Record<string, unknown>), title_source: 'legacy_unknown', title_revision: 0, visibility: 'family', created_by_user_id: null })));expect(connection.sqlite.prepare('select count(*) as n from collection').get()).toEqual({n:0});expect(connection.sqlite.pragma('foreign_key_check')).toEqual([]);connection.sqlite.close();
     const files=readdirSync(snapshots);expect(files.length).toBe(1);const snapshot=new Database(path.join(snapshots,files[0]!));expect(snapshot.prepare('select * from memory_event').all()).toEqual(before);expect(snapshot.prepare("select name from sqlite_schema where name='collection'").all()).toEqual([]);snapshot.close();
   }finally{rmSync(root,{recursive:true,force:true});}
 });
