@@ -97,7 +97,7 @@ React Native + 原生 SQLite/SecureStore/FileSystem；不是 PWA/WebView 套壳�
 
 ## 本地开发
 
-服务端断点上传使用 Linux `flock`（util-linux）保护跨进程原件写入；官方容器已包含。非 Linux 开发环境请在项目隔离容器内运行服务端。锁文件不靠删除解锁，进程退出由内核释放。
+服务端断点上传在 Linux（含官方容器）使用 `flock`（util-linux）保护跨进程原件写入：锁文件不靠删除解锁，进程退出由内核释放。非 Linux 开发机（Windows/macOS）原生 `npm run dev` 亦可运行——上传锁降级为进程内互斥，单个开发服务器进程内语义不变，只是不提供跨进程保护；生产部署仍应使用 Linux 容器。
 
 ```bash
 npm install

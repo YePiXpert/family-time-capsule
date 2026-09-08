@@ -4,7 +4,17 @@ import { once } from 'node:events';
 import { expect, it } from 'vitest';
 import { withTransferLock, TransferBusyError } from '@/lib/imports/transfer-lock';
 
-it('kernel lock is shared by independent processes and released by process death without deleting a lock file', async () => {
+it.skipIf(process.platform === 'linux')('dev fallback rejects a second in-process writer while the first holds the lock', async () => {
+  const id = randomUUID();
+  let release!: () => void;
+  const held = withTransferLock(id, () => new Promise<void>(resolve => { release = resolve; }));
+  await expect(withTransferLock(id, async () => 'unsafe second writer')).rejects.toBeInstanceOf(TransferBusyError);
+  release();
+  await expect(held).resolves.toBeUndefined();
+  await expect(withTransferLock(id, async () => 'recovered')).resolves.toBe('recovered');
+});
+
+it.skipIf(process.platform !== 'linux')('kernel lock is shared by independent processes and released by process death without deleting a lock file', async () => {
   const id = randomUUID();
   const program = `import { withTransferLock } from './lib/imports/transfer-lock.ts';
     await withTransferLock(${JSON.stringify(id)}, async () => {
