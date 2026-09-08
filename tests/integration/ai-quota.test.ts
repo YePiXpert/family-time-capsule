@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiJobLease } from "@/lib/ai/jobs";
 import type { AiWorkerQueue } from "@/jobs/runtime";
 import type { MemoryAssistant } from "@/lib/ai/types";
@@ -27,6 +27,9 @@ afterAll(async () => {
 
 const { getDb } = await import("@/db");
 const { aiDailyUsage } = await import("@/db/schema/ai-job");
+// Each scenario owns its usage ledger. Fixed-date fixtures may otherwise collide
+// with the worker's real UTC day when the calendar reaches that fixture date.
+beforeEach(() => { getDb().delete(aiDailyUsage).run(); });
 const { eq } = await import("drizzle-orm");
 const {
   consumeAiDailyQuota,
