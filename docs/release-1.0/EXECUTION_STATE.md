@@ -193,3 +193,13 @@ P0-D 实现与证据：
 - 新回归使用真实 SQLite、HTTP、原件、User ID 与 Person ID 不同的三个管理员，以及 React Native 控件和实际本地存储。先失败日志：`/tmp/ftc-r09-sharing-cover-red.log`、`/tmp/ftc-r09-native-edit-pending-red.log`；封面/分享/编辑 26 项通过，包含升级前未经授权的历史封面必须保持不可读的实际失败回归（`/tmp/ftc-r09-sharing-cover-legacy-red.log`）。原生全量 50 文件/273 项、typecheck/lint 通过；根 typecheck/lint/build/build:ops 和灾难 roundtrip 7 项通过，根 lint 12 条既存 warning，无 error。
 - 最终根全量 140 文件/879 项通过（`/tmp/ftc-r09-sharing-root-settled.log`）；完整 production E2E 75/75 通过（`/tmp/ftc-r09-sharing-e2e-final.log`），包含双端实际409刷新/重开/再次保存，以及原生私密两照片+录音的重开、断点上传、丢失分享回执重试、B阅读/C拒绝、撤回与B本机缓存清理。最后历史封面修正后 26 项集成回归、typecheck、production build/build:ops 和 edit/native-capture 10/10 再验证通过（`/tmp/ftc-r09-sharing-cover-complete.log`、`/tmp/ftc-r09-sharing-e2e-complete.log`）。独立只读审查提出的反例均已处理，无新迁移/归档版本变更；提交后核对同 SHA CI。
 - 平台相册/录音组件仍为替身；上述自动化不等于真机验收。增量变更序列/tombstone/cursor/权限版本、完整缓存刷新协议及恢复世代仍待实现，ID-11/ID-12/SYNC-8 保持部分实现；产品版本仍 1.0.0-dev.1。
+
+
+## 2026-09-08 演示就绪与 CI 修复
+
+- 目标：把项目推进到「可演示」状态。三件事完成：非 Linux 开发机可跑、一键合成演示数据、CI 回绿。
+- `54babc1` transfer-lock 非 Linux 降级：Linux 保持 flock 内核锁不变（生产容器 fail closed）；Windows/macOS 开发机改用同步进程内互斥——调用方 withUploadLock 本就串行同进程访问，进程内语义不变，仅放弃单进程开发服务器不需要的跨进程保护。测试平台感知：Linux 原有跨进程断言原样保留，非 Linux 跑进程内互斥断言；本地 Windows 验证通过。
+- `33997a2` 一键演示：`npm run demo` 首次自动 seed 独立 `demo-data/`（不碰 `./data`），合成「小满家」四人、15 条跨三年六档精度记忆、程序生成插画照片（sharp 渲染 SVG）与可播放 WAV 音频、1 条仅自己可见私密记忆、置顶成长节点、封存至 18 岁胶囊；随后同环境启动 next dev + worker（无 worker 时图片预览/波形任务永远排队、客户端 2 秒轮询不停）。README 补演示章节；demo-data 进 .gitignore。seed 复用真实服务层（performSetup/completeOnboarding/ingestImage/ingestMedia/saveDraft/publishDraft/updateMemoryEvent/createCapsule），非直接写库。幂等：已存在时拒绝重复 seed，--reset 重建。
+- Windows 实测（真实浏览器）：登录 → 今天页（年龄/回顾/最近记忆/置顶节点/胶囊全部渲染）→ 时间轴（年/人物/媒体筛选、unknown 显示「时间不确定」）→ 照片详情（3 张插画正常渲染）→ 音频详情（播放器/参与人/分享管理/讲述/事实）→ 搜索「生日」命中 2 条带摘要；worker 启动后 3 个排队 preview 补完、30 份衍生物生成。
+- CI 修复：`a2188e4` 落地时 web-quality 已红（optional-anchor-migration 严格相等断言被 0071 合法新增的 sync_memory_cover_idx 打破，当时未核 CI）。`20b5614`/`3bd5743` 改为「保留索引 name+sql 全量相等；新增索引必须显式白名单」，本意（升级不丢索引）不变；3bd5743 的 CI `34233201435` 四项全部 success，已核对。本地 Windows 全量另见 15 文件失败，均为平台差异（子进程/flock 类），先于本轮存在，Linux CI 为门禁。
+- 演示边界：demo 凭据仅限 demo-data 目录（demo@family.local / demo-family-2026，README 已注明）；所有演示素材程序合成，无真实人物数据。这满足「能演示」的最低目标，不改变任何 1.0 需求行的验收状态（BIZ-2 证据更新除外）。
