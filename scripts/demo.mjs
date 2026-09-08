@@ -30,7 +30,27 @@ if (!existsSync(envFile)) {
 }
 
 const cfg = JSON.parse(readFileSync(envFile, "utf8"));
-const port = process.env.DEMO_PORT ?? "3000";
+const portArg = process.argv.find(a => a.startsWith("--port="));
+const port = portArg ? portArg.slice("--port=".length) : process.env.DEMO_PORT ?? "3000";
+
+// 启动前探测端口：残留的孤儿进程（上次强停未连带退出的 next dev）会让新实例
+// 以 EADDRINUSE 失败。给出可执行的清理指引，而不是让用户看堆栈。
+const probe = spawnSync(
+  process.execPath,
+  ["-e", `const n=require("net");const s=n.createServer();s.once("error",()=>process.exit(1));s.listen(${port},"::",()=>s.close(()=>process.exit(0)));`],
+  { cwd: root },
+);
+if (probe.status === 1) {
+  console.error(
+    `端口 ${port} 已被占用——通常是上一次演示没退干净（Windows 强停不会连带结束 next dev 子进程）。\n` +
+      `先结束占用进程再重试：\n` +
+      `  netstat -ano | findstr :${port}\n` +
+      `  taskkill /PID <上面的PID> /T /F\n` +
+      `或换端口启动：npm run demo -- --port=3001`,
+  );
+  process.exit(1);
+}
+
 console.log("");
 console.log("──────────────────────────────────────────────");
 console.log("  家庭时光胶囊 · 本地演示");
