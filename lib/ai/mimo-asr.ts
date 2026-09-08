@@ -75,6 +75,7 @@ function parseMimoChatCompletion(
     });
   }
   const content = choice.message.content;
+  if (choice.finish_reason !== "stop") throw new AiProviderError({ capability: "transcription", code: "ai_response_invalid", message: "MiMo ASR did not return a complete transcript.", retryable: false });
   if (typeof content !== "string") {
     throw new AiProviderError({
       capability: "transcription",
@@ -101,6 +102,7 @@ function parseMimoChatCompletion(
 
 export type MimoAsrDependencies = Readonly<{
   fetch?: AiFetch;
+  dispatch?: OpenAiCompatibleDependencies["dispatch"];
 }>;
 
 export class MimoAsrTranscriber {
@@ -171,6 +173,9 @@ export class MimoAsrTranscriber {
         `MiMo 语音识别仅支持 mp3 与 wav，收到 ${input.audio.mimeType}。`,
       );
     }
+    // Official guide limits the Base64 string to 10 MB; enforce before allocating
+    // the JSON body or reserving quota. https://mimo.mi.com/docs/en-US/quick-start/usage-guide/audio/Speech-Recognition
+    if (4 * Math.ceil(input.audio.bytes.byteLength / 3) > 10_000_000) throw new AiInputError("MiMo 音频编码后超过 10 MB，请使用更小的完整音频或分段转写。");
     const dataUrl = `data:${input.audio.mimeType};base64,${Buffer.from(
       input.audio.bytes,
     ).toString("base64")}`;
@@ -197,6 +202,7 @@ export class MimoAsrTranscriber {
       "chat/completions",
       body,
       input.signal,
+      input.audio,
     );
     return parseMimoChatCompletion(
       value,

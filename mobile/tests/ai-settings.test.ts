@@ -23,3 +23,9 @@ it("submits the reviewed configuration identity using authenticated JSON and dis
   fetch.mockRejectedValueOnce(new Error("offline"));
   await expect(fetchAiSettings(credentials)).rejects.toMatchObject({ status: 0 });
 });
+
+it("retains counted usage when limits are unlimited and rejects malformed quota DTOs", () => {
+  const quota={day:"2026-09-08",limits:{maxRequests:0,maxImages:0,maxAudioSeconds:0},used:{requests:3,images:1,audioSeconds:1}};
+  expect(parseAiSettings({...status,quota}).quota).toEqual(quota);
+  for(const count of [-1,0.1,"3",Number.NaN]) expect(()=>parseAiSettings({...status,quota:{...quota,used:{...quota.used,requests:count}}})).toThrow();
+});

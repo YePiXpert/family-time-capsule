@@ -370,3 +370,26 @@ export const aiDailyUsage = sqliteTable(
     ),
   ],
 );
+
+/** Content-free dispatch accounting. Millisecond timestamps match the SQL ledger. */
+export const aiDispatch = sqliteTable("ai_dispatch", {
+  id: text("id").primaryKey(), operationId: text("operation_id").notNull(),
+  kind: text("kind", { enum: ["job", "search", "diagnostic"] }).notNull(),
+  familyId: text("family_id"), userId: text("user_id"),
+  configurationId: text("configuration_id").notNull(), capability: text("capability").notNull(),
+  day: text("day").notNull(), requests: integer("requests").notNull(),
+  images: integer("images").notNull(), audioSeconds: integer("audio_seconds").notNull(),
+  state: text("state", { enum: ["reserved", "dispatched", "responded", "uncertain", "cancelled"] }).notNull(),
+  createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull(),
+}, table => [index("ai_dispatch_created_idx").on(table.createdAt)]);
+
+/** Short-lived query conversions, scoped to actor, instance, input and receiver. */
+export const aiSearchOperation = sqliteTable("ai_search_operation", {
+  id: text("id").primaryKey(), instanceId: text("instance_id").notNull(),
+  familyId: text("family_id").notNull(), userId: text("user_id").notNull(),
+  configurationId: text("configuration_id").notNull(), inputHash: text("input_hash").notNull(),
+  consentVersion: integer("consent_version").notNull(),
+  state: text("state", { enum: ["running", "completed", "failed"] }).notNull(),
+  resultJson: text("result_json"), errorCode: text("error_code"),
+  createdAt: integer("created_at").notNull(), expiresAt: integer("expires_at").notNull(),
+}, table => [index("ai_search_actor_created_idx").on(table.familyId, table.userId, table.createdAt)]);

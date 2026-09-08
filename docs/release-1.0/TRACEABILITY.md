@@ -99,7 +99,7 @@
 | AI-17 | lib/facts/source-refs | tests/integration(story sources) |
 | AI-18 | lib/authz/contribution-access | tests/integration/contribution-visibility.test.ts |
 | AI-19/20 | db/schema/ai-job(consent)、lib/ai/capabilities | tests/e2e/ai.spec.ts |
-| AI-21 | lib/ai/jobs/service.ts(配额待补) | — |
+| AI-21 | lib/ai/dispatch.ts; lib/ai/outbound.ts; lib/ai/quota.ts; jobs/runtime.ts | tests/integration/ai-dispatch.test.ts; tests/integration/ai-search-dispatch.test.ts; tests/integration/ai-outbound.test.ts |
 | AI-22 | lib/ai/validation.ts、lib/ai/handlers/suggest-asset-name.ts | tests/integration/asset-name.test.ts：OCR 注入、URL/晚到建议拒绝；全部链路统一专项仍待补 |
 | AI-23 | scripts/ai-diagnostics.mts、ftc ai test | live 凭据外部阻塞 |
 
@@ -109,7 +109,7 @@
 | --- | --- | --- |
 | FIND-1 | lib/search/(service/tokenizer).ts、db/migrations/0023 | tests/integration/search.test.ts |
 | FIND-2 | app/(protected)/(app)/search、app/api/mobile/v1/search、mobile/src/search/offline-search.ts、mobile/src/screens/SearchScreen.tsx、mobile/src/reading/native.ts(searchReadingDownloadsOffline) | tests/e2e(搜索项目)、mobile/tests/offline-search.test.ts、search-offline-screen.test.ts |
-| FIND-3 | lib/search/natural-language.ts、app/(protected)/(app)/search/page.tsx | tests/unit/search-natural-language.test.ts |
+| FIND-3 | lib/search/operations.ts; lib/search/natural-language.ts; app/api/search/natural/route.ts; app/(protected)/(app)/search | tests/unit/search-natural-language.test.ts; tests/integration/ai-search-dispatch.test.ts; tests/e2e/natural-search.spec.ts |
 | FIND-4 | scripts/benchmark-search-nl.mts（关键词基线与理想上限，不是真实模型测评） | fake 失败关闭；真实模型对比未完成 |
 | FIND-5 | lib/clusters/service.ts（dHash/焦点分/可解释理由/按勾选合并）、app/(protected)/(app)/inbox/cluster-suggestion-ui.tsx（缩略图+勾选+全部保留+加入相册入口） | tests/integration/clusters.test.ts：相似vs字节级分开、理由构成、清晰度提示、子集合并、全部保留不动 |
 | FIND-6 | lib/memories/resurfacing | tests/integration/resurfacing.test.ts |

@@ -1,11 +1,9 @@
 # AI Provider 配置与适配器
 
-> 当前状态：**Provider、同意与后台任务基础设施已实现，真实 AI handler
-> 已扩展至图片视觉分析**。`lib/ai/` 提供 provider-neutral 接口、关闭实现、离线 Fake 和
-> OpenAI-compatible 传输层；`lib/ai/jobs/`、`jobs/` 与 `/settings/ai` 提供
-> SQLite queue、worker、披露和同意控制。production handler registry 已注册
-> `transcribe.asset.v1`（音频/视频转录）与 `analyze.asset_image.v1`（图片视觉分析），
-> 其余能力（suggestion、embedding）仍为空，不会自动处理家庭资料。
+> 当前状态：生产队列已注册音频/视频转录、图片/视频分析、素材命名、事件与
+> 收件箱整理、故事生成和回顾整理。显式自然语言搜索与 CLI 诊断共用真实发送
+> 授权和配额边界。代码与确定性自动化不代表真实 Luna/MiMo 质量已验收；
+> 产品模型仍为 `gpt-5.6-luna` 和 `mimo-v2.5-asr`。
 
 ## 1. 架构边界
 
@@ -75,8 +73,8 @@ Fake 输出永远不得进入生产档案或伪装成用户确认内容。
 
 | 能力 | 相对 `AI_BASE_URL` 的端点 |
 | --- | --- |
-| text | `chat/completions` |
-| vision | `chat/completions`（data URL 图片输入） |
+| text | `responses` 或 `chat/completions`（按 profile） |
+| vision | `responses` 或 `chat/completions`（data URL 图片输入） |
 | transcription | `audio/transcriptions`（multipart） |
 | embeddings | `embeddings` |
 
@@ -228,3 +226,23 @@ service 与 app 共享 `/data` 和同一组 AI 环境变量。worker 停止、Pr
 
 验证：确定性 Provider 单测、实际 loopback HTTP（文字/图片/multipart 转写、
 重定向与 429），无外部费用。尚无专用凭据，真实 Provider 组合未验证。
+
+## 2026-09-08 契约复核与统一发送边界
+
+生产 `createMemoryAssistant` 的实际调用必须携带服务器执行上下文；仅构造对象
+或读取状态不调用模型。`lib/ai/dispatch.ts` 在真实发送处统一实例身份、当前
+授权、原子配额和持久发送账本；`lib/ai/outbound.ts` 负责 DNS/地址检查和连接
+固定。业务代码不能靠绕过 worker 的工厂调用得到免费或未授权外发。
+
+核对了 [Luna 模型文档](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
+与 [结构化输出文档](https://developers.openai.com/api/docs/guides/structured-outputs)：
+文字/图片支持 Responses 或 Chat profile，JSON 模式分别使用 `text.format`
+和 `response_format`；JSON 模式不等于服务商严格 schema 保证，应用仍验证结果。
+Responses 文字与图片请求设置 `store: false`。
+
+[MiMo 官方语音文档](https://mimo.mi.com/docs/en-US/quick-start/usage-guide/audio/Speech-Recognition)
+规定单段 `input_audio`、匹配格式的 data URL、api-key 或 Bearer 认证及
+`usage.seconds`。当前 MiMo 路由默认 api-key，仅外发 MP3/WAV；Base64 超过
+10 MB 在编码/预留前拒绝，`finish_reason` 不是 `stop` 则拒绝不完整结果。
+不生成供应商没有提供的逐段时间戳。HTTP fixture 与真实媒体探测验证的是
+协议和边界，三项真实模型链路仍分别待专用凭据验证。

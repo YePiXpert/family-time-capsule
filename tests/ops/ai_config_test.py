@@ -79,6 +79,29 @@ class AiConfigurationTests(unittest.TestCase):
             self.assertEqual(calls[0][-2:], ["app", "worker"])
             self.assertIn("--no-deps", calls[0])
 
+    def test_only_changed_route_renews_consent_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for sub in ("config", "releases/current", "state"):
+                (root / sub).mkdir(parents=True)
+            current = {"AI_PROVIDER": "dual", "AI_CONFIGURATION_ID": "text-original", "ASR_CONFIGURATION_ID": "asr-original", "AI_BASE_URL": "https://text.example/v1", "ASR_BASE_URL": "https://speech.example/v1", "ASR_API_KEY": "synthetic-asr-key"}
+            (root / "config/env").write_text(ai.update_environment("FTC_PROJECT_NAME=ftc-test\n", current))
+            (root / "releases/current/compose.yml").write_text((ROOT / "scripts/ops/templates/compose.loopback.yml").read_text())
+            installation = ai.Installation(root)
+            installation.effective_config = lambda: current
+            installation.recreate = lambda: None
+            installation.change({"AI_BASE_URL": "https://text.example/tenant-b", "AI_DAILY_MAX_REQUESTS": "7"})
+            text = (root / "config/env").read_text()
+            self.assertNotIn("text-original", text)
+            self.assertIn("asr-original", text)
+            self.assertIn("synthetic-asr-key", text)
+            # Quota-only changes preserve both route identities.
+            (root / "config/env").write_text(ai.update_environment("FTC_PROJECT_NAME=ftc-test\n", current))
+            installation.change({"AI_DAILY_MAX_REQUESTS": "3"})
+            text = (root / "config/env").read_text()
+            self.assertIn("text-original", text)
+            self.assertIn("asr-original", text)
+
     def test_preserves_recovery_record_if_old_service_cannot_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -121,10 +144,17 @@ class BaseUrlChangeConfirmationTests(unittest.TestCase):
         values.update({"AI_PROVIDER": "dual", "AI_BASE_URL": "https://new-provider.example/v1", "AI_API_KEY": "k", "AI_MODEL": "m"})
         return values
 
-    def test_same_host_needs_no_confirmation(self):
+    def test_same_receiver_needs_no_confirmation(self):
         for install in self.installation({"AI_BASE_URL": "https://old.example/v1"}):
             with mock.patch("builtins.input", side_effect=AssertionError("input must not be called")):
-                ai.confirm_base_url_change(install, {**self.base_values(), "AI_BASE_URL": "https://old.example/v2"})
+                ai.confirm_base_url_change(install, {**self.base_values(), "AI_BASE_URL": "https://old.example:443/v1/"})
+
+    def test_same_host_port_or_tenant_path_change_requires_confirmation(self):
+        for install in self.installation({"AI_BASE_URL": "https://old.example/v1"}):
+            for target in ("https://old.example:8443/v1", "https://old.example/other-tenant/v1"):
+                with mock.patch("builtins.input", return_value="cancel"):
+                    with self.assertRaises(ai.OperationError):
+                        ai.confirm_base_url_change(install, {**self.base_values(), "AI_BASE_URL": target})
 
     def test_changed_host_requires_typed_confirm(self):
         for install in self.installation({"AI_BASE_URL": "https://old.example/v1"}):
@@ -139,7 +169,7 @@ class BaseUrlChangeConfirmationTests(unittest.TestCase):
             raise ai.OperationError("不可用")
         for install in self.installation({}):
             install.effective_config = unavailable
-            with mock.patch("builtins.input", side_effect=AssertionError("input must not be called")):
+            with self.assertRaises(ai.OperationError):
                 ai.confirm_base_url_change(install, self.base_values())
 
     def test_asr_host_change_confirmed_only_in_dual_mode(self):

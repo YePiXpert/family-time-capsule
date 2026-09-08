@@ -202,3 +202,17 @@ describe("MimoAsrTranscriber (M6)", () => {
     );
   });
 });
+
+it("rejects an oversized encoded audio body before dispatch", async () => {
+  let calls = 0;
+  const transcriber = createTranscriber(async () => { calls++; return chatCompletion("unexpected"); });
+  await expect(transcriber.transcribeAudio({ audio: { bytes: new Uint8Array(8 * 1024 * 1024), mimeType: "audio/wav", fileName: "large.wav" } })).rejects.toBeInstanceOf(AiInputError);
+  expect(calls).toBe(0);
+});
+
+it("never labels truncated, filtered or unfinished transcripts as complete", async () => {
+  for (const finish_reason of ["length","content_filter",null,undefined]) {
+    const transcriber = createTranscriber(async () => jsonResponse({ choices: [{ finish_reason, message: { content: "only the beginning" } }] }));
+    await expect(transcriber.transcribeAudio({ audio: { bytes: WAV_BYTES, mimeType: "audio/wav", fileName: "audio.wav" } })).rejects.toBeInstanceOf(AiProviderError);
+  }
+});

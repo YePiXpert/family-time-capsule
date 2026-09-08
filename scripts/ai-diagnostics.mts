@@ -2,6 +2,7 @@ import { readFileSync, mkdirSync, writeFileSync, renameSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 import { AI_ENV_KEYS, aiConfigurationStatus, aiConfigurationFingerprint, readAiCapabilityChecks, testAiCapability } from "../lib/ai/diagnostics";
 import { createMemoryAssistant } from "../lib/ai/server";
 import { AiError, AiProviderError } from "../lib/ai/errors";
@@ -35,7 +36,7 @@ async function main() {
   let result: { passed: boolean; code?: string; usage?: unknown; httpStatus?: number | null };
   try {
     const sample = selected === "transcription" ? readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "ai-smoke.wav")) : new Uint8Array();
-    result = await testAiCapability(createMemoryAssistant(), selected, sample);
+    result = await testAiCapability(createMemoryAssistant(process.env, { execution: { kind: "diagnostic", operationId: randomUUID() } }), selected, sample);
   } catch (error) {
     // Neither raw Provider error nor response/prompt content leaves this command.
     result = { passed: false, code: error instanceof AiError ? error.code : "capability_test_failed", httpStatus: error instanceof AiProviderError ? error.status : null };

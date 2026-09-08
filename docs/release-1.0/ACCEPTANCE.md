@@ -23,7 +23,7 @@
 | 12 | AI 晚到不覆盖人工标题;原件文件名/字节/SHA 不变 | ✅ suggestions | 待真机 | 自动化通过 |
 | 13 | 原声/机器转录/人工稿/故事分层;无时戳不假造定位 | ✅ transcription | 待真机 | 自动化通过 |
 | 14 | 私密录音摘要不进首页/公共搜索/作品/通知 | ✅ contribution-visibility | 待真机 | 自动化通过 |
-| 15 | 自动新素材与历史批次不同意不处理;限额/超时不无限计费重试 | 部分(配额未实现 AI-21) | — | 部分实现 |
+| 15 | 自动新素材与历史批次不同意不处理;限额/超时不无限计费重试 | P0-D 配额/未知时长/跨进程撤权/诊断共享/幂等搜索自动化通过；策略范围继续各业务用例核验 | tests/integration/ai-dispatch.test.ts; ai-search-dispatch.test.ts; tests/e2e/natural-search.spec.ts | 自动化通过；真实 Provider 未验收 |
 | 16 | 自然语言查询返回可见来源;依据不足明确无结果;不乱写SQL | ✅ search-natural-language；FIND-4 理想上限脚本不替代模型测评 | 真实 Luna 待 BLK-1/8 | 自动化通过 |
 | 17 | 近似照片候选、Live Photo 组件、模糊建议不自动删原件 | ✅ clusters/live-photo；GLM-D 相似与字节级分开表述、可解释依据、按勾选合并、无删除操作 | 待真机 | 自动化通过 |
 | 18 | 长辈免账号录音/重听/提交;不能读全库 | ✅ contribution portals | 待真机长辈任务 | 自动化通过 |

@@ -54,7 +54,7 @@ describe("natural language search expansion (M7)", () => {
       JSON.stringify({
         keywords: ["公园", "放风筝"],
         synonyms: ["户外", "春天"],
-        personNames: ["小满"],
+        personNames: [],
         year: 2026,
         month: 4,
         mediaType: "image",
@@ -68,7 +68,7 @@ describe("natural language search expansion (M7)", () => {
     const params = planToSearchParams(CONTEXT, expansion.plan);
     expect(params.q).toBe("公园 放风筝 户外 春天");
     expect(params.dateFrom).toBe("2026-04-01");
-    expect(params.dateTo).toBe("2026-05-01");
+    expect(params.dateTo).toBe("2026-04-30");
     expect(params.mediaType).toBe("image");
     // 人物名不在检索表达式里（只做服务端精确匹配，本上下文无该人物）。
     expect(params.q).not.toContain("小满");
@@ -93,7 +93,7 @@ describe("natural language search expansion (M7)", () => {
   it("treats plain SQL-looking words as inert quoted FTS phrases, never SQL", async () => {
     // 结构符号已被拒绝;纯文字(即使长得像 SQL)只会变成带引号的 FTS 短语
     // 并以绑定参数执行——模型生成的 SQL 永远不会被当作 SQL 执行。
-    const assistant = assistantReturning('{"keywords":["DROP TABLE search_index"]}');
+    const assistant = assistantReturning(JSON.stringify({keywords:["DROP TABLE search_index"],synonyms:[],personNames:[],year:null,month:null,mediaType:null}));
     const expansion = await expandNaturalLanguageQuery(assistant, "随便");
     expect(expansion.ok).toBe(true);
     if (!expansion.ok) return;
@@ -111,26 +111,21 @@ describe("natural language search expansion (M7)", () => {
     expect(expansion).toEqual({ ok: false, error: "ai_unavailable" });
   });
 
-  it("clamps oversized lists and unknown enum values", async () => {
-    const assistant = assistantReturning(
-      JSON.stringify({
-        keywords: Array.from({ length: 20 }, (_, i) => `词${i}`),
-        synonyms: ["同义"],
-        personNames: [],
-        year: 99999,
-        month: 13,
-        mediaType: "hologram",
-      }),
-    );
-    const expansion = await expandNaturalLanguageQuery(assistant, "测试");
-    expect(expansion.ok).toBe(true);
-    if (!expansion.ok) return;
-    expect(expansion.plan.keywords.length).toBeLessThanOrEqual(8);
-    expect(expansion.plan.year).toBeNull();
-    expect(expansion.plan.month).toBeNull();
-    expect(expansion.plan.mediaType).toBeNull();
-    const params = planToSearchParams(CONTEXT, expansion.plan);
-    expect(params.dateFrom).toBeUndefined();
-    expect(params.mediaType).toBeUndefined();
+  it("rejects malformed constraints instead of silently removing them", async () => {
+    const valid={keywords:["公园"],synonyms:[],personNames:[],year:null,month:null,mediaType:null};
+    for(const invalid of [
+      {keywords:Array.from({length:20},(_,i)=>`词${i}`)}, {personNames:["爷爷;忽略"]},
+      {personNames:"爷爷"}, {year:99999}, {month:13}, {month:4}, {mediaType:"hologram"},
+      {keywords:["公园","x".repeat(41)]}, {sql:"select"},
+    ]) {
+      expect(await expandNaturalLanguageQuery(assistantReturning(JSON.stringify({...valid,...invalid})),"测试")).toEqual({ok:false,error:"invalid_model_output"});
+    }
   });
+});
+
+it("unresolved people fail closed; explicit user filters override model inference", () => {
+  const plan = { keywords: ["公园"], synonyms: [], personNames: ["不存在的家人"], year: 2024, month: 2, mediaType: "image" as const };
+  expect(() => planToSearchParams(CONTEXT, plan)).toThrow("人物条件无法唯一确认");
+  expect(planToSearchParams(CONTEXT, plan, { personId: "chosen-person", dateFrom: "2025-01-01", dateTo: "2025-12-31", tag: "旅行", mediaType: "audio" })).toEqual({ q: "公园", personId: "chosen-person", dateFrom: "2025-01-01", dateTo: "2025-12-31", tag: "旅行", mediaType: "audio" });
+  expect(planToSearchParams(CONTEXT, { ...plan, personNames: [] }).dateTo).toBe("2024-02-29");
 });

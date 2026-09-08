@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type Server, type RequestListener } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { createMemoryAssistant } from "@/lib/ai/server";
@@ -14,7 +16,7 @@ async function listen(handler: RequestListener) {
 }
 
 function assistant(base: string) {
-  return createMemoryAssistant({ AI_PROVIDER: "openai-compatible", AI_BASE_URL: base, AI_API_KEY: "dedicated-loopback-test", AI_MODEL: "test-text", AI_VISION_MODEL: "test-vision", AI_TRANSCRIPTION_MODEL: "test-speech" });
+  return createMemoryAssistant({ AI_PROVIDER: "openai-compatible", AI_BASE_URL: base, AI_API_KEY: "dedicated-loopback-test", AI_MODEL: "test-text", AI_VISION_MODEL: "test-vision", AI_TRANSCRIPTION_MODEL: "test-speech" }, { execution: { kind: "diagnostic", operationId: randomUUID() } });
 }
 
 describe("real loopback HTTP, deterministic provider; no external model requests", () => {
@@ -32,7 +34,7 @@ describe("real loopback HTTP, deterministic provider; no external model requests
     const provider = assistant(base);
     expect((await provider.generateText({ messages: [{ role: "user", content: "Return a JSON title" }], responseFormat: "json" })).text).toBe('{"title":"窗边的绿萝"}');
     await provider.analyzeImage({ image: { bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png" }, prompt: "Describe shapes" });
-    expect(await provider.transcribeAudio({ audio: { bytes: new Uint8Array([4, 5, 6]), mimeType: "audio/wav", fileName: "PRIVATE_ORIGINAL.wav" } })).toMatchObject({ text: "hello family", segments: [] });
+    expect(await provider.transcribeAudio({ audio: { bytes: readFileSync("tests/fixtures/sample.wav"), mimeType: "audio/wav", fileName: "PRIVATE_ORIGINAL.wav" } })).toMatchObject({ text: "hello family", segments: [] });
     expect(received.map(call => call.path)).toEqual(["/v1/chat/completions", "/v1/chat/completions", "/v1/audio/transcriptions"]);
     expect(JSON.parse(received[1].body).messages[0].content[1].image_url.url).toBe("data:image/png;base64,AQID");
     expect(received[2].contentType).toContain("multipart/form-data; boundary=");

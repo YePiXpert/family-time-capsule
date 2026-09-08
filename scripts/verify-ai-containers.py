@@ -68,10 +68,13 @@ def interactive_configure(env, synthetic_key):
     offset = 0
     deadline = time.monotonic() + 160
     prompts = [
-        ("endpoint（", "http://127.0.0.1:3999/v1"), ("接收服务名称", "Container test only"),
-        ("文字模型", "fixture-text"), ("视觉模型", "fixture-vision"), ("转写模型", "fixture-audio"),
+        ("路由模式", "single"), ("官方或 CPA/兼容端点", "http://127.0.0.1:3999/v1"),
+        ("接收服务名称", "Container test only"), ("文字模型", "fixture-text"), ("视觉模型", "fixture-vision"),
         ("token 参数", ""), ("模型支持 temperature", ""), ("文字 JSON 模式", ""),
-        ("转写格式", ""), ("API Key（隐藏）：", synthetic_key),
+        ("文字 API 形态", "chat_completions"), ("视觉 API 形态", "chat_completions"),
+        ("每日请求上限", "4"), ("每日送分析图片上限", "0"), ("每日送转写音频秒数上限", "0"),
+        ("明确批准的内网", ""), ("转写模型", "fixture-audio"), ("转写格式", ""),
+        ("端点 API Key（隐藏）：", synthetic_key),
     ]
     try:
         while time.monotonic() < deadline:
@@ -152,6 +155,9 @@ def verify(mode, image):
             assert failed.returncode != 0 and "HTTP 401" in failed.stderr
             assert "DO_NOT_LOG_PROVIDER_BODY" not in failed.stdout + failed.stderr
             assert install.run(["exec", "-T", "app", "cat", "/tmp/ftc-ai-request-count"]).strip() == "4", "Unbounded automatic retries"
+            denied = command(["bash", str(ROOT / "scripts/ops/ftc"), "ai", "test", "--capability", "text"], env, check=False)
+            assert denied.returncode != 0 and "ai_quota_exceeded" in denied.stderr
+            assert install.run(["exec", "-T", "app", "cat", "/tmp/ftc-ai-request-count"]).strip() == "4", "Diagnostic bypassed the shared quota"
             install.run(["restart", "app", "worker"])
             status = command(["bash", str(ROOT / "scripts/ops/ftc"), "ai", "status"], env)
             assert "一致" in status.stdout and "密钥已配置" in status.stdout

@@ -28,6 +28,7 @@ import {
   validateTranscribeAudioInput,
 } from "./validation";
 import { assertAiServerRuntime } from "./server-runtime";
+import type { AiDispatch } from "./dispatch";
 
 export type AiFetch = (
   input: string | URL | Request,
@@ -36,6 +37,7 @@ export type AiFetch = (
 
 export type OpenAiCompatibleDependencies = Readonly<{
   fetch?: AiFetch;
+  dispatch?: AiDispatch;
 }>;
 
 type JsonObject = Record<string, unknown>;
@@ -486,6 +488,7 @@ function extensionForAudio(mimeType: TranscribeAudioInput["audio"]["mimeType"]):
  * 仅端点路径与认证头不同（MiMo 文档主推 api-key 头）。
  */
 export class OpenAiCompatibleTransport {
+  readonly #dispatch?: AiDispatch;
   readonly #config: OpenAiCompatibleConfig;
   readonly #fetch: AiFetch;
   readonly #authHeaders: Readonly<Record<string, string>> | null;
@@ -496,6 +499,7 @@ export class OpenAiCompatibleTransport {
     authHeaders?: Readonly<Record<string, string>>,
   ) {
     this.#config = config;
+    this.#dispatch = dependencies.dispatch;
     this.#fetch = dependencies.fetch ?? globalThis.fetch.bind(globalThis);
     this.#authHeaders = authHeaders ?? null;
   }
@@ -520,6 +524,7 @@ export class OpenAiCompatibleTransport {
     endpoint: string,
     init: RequestInit,
     externalSignal: AbortSignal | undefined,
+    audio?: TranscribeAudioInput["audio"],
   ): Promise<unknown> {
     if (externalSignal?.aborted === true) {
       throw new AiProviderError({
@@ -548,13 +553,17 @@ export class OpenAiCompatibleTransport {
     });
 
     const operation = (async (): Promise<unknown> => {
-      const response = await this.#fetch(this.#endpoint(endpoint), {
+      const url = this.#endpoint(endpoint);
+      const requestInit: RequestInit = {
         ...init,
         cache: "no-store",
         credentials: "omit",
         redirect: "error",
         signal: controller.signal,
-      });
+      };
+      const response = this.#dispatch
+        ? await this.#dispatch({ capability, configurationId: this.#config.configurationId, baseUrl: this.#config.baseUrl, url, init: requestInit, audio })
+        : await this.#fetch(url, requestInit);
       if (!response.ok) {
         void response.body?.cancel();
         throw new AiProviderError({
@@ -617,6 +626,7 @@ export class OpenAiCompatibleTransport {
     endpoint: string,
     body: JsonObject,
     signal: AbortSignal | undefined,
+    audio?: TranscribeAudioInput["audio"],
   ): Promise<unknown> {
     const json = JSON.stringify(body);
     if (encoder.encode(json).byteLength > this.#config.maxRequestBytes) {
@@ -627,6 +637,7 @@ export class OpenAiCompatibleTransport {
       endpoint,
       { method: "POST", headers: this.#headers(true), body: json },
       signal,
+      audio,
     );
   }
 
@@ -636,6 +647,7 @@ export class OpenAiCompatibleTransport {
     body: FormData,
     approximateBytes: number,
     signal: AbortSignal | undefined,
+    audio?: TranscribeAudioInput["audio"],
   ): Promise<unknown> {
     if (approximateBytes > this.#config.maxRequestBytes) {
       throw new AiInputError("AI request exceeds the configured size limit.");
@@ -645,6 +657,7 @@ export class OpenAiCompatibleTransport {
       endpoint,
       { method: "POST", headers: this.#headers(false), body },
       signal,
+      audio,
     );
   }
 }
@@ -701,6 +714,7 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
         "responses",
         {
           model,
+          store: false,
           input: input.messages.map((message) => ({
             role: message.role,
             content: message.content,
@@ -765,6 +779,7 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
         "responses",
         {
           model,
+          store: false,
           input: [
             {
               role: "user",
@@ -848,6 +863,7 @@ export class OpenAiCompatibleMemoryAssistant implements MemoryAssistant {
       form,
       approximateBytes,
       input.signal,
+      input.audio,
     );
     return parseTranscriptionResponse(
       value,

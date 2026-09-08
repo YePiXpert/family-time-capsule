@@ -11,7 +11,7 @@ import type { MemoryAssistant } from "@/lib/ai/types";
  * - 计数与裁决在同一条条件 UPDATE 内原子完成，并发不会双双越界；
  * - 请求发出前预扣；超限抛 AiQuotaExceededError（retryAfterMs=到下一个
  *   UTC 日界），任务按可重试调度回 pending；
- * - 0/缺省 = 不限（既有部署行为不变）；音频时长未知按 0 秒计，不估算。
+ * - 0/缺省 = 不限但计数；音频未知拒绝，亚秒时长向上取整。
  */
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-ai-quota-"));
@@ -148,17 +148,19 @@ describe("限额包装（withDailyQuota）", () => {
     expect(spy).toHaveBeenCalledTimes(1); // 超限的请求没有到达底层助手
   });
 
-  it("音频时长只在已知时计入；未知按 0 秒且不拦请求数", async () => {
+  it("音频时长未知拒绝，已知亚秒向上取整", async () => {
     const transcribe = vi.fn(() => Promise.resolve({ text: "t", segments: [] }));
     const assistant = withDailyQuota(
       stubAssistant(new DeterministicFakeMemoryAssistant(), { transcribeAudio: transcribe }),
       { maxRequests: 0, maxImages: 0, maxAudioSeconds: 10 },
       { now: new Date("2026-09-10T08:00:00.000Z") },
     );
-    // 未知时长：不占用秒数 → 放行
-    await assistant.transcribeAudio({
+    await expect(assistant.transcribeAudio({
       audio: { bytes: new Uint8Array([1]), fileName: "a.mp3", mimeType: "audio/mpeg" },
-    } as never);
+    } as never)).rejects.toMatchObject({ code: "ai_input_invalid" });
+    expect(transcribe).not.toHaveBeenCalled();
+    await assistant.transcribeAudio({ audio: { bytes: new Uint8Array([1]), fileName: "short.mp3", mimeType: "audio/mpeg" }, durationSeconds: 0.1 });
+    expect(getDb().select().from(aiDailyUsage).where(eq(aiDailyUsage.day, "2026-09-10")).get()).toMatchObject({ audioSeconds: 1 });
     expect(transcribe).toHaveBeenCalledTimes(1);
     // 已知 30 秒 > 上限 10 → 调用前拒绝
     await expect(
@@ -226,11 +228,13 @@ describe("worker 全链路（runAiWorkerOnce + 限额）", () => {
     expect(failCall[3].retryAfterMs).toBeGreaterThan(0);
   });
 
-  it("未配置限额时不包装（provider 元数据原样透传）", async () => {
+  it("未配置限额时仍计数（provider 元数据原样透传）", async () => {
     const assistant = new DeterministicFakeMemoryAssistant();
-    const registry = new AiJobRegistry().register(lease.jobType, async () => ({
-      commit: () => undefined,
-    }));
+    const registry = new AiJobRegistry().register(lease.jobType, async ({ assistant: counted }) => {
+      expect(counted.provider).toBe(assistant.provider);
+      await counted.generateText({ messages: [{ role: "user", content: "synthetic request" }] });
+      return { commit: () => undefined };
+    });
     const workerQueue = queue();
     const result = await runAiWorkerOnce({
       workerId: lease.workerId,
@@ -241,5 +245,6 @@ describe("worker 全链路（runAiWorkerOnce + 限额）", () => {
     });
     expect(result.status).toBe("completed");
     expect(workerQueue.finalize).toHaveBeenCalledTimes(1);
+    expect(getDb().select().from(aiDailyUsage).where(eq(aiDailyUsage.day, new Date().toISOString().slice(0,10))).get()).toMatchObject({ requests: 1 });
   });
 });

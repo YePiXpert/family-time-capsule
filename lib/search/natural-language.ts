@@ -1,10 +1,10 @@
 import "server-only";
 
 import type { MemoryAssistant } from "@/lib/ai/types";
-import { AiCapabilityUnavailableError } from "@/lib/ai/errors";
+import { AiCapabilityUnavailableError, AiError, AiInputError } from "@/lib/ai/errors";
 import { getDb } from "@/db";
 import { person as personTable } from "@/db/schema/family";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { FamilyContext } from "@/lib/family/context";
 import type { SearchParams } from "./service";
 
@@ -59,71 +59,58 @@ const PROMPT = [
 
 function cleanToken(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim().slice(0, MAX_TOKEN_CHARS);
-  if (trimmed.length === 0) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_TOKEN_CHARS) return null;
   // 控制字符与结构符号一律拒绝（提示注入/SQL/脚本不进入检索表达式）。
   if (/[\u0000-\u001f\u007f]/u.test(trimmed)) return null;
   if (/[`"'();{}[\]<>\\|&!*^$]/u.test(trimmed)) return null;
   return trimmed;
 }
 
-function cleanTokenList(value: unknown, max: number): string[] {
-  if (!Array.isArray(value)) return [];
-  const cleaned = value.map(cleanToken).filter((t): t is string => t !== null);
-  return [...new Set(cleaned)].slice(0, max);
+function cleanTokenList(value: unknown, max: number): string[] | null {
+  if (!Array.isArray(value) || value.length > max) return null;
+  const cleaned = value.map(cleanToken);
+  if (cleaned.some(token => token === null)) return null;
+  return [...new Set(cleaned as string[])];
 }
 
 function parsePlan(value: unknown): NaturalLanguageQueryPlan | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
+  const keys = ["keywords", "synonyms", "personNames", "year", "month", "mediaType"];
+  if (Object.keys(record).length !== keys.length || Object.keys(record).some(key => !keys.includes(key))) return null;
   const keywords = cleanTokenList(record.keywords, MAX_KEYWORDS);
-  if (keywords.length === 0) return null;
-  const media = record.mediaType;
-  const mediaType =
-    typeof media === "string" && (MEDIA_TYPES as readonly string[]).includes(media)
-      ? (media as NaturalLanguageQueryPlan["mediaType"])
-      : null;
-  const year =
-    typeof record.year === "number" && Number.isSafeInteger(record.year) &&
-    record.year >= 1900 && record.year <= 2100
-      ? record.year
-      : null;
-  const month =
-    typeof record.month === "number" && Number.isSafeInteger(record.month) &&
-    record.month >= 1 && record.month <= 12
-      ? record.month
-      : null;
-  return {
-    keywords,
-    synonyms: cleanTokenList(record.synonyms, MAX_SYNONYMS),
-    personNames: cleanTokenList(record.personNames, 6),
-    year,
-    month,
-    mediaType,
-  };
+  const synonyms = cleanTokenList(record.synonyms, MAX_SYNONYMS);
+  const personNames = cleanTokenList(record.personNames, 6);
+  if (!keywords?.length || !synonyms || !personNames) return null;
+  const { year, month, mediaType } = record;
+  if (year !== null && !(typeof year === "number" && Number.isSafeInteger(year) && year >= 1900 && year <= 2100)) return null;
+  if (month !== null && !(typeof month === "number" && Number.isSafeInteger(month) && month >= 1 && month <= 12)) return null;
+  // A month without a year cannot be represented by the current date interval.
+  if (month !== null && year === null) return null;
+  if (mediaType !== null && !(typeof mediaType === "string" && (MEDIA_TYPES as readonly string[]).includes(mediaType))) return null;
+  return { keywords, synonyms, personNames, year: year as number | null, month: month as number | null, mediaType: mediaType as NaturalLanguageQueryPlan["mediaType"] };
 }
 
 /** 把受限计划映射为受权限控制的既有 SearchParams；人物名只做服务端精确匹配。 */
 export function planToSearchParams(
   context: FamilyContext,
   plan: NaturalLanguageQueryPlan,
+  manual: Partial<SearchParams> = {},
 ): SearchParams {
   const terms = [...plan.keywords, ...plan.synonyms];
   const params: SearchParams = { q: terms.join(" ") };
 
-  if (plan.personNames.length > 0) {
+  if (plan.personNames.length > 0 && !manual.personId) {
     const db = getDb();
     const people = db
       .select({ id: personTable.id, displayName: personTable.displayName })
       .from(personTable)
       .where(eq(personTable.familyId, context.familyId))
       .all();
-    const matched = people.find((p) =>
-      plan.personNames.some((name) => p.displayName === name),
-    );
-    if (matched) params.personId = matched.id;
+    const matches = plan.personNames.map(name => people.filter(p => p.displayName === name));
+    if (matches.some(rows => rows.length !== 1) || new Set(matches.map(rows => rows[0].id)).size !== 1) throw new AiInputError("人物条件无法唯一确认，请在参与人筛选中明确选择后重试。");
+    params.personId = matches[0][0].id;
   }
 
   if (plan.year !== null) {
@@ -131,12 +118,14 @@ export function planToSearchParams(
     params.dateTo = plan.year + (plan.month !== null ? "" : "-12-31");
     if (plan.month !== null) {
       params.dateFrom = `${plan.year}-${String(plan.month).padStart(2, "0")}-01`;
-      const endMonth = plan.month === 12 ? 1 : plan.month + 1;
-      const endYear = plan.month === 12 ? plan.year + 1 : plan.year;
-      params.dateTo = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+      const lastDay = new Date(Date.UTC(plan.year, plan.month, 0)).getUTCDate();
+      params.dateTo = `${plan.year}-${String(plan.month).padStart(2, "0")}-${lastDay}`;
     }
   }
   if (plan.mediaType !== null) params.mediaType = plan.mediaType;
+  for (const key of ["personId", "dateFrom", "dateTo", "tag", "mediaType"] as const) {
+    if (manual[key]) Object.assign(params, { [key]: manual[key] });
+  }
   return params;
 }
 
@@ -164,6 +153,7 @@ export async function expandNaturalLanguageQuery(
     if (error instanceof AiCapabilityUnavailableError) {
       return { ok: false, error: "ai_unavailable" };
     }
+    if (error instanceof AiError) throw error;
     return { ok: false, error: "invalid_model_output" };
   }
   let parsed: unknown;

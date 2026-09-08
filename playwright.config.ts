@@ -9,7 +9,10 @@ import { defineConfig, devices } from "@playwright/test";
  * full-journey.spec.ts 保留完整用户旅程。
  */
 
-const specs = [
+const specs: { name: string; files: string[]; port: number; env?: Record<string,string> }[] = [
+  { name: "natural-search", files: ["natural-search.spec.ts"], port: 3135, env: {
+    AI_PROVIDER: "openai-compatible", AI_BASE_URL: "http://127.0.0.1:3998/v1", AI_API_KEY: "synthetic-natural-search-key", AI_MODEL: "e2e-query", AI_DAILY_MAX_REQUESTS: "2",
+  } },
   { name: "native-capture", files: ["native-capture.spec.ts"], port: 3134 },
   { name: "persistent-draft", files: ["persistent-draft.spec.ts"], port: 3129 },
   { name: "asset-library", files: ["asset-library.spec.ts"], port: 3130 },

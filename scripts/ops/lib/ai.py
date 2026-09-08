@@ -23,7 +23,7 @@ AI_KEYS = (
     "AI_MAX_REQUEST_BYTES", "AI_MAX_RESPONSE_BYTES", "AI_TOKEN_PARAMETER",
     "AI_TEMPERATURE_SUPPORTED", "AI_JSON_MODE", "AI_TRANSCRIPTION_FORMAT",
     "AI_TEXT_PROFILE", "AI_VISION_PROFILE",
-    "AI_DAILY_MAX_REQUESTS", "AI_DAILY_MAX_IMAGES", "AI_DAILY_MAX_AUDIO_SECONDS",
+    "AI_DAILY_MAX_REQUESTS", "AI_DAILY_MAX_IMAGES", "AI_DAILY_MAX_AUDIO_SECONDS", "AI_ALLOWED_PRIVATE_TARGETS",
     "ASR_CONFIGURATION_ID", "ASR_BASE_URL", "ASR_API_KEY", "ASR_PROVIDER_LABEL", "ASR_MODEL",
     "ASR_LANGUAGE", "ASR_REQUEST_TIMEOUT_MS", "ASR_MAX_REQUEST_BYTES", "ASR_MAX_RESPONSE_BYTES",
 )
@@ -147,6 +147,13 @@ def validate_configuration(values):
     }.items():
         if values[key] not in choices:
             raise OperationError("能力协议选项无效。")
+    private_targets = values.get("AI_ALLOWED_PRIVATE_TARGETS", "")
+    if len(private_targets) > 8192:
+        raise OperationError("内网目标清单过长。")
+    for target in filter(None, private_targets.split(",")):
+        approved = urlsplit(target.strip())
+        if approved.scheme != "https" or not approved.hostname or approved.username or approved.password or approved.query or approved.fragment:
+            raise OperationError("内网目标必须是明确的 HTTPS Base URL，不接受通配符或含密钥地址。")
     for key in ("AI_DAILY_MAX_REQUESTS", "AI_DAILY_MAX_IMAGES", "AI_DAILY_MAX_AUDIO_SECONDS"):
         if values[key] and not re.fullmatch(r"\d{1,10}", values[key]):
             raise OperationError("每日限额必须是不超过 10 位的非负整数（0=不限）。")
@@ -220,7 +227,17 @@ class Installation:
     def change(self, values):
         original_env = self.env_file.read_text()
         original_compose = self.compose_file.read_text()
-        new_env = update_environment(original_env, {**values, "AI_CONFIGURATION_ID": str(uuid.uuid4()), "ASR_CONFIGURATION_ID": str(uuid.uuid4())})
+        current = self.effective_config()
+        updates = dict(values)
+        for prefix in ("AI_", "ASR_"):
+            identity = prefix + "CONFIGURATION_ID"
+            keys = [key for key in AI_KEYS if key.startswith(prefix) and key != identity and not key.startswith("AI_DAILY_") and key != "AI_ALLOWED_PRIVATE_TARGETS"]
+            changed = any(key in values and values[key] != current.get(key, "") for key in keys)
+            # Disabling/changing route mode affects both channels. An unchanged
+            # secondary route retains its consent identity, including its key.
+            mode_changed = "AI_PROVIDER" in values and values["AI_PROVIDER"] != current.get("AI_PROVIDER", "")
+            updates[identity] = str(uuid.uuid4()) if changed or mode_changed else current.get(identity, "")
+        new_env = update_environment(original_env, updates)
         new_compose = update_template(original_compose)
         recovery = self.state / "ai-recovery.json"
         if recovery.exists():
@@ -280,8 +297,8 @@ def confirm_base_url_change(install, values):
     服务商收到——这必须是一次显式决定，不能静默发生。"""
     try:
         current = install.effective_config()
-    except OperationError:
-        return  # 首次配置或容器状态暂不可读：没有旧地址可比，不做确认
+    except OperationError as error:
+        raise OperationError("无法核对当前接收地址，请先恢复配置读取；未发送 Key 或改写配置。") from error
     changes = []
     checks = [("AI_BASE_URL", values["AI_BASE_URL"])]
     if values["AI_PROVIDER"] == "dual":
@@ -290,10 +307,11 @@ def confirm_base_url_change(install, values):
         old_url = current.get(key) or ""
         if not old_url or not new_url:
             continue
-        old_host = urlsplit(old_url).hostname
-        new_host = urlsplit(new_url).hostname
-        if old_host and new_host and old_host != new_host:
-            changes.append((key, old_host, new_host))
+        def recipient(value):
+            parsed = urlsplit(value)
+            return (parsed.scheme.lower(), (parsed.hostname or "").lower(), parsed.port or (443 if parsed.scheme == "https" else 80), parsed.path.rstrip("/") or "/v1")
+        if recipient(old_url) != recipient(new_url):
+            changes.append((key, old_url, new_url))
     if not changes:
         return
     for key, old_host, new_host in changes:
@@ -316,18 +334,19 @@ def configure_input():
         mode = input("路由模式：dual=双路由（推荐）/ single=单一兼容端点（关闭请用 ftc ai disable） [dual]：") or "dual"
     values["AI_PROVIDER"] = "dual" if mode == "dual" else "openai-compatible"
     for key, prompt, default in (
-        ("AI_BASE_URL", "CPA/兼容端点（如 https://provider.example/v1）", ""),
+        ("AI_BASE_URL", "官方或 CPA/兼容端点", "https://api.openai.com/v1"),
         ("AI_PROVIDER_LABEL", "接收服务名称", "我的 AI 服务"),
         ("AI_MODEL", "文字模型" + ("（回车用默认 gpt-5.6-luna）" if mode == "dual" else "（空白关闭此能力）"), "gpt-5.6-luna" if mode == "dual" else ""),
         ("AI_VISION_MODEL", "视觉模型" + ("（回车同文字模型）" if mode == "dual" else "（空白关闭此能力）"), "gpt-5.6-luna" if mode == "dual" else ""),
         ("AI_TOKEN_PARAMETER", "token 参数 max_completion_tokens / max_tokens", "max_completion_tokens"),
-        ("AI_TEMPERATURE_SUPPORTED", "模型支持 temperature：true / false", "true"),
+        ("AI_TEMPERATURE_SUPPORTED", "模型支持 temperature：true / false", "false"),
         ("AI_JSON_MODE", "文字 JSON 模式 json_object / prompt_only", "json_object"),
-        ("AI_TEXT_PROFILE", "文字 API 形态 responses（官方 Luna 地址）/ chat_completions（第三方兼容）", "chat_completions"),
-        ("AI_VISION_PROFILE", "视觉 API 形态 responses / chat_completions", "chat_completions"),
+        ("AI_TEXT_PROFILE", "文字 API 形态 responses（官方 Luna 地址）/ chat_completions（第三方兼容）", "responses"),
+        ("AI_VISION_PROFILE", "视觉 API 形态 responses / chat_completions", "responses"),
         ("AI_DAILY_MAX_REQUESTS", "每日请求上限（0=不限）", "0"),
         ("AI_DAILY_MAX_IMAGES", "每日送分析图片上限（0=不限）", "0"),
         ("AI_DAILY_MAX_AUDIO_SECONDS", "每日送转写音频秒数上限（0=不限）", "0"),
+        ("AI_ALLOWED_PRIVATE_TARGETS", "明确批准的内网 HTTPS Base URL（逗号分隔；公网留空）", ""),
     ):
         values[key] = input(f"{prompt}" + (f" [{default}]" if default else "") + "：") or default
     if mode == "single":
@@ -375,7 +394,7 @@ def main():
         print(f"{args.capability}：" + ("测试通过" if result["passed"] else "测试失败"))
         if not result["passed"]:
             code = result.get("code", "capability_test_failed")
-            allowed = {"ai_aborted", "ai_capability_unavailable", "ai_configuration_invalid", "ai_input_invalid", "ai_network_error", "ai_provider_http_error", "ai_response_invalid", "ai_response_too_large", "ai_timeout", "capability_test_failed"}
+            allowed = {"ai_aborted", "ai_capability_unavailable", "ai_configuration_invalid", "ai_input_invalid", "ai_network_error", "ai_provider_http_error", "ai_response_invalid", "ai_response_too_large", "ai_timeout", "ai_quota_exceeded", "ai_execution_forbidden", "ai_dispatch_duplicate", "capability_test_failed"}
             safe_code = code if isinstance(code, str) and code in allowed else "capability_test_failed"
             status = result.get("httpStatus")
             suffix = f"，HTTP {status}" if type(status) is int and 400 <= status <= 599 else ""

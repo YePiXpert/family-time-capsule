@@ -2,6 +2,7 @@ import "server-only";
 
 import { SHORT_VIDEO_AUDIO_MAX_BYTES } from "@/lib/ai/media-limits";
 import { spawn } from "node:child_process";
+import { probeMedia } from "@/lib/metadata/ffprobe";
 
 /**
  * ffmpeg 视频抽帧（M3-G）。
@@ -218,19 +219,23 @@ export const CONVERT_AUDIO_MAX_BYTES = 64 * 1024 * 1024;
 const AUDIO_INPUT_FORMAT_WHITELIST =
   "wav,mp3,flac,ogg,matroska,webm,mov,mp4,m4a,aac,adts,3gp,amr";
 
-export function convertAudioToWav(
+export async function convertAudioToWav(
   absPath: string,
   signal: AbortSignal,
 ): Promise<
   | { status: "ok"; bytes: Uint8Array; durationSeconds: number | null }
   | { status: "unavailable" | "too_long" | "too_large" | "failed" | "aborted" }
 > {
+  if (signal.aborted) return { status: "aborted" };
+  const probe = await probeMedia(absPath);
+  if (!probe || probe.durationMs === null || probe.durationMs <= 0) return { status: "failed" };
+  if (probe.durationMs > CONVERT_AUDIO_MAX_SECONDS * 1000) return { status: "too_long" };
   return new Promise(resolve => {
     if (signal.aborted) { resolve({ status: "aborted" }); return; }
     const child = spawn(/* turbopackIgnore: true */ ffmpegBinary(), [
       "-v", "quiet", "-nostdin", "-protocol_whitelist", "file,pipe", "-format_whitelist", AUDIO_INPUT_FORMAT_WHITELIST,
       "-i", absPath, "-map", "0:a:0", "-vn", "-map_metadata", "-1",
-      "-t", String(CONVERT_AUDIO_MAX_SECONDS), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1",
+      "-t", String(CONVERT_AUDIO_MAX_SECONDS + 1), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", "pipe:1",
     ], { windowsHide: true });
     const chunks: Buffer[] = [];
     let total = 0, settled = false;
@@ -249,9 +254,12 @@ export function convertAudioToWav(
     child.stdout.on("data", (chunk: Buffer) => {
       total += chunk.byteLength;
       if (total > CONVERT_AUDIO_MAX_BYTES) { child.kill("SIGKILL"); done({ status: "too_large" }); return; }
+      // Decode at most one extra second and refuse it; a forged short duration
+      // must not turn the decoder's safety bound into a successful truncation.
+      if (total > CONVERT_AUDIO_MAX_SECONDS * 16000 * 2 + 4096) { child.kill("SIGKILL"); done({ status: "too_long" }); return; }
       chunks.push(chunk);
     });
     child.on("error", (error: NodeJS.ErrnoException) => done({ status: error.code === "ENOENT" ? "unavailable" : "failed" }));
-    child.on("close", code => done(code === 0 && total > 44 ? { status: "ok", bytes: new Uint8Array(Buffer.concat(chunks)), durationSeconds: null } : { status: "failed" }));
+    child.on("close", code => done(code === 0 && total > 44 ? { status: "ok", bytes: new Uint8Array(Buffer.concat(chunks)), durationSeconds: probe.durationMs! / 1000 } : { status: "failed" }));
   });
 }

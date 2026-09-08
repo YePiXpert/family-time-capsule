@@ -10,6 +10,7 @@ export {
   finalizeAiJob,
   getAiRuntimeDisclosure,
   getAiOperationalStatus,
+  getAiSearchAuthorization,
   listAiProcessingConsents,
   listJobsForEntity,
   listRecentAiJobs,

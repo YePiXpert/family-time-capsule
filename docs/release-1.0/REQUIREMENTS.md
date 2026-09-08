@@ -10,11 +10,11 @@
 
 | 状态 | 数量 |
 | --- | --- |
-| 自动化通过 | 114 |
+| 自动化通过 | 115 |
 | 部分实现 | 32 |
 | 未实现 | 8 |
 | 明确非产品范围 | 1 |
-| 外部阻塞 | 2 |
+| 外部阻塞 | 1 |
 
 ---
 
@@ -132,7 +132,7 @@
 | AI-18 | 私密上下文不传播到家庭公共标题;索引/缓存随权限变化 | 派生权限 | 自动化通过 | visibility post-filter |
 | AI-19 | AI默认关闭;分能力内容告知(→谁/用途/保留未知/关闭方式) | 上传VPS与送CPA/MiMo分环节告知 | 自动化通过(M6:能力卡与移动端显示分能力接收服务) | settings/ai; mobile/src/ai |
 | AI-20 | 自动新素材/历史回填/访客资料分开授权 | 不当同意全量 | 自动化通过 | ai_processing_consent |
-| AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 部分实现(P0-D 已复现：GET 自然检索和诊断绕过、关限额不计数、未知/亚秒音频及预留失败放行；现有 worker 表与包装保留，统一出站边界待实现) | lib/ai/quota.ts; jobs/runtime.ts; db/migrations/0060_ai_daily_usage.sql |
+| AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 自动化通过(P0-D：worker/显式搜索/诊断统一发送授权与配额；关限额仍计数；实际时长向上取整；进程竞争/重启/日界/撤权退款负例；真实模型账单未验收) | lib/ai/dispatch.ts; lib/ai/quota.ts; tests/integration/ai-dispatch.test.ts; tests/integration/ai-search-dispatch.test.ts |
 | AI-22 | 文件名/OCR/转录是数据不是指令;不取URL/执行命令/读无关上下文 | 提示注入防护 | 部分实现(M3-C：原件起名明确不可信数据边界、严格 title schema/拒绝 URL/晚到结果守卫及专项测试；其余 AI 链路仍须统一扫查) | lib/ai/handlers/suggest-asset-name.ts; tests/integration/asset-name.test.ts |
 | AI-23 | Luna文字/Luna图片/MiMo语音三个独立live测试;fake/集成/live分层 | 无凭据不勾选真实链路 | 部分实现(M6:testAiCapability 经工厂自动走 MiMo;真实凭据 BLK-1/2) | scripts/ai-diagnostics.mts; ftc ai test |
 | AI-24 | 不把开发Agent登录态当产品凭据;不放进App | 审查 | 自动化通过(NEXT_PUBLIC key 显式拒绝) | lib/ai/config |
@@ -143,7 +143,7 @@
 | --- | --- | --- | --- | --- |
 | FIND-1 | 统一索引:记忆/素材描述/OCR/转录/讲述/故事/相册/作品文本;可重建 | 权限复核 | 自动化通过 | lib/search; search:rebuild |
 | FIND-2 | 关键词/人物/日期/媒体/标签筛选无AI可用;离线对合法缓存可用 | 不下发无授权索引 | 部分实现(正式1.0 §4 重写：离线搜索改为投影式匹配——只搜标题/正文/讲述/转录/人物显示名/素材显示名/地点,内部 JSON/路径/token 绝不参与匹配或摘要,损坏 JSON 单行跳过;timeline/people 缓存补逐行 scope,读路径按 scope 过滤不依赖换号清空;SearchScreen 请求代际管理——乱序丢弃/卸载保护/写回前复核连接与授权范围/筛选变化不分页混页;错误按 ApiError.status 分类,401/403/400/429/5xx 不再伪装断网,429/5xx 提供显式「只搜本机」入口;服务端移动搜索 API 与离线共享 personId/date/mediaType 筛选语义,游标绑定筛选;已归档本机记录与服务器记忆去重、稳定排序、hasDetail=当前 scope 内有可读详情。真机飞行模式验收待补;标签筛选离线缓存未携带,如实不显示) | mobile/src/search/offline-search.ts; mobile/src/screens/SearchScreen.tsx; app/api/mobile/v1/search/route.ts |
-| FIND-3 | 自然语言查询:Luna生成受限校验的检索条件→FTS返回来源卡 | 不执行模型SQL;不凭记忆答 | 自动化通过(M7-a 已有受限计划、关键词/人物/时间映射与 Web 来源卡；真实 Luna 检索质量未验收) | lib/search/natural-language.ts; tests/unit/search-natural-language.test.ts |
+| FIND-3 | 自然语言查询:Luna生成受限校验的检索条件→FTS返回来源卡 | 不执行模型SQL;不凭记忆答 | 自动化通过(P0-D：显式幂等 POST、刷新/预取零调用、严格计划、人物未解析拒绝、人工筛选优先、闰年二月末生产浏览器回归；真实 Luna 质量未验收) | lib/search/natural-language.ts; tests/unit/search-natural-language.test.ts |
 | FIND-4 | NL 检索对关键词基线报告 Recall@K/误召回 | 不冒称CLIP | 部分实现(M7-a 合成关键词基线/理想计划上限脚本已存在；尚非真实模型对比评测，fake 只验证失败关闭) | scripts/benchmark-search-nl.mts; BLK-1/8 仅影响真实评测 |
 | FIND-5 | 近似照片:感知hash/时间/批次候选组+清晰度建议;不识别人脸;不自动删 | Live Photo不误合并 | 自动化通过(GLM-D:dHash 候选组理由可解释——哈希距离/拍摄时间差/尺寸方向/同一导入批次;字节完全相同(SHA-256 一致)与画面相似严格分开表述,UI 不叫“重复照片”;清晰度仅为“细节最多”提示;Live Photo 组件说明且不当作相似重复;操作为勾选合并/全部保留/内嵌加入相册(已有或新建,引用原件不移出收件箱,建议保持待处理),无任何删除;按勾选成员合并已支持。感知哈希持久缓存 0059 cluster_feature_cache——按来源 SHA+算法版本键,命中免读原件,损坏位串按未命中重算,旧算法/孤儿行随写清理,缓存读写失败不影响扫描正确性;集成 7/7 覆盖缓存权威性/失效/加相册。真机大数据量待验) | lib/clusters/service.ts; db/migrations/0059_cluster_feature_cache.sql; app/(protected)/(app)/inbox/cluster-suggestion-ui.tsx |
 | FIND-6 | 相关记忆按时间/人物/标签/相册解释理由;不足少显示 | 不伪装算法相关 | 自动化通过(resurfacing 按真实日期) | lib/memories/resurfacing |
@@ -209,7 +209,7 @@
 | SEC-3 | 不把自托管写成E2EE;美国VPS/CPA/MiMo不同接收边界;未知保留标注未知 | 文案审查 | 部分实现(单通道告知有;双路由文案更新中) | docs/AI_PRIVACY.md |
 | SEC-4 | 不新增人脸/声纹识别/健康诊断/成长预测/声音克隆 | — | 自动化通过(无此类代码) | — |
 | SEC-5 | 儿童监护授权有记录;称呼不自动证明监护权 | =ID-16 | 自动化通过(M2-d 核验：绑定邀请仅由已登记监护人发起，留审计记录) | lib/invitations/service.ts; tests/integration/child-account.test.ts |
-| SEC-6 | 发布前核验隐私/儿童数据/跨境/平台删号;提供导出/删号/第三方清单/联系渠道 | 法律审核外部 | 外部阻塞 | — |
+| SEC-6 | 私人自用：提供导出/删号/第三方清单/维护联系说明 | 用户 2026-09-08 明确不设法律审核门禁 | 部分实现（工程功能仍须逐项验收） | docs/release-1.0/BLOCKERS.md; docs/AI_PRIVACY.md |
 | SEC-7 | 许可台账:代码/模型/字体/图标/音乐/素材独立 | — | 未实现(部分字体已带OFL) | resources/fonts |
 | SEC-8 | Android长期签名;iOS正式渠道/证书/AppGroup/分享扩展 | keystore未固定;iOS unsigned | 外部阻塞 | mobile-build.yml |
 | SEC-9 | 真实机密/儿童素材不进CI/效果图/日志/示例 | — | 自动化通过 | fixtures 全合成 |

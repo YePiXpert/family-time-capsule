@@ -8,14 +8,17 @@
 
 | ID | 阻塞 | 需要的最少输入 | 解除后验证 | 影响范围 |
 | --- | --- | --- | --- | --- |
-| BLK-1 | CPA(gpt-5.6-luna)真实凭据 | 用户自备 CPA Base URL + API Key(文字+图片能力) | `ftc ai test --capability text/vision` 真实链路;场景 #11 | "默认 AI 文字/图片链路正式可用"声明;AI live 评测 |
-| BLK-2 | MiMo ASR 真实凭据与契约核验 | MiMo Base URL + Key;按官方当前文档核对 mimo-v2.5-asr 端点/参数 | `ftc ai test --capability transcription`;中文方言样本;场景 #11/#13 | "语音转写正式可用"声明 |
-| BLK-3 | Android 发布签名 | 长期 keystore(用户提供并安全保管;或明确接受当前测试密钥的限制并记录) | 同签名覆盖安装保留资料(场景 #31);versionCode 12 上架渠道 | Android 正式分发声明 |
+| BLK-1 | Luna 真实凭据 | 用户自备官方或 CPA Base URL + API Key(文字+图片能力) | `ftc ai test --capability text/vision` 真实链路;场景 #11 | "默认 AI 文字/图片链路正式可用"声明;AI live 评测 |
+| BLK-2 | MiMo ASR 真实凭据 | MiMo Base URL + Key；官方契约已于 2026-09-08 核对，真实调用仍未验证 | `ftc ai test --capability transcription`;中文方言样本;场景 #11/#13 | "语音转写正式可用"声明 |
+| BLK-3 | Android 发布签名 | 长期 keystore(用户提供并安全保管;或明确接受当前测试密钥的限制并记录) | 同签名覆盖安装保留资料(场景 #31);构建号按实际发布历史递增 | Android 正式分发声明 |
 | BLK-4 | iOS 分发渠道 | Apple Developer 账号/证书/TestFlight 或 App Store 审核;App Group/分享扩展配置 | 签名 IPA 真机安装;分享扩展验收(场景 #31) | iOS 正式分发声明 |
 | BLK-5 | 真实 VPS 端到端验收 | 可用的美国 VPS + 域名(DNS/TLS)或用户授权在自有服务器演练 | 双账号扫码、离线重开、家庭隔离、救援恢复、旧数据升级、Caddy 新机路径、A/B/C/D 全类故障注入(场景 #1–10、25、27) | "真实家庭可上线"声明 |
-| BLK-6 | 法律/合规审核 | 隐私政策、儿童数据(PIPL/COPPA 适用性)、跨境、平台删号要求的适用法域审查结论 | 更新 SEC-6 对应文档与商店申报材料 | 商店/公开推广 |
 | BLK-7 | 真机设备 | 至少一台 Android + 一台 iOS 真机(或明确仅模拟器声明) | REAL_DEVICE_TEST.md 全清单留档 | "真机验收完成"声明 |
-| BLK-8 | AI 评测样本 | ~200 份许可/合成中文样本(含方言、噪音、旧扫描) | REL-4 评测报告(命名/修订/转写/Recall) | AI 质量结论 |
+| BLK-8 | 真人方言与主观质量验证 | 愿意参与的真实使用者、方言录音与人工质量标注 | REL-4 真人评测与长期观察报告 | 真人质量/留存结论；200 份基础/合成样本与 runner 属于内部工程，不因此阻塞 |
+
+## 私人自用范围
+
+2026-09-08 用户明确本项目供自己私人使用，不要求法律风险评估。BLK-6 法律审核不作为本次交付门禁。资料权限、导出、账号删除与第三方接收方披露继续作为工程功能验收。
 
 ## 已解除
 

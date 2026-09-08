@@ -464,7 +464,7 @@ describe("Responses API profile (AI-2)", () => {
     ]);
     expect(body.max_output_tokens).toBe(100);
     expect(body.temperature).toBe(0);
-    expect(body).toMatchObject({ text: { format: { type: "json_object" } } });
+    expect(body).toMatchObject({ store: false, text: { format: { type: "json_object" } } });
     expect(body.response_format).toBeUndefined();
     expect(body.max_completion_tokens).toBeUndefined();
     expect(result.text).toBe('{"answer":42}');
@@ -530,6 +530,7 @@ describe("Responses API profile (AI-2)", () => {
 
     expect(String(calls[0]?.input)).toBe("https://compatible.example.test/v1/responses");
     const body = JSON.parse(String(calls[0]?.init?.body)) as {
+      store: boolean;
       input: { role: string; content: { type: string }[] }[];
       max_output_tokens: number;
     };
@@ -537,6 +538,7 @@ describe("Responses API profile (AI-2)", () => {
       "input_text",
       "input_image",
     ]);
+    expect(body.store).toBe(false);
     expect(body.max_output_tokens).toBe(64);
     expect(result.text).toBe("a red circle");
   });

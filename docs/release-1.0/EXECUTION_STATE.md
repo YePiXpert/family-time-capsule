@@ -7,7 +7,8 @@
 - 已修复推送：`8a2c73efd0220785addc24b0808c4bb05797d35c` 测试账本按用例隔离；CI `34183060802` 四项全部 success（含 production E2E/恢复）。没有降低调用次数断言或靠 rerun。
 - 已推送：`7e9c264c651b53fd36a3323735b4d4d4933a5383` P0-A/B 完整读者选择与追加迁移；CI `34183826416` 四项全部 success，已核对同 SHA。
 - 已推送：`3b87b6417ae6e545c6688277b567f5154aa030ce` P0-C 私密续传；CI `34185777483` web/mobile/ops success，E2E失败：旧用例把“保留草稿”当作家庭投递。保留隐私边界，改用明确的“交给家人整理”，全部原断言保留。
-- 当前修改：P0-C Live Photo 成对保全、恢复及明确重新提交整理（准备提交；新 SHA CI push 后单独核对）。
+- 已推送：`52f58ae6af5f52065120be71189da333db895940` P0-C Live Photo 与明确整理修订；CI `34188472925` 四项全部 success。
+- 当前修改：P0-D 统一 AI 派发、配额、授权、出站检查与显式幂等检索，正在完成最终门禁后提交。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -41,17 +42,28 @@
 - 独立只读审查发现的恢复容量、超大合并恢复、归档字段覆盖、缺失组件堵塞同步、整理快照竞态及手机旧编辑版本问题均已加回归修复。
 - 根全量 124 文件 / 790 项通过（`/tmp/ftc-livephoto-root-final.log`）；最后整理冲突及顺序修改的 3 文件 / 30 项集成回归通过（`/tmp/ftc-livephoto-review-final-pass.log`）。手机全量 49 文件 / 266 项通过，build/typecheck/lint 通过（根 14 条既存 warning），日志 `/tmp/ftc-livephoto-*-final-pass.log`。
 - production 全量 E2E 67/67、disaster roundtrip 7/7 通过：`/tmp/ftc-livephoto-e2e-verified.log`、`/tmp/ftc-livephoto-roundtrip-verified.log`。包括真实手机 UI/hook/SQLite/fetch→生产 Next 的相册 Live Photo、动态组件分块/complete 丢响应，以及 Web 分别导入后手动配对/发布/重开。最后整理修订增量已重建，native-capture/inbox-draft/merge 10/10 通过（`/tmp/ftc-livephoto-final-production.log`）。
-- 以上是平台组件替身与实际本地存储/HTTP 的自动化，不是真机相册、录音或音频焦点验收。Live Photo 新迁移的 Docker/CI 证据在提交后继续核对，不能引用旧镜像冒充候选。
+- 以上是平台组件替身与实际本地存储/HTTP 的自动化，不是真机相册、录音或音频焦点验收。Live Photo 新迁移 Docker 镜像 `sha256:eb705b4f91217888efbec330bd6545b129c27c5c57e8fccc38e9e986ea12924a` 两次真实重启续传/complete 验证通过，测试资源已清理；日志 `/tmp/ftc-livephoto-docker-smoke.log`。
 
 ## 下一个动作
 
 P0-C 原件与 Live Photo 已贯通自动化；继续服务器恢复世代与全部再分享旁路。R08 私密正文持久来源与权限保真导出恢复仍有内部缺口，必须继续修复；不把该里程碑当作私密记忆全链路完成。
 
-P0-D 已独立审查：GET 自然检索与 CLI 诊断绕过配额；限额关闭不计数；未知/亚秒时长、预留失败放行；请求前本地拒绝仍占额度；检索误用 ai:configure 且覆盖人工条件/月份边界。统一真实出站边界、显式幂等用户动作、授权复验与有界时长探测。
+P0-D 实现与证据：
 
-私密正文当前仅发布时索引，详情/重建/恢复仍须补；当前 CAP-1/ID-11/ID-12/AI-21 保留部分实现，全部内部工程远未完成。
+- 0065 追加 `ai_dispatch` 和 `ai_search_operation`（实例/账号/配置/同意版本绑定），原迁移不变；只存派生状态，家庭 archive 不包含这些表。
+- 真实发送工厂覆盖 worker、搜索、诊断；预留先持久提交，再在 SQLite immediate 事务内重新授权并开始发送。跨进程撤权已用独立 Node 进程复现与验证；确认未发送退回额度，发送状态不确定仍计数。
+- 关闭限额仍计数；音频实际字节经有界 ffprobe，亚秒向上取整，未知拒绝。六个独立进程竞争 SQLite 配额、UTC 日界、重启不重复不确定操作均通过。
+- 自然检索为显式 POST；结果按账号/同意版本短期存储。普通作者无须账号配置权限；撤权再启用不复活旧结果。严格计划拒绝非法/被截断条件，人物未解析不放宽，人工筛选优先，包含式月末一致。
+- 新生产浏览器回归实际发现 no-referrer 下原生 POST 的 Origin:null 被拒绝；改为同源 fetch 按钮，未放松 CSRF。浏览器验证真实保存/发布二月末与三月初记忆、转换、刷新/预取/重复提交、手动日期媒体及配额耗尽，1/1 通过（`/tmp/ftc-ai-search-e2e-third.log`）。
+- MiMo Base64 10 MB 和非 stop 截断响应拒绝；真实 601 秒音频回归先复现静默截断，再修复为明确 too_long。Luna Responses 设置 store:false；官方文档链接已写入 AI_PROVIDERS/AI_PRIVACY，三项真实模型仍未验收。
+- 最后根全量 128 文件/809 项通过（`/tmp/ftc-ai-reviewed-root-full.log`）。手机全量 49 文件/266 项及最后 quota DTO 3 项通过；root/mobile typecheck/lint、production build、build:ops、ops 4 文件/34 项通过。root lint 为 13 个既存 warning，无 error。root/mobile 生产依赖 npm audit 均为 0 漏洞。
+- 审查新增上游 HTTP 600 导致未捕获异常退出、`.localhost` 合法 loopback 配置被误拒绝两项反例，均以真实 HTTP/独立进程测试先失败后修复；检查地址固定，非 loopback 解析仍拒绝。最后 5 文件/24 项回归通过（`/tmp/ftc-ai-reviewed-regressions.log`）。
+- 最终 production 全量 E2E 68/68 通过（`/tmp/ftc-ai-e2e-reviewed-full.log`），disaster roundtrip 7/7 通过（`/tmp/ftc-ai-roundtrip.log`）。前一次出版失败为最后 Web build 清除了旧 build:ops 产物，已按 build→build:ops 顺序重建并重跑全量；未改原测试或断言。
+- 真 Docker 镜像 `sha256:62aecbf04a6e86a4adbf3b68054830f337cd9564e4f210f6df8580d543779e53` 的 loopback/Caddy 双模板均通过 app-worker 启动、隐藏配置、三能力真实 HTTP fixture、status 零调用、401 脱敏、第五次诊断被共享配额拒绝、重启与关闭；每模式实际 4 次 fixture 请求，测试资源已清理。日志 `/tmp/ftc-ai-docker-reviewed-smoke.log`。未启动公网代理、调用真实模型或操作生产。
+
+私密正文当前仅发布时索引，详情/重建/恢复仍须补；当前 CAP-1/ID-11/ID-12 保留部分实现，全部内部工程远未完成。
 
 ## 后续与外部阻塞
 
 继续现有 REQUIREMENTS 的认证生命周期、增量同步、adopt/升级/恢复协调、交接/加密副本、手册/许可/评测与性能；不重做既有系统。
-真实 Luna 文字/图片、MiMo 语音、长期签名、双平台真机、生产授权和必要法律审核仍缺。基础许可/合成样本、runner、候选产物及当前可做工程属于内部工作；不得据此停止或声称正式 1.0 已发布。
+真实 Luna 文字/图片、MiMo 语音、长期签名、双平台真机和生产授权仍缺。用户 2026-09-08 明确为私人自用，法律审核不作为本次交付门禁。基础许可/合成样本、runner、候选产物及当前可做工程属于内部工作；不得据此停止或声称正式 1.0 已发布。

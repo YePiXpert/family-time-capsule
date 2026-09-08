@@ -4,6 +4,8 @@ export type AiErrorCode =
   | "ai_aborted"
   | "ai_capability_unavailable"
   | "ai_configuration_invalid"
+  | "ai_execution_forbidden"
+  | "ai_dispatch_duplicate"
   | "ai_input_invalid"
   | "ai_network_error"
   | "ai_provider_http_error"

@@ -2,7 +2,7 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { AiConfigurationError, AiQuotaExceededError } from "./errors";
+import { AiConfigurationError, AiInputError, AiQuotaExceededError } from "./errors";
 import type {
   AnalyzeImageInput,
   AnalyzeImageResult,
@@ -25,8 +25,7 @@ import type {
  *   保守计数更安全）；
  * - 日界为 UTC 整日；额度耗尽抛 AiQuotaExceededError（retryAfterMs 指向
  *   下一个 UTC 日），任务按可重试调度回 pending，而不是伪装提供方错误；
- * - 音频时长只在调用方已知时计入（durationSeconds）；未知就按 0 秒计，
- *   显示层如实呈现未知，绝不估算编造。
+ * - 音频时长由真实媒体探测后向上取整；未知时拒绝外发。
  */
 
 export type AiDailyQuotaLimits = Readonly<{
@@ -125,9 +124,10 @@ export function consumeAiDailyQuota(
   const db = options.db ?? getDb();
   const now = options.now ?? new Date();
   const day = utcDayKey(now);
-  const requests = Math.max(0, Math.floor(amounts.requests));
-  const images = Math.max(0, Math.floor(amounts.images));
-  const audioSeconds = Math.max(0, Math.floor(amounts.audioSeconds));
+  if (![amounts.requests, amounts.images].every(n => Number.isSafeInteger(n) && n >= 0) || !Number.isFinite(amounts.audioSeconds) || amounts.audioSeconds < 0 || !Number.isSafeInteger(Math.ceil(amounts.audioSeconds))) throw new AiInputError("AI quota amounts are invalid.");
+  const requests = amounts.requests;
+  const images = amounts.images;
+  const audioSeconds = Math.ceil(amounts.audioSeconds);
 
   db.run(sql`
     insert into ai_daily_usage (day, requests, images, audio_seconds, updated_at)
@@ -170,15 +170,10 @@ export function consumeAiDailyQuota(
       limit: limits.maxAudioSeconds,
     });
   }
-  if (exceeded.length === 0) {
-    // UPDATE 未命中但没有活跃限额越界（并发窗口内的竞态）——按成功对待，
-    // 计数行已由上面的 insert 建好，下一次消费会正常裁决。
-    return { ok: true };
-  }
-  return { ok: false, exceeded, retryAfterMs: msUntilNextUtcDay(now) };
+  return { ok: false, exceeded, retryAfterMs: exceeded.length ? msUntilNextUtcDay(now) : 1000 };
 }
 
-function quotaError(
+export function quotaError(
   exceeded: readonly AiDailyQuotaExceeded[],
   retryAfterMs: number,
 ): AiQuotaExceededError {
@@ -191,13 +186,21 @@ function quotaError(
     .map((item) => `${labels[item.resource]} ${item.used}/${item.limit}`)
     .join("、");
   return new AiQuotaExceededError({
-    message: `今日 AI 限额已用尽（${detail}）；将在下一个 UTC 日界自动恢复重试。`,
+    message: exceeded.length ? `今日 AI 限额已用尽（${detail}）；将在下一个 UTC 日界自动恢复重试。` : "AI 额度未能预留，请稍后重试；请求尚未发出。",
     retryAfterMs,
     exceeded,
   });
 }
 
 export type QuotaCountingDatabase = Pick<QuotaDatabase, "run" | "get">;
+
+export function getAiDailyQuotaStatus() {
+  let limits: AiDailyQuotaLimits;
+  try { limits = loadAiDailyQuotaLimits(); } catch { return null; }
+  const day = utcDayKey(new Date());
+  const usage = getDb().get<{ requests: number; images: number; audio_seconds: number }>(sql`select requests,images,audio_seconds from ai_daily_usage where day=${day}`);
+  return { day, limits, used: { requests: usage?.requests ?? 0, images: usage?.images ?? 0, audioSeconds: usage?.audio_seconds ?? 0 } };
+}
 
 /**
  * 给 MemoryAssistant 套上每日限额：每次提供方调用前先原子预扣额度，
@@ -233,7 +236,8 @@ export function withDailyQuota(
         Number.isFinite(input.durationSeconds) &&
         input.durationSeconds > 0
           ? input.durationSeconds
-          : 0;
+          : null;
+      if (duration === null) throw new AiInputError("音频时长无法确认，请核对原件后再转写。");
       consume({ requests: 1, images: 0, audioSeconds: duration });
       return assistant.transcribeAudio(input);
     },

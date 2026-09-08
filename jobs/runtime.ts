@@ -20,6 +20,7 @@ import {
   finalizeAiJob,
   renewAiJobLease,
   updateAiWorkerHeartbeat,
+  validateAiJobExecution,
   type AiExecutionValidation,
   type AiJobFinalizeContext,
   type AiJobLease,
@@ -92,7 +93,7 @@ export type AiWorkerOptions = Readonly<{
   registry?: AiJobRegistry;
   queue?: AiWorkerQueue;
   leaseMs?: number;
-  /** 覆盖每日限额（测试用）；缺省读环境变量，全部为 0 时不启用限额。 */
+  /** 覆盖每日限额（测试用）；0 为不限，仍记录使用量。 */
   quotaLimits?: AiDailyQuotaLimits;
 }>;
 
@@ -147,15 +148,6 @@ export async function runAiWorkerOnce(
     safeHeartbeat(options.queue ?? DEFAULT_QUEUE, { workerId, workerVersion: WORKER_VERSION, status: "idle" });
     return { status: "idle", jobId: null, errorCode: "ai_configuration_invalid" };
   }
-  // 每日限额（AI-21）：只在配置了任一限额时启用包装；请求发出前原子预扣，
-  // 超限抛 AiQuotaExceededError → failAiJob 以 retryAfterMs 调度到日界。
-  const quotaActive =
-    quotaLimits.maxRequests > 0 ||
-    quotaLimits.maxImages > 0 ||
-    quotaLimits.maxAudioSeconds > 0;
-  const effectiveAssistant = quotaActive
-    ? withDailyQuota(assistant, quotaLimits)
-    : assistant;
   const registry = options.registry ?? createProductionAiJobRegistry();
   const queue = options.queue ?? DEFAULT_QUEUE;
   const leaseMs = options.leaseMs ?? 60_000;
@@ -176,6 +168,23 @@ export async function runAiWorkerOnce(
     return { status: "idle", jobId: null, errorCode: null };
   }
   let activeLease: AiJobLease = claimedLease;
+  // Production accounting runs inside the actual transport, after validation
+  // and preparation. Injected local assistants retain the deterministic test seam.
+  const effectiveAssistant = options.assistant
+    ? withDailyQuota(assistant, quotaLimits)
+    : createMemoryAssistant({ ...process.env,
+      AI_DAILY_MAX_REQUESTS: String(quotaLimits.maxRequests),
+      AI_DAILY_MAX_IMAGES: String(quotaLimits.maxImages),
+      AI_DAILY_MAX_AUDIO_SECONDS: String(quotaLimits.maxAudioSeconds),
+    }, { execution: {
+      kind: "job", familyId: activeLease.familyId, userId: activeLease.requestedByUserId,
+      operationId: () => `${activeLease.jobId}:${activeLease.attemptNumber}`,
+      authorize: capability => {
+        if (capability !== activeLease.requiredCapability) throw new AiError("ai_execution_forbidden", "This job is not authorized for the requested AI capability.");
+        const validation = validateAiJobExecution(activeLease, { runtime });
+        if (!validation.ok) throw new AiError("ai_execution_forbidden", "The source, permission, consent or execution lease changed before dispatch.");
+      },
+    } });
 
   const handler = registry.get(activeLease.jobType);
   if (!handler) {

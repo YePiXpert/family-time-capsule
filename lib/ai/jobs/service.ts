@@ -30,6 +30,7 @@ import { family as familyTable, person as personTable } from "@/db/schema/family
 import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
 import { inboxItem, inboxItemAsset } from "@/db/schema/inbox";
 import { createMemoryAssistant } from "@/lib/ai/server";
+import { getAiDailyQuotaStatus } from "@/lib/ai/quota";
 import { readAiCapabilityChecks } from "@/lib/ai/diagnostics";
 import {
   AI_CAPABILITIES,
@@ -944,6 +945,20 @@ export function listAiProcessingConsents(
   });
 }
 
+/** A reader may explicitly convert their own query; this grants no AI settings access. */
+export function getAiSearchAuthorization(context: FamilyContext, dependencies: AiJobServiceDependencies = {}): { configurationId: string; consentVersion: number } | null {
+  const runtime = runtimeIdentity(dependencies);
+  if (!runtime || !runtime.capabilities.text.available) return null;
+  const provider = capabilityProvider(runtime, "text");
+  return database(dependencies).transaction(tx => {
+    if (!getLiveActor(tx, context.familyId, context.userId, "archive:view", new Date())) return null;
+    if (!runtime.provider.external) return { configurationId: provider.configurationId, consentVersion: 0 };
+    const consent = tx.select().from(aiProcessingConsent).where(and(eq(aiProcessingConsent.familyId, context.familyId), eq(aiProcessingConsent.capability, "text"))).get();
+    if (!consent?.enabled || consent.providerId !== provider.id || consent.configurationId !== provider.configurationId || consent.model !== runtimeModel(runtime, "text") || consent.disclosureVersion !== AI_CONSENT_DISCLOSURE_VERSION) return null;
+    return { configurationId: provider.configurationId, consentVersion: consent.consentVersion };
+  });
+}
+
 /** Same read-only operational summary for Web and mobile; no deployment secrets. */
 export function getAiOperationalStatus(context: FamilyContext, dependencies: AiJobServiceDependencies = {}) {
   const now = new Date();
@@ -959,6 +974,7 @@ export function getAiOperationalStatus(context: FamilyContext, dependencies: AiJ
       configurationId: runtime?.provider.configurationId ?? null,
       provider: runtime?.provider.displayName ?? null, external: runtime?.provider.external ?? false,
       canConfigure: actor.role === "owner" || actor.role === "admin", workerAvailable,
+      quota: getAiDailyQuotaStatus(),
       capabilities: (["text", "vision", "transcription"] as const).map(capability => {
         const model = runtimeModel(runtime, capability);
         const provider = capabilityProvider(runtime, capability);

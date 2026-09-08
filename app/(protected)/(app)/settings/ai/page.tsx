@@ -109,6 +109,11 @@ export default async function AiSettingsPage() {
       {operational?.configured && <p role="status" className="mt-4 text-sm text-foreground/65">
         {operational.workerAvailable ? "后台处理服务可用" : "后台处理服务不可用，请联系部署管理员；仍可保存、查看和播放原件。"}
       </p>}
+      {operational?.quota && <section aria-label="AI 每日用量" className="mt-4 rounded-xl border border-foreground/10 p-4 text-sm">
+        <h2 className="font-medium">今日 AI 用量（UTC {operational.quota.day}）</h2>
+        <p>请求 {operational.quota.used.requests} / {operational.quota.limits.maxRequests || "不限"} · 图片 {operational.quota.used.images} / {operational.quota.limits.maxImages || "不限"} · 音频 {operational.quota.used.audioSeconds} 秒 / {operational.quota.limits.maxAudioSeconds || "不限"}</p>
+        <p className="mt-2 text-foreground/60">限额 0 表示不限，仍记录用量；搜索转换和诊断共用额度。音频向上取整；已发出但结果不明的请求保守计入，下一个 UTC 日重新计数。</p>
+      </section>}
 
       {disclosure.valid && disclosure.capabilities && (
         <section aria-label="AI 能力与同意" className="mt-10">

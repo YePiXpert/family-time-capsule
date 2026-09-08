@@ -8,6 +8,7 @@ import {
 } from "./openai-compatible";
 import { DualRouteMemoryAssistant } from "./dual-route";
 import type { MemoryAssistant } from "./types";
+import { createAiDispatcher, type AiExecutionContext } from "./dispatch";
 
 export {
   AiSecret,
@@ -39,12 +40,13 @@ export { MimoAsrTranscriber } from "./mimo-asr";
  */
 export function createMemoryAssistant(
   env: AiEnvironment = process.env,
-  dependencies: OpenAiCompatibleDependencies = {},
+  dependencies: OpenAiCompatibleDependencies & { execution?: AiExecutionContext } = {},
 ): MemoryAssistant {
   const config = loadAiProviderConfig(env);
   if (config.kind === "disabled") return new NullMemoryAssistant();
+  const guarded = { ...dependencies, dispatch: createAiDispatcher(dependencies.execution, env, dependencies.fetch) };
   if (config.kind === "dual-route") {
-    return new DualRouteMemoryAssistant(config, dependencies);
+    return new DualRouteMemoryAssistant(config, guarded);
   }
-  return new OpenAiCompatibleMemoryAssistant(config, dependencies);
+  return new OpenAiCompatibleMemoryAssistant(config, guarded);
 }

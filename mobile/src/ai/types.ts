@@ -7,6 +7,7 @@ export type AiSettings = {
   external: boolean;
   canConfigure: boolean;
   workerAvailable: boolean;
+  quota?: { day: string; limits: { maxRequests: number; maxImages: number; maxAudioSeconds: number }; used: { requests: number; images: number; audioSeconds: number } } | null;
   capabilities: {
     capability: OrganizerCapability;
     model: string | null;
