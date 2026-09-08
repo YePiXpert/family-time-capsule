@@ -271,3 +271,6 @@ R09 阅读包最终响应（当前实现）：媒体读取后、产物 stat 后�
 
 
 R09 事实/回收站（当前实现）：实际父事件管理权、讲述本人身份、实时账号、软删状态与跨作者级联删除保护已接通；权限过滤在分页前。private-memory-management.test.ts 的真实 Server Actions/SQLite 先失败后通过，根全量 848 项，production edit 3 项验证私密 unknown 正文/事实恢复、另一管理员不可见和清除。详情来源读取、已有事件双端分享撤销及受控缓存仍待实现，ID-11/ID-12 保持部分实现。
+
+
+R09 详情/事实来源（当前实现）：可读详情在事务内聚合，Web 归档及手机 HTTP 最终交付重新核验，相关卡片独立核对；事实正文、来源引文、确认和搜索检查全部来源，作者自己的私密记录仍可用。private-memory-detail.test.ts 覆盖真实 SQLite、原声 HTTP、服务返回竞态和事实引用；production edit 4 项、根全量 853 项、完整 production E2E 73 项与 disaster roundtrip 7 项通过。已有事件双端分享撤销、提交并发控制和受控缓存未闭合，ID-11/ID-12 保持部分实现。

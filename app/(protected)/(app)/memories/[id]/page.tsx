@@ -5,14 +5,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
-import { getVisibleMemoryEventDetail, getTimelinePage, listEventRevisions } from "@/lib/memories/service";
+import { getTimelinePage, listEventRevisions } from "@/lib/memories/service";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { formatOccurredDateLabel, formatOccurredLabel, precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
-import { listFacts } from "@/lib/contributions/service";
-import {
-  createContributionAccessSnapshot,
-  listVisibleContributionsForEvent,
-} from "@/lib/authz/contribution-access";
+import { readMemoryContent, isMemoryContentCurrent, refreshMemoryCards } from "@/lib/memories/read-access";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { MediaReader } from "@/components/media-reader";
 import { MemoryCard } from "@/components/memory-card";
@@ -32,7 +28,6 @@ import {
   getLatestImageAnalysisJobForAsset,
   getLatestVideoAnalysisJobForAsset,
 } from "@/lib/analysis/service";
-import { getAsset } from "@/lib/assets/service";
 import { AddContributionForm, ContributionBlock } from "./contribution-ui";
 import { EditEventForm } from "./edit-event-form";
 import { FactSection } from "./fact-ui";
@@ -46,9 +41,6 @@ import {
   listEventTags,
 } from "@/lib/suggestions/service";
 import { listJobsForEntity } from "@/lib/ai/jobs";
-import { factSource, type FactSourceRow } from "@/db/schema/suggestion";
-import { and, eq, inArray } from "drizzle-orm";
-import { getDb } from "@/db";
 import { StatusBadge } from "@/components/status-badge";
 import {
   loadMemoryArchiveData,
@@ -75,29 +67,24 @@ export default async function MemoryEventPage({
 }) {
   const context = await requireFamily();
   const { familyId } = context;
-  const canWriteEvent = hasFamilyCapability(context.role, "event:write");
   const canCreateContribution = hasFamilyCapability(
     context.role,
     "contribution:create",
   );
   const canViewAudit = hasFamilyCapability(context.role, "audit:view");
   const canRequestTranscription = hasFamilyCapability(context.role, "ai:review");
-  const contributionAccess = createContributionAccessSnapshot(context);
   const { id } = await params;
   const query = await searchParams;
+  const content = readMemoryContent(context, id);
+  if (!content) notFound();
+  const { detail, contributions, facts, canWrite: canWriteEvent } = content;
   const returnTo = typeof query.returnTo === "string" && /^\/(?:timeline(?:\/calendar)?|memories|collections|review|search|capsules|stories)(?:[?#]|$)/.test(query.returnTo) && !/[\\\r\n]/.test(query.returnTo) ? query.returnTo : "/timeline";
   const returnQuery = `returnTo=${encodeURIComponent(returnTo)}`;
   const pageMode = resolveMemoryPageMode(query.mode, canWriteEvent);
   const editMode = pageMode === "edit";
-  const [detail, family, people, contributions, facts, relatedPage] = await Promise.all([
-    getVisibleMemoryEventDetail(context, id),
-    getFamily(familyId),
-    listPeople(familyId),
-    listVisibleContributionsForEvent(contributionAccess, id),
-    listFacts(familyId, id),
-    getTimelinePage(context, { limit: 5 }),
+  const [family, people, relatedPage] = await Promise.all([
+    getFamily(familyId), listPeople(familyId), getTimelinePage(context, { limit: 5 }),
   ]);
-  if (!detail) notFound();
 
   // 详情页图片优先缩略图（原件仍可点开下载）
   const { getThumbnailMap } = await import("@/lib/assets/service");
@@ -117,9 +104,7 @@ export default async function MemoryEventPage({
       avAssetIds.add(a.id);
     }
   }
-  for (const c of contributions) {
-    if (c.audioAssetId) avAssetIds.add(c.audioAssetId);
-  }
+  for (const asset of content.audioAssets) avAssetIds.add(asset.id);
   const avAssetIdsArray = [...avAssetIds];
   const contributionAudioAssetIds = avAssetIdsArray.filter(
     (id) => !assets.some((a) => a.id === id),
@@ -148,12 +133,9 @@ export default async function MemoryEventPage({
       factSources,
       suggestionJobs,
       revisions,
-      suggestions,
       tags,
     ] = await Promise.all([
-      Promise.all(
-        contributionAudioAssetIds.map((assetId) => getAsset(familyId, assetId)),
-      ),
+      Promise.resolve(content.audioAssets.filter(asset => contributionAudioAssetIds.includes(asset.id))),
       getTranscriptsForAssets(familyId, avAssetIdsArray),
       Promise.all(
         avAssetIdsArray.map((assetId) =>
@@ -175,25 +157,11 @@ export default async function MemoryEventPage({
       canRequestTranscription
         ? listAiProcessingConsents(context)
         : Promise.resolve([] as AiConsentDto[]),
-      facts.length > 0
-        ? getDb()
-            .select()
-            .from(factSource)
-            .where(
-              and(
-                eq(factSource.familyId, familyId),
-                inArray(
-                  factSource.factId,
-                  facts.map((fact) => fact.id),
-                ),
-              ),
-            )
-        : Promise.resolve([] as FactSourceRow[]),
+      Promise.resolve(content.sources),
       canRequestTranscription
         ? listJobsForEntity(context, "memory_event", id)
         : Promise.resolve([] as AiJobSummary[]),
       canViewAudit ? listEventRevisions(familyId, id) : Promise.resolve([]),
-      Promise.resolve(listReviewableSuggestions(familyId, context.userId, "memory_event", id)),
       listEventTags(familyId, id),
     ]);
     return {
@@ -208,7 +176,6 @@ export default async function MemoryEventPage({
       factSources,
       suggestionJobs,
       revisions,
-      suggestions,
       tags,
     };
   });
@@ -223,7 +190,8 @@ export default async function MemoryEventPage({
   const factSources = archiveData?.factSources ?? [];
   const suggestionJobs = archiveData?.suggestionJobs ?? [];
   const revisions = archiveData?.revisions ?? [];
-  const suggestions = archiveData?.suggestions ?? [];
+  // Consent/job/source state can change while the archive dependencies await.
+  const suggestions = archiveData ? listReviewableSuggestions(familyId, context.userId, "memory_event", id) : [];
   const tags = archiveData?.tags ?? [];
   const assetById = new Map(
     [...assets, ...contributionAudioAssets.filter((a): a is NonNullable<typeof contributionAudioAssets[number]> => Boolean(a))].map((a) => [
@@ -291,11 +259,13 @@ export default async function MemoryEventPage({
   const videoJobByAssetId = new Map(
     videoAssetIds.map((assetId, index) => [assetId, videoJobs[index]]),
   );
-  const relatedEntries = relatedPage.entries.filter((entry) => entry.event.id !== id).slice(0, 4);
+  const relatedEntries = refreshMemoryCards(context, relatedPage.entries.filter(entry => entry.event.id !== id)).slice(0, 4);
   const visibleFacts = editMode
     ? facts
     : facts.filter((fact) => fact.status === "user_confirmed");
   const assetDateFormatter = new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone });
+
+  if (!isMemoryContentCurrent(context, id, content.version)) notFound();
 
   return (
     <main className="page-container max-w-5xl">

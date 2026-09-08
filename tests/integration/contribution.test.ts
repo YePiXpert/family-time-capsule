@@ -298,7 +298,7 @@ describe("Fact（P0 手工）", () => {
 
     // 其他家庭不能加 fact 到别人的事件
     expect(await addFact({ ...await testFamilyContext(adminUserId, familyId), familyId: OTHER_FAMILY }, eventId, "x")).toBeUndefined();
-    expect(await listFacts(OTHER_FAMILY, eventId)).toHaveLength(0);
+    expect(await listFacts({ ...await testFamilyContext(adminUserId, familyId), familyId: OTHER_FAMILY }, eventId)).toHaveLength(0);
   });
 });
 

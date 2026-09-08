@@ -166,13 +166,13 @@ function visibilityPredicate(snapshot: ContributionAccessSnapshot): SQL {
  * accepted from the client, and every mutable principal/child/family field is
  * compared with its live database value.
  */
-export function getVisibleContributionInTransaction(
-  tx: ContributionAccessTransaction,
+function visibleContributionQuery(
+  tx: Pick<ContributionAccessTransaction, "select">,
   snapshot: ContributionAccessSnapshot,
-  contributionId: string,
+  contributionId: string | SQL,
   options: { includeDeleted?: boolean; includeDeletedEvent?: boolean } = {},
-): VisibleContributionAuthorizationRow | undefined {
-  const row = tx
+) {
+  return tx
     .select({
       id: contribution.id,
       memoryEventId: contribution.memoryEventId,
@@ -215,20 +215,33 @@ export function getVisibleContributionInTransaction(
         eventVisibilityCondition(eventSnapshotOf(snapshot)),
       ),
     )
-    .limit(1)
-    .get();
+    .limit(1);
+}
+
+export function getVisibleContributionInTransaction(
+  tx: ContributionAccessTransaction,
+  snapshot: ContributionAccessSnapshot,
+  contributionId: string,
+  options: { includeDeleted?: boolean; includeDeletedEvent?: boolean } = {},
+): VisibleContributionAuthorizationRow | undefined {
+  const row = visibleContributionQuery(tx, snapshot, contributionId, options).get();
   if (!row || !isContributionVisibility(row.visibility)) return undefined;
   return { ...row, visibility: row.visibility };
 }
 
-async function queryVisibleContributions(
+/** Composable equivalent of the single-row policy, including live identity. */
+export function readableContributionPredicate(snapshot: ContributionAccessSnapshot, contributionId: SQL): SQL {
+  return sql`exists (${visibleContributionQuery(getDb(), snapshot, contributionId).getSQL()})`;
+}
+
+function queryVisibleContributions(
   snapshot: ContributionAccessSnapshot,
   options: {
     memoryEventId?: string;
     contributionIds?: readonly string[];
     authorPersonId?: string;
   },
-): Promise<VisibleContributionDto[]> {
+): VisibleContributionDto[] {
   if (options.contributionIds?.length === 0) return [];
   const conditions: SQL[] = [
     eq(memoryEvent.familyId, snapshot.principal.familyId),
@@ -245,7 +258,7 @@ async function queryVisibleContributions(
   if (options.authorPersonId) {
     conditions.push(eq(contribution.authorPersonId, options.authorPersonId));
   }
-  const rows = await getDb()
+  const rows = getDb()
     .select({
       row: contribution,
       authorName: authorPerson.displayName,
@@ -277,7 +290,7 @@ async function queryVisibleContributions(
       ),
     )
     .where(and(...conditions, isNull(contribution.deletedAt)))
-    .orderBy(asc(contribution.createdAt));
+    .orderBy(asc(contribution.createdAt)).all();
 
   return rows.map(({ row, authorName, authorRelation }) => {
     if (!isContributionVisibility(row.visibility)) {
@@ -303,27 +316,27 @@ async function queryVisibleContributions(
 export function listVisibleContributionsForEvent(
   snapshot: ContributionAccessSnapshot,
   memoryEventId: string,
-): Promise<VisibleContributionDto[]> {
+): VisibleContributionDto[] {
   return queryVisibleContributions(snapshot, { memoryEventId });
 }
 
 export function listVisibleContributionsForFamily(
   snapshot: ContributionAccessSnapshot,
-): Promise<VisibleContributionDto[]> {
+): VisibleContributionDto[] {
   return queryVisibleContributions(snapshot, {});
 }
 
 export function listVisibleContributionsByAuthor(
   snapshot: ContributionAccessSnapshot,
   authorPersonId: string,
-): Promise<VisibleContributionDto[]> {
+): VisibleContributionDto[] {
   return queryVisibleContributions(snapshot, { authorPersonId });
 }
 
 export function listVisibleContributionsByIds(
   snapshot: ContributionAccessSnapshot,
   contributionIds: readonly string[],
-): Promise<VisibleContributionDto[]> {
+): VisibleContributionDto[] {
   return queryVisibleContributions(snapshot, { contributionIds });
 }
 

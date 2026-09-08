@@ -7,6 +7,7 @@ import { isLiveFamilyPrincipal } from "@/lib/authz/principal";
 import { createContributionAccessSnapshot, readableAssetPredicate } from "@/lib/authz/contribution-access";
 import {
   createEventAccessSnapshot,
+  getVisibleMemoryEventInTransaction,
   eventVisibilityCondition,
 } from "@/lib/authz/event-access";
 import {
@@ -760,11 +761,13 @@ function reviewAssetReferences(tx: Parameters<Parameters<ReturnType<typeof getDb
   return references;
 }
 
-export async function getMemoryEventDetail(  familyId: string,
+function getMemoryEventDetailInTransaction(
+  db: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  familyId: string,
   eventId: string,
-): Promise<MemoryEventDetail | undefined> {
-  const db = getDb();
-  const events = await db
+  context?: FamilyContext,
+): MemoryEventDetail | undefined {
+  const events = db
     .select()
     .from(memoryEvent)
     .where(
@@ -774,37 +777,38 @@ export async function getMemoryEventDetail(  familyId: string,
         isNull(memoryEvent.deletedAt),
       ),
     )
-    .limit(1);
+    .limit(1).all();
   if (!events[0]) return undefined;
 
-  const assetLinks = await db
+  const assetLinks = db
     .select({ assetId: memoryEventAsset.assetId, livePhotoGroupId: memoryEventAsset.livePhotoGroupId, livePhotoRole: memoryEventAsset.livePhotoRole })
     .from(memoryEventAsset)
-    .where(eq(memoryEventAsset.memoryEventId, eventId)).orderBy(asc(memoryEventAsset.sortOrder), asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id));
+    .where(eq(memoryEventAsset.memoryEventId, eventId)).orderBy(asc(memoryEventAsset.sortOrder), asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id)).all();
   const assets =
     assetLinks.length > 0
-      ? await db
+      ? db
           .select()
           .from(assetTable)
           .where(
-            inArray(
-              assetTable.id,
-              assetLinks.map((l) => l.assetId),
+            and(
+              eq(assetTable.familyId, familyId),
+              inArray(assetTable.id, assetLinks.map(l => l.assetId)),
+              context ? readableAssetPredicate(createContributionAccessSnapshot(context), sql`${assetTable.id}`) : undefined,
             ),
           )
-          .orderBy(asc(assetTable.capturedAt), asc(assetTable.createdAt))
+          .orderBy(asc(assetTable.capturedAt), asc(assetTable.createdAt)).all()
       : [];
 
   const assetOrder = new Map(assetLinks.map((link, index) => [link.assetId, index]));
   assets.sort((a, b) => assetOrder.get(a.id)! - assetOrder.get(b.id)!);
 
-  const participantLinks = await db
+  const participantLinks = db
     .select({ personId: memoryEventParticipant.personId })
     .from(memoryEventParticipant)
-    .where(eq(memoryEventParticipant.memoryEventId, eventId));
+    .where(eq(memoryEventParticipant.memoryEventId, eventId)).all();
   const participants =
     participantLinks.length > 0
-      ? await db
+      ? db
           .select()
           .from(personTable)
           .where(
@@ -813,50 +817,40 @@ export async function getMemoryEventDetail(  familyId: string,
               participantLinks.map((l) => l.personId),
             ),
           )
-          .orderBy(asc(personTable.createdAt))
+          .orderBy(asc(personTable.createdAt)).all()
       : [];
 
   // Preserve original source identities when they still exactly represent the
   // canonical body. Stale mirrors must never replace an edited/empty body.
-  const notes = await db.select({ id: inboxItem.id, rawText: inboxItem.rawText, createdAt: inboxItem.createdAt }).from(inboxItem)
+  const notes = db.select({ id: inboxItem.id, rawText: inboxItem.rawText, createdAt: inboxItem.createdAt }).from(inboxItem)
     .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.memoryEventId, eventId)))
-    .orderBy(asc(inboxItem.createdAt), asc(inboxItem.id));
+    .orderBy(asc(inboxItem.createdAt), asc(inboxItem.id)).all();
   const linkedNotes = notes.flatMap(note => note.rawText?.trim() ? [{ ...note, rawText: note.rawText }] : []);
   const body = events[0].bodyText;
   const sourceNotes = !body ? [] : linkedNotes.length && linkedNotes.map(n => n.rawText).join("\n\n") === body
     ? linkedNotes
     : [{ id: events[0].id, rawText: body, createdAt: events[0].createdAt }];
 
+  const readableAssetIds = new Set(assets.map(a => a.id));
   const livePhotos = [...new Set(assetLinks.flatMap(l => l.livePhotoGroupId ? [l.livePhotoGroupId] : []))].flatMap(groupId => {
     const image = assetLinks.find(l => l.livePhotoGroupId === groupId && l.livePhotoRole === "image");
     const video = assetLinks.find(l => l.livePhotoGroupId === groupId && l.livePhotoRole === "video");
-    return image && video ? [{ groupId, imageAssetId: image.assetId, videoAssetId: video.assetId }] : [];
+    return image && video && readableAssetIds.has(image.assetId) && readableAssetIds.has(video.assetId) ? [{ groupId, imageAssetId: image.assetId, videoAssetId: video.assetId }] : [];
   });
   return { event: events[0], assets, livePhotos, participants, sourceNotes };
 }
 
-/**
- * §5 详情读取裁决：先按对象级读者实时核验，再取详情。不可见等同不存在。
- */
-export async function getVisibleMemoryEventDetail(
-  context: FamilyContext,
-  eventId: string,
-): Promise<MemoryEventDetail | undefined> {
-  const { getVisibleMemoryEventInTransaction } = await import("@/lib/authz/event-access");
-  const visible = getDb().transaction((tx) =>
-    getVisibleMemoryEventInTransaction(
-      tx,
-      { principal: {
-        userId: context.userId,
-        familyId: context.familyId,
-        role: context.role,
-        accountEnabled: context.accountEnabled,
-      }, evaluatedAt: new Date() },
-      eventId,
-    ),
-  );
-  if (!visible) return undefined;
-  return getMemoryEventDetail(context.familyId, eventId);
+/** Internal family archive/maintenance callers; application reads use the scoped facade below. */
+export async function getMemoryEventDetail(familyId: string, eventId: string): Promise<MemoryEventDetail | undefined> {
+  return getDb().transaction(tx => getMemoryEventDetailInTransaction(tx, familyId, eventId));
+}
+
+/** Authorization and every detail row come from one synchronous SQLite snapshot. */
+export function getVisibleMemoryEventDetail(context: FamilyContext, eventId: string): MemoryEventDetail | undefined {
+  return getDb().transaction(tx => {
+    if (!getVisibleMemoryEventInTransaction(tx, createEventAccessSnapshot(context), eventId)) return undefined;
+    return getMemoryEventDetailInTransaction(tx, context.familyId, eventId, context);
+  });
 }
 
 export type EventVisibilityUpdateResult =

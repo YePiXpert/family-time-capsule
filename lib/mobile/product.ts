@@ -3,11 +3,11 @@ import { listPeople } from "@/lib/family/service";
 import { readableName } from "@/lib/naming";
 
 import type { FamilyContext } from "@/lib/family/context";
-import { createContributionAccessSnapshot, listVisibleContributionsForEvent } from "@/lib/authz/contribution-access";
+import { readMemoryContent } from "@/lib/memories/read-access";
 import { getThumbnailMap } from "@/lib/assets/service";
 import { getHomeDashboard } from "@/lib/home/service";
 import { getInboxPage, type InboxEntry } from "@/lib/inbox/service";
-import { defaultTitle, getVisibleMemoryEventDetail } from "@/lib/memories/service";
+import { defaultTitle } from "@/lib/memories/service";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { searchFamily } from "@/lib/search/service";
@@ -114,15 +114,22 @@ export async function getMobileInboxEntry(
   return (await mapMobileInboxEntries(context, [entry]))[0] ?? null;
 }
 
+/** Internal handoff marker; symbol keys are omitted from JSON DTOs. */
+export const MOBILE_MEMORY_READ_VERSION = Symbol("mobile-memory-read-version");
+
 export async function getMobileMemory(context: FamilyContext, eventId: string) {
-  const [detail, contributions] = await Promise.all([
-    getVisibleMemoryEventDetail(context, eventId),
-    listVisibleContributionsForEvent(createContributionAccessSnapshot(context), eventId),
-  ]);
-  if (!detail) return null;
-  const thumbnails = await getThumbnailMap(context.familyId, detail.assets.map((asset) => asset.id));
-  const child = (await listPeople(context.familyId)).find((person) => person.id === detail.event.childPersonId);
+  const initial = readMemoryContent(context, eventId);
+  if (!initial) return null;
+  const thumbnails = await getThumbnailMap(context.familyId, initial.detail.assets.map(asset => asset.id));
+  const people = await listPeople(context.familyId);
+  // All content is re-read together after the last awaited lookup.
+  const current = readMemoryContent(context, eventId);
+  if (!current) return null;
+  const { detail, contributions } = current;
+  const readableAudioIds = new Set(current.audioAssets.map(asset => asset.id));
+  const child = people.find(person => person.id === detail.event.childPersonId);
   return {
+    [MOBILE_MEMORY_READ_VERSION]: current.version,
     id: detail.event.id,
     title: detail.event.title,
     titleSource: detail.event.titleSource,
@@ -160,7 +167,7 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
       visibility: contribution.visibility,
       canEdit: contribution.canEdit,
       createdAt: contribution.createdAt.toISOString(),
-      audioPath: contribution.audioAssetId ? mediaPath(contribution.audioAssetId) : null,
+      audioPath: contribution.audioAssetId && readableAudioIds.has(contribution.audioAssetId) ? mediaPath(contribution.audioAssetId) : null,
     })),
     updatedAt: detail.event.updatedAt.toISOString(),
   };

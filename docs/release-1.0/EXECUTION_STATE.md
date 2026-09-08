@@ -14,8 +14,9 @@
 - 已推送：`d1f0d6c12430490955838271bc8b64932944c6c0` R09 资料库/命名作者权限；CI `34198425767` 四项全部 success，已核对同 SHA。
 - 已推送：`d67c62b1ecc387684fa2449baa58b263d6ab2b29`（含 `789fef3` 讲述及 `d67c62b` 访客相册）；CI `34199522610` 四项全部 success，已核对同 SHA。
 - 已推送：`b23c3409ec160270c6d4e13db9d44ce0ccb1c26e` R10 故事/任务来源与 v3 归档；CI `34202975077` 四项全部 success，已核对同 SHA。
-- 已推送：`c6f32be5fb7ce89870d31b15bf816471c97ca286` R09 阅读包最终响应授权；CI `34204259752` Web/手机/运维通过，production E2E/恢复仍运行。
-- 当前里程碑：R09 事实和回收站管理权限；下一步已有事件双端分享/撤销、详情派生来源与受控缓存。
+- 已推送：`c6f32be5fb7ce89870d31b15bf816471c97ca286` R09 阅读包最终响应授权；CI `34204259752` 四项全部 success，已核对同 SHA。
+- 已推送：`9db3cdb4b692b4af6863a8e223981800babf5ab2` R09 事实/回收站管理；CI `34205380014` 四项全部 success，已核对同 SHA。
+- 当前里程碑：R09 详情/事实来源与最终响应；下一步已有事件双端分享/撤销和受控缓存。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -147,3 +148,22 @@ P0-D 实现与证据：
 - production edit 3/3 通过（`/tmp/ftc-r09-management-e2e-final.log`）：Web 私密 unknown 创建、实际添加事实、删除、另一个真实管理员会话无标题/API 404、作者恢复保留正文/事实/unknown，再永久清除。首跑只是测试错用页面日期文案，已按实际“时间不确定”并额外断言 HTTP precision=unknown 修正。
 - 类型、lint、production build/build:ops 通过（`/tmp/ftc-r09-management-*.log`），13 条既存 lint warning；独立只读复审未发现本批剩余授权缺陷。无新 schema/归档协议，产品版本不变。最后添加事实索引移入事务后，相关 3 文件/19 项、typecheck/build/build:ops 与 production edit 3/3 再次通过（`/tmp/ftc-r09-management-final.log`、`/tmp/ftc-r09-management-*-final2.log`）。
 - 当前只是管理路径闭合；详情聚合与事实来源读取、已有事件双端分享撤销、原生授权缓存仍在内部待办，不提升 ID-11/ID-12 为完成。
+
+
+## R09 详情和事实来源
+
+- 详情事件、可读素材及 Live Photo 对应关系改为同一 SQLite 事务快照。事实必须由当前调用者可读的父事件和全部来源共同允许；讲述来源复用完整 live User/Person/guardian/事件政策，资产和转录复用原件权限。未知、跨家庭或失效来源拒绝整条事实，作者自己的私密事实仍保留。
+- Web 阅读/编辑使用同步正文、讲述、可读音频、事实和来源集合；另一个私密讲述保护的音频不会因可见讲述再暴露文件名、播放器路径或归档转录。异步归档加载后检查内容版本；相关记忆卡片独立刷新其读者、素材和数量，待审 AI 建议在最后同步复验任务/同意/来源。
+- 手机服务在最后异步依赖后读取当前内容集合，GET/PATCH 在服务返回后再检查内部版本并立即生成 HTTP 响应。内部 Symbol 不进入 JSON DTO。网页编辑按钮改按实际事件管理权显示，指定读者不能借角色看到作者编辑入口。
+- 搜索事实从当前已确认主记录返回文本，且检查全部来源；不再直接将旧索引文本当作可读事实。添加确认事实同样要求其来源当前可读。
+- 真 SQLite/HTTP 先复现详情文件名泄漏、异步读取期间撤权仍返回 200、私密讲述派生事实仍命中（`/tmp/ftc-r09-detail-facts-red.log`）。复审另复现服务返回后撤权仍交付（`/tmp/ftc-r09-detail-handoff-red.log`），均已修复；最终新增五项覆盖实际原声文件、第二 SQLite 连接、HTTP、引用引文、独立音频权限及相关卡片。
+- production edit 4/4 通过（`/tmp/ftc-r09-detail-e2e.log`）：实际 Web 创建家庭记忆/添加事实，隔离库绑定讲述来源并撤权后，另一管理员的阅读、编辑响应原文和搜索均无事实/引文，作者仍能阅读。此处讲述范围变更由隔离测试库触发，不冒称已有事件分享入口完成。
+- 首轮根全量发现两处测试适配：同步读取后旧 `.resolves` 断言需改直接检查；隔离恢复维护者没有家庭读权限，恢复字节/关系测试应直接比较库内事实，不能伪造新管理员上下文绕过边界。保留所有数据与拒绝断言，未修改恢复授权。
+- typecheck/lint/build/build:ops 已通过，13 条既存 lint warning；disaster roundtrip 7/7 通过（`/tmp/ftc-r09-detail-roundtrip.log`）。独立只读增量复审未发现本批剩余具体缺陷。最终根全量 138 文件/853 项通过（`/tmp/ftc-r09-detail-root-reviewed.log`）；完整 production E2E 首跑 71/72，唯一失败为导入页交互就绪前选择文件的窗口；真实延迟脚本回归修复后最终全量 73/73 通过（`/tmp/ftc-r09-detail-e2e-final.log`）。无新增 schema/归档协议，产品版本仍为 1.0.0-dev.1。
+- 已有事件双端分享/撤销、普通编辑提交复验与并发控制、原生授权缓存/增量同步仍是内部工作；不得以本批门禁代替 R09/R17 完整验收。
+
+
+## 导入页交互就绪
+
+- 完整 production E2E 在资料库场景的文件选择后等待“开始导入”超时，页面没有记录所选 30 份文件（`/tmp/ftc-r09-detail-e2e-full.log`）。读取当前 Next 本地 client/hydration 指南后，新增真实浏览器延迟全部脚本加载的用例，确认交互未就绪时文件输入仍启用（`/tmp/ftc-import-hydration-red.log`）。
+- 文件输入现在在服务器 HTML/交互绑定前禁用，就绪及没有上传作业时才开放；浏览器自动化按真实可用状态选择文件，不扩大等待时间或降低原件数量断言。延迟加载测试放行脚本后只选择一次，必须出现文件和导入按钮。typecheck、该文件 lint、production build/build:ops 通过；production asset-library 2/2 与最终完整浏览器 73/73 通过（`/tmp/ftc-import-hydration-fixed.log`、`/tmp/ftc-r09-detail-e2e-final.log`）。

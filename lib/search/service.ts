@@ -1,4 +1,6 @@
 import { familyStoryPredicate } from "@/lib/authz/story-access";
+import { readableFactPredicate } from "@/lib/authz/fact-access";
+import { createContributionAccessSnapshot } from "@/lib/authz/contribution-access";
 import "server-only";
 
 /**
@@ -664,10 +666,12 @@ export function searchFamily(
         break;
       case "fact":
         if (result.facts.length < limit) {
-          result.facts.push({
-            id: hit.entity_id,
-            eventId: hit.event_id ?? "",
-            statement: hit.original_text,
+          const current = db.select().from(factTable).where(and(
+            eq(factTable.id, hit.entity_id),
+            readableFactPredicate(createContributionAccessSnapshot(context), sql`${factTable.id}`, { confirmedOnly: true }),
+          )).get();
+          if (current && (allowedEventIds === null || allowedEventIds.has(current.memoryEventId))) result.facts.push({
+            id: current.id, eventId: current.memoryEventId, statement: current.statement,
           });
         }
         break;

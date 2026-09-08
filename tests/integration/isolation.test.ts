@@ -283,9 +283,9 @@ describe("Contribution / Fact 隔离", () => {
     // Fact
     const factA = await addFact(await testFamilyContext(userA, familyA), confirmed.eventId, "A家事实");
     expect(factA).toBeTruthy();
-    expect(await listFacts(familyB, confirmed.eventId)).toHaveLength(0);
+    expect(await listFacts({ ...await testFamilyContext(userA, familyA), familyId: familyB }, confirmed.eventId)).toHaveLength(0);
     expect(await setFactStatus({ ...await testFamilyContext(userA, familyA), familyId: familyB }, factA!.id, "rejected")).toBeUndefined();
-    expect((await listFacts(familyA, confirmed.eventId))[0].status).toBe("user_confirmed");
+    expect((await listFacts(await testFamilyContext(userA, familyA), confirmed.eventId))[0].status).toBe("user_confirmed");
   });
 });
 

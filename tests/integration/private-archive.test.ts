@@ -152,7 +152,7 @@ it("R08/R09: actor archives exclude hidden graphs and restore private bodies, ac
     await legacyTarget.restore.restoreFromZip(await legacy.generateAsync({ type: "nodebuffer" }), legacyTarget.operator.id);
     const tdb = legacyTarget.database.getDb();
     tdb.run(sql`update user set family_id='family' where id=${legacyTarget.operator.id}`);
-    await expect((await import("@/lib/memories/service")).getVisibleMemoryEventDetail({ ...a, role: "owner", userId: legacyTarget.operator.id }, sharedEvent)).resolves.toBeUndefined();
+    expect((await import("@/lib/memories/service")).getVisibleMemoryEventDetail({ ...a, role: "owner", userId: legacyTarget.operator.id }, sharedEvent)).toBeUndefined();
     const access = await import("@/lib/authz/contribution-access");
     expect(await access.canReadContributionAsset(access.createContributionAccessSnapshot({ ...a, role: "owner", userId: legacyTarget.operator.id }), unsubmittedPhoto)).toBe(false);
     expect(tdb.get(sql`select body_text,visibility from memory_event where id=${sharedEvent}`)).toEqual({ body_text: "指定账号才能读的正文", visibility: "private" });

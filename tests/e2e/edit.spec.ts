@@ -137,3 +137,55 @@ test("私密未知时间记忆：作者添加事实、移入回收站、恢复�
     expect((await page.request.get(`/api/mobile/v1${memoryUrl}`)).status()).toBe(404);
   } finally { await otherContext.close(); }
 });
+
+test("家人讲述撤为私密后，旧事实和来源引文从其他管理员的阅读、编辑和搜索消失", async ({ page, browser, baseURL }) => {
+  await ensureBootstrap(page);
+  const statement = "合成暗号苔藓纸船";
+  const quote = "只在讲述来源中出现的合成引文";
+  await page.goto("/capture");
+  await page.getByLabel("写下这一刻").fill("这件事的正文仍然与家人分享。");
+  await page.getByLabel("标题", { exact: true }).fill("事实来源权限示例");
+  await page.getByLabel("时间记得多清楚").selectOption("unknown");
+  await page.getByLabel("保存后的读者").selectOption("family");
+  await page.getByRole("button", { name: "保存为一条记忆" }).click();
+  await page.getByRole("link", { name: "查看这条记忆" }).click();
+  await expect(page).toHaveURL(/\/memories\/[^/?]+/);
+  const memoryUrl = new URL(page.url()).pathname;
+  const eventId = memoryUrl.split("/").at(-1)!;
+  await page.getByRole("link", { name: "编辑档案", exact: true }).click();
+  await page.getByLabel("新增事实").fill(statement);
+  await page.getByRole("button", { name: "添加事实", exact: true }).click();
+  await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(statement);
+  const token = randomUUID(), voiceId = randomUUID();
+  const dbPath = path.join(process.cwd(), "data/e2e-edit/db/capsule.sqlite");
+  const db = new Database(dbPath);
+  try {
+    const actor = db.prepare("select family_id,person_id from user where email='admin@example.com'").get() as { family_id: string; person_id: string };
+    db.prepare("insert into user(id,name,email,role,family_id,created_at,updated_at) values ('fact-admin-c','另一位事实读者','fact-c@fixture.invalid','admin',?,unixepoch(),unixepoch())").run(actor.family_id);
+    db.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at) values (?,?,'fact-admin-c',unixepoch()+3600,unixepoch(),unixepoch())").run(randomUUID(), token);
+    db.prepare("insert into contribution(id,memory_event_id,author_person_id,raw_text,visibility,created_at,updated_at) values (?,?,?,?,'family',unixepoch(),unixepoch())").run(voiceId, eventId, actor.person_id, quote);
+    db.prepare("update fact_source set source_type='contribution',source_id=?,quote=? where fact_id in (select id from fact where memory_event_id=?)").run(voiceId, quote, eventId);
+  } finally { db.close(); }
+  const otherContext = await browser.newContext({ baseURL, extraHTTPHeaders: { authorization: `Bearer ${token}` } });
+  try {
+    const other = await otherContext.newPage();
+    await other.goto(`${memoryUrl}?mode=edit`);
+    await expect(other.getByRole("region", { name: "已确认事实" })).toContainText(statement);
+    const withdraw = new Database(dbPath);
+    try { withdraw.prepare("update contribution set visibility='private' where id=?").run(voiceId); }
+    finally { withdraw.close(); }
+    for (const url of [memoryUrl, `${memoryUrl}?mode=edit`]) {
+      const response = await other.goto(url);
+      await expect(other.getByRole("heading", { name: "事实来源权限示例", exact: true })).toBeVisible();
+      await expect(other.locator("main")).not.toContainText(statement);
+      expect(await response!.text()).not.toContain(statement);
+      expect(await response!.text()).not.toContain(quote);
+    }
+    await other.goto(`/search?q=${encodeURIComponent("苔藓纸船")}`);
+    await expect(other.locator("main")).not.toContainText(statement);
+    await page.goto(`${memoryUrl}?mode=edit`);
+    await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(statement);
+    await page.getByRole("region", { name: "已确认事实" }).getByText("来源（1）", { exact: true }).click();
+    await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(quote);
+  } finally { await otherContext.close(); }
+});

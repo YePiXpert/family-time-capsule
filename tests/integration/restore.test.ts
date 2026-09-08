@@ -633,7 +633,10 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       "child_later",
       "private",
     ]);
-    const facts = await m.contributions.listFacts(snapshot.familyId, e1Id);
+    // The restore maintainer is deliberately unbound. Compare restored storage;
+    // restoring a family does not grant this account application read access.
+    const { fact: restoredFactTable } = await import("@/db/schema/contribution");
+    const facts = db.select().from(restoredFactTable).where(equalDocument(restoredFactTable.memoryEventId, e1Id)).all();
     expect(facts.map((f) => f.statement)).toContain("2026-08-10 小满出生。");
 
     const restoredFactSources = (await db.select().from(m.schema.factSource))

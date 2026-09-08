@@ -2,8 +2,10 @@ import "server-only";
 
 import { canManageEventVisibilityInTransaction, createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import type { FamilyContext } from "@/lib/family/context";
+import { readableFactPredicate } from "@/lib/authz/fact-access";
+import { createContributionAccessSnapshot } from "@/lib/authz/contribution-access";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { indexContribution, indexFactIfConfirmed } from "@/lib/search/service";
 import { auditLog } from "@/db/schema/audit";
@@ -477,21 +479,29 @@ export async function setFactStatus(
   return db.transaction(tx => {
     const row = tx.select().from(fact).where(eq(fact.id, factId)).get();
     if (!row || !canManageEventVisibilityInTransaction(tx, createEventAccessSnapshot(context), row.memoryEventId)) return undefined;
+    if (!tx.select({ id: fact.id }).from(fact).where(and(eq(fact.id, factId), readableFactPredicate(createContributionAccessSnapshot(context), sql`${fact.id}`))).get()) return undefined;
     const updated = tx.update(fact).set({ status, updatedAt: new Date() }).where(eq(fact.id, factId)).returning().get();
     if (updated) indexFactIfConfirmed({ id: updated.id, familyId: context.familyId, memoryEventId: updated.memoryEventId, statement: updated.statement, status: updated.status });
     return updated;
   }, { behavior: "immediate" });
 }
 
-export async function listFacts(
-  familyId: string,
+export function listFacts(
+  context: FamilyContext,
   memoryEventId: string,
-): Promise<FactRow[]> {
-  if (!(await eventBelongsToFamily(familyId, memoryEventId))) return [];
+): FactRow[] {
   const db = getDb();
   return db
     .select()
     .from(fact)
-    .where(eq(fact.memoryEventId, memoryEventId))
-    .orderBy(asc(fact.createdAt));
+    .where(and(eq(fact.memoryEventId, memoryEventId), readableFactPredicate(createContributionAccessSnapshot(context), sql`${fact.id}`)))
+    .orderBy(asc(fact.createdAt)).all();
+}
+
+export function listFactSources(context: FamilyContext, factIds: string[]) {
+  if (!factIds.length) return [];
+  return getDb().select().from(factSource).where(and(
+    eq(factSource.familyId, context.familyId), inArray(factSource.factId, factIds),
+    readableFactPredicate(createContributionAccessSnapshot(context), sql`${factSource.factId}`),
+  )).all();
 }
