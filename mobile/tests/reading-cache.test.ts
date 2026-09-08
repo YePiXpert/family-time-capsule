@@ -445,3 +445,27 @@ it("separates instances at the same URL and preserves previously verified offlin
   expect((await native.nativeReadingStore.get(entry.key))?.state).toBe("ready");
   expect(existsSync(path.join(root, "captures", "only-original.jpg"))).toBe(true);
 });
+
+it("known sync revocation withdraws the current managed reading scope offline while preserving other accounts and originals", async () => {
+  await native.clearAllReadingDownloads();
+  const { scope } = await native.resolveReadingScope(credentials);
+  const transport = native.nativeReadingTransport(credentials, scope);
+  const entry = await native.readingDownloads.queue(scope, manifest, transport);
+  await native.readingDownloads.resume(scope, entry.key, transport);
+  const otherCredentials = { ...credentials, serverUrl: "https://unaffected.example.test" };
+  const other = await native.resolveReadingScope(otherCredentials);
+  const otherEntry = await native.readingDownloads.queue(other.scope, manifest, transport);
+  mode = 0;
+  const fetchCount = vi.mocked(fetch).mock.calls.length;
+  const removed = vi.fn(), unsubscribe = native.readingDownloads.subscribe(removed);
+  await native.invalidateReadingCredentials(credentials);
+  unsubscribe();
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(fetchCount);
+  expect(await native.nativeReadingStore.get(entry.key)).toBeNull();
+  expect(await native.nativeReadingStore.get(otherEntry.key)).not.toBeNull();
+  expect(removed).toHaveBeenCalledWith(entry.key);
+  expect(removed).not.toHaveBeenCalledWith(otherEntry.key);
+  await expect(native.resolveReadingScope(credentials,{ offline: true })).rejects.toThrow("在线验证");
+  expect((await native.resolveReadingScope(otherCredentials,{ offline: true })).scope.key).toBe(other.scope.key);
+  expect(existsSync(path.join(root,"captures","only-original.jpg"))).toBe(true);
+});

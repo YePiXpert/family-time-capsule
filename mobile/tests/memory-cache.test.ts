@@ -132,6 +132,7 @@ it("HTTP revocation removes the timeline cache and cannot fall back to its stale
     family: { id: "family", name: "合成家庭", timezone: "UTC" }, people: [], nextCursor: null,
     events: [{ id: memory.id, title: "REVOKED_SUMMARY_TITLE", occurredAt: at, occurredAtPrecision: "unknown", locationText: "REVOKED_LOCATION", childPersonId: null, ageDays: null, ageLabel: null, updatedAt: at, assetCount: 0, participantNames: [], captureIds: [], cover: null }],
   }, "snapshot");
+  await store.finishSyncSnapshot("snapshot", at);
   mocks.events = await store.listTimeline(scope());
   mocks.online = true;
   mocks.fetch.mockRejectedValue(new ApiError("Access denied", 404));
@@ -156,4 +157,23 @@ it("archived originals belong to their draft's account scope, even when another 
   expect(await store.listLocalMemoryMedia(memory.id, otherScope)).toEqual([]);
   expect(await store.listLocalMemoryMedia(memory.id, null)).toEqual([]);
   expect(getRawMockDatabase().prepare("select local_uri from local_capture where id='owned-photo'").get()).toEqual({ local_uri: "file:///A-PRIVATE-PHOTO.png" });
+});
+
+it("a sync permission reset withdraws already rendered private text without reopening the screen", async () => {
+  await open();
+  expect(output()).toContain("A_PRIVATE_ONLY");
+  await act(async () => { await store.clearServerCaches(); });
+  expect(output()).not.toContain("A_PRIVATE_ONLY");
+  expect(await store.getCachedMemoryDetail(scope(), memory.id)).toBeNull();
+});
+it("a late detail response cannot refill caches after a sync permission reset", async () => {
+  let resolve!: (value: MobileMemory) => void;
+  mocks.online = true;
+  mocks.fetch.mockReturnValueOnce(new Promise<MobileMemory>(done => { resolve = done; }))
+    .mockRejectedValue(new ApiError("Access denied",404));
+  await open();
+  await act(async () => { await store.clearServerCaches(); });
+  await act(async () => { resolve(memory); });
+  expect(output()).not.toContain("A_PRIVATE_ONLY");
+  expect(await store.getCachedMemoryDetail(scope(),memory.id)).toBeNull();
 });

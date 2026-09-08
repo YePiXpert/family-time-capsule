@@ -6,6 +6,9 @@ import * as Network from "expo-network";
 import { fetchSyncPage, uploadTextCapture } from "../api/client";
 import {
   getActiveDestination,
+  getSyncCheckpoint,
+  discardSyncRound,
+  clearServerCaches,
   applySyncPage,
   completeOutboxItem,
   finishSyncSnapshot,
@@ -30,6 +33,7 @@ export type { SyncSummary } from "./core";
 
 export type SyncArchiveOptions = {
   isCurrent?: () => boolean;
+  onCacheReset?: () => Promise<void>;
   /** 上传授权门（M4）：未授权目的地的待传项保留在本机。 */
   authorizeUpload?: (item: OutboxItem) => Promise<boolean>;
 };
@@ -55,6 +59,18 @@ export async function syncArchive(
     markOutboxFailure,
     completeOutboxItem,
     fetchSyncPage,
+    getSyncCheckpoint,
+    discardSyncRound,
+    resetServerCaches: async () => {
+      await clearServerCaches(); pruneCachedCovers([]);
+      await options.onCacheReset?.();
+      const { invalidateReadingCredentials } = await import("../reading/native");
+      await invalidateReadingCredentials(credentials);
+    },
+    invalidateResources: async () => {
+      const { invalidateReadingCredentials } = await import("../reading/native");
+      await invalidateReadingCredentials(credentials);
+    },
     applySyncPage: (credentials, page, snapshotId) => applySyncPage(credentials, page, snapshotId),
     cacheEventCover,
     setLocalCoverUri,

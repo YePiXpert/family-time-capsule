@@ -1,3 +1,4 @@
+import { getServerCacheRevision } from "../storage/cache-lifecycle";
 import {
   createContext,
   useCallback,
@@ -227,16 +228,17 @@ export function AppProvider({
 
   const refreshHome = useCallback(async (activeCredentials: Credentials) => {
     const generation = destGenRef.current;
+    const cacheRevision = getServerCacheRevision();
     const nextHome = await fetchMobileHome(activeCredentials);
     if (generation !== destGenRef.current) return;
-    await cacheMobileHome(nextHome);
+    if (!await cacheMobileHome(nextHome, cacheRevision)) return;
     if (generation !== destGenRef.current) return;
     setHome(nextHome);
     void revalidateReadingDownloads(activeCredentials).catch(() => {});
     try {
       const review = await fetchMobileReview(activeCredentials);
       if (generation !== destGenRef.current) return;
-      await cacheMobileReview(review);
+      if (!await cacheMobileReview(review, cacheRevision)) return;
       if (generation !== destGenRef.current) return;
       await reconcileWeeklyReviewReminder(review);
     } catch {
@@ -278,6 +280,7 @@ export function AppProvider({
       const summary = await syncArchive(activeCredentials, {
         isCurrent: () => generation === destGenRef.current && activeCredentials === credentialsRef.current,
         authorizeUpload: (item) => Promise.resolve(authorizeUpload(item)),
+        onCacheReset: reloadLocal,
       });
       // 同步期间切换了连接：丢弃旧目的地的结果，不写新视图的缓存。
       if (generation !== destGenRef.current) return;

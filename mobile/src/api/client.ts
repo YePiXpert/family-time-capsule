@@ -185,6 +185,18 @@ export function parseSyncPage(value: unknown): SyncPage {
   ) {
     throw new ApiError("服务器移动 API 返回了无效数据。", 502);
   }
+  if (value.sync !== undefined) {
+    const sync = value.sync;
+    if (!isRecord(sync) || sync.protocol !== 2 || !["snapshot","delta"].includes(String(sync.mode)) ||
+      !isString(sync.generation,128) || !sync.generation || !isString(sync.permissionStamp,128) || !sync.permissionStamp ||
+      typeof sync.invalidateResources !== "boolean" ||
+      !(sync.checkpoint === null || (isString(sync.checkpoint,512) && sync.checkpoint.length > 0)) ||
+      (value.nextCursor === null ? sync.checkpoint === null : sync.checkpoint !== null) ||
+      value.people.length > 50 || !Array.isArray(value.tombstones) || value.tombstones.length > 50 ||
+      !value.tombstones.every(row => isRecord(row) && ["memory","person"].includes(String(row.kind)) && isString(row.id,128) && row.id.length > 0)) {
+      throw new ApiError("服务器增量同步返回了无效数据。",502);
+    }
+  }
   return value as SyncPage;
 }
 
@@ -789,6 +801,7 @@ export async function fetchSyncPage(
 ): Promise<SyncPage> {
   const url = new URL(`${credentials.serverUrl}/api/mobile/v1/sync`);
   url.searchParams.set("limit", "50");
+  url.searchParams.set("protocol", "2");
   if (cursor) url.searchParams.set("cursor", cursor);
   let response: Response;
   try {
@@ -802,9 +815,12 @@ export async function fetchSyncPage(
     throw new ApiError("无法连接家庭服务器，本地数据不受影响。", 0);
   }
   if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    const code = isRecord(errorBody) && ["sync_reset","sync_changed"].includes(String(errorBody.error)) ? String(errorBody.error) : undefined;
     throw new ApiError(
       response.status === 401 ? "登录已过期，请重新登录。" : "同步失败，请稍后重试。",
       response.status,
+      code,
     );
   }
   let body: unknown;

@@ -227,7 +227,7 @@ export class ReadingDownloads {
     return work.finally(() => { this.operations.delete(work); });
   }
 
-  async clearAll(cleanup: () => Promise<void>): Promise<void> {
+  async clearAll(cleanup: () => Promise<void>, scopeKey?: string): Promise<void> {
     if (this.resetting) throw new ReadingError("正在清理本机阅读数据，请稍后重试。");
     this.resetting = true;
     try {
@@ -235,7 +235,7 @@ export class ReadingDownloads {
       await Promise.allSettled([...this.operations]);
       const entries = await this.store.list();
       await cleanup();
-      entries.forEach((entry) => this.emit(entry.key));
+      entries.filter(entry => !scopeKey || entry.scope === scopeKey).forEach((entry) => this.emit(entry.key));
       this.emit();
     } finally {
       this.resetting = false;

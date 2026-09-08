@@ -32,6 +32,7 @@ import * as mediaJobSchema from "./schema/media-job";
 import * as collectionSchema from "./schema/collection";
 import * as draftSchema from "./schema/draft";
 import * as reviewSchema from "./schema/review";
+import * as syncSchema from "./schema/sync";
 
 /**
  * SQLite 单例：数据库文件位于 $DATA_DIR/db/capsule.sqlite（PRD §11）。
@@ -93,6 +94,7 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...backupSchema,
         ...importSchema,
         ...reviewSchema,
+        ...syncSchema,
         ...draftSchema,
         ...collectionSchema,
         ...mediaJobSchema,

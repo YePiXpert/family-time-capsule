@@ -32,7 +32,7 @@ test("native recording controls and save hook publish specified readers through 
   const result = await promisify(execFile)(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.http.config.ts"], {
     cwd: path.join(process.cwd(), "mobile"), env: { ...process.env, FTC_NATIVE_HTTP_FIXTURE: JSON.stringify(fixture) }, timeout: 45000, maxBuffer: 1024 * 1024,
   });
-  expect(result.stdout).toContain("3 passed");
+  expect(result.stdout).toContain("4 passed");
   const verify = new Database(path.join(process.cwd(), "data/e2e-native-capture/db/capsule.sqlite"));
   try {
     const originals=verify.prepare("select id,visibility from asset where created_by_user_id='user-a' and original_asset_id is null").all();

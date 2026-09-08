@@ -75,6 +75,9 @@ it("R08/R09: actor archives exclude hidden graphs and restore private bodies, ac
     return { database, operator, restore: await import("@/lib/restore/service") };
   }
   const first = await target(1);
+  const priorGeneration = first.database.getDb().get<{ generation: string }>(sql`select generation from sync_state where id='instance'`)!.generation;
+  const instanceService = await import("@/lib/instance/service");
+  const priorInstance = await instanceService.getInstanceId();
   try {
     // Every malformed v2 archive fails before family/ownership writes.
     for (const tamper of ["reader", "visibility", "downgrade", "book-owner"]) {
@@ -86,9 +89,12 @@ it("R08/R09: actor archives exclude hidden graphs and restore private bodies, ac
       zip.file(`${root}/privacy.json`, JSON.stringify(privacy));
       await expect(first.restore.restoreFromZip(await zip.generateAsync({ type: "nodebuffer" }), first.operator.id)).rejects.toBeDefined();
       expect(first.database.getDb().all(sql`select id from family`)).toEqual([]);
+      expect(first.database.getDb().get<{ generation: string }>(sql`select generation from sync_state where id='instance'`)!.generation).toBe(priorGeneration);
     }
     await first.restore.restoreFromZip(ownBytes, first.operator.id);
     const tdb = first.database.getDb();
+    expect(tdb.get<{ generation: string }>(sql`select generation from sync_state where id='instance'`)!.generation).not.toBe(priorGeneration);
+    expect(await instanceService.getInstanceId()).toBe(priorInstance);
     tdb.run(sql`update user set family_id='family' where id=${first.operator.id}`);
     const operatorContext = { ...a, userId: first.operator.id, role: "owner" as const };
     const memories = await import("@/lib/memories/service"), access = await import("@/lib/authz/contribution-access");

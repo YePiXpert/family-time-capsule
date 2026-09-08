@@ -61,6 +61,11 @@ export type SyncPage = {
   people: Person[];
   events: TimelineEvent[];
   nextCursor: string | null;
+  tombstones?: { kind: "memory" | "person"; id: string }[];
+  sync?: {
+    protocol: 2; mode: "snapshot" | "delta"; generation: string;
+    permissionStamp: string; checkpoint: string | null; invalidateResources: boolean;
+  };
 };
 
 export type LocalTimelineEvent = TimelineEvent & {

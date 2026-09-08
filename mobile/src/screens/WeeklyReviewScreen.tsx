@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { getServerCacheRevision, useServerCacheRevision } from "../storage/cache-lifecycle";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
@@ -11,7 +12,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { fetchMobileReview, mutateMobileReview } from "../api/client";
+import { ApiError, fetchMobileReview, mutateMobileReview } from "../api/client";
 import type { RootStackParamList } from "../navigation/types";
 import {
   reconcileWeeklyReviewReminder,
@@ -19,7 +20,7 @@ import {
   weeklyReviewReminderEnabled,
 } from "../notifications/review-reminders";
 import { useApp } from "../state/AppContext";
-import { cacheMobileReview, getCachedMobileReview } from "../storage/database";
+import { deleteMeta, cacheMobileReview, getCachedMobileReview } from "../storage/database";
 import { colors, sharedStyles } from "../theme";
 import type { MobileReview } from "../types";
 import { dateLabel } from "../utils/format";
@@ -39,8 +40,15 @@ function statusLabel(status: MobileReview["status"]): string {
   return status === "completed" ? "已完成" : status === "in_progress" ? "进行中" : "未开始";
 }
 
-export function WeeklyReviewScreen({ navigation }: Props) {
+export function WeeklyReviewScreen(props: Props) {
+  const { credentials } = useApp();
+  const revision = useServerCacheRevision();
+  return <WeeklyReviewContent key={JSON.stringify([credentials, revision])} {...props} />;
+}
+function WeeklyReviewContent({ navigation }: Props) {
   const { credentials, online } = useApp();
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [review, setReview] = useState<MobileReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -49,9 +57,11 @@ export function WeeklyReviewScreen({ navigation }: Props) {
   const [reminders, setReminders] = useState(false);
 
   const load = useCallback(async (refresh = false) => {
+    const revision = getServerCacheRevision();
     if (refresh) setRefreshing(true); else setLoading(true);
     setError(null);
     const [cached, enabled] = await Promise.all([getCachedMobileReview(), weeklyReviewReminderEnabled()]);
+    if (!active.current || getServerCacheRevision() !== revision) return;
     setReminders(enabled);
     if (cached) setReview(cached);
     if (!credentials) {
@@ -61,13 +71,18 @@ export function WeeklyReviewScreen({ navigation }: Props) {
     }
     try {
       const next = await fetchMobileReview(credentials);
-      await cacheMobileReview(next);
+      if (!active.current || !await cacheMobileReview(next, revision)) return;
       await reconcileWeeklyReviewReminder(next);
-      setReview(next);
+      if (active.current && revision === getServerCacheRevision()) setReview(next);
     } catch (reason) {
+      if (!active.current || revision !== getServerCacheRevision()) return;
+      if (reason instanceof ApiError && [401,403,404].includes(reason.status)) {
+        setReview(null); await deleteMeta("mobile_review");
+        setError("这份回顾已不可读取，旧缓存已移除。"); return;
+      }
       setError(cached ? "暂时无法刷新，已有回顾缓存没有被清空。" : reason instanceof Error ? reason.message : "读取失败。");
     } finally {
-      setLoading(false); setRefreshing(false);
+      if (active.current) { setLoading(false); setRefreshing(false); }
     }
   }, [credentials]);
 
@@ -78,11 +93,13 @@ export function WeeklyReviewScreen({ navigation }: Props) {
       setError("这个写操作需要联网；尚未向服务器提交任何改变。");
       return null;
     }
+    const revision = getServerCacheRevision();
     setBusy(true); setError(null);
     try {
       const result = await mutateMobileReview(credentials, { reviewId: review.id, key: review.key, ...input });
-      await cacheMobileReview(result.review);
+      if (!active.current || !await cacheMobileReview(result.review, revision)) return null;
       await reconcileWeeklyReviewReminder(result.review);
+      if (!active.current || revision !== getServerCacheRevision()) return null;
       setReview(result.review);
       return result;
     } catch (reason) {

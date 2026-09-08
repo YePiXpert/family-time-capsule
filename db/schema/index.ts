@@ -33,3 +33,5 @@ export * as instanceSchema from "./instance";
 
 export * as draftSchema from "./draft";
 export * as resurfacingSchema from "./resurfacing";
+
+export * as syncSchema from "./sync";

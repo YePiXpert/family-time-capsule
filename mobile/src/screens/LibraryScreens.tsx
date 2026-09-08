@@ -1,5 +1,6 @@
+import { getServerCacheRevision, useServerCacheRevision } from "../storage/cache-lifecycle";
 import { NativeMediaReader } from "../media/NativeMediaReader";
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import QRCode from "react-native-qrcode-svg";
@@ -17,6 +18,7 @@ import {
   View,
 } from "react-native";
 import {
+  ApiError,
   createMobileLibraryItem,
   fetchMobileLibraryDetail,
   fetchMobileLibraryPage,
@@ -25,6 +27,7 @@ import {
 import type { RootStackParamList } from "../navigation/types";
 import { useApp } from "../state/AppContext";
 import {
+  deleteMeta,
   cacheMobileLibraryDetail,
   cacheMobileLibraryPage,
   getCachedMobileLibraryDetail,
@@ -96,39 +99,44 @@ function statusLabel(status: string | null): string {
 
 function useLibraryPage(domain: MobileLibraryDomain) {
   const { credentials } = useApp();
-  const [page, setPage] = useState<MobileLibraryPage | null>(null);
+  const epoch = useServerCacheRevision();
+  const currentKey = JSON.stringify([credentials, domain, epoch]);
+  const activeKey = useRef(currentKey);
+  useLayoutEffect(() => { activeKey.current = currentKey; }, [currentKey]);
+  const request = useRef(0);
+  const [page, setPage] = useState<{ key: string; value: MobileLibraryPage } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const load = useCallback(async (refresh = false) => {
-    if (refresh) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
-    const cached = await getCachedMobileLibraryPage(domain);
-    if (cached) setPage(cached);
-    if (!credentials) {
-      setError(cached ? "当前离线，正在显示上次打开的资料。" : "连接家庭服务器后可读取这部分档案。");
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
+    const serial = ++request.current;
+    const key = JSON.stringify([credentials, domain, epoch]);
+    const current = () => request.current === serial && activeKey.current === key && getServerCacheRevision() === epoch;
+    setLoading(!refresh); setRefreshing(refresh); setError(null);
     try {
-      const next = await fetchMobileLibraryPage(credentials, domain);
-      await cacheMobileLibraryPage(domain, next);
-      setPage(next);
-    } catch (reason) {
-      setError(cached
-        ? "暂时无法刷新，已保留上次成功缓存。"
-        : reason instanceof Error ? reason.message : "读取失败。");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [credentials, domain]);
-
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
-  return { page, loading, refreshing, error, reload: () => load(true) };
+      const cached = await getCachedMobileLibraryPage(domain);
+      if (!current()) return;
+      setPage(cached ? { key, value: cached } : null);
+      if (!credentials) { setError(cached ? "当前离线，正在显示上次打开的资料。" : "连接家庭服务器后可读取这部分档案。"); return; }
+      try {
+        const next = await fetchMobileLibraryPage(credentials, domain);
+        if (!current()) return;
+        if (!await cacheMobileLibraryPage(domain, next, epoch) || !current()) return;
+        setPage({ key, value: next });
+      } catch (reason) {
+        if (!current()) return;
+        if (reason instanceof ApiError && [401,403,404].includes(reason.status)) {
+          setPage(null);
+          await deleteMeta(`library_page:${domain}`);
+          if (current()) setError("这份资料已不可读取，旧缓存已移除。");
+        } else {
+          setError(cached ? "暂时无法刷新，已保留上次成功缓存。" : reason instanceof Error ? reason.message : "读取失败。");
+        }
+      }
+    } finally { if (current()) { setLoading(false); setRefreshing(false); } }
+  }, [credentials, domain, epoch]);
+  useFocusEffect(useCallback(() => { void load(); return () => { request.current++; }; }, [load]));
+  return { page: page?.key === currentKey ? page.value : null, loading, refreshing, error, reload: () => load(true) };
 }
 
 function LibraryListScreen({
@@ -329,31 +337,44 @@ function LinkShareCard({ link }: { link: string }) {
 
 function useLibraryDetail(domain: MobileLibraryDomain, id: string) {
   const { credentials } = useApp();
-  const [detail, setDetail] = useState<MobileLibraryDetail | null>(null);
+  const epoch = useServerCacheRevision();
+  const currentKey = JSON.stringify([credentials, domain, id, epoch]);
+  const activeKey = useRef(currentKey);
+  useLayoutEffect(() => { activeKey.current = currentKey; }, [currentKey]);
+  const request = useRef(0);
+  const [detail, setDetail] = useState<{ key: string; value: MobileLibraryDetail } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const cached = await getCachedMobileLibraryDetail(domain, id);
-    if (cached) setDetail(cached);
-    if (!credentials) {
-      setError(cached ? "当前离线，正在显示上次打开的详情。" : "这份详情尚未缓存，需要联网打开一次。");
-      setLoading(false);
-      return;
-    }
+  const load = useCallback(async (refresh = false) => {
+    const serial = ++request.current;
+    const key = JSON.stringify([credentials, domain, id, epoch]);
+    const current = () => request.current === serial && activeKey.current === key && getServerCacheRevision() === epoch;
+    setLoading(!refresh); setRefreshing(refresh); setError(null);
     try {
-      const next = await fetchMobileLibraryDetail(credentials, domain, id);
-      await cacheMobileLibraryDetail(domain, next);
-      setDetail(next);
-    } catch (reason) {
-      setError(cached ? "刷新失败，已保留上次成功缓存。" : reason instanceof Error ? reason.message : "读取失败。");
-    } finally {
-      setLoading(false);
-    }
-  }, [credentials, domain, id]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
-  return { detail, loading, error, reload: load };
+      const cached = await getCachedMobileLibraryDetail(domain, id);
+      if (!current()) return;
+      setDetail(cached ? { key, value: cached } : null);
+      if (!credentials) { setError(cached ? "当前离线，正在显示上次打开的资料。" : "连接家庭服务器后可读取这部分档案。"); return; }
+      try {
+        const next = await fetchMobileLibraryDetail(credentials, domain, id);
+        if (!current()) return;
+        if (!await cacheMobileLibraryDetail(domain, next, epoch) || !current()) return;
+        setDetail({ key, value: next });
+      } catch (reason) {
+        if (!current()) return;
+        if (reason instanceof ApiError && [401,403,404].includes(reason.status)) {
+          setDetail(null);
+          await deleteMeta(`library_detail:${domain}:${id}`);
+          if (current()) setError("这份资料已不可读取，旧缓存已移除。");
+        } else {
+          setError(cached ? "暂时无法刷新，已保留上次成功缓存。" : reason instanceof Error ? reason.message : "读取失败。");
+        }
+      }
+    } finally { if (current()) { setLoading(false); setRefreshing(false); } }
+  }, [credentials, domain, id, epoch]);
+  useFocusEffect(useCallback(() => { void load(); return () => { request.current++; }; }, [load]));
+  return { detail: detail?.key === currentKey ? detail.value : null, loading, refreshing, error, reload: () => load(true) };
 }
 
 function useMutation(domain: MobileLibraryDomain, id: string, reload: () => Promise<void>) {

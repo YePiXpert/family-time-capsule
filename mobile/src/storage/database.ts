@@ -1,3 +1,4 @@
+import { getServerCacheRevision, invalidateServerCacheViews } from "./cache-lifecycle";
 import * as SQLite from "expo-sqlite";
 import { readableName } from "../utils/naming";
 import type { SyncConsent,
@@ -51,6 +52,7 @@ export async function initializeLocalStore(): Promise<void> {
   }
   await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
   await db.execAsync(LOCAL_DRAFT_SCHEMA_SQL);
+  await db.execAsync("DELETE FROM sync_staging; DELETE FROM sync_cover_staging;");
   const memoryColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(memory_detail)");
   if (!memoryColumns.some((column) => column.name === "scope")) {
     // Legacy server responses have no proven owner. Discard only this
@@ -181,8 +183,19 @@ export async function deleteMeta(key: string): Promise<void> {
   await db.runAsync("DELETE FROM meta WHERE key = ?", key);
 }
 
-export async function cacheMobileHome(home: MobileHome): Promise<void> {
-  await setMeta("mobile_home", JSON.stringify(home));
+async function setRemoteCacheMeta(key: string, value: unknown, expectedRevision: number): Promise<boolean> {
+  const db = await getDatabase();
+  let saved = false;
+  await db.withExclusiveTransactionAsync(async tx => {
+    if (expectedRevision !== getServerCacheRevision()) return;
+    await tx.runAsync("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, JSON.stringify(value));
+    saved = true;
+  });
+  return saved;
+}
+
+export async function cacheMobileHome(home: MobileHome, expectedRevision = getServerCacheRevision()): Promise<boolean> {
+  return setRemoteCacheMeta("mobile_home", home, expectedRevision);
 }
 
 export async function getCachedMobileHome(): Promise<MobileHome | null> {
@@ -195,8 +208,8 @@ export async function getCachedMobileHome(): Promise<MobileHome | null> {
   }
 }
 
-export async function cacheMobileReview(review: MobileReview): Promise<void> {
-  await setMeta("mobile_review", JSON.stringify(review));
+export async function cacheMobileReview(review: MobileReview, expectedRevision = getServerCacheRevision()): Promise<boolean> {
+  return setRemoteCacheMeta("mobile_review", review, expectedRevision);
 }
 
 export async function getCachedMobileReview(): Promise<MobileReview | null> {
@@ -206,8 +219,8 @@ export async function getCachedMobileReview(): Promise<MobileReview | null> {
   catch { return null; }
 }
 
-export async function cacheMobileLibraryPage(domain: MobileLibraryDomain, page: MobileLibraryPage): Promise<void> {
-  await setMeta(`library_page:${domain}`, JSON.stringify(page));
+export async function cacheMobileLibraryPage(domain: MobileLibraryDomain, page: MobileLibraryPage, expectedRevision = getServerCacheRevision()): Promise<boolean> {
+  return setRemoteCacheMeta(`library_page:${domain}`, page, expectedRevision);
 }
 
 export async function getCachedMobileLibraryPage(domain: MobileLibraryDomain): Promise<MobileLibraryPage | null> {
@@ -217,8 +230,8 @@ export async function getCachedMobileLibraryPage(domain: MobileLibraryDomain): P
   catch { return null; }
 }
 
-export async function cacheMobileLibraryDetail(domain: MobileLibraryDomain, detail: MobileLibraryDetail): Promise<void> {
-  await setMeta(`library_detail:${domain}:${detail.id}`, JSON.stringify(detail));
+export async function cacheMobileLibraryDetail(domain: MobileLibraryDomain, detail: MobileLibraryDetail, expectedRevision = getServerCacheRevision()): Promise<boolean> {
+  return setRemoteCacheMeta(`library_detail:${domain}:${detail.id}`, detail, expectedRevision);
 }
 
 export async function getCachedMobileLibraryDetail(domain: MobileLibraryDomain, id: string): Promise<MobileLibraryDetail | null> {
@@ -269,9 +282,12 @@ export async function listCachedPeople(scope: string | null): Promise<Person[]> 
   }));
 }
 
-export async function cacheMemoryDetail(scope: string, detail: MobileMemory): Promise<void> {
+export async function cacheMemoryDetail(scope: string, detail: MobileMemory, expectedRevision = getServerCacheRevision()): Promise<boolean> {
   const db = await getDatabase();
-  await db.runAsync(
+  let saved = false;
+  await db.withExclusiveTransactionAsync(async tx => {
+    if (expectedRevision !== getServerCacheRevision()) return;
+    await tx.runAsync(
     `INSERT INTO memory_detail(scope, id, detail_json, updated_at) VALUES (?, ?, ?, ?)
      ON CONFLICT(scope, id) DO UPDATE SET
        detail_json = excluded.detail_json,
@@ -281,6 +297,9 @@ export async function cacheMemoryDetail(scope: string, detail: MobileMemory): Pr
     JSON.stringify(detail),
     detail.updatedAt,
   );
+    saved = true;
+  });
+  return saved;
 }
 
 export async function getCachedMemoryDetail(
@@ -406,16 +425,15 @@ export async function listLocalMemoryMedia(
   }));
 }
 
-export async function applySyncPage(
-  credentials: Credentials,
-  page: SyncPage,
-  snapshotId: string,
-): Promise<void> {
+/** Pages remain invisible until the complete fenced round commits. */
+export async function applySyncPage(credentials: Credentials, page: SyncPage, snapshotId: string): Promise<void> {
   const db = await getDatabase();
-  // §4.4：缓存行携带拥有者 scope，读路径按 scope 过滤。
   const scope = memoryCacheScope(credentials, page.viewer.id, page.family.id);
   if (!scope) throw new Error("同步页缺少账号信息，无法归属缓存。");
-  await db.withExclusiveTransactionAsync(async (tx) => {
+  await db.runAsync("INSERT INTO sync_staging(round_id,scope,page_json) VALUES(?,?,?)", snapshotId, scope, JSON.stringify(page));
+}
+
+async function applyCommittedSyncPage(tx: Pick<SQLite.SQLiteDatabase, "runAsync">, scope: string, page: SyncPage, snapshotId: string) {
     for (const person of page.people) {
       await tx.runAsync(
         `INSERT INTO people(
@@ -492,27 +510,58 @@ export async function applySyncPage(
         );
       }
     }
-  });
-  await Promise.all([
-    setMeta("family", JSON.stringify(page.family)),
-    setMeta("viewer", JSON.stringify(page.viewer)),
-  ]);
+  for (const row of page.tombstones ?? []) {
+    await tx.runAsync(row.kind === "memory" ? "DELETE FROM timeline_event WHERE scope=? AND id=?" : "DELETE FROM people WHERE scope=? AND id=?", scope, row.id);
+  }
+  for (const event of page.events) await tx.runAsync("DELETE FROM memory_detail WHERE scope=? AND id=?", scope, event.id);
 }
 
-export async function finishSyncSnapshot(
-  snapshotId: string,
-  serverTime: string,
-): Promise<void> {
+export async function discardSyncRound(snapshotId: string): Promise<void> {
   const db = await getDatabase();
-  await db.withExclusiveTransactionAsync(async (tx) => {
-    await tx.runAsync(
-      "DELETE FROM timeline_event WHERE seen_snapshot IS NULL OR seen_snapshot <> ?",
-      snapshotId,
-    );
-    await tx.runAsync(
-      "DELETE FROM people WHERE seen_snapshot IS NULL OR seen_snapshot <> ?",
-      snapshotId,
-    );
+  await db.runAsync("DELETE FROM sync_staging WHERE round_id=?", snapshotId);
+  await db.runAsync("DELETE FROM sync_cover_staging WHERE round_id=?", snapshotId);
+}
+
+export async function getSyncCheckpoint(credentials: Credentials): Promise<string | null> {
+  const raw = await getMeta("sync_checkpoint");
+  if (!raw) return null;
+  try {
+    const saved = JSON.parse(raw);
+    const viewer = await getCachedViewer(), family = await getCachedFamily();
+    return viewer && family && saved.scope === memoryCacheScope(credentials, viewer.id, family.id) && typeof saved.checkpoint === "string" ? saved.checkpoint : null;
+  } catch { return null; }
+}
+
+export async function finishSyncSnapshot(snapshotId: string, serverTime: string): Promise<void> {
+  const db = await getDatabase();
+  let permissionChange = false;
+  await db.withExclusiveTransactionAsync(async tx => {
+    let ordinal = 0, scope: string | null = null, first: SyncPage | null = null, last: SyncPage | null = null;
+    while (true) {
+      const row = await tx.getFirstAsync<{ ordinal: number; scope: string; page_json: string }>("SELECT ordinal,scope,page_json FROM sync_staging WHERE round_id=? AND ordinal>? ORDER BY ordinal LIMIT 1", snapshotId, ordinal);
+      if (!row) break;
+      const page = JSON.parse(row.page_json) as SyncPage;
+      if (first && (scope !== row.scope || first.sync?.mode !== page.sync?.mode || first.sync?.generation !== page.sync?.generation || first.sync?.permissionStamp !== page.sync?.permissionStamp || last?.nextCursor === null)) throw new Error("同步分页版本不一致，请重试。");
+      scope = row.scope; first ??= page; last = page; ordinal = row.ordinal;
+      await applyCommittedSyncPage(tx, scope, page, snapshotId);
+      if (page.sync?.invalidateResources) { permissionChange = true; await tx.runAsync("DELETE FROM memory_detail WHERE scope=?", scope); }
+    }
+    if (!last || !scope || last.nextCursor !== null || (last.sync && !last.sync.checkpoint)) throw new Error("同步尚未完整，已保留上一轮数据。");
+    if (last.sync?.mode !== "delta") {
+      permissionChange = true;
+      await tx.runAsync("DELETE FROM timeline_event WHERE scope<>? OR seen_snapshot IS NULL OR seen_snapshot<>?", scope, snapshotId);
+      await tx.runAsync("DELETE FROM people WHERE scope<>? OR seen_snapshot IS NULL OR seen_snapshot<>?", scope, snapshotId);
+      // A replacement snapshot cannot certify old detail source permissions.
+      await tx.runAsync("DELETE FROM memory_detail");
+    }
+    await tx.runAsync("DELETE FROM memory_detail WHERE NOT EXISTS(SELECT 1 FROM timeline_event e WHERE e.id=memory_detail.id AND e.scope=memory_detail.scope)");
+    await tx.runAsync("UPDATE timeline_event SET local_cover_uri=(SELECT uri FROM sync_cover_staging c WHERE c.round_id=? AND c.event_id=timeline_event.id) WHERE scope=? AND id IN(SELECT event_id FROM sync_cover_staging WHERE round_id=?)", snapshotId, scope, snapshotId);
+    await tx.runAsync("DELETE FROM meta WHERE key IN ('mobile_home','mobile_review') OR key LIKE 'library_%'");
+    for (const [key,value] of [["family",last.family],["viewer",last.viewer],["sync_checkpoint",last.sync ? { ...last.sync, scope } : null]] as const) {
+      await tx.runAsync("INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, JSON.stringify(value));
+    }
+    await tx.runAsync("DELETE FROM sync_staging WHERE round_id=?", snapshotId);
+    await tx.runAsync("DELETE FROM sync_cover_staging WHERE round_id=?", snapshotId);
     await tx.runAsync(`
       UPDATE timeline_event
       SET local_cover_uri = (
@@ -537,10 +586,15 @@ export async function finishSyncSnapshot(
       serverTime,
     );
   });
+  invalidateServerCacheViews(permissionChange);
 }
 
-export async function setLocalCoverUri(eventId: string, uri: string): Promise<void> {
+export async function setLocalCoverUri(eventId: string, uri: string, snapshotId?: string): Promise<void> {
   const db = await getDatabase();
+  if (snapshotId) {
+    await db.runAsync("INSERT INTO sync_cover_staging(round_id,event_id,uri) VALUES(?,?,?) ON CONFLICT(round_id,event_id) DO UPDATE SET uri=excluded.uri", snapshotId, eventId, uri);
+    return;
+  }
   await db.runAsync(
     "UPDATE timeline_event SET local_cover_uri = ? WHERE id = ?",
     uri,
@@ -964,6 +1018,8 @@ export async function archiveLocalCaptures(
 export async function clearLocalArchive(): Promise<void> {
   const db = await getDatabase();
   await db.execAsync(`
+    DELETE FROM sync_staging;
+    DELETE FROM sync_cover_staging;
     DELETE FROM timeline_event;
     DELETE FROM people;
     DELETE FROM outbox;
@@ -1125,13 +1181,13 @@ export async function setActiveDestination(destination: string): Promise<void> {
  */
 export async function clearServerCaches(): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync("DELETE FROM timeline_event");
-  await db.runAsync("DELETE FROM people");
-  await db.runAsync("DELETE FROM memory_detail");
-  await db.runAsync(
-    "DELETE FROM meta WHERE key IN ('mobile_home', 'mobile_review', 'family', 'viewer', 'last_sync_at')",
-  );
-  await db.runAsync("DELETE FROM meta WHERE key LIKE 'library_%'");
+  await db.withExclusiveTransactionAsync(async tx => {
+    await tx.runAsync("DELETE FROM timeline_event");
+    await tx.runAsync("DELETE FROM people");
+    await tx.runAsync("DELETE FROM memory_detail");
+    await tx.runAsync("DELETE FROM meta WHERE key IN ('mobile_home','mobile_review','family','viewer','last_sync_at','sync_checkpoint') OR key LIKE 'library_%'");
+  });
+  invalidateServerCacheViews(true);
 }
 
 /** 仅保留在本机：移除待传队列项，保留 local_capture 与原件文件。 */

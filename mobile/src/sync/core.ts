@@ -21,6 +21,10 @@ export type SyncDependencies = {
   /** Stop writes from a superseded connection, including late upload replies. */
   isCurrent?: () => boolean;
   afterUpload?: () => Promise<void>;
+  getSyncCheckpoint?: (credentials: Credentials) => Promise<string | null>;
+  discardSyncRound?: (snapshotId: string) => Promise<void>;
+  resetServerCaches?: () => Promise<void>;
+  invalidateResources?: () => Promise<void>;
   isConnected: () => Promise<boolean | null | undefined>;
   createSnapshotId: () => string;
   listOutbox: () => Promise<OutboxItem[]>;
@@ -57,7 +61,7 @@ export type SyncDependencies = {
     credentials: Credentials,
     event: TimelineEvent,
   ) => Promise<string | null>;
-  setLocalCoverUri: (eventId: string, uri: string) => Promise<void>;
+  setLocalCoverUri: (eventId: string, uri: string, snapshotId?: string) => Promise<void>;
   finishSyncSnapshot: (snapshotId: string, serverTime: string) => Promise<void>;
   listLocalCoverUris: () => Promise<string[]>;
   pruneCachedCovers: (referencedUris: string[]) => void;
@@ -147,34 +151,51 @@ export async function syncArchiveWithDependencies(
   );
   await dependencies.afterUpload?.();
   assertCurrent(dependencies);
-  const snapshotId = dependencies.createSnapshotId();
-  let cursor: string | null = null;
+  let checkpoint = await dependencies.getSyncCheckpoint?.(credentials) ?? null;
   let eventCount = 0;
   let serverTime = new Date().toISOString();
-  do {
-    assertCurrent(dependencies);
-    const page = await dependencies.fetchSyncPage(credentials, cursor);
-    assertCurrent(dependencies);
-    await dependencies.applySyncPage(credentials, page, snapshotId);
-    serverTime = page.serverTime;
-    eventCount += page.events.length;
-
-    for (const event of page.events) {
+  for (let attempt = 0; ; attempt++) {
+    const snapshotId = dependencies.createSnapshotId();
+    let cursor: string | null = checkpoint;
+    eventCount = 0;
+    try {
+      do {
+        assertCurrent(dependencies);
+        const page = await dependencies.fetchSyncPage(credentials, cursor);
+        assertCurrent(dependencies);
+        if (page.sync?.invalidateResources || (page.sync?.mode === "snapshot" && cursor === null)) {
+          await dependencies.invalidateResources?.();
+          assertCurrent(dependencies);
+        }
+        await dependencies.applySyncPage(credentials, page, snapshotId);
+        serverTime = page.serverTime;
+        eventCount += page.events.length;
+        for (const event of page.events) {
+          assertCurrent(dependencies);
+          try {
+            const uri = await dependencies.cacheEventCover(credentials, event);
+            assertCurrent(dependencies);
+            if (uri) await dependencies.setLocalCoverUri(event.id, uri, snapshotId);
+          } catch {
+            assertCurrent(dependencies);
+          }
+        }
+        cursor = page.nextCursor;
+      } while (cursor);
       assertCurrent(dependencies);
-      try {
-        const uri = await dependencies.cacheEventCover(credentials, event);
-        assertCurrent(dependencies);
-        if (uri) await dependencies.setLocalCoverUri(event.id, uri);
-      } catch {
-        assertCurrent(dependencies);
-        // Metadata remains available offline even if one thumbnail fails.
+      await dependencies.finishSyncSnapshot(snapshotId, serverTime);
+      break;
+    } catch (error) {
+      await dependencies.discardSyncRound?.(snapshotId);
+      assertCurrent(dependencies);
+      if (error instanceof ApiError && (error.code === "sync_reset" || error.status === 401 || error.status === 403)) {
+        await dependencies.resetServerCaches?.();
+        checkpoint = null;
       }
+      if (attempt < 2 && error instanceof ApiError && ["sync_reset", "sync_changed"].includes(error.code ?? "")) continue;
+      throw error;
     }
-    cursor = page.nextCursor;
-  } while (cursor);
-
-  assertCurrent(dependencies);
-  await dependencies.finishSyncSnapshot(snapshotId, serverTime);
+  }
   try {
     const uris = await dependencies.listLocalCoverUris();
     assertCurrent(dependencies);

@@ -74,6 +74,7 @@ export const memoryEvent = sqliteTable(
       t.id,
     ),
     index("memory_child_idx").on(t.childPersonId),
+    index("sync_memory_cover_idx").on(t.coverAssetId,t.familyId),
     index("memory_family_milestone_idx").on(
       t.familyId,
       t.isPinned,

@@ -121,6 +121,15 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
     revision INTEGER NOT NULL DEFAULT 0,
     server_revision INTEGER NOT NULL DEFAULT 0
   );
+  CREATE TABLE IF NOT EXISTS sync_staging (
+    ordinal INTEGER PRIMARY KEY AUTOINCREMENT, round_id TEXT NOT NULL,
+    scope TEXT NOT NULL, page_json TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS sync_staging_round_idx ON sync_staging(round_id,ordinal);
+  CREATE TABLE IF NOT EXISTS sync_cover_staging (
+    round_id TEXT NOT NULL, event_id TEXT NOT NULL, uri TEXT NOT NULL,
+    PRIMARY KEY(round_id,event_id)
+  );
   ${MEMORY_DETAIL_SCHEMA_SQL}
 
   INSERT OR IGNORE INTO local_capture(

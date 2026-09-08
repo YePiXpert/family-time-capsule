@@ -85,6 +85,7 @@ export const asset = sqliteTable(
       .on(t.familyId, t.createdByUserId, t.sha256)
       .where(sql`${t.originalAssetId} is null and ${t.visibility} = 'private'`),
     index("asset_family_created_idx").on(t.familyId, t.createdAt),
+    index("sync_asset_parent_idx").on(t.originalAssetId,t.familyId),
   ],
 );
 

@@ -1,3 +1,4 @@
+import { rotateSyncGenerationInTransaction } from "@/lib/mobile/sync-state";
 import { validateStoryInputSources, type StoryInputSource } from "@/lib/stories/dependencies.mjs";
 import { legacyArchivePrivacy } from "./legacy-privacy";
 import { validateArchivePrivacy, type ArchivePrivacy } from "@/lib/export/privacy.mjs";
@@ -3304,6 +3305,8 @@ async function restoreFromArchive(
         }
       }
       }
+
+      rotateSyncGenerationInTransaction(tx);
 
       // The verification belongs to the restore transaction. If it ran after
       // commit, a read/verification failure could report a failed restore even

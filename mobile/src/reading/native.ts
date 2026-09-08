@@ -467,6 +467,24 @@ export async function clearReadingScope(
     await readingDownloads.remove(entry.key, transport);
 }
 
+/** A known permission/generation change withdraws managed downloads without relying on another network request. */
+export async function invalidateReadingCredentials(credentials: Credentials): Promise<void> {
+  let scope: ReadingScope;
+  try { scope = (await resolveReadingScope(credentials, { offline: true })).scope; }
+  catch (error) { if (error instanceof ReadingError && error.status === 0) return; throw error; }
+  await readingDownloads.clearAll(async () => {
+    const database = await db();
+    // Remove metadata before files so a filesystem failure cannot keep a revoked manifest readable.
+    await database.withExclusiveTransactionAsync(async tx => {
+      await tx.runAsync("DELETE FROM reading_download WHERE scope=?", scope.key);
+      await tx.runAsync("DELETE FROM reading_binding WHERE json_extract(scope_json,'$.key')=?", scope.key);
+    });
+    // Metadata already withdrew access; a filesystem cleanup failure leaves
+    // only unreferenced cache bytes, never a readable offline manifest.
+    await FS.deleteAsync(`${root()}${scope.key}`, { idempotent: true }).catch(() => {});
+  }, scope.key);
+}
+
 /** Device reset includes all servers/accounts, bindings and orphaned/partial files. */
 export async function clearAllReadingDownloads() {
   await readingDownloads.clearAll(async () => {

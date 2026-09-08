@@ -1,3 +1,4 @@
+import { getServerCacheRevision, useServerPermissionRevision } from "../storage/cache-lifecycle";
 import { MemoryEditor } from "../memories/MemoryEditor";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -48,9 +49,10 @@ function visibilityLabel(value: MobileContributionVisibility): string {
 export function MemoryScreen(props: Props) {
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
+  const permissionRevision = useServerPermissionRevision();
   // Remount before rendering after an account/event change, including any
   // private text already held in state or in an editing control.
-  return <MemoryDetailScreen key={JSON.stringify([scope, props.route.params.id])} {...props} cacheScope={scope} />;
+  return <MemoryDetailScreen key={JSON.stringify([scope, props.route.params.id, permissionRevision])} {...props} cacheScope={scope} />;
 }
 
 function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheScope: string | null }) {
@@ -58,7 +60,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   const [memory, setMemory] = useState<MobileMemory | null>(null);
   const [localMedia, setLocalMedia] = useState<LocalMemoryMedia[]>([]);
   const [loading, setLoading] = useState(true);
-  const [denied, setDenied] = useState(false);
+  const [denied, setDenied] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [contributionText, setContributionText] = useState("");
   const [authorPersonId, setAuthorPersonId] = useState("");
@@ -72,6 +74,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
 
   const load = useCallback(async () => {
     const version = ++requestVersion.current;
+    const cacheRevision = getServerCacheRevision();
     setLoading(true);
     setError(null);
     try {
@@ -79,18 +82,18 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
         cacheScope ? getCachedMemoryDetail(cacheScope, route.params.id) : null,
         listLocalMemoryMedia(route.params.id, ownDraftScope),
       ]);
-      if (version !== requestVersion.current) return;
+      if (version !== requestVersion.current || cacheRevision !== getServerCacheRevision()) return;
       setLocalMedia(archivedMedia);
       if (credentials && online !== false) {
         try {
           const next = await fetchMobileMemory(credentials, route.params.id);
-          if (version !== requestVersion.current) return;
-          if (cacheScope) await cacheMemoryDetail(cacheScope, next);
-          if (version !== requestVersion.current) return;
+          if (version !== requestVersion.current || cacheRevision !== getServerCacheRevision()) return;
+          if (cacheScope && !await cacheMemoryDetail(cacheScope, next, cacheRevision)) return;
+          if (version !== requestVersion.current || cacheRevision !== getServerCacheRevision()) return;
           setDenied(false);
           setMemory(next);
         } catch (reason) {
-          if (version !== requestVersion.current) return;
+          if (version !== requestVersion.current || cacheRevision !== getServerCacheRevision()) return;
           if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
             setDenied(true);
             setMemory(null);
@@ -98,12 +101,14 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
             if (cacheScope) await removeCachedMemoryDetail(cacheScope, route.params.id);
             if (version === requestVersion.current) await reloadLocal?.();
           } else {
+            setDenied(!cached && archivedMedia.length === 0);
             setMemory(cached);
           }
           if (version === requestVersion.current)
             setError(reason instanceof Error ? reason.message : "无法更新记忆详情。");
         }
       } else {
+        setDenied(!cached && archivedMedia.length === 0);
         setMemory(cached);
         if (!cached) setError("当前离线；这份记忆还没有在本机打开过。");
       }

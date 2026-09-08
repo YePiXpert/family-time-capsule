@@ -32,6 +32,8 @@ vi.mock("../src/state/AppContext", () => ({ useApp: () => ({
   people: fixture.people, viewer: { id: activeUserId, role: activeUserId === fixture.userId ? "editor" : "viewer", canCapture: activeUserId === fixture.userId, canEditEvents: activeUserId === fixture.userId, canCreateContributions: false },
   outbox: [], queued: mocks.queued, grantSyncConsent: mocks.grantSyncConsent,
 }) }));
+vi.mock("expo-network", () => ({ getNetworkStateAsync: async () => ({ isConnected: true }) }));
+vi.mock("../src/reading/native", () => ({ invalidateReadingCredentials: vi.fn() }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
 vi.mock("expo-audio", () => {
   class Recorder {
@@ -331,3 +333,50 @@ it("private Live Photo stays paired when motion upload is interrupted and its co
     for (const token of [fixture.readerToken, fixture.thirdToken]) expect((await fetch(`${fixture.credentials.serverUrl}/api/media/${item.assetId}`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(404);
   }
 }, 30000);
+
+it("native incremental sync consumes real HTTP cursors and withdraws revoked offline details", async () => {
+  const store = await import("../src/storage/database");
+  const { syncArchive } = await import("../src/sync/sync");
+  const { memoryCacheScope } = await import("../src/memories/cache-scope");
+  const { offlineSearch } = await import("../src/search/offline-search");
+  const { fetchMobileMemory, patchMobileMemory, shareMobileMemory } = await import("../src/api/client");
+  const scopeA = JSON.stringify([fixture.credentials.serverUrl, fixture.credentials.instanceId, fixture.userId, fixture.family.id]);
+  const published = (await listLocalDrafts(scopeA)).find(row => row.memoryEventId && row.status === "published")!;
+  expect(published).toBeDefined();
+  const id = published.memoryEventId!;
+  const current = await fetchMobileMemory(fixture.credentials,id);
+  await shareMobileMemory(fixture.credentials,id,{ visibility: "members", readerUserIds: ["user-b"], expectedRevision: current.titleRevision!, mutationId: crypto.randomUUID() });
+  const reader = { ...fixture.credentials, token: fixture.readerToken };
+  const scopeB = memoryCacheScope(reader,"user-b",fixture.family.id)!;
+  const received: import("../src/types").SyncPage[] = [];
+  const actualFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    const response = await actualFetch(...args);
+    if (String(args[0]).includes("/api/mobile/v1/sync?") && response.ok) received.push(await response.clone().json());
+    return response;
+  };
+  try {
+    await syncArchive(reader, { authorizeUpload: async () => false });
+    expect(received.every(page => page.sync?.mode === "snapshot")).toBe(true);
+    expect((await store.listTimeline(scopeB)).map(row => row.id)).toContain(id);
+    const firstCheckpoint = await store.getSyncCheckpoint(reader); expect(firstCheckpoint).toBeTruthy();
+    received.length = 0;
+    await syncArchive(reader, { authorizeUpload: async () => false });
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({ events: [], people: [], tombstones: [], sync: { mode: "delta" } });
+    const shared = await fetchMobileMemory(fixture.credentials,id);
+    await patchMobileMemory(fixture.credentials,id,{ bodyText: "增量撤权离线暗号", expectedRevision: shared.titleRevision!, mutationId: crypto.randomUUID() });
+    received.length = 0;
+    await syncArchive(reader, { authorizeUpload: async () => false });
+    expect(received.flatMap(page => page.events.map(row => row.id))).toEqual([id]);
+    const detail = await fetchMobileMemory(reader,id); await store.cacheMemoryDetail(scopeB,detail);
+    expect((await offlineSearch({ credentials: reader, userId: "user-b", familyId: fixture.family.id, query: "增量撤权离线暗号" })).map(row => row.id)).toContain(id);
+    const edited = await fetchMobileMemory(fixture.credentials,id);
+    await shareMobileMemory(fixture.credentials,id,{ visibility: "private", readerUserIds: [], expectedRevision: edited.titleRevision!, mutationId: crypto.randomUUID() });
+    await syncArchive(reader, { authorizeUpload: async () => false });
+    expect((await store.listTimeline(scopeB)).map(row => row.id)).not.toContain(id);
+    expect(await store.getCachedMemoryDetail(scopeB,id)).toBeNull();
+    expect(await offlineSearch({ credentials: reader, userId: "user-b", familyId: fixture.family.id, query: "增量撤权离线暗号" })).toEqual([]);
+    expect((await listLocalDrafts(scopeA)).find(row => row.id === published.id)?.memoryEventId).toBe(id);
+  } finally { globalThis.fetch = actualFetch; }
+},30000);

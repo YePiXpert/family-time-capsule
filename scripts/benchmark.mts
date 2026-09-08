@@ -34,7 +34,7 @@ try {
 const { closeDatabase, getDb } = await import("../db");
 closeBenchmarkDatabase = closeDatabase;
 const { performSetup } = await import("../lib/auth/setup");
-const { completeOnboarding } = await import("../lib/family/service");
+const { completeOnboarding, getUserBinding } = await import("../lib/family/service");
 const { getTimelinePage } = await import("../lib/memories/service");
 const { getInboxPage } = await import("../lib/inbox/service");
 const { searchFamily, rebuildSearchIndex } = await import("../lib/search/service");
@@ -79,16 +79,12 @@ const db = getDb();
 const child = db.select().from(person).where(eq(person.isChild, true)).get();
 if (!child) throw new Error("child missing");
 
+const binding = await getUserBinding(admin.id);
 const context: FamilyContext = {
-  userId: admin.id,
-  userName: "基准",
-  familyId,
-  personId: null,
-  role: "admin",
-  accountEnabled: true,
-  isGuardian: false,
-  familyTimezone: "Asia/Shanghai",
-  childLaterUnlockAge: 18,
+  userId: admin.id, userName: admin.name, familyId,
+  personId: binding.personId, role: binding.role, accountEnabled: true,
+  isGuardian: binding.isGuardian, familyTimezone: binding.familyTimezone!,
+  childLaterUnlockAge: binding.childLaterUnlockAge!,
 };
 
 // —— 构造数据 ——
@@ -172,10 +168,10 @@ async function benchAsync(name: string, fn: () => Promise<unknown>): Promise<voi
   console.log(`${name}: ${(performance.now() - start).toFixed(1)} ms`);
 }
 
-const firstPage = await getTimelinePage(familyId, { limit: 30 });
-bench("Timeline 首页（30 条）", () => void getTimelinePage(familyId, { limit: 30 }));
-bench("Timeline 第二页（keyset 游标）", () =>
-  void getTimelinePage(familyId, { limit: 30, cursor: firstPage.nextCursor }),
+const firstPage = await getTimelinePage(context, { limit: 30 });
+await benchAsync("Timeline 首页（30 条）", () => getTimelinePage(context, { limit: 30 }));
+await benchAsync("Timeline 第二页（keyset 游标）", () =>
+  getTimelinePage(context, { limit: 30, cursor: firstPage.nextCursor }),
 );
 
 await benchAsync("Inbox 分页（空收件箱）", () =>
@@ -199,6 +195,28 @@ bench("Story 素材收集（全年）", () => {
   collectStoryMaterial(familyId, period);
   collectTranscriptMaterial(familyId, period);
 });
+
+const { getMobileSyncProtocolPage } = await import("../lib/mobile/sync-protocol");
+let syncCursor: string | null = null, checkpoint: string | null = null;
+let syncedEvents = 0, syncPages = 0, syncBytes = 0;
+const syncStart = performance.now();
+do {
+  const page = await getMobileSyncProtocolPage(context, syncCursor, 50);
+  syncedEvents += page.events.length; syncPages++; syncBytes += Buffer.byteLength(JSON.stringify(page));
+  syncCursor = page.nextCursor; checkpoint = page.sync.checkpoint;
+} while (syncCursor);
+if (syncedEvents !== EVENT_COUNT || !checkpoint) throw new Error("sync snapshot lost events");
+console.log(`同步完整快照（${syncPages} 页 / ${syncedEvents} 事件 / ${(syncBytes/1024).toFixed(1)} KiB）: ${(performance.now()-syncStart).toFixed(1)} ms`);
+await benchAsync("同步无变化增量", async () => {
+  const page = await getMobileSyncProtocolPage(context, checkpoint, 50);
+  if (page.events.length || page.people.length || page.tombstones.length || page.nextCursor) throw new Error("unchanged sync returned a snapshot");
+});
+const changedEvent = db.select({ id: memoryEvent.id }).from(memoryEvent).get()!;
+db.update(memoryEvent).set({ title: "增量同步基准修改" }).where(eq(memoryEvent.id,changedEvent.id)).run();
+const deltaStart = performance.now();
+const delta = await getMobileSyncProtocolPage(context, checkpoint, 50);
+if (delta.events.length !== 1 || delta.events[0]!.id !== changedEvent.id || delta.nextCursor) throw new Error("one edit failed bounded delta delivery");
+console.log(`同步单事件增量（${Buffer.byteLength(JSON.stringify(delta))} bytes）: ${(performance.now()-deltaStart).toFixed(1)} ms`);
 
 // Generated constant-memory stream: validates the real resumable service path
 // without committing a giant fixture. Full mode writes exactly 500 MiB.
