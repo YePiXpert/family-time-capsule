@@ -272,24 +272,27 @@ export async function changeBookRender(
   } else throw new BookError("invalid_operation");
   return getBookRender(context, id);
 }
+/** Synchronous final fence for both file lookup and the HTTP response boundary. */
+export function verifyBookArtifactAccess(context: FamilyContext, id: string, expected?: Job) {
+  return getDb().transaction(() => {
+    const row = authorizeJob(context, id);
+    if (row.status !== "succeeded") throw new BookError("render_not_ready", 409);
+    if (expected && (row.attempt !== expected.attempt || row.sha256 !== expected.sha256 ||
+      row.bytes !== expected.bytes || row.sourceDigest !== expected.sourceDigest ||
+      row.projectId !== expected.projectId || row.revision !== expected.revision || row.format !== expected.format))
+      throw new BookError("source_changed", 409);
+    const state = renderState(context, row.projectId, row.revision, row.format);
+    if (row.templateVersion !== BOOK_TEMPLATE_VERSION || state.digest !== row.sourceDigest)
+      throw new BookError("source_changed", 409);
+    return { row, path: artifactPath(row), title: state.book.title };
+  });
+}
 export async function readableBookArtifact(context: FamilyContext, id: string) {
-  const row = authorizeJob(context, id);
-  if (row.status !== "succeeded") throw new BookError("render_not_ready", 409);
-  if (
-    row.templateVersion !== BOOK_TEMPLATE_VERSION ||
-    renderState(context, row.projectId, row.revision, row.format).digest !==
-      row.sourceDigest
-  )
-    throw new BookError("source_changed", 409);
-  const file = artifactPath(row),
-    info = await stat(file).catch(() => null);
-  if (!info || info.size !== row.bytes)
+  const file = verifyBookArtifactAccess(context, id),
+    info = await stat(file.path).catch(() => null);
+  if (!info || info.size !== file.row.bytes)
     throw new BookError("render_missing", 410);
-  return {
-    row,
-    path: file,
-    title: getBookVersion(context, row.projectId, row.revision).title,
-  };
+  return verifyBookArtifactAccess(context, id, file.row);
 }
 async function buildInput(
   context: FamilyContext,

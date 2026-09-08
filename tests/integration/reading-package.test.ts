@@ -9,8 +9,34 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID, createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, expect, it } from "vitest";
+import { afterAll, expect, it, vi } from "vitest";
+import Database from "better-sqlite3";
 import JSZip from "jszip";
+const race = vi.hoisted(() => ({ afterMedia: null as (() => void) | null, afterStat: null as (() => void) | null, afterArtifact: null as (() => void) | null, media: null as Response | null }));
+vi.mock("@/app/api/media/[assetId]/route", async importOriginal => {
+  const actual = await importOriginal<typeof import("@/app/api/media/[assetId]/route")>();
+  return { ...actual, GET: async (...args: Parameters<typeof actual.GET>) => {
+    const response = await actual.GET(...args);
+    if (race.afterMedia) { race.media = response; const mutate = race.afterMedia; race.afterMedia = null; mutate(); }
+    return response;
+  } };
+});
+vi.mock("@/lib/books/render/jobs", async importOriginal => {
+  const actual = await importOriginal<typeof import("@/lib/books/render/jobs")>();
+  return { ...actual, readableBookArtifact: async (...args: Parameters<typeof actual.readableBookArtifact>) => {
+    const result = await actual.readableBookArtifact(...args);
+    if (race.afterArtifact) { const mutate = race.afterArtifact; race.afterArtifact = null; mutate(); }
+    return result;
+  } };
+});
+vi.mock("node:fs/promises", async importOriginal => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, stat: async (...args: Parameters<typeof actual.stat>) => {
+    const info = await actual.stat(...args);
+    if (race.afterStat && String(args[0]).includes("book-renders")) { const mutate = race.afterStat; race.afterStat = null; mutate(); }
+    return info;
+  } };
+});
 const root = mkdtempSync(path.join(tmpdir(), "ftc-reading-package-"));
 process.env.DATA_DIR = root;
 process.env.INITIAL_SETUP_TOKEN = "fictional-reading";
@@ -287,6 +313,58 @@ it("authenticated reading manifests and ranged files enforce current audience, d
     .set({ visibility: "family" })
     .where(eq(contribution.id, voiceId))
     .run();
+});
+function setSourceVisibility(visibility: "family" | "private") {
+  const connection = new Database(path.join(root, "db/capsule.sqlite"));
+  try { connection.prepare("update memory_event set visibility=?,created_by_user_id=? where id=?").run(visibility, visibility === "private" ? actor.id : null, eventId); }
+  finally { connection.close(); }
+}
+it("rechecks the package after real media read and cancels bytes when another connection withdraws its source", async () => {
+  const { session } = await import("@/db/schema/auth"), token = randomUUID();
+  getDb().insert(session).values({ id: randomUUID(), userId: actor.id, token, expiresAt: new Date(Date.now() + 3600000) }).run();
+  const { getReadingManifest } = await import("@/lib/reading/service");
+  const files = await import("@/app/api/reading/[kind]/[id]/files/[assetId]/route");
+  const manifest = getReadingManifest(context, "book", id);
+  race.afterMedia = () => setSourceVisibility("private");
+  try {
+    const result = await files.GET(new Request(`http://localhost/api/reading/book/${id}/files/${audio.asset.id}?digest=${manifest.digest}`, { headers: { authorization: `Bearer ${token}`, range: "bytes=0-31" } }), { params: Promise.resolve({ kind: "book", id, assetId: audio.asset.id }) });
+    expect(race.media?.status).toBe(206); // actual media route authorized this independently shared original
+    expect(result.status).toBe(409);
+    expect(await result.json()).toMatchObject({ error: "source_unavailable" });
+    expect(race.media?.bodyUsed).toBe(true); // denied prepared stream is disposed
+  } finally {
+    await race.media?.body?.cancel().catch(() => {});
+    race.afterMedia = null; race.media = null; setSourceVisibility("family");
+  }
+});
+it.each(["afterStat", "afterArtifact"] as const)("rechecks rendered ZIP access at %s before the HTTP handler returns bytes", async boundary => {
+  const { session } = await import("@/db/schema/auth"), token = randomUUID();
+  getDb().insert(session).values({ id: randomUUID(), userId: actor.id, token, expiresAt: new Date(Date.now() + 3600000) }).run();
+  const { GET } = await import("@/app/api/books/renders/[id]/download/route");
+  race[boundary] = () => setSourceVisibility("private");
+  let result: Response | undefined;
+  try {
+    result = await GET(new Request(`http://localhost/api/books/renders/${jobId}/download`, { headers: { authorization: `Bearer ${token}` } }), { params: Promise.resolve({ id: jobId }) });
+    expect(race[boundary]).toBeNull(); // the real filesystem/helper boundary completed
+    expect(result.status).toBe(409);
+    expect(await result.json()).toMatchObject({ error: "source_unavailable" });
+  } finally { await result?.body?.cancel().catch(() => {}); race[boundary] = null; setSourceVisibility("family"); }
+});
+it("downloads a real rendered archive whose editable title contains an unpaired Unicode surrogate", async () => {
+  const unicodeId = books.createBookProject(context, "合成 Unicode", "growth", "family");
+  const original = books.getBookProject(context, unicodeId);
+  const unicodeBook = books.saveBookProject(context, unicodeId, original.revision, { ...original, title: "合成\ud800作品" });
+  const queued = renders.requestBookRender(context, unicodeId, unicodeBook.revision, "reading_zip");
+  expect(await renders.runBookWorkerOnce()).toBe("succeeded");
+  const { session } = await import("@/db/schema/auth"), token = randomUUID();
+  getDb().insert(session).values({ id: randomUUID(), userId: actor.id, token, expiresAt: new Date(Date.now() + 3600000) }).run();
+  const { GET } = await import("@/app/api/books/renders/[id]/download/route");
+  const result = await GET(new Request(`http://localhost/api/books/renders/${queued.id}/download`, { headers: { authorization: `Bearer ${token}` } }), { params: Promise.resolve({ id: queued.id }) });
+  expect(result.status).toBe(200);
+  expect(decodeURIComponent(result.headers.get("content-disposition")!)).toContain("合成�作品.zip");
+  const bytes = await result.arrayBuffer();
+  expect(bytes.byteLength).toBe(renders.getBookRender(context, queued.id).bytes);
+  expect((await JSZip.loadAsync(bytes)).file("index.html")).not.toBeNull();
 });
 it("extracted file:// package renders images and local CSS with networking disabled and user scripts inert", async () => {
   const { chromium } = await import("@playwright/test"),

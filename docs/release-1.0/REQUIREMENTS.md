@@ -265,3 +265,6 @@ R09 家人讲述（当前实现）：读取/编辑/新增要求父事件当前�
 R09 访客相册（当前实现）：访客标题/媒体同时要求来源当前可全家分享；private-root 经明确家庭事件发布仍可播放，事件撤权、签发账号停用及链接撤销对缓存解析对象也生效。private-read-grant.test.ts 和 production collections 4/4 提供真实存储/HTTP/浏览器证据。已有事件双端分享入口和受控缓存尚未闭合，ID-11/ID-12 仍部分实现。
 
 R10 故事（当前实现）：故事组装、读取/搜索/回收站、AI 最终提交与完整输入依赖已接通；0069 将依赖持久在故事级，删除段落不擦除标题依赖。v3 归档保留和校验依赖，旧稿来源未证实则保留原文并暂停在线使用。private-story、story-input-migration、review、export/restore 有真实 SQLite、HTTP、ZIP、子进程和新目录恢复证据；根全量 837 项、production E2E 70 项、disaster roundtrip 7 项和真 Docker/v3 恢复通过，同 SHA CI 待 push 后核实。回收站事件/讲述授权、已有事件双端分享撤销和受控缓存仍未闭合，ID-11/ID-12 不提升。
+
+
+R09 阅读包最终响应（当前实现）：媒体读取后、产物 stat 后及服务返回后均再次检查当前作品/来源范围，拒绝时关闭未交付流。真实第二 SQLite 连接/Range/worker ZIP 的失败回归已修复；根全量 840 项、最终出版回归 12 项与 production book-projects/collections 7 项通过。已有事件双端分享、事件/讲述回收站权限和受控缓存尚未闭合，ID-11/ID-12 状态不提升。

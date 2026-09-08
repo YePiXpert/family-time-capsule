@@ -13,7 +13,8 @@
 - 已推送修复：`4b7b752d675d51d4b7abaf640d73799e54dca14a` 补齐完整旧行迁移预期；实际 `verify-upgrade12.mts` 的历史建库、正常升级、失败回滚、旧归档恢复/再导出及五份原件 hash 全部通过（`/tmp/ftc-r08-upgrade-ci-fixed.log`）；CI `34197311786` 四项全部 success，已核对同 SHA。
 - 已推送：`d1f0d6c12430490955838271bc8b64932944c6c0` R09 资料库/命名作者权限；CI `34198425767` 四项全部 success，已核对同 SHA。
 - 已推送：`d67c62b1ecc387684fa2449baa58b263d6ab2b29`（含 `789fef3` 讲述及 `d67c62b` 访客相册）；CI `34199522610` 四项全部 success，已核对同 SHA。
-- 当前里程碑：R10 故事来源闭包、模型提交时机与 v3 归档；本地全量、容器与恢复验证通过，对应 push 的同 SHA CI 待核实。
+- 已推送：`b23c3409ec160270c6d4e13db9d44ce0ccb1c26e` R10 故事/任务来源与 v3 归档；CI `34202975077` 手机、运维通过，Web 构建中，完整同 SHA 结论待核实。
+- 当前里程碑：R09 阅读包最终响应授权，相关本地验证通过，待提交/push 后核对同 SHA CI。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -124,3 +125,13 @@ P0-D 实现与证据：
 - disaster roundtrip 7/7 通过（`/tmp/ftc-r10-story-roundtrip-fixed.log`）；旧测试硬编码 admin 与实际初始化 owner 不符，改读真实绑定角色并保留全部恢复断言。历史 `verify-upgrade12.mts` 正常升级、迁移失败回滚、旧归档恢复/再导出及五份原件 hash 均通过（`/tmp/ftc-r10-story-upgrade.log`）。
 - 最终真 Docker 镜像 `sha256:24978c1e604cd8edee54b342434aefd5550b7d19131be06b7059964ce46db3a7`；三次容器重启、私密续传、v3 ZIP 校验、随镜像 CLI 新目录恢复及显式身份绑定通过，第三账号 404，原件 hash 不变，唯一标记资源核对后清理（`/tmp/ftc-r10-story-docker-smoke-reviewed.log`）。此为隔离开发验证，不是生产部署或正式发行物。
 - 同 SHA CI 待 push 后核实。R09 已有事件双端分享入口/受控缓存、回收站事件和讲述管理权限、阅读包文件交付前范围核查仍属下一步内部工作，相关需求保持部分实现。
+
+
+## R09 阅读包与出版下载最终授权
+
+- 阅读媒体在实际 readMedia 完成后重新构建当前作品清单，核对 digest 和媒体成员；独立全家共享原件仍可读，不代表它仍属于旧阅读包。拒绝交付时取消已准备的响应流。
+- 已渲染 ZIP/PDF/EPUB 在 filesystem stat 后及 HTTP 服务返回后同步复验当前账号、作品、任务版本和完整来源指纹，确认后才打开下载流。响应头先构造；异常时销毁已打开的流。
+- 两条真实竞态先失败（`/tmp/ftc-r09-reading-race-red2.log`）：第二 SQLite 连接撤销来源后，旧媒体仍 206、旧 ZIP 仍 200。修复后额外验证 service→HTTP 间撤权，三处边界均拒绝；实际原件 Range 和 worker ZIP 没有用假内容代替。
+- 根全量 136 文件/840 项通过（`/tmp/ftc-r09-reading-root.log`，最后 Unicode 标题增量前）；最终阅读包/实际出版 2 文件/12 项通过（`/tmp/ftc-r09-reading-final-regression.log`），包含 PDF 中文提取/逐页渲染、EPUBCheck 与断网 file:// 阅读。最终 typecheck/lint/build/build:ops 通过，13 条既存 lint warning；production book-projects/collections 7/7 通过（`/tmp/ftc-r09-reading-e2e-final.log`）。
+- 独立只读审查完成。孤立代理字符的正常创建/保存/真实ZIP下载本来就能通过（SQLite 标题规范化），不把防御性响应头处理宣称为已复现用户漏洞。产品版本、schema 与 archive 协议未新增变化。
+- 继续处理已有事件双端分享/撤销、回收站事件/讲述管理授权与受控缓存；当前不是 R09 全用户流程完成，也不是正式发行。

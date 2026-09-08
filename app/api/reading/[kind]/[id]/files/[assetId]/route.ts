@@ -14,6 +14,7 @@ export async function GET(
   const auth = await authorizeApiFamilyRequest(request.headers, "archive:view");
   if (!auth.ok)
     return mobileJson({ error: auth.error }, { status: auth.status });
+  let mediaResponse: Response | undefined;
   try {
     const { kind, id, assetId } = await params,
       manifest = getReadingManifest(auth.context, kind as ReadingKind, id);
@@ -21,8 +22,17 @@ export async function GET(
       throw new BookError("source_changed", 409);
     if (!manifest.media.some((m) => m.id === assetId))
       throw new BookError("not_found", 404);
-    return readMedia(request, { params: Promise.resolve({ assetId }) });
+    mediaResponse = await readMedia(request, { params: Promise.resolve({ assetId }) });
+    // A readable family original can outlive this package's authorization.
+    // Recheck the package after media I/O, immediately before handing it over.
+    const current = getReadingManifest(auth.context, kind as ReadingKind, id);
+    if (current.digest !== manifest.digest)
+      throw new BookError("source_changed", 409);
+    if (!current.media.some((m) => m.id === assetId))
+      throw new BookError("not_found", 404);
+    return mediaResponse;
   } catch (e) {
+    await mediaResponse?.body?.cancel().catch(() => {});
     return e instanceof BookError || e instanceof CollectionError
       ? mobileJson({ error: e.code }, { status: e.status })
       : mobileRequestError(e);
