@@ -19,11 +19,13 @@ test("上传 5 张照片合并为一个事件", async ({ page }) => {
   }));
 
   await page.goto("/capture");
-  await page
-    .locator('input[type="file"]').first()
-    .setInputFiles(files);
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  // Five explicit family submissions; merely syncing a draft never creates inbox entries.
+  for (const file of files) {
+    await page.getByRole("button", { name: "新建一件事" }).click();
+    await page.locator('input[type="file"]').first().setInputFiles(file);
+    await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
+    await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  }
 
   // 收件箱全选 → 合并
   await page.goto("/inbox");
@@ -54,7 +56,8 @@ test("HEIC + MOV 合并为一个事件（Live Photo 组合，RH-002）", async (
       mimeType: "image/heic",
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.heic")),
     });
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "新建一件事" }).click();
   await page
     .locator('input[type="file"]').first()
     .setInputFiles({
@@ -62,7 +65,7 @@ test("HEIC + MOV 合并为一个事件（Live Photo 组合，RH-002）", async (
       mimeType: "video/quicktime",
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.mov")),
     });
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
 
   await page.goto("/inbox");
   const checkboxes = page.getByRole("checkbox");

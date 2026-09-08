@@ -1,12 +1,13 @@
+import { recoverLivePhotoDraft } from "./live-photo-recovery";
 import { Directory, File, Paths } from "expo-file-system";
 import { ingestLocalImportSession } from "../storage/database";
-import { recoverPickerReceipt, type PickerReceipt } from "./picker-receipt";
+import { recoverPickerReceipt, parseLivePhotoPickerReceipt, type LivePhotoPickerReceipt, type PickerReceipt } from "./picker-receipt";
 
 const directory = new Directory(Paths.document, "picker-intake");
 const active = new Set<string>();
 
 /** Immutable, small receipt is closed before any original bytes are copied. */
-export function beginPickerReceipt(receipt: PickerReceipt): void {
+export function beginPickerReceipt(receipt: PickerReceipt | LivePhotoPickerReceipt): void {
   directory.create({ intermediates: true, idempotent: true });
   const file = new File(directory, `${receipt.captureId}.json`);
   file.create();
@@ -28,9 +29,17 @@ export async function recoverPickerIntake(queue: boolean) {
     if (!(file instanceof File) || !file.name.endsWith(".json") || file.size > 16384) continue;
     const captureId = file.name.slice(0, -5);
     if (active.has(captureId)) continue;
+    let raw: unknown;
+    try { raw = JSON.parse(file.textSync()); } catch { continue; }
+    const pair = parseLivePhotoPickerReceipt(raw, new Directory(Paths.document, "captures").uri);
+    if (pair && pair.captureId === captureId) {
+      await recoverLivePhotoDraft(pair, uri => new File(uri).exists);
+      file.delete(); totals.manifests++; totals.retainedReadonly++;
+      continue;
+    }
     let receipt;
     try {
-      receipt = recoverPickerReceipt(JSON.parse(file.textSync()), new Directory(Paths.document, "captures").uri,
+      receipt = recoverPickerReceipt(raw, new Directory(Paths.document, "captures").uri,
         (uri) => new File(uri).exists);
     } catch { continue; }
     if (!receipt || receipt.items[0]?.captureId !== captureId) continue;

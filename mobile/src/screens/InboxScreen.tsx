@@ -73,6 +73,7 @@ function InboxContent() {
     setLoading(true);
     try {
       const updated = await patchMobileInbox(credentials, editing.id, {
+        expectedTitleRevision: editing.titleRevision,
         title,
         occurredAtWall: occurredAt,
         locationText: location,
@@ -110,7 +111,7 @@ function InboxContent() {
     setLoading(true);
     setError(null);
     try {
-      const memoryEventId = await confirmMobileInbox(credentials, entry.id, draft);
+      const memoryEventId = await confirmMobileInbox(credentials, entry.id, draft, draft ? editing!.titleRevision : entry.titleRevision);
       if (request !== generation.current) return;
       await archiveLocalCaptures([entry.id], memoryEventId);
       if (request !== generation.current) return;

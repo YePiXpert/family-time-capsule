@@ -87,6 +87,7 @@ export function isMilestoneType(value: unknown): value is MilestoneType {
 export type MemoryEventDetail = {
   event: MemoryEventRow;
   assets: AssetRow[];
+  livePhotos: { groupId: string; imageAssetId: string; videoAssetId: string }[];
   participants: PersonRow[];
   sourceNotes: Array<{
     id: string;
@@ -426,6 +427,7 @@ export async function confirmInboxEntry(
   if (!["new", "needs_review", "processing"].includes(liveEntry.item.status)) {
     return { ok: false, error: "not_found" };
   }
+  if (entry.item.titleRevision !== liveEntry.item.titleRevision || entry.item.updatedAt.getTime() !== liveEntry.item.updatedAt.getTime()) return { ok: false, error: "conflict" };
   if (opts.expectedTitleRevision !== undefined && opts.expectedTitleRevision !== liveEntry.item.titleRevision) return { ok: false, error: "conflict" };
   const requestedAssetIds = [...new Set(entry.assets.map((asset) => asset.id))];
   let confirmedAssets = liveEntry.assets;
@@ -448,6 +450,7 @@ export async function confirmInboxEntry(
   if (!await validAgeAnchor(familyId, childPersonId)) return { ok: false, error: "invalid" };
 
   const aggregate = getDb().select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, entry.item.id))).get();
+  if (aggregate && aggregate.reviewedRevision !== aggregate.revision) return { ok: false, error: "conflict" };
   const aggregateItems = aggregate ? getDb().select().from(draftItem).where(eq(draftItem.draftId, aggregate.id)).all().sort((a,b) => a.sortOrder - b.sortOrder) : [];
   if (aggregate) {
     const order = new Map(aggregateItems.map(i => [i.assetId, i.sortOrder]));
@@ -508,6 +511,8 @@ export async function confirmInboxEntry(
     if (current?.status === "confirmed" && current.memoryEventId) return { ok: true, eventId: current.memoryEventId };
     if (!current || !["new", "needs_review", "processing"].includes(current.status)) return { ok: false, error: "not_found" };
     if (current.titleRevision !== entry.item.titleRevision || current.updatedAt.getTime() !== entry.item.updatedAt.getTime()) return { ok: false, error: "conflict" };
+    const latestDraft = tx.select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, entry.item.id))).get();
+    if (latestDraft && latestDraft.reviewedRevision !== latestDraft.revision) return { ok: false, error: "conflict" };
     tx.insert(memoryEvent)
       .values({
         id: eventId,
@@ -528,12 +533,11 @@ export async function confirmInboxEntry(
     if (assetIds.length > 0) {
       tx.insert(memoryEventAsset)
         .values(
-          assetIds.map((assetId, sortOrder) => ({
+          reviewAssetReferences(tx, familyId, [entry.item.id], assetIds).map((reference, sortOrder) => ({
             sortOrder,
-            caption: aggregateItems.find(i => i.assetId === assetId)?.caption ?? "",
+            ...reference,
             id: randomUUID(),
             memoryEventId: eventId,
-            assetId,
             familyId,
             createdAt: now,
           })),
@@ -662,6 +666,8 @@ export async function mergeInboxEntries(
     for (const entry of entries) {
       const live = tx.select().from(inboxItem).where(and(eq(inboxItem.id, entry.item.id), eq(inboxItem.familyId, familyId))).get();
       if (!live || !["new", "needs_review", "processing"].includes(live.status) || live.titleRevision !== entry.item.titleRevision || live.updatedAt.getTime() !== entry.item.updatedAt.getTime()) return false;
+      const aggregate = tx.select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, entry.item.id))).get();
+      if (aggregate && aggregate.reviewedRevision !== aggregate.revision) return false;
     }
     tx.insert(memoryEvent)
       .values({
@@ -683,11 +689,11 @@ export async function mergeInboxEntries(
     if (assetIds.length > 0) {
       tx.insert(memoryEventAsset)
         .values(
-          assetIds.map((assetId, sortOrder) => ({
+          reviewAssetReferences(tx, familyId, itemIds, assetIds).map((reference, sortOrder) => ({
             sortOrder,
+            ...reference,
             id: randomUUID(),
             memoryEventId: eventId,
-            assetId,
             familyId,
             createdAt: now,
           })),
@@ -726,6 +732,31 @@ export async function mergeInboxEntries(
   return { ok: true, eventId };
 }
 
+/** Reuse draft relationships when a family explicitly confirms or merges its review inbox. */
+function reviewAssetReferences(tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0], familyId: string, inboxIds: string[], assetIds: string[]) {
+  const rows = tx.select({ item: draftItem }).from(draftItem).innerJoin(draft, eq(draft.id, draftItem.draftId))
+    .where(and(eq(draft.familyId, familyId), inArray(draft.inboxItemId, inboxIds))).orderBy(asc(draft.id), asc(draftItem.sortOrder)).all().map(r => r.item);
+  const pairs = new Map<string, typeof rows>();
+  for (const row of rows) if (row.livePhotoGroupId) {
+    const key = `${row.draftId}:${row.livePhotoGroupId}`;
+    pairs.set(key, [...(pairs.get(key) ?? []), row]);
+  }
+  const references: { assetId: string; caption: string; livePhotoGroupId?: string; livePhotoRole?: string }[] = [];
+  const groupIds = new Map<string, string>();
+  for (const [key, pair] of pairs) {
+    if (pair.length !== 2 || new Set(pair.map(i => i.livePhotoRole)).size !== 2 || pair.some(i => !i.assetId || !assetIds.includes(i.assetId))) throw new Error("Live Photo 组件尚未完整，请返回草稿核对。");
+    // Different drafts may reuse a group identifier. A new event gets distinct groups.
+    groupIds.set(key, randomUUID());
+  }
+  // Preserve the user's asset order; pairing must not move all Live Photos first.
+  for (const assetId of assetIds) {
+    const paired = rows.filter(i => i.assetId === assetId && i.livePhotoGroupId);
+    if (!paired.length) references.push({ assetId, caption: rows.find(i => i.assetId === assetId)?.caption ?? "" });
+    for (const item of paired) references.push({ assetId, caption: item.caption, livePhotoGroupId: groupIds.get(`${item.draftId}:${item.livePhotoGroupId}`)!, livePhotoRole: item.livePhotoRole! });
+  }
+  return references;
+}
+
 export async function getMemoryEventDetail(  familyId: string,
   eventId: string,
 ): Promise<MemoryEventDetail | undefined> {
@@ -744,7 +775,7 @@ export async function getMemoryEventDetail(  familyId: string,
   if (!events[0]) return undefined;
 
   const assetLinks = await db
-    .select({ assetId: memoryEventAsset.assetId })
+    .select({ assetId: memoryEventAsset.assetId, livePhotoGroupId: memoryEventAsset.livePhotoGroupId, livePhotoRole: memoryEventAsset.livePhotoRole })
     .from(memoryEventAsset)
     .where(eq(memoryEventAsset.memoryEventId, eventId)).orderBy(asc(memoryEventAsset.sortOrder), asc(memoryEventAsset.createdAt), asc(memoryEventAsset.id));
   const assets =
@@ -803,7 +834,12 @@ export async function getMemoryEventDetail(  familyId: string,
       : [{ id: item.id, rawText: item.rawText, createdAt: item.createdAt }],
   );
 
-  return { event: events[0], assets, participants, sourceNotes };
+  const livePhotos = [...new Set(assetLinks.flatMap(l => l.livePhotoGroupId ? [l.livePhotoGroupId] : []))].flatMap(groupId => {
+    const image = assetLinks.find(l => l.livePhotoGroupId === groupId && l.livePhotoRole === "image");
+    const video = assetLinks.find(l => l.livePhotoGroupId === groupId && l.livePhotoRole === "video");
+    return image && video ? [{ groupId, imageAssetId: image.assetId, videoAssetId: video.assetId }] : [];
+  });
+  return { event: events[0], assets, livePhotos, participants, sourceNotes };
 }
 
 /**

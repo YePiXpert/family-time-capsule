@@ -13,7 +13,7 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif-offset.jpg"));
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
 
   // 收件箱确认（EXIF 照片显示拍摄时间 8 月 10 日）
   await page.goto("/inbox");

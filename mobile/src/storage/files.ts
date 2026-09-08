@@ -19,10 +19,10 @@ function ensureDirectories(): void {
 function safeExtension(asset: ImagePickerAsset): string {
   const match = asset.fileName?.match(/\.([a-z0-9]{1,8})$/iu);
   if (match?.[1]) return match[1].toLowerCase();
-  return asset.type === "video" ? "mp4" : "jpg";
+  return asset.type === "pairedVideo" ? "mov" : asset.type === "video" ? "mp4" : "jpg";
 }
 
-export async function preservePickedMedia(
+export async function preparePickedMedia(
   asset: ImagePickerAsset,
   id: string,
   source: Extract<MediaCaptureSource, "camera" | "library">,
@@ -30,12 +30,11 @@ export async function preservePickedMedia(
   ensureDirectories();
   const extension = safeExtension(asset);
   const destination = new File(capturesDirectory, `${id}.${extension}`);
-  await new File(asset.uri).copy(destination, { overwrite: false });
   return {
     localUri: destination.uri,
     fileName: asset.fileName?.slice(0, 200) || `capture-${id}.${extension}`,
     mimeType:
-      asset.mimeType || (asset.type === "video" ? "video/mp4" : "image/jpeg"),
+      asset.mimeType || (asset.type === "pairedVideo" ? "video/quicktime" : asset.type === "video" ? "video/mp4" : "image/jpeg"),
     lastModified: await resolveReliableMediaTime(
       source,
       asset.assetId,
@@ -48,9 +47,23 @@ export async function preservePickedMedia(
         return { creationTime, modificationTime };
       },
     ),
-    mediaType: asset.type === "video" ? "video" : "image",
+    mediaType: asset.type === "video" || asset.type === "pairedVideo" ? "video" : "image",
     source,
   };
+}
+
+export async function preservePreparedMedia(sourceUri: string, payload: MediaCapturePayload): Promise<void> {
+  const destination = new File(payload.localUri);
+  const temporary = new File(`${payload.localUri}.part`);
+  try {
+    await new File(sourceUri).copy(temporary, { overwrite: false });
+    await temporary.move(destination, { overwrite: false });
+  } catch (error) { if (temporary.exists) temporary.delete(); throw error; }
+}
+export async function preservePickedMedia(asset: ImagePickerAsset, id: string, source: Extract<MediaCaptureSource, "camera" | "library">): Promise<MediaCapturePayload> {
+  const payload = await preparePickedMedia(asset, id, source);
+  await preservePreparedMedia(asset.uri, payload);
+  return payload;
 }
 
 /** Copy a completed recorder file before it can be reclaimed by the OS. */

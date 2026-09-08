@@ -138,6 +138,7 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
     childPersonId: detail.event.childPersonId,
     participantPersonIds: detail.participants.map((person) => person.id),
     participants: detail.participants.map((person) => ({ id: person.id, displayName: person.displayName, relationToChild: person.relationToChild, isChild: person.isChild })),
+    livePhotos: detail.livePhotos,
     sourceNotes: detail.sourceNotes.map((note) => ({ id: note.id, text: note.rawText })),
     assets: detail.assets.map((asset) => ({
       id: asset.id,

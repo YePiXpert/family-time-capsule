@@ -6,6 +6,8 @@ export type DraftItem = {
   localCaptureRef: string | null;
   caption: string;
   preservationState?: "missing";
+  livePhotoGroupId?: string;
+  livePhotoRole?: "image" | "video";
 };
 /**
  * 正式 1.0 §5 对象级读者：family=全家；members=作者+指定成员（按用户 ID）；
@@ -61,11 +63,23 @@ export function parseDraftContent(value: unknown): DraftContent {
     const item = x as Record<string, unknown>;
     const assetId = nullableId(item.assetId), localCaptureRef = nullableId(item.localCaptureRef);
     if (!assetId && !localCaptureRef && item.preservationState !== "missing") return invalid();
-    return { id: id(item.id), assetId, localCaptureRef, caption: string(item.caption, 2000), ...(!assetId && !localCaptureRef ? { preservationState: "missing" as const } : {}) };
+    const group = item.livePhotoGroupId == null ? undefined : id(item.livePhotoGroupId);
+    const role = item.livePhotoRole == null ? undefined : item.livePhotoRole;
+    if (group ? role !== "image" && role !== "video" : role !== undefined) return invalid();
+    return { ...(group ? { livePhotoGroupId: group, livePhotoRole: role as "image" | "video" } : {}), id: id(item.id), assetId, localCaptureRef, caption: string(item.caption, 2000), ...(!assetId && !localCaptureRef ? { preservationState: "missing" as const } : {}) };
   });
   if (new Set(items.map(i => i.id)).size !== items.length) return invalid();
-  const assetIds = items.flatMap(i => i.assetId ? [i.assetId] : []);
-  if (new Set(assetIds).size !== assetIds.length) return invalid();
+  assertLivePhotoPairs(items);
+  for (const item of items) if (item.livePhotoGroupId) {
+    const other = items.find(i => i.id !== item.id && i.livePhotoGroupId === item.livePhotoGroupId)!;
+    if ((item.assetId && item.assetId === other.assetId) || (item.localCaptureRef && item.localCaptureRef === other.localCaptureRef)) return invalid();
+  }
+  const seen = new Map<string, DraftItem>();
+  for (const item of items) if (item.assetId) {
+    const previous = seen.get(item.assetId);
+    if (previous && !(previous.livePhotoGroupId && item.livePhotoGroupId && previous.livePhotoGroupId !== item.livePhotoGroupId && previous.livePhotoRole === item.livePhotoRole)) return invalid();
+    seen.set(item.assetId, item);
+  }
   const coverItemId = nullableId(v.coverItemId);
   if (coverItemId && !items.some(i => i.id === coverItemId)) return invalid();
   const occurredAt = v.occurredAt === null ? null : string(v.occurredAt, 32);
@@ -84,4 +98,37 @@ export function parseDraftContent(value: unknown): DraftContent {
   if (new Set(readerUserIds).size !== readerUserIds.length) return invalid();
   if (visibility !== "members" && readerUserIds.length > 0) return invalid();
   return { title: string(v.title, 100), text: string(v.text, 5000), occurredAt, occurredAtPrecision: v.occurredAtPrecision as DraftContent["occurredAtPrecision"], locationText: string(v.locationText, 200), participantIds, visibility, readerUserIds, coverItemId, items };
+}
+
+/** Relationship is explicit; missing originals retain both placeholders but cannot publish. */
+export function assertLivePhotoPairs(items: Pick<DraftItem, "livePhotoGroupId" | "livePhotoRole">[]): void {
+  const groups = new Map<string, string[]>();
+  for (const item of items) {
+    if (item.livePhotoGroupId == null) { if (item.livePhotoRole != null) throw new Error("invalid_live_photo"); continue; }
+    if (typeof item.livePhotoGroupId !== "string") throw new Error("invalid_live_photo");
+    if (!/^[\w-]{1,128}$/u.test(item.livePhotoGroupId) || !["image", "video"].includes(item.livePhotoRole ?? "")) throw new Error("invalid_live_photo");
+    groups.set(item.livePhotoGroupId, [...(groups.get(item.livePhotoGroupId) ?? []), item.livePhotoRole!]);
+  }
+  for (const roles of groups.values()) if (roles.length !== 2 || new Set(roles).size !== 2) throw new Error("invalid_live_photo");
+}
+export function removeDraftItem(content: DraftContent, id: string): Pick<DraftContent, "items" | "coverItemId"> {
+  const target = content.items.find(i => i.id === id);
+  const items = content.items.filter(i => i.id !== id && (!target?.livePhotoGroupId || i.livePhotoGroupId !== target.livePhotoGroupId));
+  return { items, coverItemId: items.some(i => i.id === content.coverItemId) ? content.coverItemId : null };
+}
+/** Dedupe ordinary references, while retaining explicit complete pairs and every local original. */
+export function reconcileDraftAsset(content: DraftContent, id: string, assetId: string): Pick<DraftContent, "items" | "coverItemId"> {
+  const item = content.items.find(i => i.id === id)!;
+  const duplicate = content.items.find(i => i.id !== id && i.assetId === assetId);
+  const remove = duplicate ? (item.livePhotoGroupId ? (duplicate.livePhotoGroupId ? null : duplicate.id) : item.id) : null;
+  const items = content.items.filter(i => i.id !== remove).map(i => i.id === id ? { ...i, assetId } : i);
+  return { items, coverItemId: content.coverItemId === remove ? (remove === id ? duplicate!.id : id) : content.coverItemId };
+}
+
+/** Explicit user pairing for separately imported components; never infer from filenames. */
+export function pairDraftItems(content: DraftContent, imageId: string, videoId: string, groupId: string): Pick<DraftContent, "items"> {
+  const image = content.items.find(i => i.id === imageId), video = content.items.find(i => i.id === videoId);
+  if (!image || !video || imageId === videoId || image.livePhotoGroupId || video.livePhotoGroupId) throw new Error("请选两份尚未配对的原件。");
+  const items = content.items.map(i => i.id === imageId || i.id === videoId ? { ...i, livePhotoGroupId: groupId, livePhotoRole: i.id === imageId ? "image" as const : "video" as const } : i);
+  return { items: parseDraftContent({ ...content, items }).items };
 }

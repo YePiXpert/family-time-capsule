@@ -191,6 +191,7 @@ export type MobileInboxAsset = {
 
 export type MobileInboxEntry = {
   id: string;
+  titleRevision?: number;
   kind: "text" | "asset" | "bundle";
   status: string;
   title: string;
@@ -241,6 +242,7 @@ export type MobileMemory = {
     relationToChild: string | null;
     isChild: boolean;
   }[];
+  livePhotos?: { groupId: string; imageAssetId: string; videoAssetId: string }[];
   sourceNotes: { id: string; text: string }[];
   assets: MobileMemoryAsset[];
   contributions: {
@@ -268,6 +270,7 @@ export type MobileSearchPage = {
 };
 
 export type InboxDraftPatch = {
+  expectedTitleRevision?: number;
   childPersonId?: string | null;
   title?: string | null;
   occurredAtWall?: string | null;

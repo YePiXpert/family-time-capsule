@@ -6,7 +6,8 @@
 - 已推送：`045b5e2` 日期真实手机 hook 修复及 HTTP/独立库/导出恢复；其 CI `34182633511` 暴露旧配额测试日期碰撞。
 - 已修复推送：`8a2c73efd0220785addc24b0808c4bb05797d35c` 测试账本按用例隔离；CI `34183060802` 四项全部 success（含 production E2E/恢复）。没有降低调用次数断言或靠 rerun。
 - 已推送：`7e9c264c651b53fd36a3323735b4d4d4933a5383` P0-A/B 完整读者选择与追加迁移；CI `34183826416` 四项全部 success，已核对同 SHA。
-- 当前修改：P0-C 新附件私密续传完整纵向流程（准备提交；新 SHA CI push 后单独核对）。
+- 已推送：`3b87b6417ae6e545c6688277b567f5154aa030ce` P0-C 私密续传；CI `34185777483` web/mobile/ops success，E2E失败：旧用例把“保留草稿”当作家庭投递。保留隐私边界，改用明确的“交给家人整理”，全部原断言保留。
+- 当前修改：P0-C Live Photo 成对保全、恢复及明确重新提交整理（准备提交；新 SHA CI push 后单独核对）。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -30,9 +31,21 @@
 - 真 Docker 镜像 `sha256:904eedffd7b3fd7b88379610756ef7ab38acb3c431eb455b619b27f7f180ff7b`，包含 util-linux；`scripts/verify-private-upload-container.py --image ftc-local-check:private-upload-20260908` 新建带唯一标记的容器/卷，两次真实重启验证分块和complete恢复、原件hash一致、其他管理员404，测试资源已清理。日志 `/tmp/ftc-private-docker-smoke.log`。这是当前上传实现冒烟，不是正式候选或生产部署。
 - 旧 reader里程碑根测试误触开发目录所留保护快照仍未删改；后续所有测试 DATA_DIR 均隔离。
 
+## P0-C Live Photo 与整理修订
+
+- 0063 追加 draft_item/memory_event_asset 的组与组件角色；0064 追加 reviewed_revision，旧整理草稿回填当前 revision。旧客户端省略配对字段会保留已有关系；移除单侧明确拒绝。
+- 手机相册读取原生 pairedVideoAsset；静态与动态原件使用既有摄取回执，在同一 SQLite 事务写草稿引用。复制中断恢复到原账号，缺失组件明确标记并阻止同步/发布；目标已关闭、改变或满容量则留独立私密恢复草稿。完整组移除不删原件。
+- Web/手机允许用户明确把分别导入的照片与视频配对，不猜文件名。网页预览等待 IndexedDB 事务提交，避免读取空预览；保存失败继续显示未落盘，重试成功后重新读取。
+- 草稿、发布、明确整理/合并、阅读、家庭归档和新目录恢复都保留双组件引用、说明与用户顺序。恢复测试包含真实 202 份原件的合并事件，不能误套 200 份草稿上限；归档附加伪造关系 ID 不会覆盖目标引用。
+- 已交整理的草稿后续普通同步保持新增正文/原件私密；明确重提才更新家庭收件箱。确认/修改/合并/废弃均拒绝尚未重新提交的版本，旧确认快照不能关闭新草稿。手机保存与确认传递输入所属修订号，409 保留输入。
+- 独立只读审查发现的恢复容量、超大合并恢复、归档字段覆盖、缺失组件堵塞同步、整理快照竞态及手机旧编辑版本问题均已加回归修复。
+- 根全量 124 文件 / 790 项通过（`/tmp/ftc-livephoto-root-final.log`）；最后整理冲突及顺序修改的 3 文件 / 30 项集成回归通过（`/tmp/ftc-livephoto-review-final-pass.log`）。手机全量 49 文件 / 266 项通过，build/typecheck/lint 通过（根 14 条既存 warning），日志 `/tmp/ftc-livephoto-*-final-pass.log`。
+- production 全量 E2E 67/67、disaster roundtrip 7/7 通过：`/tmp/ftc-livephoto-e2e-verified.log`、`/tmp/ftc-livephoto-roundtrip-verified.log`。包括真实手机 UI/hook/SQLite/fetch→生产 Next 的相册 Live Photo、动态组件分块/complete 丢响应，以及 Web 分别导入后手动配对/发布/重开。最后整理修订增量已重建，native-capture/inbox-draft/merge 10/10 通过（`/tmp/ftc-livephoto-final-production.log`）。
+- 以上是平台组件替身与实际本地存储/HTTP 的自动化，不是真机相册、录音或音频焦点验收。Live Photo 新迁移的 Docker/CI 证据在提交后继续核对，不能引用旧镜像冒充候选。
+
 ## 下一个动作
 
-P0-C 继续 Live Photo 成对原件、服务器恢复世代与全部再分享旁路。R08 私密正文持久来源与权限保真导出恢复仍有内部缺口，必须继续修复；不把该里程碑当作私密记忆全链路完成。
+P0-C 原件与 Live Photo 已贯通自动化；继续服务器恢复世代与全部再分享旁路。R08 私密正文持久来源与权限保真导出恢复仍有内部缺口，必须继续修复；不把该里程碑当作私密记忆全链路完成。
 
 P0-D 已独立审查：GET 自然检索与 CLI 诊断绕过配额；限额关闭不计数；未知/亚秒时长、预留失败放行；请求前本地拒绝仍占额度；检索误用 ai:configure 且覆盖人工条件/月份边界。统一真实出站边界、显式幂等用户动作、授权复验与有界时长探测。
 

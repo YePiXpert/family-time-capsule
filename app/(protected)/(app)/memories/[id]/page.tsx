@@ -304,7 +304,8 @@ export default async function MemoryEventPage({
         {assets.length === 0 ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-muted">这条文字记忆没有媒体素材。</div>
         ) : (
-          <MediaReader assets={assets.map(asset => ({ id: asset.id, filename: asset.originalFilename, mimeType: asset.mimeType, type: asset.type, durationMs: asset.durationMs, thumbnailId: thumbMap.get(asset.id)?.id ?? null, dateLabel: assetDateFormatter.format(asset.capturedAt ?? event.occurredAt) }))} />
+          <>{detail.livePhotos.length > 0 && <p className="text-sm text-ink-muted">Live Photo 已保留静态照片和动态原片，可在下方分别查看与播放。</p>}
+          <MediaReader assets={assets.map(asset => ({ id: asset.id, filename: asset.originalFilename, mimeType: asset.mimeType, type: asset.type, durationMs: asset.durationMs, thumbnailId: thumbMap.get(asset.id)?.id ?? null, dateLabel: assetDateFormatter.format(asset.capturedAt ?? event.occurredAt) }))} /></>
         )}
       </section>
 

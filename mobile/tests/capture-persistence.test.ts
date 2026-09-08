@@ -74,7 +74,7 @@ vi.mock("expo-image-picker", () => ({
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: vi.fn() }));
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
 vi.mock("../src/storage/files", () => ({
-  preservePickedMedia: mocks.preserveMedia, preserveRecordedAudio: mocks.preserveAudio,
+  preparePickedMedia: mocks.preserveMedia, preservePreparedMedia: vi.fn().mockResolvedValue(undefined), preservePickedMedia: mocks.preserveMedia, preserveRecordedAudio: mocks.preserveAudio,
   preservePickedDocument: vi.fn(), removeLocalFile: mocks.removeFile,
 }));
 vi.mock("../src/native/picker-intake", () => ({ beginPickerReceipt: vi.fn(), finishPickerReceipt: vi.fn() }));
@@ -92,11 +92,13 @@ vi.mock("../src/api/client", () => ({ requestMobileJson: vi.fn(async (_credentia
 const { CaptureScreen } = await import("../src/screens/CaptureScreen");
 const { initializeLocalStore } = await import("../src/storage/database");
 const { listLocalDrafts } = await import("../src/drafts/store");
+const { preservePreparedMedia } = await import("../src/storage/files");
 const { requestMobileJson } = await import("../src/api/client");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
 beforeEach(async () => {
   mocks.connected = false;
+  vi.mocked(preservePreparedMedia).mockReset().mockResolvedValue(undefined);
   mocks.grantSyncConsent.mockClear();
   await initializeLocalStore();
   const { getRawMockDatabase } = await import("../../tests/mocks/expo-sqlite");
@@ -181,4 +183,67 @@ it.each(["精确", "大约", "只到日", "到月", "到年"])("keeps %s without
   await press("保存为一条记忆");
   expect((await listLocalDrafts("local"))[0]).toMatchObject({ status: "editing", content: { occurredAt: null, text: "暂时只写下故事" } });
   expect(tree!.root.findAllByType("Text" as never).some(t => t.children.join("").includes("请先确认发生时间"))).toBe(true);
+});
+
+it("keeps a picked Live Photo image and paired video together through real SQLite reopen and removal", async () => {
+  const image = { uri: "file:///picker/still.heic", type: "livePhoto", pairedVideoAsset: { uri: "file:///picker/motion.mov", type: "pairedVideo" } };
+  mocks.library.mockResolvedValue({ canceled: false, assets: [image] });
+  mocks.preserveMedia.mockImplementation(async (asset, id) => ({ localUri: `file:///copies/${id}`, fileName: asset.type === "pairedVideo" ? "motion.mov" : "still.heic", mediaType: asset.type === "pairedVideo" ? "video" : "image", mimeType: asset.type === "pairedVideo" ? "video/quicktime" : "image/heic", source: "library", lastModified: null }));
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await press("从相册导入");
+  await expect.poll(async () => (await listLocalDrafts("local"))[0]?.content.items.length).toBe(2);
+  const row = (await listLocalDrafts("local"))[0]!;
+  expect(row.content.items.map(i => i.livePhotoRole)).toEqual(["image", "video"]);
+  expect(new Set(row.content.items.map(i => i.livePhotoGroupId)).size).toBe(1);
+  expect(row.content.items[0]?.livePhotoGroupId).toBeTruthy();
+  const { getRawMockDatabase } = await import("../../tests/mocks/expo-sqlite");
+  expect(getRawMockDatabase().prepare("SELECT count(*) n FROM local_capture WHERE id IN (?,?)").get(...row.content.items.map(i => i.localCaptureRef))).toEqual({ n: 2 });
+  await act(async () => tree!.unmount());
+  await initializeLocalStore();
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  expect((await listLocalDrafts("local"))[0]?.content.items).toEqual(row.content.items);
+  await press("从草稿移除");
+  expect((await listLocalDrafts("local"))[0]?.content.items).toEqual([]);
+  expect(getRawMockDatabase().prepare("SELECT count(*) n FROM local_capture WHERE id IN (?,?)").get(...row.content.items.map(i => i.localCaptureRef))).toEqual({ n: 2 });
+});
+
+it("does not save a half Live Photo when the paired copy fails", async () => {
+  vi.mocked(preservePreparedMedia).mockImplementation(async uri => { if (uri === "file:///motion") throw new Error("video copy failed"); });
+  mocks.library.mockResolvedValue({ canceled: false, assets: [{ uri: "file:///still", type: "livePhoto", pairedVideoAsset: { uri: "file:///motion", type: "pairedVideo" } }] });
+  mocks.preserveMedia.mockImplementation(async (asset, id) => {
+
+    return { localUri: `file:///copies/${id}`, fileName: "still.heic", mediaType: "image", mimeType: "image/heic", source: "library", lastModified: null };
+  });
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await press("从相册导入");
+  await expect.poll(() => tree!.root.findAllByType("Text" as never).some(t => t.children.join("").includes("video copy failed"))).toBe(true);
+  expect((await listLocalDrafts("local"))[0]?.content.items).toEqual([]);
+});
+
+it.each(["保存为一条记忆", "发送草稿到测试家庭", "交给家人整理"])("blocks %s for a recovered Live Photo with a missing component", async action => {
+  mocks.connected = true;
+  const scope = JSON.stringify([mocks.credentials.serverUrl, "instance", "user-a", "family"]);
+  const { createLocalDraft, saveLocalDraft } = await import("../src/drafts/store");
+  const row = await createLocalDraft(scope, crypto.randomUUID(), crypto.randomUUID());
+  const items = (["image", "video"] as const).map(role => ({ id: crypto.randomUUID(), assetId: null, localCaptureRef: null, caption: "复制中断", preservationState: "missing" as const, livePhotoGroupId: "incomplete-pair", livePhotoRole: role }));
+  await saveLocalDraft({ ...row, revision: 2, content: { ...row.content, items, occurredAtPrecision: "unknown" } }, 1);
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await press(action);
+  expect((await listLocalDrafts(scope))[0]?.status).toBe("editing");
+  expect(tree!.root.findAllByType("Text" as never).some(t => t.children.join("").includes("原件复制中断或缺失"))).toBe(true);
+  expect(mocks.grantSyncConsent).not.toHaveBeenCalled();
+});
+
+it("pairs separately imported image and video only after an explicit user action", async () => {
+  mocks.library.mockResolvedValue({ canceled: false, assets: [{ uri: "file:///still.jpg", type: "image" }, { uri: "file:///motion.mov", type: "video" }] });
+  mocks.preserveMedia.mockImplementation(async (asset, id) => ({ localUri: `file:///copies/${id}`, fileName: asset.type === "video" ? "motion.mov" : "still.jpg", mediaType: asset.type, mimeType: asset.type === "video" ? "video/quicktime" : "image/jpeg", source: "library", lastModified: null }));
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await press("从相册导入");
+  await expect.poll(async () => (await listLocalDrafts("local"))[0]?.content.items.length).toBe(2);
+  expect((await listLocalDrafts("local"))[0]?.content.items.every(i => !i.livePhotoGroupId)).toBe(true);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+  await press("与上一张照片组成 Live Photo");
+  const items = (await listLocalDrafts("local"))[0]!.content.items;
+  expect(items.map(i => i.livePhotoRole)).toEqual(["image", "video"]);
+  expect(items[0]!.livePhotoGroupId).toBe(items[1]!.livePhotoGroupId);
 });

@@ -1,3 +1,4 @@
+import { assertLivePhotoPairs } from "@/lib/drafts/model";
 import { assetDeletion } from "@/db/schema/asset-deletion";
 import { parseAssetDeletions } from "@/lib/assets/deletion-portable.mjs";
 import { parseDraftArchive } from "@/lib/drafts/archive";
@@ -776,6 +777,7 @@ async function loadAndVerifyZip(
       updatedAt?: string | null;
       assetIds?: string[];
       assetCaptions?: Record<string, string>;
+      assetReferences?: { assetId: string; caption: string; livePhotoGroupId?: string; livePhotoRole?: "image" | "video" }[];
       participantPersonIds?: string[];
       tags?: string[];
     }>
@@ -1281,6 +1283,13 @@ async function loadAndVerifyZip(
       "bad_json",
       `事件 ${m.id} 的 assetIds 非法`,
     );
+    if (m.assetReferences !== undefined) {
+      requireCondition(Array.isArray(m.assetReferences) && JSON.stringify(m.assetReferences.map(r => r?.assetId)) === JSON.stringify(m.assetIds ?? []), "bad_json", `事件 ${m.id} 素材顺序关系无效`);
+      requireCondition(m.assetReferences.every(r => isRecord(r) && typeof r.assetId === "string" && typeof r.caption === "string" && r.caption.length <= 2000), "bad_json", `事件 ${m.id} 素材说明无效`);
+      try { assertLivePhotoPairs(m.assetReferences); }
+      catch { throw new RestoreError("bad_json", `事件 ${m.id} Live Photo 关系无效`); }
+      for (const r of m.assetReferences) if (r.livePhotoRole) requireCondition(assetTypeById.get(r.assetId) === r.livePhotoRole, "bad_refs", `事件 ${m.id} Live Photo 组件类型无效`);
+    }
     requireCondition(m.assetCaptions === undefined || (m.assetCaptions !== null && typeof m.assetCaptions === "object" && !Array.isArray(m.assetCaptions) && Object.entries(m.assetCaptions).every(([id, caption]) => (m.assetIds ?? []).includes(id) && typeof caption === "string" && caption.length <= 2000)), "bad_json", `事件 ${m.id} 素材说明无效`);
     requireCondition(
       m.coverAssetId === undefined ||
@@ -2922,12 +2931,14 @@ async function restoreFromArchive(
       }
 
       const eventAssets = memoriesJson.flatMap((m) =>
-        (m.assetIds ?? []).map((assetId, sortOrder) => ({
+        (m.assetReferences ?? (m.assetIds ?? []).map(assetId => ({ assetId, caption: m.assetCaptions?.[assetId] ?? "", livePhotoGroupId: undefined, livePhotoRole: undefined }))).map((reference, sortOrder) => ({
           id: randomUUID(),
           memoryEventId: m.id,
-          assetId,
+          assetId: reference.assetId,
+          caption: reference.caption,
+          livePhotoGroupId: reference.livePhotoGroupId,
+          livePhotoRole: reference.livePhotoRole,
           sortOrder,
-          caption: m.assetCaptions?.[assetId] ?? "",
           familyId,
           createdAt: now,
         })),
@@ -2938,7 +2949,7 @@ async function restoreFromArchive(
 
       if (assetDeletions.length) tx.insert(assetDeletion).values(assetDeletions.map(row => ({ ...row, familyId, requestedByUserId: null, storageKeysJson: "[]", cleanedAt: new Date().toISOString() }))).run();
       for (const row of drafts) {
-        tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: null, authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
+        tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: null, authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, reviewedRevision: row.inboxItemId && !row.reviewPending ? 0 : null, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
         for (const [sortOrder, item] of row.items.entries()) tx.insert(draftItem).values({ ...item, draftId: row.id, sortOrder }).run();
       }
       for (const row of importSessionsJson) if (row.intakeDraftId) tx.update(importSessionTable).set({ intakeDraftId: row.intakeDraftId }).where(eq(importSessionTable.id, row.id)).run();

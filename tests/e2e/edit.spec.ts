@@ -13,7 +13,7 @@ test("创建 8/10 事件 → 修改为 8/11 → 时间轴移动、年龄变化",
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("八月中旬的一个上午");
   await page.getByLabel("年龄参考人物（可选）").selectOption({ label: "小满" });

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Crypto from "expo-crypto";
-import { bindLocalDraft, createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft, type LocalDraft } from "./store";
+import { bindLocalDraft, createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft, type LocalDraft, type DraftOriginal } from "./store";
 import { requestMobileJson } from "../api/client";
-import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent } from "./model";
+import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent, type DraftItem } from "./model";
 import type { Credentials, MediaCapturePayload } from "../types";
 export function usePersistentDraft(scope: string, enabled: boolean, credentials: Credentials | null) {
   const [draft, setDraft] = useState<LocalDraft | null>(null);
@@ -15,7 +15,7 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
   const writes = useRef<Promise<void>>(Promise.resolve());
   const revision = useRef(0);
   const failure = useRef(false);
-  const write = useCallback((next: LocalDraft, original?: { id: string; payload: MediaCapturePayload }) => {
+  const write = useCallback((next: LocalDraft, original?: DraftOriginal | DraftOriginal[]) => {
     current.current = next; setDraft(next); setSaved(false);
     const operation = writes.current.then(async () => {
       if (failure.current) throw new Error("本机保存失败，请重试后继续。");
@@ -71,27 +71,29 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     if (!row || row.status !== "editing") return;
     void write({ ...row, content: { ...row.content, ...patch }, revision: row.revision + 1, mutationId: Crypto.randomUUID(), updatedAt: new Date().toISOString() }).catch(() => {});
   }, [write]);
-  const addOriginal = useCallback(async (id: string, payload: MediaCapturePayload, existing = false) => {
+  const addOriginals = useCallback(async (originals: (DraftOriginal & { existing?: boolean; item?: Pick<DraftItem, "id" | "livePhotoGroupId" | "livePhotoRole"> })[], destination?: { scope: string; id: string }) => {
     const row = current.current;
     if (!row || row.status !== "editing") throw new Error("请先打开可以编辑的草稿。");
-    const itemId = Crypto.randomUUID();
+    if (destination && (destination.scope !== row.scope || destination.id !== row.id)) throw new Error("连接或草稿已切换；原件保留在原账号的恢复草稿中。");
+    const items = originals.map(o => ({ id: o.item?.id ?? Crypto.randomUUID(), ...o.item, assetId: null, localCaptureRef: o.id, caption: "" }));
     try {
-      await write({ ...row, content: { ...row.content, coverItemId: row.content.coverItemId ?? itemId, items: [...row.content.items, { id: itemId, assetId: null, localCaptureRef: id, caption: "" }] }, revision: row.revision + 1, mutationId: Crypto.randomUUID(), updatedAt: new Date().toISOString() }, existing ? undefined : { id, payload });
+      await write({ ...row, content: { ...row.content, coverItemId: row.content.coverItemId ?? items[0]?.id ?? null, items: [...row.content.items, ...items] }, revision: row.revision + 1, mutationId: Crypto.randomUUID(), updatedAt: new Date().toISOString() }, originals.filter(o => !o.existing));
     } catch (error) {
-      // The caller retains an intake receipt or removes only the failed new copy.
-      // Do not leave a dangling reference in the in-memory retry snapshot.
       const live = current.current;
       if (live) {
-        const next = { ...live, content: { ...live.content, items: live.content.items.filter(item => item.id !== itemId), coverItemId: live.content.coverItemId === itemId ? row.content.coverItemId : live.content.coverItemId } };
+        const added = new Set(items.map(i => i.id));
+        const next = { ...live, content: { ...live.content, items: live.content.items.filter(i => !added.has(i.id)), coverItemId: added.has(live.content.coverItemId ?? "") ? row.content.coverItemId : live.content.coverItemId } };
         current.current = next; setDraft(next);
       }
       throw error;
     }
   }, [write]);
+  const addOriginal = useCallback((id: string, payload: MediaCapturePayload, existing = false) => addOriginals([{ id, payload, existing }]), [addOriginals]);
   const save = useCallback(async (publish: boolean, syncIntent?: "draft" | "review") => {
     await writes.current;
     const row = current.current;
     if (!row || failure.current) throw new Error("本机草稿尚未保存，请检查存储空间。");
+    if ((publish || syncIntent) && row.content.items.some(i => i.preservationState === "missing")) throw new Error("有原件复制中断或缺失，请重新导入完整一组，或移除缺失的素材后保存。");
     if (publish && !isDraftDateComplete(row.content)) throw new Error("请先确认发生时间，或选择「不详」；也可以先保留草稿。");
     const next = { ...row, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
     await write(next);
@@ -127,5 +129,5 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     if (!isCurrent()) return;
     await resume(row); if (isCurrent()) await reload();
   }, [scope, resume, reload]);
-  return { reopen, continueServer, serverDrafts: serverState.scope === scope ? serverState.drafts : [], bind, unboundDrafts, draft: draft?.scope === scope ? draft : null, drafts: drafts.filter(d => d.scope === scope), error, saved, change, addOriginal, save, create, resume, discard, retry, reload };
+  return { reopen, continueServer, serverDrafts: serverState.scope === scope ? serverState.drafts : [], bind, unboundDrafts, draft: draft?.scope === scope ? draft : null, drafts: drafts.filter(d => d.scope === scope), error, saved, change, addOriginal, addOriginals, save, create, resume, discard, retry, reload };
 }

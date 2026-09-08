@@ -48,8 +48,8 @@ test('访客限定阅读链接：只读单册、范围外媒体 404、收回即�
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, '..', 'fixtures', 'sample-exif.jpg'));
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
-  await page.goto('/capture');
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '新建一件事' }).click();
   await page.getByLabel('写下这一刻').fill('虚构记录：给外婆的相册素材。');
   await page.getByLabel('标题', { exact: true }).fill('阳光下的午后');
   await page.getByLabel('发生时间', { exact: true }).fill('2026-08-15T15:00');

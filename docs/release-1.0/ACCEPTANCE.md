@@ -114,7 +114,7 @@ M3-C 最终 Docker 镜像：`sha256:11ce460bff80718c5529dd38ede9d788c67e5ef2242f
 | R03 不详时间通过真实手机保存 hook | mobile/tests/capture-persistence.test.ts：记录页点击/实际 hook/SQLite/重开；persistent-draft.test.ts：真实 Bearer HTTP 保存发布/独立库读取/导出新目录恢复，unknown 与正文保留 | 上述自动化通过；原生设备仍未验收；混合私密自动化见 R04–R07 |
 | R01/R02 User ID 与 Person ID 不同、无账号人物仍可参与 | native-capture.spec.ts 启动手机 capture-production.http.ts，通过真实 UI/hook/sync/fetch 到 Next 生产 API，B 200/C 管理员 404；draft-readers 集成拒绝停用/退出/异家庭/Person ID，draft-reader-migration 验证有数据 0060 升级 | 自动化贯通通过；真机仍未验收 |
 | R04/R05 新照片/录音私密上传与仅同步草稿 | private-draft-upload.test.ts；native-capture production E2E：真实手机控件/hook/SQLite/HTTP 与 Web 浏览器上传，三份私密原件且零 inbox 关联，草稿与发布记忆均拒绝其他管理员 | 自动化通过；设备未验收 |
-| R06 中断/重开/回执丢失 | capture-production.http.ts 使用真实文件读取与 9 MiB 合成 PCM WAV，分别丢弃 complete 响应、8 MiB chunk 响应，再初始化 SQLite 续传；最终三原件；transfer-lock 独立进程 SIGKILL 后恢复 | 自动化通过；Live Photo 成对引用继续补 |
+| R06 中断/重开/回执丢失 | capture-production.http.ts 使用真实文件读取与 9 MiB 合成 PCM WAV，分别丢弃 complete 响应、8 MiB chunk 响应，再初始化 SQLite 续传；最终三原件；transfer-lock 独立进程 SIGKILL 后恢复 | 自动化通过；新增 Live Photo 静态/动态成对续传、组件缺失恢复阻止发布、HTTP/双端 UI/导出恢复；真机另验 |
 | R07 账号/草稿权限变化 | HTTP 拒绝其他同家管理员所有上传操作，删除草稿停止上传；手机 transport 在分块/complete 前复验代际与草稿版本；删除后的临时清理和旧公开回执兼容测试 | 已测路径通过；完整撤权缓存协议仍在后续范围 |
 
 本轮发现并修复旧 quota 测试日期碰撞（045b5e2 CI 34182633511 red，修复提交 8a2c73e 对应 CI 34183060802）；没有改 provider 调用次数断言。根单测默认 DATA_DIR 现按测试文件独立 mkdtemp，避免遗漏配置的单测访问开发档案。默认开发目录的失败迁移保护快照保留，未删除或重建开发资料。

@@ -397,6 +397,10 @@ describe("native mobile API", () => {
       },
     });
 
+    const staleEdit = await inboxPatch(mobileJsonRequest(`http://localhost/api/mobile/v1/inbox/${item.id}`, "PATCH", editorToken, { title: "过期修改", expectedTitleRevision: 0 }), { params: Promise.resolve({ id: item.id }) });
+    expect(staleEdit.status).toBe(409);
+    await expect(staleEdit.json()).resolves.toEqual({ error: "conflict" });
+
     const confirmed = await inboxConfirmPost(
       mobileJsonRequest(
         `http://localhost/api/mobile/v1/inbox/${item.id}/confirm`,

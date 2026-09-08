@@ -301,6 +301,7 @@ export async function buildFamilyExport(
     createdAt: iso(e.createdAt),
     updatedAt: iso(e.updatedAt),
     assetIds: eventAssetLinks.filter((l) => l.memoryEventId === e.id).sort((a, b) => a.sortOrder - b.sortOrder).map((l) => l.assetId),
+    assetReferences: eventAssetLinks.filter(l => l.memoryEventId === e.id).sort((a,b) => a.sortOrder - b.sortOrder).map(l => ({ assetId: l.assetId, caption: l.caption, ...(l.livePhotoGroupId ? { livePhotoGroupId: l.livePhotoGroupId, livePhotoRole: l.livePhotoRole } : {}) })),
     assetCaptions: Object.fromEntries(eventAssetLinks.filter((l) => l.memoryEventId === e.id).map(l => [l.assetId, l.caption])),
     participantPersonIds: eventParticipantLinks
       .filter((l) => l.memoryEventId === e.id)

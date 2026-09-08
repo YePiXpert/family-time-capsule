@@ -442,6 +442,20 @@
       "when": 1788876000012,
       "tag": "0062_private_draft_upload",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1788876000013,
+      "tag": "0063_live_photo_relations",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1788876000014,
+      "tag": "0064_draft_review_revision",
+      "breakpoints": true
     }
   ]
 }

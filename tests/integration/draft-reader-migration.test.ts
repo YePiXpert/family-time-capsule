@@ -32,7 +32,9 @@ it("upgrades populated 0060 drafts without losing items, intake references, valu
     db.close();
     const options = { databasePath, migrationsFolder: folder, snapshotDirectory: path.join(dir, "snapshots") };
     db = openDatabaseConnection(options).sqlite;
-    for (const table of Object.keys(before)) expect(db.prepare(`select * from ${table}`).all()).toEqual(before[table]);
+    for (const table of Object.keys(before)) expect(db.prepare(`select * from ${table}`).all()).toEqual(
+      table === "draft_item" ? (before[table] as object[]).map(row => ({ ...row, live_photo_group_id: null, live_photo_role: null })) : table === "draft" ? (before[table] as object[]).map(row => ({ ...row, reviewed_revision: null })) : before[table],
+    );
     expect(db.pragma("foreign_key_list(draft)")).toEqual(foreignKeys);
     db.exec("update draft set visibility='members',reader_user_ids_json='[\"user\"]'");
     expect(db.prepare("select visibility,reader_user_ids_json from draft").get()).toEqual({ visibility: "members", reader_user_ids_json: '["user"]' });

@@ -1,4 +1,5 @@
 "use client";
+import { removeDraftItem, reconcileDraftAsset, pairDraftItems } from "@/lib/drafts/model";
 /* eslint-disable @next/next/no-img-element -- Local preserved blobs must be previewed without uploading them to an image optimizer. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -65,6 +66,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
     void store({ ...old, content: { ...old.content, ...patch }, revision: old.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() }).catch(() => {});
   }, [store]);
   const create = useCallback(async () => {
+    setNotice("");
     await writes.current;
     if (failed.current) return;
     const id = crypto.randomUUID();
@@ -117,7 +119,11 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
   useEffect(() => {
     let active = true;
     const urls: string[] = [];
-    void Promise.all((draft?.content.items ?? []).map(async item => {
+    // Items render optimistically; their blobs are readable only after the
+    // IndexedDB transaction commits. A successful retry must refresh previews too.
+    void writes.current.then(async () => {
+      if (!active || failed.current) return [];
+      return Promise.all((draft?.content.items ?? []).map(async item => {
       const original = item.localCaptureRef ? await readBrowserOriginal(scope, item.localCaptureRef) : undefined;
       if (original) { const url = URL.createObjectURL(original.file); urls.push(url); return [item.id, { url, type: original.file.type, name: original.file.name }] as const; }
       if (item.assetId) {
@@ -127,9 +133,10 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
         } catch { /* Keep the reference; opening may work after reconnecting. */ }
       }
       return [item.id, { url: "", type: "", name: "素材尚未读取，请联网重试或核对读取权限" }] as const;
-    })).then(rows => { if (active) setPreviews(Object.fromEntries(rows)); else urls.forEach(url => URL.revokeObjectURL(url)); }).catch(error => setDiskError(message(error)));
+      }));
+    }).then(rows => { if (active) setPreviews(Object.fromEntries(rows)); else urls.forEach(url => URL.revokeObjectURL(url)); }).catch(error => { if (active) setDiskError(message(error)); });
     return () => { active = false; urls.forEach(url => URL.revokeObjectURL(url)); };
-  }, [draft?.content.items, scope]);
+  }, [draft?.content.items, scope, saved]);
 
   async function addFiles(files: File[]) {
     const old = current.current;
@@ -187,9 +194,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
         const assetId = result.assetId ?? result.existingAssetId;
         if (!assetId) throw new Error(result.message ?? "原件上传未完成，本机原件仍在。");
         const live = current.current!;
-        const duplicate = live.content.items.find(i => i.id !== item.id && i.assetId === assetId);
-        const items = duplicate ? live.content.items.filter(i => i.id !== item.id) : live.content.items.map(i => i.id === item.id ? { ...i, assetId } : i);
-        const coverItemId = duplicate && live.content.coverItemId === item.id ? duplicate.id : live.content.coverItemId;
+        const { items, coverItemId } = reconcileDraftAsset(live.content, item.id, assetId);
         await store({ ...live, content: { ...live.content, items, coverItemId }, revision: live.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() });
       }
       row = current.current!;
@@ -212,6 +217,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
     finally { syncBusy.current = false; if (mounted.current) setSyncing(false); }
   }
   async function save(publish: boolean, review = false) {
+    setNotice("");
     const row = current.current;
     if (!row) return;
     if (publish && !isDraftDateComplete(row.content)) { setNotice("请确认发生时间，或选择「时间记不得了」；也可以先保留草稿。"); return; }
@@ -275,12 +281,15 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
       <label className="block">写下这一刻<textarea className={`${field} mt-2`} rows={6} maxLength={5000} value={content.text} onChange={e => change({ text: e.target.value })} placeholder="写一句话，也可以继续加照片和录音。" /></label>
       <div className="flex flex-wrap gap-3"><label className={`${button} cursor-pointer`}>添加照片、视频、录音或文档<input type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label><label className={`${button} cursor-pointer`}>拍照<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label><button type="button" className="ui-button-primary min-h-12" onClick={() => void toggleRecording()}>{recording ? "停止录音并加入这件事" : "开始录音"}</button></div>
       <ol className="space-y-3">{content.items.map((item, index) => {
-        const preview = previews[item.id];
+        const preview = previews[item.id], previous = content.items[index - 1];
+        const canPair = previous && !previous.livePhotoGroupId && !item.livePhotoGroupId && previews[previous.id]?.type.startsWith("image/") && preview?.type.startsWith("video/");
         return <li key={item.id} className="rounded-xl border border-line p-4">
           {preview?.type.startsWith("image/") ? <img src={preview.url} alt={item.caption || "这件事的照片"} className="max-h-64 rounded-lg object-contain" /> : preview?.type.startsWith("audio/") ? <audio controls src={preview.url} aria-label="重听这段录音" /> : preview?.type.startsWith("video/") ? <video controls src={preview.url} className="max-h-64" /> : preview?.url ? <a href={preview.url} target="_blank" rel="noreferrer" className={button}>打开素材</a> : null}
           <p>{item.preservationState === "missing" ? "原件已移除，请删除这项引用或补充素材" : preview?.name || "正在读取原件"} · {item.assetId ? "服务器已收到原件" : "原件已在本机"}</p>
+          {item.livePhotoGroupId && <p>Live Photo · {item.livePhotoRole === "image" ? "静态照片" : "动态原片"}（移除时整组操作）</p>}
+          {canPair && <button type="button" className={button} onClick={() => change(pairDraftItems(content, previous.id, item.id, crypto.randomUUID()))}>确认与上一张照片组成 Live Photo</button>}
           <label>素材说明<input className={field} value={item.caption} maxLength={2000} onChange={e => change({ items: content.items.map(i => i.id === item.id ? { ...i, caption: e.target.value } : i) })} /></label>
-          <div className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} disabled={index === 0} onClick={() => { const items = [...content.items]; [items[index - 1], items[index]] = [items[index]!, items[index - 1]!]; change({ items }); }}>上移</button><button type="button" className={button} disabled={index === content.items.length - 1} onClick={() => { const items = [...content.items]; [items[index], items[index + 1]] = [items[index + 1]!, items[index]!]; change({ items }); }}>下移</button><button type="button" className={button} onClick={() => change({ coverItemId: item.id })}>{content.coverItemId === item.id ? "已选为封面" : "设为封面"}</button><button type="button" className={button} onClick={() => change({ items: content.items.filter(i => i.id !== item.id), coverItemId: content.coverItemId === item.id ? null : content.coverItemId })}>从草稿移除</button></div>
+          <div className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} disabled={index === 0} onClick={() => { const items = [...content.items]; [items[index - 1], items[index]] = [items[index]!, items[index - 1]!]; change({ items }); }}>上移</button><button type="button" className={button} disabled={index === content.items.length - 1} onClick={() => { const items = [...content.items]; [items[index], items[index + 1]] = [items[index + 1]!, items[index]!]; change({ items }); }}>下移</button><button type="button" className={button} onClick={() => change({ coverItemId: item.id })}>{content.coverItemId === item.id ? "已选为封面" : "设为封面"}</button><button type="button" className={button} onClick={() => change(removeDraftItem(content, item.id))}>从草稿移除</button></div>
         </li>;
       })}</ol>
       <label className="block">标题<input className={field} value={content.title} maxLength={100} onChange={e => change({ title: e.target.value })} /></label>

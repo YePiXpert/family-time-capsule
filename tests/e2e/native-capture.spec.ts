@@ -31,11 +31,11 @@ test("native recording controls and save hook publish specified readers through 
   const result = await promisify(execFile)(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.http.config.ts"], {
     cwd: path.join(process.cwd(), "mobile"), env: { ...process.env, FTC_NATIVE_HTTP_FIXTURE: JSON.stringify(fixture) }, timeout: 45000, maxBuffer: 1024 * 1024,
   });
-  expect(result.stdout).toContain("2 passed");
+  expect(result.stdout).toContain("3 passed");
   const verify = new Database(path.join(process.cwd(), "data/e2e-native-capture/db/capsule.sqlite"));
   try {
     const originals=verify.prepare("select id,visibility from asset where created_by_user_id='user-a' and original_asset_id is null").all();
-    expect(originals).toHaveLength(3);
+    expect(originals).toHaveLength(5);
     expect(originals.every(a=>(a as {visibility:string}).visibility==='private')).toBe(true);
     expect(verify.prepare("select count(*) n from inbox_item_asset where asset_id in (select id from asset where created_by_user_id='user-a')").get()).toEqual({n:0});
   } finally { verify.close(); }
@@ -89,4 +89,26 @@ test("Web draft-only sync uploads new attachments privately before explicit publ
   } finally {db.close();}
   await page.getByRole("button",{name:"保存为一条记忆"}).click();
   await expect(page.getByRole("link",{name:"查看这条记忆"})).toBeVisible();
+});
+
+test("Web separately imported Live Photo components stay paired after explicit selection and publication", async ({ page }) => {
+  const { readFileSync } = await import("node:fs");
+  await ensureBootstrap(page);
+  await page.goto("/capture");
+  await page.getByRole("button", { name: "新建一件事" }).click();
+  await page.getByLabel("标题", { exact: true }).fill("网页确认的实况照片");
+  await page.getByLabel("时间记得多清楚").selectOption("unknown");
+  await page.getByLabel("保存后的读者").selectOption("private");
+  await page.getByLabel("添加照片、视频、录音或文档").setInputFiles([
+    { name: "still.jpg", mimeType: "image/jpeg", buffer: readFileSync(path.join(__dirname,"../fixtures/sample.jpg")) },
+    { name: "motion.mov", mimeType: "video/quicktime", buffer: readFileSync(path.join(__dirname,"../fixtures/sample.mov")) },
+  ]);
+  await page.getByRole("button", { name: "确认与上一张照片组成 Live Photo" }).click();
+  await expect(page.getByText("Live Photo · 静态照片（移除时整组操作）")).toBeVisible();
+  await page.getByRole("button", { name: "保存为一条记忆" }).click();
+  await page.getByRole("link", { name: "查看这条记忆" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "网页确认的实况照片" })).toBeVisible();
+  await expect(page.getByText("Live Photo 已保留静态照片和动态原片，可在下方分别查看与播放。")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("原始资料（2）")).toBeVisible();
 });

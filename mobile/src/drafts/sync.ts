@@ -3,7 +3,7 @@ import { uploadMediaCaptureReceipt } from "../storage/files";
 import { ApiError, requestMobileJson } from "../api/client";
 import { getActiveDestination, getDatabase } from "../storage/database";
 import { listLocalDrafts, saveLocalDraft, type LocalDraft } from "./store";
-import { parseDraftContent, type Draft } from "./model";
+import { parseDraftContent, reconcileDraftAsset, type Draft } from "./model";
 import type { Credentials, OutboxItem, MediaCapturePayload } from "../types";
 
 /** Runs after originals, under the same account/family generation and upload consent gate. */
@@ -68,10 +68,7 @@ export async function syncLocalDrafts(credentials: Credentials, options: { isCur
         await db.runAsync("UPDATE local_capture SET payload_json=? WHERE id=?", JSON.stringify(payload), item.localCaptureRef!);
       }, { draftId: row.id, guard: guardRevision });
       if (!receipt.assetId) throw new ApiError("服务器未确认私密原件。", 502);
-      const duplicate = row.content.items.find(i => i.id !== item.id && i.assetId === receipt.assetId);
-      const items = duplicate ? row.content.items.filter(i => i.id !== item.id) : row.content.items.map(i => i.id === item.id ? { ...i, assetId: receipt.assetId } : i);
-      const coverItemId = duplicate && row.content.coverItemId === item.id ? duplicate.id : row.content.coverItemId;
-      await update({ ...row, content: { ...row.content, items, coverItemId }, mutationId: Crypto.randomUUID(), revision: row.revision + 1 });
+      await update({ ...row, content: { ...row.content, ...reconcileDraftAsset(row.content, item.id, receipt.assetId) }, mutationId: Crypto.randomUUID(), revision: row.revision + 1 });
     }
     await guardRevision();
     const received = await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}`, { method: "PUT", body: JSON.stringify({ expectedRevision: row.serverRevision, mutationId: row.mutationId, content: row.content }) }) as Draft;

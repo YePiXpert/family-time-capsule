@@ -139,6 +139,7 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
   return (
     isString(value.id, 128) &&
     isString(value.title, 500) &&
+    (value.titleRevision === undefined || (Number.isSafeInteger(value.titleRevision) && Number(value.titleRevision) >= 0)) &&
     isDateTime(value.occurredAt) &&
     isString(value.occurredAtPrecision, 32) &&
     isNullableString(value.locationText, 500) &&
@@ -835,6 +836,8 @@ export async function requestMobileJson(
     const message =
       isRecord(body) && body.error === "invalid_reader"
         ? "指定成员已停用、退出或不属于当前家庭。请重新选择读者；本机内容仍保留，不会改为全家可见。"
+        : isRecord(body) && body.error === "conflict"
+        ? "内容已有新的修改，请重新读取后核对。本次输入仍保留在页面中。"
         : isRecord(body) && body.error === "asset_in_use"
         ? "这份原件仍被草稿、记忆、相册或作品使用。请先移除相关引用。"
         : response.status === 401
@@ -920,12 +923,13 @@ export async function confirmMobileInbox(
   credentials: Credentials,
   id: string,
   draft?: InboxDraftPatch,
+  expectedTitleRevision?: number,
 ): Promise<string> {
   const result = await requestMobileJson(
     credentials,
     `/api/mobile/v1/inbox/${encodeURIComponent(id)}/confirm`,
     // 确认携带当前未单独保存的编辑字段，服务端在同一事务里保存并确认。
-    { method: "POST", body: JSON.stringify(draft ?? {}) },
+    { method: "POST", body: JSON.stringify({ ...(draft ?? {}), expectedTitleRevision }) },
   );
   if (!isRecord(result) || !isString(result.memoryEventId, 128)) {
     throw new ApiError("服务器确认结果无效。", 502);

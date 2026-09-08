@@ -96,6 +96,8 @@ export const memoryEventAsset = sqliteTable(
       .references(() => family.id, { onDelete: "cascade" }),
     sortOrder: integer("sort_order").notNull().default(0),
     caption: text("caption").notNull().default(""),
+    livePhotoGroupId: text("live_photo_group_id"),
+    livePhotoRole: text("live_photo_role"),
     createdAt: createdAtColumn(),
   },
   (t) => [

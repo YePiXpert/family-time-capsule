@@ -179,6 +179,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   return (
     <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
       {showStandaloneCover ? <Image source={{ uri: localCover! }} style={styles.cover} /> : null}
+      {(memory?.livePhotos?.length ?? 0) > 0 && <Text style={sharedStyles.body}>Live Photo 已保留静态照片和动态原片，可在下方分别查看与播放。</Text>}
       <NativeMediaReader credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone):undefined})) ?? [])} />
       {memory?.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} onSaved={() => void load()} />)}
       <View style={styles.heading}>

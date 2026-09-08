@@ -85,3 +85,27 @@ it("reconciles duplicate originals and the cover without deleting either local f
   expect(saved.content.coverItemId).toBe("same-a");
   expect(getRawMockDatabase().prepare("SELECT count(*) n FROM local_capture").get()).toEqual({n:2});
 });
+
+it("keeps repeated Live Photo pairs complete when the server deduplicates each original", async () => {
+  const { uploadMediaCaptureReceipt } = await import("../src/storage/files");
+  let row = await createLocalDraft(scope, "repeated-live-photo", "repeated-pair-mutation");
+  for (const group of ["group-one", "group-two"]) {
+    const originals = (["image", "video"] as const).map(role => ({ id: `${group}-${role}`, payload: { localUri: `file:///${role}`, fileName: role === "image" ? "photo.jpg" : "motion.mov", mimeType: role === "image" ? "image/jpeg" : "video/quicktime", mediaType: role, source: "library" as const, lastModified: null } }));
+    const next = { ...row, revision: row.revision + 1, content: { ...row.content, visibility: "private" as const, items: [...row.content.items, ...originals.map(o => ({ id: o.id, localCaptureRef: o.id, assetId: null, caption: "", livePhotoGroupId: group, livePhotoRole: o.payload.mediaType }))] } };
+    await saveLocalDraft(next, row.revision, originals); row = next;
+  }
+  await saveLocalDraft({ ...row, revision: row.revision + 1, status: "queued", syncIntent: "draft" }, row.revision);
+  vi.mocked(uploadMediaCaptureReceipt).mockImplementation(async (_credentials, _id, payload) => ({ assetId: `server-${payload.mediaType}`, inboxItemId: null }));
+  vi.mocked(requestMobileJson).mockImplementation(async (_credentials, _path, init) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : null;
+    return { ...(body?.content ?? row.content), id: row.id, status: "editing", memoryEventId: null, revision: (body?.expectedRevision ?? 0) + 1, mutationId: body?.mutationId ?? row.mutationId, createdAt: row.updatedAt, updatedAt: row.updatedAt };
+  });
+  await syncLocalDrafts(credentials, { authorizeUpload: async () => true });
+  const saved = (await listLocalDrafts(scope))[0]!;
+  expect(saved.content.items).toHaveLength(4);
+  expect(saved.content.items.map(i => [i.livePhotoGroupId,i.livePhotoRole,i.assetId])).toEqual([
+    ["group-one","image","server-image"], ["group-one","video","server-video"],
+    ["group-two","image","server-image"], ["group-two","video","server-video"],
+  ]);
+  expect(getRawMockDatabase().prepare("SELECT count(*) n FROM local_capture").get()).toEqual({ n: 4 });
+});

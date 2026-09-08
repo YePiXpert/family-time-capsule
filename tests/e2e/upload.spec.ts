@@ -28,7 +28,7 @@ test("上传照片：保存成功、重复明确提示、收件箱可见、未�
     await route.continue();
   });
   await input.setInputFiles(file);
-  const sending = page.getByRole("button", { name: "保留草稿，稍后继续" }).click();
+  const sending = page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
   await requestStarted;
   try {
     await expect(
@@ -38,15 +38,15 @@ test("上传照片：保存成功、重复明确提示、收件箱可见、未�
     releaseResponse?.();
   }
   await sending;
-  await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
   await page.unroute("**/api/uploads");
 
   // 相同文件再传一次：提示已存在原件
   await input.setInputFiles(file);
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click();
-  await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
+  await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
 
-  // 上传的内容进入收件箱（不直接进时间轴）
+  // Explicitly submitted content enters the family inbox; draft-only sync has its own negative regression.
   await page.goto("/inbox");
   await expect(page.getByText("sample-exif.jpg")).toBeVisible();
   await expect(page.getByText("照片内嵌时间")).toBeVisible();
@@ -198,8 +198,8 @@ test("HEIC 上传：原件保存、收件箱显示不可预览占位 + 下载入
       mimeType: "image/heic", // iOS Safari 上传 HEIC 时的声明；桌面 Chromium 路径方式给不出
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.heic")),
     });
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click();
-  await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
+  await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
 
   await page.goto("/inbox");
   // HEIC 卡片：不渲染 <img>，而是占位说明 + 下载原件

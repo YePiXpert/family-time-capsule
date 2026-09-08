@@ -12,7 +12,7 @@ async function createReferencedEvent(page: import("@playwright/test").Page) {
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click(); await expect(page.getByText("服务器已收到草稿", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("出生那几天");
   await page.getByRole("button", { name: "确认进入时间轴" }).click();

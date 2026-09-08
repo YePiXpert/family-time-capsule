@@ -23,6 +23,7 @@ export const draft = sqliteTable("draft", {
   coverItemId: text("cover_item_id"),
   status: text("status").notNull().default("editing"),
   revision: integer("revision").notNull().default(0),
+  reviewedRevision: integer("reviewed_revision"),
   mutationId: text("mutation_id").notNull(),
   inboxItemId: text("inbox_item_id").references(() => inboxItem.id, { onDelete: "set null" }),
   memoryEventId: text("memory_event_id").references(() => memoryEvent.id, { onDelete: "set null" }),
@@ -37,4 +38,6 @@ export const draftItem = sqliteTable("draft_item", {
   localCaptureRef: text("local_capture_ref"),
   sortOrder: integer("sort_order").notNull(),
   caption: text("caption").notNull().default(""),
+    livePhotoGroupId: text("live_photo_group_id"),
+    livePhotoRole: text("live_photo_role"),
 }, t => [uniqueIndex("draft_item_order_idx").on(t.draftId, t.sortOrder)]);

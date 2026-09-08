@@ -1,7 +1,7 @@
 import { getDb } from "@/db";
 import { createContributionAccessSnapshot, getContributionAssetAccessInTransaction } from "@/lib/authz/contribution-access";
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
-import { updateInboxDraft } from "@/lib/inbox/service";
+import { getInboxEntry, updateInboxDraft } from "@/lib/inbox/service";
 import { asRecord, mobileJson, mobileRequestError, optionalFamilyWallDate, optionalString, optionalStringArray, readMobileJson } from "@/lib/mobile/http";
 import { getMobileInboxEntry } from "@/lib/mobile/product";
 
@@ -10,14 +10,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (!authorization.ok) return mobileJson({ error: authorization.error }, { status: authorization.status });
   try {
     const body = asRecord(await readMobileJson(request));
+    if (body.expectedTitleRevision !== undefined && (!Number.isSafeInteger(body.expectedTitleRevision) || Number(body.expectedTitleRevision) < 0)) return mobileJson({ error: "invalid_input" }, { status: 400 });
+    const current = await getInboxEntry(authorization.context.familyId, (await params).id);
+    if (!current) return mobileJson({ error: "not_found" }, { status: 404 });
     const occurredAt = optionalFamilyWallDate(body, "occurredAtWall", authorization.context.familyTimezone);
     const entry = await updateInboxDraft(authorization.context.familyId, (await params).id, {
       title: optionalString(body, "title", 100),
+      expectedTitleRevision: body.expectedTitleRevision as number | undefined,
       occurredAt,
       locationText: optionalString(body, "locationText", 200),
       participantPersonIds: optionalStringArray(body, "participantPersonIds"),
     });
-    if (!entry) return mobileJson({ error: "not_found_or_invalid" }, { status: 404 });
+    if (!entry) return mobileJson({ error: "conflict" }, { status: 409 });
     return mobileJson({
       entry: await getMobileInboxEntry(authorization.context, entry),
     });

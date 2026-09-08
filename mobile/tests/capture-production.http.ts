@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createElement, useEffect } from "react";
@@ -73,7 +73,7 @@ vi.mock("expo-file-system", async () => {
 vi.mock("expo-media-library", () => ({ Asset: class {} }));
 vi.mock("../src/storage/files", async importOriginal => ({
   ...await importOriginal<typeof import("../src/storage/files")>(),
-  preservePickedMedia: mocks.preserveMedia, preserveRecordedAudio: mocks.preserveAudio,
+  preparePickedMedia: mocks.preserveMedia, preservePreparedMedia: vi.fn().mockResolvedValue(undefined), preservePickedMedia: mocks.preserveMedia, preserveRecordedAudio: mocks.preserveAudio,
   preservePickedDocument: mocks.preserveDocument, removeLocalFile: mocks.removeFile,
 }));
 vi.mock("../src/native/picker-intake", () => ({ beginPickerReceipt: vi.fn(), finishPickerReceipt: vi.fn() }));
@@ -201,3 +201,57 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   expect(await requestMobileJson(fixture.credentials,`/api/mobile/v1/memories/${published.memoryEventId}`)).toMatchObject({occurredAtPrecision:"unknown"});
   for(const token of [fixture.readerToken,fixture.thirdToken]) await expect(requestMobileJson({...fixture.credentials,token},`/api/mobile/v1/memories/${published.memoryEventId}`)).rejects.toMatchObject({status:404});
 },30000);
+
+
+it("private Live Photo stays paired when motion upload is interrupted and its complete reply is lost", async () => {
+  const { createHash } = await import("node:crypto");
+  await initializeLocalStore();
+  const scope = JSON.stringify([fixture.credentials.serverUrl, fixture.credentials.instanceId, fixture.userId, fixture.family.id]);
+  await setActiveDestination(scope);
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await expect.poll(async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve,20)); }); return tree!.root.findByProps({testID:"capture-text"}).props.editable; }).toBe(true);
+  await act(async () => tree!.root.findByProps({testID:"capture-text"}).props.onChangeText("Live Photo 私密原件配对"));
+  await press("不详"); await press("仅自己");
+  const media = ["sample.jpg", "sample.mov"].map((name, i) => {
+    const localUri = path.join(originalDirectory, name);
+    writeFileSync(localUri, readFileSync(path.join(process.cwd(), "../tests/fixtures", name)));
+    return { localUri, fileName: name, mimeType: i ? "video/quicktime" : "image/jpeg", lastModified: null, mediaType: i ? "video" : "image", source: "library" };
+  });
+  mocks.library.mockResolvedValue({ canceled: false, assets: [{ uri: media[0]!.localUri, type: "livePhoto", pairedVideoAsset: { uri: media[1]!.localUri, type: "pairedVideo" } }] });
+  mocks.preserveMedia.mockImplementation(async (picked: {uri: string}) => media.find(m => m.localUri === picked.uri));
+  await press("从相册导入");
+  await expect.poll(async () => (await listLocalDrafts(scope)).find(d => d.status === "editing")?.content.items.length).toBe(2);
+  await press("保存为一条记忆");
+  const queued = (await listLocalDrafts(scope)).find(d => d.status === "queued")!;
+  await act(async () => tree!.unmount()); tree = undefined;
+  const originalFetch = globalThis.fetch; let motionUpload = "", interrupted = false, completeLost = false;
+  globalThis.fetch = async (...args) => {
+    if (motionUpload && String(args[0]).endsWith(motionUpload) && args[1]?.method === "PATCH" && !interrupted) { interrupted = true; throw new Error("motion connection interrupted"); }
+    const response = await originalFetch(...args);
+    if (String(args[0]).endsWith("/api/uploads") && String(args[1]?.body).includes("video/quicktime")) motionUpload = (await response.clone().json()).uploadId;
+    if (motionUpload && String(args[0]).endsWith(`${motionUpload}/complete`) && !completeLost) { completeLost = true; throw new Error("motion complete reply lost"); }
+    return response;
+  };
+  try {
+    await expect(syncLocalDrafts(fixture.credentials, { authorizeUpload: async () => true })).rejects.toThrow("motion connection interrupted");
+    const half = (await listLocalDrafts(scope)).find(d => d.id === queued.id)!;
+    expect(half.content.items.map(i => !!i.assetId)).toEqual([true,false]);
+    expect(half.status).toBe("queued");
+    await initializeLocalStore();
+    await expect(syncLocalDrafts(fixture.credentials, { authorizeUpload: async () => true })).rejects.toThrow("motion complete reply lost");
+    await initializeLocalStore();
+    await syncLocalDrafts(fixture.credentials, { authorizeUpload: async () => true });
+  } finally { globalThis.fetch = originalFetch; }
+  expect(interrupted && completeLost).toBe(true);
+  const published = (await listLocalDrafts(scope)).find(d => d.id === queued.id)!;
+  expect(published.status).toBe("published");
+  expect(published.content.items.map(i => i.livePhotoRole)).toEqual(["image", "video"]);
+  const detail = await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${published.memoryEventId}`);
+  expect(detail).toMatchObject({ livePhotos: [{ groupId: queued.content.items[0]!.livePhotoGroupId, imageAssetId: published.content.items[0]!.assetId, videoAssetId: published.content.items[1]!.assetId }] });
+  for (const [i,item] of published.content.items.entries()) {
+    const response = await fetch(`${fixture.credentials.serverUrl}/api/media/${item.assetId}`, { headers: { authorization: `Bearer ${fixture.credentials.token}` } });
+    expect(response.status).toBe(200);
+    expect(createHash("sha256").update(Buffer.from(await response.arrayBuffer())).digest("hex")).toBe(createHash("sha256").update(readFileSync(media[i]!.localUri)).digest("hex"));
+    for (const token of [fixture.readerToken, fixture.thirdToken]) expect((await fetch(`${fixture.credentials.serverUrl}/api/media/${item.assetId}`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(404);
+  }
+}, 30000);

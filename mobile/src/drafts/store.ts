@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from "expo-sqlite";
 import { getDatabase } from "../storage/database";
 import { parseDraftContent, emptyDraftContent, type DraftContent } from "./model";
 import type { MediaCapturePayload } from "../types";
+export type DraftOriginal = { id: string; payload: MediaCapturePayload };
 export type LocalDraft = {
   id: string; scope: string; content: DraftContent; revision: number; serverRevision: number;
   mutationId: string; status: "editing" | "queued" | "published" | "discarded";
@@ -20,20 +21,20 @@ export async function createLocalDraft(scope: string, id: string, mutationId: st
   await saveLocalDraft(row, 0);
   return row;
 }
-export async function saveLocalDraft(row: LocalDraft, expectedRevision: number, original?: { id: string; payload: MediaCapturePayload }): Promise<void> {
+export async function saveLocalDraft(row: LocalDraft, expectedRevision: number, original?: DraftOriginal | DraftOriginal[]): Promise<void> {
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(tx => saveLocalDraftInTransaction(tx, row, expectedRevision, original));
 }
-export async function saveLocalDraftInTransaction(tx: SQLiteDatabase, row: LocalDraft, expectedRevision: number, original?: { id: string; payload: MediaCapturePayload }): Promise<void> {
+export async function saveLocalDraftInTransaction(tx: SQLiteDatabase, row: LocalDraft, expectedRevision: number, original?: DraftOriginal | DraftOriginal[]): Promise<void> {
   parseDraftContent(row.content);
 
     const live = await tx.getFirstAsync<{ revision: number }>("SELECT revision FROM local_draft WHERE scope=? AND id=?", row.scope, row.id);
     if ((live?.revision ?? 0) !== expectedRevision) throw new Error("草稿已在另一处修改，请重新打开；本次输入尚未保存。");
-    if (original) {
-      if (!row.content.items.some(item => item.localCaptureRef === original.id)) throw new Error("原件缺少草稿引用。");
-      const payload = original.payload;
+    for (const entry of original ? (Array.isArray(original) ? original : [original]) : []) {
+      if (!row.content.items.some(item => item.localCaptureRef === entry.id)) throw new Error("原件缺少草稿引用。");
+      const payload = entry.payload;
       await tx.runAsync(`INSERT INTO local_capture(id,kind,title,occurred_at,local_uri,media_type,payload_json,sync_state)
-        VALUES (?, 'media_capture', ?, ?, ?, ?, ?, 'pending')`, original.id, payload.fileName, row.updatedAt, payload.localUri, payload.mediaType, JSON.stringify(payload));
+        VALUES (?, 'media_capture', ?, ?, ?, ?, ?, 'pending')`, entry.id, payload.fileName, row.updatedAt, payload.localUri, payload.mediaType, JSON.stringify(payload));
     }
     for (const item of row.content.items) {
       if (item.localCaptureRef && !await tx.getFirstAsync<{ id: string }>("SELECT id FROM local_capture WHERE id=?", item.localCaptureRef)) throw new Error("草稿引用的本机原件已经不可读；本次没有覆盖原草稿。");

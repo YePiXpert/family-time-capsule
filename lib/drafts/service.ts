@@ -68,6 +68,7 @@ function validateReferences(tx: ContributionAccessTransaction, context: FamilyCo
   for (const item of content.items) {
     if (item.assetId) {
       const original = tx.select().from(asset).where(and(eq(asset.id, item.assetId), eq(asset.familyId, context.familyId), isNull(asset.originalAssetId))).get();
+      if (original && item.livePhotoRole && original.type !== item.livePhotoRole) throw new DraftError("invalid_live_photo");
       if (!original || !getContributionAssetAccessInTransaction(tx, snapshot, item.assetId).readable) throw new DraftError("asset_unavailable", 403);
       if (original.visibility !== "family" && original.createdByUserId !== context.userId && !tx.get(sql`select 1 where ${familyReviewAssetPredicate(context.familyId, sql`${original.id}`)}`)) throw new DraftError("asset_reshare_forbidden", 403);
     }
@@ -86,6 +87,15 @@ export function saveDraft(context: FamilyContext, id: string, expectedRevision: 
     if (current?.mutationId === mutationId) return hydrate(tx, current);
     if (current && current.status !== "editing") throw new DraftError("draft_closed", 409);
     if ((current?.revision ?? 0) !== expectedRevision) throw new DraftError("revision_conflict", 409);
+    // Older clients may omit newly introduced metadata. Preserve existing pairs,
+    // and reject a one-sided removal instead of silently splitting the original.
+    if (current) {
+      const previous = hydrate(tx, current);
+      try { content = parseDraftContent({ ...content, items: content.items.map(item => {
+        const old = previous.items.find(i => i.id === item.id);
+        return old?.livePhotoGroupId && !item.livePhotoGroupId ? { ...item, livePhotoGroupId: old.livePhotoGroupId, livePhotoRole: old.livePhotoRole } : item;
+      }) }); } catch { throw new DraftError("invalid_live_photo"); }
+    }
     validateReferences(tx, context, content, id);
     const now = new Date().toISOString();
     const fields = { authorUserId: context.userId, authorPersonId: context.personId, authorName: context.userName, title: content.title, text: content.text, occurredAt: content.occurredAt, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText, participantIdsJson: JSON.stringify(content.participantIds), visibility: content.visibility, readerUserIdsJson: JSON.stringify(content.readerUserIds), coverItemId: content.coverItemId, revision: expectedRevision + 1, mutationId, updatedAt: now };
@@ -94,9 +104,9 @@ export function saveDraft(context: FamilyContext, id: string, expectedRevision: 
     tx.delete(draftItem).where(eq(draftItem.draftId, id)).run();
     if (current?.inboxItemId) {
       if (content.visibility !== "family") throw new DraftError("already_shared", 409);
-      mirrorInbox(tx, context, current.inboxItemId, content);
+      // Draft-only edits stay author controlled until another explicit submission.
     }
-    for (const [sortOrder, item] of content.items.entries()) tx.insert(draftItem).values({ id: item.id, assetId: item.assetId, localCaptureRef: item.localCaptureRef, caption: item.caption, draftId: id, sortOrder }).run();
+    for (const [sortOrder, item] of content.items.entries()) tx.insert(draftItem).values({ id: item.id, assetId: item.assetId, localCaptureRef: item.localCaptureRef, caption: item.caption, livePhotoGroupId: item.livePhotoGroupId, livePhotoRole: item.livePhotoRole, draftId: id, sortOrder }).run();
     return hydrate(tx, tx.select().from(draft).where(owned(context, id)).get()!);
   }, { behavior: "immediate" });
 }
@@ -136,12 +146,13 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     const title = content.title.trim() || content.text.trim().slice(0, 60) || "一段家庭记忆";
     const coverAssetId = content.items.find(item => item.id === content.coverItemId)?.assetId ?? content.items[0]?.assetId ?? null;
     tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
-    for (const [sortOrder, item] of content.items.entries()) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder, caption: item.caption, createdAt: now }).run();
+    for (const [sortOrder, item] of content.items.entries()) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder, caption: item.caption, livePhotoGroupId: item.livePhotoGroupId, livePhotoRole: item.livePhotoRole, createdAt: now }).run();
     for (const personId of content.participantIds) tx.insert(memoryEventParticipant).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, personId, createdAt: now }).run();
     if (content.visibility === "members") {
       for (const userId of content.readerUserIds) tx.insert(memoryEventReader).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, userId, createdAt: now }).run();
     }
     if (row.inboxItemId) {
+      mirrorInbox(tx, context, row.inboxItemId, content);
       tx.update(inboxItem).set({ status: "confirmed", memoryEventId: eventId, updatedAt: now }).where(eq(inboxItem.id, row.inboxItemId)).run();
     } else if (content.visibility === "family" && content.text.trim()) {
       // 私密事件不进入全家可见的收件箱记录。
@@ -187,7 +198,7 @@ export function submitDraftForReview(context: FamilyContext, id: string, expecte
     if (!content.text.trim() && !content.items.length) throw new DraftError("empty_draft");
     if (!row.inboxItemId) tx.insert(inboxItem).values({ id, familyId: context.familyId, kind: "bundle", status: "needs_review", createdAt: new Date(), updatedAt: new Date() }).run();
     mirrorInbox(tx, context, row.inboxItemId ?? id, content);
-    tx.update(draft).set({ inboxItemId: row.inboxItemId ?? id, revision: row.revision + 1, updatedAt: new Date().toISOString() }).where(owned(context, id)).run();
+    tx.update(draft).set({ inboxItemId: row.inboxItemId ?? id, reviewedRevision: row.revision + 1, revision: row.revision + 1, updatedAt: new Date().toISOString() }).where(owned(context, id)).run();
     return hydrate(tx, tx.select().from(draft).where(owned(context, id)).get()!);
   }, { behavior: "immediate" });
 }

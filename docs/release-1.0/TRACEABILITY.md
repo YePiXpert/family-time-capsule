@@ -168,3 +168,9 @@
 ### P0-C 私密原件贯通（2026-09-08）
 
 `upload_session.finalAssetId` 是私密回执；新增 immutable draft/instance 绑定，原件不先进入公共 inbox。`mobile/src/drafts/sync.ts` 与 Web editor 先持久化草稿，然后共用原断点传输。证据：private-draft-upload、transfer-lock、mobile batch-upload/draft-sync、native-capture production E2E。修复审查反例：过期孤立暂存、重复引用、旧版已完成公开回执、显式家庭整理读取、Files 批次关系、随机 ID 锁文件。Live Photo、全部派生与 R08 恢复尚继续，不提升整个需求为完成。
+
+### P0-C Live Photo 与明确整理修订（0063/0064）
+
+CAP-8 / R04–R07：原生相册成对组件使用既有 picker receipt，双原件引用同 SQLite 事务；重启恢复按原 scope，缺失不误报完整，满/已变更目标保留独立私密草稿。Web 明确配对、持久化后预览；发布、整理确认/合并、阅读、导出/新目录恢复均保留组、角色与顺序。证据：mobile/tests/{capture-persistence,live-photo-recovery,picked-media,draft-sync}.test.ts、capture-production.http.ts、tests/e2e/native-capture.spec.ts、tests/integration/live-photo.test.ts。
+
+已整理草稿的后续同步不扩大新增正文/原件读者；reviewed_revision 只在明确再次投递时推进。确认、修改、合并、废弃拒绝未重提版本；手机确认/保存使用输入所属的 expectedTitleRevision，冲突保留输入。证据：private-draft-upload.test.ts、mobile-api.test.ts、mobile/tests/inbox-confirm.test.ts。旧 E2E 改点明确家庭投递入口，保留全部原件、数量、权限、合并断言；草稿-only 的 404/零 inbox 负例持续保留。

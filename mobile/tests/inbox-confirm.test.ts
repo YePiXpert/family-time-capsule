@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   archiveLocal: vi.fn(),
   runSync: vi.fn(),
   navigate: vi.fn(),
+  focuses: new Set<() => void>(),
 }));
 
 const appContext = vi.hoisted(() => ({
@@ -32,7 +33,7 @@ vi.mock("react-native", () => ({
   Text: "Text", TextInput: "TextInput", View: "View",
 }));
 vi.mock("@react-navigation/native", () => ({
-  useFocusEffect: (fn: () => void) => useEffect(fn, [fn]),
+  useFocusEffect: (fn: () => void) => useEffect(() => { mocks.focuses.add(fn); const cleanup = fn(); return () => { mocks.focuses.delete(fn); if (typeof cleanup === "function") (cleanup as () => void)(); }; }, [fn]),
   useNavigation: () => ({ navigate: mocks.navigate }),
 }));
 vi.mock("@react-native-community/datetimepicker", () => ({
@@ -60,6 +61,7 @@ const ENTRY = {
   id: "inbox-1",
   kind: "text" as const,
   title: "原始标题",
+  titleRevision: 7,
   occurredAtWall: "2026-09-04T18:30",
   locationText: null,
   participantPersonIds: [],
@@ -84,7 +86,7 @@ function press(label: string) {
   const target = tree!.root
     .findAll((node) => String(node.type) === "Pressable")
     .find((node) =>
-      node.findAll((child) => String(child.type) === "Text").some((child) => flatten(child.props.children).includes(label)),
+      node.findAll((child) => String(child.type) === "Text").some((child) => flatten(child.props.children) === label),
     );
   if (!target) throw new Error(`button not found: ${label}`);
   act(() => { target.props.onPress(); });
@@ -94,7 +96,7 @@ async function pressAsync(label: string) {
   const target = tree!.root
     .findAll((node) => String(node.type) === "Pressable")
     .find((node) =>
-      node.findAll((child) => String(child.type) === "Text").some((child) => flatten(child.props.children).includes(label)),
+      node.findAll((child) => String(child.type) === "Text").some((child) => flatten(child.props.children) === label),
     );
   if (!target) throw new Error(`button not found: ${label}`);
   await act(async () => { await target.props.onPress(); });
@@ -126,6 +128,7 @@ describe("收件箱确认携带当前编辑", () => {
       { serverUrl: "https://example.test", token: "session" },
       "inbox-1",
       undefined,
+      7,
     );
   });
 
@@ -138,10 +141,26 @@ describe("收件箱确认携带当前编辑", () => {
       { serverUrl: "https://example.test", token: "session" },
       "inbox-1",
       expect.objectContaining({ title: "改好的标题" }),
+      7,
     );
     expect(mocks.patchInbox).not.toHaveBeenCalled();
     expect(mocks.archiveLocal).toHaveBeenCalledWith(["inbox-1"], "memory-1");
     expect(mocks.navigate).toHaveBeenCalledWith("Memory", { id: "memory-1" });
+  });
+
+  it("刷新后的列表确认仍携带旧编辑的修订号，冲突保留输入", async () => {
+    await act(async () => { tree = create(createElement(InboxScreen)); });
+    press("修改"); setInput("仍在编辑的旧输入");
+    mocks.fetchInbox.mockResolvedValue({ entries: [{ ...ENTRY, title: "另一台设备的新标题", titleRevision: 8 }], nextCursor: null });
+    await act(async () => { mocks.focuses.forEach(fn => fn()); });
+    expect(textOf()).toContain("另一台设备的新标题");
+    mocks.confirmInbox.mockRejectedValue(new (await import("../src/api/client")).ApiError("内容已改变，请核对", 409));
+    mocks.patchInbox.mockRejectedValue(new (await import("../src/api/client")).ApiError("内容已改变，请核对", 409));
+    await pressAsync("确认");
+    expect(mocks.confirmInbox).toHaveBeenCalledWith(appContext.credentials, ENTRY.id, expect.objectContaining({ title: "仍在编辑的旧输入" }), 7);
+    expect(tree!.root.findAllByType("TextInput" as never)[0]!.props.value).toBe("仍在编辑的旧输入");
+    await pressAsync("保存修改");
+    expect(mocks.patchInbox).toHaveBeenCalledWith(appContext.credentials, ENTRY.id, expect.objectContaining({ title: "仍在编辑的旧输入", expectedTitleRevision: 7 }));
   });
 
   it("时间字段是选择器控件而不是 ISO 文本输入", async () => {

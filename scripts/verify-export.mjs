@@ -172,6 +172,7 @@ if (hasDrafts) {
       ids.add(row.id); intakeDraftIds.add(row.id);
       if ((row.authorPersonId !== null && !personIds.has(row.authorPersonId)) || (row.inboxItemId !== null && !inboxItemIds.has(row.inboxItemId)) || (row.memoryEventId !== null && (!eventIds.has(row.memoryEventId) || row.status !== "published"))) throw new Error();
       if (!Array.isArray(row.participantIds) || row.participantIds.some(id => !personIds.has(id)) || !Array.isArray(row.items)) throw new Error();
+      validateLivePhotoReferences(row.items);
       for (const item of row.items) {
         if (!item || typeof item.id !== "string" || itemIds.has(item.id) || (item.assetId !== null && !assetIds.has(item.assetId))) throw new Error();
         itemIds.add(item.id);
@@ -192,9 +193,26 @@ const storyIds = new Set(
     ? JSON.parse(await storyEntry.async("string")).map((story) => story.id)
     : [],
 );
+function validateLivePhotoReferences(items) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!item.livePhotoGroupId) { if (item.livePhotoRole) throw new Error(); continue; }
+    if (!/^[\w-]{1,128}$/u.test(item.livePhotoGroupId) || !["image", "video"].includes(item.livePhotoRole)) throw new Error();
+    groups.set(item.livePhotoGroupId, [...(groups.get(item.livePhotoGroupId) ?? []), item]);
+  }
+  for (const pair of groups.values()) if (pair.length !== 2 || new Set(pair.map(i => i.livePhotoRole)).size !== 2 ||
+    (pair[0].assetId && pair[0].assetId === pair[1].assetId)) throw new Error();
+}
 if (people) ok(`people: ${people.length} 人`);
 if (memories) {
   for (const m of memories) {
+    if (m.assetReferences !== undefined) {
+      try {
+        if (!Array.isArray(m.assetReferences) || JSON.stringify(m.assetReferences.map(r => r.assetId)) !== JSON.stringify(m.assetIds ?? [])) throw new Error();
+        validateLivePhotoReferences(m.assetReferences);
+        for (const r of m.assetReferences) if (r.livePhotoRole && manifest.assets.find(a => a.assetId === r.assetId)?.type !== r.livePhotoRole) throw new Error();
+      } catch { fail(`memories: 事件 ${m.id} Live Photo 关系无效`); }
+    }
     for (const id of m.participantPersonIds ?? []) {
       if (!personIds.has(id)) fail(`memories: 事件 ${m.id} 引用未知 person ${id}`);
     }

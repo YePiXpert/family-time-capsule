@@ -1,3 +1,4 @@
+import { removeDraftItem, pairDraftItems } from "../drafts/model";
 import { recordLocalIntakeDraft } from "../native/intake-store";
 import { listLocalDrafts } from "../drafts/store";
 import { NativeMediaReader } from "../media/NativeMediaReader";
@@ -18,7 +19,7 @@ import {
 } from "expo-audio";
 import { useApp } from "../state/AppContext";
 import { ingestLocalImportSession, getLocalCaptureDetail, type LocalCaptureDetail } from "../storage/database";
-import { preservePickedDocument, preservePickedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
+import { preservePickedDocument, preservePickedMedia, preparePickedMedia, preservePreparedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
 import { beginPickerReceipt, finishPickerReceipt } from "../native/picker-intake";
 import { PrecisionDateTimeField } from "../components/PrecisionDateTimeField";
 import { usePersistentDraft } from "../drafts/use-draft";
@@ -52,7 +53,7 @@ export function CaptureScreen() {
     return () => { active = false; };
   }, [credentials, draftScope, captureAccess, readerRefresh]);
   const readers = readerState.scope === draftScope ? readerState.members : [];
-  const { addOriginal, change: changeDraft } = capsuleDraft;
+  const { addOriginal, addOriginals, change: changeDraft } = capsuleDraft;
   const currentDraftId = capsuleDraft.draft?.id;
   const [originals, setOriginals] = useState<Record<string, LocalCaptureDetail>>({});
   useEffect(() => {
@@ -166,6 +167,25 @@ export function CaptureScreen() {
       const id = Crypto.randomUUID();
       let privateUri: string | null = null;
       try {
+        if (asset.type === "livePhoto" || asset.pairedVideoAsset) {
+          if (!asset.pairedVideoAsset) throw new Error("Live Photo 缺少动态组件，请从相册重新选择完整原件。");
+          const current = capsuleDraft.draft;
+          if (!current || current.status !== "editing") throw new Error("请先打开草稿。");
+          if (current.content.items.length > 198) throw new Error("这份草稿已放不下完整 Live Photo，请新建一件事后导入。");
+          const components = [asset, asset.pairedVideoAsset];
+          const originals = await Promise.all(components.map(async (component, index) => {
+            const captureId = index === 0 ? id : Crypto.randomUUID();
+            return { id: captureId, itemId: Crypto.randomUUID(), role: index === 0 ? "image" as const : "video" as const, sourceUri: component.uri, payload: await preparePickedMedia(component, captureId, source) };
+          }));
+          beginPickerReceipt({ version: 2, captureId: id, scope: current.scope, draftId: current.id, expectedRevision: current.revision, createdAt: new Date().toISOString(), originals });
+          let committed = false;
+          try {
+            for (const o of originals) await preservePreparedMedia(o.sourceUri, o.payload);
+            await addOriginals(originals.map(o => ({ id: o.id, payload: o.payload, item: { id: o.itemId, livePhotoGroupId: id, livePhotoRole: o.role } })), { scope: current.scope, id: current.id });
+            committed = true; success += 2;
+          } finally { finishPickerReceipt(id, committed); }
+          continue;
+        }
         const payload = await preservePickedMedia(asset, id, source);
         privateUri = payload.localUri;
         await addOriginal(id, payload);
@@ -182,7 +202,7 @@ export function CaptureScreen() {
         ? `已保全 ${success} 份原件；${failures.length} 份未能保存：${failures[0]}`
         : `已把 ${success} 份原件复制到 App 私有目录。`,
     );
-  }, [captureAccess, finishQueue, addOriginal]);
+  }, [captureAccess, finishQueue, addOriginal, addOriginals, capsuleDraft.draft]);
 
   const pickMedia = useCallback(async (mode: "photo" | "video" | "library") => {
     if (captureAccess === "readonly") {
@@ -202,7 +222,7 @@ export function CaptureScreen() {
       }
       const result = mode === "library"
         ? await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ["images", "videos"],
+            mediaTypes: ["images", "videos", "livePhotos"],
             allowsEditing: false,
             allowsMultipleSelection: true,
             quality: 1,
@@ -452,16 +472,21 @@ export function CaptureScreen() {
         {(people ?? []).map(person => <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked: capsuleDraft.draft!.content.participantIds.includes(person.id) }} style={sharedStyles.secondaryButton} onPress={() => { const ids = capsuleDraft.draft!.content.participantIds; changeDraft({ participantIds: ids.includes(person.id) ? ids.filter(id => id !== person.id) : [...ids, person.id] }); }}><Text>{capsuleDraft.draft!.content.participantIds.includes(person.id) ? "已选 · " : ""}{person.displayName}</Text></Pressable>)}
         {capsuleDraft.draft.content.items.map((item, index) => {
           const detail = item.localCaptureRef ? originals[item.localCaptureRef] : null;
+          const previous = capsuleDraft.draft!.content.items[index - 1];
+          const mediaType = (i: typeof item) => i.localCaptureRef ? originals[i.localCaptureRef]?.mediaType : i.assetId && remoteMedia.scope === draftScope ? remoteMedia.assets[i.assetId]?.type : undefined;
+          const canPair = previous && !previous.livePhotoGroupId && !item.livePhotoGroupId && mediaType(previous) === "image" && mediaType(item) === "video";
           return <View key={item.id} style={sharedStyles.card}>
             {detail?.mediaType === "image" && detail.localUri ? <Image source={{ uri: detail.localUri }} accessibilityLabel={item.caption || "这件事的照片"} style={{ width: "100%", height: 180 }} resizeMode="contain" /> : null}
             <Text style={sharedStyles.body}>{detail?.fileName ?? "已保全的素材"}</Text>
             {item.localCaptureRef ? <Action label="打开原件 / 重听" hint="原件已在本机" disabled={false} onPress={() => navigation.navigate("LocalCapture", { captureId: item.localCaptureRef! })} /> : item.assetId && remoteMedia.scope === draftScope && remoteMedia.assets[item.assetId] ? <NativeMediaReader credentials={credentials} assets={[remoteMedia.assets[item.assetId]!]} /> : <Text accessibilityRole="alert" style={sharedStyles.body}>素材尚未读取；请联网重试，或核对读取权限。</Text>}
+            {item.livePhotoGroupId && <Text style={sharedStyles.secondaryText}>Live Photo · {item.livePhotoRole === "image" ? "静态照片" : "动态原片"}（移除时整组保留在本机）</Text>}
             <TextInput accessibilityLabel={`素材 ${index + 1} 说明`} value={item.caption} maxLength={2000} onChangeText={caption => changeDraft({ items: capsuleDraft.draft!.content.items.map(i => i.id === item.id ? { ...i, caption } : i) })} style={sharedStyles.input} />
+            {canPair && <Action label="与上一张照片组成 Live Photo" hint="仅在你确认这两份是同一张实况照片时配对" disabled={capsuleDraft.draft!.status !== "editing"} onPress={() => changeDraft(pairDraftItems(capsuleDraft.draft!.content, previous.id, item.id, Crypto.randomUUID()))} />}
             <View style={styles.actionGrid}>
               <Action label="上移" hint="调整顺序" disabled={index === 0} onPress={() => { const items = [...capsuleDraft.draft!.content.items]; [items[index - 1], items[index]] = [items[index]!, items[index - 1]!]; changeDraft({ items }); }} />
               <Action label="下移" hint="调整顺序" disabled={index === capsuleDraft.draft!.content.items.length - 1} onPress={() => { const items = [...capsuleDraft.draft!.content.items]; [items[index], items[index + 1]] = [items[index + 1]!, items[index]!]; changeDraft({ items }); }} />
               <Action label={capsuleDraft.draft!.content.coverItemId === item.id ? "已选为封面" : "设为封面"} hint="选择封面" disabled={false} onPress={() => changeDraft({ coverItemId: item.id })} />
-              <Action label="从草稿移除" hint="原件仍保留" disabled={false} onPress={() => changeDraft({ items: capsuleDraft.draft!.content.items.filter(i => i.id !== item.id), coverItemId: capsuleDraft.draft!.content.coverItemId === item.id ? null : capsuleDraft.draft!.content.coverItemId })} />
+              <Action label="从草稿移除" hint="原件仍保留" disabled={false} onPress={() => changeDraft(removeDraftItem(capsuleDraft.draft!.content, item.id))} />
             </View>
           </View>;
         })}

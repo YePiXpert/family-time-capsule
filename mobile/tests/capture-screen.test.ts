@@ -69,7 +69,7 @@ vi.mock("../src/storage/database", () => ({
   ingestLocalImportSession: vi.fn(), getLocalCaptureDetail: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("../src/storage/files", () => ({
-  preservePickedMedia: mocks.preserveMedia, preserveRecordedAudio: mocks.preserveAudio,
+  preparePickedMedia: mocks.preserveMedia, preservePreparedMedia: vi.fn().mockResolvedValue(undefined), preservePickedMedia: mocks.preserveMedia, preserveRecordedAudio: mocks.preserveAudio,
   preservePickedDocument: vi.fn(), removeLocalFile: mocks.removeFile,
 }));
 vi.mock("../src/native/picker-intake", () => ({ beginPickerReceipt: vi.fn(), finishPickerReceipt: vi.fn() }));

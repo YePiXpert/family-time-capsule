@@ -398,7 +398,7 @@ export async function getInboxEntry(
           )
       : [];
   const aggregate = db.select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId))).get();
-  if (aggregate) {
+  if (aggregate && aggregate.reviewedRevision === aggregate.revision) {
     const order = db.select().from(draftItem).where(eq(draftItem.draftId, aggregate.id)).all();
     const ranks = new Map(order.map(i => [i.assetId, i.sortOrder]));
     assets.sort((a, b) => (ranks.get(a.id) ?? 0) - (ranks.get(b.id) ?? 0));
@@ -459,6 +459,8 @@ export async function updateInboxDraft(
   const committed = db.transaction((tx) => {
     const live = tx.select().from(inboxItem).where(and(eq(inboxItem.id, itemId), eq(inboxItem.familyId, familyId))).get();
     if (!live || live.status !== entry.item.status || live.titleRevision !== entry.item.titleRevision || live.updatedAt.getTime() !== entry.item.updatedAt.getTime()) return false;
+    const aggregate = tx.select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId))).get();
+    if (aggregate && aggregate.reviewedRevision !== aggregate.revision) return false;
     tx.update(inboxItem)
       .set({
         draftTitle: title,
@@ -486,7 +488,7 @@ export async function updateInboxDraft(
           .run();
       }
     }
-    tx.update(draft).set({ title: title ?? "", occurredAt: (patch.occurredAt === undefined ? entry.item.draftOccurredAt : patch.occurredAt)?.toISOString() ?? null, locationText: locationText ?? "", participantIdsJson: JSON.stringify(participantIds), revision: sql`${draft.revision} + 1`, mutationId: randomUUID(), updatedAt: now.toISOString() }).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId), eq(draft.status, "editing"))).run();
+    tx.update(draft).set({ title: title ?? "", occurredAt: (patch.occurredAt === undefined ? entry.item.draftOccurredAt : patch.occurredAt)?.toISOString() ?? null, locationText: locationText ?? "", participantIdsJson: JSON.stringify(participantIds), reviewedRevision: sql`${draft.revision} + 1`, revision: sql`${draft.revision} + 1`, mutationId: randomUUID(), updatedAt: now.toISOString() }).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId), eq(draft.status, "editing"))).run();
     return true;
   });
   if (!committed) return undefined;
@@ -583,6 +585,8 @@ export async function discardInboxItem(
 ): Promise<boolean> {
   const db = getDb();
   return db.transaction(tx => {
+    const aggregate = tx.select().from(draft).where(and(eq(draft.familyId, familyId), eq(draft.inboxItemId, itemId), eq(draft.status, "editing"))).get();
+    if (aggregate && aggregate.reviewedRevision !== aggregate.revision) return false;
     const now = new Date();
     const rows = tx.update(inboxItem).set({ status: "discarded", updatedAt: now })
       .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.id, itemId), inArray(inboxItem.status, ["new", "needs_review", "processing"]))).returning().all();

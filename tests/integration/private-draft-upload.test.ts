@@ -107,3 +107,42 @@ it('recovers a completed legacy public receipt without relabeling it private, an
     expect(receipt.inboxItemId === null).toBe(!finish);
   }
 });
+
+it('stages new originals after a review submission without exposing them or letting a stale review close the draft', async () => {
+  const { POST: submit } = await import('@/app/api/mobile/v1/drafts/[id]/submit/route');
+  const { GET: readDraft } = await import('@/app/api/mobile/v1/drafts/[id]/route');
+  const { GET: media } = await import('@/app/api/media/[assetId]/route');
+  const { getInboxEntry, updateInboxDraft, discardInboxItem } = await import('@/lib/inbox/service');
+  const { confirmInboxEntry } = await import('@/lib/memories/service');
+  const f = await fixture('family');
+  await chunk(f.uploadId);
+  const receipt = await (await complete(req('a','POST'), route(f.uploadId))).json();
+  const content = await (await readDraft(req('a','GET'), route(f.id))).json();
+  content.items[0].assetId = receipt.assetId;
+  expect((await PUT(req('a','PUT',{content,expectedRevision:1,mutationId:randomUUID()}),route(f.id))).status).toBe(200);
+  expect((await submit(req('a','POST',{expectedRevision:2}),route(f.id))).status).toBe(200);
+  const oldReview = (await getInboxEntry('family',f.id))!;
+  const captureId = randomUUID(), bytes = Buffer.concat([png,Buffer.from('new-original')]);
+  content.text = '尚未重新交给家人的新增正文';
+  content.items.push({id:randomUUID(),assetId:null,localCaptureRef:captureId,caption:''});
+  expect((await PUT(req('a','PUT',{content,expectedRevision:3,mutationId:randomUUID()}),route(f.id))).status).toBe(200);
+  const descriptor = await (await create(req('a','POST',{...f.declaration,captureId,totalBytes:bytes.length}))).json();
+  expect((await chunk(descriptor.uploadId,bytes)).status).toBe(204);
+  const second = await (await complete(req('a','POST'),route(descriptor.uploadId))).json();
+  content.items[1].assetId = second.assetId;
+  expect((await PUT(req('a','PUT',{content,expectedRevision:4,mutationId:randomUUID()}),route(f.id))).status).toBe(200);
+  expect((await getInboxEntry('family',f.id))?.item.rawText).toBe(oldReview.item.rawText);
+  const secondRoute = {params:Promise.resolve({assetId:second.assetId})};
+  expect((await media(req('b','GET'),secondRoute)).status).toBe(404);
+  expect(await confirmInboxEntry('family',oldReview)).toEqual({ok:false,error:'conflict'});
+  expect(await updateInboxDraft('family',f.id,{title:'不能覆盖未提交的作者版本'})).toBeUndefined();
+  expect(await discardInboxItem('family',f.id)).toBe(false);
+  expect((await (await readDraft(req('a','GET'),route(f.id))).json()).status).toBe('editing');
+  expect((await submit(req('a','POST',{expectedRevision:5}),route(f.id))).status).toBe(200);
+  expect((await media(req('b','GET'),secondRoute)).status).toBe(200);
+  expect(await confirmInboxEntry('family',oldReview)).toEqual({ok:false,error:'conflict'});
+  const renewed = (await getInboxEntry('family',f.id))!;
+  expect(renewed.item.rawText).toBe(content.text);
+  expect(renewed.assets).toHaveLength(2);
+  expect((await confirmInboxEntry('family',renewed)).ok).toBe(true);
+});
