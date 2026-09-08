@@ -3,8 +3,13 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import type { Readable } from "node:stream";
-import { and, asc, count, desc, eq, inArray, lt, max, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, max, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
+import { draft, draftItem } from "@/db/schema/draft";
+import { user } from "@/db/schema/auth";
+import { withTransferLock, TransferBusyError } from "./transfer-lock";
+import { getInstanceId } from "@/lib/instance/service";
+import { hasFamilyCapability, isFamilyRole } from "@/lib/authz/policy";
 import { asset, documentText } from "@/db/schema/asset";
 import { documentTextCollector } from "@/lib/assets/document-text";
 import {
@@ -144,6 +149,7 @@ export async function createImportSession(
 }
 
 export type CreateUploadInput = {
+  draftId?: string | null;
   familyId: string;
   /** Guest portal transfers have no authenticated principal. */
   userId: string | null;
@@ -248,6 +254,7 @@ export function declareImportItems(familyId: string, importId: string, input: un
 
 function sameDeclaration(row: UploadSessionRow, input: CreateUploadInput): boolean {
   return (
+    row.draftId === (input.draftId ?? null) &&
     row.userId === input.userId &&
     row.filename === sanitizeDisplayFilename(input.filename) &&
     row.declaredMime === classifyDeclaredUpload(input.declaredMime)?.mimeType &&
@@ -290,6 +297,8 @@ export async function createUploadSession(
   if (input.totalBytes > declaration.maxBytes) {
     throw new UploadServiceError("too_large", 413);
   }
+  const instanceId = await getInstanceId();
+  if (input.draftId) assertDraftUpload({ ...input, draftId: input.draftId });
   const db = getDb();
   const existing = await db
     .select()
@@ -302,12 +311,25 @@ export async function createUploadSession(
     )
     .limit(1);
   if (existing[0]) {
+    if (existing[0].userId !== input.userId) throw new UploadServiceError("not_found", 404);
     return withUploadLock(existing[0].id, async () => {
       let row = await sessionForFamily(input.familyId, existing[0].id);
       if (row.importSessionId === null && input.importSessionId &&
         ["native", "share"].includes(input.source) &&
-        sameDeclaration({ ...row, importSessionId: input.importSessionId }, input)) {
+        sameDeclaration({ ...row, draftId: row.draftId ?? input.draftId ?? null, importSessionId: input.importSessionId }, input)) {
         row = adoptNativeUpload(row, input.importSessionId);
+      }
+      // Read an already-public legacy receipt without pretending it became private.
+      if (!row.draftId && input.draftId && row.status === "completed" &&
+          sameDeclaration({ ...row, draftId: input.draftId }, input)) {
+        return { session: row, existing: true };
+      }
+      // A pre-upgrade pending transfer can be narrowed to an owned draft once.
+      // Completed family deliveries retain their original sharing semantics.
+      if (!row.draftId && input.draftId && !row.finalAssetId && row.status !== "completed" &&
+          sameDeclaration({ ...row, draftId: input.draftId }, input)) {
+        assertDraftUpload({ ...row, draftId: input.draftId });
+        row = db.update(uploadSession).set({ draftId: input.draftId, instanceId }).where(eq(uploadSession.id, row.id)).returning().get();
       }
       if (!sameDeclaration(row, input)) {
         throw new UploadServiceError("capture_id_conflict", 409, row.receivedBytes);
@@ -339,7 +361,7 @@ export async function createUploadSession(
         ),
       )
       .limit(1);
-    if (!parent[0]) throw new UploadServiceError("import_session_not_found", 404);
+    if (!parent[0] || (parent[0].createdByUserId !== input.userId && !(input.source === "guest" && parent[0].source === "guest"))) throw new UploadServiceError("import_session_not_found", 404);
     if (parent[0].status === "completed" || parent[0].status === "cancelled") {
       throw new UploadServiceError("import_session_closed", 409);
     }
@@ -371,6 +393,7 @@ export async function createUploadSession(
     const row = db.transaction((tx) => {
       // Recheck under the SQLite write reservation after asynchronous file creation.
       assertUploadQuota(tx, input.familyId, input.totalBytes);
+      if (input.draftId) assertDraftUpload({ ...input, draftId: input.draftId });
       const created = tx
         .insert(uploadSession)
         .values({
@@ -378,6 +401,8 @@ export async function createUploadSession(
           familyId: input.familyId,
           userId: input.userId,
           captureId: input.captureId,
+          draftId: input.draftId ?? null,
+          instanceId,
           filename: sanitizeDisplayFilename(input.filename),
           declaredMime: declaration.mimeType,
           totalBytes: input.totalBytes,
@@ -516,7 +541,7 @@ function adoptNativeUpload(previous: UploadSessionRow, importId: string): Upload
       throw new UploadServiceError("capture_id_conflict", 409);
     }
     const completed = row.status === "completed";
-    if (completed && (!row.finalAssetId || !row.finalInboxItemId)) throw new UploadServiceError("invalid_completed_session", 409);
+    if (completed && (!row.finalAssetId || (!row.draftId && !row.finalInboxItemId))) throw new UploadServiceError("invalid_completed_session", 409);
     const failed = ["failed", "expired", "cancelled"].includes(row.status);
     const now = new Date();
     const values = {
@@ -544,9 +569,22 @@ function adoptNativeUpload(previous: UploadSessionRow, importId: string): Upload
   }, { behavior: "immediate" });
 }
 
+/** New originals stay private regardless of a draft's eventual publication readers. */
+function assertDraftUpload(row: { familyId: string; userId: string | null; draftId: string | null; captureId: string }, allowCompleted = false) {
+  if (!row.draftId) return;
+  const db = getDb();
+  const actor = row.userId ? db.select().from(user).where(and(eq(user.id, row.userId), eq(user.familyId, row.familyId), isNull(user.disabledAt))).get() : null;
+  if (!actor || !isFamilyRole(actor.role) || !hasFamilyCapability(actor.role, "capture:create")) throw new UploadServiceError("forbidden", 403);
+  const parent = db.select().from(draft).where(and(eq(draft.id, row.draftId), eq(draft.familyId, row.familyId), eq(draft.authorUserId, actor.id))).get();
+  if (!parent) throw new UploadServiceError("not_found", 404);
+  const item = db.select().from(draftItem).where(and(eq(draftItem.draftId, row.draftId), eq(draftItem.localCaptureRef, row.captureId))).get();
+  if (!item || (parent.status !== "editing" && !(allowCompleted && parent.status === "published"))) throw new UploadServiceError("draft_changed", 409);
+}
+
 async function sessionForFamily(
   familyId: string,
   uploadId: string,
+  actorUserId?: string | null,
 ): Promise<UploadSessionRow> {
   const rows = await getDb()
     .select()
@@ -554,6 +592,9 @@ async function sessionForFamily(
     .where(and(eq(uploadSession.familyId, familyId), eq(uploadSession.id, uploadId)))
     .limit(1);
   if (!rows[0]) throw new UploadServiceError("not_found", 404);
+  if (actorUserId !== undefined && rows[0].userId !== actorUserId) throw new UploadServiceError("not_found", 404);
+  if (rows[0].instanceId && rows[0].instanceId !== await getInstanceId()) throw new UploadServiceError("instance_changed", 409);
+  assertDraftUpload(rows[0], rows[0].status === "completed");
   return rows[0];
 }
 
@@ -624,13 +665,19 @@ async function expireIfNeeded(row: UploadSessionRow): Promise<UploadSessionRow> 
 export async function getUploadSession(
   familyId: string,
   uploadId: string,
+  actorUserId?: string | null,
 ): Promise<UploadSessionRow> {
-  return expireIfNeeded(await reconcileUpload(await sessionForFamily(familyId, uploadId)));
+  await sessionForFamily(familyId, uploadId, actorUserId);
+  return withUploadLock(uploadId, () => getUploadSessionUnlocked(familyId, uploadId, actorUserId));
+}
+async function getUploadSessionUnlocked(familyId: string, uploadId: string, actorUserId?: string | null) {
+  return expireIfNeeded(await reconcileUpload(await sessionForFamily(familyId, uploadId, actorUserId)));
 }
 
 const uploadLocks = new Map<string, Promise<void>>();
 
 async function withUploadLock<T>(uploadId: string, effect: () => Promise<T>): Promise<T> {
+  if (!getDb().select({ id: uploadSession.id }).from(uploadSession).where(eq(uploadSession.id, uploadId)).get()) throw new UploadServiceError("not_found", 404);
   const previous = uploadLocks.get(uploadId) ?? Promise.resolve();
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -638,7 +685,8 @@ async function withUploadLock<T>(uploadId: string, effect: () => Promise<T>): Pr
   uploadLocks.set(uploadId, tail);
   await previous;
   try {
-    return await effect();
+    try { return await withTransferLock(uploadId, effect); }
+    catch (error) { if (error instanceof TransferBusyError) throw new UploadServiceError("upload_busy", 409); throw error; }
   } finally {
     release();
     if (uploadLocks.get(uploadId) === tail) uploadLocks.delete(uploadId);
@@ -648,12 +696,14 @@ async function withUploadLock<T>(uploadId: string, effect: () => Promise<T>): Pr
 export async function appendUploadChunk(input: {
   familyId: string;
   uploadId: string;
+  actorUserId?: string | null;
   offset: number;
   contentLength: number;
   body: Readable;
 }): Promise<{ offset: number; replayed: boolean }> {
+  await sessionForFamily(input.familyId, input.uploadId, input.actorUserId);
   return withUploadLock(input.uploadId, async () => {
-    const row = await getUploadSession(input.familyId, input.uploadId);
+    const row = await getUploadSessionUnlocked(input.familyId, input.uploadId, input.actorUserId);
     if (!ACTIVE_STATUSES.includes(row.status as (typeof ACTIVE_STATUSES)[number])) {
       throw new UploadServiceError(
         row.status === "completed" ? "already_completed" : "upload_not_active",
@@ -817,7 +867,7 @@ function markImportItemCompleted(
   tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
   row: UploadSessionRow,
   assetId: string,
-  inboxItemId: string,
+  inboxItemId: string | null,
   now: Date,
 ): void {
   if (!row.importSessionId) return;
@@ -890,35 +940,45 @@ function applyImportDefaults(
   }
 }
 
+async function findUploadOriginal(row: UploadSessionRow, sha256: string) {
+  if (!row.draftId) return findOriginalBySha256(row.familyId, sha256);
+  // A previous draft may already share identical bytes. Deduplicate only within
+  // this unpublished aggregate, never inherit another memory's readers.
+  return getDb().select({ asset }).from(asset).innerJoin(uploadSession, eq(uploadSession.finalAssetId, asset.id))
+    .where(and(eq(uploadSession.draftId, row.draftId), eq(asset.familyId, row.familyId), eq(asset.sha256, sha256),
+      eq(asset.visibility, "private"), eq(asset.createdByUserId, row.userId!), isNull(asset.originalAssetId))).get()?.asset;
+}
+
 async function finalizeExisting(
   row: UploadSessionRow,
   existing: AssetRow,
 ): Promise<CompleteUploadResult> {
-  const inbox = createInboxItemForAssetIdempotent(row.familyId, existing, row.captureId);
-  if (inbox.status === "conflict") {
+  assertDraftUpload(row);
+  const inbox = row.draftId ? null : createInboxItemForAssetIdempotent(row.familyId, existing, row.captureId);
+  if (inbox?.status === "conflict") {
     throw new UploadServiceError("capture_id_conflict", 409, row.receivedBytes);
   }
   const now = new Date();
-  const defaults = inbox.status === "created" ? await importDefaults(row) : null;
+  const defaults = inbox?.status === "created" ? await importDefaults(row) : null;
   getDb().transaction((tx) => {
     tx.update(uploadSession)
       .set({
         status: "completed",
         finalAssetId: existing.id,
-        finalInboxItemId: inbox.item.id,
+        finalInboxItemId: inbox?.item.id ?? null,
         errorCode: null,
         updatedAt: now,
       })
       .where(eq(uploadSession.id, row.id))
       .run();
-    markImportItemCompleted(tx, row, existing.id, inbox.item.id, now);
-    applyImportDefaults(tx, row.familyId, inbox.item.id, defaults, now);
+    markImportItemCompleted(tx, row, existing.id, inbox?.item.id ?? null, now);
+    if (inbox) applyImportDefaults(tx, row.familyId, inbox.item.id, defaults, now);
   });
   await getAssetStorage().deleteUploadPart(row.tempStorageKey);
   return {
     status: "duplicate",
     assetId: existing.id,
-    inboxItemId: inbox.item.id,
+    inboxItemId: inbox?.item.id ?? null,
     sha256: existing.sha256,
     bytes: existing.bytes,
   };
@@ -927,13 +987,13 @@ async function finalizeExisting(
 export type CompleteUploadResult = {
   status: "stored" | "duplicate";
   assetId: string;
-  inboxItemId: string;
+  inboxItemId: string | null;
   sha256: string;
   bytes: number;
 };
 
 async function completedResult(row: UploadSessionRow): Promise<CompleteUploadResult> {
-  if (!row.finalAssetId || !row.finalInboxItemId) {
+  if (!row.finalAssetId || (!row.draftId && !row.finalInboxItemId)) {
     throw new UploadServiceError("invalid_completed_session", 500, row.receivedBytes);
   }
   const rows = await getDb()
@@ -954,9 +1014,11 @@ async function completedResult(row: UploadSessionRow): Promise<CompleteUploadRes
 export async function completeUpload(
   familyId: string,
   uploadId: string,
+  actorUserId?: string | null,
 ): Promise<CompleteUploadResult> {
+  await sessionForFamily(familyId, uploadId, actorUserId);
   return withUploadLock(uploadId, async () => {
-    const row = await getUploadSession(familyId, uploadId);
+    const row = await getUploadSessionUnlocked(familyId, uploadId, actorUserId);
     if (row.status === "completed") {
       await getAssetStorage().deleteUploadPart(row.tempStorageKey);
       return completedResult(row);
@@ -986,7 +1048,7 @@ export async function completeUpload(
       await failUpload(row, "content_mismatch");
       throw new UploadServiceError("content_mismatch", 415, row.receivedBytes);
     }
-    const existing = await findOriginalBySha256(row.familyId, inspected.sha256);
+    const existing = await findUploadOriginal(row, inspected.sha256);
     if (existing) return finalizeExisting(row, existing);
 
     const metadata = await resolveMetadata(
@@ -1027,9 +1089,10 @@ export async function completeUpload(
 
     const now = new Date();
     const defaults = await importDefaults(row);
-    let stored: { assetRow: AssetRow; item: typeof inboxItem.$inferSelect };
+    let stored: { assetRow: AssetRow; item: typeof inboxItem.$inferSelect | null };
     try {
       stored = getDb().transaction((tx) => {
+        assertDraftUpload(row);
         const assetRow = tx
           .insert(asset)
           .values({
@@ -1049,13 +1112,14 @@ export async function completeUpload(
             durationMs: metadata.durationMs,
             metadataJson: metadata.metadataJson,
             createdByUserId: row.userId!,
+            visibility: row.draftId ? "private" : "family",
             originalAssetId: null,
             derivativeType: null,
             createdAt: now,
           })
           .returning()
           .get();
-        const item = tx
+        const item = row.draftId ? null : tx
           .insert(inboxItem)
           .values({
             id: row.captureId,
@@ -1067,7 +1131,7 @@ export async function completeUpload(
           })
           .returning()
           .get();
-        tx.insert(inboxItemAsset)
+        if (item) tx.insert(inboxItemAsset)
           .values({
             id: randomUUID(),
             inboxItemId: item.id,
@@ -1091,23 +1155,26 @@ export async function completeUpload(
             })
             .run();
         }
-        applyImportDefaults(tx, row.familyId, item.id, defaults, now);
+        if (item) applyImportDefaults(tx, row.familyId, item.id, defaults, now);
         tx.update(uploadSession)
           .set({
             status: "completed",
             finalAssetId: assetRow.id,
-            finalInboxItemId: item.id,
+            finalInboxItemId: item?.id ?? null,
             errorCode: null,
             updatedAt: now,
           })
           .where(eq(uploadSession.id, row.id))
           .run();
-        markImportItemCompleted(tx, row, assetRow.id, item.id, now);
+        markImportItemCompleted(tx, row, assetRow.id, item?.id ?? null, now);
         return { assetRow, item };
       });
     } catch (error) {
+      // A competing complete may already have committed this deterministic original.
+      const committed = getDb().select().from(asset).where(eq(asset.id, assetId)).get();
+      if (committed) return completedResult(await sessionForFamily(familyId, uploadId, actorUserId));
       getAssetStorage().delete(storageKey);
-      const raced = await findOriginalBySha256(row.familyId, inspected.sha256);
+      const raced = await findUploadOriginal(row, inspected.sha256);
       if (raced) return finalizeExisting(row, raced);
       throw error;
     }
@@ -1117,7 +1184,7 @@ export async function completeUpload(
     return {
       status: "stored",
       assetId: stored.assetRow.id,
-      inboxItemId: stored.item.id,
+      inboxItemId: stored.item?.id ?? null,
       sha256: stored.assetRow.sha256,
       bytes: stored.assetRow.bytes,
     };
@@ -1127,9 +1194,11 @@ export async function completeUpload(
 export async function cancelUpload(
   familyId: string,
   uploadId: string,
+  actorUserId?: string | null,
 ): Promise<UploadSessionRow> {
+  await sessionForFamily(familyId, uploadId, actorUserId);
   return withUploadLock(uploadId, async () => {
-    const row = await sessionForFamily(familyId, uploadId);
+    const row = await sessionForFamily(familyId, uploadId, actorUserId);
     if (row.status === "completed" || row.status === "cancelled") return row;
     await getAssetStorage().deleteUploadPart(row.tempStorageKey);
     const now = new Date();
@@ -1199,15 +1268,20 @@ export async function cleanupExpiredUploads(
       ),
     )
     .limit(limit);
+  let cleaned = 0;
   for (const row of rows) {
-    await withUploadLock(row.id, async () => {
-      const current = await sessionForFamily(row.familyId, row.id);
-      if (["created", "uploading", "failed"].includes(current.status) && current.expiresAt < now) {
-        await expireUpload(current, now);
-      }
-    });
+    try {
+      await withUploadLock(row.id, async () => {
+        // Maintenance removes expired temporary bytes even after the author or
+        // draft loses permission. It never publishes or exposes the original.
+        const current = getDb().select().from(uploadSession).where(eq(uploadSession.id, row.id)).get();
+        if (current && ["created", "uploading", "failed"].includes(current.status) && current.expiresAt < now) {
+          await expireUpload(current, now); cleaned++;
+        }
+      });
+    } catch (error) { if (!(error instanceof UploadServiceError) || !["upload_busy", "not_found"].includes(error.code)) throw error; }
   }
-  return rows.length;
+  return cleaned;
 }
 
 export type ImportSessionDetail = {
@@ -1222,6 +1296,7 @@ export type ImportSessionDetail = {
 export async function getImportSessionDetail(
   familyId: string,
   importId: string,
+  actorUserId?: string,
 ): Promise<ImportSessionDetail | null> {
   const db = getDb();
   const sessions = await db
@@ -1229,7 +1304,7 @@ export async function getImportSessionDetail(
     .from(importSession)
     .where(and(eq(importSession.familyId, familyId), eq(importSession.id, importId)))
     .limit(1);
-  if (!sessions[0]) return null;
+  if (!sessions[0] || (actorUserId !== undefined && sessions[0].createdByUserId !== actorUserId && sessions[0].source !== "guest")) return null;
   const [rows, participants] = await Promise.all([
     db
       .select({ item: importSessionItem, upload: uploadSession })
@@ -1276,7 +1351,7 @@ const UUID_PATTERN =
 
 export async function listImportSessions(
   familyId: string,
-  options: { cursor?: string | null; limit?: number } = {},
+  options: { cursor?: string | null; limit?: number; actorUserId?: string } = {},
 ): Promise<{ sessions: ImportSessionRow[]; nextCursor: string | null }> {
   const limit = Math.max(1, Math.min(options.limit ?? 50, 100));
   const cursor = decodeImportCursor(options.cursor);
@@ -1284,7 +1359,7 @@ export async function listImportSessions(
     .select()
     .from(importSession)
     .where(
-      cursor
+      and(options.actorUserId ? or(eq(importSession.createdByUserId, options.actorUserId), eq(importSession.source, "guest")) : undefined, cursor
         ? and(
             eq(importSession.familyId, familyId),
             or(
@@ -1295,7 +1370,7 @@ export async function listImportSessions(
               ),
             ),
           )
-        : eq(importSession.familyId, familyId),
+        : eq(importSession.familyId, familyId)),
     )
     .orderBy(desc(importSession.createdAt), desc(importSession.id))
     .limit(limit + 1);
@@ -1359,9 +1434,11 @@ export async function cancelImportSession(
 export async function restartUpload(
   familyId: string,
   uploadId: string,
+  actorUserId?: string | null,
 ): Promise<UploadSessionRow> {
+  await sessionForFamily(familyId, uploadId, actorUserId);
   return withUploadLock(uploadId, async () => {
-    const row = await sessionForFamily(familyId, uploadId);
+    const row = await sessionForFamily(familyId, uploadId, actorUserId);
     if (row.status === "completed") return row;
     if (ACTIVE_STATUSES.includes(row.status as (typeof ACTIVE_STATUSES)[number])) {
       return reconcileUpload(row);

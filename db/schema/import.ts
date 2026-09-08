@@ -100,6 +100,9 @@ export const uploadSession = sqliteTable(
       .references(() => family.id, { onDelete: "cascade" }),
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
     captureId: text("capture_id").notNull(),
+    // Immutable authorization binding survives draft deletion (never SET NULL).
+    draftId: text("draft_id"),
+    instanceId: text("instance_id"),
     filename: text("filename").notNull(),
     declaredMime: text("declared_mime").notNull(),
     totalBytes: integer("total_bytes").notNull(),
@@ -132,6 +135,7 @@ export const uploadSession = sqliteTable(
     index("upload_session_family_status_idx").on(t.familyId, t.status, t.updatedAt),
     index("upload_session_expiry_idx").on(t.status, t.expiresAt),
     index("upload_session_import_idx").on(t.familyId, t.importSessionId),
+    index("upload_session_draft_idx").on(t.familyId, t.userId, t.draftId),
     check(
       "upload_session_source_check",
       sql`${t.source} in ('web', 'native', 'share', 'guest')`,

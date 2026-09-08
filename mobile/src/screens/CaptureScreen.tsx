@@ -498,8 +498,8 @@ export function CaptureScreen() {
         </> : null}
         <Text style={{ color: colors.muted, fontSize: 12 }}>
           {capsuleDraft.draft.content.visibility === "family"
-            ? "草稿文字在正式保存前仅自己可见；保存后全家可读。"
-            : "新上传的素材只对所选读者可见；已全家共享的素材不会因此变私密。带新素材的此类草稿本轮先留本机，仅文字可直接创建。"}
+            ? "草稿文字和新素材在发布前仅自己可见；保存为记忆后全家可读。"
+            : "草稿文字和新素材在发布前仅自己可见；发布后按所选读者开放。已全家共享的素材不会因此收回旧共享。"}
         </Text>
         {(!credentials || viewer?.canEditEvents) && <Action label="保存为一条记忆" hint="先写入本机，再同步到已授权家庭" disabled={busy || recording || !!capsuleDraft.error || capsuleDraft.draft.status === "published"} onPress={() => void sendDraft(true)} />}
         {credentials && family && <View style={styles.actionGrid}>

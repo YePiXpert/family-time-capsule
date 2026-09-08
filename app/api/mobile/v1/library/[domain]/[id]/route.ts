@@ -91,11 +91,11 @@ export async function PATCH(request: Request, { params }: RouteContext<"/api/mob
         result = { ok: true };
       } else if (operation === "retry") {
         const uploadId = optionalString(body, "uploadId", 128) ?? "";
-        const detail = await getImportSessionDetail(authorization.context.familyId, id);
+        const detail = await getImportSessionDetail(authorization.context.familyId, id, authorization.context.userId);
         if (!detail?.items.some((entry) => entry.upload?.id === uploadId)) {
           return mobileJson({ error: "not_found" }, { status: 404 });
         }
-        await restartUpload(authorization.context.familyId, uploadId);
+        await restartUpload(authorization.context.familyId, uploadId, authorization.context.userId);
         result = { ok: true };
       }
     }

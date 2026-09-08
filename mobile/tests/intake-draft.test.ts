@@ -70,7 +70,7 @@ it("commits a shared mixed receipt to an existing draft once, and rolls everythi
   expect(resumed.content.text).toBe("河边撑船的故事");
   expect(resumed.content.items.map(item => item.localCaptureRef)).toEqual(["mixed-audio"]);
   expect(resumed.revision).toBe(2);
-  expect(await canUploadDraftOriginal("mixed-audio", scope)).toBe(true);
+  expect(await canUploadDraftOriginal("mixed-audio", scope)).toBe(false);
   expect(await canUploadDraftOriginal("mixed-audio", "other-account")).toBe(false);
   expect(await getLocalIntake(input.id, "other-account")).toBeNull();
   expect(db.prepare("select count(*) n from outbox where id in ('mixed-audio','mixed-text')").get()).toEqual({ n: 0 });

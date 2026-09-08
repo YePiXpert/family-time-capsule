@@ -60,7 +60,7 @@ export async function GET(request: Request, context: Context) {
   if (!authorization.ok) return uploadJson({ error: authorization.error }, { status: authorization.status });
   const { id } = await context.params;
   if (!UUID_PATTERN.test(id)) return uploadJson({ error: "not_found" }, { status: 404 });
-  const detail = await getImportSessionDetail(authorization.context.familyId, id);
+  const detail = await getImportSessionDetail(authorization.context.familyId, id, authorization.context.userId);
   return detail ? uploadJson(dto(detail)) : uploadJson({ error: "not_found" }, { status: 404 });
 }
 
@@ -71,6 +71,7 @@ export async function PATCH(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     if (!UUID_PATTERN.test(id)) throw new UploadServiceError("not_found", 404);
+    if (!await getImportSessionDetail(authorization.context.familyId, id, authorization.context.userId)) throw new UploadServiceError("not_found", 404);
     const body = asRecord(await readMobileJson(request));
     const action = body.action;
     if (action === "declare") {

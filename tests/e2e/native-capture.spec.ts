@@ -31,7 +31,14 @@ test("native recording controls and save hook publish specified readers through 
   const result = await promisify(execFile)(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.http.config.ts"], {
     cwd: path.join(process.cwd(), "mobile"), env: { ...process.env, FTC_NATIVE_HTTP_FIXTURE: JSON.stringify(fixture) }, timeout: 45000, maxBuffer: 1024 * 1024,
   });
-  expect(result.stdout).toContain("1 passed");
+  expect(result.stdout).toContain("2 passed");
+  const verify = new Database(path.join(process.cwd(), "data/e2e-native-capture/db/capsule.sqlite"));
+  try {
+    const originals=verify.prepare("select id,visibility from asset where created_by_user_id='user-a' and original_asset_id is null").all();
+    expect(originals).toHaveLength(3);
+    expect(originals.every(a=>(a as {visibility:string}).visibility==='private')).toBe(true);
+    expect(verify.prepare("select count(*) n from inbox_item_asset where asset_id in (select id from asset where created_by_user_id='user-a')").get()).toEqual({n:0});
+  } finally { verify.close(); }
 });
 
 test("Web can remove a departed reader while keeping the other selected account", async ({ page }) => {
@@ -54,4 +61,32 @@ test("Web can remove a departed reader while keeping the other selected account"
   await expect(group.getByLabel("记录者", { exact: true })).toBeChecked();
   await page.getByRole("button", { name: "保存为一条记忆" }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
+});
+
+test("Web draft-only sync uploads new attachments privately before explicit publication", async ({ page }) => {
+  await ensureBootstrap(page);
+  await page.goto("/capture");
+  await page.getByLabel("写下这一刻").fill("网页上的私密附件记录");
+  await page.getByLabel("标题", {exact:true}).fill("私密草稿附件测试");
+  await page.getByLabel("时间记得多清楚").selectOption("unknown");
+  await page.getByLabel("保存后的读者").selectOption("private");
+  await page.getByLabel("添加照片、视频、录音或文档").setInputFiles({name:"web-private.txt",mimeType:"text/plain",buffer:Buffer.from("网页私密原件，尚未发布给家人")});
+  await expect(page.getByRole("status").filter({hasText:"本机已保存 ·"})).toBeVisible();
+  await page.getByRole("button",{name:"保留草稿，稍后继续"}).click();
+  await expect(page.getByText("服务器已收到草稿，可以换设备继续。尚未创建正式记忆。")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("标题",{exact:true})).toHaveValue("私密草稿附件测试");
+  const db=new Database(path.join(process.cwd(),"data/e2e-native-capture/db/capsule.sqlite"));
+  try {
+    const draft=db.prepare("select id,status,memory_event_id from draft where title='私密草稿附件测试'").get() as {id:string;status:string;memory_event_id:string|null};
+    expect(draft).toMatchObject({status:"editing",memory_event_id:null});
+    const assets=db.prepare("select a.id,a.visibility from draft_item i join asset a on a.id=i.asset_id where i.draft_id=?").all(draft.id) as {id:string;visibility:string}[];
+    expect(assets).toHaveLength(1);expect(assets[0].visibility).toBe("private");
+    expect(db.prepare("select count(*) n from inbox_item_asset where asset_id=?").get(assets[0].id)).toEqual({n:0});
+    const token=randomUUID();db.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at) values (?,?, 'user-c',unixepoch()+3600,unixepoch(),unixepoch())").run(randomUUID(),token);
+    const response=await page.request.get(`/api/media/${assets[0].id}`,{headers:{authorization:`Bearer ${token}`}});
+    expect(response.status()).toBe(404);
+  } finally {db.close();}
+  await page.getByRole("button",{name:"保存为一条记忆"}).click();
+  await expect(page.getByRole("link",{name:"查看这条记忆"})).toBeVisible();
 });

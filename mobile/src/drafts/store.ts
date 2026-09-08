@@ -52,15 +52,14 @@ export async function saveLocalDraftInTransaction(tx: SQLiteDatabase, row: Local
 }
 
 export async function queueDraftOriginals(row: LocalDraft): Promise<void> {
-  if (row.content.visibility !== "family" && row.content.items.some(item => !item.assetId)) throw new Error("私密/指定成员草稿的原件保留在本机，暂不进入家庭上传队列。");
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async tx => {
     for (const item of row.content.items) {
       if (item.assetId || !item.localCaptureRef) continue;
-      const original = await tx.getFirstAsync<{ payload_json: string | null; inbox_item_id: string | null }>("SELECT payload_json,inbox_item_id FROM local_capture WHERE id=?", item.localCaptureRef);
+      const original = await tx.getFirstAsync<{ payload_json: string | null }>("SELECT payload_json FROM local_capture WHERE id=?", item.localCaptureRef);
       if (!original?.payload_json) throw new Error("草稿原件不可读，请检查本机存储。");
-      if (original.inbox_item_id) continue;
-      await tx.runAsync("INSERT OR IGNORE INTO outbox(id,kind,payload_json,created_at) VALUES(?,'media_capture',?,?)", item.localCaptureRef, original.payload_json, row.updatedAt);
+      // Old queued drafts must not retain the legacy family-inbox transfer.
+      await tx.runAsync("DELETE FROM outbox WHERE id=?", item.localCaptureRef);
     }
   });
 }
@@ -71,7 +70,7 @@ export async function canUploadDraftOriginal(captureId: string, activeScope: str
   const references = await db.getAllAsync<{ scope: string }>(`SELECT DISTINCT d.scope FROM local_draft d,
     json_each(json_extract(d.snapshot_json, '$.content.items')) i
     WHERE json_extract(i.value, '$.localCaptureRef') = ?`, captureId);
-  if (references.some(row => row.scope !== activeScope)) return false;
+  if (references.length > 0) return false; // Draft transfers run through syncLocalDrafts with a bound owner receipt.
   const receipt = await db.getFirstAsync<{ scope: string | null; destination: string | null }>(`SELECT c.scope,c.destination
     FROM local_import_item i LEFT JOIN local_intake_choice c ON c.session_id=i.import_session_id WHERE i.capture_id=?`, captureId);
   if (!receipt) return true;

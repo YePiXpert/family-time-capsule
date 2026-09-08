@@ -806,6 +806,7 @@ describe("native mobile API", () => {
         bearerRequest(`http://localhost/api/mobile/v1/library/${domain}/${id}`, viewerToken),
         { params: Promise.resolve({ domain, id }) },
       );
+      if (domain === "imports") { expect(detail.status).toBe(404); continue; }
       expect(detail.status, domain).toBe(200);
       expect(detail.headers.get("cache-control"), domain).toBe("private, no-store");
       const serialized = JSON.stringify(await detail.json());

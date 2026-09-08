@@ -625,7 +625,7 @@ describe("durable resumable upload protocol", () => {
   it("persists the relational ImportSession item through completion", async () => {
     const batch = await createImportSession({
       familyId,
-      createdByUserId: admin.id,
+      createdByUserId: getDb().select().from(session).where(eq(session.token, adminToken)).get()!.userId,
       source: "web",
       defaultTitle: "旧照片",
     });
@@ -658,7 +658,7 @@ describe("durable resumable upload protocol", () => {
     )[0];
     const batch = await createImportSession({
       familyId,
-      createdByUserId: admin.id,
+      createdByUserId: getDb().select().from(session).where(eq(session.token, adminToken)).get()!.userId,
       source: "web",
       defaultTitle: "家庭档案文字",
       defaultOccurredAt: new Date("2026-08-08T08:08:00Z"),

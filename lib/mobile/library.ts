@@ -120,7 +120,7 @@ export async function getMobileLibraryPage(
     }));
     return paginate(domain, rows, cursor, limit);
   }
-  const page = await listImportSessions(context.familyId, { cursor, limit });
+  const page = await listImportSessions(context.familyId, { cursor, limit, actorUserId: context.userId });
   return {
     items: page.sessions.map((row) => ({
       id: row.id,
@@ -222,7 +222,7 @@ export async function getMobileLibraryDetail(
       canWrite: hasFamilyCapability(context.role, "contribution:create"),
     };
   }
-  const detail = await getImportSessionDetail(context.familyId, id);
+  const detail = await getImportSessionDetail(context.familyId, id, context.userId);
   return detail ? {
     id: detail.session.id,
     title: detail.session.defaultTitle || `导入 ${detail.session.totalCount} 项`,

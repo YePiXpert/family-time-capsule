@@ -23,7 +23,7 @@ export async function syncLocalIntake(credentials: Credentials, options: { isCur
     if (row.destination === "library" && (!media.length || media.some(capture => !capture.inbox_item_id))) continue;
     if (row.destination === "draft") {
       const draft = (await listLocalDrafts(scope)).find(draft => draft.id === row.draft_id);
-      if (!draft?.serverRevision || draft.content.visibility !== "family") continue;
+      if (!draft?.serverRevision) continue;
     }
     const ids = row.destination === "draft" ? [row.draft_id!] : media.map(capture => capture.capture_id);
     let allowed = true;

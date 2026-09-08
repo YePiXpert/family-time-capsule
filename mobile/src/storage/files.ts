@@ -137,18 +137,22 @@ async function confirmedOffset(
   };
 }
 
-export async function uploadMediaCapture(
+export async function uploadMediaCaptureReceipt(
   credentials: Credentials,
   captureId: string,
   payload: MediaCapturePayload,
   onProgress: UploadProgress = async () => undefined,
-): Promise<string> {
+  options: { draftId?: string; guard?: () => Promise<void> } = {},
+): Promise<{ assetId: string | null; inboxItemId: string | null }> {
+  const guard = options.guard ?? (async () => {});
+  const checkedFetch: typeof fetch = async (...args) => { await guard(); return fetch(...args); };
+  await guard();
   const file = new File(payload.localUri);
   if (!file.exists) throw new Error("本地原件已不存在。");
   const totalBytes = file.size;
   if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) throw new Error("本地原件为空或大小无效。");
   if (payload.importSessionId) {
-    const response = await fetch(`${credentials.serverUrl}/api/imports`, {
+    const response = await checkedFetch(`${credentials.serverUrl}/api/imports`, {
       method: "POST",
       headers: { authorization: `Bearer ${credentials.token}`, "content-type": "application/json" },
       body: JSON.stringify({ clientSessionId: payload.importSessionId, source: payload.source === "system_share" ? "share" : "native" }),
@@ -159,14 +163,14 @@ export async function uploadMediaCapture(
   }
   // Repeat creation for batches to attach an older ungrouped transfer as well.
   // The server checks the full immutable declaration before adding that relation.
-  let uploadId = payload.importSessionId ? undefined : payload.uploadId;
+  let uploadId = payload.importSessionId || options.draftId ? undefined : payload.uploadId;
   let offset = payload.uploadOffset ?? 0;
   if (uploadId) {
     try {
       const confirmed = await confirmedOffset(credentials, uploadId);
       offset = confirmed.offset;
       if (["failed", "expired", "cancelled"].includes(confirmed.status ?? "")) {
-        const retry = await fetch(`${credentials.serverUrl}/api/uploads/${uploadId}/retry`, {
+        const retry = await checkedFetch(`${credentials.serverUrl}/api/uploads/${uploadId}/retry`, {
           method: "POST",
           headers: { authorization: `Bearer ${credentials.token}` },
         });
@@ -181,7 +185,7 @@ export async function uploadMediaCapture(
     }
   }
   if (!uploadId) {
-    const response = await fetch(`${credentials.serverUrl}/api/uploads`, {
+    const response = await checkedFetch(`${credentials.serverUrl}/api/uploads`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${credentials.token}`,
@@ -189,6 +193,7 @@ export async function uploadMediaCapture(
       },
       body: JSON.stringify({
         captureId,
+        draftId: options.draftId ?? null,
         filename: payload.fileName,
         declaredMime: payload.mimeType,
         totalBytes,
@@ -203,16 +208,18 @@ export async function uploadMediaCapture(
       uploadOffset?: number;
       status?: string;
       inboxItemId?: string;
+      assetId?: string;
     };
     if (typeof created.uploadId !== "string") throw new ApiError("服务器上传结果无效。", 502);
     uploadId = created.uploadId;
     offset = Number(created.uploadOffset ?? 0);
     await onProgress(uploadId, offset);
-    if (created.status === "completed" && typeof created.inboxItemId === "string") {
-      return created.inboxItemId;
+    if (created.status === "completed" && (typeof created.assetId === "string" || typeof created.inboxItemId === "string")) {
+      await guard();
+      return { assetId: created.assetId ?? null, inboxItemId: created.inboxItemId ?? null };
     }
     if (["failed", "expired", "cancelled"].includes(created.status ?? "")) {
-      const retry = await fetch(`${credentials.serverUrl}/api/uploads/${uploadId}/retry`, {
+      const retry = await checkedFetch(`${credentials.serverUrl}/api/uploads/${uploadId}/retry`, {
         method: "POST", headers: { authorization: `Bearer ${credentials.token}` },
       });
       if (!retry.ok) throw uploadError(retry.status, "无法恢复上传");
@@ -222,13 +229,16 @@ export async function uploadMediaCapture(
   }
   await onProgress(uploadId, offset);
 
+  let stalled = 0;
   const handle = file.open(FileMode.ReadOnly);
   try {
     while (offset < totalBytes) {
+      await guard();
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > totalBytes) throw new ApiError("服务器上传位置无效。", 502);
       handle.offset = offset;
       const chunk = handle.readBytes(Math.min(UPLOAD_CHUNK_BYTES, totalBytes - offset));
       if (chunk.byteLength === 0) throw new Error("读取本地原件时提前结束。");
-      const response = await fetch(`${credentials.serverUrl}/api/uploads/${uploadId}`, {
+      const response = await checkedFetch(`${credentials.serverUrl}/api/uploads/${uploadId}`, {
         method: "PATCH",
         headers: {
           authorization: `Bearer ${credentials.token}`,
@@ -239,25 +249,37 @@ export async function uploadMediaCapture(
         body: chunk as unknown as BodyInit,
       });
       if (response.status === 409) {
-        offset = Number(response.headers.get("upload-offset") ?? offset);
+        const nextOffset = Number(response.headers.get("upload-offset") ?? offset);
+        if (nextOffset <= offset && ++stalled > 2) throw uploadError(409);
+        offset = nextOffset;
         await onProgress(uploadId, offset);
         continue;
       }
       if (!response.ok) throw uploadError(response.status);
-      offset = Number(response.headers.get("upload-offset") ?? offset + chunk.byteLength);
+      const nextOffset = Number(response.headers.get("upload-offset") ?? offset + chunk.byteLength);
+      if (!Number.isSafeInteger(nextOffset) || nextOffset <= offset || nextOffset > totalBytes) throw new ApiError("服务器上传位置无效。", 502);
+      offset = nextOffset;
       await onProgress(uploadId, offset);
     }
   } finally {
     handle.close();
   }
-  const completed = await fetch(`${credentials.serverUrl}/api/uploads/${uploadId}/complete`, {
+  await guard();
+  const completed = await checkedFetch(`${credentials.serverUrl}/api/uploads/${uploadId}/complete`, {
     method: "POST",
     headers: { authorization: `Bearer ${credentials.token}` },
   });
   if (!completed.ok) throw uploadError(completed.status, "无法完成上传");
-  const body = await completed.json() as { inboxItemId?: string };
-  if (typeof body.inboxItemId !== "string") throw new ApiError("服务器媒体上传结果无效。", 502);
-  return body.inboxItemId;
+  const body = await completed.json() as { inboxItemId?: string; assetId?: string };
+  await guard();
+  if (options.draftId ? typeof body.assetId !== "string" : typeof body.inboxItemId !== "string") throw new ApiError("服务器媒体上传结果无效。", 502);
+  return { assetId: body.assetId ?? null, inboxItemId: body.inboxItemId ?? null };
+}
+
+export async function uploadMediaCapture(credentials: Credentials, captureId: string, payload: MediaCapturePayload, onProgress: UploadProgress = async () => {}) {
+  const receipt = await uploadMediaCaptureReceipt(credentials, captureId, payload, onProgress);
+  if (!receipt.inboxItemId) throw new ApiError("服务器未确认家庭投递。", 502);
+  return receipt.inboxItemId;
 }
 
 export function removeLocalFile(uri: string): void {

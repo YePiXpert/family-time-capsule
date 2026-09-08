@@ -23,7 +23,7 @@ FROM node:24-alpine AS runner
 WORKDIR /app
 # FFmpeg 是增强能力（视频封面/波形/转码），不是核心硬依赖（PRD §19）；
 # Noto CJK 保留既有衍生物字体；可搜索 PDF 使用 resources/fonts 中的嵌入许可字体。
-RUN apk add --no-cache ffmpeg libc6-compat font-noto-cjk \
+RUN apk add --no-cache ffmpeg libc6-compat font-noto-cjk util-linux \
   && addgroup -S --gid 1001 nodejs \
   && adduser -S --uid 1001 --ingroup nodejs nextjs
 ENV NODE_ENV=production \

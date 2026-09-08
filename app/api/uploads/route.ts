@@ -12,6 +12,7 @@ export async function POST(request: Request) {
   }
   try {
     const body = asRecord(await readMobileJson(request));
+    if (body.draftId !== undefined && body.draftId !== null && (typeof body.draftId !== "string" || !/^[\w-]{1,128}$/u.test(body.draftId))) throw new UploadServiceError("invalid_input", 400);
     const captureId = typeof body.captureId === "string" ? body.captureId : "";
     const filename = typeof body.filename === "string" ? body.filename.trim() : "";
     const declaredMime = typeof body.declaredMime === "string" ? body.declaredMime : "";
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
       familyId: authorization.context.familyId,
       userId: authorization.context.userId,
       captureId,
+      draftId: typeof body.draftId === "string" ? body.draftId : null,
       filename,
       declaredMime,
       totalBytes,

@@ -21,7 +21,7 @@ export async function HEAD(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     if (!UUID_PATTERN.test(id)) throw new UploadServiceError("not_found", 404);
-    const session = await getUploadSession(authorization.context.familyId, id);
+    const session = await getUploadSession(authorization.context.familyId, id, authorization.context.userId);
     return new Response(null, {
       status: 200,
       headers: {
@@ -59,6 +59,7 @@ export async function PATCH(request: Request, context: Context) {
     const result = await appendUploadChunk({
       familyId: authorization.context.familyId,
       uploadId: id,
+      actorUserId: authorization.context.userId,
       offset: Number(offsetRaw),
       contentLength: Number(lengthRaw),
       body: Readable.fromWeb(
@@ -87,7 +88,7 @@ export async function DELETE(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     if (!UUID_PATTERN.test(id)) throw new UploadServiceError("not_found", 404);
-    const session = await cancelUpload(authorization.context.familyId, id);
+    const session = await cancelUpload(authorization.context.familyId, id, authorization.context.userId);
     return uploadJson({ uploadId: session.id, status: session.status });
   } catch (error) {
     return uploadError(error);

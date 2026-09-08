@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- Local preserved blobs must be previewed without uploading them to an image optimizer. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { uploadDraftOriginal, uploadDraftOriginalPrivate } from "@/lib/drafts/browser-upload";
+import { uploadDraftOriginal } from "@/lib/drafts/browser-upload";
 import { emptyDraftContent, isDraftDateComplete, type Draft, type DraftContent } from "@/lib/drafts/model";
 import { listBrowserDrafts, readBrowserOriginal, writeBrowserDraft, type BrowserDraft, type BrowserOriginal } from "@/lib/drafts/browser-store";
 import { zonedWallTimeToUtc, utcToZonedWallTimeInput } from "@/lib/metadata/time";
@@ -170,12 +170,20 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
           }
         } else if (check.status !== 404) throw new Error("暂时无法核对保存结果，本机草稿仍保留。");
       }
+      if (row.content.items.some(item => !item.assetId)) {
+        const accepted = await requestDraft(row.id, "", { expectedRevision: row.serverRevision, mutationId: row.mutationId, content: row.content }, "PUT");
+        const live = current.current!;
+        await store({ ...live, serverRevision: accepted.revision, revision: live.revision + 1 });
+        row = current.current!;
+      }
       for (const item of row.content.items) {
         if (item.assetId || !item.localCaptureRef) continue;
         const original = await readBrowserOriginal(scope, item.localCaptureRef);
         if (!original) throw new Error("本机原件不可读，请保留草稿并检查存储空间。");
-        if (row.content.visibility === "private") throw new Error("私密素材已留在本机，暂不上传；读者权限补齐后才能送往服务器。");
-        const result = await uploadDraftOriginal(original.file, item.localCaptureRef);
+        const revision = current.current!.revision;
+        const guard = () => { if (!mounted.current || current.current?.id !== row.id || current.current?.revision !== revision) throw new Error("草稿已修改或关闭，上传已暂停；原件仍保留。"); };
+        const result = await uploadDraftOriginal(original.file, item.localCaptureRef, row.id, guard);
+        guard();
         const assetId = result.assetId ?? result.existingAssetId;
         if (!assetId) throw new Error(result.message ?? "原件上传未完成，本机原件仍在。");
         const live = current.current!;
@@ -288,7 +296,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
       {content.visibility === "members" && <fieldset><legend>可以阅读的登录成员（始终包含自己）</legend>{members.map(m => <label key={m.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.readerUserIds.includes(m.id)} onChange={e => change({ readerUserIds: e.target.checked ? [...content.readerUserIds, m.id] : content.readerUserIds.filter(id => id !== m.id) })} />{m.name}</label>)}
         {content.readerUserIds.filter(id => !members.some(m => m.id === id)).map(id => <label key={id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked onChange={() => change({ readerUserIds: content.readerUserIds.filter(readerId => readerId !== id) })} />已选成员（待联网核对，点按移除）</label>)}
       </fieldset>}
-      {content.visibility !== "family" && <p className="text-sm text-ink-muted">新上传的素材只对这里的读者可见；原本就已全家共享的素材不会因此变成私密，仍可在资料库被家人看到。</p>}
+      {content.visibility !== "family" && <p className="text-sm text-ink-muted">草稿文字和新素材在发布前仅自己可见，发布后按这里选择的读者开放。原本已全家共享的素材不会因此收回旧共享。</p>}
     </fieldset>
     <div className="flex flex-wrap gap-3"><button className={button} disabled={syncing || !!diskError || recording || draft.status === "published"} onClick={() => void save(false, true)}>先收进来，交给家人整理</button><button className={button} disabled={syncing || !!diskError || recording || draft.status === "published"} onClick={() => void save(false)}>保留草稿，稍后继续</button>{canArchive && <button className="ui-button-primary min-h-11" disabled={syncing || !!diskError || recording || draft.status === "published"} onClick={() => void save(true)}>{draft.status === "queued" ? "重试创建记忆" : "保存为一条记忆"}</button>}{draft.status === "queued" && <button className={button} disabled={syncing} onClick={() => void store({ ...draft, status: "editing", revision: draft.revision + 1 }).catch(() => {})}>继续编辑</button>}<button className={button} disabled={syncing || draft.status === "published"} onClick={() => void discard()}>放弃这份草稿</button></div>
   </div>;

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MediaCapturePayload } from "../src/types";
-import { uploadMediaCapture } from "../src/storage/files";
+import { uploadMediaCapture, uploadMediaCaptureReceipt } from "../src/storage/files";
 
 const mocks = vi.hoisted(() => ({ opened: vi.fn(), closed: vi.fn() }));
 vi.mock("expo-file-system", () => ({
@@ -71,4 +71,19 @@ describe("native batch upload", () => {
     expect(fetcher.mock.calls[1]![0]).toContain("/legacy-transfer/retry");
     expect(fetcher.mock.calls[2]![1].headers["upload-offset"]).toBe("0");
   });
+});
+
+it("draft upload binds its declaration, returns a private asset receipt and stops before complete after a reader/account edit", async () => {
+  const current = { valid: true };
+  const fetcher = requests([json({uploadId:"private-transfer",uploadOffset:0,status:"created"}),new Response(null,{status:204,headers:{"upload-offset":"4"}})]);
+  await expect(uploadMediaCaptureReceipt(credentials,"capture",{...payload,importSessionId:undefined},async (_id,offset)=>{ if(offset===4) current.valid=false; },{draftId:"draft-a",guard:async()=>{if(!current.valid)throw new Error("draft changed");}})).rejects.toThrow("draft changed");
+  expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toMatchObject({draftId:"draft-a",captureId:"capture"});
+  expect(fetcher.mock.calls.some(([url])=>String(url).endsWith("/complete"))).toBe(false);
+  expect(mocks.closed).toHaveBeenCalledOnce();
+});
+it("draft lost-complete replay validates immutable binding and receives assetId without inbox",async()=>{
+  const fetcher=requests([json({uploadId:"private-transfer",status:"completed",uploadOffset:4,assetId:"private-asset",inboxItemId:null})]);
+  expect(await uploadMediaCaptureReceipt(credentials,"capture",{...payload,importSessionId:undefined},async()=>{},{draftId:"draft-a"})).toEqual({assetId:"private-asset",inboxItemId:null});
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(mocks.opened).not.toHaveBeenCalled();
 });

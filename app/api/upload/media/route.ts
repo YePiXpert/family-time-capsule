@@ -90,7 +90,7 @@ export async function POST(request: Request) {
   // §5：显式 private 上传不进入全家可见的收件箱/资料库窗口。
   const visibility = form.get("visibility") === "private" ? "private" : "family";
   const buffer = Buffer.from(await file.arrayBuffer());
-  if (captureId) {
+  if (captureId && visibility !== "private") {
     const existingCapture = await getInboxEntry(context.familyId, captureId);
     if (existingCapture) {
       const existingAsset = existingCapture.assets[0];
@@ -134,7 +134,7 @@ export async function POST(request: Request) {
       );
     case "duplicate":
       let duplicateInboxItemId: string | undefined;
-      if (captureId) {
+      if (captureId && visibility !== "private") {
         const inbox = createInboxItemForAssetIdempotent(
           context.familyId,
           result.existing,

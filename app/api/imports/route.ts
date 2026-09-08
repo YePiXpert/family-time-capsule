@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   const page = await listImportSessions(authorization.context.familyId, {
     cursor: url.searchParams.get("cursor"),
     limit: 50,
+    actorUserId: authorization.context.userId,
   });
   return uploadJson({
     sessions: page.sessions.map((session) => ({

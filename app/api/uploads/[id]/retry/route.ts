@@ -12,7 +12,7 @@ export async function POST(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     if (!UUID_PATTERN.test(id)) throw new UploadServiceError("not_found", 404);
-    const session = await restartUpload(authorization.context.familyId, id);
+    const session = await restartUpload(authorization.context.familyId, id, authorization.context.userId);
     return uploadJson({ uploadId: session.id, uploadOffset: session.receivedBytes, status: session.status });
   } catch (error) {
     return uploadError(error);

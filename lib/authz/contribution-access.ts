@@ -548,6 +548,9 @@ export function getContributionAssetAccessInTransaction(
     if (rootRow.createdByUserId === principal.userId) {
       return { readable: true, automaticEligible: false };
     }
+    if (tx.get<{ allowed: number }>(sql`select 1 as allowed where exists (select 1 from json_each(${JSON.stringify(familyAssetIds)}) review_ids where ${familyReviewAssetPredicate(principal.familyId, sql`review_ids.value`)})`)) {
+      return { readable: true, automaticEligible: false };
+    }
     const visibleEventReference = tx
       .select({ id: memoryEvent.id })
       .from(memoryEvent)
@@ -572,6 +575,17 @@ export function getContributionAssetAccessInTransaction(
     return { readable: false, automaticEligible: false };
   }
   return { readable: true, automaticEligible: !restrictedReference };
+}
+
+/** A family review is an explicit publication of these originals for organizing. */
+export function familyReviewAssetPredicate(familyId: string, assetId: SQL): SQL {
+  return sql`exists (select 1 from draft review_draft
+    inner join inbox_item review_inbox on review_inbox.id = review_draft.inbox_item_id
+    inner join inbox_item_asset review_asset on review_asset.inbox_item_id = review_inbox.id
+    where review_draft.family_id = ${familyId} and review_inbox.family_id = ${familyId}
+      and review_asset.family_id = ${familyId} and review_asset.asset_id = ${assetId}
+      and review_draft.visibility = 'family' and review_draft.status <> 'discarded'
+      and review_inbox.status <> 'discarded')`;
 }
 
 /** Authenticated media read facade. */
@@ -625,6 +639,7 @@ export function readableAssetPredicate(snapshot: ContributionAccessSnapshot, ass
       select 1 from root_permission
       where root_visibility = 'family'
          or uploader_id = ${p.userId}
+         or ${familyReviewAssetPredicate(p.familyId, sql`root_id`)}
          or exists (
            select 1 from memory_event_asset pred_link
            inner join memory_event pred_event on pred_event.id = pred_link.memory_event_id

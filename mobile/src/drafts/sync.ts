@@ -1,8 +1,10 @@
+import * as Crypto from "expo-crypto";
+import { uploadMediaCaptureReceipt } from "../storage/files";
 import { ApiError, requestMobileJson } from "../api/client";
 import { getActiveDestination, getDatabase } from "../storage/database";
 import { listLocalDrafts, saveLocalDraft, type LocalDraft } from "./store";
 import { parseDraftContent, type Draft } from "./model";
-import type { Credentials, OutboxItem } from "../types";
+import type { Credentials, OutboxItem, MediaCapturePayload } from "../types";
 
 /** Runs after originals, under the same account/family generation and upload consent gate. */
 export async function syncLocalDrafts(credentials: Credentials, options: { isCurrent?: () => boolean; authorizeUpload?: (item: OutboxItem) => Promise<boolean> }) {
@@ -47,20 +49,30 @@ export async function syncLocalDrafts(credentials: Credentials, options: { isCur
         continue;
       }
     } catch (error) { if (!(error instanceof ApiError) || error.status !== 404) throw error; }
-    const items = [];
-    let pending = false;
-    for (const item of row.content.items) {
-      if (item.assetId) { items.push(item); continue; }
-      const capture = await db.getFirstAsync<{ inbox_item_id: string | null }>("SELECT inbox_item_id FROM local_capture WHERE id=?", item.localCaptureRef!);
-      if (!capture?.inbox_item_id) { pending = true; break; }
-      const entry = await requestMobileJson(credentials, `/api/mobile/v1/inbox/${capture.inbox_item_id}`) as { assets?: { id: string }[] };
-      await guard();
-      const assetId = entry.assets?.[0]?.id;
-      if (!assetId) { pending = true; break; }
-      items.push({ ...item, assetId });
+    if (row.content.items.some(item => !item.assetId)) {
+      await guardRevision();
+      const saved = await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}`, { method: "PUT", body: JSON.stringify({ expectedRevision: row.serverRevision, mutationId: row.mutationId, content: row.content }) }) as Draft;
+      parseDraftContent(saved);
+      await update({ ...row, serverRevision: saved.revision, revision: row.revision + 1 });
     }
-    if (pending) continue;
-    if (JSON.stringify(items) !== JSON.stringify(row.content.items)) await update({ ...row, content: { ...row.content, items }, revision: row.revision + 1 });
+    for (const item of [...row.content.items]) {
+      if (item.assetId) continue;
+      const capture = await db.getFirstAsync<{ payload_json: string | null }>("SELECT payload_json FROM local_capture WHERE id=?", item.localCaptureRef!);
+      if (!capture?.payload_json) throw new Error("本机草稿原件不可读。");
+      const payload = JSON.parse(capture.payload_json) as MediaCapturePayload;
+      const intake = await db.getFirstAsync<{ import_session_id: string }>("SELECT import_session_id FROM local_import_item WHERE capture_id=?", item.localCaptureRef!);
+      if (intake) payload.importSessionId = intake.import_session_id;
+      const receipt = await uploadMediaCaptureReceipt(credentials, item.localCaptureRef!, payload, async (uploadId, uploadOffset) => {
+        await guardRevision();
+        payload.uploadId = uploadId; payload.uploadOffset = uploadOffset;
+        await db.runAsync("UPDATE local_capture SET payload_json=? WHERE id=?", JSON.stringify(payload), item.localCaptureRef!);
+      }, { draftId: row.id, guard: guardRevision });
+      if (!receipt.assetId) throw new ApiError("服务器未确认私密原件。", 502);
+      const duplicate = row.content.items.find(i => i.id !== item.id && i.assetId === receipt.assetId);
+      const items = duplicate ? row.content.items.filter(i => i.id !== item.id) : row.content.items.map(i => i.id === item.id ? { ...i, assetId: receipt.assetId } : i);
+      const coverItemId = duplicate && row.content.coverItemId === item.id ? duplicate.id : row.content.coverItemId;
+      await update({ ...row, content: { ...row.content, items, coverItemId }, mutationId: Crypto.randomUUID(), revision: row.revision + 1 });
+    }
     await guardRevision();
     const received = await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}`, { method: "PUT", body: JSON.stringify({ expectedRevision: row.serverRevision, mutationId: row.mutationId, content: row.content }) }) as Draft;
     parseDraftContent(received);

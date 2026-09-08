@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "导入进度 · Family Time Capsule"
 export default async function ImportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const [{ id }, context] = await Promise.all([params, requireFamily()]);
   const [detail, people] = await Promise.all([
-    getImportSessionDetail(context.familyId, id),
+    getImportSessionDetail(context.familyId, id, context.userId),
     listPeople(context.familyId),
   ]);
   if (!detail) notFound();

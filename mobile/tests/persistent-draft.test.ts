@@ -35,7 +35,7 @@ it("retains a mixed draft across reinitialization without copying originals, wit
   expect((await getLocalCaptureDetail("audio"))?.localUri).toBe("file:///originals/audio");
   await queueDraftOriginals(reordered);
   await queueDraftOriginals(reordered);
-  expect(db.prepare("SELECT count(*) n FROM outbox").get()).toEqual({ n: 3 });
+  expect(db.prepare("SELECT count(*) n FROM outbox").get()).toEqual({ n: 0 });
   const discarded = { ...reordered, revision: reordered.revision + 1, status: "discarded" as const };
   await saveLocalDraft(discarded, reordered.revision);
   expect(db.prepare("SELECT count(*) n FROM local_capture").get()).toEqual({ n: 3 });

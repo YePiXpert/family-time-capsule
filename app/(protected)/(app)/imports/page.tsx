@@ -10,10 +10,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "批量导入 · Family Time Capsule" };
 
 export default async function ImportsPage() {
-  const { familyId } = await requireFamily();
+  const { familyId, userId } = await requireFamily();
   const [people, history] = await Promise.all([
     listPeople(familyId),
-    listImportSessions(familyId, { limit: 20 }),
+    listImportSessions(familyId, { limit: 20, actorUserId: userId }),
   ]);
   return <main className="page-container max-w-5xl">
     <PageHeader eyebrow="Persistent imports" title="批量导入中心" description="一次选择很多文件，最多三项并发；页面关闭、网络中断或服务器重启后都能按确认 offset 继续。" />

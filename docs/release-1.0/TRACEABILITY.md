@@ -164,3 +164,7 @@
 - CAP-2 / R03：共享 draft isDraftDateComplete；capture-persistence（真实手机记录页/hook/SQLite重开）与 persistent-draft（Bearer API/独立库/导出恢复）。
 - CAP-1 / ID-11 / R01–R02：draft-readers 最小账号 DTO，0061 修复旧 draft 可见性约束；draft-reader-migration、draft-readers 集成；native-capture.spec.ts 启动 capture-production.http.ts，经原生实际 hook、sync 和 fetch 贯通 Next 生产 HTTP，未选管理员 404；Web 失效读者可移除。
 - P0-C / P0-D 尚未完成：不可使用上述文字/读者专项代表新私密附件、派生范围或全部外部模型配额通过。
+
+### P0-C 私密原件贯通（2026-09-08）
+
+`upload_session.finalAssetId` 是私密回执；新增 immutable draft/instance 绑定，原件不先进入公共 inbox。`mobile/src/drafts/sync.ts` 与 Web editor 先持久化草稿，然后共用原断点传输。证据：private-draft-upload、transfer-lock、mobile batch-upload/draft-sync、native-capture production E2E。修复审查反例：过期孤立暂存、重复引用、旧版已完成公开回执、显式家庭整理读取、Files 批次关系、随机 ID 锁文件。Live Photo、全部派生与 R08 恢复尚继续，不提升整个需求为完成。

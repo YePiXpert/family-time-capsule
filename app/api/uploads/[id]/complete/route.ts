@@ -14,7 +14,7 @@ export async function POST(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     if (!UUID_PATTERN.test(id)) throw new UploadServiceError("not_found", 404);
-    const result = await completeUpload(authorization.context.familyId, id);
+    const result = await completeUpload(authorization.context.familyId, id, authorization.context.userId);
     return uploadJson(result, { status: result.status === "stored" ? 201 : 200 });
   } catch (error) {
     return uploadError(error);

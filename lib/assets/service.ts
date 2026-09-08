@@ -120,7 +120,9 @@ export async function storeOriginal(
   input: StoreOriginalInput,
 ): Promise<StoreOriginalResult> {
   const sha256 = sha256Of(input.buffer);
-  const existing = await findOriginalBySha256(input.familyId, sha256, input.createdByUserId);
+  const existing = input.visibility === "private"
+    ? getDb().select().from(asset).where(and(eq(asset.familyId, input.familyId), eq(asset.sha256, sha256), eq(asset.visibility, "private"), eq(asset.createdByUserId, input.createdByUserId), isNull(asset.originalAssetId))).get()
+    : await findOriginalBySha256(input.familyId, sha256);
   if (existing) return { status: "duplicate", existing: existing };
 
   const storage = getAssetStorage();
