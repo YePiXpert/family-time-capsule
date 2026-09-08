@@ -106,7 +106,7 @@ async function main() {
   });
   assert.deepEqual(
     connection.sqlite.prepare("select * from memory_event order by id").all(),
-    rows.map(row => ({ ...(row as Record<string, unknown>), title_source: "legacy_unknown", title_revision: 0, visibility: "family", created_by_user_id: null })),
+    rows.map(row => ({ ...(row as Record<string, unknown>), body_text: "", title_source: "legacy_unknown", title_revision: 0, visibility: "family", created_by_user_id: null })),
   );
   assert.deepEqual(connection.sqlite.pragma("foreign_key_check"), []);
   assert.equal(
