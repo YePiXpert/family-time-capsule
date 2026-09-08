@@ -41,6 +41,11 @@ export type Draft = DraftContent & {
 export function emptyDraftContent(): DraftContent {
   return { title: "", text: "", occurredAt: null, occurredAtPrecision: "exact", locationText: "", participantIds: [], visibility: "family", readerUserIds: [], coverItemId: null, items: [] };
 }
+/** Incomplete dates may remain drafts; only unknown may be published without a date. */
+export function isDraftDateComplete(content: Pick<DraftContent, "occurredAt" | "occurredAtPrecision">): boolean {
+  return content.occurredAtPrecision === "unknown" ||
+    (content.occurredAt !== null && Number.isFinite(Date.parse(content.occurredAt)));
+}
 export function parseDraftContent(value: unknown): DraftContent {
   const invalid = () => { throw new Error("invalid_draft"); };
   if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();

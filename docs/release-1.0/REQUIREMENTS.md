@@ -245,3 +245,7 @@
 ## 明确非产品范围(白皮书/Goal 明示排除,不是砍需求)
 
 1. 官方多租户托管/SaaS 2. 支付平台 3. 第三个默认模型/embedding 服务 4. 全图库人脸/声纹识别 5. 声音克隆 6. 医疗/育儿判断 7. 公共社交/广告跟踪 8. 独立端到端加密产品模式(自托管+TLS+受控存储为首发承诺)
+
+## Astra / Codex 行为复核（2026-09-08）
+
+CAP-2 / R03：手机记录页「不详」经实际 usePersistentDraft 保存的旧 guard 已用失败测试复现并修复；Web/手机/服务端共用日期完整性校验。mobile/tests/capture-persistence.test.ts 6 项覆盖 unknown 保存重开、其余五档缺日期拒绝；tests/integration/persistent-draft.test.ts 覆盖真实 Bearer HTTP、独立 SQLite 连接、导出到新目录恢复，仍为 unknown 且正文完整。无迁移或版本变更。这是日期保存缺口的自动化证据；CAP-2 整行仍部分实现，完整离线混合记忆即读和真机仍需继续验证。

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { uploadDraftOriginal, uploadDraftOriginalPrivate } from "@/lib/drafts/browser-upload";
-import { emptyDraftContent, type Draft, type DraftContent } from "@/lib/drafts/model";
+import { emptyDraftContent, isDraftDateComplete, type Draft, type DraftContent } from "@/lib/drafts/model";
 import { listBrowserDrafts, readBrowserOriginal, writeBrowserDraft, type BrowserDraft, type BrowserOriginal } from "@/lib/drafts/browser-store";
 import { zonedWallTimeToUtc, utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { anchorFromPrecisionInput, formatOccurredLabel, type OccurredAtPrecision } from "@/lib/metadata/precision";
@@ -206,7 +206,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
   async function save(publish: boolean, review = false) {
     const row = current.current;
     if (!row) return;
-    if (publish && !row.content.occurredAt && row.content.occurredAtPrecision !== "unknown") { setNotice("请确认发生时间，或选择「时间记不得了」；也可以先保留草稿。"); return; }
+    if (publish && !isDraftDateComplete(row.content)) { setNotice("请确认发生时间，或选择「时间记不得了」；也可以先保留草稿。"); return; }
     if (publish && row.content.visibility === "members" && row.content.readerUserIds.length === 0) { setNotice("请先选择可以阅读这件事的家人，或改回全家/仅自己。"); return; }
     try {
       await store({ ...row, status: publish ? "queued" : "editing", revision: row.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as Crypto from "expo-crypto";
 import { bindLocalDraft, createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft, type LocalDraft } from "./store";
 import { requestMobileJson } from "../api/client";
-import { parseDraftContent, type Draft, type DraftContent } from "./model";
+import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent } from "./model";
 import type { Credentials, MediaCapturePayload } from "../types";
 export function usePersistentDraft(scope: string, enabled: boolean, credentials: Credentials | null) {
   const [draft, setDraft] = useState<LocalDraft | null>(null);
@@ -92,7 +92,7 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     await writes.current;
     const row = current.current;
     if (!row || failure.current) throw new Error("本机草稿尚未保存，请检查存储空间。");
-    if (publish && !row.content.occurredAt) throw new Error("请先确认发生时间；不确定时可以先保留草稿。");
+    if (publish && !isDraftDateComplete(row.content)) throw new Error("请先确认发生时间，或选择「不详」；也可以先保留草稿。");
     if (publish && row.content.visibility !== "family" && row.content.items.some(item => !item.assetId)) {
       throw new Error("私密/指定成员的素材本轮先保留在本机；文字-only 的私密记忆可以直接创建。");
     }

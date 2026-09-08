@@ -12,7 +12,7 @@ import type { FamilyContext } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { createContributionAccessSnapshot, getContributionAssetAccessInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
 import { indexMemoryEvent, indexDocumentAssetsForEvent } from "@/lib/search/service";
-import { parseDraftContent, type Draft, type DraftContent } from "./model";
+import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent } from "./model";
 
 export class DraftError extends Error {
   constructor(readonly code: string, readonly status = 400) { super(code); }
@@ -118,7 +118,7 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     const eventId = randomUUID(), now = new Date();
     // §6 日期精度：非 unknown 必须有时间锚点；unknown 用创建时刻做内部
     // 排序锚点（永不显示为发生时间，不参与日期筛选/年龄）。
-    if (!content.occurredAt && content.occurredAtPrecision !== "unknown") throw new DraftError("occurred_at_required");
+    if (!isDraftDateComplete(content)) throw new DraftError("occurred_at_required");
     const anchor = content.occurredAt ? new Date(content.occurredAt) : now;
     if (Number.isNaN(anchor.getTime())) throw new DraftError("invalid_draft");
     if (!content.text.trim() && !content.items.length) throw new DraftError("empty_draft");

@@ -116,6 +116,21 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
   discardDraft(ctx, draft3.id, draft3.revision);
   expect(getDraft(ctx, draft3.id).status).toBe("discarded");
   expect(getDb().select().from(asset).where(sql`${asset.originalAssetId} is null`).all()).toHaveLength(3);
+  // R03: the same native DTO is published through authenticated HTTP and remains
+  // unknown through independent database reopen, export and a fresh-instance restore.
+  const unknownId = randomUUID();
+  const unknownRoute = { params: Promise.resolve({ id: unknownId }) };
+  const unknownContent = { ...emptyDraftContent(), title: "记不得日期", text: "那次江边散步的正文", occurredAtPrecision: "unknown" as const };
+  const unknownSaved = await PUT(request({ expectedRevision: 0, mutationId: randomUUID(), content: unknownContent }), unknownRoute);
+  expect(unknownSaved.status).toBe(200);
+  expect(await unknownSaved.json()).toMatchObject({ occurredAt: null, occurredAtPrecision: "unknown" });
+  const unknownPublished = await POST(request({ expectedRevision: 1 }, "POST"), unknownRoute);
+  expect(unknownPublished.status).toBe(200);
+  const unknownMemory = await unknownPublished.json();
+  expect(unknownMemory).toMatchObject({ status: "published", occurredAt: null, occurredAtPrecision: "unknown" });
+  const reopenedUnknown = new Database(path.join(dirs[0]!, "db/capsule.sqlite"));
+  expect(reopenedUnknown.prepare("select occurred_at, occurred_at_precision from draft where id=?").get(unknownId)).toEqual({ occurred_at: null, occurred_at_precision: "unknown" });
+  reopenedUnknown.close();
   const backup = await buildFamilyExport(ctx.familyId, { actorUserId: ctx.userId });
   const bytes = readFileSync(backup.filePath);
   const zip = await JSZip.loadAsync(bytes);
@@ -127,6 +142,10 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
     const operator = target.getDb().get<{ id: string }>(sql`select id from user`)!;
     await (await import("@/lib/restore/service")).restoreFromZip(bytes, operator.id);
     expect(target.getDb().all(sql`pragma foreign_key_check`)).toEqual([]);
+    expect(target.getDb().get(sql`select occurred_at, occurred_at_precision from draft where id=${unknownId}`)).toEqual({ occurred_at: null, occurred_at_precision: "unknown" });
+    const restoredUnknown = await (await import("@/lib/memories/service")).getMemoryEventDetail(ctx.familyId, unknownMemory.memoryEventId);
+    expect(restoredUnknown?.event.occurredAtPrecision).toBe("unknown");
+    expect(restoredUnknown?.sourceNotes.map(n => n.rawText)).toEqual([unknownContent.text]);
     const restored = target.getDb().select().from(memoryEventAsset).where(eq(memoryEventAsset.memoryEventId, detail.event.id)).all().sort((a, b) => a.sortOrder - b.sortOrder);
     expect(restored.map(a => a.assetId)).toEqual([...assets].reverse());
     expect(restored.map(a => a.caption)).toEqual(["原始顺序", "原始顺序", "原始顺序"]);

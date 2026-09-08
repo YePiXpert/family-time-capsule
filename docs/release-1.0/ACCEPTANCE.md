@@ -106,3 +106,9 @@ NAV-5/CAP-1 仍为部分实现：私密事件读者、完整日期精度与服�
 真实 CPA/MiMo、真机杀进程和签名分发仍未验收。没有因本里程碑创建 stable tag。
 
 M3-C 最终 Docker 镜像：`sha256:11ce460bff80718c5529dd38ede9d788c67e5ef2242f5237abcf1b878be1994f`；修复后相册/资料库 Chromium 4 项再次通过，原件库完整验证器校验 34/34 哈希一致。
+
+## Astra / Codex 增补回归（2026-09-08）
+
+| 场景 | 证据 | 当前结论 |
+| --- | --- | --- |
+| R03 不详时间通过真实手机保存 hook | mobile/tests/capture-persistence.test.ts：记录页点击/实际 hook/SQLite/重开；persistent-draft.test.ts：真实 Bearer HTTP 保存发布/独立库读取/导出新目录恢复，unknown 与正文保留 | 上述自动化通过；原生设备和完整 R04 混合私密链路仍未验收 |
