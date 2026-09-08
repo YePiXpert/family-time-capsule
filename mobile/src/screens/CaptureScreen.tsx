@@ -22,6 +22,7 @@ import { preservePickedDocument, preservePickedMedia, preserveRecordedAudio, rem
 import { beginPickerReceipt, finishPickerReceipt } from "../native/picker-intake";
 import { PrecisionDateTimeField } from "../components/PrecisionDateTimeField";
 import { usePersistentDraft } from "../drafts/use-draft";
+import { parseDraftReaders, type DraftReader } from "../drafts/readers";
 import { colors, sharedStyles } from "../theme";
 import type { LocalImportIntakeItem, MediaCapturePayload } from "../types";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
@@ -36,6 +37,21 @@ export function CaptureScreen() {
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [message, setMessage] = useState<string | null>(null);
   const capsuleDraft = usePersistentDraft(draftScope, captureAccess !== "readonly", credentials);
+  const [readerState, setReaderState] = useState<{ scope: string; members: DraftReader[]; error: string | null }>({ scope: "", members: [], error: null });
+  const [readerRefresh, setReaderRefresh] = useState(0);
+  useEffect(() => {
+    let active = true;
+    if (credentials && captureAccess === "enabled") {
+      void requestMobileJson(credentials, "/api/mobile/v1/draft-readers").then(body => {
+        const members = parseDraftReaders(body);
+        if (active) setReaderState({ scope: draftScope, members, error: null });
+      }).catch(() => {
+        if (active) setReaderState({ scope: draftScope, members: [], error: "暂时无法核对登录成员。已选读者保留，发送时会再次验证；不会改为全家可见。" });
+      });
+    }
+    return () => { active = false; };
+  }, [credentials, draftScope, captureAccess, readerRefresh]);
+  const readers = readerState.scope === draftScope ? readerState.members : [];
   const { addOriginal, change: changeDraft } = capsuleDraft;
   const currentDraftId = capsuleDraft.draft?.id;
   const [originals, setOriginals] = useState<Record<string, LocalCaptureDetail>>({});
@@ -461,16 +477,23 @@ export function CaptureScreen() {
           })}
         </View>
         {capsuleDraft.draft.content.visibility === "members" ? <>
-          <Text style={sharedStyles.label}>可以选择这件事的家人</Text>
+          <Text style={sharedStyles.label}>可以阅读的登录成员（始终包含自己）</Text>
+          {readerState.scope === draftScope && readerState.error ? <Text accessibilityRole="alert" style={sharedStyles.body}>{readerState.error}</Text> : null}
+          {!credentials ? <Text style={sharedStyles.body}>连接家庭后可以选择登录成员；没有账号的人物仍可参与这件事。</Text> : null}
+          {credentials ? <Action label="重新核对成员" hint="联网更新可选成员，保留已有选择" disabled={false} onPress={() => setReaderRefresh(value => value + 1)} /> : null}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-            {(people ?? []).map(person => {
-              const checked = capsuleDraft.draft!.content.readerUserIds.includes(person.id);
+            {readers.map(member => {
+              const checked = capsuleDraft.draft!.content.readerUserIds.includes(member.id);
               return (
-                <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => { const ids = capsuleDraft.draft!.content.readerUserIds; changeDraft({ readerUserIds: checked ? ids.filter(id => id !== person.id) : [...ids, person.id] }); }} style={[sharedStyles.secondaryButton, { opacity: checked ? 1 : 0.65 }]}>
-                  <Text style={checked ? sharedStyles.secondaryText : { color: colors.muted, fontSize: 14 }}>{checked ? `已选 · ${person.displayName}` : person.displayName}</Text>
+                <Pressable key={member.id} accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => { const ids = capsuleDraft.draft!.content.readerUserIds; changeDraft({ readerUserIds: checked ? ids.filter(id => id !== member.id) : [...ids, member.id] }); }} style={[sharedStyles.secondaryButton, { opacity: checked ? 1 : 0.65 }]}>
+                  <Text style={checked ? sharedStyles.secondaryText : { color: colors.muted, fontSize: 14 }}>{checked ? `已选 · ${member.name}` : member.name}</Text>
                 </Pressable>
               );
             })}
+            {capsuleDraft.draft.content.readerUserIds.filter(id => !readers.some(member => member.id === id)).map(id =>
+              <Pressable key={id} accessibilityRole="checkbox" accessibilityState={{ checked: true }} onPress={() => changeDraft({ readerUserIds: capsuleDraft.draft!.content.readerUserIds.filter(readerId => readerId !== id) })} style={sharedStyles.secondaryButton}>
+                <Text style={sharedStyles.secondaryText}>已选成员（待联网核对，点按移除）</Text>
+              </Pressable>)}
           </View>
         </> : null}
         <Text style={{ color: colors.muted, fontSize: 12 }}>

@@ -4,9 +4,9 @@
 > 本清单是需求唯一 ID 来源;状态必须由真实代码/自动化/场景证据支撑,禁止"文件存在=完成"。
 > 初始基线:2026-09-06,基于 acea745 探索报告 + 白皮书 1–29 章 + GOAL_FORMAL_1_0.txt。
 
-## 状态统计（2026-09-07 M3-D intake 去向复核）
+## 状态统计（2026-09-08 P0 行为复核）
 
-统计以下有 ID 的需求行，说明括号不改变状态；明确非产品范围的附录不重复计数。
+按下方有 ID 的实际需求行统计；自动化通过不代表真机、真实模型或正式发行。
 
 | 状态 | 数量 |
 | --- | --- |
@@ -49,8 +49,8 @@
 | ID-8 | 恢复码一次显示、hash保存、原子单次使用 | 不能误删最后路径 | 自动化通过(2026-09-07 M2-b:恢复码以实例 AUTH_SECRET 派生密钥 AEAD 加密存储(非明文/非哈希——成熟组件语义,如实登记);生成即替换旧列表;每码单次使用;登录第二腿可作废) | lib/auth/two-factor-service.ts; tests/integration/two-factor.test.ts |
 | ID-9 | 活动设备列表、撤销其他会话、改密后失效重入不删本机原件 | 会话管理 | 自动化通过(M2-a 设备列表/撤销其他;M2-b 恢复令牌重置密码即撤销全部会话) | settings/sessions; lib/auth/account-recovery.ts |
 | ID-10 | 高敏操作(导出/重置认证/改密钥/转所有权/销毁)要求近期重新认证 | step-up auth | 自动化通过(2026-09-07 M2-c:session.recent_auth_at(0049)+10 分钟窗口;完整导出路由强制复核,设置页密码确认 UI;所有权移交/关闭两步验证/恢复码重生成各自内建密码确认;"改密钥"为部署级操作不在 App 内) | lib/auth/step-up.ts; app/api/export |
-| ID-11 | 对象级受众:仅自己/指定成员/家庭;角色+对象双检查 | 默认拒绝 | 自动化通过 | lib/authz/*; tests/integration/isolation |
-| ID-12 | 派生内容读者 ≤ 全部来源共同允许范围 | 撤权后派生下架 | 自动化通过(缩略图/描述/转录/搜索已覆盖) | lib/authz/contribution-access |
+| ID-11 | 对象级受众:仅自己/指定成员/家庭;角色+对象双检查 | 默认拒绝 | 部分实现(P0-A 已补最小 User 读者 API、双端账号选择和旧库 members CHECK 修复；P0-C 新原件/派生/再分享边界仍待完成) | lib/authz/*; tests/integration/isolation |
+| ID-12 | 派生内容读者 ≤ 全部来源共同允许范围 | 撤权后派生下架 | 部分实现(已确认资料库关联与来源再分享仍有缺口；既有缩略图/讲述测试不代表私密事件全部派生范围正确) | lib/authz/contribution-access |
 | ID-13 | 成员生命周期:暂停/退出/移除/角色变更停止后续同步 | 离线副本撤权说明 | 自动化通过(2026-09-07 M2-c:停用/恢复/角色调整已有;新增移出家庭+自助退出,均解绑并即刻撤销全部会话停止后续同步;离线已缓存副本无法远程抹除已在 UI/文档如实声明) | lib/accounts/service.ts; settings/accounts; tests/integration/member-lifecycle |
 | ID-14 | App 内删除账号+关联内容处理;人物记录不级联误删 | Apple 删号要求 | 自动化通过(2026-09-07 M2-c:密码+确认语双确认;凭据全撤(密码/通行密钥/两步验证/会话)+身份匿名化(邮件→deleted-*.invalid)+永久停用;讲述/胶囊/AI 任务等 RESTRICT 引用保留行以保档案完整,人物不级联删除;已下载副本不可召回如实声明) | lib/accounts/service.ts; settings/account |
 | ID-15 | 跨作者内容删除影响预览/合法保留说明/删除完成状态 | 引用守卫 | 自动化通过(回收站+素材引用守卫) | lib/trash |
@@ -132,7 +132,7 @@
 | AI-18 | 私密上下文不传播到家庭公共标题;索引/缓存随权限变化 | 派生权限 | 自动化通过 | visibility post-filter |
 | AI-19 | AI默认关闭;分能力内容告知(→谁/用途/保留未知/关闭方式) | 上传VPS与送CPA/MiMo分环节告知 | 自动化通过(M6:能力卡与移动端显示分能力接收服务) | settings/ai; mobile/src/ai |
 | AI-20 | 自动新素材/历史回填/访客资料分开授权 | 不当同意全量 | 自动化通过 | ai_processing_consent |
-| AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 自动化通过(§9:AI_DAILY_MAX_REQUESTS/_IMAGES/_AUDIO_SECONDS 部署级限额,0/缺省=不限;0060 ai_daily_usage 按 UTC 日计数,单条条件 UPDATE 原子裁决并发不双越;worker 在请求发出前预扣,失败请求也计入;超限 AiQuotaExceededError→failAiJob retryable+retryAfterMs 到日界自动顺延;音频时长仅已知时计入(TranscribeAudioInput.durationSeconds 由处理器从资产元数据/探测传入),未知按 0 秒不估算,ops test 用量未知显示"未知") | lib/ai/quota.ts; jobs/runtime.ts; db/migrations/0060_ai_daily_usage.sql |
+| AI-21 | 低并发;原子每日限额(请求/图片数/音频时长);重试/Retry-After/取消/紧急关闭 | usage未知显示未知 | 部分实现(P0-D 已复现：GET 自然检索和诊断绕过、关限额不计数、未知/亚秒音频及预留失败放行；现有 worker 表与包装保留，统一出站边界待实现) | lib/ai/quota.ts; jobs/runtime.ts; db/migrations/0060_ai_daily_usage.sql |
 | AI-22 | 文件名/OCR/转录是数据不是指令;不取URL/执行命令/读无关上下文 | 提示注入防护 | 部分实现(M3-C：原件起名明确不可信数据边界、严格 title schema/拒绝 URL/晚到结果守卫及专项测试；其余 AI 链路仍须统一扫查) | lib/ai/handlers/suggest-asset-name.ts; tests/integration/asset-name.test.ts |
 | AI-23 | Luna文字/Luna图片/MiMo语音三个独立live测试;fake/集成/live分层 | 无凭据不勾选真实链路 | 部分实现(M6:testAiCapability 经工厂自动走 MiMo;真实凭据 BLK-1/2) | scripts/ai-diagnostics.mts; ftc ai test |
 | AI-24 | 不把开发Agent登录态当产品凭据;不放进App | 审查 | 自动化通过(NEXT_PUBLIC key 显式拒绝) | lib/ai/config |
@@ -249,3 +249,5 @@
 ## Astra / Codex 行为复核（2026-09-08）
 
 CAP-2 / R03：手机记录页「不详」经实际 usePersistentDraft 保存的旧 guard 已用失败测试复现并修复；Web/手机/服务端共用日期完整性校验。mobile/tests/capture-persistence.test.ts 6 项覆盖 unknown 保存重开、其余五档缺日期拒绝；tests/integration/persistent-draft.test.ts 覆盖真实 Bearer HTTP、独立 SQLite 连接、导出到新目录恢复，仍为 unknown 且正文完整。无迁移或版本变更。这是日期保存缺口的自动化证据；CAP-2 整行仍部分实现，完整离线混合记忆即读和真机仍需继续验证。
+
+P0-A / R01–R02：0061 追加迁移修复旧 draft CHECK 不接受 members；不改旧迁移，保留正文、draft_item 与 import_session 引用。新 draft-readers API 仅返回有效同家庭账号 id/name，普通作者不获得账号管理权限；人物仍用 Person ID。原生和 Web 保留/显示已失效选择供主动移除，手机可重试成员获取。新增 native-capture production E2E 使用真实手机记录页/hook/SQLite，经实际 fetch 与原生 sync 调用 Next 生产 HTTP，B 可读而 C 管理员 404；不是手工重新构造 DTO。停用/退出/异家庭/无账号人物由真实鉴权 API 回归拒绝。私密新附件和衍生传播仍按 P0-C 继续，不据此提升 CAP-1/ID-11 全行。

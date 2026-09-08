@@ -10,6 +10,7 @@ export default defineConfig({
     },
   },
   test: {
+    setupFiles: ["tests/setup-isolated-data.ts"],
     include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
     environment: "node",
     // Integration suites own process-global DATA_DIR/database singletons. A single

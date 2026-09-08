@@ -52,7 +52,7 @@ export async function saveLocalDraftInTransaction(tx: SQLiteDatabase, row: Local
 }
 
 export async function queueDraftOriginals(row: LocalDraft): Promise<void> {
-  if (row.content.visibility !== "family") throw new Error("私密/指定成员草稿的原件保留在本机，暂不进入家庭上传队列。");
+  if (row.content.visibility !== "family" && row.content.items.some(item => !item.assetId)) throw new Error("私密/指定成员草稿的原件保留在本机，暂不进入家庭上传队列。");
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async tx => {
     for (const item of row.content.items) {

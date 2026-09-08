@@ -833,7 +833,9 @@ export async function requestMobileJson(
   }
   if (!response.ok) {
     const message =
-      isRecord(body) && body.error === "asset_in_use"
+      isRecord(body) && body.error === "invalid_reader"
+        ? "指定成员已停用、退出或不属于当前家庭。请重新选择读者；本机内容仍保留，不会改为全家可见。"
+        : isRecord(body) && body.error === "asset_in_use"
         ? "这份原件仍被草稿、记忆、相册或作品使用。请先移除相关引用。"
         : response.status === 401
         ? "登录已过期，请重新登录。"

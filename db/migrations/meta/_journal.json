@@ -428,6 +428,13 @@
       "when": 1788876000010,
       "tag": "0060_ai_daily_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1788876000011,
+      "tag": "0061_draft_member_readers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { draft, draftItem } from "@/db/schema/draft";
 import { asset } from "@/db/schema/asset";
@@ -37,6 +37,15 @@ export function listDrafts(context: FamilyContext): Draft[] {
   return getDb().transaction(tx => {
     assertActor(tx, context);
     return tx.select().from(draft).where(and(eq(draft.familyId, context.familyId), authorship(context), eq(draft.status, "editing"))).orderBy(desc(draft.updatedAt)).all().map(row => hydrate(tx, row));
+  });
+}
+/** Reader selection is not account administration. Return only public display names and User IDs. */
+export function listDraftReaders(context: FamilyContext): { id: string; name: string }[] {
+  return getDb().transaction(tx => {
+    assertActor(tx, context);
+    return tx.select({ id: user.id, name: user.name }).from(user)
+      .where(and(eq(user.familyId, context.familyId), isNull(user.disabledAt), ne(user.id, context.userId)))
+      .orderBy(asc(user.name), asc(user.id)).all();
   });
 }
 export function getDraft(context: FamilyContext, id: string): Draft {

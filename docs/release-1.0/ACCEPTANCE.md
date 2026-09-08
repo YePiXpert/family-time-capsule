@@ -112,3 +112,7 @@ M3-C 最终 Docker 镜像：`sha256:11ce460bff80718c5529dd38ede9d788c67e5ef2242f
 | 场景 | 证据 | 当前结论 |
 | --- | --- | --- |
 | R03 不详时间通过真实手机保存 hook | mobile/tests/capture-persistence.test.ts：记录页点击/实际 hook/SQLite/重开；persistent-draft.test.ts：真实 Bearer HTTP 保存发布/独立库读取/导出新目录恢复，unknown 与正文保留 | 上述自动化通过；原生设备和完整 R04 混合私密链路仍未验收 |
+| R01/R02 User ID 与 Person ID 不同、无账号人物仍可参与 | native-capture.spec.ts 启动手机 capture-production.http.ts，通过真实 UI/hook/sync/fetch 到 Next 生产 API，B 200/C 管理员 404；draft-readers 集成拒绝停用/退出/异家庭/Person ID，draft-reader-migration 验证有数据 0060 升级 | 自动化贯通通过；真机仍未验收 |
+
+
+本轮发现并修复旧 quota 测试日期碰撞（045b5e2 CI 34182633511 red，修复提交 8a2c73e 对应 CI 34183060802）；没有改 provider 调用次数断言。根单测默认 DATA_DIR 现按测试文件独立 mkdtemp，避免遗漏配置的单测访问开发档案。默认开发目录的失败迁移保护快照保留，未删除或重建开发资料。

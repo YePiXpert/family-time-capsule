@@ -158,3 +158,9 @@
 ## M3-D intake 去向补充（2026-09-07）
 
 0056 为 import session 增加 intake 目的地（draft/library）与 revision。Web `/imports/[id]` 提供去向选择面板（新草稿/仅存资料库），`app/api/imports/[id]/destination` 服务端裁决；系统分享（`/share`）先保全原件再选去向，加入已有草稿只组成一件事。原生端 intake store/recovery/sync（mobile/src/native/intake-store.ts、intake-recovery.ts、intake-sync.ts）持久化去向选择并随同步上传。集成/原生/e2e 测试见 CAP-1/CAP-6 行；导出恢复包含 intake 关系。
+
+## 2026-09-08 P0 行为回归
+
+- CAP-2 / R03：共享 draft isDraftDateComplete；capture-persistence（真实手机记录页/hook/SQLite重开）与 persistent-draft（Bearer API/独立库/导出恢复）。
+- CAP-1 / ID-11 / R01–R02：draft-readers 最小账号 DTO，0061 修复旧 draft 可见性约束；draft-reader-migration、draft-readers 集成；native-capture.spec.ts 启动 capture-production.http.ts，经原生实际 hook、sync 和 fetch 贯通 Next 生产 HTTP，未选管理员 404；Web 失效读者可移除。
+- P0-C / P0-D 尚未完成：不可使用上述文字/读者专项代表新私密附件、派生范围或全部外部模型配额通过。

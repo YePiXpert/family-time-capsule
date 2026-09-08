@@ -10,6 +10,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 
 const specs = [
+  { name: "native-capture", files: ["native-capture.spec.ts"], port: 3134 },
   { name: "persistent-draft", files: ["persistent-draft.spec.ts"], port: 3129 },
   { name: "asset-library", files: ["asset-library.spec.ts"], port: 3130 },
   { name: "book-projects", files: ["book-projects.spec.ts"], port: 3127 },

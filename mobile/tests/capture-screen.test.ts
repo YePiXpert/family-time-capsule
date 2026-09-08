@@ -122,7 +122,7 @@ async function render(intent?: string) {
 }
 async function press(label: string) {
   const button = tree!.root.findAll((n) => String(n.type) === "Pressable" &&
-    n.findAll((c) => String(c.type) === "Text" && c.props.children === label).length > 0)[0]!;
+    n.findAll((c) => String(c.type) === "Text" && c.children.join("") === label).length > 0)[0]!;
   expect(button).toBeTruthy();
   expect(button.props.disabled).toBeFalsy();
   await act(async () => { button.props.onPress(); });
@@ -259,11 +259,12 @@ it("三档读者选择：切档清空读者（§5）", async () => {
   expect(mocks.enqueueText).toHaveBeenCalledWith({ visibility: "family", readerUserIds: [] });
 });
 
-it("成员档读者多选与发布守卫（§5）", async () => {
+it("离线人物选择不冒充登录读者，空读者仍阻止发布（§5）", async () => {
   mocks.draft.content.visibility = "members";
   await render("text");
   await press("妈妈");
-  expect(mocks.enqueueText).toHaveBeenCalledWith({ readerUserIds: ["person-1"] });
+  expect(mocks.enqueueText).toHaveBeenCalledWith({ participantIds: ["person-1"] });
+  expect(mocks.enqueueText).not.toHaveBeenCalledWith(expect.objectContaining({ readerUserIds: expect.anything() }));
   // readerUserIds 未回写（仍空）→ 发布被拦并给出可读原因
   mocks.enqueueText.mockClear();
   await press("保存为一条记忆");
