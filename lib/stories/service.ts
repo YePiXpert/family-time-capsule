@@ -1,7 +1,7 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-import { isNull, or, and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { isNull, or, and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
@@ -15,9 +15,11 @@ import {
   type StoryParagraphRow,
   type StorySourceRow,
 } from "@/db/schema/story";
-import { assertFamilyCapability } from "@/lib/authz/policy";
+import { assertFamilyCapability, hasFamilyCapability, isFamilyRole } from "@/lib/authz/policy";
+import { familyStoryAssetPredicate, familyStoryPredicate, familyStorySourcePredicate } from "@/lib/authz/story-access";
 import { indexStory, removeFromSearchIndex } from "@/lib/search/service";
 import type { FamilyContext } from "@/lib/family/context";
+import { validateStoryInputSources, type StoryInputSource } from "./dependencies.mjs";
 
 /**
  * Story 服务（M4）：周记 / 月章 / 年章的草稿 → 编辑 → 发布生命周期。
@@ -86,10 +88,11 @@ export type StoryListItem = StoryRow & {
 
 export async function listStories(familyId: string): Promise<StoryListItem[]> {
   const db = getDb();
-  const rows = db
-    .select({
-      row: story,
-      coverAssetId: sql<string | null>`coalesce(
+  return db.transaction(() => {
+    const rows = db
+      .select({
+        row: story,
+        coverAssetId: sql<string | null>`coalesce(
         (
           select cover_event.cover_asset_id
           from memory_event cover_event
@@ -99,6 +102,8 @@ export async function listStories(familyId: string): Promise<StoryListItem[]> {
            and cover_asset.type = 'image'
           where cover_event.family_id = ${familyId}
             and cover_event.deleted_at is null
+            and cover_event.visibility='family' and cover_event.status='confirmed'
+            and ${familyStoryAssetPredicate(familyId, sql`cover_asset.id`)}
             and cover_event.occurred_at >= ${story.periodStart}
             and cover_event.occurred_at < ${story.periodEnd}
           order by cover_event.occurred_at desc
@@ -116,58 +121,65 @@ export async function listStories(familyId: string): Promise<StoryListItem[]> {
            and cover_asset.type = 'image'
           where cover_event.family_id = ${familyId}
             and cover_event.deleted_at is null
+            and cover_event.visibility='family' and cover_event.status='confirmed'
+            and ${familyStoryAssetPredicate(familyId, sql`cover_asset.id`)}
             and cover_event.occurred_at >= ${story.periodStart}
             and cover_event.occurred_at < ${story.periodEnd}
           order by cover_event.occurred_at desc, cover_link.created_at asc
           limit 1
         )
       )`,
-    })
-    .from(story)
-    .where(and(eq(story.familyId, familyId), isNull(story.deletedAt)))
-    .orderBy(asc(story.periodStart), asc(story.createdAt))
-    .all()
-    .slice(0, MAX_STORIES_PER_FAMILY);
-  if (rows.length === 0) return [];
-  const counts = db
-    .select({ storyId: storyParagraph.storyId, id: storyParagraph.id })
-    .from(storyParagraph)
-    .where(
-      inArray(
-        storyParagraph.storyId,
-        rows.map(({ row }) => row.id),
-      ),
-    )
-    .all();
-  const countByStory = new Map<string, number>();
-  for (const row of counts) {
-    countByStory.set(row.storyId, (countByStory.get(row.storyId) ?? 0) + 1);
-  }
-  const coverIds = rows
-    .map((item) => item.coverAssetId)
-    .filter((id): id is string => Boolean(id));
-  const coverRows = coverIds.length > 0
-    ? await db
+      })
+      .from(story)
+      .where(and(eq(story.familyId, familyId), isNull(story.deletedAt), familyStoryPredicate(familyId, sql`${story.id}`)))
+      .orderBy(asc(story.periodStart), asc(story.createdAt))
+      .all()
+      .slice(0, MAX_STORIES_PER_FAMILY);
+    if (rows.length === 0) return [];
+    const counts = db
+      .select({ storyId: storyParagraph.storyId, id: storyParagraph.id })
+      .from(storyParagraph)
+      .where(
+        inArray(
+          storyParagraph.storyId,
+          rows.map(({ row }) => row.id),
+        ),
+      )
+      .all();
+    const countByStory = new Map<string, number>();
+    for (const row of counts) {
+      countByStory.set(row.storyId, (countByStory.get(row.storyId) ?? 0) + 1);
+    }
+    const coverIds = rows
+      .map((item) => item.coverAssetId)
+      .filter((id): id is string => Boolean(id));
+    const coverRows = coverIds.length > 0
+      ? db
         .select({ id: asset.id, mimeType: asset.mimeType })
         .from(asset)
-        .where(and(eq(asset.familyId, familyId), inArray(asset.id, coverIds)))
-    : [];
-  const coverById = new Map(coverRows.map((row) => [row.id, row]));
-  const { getThumbnailMap } = await import("@/lib/assets/service");
-  const thumbnails = await getThumbnailMap(familyId, coverIds);
-  return rows.map(({ row, coverAssetId }) => {
-    const cover = coverAssetId ? coverById.get(coverAssetId) : undefined;
-    return {
-      ...row,
-      paragraphCount: countByStory.get(row.id) ?? 0,
-      cover: cover
-        ? {
+        .where(and(eq(asset.familyId, familyId), inArray(asset.id, coverIds))).all()
+      : [];
+    const coverById = new Map(coverRows.map((row) => [row.id, row]));
+    const thumbnails = new Map<string, { id: string }>();
+    if (coverIds.length) for (const thumb of db.select({ id: asset.id, originalAssetId: asset.originalAssetId }).from(asset)
+      .where(and(eq(asset.familyId, familyId), eq(asset.derivativeType, "thumbnail"), inArray(asset.originalAssetId, coverIds)))
+      .orderBy(desc(asset.createdAt)).all()) {
+      if (thumb.originalAssetId && !thumbnails.has(thumb.originalAssetId)) thumbnails.set(thumb.originalAssetId, thumb);
+    }
+    return rows.map(({ row, coverAssetId }) => {
+      const cover = coverAssetId ? coverById.get(coverAssetId) : undefined;
+      return {
+        ...row,
+        paragraphCount: countByStory.get(row.id) ?? 0,
+        cover: cover
+          ? {
             assetId: cover.id,
             mimeType: cover.mimeType,
             thumbAssetId: thumbnails.get(cover.id)?.id ?? null,
           }
-        : null,
-    };
+          : null,
+      };
+    });
   });
 }
 
@@ -175,7 +187,10 @@ export async function getStory(
   familyId: string,
   storyId: string,
 ): Promise<StoryDetail | undefined> {
-  const db = getDb();
+  return getDb().transaction(tx => getStoryInTransaction(tx, familyId, storyId));
+}
+
+export function getStoryInTransaction(db: DbTx, familyId: string, storyId: string): StoryDetail | undefined {
   const storyRow = db
     .select()
     .from(story)
@@ -184,6 +199,7 @@ export async function getStory(
         eq(story.id, storyId),
         eq(story.familyId, familyId),
         isNull(story.deletedAt),
+        familyStoryPredicate(familyId, sql`${story.id}`),
       ),
     )
     .limit(1)
@@ -198,15 +214,16 @@ export async function getStory(
   const sources =
     paragraphs.length > 0
       ? db
-          .select()
-          .from(storySource)
-          .where(
-            inArray(
-              storySource.paragraphId,
-              paragraphs.map((p) => p.id),
-            ),
-          )
-          .all()
+        .select()
+        .from(storySource)
+        .where(
+          inArray(
+            storySource.paragraphId,
+            paragraphs.map((p) => p.id),
+          ),
+        )
+        .orderBy(storySource.id)
+        .all()
       : [];
   const sourcesByParagraph = new Map<string, StorySourceRow[]>();
   for (const source of sources) {
@@ -265,6 +282,9 @@ export function collectStoryMaterial(
       and(
         eq(memoryEvent.familyId, familyId),
         isNull(memoryEvent.deletedAt),
+        eq(memoryEvent.visibility, "family"),
+        eq(memoryEvent.status, "confirmed"),
+        sql`${memoryEvent.occurredAtPrecision} <> 'unknown'`,
         gte(memoryEvent.occurredAt, period.start),
         lt(memoryEvent.occurredAt, period.end),
       ),
@@ -278,52 +298,53 @@ export function collectStoryMaterial(
   const facts =
     eventIds.length > 0
       ? db
-          .select({
-            factId: factTable.id,
-            statement: factTable.statement,
-            eventId: factTable.memoryEventId,
-          })
-          .from(factTable)
-          .where(
-            and(
-              inArray(factTable.memoryEventId, eventIds),
-              eq(factTable.status, "user_confirmed"),
-            ),
-          )
-          .all()
-          .map((f) => ({
-            ...f,
-            occurredAt: eventTitles.get(f.eventId)?.occurredAt ?? period.start,
-          }))
+        .select({
+          factId: factTable.id,
+          statement: factTable.statement,
+          eventId: factTable.memoryEventId,
+        })
+        .from(factTable)
+        .where(
+          and(
+            inArray(factTable.memoryEventId, eventIds),
+            eq(factTable.status, "user_confirmed"),
+            familyStorySourcePredicate(familyId, sql`'fact'`, sql`${factTable.id}`),
+          ),
+        )
+        .all()
+        .map((f) => ({
+          ...f,
+          occurredAt: eventTitles.get(f.eventId)?.occurredAt ?? period.start,
+        }))
       : [];
 
   const contributions =
     eventIds.length > 0
       ? db
-          .select({
-            contributionId: contributionTable.id,
-            rawText: contributionTable.rawText,
-            editedText: contributionTable.editedText,
-            eventId: contributionTable.memoryEventId,
-            authorPersonId: contributionTable.authorPersonId,
-          })
-          .from(contributionTable)
-          .where(
-            and(
-              inArray(contributionTable.memoryEventId, eventIds),
-              eq(contributionTable.visibility, "family"),
-              isNull(contributionTable.deletedAt),
-            ),
-          )
-          .all()
-          .map((c) => ({
-            contributionId: c.contributionId,
-            text: (c.editedText ?? c.rawText ?? "").trim(),
-            eventId: c.eventId,
-            occurredAt: eventTitles.get(c.eventId)?.occurredAt ?? period.start,
-            authorPersonId: c.authorPersonId,
-          }))
-          .filter((c) => c.text.length > 0)
+        .select({
+          contributionId: contributionTable.id,
+          rawText: contributionTable.rawText,
+          editedText: contributionTable.editedText,
+          eventId: contributionTable.memoryEventId,
+          authorPersonId: contributionTable.authorPersonId,
+        })
+        .from(contributionTable)
+        .where(
+          and(
+            inArray(contributionTable.memoryEventId, eventIds),
+            eq(contributionTable.visibility, "family"),
+            isNull(contributionTable.deletedAt),
+          ),
+        )
+        .all()
+        .map((c) => ({
+          contributionId: c.contributionId,
+          text: (c.editedText ?? c.rawText ?? "").trim(),
+          eventId: c.eventId,
+          occurredAt: eventTitles.get(c.eventId)?.occurredAt ?? period.start,
+          authorPersonId: c.authorPersonId,
+        }))
+        .filter((c) => c.text.length > 0)
       : [];
 
   // 转录素材需要 asset→event 映射，由 collectTranscriptMaterial 单独收集
@@ -343,6 +364,9 @@ export function collectTranscriptMaterial(
       and(
         eq(memoryEvent.familyId, familyId),
         isNull(memoryEvent.deletedAt),
+        eq(memoryEvent.visibility, "family"),
+        eq(memoryEvent.status, "confirmed"),
+        sql`${memoryEvent.occurredAtPrecision} <> 'unknown'`,
         gte(memoryEvent.occurredAt, period.start),
         lt(memoryEvent.occurredAt, period.end),
       ),
@@ -364,7 +388,7 @@ export function collectTranscriptMaterial(
   const rows = db
     .select()
     .from(assetTranscript)
-    .where(eq(assetTranscript.familyId, familyId))
+    .where(and(eq(assetTranscript.familyId, familyId), familyStoryAssetPredicate(familyId, sql`${assetTranscript.assetId}`)))
     .all();
   const result: StorySourceMaterial["transcripts"] = [];
   for (const t of rows) {
@@ -482,7 +506,7 @@ function verifyQuoteLock(
 
 export function createStoryDraft(
   context: FamilyContext,
-  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string; period?: StoryPeriod },
+  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string; inputSources?: StoryInputSource[]; period?: StoryPeriod },
   paragraphs: DraftParagraphPlan[],
 ): CreateDraftResult {
   try {
@@ -499,12 +523,20 @@ export function createStoryDraft(
   if (paragraphs.length > MAX_PARAGRAPHS_PER_STORY) {
     paragraphs = paragraphs.slice(0, MAX_PARAGRAPHS_PER_STORY);
   }
+  let inputSources: StoryInputSource[];
+  try { inputSources = validateStoryInputSources(input.inputSources ?? [])!; }
+  catch { return { ok: false, error: "invalid_input_sources" }; }
+  if (input.createdByJobId && !input.inputSources) return { ok: false, error: "invalid_input_sources" };
   const period = input.period ?? periodForKind(input.kind, input.anchor);
   const db = getDb();
 
   const storyId = randomUUID();
   const now = new Date();
-  db.transaction((tx) => {
+  return db.transaction((tx): CreateDraftResult => {
+    if (!liveStoryWriter(tx, context)) return { ok: false, error: "forbidden" };
+    if (!plansPermitFamily(tx, context.familyId, [...paragraphs, { kind: "narrative", text: "", sources: inputSources.map(source => ({ ...source, quote: null })) }])) return { ok: false, error: "source_unavailable" };
+    const material = collectStoryMaterial(context.familyId, period), transcripts = collectTranscriptMaterial(context.familyId, period);
+    if (!paragraphs.every(plan => verifyQuoteLock(plan, material, transcripts))) return { ok: false, error: "invalid_quote" };
     tx.insert(story)
       .values({
         id: storyId,
@@ -518,6 +550,7 @@ export function createStoryDraft(
         publishedAt: null,
         publishedByUserId: null,
         createdByJobId: input.createdByJobId ?? null,
+        inputSourcesJson: JSON.stringify(inputSources),
         createdAt: now,
         updatedAt: now,
       })
@@ -550,8 +583,8 @@ export function createStoryDraft(
           .run();
       }
     });
+    return { ok: true, storyId };
   });
-  return { ok: true, storyId };
 }
 
 export type RegenerateResult =
@@ -564,31 +597,34 @@ export type RegenerateResult =
  */
 export function regenerateOrCreateStory(
   context: FamilyContext,
-  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string; period?: StoryPeriod },
+  input: { kind: StoryKind; anchor: Date; title?: string; createdByJobId?: string; inputSources?: StoryInputSource[]; period?: StoryPeriod },
   paragraphs: DraftParagraphPlan[],
 ): RegenerateResult {
   const db = getDb();
   const period = input.period ?? periodForKind(input.kind, input.anchor);
-  const existing = db
-    .select()
-    .from(story)
-    .where(
-      and(
-        eq(story.familyId, context.familyId),
-        eq(story.kind, input.kind),
-        eq(story.periodStart, period.start),
-        eq(story.status, "draft"),
-      ),
-    )
-    .all();
-  const untouched = existing.find((s) => s.editedAt === null);
-  if (untouched) {
-    db.delete(story).where(eq(story.id, untouched.id)).run();
-    removeFromSearchIndex("story", untouched.id);
-  }
-  const created = createStoryDraft(context, input, paragraphs);
-  if (!created.ok) return created;
-  return { ok: true, storyId: created.storyId, replacedDraft: Boolean(untouched) };
+  return db.transaction((): RegenerateResult => {
+    const existing = db
+      .select()
+      .from(story)
+      .where(
+        and(
+          eq(story.familyId, context.familyId),
+          eq(story.kind, input.kind),
+          eq(story.periodStart, period.start),
+          eq(story.status, "draft"),
+          isNull(story.deletedAt),
+        ),
+      )
+      .all();
+    const untouched = existing.find((s) => s.editedAt === null);
+    const created = createStoryDraft(context, input, paragraphs);
+    if (!created.ok) return created;
+    if (untouched) {
+      db.delete(story).where(and(eq(story.id, untouched.id), eq(story.status, "draft"), isNull(story.editedAt), isNull(story.deletedAt))).run();
+      removeFromSearchIndex("story", untouched.id);
+    }
+    return { ok: true, storyId: created.storyId, replacedDraft: Boolean(untouched) };
+  });
 }
 
 // ---- 编辑（触发再生保护）与发布 ----
@@ -596,6 +632,19 @@ export function regenerateOrCreateStory(
 export type MutationResult = { ok: true } | { ok: false; error: string };
 
 type DbTx = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
+
+function liveStoryWriter(tx: DbTx, context: FamilyContext): boolean {
+  const actor = tx.get<{ role: string }>(sql`select role from user where id=${context.userId} and family_id=${context.familyId} and disabled_at is null`);
+  return Boolean(actor && isFamilyRole(actor.role) && actor.role === context.role && hasFamilyCapability(actor.role, "story:write"));
+}
+function plansPermitFamily(tx: DbTx, familyId: string, paragraphs: DraftParagraphPlan[]): boolean {
+  return paragraphs.every(plan => plan.sources.every(source => Boolean(tx.get(sql`select 1 where ${familyStorySourcePredicate(familyId, sql`${source.sourceType}`, sql`${source.sourceId}`)}`))));
+}
+
+/** Captures the complete actual prompt source set, including newly edited underlying text. */
+export function storyMaterialFingerprint(material: StorySourceMaterial, transcripts: StorySourceMaterial["transcripts"]): string {
+  return createHash("sha256").update(JSON.stringify({ ...material, eventTitles: [...material.eventTitles], transcripts })).digest("hex");
+}
 
 function touchEdited(tx: DbTx, familyId: string, storyId: string): void {
   const now = new Date();
@@ -620,21 +669,24 @@ export function updateStoryTitle(
     return { ok: false, error: "invalid_title" };
   }
   const db = getDb();
-  const row = db
-    .select({ id: story.id, status: story.status })
-    .from(story)
-    .where(and(eq(story.id, storyId), eq(story.familyId, context.familyId)))
-    .get();
-  if (!row) return { ok: false, error: "not_found" };
-  if (row.status === "published") return { ok: false, error: "published_immutable" };
-  db.transaction((tx) => {
-    tx.update(story)
-      .set({ title: trimmed, updatedAt: new Date() })
-      .where(eq(story.id, storyId))
-      .run();
-    touchEdited(tx, context.familyId, storyId);
+  return db.transaction((tx): MutationResult => {
+    if (!liveStoryWriter(tx, context)) return { ok: false, error: "forbidden" };
+    const row = db
+      .select({ id: story.id, status: story.status })
+      .from(story)
+      .where(and(eq(story.id, storyId), eq(story.familyId, context.familyId)))
+      .get();
+    if (!row || !db.get(sql`select 1 from story where id=${storyId} and deleted_at is null and ${familyStoryPredicate(context.familyId, sql`${storyId}`)}`)) return { ok: false, error: "not_found" };
+    if (row.status === "published") return { ok: false, error: "published_immutable" };
+    db.transaction((tx) => {
+      tx.update(story)
+        .set({ title: trimmed, updatedAt: new Date() })
+        .where(eq(story.id, storyId))
+        .run();
+      touchEdited(tx, context.familyId, storyId);
+    });
+    return { ok: true };
   });
-  return { ok: true };
 }
 
 /** 叙述段可自由编辑；引文段落一经创建不可编辑（Quote Lock，只能删除后重加）。 */
@@ -656,33 +708,36 @@ export function updateParagraphText(
     return { ok: false, error: "quote_characters_not_allowed" };
   }
   const db = getDb();
-  const paragraph = db
-    .select()
-    .from(storyParagraph)
-    .where(
-      and(
-        eq(storyParagraph.id, paragraphId),
-        eq(storyParagraph.familyId, context.familyId),
-      ),
-    )
-    .get();
-  if (!paragraph) return { ok: false, error: "not_found" };
-  if (paragraph.kind === "quote") {
-    return { ok: false, error: "quote_paragraph_immutable" };
-  }
-  const storyRow = db.select().from(story).where(eq(story.id, paragraph.storyId)).get();
-  if (!storyRow) return { ok: false, error: "not_found" };
-  if (storyRow.status === "published") {
-    return { ok: false, error: "published_immutable" };
-  }
-  db.transaction((tx) => {
-    tx.update(storyParagraph)
-      .set({ text: trimmed, updatedAt: new Date() })
-      .where(eq(storyParagraph.id, paragraphId))
-      .run();
-    touchEdited(tx, context.familyId, paragraph.storyId);
+  return db.transaction((tx): MutationResult => {
+    if (!liveStoryWriter(tx, context)) return { ok: false, error: "forbidden" };
+    const paragraph = db
+      .select()
+      .from(storyParagraph)
+      .where(
+        and(
+          eq(storyParagraph.id, paragraphId),
+          eq(storyParagraph.familyId, context.familyId),
+        ),
+      )
+      .get();
+    if (!paragraph) return { ok: false, error: "not_found" };
+    if (paragraph.kind === "quote") {
+      return { ok: false, error: "quote_paragraph_immutable" };
+    }
+    const storyRow = db.select().from(story).where(eq(story.id, paragraph.storyId)).get();
+    if (!storyRow || storyRow.deletedAt || !db.get(sql`select 1 where ${familyStoryPredicate(context.familyId, sql`${storyRow.id}`)}`)) return { ok: false, error: "not_found" };
+    if (storyRow.status === "published") {
+      return { ok: false, error: "published_immutable" };
+    }
+    db.transaction((tx) => {
+      tx.update(storyParagraph)
+        .set({ text: trimmed, updatedAt: new Date() })
+        .where(eq(storyParagraph.id, paragraphId))
+        .run();
+      touchEdited(tx, context.familyId, paragraph.storyId);
+    });
+    return { ok: true };
   });
-  return { ok: true };
 }
 
 export function deleteParagraph(
@@ -695,27 +750,30 @@ export function deleteParagraph(
     return { ok: false, error: "forbidden" };
   }
   const db = getDb();
-  const paragraph = db
-    .select()
-    .from(storyParagraph)
-    .where(
-      and(
-        eq(storyParagraph.id, paragraphId),
-        eq(storyParagraph.familyId, context.familyId),
-      ),
-    )
-    .get();
-  if (!paragraph) return { ok: false, error: "not_found" };
-  const storyRow = db.select().from(story).where(eq(story.id, paragraph.storyId)).get();
-  if (!storyRow) return { ok: false, error: "not_found" };
-  if (storyRow.status === "published") {
-    return { ok: false, error: "published_immutable" };
-  }
-  db.transaction((tx) => {
-    tx.delete(storyParagraph).where(eq(storyParagraph.id, paragraphId)).run();
-    touchEdited(tx, context.familyId, paragraph.storyId);
+  return db.transaction((tx): MutationResult => {
+    if (!liveStoryWriter(tx, context)) return { ok: false, error: "forbidden" };
+    const paragraph = db
+      .select()
+      .from(storyParagraph)
+      .where(
+        and(
+          eq(storyParagraph.id, paragraphId),
+          eq(storyParagraph.familyId, context.familyId),
+        ),
+      )
+      .get();
+    if (!paragraph) return { ok: false, error: "not_found" };
+    const storyRow = db.select().from(story).where(eq(story.id, paragraph.storyId)).get();
+    if (!storyRow || storyRow.deletedAt || !db.get(sql`select 1 where ${familyStoryPredicate(context.familyId, sql`${storyRow.id}`)}`)) return { ok: false, error: "not_found" };
+    if (storyRow.status === "published") {
+      return { ok: false, error: "published_immutable" };
+    }
+    db.transaction((tx) => {
+      tx.delete(storyParagraph).where(eq(storyParagraph.id, paragraphId)).run();
+      touchEdited(tx, context.familyId, paragraph.storyId);
+    });
+    return { ok: true };
   });
-  return { ok: true };
 }
 
 /** 手写新段落（sourceType 固定 user_text；禁止引号字符以维持 Quote Lock）。 */
@@ -737,52 +795,55 @@ export function addManualParagraph(
     return { ok: false, error: "quote_characters_not_allowed" };
   }
   const db = getDb();
-  const storyRow = db
-    .select()
-    .from(story)
-    .where(and(eq(story.id, storyId), eq(story.familyId, context.familyId)))
-    .get();
-  if (!storyRow) return { ok: false, error: "not_found" };
-  if (storyRow.status === "published") {
-    return { ok: false, error: "published_immutable" };
-  }
-  const count = db
-    .select({ id: storyParagraph.id })
-    .from(storyParagraph)
-    .where(eq(storyParagraph.storyId, storyId))
-    .all().length;
-  if (count >= MAX_PARAGRAPHS_PER_STORY) {
-    return { ok: false, error: "too_many_paragraphs" };
-  }
-  const now = new Date();
-  db.transaction((tx) => {
-    const paragraphId = randomUUID();
-    tx.insert(storyParagraph)
-      .values({
-        id: paragraphId,
-        familyId: context.familyId,
-        storyId,
-        position: count,
-        kind: "narrative",
-        text: trimmed,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-    tx.insert(storySource)
-      .values({
-        id: randomUUID(),
-        familyId: context.familyId,
-        paragraphId,
-        sourceType: "user_text",
-        sourceId: null,
-        quote: null,
-        createdAt: now,
-      })
-      .run();
-    touchEdited(tx, context.familyId, storyId);
+  return db.transaction((tx): MutationResult => {
+    if (!liveStoryWriter(tx, context)) return { ok: false, error: "forbidden" };
+    const storyRow = db
+      .select()
+      .from(story)
+      .where(and(eq(story.id, storyId), eq(story.familyId, context.familyId)))
+      .get();
+    if (!storyRow || storyRow.deletedAt || !db.get(sql`select 1 where ${familyStoryPredicate(context.familyId, sql`${storyRow.id}`)}`)) return { ok: false, error: "not_found" };
+    if (storyRow.status === "published") {
+      return { ok: false, error: "published_immutable" };
+    }
+    const count = db
+      .select({ id: storyParagraph.id })
+      .from(storyParagraph)
+      .where(eq(storyParagraph.storyId, storyId))
+      .all().length;
+    if (count >= MAX_PARAGRAPHS_PER_STORY) {
+      return { ok: false, error: "too_many_paragraphs" };
+    }
+    const now = new Date();
+    db.transaction((tx) => {
+      const paragraphId = randomUUID();
+      tx.insert(storyParagraph)
+        .values({
+          id: paragraphId,
+          familyId: context.familyId,
+          storyId,
+          position: count,
+          kind: "narrative",
+          text: trimmed,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      tx.insert(storySource)
+        .values({
+          id: randomUUID(),
+          familyId: context.familyId,
+          paragraphId,
+          sourceType: "user_text",
+          sourceId: null,
+          quote: null,
+          createdAt: now,
+        })
+        .run();
+      touchEdited(tx, context.familyId, storyId);
+    });
+    return { ok: true };
   });
-  return { ok: true };
 }
 
 /** 发布：必须至少一个段落；发布后进入搜索索引并随 archive 导出。 */
@@ -793,45 +854,48 @@ export function publishStory(context: FamilyContext, storyId: string): MutationR
     return { ok: false, error: "forbidden" };
   }
   const db = getDb();
-  const storyRow = db
-    .select()
-    .from(story)
-    .where(and(eq(story.id, storyId), eq(story.familyId, context.familyId)))
-    .get();
-  if (!storyRow) return { ok: false, error: "not_found" };
-  if (storyRow.status === "published") return { ok: true };
-  const paragraphs = db
-    .select({ id: storyParagraph.id })
-    .from(storyParagraph)
-    .where(eq(storyParagraph.storyId, storyId))
-    .all();
-  if (paragraphs.length === 0) return { ok: false, error: "empty_story" };
+  return db.transaction((tx): MutationResult => {
+    if (!liveStoryWriter(tx, context)) return { ok: false, error: "forbidden" };
+    const storyRow = db
+      .select()
+      .from(story)
+      .where(and(eq(story.id, storyId), eq(story.familyId, context.familyId)))
+      .get();
+    if (!storyRow || storyRow.deletedAt || !db.get(sql`select 1 where ${familyStoryPredicate(context.familyId, sql`${storyRow.id}`)}`)) return { ok: false, error: "not_found" };
+    if (storyRow.status === "published") return { ok: true };
+    const paragraphs = db
+      .select({ id: storyParagraph.id })
+      .from(storyParagraph)
+      .where(eq(storyParagraph.storyId, storyId))
+      .all();
+    if (paragraphs.length === 0) return { ok: false, error: "empty_story" };
 
-  const now = new Date();
-  db.update(story)
-    .set({
-      status: "published",
-      publishedAt: now,
-      publishedByUserId: context.userId,
-      updatedAt: now,
-    })
-    .where(eq(story.id, storyId))
-    .run();
+    const now = new Date();
+    db.update(story)
+      .set({
+        status: "published",
+        publishedAt: now,
+        publishedByUserId: context.userId,
+        updatedAt: now,
+      })
+      .where(eq(story.id, storyId))
+      .run();
 
-  const bodyText = db
-    .select({ text: storyParagraph.text })
-    .from(storyParagraph)
-    .where(eq(storyParagraph.storyId, storyId))
-    .all()
-    .map((p) => p.text)
-    .join("\n");
-  indexStory({
-    id: storyRow.id,
-    familyId: context.familyId,
-    title: storyRow.title,
-    bodyText,
+    const bodyText = db
+      .select({ text: storyParagraph.text })
+      .from(storyParagraph)
+      .where(eq(storyParagraph.storyId, storyId))
+      .all()
+      .map((p) => p.text)
+      .join("\n");
+    indexStory({
+      id: storyRow.id,
+      familyId: context.familyId,
+      title: storyRow.title,
+      bodyText,
+    });
+    return { ok: true };
   });
-  return { ok: true };
 }
 
 // ---- 导出用查询（edited/published 才是 durable） ----
@@ -850,7 +914,7 @@ export function collectDurableStories(familyId: string, retainedIds: string[] = 
   const stories = db
     .select()
     .from(story)
-    .where(and(eq(story.familyId, familyId),or(isNull(story.deletedAt),inArray(story.id,retainedIds))))
+    .where(and(eq(story.familyId, familyId), or(isNull(story.deletedAt), inArray(story.id, retainedIds))))
     .all()
     .filter(s => isStoryDurable(s) || retainedIds.includes(s.id));
   if (stories.length === 0) return { stories: [], paragraphs: [], sources: [] };
@@ -867,15 +931,15 @@ export function collectDurableStories(familyId: string, retainedIds: string[] = 
   const sources =
     paragraphs.length > 0
       ? db
-          .select()
-          .from(storySource)
-          .where(
-            inArray(
-              storySource.paragraphId,
-              paragraphs.map((p) => p.id),
-            ),
-          )
-          .all()
+        .select()
+        .from(storySource)
+        .where(
+          inArray(
+            storySource.paragraphId,
+            paragraphs.map((p) => p.id),
+          ),
+        )
+        .all()
       : [];
   return { stories, paragraphs, sources };
 }
@@ -914,6 +978,10 @@ export function requestStoryGeneration(
     .where(
       and(
         eq(memoryEvent.familyId, context.familyId),
+        eq(memoryEvent.visibility, "family"),
+        eq(memoryEvent.status, "confirmed"),
+        isNull(memoryEvent.deletedAt),
+        sql`${memoryEvent.occurredAtPrecision} <> 'unknown'`,
         gte(memoryEvent.occurredAt, period.start),
         lt(memoryEvent.occurredAt, period.end),
       ),

@@ -1,4 +1,6 @@
+import { familyStorySourcePredicate } from "@/lib/authz/story-access";
 import { aiVideoFrame } from "@/db/schema/analysis";
+import { eventVisibilityCondition } from "@/lib/authz/event-access";
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
@@ -424,7 +426,9 @@ function hydrateSources(
       if (!row || !isContributionVisibility(row.visibility)) {
         return { ok: false, error: "source_forbidden_or_not_found" };
       }
-      if (triggerMode === "automatic" && row.visibility !== "family") {
+      const parent = tx.select().from(memoryEvent).where(eq(memoryEvent.id, row.memoryEventId)).get();
+      const visibility: ContributionVisibility = parent?.visibility === "family" ? row.visibility : "private";
+      if (triggerMode === "automatic" && visibility !== "family") {
         return {
           ok: false,
           error: "automatic_restricted_content_forbidden",
@@ -433,7 +437,7 @@ function hydrateSources(
       hydrated.push({
         kind: reference.kind,
         id: reference.id,
-        visibility: row.visibility,
+        visibility,
         sha256: hashCanonical({
           id: row.id,
           memoryEventId: row.memoryEventId,
@@ -446,6 +450,8 @@ function hydrateSources(
           editedText: row.editedText,
           audioAssetId: row.audioAssetId,
           visibility: row.visibility,
+          parentEvent: parent,
+          readers: tx.all(sql`select user_id from memory_event_reader where memory_event_id=${row.memoryEventId} order by user_id`),
           updatedAt: iso(row.updatedAt),
         }),
       });
@@ -460,6 +466,7 @@ function hydrateSources(
           eq(memoryEvent.id, reference.id),
           eq(memoryEvent.familyId, snapshot.principal.familyId),
           isNull(memoryEvent.deletedAt),
+          eventVisibilityCondition({ principal: snapshot.principal, evaluatedAt: snapshot.evaluatedAt }),
         ),
       )
       .limit(1)
@@ -467,14 +474,27 @@ function hydrateSources(
     if (!row) {
       return { ok: false, error: "source_forbidden_or_not_found" };
     }
+    if (triggerMode === "automatic" && row.visibility !== "family") {
+      return { ok: false, error: "automatic_restricted_content_forbidden" };
+    }
     hydrated.push({
       kind: reference.kind,
       id: reference.id,
-      visibility: "family",
+      visibility: row.visibility === "family" ? "family" : "private",
       sha256: hashCanonical({
         id: row.id,
         childPersonId: row.childPersonId,
         title: row.title,
+        bodyText: row.bodyText,
+        visibility: row.visibility,
+        createdByUserId: row.createdByUserId,
+        readers: tx.all(sql`select user_id from memory_event_reader where memory_event_id=${row.id} order by user_id`),
+        // Suggested facts are this handler's output, not its confirmed input.
+        // Including them would invalidate the sibling title at finalization.
+        facts: tx.all(sql`select * from fact where memory_event_id=${row.id} and status='user_confirmed' and ${familyStorySourcePredicate(row.familyId, sql`'fact'`, sql`fact.id`)} order by id`),
+        factSources: tx.all(sql`select fs.* from fact_source fs join fact f on f.id=fs.fact_id where f.memory_event_id=${row.id} and f.status='user_confirmed' order by fs.id`),
+        contributions: tx.select().from(contribution).where(eq(contribution.memoryEventId, row.id)).orderBy(contribution.id).all(),
+        transcripts: tx.all(sql`select t.* from asset_transcript t join memory_event_asset ma on ma.asset_id=t.asset_id where ma.memory_event_id=${row.id} and t.family_id=${row.familyId} and t.edited_transcript is not null order by t.id`),
         occurredAt: iso(row.occurredAt),
         occurredAtPrecision: row.occurredAtPrecision,
         locationText: row.locationText,

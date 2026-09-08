@@ -1,3 +1,4 @@
+import { validateStoryInputSources, type StoryInputSource } from "@/lib/stories/dependencies.mjs";
 import { legacyArchivePrivacy } from "./legacy-privacy";
 import { validateArchivePrivacy, type ArchivePrivacy } from "@/lib/export/privacy.mjs";
 import { assertLivePhotoPairs } from "@/lib/drafts/model";
@@ -717,7 +718,7 @@ async function loadAndVerifyZip(
     throw new RestoreError("bad_manifest", "manifest.json 无法解析");
   }
   requireCondition(
-    [1, EXPORT_VERSION].includes(manifest.exportVersion),
+    [1, 2, EXPORT_VERSION].includes(manifest.exportVersion),
     "unsupported_version",
     `不支持的 exportVersion: ${String(manifest.exportVersion)}（当前支持 ${EXPORT_VERSION}）`,
   );
@@ -988,7 +989,7 @@ async function loadAndVerifyZip(
   const hasDialogueFiles = Boolean(capsuleQuestionsFile);
   const expectedFileCount =
     manifest.assets.length +
-    (manifest.exportVersion === 2 ? 1 : 0) +
+    (manifest.exportVersion >= 2 ? 1 : 0) +
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
     (transcriptsFile ? 1 : 0) +
@@ -1763,6 +1764,7 @@ async function loadAndVerifyZip(
   const storyIds = new Set<string>();
   const storiesJson: Array<{
     id: string;
+    inputSources: StoryInputSource[] | null;
     kind: string;
     periodStart: string;
     periodEnd: string;
@@ -1816,7 +1818,16 @@ async function loadAndVerifyZip(
       "bad_json",
       `story ${st.id} 的时间字段非法`,
     );
+    requireCondition(manifest.exportVersion < 3 || Object.hasOwn(st, "inputSources"), "bad_json", `v3 story ${st.id} 缺少生成来源清单`);
+    let inputSources: StoryInputSource[] | null;
+    try { inputSources = validateStoryInputSources(st.inputSources ?? null); }
+    catch { throw new RestoreError("bad_json", `story ${st.id} 的生成来源清单非法`); }
+    for (const source of inputSources ?? []) {
+      const ids = source.sourceType === "fact" ? factIds : source.sourceType === "contribution" ? contributionIds : source.sourceType === "transcript" ? transcriptIds : eventIds;
+      requireCondition(ids.has(source.sourceId), "bad_refs", `story ${st.id} 的生成来源不存在`);
+    }
     storiesJson.push({
+      inputSources,
       id: st.id as string,
       kind: st.kind as string,
       periodStart: st.periodStart as string,
@@ -2481,7 +2492,7 @@ async function loadAndVerifyZip(
   catch { throw new RestoreError("bad_refs", "名称审核版本或目标关系无效"); }
 
   let privacy: ArchivePrivacy | null = null;
-  if (manifest.exportVersion === 2) {
+  if (manifest.exportVersion >= 2) {
     requireCondition(memoriesJson.every(m => typeof m.bodyText === "string"), "bad_json", "v2 归档缺少记忆正文");
     try { privacy = validateArchivePrivacy(await readJson<unknown>("privacy.json"), { events: eventIds, assets: assetIds, drafts: new Set(drafts.map(d => d.id)), books: new Set(bookGraph.projects.map(p => p.id)), imports: new Set(importSessionsJson.map(i => i.id)), reviewAssets: new Set(inboxItemAssetsJson.map(l => `${l.inboxItemId}:${l.assetId}`)) }); }
     catch { throw new RestoreError("bad_refs", "v2 归档作者和读者关系无效"); }
@@ -3134,6 +3145,7 @@ async function restoreFromArchive(
               // published story to the administrator performing the restore.
               publishedByUserId: st.status === "published" ? operatorUserId : null,
               createdByJobId: null,
+              inputSourcesJson: st.inputSources === null ? null : JSON.stringify(st.inputSources),
               createdAt: parseDate(st.createdAt) ?? now,
               updatedAt: parseDate(st.updatedAt) ?? parseDate(st.createdAt) ?? now,
             })),

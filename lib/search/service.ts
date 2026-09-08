@@ -1,3 +1,4 @@
+import { familyStoryPredicate } from "@/lib/authz/story-access";
 import "server-only";
 
 /**
@@ -545,6 +546,7 @@ export function searchFamily(
               eq(storyTable.status, "published"),
               isNull(storyTable.deletedAt),
               inArray(storyTable.id, storyHitIds),
+              familyStoryPredicate(context.familyId, sql`${storyTable.id}`),
             ),
           )
           .all()

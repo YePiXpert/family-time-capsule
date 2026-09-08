@@ -46,7 +46,7 @@ export async function createDeterministicDraftAction(
   if (!result.ok) {
     return {
       error:
-        result.error === "no_story_material"
+        ["no_story_material", "no_material"].includes(result.error)
           ? "这个时间段还没有可用的已确认内容（事实/讲述/转录）。"
           : "创建失败。",
     };

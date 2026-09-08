@@ -48,6 +48,8 @@ export const story = sqliteTable(
     publishedAt: integer("published_at", { mode: "timestamp" }),
     publishedByUserId: text("published_by_user_id"),
     createdByJobId: text("created_by_job_id"),
+    /** Complete model input dependencies survive paragraph deletion; null = legacy unknown. */
+    inputSourcesJson: text("input_sources_json").default("[]"),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
     // M7 Trash：软删除时间；非空 = 回收站中

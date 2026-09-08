@@ -1,3 +1,4 @@
+import { readStoryInputSources } from "@/lib/stories/dependencies.mjs";
 import { bookProject } from "@/db/schema/book";
 import { createBookSourceResolver } from "@/lib/books/projects/sources";
 import { draft as draftTable } from "@/db/schema/draft";
@@ -84,7 +85,7 @@ import { getFamily } from "@/lib/family/service";
  * - timeline.md 用相对路径引用原媒体，解压即可读/可播放。
  */
 
-export const EXPORT_VERSION = 2;
+export const EXPORT_VERSION = 3;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** Current v2 non-media file count; legacy v1 is counted from its module set. */
 export const EXPORT_NON_ASSET_FILE_COUNT = 29 + COLLECTION_FILES.length + BOOK_FILES.length;
@@ -290,7 +291,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
     requestSubmissions = requestSubmissions.filter(row => inboxIds.has(row.inboxItemId));
     portalSubmissions = portalSubmissions.filter(row => importIds.has(row.importSessionId));
     // Copied prose and historical book snapshots must never survive an inaccessible source.
-    const permittedStories = new Set(storyBundle.stories.filter(row => !row.deletedAt && storyBundle.sources.filter(s => storyBundle.paragraphs.some(p => p.storyId === row.id && p.id === s.paragraphId)).every(s => s.sourceType === "fact" ? s.sourceId !== null && factIds.has(s.sourceId) : sourceAllowed(s.sourceType, s.sourceId))).map(s => s.id));
+    const permittedStories = new Set(storyBundle.stories.filter(row => !row.deletedAt && readStoryInputSources(row) !== null && [...(readStoryInputSources(row) ?? []), ...storyBundle.sources.filter(s => storyBundle.paragraphs.some(p => p.storyId === row.id && p.id === s.paragraphId))].every(s => s.sourceType === "fact" ? s.sourceId !== null && factIds.has(s.sourceId) : sourceAllowed(s.sourceType, s.sourceId))).map(s => s.id));
     storyBundle = { stories: storyBundle.stories.filter(s => permittedStories.has(s.id)), paragraphs: storyBundle.paragraphs.filter(p => permittedStories.has(p.storyId)), sources: storyBundle.sources.filter(s => storyBundle.paragraphs.some(p => p.id === s.paragraphId && permittedStories.has(p.storyId))) };
     reviewPeriods = reviewPeriods.filter(row => (!row.storyId || permittedStories.has(row.storyId)) && reviewEvents.filter(l => l.reviewPeriodId === row.id).every(l => readableEvents.has(l.memoryEventId)));
     const reviewIds = new Set(reviewPeriods.map(r => r.id));
@@ -303,6 +304,9 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
     const projectIds = new Set(bookGraph.projects.filter(row => !row.deletedAt && (row.audience === "family" || ownedBookIds.has(row.id)) && (!row.coverAssetId || readableAssets.has(row.coverAssetId)) && bookGraph.sources.filter(s => s.projectId === row.id).every(s => { const id = sourceSet(s); return id !== null && refs[s.kind].has(id) && createBookSourceResolver(context, row.audience)(s.kind, id).state.available; })).map(p => p.id));
     bookGraph = parseBookArchive([bookGraph.projects.filter(r => projectIds.has(r.id)), bookGraph.chapters.filter(r => projectIds.has(r.projectId)), bookGraph.blocks.filter(r => projectIds.has(r.projectId)), bookGraph.sources.filter(r => projectIds.has(r.projectId)), bookGraph.links.filter(r => projectIds.has(r.projectId)), bookGraph.revisions.filter(r => projectIds.has(r.projectId))], familyId, refs);
   }
+  // Unedited generated drafts are rebuildable; keep the review without a dangling draft link.
+  const retainedStories = new Set(storyBundle.stories.map(row => row.id));
+  reviewPeriods = reviewPeriods.map(row => ({ ...row, storyId: row.storyId && retainedStories.has(row.storyId) ? row.storyId : null }));
   const eventIds = events.map((e) => e.id);
   const privacy = collectArchivePrivacy(familyId, { events, assets, draftIds: new Set(draftArchive.map(d => d.id)), bookIds: new Set(bookGraph.projects.map(p => p.id)), importIds: new Set(importSessions.map(i => i.id)), reviewAssetPairs: new Set(inboxItemAssets.map(l => `${l.inboxItemId}:${l.assetId}`)) });
   // Capture review records before opening the ZIP and reject an inconsistent
@@ -760,6 +764,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
     json("stories.json", storyBundle.stories.map((st) => ({
       id: st.id,
       kind: st.kind,
+      inputSources: readStoryInputSources(st),
       periodStart: iso(st.periodStart),
       periodEnd: iso(st.periodEnd),
       title: st.title,

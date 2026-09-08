@@ -1,3 +1,4 @@
+import { readStoryInputSources } from "@/lib/stories/dependencies.mjs";
 import { count, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
@@ -124,8 +125,11 @@ export function restoreBookArchive(
 export function collectBookSourceClosure(familyId: string) {
   const db=getDb(),graph=collectBookArchive(familyId),events=new Set<string>(),contributions=new Set<string>(),stories=new Set<string>();
   for(const s of graph.sources){if(s.memoryEventId)events.add(s.memoryEventId);if(s.contributionId)contributions.add(s.contributionId);if(s.storyId)stories.add(s.storyId);}
+  for (const row of db.all<{ id: string }>(sql`select id from story where family_id=${familyId} and deleted_at is null and (status='published' or edited_at is not null)`)) stories.add(row.id);
   for(const storyId of stories){
     const sources=db.all<{kind:string;sourceId:string|null}>(sql`select s.source_type kind,s.source_id sourceId from story_source s join story_paragraph p on p.id=s.paragraph_id where p.story_id=${storyId} and p.family_id=${familyId} and s.family_id=${familyId}`);
+    const inputRow=db.get<{ inputSourcesJson: string | null }>(sql`select input_sources_json inputSourcesJson from story where id=${storyId} and family_id=${familyId}`);
+    for (const source of inputRow ? readStoryInputSources(inputRow) ?? [] : []) sources.push({ kind: source.sourceType, sourceId: source.sourceId });
     for(const source of sources){if(!source.sourceId)continue;
       if(source.kind==='memory_event')events.add(source.sourceId);
       if(source.kind==='contribution')contributions.add(source.sourceId);

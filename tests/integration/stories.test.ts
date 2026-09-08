@@ -415,11 +415,13 @@ describe("M4：Story 生命周期", () => {
       createEmbeddings: vi.fn().mockRejectedValue(new Error("not supported")),
     } as unknown as MemoryAssistant;
 
-    await generateStoryHandler({
+    const prepared = await generateStoryHandler({
       lease,
       assistant,
       signal: new AbortController().signal,
     });
+    // Handler preparation cannot persist before the queue's final transaction.
+    getDb().transaction(tx => prepared.commit(tx, lease));
 
     const weekly = (await listStories(familyId)).filter(
       (s) => s.kind === "weekly" && s.periodStart.getTime() === periodForKind("weekly", new Date("2026-12-23T00:00:00.000Z")).start.getTime(),

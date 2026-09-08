@@ -452,7 +452,7 @@ beforeAll(async () => {
       userName: "爸爸",
       familyId: on.familyId,
       personId: dad.id,
-      role: "admin" as const,
+      role: (await m.family.getUserBinding(adminId)).role,
       accountEnabled: true as const,
       isGuardian: true,
       familyTimezone: "Asia/Shanghai",
@@ -477,7 +477,7 @@ beforeAll(async () => {
       { kind: "weekly", anchor: storyAnchorDate, title: "出生的那一周" },
       storyPlans,
     );
-    if (!storyCreated.ok) throw new Error("story draft failed");
+    if (!storyCreated.ok) throw new Error(`story draft failed: ${storyCreated.error}`);
     const storyPublished = storyService.publishStory(storyCtx, storyCreated.storyId);
     if (!storyPublished.ok) throw new Error("story publish failed");
 

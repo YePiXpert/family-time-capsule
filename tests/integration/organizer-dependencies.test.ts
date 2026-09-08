@@ -145,6 +145,58 @@ it("keeps audio edits readable and invalidates a pending name after a transcript
   expect(transcribe).toHaveBeenCalledOnce();
 });
 
+it("runs event audio dependencies without treating their new transcript as a source edit", async () => {
+  const { ai, text } = assistant();
+  const stored = await ingestMedia({ familyId, createdByUserId: actor.id, kind: "audio", filename: "事件原声.wav", declaredMime: "audio/wav", buffer: Buffer.concat([readFileSync(path.join(__dirname, "../fixtures/sample.wav")), Buffer.from(randomUUID())]), clientLastModifiedMs: null });
+  if (stored.status !== "stored") throw new Error("audio fixture failed");
+  const item = await createInboxItemForAsset(familyId, stored.asset);
+  const confirmed = await confirmInboxEntry(familyId, (await getInboxEntry(familyId, item.id))!);
+  if (!confirmed.ok) throw new Error(confirmed.error);
+  const transcribe = vi.spyOn(ai, "transcribeAudio").mockResolvedValue({ text: "合成录音中说今天给绿植浇水。", language: "zh", durationSeconds: null, segments: [], provenance: { providerId: ai.provider.id, providerName: ai.provider.displayName, model: ai.capabilities.transcription.model! } });
+  const queued = requestEventSuggestions(context, confirmed.eventId, { runtime: ai });
+  if (!queued.ok) throw new Error(queued.error);
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" });
+  expect(transcribe).toHaveBeenCalledOnce(); expect(text).not.toHaveBeenCalled();
+  closeDatabase();
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed", jobId: queued.jobId });
+  expect(JSON.stringify(text.mock.calls[0][0].messages)).toContain("合成录音中说今天给绿植浇水。");
+  expect((await getNameReview(familyId, actor.id, "memory_event", confirmed.eventId))?.suggestions[0].valid).toBe(true);
+});
+
+it("excludes confirmed facts with withdrawn evidence and invalidates cross-event evidence in flight", async () => {
+  const { createContribution, addFact } = await import("@/lib/contributions/service");
+  const { contribution } = await import("@/db/schema/contribution");
+  const { factSource } = await import("@/db/schema/suggestion");
+  const { ai, text } = assistant();
+  const source = await confirmInboxEntry(familyId, (await getInboxEntry(familyId, textItem()))!);
+  const target = await confirmInboxEntry(familyId, (await getInboxEntry(familyId, textItem()))!);
+  if (!source.ok || !target.ok) throw new Error("event fixture failed");
+  const made = await createContribution(familyId, { memoryEventId: source.eventId, authorPersonId: binding.personId!, recordedByUserId: actor.id, rawText: "仅供引用的合成讲述", visibility: "family" });
+  if (!made.ok) throw new Error("contribution fixture failed");
+  const evidence = getDb().select().from(contribution).where(eq(contribution.memoryEventId, source.eventId)).get()!;
+  const fact = await addFact(familyId, target.eventId, "仅据另一事件讲述确认的紫色风筝事实");
+  if (!fact) throw new Error("fact fixture failed");
+  getDb().update(factSource).set({ sourceType: "contribution", sourceId: evidence.id }).where(eq(factSource.factId, fact.id)).run();
+  const queued = requestEventSuggestions(context, target.eventId, { runtime: ai }); if (!queued.ok) throw new Error(queued.error);
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed", jobId: queued.jobId });
+  expect(JSON.stringify(text.mock.calls[0][0].messages)).toContain(fact.statement);
+  expect((await getNameReview(familyId, actor.id, "memory_event", target.eventId))?.suggestions[0].valid).toBe(true);
+  getDb().update(contribution).set({ visibility: "private" }).where(eq(contribution.id, evidence.id)).run();
+  expect((await getNameReview(familyId, actor.id, "memory_event", target.eventId))?.suggestions).toHaveLength(0);
+  const fresh = requestEventSuggestions(context, target.eventId, { runtime: ai, regenerateFrom: queued.jobId }); if (!fresh.ok) throw new Error(fresh.error);
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed", jobId: fresh.jobId });
+  expect(JSON.stringify(text.mock.calls[1][0].messages)).not.toContain(fact.statement);
+  getDb().update(contribution).set({ visibility: "family" }).where(eq(contribution.id, evidence.id)).run();
+  const late = requestEventSuggestions(context, target.eventId, { runtime: ai, regenerateFrom: fresh.jobId }); if (!late.ok) throw new Error(late.error);
+  const original = text.getMockImplementation()!;
+  text.mockImplementationOnce(async input => {
+    getDb().update(memoryEvent).set({ visibility: "private" }).where(eq(memoryEvent.id, source.eventId)).run();
+    return original(input);
+  });
+  expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "discarded", errorCode: "source_changed" });
+  expect(getDb().select().from(aiSuggestion).where(eq(aiSuggestion.createdByJobId, late.jobId)).all()).toHaveLength(0);
+});
+
 it("rolls back partial enqueue when a capability is unavailable and rejects bad JSON without retry", async () => {
   const { ai, text } = assistant(); const p = await photo();
   const count = getDb().select().from(aiJob).all().length;

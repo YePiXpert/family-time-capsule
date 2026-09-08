@@ -1,3 +1,4 @@
+import { readStoryInputSources } from "@/lib/stories/dependencies.mjs";
 import { createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import { readableName } from "@/lib/naming";
 import "server-only";
@@ -353,7 +354,8 @@ export function createBookSourceResolver(
             )
             .all();
           const dependencies: unknown[] = [];
-          const allowed = sources.every((s) => {
+          const inputs = readStoryInputSources(row);
+          const allowed = inputs !== null && [...inputs, ...sources].every((s) => {
             if (s.sourceType === "user_text") return true;
             if (!s.sourceId) return false;
             if (

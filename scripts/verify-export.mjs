@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { validateStoryInputSources } from "../lib/stories/dependencies.mjs";
 import { validateArchivePrivacy } from "../lib/export/privacy.mjs";
 import { parseAssetDeletions } from "../lib/assets/deletion-portable.mjs";
 import { BOOK_FILES, validateBookArchive } from "../lib/books/projects/portable.mjs";
@@ -11,7 +12,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = "family-time-capsule-export";
-const SUPPORTED_EXPORT_VERSIONS = new Set([1, 2]);
+const SUPPORTED_EXPORT_VERSIONS = new Set([1, 2, 3]);
 
 const zipArg = process.argv[2];
 if (!zipArg) {
@@ -128,7 +129,7 @@ if (manifest.modules?.drafts !== undefined && (manifest.modules.drafts !== 1 || 
 const hasAssetDeletions = await zipEntryExists("asset-deletions.json");
 if (manifest.modules?.assetDeletions !== undefined && (manifest.modules.assetDeletions !== 1 || !hasAssetDeletions)) fail("声明的原件删除记录缺失或不支持");
 const expectedNonAssetCount =
-  (manifest.exportVersion === 2 ? 1 : 0) +
+  (manifest.exportVersion >= 2 ? 1 : 0) +
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
   (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) + (hasDrafts ? 1 : 0) + (hasAssetDeletions ? 1 : 0) +
   (hasDialogue ? 2 : 0) +
@@ -152,7 +153,7 @@ for (const a of manifest.assets ?? []) {
 }
 const factIds = new Set((facts ?? []).map((f) => f.id));
 const eventIds = new Set((memories ?? []).map((m) => m.id));
-if (manifest.exportVersion === 2) {
+if (manifest.exportVersion >= 2) {
   try {
     if (!memories.every(m => typeof m.bodyText === "string")) throw new Error();
     const privacy = validateArchivePrivacy(await readJsonAsync("privacy.json"), { events: eventIds, assets: assetIds, drafts: new Set(((await readJsonAsync("drafts.json")) ?? []).map(d => d.id)), books: new Set(bookGraph[0].map(p => p.id)), imports: new Set((importSessions ?? []).map(i => i.id)), reviewAssets: new Set(((await readJsonAsync("inbox-item-assets.json")) ?? []).map(l => `${l.inboxItemId}:${l.assetId}`)) });
@@ -206,6 +207,20 @@ const storyIds = new Set(
     ? JSON.parse(await storyEntry.async("string")).map((story) => story.id)
     : [],
 );
+if (storyEntry) {
+  const dependencyIds = {
+    fact: factIds, memory_event: eventIds,
+    contribution: new Set((contributions ?? []).map(row => row.id)),
+    transcript: new Set(((await readJsonAsync("transcripts.json")) ?? []).map(row => row.id)),
+  };
+  for (const row of JSON.parse(await storyEntry.async("string"))) {
+    try {
+      if (manifest.exportVersion >= 3 && !Object.hasOwn(row, "inputSources")) throw new Error();
+      const sources = validateStoryInputSources(row.inputSources ?? null);
+      if ((sources ?? []).some(source => !dependencyIds[source.sourceType].has(source.sourceId))) throw new Error();
+    } catch { fail(`story ${row.id} 的生成来源清单或引用无效`); }
+  }
+}
 function validateLivePhotoReferences(items) {
   const groups = new Map();
   for (const item of items) {

@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { createHash, randomUUID } from "node:crypto";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { reviewPeriod } from "@/db/schema/review";
 import { story, storyParagraph, storySource } from "@/db/schema/story";
@@ -8,12 +8,17 @@ import {
   collectStoryMaterial,
   collectTranscriptMaterial,
   getStory,
+  getStoryInTransaction,
+  storyMaterialFingerprint,
   MAX_PARAGRAPH_CHARS,
   verifyQuoteLock,
   type DraftParagraphPlan,
 } from "@/lib/stories/service";
 
+import { readStoryInputSources, type StoryInputSource } from "@/lib/stories/dependencies.mjs";
+import { familyStorySourcePredicate } from "@/lib/authz/story-access";
 const MAX_NARRATIVES = 60;
+const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 /** AI may refine wording and order only; immutable quotes and source edges are copied verbatim. */
 export const optimizeReviewStoryHandler: AiJobHandler = async ({ lease, assistant, signal }) => {
@@ -24,6 +29,13 @@ export const optimizeReviewStoryHandler: AiJobHandler = async ({ lease, assistan
   const detail = await getStory(lease.familyId, period.storyId);
   if (!detail || detail.story.status !== "draft" || detail.story.editedAt !== null) {
     throw new AiJobHandlerError("review_story_edited", false);
+  }
+  const targetFingerprint = fingerprint(detail);
+  const storyPeriod = { start: period.periodStart, end: period.periodEnd };
+  const inputFingerprint = storyMaterialFingerprint(collectStoryMaterial(lease.familyId, storyPeriod), collectTranscriptMaterial(lease.familyId, storyPeriod));
+  const dependencies = new Map<string, StoryInputSource>();
+  for (const source of [...(readStoryInputSources(detail.story) ?? []), ...detail.paragraphs.flatMap(p => p.sources)]) {
+    if (source.sourceId && ["fact", "contribution", "transcript", "memory_event"].includes(source.sourceType)) dependencies.set(`${source.sourceType}:${source.sourceId}`, { sourceType: source.sourceType as StoryInputSource["sourceType"], sourceId: source.sourceId });
   }
   const narratives = detail.paragraphs.filter((paragraph) => paragraph.kind === "narrative").slice(0, MAX_NARRATIVES);
   if (!narratives.length) throw new AiJobHandlerError("no_story_material", false);
@@ -39,6 +51,7 @@ export const optimizeReviewStoryHandler: AiJobHandler = async ({ lease, assistan
     const response = await assistant.generateText({
       messages: [{ role: "user", content: prompt }], responseFormat: "json", signal,
     });
+    if (response.finishReason !== "stop") throw new Error("incomplete_story_response");
     const parsed = JSON.parse(response.text) as { paragraphs?: unknown };
     if (Array.isArray(parsed.paragraphs)) {
       for (const raw of parsed.paragraphs) {
@@ -62,17 +75,13 @@ export const optimizeReviewStoryHandler: AiJobHandler = async ({ lease, assistan
       }]
       : []
   ));
-  const optimizedPlans: DraftParagraphPlan[] = [...aliases].map(([alias, paragraph]) => ({
-    kind: "narrative",
-    text: optimized.get(alias) ?? paragraph.text,
+  const optimizedById = new Map([...aliases].map(([alias, paragraph]) => [paragraph.id, optimized.get(alias) ?? paragraph.text]));
+  // Unsent paragraphs and immutable quotes keep their original text and place.
+  const plans: DraftParagraphPlan[] = detail.paragraphs.map((paragraph) => ({
+    kind: paragraph.kind as DraftParagraphPlan["kind"],
+    text: optimizedById.get(paragraph.id) ?? paragraph.text,
     sources: sourcesOf(paragraph),
   }));
-  const quotePlans: DraftParagraphPlan[] = detail.paragraphs.filter((paragraph) => paragraph.kind === "quote").map((paragraph) => ({
-    kind: "quote", text: paragraph.text,
-    sources: sourcesOf(paragraph),
-  }));
-  const plans = [...optimizedPlans, ...quotePlans];
-  const storyPeriod = { start: period.periodStart, end: period.periodEnd };
   const material = collectStoryMaterial(lease.familyId, storyPeriod);
   const transcripts = collectTranscriptMaterial(lease.familyId, storyPeriod);
   if (plans.some((plan) => plan.sources.length === 0 || !verifyQuoteLock(plan, material, transcripts))) {
@@ -84,7 +93,11 @@ export const optimizeReviewStoryHandler: AiJobHandler = async ({ lease, assistan
       eq(reviewPeriod.id, lease.entityId), eq(reviewPeriod.familyId, lease.familyId),
       eq(story.id, period.storyId!), eq(story.familyId, lease.familyId), eq(story.status, "draft"), isNull(story.editedAt),
     )).get();
-    if (!live) return;
+    if (!live || fingerprint(getStoryInTransaction(tx, lease.familyId, live.id)) !== targetFingerprint ||
+      storyMaterialFingerprint(collectStoryMaterial(lease.familyId, storyPeriod), collectTranscriptMaterial(lease.familyId, storyPeriod)) !== inputFingerprint ||
+      [...dependencies.values()].some(source => !tx.get(sql`select 1 where ${familyStorySourcePredicate(lease.familyId, sql`${source.sourceType}`, sql`${source.sourceId}`)}`))) {
+      throw new AiJobHandlerError("review_story_changed", false);
+    }
     tx.delete(storyParagraph).where(and(eq(storyParagraph.storyId, live.id), eq(storyParagraph.familyId, lease.familyId))).run();
     plans.forEach((plan, position) => {
       const paragraphId = randomUUID();
@@ -98,6 +111,6 @@ export const optimizeReviewStoryHandler: AiJobHandler = async ({ lease, assistan
         sourceType: source.sourceType, sourceId: source.sourceId, quote: source.quote, createdAt: now,
       }).run();
     });
-    tx.update(story).set({ createdByJobId: finalize.jobId, updatedAt: new Date() }).where(eq(story.id, live.id)).run();
+    tx.update(story).set({ createdByJobId: finalize.jobId, inputSourcesJson: JSON.stringify([...dependencies.values()]), updatedAt: new Date() }).where(eq(story.id, live.id)).run();
   } };
 };

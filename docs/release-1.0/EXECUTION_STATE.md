@@ -11,8 +11,9 @@
 - 已推送：`ffe9562bc05adc94514215897c3eb6365cb4895c` P0-D 统一 AI 派发；CI `34191966044` 四项全部 success，已核对同 SHA。
 - 已推送：`9b23344cccabe9ed4258310c7d40c1427cd1cce4` R08 正文及权限归档；CI `34196205302` Web/mobile/ops 和 production E2E/恢复通过，最后历史升级脚本预期缺少新增 body_text 字段而失败。
 - 已推送修复：`4b7b752d675d51d4b7abaf640d73799e54dca14a` 补齐完整旧行迁移预期；实际 `verify-upgrade12.mts` 的历史建库、正常升级、失败回滚、旧归档恢复/再导出及五份原件 hash 全部通过（`/tmp/ftc-r08-upgrade-ci-fixed.log`）；CI `34197311786` 四项全部 success，已核对同 SHA。
-- 已推送：`d1f0d6c12430490955838271bc8b64932944c6c0` R09 资料库/命名作者权限；CI `34198425767` 正在运行，待核对。
-- 当前修改：R09 家人讲述及访客相册权限已完成本地验证；正在处理在线故事的来源范围和结果提交。
+- 已推送：`d1f0d6c12430490955838271bc8b64932944c6c0` R09 资料库/命名作者权限；CI `34198425767` 四项全部 success，已核对同 SHA。
+- 已推送：`d67c62b1ecc387684fa2449baa58b263d6ab2b29`（含 `789fef3` 讲述及 `d67c62b` 访客相册）；CI `34199522610` 四项全部 success，已核对同 SHA。
+- 当前里程碑：R10 故事来源闭包、模型提交时机与 v3 归档；本地全量、容器与恢复验证通过，对应 push 的同 SHA CI 待核实。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -108,3 +109,18 @@ P0-D 实现与证据：
 - 每次解析、列条目、读媒体都复验签发账号仍属于该家庭、启用且持有管理权限；缓存的 ResolvedReadGrant 也不能绕过停用、撤销或过期。创建在事务内拒绝失效账号上下文。
 - 三个真实 SQLite/HTTP 用例先失败（`/tmp/ftc-r09-guest-red.log`），修复后访客、旧链接及讲述 3 文件/11 项通过。根全量 134 文件/825 项通过（`/tmp/ftc-r09-guest-root.log`）；production build/build:ops、类型检查、lint 通过，13 条既存 warning；最终新增文件 lint 0。独立只读审查未发现新旁路。
 - production collections 4/4 通过（`/tmp/ftc-r09-guest-e2e-fixed.log`）：实际 Web 私密新照片上传/发布、选择相册、生成访客链接，无账号浏览器先无法发现标题/媒体，家庭范围后 Range 206，撤回后标题消失且 Range 拒绝。范围变更仍由隔离测试库设置，已有事件双端编辑入口另行实现。首跑新测试误用不存在的日期控件标签，修正为实际“时间记得多清楚”，未改应用行为。
+
+
+## R10 故事来源与生成提交
+
+- 故事组装只收集当前家庭可读、已确认且时间有依据的事件；确认事实还要核对其底层引用。旧故事的列表、正文、搜索、作品引用和回收站都复验来源。未知时间不混入按周期自动生成。
+- 模型结果先准备，在任务最终复验事务中才写入；素材指纹变化拒绝写入，重新生成失败不先删除旧草稿。中央 AI 事件/讲述来源同时复验父事件权限、正文、读者及源版本，撤权/修改使旧任务失效。
+- 0069 追加故事级完整输入依赖，删除段落不能抹去模型标题或其他段落的来源。优化周记也持久保留全部输入依赖，核对目标和素材指纹；有界批次之外的段落保持原文及位置。真实 70 段回归先复现尾部 10 段丢失，再修复。
+- 独立只读审查找出的首段依赖删除、旧恢复抹去任务来源、standalone verifier 漏查引用、回收站标题旁路均已处理。0069 不猜旧行的模型来源，全部保留原文并置未证实状态。
+- 新归档协议 v3（产品版本不变）；兼容读取 v1/v2，旧稿缺少完整清单保持未证实。v3 故事字段必须存在，四类引用在 standalone verify/restore 均校验，个人导出和年册来源均包含故事级依赖。未编辑的生成草稿不进入耐久归档时，回顾保留且清除悬空草稿链接。
+- 失败证据：`/tmp/ftc-r10-story-red2.log`、`/tmp/ftc-r10-story-dependency-red.log`、`/tmp/ftc-r10-event-job-red.log`、`/tmp/ftc-r10-story-trash-red.log`、`/tmp/ftc-r10-optimize-batch-red.log`。最终故事/回顾 2 文件/16 项已通过（`/tmp/ftc-r10-optimize-batch-fixed.log`）；v3 导出/恢复等 3 文件/29 项、旧库真实迁移 1 项通过。新增 private-story 内含真实 ZIP、standalone verifier 子进程、非法引用预检和新目录恢复。
+- 独立复审发现中央 hash 把处理输出当成输入：新 ai_suggested 事实令标题自失效、新 ASR 转录令后续事件整理无法领取。只记录已确认事实/人工转录，实际原始依赖输出仍由 handler 指纹保护；已确认事实的底层来源在 prompt、中央任务和结果指纹都复验。两项新失败回归见 `/tmp/ftc-r10-story-review-red.log`，最终相关 4 文件/49 项通过（`/tmp/ftc-r10-story-review-fixed.log`），包含实际 WAV、worker、重开 SQLite、跨事件引用撤权与进行中拒交。
+- 最终根全量 136 文件/837 项通过（`/tmp/ftc-r10-story-root-reviewed.log`）；typecheck/lint/build/build:ops 通过，13 条既存 lint warning，无 error。完整 production E2E 70/70 通过（`/tmp/ftc-r10-story-e2e-final.log`）；新增故事用例实际 Web 私密创建/事实编辑/组装/发布、手机 HTTP 200→404、网页无正文和搜索无入口。范围修改仍为隔离库设置，未宣称已有事件双端分享入口完成。Next 流式 notFound 可先返回 200，故网页验收读取响应确认无私密正文并验证拒绝页面，API 仍断言 404。
+- disaster roundtrip 7/7 通过（`/tmp/ftc-r10-story-roundtrip-fixed.log`）；旧测试硬编码 admin 与实际初始化 owner 不符，改读真实绑定角色并保留全部恢复断言。历史 `verify-upgrade12.mts` 正常升级、迁移失败回滚、旧归档恢复/再导出及五份原件 hash 均通过（`/tmp/ftc-r10-story-upgrade.log`）。
+- 最终真 Docker 镜像 `sha256:24978c1e604cd8edee54b342434aefd5550b7d19131be06b7059964ce46db3a7`；三次容器重启、私密续传、v3 ZIP 校验、随镜像 CLI 新目录恢复及显式身份绑定通过，第三账号 404，原件 hash 不变，唯一标记资源核对后清理（`/tmp/ftc-r10-story-docker-smoke-reviewed.log`）。此为隔离开发验证，不是生产部署或正式发行物。
+- 同 SHA CI 待 push 后核实。R09 已有事件双端分享入口/受控缓存、回收站事件和讲述管理权限、阅读包文件交付前范围核查仍属下一步内部工作，相关需求保持部分实现。

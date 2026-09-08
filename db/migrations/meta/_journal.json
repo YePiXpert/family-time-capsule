@@ -484,6 +484,13 @@
       "when": 1788876000018,
       "tag": "0068_book_owner_user",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1788876000019,
+      "tag": "0069_story_input_sources",
+      "breakpoints": true
     }
   ]
 }

@@ -9,8 +9,11 @@ import {
   MAX_PARAGRAPH_CHARS,
   type StoryKind,
   type DraftParagraphPlan,
+  storyMaterialFingerprint,
 } from "@/lib/stories/service";
 import type { FamilyContext } from "@/lib/family/context";
+import { sql } from "drizzle-orm";
+import { isFamilyRole } from "@/lib/authz/policy";
 
 /**
  * Production handler for `generate.story.v1`（M4 故事生成）。
@@ -49,6 +52,7 @@ export const generateStoryHandler: AiJobHandler = async ({
   const period = periodForKind(kind, anchor);
   const material = collectStoryMaterial(lease.familyId, period);
   const transcripts = collectTranscriptMaterial(lease.familyId, period);
+  const inputFingerprint = storyMaterialFingerprint(material, transcripts);
 
   // 别名注册表（一次性别名 → 真实行）
   const aliasToFact = new Map<string, typeof material.facts[number]>();
@@ -59,7 +63,7 @@ export const generateStoryHandler: AiJobHandler = async ({
   for (const f of material.facts) {
     fSerial += 1;
     aliasToFact.set(`F${fSerial}`, f);
-    sourceBlocks.push(`[F${fSerial}] 已确认事实（${f.eventId}）：${f.statement}`);
+    sourceBlocks.push(`[F${fSerial}] 已确认事实：${f.statement}`);
   }
   let cSerial = 0;
   for (const c of material.contributions) {
@@ -120,6 +124,7 @@ export const generateStoryHandler: AiJobHandler = async ({
       responseFormat: "json",
       signal,
     });
+    if (result.finishReason !== "stop") throw new Error("incomplete_story_response");
     const text = result.text;
     const firstBrace = text.indexOf("{");
     const lastBrace = text.lastIndexOf("}");
@@ -190,35 +195,29 @@ export const generateStoryHandler: AiJobHandler = async ({
     throw new AiJobHandlerError("no_story_material", false);
   }
 
-  // 队列在 claim 时已重验发起者持有 ai:review（仅 admin/editor），
-  // 且 story:write 与 ai:review 的角色集合一致，因此这里不会造成越权。
-  const context: FamilyContext = {
-    userId: lease.requestedByUserId,
-    userName: "",
-    familyId: lease.familyId,
-    personId: null,
-    role: "editor",
-    accountEnabled: true,
-    isGuardian: false,
-    familyTimezone: "UTC",
-    childLaterUnlockAge: 18,
-  };
+  // The generated title and prose may depend on any supplied block, including
+  // one the model omitted from its citations. Retain the complete input closure.
+  const inputSources: DraftParagraphPlan["sources"] = [
+    ...[...aliasToFact.values()].map(f => ({ sourceType: "fact" as const, sourceId: f.factId, quote: null })),
+    ...[...aliasToContribution.values()].map(c => ({ sourceType: "contribution" as const, sourceId: c.contributionId, quote: null })),
+    ...[...aliasToTranscript.values()].map(t => ({ sourceType: "transcript" as const, sourceId: t.transcriptId, quote: null })),
+  ];
 
-  const result = regenerateOrCreateStory(
-    context,
-    { kind, anchor, title, createdByJobId: lease.jobId },
-    plans,
-  );
-  if (!result.ok) {
-    throw new AiJobHandlerError(`story_${result.error}`, false);
-  }
 
   return {
-    commit: () => {
-      // 故事行已在上方 regenerateOrCreateStory 内落库（SQLite 同步事务）。
-      // 幂等性：若 worker 在写库后、finalize 前崩溃，job 过期重试会再次生成——
-      // regenerate 对未编辑草稿是替换语义，最终收敛为一份草稿，绝不重复叠加。
-      void lease;
+    commit: (tx) => {
+      // Only the queue's final authorized transaction may write prepared output.
+      const current = storyMaterialFingerprint(collectStoryMaterial(lease.familyId, period), collectTranscriptMaterial(lease.familyId, period));
+      if (current !== inputFingerprint) throw new AiJobHandlerError("story_source_changed", false);
+      const actor = tx.get<{ role: string }>(sql`select role from user where id=${lease.requestedByUserId} and family_id=${lease.familyId} and disabled_at is null`);
+      if (!actor || !isFamilyRole(actor.role)) throw new AiJobHandlerError("story_forbidden", false);
+      const context: FamilyContext = {
+        userId: lease.requestedByUserId, userName: "", familyId: lease.familyId,
+        personId: null, role: actor.role, accountEnabled: true, isGuardian: false,
+        familyTimezone: "UTC", childLaterUnlockAge: 18,
+      };
+      const result = regenerateOrCreateStory(context, { kind, anchor, title, createdByJobId: lease.jobId, inputSources: inputSources.map(({ sourceType, sourceId }) => ({ sourceType, sourceId })) }, plans);
+      if (!result.ok) throw new AiJobHandlerError(`story_${result.error}`, false);
     },
   };
 };

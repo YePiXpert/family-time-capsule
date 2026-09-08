@@ -1,3 +1,4 @@
+import { familyStoryPredicate } from "@/lib/authz/story-access";
 import { deleteLibraryAsset } from "@/lib/assets/deletion";
 import { AssetLibraryError } from "@/lib/assets/library";
 import "server-only";
@@ -129,7 +130,7 @@ export function trashStory(context: FamilyContext, storyId: string): TrashMutati
     .where(
       and(
         eq(story.id, storyId),
-        eq(story.familyId, context.familyId),
+        eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`),
         isNull(story.deletedAt),
       ),
     )
@@ -213,7 +214,7 @@ export function restoreFromTrash(context: FamilyContext, kind: TrashKind, id: st
   const result = db
     .update(story)
     .set({ deletedAt: null, updatedAt: now })
-    .where(and(eq(story.id, id), eq(story.familyId, context.familyId)))
+    .where(and(eq(story.id, id), eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`)))
     .run();
   if (result.changes === 0) return { ok: false, error: "not_found" };
   const row = db.select().from(story).where(eq(story.id, id)).get();
@@ -308,7 +309,7 @@ export function purgeFromTrash(context: FamilyContext, kind: TrashKind, id: stri
   const row = db
     .select({ id: story.id })
     .from(story)
-    .where(and(eq(story.id, id), eq(story.familyId, context.familyId)))
+    .where(and(eq(story.id, id), eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`)))
     .get();
   if (!row) return { ok: false, error: "not_found" };
   db.delete(story).where(eq(story.id, id)).run();
@@ -367,7 +368,7 @@ export function listTrash(context: FamilyContext): TrashEntry[] {
     .select({ id: story.id, title: story.title, deletedAt: story.deletedAt })
     .from(story)
     .where(
-      and(eq(story.familyId, context.familyId), sql`${story.deletedAt} is not null`),
+      and(eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`), sql`${story.deletedAt} is not null`),
     )
     .orderBy(desc(story.deletedAt))
     .limit(100)

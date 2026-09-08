@@ -1,5 +1,9 @@
 # 恢复设计（RESTORE）
 
+当前写入归档协议 v3，恢复器兼容 v1/v2/v3。v3 故事的 `inputSources` 字段不可缺失，四类来源 ID 必须存在；错误在创建家庭或写内容前拒绝。旧格式无法证明完整模型输入时保留故事原文与已有引用，暂停在线展示及作品引用，不能把未知来源当作全家可见。数据库 0069 同样保留全部旧稿：早期恢复会抹去任务来源，因而不能仅凭旧 `created_by_job_id` 为空就猜它是安全的手写稿。
+
+可从当前可共享的事实、讲述和修订转录重新组装故事；原有手写编辑不会被自动覆盖。旧稿在灾难档案的 `stories.json`、`story-paragraphs.json` 和 `story-sources.json` 中仍完整保留。
+
 > v0.1.1 起恢复已实现（RH-004）：`npm run restore -- backup.zip`。
 > 本文档定义：恢复前置条件、CLI 流程、安全校验、以及未来迁移策略。
 > 导出格式见 [EXPORT_FORMAT.md](./EXPORT_FORMAT.md)。

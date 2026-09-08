@@ -1,6 +1,7 @@
+import { familyStorySourcePredicate } from "@/lib/authz/story-access";
 import { validateAiJobExecution } from "@/lib/ai/jobs/service";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { aiJobDependency, aiJobSource } from "@/db/schema/ai-job";
 import { inboxItem } from "@/db/schema/inbox";
 import { eventEvidenceFingerprint } from "@/lib/ai/event-evidence";
@@ -239,7 +240,7 @@ export const suggestEventMetadataHandler: AiJobHandler = async ({
     db
       .select({ statement: fact.statement })
       .from(fact)
-      .where(and(eq(fact.memoryEventId, eventRow.id), eq(fact.status, "user_confirmed")))
+      .where(and(eq(fact.memoryEventId, eventRow.id), eq(fact.status, "user_confirmed"), familyStorySourcePredicate(lease.familyId, sql`'fact'`, sql`${fact.id}`)))
       .orderBy(fact.createdAt),
     db
       .select({ assetId: memoryEventAsset.assetId })

@@ -56,7 +56,7 @@ test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", asyn
   const root = "family-time-capsule-export";
 
   const manifest = JSON.parse(await zip.file(`${root}/manifest.json`)!.async("string"));
-  expect(manifest.exportVersion).toBe(2);
+  expect(manifest.exportVersion).toBe(3);
   expect(manifest.familyId).toBeTruthy();
   expect(manifest.assets.length).toBeGreaterThanOrEqual(2);
 
