@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import Database from 'better-sqlite3';
 import { ensureBootstrap } from './helpers';
 test('真实相册编辑：多选、章节、顺序、重开、冲突与删除恢复',async({page})=>{
   await ensureBootstrap(page);
@@ -19,6 +22,56 @@ test('真实相册编辑：多选、章节、顺序、重开、冲突与删除�
   page.on('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'重新读取服务器版本'}).click();await expect(page.getByLabel('名称',{exact:true})).toHaveValue('另一位家人的更新');
   await page.getByRole('button',{name:'删除相册',exact:true}).click();await expect(page.getByRole('button',{name:'恢复相册',exact:true})).toBeVisible();await page.getByRole('button',{name:'恢复相册',exact:true}).click();await expect(page.getByRole('link',{name:'回家第一天',exact:true})).toBeVisible();
   await page.goto('/timeline');await expect(page.getByRole('link',{name:/回家第一天/})).toBeVisible();await expect(page.getByRole('link',{name:/窗边的午后/})).toBeVisible();
+});
+
+test('访客链接实时排除私密来源，家庭发布后可读，撤权后标题与媒体同时失效', async ({ page, browser }) => {
+  await ensureBootstrap(page);
+  const title = '私人相册来源的合成记录';
+  await page.goto('/capture');
+  await page.getByLabel('写下这一刻').fill('只给自己保存，访客不能从相册引用发现。');
+  await page.getByLabel('标题', { exact: true }).fill(title);
+  await page.getByLabel('时间记得多清楚').selectOption('unknown');
+  await page.getByLabel('保存后的读者').selectOption('private');
+  await page.getByLabel('添加照片、视频、录音或文档').setInputFiles({
+    name: '合成私人照片.png', mimeType: 'image/png',
+    buffer: Buffer.concat([readFileSync(path.join(__dirname, '../fixtures/sample.png')), Buffer.from(randomUUID())]),
+  });
+  await expect(page.getByRole('status').filter({ hasText: '本机已保存 ·' })).toBeVisible();
+  await page.getByRole('button', { name: '保存为一条记忆' }).click();
+  await page.getByRole('link', { name: '查看这条记忆' }).click();
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+  const eventId = page.url().split('/').at(-1)!;
+  await page.goto('/collections');
+  await page.getByLabel('名称', { exact: true }).fill('合成私人来源相册');
+  await page.getByRole('button', { name: '新建相册 / 章节', exact: true }).click();
+  await expect(page).toHaveURL(/\/collections\/[\w-]+$/);
+  await page.getByRole('link', { name: '从时间轴多选记忆' }).click();
+  await page.getByLabel(title, { exact: true }).check();
+  await page.getByRole('button', { name: /加入所选/ }).click();
+  await page.getByRole('link', { name: '打开相册', exact: true }).click();
+  await page.getByRole('button', { name: '生成只读链接' }).click();
+  const viewPath = (await page.locator('code').first().textContent())!.trim();
+  const token = viewPath.split('/').at(-1)!;
+  const db = new Database(path.join(process.cwd(), 'data/e2e-collections/db/capsule.sqlite'));
+  const guestContext = await browser.newContext();
+  try {
+    const original = db.prepare('select a.id,a.visibility from asset a join memory_event_asset ma on ma.asset_id=a.id where ma.memory_event_id=?').get(eventId) as { id: string; visibility: string };
+    expect(original.visibility).toBe('private');
+    const mediaUrl = `/api/media/${original.id}?grant=${token}`;
+    const guest = await guestContext.newPage();
+    await guest.goto(viewPath);
+    await expect(guest.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
+    expect((await guest.request.get(mediaUrl)).status()).toBe(401);
+    // Isolated fixture changes emulate historical sharing; the existing-event editor is still pending.
+    db.prepare("update memory_event set visibility='family' where id=?").run(eventId);
+    await guest.reload();
+    await expect(guest.getByRole('heading', { name: title, exact: true })).toBeVisible();
+    expect((await guest.request.get(mediaUrl, { headers: { range: 'bytes=0-11' } })).status()).toBe(206);
+    db.prepare("update memory_event set visibility='private' where id=?").run(eventId);
+    await guest.reload();
+    await expect(guest.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
+    expect((await guest.request.get(mediaUrl, { headers: { range: 'bytes=0-11' } })).status()).toBe(401);
+  } finally { db.close(); await guestContext.close(); }
 });
 
 test('相册选择跨越第一页，并能直接恢复时间轴指定的旧相册', async ({page}) => {
