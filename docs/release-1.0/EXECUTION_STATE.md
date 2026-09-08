@@ -17,7 +17,8 @@
 - 已推送：`c6f32be5fb7ce89870d31b15bf816471c97ca286` R09 阅读包最终响应授权；CI `34204259752` 四项全部 success，已核对同 SHA。
 - 已推送：`9db3cdb4b692b4af6863a8e223981800babf5ab2` R09 事实/回收站管理；CI `34205380014` 四项全部 success，已核对同 SHA。
 - 已推送：`d8318a5f6fa56876318726aaa0b985ba5fd0bbe4`（含 `e1ea2ce` 导入页交互就绪及详情来源）；CI `34207480740` 四项全部 success，已核对同 SHA。
-- 当前里程碑：事件编辑权限、版本与六档日期；下一步已有事件原生编辑、双端分享/撤销和受控缓存。
+- 已推送：`5e5889017abb6214d92afed957db5b5c93713ca4` 事件编辑版本/日期；CI `34209595481` 四项全部 success，已核对同 SHA。
+- 当前里程碑：已有事件双端分享/撤销、原生编辑及拒绝后清理缓存；下一步增量同步/权限版本与恢复世代。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -181,3 +182,14 @@ P0-D 实现与证据：
 - 根全量第二次 870/871，唯一遗漏为 unanchored-memory 老 HTTP fixture 未携带新增必填版本字段，已按当前真实事件版本更新，未降低断言。最终根全量 139 文件/871 项通过（`/tmp/ftc-r09-event-edit-root-reviewed.log`）。完整 production 首跑 72/74：新版 build 清除了提前生成的 worker，书籍脚本两处旧 PATCH 未带版本；已在 build 后重建 ops 并按实际 GET 版本更新请求，最终完整 production 74/74 通过（`/tmp/ftc-r09-event-edit-e2e-reviewed.log`）。typecheck（根/原生）、lint（13 既存 warning）、build/build:ops 已通过；手机 49 文件/267 项、灾难 roundtrip 7/7、独立历史卷升级/迁移失败回滚/旧归档恢复再导出及五原件 hash 通过（`/tmp/ftc-r09-event-edit-mobile.log`、`/tmp/ftc-r09-event-edit-roundtrip.log`、`/tmp/ftc-r09-event-edit-upgrade.log`）。
 - 最终原生 API 版本解析接受非负安全整数，拒绝 null/字符串/小数/负值/溢出；缺失版本仅兼容旧详情读取，新编辑类型必须携带版本。native 最终 49 文件/267 项、typecheck/lint 通过（`/tmp/ftc-r09-event-edit-native-final.log`、`/tmp/ftc-r09-event-edit-native-types-final.log`、`/tmp/ftc-r09-event-edit-native-lint.log`）。
 - 已有事件原生编辑及双端分享/撤销、受控缓存、增量同步仍须继续，本批不代表 R09/R17/SYNC-8 全流程完成。
+
+
+## R09 双端分享、原生编辑与撤权缓存
+
+- Web 详情和原生阅读页接通已有事件编辑/分享。读者继续使用最小有效账号列表的 User ID；仅管理者拿到当前 readerUserIds。API 必填 expectedRevision/mutationId，0070 收据复用同一事务；相同请求重放不重复递增版本，旧编辑不能覆盖分享修改。
+- 分享事务重新核对作者管理权和有效账号；空 members、退出/停用/其他家庭读者明确拒绝。扩展范围必须有全部原件再分享权，并检查会新增暴露的他人讲述；拒绝通过抛错回滚临时读者变化。收窄范围可在来源失效后执行。私密根原件不改成 family，照片/录音/封面只经当前事件授权读取。
+- 真实失败回归另发现跨记忆封面没有授权引用、保存期间可继续输入后被旧响应清空、409 后取消重开仍用旧版本。历史封面 ID 不提供新授权；只有在实际更换封面/明确扩大分享的事务中，通过原件读取与再分享权检查后才将原件关联到记忆；正文修改携带同值旧封面不建立新授权；原生输入/精度/人物/读者与 Web 分享控件在保存期间禁用；Web 冲突 revalidate，原生刷新详情但保留编辑草稿，再打开使用最新版本。
+- 原生详情按六档精度展示日期，unknown 不显示内部锚点或旧摘要年龄。401/403/404 后清除同 scope 的详情和时间轴缓存，并使相关服务器摘要缓存失效；页面不再退回旧标题/地点/封面。作者本机原件按真实草稿归属检索，换号无法借相同事件 ID 读取；不删除草稿或原件。
+- 新回归使用真实 SQLite、HTTP、原件、User ID 与 Person ID 不同的三个管理员，以及 React Native 控件和实际本地存储。先失败日志：`/tmp/ftc-r09-sharing-cover-red.log`、`/tmp/ftc-r09-native-edit-pending-red.log`；封面/分享/编辑 26 项通过，包含升级前未经授权的历史封面必须保持不可读的实际失败回归（`/tmp/ftc-r09-sharing-cover-legacy-red.log`）。原生全量 50 文件/273 项、typecheck/lint 通过；根 typecheck/lint/build/build:ops 和灾难 roundtrip 7 项通过，根 lint 12 条既存 warning，无 error。
+- 最终根全量 140 文件/879 项通过（`/tmp/ftc-r09-sharing-root-settled.log`）；完整 production E2E 75/75 通过（`/tmp/ftc-r09-sharing-e2e-final.log`），包含双端实际409刷新/重开/再次保存，以及原生私密两照片+录音的重开、断点上传、丢失分享回执重试、B阅读/C拒绝、撤回与B本机缓存清理。最后历史封面修正后 26 项集成回归、typecheck、production build/build:ops 和 edit/native-capture 10/10 再验证通过（`/tmp/ftc-r09-sharing-cover-complete.log`、`/tmp/ftc-r09-sharing-e2e-complete.log`）。独立只读审查提出的反例均已处理，无新迁移/归档版本变更；提交后核对同 SHA CI。
+- 平台相册/录音组件仍为替身；上述自动化不等于真机验收。增量变更序列/tombstone/cursor/权限版本、完整缓存刷新协议及恢复世代仍待实现，ID-11/ID-12/SYNC-8 保持部分实现；产品版本仍 1.0.0-dev.1。

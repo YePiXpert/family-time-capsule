@@ -52,11 +52,12 @@ export function EditEventForm({
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [revision, setRevision] = useState(event.titleRevision);
-  const [values, setValues] = useState({ title: event.title, bodyText: event.bodyText, precision: event.occurredAtPrecision,
+  const initialValues = () => ({ title: event.title, bodyText: event.bodyText, precision: event.occurredAtPrecision,
     wall: event.occurredAtPrecision === "unknown" ? "" : event.occurredAtPrecision === "year" ? defaultWallTime.slice(0, 4)
       : event.occurredAtPrecision === "month" ? defaultWallTime.slice(0, 7) : event.occurredAtPrecision === "date_only" ? defaultWallTime.slice(0, 10) : defaultWallTime,
     location: event.locationText ?? "", child: event.childPersonId ?? "", participants: participantIds,
     milestone: event.milestoneType ?? "", pinned: event.isPinned, cover: event.coverAssetId ?? "" });
+  const [values, setValues] = useState(initialValues);
   const mutation = useRef<{ signature: string; id: string } | null>(null);
   const [state, formAction, pending] = useActionState(async (_previous: { error?: string; saved?: boolean } | undefined, data: FormData) => {
     const signature = JSON.stringify([...data.entries()]);
@@ -77,7 +78,7 @@ export function EditEventForm({
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { setRevision(event.titleRevision); setValues(initialValues()); setOpen(true); }}
         className="ui-button-secondary"
       >
         修改这件事

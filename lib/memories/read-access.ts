@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
+import { memoryEventReader } from "@/db/schema/memory";
 import { asset } from "@/db/schema/asset";
 import { createContributionAccessSnapshot, listVisibleContributionsForEvent, readableAssetPredicate } from "@/lib/authz/contribution-access";
 import { canManageEventVisibilityInTransaction, createEventAccessSnapshot } from "@/lib/authz/event-access";
@@ -25,7 +26,8 @@ export function readMemoryContent(context: FamilyContext, eventId: string) {
     const facts = listFacts(context, eventId);
     const sources = listFactSources(context, facts.map(f => f.id));
     const canWrite = canManageEventVisibilityInTransaction(tx, createEventAccessSnapshot(context), eventId);
-    const content = { detail, contributions, audioAssets, facts, sources, canWrite };
+    const readerUserIds = canWrite ? tx.select({ id: memoryEventReader.userId }).from(memoryEventReader).where(and(eq(memoryEventReader.familyId, context.familyId), eq(memoryEventReader.memoryEventId, eventId))).all().map(reader => reader.id).sort() : [];
+    const content = { detail, contributions, audioAssets, facts, sources, canWrite, readerUserIds };
     return { ...content, version: createHash("sha256").update(JSON.stringify(content)).digest("hex") };
   });
 }

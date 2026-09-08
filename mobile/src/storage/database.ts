@@ -303,7 +303,12 @@ export async function getCachedMemoryDetail(
 
 export async function removeCachedMemoryDetail(scope: string, id: string): Promise<void> {
   const db = await getDatabase();
-  await db.runAsync("DELETE FROM memory_detail WHERE scope = ? AND id = ?", scope, id);
+  await db.withExclusiveTransactionAsync(async tx => {
+    await tx.runAsync("DELETE FROM memory_detail WHERE scope = ? AND id = ?", scope, id);
+    await tx.runAsync("DELETE FROM timeline_event WHERE scope = ? AND id = ?", scope, id);
+    // Summary caches may contain the revoked title or cover; retain originals and owned drafts.
+    await tx.runAsync("DELETE FROM meta WHERE key IN ('mobile_home', 'mobile_review') OR key LIKE 'library_%'");
+  });
 }
 
 export async function listTimeline(scope: string | null): Promise<LocalTimelineEvent[]> {
@@ -366,7 +371,9 @@ export type LocalMemoryMedia = {
 
 export async function listLocalMemoryMedia(
   memoryEventId: string,
+  ownDraftScope: string | null = "local",
 ): Promise<LocalMemoryMedia[]> {
+  if (ownDraftScope === null) return [];
   const db = await getDatabase();
   const rows = await db.getAllAsync<{
     id: string;
@@ -380,8 +387,16 @@ export async function listLocalMemoryMedia(
        AND memory_event_id = ?
        AND local_uri IS NOT NULL
        AND media_type IS NOT NULL
+       AND (
+         EXISTS (SELECT 1 FROM local_draft d, json_each(json_extract(d.snapshot_json, '$.content.items')) i
+           WHERE d.scope = ? AND json_extract(d.snapshot_json, '$.status') <> 'discarded'
+             AND json_extract(i.value, '$.localCaptureRef') = local_capture.id)
+         OR (? = 'local' AND NOT EXISTS (
+           SELECT 1 FROM local_draft d, json_each(json_extract(d.snapshot_json, '$.content.items')) i
+           WHERE json_extract(i.value, '$.localCaptureRef') = local_capture.id))
+       )
      ORDER BY occurred_at, id`,
-    memoryEventId,
+    memoryEventId, ownDraftScope, ownDraftScope,
   );
   return rows.map((row) => ({
     captureId: row.id,

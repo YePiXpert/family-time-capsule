@@ -17,6 +17,8 @@ import type {
   MobileMe,
   MobileMemory,
   MobileMemoryPatch,
+  MemorySharingPatch,
+  MemorySharingResult,
   MobileReview,
   MobileMemoryAsset,
   MobileSearchPage,
@@ -249,6 +251,11 @@ export function parseMobileMemory(value: unknown): MobileMemory {
   if (
     !isRecord(value) ||
     !isString(value.id, 128) ||
+    (value.bodyText !== undefined && !isString(value.bodyText, 100_000)) ||
+    (value.canWrite !== undefined && typeof value.canWrite !== "boolean") ||
+    (value.isAuthor !== undefined && typeof value.isAuthor !== "boolean") ||
+    (value.visibility !== undefined && !["private", "members", "family"].includes(String(value.visibility))) ||
+    (value.readerUserIds !== undefined && (!Array.isArray(value.readerUserIds) || value.readerUserIds.length > 20 || !value.readerUserIds.every(id => isString(id, 128)))) ||
     (value.titleRevision !== undefined && (!Number.isSafeInteger(value.titleRevision) || Number(value.titleRevision) < 0)) ||
     !isString(value.title, 500) ||
     !isDateTime(value.occurredAt) ||
@@ -840,6 +847,8 @@ export async function requestMobileJson(
         ? "指定成员已停用、退出或不属于当前家庭。请重新选择读者；本机内容仍保留，不会改为全家可见。"
         : isRecord(body) && body.error === "conflict"
         ? "内容已有新的修改，请重新读取后核对。本次输入仍保留在页面中。"
+        : isRecord(body) && body.error === "source_reshare_forbidden"
+        ? "其中有其他家人未授权转分享的内容，不能扩大读者。可以保留或缩小当前范围。"
         : isRecord(body) && body.error === "asset_in_use"
         ? "这份原件仍被草稿、记忆、相册或作品使用。请先移除相关引用。"
         : response.status === 401
@@ -970,6 +979,14 @@ export async function fetchMobileMemory(
       `/api/mobile/v1/memories/${encodeURIComponent(id)}`,
     ),
   );
+}
+
+export async function shareMobileMemory(credentials: Credentials, id: string, patch: MemorySharingPatch): Promise<MemorySharingResult> {
+  const body = await requestMobileJson(credentials, `/api/mobile/v1/memories/${encodeURIComponent(id)}/sharing`, { method: "POST", body: JSON.stringify(patch) });
+  if (!isRecord(body) || body.ok !== true || !["private", "members", "family"].includes(String(body.visibility)) ||
+    !Number.isSafeInteger(body.titleRevision) || Number(body.titleRevision) < 0 || typeof body.readable !== "boolean" ||
+    !Array.isArray(body.readerUserIds) || body.readerUserIds.length > 20 || !body.readerUserIds.every(id => isString(id, 128))) throw new ApiError("服务器分享设置返回了无效数据。", 502);
+  return body as MemorySharingResult;
 }
 
 export async function patchMobileMemory(

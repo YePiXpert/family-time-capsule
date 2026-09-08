@@ -232,5 +232,81 @@ test("编辑六档时间和正文，过期页面保存保留输入并拒绝覆�
   await expect(newer.getByRole("heading", { name: "另一页已保存的新标题", exact: true })).toBeVisible();
   await expect(newer.getByText("已保存的正文 unknown", { exact: true })).toBeVisible();
   await expect(newer.getByText("时间不确定", { exact: true }).first()).toBeVisible();
+  await form.getByRole("button", { name: "收起", exact: true }).click();
+  await page.getByRole("button", { name: "修改这件事", exact: true }).click();
+  await expect(form.getByLabel("标题", { exact: true })).toHaveValue("另一页已保存的新标题");
+  await expect(form.getByLabel("记忆正文")).toHaveValue("已保存的正文 unknown");
+  await form.getByLabel("记忆正文").fill("核对最新版本后重新保存");
+  await form.getByRole("button", { name: "保存修改" }).click();
+  await expect.poll(async () => (await (await context.request.get(`/api/mobile/v1${memoryPath}`)).json()).bodyText).toBe("核对最新版本后重新保存");
   await newer.close();
+});
+
+test("作者通过网页分享私密图文音给 B，C 看不到，撤销后 B 详情和 Range 失效", async ({ page, browser }) => {
+  await ensureBootstrap(page);
+  const db = new Database(path.join(process.cwd(), "data/e2e-edit/db/capsule.sqlite"));
+  const bToken = randomUUID(); const cToken = randomUUID();
+  try {
+    const family = db.prepare("select id from family").get() as { id: string };
+    for (const [id, name, token] of [["share-b", "接收家人B", bToken], ["share-c", "未选管理员C", cToken]]) {
+      db.prepare("insert into person(id,family_id,display_name,created_at,updated_at) values (?,?,?,unixepoch(),unixepoch())").run(`person-${id}`, family.id, name);
+      db.prepare("insert into user(id,name,email,role,family_id,person_id,created_at,updated_at) values (?,?,?,'admin',?,?,unixepoch(),unixepoch())").run(id, name, `${id}@fixture.invalid`, family.id, `person-${id}`);
+      db.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at) values (?,?,?,unixepoch()+3600,unixepoch(),unixepoch())").run(randomUUID(), token, id);
+    }
+  } finally { db.close(); }
+  await page.goto("/capture");
+  await page.getByLabel("写下这一刻").fill("旧盒子里两张照片和一段原声，具体时间记不清了。");
+  await page.getByLabel("标题", { exact: true }).fill("通过网页明确分享的私密旧事");
+  await page.getByLabel("时间记得多清楚").selectOption("unknown");
+  await page.getByLabel("保存后的读者").selectOption("private");
+  await page.locator('input[type="file"]').first().setInputFiles(["sample.png", "sample-exif.jpg", "sample.wav"].map(name => path.join(__dirname, "../fixtures", name)));
+  await page.getByRole("button", { name: "保存为一条记忆" }).click();
+  await page.getByRole("link", { name: "查看这条记忆" }).click();
+  await expect(page).toHaveURL(/\/memories\/[^/?]+/);
+  const memoryPath = new URL(page.url()).pathname;
+  const id = memoryPath.split("/").at(-1)!;
+  const apiPath = `/api/mobile/v1/memories/${id}`;
+  const author = await (await page.request.get(apiPath)).json();
+  expect(author.assets).toHaveLength(3);
+  const b = await browser.newContext({ extraHTTPHeaders: { authorization: `Bearer ${bToken}` } });
+  const c = await browser.newContext({ extraHTTPHeaders: { authorization: `Bearer ${cToken}` } });
+  const reader = await b.newPage();
+  try {
+    expect((await b.request.get(new URL(apiPath, page.url()).href)).status()).toBe(404);
+    expect((await c.request.get(new URL(apiPath, page.url()).href)).status()).toBe(404);
+    await page.getByRole("button", { name: "管理分享", exact: true }).click();
+    const share = page.getByRole("form", { name: "修改记忆读者" });
+    await share.getByLabel("谁可以阅读这件事").selectOption("members");
+    await share.getByLabel("接收家人B", { exact: true }).check();
+    await share.getByRole("button", { name: "保存分享设置" }).click();
+    await expect(page.getByRole("status", { name: "" }).filter({ hasText: "分享设置已保存。" })).toBeVisible();
+    await reader.goto(new URL(memoryPath, page.url()).href);
+    await expect(reader.getByRole("heading", { name: "通过网页明确分享的私密旧事", exact: true })).toBeVisible();
+    await expect(reader.getByText("旧盒子里两张照片和一段原声，具体时间记不清了。", { exact: true })).toBeVisible();
+    await expect(reader.getByRole("button", { name: "管理分享", exact: true })).toHaveCount(0);
+    for (const asset of author.assets) {
+      expect((await b.request.get(new URL(`/api/media/${asset.id}`, page.url()).href, { headers: { range: "bytes=0-11" } })).status()).toBe(206);
+      expect((await c.request.get(new URL(`/api/media/${asset.id}`, page.url()).href, { headers: { range: "bytes=0-11" } })).status()).toBe(404);
+    }
+    expect((await c.request.get(new URL(apiPath, page.url()).href)).status()).toBe(404);
+    expect((await b.request.post(new URL(`${apiPath}/sharing`, page.url()).href, { data: { visibility: "family", readerUserIds: [], expectedRevision: 1, mutationId: randomUUID() } })).status()).toBe(403);
+    await page.getByRole("button", { name: "管理分享", exact: true }).click();
+    expect((await page.request.patch(apiPath, { data: { locationText: "另一端修改", expectedRevision: 1, mutationId: randomUUID() } })).status()).toBe(200);
+    await share.getByLabel("谁可以阅读这件事").selectOption("private");
+    await share.getByRole("button", { name: "保存分享设置" }).click();
+    await expect(share.getByRole("alert")).toContainText("选择已保留");
+    await expect(share.getByLabel("谁可以阅读这件事")).toHaveValue("private");
+    await share.getByRole("button", { name: "取消", exact: true }).click();
+    await page.getByRole("button", { name: "管理分享", exact: true }).click();
+    await expect(share.getByLabel("谁可以阅读这件事")).toHaveValue("members");
+    await share.getByLabel("谁可以阅读这件事").selectOption("private");
+    await share.getByRole("button", { name: "保存分享设置" }).click();
+    await expect(page.getByText("当前读者：仅自己", { exact: true })).toBeVisible();
+    expect((await b.request.get(new URL(apiPath, page.url()).href)).status()).toBe(404);
+    const revoked = await reader.reload();
+    const html = await revoked!.text();
+    expect(html).not.toContain("通过网页明确分享的私密旧事");
+    expect(html).not.toContain("旧盒子里两张照片和一段原声");
+    for (const asset of author.assets) expect((await b.request.get(new URL(`/api/media/${asset.id}`, page.url()).href, { headers: { range: "bytes=0-11" } })).status()).toBe(404);
+  } finally { await b.close(); await c.close(); }
 });

@@ -1,3 +1,6 @@
+import { MemorySharingForm } from "./memory-sharing-form";
+import { listDraftReaders } from "@/lib/drafts/service";
+import type { EventVisibility } from "@/lib/authz/policy";
 import { listReviewableSuggestions } from "@/lib/suggestions/access";
 import type { Metadata } from "next";
 import { OrganizerControl } from "@/components/organizer-control";
@@ -265,6 +268,7 @@ export default async function MemoryEventPage({
     : facts.filter((fact) => fact.status === "user_confirmed");
   const assetDateFormatter = new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone });
 
+  const availableReaders = canWriteEvent ? listDraftReaders(context) : [];
   if (!isMemoryContentCurrent(context, id, content.version)) notFound();
 
   return (
@@ -319,6 +323,7 @@ export default async function MemoryEventPage({
         <section aria-label="参与人物" className="mt-4 text-sm text-muted">与 {participants.map((person) => person.displayName).join("、")} 一起</section>
       </div>
 
+      {canWriteEvent ? <MemorySharingForm eventId={event.id} visibility={event.visibility as EventVisibility} readerUserIds={content.readerUserIds} revision={event.titleRevision} readers={availableReaders} isAuthor={event.createdByUserId === context.userId} /> : null}
       {canWriteEvent ? <OrganizerControl kind="memory_event" id={event.id} /> : null}
       {canWriteEvent ? <section aria-label="编辑档案" className={editMode ? "mt-6 rounded-2xl border border-accent/40 bg-accent-soft/40 p-4" : "mt-4"}>
         {editMode ? <h2 className="font-semibold">编辑档案</h2> : null}

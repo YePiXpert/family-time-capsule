@@ -18,7 +18,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const authorization = await authorizeApiFamilyRequest(request.headers, "event:write");
   if (!authorization.ok) return mobileJson({ error: authorization.error }, { status: authorization.status });
   try {
-    const body = asRecord(await readMobileJson(request));
+    const body = asRecord(await readMobileJson(request, 512 * 1024));
     const rawWall = optionalString(body, "occurredAtWall", 19);
     const precision = optionalString(body, "occurredAtPrecision", 32);
     if (precision !== undefined && !isOccurredAtPrecision(precision)) return mobileJson({ error: "invalid_input" }, { status: 400 });

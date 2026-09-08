@@ -9,6 +9,7 @@ import { colors, sharedStyles } from "../theme";
 import { DateTimeField } from "./DateTimeField";
 import {
   anchorFromPrecisionInput,
+  precisionLevel,
   formatOccurredLabel,
   type OccurredAtPrecision,
 } from "../utils/occurred-precision";
@@ -56,13 +57,16 @@ export function PrecisionDateTimeField({
   occurredAt,
   precision,
   timezone,
-  onChange,
+  onChange: emitChange,
+  disabled = false,
 }: {
   occurredAt: string | null;
   precision: OccurredAtPrecision;
   timezone: string;
+  disabled?: boolean;
   onChange: (next: { occurredAt: string | null; precision: OccurredAtPrecision }) => void;
 }) {
+  const onChange = (value: { occurredAt: string | null; precision: OccurredAtPrecision }) => { if (!disabled) emitChange(value); };
   const [loosePicking, setLoosePicking] = useState<{ mode: LooseMode; date: Date } | null>(null);
 
   const anchorWall = occurredAt ? utcToZonedWallTimeInput(new Date(occurredAt), timezone) : "";
@@ -80,6 +84,7 @@ export function PrecisionDateTimeField({
 
   const switchPrecision = (next: OccurredAtPrecision) => {
     if (next === precision) return;
+    if (precisionLevel(next) > precisionLevel(precision)) { onChange({ occurredAt: null, precision: next }); return; }
     if (next === "unknown" || !occurredAt || !anchorWall) {
       onChange({ occurredAt: next === "unknown" ? null : occurredAt, precision: next });
       return;
@@ -117,7 +122,7 @@ export function PrecisionDateTimeField({
         {PRECISION_OPTIONS.map((option) => {
           const active = option.value === precision;
           return (
-            <Pressable
+            <Pressable disabled={disabled}
               key={option.value}
               accessibilityRole="radio"
               accessibilityState={{ selected: active }}
@@ -136,7 +141,7 @@ export function PrecisionDateTimeField({
       </View>
 
       {precision === "exact" || precision === "approximate" ? (
-        <DateTimeField
+        <DateTimeField disabled={disabled}
           value={anchorWall}
           onChange={(wall) => {
             if (!wall) {
@@ -150,7 +155,7 @@ export function PrecisionDateTimeField({
 
       {precision === "date_only" || precision === "month" || precision === "year" ? (
         <View style={{ gap: 4 }}>
-          <Pressable
+          <Pressable disabled={disabled}
             onPress={() =>
               Platform.OS === "android"
                 ? openLooseAndroid(precision)
@@ -184,7 +189,7 @@ export function PrecisionDateTimeField({
                   if (date) setLoosePicking({ ...loosePicking, date: new Date(date.getTime()) });
                 }}
               />
-              <Pressable
+              <Pressable disabled={disabled}
                 onPress={() => {
                   commitLoose(loosePicking.date, loosePicking.mode);
                   setLoosePicking(null);

@@ -20,7 +20,7 @@ import {
 import { getFamily } from "@/lib/family/service";
 import { anchorFromPrecisionInput, isOccurredAtPrecision } from "@/lib/metadata/precision";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
-import { isMilestoneType, updateMemoryEvent } from "@/lib/memories/service";
+import { isMilestoneType, updateMemoryEvent, updateMemoryEventVisibility } from "@/lib/memories/service";
 import {
   addFact,
   createContribution,
@@ -97,6 +97,7 @@ export async function editEventAction(
     isPinned: formData.has("isPinned"),
   });
   if (!result.ok) {
+    if (result.error === "conflict") revalidatePath(`/memories/${eventId}`);
     return {
       error:
         result.error === "conflict"
@@ -410,4 +411,26 @@ export async function resolveSuggestionAction(
     };
   }
   return { success: "已处理。" };
+}
+
+
+export async function shareMemoryAction(formData: FormData): Promise<{ saved?: boolean; error?: string }> {
+  const context = await requireFamilyCapability("event:write");
+  const eventId = String(formData.get("eventId") ?? "");
+  const mutationId = String(formData.get("mutationId") ?? "");
+  if (!formData.has("expectedRevision") || !/^[\w-]{1,128}$/u.test(mutationId)) return { error: "页面版本无效，请重新打开分享设置。" };
+  const result = await updateMemoryEventVisibility(context, eventId, formData.get("visibility"), formData.getAll("readerUserIds").map(String), Number(formData.get("expectedRevision")), mutationId);
+  if (!result.ok) {
+    if (result.error === "conflict") revalidatePath(`/memories/${eventId}`);
+    return { error: result.error === "conflict" ? "这件事已被修改，选择已保留。请取消并重新打开，核对后再保存。"
+    : result.error === "source_reshare_forbidden" ? "其中有其他家人未授权转分享的内容，不能扩大读者。可以保留或缩小当前范围。"
+    : result.error === "invalid_reader" ? "选中的成员已停用、退出或不属于当前家庭。选择已保留，请重新核对；读者范围没有改变。"
+    : result.error === "invalid" ? "请选择有效的家人账号；不选家人时请选择仅作者可见。"
+    : "事件不存在或你已没有管理分享的权限。" };
+  }
+  revalidatePath(`/memories/${eventId}`);
+  revalidatePath("/timeline");
+  revalidatePath("/search");
+  revalidatePath("/");
+  return { saved: true };
 }

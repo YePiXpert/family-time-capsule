@@ -65,7 +65,7 @@
 | SYNC-4/5 | app/api/uploads/*、lib/imports/service.ts | tests/integration/resumable-upload.test.ts、resumable-restart.test.ts |
 | SYNC-6 | captureId 幂等(lib/imports) | tests/integration/resumable-upload.test.ts(409 case) |
 | SYNC-7 | lib/mobile/sync.ts | tests/integration/mobile-api.test.ts(增量待补) |
-| SYNC-8 | db/schema/memory.ts(_revision/memoryMutation)、0070、lib/memories/service.ts、Web 详情/回顾表单；原生编辑/离线比较仍待接通 | tests/integration/memory-edit-permissions.test.ts、memory-edit.test.ts、tests/e2e/edit.spec.ts、review.spec.ts |
+| SYNC-8 | db/schema/memory.ts(_revision/memoryMutation)、0070、lib/memories/service.ts、Web 详情/回顾/分享表单、mobile/src/memories/MemoryEditor.tsx；离线比较/同步协议仍待接通 | tests/integration/memory-edit-permissions.test.ts、memory-sharing.test.ts、memory-edit.test.ts、mobile/tests/memory-editor.test.ts、capture-production.http.ts、tests/e2e/edit.spec.ts、review.spec.ts |
 | SYNC-9 | mobile/src/screens/SettingsScreen.tsx、src/state/device-clear | mobile/tests/device-clear.test.ts |
 | SYNC-11 | mobile/src/rescue/(rescue-package/device).ts | mobile/tests/rescue-package.test.ts |
 

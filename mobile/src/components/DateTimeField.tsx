@@ -29,11 +29,14 @@ export function parseWallString(value: string | null): Date | null {
 
 export function DateTimeField({
   value,
-  onChange,
+  onChange: emitChange,
+  disabled = false,
 }: {
   value: string | null;
+  disabled?: boolean;
   onChange: (value: string | null) => void;
 }) {
+  const onChange = (value: string | null) => { if (!disabled) emitChange(value); };
   const [picking, setPicking] = useState<{ date: Date; step: "date" | "time" } | null>(null);
   const current = parseWallString(value) ?? new Date();
 
@@ -61,14 +64,14 @@ export function DateTimeField({
   return (
     <View style={{ gap: 6 }}>
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable
+        <Pressable disabled={disabled}
           onPress={Platform.OS === "android" ? openAndroid : () => setPicking({ date: new Date(current.getTime()), step: "date" })}
           style={[sharedStyles.input, { flex: 1, justifyContent: "center" }]}
         >
           <Text style={{ color: value ? colors.ink : colors.muted, fontSize: 16 }}>{label}</Text>
         </Pressable>
         {value ? (
-          <Pressable onPress={() => onChange(null)} style={[sharedStyles.input, { justifyContent: "center" }]}>
+          <Pressable disabled={disabled} onPress={() => onChange(null)} style={[sharedStyles.input, { justifyContent: "center" }]}>
             <Text style={{ color: colors.coralDark, fontSize: 14, fontWeight: "800" }}>清空</Text>
           </Pressable>
         ) : null}
@@ -87,14 +90,14 @@ export function DateTimeField({
                 }}
               />
               {picking.step === "date" ? (
-                <Pressable
+                <Pressable disabled={disabled}
                   onPress={() => setPicking({ date: picking.date, step: "time" })}
                   style={sharedStyles.primaryButton}
                 >
                   <Text style={sharedStyles.primaryText}>下一步：选择时间</Text>
                 </Pressable>
               ) : (
-                <Pressable
+                <Pressable disabled={disabled}
                   onPress={() => {
                     commit(picking.date);
                     setPicking(null);

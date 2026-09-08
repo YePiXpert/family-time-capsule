@@ -6,6 +6,10 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 
 const fixture = JSON.parse(process.env.FTC_NATIVE_HTTP_FIXTURE!);
+let activeCredentials = fixture.credentials;
+let activeUserId = fixture.userId;
+let activeOnline = true;
+const activeEvents: import("../src/types").LocalTimelineEvent[] = [];
 const mocks = vi.hoisted(() => ({
   constructor: vi.fn(), permission: vi.fn(), audioMode: vi.fn(), prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
   documentPicker: vi.fn(), preserveDocument: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), preserveMedia: vi.fn(), preserveAudio: vi.fn(), removeFile: vi.fn(),
@@ -24,8 +28,8 @@ vi.mock("@react-navigation/native", () => ({
 }));
 const navigation = { setParams: mocks.setParams };
 vi.mock("../src/state/AppContext", () => ({ useApp: () => ({
-  credentials: fixture.credentials, family: fixture.family, userId: fixture.userId,
-  people: fixture.people, viewer: { canCapture: true, canEditEvents: true },
+  credentials: activeCredentials, family: fixture.family, userId: activeUserId, online: activeOnline, events: activeEvents,
+  people: fixture.people, viewer: { id: activeUserId, role: activeUserId === fixture.userId ? "editor" : "viewer", canCapture: activeUserId === fixture.userId, canEditEvents: activeUserId === fixture.userId, canCreateContributions: false },
   outbox: [], queued: mocks.queued, grantSyncConsent: mocks.grantSyncConsent,
 }) }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
@@ -84,6 +88,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
   default: "DateTimePicker",
 }));
 
+const { MemoryScreen } = await import("../src/screens/MemoryScreen");
 const { CaptureScreen } = await import("../src/screens/CaptureScreen");
 const { initializeLocalStore, setActiveDestination } = await import("../src/storage/database");
 const { listLocalDrafts } = await import("../src/drafts/store");
@@ -92,7 +97,7 @@ const { syncLocalDrafts } = await import("../src/drafts/sync");
 const { requestMobileJson } = await import("../src/api/client");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
-afterEach(async () => { if (tree) await act(async () => tree!.unmount()); });
+afterEach(async () => { if (tree) await act(async () => tree!.unmount()); tree = undefined; activeCredentials = fixture.credentials; activeUserId = fixture.userId; activeOnline = true; });
 async function press(label: string) {
   const node = tree!.root.findAllByType("Pressable" as never).find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === label));
   expect(node, label).toBeDefined();
@@ -200,6 +205,77 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   expect(published.status).toBe("published");
   expect(await requestMobileJson(fixture.credentials,`/api/mobile/v1/memories/${published.memoryEventId}`)).toMatchObject({occurredAtPrecision:"unknown"});
   for(const token of [fixture.readerToken,fixture.thirdToken]) await expect(requestMobileJson({...fixture.credentials,token},`/api/mobile/v1/memories/${published.memoryEventId}`)).rejects.toMatchObject({status:404});
+
+  const memoryId = published.memoryEventId!;
+  const renderMemory = () => createElement(MemoryScreen, { route: { params: { id: memoryId } }, navigation: {} } as never);
+  const rendered = () => JSON.stringify(tree!.toJSON());
+  const settle = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); }); return rendered(); };
+  await act(async () => { tree = create(renderMemory()); });
+  await expect.poll(settle).toContain("有两张照片与原声的私密往事");
+  expect(rendered()).toContain("时间不确定");
+  await press("修改这件事");
+  await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`, { method: "PATCH", body: JSON.stringify({ bodyText: "另一端先修改的正文", expectedRevision: 0, mutationId: crypto.randomUUID() }) });
+  await act(async () => tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.onChangeText("原声与照片仍在，手机保存的正文修改"));
+  await press("保存记忆修改");
+  await expect.poll(settle).toContain("输入和选择已保留");
+  expect(tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.value).toBe("原声与照片仍在，手机保存的正文修改");
+  await press("取消编辑"); await press("修改这件事");
+  expect(tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.value).toBe("另一端先修改的正文");
+  await act(async () => tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.onChangeText("原声与照片仍在，手机保存的正文修改"));
+  await press("保存记忆修改");
+  await expect.poll(settle).toContain("已保存。");
+  expect(await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`)).toMatchObject({ bodyText: "原声与照片仍在，手机保存的正文修改", occurredAtPrecision: "unknown", titleRevision: 2 });
+  await press("管理分享"); await press("指定家人");
+  await expect.poll(settle).toContain("妈妈");
+  const selected = tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityRole === "checkbox" && node.props.accessibilityLabel === "妈妈");
+  expect(selected).toBeDefined();
+  await act(async () => selected!.props.onPress());
+  let lostShareReply = false;
+  const network = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    const response = await network(...args);
+    if (!lostShareReply && String(args[0]).endsWith(`/memories/${memoryId}/sharing`) && response.ok) { lostShareReply = true; throw new Error("synthetic lost sharing reply"); }
+    return response;
+  };
+  try {
+    await press("保存分享设置");
+    await expect.poll(settle).toContain("无法连接家庭服务器");
+    expect(tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === "妈妈")?.props.accessibilityState.checked).toBe(true);
+    await press("保存分享设置");
+    await expect.poll(settle).toContain("已保存。");
+  } finally { globalThis.fetch = network; }
+  expect(lostShareReply).toBe(true);
+  expect(await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`)).toMatchObject({ visibility: "members", readerUserIds: ["user-b"], titleRevision: 3 });
+  await expect(requestMobileJson({ ...fixture.credentials, token: fixture.thirdToken }, `/api/mobile/v1/memories/${memoryId}`)).rejects.toMatchObject({ status: 404 });
+  for (const item of published.content.items) {
+    const response = await fetch(`${fixture.credentials.serverUrl}/api/media/${item.assetId}`, { headers: { authorization: `Bearer ${fixture.readerToken}`, range: "bytes=0-11" } });
+    expect(response.status).toBe(206);
+    expect((await response.arrayBuffer()).byteLength).toBe(12);
+  }
+  await act(async () => tree!.unmount()); tree = undefined;
+  activeCredentials = { ...fixture.credentials, token: fixture.readerToken }; activeUserId = "user-b";
+  await act(async () => { tree = create(renderMemory()); });
+  await expect.poll(settle).toContain("原声与照片仍在，手机保存的正文修改");
+  expect(rendered()).not.toContain("管理分享");
+  await act(async () => tree!.unmount()); tree = undefined;
+  activeCredentials = fixture.credentials; activeUserId = fixture.userId;
+  await act(async () => { tree = create(renderMemory()); });
+  await expect.poll(settle).toContain("管理分享");
+  await press("管理分享"); await press("仅自己"); await press("保存分享设置");
+  await expect.poll(settle).toContain("已保存。");
+  await act(async () => tree!.unmount()); tree = undefined;
+  activeCredentials = { ...fixture.credentials, token: fixture.readerToken }; activeUserId = "user-b";
+  await act(async () => { tree = create(renderMemory()); });
+  await expect.poll(settle).toContain("读取");
+  await expect.poll(async () => { await settle(); const { getCachedMemoryDetail } = await import("../src/storage/database"); const { memoryCacheScope } = await import("../src/memories/cache-scope"); return getCachedMemoryDetail(memoryCacheScope(activeCredentials, activeUserId, fixture.family.id)!, memoryId); }).toBeNull();
+  expect(rendered()).not.toContain("原声与照片仍在，手机保存的正文修改");
+  activeOnline = false;
+  await act(async () => tree!.update(renderMemory()));
+  expect(rendered()).not.toContain("原声与照片仍在，手机保存的正文修改");
+  expect(tree!.root.findByType("NativeMediaReader" as never).props.assets).toEqual([]);
+  for (const item of published.content.items) expect((await fetch(`${fixture.credentials.serverUrl}/api/media/${item.assetId}`, { headers: { authorization: `Bearer ${fixture.readerToken}`, range: "bytes=0-11" } })).status).toBe(404);
+  await act(async () => tree!.unmount()); tree = undefined;
+  activeCredentials = fixture.credentials; activeUserId = fixture.userId; activeOnline = true;
 },30000);
 
 

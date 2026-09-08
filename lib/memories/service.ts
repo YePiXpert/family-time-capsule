@@ -1,4 +1,5 @@
-import { isOccurredAtPrecision, precisionHasDay } from "@/lib/metadata/precision";
+import { assertMemoryShareSources, attachMemoryCoverInTransaction, MemoryShareSourceError } from "./share-access";
+import { isOccurredAtPrecision, precisionHasDay, precisionLevel } from "@/lib/metadata/precision";
 import { InvalidUserBindingError } from "@/lib/family/service";
 import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
 import "server-only";
@@ -164,7 +165,6 @@ export async function updateMemoryEvent(
     const precision = patch.occurredAtPrecision ?? current.occurredAtPrecision;
     if (!isOccurredAtPrecision(precision)) return { ok: false, error: "invalid" };
     // An unknown sorting anchor cannot become a claimed occurrence by changing only its label.
-    const precisionLevel = (value: string) => value === "unknown" ? 0 : value === "year" ? 1 : value === "month" ? 2 : value === "date_only" ? 3 : 4;
     if (precisionLevel(precision) > precisionLevel(current.occurredAtPrecision) && !patch.occurredAt) return { ok: false, error: "invalid" };
     const occurredAt = precision === "unknown" ? current.occurredAt : patch.occurredAt ?? current.occurredAt;
     if (Number.isNaN(occurredAt.getTime())) return { ok: false, error: "invalid" };
@@ -183,6 +183,7 @@ export async function updateMemoryEvent(
     if (coverAssetId && patch.coverAssetId !== undefined) {
       const cover = tx.select().from(assetTable).where(and(eq(assetTable.id, coverAssetId), eq(assetTable.familyId, familyId), readableAssetPredicate(createContributionAccessSnapshot(context), sql`${coverAssetId}`))).get();
       if (!cover || (coverAssetId !== current.coverAssetId && !canManageOriginalInTransaction(tx, context, cover))) return { ok: false, error: "bad_cover" };
+      if (coverAssetId !== current.coverAssetId && !attachMemoryCoverInTransaction(tx, context, eventId, coverAssetId)) return { ok: false, error: "bad_cover" };
     }
     const family = tx.select().from(familyTable).where(eq(familyTable.id, familyId)).get();
     const ageDays = precisionHasDay(precision) && child?.birthDate ? computeAgeDays(child.birthDate, occurredAt, family?.timezone ?? "UTC") : null;
@@ -734,79 +735,58 @@ export function getVisibleMemoryEventDetail(context: FamilyContext, eventId: str
 }
 
 export type EventVisibilityUpdateResult =
-  | { ok: true; visibility: EventVisibility; readerUserIds: string[] }
-  | { ok: false; error: "not_found" | "forbidden" | "invalid" | "conflict" };
+  | { ok: true; visibility: EventVisibility; readerUserIds: string[]; titleRevision: number; readable: boolean }
+  | { ok: false; error: "not_found" | "forbidden" | "invalid" | "conflict" | "source_reshare_forbidden" | "invalid_reader" };
 
-/**
- * §5 读者与可见性管理：仅作者（family 事件为 event:write 能力者）可改。
- * - 扩大读者（private→members/family）需要显式调用本函数，不存在静默放宽；
- * - 缩小读者后立即重建搜索索引，派生阅读物按各自 revision/权限版本失效；
- * - 冲突用 expectedRevision（title_revision）防止覆盖他人并发编辑。
- */
+/** Explicit sharing; receipt, live authorization and source checks commit together. */
 export async function updateMemoryEventVisibility(
   context: FamilyContext,
   eventId: string,
   visibility: unknown,
   readerUserIds: readonly string[],
   expectedRevision: number,
+  mutationId?: string,
 ): Promise<EventVisibilityUpdateResult> {
-  if (!isEventVisibility(visibility)) return { ok: false, error: "invalid" };
-  if (readerUserIds.length > 20) return { ok: false, error: "invalid" };
-  const { getVisibleMemoryEventInTransaction, canManageEventVisibilityInTransaction } =
-    await import("@/lib/authz/event-access");
-  const snapshot = {
-    principal: {
-      userId: context.userId,
-      familyId: context.familyId,
-      role: context.role,
-      accountEnabled: context.accountEnabled,
-    },
-    evaluatedAt: new Date(),
-  };
-  const db = getDb();
-  const committed = db.transaction((tx): EventVisibilityUpdateResult => {
-    if (!canManageEventVisibilityInTransaction(tx, snapshot, eventId)) {
-      return { ok: false, error: "forbidden" };
-    }
-    const row = tx.select().from(memoryEvent).where(
-      and(eq(memoryEvent.familyId, context.familyId), eq(memoryEvent.id, eventId), isNull(memoryEvent.deletedAt)),
-    ).get();
-    if (!row) return { ok: false, error: "not_found" };
-    if (row.titleRevision !== expectedRevision) return { ok: false, error: "conflict" };
-    const readers = [...new Set(readerUserIds)];
-    if (readers.length > 0) {
-      const valid = tx.select({ id: userTable.id }).from(userTable).where(
-        and(eq(userTable.familyId, context.familyId), inArray(userTable.id, readers), isNull(userTable.disabledAt)),
-      ).all();
-      if (valid.length !== readers.length) return { ok: false, error: "invalid" };
-    }
-    if (visibility !== "members" && readers.length > 0) return { ok: false, error: "invalid" };
-    const now = new Date();
-    // titleRevision 是事件的并发令牌：可见性/读者变更同样递增，防止与
-    // 内容编辑互相覆盖。
-    tx.update(memoryEvent).set({ visibility, updatedAt: now, titleRevision: expectedRevision + 1 }).where(eq(memoryEvent.id, eventId)).run();
-    tx.delete(memoryEventReader).where(eq(memoryEventReader.memoryEventId, eventId)).run();
-    if (visibility === "members") {
-      tx.insert(memoryEventReader).values(
-        readers.map((userId) => ({
-          id: randomUUID(),
-          familyId: context.familyId,
-          memoryEventId: eventId,
-          userId,
-          createdAt: now,
-        })),
-      ).run();
-    }
-    return { ok: true, visibility, readerUserIds: readers };
-  }, { behavior: "immediate" });
-  if (committed.ok) {
-    // 索引按新可见性重建；搜索查询侧同时有实时裁决，双保险。
-    const event = db.select().from(memoryEvent).where(eq(memoryEvent.id, eventId)).get();
-    if (event) {
-      indexMemoryEvent(event);
-    }
+  if (!isEventVisibility(visibility) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 ||
+    readerUserIds.length > 20 || readerUserIds.some(id => typeof id !== "string" || !id || id.length > 128) ||
+    (mutationId !== undefined && !/^[\w-]{1,128}$/u.test(mutationId))) return { ok: false, error: "invalid" };
+  const readers = [...new Set(readerUserIds)].sort();
+  if ((visibility === "members" && !readers.length) || (visibility !== "members" && readers.length)) return { ok: false, error: "invalid" };
+  const snapshot = createEventAccessSnapshot(context);
+  const requestHash = createHash("sha256").update(JSON.stringify({ visibility, readers, expectedRevision })).digest("hex");
+  try {
+    return getDb().transaction((tx): EventVisibilityUpdateResult => {
+      if (!canManageEventVisibilityInTransaction(tx, snapshot, eventId)) return { ok: false, error: "forbidden" };
+      const actor = tx.select().from(userTable).where(eq(userTable.id, context.userId)).get();
+      if (!actor || actor.personId !== context.personId) return { ok: false, error: "forbidden" };
+      const row = tx.select().from(memoryEvent).where(and(eq(memoryEvent.familyId, context.familyId), eq(memoryEvent.id, eventId), isNull(memoryEvent.deletedAt))).get();
+      if (!row) return { ok: false, error: "not_found" };
+      if (visibility !== "family" && !row.createdByUserId) return { ok: false, error: "invalid" };
+      const previousReaders = tx.select({ id: memoryEventReader.userId }).from(memoryEventReader).where(and(eq(memoryEventReader.memoryEventId, eventId), eq(memoryEventReader.familyId, context.familyId))).all().map(reader => reader.id);
+      if (mutationId) {
+        const receipt = tx.select().from(memoryMutation).where(and(eq(memoryMutation.familyId, context.familyId), eq(memoryMutation.actorUserId, context.userId), eq(memoryMutation.mutationId, mutationId))).get();
+        if (receipt) return receipt.memoryEventId === eventId && receipt.operation === "visibility" && receipt.requestHash === requestHash && receipt.resultRevision === row.titleRevision
+          ? { ok: true, visibility, readerUserIds: previousReaders, titleRevision: row.titleRevision, readable: true } : { ok: false, error: "conflict" };
+      }
+      if (row.titleRevision !== expectedRevision) return { ok: false, error: "conflict" };
+      if (readers.length && tx.select({ id: userTable.id }).from(userTable).where(and(eq(userTable.familyId, context.familyId), inArray(userTable.id, readers), isNull(userTable.disabledAt))).all().length !== readers.length) return { ok: false, error: "invalid_reader" };
+      const addedReaderIds = readers.filter(id => id !== row.createdByUserId && !previousReaders.includes(id));
+      const widening = row.visibility !== "family" && (visibility === "family" || (visibility === "members" && addedReaderIds.length > 0));
+      const now = new Date();
+      tx.update(memoryEvent).set({ visibility, updatedAt: now, titleRevision: expectedRevision + 1, lastEditedByUserId: context.userId }).where(eq(memoryEvent.id, eventId)).run();
+      tx.delete(memoryEventReader).where(eq(memoryEventReader.memoryEventId, eventId)).run();
+      if (readers.length) tx.insert(memoryEventReader).values(readers.map(userId => ({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, userId, createdAt: now }))).run();
+      // Source denial throws: none of the provisional scope changes may survive it.
+      if (widening) assertMemoryShareSources(tx, context, row, visibility, addedReaderIds);
+      if (mutationId) tx.insert(memoryMutation).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, actorUserId: context.userId,
+        mutationId, operation: "visibility", requestHash, resultRevision: expectedRevision + 1, createdAt: now }).run();
+      indexMemoryEvent(row);
+      return { ok: true, visibility, readerUserIds: readers, titleRevision: expectedRevision + 1, readable: Boolean(getVisibleMemoryEventInTransaction(tx, snapshot, eventId)) };
+    }, { behavior: "immediate" });
+  } catch (error) {
+    if (error instanceof MemoryShareSourceError) return { ok: false, error: "source_reshare_forbidden" };
+    throw error;
   }
-  return committed;
 }
 
 export async function listMemoryEvents(

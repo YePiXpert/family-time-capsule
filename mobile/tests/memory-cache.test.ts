@@ -1,12 +1,14 @@
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Credentials, MobileMemory } from "../src/types";
+import type { Credentials, MobileMemory, LocalTimelineEvent } from "../src/types";
 const mocks = vi.hoisted(() => ({
-  online: false, fetch: vi.fn(),
+  online: false, fetch: vi.fn(), events: [] as LocalTimelineEvent[],
   credentials: { serverUrl: "https://example.test", token: "A-session" } as Credentials | null,
   user: "A", family: "family",
 }));
+vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePicker", DateTimePickerAndroid: { open: vi.fn() } }));
+vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", Image: "Image", Pressable: "Pressable", ScrollView: "ScrollView",
   Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (x: unknown) => x, hairlineWidth: 1 },
@@ -18,7 +20,7 @@ vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite")
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => ({
-    credentials: mocks.credentials, events: [], family: { id: mocks.family, timezone: "UTC" },
+    credentials: mocks.credentials, events: mocks.events, family: { id: mocks.family, timezone: "UTC" },
     online: mocks.online, people: [], viewer: { id: mocks.user, role: "viewer", canCreateContributions: false },
   }),
 }));
@@ -44,6 +46,7 @@ async function open() { await act(async () => { tree = create(render()); }); }
 const output = () => JSON.stringify(tree!.toJSON());
 beforeEach(async () => {
   mocks.online = false;
+  mocks.events = [];
   mocks.credentials = { serverUrl: "https://example.test", token: "A-session" };
   mocks.user = "A";
   mocks.family = "family";
@@ -122,4 +125,35 @@ it("drops unowned legacy detail caches while preserving local captures and pendi
   expect(await store.getCachedMemoryDetail(scope(), memory.id)).toBeNull();
   expect(await store.getOutboxCount()).toBe(1);
   expect(await store.listTimeline(null)).toEqual([expect.objectContaining({ title: "不可替代的本机原文" })]);
+});
+it("HTTP revocation removes the timeline cache and cannot fall back to its stale summary", async () => {
+  await store.applySyncPage(mocks.credentials!, { apiVersion: 1, serverTime: at,
+    viewer: { id: "A", name: "A", role: "viewer", personId: null, canCapture: false, canEditEvents: false, canReviewInbox: false, canCreateContributions: false },
+    family: { id: "family", name: "合成家庭", timezone: "UTC" }, people: [], nextCursor: null,
+    events: [{ id: memory.id, title: "REVOKED_SUMMARY_TITLE", occurredAt: at, occurredAtPrecision: "unknown", locationText: "REVOKED_LOCATION", childPersonId: null, ageDays: null, ageLabel: null, updatedAt: at, assetCount: 0, participantNames: [], captureIds: [], cover: null }],
+  }, "snapshot");
+  mocks.events = await store.listTimeline(scope());
+  mocks.online = true;
+  mocks.fetch.mockRejectedValue(new ApiError("Access denied", 404));
+  await open();
+  expect(output()).not.toContain("REVOKED_SUMMARY_TITLE");
+  expect(output()).not.toContain("REVOKED_LOCATION");
+  expect((await store.listTimeline(scope())).filter(event => event.source === "server")).toEqual([]);
+  mocks.online = false;
+  await act(async () => { tree!.update(render()); });
+  expect(output()).not.toContain("REVOKED_SUMMARY_TITLE");
+});
+it("archived originals belong to their draft's account scope, even when another account knows the event ID", async () => {
+  const { createLocalDraft, saveLocalDraft } = await import("../src/drafts/store");
+  const ownScope = JSON.stringify(["https://example.test", "instance", "A", "family"]);
+  const otherScope = JSON.stringify(["https://example.test", "instance", "B", "family"]);
+  const draft = await createLocalDraft(ownScope, "owned-draft", "mutation-1");
+  await saveLocalDraft({ ...draft, revision: 2, status: "published", memoryEventId: memory.id,
+    content: { ...draft.content, occurredAtPrecision: "unknown", items: [{ id: "owned-item", assetId: "asset-a", localCaptureRef: "owned-photo", caption: "" }] } }, 1,
+    { id: "owned-photo", payload: { localUri: "file:///A-PRIVATE-PHOTO.png", fileName: "A-PRIVATE-PHOTO.png", mimeType: "image/png", mediaType: "image", source: "library", lastModified: null } });
+  getRawMockDatabase().prepare("update local_capture set memory_event_id=?,sync_state='archived' where id='owned-photo'").run(memory.id);
+  expect(await store.listLocalMemoryMedia(memory.id, ownScope)).toHaveLength(1);
+  expect(await store.listLocalMemoryMedia(memory.id, otherScope)).toEqual([]);
+  expect(await store.listLocalMemoryMedia(memory.id, null)).toEqual([]);
+  expect(getRawMockDatabase().prepare("select local_uri from local_capture where id='owned-photo'").get()).toEqual({ local_uri: "file:///A-PRIVATE-PHOTO.png" });
 });

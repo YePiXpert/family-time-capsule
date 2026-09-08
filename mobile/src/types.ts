@@ -240,7 +240,15 @@ export type MobileMemoryPatch = {
   isPinned?: boolean;
 };
 
+export type MemorySharingPatch = { visibility: "private" | "members" | "family"; readerUserIds: string[]; expectedRevision: number; mutationId: string };
+export type MemorySharingResult = { visibility: MemorySharingPatch["visibility"]; readerUserIds: string[]; titleRevision: number; readable: boolean };
+
 export type MobileMemory = {
+  bodyText?: string;
+  canWrite?: boolean;
+  isAuthor?: boolean;
+  visibility?: "private" | "members" | "family";
+  readerUserIds?: string[];
   /** Absent only in legacy cached details; editing requires a current version. */
   titleRevision?: number;
   id: string;

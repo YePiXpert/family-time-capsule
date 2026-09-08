@@ -271,3 +271,10 @@ it("离线人物选择不冒充登录读者，空读者仍阻止发布（§5）"
   expect(mocks.enqueueText).not.toHaveBeenCalled();
   expect(JSON.stringify(tree!.toJSON())).toContain("请先选择可以阅读这件事的家人");
 });
+it("switching a remembered year to an exact date requires a newly selected time", async () => {
+  mocks.draft.content.occurredAt = "1988-01-01T00:00:00.000Z";
+  mocks.draft.content.occurredAtPrecision = "year" as never;
+  await render("text");
+  await press("精确");
+  expect(mocks.enqueueText).toHaveBeenCalledWith({ occurredAt: null, occurredAtPrecision: "exact" });
+});

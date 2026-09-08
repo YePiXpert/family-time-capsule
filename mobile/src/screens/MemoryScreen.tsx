@@ -1,3 +1,4 @@
+import { MemoryEditor } from "../memories/MemoryEditor";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -53,10 +54,11 @@ export function MemoryScreen(props: Props) {
 }
 
 function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheScope: string | null }) {
-  const { credentials, events, family, online, people, viewer } = useApp();
+  const { credentials, events, family, online, people, viewer, reloadLocal } = useApp();
   const [memory, setMemory] = useState<MobileMemory | null>(null);
   const [localMedia, setLocalMedia] = useState<LocalMemoryMedia[]>([]);
   const [loading, setLoading] = useState(true);
+  const [denied, setDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [contributionText, setContributionText] = useState("");
   const [authorPersonId, setAuthorPersonId] = useState("");
@@ -65,7 +67,8 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   const [editingContributionText, setEditingContributionText] = useState("");
   const [savingContribution, setSavingContribution] = useState(false);
   const requestVersion = useRef(0);
-  const summary = events.find((event) => event.id === route.params.id);
+  const summary = denied ? undefined : events.find((event) => event.id === route.params.id);
+  const ownDraftScope = credentials?.instanceId && viewer?.id && family?.id ? JSON.stringify([credentials.serverUrl, credentials.instanceId, viewer.id, family.id]) : credentials ? null : "local";
 
   const load = useCallback(async () => {
     const version = ++requestVersion.current;
@@ -74,7 +77,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
     try {
       const [cached, archivedMedia] = await Promise.all([
         cacheScope ? getCachedMemoryDetail(cacheScope, route.params.id) : null,
-        listLocalMemoryMedia(route.params.id),
+        listLocalMemoryMedia(route.params.id, ownDraftScope),
       ]);
       if (version !== requestVersion.current) return;
       setLocalMedia(archivedMedia);
@@ -84,12 +87,16 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
           if (version !== requestVersion.current) return;
           if (cacheScope) await cacheMemoryDetail(cacheScope, next);
           if (version !== requestVersion.current) return;
+          setDenied(false);
           setMemory(next);
         } catch (reason) {
           if (version !== requestVersion.current) return;
           if (reason instanceof ApiError && [401, 403, 404].includes(reason.status)) {
+            setDenied(true);
             setMemory(null);
+            setLocalMedia([]);
             if (cacheScope) await removeCachedMemoryDetail(cacheScope, route.params.id);
+            if (version === requestVersion.current) await reloadLocal?.();
           } else {
             setMemory(cached);
           }
@@ -106,7 +113,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [credentials, online, route.params.id, cacheScope]);
+  }, [credentials, online, route.params.id, cacheScope, ownDraftScope, reloadLocal]);
 
   useFocusEffect(useCallback(() => {
     void load();
@@ -165,9 +172,11 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   };
 
   const title = memory?.title ?? summary?.title ?? "记忆详情";
+  const ageLabel = memory ? memory.ageLabel : summary?.ageLabel;
+  const location = memory ? memory.locationText : summary?.locationText;
   const occurredAt = memory?.occurredAt ?? summary?.occurredAt;
-  const localCover = summary?.localCoverUri ?? null;
-  const useLocalMedia = online === false || !credentials;
+  const localCover = summary?.localCoverUri && (summary.source === "local" || localMedia.some(asset => asset.localUri === summary.localCoverUri)) ? summary.localCoverUri : null;
+  const useLocalMedia = !denied && (online === false || !credentials);
   const showStandaloneCover = Boolean(localCover) && (
     useLocalMedia
       ? !localMedia.some((asset) => asset.mediaType === "image")
@@ -180,17 +189,18 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
     <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
       {showStandaloneCover ? <Image source={{ uri: localCover! }} style={styles.cover} /> : null}
       {(memory?.livePhotos?.length ?? 0) > 0 && <Text style={sharedStyles.body}>Live Photo 已保留静态照片和动态原片，可在下方分别查看与播放。</Text>}
-      <NativeMediaReader credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone):undefined})) ?? [])} />
+      <NativeMediaReader credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone,memory?.occurredAtPrecision ?? summary?.occurredAtPrecision):undefined})) ?? [])} />
       {memory?.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} onSaved={() => void load()} />)}
       <View style={styles.heading}>
         <Text style={sharedStyles.eyebrow}>阅读记忆</Text>
         <Text style={sharedStyles.title}>{title}</Text>
-        {occurredAt ? <Text style={styles.date}>{dateLabel(occurredAt, family?.timezone)}{memory?.ageLabel ?? summary?.ageLabel ? ` · ${memory?.ageLabel ?? summary?.ageLabel}` : ""}</Text> : null}
-        {memory?.locationText ?? summary?.locationText ? <Text style={sharedStyles.intro}>地点 · {memory?.locationText ?? summary?.locationText}</Text> : null}
+        {occurredAt ? <Text style={styles.date}>{dateLabel(occurredAt, family?.timezone, memory?.occurredAtPrecision ?? summary?.occurredAtPrecision)}{ageLabel ? ` · ${ageLabel}` : ""}</Text> : null}
+        {location ? <Text style={sharedStyles.intro}>地点 · {location}</Text> : null}
         <Text style={styles.sync}>{memory ? (online === false ? "本机缓存 · 当前离线" : "详情已同步到本机") : "读取中"}</Text>
       </View>
 
       {credentials && viewer?.canEditEvents?<Pressable onPress={()=>navigation.navigate("Collections",{eventIds:[route.params.id]})} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加入相册 / 章节</Text></Pressable>:null}
+      {memory ? <MemoryEditor memory={memory} onSaved={load} /> : null}
       {memory ? <OrganizerPanel kind="memory_event" id={memory.id} onSaved={() => void load()} /> : null}
 
       {error ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.retry}><Text style={styles.link}>重试</Text></Pressable></View> : null}

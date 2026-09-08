@@ -24,6 +24,11 @@ export function isOccurredAtPrecision(value: unknown): value is OccurredAtPrecis
   return typeof value === "string" && (OCCURRED_AT_PRECISIONS as readonly string[]).includes(value);
 }
 
+/** Increasing this level requires a newly supplied occurrence input. */
+export function precisionLevel(precision: string): number {
+  return precision === "unknown" ? 0 : precision === "year" ? 1 : precision === "month" ? 2 : precision === "date_only" ? 3 : 4;
+}
+
 /** 历史值只可能是这三种；其余精度为新值。 */
 export const LEGACY_PRECISIONS: readonly OccurredAtPrecision[] = ["exact", "approximate", "date_only"];
 

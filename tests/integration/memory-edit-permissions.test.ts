@@ -131,3 +131,10 @@ it("a family editor may keep an existing shared cover but cannot reshare a diffe
   expect((await service.updateMemoryEvent("family", first.id, "b", { bodyText: "家人补充正文", coverAssetId: first.assetId, expectedTitleRevision: 0, mutationId: randomUUID() })).ok).toBe(true);
   expect((await service.updateMemoryEvent("family", first.id, "b", { coverAssetId: second.assetId, expectedTitleRevision: 1, mutationId: randomUUID() })).ok).toBe(false);
 });
+it("Chinese body text within the editor limit passes the bounded HTTP request reader", async () => {
+  const id = event();
+  const bodyText = "旧事正文".repeat(6000);
+  const response = await patch("a", id, { bodyText, expectedRevision: 0, mutationId: randomUUID() });
+  expect(response.status).toBe(200);
+  expect(service.getVisibleMemoryEventDetail(ctx("a"), id)?.event.bodyText).toBe(bodyText);
+});
