@@ -211,6 +211,7 @@ export function getVisibleContributionInTransaction(
         // M7 Trash：软删除的讲述按不存在处理
         isNull(contribution.deletedAt),
         visibilityPredicate(snapshot),
+        eventVisibilityCondition(eventSnapshotOf(snapshot)),
       ),
     )
     .limit(1)
@@ -232,6 +233,7 @@ async function queryVisibleContributions(
     eq(memoryEvent.familyId, snapshot.principal.familyId),
     isNull(memoryEvent.deletedAt),
     visibilityPredicate(snapshot),
+    eventVisibilityCondition(eventSnapshotOf(snapshot)),
   ];
   if (options.memoryEventId) {
     conditions.push(eq(memoryEvent.id, options.memoryEventId));
@@ -536,6 +538,7 @@ export function getContributionAssetAccessInTransaction(
         or(
           ne(memoryEvent.familyId, principal.familyId),
           ne(contribution.visibility, "family"),
+          ne(memoryEvent.visibility, "family"),
         ),
       ),
     )
@@ -568,7 +571,8 @@ export function getContributionAssetAccessInTransaction(
     const anyReference = tx
       .select({ id: contribution.id })
       .from(contribution)
-      .where(assetReferencePredicate)
+      .innerJoin(memoryEvent, eq(memoryEvent.id, contribution.memoryEventId))
+      .where(and(assetReferencePredicate, eq(memoryEvent.familyId, principal.familyId), isNull(memoryEvent.deletedAt), isNull(contribution.deletedAt), eventVisibilityCondition(eventSnapshotOf(snapshot))))
       .limit(1)
       .get();
     if (anyReference) return { readable: true, automaticEligible: false };
@@ -656,7 +660,12 @@ export function readableAssetPredicate(snapshot: ContributionAccessSnapshot, ass
          )
          or exists (
            select 1 from contribution pred_contribution
+           join memory_event pred_contribution_event on pred_contribution_event.id = pred_contribution.memory_event_id
            where pred_contribution.audio_asset_id in (select id from descendants)
+             and pred_contribution.deleted_at is null
+             and pred_contribution_event.family_id = ${p.familyId}
+             and pred_contribution_event.deleted_at is null
+             and ${eventVisibilityCondition(eventSnapshotOf(snapshot), sql`pred_contribution_event`)}
          )
     )`;
 }

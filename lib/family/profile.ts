@@ -94,7 +94,7 @@ export async function getPersonProfile(
         .all()
     : [];
   const narrativeEvents = await getTimelineEntriesByIds(
-    context.familyId,
+    context,
     [...recentNarratives, ...voiceNarratives].map((row) => row.memoryEventId),
   );
   const eventById = new Map(

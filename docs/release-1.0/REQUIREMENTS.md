@@ -258,3 +258,6 @@ P0-C / R04–R07：0062 仅追加 upload_session.draft_id/instance_id 与索引�
 R08（当前实现）：0066/0067/0068 追加正文、隔离恢复身份和个人书籍账号归属；v2 可读档案包含明确权限清单、独立存储正文和回执，默认恢复不把私人内容归给维护者。实际 Web 发布后删草稿、索引重建、HTTP 详情与导出、独立库恢复及主机 CLI 显式绑定均已验证；真实 Docker 三次重启和容器内恢复通过。证据：tests/integration/private-memory-body.test.ts、private-archive.test.ts、memory-body-migration.test.ts，tests/e2e/native-capture.spec.ts，scripts/verify-private-upload-container.py。R09/R10 全派生及 R17/R21 恢复世代/较新撤权日志尚未闭合，相关需求仍部分实现。
 
 R09 资料库/命名（当前实现）：资料库隐藏不可读事件关联及引用状态；添加原件检查目标事件编辑权，元数据/命名/删除不把指定读者变成作者。已公开原件加入私密事件不收回既有共享。失败回归、真实 API/SQLite 及生产浏览器证据见 private-library.test.ts 和 asset-library.spec.ts；讲述、访客相册、在线故事和阅读包最终响应边界仍待继续，ID-11/ID-12 状态不提升。
+
+
+R09 家人讲述（当前实现）：读取/编辑/新增要求父事件当前可读；私密原件与衍生物的讲述引用也复验父事件，单个 HTTP/Range 与批量查询一致，独立全家共享原件保留读取但排除私密上下文自动 AI。真实失败回归见 private-contribution-event.test.ts，生产 native-capture 4/4 通过。该生产测试的分享状态通过隔离库设置，已有事件的双端分享/撤销入口和受控缓存仍待完成，不提升 ID-11/ID-12 状态。

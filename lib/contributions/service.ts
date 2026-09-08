@@ -1,3 +1,4 @@
+import { eventVisibilityCondition } from "@/lib/authz/event-access";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -134,6 +135,7 @@ export async function createContribution(
           eq(memoryEvent.id, input.memoryEventId),
           eq(memoryEvent.familyId, familyId),
           isNull(memoryEvent.deletedAt),
+          eventVisibilityCondition({ principal: { userId: input.recordedByUserId, familyId, role: actor.role, accountEnabled: true }, evaluatedAt: now }),
         ),
       )
       .limit(1)
@@ -334,6 +336,7 @@ export async function listRecentFamilyContributions(
     .where(
       and(
         eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.visibility, "family"),
         eq(contribution.visibility, "family"),
         isNull(contribution.deletedAt),
         isNull(memoryEvent.deletedAt),
@@ -390,6 +393,7 @@ export async function listRecentVoiceContributions(
     .where(
       and(
         eq(memoryEvent.familyId, familyId),
+        eq(memoryEvent.visibility, "family"),
         eq(contribution.visibility, "family"),
         isNotNull(contribution.audioAssetId),
         isNull(contribution.deletedAt),

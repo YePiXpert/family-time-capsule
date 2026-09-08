@@ -10,8 +10,9 @@
 - 已推送：`52f58ae6af5f52065120be71189da333db895940` P0-C Live Photo 与明确整理修订；CI `34188472925` 四项全部 success。
 - 已推送：`ffe9562bc05adc94514215897c3eb6365cb4895c` P0-D 统一 AI 派发；CI `34191966044` 四项全部 success，已核对同 SHA。
 - 已推送：`9b23344cccabe9ed4258310c7d40c1427cd1cce4` R08 正文及权限归档；CI `34196205302` Web/mobile/ops 和 production E2E/恢复通过，最后历史升级脚本预期缺少新增 body_text 字段而失败。
-- 已推送修复：`4b7b752d675d51d4b7abaf640d73799e54dca14a` 补齐完整旧行迁移预期；实际 `verify-upgrade12.mts` 的历史建库、正常升级、失败回滚、旧归档恢复/再导出及五份原件 hash 全部通过（`/tmp/ftc-r08-upgrade-ci-fixed.log`）；CI `34197311786` 待核对。
-- 当前修改：R09 资料库、命名与原件管理权限；正在完成提交前验证。
+- 已推送修复：`4b7b752d675d51d4b7abaf640d73799e54dca14a` 补齐完整旧行迁移预期；实际 `verify-upgrade12.mts` 的历史建库、正常升级、失败回滚、旧归档恢复/再导出及五份原件 hash 全部通过（`/tmp/ftc-r08-upgrade-ci-fixed.log`）；CI `34197311786` 四项全部 success，已核对同 SHA。
+- 已推送：`d1f0d6c12430490955838271bc8b64932944c6c0` R09 资料库/命名作者权限；CI `34198425767` 正在运行，待核对。
+- 当前修改：R09 家人讲述及媒体的父事件权限已验证；访客相册旁路继续修复。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -49,7 +50,7 @@
 
 ## 下一个动作
 
-R08 提交并核对同 SHA CI 后，继续 R09/R10 的作品、派生缓存与撤权旁路，再完成账号生命周期、增量同步及恢复协调。旧快照无法证明最新撤权状态的问题仍属内部待实现；不把 R08 当作整个私密记忆链路完成。
+继续 R09/R10 的作品、派生缓存与撤权旁路，再完成账号生命周期、增量同步及恢复协调。旧快照无法证明最新撤权状态的问题仍属内部待实现；不把 R08 当作整个私密记忆链路完成。
 
 P0-D 实现与证据：
 
@@ -64,7 +65,7 @@ P0-D 实现与证据：
 - 最终 production 全量 E2E 68/68 通过（`/tmp/ftc-ai-e2e-reviewed-full.log`），disaster roundtrip 7/7 通过（`/tmp/ftc-ai-roundtrip.log`）。前一次出版失败为最后 Web build 清除了旧 build:ops 产物，已按 build→build:ops 顺序重建并重跑全量；未改原测试或断言。
 - 真 Docker 镜像 `sha256:62aecbf04a6e86a4adbf3b68054830f337cd9564e4f210f6df8580d543779e53` 的 loopback/Caddy 双模板均通过 app-worker 启动、隐藏配置、三能力真实 HTTP fixture、status 零调用、401 脱敏、第五次诊断被共享配额拒绝、重启与关闭；每模式实际 4 次 fixture 请求，测试资源已清理。日志 `/tmp/ftc-ai-docker-reviewed-smoke.log`。未启动公网代理、调用真实模型或操作生产。
 
-私密正文当前仅发布时索引，详情/重建/恢复仍须补；当前 CAP-1/ID-11/ID-12 保留部分实现，全部内部工程远未完成。
+私密正文已在下述 R08 持久化；CAP-1/ID-11/ID-12 因全派生和缓存尚未闭合而保留部分实现，全部内部工程尚未完成。
 
 ## 后续与外部阻塞
 
@@ -81,7 +82,7 @@ P0-D 实现与证据：
 - v1 兼容恢复按草稿中的限制性证据隔离私密/指定成员正文及尚未发布的原件；缺少历史权限证据的旧归档无法推断原读者，文档如实说明。已提交的家庭整理收件保留当时说明和原件回执，不泄露随后未重新提交的修改。合集事件正文摘要、日期、封面与计数实时复验读者；撤权留下不可读占位，不能通过猜 ID 新增。
 - 根全量 131 文件/815 项通过（`/tmp/ftc-r08-root-final.log`），身份 CLI 增量 1 项通过（`/tmp/ftc-r08-cli-test.log`）；root typecheck/build/build:ops/lint 通过，13 条既存 lint warning，无 error。手机 49 文件/267 项、typecheck/lint 通过，Expo Doctor 21/21。ops 4 文件/34 项、disaster roundtrip 7/7 通过。
 - 真 Docker 镜像 `sha256:0da9390accffec1a764c6a0e59228ce27564dfe6ebbe8af675bb90f58d194722`：三次容器重启，私密续传/complete 对账、删已发布草稿后 HTTP 正文仍可读、实际下载 ZIP、容器内 verify/新目录 restore/显式身份绑定均通过；第三账号始终 404，合成原件 SHA256 一致。测试容器/卷均核对唯一标记后清理。日志 `/tmp/ftc-r08-docker-smoke.log`；不是生产部署或正式候选。
-- 完整 production E2E 68/68 通过（`/tmp/ftc-r08-e2e-final.log`）；同 SHA CI 尚待提交/push 后核对。Android/iOS export 与最终正式候选整套门禁在后续内部功能完成后复验，不把本次未运行项写成通过。
+- 完整 production E2E 68/68 通过（`/tmp/ftc-r08-e2e-final.log`）；修复历史升级预期后的 `4b7b752` 同 SHA CI 全绿，包含 Android/iOS export。最终正式候选整套门禁在后续内部功能完成后复验。
 
 
 ## R09 资料库与命名权限
@@ -90,3 +91,12 @@ P0-D 实现与证据：
 - 草稿摄取、资料库元数据和命名使用同一原件管理检查：私密原件的指定读者不会因此得到改名、改时间、删除或转投其他事件的权限；作者和明确交付家庭整理的来源继续可整理。个人事件的命名预览/修改也重新检查读者与作者权限。
 - 真实 API/SQLite 失败用例先暴露关联标题和命名入口泄漏，修复后通过。根全量 132 文件/817 项通过（`/tmp/ftc-r09-library-root.log`，命名增量前）；最终命名、草稿、私密恢复等 5 文件/17 项回归通过（`/tmp/ftc-r09-library-final-regression.log`）。最终 production build/build:ops、类型检查、lint 通过（13 条既存 warning）；最后资料库/命名及 native-capture 组合生产 E2E 5/5 通过（`/tmp/ftc-r09-library-e2e-final.log`）。
 - 独立只读审查确认后续内部任务：讲述的父事件读者、访客相册原件授权、在线故事来源撤权，以及阅读包文件响应前的最终范围核查；这些仍待修复，不计入已完成范围。
+
+
+## R09 家人讲述与媒体父事件授权
+
+- 讲述读取、编辑及新增同时核对父事件当前读者；“讲述作者”和“family 讲述”均不能绕过事件撤权。人物档案、家庭最近讲述/声音摘要不泄露私人事件。
+- 私密原件经讲述引用读取时，单个媒体与批量封面/索引查询都复验父事件。已独立全家共享的原件保持可读，但私人事件上下文不再允许自动 AI 处理。原件、衍生图与 Range 均有实际 HTTP 验证。
+- 三个失败用例先复现读取/媒体/新增旁路（`/tmp/ftc-r09-contribution-red.log`）；修复后根全量 133 文件/821 项通过（`/tmp/ftc-r09-contribution-root.log`），最后新增独立共享原件正向对照后该文件 4/4 通过（`/tmp/ftc-r09-contribution-final-test.log`）。类型检查、lint、production build/build:ops 通过，13 条既存 lint warning。
+- production native-capture 4/4 通过（`/tmp/ftc-r09-contribution-e2e2.log`）：真实手机记录/同步上传的私密 WAV 被同家庭讲述引用后，指定 B Range 206，未选 C 404，C 也不能改写/新增讲述。此段分享状态由隔离测试库设置；已有事件的 Web/原生分享编辑入口尚须接通，不宣称已完成用户 A 分享再撤销的全流程。
+- 独立只读审查完成；访客相册、在线故事、阅读包最终响应与受控缓存撤权继续处理，ID-11/ID-12 保持部分实现。

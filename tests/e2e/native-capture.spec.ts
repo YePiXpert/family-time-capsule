@@ -39,6 +39,22 @@ test("native recording controls and save hook publish specified readers through 
     expect(originals).toHaveLength(5);
     expect(originals.every(a=>(a as {visibility:string}).visibility==='private')).toBe(true);
     expect(verify.prepare("select count(*) n from inbox_item_asset where asset_id in (select id from asset where created_by_user_id='user-a')").get()).toEqual({n:0});
+    const voice = verify.prepare("select a.id assetId,ma.memory_event_id eventId,a.family_id familyId from asset a join memory_event_asset ma on ma.asset_id=a.id where a.created_by_user_id='user-a' and a.type='audio' and a.original_asset_id is null limit 1").get() as { assetId: string; eventId: string; familyId: string };
+    verify.prepare("insert into person(id,family_id,display_name,created_at,updated_at) values ('person-c',?,'旧讲述作者',unixepoch(),unixepoch())").run(voice.familyId);
+    verify.prepare("update user set person_id='person-c' where id='user-c'").run();
+    // Fixture grants B access to the previously private native event. The old
+    // family narration must not create a parallel grant for its former author C.
+    verify.prepare("update memory_event set visibility='members' where id=?").run(voice.eventId);
+    verify.prepare("insert into memory_event_reader(id,family_id,memory_event_id,user_id,created_at) values (?,?,?,'user-b',unixepoch())").run(randomUUID(), voice.familyId, voice.eventId);
+    const narration = randomUUID();
+    verify.prepare("insert into contribution(id,memory_event_id,author_person_id,raw_text,visibility,audio_asset_id,created_at,updated_at) values (?,?,'person-c','撤权后隐藏的旧讲述','family',?,unixepoch(),unixepoch())").run(narration, voice.eventId, voice.assetId);
+    const deniedHeaders = { authorization: `Bearer ${fixture.thirdToken}` };
+    const allowedVoice = await page.request.get(`/api/media/${voice.assetId}`, { headers: { authorization: `Bearer ${fixture.readerToken}`, range: "bytes=0-11" } });
+    expect(allowedVoice.status()).toBe(206);
+    expect((await allowedVoice.body()).length).toBe(12);
+    expect((await page.request.get(`/api/media/${voice.assetId}`, { headers: { ...deniedHeaders, range: "bytes=0-11" } })).status()).toBe(404);
+    expect((await page.request.patch(`/api/mobile/v1/contributions/${narration}`, { headers: deniedHeaders, data: { text: "不能继续编辑撤权事件" } })).status()).toBe(404);
+    expect((await page.request.post(`/api/mobile/v1/memories/${voice.eventId}/contributions`, { headers: deniedHeaders, data: { authorPersonId: "person-c", text: "不能向撤权事件投递", visibility: "family" } })).status()).toBe(404);
   } finally { verify.close(); }
 });
 
