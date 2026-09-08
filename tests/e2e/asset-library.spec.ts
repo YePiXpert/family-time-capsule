@@ -1,3 +1,6 @@
+import Database from "better-sqlite3";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 import { ensureBootstrap } from "./helpers";
@@ -51,5 +54,31 @@ test("资料库：30 张先保全，5 张组成一条记忆，25 张仍在；原
   await expect(page).toHaveURL(/\/library$/);
   await expect(cards).toHaveCount(29);
   expect((await page.request.get(`/api/media/${removable.id}`)).status()).toBe(404);
-
+  // An already shared original stays readable when its event becomes private,
+  // but the library must no longer reveal or let another admin modify that event.
+  const linked = assets.entries.find((a: { referenced: boolean }) => a.referenced);
+  const db = new Database(path.join(process.cwd(), "data/e2e-asset-library/db/capsule.sqlite"));
+  const token = randomUUID();
+  let hiddenId: string;
+  try {
+    const event = db.prepare("select id,family_id from memory_event limit 1").get() as { id: string; family_id: string };
+    hiddenId = event.id;
+    db.prepare("update memory_event set visibility='private' where id=?").run(event.id);
+    const actor = randomUUID();
+    db.prepare("insert into user(id,name,email,role,family_id,created_at,updated_at) values (?,?,?,'admin',?,unixepoch(),unixepoch())").run(actor, "另一个管理员", `${actor}@fixture.invalid`, event.family_id);
+    db.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at) values (?,?,?,unixepoch()+3600,unixepoch(),unixepoch())").run(randomUUID(), token, actor);
+  } finally { db.close(); }
+  await page.setExtraHTTPHeaders({ authorization: `Bearer ${token}` });
+  await page.goto(`/library/${linked.id}`);
+  await expect(page.locator("main")).not.toContainText("五张老照片的一件事");
+  const otherHeaders = { authorization: `Bearer ${token}` };
+  const otherDetail = await page.request.get(`/api/mobile/v1/assets/${linked.id}`, { headers: otherHeaders });
+  expect(otherDetail.status()).toBe(200);
+  expect(await otherDetail.json()).toMatchObject({ memories: [], referenced: false });
+  expect((await page.request.get(`/api/media/${linked.id}`, { headers: otherHeaders })).status()).toBe(200);
+  const denied = await page.request.post("/api/mobile/v1/assets", { headers: otherHeaders, data: { operation: "memory", targetId: hiddenId, assetIds: [linked.id] } });
+  expect(denied.status()).toBe(404);
+  expect((await page.request.get(`/api/mobile/v1/names?kind=memory_event&id=${hiddenId}`, { headers: otherHeaders })).status()).toBe(404);
+  const renamed = await page.request.post("/api/mobile/v1/names", { headers: otherHeaders, data: { operation: "rename", kind: "memory_event", id: hiddenId, revision: 0, title: "不能越权改名" } });
+  expect(renamed.status()).toBe(404);
 });

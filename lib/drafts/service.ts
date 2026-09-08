@@ -1,6 +1,7 @@
+import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { draft, draftItem } from "@/db/schema/draft";
 import { asset } from "@/db/schema/asset";
@@ -10,7 +11,7 @@ import { inboxItem, inboxItemAsset, inboxItemParticipant } from "@/db/schema/inb
 import { memoryEvent, memoryEventAsset, memoryEventParticipant, memoryEventReader } from "@/db/schema/memory";
 import type { FamilyContext } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
-import { createContributionAccessSnapshot, familyReviewAssetPredicate, getContributionAssetAccessInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
+import { createContributionAccessSnapshot, getContributionAssetAccessInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
 import { indexMemoryEvent, indexDocumentAssetsForEvent } from "@/lib/search/service";
 import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent } from "./model";
 
@@ -70,7 +71,7 @@ function validateReferences(tx: ContributionAccessTransaction, context: FamilyCo
       const original = tx.select().from(asset).where(and(eq(asset.id, item.assetId), eq(asset.familyId, context.familyId), isNull(asset.originalAssetId))).get();
       if (original && item.livePhotoRole && original.type !== item.livePhotoRole) throw new DraftError("invalid_live_photo");
       if (!original || !getContributionAssetAccessInTransaction(tx, snapshot, item.assetId).readable) throw new DraftError("asset_unavailable", 403);
-      if (original.visibility !== "family" && original.createdByUserId !== context.userId && !tx.get(sql`select 1 where ${familyReviewAssetPredicate(context.familyId, sql`${original.id}`)}`)) throw new DraftError("asset_reshare_forbidden", 403);
+      if (!canManageOriginalInTransaction(tx, context, original)) throw new DraftError("asset_reshare_forbidden", 403);
     }
     const existing = tx.select({ draftId: draftItem.draftId }).from(draftItem).where(eq(draftItem.id, item.id)).get();
     if (existing && existing.draftId !== draftId) throw new DraftError("item_conflict", 409);

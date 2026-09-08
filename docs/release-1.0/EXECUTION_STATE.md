@@ -9,7 +9,9 @@
 - 已推送：`3b87b6417ae6e545c6688277b567f5154aa030ce` P0-C 私密续传；CI `34185777483` web/mobile/ops success，E2E失败：旧用例把“保留草稿”当作家庭投递。保留隐私边界，改用明确的“交给家人整理”，全部原断言保留。
 - 已推送：`52f58ae6af5f52065120be71189da333db895940` P0-C Live Photo 与明确整理修订；CI `34188472925` 四项全部 success。
 - 已推送：`ffe9562bc05adc94514215897c3eb6365cb4895c` P0-D 统一 AI 派发；CI `34191966044` 四项全部 success，已核对同 SHA。
-- 当前修改：R08 私密正文持久来源、可读范围导出及恢复身份隔离；正在完成提交前验证。
+- 已推送：`9b23344cccabe9ed4258310c7d40c1427cd1cce4` R08 正文及权限归档；CI `34196205302` Web/mobile/ops 和 production E2E/恢复通过，最后历史升级脚本预期缺少新增 body_text 字段而失败。
+- 已推送修复：`4b7b752d675d51d4b7abaf640d73799e54dca14a` 补齐完整旧行迁移预期；实际 `verify-upgrade12.mts` 的历史建库、正常升级、失败回滚、旧归档恢复/再导出及五份原件 hash 全部通过（`/tmp/ftc-r08-upgrade-ci-fixed.log`）；CI `34197311786` 待核对。
+- 当前修改：R09 资料库、命名与原件管理权限；正在完成提交前验证。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -80,3 +82,11 @@ P0-D 实现与证据：
 - 根全量 131 文件/815 项通过（`/tmp/ftc-r08-root-final.log`），身份 CLI 增量 1 项通过（`/tmp/ftc-r08-cli-test.log`）；root typecheck/build/build:ops/lint 通过，13 条既存 lint warning，无 error。手机 49 文件/267 项、typecheck/lint 通过，Expo Doctor 21/21。ops 4 文件/34 项、disaster roundtrip 7/7 通过。
 - 真 Docker 镜像 `sha256:0da9390accffec1a764c6a0e59228ce27564dfe6ebbe8af675bb90f58d194722`：三次容器重启，私密续传/complete 对账、删已发布草稿后 HTTP 正文仍可读、实际下载 ZIP、容器内 verify/新目录 restore/显式身份绑定均通过；第三账号始终 404，合成原件 SHA256 一致。测试容器/卷均核对唯一标记后清理。日志 `/tmp/ftc-r08-docker-smoke.log`；不是生产部署或正式候选。
 - 完整 production E2E 68/68 通过（`/tmp/ftc-r08-e2e-final.log`）；同 SHA CI 尚待提交/push 后核对。Android/iOS export 与最终正式候选整套门禁在后续内部功能完成后复验，不把本次未运行项写成通过。
+
+
+## R09 资料库与命名权限
+
+- 公开原件加入私密事件后，原件仍可阅读；资料库关联列表和已引用状态只包含当前账号可读事件。向已有事件添加原件时，在同一事务内重新检查事件读者、编辑权限及原件再分享权限。
+- 草稿摄取、资料库元数据和命名使用同一原件管理检查：私密原件的指定读者不会因此得到改名、改时间、删除或转投其他事件的权限；作者和明确交付家庭整理的来源继续可整理。个人事件的命名预览/修改也重新检查读者与作者权限。
+- 真实 API/SQLite 失败用例先暴露关联标题和命名入口泄漏，修复后通过。根全量 132 文件/817 项通过（`/tmp/ftc-r09-library-root.log`，命名增量前）；最终命名、草稿、私密恢复等 5 文件/17 项回归通过（`/tmp/ftc-r09-library-final-regression.log`）。最终 production build/build:ops、类型检查、lint 通过（13 条既存 warning）；最后资料库/命名及 native-capture 组合生产 E2E 5/5 通过（`/tmp/ftc-r09-library-e2e-final.log`）。
+- 独立只读审查确认后续内部任务：讲述的父事件读者、访客相册原件授权、在线故事来源撤权，以及阅读包文件响应前的最终范围核查；这些仍待修复，不计入已完成范围。

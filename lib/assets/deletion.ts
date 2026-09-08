@@ -41,7 +41,7 @@ export function deleteLibraryAsset(ctx: FamilyContext, id: string, confirmed: bo
   getDb().transaction(tx => {
     const receipt = tx.select().from(assetDeletion).where(and(eq(assetDeletion.assetId, id), eq(assetDeletion.familyId, ctx.familyId))).get();
     if (receipt) { authorize(tx, ctx, receipt.requestedByUserId); return; }
-    getLibraryAsset(ctx, id); // Same live read policy as opening the original.
+    if (!getLibraryAsset(ctx, id).canDelete) throw new AssetLibraryError("forbidden", 403);
     const original = tx.select().from(asset).where(and(eq(asset.id, id), eq(asset.familyId, ctx.familyId), isNull(asset.originalAssetId))).get();
     if (!original) throw new AssetLibraryError("not_found", 404);
     authorize(tx, ctx, original.createdByUserId);

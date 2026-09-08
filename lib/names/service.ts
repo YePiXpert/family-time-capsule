@@ -10,7 +10,9 @@ import { inboxItem } from "@/db/schema/inbox";
 import { memoryEvent, memoryEventParticipant, memoryEventRevision } from "@/db/schema/memory";
 import { aiJob } from "@/db/schema/ai-job";
 import { aiSuggestion } from "@/db/schema/suggestion";
-import { hasFamilyCapability, isFamilyRole } from "@/lib/authz/policy";
+import { hasFamilyCapability, isFamilyRole, isEventVisibility, canManageEventVisibility } from "@/lib/authz/policy";
+import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
+import { eventVisibilityCondition } from "@/lib/authz/event-access";
 import { familyLocalDate, getLiveFamilyPrincipal, type LiveFamilyPrincipal } from "@/lib/authz/principal";
 import { getContributionAssetAccessInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
 import { indexMemoryEvent } from "@/lib/search/service";
@@ -32,7 +34,8 @@ function actorAllowed(tx: Tx, principal: LiveFamilyPrincipal): boolean {
 
 function targetInTransaction(tx: Tx, principal: LiveFamilyPrincipal, kind: NameTargetKind, id: string): Target | null {
   if (kind === "memory_event") {
-    const row = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, id), eq(memoryEvent.familyId, principal.familyId), isNull(memoryEvent.deletedAt))).get();
+    const row = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, id), eq(memoryEvent.familyId, principal.familyId), isNull(memoryEvent.deletedAt), eventVisibilityCondition({ principal, evaluatedAt: new Date() }))).get();
+    if (!row || !isEventVisibility(row.visibility) || !canManageEventVisibility(row.visibility, row.createdByUserId, principal)) return null;
     return row ? { kind, id, text: row.title, source: row.titleSource, revision: row.titleRevision } : null;
   }
   if (kind === "inbox_item") {
@@ -44,6 +47,7 @@ function targetInTransaction(tx: Tx, principal: LiveFamilyPrincipal, kind: NameT
   const access = getContributionAssetAccessInTransaction(tx, { principal, evaluatedAt: now, familyLocalDate: familyLocalDate(now, principal.familyTimezone) }, id);
   if (!access.readable) return null;
   const row = tx.select().from(asset).where(and(eq(asset.id, id), eq(asset.familyId, principal.familyId), isNull(asset.originalAssetId))).get();
+  if (!row || !canManageOriginalInTransaction(tx, principal, row)) return null;
   return row ? { kind, id, text: row.displayName, source: row.nameSource, revision: row.nameRevision } : null;
 }
 

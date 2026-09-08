@@ -7,8 +7,10 @@ import { assetDeletion } from "@/db/schema/asset-deletion";
 import { user } from "@/db/schema/auth";
 import { person } from "@/db/schema/family";
 import { memoryEvent, memoryEventAsset } from "@/db/schema/memory";
-import { hasFamilyCapability, isAdminClassRole } from "@/lib/authz/policy";
+import { hasFamilyCapability, isAdminClassRole, canManageEventVisibility, isEventVisibility } from "@/lib/authz/policy";
 import { createContributionAccessSnapshot, readableAssetPredicate, type ContributionAccessTransaction as Tx } from "@/lib/authz/contribution-access";
+import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
+import { createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import type { FamilyContext } from "@/lib/family/context";
 import { readableName } from "@/lib/naming";
 import { emptyDraftContent } from "@/lib/drafts/model";
@@ -30,7 +32,7 @@ function find(tx: Tx, ctx: FamilyContext, id: string) {
 }
 function card(tx: Tx, ctx: FamilyContext, row: typeof asset.$inferSelect): LibraryAsset {
   const preview = tx.get<{ id: string }>(sql`select id from asset where original_asset_id=${row.id} and family_id=${ctx.familyId} and derivative_type='thumbnail' order by created_at desc,id desc limit 1`);
-  const referenced = tx.get(sql`select 1 from memory_event_asset ma join memory_event e on e.id=ma.memory_event_id where ma.asset_id=${row.id} and ma.family_id=${ctx.familyId} and e.family_id=${ctx.familyId} and e.deleted_at is null limit 1`);
+  const referenced = tx.get(sql`select 1 from memory_event_asset ma join memory_event e on e.id=ma.memory_event_id where ma.asset_id=${row.id} and ma.family_id=${ctx.familyId} and e.family_id=${ctx.familyId} and e.deleted_at is null and ${eventVisibilityCondition(createEventAccessSnapshot(ctx), sql`e`)} limit 1`);
   const ai = tx.get<{ status: string }>(sql`select status from ai_job where family_id=${ctx.familyId} and entity_type='asset' and entity_id=${row.id} order by created_at desc,rowid desc limit 1`);
   return { id: row.id, title: readableName({ title: row.displayName, source: row.nameSource, mediaType: row.type, originalFilename: row.originalFilename, capturedAt: row.capturedAt, timeSource: row.timeSource, durationMs: row.durationMs, timezone: ctx.familyTimezone }).text, type: row.type as LibraryAsset["type"], mimeType: row.mimeType, previewId: row.type === "image" ? preview?.id ?? row.id : null, capturedAt: ["user_confirmed", "embedded_metadata"].includes(row.timeSource) ? row.capturedAt?.toISOString() ?? null : null, referenced: Boolean(referenced), syncState: "received", aiState: ai?.status ?? "none" };
 }
@@ -54,9 +56,10 @@ export function getLibraryAsset(ctx: FamilyContext, id: string): LibraryDetail {
   return getDb().transaction(tx => {
     authorize(tx, ctx);
     const row = find(tx, ctx, id);
-    const memories = tx.select({ id: memoryEvent.id, title: memoryEvent.title }).from(memoryEventAsset).innerJoin(memoryEvent, eq(memoryEvent.id, memoryEventAsset.memoryEventId)).where(and(eq(memoryEventAsset.assetId, id), eq(memoryEvent.familyId, ctx.familyId), isNull(memoryEvent.deletedAt))).all();
+    const memories = tx.select({ id: memoryEvent.id, title: memoryEvent.title }).from(memoryEventAsset).innerJoin(memoryEvent, eq(memoryEvent.id, memoryEventAsset.memoryEventId)).where(and(eq(memoryEventAsset.assetId, id), eq(memoryEvent.familyId, ctx.familyId), isNull(memoryEvent.deletedAt), eventVisibilityCondition(createEventAccessSnapshot(ctx)))).all();
     const sources = tx.all<{ source: string }>(sql`select distinct source from upload_session where family_id=${ctx.familyId} and final_asset_id=${id} union select distinct s.source from import_session_item i join import_session s on s.id=i.import_session_id where i.family_id=${ctx.familyId} and i.asset_id=${id}`);
-    return { ...card(tx, ctx, row), canDelete: hasFamilyCapability(ctx.role, "event:write") && (isAdminClassRole(ctx.role) || ctx.userId === row.createdByUserId), metadataRevision: row.metadataRevision, nameRevision: row.nameRevision, participantIds: JSON.parse(row.participantIdsJson), canWrite: hasFamilyCapability(ctx.role, "event:write"), canCapture: hasFamilyCapability(ctx.role, "capture:create"), memories, technical: { importSources: sources.map(s => s.source), originalFilename: row.originalFilename, sha256: row.sha256, bytes: row.bytes, width: row.width, height: row.height, durationMs: row.durationMs, metadataJson: row.metadataJson, importedAt: row.importedAt.toISOString(), timeSource: row.timeSource } };
+    const canManage = canManageOriginalInTransaction(tx, ctx, row);
+    return { ...card(tx, ctx, row), canDelete: canManage && hasFamilyCapability(ctx.role, "event:write") && (isAdminClassRole(ctx.role) || ctx.userId === row.createdByUserId), metadataRevision: row.metadataRevision, nameRevision: row.nameRevision, participantIds: JSON.parse(row.participantIdsJson), canWrite: canManage && hasFamilyCapability(ctx.role, "event:write"), canCapture: hasFamilyCapability(ctx.role, "capture:create"), memories, technical: { importSources: sources.map(s => s.source), originalFilename: row.originalFilename, sha256: row.sha256, bytes: row.bytes, width: row.width, height: row.height, durationMs: row.durationMs, metadataJson: row.metadataJson, importedAt: row.importedAt.toISOString(), timeSource: row.timeSource } };
   });
 }
 export function editLibraryAsset(ctx: FamilyContext, id: string, revision: number, patch: { capturedAt?: string | null; participantIds?: string[] }) {
@@ -64,6 +67,7 @@ export function editLibraryAsset(ctx: FamilyContext, id: string, revision: numbe
   if (patch.participantIds !== undefined && (!Array.isArray(patch.participantIds) || patch.participantIds.length > 50 || patch.participantIds.some(id => typeof id !== "string") || new Set(patch.participantIds).size !== patch.participantIds.length)) throw new AssetLibraryError("invalid_people");
   getDb().transaction(tx => {
     authorize(tx, ctx, "event:write"); const row = find(tx, ctx, id);
+    if (!canManageOriginalInTransaction(tx, ctx, row)) throw new AssetLibraryError("forbidden", 403);
     if (row.metadataRevision !== revision) throw new AssetLibraryError("revision_conflict", 409);
     const ids = patch.participantIds;
     if (ids?.length && tx.select().from(person).where(and(eq(person.familyId, ctx.familyId), inArray(person.id, ids))).all().length !== ids.length) throw new AssetLibraryError("invalid_people");
@@ -86,9 +90,12 @@ export function addLibraryAssetsToDraft(ctx: FamilyContext, ids: string[], draft
 }
 export function addLibraryAssetsToMemory(ctx: FamilyContext, ids: string[], memoryId: string) {
   getDb().transaction(tx => {
-    authorize(tx, ctx, "event:write"); originals(tx, ctx, ids);
-    const event = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, memoryId), eq(memoryEvent.familyId, ctx.familyId), isNull(memoryEvent.deletedAt))).get();
+    authorize(tx, ctx, "event:write");
+    const selected = originals(tx, ctx, ids);
+    const event = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, memoryId), eq(memoryEvent.familyId, ctx.familyId), isNull(memoryEvent.deletedAt), eventVisibilityCondition(createEventAccessSnapshot(ctx)))).get();
     if (!event) throw new AssetLibraryError("not_found", 404);
+    if (!isEventVisibility(event.visibility) || !canManageEventVisibility(event.visibility, event.createdByUserId, ctx)) throw new AssetLibraryError("forbidden", 403);
+    if (selected.some(row => !canManageOriginalInTransaction(tx, ctx, row))) throw new AssetLibraryError("asset_reshare_forbidden", 403);
     const prior = tx.select().from(memoryEventAsset).where(eq(memoryEventAsset.memoryEventId, memoryId)).all();
     let sortOrder = Math.max(-1, ...prior.map(item => item.sortOrder)) + 1;
     for (const assetId of ids) if (!prior.some(item => item.assetId === assetId)) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: ctx.familyId, memoryEventId: memoryId, assetId, sortOrder: sortOrder++ }).run();
