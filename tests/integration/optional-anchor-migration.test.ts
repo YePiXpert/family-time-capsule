@@ -35,7 +35,7 @@ it("upgrades a real 0050 database without cascading away references, defaults or
     `);
     const tables = ["memory_event", "memory_event_participant", "memory_event_revision", "contribution", "fact", "memory_event_tag"];
     const before = tables.map(t => db.prepare(`SELECT * FROM ${t}`).all());
-    const indexes = db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='index' AND tbl_name='memory_event' ORDER BY name").all();
+    const indexes = db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='index' AND tbl_name='memory_event' ORDER BY name").all() as Array<{ name: string; sql: string }>;
     const foreignKeys = db.pragma("foreign_key_list(memory_event)");
     const columns = db.pragma("table_info(memory_event)") as Array<{name:string;notnull:number}>;
     db.close();
@@ -51,7 +51,7 @@ it("upgrades a real 0050 database without cascading away references, defaults or
     // 升级不得丢失或改写任何既有索引；新增索引必须显式登记在此
     //（0071 增量同步为封面回填加了 sync_memory_cover_idx）。
     const afterIndexes = db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='index' AND tbl_name='memory_event' ORDER BY name").all() as Array<{ name: string; sql: string }>;
-    const added = afterIndexes.filter(i => !indexes.some((b: { name: string }) => b.name === i.name));
+    const added = afterIndexes.filter(i => !indexes.some(b => b.name === i.name));
     expect(added.map(i => i.name)).toEqual(["sync_memory_cover_idx"]);
     expect(afterIndexes.filter(i => !added.includes(i))).toEqual(indexes);
     expect(db.pragma("foreign_key_list(memory_event)")).toEqual(foreignKeys);
