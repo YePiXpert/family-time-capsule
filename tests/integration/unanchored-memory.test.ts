@@ -86,10 +86,10 @@ it("grandparent recording: no child onboarding, mixed sources, HTTP, permissions
   const token = randomUUID();
   getDb().insert(session).values({ id: randomUUID(), token, userId: actor.id, expiresAt: new Date(Date.now() + 3600000) }).run();
   const request = (body: unknown) => new Request("http://localhost/api/mobile/v1/memories/fixture", { method: "PATCH", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
-  const edited = await editHttp(request({ childPersonId: null, title: "外公讲年轻时候的故事" }), { params: Promise.resolve({ id }) });
+  const edited = await editHttp(request({ childPersonId: null, title: "外公讲年轻时候的故事", expectedRevision: getDb().select().from(memoryEvent).where(eq(memoryEvent.id, id)).get()!.titleRevision, mutationId: randomUUID() }), { params: Promise.resolve({ id }) });
   expect(edited.status).toBe(200);
   expect(await edited.json()).toMatchObject({ childPersonId: null, ageLabel: null });
-  expect((await editHttp(request({ childPersonId: "foreign-person" }), { params: Promise.resolve({ id }) })).status).toBe(400);
+  expect((await editHttp(request({ childPersonId: "foreign-person", expectedRevision: getDb().select().from(memoryEvent).where(eq(memoryEvent.id, id)).get()!.titleRevision, mutationId: randomUUID() }), { params: Promise.resolve({ id }) })).status).toBe(400);
   const second = await createTextInboxItem(familyId, "夫妻旅行");
   const confirmed = await confirmHttp(request({}), { params: Promise.resolve({ id: second.id }) });
   expect(confirmed.status).toBe(201);

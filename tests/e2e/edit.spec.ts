@@ -189,3 +189,48 @@ test("家人讲述撤为私密后，旧事实和来源引文从其他管理员�
     await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(quote);
   } finally { await otherContext.close(); }
 });
+
+test("编辑六档时间和正文，过期页面保存保留输入并拒绝覆盖", async ({ page, context }) => {
+  await ensureBootstrap(page);
+  await page.goto("/capture");
+  await page.getByLabel("写下这一刻").fill("原始的记忆正文");
+  await page.getByLabel("标题", { exact: true }).fill("需要编辑的旧事");
+  await page.getByLabel("时间记得多清楚").selectOption("unknown");
+  await page.getByLabel("保存后的读者").selectOption("private");
+  await page.getByRole("button", { name: "保存为一条记忆" }).click();
+  await page.getByRole("link", { name: "查看这条记忆" }).click();
+  await expect(page).toHaveURL(/\/memories\/[^/?]+/);
+  const memoryPath = new URL(page.url()).pathname;
+  await page.getByRole("link", { name: "编辑档案", exact: true }).click();
+  const form = page.getByRole("form", { name: "编辑事件" });
+  await expect(form.getByLabel(/真实发生时间/)).toBeDisabled();
+  await expect(form.getByLabel(/真实发生时间/)).toHaveValue("");
+  for (const [precision, wall] of [["year", "1988"], ["month", "1988-05"], ["date_only", "1988-05-03"], ["approximate", "1988-05-03T10:12"], ["exact", "1988-05-03T10:12"], ["unknown", ""]]) {
+    await form.getByLabel("时间精度").selectOption(precision);
+    if (wall) await form.getByLabel(/真实发生时间/).fill(wall);
+    const before = Number(await form.locator('[name="expectedRevision"]').inputValue());
+    await form.getByLabel("记忆正文").fill(`已保存的正文 ${precision}`);
+    await form.getByRole("button", { name: "保存修改" }).click();
+    await expect(form.locator('[name="expectedRevision"]')).toHaveValue(String(before + 1));
+    const response = await context.request.get(`/api/mobile/v1${memoryPath}`);
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toMatchObject({ occurredAtPrecision: precision });
+  }
+  const newer = await context.newPage();
+  await newer.goto(`${memoryPath}?mode=edit`);
+  const newerForm = newer.getByRole("form", { name: "编辑事件" });
+  await newerForm.getByLabel("标题", { exact: true }).fill("另一页已保存的新标题");
+  await newerForm.getByRole("button", { name: "保存修改" }).click();
+  await expect(newerForm.getByText("已保存。时间轴与年龄已更新。")).toBeVisible();
+  await form.getByLabel("标题", { exact: true }).fill("旧页面尚未保存的标题");
+  await form.getByLabel("记忆正文").fill("冲突后不能丢失的正文输入");
+  await form.getByRole("button", { name: "保存修改" }).click();
+  await expect(form.getByRole("alert")).toContainText("你的输入已保留");
+  await expect(form.getByLabel("标题", { exact: true })).toHaveValue("旧页面尚未保存的标题");
+  await expect(form.getByLabel("记忆正文")).toHaveValue("冲突后不能丢失的正文输入");
+  await newer.goto(memoryPath);
+  await expect(newer.getByRole("heading", { name: "另一页已保存的新标题", exact: true })).toBeVisible();
+  await expect(newer.getByText("已保存的正文 unknown", { exact: true })).toBeVisible();
+  await expect(newer.getByText("时间不确定", { exact: true }).first()).toBeVisible();
+  await newer.close();
+});

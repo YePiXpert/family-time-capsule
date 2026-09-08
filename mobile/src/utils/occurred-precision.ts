@@ -123,7 +123,7 @@ export function anchorFromPrecisionInput(input: {
     switch (precision) {
       case "exact":
       case "approximate":
-        return toUtc(`${trimmed.length === 16 ? trimmed : `${trimmed}:00`}`, timezone);
+        return toUtc(trimmed.length === 16 ? `${trimmed}:00` : trimmed, timezone);
       case "date_only":
         return toUtc(`${trimmed.slice(0, 10)}T00:00:00`, timezone);
       case "month":

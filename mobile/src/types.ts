@@ -225,7 +225,24 @@ export type MobileContributionVisibility =
   | "family"
   | "child_later";
 
+export type MobileMemoryPatch = {
+  expectedRevision: number;
+  mutationId: string;
+  title?: string;
+  bodyText?: string;
+  occurredAtWall?: string;
+  occurredAtPrecision?: import("./utils/occurred-precision").OccurredAtPrecision;
+  locationText?: string | null;
+  coverAssetId?: string | null;
+  childPersonId?: string | null;
+  participantPersonIds?: string[];
+  milestoneType?: string | null;
+  isPinned?: boolean;
+};
+
 export type MobileMemory = {
+  /** Absent only in legacy cached details; editing requires a current version. */
+  titleRevision?: number;
   id: string;
   title: string;
   occurredAt: string;

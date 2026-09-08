@@ -191,7 +191,7 @@ describe("§5 私密记忆：对象级读者", () => {
     const denied = await updateMemoryEvent(familyId, eventId, memberB, { title: "改标题" }, { role: "editor", accountEnabled: true });
     expect(denied.ok).toBe(false);
     // 作者可以编辑自己的私密事件
-    const allowed = await updateMemoryEvent(familyId, eventId, authorId, { title: "只属于作者的记录（改）" }, { role: "admin", accountEnabled: true });
+    const allowed = await updateMemoryEvent(familyId, eventId, authorId, { title: "只属于作者的记录（改）" }, { role: authorContext.role, accountEnabled: true });
     expect(allowed.ok).toBe(true);
   });
 

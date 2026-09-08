@@ -188,7 +188,8 @@ test("出生第一周回顾 → 人工精选 → 幂等年册草稿 → 明确�
   const sourceIds=sourceBook.sources.filter((s:{kind:string})=>s.kind==='memory').map((s:{memoryEventId:string})=>s.memoryEventId);
   expect(sourceIds.length).toBe(2);
   for(const [i,id] of sourceIds.entries()){
-    const response=await page.request.patch(`/api/mobile/v1/memories/${id}`,{data:{occurredAtWall:`2026-08-${11+i}T08:00`,occurredAtPrecision:'exact'}});expect(response.status()).toBe(200);
+    const current=await(await page.request.get(`/api/mobile/v1/memories/${id}`)).json();
+    const response=await page.request.patch(`/api/mobile/v1/memories/${id}`,{data:{expectedRevision:current.titleRevision,mutationId:randomUUID(),occurredAtWall:`2026-08-${11+i}T08:00`,occurredAtPrecision:'exact'}});expect(response.status()).toBe(200);
   }
   await page.goto('/books/review');
   await page.getByRole('button',{name:'出生第一周',exact:true}).click();
@@ -211,7 +212,8 @@ test("出生第一周回顾 → 人工精选 → 幂等年册草稿 → 明确�
   await expect(page.getByLabel('副标题',{exact:true})).toHaveValue('虚构第一周手工整理，继续保存');
   await page.getByRole('button',{name:'复制成新册',exact:true}).click();await expect(page).not.toHaveURL(draftUrl);await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
   await expect(page.getByLabel('副标题',{exact:true})).toHaveValue('虚构第一周手工整理，继续保存');
-  const moved=await page.request.patch(`/api/mobile/v1/memories/${sourceIds[0]}`,{data:{occurredAtWall:'2026-09-10T08:00',occurredAtPrecision:'exact'}});expect(moved.status()).toBe(200);
+  const beforeMove=await(await page.request.get(`/api/mobile/v1/memories/${sourceIds[0]}`)).json();
+  const moved=await page.request.patch(`/api/mobile/v1/memories/${sourceIds[0]}`,{data:{expectedRevision:beforeMove.titleRevision,mutationId:randomUUID(),occurredAtWall:'2026-09-10T08:00',occurredAtPrecision:'exact'}});expect(moved.status()).toBe(200);
   await page.goto('/books/review?startDate=2026-08-10&endDate=2026-08-16');await expect(page.getByText(/1 段记忆 · 人工精选/)).toBeVisible();
   await page.goto('/timeline/calendar?month=2026-09');await expect(page.getByRole('link',{name:'2026-09-10，1 条记忆',exact:true})).toBeVisible();
 });

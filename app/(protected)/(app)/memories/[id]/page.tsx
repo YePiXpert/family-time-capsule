@@ -323,6 +323,7 @@ export default async function MemoryEventPage({
       {canWriteEvent ? <section aria-label="编辑档案" className={editMode ? "mt-6 rounded-2xl border border-accent/40 bg-accent-soft/40 p-4" : "mt-4"}>
         {editMode ? <h2 className="font-semibold">编辑档案</h2> : null}
         <EditEventForm
+          key={`${event.id}:${editMode}`}
           event={event}
           people={people}
           assets={assets}

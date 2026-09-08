@@ -41,19 +41,25 @@ export async function toggleReviewHighlightAction(formData: FormData): Promise<v
   refresh(formData);
 }
 
-export async function editReviewMemoryAction(formData: FormData): Promise<void> {
+export async function editReviewMemoryAction(formData: FormData): Promise<{ error?: string; saved?: boolean; revision?: number }> {
   const context = await requireFamilyCapability("event:write");
   const milestoneRaw = String(formData.get("milestoneType") ?? "");
   const milestoneType = milestoneRaw === "" ? null : isMilestoneType(milestoneRaw) ? milestoneRaw : undefined;
-  if (milestoneType === undefined) return;
+  if (milestoneType === undefined) return { error: "成长节点无效。" };
   const participantPersonIds = formData.getAll("participantPersonId").map(String);
-  await updateMemoryEvent(context.familyId, String(formData.get("eventId") ?? ""), context.userId, {
+  const expectedRevision = Number(formData.get("expectedRevision"));
+  const mutationId = String(formData.get("mutationId") ?? "");
+  if (!formData.has("expectedRevision") || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !/^[\w-]{1,128}$/u.test(mutationId)) return { error: "页面版本无效，请保留输入并重新打开。" };
+  const result = await updateMemoryEvent(context.familyId, String(formData.get("eventId") ?? ""), context.userId, {
+    expectedTitleRevision: expectedRevision, mutationId,
     title: String(formData.get("title") ?? ""),
     locationText: String(formData.get("locationText") ?? ""),
     participantPersonIds,
     milestoneType,
   });
+  if (!result.ok) return { error: result.error === "conflict" ? "这件事已被修改。你的输入已保留，请重新打开并核对。" : "无法保存，请核对内容和编辑权限。输入已保留。" };
   refresh(formData);
+  return { saved: true, revision: result.event.titleRevision };
 }
 
 export async function generateReviewStoryAction(formData: FormData): Promise<void> {

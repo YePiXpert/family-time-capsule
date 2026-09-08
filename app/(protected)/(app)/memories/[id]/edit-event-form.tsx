@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import type { PersonRow } from "@/lib/memories/service";
 import type { AssetRow } from "@/lib/assets/service";
 import type { MemoryEventRow } from "@/lib/memories/service";
@@ -50,9 +50,28 @@ export function EditEventForm({
   timezone: string;
   initiallyOpen?: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(editEventAction, undefined);
   const [open, setOpen] = useState(initiallyOpen);
+  const [revision, setRevision] = useState(event.titleRevision);
+  const [values, setValues] = useState({ title: event.title, bodyText: event.bodyText, precision: event.occurredAtPrecision,
+    wall: event.occurredAtPrecision === "unknown" ? "" : event.occurredAtPrecision === "year" ? defaultWallTime.slice(0, 4)
+      : event.occurredAtPrecision === "month" ? defaultWallTime.slice(0, 7) : event.occurredAtPrecision === "date_only" ? defaultWallTime.slice(0, 10) : defaultWallTime,
+    location: event.locationText ?? "", child: event.childPersonId ?? "", participants: participantIds,
+    milestone: event.milestoneType ?? "", pinned: event.isPinned, cover: event.coverAssetId ?? "" });
+  const mutation = useRef<{ signature: string; id: string } | null>(null);
+  const [state, formAction, pending] = useActionState(async (_previous: { error?: string; saved?: boolean } | undefined, data: FormData) => {
+    const signature = JSON.stringify([...data.entries()]);
+    if (mutation.current?.signature !== signature) mutation.current = { signature, id: crypto.randomUUID() };
+    data.set("mutationId", mutation.current.id);
+    try {
+      const result = await editEventAction(undefined, data);
+      if (result.saved && result.revision !== undefined) setRevision(result.revision);
+      return result;
+    } catch {
+      return { error: "暂时无法保存，输入已保留。请联网后重试。" };
+    }
+  }, undefined);
   const children = people;
+  const set = <K extends keyof typeof values>(key: K, value: typeof values[K]) => setValues(previous => ({ ...previous, [key]: value }));
 
   if (!open) {
     return (
@@ -81,6 +100,7 @@ export function EditEventForm({
         <p className="text-sm text-accent">已保存。时间轴与年龄已更新。</p>
       )}
       <input type="hidden" name="eventId" value={event.id} />
+      <input type="hidden" name="expectedRevision" value={revision} />
 
       <label className="flex flex-col gap-1 text-sm">
         标题
@@ -89,9 +109,15 @@ export function EditEventForm({
           type="text"
           required
           maxLength={100}
-          defaultValue={event.title}
+          value={values.title}
+          onChange={e => set("title", e.target.value)}
           className={inputClass}
         />
+      </label>
+
+      <label className="flex flex-col gap-1 text-sm">
+        记忆正文
+        <textarea name="bodyText" maxLength={100000} rows={5} value={values.bodyText} onChange={e => set("bodyText", e.target.value)} className={inputClass} />
       </label>
 
       <div className="flex flex-wrap gap-3">
@@ -99,8 +125,13 @@ export function EditEventForm({
           真实发生时间（{timezone}；按所选精度填写）
           <input
             name="occurredAt"
-            type="datetime-local"
-            defaultValue={defaultWallTime}
+            type={values.precision === "month" ? "month" : values.precision === "year" || values.precision === "unknown" ? "text" : values.precision === "date_only" ? "date" : "datetime-local"}
+            value={values.wall}
+            disabled={values.precision === "unknown"}
+            required={values.precision !== "unknown"}
+            pattern={values.precision === "year" ? "[0-9]{4}" : undefined}
+            placeholder={values.precision === "year" ? "例如 1988" : undefined}
+            onChange={e => set("wall", e.target.value)}
             className={inputClass}
           />
           <span className="text-xs text-ink-muted">
@@ -112,7 +143,12 @@ export function EditEventForm({
           时间精度
           <select
             name="occurredAtPrecision"
-            defaultValue={event.occurredAtPrecision}
+            value={values.precision}
+            onChange={e => {
+              const precision = e.target.value;
+              setValues(previous => ({ ...previous, precision, wall: precision === "unknown" ? "" : precision === "year" ? previous.wall.slice(0, 4)
+                : precision === "month" ? previous.wall.slice(0, 7) : precision === "date_only" ? previous.wall.slice(0, 10) : previous.wall }));
+            }}
             className={inputClass}
           >
             {Object.entries(PRECISION_LABEL).map(([v, label]) => (
@@ -128,7 +164,8 @@ export function EditEventForm({
             name="locationText"
             type="text"
             maxLength={200}
-            defaultValue={event.locationText ?? ""}
+            value={values.location}
+            onChange={e => set("location", e.target.value)}
             placeholder="例如：北京 · 家里"
             className={inputClass}
           />
@@ -140,7 +177,8 @@ export function EditEventForm({
           年龄参考人物（可选，不改变参与人）
           <select
             name="childPersonId"
-            defaultValue={event.childPersonId ?? ""}
+            value={values.child}
+            onChange={e => set("child", e.target.value)}
             className={inputClass}
           >
             <option value="">不显示人物年龄</option>
@@ -163,7 +201,8 @@ export function EditEventForm({
                 type="checkbox"
                 name="participantPersonIds"
                 value={p.id}
-                defaultChecked={participantIds.includes(p.id)}
+                checked={values.participants.includes(p.id)}
+                onChange={e => set("participants", e.target.checked ? [...values.participants, p.id] : values.participants.filter(id => id !== p.id))}
                 className="h-4 w-4"
               />
               {p.displayName}
@@ -179,7 +218,8 @@ export function EditEventForm({
             节点类型
             <select
               name="milestoneType"
-              defaultValue={event.milestoneType ?? ""}
+              value={values.milestone}
+              onChange={e => set("milestone", e.target.value)}
               className={inputClass}
             >
               {MILESTONE_OPTIONS.map((option) => (
@@ -193,7 +233,8 @@ export function EditEventForm({
             <input
               type="checkbox"
               name="isPinned"
-              defaultChecked={event.isPinned}
+              checked={values.pinned}
+              onChange={e => set("pinned", e.target.checked)}
               className="h-4 w-4"
             />
             在节点中置顶
@@ -213,7 +254,8 @@ export function EditEventForm({
         封面素材
         <select
           name="coverAssetId"
-          defaultValue={event.coverAssetId ?? ""}
+          value={values.cover}
+          onChange={e => set("cover", e.target.value)}
           className={inputClass}
         >
           <option value="">（自动：第一张照片）</option>

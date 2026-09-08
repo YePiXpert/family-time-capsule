@@ -10,8 +10,8 @@
 
 | 状态 | 数量 |
 | --- | --- |
-| 自动化通过 | 115 |
-| 部分实现 | 32 |
+| 自动化通过 | 114 |
+| 部分实现 | 33 |
 | 未实现 | 8 |
 | 明确非产品范围 | 1 |
 | 外部阻塞 | 1 |
@@ -90,7 +90,7 @@
 | SYNC-5 | 批次暂停/恢复/重选/重试/有界并发/临时空间 | 重启后无重复事件 | 自动化通过 | tests/integration/resumable-upload |
 | SYNC-6 | complete 响应丢失/确认重放只保留预期一组 | captureId 幂等 | 自动化通过 | 409 on ID reuse |
 | SYNC-7 | 服务端单调变更序列+tombstone;cursor 过期安全重建 | 全轮成功前不清旧缓存 | 部分实现(全量快照同步有;增量cursor+tombstone未做) | lib/mobile/sync |
-| SYNC-8 | 编辑 expectedRevision;冲突保留两份可比较 | 撤权/删除优先 | 自动化通过 | memory_event_revision; tests/integration/memory-edit |
+| SYNC-8 | 编辑 expectedRevision;冲突保留两份可比较 | 撤权/删除优先 | 部分实现(Web 详情/回顾保留输入、mobile PATCH 必填 expectedRevision/mutationId、所有事件编辑递增版本、0070 事务幂等收据及提交前撤权检查已有真实回归；原生事件编辑入口、离线冲突比较和同步协议仍待贯通) | memory_event_revision; memory_mutation; tests/integration/memory-edit-permissions.test.ts; tests/e2e/edit.spec.ts; tests/e2e/review.spec.ts |
 | SYNC-9 | 取消上传/仅本机/删记录/清缓存四操作分开 | 清缓存不伤原件 | 自动化通过 | mobile settings/device-clear tests |
 | SYNC-10 | 后台执行尊重平台限制 | 不承诺杀进程后无限后台 | 自动化通过(前台/网络触发;无后台任务声明) | AppContext |
 | SYNC-11 | 本机救援包:hash/关系校验、拒绝穿越/炸弹、恢复独立本机不上传 | 无凭据 | 自动化通过 | mobile/src/rescue |
@@ -274,3 +274,6 @@ R09 事实/回收站（当前实现）：实际父事件管理权、讲述本人
 
 
 R09 详情/事实来源（当前实现）：可读详情在事务内聚合，Web 归档及手机 HTTP 最终交付重新核验，相关卡片独立核对；事实正文、来源引文、确认和搜索检查全部来源，作者自己的私密记录仍可用。private-memory-detail.test.ts 覆盖真实 SQLite、原声 HTTP、服务返回竞态和事实引用；production edit 4 项、根全量 853 项、完整 production E2E 73 项与 disaster roundtrip 7 项通过。已有事件双端分享撤销、提交并发控制和受控缓存未闭合，ID-11/ID-12 保持部分实现。
+
+
+SYNC-8 / CAP-2 编辑复验：旧实现可在停用后写入、把指定读者当编辑者、用他人的私人原件作新封面、无版本覆盖和拒绝 unknown PATCH，五个真实 SQLite/HTTP 失败用例均已修复。追加 0070 仅保存实例内请求摘要/结果版本；成功重复请求不重复编辑，不同内容复用键和删除后的重放拒绝。Web 详情及回顾使用受控输入，网络/冲突保留输入；各档日期使用对应控件及共用解析，细化精度须提供时间，unknown 不显示年龄。production edit/review 7/7 通过，含两个页面的真实冲突。原生已有事件编辑/分享控件与离线冲突协议仍是内部工作，SYNC-8 原“自动化通过”改为部分实现，统计按实际行重算。

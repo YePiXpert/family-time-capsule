@@ -1,5 +1,6 @@
 import {
   index,
+  uniqueIndex,
   integer,
   sqliteTable,
   text,
@@ -178,3 +179,16 @@ export const memoryEventRevision = sqliteTable(
   },
   (t) => [index("revision_event_idx").on(t.memoryEventId, t.createdAt)],
 );
+
+/** Instance-local mutation receipts; content and secrets are never stored here. */
+export const memoryMutation = sqliteTable("memory_mutation", {
+  id: text("id").primaryKey(),
+  familyId: text("family_id").notNull().references(() => family.id, { onDelete: "cascade" }),
+  memoryEventId: text("memory_event_id").notNull().references(() => memoryEvent.id, { onDelete: "cascade" }),
+  actorUserId: text("actor_user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  mutationId: text("mutation_id").notNull(),
+  operation: text("operation").notNull(),
+  requestHash: text("request_hash").notNull(),
+  resultRevision: integer("result_revision").notNull(),
+  createdAt: createdAtColumn(),
+}, t => [uniqueIndex("memory_mutation_actor_key_idx").on(t.familyId, t.actorUserId, t.mutationId)]);

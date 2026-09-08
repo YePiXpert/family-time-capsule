@@ -1,3 +1,4 @@
+import { ReviewMemoryForm } from "./review-memory-form";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,7 +10,6 @@ import { listPeople } from "@/lib/family/service";
 import { getReviewOverview } from "@/lib/review/service";
 import {
   changeReviewProgressAction,
-  editReviewMemoryAction,
   generateReviewStoryAction,
   optimizeReviewStoryAction,
   toggleReviewHighlightAction,
@@ -65,10 +65,7 @@ export default async function ReviewPeriodPage({ params }: PageProps<"/review/[p
       {review.events.length ? <div className="space-y-3">{review.events.map((event) => <article key={event.id} className={`rounded-2xl border p-4 ${event.selected ? "border-accent bg-accent-soft" : "border-line bg-surface"}`}>
         <div className="flex flex-wrap items-start justify-between gap-3"><div><Link href={`/memories/${event.id}`} className="font-medium hover:text-accent">{event.title}</Link><p className="mt-1 text-xs text-muted">{date.format(event.occurredAt)}{event.locationText ? ` · ${event.locationText}` : ""}{event.participantNames.length ? ` · ${event.participantNames.join("、")}` : ""}</p></div>
         {canWriteStory ? <form action={toggleReviewHighlightAction}><input type="hidden" name="reviewId" value={review.period.id} /><input type="hidden" name="eventId" value={event.id} /><input type="hidden" name="periodKey" value={review.key} /><input type="hidden" name="selected" value={event.selected ? "0" : "1"} /><button className={event.selected ? "ui-button-secondary" : "ui-button-primary"} type="submit">{event.selected ? "取消重点" : "选为重点"}</button></form> : null}</div>
-        {canEditEvent ? <details className="mt-3"><summary className="cursor-pointer text-sm text-muted">补充真实信息</summary><form action={editReviewMemoryAction} className="mt-3 grid gap-3 sm:grid-cols-2"><input type="hidden" name="eventId" value={event.id} /><input type="hidden" name="periodKey" value={review.key} /><input className="ui-input" name="title" maxLength={100} defaultValue={event.title} aria-label="标题" /><input className="ui-input" name="locationText" maxLength={200} defaultValue={event.locationText ?? ""} placeholder="地点" />
-          <select className="ui-input" name="milestoneType" defaultValue={event.milestoneType ?? ""}>{MILESTONES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-          <fieldset className="rounded-xl border border-line p-3"><legend className="px-1 text-xs text-muted">人物</legend>{people.map((person) => <label key={person.id} className="mr-3 inline-flex items-center gap-1 text-sm"><input type="checkbox" name="participantPersonId" value={person.id} defaultChecked={event.participantNames.includes(person.displayName)} />{person.displayName}</label>)}</fieldset>
-          <button className="ui-button-secondary sm:col-span-2" type="submit">保存人工补充</button></form></details> : null}
+        {canEditEvent ? <details className="mt-3"><summary className="cursor-pointer text-sm text-muted">补充真实信息</summary><ReviewMemoryForm event={event} periodKey={review.key} people={people.map(person => ({ id: person.id, displayName: person.displayName }))} milestones={MILESTONES} /></details> : null}
       </article>)}</div> : <p className="rounded-xl border border-dashed border-line p-5 text-sm text-muted">这一周还没有已确认事件。可以先整理收件箱，也可以把空白的一周标记完成。</p>}
     </ReviewStep>
 

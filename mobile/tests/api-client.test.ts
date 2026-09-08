@@ -172,7 +172,11 @@ describe("native API client", () => {
     const search = { items: [{ type: "memory", id: "memory-1", eventId: "memory-1", title: "散步", snippet: "散步" }], nextCursor: null };
     expect(parseMobileHome(home)).toEqual(home);
     expect(parseMobileInboxPage(inbox)).toEqual(inbox);
-    expect(parseMobileMemory(memory)).toEqual(memory);
+    expect(parseMobileMemory(memory)).toEqual(memory); // Old cached details remain readable.
+    expect(parseMobileMemory({ ...memory, titleRevision: 3 }).titleRevision).toBe(3);
+    for (const titleRevision of [-1, 0.5, null, "3", Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => parseMobileMemory({ ...memory, titleRevision })).toThrowError(ApiError);
+    }
     expect(parseMobileSearchPage(search)).toEqual(search);
     expect(() => parseMobileHome({ ...home, inbox: { count: -1, previews: [] } })).toThrowError(ApiError);
     expect(() => parseMobileInboxPage({ ...inbox, entries: [{ ...inbox.entries[0], assets: [{ type: "executable" }] }] })).toThrowError(ApiError);

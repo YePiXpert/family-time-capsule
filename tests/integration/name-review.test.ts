@@ -94,8 +94,14 @@ it("persists inbox adoption and protects it from a concurrently saved metadata f
 
 it("an event metadata edit cannot reset a name changed while the edit was preparing", async () => {
   const event = await fixtureEvent();
-  await Promise.all([updateMemoryEvent(familyId, event.id, admin.id, { locationText: "家中" }), renameTarget(familyId, admin.id, { kind: "memory_event", id: event.id, revision: 0, title: "并发保存的人工标题" })]);
-  expect(getDb().select().from(memoryEvent).where(eq(memoryEvent.id, event.id)).get()?.title).toBe("并发保存的人工标题");
+  const results = await Promise.all([updateMemoryEvent(familyId, event.id, admin.id, { locationText: "家中", expectedTitleRevision: 0 }), renameTarget(familyId, admin.id, { kind: "memory_event", id: event.id, revision: 0, title: "并发保存的人工标题" })]);
+  expect(results.filter(result => result.ok)).toHaveLength(1);
+  const current = getDb().select().from(memoryEvent).where(eq(memoryEvent.id, event.id)).get()!;
+  expect(current.titleRevision).toBe(1);
+  expect(current.title).toBe(results[1].ok ? "并发保存的人工标题" : event.title);
+  expect((await renameTarget(familyId, admin.id, { kind: "memory_event", id: event.id, revision: 1, title: "最终保存的人工标题" })).ok).toBe(true);
+  expect(await updateMemoryEvent(familyId, event.id, admin.id, { title: event.title, expectedTitleRevision: 0 })).toMatchObject({ ok: false, error: "conflict" });
+  expect(getDb().select().from(memoryEvent).where(eq(memoryEvent.id, event.id)).get()?.title).toBe("最终保存的人工标题");
 });
 
 it("legacy suggestions without a proven target version cannot replace a canonical title", async () => {
@@ -145,11 +151,11 @@ it("rejects unproven, unfinished and mismatched result provenance", async () => 
   if (!finishedLease || !completeAiJob(finishedLease, { runtime }).ok) throw new Error("fixture cleanup failed");
 });
 
-it("source changes invalidate adoption even without a title revision change", async () => {
+it("source edits advance the event revision and invalidate adoption", async () => {
   const event = await fixtureEvent();
   const input = suggestion("memory_event", event.id, event.titleRevision);
   await updateMemoryEvent(familyId, event.id, admin.id, { locationText: "变化后的地点" });
-  expect(await reviewTitleSuggestion(familyId, admin.id, { ...input, operation: "accept" })).toMatchObject({ ok: false, error: "stale_suggestion" });
+  expect(await reviewTitleSuggestion(familyId, admin.id, { ...input, operation: "accept" })).toMatchObject({ ok: false, error: "conflict" });
 });
 
 it("cannot adopt a private-context suggestion into a family-visible event title", async () => {

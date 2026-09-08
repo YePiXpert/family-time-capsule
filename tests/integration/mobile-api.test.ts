@@ -476,7 +476,7 @@ describe("native mobile API", () => {
         `http://localhost/api/mobile/v1/memories/${mergedBody.memoryEventId}`,
         "PATCH",
         foreignToken,
-        { title: "跨家庭写入" },
+        { title: "跨家庭写入", expectedRevision: 0, mutationId: randomUUID() },
       ),
       { params: Promise.resolve({ id: mergedBody.memoryEventId }) },
     );
@@ -489,6 +489,7 @@ describe("native mobile API", () => {
         editorToken,
         {
           title: "原生端合并后修改",
+          expectedRevision: 0, mutationId: randomUUID(),
           occurredAtWall: "2026-09-02T00:05",
           locationText: "植物园",
         },
@@ -657,7 +658,7 @@ describe("native mobile API", () => {
         `http://localhost/api/mobile/v1/memories/${confirmed.eventId}`,
         "PATCH",
         bearerToken,
-        { title: "不应复活" },
+        { title: "不应复活", expectedRevision: 0, mutationId: randomUUID() },
       ),
       { params: Promise.resolve({ id: confirmed.eventId }) },
     );

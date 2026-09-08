@@ -18,6 +18,7 @@ import {
   updateVisibleContributionText,
 } from "@/lib/authz/contribution-access";
 import { getFamily } from "@/lib/family/service";
+import { anchorFromPrecisionInput, isOccurredAtPrecision } from "@/lib/metadata/precision";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { isMilestoneType, updateMemoryEvent } from "@/lib/memories/service";
 import {
@@ -33,9 +34,9 @@ import {
 
 export type ContributionFormState = { error?: string };
 
-export type EditEventFormState = { error?: string; saved?: boolean };
+export type EditEventFormState = { error?: string; saved?: boolean; revision?: number };
 
-const PRECISIONS = ["exact", "approximate", "date_only", "month", "year", "unknown"] as const;
+
 
 /**
  * 编辑记忆事件（RH-003）。
@@ -53,41 +54,20 @@ export async function editEventAction(
   const family = await getFamily(familyId);
   const timezone = family?.timezone ?? "Asia/Shanghai";
 
-  // §6：按精度解析锚点。month 读 "YYYY-MM"，year 读 "YYYY"；unknown 不
-  // 提供时间（保留原锚点用于排序，显示永不冒充发生时间）。
-  let occurredAt: Date | undefined;
   const precisionInput = String(formData.get("occurredAtPrecision") ?? "");
-  const precision: string | undefined = PRECISIONS.includes(precisionInput as (typeof PRECISIONS)[number])
-    ? precisionInput
-    : undefined;
+  if (!isOccurredAtPrecision(precisionInput)) return { error: "请选择时间精度。" };
+  const occurredAtPrecision = precisionInput;
   const wall = String(formData.get("occurredAt") ?? "").trim();
-  if (precision === "unknown") {
-    occurredAt = undefined;
-  } else if (wall) {
-    try {
-      if (precision === "month" && /^\d{4}-\d{2}$/u.test(wall)) {
-        occurredAt = zonedWallTimeToUtc(`${wall}-01T00:00:00`, timezone);
-      } else if (precision === "year" && /^\d{4}$/u.test(wall)) {
-        occurredAt = zonedWallTimeToUtc(`${wall}-01-01T00:00:00`, timezone);
-      } else if (precision === "month" || precision === "year") {
-        return { error: "时间格式不正确。" };
-      } else {
-        occurredAt = zonedWallTimeToUtc(
-          wall.length === 16 ? `${wall}:00` : wall,
-          timezone,
-        );
-      }
-    } catch {
-      return { error: "时间格式不正确。" };
-    }
-  }
-
-  const occurredAtPrecision = precision as (typeof PRECISIONS)[number] | undefined;
+  const occurredAt = anchorFromPrecisionInput({ precision: occurredAtPrecision, wall, timezone, toUtc: zonedWallTimeToUtc });
+  if (occurredAtPrecision !== "unknown" && !occurredAt) return { error: "请按所选精度填写有效时间。" };
+  const expectedRevision = Number(formData.get("expectedRevision"));
+  const mutationId = String(formData.get("mutationId") ?? "");
+  if (!formData.has("expectedRevision") || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !/^[\w-]{1,128}$/u.test(mutationId)) return { error: "页面版本无效，请保留输入并重新打开。" };
 
   const locationRaw = String(formData.get("locationText") ?? "").trim();
 
   const coverRaw = String(formData.get("coverAssetId") ?? "");
-  const coverAssetId = coverRaw === "" ? undefined : coverRaw;
+  const coverAssetId = coverRaw === "" ? null : coverRaw;
 
   const childRaw = String(formData.get("childPersonId") ?? "");
   const childPersonId = childRaw === "" ? null : childRaw;
@@ -104,7 +84,10 @@ export async function editEventAction(
 
   const result = await updateMemoryEvent(familyId, eventId, userId, {
     title,
-    occurredAt,
+    expectedTitleRevision: expectedRevision,
+    mutationId,
+    bodyText: String(formData.get("bodyText") ?? ""),
+    occurredAt: occurredAt ?? undefined,
     occurredAtPrecision,
     locationText: locationRaw || null,
     coverAssetId,
@@ -116,8 +99,10 @@ export async function editEventAction(
   if (!result.ok) {
     return {
       error:
-        result.error === "not_found"
-          ? "事件不存在。"
+        result.error === "conflict"
+          ? "这件事已被修改。你的输入已保留，请重新打开并核对后再保存。"
+          : result.error === "not_found"
+          ? "事件不存在或你已没有编辑权限。输入已保留。"
           : result.error === "bad_person"
             ? "参与人或孩子档案无效。"
             : result.error === "bad_cover"
@@ -129,7 +114,7 @@ export async function editEventAction(
   revalidatePath("/timeline");
   revalidatePath("/");
   revalidatePath("/memories/resurfacing");
-  return { saved: true };
+  return { saved: true, revision: result.event.titleRevision };
 }
 
 const VISIBILITIES: Visibility[] = ["private", "parents", "family", "child_later"];

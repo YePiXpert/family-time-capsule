@@ -1,23 +1,26 @@
+import { isOccurredAtPrecision, precisionHasDay } from "@/lib/metadata/precision";
+import { InvalidUserBindingError } from "@/lib/family/service";
+import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
 import "server-only";
 import { draft, draftItem } from "@/db/schema/draft";
 import { aiSuggestion } from "@/db/schema/suggestion";
 import { readableName } from "@/lib/naming";
 import type { FamilyContext } from "@/lib/family/context";
-import { isLiveFamilyPrincipal } from "@/lib/authz/principal";
+import { getLiveFamilyPrincipal, PrincipalAuthorizationError, isLiveFamilyPrincipal } from "@/lib/authz/principal";
 import { createContributionAccessSnapshot, readableAssetPredicate } from "@/lib/authz/contribution-access";
 import {
+  canManageEventVisibilityInTransaction,
   createEventAccessSnapshot,
   getVisibleMemoryEventInTransaction,
   eventVisibilityCondition,
 } from "@/lib/authz/event-access";
 import {
-  canViewMemoryEvent,
   isEventVisibility,
   type EventVisibility,
   type FamilyRole,
 } from "@/lib/authz/policy";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   isNull,
   isNotNull,
@@ -43,6 +46,7 @@ import {
   memoryEventParticipant,
   memoryEventReader,
   memoryEventRevision,
+  memoryMutation,
 } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
 import type { AssetRow } from "@/lib/assets/service";
@@ -107,6 +111,8 @@ export type MemoryEventDetail = {
  * 编辑者记录在 lastEditedByUserId；ageDays 快照按新 occurredAt 重算。
  */
 export type EditMemoryEventPatch = {
+  mutationId?: string;
+  bodyText?: string;
   title?: string;
   expectedTitleRevision?: number;
   occurredAt?: Date;
@@ -130,198 +136,72 @@ export async function updateMemoryEvent(
   patch: EditMemoryEventPatch,
   viewer?: { role: FamilyRole; accountEnabled: boolean },
 ): Promise<EditResult> {
-  const db = getDb();
-  const rows = await db
-    .select()
-    .from(memoryEvent)
-    .where(
-      and(
-        eq(memoryEvent.familyId, familyId),
-        eq(memoryEvent.id, eventId),
-        isNull(memoryEvent.deletedAt),
-      ),
-    )
-    .limit(1);
-  const current = rows[0];
-  if (!current) return { ok: false, error: "not_found" };
-  // §5：编辑以可读为前提；读取不授予扩大读者，但不允许编辑不可见事件。
-  if (!isEventVisibility(current.visibility)) return { ok: false, error: "not_found" };
-  if (current.visibility !== "family") {
-    const readers = new Set(
-      (await db
-        .select({ userId: memoryEventReader.userId })
-        .from(memoryEventReader)
-        .where(eq(memoryEventReader.memoryEventId, eventId)))
-        .map((row) => row.userId),
-    );
-    const allowed = viewer
-      ? canViewMemoryEvent(current.visibility, current.createdByUserId, readers, {
-          role: viewer.role,
-          userId: editorUserId,
-          accountEnabled: viewer.accountEnabled,
-        })
-      : editorUserId === current.createdByUserId;
-    if (!allowed) return { ok: false, error: "not_found" };
+  let principal;
+  try { principal = await getLiveFamilyPrincipal(editorUserId, familyId); }
+  catch (error) {
+    if (error instanceof PrincipalAuthorizationError || error instanceof InvalidUserBindingError) return { ok: false, error: "not_found" };
+    throw error;
   }
-  if (patch.expectedTitleRevision !== undefined && patch.expectedTitleRevision !== current.titleRevision) return { ok: false, error: "conflict" };
-
-  const title = patch.title !== undefined ? patch.title.trim() : current.title;
-  if (title.length < 1 || title.length > 100) return { ok: false, error: "invalid" };
-  const occurredAt = patch.occurredAt ?? current.occurredAt;
-  if (Number.isNaN(occurredAt.getTime())) return { ok: false, error: "invalid" };
-  const precision =
-    patch.occurredAtPrecision ?? (current.occurredAtPrecision as "exact");
-  const locationText =
-    patch.locationText !== undefined
-      ? patch.locationText === null
-        ? null
-        : patch.locationText.trim().slice(0, 200) || null
-      : current.locationText;
-  const milestoneType =
-    patch.milestoneType !== undefined ? patch.milestoneType : current.milestoneType;
-  if (milestoneType !== null && !isMilestoneType(milestoneType)) {
-    return { ok: false, error: "invalid" };
-  }
-  if (patch.isPinned !== undefined && typeof patch.isPinned !== "boolean") {
-    return { ok: false, error: "invalid" };
-  }
-  const isPinned = patch.isPinned ?? current.isPinned;
-
-  const childPersonId = patch.childPersonId === undefined ? current.childPersonId : patch.childPersonId;
-  if (!await validAgeAnchor(familyId, childPersonId)) return { ok: false, error: "bad_person" };
-
-  // participants：全部必须属于本家庭；与年龄锚点分别编辑。
-  const existingParticipantRows = await db
-    .select({ personId: memoryEventParticipant.personId })
-    .from(memoryEventParticipant)
-    .where(eq(memoryEventParticipant.memoryEventId, eventId));
-  const participantIdsBefore = existingParticipantRows.map((l) => l.personId);
-  let participantIds: string[];
-  if (patch.participantPersonIds !== undefined) {
-    if (patch.participantPersonIds.length > 50) return { ok: false, error: "invalid" };
-    const wanted = [...new Set(patch.participantPersonIds)];
-    const valid = await db
-      .select({ id: personTable.id })
-      .from(personTable)
-      .where(
-        and(
-          eq(personTable.familyId, familyId),
-          inArray(personTable.id, wanted),
-        ),
-      );
-    const validSet = new Set(valid.map((p) => p.id));
-    if (wanted.some((id) => !validSet.has(id))) {
-      return { ok: false, error: "bad_person" };
+  if (viewer && (!viewer.accountEnabled || viewer.role !== principal.role)) return { ok: false, error: "not_found" };
+  const context = { ...principal, userName: "" };
+  const snapshot = createEventAccessSnapshot(context);
+  if (patch.expectedTitleRevision !== undefined && (!Number.isSafeInteger(patch.expectedTitleRevision) || patch.expectedTitleRevision < 0)) return { ok: false, error: "invalid" };
+  if (patch.mutationId !== undefined && (!/^[\w-]{1,128}$/u.test(patch.mutationId) || patch.expectedTitleRevision === undefined)) return { ok: false, error: "invalid" };
+  const requestHash = createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(patch).sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
+  return getDb().transaction((tx): EditResult => {
+    if (!canManageEventVisibilityInTransaction(tx, snapshot, eventId)) return { ok: false, error: "not_found" };
+    const current = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, eventId), eq(memoryEvent.familyId, familyId), isNull(memoryEvent.deletedAt))).get();
+    if (!current) return { ok: false, error: "not_found" };
+    if (patch.mutationId) {
+      const receipt = tx.select().from(memoryMutation).where(and(eq(memoryMutation.familyId, familyId), eq(memoryMutation.actorUserId, editorUserId), eq(memoryMutation.mutationId, patch.mutationId))).get();
+      if (receipt) return receipt.memoryEventId === eventId && receipt.operation === "edit" && receipt.requestHash === requestHash && receipt.resultRevision === current.titleRevision
+        ? { ok: true, event: current } : { ok: false, error: "conflict" };
     }
-    participantIds = wanted;
-  } else {
-    participantIds = [...participantIdsBefore];
-  }
-
-  // cover：如提供，必须属于本家庭（不强制属于本事件——允许把库里任一照片设为封面）
-  let coverAssetId = current.coverAssetId;
-  if (patch.coverAssetId !== undefined) {
-    if (patch.coverAssetId === null) {
-      coverAssetId = null;
-    } else {
-      const cover = await db
-        .select({ id: assetTable.id })
-        .from(assetTable)
-        .where(
-          and(
-            eq(assetTable.familyId, familyId),
-            eq(assetTable.id, patch.coverAssetId),
-          ),
-        )
-        .limit(1);
-      if (!cover[0]) return { ok: false, error: "bad_cover" };
-      coverAssetId = patch.coverAssetId;
+    if (patch.expectedTitleRevision !== undefined && patch.expectedTitleRevision !== current.titleRevision) return { ok: false, error: "conflict" };
+    const title = patch.title === undefined ? current.title : patch.title.trim();
+    const bodyText = patch.bodyText ?? current.bodyText;
+    if (!title || title.length > 100 || bodyText.length > 100_000) return { ok: false, error: "invalid" };
+    const precision = patch.occurredAtPrecision ?? current.occurredAtPrecision;
+    if (!isOccurredAtPrecision(precision)) return { ok: false, error: "invalid" };
+    // An unknown sorting anchor cannot become a claimed occurrence by changing only its label.
+    const precisionLevel = (value: string) => value === "unknown" ? 0 : value === "year" ? 1 : value === "month" ? 2 : value === "date_only" ? 3 : 4;
+    if (precisionLevel(precision) > precisionLevel(current.occurredAtPrecision) && !patch.occurredAt) return { ok: false, error: "invalid" };
+    const occurredAt = precision === "unknown" ? current.occurredAt : patch.occurredAt ?? current.occurredAt;
+    if (Number.isNaN(occurredAt.getTime())) return { ok: false, error: "invalid" };
+    const locationText = patch.locationText === undefined ? current.locationText : patch.locationText?.trim().slice(0, 200) || null;
+    const milestoneType = patch.milestoneType === undefined ? current.milestoneType : patch.milestoneType;
+    if (milestoneType !== null && !isMilestoneType(milestoneType)) return { ok: false, error: "invalid" };
+    if (patch.isPinned !== undefined && typeof patch.isPinned !== "boolean") return { ok: false, error: "invalid" };
+    const childPersonId = patch.childPersonId === undefined ? current.childPersonId : patch.childPersonId;
+    const child = childPersonId ? tx.select().from(personTable).where(and(eq(personTable.id, childPersonId), eq(personTable.familyId, familyId))).get() : undefined;
+    if (childPersonId !== null && !child) return { ok: false, error: "bad_person" };
+    const participantIdsBefore = tx.select({ id: memoryEventParticipant.personId }).from(memoryEventParticipant).where(eq(memoryEventParticipant.memoryEventId, eventId)).all().map(row => row.id);
+    const participantIds = [...new Set(patch.participantPersonIds ?? participantIdsBefore)];
+    if (participantIds.length > 50) return { ok: false, error: "invalid" };
+    if (participantIds.length && tx.select({ id: personTable.id }).from(personTable).where(and(eq(personTable.familyId, familyId), inArray(personTable.id, participantIds))).all().length !== participantIds.length) return { ok: false, error: "bad_person" };
+    const coverAssetId = patch.coverAssetId === undefined ? current.coverAssetId : patch.coverAssetId;
+    if (coverAssetId && patch.coverAssetId !== undefined) {
+      const cover = tx.select().from(assetTable).where(and(eq(assetTable.id, coverAssetId), eq(assetTable.familyId, familyId), readableAssetPredicate(createContributionAccessSnapshot(context), sql`${coverAssetId}`))).get();
+      if (!cover || (coverAssetId !== current.coverAssetId && !canManageOriginalInTransaction(tx, context, cover))) return { ok: false, error: "bad_cover" };
     }
-  }
-
-  // ageDays 快照按（可能新的）孩子生日与 occurredAt 重算
-  const childBirth = childPersonId === null ? [] : await db
-    .select({ birthDate: personTable.birthDate })
-    .from(personTable)
-    .where(eq(personTable.id, childPersonId))
-    .limit(1);
-  const ageDays =
-    childBirth[0]?.birthDate != null
-      ? computeAgeDays(childBirth[0].birthDate, occurredAt, await familyTimezone(familyId))
-      : null;
-
-  const now = new Date();
-  const committed = db.transaction((tx) => {
-    const live = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, eventId), eq(memoryEvent.familyId, familyId), isNull(memoryEvent.deletedAt))).get();
-    if (!live || live.titleRevision !== current.titleRevision || live.updatedAt.getTime() !== current.updatedAt.getTime()) return false;
-    // 编辑前快照（v0.1.3）：与本次修改同事务写入，保证可追溯
-    tx.insert(memoryEventRevision)
-      .values({
-        id: randomUUID(),
-        familyId,
-        memoryEventId: eventId,
-        editedByUserId: editorUserId,
-        snapshotJson: JSON.stringify({
-          title: current.title,
-          bodyText: current.bodyText,
-          titleSource: current.titleSource,
-          titleRevision: current.titleRevision,
-          occurredAt: current.occurredAt.toISOString(),
-          occurredAtPrecision: current.occurredAtPrecision,
-          locationText: current.locationText,
-          coverAssetId: current.coverAssetId,
-          childPersonId: current.childPersonId,
-          participantPersonIds: participantIdsBefore,
-          milestoneType: current.milestoneType,
-          isPinned: current.isPinned,
-          ageDays: current.ageDays,
-        }),
-        createdAt: now,
-      })
-      .run();
-
-    tx.update(memoryEvent)
-      .set({
-        title,
-        titleSource: patch.title !== undefined ? "manual" : current.titleSource,
-        titleRevision: patch.title !== undefined ? sql`${memoryEvent.titleRevision} + 1` : current.titleRevision,
-        occurredAt,
-        occurredAtPrecision: precision,
-        locationText,
-        coverAssetId,
-        childPersonId,
-        milestoneType,
-        isPinned,
-        ageDays,
-        lastEditedByUserId: editorUserId,
-        updatedAt: now,
-      })
-      .where(and(eq(memoryEvent.familyId, familyId), eq(memoryEvent.id, eventId)))
-      .run();
-
+    const family = tx.select().from(familyTable).where(eq(familyTable.id, familyId)).get();
+    const ageDays = precisionHasDay(precision) && child?.birthDate ? computeAgeDays(child.birthDate, occurredAt, family?.timezone ?? "UTC") : null;
+    const now = new Date();
+    tx.insert(memoryEventRevision).values({ id: randomUUID(), familyId, memoryEventId: eventId, editedByUserId: editorUserId,
+      snapshotJson: JSON.stringify({ ...current, participantPersonIds: participantIdsBefore }), createdAt: now }).run();
+    const event = tx.update(memoryEvent).set({ title, bodyText, titleSource: patch.title !== undefined ? "manual" : current.titleSource,
+      titleRevision: current.titleRevision + 1, occurredAt, occurredAtPrecision: precision, locationText, coverAssetId, childPersonId,
+      milestoneType, isPinned: patch.isPinned ?? current.isPinned, ageDays, lastEditedByUserId: editorUserId, updatedAt: now,
+    }).where(eq(memoryEvent.id, eventId)).returning().get();
     if (patch.participantPersonIds !== undefined) {
-      tx.delete(memoryEventParticipant)
-        .where(eq(memoryEventParticipant.memoryEventId, eventId))
-        .run();
-      if (participantIds.length > 0) tx.insert(memoryEventParticipant)
-        .values(
-          participantIds.map((personId) => ({
-            id: randomUUID(),
-            memoryEventId: eventId,
-            personId,
-            familyId,
-            createdAt: now,
-          })),
-        )
-        .run();
+      tx.delete(memoryEventParticipant).where(eq(memoryEventParticipant.memoryEventId, eventId)).run();
+      if (participantIds.length) tx.insert(memoryEventParticipant).values(participantIds.map(personId => ({ id: randomUUID(), memoryEventId: eventId, personId, familyId, createdAt: now }))).run();
     }
-    return true;
-  });
-  if (!committed) return { ok: false, error: "conflict" };
-
-  indexMemoryEvent({ id: eventId, familyId, title, childPersonId });
-  const updated = await getMemoryEventDetail(familyId, eventId);
-  return { ok: true, event: updated!.event };
+    if (patch.mutationId) tx.insert(memoryMutation).values({ id: randomUUID(), familyId, memoryEventId: eventId, actorUserId: editorUserId,
+      mutationId: patch.mutationId, operation: "edit", requestHash, resultRevision: event.titleRevision, createdAt: now }).run();
+    indexMemoryEvent(event);
+    return { ok: true, event };
+  }, { behavior: "immediate" });
 }
 
 /** occurredAt 默认值：最早的可信 capturedAt；全都没有时用最早 importedAt */

@@ -1,3 +1,4 @@
+import { precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
 import "server-only";
 import { listPeople } from "@/lib/family/service";
 import { readableName } from "@/lib/naming";
@@ -137,8 +138,8 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
     occurredAt: detail.event.occurredAt.toISOString(),
     occurredAtWall: utcToZonedWallTimeInput(detail.event.occurredAt, context.familyTimezone),
     occurredAtPrecision: detail.event.occurredAtPrecision,
-    ageDays: detail.event.ageDays,
-    ageLabel: formatPersonAgeLabel(child, detail.event.occurredAt, context.familyTimezone),
+    ageDays: !precisionHasDay(detail.event.occurredAtPrecision as OccurredAtPrecision) ? null : detail.event.ageDays,
+    ageLabel: !precisionHasDay(detail.event.occurredAtPrecision as OccurredAtPrecision) ? null : formatPersonAgeLabel(child, detail.event.occurredAt, context.familyTimezone),
     locationText: detail.event.locationText,
     milestoneType: detail.event.milestoneType,
     isPinned: detail.event.isPinned,

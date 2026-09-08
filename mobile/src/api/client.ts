@@ -16,6 +16,7 @@ import type {
   MobileLibraryPage,
   MobileMe,
   MobileMemory,
+  MobileMemoryPatch,
   MobileReview,
   MobileMemoryAsset,
   MobileSearchPage,
@@ -248,6 +249,7 @@ export function parseMobileMemory(value: unknown): MobileMemory {
   if (
     !isRecord(value) ||
     !isString(value.id, 128) ||
+    (value.titleRevision !== undefined && (!Number.isSafeInteger(value.titleRevision) || Number(value.titleRevision) < 0)) ||
     !isString(value.title, 500) ||
     !isDateTime(value.occurredAt) ||
     !isWallDateTime(value.occurredAtWall) ||
@@ -973,7 +975,7 @@ export async function fetchMobileMemory(
 export async function patchMobileMemory(
   credentials: Credentials,
   id: string,
-  patch: InboxDraftPatch,
+  patch: MobileMemoryPatch,
 ): Promise<MobileMemory> {
   return parseMobileMemory(
     await requestMobileJson(

@@ -16,7 +16,8 @@
 - 已推送：`b23c3409ec160270c6d4e13db9d44ce0ccb1c26e` R10 故事/任务来源与 v3 归档；CI `34202975077` 四项全部 success，已核对同 SHA。
 - 已推送：`c6f32be5fb7ce89870d31b15bf816471c97ca286` R09 阅读包最终响应授权；CI `34204259752` 四项全部 success，已核对同 SHA。
 - 已推送：`9db3cdb4b692b4af6863a8e223981800babf5ab2` R09 事实/回收站管理；CI `34205380014` 四项全部 success，已核对同 SHA。
-- 当前里程碑：R09 详情/事实来源与最终响应；下一步已有事件双端分享/撤销和受控缓存。
+- 已推送：`d8318a5f6fa56876318726aaa0b985ba5fd0bbe4`（含 `e1ea2ce` 导入页交互就绪及详情来源）；CI `34207480740` 四项全部 success，已核对同 SHA。
+- 当前里程碑：事件编辑权限、版本与六档日期；下一步已有事件原生编辑、双端分享/撤销和受控缓存。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -167,3 +168,16 @@ P0-D 实现与证据：
 
 - 完整 production E2E 在资料库场景的文件选择后等待“开始导入”超时，页面没有记录所选 30 份文件（`/tmp/ftc-r09-detail-e2e-full.log`）。读取当前 Next 本地 client/hydration 指南后，新增真实浏览器延迟全部脚本加载的用例，确认交互未就绪时文件输入仍启用（`/tmp/ftc-import-hydration-red.log`）。
 - 文件输入现在在服务器 HTML/交互绑定前禁用，就绪及没有上传作业时才开放；浏览器自动化按真实可用状态选择文件，不扩大等待时间或降低原件数量断言。延迟加载测试放行脚本后只选择一次，必须出现文件和导入按钮。typecheck、该文件 lint、production build/build:ops 通过；production asset-library 2/2 与最终完整浏览器 73/73 通过（`/tmp/ftc-import-hydration-fixed.log`、`/tmp/ftc-r09-detail-e2e-final.log`）。
+
+
+## 事件编辑权限、版本与日期输入
+
+- 先复现五个实际失败（`/tmp/ftc-r09-event-edit-red.log`）：停用发生在校验等待中仍提交、指定读者借 viewer 参数获得编辑权、其他作者私密封面被重用、旧 expectedRevision 覆盖新输入、mobile unknown PATCH 被旧三档 guard 拒绝。
+- `updateMemoryEvent` 在实时主体核查后，将事件编辑权限、当前版本、人物/封面校验、历史快照、正文/元数据修改和搜索更新放入同一 IMMEDIATE 事务；任何编辑都递增版本。保持原封面时不误要求额外再分享权，更换为只读原件仍拒绝。
+- 追加迁移 0070 `memory_mutation`：家庭/账号/键唯一，记录请求摘要、事件与结果版本，不存正文/密钥。重复相同请求只读收据，不重复历史行；不同内容复用键、后续版本或已删除/撤权事件优先拒绝。此表是实例本地操作收据，不加入家庭归档，归档协议保持 v3；产品版本仍 1.0.0-dev.1。
+- mobile PATCH 现在必须带 expectedRevision/mutationId；旧缺字段编辑安全返回 400，旧 GET/快照继续兼容，客户端专用 patch 类型已更新。Web 详情及回顾实际提交同样有版本和幂等键；受控字段在冲突及网络错误后保留。回顾人物勾选按 Person ID，不再用同名匹配。
+- Web 详情接通持久正文编辑；年/月/日/时刻使用相应输入，unknown 输入禁用且为空。精度收细要求新时间；unknown/year/month 不显示或保存虚构年龄。复用日期模块，修复已有完整秒值解析。页面切至编辑模式时表单按该模式重新挂载，避免已有折叠状态隐藏编辑入口。
+- 独立只读审查提出精度收细和保持旧封面两项反例，已补实际 HTTP/草稿发布回归。专项 5 文件/63 项通过（`/tmp/ftc-r09-event-edit-expanded4.log`）；production edit/review 7/7（`/tmp/ftc-r09-event-edit-e2e3.log`）包括六档正文反复保存与详情/回顾双页面旧版本冲突。浏览器首跑复现编辑模式表单未打开，第二次失败为测试在导航落定前取了旧 URL，补实际导航断言后通过。
+- 根全量第二次 870/871，唯一遗漏为 unanchored-memory 老 HTTP fixture 未携带新增必填版本字段，已按当前真实事件版本更新，未降低断言。最终根全量 139 文件/871 项通过（`/tmp/ftc-r09-event-edit-root-reviewed.log`）。完整 production 首跑 72/74：新版 build 清除了提前生成的 worker，书籍脚本两处旧 PATCH 未带版本；已在 build 后重建 ops 并按实际 GET 版本更新请求，最终完整 production 74/74 通过（`/tmp/ftc-r09-event-edit-e2e-reviewed.log`）。typecheck（根/原生）、lint（13 既存 warning）、build/build:ops 已通过；手机 49 文件/267 项、灾难 roundtrip 7/7、独立历史卷升级/迁移失败回滚/旧归档恢复再导出及五原件 hash 通过（`/tmp/ftc-r09-event-edit-mobile.log`、`/tmp/ftc-r09-event-edit-roundtrip.log`、`/tmp/ftc-r09-event-edit-upgrade.log`）。
+- 最终原生 API 版本解析接受非负安全整数，拒绝 null/字符串/小数/负值/溢出；缺失版本仅兼容旧详情读取，新编辑类型必须携带版本。native 最终 49 文件/267 项、typecheck/lint 通过（`/tmp/ftc-r09-event-edit-native-final.log`、`/tmp/ftc-r09-event-edit-native-types-final.log`、`/tmp/ftc-r09-event-edit-native-lint.log`）。
+- 已有事件原生编辑及双端分享/撤销、受控缓存、增量同步仍须继续，本批不代表 R09/R17/SYNC-8 全流程完成。

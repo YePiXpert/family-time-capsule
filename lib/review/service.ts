@@ -11,7 +11,7 @@ import { contribution } from "@/db/schema/contribution";
 import { family, person } from "@/db/schema/family";
 import { importSession, importSessionItem } from "@/db/schema/import";
 import { inboxItem } from "@/db/schema/inbox";
-import { memoryEvent } from "@/db/schema/memory";
+import { memoryEvent, memoryEventParticipant } from "@/db/schema/memory";
 import { contributionPortalSubmission, contributionRequest } from "@/db/schema/oral-history";
 import { reviewPeriod, reviewPeriodEvent, type ReviewPeriodRow } from "@/db/schema/review";
 import { story } from "@/db/schema/story";
@@ -253,6 +253,8 @@ export type ReviewOverview = {
     upcomingCapsules: number;
   };
   events: Array<{
+    titleRevision: number;
+    participantPersonIds: string[];
     id: string;
     title: string;
     occurredAt: Date;
@@ -315,6 +317,11 @@ export async function getReviewOverview(
   const countByEvent = new Map(contributionCounts.map((row) => [row.eventId, Number(row.value)]));
   const selected = new Set(selectedRows.map((row) => row.eventId));
   const clusterCount = (kind: string) => Number(clusters.find((row) => row.kind === kind)?.value ?? 0);
+  const participantIdsByEvent = new Map<string, string[]>();
+  if (timeline.entries.length) {
+    const links = getDb().select().from(memoryEventParticipant).where(and(eq(memoryEventParticipant.familyId, context.familyId), inArray(memoryEventParticipant.memoryEventId, timeline.entries.map(entry => entry.event.id)))).all();
+    for (const link of links) participantIdsByEvent.set(link.memoryEventId, [...(participantIdsByEvent.get(link.memoryEventId) ?? []), link.personId]);
+  }
   return {
     period,
     key: window.key,
@@ -341,6 +348,8 @@ export async function getReviewOverview(
       }).length,
     },
     events: timeline.entries.map((entry) => ({
+      titleRevision: entry.event.titleRevision,
+      participantPersonIds: participantIdsByEvent.get(entry.event.id) ?? [],
       id: entry.event.id,
       title: entry.event.title,
       occurredAt: entry.event.occurredAt,
