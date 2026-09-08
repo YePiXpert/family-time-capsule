@@ -133,7 +133,7 @@ describe("M7：回收站 — 事件", () => {
       "要被删除的事件",
       new Date("2026-08-20T02:00:00.000Z"),
     );
-    await addFact(familyId, eventId, "这条事实随事件进回收站。");
+    await addFact(context, eventId, "这条事实随事件进回收站。");
     await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: adminPersonId,
@@ -268,7 +268,7 @@ describe("M7：回收站 — 讲述与故事", () => {
       "故事素材事件",
       new Date("2026-09-01T02:00:00.000Z"),
     );
-    await addFact(familyId, eventId, "九月初的确认事实。");
+    await addFact(context, eventId, "九月初的确认事实。");
     const anchor = new Date("2026-09-02T00:00:00.000Z");
     const period = periodForKind("weekly", anchor);
     const plans = planDeterministicDraft(

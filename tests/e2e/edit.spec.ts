@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import Database from "better-sqlite3";
 import { ensureBootstrap, ensureLogin } from "./helpers";
 
 // RH-003：事件编辑 E2E（独立 project / 独立 DATA_DIR）
@@ -73,4 +75,65 @@ test("编辑参与人与孩子档案（安全校验下的正常路径）", async
   await expect(
     page.locator('section[aria-label="参与人物"]', { hasText: "外婆" }),
   ).toBeVisible();
+});
+
+test("私密未知时间记忆：作者添加事实、移入回收站、恢复和清除，其他管理员看不到", async ({ page, browser, baseURL }) => {
+  await ensureBootstrap(page);
+  const title = "仅自己的旧信记忆";
+  const body = "不知道哪一年，外公把一封旧信留给我。";
+  const fact = "旧信放在蓝色盒子里。";
+  await page.goto("/capture");
+  await page.getByLabel("写下这一刻").fill(body);
+  await page.getByLabel("标题", { exact: true }).fill(title);
+  await page.getByLabel("时间记得多清楚").selectOption("unknown");
+  await page.getByLabel("保存后的读者").selectOption("private");
+  await page.getByRole("button", { name: "保存为一条记忆" }).click();
+  await page.getByRole("link", { name: "查看这条记忆" }).click();
+  await expect(page).toHaveURL(/\/memories\/[^/?]+/);
+  const memoryUrl = new URL(page.url()).pathname;
+  await page.getByRole("link", { name: "编辑档案", exact: true }).click();
+  await page.getByLabel("新增事实").fill(fact);
+  await page.getByRole("button", { name: "添加事实", exact: true }).click();
+  await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(fact);
+
+  // Only the isolated edit project gets this synthetic second account/session.
+  const token = randomUUID();
+  const db = new Database(path.join(process.cwd(), "data/e2e-edit/db/capsule.sqlite"));
+  try {
+    const family = db.prepare("select id from family").get() as { id: string };
+    db.prepare("insert into user(id,name,email,role,family_id,created_at,updated_at) values ('trash-admin-c','另一位管理员','trash-c@fixture.invalid','admin',?,unixepoch(),unixepoch())").run(family.id);
+    db.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at) values (?,?,'trash-admin-c',unixepoch()+3600,unixepoch(),unixepoch())").run(randomUUID(), token);
+  } finally { db.close(); }
+  const otherContext = await browser.newContext({ baseURL, extraHTTPHeaders: { authorization: `Bearer ${token}` } });
+  try {
+    const other = await otherContext.newPage();
+    await other.goto("/trash");
+    await expect(other.getByRole("navigation", { name: "一级导航" })).toBeVisible();
+    const moveToTrash = async () => {
+      await page.getByRole("button", { name: "移到回收站", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "移到回收站", exact: true }).click();
+      await expect.poll(async () => (await page.request.get(`/api/mobile/v1${memoryUrl}`)).status()).toBe(404);
+      await page.goto("/trash");
+    };
+    await moveToTrash();
+    const entry = page.getByRole("list", { name: "回收站列表" }).getByRole("listitem").filter({ hasText: title });
+    await expect(entry).toBeVisible();
+    await other.reload();
+    await expect(other.locator("main")).not.toContainText(title);
+    expect((await other.request.get(`/api/mobile/v1${memoryUrl}`)).status()).toBe(404);
+    await entry.getByRole("button", { name: "恢复", exact: true }).click();
+    await expect(entry).toHaveCount(0);
+    await page.goto(memoryUrl);
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+    await expect(page.locator("main")).toContainText(body);
+    await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(fact);
+    await expect(page.locator("main")).toContainText("时间不确定");
+    expect((await (await page.request.get(`/api/mobile/v1${memoryUrl}`)).json()).occurredAtPrecision).toBe("unknown");
+    await page.getByRole("link", { name: "编辑档案", exact: true }).click();
+    await moveToTrash();
+    await entry.getByLabel("确认彻底清除").check();
+    await entry.getByRole("button", { name: "彻底清除", exact: true }).click();
+    await expect(entry).toHaveCount(0);
+    expect((await page.request.get(`/api/mobile/v1${memoryUrl}`)).status()).toBe(404);
+  } finally { await otherContext.close(); }
 });

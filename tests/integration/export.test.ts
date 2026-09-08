@@ -1,3 +1,4 @@
+import { testFamilyContext } from "../helpers/family-context";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -192,7 +193,7 @@ const privateContrib = await createContribution(familyId, {
   visibility: "private",
 });
 if (!privateContrib.ok) throw new Error("private contribution failed");
-await addFact(familyId, merged.eventId, "2026-08-10 全家一起去了一次公园。");
+await addFact(await testFamilyContext(adminUserId, familyId), merged.eventId, "2026-08-10 全家一起去了一次公园。");
 
 const capsuleCreated = await createCapsule(familyId, {
   title: "写给一岁的你",

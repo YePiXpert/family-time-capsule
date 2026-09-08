@@ -1,3 +1,4 @@
+import { testFamilyContext } from "../helpers/family-context";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -288,15 +289,15 @@ describe("多人视角（#012）", () => {
 describe("Fact（P0 手工）", () => {
   it("添加、确认状态、否决", async () => {
     const eventId = await makeEvent(4);
-    const f1 = await addFact(familyId, eventId, "小满在 2026-08-15 第一次笑出声。");
+    const f1 = await addFact(await testFamilyContext(adminUserId, familyId), eventId, "小满在 2026-08-15 第一次笑出声。");
     expect(f1?.status).toBe("user_confirmed");
     expect(f1?.statement).toContain("第一次笑出声");
 
-    const rejected = await setFactStatus(familyId, f1!.id, "rejected");
+    const rejected = await setFactStatus(await testFamilyContext(adminUserId, familyId), f1!.id, "rejected");
     expect(rejected?.status).toBe("rejected");
 
     // 其他家庭不能加 fact 到别人的事件
-    expect(await addFact(OTHER_FAMILY, eventId, "x")).toBeUndefined();
+    expect(await addFact({ ...await testFamilyContext(adminUserId, familyId), familyId: OTHER_FAMILY }, eventId, "x")).toBeUndefined();
     expect(await listFacts(OTHER_FAMILY, eventId)).toHaveLength(0);
   });
 });

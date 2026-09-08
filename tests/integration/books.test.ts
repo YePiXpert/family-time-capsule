@@ -122,7 +122,7 @@ describe("M6：故事书 PDF/EPUB", () => {
       new Date("2026-08-11T02:00:00.000Z"),
     );
     const { addFact, createContribution } = await import("@/lib/contributions/service");
-    await addFact(familyId, eventId, "小满出生时六斤八两。");
+    await addFact(context, eventId, "小满出生时六斤八两。");
     await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: adminPersonId,

@@ -147,7 +147,7 @@ describe("M4：Story 生命周期", () => {
       "出生那几天",
       new Date("2026-08-11T02:00:00.000Z"),
     );
-    await addFact(familyId, eventId, "小满出生时体重六斤八两。");
+    await addFact(context, eventId, "小满出生时体重六斤八两。");
     const pub = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: adminPersonId,
@@ -198,7 +198,7 @@ describe("M4：Story 生命周期", () => {
       "满月",
       new Date("2026-09-12T02:00:00.000Z"),
     );
-    await addFact(familyId, eventId, "满月当天全家到齐。");
+    await addFact(context, eventId, "满月当天全家到齐。");
     await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: adminPersonId,
@@ -248,7 +248,7 @@ describe("M4：Story 生命周期", () => {
       "百日宴",
       new Date("2026-11-18T02:00:00.000Z"),
     );
-    await addFact(familyId, eventId, "百日宴上小满穿了红色的小袄。");
+    await addFact(context, eventId, "百日宴上小满穿了红色的小袄。");
     const yAnchor = new Date("2026-11-20T00:00:00.000Z");
     const build = () =>
       planDeterministicDraft(
@@ -331,7 +331,7 @@ describe("M4：Story 生命周期", () => {
       "冬至",
       new Date("2026-12-21T10:00:00.000Z"),
     );
-    await addFact(familyId, eventId, "冬至全家一起包了饺子。");
+    await addFact(context, eventId, "冬至全家一起包了饺子。");
     const c = await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: adminPersonId,
@@ -443,7 +443,7 @@ describe("M4：Story 生命周期", () => {
       "周岁",
       new Date("2027-08-10T02:00:00.000Z"),
     );
-    await addFact(familyId, eventId, "小满周岁抓周抓住了画笔。");
+    await addFact(context, eventId, "小满周岁抓周抓住了画笔。");
     const yAnchor2 = new Date("2027-08-11T00:00:00.000Z");
     const plans = planDeterministicDraft(
       collectStoryMaterial(familyId, periodForKind("yearly", yAnchor2)),

@@ -1,3 +1,4 @@
+import { testFamilyContext } from "../helpers/family-context";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -459,7 +460,7 @@ describe("M3-D：精确 FactSource locator", () => {
       .run();
 
     // 用户确认事实
-    const confirmed = await setFactStatus(familyId, factId, "user_confirmed");
+    const confirmed = await setFactStatus(await testFamilyContext(adminId, familyId), factId, "user_confirmed");
     expect(confirmed).toBeTruthy();
 
     // STT 重跑：raw/segments 全变（edited 保留）

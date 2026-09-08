@@ -13,8 +13,9 @@
 - 已推送修复：`4b7b752d675d51d4b7abaf640d73799e54dca14a` 补齐完整旧行迁移预期；实际 `verify-upgrade12.mts` 的历史建库、正常升级、失败回滚、旧归档恢复/再导出及五份原件 hash 全部通过（`/tmp/ftc-r08-upgrade-ci-fixed.log`）；CI `34197311786` 四项全部 success，已核对同 SHA。
 - 已推送：`d1f0d6c12430490955838271bc8b64932944c6c0` R09 资料库/命名作者权限；CI `34198425767` 四项全部 success，已核对同 SHA。
 - 已推送：`d67c62b1ecc387684fa2449baa58b263d6ab2b29`（含 `789fef3` 讲述及 `d67c62b` 访客相册）；CI `34199522610` 四项全部 success，已核对同 SHA。
-- 已推送：`b23c3409ec160270c6d4e13db9d44ce0ccb1c26e` R10 故事/任务来源与 v3 归档；CI `34202975077` 手机、运维通过，Web 构建中，完整同 SHA 结论待核实。
-- 当前里程碑：R09 阅读包最终响应授权，相关本地验证通过，待提交/push 后核对同 SHA CI。
+- 已推送：`b23c3409ec160270c6d4e13db9d44ce0ccb1c26e` R10 故事/任务来源与 v3 归档；CI `34202975077` 四项全部 success，已核对同 SHA。
+- 已推送：`c6f32be5fb7ce89870d31b15bf816471c97ca286` R09 阅读包最终响应授权；CI `34204259752` Web/手机/运维通过，production E2E/恢复仍运行。
+- 当前里程碑：R09 事实和回收站管理权限；下一步已有事件双端分享/撤销、详情派生来源与受控缓存。
 - 开发版本保持 `1.0.0-dev.1`，只在 main；dev 用户；未操作生产。检测到同目录 opencode 后已询问并发状态，未停止进程，未发现并发文件修改。
 
 ## P0-A/B 实际证据
@@ -135,3 +136,14 @@ P0-D 实现与证据：
 - 根全量 136 文件/840 项通过（`/tmp/ftc-r09-reading-root.log`，最后 Unicode 标题增量前）；最终阅读包/实际出版 2 文件/12 项通过（`/tmp/ftc-r09-reading-final-regression.log`），包含 PDF 中文提取/逐页渲染、EPUBCheck 与断网 file:// 阅读。最终 typecheck/lint/build/build:ops 通过，13 条既存 lint warning；production book-projects/collections 7/7 通过（`/tmp/ftc-r09-reading-e2e-final.log`）。
 - 独立只读审查完成。孤立代理字符的正常创建/保存/真实ZIP下载本来就能通过（SQLite 标题规范化），不把防御性响应头处理宣称为已复现用户漏洞。产品版本、schema 与 archive 协议未新增变化。
 - 继续处理已有事件双端分享/撤销、回收站事件/讲述管理授权与受控缓存；当前不是 R09 全用户流程完成，也不是正式发行。
+
+
+## R09 事实与回收站管理
+
+- 添加/确认事实改为必须传入账号上下文，在写事务中按实际父事件检查当前作者/管理权；表单 eventId 不能替代事实真正的父事件。事实及索引一起提交。
+- 回收站读取、删除、恢复和永久清除复验当前账号、事件读者与讲述本人身份；角色为 admin 不再意味着可读写其他人的私密记录。恢复/清除必须已在回收站，普通入口默认仍排除软删行。
+- SQL 在每类 100 条限额前应用可见性与管理过滤，其他作者的较新私密记录不会挤掉本人的恢复入口。永久清除父事件会先检查全部讲述，拒绝连带删除其他作者内容；失败无部分删除，原件不会级联清除。
+- 真实 Server Actions/SQLite 五项先失败（`/tmp/ftc-r09-management-red.log`），另复现 101 条分页遮挡和跨作者级联删除（`/tmp/ftc-r09-trash-limit-red.log`、`/tmp/ftc-r09-trash-cascade-red.log`）。修复后回收站两文件 13 项通过，根全量 137 文件/848 项通过（`/tmp/ftc-r09-management-root.log`）。
+- production edit 3/3 通过（`/tmp/ftc-r09-management-e2e-final.log`）：Web 私密 unknown 创建、实际添加事实、删除、另一个真实管理员会话无标题/API 404、作者恢复保留正文/事实/unknown，再永久清除。首跑只是测试错用页面日期文案，已按实际“时间不确定”并额外断言 HTTP precision=unknown 修正。
+- 类型、lint、production build/build:ops 通过（`/tmp/ftc-r09-management-*.log`），13 条既存 lint warning；独立只读复审未发现本批剩余授权缺陷。无新 schema/归档协议，产品版本不变。最后添加事实索引移入事务后，相关 3 文件/19 项、typecheck/build/build:ops 与 production edit 3/3 再次通过（`/tmp/ftc-r09-management-final.log`、`/tmp/ftc-r09-management-*-final2.log`）。
+- 当前只是管理路径闭合；详情聚合与事实来源读取、已有事件双端分享撤销、原生授权缓存仍在内部待办，不提升 ID-11/ID-12 为完成。

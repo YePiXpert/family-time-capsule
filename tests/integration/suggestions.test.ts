@@ -403,7 +403,7 @@ describe("source-linked AI suggestions (M3-C)", () => {
 
   it("exports fact sources and accepted tags", async () => {
     const eventId = makeEvent("导出测试");
-    await addFact(familyId, eventId, "手工确认的事实。");
+    await addFact(adminContext, eventId, "手工确认的事实。");
     await createContribution(familyId, {
       memoryEventId: eventId,
       authorPersonId: adminPersonId,
@@ -456,7 +456,7 @@ describe("source-linked AI suggestions (M3-C)", () => {
 
   it("manual facts carry user_text source", async () => {
     const eventId = makeEvent();
-    const f = await addFact(familyId, eventId, "手工事实必须有来源。");
+    const f = await addFact(adminContext, eventId, "手工事实必须有来源。");
     expect(f).toBeTruthy();
     const sources = getDb()
       .select()

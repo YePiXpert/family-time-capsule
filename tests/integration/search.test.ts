@@ -178,7 +178,7 @@ describe("M4：FTS5 全文搜索", () => {
       searchFamily(adminContext, { q: "第一次走路" }).events.some((e) => e.id === eventId),
     ).toBe(true);
 
-    await addFact(familyId, eventId, "小满在客厅迈出了第一步。");
+    await addFact(adminContext, eventId, "小满在客厅迈出了第一步。");
     const factHit = searchFamily(adminContext, { q: "迈出了第一步" });
     expect(factHit.facts.some((f) => f.eventId === eventId)).toBe(true);
   });
@@ -227,13 +227,13 @@ describe("M4：FTS5 全文搜索", () => {
 
   it("事实拒绝后从索引移除；rejected/ai_suggested 事实不可搜索", async () => {
     const eventId = await makeEvent("事实状态");
-    const f = await addFact(familyId, eventId, "这条事实将被否决：独角兽出现了。");
+    const f = await addFact(adminContext, eventId, "这条事实将被否决：独角兽出现了。");
     if (!f) throw new Error("addFact failed");
     expect(
       searchFamily(adminContext, { q: "独角兽" }).facts.length,
     ).toBe(1);
 
-    await setFactStatus(familyId, f.id, "rejected");
+    await setFactStatus(adminContext, f.id, "rejected");
     expect(
       searchFamily(adminContext, { q: "独角兽" }).facts.length,
     ).toBe(0);

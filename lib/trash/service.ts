@@ -1,244 +1,143 @@
-import { familyStoryPredicate } from "@/lib/authz/story-access";
-import { deleteLibraryAsset } from "@/lib/assets/deletion";
-import { AssetLibraryError } from "@/lib/assets/library";
 import "server-only";
-
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
+import { user } from "@/db/schema/auth";
+import { auditLog } from "@/db/schema/audit";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent } from "@/db/schema/memory";
 import { story, storyParagraph } from "@/db/schema/story";
-import { assertFamilyCapability } from "@/lib/authz/policy";
-import { recordAudit } from "@/lib/audit/service";
+import { requiredAuditValues } from "@/lib/audit/service";
+import { canEditContribution, hasFamilyCapability, type FamilyCapability } from "@/lib/authz/policy";
+import { canManageEventVisibilityInTransaction, createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
+import { createContributionAccessSnapshot, getVisibleContributionInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
+import { familyStoryPredicate } from "@/lib/authz/story-access";
+import { deleteLibraryAsset } from "@/lib/assets/deletion";
+import { AssetLibraryError } from "@/lib/assets/library";
+import { indexContribution, indexFactIfConfirmed, indexMemoryEvent, indexStory, removeFromSearchIndex } from "@/lib/search/service";
 import type { FamilyContext } from "@/lib/family/context";
 
-/**
- * 回收站（M7，PRD §22）：MemoryEvent / Contribution / Story 的
- * 软删除 → 恢复 → 显式清除。
- *
- * - 软删除行在列表/详情/导出/搜索/故事素材中一律不可见（各查询过滤
- *   deletedAt IS NULL）；
- * - 清除是硬删除（行 + 级联链接），需要再次显式确认，写审计；
- * - Asset 永不因清除事件被连带物理删除：原件可能被多个事件/收件箱/胶囊
- *   引用；只有完全无引用时才允许物理删除（purgeAssetIfUnreferenced）。
- */
-
 export type TrashKind = "memory_event" | "contribution" | "story";
-
-export type TrashEntry = {
-  kind: TrashKind;
-  id: string;
-  label: string;
-  deletedAt: Date;
-};
-
-export type TrashMutation =
-  | { ok: true }
-  | { ok: false; error: string };
-
-function requireWrite(context: FamilyContext, capability: "event:write" | "story:write" | "contribution:create") {
-  assertFamilyCapability(context.role, capability);
+export type TrashEntry = { kind: TrashKind; id: string; label: string; deletedAt: Date };
+export type TrashMutation = { ok: true } | { ok: false; error: string };
+type Tx = ContributionAccessTransaction;
+const missing = { ok: false, error: "not_found" } as const;
+function liveActor(tx: Tx, context: FamilyContext, capability: FamilyCapability) {
+  return context.accountEnabled && hasFamilyCapability(context.role, capability) && Boolean(tx.select({ id: user.id }).from(user).where(sql`${user.id}=${context.userId} and ${user.familyId}=${context.familyId} and ${user.role}=${context.role} and ${user.disabledAt} is null`).get());
 }
-
-/** contribution 无 familyId 列：经其事件校验家庭归属。 */
-function contributionInFamily(db: ReturnType<typeof getDb>, contributionId: string, familyId: string) {
-  const row = db
-    .select({ id: contributionTable.id, familyId: memoryEvent.familyId })
-    .from(contributionTable)
-    .innerJoin(memoryEvent, eq(memoryEvent.id, contributionTable.memoryEventId))
-    .where(eq(contributionTable.id, contributionId))
-    .limit(1)
-    .get();
-  return row && row.familyId === familyId ? row : null;
+function write(context: FamilyContext, capability: FamilyCapability, mutate: (tx: Tx) => TrashMutation): TrashMutation {
+  if (!hasFamilyCapability(context.role, capability)) return { ok: false, error: "forbidden" };
+  return getDb().transaction(tx => liveActor(tx, context, capability) ? mutate(tx) : missing, { behavior: "immediate" });
 }
-
-
-// ---- 软删除 ----
-
-export function trashMemoryEvent(context: FamilyContext, eventId: string): TrashMutation {
-  try {
-    requireWrite(context, "event:write");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-  const db = getDb();
-  const row = db
-    .select({ id: memoryEvent.id, title: memoryEvent.title })
-    .from(memoryEvent)
-    .where(
-      and(
-        eq(memoryEvent.id, eventId),
-        eq(memoryEvent.familyId, context.familyId),
-        isNull(memoryEvent.deletedAt),
-      ),
-    )
-    .get();
-  if (!row) return { ok: false, error: "not_found" };
-  const now = new Date();
-  db.update(memoryEvent)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(eq(memoryEvent.id, eventId))
-    .run();
-  removeFromSearchIndex("memory_event", eventId);
-  // 事件删除时其确认事实同步移出索引
-  const facts = db
-    .select({ id: factTable.id })
-    .from(factTable)
-    .where(eq(factTable.memoryEventId, eventId))
-    .all();
-  for (const f of facts) removeFromSearchIndex("fact", f.id);
-  return { ok: true };
+function managedEvent(tx: Tx, context: FamilyContext, id: string) {
+  if (!canManageEventVisibilityInTransaction(tx, createEventAccessSnapshot(context), id, { includeDeleted: true })) return undefined;
+  return tx.select().from(memoryEvent).where(eq(memoryEvent.id, id)).get();
 }
-
-export function trashContribution(context: FamilyContext, contributionId: string): TrashMutation {
-  try {
-    requireWrite(context, "contribution:create");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-  const db = getDb();
-  const row = contributionInFamily(db, contributionId, context.familyId);
-  if (!row || !isNullDeleted(db, contributionId)) return { ok: false, error: "not_found" };
-  const now = new Date();
-  db.update(contributionTable)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(eq(contributionTable.id, contributionId))
-    .run();
-  removeFromSearchIndex("contribution", contributionId);
-  return { ok: true };
+function managedContribution(tx: Tx, context: FamilyContext, id: string) {
+  const row = getVisibleContributionInTransaction(tx, createContributionAccessSnapshot(context), id, { includeDeleted: true, includeDeletedEvent: true });
+  if (!row || !canEditContribution({ role: context.role, accountEnabled: context.accountEnabled, userPersonId: context.personId, authorPersonId: row.authorPersonId, isGuardian: context.isGuardian, childLaterUnlocked: false })) return undefined;
+  return tx.select().from(contributionTable).where(eq(contributionTable.id, id)).get();
 }
-
-function isNullDeleted(db: ReturnType<typeof getDb>, contributionId: string): boolean {
-  const row = db
-    .select({ deletedAt: contributionTable.deletedAt })
-    .from(contributionTable)
-    .where(eq(contributionTable.id, contributionId))
-    .get();
-  return row?.deletedAt == null;
+function managedStory(tx: Tx, context: FamilyContext, id: string) {
+  return tx.select().from(story).where(and(eq(story.id, id), eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`))).get();
 }
-
-export function trashStory(context: FamilyContext, storyId: string): TrashMutation {
-  try {
-    requireWrite(context, "story:write");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-  const db = getDb();
-  const row = db
-    .select({ id: story.id, status: story.status })
-    .from(story)
-    .where(
-      and(
-        eq(story.id, storyId),
-        eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`),
-        isNull(story.deletedAt),
-      ),
-    )
-    .get();
-  if (!row) return { ok: false, error: "not_found" };
-  const now = new Date();
-  db.update(story)
-    .set({ deletedAt: now, updatedAt: now })
-    .where(eq(story.id, storyId))
-    .run();
-  removeFromSearchIndex("story", storyId);
-  return { ok: true };
+function removeEventIndex(tx: Tx, id: string) {
+  removeFromSearchIndex("memory_event", id);
+  for (const row of tx.select({ id: factTable.id }).from(factTable).where(eq(factTable.memoryEventId, id)).all()) removeFromSearchIndex("fact", row.id);
 }
-
-// ---- 恢复 ----
-
+export function trashMemoryEvent(context: FamilyContext, id: string): TrashMutation {
+  return write(context, "event:write", tx => {
+    const row = managedEvent(tx, context, id);
+    if (!row || row.deletedAt) return missing;
+    tx.update(memoryEvent).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(memoryEvent.id, id)).run();
+    removeEventIndex(tx, id);
+    return { ok: true };
+  });
+}
+export function trashContribution(context: FamilyContext, id: string): TrashMutation {
+  return write(context, "contribution:create", tx => {
+    const row = managedContribution(tx, context, id);
+    if (!row || row.deletedAt) return missing;
+    tx.update(contributionTable).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(contributionTable.id, id)).run();
+    removeFromSearchIndex("contribution", id);
+    return { ok: true };
+  });
+}
+export function trashStory(context: FamilyContext, id: string): TrashMutation {
+  return write(context, "story:write", tx => {
+    const row = managedStory(tx, context, id);
+    if (!row || row.deletedAt) return missing;
+    tx.update(story).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(story.id, id)).run();
+    removeFromSearchIndex("story", id);
+    return { ok: true };
+  });
+}
 export function restoreFromTrash(context: FamilyContext, kind: TrashKind, id: string): TrashMutation {
-  const db = getDb();
-  const now = new Date();
-  if (kind === "memory_event") {
-    try {
-      requireWrite(context, "event:write");
-    } catch {
-      return { ok: false, error: "forbidden" };
-    }
-    const result = db
-      .update(memoryEvent)
-      .set({ deletedAt: null, updatedAt: now })
-      .where(
-        and(
-          eq(memoryEvent.id, id),
-          eq(memoryEvent.familyId, context.familyId),
-        ),
-      )
-      .run();
-    if (result.changes === 0) return { ok: false, error: "not_found" };
-    reindexEvent(id);
+  return write(context, kind === "memory_event" ? "event:write" : kind === "contribution" ? "contribution:create" : "story:write", tx => {
+    if (kind === "memory_event") {
+      const row = managedEvent(tx, context, id);
+      if (!row?.deletedAt) return missing;
+      tx.update(memoryEvent).set({ deletedAt: null, updatedAt: new Date() }).where(eq(memoryEvent.id, id)).run();
+      reindexEvent(id);
+    } else if (kind === "contribution") {
+      const row = managedContribution(tx, context, id);
+      if (!row?.deletedAt) return missing;
+      tx.update(contributionTable).set({ deletedAt: null, updatedAt: new Date() }).where(eq(contributionTable.id, id)).run();
+      indexContribution({ ...row, familyId: context.familyId });
+    } else if (kind === "story") {
+      const row = managedStory(tx, context, id);
+      if (!row?.deletedAt) return missing;
+      tx.update(story).set({ deletedAt: null, updatedAt: new Date() }).where(eq(story.id, id)).run();
+      if (row.status === "published") {
+        const text = tx.select({ text: storyParagraph.text }).from(storyParagraph).where(eq(storyParagraph.storyId, id)).all().map(p => p.text).join("\n");
+        indexStory({ id, familyId: context.familyId, title: row.title, bodyText: text });
+      }
+    } else return missing;
     return { ok: true };
-  }
-  if (kind === "contribution") {
-    try {
-      requireWrite(context, "contribution:create");
-    } catch {
-      return { ok: false, error: "forbidden" };
-    }
-    const owned = contributionInFamily(db, id, context.familyId);
-    if (!owned) return { ok: false, error: "not_found" };
-    db.update(contributionTable)
-      .set({ deletedAt: null, updatedAt: now })
-      .where(eq(contributionTable.id, id))
-      .run();
-    const row = db
-      .select()
-      .from(contributionTable)
-      .where(eq(contributionTable.id, id))
-      .get();
-    const eventRow = db
-      .select({ familyId: memoryEvent.familyId })
-      .from(memoryEvent)
-      .where(eq(memoryEvent.id, row?.memoryEventId ?? ""))
-      .get();
-    if (row && eventRow) {
-      indexContribution({
-        id: row.id,
-        familyId: eventRow.familyId,
-        memoryEventId: row.memoryEventId,
-        authorPersonId: row.authorPersonId,
-        rawText: row.rawText,
-        editedText: row.editedText,
-        visibility: row.visibility,
-      });
-    }
-    return { ok: true };
-  }
-  // story
-  try {
-    requireWrite(context, "story:write");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-  const result = db
-    .update(story)
-    .set({ deletedAt: null, updatedAt: now })
-    .where(and(eq(story.id, id), eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`)))
-    .run();
-  if (result.changes === 0) return { ok: false, error: "not_found" };
-  const row = db.select().from(story).where(eq(story.id, id)).get();
-  if (row && row.status === "published") {
-    const body = db
-      .select({ text: storyParagraph.text })
-      .from(storyParagraph)
-      .where(eq(storyParagraph.storyId, id))
-      .all()
-      .map((p) => p.text)
-      .join("\n");
-    indexStory({ id: row.id, familyId: row.familyId, title: row.title, bodyText: body });
-  }
-  return { ok: true };
+  });
 }
-
-// 静态导入（搜索服务不依赖回收站，无循环）
-import {
-  indexContribution,
-  indexFactIfConfirmed,
-  indexMemoryEvent,
-  indexStory,
-  removeFromSearchIndex,
-} from "@/lib/search/service";
+export function purgeFromTrash(context: FamilyContext, kind: TrashKind, id: string): TrashMutation {
+  return write(context, kind === "memory_event" ? "event:write" : kind === "contribution" ? "contribution:create" : "story:write", tx => {
+    if (kind === "memory_event") {
+      if (!managedEvent(tx, context, id)?.deletedAt) return missing;
+      const children = tx.select({ id: contributionTable.id }).from(contributionTable).where(eq(contributionTable.memoryEventId, id)).all();
+      if (children.some(row => !managedContribution(tx, context, row.id))) return { ok: false, error: "other_authors_content" };
+      removeEventIndex(tx, id);
+      for (const row of children) removeFromSearchIndex("contribution", row.id);
+      tx.delete(contributionTable).where(eq(contributionTable.memoryEventId, id)).run();
+      tx.delete(memoryEvent).where(eq(memoryEvent.id, id)).run();
+    } else if (kind === "contribution") {
+      if (!managedContribution(tx, context, id)?.deletedAt) return missing;
+      tx.delete(contributionTable).where(eq(contributionTable.id, id)).run();
+      removeFromSearchIndex("contribution", id);
+    } else if (kind === "story") {
+      if (!managedStory(tx, context, id)?.deletedAt) return missing;
+      tx.delete(story).where(eq(story.id, id)).run();
+      removeFromSearchIndex("story", id);
+    } else return missing;
+    tx.insert(auditLog).values(requiredAuditValues(context.familyId, `${kind}.purged`, context.userId, kind === "memory_event" ? { eventId: id } : { id })).run();
+    return { ok: true };
+  });
+}
+export function listTrash(context: FamilyContext): TrashEntry[] {
+  return getDb().transaction(tx => {
+    if (!liveActor(tx, context, "archive:view")) return [];
+    const entries: TrashEntry[] = [];
+    const visibleEvent = eventVisibilityCondition(createEventAccessSnapshot(context));
+    const eventManager = hasFamilyCapability(context.role, "event:write") ? sql`(${memoryEvent.visibility}='family' or ${memoryEvent.createdByUserId}=${context.userId})` : sql`0`;
+    const ownWords = context.personId && hasFamilyCapability(context.role, "contribution:create") ? eq(contributionTable.authorPersonId, context.personId) : sql`0`;
+    for (const row of tx.select().from(memoryEvent).where(and(eq(memoryEvent.familyId, context.familyId), visibleEvent, eventManager, sql`${memoryEvent.deletedAt} is not null`)).orderBy(desc(memoryEvent.deletedAt)).limit(100).all()) {
+      if (row.deletedAt && managedEvent(tx, context, row.id)) entries.push({ kind: "memory_event", id: row.id, label: row.title, deletedAt: row.deletedAt });
+    }
+    const contributions = tx.select({ row: contributionTable }).from(contributionTable).innerJoin(memoryEvent, eq(memoryEvent.id, contributionTable.memoryEventId)).where(and(eq(memoryEvent.familyId, context.familyId), visibleEvent, ownWords, sql`${contributionTable.deletedAt} is not null`)).orderBy(desc(contributionTable.deletedAt)).limit(100).all();
+    for (const { row } of contributions) {
+      if (row.deletedAt && managedContribution(tx, context, row.id)) entries.push({ kind: "contribution", id: row.id, label: `讲述：${(row.editedText ?? row.rawText ?? "").replace(/\s+/gu, " ").slice(0, 40)}`, deletedAt: row.deletedAt });
+    }
+    for (const row of tx.select().from(story).where(and(eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`), sql`${story.deletedAt} is not null`)).orderBy(desc(story.deletedAt)).limit(100).all()) {
+      if (row.deletedAt && hasFamilyCapability(context.role, "story:write")) entries.push({ kind: "story", id: row.id, label: row.title, deletedAt: row.deletedAt });
+    }
+    return entries;
+  });
+}
 
 function reindexEvent(eventId: string): void {
   const db = getDb();
@@ -261,131 +160,7 @@ function reindexEvent(eventId: string): void {
   }
 }
 
-// ---- 清除（硬删除） ----
 
-export function purgeFromTrash(context: FamilyContext, kind: TrashKind, id: string): TrashMutation {
-  const db = getDb();
-  if (kind === "memory_event") {
-    try {
-      requireWrite(context, "event:write");
-    } catch {
-      return { ok: false, error: "forbidden" };
-    }
-    const row = db
-      .select({ id: memoryEvent.id })
-      .from(memoryEvent)
-      .where(
-        and(
-          eq(memoryEvent.id, id),
-          eq(memoryEvent.familyId, context.familyId),
-        ),
-      )
-      .get();
-    if (!row) return { ok: false, error: "not_found" };
-    // 事件下的讲述也一并清除（它们依附于事件）
-    db.delete(contributionTable).where(eq(contributionTable.memoryEventId, id)).run();
-    db.delete(memoryEvent).where(eq(memoryEvent.id, id)).run();
-    removeFromSearchIndex("memory_event", id);
-    void recordAudit(context.familyId, "memory_event.purged", context.userId, { eventId: id });
-    return { ok: true };
-  }
-  if (kind === "contribution") {
-    try {
-      requireWrite(context, "contribution:create");
-    } catch {
-      return { ok: false, error: "forbidden" };
-    }
-    const owned = contributionInFamily(db, id, context.familyId);
-    if (!owned) return { ok: false, error: "not_found" };
-    db.delete(contributionTable).where(eq(contributionTable.id, id)).run();
-    removeFromSearchIndex("contribution", id);
-    return { ok: true };
-  }
-  try {
-    requireWrite(context, "story:write");
-  } catch {
-    return { ok: false, error: "forbidden" };
-  }
-  const row = db
-    .select({ id: story.id })
-    .from(story)
-    .where(and(eq(story.id, id), eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`)))
-    .get();
-  if (!row) return { ok: false, error: "not_found" };
-  db.delete(story).where(eq(story.id, id)).run();
-  removeFromSearchIndex("story", id);
-  return { ok: true };
-}
-
-// ---- 列表 ----
-
-export function listTrash(context: FamilyContext): TrashEntry[] {
-  const db = getDb();
-  const entries: TrashEntry[] = [];
-
-  const events = db
-    .select({ id: memoryEvent.id, title: memoryEvent.title, deletedAt: memoryEvent.deletedAt })
-    .from(memoryEvent)
-    .where(
-      and(
-        eq(memoryEvent.familyId, context.familyId),
-        sql`${memoryEvent.deletedAt} is not null`,
-      ),
-    )
-    .orderBy(desc(memoryEvent.deletedAt))
-    .limit(100)
-    .all();
-  for (const e of events) {
-    if (e.deletedAt) entries.push({ kind: "memory_event", id: e.id, label: e.title, deletedAt: e.deletedAt });
-  }
-
-  const contributions = db
-    .select({
-      id: contributionTable.id,
-      text: contributionTable.editedText,
-      raw: contributionTable.rawText,
-      deletedAt: contributionTable.deletedAt,
-    })
-    .from(contributionTable)
-    .innerJoin(memoryEvent, eq(memoryEvent.id, contributionTable.memoryEventId))
-    .where(
-      and(
-        eq(memoryEvent.familyId, context.familyId),
-        sql`${contributionTable.deletedAt} is not null`,
-      ),
-    )
-    .orderBy(desc(contributionTable.deletedAt))
-    .limit(100)
-    .all();
-  for (const c of contributions) {
-    if (c.deletedAt) {
-      const text = (c.text ?? c.raw ?? "").replace(/\s+/gu, " ").slice(0, 40);
-      entries.push({ kind: "contribution", id: c.id, label: `讲述：${text}`, deletedAt: c.deletedAt });
-    }
-  }
-
-  const stories = db
-    .select({ id: story.id, title: story.title, deletedAt: story.deletedAt })
-    .from(story)
-    .where(
-      and(eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`), sql`${story.deletedAt} is not null`),
-    )
-    .orderBy(desc(story.deletedAt))
-    .limit(100)
-    .all();
-  for (const st of stories) {
-    if (st.deletedAt) entries.push({ kind: "story", id: st.id, label: st.title, deletedAt: st.deletedAt });
-  }
-
-  return entries;
-}
-
-// ---- Asset 物理删除守卫 ----
-
-/**
- * 只有完全无引用的素材才允许物理删除（含其衍生物与文件）。
- * 返回 false = 仍被引用（调用方应保持文件）。
- */
 export function purgeAssetIfUnreferenced(context: FamilyContext, assetId: string): { ok: true; deleted: boolean } | { ok: false; error: string } {
   try {
     const result = deleteLibraryAsset(context, assetId, true);

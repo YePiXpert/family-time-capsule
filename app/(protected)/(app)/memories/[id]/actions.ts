@@ -214,11 +214,11 @@ export async function addFactAction(
   _prev: ContributionFormState | undefined,
   formData: FormData,
 ): Promise<ContributionFormState> {
-  const { familyId } = await requireFamilyCapability("event:write");
+  const context = await requireFamilyCapability("event:write");
   const memoryEventId = String(formData.get("memoryEventId") ?? "");
   const statement = String(formData.get("statement") ?? "");
-  const row = await addFact(familyId, memoryEventId, statement);
-  if (!row) return { error: "事实陈述需 1–500 字。" };
+  const row = await addFact(context, memoryEventId, statement);
+  if (!row) return { error: "无法添加事实，请检查内容和当前编辑权限。" };
   revalidatePath(`/memories/${memoryEventId}`);
   return {};
 }
@@ -227,11 +227,11 @@ export async function setFactStatusAction(
   _prev: ContributionFormState | undefined,
   formData: FormData,
 ): Promise<ContributionFormState> {
-  const { familyId } = await requireFamilyCapability("event:write");
+  const context = await requireFamilyCapability("event:write");
   const factId = String(formData.get("factId") ?? "");
   const memoryEventId = String(formData.get("memoryEventId") ?? "");
   const status = String(formData.get("status") ?? "") === "rejected" ? "rejected" : "user_confirmed";
-  const row = await setFactStatus(familyId, factId, status);
+  const row = await setFactStatus(context, factId, status);
   if (!row) return { error: "操作失败。" };
   revalidatePath(`/memories/${memoryEventId}`);
   return {};

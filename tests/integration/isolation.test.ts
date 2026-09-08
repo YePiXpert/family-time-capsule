@@ -1,3 +1,4 @@
+import { testFamilyContext } from "../helpers/family-context";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -280,10 +281,10 @@ describe("Contribution / Fact 隔离", () => {
     ).toBeNull(); // A 的原文未被篡改
 
     // Fact
-    const factA = await addFact(familyA, confirmed.eventId, "A家事实");
+    const factA = await addFact(await testFamilyContext(userA, familyA), confirmed.eventId, "A家事实");
     expect(factA).toBeTruthy();
     expect(await listFacts(familyB, confirmed.eventId)).toHaveLength(0);
-    expect(await setFactStatus(familyB, factA!.id, "rejected")).toBeUndefined();
+    expect(await setFactStatus({ ...await testFamilyContext(userA, familyA), familyId: familyB }, factA!.id, "rejected")).toBeUndefined();
     expect((await listFacts(familyA, confirmed.eventId))[0].status).toBe("user_confirmed");
   });
 });

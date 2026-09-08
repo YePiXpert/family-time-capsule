@@ -91,6 +91,7 @@ export function getVisibleMemoryEventInTransaction(
   tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
   snapshot: EventAccessSnapshot,
   eventId: string,
+  options: { includeDeleted?: boolean } = {},
 ): VisibleEventAuthorizationRow | undefined {
   const live = tx
     .select({ id: userTable.id })
@@ -114,7 +115,7 @@ export function getVisibleMemoryEventInTransaction(
     .where(
       sql`${memoryEvent.id} = ${eventId}
         and ${memoryEvent.familyId} = ${snapshot.principal.familyId}
-        and ${memoryEvent.deletedAt} is null`,
+        and ${options.includeDeleted ? sql`1` : sql`${memoryEvent.deletedAt} is null`}`,
     )
     .limit(1)
     .get();
@@ -144,8 +145,9 @@ export function canManageEventVisibilityInTransaction(
   tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
   snapshot: EventAccessSnapshot,
   eventId: string,
+  options: { includeDeleted?: boolean } = {},
 ): boolean {
-  const row = getVisibleMemoryEventInTransaction(tx, snapshot, eventId);
+  const row = getVisibleMemoryEventInTransaction(tx, snapshot, eventId, options);
   if (!row) return false;
   return canManageEventVisibility(row.visibility, row.createdByUserId, {
     role: snapshot.principal.role,

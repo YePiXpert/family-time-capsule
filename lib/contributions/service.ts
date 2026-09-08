@@ -1,6 +1,7 @@
-import { eventVisibilityCondition } from "@/lib/authz/event-access";
 import "server-only";
 
+import { canManageEventVisibilityInTransaction, createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
+import type { FamilyContext } from "@/lib/family/context";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -419,16 +420,17 @@ export async function listRecentVoiceContributions(
 }
 
 export async function addFact(
-  familyId: string,
+  context: FamilyContext,
   memoryEventId: string,
   statement: string,
 ): Promise<FactRow | undefined> {
   const trimmed = statement.trim();
   if (trimmed.length < 1 || trimmed.length > 500) return undefined;
-  if (!(await eventBelongsToFamily(familyId, memoryEventId))) return undefined;
+  const familyId = context.familyId;
   const db = getDb();
   const now = new Date();
   const factRow = db.transaction((tx) => {
+    if (!canManageEventVisibilityInTransaction(tx, createEventAccessSnapshot(context), memoryEventId)) return undefined;
     const rows = tx
       .insert(fact)
       .values({
@@ -453,46 +455,32 @@ export async function addFact(
         createdAt: now,
       })
       .run();
-    return row;
-  });
-  if (factRow) {
     indexFactIfConfirmed({
-      id: factRow.id,
+      id: row.id,
       familyId,
       memoryEventId,
-      statement: factRow.statement,
-      status: factRow.status,
+      statement: row.statement,
+      status: row.status,
     });
-  }
+    return row;
+  }, { behavior: "immediate" });
   return factRow;
 }
 
 export async function setFactStatus(
-  familyId: string,
+  context: FamilyContext,
   factId: string,
   status: "user_confirmed" | "rejected",
 ): Promise<FactRow | undefined> {
+  if (status !== "user_confirmed" && status !== "rejected") return undefined;
   const db = getDb();
-  // 先取行校验归属，再更新（防止跨家庭写入）
-  const existing = await db.select().from(fact).where(eq(fact.id, factId)).limit(1);
-  const row = existing[0];
-  if (!row) return undefined;
-  if (!(await eventBelongsToFamily(familyId, row.memoryEventId))) return undefined;
-  const rows = await db
-    .update(fact)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(fact.id, factId))
-    .returning();
-  if (rows[0]) {
-    indexFactIfConfirmed({
-      id: rows[0].id,
-      familyId,
-      memoryEventId: rows[0].memoryEventId,
-      statement: rows[0].statement,
-      status: rows[0].status,
-    });
-  }
-  return rows[0];
+  return db.transaction(tx => {
+    const row = tx.select().from(fact).where(eq(fact.id, factId)).get();
+    if (!row || !canManageEventVisibilityInTransaction(tx, createEventAccessSnapshot(context), row.memoryEventId)) return undefined;
+    const updated = tx.update(fact).set({ status, updatedAt: new Date() }).where(eq(fact.id, factId)).returning().get();
+    if (updated) indexFactIfConfirmed({ id: updated.id, familyId: context.familyId, memoryEventId: updated.memoryEventId, statement: updated.statement, status: updated.status });
+    return updated;
+  }, { behavior: "immediate" });
 }
 
 export async function listFacts(

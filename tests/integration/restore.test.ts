@@ -1,3 +1,4 @@
+import { testFamilyContext } from "../helpers/family-context";
 import fs, {
   existsSync,
   mkdtempSync,
@@ -307,7 +308,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       visibility: "private",
     });
     if (!privateContrib.ok) throw new Error("private contribution failed");
-    await m.contributions.addFact(familyId, e1, "2026-08-10 小满出生。");
+    await m.contributions.addFact(await testFamilyContext(adminId, familyId), e1, "2026-08-10 小满出生。");
 
     // 封存胶囊（未到期）
     const cap = await m.capsules.createCapsule(familyId, {

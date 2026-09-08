@@ -174,7 +174,7 @@ it("excludes confirmed facts with withdrawn evidence and invalidates cross-event
   const made = await createContribution(familyId, { memoryEventId: source.eventId, authorPersonId: binding.personId!, recordedByUserId: actor.id, rawText: "仅供引用的合成讲述", visibility: "family" });
   if (!made.ok) throw new Error("contribution fixture failed");
   const evidence = getDb().select().from(contribution).where(eq(contribution.memoryEventId, source.eventId)).get()!;
-  const fact = await addFact(familyId, target.eventId, "仅据另一事件讲述确认的紫色风筝事实");
+  const fact = await addFact(context, target.eventId, "仅据另一事件讲述确认的紫色风筝事实");
   if (!fact) throw new Error("fact fixture failed");
   getDb().update(factSource).set({ sourceType: "contribution", sourceId: evidence.id }).where(eq(factSource.factId, fact.id)).run();
   const queued = requestEventSuggestions(context, target.eventId, { runtime: ai }); if (!queued.ok) throw new Error(queued.error);

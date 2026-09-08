@@ -170,6 +170,7 @@ export function getVisibleContributionInTransaction(
   tx: ContributionAccessTransaction,
   snapshot: ContributionAccessSnapshot,
   contributionId: string,
+  options: { includeDeleted?: boolean; includeDeletedEvent?: boolean } = {},
 ): VisibleContributionAuthorizationRow | undefined {
   const row = tx
     .select({
@@ -207,9 +208,9 @@ export function getVisibleContributionInTransaction(
       and(
         eq(contribution.id, contributionId),
         eq(memoryEvent.familyId, snapshot.principal.familyId),
-        isNull(memoryEvent.deletedAt),
+        options.includeDeletedEvent ? undefined : isNull(memoryEvent.deletedAt),
         // M7 Trash：软删除的讲述按不存在处理
-        isNull(contribution.deletedAt),
+        options.includeDeleted ? undefined : isNull(contribution.deletedAt),
         visibilityPredicate(snapshot),
         eventVisibilityCondition(eventSnapshotOf(snapshot)),
       ),

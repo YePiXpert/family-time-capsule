@@ -93,7 +93,7 @@ export async function purgeTrashAction(
   if (!kind) return { error: "未知类型。" };
   if (confirm !== "purge") return { error: "请勾选确认后再清除。" };
   const result = purgeFromTrash(context, kind, id);
-  if (!result.ok) return { error: "清除失败。" };
+  if (!result.ok) return { error: result.error === "other_authors_content" ? "这条记忆仍有其他家人的讲述，不能一并彻底清除。可以先恢复记忆，保留他们的原话。" : "清除失败。" };
   revalidatePath("/trash");
   return { message: "已彻底清除。" };
 }
