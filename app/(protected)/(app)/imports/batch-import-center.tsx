@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/ui/icons";
 import { describeUploadError } from "@/components/upload-request";
 import { runBoundedImportPool } from "@/lib/imports/pool";
+
+const subscribeToClient = () => () => {};
 
 type PersonOption = { id: string; displayName: string; isChild: boolean };
 type ServerUpload = {
@@ -117,6 +119,7 @@ export function BatchImportCenter({
   initial?: ImportSessionDto;
 }) {
   const router = useRouter();
+  const ready = useSyncExternalStore(subscribeToClient, () => true, () => false);
   const [session, setSession] = useState(initial?.session ?? null);
   const [serverItems, setServerItems] = useState(initial?.items ?? []);
   const [localItems, setLocalItems] = useState<LocalItem[]>([]);
@@ -434,7 +437,7 @@ export function BatchImportCenter({
         <p className="mt-2 text-sm leading-6 text-muted">多选文件，或拖到这里。支持 PDF、TXT、Markdown、RTF、DOCX；HTML 与 SVG 不会作为文档接收。</p>
         <label className="ui-button-primary mt-4 cursor-pointer">
           {needsFiles ? "重新选择同一文件继续" : "选择多份文件"}
-          <input type="file" multiple accept={ACCEPT} className="sr-only" onChange={(event) => {
+          <input type="file" multiple accept={ACCEPT} disabled={!ready || working} className="sr-only" onChange={(event) => {
             void selectFiles(Array.from(event.target.files ?? []));
             event.target.value = "";
           }} />

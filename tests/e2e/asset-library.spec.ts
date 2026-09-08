@@ -4,10 +4,30 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
 import { ensureBootstrap } from "./helpers";
+test("导入脚本尚未就绪时禁用文件选择，就绪后文件只需选择一次", async ({ page, browser, baseURL }) => {
+  await ensureBootstrap(page);
+  const context = await browser.newContext({ baseURL, storageState: await page.context().storageState() });
+  let release!: () => void;
+  const scripts = new Promise<void>(resolve => { release = resolve; });
+  try {
+    const importing = await context.newPage();
+    await importing.route(/\/_next\/static\/.*\.js(?:\?|$)/, async route => { await scripts; await route.continue(); });
+    await importing.goto("/imports", { waitUntil: "commit" });
+    const input = importing.getByLabel("选择多份文件");
+    await expect(input).toBeVisible();
+    await expect(input).toBeDisabled();
+    release();
+    await expect(input).toBeEnabled();
+    await input.setInputFiles({ name: "一次选择.jpg", mimeType: "image/jpeg", buffer: await sharp({ create: { width: 20, height: 20, channels: 3, background: "blue" } }).jpeg().toBuffer() });
+    await expect(importing.getByRole("button", { name: "开始导入", exact: true })).toBeVisible();
+    await expect(importing.locator("main")).toContainText("一次选择.jpg");
+  } finally { release(); await context.close(); }
+});
 test("资料库：30 张先保全，5 张组成一条记忆，25 张仍在；原件直接加入相册", async ({ page }) => {
   await ensureBootstrap(page);
   await page.goto("/imports");
   const files = await Promise.all(Array.from({ length: 30 }, async (_, n) => ({ name: `IMG_${n}.jpg`, mimeType: "image/jpeg", buffer: await sharp({ create: { width: 40, height: 30, channels: 3, background: { r: n * 8, g: 100, b: 80 } } }).jpeg().toBuffer() })));
+  await expect(page.getByLabel("选择多份文件")).toBeEnabled();
   await page.getByLabel("选择多份文件").setInputFiles(files);
   await page.getByRole("button", { name: "开始导入" }).click();
   await expect(page.getByText("服务器已完成 30/30")).toBeVisible({ timeout: 45000 });
