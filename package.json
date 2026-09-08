@@ -22,6 +22,8 @@
     "pretest:e2e": "npm run build && npm run build:ops",
     "test:e2e": "playwright test && vitest run --config vitest.roundtrip.config.ts",
     "test:ops": "vitest run --config vitest.ops.config.ts",
+    "demo": "node scripts/demo.mjs",
+    "demo:seed": "tsx --conditions=react-server scripts/demo-seed.mts",
     "restore:principals": "tsx --conditions=react-server scripts/restore-principals.ts"
   },
   "dependencies": {

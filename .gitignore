@@ -43,6 +43,7 @@ next-env.d.ts
 
 # family-time-capsule：本地媒体与数据库（PRD §11，data/ 整体不进 git）
 /data/
+/demo-data/
 
 # sqlite
 *.sqlite

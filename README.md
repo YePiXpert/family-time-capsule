@@ -105,6 +105,20 @@ cp .env.example .env   # 按需调整 DATA_DIR / AUTH_SECRET / INITIAL_SETUP_TOK
 npm run dev            # http://localhost:3000
 ```
 
+### 一键本地演示
+
+不想到走初始化流程、只想先看产品样子：
+
+```bash
+npm run demo           # 首次自动生成合成演示数据，然后启动服务端 + worker
+```
+
+浏览器打开 <http://localhost:3000/login>，用 `demo@family.local` / `demo-family-2026` 登录。
+演示数据在独立的 `demo-data/` 目录（不碰 `./data` 正式档案）：合成「小满家」四口人、
+15 条跨三年、六档日期精度的记忆（程序生成的插画照片与 WAV 音频，无任何真实人物数据）、
+一条仅自己可见的私密记忆、置顶成长节点和一个封存到 18 岁的时间胶囊。
+`npm run demo -- --reset` 随时重建；只生成数据不启动服务用 `npm run demo:seed`。
+
 ### 首次初始化（私有注册策略）
 
 本项目**没有公开注册**。首次部署后：
