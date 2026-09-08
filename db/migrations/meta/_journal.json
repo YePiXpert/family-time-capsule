@@ -463,6 +463,27 @@
       "when": 1788876000015,
       "tag": "0065_ai_dispatch",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1788876000016,
+      "tag": "0066_memory_body",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1788876000017,
+      "tag": "0067_restore_principals",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1788876000018,
+      "tag": "0068_book_owner_user",
+      "breakpoints": true
     }
   ]
 }

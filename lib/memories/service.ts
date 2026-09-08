@@ -262,6 +262,7 @@ export async function updateMemoryEvent(
         editedByUserId: editorUserId,
         snapshotJson: JSON.stringify({
           title: current.title,
+          bodyText: current.bodyText,
           titleSource: current.titleSource,
           titleRevision: current.titleRevision,
           occurredAt: current.occurredAt.toISOString(),
@@ -519,6 +520,7 @@ export async function confirmInboxEntry(
         familyId,
         childPersonId,
         title,
+        bodyText: current.rawText ?? "",
         titleSource: title !== fallbackTitle ? "manual" : entry.item.draftTitle ? entry.item.titleSource : "rule_generated",
         occurredAt,
         occurredAtPrecision: precision,
@@ -675,6 +677,7 @@ export async function mergeInboxEntries(
         familyId,
         childPersonId,
         title,
+        bodyText: [...entries].sort((a,b) => a.item.createdAt.getTime() - b.item.createdAt.getTime() || a.item.id.localeCompare(b.item.id)).map(e => e.item.rawText ?? "").filter(text => text.trim()).join("\n\n"),
         titleSource: "manual",
         occurredAt,
         occurredAtPrecision: "exact",
@@ -813,26 +816,16 @@ export async function getMemoryEventDetail(  familyId: string,
           .orderBy(asc(personTable.createdAt))
       : [];
 
-  const linkedTextItems = await db
-    .select({
-      id: inboxItem.id,
-      rawText: inboxItem.rawText,
-      createdAt: inboxItem.createdAt,
-    })
-    .from(inboxItem)
-    .where(
-      and(
-        eq(inboxItem.familyId, familyId),
-        eq(inboxItem.memoryEventId, eventId),
-        isNotNull(inboxItem.rawText),
-      ),
-    )
-    .orderBy(asc(inboxItem.createdAt));
-  const sourceNotes = linkedTextItems.flatMap((item) =>
-    item.rawText === null
-      ? []
-      : [{ id: item.id, rawText: item.rawText, createdAt: item.createdAt }],
-  );
+  // Preserve original source identities when they still exactly represent the
+  // canonical body. Stale mirrors must never replace an edited/empty body.
+  const notes = await db.select({ id: inboxItem.id, rawText: inboxItem.rawText, createdAt: inboxItem.createdAt }).from(inboxItem)
+    .where(and(eq(inboxItem.familyId, familyId), eq(inboxItem.memoryEventId, eventId)))
+    .orderBy(asc(inboxItem.createdAt), asc(inboxItem.id));
+  const linkedNotes = notes.flatMap(note => note.rawText?.trim() ? [{ ...note, rawText: note.rawText }] : []);
+  const body = events[0].bodyText;
+  const sourceNotes = !body ? [] : linkedNotes.length && linkedNotes.map(n => n.rawText).join("\n\n") === body
+    ? linkedNotes
+    : [{ id: events[0].id, rawText: body, createdAt: events[0].createdAt }];
 
   const livePhotos = [...new Set(assetLinks.flatMap(l => l.livePhotoGroupId ? [l.livePhotoGroupId] : []))].flatMap(groupId => {
     const image = assetLinks.find(l => l.livePhotoGroupId === groupId && l.livePhotoRole === "image");
@@ -936,8 +929,7 @@ export async function updateMemoryEventVisibility(
     // 索引按新可见性重建；搜索查询侧同时有实时裁决，双保险。
     const event = db.select().from(memoryEvent).where(eq(memoryEvent.id, eventId)).get();
     if (event) {
-      const sourceDraft = db.select({ text: draft.text }).from(draft).where(eq(draft.memoryEventId, eventId)).get();
-      indexMemoryEvent(event.visibility === "family" ? event : { ...event, text: sourceDraft?.text ?? "" });
+      indexMemoryEvent(event);
     }
   }
   return committed;

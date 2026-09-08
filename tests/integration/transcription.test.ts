@@ -37,7 +37,7 @@ const {
 const { runAiWorkerOnce } = await import("@/jobs/runtime");
 const { createProductionAiJobRegistry } = await import("@/jobs/registry");
 const { DeterministicFakeMemoryAssistant } = await import("@/lib/ai/fake");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 
 const setup = await performSetup({
   token: "transcription-setup-token",
@@ -309,7 +309,7 @@ describe("transcription end-to-end", () => {
     }
     saveEditedTranscript(adminContext(), audioAsset.id, "恢复后仍应看到的人工修订。");
 
-    const exported = await buildFamilyExport(familyId);
+    const exported = await buildDisasterExport(familyId);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
     const transcriptsJson = JSON.parse(
@@ -364,7 +364,7 @@ describe("transcription end-to-end", () => {
     expect(manualRow).toMatchObject({ editedTranscript: "", revision: 1 });
     expect(m.db.getDb().select().from(m.transcript.assetTranscript).where(eq(m.transcript.assetTranscript.id, manualRow.id)).get()).toMatchObject({ editedTranscript: "", revision: 1, provider: "manual" });
 
-    const reexport = await (await import("@/lib/export/service")).buildFamilyExport(familyId);
+    const reexport = await (await import("@/lib/export/service")).buildDisasterExport(familyId);
     const secondZip = await JSZip.loadAsync(readFileSync(reexport.filePath));
     expect(JSON.parse(await secondZip.file("family-time-capsule-export/transcripts.json")!.async("string"))).toEqual(transcriptsJson);
     m.db.closeDatabase();

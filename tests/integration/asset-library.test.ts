@@ -91,7 +91,7 @@ it("30 preserved photos stay readable without events; five form one memory and d
   expect(listLibraryAssets(viewer).entries).toHaveLength(30);
   expect(() => editLibraryAsset(viewer, original.id, 1, {})).toThrow("forbidden");
   expect(() => addLibraryAssetsToMemory(viewer, [assets[0]!], published.memoryEventId!)).toThrow("forbidden");
-  const backup = await (await import("@/lib/export/service")).buildFamilyExport(ctx.familyId, { actorUserId: ctx.userId });
+  const backup = await (await import("@/lib/export/service")).buildDisasterExport(ctx.familyId, { actorUserId: ctx.userId });
   const bytes = readFileSync(backup.filePath);
   closeDatabase(); process.env.DATA_DIR = dirs[1]; vi.resetModules();
   const target = await import("@/db");

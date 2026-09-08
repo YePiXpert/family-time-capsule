@@ -180,12 +180,12 @@ describe("缩略图衍生物（v0.1.3）", () => {
   });
 
   it("导出不含缩略图（衍生物可再生，只导原件）——以 asset 计数核对", async () => {
-    const { buildFamilyExport } = await import("@/lib/export/service");
+    const { buildDisasterExport } = await import("@/lib/export/service");
     const all = await listAssets(familyId, 500);
     const originals = all.filter((a) => a.derivativeType === null).length;
     const thumbnails = all.filter((a) => a.derivativeType === "thumbnail").length;
     expect(thumbnails).toBeGreaterThan(0);
-    const report = await buildFamilyExport(familyId);
+    const report = await buildDisasterExport(familyId);
     expect(report.assetCount).toBe(originals);
     expect(report.assetCount).toBeLessThan(all.length);
   });

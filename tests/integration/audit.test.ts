@@ -33,7 +33,7 @@ const { getDb } = await import("@/db");
 const { user: userTable } = await import("@/db/schema/auth");
 const { completeOnboarding } = await import("@/lib/family/service");
 const { ingestImage } = await import("@/lib/assets/ingest");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 const { listRecentAudit, AUDIT_KINDS } = await import("@/lib/audit/service");
 
 const db = getDb();
@@ -64,7 +64,7 @@ describe("导出审计（v0.1.3）", () => {
     });
     if (stored.status !== "stored") throw new Error("store failed");
 
-    const report = await buildFamilyExport(familyId, { actorUserId: adminUserId });
+    const report = await buildDisasterExport(familyId, { actorUserId: adminUserId });
     const entries = await listRecentAudit(familyId);
     expect(entries.length).toBeGreaterThanOrEqual(1);
     const exportEntry = entries.find(
@@ -86,7 +86,7 @@ describe("导出审计（v0.1.3）", () => {
   });
 
   it("未指定 actor 时记录为系统操作（actorUserId null）", async () => {
-    await buildFamilyExport(familyId);
+    await buildDisasterExport(familyId);
     const entries = await listRecentAudit(familyId, 5);
     const latest = entries.find((e) => e.kind === AUDIT_KINDS.exportCreated);
     expect(latest!.actorUserId).toBeNull();

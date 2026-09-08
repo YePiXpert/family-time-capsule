@@ -10,7 +10,7 @@
    复核实际字节数/SHA-256，全部通过后才开启数据库事务。任一失败删除此前文件（§2）。
 2. **绝不覆盖现存数据**：只允许恢复到「无 Family」的实例；目标非空 → 明确拒绝（`target_not_empty`）。
 3. **原件只增不改**：恢复的原件按原 assetId 落盘（`putOriginalStream`，已存在即报错）。
-4. **认证数据不恢复**：user/session/account 永不来自备份。
+4. **认证数据不恢复**：密码、会话、第二因素和账号角色不来自备份。v2 作者/读者先恢复为停用、无凭据的占位身份，主机明确绑定后才成为当前账号的权限。
 
 ## 1. 恢复流程（已实现）
 
@@ -157,17 +157,28 @@ CLI 的 `restoreFromZipFile` 先用 `stat` 执行压缩包本体上限检查，�
 
 ## 5. Person / User 关系恢复
 
-- `people.json` 全量恢复为 Person（含无账号成员），ID 原样保留。
-- 家庭 `childLaterUnlockAge`、Person 的显式 `isGuardian` 与不可逆
-  `childLaterUnlockedAt` 按归档值精确恢复；旧 v1 档案使用 18 / false / null 默认值。
-- Family 周界和提醒偏好按归档值恢复；旧档使用 §2.4 的安全默认值。设备通知权限与调度 ID
-  不恢复，用户仍需在每台设备上主动开启。
-- Contribution 的 visibility、transcript、音频引用、recorder Person、姓名快照与记录模式
-  原样恢复；旧实例的 `recordedByUserId` 不可迁移并始终恢复为 null。
-- 恢复完成后：管理员登录 → `/onboarding` 自动检测「实例已有家庭」→
-  显示绑定表单（选择自己是哪位成员；孩子档案不能作为登录身份）→
-  `user.familyId / personId` 写入（`bindRestoredFamily`，服务端校验）。
-- 时间线、事件、胶囊的完整性**不依赖任何 User 存在**（Person ≠ User）。
+人物档案保持原 ID 与展示资料。登录账号由新实例建立；选择同名人物、绑定原 Person、成为 Owner/Admin 均不会自动取得归档的私人内容。
+
+v2 的 `privacy.json` 保存记忆、草稿、原件、个人作品、收件的作者与读者关系。默认恢复创建停用的占位身份，没有密码、会话、第二因素或 Person 绑定。普通账号管理不能启用待确认占位账号。
+
+### 归档身份的明确绑定
+
+先完成新账号的家庭绑定，再由主机维护者核实身份并逐项执行：
+
+```bash
+DATA_DIR=/data npm run restore:principals -- --family FAMILY_ID
+DATA_DIR=/data npm run restore:principals -- --family FAMILY_ID --bind ARCHIVE_PRINCIPAL_ID --to CURRENT_USER_ID --operator MAINTAINER_USER_ID
+# 生产容器使用相同的已编译命令：
+docker compose exec app node /app/ops/restore-principals.mjs --family FAMILY_ID
+```
+
+绑定是主机维护操作，没有普通管理员 API。它在一个事务中更新事件作者、原件上传者、草稿作者/读者、事件读者、个人作品和收件归属并记录审计。重复绑定到同一账号是幂等的；已绑定身份不能被再次转给另一账号。姓名仅供人工核对，不作为自动匹配依据。
+
+如果已核实某个归档身份就是当前 setup 账号，可以在初次恢复时明确传入 `--bind-self ARCHIVE_PRINCIPAL_ID`；不传则全部保持待确认。凭据仍来自新 setup 账号。
+
+v1 缺少完整的账号权限资料。恢复器只根据已保存的私密/指定成员草稿收紧相应事件与原件，相关事件默认私密、读者需重新确认；未知作者保持待确认。v1 中未保存的正文、原始读者和较新撤权不能还原，应在开放实例前复核。维护者不能把“结构恢复成功”当成“最新权限已证明”。
+
+家人讲述保留 Person、录入方式与姓名快照；这些来源资料不是登录授权。已封存内容仍受当前应用规则控制，下载到磁盘的 ZIP 则应由持有人妥善保管。
 
 ## 6. 测试
 
@@ -220,7 +231,7 @@ A→B→二次导出后逐行/原件 SHA 相等；缺模块、声明缺失、悬
 `modules.bookProjects=1` 后缺文件即拒绝。预检验证人物/来源外键、同作品章/块/来源关系、
 连续顺序、版式范围、历史版本号和快照来源身份；未知模块版本和坏关系在数据库写入前拒绝。
 旧档没有年册模块时使用空数组。作品、章节、块、SourceRef、块来源、Revision 按 FK 顺序
-在同一事务恢复并核对数量；私人 ownerPersonId 保持不变，需要按原有人物绑定流程认领。
+在同一事务恢复并核对数量；个人作品保留归档账号归属，由主机明确绑定，人物绑定不认领私人作品。
 删除标记保留，已失权或已删除来源不会因为恢复而显示。原始文件 SHA 与二次导出的编辑图
 必须一致。测试使用独立目录；不据此代称实际旧用户卷或手机升级已经完成。
 

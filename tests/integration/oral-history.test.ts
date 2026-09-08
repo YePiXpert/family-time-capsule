@@ -39,7 +39,7 @@ const {
   getCapsuleDialogue,
 } = await import("@/lib/capsules/dialogue");
 const { sealCapsule, openCapsule } = await import("@/lib/capsules/service");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 
 const setup = await performSetup({
   token: "oral-history-setup-token",
@@ -374,7 +374,7 @@ describe("M5-B：胶囊对话", () => {
   });
 
   it("对话随导出携带（capsule-questions / capsule-replies）", async () => {
-    const exported = await buildFamilyExport(familyId);
+    const exported = await buildDisasterExport(familyId);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
     const questions = JSON.parse(

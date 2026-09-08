@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { requireCurrentSessionId } from "@/lib/family/context";
 import { hasRecentAuth } from "@/lib/auth/step-up";
-import { buildFamilyExport, ExportVerificationError } from "@/lib/export/service";
+import { buildActorExport, ExportVerificationError } from "@/lib/export/service";
 
 /**
  * GET /api/export —— 完整 ZIP 导出（Issue #014）。
@@ -34,10 +34,10 @@ export async function GET(request: Request) {
 
   let result;
   try {
-    result = await buildFamilyExport(context.familyId, {
-      actorUserId: context.userId,
-    });
+    result = await buildActorExport(context);
   } catch (err) {
+    if (err instanceof Error && err.message === "export_forbidden") return new Response("Forbidden", { status: 403 });
+    if (err instanceof Error && err.message === "export_state_changed") return Response.json({ error: "export_state_changed", message: "导出期间资料或权限发生变化，请重新导出。" }, { status: 409 });
     if (err instanceof ExportVerificationError) {
       return Response.json(
         {

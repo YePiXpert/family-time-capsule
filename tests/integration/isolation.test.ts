@@ -72,7 +72,7 @@ const {
   openCapsule,
   addCapsuleEvent,
 } = await import("@/lib/capsules/service");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 const JSZip = (await import("jszip")).default;
 
 const db = getDb();
@@ -316,7 +316,7 @@ describe("Capsule 隔离", () => {
 
 describe("Export 隔离", () => {
   it("A 的导出不包含 B 的任何数据", async () => {
-    const result = await buildFamilyExport(familyA);
+    const result = await buildDisasterExport(familyA);
     const zip = await JSZip.loadAsync(readFileSync(result.filePath));
     const root = "family-time-capsule-export";
     const manifest = JSON.parse(await zip.file(`${root}/manifest.json`)!.async("string"));

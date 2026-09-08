@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { bookProject } from "@/db/schema/book";
 import { capsule } from "@/db/schema/capsule";
@@ -67,8 +67,6 @@ function prepare(
     !["photos", "growth", "letters"].includes(template)
   )
     throw new BookError("invalid_book");
-  if (audience === "personal" && !context.personId)
-    throw new BookError("person_required");
   const { period, window } = getOrCreateRangeReviewPeriod(
     context,
     options.startDate,
@@ -98,14 +96,21 @@ function prepare(
           )}))`
         : sql``
     }`;
-  const key = `review:${sourceFingerprint([options.startDate, options.endDate, audience, template, audience === "personal" ? context.personId : null])}`;
+  const key = `${audience === "personal" ? "review-account" : "review"}:${sourceFingerprint([options.startDate, options.endDate, audience, template, audience === "personal" ? context.userId : null])}`;
   const draft = getDb()
     .select()
     .from(bookProject)
     .where(
       and(
         eq(bookProject.familyId, context.familyId),
-        eq(bookProject.draftKey, key),
+        audience === "personal" ? or(
+          eq(bookProject.draftKey, key),
+          // Old/restored keys encode a different identity. Reuse only an owned
+          // review with its persisted range; identity labels never grant access.
+          and(sql`(${bookProject.draftKey} like 'review:%' or ${bookProject.draftKey} like 'review-account:%')`, eq(bookProject.startDate, options.startDate), eq(bookProject.endDate, options.endDate), eq(bookProject.template, template)),
+        ) : eq(bookProject.draftKey, key),
+        eq(bookProject.audience, audience),
+        audience === "personal" ? eq(bookProject.ownerUserId, context.userId) : undefined,
         eq(bookProject.status, "active"),
         isNull(bookProject.deletedAt),
       ),
@@ -462,7 +467,7 @@ export function getBookHome(context: FamilyContext, now = new Date()) {
         eq(bookProject.familyId, context.familyId),
         eq(bookProject.status, "active"),
         isNull(bookProject.deletedAt),
-        sql`(${bookProject.audience}='family' or (${bookProject.audience}='personal' and ${bookProject.ownerPersonId}=${context.personId}))`,
+        sql`(${bookProject.audience}='family' or (${bookProject.audience}='personal' and ${bookProject.ownerUserId}=${context.userId}))`,
       ),
     )
     .orderBy(sql`${bookProject.updatedAt} desc`, sql`${bookProject.id} desc`)

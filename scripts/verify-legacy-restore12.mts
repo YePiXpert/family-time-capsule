@@ -27,7 +27,7 @@ async function main() {
   assert.equal(restored.assets, 5);
   const zip = await (
     await import("../lib/export/service")
-  ).buildFamilyExport(expected.familyId);
+  ).buildDisasterExport(expected.familyId);
   copyFileSync(zip.filePath, path.join(dir, "restored12.zip"));
   closeDatabase();
   console.log(

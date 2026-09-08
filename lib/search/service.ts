@@ -13,7 +13,6 @@ import { contribution as contributionTable } from "@/db/schema/contribution";
 import { fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset, memoryEventParticipant, memoryEventReader } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
-import { inboxItem } from "@/db/schema/inbox";
 import { assetTranscript } from "@/db/schema/transcript";
 import { story as storyTable, storyParagraph as storyParagraphTable } from "@/db/schema/story";
 import { person as personTable } from "@/db/schema/family";
@@ -74,16 +73,17 @@ export function removeFromSearchIndex(
 
 // ---- 单实体索引挂钩（服务层写入路径调用） ----
 
-function eventSearchText(db: Db, event: { id: string; familyId: string; title: string }): string {
-  const notes = db.select({ text: inboxItem.rawText }).from(inboxItem).where(and(eq(inboxItem.familyId, event.familyId), eq(inboxItem.memoryEventId, event.id))).all();
-  return [event.title, ...notes.map(note => note.text || "")].join("\n");
+function eventSearchText(db: Db, event: { id: string; familyId: string; title: string; bodyText?: string }): string {
+  const body = event.bodyText ?? db.select({ body: memoryEvent.bodyText }).from(memoryEvent).where(and(eq(memoryEvent.familyId, event.familyId), eq(memoryEvent.id, event.id))).get()?.body ?? "";
+  return [event.title, body].join("\n");
 }
 export function indexMemoryEvent(event: {
   id: string;
   familyId: string;
   title: string;
   childPersonId: string | null;
-  /** §5：非 family 事件没有家庭收件箱聚合，正文由发布方显式提供。 */
+  bodyText?: string;
+  /** Optional override for legacy callers. */
   text?: string;
 }): void {
   removeFromSearchIndex("memory_event", event.id);

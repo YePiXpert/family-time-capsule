@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { validateArchivePrivacy } from "../lib/export/privacy.mjs";
 import { parseAssetDeletions } from "../lib/assets/deletion-portable.mjs";
 import { BOOK_FILES, validateBookArchive } from "../lib/books/projects/portable.mjs";
 import { COLLECTION_FILES, validateCollectionArchive } from "../lib/collections/portable.mjs";
@@ -10,7 +11,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = "family-time-capsule-export";
-const SUPPORTED_EXPORT_VERSIONS = new Set([1]);
+const SUPPORTED_EXPORT_VERSIONS = new Set([1, 2]);
 
 const zipArg = process.argv[2];
 if (!zipArg) {
@@ -127,6 +128,7 @@ if (manifest.modules?.drafts !== undefined && (manifest.modules.drafts !== 1 || 
 const hasAssetDeletions = await zipEntryExists("asset-deletions.json");
 if (manifest.modules?.assetDeletions !== undefined && (manifest.modules.assetDeletions !== 1 || !hasAssetDeletions)) fail("声明的原件删除记录缺失或不支持");
 const expectedNonAssetCount =
+  (manifest.exportVersion === 2 ? 1 : 0) +
   (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
   (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) + (hasDrafts ? 1 : 0) + (hasAssetDeletions ? 1 : 0) +
   (hasDialogue ? 2 : 0) +
@@ -144,12 +146,23 @@ if (manifest.fileCount !== expectedFileCount) {
 // 引用完整性
 const personIds = new Set((people ?? []).map((p) => p.id));
 const assetIds = new Set((manifest.assets ?? []).map((a) => a.assetId));
-try { parseAssetDeletions(hasAssetDeletions ? await readJsonAsync("asset-deletions.json") : [], assetIds); ok("原件删除记录有效"); } catch { fail("原件删除记录无效"); }
+
 for (const a of manifest.assets ?? []) {
   if (a.participantPersonIds !== undefined && (!Array.isArray(a.participantPersonIds) || a.participantPersonIds.some(id => !personIds.has(id)))) fail("素材人物引用无效");
 }
 const factIds = new Set((facts ?? []).map((f) => f.id));
 const eventIds = new Set((memories ?? []).map((m) => m.id));
+if (manifest.exportVersion === 2) {
+  try {
+    if (!memories.every(m => typeof m.bodyText === "string")) throw new Error();
+    const privacy = validateArchivePrivacy(await readJsonAsync("privacy.json"), { events: eventIds, assets: assetIds, drafts: new Set(((await readJsonAsync("drafts.json")) ?? []).map(d => d.id)), books: new Set(bookGraph[0].map(p => p.id)), imports: new Set((importSessions ?? []).map(i => i.id)), reviewAssets: new Set(((await readJsonAsync("inbox-item-assets.json")) ?? []).map(l => `${l.inboxItemId}:${l.assetId}`)) });
+    const drafts = await readJsonAsync("drafts.json");
+    if (drafts.some(d => privacy.drafts.find(p => p.id === d.id)?.visibility !== d.visibility) || bookGraph[0].some(p => p.audience === "personal" && privacy.books.find(r => r.id === p.id)?.owner === null)) throw new Error();
+    ok("v2 作者和读者关系完整");
+  } catch { fail("v2 作者、读者或正文无效"); }
+} else if (await zipEntryExists("privacy.json") || memories?.some(m => m.bodyText !== undefined)) fail("v2 内容不可降级为 v1");
+
+try { parseAssetDeletions(hasAssetDeletions ? await readJsonAsync("asset-deletions.json") : [], assetIds); ok("原件删除记录有效"); } catch { fail("原件删除记录无效"); }
 try { validateCollectionArchive(...collectionGraph, manifest.familyId, eventIds, assetIds); ok("相册关系图校验通过"); }
 catch { fail("相册编辑关系图无效"); }
 
@@ -168,7 +181,7 @@ if (hasDrafts) {
   try {
     if (!Array.isArray(drafts)) throw new Error();
     for (const row of drafts) {
-      if (!row || typeof row.id !== "string" || ids.has(row.id) || Object.hasOwn(row, "authorUserId") || Object.hasOwn(row, "familyId") || !["editing", "published", "discarded"].includes(row.status) || !["family", "private"].includes(row.visibility)) throw new Error();
+      if (!row || typeof row.id !== "string" || ids.has(row.id) || Object.hasOwn(row, "authorUserId") || Object.hasOwn(row, "familyId") || !["editing", "published", "discarded"].includes(row.status) || !["family", "members", "private"].includes(row.visibility)) throw new Error();
       ids.add(row.id); intakeDraftIds.add(row.id);
       if ((row.authorPersonId !== null && !personIds.has(row.authorPersonId)) || (row.inboxItemId !== null && !inboxItemIds.has(row.inboxItemId)) || (row.memoryEventId !== null && (!eventIds.has(row.memoryEventId) || row.status !== "published"))) throw new Error();
       if (!Array.isArray(row.participantIds) || row.participantIds.some(id => !personIds.has(id)) || !Array.isArray(row.items)) throw new Error();

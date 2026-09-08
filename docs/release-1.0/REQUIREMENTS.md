@@ -49,8 +49,8 @@
 | ID-8 | 恢复码一次显示、hash保存、原子单次使用 | 不能误删最后路径 | 自动化通过(2026-09-07 M2-b:恢复码以实例 AUTH_SECRET 派生密钥 AEAD 加密存储(非明文/非哈希——成熟组件语义,如实登记);生成即替换旧列表;每码单次使用;登录第二腿可作废) | lib/auth/two-factor-service.ts; tests/integration/two-factor.test.ts |
 | ID-9 | 活动设备列表、撤销其他会话、改密后失效重入不删本机原件 | 会话管理 | 自动化通过(M2-a 设备列表/撤销其他;M2-b 恢复令牌重置密码即撤销全部会话) | settings/sessions; lib/auth/account-recovery.ts |
 | ID-10 | 高敏操作(导出/重置认证/改密钥/转所有权/销毁)要求近期重新认证 | step-up auth | 自动化通过(2026-09-07 M2-c:session.recent_auth_at(0049)+10 分钟窗口;完整导出路由强制复核,设置页密码确认 UI;所有权移交/关闭两步验证/恢复码重生成各自内建密码确认;"改密钥"为部署级操作不在 App 内) | lib/auth/step-up.ts; app/api/export |
-| ID-11 | 对象级受众:仅自己/指定成员/家庭;角色+对象双检查 | 默认拒绝 | 部分实现(P0-A 已补最小 User 读者 API、双端账号选择和旧库 members CHECK 修复；P0-C 新原件/派生/再分享边界仍待完成) | lib/authz/*; tests/integration/isolation |
-| ID-12 | 派生内容读者 ≤ 全部来源共同允许范围 | 撤权后派生下架 | 部分实现(已确认资料库关联与来源再分享仍有缺口；既有缩略图/讲述测试不代表私密事件全部派生范围正确) | lib/authz/contribution-access |
+| ID-11 | 对象级受众:仅自己/指定成员/家庭;角色+对象双检查 | 默认拒绝 | 部分实现(P0-A/B/C 已完成真实双端读者、日期及私密续传；R08 已补正文、账号范围导出和恢复身份隔离；全部派生/撤权缓存仍待闭合) | lib/authz/*; tests/integration/isolation |
+| ID-12 | 派生内容读者 ≤ 全部来源共同允许范围 | 撤权后派生下架 | 部分实现(R08 已补导出来源闭包、私密作品账号归属及合集事件实时裁决；旧在线作品/讲述/缓存等全部再分享入口仍须继续验证) | lib/authz/contribution-access |
 | ID-13 | 成员生命周期:暂停/退出/移除/角色变更停止后续同步 | 离线副本撤权说明 | 自动化通过(2026-09-07 M2-c:停用/恢复/角色调整已有;新增移出家庭+自助退出,均解绑并即刻撤销全部会话停止后续同步;离线已缓存副本无法远程抹除已在 UI/文档如实声明) | lib/accounts/service.ts; settings/accounts; tests/integration/member-lifecycle |
 | ID-14 | App 内删除账号+关联内容处理;人物记录不级联误删 | Apple 删号要求 | 自动化通过(2026-09-07 M2-c:密码+确认语双确认;凭据全撤(密码/通行密钥/两步验证/会话)+身份匿名化(邮件→deleted-*.invalid)+永久停用;讲述/胶囊/AI 任务等 RESTRICT 引用保留行以保档案完整,人物不级联删除;已下载副本不可召回如实声明) | lib/accounts/service.ts; settings/account |
 | ID-15 | 跨作者内容删除影响预览/合法保留说明/删除完成状态 | 引用守卫 | 自动化通过(回收站+素材引用守卫) | lib/trash |
@@ -253,3 +253,6 @@ CAP-2 / R03：手机记录页「不详」经实际 usePersistentDraft 保存的�
 P0-A / R01–R02：0061 追加迁移修复旧 draft CHECK 不接受 members；不改旧迁移，保留正文、draft_item 与 import_session 引用。新 draft-readers API 仅返回有效同家庭账号 id/name，普通作者不获得账号管理权限；人物仍用 Person ID。原生和 Web 保留/显示已失效选择供主动移除，手机可重试成员获取。新增 native-capture production E2E 使用真实手机记录页/hook/SQLite，经实际 fetch 与原生 sync 调用 Next 生产 HTTP，B 可读而 C 管理员 404；不是手工重新构造 DTO。停用/退出/异家庭/无账号人物由真实鉴权 API 回归拒绝。私密新附件和衍生传播仍按 P0-C 继续，不据此提升 CAP-1/ID-11 全行。
 
 P0-C / R04–R07：0062 仅追加 upload_session.draft_id/instance_id 与索引；作者在每次操作校验，新素材发布前私密，不经家庭收件箱；既有已公开回执保留旧共享语义，未完成旧传输可收紧到作者草稿。两端先存草稿再传原件，手机直接持久化 assetId 并保留 Files/系统分享的原批次。显式交给家人整理才开放原件预览。跨进程 flock 文件描述符锁保护临时文件/complete；SIGKILL 自动释放，不删锁绕过，随机不存在 ID 不创建锁。新临时清理不受已删除草稿/停用作者阻塞。生产 Linux 容器显式包含 util-linux。上述自动化证据不代表 Live Photo 真机、完整撤权缓存或导出恢复已经完成；CAP-1/ID-11/ID-12 仍部分实现。
+
+
+R08（当前实现）：0066/0067/0068 追加正文、隔离恢复身份和个人书籍账号归属；v2 可读档案包含明确权限清单、独立存储正文和回执，默认恢复不把私人内容归给维护者。实际 Web 发布后删草稿、索引重建、HTTP 详情与导出、独立库恢复及主机 CLI 显式绑定均已验证；真实 Docker 三次重启和容器内恢复通过。证据：tests/integration/private-memory-body.test.ts、private-archive.test.ts、memory-body-migration.test.ts，tests/e2e/native-capture.spec.ts，scripts/verify-private-upload-container.py。R09/R10 全派生及 R17/R21 恢复世代/较新撤权日志尚未闭合，相关需求仍部分实现。

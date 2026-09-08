@@ -1,3 +1,5 @@
+import { legacyArchivePrivacy } from "./legacy-privacy";
+import { validateArchivePrivacy, type ArchivePrivacy } from "@/lib/export/privacy.mjs";
 import { assertLivePhotoPairs } from "@/lib/drafts/model";
 import { assetDeletion } from "@/db/schema/asset-deletion";
 import { parseAssetDeletions } from "@/lib/assets/deletion-portable.mjs";
@@ -14,7 +16,7 @@ import { NAME_SOURCES, nameSource } from "@/lib/naming";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { Readable } from "node:stream";
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import yauzl, { type Entry, type ZipFile } from "yauzl";
 import { getDb } from "@/db";
 import { asset as assetTable, documentText } from "@/db/schema/asset";
@@ -715,7 +717,7 @@ async function loadAndVerifyZip(
     throw new RestoreError("bad_manifest", "manifest.json 无法解析");
   }
   requireCondition(
-    manifest.exportVersion === EXPORT_VERSION,
+    [1, EXPORT_VERSION].includes(manifest.exportVersion),
     "unsupported_version",
     `不支持的 exportVersion: ${String(manifest.exportVersion)}（当前支持 ${EXPORT_VERSION}）`,
   );
@@ -762,6 +764,7 @@ async function loadAndVerifyZip(
       id: string;
       childPersonId: string | null;
       title: string;
+      bodyText?: string;
       titleSource?: string;
       titleRevision?: number;
       occurredAt: string | null;
@@ -985,6 +988,7 @@ async function loadAndVerifyZip(
   const hasDialogueFiles = Boolean(capsuleQuestionsFile);
   const expectedFileCount =
     manifest.assets.length +
+    (manifest.exportVersion === 2 ? 1 : 0) +
     LEGACY_EXPORT_NON_ASSET_FILE_COUNT +
     (hasInboxFiles ? 2 : 0) +
     (transcriptsFile ? 1 : 0) +
@@ -1251,6 +1255,7 @@ async function loadAndVerifyZip(
       `memory event id 非法或重复: ${String(m.id)}`,
     );
     eventIds.add(m.id);
+    requireCondition(m.bodyText === undefined || typeof m.bodyText === "string", "bad_json", `事件 ${m.id} 正文非法`);
     validateArchiveName(m.titleSource, m.titleRevision);
     requireCondition(
       typeof m.title === "string" && m.title.length > 0,
@@ -2475,7 +2480,19 @@ async function loadAndVerifyZip(
   try { nameReviews = parseNameReviews(nameReviewsRaw, new Map(memoriesJson.map(row => [row.id, row.titleRevision ?? 0])), new Map(inboxItemsJson.map(row => [row.id, row.titleRevision ?? 0])), new Map(manifest.assets.map(row => [row.assetId, row.nameRevision ?? 0]))); }
   catch { throw new RestoreError("bad_refs", "名称审核版本或目标关系无效"); }
 
+  let privacy: ArchivePrivacy | null = null;
+  if (manifest.exportVersion === 2) {
+    requireCondition(memoriesJson.every(m => typeof m.bodyText === "string"), "bad_json", "v2 归档缺少记忆正文");
+    try { privacy = validateArchivePrivacy(await readJson<unknown>("privacy.json"), { events: eventIds, assets: assetIds, drafts: new Set(drafts.map(d => d.id)), books: new Set(bookGraph.projects.map(p => p.id)), imports: new Set(importSessionsJson.map(i => i.id)), reviewAssets: new Set(inboxItemAssetsJson.map(l => `${l.inboxItemId}:${l.assetId}`)) }); }
+    catch { throw new RestoreError("bad_refs", "v2 归档作者和读者关系无效"); }
+    requireCondition(drafts.every(d => privacy!.drafts.find(p => p.id === d.id)?.visibility === d.visibility), "bad_refs", "草稿可见性与 v2 权限记录冲突");
+    requireCondition(bookGraph.projects.every(p => p.audience !== "personal" || privacy!.books.find(r => r.id === p.id)?.owner !== null), "bad_refs", "个人作品缺少归档作者");
+  } else {
+    requireCondition(!archive.has(`${EXPORT_ROOT_DIR}/privacy.json`) && memoriesJson.every(m => m.bodyText === undefined), "bad_manifest", "v2 内容不可降级为 v1 恢复");
+    privacy = legacyArchivePrivacy({ events: memoriesJson, assets: manifest.assets, drafts, books: bookGraph.projects, imports: importSessionsJson });
+  }
   return {
+    privacy,
     nameReviews,
     assetDeletions,
     drafts,
@@ -2543,6 +2560,7 @@ async function restoreFromArchive(
   archiveBytes: number,
   operatorUserId: string,
   limits: RestoreLimits,
+  principalBindings: Record<string, string> = {},
 ): Promise<RestoreReport> {
   const db = getDb();
   const data = await loadAndVerifyZip(archive, archiveBytes, limits);
@@ -2580,8 +2598,26 @@ async function restoreFromArchive(
   const storage = getAssetStorage();
   const familyId = familyJson.id;
   const now = new Date();
+  const principalUsers = new Map((data.privacy?.principals ?? []).map(p => [p.id, Object.hasOwn(principalBindings, p.id) ? principalBindings[p.id] : randomUUID()]));
+  requireCondition(Object.keys(principalBindings).every(id => principalUsers.has(id)), "bad_refs", "作者绑定重复或引用未知身份");
+  for (const target of Object.values(principalBindings)) requireCondition(target === operatorUserId, "bad_refs", "初次恢复仅可显式绑定当前 setup 账号；其余身份保留待确认");
+  const eventPrivacy = new Map(data.privacy?.events.map(r => [r.id, r]));
+  const assetPrivacy = new Map(data.privacy?.assets.map(r => [r.id, r]));
+  const draftPrivacy = new Map(data.privacy?.drafts.map(r => [r.id, r]));
+  const importPrivacy = new Map(data.privacy?.imports.map(r => [r.id, r]));
+  const restoredOwner = (owner: string | null | undefined) => owner ? principalUsers.get(owner)! : null;
 
   // 事件标签在事务内外都会用到（审计/报告），预先计算
+  // Legacy sources are used only when the archive has no canonical body field.
+  // An explicit empty body is authoritative and must not resurrect old text.
+  function legacyMemoryBody(eventId: string, targetFamilyId: string): string {
+    const notes = inboxItemsJson.filter(item => item.familyId === targetFamilyId && item.memoryEventId === eventId && item.rawText?.trim())
+      .sort((a,b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id)).map(item => item.rawText!);
+    if (notes.length) return notes.join("\n\n");
+    return drafts.filter(item => item.memoryEventId === eventId && item.status === "published" && item.text.trim())
+      .sort((a,b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id)).map(item => item.text).join("\n\n");
+  }
+
   const eventTags = memoriesJson.flatMap((m) =>
     (m.tags ?? []).map((tag) => ({
       id: randomUUID(),
@@ -2662,6 +2698,13 @@ async function restoreFromArchive(
         })
         .run();
 
+      for (const principal of data.privacy?.principals ?? []) {
+        const userId = principalUsers.get(principal.id)!;
+        const bound = Object.hasOwn(principalBindings, principal.id);
+        if (!bound) tx.insert(userTable).values({ id: userId, name: principal.name, email: `${userId}@restore.invalid`, role: "viewer", familyId, personId: null, disabledAt: now, createdAt: now, updatedAt: now }).run();
+        tx.run(sql`insert into restore_principal(id,family_id,archive_principal_id,user_id,state,bound_at) values (${randomUUID()},${familyId},${principal.id},${userId},${bound ? 'bound' : 'unresolved'},${bound ? now.getTime() : null})`);
+      }
+
       if (peopleJson.length > 0) {
         tx.insert(personTable)
           .values(
@@ -2712,7 +2755,8 @@ async function restoreFromArchive(
                 height: a.height ?? null,
                 durationMs: a.durationMs ?? null,
                 metadataJson: a.metadataJson ?? null,
-                createdByUserId: operatorUserId,
+                createdByUserId: data.privacy ? restoredOwner(assetPrivacy.get(a.assetId)!.owner)! : operatorUserId,
+                visibility: assetPrivacy.get(a.assetId)?.visibility ?? "family",
                 originalAssetId: null,
                 derivativeType: null,
                 createdAt: parseDate(a.importedAt) ?? now,
@@ -2734,6 +2778,9 @@ async function restoreFromArchive(
               familyId,
               childPersonId: m.childPersonId,
               title: m.title,
+              bodyText: m.bodyText ?? legacyMemoryBody(m.id, familyId),
+              visibility: eventPrivacy.get(m.id)?.visibility ?? "family",
+              createdByUserId: restoredOwner(eventPrivacy.get(m.id)?.owner),
               titleSource: nameSource(m.titleSource),
               titleRevision: m.titleRevision ?? 0,
               occurredAt: parseDate(m.occurredAt) ?? now,
@@ -2751,6 +2798,10 @@ async function restoreFromArchive(
             })),
           )
           .run();
+      }
+
+      for (const row of data.privacy?.events ?? []) for (const reader of new Set(row.readers.map(id => principalUsers.get(id)!))) {
+        tx.run(sql`insert into memory_event_reader(id,family_id,memory_event_id,user_id,created_at) values (${randomUUID()},${familyId},${row.id},${reader},${Math.floor(now.getTime()/1000)})`);
       }
 
       if (eventTags.length > 0) {
@@ -2821,7 +2872,7 @@ async function restoreFromArchive(
               defaultTitle: session.defaultTitle,
               defaultOccurredAt: parseDate(session.defaultOccurredAt),
               defaultLocationText: session.defaultLocationText,
-              createdByUserId: operatorUserId,
+              createdByUserId: data.privacy ? restoredOwner(importPrivacy.get(session.id)?.owner) : operatorUserId,
               createdAt: parseDate(session.createdAt)!,
               updatedAt: parseDate(session.updatedAt)!,
             })),
@@ -2948,8 +2999,9 @@ async function restoreFromArchive(
       }
 
       if (assetDeletions.length) tx.insert(assetDeletion).values(assetDeletions.map(row => ({ ...row, familyId, requestedByUserId: null, storageKeysJson: "[]", cleanedAt: new Date().toISOString() }))).run();
+      for (const receipt of data.privacy?.reviewAssets ?? []) tx.run(sql`insert into restored_review_asset(family_id,inbox_item_id,asset_id) values (${familyId},${receipt.inboxItemId},${receipt.assetId})`);
       for (const row of drafts) {
-        tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: null, authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, reviewedRevision: row.inboxItemId && !row.reviewPending ? 0 : null, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
+        tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: restoredOwner(draftPrivacy.get(row.id)?.owner), readerUserIdsJson: JSON.stringify([...new Set((draftPrivacy.get(row.id)?.readers ?? []).map(id => principalUsers.get(id)!))]), authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: draftPrivacy.get(row.id)?.visibility ?? row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, reviewedRevision: row.inboxItemId && !row.reviewPending ? 0 : null, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
         for (const [sortOrder, item] of row.items.entries()) tx.insert(draftItem).values({ ...item, draftId: row.id, sortOrder }).run();
       }
       for (const row of importSessionsJson) if (row.intakeDraftId) tx.update(importSessionTable).set({ intakeDraftId: row.intakeDraftId }).where(eq(importSessionTable.id, row.id)).run();
@@ -3154,7 +3206,7 @@ async function restoreFromArchive(
       }
 
       restoreCollectionArchive(tx, collectionGraph, familyId);
-      restoreBookArchive(tx, bookGraph, familyId);
+      restoreBookArchive(tx, bookGraph, familyId, new Map(data.privacy?.books.map(row => [row.id, restoredOwner(row.owner)])));
 
       if (capsulesJson.length > 0) {
         tx.insert(capsuleTable)
@@ -3526,7 +3578,7 @@ async function restoreFromArchive(
 export async function restoreFromZip(
   zipBuffer: Buffer,
   operatorUserId: string,
-  opts: { limits?: RestoreLimits } = {},
+  opts: { limits?: RestoreLimits; principalBindings?: Record<string, string> } = {},
 ): Promise<RestoreReport> {
   const limits = opts.limits ?? RESTORE_LIMITS;
   await assertRestoreOperator(operatorUserId);
@@ -3549,6 +3601,7 @@ export async function restoreFromZip(
       zipBuffer.byteLength,
       operatorUserId,
       limits,
+      opts.principalBindings,
     );
   } finally {
     archive.close();
@@ -3559,6 +3612,7 @@ export async function restoreFromZip(
 export async function restoreFromZipFile(
   zipPath: string,
   operatorUserId: string,
+  opts: { principalBindings?: Record<string, string> } = {},
 ): Promise<RestoreReport> {
   await assertRestoreOperator(operatorUserId);
   const archiveBytes = statSync(zipPath).size;
@@ -3580,6 +3634,7 @@ export async function restoreFromZipFile(
       archiveBytes,
       operatorUserId,
       RESTORE_LIMITS,
+      opts.principalBindings,
     );
   } finally {
     archive.close();

@@ -91,7 +91,7 @@ const { closeDatabase, getDb } = await import("@/db");
 const { getMemoryEventDetail, getTimelinePage } = await import(
   "@/lib/memories/service"
 );
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 const JSZip = (await import("jszip")).default;
 const db = getDb();
 
@@ -496,7 +496,7 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
     });
     expect(timeline[1]!.participantNames.sort()).toEqual(["妈妈", "小星"]);
 
-    const exported = await buildFamilyExport("family-v013", {
+    const exported = await buildDisasterExport("family-v013", {
       actorUserId: "user-v013",
     });
     expect(exported.assetCount).toBe(1);

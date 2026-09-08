@@ -22,6 +22,7 @@ await build({
     healthcheck: path.join(rootDir, "scripts", "healthcheck.mjs"),
     worker: path.join(rootDir, "jobs", "worker.ts"),
     restore: path.join(rootDir, "scripts", "restore.ts"),
+    "restore-principals": path.join(rootDir, "scripts", "restore-principals.ts"),
     "smoke-deployment": path.join(rootDir, "scripts", "smoke-deployment.mjs"),
     "verify-export": path.join(rootDir, "scripts", "verify-export.mjs"),
   },

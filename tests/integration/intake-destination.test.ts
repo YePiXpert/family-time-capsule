@@ -90,7 +90,7 @@ it("receives a mixed Web share, keeps partial errors, chooses once over HTTP, pu
   expect(chooseIntake(ctx, nativeReceipt.id, { destination: "draft", revision: 0, draftId: draft.id, mutationId: "", recordOnly: true }).draftId).toBe(draft.id);
   expect(getDraft(ctx, draft.id).revision).toBe(published.revision);
   expect(getDraft(ctx, draft.id).text).toBe(joined.text); // receipt acknowledgment cannot append the original text again
-  const archive = await (await import("@/lib/export/service")).buildFamilyExport(ctx.familyId, { actorUserId: ctx.userId });
+  const archive = await (await import("@/lib/export/service")).buildDisasterExport(ctx.familyId, { actorUserId: ctx.userId });
   const bytes = readFileSync(archive.filePath), zip = await JSZip.loadAsync(bytes);
   const exported = JSON.parse(await zip.file("family-time-capsule-export/import-sessions.json")!.async("string"));
   expect(exported.find((row: { id: string }) => row.id === id)).toMatchObject({ intakeDestination: "draft", intakeDraftId: draft.id });

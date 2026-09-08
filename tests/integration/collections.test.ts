@@ -274,7 +274,7 @@ it("five real originals → two collections → reorder/remove/trash/restore/reo
   expect(a.collections.getCollection(ctx,first).coverAssetId).toBeNull();
   expect(a.collections.listCollections(ctx).entries.find(c=>c.id===first)?.coverAssetId).toBeNull();
   const graph = a.archive.collectCollectionArchive(ctx.familyId),
-    backup = await a.export.buildFamilyExport(ctx.familyId);
+    backup = await a.export.buildDisasterExport(ctx.familyId);
   const bytes = readFileSync(backup.filePath);
   a.db.closeDatabase();
   const b = await open("b");
@@ -297,7 +297,7 @@ it("five real originals → two collections → reorder/remove/trash/restore/reo
       .getCollection(bctx, first)
       .items.find((i) => i.memoryEventId === events[0])?.source,
   ).toBeNull();
-  const secondExport = await b.export.buildFamilyExport(ctx.familyId);
+  const secondExport = await b.export.buildDisasterExport(ctx.familyId);
   const verify = spawnSync(
     process.execPath,
     ["scripts/verify-export.mjs", secondExport.filePath],
@@ -375,3 +375,27 @@ it("five real originals → two collections → reorder/remove/trash/restore/reo
     c.db.closeDatabase();
   }
 }, 60000);
+
+
+it("collection hydration, counts and admission enforce event readers after revocation", async () => {
+  const m = await open("private-collections");
+  expect((await m.family.completeOnboarding(m.user.id, { familyName: "合成家庭", timezone: "Asia/Shanghai", childDisplayName: "合成孩子", childBirthDate: "2026-01-01", selfDisplayName: "作者", selfRelationToChild: "爸爸" })).ok).toBe(true);
+  const a = await context(m);
+  m.db.getDb().insert(m.schema.user).values({ id: "collection-other", name: "其他管理员", email: "collection-other@fixture.invalid", familyId: a.familyId, role: "admin" }).run();
+  const c: FamilyContext = { ...a, userId: "collection-other", personId: null, role: "admin", isGuardian: false };
+  const id = randomUUID();
+  m.db.getDb().insert(m.schema.memoryEvent).values({ id, familyId: a.familyId, title: "撤权后不可见标题", occurredAt: new Date("2026-01-03"), status: "confirmed", visibility: "family", createdByUserId: a.userId }).run();
+  const collectionId = m.collections.createCollection(a, "手工合集");
+  const initial = m.collections.getCollection(a, collectionId);
+  const saved = m.collections.saveCollection(a, collectionId, initial.revision, { ...initial, items: [{ id: randomUUID(), memoryEventId: id, assetId: null, sectionId: null, caption: "" }] });
+  expect(m.collections.getCollection(c, collectionId).items[0].source?.title).toBe("撤权后不可见标题");
+  m.db.getDb().update(m.schema.memoryEvent).set({ visibility: "private" }).where(eq(m.schema.memoryEvent.id, id)).run();
+  expect(m.collections.getCollection(c, collectionId).items[0].source).toBeNull();
+  expect(m.collections.listCollections(c).entries.find(e => e.id === collectionId)?.count).toBe(0);
+  expect(m.collections.getCollection(a, collectionId).items[0].source?.title).toBe("撤权后不可见标题");
+  const retained = m.collections.saveCollection(c, collectionId, saved.revision, { ...saved, title: "仍可整理失效占位" });
+  expect(retained.items[0].source).toBeNull();
+  const otherId = m.collections.createCollection(c, "不能猜ID添加");
+  const other = m.collections.getCollection(c, otherId);
+  expect(() => m.collections.saveCollection(c, otherId, other.revision, { ...other, items: saved.items })).toThrow("source_unavailable");
+});

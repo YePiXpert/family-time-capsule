@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "设置 · Family Time Capsule" };
 
 const AUDIT_LABEL: Record<string, string> = {
-  "export.created": "导出完整备份",
+  "export.created": "导出可读档案",
   "restore.completed": "从备份恢复",
   "invitation.created": "创建账号邀请",
   "invitation.revoked": "撤销账号邀请",
@@ -54,7 +54,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
       <PageHeader
         eyebrow="Family settings"
         title="设置"
-        description="管理家庭成员与账号；外部 AI、完整导出、WebDAV 和审计记录集中在高级档案设置中。"
+        description="管理家庭成员与账号；外部 AI、可读档案导出、WebDAV 和审计记录集中在高级档案设置中。"
       />
 
       {searchParams?.accountRoleUpdated === "1" && (
@@ -150,7 +150,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
       {(canExport || canReviewAi) && <section aria-label="高级档案设置" className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6">
         <h2 className="text-lg font-medium">高级档案设置</h2>
         <p className="mt-1 text-sm leading-6 text-foreground/60">
-          完整导出、远程备份和 AI Provider 都是可选的管理能力；日常记录、整理、阅读和搜索不依赖它们。
+          可读档案导出、远程备份和 AI Provider 都是可选的管理能力；日常记录、整理、阅读和搜索不依赖它们。
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {canExport ? <ExportStepUpPanel needsStepUp={exportNeedsStepUp} /> : null}
@@ -168,7 +168,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
           </Link> : null}
         </div>
         <p className="mt-2 text-xs text-foreground/45">
-          完整导出会重新校验每份原件；API Key 与 WebDAV 凭据只存在部署环境，不写入家庭备份。
+          可读档案导出会重新校验每份原件；API Key 与 WebDAV 凭据只存在部署环境，不写入家庭备份。
         </p>
       </section>}
 

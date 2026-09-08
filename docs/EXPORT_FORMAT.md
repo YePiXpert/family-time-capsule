@@ -6,10 +6,12 @@
 
 ## 版本
 
-- 当前 `exportVersion: 1`。
-- **兼容承诺**：未来版本只做增量演进——新增字段不删旧字段、不改变既有字段语义；
-  任何 `exportVersion: 1` 的导出永远可以被当时的 `verify:export` 校验、
-  并被「同大版本」的恢复工具读取。重大不兼容变更将提升主版本号并提供迁移说明。
+- 当前 `exportVersion: 2`，应用版本仍为 `1.0.0-dev.1`。归档协议版本与应用发布版本分开。
+- v2 必须包含 `privacy.json` 和每条记忆的 `bodyText`；缺失或权限引用不完整时拒绝恢复。旧恢复器会拒绝版本 2，避免将私密内容按 v1 的家庭共享默认值读入。
+- 当前恢复器继续读取真实 v1 归档。v1 无法证明原事件的完整账号授权：发现私密/指定成员草稿时，将对应事件收紧为私密并创建待确认身份；没有保存过的正文或授权不能凭空补回。
+- `GET /api/export` 与应用内 WebDAV 仅包含调用账号当前可读的内容；Owner/Admin 不绕过私人权限。未提交的他人草稿不进入导出；包含不可读来源的故事、相册或作品整体省略，历史版本也受此约束。原件校验之前就过滤引用。
+- 主机维护使用明确的灾难导出函数或一致数据库/原件备份。它可以保全全部私人资料与已删除根节点，是服务器主机信任边界，不能由普通应用导出入口调用。
+- 收集与文件校验期间发生数据库变更时中止，删除本次未交付 ZIP，并返回可重试错误；不会交付混合授权状态的文件。已经物理下载的副本无法远程撤回。
 
 ## 目录结构
 
@@ -18,9 +20,14 @@ family-time-capsule-export/
 ├── manifest.json          导出清单与每个原件的哈希（见下）
 ├── family.json            家庭元信息（单对象）
 ├── people.json            Person 数组（现实家庭成员，含无账号者）
-├── memories.json          MemoryEvent 数组（含 assetIds / participantPersonIds / tags 关系）
-├── inbox-items.json       InboxItem 全量数组（含所有状态与完整原始文字）
-├── inbox-item-assets.json InboxItem ↔ Asset 关联行全量数组
+├── memories.json          MemoryEvent 数组（含独立 bodyText、原件、人物与标签关系）
+├── privacy.json           必需的作者身份、读者、作品归属与已提交素材凭据
+├── drafts.json / asset-deletions.json / name-reviews.json
+├── collections.json / collection-sections.json / collection-items.json
+├── book-projects.json / book-chapters.json / book-blocks.json
+├── book-source-refs.json / book-block-sources.json / book-revisions.json
+├── inbox-items.json       当前导出范围的 InboxItem 数组（含所有状态与完整原始文字）
+├── inbox-item-assets.json 对应的 InboxItem ↔ Asset 关联行数组
 ├── import-sessions.json / import-session-default-participants.json / import-session-items.json
 │                           耐久导入批次、默认人物与逐项最终关系
 ├── contribution-requests.json / contribution-request-submissions.json
@@ -49,18 +56,18 @@ family-time-capsule-export/
 认证、临时传输与 capability 不属于家庭档案，明确不导出：`user`、`account`、`session`、
 `verification`、`rate_limit`、`family_invitation`、邀请 token/hash/claim、密码哈希与
 setup token、`UploadSession`、临时上传文件、Share Extension 暂存与设备通知状态均不进入 ZIP。
-恢复后管理员通过新的邀请重新建立账号与 Person 绑定。
+恢复后通过新的邀请建立登录账号。人物绑定不认领归档作者；归档身份必须在主机上明确绑定到当前账号。
 
 ## manifest.json
 
 ```jsonc
 {
-  "exportVersion": 1,
-  "appVersion": "1.1.0-alpha.1",  // 产生导出的应用版本（package.json version）
+  "exportVersion": 2,
+  "appVersion": "1.0.0-dev.1",  // 产生导出的应用版本（package.json version）
   "exportedAt": "2026-08-29T12:00:00.000Z",
   "familyId": "<uuid>",
   "familyName": "我们一家",
-  "fileCount": 32,                 // 固定 25 个非媒体文件 + 7 个原件（不含 .keep）
+  "fileCount": 45,                 // 固定 38 个非媒体文件 + 7 个原件（不含 .keep）
   "assetCount": 7,
   "assets": [
     {
@@ -87,13 +94,29 @@ setup token、`UploadSession`、临时上传文件、Share Extension 暂存与�
 规则：
 
 - `assets` 只包含**原件**（derivativeType=null）；衍生物可再生，不入档。
-- 1.1 当前格式固定包含上图 25 个非媒体文件；因此
-  `fileCount = assetCount + 25`，`.keep` 不计数。旧 v1 会根据实际成组文件数校验，不能
+- 当前 v2 固定包含 38 个非媒体文件；因此
+  `fileCount = assetCount + 38`，`.keep` 不计数。旧 v1 会根据实际成组文件数校验，不能
   伪造当前格式的计数。
 - `capturedAt`/`importedAt` 为 UTC ISO-8601。
 - 增量字段缺失时的恢复端默认：`type` 按目录名（images/audio/video/documents）推断；
   `timeSource` 按 capturedAt 有无推断（有→embedded_metadata，无→import_time）；
   `originalFilename` 回退 `<assetId>.<ext>`。
+
+## privacy.json 与正文
+
+`privacy.json` 的 `version` 固定为 1，包含以下数组。字段白名单、唯一 ID 和完整引用在恢复前校验，不能忽略坏权限后继续导入。
+
+| 数组 | 内容 |
+| --- | --- |
+| `principals` | `{ id, name }`：归档内不透明身份 ID 与展示名，不含邮箱、密码、会话、角色或登录凭据 |
+| `events` / `drafts` | `{ id, visibility, owner, readers }`；owner/readers 引用 principals，参与人物不充当读者 |
+| `assets` | `{ id, visibility, owner }`；不会把全部原件默认归给恢复维护者 |
+| `books` / `imports` | `{ id, owner }`；个人作品和私密收件归属按账号保存 |
+| `reviewAssets` | `{ inboxItemId, assetId }`；保存已明确提交给家人整理的素材访问凭据，不复制后续未提交草稿 |
+
+正文独立存储于 `memory_event.body_text` 并写入 `memories.json.bodyText` 和 `timeline.md`。草稿删除、索引重建和元数据编辑不会删除正文。旧库升级按时间与 ID 排序，优先合并非空收件箱原文，只有没有原文时才取已发布草稿；不会双计镜像，也不会合并掉内容相同的独立来源。恢复时仅对缺少正文字段的旧档使用该回填规则；显式空正文保持为空。
+
+v2 恢复将未绑定身份保存为停用、无凭据、无 Person 绑定的占位账号。明确的主机绑定会同时更新事件、原件、草稿、读者、作品与收件归属并写审计；不会自动创建登录权限。操作方法见 [RESTORE.md](./RESTORE.md#归档身份的明确绑定)。
 
 ## 实体 JSON 语义
 

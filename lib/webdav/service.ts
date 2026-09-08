@@ -7,7 +7,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backupRun, type BackupRunRow } from "@/db/schema/backup";
 import { assertFamilyCapability } from "@/lib/authz/policy";
-import { buildFamilyExport } from "@/lib/export/service";
+import { buildActorExport } from "@/lib/export/service";
 import type { FamilyContext } from "@/lib/family/context";
 
 /**
@@ -194,7 +194,7 @@ export async function runWebDavBackup(
   // 1) verified export（导出内部已做逐字节 SHA 校验，不一致会抛错）
   let exportResult;
   try {
-    exportResult = await buildFamilyExport(context.familyId);
+    exportResult = await buildActorExport(context);
   } catch (error) {
     return fail(`export_failed: ${(error as Error).message}`);
   }
@@ -265,7 +265,7 @@ export async function runWebDavBackup(
   } catch (error) {
     return fail(`webdav_error: ${(error as Error).message}`);
   } finally {
-    // buildFamilyExport creates an operational temporary. Upload paths reopen
+    // buildActorExport creates an operational temporary. Upload paths reopen
     // it as needed, then cleanup happens for every success/failure branch.
     await unlink(exportResult.filePath).catch(() => undefined);
   }

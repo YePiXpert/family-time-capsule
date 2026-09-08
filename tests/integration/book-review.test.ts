@@ -398,9 +398,24 @@ it("five confirmed memories become a durable ordered album draft; date edits upd
   ).toBe(originalCount);
 });
 
+it("personal review lookup uses the live account without claiming another account's Person identity", () => {
+  const options = { startDate: "2023-01-01", endDate: "2023-01-07", audience: "personal" as const };
+  const own = review.createBookFromReview(context, options, []);
+  const otherId = randomUUID();
+  getDb().update(user).set({ personId: null }).where(eq(user.id, actor.id)).run();
+  getDb().insert(user).values({ id: otherId, name: "同人物另一账号", email: `${otherId}@fixture.invalid`, role: "admin", familyId: context.familyId, personId: context.personId }).run();
+  const other = { ...context, userId: otherId, role: "admin" as const };
+  expect(review.getBookReview(other, options).draft).toBeNull();
+  const ownOther = review.createBookFromReview(other, options, []);
+  expect(ownOther.id).not.toBe(own.id);
+  getDb().update(user).set({ personId: null }).where(eq(user.id, otherId)).run();
+  expect(review.getBookReview({ ...other, personId: null, isGuardian: false }, options).draft?.id).toBe(ownOther.id);
+  getDb().update(user).set({ personId: context.personId }).where(eq(user.id, actor.id)).run();
+});
+
 it("review draft keys, completed copies and highlights survive independent restore without creating a second unfinished book", async () => {
   const before=(await import("@/lib/books/projects/archive")).collectBookArchive(context.familyId);
-  const current=review.getBookReview(context,range),backup=await(await import("@/lib/export/service")).buildFamilyExport(context.familyId),bytes=readFileSync(backup.filePath);
+  const current=review.getBookReview(context,range),backup=await(await import("@/lib/export/service")).buildDisasterExport(context.familyId),bytes=readFileSync(backup.filePath);
   closeDatabase();process.env.DATA_DIR=path.join(root,"restored-review");vi.resetModules();const restored=await import("@/db");
   try {
     await(await import("@/lib/auth/setup")).performSetup({token:"fictional-review",displayName:"恢复虚构管理员",email:"restored-review@example.test",password:"fictional-review-password"});
@@ -411,6 +426,6 @@ it("review draft keys, completed copies and highlights survive independent resto
     const nextContext={...context,...await family.getUserBinding(actor.id),userId:actor.id,userName:actor.name,familyId:context.familyId,familyTimezone:context.familyTimezone,childLaterUnlockAge:context.childLaterUnlockAge};
     const nextReview=await import("@/lib/books/projects/review"),overview=nextReview.getBookReview(nextContext,range);
     expect(overview.selectedCount).toBe(current.selectedCount);expect(overview.draft?.id).toBe(current.draft?.id);expect(nextReview.createBookFromReview(nextContext,range)).toEqual({id:current.draft!.id,existing:true});
-    const again=await(await import("@/lib/export/service")).buildFamilyExport(context.familyId);expect(readFileSync(again.filePath).length).toBeGreaterThan(0);
+    const again=await(await import("@/lib/export/service")).buildDisasterExport(context.familyId);expect(readFileSync(again.filePath).length).toBeGreaterThan(0);
   } finally {restored.closeDatabase();process.env.DATA_DIR=root;}
 });

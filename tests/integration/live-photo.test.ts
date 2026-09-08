@@ -205,7 +205,7 @@ it("persists explicit pair roles through private draft HTTP, publication and por
   const { emptyDraftContent } = await import("@/lib/drafts/model");
   const { saveDraft, getDraft, publishDraft } = await import("@/lib/drafts/service");
   const { memoryEventAsset } = await import("@/db/schema/memory");
-  const { buildFamilyExport } = await import("@/lib/export/service");
+  const { buildDisasterExport } = await import("@/lib/export/service");
   const { PUT } = await import("@/app/api/mobile/v1/drafts/[id]/route");
   const binding = await getUserBinding(adminUserId);
   const ctx = { userId: adminUserId, userName: "爸爸", familyId, personId: binding.personId, role: binding.role, accountEnabled: true as const, isGuardian: false, familyTimezone: "Asia/Shanghai", childLaterUnlockAge: 18 };
@@ -268,7 +268,7 @@ it("persists explicit pair roles through private draft HTTP, publication and por
   const larger = await mergeInboxEntries(familyId, largerDraftIds, { title: "202份素材的共同记忆" });
   if (!larger.ok) throw new Error(larger.error);
   const { default: JSZip } = await import("jszip");
-  const backup = await buildFamilyExport(familyId, { actorUserId: adminUserId });
+  const backup = await buildDisasterExport(familyId, { actorUserId: adminUserId });
   const zip = await JSZip.loadAsync(readFileSync(backup.filePath));
   const memories = JSON.parse(await zip.file("family-time-capsule-export/memories.json")!.async("string"));
   expect(memories.find((m: { id: string }) => m.id === published.memoryEventId).assetReferences).toEqual(content.items.map(({ assetId, livePhotoGroupId, livePhotoRole, caption }) => ({ assetId, livePhotoGroupId, livePhotoRole, caption })));

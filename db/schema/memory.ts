@@ -34,6 +34,7 @@ export const memoryEvent = sqliteTable(
     childPersonId: text("child_person_id")
       .references(() => person.id),
     title: text("title").notNull(),
+    bodyText: text("body_text").notNull().default(""),
     titleSource: text("title_source").notNull().default("legacy_unknown"),
     titleRevision: integer("title_revision").notNull().default(0),
     occurredAt: integer("occurred_at", { mode: "timestamp" }).notNull(),

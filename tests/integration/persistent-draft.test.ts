@@ -21,7 +21,7 @@ const { emptyDraftContent } = await import("@/lib/drafts/model");
 const { saveDraft, getDraft, listDrafts, publishDraft, discardDraft } = await import("@/lib/drafts/service");
 const { getMemoryEventDetail } = await import("@/lib/memories/service");
 const { searchFamily, rebuildSearchIndex } = await import("@/lib/search/service");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 const { PUT, GET } = await import("@/app/api/mobile/v1/drafts/[id]/route");
 const { POST } = await import("@/app/api/mobile/v1/drafts/[id]/publish/route");
 afterAll(() => { closeDatabase(); dirs.forEach(dir => rmSync(dir, { recursive: true, force: true })); });
@@ -131,7 +131,7 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
   const reopenedUnknown = new Database(path.join(dirs[0]!, "db/capsule.sqlite"));
   expect(reopenedUnknown.prepare("select occurred_at, occurred_at_precision from draft where id=?").get(unknownId)).toEqual({ occurred_at: null, occurred_at_precision: "unknown" });
   reopenedUnknown.close();
-  const backup = await buildFamilyExport(ctx.familyId, { actorUserId: ctx.userId });
+  const backup = await buildDisasterExport(ctx.familyId, { actorUserId: ctx.userId });
   const bytes = readFileSync(backup.filePath);
   const zip = await JSZip.loadAsync(bytes);
   expect(Object.keys(zip.files).filter(name => name.endsWith("drafts.json"))).toHaveLength(1);
@@ -150,11 +150,18 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
     expect(restored.map(a => a.assetId)).toEqual([...assets].reverse());
     expect(restored.map(a => a.caption)).toEqual(["原始顺序", "原始顺序", "原始顺序"]);
     const row = target.getDb().get<{ author_user_id: string | null; author_person_id: string }>(sql`select author_user_id, author_person_id from draft where id=${draft2.id}`)!;
-    expect(row).toEqual({ author_user_id: null, author_person_id: ctx.personId });
-    // Restore operator never becomes the author. Rebinding the original Person resumes the draft.
+    expect(row.author_person_id).toBe(ctx.personId);
+    expect(row.author_user_id).not.toBeNull();
+    expect(row.author_user_id).not.toBe(operator.id);
+    // V2 never grants private ownership by matching a Person. Host recovery must explicitly bind the archived identity.
     const resumedUser = randomUUID();
     target.getDb().insert(user).values({ id: resumedUser, name: "恢复原作者", email: "resumed@fixture.invalid", familyId: ctx.familyId, personId: ctx.personId, role: "editor" }).run();
-    const restoredDraft = (await import("@/lib/drafts/service")).getDraft({ ...ctx, userId: resumedUser, role: "editor" }, draft2.id);
+    const restoredDraftService = await import("@/lib/drafts/service");
+    expect(() => restoredDraftService.getDraft({ ...ctx, userId: resumedUser, role: "editor" }, draft2.id)).toThrow("not_found");
+    target.getDb().run(sql`update user set family_id=${ctx.familyId} where id=${operator.id}`);
+    const principal = target.getDb().get<{ archive_principal_id: string }>(sql`select archive_principal_id from restore_principal where user_id=${row.author_user_id}`)!;
+    (await import("@/lib/restore/principals")).bindRestoredPrincipal(ctx.familyId, principal.archive_principal_id, resumedUser, operator.id);
+    const restoredDraft = restoredDraftService.getDraft({ ...ctx, userId: resumedUser, role: "editor" }, draft2.id);
     expect(restoredDraft.text).toBe(content.text);
     expect(restoredDraft.items.map(i => i.assetId)).toEqual([assets[0]]);
   } finally { target.closeDatabase(); }

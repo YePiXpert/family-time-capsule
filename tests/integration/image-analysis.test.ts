@@ -36,7 +36,7 @@ const { requestImageAnalysis } = await import("@/lib/analysis/service");
 const { runAiWorkerOnce } = await import("@/jobs/runtime");
 const { createProductionAiJobRegistry } = await import("@/jobs/registry");
 const { DeterministicFakeMemoryAssistant } = await import("@/lib/ai/fake");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 
 const setup = await performSetup({
   token: "image-analysis-setup-token",
@@ -326,7 +326,7 @@ describe("image analysis end-to-end", () => {
       .get();
     expect(row).toBeTruthy();
 
-    const exported = await buildFamilyExport(familyId);
+    const exported = await buildDisasterExport(familyId);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
     const root = "family-time-capsule-export";
@@ -340,7 +340,7 @@ describe("image analysis end-to-end", () => {
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
     expect(manifest.fileCount).toBe(
-      manifest.assets.length + 37,
+      manifest.assets.length + 38,
     );
 
     const files = Object.keys(zip.files).filter((n) =>

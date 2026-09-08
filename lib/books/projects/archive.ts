@@ -19,12 +19,14 @@ export function collectBookArchive(familyId: string) {
       .from(bookProject)
       .where(eq(bookProject.familyId, familyId))
       .all()
-      .map((p) => ({
+      .map(({ ownerUserId, ...p }) => {
+        void ownerUserId;
+        return {
         ...p,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
         deletedAt: iso(p.deletedAt),
-      })),
+      }; }),
     chapters: db
       .select()
       .from(bookChapter)
@@ -70,12 +72,14 @@ export function restoreBookArchive(
   tx: ContributionAccessTransaction,
   g: BookArchiveGraph,
   familyId: string,
+  owners: Map<string, string | null> = new Map(),
 ) {
   if (g.projects.length)
     tx.insert(bookProject)
       .values(
         g.projects.map((p) => ({
           ...p,
+          ownerUserId: owners.get(p.id) ?? null,
           createdAt: new Date(p.createdAt),
           updatedAt: new Date(p.updatedAt),
           deletedAt: p.deletedAt ? new Date(p.deletedAt) : null,

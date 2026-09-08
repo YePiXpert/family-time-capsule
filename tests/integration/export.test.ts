@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-export-"));
@@ -56,7 +56,7 @@ const {
   sealCapsule,
   addCapsuleEvent,
 } = await import("@/lib/capsules/service");
-const { buildFamilyExport, ExportVerificationError } = await import(
+const { buildActorExport, buildDisasterExport, ExportVerificationError } = await import(
   "@/lib/export/service"
 );
 const { getAssetStorage } = await import("@/lib/assets/storage");
@@ -205,7 +205,7 @@ await sealCapsule(familyId, capsuleCreated.capsuleId); // 未到期的封存胶�
 
 describe("完整导出（#014）", () => {
   it("导出 → 解压 → manifest/JSON/媒体齐全且哈希一致", async () => {
-    const result = await buildFamilyExport(familyId);
+    const result = await buildDisasterExport(familyId);
     expect(result.assetCount).toBeGreaterThanOrEqual(6); // 5 图 + 1 音频
     expect(result.bytes).toBeGreaterThan(1000);
 
@@ -238,10 +238,10 @@ describe("完整导出（#014）", () => {
     const capsules = JSON.parse(await zip.file(`${root}/capsules.json`)!.async("string"));
     const timelineMd = await zip.file(`${root}/timeline.md`)!.async("string");
 
-    expect(manifest.exportVersion).toBe(1);
+    expect(manifest.exportVersion).toBe(2);
     expect(manifest.appVersion).toBe(JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")).version);
     expect(manifest.familyId).toBe(familyId);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 37);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 38);
     expect(result.fileCount).toBe(manifest.fileCount);
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
@@ -417,6 +417,29 @@ describe("完整导出（#014）", () => {
     expect(zip.file(`${root}/originals/documents/.keep`)).toBeTruthy();
   });
 
+  it("another process tightening permissions during original hashing cancels the archive before it is handed out", async () => {
+    const { getLiveFamilyPrincipal } = await import("@/lib/authz/principal");
+    const principal = await getLiveFamilyPrincipal(adminUserId, familyId);
+    const context = { ...principal, userName: "爸爸" };
+    const storage = getAssetStorage(), resolve = storage.resolvePath.bind(storage);
+    const { spawnSync } = await import("node:child_process");
+    const before = readdirSync(path.join(dataDir, "exports")).sort();
+    const hook = vi.spyOn(storage, "resolvePath").mockImplementationOnce(key => {
+      const child = spawnSync(process.execPath, ["--input-type=commonjs", "-e", "const Database=require('better-sqlite3');const db=new Database(process.argv[1]);db.prepare(\"update memory_event set visibility='private' where id=?\").run(process.argv[2]);db.close();", path.join(dataDir, "db/capsule.sqlite"), merged.eventId], { cwd: process.cwd(), encoding: "utf8" });
+      expect(child.status, child.stderr).toBe(0);
+      return resolve(key);
+    });
+    try {
+      await expect(buildActorExport(context)).rejects.toThrow("export_state_changed");
+      expect(hook).toHaveBeenCalled();
+      expect(readdirSync(path.join(dataDir, "exports")).sort()).toEqual(before);
+    } finally {
+      hook.mockRestore();
+      const { sql } = await import("drizzle-orm");
+      db.run(sql`update memory_event set visibility='family' where id=${merged.eventId}`);
+    }
+  });
+
   it("原件被篡改 → 导出明确失败，不产出备份", async () => {
     const storage = getAssetStorage();
     // 找一个原件直接改写磁盘字节（模拟 bit rot / 篡改）
@@ -427,6 +450,6 @@ describe("完整导出（#014）", () => {
     const fs = await import("node:fs");
     fs.writeFileSync(abs, Buffer.concat([readFileSync(abs), Buffer.from("tampered")]));
 
-    await expect(buildFamilyExport(familyId)).rejects.toThrow(ExportVerificationError);
+    await expect(buildDisasterExport(familyId)).rejects.toThrow(ExportVerificationError);
   });
 });

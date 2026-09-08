@@ -15,13 +15,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:export": "node scripts/verify-export.mjs",
-    "restore": "tsx scripts/restore.ts",
+    "restore": "tsx --conditions=react-server scripts/restore.ts",
     "recover-account": "tsx --conditions=react-server scripts/account-recovery.ts",
     "search:rebuild": "tsx --conditions=react-server scripts/search-rebuild.ts",
     "benchmark": "tsx --conditions=react-server scripts/benchmark.mts",
     "pretest:e2e": "npm run build && npm run build:ops",
     "test:e2e": "playwright test && vitest run --config vitest.roundtrip.config.ts",
-    "test:ops": "vitest run --config vitest.ops.config.ts"
+    "test:ops": "vitest run --config vitest.ops.config.ts",
+    "restore:principals": "tsx --conditions=react-server scripts/restore-principals.ts"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^14.0.0",

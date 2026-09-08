@@ -12,7 +12,7 @@ const inputClass =
 
 /**
  * 高敏自助操作（M2-c）：
- * - 完整导出需要 10 分钟内的密码复核（ID-10 step-up），确认后浏览器下载；
+ * - 可读档案导出需要 10 分钟内的密码复核（ID-10 step-up），确认后浏览器下载；
  * - 退出家庭（ID-13）与删除账号（ID-14，需密码+明确确认语）。
  */
 export function ExportStepUpPanel({ needsStepUp }: { needsStepUp: boolean }) {
@@ -22,12 +22,13 @@ export function ExportStepUpPanel({ needsStepUp }: { needsStepUp: boolean }) {
   );
   if (!needsStepUp || state?.exportReady) {
     return (
-      <section aria-label="完整导出" className="flex flex-col gap-2">
+      <section aria-label="可读档案导出" className="flex flex-col gap-2">
+        <p className="text-sm text-foreground/70">包含你当前可读的原件与档案。涉及不可读来源的作品会省略；已下载的文件无法随撤权远程收回。</p>
         <a
           href="/api/export"
           className="inline-flex min-h-11 items-center justify-center rounded-lg bg-foreground px-4 py-2.5 text-sm text-background transition-opacity hover:opacity-90"
         >
-          导出完整备份 ZIP
+          导出可读档案 ZIP
         </a>
         <p className="text-xs text-foreground/55">
           {state?.exportReady ? "密码复核已通过（10 分钟内有效）。" : "密码复核在近期已完成。"}
@@ -36,9 +37,9 @@ export function ExportStepUpPanel({ needsStepUp }: { needsStepUp: boolean }) {
     );
   }
   return (
-    <form aria-label="完整导出" action={formAction} className="flex flex-col gap-2">
+    <form aria-label="可读档案导出" action={formAction} className="flex flex-col gap-2">
       <p className="text-sm leading-6 text-foreground/70">
-        完整导出是高敏操作，需要 10 分钟内的登录或密码复核。若刚登录不久，直接下载即可。
+        可读档案导出是高敏操作，需要 10 分钟内的登录或密码复核。若刚登录不久，直接下载即可。
       </p>
       <div className="flex flex-col gap-2 sm:flex-row">
         <input

@@ -1,3 +1,16 @@
+import { bookProject } from "@/db/schema/book";
+import { createBookSourceResolver } from "@/lib/books/projects/sources";
+import { draft as draftTable } from "@/db/schema/draft";
+import type { FamilyContext } from "@/lib/family/context";
+import { getLiveFamilyPrincipal } from "@/lib/authz/principal";
+import { hasFamilyCapability } from "@/lib/authz/policy";
+import { auditLog } from "@/db/schema/audit";
+import { randomUUID } from "node:crypto";
+import { createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
+import { createContributionAccessSnapshot, readableAssetPredicate, getVisibleContributionInTransaction } from "@/lib/authz/contribution-access";
+import { parseBookArchive } from "@/lib/books/projects/archive";
+import { parseCollectionArchive } from "@/lib/collections/archive";
+import { collectArchivePrivacy } from "./collect-privacy";
 import { assetDeletion } from "@/db/schema/asset-deletion";
 import { collectDraftArchive } from "@/lib/drafts/archive";
 import { collectNameReviews, parseNameReviews } from "@/lib/names/archive";
@@ -9,7 +22,7 @@ import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
 
 import { collectDurableStories } from "@/lib/stories/service";
 import { collectCapsuleDialogue } from "@/lib/capsules/dialogue";
-import { createReadStream, createWriteStream, statSync } from "node:fs";
+import { createReadStream, createWriteStream, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { ZipArchive } from "archiver";
@@ -71,10 +84,10 @@ import { getFamily } from "@/lib/family/service";
  * - timeline.md 用相对路径引用原媒体，解压即可读/可播放。
  */
 
-export const EXPORT_VERSION = 1;
+export const EXPORT_VERSION = 2;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
-/** v1 当前固定的非媒体文件数；恢复端也用它区分完整新档与旧式 v1 档。 */
-export const EXPORT_NON_ASSET_FILE_COUNT = 28 + COLLECTION_FILES.length + BOOK_FILES.length;
+/** Current v2 non-media file count; legacy v1 is counted from its module set. */
+export const EXPORT_NON_ASSET_FILE_COUNT = 29 + COLLECTION_FILES.length + BOOK_FILES.length;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -140,38 +153,50 @@ export type ExportResult = {
   assetCount: number;
 };
 
-export async function buildFamilyExport(
-  familyId: string,
-  opts: { actorUserId?: string | null } = {},
-): Promise<ExportResult> {
+/** Host maintenance only; application requests must use buildActorExport. */
+export function buildDisasterExport(familyId: string, opts: { actorUserId?: string | null } = {}) {
+  return buildExport(familyId, opts);
+}
+export async function buildActorExport(context: FamilyContext) {
+  const principal = await getLiveFamilyPrincipal(context.userId, context.familyId);
+  return buildExport(context.familyId, { actorUserId: context.userId, context: { ...context, ...principal } });
+}
+async function buildExport(familyId: string, opts: { actorUserId?: string | null; context?: FamilyContext }): Promise<ExportResult> {
   const db = getDb();
-  const collectionGraph = collectCollectionArchive(familyId);
-  const bookGraph = collectBookArchive(familyId);
+  const epoch = () => JSON.stringify([db.get(sql`pragma data_version`), db.get(sql`select total_changes() n`)]);
+  const assertActor = () => {
+    if (!opts.context) return;
+    const c = opts.context;
+    if (!hasFamilyCapability(c.role, "archive:export") || !db.get(sql`select id from user where id=${c.userId} and family_id=${familyId} and role=${c.role} and person_id is ${c.personId} and disabled_at is null`)) throw new Error("export_forbidden");
+  };
+  const startEpoch = db.transaction(() => { assertActor(); return epoch(); });
+  let collectionGraph = collectCollectionArchive(familyId);
+  let bookGraph = collectBookArchive(familyId);
   const bookClosure = collectBookSourceClosure(familyId);
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
   const [
     people,
-    assets,
-    events,
-    contributions,
-    facts,
-    capsules,
-    inboxItems,
-    inboxItemAssets,
-    inboxItemParticipants,
-    transcripts,
-    factSources,
-    tags,
-    importSessions,
-    importDefaultParticipants,
-    importItems,
+    initialAssets,
+    initialEvents,
+    initialContributions,
+    initialFacts,
+    initialCapsules,
+    initialInboxItems,
+    initialInboxItemAssets,
+    initialInboxItemParticipants,
+    initialTranscripts,
+    initialFactSources,
+    initialTags,
+    initialImportSessions,
+    initialImportDefaultParticipants,
+    initialImportItems,
     contributionRequests,
-    requestSubmissions,
-    portalSubmissions,
-    reviewPeriods,
-    reviewEvents,
+    initialRequestSubmissions,
+    initialPortalSubmissions,
+    initialReviewPeriods,
+    initialReviewEvents,
   ] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
@@ -181,10 +206,11 @@ export async function buildFamilyExport(
       .where(
         and(
           eq(memoryEventTable.familyId, familyId),
-          or(isNull(memoryEventTable.deletedAt), inArray(memoryEventTable.id,bookClosure.events), sql`exists (select 1 from collection_item ci where ci.memory_event_id=${memoryEventTable.id} and ci.family_id=${familyId})`),
+          // Disaster archives retain tombstoned roots so dependent facts and links remain valid.
+          opts.context ? isNull(memoryEventTable.deletedAt) : undefined,
         ),
       ),
-    listCompleteFamilyContributionsForDisasterExport(db, familyId, bookClosure.contributions),
+    listCompleteFamilyContributionsForDisasterExport(db, familyId),
     listFamilyFacts(db, familyId),
     db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
     db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
@@ -212,11 +238,77 @@ export async function buildFamilyExport(
     db.select().from(reviewPeriodEvent).where(eq(reviewPeriodEvent.familyId, familyId)),
   ]);
 
+  let assets = initialAssets;
+  let events = initialEvents;
+  let contributions = initialContributions;
+  let facts = initialFacts;
+  let capsules = initialCapsules;
+  let inboxItems = initialInboxItems;
+  let inboxItemAssets = initialInboxItemAssets;
+  let inboxItemParticipants = initialInboxItemParticipants;
+  let transcripts = initialTranscripts;
+  let factSources = initialFactSources;
+  let tags = initialTags;
+  let importSessions = initialImportSessions;
+  let importDefaultParticipants = initialImportDefaultParticipants;
+  let importItems = initialImportItems;
+  let requestSubmissions = initialRequestSubmissions;
+  let portalSubmissions = initialPortalSubmissions;
+  let reviewPeriods = initialReviewPeriods;
+  let reviewEvents = initialReviewEvents;
+  let draftArchive = collectDraftArchive(familyId, new Set(events.map(e => e.id)));
+  let storyBundle = collectDurableStories(familyId, bookClosure.stories);
+  let dialogue = collectCapsuleDialogue(familyId);
+  if (opts.context) {
+    const context = opts.context, access = createContributionAccessSnapshot(context);
+    const readableEvents = new Set(db.select({ id: memoryEventTable.id }).from(memoryEventTable).where(and(eq(memoryEventTable.familyId, familyId), eventVisibilityCondition(createEventAccessSnapshot(context)), isNull(memoryEventTable.deletedAt))).all().map(r => r.id));
+    events = events.filter(row => readableEvents.has(row.id));
+    const readableAssets = new Set(db.select({ id: assetTable.id }).from(assetTable).where(and(eq(assetTable.familyId, familyId), readableAssetPredicate(access, sql`${assetTable.id}`))).all().map(r => r.id));
+    assets = assets.filter(row => readableAssets.has(row.id));
+    events = events.map(row => ({ ...row, coverAssetId: row.coverAssetId && readableAssets.has(row.coverAssetId) ? row.coverAssetId : null }));
+    contributions = contributions.filter(row => readableEvents.has(row.memoryEventId) && db.transaction(tx => Boolean(getVisibleContributionInTransaction(tx, access, row.id))) && (!row.audioAssetId || readableAssets.has(row.audioAssetId)));
+    const contributionIds = new Set(contributions.map(c => c.id));
+    transcripts = transcripts.filter(row => readableAssets.has(row.assetId));
+    const transcriptIds = new Set(transcripts.map(t => t.id));
+    const sourceAllowed = (kind: string, id: string | null) => kind === "user_text" || (id !== null && (kind === "contribution" ? contributionIds : kind === "transcript" ? transcriptIds : kind === "memory_event" ? readableEvents : readableAssets).has(id));
+    facts = facts.filter(row => readableEvents.has(row.memoryEventId) && factSources.filter(s => s.factId === row.id).every(s => sourceAllowed(s.sourceType, s.sourceId)));
+    const factIds = new Set(facts.map(f => f.id));
+    factSources = factSources.filter(row => factIds.has(row.factId));
+    tags = tags.filter(row => readableEvents.has(row.memoryEventId));
+    const ownDrafts = new Set(db.select({ id: draftTable.id }).from(draftTable).where(and(eq(draftTable.familyId, familyId), or(eq(draftTable.authorUserId, context.userId), context.personId ? and(isNull(draftTable.authorUserId), eq(draftTable.authorPersonId, context.personId)) : undefined))).all().map(r => r.id));
+    draftArchive = draftArchive.filter(row => ownDrafts.has(row.id) && row.items.every(item => !item.assetId || readableAssets.has(item.assetId))).map(row => ({ ...row, memoryEventId: row.memoryEventId && readableEvents.has(row.memoryEventId) ? row.memoryEventId : null }));
+    inboxItems = inboxItems.filter(row => (!row.memoryEventId || readableEvents.has(row.memoryEventId)) && inboxItemAssets.filter(l => l.inboxItemId === row.id).every(l => readableAssets.has(l.assetId)));
+    const inboxIds = new Set(inboxItems.map(i => i.id));
+    draftArchive = draftArchive.map(row => ({ ...row, inboxItemId: row.inboxItemId && inboxIds.has(row.inboxItemId) ? row.inboxItemId : null }));
+    inboxItemAssets = inboxItemAssets.filter(row => inboxIds.has(row.inboxItemId) && readableAssets.has(row.assetId));
+    inboxItemParticipants = inboxItemParticipants.filter(row => inboxIds.has(row.inboxItemId));
+    const draftIds = new Set(draftArchive.map(d => d.id));
+    importSessions = importSessions.filter(row => (row.createdByUserId === context.userId || row.source === "guest") && (!row.intakeDraftId || draftIds.has(row.intakeDraftId)) && importItems.filter(i => i.importSessionId === row.id).every(i => (!i.assetId || readableAssets.has(i.assetId)) && (!i.inboxItemId || inboxIds.has(i.inboxItemId))));
+    const importIds = new Set(importSessions.map(i => i.id));
+    importItems = importItems.filter(row => importIds.has(row.importSessionId));
+    importDefaultParticipants = importDefaultParticipants.filter(row => importIds.has(row.importSessionId));
+    requestSubmissions = requestSubmissions.filter(row => inboxIds.has(row.inboxItemId));
+    portalSubmissions = portalSubmissions.filter(row => importIds.has(row.importSessionId));
+    // Copied prose and historical book snapshots must never survive an inaccessible source.
+    const permittedStories = new Set(storyBundle.stories.filter(row => !row.deletedAt && storyBundle.sources.filter(s => storyBundle.paragraphs.some(p => p.storyId === row.id && p.id === s.paragraphId)).every(s => s.sourceType === "fact" ? s.sourceId !== null && factIds.has(s.sourceId) : sourceAllowed(s.sourceType, s.sourceId))).map(s => s.id));
+    storyBundle = { stories: storyBundle.stories.filter(s => permittedStories.has(s.id)), paragraphs: storyBundle.paragraphs.filter(p => permittedStories.has(p.storyId)), sources: storyBundle.sources.filter(s => storyBundle.paragraphs.some(p => p.id === s.paragraphId && permittedStories.has(p.storyId))) };
+    reviewPeriods = reviewPeriods.filter(row => (!row.storyId || permittedStories.has(row.storyId)) && reviewEvents.filter(l => l.reviewPeriodId === row.id).every(l => readableEvents.has(l.memoryEventId)));
+    const reviewIds = new Set(reviewPeriods.map(r => r.id));
+    reviewEvents = reviewEvents.filter(row => reviewIds.has(row.reviewPeriodId));
+    const collectionIds = new Set(collectionGraph.collections.filter(row => !row.deletedAt && (!row.coverAssetId || readableAssets.has(row.coverAssetId)) && collectionGraph.items.filter(i => i.collectionId === row.id).every(i => (!i.memoryEventId || readableEvents.has(i.memoryEventId)) && (!i.assetId || readableAssets.has(i.assetId)))).map(r => r.id));
+    collectionGraph = parseCollectionArchive(collectionGraph.collections.filter(r => collectionIds.has(r.id)), collectionGraph.sections.filter(r => collectionIds.has(r.collectionId)), collectionGraph.items.filter(r => collectionIds.has(r.collectionId)), familyId, readableEvents, readableAssets);
+    const refs = { memory: readableEvents, asset: readableAssets, contribution: contributionIds, story: permittedStories, collection: collectionIds, person: new Set(people.map(p => p.id)) };
+    const sourceSet = (row: (typeof bookGraph.sources)[number]) => row.kind === "memory" ? row.memoryEventId : row.kind === "asset" ? row.assetId : row.kind === "contribution" ? row.contributionId : row.kind === "story" ? row.storyId : row.collectionId;
+    const ownedBookIds = new Set(db.select({ id: bookProject.id }).from(bookProject).where(eq(bookProject.ownerUserId, context.userId)).all().map(r => r.id));
+    const projectIds = new Set(bookGraph.projects.filter(row => !row.deletedAt && (row.audience === "family" || ownedBookIds.has(row.id)) && (!row.coverAssetId || readableAssets.has(row.coverAssetId)) && bookGraph.sources.filter(s => s.projectId === row.id).every(s => { const id = sourceSet(s); return id !== null && refs[s.kind].has(id) && createBookSourceResolver(context, row.audience)(s.kind, id).state.available; })).map(p => p.id));
+    bookGraph = parseBookArchive([bookGraph.projects.filter(r => projectIds.has(r.id)), bookGraph.chapters.filter(r => projectIds.has(r.projectId)), bookGraph.blocks.filter(r => projectIds.has(r.projectId)), bookGraph.sources.filter(r => projectIds.has(r.projectId)), bookGraph.links.filter(r => projectIds.has(r.projectId)), bookGraph.revisions.filter(r => projectIds.has(r.projectId))], familyId, refs);
+  }
   const eventIds = events.map((e) => e.id);
+  const privacy = collectArchivePrivacy(familyId, { events, assets, draftIds: new Set(draftArchive.map(d => d.id)), bookIds: new Set(bookGraph.projects.map(p => p.id)), importIds: new Set(importSessions.map(i => i.id)), reviewAssetPairs: new Set(inboxItemAssets.map(l => `${l.inboxItemId}:${l.assetId}`)) });
   // Capture review records before opening the ZIP and reject an inconsistent
   // title snapshot rather than emitting an archive that cannot be restored.
   const nameReviews = parseNameReviews(collectNameReviews(familyId, new Set(eventIds), new Set(inboxItems.map(item => item.id)), new Set(assets.map(a => a.id))), new Map(events.map(event => [event.id, event.titleRevision])), new Map(inboxItems.map(item => [item.id, item.titleRevision])), new Map(assets.map(a => [a.id, a.nameRevision])));
-  const [eventAssetLinks, eventParticipantLinks, capsuleEventLinks, capsuleAssetLinks, capsuleContributionLinks] =
+  const [initialEventAssetLinks, eventParticipantLinks, initialCapsuleEventLinks, initialCapsuleAssetLinks, initialCapsuleContributionLinks] =
     await Promise.all([
       eventIds.length
         ? db.select().from(memoryEventAsset).where(inArray(memoryEventAsset.memoryEventId, eventIds))
@@ -228,6 +320,23 @@ export async function buildFamilyExport(
       db.select().from(capsuleAsset).where(eq(capsuleAsset.familyId, familyId)),
       db.select().from(capsuleContribution).where(eq(capsuleContribution.familyId, familyId)),
     ]);
+
+  let eventAssetLinks = initialEventAssetLinks;
+  let capsuleEventLinks = initialCapsuleEventLinks;
+  let capsuleAssetLinks = initialCapsuleAssetLinks;
+  let capsuleContributionLinks = initialCapsuleContributionLinks;
+  if (opts.context) {
+    const assetIds = new Set(assets.map(a => a.id)), eventsSet = new Set(eventIds), contributionIds = new Set(contributions.map(c => c.id));
+    const brokenPairs = new Set(eventAssetLinks.filter(row => row.livePhotoGroupId && !assetIds.has(row.assetId)).map(row => row.livePhotoGroupId!));
+    eventAssetLinks = eventAssetLinks.filter(row => assetIds.has(row.assetId) && (!row.livePhotoGroupId || !brokenPairs.has(row.livePhotoGroupId)));
+    events = events.map(row => ({ ...row, coverAssetId: row.coverAssetId && eventAssetLinks.some(l => l.memoryEventId === row.id && l.assetId === row.coverAssetId) ? row.coverAssetId : null }));
+    const capsuleIds = new Set(capsules.filter(row => capsuleEventLinks.filter(l => l.capsuleId === row.id).every(l => eventsSet.has(l.memoryEventId)) && capsuleAssetLinks.filter(l => l.capsuleId === row.id).every(l => assetIds.has(l.assetId)) && capsuleContributionLinks.filter(l => l.capsuleId === row.id).every(l => contributionIds.has(l.contributionId)) && dialogue.replies.filter(r => r.capsuleId === row.id).every(r => !r.assetId || assetIds.has(r.assetId))).map(c => c.id));
+    capsules = capsules.filter(row => capsuleIds.has(row.id));
+    capsuleEventLinks = capsuleEventLinks.filter(row => capsuleIds.has(row.capsuleId));
+    capsuleAssetLinks = capsuleAssetLinks.filter(row => capsuleIds.has(row.capsuleId));
+    capsuleContributionLinks = capsuleContributionLinks.filter(row => capsuleIds.has(row.capsuleId));
+    dialogue = { questions: dialogue.questions.filter(q => capsuleIds.has(q.capsuleId)), replies: dialogue.replies.filter(r => capsuleIds.has(r.capsuleId)) };
+  }
 
   const storage = getAssetStorage();
 
@@ -275,6 +384,7 @@ export async function buildFamilyExport(
   // 2) 组织导出数据
   const personById = new Map(people.map((p) => [p.id, p]));
   const eventsSorted = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
+  const timelineEvents = eventsSorted.filter(e => !e.deletedAt);
 
   const tagsByEvent = new Map<string, string[]>();
   for (const t of tags) {
@@ -287,6 +397,7 @@ export async function buildFamilyExport(
     id: e.id,
     childPersonId: e.childPersonId,
     title: e.title,
+    bodyText: e.bodyText,
     titleSource: e.titleSource,
     titleRevision: e.titleRevision,
     occurredAt: iso(e.occurredAt),
@@ -359,9 +470,10 @@ export async function buildFamilyExport(
   const md: string[] = [];
   md.push(`# ${family.name} · 家庭记忆时间轴`);
   md.push("");
-  md.push(`> 由 Family Time Capsule 导出于 ${dt(new Date(), { dateStyle: "full", timeZone: tz })} · 共 ${eventsSorted.length} 个事件`);
+  md.push(`> 由 Family Time Capsule 导出于 ${dt(new Date(), { dateStyle: "full", timeZone: tz })} · 共 ${timelineEvents.length} 个事件`);
   md.push("");
   const renderEventBody = (e: (typeof eventsSorted)[number]): void => {
+    if (e.bodyText) md.push(e.bodyText, "");
     for (const link of eventAssetLinks.filter((l) => l.memoryEventId === e.id)) {
       const asset = assets.find((a) => a.id === link.assetId);
       if (!asset || asset.derivativeType) continue;
@@ -397,7 +509,7 @@ export async function buildFamilyExport(
 
   let lastMonth = "";
   const undated: typeof eventsSorted = [];
-  for (const e of eventsSorted) {
+  for (const e of timelineEvents) {
     // unknown 的锚点是创建时刻：按月分组会伪造发生月份，单独归入「时间不确定」。
     if (e.occurredAtPrecision === "unknown") {
       undated.push(e);
@@ -505,8 +617,9 @@ export async function buildFamilyExport(
       updatedAt: iso(p.updatedAt),
     })));
     json("memories.json", memoriesJson);
-    json("asset-deletions.json", db.select({ assetId: assetDeletion.assetId, sha256: assetDeletion.sha256, deletedAt: assetDeletion.deletedAt }).from(assetDeletion).where(eq(assetDeletion.familyId, familyId)).all());
-    json("drafts.json", collectDraftArchive(familyId, new Set(eventIds)));
+    json("asset-deletions.json", opts.context ? [] : db.select({ assetId: assetDeletion.assetId, sha256: assetDeletion.sha256, deletedAt: assetDeletion.deletedAt }).from(assetDeletion).where(eq(assetDeletion.familyId, familyId)).all());
+    json("drafts.json", draftArchive);
+    json("privacy.json", privacy);
     json("inbox-items.json", inboxItemsJson);
     json("inbox-item-assets.json", inboxItemAssetsJson);
     json("import-sessions.json", importSessions.map((session) => ({
@@ -644,7 +757,6 @@ export async function buildFamilyExport(
       endMs: s.endMs,
       createdAt: iso(s.createdAt),
     })));
-    const storyBundle = collectDurableStories(familyId, bookClosure.stories);
     json("stories.json", storyBundle.stories.map((st) => ({
       id: st.id,
       kind: st.kind,
@@ -693,7 +805,6 @@ export async function buildFamilyExport(
       updatedAt: iso(t.updatedAt),
     })));
     json("capsules.json", capsulesJson);
-    const dialogue = collectCapsuleDialogue(familyId);
     json("capsule-questions.json", dialogue.questions.map((q) => ({
       id: q.id,
       capsuleId: q.capsuleId,
@@ -731,16 +842,15 @@ export async function buildFamilyExport(
   });
 
   const bytes = statSync(filePath).size;
-  // 审计留痕（v0.1.3）：best-effort，失败不影响导出结果
-  {
-    const { recordAudit, AUDIT_KINDS } = await import("@/lib/audit/service");
-    await recordAudit(familyId, AUDIT_KINDS.exportCreated, opts.actorUserId ?? null, {
-      fileName,
-      bytes,
-      assetCount: manifestAssets.length,
-      fileCount: manifestAssets.length + EXPORT_NON_ASSET_FILE_COUNT,
-    });
-  }
+  try {
+    db.transaction(tx => {
+      assertActor();
+      if (epoch() !== startEpoch) throw new Error("export_state_changed");
+      // Final authorization and the audit commit synchronously under one writer lock.
+      tx.insert(auditLog).values({ id: randomUUID(), familyId, kind: "export.created", actorUserId: opts.actorUserId ?? null, detailJson: JSON.stringify({ fileName, bytes, assetCount: manifestAssets.length, fileCount: manifestAssets.length + EXPORT_NON_ASSET_FILE_COUNT }), createdAt: new Date() }).run();
+    }, { behavior: "immediate" });
+  } catch (error) { unlinkSync(filePath); throw error; }
+
   return {
     filePath,
     fileName,
@@ -751,13 +861,12 @@ export async function buildFamilyExport(
 }
 
 /**
- * Deliberate full-backup bypass: the API route has already required
- * `archive:export`. Never reuse this query for ordinary archive reads.
+ * Host disaster collection. Actor exports intersect these rows with their live
+ * object grants before any original is hashed or any archive is emitted.
  */
 async function listCompleteFamilyContributionsForDisasterExport(
   db: ReturnType<typeof getDb>,
   familyId: string,
-  retainedIds: string[] = [],
 ) {
   return db
     .select({ contribution: contributionTable })
@@ -766,7 +875,6 @@ async function listCompleteFamilyContributionsForDisasterExport(
     .where(
       and(
         eq(memoryEventTable.familyId, familyId),
-        or(isNull(contributionTable.deletedAt),inArray(contributionTable.id,retainedIds)),
       ),
     )
     .then((rows) => rows.map((r) => r.contribution));

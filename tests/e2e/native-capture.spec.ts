@@ -4,6 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { expect, test } from "@playwright/test";
+import { grantExportStepUp } from "./helpers/export-step-up";
 import { ensureBootstrap } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
@@ -64,6 +65,7 @@ test("Web can remove a departed reader while keeping the other selected account"
 });
 
 test("Web draft-only sync uploads new attachments privately before explicit publication", async ({ page }) => {
+  test.setTimeout(90000);
   await ensureBootstrap(page);
   await page.goto("/capture");
   await page.getByLabel("写下这一刻").fill("网页上的私密附件记录");
@@ -89,6 +91,35 @@ test("Web draft-only sync uploads new attachments privately before explicit publ
   } finally {db.close();}
   await page.getByRole("button",{name:"保存为一条记忆"}).click();
   await expect(page.getByRole("link",{name:"查看这条记忆"})).toBeVisible();
+  const detailLink = (await page.getByRole("link", { name: "查看这条记忆" }).getAttribute("href"))!;
+  const eventId = detailLink.split("/").at(-1)!;
+  await page.goto(detailLink);
+  await expect(page.locator("main")).toContainText("网页上的私密附件记录");
+  const cleanupDraft = new Database(path.join(process.cwd(), "data/e2e-native-capture/db/capsule.sqlite"));
+  let adminToken: string;
+  try {
+    cleanupDraft.pragma("foreign_keys = ON");
+    cleanupDraft.prepare("delete from draft where memory_event_id=?").run(eventId);
+    adminToken = randomUUID();
+    cleanupDraft.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at,recent_auth_at) values (?,?,'user-c',unixepoch()+3600,unixepoch(),unixepoch(),unixepoch())").run(randomUUID(), adminToken);
+  } finally { cleanupDraft.close(); }
+  await promisify(execFile)("npm", ["run", "search:rebuild"], { cwd: process.cwd(), env: { ...process.env, DATA_DIR: path.join(process.cwd(), "data/e2e-native-capture") }, timeout: 30000, maxBuffer: 1024 * 1024 });
+  await page.reload();
+  await expect(page.locator("main")).toContainText("网页上的私密附件记录");
+  await page.goto("/search?q=" + encodeURIComponent("私密附件"));
+  await expect(page.getByRole("link", { name: /私密草稿附件测试/ })).toBeVisible();
+  await grantExportStepUp(page);
+  const ownArchive = await page.request.get("/api/export");
+  expect(ownArchive.status()).toBe(200);
+  const { default: JSZip } = await import("jszip");
+  const ownZip = await JSZip.loadAsync(Buffer.from(await ownArchive.body()));
+  const exported = JSON.parse(await ownZip.file("family-time-capsule-export/memories.json")!.async("string"));
+  expect(exported.find((e: { id: string }) => e.id === eventId)).toMatchObject({ bodyText: "网页上的私密附件记录", occurredAtPrecision: "unknown" });
+  expect((await page.request.get(`/api/mobile/v1/memories/${eventId}`, { headers: { authorization: `Bearer ${adminToken}` } })).status()).toBe(404);
+  const otherArchive = await page.request.get("/api/export", { headers: { authorization: `Bearer ${adminToken}` } });
+  expect(otherArchive.status()).toBe(200);
+  const otherZip = await JSZip.loadAsync(Buffer.from(await otherArchive.body()));
+  expect(await otherZip.file("family-time-capsule-export/memories.json")!.async("string")).not.toContain(eventId);
 });
 
 test("Web separately imported Live Photo components stay paired after explicit selection and publication", async ({ page }) => {

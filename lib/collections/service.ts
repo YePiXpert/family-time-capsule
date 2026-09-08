@@ -1,3 +1,4 @@
+import { createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import { asset } from "@/db/schema/asset";
 import { readableName } from "@/lib/naming";
 import "server-only";
@@ -122,6 +123,7 @@ export function getCollection(
               eq(memoryEvent.status, "confirmed"),
               isNull(memoryEvent.deletedAt),
               inArray(memoryEvent.id, ids),
+              eventVisibilityCondition(createEventAccessSnapshot(context)),
             ),
           )
           .all()
@@ -237,7 +239,7 @@ export function listCollections(
     ids = page.map((r) => r.id);
   const counts = ids.length
     ? getDb().all<{ id: string; count: number }>(
-        sql`select ci.collection_id as id,count(*) as count from collection_item ci left join memory_event e on e.id=ci.memory_event_id where ci.collection_id in (select value from json_each(${JSON.stringify(ids)})) and ci.family_id=${context.familyId} and ((e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null) or (ci.asset_id is not null and ${readableAssetPredicate(createContributionAccessSnapshot(context), sql`ci.asset_id`)})) group by ci.collection_id`,
+        sql`select ci.collection_id as id,count(*) as count from collection_item ci left join memory_event e on e.id=ci.memory_event_id where ci.collection_id in (select value from json_each(${JSON.stringify(ids)})) and ci.family_id=${context.familyId} and ((e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null and ${eventVisibilityCondition(createEventAccessSnapshot(context), sql`e`)}) or (ci.asset_id is not null and ${readableAssetPredicate(createContributionAccessSnapshot(context), sql`ci.asset_id`)})) group by ci.collection_id`,
       )
     : [];
   const readable = readableAssetPredicate(
@@ -247,7 +249,7 @@ export function listCollections(
   const covers = ids.length
     ? getDb().all<{ id: string; assetId: string }>(
         sql`select c.id,coalesce((select id from asset t where t.original_asset_id=a.id and t.family_id=${context.familyId} and t.derivative_type='thumbnail' order by t.created_at desc,t.id desc limit 1),a.id) as assetId from collection c join asset a on a.id=c.cover_asset_id where c.id in (select value from json_each(${JSON.stringify(ids)})) and c.family_id=${context.familyId} and ${readable}
-        and (exists(select 1 from collection_item ci where ci.collection_id=c.id and ci.family_id=${context.familyId} and ci.asset_id=a.id) or exists(select 1 from collection_item ci join memory_event e on e.id=ci.memory_event_id join memory_event_asset ma on ma.memory_event_id=e.id where ci.collection_id=c.id and ci.family_id=${context.familyId} and e.family_id=${context.familyId} and ma.family_id=${context.familyId} and ma.asset_id=a.id and e.status='confirmed' and e.deleted_at is null))`,
+        and (exists(select 1 from collection_item ci where ci.collection_id=c.id and ci.family_id=${context.familyId} and ci.asset_id=a.id) or exists(select 1 from collection_item ci join memory_event e on e.id=ci.memory_event_id join memory_event_asset ma on ma.memory_event_id=e.id where ci.collection_id=c.id and ci.family_id=${context.familyId} and e.family_id=${context.familyId} and ma.family_id=${context.familyId} and ma.asset_id=a.id and e.status='confirmed' and e.deleted_at is null and ${eventVisibilityCondition(createEventAccessSnapshot(context), sql`e`)}))`,
       )
     : [];
   const last = page.at(-1);
@@ -304,6 +306,7 @@ export function saveCollection(
             and(
               eq(memoryEvent.familyId, context.familyId),
               inArray(memoryEvent.id, ids),
+              eventVisibilityCondition(createEventAccessSnapshot(context)),
             ),
           )
           .all()
@@ -320,9 +323,7 @@ export function saveCollection(
         (p) => p.id === item.id && p.memoryEventId === item.memoryEventId,
       );
       if (
-        (!existing &&
-          (!source || source.status !== "confirmed" || source.deletedAt)) ||
-        (item.memoryEventId && !source)
+        !existing && (!source || source.status !== "confirmed" || source.deletedAt)
       )
         throw new CollectionError("source_unavailable", 404);
     }
@@ -333,7 +334,7 @@ export function saveCollection(
       );
       const cover =
         tx.get(sql`select a.id from asset a where a.id=${edit.coverAssetId} and a.original_asset_id is null and a.type='image' and ${readable}
-        and (a.id in (select value from json_each(${JSON.stringify(edit.items.flatMap(i => i.assetId ? [i.assetId] : []))})) or exists(select 1 from memory_event_asset ma join memory_event e on e.id=ma.memory_event_id where ma.asset_id=a.id and ma.family_id=${context.familyId} and e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null and e.id in (select value from json_each(${JSON.stringify(ids)}))))`);
+        and (a.id in (select value from json_each(${JSON.stringify(edit.items.flatMap(i => i.assetId ? [i.assetId] : []))})) or exists(select 1 from memory_event_asset ma join memory_event e on e.id=ma.memory_event_id where ma.asset_id=a.id and ma.family_id=${context.familyId} and e.family_id=${context.familyId} and e.status='confirmed' and e.deleted_at is null and ${eventVisibilityCondition(createEventAccessSnapshot(context), sql`e`)} and e.id in (select value from json_each(${JSON.stringify(ids)}))))`);
       if (!cover) throw new CollectionError("invalid_cover");
     }
     tx.delete(collectionItem).where(eq(collectionItem.collectionId, id)).run();

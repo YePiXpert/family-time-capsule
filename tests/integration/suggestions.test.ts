@@ -43,7 +43,7 @@ const {
 } = await import("@/lib/suggestions/service");
 const { addFact } = await import("@/lib/contributions/service");
 const { createContribution } = await import("@/lib/contributions/service");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 
 const { suggestEventMetadataHandler } = await import(
   "@/lib/ai/handlers/suggest-event-metadata"
@@ -429,7 +429,7 @@ describe("source-linked AI suggestions (M3-C)", () => {
     )!;
     await resolveSuggestion(familyId, admin.id, tagSuggestion.id, "accept");
 
-    const exported = await buildFamilyExport(familyId);
+    const exported = await buildDisasterExport(familyId);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(
       (await import("node:fs")).readFileSync(exported.filePath),

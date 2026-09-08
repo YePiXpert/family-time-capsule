@@ -15,10 +15,15 @@ async function main() {
   const args = process.argv.slice(2);
   let zipPath: string | undefined;
   let explicitUser: string | undefined;
+  let bindSelf: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--user") {
+    if (arg === "--bind-self") {
+      const value = args[++i];
+      if (!value || value.startsWith("--") || bindSelf) throw new Error("--bind-self 必须提供一项归档身份 ID");
+      bindSelf = value;
+    } else if (arg === "--user") {
       const value = args[++i];
       if (!value || value.startsWith("--")) {
         console.error("✗ --user 必须提供 userId");
@@ -71,7 +76,7 @@ async function main() {
     }
     console.log(`操作者: ${operator.email}`);
 
-    const report = await restoreFromZipFile(zipPath, operator.id);
+    const report = await restoreFromZipFile(zipPath, operator.id, { principalBindings: bindSelf ? { [bindSelf]: operator.id } : {} });
     console.log("✓ 恢复完成：");
     console.log(`  家庭     ${report.familyId}`);
     console.log(`  成员     ${report.people}`);
@@ -80,7 +85,7 @@ async function main() {
     console.log(`  讲述     ${report.contributions}`);
     console.log(`  事实     ${report.facts}`);
     console.log(`  胶囊     ${report.capsules}`);
-    console.log("\n下一步：管理员登录后访问 /onboarding 选择「你是谁」完成绑定。");
+    console.log("\n下一步：管理员登录后完成家庭绑定。归档身份不会按人物自动认领；使用 restore:principals 查看待确认身份，核实后逐项绑定账号。");
   } catch (err) {
     if (err instanceof RestoreError) {
       console.error(`✗ 恢复失败 [${err.code}]: ${err.message}`);

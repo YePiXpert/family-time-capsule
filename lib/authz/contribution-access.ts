@@ -579,13 +579,18 @@ export function getContributionAssetAccessInTransaction(
 
 /** A family review is an explicit publication of these originals for organizing. */
 export function familyReviewAssetPredicate(familyId: string, assetId: SQL): SQL {
-  return sql`exists (select 1 from draft review_draft
+  return sql`(exists (select 1 from draft review_draft
     inner join inbox_item review_inbox on review_inbox.id = review_draft.inbox_item_id
     inner join inbox_item_asset review_asset on review_asset.inbox_item_id = review_inbox.id
     where review_draft.family_id = ${familyId} and review_inbox.family_id = ${familyId}
       and review_asset.family_id = ${familyId} and review_asset.asset_id = ${assetId}
       and review_draft.visibility = 'family' and review_draft.status <> 'discarded'
-      and review_inbox.status <> 'discarded')`;
+      and review_inbox.status <> 'discarded') or exists (
+        select 1 from restored_review_asset receipt
+        join inbox_item i on i.id=receipt.inbox_item_id and i.family_id=receipt.family_id
+        join inbox_item_asset link on link.inbox_item_id=i.id and link.asset_id=receipt.asset_id and link.family_id=receipt.family_id
+        where receipt.family_id=${familyId} and receipt.asset_id=${assetId} and i.status <> 'discarded'
+      ))`;
 }
 
 /** Authenticated media read facade. */

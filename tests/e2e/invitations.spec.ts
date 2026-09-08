@@ -180,7 +180,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
       viewer.page.getByRole("link", { name: "管理账号邀请" }),
     ).toHaveCount(0);
     await expect(
-      viewer.page.getByRole("link", { name: /导出完整备份/ }),
+      viewer.page.getByRole("link", { name: /导出可读档案/ }),
     ).toHaveCount(0);
 
     await viewer.page.goto("/capture");
@@ -227,7 +227,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
       contributor.page.getByRole("link", { name: "管理账号邀请" }),
     ).toHaveCount(0);
     await expect(
-      contributor.page.getByRole("link", { name: /导出完整备份/ }),
+      contributor.page.getByRole("link", { name: /导出可读档案/ }),
     ).toHaveCount(0);
 
     await contributor.page.goto("/capture");

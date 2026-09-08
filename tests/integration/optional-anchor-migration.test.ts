@@ -45,7 +45,7 @@ it("upgrades a real 0050 database without cascading away references, defaults or
     // created_by_user_id=NULL 的行级默认；旧行数据本身不变。
     const beforeWithReaderDefaults = before.map((rows, i) =>
       tables[i] === "memory_event"
-        ? (rows as Array<Record<string, unknown>>).map(row => ({ ...row, visibility: "family", created_by_user_id: null }))
+        ? (rows as Array<Record<string, unknown>>).map(row => ({ ...row, visibility: "family", created_by_user_id: null, body_text: "" }))
         : rows);
     expect(tables.map(t => db.prepare(`SELECT * FROM ${t}`).all())).toEqual(beforeWithReaderDefaults);
     expect(db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='index' AND tbl_name='memory_event' ORDER BY name").all()).toEqual(indexes);
@@ -54,6 +54,7 @@ it("upgrades a real 0050 database without cascading away references, defaults or
       ...columns.map(c => c.name === "child_person_id" ? {...c,notnull:0} : c),
       expect.objectContaining({ name: "visibility", notnull: 1, dflt_value: "'family'" }),
       expect.objectContaining({ name: "created_by_user_id", notnull: 0, dflt_value: null }),
+      expect.objectContaining({ name: "body_text", notnull: 1, dflt_value: "''" }),
     ]);
     expect(db.pragma("foreign_keys", {simple:true})).toBe(1);
     expect(db.pragma("foreign_key_check")).toEqual([]);

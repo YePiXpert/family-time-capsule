@@ -831,7 +831,7 @@ beforeAll(async () => {
       ],
     });
     books.saveBookVersion(context, bookId, book.revision);
-    const zip = await m.exportSvc.buildFamilyExport(on.familyId);
+    const zip = await m.exportSvc.buildDisasterExport(on.familyId);
     const JSZip = (await import("jszip")).default,
       initial = await JSZip.loadAsync(readFileSync(zip.filePath)),
       editingModules: Record<string, unknown> = {};
@@ -986,7 +986,7 @@ beforeAll(async () => {
     expect(restoredDocument.sha256).toBe(expect_.documentSha256);
     const restoredImport = m.db.getDb().select().from(schemaImport.importSession)
       .where(eq(schemaImport.importSession.id, expect_.importSessionId)).get()!;
-    expect(restoredImport).toMatchObject({ source: "guest", status: "completed", createdByUserId: adminId });
+    expect(restoredImport).toMatchObject({ source: "guest", status: "completed", createdByUserId: null });
     const restoredImportItems = m.db.getDb().select().from(schemaImport.importSessionItem).all();
     expect(restoredImportItems).toEqual(expect.arrayContaining([
       expect.objectContaining({ assetId: expect_.documentAssetId, uploadSessionId: null, status: "completed" }),
@@ -1231,7 +1231,7 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       .map(([name]) => name);
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 37);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 38);
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zipFileNames).toContain("family-time-capsule-export/name-reviews.json");
 

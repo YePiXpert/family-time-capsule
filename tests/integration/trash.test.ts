@@ -48,7 +48,7 @@ const {
   purgeAssetIfUnreferenced,
 } = await import("@/lib/trash/service");
 const { searchFamily } = await import("@/lib/search/service");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildActorExport, buildDisasterExport } = await import("@/lib/export/service");
 
 const setup = await performSetup({
   token: "trash-setup-token",
@@ -154,8 +154,8 @@ describe("M7：回收站 — 事件", () => {
     expect(await getMemoryEventDetail(familyId, eventId)).toBeUndefined();
     expect(searchFamily(context, { q: "要被删除的事件" }).total).toBe(0);
 
-    // 导出不含该事件
-    const exported = await buildFamilyExport(familyId);
+    // 普通应用导出不含该事件；主机灾难备份保留墓碑及依赖图。
+    const exported = await buildActorExport(context);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
     const memories = JSON.parse(
@@ -289,7 +289,7 @@ describe("M7：回收站 — 讲述与故事", () => {
     expect(trashStory(context, created.storyId)).toEqual({ ok: true });
     expect((await listStories(familyId)).some((s) => s.id === created.storyId)).toBe(false);
     expect(searchFamily(context, { q: "确认事实" }).stories.length).toBe(0);
-    const exported = await buildFamilyExport(familyId);
+    const exported = await buildDisasterExport(familyId);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
     const stories = JSON.parse(

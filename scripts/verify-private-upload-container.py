@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Fictional-only private upload/restart smoke in a newly labeled Docker volume."""
 import argparse
+import base64
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -9,6 +11,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import zipfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--image', required=True)
@@ -113,12 +116,39 @@ try:
     assert request('PUT', draft_route, dict(content=content, expectedRevision=1, mutationId=str(uuid.uuid4())))[0] == 200
     status, _, body = request('POST', draft_route + '/publish', dict(expectedRevision=2))
     assert status == 200, body
-    event_route = '/api/mobile/v1/memories/' + json.loads(body)['memoryEventId']
+    event_id = json.loads(body)['memoryEventId']
+    event_route = '/api/mobile/v1/memories/' + event_id
     assert request('GET', event_route)[0] == 200
     assert request('GET', event_route, actor=other)[0] == 404
     assert request('GET', asset_route, actor=other)[0] == 404
+    # Body must outlive its published draft and survive the shipped CLI restore.
+    docker('exec', name, 'node', '-e', "const db=require('better-sqlite3')('/data/db/capsule.sqlite');db.prepare('delete from draft where id=?').run(process.argv[1]);db.prepare('update session set recent_auth_at=unixepoch()').run();db.close()", draft_id)
+    docker('restart', name)
+    ready()
+    assert content['text'] in request('GET', event_route)[2].decode()
+    status, _, archive = request('GET', '/api/export')
+    assert status == 200, archive[:500]
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        security = json.loads(z.read('family-time-capsule-export/privacy.json'))
+        principal = next(e['owner'] for e in security['events'] if e['id'] == event_id)
+        memories = json.loads(z.read('family-time-capsule-export/memories.json'))
+        assert next(e['bodyText'] for e in memories if e['id'] == event_id) == content['text']
+    docker('exec', name, 'node', '-e', "require('fs').writeFileSync('/data/synthetic.zip',Buffer.from(process.argv[1],'base64'))", base64.b64encode(archive).decode())
+    docker('exec', name, 'node', 'ops/verify-export.mjs', '/data/synthetic.zip')
+    restored_dir = '/data/restored'
+    docker('exec', '-e', 'DATA_DIR=' + restored_dir, name, 'node', 'ops/restore-principals.mjs', '--family', 'family')
+    docker('exec', name, 'node', '-e', "const db=require('better-sqlite3')('/data/restored/db/capsule.sqlite');db.prepare(\"insert into user(id,name,email,role,created_at,updated_at) values ('operator','合成恢复维护者','restore@fixture.invalid','owner',unixepoch(),unixepoch())\").run();db.close()")
+    docker('exec', '-e', 'DATA_DIR=' + restored_dir, name, 'node', 'ops/restore.mjs', '/data/synthetic.zip', '--user', 'operator')
+    check = "const db=require('better-sqlite3')('/data/restored/db/capsule.sqlite'); const e=db.prepare('select body_text,visibility,created_by_user_id from memory_event where id=?').get(process.argv[1]); console.log(JSON.stringify(e));db.close()"
+    restored = json.loads(docker('exec', name, 'node', '-e', check, event_id))
+    assert restored['body_text'] == content['text'] and restored['visibility'] == 'private'
+    assert restored['created_by_user_id'] != 'operator'
+    docker('exec', name, 'node', '-e', "const db=require('better-sqlite3')('/data/restored/db/capsule.sqlite');db.prepare(\"update user set family_id='family' where id='operator'\").run();db.close()")
+    bound = docker('exec', '-e', 'DATA_DIR=' + restored_dir, name, 'node', 'ops/restore-principals.mjs', '--family', 'family', '--bind', principal, '--to', 'operator', '--operator', 'operator')
+    assert json.loads(bound)['changed'] is True
+    assert json.loads(docker('exec', name, 'node', '-e', check, event_id))['created_by_user_id'] == 'operator'
     result = {'image': docker('image','inspect',args.image,'--format','{{.Id}}'),
-              'privateUpload': True, 'containerRestarts': 2, 'duplicateOriginals': False,
+              'privateUpload': True, 'containerRestarts': 3, 'privateBodyRestore': True, 'explicitPrincipalBinding': True, 'duplicateOriginals': False,
               'originalSha256': hashlib.sha256(original).hexdigest(), 'thirdPartyRead': 404}
     print(json.dumps(result, ensure_ascii=False))
 finally:

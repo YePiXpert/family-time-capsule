@@ -32,7 +32,7 @@ const { performSetup } = await import("@/lib/auth/setup");
 const assetStorageModule = await import("@/lib/assets/storage");
 const { completeOnboarding, getUserBinding } = await import("@/lib/family/service");
 const { setFactStatus } = await import("@/lib/contributions/service");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 const { suggestEventMetadataHandler } = await import(
   "@/lib/ai/handlers/suggest-event-metadata"
 );
@@ -544,7 +544,7 @@ describe("M3-D：精确 FactSource locator", () => {
       })
       .run();
 
-    const exported = await buildFamilyExport(familyId);
+    const exported = await buildDisasterExport(familyId);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
     const factSources = JSON.parse(

@@ -321,7 +321,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     if (!sealed) throw new Error("seal failed");
 
     // 导出
-    const exported = await m.exportSvc.buildFamilyExport(familyId);
+    const exported = await m.exportSvc.buildDisasterExport(familyId);
 
     // 快照期望值（独立于实现读取）
     const people = await m.family.listPeople(familyId);
@@ -1050,7 +1050,12 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       const manifest = JSON.parse(await manifestFile.async("string"));
       zip.remove("family-time-capsule-export/name-reviews.json");
       delete manifest.modules.nameReviews;
-      manifest.fileCount -= 13;
+      manifest.exportVersion = 1;
+      manifest.fileCount -= 14;
+      zip.remove("family-time-capsule-export/privacy.json");
+      const legacyMemories = JSON.parse(await zip.file("family-time-capsule-export/memories.json")!.async("string"));
+      for (const memory of legacyMemories) delete memory.bodyText;
+      zip.file("family-time-capsule-export/memories.json", JSON.stringify(legacyMemories));
       zip.file(
         "family-time-capsule-export/manifest.json",
         JSON.stringify(manifest),

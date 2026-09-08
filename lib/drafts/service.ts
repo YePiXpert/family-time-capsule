@@ -145,7 +145,7 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     if (content.items.some(item => !item.assetId)) throw new DraftError("originals_pending", 409);
     const title = content.title.trim() || content.text.trim().slice(0, 60) || "一段家庭记忆";
     const coverAssetId = content.items.find(item => item.id === content.coverItemId)?.assetId ?? content.items[0]?.assetId ?? null;
-    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
+    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, bodyText: content.text, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
     for (const [sortOrder, item] of content.items.entries()) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder, caption: item.caption, livePhotoGroupId: item.livePhotoGroupId, livePhotoRole: item.livePhotoRole, createdAt: now }).run();
     for (const personId of content.participantIds) tx.insert(memoryEventParticipant).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, personId, createdAt: now }).run();
     if (content.visibility === "members") {
@@ -167,7 +167,7 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     if (event) {
       // 非 family 事件没有家庭收件箱聚合，正文随事件一并索引（读取侧有
       // 实时读者裁决，索引本身不构成泄漏面）。
-      indexMemoryEvent(published.visibility === "family" ? event : { ...event, text: published.text });
+      indexMemoryEvent(event);
       indexDocumentAssetsForEvent(context.familyId, event.id, published.items.flatMap(i => i.assetId ? [i.assetId] : []));
     }
   }

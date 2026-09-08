@@ -1,3 +1,4 @@
+import { createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import { readableName } from "@/lib/naming";
 import "server-only";
 import { createHash } from "node:crypto";
@@ -16,6 +17,7 @@ import {
   createContributionAccessSnapshot,
   getVisibleContributionInTransaction,
   readableAssetPredicate,
+  familyReviewAssetPredicate,
 } from "@/lib/authz/contribution-access";
 import { getCollection } from "@/lib/collections/service";
 import { isCapsuleUnlocked } from "@/lib/capsules/service";
@@ -136,6 +138,8 @@ export function createBookSourceResolver(
               eq(memoryEvent.id, id),
               eq(memoryEvent.familyId, context.familyId),
               eq(memoryEvent.status, "confirmed"),
+              eventVisibilityCondition(createEventAccessSnapshot(context)),
+              audience === "family" ? eq(memoryEvent.visibility, "family") : undefined,
               isNull(memoryEvent.deletedAt),
             ),
           )
@@ -151,9 +155,6 @@ export function createBookSourceResolver(
               ),
             )
             .get();
-          const notes = db.all<{ rawText: string }>(
-            sql`select raw_text rawText from inbox_item where family_id=${context.familyId} and memory_event_id=${id} and raw_text is not null order by created_at,id`,
-          );
           const images = db
             .select({ id: asset.id })
             .from(asset)
@@ -185,8 +186,8 @@ export function createBookSourceResolver(
               author: null,
               asset: null,
             },
-            fingerprint: sourceFingerprint([row, notes]),
-            text: notes.map((n) => n.rawText).join("\n\n"),
+            fingerprint: sourceFingerprint(row),
+            text: row.bodyText,
             images,
             eventId: id,
           };
@@ -215,6 +216,7 @@ export function createBookSourceResolver(
         if (
           row &&
           !narrow &&
+          (audience === "personal" || row.visibility === "family" || (event && resolve("memory", event.id).state.available) || Boolean(db.get(sql`select 1 where ${familyReviewAssetPredicate(context.familyId, sql`${id}`)}`))) &&
           !closedCapsule("asset", id) &&
           (!event || resolve("memory", event.id).state.available)
         )

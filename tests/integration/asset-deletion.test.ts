@@ -78,7 +78,7 @@ it("guards live permissions and every user reference; deletion survives a disk f
   expect(deleteLibraryAsset(ctx, id, true)).toEqual({ deleted: true, cleanupPending: false });
   const receipt = getDb().select().from(assetDeletion).get()!;
   expect(receipt.storageKeysJson).toBe("[]"); expect(receipt.cleanedAt).not.toBeNull();
-  const backup = await (await import("@/lib/export/service")).buildFamilyExport(ctx.familyId, { actorUserId: ctx.userId });
+  const backup = await (await import("@/lib/export/service")).buildDisasterExport(ctx.familyId, { actorUserId: ctx.userId });
   const bytes = readFileSync(backup.filePath), zip = await JSZip.loadAsync(bytes);
   expect(JSON.parse(await zip.file("family-time-capsule-export/asset-deletions.json")!.async("string"))).toEqual([{ assetId: id, sha256: original.asset.sha256, deletedAt: receipt.deletedAt }]);
   closeDatabase(); process.env.DATA_DIR = dirs[1]; vi.resetModules();

@@ -51,7 +51,7 @@ it("preserves adoption, rejection, undo and original bytes through restore and a
   const image = await ingestImage({ familyId, createdByUserId: a.actor.id, filename: "IMG_原件.jpg", declaredMime: "image/jpeg", buffer: originalBytes, clientLastModifiedMs: null });
   if (image.status !== "stored") throw new Error("fixture original failed");
   expect((await a.names.renameTarget(familyId, a.actor.id, { kind: "asset", id: image.asset.id, revision: 0, title: "人工素材名称" })).ok).toBe(true);
-  const exported = await a.export.buildFamilyExport(familyId);
+  const exported = await a.export.buildDisasterExport(familyId);
   const originalZip = await JSZip.loadAsync(readFileSync(exported.filePath));
   const reviews = await json(originalZip, "name-reviews.json");
   expect(reviews.map((row: { status: string }) => row.status).sort()).toEqual(["accepted", "rejected", "rejected"]);
@@ -77,7 +77,7 @@ it("preserves adoption, rejection, undo and original bytes through restore and a
   expect(restoredImage).toMatchObject({ displayName: "人工素材名称", nameSource: "manual", nameRevision: 1, originalFilename: image.asset.originalFilename, sha256: image.asset.sha256, storageKey: image.asset.storageKey, capturedAt: image.asset.capturedAt });
   const { getAssetStorage } = await import("@/lib/assets/storage");
   expect(getAssetStorage().read(restoredImage.storageKey)).toEqual(originalBytes);
-  const again = await b.export.buildFamilyExport(familyId);
+  const again = await b.export.buildDisasterExport(familyId);
   const againZip = await JSZip.loadAsync(readFileSync(again.filePath));
   const sort = (rows: Array<{ id: string }>) => rows.sort((left, right) => left.id.localeCompare(right.id));
   expect(sort(await json(againZip, "name-reviews.json"))).toEqual(sort(reviews));

@@ -26,7 +26,7 @@ const { getHomeDashboard } = await import("@/lib/home/service");
 const { getCalendarMonth } = await import("@/lib/memories/calendar");
 const { searchFamily } = await import("@/lib/search/service");
 const { createBookSourceResolver } = await import("@/lib/books/projects/sources");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 const { createContribution } = await import("@/lib/contributions/service");
 const { createContributionAccessSnapshot, listVisibleContributionsForEvent, canReadContributionAsset } = await import("@/lib/authz/contribution-access");
 const { POST: confirmHttp } = await import("@/app/api/mobile/v1/inbox/[id]/confirm/route");
@@ -106,7 +106,7 @@ it("grandparent recording: no child onboarding, mixed sources, HTTP, permissions
   expect(getDb().select().from(assetTranscript).where(eq(assetTranscript.assetId, stored.asset.id)).get()).toBeTruthy();
   expect((await getMemoryEventDetail(familyId, id))?.event.title).toBe("外公讲年轻时候的故事");
 
-  const archive = await buildFamilyExport(familyId, { actorUserId: actor.id });
+  const archive = await buildDisasterExport(familyId, { actorUserId: actor.id });
   const zipBytes = readFileSync(archive.filePath);
   const zip = await JSZip.loadAsync(zipBytes);
   const md = await zip.file(Object.keys(zip.files).find(name => name.endsWith("/timeline.md"))!)!.async("string");

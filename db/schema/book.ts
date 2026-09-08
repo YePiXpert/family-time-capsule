@@ -7,6 +7,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { family, person } from "./family";
+import { user } from "./auth";
 import { asset } from "./asset";
 import { memoryEvent } from "./memory";
 import { contribution } from "./contribution";
@@ -24,6 +25,7 @@ export const bookProject = sqliteTable(
     familyId: text("family_id")
       .notNull()
       .references(() => family.id, { onDelete: "cascade" }),
+    ownerUserId: text("owner_user_id").references(() => user.id),
     ownerPersonId: text("owner_person_id").references(() => person.id, {
       onDelete: "set null",
     }),

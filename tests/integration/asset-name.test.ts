@@ -51,7 +51,7 @@ it("asset naming uses bounded inert evidence, human adoption and durable review;
   const suggestion = review.suggestions[0]!;
   expect(await reviewTitleSuggestion(ctx.familyId, ctx.userId, { targetKind: "asset", targetId: original.id, targetRevision: 0, suggestionId: suggestion.id, suggestionRevision: suggestion.revision, operation: "accept" })).toMatchObject({ ok: true });
   expect(getDb().select().from(asset).where(eq(asset.id, original.id)).get()).toMatchObject({ displayName: "窗边的一盆绿植", originalFilename: "IMG_secret.jpg", sha256: original.sha256 });
-  const backup = await (await import("@/lib/export/service")).buildFamilyExport(ctx.familyId, { actorUserId: ctx.userId });
+  const backup = await (await import("@/lib/export/service")).buildDisasterExport(ctx.familyId, { actorUserId: ctx.userId });
   const zip = await JSZip.loadAsync(readFileSync(backup.filePath));
   expect(JSON.parse(await zip.file("family-time-capsule-export/name-reviews.json")!.async("string"))).toEqual(expect.arrayContaining([expect.objectContaining({ entityType: "asset", entityId: original.id, status: "accepted" })]));
   text.mockResolvedValueOnce({ text: JSON.stringify({ title: "https://evil.invalid/download" }), finishReason: "stop", provenance });

@@ -49,7 +49,7 @@ function project(context: FamilyContext, id: string) {
   if (
     !row ||
     (row.audience === "personal" &&
-      (!context.personId || row.ownerPersonId !== context.personId))
+      row.ownerUserId !== context.userId)
   )
     throw new BookError("not_found", 404);
   return row;
@@ -223,7 +223,7 @@ export function listBookProjects(
     .where(
       and(
         eq(bookProject.familyId, context.familyId),
-        sql`(${bookProject.audience}='family' or (${bookProject.ownerPersonId}=${context.personId} and ${bookProject.audience}='personal'))`,
+        sql`(${bookProject.audience}='family' or (${bookProject.ownerUserId}=${context.userId} and ${bookProject.audience}='personal'))`,
         options.deleted
           ? sql`${bookProject.deletedAt} is not null`
           : isNull(bookProject.deletedAt),
@@ -287,14 +287,13 @@ export function createBookProject(
   });
   return getDb().transaction((tx) => {
     assertBookContext(context, true);
-    if (audience === "personal" && !context.personId)
-      throw new BookError("person_required");
     const id = randomUUID();
     tx.insert(bookProject)
       .values({
         id,
         familyId: context.familyId,
         ownerPersonId: context.personId,
+        ownerUserId: context.userId,
         title: edit.title,
         template,
         audience,

@@ -37,7 +37,7 @@ export default async function BackupSettingsPage() {
       </Link>
       <h1 className="mt-4 text-2xl font-semibold">远程备份（WebDAV）</h1>
       <p className="mt-2 text-sm leading-6 text-foreground/60">
-        WebDAV 只是备份目标，不是主存储：每次备份先生成完整校验过的导出，
+        WebDAV 只是备份目标，不是主存储：每次备份先生成你当前可读范围内、经过校验的导出，
         上传到远端临时文件、回读核对 SHA-256 后再原子改名。凭据只保存在部署
         环境的环境变量里，不进数据库、不进导出、不下发浏览器。
       </p>

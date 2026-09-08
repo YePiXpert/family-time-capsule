@@ -501,7 +501,7 @@ it("complete archive restores editing, retained historical sources and tombstone
     graph = archive.collectBookArchive(context.familyId);
   const backup = await (
     await import("@/lib/export/service")
-  ).buildFamilyExport(context.familyId);
+  ).buildDisasterExport(context.familyId);
   const bytes = readFileSync(backup.filePath);
   closeDatabase();
   process.env.DATA_DIR = path.join(root, "independent-restore");
@@ -594,7 +594,7 @@ it("complete archive restores editing, retained historical sources and tombstone
     ).toEqual(doc.blocks);
     const second = await (
         await import("@/lib/export/service")
-      ).buildFamilyExport(context.familyId),
+      ).buildDisasterExport(context.familyId),
       zip = await JSZip.loadAsync(readFileSync(second.filePath)),
       first = await JSZip.loadAsync(bytes);
     for (const name of (await import("@/lib/books/projects/portable.mjs"))

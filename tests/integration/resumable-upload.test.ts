@@ -209,9 +209,9 @@ describe("durable resumable upload protocol", () => {
     const other = await createImportSession({ familyId, createdByUserId: admin.id, source: "share" });
     expect(() => createImportedTextCapture(familyId, admin.id, other.id, captureId, "外婆留下的话")).toThrow("capture_id_conflict");
     expect(() => createImportedTextCapture(familyId, randomUUID(), batch.id, randomUUID(), "无权写入")).toThrow("not_found");
-    const { buildFamilyExport } = await import("@/lib/export/service");
+    const { buildDisasterExport } = await import("@/lib/export/service");
     const { default: JSZip } = await import("jszip");
-    const archive = await buildFamilyExport(familyId);
+    const archive = await buildDisasterExport(familyId);
     const zip = await JSZip.loadAsync(readFileSync(archive.filePath));
     const items = JSON.parse(await zip.file("family-time-capsule-export/import-session-items.json")!.async("string"));
     expect(items).toEqual(expect.arrayContaining([expect.objectContaining({ importSessionId: batch.id, inboxItemId: captureId, assetId: null, status: "completed" })]));
@@ -255,9 +255,9 @@ describe("durable resumable upload protocol", () => {
     expect(detail.items[0].item).toMatchObject({ assetId: row.finalAssetId, inboxItemId: row.finalInboxItemId });
     expect(getDb().select({ n: count() }).from(asset).get()!.n).toBe(assetCount);
     expect(getDb().select({ n: count() }).from(inboxItem).get()!.n).toBe(inboxCount);
-    const { buildFamilyExport } = await import("@/lib/export/service");
+    const { buildDisasterExport } = await import("@/lib/export/service");
     const { default: JSZip } = await import("jszip");
-    const archive = await buildFamilyExport(familyId);
+    const archive = await buildDisasterExport(familyId);
     const zip = await JSZip.loadAsync(readFileSync(archive.filePath));
     const sessions = JSON.parse(await zip.file("family-time-capsule-export/import-sessions.json")!.async("string"));
     const items = JSON.parse(await zip.file("family-time-capsule-export/import-session-items.json")!.async("string"));

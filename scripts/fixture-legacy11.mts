@@ -72,9 +72,10 @@ async function main() {
       bytes: stored.asset.bytes,
     });
   }
-  const exported = await (
-    await import("../lib/export/service")
-  ).buildFamilyExport(on.familyId);
+  // This file is copied into the asserted historical checkout above. Keep its
+  // historical API contract, independent of the current application's names.
+  const legacyExporter = await import("../lib/export/service") as unknown as { buildFamilyExport(familyId: string): Promise<{ filePath: string }> };
+  const exported = await legacyExporter.buildFamilyExport(on.familyId);
   mkdirSync(output, { recursive: true });
   const archive = path.join(output, "legacy11.zip");
   copyFileSync(exported.filePath, archive);

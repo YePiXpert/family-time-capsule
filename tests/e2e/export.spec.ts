@@ -7,7 +7,7 @@ import { grantExportStepUp } from "./helpers/export-step-up";
 // RH-006：本 spec 自包含（独立 DATA_DIR，自行 bootstrap）
 test.describe.configure({ mode: "serial" });
 
-test("导出完整备份：ZIP 可下载、manifest 哈希全部可验证", async ({ page }) => {
+test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", async ({ page }) => {
   await ensureBootstrap(page);
 
   // 自备内容：一张 EXIF 照片 + 一段 WAV，确认成一个事件，并封存一个胶囊
@@ -56,7 +56,7 @@ test("导出完整备份：ZIP 可下载、manifest 哈希全部可验证", asyn
   const root = "family-time-capsule-export";
 
   const manifest = JSON.parse(await zip.file(`${root}/manifest.json`)!.async("string"));
-  expect(manifest.exportVersion).toBe(1);
+  expect(manifest.exportVersion).toBe(2);
   expect(manifest.familyId).toBeTruthy();
   expect(manifest.assets.length).toBeGreaterThanOrEqual(2);
 

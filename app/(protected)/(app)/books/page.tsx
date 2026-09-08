@@ -100,15 +100,15 @@ export default async function BooksPage() {
 
       </details>
       {canExport ? (
-        <section className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6" aria-label="完整家庭备份">
-          <SectionHeader title="完整家庭备份" description="用于迁移和灾难恢复，包含原件与可验证的档案数据" />
+        <section className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6" aria-label="可读档案导出">
+          <SectionHeader title="可读档案导出" description="保存你当前可读的原件与档案，保留作者和读者关系" />
           <div className="mt-4 flex flex-wrap gap-3">
-            <a href="/api/export" className="ui-button-primary">导出完整备份 ZIP</a>
+            <a href="/api/export" className="ui-button-primary">导出可读档案 ZIP</a>
             {canBackup ? <Link href="/settings/backup" className="ui-button-secondary">管理远程备份</Link> : null}
           </div>
           <details className="mt-4 text-sm text-muted">
             <summary className="min-h-11 py-3 font-medium">备份里有什么？</summary>
-            <p className="leading-6">导出会重新核对每份原件的 SHA-256，并包含记忆、家人讲述、故事、胶囊与恢复所需关系。书籍适合阅读，完整备份适合保全；请分别保存。</p>
+            <p className="leading-6">导出会重新核对原件，并保存当前可读内容的作者和读者关系。涉及不可读来源的作品会省略。整台服务器的灾难备份由主机维护工具完成。</p>
           </details>
         </section>
       ) : null}

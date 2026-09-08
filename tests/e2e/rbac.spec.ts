@@ -165,7 +165,7 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   await expect(page.getByRole("button", { name: "添加家人" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "邀请家人加入" })).toHaveCount(0);
   await page.goto("/settings");
-  await expect(page.getByRole("link", { name: /导出完整备份/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /导出可读档案/ })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "最近操作" })).toHaveCount(0);
   await page.goto(memoryPath);
   await expect(page.getByLabel("谁在讲述")).toHaveCount(0);

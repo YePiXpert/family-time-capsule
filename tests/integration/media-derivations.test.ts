@@ -406,8 +406,8 @@ it("serializes concurrent workers and rejects cancelled work before publishing",
 });
 
 it("restores original SHA values and regenerates real derivatives while keeping processing jobs out of the portable archive", async () => {
-  const { buildFamilyExport } = await import("@/lib/export/service");
-  const archive = await buildFamilyExport(context.familyId),
+  const { buildDisasterExport } = await import("@/lib/export/service");
+  const archive = await buildDisasterExport(context.familyId),
     bytes = readFileSync(archive.filePath);
   const oldAssets = getDb().select().from(asset).all();
   const expectedPreview = oldAssets.find(row => row.derivativeType === 'preview' && oldAssets.some(source=>source.id===row.originalAssetId&&source.type==='image'))!;

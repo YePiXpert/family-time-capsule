@@ -48,7 +48,7 @@ const {
   requestStoryGeneration,
 } = await import("@/lib/stories/service");
 const { searchFamily } = await import("@/lib/search/service");
-const { buildFamilyExport } = await import("@/lib/export/service");
+const { buildDisasterExport } = await import("@/lib/export/service");
 const { generateStoryHandler } = await import("@/lib/ai/handlers/generate-story");
 
 const setup = await performSetup({
@@ -456,7 +456,7 @@ describe("M4：Story 生命周期", () => {
     expect(hit.stories.some((s) => s.id === created.storyId)).toBe(true);
 
     // 导出：published + edited 保留；纯 draft 排除
-    const exported = await buildFamilyExport(familyId);
+    const exported = await buildDisasterExport(familyId);
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
     const stories = JSON.parse(
@@ -488,6 +488,6 @@ describe("M4：Story 生命周期", () => {
     );
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
-    expect(manifest.fileCount).toBe(manifest.assets.length + 37);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 38);
   });
 });
