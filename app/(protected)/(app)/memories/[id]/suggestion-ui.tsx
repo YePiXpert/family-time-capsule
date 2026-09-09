@@ -172,7 +172,7 @@ export function SuggestionSection({
   const resolvedSuggestions = suggestions.filter((s) => s.status !== "pending");
 
   return (
-    <section aria-label="AI 整理建议" className="mt-10">
+    <section id="ai-suggestions" aria-label="AI 整理建议" className="mt-10">
       <h2 className="text-lg font-medium">AI 整理建议</h2>
       <p className="mt-1 text-sm leading-6 text-foreground/50">
         AI 只产出可审建议；接受后才会写入事件。拒绝的内容不会进入时间轴或故事。

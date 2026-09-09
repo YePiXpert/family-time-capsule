@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap } from "./helpers";
 
@@ -44,8 +45,8 @@ test("所选文字的整理入口创建真实任务，可取消并重试而不�
   const textCard = page.locator("article", { has: page.getByRole("heading", { name: "文字整理与故事草稿" }) });
   await textCard.getByRole("button", { name: "同意启用这项外部处理" }).click();
   await expect(textCard.getByText("可使用")).toBeVisible();
-  await page.goto("/capture");
-  await page.getByPlaceholder("写一句话，也可以继续加照片和录音。").fill("清晨在窗边给绿植浇水。");
+  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.getByPlaceholder("想说点什么？也可以不写，直接保存素材。").fill("清晨在窗边给绿植浇水。");
   await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
   await expect(page.getByText("已收进收件箱。")).toBeVisible();
   await page.goto("/inbox");

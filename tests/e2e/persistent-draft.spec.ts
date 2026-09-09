@@ -1,13 +1,14 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { ensureBootstrap } from "./helpers";
 
 test("long-lived mixed Web draft: offline save, closed page recovery, reorder, cover, one memory and one copy of each original", async ({ page, context }) => {
   await ensureBootstrap(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page.getByLabel("写下这一刻").fill("外公说年轻时在江边划船，今天录下来。正文检索词竹篙。");
-  await page.getByLabel("标题", { exact: true }).fill("外公的江边往事");
-  await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
+  await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("外公的江边往事");
+  await expandCaptureOptions(page); await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
   await page.locator('input[type="file"]').first().setInputFiles(["sample-exif.jpg", "sample.jpg", "sample.wav"].map(name => path.join(__dirname, "../fixtures", name)));
   await expect(page.getByText("3 份原件已保存在本机", { exact: false })).toBeVisible();
   const before = await (await page.request.get("/api/mobile/v1/sync")).json();
@@ -18,14 +19,16 @@ test("long-lived mixed Web draft: offline save, closed page recovery, reorder, c
   await page.close();
   await context.setOffline(false);
   const reopened = await context.newPage();
-  await reopened.goto("/capture");
+  await reopened.goto("/capture"); await expandCaptureOptions(reopened);
   await expect(reopened.getByLabel("写下这一刻")).toHaveValue("外公说年轻时在江边划船，今天录下来。正文检索词竹篙。");
   await expect(reopened.getByLabel("标题", { exact: true })).toHaveValue("外公的江边往事");
   await expect(reopened.locator("main ol > li")).toHaveCount(3);
   await expect(reopened.locator("audio")).toHaveCount(1);
+  await reopened.locator("main ol > li").last().getByText("说明与调整（可选）").click();
   await reopened.locator("main ol > li").last().getByRole("button", { name: "上移" }).click();
+  await reopened.locator("main ol > li").last().getByText("说明与调整（可选）").click();
   await reopened.locator("main ol > li").last().getByRole("button", { name: "设为封面" }).click();
-  await reopened.getByRole("button", { name: "保存为一条记忆" }).click();
+  await reopened.getByRole("button", { name: "仅保存，稍后整理" }).click();
   await expect(reopened.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   const link = await reopened.getByRole("link", { name: "查看这条记忆" }).getAttribute("href");
   const id = link!.split("/").at(-1)!;

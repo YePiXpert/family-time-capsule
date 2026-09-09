@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { ensureBootstrap, ensureLogin } from "./helpers";
@@ -8,7 +9,7 @@ test.describe.configure({ mode: "serial" });
 
 /** 为胶囊准备一个可引用的记忆事件 */
 async function createReferencedEvent(page: import("@playwright/test").Page) {
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));

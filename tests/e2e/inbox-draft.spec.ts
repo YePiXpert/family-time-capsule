@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { ADMIN, addFamilyMember, ensureBootstrap, ensureLogin } from "./helpers";
@@ -7,11 +8,11 @@ test.describe.configure({ mode: "serial" });
 test("Web 先收进来会保存并回填全部草稿字段", async ({ page }) => {
   await ensureBootstrap(page);
   await addFamilyMember(page, "外婆", "外婆");
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page.getByLabel("写下这一刻").fill("傍晚和外婆一起看云。");
-  await page.getByLabel("标题").fill("窗边看云");
-  await page.getByLabel("发生时间").fill("2026-08-12T18:30");
-  await page.getByLabel("地点").fill("家里窗边");
+  await expandCaptureOptions(page); await page.getByLabel("标题").fill("窗边看云");
+  await expandCaptureOptions(page); await page.getByLabel("发生时间").fill("2026-08-12T18:30");
+  await expandCaptureOptions(page); await page.getByLabel("地点").fill("家里窗边");
   await page.getByLabel("外婆", { exact: true }).check();
   await page.getByRole("button", { name: /先收进来/u }).click();
   await expect(page.getByText("已收进收件箱")).toBeVisible();
@@ -106,7 +107,7 @@ test("人工名称在 Web 与移动 API 间同步，并拒绝过期的确认表�
   await card.getByRole("button", { name: "确认进入时间轴" }).click();
   await expect(card.getByText("名称已被另一处修改，本次输入已保留，请核对后再确认。")).toBeVisible();
   await expect(card.getByLabel("事件标题")).toHaveValue("我还没确认的草稿");
-  await page.reload();
+  await page.reload(); await expandCaptureOptions(page);
   await expect(card.getByLabel("事件标题")).toHaveValue("另一处保存的名称");
   await card.getByRole("button", { name: "确认进入时间轴" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "另一处保存的名称" })).toBeVisible();
@@ -122,10 +123,10 @@ test("人工名称在 Web 与移动 API 间同步，并拒绝过期的确认表�
 
 test("祖辈记忆不绑定孩子：创建、重开编辑、搜索和日历均显示真实日期", async ({ page }) => {
   await ensureLogin(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page.getByLabel("写下这一刻").fill("外公年轻时候在江边划船的故事。");
-  await page.getByLabel("标题", { exact: true }).fill("外公讲年轻时候的故事");
-  await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
+  await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("外公讲年轻时候的故事");
+  await expandCaptureOptions(page); await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
   await page.getByRole("button", { name: /先收进来/u }).click();
   await expect(page.getByText("已收进收件箱")).toBeVisible();
   await page.goto("/inbox");

@@ -3,7 +3,10 @@ import { recordLocalIntakeDraft } from "../native/intake-store";
 import { listLocalDrafts } from "../drafts/store";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import type { ReaderAsset } from "../media/types";
-import { requestMobileJson } from "../api/client";
+import { OrganizerPanel } from "../ai/OrganizerPanel";
+import { captureDateSummary, captureOrganizerAvailability, captureSavedMessage } from "../drafts/capture";
+import type { AiSettings } from "../ai/types";
+import { requestMobileJson, parseAiSettings } from "../api/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -36,6 +39,9 @@ export function CaptureScreen() {
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
   const draftScope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [aiState, setAiState] = useState<{ scope: string; settings: AiSettings | null }>({ scope: "", settings: null });
   const [message, setMessage] = useState<string | null>(null);
   const capsuleDraft = usePersistentDraft(draftScope, captureAccess !== "readonly", credentials);
   const [readerState, setReaderState] = useState<{ scope: string; members: DraftReader[]; error: string | null }>({ scope: "", members: [], error: null });
@@ -53,6 +59,14 @@ export function CaptureScreen() {
     return () => { active = false; };
   }, [credentials, draftScope, captureAccess, readerRefresh]);
   const readers = readerState.scope === draftScope ? readerState.members : [];
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    if (credentials && viewer?.canEditEvents) void requestMobileJson(credentials, "/api/mobile/v1/ai/settings").then(body => {
+      const settings = parseAiSettings(body);
+      if (active) setAiState({ scope: draftScope, settings });
+    }).catch(() => { if (active) setAiState({ scope: draftScope, settings: null }); });
+    return () => { active = false; };
+  }, [credentials, draftScope, viewer?.canEditEvents]));
   const { addOriginal, addOriginals, change: changeDraft } = capsuleDraft;
   const currentDraftId = capsuleDraft.draft?.id;
   const [originals, setOriginals] = useState<Record<string, LocalCaptureDetail>>({});
@@ -92,14 +106,14 @@ export function CaptureScreen() {
     }).catch(e => { if (active) setMessage(e.message); });
     return () => { active = false; };
   }, [route.params?.localDraftId, draftScope, localDraftReady, resumeLocalDraft, navigation]);
-  const sendDraft = async (publish: boolean, intent?: "draft" | "review") => {
+  const sendDraft = async (publish: boolean, intent?: "draft" | "review", organize = false) => {
     try {
       const content = capsuleDraft.draft?.content;
       if (publish && content?.visibility === "members" && content.readerUserIds.length === 0) {
         setMessage("请先选择可以阅读这件事的家人，或改回全家/仅自己。");
         return;
       }
-      await capsuleDraft.save(publish, intent);
+      await capsuleDraft.save(publish, intent, organize);
       setMessage("本机已保存，网络工作会在后台继续。");
       const row = capsuleDraft.draft;
       if (credentials && family && row) {
@@ -414,6 +428,9 @@ export function CaptureScreen() {
     }, [navigation, pickMedia, route.params?.intent]),
   );
 
+  const content = capsuleDraft.draft?.content;
+  const organizer = captureOrganizerAvailability(aiState.scope === draftScope ? aiState.settings : null, content?.visibility ?? "private", (content?.items ?? []).map(item => item.localCaptureRef ? originals[item.localCaptureRef]?.mimeType ?? "" : item.assetId && remoteMedia.scope === draftScope ? remoteMedia.assets[item.assetId]?.mimeType ?? "" : ""));
+
   if (captureAccess === "readonly") {
     return (
       <ScrollView contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
@@ -434,14 +451,12 @@ export function CaptureScreen() {
     <ScrollView contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
       <Text style={sharedStyles.eyebrow}>离线也不会丢</Text>
       <Text testID="capture-title" style={sharedStyles.title}>记录此刻</Text>
-      <Text style={sharedStyles.intro}>围绕一件事写文字、加照片和录音，自动保存到本机。</Text>
+      <Text style={sharedStyles.intro}>选照片、视频或录音，也可以写一句话。不用填表，先保存这一刻。</Text>
       <View style={sharedStyles.card}>
         <Text style={sharedStyles.label}>一句话、一段故事</Text>
         <TextInput testID="capture-text" multiline editable={capsuleDraft.draft?.status === "editing"} maxLength={5000} onChangeText={setText} placeholder="今天发生了什么？" ref={textInputRef} style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
         <Text style={styles.counter}>{text.length} / 5000</Text>
-        <Pressable disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => void saveText()} style={({ pressed }) => [sharedStyles.primaryButton, pressed && sharedStyles.pressed, (busy || recording) && sharedStyles.disabled]}>
-          <Text style={sharedStyles.primaryText}>保留整件事草稿</Text>
-        </Pressable>
+
       </View>
 
       <View onLayout={(event) => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.actionGrid}>
@@ -455,10 +470,12 @@ export function CaptureScreen() {
       {message ? <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>{message}</Text></View> : null}
 
       {capsuleDraft.error ? <View accessibilityRole="alert" style={sharedStyles.warning}><Text style={sharedStyles.error}>{capsuleDraft.error}</Text><Action label="重试本机保存" hint="检查磁盘空间后重试" disabled={busy} onPress={() => void capsuleDraft.retry().catch(e => setMessage(e.message))} /></View> : null}
-      <Text accessibilityLiveRegion="polite" style={sharedStyles.body}>{capsuleDraft.saved ? "本机已保存" : "正在写入本机…"} · {capsuleDraft.draft?.serverRevision ? "服务器已收到" : "服务器尚未收到"} · {capsuleDraft.draft?.status === "published" ? "正式记忆已创建" : "尚未创建正式记忆"} · AI 尚未整理</Text>
+      <Text accessibilityLiveRegion="polite" style={sharedStyles.body}>{capsuleDraft.saved ? "本机已保存" : "正在写入本机…"} · {capsuleDraft.draft?.status === "published" ? "记忆已保存" : capsuleDraft.draft?.serverRevision ? "草稿已同步" : "等待发送"}</Text>
       {(capsuleDraft.unboundDrafts ?? []).map(row => <Action key={row.id} label={`把本机草稿“${row.content.title || row.content.text.slice(0, 20) || "未命名"}”用于${family?.name ?? "当前家庭"}`} hint="确认原件的目的地，不复制原件" disabled={busy || recording} onPress={() => void capsuleDraft.bind(row.id).catch(e => setMessage(e.message))} />)}
       {capsuleDraft.draft ? <View style={sharedStyles.card}>
         <Text style={sharedStyles.cardTitle}>这一件事</Text>
+        <Action label={detailsOpen ? "收起补充信息" : "补充信息（可选）"} hint="标题、时间、人物和素材说明，不填也能保存" disabled={false} onPress={() => setDetailsOpen(value => !value)} />
+        {detailsOpen && <>
         <TextInput accessibilityLabel="记忆标题" placeholder="标题（可选）" value={capsuleDraft.draft.content.title} maxLength={100} editable={capsuleDraft.draft.status === "editing"} onChangeText={title => changeDraft({ title })} style={sharedStyles.input} />
         <Text style={sharedStyles.label}>发生时间</Text>
         <PrecisionDateTimeField
@@ -468,8 +485,11 @@ export function CaptureScreen() {
           onChange={({ occurredAt, precision: occurredAtPrecision }) => changeDraft({ occurredAt, occurredAtPrecision })}
         />
         <Action label="就是现在" hint="确认此刻发生（精确时间）" disabled={capsuleDraft.draft.status !== "editing"} onPress={() => changeDraft({ occurredAt: new Date().toISOString(), occurredAtPrecision: "exact" })} />
+        <TextInput accessibilityLabel="地点（可选）" placeholder="地点（可选）" value={capsuleDraft.draft.content.locationText} maxLength={200} editable={capsuleDraft.draft.status === "editing"} onChangeText={locationText => changeDraft({ locationText })} style={sharedStyles.input} />
         <Text style={sharedStyles.label}>参与人物</Text>
         {(people ?? []).map(person => <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked: capsuleDraft.draft!.content.participantIds.includes(person.id) }} style={sharedStyles.secondaryButton} onPress={() => { const ids = capsuleDraft.draft!.content.participantIds; changeDraft({ participantIds: ids.includes(person.id) ? ids.filter(id => id !== person.id) : [...ids, person.id] }); }}><Text>{capsuleDraft.draft!.content.participantIds.includes(person.id) ? "已选 · " : ""}{person.displayName}</Text></Pressable>)}
+        </>}
+        <Text style={sharedStyles.body}>{captureDateSummary(capsuleDraft.draft.content, capsuleDraft.draft.captureTimeEdited, recordingTimezone)}</Text>
         {capsuleDraft.draft.content.items.map((item, index) => {
           const detail = item.localCaptureRef ? originals[item.localCaptureRef] : null;
           const previous = capsuleDraft.draft!.content.items[index - 1];
@@ -480,6 +500,7 @@ export function CaptureScreen() {
             <Text style={sharedStyles.body}>{detail?.fileName ?? "已保全的素材"}</Text>
             {item.localCaptureRef ? <Action label="打开原件 / 重听" hint="原件已在本机" disabled={false} onPress={() => navigation.navigate("LocalCapture", { captureId: item.localCaptureRef! })} /> : item.assetId && remoteMedia.scope === draftScope && remoteMedia.assets[item.assetId] ? <NativeMediaReader credentials={credentials} assets={[remoteMedia.assets[item.assetId]!]} /> : <Text accessibilityRole="alert" style={sharedStyles.body}>素材尚未读取；请联网重试，或核对读取权限。</Text>}
             {item.livePhotoGroupId && <Text style={sharedStyles.secondaryText}>Live Photo · {item.livePhotoRole === "image" ? "静态照片" : "动态原片"}（移除时整组保留在本机）</Text>}
+            {detailsOpen && <>
             <TextInput accessibilityLabel={`素材 ${index + 1} 说明`} value={item.caption} maxLength={2000} onChangeText={caption => changeDraft({ items: capsuleDraft.draft!.content.items.map(i => i.id === item.id ? { ...i, caption } : i) })} style={sharedStyles.input} />
             {canPair && <Action label="与上一张照片组成 Live Photo" hint="仅在你确认这两份是同一张实况照片时配对" disabled={capsuleDraft.draft!.status !== "editing"} onPress={() => changeDraft(pairDraftItems(capsuleDraft.draft!.content, previous.id, item.id, Crypto.randomUUID()))} />}
             <View style={styles.actionGrid}>
@@ -487,7 +508,7 @@ export function CaptureScreen() {
               <Action label="下移" hint="调整顺序" disabled={index === capsuleDraft.draft!.content.items.length - 1} onPress={() => { const items = [...capsuleDraft.draft!.content.items]; [items[index], items[index + 1]] = [items[index + 1]!, items[index]!]; changeDraft({ items }); }} />
               <Action label={capsuleDraft.draft!.content.coverItemId === item.id ? "已选为封面" : "设为封面"} hint="选择封面" disabled={false} onPress={() => changeDraft({ coverItemId: item.id })} />
               <Action label="从草稿移除" hint="原件仍保留" disabled={false} onPress={() => changeDraft(removeDraftItem(capsuleDraft.draft!.content, item.id))} />
-            </View>
+            </View></>}
           </View>;
         })}
         <Text style={sharedStyles.label}>保存后的读者</Text>
@@ -526,11 +547,23 @@ export function CaptureScreen() {
             ? "草稿文字和新素材在发布前仅自己可见；保存为记忆后全家可读。"
             : "草稿文字和新素材在发布前仅自己可见；发布后按所选读者开放。已全家共享的素材不会因此收回旧共享。"}
         </Text>
-        {(!credentials || viewer?.canEditEvents) && <Action label="保存为一条记忆" hint="先写入本机，再同步到已授权家庭" disabled={busy || recording || !!capsuleDraft.error || capsuleDraft.draft.status === "published"} onPress={() => void sendDraft(true)} />}
-        {credentials && family && <View style={styles.actionGrid}>
-          <Action label={`发送草稿到${family.name}`} hint="暂不创建记忆，可以换设备继续" disabled={busy || recording || capsuleDraft.draft.status !== "editing"} onPress={() => void sendDraft(false, "draft")} />
-          <Action label="交给家人整理" hint={`送到${family.name}，全家可见`} disabled={busy || recording || capsuleDraft.draft.status !== "editing"} onPress={() => void sendDraft(false, "review")} />
-        </View>}
+        {capsuleDraft.draft.status !== "published" && <>
+          {(!credentials || viewer?.canEditEvents) && <Text style={sharedStyles.body}>{organizer.message}</Text>}
+          <Action label={capsuleDraft.draft.status === "queued" ? capsuleDraft.draft.organizeOnPublish ? "重试保存并整理" : "重试保存" : organizer.ready ? "保存并整理" : "保存"} hint="先保存在本机，再发送到已授权家庭" primary disabled={busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length)} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : organizer.ready)} />
+          <Action label={moreOpen ? "收起保存选项" : "更多保存选项"} hint="保留草稿或交给家人整理" disabled={false} onPress={() => setMoreOpen(value => !value)} />
+          {moreOpen && <>
+        <Pressable disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => void saveText()} style={({ pressed }) => [sharedStyles.primaryButton, pressed && sharedStyles.pressed, (busy || recording) && sharedStyles.disabled]}>
+          <Text style={sharedStyles.primaryText}>保留整件事草稿</Text>
+        </Pressable>
+            {(!credentials || viewer?.canEditEvents) && <Action label="仅保存，稍后整理" hint="保存为记忆，不请求 AI" disabled={busy || recording} onPress={() => void sendDraft(true)} />}
+            {credentials && family && <View style={styles.actionGrid}>
+              <Action label={`发送草稿到${family.name}`} hint="暂不创建记忆，可以换设备继续" disabled={busy || recording || capsuleDraft.draft.status !== "editing"} onPress={() => void sendDraft(false, "draft")} />
+              {capsuleDraft.draft.content.visibility === "family" && <Action label="交给家人整理" hint={`送到${family.name}，全家可见`} disabled={busy || recording || capsuleDraft.draft.status !== "editing"} onPress={() => void sendDraft(false, "review")} />}
+            </View>}
+          </>}
+        </>}
+        {capsuleDraft.draft.status === "published" && <Text accessibilityLiveRegion="polite" style={sharedStyles.body}>{captureSavedMessage(capsuleDraft.draft.processing)}</Text>}
+        {capsuleDraft.draft.memoryEventId && capsuleDraft.draft.organizeOnPublish && <OrganizerPanel kind="memory_event" id={capsuleDraft.draft.memoryEventId} defaultOpen />}
         {(capsuleDraft.serverDrafts ?? []).filter(remote => !capsuleDraft.drafts.some(local => local.id === remote.id)).map(remote => <Action key={remote.id} label={`继续服务器草稿：${remote.title || remote.text.slice(0, 20) || "未命名"}`} hint="保留素材引用，不重复下载原件" disabled={busy || recording} onPress={() => void capsuleDraft.continueServer(remote).catch(e => setMessage(e.message))} />)}
         {capsuleDraft.draft.memoryEventId && <Action label="查看正式记忆" hint="已创建" disabled={false} onPress={() => navigation.navigate("Memory", { id: capsuleDraft.draft!.memoryEventId! })} />}
         <Action label="新建一件事" hint="继续草稿仍保留" disabled={busy || recording} onPress={() => void capsuleDraft.create().catch(e => setMessage(e.message))} />

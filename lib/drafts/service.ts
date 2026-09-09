@@ -14,6 +14,7 @@ import { hasFamilyCapability } from "@/lib/authz/policy";
 import { createContributionAccessSnapshot, getContributionAssetAccessInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
 import { indexMemoryEvent, indexDocumentAssetsForEvent } from "@/lib/search/service";
 import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent } from "./model";
+import { inferCaptureTime } from "./capture-time";
 
 export class DraftError extends Error {
   constructor(readonly code: string, readonly status = 400) { super(code); }
@@ -124,7 +125,7 @@ export function discardDraft(context: FamilyContext, id: string, expectedRevisio
     tx.delete(draftItem).where(eq(draftItem.draftId, id)).run();
   }, { behavior: "immediate" });
 }
-export function publishDraft(context: FamilyContext, id: string, expectedRevision: number): Draft {
+export function publishDraft(context: FamilyContext, id: string, expectedRevision: number, options: { inferTime?: boolean } = {}): Draft {
   const published = getDb().transaction(tx => {
     assertActor(tx, context, true);
     const row = tx.select().from(draft).where(owned(context, id)).get();
@@ -133,6 +134,13 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     if (row.status !== "editing" || row.revision !== expectedRevision) throw new DraftError("revision_conflict", 409);
     const content = hydrate(tx, row);
     validateReferences(tx, context, content, id);
+    // Quick capture only fills the untouched, empty default. Explicit unknown,
+    // approximate dates and user-entered dates keep their original meaning.
+    if (options.inferTime && content.occurredAt === null && content.occurredAtPrecision === "exact") {
+      const ids = content.items.flatMap(item => item.assetId ? [item.assetId] : []);
+      const originals = ids.length ? tx.select().from(asset).where(and(eq(asset.familyId, context.familyId), inArray(asset.id, ids))).all() : [];
+      Object.assign(content, inferCaptureTime(originals, context.familyTimezone));
+    }
     // §5：私密/指定读者草稿现在直接发布为对应可见性的记忆事件；
     // 挂在家庭收件箱上的聚合仍要求 family（收件箱是全家评审面）。
     if (row.inboxItemId && content.visibility !== "family") throw new DraftError("already_shared", 409);
@@ -159,7 +167,7 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
       // 私密事件不进入全家可见的收件箱记录。
       tx.insert(inboxItem).values({ id: randomUUID(), familyId: context.familyId, kind: "text", rawText: content.text, status: "confirmed", memoryEventId: eventId, createdAt: now, updatedAt: now }).run();
     }
-    tx.update(draft).set({ status: "published", memoryEventId: eventId, revision: row.revision + 1, updatedAt: now.toISOString() }).where(owned(context, id)).run();
+    tx.update(draft).set({ status: "published", memoryEventId: eventId, occurredAt: content.occurredAt, occurredAtPrecision: content.occurredAtPrecision, revision: row.revision + 1, updatedAt: now.toISOString() }).where(owned(context, id)).run();
     return hydrate(tx, tx.select().from(draft).where(owned(context, id)).get()!);
   }, { behavior: "immediate" });
   // Derived indexing is retryable. No AI/network operation enters the save transaction.

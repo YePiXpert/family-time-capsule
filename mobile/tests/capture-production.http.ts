@@ -1,3 +1,4 @@
+import { revealCaptureAction } from "./capture-controls";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -101,6 +102,7 @@ const { requestMobileJson } = await import("../src/api/client");
 let tree: ReactTestRenderer | undefined;
 afterEach(async () => { if (tree) await act(async () => tree!.unmount()); tree = undefined; activeCredentials = fixture.credentials; activeUserId = fixture.userId; activeOnline = true; });
 async function press(label: string) {
+  await revealCaptureAction(tree!, label);
   const node = tree!.root.findAllByType("Pressable" as never).find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === label));
   expect(node, label).toBeDefined();
   await act(async () => { node!.props.onPress(); });
@@ -128,7 +130,7 @@ it("R01/R02/R03: real native recording hook → HTTP DTO → production API → 
   const reader = readers.find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === "妈妈"));
   await act(async () => reader!.props.onPress());
   await act(async () => boxes[1]!.props.onPress());
-  await press("保存为一条记忆");
+  await press("保存");
   expect(mocks.grantSyncConsent).toHaveBeenCalledOnce();
   const before = (await listLocalDrafts(scope))[0]!;
   expect(before).toMatchObject({ status: "queued", content: { readerUserIds: ["user-b"], participantIds: ["person-no-account"], occurredAtPrecision: "unknown", occurredAt: null } });
@@ -200,7 +202,7 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   // Reopen the real capture hook to request publication after draft-only sync.
   await act(async()=>{tree=create(createElement(CaptureScreen));});
   await expect.poll(async()=>{await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20));});return tree!.root.findByProps({testID:"capture-text"}).props.value;}).toBe("有两张照片与原声的私密往事");
-  await press("保存为一条记忆");
+  await press("保存");
   await act(async()=>tree!.unmount());tree=undefined;
   await syncLocalDrafts(fixture.credentials,{authorizeUpload:async()=>true});
   const published=(await listLocalDrafts(scope)).find(d=>d.id===queued.id)!;
@@ -299,7 +301,7 @@ it("private Live Photo stays paired when motion upload is interrupted and its co
   mocks.preserveMedia.mockImplementation(async (picked: {uri: string}) => media.find(m => m.localUri === picked.uri));
   await press("从相册导入");
   await expect.poll(async () => (await listLocalDrafts(scope)).find(d => d.status === "editing")?.content.items.length).toBe(2);
-  await press("保存为一条记忆");
+  await press("保存");
   const queued = (await listLocalDrafts(scope)).find(d => d.status === "queued")!;
   await act(async () => tree!.unmount()); tree = undefined;
   const originalFetch = globalThis.fetch; let motionUpload = "", interrupted = false, completeLost = false;

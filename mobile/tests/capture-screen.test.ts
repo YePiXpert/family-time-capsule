@@ -1,3 +1,4 @@
+import { revealCaptureAction } from "./capture-controls";
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -121,6 +122,7 @@ async function render(intent?: string) {
   await act(async () => { await vi.advanceTimersByTimeAsync(60); });
 }
 async function press(label: string) {
+  await revealCaptureAction(tree!, label);
   const button = tree!.root.findAll((n) => String(n.type) === "Pressable" &&
     n.findAll((c) => String(c.type) === "Text" && c.children.join("") === label).length > 0)[0]!;
   expect(button).toBeTruthy();
@@ -261,13 +263,14 @@ it("三档读者选择：切档清空读者（§5）", async () => {
 
 it("离线人物选择不冒充登录读者，空读者仍阻止发布（§5）", async () => {
   mocks.draft.content.visibility = "members";
+  mocks.draft.content.text = "一段需要选择读者的记录";
   await render("text");
   await press("妈妈");
   expect(mocks.enqueueText).toHaveBeenCalledWith({ participantIds: ["person-1"] });
   expect(mocks.enqueueText).not.toHaveBeenCalledWith(expect.objectContaining({ readerUserIds: expect.anything() }));
   // readerUserIds 未回写（仍空）→ 发布被拦并给出可读原因
   mocks.enqueueText.mockClear();
-  await press("保存为一条记忆");
+  await press("保存");
   expect(mocks.enqueueText).not.toHaveBeenCalled();
   expect(JSON.stringify(tree!.toJSON())).toContain("请先选择可以阅读这件事的家人");
 });

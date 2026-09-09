@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -10,7 +11,7 @@ test.describe.configure({ mode: "serial" });
 
 test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元素", async ({ page }) => {
   await ensureBootstrap(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
 
   // 上传音频（真实可播放 WAV）
   const wav = readFileSync(path.join(__dirname, "..", "fixtures", "sample.wav"));
@@ -30,7 +31,7 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   // 另开一件事写文字；前面的素材草稿仍保留。
   await page.getByRole("button", { name: "新建一件事" }).click();
   await page
-    .getByPlaceholder("写一句话，也可以继续加照片和录音。")
+    .getByPlaceholder("想说点什么？也可以不写，直接保存素材。")
     .fill("小满今天自己扶着沙发站起来了。");
   await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
   await expect(page.getByText("已收进收件箱。")).toBeVisible();
@@ -80,7 +81,7 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   const transcriptUrl = `/api/mobile/v1/transcripts/${detail.assets[0].id}`;
   const seed = await page.request.post(transcriptUrl, { data: { text: "最初听到的歌词", revision: null }, headers: { origin: new URL(page.url()).origin } });
   expect(seed.status()).toBe(200);
-  await page.reload();
+  await page.reload(); await expandCaptureOptions(page);
   await page.getByText("转录全文与修订 · 外婆哼的歌.wav", { exact: true }).click();
   const transcriptInput = page.getByRole("textbox", { name: "修订 外婆哼的歌.wav 的转录" });
   await transcriptInput.fill("网页里正在修订的歌词");
@@ -141,7 +142,7 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
 
 
 test("照片阅读器保持原图比例，键盘翻页、缩放和关闭返回位置",async({page})=>{
-  await ensureBootstrap(page);await page.goto('/capture');
+  await ensureBootstrap(page);await page.goto('/capture'); await expandCaptureOptions(page);
   const files=await Promise.all(['#d2b89b','#aec0b5'].map(async(background,i)=>({name:`虚构家庭照片${i+1}.jpg`,mimeType:'image/jpeg',buffer:await sharp({create:{width:900,height:600,channels:3,background}}).jpeg().toBuffer()})));
   for (const file of files) {
     await page.getByRole("button", { name: "新建一件事" }).click();

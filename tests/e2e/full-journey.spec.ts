@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { addFamilyMember, ensureBootstrap, ensureLogin } from "./helpers";
@@ -15,7 +16,7 @@ test("完整旅程：从初始化到导出与登出", async ({ page }) => {
   await ensureBootstrap(page);
 
   // 1) 上传旧照片（EXIF 8/10）
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));

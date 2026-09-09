@@ -384,7 +384,17 @@ function hydrateSources(
       if (!access.readable) {
         return { ok: false, error: "source_forbidden_or_not_found" };
       }
-      const visibility: ContributionVisibility = access.automaticEligible
+      // Draft uploads retain a private storage root after publication. A
+      // manual request for an explicitly family-visible event may use that
+      // event's original references at the event audience, without changing
+      // the root or granting unscoped/automatic access. The parent itself is a
+      // snapshotted source, so removal, audience or reference edits invalidate
+      // every stage and any pending result.
+      const sharedEventReference = triggerMode === "manual" && row.visibility === "private" && row.originalAssetId === null && references.some(parent => parent.kind === "memory_event" && tx.select({ id: memoryEvent.id })
+        .from(memoryEvent).innerJoin(memoryEventAsset, and(eq(memoryEventAsset.memoryEventId, memoryEvent.id), eq(memoryEventAsset.familyId, memoryEvent.familyId)))
+        .where(and(eq(memoryEvent.id, parent.id), eq(memoryEvent.familyId, snapshot.principal.familyId), eq(memoryEvent.visibility, "family"), isNull(memoryEvent.deletedAt), eq(memoryEventAsset.assetId, row.id), eventVisibilityCondition({ principal: snapshot.principal, evaluatedAt: snapshot.evaluatedAt })))
+        .get());
+      const visibility: ContributionVisibility = access.automaticEligible || sharedEventReference
         ? "family"
         : "private";
       if (triggerMode === "automatic" && visibility !== "family") {

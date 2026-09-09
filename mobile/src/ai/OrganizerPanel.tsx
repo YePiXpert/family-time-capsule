@@ -12,7 +12,7 @@ import type { AppNavigation } from "../navigation/types";
 import { aiJobFailureMessage } from "./job-messages";
 import type { OrganizerTarget, OrganizerOperation, OrganizerReview } from "./organizer-types";
 
-type Props = OrganizerTarget & { label?: string; onSaved?: () => void; assetOperation?: "name" | "transcribe" };
+type Props = OrganizerTarget & { label?: string; onSaved?: () => void; assetOperation?: "name" | "transcribe"; defaultOpen?: boolean };
 export function OrganizerPanel(props: Props) {
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
@@ -20,10 +20,10 @@ export function OrganizerPanel(props: Props) {
   if (!["owner", "admin", "editor"].includes(viewer?.role ?? "")) return props.kind === "asset" && props.assetOperation !== "name" ? <TranscriptEditor assetId={props.id} label={props.label ?? "录音或视频"} /> : null;
   return <Panel key={JSON.stringify([scope, props.kind, props.id])} {...props} scope={scope} />;
 }
-function Panel({ kind, id, label, onSaved, scope, assetOperation = "transcribe" }: Props & { scope: string }) {
+function Panel({ kind, id, label, onSaved, scope, assetOperation = "transcribe", defaultOpen = false }: Props & { scope: string }) {
   const { credentials, online } = useApp();
   const navigation = useNavigation<AppNavigation>();
-  const [opened, setOpened] = useState(false), [review, setReview] = useState<OrganizerReview | null>(null), [verified, setVerified] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [refreshVersion, setRefreshVersion] = useState(0);
+  const [opened, setOpened] = useState(defaultOpen), [review, setReview] = useState<OrganizerReview | null>(null), [verified, setVerified] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [refreshVersion, setRefreshVersion] = useState(0);
   const generation = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | null>(null), previous = useRef("");
   const cacheKey = `organizer:${scope}:${kind}:${id}`;
   const receive = useCallback((next: OrganizerReview | null) => {
@@ -100,6 +100,6 @@ function Panel({ kind, id, label, onSaved, scope, assetOperation = "transcribe" 
         <Pressable onPress={() => navigation.navigate("Settings")} style={s.secondaryButton}><Text style={s.secondaryText}>查看 AI 设置、检测与授权</Text></Pressable>
       </> : null}
     </View>
-    {transcription ? <TranscriptEditor assetId={id} label={label ?? "录音或视频"} onSaved={onSaved} refreshVersion={refreshVersion} /> : <NameEditor kind={kind} id={id} onSaved={onSaved} refreshVersion={refreshVersion} />}
+    {transcription ? <TranscriptEditor assetId={id} label={label ?? "录音或视频"} onSaved={onSaved} refreshVersion={refreshVersion} /> : <NameEditor kind={kind} id={id} onSaved={onSaved} refreshVersion={refreshVersion} defaultOpen={defaultOpen} />}
   </View>;
 }

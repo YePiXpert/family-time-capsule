@@ -76,7 +76,7 @@ export function requestEventSuggestions(
       // queue snapshots those exact rows and rechecks visibility before I/O.
       const sources = [{ kind: "memory_event" as const, id: event.id }, ...originals.map(asset => ({ kind: "asset" as const, id: asset.id })), ...notes.map(row => ({ kind: "inbox_item" as const, id: row.id })), ...contributions.map(row => ({ kind: "contribution" as const, id: row.id }))];
       if (sources.length > 50) return { ok: false, error: "organizer_context_limit" };
-      const { dependencies, generation } = organizerMediaStages(tx, context, originals, "organizer-event-v2", options);
+      const { dependencies, generation } = organizerMediaStages(tx, context, originals, "organizer-event-v2", options, event.id);
       const result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: "suggest.event_metadata.v1", entityType: "memory_event", entityId: event.id, requiredCapability: "text", triggerMode: "manual", dependencies, generation: options.regenerateFrom ? `${generation}:regenerate:${options.regenerateFrom}` : generation, sources }, options);
       if (!result.ok) throw new OrganizerEnqueueError(result);
       return result;
@@ -327,7 +327,7 @@ class OrganizerEnqueueError extends Error {
   constructor(readonly result: SuggestionRequestResult) { super("organizer unavailable"); }
 }
 
-function organizerMediaStages(tx: ContributionAccessTransaction, context: FamilyContext, originals: (typeof assetTable.$inferSelect)[], promptVersion: string, options: AiJobServiceDependencies) {
+function organizerMediaStages(tx: ContributionAccessTransaction, context: FamilyContext, originals: (typeof assetTable.$inferSelect)[], promptVersion: string, options: AiJobServiceDependencies, eventId?: string) {
       const dependencies: string[] = [];
       for (const asset of originals) {
         const stage = asset.type === "image" ? { jobType: "analyze.asset_image.v1", capability: "vision" as const }
@@ -341,12 +341,15 @@ function organizerMediaStages(tx: ContributionAccessTransaction, context: Family
           dependencies.push(producer.id);
           continue;
         }
-        let result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: stage.jobType, entityType: "asset", entityId: asset.id, requiredCapability: stage.capability, triggerMode: "manual", sources: [{ kind: "asset", id: asset.id }] }, options);
+        // Saving this event requests only its selected content. Every unfinished
+        // stage must stop if that event is removed, edited or its audience changes.
+        const sources = [{ kind: "asset" as const, id: asset.id }, ...(eventId ? [{ kind: "memory_event" as const, id: eventId }] : [])];
+        let result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: stage.jobType, entityType: "asset", entityId: asset.id, requiredCapability: stage.capability, triggerMode: "manual", sources }, options);
         if (!result.ok) throw new OrganizerEnqueueError(result);
         // A completed operational row without its normalized evidence is not
         // a successful stage to reuse (e.g. deliberate analysis cleanup).
         if (tx.select().from(aiJob).where(eq(aiJob.id, result.jobId)).get()?.status === "completed") {
-          result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: stage.jobType, entityType: "asset", entityId: asset.id, requiredCapability: stage.capability, triggerMode: "manual", sources: [{ kind: "asset", id: asset.id }], generation: result.jobId }, options);
+          result = enqueueAiJob({ familyId: context.familyId, requestedByUserId: context.userId, jobType: stage.jobType, entityType: "asset", entityId: asset.id, requiredCapability: stage.capability, triggerMode: "manual", sources, generation: result.jobId }, options);
           if (!result.ok) throw new OrganizerEnqueueError(result);
         }
         dependencies.push(result.jobId);

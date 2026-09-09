@@ -9,6 +9,9 @@ export type BrowserDraft = {
   mutationId: string;
   status: "editing" | "queued" | "published" | "discarded";
   memoryEventId: string | null;
+  organizeOnPublish?: boolean;
+  captureTimeEdited?: boolean;
+  processing?: import("@/mobile/src/drafts/capture").CaptureProcessing;
   updatedAt: string;
 };
 /** Originals have a separate key; reordering/editing a draft never copies bytes. */

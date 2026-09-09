@@ -7,12 +7,12 @@ import { parseOrganizerReview } from "@/mobile/src/api/client";
 import { aiJobFailureMessage } from "@/lib/ai/job-messages";
 import type { OrganizerTarget, OrganizerReview, OrganizerOperation } from "@/mobile/src/ai/organizer-types";
 
-export function OrganizerControl(props: OrganizerTarget & { reviewNames?: boolean; assetOperation?: "name" | "transcribe" }) {
+export function OrganizerControl(props: OrganizerTarget & { reviewNames?: boolean; assetOperation?: "name" | "transcribe"; defaultOpen?: boolean }) {
   return <Control key={JSON.stringify([props.kind, props.id])} {...props} />;
 }
-function Control({ kind, id, reviewNames = true, assetOperation = "transcribe" }: OrganizerTarget & { reviewNames?: boolean; assetOperation?: "name" | "transcribe" }) {
+function Control({ kind, id, reviewNames = true, assetOperation = "transcribe", defaultOpen = false }: OrganizerTarget & { reviewNames?: boolean; assetOperation?: "name" | "transcribe"; defaultOpen?: boolean }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false), [review, setReview] = useState<OrganizerReview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [refreshVersion, setRefreshVersion] = useState(0);
+  const [open, setOpen] = useState(defaultOpen), [review, setReview] = useState<OrganizerReview | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [refreshVersion, setRefreshVersion] = useState(0);
   const generation = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | null>(null), previous = useRef("");
   const receive = useCallback((next: OrganizerReview) => {
     const signature = JSON.stringify([next.names, next.transcripts]);
@@ -52,8 +52,8 @@ function Control({ kind, id, reviewNames = true, assetOperation = "transcribe" }
   const capability = review?.settings.capabilities.find(row => row.capability === (transcription ? "transcription" : "text"));
   const active = review?.tasks.some(task => task.active);
   return <div className="my-3">
-    <details className="rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setBusy(false); }}>
-      <summary className="min-h-11 cursor-pointer py-2">{transcription ? "转成文字" : "AI 帮我起名"}</summary>
+    <details open={open} className="rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setBusy(false); }}>
+      <summary className="min-h-11 cursor-pointer py-2">{transcription ? "转成文字" : defaultOpen ? "整理进度与建议" : "AI 帮我起名"}</summary>
       <p className="my-2 text-muted">仅处理你选择的素材，原件可随时查看。标题、人物、时间和合并均由你确认。</p>
       {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
       {review ? <>
@@ -61,7 +61,7 @@ function Control({ kind, id, reviewNames = true, assetOperation = "transcribe" }
         {review.settings.configured && !review.settings.workerAvailable ? <p>后台暂不可用，任务会保留等待；记录与播放仍可使用。</p> : null}
         <Link href="/settings/ai" className="underline">查看 AI 设置、检测与授权</Link>
         <button type="button" className="ui-button-primary my-2" disabled={busy || active || !capability?.available || !capability.consented} onClick={() => void mutate(transcription ? "transcribe" : "name")}>{transcription ? "开始转成文字" : "生成标题建议"}</button>
-        {review.tasks.map((task, index) => <div key={task.id} className="my-2 rounded-lg border border-line p-3">
+        {(defaultOpen ? review.tasks.slice(0, 1) : review.tasks).map((task, index) => <div key={task.id} className="my-2 rounded-lg border border-line p-3">
           <p role="status">{task.message}</p>
           <ol className="my-2 list-inside list-decimal text-muted">{task.steps.map((step, i) => <li key={i}>{step.label} · {({ pending: "等待中", running: "处理中", completed: "完成", failed: "失败", cancelled: "已取消" })[step.status]}</li>)}</ol>
           <div className="flex flex-wrap gap-2">
@@ -70,10 +70,12 @@ function Control({ kind, id, reviewNames = true, assetOperation = "transcribe" }
             {task.canRegenerate && index === 0 ? <button type="button" className="ui-button-secondary" disabled={busy || active} onClick={() => void mutate("regenerate", task.id)}>重新生成建议（可能计费）</button> : null}
           </div>
         </div>)}
-        {review.names?.suggestions.filter(row => row.status === "pending" && row.valid).map(row => <p key={row.id}>AI 建议：{row.title}，请在下方审核后采用。</p>)}
+        {!reviewNames && review.names?.suggestions.filter(row => row.status === "pending" && row.valid).map(row => <p key={row.id}>AI 建议：{row.title}，请在下方审核后采用。</p>)}
+        {defaultOpen && review.transcripts.length > 0 && <details><summary className="min-h-11 cursor-pointer py-2">查看录音文字</summary>{review.transcripts.map(row => <p key={row.assetId} className="my-2 whitespace-pre-wrap">{row.text}</p>)}</details>}
       </> : <p>展开后读取服务状态。</p>}
       <button type="button" className="ui-button-secondary my-2" disabled={busy} onClick={() => void load()}>刷新整理状态</button>
     </details>
-    {reviewNames ? <NameReviewControl kind={kind} id={id} refreshVersion={refreshVersion} /> : null}
+    {reviewNames ? <NameReviewControl kind={kind} id={id} refreshVersion={refreshVersion} defaultOpen={defaultOpen} /> : null}
+    {defaultOpen && kind === "memory_event" && <Link className="underline" href={`/memories/${id}?mode=archive#ai-suggestions`}>查看地点、时间与标签建议</Link>}
   </div>;
 }

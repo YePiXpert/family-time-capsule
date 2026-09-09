@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,7 +19,7 @@ test("上传 5 张照片合并为一个事件", async ({ page }) => {
     buffer: Buffer.concat([base, Buffer.from([n])]),
   }));
 
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   // Five explicit family submissions; merely syncing a draft never creates inbox entries.
   for (const file of files) {
     await page.getByRole("button", { name: "新建一件事" }).click();
@@ -48,7 +49,7 @@ test("上传 5 张照片合并为一个事件", async ({ page }) => {
 
 test("HEIC + MOV 合并为一个事件（Live Photo 组合，RH-002）", async ({ page }) => {
   await ensureLogin(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles({

@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap } from "./helpers";
 import path from "node:path";
@@ -10,9 +11,9 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
 }) => {
   await ensureBootstrap(page);
   for (let i = 1; i <= 2; i++) {
-    await page.goto("/capture");
+    await page.goto("/capture"); await expandCaptureOptions(page);
     await page
-      .getByPlaceholder("写一句话，也可以继续加照片和录音。")
+      .getByPlaceholder("想说点什么？也可以不写，直接保存素材。")
       .fill(`虚构素材 ${i}：我们在窗边读了一封信。`);
     await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
     await expect(page.getByText("已收进收件箱。")).toBeVisible();
@@ -45,7 +46,7 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
     .click();
   await page.getByRole("button", { name: "保存当前编辑" }).click();
   await expect(page.getByText("已自动保存，可以随时重开。")).toBeVisible();
-  await page.reload();
+  await page.reload(); await expandCaptureOptions(page);
   await expect(
     page.getByRole("textbox", { name: "正文", exact: true }).nth(2),
   ).toHaveValue("手工整理：窗边的第一封家书。");
@@ -71,7 +72,7 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
     },
   });
   expect(response.status()).toBe(200);
-  await page.reload();
+  await page.reload(); await expandCaptureOptions(page);
   await expect(
     page.getByRole("textbox", { name: "正文", exact: true }),
   ).toHaveCount(32);

@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -7,14 +8,14 @@ import { ensureBootstrap } from './helpers';
 test('真实相册编辑：多选、章节、顺序、重开、冲突与删除恢复',async({page})=>{
   await ensureBootstrap(page);
   for(const [index,title] of ['回家第一天','窗边的午后'].entries()){
-    await page.goto('/capture');await page.getByLabel('写下这一刻').fill(`虚构家庭记录：${title}。`);await page.getByLabel('标题',{exact:true}).fill(title);await page.getByLabel('发生时间',{exact:true}).fill(`2026-08-${10+index}T12:30`);await page.getByRole('button',{name:/先收进来/}).click();await expect(page.getByText('已收进收件箱')).toBeVisible();await page.goto('/inbox');await page.getByRole('button',{name:'确认进入时间轴'}).click();await expect(page.getByRole('heading',{level:1,name:title})).toBeVisible();
+    await page.goto('/capture'); await expandCaptureOptions(page);await page.getByLabel('写下这一刻').fill(`虚构家庭记录：${title}。`);await expandCaptureOptions(page); await page.getByLabel('标题',{exact:true}).fill(title);await expandCaptureOptions(page); await page.getByLabel('发生时间',{exact:true}).fill(`2026-08-${10+index}T12:30`);await page.getByRole('button',{name:/先收进来/}).click();await expect(page.getByText('已收进收件箱')).toBeVisible();await page.goto('/inbox');await page.getByRole('button',{name:'确认进入时间轴'}).click();await expect(page.getByRole('heading',{level:1,name:title})).toBeVisible();
   }
   await page.goto('/collections');await page.getByLabel('名称',{exact:true}).fill('出生第一周');await page.getByLabel('形式').selectOption('chapter');await page.getByRole('button',{name:'新建相册 / 章节',exact:true}).click();
   await expect(page).toHaveURL(/\/collections\/[\w-]+$/);const url=page.url(),id=url.split('/').at(-1)!;
   await page.getByLabel('简介').fill('虚构家庭的第一本相册，保留每个人当时的原话。');await page.getByRole('button',{name:'添加小节',exact:true}).click();await page.getByLabel('小节 1 名称').fill('在家里的日子');await page.getByRole('button',{name:'保存相册',exact:true}).click();await expect(page.getByRole('status')).toHaveText('已保存，可以随时重开。');
   await page.getByRole('link',{name:'从时间轴多选记忆'}).click();await page.getByLabel('回家第一天',{exact:true}).check();await page.getByLabel('窗边的午后',{exact:true}).check();await page.getByRole('button',{name:'加入所选 2 条记忆',exact:true}).click();await page.getByRole('link',{name:'打开相册',exact:true}).click();
   await page.getByLabel('图文说明').first().fill('手写说明：那天阳光很暖。');await page.getByLabel('所属小节').first().selectOption({label:'在家里的日子'});await page.getByRole('button',{name:'下移 回家第一天',exact:true}).focus();await page.keyboard.press('Enter');await page.getByRole('button',{name:'保存排序与说明'}).click();await expect(page.getByRole('status')).toHaveText('已保存，可以随时重开。');
-  await page.reload();await expect(page.getByRole('link',{name:'窗边的午后',exact:true})).toBeVisible();await expect(page.getByLabel('图文说明').nth(1)).toHaveValue('手写说明：那天阳光很暖。');expect(await page.locator('ol li a').allTextContents()).toEqual(['窗边的午后','回家第一天']);
+  await page.reload(); await expandCaptureOptions(page);await expect(page.getByRole('link',{name:'窗边的午后',exact:true})).toBeVisible();await expect(page.getByLabel('图文说明').nth(1)).toHaveValue('手写说明：那天阳光很暖。');expect(await page.locator('ol li a').allTextContents()).toEqual(['窗边的午后','回家第一天']);
   for(const width of [375,768,1024,1440]){await page.setViewportSize({width,height:900});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);await page.screenshot({path:`test-results/collection-fictional-${width}.png`,fullPage:true});}
   await page.getByRole('button',{name:'阅读相册',exact:true}).click();await expect(page.getByRole('heading',{name:'在家里的日子',exact:true})).toBeVisible();await expect(page.getByText('手写说明：那天阳光很暖。',{exact:true})).toBeVisible();await expect(page.getByLabel('图文说明')).toHaveCount(0);await page.getByRole('button',{name:'继续编辑',exact:true}).click();
   const response=await page.request.get(`/api/collections/${id}`),current=await response.json();const remote=await page.request.patch(`/api/collections/${id}`,{data:{operation:'save',revision:current.revision,edit:{...current,title:'另一位家人的更新'}}});expect(remote.status()).toBe(200);
@@ -27,17 +28,17 @@ test('真实相册编辑：多选、章节、顺序、重开、冲突与删除�
 test('访客链接实时排除私密来源，家庭发布后可读，撤权后标题与媒体同时失效', async ({ page, browser }) => {
   await ensureBootstrap(page);
   const title = '私人相册来源的合成记录';
-  await page.goto('/capture');
+  await page.goto('/capture'); await expandCaptureOptions(page);
   await page.getByLabel('写下这一刻').fill('只给自己保存，访客不能从相册引用发现。');
-  await page.getByLabel('标题', { exact: true }).fill(title);
-  await page.getByLabel('时间记得多清楚').selectOption('unknown');
+  await expandCaptureOptions(page); await page.getByLabel('标题', { exact: true }).fill(title);
+  await expandCaptureOptions(page); await page.getByLabel('时间记得多清楚').selectOption('unknown');
   await page.getByLabel('保存后的读者').selectOption('private');
   await page.getByLabel('添加照片、视频、录音或文档').setInputFiles({
     name: '合成私人照片.png', mimeType: 'image/png',
     buffer: Buffer.concat([readFileSync(path.join(__dirname, '../fixtures/sample.png')), Buffer.from(randomUUID())]),
   });
   await expect(page.getByRole('status').filter({ hasText: '本机已保存 ·' })).toBeVisible();
-  await page.getByRole('button', { name: '保存为一条记忆' }).click();
+  await page.getByRole('button', { name: '仅保存，稍后整理' }).click();
   await page.getByRole('link', { name: '查看这条记忆' }).click();
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
   const eventId = page.url().split('/').at(-1)!;
@@ -64,11 +65,11 @@ test('访客链接实时排除私密来源，家庭发布后可读，撤权后�
     expect((await guest.request.get(mediaUrl)).status()).toBe(401);
     // Isolated fixture changes emulate historical sharing; the existing-event editor is still pending.
     db.prepare("update memory_event set visibility='family' where id=?").run(eventId);
-    await guest.reload();
+    await guest.reload(); await expandCaptureOptions(guest);
     await expect(guest.getByRole('heading', { name: title, exact: true })).toBeVisible();
     expect((await guest.request.get(mediaUrl, { headers: { range: 'bytes=0-11' } })).status()).toBe(206);
     db.prepare("update memory_event set visibility='private' where id=?").run(eventId);
-    await guest.reload();
+    await guest.reload(); await expandCaptureOptions(guest);
     await expect(guest.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
     expect((await guest.request.get(mediaUrl, { headers: { range: 'bytes=0-11' } })).status()).toBe(401);
   } finally { db.close(); await guestContext.close(); }
@@ -97,15 +98,15 @@ test('相册选择跨越第一页，并能直接恢复时间轴指定的旧相�
 test('访客限定阅读链接：只读单册、范围外媒体 404、收回即失效（M2-d ID-5）', async ({ page, browser }) => {
   await ensureBootstrap(page);
   // 自备一条带照片的记忆 + 一本相册
-  await page.goto('/capture');
+  await page.goto('/capture'); await expandCaptureOptions(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, '..', 'fixtures', 'sample-exif.jpg'));
   await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '新建一件事' }).click();
   await page.getByLabel('写下这一刻').fill('虚构记录：给外婆的相册素材。');
-  await page.getByLabel('标题', { exact: true }).fill('阳光下的午后');
-  await page.getByLabel('发生时间', { exact: true }).fill('2026-08-15T15:00');
+  await expandCaptureOptions(page); await page.getByLabel('标题', { exact: true }).fill('阳光下的午后');
+  await expandCaptureOptions(page); await page.getByLabel('发生时间', { exact: true }).fill('2026-08-15T15:00');
   await page.getByRole('button', { name: /先收进来/ }).click();
   await expect(page.getByText('已收进收件箱')).toBeVisible();
   await page.goto('/inbox');

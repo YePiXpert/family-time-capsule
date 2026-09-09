@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap } from "./helpers";
 import Database from "better-sqlite3";
@@ -32,10 +33,10 @@ function currentShanghaiWeek(): { monday: string; thursday: string } {
 test("每周回顾从收件箱重点生成有来源的无 AI 草稿", async ({ page }) => {
   const { monday, thursday } = currentShanghaiWeek();
   await ensureBootstrap(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page.getByLabel("写下这一刻").fill("周四傍晚一起在公园放风筝。");
-  await page.getByLabel("标题").fill("公园放风筝");
-  await page.getByLabel("发生时间").fill(`${thursday}T18:30`);
+  await expandCaptureOptions(page); await page.getByLabel("标题").fill("公园放风筝");
+  await expandCaptureOptions(page); await page.getByLabel("发生时间").fill(`${thursday}T18:30`);
   await page.getByRole("button", { name: /先收进来/u }).click();
   await expect(page.getByText("已收进收件箱")).toBeVisible();
   await page.goto("/inbox");
@@ -78,13 +79,13 @@ test("每周回顾从收件箱重点生成有来源的无 AI 草稿", async ({ p
 
 test("故事真实组装与发布遵循来源范围，撤权后网页、搜索与手机 HTTP 同时失效", async ({ page }) => {
   await ensureBootstrap(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page.getByLabel("写下这一刻").fill("合成向日葵的一次私人记录。");
-  await page.getByLabel("标题", { exact: true }).fill("故事的私人来源");
-  await page.getByLabel("发生时间", { exact: true }).fill("2028-09-14T12:00");
+  await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("故事的私人来源");
+  await expandCaptureOptions(page); await page.getByLabel("发生时间", { exact: true }).fill("2028-09-14T12:00");
   await page.getByLabel("保存后的读者").selectOption("private");
   await expect(page.getByRole("status").filter({ hasText: "本机已保存 ·" })).toBeVisible();
-  await page.getByRole("button", { name: "保存为一条记忆" }).click();
+  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
   await page.getByRole("link", { name: "查看这条记忆" }).click();
   await expect(page).toHaveURL(/\/memories\/[^/]+$/);
   const eventId = page.url().split("/").at(-1)!;
@@ -121,7 +122,7 @@ test("故事真实组装与发布遵循来源范围，撤权后网页、搜索�
     db.prepare("update memory_event set visibility='private' where id=?").run(eventId);
     expect((await page.request.get(endpoint, { headers: { authorization: `Bearer ${token}` } })).status()).toBe(404);
     // A streamed Next response can send headers before notFound resolves.
-    const hidden = await page.reload();
+    const hidden = await page.reload(); await expandCaptureOptions(page);
     expect(await hidden!.text()).not.toContain("合成向日葵长出了第三片叶子。");
     await expect(page.getByRole("heading", { name: "这里没有这段记忆", exact: true })).toBeVisible();
     await page.goto("/stories"); await expect(page.locator(`a[href='/stories/${storyId}']`)).toHaveCount(0);

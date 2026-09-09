@@ -1,3 +1,4 @@
+import { revealCaptureAction } from "./capture-controls";
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -122,7 +123,7 @@ it("R01/R02: selects login User IDs and preserves accountless people only as par
   const scope = JSON.stringify([mocks.credentials.serverUrl, "instance", "user-a", "family"]);
   expect((await listLocalDrafts(scope))[0]?.content.readerUserIds).toEqual(["user-b"]);
   expect((await listLocalDrafts(scope))[0]?.content.participantIds).toEqual(["person-2"]);
-  await press("保存为一条记忆");
+  await press("保存");
   expect((await listLocalDrafts(scope))[0]).toMatchObject({ status: "queued", content: { visibility: "members", readerUserIds: ["user-b"], occurredAt: null } });
   expect(mocks.grantSyncConsent).toHaveBeenCalledOnce();
 });
@@ -154,6 +155,7 @@ it("retries reader lookup after network recovery and lets the author remove a de
 });
 afterEach(async () => { if (tree) await act(async () => tree!.unmount()); });
 async function press(label: string) {
+  await revealCaptureAction(tree!, label);
   const node = tree!.root.findAllByType("Pressable" as never).find(n =>
     n.findAllByType("Text" as never).some(t => t.children.join("") === label));
   expect(node, label).toBeDefined();
@@ -164,7 +166,7 @@ it("R03: the recording page and real save hook persist unknown time through reop
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("那次一起去江边，日期已经记不清"));
   await press("不详");
-  await press("保存为一条记忆");
+  await press("保存");
   const rows = await listLocalDrafts("local");
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ status: "queued", syncIntent: "publish", content: { occurredAt: null, occurredAtPrecision: "unknown", text: "那次一起去江边，日期已经记不清" } });
@@ -172,6 +174,7 @@ it("R03: the recording page and real save hook persist unknown time through reop
   await initializeLocalStore();
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   expect(await listLocalDrafts("local")).toEqual(rows);
+  await press("补充信息（可选）");
   const unknown = tree!.root.findAllByType("Pressable" as never).find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === "不详"));
   expect(unknown?.props.accessibilityState.selected).toBe(true);
 });
@@ -179,8 +182,9 @@ it("R03: the recording page and real save hook persist unknown time through reop
 it.each(["精确", "大约", "只到日", "到月", "到年"])("keeps %s without a date as an editable draft", async label => {
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("暂时只写下故事"));
+  if (label === "精确") await press("大约");
   await press(label);
-  await press("保存为一条记忆");
+  await press("保存");
   expect((await listLocalDrafts("local"))[0]).toMatchObject({ status: "editing", content: { occurredAt: null, text: "暂时只写下故事" } });
   expect(tree!.root.findAllByType("Text" as never).some(t => t.children.join("").includes("请先确认发生时间"))).toBe(true);
 });
@@ -220,7 +224,7 @@ it("does not save a half Live Photo when the paired copy fails", async () => {
   expect((await listLocalDrafts("local"))[0]?.content.items).toEqual([]);
 });
 
-it.each(["保存为一条记忆", "发送草稿到测试家庭", "交给家人整理"])("blocks %s for a recovered Live Photo with a missing component", async action => {
+it.each(["保存", "发送草稿到测试家庭", "交给家人整理"])("blocks %s for a recovered Live Photo with a missing component", async action => {
   mocks.connected = true;
   const scope = JSON.stringify([mocks.credentials.serverUrl, "instance", "user-a", "family"]);
   const { createLocalDraft, saveLocalDraft } = await import("../src/drafts/store");
@@ -246,4 +250,13 @@ it("pairs separately imported image and video only after an explicit user action
   const items = (await listLocalDrafts("local"))[0]!.content.items;
   expect(items.map(i => i.livePhotoRole)).toEqual(["image", "video"]);
   expect(items[0]!.livePhotoGroupId).toBe(items[1]!.livePhotoGroupId);
+});
+
+it("quick capture keeps optional fields collapsed and queues a text memory without filling a date or title", async () => {
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  expect(tree!.root.findAllByProps({ accessibilityLabel: "记忆标题" })).toHaveLength(0);
+  expect(tree!.root.findAllByType("Pressable" as never).filter(node => node.props.accessibilityRole === "checkbox")).toHaveLength(0);
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("只写一句话，先留下来"));
+  await press("保存");
+  expect((await listLocalDrafts("local"))[0]).toMatchObject({ status: "queued", syncIntent: "publish", organizeOnPublish: false, content: { title: "", occurredAt: null, text: "只写一句话，先留下来" } });
 });

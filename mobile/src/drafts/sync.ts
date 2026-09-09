@@ -4,6 +4,7 @@ import { ApiError, requestMobileJson } from "../api/client";
 import { getActiveDestination, getDatabase } from "../storage/database";
 import { listLocalDrafts, saveLocalDraft, type LocalDraft } from "./store";
 import { parseDraftContent, reconcileDraftAsset, type Draft } from "./model";
+import type { CaptureProcessing } from "./capture";
 import type { Credentials, OutboxItem, MediaCapturePayload } from "../types";
 
 /** Runs after originals, under the same account/family generation and upload consent gate. */
@@ -44,7 +45,7 @@ export async function syncLocalDrafts(credentials: Credentials, options: { isCur
       const remote = await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}`) as Draft;
       await guard();
       if (remote.status === "published" && remote.memoryEventId) {
-        await update({ ...row, status: "published", memoryEventId: remote.memoryEventId, serverRevision: remote.revision, revision: row.revision + 1 });
+        await update({ ...row, content: { ...row.content, occurredAt: remote.occurredAt, occurredAtPrecision: remote.occurredAtPrecision }, status: "published", memoryEventId: remote.memoryEventId, serverRevision: remote.revision, revision: row.revision + 1 });
         for (const item of row.content.items) if (item.localCaptureRef) await db.runAsync("UPDATE local_capture SET memory_event_id=?,sync_state='archived' WHERE id=?", remote.memoryEventId, item.localCaptureRef);
         continue;
       }
@@ -82,10 +83,10 @@ export async function syncLocalDrafts(credentials: Credentials, options: { isCur
       continue;
     }
     await guardRevision();
-    const result = received.status === "published" ? received : await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}/publish`, { method: "POST", body: JSON.stringify({ expectedRevision: received.revision }) }) as Draft;
+    const result = received.status === "published" ? received : await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}/publish`, { method: "POST", body: JSON.stringify({ expectedRevision: received.revision, quickSave: true, inferTime: !row.captureTimeEdited, organize: row.organizeOnPublish === true }) }) as Draft & { processing?: CaptureProcessing };
     parseDraftContent(result);
     if (result.status !== "published" || typeof result.memoryEventId !== "string") throw new ApiError("服务器尚未确认记忆创建。", 502);
-    await update({ ...row, status: "published", memoryEventId: result.memoryEventId, serverRevision: result.revision, revision: row.revision + 1 });
+    await update({ ...row, content: { ...row.content, occurredAt: result.occurredAt, occurredAtPrecision: result.occurredAtPrecision }, processing: (result as Draft & { processing?: CaptureProcessing }).processing, status: "published", memoryEventId: result.memoryEventId, serverRevision: result.revision, revision: row.revision + 1 });
     for (const item of row.content.items) if (item.localCaptureRef) await db.runAsync("UPDATE local_capture SET memory_event_id=?,sync_state='archived' WHERE id=?", result.memoryEventId, item.localCaptureRef);
   }
 }

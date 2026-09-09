@@ -6,7 +6,7 @@ import { listPeople } from "@/lib/family/service";
 import { PageHeader } from "@/components/page-header";
 import { InlineNotice } from "@/components/inline-notice";
 import { PersistentCaptureEditor } from "./persistent-capture-editor";
-import Link from "next/link";
+import { getAiOperationalStatus } from "@/lib/ai/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +27,7 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
       <PageHeader
         eyebrow="Capture"
         title="记录这一刻"
-        description="围绕一件事写文字、加照片和录音。草稿自动保存在本机，明天还能继续。"
-        actions={canCapture ? <Link href="/imports" className="ui-button-secondary">批量导入</Link> : undefined}
+        description="选照片、视频或录音，也可以写一句话。不用填表，先把这一刻留下来。"
       />
 
       {canCapture ? (
@@ -37,6 +36,7 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
           scope={`${userId}:${familyId}`}
           timezone={familyTimezone}
           canArchive={canArchive}
+          aiSettings={hasFamilyCapability(role, "ai:review") ? getAiOperationalStatus(context) : null}
           people={people.map((person) => ({
             id: person.id,
             displayName: person.displayName,

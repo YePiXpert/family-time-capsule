@@ -1,3 +1,4 @@
+import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -10,7 +11,7 @@ test("上传照片：保存成功、重复明确提示、收件箱可见、未�
   page,
 }) => {
   await ensureBootstrap(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
 
   const file = path.join(__dirname, "..", "fixtures", "sample-exif.jpg");
   const input = page.locator('input[type="file"]').first();
@@ -190,7 +191,7 @@ test("原生 Bearer 补传：设备 UUID 幂等且进入同一个 Web 收件箱"
 test("HEIC 上传：原件保存、收件箱显示不可预览占位 + 下载入口", async ({ page }) => {
   // 每个测试是独立 context → 幂等登录
   await ensureLogin(page);
-  await page.goto("/capture");
+  await page.goto("/capture"); await expandCaptureOptions(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles({

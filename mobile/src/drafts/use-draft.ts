@@ -3,6 +3,7 @@ import * as Crypto from "expo-crypto";
 import { bindLocalDraft, createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft, type LocalDraft, type DraftOriginal } from "./store";
 import { requestMobileJson } from "../api/client";
 import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent, type DraftItem } from "./model";
+import { canInferCaptureTime } from "./capture";
 import type { Credentials, MediaCapturePayload } from "../types";
 export function usePersistentDraft(scope: string, enabled: boolean, credentials: Credentials | null) {
   const [draft, setDraft] = useState<LocalDraft | null>(null);
@@ -69,7 +70,7 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
   const change = useCallback((patch: Partial<DraftContent>) => {
     const row = current.current;
     if (!row || row.status !== "editing") return;
-    void write({ ...row, content: { ...row.content, ...patch }, revision: row.revision + 1, mutationId: Crypto.randomUUID(), updatedAt: new Date().toISOString() }).catch(() => {});
+    void write({ ...row, captureTimeEdited: row.captureTimeEdited || "occurredAt" in patch || "occurredAtPrecision" in patch, content: { ...row.content, ...patch }, revision: row.revision + 1, mutationId: Crypto.randomUUID(), updatedAt: new Date().toISOString() }).catch(() => {});
   }, [write]);
   const addOriginals = useCallback(async (originals: (DraftOriginal & { existing?: boolean; item?: Pick<DraftItem, "id" | "livePhotoGroupId" | "livePhotoRole"> })[], destination?: { scope: string; id: string }) => {
     const row = current.current;
@@ -89,13 +90,13 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     }
   }, [write]);
   const addOriginal = useCallback((id: string, payload: MediaCapturePayload, existing = false) => addOriginals([{ id, payload, existing }]), [addOriginals]);
-  const save = useCallback(async (publish: boolean, syncIntent?: "draft" | "review") => {
+  const save = useCallback(async (publish: boolean, syncIntent?: "draft" | "review", organize = false) => {
     await writes.current;
     const row = current.current;
     if (!row || failure.current) throw new Error("本机草稿尚未保存，请检查存储空间。");
     if ((publish || syncIntent) && row.content.items.some(i => i.preservationState === "missing")) throw new Error("有原件复制中断或缺失，请重新导入完整一组，或移除缺失的素材后保存。");
-    if (publish && !isDraftDateComplete(row.content)) throw new Error("请先确认发生时间，或选择「不详」；也可以先保留草稿。");
-    const next = { ...row, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
+    if (publish && !isDraftDateComplete(row.content) && (!canInferCaptureTime(row.content) || row.captureTimeEdited)) throw new Error("请先确认发生时间，或选择「不详」；也可以先保留草稿。");
+    const next = { ...row, organizeOnPublish: publish && organize, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
     await write(next);
     if (publish || syncIntent) await queueDraftOriginals(next);
     await reload();

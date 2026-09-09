@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { NAME_SOURCE_LABELS, type NameKind, type NameReview } from "@/mobile/src/names/types";
 
-export function NameReviewControl({ kind, id, refreshVersion = 0 }: { kind: NameKind; id: string; refreshVersion?: number }) {
+export function NameReviewControl({ kind, id, refreshVersion = 0, defaultOpen = false }: { kind: NameKind; id: string; refreshVersion?: number; defaultOpen?: boolean }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [review, setReview] = useState<NameReview | null>(null);
   const [title, setTitle] = useState("");
   const [edited, setEdited] = useState<Record<string, string>>({});
@@ -41,7 +41,7 @@ export function NameReviewControl({ kind, id, refreshVersion = 0 }: { kind: Name
     finally { if (request === generation.current) setBusy(false); }
   };
 
-  return <details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setBusy(false); }}>
+  return <details open={open} className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setBusy(false); }}>
     <summary className="min-h-11 cursor-pointer py-2">{kind === "asset" ? "修改素材展示名" : "修改标题与审核 AI 建议"}</summary>
     {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
     <button type="button" className="ui-button-secondary my-2" disabled={busy} onClick={() => setRefresh(value => value + 1)}>刷新名称与建议（保留输入）</button>

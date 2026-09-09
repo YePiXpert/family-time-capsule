@@ -8,16 +8,16 @@ import { deleteMeta, getMeta, setMeta } from "../storage/database";
 import { sharedStyles } from "../theme";
 import { NAME_SOURCE_LABELS, type NameKind, type NameReview } from "./types";
 
-export function NameEditor({ kind, id, onSaved, refreshVersion = 0 }: { kind: NameKind; id: string; onSaved?: () => void; refreshVersion?: number }) {
+export function NameEditor({ kind, id, onSaved, refreshVersion = 0, defaultOpen = false }: { kind: NameKind; id: string; onSaved?: () => void; refreshVersion?: number; defaultOpen?: boolean }) {
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope || !viewer?.canEditEvents) return null;
-  return <Editor key={JSON.stringify([scope, kind, id])} kind={kind} id={id} scope={scope} onSaved={onSaved} refreshVersion={refreshVersion} />;
+  return <Editor key={JSON.stringify([scope, kind, id])} kind={kind} id={id} scope={scope} onSaved={onSaved} refreshVersion={refreshVersion} defaultOpen={defaultOpen} />;
 }
 
-function Editor({ kind, id, scope, onSaved, refreshVersion }: { kind: NameKind; id: string; scope: string; onSaved?: () => void; refreshVersion?: number }) {
+function Editor({ kind, id, scope, onSaved, refreshVersion, defaultOpen = false }: { kind: NameKind; id: string; scope: string; onSaved?: () => void; refreshVersion?: number; defaultOpen?: boolean }) {
   const { credentials, online, runSync } = useApp();
-  const [opened, setOpened] = useState(false);
+  const [opened, setOpened] = useState(defaultOpen);
   const [review, setReview] = useState<NameReview | null>(null);
   const [title, setTitle] = useState("");
   const [edits, setEdits] = useState<Record<string, string>>({});

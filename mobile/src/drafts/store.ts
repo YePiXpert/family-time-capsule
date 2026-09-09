@@ -9,6 +9,9 @@ export type LocalDraft = {
   syncIntent?: "draft" | "review" | "publish";
   syncedRevision?: number;
   discardPending?: boolean;
+  organizeOnPublish?: boolean;
+  captureTimeEdited?: boolean;
+  processing?: import("./capture").CaptureProcessing;
   memoryEventId: string | null; updatedAt: string;
 };
 export async function listLocalDrafts(scope: string): Promise<LocalDraft[]> {
