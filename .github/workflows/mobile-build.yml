@@ -340,7 +340,7 @@ jobs:
           CHANNEL="$(python3 -c '
           import json, os
           version = os.environ["GITHUB_REF_NAME"][1:]
-          registry = json.load(open("scripts/ops/lib/releases.json"))
+          registry = json.load(open(os.path.join(os.environ["GITHUB_WORKSPACE"], "scripts/ops/lib/releases.json")))
           entry = next(r for r in registry["releases"] if r["version"] == version)
           print(entry["channel"])
           ')"
