@@ -340,7 +340,7 @@ describe("image analysis end-to-end", () => {
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
     expect(manifest.fileCount).toBe(
-      manifest.assets.length + 38,
+      manifest.assets.length + 27,
     );
 
     const files = Object.keys(zip.files).filter((n) =>

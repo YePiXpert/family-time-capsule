@@ -39,7 +39,7 @@ vi.mock("../src/api/client", () => ({
   fetchBooks: mocks.list,
   mutateBook: mocks.mutate,
   fetchBookMaterials: mocks.materials,
-  createNativeBook: mocks.create,
+  requestMobileJson: mocks.create,
   fetchBookRenders: async () => [],
 }));
 const { BooksScreen, BookDetailScreen } =
@@ -93,8 +93,8 @@ async function press(label: string, index = 0) {
   const button = tree!.root.findAll(
     (n) =>
       String(n.type) === "Pressable" &&
-      n.findAll((c) => String(c.type) === "Text" && c.props.children === label)
-        .length > 0,
+      (n.props.accessibilityLabel === label || n.findAll((c) => String(c.type) === "Text" && c.props.children === label)
+        .length > 0),
   )[index]!;
   expect(button).toBeTruthy();
   expect(button.props.disabled).not.toBe(true);
@@ -108,31 +108,17 @@ async function field(label: string, value: string, index = 0) {
   expect(input).toBeTruthy();
   await act(() => input.props.onChangeText(value));
 }
-it("creates a real native shelf project with explicit template and audience, then navigates to its editor", async () => {
-  mocks.list.mockResolvedValue({
-    entries: [],
-    nextCursor: null,
-    canWrite: true,
-  });
-  mocks.create.mockResolvedValue("new-book");
-  await act(async () => {
-    tree = create(
-      createElement(BooksScreen, {
-        navigation: { navigate: mocks.navigate },
-        route: {},
-      } as unknown as Parameters<typeof BooksScreen>[0]),
-    );
-  });
-  await field("作品标题", "虚构家人的来信");
-  await press("家人来信集：以每位家人的讲述为中心，留下署名和日期。");
-  await press("建立作品");
-  expect(mocks.create).toHaveBeenCalledWith(
-    mocks.credentials,
-    "虚构家人的来信",
-    "letters",
-    "family",
-  );
-  expect(mocks.navigate).toHaveBeenCalledWith("BookDetail", { id: "new-book" });
+it("creates a work from selected memories without a title or template form", async () => {
+  mocks.list.mockResolvedValue({entries:[],nextCursor:null,canWrite:true});
+  mocks.materials.mockResolvedValue({entries:[{id:"memory",kind:"memory",title:"窗边阅读"}],nextCursor:null});
+  mocks.create.mockResolvedValue({id:"new-book",kind:"book"});
+  await act(async () => { tree = create(createElement(BooksScreen,{navigation:{navigate:mocks.navigate}} as unknown as Parameters<typeof BooksScreen>[0])); });
+  expect(tree!.root.findAllByType("TextInput" as never)).toHaveLength(0);
+  await press("新建家庭书");
+  await press("窗边阅读");
+  await press("生成预览");
+  expect(mocks.create).toHaveBeenCalledWith(mocks.credentials,"/api/works",expect.objectContaining({method:"POST",body:JSON.stringify({kind:"book",audience:"family",selection:[{id:"memory",kind:"memory"}]})}));
+  expect(mocks.navigate).toHaveBeenCalledWith("BookDetail",{id:"new-book"});
 });
 it("edits and reorders native content, keeps text on conflict and selects actual server materials", async () => {
   mocks.get.mockResolvedValue(detail());
@@ -149,9 +135,11 @@ it("edits and reorders native content, keeps text on conflict and selects actual
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("基础编辑");
+  await press("编辑");
+  await press("选择此内容");
   await field("正文", "我保留的手工文字");
   await press("内容下移");
+  await press("作品管理");
   await press("保存版本快照");
   expect(
     mocks.mutate.mock.lastCall?.[2].edit.blocks.map(
@@ -171,7 +159,7 @@ it("edits and reorders native content, keeps text on conflict and selects actual
       : { ...detail(), revision: 4 },
   );
   await press("重试保存");
-  await press("从记忆、相册或故事选材");
+  await press("添加记忆或相册");
   await press("虚构窗边阅读");
   await press("加入 1 项");
   expect(mocks.mutate.mock.lastCall?.[2]).toEqual({
@@ -198,7 +186,8 @@ it("does not replace typing made while autosave is in flight", async () => {
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("基础编辑");
+  await press("编辑");
+  await press("整本设置");
   await field("副标题", "第一次输入");
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 950));

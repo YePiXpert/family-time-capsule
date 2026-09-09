@@ -2,12 +2,12 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import type {
   CollectionDetail,
   CollectionEdit,
   CollectionPage,
 } from "@/mobile/src/collections/types";
+import { WorkCreator } from "@/components/work-creator";
 import { PageHeader } from "@/components/page-header";
 const field =
   "min-h-11 w-full rounded-xl border border-line bg-surface px-3 py-2";
@@ -33,14 +33,12 @@ async function request<T>(url: string, body?: unknown): Promise<T> {
     );
   return data;
 }
-export function CollectionsClient() {
-  const router = useRouter();
+export function CollectionsClient({ embedded = false }: { embedded?: boolean }) {
+  const Container = embedded ? "section" : "main";
+  const [creating, setCreating] = useState(false);
   const [page, setPage] = useState<CollectionPage | null>(null),
     [deleted, setDeleted] = useState(false),
-    [title, setTitle] = useState(""),
-    [kind, setKind] = useState<"album" | "chapter">("album"),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [error, setError] = useState("");
   const load = useCallback(
     async (cursor = "") => {
       try {
@@ -63,41 +61,23 @@ export function CollectionsClient() {
     const timer = setTimeout(() => void load(), 0);
     return () => clearTimeout(timer);
   }, [load]);
-  async function create() {
-    setBusy(true);
-    setError("");
-    try {
-      const r = await fetch("/api/collections", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title, kind }),
-      });
-      const b = await r.json();
-      if (!r.ok) throw new Error("请填写 1–200 字的名称，或稍后重试。");
-      router.push(`/collections/${b.id}`);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
-    <main className="page-container">
-      <PageHeader
+    <Container className={embedded ? "mt-4" : "page-container"}>
+      {!embedded && <PageHeader
         title="相册与章节"
         eyebrow="Family collections"
         description="从真实记忆里，整理一段想反复翻看的家庭经历。"
         backHref="/timeline"
-        backLabel="返回时间轴"
-      />
-      <div className="mt-5 flex gap-3">
+        backLabel="返回记忆"
+      />}
+      <details className="mt-4"><summary className="ui-text-link cursor-pointer">管理</summary>
         <button
           className="ui-button-secondary"
           onClick={() => setDeleted(!deleted)}
         >
           {deleted ? "返回相册" : "相册回收站"}
         </button>
-      </div>
+      </details>
       {error ? (
         <p role="alert" className="mt-4 text-danger">
           {error}
@@ -109,40 +89,8 @@ export function CollectionsClient() {
           </button>
         </p>
       ) : null}
-      {page?.canWrite && !deleted ? (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void create();
-          }}
-          className="my-6 grid gap-3 sm:grid-cols-3"
-        >
-          <label>
-            名称
-            <input
-              className={field}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={200}
-              required
-            />
-          </label>
-          <label>
-            形式
-            <select
-              className={field}
-              value={kind}
-              onChange={(e) => setKind(e.target.value as typeof kind)}
-            >
-              <option value="album">主题相册</option>
-              <option value="chapter">章节（可分小节）</option>
-            </select>
-          </label>
-          <button disabled={busy} className="ui-button-primary self-end">
-            {busy ? "正在创建…" : "新建相册 / 章节"}
-          </button>
-        </form>
-      ) : null}
+      {page?.canWrite && !deleted && !creating ? <button className="ui-button-primary mt-4" onClick={() => setCreating(true)}>新建相册</button> : null}
+      {creating ? <WorkCreator kind="album" onCancel={() => setCreating(false)} /> : null}
       <ol className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {page?.entries.map((c) => (
           <li key={c.id} className="min-w-0">
@@ -178,7 +126,7 @@ export function CollectionsClient() {
         <p className="mt-6 text-muted">
           {deleted
             ? "回收站没有相册。"
-            : "先为一段家庭经历取个名字，再从时间轴挑选记忆。"}
+            : "选一些记忆，做成第一本相册。"}
         </p>
       ) : null}
       {page?.nextCursor ? (
@@ -189,11 +137,11 @@ export function CollectionsClient() {
           更多相册
         </button>
       ) : null}
-    </main>
+    </Container>
   );
 }
 export function CollectionEditor({ id }: { id: string }) {
-  const [reading, setReading] = useState(false);
+  const [reading, setReading] = useState(true);
   const [doc, setDoc] = useState<CollectionDetail | null>(null),
     [saved, setSaved] = useState<CollectionDetail | null>(null),
     [error, setError] = useState(""),
@@ -333,6 +281,7 @@ export function CollectionEditor({ id }: { id: string }) {
                     onChange={(e) => update({ title: e.target.value })}
                   />
                 </label>
+                <label className="block">形式<select className={field} value={doc.kind} onChange={e => update({ kind: e.target.value as "album" | "chapter" })}><option value="album">相册</option><option value="chapter">章节</option></select></label>
                 <label className="block">
                   简介
                   <textarea

@@ -304,8 +304,6 @@ const { ingestImage, ingestMedia } = await import("../lib/assets/ingest");
 const { saveDraft, publishDraft } = await import("../lib/drafts/service");
 const { emptyDraftContent } = await import("../mobile/src/drafts/model");
 const { updateMemoryEvent, getTimelinePage } = await import("../lib/memories/service");
-const { createCapsule, sealCapsule } = await import("../lib/capsules/service");
-const { addFutureQuestion } = await import("../lib/capsules/dialogue");
 
 const db = getDb();
 const adminId = (await db.select({ id: userTable.id }).from(userTable))[0].id;
@@ -510,13 +508,6 @@ let published = 0;
 for (const spec of events) {
   await publishEvent(spec);
   published++;
-}
-
-// 时间胶囊：封存到小满 18 岁，留一个未来问题。
-const capsule = await createCapsule(familyId, { title: "写给十八岁的小满", unlockType: "age", unlockValue: "18" });
-if (capsule.ok) {
-  await addFutureQuestion(context, capsule.capsuleId, "十八岁的你，现在最喜欢做的事是什么？");
-  await sealCapsule(familyId, capsule.capsuleId);
 }
 
 // ---------- 自检 ----------

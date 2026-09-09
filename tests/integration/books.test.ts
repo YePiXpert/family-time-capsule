@@ -1,5 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -23,15 +22,8 @@ const { completeOnboarding, getUserBinding } = await import("@/lib/family/servic
 const { ingestImage } = await import("@/lib/assets/ingest");
 const { createInboxItemForAsset, getInboxEntry } = await import("@/lib/inbox/service");
 const { confirmInboxEntry } = await import("@/lib/memories/service");
-const {
-  createStoryDraft,
-  publishStory,
-  periodForKind,
-  collectStoryMaterial,
-  collectTranscriptMaterial,
-  planDeterministicDraft,
-} = await import("@/lib/stories/service");
-const { generateStoryBook, generateYearBook } = await import("@/lib/books/service");
+
+const { generateYearBook } = await import("@/lib/books/service");
 const { wrapText } = await import("@/lib/books/layout");
 
 const setup = await performSetup({
@@ -110,81 +102,6 @@ describe("M6：换行排版", () => {
     for (const line of latin) {
       expect(line.startsWith("beautiful") || line.startsWith("moment")).toBe(true);
     }
-  });
-});
-
-describe("M6：故事书 PDF/EPUB", () => {
-  let storyId = "";
-
-  it("已发布故事生成结构合法的 PDF（无内部 URL）", async () => {
-    const eventId = await makeEventAt(
-      "出生那几天",
-      new Date("2026-08-11T02:00:00.000Z"),
-    );
-    const { addFact, createContribution } = await import("@/lib/contributions/service");
-    await addFact(context, eventId, "小满出生时六斤八两。");
-    await createContribution(familyId, {
-      memoryEventId: eventId,
-      authorPersonId: adminPersonId,
-      recordedByUserId: adminId,
-      rawText: "那天凌晨我数着走廊的灯等她出生。",
-      visibility: "family",
-    });
-    const anchor = new Date("2026-08-12T00:00:00.000Z");
-    const period = periodForKind("weekly", anchor);
-    const plans = planDeterministicDraft(
-      collectStoryMaterial(familyId, period),
-      collectTranscriptMaterial(familyId, period),
-    );
-    const created = createStoryDraft(
-      context,
-      { kind: "weekly", anchor, title: "出生的那一周" },
-      plans,
-    );
-    if (!created.ok) throw new Error("draft failed");
-    storyId = created.storyId;
-    expect(await publishStory(context, storyId)).toEqual({ ok: true });
-
-    const pdf = await generateStoryBook(familyId, storyId, "pdf", "书籍测试家庭");
-    if (!pdf.ok) throw new Error("pdf failed");
-    const bytes = pdf.buffer;
-    expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
-    expect(bytes.subarray(-6).toString("latin1")).toContain("%%EOF");
-    const text = bytes.toString("latin1");
-    expect(text).toContain("/Type /Catalog");
-    expect((text.match(/\/Type \/Page[^s]/g) ?? []).length).toBeGreaterThanOrEqual(1);
-    // 内部鉴权 URL 绝不出现
-    expect(text).not.toContain("/api/media");
-    expect(pdf.filename.endsWith(".pdf")).toBe(true);
-    const output=path.join(dataDir,'legacy-story.pdf');writeFileSync(output,bytes);const extracted=spawnSync('pdftotext',[output,'-'],{encoding:'utf8'});expect(extracted.status,extracted.stderr).toBe(0);expect(extracted.stdout.replace(/\s/g,'')).toContain('出生的那一周');
-  });
-
-  it("EPUB：mimetype 首位不压缩、OPF/nav/章节齐全、媒体内嵌", async () => {
-    const epub = await generateStoryBook(familyId, storyId, "epub", "书籍测试家庭");
-    if (!epub.ok) throw new Error("epub failed");
-    const JSZip = (await import("jszip")).default;
-    const zip = await JSZip.loadAsync(epub.buffer);
-
-    // mimetype 首位且未压缩
-    const firstEntryName = Object.keys(zip.files)[0];
-    expect(firstEntryName).toBe("mimetype");
-    expect(await zip.file("mimetype")!.async("string")).toBe("application/epub+zip");
-    expect(zip.file("META-INF/container.xml")).toBeTruthy();
-    const opf = await zip.file("OEBPS/content.opf")!.async("string");
-    expect(opf).toContain("<dc:title>出生的那一周</dc:title>");
-    expect(opf).toContain('properties="nav"');
-    const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
-    expect(nav).toContain('epub:type="toc"');
-    const chapter = await zip.file("OEBPS/chapter0.xhtml")!.async("string");
-    expect(chapter).toContain("出生的那一周");
-    expect(chapter).not.toContain("/api/media");
-    expect(epub.filename.endsWith(".epub")).toBe(true);
-    const output=path.join(dataDir,'legacy-story.epub');writeFileSync(output,epub.buffer);const checked=spawnSync('epubcheck',[output],{encoding:'utf8'});expect(checked.status,checked.stdout+checked.stderr).toBe(0);
-  });
-
-  it("未发布故事拒绝成书", async () => {
-    const result = await generateStoryBook(familyId, "missing-story", "pdf", "家");
-    expect(result).toEqual({ ok: false, error: "story_not_found" });
   });
 });
 

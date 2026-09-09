@@ -1,4 +1,5 @@
 "use client";
+import { focusedImageFrame } from "@/mobile/src/books/image-frame";
 import Image from "next/image";
 import Link from "next/link";
 import type { BookDetail } from "@/mobile/src/books/types";
@@ -146,7 +147,11 @@ export function BookPreview({ book }: { book: BookDetail }) {
                                   ? 2
                                   : 4,
                             )
-                            .map((asset, i) => (
+                            .map((asset, i) => {
+                              const frame = focusedImageFrame(asset.width ?? 1, asset.height ?? 1, 100, 100, block.layout.focus[i] ?? { x: 0.5, y: 0.5 });
+                              const x = frame && frame.width > 100 ? -frame.left / (frame.width - 100) * 100 : 50;
+                              const y = frame && frame.height > 100 ? -frame.top / (frame.height - 100) * 100 : 50;
+                              return (
                               <Image
                                 key={`${asset.id}-${i}`}
                                 src={`/api/media/${asset.previewAssetId || asset.id}`}
@@ -156,10 +161,11 @@ export function BookPreview({ book }: { book: BookDetail }) {
                                 alt={block.caption || asset.filename}
                                 className={`w-full ${block.layout.fit === "cover" ? "aspect-square object-cover" : "max-h-96 object-contain"}`}
                                 style={{
-                                  objectPosition: `${(block.layout.focus[i]?.x ?? 0.5) * 100}% ${(block.layout.focus[i]?.y ?? 0.5) * 100}%`,
+                                  objectPosition: `${x}% ${y}%`,
                                 }}
                               />
-                            ))}
+                              );
+                            })}
                         </div>
                       ) : null}
                       {block.kind === "quote" ? (

@@ -20,6 +20,7 @@ export const FAMILY = {
 };
 
 export async function expectInApp(page: Page) {
+  await expect(page).toHaveURL(url => !["/", "/login", "/login/two-factor", "/onboarding"].includes(url.pathname));
   // (protected) 布局独有的导航——登录页同名 h1 会造成假通过
   await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
 }

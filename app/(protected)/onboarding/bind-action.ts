@@ -22,5 +22,5 @@ export async function bindRestoredAction(
           : "请选择一个家庭成员（孩子档案不能作为登录身份）。",
     };
   }
-  redirect("/");
+  redirect("/timeline");
 }

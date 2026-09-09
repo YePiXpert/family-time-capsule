@@ -84,7 +84,6 @@ async function main() {
     console.log(`  事件     ${report.events}`);
     console.log(`  讲述     ${report.contributions}`);
     console.log(`  事实     ${report.facts}`);
-    console.log(`  胶囊     ${report.capsules}`);
     console.log("\n下一步：管理员登录后完成家庭绑定。归档身份不会按人物自动认领；使用 restore:principals 查看待确认身份，核实后逐项绑定账号。");
   } catch (err) {
     if (err instanceof RestoreError) {

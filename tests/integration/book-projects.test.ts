@@ -330,9 +330,8 @@ it("API optimistic conflicts preserve stored state and source changes redact cur
     "人工整理后的妈妈来信",
   );
 });
-it("family publications deny private derivative-linked audio and sealed capsule images", async () => {
-  const { asset } = await import("@/db/schema/asset"),
-    { capsule, capsuleAsset } = await import("@/db/schema/capsule");
+it("family publications deny private derivative-linked audio", async () => {
+  const { asset } = await import("@/db/schema/asset");
   const original = getDb()
     .select()
     .from(asset)
@@ -365,32 +364,6 @@ it("family publications deny private derivative-linked audio and sealed capsule 
     .set({ audioAssetId: null })
     .where(eq(contribution.id, privateId))
     .run();
-  const capsuleId = randomUUID();
-  getDb()
-    .insert(capsule)
-    .values({
-      id: capsuleId,
-      familyId: context.familyId,
-      title: "未到期虚构胶囊",
-      unlockType: "date",
-      unlockValue: "2099-01-01",
-      status: "sealed",
-    })
-    .run();
-  getDb()
-    .insert(capsuleAsset)
-    .values({
-      id: randomUUID(),
-      familyId: context.familyId,
-      capsuleId,
-      assetId: derivative,
-    })
-    .run();
-  expect(
-    createBookSourceResolver(context, "family")("asset", original.id).state
-      .available,
-  ).toBe(false);
-  getDb().delete(capsule).where(eq(capsule.id, capsuleId)).run();
   getDb().delete(asset).where(eq(asset.id, derivative)).run();
 });
 it("historical source refs remain recoverable after permanent source removal", async () => {
@@ -430,46 +403,9 @@ it("complete archive restores editing, retained historical sources and tombstone
     { readFileSync } = await import("node:fs"),
     { spawnSync } = await import("node:child_process"),
     JSZip = (await import("jszip")).default;
-  const { story, storyParagraph, storySource } =
-    await import("@/db/schema/story");
-  const storyId = randomUUID(),
-    paragraphId = randomUUID();
-  getDb()
-    .insert(story)
-    .values({
-      id: storyId,
-      familyId: context.familyId,
-      title: "已发表虚构故事",
-      kind: "monthly",
-      status: "published",
-      periodStart: new Date("2024-03-01"),
-      periodEnd: new Date("2024-04-01"),
-    })
-    .run();
-  getDb()
-    .insert(storyParagraph)
-    .values({
-      id: paragraphId,
-      familyId: context.familyId,
-      storyId,
-      position: 0,
-      kind: "narrative",
-      text: "从真实原文整理的虚构故事。",
-    })
-    .run();
-  getDb()
-    .insert(storySource)
-    .values({
-      id: randomUUID(),
-      familyId: context.familyId,
-      paragraphId,
-      sourceType: "contribution",
-      sourceId: publicId,
-    })
-    .run();
   const id = books.createBookProject(context, "可恢复来源", "growth", "family");
   let doc = addBookSelections(context, id, 1, [
-    { kind: "story", id: storyId },
+    { kind: "contribution", id: publicId },
     { kind: "memory", id: events[1] },
   ]);
   books.saveBookVersion(context, id, doc.revision);
@@ -478,15 +414,10 @@ it("complete archive restores editing, retained historical sources and tombstone
     blocks: doc.blocks.filter(
       (b) =>
         !b.sourceIds.some(
-          (s) => doc.sources.find((r) => r.id === s)?.storyId === storyId,
+          (s) => doc.sources.find((r) => r.id === s)?.contributionId === publicId,
         ),
     ),
   });
-  getDb()
-    .update(story)
-    .set({ deletedAt: new Date() })
-    .where(eq(story.id, storyId))
-    .run();
   getDb()
     .update(contribution)
     .set({ deletedAt: new Date() })
@@ -563,14 +494,6 @@ it("complete archive restores editing, retained historical sources and tombstone
             publicId,
           ),
         )
-        .get()?.deletedAt,
-    ).not.toBeNull();
-    expect(
-      restoredDb
-        .getDb()
-        .select()
-        .from((await import("@/db/schema/story")).story)
-        .where(eq((await import("@/db/schema/story")).story.id, storyId))
         .get()?.deletedAt,
     ).not.toBeNull();
     const familyService = await import("@/lib/family/service");

@@ -18,8 +18,7 @@ import { calendarRange } from "@/lib/memories/calendar-range";
 import { memoryEvent } from "@/db/schema/memory";
 import { getAsset } from "@/lib/assets/service";
 import { getAssetStorage } from "@/lib/assets/storage";
-import { getStory } from "@/lib/stories/service";
-import { renderParagraphsToPdf } from "./pdf";
+
 import {
   renderLegacyEpubIsolated,
   assertCompatibilityRenderBudget,
@@ -76,81 +75,6 @@ async function assetToPageImage(
 }
 
 // ---- 故事书 ----
-
-export async function generateStoryBook(
-  familyId: string,
-  storyId: string,
-  format: BookFormat,
-  familyName: string,
-  context?: FamilyContext,
-): Promise<BookResult> {
-  const detail = await getStory(familyId, storyId);
-  if (!detail) return { ok: false, error: "story_not_found" };
-  if (detail.story.status !== "published") {
-    return { ok: false, error: "story_not_published" };
-  }
-
-  const verify = () => {
-    if (!context) return "";
-    assertBookContext(context);
-    const resolved = createBookSourceResolver(context, "family")(
-      "story",
-      storyId,
-    );
-    if (!resolved.state.available)
-      throw new BookError("source_unavailable", 409);
-    return resolved.fingerprint;
-  };
-  const digest = verify();
-  const recheck = () => {
-    if (verify() !== digest) throw new BookError("source_changed", 409);
-  };
-  const title = detail.story.title;
-  if (format === "pdf") {
-    const paragraphs: Paragraph[] = [
-      { kind: "title", text: title },
-      ...detail.paragraphs.map((p) =>
-        p.kind === "quote"
-          ? ({ kind: "quote", text: `「${p.text}」` } as Paragraph)
-          : ({ kind: "body", text: p.text } as Paragraph),
-      ),
-    ];
-    const buffer = await renderParagraphsToPdf(paragraphs);
-    recheck();
-    return {
-      ok: true,
-      buffer,
-      filename: `${sanitizeFilename(title)}.pdf`,
-      contentType: "application/pdf",
-    };
-  }
-
-  const chapters: EpubChapter[] = [
-    {
-      title,
-      paragraphs: detail.paragraphs.map((p) =>
-        p.kind === "quote"
-          ? { kind: "quote" as const, text: p.text }
-          : { kind: "body" as const, text: p.text },
-      ),
-      image: null,
-    },
-  ];
-  const book: EpubBook = {
-    title,
-    author: familyName,
-    language: "zh-CN",
-    chapters,
-  };
-  const buffer = await renderLegacyEpubIsolated(book, randomUUID());
-  recheck();
-  return {
-    ok: true,
-    buffer,
-    filename: `${sanitizeFilename(title)}.epub`,
-    contentType: "application/epub+zip",
-  };
-}
 
 // ---- 年度书 ----
 

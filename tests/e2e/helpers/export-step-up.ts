@@ -8,6 +8,7 @@ import { ADMIN } from "../helpers";
  */
 export async function grantExportStepUp(page: Page) {
   await page.goto("/settings");
+  await page.locator("summary").filter({ hasText: "备份与恢复" }).click();
   const panel = page.getByRole("region", { name: "可读档案导出" });
   await expect(panel).toBeVisible({ timeout: 20_000 });
   const link = panel.getByRole("link", { name: "导出可读档案 ZIP" });

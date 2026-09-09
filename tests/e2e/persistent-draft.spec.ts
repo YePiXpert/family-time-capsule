@@ -14,7 +14,7 @@ test("long-lived mixed Web draft: offline save, closed page recovery, reorder, c
   const before = await (await page.request.get("/api/mobile/v1/sync")).json();
   expect(before.events).toHaveLength(0);
   await context.setOffline(true);
-  await page.getByRole("button", { name: "保留草稿，稍后继续" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /^本机已保存 ·/ })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "本机已保存 ·" })).toBeVisible();
   await page.close();
   await context.setOffline(false);
@@ -28,7 +28,7 @@ test("long-lived mixed Web draft: offline save, closed page recovery, reorder, c
   await reopened.locator("main ol > li").last().getByRole("button", { name: "上移" }).click();
   await reopened.locator("main ol > li").last().getByText("说明与调整（可选）").click();
   await reopened.locator("main ol > li").last().getByRole("button", { name: "设为封面" }).click();
-  await reopened.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await reopened.getByRole("button", { name: "保存" }).click();
   await expect(reopened.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   const link = await reopened.getByRole("link", { name: "查看这条记忆" }).getAttribute("href");
   const id = link!.split("/").at(-1)!;

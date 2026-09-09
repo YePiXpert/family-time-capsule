@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { ensureBootstrap, ensureLogin } from "./helpers";
@@ -14,7 +14,7 @@ test("旧照片后上传：确认后时间轴按真实发生时间（8/10）展�
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif-offset.jpg"));
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
 
   // 收件箱确认（EXIF 照片显示拍摄时间 8 月 10 日）
   await page.goto("/inbox");
@@ -50,13 +50,13 @@ test("事件详情页展示素材与参与人", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "原件校验" })).toBeVisible();
 });
 
-test("375px 五项导航无横向滚动且搜索可用键盘打开", async ({ page }) => {
+test("375px 三项导航无横向滚动且搜索可用键盘打开", async ({ page }) => {
   await ensureLogin(page);
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
 
   const navigation = page.getByRole("navigation", { name: "一级导航" });
-  await expect(navigation.getByRole("link")).toHaveCount(5);
+  await expect(navigation.getByRole("link")).toHaveCount(3);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
   ).toBe(true);

@@ -1,5 +1,6 @@
+import { Text, TextInput } from "../components/typography";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ApiError, searchMobile, type MobileSearchFilterInput } from "../api/client";
 import { useApp } from "../state/AppContext";
@@ -85,12 +86,11 @@ export function SearchScreen({ navigation }: Props) {
       kindLabel:
         item.type === "memory" ? "记忆"
           : item.type === "contribution" ? "家人讲述"
-            : item.type === "story" ? "故事"
-              : "档案内容",
+            : "档案内容",
       title: item.title,
       snippet: item.snippet,
       open: target
-        ? () => navigation.navigate(target.kind === "memory" ? "Memory" : "StoryDetail", target.kind === "memory" ? { id: target.id } : { id: target.id })
+        ? () => navigation.navigate("Memory", { id: target.id })
         : null,
     };
   };

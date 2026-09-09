@@ -54,7 +54,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
       <PageHeader
         eyebrow="Family settings"
         title="设置"
-        description="管理家庭成员与账号；外部 AI、可读档案导出、WebDAV 和审计记录集中在高级档案设置中。"
+        description="管理家人、设备和资料。"
       />
 
       {searchParams?.accountRoleUpdated === "1" && (
@@ -74,18 +74,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
         </p>
       )}
 
-      <section aria-label="显示" className="mt-8">
-        <h2 className="text-lg font-medium">显示</h2>
-        <p className="mt-1 text-sm text-muted">
-          标准显示或大字简洁显示；这只改变这一台设备上的界面大小和入口数量，不影响任何权限。
-        </p>
-        <div className="mt-3">
-          <DisplayModeToggle mode={displayMode} />
-        </div>
-      </section>
-
-      <section aria-label="家庭" className="mt-8">
-        <h2 className="text-lg font-medium">家庭</h2>
+      <details name="settings-section" className="mt-6 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">家人和账号</summary>
         <dl className="mt-3 grid gap-x-8 gap-y-2 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-foreground/50">家庭名称</dt>
@@ -145,33 +134,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
             活动设备与会话
           </Link>
         </div>
-      </section>
-
-      {(canExport || canReviewAi) && <section aria-label="高级档案设置" className="mt-10 rounded-2xl border border-line bg-surface p-5 sm:p-6">
-        <h2 className="text-lg font-medium">高级档案设置</h2>
-        <p className="mt-1 text-sm leading-6 text-foreground/60">
-          可读档案导出、远程备份和 AI Provider 都是可选的管理能力；日常记录、整理、阅读和搜索不依赖它们。
-        </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          {canExport ? <ExportStepUpPanel needsStepUp={exportNeedsStepUp} /> : null}
-          {canExport ? <Link
-            href="/settings/backup"
-            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm transition-colors hover:border-accent"
-          >
-            管理 WebDAV 远程备份
-          </Link> : null}
-          {canReviewAi ? <Link
-            href="/settings/ai"
-            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent"
-          >
-            AI 整理与隐私
-          </Link> : null}
-        </div>
-        <p className="mt-2 text-xs text-foreground/45">
-          可读档案导出会重新校验每份原件；API Key 与 WebDAV 凭据只存在部署环境，不写入家庭备份。
-        </p>
-      </section>}
-
+      <details className="mt-5"><summary className="ui-text-link cursor-pointer">账户维护与审计</summary>
       <DangerZone isOwner={role === "owner"} />
 
       {canViewAudit && <section aria-label="安全与审计记录" className="mt-10">
@@ -209,6 +172,13 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
           </ul>
         )}
       </section>}
+      </details>
+      </details>
+
+      <details name="settings-section" className="mt-3 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">存储与同步</summary><div className="flex flex-wrap gap-3"><Link href="/library" className="ui-button-secondary">资料库</Link><Link href="/imports" className="ui-button-secondary">导入进度</Link><Link href="/trash" className="ui-button-secondary">回收站</Link></div></details>
+      {canExport ? <details name="settings-section" className="mt-3 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">备份与恢复</summary><div className="flex flex-wrap gap-3"><ExportStepUpPanel needsStepUp={exportNeedsStepUp} /><Link href="/settings/backup" className="ui-button-secondary">家庭备份与恢复</Link></div></details> : null}
+      <details name="settings-section" className="mt-3 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">显示与辅助</summary><DisplayModeToggle mode={displayMode} />{canReviewAi ? <Link href="/settings/ai" className="ui-button-secondary mt-4">AI 整理与隐私</Link> : null}</details>
+
     </main>
   );
 }

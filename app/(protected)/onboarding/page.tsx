@@ -13,7 +13,7 @@ export const metadata = { title: "创建家庭 · Family Time Capsule" };
 export default async function OnboardingPage() {
   const session = await requireSession();
   const binding = await requireUserBinding(session.id);
-  if (binding.familyId) redirect("/");
+  if (binding.familyId) redirect("/timeline");
   if (!hasFamilyCapability(binding.role, "family:manage")) {
     return (
       <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-20">

@@ -97,7 +97,6 @@ type Snapshot = {
     createdAt: string;
     updatedAt: string;
   }>;
-  capsules: Array<{ id: string; title: string; status: string; eventIds: string[] }>;
   assets: Array<{ id: string; sha256: string; bytes: number; mimeType: string; fileBytes: string }>;
   inboxItems: Array<{
     id: string;
@@ -134,7 +133,6 @@ async function freshModules() {
     inbox: await import("@/lib/inbox/service"),
     memories: await import("@/lib/memories/service"),
     contributions: await import("@/lib/contributions/service"),
-    capsules: await import("@/lib/capsules/service"),
     exportSvc: await import("@/lib/export/service"),
     restoreSvc: await import("@/lib/restore/service"),
     storage: await import("@/lib/assets/storage"),
@@ -310,17 +308,6 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     if (!privateContrib.ok) throw new Error("private contribution failed");
     await m.contributions.addFact(await testFamilyContext(adminId, familyId), e1, "2026-08-10 小满出生。");
 
-    // 封存胶囊（未到期）
-    const cap = await m.capsules.createCapsule(familyId, {
-      title: "写给一岁的你",
-      unlockType: "date",
-      unlockValue: "2027-08-10",
-    });
-    if (!cap.ok) throw new Error("capsule failed");
-    await m.capsules.addCapsuleEvent(familyId, cap.capsuleId, e1);
-    const sealed = await m.capsules.sealCapsule(familyId, cap.capsuleId);
-    if (!sealed) throw new Error("seal failed");
-
     // 导出
     const exported = await m.exportSvc.buildDisasterExport(familyId);
 
@@ -413,9 +400,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
       })),
       tags: tagRows.map((t) => ({ memoryEventId: t.memoryEventId, tag: t.tag })),
       transcripts: [],
-      capsules: [
-        { id: cap.capsuleId, title: "写给一岁的你", status: "sealed", eventIds: [e1] },
-      ],
+
       assets,
       inboxItems,
       inboxItemAssets,
@@ -461,7 +446,6 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     expect(report.factSources).toBe(snapshot.factSources.length);
     expect(report.tags).toBe(snapshot.tags.length);
     expect(report.transcripts).toBe(0);
-    expect(report.capsules).toBe(1);
     expect(report.inboxItems).toBe(snapshot.inboxItems.length);
     expect(report.inboxItemAssets).toBe(snapshot.inboxItemAssets.length);
     const documentSchema = await import("@/db/schema/asset");
@@ -582,7 +566,7 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
     ).toHaveLength(0);
 
     // 6) 讲述 / 事实
-    const e1Id = snapshot.capsules[0].eventIds[0];
+    const e1Id = snapshot.contributions[0].memoryEventId;
     const contribs = await m.contributions.listContributions(snapshot.familyId, e1Id);
     expect(contribs.map((c) => c.rawText)).toContain("外婆说：这孩子的手真小。");
     expect(contribs.map((c) => c.authorName)).toContain("外婆");
@@ -659,16 +643,6 @@ describe("RH-004 归档恢复（A → export → B restore）", () => {
         `${a.memoryEventId}-${a.tag}`.localeCompare(`${b.memoryEventId}-${b.tag}`),
       ),
     );
-
-    // 7) 封存胶囊：内容引用完整（导出/恢复不因 seal 丢失内容）
-    const capDetail = await m.capsules.getCompleteCapsuleDetailForDisasterExport(
-      snapshot.familyId,
-      snapshot.capsules[0].id,
-      "2026-08-10",
-      "Asia/Shanghai",
-    );
-    expect(capDetail!.capsule.status).toBe("sealed");
-    expect(capDetail!.events).toHaveLength(1);
 
     // 7.5) 恢复审计（v0.1.3）
     const auditList = await m.db.getDb().all(
@@ -1055,7 +1029,10 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       zip.remove("family-time-capsule-export/name-reviews.json");
       delete manifest.modules.nameReviews;
       manifest.exportVersion = 1;
-      manifest.fileCount -= 14;
+      manifest.fileCount -= 9;
+      zip.file("family-time-capsule-export/capsules.json", "[]");
+      zip.file("family-time-capsule-export/stories/.keep", "");
+      manifest.fileCount += 1;
       zip.remove("family-time-capsule-export/privacy.json");
       const legacyMemories = JSON.parse(await zip.file("family-time-capsule-export/memories.json")!.async("string"));
       for (const memory of legacyMemories) delete memory.bodyText;
@@ -1067,12 +1044,6 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       const familyFile = zip.file("family-time-capsule-export/family.json")!;
       const familyJson = JSON.parse(await familyFile.async("string"));
       delete familyJson.childLaterUnlockAge;
-      delete familyJson.weekStartsOn;
-      delete familyJson.reviewReminderWeekday;
-      delete familyJson.reviewReminderLocalTime;
-      delete familyJson.remindPendingInbox;
-      delete familyJson.remindPendingRequests;
-      delete familyJson.remindUpcomingCapsules;
       zip.file(
         "family-time-capsule-export/family.json",
         JSON.stringify(familyJson),
@@ -1117,12 +1088,6 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
       18,
     );
     expect(await m.family.getFamily(snapshot.familyId)).toMatchObject({
-      weekStartsOn: 1,
-      reviewReminderWeekday: 0,
-      reviewReminderLocalTime: "19:30",
-      remindPendingInbox: true,
-      remindPendingRequests: true,
-      remindUpcomingCapsules: true,
     });
     expect(
       (await m.family.listPeople(snapshot.familyId)).every(
@@ -1159,7 +1124,7 @@ describe("RH-004/RH-010 恶意与非法输入", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "ftc-restore-partial-v11-"));
     const { m, adminId } = await freshB(dir);
     const buf = await buildTamperedZip(async (zip) => {
-      zip.remove("family-time-capsule-export/review-period-events.json");
+      zip.remove("family-time-capsule-export/import-session-items.json");
     });
     await expect(m.restoreSvc.restoreFromZip(buf, adminId)).rejects.toMatchObject({
       code: "missing_json",

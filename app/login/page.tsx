@@ -29,7 +29,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
       }
     }
   }
-  if (validSession) redirect("/");
+  if (validSession) redirect("/timeline");
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-20">

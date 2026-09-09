@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { ADMIN, addFamilyMember, ensureBootstrap, ensureLogin } from "./helpers";
@@ -14,8 +14,7 @@ test("Web 先收进来会保存并回填全部草稿字段", async ({ page }) =>
   await expandCaptureOptions(page); await page.getByLabel("发生时间").fill("2026-08-12T18:30");
   await expandCaptureOptions(page); await page.getByLabel("地点").fill("家里窗边");
   await page.getByLabel("外婆", { exact: true }).check();
-  await page.getByRole("button", { name: /先收进来/u }).click();
-  await expect(page.getByText("已收进收件箱")).toBeVisible();
+  await submitCaptureForReview(page);
 
   await page.goto("/inbox");
   const card = page.locator("article").filter({ hasText: "傍晚和外婆一起看云" });
@@ -127,8 +126,7 @@ test("祖辈记忆不绑定孩子：创建、重开编辑、搜索和日历均�
   await page.getByLabel("写下这一刻").fill("外公年轻时候在江边划船的故事。");
   await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("外公讲年轻时候的故事");
   await expandCaptureOptions(page); await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
-  await page.getByRole("button", { name: /先收进来/u }).click();
-  await expect(page.getByText("已收进收件箱")).toBeVisible();
+  await submitCaptureForReview(page);
   await page.goto("/inbox");
   const card = page.locator("article").filter({ hasText: "外公年轻时候在江边划船的故事" });
   await expect(card.getByLabel("年龄参考人物（可选）")).toHaveValue("");

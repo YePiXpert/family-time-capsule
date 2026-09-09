@@ -1,4 +1,4 @@
-import { readStoryInputSources } from "@/lib/stories/dependencies.mjs";
+
 import { bookProject } from "@/db/schema/book";
 import { createBookSourceResolver } from "@/lib/books/projects/sources";
 import { draft as draftTable } from "@/db/schema/draft";
@@ -16,13 +16,11 @@ import { assetDeletion } from "@/db/schema/asset-deletion";
 import { collectDraftArchive } from "@/lib/drafts/archive";
 import { collectNameReviews, parseNameReviews } from "@/lib/names/archive";
 import "server-only";
-import { collectBookArchive, collectBookSourceClosure } from "@/lib/books/projects/archive";
+import { collectBookArchive } from "@/lib/books/projects/archive";
 import { BOOK_FILES } from "@/lib/books/projects/portable.mjs";
 import { collectCollectionArchive } from "@/lib/collections/archive";
 import { COLLECTION_FILES } from "@/lib/collections/portable.mjs";
 
-import { collectDurableStories } from "@/lib/stories/service";
-import { collectCapsuleDialogue } from "@/lib/capsules/dialogue";
 import { createReadStream, createWriteStream, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -41,24 +39,14 @@ import {
   memoryEventParticipant,
 } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
-import {
-  capsule as capsuleTable,
-  capsuleAsset,
-  capsuleContribution,
-  capsuleEvent,
-} from "@/db/schema/capsule";
+
 import { factSource } from "@/db/schema/suggestion";
 import {
   importSession,
   importSessionDefaultParticipant,
   importSessionItem,
 } from "@/db/schema/import";
-import {
-  contributionPortalSubmission,
-  contributionRequest,
-  contributionRequestSubmission,
-} from "@/db/schema/oral-history";
-import { reviewPeriod, reviewPeriodEvent } from "@/db/schema/review";
+
 import { getAssetStorage } from "@/lib/assets/storage";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
 import {
@@ -75,7 +63,7 @@ import { getFamily } from "@/lib/family/service";
  * family-time-capsule-export/
  * ├── manifest.json / family.json / people.json / memories.json
  * ├── inbox-items.json / inbox-item-assets.json
- * ├── contributions.json / facts.json / capsules.json / timeline.md
+ * ├── contributions.json / facts.json / timeline.md
  * ├── originals/{images,audio,video,documents}/
  * └── stories/
  *
@@ -85,10 +73,10 @@ import { getFamily } from "@/lib/family/service";
  * - timeline.md 用相对路径引用原媒体，解压即可读/可播放。
  */
 
-export const EXPORT_VERSION = 3;
+export const EXPORT_VERSION = 4;
 export const EXPORT_ROOT_DIR = "family-time-capsule-export";
 /** Current v2 non-media file count; legacy v1 is counted from its module set. */
-export const EXPORT_NON_ASSET_FILE_COUNT = 29 + COLLECTION_FILES.length + BOOK_FILES.length;
+export const EXPORT_NON_ASSET_FILE_COUNT = 18 + COLLECTION_FILES.length + BOOK_FILES.length;
 /** v0.1.3 及更早的 v1 档尚无两份 Inbox JSON。 */
 export const LEGACY_EXPORT_NON_ASSET_FILE_COUNT = 8;
 export type ExportChecksumMismatchError = {
@@ -173,7 +161,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
   const startEpoch = db.transaction(() => { assertActor(); return epoch(); });
   let collectionGraph = collectCollectionArchive(familyId);
   let bookGraph = collectBookArchive(familyId);
-  const bookClosure = collectBookSourceClosure(familyId);
+
   const family = await getFamily(familyId);
   if (!family) throw new Error("family not found");
 
@@ -183,7 +171,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
     initialEvents,
     initialContributions,
     initialFacts,
-    initialCapsules,
+
     initialInboxItems,
     initialInboxItemAssets,
     initialInboxItemParticipants,
@@ -193,11 +181,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
     initialImportSessions,
     initialImportDefaultParticipants,
     initialImportItems,
-    contributionRequests,
-    initialRequestSubmissions,
-    initialPortalSubmissions,
-    initialReviewPeriods,
-    initialReviewEvents,
+
   ] = await Promise.all([
     db.select().from(personTable).where(eq(personTable.familyId, familyId)),
     db.select().from(assetTable).where(eq(assetTable.familyId, familyId)),
@@ -213,7 +197,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       ),
     listCompleteFamilyContributionsForDisasterExport(db, familyId),
     listFamilyFacts(db, familyId),
-    db.select().from(capsuleTable).where(eq(capsuleTable.familyId, familyId)),
+
     db.select().from(inboxItem).where(eq(inboxItem.familyId, familyId)),
     db.select().from(inboxItemAsset).where(eq(inboxItemAsset.familyId, familyId)),
     db.select().from(inboxItemParticipant).where(eq(inboxItemParticipant.familyId, familyId)),
@@ -226,24 +210,14 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       .from(importSessionDefaultParticipant)
       .where(eq(importSessionDefaultParticipant.familyId, familyId)),
     db.select().from(importSessionItem).where(eq(importSessionItem.familyId, familyId)),
-    db.select().from(contributionRequest).where(eq(contributionRequest.familyId, familyId)),
-    db
-      .select()
-      .from(contributionRequestSubmission)
-      .where(eq(contributionRequestSubmission.familyId, familyId)),
-    db
-      .select()
-      .from(contributionPortalSubmission)
-      .where(eq(contributionPortalSubmission.familyId, familyId)),
-    db.select().from(reviewPeriod).where(eq(reviewPeriod.familyId, familyId)),
-    db.select().from(reviewPeriodEvent).where(eq(reviewPeriodEvent.familyId, familyId)),
+
   ]);
 
   let assets = initialAssets;
   let events = initialEvents;
   let contributions = initialContributions;
   let facts = initialFacts;
-  let capsules = initialCapsules;
+
   let inboxItems = initialInboxItems;
   let inboxItemAssets = initialInboxItemAssets;
   let inboxItemParticipants = initialInboxItemParticipants;
@@ -253,13 +227,9 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
   let importSessions = initialImportSessions;
   let importDefaultParticipants = initialImportDefaultParticipants;
   let importItems = initialImportItems;
-  let requestSubmissions = initialRequestSubmissions;
-  let portalSubmissions = initialPortalSubmissions;
-  let reviewPeriods = initialReviewPeriods;
-  let reviewEvents = initialReviewEvents;
+
   let draftArchive = collectDraftArchive(familyId, new Set(events.map(e => e.id)));
-  let storyBundle = collectDurableStories(familyId, bookClosure.stories);
-  let dialogue = collectCapsuleDialogue(familyId);
+
   if (opts.context) {
     const context = opts.context, access = createContributionAccessSnapshot(context);
     const readableEvents = new Set(db.select({ id: memoryEventTable.id }).from(memoryEventTable).where(and(eq(memoryEventTable.familyId, familyId), eventVisibilityCondition(createEventAccessSnapshot(context)), isNull(memoryEventTable.deletedAt))).all().map(r => r.id));
@@ -288,31 +258,25 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
     const importIds = new Set(importSessions.map(i => i.id));
     importItems = importItems.filter(row => importIds.has(row.importSessionId));
     importDefaultParticipants = importDefaultParticipants.filter(row => importIds.has(row.importSessionId));
-    requestSubmissions = requestSubmissions.filter(row => inboxIds.has(row.inboxItemId));
-    portalSubmissions = portalSubmissions.filter(row => importIds.has(row.importSessionId));
+
     // Copied prose and historical book snapshots must never survive an inaccessible source.
-    const permittedStories = new Set(storyBundle.stories.filter(row => !row.deletedAt && readStoryInputSources(row) !== null && [...(readStoryInputSources(row) ?? []), ...storyBundle.sources.filter(s => storyBundle.paragraphs.some(p => p.storyId === row.id && p.id === s.paragraphId))].every(s => s.sourceType === "fact" ? s.sourceId !== null && factIds.has(s.sourceId) : sourceAllowed(s.sourceType, s.sourceId))).map(s => s.id));
-    storyBundle = { stories: storyBundle.stories.filter(s => permittedStories.has(s.id)), paragraphs: storyBundle.paragraphs.filter(p => permittedStories.has(p.storyId)), sources: storyBundle.sources.filter(s => storyBundle.paragraphs.some(p => p.id === s.paragraphId && permittedStories.has(p.storyId))) };
-    reviewPeriods = reviewPeriods.filter(row => (!row.storyId || permittedStories.has(row.storyId)) && reviewEvents.filter(l => l.reviewPeriodId === row.id).every(l => readableEvents.has(l.memoryEventId)));
-    const reviewIds = new Set(reviewPeriods.map(r => r.id));
-    reviewEvents = reviewEvents.filter(row => reviewIds.has(row.reviewPeriodId));
+
     const collectionIds = new Set(collectionGraph.collections.filter(row => !row.deletedAt && (!row.coverAssetId || readableAssets.has(row.coverAssetId)) && collectionGraph.items.filter(i => i.collectionId === row.id).every(i => (!i.memoryEventId || readableEvents.has(i.memoryEventId)) && (!i.assetId || readableAssets.has(i.assetId)))).map(r => r.id));
     collectionGraph = parseCollectionArchive(collectionGraph.collections.filter(r => collectionIds.has(r.id)), collectionGraph.sections.filter(r => collectionIds.has(r.collectionId)), collectionGraph.items.filter(r => collectionIds.has(r.collectionId)), familyId, readableEvents, readableAssets);
-    const refs = { memory: readableEvents, asset: readableAssets, contribution: contributionIds, story: permittedStories, collection: collectionIds, person: new Set(people.map(p => p.id)) };
-    const sourceSet = (row: (typeof bookGraph.sources)[number]) => row.kind === "memory" ? row.memoryEventId : row.kind === "asset" ? row.assetId : row.kind === "contribution" ? row.contributionId : row.kind === "story" ? row.storyId : row.collectionId;
+    const refs = { memory: readableEvents, asset: readableAssets, contribution: contributionIds, collection: collectionIds, person: new Set(people.map(p => p.id)) };
+    const sourceSet = (row: (typeof bookGraph.sources)[number]) => row.kind === "memory" ? row.memoryEventId : row.kind === "asset" ? row.assetId : row.kind === "contribution" ? row.contributionId : row.collectionId;
     const ownedBookIds = new Set(db.select({ id: bookProject.id }).from(bookProject).where(eq(bookProject.ownerUserId, context.userId)).all().map(r => r.id));
     const projectIds = new Set(bookGraph.projects.filter(row => !row.deletedAt && (row.audience === "family" || ownedBookIds.has(row.id)) && (!row.coverAssetId || readableAssets.has(row.coverAssetId)) && bookGraph.sources.filter(s => s.projectId === row.id).every(s => { const id = sourceSet(s); return id !== null && refs[s.kind].has(id) && createBookSourceResolver(context, row.audience)(s.kind, id).state.available; })).map(p => p.id));
     bookGraph = parseBookArchive([bookGraph.projects.filter(r => projectIds.has(r.id)), bookGraph.chapters.filter(r => projectIds.has(r.projectId)), bookGraph.blocks.filter(r => projectIds.has(r.projectId)), bookGraph.sources.filter(r => projectIds.has(r.projectId)), bookGraph.links.filter(r => projectIds.has(r.projectId)), bookGraph.revisions.filter(r => projectIds.has(r.projectId))], familyId, refs);
   }
   // Unedited generated drafts are rebuildable; keep the review without a dangling draft link.
-  const retainedStories = new Set(storyBundle.stories.map(row => row.id));
-  reviewPeriods = reviewPeriods.map(row => ({ ...row, storyId: row.storyId && retainedStories.has(row.storyId) ? row.storyId : null }));
+
   const eventIds = events.map((e) => e.id);
   const privacy = collectArchivePrivacy(familyId, { events, assets, draftIds: new Set(draftArchive.map(d => d.id)), bookIds: new Set(bookGraph.projects.map(p => p.id)), importIds: new Set(importSessions.map(i => i.id)), reviewAssetPairs: new Set(inboxItemAssets.map(l => `${l.inboxItemId}:${l.assetId}`)) });
   // Capture review records before opening the ZIP and reject an inconsistent
   // title snapshot rather than emitting an archive that cannot be restored.
   const nameReviews = parseNameReviews(collectNameReviews(familyId, new Set(eventIds), new Set(inboxItems.map(item => item.id)), new Set(assets.map(a => a.id))), new Map(events.map(event => [event.id, event.titleRevision])), new Map(inboxItems.map(item => [item.id, item.titleRevision])), new Map(assets.map(a => [a.id, a.nameRevision])));
-  const [initialEventAssetLinks, eventParticipantLinks, initialCapsuleEventLinks, initialCapsuleAssetLinks, initialCapsuleContributionLinks] =
+  const [initialEventAssetLinks, eventParticipantLinks,   ] =
     await Promise.all([
       eventIds.length
         ? db.select().from(memoryEventAsset).where(inArray(memoryEventAsset.memoryEventId, eventIds))
@@ -320,26 +284,17 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       eventIds.length
         ? db.select().from(memoryEventParticipant).where(inArray(memoryEventParticipant.memoryEventId, eventIds))
         : Promise.resolve([] as (typeof memoryEventParticipant.$inferSelect)[]),
-      db.select().from(capsuleEvent).where(eq(capsuleEvent.familyId, familyId)),
-      db.select().from(capsuleAsset).where(eq(capsuleAsset.familyId, familyId)),
-      db.select().from(capsuleContribution).where(eq(capsuleContribution.familyId, familyId)),
+
     ]);
 
   let eventAssetLinks = initialEventAssetLinks;
-  let capsuleEventLinks = initialCapsuleEventLinks;
-  let capsuleAssetLinks = initialCapsuleAssetLinks;
-  let capsuleContributionLinks = initialCapsuleContributionLinks;
+
   if (opts.context) {
-    const assetIds = new Set(assets.map(a => a.id)), eventsSet = new Set(eventIds), contributionIds = new Set(contributions.map(c => c.id));
+    const assetIds = new Set(assets.map(a => a.id));
     const brokenPairs = new Set(eventAssetLinks.filter(row => row.livePhotoGroupId && !assetIds.has(row.assetId)).map(row => row.livePhotoGroupId!));
     eventAssetLinks = eventAssetLinks.filter(row => assetIds.has(row.assetId) && (!row.livePhotoGroupId || !brokenPairs.has(row.livePhotoGroupId)));
     events = events.map(row => ({ ...row, coverAssetId: row.coverAssetId && eventAssetLinks.some(l => l.memoryEventId === row.id && l.assetId === row.coverAssetId) ? row.coverAssetId : null }));
-    const capsuleIds = new Set(capsules.filter(row => capsuleEventLinks.filter(l => l.capsuleId === row.id).every(l => eventsSet.has(l.memoryEventId)) && capsuleAssetLinks.filter(l => l.capsuleId === row.id).every(l => assetIds.has(l.assetId)) && capsuleContributionLinks.filter(l => l.capsuleId === row.id).every(l => contributionIds.has(l.contributionId)) && dialogue.replies.filter(r => r.capsuleId === row.id).every(r => !r.assetId || assetIds.has(r.assetId))).map(c => c.id));
-    capsules = capsules.filter(row => capsuleIds.has(row.id));
-    capsuleEventLinks = capsuleEventLinks.filter(row => capsuleIds.has(row.capsuleId));
-    capsuleAssetLinks = capsuleAssetLinks.filter(row => capsuleIds.has(row.capsuleId));
-    capsuleContributionLinks = capsuleContributionLinks.filter(row => capsuleIds.has(row.capsuleId));
-    dialogue = { questions: dialogue.questions.filter(q => capsuleIds.has(q.capsuleId)), replies: dialogue.replies.filter(r => capsuleIds.has(r.capsuleId)) };
+
   }
 
   const storage = getAssetStorage();
@@ -422,23 +377,6 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       .filter((l) => l.memoryEventId === e.id)
       .map((l) => l.personId),
     tags: tagsByEvent.get(e.id) ?? [],
-  }));
-
-  const capsulesJson = capsules.map((c) => ({
-    id: c.id,
-    title: c.title,
-    unlockType: c.unlockType,
-    unlockValue: c.unlockValue,
-    status: c.status,
-    sealedAt: iso(c.sealedAt),
-    openedAt: iso(c.openedAt),
-    createdAt: iso(c.createdAt),
-    // 导出永远包含内容（封存不是物理加密，PRD §15）
-    memoryEventIds: capsuleEventLinks.filter((l) => l.capsuleId === c.id).map((l) => l.memoryEventId),
-    assetIds: capsuleAssetLinks.filter((l) => l.capsuleId === c.id).map((l) => l.assetId),
-    contributionIds: capsuleContributionLinks
-      .filter((l) => l.capsuleId === c.id)
-      .map((l) => l.contributionId),
   }));
 
   const inboxItemsJson = inboxItems.map((item) => ({
@@ -600,12 +538,6 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       name: family.name,
       timezone: family.timezone,
       childLaterUnlockAge: family.childLaterUnlockAge,
-      weekStartsOn: family.weekStartsOn,
-      reviewReminderWeekday: family.reviewReminderWeekday,
-      reviewReminderLocalTime: family.reviewReminderLocalTime,
-      remindPendingInbox: family.remindPendingInbox,
-      remindPendingRequests: family.remindPendingRequests,
-      remindUpcomingCapsules: family.remindUpcomingCapsules,
       createdAt: iso(family.createdAt),
       updatedAt: iso(family.updatedAt),
     });
@@ -664,66 +596,12 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       createdAt: iso(item.createdAt),
       updatedAt: iso(item.updatedAt),
     })));
-    json("contribution-requests.json", contributionRequests.map((request) => ({
-      id: request.id,
-      kind: request.kind,
-      title: request.title,
-      recipientLabel: request.recipientLabel,
-      recipientPersonId: request.recipientPersonId,
-      promptText: request.promptText,
-      topicKey: request.topicKey,
-      maxSubmissions: request.maxSubmissions,
-      maxFilesPerSubmission: request.maxFilesPerSubmission,
-      allowImages: request.allowImages,
-      allowAudio: request.allowAudio,
-      allowVideo: request.allowVideo,
-      allowDocuments: request.allowDocuments,
-      allowText: request.allowText,
-      allowBrowserRecording: request.allowBrowserRecording,
-      allowGuestName: request.allowGuestName,
-      allowReuse: request.allowReuse,
-      expiresAt: iso(request.expiresAt),
-      createdAt: iso(request.createdAt),
-      updatedAt: iso(request.updatedAt),
-      // tokenHash, creator/closer User ids and live status are instance-local.
-      // Every restored entry is deliberately closed until a user regenerates it.
-    })));
-    json("contribution-request-submissions.json", requestSubmissions.map((submission) => ({
-      id: submission.id,
-      requestId: submission.requestId,
-      inboxItemId: submission.inboxItemId,
-      createdAt: iso(submission.createdAt),
-    })));
-    json("contribution-portal-submissions.json", portalSubmissions.map((submission) => ({
-      id: submission.id,
-      requestId: submission.requestId,
-      importSessionId: submission.importSessionId,
-      guestDisplayName: submission.guestDisplayName,
-      status: submission.status,
-      completedAt: iso(submission.completedAt),
-      createdAt: iso(submission.createdAt),
-    })));
+
     for (const [index, rows] of Object.values(bookGraph).entries()) json(BOOK_FILES[index], rows);
     json("collections.json", collectionGraph.collections);
     json("collection-sections.json", collectionGraph.sections);
     json("collection-items.json", collectionGraph.items);
-    json("review-periods.json", reviewPeriods.map((period) => ({
-      id: period.id,
-      periodStart: iso(period.periodStart),
-      periodEnd: iso(period.periodEnd),
-      status: period.status,
-      storyId: period.storyId,
-      startedAt: iso(period.startedAt),
-      completedAt: iso(period.completedAt),
-      createdAt: iso(period.createdAt),
-      updatedAt: iso(period.updatedAt),
-    })));
-    json("review-period-events.json", reviewEvents.map((link) => ({
-      id: link.id,
-      reviewPeriodId: link.reviewPeriodId,
-      memoryEventId: link.memoryEventId,
-      createdAt: iso(link.createdAt),
-    })));
+
     json("contributions.json", contributions.map((c) => ({
       id: c.id,
       memoryEventId: c.memoryEventId,
@@ -761,37 +639,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       endMs: s.endMs,
       createdAt: iso(s.createdAt),
     })));
-    json("stories.json", storyBundle.stories.map((st) => ({
-      id: st.id,
-      kind: st.kind,
-      inputSources: readStoryInputSources(st),
-      periodStart: iso(st.periodStart),
-      periodEnd: iso(st.periodEnd),
-      title: st.title,
-      status: st.status,
-      editedAt: st.editedAt ? iso(st.editedAt) : null,
-      publishedAt: st.publishedAt ? iso(st.publishedAt) : null,
-      createdAt: iso(st.createdAt),
-      updatedAt: iso(st.updatedAt),
-      deletedAt: iso(st.deletedAt),
-    })));
-    json("story-paragraphs.json", storyBundle.paragraphs.map((pp) => ({
-      id: pp.id,
-      storyId: pp.storyId,
-      position: pp.position,
-      kind: pp.kind,
-      text: pp.text,
-      createdAt: iso(pp.createdAt),
-      updatedAt: iso(pp.updatedAt),
-    })));
-    json("story-sources.json", storyBundle.sources.map((ss) => ({
-      id: ss.id,
-      paragraphId: ss.paragraphId,
-      sourceType: ss.sourceType,
-      sourceId: ss.sourceId,
-      quote: ss.quote,
-      createdAt: iso(ss.createdAt),
-    })));
+
     json("transcripts.json", transcripts.map((t) => ({
       id: t.id,
       familyId: t.familyId,
@@ -809,22 +657,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       createdAt: iso(t.createdAt),
       updatedAt: iso(t.updatedAt),
     })));
-    json("capsules.json", capsulesJson);
-    json("capsule-questions.json", dialogue.questions.map((q) => ({
-      id: q.id,
-      capsuleId: q.capsuleId,
-      questionText: q.questionText,
-      createdAt: iso(q.createdAt),
-    })));
-    json("capsule-replies.json", dialogue.replies.map((r) => ({
-      id: r.id,
-      questionId: r.questionId,
-      capsuleId: r.capsuleId,
-      authorPersonId: r.authorPersonId,
-      text: r.text,
-      assetId: r.assetId,
-      createdAt: iso(r.createdAt),
-    })));
+
     archive.append(Buffer.from(md.join("\n"), "utf8"), {
       name: `${EXPORT_ROOT_DIR}/timeline.md`,
     });
@@ -837,7 +670,6 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
       });
     }
     // 空目录也保留（stories/ 及空的媒体目录）
-    archive.append(Buffer.alloc(0), { name: `${EXPORT_ROOT_DIR}/stories/.keep` });
     archive.append(Buffer.alloc(0), { name: `${EXPORT_ROOT_DIR}/originals/images/.keep` });
     archive.append(Buffer.alloc(0), { name: `${EXPORT_ROOT_DIR}/originals/audio/.keep` });
     archive.append(Buffer.alloc(0), { name: `${EXPORT_ROOT_DIR}/originals/video/.keep` });

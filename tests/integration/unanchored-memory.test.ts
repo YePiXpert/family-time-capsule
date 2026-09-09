@@ -22,7 +22,6 @@ const { createTextInboxItem, createInboxItemForAsset, getInboxEntry } = await im
 const { mergeInboxEntries, confirmInboxEntry, updateMemoryEvent, getMemoryEventDetail, getTimelinePage } = await import("@/lib/memories/service");
 const { getMobileMemory } = await import("@/lib/mobile/product");
 const { getMobileSyncPage } = await import("@/lib/mobile/sync");
-const { getHomeDashboard } = await import("@/lib/home/service");
 const { getCalendarMonth } = await import("@/lib/memories/calendar");
 const { searchFamily } = await import("@/lib/search/service");
 const { createBookSourceResolver } = await import("@/lib/books/projects/sources");
@@ -59,7 +58,6 @@ it("grandparent recording: no child onboarding, mixed sources, HTTP, permissions
   expect(await canReadContributionAsset(createContributionAccessSnapshot(context), stored.asset.id)).toBe(true);
   expect((await getTimelinePage(context)).entries.map(e => e.event.id)).toContain(id);
   expect(JSON.stringify(await getCalendarMonth(context, "2026-09"))).toContain("2026-09-07");
-  expect((await getHomeDashboard(context)).recentMemories[0].ageLabel).toBeNull();
   expect(searchFamily(context, { q: "年轻" }).events.map(e => e.id)).toContain(id);
   expect(createBookSourceResolver(context, "personal")("memory", id).state).toMatchObject({ available: true, ageLabel: null });
   expect((await getMobileSyncPage({ context })).events.find(e => e.id === id)?.ageLabel).toBeNull();

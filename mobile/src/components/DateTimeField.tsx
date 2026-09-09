@@ -1,10 +1,11 @@
+import { Text } from "./typography";
 import { useState } from "react";
 import {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
   default as DateTimePicker,
 } from "@react-native-community/datetimepicker";
-import { Modal, Platform, Pressable, Text, View } from "react-native";
+import { Modal, Platform, Pressable, View } from "react-native";
 import { colors, sharedStyles } from "../theme";
 
 /**

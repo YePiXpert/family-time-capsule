@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  homeWebPath,
   HOME_CAPTURE_ACTIONS,
   resolveSearchTarget,
 } from "../src/navigation/intents";
@@ -20,14 +19,7 @@ describe("native navigation and reading details", () => {
     ]);
   });
 
-  it("routes stories and memories to concrete native detail screens", () => {
-    expect(homeWebPath("story", "story-1")).toBe("/stories/story-1");
-    expect(homeWebPath("capsule", "capsule-1")).toBe("/capsules/capsule-1");
-    expect(homeWebPath("prompt", null)).toBe("/requests");
-    expect(resolveSearchTarget({ type: "story", id: "story-2", eventId: null })).toEqual({
-      kind: "story",
-      id: "story-2",
-    });
+  it("routes source matches to concrete native detail screens", () => {
     expect(resolveSearchTarget({ type: "contribution", id: "c-1", eventId: "memory-1" })).toEqual({
       kind: "memory",
       id: "memory-1",

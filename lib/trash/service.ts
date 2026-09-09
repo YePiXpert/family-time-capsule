@@ -5,18 +5,18 @@ import { user } from "@/db/schema/auth";
 import { auditLog } from "@/db/schema/audit";
 import { contribution as contributionTable, fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent } from "@/db/schema/memory";
-import { story, storyParagraph } from "@/db/schema/story";
+
 import { requiredAuditValues } from "@/lib/audit/service";
 import { canEditContribution, hasFamilyCapability, type FamilyCapability } from "@/lib/authz/policy";
 import { canManageEventVisibilityInTransaction, createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import { createContributionAccessSnapshot, getVisibleContributionInTransaction, type ContributionAccessTransaction } from "@/lib/authz/contribution-access";
-import { familyStoryPredicate } from "@/lib/authz/story-access";
+
 import { deleteLibraryAsset } from "@/lib/assets/deletion";
 import { AssetLibraryError } from "@/lib/assets/library";
-import { indexContribution, indexFactIfConfirmed, indexMemoryEvent, indexStory, removeFromSearchIndex } from "@/lib/search/service";
+import { indexContribution, indexFactIfConfirmed, indexMemoryEvent, removeFromSearchIndex } from "@/lib/search/service";
 import type { FamilyContext } from "@/lib/family/context";
 
-export type TrashKind = "memory_event" | "contribution" | "story";
+export type TrashKind = "memory_event" | "contribution";
 export type TrashEntry = { kind: TrashKind; id: string; label: string; deletedAt: Date };
 export type TrashMutation = { ok: true } | { ok: false; error: string };
 type Tx = ContributionAccessTransaction;
@@ -37,9 +37,7 @@ function managedContribution(tx: Tx, context: FamilyContext, id: string) {
   if (!row || !canEditContribution({ role: context.role, accountEnabled: context.accountEnabled, userPersonId: context.personId, authorPersonId: row.authorPersonId, isGuardian: context.isGuardian, childLaterUnlocked: false })) return undefined;
   return tx.select().from(contributionTable).where(eq(contributionTable.id, id)).get();
 }
-function managedStory(tx: Tx, context: FamilyContext, id: string) {
-  return tx.select().from(story).where(and(eq(story.id, id), eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`))).get();
-}
+
 function removeEventIndex(tx: Tx, id: string) {
   removeFromSearchIndex("memory_event", id);
   for (const row of tx.select({ id: factTable.id }).from(factTable).where(eq(factTable.memoryEventId, id)).all()) removeFromSearchIndex("fact", row.id);
@@ -62,17 +60,9 @@ export function trashContribution(context: FamilyContext, id: string): TrashMuta
     return { ok: true };
   });
 }
-export function trashStory(context: FamilyContext, id: string): TrashMutation {
-  return write(context, "story:write", tx => {
-    const row = managedStory(tx, context, id);
-    if (!row || row.deletedAt) return missing;
-    tx.update(story).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(story.id, id)).run();
-    removeFromSearchIndex("story", id);
-    return { ok: true };
-  });
-}
+
 export function restoreFromTrash(context: FamilyContext, kind: TrashKind, id: string): TrashMutation {
-  return write(context, kind === "memory_event" ? "event:write" : kind === "contribution" ? "contribution:create" : "story:write", tx => {
+  return write(context, kind === "memory_event" ? "event:write" : "contribution:create", tx => {
     if (kind === "memory_event") {
       const row = managedEvent(tx, context, id);
       if (!row?.deletedAt) return missing;
@@ -83,20 +73,12 @@ export function restoreFromTrash(context: FamilyContext, kind: TrashKind, id: st
       if (!row?.deletedAt) return missing;
       tx.update(contributionTable).set({ deletedAt: null, updatedAt: new Date() }).where(eq(contributionTable.id, id)).run();
       indexContribution({ ...row, familyId: context.familyId });
-    } else if (kind === "story") {
-      const row = managedStory(tx, context, id);
-      if (!row?.deletedAt) return missing;
-      tx.update(story).set({ deletedAt: null, updatedAt: new Date() }).where(eq(story.id, id)).run();
-      if (row.status === "published") {
-        const text = tx.select({ text: storyParagraph.text }).from(storyParagraph).where(eq(storyParagraph.storyId, id)).all().map(p => p.text).join("\n");
-        indexStory({ id, familyId: context.familyId, title: row.title, bodyText: text });
-      }
     } else return missing;
     return { ok: true };
   });
 }
 export function purgeFromTrash(context: FamilyContext, kind: TrashKind, id: string): TrashMutation {
-  return write(context, kind === "memory_event" ? "event:write" : kind === "contribution" ? "contribution:create" : "story:write", tx => {
+  return write(context, kind === "memory_event" ? "event:write" : "contribution:create", tx => {
     if (kind === "memory_event") {
       if (!managedEvent(tx, context, id)?.deletedAt) return missing;
       const children = tx.select({ id: contributionTable.id }).from(contributionTable).where(eq(contributionTable.memoryEventId, id)).all();
@@ -109,10 +91,6 @@ export function purgeFromTrash(context: FamilyContext, kind: TrashKind, id: stri
       if (!managedContribution(tx, context, id)?.deletedAt) return missing;
       tx.delete(contributionTable).where(eq(contributionTable.id, id)).run();
       removeFromSearchIndex("contribution", id);
-    } else if (kind === "story") {
-      if (!managedStory(tx, context, id)?.deletedAt) return missing;
-      tx.delete(story).where(eq(story.id, id)).run();
-      removeFromSearchIndex("story", id);
     } else return missing;
     tx.insert(auditLog).values(requiredAuditValues(context.familyId, `${kind}.purged`, context.userId, kind === "memory_event" ? { eventId: id } : { id })).run();
     return { ok: true };
@@ -132,9 +110,7 @@ export function listTrash(context: FamilyContext): TrashEntry[] {
     for (const { row } of contributions) {
       if (row.deletedAt && managedContribution(tx, context, row.id)) entries.push({ kind: "contribution", id: row.id, label: `讲述：${(row.editedText ?? row.rawText ?? "").replace(/\s+/gu, " ").slice(0, 40)}`, deletedAt: row.deletedAt });
     }
-    for (const row of tx.select().from(story).where(and(eq(story.familyId, context.familyId), familyStoryPredicate(context.familyId, sql`${story.id}`), sql`${story.deletedAt} is not null`)).orderBy(desc(story.deletedAt)).limit(100).all()) {
-      if (row.deletedAt && hasFamilyCapability(context.role, "story:write")) entries.push({ kind: "story", id: row.id, label: row.title, deletedAt: row.deletedAt });
-    }
+
     return entries;
   });
 }
@@ -160,7 +136,6 @@ function reindexEvent(eventId: string): void {
   }
 }
 
-
 export function purgeAssetIfUnreferenced(context: FamilyContext, assetId: string): { ok: true; deleted: boolean } | { ok: false; error: string } {
   try {
     const result = deleteLibraryAsset(context, assetId, true);
@@ -171,4 +146,4 @@ export function purgeAssetIfUnreferenced(context: FamilyContext, assetId: string
   }
 }
 
-export const TRASH_KINDS: readonly TrashKind[] = ["memory_event", "contribution", "story"];
+export const TRASH_KINDS: readonly TrashKind[] = ["memory_event", "contribution"];

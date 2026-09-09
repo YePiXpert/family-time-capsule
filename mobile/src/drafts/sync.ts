@@ -83,7 +83,7 @@ export async function syncLocalDrafts(credentials: Credentials, options: { isCur
       continue;
     }
     await guardRevision();
-    const result = received.status === "published" ? received : await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}/publish`, { method: "POST", body: JSON.stringify({ expectedRevision: received.revision, quickSave: true, inferTime: !row.captureTimeEdited, organize: row.organizeOnPublish === true }) }) as Draft & { processing?: CaptureProcessing };
+    const result = received.status === "published" ? received : await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}/publish`, { method: "POST", body: JSON.stringify({ expectedRevision: received.revision, quickSave: true, inferTime: !row.captureTimeEdited, organize: row.organizeOnPublish === true, organizeMode: "automatic" }) }) as Draft & { processing?: CaptureProcessing };
     parseDraftContent(result);
     if (result.status !== "published" || typeof result.memoryEventId !== "string") throw new ApiError("服务器尚未确认记忆创建。", 502);
     await update({ ...row, content: { ...row.content, occurredAt: result.occurredAt, occurredAtPrecision: result.occurredAtPrecision }, processing: (result as Draft & { processing?: CaptureProcessing }).processing, status: "published", memoryEventId: result.memoryEventId, serverRevision: result.revision, revision: row.revision + 1 });

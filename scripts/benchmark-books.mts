@@ -110,7 +110,6 @@ try {
         assetId,
         memoryEventId: null,
         contributionId: null,
-        storyId: null,
         collectionId: null,
         fingerprint: before,
         label: "虚构图案原件",

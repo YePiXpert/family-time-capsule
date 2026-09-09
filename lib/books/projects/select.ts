@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { contribution } from "@/db/schema/contribution";
-import { storyParagraph } from "@/db/schema/story";
+
 import { getCollection } from "@/lib/collections/service";
 import type { FamilyContext } from "@/lib/family/context";
 import type { BookBlock, BookSourceKind } from "@/mobile/src/books/types";
@@ -29,7 +29,7 @@ export function addBookSelections(
     selection.some(
       (s) =>
         !s ||
-        !["memory", "collection", "story", "contribution"].includes(s.kind) ||
+        !["memory", "collection", "contribution"].includes(s.kind) ||
         typeof s.id !== "string" ||
         s.id.length > 128,
     )
@@ -164,7 +164,7 @@ export function addBookSelections(
       }
     }
     for (const selected of selection as {
-      kind: "memory" | "collection" | "story" | "contribution";
+      kind: "memory" | "collection" | "contribution";
       id: string;
     }[]) {
       const state = resolve(selected.kind, selected.id);
@@ -200,32 +200,6 @@ export function addBookSelections(
               doc.blocks[before]!.caption = item.caption;
           }
         }
-      } else {
-        if (already("story", selected.id)) continue;
-        const sourceId = ref("story", selected.id),
-          chapter = chapterId || randomUUID();
-        if (!chapterId) doc.chapters.push({ id: chapter, title: state.state.label });
-        const paragraphs = getDb()
-          .select()
-          .from(storyParagraph)
-          .where(
-            and(
-              eq(storyParagraph.storyId, selected.id),
-              eq(storyParagraph.familyId, context.familyId),
-            ),
-          )
-          .orderBy(storyParagraph.position)
-          .all();
-        paragraphs.forEach((p, i) =>
-          block(
-            chapter,
-            p.kind === "quote" ? "quote" : "text",
-            p.text,
-            [sourceId],
-            "",
-            i === 0,
-          ),
-        );
       }
     }
     return saveBookProject(context, projectId, revision, doc);

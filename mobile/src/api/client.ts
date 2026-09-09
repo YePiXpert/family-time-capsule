@@ -19,7 +19,6 @@ import type {
   MobileMemoryPatch,
   MemorySharingPatch,
   MemorySharingResult,
-  MobileReview,
   MobileMemoryAsset,
   MobileSearchPage,
   OnboardingInput,
@@ -327,68 +326,9 @@ export function parseMobileMemory(value: unknown): MobileMemory {
 }
 
 export function parseMobileHome(value: unknown): MobileHome {
-  const validChild = value && isRecord(value) && (value.child === null || (
-    isRecord(value.child) &&
-    isString(value.child.id, 128) &&
-    isString(value.child.displayName, 200) &&
-    isNullableString(value.child.currentAgeLabel, 100) &&
-    isNullablePath(value.child.avatarPath)
-  ));
-  const validInbox = value && isRecord(value) && isRecord(value.inbox) &&
-    Number.isSafeInteger(value.inbox.count) && Number(value.inbox.count) >= 0 &&
-    Array.isArray(value.inbox.previews) && value.inbox.previews.length <= 10 &&
-    value.inbox.previews.every((preview) =>
-      isRecord(preview) && isString(preview.id, 128) &&
-      isString(preview.title, 500) && isString(preview.status, 32) &&
-      isNullablePath(preview.mediaPath));
-  const validRecent = value && isRecord(value) && Array.isArray(value.recentMemories) &&
-    value.recentMemories.length <= 10 && value.recentMemories.every((memory) =>
-      isRecord(memory) && isString(memory.id, 128) && isString(memory.title, 500) &&
-      isDateTime(memory.occurredAt) && isNullableString(memory.ageLabel, 100) &&
-      isNullablePath(memory.coverPath));
-  const validOnThisDay = value && isRecord(value) && Array.isArray(value.onThisDay) &&
-    value.onThisDay.length <= 10 && value.onThisDay.every((memory) =>
-      isRecord(memory) && isString(memory.id, 128) && isString(memory.title, 500) &&
-      isDateTime(memory.occurredAt));
-  const validStory = value && isRecord(value) && (value.story === null || (
-    isRecord(value.story) && isString(value.story.id, 128) &&
-    isString(value.story.title, 500) && isString(value.story.status, 32)));
-  const validCapsule = value && isRecord(value) && (value.capsule === null || (
-    isRecord(value.capsule) && isString(value.capsule.id, 128) &&
-    isString(value.capsule.title, 500) && isString(value.capsule.status, 32) &&
-    isString(value.capsule.unlockType, 32) && isString(value.capsule.unlockValue, 200) &&
-    typeof value.capsule.unlocked === "boolean"));
-  const validWeeklyReview = value && isRecord(value) && isRecord(value.weeklyReview) &&
-    isString(value.weeklyReview.key, 10) && isString(value.weeklyReview.status, 32) &&
-    Number.isSafeInteger(value.weeklyReview.confirmedCount) && Number(value.weeklyReview.confirmedCount) >= 0 &&
-    Number.isSafeInteger(value.weeklyReview.pendingInboxCount) && Number(value.weeklyReview.pendingInboxCount) >= 0 &&
-    isNullableString(value.weeklyReview.storyId, 128);
-  if (
-    !isRecord(value) ||
-    !isRecord(value.family) ||
-    !isString(value.family.name, 500) ||
-    !isString(value.family.timezone, 100) ||
-    !validChild ||
-    !isRecord(value.capabilities) ||
-    typeof value.capabilities.canCapture !== "boolean" ||
-    !validInbox ||
-    !validRecent ||
-    !validOnThisDay ||
-    !validStory ||
-    !validCapsule ||
-    !validWeeklyReview ||
-    (value.monthlyReview !== undefined && (!isRecord(value.monthlyReview) || !isString(value.monthlyReview.month,7) || !isString(value.monthlyReview.startDate,10) || !isString(value.monthlyReview.endDate,10) || !Number.isSafeInteger(value.monthlyReview.count) || Number(value.monthlyReview.count)<0)) ||
-    (value.activeBooks !== undefined && (!Array.isArray(value.activeBooks) || !value.activeBooks.every(b=>isRecord(b)&&isString(b.id,128)&&isString(b.title,200)&&isString(b.subtitle,500)))) ||
-    !isRecord(value.prompt) ||
-    !isString(value.prompt.text, 1000) ||
-    !isNullableString(value.prompt.recipientLabel, 200) ||
-    !Number.isSafeInteger(value.prompt.pendingCount) ||
-    typeof value.prompt.isCreatedRequest !== "boolean" ||
-    typeof value.isFirstUse !== "boolean"
-  ) {
-    throw new ApiError("服务器首页返回了无效数据。", 502);
-  }
-  return value as MobileHome;
+  if (!isRecord(value) || !isRecord(value.family) || !isString(value.family.name,500) || !isString(value.family.timezone,100) || !isRecord(value.capabilities) || typeof value.capabilities.canCapture !== "boolean" || !isRecord(value.inbox) || !Number.isSafeInteger(value.inbox.count) || Number(value.inbox.count) < 0) throw new ApiError("服务器返回了无效摘要。",502);
+  if (value.pendingImports !== undefined && (!Array.isArray(value.pendingImports) || value.pendingImports.length > 100 || !value.pendingImports.every(row => isRecord(row) && isString(row.id,128) && isString(row.title,200)))) throw new ApiError("服务器返回了无效待处理列表。",502);
+  return { ...(value.pendingImports === undefined ? {} : {pendingImports: value.pendingImports as {id:string;title:string}[]}), family:{name:value.family.name,timezone:value.family.timezone},capabilities:{canCapture:value.capabilities.canCapture},inbox:{count:Number(value.inbox.count)}};
 }
 
 export function parseMobileSearchPage(value: unknown): MobileSearchPage {
@@ -399,7 +339,7 @@ export function parseMobileSearchPage(value: unknown): MobileSearchPage {
     !value.items.every(
       (item) =>
         isRecord(item) &&
-        ["memory", "fact", "contribution", "transcript", "story"].includes(
+        ["memory", "fact", "contribution", "transcript"].includes(
           String(item.type),
         ) &&
         isString(item.id, 128) &&
@@ -936,7 +876,7 @@ export function parseAiSettings(value: unknown): import("../ai/types").AiSetting
     isRecord(quota.limits) && isRecord(quota.used) &&
     [quota.limits.maxRequests, quota.limits.maxImages, quota.limits.maxAudioSeconds, quota.used.requests, quota.used.images, quota.used.audioSeconds].every(n => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)
   );
-  if (!isRecord(value) || !validQuota(value.quota) || ![value.valid, value.configured, value.external, value.canConfigure, value.workerAvailable].every(flag => typeof flag === "boolean") || !isNullableString(value.configurationId, 128) || !isNullableString(value.provider, 100) || !Array.isArray(value.capabilities) || value.capabilities.length !== 3 || new Set(value.capabilities.map(row => isRecord(row) ? row.capability : null)).size !== 3 || !value.capabilities.every(row => isRecord(row) && ["text", "vision", "transcription"].includes(String(row.capability)) && isNullableString(row.model, 256) && typeof row.available === "boolean" && typeof row.consented === "boolean" && isRecord(row.check) && ["untested", "passed", "failed"].includes(String(row.check.state)) && (row.check.testedAt === null || isDateTime(row.check.testedAt)) && isNullableString(row.check.code, 64))) {
+  if (!isRecord(value) || !validQuota(value.quota) || ![value.valid, value.configured, value.external, value.canConfigure, value.workerAvailable].every(flag => typeof flag === "boolean") || !isNullableString(value.configurationId, 128) || !isNullableString(value.provider, 100) || !Array.isArray(value.capabilities) || value.capabilities.length !== 3 || new Set(value.capabilities.map(row => isRecord(row) ? row.capability : null)).size !== 3 || !value.capabilities.every(row => isRecord(row) && ["text", "vision", "transcription"].includes(String(row.capability)) && isNullableString(row.model, 256) && typeof row.available === "boolean" && typeof row.consented === "boolean" && (row.automaticAllowed === undefined || typeof row.automaticAllowed === "boolean") && isRecord(row.check) && ["untested", "passed", "failed"].includes(String(row.check.state)) && (row.check.testedAt === null || isDateTime(row.check.testedAt)) && isNullableString(row.check.code, 64))) {
     throw new ApiError("服务器 AI 状态无效，请升级配套服务端。", 502);
   }
   return value as import("../ai/types").AiSettings;
@@ -1196,55 +1136,6 @@ export async function mutateMobileLibraryItem(
   ));
 }
 
-export function parseMobileReview(value: unknown): MobileReview {
-  const validCount = (entry: unknown) => Number.isSafeInteger(entry) && Number(entry) >= 0;
-  if (
-    !isRecord(value) || !isString(value.id, 128) || !isString(value.key, 10) ||
-    !isDateTime(value.periodStart) || !isDateTime(value.periodEnd) ||
-    !["open", "in_progress", "completed"].includes(String(value.status)) ||
-    !isNullableString(value.storyId, 128) || !isNullableString(value.startedAt, 64) ||
-    !isNullableString(value.completedAt, 64) || typeof value.canWrite !== "boolean" ||
-    !isRecord(value.preferences) || !isString(value.preferences.timezone, 100) ||
-    !Number.isSafeInteger(value.preferences.weekStartsOn) || !Number.isSafeInteger(value.preferences.reminderWeekday) ||
-    !isString(value.preferences.reminderLocalTime, 5) ||
-    typeof value.preferences.remindPendingInbox !== "boolean" ||
-    typeof value.preferences.remindPendingRequests !== "boolean" ||
-    typeof value.preferences.remindUpcomingCapsules !== "boolean" ||
-    !isRecord(value.counts) || ![
-      value.counts.inbox, value.counts.needsReview, value.counts.duplicateSuggestions,
-      value.counts.clusterSuggestions, value.counts.guestSubmissions, value.counts.failedImports,
-      value.counts.pendingRequests, value.counts.upcomingCapsules,
-    ].every(validCount) || (value.reminderAt !== null && !isDateTime(value.reminderAt)) ||
-    !Array.isArray(value.events) || value.events.length > 50 || !value.events.every((event) => (
-      isRecord(event) && isString(event.id, 128) && isString(event.title, 500) &&
-      isDateTime(event.occurredAt) && isNullableString(event.locationText, 500) &&
-      Array.isArray(event.participantNames) && event.participantNames.length <= 100 &&
-      event.participantNames.every((name) => isString(name, 200)) &&
-      isNullableString(event.milestoneType, 32) && validCount(event.contributionCount) &&
-      typeof event.selected === "boolean"
-    ))
-  ) throw new ApiError("服务器每周回顾返回了无效数据。", 502);
-  return value as MobileReview;
-}
-
-export async function fetchMobileReview(credentials: Credentials): Promise<MobileReview> {
-  return parseMobileReview(await requestMobileJson(credentials, "/api/mobile/v1/review"));
-}
-
-export async function mutateMobileReview(
-  credentials: Credentials,
-  input: Record<string, unknown>,
-): Promise<{ review: MobileReview; storyId?: string }> {
-  const value = await requestMobileJson(credentials, "/api/mobile/v1/review", {
-    method: "PATCH",
-    body: JSON.stringify(input),
-  });
-  if (!isRecord(value) || !isRecord(value.review) || (value.storyId !== undefined && !isString(value.storyId, 128))) {
-    throw new ApiError("服务器每周回顾写入结果无效。", 502);
-  }
-  return { review: parseMobileReview(value.review), ...(typeof value.storyId === "string" ? { storyId: value.storyId } : {}) };
-}
-
 export async function uploadTextCapture(
   credentials: Credentials,
   id: string,
@@ -1347,9 +1238,9 @@ export async function mutateBook(credentials:Credentials,id:string,input:Record<
   try {return await requestMobileJson(credentials,`/api/books/projects/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(input)}) as import('../books/types').BookDetail;}
   catch(e){if(e instanceof ApiError&&e.status===409)throw new ApiError('其他家人已保存修改。你的输入仍保留，请复制需要的文字，再重新载入核对。',409);throw e;}
 }
-export type BookMaterials={entries:{id:string;title:string;kind:'memory'|'collection'|'story'}[];nextCursor:string|null};
-export async function fetchBookMaterials(credentials:Credentials,kind:string,audience:string,cursor=''):Promise<BookMaterials>{
-  const value=await requestMobileJson(credentials,`/api/books/projects/materials?${new URLSearchParams({kind,audience,cursor})}`);
+export type BookMaterials={entries:{id:string;title:string;kind:'memory'|'collection'}[];nextCursor:string|null};
+export async function fetchBookMaterials(credentials:Credentials,kind:string,audience:string,cursor='',month=''):Promise<BookMaterials>{
+  const value=await requestMobileJson(credentials,`/api/books/projects/materials?${new URLSearchParams({kind,audience,cursor,month})}`);
   if(!isRecord(value)||!Array.isArray(value.entries)||!hasCursor(value))throw new Error('选材响应无效');return value as BookMaterials;
 }
 
@@ -1377,16 +1268,6 @@ export async function changeBookRender(credentials:Credentials,id:string,operati
   await requestMobileJson(credentials,`/api/books/renders/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify({operation})});
 }
 
-export async function fetchBookReview(credentials:Credentials,params:Record<string,string>):Promise<import('../books/review-types').BookReview> {
-  const value=await requestMobileJson(credentials,`/api/books/review?${new URLSearchParams(params)}`);
-  if(!isRecord(value)||!Array.isArray(value.materials)||!Array.isArray(value.months)||typeof value.total!=="number"||!hasCursor(value))throw new ApiError("回顾响应无效。",502);
-  return value as import('../books/review-types').BookReview;
-}
-export async function mutateBookReview(credentials:Credentials,input:Record<string,unknown>):Promise<{id?:string;existing?:boolean}> {
-  return await requestMobileJson(credentials,"/api/books/review",{method:"POST",body:JSON.stringify(input)}) as {id?:string;existing?:boolean};
-}
-
-
 export function parseTranscriptReview(value: unknown): import("../transcripts/types").TranscriptReview {
   if (!isRecord(value) || !isString(value.assetId, 128) || typeof value.canEdit !== "boolean") throw new ApiError("转录信息无效。", 502);
   const row = value.transcript;
@@ -1403,7 +1284,6 @@ export async function saveTranscriptReview(credentials: Credentials, assetId: st
   if (result.assetId !== assetId) throw new ApiError("转录素材不匹配。", 502);
   return result;
 }
-
 
 export function parseOrganizerReview(value: unknown): import("../ai/organizer-types").OrganizerReview {
   if (!isRecord(value) || !isRecord(value.target) || !["asset", "inbox_item", "memory_event"].includes(String(value.target.kind)) || !isString(value.target.id, 128) || !Array.isArray(value.tasks) || value.tasks.length > 10 || !Array.isArray(value.transcripts)) throw new ApiError("整理结果格式无效。", 502);

@@ -1,5 +1,6 @@
+import { Text, TextInput } from "./typography";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
 import { signIn, signOut, TwoFactorRequiredError, verifyTwoFactor, type TwoFactorChallenge } from "../api/client";
 import type { Credentials } from "../types";
 import { sharedStyles } from "../theme";

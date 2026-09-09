@@ -14,7 +14,6 @@ import * as Network from "expo-network";
 import {
   fetchBootstrap,
   fetchMobileHome,
-  fetchMobileReview,
   fetchMe,
   signOut,
   submitOnboarding,
@@ -26,7 +25,6 @@ import {
 } from "../auth/credentials";
 import {
   cacheMobileHome,
-  cacheMobileReview,
   clearLocalArchive,
   clearServerCaches,
   deleteLocalCaptureRecord,
@@ -62,7 +60,6 @@ import type {
   SyncConsent,
   Viewer,
 } from "../types";
-import { reconcileWeeklyReviewReminder } from "../notifications/review-reminders";
 import { clearAllReadingDownloads, revalidateReadingDownloads } from "../reading/native";
 
 type AppContextValue = {
@@ -235,16 +232,7 @@ export function AppProvider({
     if (generation !== destGenRef.current) return;
     setHome(nextHome);
     void revalidateReadingDownloads(activeCredentials).catch(() => {});
-    try {
-      const review = await fetchMobileReview(activeCredentials);
-      if (generation !== destGenRef.current) return;
-      if (!await cacheMobileReview(review, cacheRevision)) return;
-      if (generation !== destGenRef.current) return;
-      await reconcileWeeklyReviewReminder(review);
-    } catch {
-      // Review is an independent versioned snapshot; retain its last cache if
-      // the endpoint is temporarily unavailable or the server is still 1.0.
-    }
+
   }, []);
 
   const runSync = useCallback(async () => {
@@ -549,14 +537,8 @@ export function AppProvider({
   }), [receiveSystemShares]);
 
   useEffect(() => {
-    const timer = setTimeout(() => void reconcileWeeklyReviewReminder(), 0);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void receiveSystemShares().then(async () => {
-        await reconcileWeeklyReviewReminder();
         if (credentials && !needsOnboardingRef.current) await runSync();
       });
     });

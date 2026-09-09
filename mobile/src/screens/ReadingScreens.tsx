@@ -1,7 +1,8 @@
+import { Text } from "../components/typography";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useApp } from "../state/AppContext";
 import { sharedStyles as s } from "../theme";

@@ -7,9 +7,9 @@ import { loadCredentials } from "./src/auth/credentials";
 import { initializeLocalStore } from "./src/storage/database";
 import { colors, sharedStyles } from "./src/theme";
 import type { Credentials } from "./src/types";
-import { configureNotificationPresentation } from "./src/notifications/review-reminders";
+import { clearRetiredReminders } from "./src/notifications/cleanup";
 
-configureNotificationPresentation();
+void clearRetiredReminders();
 
 export default function App() {
   const [ready, setReady] = useState(false);

@@ -1,4 +1,4 @@
-import { familyStoryPredicate } from "@/lib/authz/story-access";
+
 import { readableFactPredicate } from "@/lib/authz/fact-access";
 import { createContributionAccessSnapshot } from "@/lib/authz/contribution-access";
 import "server-only";
@@ -17,7 +17,7 @@ import { fact as factTable } from "@/db/schema/contribution";
 import { memoryEvent, memoryEventAsset, memoryEventParticipant, memoryEventReader } from "@/db/schema/memory";
 import { memoryEventTag } from "@/db/schema/suggestion";
 import { assetTranscript } from "@/db/schema/transcript";
-import { story as storyTable, storyParagraph as storyParagraphTable } from "@/db/schema/story";
+
 import { person as personTable } from "@/db/schema/family";
 import type { FamilyContext } from "@/lib/family/context";
 import { canViewContribution, type ContributionVisibility } from "@/lib/authz/policy";
@@ -40,7 +40,7 @@ export type SearchEntityType =
   | "fact"
   | "contribution"
   | "transcript"
-  | "story"
+
   | "document";
 
 type IndexRow = {
@@ -186,27 +186,6 @@ export function indexEditedTranscript(row: {
   ]);
 }
 
-export function indexStory(row: {
-  id: string;
-  familyId: string;
-  title: string;
-  bodyText: string;
-}): void {
-  removeFromSearchIndex("story", row.id);
-  insertIndexRows(getDb(), [
-    {
-      original_text: `${row.title}\n${row.bodyText}`,
-      family_id: row.familyId,
-      entity_type: "story",
-      entity_id: row.id,
-      event_id: null,
-      visibility: "family",
-      author_person_id: null,
-      child_person_id: null,
-    },
-  ]);
-}
-
 export function indexDocumentAssetsForEvent(
   familyId: string,
   eventId: string,
@@ -318,32 +297,6 @@ export function rebuildSearchIndex(): {
   }
 
   // 已发布故事（标题 + 段落文本）随重建进入索引
-  const stories = db
-    .select()
-    .from(storyTable)
-    .all()
-    .filter((st) => st.status === "published" && st.deletedAt === null);
-  for (const st of stories) {
-    const body = db
-      .select({ text: storyParagraphTable.text })
-      .from(storyParagraphTable)
-      .where(eq(storyParagraphTable.storyId, st.id))
-      .all()
-      .map((pp) => pp.text)
-      .join("\n");
-    insertIndexRows(db, [
-      {
-        original_text: `${st.title}\n${body}`,
-        family_id: st.familyId,
-        entity_type: "story",
-        entity_id: st.id,
-        event_id: null,
-        visibility: "family",
-        author_person_id: null,
-        child_person_id: null,
-      },
-    ]);
-  }
 
   const documentRows = db
     .select({
@@ -401,7 +354,6 @@ export type SearchResult = {
   facts: Array<{ id: string; eventId: string; statement: string }>;
   contributions: Array<{ id: string; eventId: string; text: string; authorName: string | null }>;
   transcripts: Array<{ id: string; eventId: string; text: string }>;
-  stories: Array<{ id: string; title: string; snippet: string }>;
   documents: Array<{ id: string; eventId: string; filename: string; snippet: string }>;
   total: number;
 };
@@ -432,7 +384,7 @@ export function searchFamily(
   const db = getDb();
   const q = params.q.trim();
   if (!q) {
-    return { events: [], facts: [], contributions: [], transcripts: [], stories: [], documents: [], total: 0 };
+    return { events: [], facts: [], contributions: [], transcripts: [], documents: [], total: 0 };
   }
 
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
@@ -449,7 +401,7 @@ export function searchFamily(
   } else {
     const expr = ftsQueryExpression(q);
     if (!expr) {
-      return { events: [], facts: [], contributions: [], transcripts: [], stories: [], documents: [], total: 0 };
+      return { events: [], facts: [], contributions: [], transcripts: [], documents: [], total: 0 };
     }
     raw = db
       .all(
@@ -534,27 +486,6 @@ export function searchFamily(
       .map((e) => [e.id, e.childPersonId]),
   );
 
-  const storyHitIds = raw
-    .filter((row) => row.entity_type === "story")
-    .map((row) => row.entity_id);
-  const activeStoryIds = new Set(
-    storyHitIds.length > 0
-      ? db
-          .select({ id: storyTable.id })
-          .from(storyTable)
-          .where(
-            and(
-              eq(storyTable.familyId, context.familyId),
-              eq(storyTable.status, "published"),
-              isNull(storyTable.deletedAt),
-              inArray(storyTable.id, storyHitIds),
-              familyStoryPredicate(context.familyId, sql`${storyTable.id}`),
-            ),
-          )
-          .all()
-          .map((story) => story.id)
-      : [],
-  );
   const contributionHitIds = raw
     .filter((row) => row.entity_type === "contribution")
     .map((row) => row.entity_id);
@@ -579,7 +510,6 @@ export function searchFamily(
 
   const visible: RawHit[] = raw.filter((r) => {
     if (r.event_id && !activeEventIds.has(r.event_id)) return false;
-    if (r.entity_type === "story" && !activeStoryIds.has(r.entity_id)) return false;
     if (
       r.entity_type === "contribution" &&
       !activeContributionIds.has(r.entity_id)
@@ -621,7 +551,6 @@ export function searchFamily(
     facts: [],
     contributions: [],
     transcripts: [],
-    stories: [],
     documents: [],
     total: 0,
   };
@@ -696,29 +625,7 @@ export function searchFamily(
           });
         }
         break;
-      case "story":
-        if (result.stories.length < limit) {
-          const storyRow = db
-            .select({ title: storyTable.title })
-            .from(storyTable)
-            .where(
-              and(
-                eq(storyTable.id, hit.entity_id),
-                eq(storyTable.familyId, context.familyId),
-                eq(storyTable.status, "published"),
-                isNull(storyTable.deletedAt),
-              ),
-            )
-            .get();
-          if (storyRow) {
-            result.stories.push({
-              id: hit.entity_id,
-              title: storyRow.title,
-              snippet,
-            });
-          }
-        }
-        break;
+
       case "document":
         if (result.documents.length < limit && hit.event_id) {
           const document = db
@@ -748,8 +655,7 @@ export function searchFamily(
     result.events.length +
     result.facts.length +
     result.contributions.length +
-    result.transcripts.length +
-    result.stories.length;
+    result.transcripts.length;
   result.total += result.documents.length;
   return result;
 }

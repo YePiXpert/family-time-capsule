@@ -92,8 +92,7 @@ export function validateBookEdit(input: unknown): BookEdit {
     memory: "memoryEventId",
     asset: "assetId",
     contribution: "contributionId",
-    story: "storyId",
-    collection: "collectionId",
+      collection: "collectionId",
   } as const;
   for (const source of v.sources) {
     if (
@@ -165,7 +164,6 @@ export function validateBookEdit(input: unknown): BookEdit {
       memoryEventId: s.memoryEventId,
       assetId: s.assetId,
       contributionId: s.contributionId,
-      storyId: s.storyId,
       collectionId: s.collectionId,
       fingerprint: s.fingerprint,
       label: s.label,

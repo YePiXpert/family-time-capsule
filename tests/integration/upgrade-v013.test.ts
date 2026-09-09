@@ -174,8 +174,6 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
           "memory_event_participant",
           "contribution",
           "fact",
-          "capsule",
-          "capsule_event",
         ].map(async (table) => {
           const rows = (await db.all(
             sql.raw(`SELECT count(*) AS count FROM "${table}"`),
@@ -194,8 +192,6 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
       memory_event_participant: 3,
       contribution: 1,
       fact: 1,
-      capsule: 1,
-      capsule_event: 1,
     });
 
     const userBinding = (await db.all(
@@ -521,9 +517,6 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
     const facts = JSON.parse(
       await zip.file(`${root}/facts.json`)!.async("string"),
     ) as Array<{ id: string; memoryEventId: string }>;
-    const capsules = JSON.parse(
-      await zip.file(`${root}/capsules.json`)!.async("string"),
-    ) as Array<{ id: string; memoryEventIds: string[]; assetIds: string[] }>;
     const inboxItems = JSON.parse(
       await zip.file(`${root}/inbox-items.json`)!.async("string"),
     ) as Array<{ id: string; rawText: string | null }>;
@@ -562,13 +555,7 @@ describe("real v0.1.3 (0010) archive upgrade", () => {
         memoryEventId: "event-old-v013",
       }),
     );
-    expect(capsules).toContainEqual(
-      expect.objectContaining({
-        id: "capsule-v013",
-        memoryEventIds: ["event-old-v013"],
-        assetIds: ["asset-v013"],
-      }),
-    );
+    expect(zip.file(`${root}/capsules.json`)).toBeNull();
     expect(inboxItems).toContainEqual(
       expect.objectContaining({
         id: "inbox-text-v013",

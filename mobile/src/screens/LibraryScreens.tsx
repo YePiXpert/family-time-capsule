@@ -1,22 +1,10 @@
+import { Text, TextInput } from "../components/typography";
 import { getServerCacheRevision, useServerCacheRevision } from "../storage/cache-lifecycle";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
-import QRCode from "react-native-qrcode-svg";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  Share,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import {
   ApiError,
   createMobileLibraryItem,
@@ -44,14 +32,10 @@ import type {
 import { dateLabel } from "../utils/format";
 
 type Navigation = NativeStackNavigationProp<RootStackParamList>;
-type DetailRoute = "PersonDetail" | "StoryDetail" | "CapsuleDetail" | "RequestDetail" | "ContributionPortalDetail" | "ImportSessionDetail";
+type DetailRoute = "PersonDetail" | "ImportSessionDetail";
 
 const DOMAIN_COPY: Record<MobileLibraryDomain, { eyebrow: string; title: string; empty: string }> = {
   people: { eyebrow: "Family", title: "家人", empty: "还没有其他家人人物。" },
-  stories: { eyebrow: "Stories", title: "故事", empty: "还没有故事草稿。" },
-  capsules: { eyebrow: "Time capsules", title: "时间胶囊", empty: "还没有时间胶囊。" },
-  requests: { eyebrow: "Oral history", title: "口述史", empty: "还没有向家人发起问题。" },
-  portals: { eyebrow: "Contribution portals", title: "家庭投递箱", empty: "还没有家庭投递箱。" },
   imports: { eyebrow: "Import sessions", title: "导入会话", empty: "还没有服务器端导入会话。" },
 };
 
@@ -72,8 +56,6 @@ function records(value: unknown): Record<string, unknown>[] {
 function canWriteDomain(domain: MobileLibraryDomain, viewer: ReturnType<typeof useApp>["viewer"]): boolean {
   if (!viewer) return false;
   if (domain === "people") return viewer.role === "owner" || viewer.role === "admin";
-  if (domain === "stories" || domain === "capsules") return viewer.role === "owner" || viewer.role === "admin" || viewer.role === "editor";
-  if (domain === "requests" || domain === "portals") return viewer.canCreateContributions;
   return viewer.canCapture;
 }
 
@@ -205,61 +187,24 @@ function useCreate(domain: MobileLibraryDomain, onCreated?: (id: string, token?:
   return { create, busy, error };
 }
 
-function InlineCreate({ domain }: { domain: "people" | "stories" | "capsules" | "portals" }) {
+function InlineCreate({ domain }: { domain: "people" }) {
   const navigation = useNavigation<Navigation>();
   const { viewer } = useApp();
   const [expanded, setExpanded] = useState(false);
-  const [first, setFirst] = useState("");
-  const [second, setSecond] = useState("");
-  const [third, setThird] = useState("");
-  const { create, busy, error } = useCreate(domain, (id, token) => {
-    setExpanded(false);
-    setFirst(""); setSecond(""); setThird("");
-    const route = domain === "people" ? "PersonDetail" : domain === "stories" ? "StoryDetail" : domain === "capsules" ? "CapsuleDetail" : "ContributionPortalDetail";
-    if (route === "ContributionPortalDetail") navigation.navigate(route, { id, token });
-    else navigation.navigate(route, { id });
-  });
+  const [name, setName] = useState("");
+  const [relation, setRelation] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const { create, busy, error } = useCreate(domain, id => { setExpanded(false); navigation.navigate("PersonDetail", { id }); });
   if (!canWriteDomain(domain, viewer)) return null;
-  if (domain === "stories") return <View style={sharedStyles.card}>
-    <Text style={sharedStyles.cardTitle}>本周故事草稿</Text>
-    <Text style={sharedStyles.body}>用已确认的记忆和真实讲述生成有来源的结构化草稿，不调用 AI，也不会自动发布。</Text>
-    {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
-    <Pressable disabled={busy} onPress={() => void create({ anchor: new Date().toISOString() })} style={[sharedStyles.primaryButton, busy && sharedStyles.disabled]}><Text style={sharedStyles.primaryText}>{busy ? "创建中…" : "创建本周草稿"}</Text></Pressable>
-  </View>;
-  const labels = domain === "people"
-    ? ["姓名", "与孩子的关系", "出生日期（可留空，YYYY-MM-DD）"]
-    : domain === "capsules"
-      ? ["胶囊名称", "开启日期（YYYY-MM-DD）", ""]
-      : ["投递箱标题", "给家人的简短说明", ""];
-  const submit = () => {
-    if (domain === "people") void create({ displayName: first, relationToChild: second, birthDate: third });
-    else if (domain === "capsules") void create({ title: first, unlockType: "date", unlockValue: second });
-    else void create({ title: first, description: second });
-  };
-  return <View style={sharedStyles.card}>
-    <Pressable onPress={() => setExpanded((value) => !value)}><Text style={styles.link}>{expanded ? "收起创建表单" : domain === "people" ? "+ 新增家人" : domain === "capsules" ? "+ 创建胶囊" : "+ 创建投递箱"}</Text></Pressable>
-    {expanded ? <>
-      <TextInput onChangeText={setFirst} placeholder={labels[0]} style={sharedStyles.input} value={first} />
-      <TextInput multiline={domain === "portals"} onChangeText={setSecond} placeholder={labels[1]} style={sharedStyles.input} value={second} />
-      {labels[2] ? <TextInput onChangeText={setThird} placeholder={labels[2]} style={sharedStyles.input} value={third} /> : null}
-      {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
-      <Pressable disabled={busy} onPress={submit} style={[sharedStyles.primaryButton, busy && sharedStyles.disabled]}><Text style={sharedStyles.primaryText}>{busy ? "保存中…" : "保存"}</Text></Pressable>
-    </> : null}
+  return <View style={sharedStyles.card}><Pressable accessibilityRole="button" accessibilityState={{expanded}} onPress={() => setExpanded(value => !value)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>新增家人</Text></Pressable>
+    {expanded ? <><TextInput accessibilityLabel="姓名" placeholder="姓名" value={name} onChangeText={setName} style={sharedStyles.input} /><TextInput accessibilityLabel="关系" placeholder="与孩子的关系" value={relation} onChangeText={setRelation} style={sharedStyles.input} /><TextInput accessibilityLabel="生日" placeholder="出生日期（可选）" value={birthDate} onChangeText={setBirthDate} style={sharedStyles.input} />{error ? <Text accessibilityRole="alert">{error}</Text> : null}<Pressable accessibilityRole="button" disabled={busy} onPress={() => void create({displayName:name,relationToChild:relation,birthDate})} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>保存</Text></Pressable></> : null}
   </View>;
 }
 
 export function PeopleScreen() {
   return <LibraryListScreen detailRoute="PersonDetail" domain="people" header={<InlineCreate domain="people" />} />;
 }
-export function StoriesScreen() {
-  return <LibraryListScreen detailRoute="StoryDetail" domain="stories" header={<InlineCreate domain="stories" />} />;
-}
-export function CapsulesScreen() {
-  return <LibraryListScreen detailRoute="CapsuleDetail" domain="capsules" header={<InlineCreate domain="capsules" />} />;
-}
-export function ContributionPortalsScreen() {
-  return <LibraryListScreen detailRoute="ContributionPortalDetail" domain="portals" header={<InlineCreate domain="portals" />} />;
-}
+
 export function ImportSessionsScreen() {
   return <LibraryListScreen detailRoute="ImportSessionDetail" domain="imports" header={<LocalImportSessions />} />;
 }
@@ -282,56 +227,6 @@ function LocalImportSessions() {
     <Text style={sharedStyles.cardTitle}>收到的内容 · {sessions.length}</Text>
     {sessions.map((session) => <Pressable accessibilityRole="button" onPress={() => navigation.navigate("LocalIntake", { id: session.id })} key={session.id} style={sharedStyles.secondaryButton}><Text style={styles.itemTitle}>{session.source === "share" ? "系统分享" : "文件导入"}</Text><Text style={styles.meta}>{statusLabel(session.status)} · {session.completedCount}/{session.totalCount}{session.failedCount ? ` · ${session.failedCount} 项需重试` : ""}</Text></Pressable>)}
     <Pressable onPress={() => navigation.navigate("MainTabs", { screen: "Capture", params: { intent: "library", requestKey: Date.now() } })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>从 Files 继续导入</Text></Pressable>
-  </View>;
-}
-
-export function RequestsScreen() {
-  const navigation = useNavigation<Navigation>();
-  const { viewer } = useApp();
-  return <LibraryListScreen detailRoute="RequestDetail" domain="requests" header={canWriteDomain("requests", viewer) ? <Pressable onPress={() => navigation.navigate("RequestCreate")} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>向家人发起问题</Text></Pressable> : undefined} />;
-}
-
-type RequestCreateProps = NativeStackScreenProps<RootStackParamList, "RequestCreate">;
-export function RequestCreateScreen({ route }: RequestCreateProps) {
-  const { credentials } = useApp();
-  const [recipient, setRecipient] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [link, setLink] = useState<string | null>(null);
-  const { create, busy, error } = useCreate("requests", (_id, token) => {
-    if (credentials && token) setLink(`${credentials.serverUrl}/respond/${token}`);
-  });
-  if (link) return <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-    <Text style={sharedStyles.eyebrow}>只显示这一次</Text><Text style={sharedStyles.title}>回答链接已创建</Text>
-    <LinkShareCard link={link} />
-    <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>服务器只保存 token 的 SHA-256 哈希。离开后不会从缓存找回这个明文链接；问题本身仍会保留。</Text></View>
-  </ScrollView>;
-  return <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-    <Text style={sharedStyles.eyebrow}>Family voices</Text><Text style={sharedStyles.title}>创建口述史问题</Text>
-    <TextInput onChangeText={setRecipient} placeholder="称呼，例如：外婆" style={sharedStyles.input} value={recipient} />
-    <TextInput multiline onChangeText={setPrompt} placeholder="一个具体、容易回答的问题" style={[sharedStyles.input, styles.multiline]} value={prompt} />
-    {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
-    <Pressable disabled={busy} onPress={() => void create({ recipientLabel: recipient, promptText: prompt, recipientPersonId: route.params?.personId ?? null })} style={[sharedStyles.primaryButton, busy && sharedStyles.disabled]}><Text style={sharedStyles.primaryText}>{busy ? "创建中…" : "创建安全回答链接"}</Text></Pressable>
-  </ScrollView>;
-}
-
-type RequestDetailProps = NativeStackScreenProps<RootStackParamList, "RequestDetail">;
-export function RequestDetailScreen({ route }: RequestDetailProps) {
-  return <DetailShell domain="requests" id={route.params.id}>{(detail, controls) => <>
-    <Text style={sharedStyles.eyebrow}>Oral history · {statusLabel(stringValue(detail.status))}</Text>
-    <Text style={sharedStyles.title}>{detail.title}</Text>
-    <Text style={sharedStyles.intro}>给{stringValue(detail.recipientLabel) ?? "家人"} · 有效期至 {stringValue(detail.expiresAt)?.slice(0, 10)}</Text>
-    <Section title="回答状态"><Info label="已收到" value={`${String(detail.submissionCount ?? 0)} 条`} /><Info label="待整理" value={`${String(detail.pendingCount ?? 0)} 条`} /></Section>
-    <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>为保护访客入口，明文回答链接只在创建成功当次显示；服务器和离线缓存都不能从哈希恢复 token。</Text></View>
-    {booleanValue(detail.canWrite) && stringValue(detail.status) === "open" ? <Pressable onPress={() => Alert.alert("关闭问题？", "回答链接会立即失效，已有回答仍保留在收件箱。", [{ text: "取消", style: "cancel" }, { text: "关闭", style: "destructive", onPress: () => void controls.mutate({ operation: "close" }) }])} style={styles.dangerButton}><Text style={styles.dangerText}>关闭问题</Text></Pressable> : null}
-  </>}</DetailShell>;
-}
-
-function LinkShareCard({ link }: { link: string }) {
-  return <View style={[sharedStyles.card, styles.linkCard]}>
-    <QRCode backgroundColor={colors.card} color={colors.ink} quietZone={8} size={190} value={link} />
-    <Text selectable style={styles.selectableLink}>{link}</Text>
-    <Text style={styles.meta}>长按上方链接可复制，或使用系统分享。</Text>
-    <Pressable onPress={() => void Share.share({ message: link, url: link })} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>系统分享链接</Text></Pressable>
   </View>;
 }
 
@@ -420,7 +315,6 @@ export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
     const memories = records(detail.memories);
     const narratives = records(detail.narratives);
     const voices = records(detail.voices);
-    const requests = records(detail.requests);
     const beginEdit = () => { setName(detail.title); setRelation(stringValue(detail.relationToChild) ?? ""); setBirthDate(stringValue(detail.birthDate) ?? ""); setEditing(true); };
     return <>
       <Text style={sharedStyles.eyebrow}>Person</Text><Text style={sharedStyles.title}>{detail.title}</Text>
@@ -434,75 +328,12 @@ export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
       <Section title={`共同记忆 · ${memories.length}`}>{memories.map((entry) => <Pressable key={stringValue(entry.id)} onPress={() => navigation.navigate("Memory", { id: stringValue(entry.id) ?? "" })} style={styles.compactRow}><Text style={styles.itemTitle}>{stringValue(entry.title)}</Text><Text style={styles.meta}>{stringValue(entry.occurredAt) ? dateLabel(stringValue(entry.occurredAt)!) : ""}</Text></Pressable>)}</Section>
       {voices.length ? <Section title={`家人的声音 · 最近 ${voices.length} 段`}><NativeMediaReader credentials={credentials} assets={voices.map(voice=>({id:stringValue(voice.assetId)!,type:"audio",filename:stringValue(voice.memoryTitle)||"家人的声音",mimeType:stringValue(voice.mimeType)||"audio/mp4",author:detail.title,dateLabel:stringValue(voice.createdAt)?dateLabel(stringValue(voice.createdAt)!):undefined}))}/>{voices.map(voice=><Pressable key={stringValue(voice.id)} style={sharedStyles.secondaryButton} onPress={()=>navigation.navigate("Memory",{id:stringValue(voice.memoryEventId)!})}><Text style={sharedStyles.secondaryText}>回到来源：{stringValue(voice.memoryTitle)}</Text></Pressable>)}</Section>:null}
       <Section title={`独立讲述 · ${narratives.length}`}>{narratives.map((entry) => <View key={stringValue(entry.id)} style={styles.quote}><Text style={sharedStyles.body}>{stringValue(entry.text)}</Text><Text style={styles.meta}>{stringValue(entry.memoryTitle)}</Text></View>)}</Section>
-      <Section title={`口述史问题 · ${requests.length}`}>{requests.map((entry) => <View key={stringValue(entry.id)} style={styles.compactRow}><Text style={styles.itemTitle}>{stringValue(entry.promptText)}</Text><Text style={styles.meta}>{statusLabel(stringValue(entry.status))}</Text></View>)}</Section>
     </>;
   }}</DetailShell>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>{title}</Text>{children}</View>;
-}
-
-type StoryDetailProps = NativeStackScreenProps<RootStackParamList, "StoryDetail">;
-export function StoryDetailScreen({ route, navigation }: StoryDetailProps) {
-  const [title, setTitle] = useState("");
-  const [paragraph, setParagraph] = useState("");
-  return <DetailShell domain="stories" id={route.params.id}>{(detail, controls) => {
-    const paragraphs = records(detail.paragraphs);
-    const writable = booleanValue(detail.canWrite);
-    return <>
-      <Text style={sharedStyles.eyebrow}>Story · {statusLabel(stringValue(detail.status))}</Text><Text style={sharedStyles.title}>{detail.title}</Text>
-      <Text style={sharedStyles.intro}>{stringValue(detail.periodStart)?.slice(0, 10)} — {stringValue(detail.periodEnd)?.slice(0, 10)}</Text>
-      {paragraphs.map((entry) => <View key={stringValue(entry.id)} style={sharedStyles.card}><Text style={sharedStyles.body}>{stringValue(entry.text)}</Text><Text style={styles.meta}>{records(entry.sources).map((source) => stringValue(source.type) === "memory_event" ? "来源记忆" : stringValue(source.type) === "contribution" ? "真实讲述" : "人工文字").join(" · ")}</Text>{records(entry.sources).filter((source) => stringValue(source.type) === "memory_event").map((source) => <Pressable key={stringValue(source.id)} onPress={() => navigation.navigate("Memory", { id: stringValue(source.id) ?? "" })}><Text style={styles.link}>查看来源记忆 →</Text></Pressable>)}</View>)}
-      {writable ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>编辑草稿</Text>
-        <TextInput onChangeText={setTitle} placeholder="新的故事标题" style={sharedStyles.input} value={title} />
-        <Pressable disabled={!title.trim() || controls.busy} onPress={() => void controls.mutate({ operation: "title", title }).then((result) => result && setTitle(""))} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>修改标题</Text></Pressable>
-        <TextInput multiline onChangeText={setParagraph} placeholder="补一段人工文字（不会冒充引文）" style={[sharedStyles.input, styles.multiline]} value={paragraph} />
-        <Pressable disabled={!paragraph.trim() || controls.busy} onPress={() => void controls.mutate({ operation: "paragraph", text: paragraph }).then((result) => result && setParagraph(""))} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加入段落</Text></Pressable>
-        <Pressable disabled={controls.busy} onPress={() => Alert.alert("发布故事？", "发布后草稿将不可继续编辑。", [{ text: "取消", style: "cancel" }, { text: "发布", onPress: () => void controls.mutate({ operation: "publish" }) }])} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>发布故事</Text></Pressable>
-      </View> : null}
-    </>;
-  }}</DetailShell>;
-}
-
-type CapsuleDetailProps = NativeStackScreenProps<RootStackParamList, "CapsuleDetail">;
-export function CapsuleDetailScreen({ route, navigation }: CapsuleDetailProps) {
-  const { events } = useApp();
-  return <DetailShell domain="capsules" id={route.params.id}>{(detail, controls) => {
-    const unlocked = booleanValue(detail.unlocked);
-    const status = stringValue(detail.status);
-    const writable = booleanValue(detail.canWrite);
-    const contentEvents = records(detail.events);
-    return <>
-      <Text style={sharedStyles.eyebrow}>Time capsule · {statusLabel(status)}</Text><Text style={sharedStyles.title}>{detail.title}</Text>
-      <Text style={sharedStyles.intro}>{stringValue(detail.unlockType) === "age" ? "孩子年龄" : "开启日期"}：{stringValue(detail.unlockValue)}</Text>
-      {!unlocked && status !== "draft" ? <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>胶囊尚未到期。移动 API 不返回其中的记忆、原件或讲述。</Text></View> : null}
-      {(unlocked || status === "draft") ? <Section title={`胶囊内容 · ${contentEvents.length}`}>{contentEvents.map((entry) => <Pressable key={stringValue(entry.id)} onPress={() => navigation.navigate("Memory", { id: stringValue(entry.id) ?? "" })} style={styles.compactRow}><Text style={styles.itemTitle}>{stringValue(entry.title)}</Text></Pressable>)}</Section> : null}
-      {writable && status === "draft" ? <Section title="添加最近记忆">{events.filter((entry) => entry.source === "server" && !contentEvents.some((existing) => stringValue(existing.id) === entry.id)).slice(0, 8).map((entry) => <Pressable key={entry.id} onPress={() => void controls.mutate({ operation: "add_event", eventId: entry.id })} style={styles.compactRow}><Text style={styles.itemTitle}>{entry.title}</Text><Text style={styles.link}>加入</Text></Pressable>)}<Pressable onPress={() => Alert.alert("封存胶囊？", "封存后到期前不会通过移动 API 泄露内容。", [{ text: "取消", style: "cancel" }, { text: "封存", onPress: () => void controls.mutate({ operation: "seal" }) }])} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>封存胶囊</Text></Pressable></Section> : null}
-      {writable && status === "sealed" && unlocked ? <Pressable onPress={() => void controls.mutate({ operation: "open" })} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>开启到期胶囊</Text></Pressable> : null}
-    </>;
-  }}</DetailShell>;
-}
-
-type PortalDetailProps = NativeStackScreenProps<RootStackParamList, "ContributionPortalDetail">;
-export function ContributionPortalDetailScreen({ route, navigation }: PortalDetailProps) {
-  const { credentials } = useApp();
-  const [token, setToken] = useState(route.params.token ?? null);
-  const link = token && credentials ? `${credentials.serverUrl}/contribute/${token}` : null;
-  return <DetailShell domain="portals" id={route.params.id}>{(detail, controls) => <>
-    <Text style={sharedStyles.eyebrow}>Family contribution portal</Text><Text style={sharedStyles.title}>{detail.title}</Text>
-    <Text style={sharedStyles.intro}>{stringValue(detail.description)}</Text>
-    <Section title="投递状态"><Info label="状态" value={statusLabel(stringValue(detail.status))} /><Info label="收到" value={`${String(detail.submissionCount ?? 0)} 份`} /><Info label="待整理" value={`${String(detail.pendingCount ?? 0)} 份`} /><Info label="有效期" value={stringValue(detail.expiresAt)?.slice(0, 10) ?? ""} /></Section>
-    {link ? <><LinkShareCard link={link} /><View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>明文 token 只保留在当前页面状态，不写入离线缓存。换发后旧链接立即失效。</Text></View></> : <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>为保护访客入口，服务器无法从 SHA-256 哈希恢复旧链接。可换发一个新链接，旧链接会立即失效。</Text></View>}
-    {records(detail.bundles).length ? <Section title="最近提交">{records(detail.bundles).map((entry) => <Pressable key={stringValue(entry.id)} onPress={() => navigation.navigate("Inbox")} style={styles.compactRow}><Text style={styles.itemTitle}>{stringValue(entry.guestDisplayName) ?? "未填写称呼"}</Text><Text style={styles.meta}>{statusLabel(stringValue(entry.status))}</Text></Pressable>)}</Section> : null}
-    {booleanValue(detail.canWrite) ? <View style={styles.actions}>
-      {stringValue(detail.status) === "open" ? <Pressable onPress={() => void controls.mutate({ operation: "pause" })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>暂停投递</Text></Pressable> : null}
-      {stringValue(detail.status) === "paused" ? <Pressable onPress={() => void controls.mutate({ operation: "reopen" })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>重新开放</Text></Pressable> : null}
-      <Pressable onPress={() => void controls.mutate({ operation: "extend" })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>延长 30 天</Text></Pressable>
-      <Pressable onPress={() => Alert.alert("换发投递链接？", "旧 token 会立即失效。", [{ text: "取消", style: "cancel" }, { text: "换发", onPress: () => void controls.mutate({ operation: "regenerate" }).then((result) => setToken(result?.token ?? null)) }])} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>换发安全链接</Text></Pressable>
-      <Pressable onPress={() => Alert.alert("撤销投递箱？", "旧链接将立即失效；已进入收件箱的原件不会删除。", [{ text: "取消", style: "cancel" }, { text: "撤销", style: "destructive", onPress: () => void controls.mutate({ operation: "revoke" }) }])} style={styles.dangerButton}><Text style={styles.dangerText}>撤销投递箱</Text></Pressable>
-    </View> : null}
-  </>}</DetailShell>;
 }
 
 function Info({ label, value }: { label: string; value: string }) {

@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,7 +18,7 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await page
     .locator('input[type="file"]').first()
     .setInputFiles({ name: "外婆哼的歌.wav", mimeType: "audio/wav", buffer: wav });
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
 
   await page.getByRole("button", { name: "新建一件事" }).click();
   // 上传视频（MOV：多数桌面浏览器不可直接解码 → 占位 + 下载入口）
@@ -26,15 +26,14 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await page
     .locator('input[type="file"]').first()
     .setInputFiles({ name: "第一次翻身.MOV", mimeType: "video/quicktime", buffer: mov });
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
 
   // 另开一件事写文字；前面的素材草稿仍保留。
   await page.getByRole("button", { name: "新建一件事" }).click();
   await page
     .getByPlaceholder("想说点什么？也可以不写，直接保存素材。")
     .fill("小满今天自己扶着沙发站起来了。");
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
-  await expect(page.getByText("已收进收件箱。")).toBeVisible();
+  await submitCaptureForReview(page);
 
   // 收件箱：三条待整理
   await page.goto("/inbox");
@@ -140,15 +139,14 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   await expect(page.getByRole("link", { name: /自己站起来了/ })).toBeVisible();
 });
 
-
 test("照片阅读器保持原图比例，键盘翻页、缩放和关闭返回位置",async({page})=>{
   await ensureBootstrap(page);await page.goto('/capture'); await expandCaptureOptions(page);
   const files=await Promise.all(['#d2b89b','#aec0b5'].map(async(background,i)=>({name:`虚构家庭照片${i+1}.jpg`,mimeType:'image/jpeg',buffer:await sharp({create:{width:900,height:600,channels:3,background}}).jpeg().toBuffer()})));
   for (const file of files) {
     await page.getByRole("button", { name: "新建一件事" }).click();
     await page.locator('input[type="file"]').first().setInputFiles(file);
-    await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
-    await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+    await submitCaptureForReview(page);
+
   }
   await page.goto('/inbox');await expect(page.getByRole('checkbox')).toHaveCount(2);for(const box of await page.getByRole('checkbox').all())await box.check();await page.getByLabel('合并事件标题').fill('虚构家庭的两张照片');await page.getByRole('button',{name:'合并',exact:true}).click();
   const openers=page.getByRole('button',{name:/打开阅读器：虚构家庭照片/});await expect(openers).toHaveCount(2);const names=await openers.evaluateAll(nodes=>nodes.map(n=>n.getAttribute('aria-label')!.replace('打开阅读器：','')));expect(new Set(names)).toEqual(new Set(['虚构家庭照片1.jpg','虚构家庭照片2.jpg']));const open=openers.first();await open.click();const dialog=page.getByRole('dialog',{name:'媒体阅读器'});await expect(dialog).toBeVisible();

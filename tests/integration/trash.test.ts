@@ -21,7 +21,7 @@ const { user: userTable } = await import("@/db/schema/auth");
 const { person } = await import("@/db/schema/family");
 const { memoryEvent, memoryEventAsset } = await import("@/db/schema/memory");
 const { contribution: contributionTable } = await import("@/db/schema/contribution");
-const { story } = await import("@/db/schema/story");
+
 const { asset: assetTable } = await import("@/db/schema/asset");
 const { performSetup } = await import("@/lib/auth/setup");
 const { completeOnboarding, getUserBinding } = await import("@/lib/family/service");
@@ -29,19 +29,10 @@ const { ingestImage } = await import("@/lib/assets/ingest");
 const { createInboxItemForAsset, getInboxEntry } = await import("@/lib/inbox/service");
 const { confirmInboxEntry, getTimelinePage, getMemoryEventDetail } = await import("@/lib/memories/service");
 const { createContribution, addFact } = await import("@/lib/contributions/service");
-const {
-  createStoryDraft,
-  publishStory,
-  planDeterministicDraft,
-  collectStoryMaterial,
-  collectTranscriptMaterial,
-  periodForKind,
-  listStories,
-} = await import("@/lib/stories/service");
+
 const {
   trashMemoryEvent,
   trashContribution,
-  trashStory,
   restoreFromTrash,
   purgeFromTrash,
   listTrash,
@@ -263,52 +254,6 @@ describe("M7：回收站 — 讲述与故事", () => {
     expect(searchFamily(context, { q: "回收站测试讲述正文" }).contributions.length).toBe(1);
   });
 
-  it("故事软删除后列表/导出排除，恢复回来；清除为硬删除", async () => {
-    const eventId = await makeEventAt(
-      "故事素材事件",
-      new Date("2026-09-01T02:00:00.000Z"),
-    );
-    await addFact(context, eventId, "九月初的确认事实。");
-    const anchor = new Date("2026-09-02T00:00:00.000Z");
-    const period = periodForKind("weekly", anchor);
-    const plans = planDeterministicDraft(
-      collectStoryMaterial(familyId, period),
-      collectTranscriptMaterial(familyId, period),
-    );
-    const created = createStoryDraft(
-      context,
-      { kind: "weekly", anchor, title: "回收站测试故事" },
-      plans,
-    );
-    if (!created.ok) throw new Error("draft failed");
-    expect(await publishStory(context, created.storyId)).toEqual({ ok: true });
-
-    // 搜索可命中
-    expect(searchFamily(context, { q: "确认事实" }).stories.length).toBeGreaterThanOrEqual(1);
-
-    expect(trashStory(context, created.storyId)).toEqual({ ok: true });
-    expect((await listStories(familyId)).some((s) => s.id === created.storyId)).toBe(false);
-    expect(searchFamily(context, { q: "确认事实" }).stories.length).toBe(0);
-    const exported = await buildDisasterExport(familyId);
-    const JSZip = (await import("jszip")).default;
-    const zip = await JSZip.loadAsync(readFileSync(exported.filePath));
-    const stories = JSON.parse(
-      await zip.file("family-time-capsule-export/stories.json")!.async("string"),
-    );
-    expect(stories.some((s: { id: string }) => s.id === created.storyId)).toBe(false);
-
-    // 恢复
-    expect(restoreFromTrash(context, "story", created.storyId)).toEqual({ ok: true });
-    expect((await listStories(familyId)).some((s) => s.id === created.storyId)).toBe(true);
-    expect(searchFamily(context, { q: "确认事实" }).stories.length).toBeGreaterThanOrEqual(1);
-
-    // 清除
-    trashStory(context, created.storyId);
-    expect(purgeFromTrash(context, "story", created.storyId)).toEqual({ ok: true });
-    expect(
-      getDb().select().from(story).where(eq(story.id, created.storyId)).all(),
-    ).toHaveLength(0);
-  });
 });
 
 describe("M7：素材物理删除守卫", () => {

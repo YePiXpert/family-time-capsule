@@ -207,3 +207,37 @@ it("a private original becomes family-scoped AI evidence only through an actual 
     expect(enqueueAiJob({ ...input, triggerMode: "automatic" }, { runtime: ai })).toMatchObject({ ok: false, error: "automatic_restricted_content_forbidden" });
   }
 });
+
+it("automatic capture requires automatic consent, while an explicitly manual grant still permits manual organization", async () => {
+  const { createMemoryAssistant } = await import("@/lib/ai/server");
+  const { enableAiProcessingConsent } = await import("@/lib/ai/jobs");
+  const runtime = createMemoryAssistant({ AI_PROVIDER: "openai-compatible", AI_BASE_URL: "https://automatic.fixture.invalid/v1", AI_API_KEY: "fixture-key", AI_MODEL: "fixture-text" });
+  expect(enableAiProcessingConsent(context, { capability: "text", allowAutomaticFamilyContent: false }, { runtime }).ok).toBe(true);
+  const d = newDraft([], { text: "自动授权边界" });
+  const count = getDb().select().from(aiJob).all().length;
+  const result = publishCapture(context, d.id, d.revision, true, { runtime, triggerMode: "automatic" });
+  expect(result.status).toBe("published");
+  expect(result.processing.state).toBe("skipped");
+  expect(getDb().select().from(aiJob).all()).toHaveLength(count);
+  expect(enableAiProcessingConsent(context, { capability: "text", allowAutomaticFamilyContent: true }, { runtime }).ok).toBe(true);
+  const allowed = newDraft([], { text: "已允许自动整理" });
+  expect(publishCapture(context, allowed.id, allowed.revision, true, { runtime, triggerMode: "automatic" }).processing.state).toBe("queued");
+  const job = getDb().select().from(aiJob).all().at(-1)!;
+  expect(job.triggerMode).toBe("automatic");
+});
+
+it("authorized automatic media processing is anchored to the shared event, and audience revocation stops it", async () => {
+  getDb().update(aiJob).set({ status: "cancelled", finishedAt: new Date(), updatedAt: new Date() }).where(eq(aiJob.status, "pending")).run();
+  const { ai, vision } = assistant();
+  const p = await photo(), d = newDraft([p.original.id]);
+  const result = publishCapture(context, d.id, d.revision, true, { runtime: ai, triggerMode: "automatic" });
+  expect(result.processing.state).toBe("queued");
+  const jobs = getDb().select().from(aiJob).all().filter(job => job.requestedByUserId === context.userId && job.triggerMode === "automatic" && job.status === "pending");
+  expect(jobs.some(job => job.entityId === p.original.id)).toBe(true);
+  expect(getDb().select().from(asset).where(eq(asset.id, p.original.id)).get()?.visibility).toBe("private");
+  getDb().update(memoryEvent).set({ visibility: "private" }).where(eq(memoryEvent.id, result.memoryEventId!)).run();
+  await runAiWorkerOnce({ assistant: ai });
+  await runAiWorkerOnce({ assistant: ai });
+  expect(vision).not.toHaveBeenCalled();
+  expect(getDb().select().from(aiJob).where(eq(aiJob.entityId, p.original.id)).all().every(job => job.status === "cancelled")).toBe(true);
+});

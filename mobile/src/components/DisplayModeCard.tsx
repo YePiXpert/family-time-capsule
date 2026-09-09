@@ -1,10 +1,11 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Text } from "./typography";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useApp } from "../state/AppContext";
 import { colors, sharedStyles } from "../theme";
 
 /**
- * 标准显示 / 大字简洁显示的设备级切换（NAV-11）。
- * 只影响这一台设备的界面大小与入口数量，不改变任何权限。
+ * 标准显示 / 大字显示的设备级切换（NAV-11）。
+ * 只影响这一台设备的界面大小，不改变任何权限。
  */
 export function DisplayModeCard() {
   const { displayMode, setDisplayMode } = useApp();
@@ -12,7 +13,7 @@ export function DisplayModeCard() {
   return (
     <View style={sharedStyles.card}>
       <Text style={sharedStyles.cardTitle}>显示方式</Text>
-      <Text style={sharedStyles.body}>只影响这一台设备；想用完整功能时，随时切回标准显示。</Text>
+      <Text style={sharedStyles.body}>只影响这一台设备；只调整文字和按钮大小，所有功能保持一致。</Text>
       <View style={styles.row}>
         <Pressable
           accessibilityRole="button"
@@ -38,7 +39,7 @@ export function DisplayModeCard() {
             pressed && sharedStyles.pressed,
           ]}
         >
-          <Text style={[styles.optionText, displayMode === "simple" && styles.optionTextActive]}>大字简洁显示</Text>
+          <Text style={[styles.optionText, displayMode === "simple" && styles.optionTextActive]}>大字显示</Text>
         </Pressable>
       </View>
     </View>

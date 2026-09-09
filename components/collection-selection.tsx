@@ -8,9 +8,11 @@ import type {
 export function CollectionSelection({
   memories,
   initialCollection = "",
+  summaryLabel,
 }: {
   memories: { id: string; title: string }[];
   initialCollection?: string;
+  summaryLabel?: string;
 }) {
   const [page, setPage] = useState<CollectionPage | null>(null),
     [collection, setCollection] = useState(initialCollection),
@@ -129,7 +131,7 @@ export function CollectionSelection({
       open={initialCollection ? true : undefined}
     >
       <summary className="min-h-11 cursor-pointer py-2">
-        {memories.length === 1 ? "加入相册 / 章节" : "多选整理到相册 / 章节"}
+        {summaryLabel ?? (memories.length === 1 ? "加入相册 / 章节" : "多选整理到相册 / 章节")}
       </summary>
       {error ? (
         <p role="alert" className="my-3">

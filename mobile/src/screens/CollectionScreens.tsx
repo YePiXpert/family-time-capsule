@@ -1,20 +1,13 @@
+import { Text, TextInput } from "../components/typography";
+import { WorkCreator } from "./WorkCreator";
+import { Disclosure } from "../components/Disclosure";
 import { ReadingDownloadButton } from "../reading/DownloadButton";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { randomUUID } from "expo-crypto";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, View } from "react-native";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import {
-  createNativeCollection,
   fetchCollection,
   fetchCollections,
   mutateCollection,
@@ -46,12 +39,11 @@ function Button({
 export function CollectionsScreen({
   navigation,
   route,
-}: NativeStackScreenProps<RootStackParamList, "Collections">) {
+}: { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Collections">["navigation"], "navigate">; route: NativeStackScreenProps<RootStackParamList, "Collections">["route"] }) {
   const { credentials } = useApp();
   const [page, setPage] = useState<CollectionPage | null>(null),
     [error, setError] = useState(""),
-    [title, setTitle] = useState(""),
-    [kind, setKind] = useState<"album" | "chapter">("album"),
+    [creating, setCreating] = useState(false),
     [deleted, setDeleted] = useState(false),
     [busy, setBusy] = useState(false);
   const load = useCallback(
@@ -80,24 +72,6 @@ export function CollectionsScreen({
       void load();
     }, [load]),
   );
-  async function create() {
-    if (!credentials) return;
-    setBusy(true);
-    try {
-      const id = await createNativeCollection(credentials, title, kind);
-      if (route.params?.eventIds?.length)
-        await mutateCollection(credentials, id, {
-          operation: "add",
-          revision: 1,
-          eventIds: route.params.eventIds,
-        });
-      navigation.navigate("CollectionDetail", { id });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   async function choose(id: string, revision: number) {
     if (!credentials) return;
     if (!route.params?.eventIds?.length || !page?.canWrite || deleted) {
@@ -124,16 +98,16 @@ export function CollectionsScreen({
       contentContainerStyle={s.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={s.title}>相册与章节</Text>
+
       <Text style={s.intro}>
         {route.params?.eventIds?.length
           ? `将所选 ${route.params.eventIds.length} 条记忆加入相册。只建立关系，原件不会复制。`
           : "把一段真实的家庭经历整理在一起。"}
       </Text>
-      <Button
+      <Disclosure title="管理"><Button
         title={deleted ? "返回相册" : "相册回收站"}
         onPress={() => setDeleted(!deleted)}
-      />
+      /></Disclosure>
       {error ? (
         <>
           <Text style={s.error} accessibilityRole="alert">
@@ -142,27 +116,8 @@ export function CollectionsScreen({
           <Button title="重试" onPress={() => void load()} />
         </>
       ) : null}
-      {page?.canWrite && !deleted ? (
-        <>
-          <Text style={s.label}>新相册名称</Text>
-          <TextInput
-            accessibilityLabel="新相册名称"
-            style={s.input}
-            maxLength={200}
-            value={title}
-            onChangeText={setTitle}
-          />
-          <Button
-            title={kind === "album" ? "形式：主题相册" : "形式：章节"}
-            onPress={() => setKind(kind === "album" ? "chapter" : "album")}
-          />
-          <Button
-            title="新建相册 / 章节"
-            disabled={busy || !title.trim()}
-            onPress={() => void create()}
-          />
-        </>
-      ) : null}
+      {page?.canWrite && !deleted && !creating ? <Button title="新建相册" onPress={() => setCreating(true)} /> : null}
+      {creating ? <WorkCreator kind="album" onCancel={() => setCreating(false)} onCreated={id => { setCreating(false); navigation.navigate("CollectionDetail", { id }); }} /> : null}
       {page?.entries.map((c) => (
         <Pressable
           key={c.id}
@@ -203,7 +158,7 @@ export function CollectionDetailScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "CollectionDetail">) {
   const { credentials } = useApp();
-  const [reading, setReading] = useState(false);
+  const [reading, setReading] = useState(true);
   const [doc, setDoc] = useState<CollectionDetail | null>(null),
     [error, setError] = useState(""),
     [status, setStatus] = useState(""),
@@ -340,6 +295,7 @@ export function CollectionDetailScreen({
             maxLength={200}
             onChangeText={(title) => update({ ...doc, title })}
           />
+          <Button title={doc.kind === "album" ? "形式：相册，改为章节" : "形式：章节，改为相册"} onPress={() => update({ ...doc, kind: doc.kind === "album" ? "chapter" : "album" })} />
           <Text style={s.label}>简介</Text>
           <TextInput
             style={[s.input, { minHeight: 96, textAlignVertical: "top" }]}

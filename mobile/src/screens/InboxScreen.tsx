@@ -1,6 +1,7 @@
+import { Text, TextInput } from "../components/typography";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { ApiError, confirmMobileInbox, fetchMobileInbox, mergeMobileInbox, patchMobileInbox } from "../api/client";
 import { DateTimeField } from "../components/DateTimeField";

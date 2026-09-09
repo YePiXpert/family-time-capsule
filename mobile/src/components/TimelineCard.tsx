@@ -1,4 +1,5 @@
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Text } from "./typography";
+import { Image, Pressable, StyleSheet, View } from "react-native";
 import { colors } from "../theme";
 import type { LocalTimelineEvent } from "../types";
 import { dateLabel } from "../utils/format";

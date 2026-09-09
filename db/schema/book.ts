@@ -11,13 +11,12 @@ import { user } from "./auth";
 import { asset } from "./asset";
 import { memoryEvent } from "./memory";
 import { contribution } from "./contribution";
-import { story } from "./story";
 import { collection } from "./collection";
 const timestamp = (name: string) =>
   integer(name, { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date());
-/** Story narrates; Collection organizes; BookProject owns publication editing. */
+/** Collections organize memories; BookProject owns publication editing. */
 export const bookProject = sqliteTable(
   "book_project",
   {
@@ -113,7 +112,7 @@ export const bookSourceRef = sqliteTable(
       .notNull()
       .references(() => bookProject.id, { onDelete: "cascade" }),
     kind: text("kind", {
-      enum: ["memory", "asset", "contribution", "story", "collection"],
+      enum: ["memory", "asset", "contribution", "collection"],
     }).notNull(),
     memoryEventId: text("memory_event_id").references(() => memoryEvent.id, {
       onDelete: "set null",
@@ -122,9 +121,6 @@ export const bookSourceRef = sqliteTable(
       onDelete: "set null",
     }),
     contributionId: text("contribution_id").references(() => contribution.id, {
-      onDelete: "set null",
-    }),
-    storyId: text("story_id").references(() => story.id, {
       onDelete: "set null",
     }),
     collectionId: text("collection_id").references(() => collection.id, {

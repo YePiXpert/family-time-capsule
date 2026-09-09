@@ -1,40 +1,31 @@
+import { PendingScreen } from "../screens/PendingScreen";
 import { LocalIntakeScreen } from "../screens/LocalIntakeScreen";
 import { AssetLibraryScreen, AssetDetailScreen } from "../screens/AssetLibraryScreen";
 import { ReadingDownloadsScreen, OfflineReadingScreen } from "../screens/ReadingScreens";
-import { BookReviewScreen } from "../screens/BookReviewScreen";
 import { NavigationContainer, type Theme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "../components/typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../state/AppContext";
-import { HomeScreen } from "../screens/HomeScreen";
 import { TimelineScreen } from "../screens/TimelineScreen";
 import { CaptureScreen } from "../screens/CaptureScreen";
 import { InboxScreen } from "../screens/InboxScreen";
-import { MoreScreen } from "../screens/MoreScreen";
+import { SettingsHubScreen } from "../screens/SettingsHubScreen";
+import { WorksScreen } from "../screens/WorksScreen";
 import { MemoryScreen } from "../screens/MemoryScreen";
 import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import {
-  CapsuleDetailScreen,
-  CapsulesScreen,
-  ContributionPortalDetailScreen,
-  ContributionPortalsScreen,
   ImportSessionDetailScreen,
   ImportSessionsScreen,
   PeopleScreen,
   PersonDetailScreen,
-  RequestCreateScreen,
-  RequestDetailScreen,
-  RequestsScreen,
-  StoriesScreen,
-  StoryDetailScreen,
 } from "../screens/LibraryScreens";
 import { CollectionsScreen, CollectionDetailScreen } from "../screens/CollectionScreens";
 import { BooksScreen, BookDetailScreen } from "../screens/BookScreens";
 import { CalendarScreen } from "../screens/CalendarScreen";
-import { WeeklyReviewScreen } from "../screens/WeeklyReviewScreen";
 import { InviteFamilyScreen } from "../screens/InviteFamilyScreen";
 import { LocalCaptureDetailScreen } from "../screens/LocalCaptureDetailScreen";
 import { colors } from "../theme";
@@ -54,22 +45,16 @@ const navigationTheme: Theme = {
   },
 };
 
-// 正式 1.0 一级入口(M1):今天/记忆/记录/家人/我的;收件箱入栈为整理页。
 const tabMeta = {
-  Home: ["今天", "⌂"],
   Timeline: ["记忆", "◷"],
   Capture: ["记录", "+"],
-  People: ["家人", "☺"],
-  More: ["我的", "•••"],
+  Works: ["作品", "▤"],
 } as const;
-
-// 大字简洁显示(长辈阅读)下的标签:更大的字与更直白的动词。
-const simpleTabLabel = (route: keyof typeof tabMeta) => (route === "Capture" ? "说几句" : tabMeta[route][0]);
 
 function MainTabs() {
   const { displayMode } = useApp();
   const simple = displayMode === "simple";
-  return <Tabs.Navigator screenOptions={({ route }) => ({
+  return <Tabs.Navigator screenOptions={({ route, navigation }) => ({
     headerStyle: { backgroundColor: colors.paper },
     headerShadowVisible: false,
     headerTitleStyle: { color: colors.ink, fontWeight: "800" },
@@ -80,13 +65,12 @@ function MainTabs() {
     tabBarStyle: { height: simple ? 76 : 64, paddingTop: 5, paddingBottom: simple ? 8 : 6, backgroundColor: colors.card, borderTopColor: colors.line },
     tabBarLabelStyle: { fontSize: simple ? 14 : 11, fontWeight: "700" },
     tabBarIcon: ({ focused }) => <View style={[styles.icon, route.name === "Capture" && styles.captureIcon, focused && route.name !== "Capture" && styles.activeIcon]}><Text style={[styles.iconText, route.name === "Capture" && styles.captureIconText]}>{tabMeta[route.name][1]}</Text></View>,
-    title: simple ? simpleTabLabel(route.name) : tabMeta[route.name][0],
+    title: tabMeta[route.name][0],
+    headerRight: () => <Pressable accessibilityRole="button" accessibilityLabel="设置" onPress={() => navigation.getParent()?.navigate("Settings")} style={{ padding: 14 }}><Text style={{ color: colors.coralDark, fontSize: 16 }}>设置</Text></Pressable>,
   })}>
-    <Tabs.Screen component={HomeScreen} name="Home" />
     <Tabs.Screen component={TimelineScreen} name="Timeline" />
     <Tabs.Screen component={CaptureScreen} name="Capture" options={{ tabBarLabelStyle: { color: colors.coralDark, fontSize: simple ? 14 : 11, fontWeight: "800" } }} />
-    <Tabs.Screen component={PeopleScreen} name="People" />
-    <Tabs.Screen component={MoreScreen} name="More" />
+    <Tabs.Screen component={WorksScreen} name="Works" />
   </Tabs.Navigator>;
 }
 
@@ -102,18 +86,12 @@ export function AppNavigator() {
         <Stack.Screen component={AssetLibraryScreen} name="AssetLibrary" options={{ title: "资料库" }} />
         <Stack.Screen component={AssetDetailScreen} name="AssetDetail" options={{ title: "资料" }} />
         <Stack.Screen component={SearchScreen} name="Search" options={{ title: "搜索" }} />
-        <Stack.Screen component={SettingsScreen} name="Settings" options={{ title: "设置" }} />
+        <Stack.Screen component={SettingsHubScreen} name="Settings" options={{ title: "设置" }} />
+        <Stack.Screen component={SettingsScreen} name="DeviceSettings" options={{ title: "存储与同步" }} />
+        <Stack.Screen component={PeopleScreen} name="People" options={{ title: "家人" }} />
+        <Stack.Screen component={PendingScreen} name="Pending" options={{title:"待处理"}} />
         <Stack.Screen component={InboxScreen} name="Inbox" options={{ title: "待整理" }} />
         <Stack.Screen component={PersonDetailScreen} name="PersonDetail" options={{ title: "人物" }} />
-        <Stack.Screen component={StoriesScreen} name="Stories" options={{ title: "故事" }} />
-        <Stack.Screen component={StoryDetailScreen} name="StoryDetail" options={{ title: "故事" }} />
-        <Stack.Screen component={CapsulesScreen} name="Capsules" options={{ title: "时间胶囊" }} />
-        <Stack.Screen component={CapsuleDetailScreen} name="CapsuleDetail" options={{ title: "时间胶囊" }} />
-        <Stack.Screen component={RequestsScreen} name="Requests" options={{ title: "口述史" }} />
-        <Stack.Screen component={RequestDetailScreen} name="RequestDetail" options={{ title: "口述史问题" }} />
-        <Stack.Screen component={RequestCreateScreen} name="RequestCreate" options={{ title: "发起问题" }} />
-        <Stack.Screen component={ContributionPortalsScreen} name="ContributionPortals" options={{ title: "家庭投递箱" }} />
-        <Stack.Screen component={ContributionPortalDetailScreen} name="ContributionPortalDetail" options={{ title: "家庭投递箱" }} />
         <Stack.Screen component={LocalIntakeScreen} name="LocalIntake" options={{ title: "收到的内容" }} />
         <Stack.Screen component={ImportSessionsScreen} name="ImportSessions" options={{ title: "导入会话" }} />
         <Stack.Screen component={ImportSessionDetailScreen} name="ImportSessionDetail" options={{ title: "导入进度" }} />
@@ -121,11 +99,9 @@ export function AppNavigator() {
         <Stack.Screen component={CollectionDetailScreen} name="CollectionDetail" options={{title:"相册"}} />
         <Stack.Screen component={ReadingDownloadsScreen} name="ReadingDownloads" options={{title:"离线收藏"}} />
         <Stack.Screen component={OfflineReadingScreen} name="OfflineReading" options={{title:"离线阅读"}} />
-        <Stack.Screen component={BookReviewScreen} name="BookReview" options={{title:"月度与年度回顾"}} />
         <Stack.Screen component={BooksScreen} name="Books" options={{title:"家庭书架"}} />
         <Stack.Screen component={BookDetailScreen} name="BookDetail" options={{title:"家庭作品"}} />
         <Stack.Screen component={CalendarScreen} name="Calendar" options={{ title: "记忆日历" }} />
-        <Stack.Screen component={WeeklyReviewScreen} name="WeeklyReview" options={{ title: "每周回顾" }} />
         <Stack.Screen component={InviteFamilyScreen} name="InviteFamily" options={{ title: "邀请家人加入" }} />
         <Stack.Screen component={LocalCaptureDetailScreen} name="LocalCapture" options={{ title: "本机记录" }} />
       </Stack.Navigator>

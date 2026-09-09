@@ -22,7 +22,7 @@ vi.mock("../src/state/AppContext", () => ({ useApp: () => mocks.state }));
 vi.mock("../src/storage/database", () => ({ getMeta: vi.fn(), setMeta: vi.fn(), deleteMeta: vi.fn() }));
 vi.mock("../src/api/client", async original => ({ ...await original<object>(), fetchAiSettings: mocks.fetch }));
 const { AiSettingsSection } = await import("../src/ai/AiSettingsSection");
-const { MoreScreen } = await import("../src/screens/MoreScreen");
+const { SettingsHubScreen } = await import("../src/screens/SettingsHubScreen");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
 afterEach(async () => { if (tree) await act(() => tree!.unmount()); tree = undefined; vi.clearAllMocks(); });
@@ -38,7 +38,8 @@ it.each(["owner", "admin", "editor", "contributor", "viewer"])("shows AI setting
 
 it.each(["owner", "admin", "editor", "contributor", "viewer"])("limits invitations to managers when logged in as %s", async role => {
   mocks.state.viewer.role = role;
-  await act(async () => { tree = create(createElement(MoreScreen)); });
+  await act(async () => { tree = create(createElement(SettingsHubScreen)); });
+  await act(async () => tree!.root.find(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "家人和账号").props.onPress());
   const buttons = tree!.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "邀请家人加入");
   expect(buttons).toHaveLength(["owner", "admin"].includes(role) ? 1 : 0);
   if (buttons.length) {

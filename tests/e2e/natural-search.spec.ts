@@ -19,7 +19,7 @@ test.afterAll(async()=>{provider.closeAllConnections();await new Promise<void>(r
 test("explicit conversion persists once; refresh and prefetch do not call AI, month end and manual filters survive",async({page})=>{
   await ensureBootstrap(page);
   await page.goto("/settings/ai");
-  const card=page.locator("article",{has:page.getByRole("heading",{name:"文字整理与故事草稿"})});
+  const card=page.locator("article",{has:page.getByRole("heading",{name:"文字整理与信息建议"})});
   await card.getByRole("button",{name:"同意启用这项外部处理"}).click();
   await expect(card.getByText("可使用")).toBeVisible();
   for(const [date,title] of [["2024-02-29T12:00:00.000Z","公园二月最后一天"],["2024-03-01T12:00:00.000Z","公园三月第一天"]]){

@@ -91,16 +91,9 @@ type Expectation = {
   factQuote: string;
   tags: string[];
   textEventDateOnly: string;
-  publishedStoryId: string;
-  publishedStoryTitle: string;
-  dialogueQuestionId: string;
-  dialogueReplyText: string;
   documentAssetId: string;
   documentSha256: string;
   importSessionId: string;
-  portalId: string;
-  portalSubmissionId: string;
-  reviewPeriodId: string;
 };
 
 let expect_: Expectation;
@@ -270,12 +263,6 @@ beforeAll(async () => {
       .update(m.schemaFamily.family)
       .set({
         childLaterUnlockAge: 21,
-        weekStartsOn: 0,
-        reviewReminderWeekday: 6,
-        reviewReminderLocalTime: "08:45",
-        remindPendingInbox: false,
-        remindPendingRequests: true,
-        remindUpcomingCapsules: false,
       })
       .where(eq(m.schemaFamily.family.id, on.familyId));
     await m.db
@@ -445,75 +432,6 @@ beforeAll(async () => {
       .run();
     const textEventDateOnly = "2026年8月10日";
 
-    // M4 durable：已发布的故事（含逐字引文段与来源）
-    const storyService = await import("@/lib/stories/service");
-    const storyCtx = {
-      userId: adminId,
-      userName: "爸爸",
-      familyId: on.familyId,
-      personId: dad.id,
-      role: (await m.family.getUserBinding(adminId)).role,
-      accountEnabled: true as const,
-      isGuardian: true,
-      familyTimezone: "Asia/Shanghai",
-      childLaterUnlockAge: 21,
-    };
-    const familyContribution = await m.contributions.createContribution(on.familyId, {
-      memoryEventId: ev.eventId,
-      authorPersonId: dad.id,
-      recordedByUserId: adminId,
-      rawText: "出生那天清晨，我第一次抱起她。",
-      visibility: "family",
-    });
-    if (!familyContribution.ok) throw new Error("family contribution failed");
-    const storyAnchorDate = new Date("2026-08-12T00:00:00.000Z");
-    const storyPeriod = storyService.periodForKind("weekly", storyAnchorDate);
-    const storyMaterial = storyService.collectStoryMaterial(on.familyId, storyPeriod);
-    const storyTranscripts = storyService.collectTranscriptMaterial(on.familyId, storyPeriod);
-    const storyPlans = storyService.planDeterministicDraft(storyMaterial, storyTranscripts);
-    expect(storyPlans.length).toBeGreaterThanOrEqual(2);
-    const storyCreated = storyService.createStoryDraft(
-      storyCtx,
-      { kind: "weekly", anchor: storyAnchorDate, title: "出生的那一周" },
-      storyPlans,
-    );
-    if (!storyCreated.ok) throw new Error(`story draft failed: ${storyCreated.error}`);
-    const storyPublished = storyService.publishStory(storyCtx, storyCreated.storyId);
-    if (!storyPublished.ok) throw new Error("story publish failed");
-
-    // M5 durable：胶囊未来问题 + 开启后的回答
-    const dialogueService = await import("@/lib/capsules/dialogue");
-    const schemaCapsule = await import("@/db/schema/capsule");
-    const { randomUUID: uuid5 } = await import("node:crypto");
-    const dialogueCapsuleId = uuid5();
-    m.db.getDb().insert(schemaCapsule.capsule).values({
-      id: dialogueCapsuleId,
-      familyId: on.familyId,
-      title: "写给十六岁",
-      unlockType: "date",
-      unlockValue: "2026-08-15",
-      status: "draft",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }).run();
-    const addedQuestion = await dialogueService.addFutureQuestion(
-      storyCtx,
-      dialogueCapsuleId,
-      "十六岁的你，最想对现在的我们说什么？",
-    );
-    if (!addedQuestion.ok) throw new Error("question failed");
-    // 直接置为 opened（构造已解锁状态）
-    m.db.getDb().update(schemaCapsule.capsule)
-      .set({ status: "opened", sealedAt: new Date(), openedAt: new Date(), updatedAt: new Date() })
-      .where(eq(schemaCapsule.capsule.id, dialogueCapsuleId))
-      .run();
-    const dialogueReply = await dialogueService.addCapsuleReply(
-      storyCtx,
-      addedQuestion.questionId!,
-      { text: "谢谢你们留下这些。我现在很好。" },
-    );
-    if (!dialogueReply.ok) throw new Error("reply failed");
-
     // 1.1 durable graph: document + import + guest portal + weekly review.
     const documentAssetId = randomUUID();
     const documentBytes = Buffer.from("%PDF-1.4\nFamily archive document\n%%EOF\n");
@@ -561,8 +479,6 @@ beforeAll(async () => {
       createdAt: new Date("2026-08-13T00:00:00.000Z"),
     });
     const schemaImport = await import("@/db/schema/import");
-    const schemaOralHistory = await import("@/db/schema/oral-history");
-    const schemaReview = await import("@/db/schema/review");
     const importSessionId = randomUUID();
     const importItemId = randomUUID();
     m.db.getDb().insert(schemaImport.importSession).values({
@@ -606,91 +522,6 @@ beforeAll(async () => {
       createdAt: new Date("2026-08-13T00:00:00.000Z"),
       updatedAt: new Date("2026-08-13T00:05:00.000Z"),
     }).run();
-    const portalId = randomUUID();
-    m.db.getDb().insert(schemaOralHistory.contributionRequest).values({
-      id: portalId,
-      familyId: on.familyId,
-      tokenHash: createHash("sha256").update("roundtrip-guest-token").digest("hex"),
-      kind: "portal",
-      title: "满月照片收集",
-      recipientLabel: "外婆",
-      recipientPersonId: grandma.personId,
-      promptText: "请留下照片、声音或家书。",
-      topicKey: null,
-      status: "open",
-      maxSubmissions: 20,
-      maxFilesPerSubmission: 10,
-      allowImages: true,
-      allowAudio: true,
-      allowVideo: true,
-      allowDocuments: true,
-      allowText: true,
-      allowBrowserRecording: true,
-      allowGuestName: true,
-      allowReuse: true,
-      expiresAt: new Date("2026-09-13T00:00:00.000Z"),
-      createdByUserId: adminId,
-      createdAt: new Date("2026-08-13T00:00:00.000Z"),
-      updatedAt: new Date("2026-08-13T00:00:00.000Z"),
-    }).run();
-    const portalSubmissionId = randomUUID();
-    m.db.getDb().insert(schemaOralHistory.contributionPortalSubmission).values({
-      id: portalSubmissionId,
-      familyId: on.familyId,
-      requestId: portalId,
-      importSessionId,
-      guestDisplayName: "外婆（访客填写）",
-      status: "completed",
-      completedAt: new Date("2026-08-13T00:05:00.000Z"),
-      createdAt: new Date("2026-08-13T00:00:00.000Z"),
-    }).run();
-    const requestId = randomUUID();
-    m.db.getDb().insert(schemaOralHistory.contributionRequest).values({
-      id: requestId,
-      familyId: on.familyId,
-      tokenHash: createHash("sha256").update("roundtrip-request-token").digest("hex"),
-      kind: "request",
-      title: null,
-      recipientLabel: "爸爸",
-      recipientPersonId: dad.id,
-      promptText: "那天你最先注意到了什么？",
-      status: "closed",
-      expiresAt: new Date("2026-09-13T00:00:00.000Z"),
-      closedAt: new Date("2026-08-14T00:00:00.000Z"),
-      closedByUserId: adminId,
-      createdByUserId: adminId,
-      createdAt: new Date("2026-08-13T00:00:00.000Z"),
-      updatedAt: new Date("2026-08-14T00:00:00.000Z"),
-    }).run();
-    m.db.getDb().insert(schemaOralHistory.contributionRequestSubmission).values({
-      id: randomUUID(),
-      familyId: on.familyId,
-      requestId,
-      inboxItemId: pendingTextItem.id,
-      createdAt: new Date("2026-08-13T00:00:00.000Z"),
-    }).run();
-    const reviewPeriodId = randomUUID();
-    m.db.getDb().insert(schemaReview.reviewPeriod).values({
-      id: reviewPeriodId,
-      familyId: on.familyId,
-      periodStart: storyPeriod.start,
-      periodEnd: storyPeriod.end,
-      status: "completed",
-      storyId: storyCreated.storyId,
-      startedAt: new Date("2026-08-13T00:00:00.000Z"),
-      completedAt: new Date("2026-08-13T01:00:00.000Z"),
-      createdAt: new Date("2026-08-13T00:00:00.000Z"),
-      updatedAt: new Date("2026-08-13T01:00:00.000Z"),
-    }).run();
-    m.db.getDb().insert(schemaReview.reviewPeriodEvent).values({
-      id: randomUUID(),
-      familyId: on.familyId,
-      reviewPeriodId,
-      memoryEventId: ev.eventId,
-      selectedByUserId: adminId,
-      createdAt: new Date("2026-08-13T00:30:00.000Z"),
-    }).run();
-
     const peoplePolicy = (await m.family.listPeople(on.familyId))
       .map((person) => ({
         id: person.id,
@@ -876,16 +707,9 @@ beforeAll(async () => {
       tags: ["出生", "医院"],
       textEventDateOnly,
       // M4 durable
-      publishedStoryId: storyCreated.storyId,
-      publishedStoryTitle: "出生的那一周",
-      dialogueQuestionId: addedQuestion.questionId!,
-      dialogueReplyText: "谢谢你们留下这些。我现在很好。",
       documentAssetId,
       documentSha256: createHash("sha256").update(documentBytes).digest("hex"),
       importSessionId,
-      portalId,
-      portalSubmissionId,
-      reviewPeriodId,
     };
     m.db.closeDatabase();
   }
@@ -919,9 +743,6 @@ beforeAll(async () => {
     expect(report.inboxItemAssets).toBe(expect_.inboxItemAssets.length);
     expect(report.importSessions).toBe(1);
     expect(report.importSessionItems).toBe(1);
-    expect(report.contributionRequests).toBe(2);
-    expect(report.portalSubmissions).toBe(1);
-    expect(report.reviewPeriods).toBe(1);
 
     const restoredInboxItems = (
       await m.db.getDb().select().from(m.schemaInbox.inboxItem)
@@ -968,17 +789,9 @@ beforeAll(async () => {
     const restoredFamily = await m.family.getFamily(expect_.familyId);
     expect(restoredFamily?.childLaterUnlockAge).toBe(expect_.familyUnlockAge);
     expect(restoredFamily).toMatchObject({
-      weekStartsOn: 0,
-      reviewReminderWeekday: 6,
-      reviewReminderLocalTime: "08:45",
-      remindPendingInbox: false,
-      remindPendingRequests: true,
-      remindUpcomingCapsules: false,
     });
     const schemaAsset = await import("@/db/schema/asset");
     const schemaImport = await import("@/db/schema/import");
-    const schemaOralHistory = await import("@/db/schema/oral-history");
-    const schemaReview = await import("@/db/schema/review");
     const { eq } = await import("drizzle-orm");
     const restoredDocument = m.db.getDb().select().from(schemaAsset.asset)
       .where(eq(schemaAsset.asset.id, expect_.documentAssetId)).get()!;
@@ -991,22 +804,6 @@ beforeAll(async () => {
     expect(restoredImportItems).toEqual(expect.arrayContaining([
       expect.objectContaining({ assetId: expect_.documentAssetId, uploadSessionId: null, status: "completed" }),
     ]));
-    const restoredPortals = m.db.getDb().select().from(schemaOralHistory.contributionRequest).all();
-    expect(restoredPortals).toHaveLength(2);
-    expect(restoredPortals.every((portal) =>
-      portal.status === "closed" &&
-      portal.tokenHash === null &&
-      portal.createdByUserId === adminId &&
-      portal.closedAt !== null
-    )).toBe(true);
-    expect(m.db.getDb().select().from(schemaOralHistory.contributionPortalSubmission)
-      .where(eq(schemaOralHistory.contributionPortalSubmission.id, expect_.portalSubmissionId)).get())
-      .toMatchObject({ requestId: expect_.portalId, importSessionId: expect_.importSessionId });
-    expect(m.db.getDb().select().from(schemaReview.reviewPeriod)
-      .where(eq(schemaReview.reviewPeriod.id, expect_.reviewPeriodId)).get())
-      .toMatchObject({ storyId: expect_.publishedStoryId, status: "completed" });
-    expect(m.db.getDb().select().from(schemaReview.reviewPeriodEvent).all())
-      .toEqual(expect.arrayContaining([expect.objectContaining({ selectedByUserId: null })]));
     const restoredPeoplePolicy = (await m.family.listPeople(expect_.familyId))
       .map((person) => ({
         id: person.id,
@@ -1231,54 +1028,9 @@ describe("RH-005 灾难恢复 roundtrip", () => {
       .map(([name]) => name);
     const keepCount = zipFileNames.filter((n) => n.endsWith("/.keep")).length;
     expect(zipFileNames.length - keepCount).toBe(manifest.fileCount);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 38);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 27);
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zipFileNames).toContain("family-time-capsule-export/name-reviews.json");
-
-    // M4 durable：已发布故事 + 段落 + 来源（含逐字引文）往返
-    const restoredStories = JSON.parse(
-      await zip.file("family-time-capsule-export/stories.json")!.async("string"),
-    );
-    const publishedStory = restoredStories.find(
-      (st: { id: string }) => st.id === expect_.publishedStoryId,
-    );
-    expect(publishedStory).toMatchObject({
-      title: expect_.publishedStoryTitle,
-      status: "published",
-    });
-    const restoredStoryParagraphs = JSON.parse(
-      await zip.file("family-time-capsule-export/story-paragraphs.json")!.async("string"),
-    );
-    const quoteParagraph = restoredStoryParagraphs.find(
-      (pp: { kind: string; text: string }) =>
-        pp.kind === "quote" && pp.text.includes("我第一次抱起她"),
-    );
-    expect(quoteParagraph).toBeTruthy();
-    const restoredStorySources = JSON.parse(
-      await zip.file("family-time-capsule-export/story-sources.json")!.async("string"),
-    );
-    expect(
-      restoredStorySources.some(
-        (ss: { paragraphId: string; quote: string | null }) =>
-          ss.paragraphId === quoteParagraph.id && ss.quote === quoteParagraph.text,
-      ),
-    ).toBe(true);
-
-    // M5 durable：胶囊问题与回答往返
-    const restoredQuestions = JSON.parse(
-      await zip.file("family-time-capsule-export/capsule-questions.json")!.async("string"),
-    );
-    expect(
-      restoredQuestions.some(
-        (q: { id: string }) => q.id === expect_.dialogueQuestionId,
-      ),
-    ).toBe(true);
-    const restoredReplies = JSON.parse(
-      await zip.file("family-time-capsule-export/capsule-replies.json")!.async("string"),
-    );
-    expect(
-      restoredReplies.some((r: { text: string | null }) => r.text === expect_.dialogueReplyText),
-    ).toBe(true);
 
     // M3 durable：edited transcript / fact locator / tags / date_only 精度全部往返
     const transcripts = JSON.parse(
@@ -1334,38 +1086,11 @@ describe("RH-005 灾难恢复 roundtrip", () => {
     const importItems = JSON.parse(
       await zip.file("family-time-capsule-export/import-session-items.json")!.async("string"),
     );
-    const portals = JSON.parse(
-      await zip.file("family-time-capsule-export/contribution-requests.json")!.async("string"),
-    );
-    const portalSubmissions = JSON.parse(
-      await zip.file("family-time-capsule-export/contribution-portal-submissions.json")!.async("string"),
-    );
-    const reviewPeriods = JSON.parse(
-      await zip.file("family-time-capsule-export/review-periods.json")!.async("string"),
-    );
-    const reviewEvents = JSON.parse(
-      await zip.file("family-time-capsule-export/review-period-events.json")!.async("string"),
-    );
     expect(importSessions).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: expect_.importSessionId, source: "guest", status: "completed" }),
     ]));
     expect(importItems).toEqual(expect.arrayContaining([
       expect.objectContaining({ assetId: expect_.documentAssetId, inboxItemId: expect.any(String) }),
-    ]));
-    expect(portals).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: expect_.portalId, kind: "portal" }),
-    ]));
-    expect(portals.every((portal: Record<string, unknown>) =>
-      !("token" in portal) && !("tokenHash" in portal) && !("createdByUserId" in portal)
-    )).toBe(true);
-    expect(portalSubmissions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: expect_.portalSubmissionId, importSessionId: expect_.importSessionId }),
-    ]));
-    expect(reviewPeriods).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: expect_.reviewPeriodId, storyId: expect_.publishedStoryId }),
-    ]));
-    expect(reviewEvents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ reviewPeriodId: expect_.reviewPeriodId, memoryEventId: expect_.photoEventId }),
     ]));
     expect(manifest.assets.find(
       (entry: { assetId: string; sha256: string }) => entry.assetId === expect_.documentAssetId,

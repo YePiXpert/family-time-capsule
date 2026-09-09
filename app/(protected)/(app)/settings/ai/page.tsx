@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 };
 
 const CAPABILITY_LABEL: Record<AiCapability, string> = {
-  text: "文字整理与故事草稿",
+  text: "文字整理与信息建议",
   vision: "图片与视频画面理解",
   transcription: "音频与视频音轨转录",
   embeddings: "可选语义搜索索引",

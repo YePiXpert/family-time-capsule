@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -77,7 +77,7 @@ test("Web can remove a departed reader while keeping the other selected account"
   await group.getByLabel("已选成员（待联网核对，点按移除）").click();
   await expect(group.getByLabel("已选成员（待联网核对，点按移除）")).toHaveCount(0);
   await expect(group.getByLabel("记录者", { exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
 });
 
@@ -91,8 +91,8 @@ test("Web draft-only sync uploads new attachments privately before explicit publ
   await page.getByLabel("保存后的读者").selectOption("private");
   await page.getByLabel("添加照片、视频、录音或文档").setInputFiles({name:"web-private.txt",mimeType:"text/plain",buffer:Buffer.from("网页私密原件，尚未发布给家人")});
   await expect(page.getByRole("status").filter({hasText:"本机已保存 ·"})).toBeVisible();
-  await page.getByRole("button",{name:"保留草稿，稍后继续"}).click();
-  await expect(page.getByText("服务器已收到草稿，可以换设备继续。尚未创建正式记忆。")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: /^本机已保存 ·/ })).toBeVisible();
+  await submitCaptureForReview(page, false);
   await page.reload(); await expandCaptureOptions(page);
   await expect(page.getByLabel("标题",{exact:true})).toHaveValue("私密草稿附件测试");
   const db=new Database(path.join(process.cwd(),"data/e2e-native-capture/db/capsule.sqlite"));
@@ -106,7 +106,7 @@ test("Web draft-only sync uploads new attachments privately before explicit publ
     const response=await page.request.get(`/api/media/${assets[0].id}`,{headers:{authorization:`Bearer ${token}`}});
     expect(response.status()).toBe(404);
   } finally {db.close();}
-  await page.getByRole("button",{name:"仅保存，稍后整理"}).click();
+  await page.getByRole("button",{name:"保存"}).click();
   await expect(page.getByRole("link",{name:"查看这条记忆"})).toBeVisible();
   const detailLink = (await page.getByRole("link", { name: "查看这条记忆" }).getAttribute("href"))!;
   const eventId = detailLink.split("/").at(-1)!;
@@ -153,7 +153,7 @@ test("Web separately imported Live Photo components stay paired after explicit s
   ]);
   await page.getByRole("button", { name: "确认与上一张照片组成 Live Photo" }).click();
   await expect(page.getByText("Live Photo · 静态照片（移除时整组操作）")).toBeVisible();
-  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
   await page.getByRole("link", { name: "查看这条记忆" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "网页确认的实况照片" })).toBeVisible();
   await expect(page.getByText("Live Photo 已保留静态照片和动态原片，可在下方分别查看与播放。")).toBeVisible();

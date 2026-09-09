@@ -25,3 +25,11 @@ it("never displays today as a missing manual date", () => {
   expect(captureDateSummary({ occurredAt: null, occurredAtPrecision: "exact" }, false, "UTC")).toContain("自动读取");
   expect(captureDateSummary({ occurredAt: null, occurredAtPrecision: "unknown" }, true, "UTC")).toContain("时间不确定");
 });
+
+
+it("keeps manual consent separate from automatic organization", () => {
+  expect(captureOrganizerAvailability(settings, "family", [], "automatic").ready).toBe(false);
+  const automatic = { ...settings, capabilities: settings.capabilities.map(row => ({ ...row, automaticAllowed: true })) };
+  expect(captureOrganizerAvailability(automatic, "family", ["image/jpeg"], "automatic").ready).toBe(true);
+  expect(captureOrganizerAvailability(automatic, "private", [], "automatic").ready).toBe(false);
+});

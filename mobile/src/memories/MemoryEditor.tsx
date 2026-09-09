@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text, TextInput } from "../components/typography";
 import { randomUUID } from "expo-crypto";
 import { ApiError, patchMobileMemory, requestMobileJson, shareMobileMemory } from "../api/client";
 import { PrecisionDateTimeField } from "../components/PrecisionDateTimeField";

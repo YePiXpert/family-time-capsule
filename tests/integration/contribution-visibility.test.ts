@@ -30,7 +30,7 @@ const { user: userTable } = await import("@/db/schema/auth");
 const { person: personTable } = await import("@/db/schema/family");
 const { memoryEvent } = await import("@/db/schema/memory");
 const { contribution } = await import("@/db/schema/contribution");
-const { capsuleContribution } = await import("@/db/schema/capsule");
+
 const { completeOnboarding, getUserBinding, listPeople } = await import(
   "@/lib/family/service"
 );
@@ -39,14 +39,6 @@ const {
   listVisibleContributionsForEvent,
   updateVisibleContributionText,
 } = await import("@/lib/authz/contribution-access");
-const {
-  addCapsuleContribution,
-  createCapsule,
-  getCapsuleDetail,
-  getCompleteCapsuleDetailForDisasterExport,
-  listCapsules,
-  sealCapsule,
-} = await import("@/lib/capsules/service");
 
 const db = getDb();
 const adminUserId = (
@@ -423,128 +415,5 @@ describe("Contribution live visibility DAL", () => {
         "停用后不能写",
       ),
     ).toEqual({ ok: false, error: "forbidden_or_not_found" });
-  });
-});
-
-describe("Capsule visibility intersection", () => {
-  it("filters detail/count/add and keeps the explicit disaster reader complete", async () => {
-    const adminAccess = await accessFor(adminUserId, beforeLeapBirthday);
-    const created = await createCapsule(familyId, {
-      title: "可见性胶囊",
-      unlockType: "date",
-      unlockValue: "2042-02-28",
-    });
-    if (!created.ok) throw new Error("capsule create failed");
-
-    expect(
-      await addCapsuleContribution(
-        adminAccess,
-        created.capsuleId,
-        ids.familyContribution,
-      ),
-    ).toBe(true);
-    expect(
-      await addCapsuleContribution(
-        adminAccess,
-        created.capsuleId,
-        ids.privateContribution,
-      ),
-    ).toBe(false);
-
-    // Historical/restored links can contain rows the current viewer cannot
-    // see; ordinary detail and counts still filter them at read time.
-    db.insert(capsuleContribution)
-      .values({
-        id: randomUUID(),
-        capsuleId: created.capsuleId,
-        contributionId: ids.privateContribution,
-        familyId,
-        createdAt: seededAt,
-      })
-      .run();
-
-    const draft = await getCapsuleDetail(
-      adminAccess,
-      created.capsuleId,
-      leapChild.birthDate,
-    );
-    expect(idsOf(draft?.contributions ?? [])).toEqual([ids.familyContribution]);
-    const list = await listCapsules(adminAccess, leapChild.birthDate);
-    expect(list.find((row) => row.id === created.capsuleId)?.itemCount).toBe(1);
-
-    await sealCapsule(familyId, created.capsuleId);
-    const locked = await getCapsuleDetail(
-      adminAccess,
-      created.capsuleId,
-      leapChild.birthDate,
-    );
-    expect(locked?.unlocked).toBe(false);
-    expect(locked?.contributions).toHaveLength(0);
-
-    const unlockedAdmin = await accessFor(adminUserId, atLeapBirthday);
-    const openedByTime = await getCapsuleDetail(
-      unlockedAdmin,
-      created.capsuleId,
-      leapChild.birthDate,
-    );
-    expect(openedByTime?.unlocked).toBe(true);
-    expect(idsOf(openedByTime?.contributions ?? [])).toEqual([
-      ids.familyContribution,
-    ]);
-
-    const complete = await getCompleteCapsuleDetailForDisasterExport(
-      familyId,
-      created.capsuleId,
-      leapChild.birthDate,
-      "America/Los_Angeles",
-      beforeLeapBirthday,
-    );
-    expect(idsOf(complete?.contributions ?? [])).toEqual(
-      [ids.familyContribution, ids.privateContribution].sort(),
-    );
-  });
-
-  it("rechecks guardian and row visibility inside the same write transaction", async () => {
-    const guardianAccess = await accessFor(
-      ids.guardianUser,
-      beforeLeapBirthday,
-    );
-    const guardianCapsule = await createCapsule(familyId, {
-      title: "监护人撤销测试",
-      unlockType: "date",
-      unlockValue: "2099-01-01",
-    });
-    if (!guardianCapsule.ok) throw new Error("capsule create failed");
-
-    db.update(personTable)
-      .set({ isGuardian: false, updatedAt: seededAt })
-      .where(eq(personTable.id, ids.guardianPerson))
-      .run();
-    expect(
-      await addCapsuleContribution(
-        guardianAccess,
-        guardianCapsule.capsuleId,
-        ids.parentsContribution,
-      ),
-    ).toBe(false);
-
-    const adminAccess = await accessFor(adminUserId, beforeLeapBirthday);
-    const visibilityCapsule = await createCapsule(familyId, {
-      title: "可见范围变化测试",
-      unlockType: "date",
-      unlockValue: "2099-01-01",
-    });
-    if (!visibilityCapsule.ok) throw new Error("capsule create failed");
-    db.update(contribution)
-      .set({ visibility: "private", updatedAt: seededAt })
-      .where(eq(contribution.id, ids.staleVisibilityContribution))
-      .run();
-    expect(
-      await addCapsuleContribution(
-        adminAccess,
-        visibilityCapsule.capsuleId,
-        ids.staleVisibilityContribution,
-      ),
-    ).toBe(false);
   });
 });

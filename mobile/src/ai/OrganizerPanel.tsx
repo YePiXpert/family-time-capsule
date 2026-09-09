@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text } from "../components/typography";
 import { ApiError, fetchOrganizerReview, mutateOrganizerReview, parseOrganizerReview } from "../api/client";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { NameEditor } from "../names/NameEditor";

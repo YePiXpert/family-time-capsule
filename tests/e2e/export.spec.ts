@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { ensureBootstrap, ensureLogin } from "./helpers";
@@ -11,17 +11,17 @@ test.describe.configure({ mode: "serial" });
 test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", async ({ page }) => {
   await ensureBootstrap(page);
 
-  // 自备内容：一张 EXIF 照片 + 一段 WAV，确认成一个事件，并封存一个胶囊
+  // 自备内容：一张 EXIF 照片 + 一段 WAV，确认成一个事件，
   await page.goto("/capture"); await expandCaptureOptions(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
   await page.getByRole("button", { name: "新建一件事" }).click();
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample.wav"));
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
 
   await page.goto("/inbox");
   const checkboxes = page.getByRole("checkbox");
@@ -33,16 +33,6 @@ test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", asyn
   await page.getByLabel("合并事件标题").fill("出生那几天");
   await page.getByRole("button", { name: "合并" }).click();
   await expect(page.getByRole("heading", { name: "出生那几天" })).toBeVisible();
-
-  await page.goto("/capsules");
-  await page.getByLabel("胶囊标题").fill("写给一岁的你");
-  await page.getByLabel("开启条件").selectOption("date");
-  await page.getByLabel("开启日期").fill("2027-08-10");
-  await page.getByRole("button", { name: "创建胶囊" }).click();
-  await page.getByLabel("记忆事件").selectOption({ label: "出生那几天" });
-  await page.getByRole("button", { name: "添加", exact: true }).click();
-  await page.getByRole("button", { name: "封存胶囊" }).click();
-  await expect(page.getByText("已封存", { exact: false }).first()).toBeVisible();
 
   // 导出并验证（先完成 ID-10 密码复核）
   await grantExportStepUp(page);
@@ -57,7 +47,7 @@ test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", asyn
   const root = "family-time-capsule-export";
 
   const manifest = JSON.parse(await zip.file(`${root}/manifest.json`)!.async("string"));
-  expect(manifest.exportVersion).toBe(3);
+  expect(manifest.exportVersion).toBe(4);
   expect(manifest.familyId).toBeTruthy();
   expect(manifest.assets.length).toBeGreaterThanOrEqual(2);
 
@@ -77,7 +67,6 @@ test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", asyn
     "memories.json",
     "contributions.json",
     "facts.json",
-    "capsules.json",
   ]) {
     const data = JSON.parse(await zip.file(`${root}/${name}`)!.async("string"));
     expect(Array.isArray(data) || typeof data === "object").toBe(true);
@@ -88,11 +77,7 @@ test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", asyn
   expect(timeline).toContain("家庭记忆时间轴");
   expect(timeline).toMatch(/originals\/(images|audio|video)\//);
 
-  // 封存胶囊内容在导出中完整
-  const capsules = JSON.parse(await zip.file(`${root}/capsules.json`)!.async("string"));
-  const sealed = capsules.find((c: { status: string }) => c.status === "sealed");
-  expect(sealed).toBeTruthy();
-  expect(sealed.memoryEventIds.length).toBeGreaterThan(0);
+  expect(zip.file(`${root}/capsules.json`)).toBeNull();
 
   // 未登录不可导出
   await page.getByRole("button", { name: "退出" }).click();

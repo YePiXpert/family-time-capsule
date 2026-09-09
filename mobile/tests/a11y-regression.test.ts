@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
+vi.mock("../src/ai/AiSettingsSection", () => ({ AiSettingsSection: () => null }));
 
 /**
  * NAV-9 可访问性回归（GLM-C）：
@@ -41,8 +42,8 @@ vi.mock("../src/state/AppContext", () => ({
 }));
 
 const { sharedStyles } = await import("../src/theme");
-const { HomeScreen } = await import("../src/screens/HomeScreen");
-const { MoreScreen } = await import("../src/screens/MoreScreen");
+
+const { SettingsHubScreen } = await import("../src/screens/SettingsHubScreen");
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -68,17 +69,10 @@ it("高频交互触控目标至少 48", () => {
   expect((sharedStyles.secondaryButton as Record<string, unknown>).minHeight).toBeGreaterThanOrEqual(48);
 });
 
-it("首页与「我的」所有可点按元素都声明 accessibilityRole（读屏不只剩裸文本）", async () => {
-  await act(async () => { tree = create(createElement(HomeScreen)); });
-  const homePressables = tree!.root.findAll((node) => String(node.type) === "Pressable");
-  expect(homePressables.length).toBeGreaterThan(4);
-  for (const node of homePressables) {
-    expect(typeof node.props.accessibilityRole === "string", "home Pressable 缺少 accessibilityRole").toBe(true);
-  }
-
-  await act(async () => { tree = create(createElement(MoreScreen)); });
+it("设置所有可点按元素都声明 accessibilityRole（读屏不只剩裸文本）", async () => {
+  await act(async () => { tree = create(createElement(SettingsHubScreen)); });
   const morePressables = tree!.root.findAll((node) => String(node.type) === "Pressable");
-  expect(morePressables.length).toBeGreaterThan(4);
+  expect(morePressables.length).toBe(4);
   for (const node of morePressables) {
     expect(typeof node.props.accessibilityRole === "string").toBe(true);
   }

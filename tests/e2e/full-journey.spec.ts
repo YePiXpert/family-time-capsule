@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { addFamilyMember, ensureBootstrap, ensureLogin } from "./helpers";
@@ -6,7 +6,7 @@ import { grantExportStepUp } from "./helpers/export-step-up";
 
 /**
  * 完整用户旅程（RH-006 保留）：
- * setup → onboarding → 上传 → 收件箱确认 → 时间轴 → 多人视角 → 胶囊 →
+ * setup → onboarding → 上传 → 收件箱确认 → 时间轴 → 多人视角 → 相册 →
  * 导出 → 登出安全。
  * 本 project（journey）独占一个 DATA_DIR，与功能 spec 互不依赖。
  */
@@ -20,7 +20,7 @@ test("完整旅程：从初始化到导出与登出", async ({ page }) => {
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
 
   // 2) 收件箱确认
   await page.goto("/inbox");
@@ -46,16 +46,13 @@ test("完整旅程：从初始化到导出与登出", async ({ page }) => {
   await page.getByRole("button", { name: "保存这段讲述" }).click();
   await expect(page.getByRole("heading", { level: 3, name: "爸爸" })).toBeVisible();
 
-  // 5) 胶囊封存
-  await page.goto("/capsules");
-  await page.getByLabel("胶囊标题").fill("写给一岁的你");
-  await page.getByLabel("开启条件").selectOption("date");
-  await page.getByLabel("开启日期").fill("2027-08-10");
-  await page.getByRole("button", { name: "创建胶囊" }).click();
-  await page.getByLabel("记忆事件").selectOption({ label: "八月中旬的一个上午" });
-  await page.getByRole("button", { name: "添加", exact: true }).click();
-  await page.getByRole("button", { name: "封存胶囊" }).click();
-  await expect(page.getByText("内容已封存。", { exact: false }).first()).toBeVisible();
+  // 5) 从真实记忆生成相册预览。
+  await page.goto("/books");
+  await page.getByRole("button", { name: "新建相册", exact: true }).click();
+  await page.getByRole("checkbox", { name: "八月中旬的一个上午", exact: true }).check();
+  await page.getByRole("button", { name: "生成预览", exact: true }).click();
+  await expect(page).toHaveURL(/\/collections\/[\w-]+$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("八月中旬的一个上午");
 
   // 6) 导出 + 哈希验证
   await grantExportStepUp(page);

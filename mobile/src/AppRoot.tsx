@@ -5,6 +5,7 @@ import { useApp } from "./state/AppContext";
 import { AppNavigator } from "./navigation/AppNavigator";
 import { OnboardingGate, WelcomeFlow } from "./screens/WelcomeFlow";
 import { SyncConsentScreen } from "./screens/SyncConsentScreen";
+import { TextScaleContext } from "./components/typography";
 import { colors } from "./theme";
 
 /**
@@ -16,7 +17,7 @@ import { colors } from "./theme";
  * welcomeSeen 为 null 表示本机状态仍在读取，短暂显示加载态避免闪屏。
  */
 export function AppRoot() {
-  const { credentials, welcomeSeen, needsOnboarding, awaitingSyncConsent } = useApp();
+  const { credentials, welcomeSeen, needsOnboarding, awaitingSyncConsent, displayMode } = useApp();
   const insets = useSafeAreaInsets();
   const body = (() => {
     if (welcomeSeen === null) {
@@ -32,10 +33,10 @@ export function AppRoot() {
     return <AppNavigator />;
   })();
   return (
-    <View style={styles.fill}>
+    <TextScaleContext.Provider value={displayMode === "simple" ? 1.2 : 1}><View style={styles.fill}>
       <StatusBar style="dark" />
       {body}
-    </View>
+    </View></TextScaleContext.Provider>
   );
 }
 

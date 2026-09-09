@@ -38,11 +38,7 @@ const { completeOnboarding, getUserBinding } = await import("../lib/family/servi
 const { getTimelinePage } = await import("../lib/memories/service");
 const { getInboxPage } = await import("../lib/inbox/service");
 const { searchFamily, rebuildSearchIndex } = await import("../lib/search/service");
-const {
-  collectStoryMaterial,
-  collectTranscriptMaterial,
-  periodForKind,
-} = await import("../lib/stories/service");
+
 const { memoryEvent } = await import("../db/schema/memory");
 const { asset } = await import("../db/schema/asset");
 const { person } = await import("../db/schema/family");
@@ -189,12 +185,6 @@ bench("搜索：无命中", () => searchFamily(context, { q: "绝不存在的词
 bench("搜索：2 字 + 日期过滤", () =>
   searchFamily(context, { q: "基准", dateFrom: "2018-01-01", dateTo: "2018-12-31" }),
 );
-
-const period = periodForKind("yearly", new Date(2018, 5, 1));
-bench("Story 素材收集（全年）", () => {
-  collectStoryMaterial(familyId, period);
-  collectTranscriptMaterial(familyId, period);
-});
 
 const { getMobileSyncProtocolPage } = await import("../lib/mobile/sync-protocol");
 let syncCursor: string | null = null, checkpoint: string | null = null;

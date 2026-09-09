@@ -1,3 +1,4 @@
+import { pendingImports } from "@/lib/home/pending";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
@@ -74,6 +75,7 @@ export default async function TimelinePage({
     getTimelineFacets(familyId, context.familyTimezone),
     canReviewInbox ? countInbox(familyId) : Promise.resolve(0),
   ]);
+  const pendingCount = inboxCount + pendingImports(context).length;
   const timezone = family?.timezone ?? "Asia/Shanghai";
   const range = rangeFor(params, timezone);
   const requestedMedia = value(params, "media");
@@ -90,7 +92,6 @@ export default async function TimelinePage({
     occurredBefore: range.before,
   });
   const entries = timelinePage.entries;
-  const dateFormatter = new Intl.DateTimeFormat("zh-CN", { dateStyle: "long", timeZone: timezone });
   const monthFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", timeZone: timezone });
   const groups = new Map<string, typeof entries>();
   for (const entry of entries) {
@@ -104,11 +105,12 @@ export default async function TimelinePage({
 
   return (
     <main className="page-container">
-      <PageHeader eyebrow="Memories" title="记忆" description="全家人的记忆按真实发生时间排列，晚上传的旧照片仍会回到它属于的那一天。" />
+      <PageHeader title="记忆" actions={<Link href="/search" aria-label="搜索家庭记忆" className="ui-button-secondary">搜索</Link>} />
 
-      <nav aria-label="记忆浏览方式" className="mt-4 flex flex-wrap gap-3"><Link href="/timeline" aria-current="page" className="ui-button-primary">时间线</Link><Link href="/library" className="ui-button-secondary">资料</Link><Link href={`/timeline/calendar?${new URLSearchParams(Object.fromEntries(["person", "media", "tag", "month"].map(key => [key, value(params, key)]).filter(([, v]) => v)))}`} className="ui-button-secondary">日历</Link><Link href="/collections" className="ui-button-secondary">相册</Link>{canReviewInbox ? <Link href="/inbox" className="ui-button-secondary">待整理{inboxCount > 0 ? ` · ${inboxCount > 99 ? "99+" : inboxCount} 条` : ""}</Link> : null}</nav>
-
-      <section aria-label="筛选时间轴" className="mt-6 rounded-2xl border border-line bg-surface p-4">
+      {pendingCount > 0 ? <Link href="/pending" className="ui-text-link mt-3">待处理 {pendingCount > 99 ? "99+" : pendingCount} 条</Link> : null}
+      <details aria-label="筛选时间轴" className="mt-4 rounded-2xl border border-line bg-surface p-3" open={hasFilters}>
+        <summary className="min-h-11 cursor-pointer py-2">筛选{hasFilters ? " · 已启用" : ""}</summary>
+        <Link href="/timeline/calendar" className="ui-text-link mb-3">在日历中选择日期</Link>
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" action="/timeline">
           <input type="hidden" name="collection" value={value(params, "collection")} />
           <label className="text-sm font-medium">跳到月份<input type="month" name="month" defaultValue={value(params, "month")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3" /></label>
@@ -118,22 +120,22 @@ export default async function TimelinePage({
           <label className="text-sm font-medium">标签<select name="tag" defaultValue={value(params, "tag")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有标签</option>{facets.tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-5"><button type="submit" className="ui-button-primary">查看</button>{hasFilters ? <Link href="/timeline" className="ui-button-secondary">清除筛选</Link> : null}</div>
         </form>
-      </section>
+      </details>
 
       {entries.length === 0 ? (
         <div className="mt-8">
           <EmptyState
             icon="timeline"
             title={hasFilters || cursor ? "没有符合条件的记忆" : "时间轴还在等第一件事"}
-            description={hasFilters || cursor ? "换一个月份、人物或媒体类型，也可以回到全部记忆。" : "先记录一句话或一份素材，在收件箱确认后，它就会出现在真实发生的时间位置。"}
+            description={hasFilters || cursor ? "换一个月份、人物或媒体类型，也可以回到全部记忆。" : "写一句话或选一张照片，保存后在这里回看。"}
             action={hasFilters || cursor ? "回到全部记忆" : "记录第一件事"}
             actionHref={hasFilters || cursor ? "/timeline" : "/capture"}
-            secondary={!hasFilters && !cursor ? <Link href="/inbox" className="ui-text-link">查看收件箱</Link> : undefined}
+            secondary={canReviewInbox && inboxCount > 0 ? <Link href="/inbox" className="ui-text-link">查看待处理内容</Link> : undefined}
           />
         </div>
       ) : (
         <div className="mt-8 space-y-10">
-          <CollectionSelection memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} />
+          {hasFamilyCapability(role, "event:write") ? <CollectionSelection summaryLabel="选择记忆" memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} /> : null}
           {[...groups.entries()].map(([month, list]) => (
             <section key={month} aria-label={month}>
               <div className="flex items-center gap-3"><h2 className="text-sm font-semibold tracking-[0.16em] text-muted">{month}</h2><span className="h-px flex-1 bg-line" /></div>

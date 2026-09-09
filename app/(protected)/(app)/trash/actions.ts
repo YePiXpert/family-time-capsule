@@ -7,13 +7,12 @@ import {
   restoreFromTrash,
   trashContribution,
   trashMemoryEvent,
-  trashStory,
   type TrashKind,
 } from "@/lib/trash/service";
 
 export type TrashActionState = { error?: string; message?: string };
 
-const KINDS: readonly TrashKind[] = ["memory_event", "contribution", "story"];
+const KINDS: readonly TrashKind[] = ["memory_event", "contribution"];
 
 function parseKind(value: string): TrashKind | null {
   return KINDS.includes(value as TrashKind) ? (value as TrashKind) : null;
@@ -33,21 +32,6 @@ export async function trashEventAction(
   revalidatePath("/timeline");
   revalidatePath("/trash");
   return { message: "已移到回收站（可在回收站恢复）。" };
-}
-
-export async function trashStoryAction(
-  _prev: TrashActionState | undefined,
-  formData: FormData,
-): Promise<TrashActionState> {
-  void _prev;
-  const context = await requireFamilyCapability("story:write");
-  const storyId = String(formData.get("storyId") ?? "");
-  const result = trashStory(context, storyId);
-  if (!result.ok) return { error: "删除失败。" };
-  revalidatePath(`/stories/${storyId}`);
-  revalidatePath("/stories");
-  revalidatePath("/trash");
-  return { message: "已移到回收站。" };
 }
 
 export async function trashContributionAction(
@@ -76,7 +60,6 @@ export async function restoreTrashAction(
   if (!result.ok) return { error: "恢复失败。" };
   revalidatePath("/trash");
   revalidatePath("/timeline");
-  revalidatePath("/stories");
   return { message: "已恢复。" };
 }
 

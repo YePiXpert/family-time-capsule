@@ -18,48 +18,7 @@ function mediaPath(assetId: string): string {
 }
 
 export async function getMobileHome(context: FamilyContext) {
-  const dashboard = await getHomeDashboard(context);
-  return {
-    family: { name: dashboard.family.name, timezone: dashboard.family.timezone },
-    child: dashboard.child ? {
-      id: dashboard.child.id,
-      displayName: dashboard.child.displayName,
-      currentAgeLabel: dashboard.child.currentAgeLabel,
-      avatarPath: dashboard.child.avatar ? mediaPath(dashboard.child.avatar.thumbAssetId ?? dashboard.child.avatar.assetId) : null,
-    } : null,
-    capabilities: { canCapture: dashboard.canCapture },
-    inbox: {
-      count: dashboard.inbox.count,
-      previews: dashboard.inbox.previews.map((preview) => ({
-        id: preview.id,
-        title: preview.title,
-        status: preview.status,
-        mediaPath: preview.media ? mediaPath(preview.media.thumbAssetId ?? preview.media.assetId) : null,
-      })),
-    },
-    recentMemories: dashboard.recentMemories.slice(0, 5).map((memory) => ({
-      id: memory.id,
-      title: memory.title,
-      occurredAt: memory.occurredAt.toISOString(),
-      ageLabel: memory.ageLabel,
-      coverPath: memory.cover ? mediaPath(memory.cover.thumbAssetId ?? memory.cover.assetId) : null,
-    })),
-    onThisDay: dashboard.onThisDay.map((memory) => ({ id: memory.id, title: memory.title, occurredAt: memory.occurredAt.toISOString() })),
-    voices: dashboard.voices.map((voice) => ({
-      id: voice.id,
-      memoryEventId: voice.memoryEventId,
-      eventTitle: voice.eventTitle,
-      authorName: voice.authorName,
-      audioPath: mediaPath(voice.audioAssetId),
-    })),
-    story: dashboard.recentStory ? { id: dashboard.recentStory.id, title: dashboard.recentStory.title, status: dashboard.recentStory.status } : null,
-    capsule: dashboard.upcomingCapsule ? { id: dashboard.upcomingCapsule.id, title: dashboard.upcomingCapsule.title, status: dashboard.upcomingCapsule.status, unlockType: dashboard.upcomingCapsule.unlockType, unlockValue: dashboard.upcomingCapsule.unlockValue, unlocked: dashboard.upcomingCapsule.unlocked } : null,
-    prompt: dashboard.familyPrompt,
-    weeklyReview: dashboard.weeklyReview,
-    monthlyReview: dashboard.monthlyReview,
-    activeBooks: dashboard.activeBooks,
-    isFirstUse: dashboard.isFirstUse,
-  };
+  return getHomeDashboard(context);
 }
 
 export async function getMobileInbox(context: FamilyContext, cursor: string | null, limit: number) {
@@ -216,7 +175,6 @@ export function getMobileSearch(
     ...result.facts.map((item) => ({ type: "fact", id: item.id, eventId: item.eventId, title: item.statement, snippet: item.statement })),
     ...result.contributions.map((item) => ({ type: "contribution", id: item.id, eventId: item.eventId, title: item.authorName ?? "家人讲述", snippet: item.text })),
     ...result.transcripts.map((item) => ({ type: "transcript", id: item.id, eventId: item.eventId, title: "录音转录", snippet: item.text })),
-    ...result.stories.map((item) => ({ type: "story", id: item.id, eventId: null, title: item.title, snippet: item.snippet })),
   ];
   const offset = searchCursor(cursor, query, filters);
   const safeLimit = Math.min(Math.max(limit, 1), 50);

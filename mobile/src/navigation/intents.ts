@@ -13,25 +13,12 @@ export const HOME_CAPTURE_ACTIONS: readonly {
   { label: "导入", hint: "相册多选", intent: "library" },
 ];
 
-export function homeWebPath(
-  kind: "story" | "capsule" | "prompt",
-  id: string | null,
-): string {
-  if (kind === "story" && id) return `/stories/${encodeURIComponent(id)}`;
-  if (kind === "capsule" && id) return `/capsules/${encodeURIComponent(id)}`;
-  return kind === "prompt" ? "/requests" : kind === "story" ? "/stories" : "/capsules";
-}
-
 export type MobileSearchTarget =
   | { kind: "memory"; id: string }
-  | { kind: "story"; id: string }
   | null;
 
 export function resolveSearchTarget(
   item: Pick<MobileSearchPage["items"][number], "type" | "id" | "eventId">,
 ): MobileSearchTarget {
-  if (item.type === "story") {
-    return { kind: "story", id: item.id };
-  }
   return item.eventId ? { kind: "memory", id: item.eventId } : null;
 }

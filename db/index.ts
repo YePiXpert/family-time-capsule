@@ -12,7 +12,6 @@ import * as assetSchema from "./schema/asset";
 import * as aiJobSchema from "./schema/ai-job";
 import * as auditSchema from "./schema/audit";
 import * as authSchema from "./schema/auth";
-import * as capsuleSchema from "./schema/capsule";
 import * as contributionSchema from "./schema/contribution";
 import * as familySchema from "./schema/family";
 import * as inboxSchema from "./schema/inbox";
@@ -22,8 +21,6 @@ import * as transcriptSchema from "./schema/transcript";
 import * as analysisSchema from "./schema/analysis";
 import * as suggestionSchema from "./schema/suggestion";
 import * as clusterSchema from "./schema/clusters";
-import * as storySchema from "./schema/story";
-import * as oralHistorySchema from "./schema/oral-history";
 import * as backupSchema from "./schema/backup";
 import * as importSchema from "./schema/import";
 import * as bookSchema from "./schema/book";
@@ -31,7 +28,6 @@ import * as bookRenderSchema from "./schema/book-render-job";
 import * as mediaJobSchema from "./schema/media-job";
 import * as collectionSchema from "./schema/collection";
 import * as draftSchema from "./schema/draft";
-import * as reviewSchema from "./schema/review";
 import * as syncSchema from "./schema/sync";
 
 /**
@@ -84,16 +80,12 @@ export function openDatabaseConnection(options: DatabaseConnectionOptions) {
         ...invitationSchema,
         ...memorySchema,
         ...contributionSchema,
-        ...capsuleSchema,
         ...transcriptSchema,
         ...analysisSchema,
         ...suggestionSchema,
         ...clusterSchema,
-        ...storySchema,
-        ...oralHistorySchema,
         ...backupSchema,
         ...importSchema,
-        ...reviewSchema,
         ...syncSchema,
         ...draftSchema,
         ...collectionSchema,

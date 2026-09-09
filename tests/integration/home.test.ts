@@ -62,50 +62,34 @@ const context: FamilyContext = {
   childLaterUnlockAge: binding.childLaterUnlockAge ?? 18,
 };
 
-describe("real family dashboard", () => {
-  it("returns a useful first-use state from real family data", async () => {
-    const dashboard = await getHomeDashboard(
-      context,
-      new Date("2026-09-04T08:00:00.000Z"),
-    );
-    expect(dashboard.family.name).toBe("小满家");
-    expect(dashboard.child).toMatchObject({ displayName: "小满" });
-    expect(dashboard.child?.currentAgeLabel).toBeTruthy();
-    expect(dashboard.inbox).toEqual({ count: 0, previews: [] });
-    expect(dashboard.recentMemories).toEqual([]);
-    expect(dashboard.familyPrompt.text.length).toBeGreaterThan(5);
-    expect(dashboard.isFirstUse).toBe(true);
+describe("minimal family summary", () => {
+  it("returns only family, capture capability and actionable inbox count", async () => {
+    expect(await getHomeDashboard(context)).toEqual({family:{name:"小满家",timezone:"Asia/Shanghai"},capabilities:{canCapture:true},inbox:{count:0},pendingImports:[]});
   });
-
-  it("shows bounded inbox previews and then a confirmed memory", async () => {
-    const item = await createTextInboxItem(
-      context.familyId,
-      "第一次从真实数据首页看到这句话。",
-    );
-    const withInbox = await getHomeDashboard(context);
-    expect(withInbox.inbox.count).toBe(1);
-    expect(withInbox.inbox.previews).toEqual([
-      expect.objectContaining({ id: item.id, title: "第一次从真实数据首页看到这句话" }),
-    ]);
-    expect(withInbox.isFirstUse).toBe(false);
-
-    const entry = await getInboxEntry(context.familyId, item.id);
-    if (!entry) throw new Error("inbox entry missing");
-    const confirmed = await confirmInboxEntry(context.familyId, entry, {
-      title: "去年今天的一句话",
-      occurredAt: new Date("2025-09-04T08:00:00.000Z"),
-    });
-    expect(confirmed.ok).toBe(true);
-
-    const archived = await getHomeDashboard(
-      context,
-      new Date("2026-09-04T08:00:00.000Z"),
-    );
-    expect(archived.inbox.count).toBe(0);
-    expect(archived.recentMemories[0]).toMatchObject({
-      title: "去年今天的一句话",
-      assetCount: 0,
-    });
-    expect(archived.onThisDay[0]?.id).toBe(confirmed.ok ? confirmed.eventId : "");
+  it("clears the pending count after confirming a record", async () => {
+    const item = await createTextInboxItem(context.familyId,"第一次记录");
+    expect((await getHomeDashboard(context)).inbox.count).toBe(1);
+    const entry = await getInboxEntry(context.familyId,item.id);
+    const result = await confirmInboxEntry(context.familyId,entry!,{title:"第一次记录",occurredAt:new Date("2026-09-04T08:00:00Z")});
+    expect(result.ok).toBe(true);
+    expect((await getHomeDashboard(context)).inbox.count).toBe(0);
   });
+});
+
+it("shows only this member's actionable imports, excluding completed, cancelled and active transfers", async () => {
+  const { randomUUID } = await import("node:crypto");
+  const { importSession } = await import("@/db/schema/import");
+  const otherUser = randomUUID();
+  getDb().insert(user).values({ id: otherUser, familyId: context.familyId, name: "另一位家人", email: `${otherUser}@fixture.invalid`, role: "editor" }).run();
+  const ids: string[] = [];
+  for (const [status, totalCount, failedCount, owner] of [
+    ["collecting", 2, 0, admin.id], ["reviewing", 2, 1, admin.id],
+    ["collecting", 0, 0, admin.id], ["uploading", 2, 0, admin.id],
+    ["completed", 2, 0, admin.id], ["cancelled", 2, 1, admin.id],
+    ["collecting", 2, 0, otherUser],
+  ] as const) {
+    const id = randomUUID(); ids.push(id);
+    getDb().insert(importSession).values({ id, familyId: context.familyId, source: "web", status, totalCount, failedCount, completedCount: status === "completed" ? totalCount : 0, createdByUserId: owner }).run();
+  }
+  expect((await getHomeDashboard(context)).pendingImports.map(row => row.id).sort()).toEqual(ids.slice(0, 2).sort());
 });

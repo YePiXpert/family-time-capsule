@@ -5,7 +5,7 @@ import { useTransition } from "react";
 import { DISPLAY_MODE_COOKIE, type DisplayMode } from "@/lib/display-mode";
 
 /**
- * 标准显示 / 大字简洁显示的设备级切换。
+ * 标准显示 / 大字显示的设备级切换。
  * 只写一个非敏感 cookie 并刷新当前路由；服务端各页按 cookie 渲染，
  * 不存在闪烁，也不改动任何权限。
  */
@@ -41,7 +41,7 @@ export function DisplayModeToggle({ mode }: { mode: DisplayMode }) {
         className={mode === "simple" ? "ui-button-primary" : "ui-button-secondary"}
         disabled={pending}
       >
-        大字简洁显示
+        大字显示
       </button>
       <span className="text-sm text-muted">只影响这一台设备</span>
     </div>

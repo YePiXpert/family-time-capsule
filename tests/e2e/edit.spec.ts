@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -16,7 +16,7 @@ test("创建 8/10 事件 → 修改为 8/11 → 时间轴移动、年龄变化",
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("八月中旬的一个上午");
   await page.getByLabel("年龄参考人物（可选）").selectOption({ label: "小满" });
@@ -88,7 +88,7 @@ test("私密未知时间记忆：作者添加事实、移入回收站、恢复�
   await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill(title);
   await expandCaptureOptions(page); await page.getByLabel("时间记得多清楚").selectOption("unknown");
   await page.getByLabel("保存后的读者").selectOption("private");
-  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
   await page.getByRole("link", { name: "查看这条记忆" }).click();
   await expect(page).toHaveURL(/\/memories\/[^/?]+/);
   const memoryUrl = new URL(page.url()).pathname;
@@ -148,7 +148,7 @@ test("家人讲述撤为私密后，旧事实和来源引文从其他管理员�
   await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("事实来源权限示例");
   await expandCaptureOptions(page); await page.getByLabel("时间记得多清楚").selectOption("unknown");
   await page.getByLabel("保存后的读者").selectOption("family");
-  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
   await page.getByRole("link", { name: "查看这条记忆" }).click();
   await expect(page).toHaveURL(/\/memories\/[^/?]+/);
   const memoryUrl = new URL(page.url()).pathname;
@@ -198,7 +198,7 @@ test("编辑六档时间和正文，过期页面保存保留输入并拒绝覆�
   await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("需要编辑的旧事");
   await expandCaptureOptions(page); await page.getByLabel("时间记得多清楚").selectOption("unknown");
   await page.getByLabel("保存后的读者").selectOption("private");
-  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
   await page.getByRole("link", { name: "查看这条记忆" }).click();
   await expect(page).toHaveURL(/\/memories\/[^/?]+/);
   const memoryPath = new URL(page.url()).pathname;
@@ -261,7 +261,7 @@ test("作者通过网页分享私密图文音给 B，C 看不到，撤销后 B �
   await expandCaptureOptions(page); await page.getByLabel("时间记得多清楚").selectOption("unknown");
   await page.getByLabel("保存后的读者").selectOption("private");
   await page.locator('input[type="file"]').first().setInputFiles(["sample.png", "sample-exif.jpg", "sample.wav"].map(name => path.join(__dirname, "../fixtures", name)));
-  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
   await page.getByRole("link", { name: "查看这条记忆" }).click();
   await expect(page).toHaveURL(/\/memories\/[^/?]+/);
   const memoryPath = new URL(page.url()).pathname;

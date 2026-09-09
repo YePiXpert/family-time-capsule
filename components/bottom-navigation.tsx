@@ -18,7 +18,7 @@ export function BottomNavigation({ capabilities, simpleMode = false }: { capabil
         {navigation.map((item) => {
           const active = isNavigationItemActive(pathname, item.href);
           // 简洁模式用更直白的动词，避免「记录」这类抽象名词。
-          const label = simpleMode && item.href === "/capture" ? "说几句" : item.label;
+          const label = item.label;
           return (
             <Link
               key={item.href}

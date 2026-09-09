@@ -1,8 +1,9 @@
+import { Text, TextInput } from "../components/typography";
 import { getServerCacheRevision, useServerPermissionRevision } from "../storage/cache-lifecycle";
 import { MemoryEditor } from "../memories/MemoryEditor";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import {

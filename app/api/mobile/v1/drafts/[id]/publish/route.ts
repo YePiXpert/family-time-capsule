@@ -11,7 +11,8 @@ export async function POST(request: Request, route: { params: Promise<{ id: stri
   try {
     const body = asRecord(await readMobileJson(request));
     if (["quickSave", "organize", "inferTime"].some(key => body[key] !== undefined && typeof body[key] !== "boolean")) return mobileJson({ error: "invalid_input" }, { status: 400 });
-    if (body.quickSave === true) return mobileJson(publishCapture(auth.context, (await route.params).id, body.expectedRevision as number, body.organize === true, { inferTime: body.inferTime !== false }));
+    if (body.organizeMode !== undefined && !["manual", "automatic"].includes(String(body.organizeMode))) return mobileJson({ error: "invalid_input" }, { status: 400 });
+    if (body.quickSave === true) return mobileJson(publishCapture(auth.context, (await route.params).id, body.expectedRevision as number, body.organize === true, { inferTime: body.inferTime !== false, triggerMode: body.organizeMode === "automatic" ? "automatic" : "manual" }));
     return mobileJson(publishDraft(auth.context, (await route.params).id, body.expectedRevision as number));
   } catch (error) { return draftResponseError(error); }
 }

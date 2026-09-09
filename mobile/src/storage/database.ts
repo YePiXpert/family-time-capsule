@@ -14,7 +14,6 @@ import type { SyncConsent,
   MobileLibraryPage,
   MobileMemory,
   MobileHome,
-  MobileReview,
   OutboxItem,
   Person,
   SyncPage,
@@ -52,6 +51,8 @@ export async function initializeLocalStore(): Promise<void> {
   }
   await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
   await db.execAsync(LOCAL_DRAFT_SCHEMA_SQL);
+  // Retired modules are replaceable server caches, never locally captured originals.
+  await db.runAsync("DELETE FROM meta WHERE key = 'mobile_review' OR key IN ('library_page:stories','library_page:capsules','library_page:requests','library_page:portals') OR key LIKE 'library_detail:stories:%' OR key LIKE 'library_detail:capsules:%' OR key LIKE 'library_detail:requests:%' OR key LIKE 'library_detail:portals:%'");
   await db.execAsync("DELETE FROM sync_staging; DELETE FROM sync_cover_staging;");
   const memoryColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(memory_detail)");
   if (!memoryColumns.some((column) => column.name === "scope")) {
@@ -206,17 +207,6 @@ export async function getCachedMobileHome(): Promise<MobileHome | null> {
   } catch {
     return null;
   }
-}
-
-export async function cacheMobileReview(review: MobileReview, expectedRevision = getServerCacheRevision()): Promise<boolean> {
-  return setRemoteCacheMeta("mobile_review", review, expectedRevision);
-}
-
-export async function getCachedMobileReview(): Promise<MobileReview | null> {
-  const raw = await getMeta("mobile_review");
-  if (!raw) return null;
-  try { return JSON.parse(raw) as MobileReview; }
-  catch { return null; }
 }
 
 export async function cacheMobileLibraryPage(domain: MobileLibraryDomain, page: MobileLibraryPage, expectedRevision = getServerCacheRevision()): Promise<boolean> {
@@ -761,10 +751,12 @@ export async function listLocalImportSessions(scope?: string): Promise<LocalImpo
     failed_count: number;
     created_at: string;
     updated_at: string;
-  }>(`SELECT s.* FROM local_import_session s LEFT JOIN local_intake_choice c ON c.session_id=s.id
+    needs_action: number;
+  }>(`SELECT s.*, (s.status<>'cancelled' AND s.total_count>0 AND (s.failed_count>0 OR c.destination='pending')) AS needs_action FROM local_import_session s LEFT JOIN local_intake_choice c ON c.session_id=s.id
     WHERE ? IS NULL OR c.scope=? OR c.scope='local' OR c.scope IS NULL ORDER BY s.updated_at DESC,s.id DESC`, scope ?? null, scope ?? null);
   return rows.map((row) => ({
     id: row.id,
+    needsAction: row.needs_action === 1,
     source: row.source,
     status: row.status,
     totalCount: row.total_count,

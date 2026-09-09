@@ -43,7 +43,7 @@ test("资料库：30 张先保全，5 张组成一条记忆，25 张仍在；原
   await expect(page.locator("main ol > li")).toHaveCount(5);
   await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("五张老照片的一件事");
   await expandCaptureOptions(page); await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
-  await page.getByRole("button", { name: "仅保存，稍后整理" }).click();
+  await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   expect((await (await page.request.get("/api/mobile/v1/sync")).json()).events).toHaveLength(1);
   const assets = await (await page.request.get("/api/mobile/v1/assets")).json();

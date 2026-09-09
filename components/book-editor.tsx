@@ -1,4 +1,5 @@
 "use client";
+import { WorkCreator } from "./work-creator";
 import { BookRenderPanel } from "./book-render-panel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -45,171 +46,28 @@ async function request<T>(
   return data;
 }
 export function BookShelf() {
-  const router = useRouter(),
-    [page, setPage] = useState<BookPage | null>(null),
-    [title, setTitle] = useState(""),
-    [template, setTemplate] = useState<BookTemplate>("growth"),
-    [audience, setAudience] = useState<BookAudience>("family"),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
-    [deleted, setDeleted] = useState(false);
-  const load = useCallback(
-    async (cursor = "") => {
-      try {
-        const next = await request<BookPage>(
-          `/api/books/projects?deleted=${deleted ? "1" : "0"}&cursor=${encodeURIComponent(cursor)}`,
-        );
-        setPage((current) =>
-          cursor && current
-            ? { ...next, entries: [...current.entries, ...next.entries] }
-            : next,
-        );
-        setError("");
-      } catch (e) {
-        setError((e as Error).message);
-      }
-    },
-    [deleted],
-  );
-  useEffect(() => {
-    const timer = setTimeout(() => void load(), 0);
-    return () => clearTimeout(timer);
-  }, [load]);
-  async function create() {
-    setBusy(true);
+  const [page, setPage] = useState<BookPage | null>(null);
+  const [deleted, setDeleted] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const load = useCallback(async (cursor = "") => {
     try {
-      const result = await request<{ id: string }>(
-        "/api/books/projects",
-        "POST",
-        { title, template, audience },
-      );
-      router.push(`/books/${result.id}`);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <section aria-label="成长年册书架" className="mt-6">
-      <Link href="/books/review" className="ui-button-secondary mb-5">月度、年度与出生第一周回顾</Link>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl">我的作品</h2>
-        <button
-          className="ui-button-secondary"
-          onClick={() => setDeleted((v) => !v)}
-        >
-          {deleted ? "返回书架" : "作品回收站"}
-        </button>
-      </div>
-      {error ? (
-        <p role="alert" className="my-4">
-          {error}
-          <button
-            className="ui-button-secondary ml-2"
-            onClick={() => void load()}
-          >
-            重试
-          </button>
-        </p>
-      ) : null}
-      {page?.canWrite && !deleted ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void create();
-          }}
-          className="my-6 space-y-4 rounded-2xl border border-line bg-surface p-5"
-        >
-          <label className="block">
-            作品名称
-            <input
-              className={field}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={200}
-              required
-            />
-          </label>
-          <fieldset className="grid gap-3 sm:grid-cols-3">
-            <legend className="mb-2">选一种开始方式</legend>
-            {BOOK_TEMPLATES.map((item) => (
-              <label
-                className="rounded-xl border border-line p-3"
-                key={item.id}
-              >
-                <span className="flex min-h-11 items-center gap-2">
-                  <input
-                    type="radio"
-                    name="book-template"
-                    value={item.id}
-                    checked={template === item.id}
-                    onChange={() => setTemplate(item.id)}
-                  />
-                  {item.title}
-                </span>
-                <span className="text-sm text-muted">{item.description}</span>
-              </label>
-            ))}
-          </fieldset>
-          <label className="block">
-            读者范围
-            <select
-              className={field}
-              value={audience}
-              onChange={(e) => setAudience(e.target.value as BookAudience)}
-            >
-              <option value="family">家庭可读版</option>
-              <option value="personal">我的私人阅读版</option>
-            </select>
-          </label>
-          <p className="text-sm text-muted">
-            家庭版只选入家庭读者可见的原文；私密、父母可见、长大后可见讲述及未到期胶囊不会自动加入。
-          </p>
-          <button className="ui-button-primary" disabled={busy}>
-            {busy ? "正在建立…" : "建立可编辑作品"}
-          </button>
-        </form>
-      ) : null}
-      <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {page?.entries.map((book) => (
-          <li key={book.id}>
-            <Link
-              href={`/books/${book.id}`}
-              className="block h-full rounded-2xl border border-line bg-surface p-5"
-            >
-              <p className="text-sm text-muted">
-                {BOOK_TEMPLATES.find((t) => t.id === book.template)?.title} ·{" "}
-                {book.audience === "family" ? "家庭可读版" : "私人阅读版"}
-              </p>
-              <h3 className="mt-3 break-words text-xl">{book.title}</h3>
-              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted">
-                {book.subtitle}
-              </p>
-              <span className="mt-4 block text-sm">
-                继续阅读与编辑 · 修订 {book.revision}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ol>
-      {page && !page.entries.length ? (
-        <p className="my-5 rounded-xl border border-dashed border-line p-5 text-muted">
-          {deleted
-            ? "回收站没有作品。"
-            : "为一段家庭经历取个名字，再从旧素材里挑选。编辑内容会保存在家庭服务器。"}
-        </p>
-      ) : null}
-      {page?.nextCursor ? (
-        <button
-          className="ui-button-secondary mt-4"
-          onClick={() => void load(page.nextCursor!)}
-        >
-          更多作品
-        </button>
-      ) : null}
-    </section>
-  );
+      const next = await request<BookPage>(`/api/books/projects?${new URLSearchParams({ deleted: deleted ? "1" : "0", cursor })}`);
+      setPage(old => cursor && old ? { ...next, entries: [...old.entries, ...next.entries] } : next); setError("");
+    } catch (e) { setError((e as Error).message); }
+  }, [deleted]);
+  useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
+  return <section aria-label="家庭书" className="mt-4 space-y-4">
+    <div className="flex items-start justify-between gap-3">
+      {page?.canWrite && !deleted && !creating ? <button className="ui-button-primary" onClick={() => setCreating(true)}>新建家庭书</button> : <span />}
+      <details><summary className="ui-text-link cursor-pointer">管理</summary><button className="ui-button-secondary" onClick={() => { setDeleted(value => !value); setCreating(false); }}>{deleted ? "返回家庭书" : "作品回收站"}</button></details>
+    </div>
+    {creating ? <WorkCreator kind="book" onCancel={() => setCreating(false)} /> : null}
+    {error ? <p role="alert">{error}<button className="ui-text-link ml-3" onClick={() => void load()}>重试</button></p> : null}
+    <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{page?.entries.map(book => <li key={book.id}><Link href={`/books/${book.id}`} className="block rounded-2xl border border-line p-5"><h2 className="text-xl">{book.title}</h2><p className="mt-2 text-sm text-muted">{book.subtitle}</p></Link></li>)}</ol>
+    {page && !page.entries.length ? <p className="text-muted">{deleted ? "回收站没有作品。" : "选一些记忆，做成第一本家庭书。"}</p> : null}
+    {page?.nextCursor ? <button className="ui-button-secondary" onClick={() => void load(page.nextCursor!)}>更多作品</button> : null}
+  </section>;
 }
 export function BookEditor({ id }: { id: string }) {
   const router = useRouter();
@@ -219,8 +77,10 @@ export function BookEditor({ id }: { id: string }) {
     [busy, setBusy] = useState(false),
     [paused, setPaused] = useState(false),
     [sequence, setSequence] = useState(0),
-    [reading, setReading] = useState(false),
+    [reading, setReading] = useState(true),
     [operationBusy, setOperationBusy] = useState(false),
+    [tool, setTool] = useState<"content" | "layout" | "settings">("content"),
+    [activeBlock, setActiveBlock] = useState<string | null>(null),
     [dragBlockId, setDragBlockId] = useState<string | null>(null),
     [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(
       null,
@@ -474,6 +334,7 @@ export function BookEditor({ id }: { id: string }) {
       <div className="my-4 flex flex-wrap gap-3">
         {canEdit ? (
           <>
+            {!reading ? <>
             <button
               className="ui-button-primary"
               disabled={busy}
@@ -481,30 +342,24 @@ export function BookEditor({ id }: { id: string }) {
             >
               保存当前编辑
             </button>
+            </> : null}
             <button
               className="ui-button-secondary"
               disabled={busy}
               onClick={() => (reading ? setReading(false) : void preview())}
             >
-              {reading ? "继续编辑" : "预览作品"}
+              {reading ? "编辑" : "预览作品"}
             </button>
-            <button
-              className="ui-button-secondary"
-              disabled={busy}
-              onClick={() => void operation("snapshot")}
-            >
-              保存版本快照
-            </button>
-            <button className="ui-button-secondary" disabled={busy} onClick={() => void operation("copy")}>复制成新册</button>
-            <button className="ui-button-secondary" disabled={busy} onClick={() => void operation(book.status === "finished" ? "reopen" : "finish")}>{book.status === "finished" ? "重新列为正在制作" : "标记制作完成"}</button>
+
           </>
         ) : null}
       </div>
+      {canEdit && !reading ? <nav aria-label="编辑工具" className="my-4 flex gap-3">{(["content", "layout", "settings"] as const).map((value, i) => <button key={value} aria-pressed={tool === value} onClick={() => setTool(value)} className={tool === value ? "ui-button-primary" : "ui-button-secondary"}>{["内容", "版式", "整本设置"][i]}</button>)}</nav> : null}
       {canEdit && !reading ? (
         <div className="xl:grid xl:grid-cols-2 xl:items-start xl:gap-6">
           <div className="min-w-0">
             <fieldset disabled={operationBusy}>
-          <section
+          {tool === "settings" ? <section
             aria-label="作品信息"
             className="grid gap-4 rounded-2xl border border-line bg-surface p-4 sm:grid-cols-2"
           >
@@ -590,19 +445,20 @@ export function BookEditor({ id }: { id: string }) {
                 ))}
               </select>
             </label>
-          </section>
-          <BookMaterialPicker
+          </section> : null}
+          {tool === "content" ? <BookMaterialPicker
             audience={book.audience}
             disabled={busy}
             onAdd={(selection) => operation("add", { selection })}
-          />
-          <section aria-label="章节与内容块" className="mt-7 space-y-5">
+          /> : null}
+          {tool !== "settings" ? <section aria-label="章节与内容块" className="mt-7 space-y-5">
             <h2 className="text-2xl">章节与内容</h2>
             {book.chapters.map((chapter, chapterIndex) => (
               <section
                 className="rounded-2xl border border-line p-4"
                 key={chapter.id}
               >
+                <details><summary className="min-h-11 cursor-pointer py-2">{chapter.title} · 编辑章节</summary>
                 <label>
                   章节 {chapterIndex + 1} 名称
                   <input
@@ -665,6 +521,7 @@ export function BookEditor({ id }: { id: string }) {
                     删除章节
                   </button>
                 </div>
+                </details>
                 {book.blocks
                   .filter((b) => b.chapterId === chapter.id)
                   .map((block, index) => {
@@ -711,6 +568,8 @@ export function BookEditor({ id }: { id: string }) {
                           setDropHint(null);
                         }}
                       >
+                        <button className="ui-text-link" aria-expanded={activeBlock === block.id} onClick={() => setActiveBlock(value => value === block.id ? null : block.id)}>{block.text.slice(0, 80) || block.caption || `内容 ${index + 1}`} · {activeBlock === block.id ? "收起" : "编辑"}</button>
+                        {activeBlock === block.id ? <>
                         <div>
                           <span
                             className="inline-flex min-h-8 cursor-grab items-center gap-1 text-sm text-muted select-none"
@@ -736,7 +595,7 @@ export function BookEditor({ id }: { id: string }) {
                           </p>
                         ) : (
                           <>
-                            <label className="block">
+                            {tool === "layout" ? <label className="block">
                               版式
                               <select
                                 className={field}
@@ -760,7 +619,8 @@ export function BookEditor({ id }: { id: string }) {
                                   </option>
                                 ))}
                               </select>
-                            </label>
+                            </label> : null}
+                            {tool === "content" ? <>
                             <label className="block">
                               正文
                               <textarea
@@ -789,7 +649,8 @@ export function BookEditor({ id }: { id: string }) {
                                 }
                               />
                             </label>
-                            {["image", "double", "collage"].includes(
+                            </> : null}
+                            {tool === "layout" && ["image", "double", "collage"].includes(
                               block.kind,
                             ) ? (
                               <>
@@ -1027,6 +888,7 @@ export function BookEditor({ id }: { id: string }) {
                             删除内容块
                           </button>
                         </div>
+                        </> : null}
                       </article>
                     );
                   })}
@@ -1067,7 +929,7 @@ export function BookEditor({ id }: { id: string }) {
             >
               添加章节
             </button>
-          </section>
+          </section> : null}
             </fieldset>
           </div>
           <aside
@@ -1080,7 +942,21 @@ export function BookEditor({ id }: { id: string }) {
       ) : (
         <BookPreview book={book} />
       )}
+      <details className="my-4"><summary className="ui-button-secondary cursor-pointer">导出与下载</summary>
       {!book.deletedAt ? <BookRenderPanel id={id} audience={book.audience} prepare={async()=>{setOperationBusy(true);try{return await save()?serverRevision.current:null;}finally{setOperationBusy(false);}}}/> : null}
+      </details>
+      <details className="my-4"><summary className="ui-text-link cursor-pointer">作品管理</summary>
+      {canEdit ? <>
+            <button
+              className="ui-button-secondary"
+              disabled={busy}
+              onClick={() => void operation("snapshot")}
+            >
+              保存版本快照
+            </button>
+            <button className="ui-button-secondary" disabled={busy} onClick={() => void operation("copy")}>复制成新册</button>
+            <button className="ui-button-secondary" disabled={busy} onClick={() => void operation(book.status === "finished" ? "reopen" : "finish")}>{book.status === "finished" ? "重新列为正在制作" : "标记制作完成"}</button>
+      </> : null}
       <section className="my-8" aria-label="保存的版本">
         <h2 className="text-lg">保存的版本</h2>
         <p className="my-2 text-sm text-muted">
@@ -1106,6 +982,7 @@ export function BookEditor({ id }: { id: string }) {
                   timeZone: book.timezone,
                 }).format(new Date(version.createdAt))}
               </Link>
+              {canEdit ? <button className="ui-text-link ml-3" disabled={busy} onClick={() => { if (window.confirm("当前排版会先保存为版本，再恢复所选排版。")) void operation("restore_version", { version: version.revision }); }}>恢复此版本</button> : null}
             </li>
           ))}
         </ul>
@@ -1125,6 +1002,7 @@ export function BookEditor({ id }: { id: string }) {
           {book.deletedAt ? "恢复作品" : "删除作品"}
         </button>
       ) : null}
+      </details>
     </main>
   );
 }
@@ -1192,7 +1070,7 @@ function BookMaterialPicker({
         >
           <option value="memory">已确认记忆</option>
           <option value="collection">相册 / 章节</option>
-          <option value="story">已发布故事</option>
+
         </select>
       </label>
       {error ? <p role="alert">{error}</p> : null}

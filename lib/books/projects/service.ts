@@ -108,7 +108,6 @@ function persistedEdit(id: string): BookEdit {
       memoryEventId: s.memoryEventId,
       assetId: s.assetId,
       contributionId: s.contributionId,
-      storyId: s.storyId,
       collectionId: s.collectionId,
       fingerprint: s.fingerprint,
       label: s.label,
@@ -552,6 +551,16 @@ export function getBookVersion(
     return readerDetail(context, { ...row, revision }, edit);
   });
 }
+/** Preserve the current edition and restore only sources still readable today. */
+export function restoreBookVersion(context: FamilyContext, id: string, revision: number, version: number) {
+  if (!Number.isSafeInteger(version) || version < 1) throw new BookError("invalid_revision");
+  return getDb().transaction(() => {
+    const saved = getBookVersion(context, id, version);
+    if (saved.blockedBlockIds.length) throw new BookError("source_unavailable", 403);
+    saveBookVersion(context, id, revision);
+    return saveBookProject(context, id, revision, saved);
+  });
+}
 export function newBookSource(
   kind: BookSourceRef["kind"],
   targetId: string,
@@ -562,7 +571,6 @@ export function newBookSource(
     memoryEventId: null,
     assetId: null,
     contributionId: null,
-    storyId: null,
     collectionId: null,
     [SOURCE_FIELDS[kind]]: targetId,
     fingerprint: "",

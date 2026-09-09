@@ -34,5 +34,5 @@ export async function onboardingAction(
   // this binding. Purge their client Router Cache entries before navigating,
   // otherwise the pre-onboarding redirect can race the new bound state.
   revalidatePath("/", "layout");
-  redirect("/");
+  redirect("/timeline");
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { validateStoryInputSources } from "../lib/stories/dependencies.mjs";
+
 import { validateArchivePrivacy } from "../lib/export/privacy.mjs";
 import { parseAssetDeletions } from "../lib/assets/deletion-portable.mjs";
 import { BOOK_FILES, validateBookArchive } from "../lib/books/projects/portable.mjs";
@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = "family-time-capsule-export";
-const SUPPORTED_EXPORT_VERSIONS = new Set([1, 2, 3]);
+const SUPPORTED_EXPORT_VERSIONS = new Set([1, 2, 3, 4]);
 
 const zipArg = process.argv[2];
 if (!zipArg) {
@@ -74,15 +74,11 @@ const [
   facts,
   factSources,
   transcripts,
-  capsules,
+
   importSessions,
   importDefaultParticipants,
   importSessionItems,
-  contributionRequests,
-  requestSubmissions,
-  portalSubmissions,
-  reviewPeriods,
-  reviewPeriodEvents,
+
 ] = await Promise.all([
   readJsonAsync("family.json"),
   readJsonAsync("people.json"),
@@ -91,15 +87,11 @@ const [
   readJsonAsync("facts.json"),
   readJsonAsync("fact-sources.json"),
   readJsonAsync("transcripts.json"),
-  readJsonAsync("capsules.json"),
+
   readJsonAsync("import-sessions.json"),
   readJsonAsync("import-session-default-participants.json"),
   readJsonAsync("import-session-items.json"),
-  readJsonAsync("contribution-requests.json"),
-  readJsonAsync("contribution-request-submissions.json"),
-  readJsonAsync("contribution-portal-submissions.json"),
-  readJsonAsync("review-periods.json"),
-  readJsonAsync("review-period-events.json"),
+
 ]);
 if (familyJson) ok(`family: ${familyJson.name} (${familyJson.timezone})`);
 
@@ -130,10 +122,10 @@ const hasAssetDeletions = await zipEntryExists("asset-deletions.json");
 if (manifest.modules?.assetDeletions !== undefined && (manifest.modules.assetDeletions !== 1 || !hasAssetDeletions)) fail("声明的原件删除记录缺失或不支持");
 const expectedNonAssetCount =
   (manifest.exportVersion >= 2 ? 1 : 0) +
-  (hasInboxItems && hasInboxItemAssets ? 12 : 10) +
+  (hasInboxItems && hasInboxItemAssets ? 12 : 10) - (manifest.exportVersion >= 4 ? 1 : 0) +
   (hasStories ? 3 : 0) + (hasNameReviews ? 1 : 0) + (hasDrafts ? 1 : 0) + (hasAssetDeletions ? 1 : 0) +
   (hasDialogue ? 2 : 0) +
-  (importSessions ? 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
+  (importSessions ? manifest.exportVersion >= 4 ? 3 : 8 : 0) + (hasCollections ? COLLECTION_FILES.length : 0) + (hasBooks ? BOOK_FILES.length : 0);
 if (hasInboxItems !== hasInboxItemAssets) {
   fail("inbox-items.json 与 inbox-item-assets.json 必须同时存在或同时缺失");
 }
@@ -167,7 +159,7 @@ try { parseAssetDeletions(hasAssetDeletions ? await readJsonAsync("asset-deletio
 try { validateCollectionArchive(...collectionGraph, manifest.familyId, eventIds, assetIds); ok("相册关系图校验通过"); }
 catch { fail("相册编辑关系图无效"); }
 
-try { validateBookArchive(bookGraph, manifest.familyId, { memory:eventIds, asset:assetIds, person:personIds, contribution:new Set((contributions??[]).map(c=>c.id)), story:new Set(((await readJsonAsync("stories.json"))??[]).map(s=>s.id)), collection:new Set(collectionGraph[0].map(c=>c.id)) }); ok("年册编辑与历史版本关系图校验通过"); }
+try { validateBookArchive(bookGraph, manifest.familyId, { memory:eventIds, asset:assetIds, person:personIds, contribution:new Set((contributions??[]).map(c=>c.id)), collection:new Set(collectionGraph[0].map(c=>c.id)) }); ok("年册编辑与历史版本关系图校验通过"); }
 catch { fail("年册编辑与历史版本关系图无效"); }
 const inboxEntry = zip.file(`${ROOT}/inbox-items.json`);
 const inboxItemIds = new Set(
@@ -200,26 +192,6 @@ if (hasNameReviews) {
   const reviews = await readJsonAsync("name-reviews.json");
   if (!Array.isArray(reviews) || reviews.some(row => !row || !["accepted", "rejected"].includes(row.status) || !Number.isSafeInteger(row.revision) || row.revision < 1 || !(row.entityType === "memory_event" ? eventIds : row.entityType === "inbox_item" ? inboxItemIds : row.entityType === "asset" ? assetIds : new Set()).has(row.entityId))) fail("名称审核墓碑或目标关系无效");
   else ok(`名称审核：${reviews.length} 条，目标关系完整（详细版本校验由恢复预检执行）`);
-}
-const storyEntry = zip.file(`${ROOT}/stories.json`);
-const storyIds = new Set(
-  storyEntry
-    ? JSON.parse(await storyEntry.async("string")).map((story) => story.id)
-    : [],
-);
-if (storyEntry) {
-  const dependencyIds = {
-    fact: factIds, memory_event: eventIds,
-    contribution: new Set((contributions ?? []).map(row => row.id)),
-    transcript: new Set(((await readJsonAsync("transcripts.json")) ?? []).map(row => row.id)),
-  };
-  for (const row of JSON.parse(await storyEntry.async("string"))) {
-    try {
-      if (manifest.exportVersion >= 3 && !Object.hasOwn(row, "inputSources")) throw new Error();
-      const sources = validateStoryInputSources(row.inputSources ?? null);
-      if ((sources ?? []).some(source => !dependencyIds[source.sourceType].has(source.sourceId))) throw new Error();
-    } catch { fail(`story ${row.id} 的生成来源清单或引用无效`); }
-  }
 }
 function validateLivePhotoReferences(items) {
   const groups = new Map();
@@ -257,15 +229,7 @@ if (contributions) {
   }
   ok(`contributions: ${contributions.length} 条`);
 }
-if (capsules) {
-  for (const c of capsules) {
-    for (const id of c.memoryEventIds ?? []) {
-      if (!(memories ?? []).some((m) => m.id === id))
-        fail(`capsules: ${c.id} 引用未知 event ${id}`);
-    }
-  }
-  ok(`capsules: ${capsules.length} 个`);
-}
+
 if (facts) ok(`facts: ${facts.length} 条`);
 if (factSources) {
   for (const s of factSources) {
@@ -305,32 +269,6 @@ for (const item of importSessionItems ?? []) {
     fail(`import item ${item.id} 引用未知 asset`);
   if (item.inboxItemId && !inboxItemIds.has(item.inboxItemId))
     fail(`import item ${item.id} 引用未知 inbox item`);
-}
-const requestIds = new Set((contributionRequests ?? []).map((request) => request.id));
-for (const request of contributionRequests ?? []) {
-  if (
-    Object.hasOwn(request, "token") ||
-    Object.hasOwn(request, "tokenHash") ||
-    Object.hasOwn(request, "createdByUserId") ||
-    Object.hasOwn(request, "closedByUserId")
-  ) fail(`contribution request ${request.id} 泄露 token 或本地 User id`);
-}
-for (const submission of requestSubmissions ?? []) {
-  if (!requestIds.has(submission.requestId) || !inboxItemIds.has(submission.inboxItemId))
-    fail(`request submission ${submission.id} 引用不完整`);
-}
-for (const submission of portalSubmissions ?? []) {
-  if (!requestIds.has(submission.requestId) || !importSessionIds.has(submission.importSessionId))
-    fail(`portal submission ${submission.id} 引用不完整`);
-}
-const reviewPeriodIds = new Set((reviewPeriods ?? []).map((period) => period.id));
-for (const period of reviewPeriods ?? []) {
-  if (period.storyId && !storyIds.has(period.storyId))
-    fail(`review period ${period.id} 引用未知 story`);
-}
-for (const link of reviewPeriodEvents ?? []) {
-  if (!reviewPeriodIds.has(link.reviewPeriodId) || !eventIds.has(link.memoryEventId))
-    fail(`review period event ${link.id} 引用不完整`);
 }
 if (importSessions)
   ok(`1.1 durable graph: ${importSessions.length} 个导入会话，关系完整且无 guest token`);

@@ -52,11 +52,7 @@ const {
 } = await import("@/lib/inbox/service");
 const { confirmInboxEntry, mergeInboxEntries, updateMemoryEvent } = await import("@/lib/memories/service");
 const { createContribution, addFact } = await import("@/lib/contributions/service");
-const {
-  createCapsule,
-  sealCapsule,
-  addCapsuleEvent,
-} = await import("@/lib/capsules/service");
+
 const { buildActorExport, buildDisasterExport, ExportVerificationError } = await import(
   "@/lib/export/service"
 );
@@ -195,15 +191,6 @@ const privateContrib = await createContribution(familyId, {
 if (!privateContrib.ok) throw new Error("private contribution failed");
 await addFact(await testFamilyContext(adminUserId, familyId), merged.eventId, "2026-08-10 全家一起去了一次公园。");
 
-const capsuleCreated = await createCapsule(familyId, {
-  title: "写给一岁的你",
-  unlockType: "date",
-  unlockValue: "2027-08-10",
-});
-if (!capsuleCreated.ok) throw new Error("capsule failed");
-await addCapsuleEvent(familyId, capsuleCreated.capsuleId, audioEvent.eventId);
-await sealCapsule(familyId, capsuleCreated.capsuleId); // 未到期的封存胶囊
-
 describe("完整导出（#014）", () => {
   it("导出 → 解压 → manifest/JSON/媒体齐全且哈希一致", async () => {
     const result = await buildDisasterExport(familyId);
@@ -236,13 +223,12 @@ describe("完整导出（#014）", () => {
     const transcripts = JSON.parse(
       await zip.file(`${root}/transcripts.json`)!.async("string"),
     );
-    const capsules = JSON.parse(await zip.file(`${root}/capsules.json`)!.async("string"));
     const timelineMd = await zip.file(`${root}/timeline.md`)!.async("string");
 
-    expect(manifest.exportVersion).toBe(3);
+    expect(manifest.exportVersion).toBe(4);
     expect(manifest.appVersion).toBe(JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")).version);
     expect(manifest.familyId).toBe(familyId);
-    expect(manifest.fileCount).toBe(manifest.assets.length + 38);
+    expect(manifest.fileCount).toBe(manifest.assets.length + 27);
     expect(result.fileCount).toBe(manifest.fileCount);
     expect(manifest.modules.nameReviews).toBe(1);
     expect(zip.file("family-time-capsule-export/name-reviews.json")).not.toBeNull();
@@ -387,9 +373,6 @@ describe("完整导出（#014）", () => {
     expect(contributions).toHaveLength(2);
 
     // 封存胶囊内容在导出中完整（export 始终包含）
-    expect(capsules.length).toBe(1);
-    expect(capsules[0].memoryEventIds).toHaveLength(1);
-    expect(capsules[0].status).toBe("sealed");
 
     // timeline.md：相对路径引用 + 事件 + 讲述
     expect(timelineMd).toContain("# 我们一家 · 家庭记忆时间轴");
@@ -414,7 +397,7 @@ describe("完整导出（#014）", () => {
     }
 
     // 空目录占位
-    expect(zip.file(`${root}/stories/.keep`)).toBeTruthy();
+    expect(zip.file(`${root}/stories/.keep`)).toBeNull();
     expect(zip.file(`${root}/originals/documents/.keep`)).toBeTruthy();
   });
 

@@ -13,7 +13,7 @@ test.describe.configure({ mode: "serial" });
 test("仅用键盘完成登录（Tab/Enter）", async ({ page }) => {
   await ensureBootstrap(page);
   // 退出到登录页，随后全程只用键盘完成登录
-  await page.goto("/more");
+  await page.goto("/settings");
   const logout = page.getByRole("button", { name: "退出", exact: true });
   if (await logout.isVisible()) {
     await logout.click();
@@ -37,6 +37,7 @@ test("减少动态偏好下过渡近零；主导航键盘可达", async ({ page 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await ensureBootstrap(page);
   await page.goto("/");
+  await expect(page).toHaveURL(/\/timeline$/);
   const motion = await page.evaluate(() => {
     const button = document.querySelector<HTMLElement>(".ui-button-primary") ?? document.querySelector<HTMLElement>("a[class*=button]");
     return {
@@ -65,6 +66,7 @@ test("高频触控目标 ≥44px；图标按钮有可读名称", async ({ page }
   await ensureLogin(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await expect(page).toHaveURL(/\/timeline$/);
   const heights = await page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>(".bottom-nav-item")].map((item) => item.getBoundingClientRect().height),
   );

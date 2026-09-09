@@ -1,18 +1,8 @@
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { updatePerson } from "@/lib/family/service";
-import { addManualParagraph, publishStory, updateStoryTitle } from "@/lib/stories/service";
-import { addCapsuleEvent, openCapsule, sealCapsule } from "@/lib/capsules/service";
-import { closeContributionRequest } from "@/lib/oral-history/service";
-import {
-  extendContributionPortal,
-  pauseContributionPortal,
-  regenerateContributionPortalToken,
-  reopenContributionPortal,
-  revokeContributionPortal,
-} from "@/lib/contribution-portals/service";
+
 import { cancelImportSession, getImportSessionDetail, restartUpload, setImportSessionUploading } from "@/lib/imports/service";
 import { UploadServiceError } from "@/lib/imports/service";
-import { listPeople } from "@/lib/family/service";
 import { asRecord, mobileJson, mobileRequestError, optionalString, readMobileJson } from "@/lib/mobile/http";
 import { getMobileLibraryDetail, MOBILE_LIBRARY_DOMAINS, type MobileLibraryDomain } from "@/lib/mobile/library";
 
@@ -34,11 +24,7 @@ export async function PATCH(request: Request, { params }: RouteContext<"/api/mob
   const { domain: rawDomain, id } = await params;
   const domain = domainOf(rawDomain);
   if (!domain) return mobileJson({ error: "not_found" }, { status: 404 });
-  const capability = domain === "people" ? "family:manage"
-    : domain === "stories" ? "story:write"
-      : domain === "capsules" ? "capsule:write"
-        : domain === "requests" || domain === "portals" ? "contribution:create"
-          : "capture:create";
+  const capability = domain === "people" ? "family:manage" : "capture:create";
   const authorization = await authorizeApiFamilyRequest(request.headers, capability);
   if (!authorization.ok) return mobileJson({ error: authorization.error }, { status: authorization.status });
   try {
@@ -56,31 +42,6 @@ export async function PATCH(request: Request, { params }: RouteContext<"/api/mob
         relationToChild: optionalString(body, "relationToChild", 20) ?? "",
         birthDate: optionalString(body, "birthDate", 10) ?? "",
       });
-    } else if (domain === "stories") {
-      const operation = body.operation;
-      result = operation === "title" ? updateStoryTitle(authorization.context, id, optionalString(body, "title", 100) ?? "")
-        : operation === "paragraph" ? addManualParagraph(authorization.context, id, optionalString(body, "text", 2_000) ?? "")
-          : operation === "publish" ? publishStory(authorization.context, id)
-            : result;
-    } else if (domain === "capsules") {
-      const operation = body.operation;
-      if (operation === "seal") result = { ok: Boolean(await sealCapsule(authorization.context.familyId, id)), error: "invalid_state" };
-      else if (operation === "open") {
-        const people = await listPeople(authorization.context.familyId);
-        result = await openCapsule(authorization.context.familyId, id, people.find((entry) => entry.isChild)?.birthDate ?? null, authorization.context.familyTimezone);
-      } else if (operation === "add_event") {
-        // The domain service rechecks that both ids belong to the live family and that the capsule is draft.
-        result = { ok: await addCapsuleEvent(authorization.context.familyId, id, optionalString(body, "eventId", 128) ?? ""), error: "not_found" };
-      }
-    } else if (domain === "requests") {
-      result = closeContributionRequest(authorization.context, id);
-    } else if (domain === "portals") {
-      const operation = body.operation;
-      if (operation === "pause") result = pauseContributionPortal(authorization.context, id);
-      else if (operation === "reopen") result = reopenContributionPortal(authorization.context, id);
-      else if (operation === "revoke") result = revokeContributionPortal(authorization.context, id);
-      else if (operation === "extend") result = extendContributionPortal(authorization.context, id, 30);
-      else if (operation === "regenerate") result = regenerateContributionPortalToken(authorization.context, id);
     } else if (domain === "imports") {
       const operation = body.operation;
       if (operation === "pause" || operation === "resume") {

@@ -1,4 +1,4 @@
-import { familyStorySourcePredicate } from "@/lib/authz/story-access";
+import { familySourcePredicate } from "@/lib/authz/family-source-access";
 import { aiVideoFrame } from "@/db/schema/analysis";
 import { eventVisibilityCondition } from "@/lib/authz/event-access";
 import "server-only";
@@ -385,12 +385,13 @@ function hydrateSources(
         return { ok: false, error: "source_forbidden_or_not_found" };
       }
       // Draft uploads retain a private storage root after publication. A
-      // manual request for an explicitly family-visible event may use that
+      // request for an explicitly family-visible event may use that
       // event's original references at the event audience, without changing
-      // the root or granting unscoped/automatic access. The parent itself is a
+      // the root or granting unscoped access. Automatic requests additionally
+      // require the existing automatic-processing consent. The parent is a
       // snapshotted source, so removal, audience or reference edits invalidate
       // every stage and any pending result.
-      const sharedEventReference = triggerMode === "manual" && row.visibility === "private" && row.originalAssetId === null && references.some(parent => parent.kind === "memory_event" && tx.select({ id: memoryEvent.id })
+      const sharedEventReference = row.visibility === "private" && row.originalAssetId === null && references.some(parent => parent.kind === "memory_event" && tx.select({ id: memoryEvent.id })
         .from(memoryEvent).innerJoin(memoryEventAsset, and(eq(memoryEventAsset.memoryEventId, memoryEvent.id), eq(memoryEventAsset.familyId, memoryEvent.familyId)))
         .where(and(eq(memoryEvent.id, parent.id), eq(memoryEvent.familyId, snapshot.principal.familyId), eq(memoryEvent.visibility, "family"), isNull(memoryEvent.deletedAt), eq(memoryEventAsset.assetId, row.id), eventVisibilityCondition({ principal: snapshot.principal, evaluatedAt: snapshot.evaluatedAt })))
         .get());
@@ -501,7 +502,7 @@ function hydrateSources(
         readers: tx.all(sql`select user_id from memory_event_reader where memory_event_id=${row.id} order by user_id`),
         // Suggested facts are this handler's output, not its confirmed input.
         // Including them would invalidate the sibling title at finalization.
-        facts: tx.all(sql`select * from fact where memory_event_id=${row.id} and status='user_confirmed' and ${familyStorySourcePredicate(row.familyId, sql`'fact'`, sql`fact.id`)} order by id`),
+        facts: tx.all(sql`select * from fact where memory_event_id=${row.id} and status='user_confirmed' and ${familySourcePredicate(row.familyId, sql`'fact'`, sql`fact.id`)} order by id`),
         factSources: tx.all(sql`select fs.* from fact_source fs join fact f on f.id=fs.fact_id where f.memory_event_id=${row.id} and f.status='user_confirmed' order by fs.id`),
         contributions: tx.select().from(contribution).where(eq(contribution.memoryEventId, row.id)).orderBy(contribution.id).all(),
         transcripts: tx.all(sql`select t.* from asset_transcript t join memory_event_asset ma on ma.asset_id=t.asset_id where ma.memory_event_id=${row.id} and t.family_id=${row.familyId} and t.edited_transcript is not null order by t.id`),
@@ -1012,7 +1013,7 @@ export function getAiOperationalStatus(context: FamilyContext, dependencies: AiJ
         const consented = Boolean(runtime && (!runtime.provider.external || (consent?.enabled && consent.providerId === provider.id && consent.configurationId === provider.configurationId && consent.model === model)));
         const receiver = runtime?.capabilities[capability]?.providerName ?? runtime?.provider.displayName ?? null;
         const capabilityConfigurationId = provider.configurationId;
-        return { capability, model, available: model !== null, consented, check: checks[capability], receiver, configurationId: capabilityConfigurationId };
+        return { capability, model, available: model !== null, consented, automaticAllowed: consented && (!runtime?.provider.external || consent?.allowAutomaticFamilyContent === true), check: checks[capability], receiver, configurationId: capabilityConfigurationId };
       }),
     };
   });

@@ -1,5 +1,6 @@
+import { Text } from "../components/typography";
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useApp } from "../state/AppContext";
 import { ServerConnectionForm } from "../components/ServerConnectionForm";
@@ -7,7 +8,7 @@ import { exportRescuePackage, restoreRescuePackage } from "../rescue/device";
 import { colors, sharedStyles } from "../theme";
 import type { MediaCapturePayload, OutboxItem } from "../types";
 import { dateLabel } from "../utils/format";
-import { AiSettingsSection } from "../ai/AiSettingsSection";
+import { Disclosure } from "../components/Disclosure";
 
 export function SettingsScreen() {
   const {
@@ -93,7 +94,7 @@ export function SettingsScreen() {
       <Row label="等待补传" value={`${outbox.length} 条`} />
       <Row label="上次同步" value={lastSyncAt ? dateLabel(lastSyncAt) : "尚未完成"} />
     </View>
-    <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>时间轴与成员存于本机 SQLite；待上传原件与离线封面位于 App 私有目录；断开服务器不会删除它们。取消上传、暂停或仅保留本机都不会删除原件。</Text></View>
+    <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>未同步的记录和下载的内容保存在本机，断开服务器后仍会保留。</Text></View>
     {credentials ? <>
       <Pressable disabled={syncing} onPress={() => void runSync()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{syncing ? "同步中…" : "立即同步"}</Text></Pressable>
       <Pressable onPress={() => Alert.alert("断开家庭服务器？", "本机记录和已下载资料都会保留。", [{ text: "取消", style: "cancel" }, { text: "确认断开", onPress: () => void disconnect() }])} style={styles.textButton}><Text style={styles.danger}>断开家庭服务器</Text></Pressable>
@@ -118,15 +119,15 @@ export function SettingsScreen() {
       </View>
     ) : null}
 
-    <AiSettingsSection />
-    <Text style={sharedStyles.eyebrow}>本机救援包</Text>
+    <Disclosure title="本机备份与恢复">
     <View style={sharedStyles.card}>
       <Text style={sharedStyles.body}>把尚未同步的本机记录（文字全文、原件与校验清单）导出为一个 ZIP，通过系统分享保存到 App 之外。它只包含你自己的本机资料，不含任何登录凭据，也不是完整家庭备份。</Text>
       <Pressable disabled={rescueBusy} onPress={() => void exportRescue()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>导出本机救援包</Text></Pressable>
       <Pressable disabled={rescueBusy} onPress={() => void importRescue()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>从救援包恢复</Text></Pressable>
     </View>
 
-    <Pressable onPress={() => Alert.alert("清除本机全部数据？", "本机记录、原件、离线缓存与登录凭据都会永久删除；服务器资料不受影响。", [{ text: "取消", style: "cancel" }, { text: "确认清除", style: "destructive", onPress: () => void clearLocal() }])} style={styles.clear}><Text style={styles.danger}>清除本机全部数据</Text></Pressable>
+    </Disclosure>
+    <Disclosure title="数据清理"><Pressable onPress={() => Alert.alert("清除本机全部数据？", "本机记录、原件、离线缓存与登录凭据都会永久删除；服务器资料不受影响。", [{ text: "取消", style: "cancel" }, { text: "确认清除", style: "destructive", onPress: () => void clearLocal() }])} style={styles.clear}><Text style={styles.danger}>清除本机全部数据</Text></Pressable></Disclosure>
   </ScrollView>;
 }
 

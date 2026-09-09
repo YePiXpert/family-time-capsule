@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test, type Page } from "@playwright/test";
 import Database from "better-sqlite3";
 import path from "node:path";
@@ -103,7 +103,7 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
   await page.goto("/inbox");
   await page.getByLabel("事件标题").fill("权限边界事件");
   await page.getByRole("button", { name: "确认进入时间轴" }).click();
@@ -154,12 +154,13 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   const primaryNavigation = page.getByRole("navigation", { name: "一级导航" });
   await expect(primaryNavigation.getByText("记录", { exact: true })).toHaveCount(0);
   await expect(primaryNavigation.getByText("收件箱", { exact: true })).toHaveCount(0);
-  await page.goto("/more");
+  await page.goto("/settings");
   // 正式 1.0 IA:家人是一级入口(浏览对全员开放),但 viewer 的「我的」页
   // 不出现故事/口述史/胶囊等写入入口;/family 页内的管理控件另行断言隐藏。
   await expect(page.locator('a[href="/stories"]')).toHaveCount(0);
   await expect(page.locator('a[href="/requests"]')).toHaveCount(0);
   await expect(page.locator('a[href="/capsules"]')).toHaveCount(0);
+  await page.goto("/timeline");
   await expect(page.locator('a[href="/search"]').first()).toBeVisible();
   await page.goto("/family");
   await expect(page.getByRole("heading", { name: "家人" })).toBeVisible();

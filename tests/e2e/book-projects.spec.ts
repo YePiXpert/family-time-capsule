@@ -12,44 +12,30 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
   await ensureBootstrap(page);
   for (let i = 1; i <= 2; i++) {
     await page.goto("/capture"); await expandCaptureOptions(page);
-    await page
-      .getByPlaceholder("想说点什么？也可以不写，直接保存素材。")
-      .fill(`虚构素材 ${i}：我们在窗边读了一封信。`);
-    await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
-    await expect(page.getByText("已收进收件箱。")).toBeVisible();
-    await page.goto("/inbox");
-    await page.getByLabel("事件标题").fill(`虚构家庭片段 ${i}`);
-    await page.getByRole("button", { name: "确认进入时间轴" }).click();
-    await expect(page).toHaveURL(/\/memories\//);
+    await page.getByLabel("写下这一刻").fill(`虚构素材 ${i}：我们在窗边读了一封信。`);
+    await page.getByLabel("标题", { exact: true }).fill(`虚构家庭片段 ${i}`);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   }
-  await page.goto("/books");
-  await page.getByLabel("作品名称").fill("虚构家庭的成长年册");
-  await page.getByRole("radio", { name: "图文成长册" }).check();
-  await page.getByRole("button", { name: "建立可编辑作品" }).click();
+  await page.goto("/books?kind=book");
+  await page.getByRole("button", { name: "新建家庭书", exact: true }).click();
+  for (const i of [1, 2]) await page.getByRole("checkbox", { name: `虚构家庭片段 ${i}`, exact: true }).check();
+  await page.getByRole("button", { name: "生成预览", exact: true }).click();
   await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
-  const url = page.url(),
-    id = url.split("/").at(-1)!;
-  await page.getByText("从真实记忆中选材", { exact: true }).click();
-  await page.getByRole("checkbox", { name: "虚构家庭片段 1" }).check();
-  await page.getByRole("checkbox", { name: "虚构家庭片段 2" }).check();
-  await page.getByRole("button", { name: "加入所选 2 项来源" }).click();
-  await expect(
-    page.getByRole("textbox", { name: "正文", exact: true }),
-  ).toHaveCount(4);
-  await page
-    .getByRole("textbox", { name: "正文", exact: true })
-    .nth(1)
-    .fill("手工整理：窗边的第一封家书。");
-  await page
-    .getByRole("button", { name: "内容下移", exact: true })
-    .nth(1)
-    .click();
+  const url = page.url(), id = url.split("/").at(-1)!;
+  await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: "整本设置", exact: true }).click();
+  await page.getByLabel("标题", { exact: true }).fill("虚构家庭的成长年册");
+  await page.getByRole("button", { name: "内容", exact: true }).click();
+  await page.getByRole("button", { name: /虚构素材 1.*· 编辑/ }).click();
+  await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveCount(1);
+  await page.getByRole("textbox", { name: "正文", exact: true }).fill("手工整理：窗边的第一封家书。");
+  await page.getByRole("button", { name: "内容下移", exact: true }).click();
   await page.getByRole("button", { name: "保存当前编辑" }).click();
   await expect(page.getByText("已自动保存，可以随时重开。")).toBeVisible();
-  await page.reload(); await expandCaptureOptions(page);
-  await expect(
-    page.getByRole("textbox", { name: "正文", exact: true }).nth(2),
-  ).toHaveValue("手工整理：窗边的第一封家书。");
+  await page.reload();
+  await expect(page.getByText("手工整理：窗边的第一封家书。", { exact: true })).toBeVisible();
   let doc = (await (
     await page.request.get(`/api/books/projects/${id}`)
   ).json()) as BookDetail;
@@ -72,13 +58,11 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
     },
   });
   expect(response.status()).toBe(200);
-  await page.reload(); await expandCaptureOptions(page);
-  await expect(
-    page.getByRole("textbox", { name: "正文", exact: true }),
-  ).toHaveCount(32);
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveCount(0);
+  await page.getByText("作品管理", { exact: true }).click();
   await page.getByRole("button", { name: "保存版本快照" }).click();
   await expect(page.getByText("已保存版本快照。")).toBeVisible();
-  await page.getByRole("button", { name: "预览作品" }).click();
   await expect(
     page.getByText(
       "第 32 页虚构家书。春天，我们在窗边一起阅读。This fictional family keeps a letter.",
@@ -96,7 +80,8 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
       fullPage: true,
     });
   }
-  await page.getByRole("button", { name: "继续编辑" }).click();
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: /第 1 页虚构家书.*· 编辑/ }).click();
   doc = await (await page.request.get(`/api/books/projects/${id}`)).json();
   await page.request.patch(`/api/books/projects/${id}`, {
     data: {
@@ -122,11 +107,12 @@ test("生产 worker 完成 PDF/EPUB，浏览器可预览下载并清理产物", 
   page, browser,
 }) => {
   await ensureBootstrap(page);
-  await page.goto("/books");
+  await page.goto("/books?kind=book");
   await page.getByRole("link", { name: /虚构家庭的成长年册/ }).click();
   await expect(
     page.getByRole("heading", { name: "虚构家庭的成长年册", exact: true }),
   ).toBeVisible();
+  await page.getByText("导出与下载", { exact: true }).click();
   const panel = page.getByRole("region", { name: "出版与下载" });
   for (const format of ["PDF", "EPUB", "精选阅读包 ZIP"]) {
     await panel
@@ -182,39 +168,38 @@ test("生产 worker 完成 PDF/EPUB，浏览器可预览下载并清理产物", 
   await expect(panel.getByText(/已取消/)).toBeVisible();
 });
 
-test("出生第一周回顾 → 人工精选 → 幂等年册草稿 → 明确复制，改日期后回顾与日历同步", async ({page}) => {
+test("月份选材生成新册，复制保留编辑，日期调整同步到日历", async ({ page }) => {
   await ensureBootstrap(page);
-  const shelf=await(await page.request.get('/api/books/projects')).json();
-  const sourceBook=await(await page.request.get(`/api/books/projects/${shelf.entries[0].id}`)).json();
-  const sourceIds=sourceBook.sources.filter((s:{kind:string})=>s.kind==='memory').map((s:{memoryEventId:string})=>s.memoryEventId);
-  expect(sourceIds.length).toBe(2);
-  for(const [i,id] of sourceIds.entries()){
-    const current=await(await page.request.get(`/api/mobile/v1/memories/${id}`)).json();
-    const response=await page.request.patch(`/api/mobile/v1/memories/${id}`,{data:{expectedRevision:current.titleRevision,mutationId:randomUUID(),occurredAtWall:`2026-08-${11+i}T08:00`,occurredAtPrecision:'exact'}});expect(response.status()).toBe(200);
+  const shelf = await (await page.request.get("/api/books/projects")).json();
+  const original = await (await page.request.get(`/api/books/projects/${shelf.entries[0].id}`)).json();
+  const sourceIds = original.sources.filter((s: { kind: string }) => s.kind === "memory").map((s: { memoryEventId: string }) => s.memoryEventId);
+  expect(sourceIds).toHaveLength(2);
+  for (const [i, id] of sourceIds.entries()) {
+    const memory = await (await page.request.get(`/api/mobile/v1/memories/${id}`)).json();
+    const response = await page.request.patch(`/api/mobile/v1/memories/${id}`, { data: { expectedRevision: memory.titleRevision, mutationId: randomUUID(), occurredAtWall: `2026-08-${11+i}T08:00`, occurredAtPrecision: "exact" } });
+    expect(response.status()).toBe(200);
   }
-  await page.goto('/books/review');
-  await page.getByRole('button',{name:'出生第一周',exact:true}).click();
-  await expect(page.getByText(/2 段记忆 · 人工精选 0 段/)).toBeVisible();
-  await page.getByRole('button',{name:'设为人工精选',exact:true}).first().click();
-  await expect(page.getByText(/2 段记忆 · 人工精选 1 段/)).toBeVisible();
-  for(const width of [375,768,1440]){
-    await page.setViewportSize({width,height:1000});
-    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
-    await page.screenshot({path:`test-results/fictional-book-review-${width}.png`,fullPage:true});
-  }
-  await page.getByRole('button',{name:'建立可编辑年册草稿',exact:true}).focus();await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);const draftUrl=page.url();
-  await page.getByLabel('副标题',{exact:true}).fill('虚构第一周手工整理，继续保存');
-  await page.getByRole('button',{name:'保存当前编辑',exact:true}).click();
-  await expect(page.getByText('已自动保存，可以随时重开。')).toBeVisible();
-  await page.goto('/books/review?startDate=2026-08-10&endDate=2026-08-16');
-  await expect(page.getByText(/还有 1 段当前范围的记忆尚未选入/)).toBeVisible();
-  await page.getByRole('button',{name:'恢复同一草稿',exact:true}).click();await expect(page).toHaveURL(draftUrl);
-  await expect(page.getByLabel('副标题',{exact:true})).toHaveValue('虚构第一周手工整理，继续保存');
-  await page.getByRole('button',{name:'复制成新册',exact:true}).click();await expect(page).not.toHaveURL(draftUrl);await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
-  await expect(page.getByLabel('副标题',{exact:true})).toHaveValue('虚构第一周手工整理，继续保存');
-  const beforeMove=await(await page.request.get(`/api/mobile/v1/memories/${sourceIds[0]}`)).json();
-  const moved=await page.request.patch(`/api/mobile/v1/memories/${sourceIds[0]}`,{data:{expectedRevision:beforeMove.titleRevision,mutationId:randomUUID(),occurredAtWall:'2026-09-10T08:00',occurredAtPrecision:'exact'}});expect(moved.status()).toBe(200);
-  await page.goto('/books/review?startDate=2026-08-10&endDate=2026-08-16');await expect(page.getByText(/1 段记忆 · 人工精选/)).toBeVisible();
-  await page.goto('/timeline/calendar?month=2026-09');await expect(page.getByRole('link',{name:'2026-09-10，1 条记忆',exact:true})).toBeVisible();
+  await page.goto("/books?kind=book");
+  await page.getByRole("button", { name: "新建家庭书", exact: true }).click();
+  await page.getByText("筛选与读者", { exact: true }).click();
+  await page.getByLabel("月份", { exact: true }).fill("2026-08");
+  await expect(page.getByRole("checkbox")).toHaveCount(2);
+  await page.getByRole("checkbox").first().check();
+  await page.getByRole("button", { name: "生成预览", exact: true }).click();
+  await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
+  const draftUrl = page.url();
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: "整本设置", exact: true }).click();
+  await page.getByLabel("副标题", { exact: true }).fill("虚构第一周手工整理");
+  await page.getByRole("button", { name: "保存当前编辑", exact: true }).click();
+  await expect(page.getByText("已自动保存，可以随时重开。")).toBeVisible();
+  await page.getByText("作品管理", { exact: true }).click();
+  await page.getByRole("button", { name: "复制成新册", exact: true }).click();
+  await expect(page).not.toHaveURL(draftUrl);
+  await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
+  await expect(page.getByText("虚构第一周手工整理", { exact: true })).toBeVisible();
+  const current = await (await page.request.get(`/api/mobile/v1/memories/${sourceIds[0]}`)).json();
+  expect((await page.request.patch(`/api/mobile/v1/memories/${sourceIds[0]}`, { data: { expectedRevision: current.titleRevision, mutationId: randomUUID(), occurredAtWall: "2026-09-10T08:00", occurredAtPrecision: "exact" } })).status()).toBe(200);
+  await page.goto("/timeline/calendar?month=2026-09");
+  await expect(page.getByRole("link", { name: "2026-09-10，1 条记忆", exact: true })).toBeVisible();
 });

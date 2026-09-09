@@ -1,4 +1,4 @@
-import { familyStorySourcePredicate } from "@/lib/authz/story-access";
+import { familySourcePredicate } from "@/lib/authz/family-source-access";
 import "server-only";
 import { createHash } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -20,7 +20,7 @@ export function eventEvidenceFingerprint(tx: ContributionAccessTransaction, fami
     if (ref.sourceKind === "inbox_item") return { ref, rawText: tx.select({ rawText: inboxItem.rawText }).from(inboxItem).where(and(eq(inboxItem.id, ref.sourceId), eq(inboxItem.familyId, familyId))).get()?.rawText };
     return { ref };
   });
-  const facts = tx.select({ id: fact.id, statement: fact.statement }).from(fact).where(and(eq(fact.memoryEventId, eventId), eq(fact.status, "user_confirmed"), familyStorySourcePredicate(familyId, sql`'fact'`, sql`${fact.id}`))).orderBy(asc(fact.id)).all();
+  const facts = tx.select({ id: fact.id, statement: fact.statement }).from(fact).where(and(eq(fact.memoryEventId, eventId), eq(fact.status, "user_confirmed"), familySourcePredicate(familyId, sql`'fact'`, sql`${fact.id}`))).orderBy(asc(fact.id)).all();
   const tags = tx.select({ tag: memoryEventTag.tag }).from(memoryEventTag).where(and(eq(memoryEventTag.familyId, familyId), eq(memoryEventTag.memoryEventId, eventId))).orderBy(asc(memoryEventTag.tag)).all();
   return createHash("sha256").update(JSON.stringify({ promptVersion: "organizer-event-v2", sources, facts, tags })).digest("hex");
 }

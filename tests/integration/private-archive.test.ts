@@ -151,6 +151,8 @@ it("R08/R09: actor archives exclude hidden graphs and restore private bodies, ac
     const legacy = await JSZip.loadAsync(ownBytes);
     const manifest = JSON.parse(await legacy.file(`${root}/manifest.json`)!.async("string"));
     manifest.exportVersion = 1; manifest.fileCount--;
+    for (const name of ["capsules.json", "contribution-requests.json", "contribution-request-submissions.json", "contribution-portal-submissions.json", "review-periods.json", "review-period-events.json"]) legacy.file(`${root}/${name}`, "[]");
+    manifest.fileCount += 6;
     legacy.file(`${root}/manifest.json`, JSON.stringify(manifest)); legacy.remove(`${root}/privacy.json`);
     const memories = JSON.parse(await legacy.file(`${root}/memories.json`)!.async("string"));
     for (const m of memories) delete m.bodyText;

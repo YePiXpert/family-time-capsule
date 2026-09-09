@@ -94,7 +94,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
 const { MemoryScreen } = await import("../src/screens/MemoryScreen");
 const { CaptureScreen } = await import("../src/screens/CaptureScreen");
 const { initializeLocalStore, setActiveDestination } = await import("../src/storage/database");
-const { listLocalDrafts } = await import("../src/drafts/store");
+const { listLocalDrafts, saveLocalDraft, queueDraftOriginals } = await import("../src/drafts/store");
 const { syncLocalIntake } = await import("../src/native/intake-sync");
 const { syncLocalDrafts } = await import("../src/drafts/sync");
 const { requestMobileJson } = await import("../src/api/client");
@@ -161,19 +161,22 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   const media = [0,1].map(i => { const localUri = path.join(originalDirectory, `photo-${i}.png`); writeFileSync(localUri, Buffer.concat([png,Buffer.from(String(i))])); return {localUri,fileName:`photo-${i}.png`,mimeType:"image/png",lastModified:null,mediaType:"image",source:"library"}; });
   mocks.library.mockResolvedValue({canceled:false,assets:media.slice(0,1).map(m => ({uri:m.localUri,type:"image",fileName:m.fileName}))});
   mocks.preserveMedia.mockImplementation(async (picked: {uri:string}) => media.find(m => m.localUri === picked.uri));
-  await press("从相册导入");
+  await press("相册");
   mocks.documentPicker.mockResolvedValue({canceled:false,assets:[{uri:media[1]!.localUri,name:media[1]!.fileName,mimeType:"image/png"}]});
   mocks.preserveDocument.mockImplementation(async (_asset:unknown,_id:string,prepared:(p:unknown)=>void)=>{const payload={...media[1]!,source:"files"};prepared(payload);return payload;});
-  await press("从 Files 导入");
+  await press("文件");
   const pcmBytes=9*1024*1024;
   const wav = Buffer.alloc(44+pcmBytes); wav.write("RIFF",0); wav.writeUInt32LE(wav.length-8,4); wav.write("WAVEfmt ",8); wav.writeUInt32LE(16,16); wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(16000,24); wav.writeUInt32LE(32000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write("data",36); wav.writeUInt32LE(pcmBytes,40);
   for(let i=44;i<wav.length;i+=2) wav.writeInt16LE(Math.round(2000*Math.sin((i-44)*Math.PI*440/16000)),i);
   const audioUri=path.join(originalDirectory,"voice.wav"); writeFileSync(audioUri,wav);
   mocks.permission.mockResolvedValue({granted:true});
   mocks.preserveAudio.mockResolvedValue({localUri:audioUri,fileName:"voice.wav",mimeType:"audio/wav",lastModified:null,mediaType:"audio",source:"recorder"});
-  await press("直接录音"); await press("完成录音");
+  await press("录音"); await press("完成录音");
   await expect.poll(async () => (await listLocalDrafts(scope)).find(d=>d.status === "editing")?.content.items.length).toBe(3);
-  await press(`发送草稿到${fixture.family.name}`);
+  // Draft-only sync remains a supported transport operation; the everyday UI now has one publish action.
+  const editing = (await listLocalDrafts(scope)).find(d => d.status === "editing")!;
+  await saveLocalDraft({ ...editing, status: "queued", syncIntent: "draft", revision: editing.revision + 1, mutationId: crypto.randomUUID() }, editing.revision);
+  await queueDraftOriginals(editing);
   const queued=(await listLocalDrafts(scope)).find(d=>d.status === "queued")!;
   expect(queued.content.visibility).toBe("private");
   await act(async()=>tree!.unmount()); tree=undefined;
@@ -299,7 +302,7 @@ it("private Live Photo stays paired when motion upload is interrupted and its co
   });
   mocks.library.mockResolvedValue({ canceled: false, assets: [{ uri: media[0]!.localUri, type: "livePhoto", pairedVideoAsset: { uri: media[1]!.localUri, type: "pairedVideo" } }] });
   mocks.preserveMedia.mockImplementation(async (picked: {uri: string}) => media.find(m => m.localUri === picked.uri));
-  await press("从相册导入");
+  await press("相册");
   await expect.poll(async () => (await listLocalDrafts(scope)).find(d => d.status === "editing")?.content.items.length).toBe(2);
   await press("保存");
   const queued = (await listLocalDrafts(scope)).find(d => d.status === "queued")!;

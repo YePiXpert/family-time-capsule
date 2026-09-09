@@ -14,6 +14,7 @@ import {
   getBookVersion,
   saveBookProject,
   saveBookVersion,
+  restoreBookVersion,
   setBookDeleted,
 } from "@/lib/books/projects/service";
 import { addBookSelections } from "@/lib/books/projects/select";
@@ -68,6 +69,8 @@ export async function PATCH(request: Request, { params }: Route) {
       );
     if (body.operation === "snapshot")
       return mobileJson(saveBookVersion(auth.context, id, revision));
+    if (body.operation === "restore_version")
+      return mobileJson(restoreBookVersion(auth.context, id, revision, Number(body.version)));
     if (body.operation === "delete" || body.operation === "restore")
       return mobileJson(
         setBookDeleted(auth.context, id, revision, body.operation === "delete"),

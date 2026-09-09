@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { BottomNavigation } from "./bottom-navigation";
 import { SidebarNavigation } from "./sidebar-navigation";
 import { Icon } from "./ui/icons";
-import { ReturnToStandardButton } from "./display-mode-toggle";
 import type { DisplayMode } from "@/lib/display-mode";
 import type { FamilyCapability, FamilyRole } from "@/lib/authz/policy";
 
@@ -18,12 +17,9 @@ export function AppShell({ children, familyName, inboxCount, userName, role, cap
           <span className="block truncate text-base font-semibold">{familyName}</span>
         </Link>
         <div className="flex flex-none items-center gap-2">
-          {simple ? null : (
-            <Link href="/search" className="icon-button" aria-label="搜索家庭记忆">
-              <Icon name="search" size={22} />
-            </Link>
-          )}
-          <ReturnToStandardButton mode={displayMode} />
+          <Link href="/settings" className="icon-button" aria-label="设置">
+            <Icon name="settings" size={22} />
+          </Link>
         </div>
       </header>
       <div className="app-shell-content">{children}</div>

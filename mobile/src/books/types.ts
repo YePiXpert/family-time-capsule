@@ -1,14 +1,13 @@
 export type BookTemplate = "photos" | "growth" | "letters";
 export type BookAudience = "personal" | "family";
 export type BookSourceKind =
-  "memory" | "asset" | "contribution" | "story" | "collection";
+  "memory" | "asset" | "contribution" | "collection";
 export type BookSourceRef = {
   id: string;
   kind: BookSourceKind;
   memoryEventId: string | null;
   assetId: string | null;
   contributionId: string | null;
-  storyId: string | null;
   collectionId: string | null;
   fingerprint: string;
   label: string;

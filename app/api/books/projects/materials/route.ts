@@ -1,6 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { getDb } from "@/db";
-import { story } from "@/db/schema/story";
+import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { authorizeApiFamilyRequest } from "@/lib/authz/context";
 import { mobileJson, mobileRequestError } from "@/lib/mobile/http";
 import { BookError } from "@/lib/books/projects/service";
@@ -19,7 +17,7 @@ export async function GET(request: Request) {
       cursor = query.get("cursor");
     if (
       !["personal", "family"].includes(audience) ||
-      !["memory", "collection", "story"].includes(kind)
+      !["memory", "collection"].includes(kind)
     )
       throw new BookError("invalid_filter");
     const resolve = createBookSourceResolver(
@@ -29,7 +27,13 @@ export async function GET(request: Request) {
     let rows: { id: string; title: string }[] = [],
       nextCursor: string | null = null;
     if (kind === "memory") {
-      const page = await getTimelinePage(auth.context, { cursor, limit: 24 });
+      const month = query.get("month") || "";
+      if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BookError("invalid_filter");
+      const nextMonth = month ? new Date(Date.UTC(Number(month.slice(0,4)), Number(month.slice(5,7)), 1)).toISOString().slice(0,7) : "";
+      const page = await getTimelinePage(auth.context, { cursor, limit: 24,
+        occurredFrom: month ? zonedWallTimeToUtc(`${month}-01T00:00:00`, auth.context.familyTimezone) : undefined,
+        occurredBefore: month ? zonedWallTimeToUtc(`${nextMonth}-01T00:00:00`, auth.context.familyTimezone) : undefined,
+      });
       rows = page.entries.map((e) => ({
         id: e.event.id,
         title: e.event.title,
@@ -39,49 +43,8 @@ export async function GET(request: Request) {
       const page = listCollections(auth.context, { cursor });
       rows = page.entries;
       nextCursor = page.nextCursor;
-    } else {
-      let after: { at: number; id: string } | null = null;
-      if (cursor) {
-        try {
-          after = JSON.parse(Buffer.from(cursor, "base64url").toString());
-          if (
-            !after ||
-            !Number.isSafeInteger(after.at) ||
-            typeof after.id !== "string"
-          )
-            throw new Error();
-        } catch {
-          throw new BookError("invalid_cursor");
-        }
-      }
-      const all = getDb()
-        .select()
-        .from(story)
-        .where(
-          and(
-            eq(story.familyId, auth.context.familyId),
-            eq(story.status, "published"),
-            isNull(story.deletedAt),
-            after
-              ? sql`(${story.updatedAt},${story.id})<(${after.at},${after.id})`
-              : undefined,
-          ),
-        )
-        .orderBy(desc(story.updatedAt), desc(story.id))
-        .limit(25)
-        .all();
-      rows = all.slice(0, 24);
-      const last = rows.at(-1) && all[23];
-      nextCursor =
-        all.length > 24 && last
-          ? Buffer.from(
-              JSON.stringify({
-                at: last.updatedAt.getTime() / 1000,
-                id: last.id,
-              }),
-            ).toString("base64url")
-          : null;
     }
+
     return mobileJson({
       entries: rows.flatMap((row) => {
         const state = resolve(kind as BookSourceKind, row.id);

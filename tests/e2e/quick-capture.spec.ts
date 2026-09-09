@@ -50,7 +50,7 @@ test("choose photos and save without filling any field or enabling AI; same-day 
     await expect(page.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
     await page.getByLabel("添加照片、视频、录音或文档").setInputFiles(path.join(__dirname, "../fixtures", filename));
     await expect(page.locator("main ol > li")).toHaveCount(1);
-    await expect(page.getByText("AI 尚未获得处理授权", { exact: false })).toBeVisible();
+    await expect(page.getByText("保存后按已有授权在后台整理，不影响原件。")).toHaveCount(0);
     for (const width of [375, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -75,8 +75,9 @@ test("one save survives a lost response, runs real queued image/audio/text HTTP 
   test.setTimeout(90000);
   await ensureBootstrap(page);
   await page.goto("/settings/ai");
-  for (const name of ["文字整理与故事草稿", "图片与视频画面理解", "音频与视频音轨转录"]) {
+  for (const name of ["文字整理与信息建议", "图片与视频画面理解", "音频与视频音轨转录"]) {
     const card = page.locator("article", { has: page.getByRole("heading", { name }) });
+    await card.getByLabel("允许系统自动处理明确标为“家人可见”的内容").check();
     await card.getByRole("button", { name: "同意启用这项外部处理" }).click();
     await expect(card.getByText("可使用")).toBeVisible();
   }
@@ -89,14 +90,16 @@ test("one save survives a lost response, runs real queued image/audio/text HTTP 
     expect(response.ok()).toBe(true); committed = true;
     await route.abort("failed");
   }, { times: 1 });
-  await page.getByRole("button", { name: "保存并整理", exact: true }).click();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect.poll(() => committed).toBe(true);
-  await expect(page.getByRole("button", { name: "重试保存并整理", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "重试保存", exact: true })).toBeEnabled();
   expect(dbRead(db => db.prepare("select count(*) n from memory_event").get())).toEqual({ n: before + 1 });
-  await page.getByRole("button", { name: "重试保存并整理", exact: true }).click();
+  await page.getByRole("button", { name: "重试保存", exact: true }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   expect(dbRead(db => db.prepare("select count(*) n from ai_job").get())).toEqual({ n: 3 });
   expect(calls).toBe(0);
+  await page.getByText("AI 帮我起名", { exact: true }).click();
+  await page.getByText("修改标题与审核 AI 建议", { exact: true }).click();
   for (let i = 0; i < 3; i++) expect(await workOnce()).toContain("[ai-worker] completed");
   await expect(page.getByText("AI 建议：窗边的绿植与浇水声", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "采用", exact: true })).toBeEnabled();
@@ -116,8 +119,9 @@ test("failed AI still leaves the saved memory readable; private save never reque
   await ensureBootstrap(page);
   await page.goto("/capture");
   await page.getByLabel("写下这一刻").fill("今天只想先把这件事记下来。");
-  await page.getByRole("button", { name: "保存并整理", exact: true }).click();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
+  await page.getByText("AI 帮我起名", { exact: true }).click();
   refuse = true;
   try { expect(await workOnce()).toContain("[ai-worker] failed"); } finally { refuse = false; }
   await expect(page.getByText("整理服务拒绝了请求", { exact: false })).toBeVisible();
@@ -126,8 +130,9 @@ test("failed AI still leaves the saved memory readable; private save never reque
   const count = calls;
   await page.goto("/capture");
   await page.getByLabel("写下这一刻").fill("仅自己可见的记录");
+  await page.locator("summary").filter({ hasText: "全家可见" }).click();
   await page.getByLabel("保存后的读者").selectOption("private");
-  await expect(page.getByRole("button", { name: "保存并整理", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   expect(calls).toBe(count);

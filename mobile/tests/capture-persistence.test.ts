@@ -194,7 +194,7 @@ it("keeps a picked Live Photo image and paired video together through real SQLit
   mocks.library.mockResolvedValue({ canceled: false, assets: [image] });
   mocks.preserveMedia.mockImplementation(async (asset, id) => ({ localUri: `file:///copies/${id}`, fileName: asset.type === "pairedVideo" ? "motion.mov" : "still.heic", mediaType: asset.type === "pairedVideo" ? "video" : "image", mimeType: asset.type === "pairedVideo" ? "video/quicktime" : "image/heic", source: "library", lastModified: null }));
   await act(async () => { tree = create(createElement(CaptureScreen)); });
-  await press("从相册导入");
+  await press("相册");
   await expect.poll(async () => (await listLocalDrafts("local"))[0]?.content.items.length).toBe(2);
   const row = (await listLocalDrafts("local"))[0]!;
   expect(row.content.items.map(i => i.livePhotoRole)).toEqual(["image", "video"]);
@@ -219,12 +219,12 @@ it("does not save a half Live Photo when the paired copy fails", async () => {
     return { localUri: `file:///copies/${id}`, fileName: "still.heic", mediaType: "image", mimeType: "image/heic", source: "library", lastModified: null };
   });
   await act(async () => { tree = create(createElement(CaptureScreen)); });
-  await press("从相册导入");
+  await press("相册");
   await expect.poll(() => tree!.root.findAllByType("Text" as never).some(t => t.children.join("").includes("video copy failed"))).toBe(true);
   expect((await listLocalDrafts("local"))[0]?.content.items).toEqual([]);
 });
 
-it.each(["保存", "发送草稿到测试家庭", "交给家人整理"])("blocks %s for a recovered Live Photo with a missing component", async action => {
+it.each(["保存"])("blocks %s for a recovered Live Photo with a missing component", async action => {
   mocks.connected = true;
   const scope = JSON.stringify([mocks.credentials.serverUrl, "instance", "user-a", "family"]);
   const { createLocalDraft, saveLocalDraft } = await import("../src/drafts/store");
@@ -242,7 +242,7 @@ it("pairs separately imported image and video only after an explicit user action
   mocks.library.mockResolvedValue({ canceled: false, assets: [{ uri: "file:///still.jpg", type: "image" }, { uri: "file:///motion.mov", type: "video" }] });
   mocks.preserveMedia.mockImplementation(async (asset, id) => ({ localUri: `file:///copies/${id}`, fileName: asset.type === "video" ? "motion.mov" : "still.jpg", mediaType: asset.type, mimeType: asset.type === "video" ? "video/quicktime" : "image/jpeg", source: "library", lastModified: null }));
   await act(async () => { tree = create(createElement(CaptureScreen)); });
-  await press("从相册导入");
+  await press("相册");
   await expect.poll(async () => (await listLocalDrafts("local"))[0]?.content.items.length).toBe(2);
   expect((await listLocalDrafts("local"))[0]?.content.items.every(i => !i.livePhotoGroupId)).toBe(true);
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });

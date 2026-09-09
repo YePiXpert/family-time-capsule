@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { Text, TextInput } from "../components/typography";
 import { ApiError, fetchTranscriptReview, parseTranscriptReview, saveTranscriptReview } from "../api/client";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { useApp } from "../state/AppContext";

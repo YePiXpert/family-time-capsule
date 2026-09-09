@@ -1,7 +1,8 @@
+import { Text } from "../components/typography";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import { chooseLocalIntake, getLocalIntake, type IntakeDetail } from "../native/intake-store";
 import { listLocalDrafts, type LocalDraft } from "../drafts/store";

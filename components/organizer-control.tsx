@@ -71,11 +71,11 @@ function Control({ kind, id, reviewNames = true, assetOperation = "transcribe", 
           </div>
         </div>)}
         {!reviewNames && review.names?.suggestions.filter(row => row.status === "pending" && row.valid).map(row => <p key={row.id}>AI 建议：{row.title}，请在下方审核后采用。</p>)}
-        {defaultOpen && review.transcripts.length > 0 && <details><summary className="min-h-11 cursor-pointer py-2">查看录音文字</summary>{review.transcripts.map(row => <p key={row.assetId} className="my-2 whitespace-pre-wrap">{row.text}</p>)}</details>}
+        {review.transcripts.length > 0 && <details><summary className="min-h-11 cursor-pointer py-2">查看录音文字</summary>{review.transcripts.map(row => <p key={row.assetId} className="my-2 whitespace-pre-wrap">{row.text}</p>)}</details>}
       </> : <p>展开后读取服务状态。</p>}
       <button type="button" className="ui-button-secondary my-2" disabled={busy} onClick={() => void load()}>刷新整理状态</button>
     </details>
     {reviewNames ? <NameReviewControl kind={kind} id={id} refreshVersion={refreshVersion} defaultOpen={defaultOpen} /> : null}
-    {defaultOpen && kind === "memory_event" && <Link className="underline" href={`/memories/${id}?mode=archive#ai-suggestions`}>查看地点、时间与标签建议</Link>}
+    {open && kind === "memory_event" && <Link className="underline" href={`/memories/${id}?mode=archive#ai-suggestions`}>查看地点、时间与标签建议</Link>}
   </div>;
 }

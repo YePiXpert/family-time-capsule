@@ -25,7 +25,7 @@ export function captureDateSummary(content: Pick<DraftContent, "occurredAt" | "o
 
 /** The combined button is an explicit request for this memory's selected media.
  * It never enables consent, changes audience, or enrolls future uploads. */
-export function captureOrganizerAvailability(settings: AiSettings | null, visibility: DraftContent["visibility"], mimeTypes: string[]): { ready: boolean; message: string } {
+export function captureOrganizerAvailability(settings: AiSettings | null, visibility: DraftContent["visibility"], mimeTypes: string[], mode: "manual" | "automatic" = "manual"): { ready: boolean; message: string } {
   if (visibility !== "family") return { ready: false, message: "按所选读者保存；需要 AI 时，可在记忆中单独选择整理。" };
   if (mimeTypes.length > 10) return { ready: false, message: "素材可以一起保存；AI 每次最多整理 10 份，可以稍后分批选择。" };
   if (!settings?.configured) return { ready: false, message: "AI 尚未配置或暂不可用，可以直接保存，稍后再整理。" };
@@ -38,5 +38,6 @@ export function captureOrganizerAvailability(settings: AiSettings | null, visibi
   const capabilities = [...required].map(kind => settings.capabilities.find(row => row.capability === kind));
   if (capabilities.some(row => !row?.available)) return { ready: false, message: "所需的 AI 模型尚未配齐，可以直接保存，稍后再整理。" };
   if (capabilities.some(row => !row?.consented)) return { ready: false, message: "AI 尚未获得处理授权，可以直接保存；管理员可在 AI 设置中开启。" };
+  if (mode === "automatic" && capabilities.some(row => row?.automaticAllowed !== true)) return { ready: false, message: "自动整理尚未授权，可以直接保存。" };
   return { ready: true, message: "保存并整理会将本次文字和素材发送给已授权的 AI，后台看图、转录并生成建议，你可以稍后确认。" };
 }

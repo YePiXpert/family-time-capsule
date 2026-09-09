@@ -1,4 +1,4 @@
-import { readStoryInputSources } from "@/lib/stories/dependencies.mjs";
+
 import { createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import { readableName } from "@/lib/naming";
 import "server-only";
@@ -8,11 +8,9 @@ import { getDb } from "@/db";
 import { asset } from "@/db/schema/asset";
 import { person } from "@/db/schema/family";
 import { memoryEvent } from "@/db/schema/memory";
-import { contribution, fact } from "@/db/schema/contribution";
-import { assetTranscript } from "@/db/schema/transcript";
-import { story, storyParagraph, storySource } from "@/db/schema/story";
-import { factSource } from "@/db/schema/suggestion";
-import { capsule } from "@/db/schema/capsule";
+import { contribution } from "@/db/schema/contribution";
+
+
 import type { FamilyContext } from "@/lib/family/context";
 import {
   createContributionAccessSnapshot,
@@ -21,7 +19,7 @@ import {
   familyReviewAssetPredicate,
 } from "@/lib/authz/contribution-access";
 import { getCollection } from "@/lib/collections/service";
-import { isCapsuleUnlocked } from "@/lib/capsules/service";
+
 import { formatPersonAgeLabel } from "@/lib/memories/age";
 import type {
   BookAudience,
@@ -33,7 +31,6 @@ export const SOURCE_FIELDS = {
   memory: "memoryEventId",
   asset: "assetId",
   contribution: "contributionId",
-  story: "storyId",
   collection: "collectionId",
 } as const;
 export function bookSourceTarget(ref: BookSourceRef) {
@@ -73,52 +70,13 @@ export function createBookSourceResolver(
     snapshot = createContributionAccessSnapshot(context),
     cache = new Map<string, ResolvedBookSource>(),
     visiting = new Set<string>();
-  const familyChild = db
-    .select()
-    .from(person)
-    .where(and(eq(person.familyId, context.familyId), eq(person.isChild, true)))
-    .get();
   function assetDescendants(id: string) {
     return sql`with recursive book_asset_tree(id) as (
       select id from asset where id=${id} and family_id=${context.familyId}
       union select a.id from asset a join book_asset_tree t on a.original_asset_id=t.id where a.family_id=${context.familyId}
     ) select id from book_asset_tree`;
   }
-  function closedCapsule(
-    kind: "memory" | "asset" | "contribution",
-    id: string,
-  ) {
-    const table =
-        kind === "memory"
-          ? "capsule_event"
-          : kind === "asset"
-            ? "capsule_asset"
-            : "capsule_contribution",
-      column =
-        kind === "memory"
-          ? "memory_event_id"
-          : kind === "asset"
-            ? "asset_id"
-            : "contribution_id";
-    const rows = db
-      .select()
-      .from(capsule)
-      .where(
-        and(
-          eq(capsule.familyId, context.familyId),
-          sql`${capsule.id} in (select capsule_id from ${sql.identifier(table)} where family_id=${context.familyId} and ${kind === "asset" ? sql`${sql.identifier(column)} in (${assetDescendants(id)})` : sql`${sql.identifier(column)}=${id}`})`,
-        ),
-      )
-      .all();
-    return rows.some(
-      (row) =>
-        !isCapsuleUnlocked(
-          row,
-          familyChild?.birthDate ?? null,
-          context.familyTimezone,
-        ),
-    );
-  }
+
   function resolve(
     kind: BookSourceKind,
     id: string | null,
@@ -145,7 +103,7 @@ export function createBookSourceResolver(
             ),
           )
           .get();
-        if (row && !closedCapsule("memory", id)) {
+        if (row) {
           const child = row.childPersonId === null ? undefined : db
             .select()
             .from(person)
@@ -170,7 +128,7 @@ export function createBookSourceResolver(
             )
             .all()
             .map((a) => a.id)
-            .filter((assetId) => !closedCapsule("asset", assetId));
+            ;
           result = {
             state: {
               available: true,
@@ -218,7 +176,6 @@ export function createBookSourceResolver(
           row &&
           !narrow &&
           (audience === "personal" || row.visibility === "family" || (event && resolve("memory", event.id).state.available) || Boolean(db.get(sql`select 1 where ${familyReviewAssetPredicate(context.familyId, sql`${id}`)}`))) &&
-          !closedCapsule("asset", id) &&
           (!event || resolve("memory", event.id).state.available)
         )
           result = {
@@ -260,8 +217,7 @@ export function createBookSourceResolver(
         );
         if (
           row &&
-          (audience === "personal" || row.visibility === "family") &&
-          !closedCapsule("contribution", id)
+          (audience === "personal" || row.visibility === "family")
         ) {
           const original = db
               .select()
@@ -317,146 +273,6 @@ export function createBookSourceResolver(
             };
         } catch {
           /* Missing/denied collection stays unavailable. */
-        }
-      } else if (kind === "story") {
-        const row = db
-          .select()
-          .from(story)
-          .where(
-            and(
-              eq(story.id, id),
-              eq(story.familyId, context.familyId),
-              eq(story.status, "published"),
-              isNull(story.deletedAt),
-            ),
-          )
-          .get();
-        if (row) {
-          const paragraphs = db
-            .select()
-            .from(storyParagraph)
-            .where(
-              and(
-                eq(storyParagraph.storyId, id),
-                eq(storyParagraph.familyId, context.familyId),
-              ),
-            )
-            .orderBy(storyParagraph.position)
-            .all();
-          const sources = db
-            .select()
-            .from(storySource)
-            .where(
-              and(
-                eq(storySource.familyId, context.familyId),
-                sql`${storySource.paragraphId} in(select id from story_paragraph where story_id=${id})`,
-              ),
-            )
-            .all();
-          const dependencies: unknown[] = [];
-          const inputs = readStoryInputSources(row);
-          const allowed = inputs !== null && [...inputs, ...sources].every((s) => {
-            if (s.sourceType === "user_text") return true;
-            if (!s.sourceId) return false;
-            if (
-              s.sourceType === "contribution" ||
-              s.sourceType === "memory_event"
-            ) {
-              const r = resolve(
-                s.sourceType === "contribution" ? "contribution" : "memory",
-                s.sourceId,
-              );
-              dependencies.push(r.fingerprint);
-              return r.state.available;
-            }
-            if (s.sourceType === "transcript") {
-              const transcript = db
-                .select()
-                .from(assetTranscript)
-                .where(
-                  and(
-                    eq(assetTranscript.id, s.sourceId),
-                    eq(assetTranscript.familyId, context.familyId),
-                  ),
-                )
-                .get();
-              if (!transcript) return false;
-              const r = resolve("asset", transcript.assetId);
-              dependencies.push([r.fingerprint, transcript]);
-              return r.state.available;
-            }
-            if (s.sourceType === "fact") {
-              const f = db
-                .select()
-                .from(fact)
-                .where(
-                  and(
-                    eq(fact.id, s.sourceId),
-                    eq(fact.status, "user_confirmed"),
-                  ),
-                )
-                .get();
-              if (!f || !resolve("memory", f.memoryEventId).state.available)
-                return false;
-              const refs = db
-                .select()
-                .from(factSource)
-                .where(
-                  and(
-                    eq(factSource.factId, f.id),
-                    eq(factSource.familyId, context.familyId),
-                  ),
-                )
-                .all();
-              dependencies.push(f);
-              return refs.every((ref) => {
-                if (ref.sourceType === "user_text") return true;
-                if (!ref.sourceId) return false;
-                if (ref.sourceType === "contribution") {
-                  const r = resolve("contribution", ref.sourceId);
-                  dependencies.push(r.fingerprint);
-                  return r.state.available;
-                }
-                let assetId = ref.sourceId;
-                if (ref.sourceType === "transcript") {
-                  const t = db
-                    .select()
-                    .from(assetTranscript)
-                    .where(
-                      and(
-                        eq(assetTranscript.id, ref.sourceId),
-                        eq(assetTranscript.familyId, context.familyId),
-                      ),
-                    )
-                    .get();
-                  if (!t) return false;
-                  assetId = t.assetId;
-                  dependencies.push(t);
-                }
-                const r = resolve("asset", assetId);
-                dependencies.push(r.fingerprint);
-                return r.state.available;
-              });
-            }
-            return false;
-          });
-          if (allowed)
-            result = {
-              state: {
-                ...unavailable().state,
-                available: true,
-                label: row.title,
-              },
-              fingerprint: sourceFingerprint([
-                row,
-                paragraphs,
-                sources,
-                dependencies,
-              ]),
-              text: paragraphs.map((p) => p.text).join("\n\n"),
-              images: [],
-              eventId: null,
-            };
         }
       }
     } finally {

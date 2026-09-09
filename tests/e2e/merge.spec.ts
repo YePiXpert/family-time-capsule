@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -24,8 +24,8 @@ test("上传 5 张照片合并为一个事件", async ({ page }) => {
   for (const file of files) {
     await page.getByRole("button", { name: "新建一件事" }).click();
     await page.locator('input[type="file"]').first().setInputFiles(file);
-    await page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
-    await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+    await submitCaptureForReview(page);
+
   }
 
   // 收件箱全选 → 合并
@@ -57,7 +57,7 @@ test("HEIC + MOV 合并为一个事件（Live Photo 组合，RH-002）", async (
       mimeType: "image/heic",
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.heic")),
     });
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
   await page.getByRole("button", { name: "新建一件事" }).click();
   await page
     .locator('input[type="file"]').first()
@@ -66,7 +66,7 @@ test("HEIC + MOV 合并为一个事件（Live Photo 组合，RH-002）", async (
       mimeType: "video/quicktime",
       buffer: readFileSync(path.join(__dirname, "..", "fixtures", "sample.mov")),
     });
-  await page.getByRole("button", { name: "先收进来，交给家人整理" }).click(); await expect(page.getByText("已收进收件箱。整件事的草稿可以继续整理。", { exact: true })).toBeVisible();
+  await submitCaptureForReview(page);
 
   await page.goto("/inbox");
   const checkboxes = page.getByRole("checkbox");

@@ -65,9 +65,7 @@ const { GET: libraryGet, POST: libraryPost } = await import(
 const { GET: libraryDetailGet, PATCH: libraryDetailPatch } = await import(
   "@/app/api/mobile/v1/library/[domain]/[id]/route"
 );
-const { GET: reviewGet, PATCH: reviewPatch } = await import(
-  "@/app/api/mobile/v1/review/route"
-);
+
 const { createImportSession } = await import("@/lib/imports/service");
 
 const email = "mobile@example.com";
@@ -666,12 +664,9 @@ describe("native mobile API", () => {
     const home = await homeGet(
       bearerRequest("http://localhost/api/mobile/v1/home", bearerToken),
     );
-    const homeBody = (await home.json()) as {
-      recentMemories: Array<{ id: string }>;
-      onThisDay: Array<{ id: string }>;
-    };
-    expect(homeBody.recentMemories.some((event) => event.id === confirmed.eventId)).toBe(false);
-    expect(homeBody.onThisDay.some((event) => event.id === confirmed.eventId)).toBe(false);
+    const homeBody = await home.json();
+    expect(homeBody).not.toHaveProperty("recentMemories");
+    expect(JSON.stringify(homeBody)).not.toContain(confirmed.eventId);
     const search = await searchGet(
       bearerRequest(
         "http://localhost/api/mobile/v1/search?q=%E5%B7%B2%E5%88%A0%E9%99%A4%E7%A7%BB%E5%8A%A8%E5%9B%9E%E5%BD%92%E5%94%AF%E4%B8%80%E5%AD%97%E6%A0%B7",
@@ -692,73 +687,10 @@ describe("native mobile API", () => {
       ),
     ))[0]!;
 
-    const requestCreated = await libraryPost(
-      mobileJsonRequest("http://localhost/api/mobile/v1/library/requests", "POST", bearerToken, {
-        recipientLabel: "外婆",
-        promptText: "小时候最难忘的一顿饭是什么？",
-      }),
-      { params: Promise.resolve({ domain: "requests" }) },
-    );
-    expect(requestCreated.status).toBe(201);
-    const requestResult = (await requestCreated.json()) as { id: string; token: string };
-    expect(requestResult.token).toHaveLength(43);
-
-    // Seed dated material explicitly; suite execution date must not select an empty week.
-    const { createContribution } = await import("@/lib/contributions/service");
-    await getDb().update(memoryEvent).set({ occurredAt: new Date("2026-09-04T12:00:00.000Z") }).where((await import("drizzle-orm")).eq(memoryEvent.id, event.id));
-    expect((await createContribution(familyId, { memoryEventId: event.id, authorPersonId: admin.personId!, recordedByUserId: admin.id, rawText: "虚构家庭本周一起做饭。", visibility: "family" })).ok).toBe(true);
-    const storyCreated = await libraryPost(
-      mobileJsonRequest("http://localhost/api/mobile/v1/library/stories", "POST", bearerToken, {
-        anchor: "2026-09-04T12:00:00.000Z",
-      }),
-      { params: Promise.resolve({ domain: "stories" }) },
-    );
-    expect(storyCreated.status, await storyCreated.clone().text()).toBe(201);
-    const storyResult = (await storyCreated.json()) as { id: string };
-    const storyDetail = await libraryDetailGet(
-      bearerRequest(`http://localhost/api/mobile/v1/library/stories/${storyResult.id}`, viewerToken),
-      { params: Promise.resolve({ domain: "stories", id: storyResult.id }) },
-    );
-    expect(storyDetail.status).toBe(200);
-    await expect(storyDetail.json()).resolves.toMatchObject({
-      id: storyResult.id,
-      status: "draft",
-      canWrite: false,
-      paragraphs: expect.arrayContaining([
-        expect.objectContaining({ sources: expect.any(Array) }),
-      ]),
-    });
-
-    const portalCreated = await libraryPost(
-      mobileJsonRequest("http://localhost/api/mobile/v1/library/portals", "POST", bearerToken, {
-        title: "旧照片征集",
-        description: "请把原始照片和当时的故事一起留下。",
-      }),
-      { params: Promise.resolve({ domain: "portals" }) },
-    );
-    expect(portalCreated.status).toBe(201);
-    const portalResult = (await portalCreated.json()) as { id: string; token: string };
-    expect(portalResult.token).toHaveLength(43);
-
-    const capsuleCreated = await libraryPost(
-      mobileJsonRequest("http://localhost/api/mobile/v1/library/capsules", "POST", bearerToken, {
-        title: "明年再看",
-        unlockType: "date",
-        unlockValue: "2099-01-01",
-      }),
-      { params: Promise.resolve({ domain: "capsules" }) },
-    );
-    const capsuleResult = (await capsuleCreated.json()) as { id: string };
-    expect(capsuleCreated.status).toBe(201);
-    expect((await libraryDetailPatch(
-      mobileJsonRequest(`http://localhost/api/mobile/v1/library/capsules/${capsuleResult.id}`, "PATCH", bearerToken, { operation: "add_event", eventId: event.id }),
-      { params: Promise.resolve({ domain: "capsules", id: capsuleResult.id }) },
-    )).status).toBe(200);
-    expect((await libraryDetailPatch(
-      mobileJsonRequest(`http://localhost/api/mobile/v1/library/capsules/${capsuleResult.id}`, "PATCH", bearerToken, { operation: "seal" }),
-      { params: Promise.resolve({ domain: "capsules", id: capsuleResult.id }) },
-    )).status).toBe(200);
-
+    for (const domain of ["stories", "capsules", "requests", "portals"]) {
+      expect((await libraryGet(bearerRequest(`http://localhost/api/mobile/v1/library/${domain}`, bearerToken), { params: Promise.resolve({domain}) })).status).toBe(404);
+      expect((await libraryPost(mobileJsonRequest(`http://localhost/api/mobile/v1/library/${domain}`, "POST", bearerToken, {}), { params: Promise.resolve({domain}) })).status).toBe(404);
+    }
     const importRow = await createImportSession({
       familyId,
       createdByUserId: admin.id,
@@ -766,7 +698,7 @@ describe("native mobile API", () => {
       defaultTitle: "原生 Files 导入",
     });
 
-    for (const domain of ["people", "stories", "capsules", "requests", "portals", "imports"] as const) {
+    for (const domain of ["people", "imports"] as const) {
       const response = await libraryGet(
         bearerRequest(`http://localhost/api/mobile/v1/library/${domain}?limit=1`, viewerToken),
         { params: Promise.resolve({ domain }) },
@@ -775,8 +707,6 @@ describe("native mobile API", () => {
       expect(response.headers.get("cache-control"), domain).toBe("private, no-store");
       const body = (await response.json()) as { items: Record<string, unknown>[]; nextCursor: string | null };
       expect(body.items.length, domain).toBeLessThanOrEqual(1);
-      expect(JSON.stringify(body)).not.toContain(requestResult.token);
-      expect(JSON.stringify(body)).not.toContain(portalResult.token);
     }
 
     const firstPeople = await libraryGet(
@@ -792,74 +722,15 @@ describe("native mobile API", () => {
     const secondPeopleBody = (await secondPeople.json()) as { items: Array<{ id: string }> };
     expect(secondPeopleBody.items[0]?.id).not.toBe(firstPeopleBody.items[0]?.id);
 
-    const locked = await libraryDetailGet(
-      bearerRequest(`http://localhost/api/mobile/v1/library/capsules/${capsuleResult.id}`, viewerToken),
-      { params: Promise.resolve({ domain: "capsules", id: capsuleResult.id }) },
-    );
-    expect(locked.status).toBe(200);
-    await expect(locked.json()).resolves.toMatchObject({
-      id: capsuleResult.id,
-      unlocked: false,
-      events: [],
-      assets: [],
-      contributions: [],
-      canWrite: false,
-    });
+    const foreignImport = await libraryDetailGet(bearerRequest(`http://localhost/api/mobile/v1/library/imports/${importRow.id}`, viewerToken), { params: Promise.resolve({domain:"imports",id:importRow.id}) });
+    expect(foreignImport.status).toBe(404);
 
-    for (const [domain, id] of [["requests", requestResult.id], ["portals", portalResult.id], ["imports", importRow.id]] as const) {
-      const detail = await libraryDetailGet(
-        bearerRequest(`http://localhost/api/mobile/v1/library/${domain}/${id}`, viewerToken),
-        { params: Promise.resolve({ domain, id }) },
-      );
-      if (domain === "imports") { expect(detail.status).toBe(404); continue; }
-      expect(detail.status, domain).toBe(200);
-      expect(detail.headers.get("cache-control"), domain).toBe("private, no-store");
-      const serialized = JSON.stringify(await detail.json());
-      expect(serialized).not.toContain(requestResult.token);
-      expect(serialized).not.toContain(portalResult.token);
-    }
-  });
-
-  it("serves a private no-store weekly review and enforces viewer/foreign write isolation", async () => {
-    const admin = (await getDb().select().from(user))[0]!;
-    const child = (await getDb().select().from(person).where(
-      (await import("drizzle-orm")).and(
-        (await import("drizzle-orm")).eq(person.familyId, admin.familyId!),
-        (await import("drizzle-orm")).eq(person.isChild, true),
-      ),
-    ))[0]!;
-    const eventId = randomUUID();
-    await getDb().insert(memoryEvent).values({
-      id: eventId, familyId: admin.familyId!, childPersonId: child.id,
-      title: "移动端每周重点", occurredAt: new Date("2026-09-03T02:00:00.000Z"),
-      occurredAtPrecision: "exact", status: "confirmed", createdAt: new Date(), updatedAt: new Date(),
-    });
-    const response = await reviewGet(bearerRequest("http://localhost/api/mobile/v1/review?period=2026-09-03", viewerToken));
-    expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
-    const body = (await response.json()) as { id: string; key: string; canWrite: boolean; events: Array<{ id: string }> };
-    expect(body.canWrite).toBe(false);
-    expect(body.events.map((entry) => entry.id)).toContain(eventId);
-
-    const viewerDenied = await reviewPatch(mobileJsonRequest("http://localhost/api/mobile/v1/review", "PATCH", viewerToken, {
-      operation: "complete", reviewId: body.id, key: body.key,
-    }));
-    expect(viewerDenied.status).toBe(403);
-    const foreignHidden = await reviewPatch(mobileJsonRequest("http://localhost/api/mobile/v1/review", "PATCH", foreignToken, {
-      operation: "complete", reviewId: body.id, key: body.key,
-    }));
-    expect(foreignHidden.status).toBe(404);
-    const selected = await reviewPatch(mobileJsonRequest("http://localhost/api/mobile/v1/review", "PATCH", bearerToken, {
-      operation: "highlight", reviewId: body.id, key: body.key, eventId, selected: true,
-    }));
-    expect(selected.status).toBe(200);
-    await expect(selected.json()).resolves.toMatchObject({ review: { events: expect.arrayContaining([expect.objectContaining({ id: eventId, selected: true })]) } });
   });
 
   it("rejects mobile library writes for viewers, client family ids, and foreign-family details", async () => {
     const admin = (await getDb().select().from(user))[0]!;
     const ownPerson = (await listPeople(admin.familyId!))[0]!;
-    for (const domain of ["people", "stories", "capsules", "requests", "portals", "imports"] as const) {
+    for (const domain of ["people", "imports"] as const) {
       const denied = await libraryPost(
         mobileJsonRequest(`http://localhost/api/mobile/v1/library/${domain}`, "POST", viewerToken, {}),
         { params: Promise.resolve({ domain }) },

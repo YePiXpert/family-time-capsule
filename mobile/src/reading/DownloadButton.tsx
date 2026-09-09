@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
+import { Text } from "../components/typography";
 import { useNavigation } from "@react-navigation/native";
 import type { AppNavigation } from "../navigation/types";
 import { useApp } from "../state/AppContext";

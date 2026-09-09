@@ -191,35 +191,6 @@ export default async function PersonProfilePage({
         )}
       </section>
 
-      <section className="mt-10" aria-label="口述史">
-        <SectionHeader
-          title="口述史问题"
-          description="专门发给这位家人的家庭讲述邀请"
-          actionHref={canAsk ? `/requests?personId=${encodeURIComponent(profile.person.id)}` : "/requests"}
-          actionLabel={canAsk ? "发起一个问题" : "查看口述史"}
-        />
-        {profile.oralHistoryRequests.length > 0 ? (
-          <div className="mt-3 space-y-3">
-            {profile.oralHistoryRequests.map((request) => (
-              <Link
-                key={request.id}
-                href="/requests"
-                className="flex min-h-16 items-start justify-between gap-4 rounded-2xl border border-line bg-surface p-4 hover:border-accent/50"
-              >
-                <span>
-                  <span className="block font-medium">{request.promptText}</span>
-                  <span className="mt-1 block text-xs text-muted">
-                    已收到 {request.submissionCount} 条 · 待整理 {request.pendingCount} 条
-                  </span>
-                </span>
-                <StatusBadge tone={request.status === "open" ? "success" : "neutral"}>
-                  {request.status === "open" ? "待回答" : "已结束"}
-                </StatusBadge>
-              </Link>
-            ))}
-          </div>
-        ) : null}
-      </section>
     </main>
   );
 }

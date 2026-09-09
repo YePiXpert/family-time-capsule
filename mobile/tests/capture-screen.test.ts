@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   items: [] as unknown[],
-  constructor: vi.fn(), permission: vi.fn(), audioMode: vi.fn(),
+  alert: vi.fn(), constructor: vi.fn(), permission: vi.fn(), audioMode: vi.fn(),
   prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
   cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(),
   enqueueText: vi.fn(), enqueueMedia: vi.fn(), preserveMedia: vi.fn(),
@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("react-native", () => ({
+  Alert: { alert: mocks.alert },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
@@ -137,7 +138,6 @@ it.each(["text", "photo", "library"])("opens %s and saves without initializing a
     expect(mocks.focus).toHaveBeenCalledOnce();
     const input = tree!.root.findAllByType("TextInput" as never)[0]!;
     await act(() => input.props.onChangeText("今天一起散步"));
-    await press("保留整件事草稿");
     expect(mocks.enqueueText).toHaveBeenCalledWith({ text: "今天一起散步" });
   } else {
     expect(intent === "photo" ? mocks.camera : mocks.library).toHaveBeenCalledOnce();
@@ -152,10 +152,10 @@ it.each(["text", "photo", "library"])("opens %s and saves without initializing a
 it("keeps capture usable when microphone permission is denied", async () => {
   mocks.permission.mockResolvedValue({ granted: false });
   await render();
-  await press("直接录音");
+  await press("录音");
   expect(JSON.stringify(tree!.toJSON())).toContain("需要麦克风权限");
   expect(mocks.constructor).not.toHaveBeenCalled();
-  await press("从相册导入");
+  await press("相册");
   expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
 });
 
@@ -166,18 +166,18 @@ it("offers library import and remains usable when the native camera is unavailab
   await render("photo");
   expect(JSON.stringify(tree!.toJSON())).toContain("当前设备无法使用相机，请从相册导入。");
   expect(mocks.enqueueMedia).not.toHaveBeenCalled();
-  await press("从相册导入");
+  await press("相册");
   expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
 });
 
 it.each(["constructor", "prepare", "record"] as const)("contains %s failure and can retry recording", async (step) => {
   mocks[step].mockImplementationOnce(() => { throw new Error("录音设备不可用"); });
   await render();
-  await press("直接录音");
+  await press("录音");
   expect(JSON.stringify(tree!.toJSON())).toContain("录音设备不可用");
   expect(mocks.audioMode).toHaveBeenLastCalledWith(expect.objectContaining({ allowsRecording: false }));
   if (step !== "constructor") expect(mocks.release).toHaveBeenCalledOnce();
-  await press("直接录音");
+  await press("录音");
   expect(JSON.stringify(tree!.toJSON())).toContain("完成录音");
   expect(mocks.permission.mock.invocationCallOrder[0]).toBeLessThan(mocks.constructor.mock.invocationCallOrder[0]!);
   expect(mocks.audioMode.mock.invocationCallOrder[0]).toBeLessThan(mocks.constructor.mock.invocationCallOrder[0]!);
@@ -189,27 +189,29 @@ it.each(["constructor", "prepare", "record"] as const)("contains %s failure and 
 it("releases the recorder and restores other capture actions after stop fails", async () => {
   mocks.stop.mockRejectedValueOnce(new Error("录音已中断"));
   await render();
-  await press("直接录音");
+  await press("录音");
   await press("完成录音");
   expect(mocks.release).toHaveBeenCalledOnce();
   expect(mocks.enqueueMedia).not.toHaveBeenCalled();
-  await press("拍照片");
+  await press("拍摄");
+  await act(async () => mocks.alert.mock.calls.at(-1)![2].find((option: { text: string }) => option.text === "拍照片").onPress());
   expect(mocks.camera).toHaveBeenCalledOnce();
 });
 
 it("does not lose the saved result if resetting the audio session fails", async () => {
   await render();
-  await press("直接录音");
+  await press("录音");
   mocks.audioMode.mockRejectedValueOnce(new Error("session reset failed"));
   await press("完成录音");
   expect(JSON.stringify(tree!.toJSON())).toContain("录音原件已复制");
   expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
-  await press("拍照片");
+  await press("拍摄");
+  await act(async () => mocks.alert.mock.calls.at(-1)![2].find((option: { text: string }) => option.text === "拍照片").onPress());
 });
 
 it("releases a live recorder when the screen unmounts", async () => {
   await render();
-  await press("直接录音");
+  await press("录音");
   await act(() => tree!.unmount());
   tree = undefined;
   expect(mocks.release).toHaveBeenCalledOnce();
@@ -220,7 +222,7 @@ it("does not create a recorder if unmounted while waiting for permission", async
   let grant!: (value: { granted: boolean }) => void;
   mocks.permission.mockReturnValue(new Promise((resolve) => { grant = resolve; }));
   await render();
-  await press("直接录音");
+  await press("录音");
   await act(() => tree!.unmount());
   tree = undefined;
   await act(async () => { grant({ granted: true }); });

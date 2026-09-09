@@ -11,7 +11,6 @@ export const metadata: Metadata = { title: "回收站 · Family Time Capsule" };
 const KIND_LABEL: Record<string, string> = {
   memory_event: "记忆事件",
   contribution: "家人讲述",
-  story: "故事",
 };
 
 export default async function TrashPage() {

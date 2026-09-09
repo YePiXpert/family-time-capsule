@@ -105,6 +105,7 @@ export type LocalImportIntakeItem = {
 };
 
 export type LocalImportSession = {
+  needsAction?: boolean;
   id: string;
   source: LocalImportSource;
   status: "collecting" | "uploading" | "reviewing" | "completed" | "cancelled";
@@ -126,62 +127,9 @@ export type OutboxItem = {
 
 export type MobileHome = {
   family: { name: string; timezone: string };
-  child: null | {
-    id: string;
-    displayName: string;
-    currentAgeLabel: string | null;
-    avatarPath: string | null;
-  };
   capabilities: { canCapture: boolean };
-  inbox: {
-    count: number;
-    previews: {
-      id: string;
-      title: string;
-      status: string;
-      mediaPath: string | null;
-    }[];
-  };
-  recentMemories: {
-    id: string;
-    title: string;
-    occurredAt: string;
-    ageLabel: string | null;
-    coverPath: string | null;
-  }[];
-  onThisDay: { id: string; title: string; occurredAt: string }[];
-  voices?: {
-    id: string;
-    memoryEventId: string;
-    eventTitle: string;
-    authorName: string;
-    audioPath: string;
-  }[];
-  story: null | { id: string; title: string; status: string };
-  capsule: null | {
-    id: string;
-    title: string;
-    status: string;
-    unlockType: string;
-    unlockValue: string;
-    unlocked: boolean;
-  };
-  prompt: {
-    text: string;
-    recipientLabel: string | null;
-    pendingCount: number;
-    isCreatedRequest: boolean;
-  };
-  monthlyReview?: {month:string;startDate:string;endDate:string;count:number};
-  activeBooks?: {id:string;title:string;subtitle:string}[];
-  weeklyReview: {
-    key: string;
-    status: string;
-    confirmedCount: number;
-    pendingInboxCount: number;
-    storyId: string | null;
-  };
-  isFirstUse: boolean;
+  inbox: { count: number };
+  pendingImports?: { id: string; title: string }[];
 };
 
 export type MobileInboxAsset = {
@@ -290,7 +238,7 @@ export type MobileMemory = {
 
 export type MobileSearchPage = {
   items: {
-    type: "memory" | "fact" | "contribution" | "transcript" | "story";
+    type: "memory" | "fact" | "contribution" | "transcript";
     id: string;
     eventId: string | null;
     title: string;
@@ -314,13 +262,7 @@ export type MobileContributionInput = {
   visibility: MobileContributionVisibility;
 };
 
-export type MobileLibraryDomain =
-  | "people"
-  | "stories"
-  | "capsules"
-  | "requests"
-  | "portals"
-  | "imports";
+export type MobileLibraryDomain = "people" | "imports";
 
 export type MobileLibraryItem = {
   id: string;
@@ -346,48 +288,6 @@ export type MobileLibraryMutationResult = {
   id?: string;
   token?: string;
   expiresAt?: string;
-};
-
-export type MobileReview = {
-  id: string;
-  key: string;
-  periodStart: string;
-  periodEnd: string;
-  status: "open" | "in_progress" | "completed";
-  storyId: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  canWrite: boolean;
-  preferences: {
-    timezone: string;
-    weekStartsOn: number;
-    reminderWeekday: number;
-    reminderLocalTime: string;
-    remindPendingInbox: boolean;
-    remindPendingRequests: boolean;
-    remindUpcomingCapsules: boolean;
-  };
-  counts: {
-    inbox: number;
-    needsReview: number;
-    duplicateSuggestions: number;
-    clusterSuggestions: number;
-    guestSubmissions: number;
-    failedImports: number;
-    pendingRequests: number;
-    upcomingCapsules: number;
-  };
-  reminderAt: string | null;
-  events: {
-    id: string;
-    title: string;
-    occurredAt: string;
-    locationText: string | null;
-    participantNames: string[];
-    milestoneType: string | null;
-    contributionCount: number;
-    selected: boolean;
-  }[];
 };
 
 export type MobileCalendar = {

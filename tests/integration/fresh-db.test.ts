@@ -45,15 +45,12 @@ describe("fresh database 冷启动", () => {
       "memory_event_revision",
       "contribution",
       "fact",
-      "capsule",
-      "capsule_asset",
-      "capsule_event",
-      "capsule_contribution",
       "audit_log",
       "rate_limit",
       "family_invitation",
       "asset_transcript",
     ];
+    for (const table of ["capsule", "story", "contribution_request", "review_period"]) expect(names).not.toContain(table);
     for (const table of expected) {
       expect(names, `missing table: ${table}`).toContain(table);
     }

@@ -1,6 +1,7 @@
+import { Text, TextInput } from "../components/typography";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { Alert, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import { requestMobileJson } from "../api/client";
 import { useApp } from "../state/AppContext";

@@ -1,13 +1,10 @@
+import { usePendingImports } from "./PendingScreen";
+import { Text } from "../components/typography";
 import { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
-import {
-  FlatList,
-  Pressable,
-  RefreshControl,
-  Text,
-  View,
-} from "react-native";
+import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { useApp } from "../state/AppContext";
+import { Disclosure } from "../components/Disclosure";
 import { TimelineCard } from "../components/TimelineCard";
 import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
@@ -28,8 +25,8 @@ export function TimelineScreen() {
     viewer,
   } = useApp();
   // 收件箱不再是主导航(M1):「记忆」页头部保留整理入口,数量来自最近一次同步。
-  const inboxCount = home?.inbox.count ?? 0;
-  const canReviewInbox = viewer?.canReviewInbox ?? false;
+  const imports = usePendingImports();
+  const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
     <FlatList
       contentContainerStyle={
@@ -49,35 +46,32 @@ export function TimelineScreen() {
       }
       ListHeaderComponent={
         <View style={{ gap: 12, padding: 8 }}>
-          {canReviewInbox && credentials ? (
-            <Pressable
-              onPress={() => navigation.navigate("Inbox")}
+          {inboxCount > 0 ? (
+            <Pressable accessibilityRole="button"
+              onPress={() => navigation.navigate("Pending")}
               style={sharedStyles.secondaryButton}
             >
               <Text style={sharedStyles.secondaryText}>
-                待整理{inboxCount > 0 ? ` · ${inboxCount > 99 ? "99+" : inboxCount} 条素材等确认` : " · 收件箱已经整理完"}
+                待处理 {inboxCount > 99 ? "99+" : inboxCount} 条
               </Text>
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="button" onPress={() => navigation.navigate("AssetLibrary")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>资料 · 所有照片、声音与文档</Text></Pressable>
-          <Pressable
-            onPress={() => navigation.navigate("Collections")}
-            style={sharedStyles.secondaryButton}
-          >
-            <Text style={sharedStyles.secondaryText}>相册与章节</Text>
-          </Pressable>
-          {viewer?.canEditEvents ? (
-            <Pressable
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Search")} style={[sharedStyles.secondaryButton, { flex: 1 }]}><Text style={sharedStyles.secondaryText}>搜索</Text></Pressable>
+            <View style={{ flex: 1 }}><Disclosure title="筛选"><Pressable accessibilityRole="button" onPress={() => navigation.navigate("Calendar")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>日期与人物</Text></Pressable>          {viewer?.canEditEvents ? (
+            <Pressable accessibilityRole="button"
               onPress={() => setSelecting(!selecting)}
               style={sharedStyles.secondaryButton}
             >
               <Text style={sharedStyles.secondaryText}>
-                {selecting ? "退出多选" : "多选记忆加入相册"}
+                {selecting ? "取消选择" : "选择"}
               </Text>
             </Pressable>
           ) : null}
+</Disclosure></View>
+          </View>
           {selecting ? (
-            <Pressable
+            <Pressable accessibilityRole="button"
               disabled={!selected.length}
               onPress={() =>
                 navigation.navigate("Collections", { eventIds: selected })
@@ -89,16 +83,10 @@ export function TimelineScreen() {
               </Text>
             </Pressable>
           ) : null}
-          <Pressable
-            onPress={() => navigation.navigate("Calendar")}
-            style={sharedStyles.secondaryButton}
-          >
-            <Text style={sharedStyles.secondaryText}>日历 · 按年龄找记忆</Text>
-          </Pressable>
           {outbox.length > 0 ? (
-            <View style={sharedStyles.warning}>
+            <View>
               <Text style={sharedStyles.warningText}>
-                {outbox.length} 份记录安全留在本机，
+                {outbox.length} 份已保存在本机，
                 {credentials ? "联网后会继续补传" : "连接服务器后再补传"}。
               </Text>
             </View>

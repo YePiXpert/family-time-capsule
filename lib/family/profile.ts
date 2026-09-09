@@ -15,10 +15,6 @@ import {
   getTimelinePage,
   type TimelineEntry,
 } from "@/lib/memories/service";
-import {
-  listContributionRequests,
-  type RequestWithStats,
-} from "@/lib/oral-history/service";
 
 export type PersonNarrative = {
   id: string;
@@ -43,7 +39,6 @@ export type PersonProfile = {
     durationMs: number | null;
     mimeType: string;
   }[];
-  oralHistoryRequests: RequestWithStats[];
 };
 
 /**
@@ -67,10 +62,9 @@ export async function getPersonProfile(
   if (!target[0]) return null;
 
   const snapshot = createContributionAccessSnapshot(context);
-  const [timeline, visibleNarratives, requests] = await Promise.all([
+  const [timeline, visibleNarratives] = await Promise.all([
     getTimelinePage(context, { personId, limit: 24 }),
     listVisibleContributionsByAuthor(snapshot, personId),
-    Promise.resolve(listContributionRequests(context)),
   ]);
   const recentNarratives = [...visibleNarratives]
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -145,8 +139,6 @@ export async function getPersonProfile(
           ]
         : [];
     }),
-    oralHistoryRequests: requests.filter(
-      (request) => request.recipientPersonId === personId,
-    ),
+
   };
 }

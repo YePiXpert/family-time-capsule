@@ -34,7 +34,7 @@ export function LoginForm() {
       router.push("/login/two-factor");
       return;
     }
-    router.push("/");
+    router.push("/timeline");
     router.refresh();
   }
 
@@ -69,7 +69,7 @@ export function LoginForm() {
       }
       // 通行密钥会话由 Set-Cookie 下发；整页跳转确保 cookie 与客户端状态一致
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = "/";
+      window.location.href = "/timeline";
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (/cancel|abort/i.test(message)) {

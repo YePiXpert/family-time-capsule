@@ -34,7 +34,7 @@ const {
 } = await import("@/lib/memories/service");
 const { getResurfacing } = await import("@/lib/memories/resurfacing");
 const { createContribution } = await import("@/lib/contributions/service");
-const { createContributionRequest } = await import("@/lib/oral-history/service");
+
 const { getPersonProfile } = await import("@/lib/family/profile");
 
 const setup = await performSetup({
@@ -147,13 +147,6 @@ describe("重新遇见与人物主页", () => {
       visibility: "family",
     });
     expect(contribution.ok).toBe(true);
-    const request = createContributionRequest(context, {
-      recipientLabel: "外婆",
-      recipientPersonId: grandmaResult.personId,
-      promptText: "小时候过年最期待什么？",
-    });
-    expect(request.ok).toBe(true);
-
     const profile = await getPersonProfile(context, grandmaResult.personId);
     expect(profile?.person.displayName).toBe("外婆");
     expect(profile?.participatingMemories.map((entry) => entry.event.id)).toContain(eventId);
@@ -161,10 +154,6 @@ describe("重新遇见与人物主页", () => {
     expect(profile?.narratives[0]).toMatchObject({
       memoryEventId: eventId,
       text: "小时候过年，饺子要包到午夜。",
-    });
-    expect(profile?.oralHistoryRequests[0]).toMatchObject({
-      recipientPersonId: grandmaResult.personId,
-      promptText: "小时候过年最期待什么？",
     });
     expect(await getPersonProfile(context, "person-from-another-family")).toBeNull();
   });

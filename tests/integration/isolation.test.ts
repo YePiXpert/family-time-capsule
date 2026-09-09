@@ -65,14 +65,7 @@ const {
   listFacts,
   setFactStatus,
 } = await import("@/lib/contributions/service");
-const {
-  createCapsule,
-  getCapsuleDetail,
-  listCapsules,
-  sealCapsule,
-  openCapsule,
-  addCapsuleEvent,
-} = await import("@/lib/capsules/service");
+
 const { buildDisasterExport } = await import("@/lib/export/service");
 const JSZip = (await import("jszip")).default;
 
@@ -286,32 +279,6 @@ describe("Contribution / Fact 隔离", () => {
     expect(await listFacts({ ...await testFamilyContext(userA, familyA), familyId: familyB }, confirmed.eventId)).toHaveLength(0);
     expect(await setFactStatus({ ...await testFamilyContext(userA, familyA), familyId: familyB }, factA!.id, "rejected")).toBeUndefined();
     expect((await listFacts(await testFamilyContext(userA, familyA), confirmed.eventId))[0].status).toBe("user_confirmed");
-  });
-});
-
-describe("Capsule 隔离", () => {
-  it("详情/列表/封存/开启/添加内容全部拒绝", async () => {
-    const created = await createCapsule(familyA, {
-      title: "A家胶囊",
-      unlockType: "date",
-      unlockValue: "2027-01-01",
-    });
-    if (!created.ok) throw new Error("capsule failed");
-    const events = await listMemoryEvents(familyA);
-
-    expect(
-      await getCapsuleDetail(FAMILY_B_ACCESS, created.capsuleId, null),
-    ).toBeUndefined();
-    expect(await listCapsules(FAMILY_B_ACCESS, null)).toHaveLength(0);
-    expect(await sealCapsule(familyB, created.capsuleId)).toBeUndefined();
-    expect(await openCapsule(familyB, created.capsuleId, null, "Asia/Shanghai")).toEqual({
-      ok: false,
-      error: "not_found",
-    });
-    expect(await addCapsuleEvent(familyB, created.capsuleId, events[0].id)).toBe(false);
-    // A 自己可以
-    expect(await addCapsuleEvent(familyA, created.capsuleId, events[0].id)).toBe(true);
-    expect(await sealCapsule(familyA, created.capsuleId)).toBeTruthy();
   });
 });
 

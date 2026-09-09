@@ -1,4 +1,5 @@
-import { Text, View } from "react-native";
+import { Text } from "./typography";
+import { View } from "react-native";
 import { AccountLoginForm } from "./AccountLoginForm";
 import { sharedStyles } from "../theme";
 import type { Credentials } from "../types";

@@ -12,7 +12,7 @@ export type CaptureResult = Draft & { processing: CaptureProcessing };
 /** The button explicitly requests this event's organization. Queue only: no
  * external I/O during save. Publish and the durable queue commit together;
  * refusal rolls back the AI subtransaction while preserving the memory. */
-export function publishCapture(context: FamilyContext, id: string, revision: number, organize: boolean, dependencies: AiJobServiceDependencies & { inferTime?: boolean } = {}): CaptureResult {
+export function publishCapture(context: FamilyContext, id: string, revision: number, organize: boolean, dependencies: AiJobServiceDependencies & { inferTime?: boolean; triggerMode?: "manual" | "automatic" } = {}): CaptureResult {
   return getDb().transaction(() => {
     // A retry after an acknowledged/lost response must not launch fresh work,
     // even if the title, provider or consent changed since the first save.

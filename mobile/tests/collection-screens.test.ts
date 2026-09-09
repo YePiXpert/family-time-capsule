@@ -18,6 +18,7 @@ async function press(label:string,index=0){const button=tree!.root.findAll(n=>St
 it('edits real native collection captions/order, preserves input after a conflict and opens the source',async()=>{
   mocks.get.mockResolvedValue(detail());mocks.mutate.mockRejectedValue(new Error('其他家人已修改相册'));
   await act(async()=>{tree=create(createElement(CollectionDetailScreen,{route:{params:{id:'collection'}},navigation:{navigate:mocks.navigate}} as unknown as Parameters<typeof CollectionDetailScreen>[0]));});
+  await press("继续编辑");
   const caption=tree!.root.findAll(n=>String(n.type)==='TextInput'&&n.props.accessibilityLabel==='图文说明')[0]!;
   await act(()=>caption.props.onChangeText('我手写的说明'));await press('下移');await press('保存排序与说明');
   expect(mocks.mutate.mock.lastCall?.[2].edit.items.map((i:{id:string})=>i.id)).toEqual(['second','first']);

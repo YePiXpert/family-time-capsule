@@ -171,8 +171,9 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
     invitedContexts.push(viewer.context);
 
     await viewer.page.goto("/settings");
+    await viewer.page.locator("summary").filter({hasText: "家人和账号"}).click();
     await expect(
-      viewer.page.getByLabel("家庭", { exact: true }).getByText(FAMILY.name, { exact: true }),
+      viewer.page.getByRole("link", { name: `家庭时间胶囊 ${FAMILY.name}`, exact: true }).first(),
     ).toBeVisible();
     await expect(
       viewer.page.getByText(VIEWER.displayName, { exact: true }).first(),
@@ -216,8 +217,9 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
     invitedContexts.push(contributor.context);
 
     await contributor.page.goto("/settings");
+    await contributor.page.locator("summary").filter({hasText: "家人和账号"}).click();
     await expect(
-      contributor.page.getByLabel("家庭", { exact: true }).getByText(FAMILY.name, { exact: true }),
+      contributor.page.getByRole("link", { name: `家庭时间胶囊 ${FAMILY.name}`, exact: true }).first(),
     ).toBeVisible();
     await expect(
       contributor.page
@@ -239,7 +241,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
     ).toBeVisible();
     const note = "贡献者通过邀请写下的真实文字";
     await contributor.page.getByPlaceholder("想说点什么？也可以不写，直接保存素材。").fill(note);
-    await contributor.page.getByRole("button", { name: "先收进来，交给家人整理" }).click();
+    await contributor.page.getByRole("button", { name: "保存", exact: true }).click();
     await expect(contributor.page.getByText("已收进收件箱。")).toBeVisible();
 
     await contributor.page.goto("/inbox");
