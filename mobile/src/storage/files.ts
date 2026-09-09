@@ -210,7 +210,7 @@ export async function uploadMediaCaptureReceipt(
         captureId,
         draftId: options.draftId ?? null,
         filename: payload.fileName,
-        declaredMime: payload.mimeType,
+        declaredMime: classifyImportedFile(payload.fileName, payload.mimeType)?.mimeType ?? payload.mimeType,
         totalBytes,
         lastModified: payload.lastModified,
         source: payload.source === "system_share" ? "share" : "native",

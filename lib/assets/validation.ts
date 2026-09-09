@@ -39,6 +39,7 @@ export const AUDIO_MIME_WHITELIST: Set<string> = new Set([
 
 /** P0 视频白名单 */
 export const VIDEO_MIME_WHITELIST: Set<string> = new Set([
+  "video/mpeg",
   "video/mp4",
   "video/quicktime",
   "video/webm",
@@ -76,6 +77,7 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   "audio/webm": "webm",
   "audio/ogg": "ogg",
   "audio/flac": "flac",
+  "video/mpeg": "mpg",
   "video/mp4": "mp4",
   "video/quicktime": "mov",
   "video/webm": "webm",
@@ -229,6 +231,8 @@ export function sniffAudioMime(buffer: Buffer): string | null {
 /** 视频魔数嗅探：mp4/mov（ftyp）、webm/mkv（EBML） */
 export function sniffVideoMime(buffer: Buffer): string | null {
   if (buffer.length < 12) return null;
+  // MPEG-1/2 program stream pack header, or an elementary video sequence.
+  if (buffer[0] === 0 && buffer[1] === 0 && buffer[2] === 1 && [0xba, 0xb3].includes(buffer[3]!)) return "video/mpeg";
   if (buffer.subarray(4, 8).toString("ascii") === "ftyp") {
     const brand = buffer.subarray(8, 12).toString("ascii");
     if (brand === "qt  ") return "video/quicktime";

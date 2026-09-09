@@ -74,3 +74,32 @@ test("an imported MOV without browser MIME previews, saves its exact bytes and p
   await page.locator("dialog video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
   await expect.poll(() => page.locator("dialog video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
 });
+
+test("MPG survives a rejected start and the same local draft retries into a playable compatibility version", async ({ page }) => {
+  await ensureBootstrap(page);
+  await page.goto("/capture");
+  const input = test.info().outputPath("c2-0.mpg");
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0xabcdef:s=96x64:r=25:d=1", "-c:v", "mpeg2video", "-f", "mpeg", input]);
+  const bytes = readFileSync(input);
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "c2-0.mpg", mimeType: "", buffer: bytes });
+  await expect(page.getByText("当前设备不能直接播放这个视频。", { exact: false })).toBeVisible();
+  // Model the old server's 415 response, then keep exactly the same preserved draft.
+  await page.route("**/api/uploads", route => route.fulfill({ status: 415, contentType: "application/json", body: JSON.stringify({ error: "mime_not_allowed" }) }), { times: 1 });
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByText("服务器尚不支持这个文件格式", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "重试保存", exact: true }).click();
+  const link = page.getByRole("link", { name: "查看这条记忆" });
+  await expect(link).toBeVisible();
+  const id = (await link.getAttribute("href"))!.split("/").at(-1)!;
+  const memory = await (await page.request.get(`/api/mobile/v1/memories/${id}`)).json();
+  expect(memory.assets[0]).toMatchObject({ type: "video", mimeType: "video/mpeg" });
+  expect(await (await page.request.get(`/api/media/${memory.assets[0].id}`)).body()).toEqual(bytes);
+  await expect.poll(async () => {
+    execFileSync(process.execPath, [".next/ops/worker.mjs", "--once"], { env: { ...process.env, DATA_DIR: path.join(process.cwd(), "data/e2e-persistent-draft"), AUTH_SECRET: "e2e-test-auth-secret-0123456789abcdef" }, timeout: 30000 });
+    const result = await (await page.request.get(`/api/media/${memory.assets[0].id}/derivations`)).json();
+    return result.jobs.find((job: { kind: string }) => job.kind === "transcode")?.status;
+  }, { timeout: 30000 }).toBe("succeeded");
+  await expect(page.getByText("已切换到兼容播放版，原件保留。")).toBeVisible();
+  await page.locator("main video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
+  await expect.poll(() => page.locator("main video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
+});

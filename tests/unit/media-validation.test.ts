@@ -1,3 +1,4 @@
+import { classifyImportedFile } from "@/mobile/src/storage/import-policy";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -198,4 +199,19 @@ describe("validateMediaUpload", () => {
     const png = readFileSync(path.join(fixtures, "sample.jpg"));
     expect(validateImageUpload(png, "image/jpeg").ok).toBe(true);
   });
+});
+
+it("recognizes MPEG program and elementary video streams while rejecting renamed text", () => {
+  for (const code of [0xba, 0xb3]) {
+    const bytes = Buffer.concat([Buffer.from([0, 0, 1, code]), Buffer.alloc(32, 0x44)]);
+    expect(sniffVideoMime(bytes)).toBe("video/mpeg");
+    expect(validateMediaUpload(bytes, "video/mpeg", "video")).toEqual({ ok: true, value: { mimeType: "video/mpeg", extension: "mpg" } });
+  }
+  expect(validateMediaUpload(Buffer.from("<html>not a video</html>"), "video/mpeg", "video")).toEqual({ ok: false, error: "content_mismatch" });
+});
+
+it.each(["c2-0.mpg", "video.MPEG", "sequence.m2v"])("recognizes %s from Files even without a MIME", name => {
+  expect(classifyImportedFile(name, "application/octet-stream")).toEqual({ mimeType: "video/mpeg", mediaType: "video" });
+  expect(classifyImportedFile(name, "video/x-mpeg")).toEqual({ mimeType: "video/mpeg", mediaType: "video" });
+  expect(classifyImportedFile(name, "text/html")).toBeNull();
 });

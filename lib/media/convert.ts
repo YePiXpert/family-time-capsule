@@ -1,6 +1,6 @@
 import "server-only";
 import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import sharp from "sharp";
 import { ffmpegBinary } from "./ffmpeg";
 import type { AssetRow } from "@/lib/assets/service";
@@ -9,6 +9,7 @@ export const MEDIA_OUTPUT_LIMIT = 128 * 1024 * 1024;
 export const MEDIA_TIMEOUT_MS = 180_000;
 export class MediaConversionError extends Error {}
 const demuxers: Record<string, string> = {
+  "video/mpeg": "mpeg",
   "video/mp4": "mov",
   "video/quicktime": "mov",
   "video/3gpp": "mov",
@@ -96,7 +97,15 @@ export async function convertMedia(
     extension = "webp";
     type = "image";
   } else {
-    const demuxer = demuxers[original.mimeType];
+    let demuxer = demuxers[original.mimeType];
+    if (original.mimeType === "video/mpeg") {
+      const input = await open(inputPath, "r");
+      try {
+        const prefix = Buffer.alloc(4);
+        await input.read(prefix, 0, 4, 0);
+        if (prefix.equals(Buffer.from([0, 0, 1, 0xb3]))) demuxer = "mpegvideo";
+      } finally { await input.close(); }
+    }
     if (!demuxer) throw new MediaConversionError("codec_or_media_unsupported");
     const args = [
       "-hide_banner",
