@@ -38,7 +38,7 @@ import type { AppNavigation, MainTabParamList } from "../navigation/types";
 export function CaptureScreen() {
   const navigation = useNavigation<AppNavigation>();
   const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
-  const { credentials, outbox, queued, viewer, family, people, userId, reloadLocal, grantSyncConsent, syncConsent } = useApp();
+  const { credentials, outbox, queued, viewer, family, people, userId, syncing, reloadLocal, grantSyncConsent, syncConsent } = useApp();
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
   const draftScope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -46,6 +46,11 @@ export function CaptureScreen() {
   const [aiState, setAiState] = useState<{ scope: string; settings: AiSettings | null }>({ scope: "", settings: null });
   const [message, setMessage] = useState<string | null>(null);
   const capsuleDraft = usePersistentDraft(draftScope, captureAccess !== "readonly", credentials);
+  const reloadDraft = capsuleDraft.reload;
+  useFocusEffect(useCallback(() => {
+    if (syncing) return;
+    void reloadDraft().catch(error => setMessage(error instanceof Error ? error.message : "暂时无法刷新记录状态。"));
+  }, [reloadDraft, syncing]));
   const [readerState, setReaderState] = useState<{ scope: string; members: DraftReader[]; error: string | null }>({ scope: "", members: [], error: null });
   const [readerRefresh, setReaderRefresh] = useState(0);
   useEffect(() => {
@@ -451,7 +456,8 @@ export function CaptureScreen() {
     <ScrollView stickyHeaderIndices={[0]} contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
       <View style={{ backgroundColor: colors.card, padding: 12, borderRadius: 16, gap: 8, borderWidth: 1, borderColor: colors.line }}>
         <Text style={sharedStyles.label}>{capsuleDraft.draft?.content.visibility === "private" ? "仅自己可见" : capsuleDraft.draft?.content.visibility === "members" ? "指定成员可见" : "全家可见"}</Text>
-        {capsuleDraft.draft && capsuleDraft.draft.status !== "published" ? <Action label={busy ? "正在保存…" : capsuleDraft.draft.status === "queued" ? "重试保存" : "保存"} hint="先保存在本机，再发送到已授权家庭" primary disabled={busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length)} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} /> : <Text style={sharedStyles.body}>已保存这条成长记录</Text>}
+        {capsuleDraft.draft && capsuleDraft.draft.status !== "published" ? <Action label={busy ? "正在保存…" : capsuleDraft.draft.status === "queued" ? "重试保存" : "保存"} hint="先保存在本机，再发送到已授权家庭" primary disabled={busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length)} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} /> : <Text style={sharedStyles.body}>{capsuleDraft.draft ? "已保存这条成长记录" : "正在打开记录…"}</Text>}
+        {capsuleDraft.draft && capsuleDraft.draft.status !== "editing" ? <Action label="记录下一刻" hint="这一条会继续保留" disabled={busy || recording || !!capsuleDraft.error} onPress={() => void capsuleDraft.create().catch(error => setMessage(error.message))} /> : null}
       </View>
       <Text style={sharedStyles.eyebrow}>离线也不会丢</Text>
       <Text testID="capture-title" style={sharedStyles.title}>记录此刻</Text>

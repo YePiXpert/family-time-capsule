@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  connected: false,
+  connected: false, syncing: false,
   credentials: { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "test-session" },
   family: { id: "family", name: "测试家庭", timezone: "Asia/Shanghai" },
   grantSyncConsent: vi.fn().mockResolvedValue(undefined),
@@ -38,7 +38,7 @@ vi.mock("@react-navigation/native", () => ({
 }));
 const navigation = { setParams: mocks.setParams };
 vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({
+  useApp: () => ({ syncing: mocks.syncing,
     credentials: mocks.connected ? mocks.credentials : null,
     viewer: mocks.connected ? { canCapture: true, canEditEvents: true } : null,
     family: mocks.connected ? mocks.family : null, userId: mocks.connected ? "user-a" : null,
@@ -92,13 +92,13 @@ vi.mock("../src/api/client", () => ({ requestMobileJson: vi.fn(async (_credentia
 }) }));
 const { CaptureScreen } = await import("../src/screens/CaptureScreen");
 const { initializeLocalStore } = await import("../src/storage/database");
-const { listLocalDrafts } = await import("../src/drafts/store");
+const { listLocalDrafts, saveLocalDraft } = await import("../src/drafts/store");
 const { preservePreparedMedia } = await import("../src/storage/files");
 const { requestMobileJson } = await import("../src/api/client");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
 beforeEach(async () => {
-  mocks.connected = false;
+  mocks.connected = false; mocks.syncing = false;
   vi.mocked(preservePreparedMedia).mockReset().mockResolvedValue(undefined);
   mocks.grantSyncConsent.mockClear();
   await initializeLocalStore();
@@ -259,4 +259,18 @@ it("quick capture keeps optional fields collapsed and queues a text memory witho
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("只写一句话，先留下来"));
   await press("保存");
   expect((await listLocalDrafts("local"))[0]).toMatchObject({ status: "queued", syncIntent: "publish", organizeOnPublish: false, content: { title: "", occurredAt: null, text: "只写一句话，先留下来" } });
+});
+
+it("refreshes publication status after sync and starts the next record without losing the saved one", async () => {
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("小美今天的笑脸"));
+  await press("保存");
+  const draft = (await listLocalDrafts("local"))[0]!;
+  await act(async () => { mocks.syncing = true; tree!.update(createElement(CaptureScreen)); });
+  await saveLocalDraft({ ...draft, status: "published", memoryEventId: "saved-memory", revision: draft.revision + 1 }, draft.revision);
+  await act(async () => { mocks.syncing = false; tree!.update(createElement(CaptureScreen)); });
+  expect(JSON.stringify(tree!.toJSON())).toContain("已保存这条成长记录");
+  await press("记录下一刻");
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  expect((await listLocalDrafts("local")).find(row => row.id === draft.id)).toMatchObject({ status: "published", content: { text: "小美今天的笑脸" } });
 });

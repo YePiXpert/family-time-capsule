@@ -235,9 +235,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
 
     await contributor.page.goto("/capture"); await expandCaptureOptions(contributor.page);
     await expect(
-      contributor.page
-        .getByRole("navigation", { name: "一级导航" })
-        .getByRole("link", { name: "记录" }),
+      contributor.page.getByRole("heading", { name: "记录这一刻", level: 1 }),
     ).toBeVisible();
     const note = "贡献者通过邀请写下的真实文字";
     await contributor.page.getByPlaceholder("想说点什么？也可以不写，直接保存素材。").fill(note);

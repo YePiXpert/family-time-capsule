@@ -85,7 +85,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
 vi.mock("../src/drafts/use-draft", () => ({
   usePersistentDraft: () => ({
     draft: mocks.draft,
-    drafts: [], saved: true, error: null,
+    drafts: [], saved: true, error: null, reload: async () => [],
     change: mocks.enqueueText, addOriginal: mocks.enqueueMedia, save: vi.fn(),
     create: vi.fn(), resume: vi.fn(), discard: vi.fn(), retry: vi.fn(),
   }),
