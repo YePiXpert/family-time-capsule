@@ -42,6 +42,8 @@ export type MobilePersonDto = {
 
 export type MobileTimelineEventDto = {
   id: string;
+  bodyText: string;
+  milestoneType: string | null;
   title: string;
   occurredAt: string;
   occurredAtPrecision: string;
@@ -52,6 +54,7 @@ export type MobileTimelineEventDto = {
   updatedAt: string;
   assetCount: number;
   participantNames: string[];
+  participantIds: string[];
   captureIds: string[];
   cover: null | {
     assetId: string;
@@ -91,11 +94,11 @@ export function mobileTimelineEvents(context: FamilyContext, family: MobileFamil
     const mediaAssetId = entry.coverThumbAssetId ?? entry.coverAssetId;
     const anchor = people.find(person => person.id === entry.event.childPersonId);
     const hasDay = isOccurredAtPrecision(entry.event.occurredAtPrecision) && precisionHasDay(entry.event.occurredAtPrecision);
-    return { id: entry.event.id, title: entry.event.title, occurredAt: entry.event.occurredAt.toISOString(), occurredAtPrecision: entry.event.occurredAtPrecision,
+    return { id: entry.event.id, bodyText: entry.event.bodyText, milestoneType: entry.event.milestoneType, title: entry.event.title, occurredAt: entry.event.occurredAt.toISOString(), occurredAtPrecision: entry.event.occurredAtPrecision,
       locationText: entry.event.locationText, childPersonId: entry.event.childPersonId,
       ageDays: hasDay ? entry.event.ageDays : null,
       ageLabel: hasDay ? formatPersonAgeLabel(anchor, entry.event.occurredAt, family.timezone) : null,
-      updatedAt: entry.event.updatedAt.toISOString(), assetCount: entry.assetCount, participantNames: entry.participantNames, captureIds: ids.get(entry.event.id) ?? [],
+      updatedAt: entry.event.updatedAt.toISOString(), assetCount: entry.assetCount, participantNames: entry.participantNames, participantIds: entry.participantIds ?? [], captureIds: ids.get(entry.event.id) ?? [],
       cover: entry.coverAssetId && mediaAssetId ? { assetId: entry.coverAssetId, mediaAssetId, type: entry.coverAssetType, mimeType: entry.coverAssetMime, path: `/api/media/${encodeURIComponent(mediaAssetId)}` } : null };
   });
 }

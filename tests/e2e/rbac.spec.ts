@@ -111,11 +111,11 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   const memoryPath = new URL(page.url()).pathname;
 
   await page.getByLabel("谁在讲述").selectOption({ label: "爸爸" });
-  await page.getByPlaceholder("TA 想说的那段话……").fill("爸爸自己的原文");
+  await page.getByLabel("补充文字讲述").fill("爸爸自己的原文");
   await page.getByRole("button", { name: "保存这段讲述" }).click();
   await expect(page.getByText("爸爸自己的原文").first()).toBeVisible();
   await page.getByLabel("谁在讲述").selectOption({ label: "外婆" });
-  await page.getByPlaceholder("TA 想说的那段话……").fill("外婆不可被代改的原文");
+  await page.getByLabel("补充文字讲述").fill("外婆不可被代改的原文");
   await page.getByRole("button", { name: "保存这段讲述" }).click();
   await expect(page.getByText("外婆不可被代改的原文").first()).toBeVisible();
 

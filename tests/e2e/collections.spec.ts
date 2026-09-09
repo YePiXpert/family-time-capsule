@@ -10,7 +10,7 @@ test('真实相册编辑：多选、章节、顺序、重开、冲突与删除�
   for(const [index,title] of ['回家第一天','窗边的午后'].entries()){
     await page.goto('/capture'); await expandCaptureOptions(page);await page.getByLabel('写下这一刻').fill(`虚构家庭记录：${title}。`);await expandCaptureOptions(page); await page.getByLabel('标题',{exact:true}).fill(title);await expandCaptureOptions(page); await page.getByLabel('发生时间',{exact:true}).fill(`2026-08-${10+index}T12:30`);await submitCaptureForReview(page);await page.goto('/inbox');await page.getByRole('button',{name:'确认进入时间轴'}).click();await expect(page.getByRole('heading',{level:1,name:title})).toBeVisible();
   }
-  await page.goto('/books');await page.getByRole('button',{name:'新建相册',exact:true}).click();
+  await page.goto('/collections');await page.getByRole('button',{name:'新建相册',exact:true}).click();
   for (const title of ['回家第一天','窗边的午后']) await page.getByRole('checkbox',{name:title,exact:true}).check();
   await page.getByRole('button',{name:'生成预览',exact:true}).click();
   await expect(page).toHaveURL(/\/collections\/[\w-]+$/);const url=page.url(),id=url.split('/').at(-1)!;
@@ -44,7 +44,7 @@ test('访客链接实时排除私密来源，家庭发布后可读，撤权后�
   await page.getByRole('link', { name: '查看这条记忆' }).click();
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
   const eventId = page.url().split('/').at(-1)!;
-  await page.goto('/books');
+  await page.goto('/collections');
   await page.getByRole('button', {name:'新建相册',exact:true}).click();
   await page.getByRole('checkbox', {name:'私人相册来源的合成记录',exact:true}).check();
   await page.getByRole('button', {name:'生成预览',exact:true}).click();
@@ -122,7 +122,7 @@ test('访客限定阅读链接：只读单册、范围外媒体 404、收回即�
   await page.getByLabel('合并事件标题').fill('阳光下的午后');
   await page.getByRole('button', { name: '合并' }).click();
   await expect(page.getByRole('heading', { name: '阳光下的午后' })).toBeVisible();
-  await page.goto('/books');
+  await page.goto('/collections');
   await page.getByRole('button', {name:'新建相册',exact:true}).click();
   await page.getByRole('checkbox', {name:'阳光下的午后',exact:true}).check();
   await page.getByRole('button', {name:'生成预览',exact:true}).click();

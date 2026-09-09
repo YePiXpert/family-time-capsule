@@ -3,17 +3,18 @@ import Link from "next/link";
 import { requireFamily } from "@/lib/family/context";
 import { PageHeader } from "@/components/page-header";
 import { BookShelf } from "@/components/book-editor";
-import { CollectionsClient } from "../collections/ui";
+import { GrowthBookCard } from "@/components/growth-book-card";
+import { getGrowthOverview } from "@/lib/growth/service";
 export const metadata: Metadata = { title: "成长册 · 小美成长记" };
-export default async function WorksPage({ searchParams }: { searchParams: Promise<{ kind?: string }> }) {
-  await requireFamily();
-  const books = (await searchParams).kind === "book";
-  return <main className="page-container">
-    <PageHeader eyebrow="送给长大的你" title="成长册" description="把照片、家人的话和那时的声音，慢慢装订成礼物。" />
-    <nav aria-label="作品类型" className="mt-4 flex gap-3">
-      <Link href="/books" aria-current={!books ? "page" : undefined} className={!books ? "ui-button-primary" : "ui-button-secondary"}>回忆相册</Link>
-      <Link href="/books?kind=book" aria-current={books ? "page" : undefined} className={books ? "ui-button-primary" : "ui-button-secondary"}>成长书</Link>
-    </nav>
-    {books ? <BookShelf /> : <CollectionsClient embedded />}
+export default async function WorksPage({ searchParams }: { searchParams: Promise<{ month?: string; kind?: string }> }) {
+  const context = await requireFamily();
+  const month = Number((await searchParams).month ?? "1");
+  const overview = getGrowthOverview(context, Number.isSafeInteger(month) && month > 0 && month < 1000 ? month : 1);
+  return <main className="page-container growth-page">
+    <PageHeader title="成长册" description="每天留下一点，慢慢写成送给你的礼物。" />
+    {overview.stages.length > 2 ? <nav className="growth-stage-nav mt-5" aria-label="选择成长册月份">{overview.stages.filter(s => s.key !== "birth").map(s => <Link key={s.key} href={`/books?month=${s.key}`} aria-current={String(overview.month) === s.key ? "page" : undefined} className={String(overview.month) === s.key ? "ui-button-primary" : "ui-button-secondary"}>{s.label}</Link>)}</nav> : null}
+    <GrowthBookCard key={`${context.userId}:${context.familyId}:${overview.month}`} overview={overview} />
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">我的书架</h2><Link href="/collections" className="ui-text-link">整理素材相册</Link></div>
+    <BookShelf key={`${context.userId}:${context.familyId}`} />
   </main>;
 }

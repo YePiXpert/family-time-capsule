@@ -1,3 +1,5 @@
+import { NativeMediaReader } from "../media/NativeMediaReader";
+import { GrowthBookCard } from "../growth/GrowthBookCard";
 import { FocusedImage } from "../components/FocusedImage";
 import { Text, TextInput } from "../components/typography";
 import { WorkCreator } from "./WorkCreator";
@@ -77,7 +79,7 @@ function Field({
   );
 }
 export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Books">["navigation"], "navigate"> }) {
-  const { credentials } = useApp();
+  const { credentials, family, viewer } = useApp();
   const [page, setPage] = useState<BookPage | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -89,6 +91,9 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
   }, [credentials, deleted]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   return <ScrollView style={s.screen} contentContainerStyle={s.content}>
+    {!deleted && !creating ? <GrowthBookCard key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, family?.id, viewer?.id])} /> : null}
+    <Text style={s.cardTitle}>我的书架</Text>
+    <Button title="整理素材相册" onPress={() => navigation.navigate("Collections")} />
     {page?.canWrite && !deleted && !creating ? <Button title="新建家庭书" onPress={() => setCreating(true)} /> : null}
     {creating ? <WorkCreator kind="book" onCancel={() => setCreating(false)} onCreated={id => { setCreating(false); navigation.navigate("BookDetail", { id }); }} /> : null}
     {error ? <><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button title="重试" onPress={() => void load()} /></> : null}
@@ -372,6 +377,15 @@ export function BookDetailScreen({
           />
         </View>
       ) : null}
+      {canEdit && !editing ? <Disclosure title="调整封面、寄语与收录内容">
+        <Field label="给宝宝的寄语" value={book.subtitle} onChange={subtitle => update({ subtitle: subtitle.slice(0, 500) })} multiline />
+        <Text style={s.label}>封面照片</Text>
+        <Button title="只用标题封面" onPress={() => update({ coverAssetId: null })} disabled={busy} />
+        {[...new Map(Object.values(book.sourceStates).filter(state => state.available && state.asset?.type === "image").map(state => [state.asset!.id, state])).values()].map((state, i) => <Button key={state.asset!.id} title={`${book.coverAssetId === state.asset!.id ? "已选 · " : ""}照片 ${i + 1} · ${state.asset!.filename}`} onPress={() => update({ coverAssetId: state.asset!.id })} disabled={busy} />)}
+        <Text style={s.body}>从本册移除不会删除原记录，也不会自动加回来。</Text>
+        {book.sources.filter(source => source.kind === "memory" && book.blocks.some(b => b.sourceIds.includes(source.id))).map(source => <Button key={source.id} title={`从本册移除：${book.sourceStates[source.id]?.label || "暂不可见的记录"}`} onPress={() => update({ blocks: book.blocks.filter(b => !b.sourceIds.includes(source.id)) })} disabled={busy} />)}
+      </Disclosure> : null}
+      {book.readingMedia?.length ? <View style={s.card}><Text style={s.cardTitle}>声音与视频</Text><NativeMediaReader credentials={credentials} assets={book.readingMedia.flatMap(state => state.asset ? [{ id: state.asset.id, type: state.asset.type, filename: state.label || state.asset.filename, mimeType: state.asset.mimeType }] : [])} /></View> : null}
       <Disclosure title="导出与下载">
       {!book.deletedAt ? <ReadingDownloadButton kind="book" id={id} prepare={async () => { setOperation(true); try { return await save() && sequence.current === savedSequence.current; } finally { setOperation(false); } }} /> : null}
       {credentials && !book.deletedAt ? (
@@ -386,7 +400,7 @@ export function BookDetailScreen({
       {canEdit ? (
         <>
           <Button
-            title={editing ? "阅读作品" : "编辑"}
+            title={editing ? "阅读作品" : "更多调整"}
             disabled={busy}
             onPress={() => {
               if (editing) {
@@ -657,6 +671,8 @@ export function BookDetailScreen({
         </>
       ) : null}
       {visibleBlocks.map((b) => {
+        const states = b.sourceIds.map(id => book.sourceStates[id]);
+        const author = [...new Set(states.map(state => state?.author).filter(Boolean))].join("、");
         const blocked = book.blockedBlockIds.includes(b.id),
           index = allBlocks.findIndex((x) => x.id === b.id),
           images = b.sourceIds
@@ -711,8 +727,9 @@ export function BookDetailScreen({
                     color: colors.ink,
                   }}
                 >
-                  {b.text}
+                  {b.text || (b.kind === "quote" && states.some(state => state?.asset?.type === "audio") ? "原声讲述" : "")}
                 </Text>
+                {b.kind === "quote" && author ? <Text style={s.body}>— {author}</Text> : null}
                 {b.caption ? <Text style={s.body}>{b.caption}</Text> : null}
                 <Disclosure title="查看来源">{b.sourceIds.map((r) => {
                   const ref = book.sources.find((s) => s.id === r);

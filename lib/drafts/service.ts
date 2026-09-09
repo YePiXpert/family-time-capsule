@@ -1,3 +1,7 @@
+import { calendarDate } from "@/mobile/src/utils/calendar";
+import { selectGrowthChild } from "@/mobile/src/design/growth-stages";
+import { computeAgeDays } from "@/lib/memories/service";
+import { precisionHasDay } from "@/lib/metadata/precision";
 import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
 import "server-only";
 import { randomUUID } from "node:crypto";
@@ -154,9 +158,15 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     if (content.items.some(item => !item.assetId)) throw new DraftError("originals_pending", 409);
     const title = content.title.trim() || content.text.trim().slice(0, 60) || "一段家庭记忆";
     const coverAssetId = content.items.find(item => item.id === content.coverItemId)?.assetId ?? content.items[0]?.assetId ?? null;
-    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, bodyText: content.text, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: null, ageDays: null, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
+    const children = tx.select().from(person).where(and(eq(person.familyId, context.familyId), eq(person.isChild, true))).all();
+    const selectedChildren = children.filter(child => content.participantIds.includes(child.id));
+    const defaultChild = selectGrowthChild(children);
+    const beforeBirth = defaultChild?.birthDate && precisionHasDay(content.occurredAtPrecision) && calendarDate(anchor, context.familyTimezone) < defaultChild.birthDate;
+    const child = selectedChildren.length === 1 ? selectedChildren[0]! : content.participantIds.length || beforeBirth ? null : defaultChild;
+    const ageDays = child?.birthDate && precisionHasDay(content.occurredAtPrecision) ? computeAgeDays(child.birthDate, anchor, context.familyTimezone) : null;
+    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, bodyText: content.text, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: child?.id ?? null, ageDays, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
     for (const [sortOrder, item] of content.items.entries()) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder, caption: item.caption, livePhotoGroupId: item.livePhotoGroupId, livePhotoRole: item.livePhotoRole, createdAt: now }).run();
-    for (const personId of content.participantIds) tx.insert(memoryEventParticipant).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, personId, createdAt: now }).run();
+    for (const personId of new Set([...content.participantIds, ...(child ? [child.id] : [])])) tx.insert(memoryEventParticipant).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, personId, createdAt: now }).run();
     if (content.visibility === "members") {
       for (const userId of content.readerUserIds) tx.insert(memoryEventReader).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, userId, createdAt: now }).run();
     }

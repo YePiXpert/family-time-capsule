@@ -1,3 +1,5 @@
+import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
+import { draft as draftTable, draftItem } from "@/db/schema/draft";
 import "server-only";
 
 import { canManageEventVisibilityInTransaction, createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
@@ -40,6 +42,9 @@ export type CreateContributionInput = {
   rawText?: string;
   editedText?: string;
   visibility?: Visibility;
+  audioAssetId?: string;
+  clientId?: string;
+  sourceDraftId?: string;
 };
 
 export type CreateResult =
@@ -80,10 +85,12 @@ export async function createContribution(
   familyId: string,
   input: CreateContributionInput,
 ): Promise<CreateResult> {
+  if (input.audioAssetId && !input.rawText?.trim()) input = { ...input, rawText: undefined };
+  if (input.clientId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.clientId)) return { ok: false, error: "invalid" };
   if (!validateText(input.rawText) || !validateText(input.editedText)) {
     return { ok: false, error: "invalid" };
   }
-  if (!input.rawText?.trim() && !input.editedText?.trim()) {
+  if (!input.rawText?.trim() && !input.editedText?.trim() && !input.audioAssetId) {
     return { ok: false, error: "invalid" };
   }
   if (
@@ -93,7 +100,7 @@ export async function createContribution(
     return { ok: false, error: "invalid" };
   }
   const db = getDb();
-  const id = randomUUID();
+  const id = input.clientId ?? randomUUID();
   const now = new Date();
   const result = db.transaction((tx) => {
     const actor = tx
@@ -167,6 +174,18 @@ export async function createContribution(
       return { ok: false, error: "author_not_allowed" } as const;
     }
 
+    if (input.audioAssetId) {
+      const audio = tx.select().from(assetTable).where(and(eq(assetTable.id, input.audioAssetId), eq(assetTable.familyId, familyId))).get();
+      if (!audio || audio.type !== "audio" || !canManageOriginalInTransaction(tx, { familyId, userId: input.recordedByUserId }, audio)) return { ok: false, error: "forbidden" } as const;
+    }
+    const sourceDraft = input.sourceDraftId ? tx.select().from(draftTable).where(and(eq(draftTable.id, input.sourceDraftId), eq(draftTable.familyId, familyId), eq(draftTable.authorUserId, input.recordedByUserId))).get() : null;
+    if (input.sourceDraftId && (!sourceDraft || !input.audioAssetId || !tx.select().from(draftItem).where(and(eq(draftItem.draftId, input.sourceDraftId), eq(draftItem.assetId, input.audioAssetId))).get())) return { ok: false, error: "forbidden" } as const;
+    const existing = tx.select().from(contribution).where(eq(contribution.id, id)).get();
+    if (existing) {
+      const same = existing.memoryEventId === input.memoryEventId && existing.recordedByUserId === input.recordedByUserId && existing.authorPersonId === input.authorPersonId && existing.audioAssetId === (input.audioAssetId ?? null) && existing.rawText === (input.rawText?.trim() || null) && existing.editedText === (input.editedText?.trim() || null) && existing.visibility === (input.visibility ?? "family") && !existing.deletedAt;
+      return same ? { ok: true, contributionId: id } as const : { ok: false, error: "invalid" } as const;
+    }
+    if (sourceDraft && sourceDraft.status !== "editing") return { ok: false, error: "invalid" } as const;
     tx.insert(contribution)
       .values({
         id,
@@ -176,6 +195,7 @@ export async function createContribution(
         recordedByPersonId: actor.personId,
         recordedByNameSnapshot: actor.name,
         recordingMode: recordingOwnWords ? "self" : "on_behalf",
+        audioAssetId: input.audioAssetId ?? null,
         rawText: input.rawText?.trim() || null,
         editedText: input.editedText?.trim() || null,
         visibility: input.visibility ?? "family",
@@ -183,6 +203,7 @@ export async function createContribution(
         updatedAt: now,
       })
       .run();
+    if (sourceDraft) tx.update(draftTable).set({ status: "published", memoryEventId: input.memoryEventId, revision: sourceDraft.revision + 1, updatedAt: now.toISOString() }).where(eq(draftTable.id, sourceDraft.id)).run();
     if (!recordingOwnWords) {
       tx.insert(auditLog)
         .values(

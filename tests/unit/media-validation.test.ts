@@ -215,3 +215,18 @@ it.each(["c2-0.mpg", "video.MPEG", "sequence.m2v"])("recognizes %s from Files ev
   expect(classifyImportedFile(name, "video/x-mpeg")).toEqual({ mimeType: "video/mpeg", mediaType: "video" });
   expect(classifyImportedFile(name, "text/html")).toBeNull();
 });
+
+it('accepts generic MP4 audio containers produced by browser recorders', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(path.join(tmpdir(), 'ftc-browser-mp4-audio-'));
+  try {
+    const file = path.join(dir, 'voice.mp4');
+    execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','sine=frequency=440:duration=0.1','-c:a','aac','-movflags','+faststart',file]);
+    const bytes = readFileSync(file);
+    expect(sniffVideoMime(bytes)).toBe('video/mp4');
+    expect(validateMediaUpload(bytes,'audio/mp4','audio').ok).toBe(true);
+    expect(validateMediaUpload(bytes,'audio/mpeg','audio')).toEqual({ok:false,error:'content_mismatch'});
+  } finally { rmSync(dir,{recursive:true,force:true}); }
+});

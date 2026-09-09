@@ -1,3 +1,4 @@
+import { collectBookReadingMedia } from "./media";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
@@ -150,7 +151,7 @@ function readerDetail(
       warnings.push({ blockId: block.id, code: "low_resolution" });
     if (block.text.length > 1600)
       warnings.push({ blockId: block.id, code: "long_text" });
-    if (!block.text.trim() && !images.length && block.kind !== "date")
+    if (!block.text.trim() && !images.length && !states.some(s => ["audio", "video"].includes(s?.asset?.type ?? "")) && block.kind !== "date")
       warnings.push({ blockId: block.id, code: "empty_block" });
     return block;
   });
@@ -193,7 +194,8 @@ export function getBookProject(context: FamilyContext, id: string): BookDetail {
   return getDb().transaction(() => {
     assertBookContext(context);
     const row = project(context, id);
-    return readerDetail(context, row, persistedEdit(id));
+    const detail = readerDetail(context, row, persistedEdit(id));
+    return { ...detail, readingMedia: collectBookReadingMedia(context, detail).map(m => m.state) };
   });
 }
 export function listBookProjects(

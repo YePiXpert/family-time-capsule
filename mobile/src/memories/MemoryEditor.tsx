@@ -69,9 +69,21 @@ export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSave
       if (active.current) setMessage(error instanceof ApiError && error.status === 409 ? "这件事已被修改。输入和选择已保留；请复制需要的文字，再取消并重新打开核对。" : error instanceof Error ? error.message : "暂时无法保存，输入和选择已保留。");
     } finally { if (active.current) setPending(false); }
   };
+  async function mark(milestoneType: string) {
+    if (!credentials || pending) return;
+    setPending(true); setMessage(null);
+    try {
+      const values = { expectedRevision: memory.titleRevision!, milestoneType: memory.milestoneType === milestoneType ? null : milestoneType };
+      await patchMobileMemory(credentials, memory.id, { ...values, mutationId: mutationId(values) });
+      if (active.current) await onSaved();
+    } catch { if (active.current) setMessage("暂时无法保存标记，请联网后重试。"); }
+    finally { if (active.current) setPending(false); }
+  }
   return <View style={sharedStyles.card} accessibilityLabel="编辑与分享">
     {message ? <Text accessibilityRole="alert" style={sharedStyles.body}>{message}</Text> : null}
     {!content && !sharing ? <>
+      <Text style={sharedStyles.label}>标记这一刻</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{[["first_time", "第一次"], ["other", "值得记住"]].map(([value, label]) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: memory.milestoneType === value }} disabled={pending || online === false} onPress={() => void mark(value!)} style={memory.milestoneType === value ? sharedStyles.primaryButton : sharedStyles.secondaryButton}><Text style={memory.milestoneType === value ? sharedStyles.primaryText : sharedStyles.secondaryText}>{label}</Text></Pressable>)}</View>
       <EditorButton pending={pending} label="修改这件事" onPress={() => { setMessage(null); setContent({ title: memory.title, bodyText: memory.bodyText!, location: memory.locationText ?? "", occurredAt: memory.occurredAtPrecision === "unknown" ? null : memory.occurredAt, precision: memory.occurredAtPrecision as OccurredAtPrecision, participants: memory.participantPersonIds, child: memory.childPersonId, revision: memory.titleRevision! }); }} />
       {memory.visibility ? <EditorButton pending={pending} label="管理分享" onPress={() => { setMessage(null); setSharing({ visibility: memory.visibility!, readers: memory.readerUserIds ?? [], revision: memory.titleRevision! }); }} /> : null}
     </> : null}

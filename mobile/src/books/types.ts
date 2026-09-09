@@ -60,6 +60,7 @@ export type BookSourceState = {
   } | null;
 };
 export type BookDetail = BookEdit & {
+  readingMedia?: BookSourceState[];
   id: string;
   revision: number;
   ownerPersonId: string | null;

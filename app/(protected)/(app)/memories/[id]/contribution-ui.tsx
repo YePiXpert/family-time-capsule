@@ -1,7 +1,8 @@
 "use client";
 import { MediaReader } from "@/components/media-reader";
 
-import { useActionState } from "react";
+import { VoiceContribution } from "@/components/voice-contribution";
+import { useActionState, useState } from "react";
 import type { PersonRow } from "@/lib/memories/service";
 import type { VisibleContributionDto } from "@/lib/authz/contribution-access";
 import {
@@ -22,13 +23,16 @@ const VISIBILITY_LABEL: Record<string, string> = {
 /** 新增视角表单：作者可选任何家庭成员（不要求有账号） */
 export function AddContributionForm({
   memoryEventId,
-  people,
+  people, scope, defaultAuthorId,
 }: {
   memoryEventId: string;
   people: PersonRow[];
+  scope: string; defaultAuthorId: string | null;
 }) {
   const [state, formAction, pending] = useActionState(addContributionAction, undefined);
   const authors = people.filter((p) => !p.isChild);
+  const [authorId, setAuthorId] = useState(defaultAuthorId || authors[0]?.id || "");
+  const [visibility, setVisibility] = useState<"family" | "private" | "parents" | "child_later">("family");
 
   return (
     <form action={formAction} className="mt-3 flex flex-col gap-3">
@@ -41,7 +45,7 @@ export function AddContributionForm({
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-sm">
           谁在讲述
-          <select name="authorPersonId" required className={inputClass} defaultValue="">
+          <select name="authorPersonId" required className={inputClass} value={authorId} onChange={e => setAuthorId(e.target.value)}>
             <option value="" disabled>
               选择家人
             </option>
@@ -57,7 +61,7 @@ export function AddContributionForm({
         </label>
         <label className="flex flex-col gap-1 text-sm">
           可见范围
-          <select name="visibility" defaultValue="family" className={inputClass}>
+          <select name="visibility" value={visibility} onChange={e => setVisibility(e.target.value as typeof visibility)} className={inputClass}>
             {Object.entries(VISIBILITY_LABEL).map(([v, label]) => (
               <option key={v} value={v}>
                 {label}
@@ -66,12 +70,14 @@ export function AddContributionForm({
           </select>
         </label>
       </div>
+      <VoiceContribution key={`${scope}:${memoryEventId}`} scope={scope} memoryId={memoryEventId} authorPersonId={authorId} authorName={authors.find(p => p.id === authorId)?.displayName || "家人"} visibility={visibility} />
       <textarea
         name="text"
+        aria-label="补充文字讲述"
         required
         maxLength={5000}
         rows={3}
-        placeholder="TA 想说的那段话……"
+        placeholder="补一句当时的感受……"
         className={inputClass}
       />
       <button

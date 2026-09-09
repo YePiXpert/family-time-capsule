@@ -152,6 +152,8 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
     isString(value.id, 128) &&
     isString(value.title, 500) &&
     (value.titleRevision === undefined || (Number.isSafeInteger(value.titleRevision) && Number(value.titleRevision) >= 0)) &&
+    (value.bodyText === undefined || isString(value.bodyText, 100_000)) &&
+    (value.milestoneType === undefined || isNullableString(value.milestoneType, 32)) &&
     isDateTime(value.occurredAt) &&
     isString(value.occurredAtPrecision, 32) &&
     isNullableString(value.locationText, 500) &&
@@ -161,6 +163,7 @@ function isTimelineEvent(value: unknown): value is TimelineEvent {
     isDateTime(value.updatedAt) &&
     Number.isSafeInteger(value.assetCount) &&
     Number(value.assetCount) >= 0 &&
+    (value.participantIds === undefined || (Array.isArray(value.participantIds) && value.participantIds.every(id => isString(id, 128)))) &&
     Array.isArray(value.participantNames) &&
     value.participantNames.length <= 1000 &&
     value.participantNames.every((name) => isString(name, 200)) &&

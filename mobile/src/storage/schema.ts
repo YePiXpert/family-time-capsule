@@ -11,6 +11,8 @@ export const TIMELINE_SCHEMA_SQL = `
     id TEXT PRIMARY KEY NOT NULL,
     scope TEXT NOT NULL,
     title TEXT NOT NULL,
+    body_text TEXT NOT NULL DEFAULT '',
+    milestone_type TEXT,
     occurred_at TEXT NOT NULL,
     occurred_at_precision TEXT NOT NULL,
     location_text TEXT,
@@ -20,6 +22,7 @@ export const TIMELINE_SCHEMA_SQL = `
     updated_at TEXT NOT NULL,
     asset_count INTEGER NOT NULL,
     participant_names_json TEXT NOT NULL,
+    participant_ids_json TEXT NOT NULL DEFAULT '[]',
     cover_json TEXT,
     local_cover_uri TEXT,
     seen_snapshot TEXT

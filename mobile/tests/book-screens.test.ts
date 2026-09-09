@@ -2,6 +2,8 @@ import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultBookLayout, type BookDetail } from "../src/books/types";
+vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: () => null }));
+vi.mock("../src/growth/GrowthBookCard", () => ({ GrowthBookCard: () => null }));
 vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -135,7 +137,7 @@ it("edits and reorders native content, keeps text on conflict and selects actual
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("编辑");
+  await press("更多调整");
   await press("选择此内容");
   await field("正文", "我保留的手工文字");
   await press("内容下移");
@@ -186,7 +188,7 @@ it("does not replace typing made while autosave is in flight", async () => {
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("编辑");
+  await press("更多调整");
   await press("整本设置");
   await field("副标题", "第一次输入");
   await act(async () => {

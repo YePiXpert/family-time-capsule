@@ -5,6 +5,7 @@ import { Icon } from "./ui/icons";
 export type MemoryCardProps = {
   id: string;
   title: string;
+  bodyText?: string;
   dateLabel: string;
   ageLabel?: string | null;
   location?: string | null;
@@ -26,7 +27,7 @@ const MILESTONE_LABEL: Record<string, string> = {
   other: "值得记住",
 };
 
-export function MemoryCard({ id, title, dateLabel, ageLabel, location, people = [], assetCount = 0, cover, href, compact = false, milestoneType, isPinned = false }: MemoryCardProps) {
+export function MemoryCard({ id, title, bodyText, dateLabel, ageLabel, location, people = [], assetCount = 0, cover, href, compact = false, milestoneType, isPinned = false }: MemoryCardProps) {
   return (
     <Link href={href ?? `/memories/${id}`} className={`memory-card ${compact ? "memory-card-compact" : ""}`}>
       <div className="memory-card-media">
@@ -46,6 +47,7 @@ export function MemoryCard({ id, title, dateLabel, ageLabel, location, people = 
         ) : null}
         <p className="text-xs font-medium text-accent">{dateLabel}{ageLabel ? ` · ${ageLabel}` : ""}</p>
         <h3 className="mt-1 line-clamp-2 text-base font-semibold leading-6 sm:text-lg">{title}</h3>
+        {bodyText && bodyText !== title ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap leading-7 text-foreground">{bodyText}</p> : null}
         {location ? <p className="mt-1 truncate text-sm text-muted">{location}</p> : null}
         <p className="mt-2 truncate text-xs text-faint">{people.join(" · ")}{people.length && assetCount ? " · " : ""}{assetCount ? `${assetCount} 份素材` : ""}</p>
       </div>

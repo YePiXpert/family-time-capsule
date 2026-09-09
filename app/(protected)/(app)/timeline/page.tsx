@@ -1,3 +1,4 @@
+import { growthStage, growthStages, eventGrowthStage } from "@/mobile/src/design/growth-stages";
 import { growthHeading } from "@/mobile/src/design/growth";
 import { pendingImports } from "@/lib/home/pending";
 import type { Metadata } from "next";
@@ -48,7 +49,7 @@ function rangeFor(params: TimelineParams, timezone: string) {
 
 function queryHref(params: TimelineParams, patch: Record<string, string | undefined>) {
   const next = new URLSearchParams();
-  for (const key of ["person", "media", "tag", "month", "year", "collection", "cursor"]) {
+  for (const key of ["person", "media", "tag", "month", "year", "collection", "cursor", "stage", "important"]) {
     const current = value(params, key);
     if (current) next.set(key, current);
   }
@@ -78,7 +79,10 @@ export default async function TimelinePage({
   const pendingCount = inboxCount + pendingImports(context).length;
   const timezone = family?.timezone ?? "Asia/Shanghai";
   const growth = growthHeading(people, new Date(), timezone);
-  const range = rangeFor(params, timezone);
+  const child = people.find(p => p.id === growth.childId);
+  const stages = growthStages(child?.birthDate ?? null, new Date(), timezone);
+  const stage = child?.birthDate && !value(params, "month") && !value(params, "year") ? growthStage(child.birthDate, value(params, "stage")) : null;
+  const range = stage ? { from: zonedWallTimeToUtc(`${stage.from}T00:00:00`, timezone), before: zonedWallTimeToUtc(`${stage.before}T00:00:00`, timezone) } : rangeFor(params, timezone);
   const requestedMedia = value(params, "media");
   const mediaType = requestedMedia === "image" || requestedMedia === "audio" || requestedMedia === "video" || requestedMedia === "document" ? requestedMedia : null;
   const cursor = value(params, "cursor") || undefined;
@@ -87,6 +91,9 @@ export default async function TimelinePage({
   const timelinePage = await getTimelinePage(context, {
     cursor,
     personId,
+    growthChildId: stage ? growth.childId : null,
+    growthDayOnly: Boolean(stage),
+    milestoneOnly: value(params, "important") === "1",
     mediaType,
     tag: value(params, "tag").slice(0, 100) || null,
     occurredFrom: range.from,
@@ -96,12 +103,13 @@ export default async function TimelinePage({
   const monthFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", timeZone: timezone });
   const groups = new Map<string, typeof entries>();
   for (const entry of entries) {
-    const month = monthFormatter.format(entry.event.occurredAt);
+    const ageStage = child?.birthDate && (entry.event.childPersonId ? entry.event.childPersonId === child.id : entry.participantIds?.length ? entry.participantIds.includes(child.id) : people.filter(p => p.isChild).length === 1) ? eventGrowthStage(child.birthDate, entry.event.occurredAt.toISOString(), entry.event.occurredAtPrecision, timezone) : null;
+    const month = entry.event.occurredAtPrecision === "unknown" ? "时间待补充" : ageStage?.label ?? monthFormatter.format(entry.event.occurredAt);
     const list = groups.get(month) ?? [];
     list.push(entry);
     groups.set(month, list);
   }
-  const hasFilters = ["person", "media", "tag", "month", "year", "collection"].some((key) => value(params, key));
+  const hasFilters = ["person", "media", "tag", "month", "year", "collection", "stage", "important"].some((key) => value(params, key));
   const monthActive = /^\d{4}-(0[1-9]|1[0-2])$/.test(value(params, "month"));
 
   return (
@@ -110,6 +118,11 @@ export default async function TimelinePage({
         <div className="growth-mark" aria-hidden="true">✿</div>
         <div className="min-w-0 flex-1"><p className="page-eyebrow">一点一滴，慢慢长大</p><h1>{growth.title}</h1><p className="growth-dedication">留下今天，送给长大的你。</p>{growth.age ? <p className="growth-age">{growth.age}</p> : null}</div>
       </section>
+      {stages.length ? <nav aria-label="按月龄回看" className="growth-stage-nav">
+        <Link href={queryHref(params, { stage: undefined, cursor: undefined, month: undefined, year: undefined })} aria-current={!stage ? "page" : undefined} className={!stage ? "ui-button-primary" : "ui-button-secondary"}>全部</Link>
+        {stages.map(item => <Link key={item.key} href={queryHref(params, { stage: item.key, cursor: undefined, month: undefined, year: undefined })} aria-current={stage?.key === item.key ? "page" : undefined} className={stage?.key === item.key ? "ui-button-primary" : "ui-button-secondary"}>{item.label}</Link>)}
+      </nav> : <p className="mb-4 text-sm text-muted">填写宝宝生日后，就能按月龄回看。<Link href="/family" className="ui-text-link ml-2">查看孩子档案</Link></p>}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><Link href={queryHref(params, { important: value(params, "important") === "1" ? undefined : "1", cursor: undefined })} className="ui-text-link">{value(params, "important") === "1" ? "查看所有时刻" : "第一次与值得记住"}</Link><Link href="/books" className="ui-text-link">看看{growth.childName}的成长册</Link></div>
       <div className="flex items-center justify-between gap-4"><h2 className="text-xl font-semibold">成长点滴</h2><Link href="/search" aria-label="搜索家庭记忆" className="ui-button-secondary">搜索</Link></div>
 
       {pendingCount > 0 ? <Link href="/pending" className="ui-text-link mt-3">待处理 {pendingCount > 99 ? "99+" : pendingCount} 条</Link> : null}
@@ -117,6 +130,7 @@ export default async function TimelinePage({
         <summary className="min-h-11 cursor-pointer py-2">筛选{hasFilters ? " · 已启用" : ""}</summary>
         <Link href="/timeline/calendar" className="ui-text-link mb-3">在日历中选择日期</Link>
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" action="/timeline">
+          <input type="hidden" name="stage" value={stage?.key ?? ""} /><input type="hidden" name="important" value={value(params, "important")} />
           <input type="hidden" name="collection" value={value(params, "collection")} />
           <label className="text-sm font-medium">跳到月份<input type="month" name="month" defaultValue={value(params, "month")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3" /></label>
           <label className="text-sm font-medium">跳到年份<select name="year" defaultValue={monthActive ? "" : value(params, "year")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">全部年份</option>{facets.years.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label>
@@ -148,7 +162,7 @@ export default async function TimelinePage({
               <ol className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
                 {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, coverThumbAssetId, assetCount, participantNames }) => (
                   <li key={event.id} className="min-w-0">
-                    <MemoryCard id={event.id} title={event.title} dateLabel={formatOccurredDateLabel(event.occurredAtPrecision as OccurredAtPrecision, event.occurredAt, timezone)} ageLabel={precisionHasDay(event.occurredAtPrecision as OccurredAtPrecision) ? formatPersonAgeLabel(people.find(p => p.id === event.childPersonId), event.occurredAt, timezone) : null} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
+                    <MemoryCard id={event.id} title={event.title} bodyText={event.bodyText} dateLabel={formatOccurredDateLabel(event.occurredAtPrecision as OccurredAtPrecision, event.occurredAt, timezone)} ageLabel={precisionHasDay(event.occurredAtPrecision as OccurredAtPrecision) ? formatPersonAgeLabel(people.find(p => p.id === event.childPersonId), event.occurredAt, timezone) : null} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />
                   </li>
                 ))}
               </ol>

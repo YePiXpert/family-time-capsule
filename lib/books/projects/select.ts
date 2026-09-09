@@ -147,20 +147,14 @@ export function addBookSelections(
         block(
           chapter,
           "text",
-          [material.state.label, material.text].filter(Boolean).join("\n\n"),
+          [...new Set([material.state.label, material.text].filter(Boolean))].join("\n\n"),
           base,
         );
-        const image = material.images.find(
-          (image) => resolve("asset", image).state.available,
-        );
-        if (image)
-          block(
-            chapter,
-            "image",
-            "",
-            [...base, ref("asset", image)],
-            material.state.label,
-          );
+        const images = material.images.filter(image => resolve("asset", image).state.available);
+        for (let i = 0; i < images.length; i += 4) {
+          const group = images.slice(i, i + 4);
+          block(chapter, group.length === 1 ? "image" : group.length === 2 ? "double" : "collage", "", [...base, ...group.map(image => ref("asset", image))], material.state.label);
+        }
       }
     }
     for (const selected of selection as {
@@ -172,7 +166,7 @@ export function addBookSelections(
         throw new BookError("source_unavailable", 403);
       if (selected.kind === "memory") memory(selected.id, fallbackChapter, []);
       else if (selected.kind === "contribution")
-        addContribution(selected.id, fallbackChapter, []);
+        addContribution(selected.id, fallbackChapter, doc.template === "growth" && state.eventId ? [ref("memory", state.eventId)] : []);
       else if (selected.kind === "collection") {
         const album = getCollection(context, selected.id),
           parent = ref("collection", selected.id);

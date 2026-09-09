@@ -1,3 +1,4 @@
+import { MilestoneActions } from "@/components/milestone-actions";
 import { MemorySharingForm } from "./memory-sharing-form";
 import { listDraftReaders } from "@/lib/drafts/service";
 import type { EventVisibility } from "@/lib/authz/policy";
@@ -323,6 +324,7 @@ export default async function MemoryEventPage({
         <section aria-label="参与人物" className="mt-4 text-sm text-muted">与 {participants.map((person) => person.displayName).join("、")} 一起</section>
       </div>
 
+      {canWriteEvent ? <MilestoneActions key={`${event.id}:${event.titleRevision}`} id={event.id} revision={event.titleRevision} milestone={event.milestoneType} /> : null}
       {canWriteEvent ? <MemorySharingForm eventId={event.id} visibility={event.visibility as EventVisibility} readerUserIds={content.readerUserIds} revision={event.titleRevision} readers={availableReaders} isAuthor={event.createdByUserId === context.userId} /> : null}
       {canWriteEvent ? <OrganizerControl kind="memory_event" id={event.id} /> : null}
       {canWriteEvent ? <section aria-label="编辑档案" className={editMode ? "mt-6 rounded-2xl border border-accent/40 bg-accent-soft/40 p-4" : "mt-4"}>
@@ -369,7 +371,7 @@ export default async function MemoryEventPage({
             <ContributionBlock key={contribution.id} contribution={contribution} dateLabel={new Intl.DateTimeFormat("zh-CN",{dateStyle:"long",timeZone:timezone}).format(contribution.createdAt)} canEdit={contribution.canEdit} />
           )) : <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">还没有家人补充讲述。</p>}
         </div>
-        {canCreateContribution && contributionAuthors.length > 0 ? <AddContributionForm memoryEventId={event.id} people={contributionAuthors} /> : null}
+        {canCreateContribution && contributionAuthors.length > 0 ? <AddContributionForm memoryEventId={event.id} people={contributionAuthors} scope={`${context.userId}:${familyId}`} defaultAuthorId={context.personId} /> : null}
       </section>
 
       <FactSection memoryEventId={event.id} facts={visibleFacts} factSources={factSources} sourceLabels={factSourceLabels} canWrite={canWriteEvent} />

@@ -1,3 +1,4 @@
+import { selectGrowthChild } from "./growth-stages";
 import { calendarAge, calendarDate, parseCalendarDate } from "../utils/calendar";
 
 type ChildProfile = { id: string; displayName: string; isChild: boolean; birthDate: string | null };
@@ -5,7 +6,7 @@ type ChildProfile = { id: string; displayName: string; isChild: boolean; birthDa
 /** Only use an unambiguous child profile. Never guess a birthday or use fixture data. */
 export function growthHeading(people: readonly ChildProfile[], at: Date, timezone: string) {
   const children = people.filter(person => person.isChild);
-  const child = children.find(person => person.displayName.trim() === "小美") ?? (children.length === 1 ? children[0] : undefined);
+  const child = selectGrowthChild(people);
   const title = child ? `${child.displayName}成长记` : children.length > 1 ? "孩子们的成长记" : "小美成长记";
   let age: string | null = null;
   if (child?.birthDate) {

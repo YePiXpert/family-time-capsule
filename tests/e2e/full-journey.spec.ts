@@ -41,13 +41,13 @@ test("完整旅程：从初始化到导出与登出", async ({ page }) => {
   await page.getByRole("link", { name: /八月中旬的一个上午/ }).click();
   await page.getByLabel("谁在讲述").selectOption({ label: "爸爸" });
   await page
-    .getByPlaceholder("TA 想说的那段话……")
+    .getByLabel("补充文字讲述")
     .fill("她盯着窗帘看了一上午。");
   await page.getByRole("button", { name: "保存这段讲述" }).click();
   await expect(page.getByRole("heading", { level: 3, name: "爸爸" })).toBeVisible();
 
   // 5) 从真实记忆生成相册预览。
-  await page.goto("/books");
+  await page.goto("/collections");
   await page.getByRole("button", { name: "新建相册", exact: true }).click();
   await page.getByRole("checkbox", { name: "八月中旬的一个上午", exact: true }).check();
   await page.getByRole("button", { name: "生成预览", exact: true }).click();

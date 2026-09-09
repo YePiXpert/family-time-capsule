@@ -51,6 +51,15 @@ export async function initializeLocalStore(): Promise<void> {
     }
   }
   await db.execAsync(MOBILE_LOCAL_SCHEMA_SQL);
+  const growthColumns = await db.getAllAsync<{ name: string }>("PRAGMA table_info(timeline_event)");
+  let refreshGrowthCache = false;
+  for (const [name, definition] of [["body_text", "TEXT NOT NULL DEFAULT ''"], ["milestone_type", "TEXT"], ["participant_ids_json", "TEXT NOT NULL DEFAULT '[]'"]]) {
+    if (!growthColumns.some(c => c.name === name)) {
+      await db.execAsync(`ALTER TABLE timeline_event ADD COLUMN ${name} ${definition}`);
+      refreshGrowthCache = true;
+    }
+  }
+  if (refreshGrowthCache) await db.runAsync("DELETE FROM meta WHERE key='sync_checkpoint'");
   await db.execAsync(LOCAL_DRAFT_SCHEMA_SQL);
   // Retired modules are replaceable server caches, never locally captured originals.
   await db.runAsync("DELETE FROM meta WHERE key = 'mobile_review' OR key IN ('library_page:stories','library_page:capsules','library_page:requests','library_page:portals') OR key LIKE 'library_detail:stories:%' OR key LIKE 'library_detail:capsules:%' OR key LIKE 'library_detail:requests:%' OR key LIKE 'library_detail:portals:%'");
@@ -328,6 +337,8 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
       ? db.getAllAsync<{
           id: string;
           title: string;
+          body_text: string;
+          milestone_type: string | null;
           occurred_at: string;
           occurred_at_precision: string;
           location_text: string | null;
@@ -337,6 +348,7 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
           updated_at: string;
           asset_count: number;
           participant_names_json: string;
+          participant_ids_json: string;
           cover_json: string | null;
           local_cover_uri: string | null;
         }>("SELECT * FROM timeline_event WHERE scope = ? ORDER BY occurred_at DESC, id DESC", scope)
@@ -352,6 +364,8 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
   const serverEvents = rows.map((row) => ({
     id: row.id,
     title: row.title,
+    bodyText: row.body_text,
+    milestoneType: row.milestone_type,
     occurredAt: row.occurred_at,
     occurredAtPrecision: row.occurred_at_precision,
     locationText: row.location_text,
@@ -361,6 +375,7 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
     updatedAt: row.updated_at,
     assetCount: row.asset_count,
     participantNames: JSON.parse(row.participant_names_json) as string[],
+    participantIds: JSON.parse(row.participant_ids_json) as string[],
     captureIds: [],
     cover: row.cover_json
       ? (JSON.parse(row.cover_json) as LocalTimelineEvent["cover"])
@@ -467,11 +482,13 @@ async function applyCommittedSyncPage(tx: Pick<SQLite.SQLiteDatabase, "runAsync"
         `INSERT INTO timeline_event(
           id, scope, title, occurred_at, occurred_at_precision, location_text,
           child_person_id, age_days, age_label, updated_at, asset_count,
-          participant_names_json, cover_json, local_cover_uri, seen_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+          participant_names_json, cover_json, local_cover_uri, seen_snapshot, body_text, milestone_type, participant_ids_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           scope = excluded.scope,
           title = excluded.title,
+          body_text = excluded.body_text,
+          milestone_type = excluded.milestone_type,
           occurred_at = excluded.occurred_at,
           occurred_at_precision = excluded.occurred_at_precision,
           location_text = excluded.location_text,
@@ -481,6 +498,7 @@ async function applyCommittedSyncPage(tx: Pick<SQLite.SQLiteDatabase, "runAsync"
           updated_at = excluded.updated_at,
           asset_count = excluded.asset_count,
           participant_names_json = excluded.participant_names_json,
+          participant_ids_json = excluded.participant_ids_json,
           cover_json = excluded.cover_json,
           local_cover_uri = CASE
             WHEN timeline_event.cover_json = excluded.cover_json THEN timeline_event.local_cover_uri
@@ -501,6 +519,9 @@ async function applyCommittedSyncPage(tx: Pick<SQLite.SQLiteDatabase, "runAsync"
         JSON.stringify(event.participantNames),
         event.cover ? JSON.stringify(event.cover) : null,
         snapshotId,
+        event.bodyText ?? "",
+        event.milestoneType ?? null,
+        JSON.stringify(event.participantIds ?? []),
       );
       if (event.captureIds.length > 0) {
         const placeholders = event.captureIds.map(() => "?").join(", ");

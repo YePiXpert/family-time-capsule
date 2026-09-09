@@ -24,7 +24,7 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
   await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
   const url = page.url(), id = url.split("/").at(-1)!;
   await expect(page.getByRole("textbox", { name: "正文", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: "更多调整", exact: true }).click();
   await page.getByRole("button", { name: "整本设置", exact: true }).click();
   await page.getByLabel("标题", { exact: true }).fill("虚构家庭的成长年册");
   await page.getByRole("button", { name: "内容", exact: true }).click();
@@ -80,7 +80,7 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
       fullPage: true,
     });
   }
-  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: "更多调整", exact: true }).click();
   await page.getByRole("button", { name: /第 1 页虚构家书.*· 编辑/ }).click();
   doc = await (await page.request.get(`/api/books/projects/${id}`)).json();
   await page.request.patch(`/api/books/projects/${id}`, {
@@ -188,7 +188,7 @@ test("月份选材生成新册，复制保留编辑，日期调整同步到日�
   await page.getByRole("button", { name: "生成预览", exact: true }).click();
   await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
   const draftUrl = page.url();
-  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  await page.getByRole("button", { name: "更多调整", exact: true }).click();
   await page.getByRole("button", { name: "整本设置", exact: true }).click();
   await page.getByLabel("副标题", { exact: true }).fill("虚构第一周手工整理");
   await page.getByRole("button", { name: "保存当前编辑", exact: true }).click();

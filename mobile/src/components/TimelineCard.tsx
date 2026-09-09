@@ -38,6 +38,8 @@ export function TimelineCard({
         ) : null}
         <Text style={styles.date}>{dateLabel(item.occurredAt, timeZone, item.occurredAtPrecision)}</Text>
         <Text numberOfLines={2} style={styles.title}>{item.title}</Text>
+        {item.bodyText && item.bodyText !== item.title ? <Text numberOfLines={3} style={styles.story}>{item.bodyText}</Text> : null}
+        {item.milestoneType ? <Text style={styles.date}>{item.milestoneType === "first_time" ? "第一次" : "值得记住"}</Text> : null}
         <View style={styles.meta}>
           {age ? <Text style={styles.age}>{age}</Text> : null}
           {item.participantNames.length > 0 ? (
@@ -67,6 +69,7 @@ const styles = StyleSheet.create({
   body: { padding: 18, gap: 8 },
   localBadge: { color: colors.sage, fontSize: 13, fontWeight: "600" },
   date: { color: colors.coral, fontSize: 13, fontWeight: "600" },
+  story: { color: colors.ink, fontSize: 16, lineHeight: 26 },
   title: { color: colors.ink, fontSize: 20,  fontWeight: "600" },
   meta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
   age: { color: colors.sage, backgroundColor: colors.softSage, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, fontWeight: "600" },

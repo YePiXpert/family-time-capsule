@@ -33,6 +33,8 @@ export type Person = {
 
 export type TimelineEvent = {
   id: string;
+  bodyText?: string;
+  milestoneType?: string | null;
   title: string;
   occurredAt: string;
   occurredAtPrecision: string;
@@ -43,6 +45,7 @@ export type TimelineEvent = {
   updatedAt: string;
   assetCount: number;
   participantNames: string[];
+  participantIds?: string[];
   captureIds: string[];
   cover: null | {
     assetId: string;
@@ -198,6 +201,8 @@ export type MemorySharingPatch = { visibility: "private" | "members" | "family";
 export type MemorySharingResult = { visibility: MemorySharingPatch["visibility"]; readerUserIds: string[]; titleRevision: number; readable: boolean };
 
 export type MobileMemory = {
+  milestoneType?: string | null;
+  isPinned?: boolean;
   bodyText?: string;
   canWrite?: boolean;
   isAuthor?: boolean;
@@ -259,7 +264,10 @@ export type InboxDraftPatch = {
 
 export type MobileContributionInput = {
   authorPersonId: string;
-  text: string;
+  text?: string;
+  audioAssetId?: string;
+  clientId?: string;
+  sourceDraftId?: string;
   visibility: MobileContributionVisibility;
 };
 

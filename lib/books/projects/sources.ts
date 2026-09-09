@@ -239,6 +239,7 @@ export function createBookSourceResolver(
             result = {
               state: {
                 ...event.state,
+                asset: original.audioAssetId ? resolve("asset", original.audioAssetId).state.asset : null,
                 label: `${author.displayName}的讲述`,
                 author: author.displayName,
                 authoredAt: original.createdAt.toISOString(),

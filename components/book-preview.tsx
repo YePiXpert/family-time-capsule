@@ -1,4 +1,5 @@
 "use client";
+import { MediaReader } from "./media-reader";
 import { focusedImageFrame } from "@/mobile/src/books/image-frame";
 import Image from "next/image";
 import Link from "next/link";
@@ -171,7 +172,7 @@ export function BookPreview({ book }: { book: BookDetail }) {
                       {block.kind === "quote" ? (
                         <blockquote className="border-l-2 border-accent/40 pl-4">
                           <p className="whitespace-pre-wrap break-words text-lg leading-8">
-                            {block.text}
+                            {block.text || (states.some(s => s?.asset?.type === "audio") ? "原声讲述" : "")}
                           </p>
                           {author ? (
                             <footer className="mt-3 text-sm text-muted">
@@ -226,6 +227,7 @@ export function BookPreview({ book }: { book: BookDetail }) {
             })}
         </section>
       ))}
+      {book.readingMedia?.length ? <section className="my-6 rounded-2xl border border-line p-4" aria-label="声音与视频"><h3 className="mb-3 text-lg font-semibold">声音与视频</h3><MediaReader assets={book.readingMedia.flatMap(state => state.asset ? [{ id: state.asset.id, type: state.asset.type, filename: state.label || state.asset.filename, mimeType: state.asset.mimeType }] : [])} /></section> : null}
       {!book.blocks.length ? (
         <p className="my-5 rounded-xl border border-dashed border-line p-5 text-muted">
           还没有选材。可以从真实记忆、相册或已发布故事中挑选，也可以手工插入内容。

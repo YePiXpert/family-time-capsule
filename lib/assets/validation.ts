@@ -302,7 +302,8 @@ export function validateMediaUpload(
 /** 同容器家族：webm/mkv 音视频共享 EBML 容器 */
 function sameContainerFamily(declared: string, sniffed: string): boolean {
   const webmish = new Set(["audio/webm", "video/webm", "video/x-matroska"]);
-  return webmish.has(declared) && webmish.has(sniffed);
+  const bmff = new Set(["audio/mp4", "audio/m4a", "audio/x-m4a", "video/mp4"]);
+  return (webmish.has(declared) && webmish.has(sniffed)) || (bmff.has(declared) && bmff.has(sniffed));
 }
 
 /**

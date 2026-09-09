@@ -17,6 +17,7 @@ vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
 }));
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
+vi.mock("../src/contributions/VoiceContribution", () => ({ NativeVoiceContribution: () => null }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => ({

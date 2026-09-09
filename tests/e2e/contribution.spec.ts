@@ -31,7 +31,7 @@ test("同一事件的多人视角独立保存与显示", async ({ page }) => {
   // 爸爸的讲述
   await page.getByLabel("谁在讲述").selectOption({ label: "爸爸" });
   await page
-    .getByPlaceholder("TA 想说的那段话……")
+    .getByLabel("补充文字讲述")
     .fill("那天上午阳光很好，她一直盯着窗帘看。");
   await page.getByRole("button", { name: "保存这段讲述" }).click();
   await expect(
@@ -41,7 +41,7 @@ test("同一事件的多人视角独立保存与显示", async ({ page }) => {
   // 外婆的讲述（外婆没有登录账号，Person 存在即可）
   await page.getByLabel("谁在讲述").selectOption({ label: "外婆" });
   await page
-    .getByPlaceholder("TA 想说的那段话……")
+    .getByLabel("补充文字讲述")
     .fill("外婆说这孩子的眉毛长得像她妈妈小时候。");
   await page.getByLabel("可见范围").selectOption("child_later");
   await page.getByRole("button", { name: "保存这段讲述" }).click();

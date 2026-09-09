@@ -331,6 +331,14 @@ export function BookEditor({ id }: { id: string }) {
           </div>
         </div>
       ) : null}
+      {canEdit && reading ? <details className="my-4 rounded-2xl border border-line bg-surface p-4">
+        <summary className="min-h-11 cursor-pointer py-2 font-medium">调整封面、寄语与收录内容</summary>
+        <div className="mt-3 space-y-4">
+          <label className="block">给宝宝的寄语<textarea className={`${field} mt-2 w-full`} rows={3} maxLength={500} value={book.subtitle} onChange={e => update({ subtitle: e.target.value })} placeholder="写几句想留给长大的你的话……" /></label>
+          <label className="block">封面照片<select className={`${field} mt-2 w-full`} value={book.coverAssetId ?? ""} onChange={e => update({ coverAssetId: e.target.value || null })}><option value="">只用标题封面</option>{[...new Map(Object.values(book.sourceStates).filter(s => s.available && s.asset?.type === "image").map(s => [s.asset!.id, s])).values()].map((s, i) => <option key={s.asset!.id} value={s.asset!.id}>{`照片 ${i + 1} · ${s.asset!.filename}`}</option>)}</select></label>
+          <div><p className="mb-2 text-sm text-muted">从本册移除不会删除原记录，之后也不会自动加回来。</p>{book.sources.filter(source => source.kind === "memory" && book.blocks.some(b => b.sourceIds.includes(source.id))).map(source => <div key={source.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-line py-2"><span>{book.sourceStates[source.id]?.label || "暂不可见的记录"}</span><button className="ui-button-secondary" onClick={() => update({ blocks: book.blocks.filter(b => !b.sourceIds.includes(source.id)) })}>从本册移除：{book.sourceStates[source.id]?.label || "这条记录"}</button></div>)}</div>
+        </div>
+      </details> : null}
       <div className="my-4 flex flex-wrap gap-3">
         {canEdit ? (
           <>
@@ -348,7 +356,7 @@ export function BookEditor({ id }: { id: string }) {
               disabled={busy}
               onClick={() => (reading ? setReading(false) : void preview())}
             >
-              {reading ? "编辑" : "预览作品"}
+              {reading ? "更多调整" : "预览作品"}
             </button>
 
           </>

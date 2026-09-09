@@ -10,15 +10,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = asRecord(await readMobileJson(request));
     const authorPersonId = optionalString(body, "authorPersonId", 128);
     const rawText = optionalString(body, "text", 5000);
+    const audioAssetId = optionalString(body, "audioAssetId", 128);
+    const clientId = optionalString(body, "clientId", 128);
+    const sourceDraftId = optionalString(body, "sourceDraftId", 128);
     const visibility = optionalString(body, "visibility", 32) ?? "family";
-    if (!authorPersonId || !rawText || !isContributionVisibility(visibility)) {
+    if (!authorPersonId || (!rawText && !audioAssetId) || !isContributionVisibility(visibility)) {
       return mobileJson({ error: "invalid_input" }, { status: 400 });
     }
     const result = await createContribution(authorization.context.familyId, {
       memoryEventId: (await params).id,
       authorPersonId,
       recordedByUserId: authorization.context.userId,
-      rawText,
+      rawText: rawText || undefined,
+      audioAssetId: audioAssetId || undefined, clientId: clientId || undefined, sourceDraftId: sourceDraftId || undefined,
       visibility,
     });
     if (!result.ok) {

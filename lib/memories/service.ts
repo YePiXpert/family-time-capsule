@@ -867,6 +867,7 @@ export type TimelineEntry = {
   coverThumbAssetId: string | null;
   assetCount: number;
   participantNames: string[];
+  participantIds?: string[];
   tags: string[];
 };
 
@@ -1032,6 +1033,7 @@ export async function hydrateTimelineEntries(
         : null,
       assetCount: links.length,
       participantNames: participantNamesByEvent.get(event.id) ?? [],
+      participantIds: participantLinks.filter(link => link.memoryEventId === event.id).map(link => link.personId),
       tags: tagsByEvent.get(event.id) ?? [],
     };
   });
@@ -1091,6 +1093,9 @@ export async function getTimelinePage(
     cursor?: string | null;
     limit?: number;
     personId?: string | null;
+    growthChildId?: string | null;
+    growthDayOnly?: boolean;
+    milestoneOnly?: boolean;
     mediaType?: "image" | "audio" | "video" | "document" | null;
     tag?: string | null;
     occurredFrom?: Date | null;
@@ -1121,6 +1126,15 @@ export async function getTimelinePage(
         eq(memoryEvent.status, "confirmed"),
         isNull(memoryEvent.deletedAt),
         visibleEvent,
+        options.growthChildId ? sql`(
+          ${memoryEvent.childPersonId} = ${options.growthChildId} OR
+          (${memoryEvent.childPersonId} is null AND (
+            exists(select 1 from memory_event_participant gp where gp.memory_event_id=${memoryEvent.id} and gp.family_id=${familyId} and gp.person_id=${options.growthChildId}) OR
+            ((select count(*) from person gc where gc.family_id=${familyId} and gc.is_child=1)=1 and not exists(select 1 from memory_event_participant anyp where anyp.memory_event_id=${memoryEvent.id} and anyp.family_id=${familyId}))
+          ))
+        )` : undefined,
+        options.growthDayOnly ? sql`${memoryEvent.occurredAtPrecision} in ('exact','date_only','approximate')` : undefined,
+        options.milestoneOnly ? isNotNull(memoryEvent.milestoneType) : undefined,
         options.personId
           ? sql`exists (
               select 1 from memory_event_participant timeline_person
