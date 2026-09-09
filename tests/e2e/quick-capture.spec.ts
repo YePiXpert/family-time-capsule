@@ -8,7 +8,9 @@ import { ensureBootstrap } from "./helpers";
 import { QUICK_CAPTURE_AI_ENV } from "./helpers/capture-ai";
 
 let provider: Server, calls = 0, refuse = false;
-test.describe.configure({ mode: "serial" });
+// This journey shares consent and queue state; retrying the whole group against
+// its already-mutated server would test a different starting condition.
+test.describe.configure({ mode: "serial", retries: 0 });
 test.beforeAll(async () => {
   provider = createServer(async (request, response) => {
     const chunks: Buffer[] = [];
@@ -31,7 +33,8 @@ async function workOnce() {
   const result = await promisify(execFile)(process.execPath, [".next/ops/worker.mjs", "--once"], {
     cwd: process.cwd(), env: { ...process.env, ...QUICK_CAPTURE_AI_ENV, DATA_DIR: path.join(process.cwd(), "data/e2e-quick-capture"), AUTH_SECRET: "e2e-test-auth-secret-0123456789abcdef" }, timeout: 30000,
   });
-  return result.stdout;
+  return result.stdout + (result.stdout.includes("[ai-worker] failed")
+    ? `\n${JSON.stringify(dbRead(db => db.prepare("select job_type, status, last_error_code from ai_job").all()))}` : "");
 }
 function dbRead<T>(read: (db: Database.Database) => T): T {
   const db = new Database(path.join(process.cwd(), "data/e2e-quick-capture/db/capsule.sqlite"), { readonly: true });

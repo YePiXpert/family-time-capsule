@@ -111,6 +111,38 @@ it("one combined save durably queues image then naming, exposes suggestions and 
   expect(getDb().select().from(aiJob).all()).toHaveLength(count);
 });
 
+it("dual-route capture binds each queued stage to its actual receiver and reuses the same chain", async () => {
+  const { createMemoryAssistant } = await import("@/lib/ai/server");
+  const { enableAiProcessingConsent } = await import("@/lib/ai/jobs");
+  const { requestEventSuggestions } = await import("@/lib/suggestions/service");
+  const ai = createMemoryAssistant({ AI_PROVIDER: "dual", AI_BASE_URL: "https://primary.fixture.invalid/v1", AI_API_KEY: "fixture-primary-key", ASR_API_KEY: "fixture-asr-key" });
+  const provenance = (capability: "text" | "vision" | "transcription") => ({ providerId: ai.capabilities[capability].providerId!, providerName: ai.capabilities[capability].providerName!, model: ai.capabilities[capability].model! });
+  vi.spyOn(ai, "generateText").mockResolvedValue({ text: JSON.stringify({ title: "窗边绿植与一段录音", locationText: null, occurredAt: null, timePrecision: "approximate", tags: [], personNames: [], facts: [] }), finishReason: "stop", provenance: provenance("text") });
+  vi.spyOn(ai, "analyzeImage").mockResolvedValue({ text: "【描述】窗边的一盆绿植。\n【图中文字】无。", finishReason: "stop", provenance: provenance("vision") });
+  vi.spyOn(ai, "transcribeAudio").mockResolvedValue({ text: "Hello family, this is a test recording.", language: "en", durationSeconds: 2, segments: [], provenance: provenance("transcription") });
+  for (const capability of ["text", "vision", "transcription"] as const) {
+    expect(enableAiProcessingConsent(context, { capability, allowAutomaticFamilyContent: false }, { runtime: ai }).ok).toBe(true);
+  }
+  const p = await photo();
+  const audio = await ingestMedia({ familyId: context.familyId, createdByUserId: actor.id, filename: "dual.wav", declaredMime: "audio/wav", buffer: readFileSync(path.join(__dirname, "../../resources/ai/smoke.wav")), kind: "audio", visibility: "private" });
+  if (audio.status !== "stored") throw new Error(audio.status);
+  const d = newDraft([p.original.id, audio.asset.id]);
+  const result = publishCapture(context, d.id, d.revision, true, { runtime: ai });
+  expect(result.processing, JSON.stringify(result.processing)).toMatchObject({ state: "queued" });
+  if (result.processing.state !== "queued") throw new Error(result.processing.reason);
+  const rows = getDb().select().from(aiJob).where(eq(aiJob.status, "pending")).all();
+  expect(rows).toHaveLength(3);
+  for (const row of rows) {
+    const receiver = ai.capabilities[row.requiredCapability as "text" | "vision" | "transcription"];
+    expect(row).toMatchObject({ providerId: receiver.providerId, configurationId: receiver.configurationId });
+  }
+  expect(requestEventSuggestions(context, result.memoryEventId!, { runtime: ai })).toMatchObject({ ok: true, created: false, jobId: result.processing.jobId });
+  for (let n = 0; n < 3; n++) expect(await runAiWorkerOnce({ assistant: ai })).toMatchObject({ status: "completed" });
+  expect(ai.analyzeImage).toHaveBeenCalledOnce();
+  expect(ai.transcribeAudio).toHaveBeenCalledOnce();
+  expect(ai.generateText).toHaveBeenCalledOnce();
+});
+
 it("an AI refusal does not undo publication or leave partially queued stages", async () => {
   const p = await photo(), audio = await ingestMedia({ familyId: context.familyId, createdByUserId: actor.id, filename: "讲述.wav", declaredMime: "audio/wav", buffer: readFileSync(path.join(__dirname, "../fixtures/sample.wav")), kind: "audio", visibility: "private" });
   if (audio.status !== "stored") throw new Error(audio.status);

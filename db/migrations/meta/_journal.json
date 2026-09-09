@@ -505,6 +505,13 @@
       "when": 1788876000021,
       "tag": "0071_incremental_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1788876000022,
+      "tag": "0072_ai_capability_dependencies",
+      "breakpoints": true
     }
   ]
 }

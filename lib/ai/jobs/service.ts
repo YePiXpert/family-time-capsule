@@ -1086,9 +1086,7 @@ export function enqueueAiJob(
       const revision = targetRevision(tx, input.entityType, input.entityId);
 
       let consentVersion: number | null = null;
-      const enqueueProvider = isCapability(input.requiredCapability)
-        ? capabilityProvider(runtime, input.requiredCapability)
-        : null;
+      const enqueueProvider = capabilityProvider(runtime, input.requiredCapability);
       if (runtime.provider.external && enqueueProvider) {
         const consent = tx
           .select()
@@ -1172,7 +1170,8 @@ export function enqueueAiJob(
           existing.entityType === input.entityType &&
           existing.entityId === input.entityId &&
           existing.requiredCapability === input.requiredCapability &&
-          existing.providerId === runtime.provider.id &&
+          existing.providerId === enqueueProvider.id &&
+          existing.configurationId === enqueueProvider.configurationId &&
           existing.providerExternal === runtime.provider.external &&
           existing.model === model &&
           existing.consentVersion === consentVersion &&
@@ -1198,8 +1197,8 @@ export function enqueueAiJob(
           entityId: input.entityId,
           targetRevision: revision,
           requiredCapability: input.requiredCapability,
-          providerId: runtime.provider.id,
-        configurationId: runtime.provider.configurationId ?? "",
+          providerId: enqueueProvider.id,
+          configurationId: enqueueProvider.configurationId,
           model,
           providerExternal: runtime.provider.external,
           consentVersion,

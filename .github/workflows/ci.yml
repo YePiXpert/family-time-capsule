@@ -98,6 +98,8 @@ jobs:
       # Shared calendar utilities resolve the installed Expo TypeScript base.
       - run: npm ci
         working-directory: mobile
+      # Match the runtime image: audio AI requires a measured duration from ffprobe.
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run build:ops
