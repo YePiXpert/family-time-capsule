@@ -8,7 +8,7 @@ import { submitVoice, type VoiceReceipt } from "@/mobile/src/contributions/submi
 import { RecordingMeter } from "./recording-meter";
 type VoiceDraft = BrowserDraft & { voice: VoiceReceipt };
 const visibilityLabels = { family: "全家可见", private: "仅自己", parents: "父母可见", child_later: "留给孩子将来" };
-export function VoiceContribution({ scope, memoryId, authorPersonId, authorName, visibility }: { scope: string; memoryId: string; authorPersonId: string; authorName: string; visibility: VoiceReceipt["visibility"] }) {
+export function VoiceContribution({ scope, memoryId, authorPersonId, authorName, visibility, onRestoreSelection }: { scope: string; memoryId: string; authorPersonId: string; authorName: string; visibility: VoiceReceipt["visibility"]; onRestoreSelection: (voice: VoiceReceipt) => void }) {
   const localScope = `${scope}:voice:${memoryId}`;
   const router = useRouter();
   const [row, setRow] = useState<VoiceDraft | null>(null), [preview, setPreview] = useState<string | null>(null);
@@ -19,10 +19,10 @@ export function VoiceContribution({ scope, memoryId, authorPersonId, authorName,
     mounted.current = true;
     void listBrowserDrafts(localScope).then(rows => {
       const pending = (rows as VoiceDraft[]).find(r => r.voice?.memoryId === memoryId && ["editing", "queued"].includes(r.status));
-      if (mounted.current && pending) { current.current = pending; setRow(pending); }
+      if (mounted.current && pending) { current.current = pending; setRow(pending); onRestoreSelection(pending.voice); }
     }).catch(() => { if (mounted.current) setMessage("无法读取本机录音草稿，请检查浏览器存储空间。"); }).finally(() => { if (mounted.current) setLoading(false); });
     return () => { mounted.current = false; if (recorder.current?.state === "recording") recorder.current.stop(); stream.current?.getTracks().forEach(t => t.stop()); };
-  }, [localScope, memoryId]);
+  }, [localScope, memoryId, onRestoreSelection]);
   useEffect(() => {
     if (!row) return;
     let active = true; let url: string | undefined;
@@ -97,8 +97,9 @@ export function VoiceContribution({ scope, memoryId, authorPersonId, authorName,
     } catch (e) { if (mounted.current) setMessage(e instanceof Error ? e.message : "录音尚未送达，本机原件保留。"); }
     finally { operation.current = false; if (mounted.current) setBusy(false); }
   }
+  const selection = row?.status === "editing" ? { authorName, visibility } : row?.voice;
   return <div className="space-y-3 rounded-xl border border-line bg-surface p-3">
-    {!row ? <button type="button" className="ui-button-secondary" disabled={busy || loading || !authorPersonId} onClick={() => void record()}>{recording ? "完成录音" : "留段声音"}</button> : <><p className="text-sm text-muted">{row.voice.authorName} · {visibilityLabels[row.voice.visibility]} · 本机录音</p>{preview ? <audio controls src={preview} className="w-full" aria-label="重听待保存的声音" /> : null}<button type="button" disabled={busy} className="ui-button-primary" onClick={() => void save()}>{busy ? "正在保存声音…" : row.status === "queued" ? "重试保存声音" : "保存声音"}</button></>}
+    {!row ? <button type="button" className="ui-button-secondary" disabled={busy || loading || !authorPersonId} onClick={() => void record()}>{recording ? "完成录音" : "留段声音"}</button> : <><p className="text-sm text-muted">{selection!.authorName} · {visibilityLabels[selection!.visibility]} · 本机录音</p>{preview ? <audio controls src={preview} className="w-full" aria-label="重听待保存的声音" /> : null}<button type="button" disabled={busy} className="ui-button-primary" onClick={() => void save()}>{busy ? "正在保存声音…" : row.status === "queued" ? "重试保存声音" : "保存声音"}</button></>}
     {recording ? <><RecordingMeter streamRef={stream} /><p className="text-sm text-muted">录音中，完成后保存在本机。</p></> : null}
     {message ? <p role="status" className="text-sm text-muted">{message}</p> : null}
   </div>;

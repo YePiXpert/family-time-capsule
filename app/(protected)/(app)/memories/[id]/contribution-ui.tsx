@@ -2,7 +2,8 @@
 import { MediaReader } from "@/components/media-reader";
 
 import { VoiceContribution } from "@/components/voice-contribution";
-import { useActionState, useState } from "react";
+import { useActionState, useCallback, useState } from "react";
+import type { VoiceReceipt } from "@/mobile/src/contributions/submit-voice";
 import type { PersonRow } from "@/lib/memories/service";
 import type { VisibleContributionDto } from "@/lib/authz/contribution-access";
 import {
@@ -33,6 +34,10 @@ export function AddContributionForm({
   const authors = people.filter((p) => !p.isChild);
   const [authorId, setAuthorId] = useState(defaultAuthorId || authors[0]?.id || "");
   const [visibility, setVisibility] = useState<"family" | "private" | "parents" | "child_later">("family");
+  const restoreVoiceSelection = useCallback((voice: VoiceReceipt) => {
+    setAuthorId(voice.authorPersonId);
+    setVisibility(voice.visibility);
+  }, []);
 
   return (
     <form action={formAction} className="mt-3 flex flex-col gap-3">
@@ -70,7 +75,7 @@ export function AddContributionForm({
           </select>
         </label>
       </div>
-      <VoiceContribution key={`${scope}:${memoryEventId}`} scope={scope} memoryId={memoryEventId} authorPersonId={authorId} authorName={authors.find(p => p.id === authorId)?.displayName || "家人"} visibility={visibility} />
+      <VoiceContribution key={`${scope}:${memoryEventId}`} scope={scope} memoryId={memoryEventId} authorPersonId={authorId} authorName={authors.find(p => p.id === authorId)?.displayName || "家人"} visibility={visibility} onRestoreSelection={restoreVoiceSelection} />
       <textarea
         name="text"
         aria-label="补充文字讲述"

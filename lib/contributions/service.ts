@@ -5,14 +5,14 @@ import "server-only";
 import { canManageEventVisibilityInTransaction, createEventAccessSnapshot, eventVisibilityCondition } from "@/lib/authz/event-access";
 import type { FamilyContext } from "@/lib/family/context";
 import { readableFactPredicate } from "@/lib/authz/fact-access";
-import { createContributionAccessSnapshot } from "@/lib/authz/contribution-access";
+import { createContributionAccessSnapshot, getContributionAssetAccessInTransaction } from "@/lib/authz/contribution-access";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { indexContribution, indexFactIfConfirmed } from "@/lib/search/service";
 import { auditLog } from "@/db/schema/audit";
 import { user as userTable } from "@/db/schema/auth";
-import { person as personTable } from "@/db/schema/family";
+import { family as familyTable, person as personTable } from "@/db/schema/family";
 import { memoryEvent } from "@/db/schema/memory";
 import { contribution, fact } from "@/db/schema/contribution";
 import { factSource } from "@/db/schema/suggestion";
@@ -110,8 +110,12 @@ export async function createContribution(
         personId: userTable.personId,
         boundPersonId: personTable.id,
         boundPersonFamilyId: personTable.familyId,
+        isGuardian: personTable.isGuardian,
+        familyTimezone: familyTable.timezone,
+        childLaterUnlockAge: familyTable.childLaterUnlockAge,
       })
       .from(userTable)
+      .innerJoin(familyTable, eq(userTable.familyId, familyTable.id))
       .leftJoin(personTable, eq(userTable.personId, personTable.id))
       .where(
         and(
@@ -174,10 +178,6 @@ export async function createContribution(
       return { ok: false, error: "author_not_allowed" } as const;
     }
 
-    if (input.audioAssetId) {
-      const audio = tx.select().from(assetTable).where(and(eq(assetTable.id, input.audioAssetId), eq(assetTable.familyId, familyId))).get();
-      if (!audio || audio.type !== "audio" || !canManageOriginalInTransaction(tx, { familyId, userId: input.recordedByUserId }, audio)) return { ok: false, error: "forbidden" } as const;
-    }
     const sourceDraft = input.sourceDraftId ? tx.select().from(draftTable).where(and(eq(draftTable.id, input.sourceDraftId), eq(draftTable.familyId, familyId), eq(draftTable.authorUserId, input.recordedByUserId))).get() : null;
     if (input.sourceDraftId && (!sourceDraft || !input.audioAssetId || !tx.select().from(draftItem).where(and(eq(draftItem.draftId, input.sourceDraftId), eq(draftItem.assetId, input.audioAssetId))).get())) return { ok: false, error: "forbidden" } as const;
     const existing = tx.select().from(contribution).where(eq(contribution.id, id)).get();
@@ -186,6 +186,20 @@ export async function createContribution(
       return same ? { ok: true, contributionId: id } as const : { ok: false, error: "invalid" } as const;
     }
     if (sourceDraft && sourceDraft.status !== "editing") return { ok: false, error: "invalid" } as const;
+    // Exact retries acknowledge the saved receipt above; every new reference rechecks access.
+    if (input.audioAssetId) {
+      const audio = tx.select().from(assetTable).where(and(eq(assetTable.id, input.audioAssetId), eq(assetTable.familyId, familyId))).get();
+      const audioContext: FamilyContext = {
+        familyId, userId: input.recordedByUserId, userName: actor.name,
+        personId: actor.personId, role: actor.role, accountEnabled: true,
+        isGuardian: actor.isGuardian ?? false, familyTimezone: actor.familyTimezone,
+        childLaterUnlockAge: actor.childLaterUnlockAge,
+      };
+      const access = createContributionAccessSnapshot(audioContext, now);
+      if (!audio || audio.type !== "audio" ||
+        !getContributionAssetAccessInTransaction(tx, access, audio.id).readable ||
+        !canManageOriginalInTransaction(tx, audioContext, audio)) return { ok: false, error: "forbidden" } as const;
+    }
     tx.insert(contribution)
       .values({
         id,

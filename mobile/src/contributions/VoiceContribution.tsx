@@ -15,7 +15,7 @@ import { sharedStyles as s } from "../theme";
 import { submitVoice, type VoiceReceipt } from "./submit-voice";
 type VoiceDraft = LocalDraft & { voice: VoiceReceipt; voicePayload: MediaCapturePayload };
 const visibilityLabels = { family: "全家可见", private: "仅自己", parents: "父母可见", child_later: "留给孩子将来" };
-export function NativeVoiceContribution({ memoryId, authorPersonId, authorName, visibility, onSaved }: { memoryId: string; authorPersonId: string; authorName: string; visibility: VoiceReceipt["visibility"]; onSaved: () => Promise<void> }) {
+export function NativeVoiceContribution({ memoryId, authorPersonId, authorName, visibility, onSaved, onRestoreSelection }: { memoryId: string; authorPersonId: string; authorName: string; visibility: VoiceReceipt["visibility"]; onSaved: () => Promise<void>; onRestoreSelection: (voice: VoiceReceipt) => void }) {
   const { credentials, family, viewer } = useApp();
   const scope = JSON.stringify([credentials?.serverUrl, credentials?.instanceId, viewer?.id, family?.id, "voice", memoryId]);
   const identity = useRef(scope);
@@ -29,10 +29,10 @@ export function NativeVoiceContribution({ memoryId, authorPersonId, authorName, 
     mounted.current = true;
     void listLocalDrafts(scope).then(rows => {
       const pending = (rows as VoiceDraft[]).find(r => r.voice?.memoryId === memoryId && ["editing", "queued"].includes(r.status));
-      if (mounted.current && identity.current === scope && pending) { current.current = pending; setRow(pending); }
+      if (mounted.current && identity.current === scope && pending) { current.current = pending; setRow(pending); onRestoreSelection(pending.voice); }
     }).catch(() => { if (mounted.current) setMessage("无法读取本机录音，请检查存储空间。"); }).finally(() => { if (mounted.current) setLoading(false); });
     return () => { mounted.current = false; void finishRef.current?.(); };
-  }, [scope, memoryId]);
+  }, [scope, memoryId, onRestoreSelection]);
   const guard = () => { if (!mounted.current || identity.current !== scope) throw new Error("账号或页面已改变，录音仍保存在原账号的本机草稿中。"); };
   async function persist(next: VoiceDraft, payload?: MediaCapturePayload) {
     await saveLocalDraft(next, current.current?.id === next.id ? current.current.revision : 0, payload ? { id: next.voice.originalId, payload } : undefined);
@@ -97,9 +97,10 @@ export function NativeVoiceContribution({ memoryId, authorPersonId, authorName, 
     } catch (e) { if (mounted.current && identity.current === scope) setMessage(e instanceof Error ? e.message : "录音尚未送达，本机原件保留。"); }
     finally { operation.current = false; if (mounted.current && identity.current === scope) setBusy(false); }
   }
+  const selection = row?.status === "editing" ? { authorName, visibility } : row?.voice;
   return <View style={{ gap: 12 }}>
     {!row ? <Pressable accessibilityRole="button" disabled={busy || loading || !authorPersonId} onPress={() => void record()} style={s.secondaryButton}><Text style={s.secondaryText}>{recording ? "完成录音" : "留段声音"}</Text></Pressable> : <>
-      <Text style={s.body}>{row.voice.authorName} · {visibilityLabels[row.voice.visibility]} · 本机录音</Text>
+      <Text style={s.body}>{selection!.authorName} · {visibilityLabels[selection!.visibility]} · 本机录音</Text>
       <NativeMediaReader credentials={null} assets={[{ id: row.voice.originalId, type: "audio", filename: "待保存的声音", mimeType: row.voicePayload.mimeType, localUri: row.voicePayload.localUri }]} />
       <Pressable accessibilityRole="button" disabled={busy} onPress={() => void save()} style={s.primaryButton}><Text style={s.primaryText}>{busy ? "正在保存声音…" : row.status === "queued" ? "重试保存声音" : "保存声音"}</Text></Pressable>
     </>}

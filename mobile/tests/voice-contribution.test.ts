@@ -1,4 +1,6 @@
-import { createElement } from 'react';
+import { createElement, useCallback, useState } from 'react';
+import { Pressable, Text } from 'react-native';
+import type { VoiceReceipt } from '../src/contributions/submit-voice';
 import { act,create,type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach,beforeEach,expect,it,vi } from 'vitest';
 const mocks=vi.hoisted(()=>({rows:new Map<string,any>(),permission:vi.fn(),mode:vi.fn(),preserve:vi.fn(),upload:vi.fn(),request:vi.fn(),saved:vi.fn(),stop:vi.fn(),release:vi.fn(),app:{credentials:{serverUrl:'https://fixture.invalid',instanceId:'instance',token:'fixture'},family:{id:'family'},viewer:{id:'dad'}}}));
@@ -14,7 +16,17 @@ vi.mock('../src/drafts/store',()=>({listLocalDrafts:async(scope:string)=>[...moc
 const {NativeVoiceContribution}=await import('../src/contributions/VoiceContribution');
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 let tree:ReactTestRenderer|undefined;
-async function mount(){await act(async()=>{tree=create(createElement(NativeVoiceContribution,{memoryId:'memory',authorPersonId:'dad-person',authorName:'爸爸',visibility:'family',onSaved:mocks.saved}));});}
+type Selection = Pick<VoiceReceipt, 'authorPersonId' | 'authorName' | 'visibility'>;
+const defaultSelection: Selection = { authorPersonId:'dad-person', authorName:'爸爸', visibility:'family' };
+function Form({initialSelection=defaultSelection}:{initialSelection?:Selection}) {
+  const [selection,setSelection]=useState(initialSelection);
+  const restore=useCallback((voice:VoiceReceipt)=>setSelection({authorPersonId:voice.authorPersonId,authorName:voice.authorName,visibility:voice.visibility}),[]);
+  return createElement('Form',null,
+    createElement(NativeVoiceContribution,{memoryId:'memory',...selection,onSaved:mocks.saved,onRestoreSelection:restore}),
+    createElement(Pressable,{onPress:()=>setSelection(defaultSelection)},createElement(Text,null,'选择爸爸与全家')));
+}
+async function mount(initialSelection?:Selection){await act(async()=>{tree=create(createElement(Form,{initialSelection}));});}
+function visibleText(){return tree!.root.findAllByType('Text' as any).map(t=>t.children.join(''));}
 function button(label:string){return tree!.root.findAllByType('Pressable' as any).find(b=>b.findAllByType('Text' as any).some(t=>t.children.join('')===label))!;}
 async function tap(label:string){expect(button(label)).toBeTruthy();await act(async()=>{await button(label).props.onPress();});}
 beforeEach(()=>{mocks.rows.clear();vi.clearAllMocks();mocks.permission.mockResolvedValue({granted:true});mocks.mode.mockResolvedValue(undefined);mocks.stop.mockResolvedValue(undefined);mocks.preserve.mockResolvedValue({localUri:'file:///permanent.m4a',mimeType:'audio/mp4',mediaType:'audio',fileName:'声音.m4a',lastModified:null});mocks.upload.mockResolvedValue({assetId:'audio'});mocks.saved.mockResolvedValue(undefined);});
@@ -33,4 +45,48 @@ it('keeps the recorded original after offline failure and recovers a lost server
   });
   await tap('重试保存声音');expect(button('重试保存声音')).toBeTruthy();
   await tap('重试保存声音');expect(posts).toBe(1);expect(mocks.upload).toHaveBeenCalledOnce();expect(mocks.preserve).toHaveBeenCalledOnce();expect([...mocks.rows.values()][0].status).toBe('published');expect(mocks.saved).toHaveBeenCalledOnce();
+});
+
+function captureSubmissions() {
+  let remote:any=null;
+  const submitted:any[]=[];
+  mocks.request.mockImplementation(async(_credentials:any,_path:string,init?:RequestInit)=>{
+    if(!init){if(!remote)throw {status:404};return structuredClone(remote);}
+    const body=JSON.parse(init.body as string);
+    if(init.method==='PUT'){remote={id:'remote',revision:(remote?.revision??0)+1,status:'editing',memoryEventId:null,items:body.content.items};return structuredClone(remote);}
+    submitted.push(body);remote.status='published';remote.memoryEventId='memory';return {id:'voice'};
+  });
+  return submitted;
+}
+for(const [visibility,label] of [['private','仅自己'],['parents','父母可见'],['child_later','留给孩子将来']] as const) {
+  it(`restores the recorded author and ${visibility} audience before saving`,async()=>{
+    await mount({authorPersonId:'grandma-person',authorName:'外婆',visibility});
+    await tap('留段声音');await tap('完成录音');
+    await act(async()=>tree!.unmount());tree=undefined;
+    await mount();
+    expect(visibleText()).toContain(`外婆 · ${label} · 本机录音`);
+    const submitted=captureSubmissions();
+    await tap('保存声音');
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]).toMatchObject({authorPersonId:'grandma-person',visibility});
+  });
+}
+it('previews an explicit change to restored draft authorship and audience before submitting it',async()=>{
+  await mount({authorPersonId:'grandma-person',authorName:'外婆',visibility:'private'});
+  await tap('留段声音');await tap('完成录音');
+  await act(async()=>tree!.unmount());tree=undefined;
+  await mount();await tap('选择爸爸与全家');
+  expect(visibleText()).toContain('爸爸 · 全家可见 · 本机录音');
+  const submitted=captureSubmissions();await tap('保存声音');
+  expect(submitted[0]).toMatchObject({authorPersonId:'dad-person',visibility:'family'});
+});
+it('keeps the queued receipt audience when form controls change before a retry',async()=>{
+  await mount({authorPersonId:'grandma-person',authorName:'外婆',visibility:'private'});
+  await tap('留段声音');await tap('完成录音');
+  mocks.request.mockRejectedValueOnce(Error('offline'));await tap('保存声音');
+  await act(async()=>tree!.unmount());tree=undefined;
+  await mount();await tap('选择爸爸与全家');
+  expect(visibleText()).toContain('外婆 · 仅自己 · 本机录音');
+  const submitted=captureSubmissions();await tap('重试保存声音');
+  expect(submitted[0]).toMatchObject({authorPersonId:'grandma-person',visibility:'private'});
 });

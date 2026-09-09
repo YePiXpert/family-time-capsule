@@ -13,7 +13,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "app.familytimecapsule.mobile",
-      "buildNumber": "20",
+      "buildNumber": "21",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -24,7 +24,7 @@
     },
     "android": {
       "package": "app.familytimecapsule.mobile",
-      "versionCode": 20,
+      "versionCode": 21,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
