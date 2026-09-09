@@ -31,7 +31,7 @@ test("音频 + 视频 + 文字 → 各自确认成事件，页面渲染回放元
   // 另开一件事写文字；前面的素材草稿仍保留。
   await page.getByRole("button", { name: "新建一件事" }).click();
   await page
-    .getByPlaceholder("想说点什么？也可以不写，直接保存素材。")
+    .getByLabel("写下这一刻")
     .fill("小满今天自己扶着沙发站起来了。");
   await submitCaptureForReview(page);
 

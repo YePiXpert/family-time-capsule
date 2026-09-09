@@ -47,7 +47,7 @@ test("所选文字的整理入口创建真实任务，可取消并重试而不�
   await textCard.getByRole("button", { name: "同意启用这项外部处理" }).click();
   await expect(textCard.getByText("可使用")).toBeVisible();
   await page.goto("/capture"); await expandCaptureOptions(page);
-  await page.getByPlaceholder("想说点什么？也可以不写，直接保存素材。").fill("清晨在窗边给绿植浇水。");
+  await page.getByLabel("写下这一刻").fill("清晨在窗边给绿植浇水。");
   await submitCaptureForReview(page);
 
   await page.goto("/inbox");
