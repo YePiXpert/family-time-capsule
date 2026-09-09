@@ -173,7 +173,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
     await viewer.page.goto("/settings");
     await viewer.page.locator("summary").filter({hasText: "家人和账号"}).click();
     await expect(
-      viewer.page.getByRole("link", { name: `家庭时间胶囊 ${FAMILY.name}`, exact: true }).first(),
+      viewer.page.getByRole("link", { name: `小美成长记 ${FAMILY.name}`, exact: true }).first(),
     ).toBeVisible();
     await expect(
       viewer.page.getByText(VIEWER.displayName, { exact: true }).first(),
@@ -219,7 +219,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
     await contributor.page.goto("/settings");
     await contributor.page.locator("summary").filter({hasText: "家人和账号"}).click();
     await expect(
-      contributor.page.getByRole("link", { name: `家庭时间胶囊 ${FAMILY.name}`, exact: true }).first(),
+      contributor.page.getByRole("link", { name: `小美成长记 ${FAMILY.name}`, exact: true }).first(),
     ).toBeVisible();
     await expect(
       contributor.page

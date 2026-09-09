@@ -37,9 +37,10 @@ export type MainTabParamList = {
   Timeline: undefined;
   Capture: { intent?: CaptureIntent; requestKey?: number; draftId?: string; localDraftId?: string } | undefined;
   Works: undefined;
+  Profile: undefined;
 };
 
-export const TAB_ROUTES = ["Timeline", "Capture", "Works"] as const;
+export const TAB_ROUTES = ["Timeline", "Works", "Profile"] as const;
 
 export type AppNavigation = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList>,

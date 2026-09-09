@@ -11,6 +11,7 @@ export function BottomNavigation({ capabilities, simpleMode = false }: { capabil
   const navigation = filterNavigationByCapabilities(PRIMARY_NAVIGATION, capabilities);
   return (
     <nav aria-label="一级导航" className="bottom-navigation lg:hidden">
+      {capabilities.includes("capture:create") && pathname !== "/capture" ? <Link href="/capture" className="floating-capture" aria-label="记录一刻"><Icon name="capture" size={22} /><span>记录一刻</span></Link> : null}
       <div
         className="bottom-navigation-inner"
         style={{ gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))` }}

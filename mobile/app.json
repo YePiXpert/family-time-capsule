@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "家庭时间胶囊",
+    "name": "小美成长记",
     "slug": "family-time-capsule",
     "platforms": [
       "ios",
@@ -13,23 +13,23 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "app.familytimecapsule.mobile",
-      "buildNumber": "16",
+      "buildNumber": "17",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
-        "NSPhotoLibraryUsageDescription": "选择要保存到家庭时间胶囊的照片或视频。"
+        "NSPhotoLibraryUsageDescription": "选择要保存到小美成长记的照片或视频。"
       }
     },
     "android": {
       "package": "app.familytimecapsule.mobile",
-      "versionCode": 16,
+      "versionCode": 17,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#FAF8F4",
+        "backgroundColor": "#FFFAF5",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
@@ -44,15 +44,15 @@
         "expo-secure-store",
         {
           "configureAndroidBackup": true,
-          "faceIDPermission": "允许家庭时间胶囊安全读取登录凭据。"
+          "faceIDPermission": "允许小美成长记安全读取登录凭据。"
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "选择要保存到家庭时间胶囊的照片或视频。",
-          "cameraPermission": "拍摄要保存到家庭时间胶囊的照片或视频。",
-          "microphonePermission": "录制要保存到家庭时间胶囊的视频声音。"
+          "photosPermission": "选择要保存到小美成长记的照片或视频。",
+          "cameraPermission": "拍摄要保存到小美成长记的照片或视频。",
+          "microphonePermission": "录制要保存到小美成长记的视频声音。"
         }
       ],
       [
@@ -69,7 +69,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "录制要保存到家庭时间胶囊的家庭声音。",
+          "microphonePermission": "录制要保存到小美成长记的家庭声音。",
           "recordAudioAndroid": true,
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false

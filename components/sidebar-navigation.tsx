@@ -24,7 +24,7 @@ export function SidebarNavigation({ familyName, userName, role, capabilities }: 
     <aside className="sidebar-navigation" aria-label="应用导航">
       <div className="px-5 pb-5 pt-7">
         <Link href="/" className="block rounded-lg focus-visible:outline-offset-4">
-          <span className="page-eyebrow">家庭时间胶囊</span>
+          <span className="page-eyebrow">小美成长记</span>
           <span className="mt-1 block truncate text-lg font-semibold">{familyName}</span>
         </Link>
       </div>
@@ -43,7 +43,7 @@ export function SidebarNavigation({ familyName, userName, role, capabilities }: 
           })}
         </ul>
       </nav>
-      <nav aria-label="设置" className="mt-auto px-3 py-5">
+      <nav aria-label="记录" className="mt-auto px-3 py-5">
         {secondaryNavigation.map(item => <Link key={item.href} href={item.href} className="sidebar-nav-item" aria-current={isNavigationItemActive(pathname, item.href) ? "page" : undefined}><Icon name={item.icon} size={21} /><span>{item.label}</span></Link>)}
       </nav>
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-line px-5 py-4">

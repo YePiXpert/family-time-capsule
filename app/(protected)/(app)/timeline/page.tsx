@@ -1,3 +1,4 @@
+import { growthHeading } from "@/mobile/src/design/growth";
 import { pendingImports } from "@/lib/home/pending";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -9,14 +10,13 @@ import { hasFamilyCapability } from "@/lib/authz/policy";
 import { formatPersonAgeLabel } from "@/lib/memories/age";
 import { formatOccurredDateLabel, precisionHasDay, type OccurredAtPrecision } from "@/lib/metadata/precision";
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
-import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { CollectionSelection } from "@/components/collection-selection";
 import { MemoryCard } from "@/components/memory-card";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "记忆 · Family Time Capsule" };
+export const metadata: Metadata = { title: "成长 · 小美成长记" };
 
 type TimelineParams = Record<string, string | string[] | undefined>;
 
@@ -77,6 +77,7 @@ export default async function TimelinePage({
   ]);
   const pendingCount = inboxCount + pendingImports(context).length;
   const timezone = family?.timezone ?? "Asia/Shanghai";
+  const growth = growthHeading(people, new Date(), timezone);
   const range = rangeFor(params, timezone);
   const requestedMedia = value(params, "media");
   const mediaType = requestedMedia === "image" || requestedMedia === "audio" || requestedMedia === "video" || requestedMedia === "document" ? requestedMedia : null;
@@ -104,8 +105,12 @@ export default async function TimelinePage({
   const monthActive = /^\d{4}-(0[1-9]|1[0-2])$/.test(value(params, "month"));
 
   return (
-    <main className="page-container">
-      <PageHeader title="记忆" actions={<Link href="/search" aria-label="搜索家庭记忆" className="ui-button-secondary">搜索</Link>} />
+    <main className="page-container growth-page">
+      <section className="growth-hero" aria-label="成长概览">
+        <div className="growth-mark" aria-hidden="true">✿</div>
+        <div className="min-w-0 flex-1"><p className="page-eyebrow">一点一滴，慢慢长大</p><h1>{growth.title}</h1><p className="growth-dedication">留下今天，送给长大的你。</p>{growth.age ? <p className="growth-age">{growth.age}</p> : null}</div>
+      </section>
+      <div className="flex items-center justify-between gap-4"><h2 className="text-xl font-semibold">成长点滴</h2><Link href="/search" aria-label="搜索家庭记忆" className="ui-button-secondary">搜索</Link></div>
 
       {pendingCount > 0 ? <Link href="/pending" className="ui-text-link mt-3">待处理 {pendingCount > 99 ? "99+" : pendingCount} 条</Link> : null}
       <details aria-label="筛选时间轴" className="mt-4 rounded-2xl border border-line bg-surface p-3" open={hasFilters}>
@@ -120,6 +125,7 @@ export default async function TimelinePage({
           <label className="text-sm font-medium">标签<select name="tag" defaultValue={value(params, "tag")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有标签</option>{facets.tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-5"><button type="submit" className="ui-button-primary">查看</button>{hasFilters ? <Link href="/timeline" className="ui-button-secondary">清除筛选</Link> : null}</div>
         </form>
+          {hasFamilyCapability(role, "event:write") ? <CollectionSelection summaryLabel="选择记忆" memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} /> : null}
       </details>
 
       {entries.length === 0 ? (
@@ -135,11 +141,11 @@ export default async function TimelinePage({
         </div>
       ) : (
         <div className="mt-8 space-y-10">
-          {hasFamilyCapability(role, "event:write") ? <CollectionSelection summaryLabel="选择记忆" memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} /> : null}
+
           {[...groups.entries()].map(([month, list]) => (
             <section key={month} aria-label={month}>
               <div className="flex items-center gap-3"><h2 className="text-sm font-semibold tracking-[0.16em] text-muted">{month}</h2><span className="h-px flex-1 bg-line" /></div>
-              <ol className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <ol className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
                 {list.map(({ event, coverAssetId, coverAssetType, coverAssetMime, coverThumbAssetId, assetCount, participantNames }) => (
                   <li key={event.id} className="min-w-0">
                     <MemoryCard id={event.id} title={event.title} dateLabel={formatOccurredDateLabel(event.occurredAtPrecision as OccurredAtPrecision, event.occurredAt, timezone)} ageLabel={precisionHasDay(event.occurredAtPrecision as OccurredAtPrecision) ? formatPersonAgeLabel(people.find(p => p.id === event.childPersonId), event.occurredAt, timezone) : null} location={event.locationText} people={participantNames} assetCount={assetCount} milestoneType={event.milestoneType} isPinned={event.isPinned} cover={coverAssetId ? { assetId: coverAssetId, type: coverAssetType, mimeType: coverAssetMime ?? "application/octet-stream", thumbAssetId: coverThumbAssetId } : null} />

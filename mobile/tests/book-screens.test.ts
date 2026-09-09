@@ -117,7 +117,7 @@ it("creates a work from selected memories without a title or template form", asy
   await press("新建家庭书");
   await press("窗边阅读");
   await press("生成预览");
-  expect(mocks.create).toHaveBeenCalledWith(mocks.credentials,"/api/works",expect.objectContaining({method:"POST",body:JSON.stringify({kind:"book",audience:"family",selection:[{id:"memory",kind:"memory"}]})}));
+  expect(mocks.create).toHaveBeenCalledWith(mocks.credentials,"/api/works",expect.objectContaining({method:"POST",body:JSON.stringify({kind:"book",audience:"family",template:"growth",selection:[{id:"memory",kind:"memory"}]})}));
   expect(mocks.navigate).toHaveBeenCalledWith("BookDetail",{id:"new-book"});
 });
 it("edits and reorders native content, keeps text on conflict and selects actual server materials", async () => {

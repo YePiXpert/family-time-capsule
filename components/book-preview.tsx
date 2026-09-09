@@ -34,7 +34,7 @@ export function BookPreview({ book }: { book: BookDetail }) {
     coverState?.asset?.previewAssetId || coverState?.asset?.id || null;
   return (
     <div
-      className={`mx-auto w-full ${book.pageSize === "A4" ? "max-w-3xl" : "max-w-xl"}`}
+      className={`book-paper mx-auto w-full ${book.pageSize === "A4" ? "max-w-3xl" : "max-w-xl"}`}
       aria-label="年册预览"
     >
       <article

@@ -85,8 +85,8 @@ function WelcomeStep({ onChoose }: { onChoose: (step: Step) => void }) {
   return (
     <View style={{ gap: 16, justifyContent: "center", flexGrow: 1 }}>
       <StepHeader
-        eyebrow="家庭时间胶囊"
-        title="把家人的回忆留在自己手里"
+        eyebrow="小美成长记"
+        title="从今天起，写下宝宝的成长"
         intro="记录保存在你自己的设备上；连接自托管的家庭空间后，才能与家人共享。这里没有官方云服务。"
       />
       <Pressable onPress={() => onChoose("create")} style={sharedStyles.primaryButton}>
@@ -177,7 +177,7 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
       <StepHeader
         eyebrow="创建我的家庭"
         title="连接家庭空间"
-        intro="填写家人的自托管服务地址（管理员部署后获得），我们会先确认这是可用的家庭时间胶囊实例。"
+        intro="填写家人的自托管服务地址（管理员部署后获得），我们会先确认这是可用的小美成长记实例。"
       />
       <Text style={sharedStyles.label}>家庭空间地址</Text>
       <TextInput

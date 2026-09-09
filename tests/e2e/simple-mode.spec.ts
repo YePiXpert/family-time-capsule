@@ -15,7 +15,7 @@ test("大字显示保持相同三个入口和设置分组，偏好在刷新后�
     await page.goto("/");
     await expect(page).toHaveURL(/\/timeline$/);
     const nav = page.getByRole("navigation", { name: "一级导航" });
-    await expect(nav.getByRole("link")).toHaveText(["记忆", "记录", "作品"]);
+    await expect(nav.locator(".bottom-nav-item")).toHaveText(["成长", "成长册", "我的"]);
     await expect(page.getByRole("link", { name: "设置", exact: true }).first()).toBeVisible();
     await expect(page.getByText(/待处理.*条/)).toHaveCount(0);
   }

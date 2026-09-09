@@ -1,5 +1,5 @@
 import type { BookDetail } from "@/mobile/src/books/types";
-export const BOOK_TEMPLATE_VERSION = "1.2-layout-3";
+export const BOOK_TEMPLATE_VERSION = "1.2-layout-4-journal";
 export const BOOK_RENDER_LIMITS = {
   pages: 200,
   outputBytes: 256 * 1024 * 1024,

@@ -69,13 +69,13 @@ test("B2: 正确 token 完成初始化并登录进入 onboarding", async ({ page
 
   // 进入受保护首页
   await expect(page).toHaveURL(/\/[^/]*$/);
-  await expect(page.getByRole("heading", { level: 1, name: "记忆" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "小满成长记" })).toBeVisible();
   await expect(page.getByRole("link", { name: "记录第一件事" })).toBeVisible();
   await expect(page.getByText(ADMIN.displayName)).toBeVisible();
 
   // 已登录用户访问 /login 应回首页
   await page.goto("/login");
-  await expect(page.getByRole("heading", { level: 1, name: "记忆" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "小满成长记" })).toBeVisible();
 
   // 家人页可以看到女儿与爸爸，并添加没有账号的外婆
   await page.goto("/family");

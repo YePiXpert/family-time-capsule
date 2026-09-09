@@ -7,9 +7,12 @@ import { useApp } from "../state/AppContext";
 import { Disclosure } from "../components/Disclosure";
 import { sharedStyles as s } from "../theme";
 
+import { GROWTH_BOOK_TEMPLATES } from "../books/types";
+
 type Material = BookMaterials["entries"][number];
 export function WorkCreator({ kind, onCreated, onCancel }: { kind: "album" | "book"; onCreated: (id: string) => void; onCancel: () => void }) {
   const { credentials } = useApp();
+  const [template, setTemplate] = useState<"photos" | "growth">("growth");
   const [source, setSource] = useState<"memory" | "collection">("memory");
   const [monthInput, setMonthInput] = useState("");
   const [month, setMonth] = useState("");
@@ -40,7 +43,7 @@ export function WorkCreator({ kind, onCreated, onCancel }: { kind: "album" | "bo
     if (!credentials || busy) return;
     setBusy(true); setError("");
     try {
-      const result = await requestMobileJson(credentials, "/api/works", { method: "POST", body: JSON.stringify({ kind, audience, selection: selected.map(({ id, kind }) => ({ id, kind })) }) }) as { id?: unknown };
+      const result = await requestMobileJson(credentials, "/api/works", { method: "POST", body: JSON.stringify({ kind, audience, template, selection: selected.map(({ id, kind }) => ({ id, kind })) }) }) as { id?: unknown };
       if (typeof result.id !== "string") throw new Error("生成结果无效，请返回作品列表查看。");
       onCreated(result.id);
     } catch (e) { setError((e as Error).message); }
@@ -50,6 +53,7 @@ export function WorkCreator({ kind, onCreated, onCancel }: { kind: "album" | "bo
   return <View style={s.card}>
     <Text style={s.cardTitle}>选出想留下的记忆</Text>
     {!credentials ? <Text style={s.body}>连接家庭服务器后可以创建作品。</Text> : <>
+      {kind === "book" ? <View style={{ gap: 8 }}><Text style={s.label}>成长册样式</Text>{GROWTH_BOOK_TEMPLATES.map(option => <Pressable key={option.id} accessibilityRole="radio" accessibilityState={{ checked: template === option.id }} disabled={busy} onPress={() => setTemplate(option.id as "photos" | "growth")} style={template === option.id ? s.notice : s.card}><Text style={s.cardTitle}>{option.title}</Text><Text style={s.body}>{option.description}</Text></Pressable>)}</View> : null}
       <Disclosure title="筛选与读者">
         {kind === "book" ? <>{button(source === "memory" ? "素材：记忆" : "素材：相册", () => setSource(value => value === "memory" ? "collection" : "memory"))}{button(audience === "family" ? "全家可见" : "仅自己", () => { setAudience(value => value === "family" ? "personal" : "family"); setSelected([]); })}</> : null}
         {source === "memory" ? <><TextInput accessibilityLabel="月份" placeholder="例如 2026-09，留空看全部" value={monthInput} onChangeText={setMonthInput} editable={!busy} style={s.input} />{button("应用月份", () => {

@@ -14,7 +14,7 @@ export default async function SetupPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-20">
-      <h1 className="text-2xl font-semibold">初始化家庭时间胶囊</h1>
+      <h1 className="text-2xl font-semibold">初始化小美成长记</h1>
       <p className="mt-1 text-sm leading-6 text-foreground/60">
         创建第一个管理员账号。此页面只在首次部署、且数据库中还没有任何用户时可用。
       </p>

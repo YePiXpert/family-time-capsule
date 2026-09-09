@@ -33,7 +33,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-20">
-      <h1 className="text-2xl font-semibold">家庭时间胶囊</h1>
+      <h1 className="text-2xl font-semibold">小美成长记</h1>
       <p className="mt-1 text-sm text-foreground/60">
         私人家庭记忆档案，仅限家庭成员访问。
       </p>

@@ -1,3 +1,4 @@
+import { journalColors } from "@/mobile/src/design/tokens";
 import { ZipArchive } from "archiver";
 import { createReadStream, createWriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
@@ -18,7 +19,7 @@ export function escapeBookText(value: string) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 }
-const style = `body{font-family:serif;line-height:1.8;margin:1.2em;color:#302924;background:#fffaf4}h1,h2{line-height:1.4;overflow-wrap:anywhere}h1{font-size:1.8em}p{white-space:pre-wrap;overflow-wrap:anywhere}img{max-width:100%;height:auto}figure{margin:1em 0}figcaption,.source,.notice{font-size:.85em;color:#695d54}blockquote{margin:1em 0;padding-left:1em;border-left:.2em solid #b78970}.grid{display:flex;gap:1em;flex-wrap:wrap}.grid figure{flex:1 1 40%;min-width:0}.photos figure{margin:1.5em 0}.letters blockquote{font-size:1.12em}.date{color:#7b4f37}.cover{padding:2em 0}.chapter{margin:3em 0}audio,video{max-width:100%}a{color:#8e5135}`;
+const style = `body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.8;margin:1.2em;color:${journalColors.ink};background:${journalColors.card}}h1,h2{line-height:1.4;overflow-wrap:anywhere}h1{font-size:1.8em}p{white-space:pre-wrap;overflow-wrap:anywhere}img{max-width:100%;height:auto}figure{margin:1em 0}figcaption,.source,.notice{font-size:.85em;color:${journalColors.muted}}blockquote{margin:1em 0;padding-left:1em;border-left:.2em solid ${journalColors.peach}}.grid{display:flex;gap:1em;flex-wrap:wrap}.grid figure{flex:1 1 40%;min-width:0}.photos figure{margin:1.5em 0}.letters blockquote{font-size:1.12em}.date{color:${journalColors.coral}}.cover{padding:2em 0}.chapter{margin:3em 0}audio,video{max-width:100%}a{color:${journalColors.coral}}`;
 function xhtml(title: string, body: string) {
   return `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="zh-CN" lang="zh-CN"><head><title>${escapeBookText(title)}</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body>${body}</body></html>`;
 }

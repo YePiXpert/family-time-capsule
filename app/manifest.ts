@@ -1,15 +1,16 @@
+import { journalColors } from "@/mobile/src/design/tokens";
 import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "家庭时间胶囊 · Family Time Capsule",
-    short_name: "时间胶囊",
+    name: "小美成长记",
+    short_name: "成长记",
     description:
       "私人、自托管的家庭成长记忆档案。随处记录，统一归档。",
     start_url: "/",
     display: "standalone",
-    background_color: "#faf8f4",
-    theme_color: "#faf8f4",
+    background_color: journalColors.paper,
+    theme_color: journalColors.paper,
     lang: "zh-CN",
     icons: [
       {

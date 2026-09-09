@@ -104,12 +104,12 @@ export const BOOK_TEMPLATES: {
 }[] = [
   {
     id: "photos",
-    title: "照片相册",
+    title: "照片册",
     description: "照片优先，用少量说明串起那段日子。",
   },
   {
     id: "growth",
-    title: "图文成长册",
+    title: "图文成长记",
     description: "按日期编排照片、原话和成长片段。",
   },
   {
@@ -130,3 +130,6 @@ export function defaultBookLayout(): BookLayout {
     ],
   };
 }
+
+/** New books use two approachable templates; historical letters remain readable. */
+export const GROWTH_BOOK_TEMPLATES = BOOK_TEMPLATES.filter(template => template.id !== "letters");

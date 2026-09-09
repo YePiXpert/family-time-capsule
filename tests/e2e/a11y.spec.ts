@@ -76,3 +76,22 @@ test("高频触控目标 ≥44px；图标按钮有可读名称", async ({ page }
   await expect(page.getByRole("link", { name: "搜索家庭记忆" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "一级导航" })).toBeVisible();
 });
+
+test("journal colors survive CSP; layouts remain readable from phone to desktop", async ({ page }) => {
+  await ensureLogin(page);
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "light" });
+  for (const width of [375, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/timeline");
+    const appearance = await page.evaluate(() => ({
+      background: getComputedStyle(document.body).backgroundColor,
+      overflow: document.documentElement.scrollWidth > innerWidth,
+      headings: document.querySelectorAll("main h1").length,
+      motion: getComputedStyle(document.querySelector(".growth-hero")!).animationDuration,
+    }));
+    expect(appearance.background).toBe("rgb(255, 250, 245)");
+    expect(appearance.overflow).toBe(false);
+    expect(appearance.headings).toBe(1);
+    expect(parseFloat(appearance.motion)).toBeLessThanOrEqual(0.001);
+  }
+});

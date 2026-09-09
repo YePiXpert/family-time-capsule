@@ -11,6 +11,8 @@ import { createBookSourceResolver } from "./sources";
 export function createWork(context: FamilyContext, input: Record<string, unknown>) {
   const kind = input.kind;
   const audience = input.audience ?? "family";
+  const template = input.template ?? "growth";
+  if (kind === "book" && template !== "growth" && template !== "photos") throw new BookError("invalid_template");
   if (kind !== "album" && kind !== "book") throw new BookError("invalid_work");
   if (audience !== "family" && audience !== "personal") throw new BookError("invalid_audience");
   if (!Array.isArray(input.selection) || !input.selection.length || input.selection.length > 100) throw new BookError("invalid_selection");
@@ -38,7 +40,7 @@ export function createWork(context: FamilyContext, input: Record<string, unknown
       if (coverAssetId) saveCollection(context, id, populated.revision, { ...populated, coverAssetId });
       return { id, kind };
     }
-    const id = createBookProject(context, title, "growth", audience);
+    const id = createBookProject(context, title, template as "growth" | "photos", audience);
     let book = addBookSelections(context, id, getBookProject(context, id).revision, selection);
     const coverAssetId = Object.values(book.sourceStates).find(s => s.available && s.asset?.type === "image")?.asset?.id ?? null;
     if (coverAssetId) book = saveBookProject(context, id, book.revision, { ...book, coverAssetId });

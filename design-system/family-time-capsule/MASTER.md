@@ -1,68 +1,34 @@
-# Family Time Capsule design system
+# 小美成长记 · 温暖成长手帐
 
-> The local design search returned an unrelated marketing-page pattern twice. This
-> project-specific fallback therefore follows the skill's verified high-priority UX
-> rules and the product's existing archival direction instead of that unverified match.
+## 产品与主次
 
-## Product posture
+小美是主角。照片、声音和家人留下的话是主要内容；出生日期与月龄来自真实档案。
+成长、成长册、我的为三个常驻目的地，记录一刻是独立动作。
+优先复用现有记录、原件、离线存储、媒体阅读和出版组件。
 
-- Private, self-hosted family archive; never present it as an AI SaaS dashboard.
-- Photo- and memory-first. AI status is supportive metadata, never the visual hero.
-- Warm, quiet, durable, and legible enough for parents and grandparents.
-- Mobile-first for capture and review; desktop-efficient for editing, backup, and books.
+## 共享规范
 
-## Visual language
+Web、原生和成长册渲染器使用 `mobile/src/design/tokens.ts`。
+暖白与奶油色为实底，蜜桃粉用于状态与主要操作，杏色辅助，深灰褐色正文。
+系统字体，正文 16px，辅助文字至少 13px；控件至少 44px，常用按钮 48px。
+软圆角、细边框、极轻阴影；照片优先，减少套卡和重复入口。
 
-- Keep the existing warm paper/stone palette and restrained terracotta accent.
-- Use semantic CSS variables only; do not introduce raw per-component colors.
-- Body text is at least 16px with 1.5 line height. Metadata may be 13–14px, never below 12px.
-- Prefer system fonts for offline reliability and long-term self-hosting. Do not add remote font requests.
-- Cards separate related memories with borders and subtle shadows; avoid glassmorphism, neon gradients,
-  marketing carousels, testimonials, gamification, and decorative dashboards.
-- Use one consistent inline SVG icon style. Icons are never the only accessible name.
+## 玻璃与动效
 
-## Interaction
+仅导航、浮动记录按钮和照片工具可用轻玻璃。正文、表单、弹窗、成长册保持实底。
+原生使用 expo-blur；Android 12+ 使用屏幕 BlurTargetView，旧 Android 使用不透明暖白。
+减少透明度即时关闭模糊，读取偏好期间也使用实底。Web 通过 CSS 能力检测和偏好媒体查询降级。
+过渡 180ms；减少动态效果时关闭。录音波形取真实麦克风信号，关闭动态时保留录音状态。
 
-- Every interactive target is at least 44×44px with at least 8px separation where targets cluster.
-- Keyboard focus is always visible and must not be obscured by sticky navigation.
-- Hover is an enhancement only; every action works with keyboard and touch.
-- State changes show pending, success, error, and retry feedback near the triggering control.
-- Motion is optional, under 250ms, and disabled under `prefers-reduced-motion: reduce`.
-- Avoid layout-shifting hover transforms and auto-advancing content.
+## 成长册
 
-## Responsive layout
+新建提供照片册、图文成长记两种模板；历史来信模板保留阅读和兼容编辑。
+Web/原生预览及 PDF、EPUB、离线阅读包采用一致的纸张和文字色。
+渲染版本变化必须使旧样式缓存失效；任何展示改动都不扩大原内容读者范围。
 
-- Verify 375px, 768px, 1024px, and 1440px widths.
-- No horizontal page scrolling. Tables collapse to labelled cards or remain in a clearly labelled
-  horizontally scrollable region with keyboard access.
-- Primary mobile navigation has at most five destinations; secondary areas live in an accessible menu.
-- Respect `env(safe-area-inset-*)` in standalone PWA mode.
-- Lists paginate or use cursor-based “load more”; never send the complete archive to a client component.
+## 验证
 
-## Forms and feedback
-
-- Every field has a persistent visible label; placeholders are examples, not labels.
-- Instructions precede controls. Validation errors are tied to fields with `aria-describedby` and
-  a concise summary when several fields fail.
-- Destructive actions name the exact target, require an explicit confirmation, and explain recovery.
-- Uploads expose file-level progress/status, validation failures, duplicate detection, and safe retry.
-- Long jobs expose queued/processing/failed/completed states without leaking provider stacks or secrets.
-
-## Archive-specific components
-
-- Original media and derivative/AI content are visually distinct. Originals receive an “original”
-  provenance label; AI suggestions receive “AI generated · unconfirmed”.
-- Fact, transcript, and story states use both text and shape/icon—not color alone.
-- Source tracing is a first-class button or link labelled “View sources”.
-- Visibility is shown in plain language near contributions, stories, search results, and share links.
-- Empty states explain the safe next action without implying data was lost.
-
-## Accessibility and delivery gates
-
-- WCAG AA text contrast (4.5:1; 3:1 for large text and UI boundaries).
-- Semantic landmarks, one page heading, logical heading order, labelled media controls, useful alt text,
-  and empty alt text for purely decorative images.
-- Full keyboard operation, visible focus, dialog focus trap/restore, and announced async status (`aria-live`).
-- Native controls are preferred. Custom widgets require documented keyboard behavior.
-- Before release: run the UI skill's pro checklist, Playwright keyboard/accessibility smoke, and responsive
-  browser checks at the four canonical widths.
+375/768/1024/1440px、系统大字、对比度、焦点与触控区域。
+必须在实际 CSP 下检查颜色与样式，不通过放宽 CSP 解决样式问题。
+导入视频验证文件缺少 MIME、原始字节保存、真正的解码播放与 HEVC 兼容转码。
+构建通过、自动化播放通过与真实 Android/iOS 设备验收分别记录。

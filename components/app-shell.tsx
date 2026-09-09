@@ -13,7 +13,7 @@ export function AppShell({ children, familyName, inboxCount, userName, role, cap
       <SidebarNavigation capabilities={capabilities} familyName={familyName} inboxCount={inboxCount} role={role} userName={userName} simpleMode={simple} />
       <header className="mobile-app-header lg:hidden">
         <Link href="/" className="min-w-0 rounded-md py-1">
-          <span className="block text-xs font-semibold tracking-[0.16em] text-accent">家庭时间胶囊</span>
+          <span className="block text-xs font-semibold tracking-[0.16em] text-accent">小美成长记</span>
           <span className="block truncate text-base font-semibold">{familyName}</span>
         </Link>
         <div className="flex flex-none items-center gap-2">

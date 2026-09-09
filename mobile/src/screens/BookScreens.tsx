@@ -488,7 +488,7 @@ export function BookDetailScreen({
             onChange={(endDate) => update({ endDate: endDate || null })}
             disabled={busy}
           />
-          {BOOK_TEMPLATES.map((t) => (
+          {BOOK_TEMPLATES.filter(t => t.id !== "letters" || book.template === "letters").map((t) => (
             <Button
               key={t.id}
               title={`${book.template === t.id ? "✓ " : ""}${t.title}`}

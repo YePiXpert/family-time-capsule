@@ -1,3 +1,4 @@
+import { journalColors } from "@/mobile/src/design/tokens";
 import PDFDocument from "pdfkit";
 import { checkedPdfText } from "./text";
 import { createWriteStream } from "node:fs";
@@ -41,6 +42,7 @@ export async function renderBookPdf(
   // invalid_worker_output）。这里只记录溢出，由下方同步检查点统一抛出。
   pdf.on("pageAdded", () => {
     pages++;
+    pdf.save().rect(0, 0, pdf.page.width, pdf.page.height).fill(journalColors.card).restore();
     if (pages > BOOK_RENDER_LIMITS.pages) {
       pageOverflow = true;
       return;
@@ -65,7 +67,7 @@ export async function renderBookPdf(
     ensureWithinPageLimit();
     if (!value.trim()) return;
     pdf
-      .fillColor("#302924")
+      .fillColor(journalColors.ink)
       .fontSize(size)
       .text(normalized(value), margin, pdf.y, {
         width: width(),
@@ -252,7 +254,7 @@ export async function renderBookPdf(
       pdf.switchToPage(entry.page);
       pdf
         .fontSize(11)
-        .fillColor("#302924")
+        .fillColor(journalColors.ink)
         .text(normalized(entry.title), margin, entry.y, {
           width: width() - 40,
           lineGap: 3,
@@ -271,7 +273,7 @@ export async function renderBookPdf(
       pdf.page.margins.bottom = 0;
       pdf
         .fontSize(8)
-        .fillColor("#77685e")
+        .fillColor(journalColors.muted)
         .text(`${i + 1} / ${finalPages}`, margin, pdf.page.height - 24, {
           width: width(),
           align: "center",

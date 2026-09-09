@@ -11,13 +11,13 @@ export type NavigationItem = {
 
 // 日常只有浏览、记录和作品；管理入口独立于主导航。
 export const PRIMARY_NAVIGATION: readonly NavigationItem[] = [
-  { href: "/timeline", label: "记忆", icon: "timeline", capability: "archive:view" },
-  { href: "/capture", label: "记录", icon: "capture", capability: "capture:create", emphasis: true },
-  { href: "/books", label: "作品", icon: "book", capability: "archive:view" },
+  { href: "/timeline", label: "成长", icon: "timeline", capability: "archive:view" },
+  { href: "/books", label: "成长册", icon: "book", capability: "archive:view" },
+  { href: "/settings", label: "我的", icon: "settings", capability: "archive:view" },
 ];
 
 export const SECONDARY_NAVIGATION: readonly NavigationItem[] = [
-  { href: "/settings", label: "设置", icon: "settings", capability: "archive:view" },
+  { href: "/capture", label: "记录一刻", icon: "capture", capability: "capture:create", emphasis: true },
 ];
 
 export function filterNavigationByCapabilities(
@@ -35,6 +35,6 @@ export function isNavigationItemActive(pathname: string, href: string): boolean 
   if (href === "/timeline") return pathname === "/" || MEMORIES_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   if (href === "/books") return ["/books", "/collections"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   if (href === "/family") return pathname === href || pathname.startsWith(`${href}/`);
-  if (href === "/settings") return pathname === href;
+  if (href === "/settings") return ["/settings", "/family"].some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`));
   return pathname === href || pathname.startsWith(`${href}/`);
 }

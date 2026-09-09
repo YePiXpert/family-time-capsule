@@ -399,7 +399,7 @@ it("extracted file:// package renders images and local CSS with networking disab
       await page.evaluate(
         () => getComputedStyle(document.body).backgroundColor,
       ),
-    ).toBe("rgb(255, 250, 244)");
+    ).toBe("rgb(255, 253, 249)");
     expect(await page.evaluate(() => "leak" in window)).toBe(false);
     expect(network).toEqual([]);
     await page.screenshot({

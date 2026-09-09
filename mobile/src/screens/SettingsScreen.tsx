@@ -85,7 +85,7 @@ export function SettingsScreen() {
   };
 
   return <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-    <Text style={sharedStyles.eyebrow}>设备与同步</Text><Text style={sharedStyles.title}>{family?.name ?? "家庭时间胶囊"}</Text>
+    <Text style={sharedStyles.eyebrow}>设备与同步</Text><Text style={sharedStyles.title}>{family?.name ?? "小美成长记"}</Text>
     <View style={sharedStyles.card}>
       <Row label="模式" value={credentials ? "本机 + 自托管同步" : "仅本机"} />
       {credentials ? <><Row label="账号" value={viewer?.name ?? "等待同步"} /><Row label="服务器" value={credentials.serverUrl} /></> : null}

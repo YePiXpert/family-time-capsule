@@ -2,9 +2,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { GROWTH_BOOK_TEMPLATES } from "@/mobile/src/books/types";
+
 type Material = { id: string; kind: "memory" | "collection"; title: string };
 export function WorkCreator({ kind, onCancel }: { kind: "album" | "book"; onCancel: () => void }) {
   const router = useRouter();
+  const [template, setTemplate] = useState<"photos" | "growth">("growth");
   const [source, setSource] = useState<"memory" | "collection">("memory");
   const [month, setMonth] = useState("");
   const [entries, setEntries] = useState<Material[]>([]);
@@ -38,7 +41,7 @@ export function WorkCreator({ kind, onCancel }: { kind: "album" | "book"; onCanc
   async function create() {
     setBusy(true); setError("");
     try {
-      const response = await fetch("/api/works", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, audience, selection: selected.map(({ id, kind }) => ({ id, kind })) }) });
+      const response = await fetch("/api/works", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, audience, template, selection: selected.map(({ id, kind }) => ({ id, kind })) }) });
       if (!response.ok) throw new Error("生成失败，选择仍保留。请确认素材可读后重试。");
       const result = await response.json();
       router.push(`/${kind === "book" ? "books" : "collections"}/${result.id}`);
@@ -48,6 +51,7 @@ export function WorkCreator({ kind, onCancel }: { kind: "album" | "book"; onCanc
   return <section aria-label="新建作品" className="my-4 space-y-4 rounded-2xl border border-line p-4">
     <h2 className="text-xl">选出想留下的记忆</h2>
     <fieldset disabled={busy} className="space-y-4">
+      {kind === "book" ? <fieldset className="grid gap-3 sm:grid-cols-2"><legend className="mb-2 text-sm font-semibold">成长册样式</legend>{GROWTH_BOOK_TEMPLATES.map(option => <label key={option.id} className="rounded-2xl border border-line bg-surface p-4"><input type="radio" name="growth-template" value={option.id} checked={template === option.id} onChange={() => setTemplate(option.id as "photos" | "growth")} className="mr-2" />{option.title}<span className="mt-2 block text-sm text-muted">{option.description}</span></label>)}</fieldset> : null}
       <details><summary className="min-h-11 cursor-pointer py-2">筛选与读者</summary><div className="flex flex-wrap gap-3">
         {kind === "book" && <label>素材来源 <select className={field} value={source} onChange={e => { setSource(e.target.value as typeof source); setEntries([]); setCursor(null); }}><option value="memory">记忆</option><option value="collection">相册</option></select></label>}
         {source === "memory" && <label>月份 <input className={field} type="month" value={month} onChange={e => { setMonth(e.target.value); setEntries([]); setCursor(null); }} /></label>}

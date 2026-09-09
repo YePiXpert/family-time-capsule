@@ -22,7 +22,7 @@ export function TimelineCard({
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
       {item.localCoverUri ? (
-        <Image source={{ uri: item.localCoverUri }} style={styles.cover} />
+        <Image fadeDuration={0} source={{ uri: item.localCoverUri }} style={styles.cover} />
       ) : (
         <View style={styles.placeholder}>
           <Text style={styles.placeholderText}>

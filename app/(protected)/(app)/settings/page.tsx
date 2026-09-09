@@ -13,7 +13,7 @@ import { DangerZone, ExportStepUpPanel } from "./account/danger-zone";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "设置 · Family Time Capsule" };
+export const metadata: Metadata = { title: "我的 · 小美成长记" };
 
 const AUDIT_LABEL: Record<string, string> = {
   "export.created": "导出可读档案",
@@ -50,10 +50,10 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
   ]);
 
   return (
-    <main className="page-container max-w-4xl">
+    <main className="page-container settings-page max-w-4xl">
       <PageHeader
-        eyebrow="Family settings"
-        title="设置"
+        eyebrow="陪你一起长大"
+        title="我的"
         description="管理家人、设备和资料。"
       />
 

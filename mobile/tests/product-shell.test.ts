@@ -9,9 +9,9 @@ import {
 import type { Viewer } from "../src/types";
 
 describe("native product shell", () => {
-  it("keeps exactly three primary destinations with capture in the center", () => {
-    expect(TAB_ROUTES).toEqual(["Timeline", "Capture", "Works"]);
-    expect(TAB_ROUTES[1]).toBe("Capture");
+  it("keeps growth, books and profile as destinations with capture as an action", () => {
+    expect(TAB_ROUTES).toEqual(["Timeline", "Works", "Profile"]);
+    expect(TAB_ROUTES[1]).toBe("Works");
   });
 
   it("persists direct audio captures and memory detail without weakening old media", () => {

@@ -390,7 +390,7 @@ export function BookEditor({ id }: { id: string }) {
                   update({ template: e.target.value as BookTemplate })
                 }
               >
-                {BOOK_TEMPLATES.map((t) => (
+                {BOOK_TEMPLATES.filter(t => t.id !== "letters" || book.template === "letters").map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.title}
                   </option>

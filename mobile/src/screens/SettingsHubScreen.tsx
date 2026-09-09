@@ -22,7 +22,7 @@ export function SettingsHubScreen() {
   const button = (label: string, action: () => void) => <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={action} style={s.secondaryButton}><Text style={s.secondaryText}>{label}</Text></Pressable>;
   const manager = viewer?.role === "owner" || viewer?.role === "admin";
   return <ScrollView style={s.screen} contentContainerStyle={s.content}>
-    <Text style={s.title}>{family?.name ?? "设置"}</Text>
+    <Text style={s.eyebrow}>陪你一起长大</Text><Text style={s.title}>{viewer?.name ?? "我的成长手帐"}</Text><Text style={s.body}>{family?.name ?? "照片、声音和想留下的话，都好好保存。"}</Text>
     <Disclosure {...group("家人和账号")}>
       {button("家人", () => navigation.navigate("People"))}
       {credentials && manager ? <>{button("邀请家人加入", () => navigation.navigate("InviteFamily"))}{button("管理账号", () => void web("/settings/accounts"))}</> : null}

@@ -55,10 +55,10 @@ test("375px 三项导航无横向滚动且搜索可用键盘打开", async ({ pa
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/");
   await expect(page).toHaveURL(/\/timeline$/);
-  await expect(page.getByRole("heading", { level: 1, name: "记忆", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "小满成长记", exact: true })).toBeVisible();
 
   const navigation = page.getByRole("navigation", { name: "一级导航" });
-  await expect(navigation.getByRole("link")).toHaveCount(3);
+  await expect(navigation.locator(".bottom-nav-item")).toHaveCount(3);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
   ).toBe(true);

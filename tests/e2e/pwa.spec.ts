@@ -7,7 +7,7 @@ test("manifest / 图标 / service worker / 离线页可访问", async ({ request
   const manifestResp = await request.get("/manifest.webmanifest");
   expect(manifestResp.status()).toBe(200);
   const manifest = await manifestResp.json();
-  expect(manifest.name).toContain("家庭时间胶囊");
+  expect(manifest.name).toContain("小美成长记");
   expect(manifest.display).toBe("standalone");
   expect(manifest.icons.length).toBeGreaterThanOrEqual(2);
   for (const icon of manifest.icons) {

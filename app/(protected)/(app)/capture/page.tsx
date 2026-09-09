@@ -23,11 +23,11 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
   const memberRows = canCapture ? listDraftReaders(context) : [];
 
   return (
-    <main className="page-container">
+    <main className="page-container capture-page max-w-3xl">
       <PageHeader
-        eyebrow="Capture"
+        eyebrow="值得留下的一刻"
         title="记录这一刻"
-        description="选照片、视频或录音，也可以写一句话。不用填表，先把这一刻留下来。"
+        description="一张照片、一段声音，或一句想对宝宝说的话。"
       />
 
       {canCapture ? (

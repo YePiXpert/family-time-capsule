@@ -520,7 +520,7 @@ export function CaptureScreen() {
           {([["family", "全家"], ["members", "指定成员"], ["private", "仅自己"]] as const).map(([value, label]) => {
             const active = capsuleDraft.draft!.content.visibility === value;
             return (
-              <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: active }} onPress={() => changeDraft(value === "members" ? { visibility: value } : { visibility: value, readerUserIds: [] })} style={[sharedStyles.secondaryButton, { opacity: active ? 1 : 0.65, borderColor: active ? colors.coral : colors.muted }]}>
+              <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: active }} onPress={() => changeDraft(value === "members" ? { visibility: value } : { visibility: value, readerUserIds: [] })} style={[sharedStyles.secondaryButton, { borderColor: active ? colors.coral : colors.muted }]}>
                 <Text style={active ? sharedStyles.secondaryText : { color: colors.muted, fontSize: 14 }}>{label}</Text>
               </Pressable>
             );
@@ -535,7 +535,7 @@ export function CaptureScreen() {
             {readers.map(member => {
               const checked = capsuleDraft.draft!.content.readerUserIds.includes(member.id);
               return (
-                <Pressable key={member.id} accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => { const ids = capsuleDraft.draft!.content.readerUserIds; changeDraft({ readerUserIds: checked ? ids.filter(id => id !== member.id) : [...ids, member.id] }); }} style={[sharedStyles.secondaryButton, { opacity: checked ? 1 : 0.65 }]}>
+                <Pressable key={member.id} accessibilityRole="checkbox" accessibilityState={{ checked }} onPress={() => { const ids = capsuleDraft.draft!.content.readerUserIds; changeDraft({ readerUserIds: checked ? ids.filter(id => id !== member.id) : [...ids, member.id] }); }} style={[sharedStyles.secondaryButton, { }]}>
                   <Text style={checked ? sharedStyles.secondaryText : { color: colors.muted, fontSize: 14 }}>{checked ? `已选 · ${member.name}` : member.name}</Text>
                 </Pressable>
               );
