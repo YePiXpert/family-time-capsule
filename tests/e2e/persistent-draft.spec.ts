@@ -2,6 +2,7 @@ import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { ensureBootstrap } from "./helpers";
 
 test("long-lived mixed Web draft: offline save, closed page recovery, reorder, cover, one memory and one copy of each original", async ({ page, context }) => {
@@ -47,7 +48,9 @@ test("long-lived mixed Web draft: offline save, closed page recovery, reorder, c
 test("an imported MOV without browser MIME previews, saves its exact bytes and plays from the server", async ({ page }) => {
   await ensureBootstrap(page);
   await page.goto("/capture");
-  const bytes = readFileSync(path.join(__dirname, "../fixtures/sample.mov"));
+  const videoPath = test.info().outputPath("import.mov");
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0xe8bca9:s=96x64:r=12:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", videoPath]);
+  const bytes = readFileSync(videoPath);
   await page.getByLabel("写下这一刻").fill("小美回家路上的视频");
   await page.locator('input[type="file"]').first().setInputFiles({ name: "home.mov", mimeType: "", buffer: bytes });
   await expect(page.locator("main video")).toHaveCount(1);

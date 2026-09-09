@@ -71,6 +71,8 @@ afterAll(() => {
   closeDatabase();
   rmSync(root, { recursive: true, force: true });
 });
+
+
 async function original(
   type: "image" | "video" | "audio",
   mimeType: string,
@@ -478,4 +480,20 @@ it("restores original SHA values and regenerates real derivatives while keeping 
     rmSync(target, { recursive: true, force: true });
     process.env.DATA_DIR = root;
   }
+});
+
+it("makes a real 10-bit HEVC MOV playable as H.264 without changing the original", async () => {
+  const input = path.join(root, "phone-hevc.mov");
+  const generated = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0xe8bca9:s=96x64:r=12:d=1", "-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-x265-params", "pools=1:frame-threads=1:log-level=error", "-tag:v", "hvc1", input]);
+  expect(generated.status, generated.stderr?.toString()).toBe(0);
+  const bytes = readFileSync(input);
+  const source = await original("video", "video/quicktime", bytes);
+  requestMediaDerivation(context, source.id, "transcode");
+  expect(await runMediaWorkerOnce()).toBe("succeeded");
+  const job = getMediaDerivations(context, source.id).find(job => job.kind === "transcode")!;
+  const output = getDb().select().from(asset).where(eq(asset.id, job.outputAssetId!)).get()!;
+  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,pix_fmt", "-of", "json", getAssetStorage().resolvePath(output.storageKey)]);
+  expect(probe.status).toBe(0);
+  expect(JSON.parse(probe.stdout.toString()).streams[0]).toMatchObject({ codec_name: "h264", pix_fmt: "yuv420p" });
+  expect(readFileSync(getAssetStorage().resolvePath(source.storageKey))).toEqual(bytes);
 });

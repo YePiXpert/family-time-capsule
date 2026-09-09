@@ -14,9 +14,10 @@ const activeEvents: import("../src/types").LocalTimelineEvent[] = [];
 const mocks = vi.hoisted(() => ({
   constructor: vi.fn(), permission: vi.fn(), audioMode: vi.fn(), prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
   documentPicker: vi.fn(), preserveDocument: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), preserveMedia: vi.fn(), preserveAudio: vi.fn(), removeFile: vi.fn(),
-  setParams: vi.fn(), route: { params: {} }, grantSyncConsent: vi.fn().mockResolvedValue(undefined), queued: vi.fn(),
+  setParams: vi.fn(), route: { params: {} }, grantSyncConsent: vi.fn().mockResolvedValue(undefined), reloadLocal: async () => {}, queued: vi.fn(),
 }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
@@ -31,7 +32,7 @@ const navigation = { setParams: mocks.setParams };
 vi.mock("../src/state/AppContext", () => ({ useApp: () => ({
   credentials: activeCredentials, family: fixture.family, userId: activeUserId, online: activeOnline, events: activeEvents,
   people: fixture.people, viewer: { id: activeUserId, role: activeUserId === fixture.userId ? "editor" : "viewer", canCapture: activeUserId === fixture.userId, canEditEvents: activeUserId === fixture.userId, canCreateContributions: false },
-  outbox: [], queued: mocks.queued, grantSyncConsent: mocks.grantSyncConsent,
+  outbox: [], queued: mocks.queued, reloadLocal: mocks.reloadLocal, grantSyncConsent: mocks.grantSyncConsent,
 }) }));
 vi.mock("expo-network", () => ({ getNetworkStateAsync: async () => ({ isConnected: true }) }));
 vi.mock("../src/reading/native", () => ({ invalidateReadingCredentials: vi.fn() }));

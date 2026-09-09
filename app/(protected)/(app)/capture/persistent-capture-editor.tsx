@@ -1,5 +1,6 @@
 "use client";
 import { RecordingMeter } from "@/components/recording-meter";
+import { ImportedVideoPreview } from "@/components/imported-video-preview";
 import { classifyImportedFile } from "@/mobile/src/storage/import-policy";
 import { removeDraftItem, reconcileDraftAsset, pairDraftItems } from "@/lib/drafts/model";
 /* eslint-disable @next/next/no-img-element -- Local preserved blobs must be previewed without uploading them to an image optimizer. */
@@ -296,7 +297,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
         const preview = previews[item.id], previous = content.items[index - 1];
         const canPair = previous && !previous.livePhotoGroupId && !item.livePhotoGroupId && previews[previous.id]?.type.startsWith("image/") && preview?.type.startsWith("video/");
         return <li key={item.id} className="rounded-xl border border-line p-4">
-          {preview?.type.startsWith("image/") ? <img src={preview.url} alt={item.caption || "这件事的照片"} className="h-40 w-full rounded-lg object-contain" /> : preview?.type.startsWith("audio/") ? <audio controls src={preview.url} aria-label="重听这段录音" /> : preview?.type.startsWith("video/") ? <video controls src={preview.url} className="max-h-64" /> : preview?.url ? <a href={preview.url} target="_blank" rel="noreferrer" className={button}>打开素材</a> : null}
+          {preview?.type.startsWith("image/") ? <img src={preview.url} alt={item.caption || "这件事的照片"} className="h-40 w-full rounded-lg object-contain" /> : preview?.type.startsWith("audio/") ? <audio controls src={preview.url} aria-label="重听这段录音" /> : preview?.type.startsWith("video/") ? <ImportedVideoPreview key={preview.url} src={preview.url} /> : preview?.url ? <a href={preview.url} target="_blank" rel="noreferrer" className={button}>打开素材</a> : null}
           <p>{item.preservationState === "missing" ? "原件已移除，请删除这项引用或补充素材" : preview?.name || "正在读取原件"} · {item.assetId ? "服务器已收到原件" : "原件已在本机"}</p>
           {item.livePhotoGroupId && <p>Live Photo · {item.livePhotoRole === "image" ? "静态照片" : "动态原片"}（移除时整组操作）</p>}
           {canPair && <button type="button" className={button} onClick={() => change(pairDraftItems(content, previous.id, item.id, crypto.randomUUID()))}>确认与上一张照片组成 Live Photo</button>}
