@@ -17,9 +17,9 @@ function ensureDirectories(): void {
 }
 
 function safeExtension(asset: ImagePickerAsset): string {
-  const match = asset.fileName?.match(/\.([a-z0-9]{1,8})$/iu);
+  const match = (asset.fileName || asset.uri.split(/[?#]/u)[0])?.match(/\.([a-z0-9]{1,8})$/iu);
   if (match?.[1]) return match[1].toLowerCase();
-  return asset.type === "pairedVideo" ? "mov" : asset.type === "video" ? "mp4" : "jpg";
+  return asset.type === "pairedVideo" || asset.mimeType === "video/quicktime" ? "mov" : asset.type === "video" || asset.mimeType?.startsWith("video/") ? "mp4" : "jpg";
 }
 
 export async function preparePickedMedia(
@@ -30,11 +30,13 @@ export async function preparePickedMedia(
   ensureDirectories();
   const extension = safeExtension(asset);
   const destination = new File(capturesDirectory, `${id}.${extension}`);
+  const classification = classifyImportedFile(`capture.${extension}`, asset.mimeType);
+  const isVideo = asset.type === "video" || asset.type === "pairedVideo" || classification?.mediaType === "video";
   return {
     localUri: destination.uri,
     fileName: asset.fileName?.slice(0, 200) || `capture-${id}.${extension}`,
     mimeType:
-      asset.mimeType || (asset.type === "pairedVideo" ? "video/quicktime" : asset.type === "video" ? "video/mp4" : "image/jpeg"),
+      classification?.mimeType || (isVideo ? "video/mp4" : "image/jpeg"),
     lastModified: await resolveReliableMediaTime(
       source,
       asset.assetId,
@@ -47,7 +49,7 @@ export async function preparePickedMedia(
         return { creationTime, modificationTime };
       },
     ),
-    mediaType: asset.type === "video" || asset.type === "pairedVideo" ? "video" : "image",
+    mediaType: isVideo ? "video" : "image",
     source,
   };
 }

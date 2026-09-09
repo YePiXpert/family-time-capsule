@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
   cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(),
   enqueueText: vi.fn(), enqueueMedia: vi.fn(), preserveMedia: vi.fn(),
-  preserveAudio: vi.fn(), removeFile: vi.fn(), queued: vi.fn(),
+  preserveAudio: vi.fn(), removeFile: vi.fn(), reloadLocal: async () => {}, queued: vi.fn(),
   setParams: vi.fn(), focus: vi.fn(), scrollTo: vi.fn(),
   route: { params: {} as { intent?: string } },
   draft: {
@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Alert: { alert: mocks.alert },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
   Text: "Text", TextInput: "TextInput", View: "View",
@@ -36,7 +37,7 @@ vi.mock("@react-navigation/native", () => ({
 const navigation = { setParams: mocks.setParams };
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => ({
-    credentials: null, viewer: null, outbox: [], queued: mocks.queued,
+    credentials: null, viewer: null, outbox: [], queued: mocks.queued, reloadLocal: mocks.reloadLocal,
     people: [{ id: "person-1", displayName: "妈妈" }, { id: "person-2", displayName: "外公" }],
   }),
 }));

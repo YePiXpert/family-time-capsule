@@ -1,3 +1,5 @@
+import { growthHeading } from "../design/growth";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePendingImports } from "./PendingScreen";
 import { Text } from "../components/typography";
 import { useState } from "react";
@@ -23,29 +25,35 @@ export function TimelineScreen() {
     runSync,
     reloadLocal,
     viewer,
+    people,
   } = useApp();
   // 收件箱不再是主导航(M1):「记忆」页头部保留整理入口,数量来自最近一次同步。
   const imports = usePendingImports();
+  const insets = useSafeAreaInsets();
+  const growth = growthHeading(people ?? [], new Date(), family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
     <FlatList
-      contentContainerStyle={
-        events.length === 0
-          ? { flexGrow: 1 }
-          : { padding: 15, paddingBottom: 36, gap: 13 }
-      }
+      contentContainerStyle={{ padding: 20, paddingTop: insets.top + 24, paddingBottom: 180, gap: 18, ...(events.length === 0 ? { flexGrow: 1 } : {}) }}
       data={events}
       keyExtractor={(item) => item.id}
       ListEmptyComponent={
         <View style={sharedStyles.empty}>
-          <Text style={sharedStyles.emptyTitle}>本机还没有回忆</Text>
+          <Text style={sharedStyles.emptyTitle}>第一篇成长记，从今天开始</Text>
           <Text style={sharedStyles.emptyText}>
-            先去“记录”写下一刻；连接服务器后，这里也会保留可离线浏览的家庭时间轴。
+            选一张照片，留下一句想对宝宝说的话。
           </Text>
         </View>
       }
       ListHeaderComponent={
-        <View style={{ gap: 12, padding: 8 }}>
+        <View style={{ gap: 18 }}>
+          <View style={{ paddingTop: 12, paddingBottom: 24, gap: 8 }}>
+            <Text style={sharedStyles.eyebrow}>一点一滴，慢慢长大</Text>
+            <Text accessibilityRole="header" style={[sharedStyles.title, { fontSize: 32 }]}>{growth.title}</Text>
+            <Text style={sharedStyles.body}>留下今天，送给长大的你。</Text>
+            {growth.age ? <Text style={{ color: colors.coralDark, backgroundColor: colors.softCoral, alignSelf: "flex-start", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7, fontSize: 14, marginTop: 8 }}>{growth.age}</Text> : null}
+          </View>
+          <Text accessibilityRole="header" style={sharedStyles.cardTitle}>成长点滴</Text>
           {inboxCount > 0 ? (
             <Pressable accessibilityRole="button"
               onPress={() => navigation.navigate("Pending")}
@@ -117,6 +125,7 @@ export function TimelineScreen() {
                   )
                 : item.source === "server"
                   ? navigation.navigate("Memory", { id: item.id })
+                  : item.localDraftId ? navigation.navigate("Capture", { localDraftId: item.localDraftId })
                   : navigation.navigate("LocalCapture", { captureId: item.id })
             }
           />

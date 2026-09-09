@@ -1,10 +1,10 @@
 import { createElement, useEffect } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, expect, it, vi } from 'vitest';
-const mocks=vi.hoisted(()=>({get:vi.fn(),play:vi.fn(),pause:vi.fn(),seek:vi.fn(),rate:vi.fn(),active:0}));
-vi.mock('react-native',()=>({ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',TextInput:'TextInput',View:'View',useWindowDimensions:()=>({width:375,height:800}),StyleSheet:{create:(s:unknown)=>s}}));
+const mocks=vi.hoisted(()=>({get:vi.fn(),play:vi.fn(),pause:vi.fn(),seek:vi.fn(),rate:vi.fn(),active:0,videoError:false}));
+vi.mock('react-native',()=>({AccessibilityInfo:{addEventListener:()=>({remove:()=>{}}),isReduceMotionEnabled:async()=>true,isReduceTransparencyEnabled:async()=>true},ActivityIndicator:'ActivityIndicator',Image:'Image',Modal:'Modal',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',TextInput:'TextInput',View:'View',useWindowDimensions:()=>({width:375,height:800}),StyleSheet:{create:(s:unknown)=>s}}));
 vi.mock('react-native-safe-area-context',()=>({SafeAreaView:'SafeAreaView'}));
-vi.mock('expo',()=>({useEvent:()=>({status:'readyToPlay',error:null})}));
+vi.mock('expo',()=>({useEvent:()=>({status:mocks.videoError?'error':'readyToPlay',error:mocks.videoError?new Error('codec'):null})}));
 vi.mock('expo-video',()=>({VideoView:'VideoView',useVideoPlayer:()=>{useEffect(()=>{mocks.active++;return()=>{mocks.active--;};},[]);return {};}}));
 vi.mock('expo-audio',()=>({useAudioPlayer:()=>{useEffect(()=>{mocks.active++;return()=>{mocks.active--;};},[]);return {play:mocks.play,pause:mocks.pause,seekTo:mocks.seek,setPlaybackRate:mocks.rate};},useAudioPlayerStatus:()=>({duration:60,currentTime:12,isLoaded:true,playing:false,isBuffering:false,didJustFinish:false,error:null})}));
 vi.mock('../src/media/export-original',()=>({exportOriginalCopy:vi.fn()}));
@@ -12,7 +12,7 @@ vi.mock('../src/api/client',()=>({fetchMediaDerivations:mocks.get}));
 const {NativeMediaReader}=await import('../src/media/NativeMediaReader');
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let tree:ReactTestRenderer|undefined;
-afterEach(async()=>{if(tree)await act(()=>tree!.unmount());tree=undefined;expect(mocks.active).toBe(0);vi.clearAllMocks();});
+afterEach(async()=>{if(tree)await act(()=>tree!.unmount());tree=undefined;expect(mocks.active).toBe(0);mocks.videoError=false;vi.clearAllMocks();});
 async function press(title:string){const button=tree!.root.findAll(n=>String(n.type)==='Pressable'&&(n.props.accessibilityLabel===title||n.findAll(c=>String(c.type)==='Text'&&c.props.children===title).length>0))[0]!;expect(button,title).toBeTruthy();await act(async()=>button.props.onPress());}
 it('creates only the active player, controls real audio UI and releases it on image navigation and closing',async()=>{
   mocks.get.mockResolvedValue({jobs:[],transcript:{text:'妈妈的原话',edited:false,segments:[{startSeconds:10,endSeconds:15,text:'十秒处的原话'}]}});
@@ -35,4 +35,16 @@ it('restores local voice progress and transcript without requesting remote media
  mocks.seek.mockResolvedValue(undefined);const onPosition=vi.fn();
  await act(async()=>{tree=create(createElement(NativeMediaReader,{credentials:null,onPosition,assets:[{id:'cached',type:'audio',filename:'已下载虚构声音',mimeType:'audio/wav',localUri:'file:///reader-downloads/fictional.wav',initialSeconds:8,localTranscript:{text:'有时间戳的原话',edited:false,segments:[{startSeconds:3,endSeconds:5,text:'真实三秒原话'}]}}]}));});
  await press('打开阅读器：已下载虚构声音');expect(mocks.seek).toHaveBeenCalledWith(8);expect(mocks.get).not.toHaveBeenCalled();expect(mocks.play).not.toHaveBeenCalled();await press('3.0 秒 · 真实三秒原话');expect(mocks.seek).toHaveBeenCalledWith(3);await press('关闭阅读器');expect(onPosition).toHaveBeenCalledWith('cached',12);
+});
+
+
+it('requests one compatible version on a remote video decode failure and keeps originals accessible',async()=>{
+ mocks.videoError=true;
+ mocks.get.mockResolvedValue({jobs:[],transcript:null});
+ await act(async()=>{tree=create(createElement(NativeMediaReader,{credentials:{serverUrl:'https://fictional.example.test',token:'test'},assets:[{id:'mov',type:'video',filename:'小美.mov',mimeType:'video/quicktime'}]}));});
+ await press('打开阅读器：小美.mov');
+ expect(mocks.get.mock.calls.filter(args=>args[2]==='transcode')).toHaveLength(1);
+ expect(tree!.root.findByType('VideoView' as never).props.surfaceType).toBe('textureView');
+ expect(JSON.stringify(tree!.toJSON())).toContain('导出原件副本');
+ await press('关闭阅读器');
 });

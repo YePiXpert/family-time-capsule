@@ -1,4 +1,6 @@
 "use client";
+import { RecordingMeter } from "@/components/recording-meter";
+import { classifyImportedFile } from "@/mobile/src/storage/import-policy";
 import { removeDraftItem, reconcileDraftAsset, pairDraftItems } from "@/lib/drafts/model";
 /* eslint-disable @next/next/no-img-element -- Local preserved blobs must be previewed without uploading them to an image optimizer. */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -128,7 +130,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
       if (!active || failed.current) return [];
       return Promise.all((draft?.content.items ?? []).map(async item => {
       const original = item.localCaptureRef ? await readBrowserOriginal(scope, item.localCaptureRef) : undefined;
-      if (original) { const url = URL.createObjectURL(original.file); urls.push(url); return [item.id, { url, type: original.file.type, name: original.file.name }] as const; }
+      if (original) { const url = URL.createObjectURL(original.file); urls.push(url); return [item.id, { url, type: classifyImportedFile(original.file.name, original.file.type)?.mimeType || original.file.type, name: original.file.name }] as const; }
       if (item.assetId) {
         try {
           const response = await fetch(`/api/media/${encodeURIComponent(item.assetId)}/metadata`);
@@ -288,6 +290,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
         <button type="button" className={button} onClick={() => void toggleRecording()}>{recording ? "停止录音并加入这件事" : "录音"}</button>
         <label className={`${button} cursor-pointer`}>文件<input aria-label="添加文件" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
       </div>
+      {recording ? <RecordingMeter streamRef={recordingStream} /> : null}
       <label className="block">补充一句话（可选）<textarea aria-label="写下这一刻" className={`${field} mt-2`} rows={2} maxLength={5000} value={content.text} onChange={e => change({ text: e.target.value })} placeholder="想说点什么？也可以不写，直接保存素材。" /></label>
       <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{content.items.map((item, index) => {
         const preview = previews[item.id], previous = content.items[index - 1];

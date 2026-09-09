@@ -1,4 +1,5 @@
 "use client";
+import { classifyImportedFile } from "@/mobile/src/storage/import-policy";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -71,19 +72,9 @@ const ACCEPT = [
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ].join(",");
 
-const EXTENSION_MIME: Record<string, string> = {
-  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
-  heic: "image/heic", heif: "image/heif", avif: "image/avif", mp3: "audio/mpeg",
-  m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac",
-  mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska",
-  pdf: "application/pdf", txt: "text/plain", md: "text/markdown", markdown: "text/markdown",
-  rtf: "application/rtf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-};
-
 function mimeFor(file: File): string | null {
-  if (file.type) return ACCEPT.split(",").includes(file.type.toLowerCase()) ? file.type.toLowerCase() : null;
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  return EXTENSION_MIME[extension] ?? null;
+  const mime = classifyImportedFile(file.name, file.type)?.mimeType;
+  return mime && ACCEPT.split(",").includes(mime) ? mime : null;
 }
 
 function readableBytes(bytes: number): string {

@@ -145,6 +145,9 @@ export function AppProvider({
   const reloadLocal = useCallback(async () => {
     const generation = destGenRef.current;
     const cacheScope = memoryCacheScope(credentialsRef.current, userIdRef.current ?? undefined, familyIdRef.current ?? undefined);
+    const currentCredentials = credentialsRef.current;
+    const draftScope = currentCredentials ? (currentCredentials.instanceId && userIdRef.current && familyIdRef.current
+      ? JSON.stringify([currentCredentials.serverUrl, currentCredentials.instanceId, userIdRef.current, familyIdRef.current]) : null) : "local";
     const [
       nextEvents,
       nextFamily,
@@ -157,7 +160,7 @@ export function AppProvider({
       consent,
       displayModeValue,
     ] = await Promise.all([
-      listTimeline(cacheScope),
+      listTimeline(cacheScope, draftScope),
       getCachedFamily(),
       getCachedViewer(),
       listCachedPeople(cacheScope),

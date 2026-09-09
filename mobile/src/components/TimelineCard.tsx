@@ -33,7 +33,7 @@ export function TimelineCard({
       <View style={styles.body}>
         {item.source === "local" ? (
           <Text style={styles.localBadge}>
-            {item.syncState === "inbox" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
+            {item.localDraftId ? item.syncState === null ? "已保存" : "已保存在本机" : item.syncState === "inbox" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
           </Text>
         ) : null}
         <Text style={styles.date}>{dateLabel(item.occurredAt, timeZone, item.occurredAtPrecision)}</Text>
@@ -57,19 +57,19 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: colors.card,
     borderColor: colors.line,
-    borderRadius: 19,
+    borderRadius: 22,
     borderWidth: 1,
   },
   pressed: { opacity: 0.72 },
-  cover: { width: "100%", height: 210, backgroundColor: colors.softCoral },
+  cover: { width: "100%", aspectRatio: 4 / 3, backgroundColor: colors.softCoral },
   placeholder: { height: 92, alignItems: "center", justifyContent: "center", backgroundColor: colors.softCoral },
   placeholderText: { color: colors.coralDark, fontSize: 13, fontWeight: "700" },
-  body: { padding: 15, gap: 6 },
-  localBadge: { color: colors.sage, fontSize: 11, fontWeight: "800" },
-  date: { color: colors.coral, fontSize: 12, fontWeight: "800" },
-  title: { color: colors.ink, fontSize: 20, lineHeight: 27, fontWeight: "800" },
+  body: { padding: 18, gap: 8 },
+  localBadge: { color: colors.sage, fontSize: 13, fontWeight: "600" },
+  date: { color: colors.coral, fontSize: 13, fontWeight: "600" },
+  title: { color: colors.ink, fontSize: 20,  fontWeight: "600" },
   meta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
-  age: { color: colors.sage, backgroundColor: colors.softSage, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, fontSize: 11, fontWeight: "800" },
-  people: { flex: 1, color: colors.muted, fontSize: 12 },
-  location: { color: colors.muted, fontSize: 12 },
+  age: { color: colors.sage, backgroundColor: colors.softSage, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, fontWeight: "600" },
+  people: { flex: 1, color: colors.muted, fontSize: 13 },
+  location: { color: colors.muted, fontSize: 13 },
 });

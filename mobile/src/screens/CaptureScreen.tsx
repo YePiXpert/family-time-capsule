@@ -1,3 +1,4 @@
+import { RecordingMeter } from "../components/RecordingMeter";
 import { Text, TextInput } from "../components/typography";
 import { removeDraftItem, pairDraftItems } from "../drafts/model";
 import { recordLocalIntakeDraft } from "../native/intake-store";
@@ -37,7 +38,7 @@ import type { AppNavigation, MainTabParamList } from "../navigation/types";
 export function CaptureScreen() {
   const navigation = useNavigation<AppNavigation>();
   const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
-  const { credentials, outbox, queued, viewer, family, people, userId, grantSyncConsent, syncConsent } = useApp();
+  const { credentials, outbox, queued, viewer, family, people, userId, reloadLocal, grantSyncConsent, syncConsent } = useApp();
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
   const draftScope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -115,6 +116,7 @@ export function CaptureScreen() {
         return;
       }
       await capsuleDraft.save(publish, intent, organize);
+      await reloadLocal().catch(() => {});
       setMessage("本机已保存，网络工作会在后台继续。");
       const row = capsuleDraft.draft;
       if (credentials && family && row) {
@@ -124,6 +126,7 @@ export function CaptureScreen() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "本机保存失败。"); }
   };
   const recorderRef = useRef<AudioRecorder | null>(null);
+  const readRecording = useCallback(() => recorderRef.current?.getStatus(), []);
   const mountedRef = useRef(false);
   const recordingBusyRef = useRef(false);
   const text = capsuleDraft.draft?.content.text ?? "";
@@ -445,13 +448,17 @@ export function CaptureScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
+    <ScrollView stickyHeaderIndices={[0]} contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
+      <View style={{ backgroundColor: colors.card, padding: 12, borderRadius: 16, gap: 8, borderWidth: 1, borderColor: colors.line }}>
+        <Text style={sharedStyles.label}>{capsuleDraft.draft?.content.visibility === "private" ? "仅自己可见" : capsuleDraft.draft?.content.visibility === "members" ? "指定成员可见" : "全家可见"}</Text>
+        {capsuleDraft.draft && capsuleDraft.draft.status !== "published" ? <Action label={busy ? "正在保存…" : capsuleDraft.draft.status === "queued" ? "重试保存" : "保存"} hint="先保存在本机，再发送到已授权家庭" primary disabled={busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length)} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} /> : <Text style={sharedStyles.body}>已保存这条成长记录</Text>}
+      </View>
       <Text style={sharedStyles.eyebrow}>离线也不会丢</Text>
       <Text testID="capture-title" style={sharedStyles.title}>记录此刻</Text>
-      <Text style={sharedStyles.intro}>选照片、视频或录音，也可以写一句话。不用填表，先保存这一刻。</Text>
+      <Text style={sharedStyles.intro}>选照片、视频或录音，也可以写一句话。留下想对宝宝说的话。</Text>
       <View style={sharedStyles.card}>
         <Text style={sharedStyles.label}>一句话、一段故事</Text>
-        <TextInput testID="capture-text" multiline editable={capsuleDraft.draft?.status === "editing"} maxLength={5000} onChangeText={setText} placeholder="今天发生了什么？" ref={textInputRef} style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
+        <TextInput testID="capture-text" multiline editable={capsuleDraft.draft?.status === "editing"} maxLength={5000} onChangeText={setText} placeholder="今天的你，又带来了什么小惊喜？" ref={textInputRef} style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
         <Text style={styles.counter}>{text.length} / 5000</Text>
 
       </View>
@@ -462,6 +469,7 @@ export function CaptureScreen() {
         <Action label={recording ? "完成录音" : "录音"} hint={recording ? "保存原声" : "留下声音"} disabled={busy} primary={recording} onPress={() => void toggleRecording()} />
         <Action label="文件" hint="文档与录音" disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => void pickFiles()} />
       </View>
+      {recording ? <RecordingMeter read={readRecording} /> : null}
       {busy ? <ActivityIndicator color={colors.coral} /> : null}
       {message ? <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>{message}</Text></View> : null}
 
@@ -546,7 +554,7 @@ export function CaptureScreen() {
         </Disclosure>
         {capsuleDraft.draft.status !== "published" && <>
           {organizer.ready && <Text style={sharedStyles.body}>保存后按已有授权在后台整理，不影响原件。</Text>}
-          <Action label={busy ? "正在保存…" : capsuleDraft.draft.status === "queued" ? "重试保存" : "保存"} hint="先保存在本机，再发送到已授权家庭" primary disabled={busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length)} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} />
+
 
         </>}
         {capsuleDraft.draft.status === "published" && <Text accessibilityLiveRegion="polite" style={sharedStyles.body}>{captureSavedMessage(capsuleDraft.draft.processing)}</Text>}
@@ -576,11 +584,11 @@ const styles = StyleSheet.create({
   action: { width: "48%", minHeight: 76, flexGrow: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.card, borderColor: colors.line, borderWidth: 1, borderRadius: 15, gap: 4 },
   recording: { backgroundColor: colors.coral, borderColor: colors.coral },
   actionLabel: { color: colors.coralDark, fontSize: 15, fontWeight: "800" },
-  actionHint: { color: colors.muted, fontSize: 11 },
+  actionHint: { color: colors.muted, fontSize: 13 },
   recordingText: { color: "#FFFFFF" },
   outboxRow: { minHeight: 52, flexDirection: "row", alignItems: "center", gap: 10, borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
   grow: { flex: 1, gap: 3 },
   outboxTitle: { color: colors.ink, fontSize: 13, fontWeight: "700" },
-  pending: { color: colors.sage, fontSize: 11 },
-  state: { color: colors.coralDark, fontSize: 11, fontWeight: "800" },
+  pending: { color: colors.sage, fontSize: 13 },
+  state: { color: colors.coralDark, fontSize: 13, fontWeight: "800" },
 });

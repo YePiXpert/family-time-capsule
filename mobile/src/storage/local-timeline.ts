@@ -1,4 +1,19 @@
 import type { LocalTimelineEvent, OutboxItem } from "../types";
+import type { LocalDraft } from "../drafts/store";
+
+export function mergeSavedDrafts(events: LocalTimelineEvent[], drafts: LocalDraft[], covers: Record<string, string> = {}): LocalTimelineEvent[] {
+  const remoteIds = new Set(events.filter(event => event.source === "server").map(event => event.id));
+  const saved = drafts.filter(draft => draft.status === "queued" && (!draft.memoryEventId || !remoteIds.has(draft.memoryEventId)));
+  return [...events, ...saved.map((draft): LocalTimelineEvent => ({
+    id: `draft:${draft.id}`, localDraftId: draft.id, source: "local", syncState: draft.status === "published" ? null : "pending",
+    title: draft.content.title || draft.content.text.trim().slice(0, 60) || "一段成长记录",
+    occurredAt: draft.content.occurredAt ?? draft.updatedAt, occurredAtPrecision: draft.content.occurredAt ? draft.content.occurredAtPrecision : "unknown",
+    locationText: draft.content.locationText || null, childPersonId: null, ageDays: null, ageLabel: null,
+    updatedAt: draft.updatedAt, assetCount: draft.content.items.length, participantNames: [],
+    captureIds: draft.content.items.flatMap(item => item.localCaptureRef ? [item.localCaptureRef] : []),
+    cover: null, localCoverUri: covers[draft.id] ?? null,
+  }))].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || b.id.localeCompare(a.id));
+}
 
 export type LocalCaptureRow = {
   id: string;

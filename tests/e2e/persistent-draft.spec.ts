@@ -1,6 +1,7 @@
 import { expandCaptureOptions } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { ensureBootstrap } from "./helpers";
 
 test("long-lived mixed Web draft: offline save, closed page recovery, reorder, cover, one memory and one copy of each original", async ({ page, context }) => {
@@ -41,4 +42,32 @@ test("long-lived mixed Web draft: offline save, closed page recovery, reorder, c
   await expect(reopened.locator("main")).not.toContainText(/个月|出生当天/);
   await reopened.goto("/search?q=" + encodeURIComponent("竹篙"));
   await expect(reopened.getByRole("link", { name: /外公的江边往事/ })).toBeVisible();
+});
+
+test("an imported MOV without browser MIME previews, saves its exact bytes and plays from the server", async ({ page }) => {
+  await ensureBootstrap(page);
+  await page.goto("/capture");
+  const bytes = readFileSync(path.join(__dirname, "../fixtures/sample.mov"));
+  await page.getByLabel("写下这一刻").fill("小美回家路上的视频");
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "home.mov", mimeType: "", buffer: bytes });
+  await expect(page.locator("main video")).toHaveCount(1);
+  await page.locator("main video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
+  await expandCaptureOptions(page);
+  await page.getByLabel("发生时间", { exact: true }).fill("2026-09-08T10:00");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  const link = page.getByRole("link", { name: "查看这条记忆" });
+  await expect(link).toBeVisible();
+  const id = (await link.getAttribute("href"))!.split("/").at(-1)!;
+  const memory = await (await page.request.get(`/api/mobile/v1/memories/${id}`)).json();
+  expect(memory.assets).toHaveLength(1);
+  expect(memory.assets[0]).toMatchObject({ type: "video", mimeType: "video/quicktime" });
+  const original = await page.request.get(`/api/media/${memory.assets[0].id}`);
+  expect(await original.body()).toEqual(bytes);
+  const range = await page.request.get(`/api/media/${memory.assets[0].id}`, { headers: { Range: "bytes=0-63" } });
+  expect(range.status()).toBe(206);
+  expect(await range.body()).toEqual(bytes.subarray(0, 64));
+  await link.click();
+  await page.getByRole("button", { name: /^打开阅读器：/ }).first().click();
+  await page.locator("dialog video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
+  await expect.poll(() => page.locator("dialog video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
 });

@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
   cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(),
   enqueueText: vi.fn(), enqueueMedia: vi.fn(), preserveMedia: vi.fn(),
-  preserveAudio: vi.fn(), removeFile: vi.fn(), queued: vi.fn(),
+  preserveAudio: vi.fn(), removeFile: vi.fn(), reloadLocal: async () => {}, queued: vi.fn(),
   setParams: vi.fn(), focus: vi.fn(), scrollTo: vi.fn(),
   route: { params: {} as { intent?: string } },
   draft: {
@@ -43,7 +43,7 @@ vi.mock("../src/state/AppContext", () => ({
     viewer: mocks.connected ? { canCapture: true, canEditEvents: true } : null,
     family: mocks.connected ? mocks.family : null, userId: mocks.connected ? "user-a" : null,
     grantSyncConsent: mocks.grantSyncConsent,
-    outbox: [], queued: mocks.queued,
+    outbox: [], queued: mocks.queued, reloadLocal: mocks.reloadLocal,
     people: [{ id: "person-1", displayName: "妈妈" }, { id: "person-2", displayName: "外公" }],
   }),
 }));

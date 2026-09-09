@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { initializeLocalStore, getLocalCaptureDetail, clearServerCaches, setActiveDestination } from "../src/storage/database";
+import { initializeLocalStore, getLocalCaptureDetail, clearServerCaches, setActiveDestination, listTimeline } from "../src/storage/database";
 import { createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft } from "../src/drafts/store";
 import { getRawMockDatabase } from "../../tests/mocks/expo-sqlite";
 import type { MediaCapturePayload } from "../src/types";
@@ -39,4 +39,24 @@ it("retains a mixed draft across reinitialization without copying originals, wit
   const discarded = { ...reordered, revision: reordered.revision + 1, status: "discarded" as const };
   await saveLocalDraft(discarded, reordered.revision);
   expect(db.prepare("SELECT count(*) n FROM local_capture").get()).toEqual({ n: 3 });
+});
+
+it("shows a saved offline video bundle as one record after restart, scoped to its owner", async () => {
+  await initializeLocalStore();
+  const scope = "saved-video-owner";
+  let draft = await createLocalDraft(scope, "video-draft", "video-mutation");
+  draft = { ...draft, revision: 2, content: { ...draft.content, text: "小美第一次回家", items: [{ id: "video-item", assetId: null, localCaptureRef: "saved-video", caption: "回家的路上" }] } };
+  await saveLocalDraft(draft, 1, { id: "saved-video", payload: { localUri: "file:///originals/home.mov", fileName: "home.mov", mimeType: "video/quicktime", mediaType: "video", lastModified: null, source: "library" } });
+  expect((await listTimeline(null, scope)).some(item => item.localDraftId === draft.id)).toBe(false);
+  draft = { ...draft, status: "queued", syncIntent: "publish", revision: 3 };
+  await saveLocalDraft(draft, 2);
+  await initializeLocalStore();
+  const entries = (await listTimeline(null, scope)).filter(item => item.localDraftId === draft.id);
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ title: "小美第一次回家", assetCount: 1, occurredAtPrecision: "unknown", captureIds: ["saved-video"] });
+  expect((await getLocalCaptureDetail("saved-video"))?.localUri).toBe("file:///originals/home.mov");
+  expect((await listTimeline(null, "other-owner")).some(item => item.localDraftId === draft.id)).toBe(false);
+  await saveLocalDraft({ ...draft, status: "published", memoryEventId: "published-video", revision: 4 }, 3);
+  // A removed server record must not be resurrected by an old published draft.
+  expect((await listTimeline(null, scope)).some(item => item.localDraftId === draft.id)).toBe(false);
 });

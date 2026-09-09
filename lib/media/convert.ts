@@ -11,6 +11,7 @@ export class MediaConversionError extends Error {}
 const demuxers: Record<string, string> = {
   "video/mp4": "mov",
   "video/quicktime": "mov",
+  "video/3gpp": "mov",
   "audio/mp4": "mov",
   "audio/x-m4a": "mov",
   "video/webm": "matroska",

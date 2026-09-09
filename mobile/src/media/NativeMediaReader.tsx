@@ -10,6 +10,7 @@ import type { ReaderAsset, ReaderTranscript, MediaDerivation } from "./types";
 import { fetchMediaDerivations } from "../api/client";
 import { exportOriginalCopy } from "./export-original";
 import { sharedStyles as s } from "../theme";
+import { useAccessibleEffects } from "../design/use-effects";
 export type NativeReaderAsset = ReaderAsset & {
   localUri?: string;
   localTranscript?: ReaderTranscript | null;
@@ -59,6 +60,7 @@ export function NativeMediaReader({
   assets: NativeReaderAsset[];
   credentials: Credentials | null;
 }) {
+  const { reducedMotion } = useAccessibleEffects();
   const [index, setIndex] = useState<number | null>(null),
     [continuous, setContinuous] = useState(false);
   const item = index === null ? null : assets[index];
@@ -109,7 +111,7 @@ export function NativeMediaReader({
       <Modal
         visible={item !== null}
         onRequestClose={() => setIndex(null)}
-        animationType="slide"
+        animationType={reducedMotion ? "none" : "fade"}
       >
         <SafeAreaView style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={s.content}>
@@ -171,6 +173,7 @@ function Active({
     [zoom, setZoom] = useState(1),
     [retry, setRetry] = useState(0);
   const { width } = useWindowDimensions();
+  const compatibilityRequested = useRef(false);
   useEffect(() => {
     if (!credentials || item.localUri) return;
     let alive = true,
@@ -225,6 +228,12 @@ function Active({
     } catch {
       setError("无法开始处理，请稍后重试。");
     }
+  }
+  function playbackFailed() {
+    if (!credentials || item.localUri || compatibilityRequested.current || transcode) return;
+    compatibilityRequested.current = true;
+    setError("正在准备兼容播放版，原视频已保留。完成后会自动切换。");
+    void generate("transcode");
   }
   return (
     <>
@@ -288,6 +297,7 @@ function Active({
           <Video
             key={`${selectedId}-${retry}`}
             source={source}
+            onPlaybackError={playbackFailed}
             initialSeconds={item.initialSeconds}
             onPosition={
               onPosition ? (seconds) => onPosition(item.id, seconds) : undefined
@@ -490,7 +500,9 @@ function Video({
   poster,
   initialSeconds = 0,
   onPosition,
+  onPlaybackError,
 }: {
+  onPlaybackError?: () => void;
   initialSeconds?: number;
   onPosition?: (seconds: number) => void;
   source: PlaybackSource;
@@ -510,6 +522,9 @@ function Video({
     status: player.status,
     error: undefined,
   });
+  useEffect(() => {
+    if (status === "error") onPlaybackError?.();
+  }, [status, onPlaybackError]);
   useEffect(() => {
     if (status === "readyToPlay" && !restored.current) {
       restored.current = true;
@@ -536,13 +551,14 @@ function Video({
           ) : null}
         </>
       ) : null}
-      {error ? (
+      {error || status === "error" ? (
         <Text style={s.error}>视频暂时无法解码，请重试或生成兼容播放版。</Text>
       ) : null}
       <VideoView
         player={player}
         contentFit="contain"
         nativeControls
+        surfaceType="textureView"
         style={{ width: "100%", height: 340 }}
       />
     </>

@@ -42,3 +42,12 @@ it("never promotes a partial copy as a preserved original", async () => {
   expect(existsSync(path.join(state.root, "captures/failed-motion.mov.part"))).toBe(false);
   expect(readFileSync(source).length).toBeGreaterThan(0);
 });
+
+it("preserves an imported MOV when the picker omits type, MIME and filename", async () => {
+  state.interrupt = false;
+  const source = path.join(process.cwd(), "../tests/fixtures/sample.mov");
+  const payload = await preservePickedMedia({ uri: source, width: 32, height: 32 }, "untyped-video", "library");
+  expect(payload).toMatchObject({ mimeType: "video/quicktime", mediaType: "video", lastModified: null });
+  expect(payload.localUri).toMatch(/\.mov$/);
+  expect(readFileSync(payload.localUri)).toEqual(readFileSync(source));
+});

@@ -21,6 +21,7 @@ import type { SyncConsent,
 } from "../types";
 import {
   mergeTimelineEvents,
+  mergeSavedDrafts,
   type LocalCaptureRow,
 } from "./local-timeline";
 import { memoryCacheScope } from "../memories/cache-scope";
@@ -320,7 +321,7 @@ export async function removeCachedMemoryDetail(scope: string, id: string): Promi
   });
 }
 
-export async function listTimeline(scope: string | null): Promise<LocalTimelineEvent[]> {
+export async function listTimeline(scope: string | null, draftScope: string | null = null): Promise<LocalTimelineEvent[]> {
   const db = await getDatabase();
   const [rows, localRows] = await Promise.all([
     scope
@@ -368,7 +369,21 @@ export async function listTimeline(scope: string | null): Promise<LocalTimelineE
     source: "server" as const,
     syncState: null,
   }));
-  return mergeTimelineEvents(serverEvents, localRows);
+  const timeline = mergeTimelineEvents(serverEvents, localRows);
+  if (!draftScope) return timeline;
+  const snapshots = await db.getAllAsync<{ snapshot_json: string }>("SELECT snapshot_json FROM local_draft WHERE scope=?", draftScope);
+  const drafts = snapshots.map(row => JSON.parse(row.snapshot_json) as import("../drafts/store").LocalDraft);
+  const covers: Record<string, string> = {};
+  for (const draft of drafts) {
+    if (draft.status !== "queued") continue;
+    const ordered = [...draft.content.items].sort((a, b) => Number(b.id === draft.content.coverItemId) - Number(a.id === draft.content.coverItemId));
+    for (const item of ordered) {
+      if (!item.localCaptureRef) continue;
+      const cover = await db.getFirstAsync<{ local_uri: string }>("SELECT local_uri FROM local_capture WHERE id=? AND media_type='image' AND local_uri IS NOT NULL", item.localCaptureRef);
+      if (cover) { covers[draft.id] = cover.local_uri; break; }
+    }
+  }
+  return mergeSavedDrafts(timeline, drafts, covers);
 }
 
 export type LocalMemoryMedia = {

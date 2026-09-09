@@ -1,8 +1,9 @@
+import { classifyImportedFile } from "@/mobile/src/storage/import-policy";
 import type { UploadResponse } from "@/components/upload-request";
 /** Resumable upload shared by all media types, including documents. */
 export async function uploadDraftOriginal(file: File, captureId: string, draftId: string, guard: () => void = () => {}): Promise<UploadResponse> {
   guard();
-  const created = await fetch("/api/uploads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ captureId, draftId, filename: file.name, declaredMime: file.type || "application/octet-stream", totalBytes: file.size, source: "web", importSessionId: null, lastModified: file.lastModified > 0 ? file.lastModified : null }), signal: AbortSignal.timeout(30000) });
+  const created = await fetch("/api/uploads", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ captureId, draftId, filename: file.name, declaredMime: classifyImportedFile(file.name, file.type)?.mimeType || file.type || "application/octet-stream", totalBytes: file.size, source: "web", importSessionId: null, lastModified: file.lastModified > 0 ? file.lastModified : null }), signal: AbortSignal.timeout(30000) });
   if (!created.ok) throw new Error("未能开始上传，本机原件仍保留。请检查格式、网络与权限。");
   const descriptor = await created.json();
   if (descriptor.assetId) return { status: "stored", assetId: descriptor.assetId, inboxItemId: descriptor.inboxItemId };

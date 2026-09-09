@@ -168,6 +168,7 @@ function ActiveMedia({
     [position, setPosition] = useState(0),
     [duration, setDuration] = useState(0);
   const player = useRef<HTMLMediaElement | null>(null);
+  const compatibilityRequested = useRef(false);
   useEffect(() => {
     let alive = true,
       timer: ReturnType<typeof setTimeout> | undefined;
@@ -245,6 +246,8 @@ function ActiveMedia({
   const [resetSource, setResetSource] = useState(source);
   if (resetSource !== source) {
     setResetSource(source);
+    setFailed(false);
+    setLoading(true);
     setPlaying(false);
     setEnded(false);
     setPosition(0);
@@ -401,10 +404,16 @@ function ActiveMedia({
               }}
               onTimeUpdate={(e) => setPosition(e.currentTarget.currentTime)}
               onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-              onError={() => {
+              onError={(event) => {
                 setLoading(false);
                 setFailed(true);
                 setPlaying(false);
+                const code = event.currentTarget.error?.code;
+                if ((code === 3 || code === 4) && !transcode && !compatibilityRequested.current) {
+                  compatibilityRequested.current = true;
+                  setMessage("正在准备兼容播放版，原视频已保留。完成后会自动切换。");
+                  void generate("transcode");
+                }
               }}
             />
           ) : (
