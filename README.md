@@ -1,6 +1,9 @@
 # Family Time Capsule
 
-**1.0.0-dev.1 / 正式 1.0 开发中**
+**1.0.0-dev.1 / 正式 1.0 开发预发布版**
+
+安装包与升级说明见 [v1.0.0-dev.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.0-dev.1)。
+网页更新后刷新即可；构建 14 及更早的原生 App 需更新安装包，构建 15 与本版服务端兼容。
 
 随手留一刻，全家能看懂；AI 帮忙整理，原件始终属于你。
 

@@ -307,10 +307,13 @@ jobs:
           python3 - "$VERSION" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$IMAGE_REF" "$APK_SHA" "$IPA_SHA" "$OPS_FILE" "$OPS_SHA" > release-manifest.json <<'PY'
           import json, sys
           version, tag, sha, image, apk, ipa, ops_file, ops = sys.argv[1:9]
+          native = json.load(open("../mobile/app.json"))["expo"]
+          migrations = json.load(open("../db/migrations/meta/_journal.json"))["entries"]
           print(json.dumps({
               "version": version,
               "tag": tag,
               "gitSha": sha,
+              "nativeBuild": {"android": native["android"]["versionCode"], "ios": native["ios"]["buildNumber"]},
               "image": {"ref": image, "platforms": ["linux/amd64"],
                         "note": "app/worker 共用同一镜像；部署建议固定 digest"},
               "packages": {
@@ -320,16 +323,13 @@ jobs:
                               "signing": "unsigned", "note": "需自行签名后部署"},
                   "ops-scripts": {"file": ops_file, "sha256": ops},
               },
-              "api": {"added": [
-                  "GET /api/bootstrap",
-                  "POST /api/bootstrap/setup",
-                  "GET /api/mobile/v1/me",
-                  "POST /api/mobile/v1/onboarding",
-                  "GET /api/invitations/preview",
-                  "POST /api/invitations/accept",
-                  "POST /api/mobile/v1/invitations",
-              ]},
-              "migrations": ["0040_instance_meta.sql"],
+              "api": {
+                  "added": ["POST /api/works"],
+                  "changed": ["GET /api/mobile/v1/home", "GET /api/books/projects/materials", "PATCH /api/books/projects/{id}"],
+                  "minimumNativeBuild": 15,
+                  "note": "旧客户端需更新；服务端部署不会更新已安装 App 的界面。",
+              },
+              "migrations": [entry["tag"] + ".sql" for entry in migrations],
               "verification": "自动化测试与 CI 全绿；真实 VPS/真机端到端验收未完成，不以本 manifest 替代",
           }, ensure_ascii=False, indent=2))
           PY
