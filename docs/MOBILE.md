@@ -1,8 +1,8 @@
 # 原生 iOS / Android 客户端
 
-> 当前版本：`1.2.0-alpha.4`；Expo 展示版本为 `1.2.0`，iOS buildNumber / Android
-> versionCode 为 `10`。变更与升级说明见 [发布说明](RELEASE_NOTES_1_2.md)；历史发布证据
-> 保持冻结。真实设备安装、旧包无损升级与系统分享验收尚未完成。
+> 当前开发版本：`1.0.0-dev.1`；Expo 展示版本为 `1.0.0`，iOS buildNumber / Android
+> versionCode 为 `13`。手机是主要使用场景；每次交付必须提供同一 `main` 提交的 APK 与自签用 IPA。
+> 当前进度见 [执行状态](release-1.0/EXECUTION_STATE.md)；下文历史构建记录不代表本次验收。
 
 `mobile/` 是 Expo SDK 57 + React Native 的原生客户端。它渲染 UIKit/Android View
 对应的原生组件，使用原生 SQLite、Keychain/Keystore 和文件系统模块，**不是 PWA，
