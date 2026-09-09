@@ -44,7 +44,7 @@
 | ID-3 | 首用闭环:创建家庭→HTTPS核实→一次性初始化→登录→建家庭人物 | bootstrap 零隐私 | 自动化通过 | app/api/bootstrap; tests/integration/bootstrap-flow |
 | ID-4 | 邀请:高熵链接/二维码、预览不消耗、原子claim、角色服务端验证 | 过期/撤销/重放不越权 | 自动化通过 | lib/invitations; tests/integration/invitation-flow |
 | ID-5 | 访客提交/限定阅读独立 scope,只存hash,限时限次可撤销 | scope 不可互换 | 自动化通过(2026-09-07 M2-d:投递箱(只提交)+限定阅读链接(只读单一相册,0050;令牌只存哈希;可过期/收回即时失效;媒体按相册范围裁决;访客强制 inline 不能批量下载)) | lib/family/read-grants.ts; app/view/[token] |
-| ID-6 | 密码+Passkey;管理员 TOTP+恢复码 | 成熟实现 | 自动化通过(2026-09-07 M2-b:better-auth twoFactor(TOTP+恢复码,AEAD 加密存储)+@simplewebauthn Passkey 注册/登录;原生 App 二步验证暂需网页完成,如实标注) | lib/auth/(auth|passkey).ts; app/settings/security; tests/e2e/security.spec.ts |
+| ID-6 | 密码+Passkey;管理员 TOTP+恢复码 | 成熟实现 | 自动化通过(2026-09-07 M2-b:better-auth twoFactor(TOTP+恢复码,AEAD 加密存储)+@simplewebauthn Passkey 注册/登录;原生动态码/恢复码登录已有 SQLite/真实 HTTP 与控件自动化；认证配置和 Passkey 仍在 Web，真机待验) | lib/auth/(auth|passkey).ts; app/settings/security; tests/e2e/security.spec.ts |
 | ID-7 | 无邮件时的本机受审计恢复 CLI | 不开公开重置后门 | 自动化通过(2026-09-07 M2-b:npm run recover-account 仅主机本地;令牌 256-bit 只存哈希 15 分钟;重置即撤销全部会话;无 HTTP 签发入口) | scripts/account-recovery.ts; lib/auth/account-recovery.ts |
 | ID-8 | 恢复码一次显示、hash保存、原子单次使用 | 不能误删最后路径 | 自动化通过(2026-09-07 M2-b:恢复码以实例 AUTH_SECRET 派生密钥 AEAD 加密存储(非明文/非哈希——成熟组件语义,如实登记);生成即替换旧列表;每码单次使用;登录第二腿可作废) | lib/auth/two-factor-service.ts; tests/integration/two-factor.test.ts |
 | ID-9 | 活动设备列表、撤销其他会话、改密后失效重入不删本机原件 | 会话管理 | 自动化通过(M2-a 设备列表/撤销其他;M2-b 恢复令牌重置密码即撤销全部会话) | settings/sessions; lib/auth/account-recovery.ts |

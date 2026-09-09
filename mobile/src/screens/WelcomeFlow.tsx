@@ -22,7 +22,8 @@ import {
 } from "../api/client";
 import { useApp } from "../state/AppContext";
 import { colors, sharedStyles } from "../theme";
-import type { BootstrapInfo, Credentials, InvitationPreview } from "../types";
+import { AccountLoginForm } from "../components/AccountLoginForm";
+import type { BootstrapInfo, InvitationPreview } from "../types";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "所有者",
@@ -126,9 +127,6 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginBusy, setLoginBusy] = useState(false);
 
   const detect = async () => {
     if (!serverUrl.trim()) {
@@ -178,20 +176,6 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
       }
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const submitLogin = async () => {
-    if (!info) return;
-    setLoginBusy(true);
-    setError(null);
-    try {
-      const credentials = await signIn(info.serverUrl, loginEmail, loginPassword);
-      await connect(credentials);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "登录失败。");
-    } finally {
-      setLoginBusy(false);
     }
   };
 
@@ -253,13 +237,7 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
       {info && info.info.setup.state === "completed" ? (
         <View style={sharedStyles.card}>
           <Text style={sharedStyles.cardTitle}>登录该家庭空间</Text>
-          <Text style={sharedStyles.label}>邮箱</Text>
-          <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" onChangeText={setLoginEmail} style={sharedStyles.input} value={loginEmail} />
-          <Text style={sharedStyles.label}>密码</Text>
-          <TextInput autoCapitalize="none" autoComplete="current-password" onChangeText={setLoginPassword} secureTextEntry style={sharedStyles.input} value={loginPassword} />
-          <Pressable disabled={loginBusy} onPress={() => void submitLogin()} style={sharedStyles.primaryButton}>
-            {loginBusy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>登录</Text>}
-          </Pressable>
+          <AccountLoginForm key={info.serverUrl} serverUrl={info.serverUrl} onLogin={connect} />
         </View>
       ) : null}
     </View>
@@ -432,41 +410,11 @@ function JoinFamilyStep({ onBack }: { onBack: () => void }) {
 
 function LoginStep({ onBack }: { onBack: () => void }) {
   const { connect } = useApp();
-  const [serverUrl, setServerUrl] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    if (!serverUrl.trim() || !email.trim() || !password) {
-      setError("请填写服务器地址、邮箱和密码。");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const credentials: Credentials = await signIn(serverUrl, email, password);
-      await connect(credentials);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "登录失败。");
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <View style={{ gap: 12 }}>
       <BackButton onBack={onBack} />
       <StepHeader eyebrow="已有账号" title="登录家庭空间" intro="使用已有的邮箱和密码登录自托管家庭空间。" />
-      <Text style={sharedStyles.label}>家庭空间地址</Text>
-      <TextInput autoCapitalize="none" autoCorrect={false} keyboardType="url" onChangeText={setServerUrl} placeholder="https://capsule.example.com" style={sharedStyles.input} value={serverUrl} />
-      <Text style={sharedStyles.label}>邮箱</Text>
-      <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" onChangeText={setEmail} style={sharedStyles.input} value={email} />
-      <Text style={sharedStyles.label}>密码</Text>
-      <TextInput autoCapitalize="none" autoComplete="current-password" onChangeText={setPassword} secureTextEntry style={sharedStyles.input} value={password} />
-      {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
-      <Pressable disabled={busy} onPress={() => void submit()} style={sharedStyles.primaryButton}>
-        {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>登录</Text>}
-      </Pressable>
+      <AccountLoginForm onLogin={connect} />
     </View>
   );
 }

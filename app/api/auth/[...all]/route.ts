@@ -1,10 +1,12 @@
 import { getAuth } from "@/lib/auth/auth";
+import { handleNativeAuthRequest } from "@/lib/auth/native-transport";
 import {
   getUserBinding,
   InvalidUserBindingError,
 } from "@/lib/family/service";
 
 async function handleAuthRequest(request: Request) {
+  if (request.headers.get("x-ftc-native-auth") === "1") return handleNativeAuthRequest(request);
   const pathname = new URL(request.url).pathname;
   // A disabled principal must still be able to clear a stale cookie.
   const isSessionRecoveryRequest =

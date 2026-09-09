@@ -31,6 +31,7 @@ import type {
 
 type SignInResponse = {
   token?: unknown;
+  twoFactorRedirect?: unknown;
   user?: { id?: unknown; name?: unknown };
   message?: unknown;
 };
@@ -43,6 +44,15 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
+  }
+}
+
+export type TwoFactorChallenge = { serverUrl: string; challenge: string };
+
+export class TwoFactorRequiredError extends Error {
+  constructor(readonly pending: TwoFactorChallenge) {
+    super("请输入验证器动态码或一次性恢复码。");
+    this.name = "TwoFactorRequiredError";
   }
 }
 
@@ -431,10 +441,13 @@ export async function signIn(
   try {
     response = await fetchWithTimeout(`${serverUrl}/api/auth/sign-in/email`, {
       method: "POST",
+      credentials: "omit",
+      redirect: "error",
       headers: {
         accept: "application/json",
         "content-type": "application/json",
         origin: new URL(serverUrl).origin,
+        "x-ftc-native-auth": "1",
       },
       body: JSON.stringify({ email: email.trim(), password, rememberMe: true }),
     });
@@ -443,9 +456,17 @@ export async function signIn(
   }
   let body: SignInResponse = {};
   try {
-    body = (await response.json()) as SignInResponse;
+    const parsed: unknown = await response.json();
+    body = isRecord(parsed) ? parsed : {};
   } catch {
     // Keep the stable status-based error below for reverse-proxy HTML errors.
+  }
+  if (response.ok && body.twoFactorRedirect === true) {
+    const challenge = response.headers.get("x-ftc-two-factor-challenge");
+    if (!challenge || !/^[A-Za-z0-9%._~+/=-]{1,1024}$/u.test(challenge)) {
+      throw new ApiError("此服务器尚不支持 App 两步验证登录，请升级服务器后重试。", 409, "native_auth_upgrade_required");
+    }
+    throw new TwoFactorRequiredError({ serverUrl, challenge });
   }
   const tokenHeader = response.headers.get("set-auth-token");
   const tokenBody = typeof body.token === "string" ? body.token : null;
@@ -457,6 +478,28 @@ export async function signIn(
         : "无法登录家庭服务器，请检查地址和网络。",
       response.status,
     );
+  }
+  return { serverUrl, token };
+}
+
+export async function verifyTwoFactor(pending: TwoFactorChallenge, code: string, method: "totp" | "backup"): Promise<Credentials> {
+  const serverUrl = normalizeServerUrl(pending.serverUrl);
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${serverUrl}/api/auth/two-factor/verify-${method === "totp" ? "totp" : "backup-code"}`, {
+      method: "POST", credentials: "omit", redirect: "error",
+      headers: { "content-type": "application/json", origin: new URL(serverUrl).origin, "x-ftc-native-auth": "1", "x-ftc-two-factor-challenge": pending.challenge },
+      body: JSON.stringify({ code: code.trim(), trustDevice: false }),
+    });
+  } catch {
+    throw new ApiError("验证响应未收到。请重试；若提示已失效，请重新登录。", 0);
+  }
+  const parsed: unknown = await response.json().catch(() => ({}));
+  const body = isRecord(parsed) ? parsed : {};
+  const token = response.headers.get("set-auth-token") ?? (typeof body.token === "string" ? body.token : null);
+  if (!response.ok || !token) {
+    const invalid = body.error === "invalid_challenge" || body.code === "INVALID_TWO_FACTOR_COOKIE" || body.code === "TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE";
+    throw new ApiError(response.status === 429 ? "验证尝试过多，请稍后重新登录。" : invalid ? "本次验证已失效，请重新登录。" : "验证码不正确或已使用，请核对后重试。", response.status, invalid ? "challenge_expired" : "verification_failed");
   }
   return { serverUrl, token };
 }
