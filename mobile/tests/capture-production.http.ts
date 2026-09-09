@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   documentPicker: vi.fn(), preserveDocument: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), preserveMedia: vi.fn(), preserveAudio: vi.fn(), removeFile: vi.fn(),
   setParams: vi.fn(), route: { params: {} }, grantSyncConsent: vi.fn().mockResolvedValue(undefined), reloadLocal: async () => {}, queued: vi.fn(),
 }));
+vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
@@ -104,7 +105,7 @@ let tree: ReactTestRenderer | undefined;
 afterEach(async () => { if (tree) await act(async () => tree!.unmount()); tree = undefined; activeCredentials = fixture.credentials; activeUserId = fixture.userId; activeOnline = true; });
 async function press(label: string) {
   await revealCaptureAction(tree!, label);
-  const node = tree!.root.findAllByType("Pressable" as never).find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === label));
+  const node = tree!.root.findAllByType("Pressable" as never).find(n => n.props.accessibilityLabel === label || n.findAllByType("Text" as never).some(t => t.children.join("") === label));
   expect(node, label).toBeDefined();
   await act(async () => { node!.props.onPress(); });
 }

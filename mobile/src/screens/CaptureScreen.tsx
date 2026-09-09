@@ -1,3 +1,4 @@
+import { JournalIcon } from "../components/JournalIcon";
 import { RecordingMeter } from "../components/RecordingMeter";
 import { Text, TextInput } from "../components/typography";
 import { removeDraftItem, pairDraftItems } from "../drafts/model";
@@ -422,7 +423,7 @@ export function CaptureScreen() {
           textInputRef.current?.focus();
         } else if (intent === "audio") {
           scrollRef.current?.scrollTo({ y: actionAreaY.current, animated: true });
-          setMessage("录音区域已就绪，点“直接录音”开始。");
+          setMessage("录音区域已就绪，点“录音”开始。");
         } else {
           void pickMedia(intent);
         }
@@ -453,52 +454,44 @@ export function CaptureScreen() {
   }
 
   return (
-    <ScrollView stickyHeaderIndices={[0]} contentContainerStyle={sharedStyles.content} ref={scrollRef} style={sharedStyles.screen}>
-      <View style={{ backgroundColor: colors.card, padding: 12, borderRadius: 16, gap: 8, borderWidth: 1, borderColor: colors.line }}>
-        <Text style={sharedStyles.label}>{capsuleDraft.draft?.content.visibility === "private" ? "仅自己可见" : capsuleDraft.draft?.content.visibility === "members" ? "指定成员可见" : "全家可见"}</Text>
-        {capsuleDraft.draft && capsuleDraft.draft.status !== "published" ? <Action label={busy ? "正在保存…" : capsuleDraft.draft.status === "queued" ? "重试保存" : "保存"} hint="先保存在本机，再发送到已授权家庭" primary disabled={busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length)} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} /> : <Text style={sharedStyles.body}>{capsuleDraft.draft ? "已保存这条成长记录" : "正在打开记录…"}</Text>}
-        {capsuleDraft.draft && capsuleDraft.draft.status !== "editing" ? <Action label="记录下一刻" hint="这一条会继续保留" disabled={busy || recording || !!capsuleDraft.error} onPress={() => void capsuleDraft.create().catch(error => setMessage(error.message))} /> : null}
+    <ScrollView stickyHeaderIndices={[0]} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} ref={scrollRef} style={sharedStyles.screen}>
+      <View style={styles.saveBar}>
+        <View style={styles.saveInfo}>
+          <Text style={sharedStyles.label}>{capsuleDraft.draft?.content.visibility === "private" ? "仅自己可见" : capsuleDraft.draft?.content.visibility === "members" ? "指定成员可见" : "全家可见"}</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.saveState}>{capsuleDraft.saved ? "本机已保存" : "正在写入本机…"}</Text>
+        </View>
+        {capsuleDraft.draft && capsuleDraft.draft.status !== "published" ? <Pressable accessibilityRole="button" accessibilityHint="先保存在本机，再发送到已授权家庭" disabled={busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length)} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} style={({ pressed }) => [styles.saveButton, pressed && sharedStyles.pressed, (busy || recording || !!capsuleDraft.error || (!capsuleDraft.draft!.content.text.trim() && !capsuleDraft.draft!.content.items.length)) && styles.saveDisabled]}><Text style={styles.saveLabel}>{busy ? "正在保存…" : capsuleDraft.draft.status === "queued" ? "重试保存" : "保存"}</Text></Pressable> : <Text style={sharedStyles.body}>{capsuleDraft.draft ? "已保存这条成长记录" : "正在打开记录…"}</Text>}
       </View>
-      <Text style={sharedStyles.eyebrow}>离线也不会丢</Text>
-      <Text testID="capture-title" style={sharedStyles.title}>记录此刻</Text>
-      <Text style={sharedStyles.intro}>选照片、视频或录音，也可以写一句话。留下想对宝宝说的话。</Text>
-      <View style={sharedStyles.card}>
-        <Text style={sharedStyles.label}>一句话、一段故事</Text>
-        <TextInput testID="capture-text" multiline editable={capsuleDraft.draft?.status === "editing"} maxLength={5000} onChangeText={setText} placeholder="今天的你，又带来了什么小惊喜？" ref={textInputRef} style={[sharedStyles.input, styles.textArea]} textAlignVertical="top" value={text} />
-        <Text style={styles.counter}>{text.length} / 5000</Text>
-
+      {capsuleDraft.draft && capsuleDraft.draft.status !== "editing" ? <Action label="记录下一刻" hint="这一条会继续保留" disabled={busy || recording || !!capsuleDraft.error} onPress={() => void capsuleDraft.create().catch(error => setMessage(error.message))} /> : null}
+      <View style={styles.heading}>
+        <Text testID="capture-title" style={styles.title}>记录此刻</Text>
+        <Text style={styles.subtitle}>照片、声音，还有你想记住的小事。</Text>
       </View>
-
-      <View onLayout={(event) => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.actionGrid}>
-        <Action label="相册" hint="照片与视频" disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => void pickMedia("library")} />
-        <Action label="拍摄" hint="照片或视频" disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => Alert.alert("拍摄", "选择拍摄方式", [{ text: "取消", style: "cancel" }, { text: "拍照片", onPress: () => void pickMedia("photo") }, { text: "拍视频", onPress: () => void pickMedia("video") }])} />
-        <Action label={recording ? "完成录音" : "录音"} hint={recording ? "保存原声" : "留下声音"} disabled={busy} primary={recording} onPress={() => void toggleRecording()} />
-        <Action label="文件" hint="文档与录音" disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => void pickFiles()} />
+      <View onLayout={(event) => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.paper}>
+        <Pressable accessibilityRole="button" accessibilityLabel="相册" accessibilityHint="添加照片或视频" disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => void pickMedia("library")} style={({ pressed }) => [styles.addMedia, pressed && sharedStyles.pressed]}>
+          <JournalIcon name="image" size={32} color={colors.coral} />
+          <Text style={styles.mediaTitle}>{content?.items.length ? "继续添加照片或视频" : "添加照片或视频"}</Text>
+          <Text style={styles.mediaHint}>从相册选入，留住这一刻</Text>
+        </Pressable>
+        <View style={styles.tools}>
+          <Action compact icon="camera" label="拍摄" hint="照片或视频" disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => Alert.alert("拍摄", "选择拍摄方式", [{ text: "取消", style: "cancel" }, { text: "拍照片", onPress: () => void pickMedia("photo") }, { text: "拍视频", onPress: () => void pickMedia("video") }])} />
+          <Action compact icon="microphone" label={recording ? "完成录音" : "录音"} hint={recording ? "保存原声" : "留下声音"} disabled={busy} primary={recording} onPress={() => void toggleRecording()} />
+          <Action compact icon="file" label="文件" hint="文档与录音" disabled={busy || recording || capsuleDraft.draft?.status !== "editing"} onPress={() => void pickFiles()} />
+        </View>
+        <View style={styles.writing}>
+          <View style={styles.writingLabel}><Text style={sharedStyles.label}>想留下的话</Text><Text style={styles.mediaHint}>选填</Text></View>
+          <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline editable={capsuleDraft.draft?.status === "editing"} maxLength={5000} onChangeText={setText} placeholder="今天的你，又带来了什么小惊喜？" placeholderTextColor={colors.muted} ref={textInputRef} style={styles.textArea} textAlignVertical="top" value={text} />
+          {text.length > 4500 ? <Text style={styles.counter}>{text.length} / 5000</Text> : null}
+        </View>
       </View>
       {recording ? <RecordingMeter read={readRecording} /> : null}
       {busy ? <ActivityIndicator color={colors.coral} /> : null}
       {message ? <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>{message}</Text></View> : null}
 
       {capsuleDraft.error ? <View accessibilityRole="alert" style={sharedStyles.warning}><Text style={sharedStyles.error}>{capsuleDraft.error}</Text><Action label="重试本机保存" hint="检查磁盘空间后重试" disabled={busy} onPress={() => void capsuleDraft.retry().catch(e => setMessage(e.message))} /></View> : null}
-      <Text accessibilityLiveRegion="polite" style={sharedStyles.body}>{capsuleDraft.saved ? "本机已保存" : "正在写入本机…"} · {capsuleDraft.draft?.status === "published" ? "记忆已保存" : capsuleDraft.draft?.serverRevision ? "草稿已同步" : "等待发送"}</Text>
+
       {(capsuleDraft.unboundDrafts ?? []).map(row => <Action key={row.id} label={`把本机草稿“${row.content.title || row.content.text.slice(0, 20) || "未命名"}”用于${family?.name ?? "当前家庭"}`} hint="确认原件的目的地，不复制原件" disabled={busy || recording} onPress={() => void capsuleDraft.bind(row.id).catch(e => setMessage(e.message))} />)}
-      {capsuleDraft.draft ? <View style={sharedStyles.card}>
-        <Action label={detailsOpen ? "收起补充信息" : "补充信息（可选）"} hint="标题、时间、人物和素材说明，不填也能保存" disabled={false} onPress={() => setDetailsOpen(value => !value)} />
-        {detailsOpen && <>
-        <TextInput accessibilityLabel="记忆标题" placeholder="标题（可选）" value={capsuleDraft.draft.content.title} maxLength={100} editable={capsuleDraft.draft.status === "editing"} onChangeText={title => changeDraft({ title })} style={sharedStyles.input} />
-        <Text style={sharedStyles.label}>发生时间</Text>
-        <PrecisionDateTimeField
-          occurredAt={capsuleDraft.draft.content.occurredAt}
-          precision={capsuleDraft.draft.content.occurredAtPrecision}
-          timezone={recordingTimezone}
-          onChange={({ occurredAt, precision: occurredAtPrecision }) => changeDraft({ occurredAt, occurredAtPrecision })}
-        />
-        <Action label="就是现在" hint="确认此刻发生（精确时间）" disabled={capsuleDraft.draft.status !== "editing"} onPress={() => changeDraft({ occurredAt: new Date().toISOString(), occurredAtPrecision: "exact" })} />
-        <TextInput accessibilityLabel="地点（可选）" placeholder="地点（可选）" value={capsuleDraft.draft.content.locationText} maxLength={200} editable={capsuleDraft.draft.status === "editing"} onChangeText={locationText => changeDraft({ locationText })} style={sharedStyles.input} />
-        <Text style={sharedStyles.label}>参与人物</Text>
-        {(people ?? []).map(person => <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked: capsuleDraft.draft!.content.participantIds.includes(person.id) }} style={sharedStyles.secondaryButton} onPress={() => { const ids = capsuleDraft.draft!.content.participantIds; changeDraft({ participantIds: ids.includes(person.id) ? ids.filter(id => id !== person.id) : [...ids, person.id] }); }}><Text>{capsuleDraft.draft!.content.participantIds.includes(person.id) ? "已选 · " : ""}{person.displayName}</Text></Pressable>)}
-        </>}
-        <Text style={sharedStyles.body}>{captureDateSummary(capsuleDraft.draft.content, capsuleDraft.draft.captureTimeEdited, recordingTimezone)}</Text>
+      {capsuleDraft.draft ? <View style={styles.supplement}>
         {capsuleDraft.draft.content.items.map((item, index) => {
           const detail = item.localCaptureRef ? originals[item.localCaptureRef] : null;
           const previous = capsuleDraft.draft!.content.items[index - 1];
@@ -520,6 +513,22 @@ export function CaptureScreen() {
             </View></>}
           </View>;
         })}
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: detailsOpen }} onPress={() => setDetailsOpen(value => !value)} style={styles.detailsToggle}><Text style={sharedStyles.label}>{detailsOpen ? "收起补充信息" : "补充信息（可选）"}</Text><Text style={styles.detailChevron}>{detailsOpen ? "−" : "+"}</Text></Pressable>
+        {detailsOpen && <>
+        <TextInput accessibilityLabel="记忆标题" placeholder="标题（可选）" value={capsuleDraft.draft.content.title} maxLength={100} editable={capsuleDraft.draft.status === "editing"} onChangeText={title => changeDraft({ title })} style={sharedStyles.input} />
+        <Text style={sharedStyles.label}>发生时间</Text>
+        <PrecisionDateTimeField
+          occurredAt={capsuleDraft.draft.content.occurredAt}
+          precision={capsuleDraft.draft.content.occurredAtPrecision}
+          timezone={recordingTimezone}
+          onChange={({ occurredAt, precision: occurredAtPrecision }) => changeDraft({ occurredAt, occurredAtPrecision })}
+        />
+        <Action label="就是现在" hint="确认此刻发生（精确时间）" disabled={capsuleDraft.draft.status !== "editing"} onPress={() => changeDraft({ occurredAt: new Date().toISOString(), occurredAtPrecision: "exact" })} />
+        <TextInput accessibilityLabel="地点（可选）" placeholder="地点（可选）" value={capsuleDraft.draft.content.locationText} maxLength={200} editable={capsuleDraft.draft.status === "editing"} onChangeText={locationText => changeDraft({ locationText })} style={sharedStyles.input} />
+        <Text style={sharedStyles.label}>参与人物</Text>
+        {(people ?? []).map(person => <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked: capsuleDraft.draft!.content.participantIds.includes(person.id) }} style={sharedStyles.secondaryButton} onPress={() => { const ids = capsuleDraft.draft!.content.participantIds; changeDraft({ participantIds: ids.includes(person.id) ? ids.filter(id => id !== person.id) : [...ids, person.id] }); }}><Text>{capsuleDraft.draft!.content.participantIds.includes(person.id) ? "已选 · " : ""}{person.displayName}</Text></Pressable>)}
+        </>}
+        <Text style={sharedStyles.body}>{captureDateSummary(capsuleDraft.draft.content, capsuleDraft.draft.captureTimeEdited, recordingTimezone)}</Text>
         <Disclosure title={capsuleDraft.draft.content.visibility === "family" ? "全家可见" : capsuleDraft.draft.content.visibility === "members" ? "指定成员可见" : "仅自己可见"}>
         <Text style={sharedStyles.label}>保存后的读者</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
@@ -579,12 +588,33 @@ export function CaptureScreen() {
   );
 }
 
-function Action({ label, hint, onPress, disabled, primary = false }: { label: string; hint: string; onPress: () => void; disabled: boolean; primary?: boolean }) {
-  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.action, primary && styles.recording, pressed && sharedStyles.pressed, disabled && sharedStyles.disabled]}><Text style={[styles.actionLabel, primary && styles.recordingText]}>{label}</Text><Text style={[styles.actionHint, primary && styles.recordingText]}>{hint}</Text></Pressable>;
+function Action({ label, hint, onPress, disabled, primary = false, compact = false, icon }: { label: string; hint: string; onPress: () => void; disabled: boolean; primary?: boolean; compact?: boolean; icon?: "camera" | "microphone" | "file" }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={hint} disabled={disabled} onPress={onPress} style={({ pressed }) => [compact ? styles.tool : styles.action, primary && styles.recording, pressed && sharedStyles.pressed, disabled && sharedStyles.disabled]}>{icon ? <JournalIcon name={icon} color={primary ? "#FFFFFF" : colors.coral} size={20} /> : null}<Text style={[styles.actionLabel, primary && styles.recordingText]}>{label}</Text>{!compact ? <Text style={[styles.actionHint, primary && styles.recordingText]}>{hint}</Text> : null}</Pressable>;
 }
 
 const styles = StyleSheet.create({
-  textArea: { minHeight: 140, fontSize: 17, lineHeight: 25 },
+  content: { padding: 20, paddingTop: 8, paddingBottom: 140, gap: 20 },
+  saveBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, padding: 12, borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.card },
+  saveInfo: { flex: 1, gap: 3, minWidth: 120 },
+  saveState: { fontSize: 12, color: colors.muted },
+  saveButton: { minHeight: 48, minWidth: 100, paddingHorizontal: 22, justifyContent: "center", alignItems: "center", backgroundColor: colors.coral, borderRadius: 13 },
+  saveDisabled: { backgroundColor: colors.muted },
+  saveLabel: { color: "#FFFFFF", fontSize: 15, fontWeight: "600" },
+  heading: { gap: 7, paddingHorizontal: 2 },
+  title: { color: colors.ink, fontSize: 28, fontWeight: "600" },
+  subtitle: { color: colors.muted, fontSize: 14, lineHeight: 22 },
+  paper: { padding: 16, borderWidth: 1, borderColor: colors.line, borderRadius: 22, backgroundColor: colors.card },
+  addMedia: { minHeight: 144, alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderWidth: 1, borderStyle: "dashed", borderColor: colors.peach, borderRadius: 15, backgroundColor: colors.softCoral },
+  mediaTitle: { color: colors.ink, fontSize: 16, fontWeight: "600", textAlign: "center" },
+  mediaHint: { color: colors.muted, fontSize: 13 },
+  tools: { flexDirection: "row", flexWrap: "wrap", gap: 4, paddingTop: 8, marginBottom: 14 },
+  tool: { flex: 1, minWidth: 75, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 7, borderRadius: 12, paddingHorizontal: 6, paddingVertical: 9 },
+  writing: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.line, paddingTop: 18 },
+  writingLabel: { flexDirection: "row", alignItems: "center", gap: 10 },
+  textArea: { minHeight: 120, color: colors.ink, fontSize: 16, lineHeight: 28, paddingTop: 12, paddingHorizontal: 0 },
+  supplement: { gap: 10 },
+  detailsToggle: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+  detailChevron: { fontSize: 22, color: colors.muted },
   counter: { color: colors.muted, fontSize: 12, textAlign: "right" },
   actionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   action: { width: "48%", minHeight: 76, flexGrow: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.card, borderColor: colors.line, borderWidth: 1, borderRadius: 15, gap: 4 },

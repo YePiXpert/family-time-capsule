@@ -3,14 +3,16 @@ import type { Metadata } from "next";
 import { requireFamily } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { listPeople } from "@/lib/family/service";
-import { PageHeader } from "@/components/page-header";
+import Link from "next/link";
+import { Icon } from "@/components/ui/icons";
+import styles from "./capture.module.css";
 import { InlineNotice } from "@/components/inline-notice";
 import { PersistentCaptureEditor } from "./persistent-capture-editor";
 import { getAiOperationalStatus } from "@/lib/ai/jobs";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "记录 · Family Time Capsule" };
+export const metadata: Metadata = { title: "记录这一刻 · 小美成长记" };
 
 export default async function CapturePage({ searchParams }: { searchParams: Promise<{ draft?: string }> }) {
   const context = await requireFamily();
@@ -23,12 +25,14 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
   const memberRows = canCapture ? listDraftReaders(context) : [];
 
   return (
-    <main className="page-container capture-page max-w-3xl">
-      <PageHeader
-        eyebrow="值得留下的一刻"
-        title="记录这一刻"
-        description="一张照片、一段声音，或一句想对宝宝说的话。"
-      />
+    <main className={`capture-page ${styles.page}`}>
+      <header className={styles.heading}>
+        <div>
+          <h1>记录这一刻</h1>
+          <p>照片、声音，还有你想记住的小事。</p>
+        </div>
+        <Link href="/timeline" className={styles.back}><Icon name="arrow-left" size={18} /><span>回到成长记</span></Link>
+      </header>
 
       {canCapture ? (
         <PersistentCaptureEditor

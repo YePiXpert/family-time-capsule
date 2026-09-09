@@ -51,12 +51,17 @@ test("choose photos and save without filling any field or enabling AI; same-day 
     await page.getByLabel("添加照片、视频、录音或文档").setInputFiles(path.join(__dirname, "../fixtures", filename));
     await expect(page.locator("main ol > li")).toHaveCount(1);
     await expect(page.getByText("保存后按已有授权在后台整理，不影响原件。")).toHaveCount(0);
-    for (const width of [375, 1280]) {
-      await page.setViewportSize({ width, height: 900 });
+    for (const width of [375, 768, 1280]) {
+      await page.setViewportSize({ width, height: 720 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      if (width === 375) {
-        await page.evaluate(() => window.scrollTo(0, 0));
-        await expect(page.getByRole("button", { name: "保存", exact: true })).toBeInViewport();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect(page.getByRole("button", { name: "保存", exact: true })).toBeInViewport();
+      await expect(page.locator("summary").filter({ hasText: "全家可见" })).toBeInViewport();
+      if (width >= 1024) {
+        await expect(page.locator(".mobile-app-header")).toBeHidden();
+        await expect(page.locator(".bottom-navigation")).toBeHidden();
+        const editor = await page.locator("main").boundingBox();
+        expect(editor!.width).toBeLessThanOrEqual(850);
       }
       await page.screenshot({ path: `test-results/quick-capture-${width}.png`, fullPage: true });
     }

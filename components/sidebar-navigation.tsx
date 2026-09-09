@@ -22,13 +22,14 @@ export function SidebarNavigation({ familyName, userName, role, capabilities }: 
   const secondaryNavigation = filterNavigationByCapabilities(SECONDARY_NAVIGATION, capabilities);
   return (
     <aside className="sidebar-navigation" aria-label="应用导航">
-      <div className="px-5 pb-5 pt-7">
-        <Link href="/" className="block rounded-lg focus-visible:outline-offset-4">
-          <span className="page-eyebrow">小美成长记</span>
-          <span className="mt-1 block truncate text-lg font-semibold">{familyName}</span>
+      <div className="sidebar-brand">
+        <Link href="/" className="sidebar-brand-link">
+          <span className="sidebar-brand-mark"><Icon name="book" size={24} /></span>
+          <span className="min-w-0"><span className="sidebar-brand-title">小美成长记</span>
+          <span className="sidebar-family">{familyName}</span></span>
         </Link>
       </div>
-      <nav aria-label="一级导航" className="mt-5 px-3">
+      <nav aria-label="一级导航" className="px-4">
         <ul className="space-y-1">
           {primaryNavigation.map((item) => {
             const active = isNavigationItemActive(pathname, item.href);
@@ -43,11 +44,12 @@ export function SidebarNavigation({ familyName, userName, role, capabilities }: 
           })}
         </ul>
       </nav>
-      <nav aria-label="记录" className="mt-auto px-3 py-5">
-        {secondaryNavigation.map(item => <Link key={item.href} href={item.href} className="sidebar-nav-item" aria-current={isNavigationItemActive(pathname, item.href) ? "page" : undefined}><Icon name={item.icon} size={21} /><span>{item.label}</span></Link>)}
+      <nav aria-label="记录" className="sidebar-capture">
+        {secondaryNavigation.map(item => <Link key={item.href} href={item.href} className={`sidebar-nav-item sidebar-nav-item-emphasis ${isNavigationItemActive(pathname, item.href) ? "is-active" : ""}`} aria-current={isNavigationItemActive(pathname, item.href) ? "page" : undefined}><Icon name={item.icon} size={21} /><span>{item.label}</span></Link>)}
       </nav>
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-line px-5 py-4">
-        <span className="min-w-0 truncate text-sm text-muted">{userName} · {ROLE_LABELS[role]}</span>
+      <div className="sidebar-account">
+        <span className="sidebar-avatar" aria-hidden="true">{Array.from(userName)[0]}</span>
+        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{userName}</span><span className="block text-xs text-muted">{ROLE_LABELS[role]}</span></span>
         <LogoutButton />
       </div>
     </aside>

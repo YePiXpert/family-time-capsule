@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     },
   },
 }));
+vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native", () => ({
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
   Text: "Text", TextInput: "TextInput", View: "View",
@@ -157,7 +158,7 @@ afterEach(async () => { if (tree) await act(async () => tree!.unmount()); });
 async function press(label: string) {
   await revealCaptureAction(tree!, label);
   const node = tree!.root.findAllByType("Pressable" as never).find(n =>
-    n.findAllByType("Text" as never).some(t => t.children.join("") === label));
+    n.props.accessibilityLabel === label || n.findAllByType("Text" as never).some(t => t.children.join("") === label));
   expect(node, label).toBeDefined();
   await act(async () => { node!.props.onPress(); });
 }

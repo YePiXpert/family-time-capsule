@@ -1,4 +1,6 @@
 "use client";
+import styles from "./capture.module.css";
+import { Icon } from "@/components/ui/icons";
 import { RecordingMeter } from "@/components/recording-meter";
 import { ImportedVideoPreview } from "@/components/imported-video-preview";
 import { classifyImportedFile } from "@/mobile/src/storage/import-policy";
@@ -275,37 +277,47 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
       change({ occurredAt: anchor ? anchor.toISOString() : null });
     } catch { setNotice("时间格式不正确。"); }
   };
-  return <div className="mt-6 space-y-4 pb-20 sm:pb-0">
-    <p role="status">{saved ? "本机已保存" : "正在写入本机…"} · {draft.status === "published" ? "记忆已保存" : draft.serverRevision ? "草稿已同步" : "等待发送"}</p>
+  return <div className={styles.editor}>
+    <div className={styles.paper}>
+    <div className={styles.paperHeading}><span>这一刻的记录</span>
+    <p role="status" className={styles.saveState}><Icon name={saved ? "check" : "edit"} size={16} />{saved ? "本机已保存" : "正在写入本机…"} · {draft.status === "published" ? "记忆已保存" : draft.serverRevision ? "草稿已同步" : "仅存本机"}</p></div>
     {diskError && <div role="alert" className="rounded-xl border border-red-700 p-4 text-red-800">{diskError}<button className={button} onClick={() => { failed.current = false; void store(current.current!).catch(() => {}); }}>重试本机保存</button></div>}
-    {notice && <p role="status" className="text-sm text-ink-muted">{notice}</p>}
+    {notice && <p role="status" className={styles.notice}>{notice}</p>}
     {draft.memoryEventId && draft.organizeOnPublish && <OrganizerControl kind="memory_event" id={draft.memoryEventId} />}
-    {draft.memoryEventId && <div className="flex flex-wrap gap-3"><Link href={`/memories/${draft.memoryEventId}`} className="ui-button-primary">查看这条记忆</Link><button className={button} disabled={syncing || recording || !!diskError} onClick={() => void create()}>新建一件事</button></div>}
-    <fieldset disabled={!editable} className="space-y-5">
-      <div className="flex flex-wrap gap-2">
-        <label className={`${button} cursor-pointer`}>相册<input aria-label="添加照片、视频、录音或文档" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
-        <details><summary className={`${button} cursor-pointer`}>拍摄</summary><div className="flex flex-wrap gap-2 py-2">
-          <label className={`${button} cursor-pointer`}>拍照<input aria-label="拍照" type="file" accept="image/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
-          <label className={`${button} cursor-pointer`}>录像<input aria-label="录像" type="file" accept="video/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
-        </div></details>
-        <button type="button" className={button} onClick={() => void toggleRecording()}>{recording ? "停止录音并加入这件事" : "录音"}</button>
-        <label className={`${button} cursor-pointer`}>文件<input aria-label="添加文件" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+    {draft.status === "published" && <p className={styles.publishedAudience}><Icon name={content.visibility === "private" ? "lock" : "people"} size={18} />{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}</p>}
+    {draft.memoryEventId && <div className="mb-5 flex flex-wrap gap-3"><Link href={`/memories/${draft.memoryEventId}`} className="ui-button-primary">查看这条记忆</Link><button className={button} disabled={syncing || recording || !!diskError} onClick={() => void create()}>新建一件事</button></div>}
+    <fieldset disabled={!editable} className={styles.compose}>
+      <div className={styles.mediaTools}>
+        <label className={`${styles.addMedia} ${content.items.length ? styles.addMediaCompact : ""}`}>
+          <span className={styles.mediaIcon}><Icon name="image" size={30} /></span>
+          <span><strong>{content.items.length ? "继续添加照片或视频" : "添加照片或视频"}</strong><span className={styles.mediaHint}>从相册选入，留住这一刻</span></span>
+          <span className={styles.addMark}><Icon name="capture" size={22} /></span>
+          <input aria-label="添加照片、视频、录音或文档" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
+        </label>
+        <div className={styles.tools}>
+          <details className={styles.camera}><summary className={styles.tool}><Icon name="camera" size={20} />拍摄</summary><div className={styles.cameraMenu}>
+            <label className={`${button} cursor-pointer`}>拍照<input aria-label="拍照" type="file" accept="image/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+            <label className={`${button} cursor-pointer`}>录像<input aria-label="录像" type="file" accept="video/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+          </div></details>
+          <button type="button" className={styles.tool} onClick={() => void toggleRecording()}><Icon name="microphone" size={20} />{recording ? "停止录音并加入这件事" : "录音"}</button>
+          <label className={styles.tool}><Icon name="story" size={20} />文件<input aria-label="添加文件" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+        </div>
       </div>
       {recording ? <RecordingMeter streamRef={recordingStream} /> : null}
-      <label className="block">补充一句话（可选）<textarea aria-label="写下这一刻" className={`${field} mt-2`} rows={2} maxLength={5000} value={content.text} onChange={e => change({ text: e.target.value })} placeholder="想说点什么？也可以不写，直接保存素材。" /></label>
-      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{content.items.map((item, index) => {
+      <label className={styles.writing}><span>想留下的话<span className={styles.optional}>选填</span></span><textarea aria-label="写下这一刻" className={styles.textarea} rows={3} maxLength={5000} value={content.text} onChange={e => change({ text: e.target.value })} placeholder="今天的你，又带来了什么小惊喜？" /></label>
+      <ol className={styles.attachments}>{content.items.map((item, index) => {
         const preview = previews[item.id], previous = content.items[index - 1];
         const canPair = previous && !previous.livePhotoGroupId && !item.livePhotoGroupId && previews[previous.id]?.type.startsWith("image/") && preview?.type.startsWith("video/");
-        return <li key={item.id} className="rounded-xl border border-line p-4">
-          {preview?.type.startsWith("image/") ? <img src={preview.url} alt={item.caption || "这件事的照片"} className="h-40 w-full rounded-lg object-contain" /> : preview?.type.startsWith("audio/") ? <audio controls src={preview.url} aria-label="重听这段录音" /> : preview?.type.startsWith("video/") ? <ImportedVideoPreview key={preview.url} src={preview.url} /> : preview?.url ? <a href={preview.url} target="_blank" rel="noreferrer" className={button}>打开素材</a> : null}
-          <p>{item.preservationState === "missing" ? "原件已移除，请删除这项引用或补充素材" : preview?.name || "正在读取原件"} · {item.assetId ? "服务器已收到原件" : "原件已在本机"}</p>
+        return <li key={item.id} className={styles.attachment}>
+          {preview?.type.startsWith("image/") ? <img src={preview.url} alt={item.caption || "这件事的照片"} className={styles.preview} /> : preview?.type.startsWith("audio/") ? <audio controls src={preview.url} aria-label="重听这段录音" /> : preview?.type.startsWith("video/") ? <ImportedVideoPreview key={preview.url} src={preview.url} /> : preview?.url ? <a href={preview.url} target="_blank" rel="noreferrer" className={button}>打开素材</a> : null}
+          <p className={styles.fileCaption}>{item.preservationState === "missing" ? "原件已移除，请删除这项引用或补充素材" : preview?.name || "正在读取原件"} · {item.assetId ? "服务器已收到原件" : "原件已在本机"}</p>
           {item.livePhotoGroupId && <p>Live Photo · {item.livePhotoRole === "image" ? "静态照片" : "动态原片"}（移除时整组操作）</p>}
           {canPair && <button type="button" className={button} onClick={() => change(pairDraftItems(content, previous.id, item.id, crypto.randomUUID()))}>确认与上一张照片组成 Live Photo</button>}
           <details><summary className="min-h-11 cursor-pointer py-2">说明与调整（可选）</summary><label>素材说明<input className={field} value={item.caption} maxLength={2000} onChange={e => change({ items: content.items.map(i => i.id === item.id ? { ...i, caption: e.target.value } : i) })} /></label>
           <div className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} disabled={index === 0} onClick={() => { const items = [...content.items]; [items[index - 1], items[index]] = [items[index]!, items[index - 1]!]; change({ items }); }}>上移</button><button type="button" className={button} disabled={index === content.items.length - 1} onClick={() => { const items = [...content.items]; [items[index], items[index + 1]] = [items[index + 1]!, items[index]!]; change({ items }); }}>下移</button><button type="button" className={button} onClick={() => change({ coverItemId: item.id })}>{content.coverItemId === item.id ? "已选为封面" : "设为封面"}</button><button type="button" className={button} onClick={() => change(removeDraftItem(content, item.id))}>从草稿移除</button></div></details>
         </li>;
       })}</ol>
-      <details className="rounded-xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2">补充信息（可选）</summary><div className="space-y-4">
+      <details className={styles.details}><summary><Icon name="edit" size={18} /><span>补充信息（可选）</span><Icon name="chevron-right" size={16} /></summary><div className="space-y-4 pb-4">
       <label className="block">标题<input className={field} value={content.title} maxLength={100} onChange={e => change({ title: e.target.value })} /></label>
       <div className="block space-y-2">
         <label className="block">时间记得多清楚<select className={field} value={content.occurredAtPrecision} onChange={e => change({ occurredAtPrecision: e.target.value as OccurredAtPrecision, ...(e.target.value === "unknown" ? { occurredAt: null } : {}) })}><option value="exact">精确到分</option><option value="approximate">大致时间</option><option value="date_only">只记得日期</option><option value="month">只记得年月</option><option value="year">只记得年份</option><option value="unknown">时间记不得了</option></select></label>
@@ -316,21 +328,22 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
       <label className="block">地点<input className={field} value={content.locationText} maxLength={200} onChange={e => change({ locationText: e.target.value })} /></label>
       <fieldset><legend>人物</legend>{people.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.participantIds.includes(p.id)} onChange={e => change({ participantIds: e.target.checked ? [...content.participantIds, p.id] : content.participantIds.filter(id => id !== p.id) })} />{p.displayName}</label>)}</fieldset>
       </div></details>
-      <p className="text-sm text-ink-muted">{captureDateSummary(content, draft.captureTimeEdited, timezone)}</p>
-      <details><summary className="min-h-11 cursor-pointer py-2">{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}</summary>
+      <p className={styles.dateNote}>{captureDateSummary(content, draft.captureTimeEdited, timezone)}</p>
+
+    </fieldset>
+    </div>
+    {draft.status !== "published" && <div className="space-y-3">
+      {canArchive && organizer.ready && <p className="text-sm text-ink-muted">保存后按已有授权在后台整理，不影响原件。</p>}
+      <div className={styles.saveBar}><fieldset disabled={!editable} className={styles.readerControl}>      <details className={styles.privacy}><summary><Icon name={content.visibility === "private" ? "lock" : "people"} size={20} />{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}<Icon name="chevron-right" size={15} /></summary><div className={styles.privacyPanel}>
       <label className="block">保存后的读者<select className={field} value={content.visibility} onChange={e => change({ visibility: e.target.value as DraftContent["visibility"], ...(e.target.value === "members" ? {} : { readerUserIds: [] }) })}><option value="family">全家</option><option value="members">指定成员</option><option value="private">仅自己</option></select></label>
       {content.visibility === "members" && <fieldset><legend>可以阅读的登录成员（始终包含自己）</legend>{members.map(m => <label key={m.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.readerUserIds.includes(m.id)} onChange={e => change({ readerUserIds: e.target.checked ? [...content.readerUserIds, m.id] : content.readerUserIds.filter(id => id !== m.id) })} />{m.name}</label>)}
         {content.readerUserIds.filter(id => !members.some(m => m.id === id)).map(id => <label key={id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked onChange={() => change({ readerUserIds: content.readerUserIds.filter(readerId => readerId !== id) })} />已选成员（待联网核对，点按移除）</label>)}
       </fieldset>}
       {content.visibility !== "family" && <p className="text-sm text-ink-muted">草稿文字和新素材在发布前仅自己可见，发布后按这里选择的读者开放。原本已全家共享的素材不会因此收回旧共享。</p>}
-      </details>
-    </fieldset>
-    {draft.status !== "published" && <div className="space-y-3">
-      {canArchive && organizer.ready && <p className="text-sm text-ink-muted">保存后按已有授权在后台整理，不影响原件。</p>}
-      <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex items-center gap-3 border-t border-line bg-surface px-4 py-3 sm:static sm:border-0 sm:bg-transparent sm:p-0"><span className="shrink-0 text-sm text-muted sm:hidden">{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}</span>
-      <button className="ui-button-primary min-h-12 w-full sm:w-auto" disabled={syncing || !!diskError || recording || (!content.text.trim() && !content.items.length)} onClick={() => void save(canArchive, !canArchive && content.visibility === "family", canArchive && (draft.status === "queued" ? draft.organizeOnPublish === true : automaticRequested))}>{syncing ? "正在保存…" : draft.status === "queued" ? "重试保存" : "保存"}</button></div>
+      </div></details></fieldset>
+      <button className={`ui-button-primary ${styles.saveButton}`} disabled={syncing || !!diskError || recording || (!content.text.trim() && !content.items.length)} onClick={() => void save(canArchive, !canArchive && content.visibility === "family", canArchive && (draft.status === "queued" ? draft.organizeOnPublish === true : automaticRequested))}>{syncing ? "正在保存…" : draft.status === "queued" ? "重试保存" : "保存"}<Icon name="check" size={18} /></button></div>
       {!canArchive && <p className="text-sm text-ink-muted">{content.visibility === "family" ? "保存到家庭待整理列表，家人可以继续补充。" : "先保存为私密草稿，稍后可以继续。"}</p>}
-      <details><summary className="min-h-11 cursor-pointer py-2">草稿</summary>
+      <details className={styles.drafts}><summary><Icon name="archive" size={18} />草稿<Icon name="chevron-right" size={16} /></summary>
     <details><summary className="min-h-11 cursor-pointer">继续草稿（{drafts.filter(d => d.id !== draft.id && (d.status === "editing" || d.status === "queued")).length}）</summary>
       {drafts.filter(d => d.id !== draft.id && (d.status === "editing" || d.status === "queued")).map(d => <button key={d.id} className={`${button} m-1`} disabled={syncing || recording} onClick={() => void resume(d)}>{d.content.title || d.content.text.slice(0, 30) || "未命名的一件事"}</button>)}
       {serverDrafts.filter(d => !drafts.some(l => l.id === d.id)).map(d => <button key={d.id} className={`${button} m-1`} disabled={syncing || recording} onClick={() => void continueServer(d).catch(e => setNotice(message(e)))}>{d.title || "服务器草稿"}</button>)}

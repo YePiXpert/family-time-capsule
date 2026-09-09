@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     },
   },
 }));
+vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Alert: { alert: mocks.alert },
@@ -126,7 +127,7 @@ async function render(intent?: string) {
 async function press(label: string) {
   await revealCaptureAction(tree!, label);
   const button = tree!.root.findAll((n) => String(n.type) === "Pressable" &&
-    n.findAll((c) => String(c.type) === "Text" && c.children.join("") === label).length > 0)[0]!;
+    (n.props.accessibilityLabel === label || n.findAll((c) => String(c.type) === "Text" && c.children.join("") === label).length > 0))[0]!;
   expect(button).toBeTruthy();
   expect(button.props.disabled).toBeFalsy();
   await act(async () => { button.props.onPress(); });

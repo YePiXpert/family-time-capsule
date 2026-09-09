@@ -22,6 +22,9 @@ export type IconName =
   | "archive"
   | "chevron-right"
   | "arrow-left"
+  | "camera"
+  | "lock"
+  | "check"
   | "spark";
 
 type IconProps = Omit<SVGProps<SVGSVGElement>, "children"> & {
@@ -51,6 +54,9 @@ const paths: Record<IconName, React.ReactNode> = {
   archive: <><path d="M4 8h16v12H4zM3 4h18v4H3zM9 12h6"/></>,
   "chevron-right": <path d="m9 5 7 7-7 7"/>,
   "arrow-left": <><path d="m10 5-7 7 7 7M3 12h18"/></>,
+  camera: <><path d="M8 5l1.5-2h5L16 5h4a1 1 0 0 1 1 1v13H3V6a1 1 0 0 1 1-1z"/><circle cx="12" cy="12" r="4"/></>,
+  lock: <><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/></>,
+  check: <path d="m5 12 4 4L19 6"/>,
   spark: <><path d="M12 2.5c.5 5 2.5 7 7.5 7.5-5 .5-7 2.5-7.5 7.5-.5-5-2.5-7-7.5-7.5 5-.5 7-2.5 7.5-7.5Z"/><path d="M19 15.5c.2 2 1 2.8 3 3-2 .2-2.8 1-3 3-.2-2-1-2.8-3-3 2-.2 2.8-1 3-3Z"/></>,
 };
 

@@ -546,7 +546,7 @@ select {
     bottom: 0;
     left: env(safe-area-inset-left);
     display: flex;
-    width: 16.5rem;
+    width: 14rem;
     flex-direction: column;
     border-right: 1px solid var(--line);
     background: var(--surface);
@@ -608,7 +608,7 @@ select {
 
   .app-shell-content {
     min-height: 100dvh;
-    margin-left: calc(16.5rem + env(safe-area-inset-left));
+    margin-left: calc(14rem + env(safe-area-inset-left));
     padding-bottom: 0;
   }
 
@@ -634,10 +634,6 @@ select {
 .bottom-nav-item > span:first-child { display: flex; align-items: center; justify-content: center; min-width: 3.25rem; padding: 0.35rem; border-radius: 999px; }
 .bottom-nav-item.is-active > span:first-child { background: var(--accent-soft); }
 .floating-capture { position: absolute; bottom: calc(100% + 0.9rem); right: 0; display: inline-flex; min-height: 3.25rem; align-items: center; gap: 0.5rem; border: 1px solid var(--line); border-radius: 999px; padding: 0.65rem 1.2rem; background: var(--surface); color: var(--accent); font-weight: 650; box-shadow: 0 4px 16px color-mix(in srgb, var(--foreground) 7%, transparent); }
-.capture-page textarea { min-height: 8rem; line-height: 1.8; }
-.capture-page fieldset, .capture-page input, .capture-page select, .capture-page textarea { background: var(--surface); }
-.capture-page { padding-bottom: 6rem; }
-.capture-page [class*="fixed inset-x"] { bottom: calc(5.7rem + env(safe-area-inset-bottom)); }
 .settings-page > details { background: var(--surface); border-radius: var(--journal-radius-card); }
 .settings-page > details > summary { display: flex; align-items: center; justify-content: space-between; }
 .settings-page > details > summary::after { content: "+"; color: var(--accent); font-size: 1.25rem; }
@@ -653,5 +649,22 @@ select {
   .growth-hero { animation: journal-arrive 180ms ease-out; }
   @keyframes journal-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 }
-@media (min-width: 640px) { .capture-page [class*="fixed inset-x"] { bottom: auto; } }
 @media (min-width: 1024px) { .app-shell-content, [data-display-mode="simple"] .app-shell-content { padding-bottom: 0; } }
+
+/* Keep shell breakpoints explicit: unlayered component rules outrank Tailwind utilities. */
+@media (min-width: 1024px) {
+  .mobile-app-header, .bottom-navigation { display: none; }
+  .sidebar-navigation { background: var(--surface); }
+  .sidebar-nav-item { min-height: 3.1rem; padding: .7rem 1rem; gap: .85rem; font-size: .9375rem; }
+  .sidebar-nav-item.is-active { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
+  .sidebar-nav-item-emphasis { justify-content: center; min-height: 3.1rem; background: var(--accent); color: #fff; border-radius: 1rem; }
+  .sidebar-nav-item-emphasis:hover, .sidebar-nav-item-emphasis.is-active { background: var(--accent); color: #fff; }
+}
+.sidebar-brand { padding: 2rem 1.4rem 2.5rem; }
+.sidebar-brand-link { display: flex; align-items: center; gap: .7rem; }
+.sidebar-brand-mark { display: flex; align-items: center; justify-content: center; width: 2.75rem; height: 3rem; border-radius: .85rem; background: var(--accent-soft); color: var(--accent); flex: none; }
+.sidebar-brand-title { display: block; font-size: 1rem; font-weight: 650; }
+.sidebar-family { display: block; margin-top: .15rem; color: var(--muted); font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-capture { margin-top: 1.6rem; padding: 0 1rem; }
+.sidebar-account { display: flex; align-items: center; gap: .65rem; margin-top: auto; padding: 1.25rem 1rem; border-top: 1px solid var(--line); }
+.sidebar-avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: .875rem; }
