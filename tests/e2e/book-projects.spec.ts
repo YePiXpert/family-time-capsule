@@ -197,7 +197,7 @@ test("月份选材生成新册，复制保留编辑，日期调整同步到日�
   await page.getByRole("button", { name: "复制成新册", exact: true }).click();
   await expect(page).not.toHaveURL(draftUrl);
   await expect(page).toHaveURL(/\/books\/[a-f0-9-]+$/);
-  await expect(page.getByText("虚构第一周手工整理", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("年册预览").getByText("虚构第一周手工整理", { exact: true })).toBeVisible();
   const current = await (await page.request.get(`/api/mobile/v1/memories/${sourceIds[0]}`)).json();
   expect((await page.request.patch(`/api/mobile/v1/memories/${sourceIds[0]}`, { data: { expectedRevision: current.titleRevision, mutationId: randomUUID(), occurredAtWall: "2026-09-10T08:00", occurredAtPrecision: "exact" } })).status()).toBe(200);
   await page.goto("/timeline/calendar?month=2026-09");
