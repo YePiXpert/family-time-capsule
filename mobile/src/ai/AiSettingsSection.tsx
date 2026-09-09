@@ -95,7 +95,12 @@ function SettingsContent({ scope }: { scope: string }) {
     <Text style={sharedStyles.cardTitle}>AI 整理与隐私</Text>
     <Text style={sharedStyles.body}>{!status ? "读取服务器状态" : !status.valid ? "配置无效，请联系部署管理员" : !status.configured ? "AI 未配置或已关闭" : `接收服务：${status.provider}`}</Text>
     {status?.configured ? <Text style={sharedStyles.body}>{status.workerAvailable ? "后台处理服务可用" : "后台处理服务不可用；原件仍可打开和播放"}</Text> : null}
-    {status?.quota ? <Text style={sharedStyles.body}>今日用量（UTC {status.quota.day}）：请求 {status.quota.used.requests}/{status.quota.limits.maxRequests || "不限"} · 图片 {status.quota.used.images}/{status.quota.limits.maxImages || "不限"} · 音频 {status.quota.used.audioSeconds} 秒/{status.quota.limits.maxAudioSeconds || "不限"}。0 表示不限，仍计数；搜索和诊断共用额度，结果不明的外发也计入。</Text> : null}
+    {status?.quota ? <View>
+      {Object.values(status.quota.limits).every(limit => limit === 0) ? <>
+        <Text style={sharedStyles.body}>自用模式 · 不设每日限额</Text>
+        <Text style={sharedStyles.body}>今日已用（UTC {status.quota.day}）：请求 {status.quota.used.requests} 次 · 图片 {status.quota.used.images} 张 · 音频 {status.quota.used.audioSeconds} 秒。仅统计用量，不按每日额度拦截。</Text>
+      </> : <Text style={sharedStyles.body}>今日用量（UTC {status.quota.day}）：请求 {status.quota.used.requests}/{status.quota.limits.maxRequests || "不限"} · 图片 {status.quota.used.images}/{status.quota.limits.maxImages || "不限"} · 音频 {status.quota.used.audioSeconds} 秒/{status.quota.limits.maxAudioSeconds || "不限"}。</Text>}
+    </View> : null}
     {error ? <Text accessibilityRole="alert" style={sharedStyles.warningText}>{error}</Text> : null}
     {status?.capabilities.map(row => <View key={row.capability}>
       <Text style={sharedStyles.body}>{labels[row.capability]} · {!row.available ? "未配置" : row.consented ? "已同意" : "等待同意"}</Text>

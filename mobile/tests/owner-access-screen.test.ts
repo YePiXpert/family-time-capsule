@@ -46,3 +46,13 @@ it.each(["owner", "admin", "editor", "contributor", "viewer"])("limits invitatio
     expect(mocks.navigate).toHaveBeenCalledWith("InviteFamily");
   }
 });
+
+it.each([0, 100])("distinguishes unlimited usage from an explicitly configured request limit of %s", async maxRequests => {
+  mocks.state.viewer.role = "owner";
+  mocks.fetch.mockResolvedValue({
+    valid: true, configured: true, provider: "Synthetic provider", workerAvailable: true, capabilities: [],
+    quota: { day: "2026-09-09", limits: { maxRequests, maxImages: 0, maxAudioSeconds: 0 }, used: { requests: 3, images: 1, audioSeconds: 2 } },
+  });
+  await act(async () => { tree = create(createElement(AiSettingsSection)); });
+  expect(JSON.stringify(tree!.toJSON()).includes("自用模式 · 不设每日限额")).toBe(maxRequests === 0);
+});

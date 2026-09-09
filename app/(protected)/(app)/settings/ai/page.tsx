@@ -111,8 +111,11 @@ export default async function AiSettingsPage() {
       </p>}
       {operational?.quota && <section aria-label="AI 每日用量" className="mt-4 rounded-xl border border-foreground/10 p-4 text-sm">
         <h2 className="font-medium">今日 AI 用量（UTC {operational.quota.day}）</h2>
-        <p>请求 {operational.quota.used.requests} / {operational.quota.limits.maxRequests || "不限"} · 图片 {operational.quota.used.images} / {operational.quota.limits.maxImages || "不限"} · 音频 {operational.quota.used.audioSeconds} 秒 / {operational.quota.limits.maxAudioSeconds || "不限"}</p>
-        <p className="mt-2 text-foreground/60">限额 0 表示不限，仍记录用量；搜索转换和诊断共用额度。音频向上取整；已发出但结果不明的请求保守计入，下一个 UTC 日重新计数。</p>
+        {Object.values(operational.quota.limits).every(limit => limit === 0) ? <>
+          <p>自用模式 · 不设每日限额</p>
+          <p>今日已用：请求 {operational.quota.used.requests} 次 · 图片 {operational.quota.used.images} 张 · 音频 {operational.quota.used.audioSeconds} 秒。</p>
+          <p className="mt-2 text-foreground/60">仅统计用量，不按每日额度拦截。</p>
+        </> : <p>请求 {operational.quota.used.requests} / {operational.quota.limits.maxRequests || "不限"} · 图片 {operational.quota.used.images} / {operational.quota.limits.maxImages || "不限"} · 音频 {operational.quota.used.audioSeconds} 秒 / {operational.quota.limits.maxAudioSeconds || "不限"}</p>}
       </section>}
 
       {disclosure.valid && disclosure.capabilities && (
