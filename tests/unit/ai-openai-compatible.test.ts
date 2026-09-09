@@ -430,6 +430,7 @@ describe("Responses API profile (AI-2)", () => {
       return jsonResponse({
         model: "provider-resolved-text-model",
         status: "completed",
+        incomplete_details: null,
         output: [
           {
             type: "message",
@@ -512,6 +513,7 @@ describe("Responses API profile (AI-2)", () => {
       calls.push({ input, init });
       return jsonResponse({
         status: "completed",
+        incomplete_details: null,
         output: [
           { type: "message", content: [{ type: "output_text", text: "a red circle" }] },
         ],
@@ -541,6 +543,20 @@ describe("Responses API profile (AI-2)", () => {
     expect(body.store).toBe(false);
     expect(body.max_output_tokens).toBe(64);
     expect(result.text).toBe("a red circle");
+  });
+
+  it.each([
+    { status: "incomplete", incomplete_details: null },
+    { status: "failed", incomplete_details: null },
+    { status: "in_progress", incomplete_details: null },
+    { status: "completed", incomplete_details: { reason: "max_output_tokens" } },
+  ])("rejects unfinished Responses output: %j", async (state) => {
+    const assistant = createAssistant(async () => jsonResponse({
+      ...state,
+      output: [{ type: "message", content: [{ type: "output_text", text: "partial" }] }],
+    }), { AI_TEXT_PROFILE: "responses" });
+    await expect(assistant.generateText({ messages: [{ role: "user", content: "fixture" }] }))
+      .rejects.toMatchObject({ code: "ai_response_invalid" });
   });
 
   it("text stays on chat/completions by default and rejects invalid profile values", async () => {

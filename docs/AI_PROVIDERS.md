@@ -93,7 +93,7 @@ Fake 输出永远不得进入生产档案或伪装成用户确认内容。
 
 | 变量 | 规则 |
 | --- | --- |
-| `AI_PROVIDER` | 未设置、`disabled` 或 `none` 表示关闭；唯一启用值是 `openai-compatible` |
+| `AI_PROVIDER` | 未设置、`disabled` 或 `none` 表示关闭；`openai-compatible` 使用单通道，`dual` 使用 CPA + MiMo 双通道 |
 | `AI_BASE_URL` | 启用时必填；可包含 `/v1` 路径；不得含账号、密码、query 或 fragment；远程地址必须 HTTPS，HTTP 仅允许 loopback |
 | `AI_API_KEY` | 启用时必填；只用于发送 Bearer 请求；不得写入数据库、页面、日志、测试 fixture 或导出 |
 | `AI_PROVIDER_LABEL` | 可选的用户可读供应商名称，默认 `OpenAI-compatible endpoint` |
@@ -246,3 +246,11 @@ Responses 文字与图片请求设置 `store: false`。
 10 MB 在编码/预留前拒绝，`finish_reason` 不是 `stop` 则拒绝不完整结果。
 不生成供应商没有提供的逐段时间戳。HTTP fixture 与真实媒体探测验证的是
 协议和边界，三项真实模型链路仍分别待专用凭据验证。
+
+## 2026-09-09 CPA 实际接口验证
+
+用户指定的 CPA 接口已确认提供 `gpt-5.6-luna`。使用应用真实适配器、
+Responses profile 和无家庭内容的合成图片/算术题，图片与文字语义诊断均通过。
+首次诊断发现完成响应的 `incomplete_details: null` 被误判为截断，已修复；
+非完成状态、非空截断信息和拒绝输出继续拒绝，新增回归覆盖。
+该验证不代表家庭素材质量、整条整理任务或小米语音链路已完成真实验收。

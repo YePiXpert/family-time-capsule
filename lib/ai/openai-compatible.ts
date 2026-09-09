@@ -278,7 +278,8 @@ function parseResponsesResponse(
   if (!isObject(value) || !Array.isArray(value.output) || value.output.length === 0) {
     throw responseError(capability, "AI provider responses output was missing.");
   }
-  if (value.status === "incomplete" || value.incomplete_details !== undefined) {
+  // Completed Responses use null here; only an actual detail signals truncation.
+  if ((value.status !== undefined && value.status !== "completed") || value.incomplete_details != null) {
     throw responseError(capability, "AI provider refused or did not finish the requested output.");
   }
   const texts: string[] = [];
