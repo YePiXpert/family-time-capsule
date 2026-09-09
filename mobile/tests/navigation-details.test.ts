@@ -50,10 +50,11 @@ describe("native navigation and reading details", () => {
       role,
       personId,
       canCapture: role !== "viewer",
-      canReviewInbox: role === "admin" || role === "editor",
+      canReviewInbox: role === "owner" || role === "admin" || role === "editor",
       canCreateContributions: role !== "viewer",
-      canEditEvents: role === "admin" || role === "editor",
+      canEditEvents: role === "owner" || role === "admin" || role === "editor",
     });
+    expect(eligibleContributionAuthors(viewer("owner", "person-a"), people).map((person) => person.id)).toEqual(["person-a", "person-b"]);
     expect(eligibleContributionAuthors(viewer("editor", "person-a"), people).map((person) => person.id)).toEqual(["person-a", "person-b"]);
     expect(eligibleContributionAuthors(viewer("contributor", "person-a"), people).map((person) => person.id)).toEqual(["person-a"]);
     expect(eligibleContributionAuthors(viewer("viewer", "person-a"), people)).toEqual([]);

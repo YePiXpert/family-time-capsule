@@ -113,7 +113,7 @@ function isViewer(value: unknown): value is Viewer {
   return (
     isString(value.id, 128) &&
     isString(value.name, 200) &&
-    ["admin", "editor", "contributor", "viewer"].includes(
+    ["owner", "admin", "editor", "contributor", "viewer"].includes(
       String(value.role),
     ) &&
     isNullableString(value.personId, 128) &&

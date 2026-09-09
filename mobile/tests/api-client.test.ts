@@ -39,6 +39,19 @@ function validPage(): SyncPage {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("native API client", () => {
+  it.each(["owner", "admin", "editor", "contributor", "viewer"] as const)("accepts the server's %s role without losing capability flags", role => {
+    const page = validPage();
+    page.viewer.role = role;
+    page.viewer.canCapture = role !== "viewer";
+    page.viewer.canEditEvents = ["owner", "admin", "editor"].includes(role);
+    expect(parseSyncPage(page).viewer).toEqual(page.viewer);
+  });
+
+  it("rejects unknown roles instead of granting owner access", () => {
+    const page = validPage();
+    expect(() => parseSyncPage({ ...page, viewer: { ...page.viewer, role: "superuser" } })).toThrow();
+  });
+
   it("persists the share batch before submitting its text", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "batch-1" })))

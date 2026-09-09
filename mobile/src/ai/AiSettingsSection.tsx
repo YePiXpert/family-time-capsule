@@ -14,7 +14,7 @@ const content = { text: "所选文字、分析或转录中最少必要的内容"
 export function AiSettingsSection() {
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
-  if (!credentials || !scope || !["admin", "editor"].includes(viewer?.role ?? "")) return <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>AI 默认关闭；服务器同步授权与 AI 外部处理授权分别管理。保存、查看与播放无需等待 AI。</Text></View>;
+  if (!credentials || !scope || !["owner", "admin", "editor"].includes(viewer?.role ?? "")) return <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>AI 默认关闭；服务器同步授权与 AI 外部处理授权分别管理。保存、查看与播放无需等待 AI。</Text></View>;
   return <SettingsContent key={scope} scope={scope} />;
 }
 

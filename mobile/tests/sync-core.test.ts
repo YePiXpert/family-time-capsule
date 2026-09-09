@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../src/api/client";
+import { ApiError, parseSyncPage } from "../src/api/client";
 import {
   syncArchiveWithDependencies,
   type SyncDependencies,
@@ -87,6 +87,18 @@ function dependencies(): SyncDependencies {
 beforeEach(() => vi.restoreAllMocks());
 
 describe("offline sync core", () => {
+  it("commits the owner snapshot so recording remains enabled after login", async () => {
+    const deps = dependencies();
+    const ownerPage = page();
+    ownerPage.viewer.role = "owner";
+    vi.mocked(deps.fetchSyncPage).mockImplementation(async () => parseSyncPage(ownerPage));
+    await syncArchiveWithDependencies(credentials, deps);
+    expect(deps.applySyncPage).toHaveBeenCalledWith(credentials, expect.objectContaining({
+      viewer: expect.objectContaining({ role: "owner", canCapture: true, canEditEvents: true }),
+    }), expect.anything());
+    expect(deps.finishSyncSnapshot).toHaveBeenCalled();
+  });
+
   it("passes text batch provenance and retains failed captures for retry", async () => {
     const deps = dependencies();
     vi.mocked(deps.listOutbox).mockResolvedValue([{

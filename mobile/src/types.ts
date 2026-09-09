@@ -8,7 +8,7 @@ export type Credentials = {
 export type Viewer = {
   id: string;
   name: string;
-  role: "admin" | "editor" | "contributor" | "viewer";
+  role: "owner" | "admin" | "editor" | "contributor" | "viewer";
   personId: string | null;
   canCapture: boolean;
   canReviewInbox: boolean;

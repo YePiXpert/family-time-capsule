@@ -12,7 +12,7 @@ export function eligibleContributionAuthors(
   people: readonly Person[],
 ): Person[] {
   if (!viewer?.canCreateContributions) return [];
-  if (viewer.role === "admin" || viewer.role === "editor") return [...people];
+  if (viewer.role === "owner" || viewer.role === "admin" || viewer.role === "editor") return [...people];
   return viewer.personId
     ? people.filter((person) => person.id === viewer.personId)
     : [];

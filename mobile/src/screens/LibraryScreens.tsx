@@ -71,8 +71,8 @@ function records(value: unknown): Record<string, unknown>[] {
 
 function canWriteDomain(domain: MobileLibraryDomain, viewer: ReturnType<typeof useApp>["viewer"]): boolean {
   if (!viewer) return false;
-  if (domain === "people") return viewer.role === "admin";
-  if (domain === "stories" || domain === "capsules") return viewer.role === "admin" || viewer.role === "editor";
+  if (domain === "people") return viewer.role === "owner" || viewer.role === "admin";
+  if (domain === "stories" || domain === "capsules") return viewer.role === "owner" || viewer.role === "admin" || viewer.role === "editor";
   if (domain === "requests" || domain === "portals") return viewer.canCreateContributions;
   return viewer.canCapture;
 }
@@ -425,7 +425,7 @@ export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
     return <>
       <Text style={sharedStyles.eyebrow}>Person</Text><Text style={sharedStyles.title}>{detail.title}</Text>
       <Text style={sharedStyles.intro}>{stringValue(detail.relationToChild) ?? "家人"}{stringValue(detail.birthDate) ? ` · ${stringValue(detail.birthDate)}` : ""}</Text>
-      {viewer?.role === "admin" ? editing ? <View style={sharedStyles.card}>
+      {(viewer?.role === "owner" || viewer?.role === "admin") ? editing ? <View style={sharedStyles.card}>
         <TextInput onChangeText={setName} placeholder="姓名" style={sharedStyles.input} value={name} />
         <TextInput onChangeText={setRelation} placeholder="关系" style={sharedStyles.input} value={relation} />
         <TextInput onChangeText={setBirthDate} placeholder="YYYY-MM-DD" style={sharedStyles.input} value={birthDate} />

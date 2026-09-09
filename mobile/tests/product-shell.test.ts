@@ -34,6 +34,7 @@ describe("native product shell", () => {
   });
 
   it.each([
+    ["owner", true, true],
     ["admin", true, true],
     ["editor", true, true],
     ["contributor", true, false],
@@ -47,7 +48,7 @@ describe("native product shell", () => {
       canCapture,
       canReviewInbox,
       canCreateContributions: role !== "viewer",
-      canEditEvents: role === "admin" || role === "editor",
+      canEditEvents: role === "owner" || role === "admin" || role === "editor",
     };
     expect(resolveNativeCaptureAccess(true, viewer)).toBe(canCapture ? "enabled" : "readonly");
     expect(canReviewMobileInbox(viewer)).toBe(canReviewInbox);
