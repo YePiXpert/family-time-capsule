@@ -90,6 +90,7 @@ test('相册选择跨越第一页，并能直接恢复时间轴指定的旧相�
   const firstPage=await (await page.request.get('/api/collections')).json();
   const outside=ids.find(id=>!firstPage.entries.some((entry:{id:string})=>entry.id===id))!;expect(outside).toBeTruthy();
   await page.goto('/timeline');
+  await page.locator('details[aria-label="筛选时间轴"] > summary').click();
   await page.getByText('选择记忆',{exact:true}).click();
   const select=page.getByRole('combobox',{name:'目标相册',exact:true});
   await expect(select.locator('option')).toHaveCount(31);
