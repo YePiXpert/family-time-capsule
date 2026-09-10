@@ -75,13 +75,16 @@ test("an imported MOV without browser MIME previews, saves its exact bytes and p
   await expect.poll(() => page.locator("dialog video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
 });
 
-test("MPG survives a rejected start and the same local draft retries into a playable compatibility version", async ({ page }) => {
+for (const { filename, mime, format } of [
+  { filename: "dvd.mpg", mime: "video/mpeg", format: "dvd" },
+  { filename: "transport.ts", mime: "video/mp2t", format: "mpegts" },
+]) test(`${filename} survives a rejected start and retries the same draft into playable video with audio`, async ({ page }) => {
   await ensureBootstrap(page);
   await page.goto("/capture");
-  const input = test.info().outputPath("c2-0.mpg");
-  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0xabcdef:s=96x64:r=25:d=1", "-c:v", "mpeg2video", "-f", "mpeg", input]);
+  const input = test.info().outputPath(filename);
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0xabcdef:s=96x64:r=25:d=1", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=1", "-c:v", "mpeg2video", "-c:a", "ac3", "-shortest", "-f", format, input]);
   const bytes = readFileSync(input);
-  await page.locator('input[type="file"]').first().setInputFiles({ name: "c2-0.mpg", mimeType: "", buffer: bytes });
+  await page.locator('input[type="file"]').first().setInputFiles({ name: filename, mimeType: "application/octet-stream", buffer: bytes });
   await expect(page.getByText("当前设备不能直接播放这个视频。", { exact: false })).toBeVisible();
   // Model the old server's 415 response, then keep exactly the same preserved draft.
   await page.route("**/api/uploads", route => route.fulfill({ status: 415, contentType: "application/json", body: JSON.stringify({ error: "mime_not_allowed" }) }), { times: 1 });
@@ -92,7 +95,7 @@ test("MPG survives a rejected start and the same local draft retries into a play
   await expect(link).toBeVisible();
   const id = (await link.getAttribute("href"))!.split("/").at(-1)!;
   const memory = await (await page.request.get(`/api/mobile/v1/memories/${id}`)).json();
-  expect(memory.assets[0]).toMatchObject({ type: "video", mimeType: "video/mpeg" });
+  expect(memory.assets[0]).toMatchObject({ type: "video", mimeType: mime });
   expect(await (await page.request.get(`/api/media/${memory.assets[0].id}`)).body()).toEqual(bytes);
   await expect.poll(async () => {
     execFileSync(process.execPath, [".next/ops/worker.mjs", "--once"], { env: { ...process.env, DATA_DIR: path.join(process.cwd(), "data/e2e-persistent-draft"), AUTH_SECRET: "e2e-test-auth-secret-0123456789abcdef" }, timeout: 30000 });

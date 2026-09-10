@@ -296,11 +296,9 @@ export function CaptureScreen() {
       const result = await DocumentPicker.getDocumentAsync({
         multiple: true,
         copyToCacheDirectory: true,
-        type: [
-          "image/*", "video/*", "audio/*", "application/pdf", "text/plain",
-          "text/markdown", "text/rtf", "application/rtf",
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ],
+        // Some file providers label camera/DVD videos as generic binary data.
+        // Let them be selected; preservePickedDocument still validates the type.
+        type: "*/*",
       });
       if (result.canceled) return;
       let copied = 0;

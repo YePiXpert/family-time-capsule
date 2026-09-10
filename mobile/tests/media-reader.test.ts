@@ -48,3 +48,14 @@ it('requests one compatible version on a remote video decode failure and keeps o
  expect(JSON.stringify(tree!.toJSON())).toContain('导出原件副本');
  await press('关闭阅读器');
 });
+
+it('explains local decoder limits without treating a preserved video as a failed import or uploading it',async()=>{
+ mocks.videoError=true;
+ await act(async()=>{tree=create(createElement(NativeMediaReader,{credentials:null,assets:[{id:'local-mpg',type:'video',filename:'dvd.mpg',mimeType:'video/mpeg',localUri:'file:///private/dvd.mpg'}]}));});
+ await press('打开阅读器：dvd.mpg');
+ expect(JSON.stringify(tree!.toJSON())).toContain('原件已保存在本机');
+ expect(JSON.stringify(tree!.toJSON())).toContain('保存并同步后');
+ expect(JSON.stringify(tree!.toJSON())).toContain('导出原件副本');
+ expect(mocks.get).not.toHaveBeenCalled();
+ await press('关闭阅读器');
+});

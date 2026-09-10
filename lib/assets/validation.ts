@@ -40,6 +40,7 @@ export const AUDIO_MIME_WHITELIST: Set<string> = new Set([
 /** P0 视频白名单 */
 export const VIDEO_MIME_WHITELIST: Set<string> = new Set([
   "video/mpeg",
+  "video/mp2t",
   "video/mp4",
   "video/quicktime",
   "video/webm",
@@ -78,6 +79,7 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   "audio/ogg": "ogg",
   "audio/flac": "flac",
   "video/mpeg": "mpg",
+  "video/mp2t": "ts",
   "video/mp4": "mp4",
   "video/quicktime": "mov",
   "video/webm": "webm",
@@ -145,7 +147,8 @@ export function validateUploadPrefix(
       return { ok: false, error: "content_mismatch" };
     }
   } else if (declared.type === "audio" || declared.type === "video") {
-    const sniffed = sniffAudioMime(prefix) ?? sniffVideoMime(prefix);
+    // A transport stream's timestamp can resemble an MP3 frame header.
+    const sniffed = sniffVideoMime(prefix) ?? sniffAudioMime(prefix);
     if (!sniffed) return { ok: false, error: "content_mismatch" };
     if (
       sniffFamily(sniffed) !== declared.type &&
@@ -228,11 +231,19 @@ export function sniffAudioMime(buffer: Buffer): string | null {
   return null;
 }
 
-/** 视频魔数嗅探：mp4/mov（ftyp）、webm/mkv（EBML） */
+/** 视频容器嗅探；TS 必须包含连续同步包，不能仅凭一个 0x47 字节放行。 */
 export function sniffVideoMime(buffer: Buffer): string | null {
   if (buffer.length < 12) return null;
   // MPEG-1/2 program stream pack header, or an elementary video sequence.
   if (buffer[0] === 0 && buffer[1] === 0 && buffer[2] === 1 && [0xba, 0xb3].includes(buffer[3]!)) return "video/mpeg";
+  // MPEG-TS (188), AVCHD/M2TS (192, four-byte timestamp), and TS with FEC (204).
+  for (const [packetSize, syncOffset] of [[188, 0], [192, 4], [204, 0]] as const) {
+    if (buffer.length < syncOffset + packetSize * 2 + 4) continue;
+    if ([0, 1, 2].every(index => {
+      const offset = syncOffset + packetSize * index;
+      return buffer[offset] === 0x47 && (buffer[offset + 3]! & 0x30) !== 0;
+    })) return "video/mp2t";
+  }
   if (buffer.subarray(4, 8).toString("ascii") === "ftyp") {
     const brand = buffer.subarray(8, 12).toString("ascii");
     if (brand === "qt  ") return "video/quicktime";
@@ -284,7 +295,7 @@ export function validateMediaUpload(
   if (!sniffedAudio && !sniffedVideo) {
     return { ok: false, error: "content_mismatch" };
   }
-  const sniffed = sniffedAudio ?? sniffedVideo!;
+  const sniffed = sniffedVideo ?? sniffedAudio!;
   const sniffedFamily = sniffFamily(sniffed);
   const declaredFamily = sniffFamily(normalized);
   // 族必须一致；唯一例外是 EBML 家族（webm/mkv 的音视频声明可互换）

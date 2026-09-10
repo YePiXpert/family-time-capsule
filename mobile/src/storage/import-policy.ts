@@ -12,6 +12,7 @@ const DOCUMENT_MIME_BY_EXTENSION: Record<string, string> = {
 const MEDIA_MIME_BY_EXTENSION: Record<string, string> = {
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", heic: "image/heic", heif: "image/heif", webp: "image/webp", gif: "image/gif", avif: "image/avif",
   mpg: "video/mpeg", mpeg: "video/mpeg", mpe: "video/mpeg", m1v: "video/mpeg", m2v: "video/mpeg",
+  ts: "video/mp2t", mts: "video/mp2t", m2t: "video/mp2t", m2ts: "video/mp2t",
   mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", qt: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska", "3gp": "video/3gpp",
   m4a: "audio/mp4", mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", aac: "audio/aac",
 };
@@ -26,7 +27,8 @@ export function classifyImportedFile(filename: string, declaredMime?: string | n
   // generic type. This is only an intake hint; the server still checks bytes.
   if (!mime || ["application/octet-stream", "binary/octet-stream", "video/*", "audio/*", "image/*"].includes(mime)) mime = MEDIA_MIME_BY_EXTENSION[extension] ?? mime;
   if (["video/mov", "video/x-quicktime"].includes(mime)) mime = "video/quicktime";
-  if (["video/mpg", "video/x-mpeg", "video/x-mpeg2"].includes(mime)) mime = "video/mpeg";
+  if (["video/mpg", "video/mpeg2", "video/x-mpeg", "video/x-mpeg2", "application/mpeg", "application/x-mpeg"].includes(mime)) mime = "video/mpeg";
+  if (["video/mpegts", "video/x-mpegts", "video/mp2ts"].includes(mime)) mime = "video/mp2t";
   if (mime === "video/x-m4v") mime = "video/mp4";
   if (["image/svg+xml", "text/html", "application/xhtml+xml"].includes(mime)) return null;
   if (mime.startsWith("image/")) return { mimeType: mime, mediaType: "image" };

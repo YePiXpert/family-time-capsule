@@ -44,7 +44,7 @@ function runFfprobe(absPath: string): Promise<ProbeExecution> {
         "-v",
         "quiet",
         "-protocol_whitelist", "file,pipe",
-        "-format_whitelist", "mov,matroska,webm,mp3,wav,flac,ogg,aac",
+        "-format_whitelist", "mov,matroska,webm,mp3,wav,flac,ogg,aac,mpeg,mpegvideo,mpegts",
         "-print_format",
         "json",
         "-show_format",

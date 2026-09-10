@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   items: [] as unknown[],
   alert: vi.fn(), constructor: vi.fn(), permission: vi.fn(), audioMode: vi.fn(),
   prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
-  cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(),
+  cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), documents: vi.fn(),
   enqueueText: vi.fn(), enqueueMedia: vi.fn(), preserveMedia: vi.fn(),
   preserveAudio: vi.fn(), removeFile: vi.fn(), reloadLocal: async () => {}, queued: vi.fn(),
   setParams: vi.fn(), focus: vi.fn(), scrollTo: vi.fn(),
@@ -69,7 +69,7 @@ vi.mock("expo-image-picker", () => ({
   UIImagePickerPreferredAssetRepresentationMode: { Current: "current" },
   UIImagePickerControllerQualityType: { High: "high" },
 }));
-vi.mock("expo-document-picker", () => ({ getDocumentAsync: vi.fn() }));
+vi.mock("expo-document-picker", () => ({ getDocumentAsync: mocks.documents }));
 vi.mock("../src/storage/database", () => ({
   enqueueTextCapture: mocks.enqueueText, enqueueMediaCapture: mocks.enqueueMedia,
   ingestLocalImportSession: vi.fn(), getLocalCaptureDetail: vi.fn().mockResolvedValue(null),
@@ -161,6 +161,14 @@ it("keeps capture usable when microphone permission is denied", async () => {
   expect(mocks.constructor).not.toHaveBeenCalled();
   await press("相册");
   expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
+});
+
+it("allows files with generic provider types to reach the import classifier", async () => {
+  mocks.documents.mockResolvedValue({ canceled: true, assets: null });
+  await render();
+  await press("文件");
+  expect(mocks.documents).toHaveBeenCalledWith({ multiple: true, copyToCacheDirectory: true, type: "*/*" });
+  expect(mocks.enqueueMedia).not.toHaveBeenCalled();
 });
 
 it("offers library import and remains usable when the native camera is unavailable", async () => {

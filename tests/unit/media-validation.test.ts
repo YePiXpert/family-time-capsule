@@ -10,6 +10,7 @@ import {
   sniffVideoMime,
   validateImageUpload,
   validateMediaUpload,
+  validateUploadPrefix,
 } from "@/lib/assets/validation";
 
 const fixtures = path.join(__dirname, "..", "fixtures");
@@ -214,6 +215,34 @@ it.each(["c2-0.mpg", "video.MPEG", "sequence.m2v"])("recognizes %s from Files ev
   expect(classifyImportedFile(name, "application/octet-stream")).toEqual({ mimeType: "video/mpeg", mediaType: "video" });
   expect(classifyImportedFile(name, "video/x-mpeg")).toEqual({ mimeType: "video/mpeg", mediaType: "video" });
   expect(classifyImportedFile(name, "text/html")).toBeNull();
+});
+
+it.each([[188, 0], [192, 4], [204, 0]])("validates transport packets with stride %i and sync offset %i", (stride, sync) => {
+  const bytes = Buffer.alloc(stride * 3, 0xff);
+  for (let packet = 0; packet < 3; packet++) bytes.set([0x47, 0x40, 0, 0x10], sync + stride * packet);
+  expect(sniffVideoMime(bytes)).toBe("video/mp2t");
+  expect(validateUploadPrefix(bytes, "video/MP2T", 216443460)).toMatchObject({ ok: true, value: { type: "video", mimeType: "video/mp2t", extension: "ts" } });
+  expect(validateMediaUpload(bytes, "video/mp2t", "video").ok).toBe(true);
+  bytes[sync + stride] = 0;
+  expect(sniffVideoMime(bytes)).toBeNull();
+  expect(validateUploadPrefix(bytes, "video/mp2t", bytes.length)).toEqual({ ok: false, error: "content_mismatch" });
+});
+
+it.each(["all.ts", "camera.MTS", "camera.m2t", "camera.m2ts"])("recognizes %s with missing or generic provider MIME", name => {
+  for (const mime of [null, "", "application/octet-stream", "video/mp2t", "video/mpegts"]) {
+    expect(classifyImportedFile(name, mime)).toEqual({ mimeType: "video/mp2t", mediaType: "video" });
+  }
+  expect(classifyImportedFile(name, "text/html")).toBeNull();
+});
+
+it.each(["video/mpeg2", "video/x-mpeg2", "application/mpeg", "application/x-mpeg"])("normalizes legacy MPEG MIME %s", mime => {
+  expect(classifyImportedFile("c1-0.mpg", mime)).toEqual({ mimeType: "video/mpeg", mediaType: "video" });
+});
+
+it("rejects text, playlists and one stray sync byte declared as transport video", () => {
+  for (const bytes of [Buffer.from("export const recording = false;"), Buffer.from("#EXTM3U\nhttp://example.test/private.ts"), Buffer.from("GIF89a not an MPEG transport stream"), Buffer.from([0x47, 0x40, 0, 0x10, ...Array(600).fill(0)])]) {
+    expect(validateUploadPrefix(bytes, "video/mp2t", bytes.length)).toEqual({ ok: false, error: "content_mismatch" });
+  }
 });
 
 it('accepts generic MP4 audio containers produced by browser recorders', async () => {

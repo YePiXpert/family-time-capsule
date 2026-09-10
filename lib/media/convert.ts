@@ -10,6 +10,7 @@ export const MEDIA_TIMEOUT_MS = 180_000;
 export class MediaConversionError extends Error {}
 const demuxers: Record<string, string> = {
   "video/mpeg": "mpeg",
+  "video/mp2t": "mpegts",
   "video/mp4": "mov",
   "video/quicktime": "mov",
   "video/3gpp": "mov",
@@ -174,7 +175,9 @@ export async function convertMedia(
         "-map",
         "0:a:0?",
         "-vf",
-        "scale=1280:1280:force_original_aspect_ratio=decrease:force_divisible_by=2",
+        // Keep smaller originals at their native size; upscaling older footage
+        // wastes the bounded conversion time and output quota without adding detail.
+        "scale=w='min(1280,iw)':h='min(1280,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
         "-c:v",
         "libx264",
         "-preset",

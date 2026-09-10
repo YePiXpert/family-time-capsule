@@ -1,9 +1,9 @@
 # Family Time Capsule
 
-**1.0.0-dev.2 / 正式 1.0 开发预发布版**
+**1.0.0-dev.3 / 正式 1.0 开发预发布版**
 
-安装包与升级说明见 [v1.0.0-dev.2 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.0-dev.2)。
-网页更新后刷新即可；安装构建 24 可获得新版原生 UI 和保存栏修复。构建 15–23 仍与服务端兼容，构建 14 及更早版本需更新。
+安装包与升级说明见 [v1.0.0-dev.3 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.0-dev.3)。
+网页更新后刷新即可；安装构建 25 可获得 TS/MPG 文件导入修复；旧视频同步后可生成兼容播放版。构建 15–24 仍与服务端兼容，构建 14 及更早版本需更新。
 
 从出生开始，留下照片、声音和想对你说的话，慢慢写成送给你的成长礼物。
 

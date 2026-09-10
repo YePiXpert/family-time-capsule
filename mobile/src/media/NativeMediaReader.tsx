@@ -300,6 +300,7 @@ function Active({
           <Video
             key={`${selectedId}-${retry}`}
             source={source}
+            localOriginal={Boolean(item.localUri)}
             onPlaybackError={playbackFailed}
             initialSeconds={item.initialSeconds}
             onPosition={
@@ -502,6 +503,7 @@ function Audio({
 function Video({
   source,
   poster,
+  localOriginal = false,
   initialSeconds = 0,
   onPosition,
   onPlaybackError,
@@ -511,6 +513,7 @@ function Video({
   onPosition?: (seconds: number) => void;
   source: PlaybackSource;
   poster: PlaybackSource | null;
+  localOriginal?: boolean;
 }) {
   const s = useSharedStyles();
   const player = useVideoPlayer(source, (player) => {
@@ -557,7 +560,9 @@ function Video({
         </>
       ) : null}
       {error || status === "error" ? (
-        <Text style={s.error}>视频暂时无法解码，请重试或生成兼容播放版。</Text>
+        <Text style={s.error}>{localOriginal
+          ? "原件已保存在本机，此设备不能直接播放该编码。保存并同步后，可在记忆详情生成兼容播放版。"
+          : "视频暂时无法解码，请重试或生成兼容播放版。"}</Text>
       ) : null}
       <VideoView
         player={player}

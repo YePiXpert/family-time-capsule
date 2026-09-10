@@ -495,18 +495,23 @@ it("makes a real 10-bit HEVC MOV playable as H.264 without changing the original
   expect(await runMediaWorkerOnce()).toBe("succeeded");
   const job = getMediaDerivations(context, source.id).find(job => job.kind === "transcode")!;
   const output = getDb().select().from(asset).where(eq(asset.id, job.outputAssetId!)).get()!;
-  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,pix_fmt", "-of", "json", getAssetStorage().resolvePath(output.storageKey)]);
+  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,pix_fmt,width,height", "-of", "json", getAssetStorage().resolvePath(output.storageKey)]);
   expect(probe.status).toBe(0);
   expect(JSON.parse(probe.stdout.toString()).streams[0]).toMatchObject({ codec_name: "h264", pix_fmt: "yuv420p" });
   expect(readFileSync(getAssetStorage().resolvePath(source.storageKey))).toEqual(bytes);
 });
 
-it("accepts an MPG through the resumable HTTP upload and creates a real playable MP4", async () => {
-  const input = path.join(root, "c2-0.mpg");
-  const generated = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0xe8bca9:s=96x64:r=25:d=1", "-c:v", "mpeg2video", "-f", "mpeg", input]);
+it.each([
+  { filename: "program.mpg", mime: "video/mpeg", format: "mpeg", options: [] },
+  { filename: "dvd.mpg", mime: "video/mpeg", format: "dvd", options: [] },
+  { filename: "transport.ts", mime: "video/mp2t", format: "mpegts", options: [] },
+  { filename: "camera.m2ts", mime: "video/mp2t", format: "mpegts", options: ["-mpegts_m2ts_mode", "1"] },
+])("uploads $filename with MPEG-2/AC-3 and creates a real H.264/AAC playback copy", async ({ filename, mime, format, options }) => {
+  const input = path.join(root, filename);
+  const generated = spawnSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=0xe8bca9:s=96x64:r=25:d=1", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=1", "-c:v", "mpeg2video", "-c:a", "ac3", "-shortest", "-f", format, ...options, input]);
   expect(generated.status, generated.stderr?.toString()).toBe(0);
   const bytes = readFileSync(input);
-  const started = await begin(new Request("http://localhost/api/uploads", { method: "POST", headers, body: JSON.stringify({ captureId: randomUUID(), filename: "c2-0.mpg", declaredMime: "video/mpeg", totalBytes: bytes.length, source: "web", importSessionId: null, lastModified: null }) }));
+  const started = await begin(new Request("http://localhost/api/uploads", { method: "POST", headers, body: JSON.stringify({ captureId: randomUUID(), filename, declaredMime: mime, totalBytes: bytes.length, source: "web", importSessionId: null, lastModified: null }) }));
   expect(started.status).toBe(201);
   const upload = await started.json();
   const parameters = { params: Promise.resolve({ id: upload.uploadId }) };
@@ -516,15 +521,20 @@ it("accepts an MPG through the resumable HTTP upload and creates a real playable
   expect(completed.status).toBe(201);
   const saved = await completed.json();
   const source = getDb().select().from(asset).where(eq(asset.id, saved.assetId)).get()!;
-  expect(source).toMatchObject({ type: "video", mimeType: "video/mpeg" });
+  expect(source).toMatchObject({ type: "video", mimeType: mime });
+  expect(source.durationMs).toBeGreaterThan(500);
+  expect(source.width).toBe(96);
+  expect(source.height).toBe(64);
   requestMediaDerivation(context, source.id, "transcode");
   for (let i = 0; i < 12 && !getMediaDerivations(context, source.id).some(j => j.kind === "transcode" && j.status === "succeeded"); i++) await runMediaWorkerOnce();
   const job = getMediaDerivations(context, source.id).find(j => j.kind === "transcode")!;
   expect(job.status).toBe("succeeded");
   const output = getDb().select().from(asset).where(eq(asset.id, job.outputAssetId!)).get()!;
-  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,pix_fmt", "-of", "json", getAssetStorage().resolvePath(output.storageKey)]);
+  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_name,pix_fmt,width,height", "-of", "json", getAssetStorage().resolvePath(output.storageKey)]);
   expect(probe.status).toBe(0);
   expect(JSON.parse(probe.stdout.toString()).streams[0]).toMatchObject({ codec_name: "h264", pix_fmt: "yuv420p" });
+  expect(JSON.parse(probe.stdout.toString()).streams[1]).toMatchObject({ codec_name: "aac" });
+  expect(JSON.parse(probe.stdout.toString()).streams[0]).toMatchObject({ width: 96, height: 64 });
   expect(readFileSync(getAssetStorage().resolvePath(source.storageKey))).toEqual(bytes);
 });
 
