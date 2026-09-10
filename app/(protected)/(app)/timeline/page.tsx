@@ -3,6 +3,8 @@ import { growthHeading } from "@/mobile/src/design/growth";
 import { pendingImports } from "@/lib/home/pending";
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
+import keepsake from "@/mobile/assets/illustrations/keepsake-box.png";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getTimelineFacets, getTimelinePage } from "@/lib/memories/service";
@@ -115,8 +117,8 @@ export default async function TimelinePage({
   return (
     <main className="page-container growth-page">
       <section className="growth-hero" aria-label="成长概览">
-        <div className="growth-mark" aria-hidden="true">✿</div>
         <div className="min-w-0 flex-1"><p className="page-eyebrow">一点一滴，慢慢长大</p><h1>{growth.title}</h1><p className="growth-dedication">留下今天，送给长大的你。</p>{growth.age ? <p className="growth-age">{growth.age}</p> : null}</div>
+        <Image src={keepsake} alt="" className="growth-hero-art" sizes="(max-width: 639px) 112px, 280px" />
       </section>
       {stages.length ? <nav aria-label="按月龄回看" className="growth-stage-nav">
         <Link href={queryHref(params, { stage: undefined, cursor: undefined, month: undefined, year: undefined })} aria-current={!stage ? "page" : undefined} className={!stage ? "ui-button-primary" : "ui-button-secondary"}>全部</Link>

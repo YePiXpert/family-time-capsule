@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "../components/typography";
+import { JournalArtwork } from "../components/JournalArtwork";
 import { ApiError, requestMobileJson } from "../api/client";
 import { useApp } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
@@ -37,8 +38,9 @@ export function GrowthBookCard() {
     } catch (e) { if (currentScope.current === scope) setError(e instanceof ApiError && e.code ? growthErrorMessage(e.code) : "暂时无法准备成长册，请重试。"); }
     finally { if (currentScope.current === scope) setBusy(false); }
   }
-  if (!credentials) return <View style={s.card}><Text style={s.cardTitle}>从第一条记录，写成一本成长册</Text><Text style={s.body}>连接家庭服务器后，可以按宝宝生日整理。已经下载的成长册仍可离线阅读。</Text></View>;
+  if (!credentials) return <View style={s.card}><JournalArtwork kind="album" /><Text style={s.cardTitle}>从第一条记录，写成一本成长册</Text><Text style={s.body}>连接家庭服务器后，可以按宝宝生日整理。已经下载的成长册仍可离线阅读。</Text></View>;
   return <View style={[s.card, { padding: 20, gap: 14 }]}>
+    <JournalArtwork kind="album" />
     <Text style={{ color: colors.coral, fontSize: 14 }}>全家可见 · 按月成长册</Text>
     {loaded?.stages.length ? <ScrollView horizontal contentContainerStyle={{ gap: 8 }} showsHorizontalScrollIndicator={false}>{loaded.stages.filter(stage => stage.key !== "birth").map(stage => <Pressable key={stage.key} disabled={busy} accessibilityRole="tab" accessibilityState={{ selected: Number(stage.key) === month }} onPress={() => setMonth(Number(stage.key))} style={Number(stage.key) === month ? s.primaryButton : s.secondaryButton}><Text style={Number(stage.key) === month ? s.primaryText : s.secondaryText}>{stage.label}</Text></Pressable>)}</ScrollView> : null}
     <Text style={s.cardTitle}>{data?.title ?? "正在读取成长记录…"}</Text>

@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import album from "@/mobile/assets/illustrations/growing-album.png";
 import { useRouter } from "next/navigation";
 import { Icon } from "./ui/icons";
 import { growthErrorMessage, type GrowthOverview } from "@/mobile/src/growth/types";
@@ -17,6 +19,7 @@ export function GrowthBookCard({ overview }: { overview: GrowthOverview }) {
     } catch (e) { setError(e instanceof Error ? e.message : "暂时无法准备成长册。"); setBusy(false); }
   }
   return <section className="growth-book-feature" aria-label="按月成长册">
+    <Image src={album} alt="" className="growth-book-art" sizes="(max-width: 639px) 200px, 240px" />
     <div className="mb-4 flex items-center gap-2 text-sm text-accent"><Icon name="book" size={22} /><span>全家可见 · 随着记录慢慢长大</span></div>
     <h2>{overview.title}</h2>
     <p className="mt-3 text-muted">{overview.pendingBirthday ? "确认宝宝生日，就能把这段日子按月整理成册。" : overview.memoryCount ? `已有 ${overview.memoryCount} 条记录。打开时会收入新增内容，保留你改过的文字、封面和删去的页面。` : "从第一条记录开始，满月前也能预览。"}</p>

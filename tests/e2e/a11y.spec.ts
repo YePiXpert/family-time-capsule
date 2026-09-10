@@ -95,3 +95,23 @@ test("journal colors survive CSP; layouts remain readable from phone to desktop"
     expect(parseFloat(appearance.motion)).toBeLessThanOrEqual(0.001);
   }
 });
+
+test("production glass renders in Chromium and respects reduced transparency", async ({ page, context }) => {
+  await ensureLogin(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/timeline");
+  // The production CSS optimizer previously kept only the Safari-prefixed property.
+  const surfaces = page.locator(".bottom-navigation-inner, .floating-capture");
+  await expect(surfaces).toHaveCount(2);
+  for (const surface of await surfaces.all()) {
+    expect(await surface.evaluate(node => getComputedStyle(node).backdropFilter)).toContain("blur(20px)");
+  }
+  expect(await page.locator(".bottom-navigation").evaluate(node => getComputedStyle(node).backdropFilter)).toBe("none");
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
+  for (const surface of await surfaces.all()) {
+    const style = await surface.evaluate(node => ({ blur: getComputedStyle(node).backdropFilter, fill: getComputedStyle(node).backgroundColor }));
+    expect(style.blur).toBe("none");
+    expect(style.fill).toBe("rgb(255, 253, 249)");
+  }
+});

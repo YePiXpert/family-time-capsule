@@ -10,6 +10,7 @@ import { FlatList, Pressable, RefreshControl, ScrollView, View } from "react-nat
 import { useApp } from "../state/AppContext";
 import { Disclosure } from "../components/Disclosure";
 import { TimelineCard } from "../components/TimelineCard";
+import { JournalArtwork } from "../components/JournalArtwork";
 import type { AppNavigation } from "../navigation/types";
 import { colors, sharedStyles } from "../theme";
 
@@ -64,11 +65,14 @@ export function TimelineScreen() {
       }
       ListHeaderComponent={
         <View style={{ gap: 18 }}>
-          <View style={{ paddingTop: 12, paddingBottom: 24, gap: 8 }}>
+          <View style={{ paddingTop: 12, paddingBottom: 24, gap: 12, flexDirection: "row", alignItems: "center" }}>
+            <View style={{ flex: 1, gap: 8 }}>
             <Text style={sharedStyles.eyebrow}>一点一滴，慢慢长大</Text>
             <Text accessibilityRole="header" style={[sharedStyles.title, { fontSize: 32 }]}>{growth.title}</Text>
             <Text style={sharedStyles.body}>留下今天，送给长大的你。</Text>
             {growth.age ? <Text style={{ color: colors.coralDark, backgroundColor: colors.softCoral, alignSelf: "flex-start", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7, fontSize: 14, marginTop: 8 }}>{growth.age}</Text> : null}
+            </View>
+            <JournalArtwork kind="keepsake" compact />
           </View>
           {stages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} accessibilityLabel="按月龄回看">
             {[{ key: "", label: "全部" }, ...stages].map(item => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: (stage?.key ?? "") === item.key }} onPress={() => { setStageKey(item.key); setSelected([]); }} style={(stage?.key ?? "") === item.key ? sharedStyles.primaryButton : sharedStyles.secondaryButton}><Text style={(stage?.key ?? "") === item.key ? sharedStyles.primaryText : sharedStyles.secondaryText}>{item.label}</Text></Pressable>)}

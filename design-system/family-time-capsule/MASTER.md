@@ -15,10 +15,17 @@ Web、原生和成长册渲染器使用 `mobile/src/design/tokens.ts`。
 
 ## 玻璃与动效
 
-仅导航、浮动记录按钮和照片工具可用轻玻璃。正文、表单、弹窗、成长册保持实底。
-原生使用 expo-blur；Android 12+ 使用屏幕 BlurTargetView，旧 Android 使用不透明暖白。
+仅导航、浮动记录按钮和照片工具可用液体玻璃。正文、表单、弹窗、成长册保持实底。
+iOS 26+ 在运行时与编译支持检查通过后使用 expo-glass-effect 的原生 Liquid Glass。
+旧 iOS 与 Android 12+ 使用 expo-blur、透色渐变和亮边；Android 使用屏幕 BlurTargetView，旧 Android 使用不透明暖白。
 减少透明度即时关闭模糊，读取偏好期间也使用实底。Web 通过 CSS 能力检测和偏好媒体查询降级。
 过渡 180ms；减少动态效果时关闭。录音波形取真实麦克风信号，关闭动态时保留录音状态。
+Web 导航容器不加滤镜，每个悬浮表面独立采样背景，避免记录按钮受到父级 backdrop 隔离。
+
+## 插画
+
+首页纪念盒、成长册入口纸张相册使用 `mobile/assets/illustrations/` 下的内置 imagegen 素材，Web 静态导入同一文件。
+插画仅为装饰，屏幕阅读器略过；不进入用户照片、记忆、成长册导出或备份。提示词见同目录 `PROMPTS.md`。
 
 ## 成长册
 

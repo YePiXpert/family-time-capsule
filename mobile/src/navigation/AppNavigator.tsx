@@ -60,6 +60,7 @@ const tabMeta = {
 
 function JournalTabBar({ state, descriptors, navigation, target }: BottomTabBarProps & { target: RefObject<View | null> }) {
   const { viewer, credentials, displayMode } = useApp();
+  const { reducedMotion } = useAccessibleEffects();
   const insets = useSafeAreaInsets();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
@@ -71,7 +72,7 @@ function JournalTabBar({ state, descriptors, navigation, target }: BottomTabBarP
   const canCapture = !credentials || viewer?.canCapture;
   if (!current || keyboardOpen) return null;
   return <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-    {current.name !== "Capture" && canCapture ? <Pressable accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={styles.floatingCapture}>
+    {current.name !== "Capture" && canCapture ? <Pressable accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, pressed && !reducedMotion && styles.pressed]}>
       <GlassSurface target={target} />
       <JournalIcon name="plus" color={colors.coralDark} size={24} />
       <Text style={styles.captureLabel}>记录一刻</Text>
@@ -84,8 +85,8 @@ function JournalTabBar({ state, descriptors, navigation, target }: BottomTabBarP
         return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={meta.label} accessibilityState={{ selected: focused }} testID={`tab-${route.name.toLowerCase()}`} onPress={() => {
           const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
-        }} onLongPress={() => navigation.emit({ type: "tabLongPress", target: route.key })} style={styles.tabItem}>
-          <View style={[styles.tabIcon, focused && { backgroundColor: colors.softCoral }]}><JournalIcon name={meta.icon} color={focused ? colors.coralDark : colors.muted} /></View>
+        }} onLongPress={() => navigation.emit({ type: "tabLongPress", target: route.key })} style={({ pressed }) => [styles.tabItem, pressed && !reducedMotion && styles.pressed]}>
+          <View style={[styles.tabIcon, focused && styles.tabIconActive]}><JournalIcon name={meta.icon} color={focused ? colors.coralDark : colors.ink} /></View>
           <Text style={[styles.tabLabel, focused && { color: colors.coralDark }, displayMode === "simple" && { fontSize: 16 }]}>{descriptors[route.key]?.options.tabBarAccessibilityLabel ?? meta.label}</Text>
         </Pressable>;
       })}
@@ -155,11 +156,13 @@ export function AppNavigator() {
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.paper },
   dock: { position: "absolute", bottom: 0, left: 16, right: 16 },
-  tabRow: { flexDirection: "row", minHeight: 74, borderRadius: 26, overflow: "hidden", borderWidth: 1, borderColor: colors.line },
+  tabRow: { flexDirection: "row", minHeight: 74, borderRadius: 26, overflow: "hidden", boxShadow: "0 6px 24px rgba(59,48,43,0.12)" },
   tabItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 8, gap: 3 },
-  tabIcon: { paddingHorizontal: 18, paddingVertical: 4, borderRadius: 18 },
-  tabLabel: { fontSize: 13, fontWeight: "600", color: colors.muted },
-  floatingCapture: { alignSelf: "flex-end", minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, marginBottom: 12, borderRadius: 26, overflow: "hidden", borderWidth: 1, borderColor: colors.peach },
+  tabIcon: { paddingHorizontal: 18, paddingVertical: 4, borderRadius: 18, borderWidth: 1, borderColor: "transparent" },
+  tabIconActive: { backgroundColor: "rgba(251,233,227,0.88)", borderColor: "rgba(255,255,255,0.9)", boxShadow: "0 2px 6px rgba(173,81,69,0.10)" },
+  tabLabel: { fontSize: 13, fontWeight: "600", color: colors.ink },
+  floatingCapture: { alignSelf: "flex-end", minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, marginBottom: 12, borderRadius: 26, overflow: "hidden", boxShadow: "0 5px 20px rgba(173,81,69,0.16)" },
+  pressed: { transform: [{ scale: 0.96 }] },
   captureLabel: { color: colors.coralDark, fontSize: 16, fontWeight: "700", paddingVertical: 12 },
   banner: { backgroundColor: colors.softSage, paddingHorizontal: 16, paddingBottom: 8 },
   bannerText: { color: colors.sage, fontSize: 12, lineHeight: 17, fontWeight: "700", textAlign: "center" },
