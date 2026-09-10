@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { waitForCapture } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap } from "./helpers";
 
@@ -20,7 +20,7 @@ test("100 项队列在首个上传前持久化，失败后刷新仍可看到全�
   expect(detail.session.totalCount).toBe(100);
   expect(detail.items).toHaveLength(100);
   expect(detail.items.every((item: { upload: unknown }) => item.upload === null)).toBe(true);
-  await page.reload(); await expandCaptureOptions(page);
+  await page.reload(); await waitForCapture(page);
   await expect(page.getByText("durable-queue-99.txt", { exact: true })).toBeVisible();
 });
 
@@ -45,7 +45,7 @@ test("批量导入：文档与照片逐项续传、刷新后保留服务器进�
   await expect(page).toHaveURL(/\/imports\/[0-9a-f-]{36}$/u);
   await expect(page.getByText("服务器已完成 4/4")).toBeVisible();
 
-  await page.reload(); await expandCaptureOptions(page);
+  await page.reload(); await waitForCapture(page);
   await expect(page.getByText("刷新不会丢服务器进度")).toBeVisible();
   await expect(page.getByText("已入箱").first()).toBeVisible();
 
@@ -57,7 +57,7 @@ test("批量导入：文档与照片逐项续传、刷新后保留服务器进�
 
 test("系统分享先保全混合收件，刷新后选已有草稿只组成一件事", async ({ page }) => {
   await ensureBootstrap(page);
-  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.goto("/capture"); await waitForCapture(page);
   const content = { title: "继续拜访外公", text: "原来的半句话", occurredAt: null, occurredAtPrecision: "exact", locationText: "", participantIds: [], visibility: "family", coverItemId: null, items: [] };
   const draftId = crypto.randomUUID();
   expect((await page.request.put(`/api/mobile/v1/drafts/${draftId}`, { data: { expectedRevision: 0, mutationId: crypto.randomUUID(), content } })).ok()).toBe(true);
@@ -69,7 +69,7 @@ test("系统分享先保全混合收件，刷新后选已有草稿只组成一�
   const originalLink = page.getByRole("link", { name: /^打开：/ });
   await expect(originalLink).toHaveCount(1);
   const originalHref = await originalLink.getAttribute("href");
-  await page.reload(); await expandCaptureOptions(page);
+  await page.reload(); await waitForCapture(page);
   await page.getByRole("button", { name: "加入草稿：继续拜访外公", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/capture\\?draft=${draftId}`));
   const draft = await (await page.request.get(`/api/mobile/v1/drafts/${draftId}`)).json();

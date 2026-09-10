@@ -1,16 +1,44 @@
 import { expect, type Page } from "@playwright/test";
+import { emptyDraftContent } from "../../../lib/drafts/model";
 import type { BrowserDraft, BrowserOriginal } from "../../../lib/drafts/browser-store";
 
-export async function expandCaptureOptions(page: Page) {
+export async function waitForCapture(page: Page) {
   if (new URL(page.url()).pathname !== "/capture") return;
-  const metadata = page.locator("summary").filter({ hasText: "补充信息（可选）" });
-  const readOnly = page.getByText("当前账号是只读角色", { exact: false });
-  await expect(metadata.or(readOnly)).toBeVisible();
-  if (await readOnly.isVisible()) return;
-  for (const summary of [metadata, page.locator("summary").filter({ hasText: /^(全家|指定成员|仅自己)可见$/ }), page.locator("summary").filter({ hasText: /^草稿$/ })]) {
-    if (!await summary.count()) continue;
-    if (!await summary.evaluate(node => (node.parentElement as HTMLDetailsElement).open)) await summary.click();
-  }
+  await expect(page.getByLabel("写下这一刻").or(page.getByText("当前账号是只读角色", { exact: false }))).toBeVisible();
+}
+
+/** Seed legacy metadata for recovery/editor journeys. The quick UI has no metadata form. */
+export async function setCaptureMetadata(page: Page, patch: Partial<BrowserDraft["content"]>, fresh = false) {
+  await expect(page.getByRole("status").filter({ hasText: /^本机已保存 ·/ })).toBeVisible();
+  await page.evaluate(async ({ patch, fresh, empty }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("ftc-drafts-v1", 1); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("drafts", "readwrite"), store = tx.objectStore("drafts"), request = store.getAll();
+        request.onsuccess = () => {
+          const rows = (request.result as BrowserDraft[]).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+          const requested = new URL(location.href).searchParams.get("localDraft") ?? new URL(location.href).searchParams.get("draft");
+          const previous = rows.find(row => row.id === requested) ?? rows.find(row => row.status === "editing")!;
+          const row = fresh ? { ...previous, id: crypto.randomUUID(), content: empty, captureTimeEdited: false, organizeOnPublish: false, revision: 0, serverRevision: 0, syncedRevision: 0, status: "editing" as const, memoryEventId: null } : previous;
+          store.put({ ...row, content: { ...row.content, ...patch }, captureTimeEdited: row.captureTimeEdited || "occurredAt" in patch || "occurredAtPrecision" in patch, revision: row.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date(Math.max(Date.now(), Date.parse(rows[0]!.updatedAt) + 1)).toISOString() });
+        };
+        tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+      });
+    } finally { db.close(); }
+  }, { patch, fresh, empty: emptyDraftContent() });
+  if (fresh) await page.goto("/capture"); else await page.reload();
+  await waitForCapture(page);
+}
+export async function startCaptureDraft(page: Page) { await setCaptureMetadata(page, {}, true); }
+export async function readCaptureDraft(page: Page): Promise<BrowserDraft> {
+  await expect(page.getByRole("status").filter({ hasText: /^本机已保存 ·/ })).toBeVisible();
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => { const r = indexedDB.open("ftc-drafts-v1", 1); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+    try { return await new Promise<BrowserDraft>((resolve, reject) => { const r = db.transaction("drafts").objectStore("drafts").getAll(); r.onsuccess = () => { const rows = (r.result as BrowserDraft[]).filter(d => d.status === "editing").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)); const requested = new URL(location.href).searchParams.get("localDraft") ?? new URL(location.href).searchParams.get("draft"); resolve(rows.find(d => d.id === requested) ?? rows[0]!); }; r.onerror = () => reject(r.error); }); }
+    finally { db.close(); }
+  });
 }
 
 /** Inbox editor fixtures submit an existing local draft through the supported API.
@@ -65,5 +93,5 @@ export async function submitCaptureForReview(page: Page, submit = true) {
     db.close();
   }, submit);
   await page.reload();
-  await expandCaptureOptions(page);
+  await waitForCapture(page);
 }

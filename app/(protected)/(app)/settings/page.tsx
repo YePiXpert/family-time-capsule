@@ -185,7 +185,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
       </details>
       </details>
 
-      <details name="settings-section" className="mt-3"><summary>存储与同步</summary><div className="flex flex-wrap gap-3"><Link href="/library" className="ui-button-secondary">资料库</Link><Link href="/imports" className="ui-button-secondary">导入进度</Link><Link href="/trash" className="ui-button-secondary">回收站</Link></div></details>
+      <details name="settings-section" className="mt-3"><summary>存储与同步</summary><div className="flex flex-wrap gap-3"><Link href="/library" className="ui-button-secondary">资料库</Link><Link href="/pending" className="ui-button-secondary">未完成记录</Link><Link href="/imports" className="ui-button-secondary">导入进度</Link><Link href="/trash" className="ui-button-secondary">回收站</Link></div></details>
       {canExport ? <details name="settings-section" className="mt-3"><summary>备份与恢复</summary><div className="flex flex-wrap gap-3"><ExportStepUpPanel needsStepUp={exportNeedsStepUp} /><Link href="/settings/backup" className="ui-button-secondary">家庭备份与恢复</Link></div></details> : null}
       <details name="settings-section" className="mt-3"><summary>显示与辅助</summary><DisplayModeToggle mode={displayMode} />{canReviewAi ? <Link href="/settings/ai" className="ui-button-secondary mt-4">AI 整理与隐私</Link> : null}</details>
 

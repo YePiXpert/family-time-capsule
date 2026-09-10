@@ -75,6 +75,7 @@ export function SettingsHubScreen() {
       <Disclosure {...group("存储与同步")}>
         <ListGroup>
           <ListRow icon="settings" title="设备与同步" detail="上传状态、待传记录与本机空间" onPress={() => navigation.navigate("DeviceSettings")} />
+          <ListRow icon="file" title="未完成记录" detail="继续之前的记录或重试同步" onPress={() => navigation.navigate("Pending")} />
           <ListRow icon="image" title="资料库" detail="全部照片、视频与声音原件" onPress={() => navigation.navigate("AssetLibrary")} />
           <ListRow icon="download" title="导入进度" onPress={() => navigation.navigate("ImportSessions")} />
           <ListRow icon="book" title="离线下载" detail="没网也能翻的内容" onPress={() => navigation.navigate("ReadingDownloads")} last />

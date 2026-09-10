@@ -3,7 +3,7 @@ import * as Crypto from "expo-crypto";
 import { bindLocalDraft, createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft, type LocalDraft, type DraftOriginal } from "./store";
 import { requestMobileJson } from "../api/client";
 import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent, type DraftItem } from "./model";
-import { canInferCaptureTime } from "./capture";
+import { canInferCaptureTime, quickCaptureContent } from "./capture";
 import type { Credentials, MediaCapturePayload } from "../types";
 export function usePersistentDraft(scope: string, enabled: boolean, credentials: Credentials | null) {
   const [draft, setDraft] = useState<LocalDraft | null>(null);
@@ -39,7 +39,8 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
   const create = useCallback(async () => {
     await writes.current;
     if (failure.current) return;
-    const row = await createLocalDraft(scope, Crypto.randomUUID(), Crypto.randomUUID());
+    const previous = current.current?.scope === scope ? current.current.content : (await listLocalDrafts(scope))[0]?.content;
+    const row = await createLocalDraft(scope, Crypto.randomUUID(), Crypto.randomUUID(), previous ? { visibility: previous.visibility, readerUserIds: previous.readerUserIds } : undefined);
     current.current = row; revision.current = row.revision; setDraft(row); setSaved(true); await reload();
   }, [scope, reload]);
   useEffect(() => {
@@ -51,7 +52,7 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
       if (!enabled) return;
       const rows = await reload();
       if (!active) return;
-      const row = rows.find(d => d.status === "editing" || d.status === "queued");
+      const row = rows.find(d => d.status === "editing") ?? rows.find(d => d.status === "queued");
       if (row) { current.current = row; revision.current = row.revision; setDraft(row); setSaved(true); }
       else await create();
     }).catch(e => setError(e instanceof Error ? e.message : "无法读取本机草稿。"));
@@ -96,7 +97,7 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     if (!row || failure.current) throw new Error("本机草稿尚未保存，请检查存储空间。");
     if ((publish || syncIntent) && row.content.items.some(i => i.preservationState === "missing")) throw new Error("有原件复制中断或缺失，请重新导入完整一组，或移除缺失的素材后保存。");
     if (publish && !isDraftDateComplete(row.content) && (!canInferCaptureTime(row.content) || row.captureTimeEdited)) throw new Error("请先确认发生时间，或选择「不详」；也可以先保留草稿。");
-    const next = { ...row, organizeOnPublish: publish && organize, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
+    const next = { ...row, content: quickCaptureContent(row.content, row.captureTimeEdited), organizeOnPublish: publish && organize, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
     await write(next);
     if (publish || syncIntent) await queueDraftOriginals(next);
     await reload();

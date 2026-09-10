@@ -16,6 +16,13 @@ export function canInferCaptureTime(content: Pick<DraftContent, "occurredAt" | "
   return content.occurredAt === null && content.occurredAtPrecision === "exact";
 }
 
+/** A fresh text-only note records this moment; imported/explicit dates retain their meaning. */
+export function quickCaptureContent(content: DraftContent, edited?: boolean, now = new Date()): DraftContent {
+  return !edited && !content.items.length && canInferCaptureTime(content)
+    ? { ...content, occurredAt: now.toISOString() }
+    : content;
+}
+
 export function captureDateSummary(content: Pick<DraftContent, "occurredAt" | "occurredAtPrecision">, edited: boolean | undefined, timezone: string): string {
   if (canInferCaptureTime(content) && !edited) return "日期自动读取，信息可以稍后补充。";
   if (content.occurredAtPrecision === "unknown") return "时间不确定，可以稍后补充。";

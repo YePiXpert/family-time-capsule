@@ -16,12 +16,15 @@ const mocks = vi.hoisted(() => ({
   documentPicker: vi.fn(), preserveDocument: vi.fn(), cameraPermission: vi.fn(), camera: vi.fn(), library: vi.fn(), preserveMedia: vi.fn(), preserveAudio: vi.fn(), removeFile: vi.fn(),
   setParams: vi.fn(), route: { params: {} }, grantSyncConsent: vi.fn().mockResolvedValue(undefined), reloadLocal: async () => {}, queued: vi.fn(),
 }));
+vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
+vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
+vi.mock("expo-glass-effect", () => ({ GlassView: "GlassView", isGlassEffectAPIAvailable: () => false, isLiquidGlassAvailable: () => false }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Keyboard: { addListener: () => ({ remove: () => {} }) },
-  Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
+  Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", KeyboardAvoidingView: "KeyboardAvoidingView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
   Platform: { OS: "ios", select: (v: { ios: unknown }) => v.ios },
@@ -122,27 +125,26 @@ it("R01/R02/R03: real native recording hook → HTTP DTO → production API → 
     return tree!.root.findByProps({ testID: "capture-text" }).props.editable;
   }).toBe(true);
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("日期不详的江边往事"));
-  await press("不详");
+  await seedCaptureMetadata({ occurredAt: null, occurredAtPrecision: "unknown", participantIds: ["person-no-account"] });
   await press("指定成员");
   await expect.poll(async () => {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
     return tree!.root.findAllByType("Pressable" as never).filter(n => n.props.accessibilityRole === "checkbox").length;
-  }).toBe(fixture.people.length + fixture.readerCount);
+  }).toBe(fixture.readerCount);
   const boxes = tree!.root.findAllByType("Pressable" as never).filter(n => n.props.accessibilityRole === "checkbox");
-  const readers = boxes.slice(fixture.people.length);
+  const readers = boxes;
   expect(readers.some(n => n.findAllByType("Text" as never).some(t => t.children.join("") === "外公"))).toBe(false);
   const reader = readers.find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === "妈妈"));
   await act(async () => reader!.props.onPress());
-  await act(async () => boxes[1]!.props.onPress());
   await press("保存");
   expect(mocks.grantSyncConsent).toHaveBeenCalledOnce();
-  const before = (await listLocalDrafts(scope))[0]!;
+  const before = (await listLocalDrafts(scope)).find(d => d.status === "queued")!;
   expect(before).toMatchObject({ status: "queued", content: { readerUserIds: ["user-b"], participantIds: ["person-no-account"], occurredAtPrecision: "unknown", occurredAt: null } });
   await act(async () => tree!.unmount()); tree = undefined;
   await initializeLocalStore();
-  expect((await listLocalDrafts(scope))[0]).toEqual(before);
+  expect((await listLocalDrafts(scope)).find(d => d.id === before.id)).toEqual(before);
   await syncLocalDrafts(fixture.credentials, { authorizeUpload: async () => true });
-  const published = (await listLocalDrafts(scope))[0]!;
+  const published = (await listLocalDrafts(scope)).find(d => d.id === before.id)!;
   expect(published.status).toBe("published");
   expect(published.content.occurredAt).toBeNull();
   const url = `/api/mobile/v1/memories/${published.memoryEventId}`;
@@ -160,7 +162,7 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await expect.poll(async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve,20)); }); return tree!.root.findByProps({testID:"capture-text"}).props.editable; }).toBe(true);
   await act(async () => tree!.root.findByProps({testID:"capture-text"}).props.onChangeText("有两张照片与原声的私密往事"));
-  await press("不详"); await press("仅自己");
+  await seedCaptureMetadata({ occurredAt: null, occurredAtPrecision: "unknown" }); await press("仅自己");
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aA1kAAAAASUVORK5CYII=", "base64");
   const media = [0,1].map(i => { const localUri = path.join(originalDirectory, `photo-${i}.png`); writeFileSync(localUri, Buffer.concat([png,Buffer.from(String(i))])); return {localUri,fileName:`photo-${i}.png`,mimeType:"image/png",lastModified:null,mediaType:"image",source:"library"}; });
   mocks.library.mockResolvedValue({canceled:false,assets:media.slice(0,1).map(m => ({uri:m.localUri,type:"image",fileName:m.fileName}))});
@@ -298,7 +300,7 @@ it("private Live Photo stays paired when motion upload is interrupted and its co
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await expect.poll(async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve,20)); }); return tree!.root.findByProps({testID:"capture-text"}).props.editable; }).toBe(true);
   await act(async () => tree!.root.findByProps({testID:"capture-text"}).props.onChangeText("Live Photo 私密原件配对"));
-  await press("不详"); await press("仅自己");
+  await seedCaptureMetadata({ occurredAt: null, occurredAtPrecision: "unknown" }); await press("仅自己");
   const media = ["sample.jpg", "sample.mov"].map((name, i) => {
     const localUri = path.join(originalDirectory, name);
     writeFileSync(localUri, readFileSync(path.join(process.cwd(), "../tests/fixtures", name)));
@@ -389,3 +391,11 @@ it("native incremental sync consumes real HTTP cursors and withdraws revoked off
     expect((await listLocalDrafts(scopeA)).find(row => row.id === published.id)?.memoryEventId).toBe(id);
   } finally { globalThis.fetch = actualFetch; }
 },30000);
+
+async function seedCaptureMetadata(patch: Partial<import("../src/drafts/model").DraftContent>) {
+  const scope = JSON.stringify([fixture.credentials.serverUrl, fixture.credentials.instanceId, fixture.userId, fixture.family.id]);
+  const row = (await listLocalDrafts(scope)).find(d => d.status === "editing")!;
+  await act(async () => { tree!.unmount(); });
+  await saveLocalDraft({ ...row, content: { ...row.content, ...patch }, captureTimeEdited: true, revision: row.revision + 1 }, row.revision);
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+}

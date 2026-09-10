@@ -1,4 +1,4 @@
-import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
+import { waitForCapture, startCaptureDraft, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { ensureBootstrap, ensureLogin } from "./helpers";
@@ -12,12 +12,12 @@ test("导出可读档案：ZIP 可下载、manifest 哈希全部可验证", asyn
   await ensureBootstrap(page);
 
   // 自备内容：一张 EXIF 照片 + 一段 WAV，确认成一个事件，
-  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.goto("/capture"); await waitForCapture(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
   await submitCaptureForReview(page);
-  await page.getByRole("button", { name: "新建一件事" }).click();
+  await startCaptureDraft(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample.wav"));

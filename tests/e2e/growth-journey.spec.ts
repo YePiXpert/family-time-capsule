@@ -1,8 +1,8 @@
+import { setCaptureMetadata, waitForCapture } from "./helpers/capture";
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { ensureBootstrap } from './helpers';
-import { expandCaptureOptions } from './helpers/capture';
 test.use({permissions:['microphone'],launchOptions:{args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']}});
 test('restoring an unsent private recording preserves its audience in the form and saved contribution',async({page})=>{
   await ensureBootstrap(page);
@@ -39,8 +39,8 @@ test('record → first moment → family voice → birthday month → editable g
   await page.goto('/capture');
   await page.getByLabel('写下这一刻').fill('今天第一次握紧爸爸的手指。');
   await page.locator('input[type="file"]').first().setInputFiles(['sample.jpg','sample.mp4'].map(file=>path.join(__dirname,'../fixtures',file)));
-  await expandCaptureOptions(page);
-  await page.getByLabel('发生时间',{exact:true}).fill('2026-08-12T09:30');
+  await waitForCapture(page);
+  await setCaptureMetadata(page, { occurredAt: new Date('2026-08-12T09:30' + ":00+08:00").toISOString() });
   await page.getByRole('button',{name:'保存',exact:true}).click();
   const link=page.getByRole('link',{name:'查看这条记忆'});await expect(link).toBeVisible();
   const memoryPath=(await link.getAttribute('href'))!;

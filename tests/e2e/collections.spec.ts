@@ -1,4 +1,4 @@
-import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
+import { setCaptureMetadata, waitForCapture, startCaptureDraft, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +8,7 @@ import { ensureBootstrap } from './helpers';
 test('真实相册编辑：多选、章节、顺序、重开、冲突与删除恢复',async({page})=>{
   await ensureBootstrap(page);
   for(const [index,title] of ['回家第一天','窗边的午后'].entries()){
-    await page.goto('/capture'); await expandCaptureOptions(page);await page.getByLabel('写下这一刻').fill(`虚构家庭记录：${title}。`);await expandCaptureOptions(page); await page.getByLabel('标题',{exact:true}).fill(title);await expandCaptureOptions(page); await page.getByLabel('发生时间',{exact:true}).fill(`2026-08-${10+index}T12:30`);await submitCaptureForReview(page);await page.goto('/inbox');await page.getByRole('button',{name:'确认进入时间轴'}).click();await expect(page.getByRole('heading',{level:1,name:title})).toBeVisible();
+    await page.goto('/capture'); await waitForCapture(page);await page.getByLabel('写下这一刻').fill(`虚构家庭记录：${title}。`);await waitForCapture(page); await setCaptureMetadata(page, { title: title });await waitForCapture(page); await setCaptureMetadata(page, { occurredAt: new Date(`2026-08-${10+index}T12:30` + ":00+08:00").toISOString() });await submitCaptureForReview(page);await page.goto('/inbox');await page.getByRole('button',{name:'确认进入时间轴'}).click();await expect(page.getByRole('heading',{level:1,name:title})).toBeVisible();
   }
   await page.goto('/collections');await page.getByRole('button',{name:'新建相册',exact:true}).click();
   for (const title of ['回家第一天','窗边的午后']) await page.getByRole('checkbox',{name:title,exact:true}).check();
@@ -30,11 +30,11 @@ test('真实相册编辑：多选、章节、顺序、重开、冲突与删除�
 test('访客链接实时排除私密来源，家庭发布后可读，撤权后标题与媒体同时失效', async ({ page, browser }) => {
   await ensureBootstrap(page);
   const title = '私人相册来源的合成记录';
-  await page.goto('/capture'); await expandCaptureOptions(page);
+  await page.goto('/capture'); await waitForCapture(page);
   await page.getByLabel('写下这一刻').fill('只给自己保存，访客不能从相册引用发现。');
-  await expandCaptureOptions(page); await page.getByLabel('标题', { exact: true }).fill(title);
-  await expandCaptureOptions(page); await page.getByLabel('时间记得多清楚').selectOption('unknown');
-  await page.getByLabel('保存后的读者').selectOption('private');
+  await waitForCapture(page); await setCaptureMetadata(page, { title: title });
+  await waitForCapture(page); await setCaptureMetadata(page, { occurredAt: null, occurredAtPrecision: "unknown" });
+  await page.getByRole("button", { name: "仅自己", exact: true }).click();
   await page.getByLabel('添加照片、视频、录音或文档').setInputFiles({
     name: '合成私人照片.png', mimeType: 'image/png',
     buffer: Buffer.concat([readFileSync(path.join(__dirname, '../fixtures/sample.png')), Buffer.from(randomUUID())]),
@@ -70,11 +70,11 @@ test('访客链接实时排除私密来源，家庭发布后可读，撤权后�
     expect((await guest.request.get(mediaUrl)).status()).toBe(401);
     // Isolated fixture changes emulate historical sharing; the existing-event editor is still pending.
     db.prepare("update memory_event set visibility='family' where id=?").run(eventId);
-    await guest.reload(); await expandCaptureOptions(guest);
+    await guest.reload(); await waitForCapture(guest);
     await expect(guest.getByRole('heading', { name: title, exact: true })).toBeVisible();
     expect((await guest.request.get(mediaUrl, { headers: { range: 'bytes=0-11' } })).status()).toBe(206);
     db.prepare("update memory_event set visibility='private' where id=?").run(eventId);
-    await guest.reload(); await expandCaptureOptions(guest);
+    await guest.reload(); await waitForCapture(guest);
     await expect(guest.getByRole('heading', { name: title, exact: true })).toHaveCount(0);
     expect((await guest.request.get(mediaUrl, { headers: { range: 'bytes=0-11' } })).status()).toBe(401);
   } finally { db.close(); await guestContext.close(); }
@@ -104,15 +104,15 @@ test('相册选择跨越第一页，并能直接恢复时间轴指定的旧相�
 test('访客限定阅读链接：只读单册、范围外媒体 404、收回即失效（M2-d ID-5）', async ({ page, browser }) => {
   await ensureBootstrap(page);
   // 自备一条带照片的记忆 + 一本相册
-  await page.goto('/capture'); await expandCaptureOptions(page);
+  await page.goto('/capture'); await waitForCapture(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, '..', 'fixtures', 'sample-exif.jpg'));
   await submitCaptureForReview(page);
-  await page.getByRole('button', { name: '新建一件事' }).click();
+  await startCaptureDraft(page);
   await page.getByLabel('写下这一刻').fill('虚构记录：给外婆的相册素材。');
-  await expandCaptureOptions(page); await page.getByLabel('标题', { exact: true }).fill('阳光下的午后');
-  await expandCaptureOptions(page); await page.getByLabel('发生时间', { exact: true }).fill('2026-08-15T15:00');
+  await waitForCapture(page); await setCaptureMetadata(page, { title: '阳光下的午后' });
+  await waitForCapture(page); await setCaptureMetadata(page, { occurredAt: new Date('2026-08-15T15:00' + ":00+08:00").toISOString() });
   await submitCaptureForReview(page);
 
   await page.goto('/inbox');

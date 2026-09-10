@@ -1,4 +1,4 @@
-import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
+import { waitForCapture, submitCaptureForReview } from "./helpers/capture";
 import { expect, test, type Page } from "@playwright/test";
 import Database from "better-sqlite3";
 import path from "node:path";
@@ -99,7 +99,7 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   await page.getByRole("button", { name: "添加家人" }).click();
   await expect(page.getByText("外婆").first()).toBeVisible();
 
-  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.goto("/capture"); await waitForCapture(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));
@@ -148,7 +148,7 @@ test("viewer role fails closed at stale actions and HTTP write routes", async ({
   const mediaRead = await page.request.get(`/api/media/${assetId}`);
   expect(mediaRead.status()).toBe(200);
 
-  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.goto("/capture"); await waitForCapture(page);
   await expect(page.getByText("当前账号是只读角色")).toBeVisible();
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
   const primaryNavigation = page.getByRole("navigation", { name: "一级导航" });

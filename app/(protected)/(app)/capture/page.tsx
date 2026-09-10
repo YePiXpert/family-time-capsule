@@ -2,7 +2,6 @@ import { getDraft, listDraftReaders } from "@/lib/drafts/service";
 import type { Metadata } from "next";
 import { requireFamily } from "@/lib/family/context";
 import { hasFamilyCapability } from "@/lib/authz/policy";
-import { listPeople } from "@/lib/family/service";
 import Link from "next/link";
 import { Icon } from "@/components/ui/icons";
 import styles from "./capture.module.css";
@@ -14,13 +13,12 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = { title: "记录这一刻 · 小美成长记" };
 
-export default async function CapturePage({ searchParams }: { searchParams: Promise<{ draft?: string }> }) {
+export default async function CapturePage({ searchParams }: { searchParams: Promise<{ draft?: string; localDraft?: string }> }) {
   const context = await requireFamily();
   const { familyId, role, userId, familyTimezone } = context;
   const query = await searchParams;
   const canCapture = hasFamilyCapability(role, "capture:create");
   const canArchive = hasFamilyCapability(role, "inbox:review");
-  const people = canCapture ? await listPeople(familyId) : [];
   // §5：指定读者按家庭账号（用户）选择；参与人物不是读者。
   const memberRows = canCapture ? listDraftReaders(context) : [];
 
@@ -28,8 +26,9 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
     <main className={`capture-page ${styles.page}`}>
       <header className={styles.heading}>
         <div>
-          <h1>记录这一刻</h1>
-          <p>照片、声音，还有你想记住的小事。</p>
+          <span className={styles.eyebrow}>小美成长记</span>
+          <h1>记录一刻</h1>
+          <p>把今天的小美好，留给未来。</p>
         </div>
         <Link href="/timeline" className={styles.back}><Icon name="arrow-left" size={18} /><span>回到成长记</span></Link>
       </header>
@@ -37,15 +36,11 @@ export default async function CapturePage({ searchParams }: { searchParams: Prom
       {canCapture ? (
         <PersistentCaptureEditor
           initialServerDraft={canCapture && query.draft ? getDraft(context, query.draft) : undefined}
+          initialLocalDraftId={query.localDraft}
           scope={`${userId}:${familyId}`}
           timezone={familyTimezone}
           canArchive={canArchive}
           aiSettings={hasFamilyCapability(role, "ai:review") ? getAiOperationalStatus(context) : null}
-          people={people.map((person) => ({
-            id: person.id,
-            displayName: person.displayName,
-            isChild: person.isChild,
-          }))}
           members={memberRows}
         />
       ) : (

@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { waitForCapture } from "./helpers/capture";
 import {
   expect,
   test,
@@ -185,7 +185,7 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
       viewer.page.getByRole("link", { name: /导出可读档案/ }),
     ).toHaveCount(0);
 
-    await viewer.page.goto("/capture"); await expandCaptureOptions(viewer.page);
+    await viewer.page.goto("/capture"); await waitForCapture(viewer.page);
     await expect(viewer.page.getByText("当前账号是只读角色")).toBeVisible();
     await expect(viewer.page.locator("textarea[name='text']")).toHaveCount(0);
     await expect(
@@ -233,14 +233,14 @@ test("管理员邀请 viewer/contributor，受邀账号只获得各自家庭权�
       contributor.page.getByRole("link", { name: /导出可读档案/ }),
     ).toHaveCount(0);
 
-    await contributor.page.goto("/capture"); await expandCaptureOptions(contributor.page);
+    await contributor.page.goto("/capture"); await waitForCapture(contributor.page);
     await expect(
-      contributor.page.getByRole("heading", { name: "记录这一刻", level: 1 }),
+      contributor.page.getByRole("heading", { name: "记录一刻", level: 1 }),
     ).toBeVisible();
     const note = "贡献者通过邀请写下的真实文字";
     await contributor.page.getByLabel("写下这一刻").fill(note);
     await contributor.page.getByRole("button", { name: "保存", exact: true }).click();
-    await expect(contributor.page.getByText("已收进收件箱。")).toBeVisible();
+    await expect(contributor.page.getByText("已收进收件箱，可以继续记录。")).toBeVisible();
 
     await contributor.page.goto("/inbox");
     await expect(contributor.page.getByText(note)).toBeVisible();

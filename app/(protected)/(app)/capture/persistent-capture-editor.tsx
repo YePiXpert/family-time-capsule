@@ -9,16 +9,12 @@ import { removeDraftItem, reconcileDraftAsset, pairDraftItems } from "@/lib/draf
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { OrganizerControl } from "@/components/organizer-control";
-import { canInferCaptureTime, captureDateSummary, captureOrganizerAvailability, captureSavedMessage, type CaptureProcessing } from "@/mobile/src/drafts/capture";
+import { canInferCaptureTime, captureDateSummary, captureOrganizerAvailability, captureSavedMessage, quickCaptureContent, type CaptureProcessing } from "@/mobile/src/drafts/capture";
 import type { AiSettings } from "@/mobile/src/ai/types";
 import { uploadDraftOriginal } from "@/lib/drafts/browser-upload";
 import { emptyDraftContent, isDraftDateComplete, type Draft, type DraftContent } from "@/lib/drafts/model";
 import { listBrowserDrafts, readBrowserOriginal, writeBrowserDraft, type BrowserDraft, type BrowserOriginal } from "@/lib/drafts/browser-store";
-import { zonedWallTimeToUtc, utcToZonedWallTimeInput } from "@/lib/metadata/time";
-import { anchorFromPrecisionInput, formatOccurredLabel, type OccurredAtPrecision } from "@/lib/metadata/precision";
 
-type Person = { id: string; displayName: string; isChild: boolean };
-const field = "min-h-11 w-full rounded-xl border border-line bg-surface px-3 py-2 text-base";
 const button = "ui-button-secondary min-h-11";
 function message(error: unknown) { return error instanceof Error ? error.message : "操作失败，请重试。"; }
 async function requestDraft(id: string, path: string, body: unknown, method = "POST"): Promise<Draft & { processing?: CaptureProcessing }> {
@@ -31,10 +27,9 @@ async function requestDraft(id: string, path: string, body: unknown, method = "P
   return result;
 }
 
-export function PersistentCaptureEditor({ people, members, canArchive, scope, timezone, initialServerDraft, aiSettings = null }: { aiSettings?: AiSettings | null; people: Person[]; members: { id: string; name: string }[]; canArchive: boolean; scope: string; timezone: string; initialServerDraft?: Draft }) {
+export function PersistentCaptureEditor({ members, canArchive, scope, timezone, initialServerDraft, initialLocalDraftId, aiSettings = null }: { aiSettings?: AiSettings | null; members: { id: string; name: string }[]; canArchive: boolean; scope: string; timezone: string; initialServerDraft?: Draft; initialLocalDraftId?: string }) {
   const [draft, setDraft] = useState<BrowserDraft | null>(null);
-  const [drafts, setDrafts] = useState<BrowserDraft[]>([]);
-  const [serverDrafts, setServerDrafts] = useState<Draft[]>([]);
+  const [lastMemoryId, setLastMemoryId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [diskError, setDiskError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -49,8 +44,8 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
   const recordingStream = useRef<MediaStream | null>(null);
   const [recording, setRecording] = useState(false);
   const syncBusy = useRef(false);
+  const saveBusy = useRef(false);
   const mounted = useRef(true);
-  const refreshList = useCallback(async () => setDrafts(await listBrowserDrafts(scope)), [scope]);
 
   const store = useCallback((next: BrowserDraft, originals: BrowserOriginal[] = []) => {
     for (const original of originals) pendingOriginals.current.set(original.id, original);
@@ -78,10 +73,11 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
     await writes.current;
     if (failed.current) return;
     const id = crypto.randomUUID();
+    const previous = (current.current?.scope === scope ? current.current.content : undefined) ?? (await listBrowserDrafts(scope))[0]?.content;
+    const content = { ...emptyDraftContent(), ...(previous ? { visibility: previous.visibility, readerUserIds: previous.readerUserIds } : {}) };
     committed.current = 0;
-    await store({ id, scope, content: emptyDraftContent(), revision: 1, serverRevision: 0, syncedRevision: 0, mutationId: crypto.randomUUID(), status: "editing", memoryEventId: null, updatedAt: new Date().toISOString() });
-    await refreshList();
-  }, [scope, store, refreshList]);
+    await store({ id, scope, content, revision: 1, serverRevision: 0, syncedRevision: 0, mutationId: crypto.randomUUID(), status: "editing", memoryEventId: null, updatedAt: new Date().toISOString() });
+  }, [scope, store]);
 
   useEffect(() => {
     let active = true; mounted.current = true;
@@ -104,25 +100,24 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
       if (initialServerDraft) {
         const existing = rows.find(row => row.id === initialServerDraft.id);
         if (initialServerDraft.items.some(item => !item.assetId && !existing?.content.items.find(local => local.id === item.id)?.localCaptureRef)) {
-          setNotice("这份草稿还有素材留在原设备，请先在那里完成上传。已收到的原件仍可从资料库打开。"); setDrafts(rows); return;
+          setNotice("这份草稿还有素材留在原设备，请先在那里完成上传。已收到的原件仍可从资料库打开。"); return;
         }
         if (!existing || existing.revision === existing.syncedRevision) {
           const revision = (existing?.revision ?? 0) + 1;
           const row: BrowserDraft = { id: initialServerDraft.id, scope, content: { ...initialServerDraft, items: initialServerDraft.items.map(item => ({ ...item, localCaptureRef: existing?.content.items.find(i => i.id === item.id)?.localCaptureRef ?? null })) }, revision, serverRevision: initialServerDraft.revision, syncedRevision: revision, mutationId: crypto.randomUUID(), status: initialServerDraft.status, memoryEventId: initialServerDraft.memoryEventId, updatedAt: initialServerDraft.updatedAt };
           await writeBrowserDraft(row, existing?.revision ?? 0);
-          current.current = row; committed.current = row.revision; setDraft(row); setSaved(true); await refreshList(); return;
+          current.current = row; committed.current = row.revision; setDraft(row); setSaved(true); return;
         }
         current.current = existing; committed.current = existing.revision; setDraft(existing); setSaved(true);
-        setNotice("这份草稿还有本机修改，请先核对后再同步。服务器新加入的资料引用仍保留。"); setDrafts(rows); return;
+        setNotice("这份草稿还有本机修改，请先核对后再同步。服务器新加入的资料引用仍保留。"); return;
       }
-      setDrafts(rows);
-      const existing = rows.find(row => row.status === "editing" || row.status === "queued");
+
+      const existing = rows.find(row => row.id === initialLocalDraftId && (row.status === "editing" || row.status === "queued")) ?? rows.find(row => row.status === "editing" || row.status === "queued");
       if (existing) { current.current = existing; committed.current = existing.revision; setDraft(existing); setSaved(true); }
       else void create().catch(error => setDiskError(message(error)));
     }).catch(error => setDiskError(message(error)));
-    void fetch("/api/mobile/v1/drafts").then(r => r.ok ? r.json() : null).then(body => { if (active && body) setServerDrafts(body.drafts); }).catch(() => {});
     return () => { active = false; mounted.current = false; recorder.current?.stop(); recordingStream.current?.getTracks().forEach(track => track.stop()); };
-  }, [scope, create, initialServerDraft, refreshList]);
+  }, [scope, create, initialServerDraft, initialLocalDraftId]);
 
   useEffect(() => {
     let active = true;
@@ -181,7 +176,7 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
           const remote = await check.json() as Draft;
           if (remote.status === "published" && remote.memoryEventId) {
             await store({ ...row, content: { ...row.content, occurredAt: remote.occurredAt, occurredAtPrecision: remote.occurredAtPrecision }, status: "published", memoryEventId: remote.memoryEventId, serverRevision: remote.revision, revision: row.revision + 1 });
-            setNotice("记忆已保存，已恢复上次结果。"); await refreshList(); return;
+            setLastMemoryId(remote.memoryEventId); await create(); setNotice("记忆已保存，已恢复上次结果。"); return;
           }
         } else if (check.status !== 404) throw new Error("暂时无法核对保存结果，本机草稿仍保留。");
       }
@@ -213,152 +208,102 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
         const submitted = await requestDraft(row.id, "/submit", { expectedRevision: received.revision });
         const latest = current.current!;
         await store({ ...latest, revision: latest.revision + 1, serverRevision: submitted.revision, syncedRevision: latest.revision + 1 });
-        setNotice("已收进收件箱。整件事的草稿可以继续整理。");
+        await create();
+        setNotice("已收进收件箱，可以继续记录。");
       } else if (publish) {
         const result = received.status === "published" ? received : await requestDraft(row.id, "/publish", { expectedRevision: received.revision, quickSave: true, inferTime: !row.captureTimeEdited, organize: row.organizeOnPublish === true, organizeMode: "automatic" });
         const latest = current.current!;
         await store({ ...latest, content: { ...latest.content, occurredAt: result.occurredAt, occurredAtPrecision: result.occurredAtPrecision }, processing: result.processing, status: "published", memoryEventId: result.memoryEventId, serverRevision: result.revision, revision: latest.revision + 1, syncedRevision: latest.revision + 1 });
+        setLastMemoryId(result.memoryEventId);
+        await create();
         setNotice(captureSavedMessage(result.processing));
-      } else setNotice("服务器已收到草稿，可以换设备继续。尚未创建正式记忆。");
-      await refreshList();
-    } catch (error) { if (mounted.current) setNotice(message(error)); }
+      } else {
+        await create();
+        setNotice("私密草稿已保存，可从未完成记录继续。");
+      }
+      } catch (error) { if (mounted.current) setNotice(message(error)); }
     finally { syncBusy.current = false; if (mounted.current) setSyncing(false); }
   }
   async function save(publish: boolean, review = false, organize = false) {
+    if (saveBusy.current || syncBusy.current) return;
     setNotice("");
     const row = current.current;
     if (!row) return;
-    if (publish && !isDraftDateComplete(row.content) && (!canInferCaptureTime(row.content) || row.captureTimeEdited)) { setNotice("请确认发生时间，或选择「时间记不得了」；也可以先保留草稿。"); return; }
+    if (publish && !isDraftDateComplete(row.content) && (!canInferCaptureTime(row.content) || row.captureTimeEdited)) { setNotice("这份旧草稿的日期尚未填完，可以标为时间不确定后保存。"); return; }
     if (publish && row.content.visibility === "members" && row.content.readerUserIds.length === 0) { setNotice("请先选择可以阅读这件事的家人，或改回全家/仅自己。"); return; }
+    saveBusy.current = true; setSyncing(true); setLastMemoryId(null);
     try {
-      await store({ ...row, organizeOnPublish: publish && organize, status: publish ? "queued" : "editing", revision: row.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() });
+      await store({ ...row, content: quickCaptureContent(row.content, row.captureTimeEdited), organizeOnPublish: publish && organize, status: publish ? "queued" : "editing", revision: row.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() });
       setNotice(publish ? "本机已保存，正在后台创建记忆。可以离开页面，重开后可继续。" : "本机已保存，正在尝试送往服务器。可以离开页面。");
-      void sendToServer(publish, review);
+      await sendToServer(publish, review);
     } catch (error) { setNotice(message(error)); }
-  }
-  async function resume(row: BrowserDraft) {
-    await writes.current; if (failed.current || syncing) return;
-    current.current = row; committed.current = row.revision; setDraft(row); setSaved(true); setNotice("");
-  }
-  async function continueServer(row: Draft) {
-    await writes.current;
-    if (syncing || failed.current) return;
-    const existing = (await listBrowserDrafts(scope)).find(d => d.id === row.id);
-    if (existing && existing.revision !== existing.syncedRevision) { setNotice("本机还有未送达的修改，请先继续本机草稿，避免覆盖。"); return; }
-    if (row.status !== "editing") throw new Error("这份草稿已提交或关闭，请刷新后核对。");
-    if (row.items.some(item => !item.assetId)) throw new Error("这份草稿还有素材留在原设备，请先在那里完成上传。");
-    const local: BrowserDraft = { id: row.id, scope, content: { ...row, items: row.items.map(item => ({ ...item, localCaptureRef: null })) }, revision: (existing?.revision ?? 0) + 1, serverRevision: row.revision, syncedRevision: (existing?.revision ?? 0) + 1, mutationId: crypto.randomUUID(), status: "editing", memoryEventId: row.memoryEventId, updatedAt: row.updatedAt };
-    await writeBrowserDraft(local, existing?.revision ?? 0); await resume(local); await refreshList();
+    finally { saveBusy.current = false; if (mounted.current) setSyncing(false); }
   }
   async function discard() {
-    const row = current.current; if (!row || syncing) return;
+    const row = current.current; if (!row || syncing || recording || !window.confirm("清空这次记录？原件仍会保留。")) return;
     try {
       await writes.current;
       if (row.serverRevision > 0) await requestDraft(row.id, "", { expectedRevision: row.serverRevision }, "DELETE");
       await store({ ...row, status: "discarded", revision: row.revision + 1 });
-      setNotice("草稿已放弃，原件仍保留。"); await create();
+      await create(); setNotice("已清空，原件仍保留。");
     } catch (error) { setNotice(message(error)); }
   }
-  if (!draft) return <p role="status" className="mt-8">{diskError || "正在打开本机草稿…"}</p>;
+  if (!draft) return <div className="mt-8"><p role="status">{diskError || notice || "正在打开本机草稿…"}</p>{notice && <Link href="/pending" className={button}>返回未完成记录</Link>}</div>;
   const content = draft.content, editable = draft.status === "editing" && !syncing;
-  const otherLocalDrafts = drafts.filter(d => d.id !== draft.id && (d.status === "editing" || d.status === "queued"));
-  const otherServerDrafts = serverDrafts.filter(d => d.id !== draft.id && d.status === "editing" && !drafts.some(local => local.id === d.id));
-  const otherDraftCount = otherLocalDrafts.length + otherServerDrafts.length;
   const automaticRequested = captureOrganizerAvailability(aiSettings, content.visibility, [], "automatic").ready;
-  const organizer = captureOrganizerAvailability(aiSettings, content.visibility, content.items.map(item => previews[item.id]?.type ?? ""), "automatic");
-  const occurredInput = () => {
-    if (!content.occurredAt) return "";
-    const wall = utcToZonedWallTimeInput(new Date(content.occurredAt), timezone);
-    if (content.occurredAtPrecision === "month") return wall.slice(0, 7);
-    if (content.occurredAtPrecision === "year") return wall.slice(0, 4);
-    if (content.occurredAtPrecision === "date_only") return wall.slice(0, 10);
-    return wall.slice(0, 16);
-  };
-  const setOccurredInput = (value: string) => {
-    try {
-      const anchor = anchorFromPrecisionInput({ precision: content.occurredAtPrecision, wall: value, timezone, toUtc: zonedWallTimeToUtc });
-      change({ occurredAt: anchor ? anchor.toISOString() : null });
-    } catch { setNotice("时间格式不正确。"); }
-  };
   return <div className={styles.editor}>
     <div className={styles.paper}>
-    <div className={styles.paperHeading}><span>这一刻的记录</span>
-    <p role="status" className={styles.saveState}><Icon name={saved ? "check" : "edit"} size={16} />{saved ? "本机已保存" : "正在写入本机…"} · {draft.status === "published" ? "记忆已保存" : draft.serverRevision ? "草稿已同步" : "仅存本机"}</p></div>
-    {diskError && <div role="alert" className="inline-notice inline-notice-danger flex flex-wrap items-center gap-3">{diskError}<button className={button} onClick={() => { failed.current = false; void store(current.current!).catch(() => {}); }}>重试本机保存</button></div>}
-    {notice && <p role="status" className={styles.notice}>{notice}</p>}
-    {draft.memoryEventId && draft.organizeOnPublish && <OrganizerControl kind="memory_event" id={draft.memoryEventId} />}
-    {draft.status === "published" && <p className={styles.publishedAudience}><Icon name={content.visibility === "private" ? "lock" : "people"} size={18} />{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}</p>}
-    {draft.memoryEventId && <div className="mb-5 flex flex-wrap gap-3"><Link href={`/memories/${draft.memoryEventId}`} className="ui-button-primary">查看这条记忆</Link><button className={button} disabled={syncing || recording || !!diskError} onClick={() => void create()}>新建一件事</button></div>}
-    <fieldset disabled={!editable} className={styles.compose}>
-      <div className={styles.mediaTools}>
-        <label className={`${styles.addMedia} ${content.items.length ? styles.addMediaCompact : ""}`}>
-          <span className={styles.mediaIcon}><Icon name="image" size={30} /></span>
-          <span><strong>{content.items.length ? "继续添加照片或视频" : "添加照片或视频"}</strong><span className={styles.mediaHint}>从相册选入，留住这一刻</span></span>
-          <span className={styles.addMark}><Icon name="capture" size={22} /></span>
-          <input aria-label="添加照片、视频、录音或文档" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
-        </label>
-        <div className={styles.tools}>
-          <details className={styles.camera}><summary className={styles.tool}><Icon name="camera" size={20} />拍摄</summary><div className={styles.cameraMenu}>
-            <label className={`${button} cursor-pointer`}>拍照<input aria-label="拍照" type="file" accept="image/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
-            <label className={`${button} cursor-pointer`}>录像<input aria-label="录像" type="file" accept="video/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
-          </div></details>
-          <button type="button" className={styles.tool} onClick={() => void toggleRecording()}><Icon name="microphone" size={20} />{recording ? "停止录音并加入这件事" : "录音"}</button>
-          <label className={styles.tool}><Icon name="story" size={20} />文件<input aria-label="添加文件" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+      {diskError && <div role="alert" className="inline-notice inline-notice-danger">{diskError}<button className={button} onClick={() => { failed.current = false; void store(current.current!).catch(() => {}); }}>重试本机保存</button></div>}
+      <fieldset disabled={!editable} className={styles.compose}>
+        <textarea aria-label="写下这一刻" className={styles.textarea} rows={5} maxLength={5000} value={content.text} onChange={e => change({ text: e.target.value })} placeholder="今天，有什么想记住的？" />
+        <div className={styles.mediaTools}>
+          <label className={styles.addMedia}><Icon name="image" size={20} />照片 / 视频<input aria-label="添加照片、视频、录音或文档" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+          <div className={styles.tools}>
+            <label className={styles.tool}><Icon name="camera" size={18} />拍照<input aria-label="拍照" type="file" accept="image/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+            <label className={styles.tool}><Icon name="video" size={18} />录像<input aria-label="录像" type="file" accept="video/*" capture="environment" className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+            <button type="button" className={styles.tool} onClick={() => void toggleRecording()}><Icon name="microphone" size={18} />{recording ? "完成录音" : "录音"}</button>
+            <label className={styles.tool}><Icon name="story" size={18} />文件<input aria-label="添加文件" type="file" multiple className="sr-only" onChange={e => { void addFiles(Array.from(e.target.files ?? [])); e.target.value = ""; }} /></label>
+          </div>
         </div>
+        <ol className={styles.attachments}>{content.items.map((item, index) => {
+          const preview = previews[item.id], previous = content.items[index - 1];
+          const canPair = previous && !previous.livePhotoGroupId && !item.livePhotoGroupId && previews[previous.id]?.type.startsWith("image/") && preview?.type.startsWith("video/");
+          return <li key={item.id} className={styles.attachment}>
+            {preview?.type.startsWith("image/") ? <img src={preview.url} alt={item.caption || "这件事的照片"} className={styles.preview} /> : preview?.type.startsWith("audio/") ? <audio controls src={preview.url} aria-label="重听这段录音" /> : preview?.type.startsWith("video/") ? <ImportedVideoPreview key={preview.url} src={preview.url} assetId={item.assetId} /> : preview?.url ? <a href={preview.url} target="_blank" rel="noreferrer" className={button}>打开素材</a> : null}
+            <p className={styles.fileCaption}>{item.preservationState === "missing" ? "原件已移除，请移除这项引用或重新添加" : preview?.name || "正在读取原件"}</p>
+            {item.livePhotoGroupId && <p className={styles.fileCaption}>Live Photo · {item.livePhotoRole === "image" ? "照片" : "动态原片"}</p>}
+            {canPair && <button type="button" className={styles.tool} onClick={() => change(pairDraftItems(content, previous.id, item.id, crypto.randomUUID()))}>确认与上一张照片组成 Live Photo</button>}
+            <button type="button" className={styles.tool} onClick={() => change(removeDraftItem(content, item.id))}>移除</button>
+          </li>;
+        })}</ol>
+        {recording ? <RecordingMeter streamRef={recordingStream} /> : null}
+      </fieldset>
+      <div className={styles.paperFooter}>
+        <p role="status" className={styles.saveState}>{saved ? "本机已保存" : "正在写入本机…"} · {draft.status === "queued" ? "待同步" : "自动暂存"}</p>
+        {(content.text.trim() || content.items.length > 0 || content.title) && <button className={styles.tool} disabled={!editable || recording || !!diskError} onClick={() => void discard()}>清空</button>}
       </div>
-      {recording ? <RecordingMeter streamRef={recordingStream} /> : null}
-      <label className={styles.writing}><span>想留下的话<span className={styles.optional}>选填</span></span><textarea aria-label="写下这一刻" className={styles.textarea} rows={3} maxLength={5000} value={content.text} onChange={e => change({ text: e.target.value })} placeholder="今天的你，又带来了什么小惊喜？" /></label>
-      <ol className={styles.attachments}>{content.items.map((item, index) => {
-        const preview = previews[item.id], previous = content.items[index - 1];
-        const canPair = previous && !previous.livePhotoGroupId && !item.livePhotoGroupId && previews[previous.id]?.type.startsWith("image/") && preview?.type.startsWith("video/");
-        return <li key={item.id} className={styles.attachment}>
-          {preview?.type.startsWith("image/") ? <img src={preview.url} alt={item.caption || "这件事的照片"} className={styles.preview} /> : preview?.type.startsWith("audio/") ? <audio controls src={preview.url} aria-label="重听这段录音" /> : preview?.type.startsWith("video/") ? <ImportedVideoPreview key={preview.url} src={preview.url} assetId={item.assetId} /> : preview?.url ? <a href={preview.url} target="_blank" rel="noreferrer" className={button}>打开素材</a> : null}
-          <p className={styles.fileCaption}>{item.preservationState === "missing" ? "原件已移除，请删除这项引用或补充素材" : preview?.name || "正在读取原件"} · {item.assetId ? "服务器已收到原件" : "原件已在本机"}</p>
-          {item.livePhotoGroupId && <p>Live Photo · {item.livePhotoRole === "image" ? "静态照片" : "动态原片"}（移除时整组操作）</p>}
-          {canPair && <button type="button" className={button} onClick={() => change(pairDraftItems(content, previous.id, item.id, crypto.randomUUID()))}>确认与上一张照片组成 Live Photo</button>}
-          <details><summary className="min-h-11 cursor-pointer py-2">说明与调整（可选）</summary><label>素材说明<input className={field} value={item.caption} maxLength={2000} onChange={e => change({ items: content.items.map(i => i.id === item.id ? { ...i, caption: e.target.value } : i) })} /></label>
-          <div className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} disabled={index === 0} onClick={() => { const items = [...content.items]; [items[index - 1], items[index]] = [items[index]!, items[index - 1]!]; change({ items }); }}>上移</button><button type="button" className={button} disabled={index === content.items.length - 1} onClick={() => { const items = [...content.items]; [items[index], items[index + 1]] = [items[index + 1]!, items[index]!]; change({ items }); }}>下移</button><button type="button" className={button} onClick={() => change({ coverItemId: item.id })}>{content.coverItemId === item.id ? "已选为封面" : "设为封面"}</button><button type="button" className={button} onClick={() => change(removeDraftItem(content, item.id))}>从草稿移除</button></div></details>
-        </li>;
-      })}</ol>
-      <details className={styles.details}><summary><Icon name="edit" size={18} /><span>补充信息（可选）</span><Icon name="chevron-right" size={16} /></summary><div className="space-y-4 pb-4">
-      <label className="block">标题<input className={field} value={content.title} maxLength={100} onChange={e => change({ title: e.target.value })} /></label>
-      <div className="block space-y-2">
-        <label className="block">时间记得多清楚<select className={field} value={content.occurredAtPrecision} onChange={e => change({ occurredAtPrecision: e.target.value as OccurredAtPrecision, ...(e.target.value === "unknown" ? { occurredAt: null } : {}) })}><option value="exact">精确到分</option><option value="approximate">大致时间</option><option value="date_only">只记得日期</option><option value="month">只记得年月</option><option value="year">只记得年份</option><option value="unknown">时间记不得了</option></select></label>
-        {content.occurredAtPrecision !== "unknown" && <label className="block">{content.occurredAtPrecision === "month" ? "年月（如 1988-05）" : content.occurredAtPrecision === "year" ? "年份（如 1988）" : "发生时间"}<input type={content.occurredAtPrecision === "month" ? "month" : content.occurredAtPrecision === "year" ? "text" : "datetime-local"} inputMode={content.occurredAtPrecision === "year" ? "numeric" : undefined} placeholder={content.occurredAtPrecision === "year" ? "1988" : undefined} className={field} value={occurredInput()} onChange={e => setOccurredInput(e.target.value)} /></label>}
-        {content.occurredAtPrecision === "exact" && <button type="button" className={button} onClick={() => change({ occurredAt: new Date().toISOString() })}>就是现在</button>}
-        <p className="text-sm text-muted">{content.occurredAtPrecision === "unknown" ? "不填时间也照常保存；这条记忆会标注「时间不确定」，不会被放进某个编造的日期。" : content.occurredAt && content.occurredAtPrecision !== "exact" && content.occurredAtPrecision !== "approximate" ? formatOccurredLabel(content.occurredAtPrecision, content.occurredAt, timezone) : ""}</p>
-      </div>
-      <label className="block">地点<input className={field} value={content.locationText} maxLength={200} onChange={e => change({ locationText: e.target.value })} /></label>
-      <fieldset><legend>人物</legend>{people.map(p => <label key={p.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.participantIds.includes(p.id)} onChange={e => change({ participantIds: e.target.checked ? [...content.participantIds, p.id] : content.participantIds.filter(id => id !== p.id) })} />{p.displayName}</label>)}</fieldset>
-      </div></details>
-      <p className={styles.dateNote}>{captureDateSummary(content, draft.captureTimeEdited, timezone)}</p>
-
-    </fieldset>
     </div>
-    {draft.status !== "published" && <div className="space-y-3">
-      {canArchive && organizer.ready && <p className="text-sm text-muted">保存后按已有授权在后台整理，不影响原件。</p>}
-      <div className={styles.saveBar}><fieldset disabled={!editable} className={styles.readerControl}>      <details className={styles.privacy}><summary><Icon name={content.visibility === "private" ? "lock" : "people"} size={20} />{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}<Icon name="chevron-right" size={15} /></summary><div className={styles.privacyPanel}>
-      <label className="block">保存后的读者<select className={field} value={content.visibility} onChange={e => change({ visibility: e.target.value as DraftContent["visibility"], ...(e.target.value === "members" ? {} : { readerUserIds: [] }) })}><option value="family">全家</option><option value="members">指定成员</option><option value="private">仅自己</option></select></label>
-      {content.visibility === "members" && <fieldset><legend>可以阅读的登录成员（始终包含自己）</legend>{members.map(m => <label key={m.id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={content.readerUserIds.includes(m.id)} onChange={e => change({ readerUserIds: e.target.checked ? [...content.readerUserIds, m.id] : content.readerUserIds.filter(id => id !== m.id) })} />{m.name}</label>)}
-        {content.readerUserIds.filter(id => !members.some(m => m.id === id)).map(id => <label key={id} className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked onChange={() => change({ readerUserIds: content.readerUserIds.filter(readerId => readerId !== id) })} />已选成员（待联网核对，点按移除）</label>)}
-      </fieldset>}
-      {content.visibility !== "family" && <p className="text-sm text-muted">草稿文字和新素材在发布前仅自己可见，发布后按这里选择的读者开放。原本已全家共享的素材不会因此收回旧共享。</p>}
-      </div></details></fieldset>
-      <button className={`ui-button-primary ${styles.saveButton}`} disabled={syncing || !!diskError || recording || (!content.text.trim() && !content.items.length)} onClick={() => void save(canArchive, !canArchive && content.visibility === "family", canArchive && (draft.status === "queued" ? draft.organizeOnPublish === true : automaticRequested))}>{syncing ? "正在保存…" : draft.status === "queued" ? "重试保存" : "保存"}<Icon name="check" size={18} /></button></div>
-      {!canArchive && <p className="text-sm text-muted">{content.visibility === "family" ? "保存到家庭待整理列表，家人可以继续补充。" : "先保存为私密草稿，稍后可以继续。"}</p>}
-      <details className={styles.drafts}><summary><Icon name="archive" size={18} />草稿<Icon name="chevron-right" size={16} /></summary>
-      <div className="mb-3">
-        <p className="mb-2 text-sm text-muted">{otherDraftCount ? `继续草稿（${otherDraftCount}）` : "暂无其他草稿"}</p>
-        {otherDraftCount > 0 && <div className="flex flex-wrap gap-2">
-          {otherLocalDrafts.map(d => <button key={d.id} className={button} disabled={syncing || recording} onClick={() => void resume(d)}>{d.content.title || d.content.text.slice(0, 30) || "未命名的一件事"}</button>)}
-          {otherServerDrafts.map(d => <button key={d.id} className={button} disabled={syncing || recording} onClick={() => void continueServer(d).catch(e => setNotice(message(e)))}>{d.title || "服务器草稿"}</button>)}
+    {notice && <p role="status" className={styles.notice}>{notice}</p>}
+    {lastMemoryId && <Link href={`/memories/${lastMemoryId}`} className={styles.resultLink}>查看这条记忆</Link>}
+    {draft.memoryEventId && <><Link href={`/memories/${draft.memoryEventId}`} className={styles.resultLink}>查看这条记忆</Link><button className={styles.tool} onClick={() => void create()}>记录下一刻</button></>}
+    {draft.memoryEventId && draft.organizeOnPublish && <OrganizerControl kind="memory_event" id={draft.memoryEventId} />}
+    <p className={styles.dateNote}>{captureDateSummary(content, draft.captureTimeEdited, timezone)}</p>
+    {!isDraftDateComplete(content) && (!canInferCaptureTime(content) || draft.captureTimeEdited) && <button className={styles.tool} disabled={!editable} onClick={() => change({ occurredAt: null, occurredAtPrecision: "unknown" })}>标为时间不确定</button>}
+    {draft.status !== "published" && <>
+      <fieldset disabled={!editable} className={styles.audience} aria-label="保存后的读者">
+        <legend className="sr-only">保存后的读者</legend>
+        {([["family", "全家"], ["members", "指定成员"], ["private", "仅自己"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={content.visibility === value} className={styles.audienceChoice} onClick={() => change({ visibility: value, ...(value === "members" ? {} : { readerUserIds: [] }) })}>{label}</button>)}
+        {content.visibility === "members" && <div className={styles.members}>
+          {members.map(m => <label key={m.id}><input type="checkbox" checked={content.readerUserIds.includes(m.id)} onChange={e => change({ readerUserIds: e.target.checked ? [...content.readerUserIds, m.id] : content.readerUserIds.filter(id => id !== m.id) })} />{m.name}</label>)}
+          {content.readerUserIds.filter(id => !members.some(m => m.id === id)).map(id => <label key={id}><input type="checkbox" checked onChange={() => change({ readerUserIds: content.readerUserIds.filter(readerId => readerId !== id) })} />已选成员（待联网核对，点按移除）</label>)}
         </div>}
+      </fieldset>
+      {draft.status === "queued" && <button className={styles.tool} disabled={syncing} onClick={() => void store({ ...draft, status: "editing", revision: draft.revision + 1 }).catch(() => {})}>继续编辑</button>}
+      <div className={styles.saveBar}>
+        <p className={styles.visibility}><Icon name={content.visibility === "private" ? "lock" : "people"} size={16} />{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}</p>
+        <button className={styles.saveButton} disabled={syncing || !!diskError || recording || (!content.text.trim() && !content.items.length)} onClick={() => void save(canArchive, !canArchive && content.visibility === "family", canArchive && (draft.status === "queued" ? draft.organizeOnPublish === true : automaticRequested))}><Icon name="check" size={18} />{syncing ? "正在保存…" : draft.status === "queued" ? "重试保存" : "保存"}</button>
       </div>
-      <div className="flex flex-wrap gap-3">
-        <button className={button} disabled={syncing || recording || !!diskError} onClick={() => void create()}>新建一件事</button>
-        {draft.status === "queued" && <button className={button} disabled={syncing} onClick={() => void store({ ...draft, status: "editing", revision: draft.revision + 1 }).catch(() => {})}>继续编辑</button>}
-        <button className={button} disabled={syncing} onClick={() => void discard()}>放弃这份草稿</button>
-      </div></details>
-    </div>}
+      {!canArchive && <p className={styles.dateNote}>{content.visibility === "family" ? "保存到家庭待整理列表。" : "先保存为私密草稿。"}</p>}
+    </>}
   </div>;
 }

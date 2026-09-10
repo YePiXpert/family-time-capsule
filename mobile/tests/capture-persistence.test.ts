@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  alert: vi.fn(), keyboard: new Map<string, () => void>(),
   connected: false, syncing: false,
   credentials: { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "test-session" },
   family: { id: "family", name: "测试家庭", timezone: "Asia/Shanghai" },
@@ -25,11 +26,16 @@ const mocks = vi.hoisted(() => ({
     },
   },
 }));
+vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
+vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
+vi.mock("expo-glass-effect", () => ({ GlassView: "GlassView", isGlassEffectAPIAvailable: () => false, isLiquidGlassAvailable: () => false }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("react-native", () => ({
-  Keyboard: { addListener: () => ({ remove: () => {} }) },
-  Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
+  AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
+  Alert: { alert: mocks.alert },
+  Keyboard: { addListener: (event: string, listener: () => void) => { mocks.keyboard.set(event, listener); return { remove: () => mocks.keyboard.delete(event) }; } },
+  Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", KeyboardAvoidingView: "KeyboardAvoidingView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
   Platform: { OS: "ios", select: (v: { ios: unknown }) => v.ios },
@@ -39,7 +45,7 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => navigation,
   useRoute: () => mocks.route,
 }));
-const navigation = { setParams: mocks.setParams };
+const navigation = { setParams: mocks.setParams, navigate: vi.fn() };
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => ({ syncing: mocks.syncing,
     credentials: mocks.connected ? mocks.credentials : null,
@@ -101,6 +107,7 @@ const { requestMobileJson } = await import("../src/api/client");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
 beforeEach(async () => {
+  mocks.alert.mockClear();
   mocks.connected = false; mocks.syncing = false;
   vi.mocked(preservePreparedMedia).mockReset().mockResolvedValue(undefined);
   mocks.grantSyncConsent.mockClear();
@@ -113,21 +120,20 @@ it("R01/R02: selects login User IDs and preserves accountless people only as par
   mocks.connected = true;
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("和妈妈外公一起散步"));
-  await press("不详");
+  await seedMetadata({ occurredAtPrecision: "unknown", participantIds: ["person-2"] });
   await press("指定成员");
   const allCheckboxes = () => tree!.root.findAllByType("Pressable" as never).filter(n => n.props.accessibilityRole === "checkbox");
-  // First two checkboxes are participants; the following ones are login readers.
-  const checkboxes = () => allCheckboxes().slice(2);
+  // Only account readers belong on the quick capture page.
+  const checkboxes = allCheckboxes;
   expect(checkboxes().map(n => n.findAllByType("Text" as never).map(t => t.children.join("")).join(""))).not.toContain("外公");
   const reader = checkboxes().find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === "妈妈"));
   expect(reader).toBeDefined();
   await act(async () => reader!.props.onPress());
-  await act(async () => allCheckboxes()[1]!.props.onPress());
   const scope = JSON.stringify([mocks.credentials.serverUrl, "instance", "user-a", "family"]);
   expect((await listLocalDrafts(scope))[0]?.content.readerUserIds).toEqual(["user-b"]);
   expect((await listLocalDrafts(scope))[0]?.content.participantIds).toEqual(["person-2"]);
   await press("保存");
-  expect((await listLocalDrafts(scope))[0]).toMatchObject({ status: "queued", content: { visibility: "members", readerUserIds: ["user-b"], occurredAt: null } });
+  expect((await listLocalDrafts(scope)).find(d => d.status === "queued")).toMatchObject({ status: "queued", content: { visibility: "members", readerUserIds: ["user-b"], occurredAt: null } });
   expect(mocks.grantSyncConsent).toHaveBeenCalledOnce();
 });
 
@@ -168,28 +174,28 @@ it("R03: the recording page and real save hook persist unknown time through reop
   await initializeLocalStore();
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("那次一起去江边，日期已经记不清"));
-  await press("不详");
+  await seedMetadata({ occurredAtPrecision: "unknown" });
   await press("保存");
   const rows = await listLocalDrafts("local");
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toMatchObject({ status: "queued", syncIntent: "publish", content: { occurredAt: null, occurredAtPrecision: "unknown", text: "那次一起去江边，日期已经记不清" } });
+  expect(rows).toHaveLength(2);
+  expect(rows.find(d => d.status === "queued")).toMatchObject({ status: "queued", syncIntent: "publish", content: { occurredAt: null, occurredAtPrecision: "unknown", text: "那次一起去江边，日期已经记不清" } });
   await act(async () => tree!.unmount());
   await initializeLocalStore();
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   expect(await listLocalDrafts("local")).toEqual(rows);
-  await press("补充信息（可选）");
-  const unknown = tree!.root.findAllByType("Pressable" as never).find(n => n.findAllByType("Text" as never).some(t => t.children.join("") === "不详"));
-  expect(unknown?.props.accessibilityState.selected).toBe(true);
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  expect((await listLocalDrafts("local")).find(d => d.status === "queued")?.content.occurredAtPrecision).toBe("unknown");
 });
 
-it.each(["精确", "大约", "只到日", "到月", "到年"])("keeps %s without a date as an editable draft", async label => {
+it.each(["exact", "approximate", "date_only", "month", "year"] as const)("recovers an incomplete legacy %s date without inventing a date", async precision => {
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("暂时只写下故事"));
-  if (label === "精确") await press("大约");
-  await press(label);
+  await seedMetadata({ occurredAtPrecision: precision });
   await press("保存");
   expect((await listLocalDrafts("local"))[0]).toMatchObject({ status: "editing", content: { occurredAt: null, text: "暂时只写下故事" } });
-  expect(tree!.root.findAllByType("Text" as never).some(t => t.children.join("").includes("请先确认发生时间"))).toBe(true);
+  await press("标为时间不确定");
+  await press("保存");
+  expect((await listLocalDrafts("local")).find(d => d.status === "queued")?.content.occurredAtPrecision).toBe("unknown");
 });
 
 it("keeps a picked Live Photo image and paired video together through real SQLite reopen and removal", async () => {
@@ -209,7 +215,7 @@ it("keeps a picked Live Photo image and paired video together through real SQLit
   await initializeLocalStore();
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   expect((await listLocalDrafts("local"))[0]?.content.items).toEqual(row.content.items);
-  await press("从草稿移除");
+  await press("移除");
   expect((await listLocalDrafts("local"))[0]?.content.items).toEqual([]);
   expect(getRawMockDatabase().prepare("SELECT count(*) n FROM local_capture WHERE id IN (?,?)").get(...row.content.items.map(i => i.localCaptureRef))).toEqual({ n: 2 });
 });
@@ -255,28 +261,89 @@ it("pairs separately imported image and video only after an explicit user action
   expect(items[0]!.livePhotoGroupId).toBe(items[1]!.livePhotoGroupId);
 });
 
-it("quick capture keeps optional fields collapsed and queues a text memory without filling a date or title", async () => {
+it("quick capture queues text with the current time and prepares the next record without menus", async () => {
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   expect(tree!.root.findAllByProps({ accessibilityLabel: "记忆标题" })).toHaveLength(0);
   expect(tree!.root.findAllByType("Pressable" as never).filter(node => node.props.accessibilityRole === "checkbox")).toHaveLength(0);
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("只写一句话，先留下来"));
   await press("保存");
-  expect((await listLocalDrafts("local"))[0]).toMatchObject({ status: "queued", syncIntent: "publish", organizeOnPublish: false, content: { title: "", occurredAt: null, text: "只写一句话，先留下来" } });
+  expect((await listLocalDrafts("local")).find(d => d.status === "queued")).toMatchObject({ status: "queued", syncIntent: "publish", organizeOnPublish: false, content: { title: "", occurredAt: expect.any(String), text: "只写一句话，先留下来" } });
   const saveBar = tree!.root.findByProps({ testID: "capture-save-bar" });
-  expect(saveBar.findAllByType("Text" as never).some(node => node.children.join("") === "已保存在本机")).toBe(true);
-  expect(saveBar.findAllByProps({ testID: "capture-save" })).toHaveLength(0);
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  expect(saveBar.findByProps({ testID: "capture-save" }).props.disabled).toBe(true);
 });
 
 it("refreshes publication status after sync and starts the next record without losing the saved one", async () => {
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("小美今天的笑脸"));
   await press("保存");
-  const draft = (await listLocalDrafts("local"))[0]!;
+  const draft = (await listLocalDrafts("local")).find(d => d.status === "queued")!;
   await act(async () => { mocks.syncing = true; tree!.update(createElement(CaptureScreen)); });
   await saveLocalDraft({ ...draft, status: "published", memoryEventId: "saved-memory", revision: draft.revision + 1 }, draft.revision);
   await act(async () => { mocks.syncing = false; tree!.update(createElement(CaptureScreen)); });
-  expect(JSON.stringify(tree!.toJSON())).toContain("已保存这条成长记录");
-  await press("记录下一刻");
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("记录下一刻");
   expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
   expect((await listLocalDrafts("local")).find(row => row.id === draft.id)).toMatchObject({ status: "published", content: { text: "小美今天的笑脸" } });
+});
+
+async function seedMetadata(patch: Partial<import("../src/drafts/model").DraftContent>) {
+  const scope = mocks.connected ? JSON.stringify([mocks.credentials.serverUrl, "instance", "user-a", "family"]) : "local";
+  const row = (await listLocalDrafts(scope)).find(d => d.status === "editing")!;
+  await act(async () => { tree!.unmount(); });
+  await saveLocalDraft({ ...row, content: { ...row.content, ...patch }, captureTimeEdited: true, revision: row.revision + 1 }, row.revision);
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+}
+
+it("keeps save reachable above the keyboard and retains the chosen audience for the next note", async () => {
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await press("仅自己");
+  await act(async () => {
+    tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("键盘打开也能直接保存");
+    mocks.keyboard.get("keyboardDidShow")!();
+  });
+  const bar = tree!.root.findByProps({ testID: "capture-save-bar" });
+  expect(bar.props.style.at(-1).bottom).toBe(8);
+  expect(bar.findByProps({ testID: "capture-save" }).props.disabled).toBe(false);
+  await press("保存");
+  const rows = await listLocalDrafts("local");
+  expect(rows.find(d => d.status === "queued")?.content).toMatchObject({ visibility: "private", text: "键盘打开也能直接保存" });
+  expect(rows.find(d => d.status === "editing")?.content).toMatchObject({ visibility: "private", text: "" });
+});
+
+it("clears only after confirmation and keeps the discarded record durable", async () => {
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("暂时不要清空"));
+  await press("清空");
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("暂时不要清空");
+  const confirm = mocks.alert.mock.calls[0]![2].find((button: { text: string }) => button.text === "清空");
+  await act(async () => { confirm.onPress(); });
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  expect((await listLocalDrafts("local")).find(d => d.status === "discarded")?.content.text).toBe("暂时不要清空");
+});
+
+it("retains the same record when queueing fails and retries without duplicate publication", async () => {
+  const store = await import("../src/drafts/store");
+  const queue = vi.spyOn(store, "queueDraftOriginals").mockRejectedValueOnce(new Error("队列暂时无法写入"));
+  try {
+    await act(async () => { tree = create(createElement(CaptureScreen)); });
+    await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("失败也不能丢失的记录"));
+    await press("保存");
+    const original = (await listLocalDrafts("local"))[0]!;
+    expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("失败也不能丢失的记录");
+    expect(await listLocalDrafts("local")).toHaveLength(1);
+    await press("继续同步");
+    expect((await listLocalDrafts("local")).filter(d => d.content.text)).toMatchObject([{ id: original.id, status: "queued" }]);
+    expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  } finally { queue.mockRestore(); }
+});
+
+it("offers the queued record in pending work while the composer is ready for the next note", async () => {
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("从待处理找回的记录"));
+  await press("保存");
+  const queued = (await listLocalDrafts("local")).find(d => d.status === "queued")!;
+  const { PendingScreen } = await import("../src/screens/PendingScreen");
+  await act(async () => { tree!.update(createElement(PendingScreen)); });
+  await press("从待处理找回的记录");
+  expect(navigation.navigate).toHaveBeenLastCalledWith("Capture", { localDraftId: queued.id });
 });

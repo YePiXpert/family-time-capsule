@@ -33,3 +33,16 @@ it("keeps manual consent separate from automatic organization", () => {
   expect(captureOrganizerAvailability(automatic, "family", ["image/jpeg"], "automatic").ready).toBe(true);
   expect(captureOrganizerAvailability(automatic, "private", [], "automatic").ready).toBe(false);
 });
+
+it("uses now only for fresh text while preserving imported, explicit and incomplete historical dates", async () => {
+  const { quickCaptureContent } = await import("../src/drafts/capture");
+  const { emptyDraftContent } = await import("../src/drafts/model");
+  const now = new Date("2026-09-10T08:00:00Z");
+  const text = { ...emptyDraftContent(), text: "今天迈出了第一步" };
+  expect(quickCaptureContent(text, false, now).occurredAt).toBe(now.toISOString());
+  expect(quickCaptureContent(text, true, now)).toBe(text);
+  const unknown = { ...text, occurredAtPrecision: "unknown" as const };
+  expect(quickCaptureContent(unknown, false, now)).toBe(unknown);
+  const image = { ...text, items: [{ id: "photo", assetId: null, localCaptureRef: "original", caption: "" }] };
+  expect(quickCaptureContent(image, false, now)).toBe(image);
+});

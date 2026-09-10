@@ -1,4 +1,4 @@
-import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
+import { waitForCapture, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap } from "./helpers";
 
@@ -46,7 +46,7 @@ test("所选文字的整理入口创建真实任务，可取消并重试而不�
   const textCard = page.locator("article", { has: page.getByRole("heading", { name: "文字整理与信息建议" }) });
   await textCard.getByRole("button", { name: "同意启用这项外部处理" }).click();
   await expect(textCard.getByText("可使用")).toBeVisible();
-  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.goto("/capture"); await waitForCapture(page);
   await page.getByLabel("写下这一刻").fill("清晨在窗边给绿植浇水。");
   await submitCaptureForReview(page);
 

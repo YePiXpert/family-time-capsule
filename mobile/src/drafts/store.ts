@@ -19,8 +19,8 @@ export async function listLocalDrafts(scope: string): Promise<LocalDraft[]> {
   const rows = await db.getAllAsync<{ snapshot_json: string }>("SELECT snapshot_json FROM local_draft WHERE scope=? ORDER BY updated_at DESC", scope);
   return rows.map(row => JSON.parse(row.snapshot_json) as LocalDraft);
 }
-export async function createLocalDraft(scope: string, id: string, mutationId: string): Promise<LocalDraft> {
-  const row: LocalDraft = { id, scope, content: emptyDraftContent(), revision: 1, serverRevision: 0, mutationId, status: "editing", memoryEventId: null, updatedAt: new Date().toISOString() };
+export async function createLocalDraft(scope: string, id: string, mutationId: string, audience?: Pick<DraftContent, "visibility" | "readerUserIds">): Promise<LocalDraft> {
+  const row: LocalDraft = { id, scope, content: { ...emptyDraftContent(), ...audience }, revision: 1, serverRevision: 0, mutationId, status: "editing", memoryEventId: null, updatedAt: new Date().toISOString() };
   await saveLocalDraft(row, 0);
   return row;
 }

@@ -1,16 +1,16 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { startCaptureDraft, readCaptureDraft, waitForCapture, setCaptureMetadata } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { ensureBootstrap } from "./helpers";
 
-test("long-lived mixed Web draft: offline save, closed page recovery, reorder, cover, one memory and one copy of each original", async ({ page, context }) => {
+test("long-lived mixed Web draft: offline save, closed page recovery, removal, one memory and one copy of each original", async ({ page, context }) => {
   await ensureBootstrap(page);
-  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.goto("/capture"); await waitForCapture(page);
   await page.getByLabel("写下这一刻").fill("外公说年轻时在江边划船，今天录下来。正文检索词竹篙。");
-  await expandCaptureOptions(page); await page.getByLabel("标题", { exact: true }).fill("外公的江边往事");
-  await expandCaptureOptions(page); await page.getByLabel("发生时间", { exact: true }).fill("1980-08-12T18:30");
+  await waitForCapture(page); await setCaptureMetadata(page, { title: "外公的江边往事" });
+  await waitForCapture(page); await setCaptureMetadata(page, { occurredAt: new Date("1980-08-12T18:30:00+08:00").toISOString() });
   await page.locator('input[type="file"]').first().setInputFiles(["sample-exif.jpg", "sample.jpg", "sample.wav"].map(name => path.join(__dirname, "../fixtures", name)));
   await expect(page.getByText("3 份原件已保存在本机", { exact: false })).toBeVisible();
   const before = await (await page.request.get("/api/mobile/v1/sync")).json();
@@ -21,21 +21,21 @@ test("long-lived mixed Web draft: offline save, closed page recovery, reorder, c
   await page.close();
   await context.setOffline(false);
   const reopened = await context.newPage();
-  await reopened.goto("/capture"); await expandCaptureOptions(reopened);
+  await reopened.goto("/capture"); await waitForCapture(reopened);
   await expect(reopened.getByLabel("写下这一刻")).toHaveValue("外公说年轻时在江边划船，今天录下来。正文检索词竹篙。");
-  await expect(reopened.getByLabel("标题", { exact: true })).toHaveValue("外公的江边往事");
+  expect((await readCaptureDraft(reopened)).content.title).toBe("外公的江边往事");
   await expect(reopened.locator("main ol > li")).toHaveCount(3);
   await expect(reopened.locator("audio")).toHaveCount(1);
-  await reopened.locator("main ol > li").last().getByText("说明与调整（可选）").click();
-  await reopened.locator("main ol > li").last().getByRole("button", { name: "上移" }).click();
-  await reopened.locator("main ol > li").last().getByText("说明与调整（可选）").click();
-  await reopened.locator("main ol > li").last().getByRole("button", { name: "设为封面" }).click();
+  // Removal is directly available; the original remains preserved locally.
+  const preserved = await readCaptureDraft(reopened);
+  await reopened.locator("main ol > li").nth(1).getByRole("button", { name: "移除", exact: true }).click();
+  expect((await readCaptureDraft(reopened)).content.coverItemId).toBe(preserved.content.coverItemId);
   await reopened.getByRole("button", { name: "保存" }).click();
   await expect(reopened.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   const link = await reopened.getByRole("link", { name: "查看这条记忆" }).getAttribute("href");
   const id = link!.split("/").at(-1)!;
   const memory = await (await reopened.request.get(`/api/mobile/v1/memories/${id}`)).json();
-  expect(memory.assets.map((a: { type: string }) => a.type)).toEqual(["image", "audio", "image"]);
+  expect(memory.assets.map((a: { type: string }) => a.type)).toEqual(["image", "audio"]);
   expect(memory.childPersonId).toBeNull();
   expect((await (await reopened.request.get("/api/mobile/v1/sync")).json()).events).toHaveLength(1);
   await reopened.getByRole("link", { name: "查看这条记忆" }).click();
@@ -55,8 +55,8 @@ test("an imported MOV without browser MIME previews, saves its exact bytes and p
   await page.locator('input[type="file"]').first().setInputFiles({ name: "home.mov", mimeType: "", buffer: bytes });
   await expect(page.locator("main video")).toHaveCount(1);
   await page.locator("main video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
-  await expandCaptureOptions(page);
-  await page.getByLabel("发生时间", { exact: true }).fill("2026-09-08T10:00");
+  await waitForCapture(page);
+  await setCaptureMetadata(page, { occurredAt: new Date("2026-09-08T10:00:00+08:00").toISOString() });
   await page.getByRole("button", { name: "保存", exact: true }).click();
   const link = page.getByRole("link", { name: "查看这条记忆" });
   await expect(link).toBeVisible();
@@ -71,8 +71,8 @@ test("an imported MOV without browser MIME previews, saves its exact bytes and p
   expect(await range.body()).toEqual(bytes.subarray(0, 64));
   await link.click();
   await page.getByRole("button", { name: /^打开阅读器：/ }).first().click();
-  await page.locator("dialog video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
   await expect.poll(() => page.locator("dialog video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
+  await page.locator("dialog video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
 });
 
 for (const { filename, mime, format } of [
@@ -102,7 +102,32 @@ for (const { filename, mime, format } of [
     const result = await (await page.request.get(`/api/media/${memory.assets[0].id}/derivations`)).json();
     return result.jobs.find((job: { kind: string }) => job.kind === "transcode")?.status;
   }, { timeout: 30000 }).toBe("succeeded");
-  await expect(page.getByText("已切换到兼容播放版，原件保留。")).toBeVisible();
-  await page.locator("main video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
-  await expect.poll(() => page.locator("main video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
+  await link.click();
+  await page.getByRole("button", { name: /^打开阅读器：/ }).first().click();
+  await expect.poll(() => page.locator("dialog video").evaluate((video: HTMLVideoElement) => video.readyState)).toBeGreaterThanOrEqual(2);
+  await page.locator("dialog video").evaluate(async (video: HTMLVideoElement) => { video.muted = true; await video.play(); });
+});
+
+test("unfinished records are recoverable from pending work and clearing needs confirmation", async ({ page }) => {
+  await ensureBootstrap(page);
+  await page.goto("/capture");
+  await page.getByLabel("写下这一刻").fill("没有写完的私密旧记录");
+  await page.getByRole("button", { name: "仅自己", exact: true }).click();
+  const original = await readCaptureDraft(page);
+  await startCaptureDraft(page);
+  await page.getByLabel("写下这一刻").fill("另一份未完成记录");
+  await readCaptureDraft(page);
+  await page.goto("/pending");
+  await page.getByRole("link", { name: /没有写完的私密旧记录/ }).click();
+  await expect(page.getByLabel("写下这一刻")).toHaveValue("没有写完的私密旧记录");
+  expect((await readCaptureDraft(page)).id).toBe(original.id);
+  await expect(page.getByRole("button", { name: "仅自己", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("main details")).toHaveCount(0);
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByRole("button", { name: "清空", exact: true }).click();
+  await expect(page.getByLabel("写下这一刻")).toHaveValue("没有写完的私密旧记录");
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "清空", exact: true }).click();
+  await expect(page.getByLabel("写下这一刻")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
 });

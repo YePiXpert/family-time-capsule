@@ -1,4 +1,4 @@
-import { expandCaptureOptions } from "./helpers/capture";
+import { waitForCapture, setCaptureMetadata } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap } from "./helpers";
 import path from "node:path";
@@ -11,9 +11,9 @@ test("真实记忆选材 → 手工编辑与排序 → 保存重开 → 32 页�
 }) => {
   await ensureBootstrap(page);
   for (let i = 1; i <= 2; i++) {
-    await page.goto("/capture"); await expandCaptureOptions(page);
+    await page.goto("/capture"); await waitForCapture(page);
     await page.getByLabel("写下这一刻").fill(`虚构素材 ${i}：我们在窗边读了一封信。`);
-    await page.getByLabel("标题", { exact: true }).fill(`虚构家庭片段 ${i}`);
+    await setCaptureMetadata(page, { title: `虚构家庭片段 ${i}` });
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   }

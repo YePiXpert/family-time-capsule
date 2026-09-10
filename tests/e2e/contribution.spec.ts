@@ -1,4 +1,4 @@
-import { expandCaptureOptions, submitCaptureForReview } from "./helpers/capture";
+import { waitForCapture, submitCaptureForReview } from "./helpers/capture";
 import { expect, test } from "@playwright/test";
 import path from "node:path";
 import { addFamilyMember, ensureBootstrap } from "./helpers";
@@ -11,7 +11,7 @@ test("同一事件的多人视角独立保存与显示", async ({ page }) => {
   await ensureBootstrap(page);
 
   // 自建一个事件（上传 EXIF 照片并确认）
-  await page.goto("/capture"); await expandCaptureOptions(page);
+  await page.goto("/capture"); await waitForCapture(page);
   await page
     .locator('input[type="file"]').first()
     .setInputFiles(path.join(__dirname, "..", "fixtures", "sample-exif.jpg"));

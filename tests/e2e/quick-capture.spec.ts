@@ -56,7 +56,8 @@ test("choose photos and save without filling any field or enabling AI; same-day 
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       await page.evaluate(() => window.scrollTo(0, 0));
       await expect(page.getByRole("button", { name: "保存", exact: true })).toBeInViewport();
-      await expect(page.locator("summary").filter({ hasText: "全家可见" })).toBeInViewport();
+      await expect(page.getByText("全家可见", { exact: true })).toBeInViewport();
+      await expect(page.locator("main details")).toHaveCount(0);
       if (width >= 1024) {
         await expect(page.locator(".mobile-app-header")).toBeHidden();
         await expect(page.locator(".bottom-navigation")).toBeHidden();
@@ -103,6 +104,7 @@ test("one save survives a lost response, runs real queued image/audio/text HTTP 
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
   expect(dbRead(db => db.prepare("select count(*) n from ai_job").get())).toEqual({ n: 3 });
   expect(calls).toBe(0);
+  await page.getByRole("link", { name: "查看这条记忆" }).click();
   await page.getByText("AI 帮我起名", { exact: true }).click();
   await page.getByText("修改标题与审核 AI 建议", { exact: true }).click();
   for (let i = 0; i < 3; i++) expect(await workOnce()).toContain("[ai-worker] completed");
@@ -126,17 +128,16 @@ test("failed AI still leaves the saved memory readable; private save never reque
   await page.getByLabel("写下这一刻").fill("今天只想先把这件事记下来。");
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
+  await page.getByRole("link", { name: "查看这条记忆" }).click();
   await page.getByText("AI 帮我起名", { exact: true }).click();
   refuse = true;
   try { expect(await workOnce()).toContain("[ai-worker] failed"); } finally { refuse = false; }
   await expect(page.getByText("整理服务拒绝了请求", { exact: false })).toBeVisible();
-  await page.getByRole("link", { name: "查看这条记忆" }).click();
   await expect(page.locator("main")).toContainText("今天只想先把这件事记下来。");
   const count = calls;
   await page.goto("/capture");
   await page.getByLabel("写下这一刻").fill("仅自己可见的记录");
-  await page.locator("summary").filter({ hasText: "全家可见" }).click();
-  await page.getByLabel("保存后的读者").selectOption("private");
+  await page.getByRole("button", { name: "仅自己", exact: true }).click();
   await expect(page.getByRole("button", { name: "保存", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();

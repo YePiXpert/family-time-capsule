@@ -21,13 +21,16 @@ const mocks = vi.hoisted(() => ({
     },
   },
 }));
+vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
+vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
+vi.mock("expo-glass-effect", () => ({ GlassView: "GlassView", isGlassEffectAPIAvailable: () => false, isLiquidGlassAvailable: () => false }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Alert: { alert: mocks.alert },
   Keyboard: { addListener: () => ({ remove: () => {} }) },
-  Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView",
+  Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", KeyboardAvoidingView: "KeyboardAvoidingView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
   Platform: { OS: "ios", select: (v: { ios: unknown }) => v.ios },
@@ -99,6 +102,8 @@ let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers();
+  mocks.draft.content.text = "";
+  mocks.draft.content.items = [];
   mocks.draft.content.occurredAt = null;
   mocks.draft.content.occurredAtPrecision = "exact";
   mocks.draft.content.visibility = "family";
@@ -205,8 +210,7 @@ it("releases the recorder and restores other capture actions after stop fails", 
   await press("完成录音");
   expect(mocks.release).toHaveBeenCalledOnce();
   expect(mocks.enqueueMedia).not.toHaveBeenCalled();
-  await press("拍摄");
-  await act(async () => mocks.alert.mock.calls.at(-1)![2].find((option: { text: string }) => option.text === "拍照片").onPress());
+  await press("拍照");
   expect(mocks.camera).toHaveBeenCalledOnce();
 });
 
@@ -217,8 +221,7 @@ it("does not lose the saved result if resetting the audio session fails", async 
   await press("完成录音");
   expect(JSON.stringify(tree!.toJSON())).toContain("录音原件已复制");
   expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
-  await press("拍摄");
-  await act(async () => mocks.alert.mock.calls.at(-1)![2].find((option: { text: string }) => option.text === "拍照片").onPress());
+  await press("拍照");
 });
 
 it("releases a live recorder when the screen unmounts", async () => {
@@ -245,7 +248,7 @@ it("does not create a recorder if unmounted while waiting for permission", async
 it("精度切换到「到月」把锚点收细为该月首日（§6）", async () => {
   const { zonedWallTimeToUtc } = await import("../src/utils/wall-time");
   mocks.draft.content.occurredAt = "2026-03-15T04:30:00.000Z";
-  await render("text");
+  await renderDateField();
   await press("到月");
   expect(mocks.enqueueText).toHaveBeenCalledWith({
     occurredAt: expect.any(String),
@@ -259,7 +262,7 @@ it("精度切换到「到月」把锚点收细为该月首日（§6）", async (
 
 it("精度切到「不详」清空发生时间且不写锚点（§6）", async () => {
   mocks.draft.content.occurredAt = "2026-03-15T04:30:00.000Z";
-  await render("text");
+  await renderDateField();
   await press("不详");
   expect(mocks.enqueueText).toHaveBeenCalledWith({
     occurredAt: null,
@@ -279,10 +282,7 @@ it("离线人物选择不冒充登录读者，空读者仍阻止发布（§5）"
   mocks.draft.content.visibility = "members";
   mocks.draft.content.text = "一段需要选择读者的记录";
   await render("text");
-  await press("妈妈");
-  expect(mocks.enqueueText).toHaveBeenCalledWith({ participantIds: ["person-1"] });
-  expect(mocks.enqueueText).not.toHaveBeenCalledWith(expect.objectContaining({ readerUserIds: expect.anything() }));
-  // readerUserIds 未回写（仍空）→ 发布被拦并给出可读原因
+  expect(tree!.root.findAllByType("Pressable" as never).filter(node => node.props.accessibilityRole === "checkbox")).toHaveLength(0);
   mocks.enqueueText.mockClear();
   await press("保存");
   expect(mocks.enqueueText).not.toHaveBeenCalled();
@@ -291,7 +291,27 @@ it("离线人物选择不冒充登录读者，空读者仍阻止发布（§5）"
 it("switching a remembered year to an exact date requires a newly selected time", async () => {
   mocks.draft.content.occurredAt = "1988-01-01T00:00:00.000Z";
   mocks.draft.content.occurredAtPrecision = "year" as never;
-  await render("text");
+  await renderDateField();
   await press("精确");
   expect(mocks.enqueueText).toHaveBeenCalledWith({ occurredAt: null, occurredAtPrecision: "exact" });
+});
+
+async function renderDateField() {
+  const { PrecisionDateTimeField } = await import("../src/components/PrecisionDateTimeField");
+  await act(async () => { tree = create(createElement(PrecisionDateTimeField, {
+    occurredAt: mocks.draft.content.occurredAt,
+    precision: mocks.draft.content.occurredAtPrecision,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    onChange: ({ occurredAt, precision }) => mocks.enqueueText({ occurredAt, occurredAtPrecision: precision }),
+  })); });
+}
+
+it("exposes recording actions directly without a second menu", async () => {
+  await render();
+  const labels = tree!.root.findAllByType("Pressable" as never).map(node => node.props.accessibilityLabel);
+  expect(labels).toEqual(expect.arrayContaining(["相册", "拍照", "录像", "录音", "文件", "保存"]));
+  expect(tree!.root.findAllByType("Pressable" as never).some(node => node.props.accessibilityState?.expanded !== undefined)).toBe(false);
+  await press("录像");
+  expect(mocks.camera).toHaveBeenCalledOnce();
+  expect(mocks.alert).not.toHaveBeenCalled();
 });
