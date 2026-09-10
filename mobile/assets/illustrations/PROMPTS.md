@@ -1,10 +1,10 @@
 # 成长手帐插画
 
 2026-09-10。使用内置 image_gen 工具生成；未通过 CLI/API 指定模型。
-两张原始 PNG 保存在本目录，Web 与原生共用；原生随安装包提供，离线可用。
+两张插画以 WebP（1024px，q88）保存在本目录，Web 与原生共用；原生随安装包提供，离线可用。
 仅作应用装饰，不是家庭照片，也不插入用户记忆或出版内容。
 
-## keepsake-box.png
+## keepsake-box.webp（原 keepsake-box.png）
 
 用于成长首页。
 
@@ -19,7 +19,7 @@ Color palette: existing app palette warm cream, pale peach #EFB9A8, muted terrac
 Constraints: objects only, no people, no faces, no photos of real children, no text, no letters, no numbers, no logos, no watermark, no UI elements, no collage panels. The image is decorative art, not a simulated user memory.
 ```
 
-## growing-album.png
+## growing-album.webp（原 growing-album.png）
 
 用于成长册入口。
 
