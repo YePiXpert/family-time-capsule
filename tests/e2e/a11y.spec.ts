@@ -110,8 +110,7 @@ test("production glass renders in Chromium and respects reduced transparency", a
   const cdp = await context.newCDPSession(page);
   await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
   for (const surface of await surfaces.all()) {
-    const style = await surface.evaluate(node => ({ blur: getComputedStyle(node).backdropFilter, fill: getComputedStyle(node).backgroundColor }));
-    expect(style.blur).toBe("none");
-    expect(style.fill).toBe("rgb(255, 253, 249)");
+    // Chromium applies a changed media preference on its next rendering frame.
+    await expect.poll(() => surface.evaluate(node => ({ blur: getComputedStyle(node).backdropFilter, fill: getComputedStyle(node).backgroundColor }))).toEqual({ blur: "none", fill: "rgb(255, 253, 249)" });
   }
 });
