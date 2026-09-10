@@ -1,0 +1,25 @@
+appId: app.familytimecapsule.mobile
+---
+# 首次启动 → 本机模式 → 三个目的地与悬浮「记录一刻」
+- launchApp:
+    clearState: true
+- scrollUntilVisible:
+    element: "暂时只在本机记录"
+    direction: DOWN
+- tapOn: "暂时只在本机记录"
+- assertVisible: "留下今天，送给长大的你。"
+- assertVisible: "第一篇成长记，从今天开始"
+- takeScreenshot: home-timeline
+- tapOn:
+    id: tab-works
+- assertVisible: "我的书架"
+- takeScreenshot: home-works
+- tapOn:
+    id: tab-profile
+- scrollUntilVisible:
+    element: "显示与辅助"
+    direction: DOWN
+- takeScreenshot: home-profile
+- tapOn:
+    id: tab-timeline
+- assertVisible: "记录一刻"

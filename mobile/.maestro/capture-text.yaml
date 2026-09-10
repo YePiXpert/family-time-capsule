@@ -1,0 +1,24 @@
+appId: app.familytimecapsule.mobile
+---
+# 记录一刻 → 写一句话 → 保存 → 回到成长首页可见（离线记录闭环）
+- launchApp:
+    clearState: true
+- scrollUntilVisible:
+    element: "暂时只在本机记录"
+    direction: DOWN
+- tapOn: "暂时只在本机记录"
+- tapOn: "记录一刻"
+- assertVisible:
+    id: capture-title
+- tapOn:
+    id: capture-text
+- inputText: "今天第一次翻身，全家都鼓掌。"
+- hideKeyboard
+- assertVisible: "全家可见"
+- tapOn: "^保存$"
+- assertVisible: "已保存这条成长记录"
+- takeScreenshot: capture-text-saved
+- tapOn:
+    id: tab-timeline
+- assertVisible: "今天第一次翻身，全家都鼓掌。"
+- takeScreenshot: capture-text-timeline

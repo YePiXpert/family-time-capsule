@@ -1,0 +1,21 @@
+appId: app.familytimecapsule.mobile
+---
+# 记录页三大工具：拍摄/录音/文件；模拟器无相机，取消拍摄后页面仍可用
+- launchApp:
+    clearState: true
+- scrollUntilVisible:
+    element: "暂时只在本机记录"
+    direction: DOWN
+- tapOn: "暂时只在本机记录"
+- tapOn: "记录一刻"
+- assertVisible:
+    id: capture-title
+- assertVisible: "拍摄"
+- assertVisible: "录音"
+- assertVisible: "文件"
+- tapOn: "拍摄"
+- assertVisible: "选择拍摄方式"
+- tapOn: "取消"
+- assertVisible:
+    id: capture-title
+- takeScreenshot: capture-tools

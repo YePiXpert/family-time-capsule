@@ -1,0 +1,29 @@
+appId: app.familytimecapsule.mobile
+---
+# 我的 → 显示与辅助 → 大字显示切换（NAV-11 设备级）
+- launchApp:
+    clearState: true
+- scrollUntilVisible:
+    element: "暂时只在本机记录"
+    direction: DOWN
+- tapOn: "暂时只在本机记录"
+- tapOn:
+    id: tab-profile
+- scrollUntilVisible:
+    element: "显示与辅助"
+    direction: DOWN
+- tapOn: "显示与辅助"
+- scrollUntilVisible:
+    element:
+      id: "display-simple"
+    direction: DOWN
+- assertVisible:
+    id: display-simple
+- takeScreenshot: settings-display
+- tapOn:
+    id: display-simple
+- assertVisible:
+    id: display-standard
+- takeScreenshot: settings-display-simple
+- tapOn:
+    id: display-standard

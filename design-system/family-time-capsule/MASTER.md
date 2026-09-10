@@ -10,8 +10,12 @@
 
 Web、原生和成长册渲染器使用 `mobile/src/design/tokens.ts`。
 暖白与奶油色为实底，蜜桃粉用于状态与主要操作，杏色辅助，深灰褐色正文。
+深色模式使用同一组语义键的暗色板（`journalDarkColors`），原生经 `JournalThemeProvider`
+（跟随系统/浅色/深色）切换，Web 经 `@media (prefers-color-scheme: dark)` 切换 `--journal-*` 变量。
 系统字体，正文 16px，辅助文字至少 13px；控件至少 44px，常用按钮 48px。
 软圆角、细边框、极轻阴影；照片优先，减少套卡和重复入口。
+原生共享组件集中在 `mobile/src/components/ui.tsx`（Button/Chip/IconButton/Pill/
+SectionHeader/ListGroup/ListRow/EmptyState），一律读取当前色板，不写死颜色。
 
 ## 玻璃与动效
 
@@ -24,7 +28,8 @@ Web 导航容器不加滤镜，每个悬浮表面独立采样背景，避免记�
 
 ## 插画
 
-首页纪念盒、成长册入口纸张相册使用 `mobile/assets/illustrations/` 下的内置 imagegen 素材，Web 静态导入同一文件。
+首页纪念盒、成长册入口纸张相册使用 `mobile/assets/illustrations/` 下的内置 imagegen 素材
+（1024px WebP），Web 静态导入同一文件。
 插画仅为装饰，屏幕阅读器略过；不进入用户照片、记忆、成长册导出或备份。提示词见同目录 `PROMPTS.md`。
 
 ## 成长册
