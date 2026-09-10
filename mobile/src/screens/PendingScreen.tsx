@@ -5,7 +5,7 @@ import { Text } from "../components/typography";
 import { useApp } from "../state/AppContext";
 import { listLocalImportSessions } from "../storage/database";
 import type { AppNavigation } from "../navigation/types";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 
 export function usePendingImports() {
   const { credentials, userId, family, home } = useApp();
@@ -24,6 +24,7 @@ export function usePendingImports() {
 }
 
 export function PendingScreen() {
+  const s = useSharedStyles();
   const navigation = useNavigation<AppNavigation>();
   const { home, viewer } = useApp();
   const imports = usePendingImports();

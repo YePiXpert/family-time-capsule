@@ -1,5 +1,5 @@
 import { Text, TextInput } from "../components/typography";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -7,7 +7,8 @@ import { ApiError, fetchMobileCalendar } from "../api/client";
 import type { MobileCalendar } from "../types";
 import type { RootStackParamList } from "../navigation/types";
 import { useApp } from "../state/AppContext";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 import {
   addCalendarMonths,
   calendarDate,
@@ -16,6 +17,8 @@ import {
 
 type Props = NativeStackScreenProps<RootStackParamList, "Calendar">;
 export function CalendarScreen({ navigation }: Props) {
+  const s = useSharedStyles();
+  const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const { credentials, family } = useApp();
   const [month, setMonth] = useState(() =>
     calendarDate(new Date(), family?.timezone || "UTC").slice(0, 7),
@@ -92,11 +95,11 @@ export function CalendarScreen({ navigation }: Props) {
       accessibilityState={{ selected }}
       onPress={action}
       style={
-        selected ? sharedStyles.primaryButton : sharedStyles.secondaryButton
+        selected ? s.primaryButton : s.secondaryButton
       }
     >
       <Text
-        style={selected ? sharedStyles.primaryText : sharedStyles.secondaryText}
+        style={selected ? s.primaryText : s.secondaryText}
       >
         {label}
       </Text>
@@ -104,18 +107,18 @@ export function CalendarScreen({ navigation }: Props) {
   );
   return (
     <ScrollView
-      style={sharedStyles.screen}
-      contentContainerStyle={sharedStyles.content}
+      style={s.screen}
+      contentContainerStyle={s.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={sharedStyles.title}>记忆日历</Text>
-      <Text style={sharedStyles.body}>
+      <Text style={s.title}>记忆日历</Text>
+      <Text style={s.body}>
         家庭时区 · {data?.timezone || family?.timezone || "UTC"}
       </Text>
-      <Text style={sharedStyles.label}>年 / 月（YYYY-MM）</Text>
+      <Text style={s.label}>年 / 月（YYYY-MM）</Text>
       <TextInput
         accessibilityLabel="年 / 月"
-        style={sharedStyles.input}
+        style={s.input}
         value={monthInput}
         onChangeText={setMonthInput}
         maxLength={7}
@@ -152,10 +155,10 @@ export function CalendarScreen({ navigation }: Props) {
           ["document", "文档"],
         ].map(([v, label]) => button(label!, () => setMedia(v!), media === v))}
       </View>
-      <Text style={sharedStyles.label}>标签</Text>
+      <Text style={s.label}>标签</Text>
       <TextInput
         accessibilityLabel="标签"
-        style={sharedStyles.input}
+        style={s.input}
         value={tagInput}
         onChangeText={setTagInput}
         maxLength={50}
@@ -166,15 +169,15 @@ export function CalendarScreen({ navigation }: Props) {
           button(a.label, () => jump(a.date.slice(0, 7), a.date)),
         )}
       </View>
-      {busy ? <ActivityIndicator color={colors.coral} /> : null}
+      {busy ? <ActivityIndicator color={s.colors.coral} /> : null}
       {error ? (
         <View accessibilityRole="alert">
-          <Text style={sharedStyles.error}>{error}</Text>
+          <Text style={s.error}>{error}</Text>
           <Pressable
             onPress={() => void load()}
-            style={sharedStyles.secondaryButton}
+            style={s.secondaryButton}
           >
-            <Text style={sharedStyles.secondaryText}>重试</Text>
+            <Text style={s.secondaryText}>重试</Text>
           </Pressable>
         </View>
       ) : null}
@@ -220,28 +223,28 @@ export function CalendarScreen({ navigation }: Props) {
               </Pressable>
             ))}
           </View>
-          <Text style={sharedStyles.cardTitle}>{date || month} · 记忆</Text>
+          <Text style={s.cardTitle}>{date || month} · 记忆</Text>
           {date ? button("整月记忆", () => setDate("")) : null}
           {data.entries.map((entry) => (
             <Pressable
               key={entry.id}
               onPress={() => navigation.navigate("Memory", { id: entry.id })}
-              style={sharedStyles.card}
+              style={s.card}
             >
-              <Text style={sharedStyles.cardTitle}>{entry.title}</Text>
-              <Text style={sharedStyles.body}>{entry.date}</Text>
+              <Text style={s.cardTitle}>{entry.title}</Text>
+              <Text style={s.body}>{entry.date}</Text>
             </Pressable>
           ))}
           {!data.entries.length ? (
-            <Text style={sharedStyles.body}>没有符合条件的已确认记忆。</Text>
+            <Text style={s.body}>没有符合条件的已确认记忆。</Text>
           ) : null}
           {data.nextCursor ? (
             <Pressable
               disabled={busy}
               onPress={() => void load(data.nextCursor!)}
-              style={sharedStyles.secondaryButton}
+              style={s.secondaryButton}
             >
-              <Text style={sharedStyles.secondaryText}>更早的记忆</Text>
+              <Text style={s.secondaryText}>更早的记忆</Text>
             </Pressable>
           ) : null}
         </>
@@ -249,24 +252,26 @@ export function CalendarScreen({ navigation }: Props) {
     </ScrollView>
   );
 }
-const styles = StyleSheet.create({
+function createStyles(palette: JournalPalette) {
+  return StyleSheet.create({
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   grid: { flexDirection: "row", flexWrap: "wrap" },
   weekday: {
     width: "14.28%",
     textAlign: "center",
-    color: colors.muted,
+    color: palette.muted,
     paddingVertical: 10,
   },
   cell: { width: "14.28%", minHeight: 86, padding: 2 },
   day: {
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: palette.line,
     borderRadius: 7,
     alignItems: "center",
   },
-  selected: { backgroundColor: colors.softCoral, borderColor: colors.coral },
-  dayText: { color: colors.ink, fontSize: 16 },
-  count: { color: colors.muted, fontSize: 12 },
+  selected: { backgroundColor: palette.softCoral, borderColor: palette.coral },
+  dayText: { color: palette.ink, fontSize: 16 },
+  count: { color: palette.muted, fontSize: 12 },
   cover: { width: "100%", height: 32, borderRadius: 4 },
-});
+  });
+}

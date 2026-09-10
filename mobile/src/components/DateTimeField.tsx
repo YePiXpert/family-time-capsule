@@ -6,7 +6,7 @@ import {
   default as DateTimePicker,
 } from "@react-native-community/datetimepicker";
 import { Modal, Platform, Pressable, View } from "react-native";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
 
 /**
  * 适配手机的发生时间选择器（M3）：日期 → 时间两步，按家庭墙钟时间
@@ -37,6 +37,7 @@ export function DateTimeField({
   disabled?: boolean;
   onChange: (value: string | null) => void;
 }) {
+  const s = useSharedStyles();
   const onChange = (value: string | null) => { if (!disabled) emitChange(value); };
   const [picking, setPicking] = useState<{ date: Date; step: "date" | "time" } | null>(null);
   const current = parseWallString(value) ?? new Date();
@@ -67,20 +68,20 @@ export function DateTimeField({
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Pressable disabled={disabled}
           onPress={Platform.OS === "android" ? openAndroid : () => setPicking({ date: new Date(current.getTime()), step: "date" })}
-          style={[sharedStyles.input, { flex: 1, justifyContent: "center" }]}
+          style={[s.input, { flex: 1, justifyContent: "center" }]}
         >
-          <Text style={{ color: value ? colors.ink : colors.muted, fontSize: 16 }}>{label}</Text>
+          <Text style={{ color: value ? s.colors.ink : s.colors.muted, fontSize: 16 }}>{label}</Text>
         </Pressable>
         {value ? (
-          <Pressable disabled={disabled} onPress={() => onChange(null)} style={[sharedStyles.input, { justifyContent: "center" }]}>
-            <Text style={{ color: colors.coralDark, fontSize: 14, fontWeight: "800" }}>清空</Text>
+          <Pressable disabled={disabled} onPress={() => onChange(null)} style={[s.input, { justifyContent: "center" }]}>
+            <Text style={{ color: s.colors.coralDark, fontSize: 14, fontWeight: "800" }}>清空</Text>
           </Pressable>
         ) : null}
       </View>
       {Platform.OS === "ios" && picking ? (
         <Modal animationType="slide" transparent visible onRequestClose={() => setPicking(null)}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetCard}>
+          <View style={[styles.sheet, { backgroundColor: s.colors.scrim }]}>
+            <View style={[styles.sheetCard, { backgroundColor: s.colors.elevated }]}>
               <DateTimePicker
                 key={picking.step}
                 mode={picking.step}
@@ -93,9 +94,9 @@ export function DateTimeField({
               {picking.step === "date" ? (
                 <Pressable disabled={disabled}
                   onPress={() => setPicking({ date: picking.date, step: "time" })}
-                  style={sharedStyles.primaryButton}
+                  style={s.primaryButton}
                 >
-                  <Text style={sharedStyles.primaryText}>下一步：选择时间</Text>
+                  <Text style={s.primaryText}>下一步：选择时间</Text>
                 </Pressable>
               ) : (
                 <Pressable disabled={disabled}
@@ -103,9 +104,9 @@ export function DateTimeField({
                     commit(picking.date);
                     setPicking(null);
                   }}
-                  style={sharedStyles.primaryButton}
+                  style={s.primaryButton}
                 >
-                  <Text style={sharedStyles.primaryText}>确定</Text>
+                  <Text style={s.primaryText}>确定</Text>
                 </Pressable>
               )}
             </View>
@@ -117,6 +118,6 @@ export function DateTimeField({
 }
 
 const styles = {
-  sheet: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(47,36,31,0.4)" },
-  sheetCard: { backgroundColor: "#FFFFFF", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, gap: 12 },
+  sheet: { flex: 1, justifyContent: "flex-end" },
+  sheetCard: { borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, gap: 12 },
 } as const;

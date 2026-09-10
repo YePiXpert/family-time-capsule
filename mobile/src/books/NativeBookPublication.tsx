@@ -7,7 +7,7 @@ import {
   changeBookRender,
 } from "../api/client";
 import type { Credentials } from "../types";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import { bookRenderMessage, type BookRenderStatus } from "./render-types";
 import { exportPublication } from "./export-publication";
 export function NativeBookPublication({
@@ -21,6 +21,7 @@ export function NativeBookPublication({
   audience: "personal" | "family";
   prepare: () => Promise<number | null>;
 }) {
+  const s = useSharedStyles();
   const [jobs, setJobs] = useState<BookRenderStatus[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);

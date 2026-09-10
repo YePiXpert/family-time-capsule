@@ -1,11 +1,12 @@
 import { Text, TextInput } from "../components/typography";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ApiError, searchMobile, type MobileSearchFilterInput } from "../api/client";
 import { useApp } from "../state/AppContext";
 import type { RootStackParamList } from "../navigation/types";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 import type { MobileSearchPage } from "../types";
 import { resolveSearchTarget } from "../navigation/intents";
 import { memoryCacheScope } from "../memories/cache-scope";
@@ -43,6 +44,8 @@ const QUERY_MAX = 100;
  * - 离线筛选：人物/日期范围/媒体类型与在线语义一致。
  */
 export function SearchScreen({ navigation }: Props) {
+  const s = useSharedStyles();
+  const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const { credentials, online, viewer, family, people } = useApp();
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
@@ -245,7 +248,7 @@ export function SearchScreen({ navigation }: Props) {
 
   const peopleChips = [{ id: null, displayName: "全部人物" }, ...people.map((person) => ({ id: person.id, displayName: person.displayName }))];
 
-  return <View style={sharedStyles.screen}>
+  return <View style={s.screen}>
     <View style={styles.searchBar}>
       <TextInput
         accessibilityLabel="搜索家庭记忆"
@@ -253,16 +256,16 @@ export function SearchScreen({ navigation }: Props) {
         onSubmitEditing={startSearch}
         placeholder="搜索记忆、讲述或故事"
         returnKeyType="search"
-        style={[sharedStyles.input, styles.input]}
+        style={[s.input, styles.input]}
         value={query}
       />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="开始搜索"
         onPress={startSearch}
-        style={sharedStyles.primaryButton}
+        style={s.primaryButton}
       >
-        <Text style={sharedStyles.primaryText}>搜索</Text>
+        <Text style={s.primaryText}>搜索</Text>
       </Pressable>
     </View>
     <ScrollView horizontal accessibilityLabel="筛选人物" contentContainerStyle={styles.chipRow} showsHorizontalScrollIndicator={false}>
@@ -298,7 +301,7 @@ export function SearchScreen({ navigation }: Props) {
         accessibilityLabel="日期范围起点（年-月-日，可留空）"
         onChangeText={setDateFrom}
         placeholder="开始日期 2020-01-01"
-        style={[sharedStyles.input, styles.dateInput]}
+        style={[s.input, styles.dateInput]}
         value={dateFrom}
       />
       <Text style={styles.dateSeparator}>至</Text>
@@ -306,7 +309,7 @@ export function SearchScreen({ navigation }: Props) {
         accessibilityLabel="日期范围终点（年-月-日，可留空）"
         onChangeText={setDateTo}
         placeholder="结束日期 2026-12-31"
-        style={[sharedStyles.input, styles.dateInput]}
+        style={[s.input, styles.dateInput]}
         value={dateTo}
       />
     </View>
@@ -314,9 +317,9 @@ export function SearchScreen({ navigation }: Props) {
     {noticeText ? <Text style={styles.noticeText}>{noticeText}</Text> : null}
     {error ? (
       <View style={styles.errorBox}>
-        <Text style={[sharedStyles.error, styles.errorText]}>{error}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="只搜索这台设备已保存的内容" onPress={searchDeviceOnly} style={sharedStyles.secondaryButton}>
-          <Text style={sharedStyles.secondaryText}>只搜本机内容</Text>
+        <Text style={[s.error, styles.errorText]}>{error}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="只搜索这台设备已保存的内容" onPress={searchDeviceOnly} style={s.secondaryButton}>
+          <Text style={s.secondaryText}>只搜本机内容</Text>
         </Pressable>
       </View>
     ) : null}
@@ -325,17 +328,17 @@ export function SearchScreen({ navigation }: Props) {
       data={items}
       keyExtractor={(item) => item.key}
       ListEmptyComponent={!loading ? (
-        <View style={sharedStyles.empty}>
-          <Text style={sharedStyles.emptyTitle}>{activeQuery ? "没有找到相关内容" : "找回一段家庭记忆"}</Text>
-          <Text style={sharedStyles.emptyText}>
+        <View style={s.empty}>
+          <Text style={s.emptyTitle}>{activeQuery ? "没有找到相关内容" : "找回一段家庭记忆"}</Text>
+          <Text style={s.emptyText}>
             {notice ? "这台设备上没有已保存的相关内容；联网后可以搜索完整家庭档案。" : "输入人物、地点、标题或讲述中的字词。"}
           </Text>
         </View>
       ) : null}
-      ListFooterComponent={loading ? <ActivityIndicator color={colors.coral} /> : cursor ? (
+      ListFooterComponent={loading ? <ActivityIndicator color={s.colors.coral} /> : cursor ? (
         filtersKey() === activeFiltersKey ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="加载更多" onPress={loadMore} style={sharedStyles.secondaryButton}>
-            <Text style={sharedStyles.secondaryText}>加载更多</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="加载更多" onPress={loadMore} style={s.secondaryButton}>
+            <Text style={s.secondaryText}>加载更多</Text>
           </Pressable>
         ) : (
           <Text style={styles.staleHint}>筛选已变化，点击「搜索」查看新结果。</Text>
@@ -347,11 +350,11 @@ export function SearchScreen({ navigation }: Props) {
           accessibilityLabel={`打开${item.kindLabel}：${item.title}`}
           disabled={!item.open}
           onPress={() => item.open?.()}
-          style={({ pressed }) => [sharedStyles.card, pressed && sharedStyles.pressed, !item.open && sharedStyles.disabled]}
+          style={({ pressed }) => [s.card, pressed && s.pressed, !item.open && s.disabled]}
         >
           <Text style={styles.kind}>{item.kindLabel}</Text>
-          <Text style={sharedStyles.cardTitle}>{item.title}</Text>
-          <Text numberOfLines={3} style={sharedStyles.body}>{item.snippet}</Text>
+          <Text style={s.cardTitle}>{item.title}</Text>
+          <Text numberOfLines={3} style={s.body}>{item.snippet}</Text>
         </Pressable>
       )}
     />
@@ -368,22 +371,24 @@ function classifyError(error: ApiError): string {
   return error.message || "搜索失败。";
 }
 
-const styles = StyleSheet.create({
-  searchBar: { flexDirection: "row", gap: 8, padding: 14, borderBottomColor: colors.line, borderBottomWidth: 1 },
+function createStyles(palette: JournalPalette) {
+  return StyleSheet.create({
+  searchBar: { flexDirection: "row", gap: 8, padding: 14, borderBottomColor: palette.line, borderBottomWidth: 1 },
   input: { flex: 1 },
   chipRow: { flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingTop: 10 },
-  chip: { borderColor: colors.line, borderRadius: 16, borderWidth: 1, minHeight: 48, justifyContent: "center", paddingHorizontal: 14 },
-  chipActive: { backgroundColor: colors.softSage, borderColor: colors.sage },
-  chipText: { color: colors.ink, fontSize: 14 },
-  chipTextActive: { color: colors.sage, fontWeight: "700" },
+  chip: { borderColor: palette.line, borderRadius: 16, borderWidth: 1, minHeight: 48, justifyContent: "center", paddingHorizontal: 14 },
+  chipActive: { backgroundColor: palette.softSage, borderColor: palette.sage },
+  chipText: { color: palette.ink, fontSize: 14 },
+  chipTextActive: { color: palette.sage, fontWeight: "700" },
   dateRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingTop: 10 },
   dateInput: { flex: 1 },
-  dateSeparator: { color: colors.ink, fontSize: 14 },
-  staleHint: { color: colors.muted, fontSize: 12, lineHeight: 18, padding: 4, textAlign: "center" },
+  dateSeparator: { color: palette.ink, fontSize: 14 },
+  staleHint: { color: palette.muted, fontSize: 12, lineHeight: 18, padding: 4, textAlign: "center" },
   list: { padding: 14, paddingBottom: 36, gap: 10 },
-  notice: { backgroundColor: colors.softSage, color: colors.sage, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8, marginTop: 10 },
-  noticeText: { color: colors.warning, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8, marginTop: 10 },
+  notice: { backgroundColor: palette.softSage, color: palette.sage, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8, marginTop: 10 },
+  noticeText: { color: palette.warning, fontSize: 13, lineHeight: 19, fontWeight: "700", paddingHorizontal: 14, paddingVertical: 8, marginTop: 10 },
   errorBox: { paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
   errorText: { padding: 0 },
-  kind: { color: colors.coral, fontSize: 11, fontWeight: "800" },
-});
+  kind: { color: palette.coral, fontSize: 11, fontWeight: "800" },
+  });
+}

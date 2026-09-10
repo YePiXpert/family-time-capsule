@@ -6,7 +6,7 @@ import { ApiError, fetchTranscriptReview, parseTranscriptReview, saveTranscriptR
 import { memoryCacheScope } from "../memories/cache-scope";
 import { useApp } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import type { TranscriptReview } from "./types";
 
 export function TranscriptEditor({ assetId, label, onSaved, refreshVersion = 0 }: { assetId: string; label: string; onSaved?: () => void; refreshVersion?: number }) {
@@ -17,6 +17,7 @@ export function TranscriptEditor({ assetId, label, onSaved, refreshVersion = 0 }
 }
 
 function Editor({ assetId, label, scope, onSaved, refreshVersion }: { assetId: string; label: string; scope: string; onSaved?: () => void; refreshVersion?: number }) {
+  const s = useSharedStyles();
   const { credentials, online } = useApp();
   const [opened, setOpened] = useState(false);
   const [review, setReview] = useState<TranscriptReview | null>(null);

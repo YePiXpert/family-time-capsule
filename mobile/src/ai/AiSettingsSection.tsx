@@ -6,20 +6,22 @@ import { ApiError, changeAiConsent, fetchAiSettings, parseAiSettings } from "../
 import { memoryCacheScope } from "../memories/cache-scope";
 import { useApp } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
-import { sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
 import type { AiSettings, OrganizerCapability } from "./types";
 
 const labels = { text: "文字起名", vision: "图片与视频画面理解", transcription: "录音与视频音轨转写" };
 const content = { text: "所选文字、分析或转录中最少必要的内容", vision: "去除 EXIF 的受限图片预览或少量视频画面", transcription: "所选录音或视频的音轨" };
 
 export function AiSettingsSection() {
+  const s = useSharedStyles();
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
-  if (!credentials || !scope || !["owner", "admin", "editor"].includes(viewer?.role ?? "")) return <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>AI 默认关闭；服务器同步授权与 AI 外部处理授权分别管理。保存、查看与播放无需等待 AI。</Text></View>;
+  if (!credentials || !scope || !["owner", "admin", "editor"].includes(viewer?.role ?? "")) return <View style={s.notice}><Text style={s.noticeText}>AI 默认关闭；服务器同步授权与 AI 外部处理授权分别管理。保存、查看与播放无需等待 AI。</Text></View>;
   return <SettingsContent key={scope} scope={scope} />;
 }
 
 function SettingsContent({ scope }: { scope: string }) {
+  const s = useSharedStyles();
   const { credentials, online } = useApp();
   const [status, setStatus] = useState<AiSettings | null>(null);
   const [verified, setVerified] = useState(false);
@@ -92,23 +94,23 @@ function SettingsContent({ scope }: { scope: string }) {
     [{ text: "取消", style: "cancel" }, { text: enabled ? "确认关闭" : "同意手动处理", onPress: () => void apply() }]);
   };
 
-  return <View style={sharedStyles.card}>
-    <Text style={sharedStyles.cardTitle}>AI 整理与隐私</Text>
-    <Text style={sharedStyles.body}>{!status ? "读取服务器状态" : !status.valid ? "配置无效，请联系部署管理员" : !status.configured ? "AI 未配置或已关闭" : `接收服务：${status.provider}`}</Text>
-    {status?.configured ? <Text style={sharedStyles.body}>{status.workerAvailable ? "后台处理服务可用" : "后台处理服务不可用；原件仍可打开和播放"}</Text> : null}
+  return <View style={s.card}>
+    <Text style={s.cardTitle}>AI 整理与隐私</Text>
+    <Text style={s.body}>{!status ? "读取服务器状态" : !status.valid ? "配置无效，请联系部署管理员" : !status.configured ? "AI 未配置或已关闭" : `接收服务：${status.provider}`}</Text>
+    {status?.configured ? <Text style={s.body}>{status.workerAvailable ? "后台处理服务可用" : "后台处理服务不可用；原件仍可打开和播放"}</Text> : null}
     {status?.quota ? <View>
       {Object.values(status.quota.limits).every(limit => limit === 0) ? <>
-        <Text style={sharedStyles.body}>自用模式 · 不设每日限额</Text>
-        <Text style={sharedStyles.body}>今日已用（UTC {status.quota.day}）：请求 {status.quota.used.requests} 次 · 图片 {status.quota.used.images} 张 · 音频 {status.quota.used.audioSeconds} 秒。仅统计用量，不按每日额度拦截。</Text>
-      </> : <Text style={sharedStyles.body}>今日用量（UTC {status.quota.day}）：请求 {status.quota.used.requests}/{status.quota.limits.maxRequests || "不限"} · 图片 {status.quota.used.images}/{status.quota.limits.maxImages || "不限"} · 音频 {status.quota.used.audioSeconds} 秒/{status.quota.limits.maxAudioSeconds || "不限"}。</Text>}
+        <Text style={s.body}>自用模式 · 不设每日限额</Text>
+        <Text style={s.body}>今日已用（UTC {status.quota.day}）：请求 {status.quota.used.requests} 次 · 图片 {status.quota.used.images} 张 · 音频 {status.quota.used.audioSeconds} 秒。仅统计用量，不按每日额度拦截。</Text>
+      </> : <Text style={s.body}>今日用量（UTC {status.quota.day}）：请求 {status.quota.used.requests}/{status.quota.limits.maxRequests || "不限"} · 图片 {status.quota.used.images}/{status.quota.limits.maxImages || "不限"} · 音频 {status.quota.used.audioSeconds} 秒/{status.quota.limits.maxAudioSeconds || "不限"}。</Text>}
     </View> : null}
-    {error ? <Text accessibilityRole="alert" style={sharedStyles.warningText}>{error}</Text> : null}
+    {error ? <Text accessibilityRole="alert" style={s.warningText}>{error}</Text> : null}
     {status?.capabilities.map(row => <View key={row.capability}>
-      <Text style={sharedStyles.body}>{labels[row.capability]} · {!row.available ? "未配置" : row.consented ? "已同意" : "等待同意"}</Text>
-      {row.available ? <Text style={sharedStyles.body}>{row.receiver ? `接收服务：${row.receiver} · ` : ""}模型：{row.model} · {row.check.state === "passed" ? "测试通过" : row.check.state === "failed" ? "测试失败" : "尚未测试"}</Text> : null}
-      {row.available && status.canConfigure && status.external ? <Pressable disabled={!verified || busy || online === false} onPress={() => confirm(row.capability, row.consented)} style={[sharedStyles.secondaryButton, (!verified || busy || online === false) && sharedStyles.disabled]}><Text style={sharedStyles.secondaryText}>{row.consented ? "关闭这项外部处理" : "查看并同意手动处理"}</Text></Pressable> : null}
+      <Text style={s.body}>{labels[row.capability]} · {!row.available ? "未配置" : row.consented ? "已同意" : "等待同意"}</Text>
+      {row.available ? <Text style={s.body}>{row.receiver ? `接收服务：${row.receiver} · ` : ""}模型：{row.model} · {row.check.state === "passed" ? "测试通过" : row.check.state === "failed" ? "测试失败" : "尚未测试"}</Text> : null}
+      {row.available && status.canConfigure && status.external ? <Pressable disabled={!verified || busy || online === false} onPress={() => confirm(row.capability, row.consented)} style={[s.secondaryButton, (!verified || busy || online === false) && s.disabled]}><Text style={s.secondaryText}>{row.consented ? "关闭这项外部处理" : "查看并同意手动处理"}</Text></Pressable> : null}
     </View>)}
-    <Text style={sharedStyles.body}>配置与能力检测由部署管理员在 VPS 使用 ftc ai 完成。App 不保存模型 Key，也不继承开发工具的模型账号。</Text>
-    <Pressable disabled={busy} onPress={() => void load()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{busy ? "读取中…" : "刷新 AI 状态"}</Text></Pressable>
+    <Text style={s.body}>配置与能力检测由部署管理员在 VPS 使用 ftc ai 完成。App 不保存模型 Key，也不继承开发工具的模型账号。</Text>
+    <Pressable disabled={busy} onPress={() => void load()} style={s.secondaryButton}><Text style={s.secondaryText}>{busy ? "读取中…" : "刷新 AI 状态"}</Text></Pressable>
   </View>;
 }

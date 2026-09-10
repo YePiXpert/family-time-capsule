@@ -4,7 +4,7 @@ import { Text } from "../components/typography";
 import { useNavigation } from "@react-navigation/native";
 import type { AppNavigation } from "../navigation/types";
 import { useApp } from "../state/AppContext";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import type { ReadingKind } from "./types";
 import {
   nativeReadingTransport,
@@ -20,6 +20,7 @@ export function ReadingDownloadButton({
   id: string;
   prepare?: () => Promise<boolean>;
 }) {
+  const s = useSharedStyles();
   const { credentials, online: connected } = useApp(),
     navigation = useNavigation<AppNavigation>(),
     [busy, setBusy] = useState(false),

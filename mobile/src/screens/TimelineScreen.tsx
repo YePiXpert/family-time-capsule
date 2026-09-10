@@ -6,13 +6,14 @@ import { usePendingImports } from "./PendingScreen";
 import { Text } from "../components/typography";
 import { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
-import { FlatList, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useApp } from "../state/AppContext";
-import { Disclosure } from "../components/Disclosure";
 import { TimelineCard } from "../components/TimelineCard";
 import { JournalArtwork } from "../components/JournalArtwork";
+import { Button, Chip, EmptyState, IconButton, Pill } from "../components/ui";
+import { useColorTheme } from "../theme";
+import { journalRadius, journalSpace, journalType } from "../design/tokens";
 import type { AppNavigation } from "../navigation/types";
-import { colors, sharedStyles } from "../theme";
 
 export function TimelineScreen() {
   const [stageKey, setStageKey] = useState("");
@@ -35,6 +36,7 @@ export function TimelineScreen() {
   // 收件箱不再是主导航(M1):「记忆」页头部保留整理入口,数量来自最近一次同步。
   const imports = usePendingImports();
   const insets = useSafeAreaInsets();
+  const { colors } = useColorTheme();
   const growth = growthHeading(people ?? [], new Date(), family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   const child = people?.find(p => p.id === growth.childId);
   const timezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -52,75 +54,70 @@ export function TimelineScreen() {
   const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
     <FlatList
-      contentContainerStyle={{ padding: 20, paddingTop: insets.top + 24, paddingBottom: 180, gap: 18, ...(events.length === 0 ? { flexGrow: 1 } : {}) }}
+      contentContainerStyle={{
+        padding: journalSpace.page,
+        paddingTop: insets.top + 20,
+        paddingBottom: 210,
+        gap: 18,
+        ...(events.length === 0 ? { flexGrow: 1 } : {}),
+      }}
       data={visibleEvents}
       keyExtractor={(item) => item.id}
       ListEmptyComponent={
-        <View style={sharedStyles.empty}>
-          <Text style={sharedStyles.emptyTitle}>{stage || important ? "这里还没有记录" : "第一篇成长记，从今天开始"}</Text>
-          <Text style={sharedStyles.emptyText}>
-            选一张照片，留下一句想对宝宝说的话。
-          </Text>
-        </View>
+        <EmptyState
+          art={<JournalArtwork kind="keepsake" />}
+          title={stage || important ? "这里还没有记录" : "第一篇成长记，从今天开始"}
+          body="选一张照片，留下一句想对宝宝说的话。"
+          action={<Button title="记录一刻" variant="primary" icon="plus" onPress={() => navigation.navigate("Capture")} full={false} />}
+        />
       }
       ListHeaderComponent={
-        <View style={{ gap: 18 }}>
-          <View style={{ paddingTop: 12, paddingBottom: 24, gap: 12, flexDirection: "row", alignItems: "center" }}>
-            <View style={{ flex: 1, gap: 8 }}>
-            <Text style={sharedStyles.eyebrow}>一点一滴，慢慢长大</Text>
-            <Text accessibilityRole="header" style={[sharedStyles.title, { fontSize: 32 }]}>{growth.title}</Text>
-            <Text style={sharedStyles.body}>留下今天，送给长大的你。</Text>
-            {growth.age ? <Text style={{ color: colors.coralDark, backgroundColor: colors.softCoral, alignSelf: "flex-start", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7, fontSize: 14, marginTop: 8 }}>{growth.age}</Text> : null}
+        <View style={{ gap: 20 }}>
+          {/* Hero：宝宝是主角——名字、真实月龄、一句话寄语，插画融入右侧 */}
+          <View style={styles.hero}>
+            <View style={styles.heroText}>
+              <Text style={[styles.eyebrow, { color: colors.coral }]}>一点一滴，慢慢长大</Text>
+              <Text accessibilityRole="header" style={[styles.heroTitle, { color: colors.ink }]}>{growth.title}</Text>
+              <Text style={[styles.heroIntro, { color: colors.muted }]}>留下今天，送给长大的你。</Text>
+              {growth.age ? <View style={{ marginTop: 10 }}><Pill label={growth.age} icon="growth" /></View> : null}
             </View>
             <JournalArtwork kind="keepsake" compact />
           </View>
-          {stages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} accessibilityLabel="按月龄回看">
-            {[{ key: "", label: "全部" }, ...stages].map(item => <Pressable key={item.key} accessibilityRole="tab" accessibilityState={{ selected: (stage?.key ?? "") === item.key }} onPress={() => { setStageKey(item.key); setSelected([]); }} style={(stage?.key ?? "") === item.key ? sharedStyles.primaryButton : sharedStyles.secondaryButton}><Text style={(stage?.key ?? "") === item.key ? sharedStyles.primaryText : sharedStyles.secondaryText}>{item.label}</Text></Pressable>)}
-          </ScrollView> : <Pressable accessibilityRole="button" onPress={() => navigation.navigate("People")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>填写宝宝生日，按月龄回看</Text></Pressable>}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            <Pressable accessibilityRole="button" accessibilityState={{ selected: important }} onPress={() => setImportant(v => !v)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{important ? "查看所有时刻" : "第一次与值得记住"}</Text></Pressable>
-            <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Works")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>看看成长册</Text></Pressable>
+
+          {/* 月龄轨迹：轻量胶囊，内容为主角 */}
+          {stages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }} accessibilityLabel="按月龄回看">
+            {[{ key: "", label: "全部" }, ...stages].map(item => <Chip key={item.key} label={item.label} selected={(stage?.key ?? "") === item.key} onPress={() => { setStageKey(item.key); setSelected([]); }} />)}
+          </ScrollView> : <Button title="填写宝宝生日，按月龄回看" icon="calendar" onPress={() => navigation.navigate("People")} />}
+
+          {/* 次级工具行：筛选与管理退到一行小控件 */}
+          <View style={styles.toolRow}>
+            <Chip accessibilityRole="button" icon="star" label={important ? "查看所有时刻" : "第一次与值得记住"} selected={important} onPress={() => setImportant(v => !v)} />
+            <View style={{ flex: 1 }} />
+            <IconButton icon="search" label="搜索" onPress={() => navigation.navigate("Search")} />
+            <IconButton icon="calendar" label="日期与人物" onPress={() => navigation.navigate("Calendar")} />
+            {viewer?.canEditEvents ? (
+              <IconButton icon="check" label={selecting ? "取消选择" : "选择"} tone={selecting ? "accent" : "plain"} onPress={() => { setSelecting(!selecting); setSelected([]); }} />
+            ) : null}
           </View>
-          {inboxCount > 0 ? (
-            <Pressable accessibilityRole="button"
-              onPress={() => navigation.navigate("Pending")}
-              style={sharedStyles.secondaryButton}
-            >
-              <Text style={sharedStyles.secondaryText}>
-                待处理 {inboxCount > 99 ? "99+" : inboxCount} 条
-              </Text>
-            </Pressable>
-          ) : null}
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Search")} style={[sharedStyles.secondaryButton, { flex: 1 }]}><Text style={sharedStyles.secondaryText}>搜索</Text></Pressable>
-            <View style={{ flex: 1 }}><Disclosure title="筛选"><Pressable accessibilityRole="button" onPress={() => navigation.navigate("Calendar")} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>日期与人物</Text></Pressable>          {viewer?.canEditEvents ? (
-            <Pressable accessibilityRole="button"
-              onPress={() => setSelecting(!selecting)}
-              style={sharedStyles.secondaryButton}
-            >
-              <Text style={sharedStyles.secondaryText}>
-                {selecting ? "取消选择" : "选择"}
-              </Text>
-            </Pressable>
-          ) : null}
-</Disclosure></View>
-          </View>
+
           {selecting ? (
-            <Pressable accessibilityRole="button"
-              disabled={!selected.length}
-              onPress={() =>
-                navigation.navigate("Collections", { eventIds: selected })
-              }
-              style={sharedStyles.secondaryButton}
-            >
-              <Text style={sharedStyles.secondaryText}>
-                将所选 {selected.length} 条加入相册
-              </Text>
+            <View style={[styles.selectionCard, { backgroundColor: colors.softCoral, borderColor: colors.peach }]}>
+              <Text style={[styles.selectionText, { color: colors.coralDark }]}>已选 {selected.length} 条</Text>
+              <View style={styles.selectionActions}>
+                <Button title={`将所选 ${selected.length} 条加入相册`} variant="primary" disabled={!selected.length} onPress={() => navigation.navigate("Collections", { eventIds: selected })} full={false} />
+              </View>
+            </View>
+          ) : null}
+
+          {inboxCount > 0 ? (
+            <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Pending")} style={[styles.inboxCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+              <Text style={[styles.inboxText, { color: colors.ink }]}>待处理 {inboxCount > 99 ? "99+" : inboxCount} 条</Text>
             </Pressable>
           ) : null}
+
           {outbox.length > 0 ? (
-            <View>
-              <Text style={sharedStyles.warningText}>
+            <View style={[styles.outboxCard, { backgroundColor: colors.warningSoft }]}>
+              <Text style={[styles.outboxText, { color: colors.warning }]}>
                 {outbox.length} 份已保存在本机，
                 {credentials ? "联网后会继续补传" : "连接服务器后再补传"}。
               </Text>
@@ -137,13 +134,16 @@ export function TimelineScreen() {
       }
       renderItem={({ item, index }) => (
         <View>
-          {index === 0 || groupLabel(visibleEvents[index - 1]!) !== groupLabel(item) ? <Text accessibilityRole="header" style={[sharedStyles.cardTitle, { marginBottom: 12 }]}>{groupLabel(item)}</Text> : null}
-          {selecting && item.source === "server" ? (
-            <Text>{selected.includes(item.id) ? "已选择" : "点按选择"}</Text>
+          {index === 0 || groupLabel(visibleEvents[index - 1]!) !== groupLabel(item) ? (
+            <View style={styles.groupHeader}>
+              <Text accessibilityRole="header" style={[styles.groupLabel, { color: colors.muted }]}>{groupLabel(item)}</Text>
+              <View style={[styles.groupRule, { backgroundColor: colors.line }]} />
+            </View>
           ) : null}
           <TimelineCard
             item={item}
             timeZone={item.source === "server" ? family?.timezone : undefined}
+            selected={selecting && item.source === "server" ? selected.includes(item.id) : undefined}
             onPress={() =>
               selecting && item.source === "server"
                 ? setSelected((ids) =>
@@ -159,7 +159,37 @@ export function TimelineScreen() {
           />
         </View>
       )}
-      style={sharedStyles.screen}
+      style={{ flex: 1, backgroundColor: colors.paper }}
     />
   );
 }
+
+const styles = StyleSheet.create({
+  hero: { flexDirection: "row", alignItems: "center", gap: 16, paddingBottom: 4 },
+  heroText: { flex: 1, gap: 8 },
+  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.2 },
+  heroTitle: { fontSize: journalType.hero, fontWeight: "800", letterSpacing: -0.5 },
+  heroIntro: { fontSize: journalType.body },
+  toolRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  selectionCard: {
+    borderRadius: journalRadius.card,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+  },
+  selectionText: { fontSize: 14, fontWeight: "700" },
+  selectionActions: { flexDirection: "row" },
+  inboxCard: {
+    borderRadius: journalRadius.control,
+    borderWidth: 1,
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  inboxText: { fontSize: 15, fontWeight: "600" },
+  outboxCard: { borderRadius: journalRadius.control, padding: 12 },
+  outboxText: { fontSize: 13, lineHeight: 19 },
+  groupHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14, marginTop: 6 },
+  groupLabel: { fontSize: 13, fontWeight: "700", letterSpacing: 0.6 },
+  groupRule: { flex: 1, height: StyleSheet.hairlineWidth },
+});

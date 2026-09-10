@@ -1,5 +1,5 @@
 import { Text } from "../components/typography";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { exportOriginalCopy } from "../media/export-original";
@@ -11,7 +11,8 @@ import {
 } from "../storage/database";
 import { localFileExists } from "../storage/files";
 import { useApp } from "../state/AppContext";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 
 /**
  * 本机记录详情（M3）：不联网、未上传、待整理都能直接打开本机内容。
@@ -28,6 +29,8 @@ const SYNC_STATE_LABELS: Record<LocalCaptureDetail["syncState"], string> = {
 };
 
 export function LocalCaptureDetailScreen({ route }: { route: { params: { captureId: string } } }) {
+  const s = useSharedStyles();
+  const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const captureId = route.params.captureId.replace(/^local:/u, "");
   const { credentials, outbox, runSync } = useApp();
   const [detail, setDetail] = useState<LocalCaptureDetail | null>(null);
@@ -67,13 +70,13 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
   };
 
   if (loading && !detail) {
-    return <View style={sharedStyles.empty}><ActivityIndicator color={colors.coral} size="large" /></View>;
+    return <View style={s.empty}><ActivityIndicator color={s.colors.coral} size="large" /></View>;
   }
   if (!detail) {
     return (
-      <View style={sharedStyles.empty}>
-        <Text style={sharedStyles.emptyTitle}>找不到这条本机记录</Text>
-        <Text style={sharedStyles.emptyText}>它可能已被整理入档。已入档的内容请打开对应的记忆查看。</Text>
+      <View style={s.empty}>
+        <Text style={s.emptyTitle}>找不到这条本机记录</Text>
+        <Text style={s.emptyText}>它可能已被整理入档。已入档的内容请打开对应的记忆查看。</Text>
       </View>
     );
   }
@@ -90,9 +93,9 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
       : null;
 
   return (
-    <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-      <Text style={sharedStyles.eyebrow}>本机记录</Text>
-      <Text style={sharedStyles.title}>{detail.title}</Text>
+    <ScrollView contentContainerStyle={s.content} style={s.screen}>
+      <Text style={s.eyebrow}>本机记录</Text>
+      <Text style={s.title}>{detail.title}</Text>
       <View style={styles.statusRow}>
         <View style={styles.chip}><Text style={styles.chipText}>已保存本机</Text></View>
         <View style={[styles.chip, styles.chipSync]}><Text style={styles.chipText}>{SYNC_STATE_LABELS[detail.syncState]}</Text></View>
@@ -100,34 +103,34 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
         {detail.syncState === "archived" && detail.memoryEventId ? <View style={[styles.chip, styles.chipReview]}><Text style={styles.chipText}>已整理入档</Text></View> : null}
       </View>
       {outboxItem && outboxItem.attemptCount > 0 ? (
-        <View style={sharedStyles.warning}>
-          <Text style={sharedStyles.warningText}>上传未成功：{outboxItem.lastError}（已尝试 {outboxItem.attemptCount} 次）。原件始终保留在本机。</Text>
+        <View style={s.warning}>
+          <Text style={s.warningText}>上传未成功：{outboxItem.lastError}（已尝试 {outboxItem.attemptCount} 次）。原件始终保留在本机。</Text>
           {credentials ? <Pressable onPress={() => void runSync()} style={styles.retry}><Text style={styles.retryText}>重试上传</Text></Pressable> : null}
         </View>
       ) : null}
 
       {detail.kind === "text_capture" ? (
         detail.text !== null ? (
-          <View style={sharedStyles.card}>
+          <View style={s.card}>
             <Text selectable style={styles.fullText}>{detail.text}</Text>
           </View>
         ) : (
-          <View style={sharedStyles.notice}>
-            <Text style={sharedStyles.noticeText}>这份文字已送达家庭收件箱；全文在收件箱中查看与整理。</Text>
+          <View style={s.notice}>
+            <Text style={s.noticeText}>这份文字已送达家庭收件箱；全文在收件箱中查看与整理。</Text>
           </View>
         )
       ) : fileExists && asset ? (
         detail.mediaType === "document" ? (
-          <View style={sharedStyles.card}>
-            <Text style={sharedStyles.cardTitle}>{detail.fileName ?? detail.title}</Text>
-            <Text style={sharedStyles.body}>本机文档可直接导出到其他 App 打开。</Text>
+          <View style={s.card}>
+            <Text style={s.cardTitle}>{detail.fileName ?? detail.title}</Text>
+            <Text style={s.body}>本机文档可直接导出到其他 App 打开。</Text>
           </View>
         ) : (
           <NativeMediaReader assets={[asset]} credentials={null} />
         )
       ) : (
-        <View style={sharedStyles.warning}>
-          <Text style={sharedStyles.warningText}>本机原件文件已不存在（可能被系统清理或其他 App 删除）。记录条目仍保留，不会伪装成保存成功。</Text>
+        <View style={s.warning}>
+          <Text style={s.warningText}>本机原件文件已不存在（可能被系统清理或其他 App 删除）。记录条目仍保留，不会伪装成保存成功。</Text>
         </View>
       )}
 
@@ -147,9 +150,9 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
               Alert.alert("导出失败", error instanceof Error ? error.message : "请稍后重试。"),
             )
           }
-          style={sharedStyles.secondaryButton}
+          style={s.secondaryButton}
         >
-          <Text style={sharedStyles.secondaryText}>导出这份原件</Text>
+          <Text style={s.secondaryText}>导出这份原件</Text>
         </Pressable>
       ) : null}
       <Pressable onPress={removeRecord} style={styles.remove}>
@@ -160,16 +163,18 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: JournalPalette) {
+  return StyleSheet.create({
   statusRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  chip: { backgroundColor: colors.softSage, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
-  chipSync: { backgroundColor: colors.softCoral },
-  chipReview: { backgroundColor: "#FFF1D9" },
-  chipText: { color: colors.sage, fontSize: 12, fontWeight: "800" },
-  fullText: { color: colors.ink, fontSize: 16, lineHeight: 26 },
+  chip: { backgroundColor: palette.softSage, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
+  chipSync: { backgroundColor: palette.softCoral },
+  chipReview: { backgroundColor: palette.warningSoft },
+  chipText: { color: palette.sage, fontSize: 12, fontWeight: "800" },
+  fullText: { color: palette.ink, fontSize: 16, lineHeight: 26 },
   retry: { minHeight: 44, justifyContent: "center" },
-  retryText: { color: colors.coralDark, fontSize: 13, fontWeight: "800" },
+  retryText: { color: palette.coralDark, fontSize: 13, fontWeight: "800" },
   remove: { minHeight: 48, alignItems: "center", justifyContent: "center" },
-  removeText: { color: colors.error, fontSize: 14, fontWeight: "800" },
-  note: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
-});
+  removeText: { color: palette.error, fontSize: 14, fontWeight: "800" },
+  note: { color: palette.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  });
+}

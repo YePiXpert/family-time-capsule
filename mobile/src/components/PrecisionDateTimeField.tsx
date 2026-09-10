@@ -6,7 +6,7 @@ import {
   default as DateTimePicker,
 } from "@react-native-community/datetimepicker";
 import { Modal, Platform, Pressable, View } from "react-native";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
 import { DateTimeField } from "./DateTimeField";
 import {
   anchorFromPrecisionInput,
@@ -67,6 +67,7 @@ export function PrecisionDateTimeField({
   disabled?: boolean;
   onChange: (next: { occurredAt: string | null; precision: OccurredAtPrecision }) => void;
 }) {
+  const s = useSharedStyles();
   const onChange = (value: { occurredAt: string | null; precision: OccurredAtPrecision }) => { if (!disabled) emitChange(value); };
   const [loosePicking, setLoosePicking] = useState<{ mode: LooseMode; date: Date } | null>(null);
 
@@ -129,11 +130,11 @@ export function PrecisionDateTimeField({
               accessibilityState={{ selected: active }}
               onPress={() => switchPrecision(option.value)}
               style={[
-                sharedStyles.secondaryButton,
-                { opacity: active ? 1 : 0.65, borderColor: active ? colors.coral : colors.muted },
+                s.secondaryButton,
+                { opacity: active ? 1 : 0.65, borderColor: active ? s.colors.coral : s.colors.muted },
               ]}
             >
-              <Text style={active ? sharedStyles.secondaryText : { color: colors.muted, fontSize: 14 }}>
+              <Text style={active ? s.secondaryText : { color: s.colors.muted, fontSize: 14 }}>
                 {option.label}
               </Text>
             </Pressable>
@@ -162,26 +163,26 @@ export function PrecisionDateTimeField({
                 ? openLooseAndroid(precision)
                 : setLoosePicking({ mode: precision, date: occurredAt && anchorWall ? new Date(anchorWall) : new Date() })
             }
-            style={[sharedStyles.input, { justifyContent: "center" }]}
+            style={[s.input, { justifyContent: "center" }]}
           >
-            <Text style={{ color: occurredAt ? colors.ink : colors.muted, fontSize: 16 }}>{currentLabel}</Text>
+            <Text style={{ color: occurredAt ? s.colors.ink : s.colors.muted, fontSize: 16 }}>{currentLabel}</Text>
           </Pressable>
-          <Text style={{ color: colors.muted, fontSize: 12 }}>{LOOSE_HINT[precision]}</Text>
+          <Text style={{ color: s.colors.muted, fontSize: 12 }}>{LOOSE_HINT[precision]}</Text>
         </View>
       ) : null}
 
       {precision === "unknown" ? (
-        <Text style={{ color: colors.muted, fontSize: 12 }}>不写发生时间；这条记忆按保存先后排序，不会显示编造的日期。</Text>
+        <Text style={{ color: s.colors.muted, fontSize: 12 }}>不写发生时间；这条记忆按保存先后排序，不会显示编造的日期。</Text>
       ) : null}
 
       {precision !== "exact" && precision !== "approximate" && precision !== "unknown" ? (
-        <Text style={{ color: colors.muted, fontSize: 12 }}>当前：{currentLabel}</Text>
+        <Text style={{ color: s.colors.muted, fontSize: 12 }}>当前：{currentLabel}</Text>
       ) : null}
 
       {Platform.OS === "ios" && loosePicking ? (
         <Modal animationType="slide" transparent visible onRequestClose={() => setLoosePicking(null)}>
-          <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(47,36,31,0.4)" }}>
-            <View style={{ backgroundColor: "#FFFFFF", borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, gap: 12 }}>
+          <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: s.colors.scrim }}>
+            <View style={{ backgroundColor: s.colors.elevated, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, gap: 12 }}>
               <DateTimePicker
                 mode="date"
                 style={{ width: "100%" }}
@@ -195,9 +196,9 @@ export function PrecisionDateTimeField({
                   commitLoose(loosePicking.date, loosePicking.mode);
                   setLoosePicking(null);
                 }}
-                style={sharedStyles.primaryButton}
+                style={s.primaryButton}
               >
-                <Text style={sharedStyles.primaryText}>确定</Text>
+                <Text style={s.primaryText}>确定</Text>
               </Pressable>
             </View>
           </View>

@@ -5,12 +5,13 @@ import { Pressable, View } from "react-native";
 import { fetchBookMaterials, requestMobileJson, type BookMaterials } from "../api/client";
 import { useApp } from "../state/AppContext";
 import { Disclosure } from "../components/Disclosure";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 
 import { GROWTH_BOOK_TEMPLATES } from "../books/types";
 
 type Material = BookMaterials["entries"][number];
 export function WorkCreator({ kind, onCreated, onCancel }: { kind: "album" | "book"; onCreated: (id: string) => void; onCancel: () => void }) {
+  const s = useSharedStyles();
   const { credentials } = useApp();
   const [template, setTemplate] = useState<"photos" | "growth">("growth");
   const [source, setSource] = useState<"memory" | "collection">("memory");

@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useApp } from "../state/AppContext";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 import {
   nativeReadingStore,
@@ -30,6 +30,7 @@ function Button({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const s = useSharedStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -44,6 +45,7 @@ function Button({
 export function ReadingDownloadsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "ReadingDownloads">) {
+  const s = useSharedStyles();
   const { credentials, online: connected } = useApp(),
     [scope, setScope] = useState<ReadingScope | null>(null),
     [rows, setRows] = useState<DownloadSummary[]>([]),
@@ -240,6 +242,7 @@ export function OfflineReadingScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "OfflineReading">) {
+  const s = useSharedStyles();
   const { credentials, online: connected } = useApp(),
     key = route.params.key,
     [entry, setEntry] = useState<DownloadEntry | null>(null),

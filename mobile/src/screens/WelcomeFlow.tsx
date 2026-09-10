@@ -13,7 +13,8 @@ import {
   signIn,
 } from "../api/client";
 import { useApp } from "../state/AppContext";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 import { AccountLoginForm } from "../components/AccountLoginForm";
 import type { BootstrapInfo, InvitationPreview } from "../types";
 
@@ -32,6 +33,11 @@ const PREVIEW_STATUS_LABELS: Record<string, string> = {
   used: "已被使用",
 };
 
+function useThemedStyles() {
+  const s = useSharedStyles();
+  return useMemo(() => createStyles(s.colors), [s.colors]);
+}
+
 function formatExpiry(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -48,11 +54,12 @@ function formatExpiry(value: string): string {
 type Step = "welcome" | "create" | "join" | "login";
 
 export function WelcomeFlow() {
+  const s = useSharedStyles();
   const [step, setStep] = useState<Step>("welcome");
   const insets = useSafeAreaInsets();
   return (
-    <View style={[sharedStyles.screen, { paddingTop: insets.top + 18 }]}>
-      <ScrollView contentContainerStyle={[sharedStyles.content, { flexGrow: 1 }]}>
+    <View style={[s.screen, { paddingTop: insets.top + 18 }]}>
+      <ScrollView contentContainerStyle={[s.content, { flexGrow: 1 }]}>
         {step === "welcome" ? <WelcomeStep onChoose={setStep} /> : null}
         {step === "create" ? <CreateFamilyStep onBack={() => setStep("welcome")} /> : null}
         {step === "join" ? <JoinFamilyStep onBack={() => setStep("welcome")} /> : null}
@@ -63,16 +70,18 @@ export function WelcomeFlow() {
 }
 
 function StepHeader({ eyebrow, title, intro }: { eyebrow: string; title: string; intro: string }) {
+  const s = useSharedStyles();
   return (
     <View style={{ gap: 8, marginTop: 8 }}>
-      <Text style={sharedStyles.eyebrow}>{eyebrow}</Text>
-      <Text style={sharedStyles.title}>{title}</Text>
-      <Text style={sharedStyles.intro}>{intro}</Text>
+      <Text style={s.eyebrow}>{eyebrow}</Text>
+      <Text style={s.title}>{title}</Text>
+      <Text style={s.intro}>{intro}</Text>
     </View>
   );
 }
 
 function BackButton({ onBack }: { onBack: () => void }) {
+  const styles = useThemedStyles();
   return (
     <Pressable onPress={onBack} style={styles.back}>
       <Text style={styles.backText}>← 返回</Text>
@@ -81,6 +90,8 @@ function BackButton({ onBack }: { onBack: () => void }) {
 }
 
 function WelcomeStep({ onChoose }: { onChoose: (step: Step) => void }) {
+  const s = useSharedStyles();
+  const styles = useThemedStyles();
   const { setWelcomeSeen } = useApp();
   return (
     <View style={{ gap: 16, justifyContent: "center", flexGrow: 1 }}>
@@ -89,14 +100,14 @@ function WelcomeStep({ onChoose }: { onChoose: (step: Step) => void }) {
         title="从今天起，写下宝宝的成长"
         intro="记录保存在你自己的设备上；连接自托管的家庭空间后，才能与家人共享。这里没有官方云服务。"
       />
-      <Pressable onPress={() => onChoose("create")} style={sharedStyles.primaryButton}>
-        <Text style={sharedStyles.primaryText}>创建我的家庭</Text>
+      <Pressable onPress={() => onChoose("create")} style={s.primaryButton}>
+        <Text style={s.primaryText}>创建我的家庭</Text>
       </Pressable>
-      <Pressable onPress={() => onChoose("join")} style={sharedStyles.secondaryButton}>
-        <Text style={sharedStyles.secondaryText}>加入家人的家庭</Text>
+      <Pressable onPress={() => onChoose("join")} style={s.secondaryButton}>
+        <Text style={s.secondaryText}>加入家人的家庭</Text>
       </Pressable>
-      <Pressable onPress={() => void setWelcomeSeen()} style={sharedStyles.secondaryButton}>
-        <Text style={sharedStyles.secondaryText}>暂时只在本机记录</Text>
+      <Pressable onPress={() => void setWelcomeSeen()} style={s.secondaryButton}>
+        <Text style={s.secondaryText}>暂时只在本机记录</Text>
       </Pressable>
       <Pressable onPress={() => onChoose("login")} style={styles.textButton}>
         <Text style={styles.plainLink}>已有账号登录</Text>
@@ -107,6 +118,7 @@ function WelcomeStep({ onChoose }: { onChoose: (step: Step) => void }) {
 }
 
 function CreateFamilyStep({ onBack }: { onBack: () => void }) {
+  const s = useSharedStyles();
   const { connect } = useApp();
   const [serverUrl, setServerUrl] = useState("");
   const [info, setInfo] = useState<{ serverUrl: string; info: BootstrapInfo } | null>(null);
@@ -179,25 +191,25 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
         title="连接家庭空间"
         intro="填写家人的自托管服务地址（管理员部署后获得），我们会先确认这是可用的小美成长记实例。"
       />
-      <Text style={sharedStyles.label}>家庭空间地址</Text>
+      <Text style={s.label}>家庭空间地址</Text>
       <TextInput
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
         onChangeText={setServerUrl}
         placeholder="https://capsule.example.com"
-        style={sharedStyles.input}
+        style={s.input}
         value={serverUrl}
       />
-      <Pressable disabled={detecting} onPress={() => void detect()} style={sharedStyles.primaryButton}>
-        {detecting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>检测家庭空间</Text>}
+      <Pressable disabled={detecting} onPress={() => void detect()} style={s.primaryButton}>
+        {detecting ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>检测家庭空间</Text>}
       </Pressable>
-      {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
+      {error ? <Text style={s.error}>{error}</Text> : null}
 
       {info ? (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>{info.serverUrl.replace(/^https?:\/\//u, "")}</Text>
-          <Text style={sharedStyles.body}>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>{info.serverUrl.replace(/^https?:\/\//u, "")}</Text>
+          <Text style={s.body}>
             {info.info.setup.state === "available"
               ? "这是一个新部署的家庭空间，可以创建第一个管理员账号。"
               : info.info.setup.state === "completed"
@@ -208,27 +220,27 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
       ) : null}
 
       {info && info.info.setup.state === "available" ? (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>创建管理员账号</Text>
-          <Text style={sharedStyles.label}>初始化令牌</Text>
-          <TextInput autoCapitalize="none" autoCorrect={false} onChangeText={setToken} placeholder="部署时设置的 INITIAL_SETUP_TOKEN" style={sharedStyles.input} value={token} />
-          <Text style={sharedStyles.label}>你的称呼</Text>
-          <TextInput onChangeText={setDisplayName} placeholder="例如：妈妈" style={sharedStyles.input} value={displayName} />
-          <Text style={sharedStyles.label}>邮箱（用于登录）</Text>
-          <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" onChangeText={setEmail} style={sharedStyles.input} value={email} />
-          <Text style={sharedStyles.label}>密码（至少 10 位）</Text>
-          <TextInput autoCapitalize="none" autoComplete="new-password" onChangeText={setPassword} secureTextEntry style={sharedStyles.input} value={password} />
-          <Text style={sharedStyles.label}>确认密码</Text>
-          <TextInput autoCapitalize="none" autoComplete="new-password" onChangeText={setPasswordConfirm} secureTextEntry style={sharedStyles.input} value={passwordConfirm} />
-          <Pressable disabled={submitting} onPress={() => void submitSetup()} style={sharedStyles.primaryButton}>
-            {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>创建账号并登录</Text>}
+        <View style={s.card}>
+          <Text style={s.cardTitle}>创建管理员账号</Text>
+          <Text style={s.label}>初始化令牌</Text>
+          <TextInput autoCapitalize="none" autoCorrect={false} onChangeText={setToken} placeholder="部署时设置的 INITIAL_SETUP_TOKEN" style={s.input} value={token} />
+          <Text style={s.label}>你的称呼</Text>
+          <TextInput onChangeText={setDisplayName} placeholder="例如：妈妈" style={s.input} value={displayName} />
+          <Text style={s.label}>邮箱（用于登录）</Text>
+          <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" onChangeText={setEmail} style={s.input} value={email} />
+          <Text style={s.label}>密码（至少 10 位）</Text>
+          <TextInput autoCapitalize="none" autoComplete="new-password" onChangeText={setPassword} secureTextEntry style={s.input} value={password} />
+          <Text style={s.label}>确认密码</Text>
+          <TextInput autoCapitalize="none" autoComplete="new-password" onChangeText={setPasswordConfirm} secureTextEntry style={s.input} value={passwordConfirm} />
+          <Pressable disabled={submitting} onPress={() => void submitSetup()} style={s.primaryButton}>
+            {submitting ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>创建账号并登录</Text>}
           </Pressable>
         </View>
       ) : null}
 
       {info && info.info.setup.state === "completed" ? (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>登录该家庭空间</Text>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>登录该家庭空间</Text>
           <AccountLoginForm key={info.serverUrl} serverUrl={info.serverUrl} onLogin={connect} />
         </View>
       ) : null}
@@ -241,6 +253,8 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
  * 在 App 内注册账号（原子接受邀请）→ 自动登录并绑定同一家庭。
  */
 function JoinFamilyStep({ onBack }: { onBack: () => void }) {
+  const s = useSharedStyles();
+  const styles = useThemedStyles();
   const { connect } = useApp();
   const [link, setLink] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -329,19 +343,19 @@ function JoinFamilyStep({ onBack }: { onBack: () => void }) {
           setError(null);
         }}
         placeholder="https://capsule.example.com/invite/…"
-        style={[sharedStyles.input, styles.linkInput]}
+        style={[s.input, styles.linkInput]}
         value={link}
       />
       <View style={{ flexDirection: "row", gap: 10 }}>
         <Pressable
           disabled={checking}
           onPress={() => void startCheck(link)}
-          style={[sharedStyles.primaryButton, { flex: 1 }]}
+          style={[s.primaryButton, { flex: 1 }]}
         >
-          {checking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>查看邀请</Text>}
+          {checking ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>查看邀请</Text>}
         </Pressable>
-        <Pressable onPress={() => void startScan()} style={[sharedStyles.secondaryButton, { flex: 1 }]}>
-          <Text style={sharedStyles.secondaryText}>{scanning ? "正在扫码…" : "扫描二维码"}</Text>
+        <Pressable onPress={() => void startScan()} style={[s.secondaryButton, { flex: 1 }]}>
+          <Text style={s.secondaryText}>{scanning ? "正在扫码…" : "扫描二维码"}</Text>
         </Pressable>
       </View>
       {scanning ? (
@@ -358,40 +372,40 @@ function JoinFamilyStep({ onBack }: { onBack: () => void }) {
           <Text style={styles.note}>对准家人 App 中展示的邀请二维码</Text>
         </View>
       ) : null}
-      {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
+      {error ? <Text style={s.error}>{error}</Text> : null}
 
       {invite && preview && preview.status !== "invalid" ? (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>将加入：{preview.familyName}</Text>
-          <Text style={sharedStyles.body}>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>将加入：{preview.familyName}</Text>
+          <Text style={s.body}>
             身份：{ROLE_LABELS[preview.role] ?? preview.role}
             {preview.personName ? `（关联家人档案：${preview.personName}）` : ""}
           </Text>
-          <Text style={sharedStyles.body}>
+          <Text style={s.body}>
             {preview.status === "active"
               ? `有效期至 ${formatExpiry(preview.expiresAt)}`
               : `邀请状态：${PREVIEW_STATUS_LABELS[preview.status]}，不能再使用。`}
           </Text>
           {preview.email ? (
-            <Text style={sharedStyles.warning}>此邀请限定了邮箱 {preview.email}。</Text>
+            <Text style={s.warning}>此邀请限定了邮箱 {preview.email}。</Text>
           ) : null}
         </View>
       ) : null}
       {preview?.status === "invalid" ? (
-        <Text style={sharedStyles.error}>邀请链接无效，请向家人重新获取。</Text>
+        <Text style={s.error}>邀请链接无效，请向家人重新获取。</Text>
       ) : null}
 
       {invite && active ? (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>设置你的账号</Text>
-          <Text style={sharedStyles.label}>你的称呼</Text>
-          <TextInput onChangeText={setDisplayName} placeholder="例如：爸爸" style={sharedStyles.input} value={displayName} />
-          <Text style={sharedStyles.label}>邮箱（用于登录）</Text>
-          <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" onChangeText={setEmail} placeholder="dad@example.com" style={sharedStyles.input} value={email} />
-          <Text style={sharedStyles.label}>密码（至少 10 位）</Text>
-          <TextInput autoCapitalize="none" autoComplete="new-password" onChangeText={setPassword} placeholder="至少 10 位" secureTextEntry style={sharedStyles.input} value={password} />
-          <Pressable disabled={submitting} onPress={() => void submit()} style={sharedStyles.primaryButton}>
-            {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>注册并加入家庭</Text>}
+        <View style={s.card}>
+          <Text style={s.cardTitle}>设置你的账号</Text>
+          <Text style={s.label}>你的称呼</Text>
+          <TextInput onChangeText={setDisplayName} placeholder="例如：爸爸" style={s.input} value={displayName} />
+          <Text style={s.label}>邮箱（用于登录）</Text>
+          <TextInput autoCapitalize="none" autoComplete="email" keyboardType="email-address" onChangeText={setEmail} placeholder="dad@example.com" style={s.input} value={email} />
+          <Text style={s.label}>密码（至少 10 位）</Text>
+          <TextInput autoCapitalize="none" autoComplete="new-password" onChangeText={setPassword} placeholder="至少 10 位" secureTextEntry style={s.input} value={password} />
+          <Pressable disabled={submitting} onPress={() => void submit()} style={s.primaryButton}>
+            {submitting ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>注册并加入家庭</Text>}
           </Pressable>
           <Text style={styles.note}>注册成功后会自动登录；该邮箱已有账号时请改用“已有账号登录”。</Text>
         </View>
@@ -413,6 +427,8 @@ function LoginStep({ onBack }: { onBack: () => void }) {
 
 /** 账号已建立但还没有家庭时的一次性初始化门（登录不再被误判失败）。 */
 export function OnboardingGate() {
+  const s = useSharedStyles();
+  const styles = useThemedStyles();
   const { completeOnboarding, disconnect, credentials } = useApp();
   const [familyName, setFamilyName] = useState("");
   const [childDisplayName, setChildDisplayName] = useState("");
@@ -458,32 +474,32 @@ export function OnboardingGate() {
   };
 
   return (
-    <View style={[sharedStyles.screen, { paddingTop: insets.top + 18 }]}>
-      <ScrollView contentContainerStyle={sharedStyles.content}>
+    <View style={[s.screen, { paddingTop: insets.top + 18 }]}>
+      <ScrollView contentContainerStyle={s.content}>
         <StepHeader
           eyebrow="初始化家庭"
           title="建立你的家庭"
           intro={`以 ${credentials?.serverUrl ?? "家庭空间"} 管理员身份创建家庭和你的档案，孩子资料可稍后补充。家庭时区：${timezone}。`}
         />
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.label}>家庭名称</Text>
-          <TextInput onChangeText={setFamilyName} placeholder="例如：河边的小满家" style={sharedStyles.input} value={familyName} />
-          <Text style={sharedStyles.label}>孩子的称呼（可跳过）</Text>
-          <TextInput onChangeText={setChildDisplayName} placeholder="例如：小满" style={sharedStyles.input} value={childDisplayName} />
-          <Text style={sharedStyles.label}>孩子的出生日期（可稍后补充）</Text>
-          <TextInput onChangeText={setChildBirthDate} placeholder="2026-09-02" style={sharedStyles.input} value={childBirthDate} />
-          <Text style={sharedStyles.label}>你的称呼</Text>
-          <TextInput onChangeText={setSelfDisplayName} placeholder="例如：妈妈" style={sharedStyles.input} value={selfDisplayName} />
-          <Text style={sharedStyles.label}>与孩子的关系</Text>
-          <TextInput onChangeText={setSelfRelationToChild} placeholder="例如：妈妈" style={sharedStyles.input} value={selfRelationToChild} />
+        <View style={s.card}>
+          <Text style={s.label}>家庭名称</Text>
+          <TextInput onChangeText={setFamilyName} placeholder="例如：河边的小满家" style={s.input} value={familyName} />
+          <Text style={s.label}>孩子的称呼（可跳过）</Text>
+          <TextInput onChangeText={setChildDisplayName} placeholder="例如：小满" style={s.input} value={childDisplayName} />
+          <Text style={s.label}>孩子的出生日期（可稍后补充）</Text>
+          <TextInput onChangeText={setChildBirthDate} placeholder="2026-09-02" style={s.input} value={childBirthDate} />
+          <Text style={s.label}>你的称呼</Text>
+          <TextInput onChangeText={setSelfDisplayName} placeholder="例如：妈妈" style={s.input} value={selfDisplayName} />
+          <Text style={s.label}>与孩子的关系</Text>
+          <TextInput onChangeText={setSelfRelationToChild} placeholder="例如：妈妈" style={s.input} value={selfRelationToChild} />
           <View style={styles.switchRow}>
-            <Text style={sharedStyles.label}>我是孩子的监护人</Text>
+            <Text style={s.label}>我是孩子的监护人</Text>
             <Switch onValueChange={setSelfIsGuardian} value={selfIsGuardian} />
           </View>
         </View>
-        {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
-        <Pressable disabled={busy} onPress={() => void submit()} style={sharedStyles.primaryButton}>
-          {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>建立家庭并开始同步</Text>}
+        {error ? <Text style={s.error}>{error}</Text> : null}
+        <Pressable disabled={busy} onPress={() => void submit()} style={s.primaryButton}>
+          {busy ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>建立家庭并开始同步</Text>}
         </Pressable>
         <Pressable onPress={() => void disconnect()} style={styles.textButton}>
           <Text style={styles.plainLink}>换个账号</Text>
@@ -494,14 +510,16 @@ export function OnboardingGate() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: JournalPalette) {
+  return StyleSheet.create({
   back: { minHeight: 44, justifyContent: "center" },
-  backText: { color: colors.coralDark, fontSize: 15, fontWeight: "800" },
+  backText: { color: palette.coralDark, fontSize: 15, fontWeight: "800" },
   textButton: { minHeight: 48, alignItems: "center", justifyContent: "center" },
-  plainLink: { color: colors.coralDark, fontSize: 15, fontWeight: "700" },
-  note: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  plainLink: { color: palette.coralDark, fontSize: 15, fontWeight: "700" },
+  note: { color: palette.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
   linkInput: { minHeight: 72, textAlignVertical: "top" },
   cameraBox: { gap: 8 },
   camera: { height: 240, borderRadius: 12, overflow: "hidden" },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-});
+  });
+}

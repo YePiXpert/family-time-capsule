@@ -6,7 +6,7 @@ import { ApiError, fetchNameReview, mutateNameReview, parseNameReview } from "..
 import { memoryCacheScope } from "../memories/cache-scope";
 import { useApp } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
-import { sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
 import { NAME_SOURCE_LABELS, type NameKind, type NameReview } from "./types";
 
 export function NameEditor({ kind, id, onSaved, refreshVersion = 0, defaultOpen = false }: { kind: NameKind; id: string; onSaved?: () => void; refreshVersion?: number; defaultOpen?: boolean }) {
@@ -17,6 +17,7 @@ export function NameEditor({ kind, id, onSaved, refreshVersion = 0, defaultOpen 
 }
 
 function Editor({ kind, id, scope, onSaved, refreshVersion, defaultOpen = false }: { kind: NameKind; id: string; scope: string; onSaved?: () => void; refreshVersion?: number; defaultOpen?: boolean }) {
+  const s = useSharedStyles();
   const { credentials, online, runSync } = useApp();
   const [opened, setOpened] = useState(defaultOpen);
   const [review, setReview] = useState<NameReview | null>(null);
@@ -78,24 +79,24 @@ function Editor({ kind, id, scope, onSaved, refreshVersion, defaultOpen = false 
     if (lastRefresh.current !== refreshVersion) { lastRefresh.current = refreshVersion; void load(); }
   }, [load, refreshVersion]);
   const disabled = busy || !verified || online === false;
-  return <View style={sharedStyles.card}>
-    <Pressable onPress={() => setOpened(!opened)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{kind === "asset" ? "素材展示名" : "标题与 AI 建议"}</Text></Pressable>
+  return <View style={s.card}>
+    <Pressable onPress={() => setOpened(!opened)} style={s.secondaryButton}><Text style={s.secondaryText}>{kind === "asset" ? "素材展示名" : "标题与 AI 建议"}</Text></Pressable>
     {opened ? <>
-      {error ? <Text accessibilityRole="alert" style={sharedStyles.warningText}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" style={s.warningText}>{error}</Text> : null}
       {review ? <>
-        <Text style={sharedStyles.body}>{NAME_SOURCE_LABELS[review.target.source] ?? "展示名称"} · 原件文件名和字节保持不变</Text>
-        <TextInput accessibilityLabel="人工名称" maxLength={100} value={title} onChangeText={value => { touched.current = true; setTitle(value); }} style={sharedStyles.input} />
-        <Pressable disabled={disabled || !title.trim()} onPress={() => void mutate({ operation: "rename", title })} style={[sharedStyles.primaryButton, disabled && sharedStyles.disabled]}><Text style={sharedStyles.primaryText}>保存人工名称</Text></Pressable>
+        <Text style={s.body}>{NAME_SOURCE_LABELS[review.target.source] ?? "展示名称"} · 原件文件名和字节保持不变</Text>
+        <TextInput accessibilityLabel="人工名称" maxLength={100} value={title} onChangeText={value => { touched.current = true; setTitle(value); }} style={s.input} />
+        <Pressable disabled={disabled || !title.trim()} onPress={() => void mutate({ operation: "rename", title })} style={[s.primaryButton, disabled && s.disabled]}><Text style={s.primaryText}>保存人工名称</Text></Pressable>
         {review.suggestions.filter(row => row.status === "pending" || row.canUndo).map(row => <View key={row.id}>
-          <Text style={sharedStyles.body}>AI 建议：{row.title}{row.status === "pending" && !row.valid ? "（已过期）" : ""}</Text>
+          <Text style={s.body}>AI 建议：{row.title}{row.status === "pending" && !row.valid ? "（已过期）" : ""}</Text>
           {row.status === "pending" ? <>
-            <TextInput accessibilityLabel="修改建议名称" maxLength={100} value={edits[row.id] ?? row.title} onChangeText={value => setEdits({ ...edits, [row.id]: value })} style={sharedStyles.input} />
-            <Pressable disabled={disabled || !row.valid} onPress={() => void mutate({ operation: "accept", suggestionId: row.id, suggestionRevision: row.revision, ...(edits[row.id] === undefined ? {} : { editedTitle: edits[row.id] }) })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{edits[row.id] === undefined ? "采用" : "修改后采用"}</Text></Pressable>
-            <Pressable disabled={disabled} onPress={() => void mutate({ operation: "reject", suggestionId: row.id, suggestionRevision: row.revision })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>忽略</Text></Pressable>
-          </> : <Pressable disabled={disabled} onPress={() => void mutate({ operation: "undo", suggestionId: row.id, suggestionRevision: row.revision })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>撤销这次采用</Text></Pressable>}
+            <TextInput accessibilityLabel="修改建议名称" maxLength={100} value={edits[row.id] ?? row.title} onChangeText={value => setEdits({ ...edits, [row.id]: value })} style={s.input} />
+            <Pressable disabled={disabled || !row.valid} onPress={() => void mutate({ operation: "accept", suggestionId: row.id, suggestionRevision: row.revision, ...(edits[row.id] === undefined ? {} : { editedTitle: edits[row.id] }) })} style={s.secondaryButton}><Text style={s.secondaryText}>{edits[row.id] === undefined ? "采用" : "修改后采用"}</Text></Pressable>
+            <Pressable disabled={disabled} onPress={() => void mutate({ operation: "reject", suggestionId: row.id, suggestionRevision: row.revision })} style={s.secondaryButton}><Text style={s.secondaryText}>忽略</Text></Pressable>
+          </> : <Pressable disabled={disabled} onPress={() => void mutate({ operation: "undo", suggestionId: row.id, suggestionRevision: row.revision })} style={s.secondaryButton}><Text style={s.secondaryText}>撤销这次采用</Text></Pressable>}
         </View>)}
       </> : null}
-      <Pressable disabled={busy} onPress={() => void load()} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{busy ? "读取中…" : "刷新名称与建议"}</Text></Pressable>
+      <Pressable disabled={busy} onPress={() => void load()} style={s.secondaryButton}><Text style={s.secondaryText}>{busy ? "读取中…" : "刷新名称与建议"}</Text></Pressable>
     </> : null}
   </View>;
 }

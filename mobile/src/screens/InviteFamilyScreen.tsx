@@ -1,11 +1,12 @@
 import { Text, TextInput } from "../components/typography";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, Share, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import { createInvitation } from "../api/client";
 import { useApp } from "../state/AppContext";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 import type { InvitationCreateResult } from "../types";
 
 /**
@@ -22,6 +23,8 @@ const ROLES: { key: "admin" | "editor" | "contributor" | "viewer"; label: string
 ];
 
 export function InviteFamilyScreen() {
+  const s = useSharedStyles();
+  const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const { credentials, people } = useApp();
   const [role, setRole] = useState<"admin" | "editor" | "contributor" | "viewer">("contributor");
   const [expiresInDays, setExpiresInDays] = useState(7);
@@ -70,16 +73,16 @@ export function InviteFamilyScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-      <Text style={sharedStyles.eyebrow}>账号邀请</Text>
-      <Text style={sharedStyles.title}>邀请家人加入</Text>
-      <Text style={sharedStyles.intro}>
+    <ScrollView contentContainerStyle={s.content} style={s.screen}>
+      <Text style={s.eyebrow}>账号邀请</Text>
+      <Text style={s.title}>邀请家人加入</Text>
+      <Text style={s.intro}>
         生成一次性邀请链接或二维码。家人在 App 的“加入家人的家庭”中粘贴或扫码，即可用自己的账号加入本家庭。
       </Text>
 
       {result ? (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>邀请已创建（只显示这一次）</Text>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>邀请已创建（只显示这一次）</Text>
           <View style={styles.qrWrap}>
             <QRCode size={200} value={link} />
           </View>
@@ -87,11 +90,11 @@ export function InviteFamilyScreen() {
             {link}
           </Text>
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <Pressable onPress={() => void copy()} style={[sharedStyles.secondaryButton, { flex: 1 }]}>
-              <Text style={sharedStyles.secondaryText}>复制链接</Text>
+            <Pressable onPress={() => void copy()} style={[s.secondaryButton, { flex: 1 }]}>
+              <Text style={s.secondaryText}>复制链接</Text>
             </Pressable>
-            <Pressable onPress={() => void share()} style={[sharedStyles.secondaryButton, { flex: 1 }]}>
-              <Text style={sharedStyles.secondaryText}>系统分享</Text>
+            <Pressable onPress={() => void share()} style={[s.secondaryButton, { flex: 1 }]}>
+              <Text style={s.secondaryText}>系统分享</Text>
             </Pressable>
           </View>
           <Text style={styles.note}>
@@ -102,14 +105,14 @@ export function InviteFamilyScreen() {
               setResult(null);
               setPersonId("");
             }}
-            style={sharedStyles.primaryButton}
+            style={s.primaryButton}
           >
-            <Text style={sharedStyles.primaryText}>再创建一个邀请</Text>
+            <Text style={s.primaryText}>再创建一个邀请</Text>
           </Pressable>
         </View>
       ) : (
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.label}>家人在家庭中的身份</Text>
+        <View style={s.card}>
+          <Text style={s.label}>家人在家庭中的身份</Text>
           {ROLES.map((entry) => (
             <Pressable
               key={entry.key}
@@ -123,19 +126,19 @@ export function InviteFamilyScreen() {
               <Text style={styles.roleMark}>{role === entry.key ? "✓" : ""}</Text>
             </Pressable>
           ))}
-          <Text style={sharedStyles.label}>有效期（天）</Text>
+          <Text style={s.label}>有效期（天）</Text>
           <TextInput
             keyboardType="number-pad"
             onChangeText={(value) => {
               const parsed = Number.parseInt(value.replace(/[^0-9]/gu, ""), 10);
               setExpiresInDays(Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 30) : 1);
             }}
-            style={sharedStyles.input}
+            style={s.input}
             value={String(expiresInDays)}
           />
           {people.length > 0 ? (
             <>
-              <Text style={sharedStyles.label}>关联已有家人档案（可选）</Text>
+              <Text style={s.label}>关联已有家人档案（可选）</Text>
               {people.map((entry) => (
                 <Pressable
                   key={entry.id}
@@ -151,9 +154,9 @@ export function InviteFamilyScreen() {
               ))}
             </>
           ) : null}
-          {error ? <Text style={sharedStyles.error}>{error}</Text> : null}
-          <Pressable disabled={creating} onPress={() => void submit()} style={sharedStyles.primaryButton}>
-            {creating ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>创建邀请</Text>}
+          {error ? <Text style={s.error}>{error}</Text> : null}
+          <Pressable disabled={creating} onPress={() => void submit()} style={s.primaryButton}>
+            {creating ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>创建邀请</Text>}
           </Pressable>
         </View>
       )}
@@ -161,22 +164,22 @@ export function InviteFamilyScreen() {
   );
 }
 
-const styles = {
-  qrWrap: { alignItems: "center", paddingVertical: 12, backgroundColor: "#FFFFFF", borderRadius: 12 },
-  link: { color: colors.ink, fontSize: 12, lineHeight: 18 },
-  note: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+const createStyles = (palette: JournalPalette) => ({
+  qrWrap: { alignItems: "center", paddingVertical: 12, backgroundColor: palette.elevated, borderRadius: 12 },
+  link: { color: palette.ink, fontSize: 12, lineHeight: 18 },
+  note: { color: palette.muted, fontSize: 12, lineHeight: 18 },
   roleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    borderColor: colors.line,
+    borderColor: palette.line,
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  roleRowActive: { borderColor: colors.coral, backgroundColor: colors.softCoral },
-  roleLabel: { color: colors.ink, fontSize: 15, fontWeight: "800" },
-  roleHint: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-  roleMark: { color: colors.coralDark, fontSize: 18, fontWeight: "900" },
-} as const;
+  roleRowActive: { borderColor: palette.coral, backgroundColor: palette.softCoral },
+  roleLabel: { color: palette.ink, fontSize: 15, fontWeight: "800" },
+  roleHint: { color: palette.muted, fontSize: 12, lineHeight: 17 },
+  roleMark: { color: palette.coralDark, fontSize: 18, fontWeight: "900" },
+}) as const;

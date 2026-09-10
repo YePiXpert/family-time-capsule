@@ -10,9 +10,10 @@ import { NativeMediaReader } from "../media/NativeMediaReader";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
 import { useApp } from "../state/AppContext";
 import type { RootStackParamList } from "../navigation/types";
-import { sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
 
 export function LocalIntakeScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "LocalIntake">) {
+  const s = useSharedStyles();
   const { credentials, userId, family, viewer, queued, grantSyncConsent, syncConsent } = useApp();
   const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const scopeRef = useRef(scope);
@@ -49,34 +50,35 @@ export function LocalIntakeScreen({ route, navigation }: NativeStackScreenProps<
     } catch (e) { if (scopeRef.current === scope) setError(e instanceof Error ? e.message : "本机保存失败，请重试。"); }
     finally { setBusy(false); }
   };
-  return <ScrollView style={sharedStyles.screen} contentContainerStyle={sharedStyles.content}>
-    <Text style={sharedStyles.title}>收到的内容</Text>
-    <Text style={sharedStyles.body}>先看一看，明天再整理也可以。加入草稿只保存引用，原件仍保留。</Text>
-    {error && <Text accessibilityRole="alert" style={sharedStyles.error}>{error}</Text>}
-    {message && <Text accessibilityLiveRegion="polite" style={sharedStyles.body}>{message}</Text>}
-    {!detail ? <Text style={sharedStyles.body}>正在读取本机收件，或它属于其他账号。</Text> : <>
-      <Text style={sharedStyles.body}>{detail.items.length} 项 · {detail.choice.destination === "pending" ? "尚未选择去向" : detail.choice.destination === "draft" ? "已加入草稿" : "仅存资料库"}</Text>
-      {detail.items.map(item => <View key={item.captureId} style={sharedStyles.card}>
-        <Text style={sharedStyles.cardTitle}>{item.original?.title || "未能复制的内容"}</Text>
-        {item.error || !item.original ? <Text accessibilityRole="alert" style={sharedStyles.error}>这一项没有完整保全，请从原应用重新分享。其他项仍然可用。</Text> : <>
-          {item.original.text && <Text style={sharedStyles.body}>{item.original.text}</Text>}
+  return <ScrollView style={s.screen} contentContainerStyle={s.content}>
+    <Text style={s.title}>收到的内容</Text>
+    <Text style={s.body}>先看一看，明天再整理也可以。加入草稿只保存引用，原件仍保留。</Text>
+    {error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
+    {message && <Text accessibilityLiveRegion="polite" style={s.body}>{message}</Text>}
+    {!detail ? <Text style={s.body}>正在读取本机收件，或它属于其他账号。</Text> : <>
+      <Text style={s.body}>{detail.items.length} 项 · {detail.choice.destination === "pending" ? "尚未选择去向" : detail.choice.destination === "draft" ? "已加入草稿" : "仅存资料库"}</Text>
+      {detail.items.map(item => <View key={item.captureId} style={s.card}>
+        <Text style={s.cardTitle}>{item.original?.title || "未能复制的内容"}</Text>
+        {item.error || !item.original ? <Text accessibilityRole="alert" style={s.error}>这一项没有完整保全，请从原应用重新分享。其他项仍然可用。</Text> : <>
+          {item.original.text && <Text style={s.body}>{item.original.text}</Text>}
           {item.original.localUri && item.original.mediaType && <NativeMediaReader credentials={null} assets={[{ id: item.captureId, type: item.original.mediaType, filename: item.original.title, mimeType: item.original.mimeType ?? "", localUri: item.original.localUri }]} />}
-          <Text style={sharedStyles.body}>本机已保存 · {item.original.syncState === "pending" ? "服务器尚未收到" : "服务器已收到"}</Text>
+          <Text style={s.body}>本机已保存 · {item.original.syncState === "pending" ? "服务器尚未收到" : "服务器已收到"}</Text>
         </>}
       </View>)}
       {editable && detail.choice.destination === "pending" && <>
         <IntakeButton busy={busy} label="加入新草稿" onPress={() => void choose("draft")} />
         {(state?.drafts ?? []).map(draft => <View key={draft.id}><IntakeButton busy={busy} label={`加入草稿：${draft.content.title || draft.content.text.slice(0, 30) || "未命名的一件事"}`} onPress={() => void choose("draft", draft)} /></View>)}
         <IntakeButton busy={busy} label={scope === "local" ? "仅存本机资料库" : `仅存资料库 · ${family?.name}`} onPress={() => void choose("library")} />
-        <Text style={sharedStyles.body}>暂不选择也已保存在本机。部分复制失败的项会留下错误凭据。</Text>
+        <Text style={s.body}>暂不选择也已保存在本机。部分复制失败的项会留下错误凭据。</Text>
       </>}
       {editable && detail.choice.destination === "library" && <IntakeButton busy={busy} label={scope === "local" ? "原件留在本机" : `确认送到资料库 · ${family?.name}`} onPress={() => void choose("library")} />}
       {editable && detail.choice.draft_id && <IntakeButton busy={busy} label="继续这件事" onPress={() => navigation.navigate("MainTabs", { screen: "Capture", params: { localDraftId: detail.choice.draft_id!, requestKey: Date.now() } })} />}
-      {!editable && <Text style={sharedStyles.body}>当前家庭账号只能阅读；分享副本已留在本机，尚未授权上传。</Text>}
+      {!editable && <Text style={s.body}>当前家庭账号只能阅读；分享副本已留在本机，尚未授权上传。</Text>}
     </>}
   </ScrollView>;
 }
 
 function IntakeButton({ label, onPress, busy }: { label: string; onPress: () => void; busy: boolean }) {
-  return <Pressable accessibilityRole="button" disabled={busy} style={sharedStyles.secondaryButton} onPress={onPress}><Text style={sharedStyles.secondaryText}>{label}</Text></Pressable>;
+  const s = useSharedStyles();
+  return <Pressable accessibilityRole="button" disabled={busy} style={s.secondaryButton} onPress={onPress}><Text style={s.secondaryText}>{label}</Text></Pressable>;
 }

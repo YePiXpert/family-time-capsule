@@ -1,5 +1,5 @@
 import { Text, TextInput } from "../components/typography";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { memoryCacheScope } from "../memories/cache-scope";
@@ -7,7 +7,8 @@ import { ApiError, confirmMobileInbox, fetchMobileInbox, mergeMobileInbox, patch
 import { DateTimeField } from "../components/DateTimeField";
 import { useApp } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 import type { InboxDraftPatch, MobileInboxEntry } from "../types";
 import { inputDateTime } from "../utils/format";
 import { archiveLocalCaptures } from "../storage/database";
@@ -21,6 +22,8 @@ export function InboxScreen() {
 }
 
 function InboxContent() {
+  const s = useSharedStyles();
+  const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const navigation = useNavigation<AppNavigation>();
   const { credentials, people, runSync, viewer } = useApp();
   const generation = useRef(0);
@@ -161,59 +164,61 @@ function InboxContent() {
   };
 
   if (!credentials) {
-    return <View style={sharedStyles.empty}><Text style={sharedStyles.emptyTitle}>收件箱需要家庭服务器</Text><Text style={sharedStyles.emptyText}>本机记录不会丢失。连接后，等待补传的素材会出现在这里。</Text><Pressable onPress={() => navigation.navigate("Settings")} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>连接服务器</Text></Pressable></View>;
+    return <View style={s.empty}><Text style={s.emptyTitle}>收件箱需要家庭服务器</Text><Text style={s.emptyText}>本机记录不会丢失。连接后，等待补传的素材会出现在这里。</Text><Pressable onPress={() => navigation.navigate("Settings")} style={s.primaryButton}><Text style={s.primaryText}>连接服务器</Text></Pressable></View>;
   }
 
   return (
-    <ScrollView contentContainerStyle={sharedStyles.content} style={sharedStyles.screen}>
-      <View><Text style={sharedStyles.eyebrow}>从素材到记忆</Text><Text style={sharedStyles.title}>收件箱</Text><Text style={sharedStyles.intro}>{canReview ? "先修改标题、时间、人物与地点，再单条确认或多选合并。" : "当前家庭角色可查看待整理素材，但不能修改、合并或确认。"}</Text></View>
-      {error ? <View style={sharedStyles.warning}><Text style={sharedStyles.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.inlineButton}><Text style={styles.link}>重试</Text></Pressable></View> : null}
+    <ScrollView contentContainerStyle={s.content} style={s.screen}>
+      <View><Text style={s.eyebrow}>从素材到记忆</Text><Text style={s.title}>收件箱</Text><Text style={s.intro}>{canReview ? "先修改标题、时间、人物与地点，再单条确认或多选合并。" : "当前家庭角色可查看待整理素材，但不能修改、合并或确认。"}</Text></View>
+      {error ? <View style={s.warning}><Text style={s.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.inlineButton}><Text style={styles.link}>重试</Text></Pressable></View> : null}
 
-      {canReview && selected.size >= 2 ? <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>合并 {selected.size} 项</Text><TextInput onChangeText={setMergeTitle} placeholder="合并后的记忆标题" style={sharedStyles.input} value={mergeTitle} /><Pressable disabled={loading} onPress={() => void merge()} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>合并并确认入档</Text></Pressable></View> : null}
+      {canReview && selected.size >= 2 ? <View style={s.card}><Text style={s.cardTitle}>合并 {selected.size} 项</Text><TextInput onChangeText={setMergeTitle} placeholder="合并后的记忆标题" style={s.input} value={mergeTitle} /><Pressable disabled={loading} onPress={() => void merge()} style={s.primaryButton}><Text style={s.primaryText}>合并并确认入档</Text></Pressable></View> : null}
 
-      {canReview && editing ? <View style={sharedStyles.card}>
-        <View style={styles.between}><Text style={sharedStyles.cardTitle}>修改待整理素材</Text><Pressable onPress={() => setEditing(null)} style={styles.inlineButton}><Text style={styles.link}>收起</Text></Pressable></View>
-        <Text style={sharedStyles.label}>标题</Text><TextInput onChangeText={setTitle} style={sharedStyles.input} value={title} />
-        <Text style={sharedStyles.label}>发生时间</Text><DateTimeField onChange={setOccurredAt} value={occurredAt} />
-        <Text style={sharedStyles.label}>地点</Text><TextInput onChangeText={setLocation} placeholder="可不填" style={sharedStyles.input} value={location} />
-        <Text style={sharedStyles.label}>人物</Text><View style={styles.peopleWrap}>{people.map((person) => <Pressable key={person.id} onPress={() => setParticipants((current) => { const next = new Set(current); if (next.has(person.id)) next.delete(person.id); else next.add(person.id); return next; })} style={[styles.personChip, participants.has(person.id) && styles.personChipActive]}><Text style={[styles.personText, participants.has(person.id) && styles.personTextActive]}>{person.displayName}</Text></Pressable>)}</View>
-        <View style={styles.buttonRow}><Pressable disabled={loading} onPress={() => void saveEdit()} style={[sharedStyles.secondaryButton, styles.grow]}><Text style={sharedStyles.secondaryText}>保存修改</Text></Pressable><Pressable disabled={loading} onPress={() => void confirm(editing)} style={[sharedStyles.primaryButton, styles.grow]}><Text style={sharedStyles.primaryText}>确认入档</Text></Pressable></View>
+      {canReview && editing ? <View style={s.card}>
+        <View style={styles.between}><Text style={s.cardTitle}>修改待整理素材</Text><Pressable onPress={() => setEditing(null)} style={styles.inlineButton}><Text style={styles.link}>收起</Text></Pressable></View>
+        <Text style={s.label}>标题</Text><TextInput onChangeText={setTitle} style={s.input} value={title} />
+        <Text style={s.label}>发生时间</Text><DateTimeField onChange={setOccurredAt} value={occurredAt} />
+        <Text style={s.label}>地点</Text><TextInput onChangeText={setLocation} placeholder="可不填" style={s.input} value={location} />
+        <Text style={s.label}>人物</Text><View style={styles.peopleWrap}>{people.map((person) => <Pressable key={person.id} onPress={() => setParticipants((current) => { const next = new Set(current); if (next.has(person.id)) next.delete(person.id); else next.add(person.id); return next; })} style={[styles.personChip, participants.has(person.id) && styles.personChipActive]}><Text style={[styles.personText, participants.has(person.id) && styles.personTextActive]}>{person.displayName}</Text></Pressable>)}</View>
+        <View style={styles.buttonRow}><Pressable disabled={loading} onPress={() => void saveEdit()} style={[s.secondaryButton, styles.grow]}><Text style={s.secondaryText}>保存修改</Text></Pressable><Pressable disabled={loading} onPress={() => void confirm(editing)} style={[s.primaryButton, styles.grow]}><Text style={s.primaryText}>确认入档</Text></Pressable></View>
       </View> : null}
 
-      {entries.length === 0 && !loading ? <View style={sharedStyles.empty}><Text style={sharedStyles.emptyTitle}>收件箱已经整理完</Text><Text style={sharedStyles.emptyText}>新记录同步后会先来到这里，不会自动确认事实或合并。</Text></View> : entries.map((entry) => {
+      {entries.length === 0 && !loading ? <View style={s.empty}><Text style={s.emptyTitle}>收件箱已经整理完</Text><Text style={s.emptyText}>新记录同步后会先来到这里，不会自动确认事实或合并。</Text></View> : entries.map((entry) => {
         const image = entry.assets.find((asset) => asset.type === "image");
         const checked = selected.has(entry.id);
         const source = image ? { uri: `${credentials.serverUrl}${image.thumbnailPath ?? image.mediaPath}`, headers: { authorization: `Bearer ${credentials.token}` } } : null;
         return <View key={entry.id}><View style={styles.entry}>
           {source ? <Image source={source} style={styles.thumbnail} /> : <View style={styles.thumbnailPlaceholder}><Text style={styles.kind}>{entry.kind === "text" ? "文字" : entry.assets[0]?.type === "audio" ? "录音" : "素材"}</Text></View>}
           <View style={styles.grow}><Text numberOfLines={2} style={styles.entryTitle}>{entry.title}</Text><Text style={styles.meta}>{entry.occurredAtWall ? entry.occurredAtWall.replace("T", " ") : "待校时"}{entry.locationText ? ` · ${entry.locationText}` : ""}</Text>{canReview ? <View style={styles.buttonRow}><Pressable onPress={() => setSelected((current) => { const next = new Set(current); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); return next; })} style={[styles.smallButton, checked && styles.smallButtonActive]}><Text style={checked ? styles.smallTextActive : styles.smallText}>{checked ? "已选择" : "选择"}</Text></Pressable><Pressable onPress={() => beginEdit(entry)} style={styles.smallButton}><Text style={styles.smallText}>修改</Text></Pressable><Pressable onPress={() => void confirm(entry)} style={styles.smallButton}><Text style={styles.smallText}>确认</Text></Pressable></View> : null}</View>
-        </View><Pressable onPress={() => setReading(reading === entry.id ? null : entry.id)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{reading === entry.id ? "收起素材" : "查看素材与全文"}</Text></Pressable>{reading === entry.id ? <View>{entry.rawText ? <Text selectable style={sharedStyles.body}>{entry.rawText}</Text> : null}<NativeMediaReader credentials={credentials} assets={entry.assets} />{entry.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} />)}</View> : null}{canReview ? <OrganizerPanel kind="inbox_item" id={entry.id} onSaved={() => void load()} /> : null}</View>;
+        </View><Pressable onPress={() => setReading(reading === entry.id ? null : entry.id)} style={s.secondaryButton}><Text style={s.secondaryText}>{reading === entry.id ? "收起素材" : "查看素材与全文"}</Text></Pressable>{reading === entry.id ? <View>{entry.rawText ? <Text selectable style={s.body}>{entry.rawText}</Text> : null}<NativeMediaReader credentials={credentials} assets={entry.assets} />{entry.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} />)}</View> : null}{canReview ? <OrganizerPanel kind="inbox_item" id={entry.id} onSaved={() => void load()} /> : null}</View>;
       })}
-      {loading ? <ActivityIndicator color={colors.coral} /> : null}
-      {cursor && !loading ? <Pressable onPress={() => void load(cursor)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>加载更多</Text></Pressable> : null}
+      {loading ? <ActivityIndicator color={s.colors.coral} /> : null}
+      {cursor && !loading ? <Pressable onPress={() => void load(cursor)} style={s.secondaryButton}><Text style={s.secondaryText}>加载更多</Text></Pressable> : null}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  entry: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 11, backgroundColor: colors.card, borderColor: colors.line, borderRadius: 16, borderWidth: 1 },
-  thumbnail: { width: 88, height: 88, borderRadius: 12, backgroundColor: colors.softCoral },
-  thumbnailPlaceholder: { width: 88, height: 88, borderRadius: 12, backgroundColor: colors.softCoral, alignItems: "center", justifyContent: "center" },
-  kind: { color: colors.coralDark, fontWeight: "800" },
+function createStyles(palette: JournalPalette) {
+  return StyleSheet.create({
+  entry: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 11, backgroundColor: palette.card, borderColor: palette.line, borderRadius: 16, borderWidth: 1 },
+  thumbnail: { width: 88, height: 88, borderRadius: 12, backgroundColor: palette.softCoral },
+  thumbnailPlaceholder: { width: 88, height: 88, borderRadius: 12, backgroundColor: palette.softCoral, alignItems: "center", justifyContent: "center" },
+  kind: { color: palette.coralDark, fontWeight: "800" },
   grow: { flex: 1, gap: 6 },
-  entryTitle: { color: colors.ink, fontSize: 16, lineHeight: 21, fontWeight: "800" },
-  meta: { color: colors.muted, fontSize: 12, lineHeight: 17 },
+  entryTitle: { color: palette.ink, fontSize: 16, lineHeight: 21, fontWeight: "800" },
+  meta: { color: palette.muted, fontSize: 12, lineHeight: 17 },
   buttonRow: { flexDirection: "row", alignItems: "center", gap: 7 },
-  smallButton: { minHeight: 44, minWidth: 52, alignItems: "center", justifyContent: "center", borderColor: colors.line, borderRadius: 10, borderWidth: 1, paddingHorizontal: 8 },
-  smallButtonActive: { backgroundColor: colors.softSage, borderColor: colors.sage },
-  smallText: { color: colors.coralDark, fontSize: 12, fontWeight: "700" },
-  smallTextActive: { color: colors.sage, fontSize: 12, fontWeight: "800" },
+  smallButton: { minHeight: 44, minWidth: 52, alignItems: "center", justifyContent: "center", borderColor: palette.line, borderRadius: 10, borderWidth: 1, paddingHorizontal: 8 },
+  smallButtonActive: { backgroundColor: palette.softSage, borderColor: palette.sage },
+  smallText: { color: palette.coralDark, fontSize: 12, fontWeight: "700" },
+  smallTextActive: { color: palette.sage, fontSize: 12, fontWeight: "800" },
   between: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   inlineButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
-  link: { color: colors.coralDark, fontSize: 13, fontWeight: "800" },
+  link: { color: palette.coralDark, fontSize: 13, fontWeight: "800" },
   peopleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  personChip: { minHeight: 44, justifyContent: "center", borderColor: colors.line, borderRadius: 22, borderWidth: 1, paddingHorizontal: 13 },
-  personChipActive: { backgroundColor: colors.softSage, borderColor: colors.sage },
-  personText: { color: colors.muted, fontWeight: "700" },
-  personTextActive: { color: colors.sage },
-});
+  personChip: { minHeight: 44, justifyContent: "center", borderColor: palette.line, borderRadius: 22, borderWidth: 1, paddingHorizontal: 13 },
+  personChipActive: { backgroundColor: palette.softSage, borderColor: palette.sage },
+  personText: { color: palette.muted, fontWeight: "700" },
+  personTextActive: { color: palette.sage },
+  });
+}

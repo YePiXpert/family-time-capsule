@@ -9,7 +9,7 @@ import type { Credentials } from "../types";
 import type { ReaderAsset, ReaderTranscript, MediaDerivation } from "./types";
 import { fetchMediaDerivations } from "../api/client";
 import { exportOriginalCopy } from "./export-original";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import { useAccessibleEffects } from "../design/use-effects";
 export type NativeReaderAsset = ReaderAsset & {
   localUri?: string;
@@ -26,6 +26,7 @@ function Button({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const s = useSharedStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -60,6 +61,7 @@ export function NativeMediaReader({
   assets: NativeReaderAsset[];
   credentials: Credentials | null;
 }) {
+  const s = useSharedStyles();
   const { reducedMotion } = useAccessibleEffects();
   const [index, setIndex] = useState<number | null>(null),
     [continuous, setContinuous] = useState(false);
@@ -163,6 +165,7 @@ function Active({
   toggleContinuous: () => void;
   onEnded: () => void;
 }) {
+  const s = useSharedStyles();
   const [jobs, setJobs] = useState<MediaDerivation[]>([]),
     [transcript, setTranscript] = useState<ReaderTranscript | null>(
       item.localTranscript ?? null,
@@ -392,6 +395,7 @@ function Audio({
   onEnded: () => void;
   transcript: ReaderTranscript | null;
 }) {
+  const s = useSharedStyles();
   const player = useAudioPlayer(source),
     status = useAudioPlayerStatus(player);
   const [seek, setSeek] = useState(""),
@@ -508,6 +512,7 @@ function Video({
   source: PlaybackSource;
   poster: PlaybackSource | null;
 }) {
+  const s = useSharedStyles();
   const player = useVideoPlayer(source, (player) => {
     player.timeUpdateEventInterval = 1;
   });

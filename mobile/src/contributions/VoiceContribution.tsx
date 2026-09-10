@@ -11,11 +11,12 @@ import { emptyDraftContent } from "../drafts/model";
 import { listLocalDrafts, saveLocalDraft, type LocalDraft } from "../drafts/store";
 import { preserveRecordedAudio, uploadMediaCaptureReceipt } from "../storage/files";
 import type { MediaCapturePayload } from "../types";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import { submitVoice, type VoiceReceipt } from "./submit-voice";
 type VoiceDraft = LocalDraft & { voice: VoiceReceipt; voicePayload: MediaCapturePayload };
 const visibilityLabels = { family: "全家可见", private: "仅自己", parents: "父母可见", child_later: "留给孩子将来" };
 export function NativeVoiceContribution({ memoryId, authorPersonId, authorName, visibility, onSaved, onRestoreSelection }: { memoryId: string; authorPersonId: string; authorName: string; visibility: VoiceReceipt["visibility"]; onSaved: () => Promise<void>; onRestoreSelection: (voice: VoiceReceipt) => void }) {
+  const s = useSharedStyles();
   const { credentials, family, viewer } = useApp();
   const scope = JSON.stringify([credentials?.serverUrl, credentials?.instanceId, viewer?.id, family?.id, "voice", memoryId]);
   const identity = useRef(scope);

@@ -3,13 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { signIn, signOut, TwoFactorRequiredError, verifyTwoFactor, type TwoFactorChallenge } from "../api/client";
 import type { Credentials } from "../types";
-import { sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
 
 export function AccountLoginForm({ serverUrl: fixedServerUrl, onLogin, buttonLabel = "登录" }: {
   serverUrl?: string;
   onLogin: (credentials: Credentials) => Promise<void>;
   buttonLabel?: string;
 }) {
+  const s = useSharedStyles();
   const [serverUrl, setServerUrl] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,18 +53,18 @@ export function AccountLoginForm({ serverUrl: fixedServerUrl, onLogin, buttonLab
   };
   return <View style={{ gap: 10 }}>
     {pending ? <>
-      <Text style={sharedStyles.cardTitle}>两步验证</Text>
-      <Text style={sharedStyles.body}>正在登录 {pending.serverUrl}。请输入验证器中的动态码；无法使用验证器时，可用一枚未使用的恢复码。</Text>
-      <TextInput accessibilityLabel={method === "totp" ? "动态验证码" : "一次性恢复码"} editable={!busy} autoCapitalize="none" autoCorrect={false} autoComplete={method === "totp" ? "one-time-code" : "off"} keyboardType={method === "totp" ? "number-pad" : "default"} secureTextEntry={method === "backup"} maxLength={method === "totp" ? 6 : 128} value={code} onChangeText={setCode} style={sharedStyles.input} />
-      <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setMethod(method === "totp" ? "backup" : "totp"); setCode(""); setError(null); }} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>{method === "totp" ? "改用恢复码" : "改用动态码"}</Text></Pressable>
-      <Pressable accessibilityRole="button" disabled={busy} onPress={cancel} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>取消验证，重新登录</Text></Pressable>
+      <Text style={s.cardTitle}>两步验证</Text>
+      <Text style={s.body}>正在登录 {pending.serverUrl}。请输入验证器中的动态码；无法使用验证器时，可用一枚未使用的恢复码。</Text>
+      <TextInput accessibilityLabel={method === "totp" ? "动态验证码" : "一次性恢复码"} editable={!busy} autoCapitalize="none" autoCorrect={false} autoComplete={method === "totp" ? "one-time-code" : "off"} keyboardType={method === "totp" ? "number-pad" : "default"} secureTextEntry={method === "backup"} maxLength={method === "totp" ? 6 : 128} value={code} onChangeText={setCode} style={s.input} />
+      <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setMethod(method === "totp" ? "backup" : "totp"); setCode(""); setError(null); }} style={s.secondaryButton}><Text style={s.secondaryText}>{method === "totp" ? "改用恢复码" : "改用动态码"}</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={busy} onPress={cancel} style={s.secondaryButton}><Text style={s.secondaryText}>取消验证，重新登录</Text></Pressable>
     </> : <>
-      {!fixedServerUrl ? <><Text style={sharedStyles.label}>家庭空间地址</Text><TextInput accessibilityLabel="家庭空间地址" editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType="url" value={serverUrl} onChangeText={setServerUrl} placeholder="https://capsule.example.com" style={sharedStyles.input} /></> : null}
-      <Text style={sharedStyles.label}>邮箱</Text><TextInput accessibilityLabel="邮箱" editable={!busy} autoCapitalize="none" autoComplete="email" keyboardType="email-address" value={email} onChangeText={setEmail} style={sharedStyles.input} />
-      <Text style={sharedStyles.label}>密码</Text><TextInput accessibilityLabel="密码" editable={!busy} autoCapitalize="none" autoComplete="current-password" secureTextEntry value={password} onChangeText={setPassword} style={sharedStyles.input} />
+      {!fixedServerUrl ? <><Text style={s.label}>家庭空间地址</Text><TextInput accessibilityLabel="家庭空间地址" editable={!busy} autoCapitalize="none" autoCorrect={false} keyboardType="url" value={serverUrl} onChangeText={setServerUrl} placeholder="https://capsule.example.com" style={s.input} /></> : null}
+      <Text style={s.label}>邮箱</Text><TextInput accessibilityLabel="邮箱" editable={!busy} autoCapitalize="none" autoComplete="email" keyboardType="email-address" value={email} onChangeText={setEmail} style={s.input} />
+      <Text style={s.label}>密码</Text><TextInput accessibilityLabel="密码" editable={!busy} autoCapitalize="none" autoComplete="current-password" secureTextEntry value={password} onChangeText={setPassword} style={s.input} />
     </>}
-    {error ? <Text accessibilityRole="alert" style={sharedStyles.error}>{error}</Text> : null}
-    <Pressable accessibilityRole="button" disabled={busy} onPress={() => void submit()} style={sharedStyles.primaryButton}>{busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>{pending ? "验证并登录" : buttonLabel}</Text>}</Pressable>
-    <Text style={sharedStyles.body}>验证完成后才保存登录凭据。验证期间不会上传本机记录。</Text>
+    {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
+    <Pressable accessibilityRole="button" disabled={busy} onPress={() => void submit()} style={s.primaryButton}>{busy ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>{pending ? "验证并登录" : buttonLabel}</Text>}</Pressable>
+    <Text style={s.body}>验证完成后才保存登录凭据。验证期间不会上传本机记录。</Text>
   </View>;
 }

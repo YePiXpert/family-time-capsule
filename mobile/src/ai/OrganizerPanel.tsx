@@ -8,13 +8,14 @@ import { NameEditor } from "../names/NameEditor";
 import { TranscriptEditor } from "../transcripts/TranscriptEditor";
 import { useApp } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import type { AppNavigation } from "../navigation/types";
 import { aiJobFailureMessage } from "./job-messages";
 import type { OrganizerTarget, OrganizerOperation, OrganizerReview } from "./organizer-types";
 
 type Props = OrganizerTarget & { label?: string; onSaved?: () => void; assetOperation?: "name" | "transcribe"; defaultOpen?: boolean };
 export function OrganizerPanel(props: Props) {
+  const s = useSharedStyles();
   const { credentials, viewer, family } = useApp();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope) return <Text style={s.body}>本机内容已保存，同步后才能使用服务端 AI。</Text>;
@@ -22,6 +23,7 @@ export function OrganizerPanel(props: Props) {
   return <Panel key={JSON.stringify([scope, props.kind, props.id])} {...props} scope={scope} />;
 }
 function Panel({ kind, id, label, onSaved, scope, assetOperation = "transcribe", defaultOpen = false }: Props & { scope: string }) {
+  const s = useSharedStyles();
   const { credentials, online } = useApp();
   const navigation = useNavigation<AppNavigation>();
   const [opened, setOpened] = useState(defaultOpen), [review, setReview] = useState<OrganizerReview | null>(null), [verified, setVerified] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [refreshVersion, setRefreshVersion] = useState(0);

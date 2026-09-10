@@ -15,7 +15,7 @@ import {
 import type { CollectionDetail, CollectionPage } from "../collections/types";
 import type { RootStackParamList } from "../navigation/types";
 import { useApp } from "../state/AppContext";
-import { sharedStyles as s, colors } from "../theme";
+import { useSharedStyles } from "../theme";
 function Button({
   title,
   onPress,
@@ -25,6 +25,7 @@ function Button({
   onPress: () => void;
   disabled?: boolean;
 }) {
+  const s = useSharedStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -40,6 +41,7 @@ export function CollectionsScreen({
   navigation,
   route,
 }: { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Collections">["navigation"], "navigate">; route: NativeStackScreenProps<RootStackParamList, "Collections">["route"] }) {
+  const s = useSharedStyles();
   const { credentials } = useApp();
   const [page, setPage] = useState<CollectionPage | null>(null),
     [error, setError] = useState(""),
@@ -157,6 +159,7 @@ export function CollectionDetailScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "CollectionDetail">) {
+  const s = useSharedStyles();
   const { credentials } = useApp();
   const [reading, setReading] = useState(true);
   const [doc, setDoc] = useState<CollectionDetail | null>(null),
@@ -553,7 +556,7 @@ export function CollectionDetailScreen({
           )}
         </View>
       ))}
-      {busy ? <ActivityIndicator color={colors.coral} /> : null}
+      {busy ? <ActivityIndicator color={s.colors.coral} /> : null}
       {editable ? (
         <Button
           title="保存排序与说明"

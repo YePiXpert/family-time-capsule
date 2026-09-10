@@ -10,12 +10,13 @@ import { NativeMediaReader } from "../media/NativeMediaReader";
 import { OrganizerPanel } from "../ai/OrganizerPanel";
 import { DateTimeField } from "../components/DateTimeField";
 import { utcToZonedWallTimeInput, zonedWallTimeToUtc } from "../utils/wall-time";
-import { sharedStyles as s } from "../theme";
+import { useSharedStyles } from "../theme";
 import type { AppNavigation } from "../navigation/types";
 import type { LibraryPage, LibraryDetail } from "../assets/types";
 const labels: Record<string, string> = { image: "照片", video: "视频", audio: "录音", document: "文档", none: "AI 尚未整理", pending: "AI 等待中", running: "AI 整理中", completed: "AI 已处理", failed: "AI 未完成", cancelled: "AI 已取消" };
-function Button({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) { return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.secondaryButton, disabled && s.disabled]}><Text style={s.secondaryText}>{title}</Text></Pressable>; }
+function Button({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) { const s = useSharedStyles(); return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.secondaryButton, disabled && s.disabled]}><Text style={s.secondaryText}>{title}</Text></Pressable>; }
 export function NativeLibraryActions({ ids, canWrite, onDone }: { ids: string[]; canWrite: boolean; onDone?: () => void }) {
+  const s = useSharedStyles();
   const { credentials } = useApp(), navigation = useNavigation<AppNavigation>();
   const [mode, setMode] = useState<"draft" | "memory" | "collection" | null>(null), [targets, setTargets] = useState<{ id: string; title: string; revision?: number }[]>([]), [cursor, setCursor] = useState<string | null>(null), [query, setQuery] = useState(""), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const load = async (kind: "draft" | "memory" | "collection", next = "") => {
@@ -43,6 +44,7 @@ export function AssetLibraryScreen() {
   return <Library key={`${memoryCacheScope(credentials, userId ?? undefined, family?.id) ?? "local"}:${viewer?.role}:${viewer?.canEditEvents}`} />;
 }
 function Library() {
+  const s = useSharedStyles();
   const { credentials, family } = useApp(), navigation = useNavigation<AppNavigation>();
   const [page, setPage] = useState<LibraryPage | null>(null), [selected, setSelected] = useState<string[]>([]), [type, setType] = useState(""), [error, setError] = useState("");
   const generation = useRef(0);
@@ -65,6 +67,7 @@ export function AssetDetailScreen({ route }: { route: { params: { id: string } }
   return <Detail key={`${memoryCacheScope(credentials, userId ?? undefined, family?.id)}:${route.params.id}:${viewer?.role}:${viewer?.canEditEvents}`} id={route.params.id} />;
 }
 function Detail({ id }: { id: string }) {
+  const s = useSharedStyles();
   const { credentials, family, people } = useApp(), navigation = useNavigation<AppNavigation>();
   const [asset, setAsset] = useState<LibraryDetail | null>(null), [at, setAt] = useState(""), [ids, setIds] = useState<string[]>([]), [technical, setTechnical] = useState(false), [message, setMessage] = useState("");
   const timezone = family?.timezone ?? "UTC";

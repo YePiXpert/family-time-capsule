@@ -1,7 +1,7 @@
 import { Text } from "./typography";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useApp } from "../state/AppContext";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
 
 /**
  * 标准显示 / 大字显示的设备级切换（NAV-11）。
@@ -9,11 +9,12 @@ import { colors, sharedStyles } from "../theme";
  */
 export function DisplayModeCard() {
   const { displayMode, setDisplayMode } = useApp();
+  const s = useSharedStyles();
   if (!displayMode) return null;
   return (
-    <View style={sharedStyles.card}>
-      <Text style={sharedStyles.cardTitle}>显示方式</Text>
-      <Text style={sharedStyles.body}>只影响这一台设备；只调整文字和按钮大小，所有功能保持一致。</Text>
+    <View style={s.card}>
+      <Text style={s.cardTitle}>显示方式</Text>
+      <Text style={s.body}>只影响这一台设备；只调整文字和按钮大小，所有功能保持一致。</Text>
       <View style={styles.row}>
         <Pressable
           accessibilityRole="button"
@@ -22,11 +23,12 @@ export function DisplayModeCard() {
           onPress={() => void setDisplayMode("standard")}
           style={({ pressed }) => [
             styles.option,
-            displayMode === "standard" && styles.optionActive,
-            pressed && sharedStyles.pressed,
+            { borderColor: s.colors.line, backgroundColor: s.colors.paper },
+            displayMode === "standard" && { borderColor: s.colors.coral, backgroundColor: s.colors.softCoral },
+            pressed && s.pressed,
           ]}
         >
-          <Text style={[styles.optionText, displayMode === "standard" && styles.optionTextActive]}>标准显示</Text>
+          <Text style={[styles.optionText, { color: s.colors.ink }, displayMode === "standard" && { color: s.colors.coralDark }]}>标准显示</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -35,11 +37,12 @@ export function DisplayModeCard() {
           onPress={() => void setDisplayMode("simple")}
           style={({ pressed }) => [
             styles.option,
-            displayMode === "simple" && styles.optionActive,
-            pressed && sharedStyles.pressed,
+            { borderColor: s.colors.line, backgroundColor: s.colors.paper },
+            displayMode === "simple" && { borderColor: s.colors.coral, backgroundColor: s.colors.softCoral },
+            pressed && s.pressed,
           ]}
         >
-          <Text style={[styles.optionText, displayMode === "simple" && styles.optionTextActive]}>大字显示</Text>
+          <Text style={[styles.optionText, { color: s.colors.ink }, displayMode === "simple" && { color: s.colors.coralDark }]}>大字显示</Text>
         </Pressable>
       </View>
     </View>
@@ -55,10 +58,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 13,
     borderWidth: 1.5,
-    borderColor: colors.line,
-    backgroundColor: colors.paper,
   },
-  optionActive: { borderColor: colors.coral, backgroundColor: colors.softCoral },
-  optionText: { color: colors.ink, fontSize: 16, fontWeight: "800" },
-  optionTextActive: { color: colors.coralDark },
+  optionText: { fontSize: 16, fontWeight: "800" },
 });

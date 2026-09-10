@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../state/AppContext";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 import type { MediaCapturePayload, TextCapturePayload } from "../types";
 
 /**
@@ -12,6 +13,8 @@ import type { MediaCapturePayload, TextCapturePayload } from "../types";
  * 网络恢复、切前后台都不会绕过此门；选择结果绑定该目的地。
  */
 export function SyncConsentScreen() {
+  const s = useSharedStyles();
+  const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const { credentials, outbox, family, grantSyncConsent } = useApp();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<"choose" | "select">("choose");
@@ -38,26 +41,26 @@ export function SyncConsentScreen() {
   };
 
   return (
-    <View style={[sharedStyles.screen, { paddingTop: insets.top + 18 }]}>
-      <ScrollView contentContainerStyle={sharedStyles.content}>
-        <Text style={sharedStyles.eyebrow}>同步授权</Text>
-        <Text style={sharedStyles.title}>要把本机记录同步给这个家庭吗？</Text>
-        <View style={sharedStyles.card}>
-          <Text style={sharedStyles.cardTitle}>目标家庭空间</Text>
-          <Text style={sharedStyles.body}>{destinations}</Text>
-          {family ? <Text style={sharedStyles.body}>家庭：{family.name}</Text> : null}
-          <Text style={sharedStyles.body}>
+    <View style={[s.screen, { paddingTop: insets.top + 18 }]}>
+      <ScrollView contentContainerStyle={s.content}>
+        <Text style={s.eyebrow}>同步授权</Text>
+        <Text style={s.title}>要把本机记录同步给这个家庭吗？</Text>
+        <View style={s.card}>
+          <Text style={s.cardTitle}>目标家庭空间</Text>
+          <Text style={s.body}>{destinations}</Text>
+          {family ? <Text style={s.body}>家庭：{family.name}</Text> : null}
+          <Text style={s.body}>
             本机有 {outbox.length} 条记录尚未同步。在你明确同意之前，任何网络恢复或前后台切换都不会上传它们。
           </Text>
         </View>
 
         {mode === "choose" ? (
           <View style={{ gap: 10 }}>
-            <Pressable disabled={working} onPress={() => submit("all")} style={sharedStyles.primaryButton}>
-              {working ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>同步全部本机记录</Text>}
+            <Pressable disabled={working} onPress={() => submit("all")} style={s.primaryButton}>
+              {working ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>同步全部本机记录</Text>}
             </Pressable>
-            <Pressable disabled={working} onPress={() => setMode("select")} style={sharedStyles.secondaryButton}>
-              <Text style={sharedStyles.secondaryText}>选择要同步的记录</Text>
+            <Pressable disabled={working} onPress={() => setMode("select")} style={s.secondaryButton}>
+              <Text style={s.secondaryText}>选择要同步的记录</Text>
             </Pressable>
             <Pressable disabled={working} onPress={() => submit("local")} style={styles.localButton}>
               <Text style={styles.localText}>仅保留在本机（不上传）</Text>
@@ -65,8 +68,8 @@ export function SyncConsentScreen() {
             <Text style={styles.note}>“仅保留在本机”不会删除任何原件；之后仍可在设置中对这个家庭重新授权。</Text>
           </View>
         ) : (
-          <View style={sharedStyles.card}>
-            <Text style={sharedStyles.cardTitle}>选择要同步的记录（{selected.size}/{outbox.length}）</Text>
+          <View style={s.card}>
+            <Text style={s.cardTitle}>选择要同步的记录（{selected.size}/{outbox.length}）</Text>
             {outbox.map((item) => {
               const checked = selected.has(item.id);
               return (
@@ -93,8 +96,8 @@ export function SyncConsentScreen() {
                 </Pressable>
               );
             })}
-            <Pressable disabled={working} onPress={submitSelected} style={sharedStyles.primaryButton}>
-              {working ? <ActivityIndicator color="#FFFFFF" /> : <Text style={sharedStyles.primaryText}>同步所选 {selected.size} 条</Text>}
+            <Pressable disabled={working} onPress={submitSelected} style={s.primaryButton}>
+              {working ? <ActivityIndicator color={s.colors.onCoral} /> : <Text style={s.primaryText}>同步所选 {selected.size} 条</Text>}
             </Pressable>
             <Pressable disabled={working} onPress={() => setMode("choose")} style={styles.backLink}>
               <Text style={styles.backText}>返回上一页</Text>
@@ -106,31 +109,33 @@ export function SyncConsentScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: JournalPalette) {
+  return StyleSheet.create({
   localButton: {
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
-    borderColor: colors.line,
+    borderColor: palette.line,
     borderRadius: 13,
     borderWidth: 1.5,
     paddingHorizontal: 16,
   },
-  localText: { color: colors.muted, fontSize: 15, fontWeight: "800" },
-  note: { color: colors.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  localText: { color: palette.muted, fontSize: 15, fontWeight: "800" },
+  note: { color: palette.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
   itemRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    borderColor: colors.line,
+    borderColor: palette.line,
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 11,
   },
-  itemRowActive: { borderColor: colors.coral, backgroundColor: colors.softCoral },
-  itemTitle: { color: colors.ink, fontSize: 14, fontWeight: "700" },
-  itemMark: { color: colors.coralDark, fontSize: 18, fontWeight: "900" },
+  itemRowActive: { borderColor: palette.coral, backgroundColor: palette.softCoral },
+  itemTitle: { color: palette.ink, fontSize: 14, fontWeight: "700" },
+  itemMark: { color: palette.coralDark, fontSize: 18, fontWeight: "900" },
   backLink: { minHeight: 44, alignItems: "center", justifyContent: "center" },
-  backText: { color: colors.coralDark, fontSize: 14, fontWeight: "800" },
-});
+  backText: { color: palette.coralDark, fontSize: 14, fontWeight: "800" },
+  });
+}

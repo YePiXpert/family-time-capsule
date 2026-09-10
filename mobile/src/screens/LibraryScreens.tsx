@@ -1,7 +1,7 @@
 import { Text, TextInput } from "../components/typography";
 import { getServerCacheRevision, useServerCacheRevision } from "../storage/cache-lifecycle";
 import { NativeMediaReader } from "../media/NativeMediaReader";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
@@ -22,7 +22,8 @@ import {
   getCachedMobileLibraryPage,
   listLocalImportSessions,
 } from "../storage/database";
-import { colors, sharedStyles } from "../theme";
+import { useSharedStyles } from "../theme";
+import type { JournalPalette } from "../design/tokens";
 import type {
   MobileLibraryDetail,
   MobileLibraryDomain,
@@ -38,6 +39,11 @@ const DOMAIN_COPY: Record<MobileLibraryDomain, { eyebrow: string; title: string;
   people: { eyebrow: "Family", title: "家人", empty: "还没有其他家人人物。" },
   imports: { eyebrow: "Import sessions", title: "导入会话", empty: "还没有服务器端导入会话。" },
 };
+
+function useThemedStyles() {
+  const s = useSharedStyles();
+  return useMemo(() => createStyles(s.colors), [s.colors]);
+}
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" ? value : null;
@@ -130,6 +136,8 @@ function LibraryListScreen({
   detailRoute?: DetailRoute;
   header?: React.ReactNode;
 }) {
+  const s = useSharedStyles();
+  const styles = useThemedStyles();
   const navigation = useNavigation<Navigation>();
   const copy = DOMAIN_COPY[domain];
   const { page, loading, refreshing, error, reload } = useLibraryPage(domain);
@@ -137,21 +145,21 @@ function LibraryListScreen({
     if (!detailRoute) return;
     navigation.navigate(detailRoute as "PersonDetail", { id: item.id });
   };
-  return <View style={sharedStyles.screen}>
+  return <View style={s.screen}>
     <FlatList
       contentContainerStyle={page?.items.length ? styles.list : styles.emptyList}
       data={page?.items ?? []}
       keyExtractor={(item) => item.id}
       ListHeaderComponent={<View style={styles.header}>
-        <Text style={sharedStyles.eyebrow}>{copy.eyebrow}</Text>
-        <Text style={sharedStyles.title}>{copy.title}</Text>
+        <Text style={s.eyebrow}>{copy.eyebrow}</Text>
+        <Text style={s.title}>{copy.title}</Text>
         {header}
-        {error ? <View style={error.includes("上次") || error.includes("离线") ? sharedStyles.notice : sharedStyles.warning}><Text style={error.includes("上次") || error.includes("离线") ? sharedStyles.noticeText : sharedStyles.warningText}>{error}</Text></View> : null}
+        {error ? <View style={error.includes("上次") || error.includes("离线") ? s.notice : s.warning}><Text style={error.includes("上次") || error.includes("离线") ? s.noticeText : s.warningText}>{error}</Text></View> : null}
       </View>}
-      ListEmptyComponent={!loading ? <View style={sharedStyles.empty}><Text style={sharedStyles.emptyTitle}>{copy.empty}</Text><Text style={sharedStyles.emptyText}>已有缓存会在离线时继续显示。</Text></View> : null}
-      ListFooterComponent={loading ? <ActivityIndicator color={colors.coral} /> : null}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={reload} tintColor={colors.coral} />}
-      renderItem={({ item }) => <Pressable disabled={!detailRoute} onPress={() => open(item)} style={({ pressed }) => [styles.row, pressed && sharedStyles.pressed]}>
+      ListEmptyComponent={!loading ? <View style={s.empty}><Text style={s.emptyTitle}>{copy.empty}</Text><Text style={s.emptyText}>已有缓存会在离线时继续显示。</Text></View> : null}
+      ListFooterComponent={loading ? <ActivityIndicator color={s.colors.coral} /> : null}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={reload} tintColor={s.colors.coral} />}
+      renderItem={({ item }) => <Pressable disabled={!detailRoute} onPress={() => open(item)} style={({ pressed }) => [styles.row, pressed && s.pressed]}>
         <View style={styles.grow}>
           <Text style={styles.itemTitle}>{item.title}</Text>
           {item.subtitle ? <Text numberOfLines={2} style={styles.meta}>{item.subtitle}</Text> : null}
@@ -188,6 +196,7 @@ function useCreate(domain: MobileLibraryDomain, onCreated?: (id: string, token?:
 }
 
 function InlineCreate({ domain }: { domain: "people" }) {
+  const s = useSharedStyles();
   const navigation = useNavigation<Navigation>();
   const { viewer } = useApp();
   const [expanded, setExpanded] = useState(false);
@@ -196,8 +205,8 @@ function InlineCreate({ domain }: { domain: "people" }) {
   const [birthDate, setBirthDate] = useState("");
   const { create, busy, error } = useCreate(domain, id => { setExpanded(false); navigation.navigate("PersonDetail", { id }); });
   if (!canWriteDomain(domain, viewer)) return null;
-  return <View style={sharedStyles.card}><Pressable accessibilityRole="button" accessibilityState={{expanded}} onPress={() => setExpanded(value => !value)} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>新增家人</Text></Pressable>
-    {expanded ? <><TextInput accessibilityLabel="姓名" placeholder="姓名" value={name} onChangeText={setName} style={sharedStyles.input} /><TextInput accessibilityLabel="关系" placeholder="与孩子的关系" value={relation} onChangeText={setRelation} style={sharedStyles.input} /><TextInput accessibilityLabel="生日" placeholder="出生日期（可选）" value={birthDate} onChangeText={setBirthDate} style={sharedStyles.input} />{error ? <Text accessibilityRole="alert">{error}</Text> : null}<Pressable accessibilityRole="button" disabled={busy} onPress={() => void create({displayName:name,relationToChild:relation,birthDate})} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>保存</Text></Pressable></> : null}
+  return <View style={s.card}><Pressable accessibilityRole="button" accessibilityState={{expanded}} onPress={() => setExpanded(value => !value)} style={s.secondaryButton}><Text style={s.secondaryText}>新增家人</Text></Pressable>
+    {expanded ? <><TextInput accessibilityLabel="姓名" placeholder="姓名" value={name} onChangeText={setName} style={s.input} /><TextInput accessibilityLabel="关系" placeholder="与孩子的关系" value={relation} onChangeText={setRelation} style={s.input} /><TextInput accessibilityLabel="生日" placeholder="出生日期（可选）" value={birthDate} onChangeText={setBirthDate} style={s.input} />{error ? <Text accessibilityRole="alert">{error}</Text> : null}<Pressable accessibilityRole="button" disabled={busy} onPress={() => void create({displayName:name,relationToChild:relation,birthDate})} style={s.primaryButton}><Text style={s.primaryText}>保存</Text></Pressable></> : null}
   </View>;
 }
 
@@ -210,6 +219,8 @@ export function ImportSessionsScreen() {
 }
 
 function LocalImportSessions() {
+  const s = useSharedStyles();
+  const styles = useThemedStyles();
   const { credentials, userId, family } = useApp();
   const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const [error, setError] = useState<string | null>(null);
@@ -221,12 +232,12 @@ function LocalImportSessions() {
     void listLocalImportSessions(scope).then((rows) => { if (active) { setSessionState({ scope, rows }); setError(null); } }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [scope]));
-  if (error) return <Text accessibilityRole="alert" style={sharedStyles.error}>{error}</Text>;
-  if (sessions.length === 0) return <View style={sharedStyles.notice}><Text style={sharedStyles.noticeText}>通过系统分享或 Files 选入的原件会先形成本机会话；即使没有服务器也会保留。</Text></View>;
-  return <View style={sharedStyles.card}>
-    <Text style={sharedStyles.cardTitle}>收到的内容 · {sessions.length}</Text>
-    {sessions.map((session) => <Pressable accessibilityRole="button" onPress={() => navigation.navigate("LocalIntake", { id: session.id })} key={session.id} style={sharedStyles.secondaryButton}><Text style={styles.itemTitle}>{session.source === "share" ? "系统分享" : "文件导入"}</Text><Text style={styles.meta}>{statusLabel(session.status)} · {session.completedCount}/{session.totalCount}{session.failedCount ? ` · ${session.failedCount} 项需重试` : ""}</Text></Pressable>)}
-    <Pressable onPress={() => navigation.navigate("MainTabs", { screen: "Capture", params: { intent: "library", requestKey: Date.now() } })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>从 Files 继续导入</Text></Pressable>
+  if (error) return <Text accessibilityRole="alert" style={s.error}>{error}</Text>;
+  if (sessions.length === 0) return <View style={s.notice}><Text style={s.noticeText}>通过系统分享或 Files 选入的原件会先形成本机会话；即使没有服务器也会保留。</Text></View>;
+  return <View style={s.card}>
+    <Text style={s.cardTitle}>收到的内容 · {sessions.length}</Text>
+    {sessions.map((session) => <Pressable accessibilityRole="button" onPress={() => navigation.navigate("LocalIntake", { id: session.id })} key={session.id} style={s.secondaryButton}><Text style={styles.itemTitle}>{session.source === "share" ? "系统分享" : "文件导入"}</Text><Text style={styles.meta}>{statusLabel(session.status)} · {session.completedCount}/{session.totalCount}{session.failedCount ? ` · ${session.failedCount} 项需重试` : ""}</Text></Pressable>)}
+    <Pressable onPress={() => navigation.navigate("MainTabs", { screen: "Capture", params: { intent: "library", requestKey: Date.now() } })} style={s.secondaryButton}><Text style={s.secondaryText}>从 Files 继续导入</Text></Pressable>
   </View>;
 }
 
@@ -295,17 +306,20 @@ function useMutation(domain: MobileLibraryDomain, id: string, reload: () => Prom
 }
 
 function DetailShell({ domain, id, children }: { domain: MobileLibraryDomain; id: string; children: (detail: MobileLibraryDetail, controls: ReturnType<typeof useMutation>) => React.ReactNode }) {
+  const s = useSharedStyles();
   const state = useLibraryDetail(domain, id);
   const controls = useMutation(domain, id, state.reload);
-  return <ScrollView contentContainerStyle={sharedStyles.content} refreshControl={<RefreshControl refreshing={state.loading} onRefresh={() => void state.reload()} tintColor={colors.coral} />} style={sharedStyles.screen}>
-    {state.error ? <View style={state.detail ? sharedStyles.notice : sharedStyles.warning}><Text style={state.detail ? sharedStyles.noticeText : sharedStyles.warningText}>{state.error}</Text></View> : null}
-    {controls.error ? <Text style={sharedStyles.error}>{controls.error}</Text> : null}
-    {state.detail ? children(state.detail, controls) : state.loading ? <ActivityIndicator color={colors.coral} /> : <View style={sharedStyles.empty}><Text style={sharedStyles.emptyTitle}>没有可显示的详情</Text></View>}
+  return <ScrollView contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={state.loading} onRefresh={() => void state.reload()} tintColor={s.colors.coral} />} style={s.screen}>
+    {state.error ? <View style={state.detail ? s.notice : s.warning}><Text style={state.detail ? s.noticeText : s.warningText}>{state.error}</Text></View> : null}
+    {controls.error ? <Text style={s.error}>{controls.error}</Text> : null}
+    {state.detail ? children(state.detail, controls) : state.loading ? <ActivityIndicator color={s.colors.coral} /> : <View style={s.empty}><Text style={s.emptyTitle}>没有可显示的详情</Text></View>}
   </ScrollView>;
 }
 
 type PersonDetailProps = NativeStackScreenProps<RootStackParamList, "PersonDetail">;
 export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
+  const s = useSharedStyles();
+  const styles = useThemedStyles();
   const { viewer, credentials } = useApp();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
@@ -317,61 +331,67 @@ export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
     const voices = records(detail.voices);
     const beginEdit = () => { setName(detail.title); setRelation(stringValue(detail.relationToChild) ?? ""); setBirthDate(stringValue(detail.birthDate) ?? ""); setEditing(true); };
     return <>
-      <Text style={sharedStyles.eyebrow}>Person</Text><Text style={sharedStyles.title}>{detail.title}</Text>
-      <Text style={sharedStyles.intro}>{stringValue(detail.relationToChild) ?? "家人"}{stringValue(detail.birthDate) ? ` · ${stringValue(detail.birthDate)}` : ""}</Text>
-      {(viewer?.role === "owner" || viewer?.role === "admin") ? editing ? <View style={sharedStyles.card}>
-        <TextInput onChangeText={setName} placeholder="姓名" style={sharedStyles.input} value={name} />
-        <TextInput onChangeText={setRelation} placeholder="关系" style={sharedStyles.input} value={relation} />
-        <TextInput onChangeText={setBirthDate} placeholder="YYYY-MM-DD" style={sharedStyles.input} value={birthDate} />
-        <Pressable disabled={controls.busy} onPress={() => void controls.mutate({ displayName: name, relationToChild: relation, birthDate }).then((result) => result && setEditing(false))} style={sharedStyles.primaryButton}><Text style={sharedStyles.primaryText}>保存人物</Text></Pressable>
-      </View> : <Pressable onPress={beginEdit} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>编辑人物</Text></Pressable> : null}
+      <Text style={s.eyebrow}>Person</Text><Text style={s.title}>{detail.title}</Text>
+      <Text style={s.intro}>{stringValue(detail.relationToChild) ?? "家人"}{stringValue(detail.birthDate) ? ` · ${stringValue(detail.birthDate)}` : ""}</Text>
+      {(viewer?.role === "owner" || viewer?.role === "admin") ? editing ? <View style={s.card}>
+        <TextInput onChangeText={setName} placeholder="姓名" style={s.input} value={name} />
+        <TextInput onChangeText={setRelation} placeholder="关系" style={s.input} value={relation} />
+        <TextInput onChangeText={setBirthDate} placeholder="YYYY-MM-DD" style={s.input} value={birthDate} />
+        <Pressable disabled={controls.busy} onPress={() => void controls.mutate({ displayName: name, relationToChild: relation, birthDate }).then((result) => result && setEditing(false))} style={s.primaryButton}><Text style={s.primaryText}>保存人物</Text></Pressable>
+      </View> : <Pressable onPress={beginEdit} style={s.secondaryButton}><Text style={s.secondaryText}>编辑人物</Text></Pressable> : null}
       <Section title={`共同记忆 · ${memories.length}`}>{memories.map((entry) => <Pressable key={stringValue(entry.id)} onPress={() => navigation.navigate("Memory", { id: stringValue(entry.id) ?? "" })} style={styles.compactRow}><Text style={styles.itemTitle}>{stringValue(entry.title)}</Text><Text style={styles.meta}>{stringValue(entry.occurredAt) ? dateLabel(stringValue(entry.occurredAt)!) : ""}</Text></Pressable>)}</Section>
-      {voices.length ? <Section title={`家人的声音 · 最近 ${voices.length} 段`}><NativeMediaReader credentials={credentials} assets={voices.map(voice=>({id:stringValue(voice.assetId)!,type:"audio",filename:stringValue(voice.memoryTitle)||"家人的声音",mimeType:stringValue(voice.mimeType)||"audio/mp4",author:detail.title,dateLabel:stringValue(voice.createdAt)?dateLabel(stringValue(voice.createdAt)!):undefined}))}/>{voices.map(voice=><Pressable key={stringValue(voice.id)} style={sharedStyles.secondaryButton} onPress={()=>navigation.navigate("Memory",{id:stringValue(voice.memoryEventId)!})}><Text style={sharedStyles.secondaryText}>回到来源：{stringValue(voice.memoryTitle)}</Text></Pressable>)}</Section>:null}
-      <Section title={`独立讲述 · ${narratives.length}`}>{narratives.map((entry) => <View key={stringValue(entry.id)} style={styles.quote}><Text style={sharedStyles.body}>{stringValue(entry.text)}</Text><Text style={styles.meta}>{stringValue(entry.memoryTitle)}</Text></View>)}</Section>
+      {voices.length ? <Section title={`家人的声音 · 最近 ${voices.length} 段`}><NativeMediaReader credentials={credentials} assets={voices.map(voice=>({id:stringValue(voice.assetId)!,type:"audio",filename:stringValue(voice.memoryTitle)||"家人的声音",mimeType:stringValue(voice.mimeType)||"audio/mp4",author:detail.title,dateLabel:stringValue(voice.createdAt)?dateLabel(stringValue(voice.createdAt)!):undefined}))}/>{voices.map(voice=><Pressable key={stringValue(voice.id)} style={s.secondaryButton} onPress={()=>navigation.navigate("Memory",{id:stringValue(voice.memoryEventId)!})}><Text style={s.secondaryText}>回到来源：{stringValue(voice.memoryTitle)}</Text></Pressable>)}</Section>:null}
+      <Section title={`独立讲述 · ${narratives.length}`}>{narratives.map((entry) => <View key={stringValue(entry.id)} style={styles.quote}><Text style={s.body}>{stringValue(entry.text)}</Text><Text style={styles.meta}>{stringValue(entry.memoryTitle)}</Text></View>)}</Section>
     </>;
   }}</DetailShell>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <View style={sharedStyles.card}><Text style={sharedStyles.cardTitle}>{title}</Text>{children}</View>;
+  const s = useSharedStyles();
+  return <View style={s.card}><Text style={s.cardTitle}>{title}</Text>{children}</View>;
 }
 
 function Info({ label, value }: { label: string; value: string }) {
+  const styles = useThemedStyles();
   return <View style={styles.info}><Text style={styles.meta}>{label}</Text><Text style={styles.infoValue}>{value}</Text></View>;
 }
 
 type ImportDetailProps = NativeStackScreenProps<RootStackParamList, "ImportSessionDetail">;
 export function ImportSessionDetailScreen({ route }: ImportDetailProps) {
+  const s = useSharedStyles();
+  const styles = useThemedStyles();
   return <DetailShell domain="imports" id={route.params.id}>{(detail, controls) => <>
-    <Text style={sharedStyles.eyebrow}>Import session · {statusLabel(stringValue(detail.status))}</Text><Text style={sharedStyles.title}>{detail.title}</Text>
+    <Text style={s.eyebrow}>Import session · {statusLabel(stringValue(detail.status))}</Text><Text style={s.title}>{detail.title}</Text>
     <Section title="整体进度"><Info label="来源" value={stringValue(detail.source) ?? ""} /><Info label="完成" value={`${String(detail.completedCount ?? 0)}/${String(detail.totalCount ?? 0)}`} /><Info label="失败" value={String(detail.failedCount ?? 0)} /></Section>
-    <Section title="文件">{records(detail.items).map((entry) => <View key={stringValue(entry.id)} style={styles.fileRow}><View style={styles.grow}><Text style={styles.itemTitle}>{stringValue(entry.filename) ?? "未命名文件"}</Text><Text style={styles.meta}>{statusLabel(stringValue(entry.status))} · {String(entry.receivedBytes ?? 0)}/{String(entry.totalBytes ?? 0)} bytes</Text>{stringValue(entry.errorCode) ? <Text style={sharedStyles.error}>{stringValue(entry.errorCode)}</Text> : null}</View>{stringValue(entry.status) === "failed" && stringValue(entry.uploadId) ? <Pressable onPress={() => void controls.mutate({ operation: "retry", uploadId: entry.uploadId })}><Text style={styles.link}>重试</Text></Pressable> : null}</View>)}</Section>
+    <Section title="文件">{records(detail.items).map((entry) => <View key={stringValue(entry.id)} style={styles.fileRow}><View style={styles.grow}><Text style={styles.itemTitle}>{stringValue(entry.filename) ?? "未命名文件"}</Text><Text style={styles.meta}>{statusLabel(stringValue(entry.status))} · {String(entry.receivedBytes ?? 0)}/{String(entry.totalBytes ?? 0)} bytes</Text>{stringValue(entry.errorCode) ? <Text style={s.error}>{stringValue(entry.errorCode)}</Text> : null}</View>{stringValue(entry.status) === "failed" && stringValue(entry.uploadId) ? <Pressable onPress={() => void controls.mutate({ operation: "retry", uploadId: entry.uploadId })}><Text style={styles.link}>重试</Text></Pressable> : null}</View>)}</Section>
     {booleanValue(detail.canWrite) && !["completed", "cancelled"].includes(stringValue(detail.status) ?? "") ? <View style={styles.actions}>
-      {stringValue(detail.status) === "uploading" ? <Pressable onPress={() => void controls.mutate({ operation: "pause" })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>暂停</Text></Pressable> : <Pressable onPress={() => void controls.mutate({ operation: "resume" })} style={sharedStyles.secondaryButton}><Text style={sharedStyles.secondaryText}>继续</Text></Pressable>}
+      {stringValue(detail.status) === "uploading" ? <Pressable onPress={() => void controls.mutate({ operation: "pause" })} style={s.secondaryButton}><Text style={s.secondaryText}>暂停</Text></Pressable> : <Pressable onPress={() => void controls.mutate({ operation: "resume" })} style={s.secondaryButton}><Text style={s.secondaryText}>继续</Text></Pressable>}
       <Pressable onPress={() => Alert.alert("取消未完成项？", "已完成原件不会回滚；仅清理尚未完成的临时上传。", [{ text: "返回", style: "cancel" }, { text: "取消未完成项", style: "destructive", onPress: () => void controls.mutate({ operation: "cancel" }) }])} style={styles.dangerButton}><Text style={styles.dangerText}>取消未完成项</Text></Pressable>
     </View> : null}
   </>}</DetailShell>;
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: JournalPalette) {
+  return StyleSheet.create({
   list: { padding: 18, paddingBottom: 44, gap: 10 },
   emptyList: { flexGrow: 1, padding: 18 },
   header: { gap: 14, marginBottom: 4 },
-  row: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.card, borderColor: colors.line, borderWidth: 1, borderRadius: 15, padding: 14 },
-  compactRow: { minHeight: 48, justifyContent: "center", borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
-  fileRow: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: 10, borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
+  row: { minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: palette.card, borderColor: palette.line, borderWidth: 1, borderRadius: 15, padding: 14 },
+  compactRow: { minHeight: 48, justifyContent: "center", borderTopColor: palette.line, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
+  fileRow: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: 10, borderTopColor: palette.line, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 8 },
   grow: { flex: 1, gap: 3 },
-  itemTitle: { color: colors.ink, fontSize: 15, lineHeight: 21, fontWeight: "800" },
-  meta: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-  arrow: { color: colors.coral, fontSize: 28 },
-  link: { color: colors.coralDark, fontSize: 14, fontWeight: "800" },
+  itemTitle: { color: palette.ink, fontSize: 15, lineHeight: 21, fontWeight: "800" },
+  meta: { color: palette.muted, fontSize: 12, lineHeight: 17 },
+  arrow: { color: palette.coral, fontSize: 28 },
+  link: { color: palette.coralDark, fontSize: 14, fontWeight: "800" },
   multiline: { minHeight: 110, textAlignVertical: "top" },
   linkCard: { alignItems: "center" },
-  selectableLink: { color: colors.coralDark, fontSize: 13, lineHeight: 19, textAlign: "center" },
-  quote: { borderLeftColor: colors.coral, borderLeftWidth: 3, paddingLeft: 12, gap: 4 },
+  selectableLink: { color: palette.coralDark, fontSize: 13, lineHeight: 19, textAlign: "center" },
+  quote: { borderLeftColor: palette.coral, borderLeftWidth: 3, paddingLeft: 12, gap: 4 },
   actions: { gap: 10 },
-  dangerButton: { minHeight: 48, alignItems: "center", justifyContent: "center", borderColor: "#D9AAA1", borderRadius: 13, borderWidth: 1 },
-  dangerText: { color: colors.error, fontSize: 14, fontWeight: "800" },
-  info: { minHeight: 38, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 14, borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth },
-  infoValue: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: "700", textAlign: "right" },
-});
+  dangerButton: { minHeight: 48, alignItems: "center", justifyContent: "center", borderColor: palette.dangerLine, borderRadius: 13, borderWidth: 1 },
+  dangerText: { color: palette.error, fontSize: 14, fontWeight: "800" },
+  info: { minHeight: 38, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 14, borderTopColor: palette.line, borderTopWidth: StyleSheet.hairlineWidth },
+  infoValue: { flex: 1, color: palette.ink, fontSize: 13, fontWeight: "700", textAlign: "right" },
+  });
+}

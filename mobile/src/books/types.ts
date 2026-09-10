@@ -94,6 +94,7 @@ export type BookPage = {
     revision: number;
     updatedAt: string;
     status: "active" | "finished";
+    coverAssetId: string | null;
   }[];
   nextCursor: string | null;
   canWrite: boolean;

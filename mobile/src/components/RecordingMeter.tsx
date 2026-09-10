@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Text } from "./typography";
-import { colors, sharedStyles } from "../theme";
+import { useColorTheme } from "../theme";
+import { journalRadius, journalSpace, journalType } from "../design/tokens";
 import { useAccessibleEffects } from "../design/use-effects";
 
 export function RecordingMeter({ read }: { read: () => { metering?: number; durationMillis?: number } | undefined }) {
   const { reducedMotion } = useAccessibleEffects();
+  const { colors } = useColorTheme();
   const [samples, setSamples] = useState<number[]>([]);
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
@@ -18,9 +20,16 @@ export function RecordingMeter({ read }: { read: () => { metering?: number; dura
     }, reducedMotion ? 1000 : 150);
     return () => clearInterval(timer);
   }, [read, reducedMotion]);
-  return <View style={sharedStyles.notice}>
-    <Text style={sharedStyles.label}>正在录音 · {seconds} 秒</Text>
-    {!reducedMotion ? <View accessible={false} style={{ height: 40, flexDirection: "row", alignItems: "center", gap: 4 }}>{samples.map((height, index) => <View key={index} style={{ width: 5, height, borderRadius: 3, backgroundColor: colors.coral }} />)}</View> : null}
-    <Text style={sharedStyles.body}>说完后点“完成录音”，留下这段原声。</Text>
+  return <View style={[styles.meter, { backgroundColor: colors.softCoral, borderColor: colors.peach }]}>
+    <Text style={[styles.label, { color: colors.coralDark }]}>正在录音 · {seconds} 秒</Text>
+    {!reducedMotion ? <View accessible={false} style={styles.bars}>{samples.map((height, index) => <View key={index} style={{ width: 5, height, borderRadius: 3, backgroundColor: colors.coral }} />)}</View> : null}
+    <Text style={[styles.hint, { color: colors.coralDark }]}>说完后点“完成录音”，留下这段原声。</Text>
   </View>;
 }
+
+const styles = StyleSheet.create({
+  meter: { alignItems: "center", borderRadius: journalRadius.control, borderWidth: 1, gap: journalSpace.small, padding: journalSpace.medium },
+  label: { fontSize: journalType.label, fontWeight: "700" },
+  bars: { height: 40, flexDirection: "row", alignItems: "center", gap: 4 },
+  hint: { fontSize: journalType.caption },
+});

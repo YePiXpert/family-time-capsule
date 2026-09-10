@@ -27,6 +27,10 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (s: unknown) => s },
   Alert: { alert: vi.fn() },
 }));
+vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
 vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
   usePreventRemove: vi.fn(),
