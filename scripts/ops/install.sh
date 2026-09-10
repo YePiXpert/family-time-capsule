@@ -88,8 +88,8 @@ if [[ -z "$PORT" && "$MODE" == "loopback" ]]; then
 fi
 if [[ -z "$IMAGE" ]]; then
   if [[ $ASSUME_YES -eq 1 ]]; then die "非交互模式必须提供 --image（固定版本的已验证镜像）。" 2; fi
-  read -r -p "应用镜像（默认 ghcr.io/yepixpert/family-time-capsule:1.0.0-dev.1）：" IMAGE
-  IMAGE="${IMAGE:-ghcr.io/yepixpert/family-time-capsule:1.0.0-dev.1}"
+  read -r -p "应用镜像（默认 ghcr.io/yepixpert/family-time-capsule:${FTC_TOOL_VERSION}）：" IMAGE
+  IMAGE="${IMAGE:-ghcr.io/yepixpert/family-time-capsule:$FTC_TOOL_VERSION}"
 fi
 
 # M0-V：版本只来自注册表/显式声明；未登记的镜像一律拒绝安装。

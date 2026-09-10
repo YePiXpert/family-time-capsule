@@ -151,7 +151,8 @@ afterEach(() => {
 
 describe("ftc 入口", () => {
   it("version/--help 可用，未知命令返回 2", () => {
-    expect(runFtc(["version"]).stdout.trim()).toBe("1.0.0-dev.1");
+    const productVersion = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")).version;
+    expect(runFtc(["version"]).stdout.trim()).toBe(productVersion);
     const help = runFtc(["--help"]);
     expect(help.status).toBe(0);
     expect(help.stdout).toContain("install");
