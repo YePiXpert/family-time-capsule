@@ -473,7 +473,7 @@ export function CaptureScreen() {
 
   return (
     <View style={sharedStyles.screen}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} ref={scrollRef}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.content} ref={scrollRef}>
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <Text style={sharedStyles.eyebrow}>记录一刻</Text>

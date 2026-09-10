@@ -7,6 +7,8 @@ appId: app.familytimecapsule.mobile
     element: "暂时只在本机记录"
     direction: DOWN
 - tapOn: "暂时只在本机记录"
+# 等待首屏渲染稳定再点导航，避免模拟器冷启动时丢触控
+- assertVisible: "留下今天，送给长大的你。"
 - tapOn:
     id: tab-profile
 - scrollUntilVisible:
