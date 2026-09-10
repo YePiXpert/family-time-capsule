@@ -6,7 +6,7 @@ import { AppNavigator } from "./navigation/AppNavigator";
 import { OnboardingGate, WelcomeFlow } from "./screens/WelcomeFlow";
 import { SyncConsentScreen } from "./screens/SyncConsentScreen";
 import { TextScaleContext } from "./components/typography";
-import { colors } from "./theme";
+import { JournalThemeProvider, useColorTheme } from "./theme";
 
 /**
  * 启动门禁（1.3）：
@@ -17,30 +17,38 @@ import { colors } from "./theme";
  * welcomeSeen 为 null 表示本机状态仍在读取，短暂显示加载态避免闪屏。
  */
 export function AppRoot() {
-  const { credentials, welcomeSeen, needsOnboarding, awaitingSyncConsent, displayMode } = useApp();
-  const insets = useSafeAreaInsets();
-  const body = (() => {
-    if (welcomeSeen === null) {
-      return (
-        <View style={[styles.center, { paddingTop: insets.top }]}>
-          <ActivityIndicator color={colors.coral} size="large" />
-        </View>
-      );
-    }
-    if (credentials && needsOnboarding) return <OnboardingGate />;
-    if (credentials && awaitingSyncConsent) return <SyncConsentScreen />;
-    if (!credentials && !welcomeSeen) return <WelcomeFlow />;
-    return <AppNavigator />;
-  })();
+  const { credentials, welcomeSeen, needsOnboarding, awaitingSyncConsent, displayMode, themeMode } = useApp();
   return (
-    <TextScaleContext.Provider value={displayMode === "simple" ? 1.2 : 1}><View style={styles.fill}>
-      <StatusBar style="dark" />
-      {body}
-    </View></TextScaleContext.Provider>
+    <JournalThemeProvider mode={themeMode ?? "auto"}>
+      <TextScaleContext.Provider value={displayMode === "simple" ? 1.2 : 1}>
+        <AppRootBody
+          gated={
+            credentials && needsOnboarding ? "onboarding"
+            : credentials && awaitingSyncConsent ? "consent"
+            : !credentials && !welcomeSeen ? "welcome"
+            : welcomeSeen === null ? "loading"
+            : "app"
+          }
+        />
+      </TextScaleContext.Provider>
+    </JournalThemeProvider>
   );
 }
 
-const styles = {
-  fill: { flex: 1, backgroundColor: colors.paper },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-} as const;
+function AppRootBody({ gated }: { gated: "loading" | "onboarding" | "consent" | "welcome" | "app" }) {
+  const insets = useSafeAreaInsets();
+  const { colors, dark } = useColorTheme();
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.paper }}>
+      <StatusBar style={dark ? "light" : "dark"} />
+      {gated === "loading" ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingTop: insets.top }}>
+          <ActivityIndicator color={colors.coral} size="large" />
+        </View>
+      ) : gated === "onboarding" ? <OnboardingGate />
+        : gated === "consent" ? <SyncConsentScreen />
+        : gated === "welcome" ? <WelcomeFlow />
+        : <AppNavigator />}
+    </View>
+  );
+}
