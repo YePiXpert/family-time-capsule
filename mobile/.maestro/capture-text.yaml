@@ -17,10 +17,17 @@ appId: app.familytimecapsule.mobile
 - swipe:
     direction: DOWN
 - assertVisible: "全家可见"
-- tapOn: "^保存$"
+- tapOn:
+    id: capture-save
+- assertVisible:
+    id: capture-title
 - assertVisible: "已保存这条成长记录"
 - takeScreenshot: capture-text-saved
 - tapOn:
     id: tab-timeline
 - assertVisible: "今天第一次翻身，全家都鼓掌。"
 - takeScreenshot: capture-text-timeline
+# 保存结果在重启后仍保留；不只检查即时成功提示。
+- stopApp
+- launchApp
+- assertVisible: "今天第一次翻身，全家都鼓掌。"

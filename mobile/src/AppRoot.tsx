@@ -23,10 +23,10 @@ export function AppRoot() {
       <TextScaleContext.Provider value={displayMode === "simple" ? 1.2 : 1}>
         <AppRootBody
           gated={
-            credentials && needsOnboarding ? "onboarding"
+            welcomeSeen === null ? "loading"
+            : credentials && needsOnboarding ? "onboarding"
             : credentials && awaitingSyncConsent ? "consent"
             : !credentials && !welcomeSeen ? "welcome"
-            : welcomeSeen === null ? "loading"
             : "app"
           }
         />

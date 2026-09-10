@@ -11,7 +11,7 @@ import { OrganizerPanel } from "../ai/OrganizerPanel";
 import { captureDateSummary, captureOrganizerAvailability, captureSavedMessage } from "../drafts/capture";
 import type { AiSettings } from "../ai/types";
 import { requestMobileJson, parseAiSettings } from "../api/client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import { ActivityIndicator, Alert, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,13 +38,16 @@ import { journalRadius, journalShadow, journalSpace, journalType } from "../desi
 import type { LocalImportIntakeItem } from "../types";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
 import type { AppNavigation, MainTabParamList } from "../navigation/types";
+import { JournalDockHeightContext } from "../navigation/dock-metrics";
 
 export function CaptureScreen() {
   const navigation = useNavigation<AppNavigation>();
   const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
   const { credentials, outbox, queued, viewer, family, people, userId, syncing, reloadLocal, grantSyncConsent, syncConsent } = useApp();
   const insets = useSafeAreaInsets();
-  const { colors, dark } = useSharedStyles();
+  const sharedStyles = useSharedStyles();
+  const { colors, dark } = sharedStyles;
+  const dockHeight = useContext(JournalDockHeightContext);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", () => setKeyboardOpen(true));
@@ -473,7 +476,7 @@ export function CaptureScreen() {
 
   return (
     <View style={sharedStyles.screen}>
-      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.content} ref={scrollRef}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingTop: insets.top + 12, paddingBottom: dockHeight + 160 }]} ref={scrollRef}>
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <Text style={sharedStyles.eyebrow}>记录一刻</Text>
@@ -603,7 +606,7 @@ export function CaptureScreen() {
         </View> : null}
       </ScrollView>
       {keyboardOpen ? null : (
-        <View style={[styles.saveBar, { backgroundColor: colors.elevated, borderTopColor: colors.line, paddingBottom: 10 + Math.max(insets.bottom, 0), boxShadow: dark ? journalShadow.floatDark : journalShadow.float }]}>
+        <View testID="capture-save-bar" style={[styles.saveBar, { bottom: dockHeight + 8, backgroundColor: colors.elevated, borderTopColor: colors.line, paddingBottom: 10, boxShadow: dark ? journalShadow.floatDark : journalShadow.float }]}>
           <Pressable accessibilityRole="button" onPress={() => setVisibilityOpen(value => !value)} style={[styles.visibilityChip, { backgroundColor: colors.softCoral }]}>
             <JournalIcon name={capsuleDraft.draft?.content.visibility === "private" ? "lock" : "users"} size={16} color={colors.coralDark} />
             <Text style={[styles.visibilityChipText, { color: colors.coralDark }]}>{visibilityLabel}</Text>
@@ -612,6 +615,7 @@ export function CaptureScreen() {
           {capsuleDraft.draft && capsuleDraft.draft.status !== "published"
             ? <Button
                 title={saveLabel}
+                testID="capture-save"
                 variant="primary"
                 icon="check"
                 full={false}

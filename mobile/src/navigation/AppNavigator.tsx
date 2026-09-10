@@ -4,6 +4,7 @@ import { BlurTargetView } from "expo-blur";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { GlassSurface } from "../components/GlassSurface";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
+import { JournalDockHeightContext } from "./dock-metrics";
 import { useAccessibleEffects } from "../design/use-effects";
 import { PendingScreen } from "../screens/PendingScreen";
 import { LocalIntakeScreen } from "../screens/LocalIntakeScreen";
@@ -61,7 +62,7 @@ const tabMeta: Record<string, { label: string; icon: JournalIconName }> = {
   Profile: { label: "我的", icon: "person" },
 };
 
-function JournalTabBar({ state, descriptors, navigation, target }: BottomTabBarProps & { target: RefObject<View | null> }) {
+function JournalTabBar({ state, descriptors, navigation, target, onHeight }: BottomTabBarProps & { target: RefObject<View | null>; onHeight: (height: number) => void }) {
   const { viewer, credentials, displayMode } = useApp();
   const { reducedMotion } = useAccessibleEffects();
   const { colors } = useColorTheme();
@@ -75,7 +76,7 @@ function JournalTabBar({ state, descriptors, navigation, target }: BottomTabBarP
   const current = state.routes[state.index];
   const canCapture = !credentials || viewer?.canCapture;
   if (!current || keyboardOpen) return null;
-  return <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+  return <View onLayout={event => onHeight(event.nativeEvent.layout.height)} style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}>
     {current.name !== "Capture" && canCapture ? <Pressable accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, { boxShadow: `0 6px 24px ${colors.scrim}` }, pressed && !reducedMotion && styles.pressed]}>
       <GlassSurface target={target} />
       <JournalIcon name="plus" color={colors.coralDark} size={22} />
@@ -101,13 +102,15 @@ function JournalTabBar({ state, descriptors, navigation, target }: BottomTabBarP
 function MainTabs() {
   const { reducedMotion } = useAccessibleEffects();
   const { colors } = useColorTheme();
+  const insets = useSafeAreaInsets();
+  const [dockHeight, setDockHeight] = useState(84 + Math.max(insets.bottom, 10));
   const targets = useRef(new Map<string, RefObject<View | null>>());
   const targetFor = (key: string) => {
     if (!targets.current.has(key)) targets.current.set(key, createRef<View>());
     return targets.current.get(key)!;
   };
-  return <Tabs.Navigator
-    tabBar={props => <JournalTabBar {...props} target={targetFor(props.state.routes[props.state.index]?.key ?? "empty")} />}
+  return <JournalDockHeightContext.Provider value={dockHeight}><Tabs.Navigator
+    tabBar={props => <JournalTabBar {...props} onHeight={setDockHeight} target={targetFor(props.state.routes[props.state.index]?.key ?? "empty")} />}
     screenLayout={({ children, route }) => <BlurTargetView ref={targetFor(route.key)} style={styles.fill}>{children}</BlurTargetView>}
     screenOptions={{
       headerStyle: { backgroundColor: colors.paper }, headerShadowVisible: false,
@@ -120,7 +123,7 @@ function MainTabs() {
     <Tabs.Screen component={SettingsHubScreen} name="Profile" options={{ title: "我的", headerShown: false }} />
     {/* Keep the existing capture route for pending shares and durable draft links. */}
     <Tabs.Screen component={CaptureScreen} name="Capture" options={{ title: "记录一刻", headerShown: false }} />
-  </Tabs.Navigator>;
+  </Tabs.Navigator></JournalDockHeightContext.Provider>;
 }
 
 export function AppNavigator() {
