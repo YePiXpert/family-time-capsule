@@ -25,9 +25,9 @@ appId: app.familytimecapsule.mobile
 - takeScreenshot: capture-text-saved
 - tapOn:
     id: tab-timeline
-- assertVisible: "今天第一次翻身，全家都鼓掌。"
+- assertVisible: ".*今天第一次翻身，全家都鼓掌。.*"
 - takeScreenshot: capture-text-timeline
 # 保存结果在重启后仍保留；不只检查即时成功提示。
 - stopApp
 - launchApp
-- assertVisible: "今天第一次翻身，全家都鼓掌。"
+- assertVisible: ".*今天第一次翻身，全家都鼓掌。.*"

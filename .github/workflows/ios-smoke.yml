@@ -2,6 +2,12 @@ name: iOS simulator smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      reuse_build_sha:
+        description: "Optional main commit whose cached simulator app can be reused for test-only changes"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -21,8 +27,26 @@ jobs:
       MAESTRO_DRIVER_STARTUP_TIMEOUT: "180000"
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Verify main-only source
         run: test "$GITHUB_REF" = refs/heads/main
+      - name: Verify reusable app source
+        id: reuse-source
+        env:
+          REUSE_BUILD_SHA: ${{ inputs.reuse_build_sha }}
+        run: |
+          if [ -n "$REUSE_BUILD_SHA" ]; then
+            [[ "$REUSE_BUILD_SHA" =~ ^[0-9a-f]{40}$ ]]
+            git merge-base --is-ancestor "$REUSE_BUILD_SHA" HEAD
+            # A cached executable is valid only when all runtime/build inputs match.
+            git diff --exit-code "$REUSE_BUILD_SHA" HEAD -- . \
+              ':(exclude)mobile/.maestro/**' \
+              ':(exclude).github/workflows/ios-smoke.yml'
+            echo "source_sha=$REUSE_BUILD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -32,21 +56,37 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - run: npm ci
-        working-directory: mobile
-      - name: Generate iOS project
-        working-directory: mobile
-        run: npx expo prebuild --platform ios --clean --no-install
-      - name: Install CocoaPods
-        working-directory: mobile
-        run: npx pod-install ios
       - uses: actions/cache/restore@v4
         id: simulator-cache
         with:
           path: mobile/build/simulator
-          key: ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**', 'mobile/scripts/**') }}-${{ github.sha }}
+          key: ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**', 'mobile/scripts/**') }}-${{ steps.reuse-source.outputs.source_sha }}
           restore-keys: |
             ios-simulator-${{ runner.arch }}-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**', 'mobile/scripts/**') }}-
+      - run: npm ci
+        if: inputs.reuse_build_sha == '' || steps.simulator-cache.outputs.cache-hit != 'true'
+        working-directory: mobile
+      - name: Generate iOS project
+        if: inputs.reuse_build_sha == '' || steps.simulator-cache.outputs.cache-hit != 'true'
+        working-directory: mobile
+        run: npx expo prebuild --platform ios --clean --no-install
+      - name: Install CocoaPods
+        if: inputs.reuse_build_sha == '' || steps.simulator-cache.outputs.cache-hit != 'true'
+        working-directory: mobile
+        run: npx pod-install ios
+      - name: Record verified build reuse
+        if: inputs.reuse_build_sha != '' && steps.simulator-cache.outputs.cache-hit == 'true'
+        env:
+          REUSE_BUILD_SHA: ${{ inputs.reuse_build_sha }}
+        run: |
+          mkdir -p ios-smoke-results
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          evidence = {"builtFrom": os.environ["REUSE_BUILD_SHA"], "testedFrom": os.environ["GITHUB_SHA"],
+                      "runtimeSourcesIdentical": True, "exactCacheMatch": True}
+          Path('ios-smoke-results/build-provenance.json').write_text(json.dumps(evidence, indent=2))
+          PY
       - name: Boot isolated iPhone simulator
         run: |
           mkdir -p ios-smoke-results
@@ -67,6 +107,7 @@ jobs:
           xcrun simctl addmedia "$SIMULATOR_ID" mobile/assets/icon.png
       - name: Build Release app for simulator
         id: simulator-build
+        if: inputs.reuse_build_sha == '' || steps.simulator-cache.outputs.cache-hit != 'true'
         working-directory: mobile
         env:
           NODE_ENV: production
@@ -86,6 +127,9 @@ jobs:
         working-directory: mobile
         run: |
           APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
+          test -f "$APP_PATH/main.jsbundle"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")" = 'app.familytimecapsule.mobile'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Info.plist")" = "$(node -p "require('./app.json').expo.ios.buildNumber")"
           codesign --verify --deep --strict "$APP_PATH"
           codesign --display --entitlements - "$APP_PATH" > ../ios-smoke-results/simulator-signature.txt 2>&1
           xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
