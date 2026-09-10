@@ -261,6 +261,9 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
   }
   if (!draft) return <p role="status" className="mt-8">{diskError || "正在打开本机草稿…"}</p>;
   const content = draft.content, editable = draft.status === "editing" && !syncing;
+  const otherLocalDrafts = drafts.filter(d => d.id !== draft.id && (d.status === "editing" || d.status === "queued"));
+  const otherServerDrafts = serverDrafts.filter(d => d.id !== draft.id && d.status === "editing" && !drafts.some(local => local.id === d.id));
+  const otherDraftCount = otherLocalDrafts.length + otherServerDrafts.length;
   const automaticRequested = captureOrganizerAvailability(aiSettings, content.visibility, [], "automatic").ready;
   const organizer = captureOrganizerAvailability(aiSettings, content.visibility, content.items.map(item => previews[item.id]?.type ?? ""), "automatic");
   const occurredInput = () => {
@@ -344,11 +347,14 @@ export function PersistentCaptureEditor({ people, members, canArchive, scope, ti
       <button className={`ui-button-primary ${styles.saveButton}`} disabled={syncing || !!diskError || recording || (!content.text.trim() && !content.items.length)} onClick={() => void save(canArchive, !canArchive && content.visibility === "family", canArchive && (draft.status === "queued" ? draft.organizeOnPublish === true : automaticRequested))}>{syncing ? "正在保存…" : draft.status === "queued" ? "重试保存" : "保存"}<Icon name="check" size={18} /></button></div>
       {!canArchive && <p className="text-sm text-muted">{content.visibility === "family" ? "保存到家庭待整理列表，家人可以继续补充。" : "先保存为私密草稿，稍后可以继续。"}</p>}
       <details className={styles.drafts}><summary><Icon name="archive" size={18} />草稿<Icon name="chevron-right" size={16} /></summary>
-    <details><summary className="min-h-11 cursor-pointer">继续草稿（{drafts.filter(d => d.id !== draft.id && (d.status === "editing" || d.status === "queued")).length}）</summary>
-      {drafts.filter(d => d.id !== draft.id && (d.status === "editing" || d.status === "queued")).map(d => <button key={d.id} className={`${button} m-1`} disabled={syncing || recording} onClick={() => void resume(d)}>{d.content.title || d.content.text.slice(0, 30) || "未命名的一件事"}</button>)}
-      {serverDrafts.filter(d => !drafts.some(l => l.id === d.id)).map(d => <button key={d.id} className={`${button} m-1`} disabled={syncing || recording} onClick={() => void continueServer(d).catch(e => setNotice(message(e)))}>{d.title || "服务器草稿"}</button>)}
-    </details>
-<div className="flex flex-wrap gap-3">
+      <div className="mb-3">
+        <p className="mb-2 text-sm text-muted">{otherDraftCount ? `继续草稿（${otherDraftCount}）` : "暂无其他草稿"}</p>
+        {otherDraftCount > 0 && <div className="flex flex-wrap gap-2">
+          {otherLocalDrafts.map(d => <button key={d.id} className={button} disabled={syncing || recording} onClick={() => void resume(d)}>{d.content.title || d.content.text.slice(0, 30) || "未命名的一件事"}</button>)}
+          {otherServerDrafts.map(d => <button key={d.id} className={button} disabled={syncing || recording} onClick={() => void continueServer(d).catch(e => setNotice(message(e)))}>{d.title || "服务器草稿"}</button>)}
+        </div>}
+      </div>
+      <div className="flex flex-wrap gap-3">
         <button className={button} disabled={syncing || recording || !!diskError} onClick={() => void create()}>新建一件事</button>
         {draft.status === "queued" && <button className={button} disabled={syncing} onClick={() => void store({ ...draft, status: "editing", revision: draft.revision + 1 }).catch(() => {})}>继续编辑</button>}
         <button className={button} disabled={syncing} onClick={() => void discard()}>放弃这份草稿</button>
