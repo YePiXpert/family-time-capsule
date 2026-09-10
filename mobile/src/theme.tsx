@@ -32,7 +32,7 @@ export function useColorTheme(): { scheme: JournalColorScheme; dark: boolean; co
 export function createSharedStyles(palette: JournalPalette) {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: palette.paper },
-    content: { padding: journalSpace.page, paddingBottom: 120, gap: journalSpace.medium },
+    content: { padding: journalSpace.page, paddingBottom: 170, gap: journalSpace.medium },
     eyebrow: {
       color: palette.coral,
       fontSize: 12,
