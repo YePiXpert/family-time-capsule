@@ -472,7 +472,8 @@ export function CaptureScreen() {
   const visibilityLabel = capsuleDraft.draft?.content.visibility === "private" ? "仅自己可见" : capsuleDraft.draft?.content.visibility === "members" ? "指定成员可见" : "全家可见";
   const saveState = capsuleDraft.saved ? "本机已保存" : "正在写入本机…";
   const saveDisabled = busy || recording || !!capsuleDraft.error || (!!capsuleDraft.draft && !capsuleDraft.draft.content.text.trim() && !capsuleDraft.draft.content.items.length);
-  const saveLabel = busy ? "正在保存…" : capsuleDraft.draft?.status === "queued" ? "重试保存" : "保存";
+  const localRecordSaved = !credentials && capsuleDraft.draft?.status === "queued" && capsuleDraft.saved && !capsuleDraft.error;
+  const saveLabel = busy ? "正在保存…" : capsuleDraft.draft?.status === "queued" ? "继续同步" : "保存";
 
   return (
     <View style={sharedStyles.screen}>
@@ -612,7 +613,7 @@ export function CaptureScreen() {
             <Text style={[styles.visibilityChipText, { color: colors.coralDark }]}>{visibilityLabel}</Text>
             <JournalIcon name="chevron-down" size={14} color={colors.faint} />
           </Pressable>
-          {capsuleDraft.draft && capsuleDraft.draft.status !== "published"
+          {capsuleDraft.draft && capsuleDraft.draft.status !== "published" && !localRecordSaved
             ? <Button
                 title={saveLabel}
                 testID="capture-save"
@@ -622,7 +623,7 @@ export function CaptureScreen() {
                 disabled={saveDisabled}
                 onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? capsuleDraft.draft!.content.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)}
               />
-            : <Text style={sharedStyles.body}>{capsuleDraft.draft ? "已保存这条成长记录" : "正在打开记录…"}</Text>}
+            : <Text accessibilityLiveRegion="polite" style={[sharedStyles.body, { flexShrink: 1, textAlign: "right" }]}>{localRecordSaved ? "已保存在本机" : capsuleDraft.draft ? "已保存这条成长记录" : "正在打开记录…"}</Text>}
         </View>
       )}
     </View>

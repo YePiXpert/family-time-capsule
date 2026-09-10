@@ -21,7 +21,7 @@ appId: app.familytimecapsule.mobile
     id: capture-save
 - assertVisible:
     id: capture-title
-- assertVisible: "已保存这条成长记录"
+- assertVisible: "已保存在本机"
 - takeScreenshot: capture-text-saved
 - tapOn:
     id: tab-timeline

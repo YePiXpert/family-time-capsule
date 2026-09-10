@@ -262,6 +262,9 @@ it("quick capture keeps optional fields collapsed and queues a text memory witho
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("只写一句话，先留下来"));
   await press("保存");
   expect((await listLocalDrafts("local"))[0]).toMatchObject({ status: "queued", syncIntent: "publish", organizeOnPublish: false, content: { title: "", occurredAt: null, text: "只写一句话，先留下来" } });
+  const saveBar = tree!.root.findByProps({ testID: "capture-save-bar" });
+  expect(saveBar.findAllByType("Text" as never).some(node => node.children.join("") === "已保存在本机")).toBe(true);
+  expect(saveBar.findAllByProps({ testID: "capture-save" })).toHaveLength(0);
 });
 
 it("refreshes publication status after sync and starts the next record without losing the saved one", async () => {
