@@ -11,7 +11,7 @@ import Link from "next/link";
 import { OrganizerControl } from "@/components/organizer-control";
 import { canInferCaptureTime, captureDateSummary, captureOrganizerAvailability, captureSavedMessage, quickCaptureContent, type CaptureProcessing } from "@/mobile/src/drafts/capture";
 import type { AiSettings } from "@/mobile/src/ai/types";
-import { uploadDraftOriginal } from "@/lib/drafts/browser-upload";
+import { uploadDraftOriginal, type DraftUploadProgress } from "@/lib/drafts/browser-upload";
 import { emptyDraftContent, isDraftDateComplete, type Draft, type DraftContent } from "@/lib/drafts/model";
 import { listBrowserDrafts, readBrowserOriginal, writeBrowserDraft, type BrowserDraft, type BrowserOriginal } from "@/lib/drafts/browser-store";
 
@@ -34,6 +34,8 @@ export function PersistentCaptureEditor({ members, canArchive, scope, timezone, 
   const [diskError, setDiskError] = useState("");
   const [saved, setSaved] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<(DraftUploadProgress & { filename: string }) | null>(null);
   const [previews, setPreviews] = useState<Record<string, { url: string; type: string; name: string }>>({});
   const current = useRef<BrowserDraft | null>(null);
   const committed = useRef(0);
@@ -69,7 +71,7 @@ export function PersistentCaptureEditor({ members, canArchive, scope, timezone, 
     void store({ ...old, captureTimeEdited: old.captureTimeEdited || "occurredAt" in patch || "occurredAtPrecision" in patch, content: { ...old.content, ...patch }, revision: old.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() }).catch(() => {});
   }, [store]);
   const create = useCallback(async () => {
-    setNotice("");
+    setNotice(""); setSaveError(""); setUploadProgress(null);
     await writes.current;
     if (failed.current) return;
     const id = crypto.randomUUID();
@@ -192,7 +194,9 @@ export function PersistentCaptureEditor({ members, canArchive, scope, timezone, 
         if (!original) throw new Error("本机原件不可读，请保留草稿并检查存储空间。");
         const revision = current.current!.revision;
         const guard = () => { if (!mounted.current || current.current?.id !== row.id || current.current?.revision !== revision) throw new Error("草稿已修改或关闭，上传已暂停；原件仍保留。"); };
-        const result = await uploadDraftOriginal(original.file, item.localCaptureRef, row.id, guard);
+        const result = await uploadDraftOriginal(original.file, item.localCaptureRef, row.id, guard, progress => {
+          if (mounted.current) setUploadProgress({ ...progress, filename: original.file.name });
+        });
         guard();
         const assetId = result.assetId ?? result.existingAssetId;
         if (!assetId) throw new Error(result.message ?? "原件上传未完成，本机原件仍在。");
@@ -221,22 +225,22 @@ export function PersistentCaptureEditor({ members, canArchive, scope, timezone, 
         await create();
         setNotice("私密草稿已保存，可从未完成记录继续。");
       }
-      } catch (error) { if (mounted.current) setNotice(message(error)); }
-    finally { syncBusy.current = false; if (mounted.current) setSyncing(false); }
+    } catch (error) { if (mounted.current) { setSaveError(message(error)); setNotice(""); } }
+    finally { syncBusy.current = false; if (mounted.current) { setSyncing(false); setUploadProgress(null); } }
   }
   async function save(publish: boolean, review = false, organize = false) {
     if (saveBusy.current || syncBusy.current) return;
-    setNotice("");
+    setNotice(""); setSaveError(""); setUploadProgress(null);
     const row = current.current;
     if (!row) return;
-    if (publish && !isDraftDateComplete(row.content) && (!canInferCaptureTime(row.content) || row.captureTimeEdited)) { setNotice("这份旧草稿的日期尚未填完，可以标为时间不确定后保存。"); return; }
-    if (publish && row.content.visibility === "members" && row.content.readerUserIds.length === 0) { setNotice("请先选择可以阅读这件事的家人，或改回全家/仅自己。"); return; }
+    if (publish && !isDraftDateComplete(row.content) && (!canInferCaptureTime(row.content) || row.captureTimeEdited)) { setSaveError("这份旧草稿的日期尚未填完，可以标为时间不确定后保存。"); return; }
+    if (publish && row.content.visibility === "members" && row.content.readerUserIds.length === 0) { setSaveError("请先选择可以阅读这件事的家人，或改回全家/仅自己。"); return; }
     saveBusy.current = true; setSyncing(true); setLastMemoryId(null);
     try {
       await store({ ...row, content: quickCaptureContent(row.content, row.captureTimeEdited), organizeOnPublish: publish && organize, status: publish ? "queued" : "editing", revision: row.revision + 1, mutationId: crypto.randomUUID(), updatedAt: new Date().toISOString() });
       setNotice(publish ? "本机已保存，正在后台创建记忆。可以离开页面，重开后可继续。" : "本机已保存，正在尝试送往服务器。可以离开页面。");
       await sendToServer(publish, review);
-    } catch (error) { setNotice(message(error)); }
+    } catch (error) { setSaveError(message(error)); setNotice(""); }
     finally { saveBusy.current = false; if (mounted.current) setSyncing(false); }
   }
   async function discard() {
@@ -251,6 +255,7 @@ export function PersistentCaptureEditor({ members, canArchive, scope, timezone, 
   if (!draft) return <div className="mt-8"><p role="status">{diskError || notice || "正在打开本机草稿…"}</p>{notice && <Link href="/pending" className={button}>返回未完成记录</Link>}</div>;
   const content = draft.content, editable = draft.status === "editing" && !syncing;
   const automaticRequested = captureOrganizerAvailability(aiSettings, content.visibility, [], "automatic").ready;
+  const uploadPercent = uploadProgress ? Math.floor(uploadProgress.uploadedBytes / Math.max(1, uploadProgress.totalBytes) * 100) : 0;
   return <div className={styles.editor}>
     <div className={styles.paper}>
       {diskError && <div role="alert" className="inline-notice inline-notice-danger">{diskError}<button className={button} onClick={() => { failed.current = false; void store(current.current!).catch(() => {}); }}>重试本机保存</button></div>}
@@ -301,7 +306,14 @@ export function PersistentCaptureEditor({ members, canArchive, scope, timezone, 
       {draft.status === "queued" && <button className={styles.tool} disabled={syncing} onClick={() => void store({ ...draft, status: "editing", revision: draft.revision + 1 }).catch(() => {})}>继续编辑</button>}
       <div className={styles.saveBar}>
         <p className={styles.visibility}><Icon name={content.visibility === "private" ? "lock" : "people"} size={16} />{content.visibility === "family" ? "全家可见" : content.visibility === "members" ? "指定成员可见" : "仅自己可见"}</p>
-        <button className={styles.saveButton} disabled={syncing || !!diskError || recording || (!content.text.trim() && !content.items.length)} onClick={() => void save(canArchive, !canArchive && content.visibility === "family", canArchive && (draft.status === "queued" ? draft.organizeOnPublish === true : automaticRequested))}><Icon name="check" size={18} />{syncing ? "正在保存…" : draft.status === "queued" ? "重试保存" : "保存"}</button>
+        {uploadProgress && <div className={styles.uploadStatus}>
+          <p role="status">{uploadProgress.phase === "retrying" ? `连接中断，正在自动续传（${uploadProgress.retry}/3）` : uploadProgress.phase === "confirming" ? "上传完成，正在确认原件…" : `正在上传 ${uploadPercent}%`}</p>
+          <progress aria-label="上传进度" value={uploadProgress.uploadedBytes} max={Math.max(1, uploadProgress.totalBytes)} />
+          <span>{uploadProgress.filename} · {(uploadProgress.uploadedBytes / 1024 / 1024).toFixed(1)} / {(uploadProgress.totalBytes / 1024 / 1024).toFixed(1)} MB</span>
+        </div>}
+        {saveError && <p role="alert" className={styles.saveError}>{saveError}</p>}
+        {!syncing && !saveError && draft.status === "queued" && <p className={styles.resumeHint}>上次上传未完成，重试会从已收到的位置继续。</p>}
+        <button className={styles.saveButton} disabled={syncing || !!diskError || recording || (!content.text.trim() && !content.items.length)} onClick={() => void save(canArchive, !canArchive && content.visibility === "family", canArchive && (draft.status === "queued" ? draft.organizeOnPublish === true : automaticRequested))}><Icon name="check" size={18} />{syncing ? uploadProgress?.phase === "retrying" ? "正在续传…" : uploadProgress?.phase === "uploading" ? `正在上传 ${uploadPercent}%` : "正在保存…" : draft.status === "queued" ? "重试保存" : "保存"}</button>
       </div>
       {!canArchive && <p className={styles.dateNote}>{content.visibility === "family" ? "保存到家庭待整理列表。" : "先保存为私密草稿。"}</p>}
     </>}

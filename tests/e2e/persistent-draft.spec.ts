@@ -131,3 +131,62 @@ test("unfinished records are recoverable from pending work and clearing needs co
   await expect(page.getByLabel("写下这一刻")).toHaveValue("");
   await expect(page.getByRole("button", { name: "保存", exact: true })).toBeDisabled();
 });
+
+test("a multi-chunk MPG automatically resumes a lost 8MB receipt and shows confirmed progress", async ({ page }) => {
+  test.setTimeout(60000);
+  await ensureBootstrap(page);
+  await page.setViewportSize({ width: 375, height: 720 });
+  await page.goto("/capture");
+  const input = test.info().outputPath("large-dvd.mpg");
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=18", "-c:v", "mpeg2video", "-b:v", "5M", "-minrate", "5M", "-maxrate", "5M", "-bufsize", "1835008", "-muxrate", "6000000", "-f", "dvd", input]);
+  const bytes = readFileSync(input);
+  expect(bytes.length).toBeGreaterThan(8 * 1024 * 1024);
+  let lost = false, waiting = false, release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const offsets: number[] = [];
+  await page.route("**/api/uploads/*", async route => {
+    if (route.request().method() !== "PATCH") { await route.continue(); return; }
+    offsets.push(Number(route.request().headers()["upload-offset"]));
+    if (!lost) { const response = await route.fetch(); expect(response.status()).toBe(204); lost = true; await route.abort("failed"); return; }
+    if (!waiting) { waiting = true; await gate; }
+    await route.continue();
+  });
+  await page.getByLabel("添加照片、视频、录音或文档").setInputFiles(input);
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  try {
+    await expect.poll(() => waiting).toBe(true);
+    const progress = page.getByRole("progressbar", { name: "上传进度" });
+    await expect(progress).toBeInViewport();
+    await expect(progress).toHaveAttribute("value", String(8 * 1024 * 1024));
+    await expect(page.getByRole("button", { name: /^正在上传/ })).toBeDisabled();
+  } finally { release(); }
+  const link = page.getByRole("link", { name: "查看这条记忆" });
+  await expect(link).toBeVisible();
+  expect(offsets.slice(0, 2)).toEqual([0, 8 * 1024 * 1024]);
+  const id = (await link.getAttribute("href"))!.split("/").at(-1)!;
+  const memory = await (await page.request.get(`/api/mobile/v1/memories/${id}`)).json();
+  expect(memory.assets).toHaveLength(1);
+  const received = await (await page.request.get(`/api/media/${memory.assets[0].id}`)).body();
+  const { createHash } = await import("node:crypto");
+  expect(createHash("sha256").update(received).digest("hex")).toBe(createHash("sha256").update(bytes).digest("hex"));
+});
+
+test("an exhausted upload shows an actionable error next to save and manual retry works", async ({ page }) => {
+  await ensureBootstrap(page);
+  await page.setViewportSize({ width: 375, height: 720 });
+  await page.goto("/capture");
+  let blocked = true, failures = 0;
+  await page.route("**/api/uploads/*", async route => {
+    if (route.request().method() === "PATCH" && blocked) { failures++; await route.abort("failed"); }
+    else await route.continue();
+  });
+  await page.getByLabel("添加照片、视频、录音或文档").setInputFiles(path.join(__dirname, "../fixtures/sample.mov"));
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "自动续传暂未成功" })).toBeInViewport();
+  expect(failures).toBe(4);
+  const retry = page.getByRole("button", { name: "重试保存", exact: true });
+  await expect(retry).toBeEnabled();
+  blocked = false;
+  await retry.click();
+  await expect(page.getByRole("link", { name: "查看这条记忆" })).toBeVisible();
+});

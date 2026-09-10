@@ -47,6 +47,11 @@
 .members input { width: 1.15rem; height: 1.15rem; }
 .saveBar { position: fixed; z-index: 35; bottom: calc(6rem + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(calc(100% - 3rem), 42rem); display: flex; flex-direction: column; gap: .5rem; padding: .65rem; border: 1px solid var(--capture-rim); border-radius: 2rem; background: var(--capture-glass); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: 0 8px 28px var(--capture-shadow); }
 .visibility { display: flex; gap: .4rem; align-items: center; color: var(--capture-muted); font-size: .75rem; }
+.uploadStatus { width: 100%; padding: 0 .5rem; color: var(--capture-ink); font-size: .8125rem; overflow-wrap: anywhere; }
+.uploadStatus progress { display: block; width: 100%; height: .4rem; margin: .4rem 0; accent-color: #547bf0; }
+.uploadStatus span { color: var(--capture-muted); font-size: .75rem; }
+.saveError { width: 100%; padding: .35rem .5rem; font-size: .8125rem; color: var(--capture-ink); overflow-wrap: anywhere; max-height: 25dvh; overflow-y: auto; }
+.resumeHint { padding: 0 .5rem; font-size: .75rem; color: var(--capture-muted); }
 .saveButton { display: flex; width: 100%; align-items: center; justify-content: center; gap: .5rem; min-height: 3.5rem; border-radius: 2rem; border: 1px solid #ffffff90; color: white; background: linear-gradient(165deg, #819ff7, #4d70d8 60%, #6378df); box-shadow: inset 0 1px 1px #ffffffb0, 0 5px 15px #4c6cd326; font-size: 1rem; font-weight: 600; }
 .saveButton:disabled { background: var(--capture-solid); color: var(--capture-muted); box-shadow: none; cursor: default; }
 @media (min-width: 1024px) { .page { margin-top: 2rem; } .saveBar { left: calc(50% + 7rem); bottom: 1.5rem; width: min(calc(100% - 20rem), 42rem); } }
