@@ -55,7 +55,7 @@ export function BookPreview({ book }: { book: BookDetail }) {
           {book.audience === "family" ? "家庭可读版" : "我的私人阅读版"} ·{" "}
           {book.pageSize}
         </p>
-        <h2 className="mt-5 break-words text-3xl">{book.title}</h2>
+        <p className="mt-5 break-words text-3xl">{book.title}</p>
         <p className="mt-3 whitespace-pre-wrap text-lg">{book.subtitle}</p>
         {book.startDate || book.endDate ? (
           <p className="mt-4 text-sm text-muted">

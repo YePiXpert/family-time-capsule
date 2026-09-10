@@ -13,7 +13,9 @@ appId: app.familytimecapsule.mobile
 - tapOn:
     id: capture-text
 - inputText: "今天第一次翻身，全家都鼓掌。"
-- hideKeyboard
+# keyboardShouldPersistTaps="handled" 下点按非交互区收起键盘（自定义输入框不支持 hideKeyboard）
+- tapOn:
+    id: capture-title
 - assertVisible: "全家可见"
 - tapOn: "^保存$"
 - assertVisible: "已保存这条成长记录"
