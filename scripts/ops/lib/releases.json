@@ -27,7 +27,8 @@
     { "version": "1.2.0-alpha.3", "channel": "exploration", "era": "exploration", "sequence": 12, "tag": "v1.2.0-alpha.3", "date": "2026-09-05" },
     { "version": "1.2.0-alpha.4", "channel": "exploration", "era": "exploration", "sequence": 13, "tag": "v1.2.0-alpha.4", "date": "2026-09-06" },
     { "version": "1.3.0-alpha.1", "channel": "exploration", "era": "exploration", "sequence": 14, "tag": "v1.3.0-alpha.1", "date": "2026-09-06" },
-    { "version": "1.0.0-dev.1", "channel": "development", "era": "formal", "sequence": 15, "tag": "v1.0.0-dev.1", "date": "2026-09-09", "note": "正式主线首个开发预发布：精简三入口与完整作品编辑；旧客户端需更新" }
+    { "version": "1.0.0-dev.1", "channel": "development", "era": "formal", "sequence": 15, "tag": "v1.0.0-dev.1", "date": "2026-09-09", "note": "正式主线首个开发预发布：精简三入口与完整作品编辑；旧客户端需更新" },
+    { "version": "1.0.0-dev.2", "channel": "development", "era": "formal", "sequence": 16, "tag": "v1.0.0-dev.2", "date": "2026-09-10", "note": "成长手帐 UI、原生液体玻璃与外观切换；修复记录保存栏遮挡，原生构建 24" }
   ],
   "planned": [
     { "version": "1.0.0-rc.5", "channel": "candidate", "era": "formal", "note": "正式候选；rc.1~rc.4 已被探索期占用，从 rc.5 起" },
