@@ -248,6 +248,7 @@ export function listBookProjects(
       revision: r.revision,
       updatedAt: r.updatedAt.toISOString(),
       status: r.status,
+      coverAssetId: r.coverAssetId,
     })),
     nextCursor:
       rows.length > 30 && last

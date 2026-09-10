@@ -45,7 +45,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
       {accountUnavailable && (
         <p
           role="alert"
-          className="mt-6 rounded-lg border border-amber-700/30 bg-amber-500/10 p-3 text-sm leading-6 text-amber-900 dark:text-amber-200"
+          className="mt-6 inline-notice inline-notice-warning text-sm leading-6"
         >
           当前登录状态已失效，或账号暂不可用。请联系家庭管理员恢复账号后再登录。
         </p>

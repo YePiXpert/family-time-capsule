@@ -14,7 +14,7 @@ export function SetupForm() {
       {state?.error && (
         <p
           role="alert"
-          className="rounded-lg border border-red-800/30 bg-red-500/10 p-3 text-sm"
+          className="inline-notice inline-notice-danger text-sm"
         >
           {state.error}
         </p>

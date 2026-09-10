@@ -17,7 +17,7 @@ export function RunBackupButton() {
         </button>
       </form>
       {state?.error && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {state.error}
         </p>
       )}

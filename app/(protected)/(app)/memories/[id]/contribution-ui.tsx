@@ -42,7 +42,7 @@ export function AddContributionForm({
   return (
     <form action={formAction} className="mt-3 flex flex-col gap-3">
       {state?.error && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {state.error}
         </p>
       )}
@@ -155,7 +155,7 @@ export function ContributionBlock({
           {pending ? "保存中…" : "修改这段讲述"}
         </button>
         {state?.error && (
-          <span className="text-xs text-red-700 dark:text-red-400">{state.error}</span>
+          <span className="text-xs text-danger">{state.error}</span>
         )}
       </form>}
     </article>

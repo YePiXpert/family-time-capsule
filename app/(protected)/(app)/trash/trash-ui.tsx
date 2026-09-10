@@ -37,7 +37,7 @@ export function TrashEntryActions({ kind, id }: { kind: string; id: string }) {
           <button
             type="submit"
             disabled={purgePending}
-            className="rounded-lg border border-red-700/30 px-3 py-1.5 text-xs text-danger transition-colors hover:border-red-700/60 disabled:opacity-50"
+            className="rounded-lg border border-danger/30 px-3 py-1.5 text-xs text-danger transition-colors hover:border-danger/60 disabled:opacity-50"
           >
             {purgePending ? "清除中…" : "彻底清除"}
           </button>

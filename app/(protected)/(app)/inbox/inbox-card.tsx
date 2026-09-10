@@ -145,7 +145,7 @@ export function InboxCard({
               <input type="hidden" name="itemId" value={item.id} />
               <input type="datetime-local" name="capturedAt" required className={`${inputClass} min-h-11 flex-1`} aria-label="修改真实时间" />
               <button type="submit" disabled={timePending} className="ui-button-secondary">{timePending ? "保存中…" : "修改时间"}</button>
-              {timeState?.error && timeState.itemId === item.id ? <span className="text-xs text-red-700 dark:text-red-400">{timeState.error}</span> : null}
+              {timeState?.error && timeState.itemId === item.id ? <span className="text-xs text-danger">{timeState.error}</span> : null}
             </form>
           </details> : null}
 
@@ -204,7 +204,7 @@ export function InboxCard({
               {confirmPending ? "整理中…" : "确认进入时间轴"}
             </button>
             {confirmState?.error && confirmState.itemId === item.id && (
-              <span className="text-xs text-red-700 dark:text-red-400">
+              <span className="text-xs text-danger">
                 {confirmState.error}
               </span>
             )}
@@ -219,12 +219,12 @@ export function InboxCard({
             <button
               type="submit"
               disabled={discardPending}
-              className="rounded-lg border border-foreground/10 px-3 py-1.5 text-xs text-foreground/60 transition-colors hover:border-red-500/40 hover:text-red-700 disabled:opacity-50 dark:hover:text-red-400"
+              className="rounded-lg border border-foreground/10 px-3 py-1.5 text-xs text-foreground/60 transition-colors hover:border-danger/40 hover:text-danger disabled:opacity-50"
             >
               {discardPending ? "移除中…" : "不收入时间轴"}
             </button>
             {discardState?.error && discardState.itemId === item.id && (
-              <span className="ml-2 text-xs text-red-700 dark:text-red-400">
+              <span className="ml-2 text-xs text-danger">
                 {discardState.error}
               </span>
             )}

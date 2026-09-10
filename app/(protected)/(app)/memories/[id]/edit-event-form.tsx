@@ -93,7 +93,7 @@ export function EditEventForm({
       aria-label="编辑事件"
     >
       {state?.error && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {state.error}
         </p>
       )}

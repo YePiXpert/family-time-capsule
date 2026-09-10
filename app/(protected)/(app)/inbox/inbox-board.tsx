@@ -111,7 +111,7 @@ export function InboxBoard({
             </label>
           ) : null}
           {mergeState?.error && (
-            <span className="mt-2 block text-xs text-red-700 dark:text-red-400">
+            <span className="mt-2 block text-xs text-danger">
               {mergeState.error}
             </span>
           )}

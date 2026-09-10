@@ -43,7 +43,7 @@ function StatusLabel({ job }: { job: AiJobSummary | undefined }) {
   }
   if (job.status === "failed") {
     return (
-      <span className="rounded-full border border-red-800/30 px-3 py-1 text-xs text-red-800 dark:text-red-300">
+      <span className="status-badge status-badge-danger">
         失败可重试
       </span>
     );
@@ -134,12 +134,12 @@ function SuggestionCard({
               name="action"
               value="reject"
               disabled={pending}
-              className="rounded border border-foreground/15 px-2 py-0.5 text-foreground/60 hover:border-red-500/40 disabled:opacity-50"
+              className="rounded border border-foreground/15 px-2 py-0.5 text-foreground/60 hover:border-danger/40 disabled:opacity-50"
             >
               拒绝
             </button>
             {state?.error && (
-              <span className="text-xs text-red-700 dark:text-red-400">{state.error}</span>
+              <span className="text-xs text-danger">{state.error}</span>
             )}
           </form>
         )}
@@ -207,7 +207,7 @@ export function SuggestionSection({
         <StatusLabel job={latestJob} />
       </div>
       {state?.error && (
-        <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="mt-2 text-sm text-danger">
           {state.error}
         </p>
       )}

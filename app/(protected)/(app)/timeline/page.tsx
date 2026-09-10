@@ -4,7 +4,7 @@ import { pendingImports } from "@/lib/home/pending";
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
-import keepsake from "@/mobile/assets/illustrations/keepsake-box.png";
+import keepsake from "@/mobile/assets/illustrations/keepsake-box.webp";
 import { requireFamily } from "@/lib/family/context";
 import { getFamily, listPeople } from "@/lib/family/service";
 import { getTimelineFacets, getTimelinePage } from "@/lib/memories/service";
@@ -15,6 +15,7 @@ import { formatOccurredDateLabel, precisionHasDay, type OccurredAtPrecision } fr
 import { zonedWallTimeToUtc } from "@/lib/metadata/time";
 import { EmptyState } from "@/components/empty-state";
 import { CollectionSelection } from "@/components/collection-selection";
+import { Icon } from "@/components/ui/icons";
 import { MemoryCard } from "@/components/memory-card";
 
 export const dynamic = "force-dynamic";
@@ -124,8 +125,14 @@ export default async function TimelinePage({
         <Link href={queryHref(params, { stage: undefined, cursor: undefined, month: undefined, year: undefined })} aria-current={!stage ? "page" : undefined} className={!stage ? "ui-button-primary" : "ui-button-secondary"}>全部</Link>
         {stages.map(item => <Link key={item.key} href={queryHref(params, { stage: item.key, cursor: undefined, month: undefined, year: undefined })} aria-current={stage?.key === item.key ? "page" : undefined} className={stage?.key === item.key ? "ui-button-primary" : "ui-button-secondary"}>{item.label}</Link>)}
       </nav> : <p className="mb-4 text-sm text-muted">填写宝宝生日后，就能按月龄回看。<Link href="/family" className="ui-text-link ml-2">查看孩子档案</Link></p>}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><Link href={queryHref(params, { important: value(params, "important") === "1" ? undefined : "1", cursor: undefined })} className="ui-text-link">{value(params, "important") === "1" ? "查看所有时刻" : "第一次与值得记住"}</Link><Link href="/books" className="ui-text-link">看看{growth.childName}的成长册</Link></div>
-      <div className="flex items-center justify-between gap-4"><h2 className="text-xl font-semibold">成长点滴</h2><Link href="/search" aria-label="搜索家庭记忆" className="ui-button-secondary">搜索</Link></div>
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <Link href={queryHref(params, { important: value(params, "important") === "1" ? undefined : "1", cursor: undefined })} className={`growth-tool-link ${value(params, "important") === "1" ? "is-active" : ""}`}><Icon name="spark" size={16} />{value(params, "important") === "1" ? "查看所有时刻" : "第一次与值得记住"}</Link>
+        <Link href="/timeline/calendar" className="growth-tool-link"><Icon name="calendar" size={16} />日期与人物</Link>
+        <span className="flex-1" />
+        <Link href="/search" aria-label="搜索家庭记忆" className="growth-tool-link"><Icon name="search" size={16} />搜索</Link>
+        <Link href="/books" className="growth-tool-link"><Icon name="book" size={16} />看看{growth.childName}的成长册</Link>
+      </div>
+      <h2 className="text-xl font-semibold">成长点滴</h2>
 
       {pendingCount > 0 ? <Link href="/pending" className="ui-text-link mt-3">待处理 {pendingCount > 99 ? "99+" : pendingCount} 条</Link> : null}
       <details aria-label="筛选时间轴" className="mt-4 rounded-2xl border border-line bg-surface p-3" open={hasFilters}>

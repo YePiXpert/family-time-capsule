@@ -121,7 +121,7 @@ export function PasskeyPanel({ initialPasskeys }: { initialPasskeys: PanelPasske
                 type="button"
                 onClick={() => void removePasskey(item.id)}
                 disabled={pending}
-                className="min-h-11 rounded-lg border border-red-700/30 px-3 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+                className="min-h-11 rounded-lg border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
               >
                 移除
               </button>
@@ -151,12 +151,12 @@ export function PasskeyPanel({ initialPasskeys }: { initialPasskeys: PanelPasske
         </button>
       </div>
       {error ? (
-        <p role="alert" className="mt-2 text-sm leading-6 text-red-700 dark:text-red-300">
+        <p role="alert" className="mt-2 text-sm leading-6 text-danger">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" className="mt-2 text-sm leading-6 text-emerald-700 dark:text-emerald-300">
+        <p role="status" className="mt-2 text-sm leading-6 text-success">
           {notice}
         </p>
       ) : null}

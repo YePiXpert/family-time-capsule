@@ -40,7 +40,7 @@ export function MemorySharingForm({ eventId, visibility, readerUserIds, revision
           {editing.readerUserIds.filter(id => !readers.some(reader => reader.id === id)).map(id => <label key={id} className="text-sm"><input disabled={pending} type="checkbox" name="readerUserIds" value={id} checked onChange={() => setEditing(v => v && ({ ...v, readerUserIds: v.readerUserIds.filter(value => value !== id) }))} />已不可用的成员（请取消选择）</label>)}
         </fieldset> : null}
         <p className="text-xs leading-5 text-muted">保存后才会改变读者。移除读者会收回这件事的在线入口；素材在其他记忆中的独立分享仍有效。已导出的文件无法远程收回。家人讲述也遵循各自的阅读范围。</p>
-        {state?.error ? <p role="alert" className="text-sm text-red-700">{state.error}</p> : null}
+        {state?.error ? <p role="alert" className="text-sm text-danger">{state.error}</p> : null}
         <div className="flex gap-2"><button type="submit" disabled={pending} className="ui-button-primary">保存分享设置</button><button type="button" disabled={pending} className="ui-button-secondary" onClick={() => setEditing(null)}>取消</button></div>
       </form>}
   </section>;

@@ -113,12 +113,12 @@ export function TwoFactorPanel({ enabled }: { enabled: boolean }) {
         当前状态：{isOn ? "已开启" : "未开启"}
       </p>
       {error ? (
-        <p role="alert" className="mt-2 text-sm leading-6 text-red-700 dark:text-red-300">
+        <p role="alert" className="mt-2 text-sm leading-6 text-danger">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" className="mt-2 text-sm leading-6 text-emerald-700 dark:text-emerald-300">
+        <p role="status" className="mt-2 text-sm leading-6 text-success">
           {notice}
         </p>
       ) : null}
@@ -168,8 +168,8 @@ export function TwoFactorPanel({ enabled }: { enabled: boolean }) {
               </code>
             </div>
           </div>
-          <div className="rounded-xl border border-amber-700/30 bg-amber-500/10 p-4">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+          <div className="inline-notice inline-notice-warning">
+            <p className="text-sm font-medium">
               2. 恢复码只显示这一次（共 {draft.backupCodes.length} 个）：
             </p>
             <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
@@ -179,7 +179,7 @@ export function TwoFactorPanel({ enabled }: { enabled: boolean }) {
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-xs leading-5 text-amber-900/80 dark:text-amber-200/80">
+            <p className="mt-2 text-xs leading-5 opacity-80">
               请抄写或存入密码管理器；每个恢复码只能使用一次，服务端不保存明文。
             </p>
           </div>
@@ -224,7 +224,7 @@ export function TwoFactorPanel({ enabled }: { enabled: boolean }) {
             <button
               type="submit"
               disabled={pending}
-              className="min-h-11 w-fit rounded-lg border border-red-700/30 px-4 py-2 text-sm font-medium text-red-800 transition-colors hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+              className="min-h-11 w-fit rounded-lg border border-danger/30 px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
             >
               {pending ? "处理中…" : "关闭两步验证"}
             </button>
@@ -242,8 +242,8 @@ export function TwoFactorPanel({ enabled }: { enabled: boolean }) {
             </button>
           </form>
           {freshCodes ? (
-            <div className="rounded-xl border border-amber-700/30 bg-amber-500/10 p-4">
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+            <div className="inline-notice inline-notice-warning">
+              <p className="text-sm font-medium">
                 新恢复码（只显示这一次）：
               </p>
               <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">

@@ -55,7 +55,7 @@ function Control({ assetId, label }: { assetId: string; label: string }) {
   const stale = review !== null && draft.revision !== (review.transcript?.revision ?? null);
   return <><OrganizerControl kind="asset" id={assetId} reviewNames={false} /><details className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { if (event.currentTarget.open) { setBusy(true); setVerified(false); void load(); } else { generation.current++; } }}>
     <summary className="min-h-11 cursor-pointer py-2">转录全文与修订 · {label}</summary>
-    {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
+    {error ? <p role="alert" className="my-2 text-danger">{error}</p> : null}
     {review ? <div className="grid gap-3">
       <p>{review.transcript?.edited ? "人工修订" : review.transcript ? "AI 转录 · 未确认" : "尚无转录，可手动记录听到的内容。"}</p>
       <p className="whitespace-pre-wrap">{review.transcript?.text || (review.transcript?.edited ? "转录已由你清空" : review.transcript ? "未识别到清晰语音" : "")}</p>

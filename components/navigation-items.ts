@@ -13,7 +13,7 @@ export type NavigationItem = {
 export const PRIMARY_NAVIGATION: readonly NavigationItem[] = [
   { href: "/timeline", label: "成长", icon: "timeline", capability: "archive:view" },
   { href: "/books", label: "成长册", icon: "book", capability: "archive:view" },
-  { href: "/settings", label: "我的", icon: "settings", capability: "archive:view" },
+  { href: "/settings", label: "我的", icon: "person", capability: "archive:view" },
 ];
 
 export const SECONDARY_NAVIGATION: readonly NavigationItem[] = [

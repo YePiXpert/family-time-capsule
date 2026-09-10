@@ -15,8 +15,8 @@ function Result({ state }: { state: FamilyPolicyFormState | undefined }) {
       role={state.error ? "alert" : "status"}
       className={
         state.error
-          ? "text-xs leading-5 text-red-700 dark:text-red-300"
-          : "text-xs leading-5 text-emerald-700 dark:text-emerald-300"
+          ? "text-xs leading-5 text-danger"
+          : "text-xs leading-5 text-success"
       }
     >
       {state.error ?? state.success}
@@ -97,7 +97,7 @@ export function ChildUnlockControl({
   const [state, formAction, pending] = useActionState(action, undefined);
   if (alreadyUnlocked) {
     return (
-      <p className="text-xs leading-5 text-emerald-700 dark:text-emerald-300">
+      <p className="text-xs leading-5 text-success">
         已永久手工解锁
       </p>
     );
@@ -105,7 +105,7 @@ export function ChildUnlockControl({
   return (
     <form
       action={formAction}
-      className="mt-3 rounded-xl border border-amber-700/25 bg-amber-500/5 p-3"
+      className="mt-3 inline-notice inline-notice-warning"
     >
       <label className="flex min-h-11 cursor-pointer items-start gap-3 text-xs leading-5">
         <input
@@ -122,7 +122,7 @@ export function ChildUnlockControl({
       <button
         type="submit"
         disabled={pending}
-        className="mt-2 min-h-11 rounded-lg border border-amber-800/40 px-3 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-200"
+        className="mt-2 min-h-11 rounded-lg border border-warning/40 px-3 py-2 text-sm font-medium text-warning transition-colors hover:bg-warning-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? "解锁中…" : "永久手工解锁"}
       </button>

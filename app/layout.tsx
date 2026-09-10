@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { journalColors, journalType, journalSpace, journalRadius } from "@/mobile/src/design/tokens";
+import { journalColors, journalDarkColors, journalType, journalSpace, journalRadius } from "@/mobile/src/design/tokens";
 import type { Metadata, Viewport } from "next";
 import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
 import { getDisplayMode } from "@/lib/display-mode.server";
@@ -31,7 +31,7 @@ export const viewport: Viewport = {
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: journalColors.paper },
-    { media: "(prefers-color-scheme: dark)", color: "#201d1a" },
+    { media: "(prefers-color-scheme: dark)", color: journalDarkColors.paper },
   ],
 };
 
@@ -46,9 +46,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     ...Object.entries(journalSpace).map(([key, value]) => [`--journal-space-${key}`, `${value / 16}rem`]),
     ...Object.entries(journalRadius).map(([key, value]) => [`--journal-radius-${key}`, `${value / 16}rem`]),
   ].map(([name, value]) => `${name}:${value}`).join(";");
+  const darkTheme = Object.entries(journalDarkColors)
+    .map(([key, value]) => `--journal-${key}:${value}`)
+    .join(";");
   return (
     <html lang="zh-CN" className="h-full antialiased" data-display-mode={displayMode}>
-      <head><style nonce={nonce}>{`:root{${theme}}`}</style></head>
+      <head><style nonce={nonce}>{`:root{${theme}}@media (prefers-color-scheme:dark){:root{${darkTheme}}}`}</style></head>
       <body className="min-h-full flex flex-col">
         {children}
         <ServiceWorkerRegistrar />

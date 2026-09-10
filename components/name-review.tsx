@@ -43,7 +43,7 @@ export function NameReviewControl({ kind, id, refreshVersion = 0, defaultOpen = 
 
   return <details open={open} className="my-3 rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setBusy(false); }}>
     <summary className="min-h-11 cursor-pointer py-2">{kind === "asset" ? "修改素材展示名" : "修改标题与审核 AI 建议"}</summary>
-    {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
+    {error ? <p role="alert" className="my-2 text-danger">{error}</p> : null}
     <button type="button" className="ui-button-secondary my-2" disabled={busy} onClick={() => setRefresh(value => value + 1)}>刷新名称与建议（保留输入）</button>
     {review ? <div className="grid gap-3">
       <p className="text-muted">{NAME_SOURCE_LABELS[review.target.source] ?? "名称"} · 修改展示名称会保留原文件名与原件。</p>

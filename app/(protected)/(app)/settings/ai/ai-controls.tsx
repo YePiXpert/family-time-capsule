@@ -22,7 +22,7 @@ function Feedback({
       role={error ? "alert" : "status"}
       className={`mt-3 rounded-lg border p-3 text-sm leading-6 ${
         error
-          ? "border-red-800/30 bg-red-500/10 text-red-800 dark:text-red-300"
+          ? "border-danger/30 bg-danger-soft text-danger"
           : "border-accent/30 bg-accent/10 text-foreground/80"
       }`}
     >
@@ -56,7 +56,7 @@ export function AiConsentControls({
         <button
           type="submit"
           disabled={revoking}
-          className="min-h-11 rounded-lg border border-red-800/30 px-4 py-2 text-sm font-medium text-red-800 transition-colors hover:bg-red-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+          className="min-h-11 rounded-lg border border-danger/30 px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
           {revoking ? "正在关闭…" : "关闭这项外部处理"}
         </button>

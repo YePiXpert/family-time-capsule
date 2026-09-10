@@ -72,7 +72,7 @@ export function InboxSuggestionChips({
               <button
                 type="submit"
                 disabled={pending}
-                className="text-foreground/40 underline underline-offset-2 hover:text-red-700 disabled:opacity-50 dark:hover:text-red-400"
+                className="text-foreground/40 underline underline-offset-2 hover:text-danger disabled:opacity-50"
                 aria-label={`不用这条${TYPE_LABEL[s.type] ?? ""}建议`}
               >
                 不用
@@ -82,7 +82,7 @@ export function InboxSuggestionChips({
         ))}
       </ul>
       {state?.error && (
-        <p role="alert" className="mt-1 text-red-700 dark:text-red-400">
+        <p role="alert" className="mt-1 text-danger">
           {state.error}
         </p>
       )}
@@ -117,7 +117,7 @@ export function InboxSuggestButton() {
         </p>
       )}
       {state?.error && (
-        <p role="alert" className="text-xs text-red-700 dark:text-red-400">
+        <p role="alert" className="text-xs text-danger">
           {state.error}
         </p>
       )}

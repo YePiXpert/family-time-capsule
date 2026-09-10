@@ -145,7 +145,7 @@ export function FactSection({
                   <input type="hidden" name="factId" value={f.id} />
                   <input type="hidden" name="memoryEventId" value={memoryEventId} />
                   <input type="hidden" name="status" value="rejected" />
-                  <button className="rounded border border-foreground/15 px-2 py-0.5 text-foreground/60 hover:border-red-500/40">
+                  <button className="rounded border border-foreground/15 px-2 py-0.5 text-foreground/60 hover:border-danger/40">
                     否决
                   </button>
                 </form>
@@ -172,7 +172,7 @@ export function FactSection({
           {addPending ? "添加中…" : "添加事实"}
         </button>
         {addState?.error && (
-          <span className="text-xs text-red-700 dark:text-red-400">{addState.error}</span>
+          <span className="text-xs text-danger">{addState.error}</span>
         )}
       </form>}
     </section>

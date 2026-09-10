@@ -12,7 +12,7 @@ export function AddPersonForm() {
   return (
     <form action={formAction} className="mt-4 flex flex-col gap-3">
       {state?.error && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {state.error}
         </p>
       )}

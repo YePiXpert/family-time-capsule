@@ -55,7 +55,7 @@ function Control({ kind, id, reviewNames = true, assetOperation = "transcribe", 
     <details open={open} className="rounded-xl border border-line p-3 text-sm" onToggle={event => { setOpen(event.currentTarget.open); if (event.currentTarget.open) setBusy(false); }}>
       <summary className="min-h-11 cursor-pointer py-2">{transcription ? "转成文字" : defaultOpen ? "整理进度与建议" : "AI 帮我起名"}</summary>
       <p className="my-2 text-muted">仅处理你选择的素材，原件可随时查看。标题、人物、时间和合并均由你确认。</p>
-      {error ? <p role="alert" className="my-2 text-red-700 dark:text-red-300">{error}</p> : null}
+      {error ? <p role="alert" className="my-2 text-danger">{error}</p> : null}
       {review ? <>
         <p className="my-2">{!review.settings.configured ? "AI 未配置" : !capability?.available ? "所需模型未配置" : !capability.consented ? "等待管理员同意外部处理" : `${review.settings.provider} · ${capability.model}`}</p>
         {review.settings.configured && !review.settings.workerAvailable ? <p>后台暂不可用，任务会保留等待；记录与播放仍可使用。</p> : null}

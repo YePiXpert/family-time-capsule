@@ -13,6 +13,7 @@ import type {
 } from "@/mobile/src/books/types";
 import { BOOK_TEMPLATES, defaultBookLayout } from "@/mobile/src/books/types";
 import { BookPreview } from "./book-preview";
+import { Icon } from "./ui/icons";
 const field =
   "min-h-11 w-full rounded-xl border border-line bg-surface px-3 py-2";
 const errorMessages: Record<string, string> = {
@@ -64,7 +65,17 @@ export function BookShelf() {
     </div>
     {creating ? <WorkCreator kind="book" onCancel={() => setCreating(false)} /> : null}
     {error ? <p role="alert">{error}<button className="ui-text-link ml-3" onClick={() => void load()}>重试</button></p> : null}
-    <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{page?.entries.map(book => <li key={book.id}><Link href={`/books/${book.id}`} className="block rounded-2xl border border-line p-5"><h2 className="text-xl">{book.title}</h2><p className="mt-2 text-sm text-muted">{book.subtitle}</p></Link></li>)}</ol>
+    <ol className="book-shelf-grid">{page?.entries.map(book => <li key={book.id} className="min-w-0"><Link href={`/books/${book.id}`} className="book-cover-link" aria-label={book.title}>
+      <span className="book-cover">
+        {book.coverAssetId ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={`/api/media/${book.coverAssetId}`} alt="" loading="lazy" />
+        ) : (
+          <span className="book-cover-fallback" aria-hidden="true"><Icon name="book" size={28} /><span className="book-cover-initial">{book.title.trim().slice(0, 1) || "书"}</span></span>
+        )}
+      </span>
+      <span className="book-cover-meta block"><span className="book-cover-title">{book.title}</span>{book.subtitle ? <span className="book-cover-sub block">{book.subtitle}</span> : null}</span>
+    </Link></li>)}</ol>
     {page && !page.entries.length ? <p className="text-muted">{deleted ? "回收站没有作品。" : "选一些记忆，做成第一本家庭书。"}</p> : null}
     {page?.nextCursor ? <button className="ui-button-secondary" onClick={() => void load(page.nextCursor!)}>更多作品</button> : null}
   </section>;

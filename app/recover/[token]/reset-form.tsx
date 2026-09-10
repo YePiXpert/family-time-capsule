@@ -17,7 +17,7 @@ export function ResetForm({ token }: { token: string }) {
       <div className="mt-8 flex flex-col gap-4">
         <p
           role="status"
-          className="rounded-lg border border-emerald-700/30 bg-emerald-500/10 p-3 text-sm leading-6"
+          className="inline-notice inline-notice-success"
         >
           {state.success}
         </p>
@@ -35,7 +35,7 @@ export function ResetForm({ token }: { token: string }) {
       {state?.error ? (
         <p
           role="alert"
-          className="rounded-lg border border-red-800/30 bg-red-500/10 p-3 text-sm"
+          className="inline-notice inline-notice-danger"
         >
           {state.error}
         </p>

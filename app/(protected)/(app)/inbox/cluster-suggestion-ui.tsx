@@ -87,7 +87,7 @@ export function ClusterSuggestionPanel({
         </p>
       )}
       {scanState?.error && (
-        <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-400">
+        <p role="alert" className="mt-2 text-sm text-danger">
           {scanState.error}
         </p>
       )}
@@ -236,7 +236,7 @@ function ClusterRow({
           </>
         ) : null}
         {state?.error && (
-          <span className="text-xs text-red-700 dark:text-red-400">
+          <span className="text-xs text-danger">
             {state.error}
           </span>
         )}

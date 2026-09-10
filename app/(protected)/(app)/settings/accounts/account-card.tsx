@@ -32,8 +32,8 @@ function ResultMessage({
       role={state.error ? "alert" : "status"}
       className={
         state.error
-          ? "text-sm leading-6 text-red-700 dark:text-red-300"
-          : "text-sm leading-6 text-emerald-700 dark:text-emerald-300"
+          ? "text-sm leading-6 text-danger"
+          : "text-sm leading-6 text-success"
       }
     >
       {state.error ?? state.success}
@@ -79,15 +79,15 @@ export function AccountCard({
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-medium">{account.name}</h2>
             {account.isCurrentUser && (
-              <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs">
+              <span className="status-badge status-badge-accent">
                 当前账号
               </span>
             )}
             <span
               className={
                 account.disabledAt
-                  ? "rounded-full border border-red-700/25 bg-red-500/10 px-2 py-0.5 text-xs text-red-800 dark:text-red-300"
-                  : "rounded-full border border-emerald-700/25 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-800 dark:text-emerald-300"
+                  ? "status-badge status-badge-danger"
+                  : "status-badge status-badge-success"
               }
             >
               {account.disabledAt ? "已停用" : "可登录"}
@@ -191,8 +191,8 @@ export function AccountCard({
             }
             className={
               account.disabledAt
-                ? "min-h-11 rounded-lg border border-emerald-700/30 px-4 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300"
-                : "min-h-11 rounded-lg border border-red-700/30 px-4 py-2 text-sm font-medium text-red-800 transition-colors hover:bg-red-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+                ? "min-h-11 rounded-lg border border-success/30 px-4 py-2 text-sm font-medium text-success transition-colors hover:bg-success-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+                : "min-h-11 rounded-lg border border-danger/30 px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
             }
           >
             {accountPending

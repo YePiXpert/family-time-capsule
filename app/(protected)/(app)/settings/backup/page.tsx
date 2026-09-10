@@ -46,7 +46,7 @@ export default async function BackupSettingsPage() {
         {status.configured ? (
           <p className="text-sm">
             目标：<span className="font-medium">{status.hostLabel}</span>
-            <span className="ml-2 rounded border border-emerald-700/40 px-1.5 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">
+            <span className="status-badge status-badge-success ml-2">
               已配置
             </span>
           </p>
@@ -82,10 +82,10 @@ export default async function BackupSettingsPage() {
                   <span
                     className={
                       run.status === "succeeded"
-                        ? "rounded border border-emerald-700/40 px-1.5 py-0.5 text-xs text-emerald-700 dark:text-emerald-400"
+                        ? "status-badge status-badge-success"
                         : run.status === "failed"
-                          ? "rounded border border-red-700/40 px-1.5 py-0.5 text-xs text-red-700 dark:text-red-400"
-                          : "rounded border border-foreground/15 px-1.5 py-0.5 text-xs"
+                          ? "status-badge status-badge-danger"
+                          : "status-badge"
                     }
                   >
                     {STATUS_LABEL[run.status] ?? run.status}
@@ -111,7 +111,7 @@ export default async function BackupSettingsPage() {
                   </p>
                 )}
                 {run.error && (
-                  <p className="mt-1 text-xs text-red-700 dark:text-red-400">{run.error}</p>
+                  <p className="mt-1 text-xs text-danger">{run.error}</p>
                 )}
               </li>
             ))}

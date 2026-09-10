@@ -23,7 +23,7 @@ export function CreateInvitationForm({
         <p
           id="create-invitation-error"
           role="alert"
-          className="rounded-lg border border-red-800/30 bg-red-500/10 p-3 text-sm leading-6 text-red-800 dark:text-red-300"
+          className="inline-notice inline-notice-danger text-sm leading-6"
         >
           {state.error}
         </p>

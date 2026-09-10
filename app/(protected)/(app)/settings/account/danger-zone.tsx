@@ -60,7 +60,7 @@ export function ExportStepUpPanel({ needsStepUp }: { needsStepUp: boolean }) {
         </button>
       </div>
       {state?.error ? (
-        <p role="alert" className="text-sm leading-6 text-red-700 dark:text-red-300">
+        <p role="alert" className="text-sm leading-6 text-danger">
           {state.error}
         </p>
       ) : null}
@@ -80,7 +80,7 @@ export function DangerZone({ isOwner }: { isOwner: boolean }) {
   return (
     <section
       aria-label="账号与家庭变更"
-      className="mt-10 rounded-2xl border border-red-800/20 bg-red-500/[0.03] p-5 sm:p-6"
+      className="mt-10 rounded-2xl border border-danger/30 bg-danger-soft p-5 sm:p-6"
     >
       <h2 className="text-lg font-medium">退出与删除</h2>
       <p className="mt-1 text-sm leading-6 text-foreground/60">
@@ -102,13 +102,13 @@ export function DangerZone({ isOwner }: { isOwner: boolean }) {
           </p>
         ) : null}
         {leaveState?.error ? (
-          <p role="alert" className="text-sm leading-6 text-red-700 dark:text-red-300">
+          <p role="alert" className="text-sm leading-6 text-danger">
             {leaveState.error}
           </p>
         ) : null}
       </form>
 
-      <form action={deleteFormAction} className="mt-6 flex flex-col gap-3 border-t border-red-800/15 pt-5">
+      <form action={deleteFormAction} className="mt-6 flex flex-col gap-3 border-t border-danger/30 pt-5">
         <p className="text-sm font-medium">删除我的账号</p>
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
@@ -132,13 +132,13 @@ export function DangerZone({ isOwner }: { isOwner: boolean }) {
           <button
             type="submit"
             disabled={deletePending}
-            className="min-h-11 shrink-0 rounded-lg border border-red-700/30 px-4 py-2 text-sm font-medium text-red-800 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+            className="min-h-11 shrink-0 rounded-lg border border-danger/30 px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50"
           >
             {deletePending ? "删除中…" : "永久删除账号"}
           </button>
         </div>
         {deleteState?.error ? (
-          <p role="alert" className="text-sm leading-6 text-red-700 dark:text-red-300">
+          <p role="alert" className="text-sm leading-6 text-danger">
             {deleteState.error}
           </p>
         ) : null}

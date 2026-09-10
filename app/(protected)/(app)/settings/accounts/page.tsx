@@ -38,7 +38,7 @@ export default async function AccountsPage() {
       <p className="mt-2 max-w-2xl text-base leading-7 text-foreground/70">
         角色决定账号能做什么。停用会立即撤销该账号的全部登录会话，但保留历史署名和家人档案；恢复后，对方可以用原密码重新登录。
       </p>
-      <p className="mt-3 rounded-xl border border-amber-700/25 bg-amber-500/10 p-4 text-sm leading-6 text-amber-900 dark:text-amber-200">
+      <p className="mt-3 inline-notice inline-notice-warning text-sm leading-6">
         家庭始终需要至少一名可用管理员。要调整最后一名管理员，请先将另一账号设为管理员。
       </p>
 

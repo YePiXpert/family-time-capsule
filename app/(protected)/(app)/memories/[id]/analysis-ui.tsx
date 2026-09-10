@@ -23,7 +23,7 @@ function StatusLabel({
   }
   if (job?.status === "failed") {
     return (
-      <span className="rounded-full border border-red-800/30 px-3 py-1 text-xs text-red-800 dark:text-red-300">
+      <span className="status-badge status-badge-danger">
         {aiJobFailureMessage(job.lastErrorCode)}
       </span>
     );
@@ -123,7 +123,7 @@ export function ImageAnalysisSection({
             </p>
           )}
           {state?.error && (
-            <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-400">
+            <p role="alert" className="mt-2 text-sm text-danger">
               {state.error}
             </p>
           )}

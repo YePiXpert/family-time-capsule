@@ -43,16 +43,16 @@ function CreateForm({ collectionId }: { collectionId: string }) {
         </button>
       </form>
       {state?.error ? (
-        <p role="alert" className="text-sm leading-6 text-red-700 dark:text-red-300">
+        <p role="alert" className="text-sm leading-6 text-danger">
           {state.error}
         </p>
       ) : null}
       {state?.invitePath ? (
-        <div className="rounded-xl border border-amber-700/30 bg-amber-500/10 p-4 text-sm">
-          <p className="font-medium text-amber-900 dark:text-amber-200">
+        <div className="inline-notice inline-notice-warning text-sm">
+          <p className="font-medium">
             只读链接已生成（只显示这一次，请立即复制给家人）：
           </p>
-          <code className="mt-2 block break-all rounded-lg border border-amber-700/20 bg-background/60 p-2 text-xs">
+          <code className="mt-2 block break-all rounded-lg border border-line bg-background/60 p-2 text-xs">
             {state.invitePath}
           </code>
         </div>
@@ -79,7 +79,7 @@ function RevokeButton({
       <button
         type="submit"
         disabled={pending}
-        className="min-h-11 rounded-lg border border-red-700/30 px-3 py-1.5 text-xs font-medium text-red-800 transition-colors hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+        className="min-h-11 rounded-lg border border-danger/30 px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
       >
         {pending ? "收回中…" : state?.revoked ? "已收回" : "收回链接"}
       </button>
@@ -124,7 +124,7 @@ export function ReadGrantPanel({
                   {grant.lastViewedAt ? ` · 最近 ${dateFormatter.format(grant.lastViewedAt)}` : ""}
                 </span>
                 {grant.revokedAt ? (
-                  <span className="ml-2 rounded-full border border-red-700/25 bg-red-500/10 px-2 py-0.5 text-xs text-red-800 dark:text-red-300">
+                  <span className="status-badge status-badge-danger ml-2">
                     已收回
                   </span>
                 ) : null}

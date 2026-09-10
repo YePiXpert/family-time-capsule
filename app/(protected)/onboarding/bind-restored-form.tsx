@@ -17,7 +17,7 @@ export function BindRestoredForm({
   return (
     <form action={formAction} className="mt-8 flex flex-col gap-4">
       {state?.error && (
-        <p role="alert" className="rounded-lg border border-red-800/30 bg-red-500/10 p-3 text-sm">
+        <p role="alert" className="inline-notice inline-notice-danger text-sm">
           {state.error}
         </p>
       )}

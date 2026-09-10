@@ -6,7 +6,6 @@ import { getAppVersion } from "@/lib/export/service";
 import { listRecentAudit } from "@/lib/audit/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { hasRecentAuth } from "@/lib/auth/step-up";
-import { PageHeader } from "@/components/page-header";
 import { DisplayModeToggle } from "@/components/display-mode-toggle";
 import { getDisplayMode } from "@/lib/display-mode.server";
 import { DangerZone, ExportStepUpPanel } from "./account/danger-zone";
@@ -33,6 +32,14 @@ const AUDIT_LABEL: Record<string, string> = {
   "ai.job_retried": "重试 AI 后台任务",
 };
 
+const roleLabels: Record<string, string> = {
+  owner: "家庭管理员",
+  admin: "管理员",
+  editor: "记录者",
+  contributor: "记录者",
+  viewer: "读者",
+};
+
 export default async function SettingsPage(props: PageProps<"/settings">) {
   const { familyId, userName, role } = await requireFamily();
   const searchParams = await props.searchParams;
@@ -51,11 +58,14 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
 
   return (
     <main className="page-container settings-page max-w-4xl">
-      <PageHeader
-        eyebrow="陪你一起长大"
-        title="我的"
-        description="管理家人、设备和资料。"
-      />
+      {/* 身份卡：家人先看到自己，再看到设置 */}
+      <div className="settings-identity">
+        <span aria-hidden="true" className="settings-identity-avatar">{(userName ?? "我").trim().slice(0, 1) || "我"}</span>
+        <div className="min-w-0">
+          <h1 className="settings-identity-name">{userName ?? "我的"}</h1>
+          <p className="settings-identity-family">{[family?.name, roleLabels[role] ?? null].filter(Boolean).join(" · ") || "管理家人、设备和资料。"}</p>
+        </div>
+      </div>
 
       {searchParams?.accountRoleUpdated === "1" && (
         <p
@@ -68,13 +78,13 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
       {searchParams?.authorizationChanged === "1" && (
         <p
           role="alert"
-          className="mt-6 rounded-lg border border-amber-700/30 bg-amber-500/10 p-3 text-sm leading-6 text-amber-900 dark:text-amber-200"
+          className="inline-notice inline-notice-warning mt-6 text-sm leading-6"
         >
           你的管理员权限已经变化，账号管理页已关闭，本次没有执行任何修改。
         </p>
       )}
 
-      <details name="settings-section" className="mt-6 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">家人和账号</summary>
+      <details name="settings-section" className="mt-4"><summary>家人和账号</summary>
         <dl className="mt-3 grid gap-x-8 gap-y-2 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-4 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-foreground/50">家庭名称</dt>
@@ -105,7 +115,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
             {canManageAccounts && (
               <Link
                 href="/settings/accounts"
-                className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="ui-button-secondary"
               >
                 管理现有账号
               </Link>
@@ -113,7 +123,7 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
             {canInvite && (
               <Link
                 href="/settings/invitations"
-                className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="ui-button-secondary"
               >
                 管理账号邀请
               </Link>
@@ -123,13 +133,13 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
             href="/settings/security"
-            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="ui-button-secondary"
           >
             账号安全（两步验证 / 通行密钥）
           </Link>
           <Link
             href="/settings/sessions"
-            className="inline-flex min-h-11 items-center rounded-lg border border-foreground/20 px-4 py-2 text-sm font-medium transition-colors hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="ui-button-secondary"
           >
             活动设备与会话
           </Link>
@@ -175,9 +185,9 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
       </details>
       </details>
 
-      <details name="settings-section" className="mt-3 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">存储与同步</summary><div className="flex flex-wrap gap-3"><Link href="/library" className="ui-button-secondary">资料库</Link><Link href="/imports" className="ui-button-secondary">导入进度</Link><Link href="/trash" className="ui-button-secondary">回收站</Link></div></details>
-      {canExport ? <details name="settings-section" className="mt-3 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">备份与恢复</summary><div className="flex flex-wrap gap-3"><ExportStepUpPanel needsStepUp={exportNeedsStepUp} /><Link href="/settings/backup" className="ui-button-secondary">家庭备份与恢复</Link></div></details> : null}
-      <details name="settings-section" className="mt-3 rounded-2xl border border-line p-4"><summary className="min-h-11 cursor-pointer py-2 font-semibold">显示与辅助</summary><DisplayModeToggle mode={displayMode} />{canReviewAi ? <Link href="/settings/ai" className="ui-button-secondary mt-4">AI 整理与隐私</Link> : null}</details>
+      <details name="settings-section" className="mt-3"><summary>存储与同步</summary><div className="flex flex-wrap gap-3"><Link href="/library" className="ui-button-secondary">资料库</Link><Link href="/imports" className="ui-button-secondary">导入进度</Link><Link href="/trash" className="ui-button-secondary">回收站</Link></div></details>
+      {canExport ? <details name="settings-section" className="mt-3"><summary>备份与恢复</summary><div className="flex flex-wrap gap-3"><ExportStepUpPanel needsStepUp={exportNeedsStepUp} /><Link href="/settings/backup" className="ui-button-secondary">家庭备份与恢复</Link></div></details> : null}
+      <details name="settings-section" className="mt-3"><summary>显示与辅助</summary><DisplayModeToggle mode={displayMode} />{canReviewAi ? <Link href="/settings/ai" className="ui-button-secondary mt-4">AI 整理与隐私</Link> : null}</details>
 
     </main>
   );

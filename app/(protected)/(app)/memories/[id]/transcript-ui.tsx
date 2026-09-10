@@ -36,7 +36,7 @@ function StatusLabel({
   }
   if (job?.status === "failed") {
     return (
-      <span className="rounded-full border border-red-800/30 px-3 py-1 text-xs text-red-800 dark:text-red-300">
+      <span className="status-badge status-badge-danger">
         {aiJobFailureMessage(job.lastErrorCode)}
       </span>
     );
@@ -159,7 +159,7 @@ export function TranscriptSection({
             {requesting ? "请求中…" : "AI 转录"}
           </button>
           {requestState?.error && (
-            <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-400">
+            <p role="alert" className="mt-2 text-sm text-danger">
               {requestState.error}
             </p>
           )}
@@ -208,7 +208,7 @@ function TranscriptEditor({ asset, memoryEventId, transcript }: { asset: AssetRo
             {editing ? "保存中…" : "保存修订"}
           </button>
           {editState?.error && (
-            <p role="alert" className="text-xs text-red-700 dark:text-red-400">
+            <p role="alert" className="text-xs text-danger">
               {editState.error}
             </p>
           )}

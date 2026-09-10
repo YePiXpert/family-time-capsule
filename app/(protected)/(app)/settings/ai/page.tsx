@@ -74,9 +74,9 @@ export default async function AiSettingsPage() {
       {!disclosure.valid ? (
         <section
           role="alert"
-          className="mt-8 rounded-xl border border-red-800/30 bg-red-500/10 p-4"
+          className="inline-notice inline-notice-danger mt-8"
         >
-          <h2 className="font-medium text-red-800 dark:text-red-300">
+          <h2 className="font-medium text-danger">
             AI 配置无效
           </h2>
           <p className="mt-1 text-sm leading-6 text-foreground/70">
@@ -203,7 +203,7 @@ export default async function AiSettingsPage() {
                   {job.jobType}
                 </p>
                 {job.lastErrorCode && (
-                  <p className="mt-2 text-xs text-red-800 dark:text-red-300">
+                  <p className="mt-2 text-xs text-danger">
                     错误码：{job.lastErrorCode}
                   </p>
                 )}

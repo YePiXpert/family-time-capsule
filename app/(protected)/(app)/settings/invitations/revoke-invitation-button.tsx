@@ -15,12 +15,12 @@ export function RevokeInvitationButton({
       <button
         type="submit"
         disabled={pending}
-        className="min-h-11 rounded-lg border border-red-800/30 px-3 py-2 text-sm text-red-800 transition-colors hover:bg-red-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300"
+        className="min-h-11 rounded-lg border border-danger/30 px-3 py-2 text-sm text-danger transition-colors hover:bg-danger-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? "撤销中…" : "撤销邀请"}
       </button>
       {state?.error && (
-        <span role="alert" className="max-w-56 text-right text-xs text-red-700 dark:text-red-300">
+        <span role="alert" className="max-w-56 text-right text-xs text-danger">
           {state.error}
         </span>
       )}
