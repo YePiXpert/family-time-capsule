@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { ensureBootstrap, ensureLogin } from "./helpers";
+import { journalColors } from "../../mobile/src/design/tokens";
+
+const rgb = (hex: string) => `rgb(${hex.slice(1).match(/../g)!.map(channel => parseInt(channel, 16)).join(", ")})`;
 
 /**
  * NAV-9 可访问性收口（GLM-C）：
@@ -89,7 +92,7 @@ test("journal colors survive CSP; layouts remain readable from phone to desktop"
       headings: document.querySelectorAll("main h1").length,
       motion: getComputedStyle(document.querySelector(".growth-hero")!).animationDuration,
     }));
-    expect(appearance.background).toBe("rgb(255, 250, 245)");
+    expect(appearance.background).toBe(rgb(journalColors.paper));
     expect(appearance.overflow).toBe(false);
     expect(appearance.headings).toBe(1);
     expect(parseFloat(appearance.motion)).toBeLessThanOrEqual(0.001);
@@ -109,8 +112,9 @@ test("production glass renders in Chromium and respects reduced transparency", a
   expect(await page.locator(".bottom-navigation").evaluate(node => getComputedStyle(node).backdropFilter)).toBe("none");
   const cdp = await context.newCDPSession(page);
   await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
+  const cardFill = rgb(journalColors.card);
   for (const surface of await surfaces.all()) {
     // Chromium applies a changed media preference on its next rendering frame.
-    await expect.poll(() => surface.evaluate(node => ({ blur: getComputedStyle(node).backdropFilter, fill: getComputedStyle(node).backgroundColor }))).toEqual({ blur: "none", fill: "rgb(255, 253, 249)" });
+    await expect.poll(() => surface.evaluate(node => ({ blur: getComputedStyle(node).backdropFilter, fill: getComputedStyle(node).backgroundColor }))).toEqual({ blur: "none", fill: cardFill });
   }
 });

@@ -12,6 +12,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import JSZip from "jszip";
+import { journalColors } from "../../mobile/src/design/tokens";
 const race = vi.hoisted(() => ({ afterMedia: null as (() => void) | null, afterStat: null as (() => void) | null, afterArtifact: null as (() => void) | null, media: null as Response | null }));
 vi.mock("@/app/api/media/[assetId]/route", async importOriginal => {
   const actual = await importOriginal<typeof import("@/app/api/media/[assetId]/route")>();
@@ -399,7 +400,7 @@ it("extracted file:// package renders images and local CSS with networking disab
       await page.evaluate(
         () => getComputedStyle(document.body).backgroundColor,
       ),
-    ).toBe("rgb(255, 253, 249)");
+    ).toBe(`rgb(${journalColors.card.slice(1).match(/../g)!.map(hex => parseInt(hex, 16)).join(", ")})`);
     expect(await page.evaluate(() => "leak" in window)).toBe(false);
     expect(network).toEqual([]);
     await page.screenshot({
