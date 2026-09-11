@@ -150,3 +150,10 @@ jobs:
 
       - name: Isolated 1.1 volume upgrade and legacy archive restore
         run: node --conditions=react-server --import tsx scripts/verify-upgrade12.mts
+
+      - name: Build trusted snapshot verification image from this commit
+        run: docker build -f docker/Dockerfile -t ftc-instance-snapshot:ci .
+      - name: Full instance snapshot with isolated Docker and production HTTP
+        run: node --conditions=react-server --import tsx scripts/verify-instance-snapshot.mts
+        env:
+          FTC_INSTANCE_TEST_IMAGE: ftc-instance-snapshot:ci

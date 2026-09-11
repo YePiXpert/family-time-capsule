@@ -201,8 +201,8 @@
 | BKP-5 | 保留策略只清过期非唯一副本;容量不足告警不停备份 | — | 自动化通过 | cleanup.sh |
 | BKP-6 | 检查分级:生成/上传/结构校验/原件校验/隔离恢复通过 | — | 自动化通过 | roundtrip tests |
 | BKP-7 | 升级真实维护状态机覆盖app写API/上传finalize/worker | 不靠sleep证明 | 自动化通过(维护503+停容器) | maintenance profile |
-| BKP-8 | 旧备份恢复重新应用已知撤权/删除记录 | tombstone 重放 | 部分实现(M3-C 原件删除记录可导出恢复；旧快照后的撤权/删除 reconciliation 仍待 M9) | lib/restore; lib/assets/deletion.ts |
-| BKP-9 | restore默认新目录/卷;结构/哈希/关系切换前完成;失败无半恢复 | — | 自动化通过 | restore.sh; scripts/restore.ts |
+| BKP-8 | 旧备份恢复重新应用已知撤权/删除记录 | tombstone 重放 | 部分实现(实例恢复保留快照内归属/停用/删除并失效旧会话、链接及同步游标；旧快照后的撤权/删除 reconciliation 仍未完成) | lib/restore; lib/assets/deletion.ts |
+| BKP-9 | restore默认新目录/卷;结构/哈希/关系切换前完成;失败无半恢复 | — | 自动化通过 | scripts/ops/lib/snapshot.py; scripts/verify-instance-snapshot.mts; tests/ops/snapshot_test.py; scripts/restore.ts |
 | BKP-10 | 离线交接包:版本/数据位置/校验/域名迁移/管理员恢复/密钥指引 | 密钥与阅读包分开 | 未实现 | — |
 | BKP-11 | 禁止 docker system prune/volume prune/down -v/含糊 rm -rf | — | 自动化通过(never present) | scripts/ops |
 
