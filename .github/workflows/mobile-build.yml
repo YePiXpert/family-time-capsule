@@ -216,7 +216,7 @@ jobs:
             -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" \
             -configuration Release -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
-            -arch "$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
             -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO \
             build > build/simulator-build.log 2>&1; then
             tail -n 160 build/simulator-build.log
