@@ -7,6 +7,7 @@ import { listRecentAudit } from "@/lib/audit/service";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import { hasRecentAuth } from "@/lib/auth/step-up";
 import { DisplayModeToggle } from "@/components/display-mode-toggle";
+import { CollapsingPageHeader } from "@/components/collapsing-page-header";
 import { getDisplayMode } from "@/lib/display-mode.server";
 import { DangerZone, ExportStepUpPanel } from "./account/danger-zone";
 
@@ -59,13 +60,15 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
   return (
     <main className="page-container settings-page max-w-4xl">
       {/* 身份卡：家人先看到自己，再看到设置 */}
-      <div className="settings-identity">
-        <span aria-hidden="true" className="settings-identity-avatar">{(userName ?? "我").trim().slice(0, 1) || "我"}</span>
-        <div className="min-w-0">
-          <h1 className="settings-identity-name">{userName ?? "我的"}</h1>
-          <p className="settings-identity-family">{[family?.name, roleLabels[role] ?? null].filter(Boolean).join(" · ") || "管理家人、设备和资料。"}</p>
+      <CollapsingPageHeader compactTitle={userName ?? "我的"}>
+        <div className="settings-identity">
+          <span aria-hidden="true" className="settings-identity-avatar">{(userName ?? "我").trim().slice(0, 1) || "我"}</span>
+          <div className="min-w-0">
+            <h1 className="settings-identity-name">{userName ?? "我的"}</h1>
+            <p className="settings-identity-family">{[family?.name, roleLabels[role] ?? null].filter(Boolean).join(" · ") || "管理家人、设备和资料。"}</p>
+          </div>
         </div>
-      </div>
+      </CollapsingPageHeader>
 
       {searchParams?.accountRoleUpdated === "1" && (
         <p

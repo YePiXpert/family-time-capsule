@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/empty-state";
 import { CollectionSelection } from "@/components/collection-selection";
 import { Icon } from "@/components/ui/icons";
 import { MemoryCard } from "@/components/memory-card";
+import { CollapsingPageHeader } from "@/components/collapsing-page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -117,10 +118,16 @@ export default async function TimelinePage({
 
   return (
     <main className="page-container growth-page">
-      <section className="growth-hero" aria-label="成长概览">
-        <div className="min-w-0 flex-1"><p className="page-eyebrow">一点一滴，慢慢长大</p><h1>{growth.title}</h1><p className="growth-dedication">留下今天，送给长大的你。</p>{growth.age ? <p className="growth-age">{growth.age}</p> : null}</div>
-        <Image src={keepsake} alt="" className="growth-hero-art" sizes="(max-width: 639px) 112px, 280px" />
-      </section>
+      <CollapsingPageHeader
+        heroClassName="growth-hero"
+        heroAriaLabel="成长概览"
+        eyebrow="一点一滴，慢慢长大"
+        title={growth.title}
+        description="留下今天，送给长大的你。"
+        compactTitle="成长"
+        heroExtra={growth.age ? <p className="growth-age">{growth.age}</p> : null}
+        heroArt={<Image src={keepsake} alt="" className="growth-hero-art" sizes="(max-width: 639px) 112px, 280px" />}
+      />
       {stages.length ? <nav aria-label="按月龄回看" className="growth-stage-nav">
         <Link href={queryHref(params, { stage: undefined, cursor: undefined, month: undefined, year: undefined })} aria-current={!stage ? "page" : undefined} className={!stage ? "ui-button-primary" : "ui-button-secondary"}>全部</Link>
         {stages.map(item => <Link key={item.key} href={queryHref(params, { stage: item.key, cursor: undefined, month: undefined, year: undefined })} aria-current={stage?.key === item.key ? "page" : undefined} className={stage?.key === item.key ? "ui-button-primary" : "ui-button-secondary"}>{item.label}</Link>)}
@@ -141,11 +148,11 @@ export default async function TimelinePage({
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5" action="/timeline">
           <input type="hidden" name="stage" value={stage?.key ?? ""} /><input type="hidden" name="important" value={value(params, "important")} />
           <input type="hidden" name="collection" value={value(params, "collection")} />
-          <label className="text-sm font-medium">跳到月份<input type="month" name="month" defaultValue={value(params, "month")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3" /></label>
-          <label className="text-sm font-medium">跳到年份<select name="year" defaultValue={monthActive ? "" : value(params, "year")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">全部年份</option>{facets.years.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label>
-          <label className="text-sm font-medium">人物<select name="person" defaultValue={personId ?? ""} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有家人</option>{people.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select></label>
-          <label className="text-sm font-medium">媒体<select name="media" defaultValue={mediaType ?? ""} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有类型</option><option value="image">照片</option><option value="video">视频</option><option value="audio">录音</option><option value="document">文档</option></select></label>
-          <label className="text-sm font-medium">标签<select name="tag" defaultValue={value(params, "tag")} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-background px-3"><option value="">所有标签</option>{facets.tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+          <label className="text-sm font-medium">跳到月份<input type="month" name="month" defaultValue={value(params, "month")} className="ui-input mt-1" /></label>
+          <label className="text-sm font-medium">跳到年份<select name="year" defaultValue={monthActive ? "" : value(params, "year")} className="ui-input mt-1"><option value="">全部年份</option>{facets.years.map((year) => <option key={year} value={year}>{year} 年</option>)}</select></label>
+          <label className="text-sm font-medium">人物<select name="person" defaultValue={personId ?? ""} className="ui-input mt-1"><option value="">所有家人</option>{people.map((person) => <option key={person.id} value={person.id}>{person.displayName}</option>)}</select></label>
+          <label className="text-sm font-medium">媒体<select name="media" defaultValue={mediaType ?? ""} className="ui-input mt-1"><option value="">所有类型</option><option value="image">照片</option><option value="video">视频</option><option value="audio">录音</option><option value="document">文档</option></select></label>
+          <label className="text-sm font-medium">标签<select name="tag" defaultValue={value(params, "tag")} className="ui-input mt-1"><option value="">所有标签</option>{facets.tags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label>
           <div className="flex gap-2 sm:col-span-2 lg:col-span-5"><button type="submit" className="ui-button-primary">查看</button>{hasFilters ? <Link href="/timeline" className="ui-button-secondary">清除筛选</Link> : null}</div>
         </form>
           {hasFamilyCapability(role, "event:write") ? <CollectionSelection summaryLabel="选择记忆" memories={entries.map(e=>({id:e.event.id,title:e.event.title}))} initialCollection={value(params,"collection")} /> : null}

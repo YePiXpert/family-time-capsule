@@ -28,15 +28,16 @@ const MILESTONE_LABEL: Record<string, string> = {
 };
 
 export function MemoryCard({ id, title, bodyText, dateLabel, ageLabel, location, people = [], assetCount = 0, cover, href, compact = false, milestoneType, isPinned = false }: MemoryCardProps) {
+  const detailHref = href ?? `/memories/${id}`;
   return (
-    <Link href={href ?? `/memories/${id}`} className={`memory-card ${compact ? "memory-card-compact" : ""}`}>
-      <div className="memory-card-media">
+    <div className={`memory-card ${compact ? "memory-card-compact" : ""}`}>
+      <Link href={detailHref} className="memory-card-media" aria-hidden="true" tabIndex={-1}>
         {cover?.type === "image" || (cover && !cover.type) ? (
           <MediaImage assetId={cover.assetId} mimeType={cover.mimeType} thumbAssetId={cover.thumbAssetId} alt="" className="h-full w-full" imgClassName="h-full w-full object-cover" loading="lazy" />
         ) : (
           <span className="memory-card-placeholder"><Icon name={cover?.type === "audio" ? "audio" : cover?.type === "video" ? "video" : "archive"} size={28} /></span>
         )}
-      </div>
+      </Link>
       <div className="min-w-0 flex-1 p-4">
         {milestoneType || isPinned ? (
           <p className="mb-1 flex flex-wrap gap-1.5 text-[0.68rem] font-semibold tracking-wide text-accent">
@@ -45,12 +46,18 @@ export function MemoryCard({ id, title, bodyText, dateLabel, ageLabel, location,
             {milestoneType ? <span>{MILESTONE_LABEL[milestoneType] ?? "成长节点"}</span> : null}
           </p>
         ) : null}
-        <p className="text-xs font-medium text-accent">{dateLabel}{ageLabel ? ` · ${ageLabel}` : ""}</p>
-        <h3 className="mt-1 line-clamp-2 text-base font-semibold leading-6 sm:text-lg">{title}</h3>
-        {bodyText && bodyText !== title ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap leading-7 text-foreground">{bodyText}</p> : null}
-        {location ? <p className="mt-1 truncate text-sm text-muted">{location}</p> : null}
-        <p className="mt-2 truncate text-xs text-faint">{people.join(" · ")}{people.length && assetCount ? " · " : ""}{assetCount ? `${assetCount} 份素材` : ""}</p>
+        <Link href={detailHref} className="memory-card-body">
+          <p className="text-xs font-medium text-accent">{dateLabel}{ageLabel ? ` · ${ageLabel}` : ""}</p>
+          <h3 className="mt-1 line-clamp-2 text-base font-semibold leading-6 sm:text-lg">{title}</h3>
+          {bodyText && bodyText !== title ? <p className="mt-2 line-clamp-3 whitespace-pre-wrap leading-7 text-foreground">{bodyText}</p> : null}
+          {location ? <p className="mt-1 truncate text-sm text-muted">{location}</p> : null}
+          <p className="mt-2 truncate text-xs text-faint">{people.join(" · ")}{people.length && assetCount ? " · " : ""}{assetCount ? `${assetCount} 份素材` : ""}</p>
+        </Link>
       </div>
-    </Link>
+      <Link href={detailHref} className="memory-card-actions glass-overlay" aria-hidden="true" tabIndex={-1}>
+        <span className="memory-card-actions-more"><Icon name="more" size={18} /></span>
+        <span className="memory-card-actions-view"><Icon name="chevron-right" size={18} /></span>
+      </Link>
+    </div>
   );
 }

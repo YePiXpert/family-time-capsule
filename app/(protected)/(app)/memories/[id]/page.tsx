@@ -17,7 +17,7 @@ import { utcToZonedWallTimeInput } from "@/lib/metadata/time";
 import { MediaReader } from "@/components/media-reader";
 import { MemoryCard } from "@/components/memory-card";
 import { CollectionSelection } from "@/components/collection-selection";
-import { PageHeader } from "@/components/page-header";
+import { CollapsingPageHeader } from "@/components/collapsing-page-header";
 import {
   getAiRuntimeDisclosure,
   listAiProcessingConsents,
@@ -302,11 +302,12 @@ export default async function MemoryEventPage({
             ) : null}
           </div>
         ) : null}
-        <PageHeader
+        <CollapsingPageHeader
           backHref={returnTo}
           backLabel="返回时间轴"
           eyebrow={editMode ? "Archive editing" : "Family memory"}
           title={event.title}
+          compactTitle={event.title}
           description={
             <span className="flex flex-wrap gap-x-3 gap-y-1">
               <span>{formatOccurredLabel(event.occurredAtPrecision as OccurredAtPrecision, event.occurredAt, timezone)}</span>

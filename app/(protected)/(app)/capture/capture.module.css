@@ -1,14 +1,14 @@
 .page {
-  --capture-ink: #242c42;
-  --capture-muted: #65718a;
-  --capture-rim: #ffffffbd;
-  --capture-glass: #ffffff85;
-  --capture-solid: #f1f4fb;
-  --capture-shadow: #526a9217;
+  --capture-ink: var(--journal-ink);
+  --capture-muted: var(--journal-muted);
+  --capture-rim: var(--journal-glass-rim-top);
+  --capture-glass: var(--journal-glass-tint-card), color-mix(in srgb, var(--journal-card) 60%, transparent);
+  --capture-solid: var(--journal-card);
+  --capture-shadow: color-mix(in srgb, var(--journal-ink) 10%, transparent);
   width: 100%; max-width: 48rem; min-height: 75dvh; margin: 0 auto;
   padding: 2.5rem 2rem calc(14rem + env(safe-area-inset-bottom));
   color: var(--capture-ink);
-  background: radial-gradient(ellipse at 100% 35%, #d4e3fb, transparent 62%), radial-gradient(ellipse at 0% 75%, #e6dbf5, transparent 58%), radial-gradient(ellipse at 10% 0%, #f9e9df, transparent 48%), var(--capture-solid);
+  background: radial-gradient(ellipse at 100% 35%, color-mix(in srgb, var(--journal-peach) 55%, transparent), transparent 62%), radial-gradient(ellipse at 0% 75%, color-mix(in srgb, var(--journal-apricot) 75%, transparent), transparent 58%), radial-gradient(ellipse at 10% 0%, color-mix(in srgb, var(--journal-softCoral) 70%, transparent), transparent 48%), var(--capture-solid);
   border-radius: 2.5rem;
 }
 .heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.75rem; }
@@ -17,16 +17,16 @@
 .heading p { margin-top: .6rem; color: var(--capture-muted); font-size: .875rem; }
 .back { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-height: 2.75rem; padding: .5rem .75rem; border: 1px solid var(--capture-rim); border-radius: 2rem; color: var(--capture-muted); background: var(--capture-glass); font-size: .8125rem; }
 .editor { min-width: 0; }
-.paper { padding: 1.5rem; background: linear-gradient(135deg, #ffffff70, transparent), var(--capture-glass); border: 1px solid var(--capture-rim); border-radius: 1.8rem; backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: inset 0 1px 0 #ffffffc0, 0 10px 32px var(--capture-shadow); }
+.paper { padding: 1.5rem; background: linear-gradient(135deg, color-mix(in srgb, var(--journal-glass-rim-top) 45%, transparent), transparent), var(--capture-glass); border: 1px solid var(--capture-rim); border-radius: 1.8rem; backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: inset 0 1px 0 var(--journal-glass-rim-top), 0 10px 32px var(--capture-shadow); }
 .compose { min-width: 0; margin: 0; padding: 0; border: 0; }
 .textarea { display: block; width: 100%; min-height: 11rem; padding: .25rem 0; border: 0; background: transparent; color: var(--capture-ink); font-size: 1.0625rem; line-height: 1.85; resize: vertical; border-radius: .5rem; }
 .textarea::placeholder { color: var(--capture-muted); }
 .mediaTools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: 1rem; }
-.addMedia { display: inline-flex; align-items: center; justify-content: center; gap: .6rem; min-height: 3rem; border: 1px solid var(--capture-rim); border-radius: 2rem; padding: .75rem 1rem; background: var(--capture-glass); box-shadow: inset 0 1px 0 #ffffffb0, 0 3px 10px var(--capture-shadow); cursor: pointer; font-size: .875rem; }
+.addMedia { display: inline-flex; align-items: center; justify-content: center; gap: .6rem; min-height: 3rem; border: 1px solid var(--capture-rim); border-radius: 2rem; padding: .75rem 1rem; background: var(--capture-glass); box-shadow: inset 0 1px 0 var(--journal-glass-rim-top), 0 3px 10px var(--capture-shadow); cursor: pointer; font-size: .875rem; }
 .tools { display: flex; flex-wrap: wrap; gap: .25rem; }
 .tool { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .4rem; border-radius: 2rem; padding: .5rem .6rem; color: var(--capture-muted); font-size: .8125rem; cursor: pointer; }
 .tool:hover, .audienceChoice:hover { background: var(--capture-glass); }
-.tool:focus-within, .addMedia:focus-within { outline: 2px solid #547bf0; outline-offset: 3px; }
+.tool:focus-within, .addMedia:focus-within { outline: 2px solid var(--journal-coral); outline-offset: 3px; }
 .tool:disabled, .compose:disabled .tool, .compose:disabled .addMedia { opacity: .5; cursor: default; }
 .paperFooter { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .75rem; }
 .saveState { color: var(--capture-muted); font-size: .75rem; }
@@ -48,11 +48,11 @@
 .saveBar { position: fixed; z-index: 35; bottom: calc(6rem + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(calc(100% - 3rem), 42rem); display: flex; flex-direction: column; gap: .5rem; padding: .65rem; border: 1px solid var(--capture-rim); border-radius: 2rem; background: var(--capture-glass); backdrop-filter: blur(28px) saturate(150%); -webkit-backdrop-filter: blur(28px) saturate(150%); box-shadow: 0 8px 28px var(--capture-shadow); }
 .visibility { display: flex; gap: .4rem; align-items: center; color: var(--capture-muted); font-size: .75rem; }
 .uploadStatus { width: 100%; padding: 0 .5rem; color: var(--capture-ink); font-size: .8125rem; overflow-wrap: anywhere; }
-.uploadStatus progress { display: block; width: 100%; height: .4rem; margin: .4rem 0; accent-color: #547bf0; }
+.uploadStatus progress { display: block; width: 100%; height: .4rem; margin: .4rem 0; accent-color: var(--journal-coral); }
 .uploadStatus span { color: var(--capture-muted); font-size: .75rem; }
 .saveError { width: 100%; padding: .35rem .5rem; font-size: .8125rem; color: var(--capture-ink); overflow-wrap: anywhere; max-height: 25dvh; overflow-y: auto; }
 .resumeHint { padding: 0 .5rem; font-size: .75rem; color: var(--capture-muted); }
-.saveButton { display: flex; width: 100%; align-items: center; justify-content: center; gap: .5rem; min-height: 3.5rem; border-radius: 2rem; border: 1px solid #ffffff90; color: white; background: linear-gradient(165deg, #819ff7, #4d70d8 60%, #6378df); box-shadow: inset 0 1px 1px #ffffffb0, 0 5px 15px #4c6cd326; font-size: 1rem; font-weight: 600; }
+.saveButton { display: flex; width: 100%; align-items: center; justify-content: center; gap: .5rem; min-height: 3.5rem; border-radius: 2rem; border: 1px solid color-mix(in srgb, var(--journal-glass-rim-top) 55%, transparent); color: var(--journal-onCoral); background: linear-gradient(165deg, var(--journal-coral), var(--journal-coralDark) 60%, var(--journal-coral)); box-shadow: inset 0 1px 1px color-mix(in srgb, var(--journal-glass-rim-top) 60%, transparent), 0 5px 15px color-mix(in srgb, var(--journal-coral) 22%, transparent); font-size: 1rem; font-weight: 600; }
 .saveButton:disabled { background: var(--capture-solid); color: var(--capture-muted); box-shadow: none; cursor: default; }
 @media (min-width: 1024px) { .page { margin-top: 2rem; } .saveBar { left: calc(50% + 7rem); bottom: 1.5rem; width: min(calc(100% - 20rem), 42rem); } }
 @media (max-width: 639px) {
@@ -69,8 +69,8 @@
 :global([data-display-mode="simple"]) .saveBar { bottom: calc(6.75rem + env(safe-area-inset-bottom)); }
 @media (min-width: 1024px) { :global([data-display-mode="simple"]) .saveBar { bottom: 1.5rem; } }
 @media (prefers-color-scheme: dark) {
-  .page { --capture-ink: #edf0ff; --capture-muted: #b2bdd7; --capture-rim: #ffffff26; --capture-glass: #30384ad9; --capture-solid: #232b40; --capture-shadow: #00000030; background: radial-gradient(ellipse at 100% 38%, #293f66, transparent 58%), radial-gradient(ellipse at 0% 75%, #3a294e, transparent 56%), #171b2c; }
-  .paper { background: linear-gradient(140deg, #ffffff0a, transparent), var(--capture-glass); box-shadow: inset 0 1px 0 #ffffff26, 0 10px 32px var(--capture-shadow); }
+  .page { --capture-glass: var(--journal-glass-tint-card), color-mix(in srgb, var(--journal-card) 60%, transparent); --capture-rim: var(--journal-glass-rim-top); --capture-solid: var(--journal-elevated); --capture-shadow: #00000030; background: radial-gradient(ellipse at 100% 38%, color-mix(in srgb, var(--journal-coral) 14%, transparent), transparent 58%), radial-gradient(ellipse at 0% 75%, color-mix(in srgb, var(--journal-apricot) 55%, transparent), transparent 56%), var(--journal-paper); }
+  .paper { background: linear-gradient(140deg, color-mix(in srgb, var(--journal-glass-rim-top) 10%, transparent), transparent), var(--capture-glass); box-shadow: inset 0 1px 0 var(--journal-glass-rim-top), 0 10px 32px var(--capture-shadow); }
 }
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
   .paper, .saveBar, .addMedia, .attachment, .notice { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--capture-solid); box-shadow: none; }

@@ -166,8 +166,6 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  border-bottom: 1px solid var(--line);
-  background: var(--background);
   padding: 0.5rem 1rem;
 }
 
@@ -463,7 +461,7 @@ select {
 }
 
 .confirm-dialog::backdrop {
-  background: color-mix(in oklab, var(--foreground) 55%, transparent);
+  background: var(--journal-glass-scrim);
 }
 
 .confirm-dialog-panel {
@@ -611,7 +609,7 @@ select {
 .memory-card:not(.memory-card-compact) .memory-card-media { width: 100%; aspect-ratio: 4 / 3; }
 .memory-card:not(.memory-card-compact) .memory-card-media img { object-fit: cover; }
 .memory-card:not(.memory-card-compact) .memory-card-placeholder { min-height: 6rem; }
-.memory-card:not(.memory-card-compact) > div:last-child { padding: 1.2rem; }
+.memory-card:not(.memory-card-compact) > div:has(.memory-card-body) { padding: 1.2rem; }
 .memory-card h3 { font-size: var(--journal-type-heading); line-height: 1.5; }
 .memory-card p { font-size: var(--journal-type-caption); }
 .memory-card:has(.memory-card-placeholder):not(.memory-card-compact) .memory-card-media { aspect-ratio: auto; }
@@ -628,42 +626,248 @@ select {
 .settings-page > details > *:not(summary) { padding-right: 1.15rem; padding-left: 1.15rem; }
 .settings-page > details > *:not(summary):last-child { padding-bottom: 1.15rem; }
 .book-paper { background: var(--journal-card); color: var(--journal-ink); --foreground: var(--journal-ink); --muted: var(--journal-muted); --accent: var(--journal-coral); --surface: var(--journal-card); --line: var(--journal-line); }
-.bottom-navigation-inner, .floating-capture {
-  --journal-glass-filter: blur(20px) saturate(165%);
+/*
+ * Liquid Glass tiers. Tokens (--journal-glass-filter/tint/rim-*, scrim) are injected
+ * by app/layout.tsx from mobile/src/design/tokens.ts; dark variants flip automatically
+ * via the injected dark tint/rim vars. Pattern per tier: solid default → translucent
+ * under a combined @supports → SEPARATE engine filter branches (the optimizer drops
+ * the standard property when combined) → reduced-transparency solid fallback.
+ * No filter on containers holding floating children: each floating surface samples
+ * the page backdrop itself.
+ */
+
+/* dock: navigation chrome, sticky headers, floating capture */
+.glass-dock,
+.mobile-app-header,
+.sidebar-navigation,
+.bottom-navigation-inner,
+.floating-capture {
   background: var(--surface);
   border: 1px solid var(--line);
   box-shadow: 0 8px 28px color-mix(in srgb, var(--journal-ink) 12%, transparent), inset 0 1px 0 color-mix(in srgb, #ffffff 80%, transparent);
 }
-/* Each floating surface samples the page directly; a filtered parent would flatten the capture button's backdrop. */
 @supports ((backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px))) {
-  .bottom-navigation-inner, .floating-capture {
-    background: linear-gradient(135deg, color-mix(in srgb, #ffffff 64%, transparent) 0%, color-mix(in srgb, var(--journal-card) 30%, transparent) 48%, color-mix(in srgb, var(--journal-peach) 22%, transparent) 100%), color-mix(in srgb, var(--journal-card) 30%, transparent);
-    border-color: color-mix(in srgb, #ffffff 80%, transparent) color-mix(in srgb, var(--journal-coral) 12%, transparent) color-mix(in srgb, var(--journal-coral) 18%, transparent) color-mix(in srgb, #ffffff 80%, transparent);
-    box-shadow: 0 8px 28px color-mix(in srgb, var(--journal-ink) 12%, transparent), inset 0 1px 1px #ffffff, inset 0 -1px 1px color-mix(in srgb, #ffffff 50%, transparent);
+  .glass-dock,
+  .mobile-app-header,
+  .sidebar-navigation,
+  .bottom-navigation-inner,
+  .floating-capture {
+    background: var(--journal-glass-tint-dock), color-mix(in srgb, var(--journal-card) 40%, transparent);
+    border-color: var(--journal-glass-rim-top) var(--journal-glass-rim-right) var(--journal-glass-rim-bottom) var(--journal-glass-rim-left);
+    box-shadow: 0 8px 28px color-mix(in srgb, var(--journal-ink) 12%, transparent), inset 0 1px 1px color-mix(in srgb, var(--journal-glass-rim-top) 60%, transparent);
   }
 }
-/* Separate capability branches keep the optimizer from discarding either engine's property. */
 @supports (-webkit-backdrop-filter: blur(20px)) {
-  .bottom-navigation-inner, .floating-capture { -webkit-backdrop-filter: var(--journal-glass-filter); }
+  .glass-dock, .mobile-app-header, .sidebar-navigation, .bottom-navigation-inner, .floating-capture { -webkit-backdrop-filter: var(--journal-glass-filter-dock); }
 }
 @supports (backdrop-filter: blur(20px)) {
-  .bottom-navigation-inner, .floating-capture { backdrop-filter: var(--journal-glass-filter); }
+  .glass-dock, .mobile-app-header, .sidebar-navigation, .bottom-navigation-inner, .floating-capture { backdrop-filter: var(--journal-glass-filter-dock); }
 }
-@media (prefers-color-scheme: dark) {
-  @supports ((backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px))) {
-    .bottom-navigation-inner, .floating-capture {
-      background: linear-gradient(135deg, color-mix(in srgb, var(--journal-elevated) 78%, transparent), color-mix(in srgb, var(--journal-card) 62%, transparent) 48%, color-mix(in srgb, var(--journal-coral) 12%, transparent)), color-mix(in srgb, var(--journal-card) 70%, transparent);
-      border-color: color-mix(in srgb, #ffffff 16%, transparent) color-mix(in srgb, #ffffff 7%, transparent) color-mix(in srgb, #000000 30%, transparent) color-mix(in srgb, #ffffff 12%, transparent);
-      box-shadow: 0 8px 28px color-mix(in srgb, #000000 45%, transparent), inset 0 1px 1px color-mix(in srgb, #ffffff 14%, transparent);
-    }
+/* Edge-to-edge chrome keeps only the horizontal rim edges. */
+.mobile-app-header { border-right-width: 0; border-left-width: 0; }
+@media (min-width: 1024px) {
+  .sidebar-navigation { border-top: 0; border-bottom: 0; border-left: 0; box-shadow: 1px 0 24px color-mix(in srgb, var(--journal-ink) 6%, transparent); }
+}
+
+/* card: content surfaces, inputs, secondary buttons */
+.glass-card,
+.memory-card,
+.quick-action,
+.inline-notice,
+.book-cover,
+.growth-book-feature,
+.settings-page > details,
+.growth-page > details[aria-label="筛选时间轴"],
+.ui-button-secondary,
+.ui-input {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--journal-ink) 5%, transparent);
+}
+@supports ((backdrop-filter: blur(14px)) or (-webkit-backdrop-filter: blur(14px))) {
+  .glass-card,
+  .memory-card,
+  .quick-action,
+  .inline-notice,
+  .book-cover,
+  .growth-book-feature,
+  .settings-page > details,
+  .growth-page > details[aria-label="筛选时间轴"],
+  .ui-button-secondary,
+  .ui-input {
+    background: var(--journal-glass-tint-card), color-mix(in srgb, var(--journal-card) 45%, transparent);
+    border-color: var(--journal-glass-rim-top) var(--journal-glass-rim-right) var(--journal-glass-rim-bottom) var(--journal-glass-rim-left);
+    box-shadow: 0 3px 14px color-mix(in srgb, var(--journal-ink) 5%, transparent), inset 0 1px 1px color-mix(in srgb, var(--journal-glass-rim-top) 55%, transparent);
   }
 }
+@supports (-webkit-backdrop-filter: blur(14px)) {
+  .glass-card, .memory-card, .quick-action, .inline-notice, .book-cover, .growth-book-feature, .settings-page > details, .growth-page > details[aria-label="筛选时间轴"], .ui-button-secondary, .ui-input { -webkit-backdrop-filter: var(--journal-glass-filter-card); }
+}
+@supports (backdrop-filter: blur(14px)) {
+  .glass-card, .memory-card, .quick-action, .inline-notice, .book-cover, .growth-book-feature, .settings-page > details, .growth-page > details[aria-label="筛选时间轴"], .ui-button-secondary, .ui-input { backdrop-filter: var(--journal-glass-filter-card); }
+}
+.ui-input {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: var(--journal-radius-control);
+  padding: 0.5rem 0.75rem;
+  color: var(--foreground);
+}
+.ui-input:focus { border-color: var(--accent); outline: none; }
+/* Variant tones outrank the translucent card base. */
+.quick-action-emphasized { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); }
+.quick-action:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.inline-notice-info { border-color: color-mix(in srgb, var(--accent) 25%, var(--line)); }
+.inline-notice-success { border-color: color-mix(in srgb, var(--success) 35%, var(--line)); background: var(--success-soft); color: var(--success); }
+.inline-notice-warning { border-color: color-mix(in srgb, var(--warning) 35%, var(--line)); background: var(--warning-soft); color: var(--warning); }
+.inline-notice-danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); background: var(--danger-soft); color: var(--danger); }
+
+/* sheet: dialogs & bottom sheets */
+.glass-sheet,
+.confirm-dialog-panel {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 60px color-mix(in oklab, var(--journal-ink) 24%, transparent);
+}
+@supports ((backdrop-filter: blur(24px)) or (-webkit-backdrop-filter: blur(24px))) {
+  .glass-sheet,
+  .confirm-dialog-panel {
+    background: var(--journal-glass-tint-sheet), color-mix(in srgb, var(--journal-card) 55%, transparent);
+    border-color: var(--journal-glass-rim-top) var(--journal-glass-rim-right) var(--journal-glass-rim-bottom) var(--journal-glass-rim-left);
+    box-shadow: 0 24px 60px color-mix(in oklab, var(--journal-ink) 24%, transparent), inset 0 1px 1px color-mix(in srgb, var(--journal-glass-rim-top) 60%, transparent);
+  }
+}
+@supports (-webkit-backdrop-filter: blur(24px)) {
+  .glass-sheet, .confirm-dialog-panel { -webkit-backdrop-filter: var(--journal-glass-filter-sheet); }
+}
+@supports (backdrop-filter: blur(24px)) {
+  .glass-sheet, .confirm-dialog-panel { backdrop-filter: var(--journal-glass-filter-sheet); }
+}
+
+/* overlay: floating menus & hover action strips */
+.glass-overlay {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--journal-ink) 12%, transparent);
+}
+@supports ((backdrop-filter: blur(28px)) or (-webkit-backdrop-filter: blur(28px))) {
+  .glass-overlay {
+    background: var(--journal-glass-tint-overlay), color-mix(in srgb, var(--journal-card) 45%, transparent);
+    border-color: var(--journal-glass-rim-top) var(--journal-glass-rim-right) var(--journal-glass-rim-bottom) var(--journal-glass-rim-left);
+    box-shadow: 0 8px 28px color-mix(in srgb, var(--journal-ink) 12%, transparent), inset 0 1px 1px color-mix(in srgb, var(--journal-glass-rim-top) 60%, transparent);
+  }
+}
+@supports (-webkit-backdrop-filter: blur(28px)) {
+  .glass-overlay { -webkit-backdrop-filter: var(--journal-glass-filter-overlay); }
+}
+@supports (backdrop-filter: blur(28px)) {
+  .glass-overlay { backdrop-filter: var(--journal-glass-filter-overlay); }
+}
+
+/* Native <dialog>: centered glass sheet on wide screens, bottom sheet below 640px. */
+@media (max-width: 639px) {
+  dialog.confirm-dialog {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: auto;
+    max-width: none;
+    max-height: 85dvh;
+    margin: 0;
+  }
+  dialog.confirm-dialog[open] { animation: confirm-sheet-up var(--journal-motion-sheet) ease-out; }
+  @keyframes confirm-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .confirm-dialog-panel {
+    border-bottom: 0;
+    border-radius: var(--journal-radius-sheet) var(--journal-radius-sheet) 0 0;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Memory card quick actions: glass chip revealed on desktop hover, persistent ⋯ on touch. */
+.memory-card { position: relative; }
+.memory-card-media { display: block; }
+.memory-card-body { display: block; min-width: 0; }
+.memory-card-actions {
+  position: absolute;
+  z-index: 10;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--accent);
+}
+.memory-card-actions-view { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .memory-card-actions { opacity: 0; transform: translateY(-4px); transition: opacity 160ms ease, transform 160ms ease; }
+  .memory-card:hover .memory-card-actions { opacity: 1; transform: none; }
+  .memory-card-actions-more { display: none; }
+  .memory-card-actions-view { display: inline-flex; }
+}
+@media (hover: none) {
+  .memory-card-actions { opacity: 1; }
+}
+
+/* Large-title collapsing page header: hero title fades/shrinks on scroll while a
+   compact glass bar fades in. The bar is fixed & flow-free, so no layout shift. */
+.collapsing-header-title { font-size: var(--journal-type-large-title); font-weight: 800; letter-spacing: -0.03em; line-height: 1.2; }
+.growth-hero .collapsing-header-title { font-size: var(--journal-type-large-title); }
+.collapsing-header-eyebrow, .collapsing-header-title { transition: opacity 180ms ease, transform 180ms ease; }
+.collapsing-header.is-collapsed .collapsing-header-eyebrow,
+.collapsing-header.is-collapsed .collapsing-header-title { opacity: 0; transform: translateY(-6px) scale(0.94); }
+.collapsing-header-hero-custom { transition: opacity 180ms ease, transform 180ms ease; }
+.collapsing-header.is-collapsed .collapsing-header-hero-custom { opacity: 0; transform: translateY(-8px); }
+.collapsing-header-bar {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0.25rem 1rem;
+  border-radius: 0;
+  opacity: 0;
+  transform: translateY(-0.5rem);
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.collapsing-header.is-collapsed .collapsing-header-bar { opacity: 1; transform: none; pointer-events: auto; }
+.collapsing-header-bar-title { overflow: hidden; font-weight: 700; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.collapsing-header-bar-back { display: inline-flex; min-height: 2.5rem; align-items: center; justify-self: start; gap: 0.3rem; color: var(--accent); font-weight: 600; }
+.collapsing-header-bar-back-label { display: none; }
+@media (min-width: 640px) { .collapsing-header-bar-back-label { display: inline; } }
+@media (max-width: 1023px) {
+  .collapsing-header-bar { top: 4rem; right: env(safe-area-inset-right); left: env(safe-area-inset-left); }
+  [data-display-mode="simple"] .collapsing-header-bar { top: 4.5rem; }
+}
+@media (min-width: 1024px) {
+  .collapsing-header-bar { right: 0; left: calc(14rem + env(safe-area-inset-left)); }
+}
+
 @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
-  .bottom-navigation-inner, .floating-capture { --journal-glass-filter: none; background: var(--surface); border-color: var(--line); box-shadow: none; }
+  .glass-dock, .mobile-app-header, .sidebar-navigation, .bottom-navigation-inner, .floating-capture { background: var(--surface); border-color: var(--line); box-shadow: none; }
+  .glass-card, .memory-card, .quick-action, .inline-notice, .book-cover, .growth-book-feature, .settings-page > details, .growth-page > details[aria-label="筛选时间轴"], .ui-button-secondary, .ui-input { background: var(--surface); border-color: var(--line); box-shadow: none; }
+  .glass-sheet, .confirm-dialog-panel, .glass-overlay { background: var(--surface-raised); border-color: var(--line); box-shadow: none; }
+  /* Neutralize via the tier vars: the optimizer drops a literal standard backdrop-filter
+     here, which would leave the blur on in engines that only support the standard property. */
+  .glass-dock, .mobile-app-header, .sidebar-navigation, .bottom-navigation-inner, .floating-capture { --journal-glass-filter-dock: none; }
+  .glass-card, .memory-card, .quick-action, .inline-notice, .book-cover, .growth-book-feature, .settings-page > details, .growth-page > details[aria-label="筛选时间轴"], .ui-button-secondary, .ui-input { --journal-glass-filter-card: none; }
+  .glass-sheet, .confirm-dialog-panel { --journal-glass-filter-sheet: none; }
+  .glass-overlay { --journal-glass-filter-overlay: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .floating-capture, .bottom-nav-item > span:first-child { transition: transform 180ms ease, box-shadow 180ms ease; }
   .floating-capture:active, .bottom-nav-item:active > span:first-child { transform: scale(0.96); }
+  .memory-card { transition: border-color 160ms ease, box-shadow 160ms ease, transform 180ms ease; }
+  .quick-action { transition: border-color 160ms ease, background-color 160ms ease, transform 180ms ease; }
+  .ui-button-secondary, .ui-input, .glass-overlay { transition: transform 180ms ease; }
+  .memory-card:active, .quick-action:active, .ui-button-secondary:active, .ui-input:active, .glass-overlay:active { transform: scale(0.97); }
   .growth-hero { animation: journal-arrive 180ms ease-out; }
   @keyframes journal-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 }
@@ -672,7 +876,6 @@ select {
 /* Keep shell breakpoints explicit: unlayered component rules outrank Tailwind utilities. */
 @media (min-width: 1024px) {
   .mobile-app-header, .bottom-navigation { display: none; }
-  .sidebar-navigation { background: var(--surface); }
   .sidebar-nav-item { min-height: 3.1rem; padding: .7rem 1rem; gap: .85rem; font-size: .9375rem; }
   .sidebar-nav-item.is-active { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
   .sidebar-nav-item-emphasis { justify-content: center; min-height: 3.1rem; background: var(--accent); color: var(--journal-onCoral); border-radius: 1rem; }
@@ -741,7 +944,7 @@ select {
 .growth-tool-link.is-active { background: var(--accent-soft); border-color: var(--journal-peach); color: var(--journal-coralDark); }
 
 /* 筛选收拢时只是一行，不再是一张空白卡片 */
-.growth-page > details[aria-label="筛选时间轴"] { border: 1px solid var(--line); border-radius: var(--journal-radius-control); background: var(--surface); padding: 0; }
+.growth-page > details[aria-label="筛选时间轴"] { border-radius: var(--journal-radius-control); padding: 0; }
 .growth-page > details[aria-label="筛选时间轴"] > summary { min-height: 3rem; display: flex; align-items: center; padding: 0.35rem 1rem; font-size: 0.9375rem; font-weight: 600; }
 .growth-page > details[aria-label="筛选时间轴"] > summary::-webkit-details-marker { display: none; }
 .growth-page > details[aria-label="筛选时间轴"][open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 0.75rem; }
