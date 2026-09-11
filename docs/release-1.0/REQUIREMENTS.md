@@ -95,7 +95,7 @@
 | SYNC-4 | 续传:offset/请求大小/过期/hash/幂等提交;大文件不入JS heap | tus 语义 | 自动化通过 | app/api/uploads; lib/imports/service |
 | SYNC-5 | 批次暂停/恢复/重选/重试/有界并发/临时空间 | 重启后无重复事件 | 自动化通过 | tests/integration/resumable-upload |
 | SYNC-6 | complete 响应丢失/确认重放只保留预期一组 | captureId 幂等 | 自动化通过 | 409 on ID reuse |
-| SYNC-7 | 服务端单调变更序列+tombstone;cursor 过期安全重建 | 全轮成功前不清旧缓存 | 部分实现(全量快照同步有;增量cursor+tombstone未做) | lib/mobile/sync |
+| SYNC-7 | 服务端单调变更序列+tombstone;cursor 过期安全重建 | 全轮成功前不清旧缓存 | 实现及专项自动化通过(protocol v2 已接入实际手机请求;delta/checkpoint/tombstone、过期重建和整轮提交有回归；已知撤权时立即清远端缓存) | lib/mobile/sync-protocol.ts; mobile/src/sync/core.ts; tests/integration/incremental-sync.test.ts; mobile/tests/sync-cache.test.ts |
 | SYNC-8 | 编辑 expectedRevision;冲突保留两份可比较 | 撤权/删除优先 | 部分实现(Web 详情/回顾保留输入、mobile PATCH 必填 expectedRevision/mutationId、所有事件编辑递增版本、0070 事务幂等收据及提交前撤权检查已有真实回归；原生编辑/分享已接通并在冲突后刷新保留输入；离线冲突比较和同步协议仍待贯通) | memory_event_revision; memory_mutation; tests/integration/memory-edit-permissions.test.ts; tests/e2e/edit.spec.ts; tests/e2e/review.spec.ts |
 | SYNC-9 | 取消上传/仅本机/删记录/清缓存四操作分开 | 清缓存不伤原件 | 自动化通过 | mobile settings/device-clear tests |
 | SYNC-10 | 后台执行尊重平台限制 | 不承诺杀进程后无限后台 | 自动化通过(前台/网络触发;无后台任务声明) | AppContext |
@@ -196,7 +196,7 @@
 | --- | --- | --- | --- | --- |
 | BKP-1 | 四种副本分明:完整家庭档案/实例快照/精选阅读包/本机救援包 | 范围声明诚实 | 自动化通过 | export vs backup vs reading vs rescue |
 | BKP-2 | 应用内"完整"与实际授权范围匹配;子集标明 | — | 自动化通过 | lib/export |
-| BKP-3 | 本机一致快照+独立故障域远端副本+定时验证 | WebDAV verified upload | 自动化通过 | lib/webdav; backup_run |
+| BKP-3 | 本机一致快照+独立故障域远端副本+定时验证 | WebDAV verified upload | 部分实现(本机一致快照、可选systemd示例、授权范围WebDAV上传及最终路径校验已有；全实例自动异地备份、周期原件巡检与超期告警未闭合，不能以当前账号导出代替完整灾备) | lib/webdav; backup_run; scripts/ops/backup.sh; docs/BACKUP_RESTORE.md |
 | BKP-4 | restic 可选加密异地保全 | 未实现(可选增强) | 未实现 | — |
 | BKP-5 | 保留策略只清过期非唯一副本;容量不足告警不停备份 | — | 自动化通过 | cleanup.sh |
 | BKP-6 | 检查分级:生成/上传/结构校验/原件校验/隔离恢复通过 | — | 自动化通过 | roundtrip tests |

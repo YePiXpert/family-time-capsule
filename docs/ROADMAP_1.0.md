@@ -1,5 +1,8 @@
 # Family Time Capsule v1.0 Roadmap
 
+> 2026-09-11 对账：下文是旧版路线图及当时的完成记录，不代表当前功能清单。
+> 独立故事、口述史任务、投递箱、定时胶囊和每周回顾后来已移除；当前产品范围见 [README](../README.md#日常使用)，后端当前工作见 [EXECUTION_STATE](release-1.0/EXECUTION_STATE.md)。不要据此重新实现已移除模块。
+
 > **Status: 1.0.0-rc.2 — AUTOMATED GATES PASS; REAL-DEVICE GATE OPEN**
 >
 > Started: 2026-08-31

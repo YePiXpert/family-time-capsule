@@ -15,6 +15,11 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?请设置 BETTER_AUTH_URL 为浏览器访问地址}
       # 首次初始化 /setup 的一次性令牌；初始化完成后建议移除
       INITIAL_SETUP_TOKEN: ${INITIAL_SETUP_TOKEN:-}
+      WEBDAV_URL: ${WEBDAV_URL:-}
+      WEBDAV_USERNAME: ${WEBDAV_USERNAME:-}
+      WEBDAV_PASSWORD: ${WEBDAV_PASSWORD:-}
+      WEBDAV_DIRECTORY: ${WEBDAV_DIRECTORY:-/family-time-capsule}
+      WEBDAV_REQUEST_TIMEOUT_MS: ${WEBDAV_REQUEST_TIMEOUT_MS:-600000}
       # 对外地址（反向代理 + HTTPS 时设置），例如：
       # BETTER_AUTH_URL: https://capsule.example.com
       AI_CONFIGURATION_ID: ${AI_CONFIGURATION_ID:-}

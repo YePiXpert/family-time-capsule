@@ -3,6 +3,9 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { unlink } from "node:fs/promises";
+import { isIP } from "node:net";
+import { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backupRun, type BackupRunRow } from "@/db/schema/backup";
@@ -18,7 +21,8 @@ import type { FamilyContext } from "@/lib/family/context";
  * - SSRF 边界：仅允许 https，或显式 loopback http（本地测试/同机 NAS）；
  *   不跟随重定向；URL 解析后强制重新序列化防混淆；
  * - 流程：verified export → PUT 临时文件 → GET 回读校验 SHA-256 →
- *   MOVE 原子改名；MOVE 不支持时降级直传并记录 strategy。
+ *   MOVE 原子改名；仅在 MOVE 不支持时降级直传。最终路径回读验证后才成功。
+ * - 这是当前账号可导出的档案副本；全实例灾备使用宿主机 ftc backup。
  */
 
 export type WebDavTargetConfig = {
@@ -38,8 +42,7 @@ function isLoopback(host: string): boolean {
     host === "127.0.0.1" ||
     host === "::1" ||
     host === "[::1]" ||
-    host.startsWith("127.") ||
-    host.startsWith("::ffff:127.")
+    (isIP(host) === 4 && host.startsWith("127."))
   );
 }
 
@@ -80,6 +83,37 @@ export function resolveWebDavTarget(
 
 type WebDavRequestInit = RequestInit & { duplex?: "half" };
 type WebDavFetch = (url: string, init: WebDavRequestInit) => Promise<Response>;
+
+class WebDavTimeoutError extends Error {}
+
+/** The deadline includes reading the body, not just receiving HTTP headers. */
+async function webDavRequest<T>(
+  fetchImpl: WebDavFetch,
+  url: string,
+  init: WebDavRequestInit,
+  timeoutMs: number,
+  consume: (response: Response) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const upload = init.body instanceof Readable ? init.body : null;
+  // Observe early stream errors even if fetch rejects before opening the file.
+  const uploadFinished = upload ? finished(upload).catch(() => undefined) : null;
+  let response: Response | undefined;
+  try {
+    response = await fetchImpl(url, { ...init, signal: controller.signal });
+    return await consume(response);
+  } catch (error) {
+    if (controller.signal.aborted) throw new WebDavTimeoutError();
+    throw error;
+  } finally {
+    // Close both directions before removing the operational export file.
+    upload?.destroy();
+    await uploadFinished;
+    await response?.body?.cancel().catch(() => undefined);
+    clearTimeout(timer);
+  }
+}
 
 export type BackupOutcome =
   | { ok: true; runId: string; strategy: "verified-upload" | "direct-upload"; sha256: string; bytes: number }
@@ -151,6 +185,8 @@ export async function runWebDavBackup(
     fetchImpl?: WebDavFetch;
     env?: Partial<NodeJS.ProcessEnv>;
     now?: Date;
+    /** Per HTTP transfer, including the response body; default ten minutes. */
+    requestTimeoutMs?: number;
   } = {},
 ): Promise<BackupOutcome> {
   try {
@@ -164,12 +200,24 @@ export async function runWebDavBackup(
     return { ok: false, error: target.error };
   }
   const fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init));
+  const timeoutSetting = (options.env ?? process.env).WEBDAV_REQUEST_TIMEOUT_MS?.trim();
+  const configuredTimeout = timeoutSetting
+    ? (/^\d+$/u.test(timeoutSetting) ? Number(timeoutSetting) : NaN)
+    : 600_000;
+  const timeoutMs = options.requestTimeoutMs ?? configuredTimeout;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2_147_483_647) {
+    return { ok: false, error: "invalid_timeout" };
+  }
+  const request = <T>(url: string, init: WebDavRequestInit, consume: (response: Response) => Promise<T>) =>
+    webDavRequest(fetchImpl, url, init, timeoutMs, consume);
+  const statusOnly = async (response: Response) => response.status;
   const db = getDb();
   const now = options.now ?? new Date();
 
   const runId = randomUUID();
   const stamp = now.toISOString().replace(/[:.]/gu, "-");
-  const finalPath = `${target.config.remoteDirectory}/family-time-capsule-${stamp}.zip`;
+  // Clock precision and clock rollback cannot cause two runs to overwrite a copy.
+  const finalPath = `${target.config.remoteDirectory}/family-time-capsule-${stamp}-${runId}.zip`;
   const tempPath = `${finalPath}.tmp`;
 
   db.insert(backupRun)
@@ -180,6 +228,7 @@ export async function runWebDavBackup(
       remotePath: finalPath,
       startedAt: now,
       attempts: 1,
+      triggeredByUserId: context.userId,
     })
     .run();
 
@@ -195,8 +244,9 @@ export async function runWebDavBackup(
   let exportResult;
   try {
     exportResult = await buildActorExport(context);
-  } catch (error) {
-    return fail(`export_failed: ${(error as Error).message}`);
+  } catch {
+    // Exceptions may contain private filenames, provider URLs or credentials.
+    return fail("export_failed");
   }
   const base = target.config.baseUrl;
   const headers = authHeader(target.config);
@@ -206,47 +256,57 @@ export async function runWebDavBackup(
   try {
     const sha256 = await hashFile(exportResult.filePath);
     // 2) 上传到临时路径
-    const put = await fetchImpl(
+    const put = await request(
       tempUrl,
       fileUploadInit(exportResult.filePath, headers, exportResult.bytes),
+      statusOnly,
     );
-    if (put.status !== 200 && put.status !== 201 && put.status !== 204) {
-      return fail(`temp_upload_failed: HTTP ${put.status}`);
+    if (put !== 200 && put !== 201 && put !== 204) {
+      return fail(`temp_upload_failed: HTTP ${put}`);
     }
 
-    // 3) 回读校验（GET 全量比对 SHA-256）
-    const readBack = await fetchImpl(tempUrl, { method: "GET", headers, redirect: "manual" });
-    if (readBack.status !== 200) {
-      return fail(`verify_read_failed: HTTP ${readBack.status}`);
-    }
-    const readBackHash = await hashResponseBody(readBack, exportResult.bytes);
-    if (
-      readBackHash.bytes !== exportResult.bytes ||
-      readBackHash.sha256 !== sha256
-    ) {
-      return fail("verify_checksum_mismatch");
-    }
+    const verify = (url: string, stage: string) => request(
+      url, { method: "GET", headers, redirect: "manual" }, async (response) => {
+        if (response.status !== 200) return `${stage}_read_failed: HTTP ${response.status}`;
+        const actual = await hashResponseBody(response, exportResult.bytes);
+        return actual.bytes === exportResult.bytes && actual.sha256 === sha256
+          ? null : `${stage}_checksum_mismatch`;
+      },
+    );
+    // 3) 验证临时副本，保留它直到最终路径也通过验证。
+    const tempError = await verify(tempUrl, "verify");
+    if (tempError) return fail(tempError);
 
     // 4) 原子改名；不支持时降级为直接上传最终路径 + 清理临时文件
     let strategy: "verified-upload" | "direct-upload" = "verified-upload";
     // 标准 WebDAV MOVE：请求 URL 是源（临时文件），Destination 头是目标
-    const move = await fetchImpl(tempUrl, {
+    const move = await request(tempUrl, {
       method: "MOVE",
-      headers: { ...headers, destination: finalUrl },
+      headers: { ...headers, destination: finalUrl, overwrite: "F" },
       redirect: "manual",
-    });
-    if (move.status >= 400) {
-      // MOVE 语义：很多实现要求 Destination 为完整 URL —— 已传；
-      // 仍失败则降级直传（非原子，如实记录）
-      const directPut = await fetchImpl(
+    }, statusOnly);
+    if (move === 405 || move === 501) {
+      // Permission, redirect, conflict and server errors are failures, not a
+      // reason to bypass the MOVE error with another write.
+      const directPut = await request(
         finalUrl,
-        fileUploadInit(exportResult.filePath, headers, exportResult.bytes),
+        fileUploadInit(exportResult.filePath, { ...headers, "if-none-match": "*" }, exportResult.bytes),
+        statusOnly,
       );
-      if (directPut.status !== 200 && directPut.status !== 201 && directPut.status !== 204) {
-        return fail(`final_upload_failed: HTTP ${directPut.status}`);
+      if (directPut !== 200 && directPut !== 201 && directPut !== 204) {
+        return fail(`final_upload_failed: HTTP ${directPut}`);
       }
       strategy = "direct-upload";
-      await fetchImpl(tempUrl, { method: "DELETE", headers, redirect: "manual" }).catch(
+    } else if (move !== 201 && move !== 204) {
+      return fail(`move_failed: HTTP ${move}`);
+    }
+
+    // A verified temporary does not prove that MOVE or the fallback PUT stored
+    // the right bytes at the final path. Only this check allows success.
+    const finalError = await verify(finalUrl, "final_verify");
+    if (finalError) return fail(finalError);
+    if (strategy === "direct-upload") {
+      await request(tempUrl, { method: "DELETE", headers, redirect: "manual" }, statusOnly).catch(
         () => undefined,
       );
     }
@@ -263,7 +323,7 @@ export async function runWebDavBackup(
       .run();
     return { ok: true, runId, strategy, sha256, bytes: exportResult.bytes };
   } catch (error) {
-    return fail(`webdav_error: ${(error as Error).message}`);
+    return fail(error instanceof WebDavTimeoutError ? "webdav_timeout" : "webdav_error");
   } finally {
     // buildActorExport creates an operational temporary. Upload paths reopen
     // it as needed, then cleanup happens for every success/failure branch.

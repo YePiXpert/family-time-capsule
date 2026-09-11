@@ -2,7 +2,8 @@ import { createServer, type Server } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import type { FamilyContext } from "@/lib/family/context";
 
 const dataDir = mkdtempSync(path.join(tmpdir(), "ftc-webdav-"));
@@ -16,6 +17,28 @@ let serverUrl = "";
 const store = new Map<string, Buffer>();
 let moveSupported = true;
 let failNextUpload = false;
+let moveStatus: number | null = null;
+let corruptFinal = false;
+let finalReadStatus: number | null = null;
+let stallFinalRead = false;
+let finalUploads = 0;
+
+beforeEach(() => {
+  moveSupported = true;
+  failNextUpload = false;
+  moveStatus = null;
+  corruptFinal = false;
+  finalReadStatus = null;
+  stallFinalRead = false;
+  finalUploads = 0;
+});
+
+function finalBytes(body: Buffer) {
+  if (!corruptFinal) return body;
+  const corrupted = Buffer.from(body);
+  corrupted[0] ^= 0xff; // Same length: byte count alone cannot verify a backup.
+  return corrupted;
+}
 
 afterAll(async () => {
   const { closeDatabase } = await import("@/db");
@@ -96,21 +119,37 @@ beforeAll(async () => {
       const chunks: Buffer[] = [];
       req.on("data", (c) => chunks.push(c));
       req.on("end", () => {
-        store.set(url, Buffer.concat(chunks));
+        const final = url.endsWith(".zip");
+        if (final) finalUploads++;
+        const body = Buffer.concat(chunks);
+        store.set(url, final ? finalBytes(body) : body);
         res.writeHead(201).end();
       });
       return;
     }
     if (req.method === "GET") {
+      if (url.endsWith(".zip") && finalReadStatus !== null) {
+        res.writeHead(finalReadStatus).end();
+        return;
+      }
       const body = store.get(url);
       if (!body) {
         res.writeHead(404).end();
         return;
       }
-      res.writeHead(200, { "content-type": "application/zip" }).end(body);
+      res.writeHead(200, { "content-type": "application/zip" });
+      if (url.endsWith(".zip") && stallFinalRead) {
+        res.write(body.subarray(0, 10)); // Headers arrive; body never completes.
+      } else {
+        res.end(body);
+      }
       return;
     }
     if (req.method === "MOVE") {
+      if (moveStatus !== null) {
+        res.writeHead(moveStatus).end();
+        return;
+      }
       if (!moveSupported) {
         res.writeHead(405).end();
         return;
@@ -130,7 +169,7 @@ beforeAll(async () => {
         return;
       }
       store.delete(url);
-      store.set(destPath, body);
+      store.set(destPath, finalBytes(body));
       res.writeHead(201).end();
       return;
     }
@@ -182,6 +221,14 @@ describe("M6：WebDAV 目标解析", () => {
         WEBDAV_PASSWORD: "p",
       }).ok,
     ).toBe(true);
+  });
+
+  it.each(["127.backup.example", "127.0.0.1.backup.example"])("a loopback-looking hostname %s cannot receive credentials over HTTP", (host) => {
+    expect(resolveWebDavTarget({
+      WEBDAV_URL: `http://${host}`,
+      WEBDAV_USERNAME: "u",
+      WEBDAV_PASSWORD: "p",
+    })).toEqual({ ok: false, error: "unsafe_url" });
   });
 });
 
@@ -279,5 +326,74 @@ describe("M6：WebDAV 备份执行", () => {
   it("未配置 env → not_configured", async () => {
     const result = await runWebDavBackup(context, { env: {} });
     expect(result).toEqual({ ok: false, error: "not_configured" });
+  });
+
+  const savedRun = (runId: string) => getDb().select().from(backupRun).where(eq(backupRun.id, runId)).get()!;
+
+  it.each([302, 207, 403, 500])("MOVE HTTP %i must not report success or attempt a direct overwrite", async (status) => {
+    moveStatus = status;
+    const result = await runWebDavBackup(context, { env: env() });
+    expect(result).toMatchObject({ ok: false, error: `move_failed: HTTP ${status}` });
+    if (result.ok || !result.runId) throw new Error("expected recorded failure");
+    expect(savedRun(result.runId)).toMatchObject({ status: "failed", sha256: null });
+    expect(finalUploads).toBe(0);
+  });
+
+  it.each([true, false])("checks the final bytes even when MOVE supported=%s", async (supported) => {
+    moveSupported = supported;
+    corruptFinal = true;
+    const result = await runWebDavBackup(context, { env: env() });
+    expect(result).toMatchObject({ ok: false, error: "final_verify_checksum_mismatch" });
+    if (result.ok || !result.runId) throw new Error("expected recorded failure");
+    const run = savedRun(result.runId);
+    expect(run).toMatchObject({ status: "failed", sha256: null });
+    // A verified temporary is retained if a fallback upload cannot be verified.
+    if (!supported) expect(store.has(`${run.remotePath}.tmp`)).toBe(true);
+  });
+
+  it("a successful MOVE followed by a missing final file is a failed backup", async () => {
+    finalReadStatus = 404;
+    const result = await runWebDavBackup(context, { env: env() });
+    expect(result).toMatchObject({ ok: false, error: "final_verify_read_failed: HTTP 404" });
+    if (result.ok || !result.runId) throw new Error("expected recorded failure");
+    expect(savedRun(result.runId).status).toBe("failed");
+  });
+
+  it("two backups with the same clock timestamp retain separate remote copies", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const first = await runWebDavBackup(context, { env: env(), now });
+    if (!first.ok) throw new Error(first.error);
+    const firstPath = savedRun(first.runId).remotePath;
+    const firstBytes = Buffer.from(store.get(firstPath)!);
+    const second = await runWebDavBackup(context, { env: env(), now });
+    if (!second.ok) throw new Error(second.error);
+    expect(savedRun(second.runId).remotePath).not.toBe(firstPath);
+    expect(store.get(firstPath)).toEqual(firstBytes);
+  });
+
+  it("transport exception details cannot expose credentials in results or history", async () => {
+    const result = await runWebDavBackup(context, {
+      env: env(),
+      fetchImpl: async () => { throw new Error("request failed for backup-user:backup-pass"); },
+    });
+    expect(result).toMatchObject({ ok: false, error: "webdav_error" });
+    if (result.ok || !result.runId) throw new Error("expected recorded failure");
+    expect(savedRun(result.runId).error).toBe("webdav_error");
+  });
+
+  it("a stalled final response body times out and leaves a failed run", async () => {
+    stallFinalRead = true;
+    const result = await runWebDavBackup(context, { env: { ...env(), WEBDAV_REQUEST_TIMEOUT_MS: "100" } });
+    expect(result).toMatchObject({ ok: false, error: "webdav_timeout" });
+    if (result.ok || !result.runId) throw new Error("expected recorded failure");
+    expect(savedRun(result.runId)).toMatchObject({ status: "failed", sha256: null });
+    expect(savedRun(result.runId).finishedAt).toBeInstanceOf(Date);
+  });
+
+  it.each(["-1", "0", "NaN", "1.5", "2147483648"])("invalid timeout %s is refused before starting an upload", async (timeout) => {
+    const count = getDb().select().from(backupRun).all().length;
+    expect(await runWebDavBackup(context, { env: { ...env(), WEBDAV_REQUEST_TIMEOUT_MS: timeout } }))
+      .toEqual({ ok: false, error: "invalid_timeout" });
+    expect(getDb().select().from(backupRun).all()).toHaveLength(count);
   });
 });

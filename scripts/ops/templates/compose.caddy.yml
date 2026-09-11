@@ -7,6 +7,11 @@ services:
     expose:
       - "3000"
     environment:
+      WEBDAV_URL: ${WEBDAV_URL:-}
+      WEBDAV_USERNAME: ${WEBDAV_USERNAME:-}
+      WEBDAV_PASSWORD: ${WEBDAV_PASSWORD:-}
+      WEBDAV_DIRECTORY: ${WEBDAV_DIRECTORY:-/family-time-capsule}
+      WEBDAV_REQUEST_TIMEOUT_MS: ${WEBDAV_REQUEST_TIMEOUT_MS:-600000}
       DATA_DIR: /data
       AUTH_SECRET: ${AUTH_SECRET:?请在 env 设置 AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?请设置为最终 https 地址}

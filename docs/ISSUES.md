@@ -1,5 +1,7 @@
 # 开发路线与 Issue 清单
 
+> 2026-09-11 对账：下面的版本与完成状态保留作历史记录。当前为 1.0.0-dev.3，产品范围以 [README](../README.md#日常使用) 为准；独立故事、口述史任务、投递箱、定时胶囊和每周回顾已移除，历史“已完成”不表示当前仍提供。后端收尾见 [EXECUTION_STATE](release-1.0/EXECUTION_STATE.md)。
+
 > 来源：PRD §22（路线）、§23（垂直切片）、§24（Issues）、§27（P0 DoD）。每个 Issue 的执行方式见 PRD §25（固定前缀）与 §26（PR 自检）。
 
 > 1.0 状态（2026-09-04）：`v1.0.0-rc.4` 已从
@@ -8,7 +10,7 @@
 > tests、36 Playwright、6 production roundtrip；mobile 为 6 files / 30 tests。
 > 真实设备验收仍未执行，因此不创建 stable `v1.0.0`。
 
-> 当前开发线：`1.1.0-alpha.1` — **Capture Anywhere & Family Rhythm**。详细产品边界和
+> 当时开发线：`1.1.0-alpha.1` — **Capture Anywhere & Family Rhythm**。当时产品边界和
 > 验收状态见 [`PRODUCT_1_1.md`](./PRODUCT_1_1.md)。
 
 ## 状态
