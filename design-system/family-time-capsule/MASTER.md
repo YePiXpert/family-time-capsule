@@ -19,11 +19,18 @@ SectionHeader/ListGroup/ListRow/EmptyState），一律读取当前色板，不�
 
 ## 玻璃与动效
 
-仅导航、浮动记录按钮和照片工具可用液体玻璃。正文、表单、弹窗、成长册保持实底。
-iOS 26+ 在运行时与编译支持检查通过后使用 expo-glass-effect 的原生 Liquid Glass。
-旧 iOS 与 Android 12+ 使用 expo-blur、透色渐变和亮边；Android 使用屏幕 BlurTargetView，旧 Android 使用不透明暖白。
-减少透明度即时关闭模糊，读取偏好期间也使用实底。Web 通过 CSS 能力检测和偏好媒体查询降级。
-过渡 180ms；减少动态效果时关闭。录音波形取真实麦克风信号，关闭动态时保留录音状态。
+液态玻璃是主材质，分四级：`dock`（导航、浮动记录按钮、紧凑标题栏）、`card`（记忆卡、
+列表分组、输入控件）、`sheet`（底部弹层、确认对话框）、`overlay`（照片工具、快捷菜单）。
+材质参数集中在 `tokens.ts` 的 `journalGlass`（模糊、渐变、亮边、压暗层），Web 注入为
+`--journal-glass-*` 变量，原生由 `GlassSurface` 读取。阅读面（正文、成长册纸张）保持实底。
+iOS 26+ 在运行时与编译支持检查通过后使用 expo-glass-effect 的原生 Liquid Glass（overlay 级
+用 clear，其余 regular）；旧 iOS 与 Android 12+ 使用 expo-blur、透色渐变和亮边；旧 Android
+使用不透明暖白。减少透明度即时关闭模糊，读取偏好期间也使用实底。Web 通过 CSS 能力检测
+（Safari 前缀与标准属性分别 @supports，防止生产优化丢属性）和偏好媒体查询降级。
+交互对齐 iOS：大标题滚动收缩页头（Web 用 CollapsingPageHeader，原生 tab 屏用 CollapsingHero，
+push 屏用原生 large title + 模糊页头）；确认与表单使用底部玻璃弹层（原生 GlassSheet，Web 窄屏
+confirm-dialog 下置）；时间线卡片支持滑动操作与长按快捷菜单；触觉反馈可在设置关闭。
+过渡 180ms，弹层 280ms；减少动态效果时关闭位移与缩放。录音波形取真实麦克风信号。
 Web 导航容器不加滤镜，每个悬浮表面独立采样背景，避免记录按钮受到父级 backdrop 隔离。
 
 ## 插画
