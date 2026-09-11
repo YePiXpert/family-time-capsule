@@ -1,10 +1,9 @@
 import { Text } from "./typography";
-import { Image, Pressable, StyleSheet, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { Image, Platform, Pressable, StyleSheet, View } from "react-native";
+import { journalFont, journalRadius } from "../design/tokens";
 import { useColorTheme } from "../theme";
 import { useAccessibleEffects } from "../design/use-effects";
 import { JournalIcon } from "./JournalIcon";
-import { GlassSurface } from "./GlassSurface";
 import type { LocalTimelineEvent } from "../types";
 import { dateLabel } from "../utils/format";
 
@@ -34,40 +33,30 @@ export function TimelineCard({
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.card,
+        { backgroundColor: colors.card, borderColor: colors.line },
         pressed && !reducedMotion && styles.pressed,
       ]}
     >
-      <GlassSurface tier="card" radius={22} />
       {selected ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.selectedRing, { borderColor: colors.coral }]} />
       ) : null}
       {item.localCoverUri ? (
         <Image fadeDuration={0} source={{ uri: item.localCoverUri }} style={[styles.cover, { backgroundColor: colors.softCoral }]} />
-      ) : (
-        <LinearGradient
-          colors={[colors.apricot, colors.softCoral]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.placeholder}
-        >
-          <JournalIcon name={item.assetCount > 0 ? "image" : milestone ? "star" : "heart"} color={colors.coral} size={22} />
+      ) : item.assetCount > 0 ? (
+        <View style={[styles.placeholder, { backgroundColor: colors.apricot }]}>
+          <JournalIcon name="image" color={colors.coral} size={18} />
           <Text style={[styles.placeholderText, { color: colors.coralDark }]}>
-            {item.assetCount > 0 ? `${item.assetCount} 份素材` : "一段回忆"}
+            {item.assetCount} 份素材
           </Text>
-        </LinearGradient>
-      )}
+        </View>
+      ) : null}
       {selected ? (
         <View style={[styles.selectedBadge, { backgroundColor: colors.coral }]}>
           <JournalIcon name="check" color={colors.onCoral} size={14} />
         </View>
       ) : null}
       <View style={styles.body}>
-        {item.source === "local" ? (
-          <Text style={[styles.localBadge, { color: colors.sage }]}>
-            {item.localDraftId ? item.syncState === null ? "已保存" : "已保存在本机" : item.syncState === "inbox" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
-          </Text>
-        ) : null}
-        <Text style={[styles.date, { color: colors.coral }]}>{dateLabel(item.occurredAt, timeZone, item.occurredAtPrecision)}</Text>
+        <Text style={[styles.date, { color: colors.muted }]}>{dateLabel(item.occurredAt, timeZone, item.occurredAtPrecision)}</Text>
         <Text numberOfLines={2} style={[styles.title, { color: colors.ink }]}>{item.title}</Text>
         {item.bodyText && item.bodyText !== item.title ? <Text numberOfLines={3} style={[styles.story, { color: colors.ink }]}>{item.bodyText}</Text> : null}
         {milestone ? (
@@ -76,15 +65,23 @@ export function TimelineCard({
             <Text style={[styles.date, { color: colors.coral }]}>{milestone}</Text>
           </View>
         ) : null}
-        <View style={styles.meta}>
+        {age || item.participantNames.length > 0 ? <View style={styles.meta}>
           {age ? <Text style={[styles.age, { color: colors.sage, backgroundColor: colors.softSage }]}>{age}</Text> : null}
           {item.participantNames.length > 0 ? (
             <Text numberOfLines={1} style={[styles.people, { color: colors.muted }]}>
               {item.participantNames.join(" · ")}
             </Text>
           ) : null}
-        </View>
+        </View> : null}
         {item.locationText ? <Text style={[styles.location, { color: colors.muted }]}>{item.locationText}</Text> : null}
+        {item.source === "local" ? (
+          <View style={[styles.localStatus, { borderTopColor: colors.line }]}>
+            <JournalIcon name="check" color={colors.sage} size={14} />
+            <Text style={[styles.localBadge, { color: colors.sage }]}>
+              {item.localDraftId ? item.syncState === null ? "已保存" : "已保存在本机" : item.syncState === "inbox" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
+            </Text>
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -93,16 +90,18 @@ export function TimelineCard({
 const styles = StyleSheet.create({
   card: {
     overflow: "hidden",
-    borderRadius: 22,
+    borderRadius: journalRadius.card,
+    borderWidth: 1,
   },
   pressed: { opacity: 0.72 },
-  selectedRing: { borderWidth: 2, borderRadius: 22 },
+  selectedRing: { borderWidth: 2, borderRadius: journalRadius.card, zIndex: 1 },
   cover: { width: "100%", aspectRatio: 4 / 3 },
   placeholder: {
-    height: 76,
+    minHeight: 52,
+    padding: 16,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     gap: 8,
   },
   placeholderText: { fontSize: 13, fontWeight: "700" },
@@ -116,11 +115,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  body: { padding: 18, gap: 8 },
-  localBadge: { fontSize: 13, fontWeight: "600" },
-  date: { fontSize: 13, fontWeight: "600" },
+  body: { padding: 20, gap: 10 },
+  localStatus: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  localBadge: { fontSize: 12, flexShrink: 1 },
+  date: { fontSize: 12, fontWeight: "500", letterSpacing: 0.3 },
   story: { fontSize: 16, lineHeight: 26 },
-  title: { fontSize: 20, fontWeight: "600" },
+  title: { fontSize: 22, fontFamily: Platform.OS === "ios" ? journalFont.editorialIOS : journalFont.editorialAndroid, fontWeight: "400" },
   milestoneRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   meta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
   age: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, fontWeight: "600" },

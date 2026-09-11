@@ -10,6 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Repository workflow
 
+- For UI work, read `DESIGN.md` and apply its mobile design rules through the shared theme and components.
 - Work and release only from `main`; do not create feature, fix, release, or temporary build branches.
 - Before starting, run `git checkout main`, `git pull --ff-only origin main`, and inspect `git status --short`.
 - Commit small, clear milestones and push them to `origin main` by default.

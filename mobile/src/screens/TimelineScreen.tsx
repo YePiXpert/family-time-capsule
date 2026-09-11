@@ -13,6 +13,7 @@ import { useContextMenu } from "../components/ContextMenu";
 import { SwipeActions } from "../components/SwipeActions";
 import { TimelineCard } from "../components/TimelineCard";
 import { JournalArtwork } from "../components/JournalArtwork";
+import { JournalIcon } from "../components/JournalIcon";
 import { Button, Chip, EmptyState, IconButton, Pill } from "../components/ui";
 import { useColorTheme } from "../theme";
 import { journalRadius, journalSpace } from "../design/tokens";
@@ -99,12 +100,13 @@ export function TimelineScreen() {
           {/* 次级工具行：筛选与管理退到一行小控件 */}
           <View style={styles.toolRow}>
             <Chip accessibilityRole="button" icon="star" label={important ? "查看所有时刻" : "第一次与值得记住"} selected={important} onPress={() => setImportant(v => !v)} />
-            <View style={{ flex: 1 }} />
+            <View style={styles.tools}>
             <IconButton icon="search" label="搜索" onPress={() => navigation.navigate("Search")} />
             <IconButton icon="calendar" label="日期与人物" onPress={() => navigation.navigate("Calendar")} />
             {viewer?.canEditEvents ? (
               <IconButton icon="check" label={selecting ? "取消选择" : "选择"} tone={selecting ? "accent" : "plain"} onPress={() => { setSelecting(!selecting); setSelected([]); }} />
             ) : null}
+            </View>
           </View>
 
           {selecting ? (
@@ -123,8 +125,9 @@ export function TimelineScreen() {
           ) : null}
 
           {outbox.length > 0 ? (
-            <View style={[styles.outboxCard, { backgroundColor: colors.warningSoft }]}>
-              <Text style={[styles.outboxText, { color: colors.warning }]}>
+            <View style={[styles.outboxCard, { backgroundColor: colors.softSage }]}>
+              <JournalIcon name="check" color={colors.sage} size={16} />
+              <Text style={[styles.outboxText, { color: colors.sage }]}>
                 {outbox.length} 份已保存在本机，
                 {credentials ? "联网后会继续补传" : "连接服务器后再补传"}。
               </Text>
@@ -202,7 +205,8 @@ export function TimelineScreen() {
 }
 
 const styles = StyleSheet.create({
-  toolRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  toolRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  tools: { flexDirection: "row", alignItems: "center", gap: 8 },
   selectionCard: {
     borderRadius: journalRadius.card,
     borderWidth: 1,
@@ -219,9 +223,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   inboxText: { fontSize: 15, fontWeight: "600" },
-  outboxCard: { borderRadius: journalRadius.control, padding: 12 },
-  outboxText: { fontSize: 13, lineHeight: 19 },
+  outboxCard: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: journalRadius.control, padding: 12 },
+  outboxText: { flex: 1, fontSize: 13, lineHeight: 19 },
   groupHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14, marginTop: 6 },
-  groupLabel: { fontSize: 13, fontWeight: "700", letterSpacing: 0.6 },
+  groupLabel: { fontSize: 13, fontWeight: "500", letterSpacing: 1 },
   groupRule: { flex: 1, height: StyleSheet.hairlineWidth },
 });

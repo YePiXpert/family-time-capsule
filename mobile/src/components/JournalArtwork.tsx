@@ -14,8 +14,8 @@ export function JournalArtwork({ kind, compact = false }: { kind: "keepsake" | "
 }
 
 const styles = StyleSheet.create({
-  compactFrame: { alignSelf: "center", borderRadius: 20, borderWidth: 1, overflow: "hidden" },
+  compactFrame: { alignSelf: "center", borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: "hidden" },
   featureFrame: { alignSelf: "center", maxWidth: "100%", borderRadius: 22, borderWidth: 1, overflow: "hidden" },
-  compact: { width: 112, height: 102 },
+  compact: { width: 80, height: 84 },
   feature: { width: 216, height: 144 },
 });

@@ -39,7 +39,7 @@ export function createSharedStyles(palette: JournalPalette) {
       fontWeight: "700",
       letterSpacing: 1.2,
     },
-    title: { color: palette.ink, fontSize: journalType.title, fontWeight: "700" },
+    title: { color: palette.ink, fontSize: journalType.title, fontWeight: "600" },
     intro: { color: palette.muted, fontSize: journalType.body },
     card: {
       backgroundColor: palette.card,
@@ -71,7 +71,7 @@ export function createSharedStyles(palette: JournalPalette) {
       borderRadius: journalRadius.control,
       paddingHorizontal: 16,
     },
-    primaryText: { color: palette.onCoral, fontSize: 15, fontWeight: "700" },
+    primaryText: { color: palette.onCoral, fontSize: 15, fontWeight: "600" },
     secondaryButton: {
       minHeight: 48,
       alignItems: "center",
@@ -82,7 +82,7 @@ export function createSharedStyles(palette: JournalPalette) {
       borderWidth: 1,
       paddingHorizontal: 16,
     },
-    secondaryText: { color: palette.coralDark, fontSize: 15, fontWeight: "700" },
+    secondaryText: { color: palette.coralDark, fontSize: 15, fontWeight: "600" },
     notice: { backgroundColor: palette.softSage, borderRadius: 12, padding: 12 },
     noticeText: { color: palette.sage, fontSize: 13 },
     warning: { backgroundColor: palette.warningSoft, borderRadius: 12, padding: 12 },

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Animated, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
-import { journalSpace, journalType } from "../design/tokens";
+import { Animated, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { journalFont, journalSpace, journalType } from "../design/tokens";
 import { useColorTheme } from "../theme";
 import { GlassSurface } from "./GlassSurface";
 import { Text } from "./typography";
@@ -41,7 +41,7 @@ export function CollapsingHero({ title, eyebrow, subtitle, pill, accessory, scro
   const fade = scrollY.interpolate({ inputRange: [0, threshold], outputRange: [1, 0], extrapolate: "clamp" });
   const lift = scrollY.interpolate({ inputRange: [0, threshold], outputRange: [0, -14], extrapolate: "clamp" });
   return (
-    <Animated.View style={[styles.hero, style, { opacity: fade, transform: [{ translateY: lift }] }]}>
+    <Animated.View style={[styles.hero, { borderBottomColor: colors.line }, style, { opacity: fade, transform: [{ translateY: lift }] }]}>
       <View style={styles.heroText}>
         {eyebrow ? <Text style={[styles.eyebrow, { color: colors.coral }]}>{eyebrow}</Text> : null}
         <Text accessibilityRole="header" style={[styles.title, { color: colors.ink }]}>{title}</Text>
@@ -83,11 +83,11 @@ export function CollapsingHeroBar({ title, scrollY, topInset, threshold = HERO_C
 }
 
 const styles = StyleSheet.create({
-  hero: { flexDirection: "row", alignItems: "center", gap: 16, paddingBottom: 4 },
-  heroText: { flex: 1, gap: 8 },
-  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.2 },
-  title: { fontSize: journalType.largeTitle, fontWeight: "800", letterSpacing: -0.5 },
-  subtitle: { fontSize: journalType.body },
+  hero: { flexDirection: "row", alignItems: "center", gap: 16, paddingTop: 8, paddingBottom: 24, borderBottomWidth: StyleSheet.hairlineWidth },
+  heroText: { flex: 1, gap: 10 },
+  eyebrow: { fontSize: 12, fontWeight: "500", letterSpacing: 1.6 },
+  title: { fontSize: journalType.largeTitle, fontFamily: Platform.OS === "ios" ? journalFont.editorialIOS : journalFont.editorialAndroid, fontWeight: "400" },
+  subtitle: { fontSize: 15 },
   pillSlot: { marginTop: 10 },
   barWrap: { position: "absolute", top: 0, left: 0, right: 0, overflow: "hidden" },
   barContent: { height: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: journalSpace.page },

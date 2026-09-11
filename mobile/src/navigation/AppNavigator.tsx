@@ -1,4 +1,4 @@
-import { journalMotion } from "../design/tokens";
+import { journalMotion, journalShadow } from "../design/tokens";
 import { createRef, useEffect, useRef, useState, type RefObject } from "react";
 import { BlurTargetView } from "expo-blur";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
@@ -66,7 +66,7 @@ const tabMeta: Record<string, { label: string; icon: JournalIconName }> = {
 function JournalTabBar({ state, descriptors, navigation, target, onHeight }: BottomTabBarProps & { target: RefObject<View | null>; onHeight: (height: number) => void }) {
   const { viewer, credentials, displayMode } = useApp();
   const { reducedMotion } = useAccessibleEffects();
-  const { colors } = useColorTheme();
+  const { colors, dark } = useColorTheme();
   const insets = useSafeAreaInsets();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
@@ -78,12 +78,11 @@ function JournalTabBar({ state, descriptors, navigation, target, onHeight }: Bot
   const canCapture = !credentials || viewer?.canCapture;
   if (!current || keyboardOpen) return null;
   return <View onLayout={event => onHeight(event.nativeEvent.layout.height)} style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-    {current.name !== "Capture" && canCapture ? <Pressable accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, { boxShadow: `0 6px 24px ${colors.scrim}` }, pressed && !reducedMotion && styles.pressed]}>
-      <GlassSurface target={target} tier="dock" radius={28} />
-      <JournalIcon name="plus" color={colors.coralDark} size={22} />
-      <Text style={[styles.captureLabel, { color: colors.coralDark }]}>记录一刻</Text>
+    {current.name !== "Capture" && canCapture ? <Pressable accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, { backgroundColor: colors.coral, boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, pressed && !reducedMotion && styles.pressed]}>
+      <JournalIcon name="plus" color={colors.onCoral} size={22} />
+      <Text style={[styles.captureLabel, { color: colors.onCoral }]}>记录一刻</Text>
     </Pressable> : null}
-    <View style={[styles.tabRow, { boxShadow: `0 6px 24px ${colors.scrim}` }, displayMode === "simple" && { minHeight: 84 }]}>
+    <View style={[styles.tabRow, { boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, displayMode === "simple" && { minHeight: 84 }]}>
       <GlassSurface target={target} tier="dock" radius={28} />
       {state.routes.filter(route => route.name !== "Capture").map(route => {
         const meta = tabMeta[route.name] ?? { label: route.name, icon: "growth" as JournalIconName };
@@ -174,7 +173,7 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 12.5, fontWeight: "600" },
   floatingCapture: { alignSelf: "flex-end", minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, marginBottom: 12, borderRadius: 26, overflow: "hidden" },
   pressed: { transform: [{ scale: 0.96 }] },
-  captureLabel: { fontSize: 16, fontWeight: "700", paddingVertical: 12 },
+  captureLabel: { fontSize: 16, fontWeight: "600", paddingVertical: 12 },
   banner: { paddingHorizontal: 16, paddingBottom: 8 },
   bannerText: { fontSize: 12, lineHeight: 17, fontWeight: "700", textAlign: "center" },
 });
