@@ -122,7 +122,7 @@ def cmd_transition(args) -> int:
     allowed = True
     reason = ""
     if src["era"] == "exploration" and dst["era"] == "formal":
-        reason = "探索期 → 正式 1.0 主线（LEGACY_TO_1_0 显式允许的升级路径）"
+        reason = "探索期 → 当前维护主线（发布注册表显式允许的升级路径）"
     elif src["era"] == "formal" and dst["era"] == "exploration":
         allowed = False
         reason = "正式主线不能回退到探索期版本（探索期已结束）"

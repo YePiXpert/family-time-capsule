@@ -2,37 +2,37 @@
   "schemaVersion": 1,
   "note": [
     "显式发布注册表：版本→通道/纪元/顺序的唯一可信来源。",
-    "规则：绝不从镜像 digest 截取版本；绝不用 sort -V 比较发布顺序；",
-    "未列出的版本一律拒绝部署（来源白名单）。",
-    "sequence 是发布顺序号，与 SemVer 优先级无关——正式 1.0.0 的 sequence",
-    "高于所有探索期版本，但 SemVer 比较中 1.0.0 < 1.3.0-alpha.1，这是一次",
-    "显式重新编号，详见仓库根 VERSIONING.md。"
+    "未列出的版本拒绝部署；digest 镜像必须显式声明版本。",
+    "sequence 是全局递增的发布顺序，与 SemVer 优先级无关。",
+    "2026-09-11 按维护者要求从 0.0.1 重新编号；它的 sequence 18 高于 1.0.0-dev.3 的 17，属于向前升级。",
+    "历史 tag、Release、原生构建号及数据库迁移编号保留，详见 VERSIONING.md。"
   ],
   "eras": {
     "exploration": "2026-08-29 至 2026-09-06 的探索期发行（0.1.x、1.x alpha/rc），历史保留、不再新增",
-    "formal": "正式 1.0.0 主线（1.0.0-dev.N / 1.0.0-rc.N / 1.0.0），终点只有 1.0.0"
+    "formal": "当前维护主线：历史 1.0.0-dev.N 和自 2026-09-11 起的 0.0.x；不等同于 stable 通道"
   },
   "releases": [
-    { "version": "0.1.0", "channel": "exploration", "era": "exploration", "sequence": 1, "tag": "v0.1.0", "date": "2026-08-29" },
-    { "version": "0.1.1", "channel": "exploration", "era": "exploration", "sequence": 2, "tag": "v0.1.1", "date": "2026-08-30" },
-    { "version": "0.1.2", "channel": "exploration", "era": "exploration", "sequence": 3, "tag": "v0.1.2", "date": "2026-08-30" },
-    { "version": "0.1.3", "channel": "exploration", "era": "exploration", "sequence": 4, "tag": "v0.1.3", "date": "2026-08-30" },
-    { "version": "1.0.0-rc.1", "channel": "exploration", "era": "exploration", "sequence": 5, "tag": "v1.0.0-rc.1", "date": "2026-09-03" },
-    { "version": "1.0.0-rc.2", "channel": "exploration", "era": "exploration", "sequence": 6, "tag": "v1.0.0-rc.2", "date": "2026-09-03" },
-    { "version": "1.0.0-rc.3", "channel": "exploration", "era": "exploration", "sequence": 7, "tag": null, "date": "2026-09-04", "note": "有 CHANGELOG 记录，未打 tag/未发镜像" },
-    { "version": "1.0.0-rc.4", "channel": "exploration", "era": "exploration", "sequence": 8, "tag": "v1.0.0-rc.4", "date": "2026-09-04" },
-    { "version": "1.1.0-alpha.1", "channel": "exploration", "era": "exploration", "sequence": 9, "tag": "v1.1.0-alpha.1", "date": "2026-09-04" },
-    { "version": "1.2.0-alpha.1", "channel": "exploration", "era": "exploration", "sequence": 10, "tag": "v1.2.0-alpha.1", "date": "2026-09-05" },
-    { "version": "1.2.0-alpha.2", "channel": "exploration", "era": "exploration", "sequence": 11, "tag": "v1.2.0-alpha.2", "date": "2026-09-05" },
-    { "version": "1.2.0-alpha.3", "channel": "exploration", "era": "exploration", "sequence": 12, "tag": "v1.2.0-alpha.3", "date": "2026-09-05" },
-    { "version": "1.2.0-alpha.4", "channel": "exploration", "era": "exploration", "sequence": 13, "tag": "v1.2.0-alpha.4", "date": "2026-09-06" },
-    { "version": "1.3.0-alpha.1", "channel": "exploration", "era": "exploration", "sequence": 14, "tag": "v1.3.0-alpha.1", "date": "2026-09-06" },
-    { "version": "1.0.0-dev.1", "channel": "development", "era": "formal", "sequence": 15, "tag": "v1.0.0-dev.1", "date": "2026-09-09", "note": "正式主线首个开发预发布：精简三入口与完整作品编辑；旧客户端需更新" },
-    { "version": "1.0.0-dev.2", "channel": "development", "era": "formal", "sequence": 16, "tag": "v1.0.0-dev.2", "date": "2026-09-10", "note": "成长手帐 UI、原生液体玻璃与外观切换；修复记录保存栏遮挡，原生构建 24" },
-    { "version": "1.0.0-dev.3", "channel": "development", "era": "formal", "sequence": 17, "tag": "v1.0.0-dev.3", "date": "2026-09-10", "note": "补齐 TS/M2TS 导入与 MPEG-2/AC-3 兼容转码，避免放大旧视频导致超时；原生构建 25" }
+    {"version": "0.1.0", "channel": "exploration", "era": "exploration", "sequence": 1, "tag": "v0.1.0", "date": "2026-08-29"},
+    {"version": "0.1.1", "channel": "exploration", "era": "exploration", "sequence": 2, "tag": "v0.1.1", "date": "2026-08-30"},
+    {"version": "0.1.2", "channel": "exploration", "era": "exploration", "sequence": 3, "tag": "v0.1.2", "date": "2026-08-30"},
+    {"version": "0.1.3", "channel": "exploration", "era": "exploration", "sequence": 4, "tag": "v0.1.3", "date": "2026-08-30"},
+    {"version": "1.0.0-rc.1", "channel": "exploration", "era": "exploration", "sequence": 5, "tag": "v1.0.0-rc.1", "date": "2026-09-03"},
+    {"version": "1.0.0-rc.2", "channel": "exploration", "era": "exploration", "sequence": 6, "tag": "v1.0.0-rc.2", "date": "2026-09-03"},
+    {"version": "1.0.0-rc.3", "channel": "exploration", "era": "exploration", "sequence": 7, "tag": null, "date": "2026-09-04", "note": "有 CHANGELOG 记录，未打 tag/未发镜像"},
+    {"version": "1.0.0-rc.4", "channel": "exploration", "era": "exploration", "sequence": 8, "tag": "v1.0.0-rc.4", "date": "2026-09-04"},
+    {"version": "1.1.0-alpha.1", "channel": "exploration", "era": "exploration", "sequence": 9, "tag": "v1.1.0-alpha.1", "date": "2026-09-04"},
+    {"version": "1.2.0-alpha.1", "channel": "exploration", "era": "exploration", "sequence": 10, "tag": "v1.2.0-alpha.1", "date": "2026-09-05"},
+    {"version": "1.2.0-alpha.2", "channel": "exploration", "era": "exploration", "sequence": 11, "tag": "v1.2.0-alpha.2", "date": "2026-09-05"},
+    {"version": "1.2.0-alpha.3", "channel": "exploration", "era": "exploration", "sequence": 12, "tag": "v1.2.0-alpha.3", "date": "2026-09-05"},
+    {"version": "1.2.0-alpha.4", "channel": "exploration", "era": "exploration", "sequence": 13, "tag": "v1.2.0-alpha.4", "date": "2026-09-06"},
+    {"version": "1.3.0-alpha.1", "channel": "exploration", "era": "exploration", "sequence": 14, "tag": "v1.3.0-alpha.1", "date": "2026-09-06"},
+    {"version": "1.0.0-dev.1", "channel": "development", "era": "formal", "sequence": 15, "tag": "v1.0.0-dev.1", "date": "2026-09-09", "note": "正式主线首个开发预发布：精简三入口与完整作品编辑；旧客户端需更新"},
+    {"version": "1.0.0-dev.2", "channel": "development", "era": "formal", "sequence": 16, "tag": "v1.0.0-dev.2", "date": "2026-09-10", "note": "成长手帐 UI、原生液体玻璃与外观切换；修复记录保存栏遮挡，原生构建 24"},
+    {"version": "1.0.0-dev.3", "channel": "development", "era": "formal", "sequence": 17, "tag": "v1.0.0-dev.3", "date": "2026-09-10", "note": "补齐 TS/M2TS 导入与 MPEG-2/AC-3 兼容转码，避免放大旧视频导致超时；原生构建 25"},
+    {"version": "0.0.1", "channel": "development", "era": "formal", "sequence": 18, "tag": "v0.0.1", "date": "2026-09-11", "note": "按维护者要求从 0.0.1 重新编号；包含运行时、部署与纸上日常设计更新，原生构建 35；沿发布序号升级，不回退数据"}
   ],
   "planned": [
-    { "version": "1.0.0-rc.5", "channel": "candidate", "era": "formal", "note": "正式候选；rc.1~rc.4 已被探索期占用，从 rc.5 起" },
-    { "version": "1.0.0", "channel": "stable", "era": "formal", "note": "正式稳定版；仅在全部发布门禁通过后登记并打 tag" }
+    {"version": "1.0.0-rc.5", "channel": "candidate", "era": "formal", "note": "正式候选；rc.1~rc.4 已被探索期占用，从 rc.5 起"},
+    {"version": "1.0.0", "channel": "stable", "era": "formal", "note": "正式稳定版；仅在全部发布门禁通过后登记并打 tag"}
   ]
 }

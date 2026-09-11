@@ -1,9 +1,9 @@
 # Family Time Capsule
 
-**1.0.0-dev.3 / 正式 1.0 开发预发布版**
+**0.0.1 / 早期发行版 · 原生构建 35**
 
-安装包与升级说明见 [v1.0.0-dev.3 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.0-dev.3)。
-网页更新后刷新即可；安装构建 25 可获得 TS/MPG 文件导入修复；旧视频同步后可生成兼容播放版。构建 15–24 仍与服务端兼容，构建 14 及更早版本需更新。
+安装包与升级说明见 [v0.0.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v0.0.1)。
+本次将产品版本重新编号为 `0.0.1`，发布序号延续为 18，原生构建号增至 35；升级顺序见 [VERSIONING.md](VERSIONING.md)。网页更新后刷新即可，App 界面需要安装对应新包。
 
 从出生开始，留下照片、声音和想对你说的话，慢慢写成送给你的成长礼物。
 
@@ -24,7 +24,7 @@ Family members tell the story.
 Original sources always come first.
 
 > AI 默认关闭、始终可选；没有 API Key、Provider 或 worker 时，核心档案仍完整可用。
-> 当前是正式 1.0 开发期：自动化、Docker 与原生包级门禁通过后发布 prerelease；系统分享、
+> 当前 `0.0.x` 属于早期开发通道：自动化、Docker 与原生包级门禁通过后发布 prerelease；系统分享、
 > Files/iCloud/DocumentsProvider、通知和真实设备媒体行为仍必须按
 > [真实设备验收](docs/REAL_DEVICE_TEST.md) 留档，不能由编译结果代替。
 
@@ -32,8 +32,8 @@ Original sources always come first.
 
 ## 日常使用
 
-界面采用暖白与蜜桃粉的成长手帐风格，首页显示孩子档案中的真实年龄。
-轻玻璃仅用于导航与浮动记录入口；系统减少透明度或不支持模糊时使用实底。
+界面采用奶油纸色、陶土色主操作和阅读式排版，首页显示孩子档案中的真实年龄，规范见 [DESIGN.md](DESIGN.md)。
+原生导航保留轻玻璃，浮动记录按钮使用实色；系统减少透明度或不支持模糊时使用实底。
 新建成长书提供照片册、图文成长记两种模板；历史作品继续兼容。
 
 

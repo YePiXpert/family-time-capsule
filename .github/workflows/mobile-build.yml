@@ -325,6 +325,10 @@ jobs:
           file: docker/Dockerfile
           platforms: linux/amd64
           push: true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
           tags: |
             ${{ env.IMAGE }}:${{ env.VERSION }}
             ${{ env.IMAGE }}:${{ github.sha }}
@@ -339,12 +343,13 @@ jobs:
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
   release:
-    name: GitHub prerelease (packages + ops + manifest)
+    name: GitHub release (packages + ops + manifest)
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     needs: [android, ios, docker-image]
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -366,6 +371,9 @@ jobs:
           IMAGE_REF: ${{ needs.docker-image.outputs.image }}@${{ needs.docker-image.outputs.digest }}
         run: |
           set -eu
+          # Release evidence must come from this exact main commit.
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=completed" \
+            --jq '.workflow_runs | any(.conclusion == "success" and .head_branch == "main")' | grep -Fx true
           test -f release-assets/FamilyTimeCapsule-android.apk
           test -f release-assets/FamilyTimeCapsule-ios-unsigned.ipa
           ls release-assets/family-time-capsule-ops-*.zip >/dev/null
@@ -397,13 +405,13 @@ jobs:
                   "ops-scripts": {"file": ops_file, "sha256": ops},
               },
               "api": {
-                  "added": ["POST /api/works"],
-                  "changed": ["GET /api/mobile/v1/home", "GET /api/books/projects/materials", "PATCH /api/books/projects/{id}"],
+                  "added": [],
+                  "changed": [],
                   "minimumNativeBuild": 15,
-                  "note": "旧客户端需更新；服务端部署不会更新已安装 App 的界面。",
+                  "note": "构建 15 及以上沿现有协议兼容；构建 14 及更早版本需更新。服务端部署不会更新已安装 App 的界面。",
               },
               "migrations": [entry["tag"] + ".sql" for entry in migrations],
-              "verification": "自动化测试与 CI 全绿；真实 VPS/真机端到端验收未完成，不以本 manifest 替代",
+              "verification": "同一提交的 CI 与原生构建通过；iOS Release 模拟器覆盖八个启动及显示场景。实际设备验收未完成，不以本 manifest 替代。",
           }, ensure_ascii=False, indent=2))
           PY
           python3 -m json.tool release-manifest.json >/dev/null

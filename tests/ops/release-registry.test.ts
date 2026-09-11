@@ -116,6 +116,14 @@ describe("resolve：版本解析不从 digest 截取", () => {
 });
 
 describe("transition：迁移白名单（不用 sort -V）", () => {
+  it("0.0.1 重新编号仍是向前升级，禁止按普通升级回到 dev.3", () => {
+    const resolve = runTool(["resolve", "--image", "ghcr.io/yepixpert/family-time-capsule:0.0.1"]);
+    expect(resolve.status).toBe(0);
+    expect(JSON.parse(resolve.stdout)).toMatchObject({ version: "0.0.1", channel: "development", sequence: 18 });
+    expect(runTool(["transition", "--from", "1.0.0-dev.3", "--to", "0.0.1"]).status).toBe(0);
+    expect(runTool(["transition", "--from", "0.0.1", "--to", "1.0.0-dev.3"]).status).toBe(26);
+  });
+
   it("探索期 → 正式 1.0 主线放行（SemVer 会误判为降级的路径）", () => {
     for (const from of ["0.1.0", "1.0.0-rc.4", "1.3.0-alpha.1"]) {
       const result = runTool(["transition", "--from", from, "--to", "1.0.0-dev.1"]);
