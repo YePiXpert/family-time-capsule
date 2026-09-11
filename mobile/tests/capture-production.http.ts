@@ -17,6 +17,15 @@ const mocks = vi.hoisted(() => ({
   setParams: vi.fn(), route: { params: {} }, grantSyncConsent: vi.fn().mockResolvedValue(undefined), reloadLocal: async () => {}, queued: vi.fn(),
 }));
 vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
+// These device presentation effects are outside the HTTP/storage contract.
+// Keep the capture component, persistent hook, fetch and SQLite paths real.
+vi.mock("../src/components/GlassSheet", () => ({
+  useConfirmSheet: () => vi.fn(async () => true),
+  useAlertSheet: () => vi.fn(async () => {}),
+}));
+vi.mock("../src/design/haptics", () => ({
+  haptics: { success: vi.fn(), warning: vi.fn(), selection: vi.fn(), impact: vi.fn() },
+}));
 vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
 vi.mock("expo-glass-effect", () => ({ GlassView: "GlassView", isGlassEffectAPIAvailable: () => false, isLiquidGlassAvailable: () => false }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
