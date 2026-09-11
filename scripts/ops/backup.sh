@@ -11,26 +11,32 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
 source "$LIB_DIR/common.sh"
 
 if [[ "${1:-}" == "verify" ]]; then
+  [[ $# -eq 2 ]] || die "用法：backup.sh verify <snapshot-file>" 2
   SNAP="${2:?用法：backup.sh verify <snapshot.tar.gz>}"
   [[ -f "$SNAP" ]] || die "快照不存在：$SNAP" 2
   [[ -f "$SNAP.sha256" ]] || die "缺少校验文件：$SNAP.sha256" 2
-  (cd "$(dirname "$SNAP")" && sha256sum -c "$(basename "$SNAP").sha256") >/dev/null \
-    || die "SHA256 校验失败：$SNAP" 22
-  tar -tzf "$SNAP" >/dev/null || die "tar 完整性校验失败。" 22
-  tar -xzOf "$SNAP" manifest.json >/dev/null 2>&1 || die "缺少 manifest.json。" 22
+  "$(ftc_python)" "$LIB_DIR/snapshot.py" verify "$SNAP"
   note "快照校验通过：$(basename "$SNAP")"
   exit 0
 fi
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  sed -n '2,5p' "$0"
+  exit 0
+fi
+[[ $# -eq 0 ]] || die "未知备份参数。用法：backup.sh [verify <snapshot-file>]" 2
 
 ftc_lock backup
 ensure_layout
 load_env || die "尚未安装。" 2
+[[ "$FTC_BACKUP_KEEP" =~ ^[1-9][0-9]{0,8}$ ]] || die "FTC_BACKUP_KEEP 必须是正整数，至少保留一份快照。" 2
 
 # 磁盘余量门槛：至少 2GB；不做任何“删旧备份腾空间”。
 check_disk_free_mb "$FTC_BACKUP_DIR" 2048
 
 ID="$(new_deployment_id)"
 SNAP="$FTC_BACKUP_DIR/ftc-snapshot-$ID.tar.gz"
+ARCHIVE_TMP="$FTC_BACKUP_DIR/.ftc-snapshot-$ID.tar.gz.partial"
+SHA_TMP="$FTC_BACKUP_DIR/.ftc-snapshot-$ID.sha256.partial"
 STAGING="$FTC_BACKUP_DIR/.staging-$ID"
 mkdir -p "$STAGING"
 
@@ -42,6 +48,7 @@ backup_exit() {
     compose_cmd up -d --wait >/dev/null 2>&1 || warn "服务恢复失败，请运行 ftc start。"
   fi
   rm -rf "$STAGING"
+  rm -f "$ARCHIVE_TMP" "$ARCHIVE_TMP.sha256" "$SHA_TMP"
   ftc_unlock backup
   exit "$code"
 }
@@ -61,27 +68,31 @@ docker run --rm --user 0:0 --network none \
 }
 
 cp "$FTC_ENV_FILE" "$STAGING/env"
-IMAGE_DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$FTC_IMAGE" 2>/dev/null || echo "$FTC_IMAGE")"
-cat > "$STAGING/manifest.json" <<EOF
-{
-  "kind": "ftc-instance-snapshot",
-  "version": 1,
-  "createdAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "toolVersion": "$FTC_TOOL_VERSION",
-  "appVersion": "$(state_get current_version || echo unknown)",
-  "image": "$IMAGE_DIGEST",
-  "sensitive": true,
-  "contains": ["database", "originals", "instance-config"],
-  "note": "实例快照包含账号与配置，受保护保管；与面向家庭迁移的 portable archive 是不同产物。"
-}
-EOF
-tar -czf "$SNAP" -C "$STAGING" manifest.json env data.tar
+IMAGE_DIGEST="$(docker inspect --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}' "$FTC_IMAGE" 2>/dev/null || echo "$FTC_IMAGE")"
+"$(ftc_python)" - "$STAGING/manifest.json" "$FTC_TOOL_VERSION" "$(state_get current_version)" "$IMAGE_DIGEST" <<'PY'
+import datetime, json, sys
+output, tool, app, image = sys.argv[1:]
+with open(output, "w", encoding="utf-8") as file:
+    json.dump({"kind": "ftc-instance-snapshot", "version": 1,
+               "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+               "toolVersion": tool, "appVersion": app or "unknown", "image": image,
+               "sensitive": True, "contains": ["database", "originals", "instance-config"]}, file, indent=2)
+PY
+tar -czf "$ARCHIVE_TMP" -C "$STAGING" manifest.json env data.tar
 # 校验文件只记录 basename，避免跨平台路径形态差异导致 -c 找不到文件。
-(cd "$(dirname "$SNAP")" && sha256sum "$(basename "$SNAP")" > "$(basename "$SNAP").sha256")
+(cd "$FTC_BACKUP_DIR" && sha256sum "$(basename "$ARCHIVE_TMP")" > "$(basename "$ARCHIVE_TMP").sha256")
 rm -rf "$STAGING"
 
 phase_set "backup-verify"
-bash "$0" verify "$SNAP"
+bash "$0" verify "$ARCHIVE_TMP"
+
+# Publish only the verified artifact. Failed attempts never look like retained
+# snapshots, and cannot evict the last valid copy during retention cleanup.
+[[ ! -e "$SNAP" && ! -e "$SNAP.sha256" ]] || die "快照名称已存在，拒绝覆盖。" 23
+read -r SNAP_SHA _ < "$ARCHIVE_TMP.sha256"
+printf '%s  %s\n' "$SNAP_SHA" "$(basename "$SNAP")" > "$SHA_TMP"
+mv "$SHA_TMP" "$SNAP.sha256"
+mv "$ARCHIVE_TMP" "$SNAP"
 
 phase_set "backup-restart"
 compose_cmd up -d --wait >/dev/null

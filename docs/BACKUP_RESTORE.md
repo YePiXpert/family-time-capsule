@@ -18,9 +18,11 @@ sudo bash scripts/ops/ftc backup verify <快照.tar.gz>  # 任意时候复验
 ```
 
 流程：停止 app/worker（维护门禁期间对外 503）→ 用应用镜像打包数据卷 →
-连同 `config/env`、manifest（版本/镜像 digest/文件清单）写入
-`backups/ftc-snapshot-<id>.tar.gz` + `.sha256` → 校验通过才报成功 →
+连同 `config/env`、manifest（格式版本/镜像标识/内容类别）写入临时文件 →
+核验整包 SHA-256、SQLite 完整性和外键、所有已登记原件的长度与 SHA-256 →
+通过才发布 `backups/ftc-snapshot-<id>.tar.gz` + `.sha256` →
 自动重启服务。保留最近 `FTC_BACKUP_KEEP`（默认 5）份，永不删除最后一份。
+损坏或缺件的新快照不会进入保留列表，也不会淘汰已有快照；失败会尝试重启服务。
 
 为什么停写：SQLite 在线直接 `cp` 主库文件不是一致备份（WAL/事务与媒体
 引用可能错位）；当前实例快照通过停写保持数据库与媒体一致。应用内 WebDAV
@@ -59,10 +61,52 @@ WebDAV 使用 `buildActorExport`，会过滤当前账号无权读取的私密资
 sudo bash scripts/ops/ftc restore <快照.tar.gz> --to /opt/ftc-restore-test
 ```
 
-先整包校验（SHA256、tar 完整性、manifest、路径穿越检查），全部通过才
-解压到目标；目标必须为空。恢复出的目录含账号状态与原实例配置
-（`BETTER_AUTH_URL` 等）——跨服务器恢复时请人工核对新域名后再启动。
-验证无误后可将其作为新 `FTC_ROOT` 启动，或映射为新数据卷。
+工具先在目标同一文件系统的私有临时目录完成解包、SQLite 完整性/外键检查和
+全部登记原件的长度/SHA-256 检查，再原子发布目标目录。绝对路径、路径穿越、
+符号链接、特殊文件、重复条目和指向归档外的硬链接均拒绝；合法归档内硬链接
+按普通文件复制。目标须不存在或为当前执行用户拥有的空目录，不能是符号链接。
+校验需要额外空间容纳快照私有副本、未压缩 `data.tar` 与解包数据；失败不产生半恢复目标。
+
+恢复保留账号、密码、停用状态、内容归属、读者范围、日期和快照内的删除记录；
+清除旧 session/verification，轮换同步 generation 并清除旧游标，撤销访客链接与
+邀请链接。手机须重新登录并完整同步。原始配置只保存在权限为 600 的
+`config/env.snapshot`，不会被执行或自动用于启动。**保留原 AUTH_SECRET**，
+它用于解密已启用的两步验证资料；不能直接换成新随机值。
+
+### 仅在本机隔离启动验证
+
+编辑恢复目录的 `config/env`，显式填写以下字段：
+
+- `AUTH_SECRET`：原实例密钥（从受保护的原配置中核对，不要 `source env.snapshot`）。
+- `FTC_RESTORE_IMAGE`：已核验来源、与该快照版本兼容的镜像，建议固定 digest。
+- `FTC_RESTORE_DATA_DIR`：恢复目录中 `data` 的绝对路径。
+- `FTC_RESTORE_UID` / `FTC_RESTORE_GID`：该数据目录所有者的数字 UID/GID。
+- `FTC_RESTORE_PROJECT`：全新的独立 Compose 项目名；`FTC_RESTORE_PORT`：未占用本机端口。
+
+在仓库目录执行：
+
+```bash
+sudo docker compose --env-file /opt/ftc-restore-test/config/env \
+  -f scripts/ops/templates/compose.restore-check.yml up -d --wait
+# 使用 http://127.0.0.1:<FTC_RESTORE_PORT> 核对；远程机器可通过 SSH 端口转发访问。
+sudo docker compose --env-file /opt/ftc-restore-test/config/env \
+  -f scripts/ops/templates/compose.restore-check.yml down
+```
+
+模板只将网关绑定到 `127.0.0.1`。应用位于无外网出口的内部网络，网关没有数据卷
+或密钥，只转发到应用的固定端口；不启动 worker，不带入原 WebDAV/AI 配置。
+应用需要读写恢复目录以运行数据库迁移和登录。`ftc install` 会拒绝此恢复目录，
+避免另建空数据卷而误以为已使用恢复数据。
+
+`restore-report.json` 记录原件数量/字节数、失效会话及链接数量和校验摘要。
+其中 `postSnapshotRevocationsReconciled: false` 表示**快照之后的停用、撤权或
+删除尚未对账**。隔离验证通过不代表可以接回公网或原手机；正式接管仍需完成
+这部分对账、域名/凭据复核和实际部署验收。当前工具不自动切换生产。
+
+仓库的 `scripts/verify-instance-snapshot.mts` 使用合成家庭数据，实际启动 Docker
+app/worker，执行 `ftc backup` / `ftc restore`，再启动独立恢复应用，验证真实登录、
+私密/指定成员/家庭读取、正文与日期、照片和音频原件、删除状态、旧会话/链接/同步游标
+失效，以及原实例在备份后的修改保持独立。它不访问真实家庭实例。
 
 ## 面向家庭的 portable 档案
 

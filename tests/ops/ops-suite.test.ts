@@ -2,6 +2,8 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**
@@ -100,6 +102,21 @@ function installOnce(env: Record<string, string> = {}) {
     "--image", "ghcr.io/yepixpert/family-time-capsule:1.3.0-alpha.1",
   ], env);
   expect(result.status).toBe(0);
+  // Backups verify actual SQLite and original bytes, not placeholder text files.
+  const dataDir = `${dockerLog.replace(/\.log$/u, "")}-volume`;
+  mkdirSync(path.join(dataDir, "db"), { recursive: true });
+  mkdirSync(path.join(dataDir, "originals"), { recursive: true });
+  const database = new Database(path.join(dataDir, "db", "capsule.sqlite"));
+  database.exec(`CREATE TABLE IF NOT EXISTS family(id TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS user(id TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS memory_event(id TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS session(id TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS verification(id TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS asset(id TEXT PRIMARY KEY, storage_key TEXT, bytes INTEGER, sha256 TEXT, original_asset_id TEXT);`);
+  database.prepare("INSERT OR REPLACE INTO asset VALUES ('photo','originals/a.jpg',?,?,NULL)")
+    .run(Buffer.byteLength("photo-bytes"), createHash("sha256").update("photo-bytes").digest("hex"));
+  database.close();
+  writeFileSync(path.join(dataDir, "originals", "a.jpg"), "photo-bytes");
   return readFileSync(path.join(ftcRoot, "config", "env"), "utf8");
 }
 
@@ -119,7 +136,7 @@ function toPosix(p: string): string {
 }
 
 beforeEach(() => {
-  workspace = mkdtempSync(path.join(tmpdir(), "ftc-ops-"));
+  workspace = mkdtempSync(path.join(process.env.FTC_TEST_TEMP_DIR ?? tmpdir(), "ftc-ops-"));
   ftcRoot = path.join(workspace, "root");
   binDir = path.join(workspace, "bin");
   dockerLog = path.join(workspace, "docker.log");
@@ -255,7 +272,6 @@ describe("ftc backup / cleanup", () => {
     const dataDir = `${dockerLog.replace(/\.log$/u, "")}-volume`;
     mkdirSync(path.join(dataDir, "db"), { recursive: true });
     mkdirSync(path.join(dataDir, "originals"), { recursive: true });
-    writeFileSync(path.join(dataDir, "db", "capsule.sqlite"), "db-bytes");
     writeFileSync(path.join(dataDir, "originals", "a.jpg"), "photo-bytes");
     const result = run("backup", []);
     expect(result.status).toBe(0);
@@ -272,7 +288,9 @@ describe("ftc backup / cleanup", () => {
     if (process.platform !== "win32") {
       const restored = path.join(workspace, "restored");
       expect(run("restore", [toPosix(snapPath), "--to", toPosix(restored)]).status).toBe(0);
-      expect(readFileSync(path.join(restored, "data", "db", "capsule.sqlite"), "utf8")).toBe("db-bytes");
+      const restoredDb = new Database(path.join(restored, "data", "db", "capsule.sqlite"), { readonly: true });
+      expect(restoredDb.prepare("SELECT storage_key FROM asset").get()).toEqual({ storage_key: "originals/a.jpg" });
+      restoredDb.close();
       expect(readFileSync(path.join(restored, "data", "originals", "a.jpg"), "utf8")).toBe("photo-bytes");
       expect(existsSync(path.join(ftcRoot, "state", "locks", "restore"))).toBe(false);
     }
@@ -281,6 +299,32 @@ describe("ftc backup / cleanup", () => {
     writeFileSync(snapPath, "corrupted");
     const corrupted = run("backup", ["verify", toPosix(snapPath)]);
     expect(corrupted.status).toBe(22);
+  });
+
+  it("an invalid new snapshot cannot replace or evict the last verified backup", () => {
+    installOnce();
+    expect(run("backup", [], { FTC_BACKUP_KEEP: "1" }).status).toBe(0);
+    const backups = path.join(ftcRoot, "backups");
+    const name = readdirSync(backups).find(file => file.endsWith(".tar.gz"))!;
+    const before = readFileSync(path.join(backups, name));
+    const dataDir = `${dockerLog.replace(/\.log$/u, "")}-volume`;
+    writeFileSync(path.join(dataDir, "originals", "a.jpg"), "bad-original");
+    const failed = run("backup", [], { FTC_BACKUP_KEEP: "1" });
+    expect(failed.status, failed.stderr).toBe(22);
+    expect(failed.stderr).toContain("original_checksum_mismatch");
+    expect(readdirSync(backups).sort()).toEqual([name, `${name}.sha256`].sort());
+    expect(readFileSync(path.join(backups, name))).toEqual(before);
+    expect(dockerCalls().at(-1)).toContain("up -d --wait");
+  });
+
+  it.each(["0", "-1", "invalid"])("rejects unsafe backup retention %s before stopping services", (keep) => {
+    const originalEnv = installOnce();
+    const priorCalls = dockerCalls();
+    writeFileSync(path.join(ftcRoot, "config", "env"), `${originalEnv}\nFTC_BACKUP_KEEP=${keep}\n`);
+    const result = run("backup", []);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("FTC_BACKUP_KEEP");
+    expect(dockerCalls()).toEqual(priorCalls);
   });
 
   it("cleanup 默认 dry-run 不删除；--apply 只清理超出保留数的快照", () => {

@@ -29,6 +29,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -f "$FTC_ROOT/restore-report.json" ]]; then
+  die "这是已恢复的核验目录。install 不会自动接入其中的数据；请按 BACKUP_RESTORE.md 使用隔离恢复模板，避免启动空卷。" 24
+fi
 ftc_lock install
 ensure_layout
 

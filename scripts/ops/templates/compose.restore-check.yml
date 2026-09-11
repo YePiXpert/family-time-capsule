@@ -1,0 +1,80 @@
+# Isolated verification of an already validated `ftc restore` directory.
+# Supply a trusted image and the ORIGINAL AUTH_SECRET explicitly. No worker or
+# archived outbound configuration is enabled, and no public port is opened.
+name: ${FTC_RESTORE_PROJECT:?set a new isolated project name}
+
+services:
+  app:
+    image: ${FTC_RESTORE_IMAGE:?set the trusted image to verify}
+    user: "${FTC_RESTORE_UID:?set the data owner uid}:${FTC_RESTORE_GID:?set the data owner gid}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DATA_DIR: /data
+      AUTH_SECRET: ${AUTH_SECRET:?retain the snapshot original secret for encrypted credentials}
+      BETTER_AUTH_URL: http://127.0.0.1:${FTC_RESTORE_PORT:?}
+      INITIAL_SETUP_TOKEN: ""
+      AI_PROVIDER: disabled
+    volumes:
+      - type: bind
+        source: ${FTC_RESTORE_DATA_DIR:?set the validated restored data directory}
+        target: /data
+        bind:
+          create_host_path: false
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "node", "/app/ops/healthcheck.mjs"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    networks:
+      - archive
+
+  # An internal-only bridge does not publish ports on all supported Docker
+  # engines. A fixed TCP relay exposes localhost while the app has no egress.
+  gateway:
+    image: ${FTC_RESTORE_IMAGE:?}
+    user: "${FTC_RESTORE_UID:?}:${FTC_RESTORE_GID:?}"
+    command:
+      - node
+      - -e
+      - |
+        const net = require('node:net');
+        net.createServer(client => {
+          const upstream = net.connect(3000, 'app');
+          client.setTimeout(30000, () => client.destroy());
+          client.on('error', () => upstream.destroy());
+          upstream.on('error', () => client.destroy());
+          client.on('close', () => upstream.destroy());
+          upstream.on('close', () => client.destroy());
+          client.pipe(upstream).pipe(client);
+        }).listen(3000, '0.0.0.0');
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:${FTC_RESTORE_PORT:?choose an unused loopback port}:3000"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "/app/ops/healthcheck.mjs"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: "no"
+    networks:
+      - access
+      - archive
+
+networks:
+  archive:
+    internal: true
+  access: {}
