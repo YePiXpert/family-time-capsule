@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { journalColors, journalDarkColors, journalType, journalSpace, journalRadius } from "@/mobile/src/design/tokens";
+import { journalColors, journalDarkColors, journalType, journalSpace, journalRadius, journalGlass, journalMotion } from "@/mobile/src/design/tokens";
 import type { Metadata, Viewport } from "next";
 import { ServiceWorkerRegistrar } from "@/components/service-worker-registrar";
 import { getDisplayMode } from "@/lib/display-mode.server";
@@ -40,15 +40,25 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   // 这只是 UI 密度选择，不影响权限，也让登录页等公共页保持一致缩放。
   const displayMode = await getDisplayMode();
   const nonce = (await headers()).get("x-nonce") ?? undefined;
+  const tiers = Object.keys(journalGlass.filter) as Array<keyof typeof journalGlass.filter>;
+  const sheen = (stops: readonly string[]) => `linear-gradient(135deg,${stops.join(",")})`;
   const theme = [
     ...Object.entries(journalColors).map(([key, value]) => [`--journal-${key}`, value]),
     ...Object.entries(journalType).map(([key, value]) => [`--journal-type-${key}`, `${value / 16}rem`]),
     ...Object.entries(journalSpace).map(([key, value]) => [`--journal-space-${key}`, `${value / 16}rem`]),
     ...Object.entries(journalRadius).map(([key, value]) => [`--journal-radius-${key}`, `${value / 16}rem`]),
+    ...tiers.map((tier) => [`--journal-glass-filter-${tier}`, journalGlass.filter[tier]]),
+    ...tiers.map((tier) => [`--journal-glass-tint-${tier}`, sheen(journalGlass.tint.light[tier])]),
+    ...Object.entries(journalGlass.rim.light).map(([side, value]) => [`--journal-glass-rim-${side}`, value]),
+    ["--journal-glass-scrim", journalGlass.scrim.light],
+    ["--journal-motion-sheet", `${journalMotion.sheetDuration}ms`],
   ].map(([name, value]) => `${name}:${value}`).join(";");
-  const darkTheme = Object.entries(journalDarkColors)
-    .map(([key, value]) => `--journal-${key}:${value}`)
-    .join(";");
+  const darkTheme = [
+    ...Object.entries(journalDarkColors).map(([key, value]) => [`--journal-${key}`, value]),
+    ...tiers.map((tier) => [`--journal-glass-tint-${tier}`, sheen(journalGlass.tint.dark[tier])]),
+    ...Object.entries(journalGlass.rim.dark).map(([side, value]) => [`--journal-glass-rim-${side}`, value]),
+    ["--journal-glass-scrim", journalGlass.scrim.dark],
+  ].map(([name, value]) => `${name}:${value}`).join(";");
   return (
     <html lang="zh-CN" className="h-full antialiased" data-display-mode={displayMode}>
       <head><style nonce={nonce}>{`:root{${theme}}@media (prefers-color-scheme:dark){:root{${darkTheme}}}`}</style></head>
