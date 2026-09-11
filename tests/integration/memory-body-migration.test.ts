@@ -12,11 +12,16 @@ it("backfills ordered legacy bodies without doubling mirrored drafts or collapsi
   try {
     db.exec("CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)");
     const journal = JSON.parse(readFileSync(path.join(folder, "meta/_journal.json"), "utf8"));
-    for (const entry of journal.entries.filter((e: { idx: number }) => e.idx <= 65)) {
-      const source = readFileSync(path.join(folder, `${entry.tag}.sql`), "utf8");
-      for (const statement of source.split("--> statement-breakpoint")) if (statement.trim()) db.exec(statement);
-      db.prepare("INSERT INTO __drizzle_migrations(hash,created_at) VALUES (?,?)").run(createHash("sha256").update(source).digest("hex"), entry.when);
-    }
+    // Batch only the empty historical fixture; the populated production upgrade
+    // below still runs with its real snapshot, transaction and foreign-key checks.
+    db.pragma("foreign_keys=OFF");
+    db.transaction(() => {
+      for (const entry of journal.entries.filter((e: { idx: number }) => e.idx <= 65)) {
+        const source = readFileSync(path.join(folder, `${entry.tag}.sql`), "utf8");
+        for (const statement of source.split("--> statement-breakpoint")) if (statement.trim()) db.exec(statement);
+        db.prepare("INSERT INTO __drizzle_migrations(hash,created_at) VALUES (?,?)").run(createHash("sha256").update(source).digest("hex"), entry.when);
+      }
+    })();
     db.pragma("foreign_keys = ON");
     db.exec(`INSERT INTO family(id,name,timezone,created_at,updated_at) VALUES ('family','旧家庭','UTC',0,0);
       INSERT INTO user(id,name,email,role,family_id,created_at,updated_at) VALUES ('user','作者','migration@fixture.invalid','editor','family',0,0);`);

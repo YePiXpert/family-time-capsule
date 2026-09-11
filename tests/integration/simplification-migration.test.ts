@@ -15,11 +15,16 @@ it("retires modules without losing the populated core/work graph, and cancels ol
     const migrationsFolder = path.join(process.cwd(), "db/migrations");
     const journal = JSON.parse(readFileSync(path.join(migrationsFolder, "meta/_journal.json"), "utf8")) as { entries: { tag: string; when: number }[] };
     db.exec('CREATE TABLE "__drizzle_migrations" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)');
-    for (const entry of journal.entries.slice(0, -1)) {
-      const sql = readFileSync(path.join(migrationsFolder, `${entry.tag}.sql`), "utf8");
-      for (const statement of sql.split("--> statement-breakpoint")) if (statement.trim()) db.exec(statement);
-      db.prepare('INSERT INTO "__drizzle_migrations" (hash,created_at) VALUES (?,?)').run(createHash("sha256").update(sql).digest("hex"), entry.when);
-    }
+    // Batch only the empty historical fixture; the populated production upgrade
+    // below still runs with its real snapshot, transaction and foreign-key checks.
+    db.pragma("foreign_keys=OFF");
+    db.transaction(() => {
+      for (const entry of journal.entries.slice(0, -1)) {
+        const sql = readFileSync(path.join(migrationsFolder, `${entry.tag}.sql`), "utf8");
+        for (const statement of sql.split("--> statement-breakpoint")) if (statement.trim()) db.exec(statement);
+        db.prepare('INSERT INTO "__drizzle_migrations" (hash,created_at) VALUES (?,?)').run(createHash("sha256").update(sql).digest("hex"), entry.when);
+      }
+    })();
     db.pragma("foreign_keys=ON");
     const insert = (table: string, values: Record<string, string | number | null>) => {
       const keys = Object.keys(values);
