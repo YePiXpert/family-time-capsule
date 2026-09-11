@@ -2,7 +2,7 @@
 # ftc backup —— 一致性实例快照（M6）。
 # 策略：维护门禁 + 停止 app/worker（停写）→ 打包数据库+原件+配置 → 校验。
 # 快照含账号与敏感配置：单独保管，绝不当作家庭阅读包分享；未加密存储时不承诺端到端加密。
-# 用法：backup.sh [verify <snapshot-file>]
+# 用法：backup.sh [--keep-stopped | verify <snapshot-file>]
 set -euo pipefail
 umask 077
 
@@ -23,11 +23,14 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   sed -n '2,5p' "$0"
   exit 0
 fi
-[[ $# -eq 0 ]] || die "未知备份参数。用法：backup.sh [verify <snapshot-file>]" 2
+KEEP_STOPPED=0
+if [[ "${1:-}" == "--keep-stopped" ]]; then KEEP_STOPPED=1; shift; fi
+[[ $# -eq 0 ]] || die "未知备份参数。用法：backup.sh [--keep-stopped | verify <snapshot-file>]" 2
 
 ftc_lock backup
 ensure_layout
 load_env || die "尚未安装。" 2
+[[ $KEEP_STOPPED -eq 1 || ! -f "$FTC_STATE_DIR/pending_rollback" ]] || die "回滚等待核对中；请使用 backup --keep-stopped，或先完成/取消回滚。" 28
 [[ "$FTC_BACKUP_KEEP" =~ ^[1-9][0-9]{0,8}$ ]] || die "FTC_BACKUP_KEEP 必须是正整数，至少保留一份快照。" 2
 
 # 磁盘余量门槛：至少 2GB；不做任何“删旧备份腾空间”。
@@ -44,8 +47,8 @@ mkdir -p "$STAGING"
 RESTART_NEEDED=0
 backup_exit() {
   local code=$?
-  if [[ $RESTART_NEEDED -eq 1 ]]; then
-    compose_cmd up -d --wait >/dev/null 2>&1 || warn "服务恢复失败，请运行 ftc start。"
+  if [[ $RESTART_NEEDED -eq 1 && $KEEP_STOPPED -eq 0 ]]; then
+    compose_cmd up -d --wait --wait-timeout 90 >/dev/null 2>&1 || warn "服务恢复失败，请运行 ftc start。"
   fi
   rm -rf "$STAGING"
   rm -f "$ARCHIVE_TMP" "$ARCHIVE_TMP.sha256" "$SHA_TMP"
@@ -64,7 +67,7 @@ docker run --rm --user 0:0 --network none \
   -v "$FTC_DATA_VOLUME:/data:ro" \
   -v "$STAGING:/stage" \
   "${FTC_IMAGE:?}" sh -c 'tar -cf /stage/data.tar -C /data .' || {
-    die "数据卷打包失败；服务已尝试恢复启动。" 23
+    die "数据卷打包失败；独立备份会尝试恢复服务，嵌套备份由调用方处理。" 23
 }
 
 cp "$FTC_ENV_FILE" "$STAGING/env"
@@ -84,7 +87,7 @@ tar -czf "$ARCHIVE_TMP" -C "$STAGING" manifest.json env data.tar
 rm -rf "$STAGING"
 
 phase_set "backup-verify"
-bash "$0" verify "$ARCHIVE_TMP"
+bash "$0" verify "$ARCHIVE_TMP" >/dev/null
 
 # Publish only the verified artifact. Failed attempts never look like retained
 # snapshots, and cannot evict the last valid copy during retention cleanup.
@@ -108,10 +111,14 @@ finally:
     os.close(directory)
 PY
 
-phase_set "backup-restart"
-compose_cmd up -d --wait >/dev/null
+if [[ $KEEP_STOPPED -eq 0 ]]; then
+  phase_set "backup-restart"
+  compose_cmd up -d --wait --wait-timeout 90 >/dev/null
+  phase_clear
+else
+  phase_set "backup-held-stopped"
+fi
 RESTART_NEEDED=0
-phase_clear
 
 # 保留策略：仅清理本工具创建的旧快照，且绝不删除最后一个可用副本。
 cd "$FTC_BACKUP_DIR"
@@ -123,3 +130,4 @@ if [[ "$COUNT" -gt "$FTC_BACKUP_KEEP" ]]; then
   done
 fi
 note "快照完成：$(basename "$SNAP")（保留最近 $FTC_BACKUP_KEEP 份）。"
+printf '%s\n' "$SNAP"

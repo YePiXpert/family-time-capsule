@@ -402,6 +402,8 @@ def main():
         print("用量：" + (json.dumps({key: value for key, value in result["usage"].items() if key in ("inputTokens", "outputTokens", "totalTokens") and type(value) is int and value >= 0}) if isinstance(result.get("usage"), dict) else "未知"))
         return
     with install.lock():
+        if (install.state / "pending_rollback").exists():
+            raise OperationError("回滚仍待核对；先完成或取消回滚，再调整 AI 配置。")
         if args.command == "recover":
             install.recover()
         elif args.command == "configure":

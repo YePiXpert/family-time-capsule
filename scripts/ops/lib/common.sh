@@ -73,9 +73,23 @@ state_get() {
 
 state_set() {
   local key="$1" value="$2"
-  mkdir -p "$FTC_STATE_DIR"
-  printf '%s' "$value" > "$FTC_STATE_DIR/$key"
-  chmod 600 "$FTC_STATE_DIR/$key" 2>/dev/null || true
+  mkdir -p "$FTC_STATE_DIR" || return 1
+  "$(ftc_python)" - "$FTC_STATE_DIR/$key" "$value" <<'PY'
+import os, sys, tempfile
+filename, value = sys.argv[1:]
+fd, staging = tempfile.mkstemp(prefix=".state-", dir=os.path.dirname(filename))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as output:
+        output.write(value)
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(staging, filename)
+    fd = os.open(os.path.dirname(filename), os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+finally:
+    if os.path.exists(staging): os.unlink(staging)
+PY
 }
 
 phase_set() {
@@ -100,6 +114,23 @@ ftc_lock() {
   exec {FTC_AI_GUARD_FD}> "$FTC_STATE_DIR/ai.lock"
   chmod 600 "$FTC_STATE_DIR/ai.lock"
   flock -s -n "$FTC_AI_GUARD_FD" || die "AI 配置操作正在运行，请稍后重试。" 9
+  # Different commands must not stop/restart or snapshot the same volume in
+  # parallel. Nested upgrade/rollback -> backup/restore inherit this open file
+  # description, so they share the lock without a re-entrant global bypass.
+  if [[ ! "${FTC_OPERATION_FD:-}" =~ ^[0-9]+$ ]] || ! "$(ftc_python)" - "$FTC_OPERATION_FD" "$FTC_STATE_DIR/operation.lock" <<'PY'
+import os, sys
+try:
+    held, expected = os.fstat(int(sys.argv[1])), os.stat(sys.argv[2])
+    assert (held.st_dev, held.st_ino) == (expected.st_dev, expected.st_ino)
+except (OSError, ValueError, AssertionError):
+    sys.exit(1)
+PY
+  then
+    exec {FTC_OPERATION_FD}> "$FTC_STATE_DIR/operation.lock"
+  fi
+  chmod 600 "$FTC_STATE_DIR/operation.lock"
+  flock -x -n "$FTC_OPERATION_FD" || die "另一个 ftc 操作正在运行（实例操作锁）。稍后再试。" 9
+  export FTC_OPERATION_FD
   if mkdir "$dir" 2>/dev/null; then
     printf '%s\n' "$$" > "$dir/pid"
     trap 'ftc_unlock '"$name"' || true' EXIT
@@ -129,6 +160,10 @@ ftc_unlock() {
   if [[ -n "${FTC_AI_GUARD_FD:-}" ]]; then
     exec {FTC_AI_GUARD_FD}>&-
     unset FTC_AI_GUARD_FD
+  fi
+  if [[ -n "${FTC_OPERATION_FD:-}" ]]; then
+    exec {FTC_OPERATION_FD}>&-
+    unset FTC_OPERATION_FD
   fi
 }
 
@@ -298,6 +333,7 @@ record_deployment() {
     printf 'version=%s\n' "$version"
     printf 'channel=%s\n' "$channel"
     printf 'image=%s\n' "$image"
+    printf 'volume=%s\n' "$FTC_DATA_VOLUME"
     printf 'created_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'accepted_writes=unknown\n'
   } > "$file"
@@ -358,7 +394,11 @@ ftc $FTC_TOOL_VERSION —— Family Time Capsule 自托管运维工具
   backup                        一致性实例快照（停写后打包数据库与原件）
   backup verify <snapshot>      校验快照完整性
   restore <backup> --to <dir>   恢复到全新空目标（不覆盖生产）
-  rollback --to <deployment>    回退到历史部署（接受过写入时需显式决策）
+  rollback --to <deployment> --snapshot <file> [--accept-data-loss]
+                                准备隔离恢复（退出 28：待核对，尚未切换）
+  rollback --activate <plan> --accept-data-loss --access-reviewed
+                                核对后复验并启用恢复卷
+  rollback --abort <plan>       取消准备并恢复原部署
   logs --service app|worker|proxy  查看脱敏日志
   stop / start                  停止/启动本项目服务（不删除卷）
   cleanup [--dry-run]           清理本工具拥有的旧产物（默认 dry-run）

@@ -63,7 +63,11 @@ jobs:
         working-directory: mobile
       - run: npm run lint
       - run: npm run typecheck
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg poppler-utils epubcheck
+      - name: Install media and publication validators
+        timeout-minutes: 8
+        run: |
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ffmpeg poppler-utils epubcheck
       - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: npm run build
@@ -153,6 +157,10 @@ jobs:
 
       - name: Build trusted snapshot verification image from this commit
         run: docker build -f docker/Dockerfile -t ftc-instance-snapshot:ci .
+      - name: Isolated upgrade and rollback with real Docker failures
+        run: node --conditions=react-server --import tsx scripts/verify-deployment-lifecycle.mts
+        env:
+          FTC_INSTANCE_TEST_IMAGE: ftc-instance-snapshot:ci
       - name: Full instance snapshot with isolated Docker and production HTTP
         run: node --conditions=react-server --import tsx scripts/verify-instance-snapshot.mts
         env:

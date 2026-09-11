@@ -5,6 +5,13 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" && pwd)"
 # shellcheck source=lib/common.sh
 source "$LIB_DIR/common.sh"
 ftc_lock lifecycle
+load_env || die "尚未安装。" 2
+# Keep a pending rollback's recovery phase visible when stopping it again.
+if [[ -f "$FTC_STATE_DIR/pending_rollback" ]]; then
+  compose_cmd stop
+  note "服务已停止；回滚仍待核对。"
+  exit 0
+fi
 phase_set "stopping"
 compose_cmd stop
 phase_clear

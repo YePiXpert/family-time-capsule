@@ -101,7 +101,7 @@ sudo docker compose --env-file /opt/ftc-restore-test/config/env \
 `restore-report.json` 记录原件数量/字节数、失效会话及链接数量和校验摘要。
 其中 `postSnapshotRevocationsReconciled: false` 表示**快照之后的停用、撤权或
 删除尚未对账**。隔离验证通过不代表可以接回公网或原手机；正式接管仍需完成
-这部分对账、域名/凭据复核和实际部署验收。当前工具不自动切换生产。
+这部分对账、域名/凭据复核和实际部署验收。独立 `ftc restore` 不切换生产；需要切回历史部署时，使用 [回滚准备/启用流程](UPGRADE.md)，明确完成访问对账后才会校验并切换新数据卷。
 
 仓库的 `scripts/verify-instance-snapshot.mts` 使用合成家庭数据，实际启动 Docker
 app/worker，执行 `ftc backup` / `ftc restore`，再启动独立恢复应用，验证真实登录、

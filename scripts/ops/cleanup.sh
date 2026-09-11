@@ -17,6 +17,7 @@ while [[ $# -gt 0 ]]; do
     *) die "未知参数：$1" 2 ;;
   esac
 done
+[[ "$EXTRA_KEEP" =~ ^[1-9][0-9]{0,8}$ ]] || die "--keep 必须是正整数，至少保留一份快照。" 2
 
 [[ -f "$FTC_ENV_FILE" ]] || die "尚未安装。" 2
 ftc_lock cleanup

@@ -146,6 +146,11 @@ def verify_archive(archive, staging):
     unpack_data(staging / "data.tar", staging / "data")
     report = verify_database(staging / "data")
     report["snapshotSha256"] = digest
+    # Non-secret provenance is carried into the isolated restore for pairing.
+    configuration = dict(line.split("=", 1) for line in (staging / "env").read_text(encoding="utf-8").splitlines() if "=" in line and not line.startswith("#"))
+    report["snapshotAppVersion"] = manifest.get("appVersion")
+    report["snapshotImage"] = configuration.get("FTC_IMAGE")
+    report["snapshotImageReference"] = manifest.get("image")
     return report
 
 

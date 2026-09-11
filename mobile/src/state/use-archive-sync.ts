@@ -128,24 +128,24 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
       setMessage(`已同步 ${summary.eventCount} 段回忆${uploaded}${retained}${skipped}。`);
     } catch (error) {
       if (generation !== destGenRef.current) return;
-      // 无家庭绑定的账号在此被服务端拒绝（401）；用 /me 区分“待初始化”
-      // 与“会话失效”，避免把新账号误报成登录已过期。
-      const status = error instanceof ApiError ? error.status : -1;
-      if (status === 401) {
-        await refreshAccount(activeCredentials).catch(() => null);
-        if (generation !== destGenRef.current) return;
-        if (needsOnboardingRef.current) {
-          await reloadLocal();
-          return;
+      let failure = error;
+      try {
+        // Distinguish incomplete onboarding from a revoked/expired session.
+        const status = error instanceof ApiError ? error.status : -1;
+        if (status === 401) {
+          await refreshAccount(activeCredentials).catch(() => null);
+          if (generation !== destGenRef.current) return;
+          if (needsOnboardingRef.current) { await reloadLocal(); return; }
         }
+        if (status === 401 || status === 403) {
+          setUserId(null);
+          setAccountFamilyId(null);
+          await clearServerCaches();
+        }
+      } catch (recoveryError) { failure = recoveryError; }
+      if (generation === destGenRef.current) {
+        setMessage(failure instanceof Error ? failure.message : "同步失败，本机资料不受影响。");
       }
-      if (status === 401 || status === 403) {
-        setUserId(null);
-        setAccountFamilyId(null);
-        await clearServerCaches();
-        if (generation !== destGenRef.current) return;
-      }
-      setMessage(error instanceof Error ? error.message : "同步失败，本机资料不受影响。");
     } finally {
       try {
         if (generation === destGenRef.current) await reloadLocal();

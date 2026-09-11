@@ -249,6 +249,13 @@ describe("ftc install", () => {
 });
 
 describe("ftc backup / cleanup", () => {
+  it("cleanup refuses zero retention without deleting the remaining snapshot", () => {
+    installOnce();
+    const snapshot = path.join(ftcRoot, "backups/ftc-snapshot-keep.tar.gz");
+    writeFileSync(snapshot, "synthetic last snapshot");
+    expect(run("cleanup", ["--apply", "--keep", "0"]).status).toBe(2);
+    expect(readFileSync(snapshot, "utf8")).toBe("synthetic last snapshot");
+  });
   it("打包失败后恢复服务，保留失败阶段且释放操作锁", () => {
     installOnce();
     const marker = path.join(workspace, "pack-failure");
@@ -348,6 +355,26 @@ describe("ftc backup / cleanup", () => {
 });
 
 describe("互斥锁", () => {
+  it.skipIf(process.platform === "win32")("different lifecycle commands share an instance lock", async () => {
+    installOnce();
+    const lock = path.join(ftcRoot, "state/operation.lock");
+    const script = path.join(workspace, "hold-operation.sh");
+    writeFileSync(script, `#!/usr/bin/env bash\nexec 8>${bashQuote(lock)}\nflock -x 8\nprintf 'locked\\n'\nread -r\n`);
+    const holder = spawn("bash", [script], { stdio: ["pipe", "pipe", "pipe"] });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        holder.stdout.once("data", () => resolve());
+        holder.once("error", reject);
+        holder.once("exit", code => reject(new Error(`lock holder exited: ${code}`)));
+      });
+      for (const command of ["backup", "start", "stop"]) expect(run(command, []).status).toBe(9);
+    } finally {
+      const exited = new Promise<void>(resolve => holder.once("exit", () => resolve()));
+      holder.stdin.end();
+      await exited;
+    }
+    expect(run("start", []).status).toBe(0);
+  });
   it("锁被存活进程持有时退出 9；进程死亡后锁自动回收并继续", async () => {
     // 用 bash 自己占锁并写入它的 $$，保证 kill -0 在同一 pid 命名空间可见。
     const lockDir = toPosix(path.join(ftcRoot, "state", "locks", "backup"));
@@ -452,5 +479,133 @@ describe("ftc rollback", () => {
     expect(result.stderr).toContain("拒绝静默执行");
     expect(result.stderr).toContain("--accept-data-loss");
     expect(content).toContain("accepted_writes=true");
+  });
+});
+
+describe("isolated deployment lifecycle", () => {
+  const targetImage = "ghcr.io/yepixpert/family-time-capsule:1.0.0-dev.1";
+  function envValue(key: string) {
+    return readFileSync(path.join(ftcRoot, "config/env"), "utf8").split("\n").find(line => line.startsWith(`${key}=`))!.slice(key.length + 1);
+  }
+  function volumePath(volume = "capsule-data") {
+    const base = `${dockerLog.replace(/\.log$/u, "")}-volume`;
+    return volume === "capsule-data" ? base : `${base}-${volume}`;
+  }
+  function marker(volume = "capsule-data") {
+    const db = new Database(path.join(volumePath(volume), "db/capsule.sqlite"), { readonly: true });
+    try { return db.prepare("SELECT value FROM lifecycle_marker").get(); }
+    finally { db.close(); }
+  }
+  function prepare() {
+    installOnce();
+    const db = new Database(path.join(volumePath(), "db/capsule.sqlite"));
+    db.exec("CREATE TABLE lifecycle_marker(value TEXT); INSERT INTO lifecycle_marker VALUES ('original');");
+    db.close();
+    const old = readFileSync(path.join(ftcRoot, "state/current_deployment"), "utf8");
+    const sql = path.join(workspace, "candidate.sql");
+    writeFileSync(sql, "UPDATE lifecycle_marker SET value='candidate-migrated';");
+    const log = path.join(workspace, "state-log.jsonl");
+    return { old, sql, log, env: { FAKE_DOCKER_CANDIDATE_SQL: toPosix(sql), FAKE_DOCKER_STATE_LOG: toPosix(log) } };
+  }
+  function states(log: string): { image: string; volume: string; phase: string; accepted: string }[] {
+    return readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+  }
+  function upgraded() {
+    const fixture = prepare();
+    const result = run("upgrade", ["--image", targetImage], fixture.env);
+    expect(result.stderr, result.stdout).not.toContain("[ftc:error]");
+    expect(result.status).toBe(0);
+    const snapshot = path.basename(readFileSync(path.join(ftcRoot, "state/upgrade_snapshot"), "utf8"));
+    return { ...fixture, snapshot, currentVolume: envValue("FTC_DATA_VOLUME") };
+  }
+  function prepareRollback(fixture: ReturnType<typeof upgraded>) {
+    const result = run("rollback", ["--to", fixture.old, "--snapshot", fixture.snapshot, "--accept-data-loss"]);
+    expect(result.stderr).toContain("尚未启用");
+    expect(result.status).toBe(28);
+    return readFileSync(path.join(ftcRoot, "state/pending_rollback"), "utf8");
+  }
+
+  it("keeps writers stopped throughout snapshot and candidate verification, then opens one verified pair", () => {
+    const fixture = upgraded();
+    expect(fixture.currentVolume).not.toBe("capsule-data");
+    expect(marker()).toEqual({ value: "original" });
+    expect(marker(fixture.currentVolume)).toEqual({ value: "candidate-migrated" });
+    expect(states(fixture.log)).toEqual([{ image: envValue("FTC_IMAGE"), volume: fixture.currentVolume, phase: "upgrade-open", accepted: "true" }]);
+    const calls = dockerCalls();
+    const candidate = calls.find(call => call.includes("run --detach"))!;
+    expect(candidate).toContain("--network none");
+    expect(candidate).not.toContain("--publish");
+    expect(candidate).not.toContain("worker.mjs");
+  });
+
+  it("candidate migration failure can restart the unchanged original volume, never the migrated candidate", () => {
+    const fixture = prepare();
+    const failure = path.join(workspace, "candidate-failure"); writeFileSync(failure, "1");
+    const result = run("upgrade", ["--image", targetImage], { ...fixture.env, FAKE_DOCKER_FAIL_CANDIDATE: failure });
+    expect(result.status).toBe(14);
+    const candidate = readFileSync(path.join(ftcRoot, "state/upgrade_candidate_volume"), "utf8");
+    expect(marker()).toEqual({ value: "original" });
+    expect(marker(candidate)).toEqual({ value: "candidate-migrated" });
+    expect(envValue("FTC_DATA_VOLUME")).toBe("capsule-data");
+    expect(states(fixture.log).map(row => [row.phase, row.volume])).toEqual([["upgrade-recover-original", "capsule-data"]]);
+  });
+
+  it("public startup failure preserves the new pair and records possible writes before it starts", () => {
+    const fixture = prepare();
+    const failure = path.join(workspace, "public-failure"); writeFileSync(failure, "1");
+    const result = run("upgrade", ["--image", targetImage], { ...fixture.env, FAKE_DOCKER_FAIL_PUBLIC_UP: failure });
+    expect(result.status).toBe(13);
+    expect(envValue("FTC_DATA_VOLUME")).not.toBe("capsule-data");
+    expect(marker()).toEqual({ value: "original" });
+    expect(states(fixture.log)).toHaveLength(1);
+    expect(states(fixture.log)[0]).toMatchObject({ phase: "upgrade-open", accepted: "true", volume: envValue("FTC_DATA_VOLUME") });
+    expect(readFileSync(path.join(ftcRoot, "state/phase"), "utf8")).toBe("upgrade-open-failed");
+    const calls = dockerCalls();
+    expect(calls.at(-2)).toContain("compose version");
+    expect(calls.at(-1)).toContain("stop app worker");
+  });
+
+  it("rollback prepares without switching, blocks accidental reopening, and activates the restored volume only after review", () => {
+    const fixture = upgraded();
+    const plan = prepareRollback(fixture);
+    expect(envValue("FTC_DATA_VOLUME")).toBe(fixture.currentVolume);
+    expect(marker(fixture.currentVolume)).toEqual({ value: "candidate-migrated" });
+    expect(run("start", []).status).toBe(28);
+    expect(run("backup", []).status).toBe(28);
+    expect(runFtc(["ai", "disable"]).status).toBe(1);
+    expect(run("rollback", ["--activate", plan, "--accept-data-loss"]).status).toBe(28);
+    const result = run("rollback", ["--activate", plan, "--accept-data-loss", "--access-reviewed"]);
+    expect(result.stderr).toContain("回滚完成");
+    expect(result.status).toBe(0);
+    const restored = envValue("FTC_DATA_VOLUME");
+    expect(restored).not.toBe(fixture.currentVolume);
+    expect(restored).not.toBe("capsule-data");
+    expect(marker(restored)).toEqual({ value: "original" });
+    expect(marker(fixture.currentVolume)).toEqual({ value: "candidate-migrated" });
+    expect(existsSync(path.join(ftcRoot, "state/pending_rollback"))).toBe(false);
+  });
+
+  it("canceling a prepared rollback restarts the original pair without applying the snapshot", () => {
+    const fixture = upgraded();
+    const plan = prepareRollback(fixture);
+    expect(run("rollback", ["--abort", plan]).status).toBe(0);
+    expect(envValue("FTC_DATA_VOLUME")).toBe(fixture.currentVolume);
+    expect(marker(fixture.currentVolume)).toEqual({ value: "candidate-migrated" });
+    expect(existsSync(path.join(ftcRoot, "state/pending_rollback"))).toBe(false);
+  });
+
+  it("refuses an unpaired snapshot and a plan prepared against a different active configuration", () => {
+    const fixture = upgraded();
+    const oldPath = path.join(ftcRoot, "state/deployments", `${fixture.old}.env`);
+    const oldRecord = readFileSync(oldPath, "utf8");
+    writeFileSync(oldPath, oldRecord.replace("version=1.3.0-alpha.1", "version=1.2.0"));
+    expect(run("rollback", ["--to", fixture.old, "--snapshot", fixture.snapshot, "--accept-data-loss"]).status).toBe(26);
+    expect(envValue("FTC_DATA_VOLUME")).toBe(fixture.currentVolume);
+    writeFileSync(oldPath, oldRecord);
+    const plan = prepareRollback(fixture);
+    const envPath = path.join(ftcRoot, "config/env");
+    writeFileSync(envPath, readFileSync(envPath, "utf8") + "# changed after prepare\n");
+    expect(run("rollback", ["--activate", plan, "--accept-data-loss", "--access-reviewed"]).status).toBe(28);
+    expect(envValue("FTC_DATA_VOLUME")).toBe(fixture.currentVolume);
   });
 });

@@ -7,8 +7,8 @@
 核心档案为**单体全栈应用**，不上微服务。AI 长任务使用共享同一 SQLite 与数据卷
 的独立 worker 进程；它是可停止的运维组件，不是核心档案的可用性依赖。
 
-`mobile/` 是可选的 React Native 原生伴侣客户端，不替代核心档案服务器。它使用设备
-SQLite + 私有文件目录保存离线副本与 outbox，通过版本化 JSON API 与单体同步；
+`mobile/` 是日常记录和翻看的主要入口。它使用设备 SQLite + 私有文件目录先保存
+记录与原件，通过版本化 JSON API 与单体档案服务器同步；
 iOS/Android 界面不加载网页，也不运行 WebView。
 
 ```text
@@ -23,7 +23,7 @@ exifr                               EXIF 时间/尺寸解析（#006）
 Vitest / Playwright                 单元·集成 / 端到端测试
 Docker Compose                      自托管部署
 SQLite AI queue + Node worker       可选后台处理；租约/重试/崩溃恢复
-Expo SDK 57 + React Native          iOS/Android 原生 UI（可选伴侣客户端）
+Expo SDK 57 + React Native          iOS/Android 原生 UI（主要使用入口）
 expo-sqlite/SecureStore/FileSystem  设备离线数据、凭据、原件/封面缓存
 ```
 
@@ -50,9 +50,8 @@ expo-sqlite/SecureStore/FileSystem  设备离线数据、凭据、原件/封面�
 ## 数据库（#002 起）
 
 - `db/index.ts`：单例连接，首次连接自动应用 `db/migrations/`（幂等）；`closeDatabase()` 供测试收尾。
-- schema 按域拆分在 `db/schema/`；当前共有 41 张关系表和 29 个只向前 migration
-  （`0000`–`0028`），另有可重建 FTS5 virtual table；覆盖认证、家庭、档案、事件、
-  讲述、胶囊、审计、AI、搜索/故事、口述、备份和回收站域。
+- schema 按域拆分在 `db/schema/`，迁移顺序以 `db/migrations/meta/_journal.json` 为准；
+  FTS 索引与服务器缓存可以重建，本机记录和原件不因缓存清理而删除。
 - 修改数据模型流程：改 `db/schema/` → `npx drizzle-kit generate` → 迁移文件随代码提交。
 
 ## 数据目录（PRD §11）
@@ -159,3 +158,12 @@ docs/         PRD、架构、数据模型、决策、Issue 清单
 docker/       Dockerfile（compose 文件在仓库根）
 data/         运行数据（gitignore）
 ```
+
+
+## 运行时与部署边界
+
+移动端 `AppContext` 只向界面提供稳定接口，内部由账号会话、本机快照、同步、系统分享接收和生命周期订阅模块组合。身份的 React 状态和供异步代码读取的引用统一更新；目的地切换会使旧任务结果失效，完成屏障保证已开始的写入先结束，再清理账号缓存。详见 [MOBILE.md](MOBILE.md)。
+
+一份记录沿“本机保存 → 明确目的地授权 → 幂等上传 → 服务端归档”推进；草稿、原件与 outbox 仍分别承担其持久化职责。重构没有新增平行的数据模型，也没有删除或重建历史档案表。页面渲染、初次读取和后台同步分别拥有可观察的失败出口，页面重试不会重建同步运行时。
+
+部署遵循同样的数据所有权原则：迁移只写新候选卷，验证前停写，启用时镜像和卷成对变更。快照恢复先进入隔离目录，经权限对账和实际启动验证后才启用。备份存在、解包成功、容器启动和数据恢复成功是不同状态，不能互相替代。详见 [UPGRADE.md](UPGRADE.md)。
