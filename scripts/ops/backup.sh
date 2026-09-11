@@ -91,8 +91,22 @@ bash "$0" verify "$ARCHIVE_TMP"
 [[ ! -e "$SNAP" && ! -e "$SNAP.sha256" ]] || die "快照名称已存在，拒绝覆盖。" 23
 read -r SNAP_SHA _ < "$ARCHIVE_TMP.sha256"
 printf '%s  %s\n' "$SNAP_SHA" "$(basename "$SNAP")" > "$SHA_TMP"
-mv "$SHA_TMP" "$SNAP.sha256"
-mv "$ARCHIVE_TMP" "$SNAP"
+# Retention may remove an older copy next. Make the verified replacement and
+# its directory entries durable first, including across sudden power loss.
+"$(ftc_python)" - "$ARCHIVE_TMP" "$SHA_TMP" "$SNAP" <<'PY'
+import os, sys
+archive, checksum, target = sys.argv[1:]
+for name in (archive, checksum):
+    with open(name, "rb") as file:
+        os.fsync(file.fileno())
+os.rename(checksum, target + ".sha256")
+os.rename(archive, target)
+directory = os.open(os.path.dirname(target), os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
 
 phase_set "backup-restart"
 compose_cmd up -d --wait >/dev/null
