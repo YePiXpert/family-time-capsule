@@ -1,20 +1,54 @@
 name: CI
+run-name: CI / ${{ inputs.source_sha || github.sha }}
 
 on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Full main commit SHA to verify (empty uses the dispatch commit)"
+        required: false
+        type: string
   push:
     branches: [main]
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.source_sha || 'latest' }}
   cancel-in-progress: true
 
 jobs:
+  source:
+    name: Verify source commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          fetch-depth: 0
+      - id: source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            test "$GITHUB_REF" = "refs/heads/main"
+            git fetch --no-tags origin main:refs/remotes/origin/main
+            git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/main
+          fi
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Verified application source: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+
   web-quality:
     name: web-quality
+    needs: source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -36,9 +70,12 @@ jobs:
 
   mobile-quality:
     name: mobile-quality
+    needs: source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -65,9 +102,12 @@ jobs:
 
   ops-quality:
     name: ops-quality
+    needs: source
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -84,10 +124,11 @@ jobs:
   e2e-restore-roundtrip:
     name: e2e-restore-roundtrip
     runs-on: ubuntu-latest
-    needs: web-quality
+    needs: [source, web-quality]
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ needs.source.outputs.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:

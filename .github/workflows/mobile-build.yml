@@ -1,13 +1,19 @@
 name: Native mobile packages
+run-name: Native packages / ${{ inputs.source_sha || github.sha }}
 
 on:
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Full main commit SHA to package (empty uses the dispatch commit)"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
 
 concurrency:
-  group: native-mobile-${{ github.ref }}
+  group: native-mobile-${{ github.ref }}-${{ inputs.source_sha || 'latest' }}
   cancel-in-progress: true
 
 permissions:
@@ -17,21 +23,47 @@ jobs:
   quality:
     name: React Native quality
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha || github.sha }}
           fetch-depth: 0
       - name: Verify main-only source
+        id: source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
         run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/main
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             test "$GITHUB_REF" = "refs/heads/main"
           else
             test "$GITHUB_REF_TYPE" = "tag"
             [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
-            git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
           fi
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Package application source: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Record package source
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          native = json.load(open("mobile/app.json"))["expo"]
+          source = {"gitSha": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+                    "version": native["version"], "androidVersionCode": native["android"]["versionCode"],
+                    "iosBuildNumber": native["ios"]["buildNumber"]}
+          with open("build-source.json", "w") as out:
+              json.dump(source, out, indent=2)
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-build-source
+          path: build-source.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Validate release tag against registry
         if: github.event_name == 'push'
         env:
@@ -86,7 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.quality.outputs.source_sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -150,7 +182,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.quality.outputs.source_sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
