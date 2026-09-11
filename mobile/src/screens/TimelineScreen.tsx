@@ -8,11 +8,12 @@ import { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useApp } from "../state/AppContext";
+import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
 import { TimelineCard } from "../components/TimelineCard";
 import { JournalArtwork } from "../components/JournalArtwork";
 import { Button, Chip, EmptyState, IconButton, Pill } from "../components/ui";
 import { useColorTheme } from "../theme";
-import { journalRadius, journalSpace, journalType } from "../design/tokens";
+import { journalRadius, journalSpace } from "../design/tokens";
 import type { AppNavigation } from "../navigation/types";
 
 export function TimelineScreen() {
@@ -37,6 +38,7 @@ export function TimelineScreen() {
   const imports = usePendingImports();
   const insets = useSafeAreaInsets();
   const { colors } = useColorTheme();
+  const { scrollY, onScroll } = useCollapsingHeroScroll();
   const growth = growthHeading(people ?? [], new Date(), family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   const child = people?.find(p => p.id === growth.childId);
   const timezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -53,14 +55,17 @@ export function TimelineScreen() {
   const groupLabel = (event: typeof events[number]) => stage?.label ?? (child?.birthDate && belongsToChild(event) ? eventGrowthStage(child.birthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : "成长点滴");
   const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
-    <FlatList
-      contentContainerStyle={{
-        padding: journalSpace.page,
-        paddingTop: insets.top + 20,
-        paddingBottom: 210,
-        gap: 18,
-        ...(events.length === 0 ? { flexGrow: 1 } : {}),
-      }}
+    <View style={{ flex: 1, backgroundColor: colors.paper }}>
+      <FlatList
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{
+          padding: journalSpace.page,
+          paddingTop: insets.top + 20,
+          paddingBottom: 210,
+          gap: 18,
+          ...(events.length === 0 ? { flexGrow: 1 } : {}),
+        }}
       data={visibleEvents}
       keyExtractor={(item) => item.id}
       ListEmptyComponent={
@@ -74,15 +79,14 @@ export function TimelineScreen() {
       ListHeaderComponent={
         <View style={{ gap: 20 }}>
           {/* Hero：宝宝是主角——名字、真实月龄、一句话寄语，插画融入右侧 */}
-          <View style={styles.hero}>
-            <View style={styles.heroText}>
-              <Text style={[styles.eyebrow, { color: colors.coral }]}>一点一滴，慢慢长大</Text>
-              <Text accessibilityRole="header" style={[styles.heroTitle, { color: colors.ink }]}>{growth.title}</Text>
-              <Text style={[styles.heroIntro, { color: colors.muted }]}>留下今天，送给长大的你。</Text>
-              {growth.age ? <View style={{ marginTop: 10 }}><Pill label={growth.age} icon="growth" /></View> : null}
-            </View>
-            <JournalArtwork kind="keepsake" compact />
-          </View>
+          <CollapsingHero
+            eyebrow="一点一滴，慢慢长大"
+            title={growth.title}
+            subtitle="留下今天，送给长大的你。"
+            pill={growth.age ? <Pill label={growth.age} icon="growth" /> : null}
+            accessory={<JournalArtwork kind="keepsake" compact />}
+            scrollY={scrollY}
+          />
 
           {/* 月龄轨迹：轻量胶囊，内容为主角 */}
           {stages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }} accessibilityLabel="按月龄回看">
@@ -159,17 +163,14 @@ export function TimelineScreen() {
           />
         </View>
       )}
-      style={{ flex: 1, backgroundColor: colors.paper }}
-    />
+        style={{ flex: 1, backgroundColor: colors.paper }}
+      />
+      <CollapsingHeroBar title="成长" scrollY={scrollY} topInset={insets.top} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: { flexDirection: "row", alignItems: "center", gap: 16, paddingBottom: 4 },
-  heroText: { flex: 1, gap: 8 },
-  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.2 },
-  heroTitle: { fontSize: journalType.hero, fontWeight: "800", letterSpacing: -0.5 },
-  heroIntro: { fontSize: journalType.body },
   toolRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   selectionCard: {
     borderRadius: journalRadius.card,

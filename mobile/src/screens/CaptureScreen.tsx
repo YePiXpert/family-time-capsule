@@ -497,7 +497,7 @@ export function CaptureScreen() {
           {(text.trim() || content?.items.length || content?.title) && editable ? <Pressable accessibilityRole="button" accessibilityLabel="清空" disabled={recording || !!capsuleDraft.error} onPress={clear} style={styles.clear}><Text style={{ color: muted }}>清空</Text></Pressable> : null}
         </View>
         <View style={[styles.composer, { borderColor: rim }]}>
-          <GlassSurface target={glassTarget} radius={28} tone="cool" />
+          <GlassSurface target={glassTarget} tier="overlay" radius={28} />
           <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline editable={editable} maxLength={5000} onChangeText={setText} placeholder="今天，有什么想记住的？" placeholderTextColor={muted} ref={textInputRef} style={[styles.textArea, { color: ink }]} textAlignVertical="top" value={text} />
           {text.length > 4500 ? <Text style={[styles.counter, { color: muted }]}>{text.length} / 5000</Text> : null}
           <View onLayout={event => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.mediaZone}>
@@ -560,7 +560,7 @@ export function CaptureScreen() {
         {capsuleDraft.draft?.memoryEventId && capsuleDraft.draft.organizeOnPublish && <OrganizerPanel kind="memory_event" id={capsuleDraft.draft.memoryEventId} />}
       </ScrollView>
       <View testID="capture-save-bar" style={[styles.saveBar, { bottom: keyboardOpen ? 8 : dockHeight + 8, borderColor: rim }]}>
-        <GlassSurface target={glassTarget} radius={30} tone="cool" />
+        <GlassSurface target={glassTarget} tier="overlay" radius={30} />
         <View style={styles.visibility}><JournalIcon name={content?.visibility === "private" ? "lock" : "users"} size={15} color={muted} /><Text style={{ color: muted, fontSize: 12 }}>{visibilityLabel}</Text></View>
         <Pressable testID="capture-save" accessibilityRole="button" accessibilityLabel={saveLabel} accessibilityState={{ disabled: saveDisabled || capsuleDraft.draft?.status === "published" }} disabled={saveDisabled || capsuleDraft.draft?.status === "published"} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? content!.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} style={({ pressed }) => [styles.saveButton, { borderColor: rim }, pressed && sharedStyles.pressed]}>
           <LinearGradient colors={saveDisabled || capsuleDraft.draft?.status === "published" ? dark ? ["#37425B", "#37425B"] : ["#E4EAF8", "#E4EAF8"] : ["#819FF7", "#4D70D8", "#6378DF"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />

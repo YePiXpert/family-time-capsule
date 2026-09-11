@@ -13,6 +13,7 @@ vi.mock("../src/state/AppContext", () => ({ useApp: () => state.app }));
 vi.mock("../src/navigation/AppNavigator", () => ({ AppNavigator: "AppNavigator" }));
 vi.mock("../src/screens/WelcomeFlow", () => ({ WelcomeFlow: "WelcomeFlow", OnboardingGate: "OnboardingGate" }));
 vi.mock("../src/screens/SyncConsentScreen", () => ({ SyncConsentScreen: "SyncConsentScreen" }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children }));
 const { AppRoot } = await import("../src/AppRoot");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;

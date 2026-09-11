@@ -13,7 +13,7 @@ import { ReadingDownloadsScreen, OfflineReadingScreen } from "../screens/Reading
 import { NavigationContainer, type Theme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Keyboard, Pressable, StyleSheet, View } from "react-native";
+import { Keyboard, Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "../components/typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../state/AppContext";
@@ -78,12 +78,12 @@ function JournalTabBar({ state, descriptors, navigation, target, onHeight }: Bot
   if (!current || keyboardOpen) return null;
   return <View onLayout={event => onHeight(event.nativeEvent.layout.height)} style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}>
     {current.name !== "Capture" && canCapture ? <Pressable accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, { boxShadow: `0 6px 24px ${colors.scrim}` }, pressed && !reducedMotion && styles.pressed]}>
-      <GlassSurface target={target} />
+      <GlassSurface target={target} tier="dock" radius={28} />
       <JournalIcon name="plus" color={colors.coralDark} size={22} />
       <Text style={[styles.captureLabel, { color: colors.coralDark }]}>记录一刻</Text>
     </Pressable> : null}
     <View style={[styles.tabRow, { boxShadow: `0 6px 24px ${colors.scrim}` }, displayMode === "simple" && { minHeight: 84 }]}>
-      <GlassSurface target={target} />
+      <GlassSurface target={target} tier="dock" radius={28} />
       {state.routes.filter(route => route.name !== "Capture").map(route => {
         const meta = tabMeta[route.name] ?? { label: route.name, icon: "growth" as JournalIconName };
         const focused = current.key === route.key;
@@ -134,7 +134,7 @@ export function AppNavigator() {
   return <View style={[styles.fill, { backgroundColor: colors.paper }]}>
     {message ? <Pressable accessibilityRole="button" accessibilityLabel="同步提示，点按收起" accessibilityHint="点按收起" onPress={dismissMessage} style={[styles.banner, { paddingTop: Math.max(insets.top, 8), backgroundColor: colors.softSage }]}><Text numberOfLines={2} accessibilityLiveRegion="polite" style={[styles.bannerText, { color: colors.sage }]}>{message}</Text></Pressable> : null}
     <NavigationContainer theme={navigationTheme(colors, dark)}>
-      <Stack.Navigator screenOptions={{ animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : journalMotion.duration, headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" }, headerTintColor: colors.coralDark, contentStyle: { backgroundColor: colors.paper } }}>
+      <Stack.Navigator screenOptions={{ animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : journalMotion.duration, headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" }, headerTintColor: colors.coralDark, contentStyle: { backgroundColor: colors.paper }, ...(Platform.OS === "ios" ? { headerLargeTitle: true, headerBlurEffect: "regular" as const } : {}) }}>
         <Stack.Screen component={MainTabs} name="MainTabs" options={{ headerShown: false }} />
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "成长记录" }} />
         <Stack.Screen component={AssetLibraryScreen} name="AssetLibrary" options={{ title: "资料库" }} />

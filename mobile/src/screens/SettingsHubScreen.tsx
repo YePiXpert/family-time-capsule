@@ -1,7 +1,7 @@
 import { AiSettingsSection } from "../ai/AiSettingsSection";
 import { Text } from "../components/typography";
 import { useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AppNavigation } from "../navigation/types";
@@ -30,7 +30,7 @@ export function SettingsHubScreen() {
   const navigation = useNavigation<AppNavigation>();
   const insets = useSafeAreaInsets();
   const { colors } = useColorTheme();
-  const { credentials, viewer, family, themeMode, setThemeMode } = useApp();
+  const { credentials, viewer, family, themeMode, setThemeMode, hapticsEnabled, setHapticsEnabled } = useApp();
   const [section, setSection] = useState("");
   const group = (name: string) => ({ title: name, open: section === name, onToggle: () => setSection(value => value === name ? "" : name) });
   const web = async (path: string) => {
@@ -106,6 +106,19 @@ export function SettingsHubScreen() {
               ))}
             </View>
           </View>
+          <View style={styles.hapticsRow}>
+            <View style={styles.hapticsText}>
+              <Text style={[styles.themeLabel, { color: colors.ink }]}>触觉反馈</Text>
+              <Text style={[styles.hapticsDetail, { color: colors.muted }]}>点按与滑动时的轻微震动</Text>
+            </View>
+            <Switch
+              accessibilityLabel="触觉反馈"
+              value={hapticsEnabled}
+              onValueChange={value => void setHapticsEnabled(value)}
+              trackColor={{ true: colors.coral, false: colors.line }}
+              thumbColor={colors.elevated}
+            />
+          </View>
         </View>
         {credentials && manager ? (
           <View style={{ marginTop: 12 }}>
@@ -139,4 +152,7 @@ const styles = StyleSheet.create({
   themeRow: { gap: 10 },
   themeLabel: { fontSize: journalType.label, fontWeight: "600" },
   themeChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  hapticsRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  hapticsText: { flex: 1, gap: 2 },
+  hapticsDetail: { fontSize: 12, lineHeight: 17 },
 });

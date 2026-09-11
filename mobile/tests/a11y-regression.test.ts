@@ -32,6 +32,7 @@ vi.mock("react-native", () => ({
   RefreshControl: "RefreshControl",
   ScrollView: "ScrollView",
   StyleSheet: { create: (v: unknown) => v },
+  Switch: "Switch",
   Text: "Text",
   TextInput: "TextInput",
   View: "View",
@@ -40,7 +41,7 @@ vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect",
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => mocks.navigation }));
 vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({ ...mocks.app }),
+  useApp: () => ({ ...mocks.app, hapticsEnabled: true, setHapticsEnabled: vi.fn() }),
 }));
 
 const { sharedStyles } = await import("../src/theme");

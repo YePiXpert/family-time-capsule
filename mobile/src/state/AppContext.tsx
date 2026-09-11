@@ -62,6 +62,7 @@ import type {
   Viewer,
 } from "../types";
 import { clearAllReadingDownloads, revalidateReadingDownloads } from "../reading/native";
+import { setHapticsEnabled as applyHapticsEnabled } from "../design/haptics";
 
 type AppContextValue = {
   credentials: Credentials | null;
@@ -83,6 +84,9 @@ type AppContextValue = {
   /** 设备级外观偏好（跟随系统/浅色/深色）；null 表示还在读取。 */
   themeMode: ThemeMode | null;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
+  /** 设备级触觉反馈开关（设置页「触觉反馈」），持久化在本机 meta。 */
+  hapticsEnabled: boolean;
+  setHapticsEnabled: (value: boolean) => Promise<void>;
   /** 账号已建立但尚未建立/绑定家庭：登录不算失败，应继续初始化。 */
   needsOnboarding: boolean;
   /** 当前目的地的同步授权；null 表示尚未授权（有待传记录时会弹出授权门）。 */
@@ -129,6 +133,7 @@ export function AppProvider({
   const [welcomeSeen, setWelcomeSeenState] = useState<boolean | null>(null);
   const [displayMode, setDisplayModeState] = useState<"standard" | "simple" | null>(null);
   const [themeMode, setThemeModeState] = useState<ThemeMode | null>(null);
+  const [hapticsEnabled, setHapticsEnabledState] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [syncConsent, setSyncConsentState] = useState<SyncConsent | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -165,6 +170,7 @@ export function AppProvider({
       consent,
       displayModeValue,
       themeModeValue,
+      hapticsValue,
     ] = await Promise.all([
       listTimeline(cacheScope, draftScope),
       getCachedFamily(),
@@ -177,6 +183,7 @@ export function AppProvider({
       getSyncConsent(),
       getMeta("display_mode"),
       getMeta("theme_mode"),
+      getMeta("haptics_enabled"),
     ]);
     if (generation !== destGenRef.current) return;
     setEvents(nextEvents);
@@ -189,6 +196,9 @@ export function AppProvider({
     setWelcomeSeenState(welcomeDone === "1");
     setDisplayModeState(displayModeValue === "simple" ? "simple" : "standard");
     setThemeModeState(themeModeValue === "light" || themeModeValue === "dark" ? themeModeValue : "auto");
+    const hapticsOn = hapticsValue !== "0";
+    setHapticsEnabledState(hapticsOn);
+    applyHapticsEnabled(hapticsOn);
     consentRef.current = consent;
     setSyncConsentState(consent);
   }, []);
@@ -442,6 +452,13 @@ export function AppProvider({
     setThemeModeState(mode);
   }, []);
 
+  /** 设备级触觉反馈：只写本机 meta，并同步到 design/haptics 的全局开关。 */
+  const setHapticsEnabled = useCallback(async (value: boolean) => {
+    await setMeta("haptics_enabled", value ? "1" : "0");
+    applyHapticsEnabled(value);
+    setHapticsEnabledState(value);
+  }, []);
+
   /** App 内建立家庭；成功后立即开始第一次同步。 */
   const completeOnboarding = useCallback(async (input: OnboardingInput) => {
     if (!credentials || connecting.current) throw new Error("尚未登录或正在切换连接。");
@@ -601,6 +618,7 @@ export function AppProvider({
     welcomeSeen,
     displayMode,
     themeMode,
+    hapticsEnabled,
     needsOnboarding,
     syncConsent,
     awaitingSyncConsent,
@@ -613,6 +631,7 @@ export function AppProvider({
     setWelcomeSeen,
     setDisplayMode,
     setThemeMode,
+    setHapticsEnabled,
     completeOnboarding,
     grantSyncConsent,
     keepOutboxItemLocal: keepItemLocal,
@@ -622,8 +641,8 @@ export function AppProvider({
   }), [
     awaitingSyncConsent, clearLocal, completeOnboarding, connect, credentials,
     deleteOutboxCapture, disconnect, displayMode, events, family, grantSyncConsent,
-    home, keepItemLocal, lastSyncAt, message, needsOnboarding, network.isConnected,
-    outbox, people, queued, reloadLocal, runSync, setDisplayMode, setThemeMode, setWelcomeSeen,
+    hapticsEnabled, home, keepItemLocal, lastSyncAt, message, needsOnboarding, network.isConnected,
+    outbox, people, queued, reloadLocal, runSync, setDisplayMode, setHapticsEnabled, setThemeMode, setWelcomeSeen,
     syncConsent, syncing, themeMode, userId, viewer, welcomeSeen,
   ]);
 

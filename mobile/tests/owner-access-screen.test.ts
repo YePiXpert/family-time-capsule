@@ -7,10 +7,11 @@ const mocks = vi.hoisted(() => ({
   state: {
     credentials: { serverUrl: "https://fixture.invalid", token: "synthetic-session" },
     viewer: { id: "user-a", role: "owner" }, family: { id: "family-a" }, online: true,
+    hapticsEnabled: true, setHapticsEnabled: async () => {},
   },
 }));
 vi.mock("react-native", () => ({
-  Pressable: "Pressable", Text: "Text", View: "View", ScrollView: "ScrollView",
+  Pressable: "Pressable", Text: "Text", View: "View", ScrollView: "ScrollView", Switch: "Switch",
   Alert: { alert: vi.fn() }, Linking: { openURL: vi.fn() },
   StyleSheet: { create: (value: unknown) => value },
 }));

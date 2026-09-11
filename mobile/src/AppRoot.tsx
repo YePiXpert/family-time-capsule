@@ -6,6 +6,7 @@ import { AppNavigator } from "./navigation/AppNavigator";
 import { OnboardingGate, WelcomeFlow } from "./screens/WelcomeFlow";
 import { SyncConsentScreen } from "./screens/SyncConsentScreen";
 import { TextScaleContext } from "./components/typography";
+import { GlassSheetProvider } from "./components/GlassSheet";
 import { JournalThemeProvider, useColorTheme } from "./theme";
 
 /**
@@ -21,15 +22,17 @@ export function AppRoot() {
   return (
     <JournalThemeProvider mode={themeMode ?? "auto"}>
       <TextScaleContext.Provider value={displayMode === "simple" ? 1.2 : 1}>
-        <AppRootBody
-          gated={
-            welcomeSeen === null ? "loading"
-            : credentials && needsOnboarding ? "onboarding"
-            : credentials && awaitingSyncConsent ? "consent"
-            : !credentials && !welcomeSeen ? "welcome"
-            : "app"
-          }
-        />
+        <GlassSheetProvider>
+          <AppRootBody
+            gated={
+              welcomeSeen === null ? "loading"
+              : credentials && needsOnboarding ? "onboarding"
+              : credentials && awaitingSyncConsent ? "consent"
+              : !credentials && !welcomeSeen ? "welcome"
+              : "app"
+            }
+          />
+        </GlassSheetProvider>
       </TextScaleContext.Provider>
     </JournalThemeProvider>
   );
