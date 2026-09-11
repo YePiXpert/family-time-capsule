@@ -15,6 +15,9 @@ vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() }, Linking: { openURL: vi.fn() },
   StyleSheet: { create: (value: unknown) => value },
 }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
+vi.mock("../src/components/GlassCard", () => ({ GlassCard: "GlassCard" }));
+vi.mock("../src/components/CollapsingHero", () => ({ useCollapsingHeroScroll: () => ({ scrollY: { interpolate: () => 0 }, onScroll: () => {} }), CollapsingHero: "CollapsingHero", CollapsingHeroBar: "CollapsingHeroBar" }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("@react-navigation/native", () => ({

@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { Text } from "../components/typography";
-import { Alert, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { ApiError, changeAiConsent, fetchAiSettings, parseAiSettings } from "../api/client";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { useApp } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
+import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { AiSettings, OrganizerCapability } from "./types";
 
@@ -23,6 +24,7 @@ export function AiSettingsSection() {
 function SettingsContent({ scope }: { scope: string }) {
   const s = useSharedStyles();
   const { credentials, online } = useApp();
+  const askConfirm = useConfirmSheet();
   const [status, setStatus] = useState<AiSettings | null>(null);
   const [verified, setVerified] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -88,10 +90,13 @@ function SettingsContent({ scope }: { scope: string }) {
     const capabilityRow = status.capabilities.find(row => row.capability === capability);
     const model = capabilityRow?.model;
     const receiver = capabilityRow?.receiver ?? status.provider;
-    Alert.alert(enabled ? "关闭这项外部处理？" : `允许${labels[capability]}？`, enabled
-      ? "等待中的相关 AI 任务会取消，已发出的远端请求不能保证撤回。记录、同步与其他后台任务仍可使用。"
-      : `接收服务：${receiver}\n模型：${model}\n会发送：${content[capability]}。\n仅适用于有权家人手动选中的内容，从确认后起效，不补处理历史资料，不自动确认人物、时间或合并。服务可能收费，可随时在此关闭。`,
-    [{ text: "取消", style: "cancel" }, { text: enabled ? "确认关闭" : "同意手动处理", onPress: () => void apply() }]);
+    void askConfirm({
+      title: enabled ? "关闭这项外部处理？" : `允许${labels[capability]}？`,
+      message: enabled
+        ? "等待中的相关 AI 任务会取消，已发出的远端请求不能保证撤回。记录、同步与其他后台任务仍可使用。"
+        : `接收服务：${receiver}\n模型：${model}\n会发送：${content[capability]}。\n仅适用于有权家人手动选中的内容，从确认后起效，不补处理历史资料，不自动确认人物、时间或合并。服务可能收费，可随时在此关闭。`,
+      confirmLabel: enabled ? "确认关闭" : "同意手动处理",
+    }).then(confirmed => { if (confirmed) void apply(); });
   };
 
   return <View style={s.card}>

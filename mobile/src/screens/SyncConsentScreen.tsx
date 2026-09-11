@@ -1,8 +1,9 @@
 import { Text } from "../components/typography";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../state/AppContext";
+import { useAlertSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
 import type { MediaCapturePayload, TextCapturePayload } from "../types";
@@ -17,6 +18,7 @@ export function SyncConsentScreen() {
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const { credentials, outbox, family, grantSyncConsent } = useApp();
   const insets = useSafeAreaInsets();
+  const alert = useAlertSheet();
   const [mode, setMode] = useState<"choose" | "select">("choose");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [working, setWorking] = useState(false);
@@ -33,7 +35,7 @@ export function SyncConsentScreen() {
 
   const submitSelected = () => {
     if (selected.size === 0) {
-      Alert.alert("尚未选择", "勾选要同步的记录，或改选“仅保留本机”。");
+      void alert({ title: "尚未选择", message: "勾选要同步的记录，或改选“仅保留本机”。" });
       return;
     }
     setWorking(true);

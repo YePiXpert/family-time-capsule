@@ -3,6 +3,9 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultBookLayout, type BookDetail } from "../src/books/types";
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: () => null }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
+vi.mock("../src/components/CollapsingHero", () => ({ useCollapsingHeroScroll: () => ({ scrollY: { interpolate: () => 0 }, onScroll: () => {} }), CollapsingHero: "CollapsingHero", CollapsingHeroBar: "CollapsingHeroBar" }));
+vi.mock("../src/design/haptics", () => ({ haptics: { success: vi.fn(), warning: vi.fn(), selection: vi.fn(), impact: vi.fn() }, setHapticsEnabled: vi.fn(), areHapticsEnabled: () => true }));
 vi.mock("../src/growth/GrowthBookCard", () => ({ GrowthBookCard: () => null }));
 vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
 const mocks = vi.hoisted(() => ({

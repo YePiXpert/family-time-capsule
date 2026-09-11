@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CollectionDetail } from '../src/collections/types';
 vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
 const mocks=vi.hoisted(()=>({get:vi.fn(),list:vi.fn(),mutate:vi.fn(),navigate:vi.fn(),credentials:{serverUrl:'https://fictional.example.test',token:'fictional-component-token'}}));
 vi.mock('react-native',()=>({ActivityIndicator:'ActivityIndicator',Image:'Image',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',TextInput:'TextInput',View:'View',StyleSheet:{create:(s:unknown)=>s},Alert:{alert:vi.fn()}}));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));

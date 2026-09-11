@@ -99,45 +99,69 @@ export type ConfirmSheetOptions = {
   destructive?: boolean;
 };
 
+export type AlertSheetOptions = {
+  title: string;
+  message?: string;
+  confirmLabel?: string;
+};
+
 type GlassSheetContextValue = {
   confirm: (options: ConfirmSheetOptions) => Promise<boolean>;
+  alert: (options: AlertSheetOptions) => Promise<void>;
 };
 
 const GlassSheetContext = createContext<GlassSheetContextValue | null>(null);
 
 let confirmImpl: ((options: ConfirmSheetOptions) => Promise<boolean>) | null = null;
+let alertImpl: ((options: AlertSheetOptions) => Promise<void>) | null = null;
 
 /** 模块级确认 API（与 hook 等价）；Provider 未挂载时安全回退为 false。 */
 export function confirmSheet(options: ConfirmSheetOptions): Promise<boolean> {
   return confirmImpl ? confirmImpl(options) : Promise.resolve(false);
 }
 
-type ConfirmRequest = { options: ConfirmSheetOptions; resolve: (value: boolean) => void };
+/** 模块级单键提示 API（纯信息、无需选择）；Provider 未挂载时直接完成。 */
+export function alertSheet(options: AlertSheetOptions): Promise<void> {
+  return alertImpl ? alertImpl(options) : Promise.resolve();
+}
+
+type SheetRequest =
+  | { kind: "confirm"; options: ConfirmSheetOptions; resolve: (value: boolean) => void }
+  | { kind: "alert"; options: AlertSheetOptions; resolve: () => void };
 
 export function GlassSheetProvider({ children }: { children: ReactNode }) {
-  const [request, setRequest] = useState<ConfirmRequest | null>(null);
-  const confirm = useCallback((options: ConfirmSheetOptions) => new Promise<boolean>(resolve => setRequest({ options, resolve })), []);
+  const [request, setRequest] = useState<SheetRequest | null>(null);
+  const confirm = useCallback((options: ConfirmSheetOptions) => new Promise<boolean>(resolve => setRequest({ kind: "confirm", options, resolve })), []);
+  const alert = useCallback((options: AlertSheetOptions) => new Promise<void>(resolve => setRequest({ kind: "alert", options, resolve })), []);
   useEffect(() => {
     confirmImpl = confirm;
-    return () => { if (confirmImpl === confirm) confirmImpl = null; };
-  }, [confirm]);
+    alertImpl = alert;
+    return () => {
+      if (confirmImpl === confirm) confirmImpl = null;
+      if (alertImpl === alert) alertImpl = null;
+    };
+  }, [confirm, alert]);
   const settle = useCallback((value: boolean) => {
     setRequest(current => {
-      current?.resolve(value);
+      if (!current) return null;
+      if (current.kind === "confirm") current.resolve(value);
+      else current.resolve();
       return null;
     });
   }, []);
   return (
-    <GlassSheetContext.Provider value={{ confirm }}>
+    <GlassSheetContext.Provider value={{ confirm, alert }}>
       {children}
       <ConfirmSheet request={request} onSettle={settle} />
     </GlassSheetContext.Provider>
   );
 }
 
-function ConfirmSheet({ request, onSettle }: { request: ConfirmRequest | null; onSettle: (value: boolean) => void }) {
+function ConfirmSheet({ request, onSettle }: { request: SheetRequest | null; onSettle: (value: boolean) => void }) {
   const { colors } = useColorTheme();
   const options = request?.options;
+  const confirmOptions = request?.kind === "confirm" ? request.options : null;
+  const isAlert = request?.kind === "alert";
   const close = useCallback((value: boolean) => {
     haptics.selection();
     onSettle(value);
@@ -148,25 +172,36 @@ function ConfirmSheet({ request, onSettle }: { request: ConfirmRequest | null; o
         <View style={styles.confirmBody}>
           <Text accessibilityRole="header" style={[styles.confirmTitle, { color: colors.ink }]}>{options.title}</Text>
           {options.message ? <Text style={[styles.confirmMessage, { color: colors.muted }]}>{options.message}</Text> : null}
-          <View style={styles.confirmActions}>
-            <Pressable accessibilityRole="button" accessibilityLabel={options.cancelLabel ?? "取消"} onPress={() => close(false)} style={({ pressed }) => [styles.cancelButton, { borderColor: colors.line }, pressed && styles.pressed]}>
-              <Text style={[styles.cancelLabel, { color: colors.coralDark }]}>{options.cancelLabel ?? "取消"}</Text>
-            </Pressable>
+          {isAlert ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={options.confirmLabel ?? "确定"}
+              accessibilityLabel={options.confirmLabel ?? "好"}
               onPress={() => close(true)}
-              style={({ pressed }) => [
-                styles.confirmButton,
-                options.destructive
-                  ? { backgroundColor: colors.errorSoft, borderColor: colors.dangerLine }
-                  : { backgroundColor: colors.coral, borderColor: colors.coral },
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [styles.confirmButton, styles.singleButton, { backgroundColor: colors.coral, borderColor: colors.coral }, pressed && styles.pressed]}
             >
-              <Text style={[styles.confirmLabel, { color: options.destructive ? colors.error : colors.onCoral }]}>{options.confirmLabel ?? "确定"}</Text>
+              <Text style={[styles.confirmLabel, { color: colors.onCoral }]}>{options.confirmLabel ?? "好"}</Text>
             </Pressable>
-          </View>
+          ) : confirmOptions ? (
+            <View style={styles.confirmActions}>
+              <Pressable accessibilityRole="button" accessibilityLabel={confirmOptions.cancelLabel ?? "取消"} onPress={() => close(false)} style={({ pressed }) => [styles.cancelButton, { borderColor: colors.line }, pressed && styles.pressed]}>
+                <Text style={[styles.cancelLabel, { color: colors.coralDark }]}>{confirmOptions.cancelLabel ?? "取消"}</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={confirmOptions.confirmLabel ?? "确定"}
+                onPress={() => close(true)}
+                style={({ pressed }) => [
+                  styles.confirmButton,
+                  confirmOptions.destructive
+                    ? { backgroundColor: colors.errorSoft, borderColor: colors.dangerLine }
+                    : { backgroundColor: colors.coral, borderColor: colors.coral },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.confirmLabel, { color: confirmOptions.destructive ? colors.error : colors.onCoral }]}>{confirmOptions.confirmLabel ?? "确定"}</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       ) : null}
     </GlassSheet>
@@ -177,6 +212,12 @@ export function useConfirmSheet() {
   const context = useContext(GlassSheetContext);
   if (!context) throw new Error("GlassSheetProvider is missing");
   return context.confirm;
+}
+
+export function useAlertSheet() {
+  const context = useContext(GlassSheetContext);
+  if (!context) throw new Error("GlassSheetProvider is missing");
+  return context.alert;
 }
 
 const styles = StyleSheet.create({
@@ -214,6 +255,7 @@ const styles = StyleSheet.create({
   },
   cancelLabel: { fontSize: journalType.body, fontWeight: "700" },
   confirmButton: { flex: 1, minHeight: 50, alignItems: "center", justifyContent: "center", borderRadius: journalRadius.control, borderWidth: 1 },
+  singleButton: { alignSelf: "stretch", marginTop: journalSpace.small },
   confirmLabel: { fontSize: journalType.body, fontWeight: "700" },
   pressed: { opacity: 0.72 },
 });

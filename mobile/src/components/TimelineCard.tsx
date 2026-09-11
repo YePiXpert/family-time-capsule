@@ -2,22 +2,27 @@ import { Text } from "./typography";
 import { Image, Pressable, StyleSheet, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColorTheme } from "../theme";
+import { useAccessibleEffects } from "../design/use-effects";
 import { JournalIcon } from "./JournalIcon";
+import { GlassSurface } from "./GlassSurface";
 import type { LocalTimelineEvent } from "../types";
 import { dateLabel } from "../utils/format";
 
 export function TimelineCard({
   item,
   onPress,
+  onLongPress,
   timeZone,
   selected,
 }: {
   item: LocalTimelineEvent;
   onPress: () => void;
+  onLongPress?: (event: { nativeEvent: { pageX: number; pageY: number } }) => void;
   timeZone?: string;
   selected?: boolean;
 }) {
   const { colors } = useColorTheme();
+  const { reducedMotion } = useAccessibleEffects();
   const age = item.ageLabel;
   const milestone = item.milestoneType ? (item.milestoneType === "first_time" ? "第一次" : "值得记住") : null;
   return (
@@ -26,13 +31,16 @@ export function TimelineCard({
       accessibilityRole="button"
       accessibilityState={selected === undefined ? undefined : { selected }}
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.card,
-        { backgroundColor: colors.card, borderColor: selected ? colors.coral : colors.line },
-        selected && { borderWidth: 2 },
-        pressed && styles.pressed,
+        pressed && !reducedMotion && styles.pressed,
       ]}
     >
+      <GlassSurface tier="card" radius={22} />
+      {selected ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.selectedRing, { borderColor: colors.coral }]} />
+      ) : null}
       {item.localCoverUri ? (
         <Image fadeDuration={0} source={{ uri: item.localCoverUri }} style={[styles.cover, { backgroundColor: colors.softCoral }]} />
       ) : (
@@ -86,9 +94,9 @@ const styles = StyleSheet.create({
   card: {
     overflow: "hidden",
     borderRadius: 22,
-    borderWidth: 1,
   },
   pressed: { opacity: 0.72 },
+  selectedRing: { borderWidth: 2, borderRadius: 22 },
   cover: { width: "100%", aspectRatio: 4 / 3 },
   placeholder: {
     height: 76,

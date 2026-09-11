@@ -16,6 +16,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
   Text: "Text", TextInput: "TextInput", View: "View",
 }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
 vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void) => useEffect(fn, [fn]),
 }));

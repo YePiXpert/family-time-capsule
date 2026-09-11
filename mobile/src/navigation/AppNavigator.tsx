@@ -17,6 +17,7 @@ import { Keyboard, Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "../components/typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../state/AppContext";
+import { haptics } from "../design/haptics";
 import { TimelineScreen } from "../screens/TimelineScreen";
 import { CaptureScreen } from "../screens/CaptureScreen";
 import { InboxScreen } from "../screens/InboxScreen";
@@ -88,6 +89,7 @@ function JournalTabBar({ state, descriptors, navigation, target, onHeight }: Bot
         const meta = tabMeta[route.name] ?? { label: route.name, icon: "growth" as JournalIconName };
         const focused = current.key === route.key;
         return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={meta.label} accessibilityState={{ selected: focused }} testID={`tab-${route.name.toLowerCase()}`} onPress={() => {
+          haptics.selection();
           const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
         }} onLongPress={() => navigation.emit({ type: "tabLongPress", target: route.key })} style={({ pressed }) => [styles.tabItem, pressed && !reducedMotion && styles.pressed]}>

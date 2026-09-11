@@ -1,15 +1,18 @@
 import { AiSettingsSection } from "../ai/AiSettingsSection";
 import { Text } from "../components/typography";
 import { useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, Switch, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AppNavigation } from "../navigation/types";
 import { useApp } from "../state/AppContext";
 import { Disclosure } from "../components/Disclosure";
 import { DisplayModeCard } from "../components/DisplayModeCard";
+import { useAlertSheet } from "../components/GlassSheet";
 import { Chip, ListGroup, ListRow } from "../components/ui";
 import { useColorTheme, type ThemeMode } from "../theme";
+import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
+import { GlassCard } from "../components/GlassCard";
 import { journalRadius, journalSpace, journalType } from "../design/tokens";
 
 const roleLabels: Record<string, string> = {
@@ -31,22 +34,34 @@ export function SettingsHubScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useColorTheme();
   const { credentials, viewer, family, themeMode, setThemeMode, hapticsEnabled, setHapticsEnabled } = useApp();
+  const alert = useAlertSheet();
+  const { scrollY, onScroll } = useCollapsingHeroScroll();
   const [section, setSection] = useState("");
   const group = (name: string) => ({ title: name, open: section === name, onToggle: () => setSection(value => value === name ? "" : name) });
   const web = async (path: string) => {
     if (!credentials) { navigation.navigate("DeviceSettings"); return; }
     try { await Linking.openURL(`${credentials.serverUrl}${path}`); }
-    catch { Alert.alert("无法打开", "请检查网络或浏览器设置。"); }
+    catch { await alert({ title: "无法打开", message: "请检查网络或浏览器设置。" }); }
   };
   const manager = viewer?.role === "owner" || viewer?.role === "admin";
   const initial = (viewer?.name ?? "我").trim().slice(0, 1) || "我";
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.paper }}
-      contentContainerStyle={{ padding: journalSpace.page, paddingTop: insets.top + 20, paddingBottom: 210, gap: 18 }}
-    >
+    <View style={{ flex: 1, backgroundColor: colors.paper }}>
+      <ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: journalSpace.page, paddingTop: insets.top + 20, paddingBottom: 210, gap: 18 }}
+      >
+      <CollapsingHero
+        eyebrow="照片、声音和想留下的话"
+        title="我的"
+        subtitle={viewer?.name ?? "我的成长手帐"}
+        scrollY={scrollY}
+      />
+
       {/* 身份卡：家人先看到自己，再看到设置 */}
-      <View style={styles.identity}>
+      <GlassCard style={styles.identity}>
         <View style={[styles.avatar, { backgroundColor: colors.softCoral }]}>
           <Text style={[styles.avatarText, { color: colors.coralDark }]}>{initial}</Text>
         </View>
@@ -56,7 +71,7 @@ export function SettingsHubScreen() {
             {[family?.name, viewer?.role ? roleLabels[viewer.role] ?? null : null].filter(Boolean).join(" · ") || "照片、声音和想留下的话，都好好保存。"}
           </Text>
         </View>
-      </View>
+      </GlassCard>
 
       {/* 四组设置保持手风琴结构（NAV-11：大字模式下结构不变） */}
       <Disclosure {...group("家人和账号")}>
@@ -126,7 +141,9 @@ export function SettingsHubScreen() {
           </View>
         ) : null}
       </Disclosure>
-    </ScrollView>
+      </ScrollView>
+      <CollapsingHeroBar title="我的" scrollY={scrollY} topInset={insets.top} />
+    </View>
   );
 }
 

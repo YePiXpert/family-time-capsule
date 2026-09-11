@@ -2,9 +2,10 @@ import { Text } from "../components/typography";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useApp } from "../state/AppContext";
+import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
 import {
@@ -47,6 +48,7 @@ export function ReadingDownloadsScreen({
 }: NativeStackScreenProps<RootStackParamList, "ReadingDownloads">) {
   const s = useSharedStyles();
   const { credentials, online: connected } = useApp(),
+    confirm = useConfirmSheet(),
     [scope, setScope] = useState<ReadingScope | null>(null),
     [rows, setRows] = useState<DownloadSummary[]>([]),
     [error, setError] = useState(""),
@@ -113,7 +115,6 @@ export function ReadingDownloadsScreen({
   }
   return (
     <ScrollView style={s.screen} contentContainerStyle={s.content}>
-      <Text style={s.title}>离线收藏</Text>
       <Text style={s.body}>
         {online
           ? "已连接家庭服务器"
@@ -194,23 +195,20 @@ export function ReadingDownloadsScreen({
             title="清理这份下载"
             disabled={busy}
             onPress={() =>
-              Alert.alert(
-                "清理阅读下载",
-                `仅删除“${row.title}”的阅读副本。本机原件和待同步素材不受影响。`,
-                [
-                  { text: "保留", style: "cancel" },
-                  {
-                    text: "清理下载",
-                    onPress: () =>
-                      void perform(() =>
-                        readingDownloads.remove(
-                          row.key,
-                          nativeReadingTransport(credentials!, scope!),
-                        ),
-                      ),
-                  },
-                ],
-              )
+              void confirm({
+                title: "清理阅读下载",
+                message: `仅删除“${row.title}”的阅读副本。本机原件和待同步素材不受影响。`,
+                confirmLabel: "清理下载",
+                cancelLabel: "保留",
+              }).then(confirmed => {
+                if (!confirmed) return;
+                void perform(() =>
+                  readingDownloads.remove(
+                    row.key,
+                    nativeReadingTransport(credentials!, scope!),
+                  ),
+                );
+              })
             }
           />
         </View>
@@ -220,18 +218,15 @@ export function ReadingDownloadsScreen({
           title="清理当前连接全部阅读下载"
           disabled={busy}
           onPress={() =>
-            Alert.alert(
-              "清理当前阅读缓存",
-              "只清除此服务器、账号、家庭下的阅读下载，不触碰原件和待同步内容。",
-              [
-                { text: "保留", style: "cancel" },
-                {
-                  text: "清理",
-                  onPress: () =>
-                    void perform(() => clearReadingScope(scope, credentials)),
-                },
-              ],
-            )
+            void confirm({
+              title: "清理当前阅读缓存",
+              message: "只清除此服务器、账号、家庭下的阅读下载，不触碰原件和待同步内容。",
+              confirmLabel: "清理",
+              cancelLabel: "保留",
+            }).then(confirmed => {
+              if (!confirmed) return;
+              void perform(() => clearReadingScope(scope, credentials));
+            })
           }
         />
       ) : null}

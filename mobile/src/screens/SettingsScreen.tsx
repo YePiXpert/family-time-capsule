@@ -1,9 +1,10 @@
 import { Text } from "../components/typography";
 import { useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { useApp } from "../state/AppContext";
 import { ServerConnectionForm } from "../components/ServerConnectionForm";
+import { useAlertSheet, useConfirmSheet } from "../components/GlassSheet";
 import { exportRescuePackage, restoreRescuePackage } from "../rescue/device";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
@@ -20,15 +21,17 @@ export function SettingsScreen() {
     keepOutboxItemLocal, deleteOutboxCapture, syncConsent,
   } = useApp();
   const [rescueBusy, setRescueBusy] = useState(false);
+  const confirm = useConfirmSheet();
+  const alert = useAlertSheet();
   const failed = outbox.filter((item) => item.attemptCount > 0);
 
   const exportRescue = async () => {
     setRescueBusy(true);
     try {
       const summary = await exportRescuePackage();
-      Alert.alert("救援包已生成", summary);
+      await alert({ title: "救援包已生成", message: summary });
     } catch (error) {
-      Alert.alert("导出未完成", error instanceof Error ? error.message : "请稍后重试。");
+      await alert({ title: "导出未完成", message: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
       setRescueBusy(false);
     }
@@ -46,49 +49,40 @@ export function SettingsScreen() {
       const result = await restoreRescuePackage(uri);
       await reloadLocal();
       dismissMessage();
-      Alert.alert(
-        "恢复完成",
-        `导入 ${result.imported} 条，跳过已存在 ${result.skipped} 条` +
+      await alert({
+        title: "恢复完成",
+        message: `导入 ${result.imported} 条，跳过已存在 ${result.skipped} 条` +
           (result.missingFiles > 0 ? `，${result.missingFiles} 条缺少文件未写入` : "") +
           "。恢复的记录默认仅保存在本机，不会自动上传。",
-      );
+      });
     } catch (error) {
-      Alert.alert("恢复未执行", error instanceof Error ? error.message : "请稍后重试。");
+      await alert({ title: "恢复未执行", message: error instanceof Error ? error.message : "请稍后重试。" });
     } finally {
       setRescueBusy(false);
     }
   };
 
   const confirmKeepLocal = (item: OutboxItem) => {
-    Alert.alert(
-      "改为仅保留本机？",
-      "这条记录不再等待上传；记录和原件都保留在本机。",
-      [
-        { text: "取消", style: "cancel" },
-        { text: "仅保留本机", onPress: () => void keepOutboxItemLocal(item.id) },
-      ],
-    );
+    void confirm({
+      title: "改为仅保留本机？",
+      message: "这条记录不再等待上传；记录和原件都保留在本机。",
+      confirmLabel: "仅保留本机",
+    }).then(confirmed => { if (confirmed) void keepOutboxItemLocal(item.id); });
   };
 
   const confirmDelete = (item: OutboxItem) => {
-    Alert.alert(
-      "删除这条本机记录？",
-      item.kind === "media_capture"
+    void confirm({
+      title: "删除这条本机记录？",
+      message: item.kind === "media_capture"
         ? "记录和本机原件文件都会被永久删除，不可恢复。服务器资料不受影响。"
         : "这条文字记录会被永久删除，不可恢复。",
-      [
-        { text: "取消", style: "cancel" },
-        {
-          text: "永久删除",
-          style: "destructive",
-          onPress: () => void deleteOutboxCapture(item),
-        },
-      ],
-    );
+      confirmLabel: "永久删除",
+      destructive: true,
+    }).then(confirmed => { if (confirmed) void deleteOutboxCapture(item); });
   };
 
   return <ScrollView contentContainerStyle={s.content} style={s.screen}>
-    <Text style={s.eyebrow}>设备与同步</Text><Text style={s.title}>{family?.name ?? "小美成长记"}</Text>
+    <Text accessibilityRole="header" style={s.title}>{family?.name ?? "小美成长记"}</Text>
     <View style={s.card}>
       <Row label="模式" value={credentials ? "本机 + 自托管同步" : "仅本机"} />
       {credentials ? <><Row label="账号" value={viewer?.name ?? "等待同步"} /><Row label="服务器" value={credentials.serverUrl} /></> : null}
@@ -100,7 +94,7 @@ export function SettingsScreen() {
     <View style={s.notice}><Text style={s.noticeText}>未同步的记录和下载的内容保存在本机，断开服务器后仍会保留。</Text></View>
     {credentials ? <>
       <Pressable disabled={syncing} onPress={() => void runSync()} style={s.secondaryButton}><Text style={s.secondaryText}>{syncing ? "同步中…" : "立即同步"}</Text></Pressable>
-      <Pressable onPress={() => Alert.alert("断开家庭服务器？", "本机记录和已下载资料都会保留。", [{ text: "取消", style: "cancel" }, { text: "确认断开", onPress: () => void disconnect() }])} style={styles.textButton}><Text style={styles.danger}>断开家庭服务器</Text></Pressable>
+      <Pressable onPress={() => void confirm({ title: "断开家庭服务器？", message: "本机记录和已下载资料都会保留。", confirmLabel: "确认断开", destructive: true }).then(confirmed => { if (confirmed) void disconnect(); })} style={styles.textButton}><Text style={styles.danger}>断开家庭服务器</Text></Pressable>
     </> : <ServerConnectionForm onLogin={connect} />}
 
     {failed.length > 0 ? (
@@ -130,7 +124,7 @@ export function SettingsScreen() {
     </View>
 
     </Disclosure>
-    <Disclosure title="数据清理"><Pressable onPress={() => Alert.alert("清除本机全部数据？", "本机记录、原件、离线缓存与登录凭据都会永久删除；服务器资料不受影响。", [{ text: "取消", style: "cancel" }, { text: "确认清除", style: "destructive", onPress: () => void clearLocal() }])} style={styles.clear}><Text style={styles.danger}>清除本机全部数据</Text></Pressable></Disclosure>
+    <Disclosure title="数据清理"><Pressable onPress={() => void confirm({ title: "清除本机全部数据？", message: "本机记录、原件、离线缓存与登录凭据都会永久删除；服务器资料不受影响。", confirmLabel: "确认清除", destructive: true }).then(confirmed => { if (confirmed) void clearLocal(); })} style={styles.clear}><Text style={styles.danger}>清除本机全部数据</Text></Pressable></Disclosure>
   </ScrollView>;
 }
 

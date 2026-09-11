@@ -28,7 +28,10 @@ import {
 import type { RootStackParamList } from "../navigation/types";
 import { useApp } from "../state/AppContext";
 import { useColorTheme, useSharedStyles } from "../theme";
-import { journalRadius, journalType } from "../design/tokens";
+import { journalRadius, journalShadow, journalType } from "../design/tokens";
+import { useConfirmSheet } from "../components/GlassSheet";
+import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
+import { haptics } from "../design/haptics";
 import {
   Button,
   Chip,
@@ -129,8 +132,11 @@ function BookCoverCell({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={book.title}
-      onPress={onPress}
-      style={({ pressed }) => [{ width: "48%", gap: 8 }, pressed && { opacity: 0.85 }]}
+      onPress={() => {
+        haptics.selection();
+        onPress();
+      }}
+      style={({ pressed }) => [{ width: "48%", gap: 8 }, pressed && { transform: [{ scale: 0.97 }] }]}
     >
       <View
         style={{
@@ -143,6 +149,7 @@ function BookCoverCell({
           borderRadius: journalRadius.card,
           borderWidth: 1,
           overflow: "hidden",
+          boxShadow: journalShadow.card,
         }}
       >
         <View
@@ -185,7 +192,7 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
   const { credentials, family, viewer } = useApp();
   const insets = useSafeAreaInsets();
   const s = useSharedStyles();
-  const { colors } = useColorTheme();
+  const { scrollY, onScroll } = useCollapsingHeroScroll();
   const [page, setPage] = useState<BookPage | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -196,12 +203,19 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
     catch (e) { setError((e as Error).message); }
   }, [credentials, deleted]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
-  return <ScrollView style={s.screen} contentContainerStyle={[s.content, { paddingTop: insets.top + 12 }]}>
-    <View style={{ gap: 6, paddingBottom: 4 }}>
-      <Text style={s.eyebrow}>一本一本，慢慢攒</Text>
-      <Text accessibilityRole="header" style={{ color: colors.ink, fontSize: journalType.title, fontWeight: "800" }}>成长册</Text>
-      <Text style={s.body}>把一段时间，订成一本可以翻的书。</Text>
-    </View>
+  return <View style={s.screen}>
+    <ScrollView
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      style={{ flex: 1 }}
+      contentContainerStyle={[s.content, { paddingTop: insets.top + 20 }]}
+    >
+    <CollapsingHero
+      eyebrow="一本一本，慢慢攒"
+      title="成长册"
+      subtitle="把一段时间，订成一本可以翻的书。"
+      scrollY={scrollY}
+    />
     {!deleted && !creating ? <GrowthBookCard key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, family?.id, viewer?.id])} /> : null}
     <SectionHeader title="我的书架" />
     {creating ? <WorkCreator kind="book" onCancel={() => setCreating(false)} onCreated={id => { setCreating(false); navigation.navigate("BookDetail", { id }); }} /> : null}
@@ -228,7 +242,9 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
       <ListRow icon={deleted ? "arrow-left" : "trash"} title={deleted ? "返回家庭书" : "作品回收站"} onPress={() => { setDeleted(value => !value); setCreating(false); }} />
       <ListRow icon="settings" title="刷新" onPress={() => void load()} last />
     </ListGroup>
-  </ScrollView>;
+    </ScrollView>
+    <CollapsingHeroBar title="成长册" scrollY={scrollY} topInset={insets.top} />
+  </View>;
 }
 export function BookDetailScreen({
   navigation,
@@ -238,6 +254,7 @@ export function BookDetailScreen({
   const insets = useSafeAreaInsets();
   const s = useSharedStyles();
   const { colors } = useColorTheme();
+  const confirm = useConfirmSheet();
   const id = route.params.id;
   const [book, setBook] = useState<BookDetail | null>(null),
     [error, setError] = useState(""),
@@ -499,10 +516,8 @@ export function BookDetailScreen({
           <Button
             title="重新载入服务器版本"
             onPress={() =>
-              Alert.alert("重新载入", "将放弃此页尚未保存的输入。", [
-                { text: "保留输入", style: "cancel" },
-                { text: "重新载入", onPress: () => void load() },
-              ])
+              void confirm({ title: "重新载入", message: "将放弃此页尚未保存的输入。", confirmLabel: "重新载入", cancelLabel: "保留输入" })
+                .then(confirmed => { if (confirmed) void load(); })
             }
             disabled={busy || saving}
           />
@@ -786,25 +801,20 @@ export function BookDetailScreen({
                 title="删除章节及其内容"
                 disabled={busy}
                 onPress={() =>
-                  Alert.alert("删除章节", "只移除本作品的内容，源记忆保留。", [
-                    { text: "取消", style: "cancel" },
-                    {
-                      text: "删除",
-                      style: "destructive",
-                      onPress: () => {
-                        update({
-                          chapters: book.chapters.filter(
-                            (c) => c.id !== chapter.id,
-                          ),
-                          blocks: book.blocks.filter(
-                            (b) => b.chapterId !== chapter.id,
-                          ),
-                        });
-                        setChapterIndex(0);
-                        setBlockPage(0);
-                      },
-                    },
-                  ])
+                  void confirm({ title: "删除章节", message: "只移除本作品的内容，源记忆保留。", confirmLabel: "删除", destructive: true })
+                    .then(confirmed => {
+                      if (!confirmed) return;
+                      update({
+                        chapters: book.chapters.filter(
+                          (c) => c.id !== chapter.id,
+                        ),
+                        blocks: book.blocks.filter(
+                          (b) => b.chapterId !== chapter.id,
+                        ),
+                      });
+                      setChapterIndex(0);
+                      setBlockPage(0);
+                    })
                 }
               />
               <Button
@@ -1083,7 +1093,7 @@ export function BookDetailScreen({
               onPress={() => void act("snapshot")}
             />
           </ListGroup> : null}
-          {canEdit ? <ToolDisclosure title="版本记录"><View style={{ gap: 8 }}>{book.versions.map(version => <Button key={version.revision} title={`恢复版本 ${version.revision}`} disabled={busy} onPress={() => Alert.alert("恢复版本", "当前排版会先保存为一个版本，再恢复所选排版。", [{ text: "取消", style: "cancel" }, { text: "恢复", onPress: () => void act("restore_version", { version: version.revision }) }])} />)}</View></ToolDisclosure> : null}
+          {canEdit ? <ToolDisclosure title="版本记录"><View style={{ gap: 8 }}>{book.versions.map(version => <Button key={version.revision} title={`恢复版本 ${version.revision}`} disabled={busy} onPress={() => void confirm({ title: "恢复版本", message: "当前排版会先保存为一个版本，再恢复所选排版。", confirmLabel: "恢复" }).then(confirmed => { if (confirmed) void act("restore_version", { version: version.revision }); })} />)}</View></ToolDisclosure> : null}
           {book.canWrite ? <ListGroup>
             <ListRow
               icon="trash"
@@ -1091,18 +1101,11 @@ export function BookDetailScreen({
               destructive={!book.deletedAt}
               last
               onPress={() =>
-                Alert.alert(
-                  book.deletedAt ? "恢复作品" : "删除作品",
-                  "源记忆、讲述和原件保持完整。",
-                  [
-                    { text: "取消", style: "cancel" },
-                    {
-                      text: "确认",
-                      onPress: () =>
-                        void act(book.deletedAt ? "restore" : "delete"),
-                    },
-                  ],
-                )
+                void confirm({
+                  title: book.deletedAt ? "恢复作品" : "删除作品",
+                  message: "源记忆、讲述和原件保持完整。",
+                  confirmLabel: "确认",
+                }).then(confirmed => { if (confirmed) void act(book.deletedAt ? "restore" : "delete"); })
               }
             />
           </ListGroup> : null}

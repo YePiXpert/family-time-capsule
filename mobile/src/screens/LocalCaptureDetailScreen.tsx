@@ -1,9 +1,10 @@
 import { Text } from "../components/typography";
 import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { exportOriginalCopy } from "../media/export-original";
 import { NativeMediaReader, type NativeReaderAsset } from "../media/NativeMediaReader";
+import { useAlertSheet, useConfirmSheet } from "../components/GlassSheet";
 import {
   getLocalCaptureDetail,
   removeLocalCaptureRecord,
@@ -33,6 +34,8 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const captureId = route.params.captureId.replace(/^local:/u, "");
   const { credentials, outbox, runSync } = useApp();
+  const confirm = useConfirmSheet();
+  const alert = useAlertSheet();
   const [detail, setDetail] = useState<LocalCaptureDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,22 +54,17 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
   const fileExists = detail?.localUri ? localFileExists(detail.localUri) : null;
 
   const removeRecord = () => {
-    Alert.alert(
-      "移除这条本机记录？",
-      fileExists
+    void confirm({
+      title: "移除这条本机记录？",
+      message: fileExists
         ? "该操作只移除记录条目，不会删除本机原件文件。"
         : "本机原件文件已不存在；此操作只清除残留的记录条目。",
-      [
-        { text: "取消", style: "cancel" },
-        {
-          text: "确认移除",
-          style: "destructive",
-          onPress: () => {
-            void removeLocalCaptureRecord(captureId).then(() => load()).catch(error => Alert.alert("尚未移除", error instanceof Error ? error.message : "请重试。"));
-          },
-        },
-      ],
-    );
+      confirmLabel: "确认移除",
+      destructive: true,
+    }).then(confirmed => {
+      if (!confirmed) return;
+      void removeLocalCaptureRecord(captureId).then(() => load()).catch(error => void alert({ title: "尚未移除", message: error instanceof Error ? error.message : "请重试。" }));
+    });
   };
 
   if (loading && !detail) {
@@ -147,7 +145,7 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
               },
               credentials,
             ).catch((error: unknown) =>
-              Alert.alert("导出失败", error instanceof Error ? error.message : "请稍后重试。"),
+              void alert({ title: "导出失败", message: error instanceof Error ? error.message : "请稍后重试。" }),
             )
           }
           style={s.secondaryButton}

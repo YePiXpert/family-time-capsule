@@ -6,7 +6,7 @@ import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { randomUUID } from "expo-crypto";
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, View } from "react-native";
 import {
   fetchCollection,
   fetchCollections,
@@ -15,6 +15,7 @@ import {
 import type { CollectionDetail, CollectionPage } from "../collections/types";
 import type { RootStackParamList } from "../navigation/types";
 import { useApp } from "../state/AppContext";
+import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 function Button({
   title,
@@ -161,6 +162,7 @@ export function CollectionDetailScreen({
 }: NativeStackScreenProps<RootStackParamList, "CollectionDetail">) {
   const s = useSharedStyles();
   const { credentials } = useApp();
+  const confirm = useConfirmSheet();
   const [reading, setReading] = useState(true);
   const [doc, setDoc] = useState<CollectionDetail | null>(null),
     [error, setError] = useState(""),
@@ -276,14 +278,12 @@ export function CollectionDetailScreen({
           <Button
             title="重新读取服务器版本"
             onPress={() =>
-              Alert.alert(
-                "重新读取",
-                "未保存输入将被替换，请先复制需要保留的文字。",
-                [
-                  { text: "保留输入", style: "cancel" },
-                  { text: "重新读取", onPress: () => void load() },
-                ],
-              )
+              void confirm({
+                title: "重新读取",
+                message: "未保存输入将被替换，请先复制需要保留的文字。",
+                confirmLabel: "重新读取",
+                cancelLabel: "保留输入",
+              }).then(confirmed => { if (confirmed) void load(); })
             }
           />
         </>
@@ -571,14 +571,11 @@ export function CollectionDetailScreen({
           onPress={() =>
             doc.deletedAt
               ? void save("restore")
-              : Alert.alert(
-                  "删除相册",
-                  "移入相册回收站后可以恢复；源记忆、讲述和原件不受影响。",
-                  [
-                    { text: "取消", style: "cancel" },
-                    { text: "移入回收站", onPress: () => void save("delete") },
-                  ],
-                )
+              : void confirm({
+                  title: "删除相册",
+                  message: "移入相册回收站后可以恢复；源记忆、讲述和原件不受影响。",
+                  confirmLabel: "移入回收站",
+                }).then(confirmed => { if (confirmed) void save("delete"); })
           }
         />
       ) : null}

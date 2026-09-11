@@ -1,10 +1,11 @@
 import { Text, TextInput } from "../components/typography";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Share, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Share, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import { createInvitation } from "../api/client";
 import { useApp } from "../state/AppContext";
+import { useAlertSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
 import type { InvitationCreateResult } from "../types";
@@ -26,6 +27,7 @@ export function InviteFamilyScreen() {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const { credentials, people } = useApp();
+  const alert = useAlertSheet();
   const [role, setRole] = useState<"admin" | "editor" | "contributor" | "viewer">("contributor");
   const [expiresInDays, setExpiresInDays] = useState(7);
   const [personId, setPersonId] = useState("");
@@ -60,7 +62,7 @@ export function InviteFamilyScreen() {
   const copy = async () => {
     if (!link) return;
     await Clipboard.setStringAsync(link);
-    Alert.alert("已复制", "邀请链接已复制；请只发送给要邀请的家人。");
+    await alert({ title: "已复制", message: "邀请链接已复制；请只发送给要邀请的家人。" });
   };
 
   const share = async () => {
@@ -75,7 +77,6 @@ export function InviteFamilyScreen() {
   return (
     <ScrollView contentContainerStyle={s.content} style={s.screen}>
       <Text style={s.eyebrow}>账号邀请</Text>
-      <Text style={s.title}>邀请家人加入</Text>
       <Text style={s.intro}>
         生成一次性邀请链接或二维码。家人在 App 的“加入家人的家庭”中粘贴或扫码，即可用自己的账号加入本家庭。
       </Text>

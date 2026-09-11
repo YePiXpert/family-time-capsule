@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   alert: vi.fn(),
+  confirm: vi.fn(async (_options?: unknown) => true),
   scope: vi.fn(),
   manifest: vi.fn(),
   queue: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (s: unknown) => s },
   Alert: { alert: mocks.alert },
 }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => mocks.confirm, useAlertSheet: () => vi.fn(async () => {}), confirmSheet: (options: unknown) => mocks.confirm(options), alertSheet: vi.fn(async () => {}) }));
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mocks.navigate }),
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
@@ -167,13 +169,11 @@ it("shows actual capacity before queueing and preserves editing when prepare fai
   expect(mocks.queue).not.toHaveBeenCalled();
   mocks.prepare.mockResolvedValue(true);
   await press("下载供离线阅读");
-  expect(mocks.alert).toHaveBeenCalledWith(
-    "下载供离线阅读",
-    expect.stringContaining("1 张照片、1 段音频"),
-    expect.any(Array),
-  );
-  expect(mocks.queue).not.toHaveBeenCalled();
-  await act(async () => mocks.alert.mock.calls[0]![2][1].onPress());
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
+    title: "下载供离线阅读",
+    message: expect.stringContaining("1 张照片、1 段音频"),
+    confirmLabel: "下载",
+  }));
   expect(mocks.queue).toHaveBeenCalledWith(scope, manifest, expect.anything());
   expect(mocks.navigate).toHaveBeenCalledWith("ReadingDownloads");
   expect(mocks.resume).toHaveBeenCalledWith(scope, key, expect.anything());
@@ -233,10 +233,10 @@ it("download list offers retry and confirms clearing only the current reading co
   await press("重试下载");
   expect(mocks.resume).toHaveBeenCalledWith(scope, key, expect.anything());
   await press("清理这份下载");
-  expect(mocks.remove).not.toHaveBeenCalled();
-  expect(mocks.alert.mock.calls[0]![1]).toContain(
-    "本机原件和待同步素材不受影响",
-  );
-  await act(async () => mocks.alert.mock.calls[0]![2][1].onPress());
+  expect(mocks.confirm.mock.lastCall?.[0]).toEqual(expect.objectContaining({
+    title: "清理阅读下载",
+    message: expect.stringContaining("本机原件和待同步素材不受影响"),
+    confirmLabel: "清理下载",
+  }));
   expect(mocks.remove).toHaveBeenCalledWith(key, expect.anything());
 });

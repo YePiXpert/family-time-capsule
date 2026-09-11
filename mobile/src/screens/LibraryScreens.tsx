@@ -4,7 +4,8 @@ import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { confirmSheet } from "../components/GlassSheet";
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import {
   ApiError,
   createMobileLibraryItem,
@@ -366,7 +367,7 @@ export function ImportSessionDetailScreen({ route }: ImportDetailProps) {
     <Section title="文件">{records(detail.items).map((entry) => <View key={stringValue(entry.id)} style={styles.fileRow}><View style={styles.grow}><Text style={styles.itemTitle}>{stringValue(entry.filename) ?? "未命名文件"}</Text><Text style={styles.meta}>{statusLabel(stringValue(entry.status))} · {String(entry.receivedBytes ?? 0)}/{String(entry.totalBytes ?? 0)} bytes</Text>{stringValue(entry.errorCode) ? <Text style={s.error}>{stringValue(entry.errorCode)}</Text> : null}</View>{stringValue(entry.status) === "failed" && stringValue(entry.uploadId) ? <Pressable onPress={() => void controls.mutate({ operation: "retry", uploadId: entry.uploadId })}><Text style={styles.link}>重试</Text></Pressable> : null}</View>)}</Section>
     {booleanValue(detail.canWrite) && !["completed", "cancelled"].includes(stringValue(detail.status) ?? "") ? <View style={styles.actions}>
       {stringValue(detail.status) === "uploading" ? <Pressable onPress={() => void controls.mutate({ operation: "pause" })} style={s.secondaryButton}><Text style={s.secondaryText}>暂停</Text></Pressable> : <Pressable onPress={() => void controls.mutate({ operation: "resume" })} style={s.secondaryButton}><Text style={s.secondaryText}>继续</Text></Pressable>}
-      <Pressable onPress={() => Alert.alert("取消未完成项？", "已完成原件不会回滚；仅清理尚未完成的临时上传。", [{ text: "返回", style: "cancel" }, { text: "取消未完成项", style: "destructive", onPress: () => void controls.mutate({ operation: "cancel" }) }])} style={styles.dangerButton}><Text style={styles.dangerText}>取消未完成项</Text></Pressable>
+      <Pressable onPress={() => void confirmSheet({ title: "取消未完成项？", message: "已完成原件不会回滚；仅清理尚未完成的临时上传。", confirmLabel: "取消未完成项", cancelLabel: "返回", destructive: true }).then(confirmed => { if (confirmed) void controls.mutate({ operation: "cancel" }); })} style={styles.dangerButton}><Text style={styles.dangerText}>取消未完成项</Text></Pressable>
     </View> : null}
   </>}</DetailShell>;
 }

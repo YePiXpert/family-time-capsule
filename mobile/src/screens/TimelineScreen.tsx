@@ -9,6 +9,8 @@ import { useNavigation } from "@react-navigation/native";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useApp } from "../state/AppContext";
 import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
+import { useContextMenu } from "../components/ContextMenu";
+import { SwipeActions } from "../components/SwipeActions";
 import { TimelineCard } from "../components/TimelineCard";
 import { JournalArtwork } from "../components/JournalArtwork";
 import { Button, Chip, EmptyState, IconButton, Pill } from "../components/ui";
@@ -39,6 +41,7 @@ export function TimelineScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useColorTheme();
   const { scrollY, onScroll } = useCollapsingHeroScroll();
+  const { openMenu, menuElement } = useContextMenu();
   const growth = growthHeading(people ?? [], new Date(), family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   const child = people?.find(p => p.id === growth.childId);
   const timezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -136,18 +139,25 @@ export function TimelineScreen() {
           onRefresh={() => void (credentials ? runSync() : reloadLocal())}
         />
       }
-      renderItem={({ item, index }) => (
-        <View>
-          {index === 0 || groupLabel(visibleEvents[index - 1]!) !== groupLabel(item) ? (
-            <View style={styles.groupHeader}>
-              <Text accessibilityRole="header" style={[styles.groupLabel, { color: colors.muted }]}>{groupLabel(item)}</Text>
-              <View style={[styles.groupRule, { backgroundColor: colors.line }]} />
-            </View>
-          ) : null}
+      renderItem={({ item, index }) => {
+        const canOrganize = item.source === "server" && Boolean(viewer?.canEditEvents);
+        const enterSelection = () => { setSelecting(true); setSelected([item.id]); };
+        const openCardMenu = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
+          if (canOrganize) enterSelection();
+          openMenu([
+            ...(canOrganize ? [
+              { key: "collect", label: "加入合集", icon: "image" as const, onPress: () => navigation.navigate("Collections", { eventIds: [item.id] }) },
+              { key: "select", label: "选择", icon: "check" as const, onPress: enterSelection },
+            ] : []),
+            { key: "detail", label: "查看详情", icon: "chevron-right" as const, onPress: () => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : item.localDraftId ? navigation.navigate("Capture", { localDraftId: item.localDraftId }) : navigation.navigate("LocalCapture", { captureId: item.id }) },
+          ], { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+        };
+        const card = (
           <TimelineCard
             item={item}
             timeZone={item.source === "server" ? family?.timezone : undefined}
             selected={selecting && item.source === "server" ? selected.includes(item.id) : undefined}
+            onLongPress={openCardMenu}
             onPress={() =>
               selecting && item.source === "server"
                 ? setSelected((ids) =>
@@ -161,11 +171,32 @@ export function TimelineScreen() {
                   : navigation.navigate("LocalCapture", { captureId: item.id })
             }
           />
-        </View>
-      )}
+        );
+        return (
+          <View>
+            {index === 0 || groupLabel(visibleEvents[index - 1]!) !== groupLabel(item) ? (
+              <View style={styles.groupHeader}>
+                <Text accessibilityRole="header" style={[styles.groupLabel, { color: colors.muted }]}>{groupLabel(item)}</Text>
+                <View style={[styles.groupRule, { backgroundColor: colors.line }]} />
+              </View>
+            ) : null}
+            {canOrganize ? (
+              <SwipeActions
+                actions={[
+                  { key: "collect", label: "加入合集", color: colors.sage, onPress: () => navigation.navigate("Collections", { eventIds: [item.id] }) },
+                  { key: "select", label: "选择", color: colors.coral, onPress: enterSelection },
+                ]}
+              >
+                {card}
+              </SwipeActions>
+            ) : card}
+          </View>
+        );
+      }}
         style={{ flex: 1, backgroundColor: colors.paper }}
       />
       <CollapsingHeroBar title="成长" scrollY={scrollY} topInset={insets.top} />
+      {menuElement}
     </View>
   );
 }

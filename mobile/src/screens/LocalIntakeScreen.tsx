@@ -51,7 +51,6 @@ export function LocalIntakeScreen({ route, navigation }: NativeStackScreenProps<
     finally { setBusy(false); }
   };
   return <ScrollView style={s.screen} contentContainerStyle={s.content}>
-    <Text style={s.title}>收到的内容</Text>
     <Text style={s.body}>先看一看，明天再整理也可以。加入草稿只保存引用，原件仍保留。</Text>
     {error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     {message && <Text accessibilityLiveRegion="polite" style={s.body}>{message}</Text>}

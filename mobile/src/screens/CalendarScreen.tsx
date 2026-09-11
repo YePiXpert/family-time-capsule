@@ -111,7 +111,6 @@ export function CalendarScreen({ navigation }: Props) {
       contentContainerStyle={s.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={s.title}>记忆日历</Text>
       <Text style={s.body}>
         家庭时区 · {data?.timezone || family?.timezone || "UTC"}
       </Text>

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Credentials, MobileLibraryDetail } from "../src/types";
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), credentials: { serverUrl: "https://synthetic.invalid", token: "a" } as Credentials | null }));
 vi.mock("react-native", () => ({ ActivityIndicator: "ActivityIndicator", Alert: {}, FlatList: "FlatList", Pressable: "Pressable", RefreshControl: "RefreshControl", ScrollView: "ScrollView", Share: {}, Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (value: unknown) => value, hairlineWidth: 1 } }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn,[fn]), useNavigation: () => ({}) }));
 vi.mock("react-native-qrcode-svg", () => ({ default: "QRCode" }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));

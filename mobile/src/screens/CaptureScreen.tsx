@@ -13,7 +13,7 @@ import type { AiSettings } from "../ai/types";
 import { requestMobileJson, parseAiSettings } from "../api/client";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
-import { ActivityIndicator, Alert, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -30,6 +30,8 @@ import { ingestLocalImportSession, getLocalCaptureDetail, type LocalCaptureDetai
 import { preservePickedDocument, preservePickedMedia, preparePickedMedia, preservePreparedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
 import { beginPickerReceipt, finishPickerReceipt } from "../native/picker-intake";
 import { GlassSurface } from "../components/GlassSurface";
+import { useConfirmSheet } from "../components/GlassSheet";
+import { haptics } from "../design/haptics";
 import { BlurTargetView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { usePersistentDraft } from "../drafts/use-draft";
@@ -48,6 +50,7 @@ export function CaptureScreen() {
   const insets = useSafeAreaInsets();
   const sharedStyles = useSharedStyles();
   const { colors, dark } = sharedStyles;
+  const confirm = useConfirmSheet();
   const dockHeight = useContext(JournalDockHeightContext);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
@@ -136,10 +139,12 @@ export function CaptureScreen() {
     try {
       const content = capsuleDraft.draft?.content;
       if (publish && content?.visibility === "members" && content.readerUserIds.length === 0) {
+        haptics.warning();
         setMessage("请先选择可以阅读这件事的家人，或改回全家/仅自己。");
         return;
       }
       await capsuleDraft.save(publish, intent, organize);
+      haptics.success();
       await reloadLocal().catch(() => {});
       setMessage("本机已保存，网络工作会在后台继续。");
       const row = capsuleDraft.draft;
@@ -477,10 +482,8 @@ export function CaptureScreen() {
   const saveLabel = busy ? "正在保存…" : capsuleDraft.draft?.status === "queued" ? "继续同步" : "保存";
   const ink = dark ? "#EDF0FF" : "#242C42", muted = dark ? "#B2BDD7" : "#65718A";
   const rim = dark ? "#FFFFFF26" : "#FFFFFFBD";
-  const clear = () => Alert.alert("清空这次记录？", "原件仍会保留。", [
-    { text: "取消", style: "cancel" },
-    { text: "清空", style: "destructive", onPress: () => void capsuleDraft.discard().catch(e => setMessage(e.message)) },
-  ]);
+  const clear = () => void confirm({ title: "清空这次记录？", message: "原件仍会保留。", confirmLabel: "清空", destructive: true })
+    .then(confirmed => { if (confirmed) void capsuleDraft.discard().catch(e => setMessage(e.message)); });
 
   return (
     <KeyboardAvoidingView style={sharedStyles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>

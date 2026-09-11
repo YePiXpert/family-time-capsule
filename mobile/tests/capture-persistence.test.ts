@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  alert: vi.fn(), keyboard: new Map<string, () => void>(),
+  alert: vi.fn(), confirm: vi.fn(async (_options?: unknown) => false), keyboard: new Map<string, () => void>(),
   connected: false, syncing: false,
   credentials: { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "test-session" },
   family: { id: "family", name: "测试家庭", timezone: "Asia/Shanghai" },
@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
 vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
 vi.mock("expo-glass-effect", () => ({ GlassView: "GlassView", isGlassEffectAPIAvailable: () => false, isLiquidGlassAvailable: () => false }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => mocks.confirm, useAlertSheet: () => vi.fn(async () => {}), confirmSheet: (options: unknown) => mocks.confirm(options), alertSheet: vi.fn(async () => {}) }));
+vi.mock("../src/design/haptics", () => ({ haptics: { success: vi.fn(), warning: vi.fn(), selection: vi.fn(), impact: vi.fn() }, setHapticsEnabled: vi.fn(), areHapticsEnabled: () => true }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("react-native", () => ({
@@ -108,6 +110,7 @@ const { requestMobileJson } = await import("../src/api/client");
 let tree: ReactTestRenderer | undefined;
 beforeEach(async () => {
   mocks.alert.mockClear();
+  mocks.confirm.mockClear().mockResolvedValue(false);
   mocks.connected = false; mocks.syncing = false;
   vi.mocked(preservePreparedMedia).mockReset().mockResolvedValue(undefined);
   mocks.grantSyncConsent.mockClear();
@@ -315,8 +318,10 @@ it("clears only after confirmation and keeps the discarded record durable", asyn
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("暂时不要清空"));
   await press("清空");
   expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("暂时不要清空");
-  const confirm = mocks.alert.mock.calls[0]![2].find((button: { text: string }) => button.text === "清空");
-  await act(async () => { confirm.onPress(); });
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "清空这次记录？", confirmLabel: "清空", destructive: true }));
+  expect((await listLocalDrafts("local")).find(d => d.status === "discarded")).toBeUndefined();
+  mocks.confirm.mockResolvedValue(true);
+  await press("清空");
   expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
   expect((await listLocalDrafts("local")).find(d => d.status === "discarded")?.content.text).toBe("暂时不要清空");
 });
