@@ -231,3 +231,20 @@ BookDetail 实际接入保存后生成 PDF/EPUB、队列进度、取消、重试
 
 “清除本机全部数据”会等待已开始的同步/接管写入结束、停止阅读下载，并清除所有连接下的
 阅读清单、身份绑定及下载目录（含未完成文件）。清理失败会显示未完成，可再次重试。
+
+
+## Runtime ownership
+
+`AppContext` is the public UI facade. Its implementation composes:
+
+- `use-account-session`: account identity, live references and destination generation; identity setters update the rendered and asynchronous views together.
+- `use-local-archive`: complete local snapshots, device preferences and recoverable read errors; older or previous-account reads cannot overwrite newer results.
+- `use-archive-sync`: one verified upload pass at a time, explicit destination consent, and a completion barrier for account changes/cleanup.
+- `use-share-intake`: serialized native intake and the matching completion barrier.
+- `use-app-lifecycle`: native event subscriptions and terminal handling of background failures.
+
+The database remains the durable source of truth. These modules do not introduce another persisted record model or change existing account/reader scopes. Saved data is retained when initial reads fail; the startup screen offers retry. Screen render recovery wraps navigation inside the existing runtime, so retrying a screen does not create a second sync coordinator.
+
+`DecisionQueue` owns confirmation lifetimes independently of animation. Requests are FIFO, stale completion callbacks cannot settle a newer sheet, and unmount cancels every outstanding confirmation. The full navigation tree has a gesture root; modal sheets retain their own root.
+
+Release simulator checks include a malformed local draft snapshot and a subsequent repaired relaunch, alongside empty/local-record startup. `local-startup.test.ts` exercises both storage-read retry and screen-render retry with the real provider and SQLite adapter.

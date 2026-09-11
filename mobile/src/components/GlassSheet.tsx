@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Animated, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,8 @@ import { useAccessibleEffects } from "../design/use-effects";
 import { useColorTheme } from "../theme";
 import { GlassSurface } from "./GlassSurface";
 import { Text } from "./typography";
+import { DecisionQueue, type AlertSheetOptions, type ConfirmSheetOptions, type SheetRequest } from "./decision-queue";
+export type { AlertSheetOptions, ConfirmSheetOptions } from "./decision-queue";
 
 /**
  * 玻璃底部弹层（M2）：替换系统 Alert 的确认交互。模态透明 + 下滑手势关闭 +
@@ -91,20 +93,6 @@ export function GlassSheet({ visible, onClose, children }: GlassSheetProps) {
   );
 }
 
-export type ConfirmSheetOptions = {
-  title: string;
-  message?: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  destructive?: boolean;
-};
-
-export type AlertSheetOptions = {
-  title: string;
-  message?: string;
-  confirmLabel?: string;
-};
-
 type GlassSheetContextValue = {
   confirm: (options: ConfirmSheetOptions) => Promise<boolean>;
   alert: (options: AlertSheetOptions) => Promise<void>;
@@ -125,47 +113,37 @@ export function alertSheet(options: AlertSheetOptions): Promise<void> {
   return alertImpl ? alertImpl(options) : Promise.resolve();
 }
 
-type SheetRequest =
-  | { kind: "confirm"; options: ConfirmSheetOptions; resolve: (value: boolean) => void }
-  | { kind: "alert"; options: AlertSheetOptions; resolve: () => void };
-
 export function GlassSheetProvider({ children }: { children: ReactNode }) {
-  const [request, setRequest] = useState<SheetRequest | null>(null);
-  const confirm = useCallback((options: ConfirmSheetOptions) => new Promise<boolean>(resolve => setRequest({ kind: "confirm", options, resolve })), []);
-  const alert = useCallback((options: AlertSheetOptions) => new Promise<void>(resolve => setRequest({ kind: "alert", options, resolve })), []);
+  const [queue] = useState(() => new DecisionQueue());
+  const request = useSyncExternalStore(queue.subscribe, queue.getSnapshot);
   useEffect(() => {
-    confirmImpl = confirm;
-    alertImpl = alert;
+    queue.open();
+    confirmImpl = queue.confirm;
+    alertImpl = queue.alert;
     return () => {
-      if (confirmImpl === confirm) confirmImpl = null;
-      if (alertImpl === alert) alertImpl = null;
+      if (confirmImpl === queue.confirm) confirmImpl = null;
+      if (alertImpl === queue.alert) alertImpl = null;
+      queue.close();
     };
-  }, [confirm, alert]);
-  const settle = useCallback((value: boolean) => {
-    setRequest(current => {
-      if (!current) return null;
-      if (current.kind === "confirm") current.resolve(value);
-      else current.resolve();
-      return null;
-    });
-  }, []);
+  }, [queue]);
+  const value = useMemo(() => ({ confirm: queue.confirm, alert: queue.alert }), [queue]);
   return (
-    <GlassSheetContext.Provider value={{ confirm, alert }}>
+    <GlassSheetContext.Provider value={value}>
       {children}
-      <ConfirmSheet request={request} onSettle={settle} />
+      <ConfirmSheet key={request?.id ?? "idle"} request={request} onSettle={queue.settle} />
     </GlassSheetContext.Provider>
   );
 }
 
-function ConfirmSheet({ request, onSettle }: { request: SheetRequest | null; onSettle: (value: boolean) => void }) {
+function ConfirmSheet({ request, onSettle }: { request: SheetRequest | null; onSettle: (id: number, value: boolean) => void }) {
   const { colors } = useColorTheme();
   const options = request?.options;
   const confirmOptions = request?.kind === "confirm" ? request.options : null;
   const isAlert = request?.kind === "alert";
   const close = useCallback((value: boolean) => {
     haptics.selection();
-    onSettle(value);
-  }, [onSettle]);
+    if (request) onSettle(request.id, value);
+  }, [onSettle, request]);
   return (
     <GlassSheet visible={request !== null} onClose={() => close(false)}>
       {options ? (

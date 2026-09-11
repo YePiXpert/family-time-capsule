@@ -112,6 +112,17 @@ for result in request.results ?? [] {
                 assert db.execute("SELECT value FROM meta WHERE key='welcome_done'").fetchone() == ("1",)
                 assert db.execute("SELECT payload_json FROM outbox WHERE id='startup-smoke'").fetchone() == (payload,)
                 assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        with sqlite3.connect(db_path) as db:
+            db.execute("INSERT INTO local_draft(scope,id,snapshot_json,revision,updated_at) VALUES ('local','damaged-smoke-fixture','invalid-json',1,'2026-09-11')")
+        launch("local-read-recovery", "本机资料暂时无法读取")
+        run("xcrun", "simctl", "terminate", udid, bundle)
+        with sqlite3.connect(db_path) as db:
+            assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
+            db.execute("DELETE FROM local_draft WHERE id='damaged-smoke-fixture'")
+        launch("repaired-local-mode-relaunch", "成长册")
+        run("xcrun", "simctl", "terminate", udid, bundle)
+        with sqlite3.connect(db_path) as db:
+            assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
         report["localRecordsPreserved"] = True
         report["success"] = True
     finally:

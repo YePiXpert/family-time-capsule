@@ -8,6 +8,7 @@ import { SyncConsentScreen } from "./screens/SyncConsentScreen";
 import { TextScaleContext } from "./components/typography";
 import { GlassSheetProvider } from "./components/GlassSheet";
 import { JournalThemeProvider, useColorTheme } from "./theme";
+import { RecoveryView } from "./components/RecoveryView";
 
 /**
  * 启动门禁（1.3）：
@@ -41,10 +42,13 @@ export function AppRoot() {
 function AppRootBody({ gated }: { gated: "loading" | "onboarding" | "consent" | "welcome" | "app" }) {
   const insets = useSafeAreaInsets();
   const { colors, dark } = useColorTheme();
+  const { localReadError, reloadLocal } = useApp();
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
       <StatusBar style={dark ? "light" : "dark"} />
-      {gated === "loading" ? (
+      {gated === "loading" && localReadError ? (
+        <RecoveryView title="本机资料暂时无法读取" detail={localReadError} retry={reloadLocal} />
+      ) : gated === "loading" ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingTop: insets.top }}>
           <ActivityIndicator color={colors.coral} size="large" />
         </View>

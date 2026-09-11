@@ -3,7 +3,7 @@ import { createElement, useEffect, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), sync: vi.fn(), clearFiles: vi.fn(), network: vi.fn(), listProps: [] as Record<string, unknown>[] }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), sync: vi.fn(), clearFiles: vi.fn(), network: vi.fn(), renderFailure: false, listProps: [] as Record<string, unknown>[] }));
 vi.mock("react-native", async () => {
   const require = createRequire(import.meta.url);
   const native = require("./runtime/native-scroll.cjs") as {
@@ -13,6 +13,7 @@ vi.mock("react-native", async () => {
   };
   type ListProps = { data: unknown[]; onScroll?: unknown; ListHeaderComponent?: ReactNode; ListEmptyComponent?: ReactNode; renderItem: (item: { item: unknown; index: number }) => ReactNode };
   function FlatList(props: ListProps) {
+    if (mocks.renderFailure) throw new Error("Synthetic native screen render failure");
     // This is RN's installed release-mode guard, not a duplicated assertion.
     native.checkListProps({ ...props, getItemCount: (data: unknown[]) => data.length });
     mocks.listProps.push(props);
@@ -43,6 +44,7 @@ vi.mock("react-native", async () => {
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: ({ children }: { children: ReactNode }) => children, useSafeAreaInsets: () => ({ top: 48, bottom: 34 }) }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle", Ellipse: "Ellipse", G: "G", Defs: "Defs", LinearGradient: "SvgGradient", Stop: "Stop" }));
 vi.mock("react-native-gesture-handler/Swipeable", () => ({ default: "Swipeable" }));
+vi.mock("react-native-gesture-handler", () => ({ GestureHandlerRootView: "GestureHandlerRootView" }));
 vi.mock("expo-status-bar", () => ({ StatusBar: "StatusBar" }));
 vi.mock("expo-blur", () => ({ BlurView: "BlurView" }));
 vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
@@ -67,7 +69,7 @@ vi.mock("../src/sync/sync", () => ({ syncArchive: mocks.sync }));
 vi.mock("../src/api/client", () => ({ ApiError: class extends Error {}, fetchBootstrap: mocks.network, fetchMobileHome: mocks.network, fetchMe: mocks.network, signOut: mocks.network, submitOnboarding: mocks.network, requestMobileJson: mocks.network }));
 
 const { default: App } = await import("../App");
-const { clearLocalArchive, initializeLocalStore, getMeta, setMeta, enqueueTextCapture, getLocalCaptureDetail } = await import("../src/storage/database");
+const { clearLocalArchive, initializeLocalStore, getDatabase, getMeta, setMeta, enqueueTextCapture, getLocalCaptureDetail } = await import("../src/storage/database");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
 beforeEach(async () => {
@@ -75,6 +77,7 @@ beforeEach(async () => {
   await clearLocalArchive();
   vi.clearAllMocks();
   mocks.listProps.length = 0;
+  mocks.renderFailure = false;
 });
 afterEach(async () => { if (tree) await act(() => tree!.unmount()); tree = undefined; });
 async function launch() {
@@ -100,6 +103,28 @@ it("chooses local recording and enters the real empty timeline with RN native sc
   expect(textOf()).toContain("第一篇成长记，从今天开始");
   expect(mocks.sync).not.toHaveBeenCalled();
   expect(mocks.network).not.toHaveBeenCalled();
+  expect(tree!.root.findAllByType("GestureHandlerRootView" as never)).toHaveLength(1);
+});
+
+it("offers retry after a damaged draft row without clearing the saved record", async () => {
+  await setMeta("welcome_done", "1");
+  await enqueueTextCapture("damaged-queue", { text: "原件必须保留" });
+  const db = await getDatabase();
+  const before = await getLocalCaptureDetail("damaged-queue");
+  const { createLocalDraft } = await import("../src/drafts/store");
+  const draft = await createLocalDraft("local", "damaged-draft", "mutation");
+  await db.runAsync("UPDATE local_draft SET snapshot_json='invalid-json' WHERE id='damaged-draft'");
+  await launch();
+  expect(textOf()).toContain("本机资料暂时无法读取");
+  expect(textOf()).toContain("重试");
+  expect(await getLocalCaptureDetail("damaged-queue")).toEqual(before);
+  // Restore the original draft bytes, then retry in the same process.
+  await db.runAsync("UPDATE local_draft SET snapshot_json=? WHERE id='damaged-draft'", JSON.stringify(draft));
+  await act(async () => { press("重试"); });
+  expect(textOf()).toContain("原件必须保留");
+  expect(textOf()).not.toContain("本机资料暂时无法读取");
+  expect(mocks.clearFiles).not.toHaveBeenCalled();
+  expect(mocks.network).not.toHaveBeenCalled();
 });
 it("cold-starts from an already saved local-mode marker and retains existing local text", async () => {
   await setMeta("welcome_done", "1");
@@ -112,6 +137,19 @@ it("cold-starts from an already saved local-mode marker and retains existing loc
   expect(textOf()).toContain("挥手");
   expect(await getLocalCaptureDetail("local-startup-record")).toEqual(before);
   expect(await getMeta("welcome_done")).toBe("1");
+  expect(mocks.clearFiles).not.toHaveBeenCalled();
+  expect(mocks.network).not.toHaveBeenCalled();
+});
+
+it("recovers a screen render failure without resetting the archive runtime or saved text", async () => {
+  await setMeta("welcome_done", "1");
+  await enqueueTextCapture("screen-retry", { text: "页面重试后还在" });
+  mocks.renderFailure = true;
+  await launch();
+  expect(textOf()).toContain("页面暂时无法打开");
+  mocks.renderFailure = false;
+  await act(async () => { press("重试"); });
+  expect(textOf()).toContain("页面重试后还在");
   expect(mocks.clearFiles).not.toHaveBeenCalled();
   expect(mocks.network).not.toHaveBeenCalled();
 });
