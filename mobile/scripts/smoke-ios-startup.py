@@ -37,6 +37,13 @@ def main():
     bundle = info["CFBundleIdentifier"]
     assert bundle == "app.familytimecapsule.mobile"
     assert "iPhoneSimulator" in info["CFBundleSupportedPlatforms"]
+    # SecureStore needs signed access-group entitlements even in Simulator.
+    # The separately built device IPA remains unsigned for the owner to sign.
+    signed_entitlements = run("codesign", "--display", "--entitlements", "-", "--xml", str(args.app.resolve()))
+    entitlements = plistlib.loads(signed_entitlements.encode())
+    identifier = entitlements.get("application-identifier") or entitlements.get("com.apple.application-identifier")
+    assert identifier and identifier.endswith(bundle), "Simulator app is missing its signed application identifier"
+    (output / "simulator-entitlements.plist").write_text(signed_entitlements)
     devices = json.loads(run("xcrun", "simctl", "list", "devices", "available", "--json"))["devices"]
     candidates = [(runtime, device) for runtime, entries in devices.items() if ".iOS-" in runtime
                   for device in entries if device.get("isAvailable") and device["name"].startswith("iPhone")]

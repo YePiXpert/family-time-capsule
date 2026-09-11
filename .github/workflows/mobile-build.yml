@@ -217,7 +217,7 @@ jobs:
             -configuration Release -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
-            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
             build > build/simulator-build.log 2>&1; then
             tail -n 160 build/simulator-build.log
             exit 1
