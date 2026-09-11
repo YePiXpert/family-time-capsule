@@ -202,6 +202,45 @@ jobs:
       - name: Install CocoaPods
         run: npx pod-install ios
         working-directory: mobile
+      # Historical pinned checkouts may predate this native startup regression.
+      - name: Build release iOS simulator app
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
+        working-directory: mobile
+        run: |
+          WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
+          test -n "$WORKSPACE_PATH"
+          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
+          test -n "$SCHEME"
+          mkdir -p build
+          if ! xcodebuild \
+            -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -arch "$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO \
+            build > build/simulator-build.log 2>&1; then
+            tail -n 160 build/simulator-build.log
+            exit 1
+          fi
+      - name: Verify native local-mode startup and relaunch
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
+        working-directory: mobile
+        env:
+          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+        run: |
+          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          python3 scripts/smoke-ios-startup.py "$APP_PATH" --output build/startup-smoke
+      - name: Preserve native startup evidence
+        if: always() && hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-ios-startup-smoke
+          path: |
+            mobile/build/startup-smoke/
+            mobile/build/simulator-build.log
+          if-no-files-found: error
+          retention-days: 30
       - name: Create unsigned device archive
         working-directory: mobile
         run: |

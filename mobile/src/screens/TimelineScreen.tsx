@@ -6,7 +6,7 @@ import { usePendingImports } from "./PendingScreen";
 import { Text } from "../components/typography";
 import { useState } from "react";
 import { useNavigation } from "@react-navigation/native";
-import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Animated, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useApp } from "../state/AppContext";
 import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
 import { useContextMenu } from "../components/ContextMenu";
@@ -59,7 +59,7 @@ export function TimelineScreen() {
   const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
-      <FlatList
+      <Animated.FlatList
         onScroll={onScroll}
         scrollEventThrottle={16}
         contentContainerStyle={{

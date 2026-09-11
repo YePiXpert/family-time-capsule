@@ -12,7 +12,7 @@ import { Text } from "./typography";
 
 export const HERO_COLLAPSE_THRESHOLD = 64;
 
-/** 返回 scrollY 与可直接绑到 FlatList/ScrollView 的 onScroll（原生驱动）。 */
+/** Native events must be bound to Animated.FlatList / Animated.ScrollView. */
 export function useCollapsingHeroScroll(threshold = HERO_COLLAPSE_THRESHOLD) {
   const [scrollY] = useState(() => new Animated.Value(0));
   const onScroll = useMemo(

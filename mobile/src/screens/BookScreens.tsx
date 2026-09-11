@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useFocusEffect, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { randomUUID } from "expo-crypto";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Alert, Animated, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchBook,
@@ -204,7 +204,7 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
   }, [credentials, deleted]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   return <View style={s.screen}>
-    <ScrollView
+    <Animated.ScrollView
       onScroll={onScroll}
       scrollEventThrottle={16}
       style={{ flex: 1 }}
@@ -242,7 +242,7 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
       <ListRow icon={deleted ? "arrow-left" : "trash"} title={deleted ? "返回家庭书" : "作品回收站"} onPress={() => { setDeleted(value => !value); setCreating(false); }} />
       <ListRow icon="settings" title="刷新" onPress={() => void load()} last />
     </ListGroup>
-    </ScrollView>
+    </Animated.ScrollView>
     <CollapsingHeroBar title="成长册" scrollY={scrollY} topInset={insets.top} />
   </View>;
 }

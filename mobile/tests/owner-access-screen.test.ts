@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("react-native", () => ({
+  Animated: { ScrollView: "ScrollView" },
   Pressable: "Pressable", Text: "Text", View: "View", ScrollView: "ScrollView", Switch: "Switch",
   Alert: { alert: vi.fn() }, Linking: { openURL: vi.fn() },
   StyleSheet: { create: (value: unknown) => value },

@@ -1,7 +1,7 @@
 import { AiSettingsSection } from "../ai/AiSettingsSection";
 import { Text } from "../components/typography";
 import { useState } from "react";
-import { Linking, ScrollView, StyleSheet, Switch, View } from "react-native";
+import { Animated, Linking, StyleSheet, Switch, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AppNavigation } from "../navigation/types";
@@ -47,7 +47,7 @@ export function SettingsHubScreen() {
   const initial = (viewer?.name ?? "我").trim().slice(0, 1) || "我";
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
-      <ScrollView
+      <Animated.ScrollView
         onScroll={onScroll}
         scrollEventThrottle={16}
         style={{ flex: 1 }}
@@ -141,7 +141,7 @@ export function SettingsHubScreen() {
           </View>
         ) : null}
       </Disclosure>
-      </ScrollView>
+      </Animated.ScrollView>
       <CollapsingHeroBar title="我的" scrollY={scrollY} topInset={insets.top} />
     </View>
   );
