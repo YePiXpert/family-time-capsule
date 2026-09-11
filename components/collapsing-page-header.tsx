@@ -65,7 +65,12 @@ export function CollapsingPageHeader({
         <header className={heroClassName ?? "collapsing-header-hero flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"} aria-label={heroAriaLabel}>
           <div className="min-w-0 flex-1">
             {backHref ? (
-              <Link href={backHref} className="ui-text-link mb-3 inline-flex min-h-11 items-center gap-2 text-sm">
+              <Link
+                href={backHref}
+                className="ui-text-link mb-3 inline-flex min-h-11 items-center gap-2 text-sm"
+                aria-hidden={collapsed}
+                tabIndex={collapsed ? -1 : 0}
+              >
                 <Icon name="arrow-left" size={18} />
                 {backLabel}
               </Link>
