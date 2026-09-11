@@ -29,6 +29,7 @@ def database(container):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("app", type=Path)
+    parser.add_argument("--entitlements", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     output = args.output.resolve()
@@ -37,13 +38,16 @@ def main():
     bundle = info["CFBundleIdentifier"]
     assert bundle == "app.familytimecapsule.mobile"
     assert "iPhoneSimulator" in info["CFBundleSupportedPlatforms"]
-    # SecureStore needs signed access-group entitlements even in Simulator.
-    # The separately built device IPA remains unsigned for the owner to sign.
-    signed_entitlements = run("codesign", "--display", "--entitlements", "-", "--xml", str(args.app.resolve()))
-    entitlements = plistlib.loads(signed_entitlements.encode())
+    # Xcode embeds Simulator access groups in __TEXT,__entitlements from its
+    # *-Simulated.xcent file; `codesign --display` exposes a different, empty
+    # dictionary. Verify the signature and the correct Xcode input, then require
+    # the actual SecureStore-backed startup to reach the expected screen.
+    run("codesign", "--verify", "--strict", str(args.app.resolve()))
+    simulated_entitlements = args.entitlements.read_bytes()
+    entitlements = plistlib.loads(simulated_entitlements)
     identifier = entitlements.get("application-identifier") or entitlements.get("com.apple.application-identifier")
     assert identifier and identifier.endswith(bundle), "Simulator app is missing its signed application identifier"
-    (output / "simulator-entitlements.plist").write_text(signed_entitlements)
+    (output / "simulator-entitlements.plist").write_bytes(simulated_entitlements)
     devices = json.loads(run("xcrun", "simctl", "list", "devices", "available", "--json"))["devices"]
     candidates = [(runtime, device) for runtime, entries in devices.items() if ".iOS-" in runtime
                   for device in entries if device.get("isAvailable") and device["name"].startswith("iPhone")]

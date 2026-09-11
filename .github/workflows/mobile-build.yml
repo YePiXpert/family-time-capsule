@@ -230,7 +230,9 @@ jobs:
         run: |
           APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
-          python3 scripts/smoke-ios-startup.py "$APP_PATH" --output build/startup-smoke
+          SIM_ENTITLEMENTS=$(find build/simulator/Build/Intermediates.noindex -name "$(basename "$APP_PATH")-Simulated.xcent" -print -quit)
+          test -n "$SIM_ENTITLEMENTS"
+          python3 scripts/smoke-ios-startup.py "$APP_PATH" --entitlements "$SIM_ENTITLEMENTS" --output build/startup-smoke
       - name: Preserve native startup evidence
         if: always() && hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
         uses: actions/upload-artifact@v7
