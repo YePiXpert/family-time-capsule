@@ -262,6 +262,15 @@ jobs:
           if ! ruby -rxcodeproj -e 'exit 0'; then
             gem install --user-install xcodeproj --version 1.27.0 --no-document
           fi
+      - name: Verify Release playback and layout with XCUITest
+        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        env:
+          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+        run: |
+          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          python3 scripts/smoke-ios-regression.py "$APP_PATH" --output build/native-regression
       - name: Build optional baseline Release simulator app
         if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         env:
@@ -302,15 +311,6 @@ jobs:
           APP_PATH=$(find "$RUNNER_TEMP/ftc-native-baseline/mobile/build/simulator/Build/Products/Release-iphonesimulator" -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
           python3 scripts/smoke-ios-regression.py "$APP_PATH" --profile-only --output build/native-baseline
-      - name: Verify Release playback and layout with XCUITest
-        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
-        working-directory: mobile
-        env:
-          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
-        run: |
-          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
-          test -n "$APP_PATH"
-          python3 scripts/smoke-ios-regression.py "$APP_PATH" --output build/native-regression
       - name: Preserve native playback and layout evidence
         if: always() && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         uses: actions/upload-artifact@v7

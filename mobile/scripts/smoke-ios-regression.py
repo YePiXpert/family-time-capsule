@@ -140,20 +140,41 @@ def main():
         def test(label, methods):
             started = time.monotonic()
             result_bundle = output / (label + ".xcresult")
-            run("xcodebuild", "test-without-building", "-xctestrun", str(xctestruns[0]),
-                "-destination", f"platform=iOS Simulator,id={udid}", "-parallel-testing-enabled", "NO",
-                "-maximum-concurrent-test-simulator-destinations", "1", "-resultBundlePath", str(result_bundle),
-                *[f"-only-testing:NativeRegression/NativeRegressionTests/{method}" for method in methods],
-                timeout=900, log=output / (label + ".log"))
-            report["checks"].append(dict(name=label, seconds=round(time.monotonic() - started, 2), methods=methods))
+            primary_failure = None
+            try:
+                run("xcodebuild", "test-without-building", "-xctestrun", str(xctestruns[0]),
+                    "-destination", f"platform=iOS Simulator,id={udid}", "-parallel-testing-enabled", "NO",
+                    "-maximum-concurrent-test-simulator-destinations", "1", "-resultBundlePath", str(result_bundle),
+                    *[f"-only-testing:NativeRegression/NativeRegressionTests/{method}" for method in methods],
+                    timeout=900, log=output / (label + ".log"))
+            except Exception as error:
+                primary_failure = error
+                raise
+            finally:
+                report["checks"].append(dict(name=label, seconds=round(time.monotonic() - started, 2),
+                                             methods=methods, success=primary_failure is None))
+                # Export failed tests too: their screenshots/accessibility trees
+                # are usually the evidence needed to repair a native regression.
+                # Diagnostic failures must never replace the original test error.
+                diagnostic_errors = []
+                if result_bundle.exists():
+                    formats = ["summary"] + (["metrics"] if "testLargeListScrollMetrics" in methods else [])
+                    for kind in formats:
+                        try:
+                            value = run("xcrun", "xcresulttool", "get", "test-results", kind, "--path", str(result_bundle))
+                            (output / (label + "-" + kind + ".json")).write_text(value + "\n")
+                        except Exception as error:
+                            diagnostic_errors.append(error)
+                    try:
+                        run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result_bundle),
+                            "--output-path", str(output / (label + "-attachments")))
+                    except Exception as error:
+                        diagnostic_errors.append(error)
+                if diagnostic_errors:
+                    (output / (label + "-diagnostics.log")).write_text("\n".join(map(str, diagnostic_errors)) + "\n")
+                    if primary_failure is None:
+                        raise diagnostic_errors[0]
             print(f"Native Release UI regression passed: {label}", flush=True)
-            # xcresult is the source of truth. JSON summaries and image/JSON
-            # attachments make first-frame and frame-metric evidence reviewable
-            # without requiring a local Xcode install.
-            summary = run("xcrun", "xcresulttool", "get", "test-results", "summary", "--path", str(result_bundle))
-            (output / (label + "-summary.json")).write_text(summary + "\n")
-            metrics = run("xcrun", "xcresulttool", "get", "test-results", "metrics", "--path", str(result_bundle))
-            (output / (label + "-metrics.json")).write_text(metrics + "\n")
             # Preserve raw typed xcresult metrics above, and extract the concise
             # XCTest console measurements for a cross-build comparison table.
             log = (output / (label + ".log")).read_text()
@@ -162,8 +183,6 @@ def main():
                 assert readings, "XCTest did not emit any scrolling performance measurements"
                 report["scrollMetrics"] = [dict(name=name, average=float(average),
                     samples=[float(value.strip()) for value in values.split(",")]) for name, average, values in readings]
-            run("xcrun", "xcresulttool", "export", "attachments", "--path", str(result_bundle),
-                "--output-path", str(output / (label + "-attachments")))
 
         if args.profile_only:
             test("baseline-scroll", ["testLargeListScrollMetrics"])
