@@ -1,7 +1,7 @@
 # 原生 iOS / Android 客户端
 
 > 当前发行版本：`0.0.1`；Expo 展示版本为 `0.0.1`，iOS buildNumber / Android
-> versionCode 为 `35`。手机是主要使用场景；每次交付必须提供同一 `main` 提交的 APK 与自签用 IPA。
+> versionCode 为 `37`（源码，待验证与打包）。本轮按维护者要求先实现、暂不测试。手机是主要使用场景；安装包交付必须提供同一 `main` 提交的 APK 与自签用 IPA。
 > 当前进度见 [执行状态](release-1.0/EXECUTION_STATE.md)；下文历史构建记录不代表本次验收。
 
 `mobile/` 是 Expo SDK 57 + React Native 的原生客户端。它渲染 UIKit/Android View

@@ -1,6 +1,8 @@
 # 移动端构建 36：稳定布局与视频播放
 
-产品版本 `0.0.1`，Android versionCode / iOS buildNumber 均为 36。通过 `mobile-build.yml` 的明确 main SHA 构建并交付 APK 与未签名设备 IPA；`v0.0.1` 的历史附件不变。
+产品版本 `0.0.1`，Android versionCode / iOS buildNumber 均为 36。原计划通过 `mobile-build.yml` 的明确 main SHA 成套构建 APK 与未签名设备 IPA；`v0.0.1` 的历史附件不变。
+
+当前状态：`7adcbe2` 的常规 CI、Android 构建和 iOS Release 启动检查通过，[原生构建运行](https://github.com/YePiXpert/family-time-capsule/actions/runs/34672945642) 在 XCUITest 播放/布局步骤失败，未产出成套 IPA。维护者随后要求先实现竞品方案、暂停测试；新增源码进入 [构建 37](mobile-build-37.md)，后续需恢复原生验证和成套打包。构建 36 的 APK 不能充当新功能安装包。
 
 ## 行为变化
 
