@@ -4,7 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Pressable, ScrollView, View } from "react-native";
 import { NativeMediaReader } from "../media/NativeMediaReader";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { RootStackParamList } from "../navigation/types";
@@ -47,7 +47,7 @@ export function ReadingDownloadsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "ReadingDownloads">) {
   const s = useSharedStyles();
-  const { credentials, online: connected } = useApp(),
+  const { credentials, online: connected } = useAppData(),
     confirm = useConfirmSheet(),
     [scope, setScope] = useState<ReadingScope | null>(null),
     [rows, setRows] = useState<DownloadSummary[]>([]),
@@ -238,7 +238,7 @@ export function OfflineReadingScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "OfflineReading">) {
   const s = useSharedStyles();
-  const { credentials, online: connected } = useApp(),
+  const { credentials, online: connected } = useAppData(),
     key = route.params.key,
     [entry, setEntry] = useState<DownloadEntry | null>(null),
     [error, setError] = useState(""),

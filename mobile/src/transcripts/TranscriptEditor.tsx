@@ -4,13 +4,13 @@ import { Pressable, View } from "react-native";
 import { Text, TextInput } from "../components/typography";
 import { ApiError, fetchTranscriptReview, parseTranscriptReview, saveTranscriptReview } from "../api/client";
 import { memoryCacheScope } from "../memories/cache-scope";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
 import { useSharedStyles } from "../theme";
 import type { TranscriptReview } from "./types";
 
 export function TranscriptEditor({ assetId, label, onSaved, refreshVersion = 0 }: { assetId: string; label: string; onSaved?: () => void; refreshVersion?: number }) {
-  const { credentials, viewer, family } = useApp();
+  const { credentials, viewer, family } = useAppData();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope) return null;
   return <Editor key={JSON.stringify([scope, assetId])} assetId={assetId} label={label} scope={scope} onSaved={onSaved} refreshVersion={refreshVersion} />;
@@ -18,7 +18,7 @@ export function TranscriptEditor({ assetId, label, onSaved, refreshVersion = 0 }
 
 function Editor({ assetId, label, scope, onSaved, refreshVersion }: { assetId: string; label: string; scope: string; onSaved?: () => void; refreshVersion?: number }) {
   const s = useSharedStyles();
-  const { credentials, online } = useApp();
+  const { credentials, online } = useAppData();
   const [opened, setOpened] = useState(false);
   const [review, setReview] = useState<TranscriptReview | null>(null);
   const [draft, setDraft] = useState({ text: "", revision: null as number | null });

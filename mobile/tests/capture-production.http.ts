@@ -44,11 +44,11 @@ vi.mock("@react-navigation/native", () => ({
   useRoute: () => mocks.route,
 }));
 const navigation = { setParams: mocks.setParams };
-vi.mock("../src/state/AppContext", () => ({ useApp: () => ({
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({
   credentials: activeCredentials, family: fixture.family, userId: activeUserId, online: activeOnline, events: activeEvents,
   people: fixture.people, viewer: { id: activeUserId, role: activeUserId === fixture.userId ? "editor" : "viewer", canCapture: activeUserId === fixture.userId, canEditEvents: activeUserId === fixture.userId, canCreateContributions: false },
   outbox: [], queued: mocks.queued, reloadLocal: mocks.reloadLocal, grantSyncConsent: mocks.grantSyncConsent,
-}) }));
+}); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("expo-network", () => ({ getNetworkStateAsync: async () => ({ isConnected: true }) }));
 vi.mock("../src/reading/native", () => ({ invalidateReadingCredentials: vi.fn() }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));

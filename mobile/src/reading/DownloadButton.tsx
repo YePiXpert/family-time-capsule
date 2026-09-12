@@ -3,7 +3,7 @@ import { Pressable, View } from "react-native";
 import { Text } from "../components/typography";
 import { useNavigation } from "@react-navigation/native";
 import type { AppNavigation } from "../navigation/types";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { ReadingKind } from "./types";
@@ -22,7 +22,7 @@ export function ReadingDownloadButton({
   prepare?: () => Promise<boolean>;
 }) {
   const s = useSharedStyles();
-  const { credentials, online: connected } = useApp(),
+  const { credentials, online: connected } = useAppData(),
     navigation = useNavigation<AppNavigation>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");

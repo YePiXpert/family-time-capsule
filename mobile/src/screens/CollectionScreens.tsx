@@ -14,7 +14,7 @@ import {
 } from "../api/client";
 import type { CollectionDetail, CollectionPage } from "../collections/types";
 import type { RootStackParamList } from "../navigation/types";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 function Button({
@@ -43,7 +43,7 @@ export function CollectionsScreen({
   route,
 }: { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Collections">["navigation"], "navigate">; route: NativeStackScreenProps<RootStackParamList, "Collections">["route"] }) {
   const s = useSharedStyles();
-  const { credentials } = useApp();
+  const { credentials } = useAppData();
   const [page, setPage] = useState<CollectionPage | null>(null),
     [error, setError] = useState(""),
     [creating, setCreating] = useState(false),
@@ -161,7 +161,7 @@ export function CollectionDetailScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "CollectionDetail">) {
   const s = useSharedStyles();
-  const { credentials } = useApp();
+  const { credentials } = useAppData();
   const confirm = useConfirmSheet();
   const [reading, setReading] = useState(true);
   const [doc, setDoc] = useState<CollectionDetail | null>(null),

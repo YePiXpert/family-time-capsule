@@ -51,3 +51,11 @@ export type AppContextValue = {
   dismissMessage: () => void;
 };
 
+export type AppActions = Pick<AppContextValue,
+  "reloadLocal" | "runSync" | "queued" | "connect" | "disconnect" |
+  "setWelcomeSeen" | "setDisplayMode" | "setThemeMode" | "setHapticsEnabled" |
+  "completeOnboarding" | "grantSyncConsent" | "keepOutboxItemLocal" |
+  "deleteOutboxCapture" | "clearLocal" | "dismissMessage">;
+export type AppSyncStatus = Pick<AppContextValue, "syncing" | "message" | "lastSyncAt">;
+/** Archive readers do not subscribe to transient background-sync notifications. */
+export type AppData = Omit<AppContextValue, keyof AppActions | keyof AppSyncStatus>;

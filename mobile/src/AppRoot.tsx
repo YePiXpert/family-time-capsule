@@ -1,7 +1,7 @@
 import { ActivityIndicator, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { useApp } from "./state/AppContext";
+import { useAppData, useAppActions } from "./state/AppContext";
 import { AppNavigator } from "./navigation/AppNavigator";
 import { OnboardingGate, WelcomeFlow } from "./screens/WelcomeFlow";
 import { SyncConsentScreen } from "./screens/SyncConsentScreen";
@@ -19,7 +19,7 @@ import { RecoveryView } from "./components/RecoveryView";
  * welcomeSeen 为 null 表示本机状态仍在读取，短暂显示加载态避免闪屏。
  */
 export function AppRoot() {
-  const { credentials, welcomeSeen, needsOnboarding, awaitingSyncConsent, displayMode, themeMode } = useApp();
+  const { credentials, welcomeSeen, needsOnboarding, awaitingSyncConsent, displayMode, themeMode } = useAppData();
   return (
     <JournalThemeProvider mode={themeMode ?? "auto"}>
       <TextScaleContext.Provider value={displayMode === "simple" ? 1.2 : 1}>
@@ -42,7 +42,8 @@ export function AppRoot() {
 function AppRootBody({ gated }: { gated: "loading" | "onboarding" | "consent" | "welcome" | "app" }) {
   const insets = useSafeAreaInsets();
   const { colors, dark } = useColorTheme();
-  const { localReadError, reloadLocal } = useApp();
+  const { localReadError } = useAppData();
+  const { reloadLocal } = useAppActions();
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
       <StatusBar style={dark ? "light" : "dark"} />

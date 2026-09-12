@@ -1,13 +1,13 @@
+import { memo, useState } from "react";
 import { Text } from "./typography";
 import { Image, Platform, Pressable, StyleSheet, View } from "react-native";
 import { journalFont, journalRadius } from "../design/tokens";
 import { useColorTheme } from "../theme";
-import { useAccessibleEffects } from "../design/use-effects";
 import { JournalIcon } from "./JournalIcon";
 import type { LocalTimelineEvent } from "../types";
 import { dateLabel } from "../utils/format";
 
-export function TimelineCard({
+export const TimelineCard = memo(function TimelineCard({
   item,
   onPress,
   onLongPress,
@@ -21,11 +21,13 @@ export function TimelineCard({
   selected?: boolean;
 }) {
   const { colors } = useColorTheme();
-  const { reducedMotion } = useAccessibleEffects();
+  const [failedCover, setFailedCover] = useState<string | null>(null);
+  const hasCover = Boolean(item.cover || item.localCoverUri);
   const age = item.ageLabel;
   const milestone = item.milestoneType ? (item.milestoneType === "first_time" ? "第一次" : "值得记住") : null;
   return (
     <Pressable
+      testID={`timeline-card-${item.id}`}
       accessibilityHint={item.source === "server" ? "打开记忆详情" : "查看本机同步状态"}
       accessibilityRole="button"
       accessibilityState={selected === undefined ? undefined : { selected }}
@@ -34,14 +36,23 @@ export function TimelineCard({
       style={({ pressed }) => [
         styles.card,
         { backgroundColor: colors.card, borderColor: colors.line },
-        pressed && !reducedMotion && styles.pressed,
+        pressed && styles.pressed,
       ]}
     >
       {selected ? (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.selectedRing, { borderColor: colors.coral }]} />
       ) : null}
-      {item.localCoverUri ? (
-        <Image fadeDuration={0} source={{ uri: item.localCoverUri }} style={[styles.cover, { backgroundColor: colors.softCoral }]} />
+      {hasCover ? (
+        <View testID={`timeline-card-media-${item.id}`} style={[styles.cover, { backgroundColor: colors.softCoral }]}>
+          {item.localCoverUri && failedCover !== item.localCoverUri ? (
+            <Image fadeDuration={0} source={{ uri: item.localCoverUri }} style={StyleSheet.absoluteFill} onError={() => setFailedCover(item.localCoverUri)} />
+          ) : (
+            <View style={styles.coverStatus}>
+              <JournalIcon name="image" color={colors.coral} size={22} />
+              <Text style={[styles.placeholderText, { color: colors.coralDark }]}>{failedCover ? "封面暂时无法显示" : "封面待加载"}</Text>
+            </View>
+          )}
+        </View>
       ) : item.assetCount > 0 ? (
         <View style={[styles.placeholder, { backgroundColor: colors.apricot }]}>
           <JournalIcon name="image" color={colors.coral} size={18} />
@@ -85,7 +96,7 @@ export function TimelineCard({
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -95,6 +106,7 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.72 },
   selectedRing: { borderWidth: 2, borderRadius: journalRadius.card, zIndex: 1 },
+  coverStatus: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
   cover: { width: "100%", aspectRatio: 4 / 3 },
   placeholder: {
     minHeight: 52,

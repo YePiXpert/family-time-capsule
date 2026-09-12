@@ -36,7 +36,7 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ t
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Alert: { alert: mocks.alert },
-  Keyboard: { addListener: (event: string, listener: () => void) => { mocks.keyboard.set(event, listener); return { remove: () => mocks.keyboard.delete(event) }; } },
+  Keyboard: { scheduleLayoutAnimation: vi.fn(), addListener: (event: string, listener: () => void) => { mocks.keyboard.set(event, listener); return { remove: () => mocks.keyboard.delete(event) }; } },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", KeyboardAvoidingView: "KeyboardAvoidingView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
@@ -48,7 +48,8 @@ vi.mock("@react-navigation/native", () => ({
   useRoute: () => mocks.route,
 }));
 const navigation = { setParams: mocks.setParams, navigate: vi.fn() };
-vi.mock("../src/state/AppContext", () => ({
+vi.mock("../src/state/AppContext", () => ((() => {
+  const mock = {
   useApp: () => ({ syncing: mocks.syncing,
     credentials: mocks.connected ? mocks.credentials : null,
     viewer: mocks.connected ? { canCapture: true, canEditEvents: true } : null,
@@ -57,7 +58,9 @@ vi.mock("../src/state/AppContext", () => ({
     outbox: [], queued: mocks.queued, reloadLocal: mocks.reloadLocal,
     people: [{ id: "person-1", displayName: "妈妈" }, { id: "person-2", displayName: "外公" }],
   }),
-}));
+};
+  return { ...mock, useAppData: mock.useApp, useAppActions: mock.useApp, useSyncStatus: mock.useApp };
+})()));
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
 vi.mock("expo-audio", () => {
   class Recorder {
@@ -101,6 +104,11 @@ vi.mock("../src/api/client", () => ({ requestMobileJson: vi.fn(async (_credentia
   if (path === "/api/mobile/v1/draft-readers") return { members: [{ id: "user-b", name: "妈妈" }, { id: "user-c", name: "另一成员" }] };
   return { drafts: [] };
 }) }));
+const { JournalDockHeightContext, JournalKeyboardContext, useJournalKeyboardState } = await import("../src/navigation/dock-metrics");
+function CaptureWithKeyboard() {
+  const open = useJournalKeyboardState();
+  return createElement(JournalKeyboardContext.Provider, { value: open }, createElement(JournalDockHeightContext.Provider, { value: 106 }, createElement(CaptureScreen)));
+}
 const { CaptureScreen } = await import("../src/screens/CaptureScreen");
 const { initializeLocalStore } = await import("../src/storage/database");
 const { listLocalDrafts, saveLocalDraft } = await import("../src/drafts/store");
@@ -298,14 +306,21 @@ async function seedMetadata(patch: Partial<import("../src/drafts/model").DraftCo
 }
 
 it("keeps save reachable above the keyboard and retains the chosen audience for the next note", async () => {
-  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => { tree = create(createElement(CaptureWithKeyboard)); });
+  const closedMargin = tree!.root.findByProps({ testID: "capture-save-bar" }).props.style.at(-1).marginBottom;
+  const scrollStyle = tree!.root.findByProps({ testID: "capture-content" }).props.contentContainerStyle;
+  expect(closedMargin).toBe(114);
   await press("仅自己");
   await act(async () => {
     tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("键盘打开也能直接保存");
-    mocks.keyboard.get("keyboardDidShow")!();
+    mocks.keyboard.get("keyboardWillShow")!();
   });
   const bar = tree!.root.findByProps({ testID: "capture-save-bar" });
-  expect(bar.props.style.at(-1).bottom).toBe(8);
+  expect(bar.props.style.at(-1).marginBottom).toBe(8);
+  expect(bar.props.style[0].position).toBeUndefined();
+  expect(tree!.root.findByProps({ testID: "capture-content" }).props.contentContainerStyle).toEqual(scrollStyle);
+  await act(async () => mocks.keyboard.get("keyboardWillHide")!());
+  expect(tree!.root.findByProps({ testID: "capture-save-bar" }).props.style.at(-1).marginBottom).toBe(closedMargin);
   expect(bar.findByProps({ testID: "capture-save" }).props.disabled).toBe(false);
   await press("保存");
   const rows = await listLocalDrafts("local");

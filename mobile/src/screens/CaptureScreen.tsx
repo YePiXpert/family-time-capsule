@@ -13,7 +13,7 @@ import type { AiSettings } from "../ai/types";
 import { requestMobileJson, parseAiSettings } from "../api/client";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
-import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -25,7 +25,7 @@ import {
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
 } from "expo-audio";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions, useSyncStatus } from "../state/AppContext";
 import { ingestLocalImportSession, getLocalCaptureDetail, type LocalCaptureDetail } from "../storage/database";
 import { preservePickedDocument, preservePickedMedia, preparePickedMedia, preservePreparedMedia, preserveRecordedAudio, removeLocalFile } from "../storage/files";
 import { beginPickerReceipt, finishPickerReceipt } from "../native/picker-intake";
@@ -41,23 +41,20 @@ import { journalRadius, journalSpace, journalType } from "../design/tokens";
 import type { LocalImportIntakeItem } from "../types";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
 import type { AppNavigation, MainTabParamList } from "../navigation/types";
-import { JournalDockHeightContext } from "../navigation/dock-metrics";
+import { JournalDockHeightContext, JournalKeyboardContext } from "../navigation/dock-metrics";
 
 export function CaptureScreen() {
   const navigation = useNavigation<AppNavigation>();
   const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
-  const { credentials, outbox, queued, viewer, family, userId, syncing, reloadLocal, grantSyncConsent, syncConsent } = useApp();
+  const { credentials, outbox, viewer, family, userId, syncConsent } = useAppData();
+  const { queued, reloadLocal, grantSyncConsent } = useAppActions();
+  const { syncing } = useSyncStatus();
   const insets = useSafeAreaInsets();
   const sharedStyles = useSharedStyles();
   const { colors, dark } = sharedStyles;
   const confirm = useConfirmSheet();
   const dockHeight = useContext(JournalDockHeightContext);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", () => setKeyboardOpen(true));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardOpen(false));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
+  const keyboardOpen = useContext(JournalKeyboardContext);
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
   const draftScope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -490,7 +487,7 @@ export function CaptureScreen() {
       <BlurTargetView ref={glassTarget} pointerEvents="none" style={StyleSheet.absoluteFill}>
         <LinearGradient colors={dark ? ["#302A40", "#293F66", "#3A294E"] : ["#F9E9DF", "#DFEAFB", "#E6DBF5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       </BlurTargetView>
-      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingTop: insets.top + 24, paddingBottom: (keyboardOpen ? 0 : dockHeight) + 160 }]} ref={scrollRef}>
+      <ScrollView testID="capture-content" style={{ flex: 1 }} automaticallyAdjustKeyboardInsets={false} contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingTop: insets.top + 24 }]} ref={scrollRef}>
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <Text style={[styles.eyebrow, { color: muted }]}>小美成长记</Text>
@@ -562,7 +559,7 @@ export function CaptureScreen() {
         </> : null}
         {capsuleDraft.draft?.memoryEventId && capsuleDraft.draft.organizeOnPublish && <OrganizerPanel kind="memory_event" id={capsuleDraft.draft.memoryEventId} />}
       </ScrollView>
-      <View testID="capture-save-bar" style={[styles.saveBar, { bottom: keyboardOpen ? 8 : dockHeight + 8, borderColor: rim }]}>
+      <View testID="capture-save-bar" style={[styles.saveBar, { marginBottom: keyboardOpen ? 8 : dockHeight + 8, borderColor: rim }]}>
         <GlassSurface target={glassTarget} tier="overlay" radius={30} />
         <View style={styles.visibility}><JournalIcon name={content?.visibility === "private" ? "lock" : "users"} size={15} color={muted} /><Text style={{ color: muted, fontSize: 12 }}>{visibilityLabel}</Text></View>
         <Pressable testID="capture-save" accessibilityRole="button" accessibilityLabel={saveLabel} accessibilityState={{ disabled: saveDisabled || capsuleDraft.draft?.status === "published" }} disabled={saveDisabled || capsuleDraft.draft?.status === "published"} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? content!.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} style={({ pressed }) => [styles.saveButton, { borderColor: rim }, pressed && sharedStyles.pressed]}>
@@ -601,7 +598,7 @@ const styles = StyleSheet.create({
   dateNote: { fontSize: 12, textAlign: "center" },
   readerRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 4 },
   readerChip: { minHeight: 44, justifyContent: "center", borderWidth: 1, borderColor: "transparent", paddingHorizontal: 12, borderRadius: 24 },
-  saveBar: { position: "absolute", left: 20, right: 20, borderWidth: 1, borderRadius: 30, overflow: "hidden", padding: 8, gap: 6 },
+  saveBar: { marginHorizontal: 20, marginTop: 8, borderWidth: 1, borderRadius: 30, overflow: "hidden", padding: 8, gap: 6 },
   visibility: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
   saveButton: { minHeight: 56, borderRadius: 28, borderWidth: 1, overflow: "hidden", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   saveLabel: { fontSize: 16, fontWeight: "600" },

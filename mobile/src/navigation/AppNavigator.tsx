@@ -1,10 +1,11 @@
+import { SyncBanner } from "../components/SyncBanner";
 import { journalMotion, journalShadow } from "../design/tokens";
-import { createRef, useEffect, useRef, useState, type RefObject } from "react";
+import { createRef, memo, useContext, useMemo, useRef, useState, type RefObject } from "react";
 import { BlurTargetView } from "expo-blur";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { GlassSurface } from "../components/GlassSurface";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
-import { JournalDockHeightContext } from "./dock-metrics";
+import { JournalCaptureActionHeightContext, JournalDockHeightContext, JournalKeyboardContext, useJournalKeyboardState } from "./dock-metrics";
 import { useAccessibleEffects } from "../design/use-effects";
 import { PendingScreen } from "../screens/PendingScreen";
 import { LocalIntakeScreen } from "../screens/LocalIntakeScreen";
@@ -13,10 +14,10 @@ import { ReadingDownloadsScreen, OfflineReadingScreen } from "../screens/Reading
 import { NavigationContainer, type Theme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { Keyboard, Platform, Pressable, StyleSheet, View } from "react-native";
+import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "../components/typography";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { haptics } from "../design/haptics";
 import { TimelineScreen } from "../screens/TimelineScreen";
 import { CaptureScreen } from "../screens/CaptureScreen";
@@ -63,26 +64,21 @@ const tabMeta: Record<string, { label: string; icon: JournalIconName }> = {
   Profile: { label: "我的", icon: "person" },
 };
 
-function JournalTabBar({ state, descriptors, navigation, target, onHeight }: BottomTabBarProps & { target: RefObject<View | null>; onHeight: (height: number) => void }) {
-  const { viewer, credentials, displayMode } = useApp();
+function JournalTabBar({ state, descriptors, navigation, target, onHeight, onActionHeight }: BottomTabBarProps & { target: RefObject<View | null>; onHeight: (height: number) => void; onActionHeight: (height: number) => void }) {
+  const { viewer, credentials, displayMode } = useAppData();
   const { reducedMotion } = useAccessibleEffects();
   const { colors, dark } = useColorTheme();
   const insets = useSafeAreaInsets();
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", () => setKeyboardOpen(true));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardOpen(false));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
+  const keyboardOpen = useContext(JournalKeyboardContext);
   const current = state.routes[state.index];
   const canCapture = !credentials || viewer?.canCapture;
-  if (!current || keyboardOpen) return null;
-  return <View onLayout={event => onHeight(event.nativeEvent.layout.height)} style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-    {current.name !== "Capture" && canCapture ? <Pressable accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, { backgroundColor: colors.coral, boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, pressed && !reducedMotion && styles.pressed]}>
+  if (!current) return null;
+  return <View pointerEvents={keyboardOpen ? "none" : "box-none"} accessibilityElementsHidden={keyboardOpen} importantForAccessibility={keyboardOpen ? "no-hide-descendants" : "auto"} style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10), opacity: keyboardOpen ? 0 : 1 }]}>
+    {current.name !== "Capture" && canCapture ? <Pressable onLayout={event => onActionHeight(event.nativeEvent.layout.height + 12)} accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, { backgroundColor: colors.coral, boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, pressed && !reducedMotion && styles.pressed]}>
       <JournalIcon name="plus" color={colors.onCoral} size={22} />
       <Text style={[styles.captureLabel, { color: colors.onCoral }]}>记录一刻</Text>
     </Pressable> : null}
-    <View style={[styles.tabRow, { boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, displayMode === "simple" && { minHeight: 84 }]}>
+    <View onLayout={event => onHeight(event.nativeEvent.layout.height)} style={[styles.tabRow, { boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, displayMode === "simple" && { minHeight: 84 }]}>
       <GlassSurface target={target} tier="dock" radius={28} />
       {state.routes.filter(route => route.name !== "Capture").map(route => {
         const meta = tabMeta[route.name] ?? { label: route.name, icon: "growth" as JournalIconName };
@@ -104,38 +100,39 @@ function MainTabs() {
   const { reducedMotion } = useAccessibleEffects();
   const { colors } = useColorTheme();
   const insets = useSafeAreaInsets();
-  const [dockHeight, setDockHeight] = useState(84 + Math.max(insets.bottom, 10));
+  const { displayMode } = useAppData();
+  const [barHeight, setBarHeight] = useState(displayMode === "simple" ? 84 : 72);
+  const dockHeight = barHeight + Math.max(insets.bottom, 10);
+  const [actionHeight, setActionHeight] = useState(64);
+  const keyboardOpen = useJournalKeyboardState();
   const targets = useRef(new Map<string, RefObject<View | null>>());
   const targetFor = (key: string) => {
     if (!targets.current.has(key)) targets.current.set(key, createRef<View>());
     return targets.current.get(key)!;
   };
-  return <JournalDockHeightContext.Provider value={dockHeight}><Tabs.Navigator
-    tabBar={props => <JournalTabBar {...props} onHeight={setDockHeight} target={targetFor(props.state.routes[props.state.index]?.key ?? "empty")} />}
+  return <JournalKeyboardContext.Provider value={keyboardOpen}><JournalCaptureActionHeightContext.Provider value={actionHeight}><JournalDockHeightContext.Provider value={dockHeight}><Tabs.Navigator
+    tabBar={props => <JournalTabBar {...props} onHeight={setBarHeight} onActionHeight={setActionHeight} target={targetFor(props.state.routes[props.state.index]?.key ?? "empty")} />}
     screenLayout={({ children, route }) => <BlurTargetView ref={targetFor(route.key)} style={styles.fill}>{children}</BlurTargetView>}
     screenOptions={{
       headerStyle: { backgroundColor: colors.paper }, headerShadowVisible: false,
       headerTitleStyle: { color: colors.ink, fontWeight: "600" },
       headerTintColor: colors.coralDark,
-      animation: reducedMotion ? "none" : "fade", transitionSpec: { animation: "timing", config: { duration: reducedMotion ? 0 : journalMotion.duration } }, tabBarHideOnKeyboard: true,
+      animation: reducedMotion ? "none" : "fade", transitionSpec: { animation: "timing", config: { duration: reducedMotion ? 0 : journalMotion.duration } },
     }}>
     <Tabs.Screen component={TimelineScreen} name="Timeline" options={{ headerShown: false }} />
     <Tabs.Screen component={WorksScreen} name="Works" options={{ title: "成长册", headerShown: false }} />
     <Tabs.Screen component={SettingsHubScreen} name="Profile" options={{ title: "我的", headerShown: false }} />
     {/* Keep the existing capture route for pending shares and durable draft links. */}
     <Tabs.Screen component={CaptureScreen} name="Capture" options={{ title: "记录一刻", headerShown: false }} />
-  </Tabs.Navigator></JournalDockHeightContext.Provider>;
+  </Tabs.Navigator></JournalDockHeightContext.Provider></JournalCaptureActionHeightContext.Provider></JournalKeyboardContext.Provider>;
 }
 
-export function AppNavigator() {
-  const insets = useSafeAreaInsets();
+const NavigationContent = memo(function NavigationContent() {
   const { reducedMotion } = useAccessibleEffects();
   const { colors, dark } = useColorTheme();
-  const { message, dismissMessage } = useApp();
-  return <View style={[styles.fill, { backgroundColor: colors.paper }]}>
-    {message ? <Pressable accessibilityRole="button" accessibilityLabel="同步提示，点按收起" accessibilityHint="点按收起" onPress={dismissMessage} style={[styles.banner, { paddingTop: Math.max(insets.top, 8), backgroundColor: colors.softSage }]}><Text numberOfLines={2} accessibilityLiveRegion="polite" style={[styles.bannerText, { color: colors.sage }]}>{message}</Text></Pressable> : null}
-    <NavigationContainer theme={navigationTheme(colors, dark)}>
-      <Stack.Navigator screenOptions={{ animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : journalMotion.duration, headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" }, headerTintColor: colors.coralDark, contentStyle: { backgroundColor: colors.paper }, ...(Platform.OS === "ios" ? { headerLargeTitle: true, headerBlurEffect: "regular" as const } : {}) }}>
+  const theme = useMemo(() => navigationTheme(colors, dark), [colors, dark]);
+  return <NavigationContainer theme={theme}>
+      <Stack.Navigator screenOptions={{ animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : journalMotion.duration, headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" }, headerTintColor: colors.coralDark, contentStyle: { backgroundColor: colors.paper }, ...(Platform.OS === "ios" ? { headerLargeTitle: false, headerBlurEffect: "regular" as const } : {}) }}>
         <Stack.Screen component={MainTabs} name="MainTabs" options={{ headerShown: false }} />
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "成长记录" }} />
         <Stack.Screen component={AssetLibraryScreen} name="AssetLibrary" options={{ title: "资料库" }} />
@@ -160,8 +157,12 @@ export function AppNavigator() {
         <Stack.Screen component={InviteFamilyScreen} name="InviteFamily" options={{ title: "邀请家人加入" }} />
         <Stack.Screen component={LocalCaptureDetailScreen} name="LocalCapture" options={{ title: "本机记录" }} />
       </Stack.Navigator>
-    </NavigationContainer>
-  </View>;
+    </NavigationContainer>;
+});
+
+export function AppNavigator() {
+  const { colors } = useColorTheme();
+  return <View style={[styles.fill, { backgroundColor: colors.paper }]}><NavigationContent /><SyncBanner /></View>;
 }
 
 const styles = StyleSheet.create({
@@ -172,8 +173,6 @@ const styles = StyleSheet.create({
   tabIcon: { paddingHorizontal: 20, paddingVertical: 5, borderRadius: 18 },
   tabLabel: { fontSize: 12.5, fontWeight: "600" },
   floatingCapture: { alignSelf: "flex-end", minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, marginBottom: 12, borderRadius: 26, overflow: "hidden" },
-  pressed: { transform: [{ scale: 0.96 }] },
+  pressed: { opacity: 0.72 },
   captureLabel: { fontSize: 16, fontWeight: "600", paddingVertical: 12 },
-  banner: { paddingHorizontal: 16, paddingBottom: 8 },
-  bannerText: { fontSize: 12, lineHeight: 17, fontWeight: "700", textAlign: "center" },
 });

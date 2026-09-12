@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Pressable, ScrollView } from "react-native";
 import { Text } from "../components/typography";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { listLocalImportSessions } from "../storage/database";
 import type { AppNavigation } from "../navigation/types";
 import { useSharedStyles } from "../theme";
@@ -11,7 +11,7 @@ import { requestMobileJson } from "../api/client";
 import type { Draft } from "../drafts/model";
 
 export function usePendingImports() {
-  const { credentials, userId, family, home } = useApp();
+  const { credentials, userId, family, home } = useAppData();
   const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const [state, setState] = useState<{ scope: string; ids: string[] }>({ scope: "", ids: [] });
   useFocusEffect(useCallback(() => {
@@ -29,7 +29,7 @@ export function usePendingImports() {
 export function PendingScreen() {
   const s = useSharedStyles();
   const navigation = useNavigation<AppNavigation>();
-  const { home, viewer, credentials, userId, family } = useApp();
+  const { home, viewer, credentials, userId, family } = useAppData();
   const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const [draftState, setDraftState] = useState<{ scope: string; local: LocalDraft[]; remote: Draft[] }>();
   const [draftError, setDraftError] = useState<{ scope: string; message: string }>();

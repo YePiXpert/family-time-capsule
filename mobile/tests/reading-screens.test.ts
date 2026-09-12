@@ -34,9 +34,7 @@ const credentials = {
   serverUrl: "https://fictional.example.test",
   token: "fictional-token",
 };
-vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({ credentials, online: mocks.online }),
-}));
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials, online: mocks.online }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/media/NativeMediaReader", () => ({
   NativeMediaReader: "NativeMediaReader",
 }));

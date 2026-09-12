@@ -5,7 +5,7 @@ import { randomUUID } from "expo-crypto";
 import { ApiError, patchMobileMemory, requestMobileJson, shareMobileMemory } from "../api/client";
 import { PrecisionDateTimeField } from "../components/PrecisionDateTimeField";
 import { parseDraftReaders, type DraftReader } from "../drafts/readers";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import type { MemorySharingPatch, MobileMemory, MobileMemoryPatch } from "../types";
 import { useSharedStyles } from "../theme";
 import { isOccurredAtPrecision, type OccurredAtPrecision } from "../utils/occurred-precision";
@@ -20,7 +20,7 @@ type Content = { title: string; bodyText: string; location: string; occurredAt: 
 type Sharing = { visibility: MemorySharingPatch["visibility"]; readers: string[]; revision: number };
 export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSaved: () => Promise<void> }) {
   const s = useSharedStyles();
-  const { credentials, family, people, online } = useApp();
+  const { credentials, family, people, online } = useAppData();
   const [content, setContent] = useState<Content | null>(null);
   const [sharing, setSharing] = useState<Sharing | null>(null);
   const [readers, setReaders] = useState<DraftReader[]>([]);

@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("react-native", () => ({ Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (value: unknown) => value } }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]) }));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => ({ ...mocks.state, runSync: mocks.sync }) }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ ...mocks.state, runSync: mocks.sync }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/storage/database", () => ({ getMeta: mocks.get, setMeta: mocks.set, deleteMeta: mocks.remove }));
 vi.mock("../src/api/client", async importOriginal => ({ ...await importOriginal<object>(), fetchNameReview: mocks.fetch, mutateNameReview: mocks.mutate }));
 const { NameEditor } = await import("../src/names/NameEditor");

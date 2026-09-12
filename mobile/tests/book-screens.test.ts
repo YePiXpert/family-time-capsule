@@ -41,9 +41,7 @@ vi.mock("@react-navigation/native", () => ({
 }));
 vi.mock("../src/books/export-publication", () => ({ exportPublication: vi.fn() }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "new-fictional-block" }));
-vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({ credentials: mocks.credentials }),
-}));
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials: mocks.credentials }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", () => ({
   fetchBook: mocks.get,
   fetchBooks: mocks.list,

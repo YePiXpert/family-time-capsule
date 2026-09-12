@@ -21,9 +21,7 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
-vi.mock("../src/state/AppContext", () => ({
-  useApp: () => appState,
-}));
+vi.mock("../src/state/AppContext", () => { const useApp = () => appState; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("expo-camera", () => ({
   CameraView: "CameraView",
   useCameraPermissions: () => [

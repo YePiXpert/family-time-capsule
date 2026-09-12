@@ -4,7 +4,7 @@ import { Text } from "../components/typography";
 import { Pressable, View } from "react-native";
 import { ApiError, changeAiConsent, fetchAiSettings, parseAiSettings } from "../api/client";
 import { memoryCacheScope } from "../memories/cache-scope";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
 import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
@@ -15,7 +15,7 @@ const content = { text: "所选文字、分析或转录中最少必要的内容"
 
 export function AiSettingsSection() {
   const s = useSharedStyles();
-  const { credentials, viewer, family } = useApp();
+  const { credentials, viewer, family } = useAppData();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope || !["owner", "admin", "editor"].includes(viewer?.role ?? "")) return <View style={s.notice}><Text style={s.noticeText}>AI 默认关闭；服务器同步授权与 AI 外部处理授权分别管理。保存、查看与播放无需等待 AI。</Text></View>;
   return <SettingsContent key={scope} scope={scope} />;
@@ -23,7 +23,7 @@ export function AiSettingsSection() {
 
 function SettingsContent({ scope }: { scope: string }) {
   const s = useSharedStyles();
-  const { credentials, online } = useApp();
+  const { credentials, online } = useAppData();
   const askConfirm = useConfirmSheet();
   const [status, setStatus] = useState<AiSettings | null>(null);
   const [verified, setVerified] = useState(false);

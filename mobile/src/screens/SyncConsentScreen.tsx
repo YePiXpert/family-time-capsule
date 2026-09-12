@@ -2,7 +2,7 @@ import { Text } from "../components/typography";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import { useAlertSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
@@ -16,7 +16,8 @@ import type { MediaCapturePayload, TextCapturePayload } from "../types";
 export function SyncConsentScreen() {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
-  const { credentials, outbox, family, grantSyncConsent } = useApp();
+  const { credentials, outbox, family } = useAppData();
+  const { grantSyncConsent } = useAppActions();
   const insets = useSafeAreaInsets();
   const alert = useAlertSheet();
   const [mode, setMode] = useState<"choose" | "select">("choose");

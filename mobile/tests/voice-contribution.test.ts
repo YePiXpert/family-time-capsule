@@ -7,7 +7,7 @@ const mocks=vi.hoisted(()=>({rows:new Map<string,any>(),permission:vi.fn(),mode:
 vi.mock('react-native',()=>({Platform:{OS:'ios'},Pressable:'Pressable',View:'View',Text:'Text',StyleSheet:{create:(s:unknown)=>s}}));
 vi.mock('../src/components/RecordingMeter',()=>({RecordingMeter:()=>null}));
 vi.mock('../src/media/NativeMediaReader',()=>({NativeMediaReader:()=>null}));
-vi.mock('../src/state/AppContext',()=>({useApp:()=>mocks.app}));
+vi.mock('../src/state/AppContext',()=>{ const useApp = ()=>mocks.app; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock('../src/api/client',()=>({requestMobileJson:mocks.request}));
 vi.mock('expo-crypto',()=>({randomUUID:()=>crypto.randomUUID()}));
 vi.mock('expo-audio',()=>({AudioModule:{AudioRecorder:class {uri='file:///temporary.m4a';prepareToRecordAsync=async()=>{};record=()=>{};stop=mocks.stop;release=mocks.release;getStatus=()=>({});}},RecordingPresets:{HIGH_QUALITY:{ios:{}}},requestRecordingPermissionsAsync:mocks.permission,setAudioModeAsync:mocks.mode}));

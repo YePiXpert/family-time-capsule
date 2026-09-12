@@ -40,9 +40,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
   default: "DateTimePicker",
   DateTimePickerAndroid: { open: vi.fn() },
 }));
-vi.mock("../src/state/AppContext", () => ({
-  useApp: () => appContext,
-}));
+vi.mock("../src/state/AppContext", () => { const useApp = () => appContext; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
 vi.mock("../src/api/client", async original => ({
   ...await original<object>(),

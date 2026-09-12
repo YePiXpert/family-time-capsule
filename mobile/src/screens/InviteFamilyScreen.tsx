@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, Share, View } from "react-nat
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import { createInvitation } from "../api/client";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { useAlertSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
@@ -26,7 +26,7 @@ const ROLES: { key: "admin" | "editor" | "contributor" | "viewer"; label: string
 export function InviteFamilyScreen() {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
-  const { credentials, people } = useApp();
+  const { credentials, people } = useAppData();
   const alert = useAlertSheet();
   const [role, setRole] = useState<"admin" | "editor" | "contributor" | "viewer">("contributor");
   const [expiresInDays, setExpiresInDays] = useState(7);

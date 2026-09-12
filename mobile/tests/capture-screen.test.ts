@@ -43,12 +43,15 @@ vi.mock("@react-navigation/native", () => ({
   useRoute: () => mocks.route,
 }));
 const navigation = { setParams: mocks.setParams };
-vi.mock("../src/state/AppContext", () => ({
+vi.mock("../src/state/AppContext", () => ((() => {
+  const mock = {
   useApp: () => ({
     credentials: null, viewer: null, outbox: [], queued: mocks.queued, reloadLocal: mocks.reloadLocal,
     people: [{ id: "person-1", displayName: "妈妈" }, { id: "person-2", displayName: "外公" }],
   }),
-}));
+};
+  return { ...mock, useAppData: mock.useApp, useAppActions: mock.useApp, useSyncStatus: mock.useApp };
+})()));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "capture-id" }));
 vi.mock("expo-audio", () => {
   class Recorder {

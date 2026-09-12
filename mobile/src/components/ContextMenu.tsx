@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Dimensions, Modal, Pressable, StyleSheet, View } from "react-native";
 import { haptics } from "../design/haptics";
 import { journalRadius, journalShadow, journalSpace, journalType } from "../design/tokens";
@@ -76,10 +76,10 @@ export function ContextMenu({ visible, anchor, items, onClose }: ContextMenuProp
 /** 便捷 hook：menuElement 渲染到屏幕根部，openMenu 传入触摸点（如 onLongPress 事件的 pageX/pageY）。 */
 export function useContextMenu() {
   const [state, setState] = useState<{ anchor: ContextMenuAnchor; items: ContextMenuItem[] } | null>(null);
-  const openMenu = (items: ContextMenuItem[], anchor: ContextMenuAnchor) => {
+  const openMenu = useCallback((items: ContextMenuItem[], anchor: ContextMenuAnchor) => {
     haptics.impact();
     setState({ items, anchor });
-  };
+  }, []);
   const closeMenu = () => setState(null);
   const menuElement: ReactNode = (
     <ContextMenu visible={state !== null} anchor={state?.anchor ?? null} items={state?.items ?? []} onClose={closeMenu} />

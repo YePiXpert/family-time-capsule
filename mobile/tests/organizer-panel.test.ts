@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), mutate: vi.fn(), get: vi.fn(), set: vi.fn(), remove: vi.fn(), navigate: vi.fn(), state: { credentials: { serverUrl: "https://fixture.invalid", token: "session-a" }, viewer: { id: "user-a", role: "admin", canEditEvents: true }, family: { id: "family-a" }, online: true } }));
 vi.mock("react-native", () => ({ Pressable: "Pressable", Text: "Text", View: "View", TextInput: "TextInput", StyleSheet: { create: (value: unknown) => value } }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]), useNavigation: () => ({ navigate: mocks.navigate }) }));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => mocks.state }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => mocks.state; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/storage/database", () => ({ getMeta: mocks.get, setMeta: mocks.set, deleteMeta: mocks.remove }));
 vi.mock("../src/api/client", async original => ({ ...await original<object>(), fetchOrganizerReview: mocks.fetch, mutateOrganizerReview: mocks.mutate }));
 const { OrganizerPanel } = await import("../src/ai/OrganizerPanel");

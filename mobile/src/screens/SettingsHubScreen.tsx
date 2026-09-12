@@ -1,17 +1,17 @@
+import { useJournalContentInset, useJournalTitleInset } from "../navigation/dock-metrics";
 import { AiSettingsSection } from "../ai/AiSettingsSection";
 import { Text } from "../components/typography";
 import { useState } from "react";
-import { Animated, Linking, StyleSheet, Switch, View } from "react-native";
+import { ScrollView, Linking, StyleSheet, Switch, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AppNavigation } from "../navigation/types";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import { Disclosure } from "../components/Disclosure";
 import { DisplayModeCard } from "../components/DisplayModeCard";
 import { useAlertSheet } from "../components/GlassSheet";
 import { Chip, ListGroup, ListRow } from "../components/ui";
 import { useColorTheme, type ThemeMode } from "../theme";
-import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
+import { CollapsingHero } from "../components/CollapsingHero";
 import { GlassCard } from "../components/GlassCard";
 import { journalRadius, journalSpace, journalType } from "../design/tokens";
 
@@ -31,11 +31,12 @@ const themeModes: { key: ThemeMode; label: string }[] = [
 
 export function SettingsHubScreen() {
   const navigation = useNavigation<AppNavigation>();
-  const insets = useSafeAreaInsets();
+  const contentBottom = useJournalContentInset();
+  const titleInset = useJournalTitleInset();
   const { colors } = useColorTheme();
-  const { credentials, viewer, family, themeMode, setThemeMode, hapticsEnabled, setHapticsEnabled } = useApp();
+  const { credentials, viewer, family, themeMode, hapticsEnabled } = useAppData();
+  const { setThemeMode, setHapticsEnabled } = useAppActions();
   const alert = useAlertSheet();
-  const { scrollY, onScroll } = useCollapsingHeroScroll();
   const [section, setSection] = useState("");
   const group = (name: string) => ({ title: name, open: section === name, onToggle: () => setSection(value => value === name ? "" : name) });
   const web = async (path: string) => {
@@ -47,17 +48,14 @@ export function SettingsHubScreen() {
   const initial = (viewer?.name ?? "我").trim().slice(0, 1) || "我";
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
-      <Animated.ScrollView
-        onScroll={onScroll}
-        scrollEventThrottle={16}
+      <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: journalSpace.page, paddingTop: insets.top + 20, paddingBottom: 210, gap: 18 }}
+        contentContainerStyle={{ padding: journalSpace.page, paddingTop: titleInset + 20, paddingBottom: contentBottom, gap: 18 }}
       >
       <CollapsingHero
         eyebrow="照片、声音和想留下的话"
         title="我的"
         subtitle={viewer?.name ?? "我的成长手帐"}
-        scrollY={scrollY}
       />
 
       {/* 身份卡：家人先看到自己，再看到设置 */}
@@ -141,8 +139,8 @@ export function SettingsHubScreen() {
           </View>
         ) : null}
       </Disclosure>
-      </Animated.ScrollView>
-      <CollapsingHeroBar title="我的" scrollY={scrollY} topInset={insets.top} />
+      </ScrollView>
+
     </View>
   );
 }

@@ -24,12 +24,10 @@ vi.mock("react-native", () => ({
 vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
 }));
-vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({
     credentials: mocks.credentials,
     family: { timezone: "Asia/Shanghai" },
-  }),
-}));
+  }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   fetchMobileCalendar: mocks.fetch,

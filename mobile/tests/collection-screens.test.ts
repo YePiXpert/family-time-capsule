@@ -9,7 +9,7 @@ vi.mock('react-native',()=>({ActivityIndicator:'ActivityIndicator',Image:'Image'
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock('@react-navigation/native',()=>({useFocusEffect:(fn:()=>void|(()=>void))=>useEffect(fn,[fn])}));
 vi.mock('expo-crypto',()=>({randomUUID:()=> 'fictional-new-section'}));
-vi.mock('../src/state/AppContext',()=>({useApp:()=>({credentials:mocks.credentials})}));
+vi.mock('../src/state/AppContext',()=>{ const useApp = ()=>({credentials:mocks.credentials}); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock('../src/api/client',async(original)=>({...await original<object>(),fetchCollection:mocks.get,fetchCollections:mocks.list,mutateCollection:mocks.mutate}));
 const {CollectionDetailScreen,CollectionsScreen}=await import('../src/screens/CollectionScreens');
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;

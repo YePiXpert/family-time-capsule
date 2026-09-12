@@ -6,7 +6,7 @@ import { ApiError, fetchOrganizerReview, mutateOrganizerReview, parseOrganizerRe
 import { memoryCacheScope } from "../memories/cache-scope";
 import { NameEditor } from "../names/NameEditor";
 import { TranscriptEditor } from "../transcripts/TranscriptEditor";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
 import { useSharedStyles } from "../theme";
 import type { AppNavigation } from "../navigation/types";
@@ -16,7 +16,7 @@ import type { OrganizerTarget, OrganizerOperation, OrganizerReview } from "./org
 type Props = OrganizerTarget & { label?: string; onSaved?: () => void; assetOperation?: "name" | "transcribe"; defaultOpen?: boolean };
 export function OrganizerPanel(props: Props) {
   const s = useSharedStyles();
-  const { credentials, viewer, family } = useApp();
+  const { credentials, viewer, family } = useAppData();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope) return <Text style={s.body}>本机内容已保存，同步后才能使用服务端 AI。</Text>;
   if (!["owner", "admin", "editor"].includes(viewer?.role ?? "")) return props.kind === "asset" && props.assetOperation !== "name" ? <TranscriptEditor assetId={props.id} label={props.label ?? "录音或视频"} /> : null;
@@ -24,7 +24,7 @@ export function OrganizerPanel(props: Props) {
 }
 function Panel({ kind, id, label, onSaved, scope, assetOperation = "transcribe", defaultOpen = false }: Props & { scope: string }) {
   const s = useSharedStyles();
-  const { credentials, online } = useApp();
+  const { credentials, online } = useAppData();
   const navigation = useNavigation<AppNavigation>();
   const [opened, setOpened] = useState(defaultOpen), [review, setReview] = useState<OrganizerReview | null>(null), [verified, setVerified] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null), [refreshVersion, setRefreshVersion] = useState(0);
   const generation = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | null>(null), previous = useRef("");

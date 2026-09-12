@@ -9,7 +9,7 @@ vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void | (
 vi.mock("react-native-qrcode-svg", () => ({ default: "QRCode" }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => ({ credentials: mocks.credentials, viewer: { role: "viewer" }, online: true, events: [] }) }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials: mocks.credentials, viewer: { role: "viewer" }, online: true, events: [] }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", async original => ({ ...await original<object>(), fetchMobileLibraryDetail: mocks.fetch }));
 const { PersonDetailScreen } = await import("../src/screens/LibraryScreens");
 const store = await import("../src/storage/database");

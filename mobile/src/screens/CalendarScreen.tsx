@@ -6,7 +6,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } fro
 import { ApiError, fetchMobileCalendar } from "../api/client";
 import type { MobileCalendar } from "../types";
 import type { RootStackParamList } from "../navigation/types";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
 import {
@@ -19,7 +19,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Calendar">;
 export function CalendarScreen({ navigation }: Props) {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
-  const { credentials, family } = useApp();
+  const { credentials, family } = useAppData();
   const [month, setMonth] = useState(() =>
     calendarDate(new Date(), family?.timezone || "UTC").slice(0, 7),
   );

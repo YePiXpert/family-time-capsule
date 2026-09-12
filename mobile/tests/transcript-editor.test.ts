@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("react-native", () => ({ Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (value: unknown) => value } }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]) }));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => mocks.state }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => mocks.state; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/storage/database", () => ({ getMeta: mocks.get, setMeta: mocks.set, deleteMeta: mocks.remove }));
 vi.mock("../src/api/client", async original => ({ ...await original<object>(), fetchTranscriptReview: mocks.fetch, saveTranscriptReview: mocks.save }));
 const { TranscriptEditor } = await import("../src/transcripts/TranscriptEditor");

@@ -1,6 +1,6 @@
 import { Text } from "./typography";
 import { Pressable, StyleSheet, View } from "react-native";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import { useSharedStyles } from "../theme";
 
 /**
@@ -8,7 +8,8 @@ import { useSharedStyles } from "../theme";
  * 只影响这一台设备的界面大小，不改变任何权限。
  */
 export function DisplayModeCard() {
-  const { displayMode, setDisplayMode } = useApp();
+  const { displayMode } = useAppData();
+  const { setDisplayMode } = useAppActions();
   const s = useSharedStyles();
   if (!displayMode) return null;
   return (

@@ -44,9 +44,12 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => mocks.navigation }));
-vi.mock("../src/state/AppContext", () => ({
+vi.mock("../src/state/AppContext", () => ((() => {
+  const mock = {
   useApp: () => ({ ...mocks.app, hapticsEnabled: true, setHapticsEnabled: vi.fn() }),
-}));
+};
+  return { ...mock, useAppData: mock.useApp, useAppActions: mock.useApp, useSyncStatus: mock.useApp };
+})()));
 
 const { sharedStyles } = await import("../src/theme");
 

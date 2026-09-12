@@ -7,7 +7,7 @@ vi.mock("react-native", () => ({ Image: "Image", Pressable: "Pressable", ScrollV
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => mocks.confirm, useAlertSheet: () => vi.fn(async () => {}), confirmSheet: (options: unknown) => mocks.confirm(options), alertSheet: vi.fn(async () => {}) }));
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]), useNavigation: () => mocks.navigation }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "new-draft-id" }));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => mocks.app }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => mocks.app; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", () => ({ requestMobileJson: mocks.request }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
 vi.mock("../src/ai/OrganizerPanel", () => ({ OrganizerPanel: "OrganizerPanel" }));

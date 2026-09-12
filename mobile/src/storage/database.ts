@@ -388,14 +388,23 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
   if (!draftScope) return timeline;
   const snapshots = await db.getAllAsync<{ snapshot_json: string }>("SELECT snapshot_json FROM local_draft WHERE scope=?", draftScope);
   const drafts = snapshots.map(row => JSON.parse(row.snapshot_json) as import("../drafts/store").LocalDraft);
+  const captureIds = [...new Set(drafts.filter(draft => draft.status === "queued")
+    .flatMap(draft => draft.content.items.flatMap(item => item.localCaptureRef ? [item.localCaptureRef] : [])))];
+  // One lookup for the whole snapshot; scrolling after a large import must not
+  // wait for a separate native SQLite round trip for every candidate cover.
+  const coverRows = captureIds.length ? await db.getAllAsync<{ id: string; local_uri: string }>(
+    "SELECT id, local_uri FROM local_capture WHERE id IN (SELECT value FROM json_each(?)) AND media_type='image' AND local_uri IS NOT NULL",
+    JSON.stringify(captureIds),
+  ) : [];
+  const coverUris = new Map(coverRows.map(row => [row.id, row.local_uri]));
   const covers: Record<string, string> = {};
   for (const draft of drafts) {
     if (draft.status !== "queued") continue;
     const ordered = [...draft.content.items].sort((a, b) => Number(b.id === draft.content.coverItemId) - Number(a.id === draft.content.coverItemId));
     for (const item of ordered) {
       if (!item.localCaptureRef) continue;
-      const cover = await db.getFirstAsync<{ local_uri: string }>("SELECT local_uri FROM local_capture WHERE id=? AND media_type='image' AND local_uri IS NOT NULL", item.localCaptureRef);
-      if (cover) { covers[draft.id] = cover.local_uri; break; }
+      const uri = coverUris.get(item.localCaptureRef);
+      if (uri) { covers[draft.id] = uri; break; }
     }
   }
   return mergeSavedDrafts(timeline, drafts, covers);
@@ -1075,11 +1084,14 @@ export type LocalCaptureDetail = {
   memoryEventId: string | null;
   syncState: "pending" | "inbox" | "archived";
   text: string | null;
+  /** Confirmed upload receipt in the requested account/family scope only. */
+  remoteAssetId?: string;
 };
 
 /** 单条本机记录详情（时间轴点击本机条目直接阅读，不要求联网）。 */
 export async function getLocalCaptureDetail(
   captureId: string,
+  sourceScope: string | null = null,
 ): Promise<LocalCaptureDetail | null> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<{
@@ -1131,6 +1143,16 @@ export async function getLocalCaptureDetail(
       }
     }
   }
+  const remote = sourceScope && row.kind === "media_capture" ? await db.getFirstAsync<{ asset_id: string }>(
+    `SELECT json_extract(i.value, '$.assetId') asset_id
+       FROM local_draft d,
+       json_each(CASE WHEN json_valid(d.snapshot_json) THEN json_extract(d.snapshot_json, '$.content.items') ELSE '[]' END) i
+       WHERE d.scope = ? AND json_extract(i.value, '$.localCaptureRef') = ?
+         AND typeof(json_extract(i.value, '$.assetId')) = 'text'
+         AND length(json_extract(i.value, '$.assetId')) BETWEEN 1 AND 128
+       ORDER BY d.updated_at DESC, d.id DESC LIMIT 1`,
+    sourceScope, captureId,
+  ) : null;
   return {
     captureId: row.id,
     kind: row.kind,
@@ -1144,6 +1166,7 @@ export async function getLocalCaptureDetail(
     memoryEventId: row.memory_event_id,
     syncState: row.sync_state,
     text,
+    ...(remote ? { remoteAssetId: remote.asset_id } : {}),
   };
 }
 

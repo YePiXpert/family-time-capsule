@@ -1,4 +1,4 @@
-import type { AppContextValue } from "./contracts";
+import type { AppActions, AppContextValue, AppData, AppSyncStatus } from "./contracts";
 import { useLocalArchive } from "./use-local-archive";
 import { useShareIntake } from "./use-share-intake";
 import { useAppLifecycle } from "./use-app-lifecycle";
@@ -46,6 +46,9 @@ import { clearAllReadingDownloads } from "../reading/native";
 
 
 const AppContext = createContext<AppContextValue | null>(null);
+const AppDataContext = createContext<AppData | null>(null);
+const AppActionsContext = createContext<AppActions | null>(null);
+const AppSyncStatusContext = createContext<AppSyncStatus | null>(null);
 
 export function AppProvider({
   initialCredentials,
@@ -241,7 +244,8 @@ export function AppProvider({
     );
   }, [accountFamilyId, credentials, needsOnboarding, outbox.length, syncConsent, userId]);
 
-  const value = useMemo<AppContextValue>(() => ({
+  const dismissMessage = useCallback(() => setMessage(null), []);
+  const data = useMemo<AppData>(() => ({
     credentials,
     family,
     viewer,
@@ -249,10 +253,7 @@ export function AppProvider({
     events,
     outbox,
     home,
-    lastSyncAt,
     online: network.isConnected ?? null,
-    syncing,
-    message,
     welcomeSeen,
     localReadError,
     displayMode,
@@ -262,6 +263,12 @@ export function AppProvider({
     syncConsent,
     awaitingSyncConsent,
     userId,
+  }), [
+    awaitingSyncConsent, credentials, displayMode, events, family, hapticsEnabled,
+    home, localReadError, needsOnboarding, network.isConnected, outbox, people,
+    syncConsent, themeMode, userId, viewer, welcomeSeen,
+  ]);
+  const actions = useMemo<AppActions>(() => ({
     reloadLocal,
     runSync,
     queued,
@@ -276,20 +283,43 @@ export function AppProvider({
     keepOutboxItemLocal: keepItemLocal,
     deleteOutboxCapture,
     clearLocal,
-    dismissMessage: () => setMessage(null),
+    dismissMessage,
   }), [
-    awaitingSyncConsent, clearLocal, completeOnboarding, connect, credentials,
-    deleteOutboxCapture, disconnect, displayMode, events, family, grantSyncConsent,
-    hapticsEnabled, home, keepItemLocal, lastSyncAt, localReadError, message, needsOnboarding, network.isConnected,
-    outbox, people, queued, reloadLocal, runSync, setDisplayMode, setHapticsEnabled, setThemeMode, setWelcomeSeen,
-    syncConsent, syncing, themeMode, userId, viewer, welcomeSeen,
+    clearLocal, completeOnboarding, connect, deleteOutboxCapture, disconnect,
+    dismissMessage, grantSyncConsent, keepItemLocal, queued, reloadLocal, runSync,
+    setDisplayMode, setHapticsEnabled, setThemeMode, setWelcomeSeen,
   ]);
-
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  const status = useMemo<AppSyncStatus>(() => ({ syncing, message, lastSyncAt }), [syncing, message, lastSyncAt]);
+  const value = useMemo<AppContextValue>(() => ({ ...data, ...actions, ...status }), [data, actions, status]);
+  return <AppDataContext.Provider value={data}>
+    <AppActionsContext.Provider value={actions}>
+      <AppSyncStatusContext.Provider value={status}>
+        <AppContext.Provider value={value}>{children}</AppContext.Provider>
+      </AppSyncStatusContext.Provider>
+    </AppActionsContext.Provider>
+  </AppDataContext.Provider>;
 }
 
 export function useApp(): AppContextValue {
   const value = useContext(AppContext);
+  if (!value) throw new Error("AppProvider is missing");
+  return value;
+}
+
+export function useAppData(): AppData {
+  const value = useContext(AppDataContext);
+  if (!value) throw new Error("AppProvider is missing");
+  return value;
+}
+
+export function useAppActions(): AppActions {
+  const value = useContext(AppActionsContext);
+  if (!value) throw new Error("AppProvider is missing");
+  return value;
+}
+
+export function useSyncStatus(): AppSyncStatus {
+  const value = useContext(AppSyncStatusContext);
   if (!value) throw new Error("AppProvider is missing");
   return value;
 }

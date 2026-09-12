@@ -7,7 +7,7 @@ vi.mock("react-native", () => ({ Text: "Text", TextInput: "TextInput", Pressable
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
 vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePicker", DateTimePickerAndroid: { open: vi.fn() } }));
 const credentials = { serverUrl: "https://fixture.invalid", token: "synthetic" };
-vi.mock("../src/state/AppContext", () => ({ useApp: () => ({ credentials, online: mocks.online, family: { timezone: "UTC" }, people: [{ id: "person-b", displayName: "家人B" }] }) }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials, online: mocks.online, family: { timezone: "UTC" }, people: [{ id: "person-b", displayName: "家人B" }] }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", async original => ({ ...await original<object>(), patchMobileMemory: mocks.patch, shareMobileMemory: mocks.share, requestMobileJson: vi.fn().mockResolvedValue({ members: [{ id: "user-b", name: "家人B" }] }) }));
 const { MemoryEditor } = await import("../src/memories/MemoryEditor");
 const { ApiError } = await import("../src/api/client");

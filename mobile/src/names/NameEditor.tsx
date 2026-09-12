@@ -4,13 +4,13 @@ import { Pressable, View } from "react-native";
 import { Text, TextInput } from "../components/typography";
 import { ApiError, fetchNameReview, mutateNameReview, parseNameReview } from "../api/client";
 import { memoryCacheScope } from "../memories/cache-scope";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import { deleteMeta, getMeta, setMeta } from "../storage/database";
 import { useSharedStyles } from "../theme";
 import { NAME_SOURCE_LABELS, type NameKind, type NameReview } from "./types";
 
 export function NameEditor({ kind, id, onSaved, refreshVersion = 0, defaultOpen = false }: { kind: NameKind; id: string; onSaved?: () => void; refreshVersion?: number; defaultOpen?: boolean }) {
-  const { credentials, viewer, family } = useApp();
+  const { credentials, viewer, family } = useAppData();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   if (!credentials || !scope || !viewer?.canEditEvents) return null;
   return <Editor key={JSON.stringify([scope, kind, id])} kind={kind} id={id} scope={scope} onSaved={onSaved} refreshVersion={refreshVersion} defaultOpen={defaultOpen} />;
@@ -18,7 +18,8 @@ export function NameEditor({ kind, id, onSaved, refreshVersion = 0, defaultOpen 
 
 function Editor({ kind, id, scope, onSaved, refreshVersion, defaultOpen = false }: { kind: NameKind; id: string; scope: string; onSaved?: () => void; refreshVersion?: number; defaultOpen?: boolean }) {
   const s = useSharedStyles();
-  const { credentials, online, runSync } = useApp();
+  const { credentials, online } = useAppData();
+  const { runSync } = useAppActions();
   const [opened, setOpened] = useState(defaultOpen);
   const [review, setReview] = useState<NameReview | null>(null);
   const [title, setTitle] = useState("");

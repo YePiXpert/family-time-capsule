@@ -6,13 +6,13 @@ import { JournalArtwork } from "../components/JournalArtwork";
 import { JournalIcon } from "../components/JournalIcon";
 import { Button, Chip } from "../components/ui";
 import { ApiError, requestMobileJson } from "../api/client";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
 import { journalType } from "../design/tokens";
 import { useColorTheme, useSharedStyles } from "../theme";
 import { growthErrorMessage, type GrowthOverview } from "./types";
 export function GrowthBookCard() {
-  const { credentials, family, viewer } = useApp();
+  const { credentials, family, viewer } = useAppData();
   const navigation = useNavigation<AppNavigation>();
   const { colors } = useColorTheme();
   const s = useSharedStyles();

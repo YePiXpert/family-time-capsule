@@ -5,7 +5,7 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } fro
 import { memoryCacheScope } from "../memories/cache-scope";
 import { ApiError, confirmMobileInbox, fetchMobileInbox, mergeMobileInbox, patchMobileInbox } from "../api/client";
 import { DateTimeField } from "../components/DateTimeField";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import type { AppNavigation } from "../navigation/types";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
@@ -17,7 +17,7 @@ import { OrganizerPanel } from "../ai/OrganizerPanel";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 
 export function InboxScreen() {
-  const { credentials, viewer, family } = useApp();
+  const { credentials, viewer, family } = useAppData();
   return <InboxContent key={memoryCacheScope(credentials, viewer?.id, family?.id)} />;
 }
 
@@ -25,7 +25,8 @@ function InboxContent() {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const navigation = useNavigation<AppNavigation>();
-  const { credentials, people, runSync, viewer } = useApp();
+  const { credentials, people, viewer } = useAppData();
+  const { runSync } = useAppActions();
   const generation = useRef(0);
   const canReview = canReviewMobileInbox(viewer);
   const [entries, setEntries] = useState<MobileInboxEntry[]>([]);

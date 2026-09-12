@@ -7,7 +7,7 @@ vi.mock("react-native", () => ({ Pressable: "Pressable", ScrollView: "ScrollView
 vi.mock("@react-navigation/native", () => ({ useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]) }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => `intake-screen-${++mocks.sequence}` }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => ({ credentials: { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "fictional" }, userId: mocks.account, family: { id: "family", name: "测试家庭" }, viewer: { role: mocks.viewer ? "viewer" : "admin", canCapture: !mocks.viewer }, queued: mocks.queued, grantSyncConsent: mocks.consent, syncConsent: null }) }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials: { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "fictional" }, userId: mocks.account, family: { id: "family", name: "测试家庭" }, viewer: { role: mocks.viewer ? "viewer" : "admin", canCapture: !mocks.viewer }, queued: mocks.queued, grantSyncConsent: mocks.consent, syncConsent: null }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 const { initializeLocalStore, ingestLocalImportSession } = await import("../src/storage/database");
 const { LocalIntakeScreen } = await import("../src/screens/LocalIntakeScreen");
 const { listLocalDrafts } = await import("../src/drafts/store");

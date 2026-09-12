@@ -1,14 +1,15 @@
+import { useJournalContentInset } from "../navigation/dock-metrics";
 import { growthStages, eventGrowthStage } from "../design/growth-stages";
 import { calendarDate } from "../utils/calendar";
 import { growthHeading } from "../design/growth";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePendingImports } from "./PendingScreen";
 import { Text } from "../components/typography";
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
-import { Animated, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { useApp } from "../state/AppContext";
-import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { useAppData, useAppActions } from "../state/AppContext";
+import { CollapsingHero } from "../components/CollapsingHero";
 import { useContextMenu } from "../components/ContextMenu";
 import { SwipeActions } from "../components/SwipeActions";
 import { TimelineCard } from "../components/TimelineCard";
@@ -17,6 +18,7 @@ import { JournalIcon } from "../components/JournalIcon";
 import { Button, Chip, EmptyState, IconButton, Pill } from "../components/ui";
 import { useColorTheme } from "../theme";
 import { journalRadius, journalSpace } from "../design/tokens";
+import type { LocalTimelineEvent } from "../types";
 import type { AppNavigation } from "../navigation/types";
 
 export function TimelineScreen() {
@@ -31,42 +33,60 @@ export function TimelineScreen() {
     family,
     home,
     outbox,
-    syncing,
-    runSync,
-    reloadLocal,
     viewer,
     people,
-  } = useApp();
+  } = useAppData();
+  const { runSync, reloadLocal } = useAppActions();
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await (credentials ? runSync() : reloadLocal()); }
+    finally { setRefreshing(false); }
+  }, [credentials, runSync, reloadLocal]);
   // 收件箱不再是主导航(M1):「记忆」页头部保留整理入口,数量来自最近一次同步。
   const imports = usePendingImports();
   const insets = useSafeAreaInsets();
+  const contentBottom = useJournalContentInset();
   const { colors } = useColorTheme();
-  const { scrollY, onScroll } = useCollapsingHeroScroll();
   const { openMenu, menuElement } = useContextMenu();
   const growth = growthHeading(people ?? [], new Date(), family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   const child = people?.find(p => p.id === growth.childId);
+  const childBirthDate = child?.birthDate ?? null;
   const timezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const stages = growthStages(child?.birthDate ?? null, new Date(), timezone);
+  const today = calendarDate(new Date(), timezone);
+  const stages = useMemo(() => growthStages(childBirthDate, new Date(today + "T00:00:00Z"), "UTC"), [childBirthDate, today]);
   const stage = stages.find(s => s.key === stageKey);
-  const belongsToChild = (event: typeof events[number]) => event.childPersonId ? event.childPersonId === growth.childId : event.participantIds?.length ? event.participantIds.includes(growth.childId ?? "") : (people ?? []).filter(p => p.isChild).length === 1 && event.participantNames.length === 0;
-  const visibleEvents = events.filter(event => {
+  const childCount = (people ?? []).filter(person => person.isChild).length;
+  const belongsToChild = useCallback((event: LocalTimelineEvent) => event.childPersonId ? event.childPersonId === growth.childId : event.participantIds?.length ? event.participantIds.includes(growth.childId ?? "") : childCount === 1 && event.participantNames.length === 0, [growth.childId, childCount]);
+  const visibleEvents = useMemo(() => events.filter(event => {
     if (important && !event.milestoneType) return false;
     if (!stage) return true;
     if (!belongsToChild(event)) return false;
     if (!["exact", "approximate", "date_only"].includes(event.occurredAtPrecision)) return false;
     try { const day = calendarDate(new Date(event.occurredAt), timezone); return day >= stage.from && day < stage.before; } catch { return false; }
-  });
-  const groupLabel = (event: typeof events[number]) => stage?.label ?? (child?.birthDate && belongsToChild(event) ? eventGrowthStage(child.birthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : "成长点滴");
+  }), [events, important, stage, belongsToChild, timezone]);
+  const groupHeaders = useMemo(() => {
+    const labels = visibleEvents.map(event => stage?.label ?? (childBirthDate && belongsToChild(event) ? eventGrowthStage(childBirthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : "成长点滴"));
+    return labels.map((label, index) => label === labels[index - 1] ? null : label);
+  }, [visibleEvents, stage, childBirthDate, belongsToChild, timezone]);
+  const selectedIds = useMemo(() => new Set(selected), [selected]);
+  const toggleSelected = useCallback((id: string) => setSelected(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id]), []);
+  const enterSelection = useCallback((id: string) => { setSelecting(true); setSelected([id]); }, []);
+  const renderItem = useCallback(({ item, index }: { item: LocalTimelineEvent; index: number }) => (
+    <TimelineRow item={item} groupLabel={groupHeaders[index] ?? null} canEdit={Boolean(viewer?.canEditEvents)} timeZone={family?.timezone} selected={selecting && item.source === "server" ? selectedIds.has(item.id) : undefined} toggleSelected={toggleSelected} enterSelection={enterSelection} openMenu={openMenu} />
+  ), [groupHeaders, viewer?.canEditEvents, family?.timezone, selecting, selectedIds, toggleSelected, enterSelection, openMenu]);
   const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
-      <Animated.FlatList
-        onScroll={onScroll}
-        scrollEventThrottle={16}
+      <FlatList
+        testID="timeline-list"
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
+        maintainVisibleContentPosition={{ minIndexForVisible: 1 }}
         contentContainerStyle={{
           padding: journalSpace.page,
           paddingTop: insets.top + 20,
-          paddingBottom: 210,
+          paddingBottom: contentBottom,
           gap: 18,
           ...(events.length === 0 ? { flexGrow: 1 } : {}),
         }}
@@ -84,12 +104,12 @@ export function TimelineScreen() {
         <View style={{ gap: 20 }}>
           {/* Hero：宝宝是主角——名字、真实月龄、一句话寄语，插画融入右侧 */}
           <CollapsingHero
+            testID="timeline-heading"
             eyebrow="一点一滴，慢慢长大"
             title={growth.title}
             subtitle="留下今天，送给长大的你。"
             pill={growth.age ? <Pill label={growth.age} icon="growth" /> : null}
             accessory={<JournalArtwork kind="keepsake" compact />}
-            scrollY={scrollY}
           />
 
           {/* 月龄轨迹：轻量胶囊，内容为主角 */}
@@ -137,72 +157,55 @@ export function TimelineScreen() {
       }
       refreshControl={
         <RefreshControl
-          refreshing={syncing}
+          refreshing={refreshing}
           tintColor={colors.coral}
-          onRefresh={() => void (credentials ? runSync() : reloadLocal())}
+          onRefresh={() => void refresh()}
         />
       }
-      renderItem={({ item, index }) => {
-        const canOrganize = item.source === "server" && Boolean(viewer?.canEditEvents);
-        const enterSelection = () => { setSelecting(true); setSelected([item.id]); };
-        const openCardMenu = (event: { nativeEvent: { pageX: number; pageY: number } }) => {
-          if (canOrganize) enterSelection();
-          openMenu([
-            ...(canOrganize ? [
-              { key: "collect", label: "加入合集", icon: "image" as const, onPress: () => navigation.navigate("Collections", { eventIds: [item.id] }) },
-              { key: "select", label: "选择", icon: "check" as const, onPress: enterSelection },
-            ] : []),
-            { key: "detail", label: "查看详情", icon: "chevron-right" as const, onPress: () => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : item.localDraftId ? navigation.navigate("Capture", { localDraftId: item.localDraftId }) : navigation.navigate("LocalCapture", { captureId: item.id }) },
-          ], { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
-        };
-        const card = (
-          <TimelineCard
-            item={item}
-            timeZone={item.source === "server" ? family?.timezone : undefined}
-            selected={selecting && item.source === "server" ? selected.includes(item.id) : undefined}
-            onLongPress={openCardMenu}
-            onPress={() =>
-              selecting && item.source === "server"
-                ? setSelected((ids) =>
-                    ids.includes(item.id)
-                      ? ids.filter((id) => id !== item.id)
-                      : [...ids, item.id],
-                  )
-                : item.source === "server"
-                  ? navigation.navigate("Memory", { id: item.id })
-                  : item.localDraftId ? navigation.navigate("Capture", { localDraftId: item.localDraftId })
-                  : navigation.navigate("LocalCapture", { captureId: item.id })
-            }
-          />
-        );
-        return (
-          <View>
-            {index === 0 || groupLabel(visibleEvents[index - 1]!) !== groupLabel(item) ? (
-              <View style={styles.groupHeader}>
-                <Text accessibilityRole="header" style={[styles.groupLabel, { color: colors.muted }]}>{groupLabel(item)}</Text>
-                <View style={[styles.groupRule, { backgroundColor: colors.line }]} />
-              </View>
-            ) : null}
-            {canOrganize ? (
-              <SwipeActions
-                actions={[
-                  { key: "collect", label: "加入合集", color: colors.sage, onPress: () => navigation.navigate("Collections", { eventIds: [item.id] }) },
-                  { key: "select", label: "选择", color: colors.coral, onPress: enterSelection },
-                ]}
-              >
-                {card}
-              </SwipeActions>
-            ) : card}
-          </View>
-        );
-      }}
+      renderItem={renderItem}
         style={{ flex: 1, backgroundColor: colors.paper }}
       />
-      <CollapsingHeroBar title="成长" scrollY={scrollY} topInset={insets.top} />
+
       {menuElement}
     </View>
   );
 }
+
+/** Stable rows avoid rebuilding swipe actions when another record or sync status changes. */
+const TimelineRow = memo(function TimelineRow({ item, groupLabel, canEdit, timeZone, selected, toggleSelected, enterSelection, openMenu }: {
+  item: LocalTimelineEvent;
+  groupLabel: string | null;
+  canEdit: boolean;
+  timeZone?: string;
+  selected?: boolean;
+  toggleSelected: (id: string) => void;
+  enterSelection: (id: string) => void;
+  openMenu: ReturnType<typeof useContextMenu>["openMenu"];
+}) {
+  const navigation = useNavigation<AppNavigation>();
+  const { colors } = useColorTheme();
+  const canOrganize = item.source === "server" && canEdit;
+  const open = () => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : item.localDraftId ? navigation.navigate("Capture", { localDraftId: item.localDraftId }) : navigation.navigate("LocalCapture", { captureId: item.id });
+  const select = () => enterSelection(item.id);
+  const collect = () => navigation.navigate("Collections", { eventIds: [item.id] });
+  const card = <TimelineCard item={item} timeZone={item.source === "server" ? timeZone : undefined} selected={selected} onPress={() => selected !== undefined ? toggleSelected(item.id) : open()} onLongPress={event => {
+    if (canOrganize) select();
+    openMenu([
+      ...(canOrganize ? [
+        { key: "collect", label: "加入合集", icon: "image" as const, onPress: collect },
+        { key: "select", label: "选择", icon: "check" as const, onPress: select },
+      ] : []),
+      { key: "detail", label: "查看详情", icon: "chevron-right" as const, onPress: open },
+    ], { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+  }} />;
+  return <View>
+    {groupLabel ? <View style={styles.groupHeader}><Text accessibilityRole="header" style={[styles.groupLabel, { color: colors.muted }]}>{groupLabel}</Text><View style={[styles.groupRule, { backgroundColor: colors.line }]} /></View> : null}
+    {canOrganize ? <SwipeActions actions={[
+      { key: "collect", label: "加入合集", color: colors.sage, onPress: collect },
+      { key: "select", label: "选择", color: colors.coral, onPress: select },
+    ]}>{card}</SwipeActions> : card}
+  </View>;
+});
 
 const styles = StyleSheet.create({
   toolRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 },

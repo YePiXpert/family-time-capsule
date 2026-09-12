@@ -19,12 +19,10 @@ vi.mock("@react-navigation/native", () => ({
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
 vi.mock("../src/contributions/VoiceContribution", () => ({ NativeVoiceContribution: () => null }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: "NativeMediaReader" }));
-vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({
     credentials: mocks.credentials, events: mocks.events, family: { id: mocks.family, timezone: "UTC" },
     online: mocks.online, people: [], viewer: { id: mocks.user, role: "viewer", canCreateContributions: false },
-  }),
-}));
+  }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", async (original) => ({ ...await original<object>(), fetchMobileMemory: mocks.fetch }));
 const store = await import("../src/storage/database");
 const { getRawMockDatabase } = await import("../../tests/mocks/expo-sqlite");

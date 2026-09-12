@@ -85,7 +85,7 @@ vi.mock("react-native", async () => {
 });
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => mocks.navigation }));
 vi.mock("@react-navigation/native-stack", () => ({}));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => mocks.app }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => mocks.app; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", () => ({
   ApiError: class ApiError extends Error {
     constructor(message: string, readonly status: number) { super(message); }

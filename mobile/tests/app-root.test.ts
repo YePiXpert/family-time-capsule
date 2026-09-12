@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
 vi.mock("react-native", () => ({ View: "View", ActivityIndicator: "ActivityIndicator", StyleSheet: { create: (v: unknown) => v }, useColorScheme: () => state.system }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 48, bottom: 34 }) }));
 vi.mock("expo-status-bar", () => ({ StatusBar: "StatusBar" }));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => state.app }));
+vi.mock("../src/state/AppContext", () => { const useApp = () => state.app; return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/navigation/AppNavigator", () => ({ AppNavigator: "AppNavigator" }));
 vi.mock("../src/screens/WelcomeFlow", () => ({ WelcomeFlow: "WelcomeFlow", OnboardingGate: "OnboardingGate" }));
 vi.mock("../src/screens/SyncConsentScreen", () => ({ SyncConsentScreen: "SyncConsentScreen" }));

@@ -5,7 +5,7 @@ import { randomUUID } from "expo-crypto";
 import { Text } from "../components/typography";
 import { RecordingMeter } from "../components/RecordingMeter";
 import { NativeMediaReader } from "../media/NativeMediaReader";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { requestMobileJson } from "../api/client";
 import { emptyDraftContent } from "../drafts/model";
 import { listLocalDrafts, saveLocalDraft, type LocalDraft } from "../drafts/store";
@@ -17,7 +17,7 @@ type VoiceDraft = LocalDraft & { voice: VoiceReceipt; voicePayload: MediaCapture
 const visibilityLabels = { family: "全家可见", private: "仅自己", parents: "父母可见", child_later: "留给孩子将来" };
 export function NativeVoiceContribution({ memoryId, authorPersonId, authorName, visibility, onSaved, onRestoreSelection }: { memoryId: string; authorPersonId: string; authorName: string; visibility: VoiceReceipt["visibility"]; onSaved: () => Promise<void>; onRestoreSelection: (voice: VoiceReceipt) => void }) {
   const s = useSharedStyles();
-  const { credentials, family, viewer } = useApp();
+  const { credentials, family, viewer } = useAppData();
   const scope = JSON.stringify([credentials?.serverUrl, credentials?.instanceId, viewer?.id, family?.id, "voice", memoryId]);
   const identity = useRef(scope);
   useLayoutEffect(() => { identity.current = scope; return () => { identity.current = ""; }; }, [scope]);

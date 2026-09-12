@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ApiError, searchMobile, type MobileSearchFilterInput } from "../api/client";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import type { RootStackParamList } from "../navigation/types";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
@@ -46,7 +46,7 @@ const QUERY_MAX = 100;
 export function SearchScreen({ navigation }: Props) {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
-  const { credentials, online, viewer, family, people } = useApp();
+  const { credentials, online, viewer, family, people } = useAppData();
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [activeFiltersKey, setActiveFiltersKey] = useState("");

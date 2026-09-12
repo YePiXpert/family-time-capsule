@@ -25,7 +25,10 @@ vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
   useNavigation: () => ({ navigate: mocks.navigate }),
 }));
-vi.mock("../src/state/AppContext", () => ({ useApp: () => mocks.state }));
+vi.mock("../src/state/AppContext", () => ((() => {
+  const mock = { useApp: () => mocks.state };
+  return { ...mock, useAppData: mock.useApp, useAppActions: mock.useApp, useSyncStatus: mock.useApp };
+})()));
 vi.mock("../src/storage/database", () => ({ getMeta: vi.fn(), setMeta: vi.fn(), deleteMeta: vi.fn() }));
 vi.mock("../src/api/client", async original => ({ ...await original<object>(), fetchAiSettings: mocks.fetch }));
 const { AiSettingsSection } = await import("../src/ai/AiSettingsSection");

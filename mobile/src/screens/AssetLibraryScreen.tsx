@@ -4,7 +4,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Image, Pressable, ScrollView, View } from "react-native";
 import * as Crypto from "expo-crypto";
 import { requestMobileJson } from "../api/client";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { OrganizerPanel } from "../ai/OrganizerPanel";
@@ -18,7 +18,7 @@ const labels: Record<string, string> = { image: "照片", video: "视频", audio
 function Button({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) { const s = useSharedStyles(); return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.secondaryButton, disabled && s.disabled]}><Text style={s.secondaryText}>{title}</Text></Pressable>; }
 export function NativeLibraryActions({ ids, canWrite, onDone }: { ids: string[]; canWrite: boolean; onDone?: () => void }) {
   const s = useSharedStyles();
-  const { credentials } = useApp(), navigation = useNavigation<AppNavigation>();
+  const { credentials } = useAppData(), navigation = useNavigation<AppNavigation>();
   const [mode, setMode] = useState<"draft" | "memory" | "collection" | null>(null), [targets, setTargets] = useState<{ id: string; title: string; revision?: number }[]>([]), [cursor, setCursor] = useState<string | null>(null), [query, setQuery] = useState(""), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const load = async (kind: "draft" | "memory" | "collection", next = "") => {
     if (!credentials) return;
@@ -41,12 +41,12 @@ export function NativeLibraryActions({ ids, canWrite, onDone }: { ids: string[];
   return <View style={s.card}><Text style={s.body}>已选 {ids.length} 份资料</Text><Button disabled={!ids.length || busy} title="加入一条新记忆" onPress={() => void add("draft", Crypto.randomUUID())} /><Button disabled={!ids.length || busy} title="加入已有草稿" onPress={() => void load("draft")} />{canWrite && <><Button disabled={!ids.length || busy} title="加入已有记忆" onPress={() => { setMode("memory"); setTargets([]); }} /><Button disabled={!ids.length || busy} title="加入相册" onPress={() => void load("collection")} /></>}{mode === "memory" && <><TextInput accessibilityLabel="搜索要加入的记忆" placeholder="输入标题或文字" style={s.input} value={query} onChangeText={setQuery} /><Button title="查找记忆" onPress={() => void load("memory")} /></>}{mode && <>{targets.map(target => <Button key={target.id} title={target.title} disabled={busy} onPress={() => void add(mode, target.id, target.revision)} />)}{cursor && <Button title="继续查找" onPress={() => void load(mode, cursor)} />}<Button title="收起选择" onPress={() => setMode(null)} /></>}{message ? <Text accessibilityRole="alert" style={s.body}>{message}</Text> : null}</View>;
 }
 export function AssetLibraryScreen() {
-  const { credentials, userId, family, viewer } = useApp();
+  const { credentials, userId, family, viewer } = useAppData();
   return <Library key={`${memoryCacheScope(credentials, userId ?? undefined, family?.id) ?? "local"}:${viewer?.role}:${viewer?.canEditEvents}`} />;
 }
 function Library() {
   const s = useSharedStyles();
-  const { credentials, family } = useApp(), navigation = useNavigation<AppNavigation>();
+  const { credentials, family } = useAppData(), navigation = useNavigation<AppNavigation>();
   const [page, setPage] = useState<LibraryPage | null>(null), [selected, setSelected] = useState<string[]>([]), [type, setType] = useState(""), [error, setError] = useState("");
   const generation = useRef(0);
   const load = useCallback(async (cursor = "") => {
@@ -64,12 +64,12 @@ function Library() {
   return <ScrollView style={s.screen} contentContainerStyle={s.content}><Text style={s.intro}>所有保留下来的原件，随时可以打开，稍后再整理。</Text><View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{["", "image", "video", "audio", "document"].map(value => <Button key={value} title={labels[value] ?? "全部"} onPress={() => { setType(value); setSelected([]); }} />)}</View>{error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}{page?.pendingDeletions.map(row => <View key={row.id} style={s.card}><Text accessibilityRole="alert" style={s.body}>原件已移出资料库，但磁盘清理尚未完成。请重试或联系维护者。</Text><Button title="重试清理已删除原件" onPress={() => void retryDeletion(row.id)} /></View>)}<Button title="刷新资料" onPress={() => void load()} />{page?.canCapture && <NativeLibraryActions ids={selected} canWrite={page.canWrite} onDone={() => void load()} />}{page?.entries.map(item => <View key={item.id} style={s.card}>{page.canCapture && <Pressable accessibilityRole="checkbox" accessibilityLabel={`选择 ${item.title}`} accessibilityState={{ checked: selected.includes(item.id) }} style={s.secondaryButton} onPress={() => setSelected(old => old.includes(item.id) ? old.filter(id => id !== item.id) : [...old, item.id])}><Text style={s.secondaryText}>{selected.includes(item.id) ? "已选" : "选择"}</Text></Pressable>}<Pressable accessibilityRole="button" onPress={() => navigation.navigate("AssetDetail", { id: item.id })}>{item.previewId && credentials && <Image accessibilityLabel={item.title} source={{ uri: `${credentials.serverUrl}/api/media/${item.previewId}`, headers: { Authorization: `Bearer ${credentials.token}` } }} style={{ width: "100%", height: 200 }} resizeMode="contain" />}<Text style={s.cardTitle}>{item.title}</Text><Text style={s.body}>{labels[item.type]} · {item.capturedAt ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeZone: family?.timezone }).format(new Date(item.capturedAt)) : "时间待补"}</Text><Text style={s.body}>{item.referenced ? "已被记忆引用" : "尚未加入记忆"} · 服务器已收到 · {labels[item.aiState] ?? "AI 状态待核对"}</Text></Pressable></View>)}{page && !page.entries.length && <Text style={s.body}>还没有资料，可以先记录或导入。</Text>}{page?.nextCursor && <Button title="更多资料" onPress={() => void load(page.nextCursor!)} />}</ScrollView>;
 }
 export function AssetDetailScreen({ route }: { route: { params: { id: string } } }) {
-  const { credentials, userId, family, viewer } = useApp();
+  const { credentials, userId, family, viewer } = useAppData();
   return <Detail key={`${memoryCacheScope(credentials, userId ?? undefined, family?.id)}:${route.params.id}:${viewer?.role}:${viewer?.canEditEvents}`} id={route.params.id} />;
 }
 function Detail({ id }: { id: string }) {
   const s = useSharedStyles();
-  const { credentials, family, people } = useApp(), navigation = useNavigation<AppNavigation>();
+  const { credentials, family, people } = useAppData(), navigation = useNavigation<AppNavigation>();
   const confirm = useConfirmSheet();
   const [asset, setAsset] = useState<LibraryDetail | null>(null), [at, setAt] = useState(""), [ids, setIds] = useState<string[]>([]), [technical, setTechnical] = useState(false), [message, setMessage] = useState("");
   const timezone = family?.timezone ?? "UTC";

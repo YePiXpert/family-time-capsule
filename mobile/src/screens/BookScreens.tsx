@@ -1,3 +1,4 @@
+import { useJournalContentInset, useJournalTitleInset } from "../navigation/dock-metrics";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { GrowthBookCard } from "../growth/GrowthBookCard";
 import { FocusedImage } from "../components/FocusedImage";
@@ -9,7 +10,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useFocusEffect, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { randomUUID } from "expo-crypto";
-import { Alert, Animated, Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchBook,
@@ -26,11 +27,11 @@ import {
   type BookBlock,
 } from "../books/types";
 import type { RootStackParamList } from "../navigation/types";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import { useColorTheme, useSharedStyles } from "../theme";
 import { journalRadius, journalShadow, journalType } from "../design/tokens";
 import { useConfirmSheet } from "../components/GlassSheet";
-import { CollapsingHero, CollapsingHeroBar, useCollapsingHeroScroll } from "../components/CollapsingHero";
+import { CollapsingHero } from "../components/CollapsingHero";
 import { haptics } from "../design/haptics";
 import {
   Button,
@@ -136,7 +137,7 @@ function BookCoverCell({
         haptics.selection();
         onPress();
       }}
-      style={({ pressed }) => [{ width: "48%", gap: 8 }, pressed && { transform: [{ scale: 0.97 }] }]}
+      style={({ pressed }) => [{ width: "48%", gap: 8 }, pressed && { opacity: 0.72 }]}
     >
       <View
         style={{
@@ -189,10 +190,10 @@ function BookCoverCell({
 }
 
 export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Books">["navigation"], "navigate"> }) {
-  const { credentials, family, viewer } = useApp();
-  const insets = useSafeAreaInsets();
+  const { credentials, family, viewer } = useAppData();
+  const contentBottom = useJournalContentInset();
+  const titleInset = useJournalTitleInset();
   const s = useSharedStyles();
-  const { scrollY, onScroll } = useCollapsingHeroScroll();
   const [page, setPage] = useState<BookPage | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -204,17 +205,14 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
   }, [credentials, deleted]);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   return <View style={s.screen}>
-    <Animated.ScrollView
-      onScroll={onScroll}
-      scrollEventThrottle={16}
+    <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={[s.content, { paddingTop: insets.top + 20 }]}
+      contentContainerStyle={[s.content, { paddingTop: titleInset + 20, paddingBottom: contentBottom }]}
     >
     <CollapsingHero
       eyebrow="一本一本，慢慢攒"
       title="成长册"
       subtitle="把一段时间，订成一本可以翻的书。"
-      scrollY={scrollY}
     />
     {!deleted && !creating ? <GrowthBookCard key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, family?.id, viewer?.id])} /> : null}
     <SectionHeader title="我的书架" />
@@ -242,15 +240,15 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
       <ListRow icon={deleted ? "arrow-left" : "trash"} title={deleted ? "返回家庭书" : "作品回收站"} onPress={() => { setDeleted(value => !value); setCreating(false); }} />
       <ListRow icon="settings" title="刷新" onPress={() => void load()} last />
     </ListGroup>
-    </Animated.ScrollView>
-    <CollapsingHeroBar title="成长册" scrollY={scrollY} topInset={insets.top} />
+    </ScrollView>
+
   </View>;
 }
 export function BookDetailScreen({
   navigation,
   route,
 }: NativeStackScreenProps<RootStackParamList, "BookDetail">) {
-  const { credentials } = useApp();
+  const { credentials } = useAppData();
   const insets = useSafeAreaInsets();
   const s = useSharedStyles();
   const { colors } = useColorTheme();

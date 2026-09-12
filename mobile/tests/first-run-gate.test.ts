@@ -1,10 +1,12 @@
-import { createElement, useEffect } from "react";
+import { createElement, Fragment, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { LocalTimelineEvent } from "../src/types";
 
 const mocks = vi.hoisted(() => ({
   sync: vi.fn(), fetchMe: vi.fn(), submitOnboarding: vi.fn(),
   saveCredentials: vi.fn(), signOut: vi.fn(),
+  events: [] as LocalTimelineEvent[], lastSyncAt: null as string | null,
 }));
 
 vi.mock("react-native", () => ({ AppState: { addEventListener: () => ({ remove() {} }) } }));
@@ -14,8 +16,8 @@ vi.mock("../src/sync/sync", () => ({ syncArchive: mocks.sync }));
 vi.mock("../src/storage/database", () => ({
   cacheMobileHome: vi.fn(), cacheMobileReview: vi.fn(), clearLocalArchive: vi.fn(),
   getCachedFamily: async () => null, getCachedMobileHome: async () => null, getCachedViewer: async () => null,
-  getMeta: async (key: string) => (key === "welcome_done" ? "1" : null),
-  listCachedPeople: async () => [], listOutbox: async () => [], listTimeline: async () => [],
+  getMeta: async (key: string) => key === "welcome_done" ? "1" : key === "last_sync_at" ? mocks.lastSyncAt : null,
+  listCachedPeople: async () => [], listOutbox: async () => [], listTimeline: async () => structuredClone(mocks.events),
   removeOutboxItem: vi.fn(), setMeta: vi.fn(),
   getSyncConsent: async () => null, setSyncConsent: vi.fn(),
   getActiveDestination: async () => null, setActiveDestination: vi.fn(),
@@ -36,11 +38,16 @@ vi.mock("../src/native/intake", () => ({ drainNativeShareIntake: async () => ({ 
 vi.mock("../../mobile/modules/share-intake/src", () => ({ subscribeToPendingNativeShares: () => () => {} }));
 vi.mock("../src/notifications/review-reminders", () => ({ reconcileWeeklyReviewReminder: async () => {} }));
 
-const { AppProvider, useApp } = await import("../src/state/AppContext");
+const { AppProvider, useApp, useAppData, useAppActions, useSyncStatus } = await import("../src/state/AppContext");
 const { ApiError } = await import("../src/api/client");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let app: ReturnType<typeof useApp>;
+let data: ReturnType<typeof useAppData>;
+let dataRenders = 0, actionRenders = 0, statusRenders = 0;
+function DataProbe() { const current = useAppData(); useEffect(() => { data = current; dataRenders++; }); return null; }
+function ActionsProbe() { useAppActions(); useEffect(() => { actionRenders++; }); return null; }
+function StatusProbe() { useSyncStatus(); useEffect(() => { statusRenders++; }); return null; }
 function Probe() {
   const current = useApp();
   useEffect(() => { app = current; }, [current]);
@@ -52,6 +59,9 @@ const credentials = { serverUrl: "https://example.test", token: "fictional-sessi
 const summary = { uploadedCount: 0, failedCount: 0, eventCount: 0 };
 
 beforeEach(() => {
+  mocks.events = [];
+  mocks.lastSyncAt = null;
+  dataRenders = actionRenders = statusRenders = 0;
   vi.resetAllMocks();
   vi.useFakeTimers();
   mocks.sync.mockResolvedValue(summary);
@@ -73,7 +83,8 @@ afterEach(async () => {
 
 async function open(initial: typeof credentials | null = credentials) {
   await act(async () => {
-    tree = create(createElement(AppProvider, { initialCredentials: initial }, createElement(Probe)));
+    tree = create(createElement(AppProvider, { initialCredentials: initial },
+      createElement(Fragment, null, createElement(Probe), createElement(DataProbe), createElement(ActionsProbe), createElement(StatusProbe))));
   });
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
 }
@@ -129,4 +140,32 @@ it("同步返回 401 时用 /me 区分“待初始化”与“会话失效”", 
 it("欢迎页状态从本机读取：已处理过则不再弹出", async () => {
   await open();
   expect(app.welcomeSeen).toBe(true);
+});
+
+it("background sync and identical SQLite snapshots leave archive readers and actions unchanged", async () => {
+  const row = (id: string): LocalTimelineEvent => ({
+    id, title: id, bodyText: "保留这段回忆", occurredAt: "2026-09-01T00:00:00.000Z", occurredAtPrecision: "exact",
+    updatedAt: "2026-09-01T00:00:00.000Z", locationText: null, childPersonId: null, ageDays: null, ageLabel: null,
+    assetCount: 0, participantNames: [], captureIds: [], cover: null, localCoverUri: null, source: "server", syncState: null,
+  });
+  mocks.events = [row("first"), row("second")];
+  await open();
+  const initialData = data!, initialCounts = { dataRenders, actionRenders, statusRenders };
+  await act(async () => { app.dismissMessage(); });
+  mocks.lastSyncAt = "2026-09-12T00:00:00.000Z";
+  await act(async () => { await app.reloadLocal(); await app.runSync(); });
+  expect(data!).toBe(initialData);
+  expect(dataRenders).toBe(initialCounts.dataRenders);
+  expect(actionRenders).toBe(initialCounts.actionRenders);
+  expect(statusRenders).toBeGreaterThan(initialCounts.statusRenders);
+
+  // A new record and an edited record still publish, while the existing first
+  // card retains its identity despite moving down after insertion.
+  mocks.events = [row("new"), mocks.events[0]!, { ...mocks.events[1]!, title: "家人补充了这段回忆" }];
+  await act(async () => { await app.reloadLocal(); });
+  expect(data!.events.map(event => event.id)).toEqual(["new", "first", "second"]);
+  expect(data!.events[1]).toBe(initialData.events[0]);
+  expect(data!.events[2]).not.toBe(initialData.events[1]);
+  expect(data!.events[2]?.title).toBe("家人补充了这段回忆");
+  expect(actionRenders).toBe(initialCounts.actionRenders);
 });

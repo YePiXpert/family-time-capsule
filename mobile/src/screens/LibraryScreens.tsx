@@ -14,7 +14,7 @@ import {
   mutateMobileLibraryItem,
 } from "../api/client";
 import type { RootStackParamList } from "../navigation/types";
-import { useApp } from "../state/AppContext";
+import { useAppData } from "../state/AppContext";
 import {
   deleteMeta,
   cacheMobileLibraryDetail,
@@ -60,7 +60,7 @@ function records(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
-function canWriteDomain(domain: MobileLibraryDomain, viewer: ReturnType<typeof useApp>["viewer"]): boolean {
+function canWriteDomain(domain: MobileLibraryDomain, viewer: ReturnType<typeof useAppData>["viewer"]): boolean {
   if (!viewer) return false;
   if (domain === "people") return viewer.role === "owner" || viewer.role === "admin";
   return viewer.canCapture;
@@ -87,7 +87,7 @@ function statusLabel(status: string | null): string {
 }
 
 function useLibraryPage(domain: MobileLibraryDomain) {
-  const { credentials } = useApp();
+  const { credentials } = useAppData();
   const epoch = useServerCacheRevision();
   const currentKey = JSON.stringify([credentials, domain, epoch]);
   const activeKey = useRef(currentKey);
@@ -173,7 +173,7 @@ function LibraryListScreen({
 }
 
 function useCreate(domain: MobileLibraryDomain, onCreated?: (id: string, token?: string) => void) {
-  const { credentials, online } = useApp();
+  const { credentials, online } = useAppData();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = async (input: Record<string, unknown>) => {
@@ -199,7 +199,7 @@ function useCreate(domain: MobileLibraryDomain, onCreated?: (id: string, token?:
 function InlineCreate({ domain }: { domain: "people" }) {
   const s = useSharedStyles();
   const navigation = useNavigation<Navigation>();
-  const { viewer } = useApp();
+  const { viewer } = useAppData();
   const [expanded, setExpanded] = useState(false);
   const [name, setName] = useState("");
   const [relation, setRelation] = useState("");
@@ -222,7 +222,7 @@ export function ImportSessionsScreen() {
 function LocalImportSessions() {
   const s = useSharedStyles();
   const styles = useThemedStyles();
-  const { credentials, userId, family } = useApp();
+  const { credentials, userId, family } = useAppData();
   const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const [error, setError] = useState<string | null>(null);
   const navigation = useNavigation<Navigation>();
@@ -243,7 +243,7 @@ function LocalImportSessions() {
 }
 
 function useLibraryDetail(domain: MobileLibraryDomain, id: string) {
-  const { credentials } = useApp();
+  const { credentials } = useAppData();
   const epoch = useServerCacheRevision();
   const currentKey = JSON.stringify([credentials, domain, id, epoch]);
   const activeKey = useRef(currentKey);
@@ -285,7 +285,7 @@ function useLibraryDetail(domain: MobileLibraryDomain, id: string) {
 }
 
 function useMutation(domain: MobileLibraryDomain, id: string, reload: () => Promise<void>) {
-  const { credentials, online } = useApp();
+  const { credentials, online } = useAppData();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mutate = async (input: Record<string, unknown>) => {
@@ -321,7 +321,7 @@ type PersonDetailProps = NativeStackScreenProps<RootStackParamList, "PersonDetai
 export function PersonDetailScreen({ route, navigation }: PersonDetailProps) {
   const s = useSharedStyles();
   const styles = useThemedStyles();
-  const { viewer, credentials } = useApp();
+  const { viewer, credentials } = useAppData();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [relation, setRelation] = useState("");

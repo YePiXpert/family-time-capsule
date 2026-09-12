@@ -8,13 +8,14 @@ import { chooseLocalIntake, getLocalIntake, type IntakeDetail } from "../native/
 import { listLocalDrafts, type LocalDraft } from "../drafts/store";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import type { RootStackParamList } from "../navigation/types";
 import { useSharedStyles } from "../theme";
 
 export function LocalIntakeScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "LocalIntake">) {
   const s = useSharedStyles();
-  const { credentials, userId, family, viewer, queued, grantSyncConsent, syncConsent } = useApp();
+  const { credentials, userId, family, viewer, syncConsent } = useAppData();
+  const { queued, grantSyncConsent } = useAppActions();
   const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
   const scopeRef = useRef(scope);
   useLayoutEffect(() => { scopeRef.current = scope; return () => { scopeRef.current = ""; }; }, [scope]);

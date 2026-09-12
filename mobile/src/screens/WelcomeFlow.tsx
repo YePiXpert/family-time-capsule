@@ -12,7 +12,7 @@ import {
   previewInvitation,
   signIn,
 } from "../api/client";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
 import { AccountLoginForm } from "../components/AccountLoginForm";
@@ -92,7 +92,7 @@ function BackButton({ onBack }: { onBack: () => void }) {
 function WelcomeStep({ onChoose }: { onChoose: (step: Step) => void }) {
   const s = useSharedStyles();
   const styles = useThemedStyles();
-  const { setWelcomeSeen } = useApp();
+  const { setWelcomeSeen } = useAppActions();
   return (
     <View style={{ gap: 16, justifyContent: "center", flexGrow: 1 }}>
       <StepHeader
@@ -119,7 +119,7 @@ function WelcomeStep({ onChoose }: { onChoose: (step: Step) => void }) {
 
 function CreateFamilyStep({ onBack }: { onBack: () => void }) {
   const s = useSharedStyles();
-  const { connect } = useApp();
+  const { connect } = useAppActions();
   const [serverUrl, setServerUrl] = useState("");
   const [info, setInfo] = useState<{ serverUrl: string; info: BootstrapInfo } | null>(null);
   const [detecting, setDetecting] = useState(false);
@@ -255,7 +255,7 @@ function CreateFamilyStep({ onBack }: { onBack: () => void }) {
 function JoinFamilyStep({ onBack }: { onBack: () => void }) {
   const s = useSharedStyles();
   const styles = useThemedStyles();
-  const { connect } = useApp();
+  const { connect } = useAppActions();
   const [link, setLink] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -415,7 +415,7 @@ function JoinFamilyStep({ onBack }: { onBack: () => void }) {
 }
 
 function LoginStep({ onBack }: { onBack: () => void }) {
-  const { connect } = useApp();
+  const { connect } = useAppActions();
   return (
     <View style={{ gap: 12 }}>
       <BackButton onBack={onBack} />
@@ -429,7 +429,8 @@ function LoginStep({ onBack }: { onBack: () => void }) {
 export function OnboardingGate() {
   const s = useSharedStyles();
   const styles = useThemedStyles();
-  const { completeOnboarding, disconnect, credentials } = useApp();
+  const { credentials } = useAppData();
+  const { completeOnboarding, disconnect } = useAppActions();
   const [familyName, setFamilyName] = useState("");
   const [childDisplayName, setChildDisplayName] = useState("");
   const [childBirthDate, setChildBirthDate] = useState("");

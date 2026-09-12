@@ -14,7 +14,7 @@ import {
   fetchMobileMemory,
   updateMobileContribution,
 } from "../api/client";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import type { RootStackParamList } from "../navigation/types";
 import {
   cacheMemoryDetail,
@@ -51,7 +51,7 @@ function visibilityLabel(value: MobileContributionVisibility): string {
 }
 
 export function MemoryScreen(props: Props) {
-  const { credentials, viewer, family } = useApp();
+  const { credentials, viewer, family } = useAppData();
   const scope = memoryCacheScope(credentials, viewer?.id, family?.id);
   const permissionRevision = useServerPermissionRevision();
   // Remount before rendering after an account/event change, including any
@@ -62,7 +62,8 @@ export function MemoryScreen(props: Props) {
 function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheScope: string | null }) {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
-  const { credentials, events, family, online, people, viewer, reloadLocal } = useApp();
+  const { credentials, events, family, online, people, viewer } = useAppData();
+  const { reloadLocal } = useAppActions();
   const [memory, setMemory] = useState<MobileMemory | null>(null);
   const [localMedia, setLocalMedia] = useState<LocalMemoryMedia[]>([]);
   const [loading, setLoading] = useState(true);

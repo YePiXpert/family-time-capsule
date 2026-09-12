@@ -8,6 +8,7 @@ import { setHapticsEnabled as applyHapticsEnabled } from "../design/haptics";
 import type { AppContextValue } from "./contracts";
 import type { Credentials, MobileHome, SyncConsent } from "../types";
 import type { ThemeMode } from "../theme";
+import { retainUnchanged } from "./retain-unchanged";
 
 type Identity = {
   credentialsRef: MutableRefObject<Credentials | null>;
@@ -49,9 +50,10 @@ export function useLocalArchive({ credentialsRef, userIdRef, familyIdRef, destGe
       if (!isCurrent()) return;
       consentRef.current = syncConsent;
       applyHapticsEnabled(haptics !== "0");
-      setSnapshot({ events, family, viewer, people, outbox, lastSyncAt, home, syncConsent,
+      const next: Snapshot = { events, family, viewer, people, outbox, lastSyncAt, home, syncConsent,
         welcomeSeen: welcomeDone === "1", displayMode: displayMode === "simple" ? "simple" : "standard",
-        themeMode: themeMode === "light" || themeMode === "dark" ? themeMode : "auto", hapticsEnabled: haptics !== "0" });
+        themeMode: themeMode === "light" || themeMode === "dark" ? themeMode : "auto", hapticsEnabled: haptics !== "0" };
+      setSnapshot(current => retainUnchanged(current, next));
     } catch (error) {
       if (!isCurrent()) return;
       setLocalReadError(error instanceof Error ? error.message : "暂时无法读取本机资料。");
@@ -59,7 +61,7 @@ export function useLocalArchive({ credentialsRef, userIdRef, familyIdRef, destGe
     }
   }, [consentRef, credentialsRef, destGenRef, familyIdRef, userIdRef]);
 
-  const setHome = useCallback((home: MobileHome | null) => setSnapshot(current => ({ ...current, home })), []);
+  const setHome = useCallback((home: MobileHome | null) => setSnapshot(current => retainUnchanged(current, { ...current, home })), []);
   const setSyncConsentState = useCallback((syncConsent: SyncConsent | null) => {
     ++readRevision.current;
     consentRef.current = syncConsent;
