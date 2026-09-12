@@ -53,7 +53,7 @@ export async function chooseLocalIntake(input: {
       || new Set(input.selectedCaptureIds).size !== input.selectedCaptureIds.length)) throw new Error("部分挑选的原件已不可用，请重新打开核对。");
     const selectedIds = new Set(input.selectedCaptureIds ?? available.map(row => row.capture_id));
     const chosen = input.destination === "draft" ? available.filter(row => selectedIds.has(row.capture_id)) : available;
-    if (input.destination === "draft" && !chosen.length) throw new Error("先挑选至少一份内容，再加入草稿。");
+    if (input.destination === "draft" && !chosen.length && !refiningDraft) throw new Error("先挑选至少一份内容，再加入草稿。");
     if (input.coverCaptureId && !chosen.some(row => row.capture_id === input.coverCaptureId && row.media_type === "image")) throw new Error("封面需要从已选照片中指定。");
     const refs = await tx.getAllAsync<{ scope: string; capture_id: string }>(`SELECT DISTINCT d.scope,json_extract(j.value,'$.localCaptureRef') AS capture_id FROM local_draft d,
       json_each(json_extract(d.snapshot_json,'$.content.items')) j

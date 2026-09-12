@@ -3,7 +3,9 @@ import { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Image, Pressable, ScrollView, View } from "react-native";
 import * as Crypto from "expo-crypto";
-import { requestMobileJson } from "../api/client";
+import { mutateCollection, requestMobileJson } from "../api/client";
+import { parseDraftContent, type Draft } from "../drafts/model";
+import type { CollectionDetail } from "../collections/types";
 import { useAppData } from "../state/AppContext";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { NativeMediaReader } from "../media/NativeMediaReader";
@@ -16,7 +18,7 @@ import type { AppNavigation } from "../navigation/types";
 import type { LibraryPage, LibraryDetail } from "../assets/types";
 const labels: Record<string, string> = { image: "照片", video: "视频", audio: "录音", document: "文档", none: "AI 尚未整理", pending: "AI 等待中", running: "AI 整理中", completed: "AI 已处理", failed: "AI 未完成", cancelled: "AI 已取消" };
 function Button({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) { const s = useSharedStyles(); return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.secondaryButton, disabled && s.disabled]}><Text style={s.secondaryText}>{title}</Text></Pressable>; }
-export function NativeLibraryActions({ ids, canWrite, onDone }: { ids: string[]; canWrite: boolean; onDone?: () => void }) {
+export function NativeLibraryActions({ ids, canWrite, onDone, coverAssetId, onNavigate }: { ids: string[]; canWrite: boolean; onDone?: () => void; coverAssetId?: string | null; onNavigate?: () => void }) {
   const s = useSharedStyles();
   const { credentials } = useAppData(), navigation = useNavigation<AppNavigation>();
   const [mode, setMode] = useState<"draft" | "memory" | "collection" | null>(null), [targets, setTargets] = useState<{ id: string; title: string; revision?: number }[]>([]), [cursor, setCursor] = useState<string | null>(null), [query, setQuery] = useState(""), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
@@ -33,8 +35,27 @@ export function NativeLibraryActions({ ids, canWrite, onDone }: { ids: string[];
     if (!credentials) return;
     setBusy(true); setMessage("");
     try {
-      await requestMobileJson(credentials, "/api/mobile/v1/assets", { method: "POST", body: JSON.stringify({ operation, targetId, revision, mutationId: Crypto.randomUUID(), assetIds: ids }) });
-      if (operation === "draft") navigation.navigate("MainTabs", { screen: "Capture", params: { draftId: targetId } });
+      const added = await requestMobileJson(credentials, "/api/mobile/v1/assets", { method: "POST", body: JSON.stringify({ operation, targetId, revision, mutationId: Crypto.randomUUID(), assetIds: ids }) });
+      if (coverAssetId && ids.includes(coverAssetId) && operation !== "memory") {
+        try {
+          if (operation === "draft") {
+            const draft = added as Draft;
+            const content = parseDraftContent(draft);
+            const coverItemId = content.items.find(item => item.assetId === coverAssetId)?.id;
+            if (coverItemId) await requestMobileJson(credentials, `/api/mobile/v1/drafts/${encodeURIComponent(targetId)}`, {
+              method: "PUT", body: JSON.stringify({ expectedRevision: draft.revision, mutationId: Crypto.randomUUID(), content: { ...content, coverItemId } }),
+            });
+          } else {
+            const collection = added as CollectionDetail;
+            await mutateCollection(credentials, targetId, { operation: "save", revision: collection.revision, edit: { ...collection, coverAssetId } });
+          }
+        } catch {
+          setMessage(`所选资料已加入${operation === "draft" ? "草稿" : "相册"}，封面暂未更新；请打开后继续设置。`);
+          onDone?.();
+          return;
+        }
+      }
+      if (operation === "draft") { onNavigate?.(); navigation.navigate("MainTabs", { screen: "Capture", params: { draftId: targetId } }); }
       else { setMessage(`已加入${operation === "memory" ? "记忆" : "相册"}，原件仍在资料库。`); onDone?.(); }
     } catch (error) { setMessage((error as Error).message); } finally { setBusy(false); }
   };

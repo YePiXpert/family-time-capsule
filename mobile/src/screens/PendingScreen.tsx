@@ -17,8 +17,8 @@ import { Button } from "../components/ui";
 import { formatOccurredLabel } from "../utils/occurred-precision";
 
 export function usePendingImports() {
-  const { credentials, userId, family, home } = useAppData();
-  const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
+  const { credentials, userId, viewer, family, home } = useAppData();
+  const scope = memoryEditScope(credentials, userId ?? viewer?.id, family?.id) ?? "local";
   const [state, setState] = useState<{ scope: string; ids: string[] }>({ scope: "", ids: [] });
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -36,7 +36,7 @@ export function PendingScreen() {
   const s = useSharedStyles();
   const navigation = useNavigation<AppNavigation>();
   const { home, viewer, credentials, userId, family } = useAppData();
-  const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
+  const scope = memoryEditScope(credentials, userId ?? viewer?.id, family?.id) ?? "local";
   const [draftState, setDraftState] = useState<{ scope: string; local: LocalDraft[]; remote: Draft[] }>();
   const [draftError, setDraftError] = useState<{ scope: string; message: string }>();
   const memoryScope = memoryEditScope(credentials, viewer?.id, family?.id);

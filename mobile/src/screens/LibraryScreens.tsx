@@ -1,4 +1,6 @@
 import { Text, TextInput } from "../components/typography";
+import { RemoteImportPicker } from "../imports/RemoteImportPicker";
+import { memoryEditScope } from "../memories/edit-model";
 import { getServerCacheRevision, useServerCacheRevision } from "../storage/cache-lifecycle";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -222,8 +224,8 @@ export function ImportSessionsScreen() {
 function LocalImportSessions() {
   const s = useSharedStyles();
   const styles = useThemedStyles();
-  const { credentials, userId, family } = useAppData();
-  const scope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
+  const { credentials, userId, viewer, family } = useAppData();
+  const scope = memoryEditScope(credentials, userId ?? viewer?.id, family?.id) ?? "local";
   const [error, setError] = useState<string | null>(null);
   const navigation = useNavigation<Navigation>();
   const [sessionState, setSessionState] = useState<{ scope: string; rows: Awaited<ReturnType<typeof listLocalImportSessions>> }>({ scope: "", rows: [] });
@@ -361,8 +363,11 @@ type ImportDetailProps = NativeStackScreenProps<RootStackParamList, "ImportSessi
 export function ImportSessionDetailScreen({ route }: ImportDetailProps) {
   const s = useSharedStyles();
   const styles = useThemedStyles();
+  const [picking, setPicking] = useState(false);
   return <DetailShell domain="imports" id={route.params.id}>{(detail, controls) => <>
     <Text style={s.eyebrow}>Import session · {statusLabel(stringValue(detail.status))}</Text><Text style={s.title}>{detail.title}</Text>
+    {booleanValue(detail.canWrite) ? <Pressable accessibilityRole="button" onPress={() => setPicking(true)} style={s.primaryButton}><Text style={s.primaryText}>这次导入，挑几张</Text></Pressable> : null}
+    {picking ? <RemoteImportPicker sessionId={route.params.id} title={detail.title} onClose={() => setPicking(false)} /> : null}
     <Section title="整体进度"><Info label="来源" value={stringValue(detail.source) ?? ""} /><Info label="完成" value={`${String(detail.completedCount ?? 0)}/${String(detail.totalCount ?? 0)}`} /><Info label="失败" value={String(detail.failedCount ?? 0)} /></Section>
     <Section title="文件">{records(detail.items).map((entry) => <View key={stringValue(entry.id)} style={styles.fileRow}><View style={styles.grow}><Text style={styles.itemTitle}>{stringValue(entry.filename) ?? "未命名文件"}</Text><Text style={styles.meta}>{statusLabel(stringValue(entry.status))} · {String(entry.receivedBytes ?? 0)}/{String(entry.totalBytes ?? 0)} bytes</Text>{stringValue(entry.errorCode) ? <Text style={s.error}>{stringValue(entry.errorCode)}</Text> : null}</View>{stringValue(entry.status) === "failed" && stringValue(entry.uploadId) ? <Pressable onPress={() => void controls.mutate({ operation: "retry", uploadId: entry.uploadId })}><Text style={styles.link}>重试</Text></Pressable> : null}</View>)}</Section>
     {booleanValue(detail.canWrite) && !["completed", "cancelled"].includes(stringValue(detail.status) ?? "") ? <View style={styles.actions}>

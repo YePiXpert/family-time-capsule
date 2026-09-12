@@ -57,7 +57,11 @@ export function CaptureScreen() {
   const dockHeight = useContext(JournalDockHeightContext);
   const keyboardOpen = useContext(JournalKeyboardContext);
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
-  const draftScope = credentials?.instanceId && userId && family ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : "local";
+  // A previously verified session can reopen its own saved draft while offline;
+  // the sync layer still verifies live identity before sending anything.
+  const draftUserId = userId ?? viewer?.id;
+  const draftScope = credentials?.instanceId && draftUserId && family && (!userId || !viewer || viewer.id === userId)
+    ? JSON.stringify([credentials.serverUrl, credentials.instanceId, draftUserId, family.id]) : "local";
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const glassTarget = useRef<View | null>(null);
   const saveBusy = useRef(false);
