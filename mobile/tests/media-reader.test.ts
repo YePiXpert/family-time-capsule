@@ -386,3 +386,29 @@ it("hides a previously rendered remote frame and preview immediately after authe
   expect(text()).toContain("登录已过期"); expect(text()).not.toContain("视频封面"); expect(text()).not.toContain("视频画面已显示");
   expect(nativeView().props.style.opacity).toBe(0); expect(nativeView().props.nativeControls).toBe(false); expect(mocks.replace).toHaveBeenLastCalledWith(null);
 });
+
+it("adopts a newly confirmed remote receipt during local playback without closing or recreating the player", async () => {
+  const local = { ...video, id: "owned-capture", localUri: "file:///private/original.mov" };
+  await act(async () => { tree = create(createElement(NativeMediaReader, { credentials: null, assets: [local] })); });
+  await press("打开阅读器：小美.mov"); await frame();
+  await act(() => mocks.player!.emit("timeUpdate", { currentTime: 12.5 }));
+  const player = mocks.player;
+  mocks.get.mockResolvedValue({ jobs: [job("preview", "succeeded", "remote-cover"), job("transcode", "succeeded", "compatible")], transcript: null });
+  await act(async () => tree!.update(createElement(NativeMediaReader, { credentials, assets: [{ ...local, remoteAssetId: "confirmed-original" }] })));
+  expect(tree!.root.findByType("Modal" as never).props.visible).toBe(true);
+  expect(mocks.player).toBe(player); expect(mocks.created).toBe(1); expect(mocks.active).toBe(1);
+  expect(mocks.replace.mock.calls.map(args => args[0].uri)).toEqual([local.localUri, `${credentials.serverUrl}/api/media/compatible`]);
+  expect(mocks.get.mock.calls.every(args => args[1] === "confirmed-original")).toBe(true);
+  expect(mocks.player!.currentTime).toBe(12.5); expect(mocks.player!.playing).toBe(true);
+});
+
+it("drops remote derivations when a local original's confirmed mapping is withdrawn", async () => {
+  const local = { ...video, id: "owned-capture", localUri: "file:///private/original.mov" };
+  mocks.get.mockResolvedValue({ jobs: [job("transcode", "succeeded", "old-compatible")], transcript: null });
+  await act(async () => { tree = create(createElement(NativeMediaReader, { credentials, assets: [{ ...local, remoteAssetId: "confirmed-original" }] })); });
+  await press("打开阅读器：小美.mov"); await frame();
+  const requests = mocks.get.mock.calls.length;
+  await act(async () => tree!.update(createElement(NativeMediaReader, { credentials: null, assets: [local] })));
+  expect(mocks.get).toHaveBeenCalledTimes(requests); expect(mocks.replace).toHaveBeenLastCalledWith({ uri: local.localUri });
+  expect(mocks.created).toBe(1); expect(tree!.root.findByType("Modal" as never).props.visible).toBe(true);
+});

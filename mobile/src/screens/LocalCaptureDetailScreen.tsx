@@ -37,6 +37,16 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
   const { runSync } = useAppActions();
   const sourceScope = credentials?.instanceId && userId && family?.id
     ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : null;
+  const connection = JSON.stringify([credentials?.serverUrl ?? null, credentials?.token ?? null]);
+  const [readerIdentity, setReaderIdentity] = useState({ connection, scope: sourceScope, epoch: 0 });
+  let readerEpoch = readerIdentity.epoch;
+  if (readerIdentity.connection !== connection || readerIdentity.scope !== sourceScope) {
+    // Restored credentials resolve their identity later on weak networks. That first
+    // resolution may add a remote receipt without closing an owned local original.
+    // Every actual connection change or loss/change of a known identity closes it.
+    if (readerIdentity.connection !== connection || readerIdentity.scope !== null) readerEpoch++;
+    setReaderIdentity({ connection, scope: sourceScope, epoch: readerEpoch });
+  }
   const confirm = useConfirmSheet();
   const alert = useAlertSheet();
   const [detail, setDetail] = useState<LocalCaptureDetail | null>(null);
@@ -134,7 +144,7 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
             <Text style={s.body}>本机文档可直接导出到其他 App 打开。</Text>
           </View>
         ) : (
-          <NativeMediaReader key={JSON.stringify([captureId, sourceScope])} assets={[asset]} credentials={asset.remoteAssetId ? credentials : null} />
+          <NativeMediaReader key={JSON.stringify([captureId, readerEpoch])} assets={[asset]} credentials={asset.remoteAssetId ? credentials : null} />
         )
       ) : (
         <View style={s.warning}>

@@ -73,7 +73,10 @@ export function NativeMediaReader({
   const removed = selected && !assets.some((candidate) => candidate.id === selected.id ||
     selected.localUri && candidate.localUri === selected.localUri ||
     selected.remoteAssetId && candidate.id === selected.remoteAssetId);
-  const item = removed ? null : selected;
+  const latestLocal = selected?.localUri
+    ? assets.find((candidate) => candidate.id === selected.id && candidate.localUri === selected.localUri) : undefined;
+  const item = removed ? null : selected && latestLocal
+    ? { ...selected, remoteAssetId: latestLocal.remoteAssetId } : selected;
   // A reordered list preserves reading, but removal/revocation must close it permanently.
   if (removed && index !== null) setIndex(null);
   const ended = useCallback(() => {
@@ -180,7 +183,9 @@ function Active({
   onEnded: () => void;
 }) {
   const s = useSharedStyles();
-  const [jobs, setJobs] = useState<MediaDerivation[]>([]),
+  const remoteId = item.remoteAssetId || item.id;
+  const canReadRemote = !item.localUri || Boolean(item.remoteAssetId);
+  const [jobState, setJobState] = useState<{ assetId: string; jobs: MediaDerivation[] }>({ assetId: remoteId, jobs: [] }),
     [transcript, setTranscript] = useState<ReaderTranscript | null>(
       item.localTranscript ?? null,
     ),
@@ -191,8 +196,7 @@ function Active({
     [retry, setRetry] = useState(0);
   const { width } = useWindowDimensions();
   const compatibilityRequested = useRef(false);
-  const remoteId = item.remoteAssetId || item.id;
-  const canReadRemote = !item.localUri || Boolean(item.remoteAssetId);
+  const jobs = jobState.assetId === remoteId ? jobState.jobs : [];
   const [metadataLoaded, setMetadataLoaded] = useState(Boolean(item.localUri && !item.remoteAssetId));
   const [generating, setGenerating] = useState(false);
   const [jobsRevision, setJobsRevision] = useState(0);
@@ -209,7 +213,7 @@ function Active({
       try {
         let data = await fetchMediaDerivations(auth, remoteId, undefined, controller.signal);
         if (controller.signal.aborted) return;
-        setJobs(data.jobs);
+        setJobState({ assetId: remoteId, jobs: data.jobs });
         setTranscript(data.transcript);
         setMetadataLoaded(true);
         setError("");
@@ -217,7 +221,7 @@ function Active({
         if (first && ["image", "video"].includes(item.type) && !data.jobs.some((job) => job.kind === "preview")) {
           data = await fetchMediaDerivations(auth, remoteId, "preview", controller.signal);
           if (controller.signal.aborted) return;
-          setJobs(data.jobs);
+          setJobState({ assetId: remoteId, jobs: data.jobs });
         }
         if (data.jobs.some((job) => ["queued", "running"].includes(job.status)))
           timer = setTimeout(() => void load(), 2000);
@@ -226,7 +230,7 @@ function Active({
         const status = (e as { status?: number }).status;
         setDenied(!item.localUri && (status === 401 || status === 403 || status === 404));
         // An owned local original stays readable if the remote account or network is unavailable.
-        if (item.localUri) setJobs([]);
+        if (item.localUri) setJobState({ assetId: remoteId, jobs: [] });
         setError(item.localUri ? "" : mediaRequestFailure(e).message);
         // An unavailable metadata endpoint must not prevent readable originals from loading.
         setMetadataLoaded(true);
@@ -241,11 +245,11 @@ function Active({
       pending.forEach((request) => request.abort());
     }
     return () => pending.forEach((request) => request.abort());
-  }, [appActive]);
+  }, [appActive, remoteId, serverUrl, token]);
   const preview = jobs.find((j) => j.kind === "preview"),
     transcode = jobs.find((j) => j.kind === "transcode"),
     waveform = jobs.find((j) => j.kind === "waveform");
-  const selectedId = original || item.localUri && !credentials
+  const selectedId = original || item.localUri && (!credentials || !canReadRemote)
     ? item.id
     : item.type === "image"
       ? preview?.outputAssetId || item.thumbnailId || item.id
@@ -260,7 +264,7 @@ function Active({
     try {
       const data = await fetchMediaDerivations(credentials, remoteId, kind, controller.signal);
       if (controller.signal.aborted) return;
-      setJobs(data.jobs);
+      setJobState({ assetId: remoteId, jobs: data.jobs });
       setJobsRevision((value) => value + 1);
     } catch (e) {
       if (!controller.signal.aborted)
