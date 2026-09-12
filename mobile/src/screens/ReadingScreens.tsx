@@ -163,12 +163,12 @@ export function ReadingDownloadsScreen({
           </Text>
           {row.error ? <Text style={s.error}>{row.error}</Text> : null}
           {row.state === "ready" ? (
-            <Button
+            <><Button
               title="阅读已下载内容"
               onPress={() =>
                 navigation.navigate("OfflineReading", { key: row.key })
               }
-            />
+            />{row.kind === "collection" ? <Button title="给家人看" onPress={() => navigation.navigate("FamilyViewing", { collectionId: row.id, downloadKey: row.key })} /> : null}</>
           ) : row.state === "downloading" ? (
             <Button
               title="暂停下载"
@@ -345,6 +345,7 @@ export function OfflineReadingScreen({
         下载版本 {doc.revision}
       </Text>
       <Text style={s.title}>{doc.title}</Text>
+      {doc.kind === "collection" ? <Button title="给家人看" onPress={() => navigation.navigate("FamilyViewing", { collectionId: doc.id, downloadKey: key })} /> : null}
       <Text style={s.body}>{doc.subtitle}</Text>
       <Text style={s.body}>{mode}</Text>
       <Text style={s.body}>

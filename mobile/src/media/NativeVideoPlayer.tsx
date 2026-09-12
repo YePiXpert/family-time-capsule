@@ -12,7 +12,7 @@ export const VIDEO_LOAD_TIMEOUT_MS = 15_000;
 
 export function NativeVideoPlayer({
   source, poster, localOriginal, remoteOriginal, initialSeconds = 0, retryToken, message, externalError,
-  onPosition, onUnsupported, onRetry, controlsVisible = true, onToggleControls, onNavigate,
+  onPosition, onUnsupported, onRetry, controlsVisible = true, onToggleControls, onNavigate, viewingOnly = false,
 }: {
   source: PlaybackSource | null;
   poster: PlaybackSource | null;
@@ -28,6 +28,7 @@ export function NativeVideoPlayer({
   controlsVisible?: boolean;
   onToggleControls?: () => void;
   onNavigate?: (direction: -1 | 1) => void;
+  viewingOnly?: boolean;
 }) {
   const s = useSharedStyles();
   const { colors } = useColorTheme();
@@ -247,7 +248,9 @@ export function NativeVideoPlayer({
     save.current?.(target);
     lastSaved.current = target;
   }
-  const explanation = usableFrame ? undefined : externalError || message || failure?.message;
+  const explanation = usableFrame ? undefined : viewingOnly
+    ? message ? "视频正在准备中…" : externalError || failure ? "这段视频暂时无法播放，可以重试或查看下一份。" : undefined
+    : externalError || message || failure?.message;
   const waiting = !explanation && (!currentFrame || status === "loading");
   const cover = !currentFrame || Boolean(explanation);
   return (
@@ -259,6 +262,7 @@ export function NativeVideoPlayer({
             player={player}
             contentFit="contain"
             nativeControls={false}
+            allowsVideoFrameAnalysis={!viewingOnly}
             surfaceType="textureView"
             accessibilityLabel="视频画面"
             accessibilityValue={{ text: currentFrame ? "画面已呈现" : "正在加载" }}

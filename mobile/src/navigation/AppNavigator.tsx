@@ -38,6 +38,7 @@ import { BooksScreen, BookDetailScreen } from "../screens/BookScreens";
 import { CalendarScreen } from "../screens/CalendarScreen";
 import { InviteFamilyScreen } from "../screens/InviteFamilyScreen";
 import { LocalCaptureDetailScreen } from "../screens/LocalCaptureDetailScreen";
+import { FamilyViewingScreen } from "../screens/FamilyViewingScreen";
 import { useColorTheme } from "../theme";
 import type { JournalPalette } from "../design/tokens";
 import type { MainTabParamList, RootStackParamList } from "./types";
@@ -127,11 +128,11 @@ function MainTabs() {
   </Tabs.Navigator></JournalDockHeightContext.Provider></JournalCaptureActionHeightContext.Provider></JournalKeyboardContext.Provider>;
 }
 
-const NavigationContent = memo(function NavigationContent() {
+const NavigationContent = memo(function NavigationContent({ onViewingChange }: { onViewingChange: (active: boolean) => void }) {
   const { reducedMotion } = useAccessibleEffects();
   const { colors, dark } = useColorTheme();
   const theme = useMemo(() => navigationTheme(colors, dark), [colors, dark]);
-  return <NavigationContainer theme={theme}>
+  return <NavigationContainer theme={theme} onStateChange={(state) => onViewingChange(Boolean(state && state.routes[state.index ?? 0]?.name === "FamilyViewing"))}>
       <Stack.Navigator screenOptions={{ animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : journalMotion.duration, headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" }, headerTintColor: colors.coralDark, contentStyle: { backgroundColor: colors.paper }, ...(Platform.OS === "ios" ? { headerLargeTitle: false, headerBlurEffect: "regular" as const } : {}) }}>
         <Stack.Screen component={MainTabs} name="MainTabs" options={{ headerShown: false }} />
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "成长记录" }} />
@@ -149,6 +150,7 @@ const NavigationContent = memo(function NavigationContent() {
         <Stack.Screen component={ImportSessionDetailScreen} name="ImportSessionDetail" options={{ title: "导入进度" }} />
         <Stack.Screen component={CollectionsScreen} name="Collections" options={{title:"相册与章节"}} />
         <Stack.Screen component={CollectionDetailScreen} name="CollectionDetail" options={{title:"相册"}} />
+        <Stack.Screen component={FamilyViewingScreen} name="FamilyViewing" options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, animation: "none" }} />
         <Stack.Screen component={ReadingDownloadsScreen} name="ReadingDownloads" options={{title:"离线收藏"}} />
         <Stack.Screen component={OfflineReadingScreen} name="OfflineReading" options={{title:"离线阅读"}} />
         <Stack.Screen component={BooksScreen} name="Books" options={{title:"家庭书架"}} />
@@ -162,7 +164,8 @@ const NavigationContent = memo(function NavigationContent() {
 
 export function AppNavigator() {
   const { colors } = useColorTheme();
-  return <View style={[styles.fill, { backgroundColor: colors.paper }]}><NavigationContent /><SyncBanner /></View>;
+  const [familyViewing, setFamilyViewing] = useState(false);
+  return <View style={[styles.fill, { backgroundColor: colors.paper }]}><NavigationContent onViewingChange={setFamilyViewing} />{familyViewing ? null : <SyncBanner />}</View>;
 }
 
 const styles = StyleSheet.create({

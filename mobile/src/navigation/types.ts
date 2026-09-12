@@ -28,6 +28,7 @@ export type RootStackParamList = {
   Calendar: undefined;
   Collections: {eventIds?:string[]} | undefined;
   CollectionDetail: {id:string};
+  FamilyViewing: { collectionId: string; downloadKey?: string };
   InviteFamily: undefined;
   LocalCapture: { captureId: string };
 };

@@ -15,7 +15,8 @@ import {
 import type { CollectionDetail, CollectionPage } from "../collections/types";
 import type { RootStackParamList } from "../navigation/types";
 import { useAppData } from "../state/AppContext";
-import { useConfirmSheet } from "../components/GlassSheet";
+import { GlassSheet, useConfirmSheet } from "../components/GlassSheet";
+import { Button as ActionButton, IconButton } from "../components/ui";
 import { useSharedStyles } from "../theme";
 function Button({
   title,
@@ -164,6 +165,7 @@ export function CollectionDetailScreen({
   const { credentials } = useAppData();
   const confirm = useConfirmSheet();
   const [reading, setReading] = useState(true);
+  const [moreVisible, setMoreVisible] = useState(false);
   const [doc, setDoc] = useState<CollectionDetail | null>(null),
     [error, setError] = useState(""),
     [status, setStatus] = useState(""),
@@ -223,6 +225,12 @@ export function CollectionDetailScreen({
     [items[index], items[next]] = [items[next]!, items[index]!];
     update({ ...doc, items, sortMode: "manual" });
   }
+  async function startFamilyViewing() {
+    if (!doc || doc.deletedAt || busy) return;
+    if (dirty.current && !await save()) return;
+    setMoreVisible(false);
+    navigation.navigate("FamilyViewing", { collectionId: doc.id });
+  }
   if (!doc)
     return (
       <View style={s.empty}>
@@ -254,7 +262,18 @@ export function CollectionDetailScreen({
       keyboardShouldPersistTaps="handled"
     >
       {!doc.deletedAt ? <ReadingDownloadButton kind="collection" id={doc.id} prepare={async () => dirty.current ? await save() : true} /> : null}
-      <Text style={s.title}>{doc.title}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <Text style={[s.title, { flex: 1 }]}>{doc.title}</Text>
+        {!doc.deletedAt ? <ActionButton title="更多" variant="ghost" full={false} onPress={() => setMoreVisible(true)} /> : null}
+      </View>
+      <GlassSheet visible={moreVisible} onClose={() => setMoreVisible(false)}>
+        <View style={{ gap: 16 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}><Text style={s.cardTitle}>相册操作</Text><IconButton icon="close" label="关闭相册更多" onPress={() => setMoreVisible(false)} /></View>
+          <Text style={s.body}>给家人看时，只浏览这个相册。长按退出并确认后，恢复完整操作。</Text>
+          <ActionButton title={busy ? "正在保存…" : "给家人看"} icon="users" variant="primary" disabled={busy || Boolean(doc.deletedAt)} onPress={() => void startFamilyViewing()} />
+          <Text style={s.body}>已下载的相册也能离线观看。这是临时观看界面，不会锁定手机。</Text>
+        </View>
+      </GlassSheet>
       {doc.canWrite && !doc.deletedAt ? (
         <Button
           title={reading ? "继续编辑" : "阅读相册"}

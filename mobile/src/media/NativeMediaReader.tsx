@@ -17,6 +17,7 @@ import { derivationFailure, mediaRequestFailure, type PlaybackSource } from "./p
 import { useAppActive } from "./use-app-active";
 import { mediaClock, ReaderPlaybackControls, ReaderSwipeSurface } from "./ReaderChrome";
 import { ReaderPhoto } from "./ReaderPhoto";
+import { OwnerExitControl } from "../viewing/OwnerExitControl";
 export type NativeReaderAsset = ReaderAsset & {
   localUri?: string;
   /** Confirmed original mapping from this account, never inferred from filenames. */
@@ -24,6 +25,7 @@ export type NativeReaderAsset = ReaderAsset & {
   localTranscript?: ReaderTranscript | null;
   initialSeconds?: number;
   thumbnailPath?: string | null;
+  readingText?: string;
 };
 function mediaSource(
   credentials: Credentials | null,
@@ -43,16 +45,22 @@ export function NativeMediaReader({
   assets,
   credentials,
   onPosition,
+  viewingOnly = false,
+  viewingTitle,
+  onViewingExit,
 }: {
   onPosition?: (assetId: string, seconds: number) => void;
   assets: NativeReaderAsset[];
   credentials: Credentials | null;
+  viewingOnly?: boolean;
+  viewingTitle?: string;
+  onViewingExit?: () => void;
 }) {
   const s = useSharedStyles();
   const { reducedMotion } = useAccessibleEffects();
-  const [index, setIndex] = useState<number | null>(null),
+  const [index, setIndex] = useState<number | null>(viewingOnly && assets.length > 0 ? 0 : null),
     [continuous, setContinuous] = useState(false);
-  const [readingAssets, setReadingAssets] = useState<NativeReaderAsset[]>([]);
+  const [readingAssets, setReadingAssets] = useState<NativeReaderAsset[]>(() => viewingOnly ? assets.map((asset) => ({ ...asset })) : []);
   const [moreVisible, setMoreVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const filmstrip = useRef<FlatList<{ asset: NativeReaderAsset; slot: number }>>(null);
@@ -91,7 +99,7 @@ export function NativeMediaReader({
   }, [index, visibleIndex, reducedMotion, controlsVisible]);
   return (
     <>
-      {assets.map((asset, i) => (
+      {!viewingOnly && assets.map((asset, i) => (
         <Pressable
           key={`${asset.id}-${i}`}
           accessibilityRole="button"
@@ -121,16 +129,16 @@ export function NativeMediaReader({
       ))}
       <Modal
         visible={item !== null}
-        onRequestClose={() => setIndex(null)}
+        onRequestClose={() => { if (!viewingOnly) setIndex(null); }}
         animationType={reducedMotion ? "none" : "fade"}
       >
         <SafeAreaView style={[s.screen, { flex: 1 }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: s.colors.line }}>
-            <Button title="返回" icon="arrow-left" variant="ghost" full={false} accessibilityLabel="关闭阅读器" onPress={() => setIndex(null)} />
+            {viewingOnly ? <OwnerExitControl onExit={() => onViewingExit?.()} /> : <Button title="返回" icon="arrow-left" variant="ghost" full={false} accessibilityLabel="关闭阅读器" onPress={() => setIndex(null)} />}
             <View style={{ flex: 1, minWidth: 0, opacity: controlsVisible ? 1 : 0 }}>
-              <Text numberOfLines={1} style={{ color: s.colors.ink, fontSize: 14, textAlign: "center" }}>{item?.dateLabel || item?.author || "这一刻"}</Text>
+              <Text numberOfLines={1} style={{ color: s.colors.ink, fontSize: 14, textAlign: "center" }}>{viewingOnly ? viewingTitle : item?.dateLabel || item?.author || "这一刻"}</Text>
             </View>
-            <Button title="更多" variant="ghost" full={false} accessibilityLabel="更多素材操作" onPress={() => setMoreVisible(true)} />
+            {viewingOnly ? <Text style={{ color: s.colors.muted, fontSize: 13, paddingHorizontal: 8 }}>仅观看</Text> : <Button title="更多" variant="ghost" full={false} accessibilityLabel="更多素材操作" onPress={() => setMoreVisible(true)} />}
           </View>
           {item ? (
             <Active
@@ -147,6 +155,7 @@ export function NativeMediaReader({
               onToggleControls={() => setControlsVisible((value) => !value)}
               onNavigate={navigate}
               onPermissionChange={permissionChanged}
+              viewingOnly={viewingOnly}
             />
           ) : null}
           {controlsVisible && visibleAssets.length > 1 ? <View style={{ borderTopWidth: 1, borderTopColor: s.colors.line, backgroundColor: s.colors.paper }}>
@@ -180,8 +189,9 @@ function Active({
   toggleContinuous,
   onEnded,
   onPosition,
-  moreVisible, onMoreClose, controlsVisible, onToggleControls, onNavigate, onPermissionChange,
+  moreVisible, onMoreClose, controlsVisible, onToggleControls, onNavigate, onPermissionChange, viewingOnly,
 }: {
+  viewingOnly: boolean;
   onPermissionChange: (assetId: string, denied: boolean) => void;
   moreVisible: boolean;
   onMoreClose: () => void;
@@ -197,7 +207,7 @@ function Active({
 }) {
   const s = useSharedStyles();
   const remoteId = item.remoteAssetId || item.id;
-  const canReadRemote = !item.localUri || Boolean(item.remoteAssetId);
+  const canReadRemote = item.type !== "text" && (!item.localUri || Boolean(item.remoteAssetId));
   const [jobState, setJobState] = useState<{ assetId: string; jobs: MediaDerivation[] }>({ assetId: remoteId, jobs: [] }),
     [transcript, setTranscript] = useState<ReaderTranscript | null>(
       item.localTranscript ?? null,
@@ -236,7 +246,7 @@ function Active({
         setError("");
         setDenied(false);
         onPermissionChange(item.id, false);
-        if (first && ["image", "video"].includes(item.type) && !data.jobs.some((job) => job.kind === "preview")) {
+        if (!viewingOnly && first && ["image", "video"].includes(item.type) && !data.jobs.some((job) => job.kind === "preview")) {
           data = await fetchMediaDerivations(auth, remoteId, "preview", controller.signal);
           if (controller.signal.aborted) return;
           setJobState({ assetId: remoteId, jobs: data.jobs });
@@ -257,7 +267,7 @@ function Active({
     }
     void load(true);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [serverUrl, token, remoteId, canReadRemote, item.id, item.localUri, item.type, retry, jobsRevision, appActive, onPermissionChange]);
+  }, [serverUrl, token, remoteId, canReadRemote, item.id, item.localUri, item.type, retry, jobsRevision, appActive, onPermissionChange, viewingOnly]);
   useEffect(() => {
     const pending = requests.current;
     if (!appActive) {
@@ -275,7 +285,7 @@ function Active({
       : transcode?.outputAssetId || item.id;
   const source = mediaSource(credentials, item, selectedId);
   async function generate(kind: MediaDerivation["kind"]) {
-    if (!credentials || !canReadRemote || !appActive) return;
+    if (viewingOnly || !credentials || !canReadRemote || !appActive) return;
     const controller = new AbortController();
     requests.current.add(controller);
     if (kind === "transcode") setGenerating(true);
@@ -295,12 +305,13 @@ function Active({
     }
   }
   function playbackFailed() {
-    if (!credentials || !canReadRemote || compatibilityRequested.current || transcode) return;
+    if (viewingOnly || !credentials || !canReadRemote || compatibilityRequested.current || transcode) return;
     compatibilityRequested.current = true;
     void generate("transcode");
   }
   function retryVideo() {
     setError("");
+    if (viewingOnly) { setRetry((value) => value + 1); return; }
     if (!transcode || transcode.status === "failed") compatibilityRequested.current = false;
     if (transcode?.status === "failed") void generate("transcode");
     else setRetry((value) => value + 1);
@@ -312,7 +323,13 @@ function Active({
   const retryMedia = () => { setError(""); setImageFailure(null); setRetry((value) => value + 1); };
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
-      {item.type === "video" ? (
+      {item.type === "text" ? (
+        <ReaderSwipeSurface onNavigate={onNavigate}><ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 28, gap: 20 }}>
+          <Text style={s.cardTitle}>{item.filename}</Text>
+          {item.dateLabel ? <Text style={s.body}>{item.dateLabel}</Text> : null}
+          <Text style={{ color: s.colors.ink, fontSize: 20, lineHeight: 32 }}>{item.readingText}</Text>
+        </ScrollView></ReaderSwipeSurface>
+      ) : item.type === "video" ? (
         <NativeVideoPlayer
           source={!denied && (metadataLoaded || item.localUri && !credentials) ? source : null}
           localOriginal={Boolean(item.localUri && selectedId === item.id)}
@@ -328,6 +345,7 @@ function Active({
           controlsVisible={controlsVisible}
           onToggleControls={onToggleControls}
           onNavigate={onNavigate}
+          viewingOnly={viewingOnly}
         />
       ) : item.type === "image" ? (
         <ReaderPhoto key={`${selectedId}-${retry}`} source={denied ? null : source} filename={item.filename} zoom={zoom} error={denied ? error : imageFailure?.key === `${selectedId}-${retry}` ? imageFailure.message : undefined}
@@ -335,7 +353,7 @@ function Active({
           onRetry={retryMedia} controlsVisible={controlsVisible} onToggleControls={onToggleControls} onNavigate={onNavigate} />
       ) : !denied && source && item.type === "audio" ? (
         <Audio key={`${selectedId}-${retry}`} source={source} continuous={continuous} onEnded={onEnded} transcript={transcript}
-          speed={audioSpeed} onController={receiveAudioController} onRetry={retryMedia} controlsVisible={controlsVisible} onToggleControls={onToggleControls} onNavigate={onNavigate}
+          speed={audioSpeed} onController={receiveAudioController} onRetry={retryMedia} controlsVisible={controlsVisible} onToggleControls={onToggleControls} onNavigate={onNavigate} viewingOnly={viewingOnly}
           initialSeconds={item.initialSeconds} onPosition={onPosition ? (seconds) => onPosition(item.id, seconds) : undefined} />
       ) : (
         <ReaderSwipeSurface onNavigate={onNavigate}>
@@ -347,7 +365,7 @@ function Active({
           </View>
         </ReaderSwipeSurface>
       )}
-      <GlassSheet visible={moreVisible} onClose={onMoreClose}>
+      {!viewingOnly ? <GlassSheet visible={moreVisible} onClose={onMoreClose}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <Text accessibilityRole="header" style={s.cardTitle}>素材信息</Text>
           <IconButton icon="close" label="关闭更多操作" onPress={onMoreClose} />
@@ -383,15 +401,16 @@ function Active({
           </Text>)}
           <Button title="重新加载" onPress={item.type === "video" ? retryVideo : retryMedia} />
         </ScrollView>
-      </GlassSheet>
+      </GlassSheet> : null}
     </View>
   );
 }
 
 function Audio({
   source, continuous, onEnded, transcript, initialSeconds = 0, onPosition, speed,
-  onController, controlsVisible, onToggleControls, onNavigate, onRetry,
+  onController, controlsVisible, onToggleControls, onNavigate, onRetry, viewingOnly,
 }: {
+  viewingOnly: boolean;
   initialSeconds?: number;
   onPosition?: (seconds: number) => void;
   source: PlaybackSource;
@@ -454,7 +473,7 @@ function Audio({
           </Pressable>
           {!status.isLoaded || status.isBuffering ? <ActivityIndicator color={s.colors.coral} /> : null}
           {status.error || error ? <View style={{ gap: 12 }}><Text style={s.error} accessibilityRole="alert">{status.error ? "这段声音暂时无法播放，请重试。" : error}</Text><Button title="重试声音" onPress={onRetry} /></View> : null}
-          {transcript ? <View style={{ gap: 8 }}><Text selectable style={{ color: s.colors.ink, fontSize: 18, lineHeight: 30 }}>{transcript.text}</Text>{transcript.edited ? <Text style={s.body}>已由家人修订</Text> : null}</View> : null}
+          {transcript ? <View style={{ gap: 8 }}><Text selectable={!viewingOnly} style={{ color: s.colors.ink, fontSize: 18, lineHeight: 30 }}>{transcript.text}</Text>{transcript.edited ? <Text style={s.body}>已由家人修订</Text> : null}</View> : null}
         </ScrollView>
       </ReaderSwipeSurface>
       {controlsVisible ? <ReaderPlaybackControls kind="audio" playing={status.playing} muted={status.mute} seconds={status.currentTime} duration={status.duration} disabled={!status.isLoaded}
