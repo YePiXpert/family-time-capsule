@@ -44,6 +44,7 @@ import type {
 } from "../types";
 import { clearAllReadingDownloads } from "../reading/native";
 import { drainMemoryEditWrites } from "../memories/edit-store";
+import { drainPhotoSelectionWrites } from "../imports/photo-selection-store";
 
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -204,7 +205,7 @@ export function AppProvider({
     try {
       // Let already-started archive/intake writes settle before erasing their
       // results. The reading reset aborts transfers and drains identity writes.
-      await Promise.all([syncDoneRef.current, intakeDoneRef.current, drainMemoryEditWrites()]);
+      await Promise.all([syncDoneRef.current, intakeDoneRef.current, drainMemoryEditWrites(), drainPhotoSelectionWrites()]);
       if (credentials) await signOut(credentials);
       await clearAllReadingDownloads();
       await Promise.all([clearCredentials(), clearLocalArchive()]);

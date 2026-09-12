@@ -49,6 +49,10 @@ export const MOBILE_LOCAL_SCHEMA_SQL = `
     scope TEXT NOT NULL, memory_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
     updated_at TEXT NOT NULL, PRIMARY KEY(scope, memory_id)
   );
+  CREATE TABLE IF NOT EXISTS local_import_selection (
+    scope TEXT NOT NULL, session_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+    revision INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(scope, session_id)
+  );
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
   CREATE TABLE IF NOT EXISTS meta (

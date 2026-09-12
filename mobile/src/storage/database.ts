@@ -1074,6 +1074,7 @@ export async function clearLocalArchive(): Promise<void> {
     DELETE FROM outbox;
     DELETE FROM local_draft;
     DELETE FROM local_memory_edit;
+    DELETE FROM local_import_selection;
     DELETE FROM local_capture;
     DELETE FROM local_import_item;
     DELETE FROM local_import_session;
