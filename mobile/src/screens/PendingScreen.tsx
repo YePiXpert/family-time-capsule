@@ -46,7 +46,7 @@ export function PendingScreen() {
     if (!memoryScope) return;
     let active = true;
     void listMemoryEdits(memoryScope).then(rows => {
-      if (!active) return;
+      if (!active || memoryEditsVersion() !== memoryVersion) return;
       const pending = rows.filter(row => row.scope === memoryScope && (
         row.savedContent || row.submission || row.conflict || row.blocked || !sameMemoryEdit(row.content, row.base)
       )).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.memoryId.localeCompare(b.memoryId));

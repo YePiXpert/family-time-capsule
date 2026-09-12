@@ -238,3 +238,21 @@ it("download list offers retry and confirms clearing only the current reading co
   }));
   expect(mocks.remove).toHaveBeenCalledWith(key, expect.anything());
 });
+
+it("opens only the selected ready album in family viewing from offline downloads", async () => {
+  const album = { ...entry, kind: "collection", id: "album", key: `${scope.key}/collection-album` };
+  mocks.scope.mockResolvedValue({ scope, online: false }); mocks.list.mockResolvedValue([album]);
+  await act(async () => { tree = create(createElement(ReadingDownloadsScreen, { navigation: { navigate: mocks.navigate } } as never)); });
+  await press("给家人看");
+  expect(mocks.navigate).toHaveBeenCalledWith("FamilyViewing", { collectionId: "album", downloadKey: album.key });
+  expect(mocks.queue).not.toHaveBeenCalled(); expect(mocks.resume).not.toHaveBeenCalled();
+});
+
+it("offers family viewing from an already opened offline album using the same download key", async () => {
+  const album = { ...entry, kind: "collection", id: "album", key: `${scope.key}/collection-album`, manifest: { ...manifest, kind: "collection", id: "album" } };
+  mocks.scope.mockResolvedValue({ scope, online: false }); mocks.get.mockResolvedValue(album);
+  await act(async () => { tree = create(createElement(OfflineReadingScreen, { route: { params: { key: album.key } }, navigation: { navigate: mocks.navigate } } as never)); });
+  await press("给家人看");
+  expect(mocks.navigate).toHaveBeenCalledWith("FamilyViewing", { collectionId: "album", downloadKey: album.key });
+  expect(mocks.queue).not.toHaveBeenCalled(); expect(mocks.resume).not.toHaveBeenCalled();
+});

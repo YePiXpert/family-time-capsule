@@ -52,7 +52,7 @@ vi.mock("../src/state/AppContext", () => ((() => {
   const mock = {
   useApp: () => ({ syncing: mocks.syncing,
     credentials: mocks.connected ? mocks.credentials : null,
-    viewer: mocks.connected ? { canCapture: true, canEditEvents: true } : null,
+    viewer: mocks.connected ? { id: "user-a", canCapture: true, canEditEvents: true } : null,
     family: mocks.connected ? mocks.family : null, userId: mocks.connected ? "user-a" : null,
     grantSyncConsent: mocks.grantSyncConsent,
     outbox: [], queued: mocks.queued, reloadLocal: mocks.reloadLocal,

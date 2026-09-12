@@ -9,7 +9,10 @@ const mocks = vi.hoisted(() => ({
   navigation: { navigate: vi.fn() }, sync: vi.fn(), reload: vi.fn(), dismiss: vi.fn(),
   cardRenders: vi.fn(),
 }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ children }: { children: unknown }) => children }));
+vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "Icon" }));
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
   View: "View", Text: "Text", Image: "Image", Pressable: "Pressable", ScrollView: "ScrollView", RefreshControl: "RefreshControl",
   FlatList: (props: { ListHeaderComponent: ReactNode; data: LocalTimelineEvent[]; renderItem: (args: { item: LocalTimelineEvent; index: number }) => ReactNode }) => createElement("FlatList", props, props.ListHeaderComponent, props.data.map((item, index) => createElement("Cell", { key: item.id }, props.renderItem({ item, index })))),
   StyleSheet: { create: (style: unknown) => style, absoluteFill: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0 }, hairlineWidth: 1 },
@@ -18,7 +21,6 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 48, bottom: 34 }) }));
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => mocks.navigation }));
 vi.mock("../src/components/typography", () => ({ Text: "Text" }));
-vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "Icon" }));
 vi.mock("../src/components/JournalArtwork", () => ({ JournalArtwork: "Artwork" }));
 vi.mock("../src/components/SwipeActions", () => ({ SwipeActions: ({ children }: { children: ReactNode }) => children }));
 vi.mock("../src/components/ContextMenu", () => {
@@ -110,4 +112,30 @@ it("shows and dismisses the sync notice in an absolute overlay", async () => {
   expect(container.props.pointerEvents).toBe("box-none");
   await act(() => tree!.root.findByProps({ testID: "sync-banner" }).props.onPress());
   expect(mocks.dismiss).toHaveBeenCalledOnce();
+});
+
+it("keeps a chosen month in the same virtual list when background sync adds newer memories", async () => {
+  const august = { ...event("august"), occurredAt: "2026-08-10T12:00:00Z" };
+  const september = event("september");
+  const unknown = { ...event("unknown"), occurredAtPrecision: "unknown" };
+  mocks.app.events = [september, august, unknown];
+  const scrollToOffset = vi.fn();
+  await act(() => { tree = create(createElement(TimelineScreen), { createNodeMock: node => node.type === "FlatList" ? { scrollToOffset } : null }); });
+  const list = tree!.root.findByType("FlatList" as never);
+  await act(() => tree!.root.findByProps({ testID: "month-picker" }).props.onPress());
+  const month = tree!.root.find(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "2026 年 8 月，本机 1 条记录");
+  await act(() => month.props.onPress());
+  expect(list.props.data).toEqual([august]);
+  expect(scrollToOffset).toHaveBeenCalledOnce();
+  mocks.app.events = [{ ...event("october"), occurredAt: "2026-10-01T12:00:00Z" }, ...mocks.app.events];
+  mocks.status.syncing = true;
+  await act(() => tree!.update(createElement(TimelineScreen)));
+  expect(tree!.root.findByType("FlatList" as never)).toBe(list);
+  expect(list.props.data).toEqual([august]);
+  expect(scrollToOffset).toHaveBeenCalledOnce();
+  expect(tree!.root.findByProps({ testID: "month-picker" }).props.accessibilityLabel).toContain("2026 年 8 月");
+  await act(() => tree!.root.findByProps({ testID: "month-picker" }).props.onPress());
+  await act(() => tree!.root.find(node => String(node.type) === "Pressable" && node.findAllByType("Text" as never).some(text => text.children.join("") === "全部月份")).props.onPress());
+  expect(list.props.data).toHaveLength(4);
+  expect(list.props.data).toContain(unknown);
 });

@@ -28,6 +28,7 @@ export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSave
   const { edit, loading: restoring, error: restoreError } = useMemoryEdit(scope, memory.id);
   const [content, setContent] = useState<MemoryEditContent | null>(null);
   const contentRef = useRef<MemoryEditContent | null>(null);
+  const editingBase = useRef<{ content: MemoryEditContent; revision: number; timezone: string } | null>(null);
   const [localWrites, setLocalWrites] = useState(0);
   const [localError, setLocalError] = useState<string | null>(null);
   const [sharing, setSharing] = useState<Sharing | null>(null);
@@ -50,12 +51,18 @@ export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSave
   if (!credentials || !memory.canWrite || memory.titleRevision === undefined || memory.bodyText === undefined || !isOccurredAtPrecision(memory.occurredAtPrecision)) return null;
   const timezone = family?.timezone ?? "UTC";
   const seed = (): LocalMemoryEdit => ({ scope: scope!, memoryId: memory.id,
-    content: memoryEditContent(memory), base: memoryEditContent(memory), baseRevision: memory.titleRevision!, timezone,
+    content: editingBase.current?.content ?? memoryEditContent(memory), base: editingBase.current?.content ?? memoryEditContent(memory),
+    baseRevision: editingBase.current?.revision ?? memory.titleRevision!, timezone: editingBase.current?.timezone ?? timezone,
     savedContent: null, submission: null, conflict: null, blocked: false, problem: null, revision: 0, updatedAt: new Date().toISOString() });
   const dirty = edit && !sameMemoryEdit(edit.content, edit.base);
   const openContent = () => {
     setMessage(null);
-    const value = edit && (dirty || edit.savedContent || edit.submission || edit.conflict || edit.baseRevision >= memory.titleRevision!) ? edit.content : memoryEditContent(memory);
+    const useLocal = edit && (dirty || edit.savedContent || edit.submission || edit.conflict || edit.baseRevision >= memory.titleRevision!);
+    const value = useLocal ? edit.content : memoryEditContent(memory);
+    // Keep the revision the owner actually opened. A refresh before their first
+    // keystroke must not silently rebase an old screen onto a newer family edit.
+    editingBase.current = useLocal ? { content: edit.base, revision: edit.baseRevision, timezone: edit.timezone }
+      : { content: memoryEditContent(memory), revision: memory.titleRevision!, timezone };
     contentRef.current = value;
     setContent(value);
   };
@@ -70,7 +77,7 @@ export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSave
       const base = current ?? seed();
       // A clean acknowledged row can be older than the detail now on screen.
       const fresh = !base.submission && !base.savedContent && !base.conflict && sameMemoryEdit(base.content, base.base)
-        && memory.titleRevision! > base.baseRevision ? seed() : base;
+        && (editingBase.current?.revision ?? memory.titleRevision!) > base.baseRevision ? seed() : base;
       return { ...fresh, content: next };
     }).catch(error => { if (active.current) setLocalError(error instanceof Error ? error.message : "本机暂存未完成，请稍后重试保存。"); })
       .finally(() => { if (active.current) setLocalWrites(count => count - 1); });

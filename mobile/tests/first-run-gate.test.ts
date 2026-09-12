@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("react-native", () => ({ AppState: { addEventListener: () => ({ remove() {} }) } }));
 vi.mock("expo-network", () => ({ useNetworkState: () => ({ isConnected: true }), addNetworkStateListener: () => ({ remove() {} }) }));
 vi.mock("expo-haptics", () => ({ notificationAsync: vi.fn(), selectionAsync: vi.fn(), impactAsync: vi.fn(), NotificationFeedbackType: { Success: "success", Warning: "warning", Error: "error" }, ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" } }));
+vi.mock("../src/memories/edit-sync", () => ({ syncMemoryEdits: async () => ({ saved: 0, needsAttention: 0 }) }));
 vi.mock("../src/sync/sync", () => ({ syncArchive: mocks.sync }));
 vi.mock("../src/storage/database", () => ({
   cacheMobileHome: vi.fn(), cacheMobileReview: vi.fn(), clearLocalArchive: vi.fn(),

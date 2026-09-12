@@ -315,8 +315,46 @@ it("exposes recording actions directly without a second menu", async () => {
   await render();
   const labels = tree!.root.findAllByType("Pressable" as never).map(node => node.props.accessibilityLabel);
   expect(labels).toEqual(expect.arrayContaining(["相册", "拍照", "录像", "录音", "文件", "保存"]));
-  expect(tree!.root.findAllByType("Pressable" as never).some(node => node.props.accessibilityState?.expanded !== undefined)).toBe(false);
+  for (const label of ["相册", "拍照", "录像", "录音", "文件"]) {
+    const action = tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === label)!;
+    expect(action.props.disabled).toBeFalsy();
+    expect(action.props.accessibilityState?.expanded).toBeUndefined();
+  }
+  expect(tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === "更多工具")?.props.accessibilityState.expanded).toBe(false);
   await press("录像");
   expect(mocks.camera).toHaveBeenCalledOnce();
   expect(mocks.alert).not.toHaveBeenCalled();
+});
+
+it("keeps writing prompts optional and previews before appending to the real existing text", async () => {
+  const { CaptureWritingPrompts } = await import("../src/components/CaptureWritingPrompts");
+  const onUse = vi.fn();
+  await act(() => { tree = create(createElement(CaptureWritingPrompts, { text: "我们已有的真实记录", disabled: false, onUse })); });
+  const promptPress = async (label: string) => {
+    const target = tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === label)!;
+    expect(target).toBeDefined(); expect(target.props.disabled).toBeFalsy();
+    await act(() => target.props.onPress());
+  };
+  expect(onUse).not.toHaveBeenCalled();
+  expect(tree!.root.findAllByType("Pressable" as never).some(node => node.props.accessibilityLabel === "生日")).toBe(false);
+  await promptPress("更多工具"); await promptPress("生日");
+  expect(onUse).not.toHaveBeenCalled();
+  await promptPress("追加到正文");
+  expect(onUse).toHaveBeenCalledOnce();
+  expect(onUse.mock.lastCall?.[0]).toMatch(/^我们已有的真实记录\n\n这个生日/);
+});
+
+it("does not let a prompt exceed the draft body limit or write while the draft is disabled", async () => {
+  const { CaptureWritingPrompts } = await import("../src/components/CaptureWritingPrompts");
+  const onUse = vi.fn();
+  await act(() => { tree = create(createElement(CaptureWritingPrompts, { text: "字".repeat(4999), disabled: false, onUse })); });
+  const control = (label: string) => tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === label)!;
+  await act(() => control("更多工具").props.onPress()); await act(() => control("第一次").props.onPress());
+  expect(control("追加到正文").props.disabled).toBe(true);
+  await act(() => control("追加到正文").props.onPress());
+  expect(onUse).not.toHaveBeenCalled();
+  await act(() => tree!.update(createElement(CaptureWritingPrompts, { text: "", disabled: true, onUse })));
+  expect(control("加入正文").props.disabled).toBe(true);
+  await act(() => control("加入正文").props.onPress());
+  expect(onUse).not.toHaveBeenCalled();
 });

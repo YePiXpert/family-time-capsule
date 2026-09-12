@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ApiError, fetchBootstrap, fetchMe, fetchMobileHome } from "../api/client";
 import { clearCredentials, saveCredentials } from "../auth/credentials";
 import { cacheMobileHome, clearServerCaches, getActiveDestination, setActiveDestination } from "../storage/database";
@@ -24,6 +24,7 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
     setCredentials, setUserId, setAccountFamilyId, setNeedsOnboarding } = session;
   const syncInFlightRef = useRef(false);
   const syncAgainRef = useRef(false);
+  const syncAgainRunner = useRef<(() => Promise<void>) | null>(null);
   const syncDoneRef = useRef<Promise<void> | null>(null);
   const [syncing, setSyncing] = useState(false);
   /** Only called after verifying the configured instance, before each upload pass. */
@@ -169,11 +170,15 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
         finish();
         if (syncAgainRef.current && generation === destGenRef.current) {
           syncAgainRef.current = false;
-          setTimeout(() => { void runSync().catch(() => {}); }, 0);
+          setTimeout(() => { void syncAgainRunner.current?.().catch(() => {}); }, 0);
         }
       }
     }
   }, [authorizeUpload, clearingLocalRef, connectingRef, credentials, credentialsRef, destGenRef, needsOnboardingRef, refreshAccount, refreshHome, reloadLocal, setAccountFamilyId, setCredentials, setMessage, setUserId]);
+  useLayoutEffect(() => {
+    syncAgainRunner.current = runSync;
+    return () => { syncAgainRunner.current = null; };
+  }, [runSync]);
 
   return { runSync, syncing, setSyncing, syncDoneRef };
 }

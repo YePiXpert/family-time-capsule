@@ -3,7 +3,8 @@ import { createElement, useEffect, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), sync: vi.fn(), clearFiles: vi.fn(), network: vi.fn(), renderFailure: false, listProps: [] as Record<string, unknown>[] }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), sync: vi.fn(), clearFiles: vi.fn(), network: vi.fn(), renderFailure: false,
+  credentials: null as { serverUrl: string; token: string; instanceId: string } | null, listProps: [] as Record<string, unknown>[] }));
 vi.mock("react-native", async () => {
   const require = createRequire(import.meta.url);
   const native = require("./runtime/native-scroll.cjs") as {
@@ -37,6 +38,7 @@ vi.mock("react-native", async () => {
     StyleSheet: { create: (v: unknown) => v, flatten: (v: unknown) => v, absoluteFill: {}, hairlineWidth: 1 },
     useColorScheme: () => "light", Platform: { OS: "ios", Version: 26 },
     Dimensions: { get: () => ({ width: 390, height: 844 }) },
+    useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
     AppState: { addEventListener: () => ({ remove() {} }) },
     AccessibilityInfo: { addEventListener: () => ({ remove() {} }), isReduceMotionEnabled: async () => false, isReduceTransparencyEnabled: async () => true },
   };
@@ -59,12 +61,13 @@ vi.mock("../src/navigation/AppNavigator", async () => ({ AppNavigator: (await im
 vi.mock("../src/screens/SyncConsentScreen", () => ({ SyncConsentScreen: "SyncConsentScreen" }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: ReactNode }) => children }));
 vi.mock("../src/notifications/cleanup", () => ({ clearRetiredReminders: async () => {} }));
-vi.mock("../src/auth/credentials", () => ({ loadCredentials: async () => null, clearCredentials: vi.fn(), saveCredentials: vi.fn() }));
+vi.mock("../src/auth/credentials", () => ({ loadCredentials: async () => mocks.credentials, clearCredentials: vi.fn(), saveCredentials: vi.fn() }));
 vi.mock("../src/storage/files", () => ({ clearLocalFiles: mocks.clearFiles, removeLocalFile: vi.fn() }));
 vi.mock("../src/reading/native", () => ({ clearAllReadingDownloads: vi.fn(), revalidateReadingDownloads: vi.fn() }));
 vi.mock("../src/native/intake", () => ({ drainNativeShareIntake: async () => ({ manifests: 0 }) }));
 vi.mock("../modules/share-intake/src", () => ({ subscribeToPendingNativeShares: () => () => {} }));
 vi.mock("../src/design/haptics", () => ({ haptics: { impact: vi.fn(), selection: vi.fn() }, setHapticsEnabled: vi.fn() }));
+vi.mock("../src/memories/edit-sync", () => ({ syncMemoryEdits: async () => ({ saved: 0, needsAttention: 0 }) }));
 vi.mock("../src/sync/sync", () => ({ syncArchive: mocks.sync }));
 vi.mock("../src/api/client", () => ({ ApiError: class extends Error {}, fetchBootstrap: mocks.network, fetchMobileHome: mocks.network, fetchMe: mocks.network, signOut: mocks.network, submitOnboarding: mocks.network, requestMobileJson: mocks.network }));
 
@@ -78,6 +81,23 @@ beforeEach(async () => {
   vi.clearAllMocks();
   mocks.listProps.length = 0;
   mocks.renderFailure = false;
+  mocks.credentials = null;
+});
+
+it("cold-starts offline into the current session's cached family timeline without authorizing an upload", async () => {
+  const { memoryCacheScope } = await import("../src/memories/cache-scope");
+  mocks.credentials = { serverUrl: "https://offline.test", instanceId: "instance", token: "synthetic-session" };
+  const scope = memoryCacheScope(mocks.credentials, "user", "family")!;
+  await setMeta("welcome_done", "1");
+  await setMeta("family", JSON.stringify({ id: "family", name: "家庭", timezone: "UTC" }));
+  await setMeta("viewer", JSON.stringify({ id: "user", role: "owner", canEditEvents: true, canReviewInbox: true }));
+  const db = await getDatabase();
+  await db.runAsync(`INSERT INTO timeline_event(id,scope,title,body_text,occurred_at,occurred_at_precision,updated_at,asset_count,participant_names_json)
+    VALUES(?,?,?,?,?,'exact',?,0,'[]')`, "cached-family-event", scope, "离线读到的家庭照片", "本机缓存的说明", "2026-09-01T00:00:00.000Z", "2026-09-01T00:00:00.000Z");
+  mocks.network.mockRejectedValueOnce(new Error("offline"));
+  await launch();
+  expect(textOf()).toContain("离线读到的家庭照片");
+  expect(mocks.sync).not.toHaveBeenCalled();
 });
 afterEach(async () => { if (tree) await act(() => tree!.unmount()); tree = undefined; });
 async function launch() {

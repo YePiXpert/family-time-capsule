@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
     token: "fictional-test-token",
   },
 }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ children }: { children: unknown }) => children }));
+vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "Icon" }));
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
   ActivityIndicator: "ActivityIndicator",
   Image: "Image",
   Pressable: "Pressable",
@@ -27,6 +30,7 @@ vi.mock("@react-navigation/native", () => ({
 vi.mock("../src/state/AppContext", () => { const useApp = () => ({
     credentials: mocks.credentials,
     family: { timezone: "Asia/Shanghai" },
+    events: [],
   }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/api/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -96,20 +100,20 @@ it("renders the real native calendar, changes media/age filters and opens the so
   });
   await press("虚构家庭的第一天");
   expect(mocks.navigate).toHaveBeenCalledWith("Memory", { id: "event-1" });
-  const input = tree!.root.findAll(
-    (n) =>
-      String(n.type) === "TextInput" &&
-      n.props.accessibilityLabel === "年 / 月",
-  )[0]!;
-  await act(() => input.props.onChangeText("2026-13"));
-  await press("跳转");
-  expect(JSON.stringify(tree!.toJSON())).toContain("请填写有效月份");
+  expect(tree!.root.findAll(n => String(n.type) === "TextInput" && n.props.accessibilityLabel === "年 / 月")).toHaveLength(0);
+  await act(() => tree!.root.findByProps({ testID: "month-picker" }).props.onPress());
+  const monthButtons = tree!.root.findAll(n => String(n.type) === "Pressable" && /^2026 年 \d+ 月，本机/.test(n.props.accessibilityLabel ?? ""));
+  expect(monthButtons).toHaveLength(12);
+  expect(monthButtons.some(n => n.props.accessibilityLabel.includes("13 月"))).toBe(false);
+  await press("3 月");
+  expect(mocks.fetch.mock.lastCall?.[1]).toMatchObject({ month: "2026-03", date: "", media: "document" });
+
 });
 it("distinguishes network errors from permission denial, removes stale results and retries", async () => {
   mocks.fetch.mockRejectedValueOnce(new ApiError("offline", 0));
   await render();
   expect(JSON.stringify(tree!.toJSON())).toContain("当前无法联网");
-  mocks.fetch.mockResolvedValueOnce(response());
+  mocks.fetch.mockImplementationOnce(async (_credentials, params) => response(params.month));
   await press("重试");
   expect(JSON.stringify(tree!.toJSON())).toContain("虚构家庭的第一天");
   mocks.fetch.mockRejectedValueOnce(new ApiError("当前账号没有权限", 403));

@@ -35,6 +35,11 @@ export async function chooseLocalIntake(input: {
       && choice.scope === input.scope && choice.draft_id === input.draftId;
     if (input.refine && !refiningDraft) throw new Error("请从这批导入原来关联的草稿继续挑选。");
     if (choice.destination !== "pending") {
+      // A completed library choice can be replayed after termination before the
+      // consent UI ran. Recover the existing upload IDs below without applying
+      // another revision or manufacturing a fresh upload request.
+      if (choice.destination === "library" && input.destination === "library" && choice.scope === input.scope
+        && choice.revision === input.expectedRevision + 1) { result.draftId = null; return; }
       // Library-only originals can later be explicitly sent from local to a family.
       const bindingLibrary = choice.destination === "library" && input.destination === "library"
         && ((choice.scope === "local" && input.scope !== "local") || (choice.scope === input.scope && input.queueUpload !== false));
@@ -78,9 +83,12 @@ export async function chooseLocalIntake(input: {
       }
       const text = [content.text, ...texts].filter(Boolean).join("\n\n");
       if (text.length > 5000 || items.length > 200) throw new Error("这批内容超过一份草稿的容量，请先仅存资料库，再挑选素材组成记忆。");
+      const previousCover = content.items.find(item => item.id === content.coverItemId);
+      const outsideCover = refiningDraft && previousCover && (!previousCover.localCaptureRef || !batchIds.has(previousCover.localCaptureRef))
+        ? previousCover.id : null;
       const next: LocalDraft = { ...(previous ?? { id: input.draftId, scope: input.scope, serverRevision: 0, status: "editing", memoryEventId: null }),
         revision: (previous?.revision ?? 0) + 1, mutationId: input.mutationId, updatedAt: new Date().toISOString(),
-        content: { ...content, text, items, coverItemId: input.coverCaptureId === null ? null : input.coverCaptureId
+        content: { ...content, text, items, coverItemId: input.coverCaptureId === null ? outsideCover : input.coverCaptureId
           ? items.find(item => item.localCaptureRef === input.coverCaptureId)?.id ?? null
           : items.some(item => item.id === content.coverItemId) ? content.coverItemId : items[0]?.id ?? null } };
       await saveLocalDraftInTransaction(tx, next, previous?.revision ?? 0);

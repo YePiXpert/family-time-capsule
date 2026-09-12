@@ -28,7 +28,7 @@ function Picker({ scope, sessionId, title, onClose }: { scope: string | null; se
   const [items, setItems] = useState<ImportPickItem[]>([]);
   const [selection, setSelection] = useState<ImportPhotoSelection | null>(null);
   const [preview, setPreview] = useState<ImportPickItem | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [finishedRequest, setFinishedRequest] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [pending, setPending] = useState(0);
@@ -38,11 +38,12 @@ function Picker({ scope, sessionId, title, onClose }: { scope: string | null; se
   const writes = useRef<Promise<unknown>>(Promise.resolve());
   const active = useRef(true);
   const storageId = `remote:${sessionId}`;
+  const requestKey = JSON.stringify([scope, sessionId, online, retry]);
+  const loading = finishedRequest !== requestKey;
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   useEffect(() => {
     const controller = new AbortController();
     let current = true;
-    setLoading(true); setError("");
     void (async () => {
       if (!scope || !credentials) throw new Error("请先连接并核对当前家庭，再挑选服务器资料。");
       if (online === false) throw new Error("这批服务器原件需要联网读取。本机导入可以离线挑选。");
@@ -74,13 +75,14 @@ function Picker({ scope, sessionId, title, onClose }: { scope: string | null; se
       const next = saved ? reconcilePhotoSelection(saved, available) : createPhotoSelection(available);
       revision.current = saved?.revision ?? 0;
       setItems(available); setSelection(next);
+      setError("");
       setWarning(unavailable ? `${unavailable} 份原件已不可见，其余资料仍可挑选。` : "");
     })().catch(reason => {
       if (current) { setSelection(null); setError(reason instanceof Error ? reason.message : "暂时无法读取导入资料。"); }
       controller.abort();
-    }).finally(() => { if (current) setLoading(false); });
+    }).finally(() => { if (current) setFinishedRequest(requestKey); });
     return () => { current = false; controller.abort(); };
-  }, [credentials, online, scope, sessionId, storageId, retry]);
+  }, [credentials, online, scope, sessionId, storageId, requestKey]);
 
   const change = (next: ImportPhotoSelection) => {
     if (!scope) return;
@@ -98,7 +100,7 @@ function Picker({ scope, sessionId, title, onClose }: { scope: string | null; se
     <Text style={s.title}>{title}</Text>
     <Text style={s.body}>分组、代表图和勾选保存在这台设备。加入相册后仍按原件的读者权限显示。</Text>
     {warning ? <Text style={s.body}>{warning}</Text> : null}
-    {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
+    {error && !loading ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
   </View>;
   const footer = selection ? <View style={{ gap: 12 }}>
     <Text style={s.body}>{pending ? "正在保存挑选…" : error ? "本机挑选尚未保存" : "挑选保留在本机 · 原件全部保留"}</Text>

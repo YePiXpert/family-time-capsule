@@ -31,15 +31,23 @@ function pickerItems(detail: IntakeDetail): ImportPickItem[] {
   });
 }
 
-export function LocalIntakeScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, "LocalIntake">) {
-  const s = useSharedStyles();
-  const { credentials, userId, family, viewer, syncConsent, online } = useAppData();
-  const { reloadLocal, runSync, grantSyncConsent } = useAppActions();
+type IntakeScreenProps = NativeStackScreenProps<RootStackParamList, "LocalIntake">;
+
+export function LocalIntakeScreen(props: IntakeScreenProps) {
+  const { credentials, userId, family, viewer } = useAppData();
   // Cached identity can address this account's local work while offline. Only
   // the live account check below may authorize sending originals to a server.
   const knownIdentity = !credentials || Boolean(credentials.instanceId && viewer?.id && family?.id && (!userId || viewer.id === userId));
   const verified = Boolean(credentials?.instanceId && userId && family?.id && viewer?.id === userId);
   const scope = credentials?.instanceId && viewer?.id && family?.id && knownIdentity ? JSON.stringify([credentials.serverUrl, credentials.instanceId, viewer.id, family.id]) : "local";
+  return <LocalIntakeSession key={JSON.stringify([scope, props.route.params.id])} {...props} scope={scope} knownIdentity={knownIdentity} verified={verified} />;
+}
+
+/** Changing account or batch remounts the local UI; pending writes retain their original scope. */
+function LocalIntakeSession({ route, navigation, scope, knownIdentity, verified }: IntakeScreenProps & { scope: string; knownIdentity: boolean; verified: boolean }) {
+  const s = useSharedStyles();
+  const { credentials, family, viewer, syncConsent, online } = useAppData();
+  const { reloadLocal, runSync, grantSyncConsent } = useAppActions();
   const key = JSON.stringify([scope, route.params.id]);
   const keyRef = useRef(key);
   const sessionRef = useRef<SelectionSession | null>(null);
@@ -53,8 +61,6 @@ export function LocalIntakeScreen({ route, navigation }: NativeStackScreenProps<
   useLayoutEffect(() => {
     keyRef.current = key;
     operationRevision.current++;
-    submitting.current = false;
-    setBusy(false); setError(null); setMessage(null); setDraftLimit(8);
     return () => { keyRef.current = ""; };
   }, [key]);
   const view = state?.key === key ? state : null;

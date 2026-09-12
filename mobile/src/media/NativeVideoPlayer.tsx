@@ -42,6 +42,7 @@ export function NativeVideoPlayer({
   const [playing, setPlaying] = useState(false);
   const [requested, setRequested] = useState(true);
   const [failure, setFailure] = useState<PlaybackFailure | null>(null);
+  const [controlError, setControlError] = useState("");
   const [seconds, setSeconds] = useState(initialSeconds);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
@@ -108,8 +109,10 @@ export function NativeVideoPlayer({
     setDuration(Number.isFinite(player.duration) ? player.duration : 0);
     if (!restored.current) {
       restored.current = true;
-      if (position.current > 0)
-        player.seekBy(Math.min(position.current, Math.max(0, player.duration - 0.1)) - player.currentTime);
+      if (position.current > 0) {
+        try { player.seekBy(Math.min(position.current, Math.max(0, player.duration - 0.1)) - player.currentTime); }
+        catch { setControlError("无法恢复上次的位置，可拖动进度条定位。"); }
+      }
       if (desired.current && foreground.current) player.play();
     }
   }, [player]);
@@ -167,6 +170,7 @@ export function NativeVideoPlayer({
       if (generation.current !== current) return;
       setFirstFrame(false);
       setFailure(null);
+      setControlError("");
       setStatus("loading");
       setAcceptedSourceKey("");
       player.pause();
@@ -242,17 +246,20 @@ export function NativeVideoPlayer({
   function seekTo(value: number) {
     if (!accepted.current || player.status !== "readyToPlay" || !Number.isFinite(value)) return;
     const target = Math.max(0, Math.min(value, player.duration));
-    player.seekBy(target - player.currentTime);
-    position.current = target;
-    setSeconds(target);
-    save.current?.(target);
-    lastSaved.current = target;
+    try {
+      player.seekBy(target - player.currentTime);
+      position.current = target;
+      setSeconds(target);
+      save.current?.(target);
+      lastSaved.current = target;
+      setControlError("");
+    } catch { setControlError("暂时无法调整播放位置，请重试或拖动到其他位置。"); }
   }
-  const explanation = usableFrame ? undefined : viewingOnly
+  const explanation = controlError || (usableFrame ? undefined : viewingOnly
     ? message ? "视频正在准备中…" : externalError || failure ? "这段视频暂时无法播放，可以重试或查看下一份。" : undefined
-    : externalError || message || failure?.message;
+    : externalError || message || failure?.message);
   const waiting = !explanation && (!currentFrame || status === "loading");
-  const cover = !currentFrame || Boolean(explanation);
+  const cover = !currentFrame || status === "loading" || Boolean(explanation);
   return (
     <View style={{ flex: 1, minHeight: 0 }}>
       <ReaderSwipeSurface onNavigate={onNavigate}>
@@ -275,10 +282,10 @@ export function NativeVideoPlayer({
             <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 20 }} pointerEvents="box-none">
               <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, gap: 12 }}>
                 {waiting || message ? <ActivityIndicator color={colors.coral} /> : null}
-                <Text testID="media-video-status" accessibilityLiveRegion="polite" style={blockingFailure && !message ? s.error : s.body}>
+                <Text testID="media-video-status" accessibilityLiveRegion="polite" style={controlError || blockingFailure && !message ? s.error : s.body}>
                   {explanation || (requested ? "正在加载视频…" : "点击播放视频")}
                 </Text>
-                {blockingFailure && !message ? <Button title="重试视频" onPress={() => { desired.current = true; setRequested(true); onRetry(); }} /> : null}
+                {(blockingFailure || controlError) && !message ? <Button title="重试视频" onPress={() => { desired.current = true; setRequested(true); onRetry(); }} /> : null}
               </View>
             </ScrollView>
           </View> : null}

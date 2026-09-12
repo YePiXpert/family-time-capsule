@@ -1,23 +1,24 @@
-import { createElement, useEffect, useState } from "react";
+import { createElement, forwardRef, Fragment, useEffect, useImperativeHandle, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MediaDerivation } from "../src/media/types";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(), play: vi.fn(), pause: vi.fn(), seek: vi.fn(), rate: vi.fn(),
-  fetch: vi.fn(), replace: vi.fn(), active: 0, created: 0, localExists: true,
+  fetch: vi.fn(), replace: vi.fn(), videoSeek: vi.fn(), exportOriginal: vi.fn(), active: 0, created: 0, localExists: true,
   loadStatus: "readyToPlay" as "readyToPlay" | "error" | "loading",
   nativeMessage: "codec",
   appListeners: new Set<(state: string) => void>(),
   player: null as FakePlayer | null,
   beforeResolve: null as (() => void | Promise<void>) | null,
 }));
-type EventValue = { status?: string; isPlaying?: boolean; currentTime?: number; error?: { message: string }; source?: unknown };
+type EventValue = { muted?: boolean; status?: string; isPlaying?: boolean; currentTime?: number; error?: { message: string }; source?: unknown };
 class FakePlayer {
   status = "idle";
   duration = 60;
   currentTime = 0;
   playing = false;
+  muted = false;
   timeUpdateEventInterval = 0;
   listeners = new Map<string, Set<(value: EventValue) => void>>();
   addListener(event: string, listener: (value: EventValue) => void) {
@@ -41,7 +42,7 @@ class FakePlayer {
     await mocks.beforeResolve?.();
   }
   play() { mocks.play(); this.playing = true; this.emit("playingChange", { isPlaying: true }); }
-  seekBy(seconds: number) { this.currentTime += seconds; }
+  seekBy(seconds: number) { mocks.videoSeek(seconds); this.currentTime += seconds; }
   pause() { mocks.pause(); this.playing = false; this.emit("playingChange", { isPlaying: false }); }
 }
 vi.mock("react-native", () => ({
@@ -49,9 +50,16 @@ vi.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: (_: string, listener: (state: string) => void) => {
     mocks.appListeners.add(listener); return { remove: () => mocks.appListeners.delete(listener) };
   } },
+  PanResponder: { create: (handlers: Record<string, unknown>) => ({ panHandlers: handlers }) },
+  FlatList: forwardRef(function MockFlatList(props: { data: unknown[]; renderItem: (item: { item: unknown; index: number }) => unknown }, ref) {
+    useImperativeHandle(ref, () => ({ scrollToOffset: vi.fn() }), []);
+    return createElement("FlatList", props, props.data.map((item, index) => createElement(Fragment, { key: index }, props.renderItem({ item, index }) as never)));
+  }),
   ActivityIndicator: "ActivityIndicator", Image: "Image", Modal: "Modal", Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View",
   useWindowDimensions: () => ({ width: 375, height: 800 }), StyleSheet: { create: (s: unknown) => s },
 }));
+vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "JournalIcon" }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null }));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
 vi.mock("expo-file-system", () => ({ File: class { get exists() { return mocks.localExists; } } }));
 vi.mock("expo-video", () => ({ VideoView: "VideoView", useVideoPlayer: (source: unknown, setup: (player: FakePlayer) => void) => {
@@ -61,9 +69,10 @@ vi.mock("expo-video", () => ({ VideoView: "VideoView", useVideoPlayer: (source: 
 } }));
 vi.mock("expo-audio", () => ({ useAudioPlayer: () => {
   useEffect(() => { mocks.active++; return () => { mocks.active--; }; }, []);
-  return { play: mocks.play, pause: mocks.pause, seekTo: mocks.seek, setPlaybackRate: mocks.rate };
-}, useAudioPlayerStatus: () => ({ duration: 60, currentTime: 12, isLoaded: true, playing: false, isBuffering: false, didJustFinish: false, error: null }) }));
-vi.mock("../src/media/export-original", () => ({ exportOriginalCopy: vi.fn() }));
+  const [player] = useState(() => ({ play: mocks.play, pause: mocks.pause, seekTo: mocks.seek, setPlaybackRate: mocks.rate, muted: false }));
+  return player;
+}, useAudioPlayerStatus: () => ({ duration: 60, currentTime: 12, isLoaded: true, playing: false, isBuffering: false, didJustFinish: false, error: null, mute: false }) }));
+vi.mock("../src/media/export-original", () => ({ exportOriginalCopy: mocks.exportOriginal }));
 vi.mock("../src/api/client", () => ({ fetchMediaDerivations: mocks.get }));
 const { NativeMediaReader } = await import("../src/media/NativeMediaReader");
 const { NativeVideoPlayer } = await import("../src/media/NativeVideoPlayer");
@@ -110,11 +119,13 @@ it("creates only the active player, controls audio and releases it on image navi
     { id: "audio-two", type: "audio", filename: "爸爸的声音", mimeType: "audio/wav" },
   ] })); });
   expect(mocks.active).toBe(0); await press("打开阅读器：妈妈的声音"); expect(mocks.active).toBe(1); expect(mocks.play).not.toHaveBeenCalled();
-  await press("播放声音"); expect(mocks.play).toHaveBeenCalledOnce(); await press("播放速度 1×"); expect(mocks.rate).toHaveBeenCalledWith(1.25);
-  await press("10.0 秒 · 十秒处的原话"); expect(mocks.seek).toHaveBeenCalledWith(10);
-  await press("下一份"); expect(mocks.active).toBe(0); await press("放大");
+  await press("播放声音"); expect(mocks.play).toHaveBeenCalledOnce(); await press("更多素材操作"); await press("播放速度 1×"); expect(mocks.rate).toHaveBeenCalledWith(1.25);
+  await press("00:10 · 十秒处的原话"); expect(mocks.seek).toHaveBeenCalledWith(10);
+  await press("下一份"); expect(mocks.active).toBe(0);
+  await act(() => tree!.root.findAll(n => String(n.type) === "View" && n.props.testID === "media-photo-viewport")[0]!.props.onLayout({ nativeEvent: { layout: { width: 375, height: 500 } } }));
+  await press("更多素材操作"); await press("放大");
   const photo = tree!.root.findAll(n => String(n.type) === "Image" && n.props.accessibilityLabel === "虚构合照").at(-1)!;
-  expect(photo.props.style.width).toBeGreaterThan(375);
+  expect(photo.parent!.props.style.width).toBeGreaterThan(375); await press("关闭更多操作");
   await press("下一份"); expect(mocks.active).toBe(1); await press("关闭阅读器"); expect(mocks.active).toBe(0);
 });
 
@@ -125,7 +136,7 @@ it.each([401, 403, 404])("distinguishes access failure %s from networking, while
     { id: "local", type: "audio", filename: "本机声音", mimeType: "audio/wav", localUri: "file:///fictional-original.wav" },
   ] })); });
   await press("打开阅读器：服务器声音"); expect(text()).toContain(status === 401 ? "登录已过期" : "当前没有阅读权限"); expect(mocks.active).toBe(0);
-  mocks.get.mockRejectedValue(Object.assign(new Error("offline"), { status: 0 })); await press("重新加载"); expect(text()).toContain("检查网络后重试");
+  mocks.get.mockRejectedValue(Object.assign(new Error("offline"), { status: 0 })); await press("重新加载"); await press("更多素材操作"); expect(text()).toContain("检查网络后重试"); await press("关闭更多操作");
   await press("下一份"); expect(mocks.active).toBe(1); expect(text()).not.toContain("带真实时间段");
 });
 
@@ -133,7 +144,7 @@ it("restores local voice progress and transcript without remote requests or auto
   mocks.seek.mockResolvedValue(undefined); const onPosition = vi.fn();
   await act(async () => { tree = create(createElement(NativeMediaReader, { credentials: null, onPosition, assets: [{ id: "cached", type: "audio", filename: "已下载虚构声音", mimeType: "audio/wav", localUri: "file:///fictional.wav", initialSeconds: 8, localTranscript: { text: "有时间戳的原话", edited: false, segments: [{ startSeconds: 3, endSeconds: 5, text: "真实三秒原话" }] } }] })); });
   await press("打开阅读器：已下载虚构声音"); expect(mocks.seek).toHaveBeenCalledWith(8); expect(mocks.get).not.toHaveBeenCalled(); expect(mocks.play).not.toHaveBeenCalled();
-  await press("3.0 秒 · 真实三秒原话"); expect(mocks.seek).toHaveBeenCalledWith(3); await press("关闭阅读器"); expect(onPosition).toHaveBeenCalledWith("cached", 12);
+  await press("更多素材操作"); await press("00:03 · 真实三秒原话"); expect(mocks.seek).toHaveBeenCalledWith(3); await press("关闭阅读器"); expect(onPosition).toHaveBeenCalledWith("cached", 12);
 });
 
 it("clicking a video plays it, removes its cover only on first frame and keeps the viewport height stable", async () => {
@@ -141,9 +152,9 @@ it("clicking a video plays it, removes its cover only on first frame and keeps t
   await mountVideo();
   expect(mocks.created).toBe(1); expect(mocks.active).toBe(1); expect(mocks.play).toHaveBeenCalledOnce();
   const viewport = () => tree!.root.findAll(n => String(n.type) === "View" && n.props.testID === "media-video-viewport")[0]!.props.style;
-  const original = viewport(); expect(original.height).toBe(340);
-  expect(text()).toContain("视频封面"); expect(text()).not.toContain("视频画面已显示");
-  await frame(); expect(text()).not.toContain("视频封面"); expect(text()).toContain("视频画面已显示"); expect(viewport()).toEqual(original);
+  const original = viewport(); expect(original.flex).toBe(1); expect(original.height).toBeUndefined();
+  expect(text()).toContain("视频封面"); expect(nativeView().props.accessibilityValue.text).not.toBe("画面已呈现");
+  await frame(); expect(text()).not.toContain("视频封面"); expect(nativeView().props.accessibilityValue.text).toBe("画面已呈现"); expect(viewport()).toEqual(original);
   await press("暂停视频"); expect(mocks.player!.playing).toBe(false); await press("播放视频"); expect(mocks.player!.playing).toBe(true);
   await press("关闭阅读器"); expect(mocks.active).toBe(0);
 });
@@ -169,7 +180,7 @@ it("requests one compatible version only after authenticated video range verific
   ready = true; mocks.loadStatus = "readyToPlay";
   await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
   expect(mocks.replace.mock.calls.at(-1)![0].uri).toContain("/compatible"); expect(mocks.created).toBe(1); expect(mocks.play).toHaveBeenCalledOnce();
-  await frame(); expect(text()).toContain("视频画面已显示"); expect(text()).not.toContain("正在准备兼容播放版");
+  await frame(); expect(nativeView().props.accessibilityValue.text).toBe("画面已呈现"); expect(text()).not.toContain("正在准备兼容播放版");
 });
 
 it.each([401, 403, 404, 500])("does not transcode a remote video when its range request returns %s", async (status) => {
@@ -197,7 +208,7 @@ it("distinguishes a missing local file and unsupported local encoding without up
   mocks.loadStatus = "error"; mocks.localExists = false;
   await mountVideo(true); expect(text()).toContain("本机视频文件已不在原位置");
   mocks.localExists = true; await press("重试视频"); expect(text()).toContain("原件已保存在本机"); expect(text()).toContain("已同步的原件");
-  expect(mocks.get).not.toHaveBeenCalled(); expect(mocks.fetch).not.toHaveBeenCalled(); expect(text()).toContain("导出原件副本");
+  expect(mocks.get).not.toHaveBeenCalled(); expect(mocks.fetch).not.toHaveBeenCalled(); await press("更多素材操作"); expect(text()).toContain("导出原件副本"); await press("关闭更多操作");
 });
 
 it("shows the conversion failure reason and allows a manual retry without looping", async () => {
@@ -246,7 +257,7 @@ it("uses a confirmed local-to-remote mapping for existing MPEG compatibility wit
   expect(mocks.replace).toHaveBeenCalledOnce(); expect(mocks.replace.mock.calls[0]![0].uri).toContain("/compatible");
   const cover = tree!.root.findAll(n => String(n.type) === "Image" && n.props.accessibilityLabel === "视频封面")[0]!;
   expect(cover.props.source.uri).toContain("/cover"); expect(mocks.fetch).not.toHaveBeenCalled();
-  expect(text()).toContain("导出原件副本");
+  await press("更多素材操作"); expect(text()).toContain("导出原件副本"); await press("关闭更多操作");
 });
 
 it.each([null, 401, 0])("keeps a mapped local video available when remote credentials/network are unavailable (%s)", async (status) => {
@@ -254,7 +265,7 @@ it.each([null, 401, 0])("keeps a mapped local video available when remote creden
   await act(async () => { tree = create(createElement(NativeMediaReader, { credentials: status === null ? null : credentials, assets: [{ ...video, localUri: "file:///private/original.mov", remoteAssetId: "remote-original" }] })); });
   await press("打开阅读器：小美.mov");
   expect(mocks.replace.mock.calls.at(-1)![0].uri).toBe("file:///private/original.mov"); expect(mocks.play).toHaveBeenCalledOnce();
-  await frame(); expect(text()).toContain("视频画面已显示"); expect(text()).not.toContain("登录已过期");
+  await frame(); expect(nativeView().props.accessibilityValue.text).toBe("画面已呈现"); expect(text()).not.toContain("登录已过期");
   expect(mocks.get.mock.calls.filter(args => args[2] === "transcode")).toHaveLength(0);
 });
 
@@ -270,7 +281,7 @@ it("checks the mapped original is readable before converting a synced local code
 it("accepts a real first frame delivered before the native replace promise settles", async () => {
   mocks.beforeResolve = () => nativeView().props.onFirstFrameRender();
   await mountVideo(true);
-  expect(text()).toContain("视频画面已显示"); expect(text()).not.toContain("等待视频画面");
+  expect(nativeView().props.accessibilityValue.text).toBe("画面已呈现"); expect(text()).not.toContain("等待视频画面");
 });
 
 it("retries a stalled native load without waiting for its old promise and ignores its late completion", async () => {
@@ -282,16 +293,16 @@ it("retries a stalled native load without waiting for its old promise and ignore
   await act(async () => { await vi.advanceTimersByTimeAsync(15_000); }); expect(text()).toContain("视频加载超过 15 秒");
   mocks.beforeResolve = null;
   await press("重试视频"); expect(mocks.replace).toHaveBeenCalledTimes(2); expect(mocks.play).toHaveBeenCalledOnce(); expect(mocks.created).toBe(1);
-  await frame(); await act(async () => release()); expect(mocks.play).toHaveBeenCalledOnce(); expect(text()).toContain("视频画面已显示");
+  await frame(); await act(async () => release()); expect(mocks.play).toHaveBeenCalledOnce(); expect(nativeView().props.accessibilityValue.text).toBe("画面已呈现");
 });
 
 it("clears the native item and controls when the current source is withdrawn", async () => {
   const props = { source: { uri: "https://fictional.example.test/video" }, poster: null, localOriginal: false, retryToken: 0, onUnsupported: vi.fn(), onRetry: vi.fn() };
   await act(async () => { tree = create(createElement(NativeVideoPlayer, props)); }); await frame();
-  expect(nativeView().props.nativeControls).toBe(true);
+  expect(nativeView().props.nativeControls).toBe(false); expect(nativeView().props.style.opacity).toBe(1);
   await act(async () => tree!.update(createElement(NativeVideoPlayer, { ...props, source: null, externalError: "当前没有阅读权限" })));
   expect(mocks.replace).toHaveBeenLastCalledWith(null); expect(nativeView().props.nativeControls).toBe(false); expect(mocks.player!.playing).toBe(false);
-  expect(text()).not.toContain("视频画面已显示"); expect(text()).toContain("当前没有阅读权限");
+  expect(nativeView().props.accessibilityValue.text).not.toBe("画面已呈现"); expect(text()).toContain("当前没有阅读权限");
 });
 
 it("permits exactly one new automatic compatibility attempt after an explicit retry of a failed request", async () => {
@@ -382,8 +393,8 @@ it("hides a previously rendered remote frame and preview immediately after authe
   mocks.get.mockResolvedValue({ jobs: [job("preview", "succeeded", "cover")], transcript: null });
   await mountVideo(); await frame(); expect(nativeView().props.style.opacity).toBe(1);
   mocks.get.mockRejectedValue(Object.assign(new Error("expired"), { status: 401 }));
-  await press("重新加载");
-  expect(text()).toContain("登录已过期"); expect(text()).not.toContain("视频封面"); expect(text()).not.toContain("视频画面已显示");
+  await press("更多素材操作"); await press("重新加载");
+  expect(text()).toContain("登录已过期"); expect(text()).not.toContain("视频封面"); expect(nativeView().props.accessibilityValue.text).not.toBe("画面已呈现");
   expect(nativeView().props.style.opacity).toBe(0); expect(nativeView().props.nativeControls).toBe(false); expect(mocks.replace).toHaveBeenLastCalledWith(null);
 });
 
@@ -411,4 +422,81 @@ it("drops remote derivations when a local original's confirmed mapping is withdr
   await act(async () => tree!.update(createElement(NativeMediaReader, { credentials: null, assets: [local] })));
   expect(mocks.get).toHaveBeenCalledTimes(requests); expect(mocks.replace).toHaveBeenLastCalledWith({ uri: local.localUri });
   expect(mocks.created).toBe(1); expect(tree!.root.findByType("Modal" as never).props.visible).toBe(true);
+});
+
+function nodeWithId(id: string, type = "View") { return tree!.root.findAll(node => String(node.type) === type && node.props.testID === id)[0]!; }
+async function layoutSeek() { await act(() => nodeWithId("media-video-seek").props.onLayout({ nativeEvent: { layout: { width: 220 } } })); }
+
+it("uses one custom playback bar, formats time, mutes, and commits one paused seek when a drag finishes", async () => {
+  const onPosition = vi.fn();
+  await act(async () => { tree = create(createElement(NativeMediaReader, { credentials: null, onPosition, assets: [{ ...video, localUri: "file:///original.mov" }] })); });
+  await press("打开阅读器：小美.mov"); await frame(); await layoutSeek();
+  await act(() => mocks.player!.emit("timeUpdate", { currentTime: 8 }));
+  expect(nodeWithId("media-video-time", "Text").props.children.join("")).toBe("00:08 / 01:00");
+  expect(nativeView().props.nativeControls).toBe(false);
+  expect(tree!.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "暂停视频")).toHaveLength(1);
+  expect(text()).not.toContain("视频画面已显示"); expect(text()).not.toContain("导出原件副本"); expect(text()).not.toContain("准备兼容播放版");
+  await press("静音"); expect(mocks.player!.muted).toBe(true); await press("打开声音"); expect(mocks.player!.muted).toBe(false);
+  await press("暂停视频");
+  await act(() => nodeWithId("media-video-seek").props.onResponderGrant({ nativeEvent: { locationX: 10 } }));
+  await act(() => nodeWithId("media-video-seek").props.onResponderMove({ nativeEvent: { locationX: 110 } }));
+  await act(() => mocks.player!.emit("timeUpdate", { currentTime: 9 }));
+  expect(mocks.videoSeek).not.toHaveBeenCalled(); expect(nodeWithId("media-video-seek").props.accessibilityValue.now).toBe(30);
+  await act(() => nodeWithId("media-video-seek").props.onResponderRelease());
+  expect(mocks.videoSeek).toHaveBeenCalledOnce(); expect(mocks.player!.currentTime).toBe(30); expect(mocks.player!.playing).toBe(false);
+  expect(onPosition).toHaveBeenLastCalledWith("mov", 30); expect(mocks.created).toBe(1); expect(mocks.replace).toHaveBeenCalledOnce();
+  await act(() => nodeWithId("media-video-seek").props.onAccessibilityAction({ nativeEvent: { actionName: "increment" } }));
+  expect(mocks.player!.currentTime).toBe(40);
+  await act(() => nodeWithId("media-video-seek").props.onResponderGrant({ nativeEvent: { locationX: 200 } }));
+  await act(() => nodeWithId("media-video-seek").props.onResponderTerminate());
+  expect(mocks.videoSeek).toHaveBeenCalledTimes(2); expect(mocks.player!.currentTime).toBe(40);
+});
+
+it("shows buffering in the same canvas after the first frame, then recovers without replacing the player", async () => {
+  await mountVideo(true); await frame();
+  const viewport = nodeWithId("media-video-viewport").props.style;
+  await act(() => mocks.player!.emit("statusChange", { status: "loading" }));
+  expect(tree!.root.findAllByType("ActivityIndicator" as never)).toHaveLength(1);
+  expect(nodeWithId("media-video-viewport").props.style).toEqual(viewport);
+  await act(() => mocks.player!.emit("statusChange", { status: "readyToPlay" }));
+  expect(tree!.root.findAllByType("ActivityIndicator" as never)).toHaveLength(0);
+  expect(mocks.created).toBe(1); expect(mocks.replace).toHaveBeenCalledOnce();
+});
+
+it("keeps a failed native seek actionable without throwing or requesting compatibility work", async () => {
+  await mountVideo(); await frame(); await layoutSeek();
+  mocks.videoSeek.mockImplementationOnce(() => { throw new Error("native seek unavailable"); });
+  await act(() => nodeWithId("media-video-seek").props.onAccessibilityAction({ nativeEvent: { actionName: "increment" } }));
+  expect(text()).toContain("暂时无法调整播放位置");
+  expect(mocks.get.mock.calls.filter(args => args[2] === "transcode")).toHaveLength(0);
+  await act(() => nodeWithId("media-video-seek").props.onAccessibilityAction({ nativeEvent: { actionName: "increment" } }));
+  expect(text()).not.toContain("暂时无法调整播放位置"); expect(mocks.player!.currentTime).toBe(10); expect(mocks.created).toBe(1);
+});
+
+it("keeps the family viewer read-only through media failures, retries, gestures, and the owner exit prompt", async () => {
+  mocks.loadStatus = "error";
+  const leave = vi.fn();
+  await act(async () => { tree = create(createElement(NativeMediaReader, { credentials, viewingOnly: true, viewingTitle: "这一本相册", onViewingExit: leave, assets: [video,
+    { id: "photo", type: "image", filename: "照片.jpg", mimeType: "image/jpeg" },
+    { id: "voice", type: "audio", filename: "声音.wav", mimeType: "audio/wav" },
+    { id: "words", type: "text", filename: "这一刻", mimeType: "text/plain", readingText: "相册里的一句话" },
+  ] })); });
+  expect(nativeView().props.allowsVideoFrameAnalysis).toBe(false);
+  expect(text()).toContain("可以重试或查看下一份"); expect(mocks.get.mock.calls.every(args => args[2] === undefined)).toBe(true);
+  for (const name of ["更多素材操作", "关闭阅读器", "导出原件副本", "准备兼容播放版", "生成声音波形"]) {
+    expect(tree!.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === name)).toHaveLength(0);
+  }
+  await act(() => tree!.root.findByType("Modal" as never).props.onRequestClose());
+  expect(tree!.root.findByType("Modal" as never).props.visible).toBe(true); expect(leave).not.toHaveBeenCalled();
+  await press("重试视频"); expect(mocks.get.mock.calls.every(args => args[2] === undefined)).toBe(true); expect(mocks.exportOriginal).not.toHaveBeenCalled();
+  const surface = tree!.root.findAll(node => String(node.type) === "View" && node.props.onPanResponderRelease)[0]!;
+  expect(surface.props.onMoveShouldSetPanResponder({}, { dx: -80, dy: 4, numberActiveTouches: 1 })).toBe(true);
+  expect(surface.props.onMoveShouldSetPanResponder({}, { dx: -80, dy: 4, numberActiveTouches: 2 })).toBe(false);
+  await act(() => surface.props.onPanResponderRelease({}, { dx: -80 })); expect(mocks.active).toBe(0);
+  await press("下一份"); expect(mocks.active).toBe(1); await press("播放声音");
+  await press("下一份"); expect(text()).toContain("相册里的一句话"); expect(mocks.active).toBe(0);
+  const exit = tree!.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "长按退出观看")[0]!;
+  await act(() => exit.props.onLongPress()); expect(leave).not.toHaveBeenCalled(); await press("继续观看");
+  await act(() => exit.props.onAccessibilityAction({ nativeEvent: { actionName: "ownerExit" } }));
+  await press("确认退出观看"); expect(leave).toHaveBeenCalledOnce(); expect(mocks.exportOriginal).not.toHaveBeenCalled();
 });

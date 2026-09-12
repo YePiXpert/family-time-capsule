@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CollectionDetail } from '../src/collections/types';
 vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
-vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null, GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
 const mocks=vi.hoisted(()=>({get:vi.fn(),list:vi.fn(),mutate:vi.fn(),navigate:vi.fn(),credentials:{serverUrl:'https://fictional.example.test',token:'fictional-component-token'}}));
 vi.mock('react-native',()=>({ActivityIndicator:'ActivityIndicator',Image:'Image',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',TextInput:'TextInput',View:'View',StyleSheet:{create:(s:unknown)=>s},Alert:{alert:vi.fn()}}));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
@@ -33,4 +33,22 @@ it('adds selected timeline memories to an existing native collection using its r
   mocks.list.mockResolvedValue({entries:[{id:'collection',title:'出生第一周',kind:'chapter',description:'',count:2,coverAssetId:null,revision:2,deletedAt:null}],nextCursor:null,canWrite:true});mocks.mutate.mockResolvedValue(detail());
   await act(async()=>{tree=create(createElement(CollectionsScreen,{route:{params:{eventIds:['event-new']}},navigation:{navigate:mocks.navigate}} as unknown as Parameters<typeof CollectionsScreen>[0]));});
   await press('出生第一周');expect(mocks.mutate).toHaveBeenCalledWith(mocks.credentials,'collection',{operation:'add',revision:2,eventIds:['event-new']});expect(mocks.navigate).toHaveBeenCalledWith('CollectionDetail',{id:'collection'});
+});
+
+it('starts the family viewing route from album more without mutating an unchanged album',async()=>{
+  mocks.get.mockResolvedValue({...detail(),kind:'album'});
+  await act(async()=>{tree=create(createElement(CollectionDetailScreen,{route:{params:{id:'collection'}},navigation:{navigate:mocks.navigate}} as never));});
+  expect(tree!.root.findAllByType('GlassSheet' as never)).toHaveLength(0);
+  await press('更多'); await press('给家人看');
+  expect(mocks.navigate).toHaveBeenCalledWith('FamilyViewing',{collectionId:'collection'});
+  expect(mocks.mutate).not.toHaveBeenCalled();
+});
+
+it('keeps family viewing closed if pending album edits cannot be saved',async()=>{
+  mocks.get.mockResolvedValue(detail()); mocks.mutate.mockRejectedValue(new Error('相册存在冲突'));
+  await act(async()=>{tree=create(createElement(CollectionDetailScreen,{route:{params:{id:'collection'}},navigation:{navigate:mocks.navigate}} as never));});
+  await press('继续编辑');
+  const title=tree!.root.findAll(n=>String(n.type)==='TextInput'&&n.props.accessibilityLabel==='名称')[0]!;
+  await act(()=>title.props.onChangeText('待保存的标题')); await press('更多'); await press('给家人看');
+  expect(mocks.mutate).toHaveBeenCalledOnce(); expect(mocks.navigate).not.toHaveBeenCalled();
 });

@@ -24,7 +24,7 @@ export function ReaderPhoto({ source, filename, zoom, controlsVisible, error, on
   const [pinching, setPinching] = useState(false);
   return (
     <ReaderSwipeSurface enabled={zoom === 1 && !pinching} onNavigate={onNavigate}>
-      <View onLayout={({ nativeEvent }) => setSize({ width: nativeEvent.layout.width, height: nativeEvent.layout.height })} style={{ flex: 1, minHeight: 0, backgroundColor: colors.mediaBackdrop }}>
+      <View testID="media-photo-viewport" onLayout={({ nativeEvent }) => setSize({ width: nativeEvent.layout.width, height: nativeEvent.layout.height })} style={{ flex: 1, minHeight: 0, backgroundColor: colors.mediaBackdrop }}>
         {source && size.width > 0 && size.height > 0 ? <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ minWidth: size.width }}>
           <ScrollView
             nestedScrollEnabled

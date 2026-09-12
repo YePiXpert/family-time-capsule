@@ -54,7 +54,7 @@ export function FamilyViewingScreen({ route, navigation }: NativeStackScreenProp
         if (contextChanged || !credentials) throw new ReadingError("账号或家庭已变化，请由手机持有人退出后重新打开。", 403);
         if (withdrawn.current) return;
         const resolved = await resolveReadingScope(credentials, { offline: connected === false });
-        if (!alive) return;
+        if (!alive || withdrawn.current) return;
         const scope = resolved.scope;
         if (userId && userId !== scope.userId || family?.id && family.id !== scope.familyId)
           throw new ReadingError("相册与当前账号或家庭不一致，请退出后重新打开。", 403);
@@ -63,7 +63,7 @@ export function FamilyViewingScreen({ route, navigation }: NativeStackScreenProp
         const transport = nativeReadingTransport(credentials, scope);
         let key = current.current ? current.current.downloadKey : downloadKey ?? null;
         if (!current.current && !key) key = (await nativeReadingStore.list(scope.key)).find((row) => row.kind === "collection" && row.id === collectionId && row.state === "ready")?.key ?? null;
-        if (!alive) return;
+        if (!alive || withdrawn.current) return;
         let manifest: ReadingManifest;
         let online = resolved.online;
         if (key) {
@@ -77,7 +77,7 @@ export function FamilyViewingScreen({ route, navigation }: NativeStackScreenProp
           if (!resolved.online) throw new ReadingError("这份相册尚未下载，联网后才能观看。", 0);
           manifest = await transport.manifest("collection", collectionId);
         }
-        if (!alive) return;
+        if (!alive || withdrawn.current) return;
         if (manifest.kind !== "collection" || manifest.id !== collectionId || manifest.userId !== scope.userId || manifest.familyId !== scope.familyId)
           throw new ReadingError("相册与当前阅读身份不一致。", 403);
         if (current.current && current.current.manifest.digest !== manifest.digest)
@@ -88,7 +88,7 @@ export function FamilyViewingScreen({ route, navigation }: NativeStackScreenProp
         setVerifiedOnline(online);
         setError("");
       } catch (reason) {
-        if (!alive) return;
+        if (!alive || withdrawn.current) return;
         const status = reason instanceof ReadingError ? reason.status : -1;
         if ([401, 403, 404, 409].includes(status)) { withdrawn.current = true; setClosedByPermission(true); }
         if (status !== 0 || !current.current) {
