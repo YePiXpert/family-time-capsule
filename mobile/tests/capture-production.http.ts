@@ -113,6 +113,8 @@ const { initializeLocalStore, setActiveDestination } = await import("../src/stor
 const { listLocalDrafts, saveLocalDraft, queueDraftOriginals } = await import("../src/drafts/store");
 const { syncLocalIntake } = await import("../src/native/intake-sync");
 const { syncLocalDrafts } = await import("../src/drafts/sync");
+const { syncMemoryEdits } = await import("../src/memories/edit-sync");
+const { drainMemoryEditWrites, getMemoryEdit } = await import("../src/memories/edit-store");
 const { requestMobileJson } = await import("../src/api/client");
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
@@ -121,7 +123,7 @@ async function press(label: string) {
   await revealCaptureAction(tree!, label);
   const node = tree!.root.findAllByType("Pressable" as never).find(n => n.props.accessibilityLabel === label || n.findAllByType("Text" as never).some(t => t.children.join("") === label));
   expect(node, label).toBeDefined();
-  await act(async () => { node!.props.onPress(); });
+  await act(async () => { node!.props.onPress(); await drainMemoryEditWrites(); });
 }
 it("R01/R02/R03: real native recording hook → HTTP DTO → production API → SQLite → reader isolation", async () => {
   await initializeLocalStore();
@@ -239,14 +241,39 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`, { method: "PATCH", body: JSON.stringify({ bodyText: "另一端先修改的正文", expectedRevision: 0, mutationId: crypto.randomUUID() }) });
   await act(async () => tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.onChangeText("原声与照片仍在，手机保存的正文修改"));
   await press("保存记忆修改");
-  await expect.poll(settle).toContain("输入和选择已保留");
+  // The screen now saves locally and AppContext schedules background sync.
+  // Drive that real worker explicitly so this fixture covers HTTP conflicts,
+  // durable reconciliation and explicit resolution instead of a no-op queued().
+  await expect.poll(settle).toContain("已保存在本机");
+  expect(await getMemoryEdit(scope, memoryId)).toMatchObject({ baseRevision: 0, savedContent: { bodyText: "原声与照片仍在，手机保存的正文修改" } });
+  expect(await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`)).toMatchObject({ bodyText: "另一端先修改的正文", titleRevision: 1 });
+  await act(async () => {
+    expect(await syncMemoryEdits(fixture.credentials, scope, fixture.userId, fixture.family.id, () => true)).toEqual({ saved: 0, needsAttention: 1 });
+  });
+  await expect.poll(settle).toContain("家人也修改了这段回忆");
+  expect(await getMemoryEdit(scope, memoryId)).toMatchObject({ baseRevision: 0, content: { bodyText: "原声与照片仍在，手机保存的正文修改" }, conflict: { content: { bodyText: "另一端先修改的正文" }, revision: 1 } });
+  await act(async () => tree!.unmount()); tree = undefined;
+  await initializeLocalStore();
+  await act(async () => { tree = create(renderMemory()); });
+  await expect.poll(settle).toContain("我的本机修改");
+  expect(rendered()).toContain("家庭最新版本");
+  expect(rendered()).toContain("原声与照片仍在，手机保存的正文修改");
+  expect(rendered()).toContain("另一端先修改的正文");
+  await press("继续修改这件事");
   expect(tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.value).toBe("原声与照片仍在，手机保存的正文修改");
-  await press("取消编辑"); await press("修改这件事");
-  expect(tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.value).toBe("另一端先修改的正文");
-  await act(async () => tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.onChangeText("原声与照片仍在，手机保存的正文修改"));
-  await press("保存记忆修改");
-  await expect.poll(settle).toContain("已保存。");
+  await press("稍后继续，保留本机输入");
+  await press("保留我的修改，重新保存");
+  expect(await getMemoryEdit(scope, memoryId)).toMatchObject({ baseRevision: 1, conflict: null, savedContent: { bodyText: "原声与照片仍在，手机保存的正文修改" } });
+  expect(await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`)).toMatchObject({ bodyText: "另一端先修改的正文", titleRevision: 1 });
+  await act(async () => {
+    expect(await syncMemoryEdits(fixture.credentials, scope, fixture.userId, fixture.family.id, () => true)).toEqual({ saved: 1, needsAttention: 0 });
+  });
+  expect(await getMemoryEdit(scope, memoryId)).toMatchObject({ baseRevision: 2, savedContent: null, submission: null, conflict: null });
   expect(await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`)).toMatchObject({ bodyText: "原声与照片仍在，手机保存的正文修改", occurredAtPrecision: "unknown", titleRevision: 2 });
+  // Reopen from the acknowledged server detail before changing its readers.
+  await act(async () => tree!.unmount()); tree = undefined;
+  await act(async () => { tree = create(renderMemory()); });
+  await expect.poll(settle).toContain("修改已同步到家庭");
   await press("管理分享"); await press("指定家人");
   await expect.poll(settle).toContain("妈妈");
   const selected = tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityRole === "checkbox" && node.props.accessibilityLabel === "妈妈");

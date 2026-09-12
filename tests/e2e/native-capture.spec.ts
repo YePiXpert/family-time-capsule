@@ -22,13 +22,18 @@ test("native recording controls and save hook publish specified readers through 
     const family = db.prepare("select id,name,timezone from family").get() as { id: string; name: string; timezone: string };
     const people = [{ id: "person-b", displayName: "妈妈" }, { id: "person-no-account", displayName: "外公" }];
     for (const person of people) db.prepare("insert or ignore into person(id,family_id,display_name,created_at,updated_at) values (?,?,?,unixepoch(),unixepoch())").run(person.id, family.id, person.displayName);
-    const tokens = Object.fromEntries(["user-a", "user-b", "user-c"].map(id => [id, randomUUID()]));
-    for (const [id, name, role, personId] of [["user-a", "记录者", "editor", null], ["user-b", "妈妈", "viewer", "person-b"], ["user-c", "未选管理员", "admin", null]]) {
-      db.prepare("insert or ignore into user(id,name,email,role,family_id,person_id,created_at,updated_at) values (?,?,?,?,?,?,unixepoch(),unixepoch())").run(id, name, `${id}@fixture.invalid`, role, family.id, personId);
+    // Give every attempt its own upload/import owner. Keep only this attempt's
+    // synthetic author active, so retries preserve exact counts and reader UI.
+    // B/C stay stable for the subsequent Web cases in this serial group.
+    db.prepare("update user set disabled_at=unixepoch() where family_id=? and email like 'native-capture-author-%@fixture.invalid'").run(family.id);
+    const authorId = `native-capture-author-${randomUUID()}`;
+    const tokens = Object.fromEntries([authorId, "user-b", "user-c"].map(id => [id, randomUUID()]));
+    for (const [id, name, role, personId] of [[authorId, "记录者", "editor", null], ["user-b", "妈妈", "viewer", "person-b"], ["user-c", "未选管理员", "admin", null]]) {
+      db.prepare("insert into user(id,name,email,role,family_id,person_id,created_at,updated_at) values (?,?,?,?,?,?,unixepoch(),unixepoch()) on conflict(id) do update set disabled_at=null,person_id=excluded.person_id").run(id, name, `${id}@fixture.invalid`, role, family.id, personId);
       db.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at) values (?,?,?,unixepoch()+3600,unixepoch(),unixepoch())").run(randomUUID(), tokens[id!]!, id);
     }
     const bootstrap = await (await page.request.get("/api/bootstrap")).json();
-    fixture = { credentials: { serverUrl: baseURL, token: tokens["user-a"], instanceId: bootstrap.instanceId }, family, people, userId: "user-a", readerToken: tokens["user-b"], thirdToken: tokens["user-c"], readerCount: 3 };
+    fixture = { credentials: { serverUrl: baseURL, token: tokens[authorId], instanceId: bootstrap.instanceId }, family, people, userId: authorId, readerToken: tokens["user-b"], thirdToken: tokens["user-c"], readerCount: 3 };
   } finally { db.close(); }
   const result = await promisify(execFile)(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.http.config.ts"], {
     cwd: path.join(process.cwd(), "mobile"), env: { ...process.env, FTC_NATIVE_HTTP_FIXTURE: JSON.stringify(fixture) }, timeout: 45000, maxBuffer: 1024 * 1024,
@@ -36,12 +41,12 @@ test("native recording controls and save hook publish specified readers through 
   expect(result.stdout).toContain("4 passed");
   const verify = new Database(path.join(process.cwd(), "data/e2e-native-capture/db/capsule.sqlite"));
   try {
-    const originals=verify.prepare("select id,visibility from asset where created_by_user_id='user-a' and original_asset_id is null").all();
+    const originals=verify.prepare("select id,visibility from asset where created_by_user_id=? and original_asset_id is null").all(fixture.userId);
     expect(originals).toHaveLength(5);
     expect(originals.every(a=>(a as {visibility:string}).visibility==='private')).toBe(true);
-    expect(verify.prepare("select count(*) n from inbox_item_asset where asset_id in (select id from asset where created_by_user_id='user-a')").get()).toEqual({n:0});
-    const voice = verify.prepare("select a.id assetId,ma.memory_event_id eventId,a.family_id familyId from asset a join memory_event_asset ma on ma.asset_id=a.id where a.created_by_user_id='user-a' and a.type='audio' and a.original_asset_id is null limit 1").get() as { assetId: string; eventId: string; familyId: string };
-    verify.prepare("insert into person(id,family_id,display_name,created_at,updated_at) values ('person-c',?,'旧讲述作者',unixepoch(),unixepoch())").run(voice.familyId);
+    expect(verify.prepare("select count(*) n from inbox_item_asset where asset_id in (select id from asset where created_by_user_id=?)").get(fixture.userId)).toEqual({n:0});
+    const voice = verify.prepare("select a.id assetId,ma.memory_event_id eventId,a.family_id familyId from asset a join memory_event_asset ma on ma.asset_id=a.id where a.created_by_user_id=? and a.type='audio' and a.original_asset_id is null limit 1").get(fixture.userId) as { assetId: string; eventId: string; familyId: string };
+    verify.prepare("insert or ignore into person(id,family_id,display_name,created_at,updated_at) values ('person-c',?,'旧讲述作者',unixepoch(),unixepoch())").run(voice.familyId);
     verify.prepare("update user set person_id='person-c' where id='user-c'").run();
     // Fixture grants B access to the previously private native event. The old
     // family narration must not create a parallel grant for its former author C.
@@ -83,21 +88,23 @@ test("Web can remove a departed reader while keeping the other selected account"
 
 test("Web draft-only sync uploads new attachments privately before explicit publication", async ({ page }) => {
   test.setTimeout(90000);
+  const title = `私密草稿附件测试 ${randomUUID()}`;
   await ensureBootstrap(page);
   await page.goto("/capture"); await waitForCapture(page);
   await page.getByLabel("写下这一刻").fill("网页上的私密附件记录");
-  await waitForCapture(page); await setCaptureMetadata(page, { title: "私密草稿附件测试" });
+  await waitForCapture(page); await setCaptureMetadata(page, { title });
   await waitForCapture(page); await setCaptureMetadata(page, { occurredAt: null, occurredAtPrecision: "unknown" });
   await page.getByRole("button", { name: "仅自己", exact: true }).click();
   await page.getByLabel("添加照片、视频、录音或文档").setInputFiles({name:"web-private.txt",mimeType:"text/plain",buffer:Buffer.from("网页私密原件，尚未发布给家人")});
   await expect(page.getByRole("status").filter({hasText:"本机已保存 ·"})).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: /^本机已保存 ·/ })).toBeVisible();
+  const draftId = (await readCaptureDraft(page)).id;
   await submitCaptureForReview(page, false);
   await page.reload(); await waitForCapture(page);
-  expect((await readCaptureDraft(page)).content.title).toBe("私密草稿附件测试");
+  expect(await readCaptureDraft(page)).toMatchObject({ id: draftId, content: { title } });
   const db=new Database(path.join(process.cwd(),"data/e2e-native-capture/db/capsule.sqlite"));
   try {
-    const draft=db.prepare("select id,status,memory_event_id from draft where title='私密草稿附件测试'").get() as {id:string;status:string;memory_event_id:string|null};
+    const draft=db.prepare("select id,status,memory_event_id from draft where id=?").get(draftId) as {id:string;status:string;memory_event_id:string|null};
     expect(draft).toMatchObject({status:"editing",memory_event_id:null});
     const assets=db.prepare("select a.id,a.visibility from draft_item i join asset a on a.id=i.asset_id where i.draft_id=?").all(draft.id) as {id:string;visibility:string}[];
     expect(assets).toHaveLength(1);expect(assets[0].visibility).toBe("private");
@@ -116,7 +123,7 @@ test("Web draft-only sync uploads new attachments privately before explicit publ
   let adminToken: string;
   try {
     cleanupDraft.pragma("foreign_keys = ON");
-    cleanupDraft.prepare("delete from draft where memory_event_id=?").run(eventId);
+    expect(cleanupDraft.prepare("delete from draft where id=? and memory_event_id=?").run(draftId, eventId).changes).toBe(1);
     adminToken = randomUUID();
     cleanupDraft.prepare("insert into session(id,token,user_id,expires_at,created_at,updated_at,recent_auth_at) values (?,?,'user-c',unixepoch()+3600,unixepoch(),unixepoch(),unixepoch())").run(randomUUID(), adminToken);
   } finally { cleanupDraft.close(); }
@@ -124,7 +131,7 @@ test("Web draft-only sync uploads new attachments privately before explicit publ
   await page.reload(); await waitForCapture(page);
   await expect(page.locator("main")).toContainText("网页上的私密附件记录");
   await page.goto("/search?q=" + encodeURIComponent("私密附件"));
-  await expect(page.getByRole("link", { name: /私密草稿附件测试/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: title, exact: true }).and(page.locator(`a[href="/memories/${eventId}"]`))).toBeVisible();
   await grantExportStepUp(page);
   const ownArchive = await page.request.get("/api/export");
   expect(ownArchive.status()).toBe(200);
@@ -141,10 +148,11 @@ test("Web draft-only sync uploads new attachments privately before explicit publ
 
 test("Web separately imported Live Photo components stay paired after explicit selection and publication", async ({ page }) => {
   const { readFileSync } = await import("node:fs");
+  const title = `网页确认的实况照片 ${randomUUID()}`;
   await ensureBootstrap(page);
   await page.goto("/capture"); await waitForCapture(page);
   await startCaptureDraft(page);
-  await waitForCapture(page); await setCaptureMetadata(page, { title: "网页确认的实况照片" });
+  await waitForCapture(page); await setCaptureMetadata(page, { title });
   await waitForCapture(page); await setCaptureMetadata(page, { occurredAt: null, occurredAtPrecision: "unknown" });
   await page.getByRole("button", { name: "仅自己", exact: true }).click();
   await page.getByLabel("添加照片、视频、录音或文档").setInputFiles([
@@ -155,7 +163,7 @@ test("Web separately imported Live Photo components stay paired after explicit s
   await expect(page.getByText("Live Photo · 照片")).toBeVisible();
   await page.getByRole("button", { name: "保存" }).click();
   await page.getByRole("link", { name: "查看这条记忆" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "网页确认的实况照片" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: title, exact: true })).toBeVisible();
   await expect(page.getByText("Live Photo 已保留静态照片和动态原片，可在下方分别查看与播放。")).toBeVisible();
   await page.reload(); await waitForCapture(page);
   await expect(page.getByText("原始资料（2）")).toBeVisible();
