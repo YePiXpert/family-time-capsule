@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, View } from "react-native";
-import { useVideoPlayer, VideoView, type VideoPlayerStatus } from "expo-video";
+import { ActivityIndicator, Image, ScrollView, View } from "react-native";
+import { useVideoPlayer, VideoView, type VideoPlayer, type VideoPlayerStatus } from "expo-video";
 import { Text } from "../components/typography";
+import { Button } from "../components/ui";
 import { useColorTheme, useSharedStyles } from "../theme";
 import { inspectPlaybackFailure, type PlaybackFailure, type PlaybackSource } from "./playback-source";
 import { useAppActive } from "./use-app-active";
+import { ReaderCanvasToggle, ReaderPlaybackControls, ReaderSwipeSurface } from "./ReaderChrome";
 
 export const VIDEO_LOAD_TIMEOUT_MS = 15_000;
 
 export function NativeVideoPlayer({
   source, poster, localOriginal, remoteOriginal, initialSeconds = 0, retryToken, message, externalError,
-  onPosition, onUnsupported, onRetry,
+  onPosition, onUnsupported, onRetry, controlsVisible = true, onToggleControls, onNavigate,
 }: {
   source: PlaybackSource | null;
   poster: PlaybackSource | null;
@@ -23,6 +25,9 @@ export function NativeVideoPlayer({
   onPosition?: (seconds: number) => void;
   onUnsupported: () => void;
   onRetry: () => void;
+  controlsVisible?: boolean;
+  onToggleControls?: () => void;
+  onNavigate?: (direction: -1 | 1) => void;
 }) {
   const s = useSharedStyles();
   const { colors } = useColorTheme();
@@ -38,6 +43,7 @@ export function NativeVideoPlayer({
   const [failure, setFailure] = useState<PlaybackFailure | null>(null);
   const [seconds, setSeconds] = useState(initialSeconds);
   const [duration, setDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
   const desired = useRef(true);
   const foreground = useRef(true);
   const accepted = useRef(false);
@@ -127,6 +133,8 @@ export function NativeVideoPlayer({
           setRequested(isPlaying);
         }
       }),
+      player.addListener("mutedChange", ({ muted: next }) => setMuted(next)),
+      player.addListener("playToEnd", () => { desired.current = false; setRequested(false); }),
       player.addListener("timeUpdate", ({ currentTime }) => {
         if (!accepted.current || !restored.current || !Number.isFinite(currentTime)) return;
         position.current = currentTime;
@@ -224,46 +232,68 @@ export function NativeVideoPlayer({
       desired.current = true;
       setRequested(true);
       if (blockingFailure || status === "error") onRetry();
-      else if (accepted.current && player.status === "readyToPlay") player.play();
+      else if (accepted.current && player.status === "readyToPlay") {
+        if (player.duration > 0 && player.currentTime >= player.duration - 0.1) seekTo(0);
+        player.play();
+      }
     }
+  }
+  function seekTo(value: number) {
+    if (!accepted.current || player.status !== "readyToPlay" || !Number.isFinite(value)) return;
+    const target = Math.max(0, Math.min(value, player.duration));
+    player.seekBy(target - player.currentTime);
+    position.current = target;
+    setSeconds(target);
+    save.current?.(target);
+    lastSaved.current = target;
   }
   const explanation = usableFrame ? undefined : externalError || message || failure?.message;
   const waiting = !explanation && (!currentFrame || status === "loading");
   const cover = !currentFrame || Boolean(explanation);
   return (
-    <>
-      <View testID="media-video-viewport" style={{ width: "100%", height: 340, backgroundColor: colors.mediaBackdrop, borderRadius: 12, overflow: "hidden" }}>
-        <VideoView
-          testID="media-video-view"
-          player={player}
-          contentFit="contain"
-          nativeControls={Boolean(stableSource) && acceptedSourceKey === sourceKey}
-          surfaceType="textureView"
-          onFirstFrameRender={() => { if (accepted.current || nativeSourceMatches.current) setFirstFrame(true); }}
-          style={{ width: "100%", height: "100%", opacity: stableSource && acceptedSourceKey === sourceKey ? 1 : 0 }}
-        />
-        {cover ? <View pointerEvents="box-none" style={{ position: "absolute", inset: 0 }}>
-          {!currentFrame && poster ? <Image accessibilityLabel="视频封面" source={poster} resizeMode="contain" style={{ position: "absolute", inset: 0 }} /> : null}
-          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 20 }} pointerEvents="box-none">
-            <View pointerEvents="none" style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, gap: 8 }}>
-              {waiting || message ? <ActivityIndicator color={colors.coral} /> : null}
-              <Text testID="media-video-status" accessibilityLiveRegion="polite" style={externalError || failure && !message ? s.error : s.body}>
-                {explanation || (requested ? "正在加载视频…" : "点击播放视频")}
-              </Text>
-            </View>
-          </ScrollView>
-        </View> : null}
-      </View>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        <Pressable accessibilityRole="button" onPress={togglePlayback} style={s.secondaryButton}>
-          <Text style={s.secondaryText}>{playing || requested && (!blockingFailure || message) ? "暂停视频" : "播放视频"}</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => { desired.current = true; setRequested(true); onRetry(); }} style={s.secondaryButton}>
-          <Text style={s.secondaryText}>重试视频</Text>
-        </Pressable>
-      </View>
-      <Text testID="media-video-time" style={s.body}>{seconds.toFixed(1)} / {duration.toFixed(1)} 秒</Text>
-      {currentFrame ? <Text testID="media-video-first-frame" style={s.body}>视频画面已显示</Text> : <Text style={s.body}>等待视频画面</Text>}
-    </>
+    <View style={{ flex: 1, minHeight: 0 }}>
+      <ReaderSwipeSurface onNavigate={onNavigate}>
+        <View testID="media-video-viewport" style={{ flex: 1, backgroundColor: colors.mediaBackdrop, overflow: "hidden" }}>
+          <VideoView
+            testID="media-video-view"
+            player={player}
+            contentFit="contain"
+            nativeControls={false}
+            surfaceType="textureView"
+            accessibilityLabel="视频画面"
+            accessibilityValue={{ text: currentFrame ? "画面已呈现" : "正在加载" }}
+            onFirstFrameRender={() => { if (accepted.current || nativeSourceMatches.current) setFirstFrame(true); }}
+            style={{ width: "100%", height: "100%", opacity: stableSource && acceptedSourceKey === sourceKey ? 1 : 0 }}
+          />
+          <ReaderCanvasToggle visible={controlsVisible} onPress={onToggleControls} />
+          {cover ? <View pointerEvents="box-none" style={{ position: "absolute", inset: 0 }}>
+            {!currentFrame && poster ? <Image accessibilityLabel="视频封面" source={poster} resizeMode="contain" style={{ position: "absolute", inset: 0 }} /> : null}
+            <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 20 }} pointerEvents="box-none">
+              <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 16, gap: 12 }}>
+                {waiting || message ? <ActivityIndicator color={colors.coral} /> : null}
+                <Text testID="media-video-status" accessibilityLiveRegion="polite" style={blockingFailure && !message ? s.error : s.body}>
+                  {explanation || (requested ? "正在加载视频…" : "点击播放视频")}
+                </Text>
+                {blockingFailure && !message ? <Button title="重试视频" onPress={() => { desired.current = true; setRequested(true); onRetry(); }} /> : null}
+              </View>
+            </ScrollView>
+          </View> : null}
+        </View>
+      </ReaderSwipeSurface>
+      {controlsVisible ? <ReaderPlaybackControls
+        kind="video"
+        playing={Boolean(playing || requested && (!blockingFailure || message))}
+        muted={muted}
+        seconds={seconds}
+        duration={duration}
+        disabled={acceptedSourceKey !== sourceKey || status !== "readyToPlay"}
+        onPlayPause={togglePlayback}
+        onSeek={seekTo}
+        onMute={() => { setNativeMuted(player, !muted); setMuted(!muted); }}
+      /> : null}
+    </View>
   );
 }
+
+/** Expo exposes mute as an imperative native property, independent of React state. */
+function setNativeMuted(player: VideoPlayer, muted: boolean) { player.muted = muted; }
