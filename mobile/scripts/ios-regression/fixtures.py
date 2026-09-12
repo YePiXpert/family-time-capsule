@@ -4,6 +4,7 @@ No real credentials or family content are used. This server verifies that the
 native client sends Authorization/Range; it does not validate a deployed server.
 """
 import json
+import hashlib
 from pathlib import Path
 import re
 import subprocess
@@ -14,6 +15,7 @@ from urllib.parse import urlsplit
 
 
 TOKEN = "native-regression-synthetic-session"
+DURATION_SECONDS = 60
 STAMP = "2026-09-12T12:00:00.000Z"
 VIEWER = dict(id="fixture-user", name="Native fixture", role="viewer", personId=None,
               canCapture=True, canReviewInbox=False, canCreateContributions=False, canEditEvents=False)
@@ -26,7 +28,7 @@ def generate_media(directory):
     common = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
     subprocess.run(common + ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30",
                             "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
-                            "-t", "24", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                            "-t", str(DURATION_SECONDS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
                             "-c:a", "aac", "-movflags", "+faststart", str(directory / "sample.mp4")], check=True)
     subprocess.run(common + ["-i", str(directory / "sample.mp4"), "-c", "copy",
                             str(directory / "sample.mov")], check=True)
@@ -57,6 +59,7 @@ class FixtureServer(ThreadingHTTPServer):
         self.transcodes = {}
         self.recovery = False
         self.sync_delay = 0
+        self.phase = "playback"
 
     def start(self):
         thread = threading.Thread(target=self.serve_forever, daemon=True)
@@ -66,7 +69,7 @@ class FixtureServer(ThreadingHTTPServer):
 
 def memory_assets():
     return [dict(id=identifier, type="video", filename=filename, mimeType=mime,
-                 durationMs=24000, mediaPath=f"/api/media/{identifier}", thumbnailPath=None)
+                 durationMs=DURATION_SECONDS * 1000, mediaPath=f"/api/media/{identifier}", thumbnailPath=None)
             for identifier, filename, mime in [
                 ("remote-mp4", "remote.mp4", "video/mp4"),
                 ("remote-mov", "remote.mov", "video/quicktime"),
@@ -95,8 +98,16 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        self.body = json.loads(self.rfile.read(length) or b"{}")
+        try:
+            value = json.loads(self.rfile.read(length) or b"{}")
+            self.body = value if isinstance(value, dict) else {}
+        except (ValueError, UnicodeError):
+            self.body = {}  # Unexpected writes still enter the audit log below.
         self.handle_route()
+
+    do_PATCH = do_POST
+    do_PUT = do_POST
+    do_DELETE = do_POST
 
     def do_GET(self):
         self.body = {}
@@ -108,11 +119,13 @@ class FixtureHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         authorized = self.headers.get("Authorization") == f"Bearer {TOKEN}"
         self.record = dict(method=self.command, path=path, authorized=authorized,
-                           range=self.headers.get("Range"), at=time.monotonic(), kind=self.body.get("kind"))
+                           range=self.headers.get("Range"), at=time.monotonic(), kind=self.body.get("kind"),
+                           phase=self.server.phase)
         self.server.requests.append(self.record)
         if path == "/fixture/control":
             self.server.recovery = self.body.get("recover", False)
             self.server.sync_delay = self.body.get("syncDelay", 0)
+            self.server.phase = self.body.get("phase", self.server.phase)
             return self.send_json({"ok": True})
         if path == "/api/auth/sign-in/email":
             if self.body.get("email") != "native@example.invalid" or self.body.get("password") != "FixtureOnly123!":
@@ -137,6 +150,29 @@ class FixtureHandler(BaseHTTPRequestHandler):
                                        people=[], events=[event], nextCursor=None))
         if path == "/api/mobile/v1/home":
             return self.send_json(dict(family=FAMILY, capabilities={"canCapture": True}, inbox={"count": 0}, pendingImports=[]))
+        if path == "/api/books/projects":
+            return self.send_json({"entries": [], "nextCursor": None, "canWrite": False})
+        if path == "/api/collections":
+            return self.send_json({"entries": [dict(id="family-album", title="Fixture family album", kind="album",
+                description="Synthetic native viewing fixture", count=1, coverAssetId=None, revision=1, deletedAt=None)],
+                "nextCursor": None, "canWrite": False})
+        if path == "/api/collections/family-album":
+            return self.send_json(dict(id="family-album", title="Fixture family album", kind="album", description="",
+                coverAssetId=None, startDate=None, endDate=None, sortMode="manual", sections=[], revision=1,
+                timezone="UTC", updatedAt=STAMP, deletedAt=None, canWrite=False, items=[dict(id="album-video",
+                memoryEventId=None, assetId="family-video", sectionId=None, caption="", source=dict(title="family.mp4",
+                occurredAt=STAMP, mediaType="video", mimeType="video/mp4", coverAssetId=None, previewAssetId=None))]))
+        if path == "/api/reading/identity":
+            return self.send_json({"userId": VIEWER["id"], "familyId": FAMILY["id"]})
+        if path == "/api/reading/collection/family-album":
+            original = (self.server.directory / "sample.mp4").read_bytes()
+            return self.send_json(dict(schemaVersion=1, kind="collection", id="family-album", revision=1,
+                digest=hashlib.sha256(b"native-viewing-fixture").hexdigest(), userId=VIEWER["id"], familyId=FAMILY["id"],
+                audience="family", title="Fixture family album", subtitle="", timezone="UTC",
+                chapters=[{"id": "fixture-chapter", "title": "Fixture", "blocks": []}], bytes=len(original),
+                media=[dict(id="family-video", filename="family.mp4", type="video", mimeType="video/mp4", bytes=len(original),
+                            sha256=hashlib.sha256(original).hexdigest(), width=320, height=240,
+                            durationMs=DURATION_SECONDS * 1000, author=None, dateLabel="Synthetic fixture", memoryEventId=None, transcript=None)]))
         if path == "/api/mobile/v1/memories/remote-memory":
             return self.send_json(dict(id="remote-memory", title="Remote native video fixtures", bodyText="",
                                        occurredAt=STAMP, occurredAtWall="2026-09-12T12:00:00", occurredAtPrecision="exact",
@@ -174,15 +210,23 @@ class FixtureHandler(BaseHTTPRequestHandler):
         requested = self.headers.get("Range")
         start, end, status = 0, len(raw) - 1, 200
         if requested:
-            match = re.fullmatch(r"bytes=(\d+)-(\d*)", requested)
-            if not match or int(match[1]) >= len(raw):
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", requested)
+            valid = bool(match and (match[1] or match[2]))
+            if valid and match:
+                if match[1]:
+                    start, end = int(match[1]), min(int(match[2] or len(raw) - 1), len(raw) - 1)
+                else:
+                    start, end = max(0, len(raw) - int(match[2])), len(raw) - 1
+                valid = 0 <= start <= end < len(raw)
+            if not valid:
                 self.send_response(416)
                 self.send_header("Content-Range", f"bytes */{len(raw)}")
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            start, end, status = int(match[1]), min(int(match[2] or len(raw) - 1), len(raw) - 1), 206
+            status = 206
         self.record["responseStatus"] = status
+        self.record["responseBytes"] = end - start + 1
         self.send_response(status)
         self.send_header("Content-Type", "video/quicktime" if filename.endswith(".mov") else "video/mp4")
         self.send_header("Accept-Ranges", "bytes")

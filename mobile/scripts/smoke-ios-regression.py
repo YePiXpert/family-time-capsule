@@ -17,13 +17,21 @@ import sqlite3
 import subprocess
 import sys
 import time
+from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).with_name("ios-regression")))
 from fixtures import FixtureServer, generate_media  # noqa: E402
 
 
 def run(*arguments, timeout=180, log=None):
-    result = subprocess.run(arguments, capture_output=True, text=True, timeout=timeout)
+    try:
+        result = subprocess.run(arguments, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        if log:
+            chunks = [chunk.decode(errors="replace") if isinstance(chunk, bytes) else chunk or ""
+                      for chunk in (error.stdout, error.stderr)]
+            Path(log).write_text("".join(chunks))
+        raise
     if log:
         Path(log).write_text(result.stdout + result.stderr)
     if result.returncode:
@@ -60,11 +68,56 @@ def seed_local(db_path, container, media):
         assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
 
 
+def seed_import(db_path, container, media):
+    """Add a real receipt after the matched 400-record performance measurement."""
+    target = container / "Documents" / "native-regression"
+    stamp = "2026-09-12T13:00:00.000Z"
+    with sqlite3.connect(db_path) as db:
+        db.execute("""INSERT INTO local_import_session(id,source,status,total_count,completed_count,created_at,updated_at)
+            VALUES ('fixture-import','files','reviewing',3,3,?,?)""", (stamp, stamp))
+        db.execute("INSERT INTO local_intake_choice(session_id,scope,destination) VALUES ('fixture-import','local','pending')")
+        for index, name in enumerate(("one", "two", "three")):
+            identifier, filename = f"fixture-pick-{name}", f"pick-{name}.png"
+            shutil.copyfile(media / "poster.png", target / filename)
+            uri = (target / filename).as_uri()
+            payload = json.dumps(dict(localUri=uri, fileName=filename, mimeType="image/png", mediaType="image"))
+            db.execute("""INSERT INTO local_capture(id,kind,title,occurred_at,local_uri,media_type,payload_json,title_source,sync_state)
+                VALUES (?,'media_capture',?,?,?,'image',?,'rule_generated','pending')""",
+                       (identifier, filename, stamp, uri, payload))
+            db.execute("""INSERT INTO local_import_item(id,import_session_id,capture_id,external_id,sort_order,intake_state,local_uri,created_at,updated_at)
+                VALUES (?,'fixture-import',?,?,?,'copied',?,?,?)""", (f"import-{index}", identifier, identifier, index, uri, stamp, stamp))
+
+
+def verify_import(db_path):
+    with sqlite3.connect(db_path) as db:
+        row = db.execute("SELECT snapshot_json FROM local_import_selection WHERE scope='local' AND session_id='fixture-import'").fetchone()
+        assert row, "Native selection was not durably saved"
+        selection = json.loads(row[0])
+        chosen = {"fixture-pick-one", "fixture-pick-two"}
+        assert set(selection["selectedIds"]) == chosen
+        assert selection["coverId"] == "fixture-pick-two"
+        manual = next(group for group in selection["groups"] if group["reason"] == "manual")
+        assert set(manual["ids"]) == chosen and manual["representativeId"] == "fixture-pick-two"
+        choice = db.execute("SELECT destination,draft_id FROM local_intake_choice WHERE session_id='fixture-import'").fetchone()
+        assert choice and choice[0] == "draft"
+        draft = json.loads(db.execute("SELECT snapshot_json FROM local_draft WHERE scope='local' AND id=?", (choice[1],)).fetchone()[0])
+        references = {item["localCaptureRef"] for item in draft["content"]["items"]}
+        assert references == chosen, "Unselected original was included in the new draft"
+        cover = next(item for item in draft["content"]["items"] if item["id"] == draft["content"]["coverItemId"])
+        assert cover["localCaptureRef"] == "fixture-pick-two"
+        originals = db.execute("SELECT id,local_uri FROM local_capture WHERE id LIKE 'fixture-pick-%'").fetchall()
+        assert len(originals) == 3 and all(Path(unquote(urlsplit(uri).path)).is_file() for _, uri in originals)
+        assert db.execute("SELECT COUNT(*) FROM outbox").fetchone()[0] == 0, "Choosing photos unexpectedly queued an upload"
+        return dict(selectedIds=selection["selectedIds"], coverId=selection["coverId"], groups=selection["groups"],
+                    revision=selection["revision"], originalsPreserved=3, uploadCount=0)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("app", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--profile-only", action="store_true", help="Run the identical scrolling metric on a baseline Release app")
+    parser.add_argument("--runner-build", type=Path, help="Reuse a precompiled Release XCTest runner (DerivedData directory)")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -110,16 +163,26 @@ def main():
         time.sleep(2)
         run("xcrun", "simctl", "terminate", udid, bundle)
         seed_local(db_path, container, media)
-        project_dir = output / "runner-project"
-        run("ruby", str(Path(__file__).with_name("ios-regression") / "create-project.rb"), str(project_dir))
-        runner_data = output / "runner-build"
-        run("xcodebuild", "-project", str(project_dir / "NativeRegression.xcodeproj"), "-scheme", "NativeRegression",
-            "-configuration", "Release", "-destination", f"platform=iOS Simulator,id={udid}",
-            "-derivedDataPath", str(runner_data), "CODE_SIGN_IDENTITY=-", "CODE_SIGNING_ALLOWED=YES",
-            "build-for-testing", timeout=600, log=output / "runner-build.log")
+        runner_data = args.runner_build.resolve() if args.runner_build else output / "runner-build"
+        if not args.runner_build:
+            project_dir = output / "runner-project"
+            run("ruby", str(Path(__file__).with_name("ios-regression") / "create-project.rb"), str(project_dir))
+            run("xcodebuild", "-project", str(project_dir / "NativeRegression.xcodeproj"), "-scheme", "NativeRegression",
+                "-configuration", "Release", "-destination", f"platform=iOS Simulator,id={udid}",
+                "-derivedDataPath", str(runner_data), f"ARCHS={report['architecture']}", "ONLY_ACTIVE_ARCH=YES",
+                "CODE_SIGN_IDENTITY=-", "CODE_SIGNING_ALLOWED=YES", "build-for-testing", timeout=600, log=output / "runner-build.log")
         xctestruns = list((runner_data / "Build" / "Products").glob("*.xctestrun"))
         assert len(xctestruns) == 1, "Expected exactly one generated UI test specification"
-        specification = plistlib.loads(xctestruns[0].read_bytes())
+        def relocate_test_root(value):
+            if isinstance(value, str):
+                return value.replace("__TESTROOT__", str(xctestruns[0].parent))
+            if isinstance(value, dict):
+                return {key: relocate_test_root(nested) for key, nested in value.items()}
+            if isinstance(value, list):
+                return [relocate_test_root(nested) for nested in value]
+            return value
+
+        specification = relocate_test_root(plistlib.loads(xctestruns[0].read_bytes()))
 
         def configure_target(value):
             if isinstance(value, dict):
@@ -135,14 +198,15 @@ def main():
                     configure_target(nested)
 
         configure_target(specification)
-        xctestruns[0].write_bytes(plistlib.dumps(specification))
+        test_specification = output / "NativeRegression.xctestrun"
+        test_specification.write_bytes(plistlib.dumps(specification))
 
         def test(label, methods):
             started = time.monotonic()
             result_bundle = output / (label + ".xcresult")
             primary_failure = None
             try:
-                run("xcodebuild", "test-without-building", "-xctestrun", str(xctestruns[0]),
+                run("xcodebuild", "test-without-building", "-xctestrun", str(test_specification),
                     "-destination", f"platform=iOS Simulator,id={udid}", "-parallel-testing-enabled", "NO",
                     "-maximum-concurrent-test-simulator-destinations", "1", "-resultBundlePath", str(result_bundle),
                     *[f"-only-testing:NativeRegression/NativeRegressionTests/{method}" for method in methods],
@@ -190,15 +254,19 @@ def main():
             return
         test("local-playback", ["testLocalMP4AndMOVPlayback"])
         test("layout-and-scroll", ["testKeyboardAndCoverGeometry", "testLargeListScrollMetrics"])
+        seed_import(db_path, container, media)
+        test("import-selection", ["testImportSelectionPersistsAndCreatesOnlySelectedReferences"])
+        report["importSelection"] = verify_import(db_path)
         # Same local records, fresh ordinary login screen. Credentials are entered
         # using UIKit controls and persisted by the real SecureStore path.
         with sqlite3.connect(db_path) as db:
             db.execute("UPDATE meta SET value='0' WHERE key='welcome_done'")
         test("authenticated-playback", ["testAuthenticatedRemotePlaybackAndRecovery"])
+        test("family-viewing", ["testFamilyViewingHidesEditingAndRequiresOwnerExit"])
         media_requests = [row for row in server.requests if re.fullmatch(r"/api/media/[^/]+", row["path"])]
         assert media_requests and all(row["authorized"] for row in media_requests), "Native media read omitted Authorization"
-        for identifier in ("remote-mp4", "remote-mov", "remote-hevc", "compatible-mp4"):
-            assert any(row["path"] == f"/api/media/{identifier}" and row.get("responseStatus") == 206
+        for identifier in ("remote-mp4", "remote-mov", "remote-hevc", "compatible-mp4", "family-video"):
+            assert any(row["path"] == f"/api/media/{identifier}" and row.get("responseStatus") == 206 and row.get("responseBytes", 0) > 2
                        for row in media_requests), f"Missing actual AVPlayer authenticated range read: {identifier}"
         transcodes = [row for row in server.requests if row["kind"] == "transcode"]
         transcode_paths = [row["path"] for row in transcodes]
@@ -207,8 +275,12 @@ def main():
         assert all(path in ("/api/media/remote-corrupt/derivations", "/api/media/remote-hevc/derivations")
                    for path in transcode_paths), "Network or permission failure incorrectly requested a compatibility transcode"
         report["hevcPlayback"] = "compatible transcode" if "/api/media/remote-hevc/derivations" in transcode_paths else "direct native HEVC"
+        viewing_writes = [row for row in server.requests if row["phase"] == "family-viewing"
+                          and row["method"] not in ("GET", "HEAD") and row["path"] != "/fixture/control"]
+        assert not viewing_writes, "Family viewing unexpectedly sent a mutation request"
+        report["familyViewing"] = {"mutationRequests": 0}
         with sqlite3.connect(db_path) as db:
-            assert db.execute("SELECT COUNT(*) FROM local_capture").fetchone()[0] == 400
+            assert db.execute("SELECT COUNT(*) FROM local_capture").fetchone()[0] == 403
             assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         report["success"] = True
     finally:

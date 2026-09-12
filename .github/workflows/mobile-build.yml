@@ -211,6 +211,25 @@ jobs:
       - name: Install CocoaPods
         run: npx pod-install ios
         working-directory: mobile
+      - name: Compile Release UI regression runner
+        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        run: |
+          if ! ruby -rxcodeproj -e 'exit 0'; then
+            gem install --user-install xcodeproj --version 1.27.0 --no-document
+          fi
+          mkdir -p build
+          ruby scripts/ios-regression/create-project.rb build/native-runner-project
+          if ! xcodebuild \
+            -project build/native-runner-project/NativeRegression.xcodeproj -scheme NativeRegression \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath build/native-runner CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            build-for-testing > build/native-runner-build.log 2>&1; then
+            tail -n 160 build/native-runner-build.log
+            exit 1
+          fi
       # Historical pinned checkouts may predate this native startup regression.
       - name: Build release iOS simulator app
         if: hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
@@ -259,9 +278,6 @@ jobs:
             brew install ffmpeg
           fi
           ffmpeg -hide_banner -encoders 2>/dev/null | grep -F libx265
-          if ! ruby -rxcodeproj -e 'exit 0'; then
-            gem install --user-install xcodeproj --version 1.27.0 --no-document
-          fi
       - name: Verify Release playback and layout with XCUITest
         if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         working-directory: mobile
@@ -270,7 +286,7 @@ jobs:
         run: |
           APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
-          python3 scripts/smoke-ios-regression.py "$APP_PATH" --output build/native-regression
+          python3 scripts/smoke-ios-regression.py "$APP_PATH" --runner-build build/native-runner --output build/native-regression
       - name: Build optional baseline Release simulator app
         if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         env:
@@ -310,20 +326,23 @@ jobs:
         run: |
           APP_PATH=$(find "$RUNNER_TEMP/ftc-native-baseline/mobile/build/simulator/Build/Products/Release-iphonesimulator" -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
-          python3 scripts/smoke-ios-regression.py "$APP_PATH" --profile-only --output build/native-baseline
+          python3 scripts/smoke-ios-regression.py "$APP_PATH" --profile-only --runner-build build/native-runner --output build/native-baseline
       - name: Preserve native playback and layout evidence
         if: always() && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         uses: actions/upload-artifact@v7
         with:
           name: FamilyTimeCapsule-ios-native-regression
           path: |
+            mobile/build/native-runner-build.log
             mobile/build/native-regression/*.json
             mobile/build/native-regression/*.log
+            mobile/build/native-regression/*.xctestrun
             mobile/build/native-regression/*.xcresult/
             mobile/build/native-regression/*-attachments/
             mobile/build/native-regression/fixtures/media-probes.json
             mobile/build/native-baseline/*.json
             mobile/build/native-baseline/*.log
+            mobile/build/native-baseline/*.xctestrun
             mobile/build/native-baseline/*.xcresult/
             mobile/build/native-baseline/*-attachments/
           if-no-files-found: error

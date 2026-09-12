@@ -35,6 +35,10 @@ final class NativeRegressionTests: XCTestCase {
 
     private func tap(_ label: String) {
         let control = element(label)
+        tapControl(control, label: label)
+    }
+
+    private func tapControl(_ control: XCUIElement, label: String) {
         XCTAssertTrue(control.waitForExistence(timeout: 15), "Missing control: \(label)")
         for _ in 0..<8 {
             if control.isHittable { break }
@@ -42,7 +46,16 @@ final class NativeRegressionTests: XCTestCase {
             else { app.swipeUp() }
         }
         XCTAssertTrue(control.isHittable, "Control is not reachable: \(label)")
+        wait("Control never became enabled: \(label)", timeout: 15) { control.isEnabled }
         control.tap()
+    }
+
+    private func tapContaining(_ label: String) {
+        tapControl(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", label)).firstMatch, label: label)
+    }
+
+    private func textContains(_ value: String) -> Bool {
+        app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", value)).firstMatch.exists
     }
 
     private func card(_ identifier: String) -> XCUIElement {
@@ -62,9 +75,34 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertEqual(actual.height, expected.height, accuracy: 2, message)
     }
 
+    private func clockSeconds(_ value: Substring) -> Double {
+        let parts = value.trimmingCharacters(in: .whitespaces).split(separator: ":")
+        guard parts.count == 2 || parts.count == 3 else { return -1 }
+        var total: Double = 0
+        for part in parts {
+            guard let number = Double(part), number >= 0 else { return -1 }
+            total = total * 60 + number
+        }
+        return total
+    }
+
     private func seconds() -> Double {
-        let text = element("media-video-time").label
-        return Double(text.split(separator: "/").first?.trimmingCharacters(in: .whitespaces) ?? "") ?? -1
+        guard let elapsed = element("media-video-time").label.split(separator: "/").first else { return -1 }
+        return clockSeconds(elapsed)
+    }
+
+    private func duration() -> Double {
+        let parts = element("media-video-time").label.split(separator: "/")
+        return parts.count == 2 ? clockSeconds(parts[1]) : -1
+    }
+
+    private func hasNativeFrame() -> Bool {
+        element("media-video-view").value as? String == "画面已呈现"
+    }
+
+    private func ownerExitControl() -> XCUIElement {
+        let exits = app.buttons.matching(identifier: "长按退出观看")
+        return exits.allElementsBoundByIndex.first(where: { $0.isHittable }) ?? exits.firstMatch
     }
 
     private func record(_ title: String, _ values: [String: Any]) {
@@ -80,10 +118,10 @@ final class NativeRegressionTests: XCTestCase {
         let viewport = element("media-video-viewport")
         XCTAssertTrue(viewport.waitForExistence(timeout: 15))
         let initialFrame = viewport.frame
-        // This value is set only by VideoView.onFirstFrameRender, never by
-        // status=readyToPlay or a mocked JavaScript playback event.
+        // The production accessibility value follows VideoView.onFirstFrameRender
+        // for the accepted source, not readyToPlay or a mocked playback event.
         wait("\(label): no native first frame", timeout: 25) {
-            self.element("media-video-first-frame").exists
+            self.hasNativeFrame()
         }
         let firstFrameSeconds = Date().timeIntervalSince(started)
         wait("\(label): playhead did not advance") { self.seconds() >= 2 }
@@ -96,15 +134,42 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertEqual(seconds(), paused, accuracy: 0.3, "Playhead moved after pause")
         tap("播放视频")
         wait("\(label): play did not resume") { self.seconds() > paused }
-        if label == "local.mp4" || label == "remote.mp4" {
-            element("media-video-view").tap()
-            let scrubber = app.sliders.firstMatch
-            XCTAssertTrue(scrubber.waitForExistence(timeout: 5), "Native video progress control is unavailable")
-            scrubber.adjust(toNormalizedSliderPosition: 0.5)
-            wait("Native progress drag did not seek") { self.seconds() >= 8 }
+        if label == "local.mp4" || label == "remote.mp4" || label == "family-viewing" {
+            tap("暂停视频")
+            wait("Player did not pause before seeking") { self.element("播放视频").exists }
+            Thread.sleep(forTimeInterval: 0.6)
+            let beforeSeek = seconds()
+            let fullDuration = duration()
+            XCTAssertGreaterThan(fullDuration, 20)
+            let fraction: CGFloat = beforeSeek < fullDuration * 0.5 ? 0.7 : 0.2
+            let target = fullDuration * Double(fraction)
+            let scrubber = element("media-video-seek")
+            XCTAssertTrue(scrubber.waitForExistence(timeout: 5), "Playback progress control is unavailable")
+            XCTAssertTrue(scrubber.isHittable, "Playback progress control cannot be touched")
+            // Drag the actual RN responder. Its adjustable accessibility role is
+            // not a UIKit UISlider, so XCUIElement.adjust would skip this path.
+            scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
+                .press(forDuration: 0.1, thenDragTo: scrubber.coordinate(withNormalizedOffset: CGVector(dx: fraction, dy: 0.5)))
+            wait("Progress drag did not seek to the requested position") { abs(self.seconds() - target) <= 1.5 }
+            XCTAssertGreaterThan(abs(seconds() - beforeSeek), 3, "Seek left the playhead unchanged")
+            if label == "local.mp4" {
+                let frameBeforeChrome = viewport.frame
+                let pausedSeek = seconds()
+                tap("收起观看工具")
+                wait("Reader controls did not hide") { !self.element("media-video-time").exists }
+                XCTAssertTrue(element("关闭阅读器").isHittable, "Closing the reader became inaccessible")
+                XCTAssertTrue(hasNativeFrame(), "Hiding controls discarded the native frame")
+                tap("显示观看工具")
+                wait("Reader controls did not return") { self.element("media-video-time").exists }
+                assertFrame(viewport.frame, frameBeforeChrome, "Showing controls changed the original viewport")
+                XCTAssertEqual(seconds(), pausedSeek, accuracy: 0.3)
+            }
+            let seeked = seconds()
+            tap("播放视频")
+            wait("Native playback did not advance from the seeked position") { self.seconds() > seeked }
         }
         record(label, ["firstFrameSeconds": firstFrameSeconds, "advancedToSeconds": seconds(),
-                       "viewport": NSStringFromCGRect(viewport.frame), "nativeFirstFrame": true])
+                       "viewport": NSCoder.string(for: viewport.frame), "nativeFirstFrame": true])
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = label + "-playing"
         screenshot.lifetime = .keepAlways
@@ -175,7 +240,7 @@ final class NativeRegressionTests: XCTestCase {
             wait("Keyboard did not dismiss") { !self.app.keyboards.firstMatch.exists }
             wait("Save controls did not return to their original position") { abs(save.frame.minY - before.minY) <= 2 }
             assertFrame(save.frame, before, "Repeated keyboard dismissal accumulates bottom padding")
-            record("keyboard-\(pass)", ["closed": NSStringFromCGRect(before), "open": NSStringFromCGRect(keyboardFrame)])
+            record("keyboard-\(pass)", ["closed": NSCoder.string(for: before), "open": NSCoder.string(for: keyboardFrame)])
         }
     }
 
@@ -253,7 +318,7 @@ final class NativeRegressionTests: XCTestCase {
         wait("Permission failure never became actionable", timeout: 25) {
             self.element("media-video-status").label.contains("权限")
         }
-        XCTAssertFalse(element("media-video-first-frame").exists)
+        XCTAssertFalse(hasNativeFrame())
         tap("下一份")
         wait("Network failure never became actionable", timeout: 25) {
             let message = self.element("media-video-status").label
@@ -276,5 +341,75 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertFalse(element("media-video-viewport").exists)
         backToTimeline()
         assertFrame(element("timeline-card-remote-memory").frame, frame, "Foreground sync lost timeline scroll position")
+    }
+
+    private func openImportReceipt() {
+        XCTAssertTrue(element("tab-profile").waitForExistence(timeout: 20))
+        tap("tab-profile")
+        tap("存储与同步")
+        tap("未完成记录")
+        tapContaining("本机收到的内容")
+        XCTAssertTrue(element("import-photo-picker").waitForExistence(timeout: 15))
+    }
+
+    func testImportSelectionPersistsAndCreatesOnlySelectedReferences() {
+        openImportReceipt()
+        wait("Import did not initially retain all originals") { self.textContains("已选 3 / 3 项") }
+        tap("仅选代表图")
+        wait("Representative selection did not apply") { self.textContains("已选 1 / 3 项") }
+        tap("全选")
+        tap("全部展开")
+        tap("选中 pick-three.png")
+        wait("Explicit deselection did not apply") { self.textContains("已选 2 / 3 项") }
+        // Initially the first image is both cover and representative, so the
+        // first remaining action belongs to the second image in fixture order.
+        tap("设为代表图")
+        tap("设为封面")
+        tap("将已选照片合为一组")
+        wait("Manual merge was not reflected") { self.textContains("已选 2 / 3 项 · 2 组") }
+        tap("拆开这组照片")
+        wait("Manual split was not reflected") { self.textContains("已选 2 / 3 项 · 3 组") }
+        tap("将已选照片合为一组")
+        wait("Selection was not saved locally") { self.textContains("挑选已暂存在本机") }
+        app.terminate()
+        app.launch()
+        openImportReceipt()
+        wait("Saved selection was lost on relaunch") { self.textContains("已选 2 / 3 项 · 2 组 · 已选封面") }
+        tap("将所选加入新草稿")
+        XCTAssertTrue(element("capture-text").waitForExistence(timeout: 15))
+        wait("Selected draft references did not persist") { self.textContains("本机已保存") }
+        record("import-selection-ui", ["selected": 2, "originals": 3, "relaunchPreserved": true])
+        // The host verifies the exact IDs, cover, groups, file preservation and
+        // absence of upload intent in SQLite after this actual native UI flow.
+    }
+
+    func testFamilyViewingHidesEditingAndRequiresOwnerExit() {
+        XCTAssertTrue(element("tab-works").waitForExistence(timeout: 20))
+        tap("tab-works")
+        tap("整理素材相册")
+        tapContaining("Fixture family album")
+        tap("更多")
+        fixtureControl(["phase": "family-viewing"])
+        tap("给家人看")
+        verifyPlayback("family-viewing")
+        XCTAssertFalse(element("更多素材操作").exists)
+        XCTAssertFalse(element("关闭阅读器").exists)
+        XCTAssertFalse(element("导出原件").exists)
+        XCTAssertFalse(element("记录一刻").exists && element("记录一刻").isHittable)
+        XCTAssertFalse(element("tab-profile").exists && element("tab-profile").isHittable)
+        tapControl(ownerExitControl(), label: "长按退出观看")
+        XCTAssertTrue(hasNativeFrame(), "A short tap exited family viewing")
+        XCTAssertFalse(element("确认退出观看").exists)
+        ownerExitControl().press(forDuration: 1.4)
+        tap("继续观看")
+        XCTAssertTrue(element("media-video-view").waitForExistence(timeout: 5))
+        ownerExitControl().press(forDuration: 1.4)
+        tap("确认退出观看")
+        wait("Owner confirmation did not restore the collection") {
+            !self.element("media-video-view").exists && self.textContains("Fixture family album")
+        }
+        XCTAssertTrue(element("更多").isHittable)
+        fixtureControl(["phase": "completed"])
+        record("family-viewing-ui", ["editingHidden": true, "shortTapKeptViewing": true, "ownerExitConfirmed": true])
     }
 }

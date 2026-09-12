@@ -1,8 +1,8 @@
 # Family Time Capsule
 
-**0.0.1 / 早期发行版 · 当前原生源码构建 38（待验证与打包）**
+**0.0.1 / 早期发行版 · 当前原生构建 39**
 
-构建 38 新增「这次导入，挑几张」与「给家人看」两个模块，见 [本轮实现说明](docs/releases/mobile-build-38.md)；承接构建 37 的沉浸式阅读、年月点选和旧回忆离线编辑。按维护者要求，本轮先提交实现，测试和安装包构建暂缓；这些改动尚无对应 APK / IPA。固定发行版与服务端升级说明仍见 [v0.0.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v0.0.1)（原生构建 35）。
+构建 39 恢复完整回归与原生验证，修复测试发现的挑片、权限撤回和播放边界问题，见 [本轮验证说明](docs/releases/mobile-build-39.md)。它包含构建 37/38 的沉浸式阅读、年月点选、旧回忆离线编辑、导入挑片与给家人看。APK 与未签名 IPA 由 [Native mobile packages](https://github.com/YePiXpert/family-time-capsule/actions/workflows/mobile-build.yml) 从同一 main 提交构建，具体结果与附件以该提交的 workflow 为准。固定发行版与服务端升级说明仍见 [v0.0.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v0.0.1)（原生构建 35）。
 产品版本保持 `0.0.1`、发布序号 18，历史 tag 与附件保持原样。升级顺序见 [VERSIONING.md](VERSIONING.md)。网页更新后刷新即可，App 界面需要安装对应新包。
 
 从出生开始，留下照片、声音和想对你说的话，慢慢写成送给你的成长礼物。
