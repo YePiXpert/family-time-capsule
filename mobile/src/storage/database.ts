@@ -361,21 +361,33 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
       ) ORDER BY occurred_at DESC, id DESC`,
     ),
   ]);
-  const serverEvents = rows.map((row) => ({
+  const editRows = draftScope && scope ? await db.getAllAsync<{ snapshot_json: string }>(
+    "SELECT snapshot_json FROM local_memory_edit WHERE scope=?", draftScope) : [];
+  const savedEdits = new Map(editRows.map(row => {
+    const edit = JSON.parse(row.snapshot_json) as import("../memories/edit-model").LocalMemoryEdit;
+    return [edit.memoryId, edit.savedContent ?? edit.submission?.content] as const;
+  }));
+  const participantRows = savedEdits.size && scope ? await db.getAllAsync<{ id: string; display_name: string }>(
+    "SELECT id,display_name FROM people WHERE scope=?", scope) : [];
+  const participantNames = new Map(participantRows.map(person => [person.id, person.display_name]));
+  const serverEvents = rows.map((row) => {
+    const edit = savedEdits.get(row.id);
+    const dateChanged = edit && (edit.occurredAt !== row.occurred_at || edit.precision !== row.occurred_at_precision);
+    return ({
     id: row.id,
-    title: row.title,
-    bodyText: row.body_text,
+    title: edit?.title ?? row.title,
+    bodyText: edit?.bodyText ?? row.body_text,
     milestoneType: row.milestone_type,
-    occurredAt: row.occurred_at,
-    occurredAtPrecision: row.occurred_at_precision,
-    locationText: row.location_text,
-    childPersonId: row.child_person_id,
-    ageDays: row.age_days,
-    ageLabel: row.age_label,
+    occurredAt: edit?.occurredAt ?? row.occurred_at,
+    occurredAtPrecision: edit?.precision ?? row.occurred_at_precision,
+    locationText: edit?.location ?? row.location_text,
+    childPersonId: edit ? edit.child : row.child_person_id,
+    ageDays: dateChanged ? null : row.age_days,
+    ageLabel: dateChanged ? null : row.age_label,
     updatedAt: row.updated_at,
     assetCount: row.asset_count,
-    participantNames: JSON.parse(row.participant_names_json) as string[],
-    participantIds: JSON.parse(row.participant_ids_json) as string[],
+    participantNames: edit ? edit.participants.map(id => participantNames.get(id) ?? "未载入人物") : JSON.parse(row.participant_names_json) as string[],
+    participantIds: edit?.participants ?? (JSON.parse(row.participant_ids_json) as string[]),
     captureIds: [],
     cover: row.cover_json
       ? (JSON.parse(row.cover_json) as LocalTimelineEvent["cover"])
@@ -383,7 +395,7 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
     localCoverUri: row.local_cover_uri,
     source: "server" as const,
     syncState: null,
-  }));
+  }); });
   const timeline = mergeTimelineEvents(serverEvents, localRows);
   if (!draftScope) return timeline;
   const snapshots = await db.getAllAsync<{ snapshot_json: string }>("SELECT snapshot_json FROM local_draft WHERE scope=?", draftScope);
@@ -1061,6 +1073,7 @@ export async function clearLocalArchive(): Promise<void> {
     DELETE FROM people;
     DELETE FROM outbox;
     DELETE FROM local_draft;
+    DELETE FROM local_memory_edit;
     DELETE FROM local_capture;
     DELETE FROM local_import_item;
     DELETE FROM local_import_session;

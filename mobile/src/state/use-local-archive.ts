@@ -37,13 +37,18 @@ export function useLocalArchive({ credentialsRef, userIdRef, familyIdRef, destGe
     setLocalReadError(null);
     try {
       const credentials = credentialsRef.current;
-      const cacheScope = memoryCacheScope(credentials, userIdRef.current ?? undefined, familyIdRef.current ?? undefined);
-      const draftScope = credentials ? (credentials.instanceId && userIdRef.current && familyIdRef.current
-        ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userIdRef.current, familyIdRef.current]) : null) : "local";
-      const [events, family, viewer, people, outbox, lastSyncAt, home, welcomeDone,
+      const [family, viewer] = await Promise.all([getCachedFamily(), getCachedViewer()]);
+      if (!isCurrent()) return;
+      // Cold starts can be offline. Read the prior snapshot with the current
+      // session hash without treating cached identity as upload authorization.
+      const readUserId = userIdRef.current ?? viewer?.id;
+      const readFamilyId = familyIdRef.current ?? family?.id;
+      const cacheScope = memoryCacheScope(credentials, readUserId, readFamilyId);
+      const draftScope = credentials ? (credentials.instanceId && readUserId && readFamilyId
+        ? JSON.stringify([credentials.serverUrl, credentials.instanceId, readUserId, readFamilyId]) : null) : "local";
+      const [events, people, outbox, lastSyncAt, home, welcomeDone,
         syncConsent, displayMode, themeMode, haptics] = await Promise.all([
-        listTimeline(cacheScope, draftScope), getCachedFamily(), getCachedViewer(),
-        listCachedPeople(cacheScope), listOutbox(), getMeta("last_sync_at"),
+        listTimeline(cacheScope, draftScope), listCachedPeople(cacheScope), listOutbox(), getMeta("last_sync_at"),
         getCachedMobileHome(), getMeta("welcome_done"), getSyncConsent(),
         getMeta("display_mode"), getMeta("theme_mode"), getMeta("haptics_enabled"),
       ]);

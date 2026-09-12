@@ -45,6 +45,10 @@ export const MEMORY_DETAIL_SCHEMA_SQL = `
 
 export const MOBILE_LOCAL_SCHEMA_SQL = `
   ${LOCAL_DRAFT_SCHEMA_SQL}
+  CREATE TABLE IF NOT EXISTS local_memory_edit (
+    scope TEXT NOT NULL, memory_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL, PRIMARY KEY(scope, memory_id)
+  );
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
   CREATE TABLE IF NOT EXISTS meta (

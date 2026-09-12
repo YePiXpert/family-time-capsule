@@ -33,6 +33,8 @@ import {
 } from "../memories/presentation";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { OrganizerPanel } from "../ai/OrganizerPanel";
+import { memoryEditScope } from "../memories/edit-model";
+import { useMemoryEdit } from "../memories/use-memory-edit";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Memory">;
 
@@ -78,6 +80,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   const requestVersion = useRef(0);
   const summary = denied ? undefined : events.find((event) => event.id === route.params.id);
   const ownDraftScope = credentials?.instanceId && viewer?.id && family?.id ? JSON.stringify([credentials.serverUrl, credentials.instanceId, viewer.id, family.id]) : credentials ? null : "local";
+  const { edit: localEdit } = useMemoryEdit(memoryEditScope(credentials, viewer?.id, family?.id), route.params.id);
 
   const load = useCallback(async () => {
     const version = ++requestVersion.current;
@@ -187,10 +190,16 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
     }
   };
 
-  const title = memory?.title ?? summary?.title ?? "记忆详情";
-  const ageLabel = memory ? memory.ageLabel : summary?.ageLabel;
-  const location = memory ? memory.locationText : summary?.locationText;
-  const occurredAt = memory?.occurredAt ?? summary?.occurredAt;
+  const savedEdit = memory && !denied && localEdit
+    ? localEdit.savedContent ?? localEdit.submission?.content ?? (localEdit.baseRevision >= (memory.titleRevision ?? 0) ? localEdit.base : null) : null;
+  const title = savedEdit?.title ?? memory?.title ?? summary?.title ?? "记忆详情";
+  const dateChanged = savedEdit && (savedEdit.occurredAt !== memory?.occurredAt || savedEdit.precision !== memory?.occurredAtPrecision);
+  const ageLabel = dateChanged ? null : memory ? memory.ageLabel : summary?.ageLabel;
+  const location = savedEdit?.location ?? (memory ? memory.locationText : summary?.locationText);
+  const occurredAt = savedEdit ? savedEdit.occurredAt : memory?.occurredAt ?? summary?.occurredAt;
+  const precision = savedEdit?.precision ?? memory?.occurredAtPrecision ?? summary?.occurredAtPrecision;
+  const displayedParticipants = savedEdit ? savedEdit.participants.map(id => people.find(person => person.id === id)?.displayName ?? "未载入人物")
+    : memory ? memory.participants.map(person => person.displayName) : summary?.participantNames ?? [];
   const localCover = summary?.localCoverUri && (summary.source === "local" || localMedia.some(asset => asset.localUri === summary.localCoverUri)) ? summary.localCoverUri : null;
   const useLocalMedia = !denied && (online === false || !credentials);
   const showStandaloneCover = Boolean(localCover) && (
@@ -210,9 +219,10 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
       <View style={styles.heading}>
         <Text style={s.eyebrow}>阅读记忆</Text>
         <Text style={s.title}>{title}</Text>
-        {occurredAt ? <Text style={styles.date}>{dateLabel(occurredAt, family?.timezone, memory?.occurredAtPrecision ?? summary?.occurredAtPrecision)}{ageLabel ? ` · ${ageLabel}` : ""}</Text> : null}
+        {occurredAt ? <Text style={styles.date}>{dateLabel(occurredAt, family?.timezone, precision)}{ageLabel ? ` · ${ageLabel}` : ""}</Text> : null}
         {location ? <Text style={s.intro}>地点 · {location}</Text> : null}
-        <Text style={styles.sync}>{memory ? (online === false ? "本机缓存 · 当前离线" : "详情已同步到本机") : "读取中"}</Text>
+        <Text style={styles.sync}>{localEdit?.savedContent || localEdit?.submission ? "修改已保存本机 · 等待同步到家庭" : memory ? (online === false ? "本机缓存 · 当前离线" : "详情已同步到本机") : "读取中"}</Text>
+        {(savedEdit?.bodyText ?? memory?.bodyText) ? <Text selectable style={styles.story}>{savedEdit?.bodyText ?? memory?.bodyText}</Text> : null}
       </View>
 
       {credentials && viewer?.canEditEvents?<Pressable onPress={()=>navigation.navigate("Collections",{eventIds:[route.params.id]})} style={s.secondaryButton}><Text style={s.secondaryText}>加入相册 / 章节</Text></Pressable>:null}
@@ -225,7 +235,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
       {(memory?.sourceNotes.length ?? 0) > 0 ? <View style={s.card}><Text style={s.cardTitle}>当时写下的</Text>{memory!.sourceNotes.map((note) => <Text key={note.id} style={styles.story}>{note.text}</Text>)}</View> : null}
       {(memory?.contributions.length ?? 0) > 0 ? <View style={s.card}><Text style={s.cardTitle}>家人讲述</Text>{memory!.contributions.map((contribution) => <View key={contribution.id} style={styles.contribution}><View style={styles.contributionHeading}><Text style={styles.author}>{contribution.authorName}</Text><Text style={styles.visibility}>{visibilityLabel(contribution.visibility)}</Text></View>{editingContributionId === contribution.id ? <><TextInput multiline onChangeText={setEditingContributionText} style={[s.input, styles.contributionInput]} textAlignVertical="top" value={editingContributionText} /><View style={styles.buttonRow}><Pressable disabled={savingContribution} onPress={() => setEditingContributionId(null)} style={[s.secondaryButton, styles.grow]}><Text style={s.secondaryText}>取消</Text></Pressable><Pressable disabled={savingContribution} onPress={() => void saveContribution()} style={[s.primaryButton, styles.grow]}><Text style={s.primaryText}>保存修改</Text></Pressable></View></> : <><Text style={styles.story}>{contribution.text}</Text>{contribution.canEdit ? <Pressable onPress={() => { setEditingContributionId(contribution.id); setEditingContributionText(contribution.text); }} style={s.secondaryButton}><Text style={s.secondaryText}>修改我的讲述</Text></Pressable> : null}</>}{contribution.audioPath ? <NativeMediaReader credentials={credentials} assets={[{id:contribution.audioPath.split('/').at(-1)!,type:'audio',filename:'家人的声音',mimeType:'audio/mp4',author:contribution.authorName,dateLabel:contribution.createdAt?dateLabel(contribution.createdAt,family?.timezone):undefined}]} /> : null}</View>)}</View> : null}
       {credentials && contributionAuthors.length > 0 ? <View style={s.card}><Text style={s.cardTitle}>补一句，或留段声音</Text><Text style={s.label}>作者</Text><View style={styles.chips}>{contributionAuthors.map((person) => <Pressable key={person.id} onPress={() => setAuthorPersonId(person.id)} style={[styles.chip, effectiveAuthorPersonId === person.id && styles.chipActive]}><Text style={effectiveAuthorPersonId === person.id ? styles.chipTextActive : styles.chipText}>{person.displayName}</Text></Pressable>)}</View><Text style={s.label}>可见范围</Text><View style={styles.chips}>{CONTRIBUTION_VISIBILITIES.map((option) => <Pressable key={option.value} onPress={() => setVisibility(option.value)} style={[styles.chip, visibility === option.value && styles.chipActive]}><Text style={visibility === option.value ? styles.chipTextActive : styles.chipText}>{option.label}</Text></Pressable>)}</View><NativeVoiceContribution key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, viewer?.id, family?.id, route.params.id])} memoryId={route.params.id} authorPersonId={effectiveAuthorPersonId} authorName={contributionAuthors.find(p => p.id === effectiveAuthorPersonId)?.displayName || "家人"} visibility={visibility} onSaved={load} onRestoreSelection={restoreVoiceSelection} /><TextInput multiline onChangeText={setContributionText} placeholder="写下你的视角……" style={[s.input, styles.contributionInput]} textAlignVertical="top" value={contributionText} /><Text style={styles.counter}>{contributionText.length} / 5000</Text><Pressable disabled={savingContribution} onPress={() => void addContribution()} style={[s.primaryButton, savingContribution && s.disabled]}><Text style={s.primaryText}>保存这段讲述</Text></Pressable></View> : null}
-      {(memory?.participants.length ?? summary?.participantNames.length ?? 0) > 0 ? <View style={s.card}><Text style={s.cardTitle}>在场的人</Text><Text style={s.body}>{memory ? memory.participants.map((person) => person.displayName).join(" · ") : summary?.participantNames.join(" · ")}</Text></View> : null}
+      {displayedParticipants.length > 0 ? <View style={s.card}><Text style={s.cardTitle}>在场的人</Text><Text style={s.body}>{displayedParticipants.join(" · ")}</Text></View> : null}
     </ScrollView>
   );
 }

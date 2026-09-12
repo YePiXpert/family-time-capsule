@@ -7,6 +7,8 @@ import { revalidateReadingDownloads } from "../reading/native";
 import { syncArchive } from "../sync/sync";
 import type { Credentials, MobileHome, MobileMe, OutboxItem } from "../types";
 import type { AccountSession } from "./use-account-session";
+import { syncMemoryEdits } from "../memories/edit-sync";
+import { memoryEditScope } from "../memories/edit-model";
 
 type Options = {
   session: AccountSession;
@@ -21,6 +23,7 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
     consentRef, destGenRef, connectingRef, clearingLocalRef,
     setCredentials, setUserId, setAccountFamilyId, setNeedsOnboarding } = session;
   const syncInFlightRef = useRef(false);
+  const syncAgainRef = useRef(false);
   const syncDoneRef = useRef<Promise<void> | null>(null);
   const [syncing, setSyncing] = useState(false);
   /** Only called after verifying the configured instance, before each upload pass. */
@@ -75,9 +78,11 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
 
   }, [destGenRef, setHome]);
 
-  const runSync = useCallback(async () => {
-    if (!credentials || credentials !== credentialsRef.current || syncInFlightRef.current || clearingLocalRef.current || connectingRef.current) return;
+  const runSync = useCallback(async (): Promise<void> => {
+    if (!credentials || credentials !== credentialsRef.current || clearingLocalRef.current || connectingRef.current) return;
+    if (syncInFlightRef.current) { syncAgainRef.current = true; return; }
     syncInFlightRef.current = true;
+    syncAgainRef.current = false;
     const generation = destGenRef.current;
     let finish!: () => void;
     syncDoneRef.current = new Promise<void>((resolve) => { finish = resolve; });
@@ -105,6 +110,10 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
       }
       const me = await refreshAccount(activeCredentials);
       if (!me || me.status !== "ready" || generation !== destGenRef.current) return;
+      const edits = await syncMemoryEdits(activeCredentials,
+        memoryEditScope(activeCredentials, me.user.id, me.family.id)!, me.user.id, me.family.id,
+        () => generation === destGenRef.current && activeCredentials === credentialsRef.current);
+      if (generation !== destGenRef.current) return;
       const summary = await syncArchive(activeCredentials, {
         isCurrent: () => generation === destGenRef.current && activeCredentials === credentialsRef.current,
         authorizeUpload: (item) => Promise.resolve(authorizeUpload(item)),
@@ -125,7 +134,9 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
       const skipped = summary.skippedUploadCount > 0
         ? `；${summary.skippedUploadCount} 条按你的选择保留在本机`
         : "";
-      setMessage(`已同步 ${summary.eventCount} 段回忆${uploaded}${retained}${skipped}。`);
+      const edited = edits.saved > 0 ? `，保存 ${edits.saved} 段修改` : "";
+      const attention = edits.needsAttention > 0 ? `；${edits.needsAttention} 段本机修改待同步或核对` : "";
+      setMessage(`已同步 ${summary.eventCount} 段回忆${uploaded}${edited}${retained}${skipped}${attention}。`);
     } catch (error) {
       if (generation !== destGenRef.current) return;
       let failure = error;
@@ -156,6 +167,10 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
         syncInFlightRef.current = false;
         syncDoneRef.current = null;
         finish();
+        if (syncAgainRef.current && generation === destGenRef.current) {
+          syncAgainRef.current = false;
+          setTimeout(() => { void runSync().catch(() => {}); }, 0);
+        }
       }
     }
   }, [authorizeUpload, clearingLocalRef, connectingRef, credentials, credentialsRef, destGenRef, needsOnboardingRef, refreshAccount, refreshHome, reloadLocal, setAccountFamilyId, setCredentials, setMessage, setUserId]);
