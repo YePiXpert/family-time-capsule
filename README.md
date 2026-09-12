@@ -1,9 +1,9 @@
 # Family Time Capsule
 
-**0.0.1 / 早期发行版 · 原生构建 35**
+**0.0.1 / 早期发行版 · 当前原生构建 36**
 
-安装包与升级说明见 [v0.0.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v0.0.1)。
-本次将产品版本重新编号为 `0.0.1`，发布序号延续为 18，原生构建号增至 35；升级顺序见 [VERSIONING.md](VERSIONING.md)。网页更新后刷新即可，App 界面需要安装对应新包。
+构建 36 的移动端安装包和原生验证结果由 [Native mobile packages](https://github.com/YePiXpert/family-time-capsule/actions/workflows/mobile-build.yml) 产出，改动见 [移动端构建说明](docs/releases/mobile-build-36.md)。固定发行版与服务端升级说明仍见 [v0.0.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v0.0.1)（原生构建 35）。
+产品版本保持 `0.0.1`、发布序号 18；构建 36 是移动端布局与播放修复，历史 tag 与附件保持原样。升级顺序见 [VERSIONING.md](VERSIONING.md)。网页更新后刷新即可，App 界面需要安装对应新包。
 
 从出生开始，留下照片、声音和想对你说的话，慢慢写成送给你的成长礼物。
 

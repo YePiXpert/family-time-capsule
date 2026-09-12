@@ -8,6 +8,10 @@ on:
         description: "Full main commit SHA to package (empty uses the dispatch commit)"
         required: false
         type: string
+      profile_baseline_sha:
+        description: "Optional full main ancestor SHA for matched iOS Release scrolling measurements"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -104,6 +108,10 @@ jobs:
         working-directory: mobile
       - run: npm test
         working-directory: mobile
+      - name: Verify native regression fixture transport
+        if: hashFiles('mobile/scripts/ios-regression/test_fixtures.py') != ''
+        run: python3 -m unittest discover -s scripts/ios-regression -p 'test_*.py'
+        working-directory: mobile
       - run: npm run doctor
         working-directory: mobile
       - run: npx expo export --platform android --output-dir dist-android
@@ -183,6 +191,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.quality.outputs.source_sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -241,6 +250,96 @@ jobs:
           path: |
             mobile/build/startup-smoke/
             mobile/build/simulator-build.log
+          if-no-files-found: error
+          retention-days: 30
+      - name: Install native playback fixture encoder
+        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            brew install ffmpeg
+          fi
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -F libx265
+          if ! ruby -rxcodeproj -e 'exit 0'; then
+            gem install --user-install xcodeproj --version 1.27.0 --no-document
+          fi
+      - name: Build optional baseline Release simulator app
+        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        env:
+          PROFILE_BASELINE_SHA: ${{ inputs.profile_baseline_sha }}
+          DELIVERED_SHA: ${{ needs.quality.outputs.source_sha }}
+          CI: "1"
+        run: |
+          [[ "$PROFILE_BASELINE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$PROFILE_BASELINE_SHA" "$DELIVERED_SHA"
+          BASELINE_ROOT="$RUNNER_TEMP/ftc-native-baseline"
+          mkdir -p "$BASELINE_ROOT"
+          git archive "$PROFILE_BASELINE_SHA" | tar -x -C "$BASELINE_ROOT"
+          cd "$BASELINE_ROOT/mobile"
+          npm ci
+          npx expo prebuild --platform ios --clean --no-install
+          npx pod-install ios
+          WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
+          test -n "$WORKSPACE_PATH"
+          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
+          test -n "$SCHEME"
+          mkdir -p "$GITHUB_WORKSPACE/mobile/build/native-baseline"
+          if ! xcodebuild \
+            -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            build > "$GITHUB_WORKSPACE/mobile/build/native-baseline/app-build.log" 2>&1; then
+            tail -n 160 "$GITHUB_WORKSPACE/mobile/build/native-baseline/app-build.log"
+            exit 1
+          fi
+      - name: Measure optional baseline with identical native scroll fixture
+        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        env:
+          SOURCE_SHA: ${{ inputs.profile_baseline_sha }}
+        run: |
+          APP_PATH=$(find "$RUNNER_TEMP/ftc-native-baseline/mobile/build/simulator/Build/Products/Release-iphonesimulator" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          python3 scripts/smoke-ios-regression.py "$APP_PATH" --profile-only --output build/native-baseline
+      - name: Verify Release playback and layout with XCUITest
+        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        env:
+          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+        run: |
+          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          python3 scripts/smoke-ios-regression.py "$APP_PATH" --output build/native-regression
+      - name: Preserve native playback and layout evidence
+        if: always() && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-ios-native-regression
+          path: |
+            mobile/build/native-regression/*.json
+            mobile/build/native-regression/*.log
+            mobile/build/native-regression/*.xcresult/
+            mobile/build/native-regression/*-attachments/
+            mobile/build/native-regression/fixtures/media-probes.json
+            mobile/build/native-baseline/*.json
+            mobile/build/native-baseline/*.log
+            mobile/build/native-baseline/*.xcresult/
+            mobile/build/native-baseline/*-attachments/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Compare baseline and delivered native scrolling metrics
+        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        run: |
+          python3 scripts/ios-regression/compare-profiles.py build/native-baseline/result.json build/native-regression/result.json > build/native-profile-comparison.md
+          cat build/native-profile-comparison.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve native profile comparison
+        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/build/native-profile-comparison.md') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-ios-profile-comparison
+          path: mobile/build/native-profile-comparison.md
           if-no-files-found: error
           retention-days: 30
       - name: Create unsigned device archive
