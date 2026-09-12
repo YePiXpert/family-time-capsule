@@ -1,15 +1,17 @@
 import { useJournalContentInset } from "../navigation/dock-metrics";
 import { growthStages, eventGrowthStage } from "../design/growth-stages";
 import { calendarDate } from "../utils/calendar";
+import { indexCalendarMonths } from "../utils/calendar-months";
 import { growthHeading } from "../design/growth";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePendingImports } from "./PendingScreen";
 import { Text } from "../components/typography";
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useAppData, useAppActions } from "../state/AppContext";
 import { CollapsingHero } from "../components/CollapsingHero";
+import { MonthPicker } from "../components/MonthPicker";
 import { useContextMenu } from "../components/ContextMenu";
 import { SwipeActions } from "../components/SwipeActions";
 import { TimelineCard } from "../components/TimelineCard";
@@ -23,6 +25,9 @@ import type { AppNavigation } from "../navigation/types";
 
 export function TimelineScreen() {
   const [stageKey, setStageKey] = useState("");
+  const [month, setMonth] = useState("");
+  const list = useRef<FlatList<LocalTimelineEvent>>(null);
+  const previousMonth = useRef(month);
   const [important, setImportant] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
@@ -54,17 +59,24 @@ export function TimelineScreen() {
   const childBirthDate = child?.birthDate ?? null;
   const timezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today = calendarDate(new Date(), timezone);
+  const monthIndex = useMemo(() => indexCalendarMonths(events, timezone), [events, timezone]);
+  useEffect(() => {
+    if (previousMonth.current === month) return;
+    previousMonth.current = month;
+    list.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [month]);
   const stages = useMemo(() => growthStages(childBirthDate, new Date(today + "T00:00:00Z"), "UTC"), [childBirthDate, today]);
   const stage = stages.find(s => s.key === stageKey);
   const childCount = (people ?? []).filter(person => person.isChild).length;
   const belongsToChild = useCallback((event: LocalTimelineEvent) => event.childPersonId ? event.childPersonId === growth.childId : event.participantIds?.length ? event.participantIds.includes(growth.childId ?? "") : childCount === 1 && event.participantNames.length === 0, [growth.childId, childCount]);
   const visibleEvents = useMemo(() => events.filter(event => {
+    if (month && monthIndex.byId.get(event.id) !== month) return false;
     if (important && !event.milestoneType) return false;
     if (!stage) return true;
     if (!belongsToChild(event)) return false;
     if (!["exact", "approximate", "date_only"].includes(event.occurredAtPrecision)) return false;
     try { const day = calendarDate(new Date(event.occurredAt), timezone); return day >= stage.from && day < stage.before; } catch { return false; }
-  }), [events, important, stage, belongsToChild, timezone]);
+  }), [events, month, monthIndex, important, stage, belongsToChild, timezone]);
   const groupHeaders = useMemo(() => {
     const labels = visibleEvents.map(event => stage?.label ?? (childBirthDate && belongsToChild(event) ? eventGrowthStage(childBirthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : "成长点滴"));
     return labels.map((label, index) => label === labels[index - 1] ? null : label);
@@ -79,6 +91,7 @@ export function TimelineScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
       <FlatList
+        ref={list}
         testID="timeline-list"
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
@@ -95,9 +108,9 @@ export function TimelineScreen() {
       ListEmptyComponent={
         <EmptyState
           art={<JournalArtwork kind="keepsake" />}
-          title={stage || important ? "这里还没有记录" : "第一篇成长记，从今天开始"}
-          body="选一张照片，留下一句想对宝宝说的话。"
-          action={<Button title="记录一刻" variant="primary" icon="plus" onPress={() => navigation.navigate("Capture")} full={false} />}
+          title={month ? monthIndex.counts.has(month) ? "没有符合筛选的记录" : "本机暂无这个月的记录" : stage || important ? "这里还没有记录" : "第一篇成长记，从今天开始"}
+          body={month ? monthIndex.counts.has(month) ? "可以查看全部月份，或调整月龄和重要时刻筛选。" : credentials ? "这个月的资料可能尚未同步到本机。可以下拉同步，或先查看全部记录。" : "选一张照片，或为已有记录补充发生日期；只明确到年份的记录仍在全部月份中。" : "选一张照片，留下一句想对宝宝说的话。"}
+          action={month ? <Button title="查看全部记录" onPress={() => { setMonth(""); setStageKey(""); setImportant(false); setSelected([]); }} full={false} /> : <Button title="记录一刻" variant="primary" icon="plus" onPress={() => navigation.navigate("Capture")} full={false} />}
         />
       }
       ListHeaderComponent={
@@ -111,6 +124,8 @@ export function TimelineScreen() {
             pill={growth.age ? <Pill label={growth.age} icon="growth" /> : null}
             accessory={<JournalArtwork kind="keepsake" compact />}
           />
+
+          <MonthPicker value={month} currentMonth={today.slice(0, 7)} counts={monthIndex.counts} allowAll onChange={next => { setMonth(next); setSelected([]); }} />
 
           {/* 月龄轨迹：轻量胶囊，内容为主角 */}
           {stages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }} accessibilityLabel="按月龄回看">
@@ -188,7 +203,7 @@ const TimelineRow = memo(function TimelineRow({ item, groupLabel, canEdit, timeZ
   const open = () => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : item.localDraftId ? navigation.navigate("Capture", { localDraftId: item.localDraftId }) : navigation.navigate("LocalCapture", { captureId: item.id });
   const select = () => enterSelection(item.id);
   const collect = () => navigation.navigate("Collections", { eventIds: [item.id] });
-  const card = <TimelineCard item={item} timeZone={item.source === "server" ? timeZone : undefined} selected={selected} onPress={() => selected !== undefined ? toggleSelected(item.id) : open()} onLongPress={event => {
+  const card = <TimelineCard item={item} timeZone={timeZone} selected={selected} onPress={() => selected !== undefined ? toggleSelected(item.id) : open()} onLongPress={event => {
     if (canOrganize) select();
     openMenu([
       ...(canOrganize ? [

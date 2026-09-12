@@ -1,5 +1,6 @@
 import { JournalIcon } from "../components/JournalIcon";
 import { RecordingMeter } from "../components/RecordingMeter";
+import { CaptureWritingPrompts } from "../components/CaptureWritingPrompts";
 import { Text, TextInput } from "../components/typography";
 import { Button } from "../components/ui";
 import { removeDraftItem, pairDraftItems, isDraftDateComplete } from "../drafts/model";
@@ -510,6 +511,7 @@ export function CaptureScreen() {
               <Action compact icon="microphone" label={recording ? "完成录音" : "录音"} hint="留下声音" disabled={busy || !capsuleDraft.draft || capsuleDraft.draft.status !== "editing"} primary={recording} onPress={() => void toggleRecording()} />
               <Action compact icon="file" label="文件" hint="添加原件" disabled={!editable || recording} onPress={() => void pickFiles()} />
             </View>
+            {capsuleDraft.draft?.status === "editing" ? <CaptureWritingPrompts key={capsuleDraft.draft.id} text={text} disabled={!editable || recording || !!capsuleDraft.error} onUse={setText} /> : null}
           </View>
           {content?.items.map((item, index) => {
             const detail = item.localCaptureRef ? originals[item.localCaptureRef] : null;

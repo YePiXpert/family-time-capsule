@@ -1,4 +1,6 @@
 import { Text, TextInput } from "../components/typography";
+import { MonthPicker } from "../components/MonthPicker";
+import { indexCalendarMonths } from "../utils/calendar-months";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -19,11 +21,11 @@ type Props = NativeStackScreenProps<RootStackParamList, "Calendar">;
 export function CalendarScreen({ navigation }: Props) {
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
-  const { credentials, family } = useAppData();
-  const [month, setMonth] = useState(() =>
-    calendarDate(new Date(), family?.timezone || "UTC").slice(0, 7),
-  );
-  const [monthInput, setMonthInput] = useState(month);
+  const { credentials, family, events } = useAppData();
+  const timezone = family?.timezone || "UTC";
+  const currentMonth = calendarDate(new Date(), timezone).slice(0, 7);
+  const monthIndex = useMemo(() => indexCalendarMonths(events, timezone), [events, timezone]);
+  const [month, setMonth] = useState(currentMonth);
   const [date, setDate] = useState("");
   const [person, setPerson] = useState("");
   const [media, setMedia] = useState("");
@@ -85,7 +87,6 @@ export function CalendarScreen({ navigation }: Props) {
   );
   const jump = (next: string, day = "") => {
     setMonth(next);
-    setMonthInput(next);
     setDate(day);
   };
   const button = (label: string, action: () => void, selected = false) => (
@@ -114,23 +115,7 @@ export function CalendarScreen({ navigation }: Props) {
       <Text style={s.body}>
         家庭时区 · {data?.timezone || family?.timezone || "UTC"}
       </Text>
-      <Text style={s.label}>年 / 月（YYYY-MM）</Text>
-      <TextInput
-        accessibilityLabel="年 / 月"
-        style={s.input}
-        value={monthInput}
-        onChangeText={setMonthInput}
-        maxLength={7}
-      />
-      {button("跳转", () => {
-        try {
-          if (!/^\d{4}-\d{2}$/.test(monthInput)) throw new Error();
-          parseCalendarDate(`${monthInput}-01`);
-          jump(monthInput);
-        } catch {
-          setError("请填写有效月份，例如 2026-09。");
-        }
-      })}
+      <MonthPicker value={month} currentMonth={currentMonth} counts={monthIndex.counts} onChange={next => jump(next)} />
       <View style={styles.wrap}>
         {button("上月", () =>
           jump(addCalendarMonths(`${month}-01`, -1).slice(0, 7)),
@@ -180,7 +165,7 @@ export function CalendarScreen({ navigation }: Props) {
           </Pressable>
         </View>
       ) : null}
-      {data ? (
+      {data?.month === month ? (
         <>
           <View style={styles.grid}>
             {["日", "一", "二", "三", "四", "五", "六"].map((d) => (
