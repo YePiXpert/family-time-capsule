@@ -3,16 +3,19 @@ import { ActivityIndicator, Image, Modal, Pressable, ScrollView, View, useWindow
 import { Text, TextInput } from "../components/typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { useVideoPlayer, VideoView } from "expo-video";
-import { useEvent } from "expo";
 import type { Credentials } from "../types";
 import type { ReaderAsset, ReaderTranscript, MediaDerivation } from "./types";
 import { fetchMediaDerivations } from "../api/client";
 import { exportOriginalCopy } from "./export-original";
 import { useSharedStyles } from "../theme";
 import { useAccessibleEffects } from "../design/use-effects";
+import { NativeVideoPlayer } from "./NativeVideoPlayer";
+import { derivationFailure, mediaRequestFailure, type PlaybackSource } from "./playback-source";
+import { useAppActive } from "./use-app-active";
 export type NativeReaderAsset = ReaderAsset & {
   localUri?: string;
+  /** Confirmed original mapping from this account, never inferred from filenames. */
+  remoteAssetId?: string;
   localTranscript?: ReaderTranscript | null;
   initialSeconds?: number;
   thumbnailPath?: string | null;
@@ -43,7 +46,7 @@ function mediaSource(
   item: NativeReaderAsset,
   id = item.id,
 ) {
-  return item.localUri
+  return item.localUri && id === item.id
     ? { uri: item.localUri }
     : credentials
       ? {
@@ -65,12 +68,19 @@ export function NativeMediaReader({
   const { reducedMotion } = useAccessibleEffects();
   const [index, setIndex] = useState<number | null>(null),
     [continuous, setContinuous] = useState(false);
-  const item = index === null ? null : assets[index];
+  const [readingAssets, setReadingAssets] = useState<NativeReaderAsset[]>([]);
+  const selected = index === null ? null : readingAssets[index];
+  const removed = selected && !assets.some((candidate) => candidate.id === selected.id ||
+    selected.localUri && candidate.localUri === selected.localUri ||
+    selected.remoteAssetId && candidate.id === selected.remoteAssetId);
+  const item = removed ? null : selected;
+  // A reordered list preserves reading, but removal/revocation must close it permanently.
+  if (removed && index !== null) setIndex(null);
   const ended = useCallback(() => {
     if (!continuous || index === null) return;
-    const next = assets.findIndex((a, i) => i > index && a.type === "audio");
+    const next = readingAssets.findIndex((a, i) => i > index && a.type === "audio");
     if (next >= 0) setIndex(next);
-  }, [assets, continuous, index]);
+  }, [readingAssets, continuous, index]);
   return (
     <>
       {assets.map((asset, i) => (
@@ -78,7 +88,11 @@ export function NativeMediaReader({
           key={`${asset.id}-${i}`}
           accessibilityRole="button"
           accessibilityLabel={`打开阅读器：${asset.filename}`}
-          onPress={() => setIndex(i)}
+          onPress={() => {
+            // Sync may reorder or reconcile local IDs while a reader is open.
+            setReadingAssets(assets.map((value) => ({ ...value })));
+            setIndex(i);
+          }}
           style={s.card}
         >
           {asset.type === "image" ? (
@@ -119,7 +133,7 @@ export function NativeMediaReader({
           <ScrollView contentContainerStyle={s.content}>
             <Button title="关闭阅读器" onPress={() => setIndex(null)} />
             <Text style={s.body} accessibilityLiveRegion="polite">
-              {index === null ? 0 : index + 1} / {assets.length}
+              {index === null ? 0 : index + 1} / {readingAssets.length}
             </Text>
             <View style={{ flexDirection: "row", gap: 8 }}>
               <Button
@@ -129,7 +143,7 @@ export function NativeMediaReader({
               />
               <Button
                 title="下一份"
-                disabled={index === null || index === assets.length - 1}
+                disabled={index === null || index === readingAssets.length - 1}
                 onPress={() => setIndex((i) => (i === null ? null : i + 1))}
               />
             </View>
@@ -177,67 +191,98 @@ function Active({
     [retry, setRetry] = useState(0);
   const { width } = useWindowDimensions();
   const compatibilityRequested = useRef(false);
+  const remoteId = item.remoteAssetId || item.id;
+  const canReadRemote = !item.localUri || Boolean(item.remoteAssetId);
+  const [metadataLoaded, setMetadataLoaded] = useState(Boolean(item.localUri && !item.remoteAssetId));
+  const [generating, setGenerating] = useState(false);
+  const [jobsRevision, setJobsRevision] = useState(0);
+  const appActive = useAppActive();
+  const requests = useRef(new Set<AbortController>());
+  const serverUrl = credentials?.serverUrl;
+  const token = credentials?.token;
   useEffect(() => {
-    if (!credentials || item.localUri) return;
-    let alive = true,
-      timer: ReturnType<typeof setTimeout> | undefined;
+    if (!serverUrl || !token || !canReadRemote || !appActive) return;
+    const auth = { serverUrl, token };
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     async function load(first = false) {
       try {
-        const data = await fetchMediaDerivations(
-          credentials!,
-          item.id,
-          first && ["image", "video"].includes(item.type)
-            ? "preview"
-            : undefined,
-        );
-        if (!alive) return;
+        let data = await fetchMediaDerivations(auth, remoteId, undefined, controller.signal);
+        if (controller.signal.aborted) return;
         setJobs(data.jobs);
         setTranscript(data.transcript);
+        setMetadataLoaded(true);
         setError("");
         setDenied(false);
-        if (data.jobs.some((j) => ["queued", "running"].includes(j.status)))
+        if (first && ["image", "video"].includes(item.type) && !data.jobs.some((job) => job.kind === "preview")) {
+          data = await fetchMediaDerivations(auth, remoteId, "preview", controller.signal);
+          if (controller.signal.aborted) return;
+          setJobs(data.jobs);
+        }
+        if (data.jobs.some((job) => ["queued", "running"].includes(job.status)))
           timer = setTimeout(() => void load(), 2000);
       } catch (e) {
-        if (!alive) return;
+        if (controller.signal.aborted) return;
         const status = (e as { status?: number }).status;
-        setDenied(status === 401 || status === 403 || status === 404);
-        setError(
-          status === 401 || status === 403 || status === 404
-            ? "来源已删除或当前没有阅读权限。"
-            : "无法连接服务器，请检查网络后重试。",
-        );
+        setDenied(!item.localUri && (status === 401 || status === 403 || status === 404));
+        // An owned local original stays readable if the remote account or network is unavailable.
+        if (item.localUri) setJobs([]);
+        setError(item.localUri ? "" : mediaRequestFailure(e).message);
+        // An unavailable metadata endpoint must not prevent readable originals from loading.
+        setMetadataLoaded(true);
       }
     }
     void load(true);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [credentials, item.id, item.localUri, item.type, retry]);
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [serverUrl, token, remoteId, canReadRemote, item.localUri, item.type, retry, jobsRevision, appActive]);
+  useEffect(() => {
+    const pending = requests.current;
+    if (!appActive) {
+      pending.forEach((request) => request.abort());
+    }
+    return () => pending.forEach((request) => request.abort());
+  }, [appActive]);
   const preview = jobs.find((j) => j.kind === "preview"),
     transcode = jobs.find((j) => j.kind === "transcode"),
     waveform = jobs.find((j) => j.kind === "waveform");
-  const selectedId = original
+  const selectedId = original || item.localUri && !credentials
     ? item.id
     : item.type === "image"
       ? preview?.outputAssetId || item.thumbnailId || item.id
       : transcode?.outputAssetId || item.id;
   const source = mediaSource(credentials, item, selectedId);
   async function generate(kind: MediaDerivation["kind"]) {
-    if (!credentials) return;
+    if (!credentials || !canReadRemote || !appActive) return;
+    const controller = new AbortController();
+    requests.current.add(controller);
+    if (kind === "transcode") setGenerating(true);
+    setError("");
     try {
-      await fetchMediaDerivations(credentials, item.id, kind);
-      setRetry((v) => v + 1);
-    } catch {
-      setError("无法开始处理，请稍后重试。");
+      const data = await fetchMediaDerivations(credentials, remoteId, kind, controller.signal);
+      if (controller.signal.aborted) return;
+      setJobs(data.jobs);
+      setJobsRevision((value) => value + 1);
+    } catch (e) {
+      if (!controller.signal.aborted)
+        setError((e as { code?: string }).code === "derivative_quota"
+          ? derivationFailure("derivative_quota") : mediaRequestFailure(e).message);
+    } finally {
+      requests.current.delete(controller);
+      if (kind === "transcode") setGenerating(false);
     }
   }
   function playbackFailed() {
-    if (!credentials || item.localUri || compatibilityRequested.current || transcode) return;
+    if (!credentials || !canReadRemote || compatibilityRequested.current || transcode) return;
     compatibilityRequested.current = true;
-    setError("正在准备兼容播放版，原视频已保留。完成后会自动切换。");
     void generate("transcode");
   }
+  function retryVideo() {
+    setError("");
+    if (!transcode || transcode.status === "failed") compatibilityRequested.current = false;
+    if (transcode?.status === "failed") void generate("transcode");
+    else setRetry((value) => value + 1);
+  }
+  const processingVideo = generating || transcode?.status === "queued" || transcode?.status === "running";
   return (
     <>
       <Text style={s.title}>{item.filename}</Text>
@@ -250,12 +295,26 @@ function Active({
           .filter(Boolean)
           .join(" · ")}
       </Text>
-      {error ? (
+      {error && item.type !== "video" ? (
         <Text accessibilityRole="alert" style={s.error}>
           {error}
         </Text>
       ) : null}
-      {!denied && source ? (
+      {item.type === "video" ? (
+        <NativeVideoPlayer
+          source={!denied && (metadataLoaded || item.localUri && !credentials) ? source : null}
+          localOriginal={Boolean(item.localUri && selectedId === item.id)}
+          remoteOriginal={item.remoteAssetId ? mediaSource(credentials, { ...item, localUri: undefined }, item.remoteAssetId) : null}
+          onUnsupported={playbackFailed}
+          onRetry={retryVideo}
+          retryToken={retry}
+          initialSeconds={item.initialSeconds}
+          onPosition={onPosition ? (seconds) => onPosition(item.id, seconds) : undefined}
+          externalError={error || (transcode?.status === "failed" ? derivationFailure(transcode.errorCode) : !source ? "请先连接家庭服务器后播放。" : "")}
+          message={processingVideo ? "正在准备兼容播放版，原视频已保留。完成后会自动切换。" : undefined}
+          poster={denied ? null : preview?.outputAssetId ? mediaSource(credentials, { ...item, localUri: undefined }, preview.outputAssetId) : item.thumbnailId ? mediaSource(credentials, { ...item, localUri: undefined }, item.thumbnailId) : null}
+        />
+      ) : !denied && source ? (
         item.type === "image" ? (
           <>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -296,22 +355,6 @@ function Active({
               </ScrollView>
             </ScrollView>
           </>
-        ) : item.type === "video" ? (
-          <Video
-            key={`${selectedId}-${retry}`}
-            source={source}
-            localOriginal={Boolean(item.localUri)}
-            onPlaybackError={playbackFailed}
-            initialSeconds={item.initialSeconds}
-            onPosition={
-              onPosition ? (seconds) => onPosition(item.id, seconds) : undefined
-            }
-            poster={
-              preview?.outputAssetId
-                ? mediaSource(credentials, item, preview.outputAssetId)
-                : null
-            }
-          />
         ) : item.type === "audio" ? (
           <Audio
             key={`${selectedId}-${retry}`}
@@ -333,10 +376,11 @@ function Active({
           </Text>
         )
       ) : null}
-      {!item.localUri && ["video", "audio"].includes(item.type) ? (
+      {canReadRemote && ["video", "audio"].includes(item.type) ? (
         <>
           <Button
             title="生成兼容播放版"
+            disabled={processingVideo}
             onPress={() => void generate("transcode")}
           />
           <Button
@@ -357,7 +401,7 @@ function Active({
         />
       ) : null}
       {jobs
-        .filter((j) => j.status !== "succeeded")
+        .filter((j) => j.status !== "succeeded" && (item.type !== "video" || j.kind === "waveform"))
         .map((j) => (
           <Text key={j.kind} style={s.body}>
             {j.status === "failed"
@@ -378,7 +422,6 @@ function Active({
     </>
   );
 }
-type PlaybackSource = { uri: string; headers?: Record<string, string> };
 function Audio({
   source,
   continuous,
@@ -500,81 +543,6 @@ function Audio({
     </>
   );
 }
-function Video({
-  source,
-  poster,
-  localOriginal = false,
-  initialSeconds = 0,
-  onPosition,
-  onPlaybackError,
-}: {
-  onPlaybackError?: () => void;
-  initialSeconds?: number;
-  onPosition?: (seconds: number) => void;
-  source: PlaybackSource;
-  poster: PlaybackSource | null;
-  localOriginal?: boolean;
-}) {
-  const s = useSharedStyles();
-  const player = useVideoPlayer(source, (player) => {
-    player.timeUpdateEventInterval = 1;
-  });
-  const time = useEvent(player, "timeUpdate", {
-    currentTime: 0,
-    currentLiveTimestamp: null,
-    currentOffsetFromLive: null,
-    bufferedPosition: 0,
-  });
-  const restored = useRef(false);
-  const { status, error } = useEvent(player, "statusChange", {
-    status: player.status,
-    error: undefined,
-  });
-  useEffect(() => {
-    if (status === "error") onPlaybackError?.();
-  }, [status, onPlaybackError]);
-  useEffect(() => {
-    if (status === "readyToPlay" && !restored.current) {
-      restored.current = true;
-      if (initialSeconds > 0)
-        player.seekBy(Math.min(initialSeconds, player.duration) - player.currentTime);
-    }
-  }, [status, player, initialSeconds]);
-  usePlaybackProgress(
-    time.currentTime,
-    status === "readyToPlay" && (initialSeconds === 0 || time.currentTime > 0),
-    onPosition,
-  );
-  return (
-    <>
-      {status === "loading" ? (
-        <>
-          <ActivityIndicator />
-          {poster ? (
-            <Image
-              source={poster}
-              accessibilityLabel="视频封面"
-              style={{ width: "100%", height: 240, resizeMode: "contain" }}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {error || status === "error" ? (
-        <Text style={s.error}>{localOriginal
-          ? "原件已保存在本机，此设备不能直接播放该编码。保存并同步后，可在记忆详情生成兼容播放版。"
-          : "视频暂时无法解码，请重试或生成兼容播放版。"}</Text>
-      ) : null}
-      <VideoView
-        player={player}
-        contentFit="contain"
-        nativeControls
-        surfaceType="textureView"
-        style={{ width: "100%", height: 340 }}
-      />
-    </>
-  );
-}
-
 /** Persist bounded updates and the final observed position without restarting playback. */
 function usePlaybackProgress(
   seconds: number,

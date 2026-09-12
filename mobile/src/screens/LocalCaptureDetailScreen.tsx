@@ -1,5 +1,5 @@
 import { Text } from "../components/typography";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { exportOriginalCopy } from "../media/export-original";
@@ -11,7 +11,7 @@ import {
   type LocalCaptureDetail,
 } from "../storage/database";
 import { localFileExists } from "../storage/files";
-import { useApp } from "../state/AppContext";
+import { useAppData, useAppActions } from "../state/AppContext";
 import { useSharedStyles } from "../theme";
 import type { JournalPalette } from "../design/tokens";
 
@@ -33,22 +33,31 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
   const s = useSharedStyles();
   const styles = useMemo(() => createStyles(s.colors), [s.colors]);
   const captureId = route.params.captureId.replace(/^local:/u, "");
-  const { credentials, outbox, runSync } = useApp();
+  const { credentials, outbox, userId, family } = useAppData();
+  const { runSync } = useAppActions();
+  const sourceScope = credentials?.instanceId && userId && family?.id
+    ? JSON.stringify([credentials.serverUrl, credentials.instanceId, userId, family.id]) : null;
   const confirm = useConfirmSheet();
   const alert = useAlertSheet();
   const [detail, setDetail] = useState<LocalCaptureDetail | null>(null);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const requestRevision = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++requestRevision.current;
     setLoading(true);
     try {
-      setDetail(await getLocalCaptureDetail(captureId));
+      const next = await getLocalCaptureDetail(captureId, sourceScope);
+      if (request !== requestRevision.current) return;
+      setDetail(next);
+      setLoadedScope(sourceScope);
     } finally {
-      setLoading(false);
+      if (request === requestRevision.current) setLoading(false);
     }
-  }, [captureId]);
+  }, [captureId, sourceScope]);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void load(); return () => { requestRevision.current++; }; }, [load]));
 
   const outboxItem = outbox.find((item) => item.id === captureId) ?? null;
   const fileExists = detail?.localUri ? localFileExists(detail.localUri) : null;
@@ -87,6 +96,7 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
           filename: detail.fileName ?? detail.title,
           mimeType: detail.mimeType ?? "application/octet-stream",
           localUri: detail.localUri,
+          remoteAssetId: loadedScope === sourceScope ? detail.remoteAssetId : undefined,
         }
       : null;
 
@@ -124,7 +134,7 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
             <Text style={s.body}>本机文档可直接导出到其他 App 打开。</Text>
           </View>
         ) : (
-          <NativeMediaReader assets={[asset]} credentials={null} />
+          <NativeMediaReader key={JSON.stringify([captureId, sourceScope])} assets={[asset]} credentials={asset.remoteAssetId ? credentials : null} />
         )
       ) : (
         <View style={s.warning}>

@@ -1,6 +1,7 @@
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Credentials } from "../src/types";
 
 const mocks = vi.hoisted(() => ({
   getDetail: vi.fn(),
@@ -8,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   exists: vi.fn(),
   exportOriginal: vi.fn(),
   runSync: vi.fn(),
+  credentials: null as Credentials | null,
+  userId: null as string | null,
+  family: null as { id: string } | null,
 }));
 
 vi.mock("react-native", () => ({
@@ -20,13 +24,13 @@ vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children
 vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void) => useEffect(fn, [fn]),
 }));
-vi.mock("../src/state/AppContext", () => ({
-  useApp: () => ({
-    credentials: null,
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({
+    credentials: mocks.credentials,
+    userId: mocks.userId,
+    family: mocks.family,
     outbox: [],
     runSync: mocks.runSync,
-  }),
-}));
+  }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/storage/database", () => ({
   getLocalCaptureDetail: mocks.getDetail,
   removeLocalCaptureRecord: mocks.removeRecord,
@@ -34,7 +38,7 @@ vi.mock("../src/storage/database", () => ({
 vi.mock("../src/storage/files", () => ({ localFileExists: mocks.exists }));
 vi.mock("../src/media/export-original", () => ({ exportOriginalCopy: mocks.exportOriginal }));
 vi.mock("../src/media/NativeMediaReader", () => ({
-  NativeMediaReader: () => "NativeMediaReader",
+  NativeMediaReader: (props: Record<string, unknown>) => createElement("NativeMediaReader", props),
 }));
 
 const { LocalCaptureDetailScreen } = await import("../src/screens/LocalCaptureDetailScreen");
@@ -56,7 +60,7 @@ function textOf(): string {
   return root.findAll((node) => String(node.type) === "Text").map((node) => flatten(node.props.children)).join("\n");
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); mocks.credentials = null; mocks.userId = null; mocks.family = null; });
 afterEach(() => {
   if (tree) tree.unmount();
   tree = undefined;
@@ -71,7 +75,7 @@ describe("本机记录详情（即存即看）", () => {
       syncState: "pending", text: "小满今天叫了爸爸。",
     });
     await act(async () => { render(); });
-    expect(mocks.getDetail).toHaveBeenCalledWith("capture-1");
+    expect(mocks.getDetail).toHaveBeenCalledWith("capture-1", null);
     expect(textOf()).toContain("小满今天叫了爸爸。");
     expect(textOf()).toContain("等待上传");
     expect(textOf()).toContain("已保存本机");
@@ -107,5 +111,32 @@ describe("本机记录详情（即存即看）", () => {
     mocks.getDetail.mockResolvedValue(null);
     await act(async () => { render(); });
     expect(textOf()).toContain("找不到这条本机记录");
+  });
+
+  it("uses an exact uploaded-video receipt and drops it immediately when the account changes", async () => {
+    mocks.credentials = { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "fictional-a" };
+    mocks.userId = "owner-a"; mocks.family = { id: "family" };
+    const detail = {
+      captureId: "capture-1", kind: "media_capture", title: "本机视频", occurredAt: "2026-09-05T09:00:00.000Z",
+      localUri: "file:///original.mpg", mediaType: "video", fileName: "original.mpg", mimeType: "video/mpeg",
+      remoteAssetId: "confirmed-original-a", syncState: "archived", text: null,
+    };
+    mocks.getDetail.mockResolvedValue(detail); mocks.exists.mockReturnValue(true);
+    await act(async () => { render(); });
+    expect(mocks.getDetail).toHaveBeenCalledWith("capture-1", JSON.stringify(["https://fixture.invalid", "instance", "owner-a", "family"]));
+    let reader = tree!.root.findByType("NativeMediaReader" as never);
+    expect(reader.props.credentials).toBe(mocks.credentials);
+    expect(reader.props.assets[0]).toMatchObject({ localUri: "file:///original.mpg", remoteAssetId: "confirmed-original-a" });
+
+    let finish!: (value: unknown) => void;
+    mocks.getDetail.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    mocks.credentials = { ...mocks.credentials, token: "fictional-b" };
+    mocks.userId = "owner-b";
+    await act(() => tree!.update(createElement(LocalCaptureDetailScreen, { route })));
+    reader = tree!.root.findByType("NativeMediaReader" as never);
+    expect(reader.props.credentials).toBeNull();
+    expect(reader.props.assets[0].remoteAssetId).toBeUndefined();
+    await act(async () => { finish({ ...detail, remoteAssetId: undefined }); });
+    expect(tree!.root.findByType("NativeMediaReader" as never).props.credentials).toBeNull();
   });
 });

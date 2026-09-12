@@ -63,10 +63,14 @@ async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const abort = () => controller.abort();
+  init.signal?.addEventListener("abort", abort, { once: true });
+  if (init.signal?.aborted) abort();
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
+    init.signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -1215,8 +1219,8 @@ export async function mutateCollection(credentials:Credentials,id:string,input:R
   catch(error){if(error instanceof ApiError && error.status===409)throw new ApiError('其他家人已修改相册。你的输入仍保留，请复制需要保留的内容后重新读取。',409);throw error;}
 }
 
-export async function fetchMediaDerivations(credentials: Credentials, assetId: string, kind?: import('../media/types').MediaDerivation['kind']): Promise<{jobs: import('../media/types').MediaDerivation[]; transcript: import('../media/types').ReaderTranscript|null}> {
-  const body = await requestMobileJson(credentials, `/api/media/${encodeURIComponent(assetId)}/derivations`, kind ? {method:'POST',body:JSON.stringify({kind})}:{});
+export async function fetchMediaDerivations(credentials: Credentials, assetId: string, kind?: import('../media/types').MediaDerivation['kind'], signal?: AbortSignal): Promise<{jobs: import('../media/types').MediaDerivation[]; transcript: import('../media/types').ReaderTranscript|null}> {
+  const body = await requestMobileJson(credentials, `/api/media/${encodeURIComponent(assetId)}/derivations`, { ...(kind ? {method:'POST',body:JSON.stringify({kind})}:{}), signal });
   if (!isRecord(body) || !Array.isArray(body.jobs) || !body.jobs.every(j=>isRecord(j)&&['preview','transcode','waveform'].includes(String(j.kind))&&['queued','running','succeeded','failed'].includes(String(j.status))&&isNullableString(j.outputAssetId,128)&&isNullableString(j.errorCode,200))) throw new ApiError('媒体处理信息无效。',502);
   const transcript=body.transcript;
   if(transcript!==null && (!isRecord(transcript)||!isString(transcript.text,2_000_000)||typeof transcript.edited!=='boolean'||!Array.isArray(transcript.segments)||!transcript.segments.every(s=>isRecord(s)&&typeof s.startSeconds==='number'&&Number.isFinite(s.startSeconds)&&s.startSeconds>=0&&typeof s.endSeconds==='number'&&Number.isFinite(s.endSeconds)&&s.endSeconds>s.startSeconds&&isString(s.text,10000)))) throw new ApiError('转录信息无效。',502);
