@@ -19,7 +19,7 @@ export function MemoryReading({ title, date, visibility, body, media, status, ch
   return <View style={styles.reading}>
     {media}
     <CollapsingHero compact variant="record" title={title} eyebrow={date} subtitle={visibility} />
-    {body && body !== title ? <Text selectable style={[styles.story, { color: colors.ink }]}>{body}</Text> : null}
+    {body && body.trim() !== title.trim() ? <Text selectable style={[styles.story, { color: colors.ink }]}>{body}</Text> : null}
     {children}
     {status ? <Text accessibilityLiveRegion="polite" style={[styles.status, { color: colors.muted }]}>{status}</Text> : null}
   </View>;
