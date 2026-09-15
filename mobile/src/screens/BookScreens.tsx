@@ -10,7 +10,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useFocusEffect, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { randomUUID } from "expo-crypto";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, View } from "react-native";
+import type { Credentials } from "../types";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchBook,
@@ -115,12 +116,15 @@ function Field({
 
 function BookCoverCell({
   book,
+  credentials,
   onPress,
 }: {
   book: BookPage["entries"][number];
+  credentials: Credentials | null;
   onPress: () => void;
 }) {
   const { colors } = useColorTheme();
+  const [failedCover, setFailedCover] = useState<string | null>(null);
   const meta = (() => {
     if (book.subtitle) return book.subtitle;
     try {
@@ -166,10 +170,10 @@ function BookCoverCell({
           <View style={{ flex: 1, backgroundColor: colors.softCoral }} />
           <View style={{ width: 1, backgroundColor: colors.line }} />
         </View>
-        <JournalIcon name="book" color={colors.coral} size={28} />
-        <Text style={{ color: colors.ink, fontSize: 28, fontWeight: "700" }}>
-          {book.title.slice(0, 1)}
-        </Text>
+        {credentials && book.coverAssetId && failedCover !== book.coverAssetId ? <Image accessibilityLabel={`${book.title}的封面`} source={{ uri: `${credentials.serverUrl}/api/media/${encodeURIComponent(book.coverAssetId)}`, headers: { Authorization: `Bearer ${credentials.token}` } }} resizeMode="contain" style={{ width: "100%", height: "100%" }} onError={() => setFailedCover(book.coverAssetId)} /> : <>
+          <JournalIcon name="book" color={colors.coral} size={28} />
+          <Text style={{ color: colors.ink, fontSize: 18, lineHeight: 28, textAlign: "center", paddingHorizontal: 20 }} numberOfLines={4}>{book.title}</Text>
+        </>}
       </View>
       <Text
         numberOfLines={2}
@@ -189,7 +193,12 @@ function BookCoverCell({
   );
 }
 
-export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Books">["navigation"], "navigate"> }) {
+type BooksProps = { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Books">["navigation"], "navigate"> };
+export function BooksScreen(props: BooksProps) {
+  const { credentials, family, viewer } = useAppData();
+  return <Bookshelf key={JSON.stringify([credentials?.serverUrl, credentials?.token, family?.id, viewer?.id])} {...props} />;
+}
+function Bookshelf({ navigation }: BooksProps) {
   const { credentials, family, viewer } = useAppData();
   const contentBottom = useJournalContentInset();
   const titleInset = useJournalTitleInset();
@@ -221,7 +230,7 @@ export function BooksScreen({ navigation }: { navigation: Pick<NativeStackScreen
     {!credentials ? <Text style={s.body}>连接家庭服务器后可以创建家庭书；已下载的作品仍可离线阅读。</Text> : null}
     {page?.entries.length ? (
       <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 20 }}>
-        {page.entries.map(book => <BookCoverCell key={book.id} book={book} onPress={() => navigation.navigate("BookDetail", { id: book.id })} />)}
+        {page.entries.map(book => <BookCoverCell key={book.id} book={book} credentials={credentials} onPress={() => navigation.navigate("BookDetail", { id: book.id })} />)}
       </View>
     ) : null}
     {page && !page.entries.length ? (
@@ -487,11 +496,20 @@ export function BookDetailScreen({
       contentContainerStyle={[s.content, { paddingTop: insets.top + 12 }]}
       keyboardShouldPersistTaps="handled"
     >
+      {book.coverAssetId && chapterIndex === 0 && blockPage === 0
+        ? <View style={{ borderColor: colors.line, borderRadius: journalRadius.card, borderWidth: 1, overflow: "hidden", aspectRatio: 4 / 3 }}>{photo(
+            book.sourceStates[
+              book.sources.find((r) => r.assetId === book.coverAssetId)?.id ||
+                ""
+            ]?.asset?.previewAssetId || book.coverAssetId,
+            "封面照片",
+          )}</View>
+        : null}
       <View style={{ gap: 6 }}>
         <Text style={s.eyebrow}>
           {book.audience === "family" ? "家庭可读版" : "我的私人阅读版"}
         </Text>
-        <Text accessibilityRole="header" style={{ color: colors.ink, fontSize: journalType.title, fontWeight: "800" }}>{book.title}</Text>
+        <Text accessibilityRole="header" style={{ color: colors.ink, fontSize: journalType.title, fontWeight: "400" }}>{book.title}</Text>
         <Text style={s.body}>{book.subtitle}</Text>
         <Text accessibilityLiveRegion="polite" style={{ color: colors.muted, fontSize: 13 }}>
           {saving
@@ -521,38 +539,15 @@ export function BookDetailScreen({
           />
         </View>
       ) : null}
-      {canEdit && !editing ? <ToolDisclosure title="调整封面、寄语与收录内容">
-        <View style={[s.card, { gap: 12 }]}>
-          <Field label="给宝宝的寄语" value={book.subtitle} onChange={subtitle => update({ subtitle: subtitle.slice(0, 500) })} multiline />
-          <Text style={s.label}>封面照片</Text>
-          <Button title="只用标题封面" onPress={() => update({ coverAssetId: null })} disabled={busy} />
-          {[...new Map(Object.values(book.sourceStates).filter(state => state.available && state.asset?.type === "image").map(state => [state.asset!.id, state])).values()].map((state, i) => <Button key={state.asset!.id} title={`${book.coverAssetId === state.asset!.id ? "已选 · " : ""}照片 ${i + 1} · ${state.asset!.filename}`} onPress={() => update({ coverAssetId: state.asset!.id })} disabled={busy} />)}
-          <Text style={s.body}>从本册移除不会删除原记录，也不会自动加回来。</Text>
-          {book.sources.filter(source => source.kind === "memory" && book.blocks.some(b => b.sourceIds.includes(source.id))).map(source => <Button key={source.id} title={`从本册移除：${book.sourceStates[source.id]?.label || "暂不可见的记录"}`} onPress={() => update({ blocks: book.blocks.filter(b => !b.sourceIds.includes(source.id)) })} disabled={busy} />)}
-        </View>
-      </ToolDisclosure> : null}
       {book.readingMedia?.length ? <View style={s.card}><Text style={s.cardTitle}>声音与视频</Text><NativeMediaReader credentials={credentials} assets={book.readingMedia.flatMap(state => state.asset ? [{ id: state.asset.id, type: state.asset.type, filename: state.label || state.asset.filename, mimeType: state.asset.mimeType }] : [])} /></View> : null}
-      <ToolDisclosure title="导出与下载">
-        <View style={{ gap: 10 }}>
-          {!book.deletedAt ? <ReadingDownloadButton kind="book" id={id} prepare={async () => { setOperation(true); try { return await save() && sequence.current === savedSequence.current; } finally { setOperation(false); } }} /> : null}
-          {credentials && !book.deletedAt ? (
-            <NativeBookPublication credentials={credentials} id={id} audience={book.audience}
-              prepare={async () => {
-                setOperation(true);
-                try { return await save() && sequence.current === savedSequence.current ? current.current!.revision : null; }
-                finally { setOperation(false); }
-              }} />
-          ) : null}
-        </View>
-      </ToolDisclosure>
       {canEdit ? (
         <>
-          <SectionHeader title="编辑工作台" />
+          {editing ? <SectionHeader title="调整成长册" /> : null}
           <View pointerEvents={busy ? "none" : "auto"}>
             <ListGroup>
               <ListRow
                 icon="edit"
-                title={editing ? "阅读作品" : "更多调整"}
+                title={editing ? "保存并阅读" : "调整这本成长册"}
                 last={!(editing && tool === "content")}
                 onPress={() => {
                   if (editing) {
@@ -585,7 +580,7 @@ export function BookDetailScreen({
       ) : null}
       {editing && canEdit ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {(["content", "layout", "settings"] as const).map((value, i) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tool === value }} onPress={() => setTool(value)} style={{
-          minHeight: 38,
+          minHeight: 44,
           alignItems: "center",
           justifyContent: "center",
           paddingHorizontal: 16,
@@ -733,15 +728,6 @@ export function BookDetailScreen({
           />
         </View>
       ) : null}
-      {book.coverAssetId
-        ? <View style={{ borderColor: colors.line, borderRadius: journalRadius.card, borderWidth: 1, overflow: "hidden", aspectRatio: 4 / 3 }}>{photo(
-            book.sourceStates[
-              book.sources.find((r) => r.assetId === book.coverAssetId)?.id ||
-                ""
-            ]?.asset?.previewAssetId || book.coverAssetId,
-            "封面照片",
-          )}</View>
-        : null}
       <ToolDisclosure title="目录">
         <ListGroup>
           {book.chapters.map((c, i) => (
@@ -1057,29 +1043,54 @@ export function BookDetailScreen({
         <Button
           variant="secondary"
           icon="arrow-left"
-          title="上一页"
+          title={blockPage === 0 && chapterIndex > 0 ? "上一章" : "上一页"}
           full={false}
-          disabled={blockPage === 0}
+          disabled={blockPage === 0 && chapterIndex === 0}
           onPress={() => {
-            setBlockPage(blockPage - 1);
+            if (blockPage > 0) setBlockPage(blockPage - 1);
+            else { setChapterIndex(chapterIndex - 1); setBlockPage(0); }
             scroll.current?.scrollTo({ y: 0, animated: false });
           }}
         />
         <Text style={{ color: colors.muted, fontSize: 13 }}>
-          第 {blockPage + 1} / {Math.max(1, Math.ceil(allBlocks.length / 8))} 页
+          第 {chapterIndex + 1} 章 · {blockPage + 1} / {Math.max(1, Math.ceil(allBlocks.length / 8))} 页
         </Text>
         <Button
           variant="secondary"
           icon="chevron-right"
-          title="下一页"
+          title={(blockPage + 1) * 8 >= allBlocks.length && chapterIndex < book.chapters.length - 1 ? "下一章" : "下一页"}
           full={false}
-          disabled={(blockPage + 1) * 8 >= allBlocks.length}
+          disabled={(blockPage + 1) * 8 >= allBlocks.length && chapterIndex >= book.chapters.length - 1}
           onPress={() => {
-            setBlockPage(blockPage + 1);
+            if ((blockPage + 1) * 8 < allBlocks.length) setBlockPage(blockPage + 1);
+            else { setChapterIndex(chapterIndex + 1); setBlockPage(0); }
             scroll.current?.scrollTo({ y: 0, animated: false });
           }}
         />
       </View>
+      {canEdit && !editing ? <ToolDisclosure title="调整封面、寄语与收录内容">
+        <View style={[s.card, { gap: 12 }]}>
+          <Field label="给宝宝的寄语" value={book.subtitle} onChange={subtitle => update({ subtitle: subtitle.slice(0, 500) })} multiline />
+          <Text style={s.label}>封面照片</Text>
+          <Button title="只用标题封面" onPress={() => update({ coverAssetId: null })} disabled={busy} />
+          {[...new Map(Object.values(book.sourceStates).filter(state => state.available && state.asset?.type === "image").map(state => [state.asset!.id, state])).values()].map((state, i) => <Button key={state.asset!.id} title={`${book.coverAssetId === state.asset!.id ? "已选 · " : ""}照片 ${i + 1} · ${state.asset!.filename}`} onPress={() => update({ coverAssetId: state.asset!.id })} disabled={busy} />)}
+          <Text style={s.body}>从本册移除不会删除原记录，也不会自动加回来。</Text>
+          {book.sources.filter(source => source.kind === "memory" && book.blocks.some(b => b.sourceIds.includes(source.id))).map(source => <Button key={source.id} title={`从本册移除：${book.sourceStates[source.id]?.label || "暂不可见的记录"}`} onPress={() => update({ blocks: book.blocks.filter(b => !b.sourceIds.includes(source.id)) })} disabled={busy} />)}
+        </View>
+      </ToolDisclosure> : null}
+      <ToolDisclosure title="导出与下载">
+        <View style={{ gap: 10 }}>
+          {!book.deletedAt ? <ReadingDownloadButton kind="book" id={id} prepare={async () => { setOperation(true); try { return await save() && sequence.current === savedSequence.current; } finally { setOperation(false); } }} /> : null}
+          {credentials && !book.deletedAt ? (
+            <NativeBookPublication credentials={credentials} id={id} audience={book.audience}
+              prepare={async () => {
+                setOperation(true);
+                try { return await save() && sequence.current === savedSequence.current ? current.current!.revision : null; }
+                finally { setOperation(false); }
+              }} />
+          ) : null}
+        </View>
+      </ToolDisclosure>
       <ToolDisclosure title="作品管理">
         <View style={{ gap: 10 }} pointerEvents={busy ? "none" : "auto"}>
           {canEdit ? <ListGroup>

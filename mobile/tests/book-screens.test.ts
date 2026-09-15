@@ -128,6 +128,22 @@ it("creates a work from selected memories without a title or template form", asy
   expect(mocks.create).toHaveBeenCalledWith(mocks.credentials,"/api/works",expect.objectContaining({method:"POST",body:JSON.stringify({kind:"book",audience:"family",template:"growth",selection:[{id:"memory",kind:"memory"}]})}));
   expect(mocks.navigate).toHaveBeenCalledWith("BookDetail",{id:"new-book"});
 });
+it("reads consecutive chapters without opening the editor or making a mutation", async () => {
+  const book = detail();
+  book.chapters.push({ id: "chapter-two", title: "第二章" });
+  book.blocks.push({ ...book.blocks[0]!, id: "third", chapterId: "chapter-two", text: "下一章的故事" });
+  mocks.get.mockResolvedValue(book);
+  await act(async () => { tree = create(createElement(BookDetailScreen, { navigation: { navigate: mocks.navigate }, route: { params: { id: "book" } } } as unknown as Parameters<typeof BookDetailScreen>[0])); });
+  expect(tree!.root.findAllByType("TextInput" as never)).toHaveLength(0);
+  expect(JSON.stringify(tree!.toJSON())).toContain("虚构内容 first");
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("下一章的故事");
+  await press("下一章");
+  expect(JSON.stringify(tree!.toJSON())).toContain("下一章的故事");
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("虚构内容 first");
+  await press("上一章");
+  expect(JSON.stringify(tree!.toJSON())).toContain("虚构内容 first");
+  expect(mocks.mutate).not.toHaveBeenCalled();
+});
 it("edits and reorders native content, keeps text on conflict and selects actual server materials", async () => {
   mocks.get.mockResolvedValue(detail());
   mocks.mutate.mockRejectedValue(new Error("其他家人已保存修改"));
@@ -143,7 +159,7 @@ it("edits and reorders native content, keeps text on conflict and selects actual
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("更多调整");
+  await press("调整这本成长册");
   await press("选择此内容");
   await field("正文", "我保留的手工文字");
   await press("内容下移");
@@ -194,7 +210,7 @@ it("does not replace typing made while autosave is in flight", async () => {
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("更多调整");
+  await press("调整这本成长册");
   await press("整本设置");
   await field("副标题", "第一次输入");
   await act(async () => {

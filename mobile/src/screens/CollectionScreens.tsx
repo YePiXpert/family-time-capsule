@@ -274,6 +274,7 @@ export function CollectionDetailScreen({
           <Text style={s.body}>已下载的相册也能离线观看。这是临时观看界面，不会锁定手机。</Text>
         </View>
       </GlassSheet>
+      {reading && !moreVisible && !doc.deletedAt ? <ActionButton title={busy ? "正在保存…" : "给家人看"} icon="users" variant="primary" disabled={busy} onPress={() => void startFamilyViewing()} /> : null}
       {doc.canWrite && !doc.deletedAt ? (
         <Button
           title={reading ? "继续编辑" : "阅读相册"}
