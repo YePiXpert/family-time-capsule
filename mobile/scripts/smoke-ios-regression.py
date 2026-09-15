@@ -252,6 +252,13 @@ def main():
             test("baseline-scroll", ["testLargeListScrollMetrics"])
             report["success"] = True
             return
+        test("journal-save-and-read", ["testSavedJournalReadingAndSupplementAfterRelaunch"])
+        with sqlite3.connect(db_path) as db:
+            saved = [json.loads(row[0]) for row in db.execute("SELECT snapshot_json FROM local_draft WHERE scope='local'")]
+        journal = [row for row in saved if "A saved supplement." in row["content"]["text"]]
+        assert len(journal) == 1 and journal[0]["status"] == "queued", "Saved supplement must remain one durable local record"
+        assert not journal[0].get("savedContent"), "Confirmed save must replace the prior reading snapshot"
+        report["journalSave"] = dict(recordCount=len(journal), revision=journal[0]["revision"], status=journal[0]["status"])
         test("local-playback", ["testLocalMP4AndMOVPlayback"])
         test("layout-and-scroll", ["testKeyboardAndCoverGeometry", "testLargeListScrollMetrics"])
         seed_import(db_path, container, media)

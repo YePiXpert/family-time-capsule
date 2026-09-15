@@ -19,6 +19,9 @@ metrics for 400 records. The suite also selects and groups an actual import rece
 relaunches it, and checks SQLite references/cover plus preservation of all originals.
 The album's family-viewing flow checks hidden editing controls, ordinary playback,
 deliberate owner exit, and the absence of mutation requests while viewing.
+The journal journey saves through the real composer, opens the resulting timeline
+record as a reader, supplements it, and verifies the same record after relaunch.
+SQLite evidence confirms one saved record rather than a duplicate after editing.
 The source codec probes identify the generated HEVC fixture; the report states
 whether the simulator played it directly or used a compatibility transcode.
 

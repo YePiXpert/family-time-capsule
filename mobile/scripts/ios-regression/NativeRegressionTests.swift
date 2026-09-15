@@ -183,6 +183,40 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 10))
     }
 
+    func testSavedJournalReadingAndSupplementAfterRelaunch() {
+        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
+        tap("记录一刻")
+        let input = element("capture-text")
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        input.tap()
+        input.typeText("Synthetic journal seaside story")
+        tap("capture-save")
+        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 15), "Save did not return to the timeline")
+        let savedCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "timeline-card-draft:", "Synthetic journal seaside story")).firstMatch
+        XCTAssertTrue(savedCard.waitForExistence(timeout: 10), "Saved record was not visible")
+        let identifier = savedCard.identifier
+        savedCard.tap()
+        XCTAssertTrue(element("补记").waitForExistence(timeout: 10))
+        XCTAssertTrue(textContains("Synthetic journal seaside story"))
+        XCTAssertFalse(input.isHittable, "Saved record opened as an editor")
+        let reading = XCTAttachment(screenshot: app.screenshot())
+        reading.name = "saved-journal-reading"; reading.lifetime = .keepAlways; add(reading)
+        tap("补记")
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        input.tap()
+        input.typeText("\nA saved supplement.")
+        tap("capture-save")
+        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 15))
+        XCTAssertTrue(element(identifier).waitForExistence(timeout: 10), "Supplement replaced the record identity")
+        app.terminate(); app.launch()
+        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
+        card(String(identifier.dropFirst("timeline-card-".count))).tap()
+        XCTAssertTrue(element("补记").waitForExistence(timeout: 10))
+        XCTAssertTrue(textContains("A saved supplement."), "Saved supplement did not survive relaunch")
+        XCTAssertFalse(input.isHittable)
+        record("saved-journal", ["recordIdentifier": identifier, "returnedToTimeline": true, "readBeforeEdit": true, "supplementSurvivedRelaunch": true])
+    }
+
     func testLocalMP4AndMOVPlayback() {
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
         for (identifier, filename) in [("local:fixture-mp4", "local.mp4"), ("local:fixture-mov", "local.mov")] {
