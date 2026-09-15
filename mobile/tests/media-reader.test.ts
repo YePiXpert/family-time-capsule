@@ -60,7 +60,7 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "JournalIcon" }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null }));
-vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
+vi.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeAreaProvider", SafeAreaView: "SafeAreaView" }));
 vi.mock("expo-file-system", () => ({ File: class { get exists() { return mocks.localExists; } } }));
 vi.mock("expo-video", () => ({ VideoView: "VideoView", useVideoPlayer: (source: unknown, setup: (player: FakePlayer) => void) => {
   const [player] = useState(() => { expect(source).toBeNull(); mocks.created++; const value = new FakePlayer(); setup(value); mocks.player = value; return value; });

@@ -3,7 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ request: vi.fn(), close: vi.fn() }));
 vi.mock("react-native", () => ({ ActivityIndicator: "ActivityIndicator", Modal: "Modal", ScrollView: "ScrollView", View: "View" }));
-vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
+vi.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeAreaProvider", SafeAreaView: "SafeAreaView" }));
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
 vi.mock("../src/components/typography", () => ({ Text: "Text" }));
 vi.mock("../src/components/ui", () => ({ Button: "Button" }));
