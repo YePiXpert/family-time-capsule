@@ -411,7 +411,7 @@ final class NativeRegressionTests: XCTestCase {
         wait("Saved selection was lost on relaunch") { self.textContains("已选 2 / 3 项 · 2 组 · 已选封面") }
         tap("将所选加入新草稿")
         XCTAssertTrue(element("capture-text").waitForExistence(timeout: 15))
-        wait("Selected draft references did not persist") { self.textContains("本机已保存") }
+        wait("Selected draft references did not persist") { self.textContains("草稿已暂存") }
         record("import-selection-ui", ["selected": 2, "originals": 3, "relaunchPreserved": true])
         // The host verifies the exact IDs, cover, groups, file preservation and
         // absence of upload intent in SQLite after this actual native UI flow.

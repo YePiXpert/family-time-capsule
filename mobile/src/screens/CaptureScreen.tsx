@@ -503,7 +503,8 @@ export function CaptureScreen() {
           {(text.trim() || content?.items.length || content?.title) && editable ? <Pressable accessibilityRole="button" accessibilityLabel="清空" disabled={recording || !!capsuleDraft.error} onPress={clear} style={styles.clear}><Text style={{ color: muted }}>清空</Text></Pressable> : null}
         </View>
         <View style={[styles.composer, { borderColor: rim, backgroundColor: colors.card }]}>
-          <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline editable={editable} maxLength={5000} onChangeText={setText} placeholder="今天，有什么想记住的？" placeholderTextColor={muted} ref={textInputRef} style={[styles.textArea, { color: ink }]} textAlignVertical="top" value={text} />
+          {/* Let the page own scrolling so a drag inside the text also dismisses the keyboard. */}
+          <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline scrollEnabled={false} editable={editable} maxLength={5000} onChangeText={setText} placeholder="今天，有什么想记住的？" placeholderTextColor={muted} ref={textInputRef} style={[styles.textArea, { color: ink }]} textAlignVertical="top" value={text} />
           {text.length > 4500 ? <Text style={[styles.counter, { color: muted }]}>{text.length} / 5000</Text> : null}
           <View onLayout={event => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.mediaZone}>
             <Pressable accessibilityRole="button" accessibilityLabel="相册" accessibilityHint="添加照片或视频" disabled={!editable || recording} onPress={() => void pickMedia("library")} style={({ pressed }) => [styles.addMedia, { borderColor: rim, backgroundColor: colors.paper }, pressed && sharedStyles.pressed, (!editable || recording) && sharedStyles.disabled]}>
