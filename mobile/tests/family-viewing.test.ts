@@ -9,17 +9,18 @@ const m = vi.hoisted(() => ({
   scope: vi.fn(), list: vi.fn(), get: vi.fn(), manifest: vi.fn(), revalidate: vi.fn(), progress: vi.fn(), queue: vi.fn(), resume: vi.fn(), goBack: vi.fn(),
   credentials: null as Credentials | null, userId: "user" as string | null, familyId: "family" as string | null, online: true,
   appListeners: new Set<(state: string) => void>(), removed: new Set<(key?: string) => void>(), prevent: false,
-  preventHandler: null as (() => void) | null, mounts: 0, activeReaders: 0,
+  preventHandler: null as (() => void) | null, mounts: 0, activeReaders: 0, os: "android",
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View",
+  Platform: { get OS() { return m.os; } },
   StyleSheet: { create: (value: unknown) => value },
   AppState: { currentState: "active", addEventListener: (_type: string, listener: (state: string) => void) => { m.appListeners.add(listener); return { remove: () => m.appListeners.delete(listener) }; } },
 }));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeAreaProvider", SafeAreaView: "SafeAreaView" }));
 vi.mock("@react-navigation/native", () => ({ usePreventRemove: (prevent: boolean, callback: () => void) => { m.prevent = prevent; m.preventHandler = callback; } }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "JournalIcon" }));
-vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children, ...callbacks }: { visible: boolean; children: unknown }) => createElement("GlassSheet", { visible, ...callbacks }, visible ? children as never : null) }));
 vi.mock("../src/state/AppContext", () => ({ useAppData: () => ({ credentials: m.credentials, userId: m.userId, family: m.familyId ? { id: m.familyId } : null, online: m.online }) }));
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: (props: Record<string, unknown>) => {
   useEffect(() => { m.mounts++; m.activeReaders++; return () => { m.activeReaders--; }; }, []);
@@ -69,7 +70,7 @@ async function press(label: string, long = false) {
   expect(button, label).toBeTruthy(); await act(async () => long ? button!.props.onLongPress() : button!.props.onPress());
 }
 beforeEach(() => {
-  vi.useFakeTimers(); m.credentials = credentials; m.userId = "user"; m.familyId = "family"; m.online = true; m.mounts = 0;
+  vi.useFakeTimers(); m.credentials = credentials; m.userId = "user"; m.familyId = "family"; m.online = true; m.mounts = 0; m.os = "android";
   m.scope.mockResolvedValue({ scope, online: true }); m.list.mockResolvedValue([]); m.manifest.mockResolvedValue(manifest());
   m.get.mockResolvedValue(entry()); m.revalidate.mockResolvedValue("online"); m.progress.mockResolvedValue(undefined);
 });
@@ -89,16 +90,26 @@ it("limits viewing to the authorized album manifest and presents no source-editi
   expect(m.queue).not.toHaveBeenCalled(); expect(m.resume).not.toHaveBeenCalled();
 });
 
-it("requires the owner gesture and explicit confirmation before allowing stack removal", async () => {
+it.each(["ios", "android"])("requires owner confirmation and safe sheet dismissal before stack removal on %s", async (os) => {
+  m.os = os;
   await render(); expect(m.prevent).toBe(true);
   await act(() => m.preventHandler?.()); expect(m.goBack).not.toHaveBeenCalled();
   const exit = tree!.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "长按退出观看")[0]!;
   expect(exit.props.onPress).toBeUndefined(); expect(exit.props.delayLongPress).toBeGreaterThanOrEqual(1000);
   await press("长按退出观看", true); expect(text()).toContain("手机持有人确认"); expect(m.goBack).not.toHaveBeenCalled();
   await press("继续观看"); expect(m.prevent).toBe(true);
+  await act(() => tree!.root.findByType("GlassSheet" as never).props.onDismiss());
+  expect(m.goBack).not.toHaveBeenCalled();
   await press("长按退出观看", true);
   m.goBack.mockImplementation(() => expect(m.prevent).toBe(false));
-  await press("确认退出观看"); expect(m.goBack).toHaveBeenCalledOnce();
+  await press("确认退出观看");
+  if (os === "ios") {
+    expect(m.prevent).toBe(true); expect(m.goBack).not.toHaveBeenCalled();
+    await act(() => tree!.root.findByType("GlassSheet" as never).props.onDismiss());
+  }
+  expect(m.goBack).toHaveBeenCalledOnce();
+  await act(() => tree!.root.findByType("GlassSheet" as never).props.onDismiss());
+  expect(m.goBack).toHaveBeenCalledOnce();
 });
 
 it("opens an existing verified download offline and saves only local viewing progress", async () => {

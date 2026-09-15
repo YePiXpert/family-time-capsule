@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, FlatList, Image, Modal, Platform, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { Text } from "../components/typography";
 import { Button, IconButton } from "../components/ui";
 import { GlassSheet } from "../components/GlassSheet";
@@ -66,6 +66,20 @@ export function NativeMediaReader({
   const [readingAssets, setReadingAssets] = useState<NativeReaderAsset[]>(() => viewingOnly ? assets.map((asset) => ({ ...asset })) : []);
   const [moreVisible, setMoreVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const viewingExitPending = useRef(false);
+  useEffect(() => () => { viewingExitPending.current = false; }, []);
+  const finishViewingExit = useCallback(() => {
+    if (!viewingExitPending.current) return;
+    viewingExitPending.current = false;
+    onViewingExit?.();
+  }, [onViewingExit]);
+  const closeViewingReader = useCallback(() => {
+    viewingExitPending.current = true;
+    setIndex(null);
+    // The owner sheet is already dismissed. Close this native window before
+    // popping its presenting route, or UIKit can leave an empty black window.
+    if (Platform.OS !== "ios") finishViewingExit();
+  }, [finishViewingExit]);
   const filmstrip = useRef<FlatList<{ asset: NativeReaderAsset; slot: number }>>(null);
   const [blockedPreviews, setBlockedPreviews] = useState<string[]>([]);
   const permissionChanged = useCallback((assetId: string, denied: boolean) => {
@@ -133,6 +147,7 @@ export function NativeMediaReader({
       <Modal
         visible={item !== null}
         onRequestClose={() => { if (!viewingOnly) setIndex(null); }}
+        onDismiss={finishViewingExit}
         animationType={reducedMotion ? "none" : "fade"}
       >
         {/* A native Modal has its own window; its safe-area provider keeps the
@@ -140,7 +155,7 @@ export function NativeMediaReader({
         <SafeAreaProvider>
         <SafeAreaView style={[s.screen, { flex: 1 }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: s.colors.line }}>
-            {viewingOnly ? <OwnerExitControl onExit={() => onViewingExit?.()} /> : <Button title="返回" icon="arrow-left" variant="ghost" full={false} accessibilityLabel="关闭阅读器" onPress={() => setIndex(null)} />}
+            {viewingOnly ? <OwnerExitControl onExit={closeViewingReader} /> : <Button title="返回" icon="arrow-left" variant="ghost" full={false} accessibilityLabel="关闭阅读器" onPress={() => setIndex(null)} />}
             <View style={{ flex: 1, minWidth: 0, opacity: controlsVisible ? 1 : 0 }}>
               <Text numberOfLines={1} style={{ color: s.colors.ink, fontSize: 14, textAlign: "center" }}>{viewingOnly ? viewingTitle : item?.dateLabel || item?.author || "这一刻"}</Text>
             </View>

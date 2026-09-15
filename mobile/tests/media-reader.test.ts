@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   appListeners: new Set<(state: string) => void>(),
   player: null as FakePlayer | null,
   beforeResolve: null as (() => void | Promise<void>) | null,
+  os: "android",
 }));
 type EventValue = { muted?: boolean; status?: string; isPlaying?: boolean; currentTime?: number; error?: { message: string }; source?: unknown };
 class FakePlayer {
@@ -46,6 +47,7 @@ class FakePlayer {
   pause() { mocks.pause(); this.playing = false; this.emit("playingChange", { isPlaying: false }); }
 }
 vi.mock("react-native", () => ({
+  Platform: { get OS() { return mocks.os; } },
   AccessibilityInfo: { addEventListener: () => ({ remove() {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   AppState: { currentState: "active", addEventListener: (_: string, listener: (state: string) => void) => {
     mocks.appListeners.add(listener); return { remove: () => mocks.appListeners.delete(listener) };
@@ -59,7 +61,7 @@ vi.mock("react-native", () => ({
   useWindowDimensions: () => ({ width: 375, height: 800 }), StyleSheet: { create: (s: unknown) => s },
 }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "JournalIcon" }));
-vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children, ...callbacks }: { visible: boolean; children: unknown }) => createElement("GlassSheet", { visible, ...callbacks }, visible ? children as never : null) }));
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeAreaProvider", SafeAreaView: "SafeAreaView" }));
 vi.mock("expo-file-system", () => ({ File: class { get exists() { return mocks.localExists; } } }));
 vi.mock("expo-video", () => ({ VideoView: "VideoView", useVideoPlayer: (source: unknown, setup: (player: FakePlayer) => void) => {
@@ -84,6 +86,7 @@ function job(kind: MediaDerivation["kind"], status: MediaDerivation["status"], o
   return { kind, status, outputAssetId, errorCode: status === "failed" ? "codec_unavailable" : null };
 }
 beforeEach(() => {
+  mocks.os = "android";
   mocks.get.mockResolvedValue({ jobs: [], transcript: null });
   mocks.fetch.mockImplementation(async () => new Response("ab", { status: 206, headers: { "Content-Range": "bytes 0-1/1000", "Content-Type": "video/quicktime" } }));
   vi.stubGlobal("fetch", mocks.fetch);
@@ -489,7 +492,24 @@ it("keeps a failed native seek actionable without throwing or requesting compati
   expect(text()).not.toContain("暂时无法调整播放位置"); expect(mocks.player!.currentTime).toBe(10); expect(mocks.created).toBe(1);
 });
 
-it("keeps the family viewer read-only through media failures, retries, gestures, and the owner exit prompt", async () => {
+it("stops the family video after the owner sheet closes, before the iOS route is removed", async () => {
+  mocks.os = "ios";
+  const leave = vi.fn();
+  await act(async () => { tree = create(createElement(NativeMediaReader, { credentials, viewingOnly: true, onViewingExit: leave, assets: [video] })); });
+  await frame(); expect(mocks.active).toBe(1);
+  const exit = tree!.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "长按退出观看")[0]!;
+  await act(() => exit.props.onLongPress());
+  await press("确认退出观看");
+  expect(mocks.active).toBe(1); expect(leave).not.toHaveBeenCalled();
+  await act(() => tree!.root.findByType("GlassSheet" as never).props.onDismiss());
+  expect(mocks.active).toBe(0); expect(leave).not.toHaveBeenCalled();
+  expect(tree!.root.findByType("Modal" as never).props.visible).toBe(false);
+  await act(() => tree!.root.findByType("Modal" as never).props.onDismiss());
+  expect(leave).toHaveBeenCalledOnce();
+});
+
+it.each(["ios", "android"])("keeps family viewing read-only and dismisses its windows before exit on %s", async (os) => {
+  mocks.os = os;
   mocks.loadStatus = "error";
   const leave = vi.fn();
   await act(async () => { tree = create(createElement(NativeMediaReader, { credentials, viewingOnly: true, viewingTitle: "这一本相册", onViewingExit: leave, assets: [video,
@@ -513,6 +533,19 @@ it("keeps the family viewer read-only through media failures, retries, gestures,
   await press("下一份"); expect(text()).toContain("相册里的一句话"); expect(mocks.active).toBe(0);
   const exit = tree!.root.findAll(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "长按退出观看")[0]!;
   await act(() => exit.props.onLongPress()); expect(leave).not.toHaveBeenCalled(); await press("继续观看");
+  await act(() => tree!.root.findByType("GlassSheet" as never).props.onDismiss());
+  expect(tree!.root.findByType("Modal" as never).props.visible).toBe(true); expect(leave).not.toHaveBeenCalled();
   await act(() => exit.props.onAccessibilityAction({ nativeEvent: { actionName: "ownerExit" } }));
-  await press("确认退出观看"); expect(leave).toHaveBeenCalledOnce(); expect(mocks.exportOriginal).not.toHaveBeenCalled();
+  await press("确认退出观看");
+  if (os === "ios") {
+    expect(tree!.root.findByType("Modal" as never).props.visible).toBe(true); expect(leave).not.toHaveBeenCalled();
+    await act(() => tree!.root.findByType("GlassSheet" as never).props.onDismiss());
+    expect(tree!.root.findByType("Modal" as never).props.visible).toBe(false); expect(leave).not.toHaveBeenCalled();
+    await act(() => tree!.root.findByType("Modal" as never).props.onDismiss());
+  }
+  expect(tree!.root.findByType("Modal" as never).props.visible).toBe(false);
+  expect(leave).toHaveBeenCalledOnce(); expect(mocks.active).toBe(0); expect(mocks.exportOriginal).not.toHaveBeenCalled();
+  await act(() => tree!.root.findByType("GlassSheet" as never).props.onDismiss());
+  await act(() => tree!.root.findByType("Modal" as never).props.onDismiss());
+  expect(leave).toHaveBeenCalledOnce();
 });

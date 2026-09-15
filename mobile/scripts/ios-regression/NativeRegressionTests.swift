@@ -116,8 +116,8 @@ final class NativeRegressionTests: XCTestCase {
 
     private func hasNativeFrame() -> Bool {
         let view = element("media-video-view")
-        // Loading and blocking failures can unmount VideoView. Querying value
-        // on an absent XCUIElement fails the test before the predicate returns.
+        // Loading and blocking failures can hide VideoView from accessibility.
+        // Reading an absent XCUIElement fails before the predicate returns.
         return view.exists && (view.value as? String) == "画面已呈现"
     }
 
@@ -382,7 +382,7 @@ final class NativeRegressionTests: XCTestCase {
         wait("Permission failure never became actionable", timeout: 25) {
             self.element("media-video-status").label.contains("权限")
         }
-        XCTAssertFalse(element("media-video-view").exists, "Permission failure left a native video view mounted")
+        XCTAssertFalse(element("media-video-view").exists, "Permission failure left a native video view exposed")
         tap("下一份")
         wait("Network failure never became actionable", timeout: 25) {
             let message = self.element("media-video-status").label
