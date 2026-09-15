@@ -6,7 +6,7 @@ All fixture data lives in the temporary simulator or the requested output folder
 The installed app, its entitlements and bundled JavaScript are never modified.
 """
 import argparse
-from ios_simulator import boot_simulator
+from ios_simulator import boot_simulator, cleanup_simulator
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -295,8 +295,7 @@ def main():
         (output / "fixture-requests.json").write_text(json.dumps(server.requests, indent=2) + "\n")
         server.shutdown()
         server.server_close()
-        subprocess.run(["xcrun", "simctl", "shutdown", udid], capture_output=True)
-        subprocess.run(["xcrun", "simctl", "delete", udid], capture_output=True)
+        cleanup_simulator(udid, output)
 
 
 if __name__ == "__main__":
