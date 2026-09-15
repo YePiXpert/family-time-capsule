@@ -13,12 +13,14 @@ export const TimelineCard = memo(function TimelineCard({
   onLongPress,
   timeZone,
   selected,
+  highlighted = false,
 }: {
   item: LocalTimelineEvent;
   onPress: () => void;
   onLongPress?: (event: { nativeEvent: { pageX: number; pageY: number } }) => void;
   timeZone?: string;
   selected?: boolean;
+  highlighted?: boolean;
 }) {
   const { colors } = useColorTheme();
   const [failedCover, setFailedCover] = useState<string | null>(null);
@@ -28,14 +30,14 @@ export const TimelineCard = memo(function TimelineCard({
   return (
     <Pressable
       testID={`timeline-card-${item.id}`}
-      accessibilityHint={item.source === "server" ? "打开记忆详情" : "查看本机同步状态"}
+      accessibilityHint="打开这段回忆"
       accessibilityRole="button"
       accessibilityState={selected === undefined ? undefined : { selected }}
       onPress={onPress}
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.card,
-        { backgroundColor: colors.card, borderColor: colors.line },
+        { backgroundColor: colors.card, borderColor: highlighted ? colors.coral : colors.line },
         pressed && styles.pressed,
       ]}
     >
@@ -45,7 +47,7 @@ export const TimelineCard = memo(function TimelineCard({
       {hasCover ? (
         <View testID={`timeline-card-media-${item.id}`} style={[styles.cover, { backgroundColor: colors.softCoral }]}>
           {item.localCoverUri && failedCover !== item.localCoverUri ? (
-            <Image fadeDuration={0} source={{ uri: item.localCoverUri }} style={StyleSheet.absoluteFill} onError={() => setFailedCover(item.localCoverUri)} />
+            <Image fadeDuration={0} resizeMode="contain" source={{ uri: item.localCoverUri }} style={StyleSheet.absoluteFill} onError={() => setFailedCover(item.localCoverUri)} />
           ) : (
             <View style={styles.coverStatus}>
               <JournalIcon name="image" color={colors.coral} size={22} />
@@ -89,7 +91,7 @@ export const TimelineCard = memo(function TimelineCard({
           <View style={[styles.localStatus, { borderTopColor: colors.line }]}>
             <JournalIcon name="check" color={colors.sage} size={14} />
             <Text style={[styles.localBadge, { color: colors.sage }]}>
-              {item.localDraftId ? item.syncState === null ? "已保存" : "已保存在本机" : item.syncState === "inbox" ? "原件在本机 · 已送达收件箱" : "原件在本机 · 等待同步"}
+              {item.hasUnsavedChanges ? "已保存 · 有未完成的补记" : item.syncState === "inbox" ? "已提交，等待家人确认" : "已保存在本机 · 等待同步"}
             </Text>
           </View>
         ) : null}

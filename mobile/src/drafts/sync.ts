@@ -79,7 +79,7 @@ export async function syncLocalDrafts(credentials: Credentials, options: { isCur
       await guardRevision();
       const result = row.syncIntent === "review" ? await requestMobileJson(credentials, `/api/mobile/v1/drafts/${row.id}/submit`, { method: "POST", body: JSON.stringify({ expectedRevision: received.revision }) }) as Draft : received;
       parseDraftContent(result);
-      await update({ ...row, status: "editing", syncedRevision: row.revision + 1, serverRevision: result.revision, revision: row.revision + 1 });
+      await update({ ...row, savedContent: row.content, status: "editing", syncedRevision: row.revision + 1, serverRevision: result.revision, revision: row.revision + 1 });
       continue;
     }
     await guardRevision();

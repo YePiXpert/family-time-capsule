@@ -43,7 +43,7 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => navigation,
   useRoute: () => mocks.route,
 }));
-const navigation = { setParams: mocks.setParams };
+const navigation = { setParams: mocks.setParams, navigate: vi.fn() };
 vi.mock("../src/state/AppContext", () => { const useApp = () => ({
   credentials: activeCredentials, family: fixture.family, userId: activeUserId, online: activeOnline, events: activeEvents,
   people: fixture.people, viewer: { id: activeUserId, role: activeUserId === fixture.userId ? "editor" : "viewer", canCapture: activeUserId === fixture.userId, canEditEvents: activeUserId === fixture.userId, canCreateContributions: false },
@@ -237,7 +237,7 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   await act(async () => { tree = create(renderMemory()); });
   await expect.poll(settle).toContain("有两张照片与原声的私密往事");
   expect(rendered()).toContain("时间不确定");
-  await press("修改这件事");
+  await press("补记");
   await requestMobileJson(fixture.credentials, `/api/mobile/v1/memories/${memoryId}`, { method: "PATCH", body: JSON.stringify({ bodyText: "另一端先修改的正文", expectedRevision: 0, mutationId: crypto.randomUUID() }) });
   await act(async () => tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.onChangeText("原声与照片仍在，手机保存的正文修改"));
   await press("保存记忆修改");
@@ -259,7 +259,7 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   expect(rendered()).toContain("家庭最新版本");
   expect(rendered()).toContain("原声与照片仍在，手机保存的正文修改");
   expect(rendered()).toContain("另一端先修改的正文");
-  await press("继续修改这件事");
+  await press("继续补记");
   expect(tree!.root.findByProps({ accessibilityLabel: "记忆正文" }).props.value).toBe("原声与照片仍在，手机保存的正文修改");
   await press("稍后继续，保留本机输入");
   await press("保留我的修改，重新保存");
@@ -274,7 +274,7 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   await act(async () => tree!.unmount()); tree = undefined;
   await act(async () => { tree = create(renderMemory()); });
   await expect.poll(settle).toContain("修改已同步到家庭");
-  await press("管理分享"); await press("指定家人");
+  await press("整理与权限"); await press("管理分享"); await press("指定家人");
   await expect.poll(settle).toContain("妈妈");
   const selected = tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityRole === "checkbox" && node.props.accessibilityLabel === "妈妈");
   expect(selected).toBeDefined();
@@ -309,7 +309,8 @@ it("R04/R05/R06: private native photos and audio survive local restart and a los
   await act(async () => tree!.unmount()); tree = undefined;
   activeCredentials = fixture.credentials; activeUserId = fixture.userId;
   await act(async () => { tree = create(renderMemory()); });
-  await expect.poll(settle).toContain("管理分享");
+  await expect.poll(settle).toContain("整理与权限");
+  await press("整理与权限");
   await press("管理分享"); await press("仅自己"); await press("保存分享设置");
   await expect.poll(settle).toContain("已保存。");
   await act(async () => tree!.unmount()); tree = undefined;

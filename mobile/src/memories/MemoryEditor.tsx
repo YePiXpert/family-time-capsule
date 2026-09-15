@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { Text, TextInput } from "../components/typography";
 import { randomUUID } from "expo-crypto";
@@ -14,13 +14,13 @@ import { changeMemoryEdit } from "./edit-store";
 import { useMemoryEdit } from "./use-memory-edit";
 import { dateLabel } from "../utils/format";
 
-function EditorButton({ label, onPress, pending }: { label: string; onPress: () => void; pending: boolean }) {
+function EditorButton({ label, onPress, pending, primary = false }: { label: string; onPress: () => void; pending: boolean; primary?: boolean }) {
   const s = useSharedStyles();
-  return <Pressable accessibilityRole="button" disabled={pending} onPress={onPress} style={s.secondaryButton}><Text style={s.secondaryText}>{label}</Text></Pressable>;
+  return <Pressable accessibilityRole="button" disabled={pending} onPress={onPress} style={primary ? s.primaryButton : s.secondaryButton}><Text style={primary ? s.primaryText : s.secondaryText}>{label}</Text></Pressable>;
 }
 
 type Sharing = { visibility: MemorySharingPatch["visibility"]; readers: string[]; revision: number };
-export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSaved: () => Promise<void> }) {
+export function MemoryEditor({ memory, onSaved, compact = false, children }: { memory: MobileMemory; onSaved: () => Promise<void>; compact?: boolean; children?: ReactNode }) {
   const s = useSharedStyles();
   const { credentials, family, people, online, viewer } = useAppData();
   const { queued, reloadLocal } = useAppActions();
@@ -36,6 +36,7 @@ export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSave
   const [readerError, setReaderError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const active = useRef(true);
   const request = useRef<{ signature: string; id: string } | null>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
@@ -170,10 +171,14 @@ export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSave
       }} />
     </> : null}
     {!content && !sharing ? <>
+      <EditorButton pending={pending || restoring || !scope || Boolean(restoreError)} label={compact ? dirty ? "继续补记" : "补记" : dirty ? "继续修改这件事" : "修改这件事"} onPress={openContent} />
+      {compact ? <Pressable accessibilityRole="button" accessibilityLabel="整理与权限" accessibilityState={{ expanded: toolsOpen }} onPress={() => setToolsOpen(value => !value)} style={s.secondaryButton}><Text style={s.secondaryText}>{toolsOpen ? "收起整理工具" : "整理与权限"}</Text></Pressable> : null}
+      {!compact || toolsOpen ? <>
       <Text style={s.label}>标记这一刻</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{[["first_time", "第一次"], ["other", "值得记住"]].map(([value, label]) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: memory.milestoneType === value }} disabled={pending || online === false} onPress={() => void mark(value!)} style={memory.milestoneType === value ? s.primaryButton : s.secondaryButton}><Text style={memory.milestoneType === value ? s.primaryText : s.secondaryText}>{label}</Text></Pressable>)}</View>
-      <EditorButton pending={pending || restoring || !scope || Boolean(restoreError)} label={dirty ? "继续修改这件事" : "修改这件事"} onPress={openContent} />
       {memory.visibility ? <EditorButton pending={pending} label="管理分享" onPress={() => { setMessage(null); setSharing({ visibility: memory.visibility!, readers: memory.readerUserIds ?? [], revision: memory.titleRevision! }); }} /> : null}
+      {children}
+      </> : null}
     </> : null}
     {content ? <>
       <Text style={s.body}>{localWrites > 0 ? "正在暂存输入…" : "输入自动暂存在本机，点击保存后才同步到家庭。"}</Text>
@@ -189,6 +194,6 @@ export function MemoryEditor({ memory, onSaved }: { memory: MobileMemory; onSave
       {sharing.visibility === "members" ? <>{readerError ? <Text>{readerError}</Text> : null}{readers.map(reader => <Pressable disabled={pending} key={reader.id} accessibilityRole="checkbox" accessibilityLabel={reader.name} accessibilityState={{ checked: sharing.readers.includes(reader.id) }} onPress={() => setSharing(v => v && ({ ...v, readers: v.readers.includes(reader.id) ? v.readers.filter(id => id !== reader.id) : [...v.readers, reader.id] }))} style={s.secondaryButton}><Text style={s.secondaryText}>{sharing.readers.includes(reader.id) ? "✓ " : ""}{reader.name}</Text></Pressable>)}{sharing.readers.filter(id => !readers.some(reader => reader.id === id)).map(id => <View key={id}><EditorButton pending={pending} label="取消已不可用的成员" onPress={() => setSharing(v => v && ({ ...v, readers: v.readers.filter(value => value !== id) }))} /></View>)}</> : null}
       <Text style={s.body}>保存后才改变读者。移除读者会收回这件事的在线入口；其他独立分享仍有效，已导出的文件无法远程收回。家人讲述也遵循各自的范围。</Text>
     </> : null}
-    {content || sharing ? <><EditorButton pending={pending || Boolean(content && edit?.conflict)} label={sharing ? "保存分享设置" : "保存记忆修改"} onPress={() => void save()} /><EditorButton pending={pending || localWrites > 0 || Boolean(content && localError)} label={content ? "稍后继续，保留本机输入" : "取消编辑"} onPress={() => { setContent(null); contentRef.current = null; setSharing(null); setMessage(null); }} /></> : null}
+    {content || sharing ? <><EditorButton primary pending={pending || Boolean(content && edit?.conflict)} label={sharing ? "保存分享设置" : "保存记忆修改"} onPress={() => void save()} /><EditorButton pending={pending || localWrites > 0 || Boolean(content && localError)} label={content ? "稍后继续，保留本机输入" : "取消编辑"} onPress={() => { setContent(null); contentRef.current = null; setSharing(null); setMessage(null); }} /></> : null}
   </View>;
 }

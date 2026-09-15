@@ -6,7 +6,7 @@ import type { LocalTimelineEvent } from "../src/types";
 const mocks = vi.hoisted(() => ({
   app: { credentials: null as unknown, events: [] as LocalTimelineEvent[], family: { timezone: "UTC" }, home: null, outbox: [], people: [], viewer: null, syncing: false },
   status: { syncing: false, message: null as string | null },
-  navigation: { navigate: vi.fn() }, sync: vi.fn(), reload: vi.fn(), dismiss: vi.fn(),
+  navigation: { navigate: vi.fn(), setParams: vi.fn() }, sync: vi.fn(), reload: vi.fn(), dismiss: vi.fn(),
   cardRenders: vi.fn(),
 }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ children }: { children: unknown }) => children }));
@@ -140,4 +140,29 @@ it("keeps a chosen month in the same virtual list when background sync adds newe
   await act(() => tree!.root.find(node => String(node.type) === "Pressable" && node.findAllByType("Text" as never).some(text => text.children.join("") === "全部月份")).props.onPress());
   expect(list.props.data).toHaveLength(4);
   expect(list.props.data).toContain(unknown);
+});
+
+it("clears a previous filter once a saved record arrives and opens its reader without repeating the scroll on sync", async () => {
+  const august = { ...event("august"), occurredAt: "2026-08-10T12:00:00Z" };
+  mocks.app.events = [event(), august];
+  const scrollToOffset = vi.fn(), scrollToIndex = vi.fn();
+  await act(() => { tree = create(createElement(TimelineScreen), { createNodeMock: node => node.type === "FlatList" ? { scrollToOffset, scrollToIndex } : null }); });
+  await act(() => tree!.root.findByProps({ accessibilityLabel: "回看与筛选" }).props.onPress());
+  await act(() => tree!.root.findByProps({ testID: "month-picker" }).props.onPress());
+  await act(() => tree!.root.findByProps({ accessibilityLabel: "2026 年 8 月，本机 1 条记录" }).props.onPress());
+  const props = { route: { params: { saved: { draftId: "fresh", scope: "local", requestKey: "save-one" } } } };
+  await act(() => tree!.update(createElement(TimelineScreen, props)));
+  expect(mocks.navigation.setParams).not.toHaveBeenCalled();
+  const saved = { ...event("draft:fresh"), localDraftId: "fresh", source: "local" as const };
+  mocks.app.events = [saved, ...mocks.app.events];
+  await act(() => tree!.update(createElement(TimelineScreen, props)));
+  expect(tree!.root.findByType("FlatList" as never).props.data).toContain(saved);
+  await expect.poll(() => scrollToIndex.mock.calls.length).toBe(1);
+  expect(scrollToIndex).toHaveBeenCalledWith({ index: 0, animated: false, viewPosition: 0.1 });
+  expect(mocks.navigation.setParams).toHaveBeenCalledWith({ saved: undefined });
+  await act(() => tree!.root.findByProps({ accessibilityLabel: "查看刚保存的记录" }).props.onPress());
+  expect(mocks.navigation.navigate).toHaveBeenLastCalledWith("SavedMemory", { draftId: "fresh", scope: "local" });
+  mocks.status.syncing = true;
+  await act(() => tree!.update(createElement(TimelineScreen, props)));
+  expect(scrollToIndex).toHaveBeenCalledTimes(1);
 });

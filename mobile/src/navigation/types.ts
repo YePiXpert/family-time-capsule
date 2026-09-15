@@ -11,6 +11,7 @@ export type RootStackParamList = {
   People: undefined;
   DeviceSettings: undefined;
   Memory: { id: string };
+  SavedMemory: { draftId: string; scope: string };
   Search: undefined;
   AssetLibrary: undefined;
   AssetDetail: { id: string };
@@ -35,8 +36,8 @@ export type RootStackParamList = {
 
 // 三个主入口；家人和设备管理使用设置栈。
 export type MainTabParamList = {
-  Timeline: undefined;
-  Capture: { intent?: CaptureIntent; requestKey?: number; draftId?: string; localDraftId?: string } | undefined;
+  Timeline: { saved?: { draftId: string; scope: string; requestKey: string } } | undefined;
+  Capture: { intent?: CaptureIntent; requestKey?: number; draftId?: string; localDraftId?: string; editSaved?: boolean } | undefined;
   Works: undefined;
   Profile: undefined;
 };

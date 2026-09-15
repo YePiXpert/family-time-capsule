@@ -1,6 +1,8 @@
 import { NativeVoiceContribution } from "../contributions/VoiceContribution";
 import type { VoiceReceipt } from "../contributions/submit-voice";
 import { Text, TextInput } from "../components/typography";
+import { MemoryReading } from "../components/MemoryReading";
+import { Disclosure } from "../components/Disclosure";
 import { getServerCacheRevision, useServerPermissionRevision } from "../storage/cache-lifecycle";
 import { MemoryEditor } from "../memories/MemoryEditor";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -213,28 +215,26 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   return (
     <ScrollView contentContainerStyle={s.content} style={s.screen}>
       {showStandaloneCover ? <Image source={{ uri: localCover! }} style={styles.cover} /> : null}
-      {(memory?.livePhotos?.length ?? 0) > 0 && <Text style={s.body}>Live Photo 已保留静态照片和动态原片，可在下方分别查看与播放。</Text>}
       <NativeMediaReader credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone,memory?.occurredAtPrecision ?? summary?.occurredAtPrecision):undefined})) ?? [])} />
-      {memory?.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} onSaved={() => void load()} />)}
-      <View style={styles.heading}>
-        <Text style={s.eyebrow}>阅读记忆</Text>
-        <Text style={s.title}>{title}</Text>
-        {occurredAt ? <Text style={styles.date}>{dateLabel(occurredAt, family?.timezone, precision)}{ageLabel ? ` · ${ageLabel}` : ""}</Text> : null}
-        {location ? <Text style={s.intro}>地点 · {location}</Text> : null}
-        <Text style={styles.sync}>{localEdit?.savedContent || localEdit?.submission ? "修改已保存本机 · 等待同步到家庭" : memory ? (online === false ? "本机缓存 · 当前离线" : "详情已同步到本机") : "读取中"}</Text>
-        {(savedEdit?.bodyText ?? memory?.bodyText) ? <Text selectable style={styles.story}>{savedEdit?.bodyText ?? memory?.bodyText}</Text> : null}
-      </View>
+      <MemoryReading title={title} date={occurredAt ? [dateLabel(occurredAt, family?.timezone, precision), ageLabel].filter(Boolean).join(" · ") : undefined}
+        visibility={memory?.visibility === "private" ? memory.isAuthor ? "仅自己可见" : "仅作者可见" : memory?.visibility === "members" ? "指定成员可见" : memory?.visibility === "family" ? "全家可见" : undefined}
+        body={savedEdit?.bodyText ?? memory?.bodyText ?? summary?.bodyText}
+        status={localEdit?.savedContent || localEdit?.submission ? "补记已保存在本机 · 等待同步" : memory ? online === false ? "已下载 · 当前离线" : "已同步到家庭" : "正在读取"}>
+        {location ? <Text style={s.intro}>{location}</Text> : null}
+      </MemoryReading>
 
-      {credentials && viewer?.canEditEvents?<Pressable onPress={()=>navigation.navigate("Collections",{eventIds:[route.params.id]})} style={s.secondaryButton}><Text style={s.secondaryText}>加入相册 / 章节</Text></Pressable>:null}
-      {memory ? <MemoryEditor memory={memory} onSaved={load} /> : null}
-      {memory ? <OrganizerPanel kind="memory_event" id={memory.id} onSaved={() => void load()} /> : null}
+      {memory ? <MemoryEditor compact memory={memory} onSaved={load}>
+        {credentials && viewer?.canEditEvents ? <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Collections", { eventIds: [route.params.id] })} style={s.secondaryButton}><Text style={s.secondaryText}>加入相册</Text></Pressable> : null}
+        <OrganizerPanel kind="memory_event" id={memory.id} onSaved={() => void load()} />
+        {memory.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} onSaved={() => void load()} />)}
+      </MemoryEditor> : null}
 
       {error ? <View style={s.warning}><Text style={s.warningText}>{error}</Text><Pressable onPress={() => void load()} style={styles.retry}><Text style={styles.link}>重试</Text></Pressable></View> : null}
       {loading && !memory ? <ActivityIndicator color={s.colors.coral} /> : null}
 
       {(memory?.sourceNotes.length ?? 0) > 0 ? <View style={s.card}><Text style={s.cardTitle}>当时写下的</Text>{memory!.sourceNotes.map((note) => <Text key={note.id} style={styles.story}>{note.text}</Text>)}</View> : null}
       {(memory?.contributions.length ?? 0) > 0 ? <View style={s.card}><Text style={s.cardTitle}>家人讲述</Text>{memory!.contributions.map((contribution) => <View key={contribution.id} style={styles.contribution}><View style={styles.contributionHeading}><Text style={styles.author}>{contribution.authorName}</Text><Text style={styles.visibility}>{visibilityLabel(contribution.visibility)}</Text></View>{editingContributionId === contribution.id ? <><TextInput multiline onChangeText={setEditingContributionText} style={[s.input, styles.contributionInput]} textAlignVertical="top" value={editingContributionText} /><View style={styles.buttonRow}><Pressable disabled={savingContribution} onPress={() => setEditingContributionId(null)} style={[s.secondaryButton, styles.grow]}><Text style={s.secondaryText}>取消</Text></Pressable><Pressable disabled={savingContribution} onPress={() => void saveContribution()} style={[s.primaryButton, styles.grow]}><Text style={s.primaryText}>保存修改</Text></Pressable></View></> : <><Text style={styles.story}>{contribution.text}</Text>{contribution.canEdit ? <Pressable onPress={() => { setEditingContributionId(contribution.id); setEditingContributionText(contribution.text); }} style={s.secondaryButton}><Text style={s.secondaryText}>修改我的讲述</Text></Pressable> : null}</>}{contribution.audioPath ? <NativeMediaReader credentials={credentials} assets={[{id:contribution.audioPath.split('/').at(-1)!,type:'audio',filename:'家人的声音',mimeType:'audio/mp4',author:contribution.authorName,dateLabel:contribution.createdAt?dateLabel(contribution.createdAt,family?.timezone):undefined}]} /> : null}</View>)}</View> : null}
-      {credentials && contributionAuthors.length > 0 ? <View style={s.card}><Text style={s.cardTitle}>补一句，或留段声音</Text><Text style={s.label}>作者</Text><View style={styles.chips}>{contributionAuthors.map((person) => <Pressable key={person.id} onPress={() => setAuthorPersonId(person.id)} style={[styles.chip, effectiveAuthorPersonId === person.id && styles.chipActive]}><Text style={effectiveAuthorPersonId === person.id ? styles.chipTextActive : styles.chipText}>{person.displayName}</Text></Pressable>)}</View><Text style={s.label}>可见范围</Text><View style={styles.chips}>{CONTRIBUTION_VISIBILITIES.map((option) => <Pressable key={option.value} onPress={() => setVisibility(option.value)} style={[styles.chip, visibility === option.value && styles.chipActive]}><Text style={visibility === option.value ? styles.chipTextActive : styles.chipText}>{option.label}</Text></Pressable>)}</View><NativeVoiceContribution key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, viewer?.id, family?.id, route.params.id])} memoryId={route.params.id} authorPersonId={effectiveAuthorPersonId} authorName={contributionAuthors.find(p => p.id === effectiveAuthorPersonId)?.displayName || "家人"} visibility={visibility} onSaved={load} onRestoreSelection={restoreVoiceSelection} /><TextInput multiline onChangeText={setContributionText} placeholder="写下你的视角……" style={[s.input, styles.contributionInput]} textAlignVertical="top" value={contributionText} /><Text style={styles.counter}>{contributionText.length} / 5000</Text><Pressable disabled={savingContribution} onPress={() => void addContribution()} style={[s.primaryButton, savingContribution && s.disabled]}><Text style={s.primaryText}>保存这段讲述</Text></Pressable></View> : null}
+      {credentials && contributionAuthors.length > 0 ? <Disclosure title="补一句，或留段声音"><View style={s.card}><Text style={s.label}>作者</Text><View style={styles.chips}>{contributionAuthors.map((person) => <Pressable key={person.id} onPress={() => setAuthorPersonId(person.id)} style={[styles.chip, effectiveAuthorPersonId === person.id && styles.chipActive]}><Text style={effectiveAuthorPersonId === person.id ? styles.chipTextActive : styles.chipText}>{person.displayName}</Text></Pressable>)}</View><Text style={s.label}>可见范围</Text><View style={styles.chips}>{CONTRIBUTION_VISIBILITIES.map((option) => <Pressable key={option.value} onPress={() => setVisibility(option.value)} style={[styles.chip, visibility === option.value && styles.chipActive]}><Text style={visibility === option.value ? styles.chipTextActive : styles.chipText}>{option.label}</Text></Pressable>)}</View><NativeVoiceContribution key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, viewer?.id, family?.id, route.params.id])} memoryId={route.params.id} authorPersonId={effectiveAuthorPersonId} authorName={contributionAuthors.find(p => p.id === effectiveAuthorPersonId)?.displayName || "家人"} visibility={visibility} onSaved={load} onRestoreSelection={restoreVoiceSelection} /><TextInput multiline onChangeText={setContributionText} placeholder="写下你的视角……" style={[s.input, styles.contributionInput]} textAlignVertical="top" value={contributionText} /><Text style={styles.counter}>{contributionText.length} / 5000</Text><Pressable disabled={savingContribution} onPress={() => void addContribution()} style={[s.primaryButton, savingContribution && s.disabled]}><Text style={s.primaryText}>保存这段讲述</Text></Pressable></View></Disclosure> : null}
       {displayedParticipants.length > 0 ? <View style={s.card}><Text style={s.cardTitle}>在场的人</Text><Text style={s.body}>{displayedParticipants.join(" · ")}</Text></View> : null}
     </ScrollView>
   );

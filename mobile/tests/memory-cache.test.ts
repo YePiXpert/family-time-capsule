@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@react-native-community/datetimepicker", () => ({ default: "DateTimePicker", DateTimePickerAndroid: { open: vi.fn() } }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
+vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "Icon" }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   ActivityIndicator: "ActivityIndicator", Image: "Image", Pressable: "Pressable", ScrollView: "ScrollView",
   Text: "Text", TextInput: "TextInput", View: "View", StyleSheet: { create: (x: unknown) => x, hairlineWidth: 1 },
 }));

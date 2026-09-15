@@ -73,6 +73,7 @@ export type SyncPage = {
 
 export type LocalTimelineEvent = TimelineEvent & {
   localDraftId?: string;
+  hasUnsavedChanges?: boolean;
   localCoverUri: string | null;
   source: "server" | "local";
   syncState: "pending" | "inbox" | null;

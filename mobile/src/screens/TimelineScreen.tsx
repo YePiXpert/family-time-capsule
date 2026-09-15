@@ -1,4 +1,6 @@
 import { useJournalContentInset } from "../navigation/dock-metrics";
+import { findSavedRecord, timelineRecordKey } from "../navigation/records";
+import { draftReadingScope } from "../drafts/reading";
 import { growthStages, eventGrowthStage } from "../design/growth-stages";
 import { calendarDate } from "../utils/calendar";
 import { indexCalendarMonths } from "../utils/calendar-months";
@@ -21,9 +23,9 @@ import { Button, Chip, EmptyState, IconButton } from "../components/ui";
 import { useColorTheme } from "../theme";
 import { journalRadius, journalSpace } from "../design/tokens";
 import type { LocalTimelineEvent } from "../types";
-import type { AppNavigation } from "../navigation/types";
+import type { AppNavigation, MainTabParamList } from "../navigation/types";
 
-export function TimelineScreen() {
+export function TimelineScreen({ route }: { route?: { params?: MainTabParamList["Timeline"] } }) {
   const [stageKey, setStageKey] = useState("");
   const [month, setMonth] = useState("");
   const list = useRef<FlatList<LocalTimelineEvent>>(null);
@@ -41,8 +43,24 @@ export function TimelineScreen() {
     outbox,
     viewer,
     people,
+    userId,
   } = useAppData();
   const { runSync, reloadLocal } = useAppActions();
+  const draftScope = draftReadingScope(credentials, userId, viewer?.id, family?.id);
+  const [savedNotice, setSavedNotice] = useState<NonNullable<MainTabParamList["Timeline"]>["saved"]>();
+  const focusRequest = useRef<string | null>(null);
+  const scrollRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollAttempts = useRef(0);
+  const pendingSave = route?.params?.saved;
+  const savedEvent = pendingSave && pendingSave.scope === draftScope ? findSavedRecord(events, pendingSave.draftId) : null;
+  if (pendingSave && savedEvent && pendingSave.requestKey !== savedNotice?.requestKey) {
+    setSavedNotice(pendingSave);
+    setMonth(""); setStageKey(""); setImportant(false); setSelected([]); setSelecting(false); setFiltersOpen(false);
+  }
+  useEffect(() => {
+    if (pendingSave && pendingSave.requestKey === savedNotice?.requestKey) navigation.setParams({ saved: undefined });
+  }, [pendingSave, savedNotice?.requestKey, navigation]);
+  useEffect(() => () => { if (scrollRetry.current) clearTimeout(scrollRetry.current); }, []);
   const [refreshing, setRefreshing] = useState(false);
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -78,6 +96,15 @@ export function TimelineScreen() {
     if (!["exact", "approximate", "date_only"].includes(event.occurredAtPrecision)) return false;
     try { const day = calendarDate(new Date(event.occurredAt), timezone); return day >= stage.from && day < stage.before; } catch { return false; }
   }), [events, month, monthIndex, important, stage, belongsToChild, timezone]);
+  const currentNotice = savedNotice?.scope === draftScope ? savedNotice : undefined;
+  const noticeEvent = currentNotice ? findSavedRecord(visibleEvents, currentNotice.draftId) : null;
+  useEffect(() => {
+    if (!currentNotice || !noticeEvent || focusRequest.current === currentNotice.requestKey) return;
+    focusRequest.current = currentNotice.requestKey;
+    scrollAttempts.current = 0;
+    const index = visibleEvents.indexOf(noticeEvent);
+    scrollRetry.current = setTimeout(() => list.current?.scrollToIndex({ index, animated: false, viewPosition: 0.1 }), 100);
+  }, [currentNotice, noticeEvent, visibleEvents]);
   const groupHeaders = useMemo(() => {
     const labels = visibleEvents.map(event => stage?.label ?? (childBirthDate && belongsToChild(event) ? eventGrowthStage(childBirthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : "成长点滴"));
     return labels.map((label, index) => label === labels[index - 1] ? null : label);
@@ -86,8 +113,8 @@ export function TimelineScreen() {
   const toggleSelected = useCallback((id: string) => setSelected(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id]), []);
   const enterSelection = useCallback((id: string) => { setSelecting(true); setSelected([id]); }, []);
   const renderItem = useCallback(({ item, index }: { item: LocalTimelineEvent; index: number }) => (
-    <TimelineRow item={item} groupLabel={groupHeaders[index] ?? null} canEdit={Boolean(viewer?.canEditEvents)} timeZone={family?.timezone} selected={selecting && item.source === "server" ? selectedIds.has(item.id) : undefined} toggleSelected={toggleSelected} enterSelection={enterSelection} openMenu={openMenu} />
-  ), [groupHeaders, viewer?.canEditEvents, family?.timezone, selecting, selectedIds, toggleSelected, enterSelection, openMenu]);
+    <TimelineRow item={item} draftScope={draftScope} highlighted={item.localDraftId === currentNotice?.draftId && Boolean(currentNotice)} groupLabel={groupHeaders[index] ?? null} canEdit={Boolean(viewer?.canEditEvents)} timeZone={family?.timezone} selected={selecting && item.source === "server" ? selectedIds.has(item.id) : undefined} toggleSelected={toggleSelected} enterSelection={enterSelection} openMenu={openMenu} />
+  ), [groupHeaders, viewer?.canEditEvents, family?.timezone, selecting, selectedIds, toggleSelected, enterSelection, openMenu, draftScope, currentNotice]);
   const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
     <View style={{ flex: 1, backgroundColor: colors.paper }}>
@@ -105,7 +132,13 @@ export function TimelineScreen() {
           ...(events.length === 0 ? { flexGrow: 1 } : {}),
         }}
       data={visibleEvents}
-      keyExtractor={(item) => item.id}
+      keyExtractor={timelineRecordKey}
+      onScrollToIndexFailed={info => {
+        if (scrollAttempts.current++ >= 3) return;
+        list.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+        if (scrollRetry.current) clearTimeout(scrollRetry.current);
+        scrollRetry.current = setTimeout(() => list.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.1 }), 150);
+      }}
       ListEmptyComponent={
         <EmptyState
           art={<JournalArtwork kind="keepsake" />}
@@ -124,6 +157,14 @@ export function TimelineScreen() {
             title={growth.title}
             subtitle={[growth.age, "留下今天，送给长大的你。"].filter(Boolean).join(" · ")}
           />
+          {currentNotice ? <View style={[styles.savedNotice, { borderColor: colors.line }]}>
+            <Text accessibilityLiveRegion="polite" style={{ color: colors.sage, fontSize: 13 }}>这一刻已保存。按发生日期收进成长记。</Text>
+            <Button title="查看刚保存的记录" variant="ghost" full={false} onPress={() => {
+              const record = findSavedRecord(events, currentNotice.draftId);
+              if (record?.source === "server") navigation.navigate("Memory", { id: record.id });
+              else navigation.navigate("SavedMemory", { draftId: currentNotice.draftId, scope: currentNotice.scope });
+            }} />
+          </View> : null}
           <View style={styles.toolRow}>
             <Pressable accessibilityRole="button" accessibilityLabel="回看与筛选" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen(value => !value)} style={styles.filterTrigger}>
               <JournalIcon name="calendar" color={colors.coral} size={18} />
@@ -195,8 +236,10 @@ export function TimelineScreen() {
 }
 
 /** Stable rows avoid rebuilding swipe actions when another record or sync status changes. */
-const TimelineRow = memo(function TimelineRow({ item, groupLabel, canEdit, timeZone, selected, toggleSelected, enterSelection, openMenu }: {
+const TimelineRow = memo(function TimelineRow({ item, draftScope, highlighted, groupLabel, canEdit, timeZone, selected, toggleSelected, enterSelection, openMenu }: {
   item: LocalTimelineEvent;
+  draftScope: string | null;
+  highlighted: boolean;
   groupLabel: string | null;
   canEdit: boolean;
   timeZone?: string;
@@ -208,10 +251,10 @@ const TimelineRow = memo(function TimelineRow({ item, groupLabel, canEdit, timeZ
   const navigation = useNavigation<AppNavigation>();
   const { colors } = useColorTheme();
   const canOrganize = item.source === "server" && canEdit;
-  const open = () => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : item.localDraftId ? navigation.navigate("Capture", { localDraftId: item.localDraftId }) : navigation.navigate("LocalCapture", { captureId: item.id });
+  const open = () => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : item.localDraftId && draftScope ? navigation.navigate("SavedMemory", { draftId: item.localDraftId, scope: draftScope }) : navigation.navigate("LocalCapture", { captureId: item.id });
   const select = () => enterSelection(item.id);
   const collect = () => navigation.navigate("Collections", { eventIds: [item.id] });
-  const card = <TimelineCard item={item} timeZone={timeZone} selected={selected} onPress={() => selected !== undefined ? toggleSelected(item.id) : open()} onLongPress={event => {
+  const card = <TimelineCard item={item} highlighted={highlighted} timeZone={timeZone} selected={selected} onPress={() => selected !== undefined ? toggleSelected(item.id) : open()} onLongPress={event => {
     if (canOrganize) select();
     openMenu([
       ...(canOrganize ? [
@@ -231,6 +274,7 @@ const TimelineRow = memo(function TimelineRow({ item, groupLabel, canEdit, timeZ
 });
 
 const styles = StyleSheet.create({
+  savedNotice: { borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: 8, gap: 4 },
   filterTrigger: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
   filterPanel: { borderWidth: 1, borderRadius: journalRadius.card, padding: 16, gap: 16 },
   toolRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 },

@@ -1,6 +1,8 @@
 import { expect, it, vi } from "vitest";
-import { initializeLocalStore, getLocalCaptureDetail, clearServerCaches, setActiveDestination, listTimeline } from "../src/storage/database";
-import { createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft } from "../src/drafts/store";
+import { initializeLocalStore, getLocalCaptureDetail, clearServerCaches, setActiveDestination, listTimeline, removeLocalCaptureRecord } from "../src/storage/database";
+import { canUploadDraftOriginal, createLocalDraft, listLocalDrafts, queueDraftOriginals, saveLocalDraft } from "../src/drafts/store";
+import { mergeSavedDrafts } from "../src/storage/local-timeline";
+import { timelineRecordKey } from "../src/navigation/records";
 import { getRawMockDatabase } from "../../tests/mocks/expo-sqlite";
 import type { MediaCapturePayload } from "../src/types";
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
@@ -59,4 +61,29 @@ it("shows a saved offline video bundle as one record after restart, scoped to it
   await saveLocalDraft({ ...draft, status: "published", memoryEventId: "published-video", revision: 4 }, 3);
   // A removed server record must not be resurrected by an old published draft.
   expect((await listTimeline(null, scope)).some(item => item.localDraftId === draft.id)).toBe(false);
+});
+
+it("keeps the saved story and its original protected while an unfinished edit removes them", async () => {
+  await initializeLocalStore();
+  const scope = "reading-snapshot-owner";
+  const draft = await createLocalDraft(scope, "snapshot-draft", "snapshot-mutation");
+  const saved = { ...draft, revision: 2, status: "queued" as const, content: { ...draft.content, title: "第一次看海", text: "已保存的完整故事", coverItemId: "snapshot-item", items: [{ id: "snapshot-item", localCaptureRef: "snapshot-photo", assetId: "receipt-photo", caption: "" }] } };
+  await saveLocalDraft(saved, 1, { id: "snapshot-photo", payload: { localUri: "file:///sea.jpg", fileName: "sea.jpg", mediaType: "image", mimeType: "image/jpeg", source: "library", lastModified: null } });
+  const editing = { ...saved, revision: 3, savedContent: saved.content, status: "editing" as const, content: { ...saved.content, title: "未完成标题", text: "未完成文字", items: [], coverItemId: null } };
+  await saveLocalDraft(editing, 2);
+  await initializeLocalStore();
+  const timeline = await listTimeline(null, scope);
+  const record = timeline.find(item => item.localDraftId === draft.id)!;
+  expect(record).toMatchObject({ title: "第一次看海", bodyText: "已保存的完整故事", localCoverUri: "file:///sea.jpg", assetCount: 1, hasUnsavedChanges: true });
+  expect(timeline.some(item => item.id === "local:snapshot-photo")).toBe(false);
+  expect((await getLocalCaptureDetail("snapshot-photo", scope))?.remoteAssetId).toBe("receipt-photo");
+  expect((await getLocalCaptureDetail("snapshot-photo", "another-owner"))?.remoteAssetId).toBeUndefined();
+  expect(await canUploadDraftOriginal("snapshot-photo", "another-owner")).toBe(false);
+  await expect(removeLocalCaptureRecord("snapshot-photo")).rejects.toThrow();
+  const published = { ...saved, status: "published" as const, memoryEventId: "server-snapshot", revision: 4 };
+  const remote = { ...record, id: "server-snapshot", source: "server" as const, localDraftId: undefined };
+  const merged = mergeSavedDrafts([remote], [published]);
+  expect(merged).toHaveLength(1);
+  expect(timelineRecordKey(merged[0]!)).toBe(timelineRecordKey(record));
+  expect(mergeSavedDrafts([], [published])).toEqual([]);
 });

@@ -97,22 +97,26 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     if (!row || failure.current) throw new Error("本机草稿尚未保存，请检查存储空间。");
     if ((publish || syncIntent) && row.content.items.some(i => i.preservationState === "missing")) throw new Error("有原件复制中断或缺失，请重新导入完整一组，或移除缺失的素材后保存。");
     if (publish && !isDraftDateComplete(row.content) && (!canInferCaptureTime(row.content) || row.captureTimeEdited)) throw new Error("请先确认发生时间，或选择「不详」；也可以先保留草稿。");
-    const next = { ...row, content: quickCaptureContent(row.content, row.captureTimeEdited), organizeOnPublish: publish && organize, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
+    const next = { ...row, savedContent: undefined, content: quickCaptureContent(row.content, row.captureTimeEdited), organizeOnPublish: publish && organize, revision: row.revision + 1, status: publish || syncIntent ? "queued" as const : "editing" as const, syncIntent: publish ? "publish" as const : syncIntent };
     await write(next);
     if (publish || syncIntent) await queueDraftOriginals(next);
     await reload();
+    return next;
   }, [write, reload]);
   const resume = useCallback(async (row: LocalDraft) => { await writes.current; if (failure.current) return; current.current = row; revision.current = row.revision; setDraft(row); setSaved(true); }, []);
   const discard = useCallback(async () => {
     await writes.current;
     if (!current.current || failure.current) return;
-    await write({ ...current.current, status: "discarded", discardPending: current.current.serverRevision > 0, revision: current.current.revision + 1 });
+    const row = current.current;
+    await write(row.savedContent
+      ? { ...row, content: row.savedContent, savedContent: undefined, status: "queued", revision: row.revision + 1 }
+      : { ...row, status: "discarded", discardPending: row.serverRevision > 0, revision: row.revision + 1 });
     await create();
   }, [write, create]);
   const reopen = useCallback(async () => {
     await writes.current;
     if (!current.current || failure.current || current.current.status !== "queued") return;
-    await write({ ...current.current, status: "editing", revision: current.current.revision + 1 }); await reload();
+    await write({ ...current.current, savedContent: current.current.content, status: "editing", revision: current.current.revision + 1 }); await reload();
   }, [write, reload]);
   const retry = useCallback(async () => { failure.current = false; if (current.current) await write(current.current); }, [write]);
   const bind = useCallback(async (id: string) => { await writes.current; const row = await bindLocalDraft(id, scope); await resume(row); await reload(); }, [scope, resume, reload]);

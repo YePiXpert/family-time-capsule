@@ -5,6 +5,7 @@ import type { MediaCapturePayload } from "../types";
 export type DraftOriginal = { id: string; payload: MediaCapturePayload };
 export type LocalDraft = {
   id: string; scope: string; content: DraftContent; revision: number; serverRevision: number;
+  savedContent?: DraftContent;
   mutationId: string; status: "editing" | "queued" | "published" | "discarded";
   syncIntent?: "draft" | "review" | "publish";
   syncedRevision?: number;
@@ -30,6 +31,7 @@ export async function saveLocalDraft(row: LocalDraft, expectedRevision: number, 
 }
 export async function saveLocalDraftInTransaction(tx: SQLiteDatabase, row: LocalDraft, expectedRevision: number, original?: DraftOriginal | DraftOriginal[]): Promise<void> {
   parseDraftContent(row.content);
+  if (row.savedContent) parseDraftContent(row.savedContent);
 
     const live = await tx.getFirstAsync<{ revision: number }>("SELECT revision FROM local_draft WHERE scope=? AND id=?", row.scope, row.id);
     if ((live?.revision ?? 0) !== expectedRevision) throw new Error("草稿已在另一处修改，请重新打开；本次输入尚未保存。");
@@ -72,7 +74,7 @@ export async function queueDraftOriginals(row: LocalDraft): Promise<void> {
 export async function canUploadDraftOriginal(captureId: string, activeScope: string): Promise<boolean> {
   const db = await getDatabase();
   const references = await db.getAllAsync<{ scope: string }>(`SELECT DISTINCT d.scope FROM local_draft d,
-    json_each(json_extract(d.snapshot_json, '$.content.items')) i
+    json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
     WHERE json_extract(i.value, '$.localCaptureRef') = ?`, captureId);
   if (references.length > 0) return false; // Draft transfers run through syncLocalDrafts with a bound owner receipt.
   const receipt = await db.getFirstAsync<{ scope: string | null; destination: string | null }>(`SELECT c.scope,c.destination
