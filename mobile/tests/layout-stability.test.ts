@@ -122,6 +122,8 @@ it("keeps a chosen month in the same virtual list when background sync adds newe
   const scrollToOffset = vi.fn();
   await act(() => { tree = create(createElement(TimelineScreen), { createNodeMock: node => node.type === "FlatList" ? { scrollToOffset } : null }); });
   const list = tree!.root.findByType("FlatList" as never);
+  expect(tree!.root.findAllByProps({ testID: "month-picker" })).toHaveLength(0);
+  await act(() => tree!.root.findByProps({ accessibilityLabel: "回看与筛选" }).props.onPress());
   await act(() => tree!.root.findByProps({ testID: "month-picker" }).props.onPress());
   const month = tree!.root.find(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "2026 年 8 月，本机 1 条记录");
   await act(() => month.props.onPress());

@@ -224,7 +224,7 @@ it("does not lose the saved result if resetting the audio session fails", async 
   await press("录音");
   mocks.audioMode.mockRejectedValueOnce(new Error("session reset failed"));
   await press("完成录音");
-  expect(JSON.stringify(tree!.toJSON())).toContain("录音原件已复制");
+  expect(JSON.stringify(tree!.toJSON())).toContain("录音已保存在本机");
   expect(mocks.enqueueMedia).toHaveBeenCalledOnce();
   await press("拍照");
 });

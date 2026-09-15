@@ -17,7 +17,7 @@ import { SwipeActions } from "../components/SwipeActions";
 import { TimelineCard } from "../components/TimelineCard";
 import { JournalArtwork } from "../components/JournalArtwork";
 import { JournalIcon } from "../components/JournalIcon";
-import { Button, Chip, EmptyState, IconButton, Pill } from "../components/ui";
+import { Button, Chip, EmptyState, IconButton } from "../components/ui";
 import { useColorTheme } from "../theme";
 import { journalRadius, journalSpace } from "../design/tokens";
 import type { LocalTimelineEvent } from "../types";
@@ -29,6 +29,7 @@ export function TimelineScreen() {
   const list = useRef<FlatList<LocalTimelineEvent>>(null);
   const previousMonth = useRef(month);
   const [important, setImportant] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const navigation = useNavigation<AppNavigation>();
@@ -117,14 +118,20 @@ export function TimelineScreen() {
         <View style={{ gap: 20 }}>
           {/* Hero：宝宝是主角——名字、真实月龄、一句话寄语，插画融入右侧 */}
           <CollapsingHero
+            compact
             testID="timeline-heading"
             eyebrow="一点一滴，慢慢长大"
             title={growth.title}
-            subtitle="留下今天，送给长大的你。"
-            pill={growth.age ? <Pill label={growth.age} icon="growth" /> : null}
-            accessory={<JournalArtwork kind="keepsake" compact />}
+            subtitle={[growth.age, "留下今天，送给长大的你。"].filter(Boolean).join(" · ")}
           />
-
+          <View style={styles.toolRow}>
+            <Pressable accessibilityRole="button" accessibilityLabel="回看与筛选" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen(value => !value)} style={styles.filterTrigger}>
+              <JournalIcon name="calendar" color={colors.coral} size={18} />
+              <Text style={{ color: colors.coralDark, fontSize: 14 }}>{month || stage || important ? "回看与筛选 · 已筛选" : "回看与筛选"}</Text>
+            </Pressable>
+            <IconButton icon="search" label="搜索" onPress={() => navigation.navigate("Search")} />
+          </View>
+          {filtersOpen ? <View style={[styles.filterPanel, { backgroundColor: colors.card, borderColor: colors.line }]}>
           <MonthPicker value={month} currentMonth={today.slice(0, 7)} counts={monthIndex.counts} allowAll onChange={next => { setMonth(next); setSelected([]); }} />
 
           {/* 月龄轨迹：轻量胶囊，内容为主角 */}
@@ -136,13 +143,14 @@ export function TimelineScreen() {
           <View style={styles.toolRow}>
             <Chip accessibilityRole="button" icon="star" label={important ? "查看所有时刻" : "第一次与值得记住"} selected={important} onPress={() => setImportant(v => !v)} />
             <View style={styles.tools}>
-            <IconButton icon="search" label="搜索" onPress={() => navigation.navigate("Search")} />
             <IconButton icon="calendar" label="日期与人物" onPress={() => navigation.navigate("Calendar")} />
             {viewer?.canEditEvents ? (
               <IconButton icon="check" label={selecting ? "取消选择" : "选择"} tone={selecting ? "accent" : "plain"} onPress={() => { setSelecting(!selecting); setSelected([]); }} />
             ) : null}
             </View>
           </View>
+          {month || stage || important ? <Button title="查看全部记录" variant="ghost" onPress={() => { setMonth(""); setStageKey(""); setImportant(false); setSelected([]); setFiltersOpen(false); }} /> : null}
+          </View> : null}
 
           {selecting ? (
             <View style={[styles.selectionCard, { backgroundColor: colors.softCoral, borderColor: colors.peach }]}>
@@ -159,7 +167,7 @@ export function TimelineScreen() {
             </Pressable>
           ) : null}
 
-          {outbox.length > 0 ? (
+          {filtersOpen && outbox.length > 0 ? (
             <View style={[styles.outboxCard, { backgroundColor: colors.softSage }]}>
               <JournalIcon name="check" color={colors.sage} size={16} />
               <Text style={[styles.outboxText, { color: colors.sage }]}>
@@ -223,6 +231,8 @@ const TimelineRow = memo(function TimelineRow({ item, groupLabel, canEdit, timeZ
 });
 
 const styles = StyleSheet.create({
+  filterTrigger: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
+  filterPanel: { borderWidth: 1, borderRadius: journalRadius.card, padding: 16, gap: 16 },
   toolRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 },
   tools: { flexDirection: "row", alignItems: "center", gap: 8 },
   selectionCard: {
