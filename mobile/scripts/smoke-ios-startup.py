@@ -13,6 +13,7 @@ import re
 import sqlite3
 import subprocess
 import time
+from ios_simulator import boot_simulator
 
 
 def run(*args, timeout=180):
@@ -68,8 +69,7 @@ for result in request.results ?? [] {
 }
 ''')
     try:
-        run("xcrun", "simctl", "boot", udid)
-        run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=300)
+        boot_simulator(udid, output)
         run("xcrun", "simctl", "ui", udid, "appearance", "light")
         run("xcrun", "simctl", "install", udid, str(args.app.resolve()))
 
