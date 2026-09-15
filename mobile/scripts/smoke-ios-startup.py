@@ -13,7 +13,7 @@ import re
 import sqlite3
 import subprocess
 import time
-from ios_simulator import boot_simulator
+from ios_simulator import boot_simulator, cleanup_simulator
 
 
 def run(*args, timeout=180):
@@ -144,8 +144,7 @@ for result in request.results ?? [] {
             (output / "native.log").write_text(logs + "\n")
         except (subprocess.SubprocessError, OSError):
             pass  # Keep the original startup failure if simulator diagnostics are unavailable.
-        subprocess.run(["xcrun", "simctl", "shutdown", udid], capture_output=True)
-        subprocess.run(["xcrun", "simctl", "delete", udid], capture_output=True)
+        cleanup_simulator(udid, output)
 
 
 if __name__ == "__main__":

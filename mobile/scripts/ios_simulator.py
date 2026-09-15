@@ -3,6 +3,20 @@ from pathlib import Path
 import subprocess
 
 
+def cleanup_simulator(udid: str, output: Path):
+    """Cleanup must not hang the build or replace an application's test failure."""
+    logs = []
+    for action in ("shutdown", "delete"):
+        try:
+            result = subprocess.run(["xcrun", "simctl", action, udid],
+                                    capture_output=True, text=True, timeout=60)
+            logs.append(f"{action}: {result.returncode}\n{result.stdout}{result.stderr}")
+        except (subprocess.SubprocessError, OSError) as error:
+            logs.append(f"{action}: {error}")
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "simulator-cleanup.log").write_text("\n".join(logs) + "\n")
+
+
 def boot_simulator(udid: str, output: Path):
     output.mkdir(parents=True, exist_ok=True)
     for attempt in (1, 2):

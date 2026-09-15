@@ -11,6 +11,19 @@ spec.loader.exec_module(simulator)
 
 
 class SimulatorBootTests(unittest.TestCase):
+    def test_cleanup_still_deletes_after_shutdown_times_out_and_keeps_original_failure(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(simulator.subprocess, "run") as run:
+            run.side_effect = [subprocess.TimeoutExpired(["shutdown"], 60), subprocess.CompletedProcess([], 0, "Deleted", "")]
+            with self.assertRaisesRegex(RuntimeError, "application failed"):
+                try:
+                    raise RuntimeError("application failed")
+                finally:
+                    simulator.cleanup_simulator("isolated", Path(directory))
+            self.assertEqual(run.call_args_list[1].args[0], ["xcrun", "simctl", "delete", "isolated"])
+            self.assertTrue(all(call.kwargs["timeout"] == 60 for call in run.call_args_list))
+            self.assertIn("timed out", (Path(directory) / "simulator-cleanup.log").read_text())
+            self.assertIn("Deleted", (Path(directory) / "simulator-cleanup.log").read_text())
+
     def test_success_preserves_boot_output(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(simulator.subprocess, "run") as run:
             run.return_value = subprocess.CompletedProcess([], 0, "Finished booting\n", "")
