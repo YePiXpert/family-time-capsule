@@ -40,7 +40,7 @@ test("创建 8/10 事件 → 修改为 8/11 → 时间轴移动、年龄变化",
   // 事件页：新日期 + 第 1 天（8/11 对 8/10 生日）+ 地点
   await expect(page.getByText("2026年8月11日").first()).toBeVisible();
   await expect(page.getByText("第 1 天")).toBeVisible();
-  await expect(page.getByText("北京 · 家里")).toBeVisible();
+  await expect(page.getByRole("main").locator("header").getByText("· 北京 · 家里", { exact: true })).toBeVisible();
 
   // 时间轴：出现在 8/11，旧日期 8/10 不再出现（本工作区唯一事件）
   await page.goto("/timeline");
@@ -120,15 +120,16 @@ test("私密未知时间记忆：作者添加事实、移入回收站、恢复�
     const entry = page.getByRole("list", { name: "回收站列表" }).getByRole("listitem").filter({ hasText: title });
     await expect(entry).toBeVisible();
     await other.reload(); await waitForCapture(other);
-    await expect(other.locator("main")).not.toContainText(title);
+    await expect(other.getByRole("main")).toBeVisible();
+    await expect(other.getByRole("main")).not.toContainText(title);
     expect((await other.request.get(`/api/mobile/v1${memoryUrl}`)).status()).toBe(404);
     await entry.getByRole("button", { name: "恢复", exact: true }).click();
     await expect(entry).toHaveCount(0);
     await page.goto(memoryUrl);
     await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
-    await expect(page.locator("main")).toContainText(body);
+    await expect(page.getByRole("main")).toContainText(body);
     await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(fact);
-    await expect(page.locator("main")).toContainText("时间不确定");
+    await expect(page.getByRole("main")).toContainText("时间不确定");
     expect((await (await page.request.get(`/api/mobile/v1${memoryUrl}`)).json()).occurredAtPrecision).toBe("unknown");
     await page.getByRole("link", { name: "编辑档案", exact: true }).click();
     await moveToTrash();
@@ -178,12 +179,15 @@ test("家人讲述撤为私密后，旧事实和来源引文从其他管理员�
     for (const url of [memoryUrl, `${memoryUrl}?mode=edit`]) {
       const response = await other.goto(url);
       await expect(other.getByRole("heading", { name: "事实来源权限示例", exact: true })).toBeVisible();
-      await expect(other.locator("main")).not.toContainText(statement);
+      await expect(other.getByRole("main")).not.toContainText(statement);
       expect(await response!.text()).not.toContain(statement);
       expect(await response!.text()).not.toContain(quote);
     }
     await other.goto(`/search?q=${encodeURIComponent("苔藓纸船")}`);
-    await expect(other.locator("main")).not.toContainText(statement);
+    // The streamed loading fallback also uses a main tag, with role=status.
+    // Wait for actual results before asserting that private text is absent.
+    await expect(other.getByRole("region", { name: "搜索结果" })).toBeVisible();
+    await expect(other.getByRole("main")).not.toContainText(statement);
     await page.goto(`${memoryUrl}?mode=edit`);
     await expect(page.getByRole("region", { name: "已确认事实" })).toContainText(statement);
     await page.getByRole("region", { name: "已确认事实" }).getByText("来源（1）", { exact: true }).click();
