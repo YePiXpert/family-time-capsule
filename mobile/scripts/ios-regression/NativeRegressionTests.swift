@@ -54,18 +54,27 @@ final class NativeRegressionTests: XCTestCase {
         tapControl(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", label)).firstMatch, label: label)
     }
 
-    private func enterLoginText(_ text: String, into control: XCUIElement, secure: Bool = false) {
+    private func enterVerifiedText(_ text: String, into control: XCUIElement, initialText: String = "", secure: Bool = false) {
+        if !initialText.isEmpty {
+            wait("Existing text did not finish loading before editing", timeout: 10) { control.value as? String == initialText }
+        }
         tapControl(control, label: control.identifier)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        if !initialText.isEmpty {
+            // The short journal fixture leaves empty space below its last line.
+            // Tapping that space puts the caret at the end; a center tap can
+            // insert into the original text instead of appending a supplement.
+            control.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.9)).tap()
+        }
         // The hosted simulator can drop characters when XCTest injects a whole
         // string in one event burst. Acknowledge each native value before the
-        // next key; the login must still use the real form and SecureStore.
-        var expected = ""
+        // next key, using the real keyboard and controlled input throughout.
+        var expected = initialText
         for character in text {
             control.typeText(String(character))
             expected.append(character)
             let prefix = expected
-            wait("Login field did not retain the typed characters", timeout: 5) {
+            wait("Native input did not retain the expected text", timeout: 5) {
                 guard let value = control.value as? String else { return false }
                 return secure ? value.count == prefix.count : value == prefix
             }
@@ -209,8 +218,10 @@ final class NativeRegressionTests: XCTestCase {
         tap("记录一刻")
         let input = element("capture-text")
         wait("Capture input did not become usable", timeout: 30) { input.exists && input.isEnabled && input.isHittable }
-        input.tap()
-        input.typeText("Synthetic journal seaside story")
+        let original = "Synthetic journal seaside story"
+        let supplement = "\nA saved supplement."
+        enterVerifiedText(original, into: input)
+        XCTAssertEqual(input.value as? String, original, "Original text was not entered correctly before saving")
         tap("capture-save")
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 15), "Save did not return to the timeline")
         let savedCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "timeline-card-draft:", "Synthetic journal seaside story")).firstMatch
@@ -224,8 +235,9 @@ final class NativeRegressionTests: XCTestCase {
         reading.name = "saved-journal-reading"; reading.lifetime = .keepAlways; add(reading)
         tap("补记")
         XCTAssertTrue(input.waitForExistence(timeout: 10))
-        input.tap()
-        input.typeText("\nA saved supplement.")
+        enterVerifiedText(supplement, into: input, initialText: original)
+        XCTAssertEqual(input.value as? String, original + supplement, "Supplement was not entered correctly before saving")
+        record("journal-input-before-save", ["nativeText": input.value as? String ?? ""])
         tap("capture-save")
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 15))
         XCTAssertTrue(element(identifier).waitForExistence(timeout: 10), "Supplement replaced the record identity")
@@ -346,10 +358,10 @@ final class NativeRegressionTests: XCTestCase {
         tap("已有账号登录")
         let address = app.textFields["家庭空间地址"]
         XCTAssertTrue(address.waitForExistence(timeout: 10))
-        enterLoginText("http://localhost:18765", into: address)
+        enterVerifiedText("http://localhost:18765", into: address)
         let email = app.textFields["邮箱"]
-        enterLoginText("native@example.invalid", into: email)
-        enterLoginText("FixtureOnly123!", into: app.secureTextFields["密码"], secure: true)
+        enterVerifiedText("native@example.invalid", into: email)
+        enterVerifiedText("FixtureOnly123!", into: app.secureTextFields["密码"], secure: true)
         // Welcome's ScrollView consumes the first outside tap to dismiss the
         // keyboard. Dismiss explicitly before asserting that login submits.
         tap("登录家庭空间")
