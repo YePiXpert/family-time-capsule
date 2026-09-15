@@ -125,7 +125,7 @@ function MainTabs() {
     <Tabs.Screen component={WorksScreen} name="Works" options={{ title: "成长册", headerShown: false }} />
     <Tabs.Screen component={SettingsHubScreen} name="Profile" options={{ title: "我的", headerShown: false }} />
     {/* Keep the existing capture route for pending shares and durable draft links. */}
-    <Tabs.Screen component={CaptureScreen} name="Capture" options={{ title: "记录一刻", headerShown: false }} />
+    <Tabs.Screen component={CaptureScreen} name="Capture" options={{ title: "记录一刻", headerShown: false, animation: "none", transitionSpec: { animation: "timing", config: { duration: 0 } } }} />
   </Tabs.Navigator></JournalDockHeightContext.Provider></JournalCaptureActionHeightContext.Provider></JournalKeyboardContext.Provider>;
 }
 
