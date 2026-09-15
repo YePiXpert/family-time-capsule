@@ -71,6 +71,8 @@ function SavedMemoryDetail({ route, navigation, scope }: Props & { scope: string
   if (record?.draft.status === "published" && record.draft.memoryEventId) return <MemoryScreen navigation={navigation as unknown as NativeStackScreenProps<RootStackParamList, "Memory">["navigation"]} route={{ key: route.key, name: "Memory", params: { id: record.draft.memoryEventId } }} />;
   const content = record && savedDraftContent(record.draft);
   const acknowledged = record?.draft.syncedRevision === record?.draft.revision;
+  const coverItem = content?.items.find(item => item.id === content.coverItemId);
+  const previewIndex = Math.max(0, record?.assets.findIndex(asset => asset.id === (coverItem?.localCaptureRef ?? coverItem?.assetId)) ?? 0);
   const status = acknowledged ? record?.draft.syncIntent === "review" ? "已提交，等待家人确认" : "已保存到家庭" : record?.draft.savedContent ? "已保存在本机 · 有未完成的补记" : "已保存在本机 · 等待同步";
   return <ScrollView contentContainerStyle={s.content} style={s.screen}>
     {record && content ? <>
@@ -79,7 +81,7 @@ function SavedMemoryDetail({ route, navigation, scope }: Props & { scope: string
         date={dateLabel(content.occurredAt ?? record.draft.updatedAt, family?.timezone, content.occurredAt ? content.occurredAtPrecision : "unknown")}
         visibility={content.visibility === "private" ? "仅自己可见" : content.visibility === "members" ? "指定成员可见" : "全家可见"}
         status={status}
-        media={record.assets.length ? <NativeMediaReader credentials={credentials} assets={record.assets} /> : null}>
+        media={record.assets.length ? <NativeMediaReader credentials={credentials} assets={record.assets} previewIndex={previewIndex} /> : null}>
         {content.locationText ? <Text style={s.intro}>{content.locationText}</Text> : null}
         {content.participantIds.length ? <Text style={s.body}>{content.participantIds.map(id => people?.find(person => person.id === id)?.displayName ?? "家人").join(" · ")}</Text> : null}
       </MemoryReading>

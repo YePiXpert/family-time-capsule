@@ -48,6 +48,7 @@ export function NativeMediaReader({
   viewingOnly = false,
   viewingTitle,
   onViewingExit,
+  previewIndex,
 }: {
   onPosition?: (assetId: string, seconds: number) => void;
   assets: NativeReaderAsset[];
@@ -55,6 +56,8 @@ export function NativeMediaReader({
   viewingOnly?: boolean;
   viewingTitle?: string;
   onViewingExit?: () => void;
+  /** Show one overview card while keeping the complete sequence in the reader. */
+  previewIndex?: number;
 }) {
   const s = useSharedStyles();
   const { reducedMotion } = useAccessibleEffects();
@@ -99,7 +102,7 @@ export function NativeMediaReader({
   }, [index, visibleIndex, reducedMotion, controlsVisible]);
   return (
     <>
-      {!viewingOnly && assets.map((asset, i) => (
+      {!viewingOnly && assets.map((asset, i) => previewIndex !== undefined && i !== Math.max(0, Math.min(previewIndex, assets.length - 1)) ? null : (
         <Pressable
           key={`${asset.id}-${i}`}
           accessibilityRole="button"
@@ -118,7 +121,7 @@ export function NativeMediaReader({
           ) : null}
           <Text style={s.cardTitle}>{asset.filename}</Text>
           <Text style={s.body}>
-            {asset.author ||
+            {previewIndex !== undefined && assets.length > 1 ? `共 ${assets.length} 份素材 · 打开后左右切换` : asset.author ||
               (asset.type === "video"
                 ? "打开视频"
                 : asset.type === "audio"
