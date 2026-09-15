@@ -54,6 +54,24 @@ final class NativeRegressionTests: XCTestCase {
         tapControl(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", label)).firstMatch, label: label)
     }
 
+    private func enterLoginText(_ text: String, into control: XCUIElement, secure: Bool = false) {
+        tapControl(control, label: control.identifier)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        // The hosted simulator can drop characters when XCTest injects a whole
+        // string in one event burst. Acknowledge each native value before the
+        // next key; the login must still use the real form and SecureStore.
+        var expected = ""
+        for character in text {
+            control.typeText(String(character))
+            expected.append(character)
+            let prefix = expected
+            wait("Login field did not retain the typed characters", timeout: 5) {
+                guard let value = control.value as? String else { return false }
+                return secure ? value.count == prefix.count : value == prefix
+            }
+        }
+    }
+
     private func textContains(_ value: String) -> Bool {
         app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", value)).firstMatch.exists
     }
@@ -270,7 +288,16 @@ final class NativeRegressionTests: XCTestCase {
                 save.frame.maxY <= self.app.keyboards.firstMatch.frame.minY + 2
             }
             let keyboardFrame = save.frame
-            app.scrollViews.firstMatch.swipeDown()
+            if pass == 0 {
+                // Use the page gutter, outside UITextView's text-selection
+                // recognizers and the keyboard's suggestion scroll view.
+                let page = element("capture-content")
+                let start = page.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.4))
+                let end = page.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.85))
+                start.press(forDuration: 0.05, thenDragTo: end)
+            } else {
+                tap("收起键盘")
+            }
             wait("Keyboard did not dismiss") { !self.app.keyboards.firstMatch.exists }
             wait("Save controls did not return to their original position") { abs(save.frame.minY - before.minY) <= 2 }
             assertFrame(save.frame, before, "Repeated keyboard dismissal accumulates bottom padding")
@@ -316,16 +343,16 @@ final class NativeRegressionTests: XCTestCase {
         tap("已有账号登录")
         let address = app.textFields["家庭空间地址"]
         XCTAssertTrue(address.waitForExistence(timeout: 10))
-        address.tap()
-        address.typeText("http://localhost:18765")
-        app.textFields["邮箱"].tap()
-        app.textFields["邮箱"].typeText("native@example.invalid")
-        app.secureTextFields["密码"].tap()
-        app.secureTextFields["密码"].typeText("FixtureOnly123!")
+        enterLoginText("http://localhost:18765", into: address)
+        let email = app.textFields["邮箱"]
+        enterLoginText("native@example.invalid", into: email)
+        enterLoginText("FixtureOnly123!", into: app.secureTextFields["密码"], secure: true)
         // Welcome's ScrollView consumes the first outside tap to dismiss the
         // keyboard. Dismiss explicitly before asserting that login submits.
         tap("登录家庭空间")
         wait("Login keyboard did not dismiss", timeout: 5) { !self.app.keyboards.firstMatch.exists }
+        XCTAssertEqual(address.value as? String, "http://localhost:18765")
+        XCTAssertEqual(email.value as? String, "native@example.invalid")
         tap("登录")
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 30))
         let row = card("remote-memory")
