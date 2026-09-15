@@ -135,8 +135,9 @@ const GroupRow = memo(function GroupRow({ group, index, representative, selected
 const ItemRow = memo(function ItemRow({ item, selected, cover, representative, credentials, disabled, locked, onToggle, onCover, onRepresentative, onOpen }: { item: ImportPickItem; selected: boolean; cover: boolean; representative: boolean; credentials?: Credentials | null; disabled: boolean; locked: boolean; onToggle: () => void; onCover: () => void; onRepresentative: () => void; onOpen?: () => void }) {
   const { colors } = useColorTheme();
   return <View style={[styles.item, { backgroundColor: colors.card, borderColor: selected ? colors.coral : colors.line }]}>
+    {item.type === "image" ? (onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={`查看原件：${item.title}`} onPress={onOpen}><ItemThumbnail item={item} credentials={credentials} large /></Pressable> : <ItemThumbnail item={item} credentials={credentials} large />) : null}
     <View style={styles.itemTop}>
-      {onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={`查看原件：${item.title}`} onPress={onOpen}><ItemThumbnail item={item} credentials={credentials} /></Pressable> : <ItemThumbnail item={item} credentials={credentials} />}
+      {item.type !== "image" ? (onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={`查看原件：${item.title}`} onPress={onOpen}><ItemThumbnail item={item} credentials={credentials} /></Pressable> : <ItemThumbnail item={item} credentials={credentials} />) : null}
       <View style={styles.textColumn}>
         <Text numberOfLines={2} style={[styles.itemTitle, { color: colors.ink }]}>{item.title || "未命名素材"}</Text>
         <Text style={[styles.small, { color: colors.muted }]}>{typeLabel(item.type)}{representative ? " · 本组代表" : ""}{cover ? " · 草稿封面" : ""}</Text>
@@ -160,7 +161,7 @@ function typeLabel(type: ImportPickItem["type"]) {
   return ({ image: "照片", video: "视频", audio: "录音", document: "文件", text: "文字" } as Record<string, string>)[type] || "素材";
 }
 
-function ItemThumbnail({ item, credentials }: { item: ImportPickItem; credentials?: Credentials | null }) {
+function ItemThumbnail({ item, credentials, large = false }: { item: ImportPickItem; credentials?: Credentials | null; large?: boolean }) {
   const { colors } = useColorTheme();
   const [failed, setFailed] = useState<string | null>(null);
   const path = item.thumbnailUri || (item.type === "image" ? item.localUri : undefined);
@@ -177,7 +178,7 @@ function ItemThumbnail({ item, credentials }: { item: ImportPickItem; credential
     source = { uri: `${credentials.serverUrl}/api/media/${encodeURIComponent(item.id)}`, headers: { Authorization: `Bearer ${credentials.token}` } };
   }
   const icon: JournalIconName = item.type === "image" ? "image" : item.type === "video" ? "video" : item.type === "audio" ? "audio" : "file";
-  return <View style={[styles.thumbnail, { backgroundColor: colors.softCoral }]}>
+  return <View style={[styles.thumbnail, large && styles.photoPreview, { backgroundColor: colors.softCoral }]}>
     {source && failed !== source.uri ? <Image source={source} resizeMode="contain" fadeDuration={0} style={StyleSheet.absoluteFill} onError={() => setFailed(source?.uri ?? null)} /> : <JournalIcon name={icon} size={28} color={colors.coralDark} />}
   </View>;
 }
@@ -199,5 +200,6 @@ const styles = StyleSheet.create({
   itemTitle: { fontSize: 15, fontWeight: "500" },
   check: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   thumbnail: { width: 88, height: 88, borderRadius: 10, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+  photoPreview: { width: "100%", height: undefined, aspectRatio: 4 / 3 },
   footer: { gap: 12, paddingTop: 8 },
 });
