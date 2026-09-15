@@ -25,6 +25,7 @@ import { InboxScreen } from "../screens/InboxScreen";
 import { SettingsHubScreen } from "../screens/SettingsHubScreen";
 import { WorksScreen } from "../screens/WorksScreen";
 import { MemoryScreen } from "../screens/MemoryScreen";
+import { SavedMemoryScreen } from "../screens/SavedMemoryScreen";
 import { SearchScreen } from "../screens/SearchScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import {
@@ -136,6 +137,7 @@ const NavigationContent = memo(function NavigationContent({ onViewingChange }: {
       <Stack.Navigator screenOptions={{ animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : journalMotion.duration, headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" }, headerTintColor: colors.coralDark, contentStyle: { backgroundColor: colors.paper }, ...(Platform.OS === "ios" ? { headerLargeTitle: false, headerBlurEffect: "regular" as const } : {}) }}>
         <Stack.Screen component={MainTabs} name="MainTabs" options={{ headerShown: false }} />
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "成长记录" }} />
+        <Stack.Screen component={SavedMemoryScreen} name="SavedMemory" options={{ title: "成长记录" }} />
         <Stack.Screen component={AssetLibraryScreen} name="AssetLibrary" options={{ title: "资料库" }} />
         <Stack.Screen component={AssetDetailScreen} name="AssetDetail" options={{ title: "资料" }} />
         <Stack.Screen component={SearchScreen} name="Search" options={{ title: "搜索" }} />

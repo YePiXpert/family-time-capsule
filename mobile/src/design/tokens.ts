@@ -56,7 +56,7 @@ export type JournalColorScheme = "light" | "dark";
 
 /** Native system fonts: Chinese editorial headings, no network font dependency. */
 export const journalFont = { editorialIOS: "Songti SC", editorialAndroid: "serif" } as const;
-export const journalType = { hero: 32, title: 30, heading: 20, body: 16, label: 14, caption: 13, largeTitle: 32 } as const;
+export const journalType = { hero: 32, title: 30, recordTitle: 22, heading: 20, body: 16, label: 14, caption: 13, largeTitle: 32 } as const;
 export const journalSpace = { hair: 4, small: 8, medium: 16, page: 20, large: 28 } as const;
 export const journalRadius = { chip: 10, control: 12, card: 18, sheet: 28, pill: 999 } as const;
 /** Base 180ms; sheets/menus use a slightly longer travel. */

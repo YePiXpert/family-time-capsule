@@ -1,12 +1,24 @@
 import type { LocalTimelineEvent, OutboxItem } from "../types";
 import type { LocalDraft } from "../drafts/store";
+import { savedDraftContent } from "../drafts/reading";
 
 export function mergeSavedDrafts(events: LocalTimelineEvent[], drafts: LocalDraft[], covers: Record<string, string> = {}): LocalTimelineEvent[] {
   const remoteIds = new Set(events.filter(event => event.source === "server").map(event => event.id));
-  const saved = drafts.filter(draft => draft.status === "queued" && (!draft.memoryEventId || !remoteIds.has(draft.memoryEventId)));
-  return [...events, ...saved.map((draft): LocalTimelineEvent => ({
-    id: `draft:${draft.id}`, localDraftId: draft.id, source: "local", syncState: draft.status === "published" ? null : "pending",
+  const saved = drafts.flatMap(draft => {
+    const content = savedDraftContent(draft);
+    return content && (!draft.memoryEventId || !remoteIds.has(draft.memoryEventId)) ? [{ ...draft, content }] : [];
+  });
+  const originalDrafts = new Map(drafts.flatMap(draft => draft.memoryEventId ? [[draft.memoryEventId, draft.id] as const] : []));
+  const linked = events.map(event => {
+    const localDraftId = event.source === "server" ? originalDrafts.get(event.id) : undefined;
+    return localDraftId ? { ...event, localDraftId } : event;
+  });
+  return [...linked, ...saved.map((draft): LocalTimelineEvent => ({
+    id: `draft:${draft.id}`, localDraftId: draft.id, source: "local", syncState: draft.syncedRevision === draft.revision && draft.syncIntent === "review" ? "inbox" : "pending",
     title: draft.content.title || draft.content.text.trim().slice(0, 60) || "一段成长记录",
+    bodyText: draft.content.text,
+    hasUnsavedChanges: draft.status === "editing" && draft.syncedRevision !== draft.revision,
+    participantIds: draft.content.participantIds,
     occurredAt: draft.content.occurredAt ?? draft.updatedAt, occurredAtPrecision: draft.content.occurredAt ? draft.content.occurredAtPrecision : "unknown",
     locationText: draft.content.locationText || null, childPersonId: null, ageDays: null, ageLabel: null,
     updatedAt: draft.updatedAt, assetCount: draft.content.items.length, participantNames: [],

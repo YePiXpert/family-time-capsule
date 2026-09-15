@@ -1,3 +1,6 @@
+import { MemoryReading } from "../components/MemoryReading";
+import { Disclosure } from "../components/Disclosure";
+import { dateLabel } from "../utils/format";
 import { Text } from "../components/typography";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -112,14 +115,10 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
 
   return (
     <ScrollView contentContainerStyle={s.content} style={s.screen}>
-      <Text style={s.eyebrow}>本机记录</Text>
-      <Text style={s.title}>{detail.title}</Text>
-      <View style={styles.statusRow}>
-        <View style={styles.chip}><Text style={styles.chipText}>已保存本机</Text></View>
-        <View style={[styles.chip, styles.chipSync]}><Text style={styles.chipText}>{SYNC_STATE_LABELS[detail.syncState]}</Text></View>
-        {detail.syncState === "inbox" ? <View style={[styles.chip, styles.chipReview]}><Text style={styles.chipText}>收件箱待整理</Text></View> : null}
-        {detail.syncState === "archived" && detail.memoryEventId ? <View style={[styles.chip, styles.chipReview]}><Text style={styles.chipText}>已整理入档</Text></View> : null}
-      </View>
+      <MemoryReading title={detail.title} body={detail.kind === "text_capture" ? detail.text : null}
+        date={dateLabel(detail.occurredAt, family?.timezone)}
+        status={detail.kind === "media_capture" && !fileExists ? "原件暂时无法读取" : `已保存在本机 · ${SYNC_STATE_LABELS[detail.syncState]}`}
+        media={fileExists && asset && detail.mediaType !== "document" ? <NativeMediaReader key={JSON.stringify([captureId, readerEpoch])} assets={[asset]} credentials={asset.remoteAssetId ? credentials : null} /> : null} />
       {outboxItem && outboxItem.attemptCount > 0 ? (
         <View style={s.warning}>
           <Text style={s.warningText}>上传未成功：{outboxItem.lastError}（已尝试 {outboxItem.attemptCount} 次）。原件始终保留在本机。</Text>
@@ -127,31 +126,14 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
         </View>
       ) : null}
 
-      {detail.kind === "text_capture" ? (
-        detail.text !== null ? (
-          <View style={s.card}>
-            <Text selectable style={styles.fullText}>{detail.text}</Text>
-          </View>
-        ) : (
-          <View style={s.notice}>
-            <Text style={s.noticeText}>这份文字已送达家庭收件箱；全文在收件箱中查看与整理。</Text>
-          </View>
-        )
-      ) : fileExists && asset ? (
-        detail.mediaType === "document" ? (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>{detail.fileName ?? detail.title}</Text>
-            <Text style={s.body}>本机文档可直接导出到其他 App 打开。</Text>
-          </View>
-        ) : (
-          <NativeMediaReader key={JSON.stringify([captureId, readerEpoch])} assets={[asset]} credentials={asset.remoteAssetId ? credentials : null} />
-        )
-      ) : (
-        <View style={s.warning}>
-          <Text style={s.warningText}>本机原件文件已不存在（可能被系统清理或其他 App 删除）。记录条目仍保留，不会伪装成保存成功。</Text>
-        </View>
-      )}
-
+      {detail.kind === "text_capture" && detail.text === null ? <View style={s.notice}>
+        <Text style={s.noticeText}>这份文字已送达家庭收件箱；全文在收件箱中查看与整理。</Text>
+      </View> : null}
+      {detail.kind === "media_capture" && !fileExists ? <View style={s.warning}>
+        <Text style={s.warningText}>本机原件文件已不存在。可以重新导入原件，或展开下方操作移除这条记录。</Text>
+      </View> : null}
+      {fileExists && detail.mediaType === "document" ? <Text style={s.body}>可以展开下方操作，导出文档后阅读。</Text> : null}
+      <Disclosure title="原件与本机记录">
       {detail.localUri && fileExists ? (
         <Pressable
           onPress={() =>
@@ -168,31 +150,25 @@ export function LocalCaptureDetailScreen({ route }: { route: { params: { capture
               void alert({ title: "导出失败", message: error instanceof Error ? error.message : "请稍后重试。" }),
             )
           }
+          accessibilityRole="button"
           style={s.secondaryButton}
         >
           <Text style={s.secondaryText}>导出这份原件</Text>
         </Pressable>
       ) : null}
-      <Pressable onPress={removeRecord} style={styles.remove}>
+      <Pressable accessibilityRole="button" onPress={removeRecord} style={styles.remove}>
         <Text style={styles.removeText}>从本机时间轴移除此记录</Text>
       </Pressable>
-      <Text style={styles.note}>保存、同步与整理是三件独立的事：未上传或待整理都不影响在这里阅读本机内容。</Text>
+      </Disclosure>
     </ScrollView>
   );
 }
 
 function createStyles(palette: JournalPalette) {
   return StyleSheet.create({
-  statusRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  chip: { backgroundColor: palette.softSage, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
-  chipSync: { backgroundColor: palette.softCoral },
-  chipReview: { backgroundColor: palette.warningSoft },
-  chipText: { color: palette.sage, fontSize: 12, fontWeight: "800" },
-  fullText: { color: palette.ink, fontSize: 16, lineHeight: 26 },
   retry: { minHeight: 44, justifyContent: "center" },
   retryText: { color: palette.coralDark, fontSize: 13, fontWeight: "800" },
   remove: { minHeight: 48, alignItems: "center", justifyContent: "center" },
   removeText: { color: palette.error, fontSize: 14, fontWeight: "800" },
-  note: { color: palette.muted, fontSize: 12, lineHeight: 18, textAlign: "center" },
   });
 }

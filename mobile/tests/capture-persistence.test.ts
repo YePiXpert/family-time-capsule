@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   enqueueText: vi.fn(), enqueueMedia: vi.fn(), preserveMedia: vi.fn(),
   preserveAudio: vi.fn(), removeFile: vi.fn(), reloadLocal: async () => {}, queued: vi.fn(),
   setParams: vi.fn(), focus: vi.fn(), scrollTo: vi.fn(),
-  route: { params: {} as { intent?: string } },
+  route: { params: {} as { intent?: string; localDraftId?: string; editSaved?: boolean } },
   draft: {
     id: "draft-id", status: "editing", serverRevision: 0,
     content: {
@@ -120,6 +120,7 @@ beforeEach(async () => {
   mocks.alert.mockClear();
   mocks.confirm.mockClear().mockResolvedValue(false);
   mocks.connected = false; mocks.syncing = false;
+  mocks.route.params = {}; navigation.navigate.mockClear();
   vi.mocked(preservePreparedMedia).mockReset().mockResolvedValue(undefined);
   mocks.grantSyncConsent.mockClear();
   await initializeLocalStore();
@@ -190,12 +191,47 @@ it("R03: the recording page and real save hook persist unknown time through reop
   const rows = await listLocalDrafts("local");
   expect(rows).toHaveLength(2);
   expect(rows.find(d => d.status === "queued")).toMatchObject({ status: "queued", syncIntent: "publish", content: { occurredAt: null, occurredAtPrecision: "unknown", text: "那次一起去江边，日期已经记不清" } });
+  expect(navigation.navigate).toHaveBeenLastCalledWith("Timeline", { saved: { draftId: rows.find(d => d.status === "queued")!.id, scope: "local", requestKey: expect.any(String) } });
   await act(async () => tree!.unmount());
   await initializeLocalStore();
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   expect(await listLocalDrafts("local")).toEqual(rows);
   expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
   expect((await listLocalDrafts("local")).find(d => d.status === "queued")?.content.occurredAtPrecision).toBe("unknown");
+});
+
+it("preserves the saved story during a restarted supplement and restores it when that supplement is discarded", async () => {
+  const { listTimeline } = await import("../src/storage/database");
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("已经留下的完整故事"));
+  await press("保存");
+  const saved = (await listLocalDrafts("local")).find(row => row.status === "queued")!;
+  mocks.route.params = { localDraftId: saved.id, editSaved: true };
+  await act(async () => tree!.update(createElement(CaptureScreen)));
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("补到一半的内容"));
+  expect((await listTimeline(null, "local")).find(row => row.localDraftId === saved.id)?.bodyText).toBe("已经留下的完整故事");
+  await act(async () => tree!.unmount());
+  await initializeLocalStore();
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("补到一半的内容");
+  mocks.confirm.mockResolvedValue(true);
+  await press("清空");
+  expect(mocks.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: "放弃这次补记？" }));
+  expect((await listLocalDrafts("local")).find(row => row.id === saved.id)).toMatchObject({ status: "queued", content: saved.content });
+  expect((await listTimeline(null, "local")).filter(row => row.localDraftId === saved.id)).toHaveLength(1);
+});
+
+it("stays on the composer and retains input when durable storage rejects save", async () => {
+  const { getRawMockDatabase } = await import("../../tests/mocks/expo-sqlite");
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("磁盘失败时保留这句话"));
+  getRawMockDatabase().exec("CREATE TRIGGER fail_capture_save BEFORE UPDATE ON local_draft BEGIN SELECT RAISE(ABORT, 'disk full'); END");
+  try {
+    await press("保存");
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("磁盘失败时保留这句话");
+    expect((await listLocalDrafts("local"))[0]!.status).toBe("editing");
+  } finally { getRawMockDatabase().exec("DROP TRIGGER fail_capture_save"); }
 });
 
 it.each(["exact", "approximate", "date_only", "month", "year"] as const)("recovers an incomplete legacy %s date without inventing a date", async precision => {
@@ -349,6 +385,7 @@ it("retains the same record when queueing fails and retries without duplicate pu
     await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("失败也不能丢失的记录"));
     await press("保存");
     const original = (await listLocalDrafts("local"))[0]!;
+    expect(navigation.navigate).not.toHaveBeenCalled();
     expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("失败也不能丢失的记录");
     expect(await listLocalDrafts("local")).toHaveLength(1);
     await press("继续同步");

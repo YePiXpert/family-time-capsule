@@ -15,11 +15,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   ActivityIndicator: "ActivityIndicator", Alert: { alert: vi.fn() }, Image: "Image",
   Modal: "Modal", Pressable: "Pressable", ScrollView: "ScrollView",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
   Text: "Text", TextInput: "TextInput", View: "View",
 }));
+vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "Icon" }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
 vi.mock("@react-navigation/native", () => ({
   useFocusEffect: (fn: () => void) => useEffect(fn, [fn]),
@@ -78,7 +80,7 @@ describe("本机记录详情（即存即看）", () => {
     expect(mocks.getDetail).toHaveBeenCalledWith("capture-1", null);
     expect(textOf()).toContain("小满今天叫了爸爸。");
     expect(textOf()).toContain("等待上传");
-    expect(textOf()).toContain("已保存本机");
+    expect(textOf()).toContain("已保存在本机");
   });
 
   it("原件文件缺失时如实报错并提供恢复入口，不显示“已安全保存”", async () => {

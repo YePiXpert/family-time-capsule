@@ -4,6 +4,8 @@ import { CaptureWritingPrompts } from "../components/CaptureWritingPrompts";
 import { Text, TextInput } from "../components/typography";
 import { Button } from "../components/ui";
 import { CollapsingHero } from "../components/CollapsingHero";
+import { Disclosure } from "../components/Disclosure";
+import { PrecisionDateTimeField } from "../components/PrecisionDateTimeField";
 import { removeDraftItem, pairDraftItems, isDraftDateComplete } from "../drafts/model";
 import { recordLocalIntakeDraft } from "../native/intake-store";
 import { listLocalDrafts } from "../drafts/store";
@@ -45,7 +47,7 @@ import { JournalDockHeightContext, JournalKeyboardContext } from "../navigation/
 export function CaptureScreen() {
   const navigation = useNavigation<AppNavigation>();
   const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
-  const { credentials, outbox, viewer, family, userId, syncConsent } = useAppData();
+  const { credentials, outbox, viewer, family, userId, syncConsent, people } = useAppData();
   const { queued, reloadLocal, grantSyncConsent } = useAppActions();
   const { syncing } = useSyncStatus();
   const insets = useSafeAreaInsets();
@@ -122,16 +124,25 @@ export function CaptureScreen() {
     return () => { active = false; };
   }, [route.params?.draftId, credentials, localDraftReady, continueLibraryDraft, navigation]);
   const resumeLocalDraft = capsuleDraft.resume;
+  const reopenSavedDraft = capsuleDraft.reopen;
   useEffect(() => {
     const id = route.params?.localDraftId;
     if (!id || !localDraftReady) return;
     let active = true;
     void listLocalDrafts(draftScope).then(async rows => {
       const row = rows.find(draft => draft.id === id);
-      if (active && row) { await resumeLocalDraft(row); if (active) navigation.setParams({ localDraftId: undefined }); }
+      if (!active || !row) return;
+      if (row.status === "published" && row.memoryEventId) {
+        navigation.setParams({ localDraftId: undefined, editSaved: undefined });
+        navigation.navigate("Memory", { id: row.memoryEventId });
+        return;
+      }
+      await resumeLocalDraft(row);
+      if (active && route.params?.editSaved && row.status === "queued") await reopenSavedDraft();
+      if (active) navigation.setParams({ localDraftId: undefined, editSaved: undefined });
     }).catch(e => { if (active) setMessage(e.message); });
     return () => { active = false; };
-  }, [route.params?.localDraftId, draftScope, localDraftReady, resumeLocalDraft, navigation]);
+  }, [route.params?.localDraftId, route.params?.editSaved, draftScope, localDraftReady, resumeLocalDraft, reopenSavedDraft, navigation]);
   const sendDraft = async (publish: boolean, intent?: "draft" | "review", organize = false) => {
     if (saveBusy.current) return;
     saveBusy.current = true; setBusy(true);
@@ -142,16 +153,17 @@ export function CaptureScreen() {
         setMessage("请先选择可以阅读这件事的家人，或改回全家/仅自己。");
         return;
       }
-      await capsuleDraft.save(publish, intent, organize);
+      const saved = await capsuleDraft.save(publish, intent, organize);
       haptics.success();
       await reloadLocal().catch(() => {});
       setMessage("本机已保存，网络工作会在后台继续。");
-      const row = capsuleDraft.draft;
+      const row = saved ?? capsuleDraft.draft;
       if (credentials && family && row) {
         const ids = [row.id, ...row.content.items.flatMap(item => item.localCaptureRef ? [item.localCaptureRef] : [])];
         void grantSyncConsent(syncConsent?.scope === "all" ? "all" : "selected", [...new Set([...(syncConsent?.ids ?? []), ...ids])]).catch(error => setMessage(error.message));
       } else void queued();
       await capsuleDraft.create();
+      if (row) navigation.navigate("Timeline", { saved: { draftId: row.id, scope: draftScope, requestKey: Crypto.randomUUID() } });
     } catch (error) { setMessage(error instanceof Error ? error.message : "本机保存失败。"); }
     finally { saveBusy.current = false; setBusy(false); }
   };
@@ -480,14 +492,14 @@ export function CaptureScreen() {
   const saveDisabled = busy || recording || !capsuleDraft.draft || !!capsuleDraft.error || (!text.trim() && !content?.items.length);
   const saveLabel = busy ? "正在保存…" : capsuleDraft.draft?.status === "queued" ? "继续同步" : "保存";
   const ink = colors.ink, muted = colors.muted, rim = colors.line;
-  const clear = () => void confirm({ title: "清空这次记录？", message: "原件仍会保留。", confirmLabel: "清空", destructive: true })
+  const clear = () => void confirm({ title: capsuleDraft.draft?.savedContent ? "放弃这次补记？" : "清空这次记录？", message: capsuleDraft.draft?.savedContent ? "之前保存的记录和原件仍会保留。" : "原件仍会保留。", confirmLabel: capsuleDraft.draft?.savedContent ? "放弃补记" : "清空", destructive: true })
     .then(confirmed => { if (confirmed) void capsuleDraft.discard().catch(e => setMessage(e.message)); });
 
   return (
     <KeyboardAvoidingView style={sharedStyles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView testID="capture-content" style={{ flex: 1 }} automaticallyAdjustKeyboardInsets={false} contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingTop: insets.top + 24 }]} ref={scrollRef}>
         <View style={styles.headerRow}>
-          <CollapsingHero compact titleTestID="capture-title" title="记录一刻" subtitle="一句话，也值得留下。" style={{ flex: 1 }} />
+          <CollapsingHero compact titleTestID="capture-title" title={capsuleDraft.draft?.savedContent ? "补记这一刻" : "记录一刻"} subtitle="一句话，也值得留下。" style={{ flex: 1 }} />
           {(text.trim() || content?.items.length || content?.title) && editable ? <Pressable accessibilityRole="button" accessibilityLabel="清空" disabled={recording || !!capsuleDraft.error} onPress={clear} style={styles.clear}><Text style={{ color: muted }}>清空</Text></Pressable> : null}
         </View>
         <View style={[styles.composer, { borderColor: rim, backgroundColor: colors.card }]}>
@@ -528,6 +540,12 @@ export function CaptureScreen() {
         {(capsuleDraft.unboundDrafts ?? []).map(row => <Action key={row.id} label={`把本机草稿“${row.content.title || row.content.text.slice(0, 20) || "未命名"}”用于${family?.name ?? "当前家庭"}`} hint="确认原件的目的地，不复制原件" disabled={busy || recording} onPress={() => void capsuleDraft.bind(row.id).catch(e => setMessage(e.message))} />)}
         {content ? <>
           <Text style={[styles.dateNote, { color: muted }]}>{captureDateSummary(content, capsuleDraft.draft?.captureTimeEdited, recordingTimezone)}</Text>
+          <Disclosure title="日期与更多信息">
+            <TextInput accessibilityLabel="记录标题" placeholder="标题（可以稍后补充）" value={content.title} onChangeText={title => changeDraft({ title })} editable={editable} maxLength={100} style={sharedStyles.input} />
+            <PrecisionDateTimeField occurredAt={content.occurredAt} precision={content.occurredAtPrecision} timezone={recordingTimezone} disabled={!editable} onChange={({ occurredAt, precision }) => changeDraft({ occurredAt, occurredAtPrecision: precision })} />
+            <TextInput accessibilityLabel="发生地点" placeholder="地点（可选）" value={content.locationText} onChangeText={locationText => changeDraft({ locationText })} editable={editable} maxLength={200} style={sharedStyles.input} />
+            {people?.length ? <><Text style={sharedStyles.label}>在场的家人</Text><View style={styles.readerRow}>{people.map(person => <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked: content.participantIds.includes(person.id), disabled: !editable }} disabled={!editable} onPress={() => changeDraft({ participantIds: content.participantIds.includes(person.id) ? content.participantIds.filter(id => id !== person.id) : [...content.participantIds, person.id] })} style={styles.readerChip}><Text style={{ color: colors.ink }}>{content.participantIds.includes(person.id) ? "已选 · " : ""}{person.displayName}</Text></Pressable>)}</View></> : null}
+          </Disclosure>
           {!isDraftDateComplete(content) && (!canInferCaptureTime(content) || capsuleDraft.draft?.captureTimeEdited) ? <Button title="标为时间不确定" variant="ghost" disabled={!editable} onPress={() => changeDraft({ occurredAt: null, occurredAtPrecision: "unknown" })} /> : null}
           <View style={styles.readerRow} accessibilityLabel="保存后的读者">
             {([["family", "全家"], ["members", "指定成员"], ["private", "仅自己"]] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: content.visibility === value, disabled: !editable }} disabled={!editable} onPress={() => changeDraft(value === "members" ? { visibility: value } : { visibility: value, readerUserIds: [] })} style={[styles.readerChip, { borderColor: content.visibility === value ? colors.peach : "transparent", backgroundColor: content.visibility === value ? colors.softCoral : "transparent" }]}><Text style={{ color: content.visibility === value ? ink : muted, fontSize: 13 }}>{label}</Text></Pressable>)}

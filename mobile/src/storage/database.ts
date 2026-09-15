@@ -25,6 +25,7 @@ import {
   type LocalCaptureRow,
 } from "./local-timeline";
 import { memoryCacheScope } from "../memories/cache-scope";
+import { savedDraftContent } from "../drafts/reading";
 import { LOCAL_DRAFT_SCHEMA_SQL, TIMELINE_SCHEMA_SQL, MEMORY_DETAIL_SCHEMA_SQL, MOBILE_LOCAL_SCHEMA_SQL } from "./schema";
 
 const DB_NAME = "family-time-capsule.sqlite";
@@ -355,7 +356,7 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
       : Promise.resolve([]),
     db.getAllAsync<LocalCaptureRow>(
       `SELECT * FROM local_capture WHERE sync_state <> 'archived' AND NOT EXISTS (
-        SELECT 1 FROM local_draft d, json_each(json_extract(d.snapshot_json, '$.content.items')) i
+        SELECT 1 FROM local_draft d, json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
         WHERE json_extract(i.value, '$.localCaptureRef') = local_capture.id
           AND json_extract(d.snapshot_json, '$.status') <> 'discarded'
       ) ORDER BY occurred_at DESC, id DESC`,
@@ -400,8 +401,8 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
   if (!draftScope) return timeline;
   const snapshots = await db.getAllAsync<{ snapshot_json: string }>("SELECT snapshot_json FROM local_draft WHERE scope=?", draftScope);
   const drafts = snapshots.map(row => JSON.parse(row.snapshot_json) as import("../drafts/store").LocalDraft);
-  const captureIds = [...new Set(drafts.filter(draft => draft.status === "queued")
-    .flatMap(draft => draft.content.items.flatMap(item => item.localCaptureRef ? [item.localCaptureRef] : [])))];
+  const captureIds = [...new Set(drafts.flatMap(draft =>
+    savedDraftContent(draft)?.items.flatMap(item => item.localCaptureRef ? [item.localCaptureRef] : []) ?? []))];
   // One lookup for the whole snapshot; scrolling after a large import must not
   // wait for a separate native SQLite round trip for every candidate cover.
   const coverRows = captureIds.length ? await db.getAllAsync<{ id: string; local_uri: string }>(
@@ -411,8 +412,9 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
   const coverUris = new Map(coverRows.map(row => [row.id, row.local_uri]));
   const covers: Record<string, string> = {};
   for (const draft of drafts) {
-    if (draft.status !== "queued") continue;
-    const ordered = [...draft.content.items].sort((a, b) => Number(b.id === draft.content.coverItemId) - Number(a.id === draft.content.coverItemId));
+    const content = savedDraftContent(draft);
+    if (!content) continue;
+    const ordered = [...content.items].sort((a, b) => Number(b.id === content.coverItemId) - Number(a.id === content.coverItemId));
     for (const item of ordered) {
       if (!item.localCaptureRef) continue;
       const uri = coverUris.get(item.localCaptureRef);
@@ -448,11 +450,11 @@ export async function listLocalMemoryMedia(
        AND local_uri IS NOT NULL
        AND media_type IS NOT NULL
        AND (
-         EXISTS (SELECT 1 FROM local_draft d, json_each(json_extract(d.snapshot_json, '$.content.items')) i
+         EXISTS (SELECT 1 FROM local_draft d, json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
            WHERE d.scope = ? AND json_extract(d.snapshot_json, '$.status') <> 'discarded'
              AND json_extract(i.value, '$.localCaptureRef') = local_capture.id)
          OR (? = 'local' AND NOT EXISTS (
-           SELECT 1 FROM local_draft d, json_each(json_extract(d.snapshot_json, '$.content.items')) i
+           SELECT 1 FROM local_draft d, json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
            WHERE json_extract(i.value, '$.localCaptureRef') = local_capture.id))
        )
      ORDER BY occurred_at, id`,
@@ -1160,7 +1162,8 @@ export async function getLocalCaptureDetail(
   const remote = sourceScope && row.kind === "media_capture" ? await db.getFirstAsync<{ asset_id: string }>(
     `SELECT json_extract(i.value, '$.assetId') asset_id
        FROM local_draft d,
-       json_each(CASE WHEN json_valid(d.snapshot_json) THEN json_extract(d.snapshot_json, '$.content.items') ELSE '[]' END) i
+       json_each(CASE WHEN json_valid(d.snapshot_json) THEN json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items')) ELSE '[]' END) draft_items,
+       json_each(draft_items.value) i
        WHERE d.scope = ? AND json_extract(i.value, '$.localCaptureRef') = ?
          AND typeof(json_extract(i.value, '$.assetId')) = 'text'
          AND length(json_extract(i.value, '$.assetId')) BETWEEN 1 AND 128
@@ -1192,7 +1195,7 @@ export async function removeLocalCaptureRecord(captureId: string): Promise<void>
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async tx => {
     const reference = await tx.getFirstAsync<{ id: string }>(`SELECT d.id FROM local_draft d,
-      json_each(json_extract(d.snapshot_json, '$.content.items')) i
+      json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
       WHERE json_extract(i.value, '$.localCaptureRef') = ?
       AND json_extract(d.snapshot_json, '$.status') IN ('editing', 'queued') LIMIT 1`, captureId);
     if (reference) throw new Error("这份原件仍在草稿中，请先从草稿移除引用。");
@@ -1266,7 +1269,7 @@ export async function deleteLocalCaptureRecord(captureId: string): Promise<void>
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async tx => {
     const reference = await tx.getFirstAsync<{ id: string }>(`SELECT d.id FROM local_draft d,
-      json_each(json_extract(d.snapshot_json, '$.content.items')) i
+      json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
       WHERE json_extract(i.value, '$.localCaptureRef') = ?
       AND json_extract(d.snapshot_json, '$.status') IN ('editing', 'queued') LIMIT 1`, captureId);
     if (reference) throw new Error("这份原件仍在草稿中，请先从草稿移除引用。");

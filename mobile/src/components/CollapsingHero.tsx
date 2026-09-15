@@ -5,7 +5,7 @@ import { useColorTheme } from "../theme";
 import { Text } from "./typography";
 
 /** A static reading title: scroll position never changes its size or opacity. */
-export function CollapsingHero({ title, eyebrow, subtitle, pill, accessory, style, testID, titleTestID, compact = false }: {
+export function CollapsingHero({ title, eyebrow, subtitle, pill, accessory, style, testID, titleTestID, compact = false, variant = "page" }: {
   title: string;
   eyebrow?: string;
   subtitle?: string;
@@ -15,13 +15,14 @@ export function CollapsingHero({ title, eyebrow, subtitle, pill, accessory, styl
   testID?: string;
   titleTestID?: string;
   compact?: boolean;
+  variant?: "page" | "record";
 }) {
   const { colors } = useColorTheme();
   return (
     <View style={[styles.hero, compact && styles.compact, { borderBottomColor: colors.line }, style]} testID={testID}>
       <View style={styles.heroText}>
         {eyebrow ? <Text style={[styles.eyebrow, { color: colors.coral }]}>{eyebrow}</Text> : null}
-        <Text testID={titleTestID} accessibilityRole="header" style={[styles.title, { color: colors.ink }]}>{title}</Text>
+        <Text testID={titleTestID} accessibilityRole="header" style={[styles.title, variant === "record" && { fontSize: journalType.recordTitle }, { color: colors.ink }]}>{title}</Text>
         {subtitle ? <Text style={[styles.subtitle, { color: colors.muted }]}>{subtitle}</Text> : null}
         {pill ? <View style={styles.pillSlot}>{pill}</View> : null}
       </View>
