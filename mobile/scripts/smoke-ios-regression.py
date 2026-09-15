@@ -6,6 +6,7 @@ All fixture data lives in the temporary simulator or the requested output folder
 The installed app, its entitlements and bundled JavaScript are never modified.
 """
 import argparse
+from ios_simulator import boot_simulator
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -142,8 +143,7 @@ def main():
     server = FixtureServer(media)
     server.start()
     try:
-        run("xcrun", "simctl", "boot", udid)
-        run("xcrun", "simctl", "bootstatus", udid, "-b", timeout=300)
+        boot_simulator(udid, output)
         run("xcrun", "simctl", "ui", udid, "appearance", "light")
         run("xcrun", "simctl", "install", udid, str(args.app.resolve()))
         run("xcrun", "simctl", "launch", udid, bundle)
