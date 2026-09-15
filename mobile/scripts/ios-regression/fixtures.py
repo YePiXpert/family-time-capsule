@@ -11,12 +11,13 @@ import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 
 TOKEN = "native-regression-synthetic-session"
 DURATION_SECONDS = 60
 STAMP = "2026-09-12T12:00:00.000Z"
+SYNC_CHECKPOINT = "native-fixture-checkpoint"
 VIEWER = dict(id="fixture-user", name="Native fixture", role="viewer", personId=None,
               canCapture=True, canReviewInbox=False, canCreateContributions=False, canEditEvents=False)
 FAMILY = dict(id="fixture-family", name="Synthetic family", timezone="UTC")
@@ -142,12 +143,26 @@ class FixtureHandler(BaseHTTPRequestHandler):
                                        family=FAMILY, account={"role": VIEWER["role"], "personId": None, "isGuardian": False}))
         if path == "/api/mobile/v1/sync":
             time.sleep(self.server.sync_delay)
+            query = parse_qs(urlsplit(self.path).query)
+            if query.get("protocol") != ["2"]:
+                return self.send_json({"error": "unsupported_fixture_sync_protocol"}, 400)
+            cursor = query.get("cursor", [None])[0]
+            if cursor is not None and cursor != SYNC_CHECKPOINT:
+                return self.send_json({"error": "sync_reset"}, 409)
+            mode = "delta" if cursor else "snapshot"
+            self.record["syncMode"] = mode
             event = dict(id="remote-memory", title="Remote native video fixtures", bodyText="Synthetic fixture",
                          occurredAt=STAMP, occurredAtPrecision="exact", locationText=None, childPersonId=None,
                          ageDays=None, ageLabel=None, updatedAt=STAMP, assetCount=len(memory_assets()),
                          participantNames=[], captureIds=[], cover=None)
+            # Foreground refresh is an unchanged delta. Legacy full snapshots
+            # correctly invalidate private detail permissions and close readers;
+            # they do not model the ordinary refresh this playback test checks.
             return self.send_json(dict(apiVersion=1, serverTime=STAMP, viewer=VIEWER, family=FAMILY,
-                                       people=[], events=[event], nextCursor=None))
+                people=[], events=[event] if mode == "snapshot" else [], tombstones=[], nextCursor=None,
+                sync=dict(protocol=2, mode=mode, generation="native-fixture-generation",
+                          permissionStamp="native-fixture-permissions", checkpoint=SYNC_CHECKPOINT,
+                          invalidateResources=False)))
         if path == "/api/mobile/v1/home":
             return self.send_json(dict(family=FAMILY, capabilities={"canCapture": True}, inbox={"count": 0}, pendingImports=[]))
         if path == "/api/books/projects":

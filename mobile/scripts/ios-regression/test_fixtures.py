@@ -46,6 +46,27 @@ class FixtureTransportTest(unittest.TestCase):
             self.assertEqual(failure.exception.code, expected)
         self.assertEqual(self.server.transcodes, {})
 
+    def test_sync_checkpoint_resumes_without_a_permission_reset(self):
+        headers = {"Authorization": f"Bearer {TOKEN}"}
+        with self.read("/api/mobile/v1/sync?protocol=2", **headers) as response:
+            initial = json.load(response)
+        self.assertEqual(initial["sync"]["mode"], "snapshot")
+        self.assertEqual([event["id"] for event in initial["events"]], ["remote-memory"])
+        checkpoint = initial["sync"]["checkpoint"]
+        self.assertTrue(checkpoint)
+        with self.read(f"/api/mobile/v1/sync?protocol=2&cursor={checkpoint}", **headers) as response:
+            resumed = json.load(response)
+        self.assertEqual(resumed["sync"], {**initial["sync"], "mode": "delta"})
+        self.assertFalse(resumed["sync"]["invalidateResources"])
+        self.assertEqual(resumed["events"], [])
+        self.assertEqual(resumed["tombstones"], [])
+        self.assertIsNone(resumed["nextCursor"])
+        self.assertEqual([row["syncMode"] for row in self.server.requests], ["snapshot", "delta"])
+        with self.assertRaises(HTTPError) as failure:
+            self.read("/api/mobile/v1/sync?protocol=2&cursor=unknown", **headers)
+        self.assertEqual(failure.exception.code, 409)
+        self.assertEqual(json.load(failure.exception), {"error": "sync_reset"})
+
     def test_range_beyond_file_is_rejected(self):
         with self.assertRaises(HTTPError) as failure:
             self.read("/api/media/remote-mp4", Authorization=f"Bearer {TOKEN}", Range="bytes=256-")
