@@ -16,7 +16,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (value: unknown) => value },
   AppState: { currentState: "active", addEventListener: (_type: string, listener: (state: string) => void) => { m.appListeners.add(listener); return { remove: () => m.appListeners.delete(listener) }; } },
 }));
-vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: "SafeAreaView" }));
+vi.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeAreaProvider", SafeAreaView: "SafeAreaView" }));
 vi.mock("@react-navigation/native", () => ({ usePreventRemove: (prevent: boolean, callback: () => void) => { m.prevent = prevent; m.preventHandler = callback; } }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "JournalIcon" }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null }));

@@ -4,7 +4,7 @@ import { Text } from "../components/typography";
 import { Button, IconButton } from "../components/ui";
 import { GlassSheet } from "../components/GlassSheet";
 import { JournalIcon } from "../components/JournalIcon";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import type { Credentials } from "../types";
 import type { ReaderAsset, ReaderTranscript, MediaDerivation } from "./types";
@@ -132,6 +132,9 @@ export function NativeMediaReader({
         onRequestClose={() => { if (!viewingOnly) setIndex(null); }}
         animationType={reducedMotion ? "none" : "fade"}
       >
+        {/* A native Modal has its own window; its safe-area provider keeps the
+            persistent exit button below the status bar and camera cutout. */}
+        <SafeAreaProvider>
         <SafeAreaView style={[s.screen, { flex: 1 }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: s.colors.line }}>
             {viewingOnly ? <OwnerExitControl onExit={() => onViewingExit?.()} /> : <Button title="返回" icon="arrow-left" variant="ghost" full={false} accessibilityLabel="关闭阅读器" onPress={() => setIndex(null)} />}
@@ -178,6 +181,7 @@ export function NativeMediaReader({
             />
           </View> : null}
         </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
     </>
   );
