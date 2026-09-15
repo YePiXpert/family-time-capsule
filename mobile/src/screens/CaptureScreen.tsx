@@ -17,7 +17,7 @@ import type { AiSettings } from "../ai/types";
 import { requestMobileJson, parseAiSettings } from "../api/client";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
@@ -497,14 +497,13 @@ export function CaptureScreen() {
 
   return (
     <KeyboardAvoidingView style={sharedStyles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView testID="capture-content" style={{ flex: 1 }} automaticallyAdjustKeyboardInsets={false} contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[styles.content, { paddingTop: insets.top + 24 }]} ref={scrollRef}>
+      <ScrollView testID="capture-content" style={{ flex: 1 }} automaticallyAdjustKeyboardInsets={false} contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onScrollBeginDrag={Keyboard.dismiss} contentContainerStyle={[styles.content, { paddingTop: insets.top + 24 }]} ref={scrollRef}>
         <View style={styles.headerRow}>
           <CollapsingHero compact titleTestID="capture-title" title={capsuleDraft.draft?.savedContent ? "补记这一刻" : "记录一刻"} subtitle="一句话，也值得留下。" style={{ flex: 1 }} />
           {(text.trim() || content?.items.length || content?.title) && editable ? <Pressable accessibilityRole="button" accessibilityLabel="清空" disabled={recording || !!capsuleDraft.error} onPress={clear} style={styles.clear}><Text style={{ color: muted }}>清空</Text></Pressable> : null}
         </View>
         <View style={[styles.composer, { borderColor: rim, backgroundColor: colors.card }]}>
-          {/* Let the page own scrolling so a drag inside the text also dismisses the keyboard. */}
-          <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline scrollEnabled={false} editable={editable} maxLength={5000} onChangeText={setText} placeholder="今天，有什么想记住的？" placeholderTextColor={muted} ref={textInputRef} style={[styles.textArea, { color: ink }]} textAlignVertical="top" value={text} />
+          <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline editable={editable} maxLength={5000} onChangeText={setText} placeholder="今天，有什么想记住的？" placeholderTextColor={muted} ref={textInputRef} style={[styles.textArea, { color: ink }]} textAlignVertical="top" value={text} />
           {text.length > 4500 ? <Text style={[styles.counter, { color: muted }]}>{text.length} / 5000</Text> : null}
           <View onLayout={event => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.mediaZone}>
             <Pressable accessibilityRole="button" accessibilityLabel="相册" accessibilityHint="添加照片或视频" disabled={!editable || recording} onPress={() => void pickMedia("library")} style={({ pressed }) => [styles.addMedia, { borderColor: rim, backgroundColor: colors.paper }, pressed && sharedStyles.pressed, (!editable || recording) && sharedStyles.disabled]}>
@@ -573,7 +572,10 @@ export function CaptureScreen() {
         {capsuleDraft.draft?.memoryEventId && capsuleDraft.draft.organizeOnPublish && <OrganizerPanel kind="memory_event" id={capsuleDraft.draft.memoryEventId} />}
       </ScrollView>
       <View testID="capture-save-bar" style={[styles.saveBar, { marginBottom: keyboardOpen ? 8 : dockHeight + 8, borderColor: rim, backgroundColor: colors.paper }]}>
-        <View style={styles.visibility}><JournalIcon name={content?.visibility === "private" ? "lock" : "users"} size={15} color={muted} /><Text style={{ color: muted, fontSize: 12 }}>{visibilityLabel}</Text></View>
+        <View style={styles.saveTools}>
+          <View style={styles.visibility}><JournalIcon name={content?.visibility === "private" ? "lock" : "users"} size={15} color={muted} /><Text style={{ color: muted, fontSize: 12 }}>{visibilityLabel}</Text></View>
+          {keyboardOpen ? <Button title="收起键盘" variant="ghost" full={false} onPress={Keyboard.dismiss} /> : null}
+        </View>
         <Button testID="capture-save" title={capsuleDraft.draft?.status === "published" ? "已保存" : saveLabel} accessibilityLabel={saveLabel} icon="check" variant="primary" disabled={saveDisabled || capsuleDraft.draft?.status === "published"} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? content!.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} />
       </View>
     </KeyboardAvoidingView>
@@ -607,7 +609,8 @@ const styles = StyleSheet.create({
   readerRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 4 },
   readerChip: { minHeight: 44, justifyContent: "center", borderWidth: 1, borderColor: "transparent", paddingHorizontal: 12, borderRadius: 24 },
   saveBar: { marginHorizontal: 20, marginTop: 8, borderTopWidth: 1, paddingTop: 10, gap: 8 },
-  visibility: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  saveTools: { flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", columnGap: 16 },
+  visibility: { flexDirection: "row", alignItems: "center", justifyContent: "center", flexShrink: 1, gap: 6 },
   saveButton: { minHeight: 56, borderRadius: 28, borderWidth: 1, overflow: "hidden", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   saveLabel: { fontSize: 16, fontWeight: "600" },
   warningCard: { borderRadius: journalRadius.control, padding: 12, gap: 6 },
