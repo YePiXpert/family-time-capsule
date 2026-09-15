@@ -19,10 +19,12 @@ export type { AlertSheetOptions, ConfirmSheetOptions } from "./decision-queue";
 export type GlassSheetProps = {
   visible: boolean;
   onClose: () => void;
+  /** iOS native dismissal has completed; safe to remove the presenting screen. */
+  onDismiss?: () => void;
   children: ReactNode;
 };
 
-export function GlassSheet({ visible, onClose, children }: GlassSheetProps) {
+export function GlassSheet({ visible, onClose, onDismiss, children }: GlassSheetProps) {
   const { scheme } = useColorTheme();
   const { reducedMotion } = useAccessibleEffects();
   const insets = useSafeAreaInsets();
@@ -72,7 +74,7 @@ export function GlassSheet({ visible, onClose, children }: GlassSheetProps) {
   const scrimOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={dismiss} onDismiss={onDismiss} statusBarTranslucent>
       <GestureHandlerRootView style={styles.fill}>
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: journalGlass.scrim[scheme], opacity: scrimOpacity }]} />
         <Pressable accessibilityRole="button" accessibilityLabel="关闭" onPress={dismiss} style={StyleSheet.absoluteFill} />
