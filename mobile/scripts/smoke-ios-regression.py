@@ -22,6 +22,7 @@ from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).with_name("ios-regression")))
 from fixtures import FixtureServer, generate_media  # noqa: E402
+from checkpoints import NativeCheckpoints  # noqa: E402
 
 
 def run(*arguments, timeout=180, log=None):
@@ -252,43 +253,54 @@ def main():
             test("baseline-scroll", ["testLargeListScrollMetrics"])
             report["success"] = True
             return
-        test("journal-save-and-read", ["testSavedJournalReadingAndSupplementAfterRelaunch"])
-        with sqlite3.connect(db_path) as db:
-            saved = [json.loads(row[0]) for row in db.execute("SELECT snapshot_json FROM local_draft WHERE scope='local'")]
-        journal = [row for row in saved if "A saved supplement." in row["content"]["text"]]
-        assert len(journal) == 1 and journal[0]["status"] == "queued", "Saved supplement must remain one durable local record"
-        assert not journal[0].get("savedContent"), "Confirmed save must replace the prior reading snapshot"
-        report["journalSave"] = dict(recordCount=len(journal), revision=journal[0]["revision"], status=journal[0]["status"])
-        test("local-playback", ["testLocalMP4AndMOVPlayback"])
-        test("layout-and-scroll", ["testKeyboardAndCoverGeometry", "testLargeListScrollMetrics"])
-        seed_import(db_path, container, media)
-        test("import-selection", ["testImportSelectionPersistsAndCreatesOnlySelectedReferences"])
-        report["importSelection"] = verify_import(db_path)
-        # Same local records, fresh ordinary login screen. Credentials are entered
-        # using UIKit controls and persisted by the real SecureStore path.
-        with sqlite3.connect(db_path) as db:
-            db.execute("UPDATE meta SET value='0' WHERE key='welcome_done'")
-        test("authenticated-playback", ["testAuthenticatedRemotePlaybackAndRecovery"])
-        test("family-viewing", ["testFamilyViewingHidesEditingAndRequiresOwnerExit"])
-        media_requests = [row for row in server.requests if re.fullmatch(r"/api/media/[^/]+", row["path"])]
-        assert media_requests and all(row["authorized"] for row in media_requests), "Native media read omitted Authorization"
-        for identifier in ("remote-mp4", "remote-mov", "remote-hevc", "compatible-mp4", "family-video"):
-            assert any(row["path"] == f"/api/media/{identifier}" and row.get("responseStatus") == 206 and row.get("responseBytes", 0) > 2
-                       for row in media_requests), f"Missing actual AVPlayer authenticated range read: {identifier}"
-        transcodes = [row for row in server.requests if row["kind"] == "transcode"]
-        transcode_paths = [row["path"] for row in transcodes]
-        assert transcode_paths.count("/api/media/remote-corrupt/derivations") == 1
-        assert transcode_paths.count("/api/media/remote-hevc/derivations") <= 1
-        assert all(path in ("/api/media/remote-corrupt/derivations", "/api/media/remote-hevc/derivations")
-                   for path in transcode_paths), "Network or permission failure incorrectly requested a compatibility transcode"
-        report["hevcPlayback"] = "compatible transcode" if "/api/media/remote-hevc/derivations" in transcode_paths else "direct native HEVC"
-        viewing_writes = [row for row in server.requests if row["phase"] == "family-viewing"
-                          and row["method"] not in ("GET", "HEAD") and row["path"] != "/fixture/control"]
-        assert not viewing_writes, "Family viewing unexpectedly sent a mutation request"
-        report["familyViewing"] = {"mutationRequests": 0}
-        with sqlite3.connect(db_path) as db:
-            assert db.execute("SELECT COUNT(*) FROM local_capture").fetchone()[0] == 403
-            assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        # XCTest terminates the app after each case. Keep independent fixture
+        # phases running so one UI failure does not hide all later diagnostics.
+        # Every failure is retained and still blocks creation of the device IPA.
+        checkpoints = NativeCheckpoints(report)
+        with checkpoints.check("journal-save-and-read"):
+            test("journal-save-and-read", ["testSavedJournalReadingAndSupplementAfterRelaunch"])
+            with sqlite3.connect(db_path) as db:
+                saved = [json.loads(row[0]) for row in db.execute("SELECT snapshot_json FROM local_draft WHERE scope='local'")]
+            journal = [row for row in saved if "A saved supplement." in row["content"]["text"]]
+            assert len(journal) == 1 and journal[0]["status"] == "queued", "Saved supplement must remain one durable local record"
+            assert not journal[0].get("savedContent"), "Confirmed save must replace the prior reading snapshot"
+            report["journalSave"] = dict(recordCount=len(journal), revision=journal[0]["revision"], status=journal[0]["status"])
+        with checkpoints.check("local-playback"):
+            test("local-playback", ["testLocalMP4AndMOVPlayback"])
+        with checkpoints.check("layout-and-scroll"):
+            test("layout-and-scroll", ["testKeyboardAndCoverGeometry", "testLargeListScrollMetrics"])
+        with checkpoints.check("import-selection"):
+            seed_import(db_path, container, media)
+            test("import-selection", ["testImportSelectionPersistsAndCreatesOnlySelectedReferences"])
+            report["importSelection"] = verify_import(db_path)
+        with checkpoints.check("authenticated-playback-and-family-viewing"):
+            # Family viewing depends on the actual login in the preceding case.
+            # Credentials use UIKit controls and the real SecureStore path.
+            with sqlite3.connect(db_path) as db:
+                db.execute("UPDATE meta SET value='0' WHERE key='welcome_done'")
+            test("authenticated-playback", ["testAuthenticatedRemotePlaybackAndRecovery"])
+            test("family-viewing", ["testFamilyViewingHidesEditingAndRequiresOwnerExit"])
+            media_requests = [row for row in server.requests if re.fullmatch(r"/api/media/[^/]+", row["path"])]
+            assert media_requests and all(row["authorized"] for row in media_requests), "Native media read omitted Authorization"
+            for identifier in ("remote-mp4", "remote-mov", "remote-hevc", "compatible-mp4", "family-video"):
+                assert any(row["path"] == f"/api/media/{identifier}" and row.get("responseStatus") == 206 and row.get("responseBytes", 0) > 2
+                           for row in media_requests), f"Missing actual AVPlayer authenticated range read: {identifier}"
+            transcodes = [row for row in server.requests if row["kind"] == "transcode"]
+            transcode_paths = [row["path"] for row in transcodes]
+            assert transcode_paths.count("/api/media/remote-corrupt/derivations") == 1
+            assert transcode_paths.count("/api/media/remote-hevc/derivations") <= 1
+            assert all(path in ("/api/media/remote-corrupt/derivations", "/api/media/remote-hevc/derivations")
+                       for path in transcode_paths), "Network or permission failure incorrectly requested a compatibility transcode"
+            report["hevcPlayback"] = "compatible transcode" if "/api/media/remote-hevc/derivations" in transcode_paths else "direct native HEVC"
+            viewing_writes = [row for row in server.requests if row["phase"] == "family-viewing"
+                              and row["method"] not in ("GET", "HEAD") and row["path"] != "/fixture/control"]
+            assert not viewing_writes, "Family viewing unexpectedly sent a mutation request"
+            report["familyViewing"] = {"mutationRequests": 0}
+        with checkpoints.check("local-storage-integrity"):
+            with sqlite3.connect(db_path) as db:
+                assert db.execute("SELECT COUNT(*) FROM local_capture").fetchone()[0] == 403
+                assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+        checkpoints.require_success()
         report["success"] = True
     finally:
         (output / "result.json").write_text(json.dumps(report, indent=2) + "\n")

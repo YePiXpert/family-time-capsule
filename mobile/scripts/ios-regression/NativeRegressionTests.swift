@@ -187,7 +187,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
         tap("记录一刻")
         let input = element("capture-text")
-        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        wait("Capture input did not become usable", timeout: 30) { input.exists && input.isEnabled && input.isHittable }
         input.tap()
         input.typeText("Synthetic journal seaside story")
         tap("capture-save")
