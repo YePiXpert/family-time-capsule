@@ -280,6 +280,9 @@ def main():
                 db.execute("UPDATE meta SET value='0' WHERE key='welcome_done'")
             test("authenticated-playback", ["testAuthenticatedRemotePlaybackAndRecovery"])
             test("family-viewing", ["testFamilyViewingHidesEditingAndRequiresOwnerExit"])
+            sync_modes = [row.get("syncMode") for row in server.requests if row["path"] == "/api/mobile/v1/sync"]
+            assert "snapshot" in sync_modes and "delta" in sync_modes, "Native foreground sync did not resume its checkpoint"
+            report["foregroundSync"] = {"checkpointResumed": True}
             media_requests = [row for row in server.requests if re.fullmatch(r"/api/media/[^/]+", row["path"])]
             assert media_requests and all(row["authorized"] for row in media_requests), "Native media read omitted Authorization"
             for identifier in ("remote-mp4", "remote-mov", "remote-hevc", "compatible-mp4", "family-video"):
