@@ -215,7 +215,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   return (
     <ScrollView contentContainerStyle={s.content} style={s.screen}>
       {showStandaloneCover ? <Image source={{ uri: localCover! }} style={styles.cover} /> : null}
-      <NativeMediaReader credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone,memory?.occurredAtPrecision ?? summary?.occurredAtPrecision):undefined})) ?? [])} />
+      <NativeMediaReader previewIndex={0} credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone,memory?.occurredAtPrecision ?? summary?.occurredAtPrecision):undefined})) ?? [])} />
       <MemoryReading title={title} date={occurredAt ? [dateLabel(occurredAt, family?.timezone, precision), ageLabel].filter(Boolean).join(" · ") : undefined}
         visibility={memory?.visibility === "private" ? memory.isAuthor ? "仅自己可见" : "仅作者可见" : memory?.visibility === "members" ? "指定成员可见" : memory?.visibility === "family" ? "全家可见" : undefined}
         body={savedEdit?.bodyText ?? memory?.bodyText ?? summary?.bodyText}

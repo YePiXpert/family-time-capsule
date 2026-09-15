@@ -111,6 +111,22 @@ async function mountVideo(local = false) {
   await press("打开阅读器：小美.mov");
 }
 
+it("keeps a mixed memory compact without dropping the other media from its reader", async () => {
+  await act(async () => { tree = create(createElement(NativeMediaReader, { credentials, previewIndex: 1, assets: [
+    { id: "audio-one", type: "audio", filename: "妈妈的声音", mimeType: "audio/wav" },
+    { id: "photo-one", type: "image", filename: "封面合照", mimeType: "image/jpeg" },
+    { id: "audio-two", type: "audio", filename: "爸爸的声音", mimeType: "audio/wav" },
+  ] })); });
+  expect(tree!.root.findAll(node => String(node.type) === "Pressable" && String(node.props.accessibilityLabel).startsWith("打开阅读器："))).toHaveLength(1);
+  expect(text()).toContain("共 3 份素材");
+  await press("打开阅读器：封面合照");
+  expect(mocks.active).toBe(0);
+  await press("上一份"); expect(mocks.active).toBe(1);
+  await press("下一份"); expect(mocks.active).toBe(0);
+  await press("下一份"); expect(mocks.active).toBe(1);
+  await press("关闭阅读器"); expect(mocks.active).toBe(0);
+});
+
 it("creates only the active player, controls audio and releases it on image navigation and closing", async () => {
   mocks.get.mockResolvedValue({ jobs: [], transcript: { text: "妈妈的原话", edited: false, segments: [{ startSeconds: 10, endSeconds: 15, text: "十秒处的原话" }] } });
   await act(async () => { tree = create(createElement(NativeMediaReader, { credentials, assets: [
