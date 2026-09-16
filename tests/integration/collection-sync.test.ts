@@ -35,14 +35,18 @@ it("replays lost creation and append replies exactly once, and rejects changed p
   expect(getCollection(context,a.id).items.map(i=>i.memoryEventId)).toEqual([one,two]);
 });
 it("keeps invisible existing items during an additive sync and refuses unavailable new sources atomically",()=>{
-  const a=syncCollection(context,create());
+  const original=create(),a=syncCollection(context,original);
   const other=randomUUID();getDb().insert(user).values({...actor,id:other,email:`${other}@fixture.invalid`,familyId:context.familyId}).run();
   getDb().update(memoryEvent).set({visibility:"private",createdByUserId:other}).where(eq(memoryEvent.id,one)).run();
   try{
     expect(getCollection(context,a.id).items[0]!.source).toBeNull();
+    // A lost response might already have committed: this denial cannot authorize
+    // discarding the immutable operation and constructing a fresh album.
+    expect(()=>syncCollection(context,original)).toThrowError(expect.objectContaining({code:"source_unavailable",status:403}));
+    expect(getCollection(context,a.id).revision).toBe(a.revision);
     const b=syncCollection(context,{mutationId:randomUUID(),target:{collectionId:a.id,baseRevision:a.revision},items:[{clientItemId:randomUUID(),memoryEventId:two}]});
     expect(getDb().select().from(collectionItem).where(eq(collectionItem.collectionId,a.id)).all().map(i=>i.memoryEventId)).toEqual([one,two]);
-    expect(()=>syncCollection(context,{mutationId:randomUUID(),target:{collectionId:a.id,baseRevision:b.revision},items:[{clientItemId:randomUUID(),memoryEventId:one}]})).toThrow("source_unavailable");
+    expect(()=>syncCollection(context,{mutationId:randomUUID(),target:{collectionId:a.id,baseRevision:b.revision},items:[{clientItemId:randomUUID(),memoryEventId:one}]})).toThrowError(expect.objectContaining({code:"source_unavailable_not_applied",status:403}));
     expect(getCollection(context,a.id).revision).toBe(b.revision);
   }finally{getDb().update(memoryEvent).set({visibility:"family",createdByUserId:actor.id}).where(eq(memoryEvent.id,one)).run();}
 });

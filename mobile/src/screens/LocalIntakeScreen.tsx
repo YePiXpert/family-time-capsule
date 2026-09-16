@@ -181,7 +181,7 @@ function LocalIntakeSession({ route, navigation, scope, knownIdentity, verified 
       await reload();
       if (!isCurrent()) return;
       if (result.draftId) {
-        navigation.navigate("MainTabs", { screen: "Capture", params: { localDraftId: result.draftId, requestKey: Date.now() } });
+        navigation.navigate("Capture", { scope, target: { kind: "local", draftId: result.draftId } });
       } else if (upload && credentials && family) {
         setMessage("已确认上传本批原件，未选素材也仍保留。文字不会自动变成记忆。");
         if (result.uploadIds.length) {
@@ -227,11 +227,11 @@ function LocalIntakeSession({ route, navigation, scope, knownIdentity, verified 
         {linked && linked.scope === scope ? <>
           <Button title="应用挑选到草稿" variant="primary" disabled={!ready || linked.status !== "editing"} onPress={() => void choose("draft", linked, false, true)} />
           {linked.status !== "editing" ? <Text style={s.body}>关联草稿当前不可编辑。先在记录页继续编辑，再应用挑选。</Text> : <Text style={s.body}>只调整本批素材的引用与封面；其他素材和正文保持不变。Live Photo 两个原件需要一起保留或移除。</Text>}
-          <Button title="查看关联草稿" disabled={busy || !knownIdentity} onPress={() => navigation.navigate("MainTabs", { screen: "Capture", params: { localDraftId: linked.id, requestKey: Date.now() } })} />
+          <Button title="查看关联草稿" disabled={busy || !knownIdentity} onPress={() => navigation.navigate("Capture", { scope, target: { kind: "local", draftId: linked.id } })} />
         </> : <>
           {linked?.content.text ? <View style={s.card}><Text style={s.cardTitle}>原本机草稿</Text><Text style={s.body}>{linked.content.text}</Text></View> : null}
           <Text style={s.body}>这批素材关联的本机草稿尚未绑定当前家庭。原件和正文仍保留，请在记录页核对去向后继续。</Text>
-          <Button title="到记录页核对本机草稿" disabled={busy || !knownIdentity} onPress={() => navigation.navigate("MainTabs", { screen: "Capture" })} />
+          <Button title="到记录页核对本机草稿" disabled={busy || !knownIdentity} onPress={() => navigation.navigate("Capture", { scope, target: { kind: "new" } })} />
         </>}
       </> : null}
     </> : null}

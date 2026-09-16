@@ -5,9 +5,9 @@
  * 目标是女儿 18 岁再打开也不过时。
  */
 :root {
-  --background: var(--journal-paper); /* 暖纸色 */
-  --foreground: var(--journal-ink); /* 暖墨色 */
-  --accent: var(--journal-coral); /* 低饱和蜜桃 */
+  --background: var(--journal-paper); /* 中性底色 */
+  --foreground: var(--journal-ink); /* 正文 */
+  --accent: var(--journal-coral); /* 苔绿 */
   --surface: var(--journal-card);
   --surface-raised: var(--journal-elevated);
   --surface-muted: var(--journal-apricot);

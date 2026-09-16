@@ -113,7 +113,8 @@ export function useArchiveSync({ session, reloadLocal, setHome, setMessage }: Op
       if (!me || me.status !== "ready" || generation !== destGenRef.current) return;
       const edits = await syncMemoryEdits(activeCredentials,
         memoryEditScope(activeCredentials, me.user.id, me.family.id)!, me.user.id, me.family.id,
-        () => generation === destGenRef.current && activeCredentials === credentialsRef.current);
+        () => generation === destGenRef.current && activeCredentials === credentialsRef.current,
+        id => authorizeUpload({ id, kind: "text_capture", payload: { text: "本次记录补充素材" }, createdAt: new Date().toISOString(), attemptCount: 0, lastError: null }));
       if (generation !== destGenRef.current) return;
       const summary = await syncArchive(activeCredentials, {
         isCurrent: () => generation === destGenRef.current && activeCredentials === credentialsRef.current,

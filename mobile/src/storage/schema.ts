@@ -45,6 +45,15 @@ export const MEMORY_DETAIL_SCHEMA_SQL = `
 
 export const MOBILE_LOCAL_SCHEMA_SQL = `
   ${LOCAL_DRAFT_SCHEMA_SQL}
+  CREATE TABLE IF NOT EXISTS local_album (
+    scope TEXT NOT NULL, id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+    revision INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(scope,id)
+  );
+  CREATE INDEX IF NOT EXISTS local_album_scope_updated_idx ON local_album(scope,updated_at DESC);
+  CREATE TABLE IF NOT EXISTS local_work_session (
+    scope TEXT NOT NULL, id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL, PRIMARY KEY(scope,id)
+  );
   CREATE TABLE IF NOT EXISTS local_memory_edit (
     scope TEXT NOT NULL, memory_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
     updated_at TEXT NOT NULL, PRIMARY KEY(scope, memory_id)

@@ -5,10 +5,11 @@ import { MemoryReading } from "../components/MemoryReading";
 import { Disclosure } from "../components/Disclosure";
 import { getServerCacheRevision, useServerPermissionRevision } from "../storage/cache-lifecycle";
 import { MemoryEditor } from "../memories/MemoryEditor";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { NativeReaderAsset } from "../media/NativeMediaReader";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import {
   createMobileContribution,
@@ -23,6 +24,7 @@ import {
   getCachedMemoryDetail,
   removeCachedMemoryDetail,
   listLocalMemoryMedia,
+  getLocalCaptureDetail,
   type LocalMemoryMedia,
 } from "../storage/database";
 import { useSharedStyles } from "../theme";
@@ -70,6 +72,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   const { reloadLocal } = useAppActions();
   const [memory, setMemory] = useState<MobileMemory | null>(null);
   const [localMedia, setLocalMedia] = useState<LocalMemoryMedia[]>([]);
+  const [pendingMedia, setPendingMedia] = useState<NativeReaderAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,6 +197,18 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
 
   const savedEdit = memory && !denied && localEdit
     ? localEdit.savedContent ?? localEdit.submission?.content ?? (localEdit.baseRevision >= (memory.titleRevision ?? 0) ? localEdit.base : null) : null;
+  useEffect(() => {
+    let active = true;
+    const items = savedEdit?.items ?? [];
+    void Promise.all(items.map(async item => {
+      if (!item.localCaptureRef) return null;
+      const original = await getLocalCaptureDetail(item.localCaptureRef, ownDraftScope);
+      return original?.localUri ? { id: original.captureId, type: original.mediaType ?? "document", filename: item.caption || original.fileName || original.title, mimeType: "", localUri: original.localUri } as NativeReaderAsset : null;
+    })).then(rows => { if (active) setPendingMedia(rows.filter((item): item is NativeReaderAsset => item !== null)); }).catch(() => { if (active) setPendingMedia([]); });
+    return () => { active = false; };
+  }, [savedEdit?.items, ownDraftScope]);
+
+
   const title = savedEdit?.title ?? memory?.title ?? summary?.title ?? "记忆详情";
   const dateChanged = savedEdit && (savedEdit.occurredAt !== memory?.occurredAt || savedEdit.precision !== memory?.occurredAtPrecision);
   const ageLabel = dateChanged ? null : memory ? memory.ageLabel : summary?.ageLabel;
@@ -204,6 +219,14 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
     : memory ? memory.participants.map(person => person.displayName) : summary?.participantNames ?? [];
   const localCover = summary?.localCoverUri && (summary.source === "local" || localMedia.some(asset => asset.localUri === summary.localCoverUri)) ? summary.localCoverUri : null;
   const useLocalMedia = !denied && (online === false || !credentials);
+  const readerAssets: NativeReaderAsset[] = [
+    ...(useLocalMedia ? localMedia.map(asset => ({ id: asset.captureId, type: asset.mediaType, filename: asset.title, mimeType: "", localUri: asset.localUri }))
+      : memory?.assets.map(asset => ({ ...asset, thumbnailId: asset.thumbnailPath?.split("/").at(-1), dateLabel: occurredAt ? dateLabel(occurredAt, family?.timezone, precision) : undefined })) ?? []),
+    ...pendingMedia,
+  ];
+  const pendingCover = savedEdit?.items?.find(item => item.id === savedEdit.newCoverItemId)?.localCaptureRef;
+  const coverId = pendingCover ?? savedEdit?.coverAssetId ?? memory?.coverAssetId ?? summary?.cover?.assetId;
+  const coverIndex = readerAssets.findIndex(asset => asset.id === coverId || (!pendingCover && useLocalMedia && asset.localUri === localCover));
   const showStandaloneCover = Boolean(localCover) && (
     useLocalMedia
       ? !localMedia.some((asset) => asset.mediaType === "image")
@@ -215,7 +238,7 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
   return (
     <ScrollView contentContainerStyle={s.content} style={s.screen}>
       {showStandaloneCover ? <Image source={{ uri: localCover! }} style={styles.cover} /> : null}
-      <NativeMediaReader previewIndex={0} credentials={credentials} assets={useLocalMedia ? localMedia.map(asset => ({id:asset.captureId,type:asset.mediaType,filename:asset.title,mimeType:'',localUri:asset.localUri})) : (memory?.assets.map(asset => ({...asset,thumbnailId:asset.thumbnailPath?.split('/').at(-1),dateLabel:occurredAt?dateLabel(occurredAt,family?.timezone,memory?.occurredAtPrecision ?? summary?.occurredAtPrecision):undefined})) ?? [])} />
+      <NativeMediaReader previewIndex={Math.max(0, coverIndex)} credentials={credentials} assets={readerAssets} />
       <MemoryReading title={title} date={occurredAt ? [dateLabel(occurredAt, family?.timezone, precision), ageLabel].filter(Boolean).join(" · ") : undefined}
         visibility={memory?.visibility === "private" ? memory.isAuthor ? "仅自己可见" : "仅作者可见" : memory?.visibility === "members" ? "指定成员可见" : memory?.visibility === "family" ? "全家可见" : undefined}
         body={savedEdit?.bodyText ?? memory?.bodyText ?? summary?.bodyText}
@@ -223,8 +246,8 @@ function MemoryDetailScreen({ route, navigation, cacheScope }: Props & { cacheSc
         {location ? <Text style={s.intro}>{location}</Text> : null}
       </MemoryReading>
 
-      {memory ? <MemoryEditor compact memory={memory} onSaved={load}>
-        {credentials && viewer?.canEditEvents ? <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Collections", { eventIds: [route.params.id] })} style={s.secondaryButton}><Text style={s.secondaryText}>加入相册</Text></Pressable> : null}
+      {memory && ownDraftScope ? <MemoryEditor compact memory={memory} onSaved={load} onEdit={() => navigation.navigate("Capture", { scope: ownDraftScope, target: { kind: "memory", memoryId: memory.id } })} onAddToAlbum={credentials && viewer?.canEditEvents ? () => navigation.navigate("Collections", { scope: ownDraftScope, refs: [{ kind: "memory", scope: ownDraftScope, id: route.params.id }] }) : undefined}>
+
         <OrganizerPanel kind="memory_event" id={memory.id} onSaved={() => void load()} />
         {memory.assets.filter(asset => asset.type === "audio" || asset.type === "video").map(asset => <OrganizerPanel key={asset.id} kind="asset" id={asset.id} label={asset.filename} onSaved={() => void load()} />)}
       </MemoryEditor> : null}

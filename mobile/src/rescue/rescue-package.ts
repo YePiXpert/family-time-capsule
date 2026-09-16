@@ -1,5 +1,8 @@
 import JSZip from "jszip";
 import { sha256 } from "@noble/hashes/sha2.js";
+import type { MemoryEditRescueGroup } from "../storage/database";
+import type { MediaCapturePayload } from "../types";
+import { parseRescueEditSnapshot, rescueEditCaptureRefs, validateRescueEditScope } from "./edit-archive";
 
 /**
  * 本机救援包（M4）：导出尚未同步的“用户自有本机记录”（文字全文、
@@ -13,7 +16,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
  */
 
 export const RESCUE_FORMAT = "ftc-local-rescue";
-export const RESCUE_VERSION = 1;
+export const RESCUE_VERSION = 2;
 export const MANIFEST_PATH = "manifest.json";
 const MAX_ENTRIES = 10000;
 const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024; // 2GB 解压上限，防炸弹
@@ -46,9 +49,17 @@ export type RescueManifestEntry = {
 
 export type RescueManifest = {
   format: typeof RESCUE_FORMAT;
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   captures: RescueManifestEntry[];
+  memoryEdits?: RescueEditManifestGroup[];
+};
+
+export type RescueEditManifestGroup = Omit<MemoryEditRescueGroup, "originals"> & {
+  originals: (RescueManifestEntry & { lastModified: number | null; source: MediaCapturePayload["source"] })[];
+};
+export type RescueRestoredEditGroup = Omit<MemoryEditRescueGroup, "originals"> & {
+  originals: (MemoryEditRescueGroup["originals"][number] & { bytes: Uint8Array })[];
 };
 
 export type RescueIO = {
@@ -62,7 +73,7 @@ function toHex(bytes: Uint8Array): string {
 
 function entryFileName(item: RescueItem): string {
   const extension = item.fileName?.match(/\.([a-z0-9]{1,8})$/iu)?.[1]?.toLowerCase();
-  return `files/${item.captureId}${extension ? `.${extension}` : ""}`;
+  return `files/${item.captureId}.${extension ?? "bin"}`;
 }
 
 function isSafeEntryPath(path: string): boolean {
@@ -76,11 +87,13 @@ function isSafeEntryPath(path: string): boolean {
 export async function buildRescuePackage(
   items: RescueItem[],
   io: RescueIO,
+  memoryEdits: MemoryEditRescueGroup[] = [],
 ): Promise<Uint8Array> {
   const zip = new JSZip();
   const entries: RescueManifestEntry[] = [];
+  const editEntries: RescueEditManifestGroup[] = [];
   let totalBytes = 0;
-  for (const item of items) {
+  async function encodeItem(item: RescueItem): Promise<RescueManifestEntry> {
     let file: string | null = null;
     let digest: string | null = null;
     let bytes = 0;
@@ -95,7 +108,7 @@ export async function buildRescuePackage(
       bytes = content.byteLength;
       zip.file(file, content);
     }
-    entries.push({
+    return {
       captureId: item.captureId,
       kind: item.kind,
       title: item.title,
@@ -107,16 +120,32 @@ export async function buildRescuePackage(
       file,
       sha256: digest,
       bytes,
-    });
+    };
+  }
+  for (const item of items) entries.push(await encodeItem(item));
+  for (const group of memoryEdits) {
+    const scope = validateRescueEditScope(group.scope);
+    const snapshot = parseRescueEditSnapshot(group.snapshot, scope, group.memoryId);
+    const originals: RescueEditManifestGroup["originals"] = [];
+    for (const original of group.originals) {
+      const p = original.payload as MediaCapturePayload & { memoryEditOwnerScope?: string; memoryEditTarget?: string };
+      if ((p.memoryEditOwnerScope !== undefined || p.memoryEditTarget !== undefined) && (p.memoryEditOwnerScope !== scope || p.memoryEditTarget !== group.memoryId)) throw new Error("编辑原件与所属记录不一致。");
+      originals.push({ ...await encodeItem({ captureId: original.id, kind: "media_capture", title: original.title, occurredAt: original.occurredAt,
+        localUri: p.localUri, fileName: p.fileName, mediaType: p.mediaType, mimeType: p.mimeType, text: null }), lastModified: p.lastModified, source: p.source });
+    }
+    editEntries.push({ scope, memoryId: group.memoryId, snapshot, originals });
   }
   const manifest: RescueManifest = {
     format: RESCUE_FORMAT,
     version: RESCUE_VERSION,
     exportedAt: new Date().toISOString(),
     captures: entries,
+    memoryEdits: editEntries,
   };
   zip.file(MANIFEST_PATH, JSON.stringify(manifest));
-  return zip.generateAsync({ type: "uint8array" });
+  const result = await zip.generateAsync({ type: "uint8array" });
+  await verifyRescuePackage(result);
+  return result;
 }
 
 /** 解析并校验救援包：格式、路径、数量、解压上限、每文件 SHA-256。 */
@@ -151,24 +180,65 @@ export async function verifyRescuePackage(
   }
   if (
     manifest.format !== RESCUE_FORMAT ||
-    manifest.version !== RESCUE_VERSION ||
+    ![1, RESCUE_VERSION].includes(manifest.version) ||
+    (manifest.version === 1 && manifest.memoryEdits !== undefined) ||
+    (manifest.version === 2 && !Array.isArray(manifest.memoryEdits)) ||
     !Array.isArray(manifest.captures) ||
     manifest.captures.length > MAX_ENTRIES
   ) {
     throw new Error("救援包格式或版本不兼容。");
   }
-  for (const entry of manifest.captures) {
-    if (!entry.file || !entry.sha256) continue;
+  const ids = new Set<string>(), referencedFiles = new Set<string>();
+  function validateEntry(entry: RescueManifestEntry, edit = false) {
+    const allowed = ["captureId", "kind", "title", "occurredAt", "mediaType", "fileName", "mimeType", "text", "file", "sha256", "bytes", ...(edit ? ["lastModified", "source"] : [])];
+    if (!entry || Object.keys(entry).some(key => !allowed.includes(key)) || !/^[\w-]{1,128}$/u.test(entry.captureId) || ids.has(entry.captureId) ||
+      !["text_capture", "media_capture"].includes(entry.kind) || typeof entry.title !== "string" || entry.title.length > 1000 ||
+      typeof entry.occurredAt !== "string" || !Number.isFinite(Date.parse(entry.occurredAt)) ||
+      !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || entry.bytes > MAX_TOTAL_BYTES ||
+      (entry.fileName !== null && (typeof entry.fileName !== "string" || entry.fileName.length > 1024)) ||
+      (entry.mimeType !== null && (typeof entry.mimeType !== "string" || entry.mimeType.length > 200)) ||
+      (entry.text !== null && (typeof entry.text !== "string" || entry.text.length > 100_000))) throw new Error("救援包记录字段无效。");
+    ids.add(entry.captureId);
+    if (entry.kind === "text_capture") {
+      if (entry.file !== null || entry.sha256 !== null || entry.bytes !== 0 || typeof entry.text !== "string") throw new Error("救援包文字记录无效。");
+      return;
+    }
+    if (!["image", "video", "audio", "document"].includes(entry.mediaType ?? "") || entry.text !== null) throw new Error("救援包原件类型无效。");
+    if (entry.file === null) {
+      if (entry.sha256 !== null || entry.bytes !== 0) throw new Error("救援包缺失原件标记无效。");
+      return;
+    }
+    if (typeof entry.file !== "string" || !isSafeEntryPath(entry.file) || entry.file === MANIFEST_PATH || referencedFiles.has(entry.file) ||
+      typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(entry.sha256)) throw new Error("救援包原件引用无效。");
+    referencedFiles.add(entry.file);
     const content = files.get(entry.file);
     if (!content) throw new Error(`救援包缺少文件：${entry.file}`);
-    if (toHex(sha256(content)) !== entry.sha256) {
-      throw new Error(`文件校验失败：${entry.fileName ?? entry.file}`);
-    }
+    if (content.byteLength !== entry.bytes || toHex(sha256(content)) !== entry.sha256) throw new Error(`文件校验失败：${entry.fileName ?? entry.file}`);
   }
+  if (Object.keys(manifest).some(key => !["format", "version", "exportedAt", "captures", "memoryEdits"].includes(key))) throw new Error("救援包清单字段无效。");
+  for (const entry of manifest.captures) validateEntry(entry);
+  const targets = new Set<string>();
+  for (const group of manifest.memoryEdits ?? []) {
+    if (!group || Object.keys(group).some(key => !["scope", "memoryId", "snapshot", "originals"].includes(key)) || !Array.isArray(group.originals)) throw new Error("救援包编辑关系无效。");
+    validateRescueEditScope(group.scope);
+    const target = JSON.stringify([group.scope, group.memoryId]);
+    if (targets.has(target)) throw new Error("救援包包含重复编辑。");
+    targets.add(target);
+    group.snapshot = parseRescueEditSnapshot(group.snapshot, group.scope, group.memoryId);
+    const refs = rescueEditCaptureRefs(group.snapshot);
+    for (const original of group.originals) {
+      validateEntry(original, true);
+      if (original.kind !== "media_capture" || !["camera", "library", "recorder", "files", "system_share"].includes(original.source) ||
+        (original.lastModified !== null && (typeof original.lastModified !== "number" || !Number.isFinite(original.lastModified))) || !refs.delete(original.captureId)) throw new Error("救援包编辑原件关联无效。");
+    }
+    if (refs.size) throw new Error("救援包缺少编辑原件信息。");
+  }
+  if (ids.size + targets.size > MAX_ENTRIES || [...files.keys()].some(file => file !== MANIFEST_PATH && !referencedFiles.has(file))) throw new Error("救援包包含多余原件或条目过多。");
   return { manifest, files };
 }
 
 export type RescueImportSink = {
+  restoreMemoryEdit?(group: RescueRestoredEditGroup): Promise<boolean>;
   captureExists(captureId: string): Promise<boolean>;
   restoreText(input: { captureId: string; title: string; text: string }): Promise<void>;
   restoreMedia(input: {
@@ -190,6 +260,7 @@ export async function importRescuePackage(
   sink: RescueImportSink,
 ): Promise<{ imported: number; skipped: number; missingFiles: number }> {
   const { manifest, files } = await verifyRescuePackage(bytes);
+  if (manifest.memoryEdits?.length && !sink.restoreMemoryEdit) throw new Error("当前版本无法恢复记录编辑，请升级后再恢复。");
   let imported = 0;
   let skipped = 0;
   let missingFiles = 0;
@@ -226,6 +297,15 @@ export async function importRescuePackage(
       bytes: content,
     });
     imported += 1;
+  }
+  for (const group of manifest.memoryEdits ?? []) {
+    const missing = group.originals.filter(original => !original.file || !files.has(original.file));
+    if (missing.length) { missingFiles += missing.length; continue; }
+    const restored = await sink.restoreMemoryEdit!({ scope: group.scope, memoryId: group.memoryId, snapshot: group.snapshot,
+      originals: group.originals.map(original => ({ id: original.captureId, title: original.title, occurredAt: original.occurredAt,
+        payload: { localUri: "", fileName: original.fileName ?? `${original.captureId}.bin`, mimeType: original.mimeType ?? "application/octet-stream",
+          mediaType: original.mediaType as MediaCapturePayload["mediaType"], source: original.source, lastModified: original.lastModified }, bytes: files.get(original.file!)! })) });
+    if (restored) imported += 1; else skipped += 1;
   }
   return { imported, skipped, missingFiles };
 }

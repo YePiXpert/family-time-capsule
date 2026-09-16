@@ -27,7 +27,7 @@ it("shows all 30 originals and adds five references to a single persistent draft
   for (const checkbox of selectors.slice(0, 5)) await act(async () => checkbox.props.onPress());
   mocks.request.mockResolvedValue({}); await press("加入一条新记忆");
   expect(JSON.parse(mocks.request.mock.lastCall?.[2].body)).toMatchObject({ operation: "draft", assetIds: ["asset-0", "asset-1", "asset-2", "asset-3", "asset-4"], targetId: "new-draft-id" });
-  expect(mocks.navigation.navigate).toHaveBeenCalledWith("MainTabs", { screen: "Capture", params: { draftId: "new-draft-id" } });
+  expect(mocks.navigation.navigate).toHaveBeenCalledWith("Capture", { scope: JSON.stringify([mocks.app.credentials.serverUrl, mocks.app.credentials.instanceId, mocks.app.userId, mocks.app.family.id]), target: { kind: "serverDraft", draftId: "new-draft-id" } });
   expect(tree!.root.findAll(n => n.props.accessibilityRole === "checkbox" && String(n.type) === "Pressable")).toHaveLength(30);
 });
 it("opens an unorganized recording, edits people/time and requires explicit confirmation before deletion", async () => {
@@ -89,5 +89,5 @@ it("saves the chosen draft cover and closes the picker before navigating to the 
   const coverWrite = mocks.request.mock.calls.find(args => args[1] === "/api/mobile/v1/drafts/new-draft-id")!;
   expect(JSON.parse(coverWrite[2].body)).toMatchObject({ expectedRevision: 4, content: { coverItemId: "item-1" } });
   expect(sequence).toEqual(["close picker", "navigate"]);
-  expect(mocks.navigation.navigate).toHaveBeenCalledWith("MainTabs", { screen: "Capture", params: { draftId: "new-draft-id" } });
+  expect(mocks.navigation.navigate).toHaveBeenCalledWith("Capture", { scope: JSON.stringify([mocks.app.credentials.serverUrl, mocks.app.credentials.instanceId, mocks.app.userId, mocks.app.family.id]), target: { kind: "serverDraft", draftId: "new-draft-id" } });
 });

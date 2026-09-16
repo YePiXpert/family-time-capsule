@@ -1,4 +1,5 @@
 import * as Sharing from "expo-sharing";
+import { randomUUID } from "expo-crypto";
 import { Directory, File, Paths } from "expo-file-system";
 import { buildRescuePackage, importRescuePackage } from "./rescue-package";
 import {
@@ -6,6 +7,8 @@ import {
   insertRestoredMediaCapture,
   insertRestoredTextCapture,
   listPendingRescueItems,
+  listMemoryEditRescueGroups,
+  restoreMemoryEditRescueGroup,
 } from "../storage/database";
 
 /**
@@ -30,8 +33,8 @@ export async function exportRescuePackage(): Promise<string> {
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error("此设备暂不支持系统分享，无法导出救援包。");
   }
-  const items = await listRescueItems();
-  if (items.length === 0) throw new Error("本机没有未入档的记录，无需救援包。");
+  const [items, edits] = await Promise.all([listRescueItems(), listMemoryEditRescueGroups()]);
+  if (items.length === 0 && edits.length === 0) throw new Error("本机没有未入档的记录，无需救援包。");
   const bytes = await buildRescuePackage(items, {
     exists: (uri) => {
       try {
@@ -40,8 +43,8 @@ export async function exportRescuePackage(): Promise<string> {
         return false;
       }
     },
-    readBytes: async (uri) => new File(uri).bytes() as unknown as Uint8Array,
-  });
+    readBytes: async (uri) => await new File(uri).bytes(),
+  }, edits);
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const target = new File(rescueCacheDirectory(), `family-time-capsule-rescue-${stamp}.zip`);
   target.write(bytes as unknown as Uint8Array);
@@ -53,7 +56,7 @@ export async function exportRescuePackage(): Promise<string> {
     mimeType: "application/zip",
     dialogTitle: "保存本机救援包",
   });
-  return `已导出 ${items.length} 条本机记录。请保存到 App 之外的位置；它不是完整家庭备份。`;
+  return `已导出 ${items.length} 条本机记录${edits.length ? `、${edits.length} 条记录编辑` : ""}。请保存到 App 之外的位置；它不是完整家庭备份。`;
 }
 
 /** 从用户选择的救援包文件恢复；返回统计。 */
@@ -64,10 +67,27 @@ export async function restoreRescuePackage(uri: string): Promise<{
 }> {
   const source = new File(uri);
   if (!source.exists) throw new Error("选择的救援包文件不存在。");
-  const bytes = source.bytes() as unknown as Uint8Array;
+  const bytes = await source.bytes();
   const capturesDirectory = new Directory(Paths.document, "captures");
   capturesDirectory.create({ idempotent: true, intermediates: true });
   return importRescuePackage(bytes, {
+    restoreMemoryEdit: async (group) => {
+      const written: File[] = [];
+      try {
+        const originals = group.originals.map(original => {
+          const extension = original.payload.fileName.match(/\.([a-z0-9]{1,8})$/iu)?.[1]?.toLowerCase() ?? "bin";
+          // Never overwrite a current original before the database checks scope.
+          const target = new File(capturesDirectory, `rescue-${randomUUID()}.${extension}`);
+          target.write(original.bytes);
+          written.push(target);
+          if (!target.exists || target.size !== original.bytes.byteLength) throw new Error("恢复编辑原件写入失败。");
+          return { id: original.id, title: original.title, occurredAt: original.occurredAt, payload: { ...original.payload, localUri: target.uri } };
+        });
+        const restored = await restoreMemoryEditRescueGroup({ scope: group.scope, memoryId: group.memoryId, snapshot: group.snapshot, originals });
+        if (!restored) for (const file of written) file.delete();
+        return restored;
+      } catch (error) { for (const file of written) if (file.exists) file.delete(); throw error; }
+    },
     captureExists: (captureId) => captureRecordExists(captureId),
     restoreText: async (input) => {
       await insertRestoredTextCapture({

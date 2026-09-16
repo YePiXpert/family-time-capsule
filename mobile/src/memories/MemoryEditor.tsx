@@ -12,15 +12,16 @@ import { isOccurredAtPrecision } from "../utils/occurred-precision";
 import { memoryEditContent, memoryEditScope, sameMemoryEdit, type LocalMemoryEdit, type MemoryEditContent } from "./edit-model";
 import { changeMemoryEdit } from "./edit-store";
 import { useMemoryEdit } from "./use-memory-edit";
+import { Disclosure } from "../components/Disclosure";
 import { dateLabel } from "../utils/format";
 
-function EditorButton({ label, onPress, pending, primary = false }: { label: string; onPress: () => void; pending: boolean; primary?: boolean }) {
+function EditorButton({ label, onPress, pending, primary = false, testID }: { testID?: string; label: string; onPress: () => void; pending: boolean; primary?: boolean }) {
   const s = useSharedStyles();
-  return <Pressable accessibilityRole="button" disabled={pending} onPress={onPress} style={primary ? s.primaryButton : s.secondaryButton}><Text style={primary ? s.primaryText : s.secondaryText}>{label}</Text></Pressable>;
+  return <Pressable testID={testID} accessibilityRole="button" disabled={pending} onPress={onPress} style={primary ? s.primaryButton : s.secondaryButton}><Text style={primary ? s.primaryText : s.secondaryText}>{label}</Text></Pressable>;
 }
 
 type Sharing = { visibility: MemorySharingPatch["visibility"]; readers: string[]; revision: number };
-export function MemoryEditor({ memory, onSaved, compact = false, children }: { memory: MobileMemory; onSaved: () => Promise<void>; compact?: boolean; children?: ReactNode }) {
+export function MemoryEditor({ memory, onSaved, compact = false, children, onEdit, onAddToAlbum }: { onEdit?: () => void; onAddToAlbum?: () => void; memory: MobileMemory; onSaved: () => Promise<void>; compact?: boolean; children?: ReactNode }) {
   const s = useSharedStyles();
   const { credentials, family, people, online, viewer } = useAppData();
   const { queued, reloadLocal } = useAppActions();
@@ -56,6 +57,8 @@ export function MemoryEditor({ memory, onSaved, compact = false, children }: { m
     baseRevision: editingBase.current?.revision ?? memory.titleRevision!, timezone: editingBase.current?.timezone ?? timezone,
     savedContent: null, submission: null, conflict: null, blocked: false, problem: null, revision: 0, updatedAt: new Date().toISOString() });
   const dirty = edit && !sameMemoryEdit(edit.content, edit.base);
+  const savedMilestone = edit?.savedContent?.milestoneType !== undefined ? edit.savedContent.milestoneType : edit?.submission?.content.milestoneType;
+  const displayedMilestone = savedMilestone !== undefined ? savedMilestone : memory.milestoneType;
   const openContent = () => {
     setMessage(null);
     const useLocal = edit && (dirty || edit.savedContent || edit.submission || edit.conflict || edit.baseRevision >= memory.titleRevision!);
@@ -126,6 +129,18 @@ export function MemoryEditor({ memory, onSaved, compact = false, children }: { m
     if (!credentials || pending) return;
     setPending(true); setMessage(null);
     try {
+      if (onEdit && scope) {
+        await changeMemoryEdit(scope, memory.id, current => {
+          const base = current ?? { ...seed(), atomicEditVersion: memory.atomicEditVersion };
+          if (base.conflict) throw new Error("请先核对两份修改，再标记这一刻。");
+          const values = base.savedContent ?? base.submission?.content ?? memoryEditContent(memory);
+          const milestone = values.milestoneType === milestoneType ? null : milestoneType;
+          return { ...base, content: { ...base.content, milestoneType: milestone }, savedContent: { ...values, milestoneType: milestone }, blocked: false, problem: null };
+        });
+        await queued();
+        if (active.current) await onSaved();
+        return;
+      }
       const values = { expectedRevision: memory.titleRevision!, milestoneType: memory.milestoneType === milestoneType ? null : milestoneType };
       await patchMobileMemory(credentials, memory.id, { ...values, mutationId: mutationId(values) });
       if (active.current) await onSaved();
@@ -153,7 +168,7 @@ export function MemoryEditor({ memory, onSaved, compact = false, children }: { m
         setPending(true);
         void changeMemoryEdit(scope, memory.id, current => {
           if (!current?.conflict) return current;
-          if (!current.content.title.trim() || (current.content.precision !== "unknown" && !current.content.occurredAt)) throw new Error("请填写标题，并按所选精度选择时间。");
+          if (current.content.precision !== "unknown" && !current.content.occurredAt) throw new Error("请按所选精度选择时间。");
           return { ...current, base: current.conflict.content, baseRevision: current.conflict.revision, savedContent: current.content,
             conflict: null, submission: null, blocked: false, problem: null };
         })
@@ -170,13 +185,24 @@ export function MemoryEditor({ memory, onSaved, compact = false, children }: { m
           .finally(() => { if (active.current) setPending(false); });
       }} />
     </> : null}
-    {!content && !sharing ? <>
-      <EditorButton pending={pending || restoring || !scope || Boolean(restoreError)} label={compact ? dirty ? "继续补记" : "补记" : dirty ? "继续修改这件事" : "修改这件事"} onPress={openContent} />
-      {compact ? <Pressable accessibilityRole="button" accessibilityLabel="整理与权限" accessibilityState={{ expanded: toolsOpen }} onPress={() => setToolsOpen(value => !value)} style={s.secondaryButton}><Text style={s.secondaryText}>{toolsOpen ? "收起整理工具" : "整理与权限"}</Text></Pressable> : null}
-      {!compact || toolsOpen ? <>
+    {!content && !sharing && onEdit ? <>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <EditorButton testID="record-edit" pending={pending || restoring || !scope || Boolean(restoreError)} label={dirty ? "继续编辑" : "编辑"} onPress={onEdit} />
+        <Pressable testID="record-first" accessibilityRole="button" accessibilityLabel="第一次" accessibilityState={{ selected: displayedMilestone === "first_time", disabled: pending || Boolean(edit?.conflict) }} disabled={pending || Boolean(edit?.conflict)} onPress={() => void mark("first_time")} style={displayedMilestone === "first_time" ? s.primaryButton : s.secondaryButton}><Text style={displayedMilestone === "first_time" ? s.primaryText : s.secondaryText}>第一次</Text></Pressable>
+        {onAddToAlbum ? <EditorButton pending={pending} label="加入相册" onPress={onAddToAlbum} /> : null}
+      </View>
+      <Disclosure title="更多整理">
+        <EditorButton pending={pending || Boolean(edit?.conflict)} label={displayedMilestone === "other" ? "取消值得记住标记" : "标为值得记住"} onPress={() => void mark("other")} />
+        {children}
+      </Disclosure>
+    </> : null}
+    {!content && !sharing && !onEdit ? <>
+      <EditorButton testID="record-edit" pending={pending || restoring || !scope || Boolean(restoreError)} label={onEdit ? dirty ? "继续编辑" : "编辑" : compact ? dirty ? "继续补记" : "补记" : dirty ? "继续修改这件事" : "修改这件事"} onPress={onEdit ?? openContent} />
+      {compact && !onEdit ? <Pressable accessibilityRole="button" accessibilityLabel="整理与权限" accessibilityState={{ expanded: toolsOpen }} onPress={() => setToolsOpen(value => !value)} style={s.secondaryButton}><Text style={s.secondaryText}>{toolsOpen ? "收起整理工具" : "整理与权限"}</Text></Pressable> : null}
+      {!compact || toolsOpen || onEdit ? <>
       <Text style={s.label}>标记这一刻</Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{[["first_time", "第一次"], ["other", "值得记住"]].map(([value, label]) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: memory.milestoneType === value }} disabled={pending || online === false} onPress={() => void mark(value!)} style={memory.milestoneType === value ? s.primaryButton : s.secondaryButton}><Text style={memory.milestoneType === value ? s.primaryText : s.secondaryText}>{label}</Text></Pressable>)}</View>
-      {memory.visibility ? <EditorButton pending={pending} label="管理分享" onPress={() => { setMessage(null); setSharing({ visibility: memory.visibility!, readers: memory.readerUserIds ?? [], revision: memory.titleRevision! }); }} /> : null}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{[["first_time", "第一次"], ["other", "值得记住"]].map(([value, label]) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: memory.milestoneType === value }} disabled={pending || (!onEdit && online === false)} onPress={() => void mark(value!)} style={memory.milestoneType === value ? s.primaryButton : s.secondaryButton}><Text style={memory.milestoneType === value ? s.primaryText : s.secondaryText}>{label}</Text></Pressable>)}</View>
+      {memory.visibility && !onEdit ? <EditorButton pending={pending} label="管理分享" onPress={() => { setMessage(null); setSharing({ visibility: memory.visibility!, readers: memory.readerUserIds ?? [], revision: memory.titleRevision! }); }} /> : null}
       {children}
       </> : null}
     </> : null}

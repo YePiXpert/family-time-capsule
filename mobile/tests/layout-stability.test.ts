@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { LocalTimelineEvent } from "../src/types";
 import type { LocalDraft } from "../src/drafts/store";
+import type { LocalMemoryEdit } from "../src/memories/edit-model";
 
 const mocks = vi.hoisted(() => ({
   app: { credentials: null as unknown, events: [] as LocalTimelineEvent[], family: { id: "family", timezone: "UTC" }, home: null, outbox: [], people: [], viewer: null as { id: string; canEditEvents: boolean; canCapture: boolean } | null, userId: undefined as string | undefined, syncing: false },
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   navigation: { navigate: vi.fn(), setParams: vi.fn() }, sync: vi.fn(), reload: vi.fn(), dismiss: vi.fn(),
   cardRenders: vi.fn(),
   unfinished: null as { scope: string; rows: LocalDraft[]; error: string | null } | null,
+  unfinishedEdits: null as { scope: string; rows: LocalMemoryEdit[]; error: string | null } | null,
 }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ children }: { children: unknown }) => children }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "Icon" }));
@@ -31,6 +33,7 @@ vi.mock("../src/components/ContextMenu", () => {
 });
 vi.mock("../src/screens/PendingScreen", () => ({ usePendingImports: () => [] }));
 vi.mock("../src/drafts/use-resumable-drafts", () => ({ useResumableDrafts: () => mocks.unfinished }));
+vi.mock("../src/memories/use-resumable-edits", () => ({ useResumableMemoryEdits: (scope: string | null, enabled: boolean) => enabled && scope === mocks.unfinishedEdits?.scope ? mocks.unfinishedEdits : null }));
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => ({ ...mocks.app, ...mocks.status, runSync: mocks.sync, reloadLocal: mocks.reload }),
   useAppData: () => mocks.app,
@@ -48,7 +51,7 @@ const { SyncBanner } = await import("../src/components/SyncBanner");
 let tree: ReactTestRenderer | undefined;
 const event = (id = "memory-a"): LocalTimelineEvent => ({ id, title: "今天的照片", occurredAt: "2026-09-01T12:00:00Z", occurredAtPrecision: "exact", locationText: null, childPersonId: null, ageDays: null, ageLabel: null, updatedAt: "2026-09-01T12:00:00Z", assetCount: 1, participantNames: [], captureIds: [], cover: { assetId: "cover", mediaAssetId: "photo", type: "image", mimeType: "image/jpeg", path: "/cover" }, localCoverUri: null, source: "server", syncState: null });
 const flatten = (style: unknown): Record<string, unknown> => Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean).map(flatten)) : style as Record<string, unknown>;
-beforeEach(() => { vi.clearAllMocks(); mocks.app.events = []; mocks.status.syncing = false; mocks.status.message = null; mocks.app.credentials = null; mocks.unfinished = null; mocks.app.viewer = null; mocks.app.userId = undefined; mocks.app.family = { id: "family", timezone: "UTC" }; });
+beforeEach(() => { vi.clearAllMocks(); mocks.app.events = []; mocks.status.syncing = false; mocks.status.message = null; mocks.app.credentials = null; mocks.unfinished = null; mocks.unfinishedEdits = null; mocks.app.viewer = null; mocks.app.userId = undefined; mocks.app.family = { id: "family", timezone: "UTC" }; });
 afterEach(async () => { if (tree) await act(() => tree!.unmount()); tree = undefined; });
 
 it("reserves the same cover frame before loading, after loading and after failure", async () => {
@@ -140,7 +143,27 @@ it("opens an interrupted draft from home with its durable draft identity", async
   mocks.unfinished = { scope: "local", error: null, rows: [{ id: "unfinished", content: { text: "写到一半的海边日记", title: "", items: [] } } as unknown as LocalDraft] };
   await act(() => { tree = create(createElement(TimelineScreen)); });
   await act(() => tree!.root.findByProps({ testID: "timeline-resume-draft" }).props.onPress());
-  expect(mocks.navigation.navigate).toHaveBeenCalledWith("Capture", { localDraftId: "unfinished" });
+  expect(mocks.navigation.navigate).toHaveBeenCalledWith("Capture", { scope: "local", target: { kind: "local", draftId: "unfinished", editSaved: false } });
+});
+
+it("resumes a server supplement in the same memory editor and hides it after changing family or losing edit permission", async () => {
+  mocks.app.credentials = { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "synthetic" };
+  mocks.app.viewer = { id: "owner", canEditEvents: true, canCapture: true };
+  mocks.app.userId = "owner";
+  const scope = JSON.stringify(["https://fixture.invalid", "instance", "owner", "family"]);
+  mocks.unfinishedEdits = { scope, error: null, rows: [{ scope, memoryId: "server-memory", content: { title: "", bodyText: "还没补完的第一次游泳" } } as LocalMemoryEdit] };
+  await act(() => { tree = create(createElement(TimelineScreen)); });
+  const button = tree!.root.findByProps({ testID: "timeline-resume-memory-edit" });
+  expect(button.props.accessibilityLabel).toBe("继续补记：还没补完的第一次游泳");
+  await act(() => button.props.onPress());
+  expect(mocks.navigation.navigate).toHaveBeenCalledWith("Capture", { scope, target: { kind: "memory", memoryId: "server-memory" } });
+  mocks.app.viewer.canEditEvents = false;
+  await act(() => tree!.update(createElement(TimelineScreen)));
+  expect(tree!.root.findAllByProps({ testID: "timeline-resume-memory-edit" })).toHaveLength(0);
+  mocks.app.viewer.canEditEvents = true;
+  mocks.app.family = { id: "other-family", timezone: "UTC" };
+  await act(() => tree!.update(createElement(TimelineScreen)));
+  expect(tree!.root.findAllByType("Text" as never).flatMap(node => node.children).join(" ")).not.toContain("还没补完的第一次游泳");
 });
 
 it("carries exact selected records into a book, preserves multi-selection on long press and clears it on family change", async () => {
@@ -173,8 +196,7 @@ it("keeps a chosen month in the same virtual list when background sync adds newe
   const scrollToOffset = vi.fn();
   await act(() => { tree = create(createElement(TimelineScreen), { createNodeMock: node => node.type === "FlatList" ? { scrollToOffset } : null }); });
   const list = tree!.root.findByType("FlatList" as never);
-  expect(tree!.root.findAllByProps({ testID: "month-picker" })).toHaveLength(0);
-  await act(() => tree!.root.findByProps({ accessibilityLabel: "回看与筛选" }).props.onPress());
+  expect(tree!.root.findAllByProps({ testID: "month-picker" })).toHaveLength(1);
   await act(() => tree!.root.findByProps({ testID: "month-picker" }).props.onPress());
   const month = tree!.root.find(node => String(node.type) === "Pressable" && node.props.accessibilityLabel === "2026 年 8 月，本机 1 条记录");
   await act(() => month.props.onPress());
@@ -198,7 +220,6 @@ it("clears a previous filter once a saved record arrives and opens its reader wi
   mocks.app.events = [event(), august];
   const scrollToOffset = vi.fn(), scrollToIndex = vi.fn();
   await act(() => { tree = create(createElement(TimelineScreen), { createNodeMock: node => node.type === "FlatList" ? { scrollToOffset, scrollToIndex } : null }); });
-  await act(() => tree!.root.findByProps({ accessibilityLabel: "回看与筛选" }).props.onPress());
   await act(() => tree!.root.findByProps({ testID: "month-picker" }).props.onPress());
   await act(() => tree!.root.findByProps({ accessibilityLabel: "2026 年 8 月，本机 1 条记录" }).props.onPress());
   const props = { route: { params: { saved: { draftId: "fresh", scope: "local", requestKey: "save-one" } } } };

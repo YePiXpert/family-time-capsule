@@ -1,9 +1,7 @@
 import { SyncBanner } from "../components/SyncBanner";
-import { journalMotion, journalShadow } from "../design/tokens";
-import { createRef, memo, useContext, useMemo, useRef, useState, type RefObject } from "react";
-import { BlurTargetView } from "expo-blur";
+import { journalMotion } from "../design/tokens";
+import { memo, useContext, useMemo, useState } from "react";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { GlassSurface } from "../components/GlassSurface";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { JournalCaptureActionHeightContext, JournalDockHeightContext, JournalKeyboardContext, useJournalKeyboardState } from "./dock-metrics";
 import { useAccessibleEffects } from "../design/use-effects";
@@ -20,6 +18,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppData } from "../state/AppContext";
 import { haptics } from "../design/haptics";
 import { TimelineScreen } from "../screens/TimelineScreen";
+import { draftReadingScope } from "../drafts/reading";
+import { LocalAlbumScreen } from "../screens/LocalAlbumScreen";
+import { MaterialPickerScreen } from "../screens/MaterialPickerScreen";
+import { WorkPreviewScreen } from "../screens/WorkPreviewScreen";
 import { CaptureScreen } from "../screens/CaptureScreen";
 import { InboxScreen } from "../screens/InboxScreen";
 import { SettingsHubScreen } from "../screens/SettingsHubScreen";
@@ -62,28 +64,28 @@ function navigationTheme(palette: JournalPalette, dark: boolean): Theme {
 }
 
 const tabMeta: Record<string, { label: string; icon: JournalIconName }> = {
-  Timeline: { label: "日常", icon: "growth" },
-  Works: { label: "回看", icon: "book" },
+  Timeline: { label: "记录", icon: "growth" },
+  Works: { label: "相册", icon: "book" },
   Profile: { label: "我的", icon: "person" },
 };
 
-function JournalTabBar({ state, descriptors, navigation, target, onHeight, onActionHeight }: BottomTabBarProps & { target: RefObject<View | null>; onHeight: (height: number) => void; onActionHeight: (height: number) => void }) {
-  const { viewer, credentials, displayMode } = useAppData();
+function JournalTabBar({ state, descriptors, navigation, onHeight, onActionHeight }: BottomTabBarProps & { onHeight: (height: number) => void; onActionHeight: (height: number) => void }) {
+  const { viewer, credentials, displayMode, userId, family } = useAppData();
+  const scope = draftReadingScope(credentials, userId, viewer?.id, family?.id);
   const { reducedMotion } = useAccessibleEffects();
-  const { colors, dark } = useColorTheme();
+  const { colors } = useColorTheme();
   const insets = useSafeAreaInsets();
   const keyboardOpen = useContext(JournalKeyboardContext);
   const current = state.routes[state.index];
   const canCapture = !credentials || viewer?.canCapture;
   if (!current) return null;
-  return <View pointerEvents={keyboardOpen ? "none" : "box-none"} accessibilityElementsHidden={keyboardOpen} importantForAccessibility={keyboardOpen ? "no-hide-descendants" : "auto"} style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10), opacity: keyboardOpen ? 0 : 1 }]}>
-    {current.name !== "Capture" && canCapture ? <Pressable onLayout={event => onActionHeight(event.nativeEvent.layout.height + 12)} accessibilityRole="button" accessibilityLabel="记录一刻" onPress={() => navigation.navigate("Capture")} style={({ pressed }) => [styles.floatingCapture, { backgroundColor: colors.coral, boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, pressed && !reducedMotion && styles.pressed]}>
+  return <View pointerEvents={keyboardOpen ? "none" : "box-none"} accessibilityElementsHidden={keyboardOpen} importantForAccessibility={keyboardOpen ? "no-hide-descendants" : "auto"} style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 10), backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.line, opacity: keyboardOpen ? 0 : 1 }]}>
+    {scope && canCapture ? <Pressable onLayout={event => onActionHeight(event.nativeEvent.layout.height + 12)} accessibilityRole="button" accessibilityLabel="记一刻" onPress={() => navigation.getParent()?.navigate("Capture", { scope, target: { kind: "new" } })} style={({ pressed }) => [styles.floatingCapture, { backgroundColor: colors.coral }, pressed && !reducedMotion && styles.pressed]}>
       <JournalIcon name="plus" color={colors.onCoral} size={22} />
-      <Text style={[styles.captureLabel, { color: colors.onCoral }]}>记录一刻</Text>
+      <Text style={[styles.captureLabel, { color: colors.onCoral }]}>记一刻</Text>
     </Pressable> : null}
-    <View onLayout={event => onHeight(event.nativeEvent.layout.height)} style={[styles.tabRow, { boxShadow: dark ? journalShadow.floatDark : journalShadow.float }, displayMode === "simple" && { minHeight: 84 }]}>
-      <GlassSurface target={target} tier="dock" radius={28} />
-      {state.routes.filter(route => route.name !== "Capture").map(route => {
+    <View onLayout={event => onHeight(event.nativeEvent.layout.height)} style={[styles.tabRow, displayMode === "simple" && { minHeight: 84 }]}>
+      {state.routes.map(route => {
         const meta = tabMeta[route.name] ?? { label: route.name, icon: "growth" as JournalIconName };
         const focused = current.key === route.key;
         return <Pressable key={route.key} accessibilityRole="tab" accessibilityLabel={meta.label} accessibilityState={{ selected: focused }} testID={`tab-${route.name.toLowerCase()}`} onPress={() => {
@@ -108,14 +110,8 @@ function MainTabs() {
   const dockHeight = barHeight + Math.max(insets.bottom, 10);
   const [actionHeight, setActionHeight] = useState(64);
   const keyboardOpen = useJournalKeyboardState();
-  const targets = useRef(new Map<string, RefObject<View | null>>());
-  const targetFor = (key: string) => {
-    if (!targets.current.has(key)) targets.current.set(key, createRef<View>());
-    return targets.current.get(key)!;
-  };
   return <JournalKeyboardContext.Provider value={keyboardOpen}><JournalCaptureActionHeightContext.Provider value={actionHeight}><JournalDockHeightContext.Provider value={dockHeight}><Tabs.Navigator
-    tabBar={props => <JournalTabBar {...props} onHeight={setBarHeight} onActionHeight={setActionHeight} target={targetFor(props.state.routes[props.state.index]?.key ?? "empty")} />}
-    screenLayout={({ children, route }) => <BlurTargetView ref={targetFor(route.key)} style={styles.fill}>{children}</BlurTargetView>}
+    tabBar={props => <JournalTabBar {...props} onHeight={setBarHeight} onActionHeight={setActionHeight} />}
     screenOptions={{
       headerStyle: { backgroundColor: colors.paper }, headerShadowVisible: false,
       headerTitleStyle: { color: colors.ink, fontWeight: "600" },
@@ -123,10 +119,8 @@ function MainTabs() {
       animation: reducedMotion ? "none" : "fade", transitionSpec: { animation: "timing", config: { duration: reducedMotion ? 0 : journalMotion.duration } },
     }}>
     <Tabs.Screen component={TimelineScreen} name="Timeline" options={{ headerShown: false }} />
-    <Tabs.Screen component={WorksScreen} name="Works" options={{ title: "回看", headerShown: false }} />
+    <Tabs.Screen component={WorksScreen} name="Works" options={{ title: "相册", headerShown: false }} />
     <Tabs.Screen component={SettingsHubScreen} name="Profile" options={{ title: "我的", headerShown: false }} />
-    {/* Keep the existing capture route for pending shares and durable draft links. */}
-    <Tabs.Screen component={CaptureScreen} name="Capture" options={{ title: "记录一刻", headerShown: false, animation: "none", transitionSpec: { animation: "timing", config: { duration: 0 } } }} />
   </Tabs.Navigator></JournalDockHeightContext.Provider></JournalCaptureActionHeightContext.Provider></JournalKeyboardContext.Provider>;
 }
 
@@ -137,6 +131,10 @@ const NavigationContent = memo(function NavigationContent({ onViewingChange }: {
   return <NavigationContainer theme={theme} onStateChange={(state) => onViewingChange(Boolean(state && state.routes[state.index ?? 0]?.name === "FamilyViewing"))}>
       <Stack.Navigator screenOptions={{ animation: reducedMotion ? "none" : "fade", animationDuration: reducedMotion ? 0 : journalMotion.duration, headerBackTitle: "返回", headerShadowVisible: false, headerStyle: { backgroundColor: colors.paper }, headerTitleStyle: { color: colors.ink, fontWeight: "800" }, headerTintColor: colors.coralDark, contentStyle: { backgroundColor: colors.paper }, ...(Platform.OS === "ios" ? { headerLargeTitle: false, headerBlurEffect: "regular" as const } : {}) }}>
         <Stack.Screen component={MainTabs} name="MainTabs" options={{ headerShown: false }} />
+        <Stack.Screen component={CaptureScreen} name="Capture" options={{ headerShown: false, animation: "none", gestureEnabled: true }} />
+        <Stack.Screen component={LocalAlbumScreen} name="LocalAlbum" options={{ title: "相册" }} />
+        <Stack.Screen component={MaterialPickerScreen} name="MaterialPicker" options={{ title: "选择记录" }} />
+        <Stack.Screen component={WorkPreviewScreen} name="WorkPreview" options={{ title: "预览" }} />
         <Stack.Screen component={MemoryScreen} name="Memory" options={{ title: "成长记录" }} />
         <Stack.Screen component={SavedMemoryScreen} name="SavedMemory" options={{ title: "成长记录" }} />
         <Stack.Screen component={AssetLibraryScreen} name="AssetLibrary" options={{ title: "资料库" }} />
@@ -174,12 +172,12 @@ export function AppNavigator() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  dock: { position: "absolute", bottom: 0, left: 16, right: 16 },
-  tabRow: { flexDirection: "row", minHeight: 72, borderRadius: 28, overflow: "hidden" },
+  dock: { position: "absolute", bottom: 0, left: 0, right: 0 },
+  tabRow: { flexDirection: "row", minHeight: 64, overflow: "hidden" },
   tabItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 8, gap: 3 },
   tabIcon: { paddingHorizontal: 20, paddingVertical: 5, borderRadius: 18 },
   tabLabel: { fontSize: 12.5, fontWeight: "600" },
-  floatingCapture: { alignSelf: "flex-end", minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, marginBottom: 12, borderRadius: 26, overflow: "hidden" },
+  floatingCapture: { alignSelf: "flex-end", minHeight: 52, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 18, marginBottom: 8, marginRight: 20, marginTop: -60, borderRadius: 14, overflow: "hidden" },
   pressed: { opacity: 0.72 },
   captureLabel: { fontSize: 16, fontWeight: "600", paddingVertical: 12 },
 });

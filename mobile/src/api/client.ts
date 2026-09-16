@@ -279,6 +279,9 @@ export function parseMobileMemory(value: unknown): MobileMemory {
   if (
     !isRecord(value) ||
     !isString(value.id, 128) ||
+    (value.atomicEditVersion !== undefined && value.atomicEditVersion !== 1) ||
+    (value.coverAssetId !== undefined && !isNullableString(value.coverAssetId, 128)) ||
+    (value.mutationReceipt !== undefined && (!isRecord(value.mutationReceipt) || !isString(value.mutationReceipt.mutationId, 128) || !Number.isSafeInteger(value.mutationReceipt.resultRevision) || Number(value.mutationReceipt.resultRevision) < 0 || typeof value.mutationReceipt.replayed !== "boolean")) ||
     (value.bodyText !== undefined && !isString(value.bodyText, 100_000)) ||
     (value.canWrite !== undefined && typeof value.canWrite !== "boolean") ||
     (value.isAuthor !== undefined && typeof value.isAuthor !== "boolean") ||

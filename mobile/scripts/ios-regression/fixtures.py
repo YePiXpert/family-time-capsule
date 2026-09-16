@@ -169,7 +169,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return self.send_json({"entries": [], "nextCursor": None, "canWrite": False})
         if path == "/api/collections":
             return self.send_json({"entries": [dict(id="family-album", title="Fixture family album", kind="album",
-                description="Synthetic native viewing fixture", count=1, coverAssetId=None, revision=1, deletedAt=None)],
+                description="Synthetic native viewing fixture", count=1, coverAssetId=None, revision=1, updatedAt=STAMP, deletedAt=None)],
                 "nextCursor": None, "canWrite": False})
         if path == "/api/collections/family-album":
             return self.send_json(dict(id="family-album", title="Fixture family album", kind="album", description="",

@@ -5,7 +5,8 @@ import { requestMobileJson } from "../api/client";
 import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent, type DraftItem } from "./model";
 import { canInferCaptureTime, quickCaptureContent } from "./capture";
 import type { Credentials, MediaCapturePayload } from "../types";
-export function usePersistentDraft(scope: string, enabled: boolean, credentials: Credentials | null) {
+export function usePersistentDraft(scope: string, enabled: boolean, credentials: Credentials | null, target?: import("../navigation/types").CaptureTarget) {
+  const targetKey = target ? JSON.stringify(target) : "legacy";
   const [draft, setDraft] = useState<LocalDraft | null>(null);
   const [drafts, setDrafts] = useState<LocalDraft[]>([]);
   const [serverState, setServerState] = useState<{ scope: string; drafts: Draft[] }>({ scope: "", drafts: [] });
@@ -38,7 +39,7 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
   }, [scope]);
   const create = useCallback(async () => {
     await writes.current;
-    if (failure.current) return;
+    if (failure.current) throw new Error("请先重试本机保存，再开始新的记录。");
     const previous = current.current?.scope === scope ? current.current.content : (await listLocalDrafts(scope))[0]?.content;
     const row = await createLocalDraft(scope, Crypto.randomUUID(), Crypto.randomUUID(), previous ? { visibility: previous.visibility, readerUserIds: previous.readerUserIds } : undefined);
     current.current = row; revision.current = row.revision; setDraft(row); setSaved(true); await reload();
@@ -49,15 +50,23 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
       await writes.current;
       if (!active) return;
       current.current = null; revision.current = 0; failure.current = false;
+      setDraft(null); setError(null);
       if (!enabled) return;
       const rows = await reload();
       if (!active) return;
-      const row = rows.find(d => d.status === "editing") ?? rows.find(d => d.status === "queued");
-      if (row) { current.current = row; revision.current = row.revision; setDraft(row); setSaved(true); }
+      const requested = targetKey === "legacy" ? null : JSON.parse(targetKey) as import("../navigation/types").CaptureTarget;
+      if (requested?.kind === "serverDraft" || requested?.kind === "memory") return;
+      const row = requested?.kind === "local" ? rows.find(d => d.id === requested.draftId && d.status !== "discarded")
+        : requested?.kind === "new" ? undefined : rows.find(d => d.status === "editing") ?? rows.find(d => d.status === "queued");
+      if (requested?.kind === "local" && !row) throw new Error("找不到这份本机记录，请返回后重新打开。");
+      if (row) {
+        current.current = row; revision.current = row.revision; setDraft(row); setSaved(true);
+        if (requested?.kind === "local" && requested.editSaved && row.status === "queued") await write({ ...row, savedContent: row.content, status: "editing", revision: row.revision + 1 });
+      }
       else await create();
     }).catch(e => setError(e instanceof Error ? e.message : "无法读取本机草稿。"));
     return () => { active = false; };
-  }, [scope, enabled, reload, create]);
+  }, [scope, enabled, reload, create, targetKey, write]);
   useEffect(() => {
     let active = true;
     if (credentials && enabled) void requestMobileJson(credentials, "/api/mobile/v1/drafts").then(body => {
@@ -103,7 +112,7 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     await reload();
     return next;
   }, [write, reload]);
-  const resume = useCallback(async (row: LocalDraft) => { await writes.current; if (failure.current) return; current.current = row; revision.current = row.revision; setDraft(row); setSaved(true); }, []);
+  const resume = useCallback(async (row: LocalDraft) => { await writes.current; if (row.scope !== scope) throw new Error("请回到保存这份记录的家庭。"); if (failure.current) throw new Error("请先重试本机保存。"); current.current = row; revision.current = row.revision; setDraft(row); setSaved(true); }, [scope]);
   const discard = useCallback(async () => {
     await writes.current;
     if (!current.current || failure.current) return;
@@ -111,8 +120,9 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     await write(row.savedContent
       ? { ...row, content: row.savedContent, savedContent: undefined, status: "queued", revision: row.revision + 1 }
       : { ...row, status: "discarded", discardPending: row.serverRevision > 0, revision: row.revision + 1 });
-    await create();
-  }, [write, create]);
+    if (row.savedContent) await reload();
+    else await create();
+  }, [write, create, reload]);
   const reopen = useCallback(async () => {
     await writes.current;
     if (!current.current || failure.current || current.current.status !== "queued") return;
@@ -135,5 +145,6 @@ export function usePersistentDraft(scope: string, enabled: boolean, credentials:
     if (!isCurrent()) return;
     await resume(row); if (isCurrent()) await reload();
   }, [scope, resume, reload]);
-  return { reopen, continueServer, serverDrafts: serverState.scope === scope ? serverState.drafts : [], bind, unboundDrafts, draft: draft?.scope === scope ? draft : null, drafts: drafts.filter(d => d.scope === scope), error, saved, change, addOriginal, addOriginals, save, create, resume, discard, retry, reload };
+  const barrier = useCallback(async () => { await writes.current; if (failure.current) throw new Error("本机暂存未完成，请重试后再离开，输入仍保留在这里。"); }, []);
+  return { barrier, reopen, continueServer, serverDrafts: serverState.scope === scope ? serverState.drafts : [], bind, unboundDrafts, draft: enabled && draft?.scope === scope ? draft : null, drafts: drafts.filter(d => d.scope === scope), error, saved, change, addOriginal, addOriginals, save, create, resume, discard, retry, reload };
 }

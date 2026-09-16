@@ -1,8 +1,10 @@
 import { Text, TextInput } from "../components/typography";
-import { WorkCreator } from "./WorkCreator";
-import { Disclosure } from "../components/Disclosure";
+import { draftReadingScope } from "../drafts/reading";
+import { listLocalAlbums,type LocalAlbum } from "../collections/local";
+import { createWorkSession } from "../worksession/store";
+import { commitWorkSession } from "../worksession/commit";
+import { invalidateReadingCredentials,nativeReadingTransport,readingDownloads,resolveReadingScope } from "../reading/native";
 import { ReadingDownloadButton } from "../reading/DownloadButton";
-import { downloadedCoverUri } from "../reading/shelf";
 import { useReadingShelf } from "../reading/useReadingShelf";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -10,13 +12,14 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { randomUUID } from "expo-crypto";
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from "react-native";
 import {
+  ApiError,
   fetchCollection,
   fetchCollections,
   mutateCollection,
 } from "../api/client";
-import type { CollectionDetail, CollectionPage } from "../collections/types";
+import type { CollectionDetail } from "../collections/types";
 import type { RootStackParamList } from "../navigation/types";
-import { useAppData } from "../state/AppContext";
+import { useAppActions,useAppData } from "../state/AppContext";
 import { GlassSheet, useConfirmSheet } from "../components/GlassSheet";
 import { Button as ActionButton, IconButton } from "../components/ui";
 import { useSharedStyles } from "../theme";
@@ -42,124 +45,54 @@ function Button({
   );
 }
 type CollectionsProps = { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Collections">["navigation"], "navigate">; route: NativeStackScreenProps<RootStackParamList, "Collections">["route"] };
-export function CollectionsScreen(props: CollectionsProps) {
-  const { credentials, family, viewer } = useAppData();
-  return <CollectionShelf key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, credentials?.token, family?.id, viewer?.id])} {...props} />;
-}
-function CollectionShelf({
-  navigation,
-  route,
-}: CollectionsProps) {
-  const s = useSharedStyles();
-  const { credentials } = useAppData();
-  const [error, setError] = useState(""),
-    [creating, setCreating] = useState(false),
-    [deleted, setDeleted] = useState(false),
-    [busy, setBusy] = useState(false);
-  const { page, downloads, offline, error: loadError, loading, load } = useReadingShelf("collection", deleted, fetchCollections);
-  const collections: (CollectionPage["entries"][number] & { localCoverUri?: string; downloadKey?: string })[] = offline
-    ? downloads.map(entry => ({ id: entry.id, title: entry.manifest.title, kind: "album", description: entry.manifest.subtitle,
-      count: entry.manifest.chapters.reduce((total, chapter) => total + chapter.blocks.length, 0),
-      coverAssetId: null, revision: entry.manifest.revision, deletedAt: null,
-      localCoverUri: downloadedCoverUri(entry), downloadKey: entry.key }))
-    : page?.entries ?? [];
-  const adding = !!route.params?.eventIds?.length;
-  async function choose(id: string, revision: number) {
-    if (!credentials) return;
-    if (!route.params?.eventIds?.length || !page?.canWrite || deleted) {
-      navigation.navigate("CollectionDetail", { id });
-      return;
-    }
-    setBusy(true);
-    try {
-      await mutateCollection(credentials, id, {
-        operation: "add",
-        revision,
-        eventIds: route.params.eventIds,
-      });
-      navigation.navigate("CollectionDetail", { id });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+export function CollectionsScreen({navigation,route}: CollectionsProps) {
+  const s=useSharedStyles();
+  const {credentials,userId,viewer,family,online}=useAppData();
+  const {runSync}=useAppActions();
+  const confirm=useConfirmSheet();
+  const scope=draftReadingScope(credentials,userId,viewer?.id,family?.id);
+  const {page,downloads,offline,error:loadError,loading,load}=useReadingShelf("collection",false,fetchCollections);
+  const [locals,setLocals]=useState<LocalAlbum[]>([]),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+  const valid=!!scope&&(!route.params?.scope||route.params.scope===scope||route.params.scope==="local");
+  const refs=route.params?.refs??(route.params?.eventIds??[]).map(id=>({kind:"memory" as const,scope:scope??"local",id}));
+  useFocusEffect(useCallback(()=>{let live=true;setLocals([]);if(scope)void Promise.all([listLocalAlbums("local"),scope!=="local"?listLocalAlbums(scope):Promise.resolve([])]).then(rows=>{if(live)setLocals(rows.flat().filter(a=>!a.remoteId));});return()=>{live=false;};},[scope,setLocals]));
+  async function choose(kind:"localAlbum"|"collection",id:string,targetScope:string,revision?:number){
+    if(!valid||busy)return;setBusy(true);try{
+      if(!refs.length){if(kind==="localAlbum")navigation.navigate("LocalAlbum",{id,scope:targetScope});else {const download=offline?downloads.find(d=>d.id===id):null;if(download)navigation.navigate("OfflineReading",{key:download.key});else navigation.navigate("CollectionDetail",{id});}return;}
+      const session=await createWorkSession(targetScope,{mode:"append",kind,id,revision},refs);
+      const authorizeSources=kind==="collection"&&refs.some(r=>r.kind==="localDraft");
+      if(authorizeSources&&!await confirm({title:"上传这些记录并加入相册",message:`将 ${refs.filter(r=>r.kind==="localDraft").length} 条本机记录及原件上传到「${family?.name??"已连接的家庭"}」（${credentials?.serverUrl??""}），原记录的读者范围保持不变。`,confirmLabel:"同意上传并加入",cancelLabel:"保留选择"}))return;
+      await commitWorkSession(session,credentials,{authorizeSources});
+      if(kind==="collection"&&online!==false)void runSync();
+      if(kind==="localAlbum")navigation.navigate("LocalAlbum",{id,scope:targetScope});else navigation.navigate("CollectionDetail",{id});
+    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
-  return (
-    <ScrollView
-      style={s.screen}
-      contentContainerStyle={s.content}
-      keyboardShouldPersistTaps="handled"
-    >
-
-      <Text style={s.intro}>
-        {route.params?.eventIds?.length
-          ? `将所选 ${route.params.eventIds.length} 条记忆加入相册。`
-          : "把一段真实的家庭经历整理在一起。"}
-      </Text>
-      {!credentials ? <Text style={s.body}>连接原来的家庭账号后，相册会出现在这里。</Text> : null}
-      {loading ? <Text style={s.body}>正在打开相册…</Text> : null}
-      {offline ? <Text style={s.body}>{adding ? "联网后可以把所选记忆加入相册。" : "已下载的相册可以继续翻阅。"}</Text> : null}
-      {error || loadError ? (
-        <>
-          <Text style={s.error} accessibilityRole="alert">
-            {error || loadError}
-          </Text>
-          <Button title="重试" onPress={() => void load()} />
-        </>
-      ) : null}
-      {page?.canWrite && !deleted && !creating ? <Button title="新建相册" onPress={() => setCreating(true)} /> : null}
-      {creating ? <WorkCreator kind="album" onCancel={() => setCreating(false)} onCreated={id => { setCreating(false); navigation.navigate("CollectionDetail", { id }); }} /> : null}
-      {collections.map((c) => (
-        <Pressable
-          key={c.id}
-          accessibilityRole="button"
-          accessibilityLabel={c.title}
-          disabled={busy || (offline && adding)}
-          onPress={() => c.downloadKey ? navigation.navigate("OfflineReading", { key: c.downloadKey }) : void choose(c.id, c.revision)}
-          style={s.card}
-        >
-          {c.localCoverUri || (c.coverAssetId && credentials) ? (
-            <Image
-              source={c.localCoverUri ? { uri: c.localCoverUri } : credentials && c.coverAssetId ? {
-                uri: `${credentials.serverUrl}/api/media/${encodeURIComponent(c.coverAssetId)}`,
-                headers: { Authorization: `Bearer ${credentials.token}` },
-              } : undefined}
-              accessibilityLabel="相册封面"
-              resizeMode="contain"
-              style={{ aspectRatio: 4 / 3, width: "100%", borderRadius: 12 }}
-            />
-          ) : null}
-          <Text style={s.cardTitle}>{c.title}</Text>
-          <Text style={s.body}>
-            {c.count} 份可见内容 · {c.kind === "album" ? "主题相册" : "章节"}
-          </Text>
-          <Text style={s.body}>{c.description}</Text>
-        </Pressable>
-      ))}
-      {offline && !collections.length ? <Text style={s.body}>这里还没有下载的相册。联网打开相册，选择“下载供离线阅读”，下次就能从这里继续翻。</Text> : null}
-      {page && !page.entries.length ? (
-        <Text style={s.body}>
-          这里还没有相册，可以先取个名字，再从时间轴多选记忆。
-        </Text>
-      ) : null}
-      {page?.nextCursor ? (
-        <Button title="更多相册" onPress={() => void load(page.nextCursor!)} />
-      ) : null}
-      <Disclosure title="管理相册">
-        <Button title={deleted ? "返回相册" : "相册回收站"} onPress={() => setDeleted(!deleted)} />
-        <Button title="管理阅读下载" onPress={() => navigation.navigate("ReadingDownloads")} />
-      </Disclosure>
-    </ScrollView>
-  );
+  async function create(){if(!scope||!valid)return;try{const session=await createWorkSession(scope,{mode:"create",kind:"album"},refs);if(refs.length){const result=await commitWorkSession(session,credentials);navigation.navigate("LocalAlbum",{id:result.id,scope});}else navigation.navigate("MaterialPicker",{scope,sessionId:session.id});}catch(e){setError((e as Error).message);}}
+  return <ScrollView style={s.screen} contentContainerStyle={s.content}><Text style={s.title}>加入相册</Text><Text style={s.body}>选择想放入的相册{refs.length?` · ${refs.length} 条记录`:""}</Text>
+    {!valid?<Text style={s.error}>账号或家庭已变化，请重新选择内容。</Text>:<><Button title="新建本机相册" onPress={()=>void create()}/>
+    {locals.map(a=><Button key={a.id} title={`${a.title} · 仅本机`} disabled={busy||refs.some(r=>r.scope!==a.scope&&!(r.kind==="localDraft"&&r.scope==="local"))} onPress={()=>void choose("localAlbum",a.id,a.scope)}/>)}
+    {(offline?downloads.map(e=>({id:e.id,title:e.title,revision:e.manifest.revision})):page?.entries??[]).map(a=><Button key={a.id} title={a.title} disabled={busy||(!offline&&!page?.canWrite&&!!refs.length)} onPress={()=>void choose("collection",a.id,scope!,a.revision)}/>)}
+    {page?.nextCursor?<Button title="更多相册" disabled={loading} onPress={()=>void load(page.nextCursor!)}/>:null}</>}
+    {error||loadError?<Text style={s.error}>{error||loadError}</Text>:null}
+  </ScrollView>;
 }
-export function CollectionDetailScreen({
+export function CollectionDetailScreen(props: NativeStackScreenProps<RootStackParamList, "CollectionDetail">) {
+  const {credentials,userId,viewer,family}=useAppData();
+  const scope=draftReadingScope(credentials,userId,viewer?.id,family?.id);
+  const s=useSharedStyles();
+  if(!scope||scope==="local")return <View style={s.empty}><Text style={s.body}>请先连接当前家庭。</Text></View>;
+  return <CollectionDetailView key={JSON.stringify([scope,credentials?.token,props.route.params.id])} {...props}/>;
+}
+function CollectionDetailView({
   route,
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "CollectionDetail">) {
   const s = useSharedStyles();
-  const { credentials } = useAppData();
+  const { credentials,userId,viewer,family } = useAppData();
+  const scope=draftReadingScope(credentials,userId,viewer?.id,family?.id);
   const confirm = useConfirmSheet();
   const [reading, setReading] = useState(true);
+  const [pendingAlbum,setPendingAlbum]=useState<LocalAlbum|null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
   const [doc, setDoc] = useState<CollectionDetail | null>(null),
     [error, setError] = useState(""),
@@ -174,13 +107,19 @@ export function CollectionDetailScreen({
     try {
       const next = await fetchCollection(credentials, route.params.id);
       setDoc(next);
+      if(scope)setPendingAlbum((await listLocalAlbums(scope)).find(a=>a.remoteId===next.id&&a.pending)??null);
       dirty.current = false;
       setError("");
       setStatus("");
     } catch (e) {
+      if(e instanceof ApiError&&[401,403,404].includes(e.status)){
+        setDoc(null);setPendingAlbum(null);dirty.current=false;
+        if(e.status!==404)await invalidateReadingCredentials(credentials).catch(()=>{});
+        else try{const cached=await resolveReadingScope(credentials,{offline:true});await readingDownloads.remove(`${cached.scope.key}/collection-${route.params.id}`,nativeReadingTransport(credentials,cached.scope));}catch{/* The denied server contents remain hidden even when cache cleanup fails. */}
+      }
       setError((e as Error).message);
     }
-  }, [credentials, route.params.id]);
+  }, [credentials, route.params.id,scope]);
   useFocusEffect(
     useCallback(() => {
       if (!dirty.current) void load();
@@ -206,6 +145,7 @@ export function CollectionDetailScreen({
       setError("");
       return true;
     } catch (e) {
+      if(e instanceof ApiError&&[401,403,404].includes(e.status)){setDoc(null);setPendingAlbum(null);dirty.current=false;}
       setError((e as Error).message);
       return false;
     } finally {
@@ -219,6 +159,12 @@ export function CollectionDetailScreen({
     if (next < 0 || next >= items.length) return;
     [items[index], items[next]] = [items[next]!, items[index]!];
     update({ ...doc, items, sortMode: "manual" });
+  }
+  async function addContents() {
+    if(!doc||!scope||scope==="local"||busy)return;
+    if(dirty.current&&!await save())return;
+    const session=await createWorkSession(scope,{mode:"append",kind:"collection",id:doc.id,revision:doc.revision});
+    navigation.navigate("MaterialPicker",{scope,sessionId:session.id});
   }
   async function startFamilyViewing() {
     if (!doc || doc.deletedAt || busy) return;
@@ -269,10 +215,11 @@ export function CollectionDetailScreen({
           <Text style={s.body}>已下载的相册也能离线观看。这是临时观看界面，不会锁定手机。</Text>
         </View>
       </GlassSheet>
-      {reading && !moreVisible && !doc.deletedAt ? <ActionButton title={busy ? "正在保存…" : "给家人看"} icon="users" variant="primary" disabled={busy} onPress={() => void startFamilyViewing()} /> : null}
+      {pendingAlbum?<ActionButton title="查看待加入的记录" onPress={()=>navigation.navigate("LocalAlbum",{id:pendingAlbum.id,scope:pendingAlbum.scope})}/>:null}
+      {doc.canWrite && !doc.deletedAt ? <ActionButton title="添加记录" variant="primary" disabled={busy} onPress={() => void addContents().catch(e=>setError(e.message))} /> : null}
       {doc.canWrite && !doc.deletedAt ? (
         <Button
-          title={reading ? "继续编辑" : "阅读相册"}
+          title={reading ? "整理" : "完成整理"}
           onPress={() => setReading(!reading)}
         />
       ) : null}
@@ -356,12 +303,7 @@ export function CollectionDetailScreen({
             disabled={busy}
             onPress={() => void save()}
           />
-          <Button
-            title="去时间轴挑选记忆"
-            onPress={() =>
-              navigation.navigate("MainTabs", { screen: "Timeline" })
-            }
-          />
+
         </>
       ) : (
         <Text style={s.body}>{doc.description}</Text>

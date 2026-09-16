@@ -3,6 +3,8 @@ import type { LocalImportIntakeItem, MediaCapturePayload } from "../types";
 
 export type PickerReceipt = {
   scope?: string;
+  memoryEditTarget?: string;
+  itemId?: string;
   sessionId: string;
   createdAt: string;
   captureId: string;
@@ -13,13 +15,14 @@ export type PickerReceipt = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function recoverPickerReceipt(value: unknown, root: string, exists: (uri: string) => boolean): {
-  scope?: string; id: string; createdAt: string; items: LocalImportIntakeItem[];
+  scope?: string; memoryEditTarget?: string; itemId?: string; id: string; createdAt: string; items: LocalImportIntakeItem[];
 } | null {
   if (!value || typeof value !== "object") return null;
   const receipt = value as PickerReceipt;
   if (!UUID.test(receipt.sessionId) || !UUID.test(receipt.captureId) ||
     !Number.isSafeInteger(receipt.index) || receipt.index < 0 || receipt.index > 10000 ||
     typeof receipt.createdAt !== "string" || !Number.isFinite(Date.parse(receipt.createdAt))) return null;
+  if (receipt.memoryEditTarget !== undefined && (typeof receipt.scope !== "string" || !/^[\w-]{1,128}$/u.test(receipt.memoryEditTarget) || typeof receipt.itemId !== "string" || !UUID.test(receipt.itemId))) return null;
   const payload = receipt.payload;
   if (!payload || typeof payload.localUri !== "string" || typeof payload.fileName !== "string" ||
     typeof payload.mimeType !== "string" || payload.lastModified !== null || payload.source !== "files") return null;
@@ -33,12 +36,13 @@ export function recoverPickerReceipt(value: unknown, root: string, exists: (uri:
       ? { kind: "file", localUri: payload.localUri, payload }
       : { kind: "error", error: "copy_interrupted" }),
   };
-  return { ...(typeof receipt.scope === "string" ? { scope: receipt.scope } : {}), id: receipt.sessionId, createdAt: receipt.createdAt, items: [item] };
+  return { ...(typeof receipt.scope === "string" ? { scope: receipt.scope } : {}), ...(receipt.memoryEditTarget ? { memoryEditTarget: receipt.memoryEditTarget, itemId: receipt.itemId } : {}), id: receipt.sessionId, createdAt: receipt.createdAt, items: [item] };
 }
 
 /** v2 extends the existing picker journal with a whole Live Photo destination. */
 export type LivePhotoPickerReceipt = {
   version: 2;
+  memoryEditTarget?: string;
   captureId: string;
   scope: string;
   draftId: string;
@@ -49,7 +53,7 @@ export type LivePhotoPickerReceipt = {
 export function parseLivePhotoPickerReceipt(value: unknown, root: string): LivePhotoPickerReceipt | null {
   if (!value || typeof value !== "object") return null;
   const r = value as LivePhotoPickerReceipt;
-  if (r.version !== 2 || !UUID.test(r.captureId) || typeof r.scope !== "string" || r.scope.length > 4096 ||
+  if ((r.memoryEditTarget !== undefined && (r.memoryEditTarget !== r.draftId || !/^[\w-]{1,128}$/u.test(r.memoryEditTarget))) || r.version !== 2 || !UUID.test(r.captureId) || typeof r.scope !== "string" || r.scope.length > 4096 ||
     !/^[\w-]{1,128}$/u.test(r.draftId) || !Number.isSafeInteger(r.expectedRevision) || r.expectedRevision < 1 ||
     typeof r.createdAt !== "string" || !Number.isFinite(Date.parse(r.createdAt)) || !Array.isArray(r.originals) || r.originals.length !== 2) return null;
   for (const o of r.originals) {

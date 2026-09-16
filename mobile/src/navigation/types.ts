@@ -6,8 +6,14 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { CaptureIntent } from "./intents";
 
+export type CaptureTarget = { kind: "new" } | { kind: "local"; draftId: string; editSaved?: boolean } | { kind: "serverDraft"; draftId: string } | { kind: "memory"; memoryId: string };
+
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
+  Capture: { scope: string; target: CaptureTarget; intent?: CaptureIntent };
+  LocalAlbum: { id: string; scope: string };
+  MaterialPicker: { sessionId: string; scope: string };
+  WorkPreview: { sessionId: string; scope: string };
   People: undefined;
   DeviceSettings: undefined;
   Memory: { id: string };
@@ -28,7 +34,7 @@ export type RootStackParamList = {
   BookDetail: {id:string};
   BookCreate: { eventIds?: string[]; scope: string };
   Calendar: undefined;
-  Collections: {eventIds?:string[]} | undefined;
+  Collections: {eventIds?:string[]; refs?:import("../collections/local").MaterialRef[]; scope?:string} | undefined;
   CollectionDetail: {id:string};
   FamilyViewing: { collectionId: string; downloadKey?: string };
   InviteFamily: undefined;
@@ -38,7 +44,6 @@ export type RootStackParamList = {
 // 三个主入口；家人和设备管理使用设置栈。
 export type MainTabParamList = {
   Timeline: { saved?: { draftId: string; scope: string; requestKey: string } } | undefined;
-  Capture: { intent?: CaptureIntent; requestKey?: number; draftId?: string; localDraftId?: string; editSaved?: boolean } | undefined;
   Works: undefined;
   Profile: undefined;
 };

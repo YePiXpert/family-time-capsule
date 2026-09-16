@@ -51,7 +51,7 @@ it("continues a mixed receipt after leaving the screen, without waiting for netw
   const draft = (await listLocalDrafts(scope))[0]!;
   expect(draft.content.text).toBe("外公留下的那段故事"); expect(draft.content.items).toHaveLength(1); expect(draft.status).toBe("editing");
   expect(mocks.consent).not.toHaveBeenCalled(); expect(mocks.sync).not.toHaveBeenCalled();
-  expect(mocks.navigate).toHaveBeenCalledWith("MainTabs", expect.objectContaining({ screen: "Capture", params: expect.objectContaining({ localDraftId: draft.id }) }));
+  expect(mocks.navigate).toHaveBeenCalledWith("Capture", { scope, target: { kind: "local", draftId: draft.id } });
   await act(() => tree!.unmount()); tree = undefined; await render("mixed");
   expect(button("查看关联草稿")).toBeDefined();
   await press("全部展开");

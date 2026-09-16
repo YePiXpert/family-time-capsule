@@ -1,3 +1,4 @@
+import { rebindAlbumDraftReferences } from "../collections/references";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { getDatabase } from "../storage/database";
 import { parseDraftContent, emptyDraftContent, type DraftContent } from "./model";
@@ -76,7 +77,10 @@ export async function canUploadDraftOriginal(captureId: string, activeScope: str
   const references = await db.getAllAsync<{ scope: string }>(`SELECT DISTINCT d.scope FROM local_draft d,
     json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
     WHERE json_extract(i.value, '$.localCaptureRef') = ?`, captureId);
-  if (references.length > 0) return false; // Draft transfers run through syncLocalDrafts with a bound owner receipt.
+  const editReference = await db.getFirstAsync<{ memory_id: string }>(`SELECT e.memory_id FROM local_memory_edit e,
+    json_each(json_array(json_extract(e.snapshot_json, '$.content.items'), json_extract(e.snapshot_json, '$.savedContent.items'), json_extract(e.snapshot_json, '$.submission.content.items'))) sets, json_each(sets.value) i
+    WHERE json_extract(i.value, '$.localCaptureRef')=? LIMIT 1`, captureId);
+  if (editReference || references.length > 0) return false; // Draft transfers run through syncLocalDrafts with a bound owner receipt.
   const receipt = await db.getFirstAsync<{ scope: string | null; destination: string | null }>(`SELECT c.scope,c.destination
     FROM local_import_item i LEFT JOIN local_intake_choice c ON c.session_id=i.import_session_id WHERE i.capture_id=?`, captureId);
   if (!receipt) return true;
@@ -96,6 +100,7 @@ export async function bindLocalDraft(id: string, targetScope: string): Promise<L
     if (await tx.getFirstAsync("SELECT id FROM local_draft WHERE scope=? AND id=?", targetScope, id)) throw new Error("该家庭已有同一草稿，请先核对。");
     const row = JSON.parse(source.snapshot_json) as LocalDraft;
     bound = { ...row, scope: targetScope, status: "editing", revision: row.revision + 1, updatedAt: new Date().toISOString() };
+    await rebindAlbumDraftReferences(tx, id, targetScope);
     await tx.runAsync("UPDATE local_intake_choice SET scope=?,revision=revision+1 WHERE scope='local' AND draft_id=? AND destination='draft'", targetScope, id);
     await tx.runAsync("UPDATE local_draft SET scope=?,snapshot_json=?,revision=?,updated_at=? WHERE scope='local' AND id=?", targetScope, JSON.stringify(bound), bound.revision, bound.updatedAt, id);
   });

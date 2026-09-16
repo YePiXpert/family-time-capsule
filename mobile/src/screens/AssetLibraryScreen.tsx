@@ -7,6 +7,7 @@ import { mutateCollection, requestMobileJson } from "../api/client";
 import { parseDraftContent, type Draft } from "../drafts/model";
 import type { CollectionDetail } from "../collections/types";
 import { useAppData } from "../state/AppContext";
+import { draftReadingScope } from "../drafts/reading";
 import { memoryCacheScope } from "../memories/cache-scope";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { OrganizerPanel } from "../ai/OrganizerPanel";
@@ -20,7 +21,8 @@ const labels: Record<string, string> = { image: "照片", video: "视频", audio
 function Button({ title, onPress, disabled = false }: { title: string; onPress: () => void; disabled?: boolean }) { const s = useSharedStyles(); return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.secondaryButton, disabled && s.disabled]}><Text style={s.secondaryText}>{title}</Text></Pressable>; }
 export function NativeLibraryActions({ ids, canWrite, onDone, coverAssetId, onNavigate }: { ids: string[]; canWrite: boolean; onDone?: () => void; coverAssetId?: string | null; onNavigate?: () => void }) {
   const s = useSharedStyles();
-  const { credentials } = useAppData(), navigation = useNavigation<AppNavigation>();
+  const { credentials, userId, viewer, family } = useAppData(), navigation = useNavigation<AppNavigation>();
+  const scope = draftReadingScope(credentials, userId, viewer?.id, family?.id);
   const [mode, setMode] = useState<"draft" | "memory" | "collection" | null>(null), [targets, setTargets] = useState<{ id: string; title: string; revision?: number }[]>([]), [cursor, setCursor] = useState<string | null>(null), [query, setQuery] = useState(""), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const load = async (kind: "draft" | "memory" | "collection", next = "") => {
     if (!credentials) return;
@@ -55,7 +57,7 @@ export function NativeLibraryActions({ ids, canWrite, onDone, coverAssetId, onNa
           return;
         }
       }
-      if (operation === "draft") { onNavigate?.(); navigation.navigate("MainTabs", { screen: "Capture", params: { draftId: targetId } }); }
+      if (operation === "draft" && scope) { onNavigate?.(); navigation.navigate("Capture", { scope, target: { kind: "serverDraft", draftId: targetId } }); }
       else { setMessage(`已加入${operation === "memory" ? "记忆" : "相册"}，原件仍在资料库。`); onDone?.(); }
     } catch (error) { setMessage((error as Error).message); } finally { setBusy(false); }
   };

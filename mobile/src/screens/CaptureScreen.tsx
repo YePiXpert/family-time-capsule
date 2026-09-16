@@ -8,15 +8,17 @@ import { Disclosure } from "../components/Disclosure";
 import { PrecisionDateTimeField } from "../components/PrecisionDateTimeField";
 import { removeDraftItem, pairDraftItems, isDraftDateComplete } from "../drafts/model";
 import { recordLocalIntakeDraft } from "../native/intake-store";
-import { listLocalDrafts } from "../drafts/store";
+import { useServerPermissionRevision } from "../storage/cache-lifecycle";
+import { draftReadingScope } from "../drafts/reading";
+import { useMemoryCapture } from "../memories/use-memory-capture";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import type { ReaderAsset } from "../media/types";
 import { OrganizerPanel } from "../ai/OrganizerPanel";
 import { captureDateSummary, captureOrganizerAvailability, captureSavedMessage, canInferCaptureTime } from "../drafts/capture";
 import type { AiSettings } from "../ai/types";
 import { requestMobileJson, parseAiSettings } from "../api/client";
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect, useNavigation, useRoute, usePreventRemove, type RouteProp } from "@react-navigation/native";
 import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
@@ -41,12 +43,21 @@ import { sharedStyles, useColorTheme, useSharedStyles } from "../theme";
 import { journalRadius, journalSpace, journalType } from "../design/tokens";
 import type { LocalImportIntakeItem } from "../types";
 import { resolveNativeCaptureAccess } from "../authz/product-access";
-import type { AppNavigation, MainTabParamList } from "../navigation/types";
-import { JournalDockHeightContext, JournalKeyboardContext } from "../navigation/dock-metrics";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/types";
+import { useJournalKeyboardState } from "../navigation/dock-metrics";
 
 export function CaptureScreen() {
-  const navigation = useNavigation<AppNavigation>();
-  const route = useRoute<RouteProp<MainTabParamList, "Capture">>();
+  const route = useRoute<RouteProp<RootStackParamList, "Capture">>();
+  const { credentials, userId, viewer, family } = useAppData();
+  const scope = draftReadingScope(credentials, userId, viewer?.id, family?.id);
+  const permissionRevision = useServerPermissionRevision();
+  return <CaptureEditor key={JSON.stringify([scope, route.key, route.params?.target, permissionRevision])} />;
+}
+
+function CaptureEditor() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, "Capture">>();
+  const route = useRoute<RouteProp<RootStackParamList, "Capture">>();
   const { credentials, outbox, viewer, family, userId, syncConsent, people } = useAppData();
   const { queued, reloadLocal, grantSyncConsent } = useAppActions();
   const { syncing } = useSyncStatus();
@@ -55,19 +66,21 @@ export function CaptureScreen() {
   const sharedStyles = useSharedStyles();
   const { colors } = sharedStyles;
   const confirm = useConfirmSheet();
-  const dockHeight = useContext(JournalDockHeightContext);
-  const keyboardOpen = useContext(JournalKeyboardContext);
+  const keyboardOpen = useJournalKeyboardState();
   const captureAccess = resolveNativeCaptureAccess(Boolean(credentials), viewer);
-  // A previously verified session can reopen its own saved draft while offline;
-  // the sync layer still verifies live identity before sending anything.
-  const draftUserId = userId ?? viewer?.id;
-  const draftScope = credentials?.instanceId && draftUserId && family && (!userId || !viewer || viewer.id === userId)
-    ? JSON.stringify([credentials.serverUrl, credentials.instanceId, draftUserId, family.id]) : "local";
+  const activeScope = draftReadingScope(credentials, userId, viewer?.id, family?.id);
+  const draftScope = route.params?.scope ?? activeScope ?? "local";
+  const identityMatches = activeScope === draftScope;
+  const target = route.params?.target;
+  const memoryId = target?.kind === "memory" ? target.memoryId : null;
   const recordingTimezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const saveBusy = useRef(false);
   const [aiState, setAiState] = useState<{ scope: string; settings: AiSettings | null }>({ scope: "", settings: null });
   const [message, setMessage] = useState<string | null>(null);
-  const capsuleDraft = usePersistentDraft(draftScope, captureAccess !== "readonly", credentials);
+  const localDraft = usePersistentDraft(draftScope, identityMatches && !memoryId && captureAccess !== "readonly", credentials, target);
+  const memoryDraft = useMemoryCapture(draftScope, memoryId, credentials, recordingTimezone, identityMatches && !!memoryId);
+  const capsuleDraft = memoryId ? memoryDraft : localDraft;
+  const exitBySave = useRef(false);
   const reloadDraft = capsuleDraft.reload;
   useFocusEffect(useCallback(() => {
     if (syncing) return;
@@ -98,8 +111,9 @@ export function CaptureScreen() {
   }, [credentials, draftScope, viewer?.canEditEvents]));
   const { addOriginal, addOriginals, change: changeDraft } = capsuleDraft;
   const currentDraftId = capsuleDraft.draft?.id;
-  const draftUiKey = JSON.stringify([draftScope, currentDraftId]);
+  const draftUiKey = JSON.stringify([draftScope, currentDraftId, memoryId]);
   const [toolsDraft, setToolsDraft] = useState<string | null>(null);
+  const [dateOpen, setDateOpen] = useState(false);
   const [readersDraft, setReadersDraft] = useState<string | null>(null);
   const toolsOpen = toolsDraft === draftUiKey;
   const readersOpen = readersDraft === draftUiKey;
@@ -108,9 +122,9 @@ export function CaptureScreen() {
   const [originals, setOriginals] = useState<Record<string, LocalCaptureDetail>>({});
   useEffect(() => {
     let active = true;
-    void Promise.all((capsuleDraft.draft?.content.items ?? []).map(async item => item.localCaptureRef ? await getLocalCaptureDetail(item.localCaptureRef) : null)).then(rows => { if (active) setOriginals(Object.fromEntries(rows.flatMap(row => row ? [[row.captureId, row]] : []))); });
+    void Promise.all((capsuleDraft.draft?.content.items ?? []).map(async item => item.localCaptureRef ? await getLocalCaptureDetail(item.localCaptureRef, draftScope) : null)).then(rows => { if (active) setOriginals(Object.fromEntries(rows.flatMap(row => row ? [[row.captureId, row]] : []))); });
     return () => { active = false; };
-  }, [capsuleDraft.draft?.content.items]);
+  }, [capsuleDraft.draft?.content.items, capsuleDraft.saved, draftScope]);
   const [remoteMedia, setRemoteMedia] = useState<{ scope: string; assets: Record<string, ReaderAsset> }>({ scope: "", assets: {} });
   useEffect(() => {
     let active = true;
@@ -121,36 +135,22 @@ export function CaptureScreen() {
     })).then(rows => { if (active) setRemoteMedia({ scope: draftScope, assets: Object.fromEntries(rows.flatMap(row => row ? [[row.id, row]] : [])) }); });
     return () => { active = false; };
   }, [credentials, draftScope, capsuleDraft.draft?.content.items]);
-  const continueLibraryDraft = capsuleDraft.continueServer, localDraftReady = Boolean(capsuleDraft.draft?.id);
+  const continueLibraryDraft = capsuleDraft.continueServer;
+  const serverDraftId = target?.kind === "serverDraft" ? target.draftId : null;
   useEffect(() => {
-    const id = route.params?.draftId;
-    if (!id || !credentials || !localDraftReady) return;
+    if (!serverDraftId || !credentials || !identityMatches) return;
     let active = true;
-    void requestMobileJson(credentials, `/api/mobile/v1/drafts/${encodeURIComponent(id)}`).then(async body => {
-      if (active) { await continueLibraryDraft(body as import("../drafts/model").Draft, () => active); if (active) navigation.setParams({ draftId: undefined }); }
+    void requestMobileJson(credentials, `/api/mobile/v1/drafts/${encodeURIComponent(serverDraftId)}`).then(async body => {
+      if (active) await continueLibraryDraft(body as import("../drafts/model").Draft, () => active);
     }).catch(e => { if (active) setMessage(e.message); });
     return () => { active = false; };
-  }, [route.params?.draftId, credentials, localDraftReady, continueLibraryDraft, navigation]);
-  const resumeLocalDraft = capsuleDraft.resume;
-  const reopenSavedDraft = capsuleDraft.reopen;
+  }, [serverDraftId, credentials, identityMatches, continueLibraryDraft]);
   useEffect(() => {
-    const id = route.params?.localDraftId;
-    if (!id || !localDraftReady) return;
-    let active = true;
-    void listLocalDrafts(draftScope).then(async rows => {
-      const row = rows.find(draft => draft.id === id);
-      if (!active || !row) return;
-      if (row.status === "published" && row.memoryEventId) {
-        navigation.setParams({ localDraftId: undefined, editSaved: undefined });
-        navigation.navigate("Memory", { id: row.memoryEventId });
-        return;
-      }
-      await resumeLocalDraft(row);
-      if (active && route.params?.editSaved && row.status === "queued") await reopenSavedDraft();
-      if (active) navigation.setParams({ localDraftId: undefined, editSaved: undefined });
-    }).catch(e => { if (active) setMessage(e.message); });
-    return () => { active = false; };
-  }, [route.params?.localDraftId, route.params?.editSaved, draftScope, localDraftReady, resumeLocalDraft, reopenSavedDraft, navigation]);
+    if (capsuleDraft.draft?.status === "published" && capsuleDraft.draft.memoryEventId) {
+      exitBySave.current = true;
+      navigation.replace("Capture", { scope: draftScope, target: { kind: "memory", memoryId: capsuleDraft.draft.memoryEventId } });
+    }
+  }, [capsuleDraft.draft?.status, capsuleDraft.draft?.memoryEventId, navigation, draftScope]);
   const sendDraft = async (publish: boolean, intent?: "draft" | "review", organize = false) => {
     if (saveBusy.current) return;
     saveBusy.current = true; setBusy(true);
@@ -170,12 +170,22 @@ export function CaptureScreen() {
         const ids = [row.id, ...row.content.items.flatMap(item => item.localCaptureRef ? [item.localCaptureRef] : [])];
         void grantSyncConsent(syncConsent?.scope === "all" ? "all" : "selected", [...new Set([...(syncConsent?.ids ?? []), ...ids])]).catch(error => setMessage(error.message));
       } else void queued();
-      await capsuleDraft.create();
-      if (row) navigation.navigate("Timeline", { saved: { draftId: row.id, scope: draftScope, requestKey: Crypto.randomUUID() } });
+      if (row) {
+        exitBySave.current = true;
+        if (memoryId) {
+          const state = navigation.getState();
+          const previous = state.routes[state.index - 1];
+          if (previous?.name === "SavedMemory" || (previous?.name === "Memory" && previous.params && "id" in previous.params && previous.params.id === memoryId)) navigation.goBack();
+          else navigation.replace("Memory", { id: memoryId });
+        }
+        else if (target?.kind === "local" && target.editSaved) navigation.popTo("SavedMemory", { draftId: row.id, scope: draftScope });
+        else navigation.replace("SavedMemory", { draftId: row.id, scope: draftScope });
+      }
     } catch (error) { setMessage(error instanceof Error ? error.message : "本机保存失败。"); }
     finally { saveBusy.current = false; setBusy(false); }
   };
   const recorderRef = useRef<AudioRecorder | null>(null);
+  const recordedUriRef = useRef<string | null>(null);
   const readRecording = useCallback(() => recorderRef.current?.getStatus(), []);
   const mountedRef = useRef(false);
   const recordingBusyRef = useRef(false);
@@ -240,7 +250,7 @@ export function CaptureScreen() {
             const captureId = index === 0 ? id : Crypto.randomUUID();
             return { id: captureId, itemId: Crypto.randomUUID(), role: index === 0 ? "image" as const : "video" as const, sourceUri: component.uri, payload: await preparePickedMedia(component, captureId, source) };
           }));
-          beginPickerReceipt({ version: 2, captureId: id, scope: current.scope, draftId: current.id, expectedRevision: current.revision, createdAt: new Date().toISOString(), originals });
+          beginPickerReceipt({ version: 2, captureId: id, scope: current.scope, draftId: current.id, expectedRevision: current.revision, ...(memoryId ? { memoryEditTarget: memoryId } : {}), createdAt: new Date().toISOString(), originals });
           let committed = false;
           try {
             for (const o of originals) await preservePreparedMedia(o.sourceUri, o.payload);
@@ -266,10 +276,10 @@ export function CaptureScreen() {
         ? `已保全 ${success} 份原件；${failures.length} 份未能保存：${failures[0]}`
         : `已添加 ${success} 份照片或视频，原件保存在本机。`,
     );
-  }, [captureAccess, finishQueue, addOriginal, addOriginals, capsuleDraft.draft]);
+  }, [captureAccess, finishQueue, addOriginal, addOriginals, capsuleDraft.draft, memoryId]);
 
   const pickMedia = useCallback(async (mode: "photo" | "video" | "library") => {
-    if (captureAccess === "readonly") {
+    if (!identityMatches || (captureAccess === "readonly" && !memoryId)) {
       setMessage("当前家庭角色只有查看权限，未创建本机待传记录。");
       return;
     }
@@ -310,7 +320,7 @@ export function CaptureScreen() {
     } finally {
       setBusy(false);
     }
-  }, [captureAccess, queuePickedAssets]);
+  }, [captureAccess, identityMatches, memoryId, queuePickedAssets]);
 
   const pickFiles = useCallback(async () => {
     if (captureAccess === "readonly") {
@@ -335,10 +345,11 @@ export function CaptureScreen() {
       let queued = 0;
       for (const [index, asset] of result.assets.entries()) {
         const captureId = Crypto.randomUUID();
+        const itemId = Crypto.randomUUID();
         let item: LocalImportIntakeItem;
         try {
           const payload = await preservePickedDocument(asset, captureId, (prepared) => {
-            beginPickerReceipt({ sessionId, createdAt, captureId, index, payload: prepared, scope: draftScope });
+            beginPickerReceipt({ sessionId, createdAt, captureId, index, payload: prepared, scope: draftScope, ...(memoryId ? { memoryEditTarget: memoryId, itemId } : {}) });
           });
           item = {
             externalId: `picker-${index}`,
@@ -360,16 +371,21 @@ export function CaptureScreen() {
         }
         let committed = false;
         try {
-          const saved = await ingestLocalImportSession({ id: sessionId, source: "files", createdAt, items: [item], queue: false, scope: draftScope });
-          queued += saved.queued;
-          failed += saved.failed;
-          committed = true;
-          if (item.kind === "file" && item.payload && "localUri" in item.payload) await addOriginal(captureId, item.payload, true);
+          if (memoryId) {
+            if (item.kind === "file" && item.payload && "localUri" in item.payload) {
+              await addOriginals([{ id: captureId, payload: item.payload, item: { id: itemId } }], { scope: draftScope, id: memoryId });
+              queued += 1; committed = true;
+            } else failed += 1;
+          } else {
+            const saved = await ingestLocalImportSession({ id: sessionId, source: "files", createdAt, items: [item], queue: false, scope: draftScope });
+            queued += saved.queued; failed += saved.failed; committed = true;
+            if (item.kind === "file" && item.payload && "localUri" in item.payload) await addOriginal(captureId, item.payload, true);
+          }
         } finally {
           finishPickerReceipt(captureId, committed);
         }
       }
-      if (copied > 0 && currentDraftId) await recordLocalIntakeDraft(sessionId, draftScope, currentDraftId);
+      if (copied > 0 && currentDraftId && !memoryId) await recordLocalIntakeDraft(sessionId, draftScope, currentDraftId);
       if (queued > 0) await finishQueue();
       setMessage(failed > 0
         ? `已添加 ${copied} 份文件；${failed} 项未能添加。`
@@ -379,7 +395,7 @@ export function CaptureScreen() {
     } finally {
       setBusy(false);
     }
-  }, [captureAccess, finishQueue, addOriginal, draftScope, currentDraftId]);
+  }, [captureAccess, finishQueue, addOriginal, addOriginals, draftScope, currentDraftId, memoryId]);
 
   const toggleRecording = async () => {
     if (captureAccess === "readonly") {
@@ -392,16 +408,17 @@ export function CaptureScreen() {
     setMessage(null);
     let audioModeEnabled = false;
     let started = false;
+    let finished = false;
     try {
       if (recording) {
         const recorder = recorderRef.current;
         if (!recorder) throw new Error("录音已中断，请重新开始。");
-        await recorder.stop();
-        if (!recorder.uri) throw new Error("没有读取到录音文件。");
+        if (!recordedUriRef.current) { await recorder.stop(); recordedUriRef.current = recorder.uri; }
+        if (!recordedUriRef.current) throw new Error("没有读取到录音文件。");
         const id = Crypto.randomUUID();
         let privateUri: string | null = null;
         try {
-          const payload = await preserveRecordedAudio(recorder.uri, id);
+          const payload = await preserveRecordedAudio(recordedUriRef.current, id);
           privateUri = payload.localUri;
           await addOriginal(id, payload);
           privateUri = null;
@@ -409,6 +426,7 @@ export function CaptureScreen() {
           if (privateUri) removeLocalFile(privateUri);
           throw error;
         }
+        finished = true; recordedUriRef.current = null;
         setMessage("录音已保存在本机，可以重听或继续记录。");
         await finishQueue();
       } else {
@@ -442,6 +460,7 @@ export function CaptureScreen() {
         setMessage("正在录音，结束时请点“完成录音”。");
       }
     } catch (error) {
+      if (recording && recordedUriRef.current) { started = true; setRecording(true); }
       setMessage(error instanceof Error ? error.message : recording ? "无法保存录音。" : "无法开始录音。");
     } finally {
       if (!started) {
@@ -454,12 +473,30 @@ export function CaptureScreen() {
       recordingBusyRef.current = false;
       if (mountedRef.current) setBusy(false);
     }
+    return finished;
   };
+
+  const leaving = useRef(false);
+  usePreventRemove(true, ({ data }) => {
+    if (exitBySave.current) { navigation.dispatch(data.action); return; }
+    if (leaving.current) return;
+    if (busy || recordingBusyRef.current) { setMessage("正在保存素材，请稍等再返回。"); return; }
+    leaving.current = true;
+    void (async () => {
+      if (recording) {
+        const finish = await confirm({ title: "结束录音后返回？", message: "录音会先保存在这条记录中，下次可以继续编辑。", confirmLabel: "结束并保留" });
+        if (!finish || !await toggleRecording()) return;
+      }
+      await capsuleDraft.barrier();
+      navigation.dispatch(data.action);
+    })().catch(reason => setMessage(reason instanceof Error ? reason.message : "本机暂存失败，请重试后再返回。"))
+      .finally(() => { leaving.current = false; });
+  });
 
   useFocusEffect(
     useCallback(() => {
       const intent = route.params?.intent;
-      if (!intent) return undefined;
+      if (!intent || !capsuleDraft.draft?.id) return undefined;
       const timer = setTimeout(() => {
         if (intent === "text") {
           scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -471,22 +508,23 @@ export function CaptureScreen() {
         } else {
           void pickMedia(intent);
         }
-        navigation.setParams({ intent: undefined, requestKey: undefined });
+        navigation.setParams({ intent: undefined });
       }, 50);
       return () => clearTimeout(timer);
-    }, [navigation, pickMedia, route.params?.intent, setToolsOpen]),
+    }, [navigation, pickMedia, route.params?.intent, setToolsOpen, capsuleDraft.draft?.id]),
   );
 
   const content = capsuleDraft.draft?.content;
   const automaticRequested = captureOrganizerAvailability(aiState.scope === draftScope ? aiState.settings : null, content?.visibility ?? "private", [], "automatic").ready;
 
-  if (captureAccess === "readonly") {
+  if (!identityMatches || (captureAccess === "readonly" && !memoryId)) {
     return (
       <ScrollView contentContainerStyle={sharedStyles.content} ref={scrollRef} style={[sharedStyles.screen, { paddingTop: insets.top }]}>
+        <Button title="返回" variant="ghost" onPress={() => navigation.goBack()} />
         <Text style={sharedStyles.eyebrow}>只读模式</Text>
         <Text style={sharedStyles.title}>记录此刻</Text>
         <View style={[styles.warningCard, { backgroundColor: colors.warningSoft }]}>
-          <Text style={{ color: colors.warning, fontSize: journalType.caption }}>当前家庭角色只有查看权限。这里不会创建无法同步的本机待传记录；断开服务器后仍可使用纯本机记录。</Text>
+          <Text style={{ color: colors.warning, fontSize: journalType.caption }}>{identityMatches ? "当前家庭角色只有查看权限。已有本机记录仍保留。" : "请返回保存这条记录的账号与家庭，再继续编辑。"}</Text>
         </View>
         <View style={sharedStyles.card}>
           <Text style={sharedStyles.cardTitle}>已有本机待传记录</Text>
@@ -498,37 +536,44 @@ export function CaptureScreen() {
 
   const visibilityLabel = content?.visibility === "private" ? "仅自己可见" : content?.visibility === "members" ? content.readerUserIds.length ? `指定 ${content.readerUserIds.length} 位家人可见` : "指定成员 · 尚未选择" : "全家可见";
   const editable = capsuleDraft.draft?.status === "editing" && !busy;
-  const saveDisabled = busy || recording || !capsuleDraft.draft || !!capsuleDraft.error || (!text.trim() && !content?.items.length);
+  const saveDisabled = busy || recording || !capsuleDraft.draft || !!capsuleDraft.error || (!memoryId && !text.trim() && !content?.title.trim() && !content?.items.length);
   const saveLabel = busy ? "正在保存…" : capsuleDraft.draft?.status === "queued" ? "继续同步" : "保存";
   const ink = colors.ink, muted = colors.muted, rim = colors.line;
   const clear = () => void confirm({ title: capsuleDraft.draft?.savedContent ? "放弃这次补记？" : "清空这次记录？", message: capsuleDraft.draft?.savedContent ? "之前保存的记录和原件仍会保留。" : "原件仍会保留。", confirmLabel: capsuleDraft.draft?.savedContent ? "放弃补记" : "清空", destructive: true })
-    .then(confirmed => { if (confirmed) void capsuleDraft.discard().catch(e => setMessage(e.message)); });
+    .then(async confirmed => {
+      if (!confirmed) return;
+      const restoringSaved = Boolean(capsuleDraft.draft?.savedContent);
+      try { await capsuleDraft.discard(); if (restoringSaved) { exitBySave.current = true; navigation.goBack(); } }
+      catch (reason) { setMessage(reason instanceof Error ? reason.message : "暂时无法恢复原记录。"); }
+    });
 
   return (
     <KeyboardAvoidingView style={sharedStyles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView testID="capture-content" style={{ flex: 1 }} automaticallyAdjustKeyboardInsets={false} contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onScrollBeginDrag={Keyboard.dismiss} contentContainerStyle={[styles.content, { paddingTop: insets.top + journalSpace.medium }]} ref={scrollRef}>
         <View style={styles.headerRow}>
-          <CollapsingHero compact variant="record" titleTestID="capture-title" title={capsuleDraft.draft?.savedContent ? "补记这一刻" : "记录一刻"} style={styles.captureHeading} />
+          <Pressable accessibilityRole="button" accessibilityLabel="返回" onPress={() => navigation.goBack()} style={styles.clear}><JournalIcon name="arrow-left" size={22} color={ink} /></Pressable>
+          <CollapsingHero compact variant="record" titleTestID="capture-title" title={memoryId || capsuleDraft.draft?.savedContent ? "编辑这一刻" : "记一刻"} style={styles.captureHeading} />
           {(text.trim() || content?.items.length || content?.title) && editable ? <Pressable accessibilityRole="button" accessibilityLabel="清空" disabled={recording || !!capsuleDraft.error} onPress={clear} style={styles.clear}><Text style={{ color: muted }}>清空</Text></Pressable> : null}
         </View>
         <View style={[styles.composer, { borderColor: rim, backgroundColor: colors.card }]}>
-          <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline editable={editable} maxLength={5000} onChangeText={setText} placeholder="今天，有什么想记住的？" placeholderTextColor={muted} ref={textInputRef} style={[styles.textArea, { color: ink }]} textAlignVertical="top" value={text} />
-          {text.length > 4500 ? <Text style={[styles.counter, { color: muted }]}>{text.length} / 5000</Text> : null}
+          <TextInput testID="capture-text" accessibilityLabel="写下这一刻" multiline editable={editable} maxLength={memoryId ? 100000 : 5000} onChangeText={setText} placeholder="今天，有什么想记住的？" placeholderTextColor={muted} ref={textInputRef} style={[styles.textArea, { color: ink }]} textAlignVertical="top" value={text} />
+          {text.length > (memoryId ? 99500 : 4500) ? <Text style={[styles.counter, { color: muted }]}>{text.length} / {memoryId ? 100000 : 5000}</Text> : null}
           <View onLayout={event => { actionAreaY.current = event.nativeEvent.layout.y; }} style={styles.mediaZone}>
+            <View style={styles.toolRow}>
             <Pressable accessibilityRole="button" accessibilityLabel="相册" accessibilityHint="添加照片或视频" disabled={!editable || recording} onPress={() => void pickMedia("library")} style={({ pressed }) => [styles.addMedia, { borderColor: rim, backgroundColor: colors.paper }, pressed && sharedStyles.pressed, (!editable || recording) && sharedStyles.disabled]}>
-              <JournalIcon name="image" size={20} color={ink} /><Text style={{ color: ink, fontSize: 14 }}>照片 / 视频</Text>
+              <JournalIcon name="image" size={20} color={ink} /><Text style={{ color: ink, fontSize: 14 }}>照片</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="拍摄、录音与文件" accessibilityState={{ expanded: toolsOpen }} onPress={() => setToolsOpen(!toolsOpen)} style={({ pressed }) => [styles.toolsToggle, pressed && sharedStyles.pressed]}>
-              <Text style={{ color: muted, fontSize: journalType.label, flexShrink: 1 }}>拍摄、录音与文件</Text><JournalIcon name={toolsOpen ? "chevron-down" : "chevron-right"} size={16} color={muted} />
-            </Pressable>
+              <Action compact icon="camera" label="拍照" displayLabel="拍摄" hint="直接拍照" disabled={!editable || recording} onPress={() => void pickMedia("photo")} />
+              {!recording ? <Action compact icon="microphone" label="录音" hint="留下声音" disabled={!editable} onPress={() => void toggleRecording()} /> : null}
+            </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="更多素材方式" accessibilityState={{ expanded: toolsOpen }} onPress={() => setToolsOpen(!toolsOpen)} style={styles.toolsToggle}><Text style={{ color: muted }}>录像与文件</Text></Pressable>
             {toolsOpen ? <View style={styles.toolRow}>
-              <Action compact icon="camera" label="拍照" hint="直接拍照" disabled={!editable || recording} onPress={() => void pickMedia("photo")} />
               <Action compact icon="video" label="录像" hint="直接录像" disabled={!editable || recording} onPress={() => void pickMedia("video")} />
-              {!recording ? <Action compact icon="microphone" label="录音" hint="留下声音" disabled={busy || !capsuleDraft.draft || capsuleDraft.draft.status !== "editing"} onPress={() => void toggleRecording()} /> : null}
               <Action compact icon="file" label="文件" hint="添加原件" disabled={!editable || recording} onPress={() => void pickFiles()} />
             </View> : null}
             {recording ? <Button title="完成录音" icon="microphone" disabled={busy} onPress={() => void toggleRecording()} /> : null}
           </View>
+          {memoryDraft.memory?.assets.length ? <NativeMediaReader credentials={credentials} assets={memoryDraft.memory.assets} /> : null}
           {content?.items.map((item, index) => {
             const detail = item.localCaptureRef ? originals[item.localCaptureRef] : null;
             const previous = content.items[index - 1];
@@ -537,8 +582,9 @@ export function CaptureScreen() {
             return <View key={item.id} style={[styles.attachment, { borderColor: rim }]}>
               {detail?.mediaType === "image" && detail.localUri ? <Image source={{ uri: detail.localUri }} accessibilityLabel={item.caption || "这件事的照片"} style={styles.itemImage} resizeMode="contain" /> : null}
               <Text style={{ color: muted, fontSize: 13 }}>{item.preservationState === "missing" ? "原件缺失，请重新添加或移除" : detail?.fileName ?? "已保全的素材"}</Text>
-              {item.localCaptureRef ? <Button title="打开原件 / 重听" variant="ghost" full={false} onPress={() => navigation.navigate("LocalCapture", { captureId: item.localCaptureRef! })} /> : item.assetId && remoteMedia.scope === draftScope && remoteMedia.assets[item.assetId] ? <NativeMediaReader credentials={credentials} assets={[remoteMedia.assets[item.assetId]!]} /> : <Text accessibilityRole="alert" style={sharedStyles.body}>素材尚未读取；请联网重试，或核对读取权限。</Text>}
+              {item.localCaptureRef ? <Button title="打开原件 / 重听" disabled={recording} variant="ghost" full={false} onPress={() => navigation.navigate("LocalCapture", { captureId: item.localCaptureRef! })} /> : item.assetId && remoteMedia.scope === draftScope && remoteMedia.assets[item.assetId] ? <NativeMediaReader credentials={credentials} assets={[remoteMedia.assets[item.assetId]!]} /> : <Text accessibilityRole="alert" style={sharedStyles.body}>素材尚未读取；请联网重试，或核对读取权限。</Text>}
               {item.livePhotoGroupId && <Text style={{ color: muted, fontSize: 13 }}>Live Photo · {item.livePhotoRole === "image" ? "照片" : "动态原片"}</Text>}
+              {mediaType(item) === "image" ? <Button title={content.coverItemId === item.id ? "当前封面" : "设为封面"} variant="ghost" disabled={!editable} onPress={() => changeDraft({ coverItemId: item.id })} /> : null}
               {canPair && <Button title="与上一张照片组成 Live Photo" variant="ghost" disabled={!editable} onPress={() => changeDraft(pairDraftItems(content, previous.id, item.id, Crypto.randomUUID()))} />}
               <Pressable accessibilityRole="button" accessibilityLabel="移除" disabled={!editable} onPress={() => changeDraft(removeDraftItem(content, item.id))} style={styles.clear}><Text style={{ color: muted }}>移除</Text></Pressable>
             </View>;
@@ -546,15 +592,15 @@ export function CaptureScreen() {
           {recording ? <RecordingMeter read={readRecording} /> : null}
           <Text accessibilityLiveRegion="polite" style={[styles.saveState, { color: muted }]}>{capsuleDraft.error ? "草稿暂存遇到问题，请重试" : capsuleDraft.saved ? "草稿已暂存" : "正在暂存…"}</Text>
         </View>
-        {busy ? <ActivityIndicator color={muted} /> : null}
+        {busy || (memoryId && !capsuleDraft.draft && !capsuleDraft.error) ? <ActivityIndicator color={muted} /> : null}
         {message ? <Text accessibilityLiveRegion="polite" style={{ color: ink, fontSize: 14 }}>{message}</Text> : null}
-        {capsuleDraft.error ? <View accessibilityRole="alert" style={sharedStyles.warning}><Text style={sharedStyles.error}>{capsuleDraft.error}</Text><Action label="重试本机保存" hint="检查磁盘空间后重试" disabled={busy} onPress={() => void capsuleDraft.retry().catch(e => setMessage(e.message))} /></View> : null}
+        {capsuleDraft.error ? <View accessibilityRole="alert" style={sharedStyles.warning}><Text style={sharedStyles.error}>{capsuleDraft.error}</Text><Action label={memoryId && !capsuleDraft.draft ? "重新读取记录" : "重试本机保存"} hint={memoryId && !capsuleDraft.draft ? "联网后重新核对记录与权限" : "检查磁盘空间后重试"} disabled={busy} onPress={() => void capsuleDraft.retry().catch(e => setMessage(e.message))} /></View> : null}
         {(capsuleDraft.unboundDrafts ?? []).map(row => <Action key={row.id} label={`把本机草稿“${row.content.title || row.content.text.slice(0, 20) || "未命名"}”用于${family?.name ?? "当前家庭"}`} hint="确认原件的目的地，不复制原件" disabled={busy || recording} onPress={() => void capsuleDraft.bind(row.id).catch(e => setMessage(e.message))} />)}
         {content ? <>
-          <Text style={[styles.dateNote, { color: muted }]}>{captureDateSummary(content, capsuleDraft.draft?.captureTimeEdited, recordingTimezone)}</Text>
-          <Disclosure title="日期与更多信息">
+          <Pressable accessibilityRole="button" accessibilityLabel="发生时间" accessibilityHint="调整记录日期与精度" disabled={!editable || recording} onPress={() => { Keyboard.dismiss(); setDateOpen(true); }} style={styles.visibility}><Text style={{ color: muted }}>{captureDateSummary(content, capsuleDraft.draft?.captureTimeEdited, recordingTimezone)}</Text><JournalIcon name="chevron-down" size={16} color={muted} /></Pressable>
+          <Disclosure title="补充信息">
+            {memoryDraft.memory?.assets.some(asset => asset.type === "image") ? <><Text style={sharedStyles.label}>选择已有照片做封面</Text>{memoryDraft.memory.assets.filter(asset => asset.type === "image").map(asset => <Pressable key={asset.id} accessibilityRole="radio" accessibilityLabel={`封面：${asset.filename}`} accessibilityState={{ selected: !memoryDraft.edit?.content.newCoverItemId && memoryDraft.edit?.content.coverAssetId === asset.id, disabled: !editable }} disabled={!editable} onPress={() => memoryDraft.setCoverAsset(asset.id)} style={styles.readerChoice}><Text style={{ color: ink }}>{!memoryDraft.edit?.content.newCoverItemId && memoryDraft.edit?.content.coverAssetId === asset.id ? "当前封面 · " : ""}{asset.filename}</Text></Pressable>)}</> : null}
             <TextInput accessibilityLabel="记录标题" placeholder="标题（可以稍后补充）" value={content.title} onChangeText={title => changeDraft({ title })} editable={editable} maxLength={100} style={sharedStyles.input} />
-            <PrecisionDateTimeField occurredAt={content.occurredAt} precision={content.occurredAtPrecision} timezone={recordingTimezone} disabled={!editable} onChange={({ occurredAt, precision }) => changeDraft({ occurredAt, occurredAtPrecision: precision })} />
             <TextInput accessibilityLabel="发生地点" placeholder="地点（可选）" value={content.locationText} onChangeText={locationText => changeDraft({ locationText })} editable={editable} maxLength={200} style={sharedStyles.input} />
             {people?.length ? <><Text style={sharedStyles.label}>在场的家人</Text><View style={styles.readerRow}>{people.map(person => <Pressable key={person.id} accessibilityRole="checkbox" accessibilityState={{ checked: content.participantIds.includes(person.id), disabled: !editable }} disabled={!editable} onPress={() => changeDraft({ participantIds: content.participantIds.includes(person.id) ? content.participantIds.filter(id => id !== person.id) : [...content.participantIds, person.id] })} style={styles.readerChip}><Text style={{ color: colors.ink }}>{content.participantIds.includes(person.id) ? "已选 · " : ""}{person.displayName}</Text></Pressable>)}</View></> : null}
           </Disclosure>
@@ -569,7 +615,7 @@ export function CaptureScreen() {
         </> : null}
         {capsuleDraft.draft?.memoryEventId && capsuleDraft.draft.organizeOnPublish && <OrganizerPanel kind="memory_event" id={capsuleDraft.draft.memoryEventId} />}
       </ScrollView>
-      <View testID="capture-save-bar" style={[styles.saveBar, { marginBottom: keyboardOpen ? 8 : dockHeight + 8, borderColor: rim, backgroundColor: colors.paper }]}>
+      <View testID="capture-save-bar" style={[styles.saveBar, { marginBottom: keyboardOpen ? 8 : Math.max(insets.bottom, 12), borderColor: rim, backgroundColor: colors.paper }]}>
         <View style={styles.saveTools}>
           <Pressable testID="capture-readers" accessibilityRole="button" accessibilityLabel={`保存后的读者：${visibilityLabel}`} accessibilityHint="更改谁可以阅读这件事" accessibilityState={{ disabled: !editable || recording, expanded: readersOpen }} disabled={!editable || recording} onPress={() => { Keyboard.dismiss(); setReadersOpen(true); }} style={({ pressed }) => [styles.visibility, pressed && sharedStyles.pressed]}>
             <JournalIcon name={content?.visibility === "private" ? "lock" : "users"} size={16} color={muted} /><Text style={{ color: muted, fontSize: journalType.label, flexShrink: 1 }}>{visibilityLabel}</Text><JournalIcon name="chevron-down" size={16} color={muted} />
@@ -578,12 +624,17 @@ export function CaptureScreen() {
         </View>
         <Button testID="capture-save" title={capsuleDraft.draft?.status === "published" ? "已保存" : saveLabel} accessibilityLabel={saveLabel} icon="check" variant="primary" disabled={saveDisabled || capsuleDraft.draft?.status === "published"} onPress={() => void sendDraft(!credentials || !!viewer?.canEditEvents, credentials && !viewer?.canEditEvents ? content!.visibility === "family" ? "review" : "draft" : undefined, capsuleDraft.draft!.status === "queued" ? capsuleDraft.draft!.organizeOnPublish === true : automaticRequested)} />
       </View>
+      <GlassSheet visible={dateOpen} onClose={() => setDateOpen(false)}>
+        <Text accessibilityRole="header" style={sharedStyles.cardTitle}>发生时间</Text>
+        {content ? <PrecisionDateTimeField occurredAt={content.occurredAt} precision={content.occurredAtPrecision} timezone={recordingTimezone} disabled={!editable} onChange={({ occurredAt, precision }) => changeDraft({ occurredAt, occurredAtPrecision: precision })} /> : null}
+        <Button title="完成日期选择" onPress={() => setDateOpen(false)} />
+      </GlassSheet>
       <GlassSheet visible={readersOpen} onClose={() => setReadersOpen(false)}>
         <Text accessibilityRole="header" style={sharedStyles.cardTitle}>谁可以阅读这件事</Text>
         <ScrollView style={{ maxHeight: Math.max(160, windowHeight - insets.top - insets.bottom - 200) }} contentContainerStyle={styles.readerSheet} keyboardShouldPersistTaps="handled">
           {content ? <>
             <View style={styles.readerChoices} accessibilityLabel="保存后的读者">
-              {([["family", "全家"], ["members", "指定成员"], ["private", "仅自己"]] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: content.visibility === value, disabled: !editable }} disabled={!editable} onPress={() => changeDraft(value === "members" ? { visibility: value } : { visibility: value, readerUserIds: [] })} style={[styles.readerChoice, { borderColor: content.visibility === value ? colors.coral : colors.line, backgroundColor: content.visibility === value ? colors.softCoral : colors.card }]}><Text style={{ color: content.visibility === value ? ink : muted, fontSize: journalType.body, flexShrink: 1 }}>{label}</Text>{content.visibility === value ? <JournalIcon name="check" size={18} color={colors.coral} /> : null}</Pressable>)}
+              {([["family", "全家"], ["members", "指定成员"], ["private", "仅自己"]] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: content.visibility === value, disabled: !editable }} disabled={!editable} onPress={() => { changeDraft(value === "members" ? { visibility: value } : { visibility: value, readerUserIds: [] }); if (value !== "members") setReadersOpen(false); }} style={[styles.readerChoice, { borderColor: content.visibility === value ? colors.coral : colors.line, backgroundColor: content.visibility === value ? colors.softCoral : colors.card }]}><Text style={{ color: content.visibility === value ? ink : muted, fontSize: journalType.body, flexShrink: 1 }}>{label}</Text>{content.visibility === value ? <JournalIcon name="check" size={18} color={colors.coral} /> : null}</Pressable>)}
             </View>
             {content.visibility === "members" ? <>
               {content.readerUserIds.length === 0 ? <Text accessibilityRole="alert" style={sharedStyles.body}>请至少选择一位家人，再保存这件事。</Text> : null}
@@ -606,23 +657,23 @@ export function CaptureScreen() {
   );
 }
 
-function Action({ label, hint, onPress, disabled, primary = false, compact = false, icon }: { label: string; hint: string; onPress: () => void; disabled: boolean; primary?: boolean; compact?: boolean; icon?: "camera" | "video" | "microphone" | "file" }) {
+function Action({ label, displayLabel, hint, onPress, disabled, primary = false, compact = false, icon }: { label: string; displayLabel?: string; hint: string; onPress: () => void; disabled: boolean; primary?: boolean; compact?: boolean; icon?: "camera" | "video" | "microphone" | "file" }) {
   const { colors } = useColorTheme();
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={hint} disabled={disabled} onPress={onPress} style={({ pressed }) => [compact ? styles.tool : styles.action, pressed && sharedStyles.pressed, disabled && sharedStyles.disabled]}>{icon ? <JournalIcon name={icon} color={primary ? colors.coral : colors.muted} size={18} /> : null}<Text style={{ color: colors.muted, fontSize: 13 }}>{label}</Text>{!compact ? <Text style={{ color: colors.muted, fontSize: 13 }}>{hint}</Text> : null}</Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={hint} disabled={disabled} onPress={onPress} style={({ pressed }) => [compact ? styles.tool : styles.action, pressed && sharedStyles.pressed, disabled && sharedStyles.disabled]}>{icon ? <JournalIcon name={icon} color={primary ? colors.coral : colors.muted} size={18} /> : null}<Text style={{ color: colors.muted, fontSize: 13 }}>{displayLabel ?? label}</Text>{!compact ? <Text style={{ color: colors.muted, fontSize: 13 }}>{hint}</Text> : null}</Pressable>;
 }
 
 const styles = StyleSheet.create({
   content: { padding: journalSpace.page, gap: journalSpace.medium },
   headerRow: { flexDirection: "row", alignItems: "center", gap: journalSpace.small, paddingHorizontal: 6, paddingBottom: 8 },
   captureHeading: { flex: 1, paddingBottom: 0, borderBottomWidth: 0 },
-  composer: { borderRadius: journalRadius.card, borderWidth: 1, padding: 20, overflow: "hidden", gap: 12 },
-  textArea: { minHeight: 176, fontSize: 17, lineHeight: 30, paddingTop: 0 },
+  composer: { paddingVertical: 8, overflow: "hidden", gap: 12 },
+  textArea: { minHeight: 176, fontSize: journalType.body, lineHeight: 28, paddingTop: 0 },
   counter: { fontSize: 12, textAlign: "right" },
   mediaZone: { gap: 10 },
-  addMedia: { alignSelf: "flex-start", minHeight: 48, flexDirection: "row", alignItems: "center", gap: 9, borderWidth: 1, borderRadius: journalRadius.control, paddingHorizontal: 16 },
+  addMedia: { flexGrow: 1, minHeight: 48, flexDirection: "row", alignItems: "center", gap: 9, borderWidth: 1, borderRadius: journalRadius.control, paddingHorizontal: 16 },
   toolsToggle: { minHeight: 44, maxWidth: "100%", flexDirection: "row", alignItems: "center", gap: journalSpace.small, alignSelf: "flex-start" },
   toolRow: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
-  tool: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 6, flexGrow: 1 },
+  tool: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 12, flexGrow: 1 },
   clear: { minHeight: 44, justifyContent: "center", alignSelf: "flex-start", paddingHorizontal: 8 },
   saveState: { fontSize: 12 },
   attachment: { borderWidth: 1, borderRadius: 18, padding: 10, gap: 6 },

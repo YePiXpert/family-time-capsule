@@ -9,12 +9,13 @@ import { Text } from "./typography";
 import { Button, Chip } from "./ui";
 
 /** Shared month selection; counts describe this device's archive, not server completeness. */
-export function MonthPicker({ value, currentMonth, counts, onChange, allowAll = false }: {
+export function MonthPicker({ value, currentMonth, counts, onChange, allowAll = false, compact = false }: {
   value: string;
   currentMonth: string;
   counts: ReadonlyMap<string, number>;
   onChange: (month: string) => void;
   allowAll?: boolean;
+  compact?: boolean;
 }) {
   const { colors } = useColorTheme();
   const { height } = useWindowDimensions();
@@ -37,11 +38,11 @@ export function MonthPicker({ value, currentMonth, counts, onChange, allowAll = 
     setYearPage(null);
   };
   return <>
-    <Pressable testID="month-picker" accessibilityRole="button" accessibilityLabel={`按年月回看，${title}`} accessibilityState={{ expanded: browsingYear !== null }} onPress={open} style={({ pressed }) => [styles.trigger, { backgroundColor: colors.card, borderColor: colors.line }, pressed && styles.pressed]}>
-      <View style={[styles.icon, { backgroundColor: colors.softCoral }]}><JournalIcon name="calendar" size={22} color={colors.coralDark} /></View>
+    <Pressable testID="month-picker" accessibilityRole="button" accessibilityLabel={`按年月回看，${title}`} accessibilityState={{ expanded: browsingYear !== null }} onPress={open} style={({ pressed }) => [styles.trigger, compact && styles.compactTrigger, { backgroundColor: colors.card, borderColor: colors.line }, pressed && styles.pressed]}>
+      {!compact ? <View style={[styles.icon, { backgroundColor: colors.softCoral }]}><JournalIcon name="calendar" size={22} color={colors.coralDark} /></View> : null}
       <View style={styles.triggerText}>
-        <Text style={[styles.title, { color: colors.ink }]}>{title}</Text>
-        <Text style={[styles.detail, { color: colors.muted }]}>{value ? `本机 ${counts.get(value) ?? 0} 条记录 · 点选年月` : latest ? `最近有记录：${calendarMonthLabel(latest)}` : "点选年份和月份，回看成长记录"}</Text>
+        <Text style={[styles.title, compact && { fontSize: 16 }, { color: colors.ink }]}>{title}</Text>
+        {!compact ? <Text style={[styles.detail, { color: colors.muted }]}>{value ? `本机 ${counts.get(value) ?? 0} 条记录 · 点选年月` : latest ? `最近有记录：${calendarMonthLabel(latest)}` : "点选年份和月份，回看成长记录"}</Text> : null}
       </View>
       <JournalIcon name="chevron-down" size={18} color={colors.muted} />
     </Pressable>
@@ -84,6 +85,7 @@ export function MonthPicker({ value, currentMonth, counts, onChange, allowAll = 
 }
 
 const styles = StyleSheet.create({
+  compactTrigger: { minHeight: 48, padding: 12, borderWidth: 0 },
   trigger: { minHeight: 72, borderWidth: 1, borderRadius: journalRadius.control, padding: 16, flexDirection: "row", alignItems: "center", gap: 12 },
   icon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   triggerText: { flex: 1, gap: 4 },

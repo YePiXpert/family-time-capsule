@@ -184,6 +184,11 @@ export type MobileContributionVisibility =
   | "child_later";
 
 export type MobileMemoryPatch = {
+  visibility?: "private" | "members" | "family";
+  readerUserIds?: string[];
+  editDraftId?: string;
+  editDraftRevision?: number;
+  appendItems?: import("./drafts/model").DraftItem[];
   expectedRevision: number;
   mutationId: string;
   title?: string;
@@ -202,6 +207,9 @@ export type MemorySharingPatch = { visibility: "private" | "members" | "family";
 export type MemorySharingResult = { visibility: MemorySharingPatch["visibility"]; readerUserIds: string[]; titleRevision: number; readable: boolean };
 
 export type MobileMemory = {
+  atomicEditVersion?: 1;
+  coverAssetId?: string | null;
+  mutationReceipt?: { mutationId: string; resultRevision: number; replayed: boolean };
   milestoneType?: string | null;
   isPinned?: boolean;
   bodyText?: string;

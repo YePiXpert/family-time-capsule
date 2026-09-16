@@ -54,8 +54,13 @@ def main():
                   for device in entries if device.get("isAvailable") and device["name"].startswith("iPhone")]
     assert candidates, "No available iPhone simulator runtime"
     runtime, device = max(candidates, key=lambda pair: tuple(int(n) for n in re.findall(r"\d+", pair[0])))
+    # Exercise the design's 390-point phone width with real native layout.
+    types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
+    compact = next((item for item in types if item["identifier"] == "com.apple.CoreSimulator.SimDeviceType.iPhone-16e"), None)
+    if compact:
+        device = {"name": compact["name"], "deviceTypeIdentifier": compact["identifier"]}
     udid = run("xcrun", "simctl", "create", "FTC release startup smoke", device["deviceTypeIdentifier"], runtime)
-    report = {"gitSha": os.environ.get("SOURCE_SHA"), "buildNumber": info["CFBundleVersion"], "runtime": runtime, "checks": []}
+    report = {"gitSha": os.environ.get("SOURCE_SHA"), "buildNumber": info["CFBundleVersion"], "runtime": runtime, "device": device["name"], "checks": []}
     ocr = output / "recognize-text.swift"
     ocr.write_text('''import Foundation
 import Vision
@@ -96,7 +101,7 @@ for result in request.results ?? [] {
         run("xcrun", "simctl", "terminate", udid, bundle)
         with sqlite3.connect(db_path) as db:
             db.execute("INSERT INTO meta(key,value) VALUES ('welcome_done','1') ON CONFLICT(key) DO UPDATE SET value='1'")
-        launch("saved-local-mode-empty", "回看")
+        launch("saved-local-mode-empty", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
         payload = json.dumps({"text": "晚饭后，你笑着挥了挥小手。想把这一刻，好好留给长大的你。"})
         with sqlite3.connect(db_path) as db:
@@ -105,7 +110,7 @@ for result in request.results ?? [] {
             db.execute("INSERT INTO outbox(id,kind,payload_json,created_at) VALUES ('startup-smoke','text_capture',?,'2026-09-11T00:00:00.000Z')", (payload,))
             before = db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone()
         for label in ("saved-local-mode-with-record", "local-mode-relaunch"):
-            launch(label, "回看")
+            launch(label, "相册")
             run("xcrun", "simctl", "terminate", udid, bundle)
             with sqlite3.connect(db_path) as db:
                 assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
@@ -119,18 +124,18 @@ for result in request.results ?? [] {
         with sqlite3.connect(db_path) as db:
             assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
             db.execute("DELETE FROM local_draft WHERE id='damaged-smoke-fixture'")
-        launch("repaired-local-mode-relaunch", "回看")
+        launch("repaired-local-mode-relaunch", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
         with sqlite3.connect(db_path) as db:
             assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
             db.execute("INSERT INTO meta(key,value) VALUES ('theme_mode','dark') ON CONFLICT(key) DO UPDATE SET value='dark'")
-        launch("local-mode-dark", "回看")
+        launch("local-mode-dark", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
         with sqlite3.connect(db_path) as db:
             db.execute("UPDATE meta SET value='light' WHERE key='theme_mode'")
             db.execute("INSERT INTO meta(key,value) VALUES ('display_mode','simple') ON CONFLICT(key) DO UPDATE SET value='simple'")
         run("xcrun", "simctl", "ui", udid, "content_size", "extra-extra-extra-large")
-        launch("local-mode-large-text", "回看")
+        launch("local-mode-large-text", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
         with sqlite3.connect(db_path) as db:
             assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before

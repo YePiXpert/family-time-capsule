@@ -17,6 +17,7 @@ export function mergeSavedDrafts(events: LocalTimelineEvent[], drafts: LocalDraf
     id: `draft:${draft.id}`, localDraftId: draft.id, source: "local", syncState: draft.syncedRevision === draft.revision && draft.syncIntent === "review" ? "inbox" : "pending",
     title: draft.content.title || draft.content.text.trim().slice(0, 60) || "一段成长记录",
     bodyText: draft.content.text,
+    milestoneType: draft.content.milestoneType ?? null,
     hasUnsavedChanges: draft.status === "editing" && draft.syncedRevision !== draft.revision,
     participantIds: draft.content.participantIds,
     occurredAt: draft.content.occurredAt ?? draft.updatedAt, occurredAtPrecision: draft.content.occurredAt ? draft.content.occurredAtPrecision : "unknown",
