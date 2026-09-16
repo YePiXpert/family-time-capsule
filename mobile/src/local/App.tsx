@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  StyleSheet,
   Text as NativeText,
   View,
   Pressable,
@@ -34,6 +35,7 @@ import {
   LocalTheme,
   Button,
   ErrorText,
+  Glass,
   Page,
   Text,
   messageOf,
@@ -64,9 +66,23 @@ function Home() {
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.muted,
+        tabBarBackground: () => (
+          <Glass
+            radius={0}
+            intensity={55}
+            style={{
+              flex: 1,
+              borderWidth: 0,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderRadius: 0,
+            }}
+          />
+        ),
         tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.line,
+          position: "absolute",
+          backgroundColor: "transparent",
+          borderTopWidth: 0,
+          elevation: 0,
         },
         tabBarLabelStyle: { fontSize: 13 },
       }}
@@ -142,27 +158,29 @@ function Root() {
   if (!state.welcome)
     return (
       <Page top>
-        <View style={{ minHeight: 140 }} />
-        <Text style={s.muted}>小美成长记</Text>
-        <Text style={s.title}>记下今天的小事</Text>
-        <Text>写几句话，留一张照片，慢慢整理成相册。</Text>
-        <Text style={s.muted}>记录保存在这台设备，随时回看。</Text>
-        <ErrorText message={error} />
-        <Button
-          title="开始记录"
-          testID="welcome-start"
-          primary
-          disabled={busy}
-          onPress={() => {
-            setBusy(true);
-            void store
-              .change((s) => {
-                s.welcome = true;
-              })
-              .catch((e) => setError(messageOf(e)))
-              .finally(() => setBusy(false));
-          }}
-        />
+        <View style={{ minHeight: 120 }} />
+        <Glass radius={24} style={{ padding: 20, gap: 12 }}>
+          <Text style={s.muted}>小美成长记</Text>
+          <Text style={s.title}>记下今天的小事</Text>
+          <Text>写几句话，留一张照片，慢慢整理成相册。</Text>
+          <Text style={s.muted}>记录保存在这台设备，随时回看。</Text>
+          <ErrorText message={error} />
+          <Button
+            title="开始记录"
+            testID="welcome-start"
+            primary
+            disabled={busy}
+            onPress={() => {
+              setBusy(true);
+              void store
+                .change((s) => {
+                  s.welcome = true;
+                })
+                .catch((e) => setError(messageOf(e)))
+                .finally(() => setBusy(false));
+            }}
+          />
+        </Glass>
       </Page>
     );
   return (
@@ -182,8 +200,14 @@ function Root() {
         }}
       >
         {error ? (
-          <View style={{ padding: 12, backgroundColor: theme.colors.card }}>
-            <ErrorText message={error} />
+          <View
+            style={{
+              padding: 12,
+              backgroundColor: theme.colors.glass,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: theme.colors.glassLine,
+            }}
+          > <ErrorText message={error} />
             <Button
               title="重试接收素材"
               onPress={() => {
@@ -198,6 +222,8 @@ function Root() {
           screenOptions={{
             headerBackTitle: "返回",
             headerShadowVisible: false,
+            headerBlurEffect: theme.dark ? "prominent" : "regular",
+            headerStyle: { backgroundColor: theme.colors.glass },
             contentStyle: { backgroundColor: theme.colors.paper },
             animation: "none",
           }}

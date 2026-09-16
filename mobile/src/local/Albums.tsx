@@ -3,7 +3,7 @@ import {
   usePreventRemove,
   type NavigationAction,
 } from "@react-navigation/native";
-import { Alert, FlatList, Pressable, ScrollView, View } from "react-native";
+import { Alert, FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useLibrary, useStore } from "./context";
 import { beginSelection, newId, now } from "./services";
 import { finishSelection, monthKey, sortedRecords } from "./model";
@@ -295,7 +295,8 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
 export function Picker({ route, navigation }: Props<"Picker">) {
   const store = useStore(),
     state = useLibrary(),
-    s = useStyles();
+    s = useStyles(),
+    { colors } = useTheme();
   const q = state.selections[route.params.sessionId];
   const list = useRef<FlatList>(null),
     restored = useRef(false),
@@ -405,7 +406,15 @@ export function Picker({ route, navigation }: Props<"Picker">) {
           </View>
         }
       />
-      <View style={{ padding: 20, gap: 8 }}>
+      <View
+        style={{
+          padding: 20,
+          gap: 8,
+          backgroundColor: colors.glass,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.glassLine,
+        }}
+      >
         <Text>已选 {q.selected.length} 条</Text>
         <Button
           title={q.albumId ? "加入此相册" : "下一步"}
