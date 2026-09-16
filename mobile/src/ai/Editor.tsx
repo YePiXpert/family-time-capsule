@@ -126,6 +126,8 @@ export function AIEditor({
     active.current = true;
     try {
       if (!(await getToken())) {
+        // 先收起面板，避免它盖在 AI 设置页上。
+        setPanel(false);
         nav.navigate("AISettings");
         return;
       }
