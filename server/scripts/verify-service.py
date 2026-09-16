@@ -3,7 +3,7 @@ import argparse,base64,json,subprocess,time,urllib.request,urllib.error,uuid
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='xiaomei-ai-staging-ai-1');args=p.parse_args()
 def call(path,body=None,token=None,method=None):
- headers={'Content-Type':'application/json'}
+ headers={} if body is None else {'Content-Type':'application/json'}
  if token:headers['Authorization']='Bearer '+token
  req=urllib.request.Request(args.base+path,data=None if body is None else json.dumps(body).encode(),headers=headers,method=method or ('POST' if body is not None else 'GET'))
  try:
