@@ -10,11 +10,13 @@ import {
   polishRequest,
   proposalPatch,
   proposalEvents,
+  requestImageIds,
   sameDayChunks,
   sameJob,
   sourceFingerprint,
   validateResult,
   POLISH_BODY_LIMIT,
+  POLISH_CONTEXT_LIMIT,
 } from "../src/ai/state";
 function fixture() {
   const library = emptyLibrary();
@@ -281,5 +283,62 @@ describe("AI suggestions remain reviewable local drafts", () => {
     expect(moveProposalPhoto(proposal, "a", 0).groups).toBe(proposal.groups);
     const emptied = moveProposalPhoto(proposal, "c", 0);
     expect(emptied.groups?.map((g) => g.photoIds)).toEqual([["a", "b", "c"]]);
+  });
+  it("sends every draft photo to grouping and only the chosen event to writing", () => {
+    const { library, draft } = fixture();
+    library.media.audio = {
+      id: "audio",
+      file: "audio.m4a",
+      name: "audio.m4a",
+      kind: "audio",
+      bytes: 1,
+      sha256: "b".repeat(64),
+    };
+    draft.content.mediaIds = ["a", "b", "c", "audio"];
+    // 分组必须覆盖整份草稿，否则一次请求都不会发出。
+    expect(requestImageIds("group", undefined, draft, library.media)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(requestImageIds("write", ["c", "b", "audio"], draft, library.media)).toEqual(
+      ["c", "b"],
+    );
+    expect(requestImageIds("write", undefined, draft, library.media)).toEqual([]);
+  });
+  it("keeps every grouped event when day grouping is switched off before confirming", () => {
+    const { library, draft } = fixture();
+    draft.groupPhotosByDay = false;
+    const proposal = {
+      fingerprint: sourceFingerprint(draft, library.media),
+      kind: "group" as const,
+      eventIndex: 0,
+      model: "deepseek-flash:high",
+      groups: [
+        { photoIds: ["a", "b"], title: "上午", summary: "室内" },
+        { photoIds: ["c"], title: "第二天", summary: "照片" },
+      ],
+    };
+    const patch = proposalPatch(draft, library.media, proposal);
+    // 关闭按天分组只是不再自动按日期拆分，确认分组后每条事情都要保留。
+    expect("photoEvents" in patch && patch.photoEvents?.map((e) => e.mediaIds)).toEqual([
+      ["a", "b"],
+      ["c"],
+    ]);
+    expect("photoEvents" in patch && patch.groupPhotosByDay).toBe(true);
+  });
+  it("refuses an oversized title and body envelope instead of sending a generic error", () => {
+    const longTitle = polishRequest({
+      title: "题".repeat(POLISH_CONTEXT_LIMIT - 10),
+      text: "正文。",
+    });
+    expect(longTitle.context).toBe("");
+    expect(longTitle.error).toContain(String(POLISH_CONTEXT_LIMIT));
+    expect(
+      polishRequest({
+        title: "题".repeat(POLISH_CONTEXT_LIMIT - 20),
+        text: "正文。",
+      }).context,
+    ).not.toBe("");
   });
 });

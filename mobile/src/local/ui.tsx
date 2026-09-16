@@ -163,12 +163,14 @@ export function Glass({
   radius = 16,
   tint,
   intensity = 45,
+  accessibilityViewIsModal,
 }: {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
   radius?: number;
   tint?: string;
   intensity?: number;
+  accessibilityViewIsModal?: boolean;
 }) {
   const { colors, dark } = useTheme();
   const base: ViewStyle = {
@@ -183,6 +185,7 @@ export function Glass({
         glassEffectStyle="regular"
         colorScheme={dark ? "dark" : "light"}
         tintColor={tint}
+        accessibilityViewIsModal={accessibilityViewIsModal}
         style={[base, style]}
       >
         {children}
@@ -193,6 +196,7 @@ export function Glass({
       intensity={intensity}
       tint={dark ? "dark" : "light"}
       blurMethod="dimezisBlurViewSdk31Plus"
+      accessibilityViewIsModal={accessibilityViewIsModal}
       style={[base, { backgroundColor: tint ?? colors.glass }, style]}
     >
       {children}

@@ -25,6 +25,7 @@ import {
   sameJob,
   polishRequest,
   moveProposalPhoto,
+  requestImageIds,
   validateResult,
   localPlaceTags,
 } from "./state";
@@ -54,6 +55,7 @@ export function AIEditor({
     [seen, setSeen] = useState(false),
     [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(""),
+    [notice, setNotice] = useState(""),
     [error, setError] = useState(""),
     [chosenEventIndex, setEventIndex] = useState(0),
     [task, setTask] = useState<"group" | "write">(
@@ -62,11 +64,18 @@ export function AIEditor({
     [writeMode, setWriteMode] = useState<WritingMode>(
       draft.aiProposal?.kind === "write" ? modeOf(draft.aiProposal) : "generate",
     ),
-    [lastRun, setLastRun] = useState<Run>({ kind: "write", mode: "generate" }),
+    [retryable, setRetryable] = useState<Run | null>(null),
     [adjusting, setAdjusting] = useState(false);
   const active = useRef(false),
+    openRef = useRef(false),
     abort = useRef<AbortController | null>(null),
     latest = useRef({ draft, media });
+  // 面板是否打开要能同步读取：结果可能在收起面板之后才返回。
+  const setPanel = (value: boolean) => {
+    openRef.current = value;
+    setOpen(value);
+    if (value) setSeen(true);
+  };
   useEffect(() => {
     latest.current = { draft, media };
   }, [draft, media]);
@@ -89,6 +98,8 @@ export function AIEditor({
     setProgress("");
   };
   const chooseWriteMode = (mode: WritingMode) => {
+    // 必须在写记录任务下预览，否则生成完成后结果不会展示。
+    setTask("write");
     setWriteMode(mode);
     setError("");
     setProgress("");
@@ -138,7 +149,8 @@ export function AIEditor({
       }
       setBusy(true);
       setError("");
-      setLastRun({ kind, mode });
+      setNotice("");
+      setRetryable(null);
       abort.current = new AbortController();
       const snapshot = latest.current,
         fp = sourceFingerprint(snapshot.draft, snapshot.media);
@@ -147,20 +159,20 @@ export function AIEditor({
           snapshotEvents[
             Math.min(eventIndex, Math.max(0, snapshotEvents.length - 1))
           ];
+      const ids = requestImageIds(
+        kind,
+        selected?.mediaIds,
+        snapshot.draft,
+        snapshot.media,
+      );
       if (kind === "group") {
         if (snapshot.draft.recordId)
           throw new Error(
             "按事情分组只在整理新建草稿的照片时使用，已保存的记录请用「调整归属」。",
           );
-        const images = snapshot.draft.content.mediaIds.filter(
-          (id) => snapshot.media[id]?.kind === "image",
-        );
-        if (images.length < 2)
+        if (ids.length < 2)
           throw new Error("按事情分组至少需要两张照片，先再多选几张。");
       }
-      const ids = (
-        kind === "write" ? (selected?.mediaIds ?? []) : []
-      ).filter((id) => snapshot.media[id]?.kind === "image");
       if (kind === "write" && mode === "polish") {
         const request = polishRequest({
           title: selected?.title ?? "",
@@ -192,12 +204,14 @@ export function AIEditor({
         kind === "write" ? ids : snapshot.draft.content.mediaIds,
         snapshot.media,
       );
-      const context =
-        kind === "write"
-          ? [selected?.title, selected?.text]
-              .filter(Boolean)
-              .join("\n")
-              .slice(0, 3500)
+      const rawWrite = [selected?.title, selected?.text]
+        .filter(Boolean)
+        .join("\n");
+      const context = kind === "write" ? rawWrite.slice(0, 3500) : "";
+      // 只把前一段发给 AI，本机内容不变；超限必须说明，不静默截断。
+      const clipped = (limit: number) =>
+        rawWrite.length > limit
+          ? `正文较长，本次只把前 ${limit} 字发给 AI，本机内容不变。`
           : "";
       const check = () => {
         if (abort.current?.signal.aborted)
@@ -245,6 +259,8 @@ export function AIEditor({
         return valid;
       };
       let result: AIResult;
+      // 本地校验通过后才值得重试；参数错误重试也不会成功。
+      setRetryable({ kind, mode });
       if (kind === "write" && mode === "polish") {
         const request = polishRequest({
           title: selected?.title ?? "",
@@ -256,6 +272,7 @@ export function AIEditor({
           writingMode: "polish",
         });
       } else if (kind === "write" && ids.length <= 20) {
+        setNotice(clipped(3500));
         setProgress("正在生成这件事的标题和正文…");
         result = await perform("write", "write", ids, {
           context,
@@ -290,6 +307,7 @@ export function AIEditor({
         if (kind === "group")
           result = validateResult({ groups: allGroups }, "group", ids);
         else {
+          if (kind === "write") setNotice(clipped(1500));
           setProgress("正在根据整组照片写记录…");
           const summaries = allGroups
             .map((g) => `${g.title}：${g.summary.slice(0, 100)}`)
@@ -312,6 +330,8 @@ export function AIEditor({
           ...(kind === "write" ? { writingMode: mode } : {}),
         },
       });
+      // 面板仍打开时用户正看着结果；收起后才返回的结果用图标小圆点提示。
+      setSeen(openRef.current);
       setProgress(
         kind === "group"
           ? "分组建议已保存，核对后确认。"
@@ -356,6 +376,7 @@ export function AIEditor({
     if (!proposal) return;
     setTask(proposal.kind);
     if (proposal.kind === "write") setWriteMode(modeOf(proposal));
+    setSeen(true);
     setError("");
     setProgress("");
   };
@@ -372,7 +393,7 @@ export function AIEditor({
       transparent
       statusBarTranslucent
       navigationBarTranslucent
-      onRequestClose={() => setOpen(false)}
+      onRequestClose={() => setPanel(false)}
     >
       <View style={{ flex: 1, justifyContent: "flex-end" }}>
         <Pressable
@@ -380,10 +401,11 @@ export function AIEditor({
           accessibilityLabel="收起 AI 面板"
           testID="ai-close"
           style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(15,20,17,0.35)" }}
-          onPress={() => setOpen(false)}
+          onPress={() => setPanel(false)}
         />
         <Glass
           radius={24}
+          accessibilityViewIsModal
           style={{
             maxHeight: "82%",
             paddingTop: 16,
@@ -397,7 +419,7 @@ export function AIEditor({
               title="收起"
               compact
               testID="ai-collapse"
-              onPress={() => setOpen(false)}
+              onPress={() => setPanel(false)}
             />
           </View>
           <ScrollView
@@ -521,18 +543,19 @@ export function AIEditor({
                 {progress}
               </Text>
             )}
+            {!!notice && <Text style={s.muted}>{notice}</Text>}
             {busy && (
               <Button title="停止等待" onPress={() => abort.current?.abort()} />
             )}
             <ErrorText message={error} />
-            {!!error && !busy && (
+            {!!error && !busy && retryable && (
               <View style={s.row}>
                 <Button
                   title="重试原请求"
                   compact
                   disabled={disabled}
                   onPress={() => {
-                    void generate(lastRun.kind, lastRun.mode);
+                    void generate(retryable.kind, retryable.mode);
                   }}
                 />
                 <Button
@@ -540,7 +563,7 @@ export function AIEditor({
                   compact
                   disabled={disabled}
                   onPress={() => {
-                    void generate(lastRun.kind, lastRun.mode, true);
+                    void generate(retryable.kind, retryable.mode, true);
                   }}
                 />
               </View>
@@ -727,10 +750,7 @@ export function AIEditor({
         accessibilityLabel={unseen ? "AI 助手，有结果待查看" : "AI 助手"}
         accessibilityState={{ selected: open }}
         disabled={disabled}
-        onPress={() => {
-          setOpen(true);
-          setSeen(true);
-        }}
+        onPress={() => setPanel(true)}
         style={({ pressed }) => ({
           width: 44,
           height: 44,

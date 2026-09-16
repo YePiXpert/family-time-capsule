@@ -13,6 +13,13 @@ export const inputSchema=z.object({
 }).strict();
 export type AIInput=z.infer<typeof inputSchema>;
 export type Group=z.infer<typeof groupSchema>;
+/** 润色的长度上限只约束正文：客户端把标题和正文放在同一个 context 里。 */
+export const POLISH_BODY_LIMIT=2000;
+const POLISH_BODY_MARK='正文：\n';
+export function polishBody(context:string) {
+ const at=context.indexOf(POLISH_BODY_MARK);
+ return at<0?context:context.slice(at+POLISH_BODY_MARK.length);
+}
 export function parseResult(value:unknown,kind:'group'|'write',input:AIInput) {
  if(kind==='write') return z.object({title:z.string().max(100),text:z.string().max(2000)}).strict().parse(value);
  const result=z.object({groups:z.array(groupSchema).min(1).max(100)}).strict().parse(value);

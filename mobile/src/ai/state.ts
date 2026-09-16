@@ -3,8 +3,21 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type { Library, RecordDraft, RecordContent } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
 import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
-/** 单次润色的正文上限；超限必须明确提示，不允许静默截断。 */
+/** 单次润色的正文上限；超限必须明确提示，不允许静默截断。与服务端一致。 */
 export const POLISH_BODY_LIMIT = 2000;
+/** 服务端对 context 的整体上限；标题过长时先在本机说明，避免笼统的输入无效。 */
+export const POLISH_CONTEXT_LIMIT = 4000;
+/** 分组请求覆盖草稿里的全部照片，写作请求只覆盖选中的这件事。 */
+export function requestImageIds(
+  kind: "group" | "write",
+  selectedMediaIds: string[] | undefined,
+  draft: RecordDraft,
+  media: Library["media"],
+): string[] {
+  return (
+    kind === "write" ? (selectedMediaIds ?? []) : draft.content.mediaIds
+  ).filter((id) => media[id]?.kind === "image");
+}
 export function sourceFingerprint(draft: RecordDraft, media: Library["media"]) {
   return bytesToHex(
     sha256(
@@ -39,9 +52,13 @@ export function polishRequest(event: {
       context: "",
       error: `正文已有 ${event.text.length} 字，一次最多润色 ${POLISH_BODY_LIMIT} 字。请先精简或分成几段，不会自动截断。`,
     };
-  return {
-    context: `${event.title.trim() ? `标题：${event.title.trim()}\n` : ""}正文：\n${event.text}`,
-  };
+  const context = `${event.title.trim() ? `标题：${event.title.trim()}\n` : ""}正文：\n${event.text}`;
+  if (context.length > POLISH_CONTEXT_LIMIT)
+    return {
+      context: "",
+      error: `标题和正文合计超过 ${POLISH_CONTEXT_LIMIT} 字，请精简标题后再试。`,
+    };
+  return { context };
 }
 const modeOf = (value: { writingMode?: WritingMode }): WritingMode =>
   value.writingMode ?? "generate";
@@ -59,13 +76,15 @@ export function sameJob(
     modeOf(previous) === modeOf(next)
   );
 }
-/** 采用建议时写回的位置：分组草稿写 photoEvents，其余直接写 content。 */
+/** 采用建议时写回的位置：分组建议按事情写回，其余直接写 content。 */
 export function proposalPatch(
   draft: RecordDraft,
   media: Library["media"],
   proposal: AIProposal,
   part?: "title" | "text",
-): Pick<RecordDraft, "content"> | Pick<RecordDraft, "photoEvents"> {
+):
+  | Pick<RecordDraft, "content">
+  | Pick<RecordDraft, "photoEvents" | "groupPhotosByDay"> {
   const accepted =
     part === "title"
       ? { ...proposal, text: undefined }
@@ -73,9 +92,17 @@ export function proposalPatch(
         ? { ...proposal, title: undefined }
         : proposal;
   const events = proposalEvents(draft, media, accepted);
+  // 分组建议必须按事情写回，否则只有第一组留在草稿里、其余照片会被丢掉。
   const grouped =
-    !draft.recordId && draft.groupPhotosByDay && draft.content.mediaIds.length;
-  return grouped ? { photoEvents: events } : { content: events[0]! };
+    !draft.recordId &&
+    (proposal.kind === "group" ||
+      (draft.groupPhotosByDay && draft.content.mediaIds.length));
+  if (!grouped) {
+    const content = events[0];
+    if (!content) throw new Error("这件事已改变，请重新生成。");
+    return { content };
+  }
+  return { photoEvents: events, groupPhotosByDay: true };
 }
 /** 在分组预览中调整一张照片的归属；每张照片仍恰好归属一次。 */
 export function moveProposalPhoto(
