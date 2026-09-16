@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
 // These device presentation effects are outside the HTTP/storage contract.
 // Keep the capture component, persistent hook, fetch and SQLite paths real.
-vi.mock("../src/components/GlassSheet", () => ({
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null,
   useConfirmSheet: () => vi.fn(async () => true),
   useAlertSheet: () => vi.fn(async () => {}),
 }));
@@ -32,7 +32,8 @@ vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect",
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
-  Keyboard: { addListener: () => ({ remove: () => {} }) },
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
+  Keyboard: { dismiss: vi.fn(), addListener: () => ({ remove: () => {} }) },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", KeyboardAvoidingView: "KeyboardAvoidingView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },

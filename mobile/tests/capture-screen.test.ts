@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
-vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null, GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
 vi.mock("../src/design/haptics", () => ({ haptics: { success: vi.fn(), warning: vi.fn(), selection: vi.fn(), impact: vi.fn() }, setHapticsEnabled: vi.fn(), areHapticsEnabled: () => true }));
 vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
 vi.mock("expo-glass-effect", () => ({ GlassView: "GlassView", isGlassEffectAPIAvailable: () => false, isLiquidGlassAvailable: () => false }));
@@ -31,7 +31,8 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ t
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Alert: { alert: mocks.alert },
-  Keyboard: { addListener: () => ({ remove: () => {} }) },
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
+  Keyboard: { dismiss: vi.fn(), addListener: () => ({ remove: () => {} }) },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", KeyboardAvoidingView: "KeyboardAvoidingView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
@@ -145,7 +146,7 @@ async function press(label: string) {
   await act(async () => { button.props.onPress(); });
 }
 
-it.each(["text", "photo", "library"])("opens %s and saves without initializing audio", async (intent) => {
+it.each(["text", "photo", "library", "audio"])("opens %s without initializing audio", async (intent) => {
   mocks.constructor.mockImplementation(() => { throw new Error("Failed to create recorder"); });
   await render(intent);
   if (intent === "text") {
@@ -153,11 +154,14 @@ it.each(["text", "photo", "library"])("opens %s and saves without initializing a
     const input = tree!.root.findAllByType("TextInput" as never)[0]!;
     await act(() => input.props.onChangeText("今天一起散步"));
     expect(mocks.enqueueText).toHaveBeenCalledWith({ text: "今天一起散步" });
+  } else if (intent === "audio") {
+    expect(tree!.root.findByProps({ accessibilityLabel: "拍摄、录音与文件" }).props.accessibilityState.expanded).toBe(true);
+    expect(tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === "录音")?.props.disabled).toBe(false);
   } else {
     expect(intent === "photo" ? mocks.camera : mocks.library).toHaveBeenCalledOnce();
     expect(mocks.enqueueMedia).toHaveBeenCalledWith("capture-id", { localUri: "file:///private/photo.jpg" });
   }
-  if (intent !== "text") expect(mocks.queued).toHaveBeenCalledOnce();
+  if (intent === "photo" || intent === "library") expect(mocks.queued).toHaveBeenCalledOnce();
   expect(mocks.constructor).not.toHaveBeenCalled();
   expect(mocks.permission).not.toHaveBeenCalled();
   expect(mocks.audioMode).not.toHaveBeenCalled();
@@ -311,19 +315,19 @@ async function renderDateField() {
   })); });
 }
 
-it("exposes recording actions directly without a second menu", async () => {
+it("keeps the active recording stop available after the optional tools are collapsed", async () => {
   await render();
-  const labels = tree!.root.findAllByType("Pressable" as never).map(node => node.props.accessibilityLabel);
-  expect(labels).toEqual(expect.arrayContaining(["相册", "拍照", "录像", "录音", "文件", "保存"]));
-  for (const label of ["相册", "拍照", "录像", "录音", "文件"]) {
-    const action = tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === label)!;
-    expect(action.props.disabled).toBeFalsy();
-    expect(action.props.accessibilityState?.expanded).toBeUndefined();
-  }
-  expect(tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === "更多工具")?.props.accessibilityState.expanded).toBe(false);
-  await press("录像");
-  expect(mocks.camera).toHaveBeenCalledOnce();
-  expect(mocks.alert).not.toHaveBeenCalled();
+  const tools = () => tree!.root.findByProps({ accessibilityLabel: "拍摄、录音与文件" });
+  expect(tools().props.accessibilityState.expanded).toBe(false);
+  await press("录音");
+  expect(tools().props.accessibilityState.expanded).toBe(true);
+  await press("拍摄、录音与文件");
+  expect(tools().props.accessibilityState.expanded).toBe(false);
+  await press("完成录音");
+  expect(mocks.stop).toHaveBeenCalledOnce();
+  expect(mocks.enqueueMedia).toHaveBeenCalledWith("capture-id", { localUri: "file:///private/recording.m4a" });
+  await press("相册");
+  expect(mocks.library).toHaveBeenCalledOnce();
 });
 
 it("keeps writing prompts optional and previews before appending to the real existing text", async () => {
