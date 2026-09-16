@@ -2,12 +2,14 @@ import { createElement, type ReactNode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { LocalTimelineEvent } from "../src/types";
+import type { LocalDraft } from "../src/drafts/store";
 
 const mocks = vi.hoisted(() => ({
-  app: { credentials: null as unknown, events: [] as LocalTimelineEvent[], family: { timezone: "UTC" }, home: null, outbox: [], people: [], viewer: null, syncing: false },
+  app: { credentials: null as unknown, events: [] as LocalTimelineEvent[], family: { id: "family", timezone: "UTC" }, home: null, outbox: [], people: [], viewer: null as { id: string; canEditEvents: boolean; canCapture: boolean } | null, userId: undefined as string | undefined, syncing: false },
   status: { syncing: false, message: null as string | null },
   navigation: { navigate: vi.fn(), setParams: vi.fn() }, sync: vi.fn(), reload: vi.fn(), dismiss: vi.fn(),
   cardRenders: vi.fn(),
+  unfinished: null as { scope: string; rows: LocalDraft[]; error: string | null } | null,
 }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ children }: { children: unknown }) => children }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "Icon" }));
@@ -28,6 +30,7 @@ vi.mock("../src/components/ContextMenu", () => {
   return { useContextMenu: () => ({ openMenu, menuElement: null }) };
 });
 vi.mock("../src/screens/PendingScreen", () => ({ usePendingImports: () => [] }));
+vi.mock("../src/drafts/use-resumable-drafts", () => ({ useResumableDrafts: () => mocks.unfinished }));
 vi.mock("../src/state/AppContext", () => ({
   useApp: () => ({ ...mocks.app, ...mocks.status, runSync: mocks.sync, reloadLocal: mocks.reload }),
   useAppData: () => mocks.app,
@@ -45,7 +48,7 @@ const { SyncBanner } = await import("../src/components/SyncBanner");
 let tree: ReactTestRenderer | undefined;
 const event = (id = "memory-a"): LocalTimelineEvent => ({ id, title: "今天的照片", occurredAt: "2026-09-01T12:00:00Z", occurredAtPrecision: "exact", locationText: null, childPersonId: null, ageDays: null, ageLabel: null, updatedAt: "2026-09-01T12:00:00Z", assetCount: 1, participantNames: [], captureIds: [], cover: { assetId: "cover", mediaAssetId: "photo", type: "image", mimeType: "image/jpeg", path: "/cover" }, localCoverUri: null, source: "server", syncState: null });
 const flatten = (style: unknown): Record<string, unknown> => Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean).map(flatten)) : style as Record<string, unknown>;
-beforeEach(() => { vi.clearAllMocks(); mocks.app.events = []; mocks.status.syncing = false; mocks.status.message = null; mocks.app.credentials = null; });
+beforeEach(() => { vi.clearAllMocks(); mocks.app.events = []; mocks.status.syncing = false; mocks.status.message = null; mocks.app.credentials = null; mocks.unfinished = null; mocks.app.viewer = null; mocks.app.userId = undefined; mocks.app.family = { id: "family", timezone: "UTC" }; });
 afterEach(async () => { if (tree) await act(() => tree!.unmount()); tree = undefined; });
 
 it("reserves the same cover frame before loading, after loading and after failure", async () => {
@@ -112,6 +115,54 @@ it("shows and dismisses the sync notice in an absolute overlay", async () => {
   expect(container.props.pointerEvents).toBe("box-none");
   await act(() => tree!.root.findByProps({ testID: "sync-banner" }).props.onPress());
   expect(mocks.dismiss).toHaveBeenCalledOnce();
+});
+
+it("hides empty sync reports and never auto-dismisses actionable sync messages", async () => {
+  vi.useFakeTimers();
+  try {
+    mocks.status.message = "已同步 0 段回忆。";
+    await act(() => { tree = create(createElement(SyncBanner)); });
+    expect(tree!.toJSON()).toBeNull();
+    await act(() => { vi.runAllTimers(); });
+    expect(mocks.dismiss).toHaveBeenCalledOnce();
+    mocks.status.message = "已同步 3 段回忆。";
+    await act(() => tree!.update(createElement(SyncBanner)));
+    await act(() => { vi.advanceTimersByTime(2000); });
+    mocks.status.message = "已同步 3 段回忆，有 1 项需要确认。";
+    await act(() => tree!.update(createElement(SyncBanner)));
+    await act(() => { vi.advanceTimersByTime(10000); });
+    expect(mocks.dismiss).toHaveBeenCalledOnce();
+    expect(JSON.stringify(tree!.toJSON())).toContain("需要确认");
+  } finally { vi.useRealTimers(); }
+});
+
+it("opens an interrupted draft from home with its durable draft identity", async () => {
+  mocks.unfinished = { scope: "local", error: null, rows: [{ id: "unfinished", content: { text: "写到一半的海边日记", title: "", items: [] } } as unknown as LocalDraft] };
+  await act(() => { tree = create(createElement(TimelineScreen)); });
+  await act(() => tree!.root.findByProps({ testID: "timeline-resume-draft" }).props.onPress());
+  expect(mocks.navigation.navigate).toHaveBeenCalledWith("Capture", { localDraftId: "unfinished" });
+});
+
+it("carries exact selected records into a book, preserves multi-selection on long press and clears it on family change", async () => {
+  mocks.app.credentials = { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "synthetic" };
+  mocks.app.viewer = { id: "owner", canEditEvents: true, canCapture: true };
+  mocks.app.userId = "owner";
+  mocks.app.events = [event("first"), event("second")];
+  await act(() => { tree = create(createElement(TimelineScreen)); });
+  const card = (id: string) => tree!.root.findByProps({ testID: `timeline-card-${id}` });
+  const longPress = (id: string) => card(id).props.onLongPress({ nativeEvent: { pageX: 20, pageY: 100 } });
+  await act(() => longPress("first"));
+  await act(() => card("second").props.onPress());
+  await act(() => longPress("second"));
+  expect(card("first").props.accessibilityState).toEqual({ selected: true });
+  expect(card("second").props.accessibilityState).toEqual({ selected: true });
+  const preview = () => tree!.root.findAll(node => String(node.type) === "Pressable" && node.findAllByType("Text" as never).some(text => text.children.join("") === "预览成长册"));
+  await act(() => preview()[0]!.props.onPress());
+  expect(mocks.navigation.navigate).toHaveBeenCalledWith("BookCreate", { eventIds: ["first", "second"], scope: JSON.stringify(["https://fixture.invalid", "instance", "owner", "family"]) });
+  mocks.app.family = { id: "other-family", timezone: "UTC" };
+  await act(() => tree!.update(createElement(TimelineScreen)));
+  expect(preview()).toHaveLength(0);
+  expect(card("first").props.accessibilityState).toBeUndefined();
 });
 
 it("keeps a chosen month in the same virtual list when background sync adds newer memories", async () => {

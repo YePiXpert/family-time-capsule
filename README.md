@@ -1,8 +1,8 @@
 # Family Time Capsule
 
-**0.0.1 / 早期发行版 · 当前原生构建 40**
+**0.0.1 / 早期发行版 · 当前原生构建 41**
 
-构建 40 打通保存、回看与补记：保存后回到时间线，已保存记录默认阅读，补记中的输入独立暂存；统一纸色界面，放大挑片预览，成长册先呈现内容，见 [本轮改动与验收](docs/releases/mobile-build-40.md)。APK 与未签名 IPA 由 [Native mobile packages](https://github.com/YePiXpert/family-time-capsule/actions/workflows/mobile-build.yml) 从同一 main 提交构建，具体结果与附件以该提交的 workflow 为准。固定发行版与服务端升级说明仍见 [v0.0.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v0.0.1)（原生构建 35）。
+构建 41 收拢日常使用：紧凑首页可继续未完成记录，照片与正文优先；选中的回忆直接带入成长册，下载过的成长册与相册从原入口离线翻阅，见 [本轮改动与验收](docs/releases/mobile-build-41.md)。APK 与未签名 IPA 由 [Native mobile packages](https://github.com/YePiXpert/family-time-capsule/actions/workflows/mobile-build.yml) 从同一 main 提交构建，具体结果与附件以该提交的 workflow 为准。固定发行版与服务端升级说明仍见 [v0.0.1 Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v0.0.1)（原生构建 35）。
 产品版本保持 `0.0.1`、发布序号 18，历史 tag 与附件保持原样。升级顺序见 [VERSIONING.md](VERSIONING.md)。网页更新后刷新即可，App 界面需要安装对应新包。
 
 从出生开始，留下照片、声音和想对你说的话，慢慢写成送给你的成长礼物。
