@@ -99,7 +99,7 @@ export async function receiveShares(store: LocalStore): Promise<void> {
     for (const item of manifest.items) {
       if (item.kind === "text" && item.text) text.push(item.text);
       else if (item.kind === "file" && item.localUri && item.fileName) {
-        const base = `${Paths.document.uri.replace(/\/$/, "")}/captures/`;
+        const base = `${Paths.document.uri.replace(/\/$/, "")}/xiaomei-v1/intake/originals/`;
         if (
           !item.localUri.startsWith(base) ||
           item.localUri.slice(base.length).includes("/") ||

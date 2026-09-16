@@ -124,7 +124,7 @@ final class ShareViewController: SLComposeServiceViewController {
     guard let container = FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: appGroup) else { throw ShareError.noContainer }
     let itemDirectory = container
-      .appendingPathComponent("ShareInbox/\(manifestId)/items", isDirectory: true)
+      .appendingPathComponent("XiaomeiLocalInbox/\(manifestId)/items", isDirectory: true)
     try FileManager.default.createDirectory(at: itemDirectory, withIntermediateDirectories: true)
     let captureId = UUID().uuidString.lowercased()
     let suppliedName = provider.suggestedName?.components(separatedBy: CharacterSet(charactersIn: "/\\")).last
@@ -165,7 +165,7 @@ final class ShareViewController: SLComposeServiceViewController {
   private func writeManifest(complete: Bool) throws {
     guard let container = FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: appGroup) else { throw ShareError.noContainer }
-    let directory = container.appendingPathComponent("ShareInbox/\(manifestId)", isDirectory: true)
+    let directory = container.appendingPathComponent("XiaomeiLocalInbox/\(manifestId)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let manifest: [String: Any] = [
       "manifestId": manifestId,

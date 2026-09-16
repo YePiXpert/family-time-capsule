@@ -3,9 +3,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { DatabaseSync } from "node:sqlite";
+import type { NativeShareManifest } from "../modules/share-intake/src";
 const env = vi.hoisted(() => ({
   root: "",
+  shares: [] as NativeShareManifest[],
+  acknowledged: [] as string[],
   database: null as DatabaseSync | null,
+}));
+vi.mock("../modules/share-intake/src", () => ({
+  consumePendingNativeShares: async () => env.shares,
+  acknowledgeNativeShare: async (id: string) => {
+    env.acknowledged.push(id);
+  },
 }));
 vi.mock("expo-crypto", async () => ({
   randomUUID: (await import("node:crypto")).randomUUID,
@@ -119,6 +128,8 @@ vi.mock("expo-sqlite", () => ({
 }));
 beforeEach(() => {
   vi.resetModules();
+  env.shares = [];
+  env.acknowledged = [];
   env.root = fs.mkdtempSync(path.join(os.tmpdir(), "xiaomei-test-"));
 });
 afterEach(() => {
@@ -216,4 +227,93 @@ it("failed database commit rolls back the library and removes extracted new file
   await expect(backup.restoreBackup(store, out)).rejects.toThrow("disk full");
   expect(JSON.stringify(store.get())).toBe(before);
   expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(count);
+});
+it("receives a native shared original once and acknowledges only its committed draft", async () => {
+  const { store, files } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  const original = path.join(
+    env.root,
+    "xiaomei-v1/intake/originals/shared.jpg",
+  );
+  fs.mkdirSync(path.dirname(original), { recursive: true });
+  fs.writeFileSync(original, Buffer.alloc(32, 15));
+  env.shares = [
+    {
+      manifestId: "receipt",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "shared",
+          captureId: "capture",
+          kind: "file",
+          localUri: original,
+          fileName: "shared.jpg",
+          mediaType: "image",
+        },
+      ],
+    },
+  ];
+  await receiveShares(store);
+  await receiveShares(store);
+  const drafts = Object.values(store.get().drafts);
+  expect(drafts).toHaveLength(1);
+  expect(env.acknowledged).toEqual(["receipt", "receipt"]);
+  const id = drafts[0]!.content.mediaIds[0]!;
+  expect(fs.readFileSync(files.mediaFile(store.get().media[id]!).uri)).toEqual(
+    Buffer.alloc(32, 15),
+  );
+});
+it("retains the native share receipt on a failed write and safely retries", async () => {
+  const { store } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  env.shares = [
+    {
+      manifestId: "receipt",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "text",
+          captureId: "capture",
+          kind: "text",
+          text: "Shared story",
+        },
+      ],
+    },
+  ];
+  env.database!.exec(
+    "CREATE TRIGGER reject_share BEFORE UPDATE ON library BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+  );
+  await expect(receiveShares(store)).rejects.toThrow("disk full");
+  expect(env.acknowledged).toEqual([]);
+  expect(Object.values(store.get().drafts)).toEqual([]);
+  env.database!.exec("DROP TRIGGER reject_share");
+  await receiveShares(store);
+  expect(Object.values(store.get().drafts)[0]?.content.text).toBe(
+    "Shared story",
+  );
+});
+it("resumes the same material session with its input, cover and scroll position", async () => {
+  const { store, media } = await setup();
+  const { beginSelection } = await import("../src/local/services");
+  const id = await beginSelection(store);
+  await store.change((s) => {
+    Object.assign(s.selections[id]!, {
+      selected: ["r"],
+      month: "2026-09",
+      offset: 444,
+      name: "生日",
+      coverId: media.id,
+    });
+  });
+  expect(await beginSelection(store, null, ["r"])).toBe(id);
+  expect(store.get().selections[id]).toMatchObject({
+    selected: ["r"],
+    offset: 444,
+    name: "生日",
+    coverId: media.id,
+  });
 });

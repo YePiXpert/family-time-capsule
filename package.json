@@ -11,7 +11,7 @@
     "typecheck": "npm --prefix mobile run typecheck",
     "lint": "npm --prefix mobile run lint",
     "test": "npm --prefix mobile test",
-    "build:android": "npm --prefix mobile exec -- expo export --platform android",
-    "build:ios": "npm --prefix mobile exec -- expo export --platform ios"
+    "build:android": "npm --prefix mobile run build:android",
+    "build:ios": "npm --prefix mobile run build:ios"
   }
 }
