@@ -21,6 +21,7 @@ const { createWork } = await import("@/lib/books/projects/create-work");
 const books = await import("@/lib/books/projects/service");
 const { getCollection } = await import("@/lib/collections/service");
 const { POST } = await import("@/app/api/works/route");
+const { GET: materials } = await import("@/app/api/books/projects/materials/route");
 expect((await performSetup({ token: "simplification-setup", displayName: "记录者", email: "works@fixture.invalid", password: "fictional-password" })).ok).toBe(true);
 const actor = getDb().select().from(user).get()!;
 await completeOnboarding(actor.id, { familyName: "测试家庭", timezone: "Asia/Shanghai", childDisplayName: "", childBirthDate: "", selfDisplayName: "记录者", selfRelationToChild: "家人" });
@@ -74,6 +75,42 @@ it("does not copy a private memory title into the family-visible album name", ()
   } finally {
     getDb().update(memoryEvent).set({ visibility: "family", title: "一段家庭记忆" }).where(eq(memoryEvent.id, memoryId)).run();
   }
+});
+
+it("resolves exact off-page selections with dates and rechecks the intended readers", async () => {
+  for (let day = 5; day <= 30; day++) {
+    const newer = saveDraft(context, randomUUID(), 0, randomUUID(), { ...emptyDraftContent(), text: `较新的记忆 ${day}`, occurredAt: `2026-09-${String(day).padStart(2, "0")}T08:00:00Z` });
+    publishDraft(context, newer.id, newer.revision);
+  }
+  const token = randomUUID();
+  getDb().insert(session).values({ id: randomUUID(), token, userId: actor.id, expiresAt: new Date(Date.now() + 60000) }).run();
+  const request = (query: URLSearchParams) => materials(new Request(`http://localhost/api/books/projects/materials?${query}`, { headers: { authorization: `Bearer ${token}` } }));
+  const firstPage = await (await request(new URLSearchParams({ kind: "memory", audience: "personal" }))).json();
+  expect(firstPage.nextCursor).toBeTruthy();
+  expect(firstPage.entries.map((entry: { id: string }) => entry.id)).not.toContain(memoryId);
+  const query = new URLSearchParams({ kind: "memory", audience: "personal" });
+  query.append("id", memoryId); query.append("id", "missing-memory");
+  const exact = await (await request(query)).json();
+  expect(exact.nextCursor).toBeNull();
+  expect(exact.entries).toEqual([expect.objectContaining({ id: memoryId, occurredAt: "2026-09-04T08:00:00.000Z", occurredAtPrecision: "exact", images: [] })]);
+  getDb().update(memoryEvent).set({ visibility: "private", title: "私密的成长记录", createdByUserId: actor.id }).where(eq(memoryEvent.id, memoryId)).run();
+  try {
+    expect((await (await request(query)).json()).entries[0].title).toBe("私密的成长记录");
+    query.set("audience", "family");
+    expect((await (await request(query)).json()).entries).toEqual([]);
+    query.set("audience", "personal");
+    const other = randomUUID();
+    getDb().insert(user).values({ ...actor, id: other, email: "private-owner@fixture.invalid", name: "另一位记录者" }).run();
+    getDb().update(memoryEvent).set({ createdByUserId: other }).where(eq(memoryEvent.id, memoryId)).run();
+    expect((await (await request(query)).json()).entries).toEqual([]);
+  } finally {
+    getDb().update(memoryEvent).set({ visibility: "family", title: "一段家庭记忆", createdByUserId: actor.id }).where(eq(memoryEvent.id, memoryId)).run();
+  }
+  const tooMany = new URLSearchParams({ kind: "memory", audience: "personal" });
+  for (let i = 0; i < 101; i++) tooMany.append("id", `memory-${i}`);
+  expect((await request(tooMany)).status).toBe(400);
+  query.append("id", memoryId);
+  expect((await request(query)).status).toBe(400);
 });
 
 it("accepts native bearer creation and rejects a viewer or client-selected family", async () => {

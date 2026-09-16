@@ -26,6 +26,7 @@ export type RootStackParamList = {
   ReadingDownloads: undefined;
   OfflineReading: {key:string};
   BookDetail: {id:string};
+  BookCreate: { eventIds?: string[]; scope: string };
   Calendar: undefined;
   Collections: {eventIds?:string[]} | undefined;
   CollectionDetail: {id:string};
