@@ -416,7 +416,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
             setBusy(true);
             void store
               .change((s) => finishSelection(s, q.id, newId(), newId, now()))
-              .then((album) => navigation.replace("Album", { id: album.id }))
+              .then((album) => navigation.popTo("Album", { id: album.id }))
               .catch((e) => setError(messageOf(e)))
               .finally(() => setBusy(false));
           }}

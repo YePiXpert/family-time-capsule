@@ -551,7 +551,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   saveRecord(s, draft.id, newId(), now()),
                 );
                 nextAction.current = () =>
-                  navigation.replace("Record", { id: record.id });
+                  navigation.popTo("Record", { id: record.id });
                 setAllowExit(true);
               });
             }}

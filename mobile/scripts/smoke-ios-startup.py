@@ -14,6 +14,7 @@ import sqlite3
 import subprocess
 import time
 from ios_simulator import boot_simulator, cleanup_simulator
+from local_fixture import empty, record, write_state, read_state
 
 
 def run(*args, timeout=180):
@@ -22,7 +23,7 @@ def run(*args, timeout=180):
 
 
 def database(container):
-    matches = list(container.rglob("family-time-capsule.sqlite"))
+    matches = list(container.rglob("xiaomei-local-v1.sqlite"))
     assert len(matches) == 1, "App did not initialize its local database"
     return matches[0]
 
@@ -96,49 +97,38 @@ for result in request.results ?? [] {
             print(f"Native release startup passed: {label}", flush=True)
             return Path(run("xcrun", "simctl", "get_app_container", udid, bundle, "data"))
 
-        container = launch("fresh-welcome", "暂时只在本机记录")
+        container = launch("fresh-welcome", "开始记录")
         db_path = database(container)
         run("xcrun", "simctl", "terminate", udid, bundle)
-        with sqlite3.connect(db_path) as db:
-            db.execute("INSERT INTO meta(key,value) VALUES ('welcome_done','1') ON CONFLICT(key) DO UPDATE SET value='1'")
+        state = empty()
+        write_state(db_path, state)
         launch("saved-local-mode-empty", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
-        payload = json.dumps({"text": "晚饭后，你笑着挥了挥小手。想把这一刻，好好留给长大的你。"})
-        with sqlite3.connect(db_path) as db:
-            db.execute("""INSERT INTO local_capture(id,kind,title,occurred_at,payload_json,title_source,sync_state)
-                VALUES ('startup-smoke','text_capture','今天，第一次向我挥手','2026-09-11T00:00:00.000Z',?,'rule_generated','pending')""", (payload,))
-            db.execute("INSERT INTO outbox(id,kind,payload_json,created_at) VALUES ('startup-smoke','text_capture',?,'2026-09-11T00:00:00.000Z')", (payload,))
-            before = db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone()
+        state['records']['startup'] = record('startup', '今天，第一次向我挥手')
+        write_state(db_path, state)
         for label in ("saved-local-mode-with-record", "local-mode-relaunch"):
             launch(label, "相册")
             run("xcrun", "simctl", "terminate", udid, bundle)
-            with sqlite3.connect(db_path) as db:
-                assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
-                assert db.execute("SELECT value FROM meta WHERE key='welcome_done'").fetchone() == ("1",)
-                assert db.execute("SELECT payload_json FROM outbox WHERE id='startup-smoke'").fetchone() == (payload,)
-                assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+            assert read_state(db_path) == state
         with sqlite3.connect(db_path) as db:
-            db.execute("INSERT INTO local_draft(scope,id,snapshot_json,revision,updated_at) VALUES ('local','damaged-smoke-fixture','invalid-json',1,'2026-09-11')")
-        launch("local-read-recovery", "本机资料暂时无法读取")
+            db.execute("UPDATE library SET snapshot='broken' WHERE id=1")
+        launch("local-read-recovery", "本机资料暂时无法打开")
         run("xcrun", "simctl", "terminate", udid, bundle)
         with sqlite3.connect(db_path) as db:
-            assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
-            db.execute("DELETE FROM local_draft WHERE id='damaged-smoke-fixture'")
+            assert db.execute('SELECT snapshot FROM library').fetchone()[0] == 'broken'
+        write_state(db_path, state)
         launch("repaired-local-mode-relaunch", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
-        with sqlite3.connect(db_path) as db:
-            assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
-            db.execute("INSERT INTO meta(key,value) VALUES ('theme_mode','dark') ON CONFLICT(key) DO UPDATE SET value='dark'")
+        state['settings']['theme'] = 'dark'
+        write_state(db_path, state)
         launch("local-mode-dark", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
-        with sqlite3.connect(db_path) as db:
-            db.execute("UPDATE meta SET value='light' WHERE key='theme_mode'")
-            db.execute("INSERT INTO meta(key,value) VALUES ('display_mode','simple') ON CONFLICT(key) DO UPDATE SET value='simple'")
+        state['settings'] = dict(theme='light', largeText=True)
+        write_state(db_path, state)
         run("xcrun", "simctl", "ui", udid, "content_size", "extra-extra-extra-large")
         launch("local-mode-large-text", "相册")
         run("xcrun", "simctl", "terminate", udid, bundle)
-        with sqlite3.connect(db_path) as db:
-            assert db.execute("SELECT * FROM local_capture WHERE id='startup-smoke'").fetchone() == before
+        assert read_state(db_path) == state
         report["localRecordsPreserved"] = True
         report["success"] = True
     finally:

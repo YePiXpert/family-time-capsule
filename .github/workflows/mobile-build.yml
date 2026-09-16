@@ -8,10 +8,6 @@ on:
         description: "Full main commit SHA to package (empty uses the dispatch commit)"
         required: false
         type: string
-      profile_baseline_sha:
-        description: "Optional full main ancestor SHA for matched iOS Release scrolling measurements"
-        required: false
-        type: string
   push:
     tags:
       - "v*"
@@ -68,38 +64,11 @@ jobs:
           path: build-source.json
           if-no-files-found: error
           retention-days: 30
-      - name: Validate release tag against registry
-        if: github.event_name == 'push'
-        env:
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          VERSION="${REF_NAME#v}"
-          export VERSION REF_NAME
-          python3 - <<'PY'
-          import json, os, sys
-          version, ref = os.environ["VERSION"], os.environ["REF_NAME"]
-          registry = json.load(open("scripts/ops/lib/releases.json"))
-          entry = next((r for r in registry["releases"] if r["version"] == version), None)
-          if entry is None:
-              print(f"tag {ref} 未登记于 scripts/ops/lib/releases.json（来源白名单），拒绝构建。")
-              sys.exit(1)
-          if entry.get("tag") != ref:
-              print(f"注册表中 {version} 的 tag 字段与 {ref} 不一致。")
-              sys.exit(1)
-          if entry["channel"] == "stable" and not os.path.exists("docs/release-1.0/STABLE_READINESS.md"):
-              print("stable 通道发布需要 docs/release-1.0/STABLE_READINESS.md（发布门禁全部通过后才会创建）。")
-              sys.exit(1)
-          print(f"registry channel: {entry['channel']}")
-          PY
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            mobile/package-lock.json
-      # Native offline tests stream real files through the shared SQLite driver.
-      - run: npm ci
+          cache-dependency-path: mobile/package-lock.json
       - run: npm ci
         working-directory: mobile
       - run: npm run typecheck
@@ -107,10 +76,6 @@ jobs:
       - run: npm run lint
         working-directory: mobile
       - run: npm test
-        working-directory: mobile
-      - name: Verify native regression fixture transport
-        if: hashFiles('mobile/scripts/ios-regression/test_fixtures.py') != ''
-        run: python3 -m unittest discover -s scripts/ios-regression -p 'test_*.py'
         working-directory: mobile
       - run: npm run doctor
         working-directory: mobile
@@ -145,7 +110,7 @@ jobs:
         env:
           CI: "1"
       - name: Build installable standalone APK
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
         working-directory: mobile/android
         env:
           NODE_ENV: production
@@ -169,7 +134,33 @@ jobs:
           echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND'
           echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND_MULTIPLE'
           echo "$MANIFEST_REPORT" | grep -F 'application/pdf'
+          if echo "$MANIFEST_REPORT" | grep -F 'android.permission.INTERNET'; then
+            echo 'Release app must not request internet access'; exit 1
+          fi
           unzip -l "$APK" | grep -F 'assets/index.android.bundle'
+      - name: Enable KVM for Android verification
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify offline Release app on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: python3 mobile/scripts/smoke-android.py mobile/android/app/build/outputs/apk/release/app-release.apk --output mobile/build/android-smoke
+      - name: Preserve Android native evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-android-local-regression
+          path: mobile/build/android-smoke/
+          if-no-files-found: error
+          retention-days: 30
       - name: Name package
         run: cp mobile/android/app/build/outputs/apk/release/app-release.apk FamilyTimeCapsule-android.apk
       - uses: actions/upload-artifact@v7
@@ -271,13 +262,6 @@ jobs:
             mobile/build/simulator-build.log
           if-no-files-found: error
           retention-days: 30
-      - name: Install native playback fixture encoder
-        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
-        run: |
-          if ! command -v ffmpeg >/dev/null; then
-            brew install ffmpeg
-          fi
-          ffmpeg -hide_banner -encoders 2>/dev/null | grep -F libx265
       - name: Verify Release playback and layout with XCUITest
         if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         working-directory: mobile
@@ -287,78 +271,12 @@ jobs:
           APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
           python3 scripts/smoke-ios-regression.py "$APP_PATH" --runner-build build/native-runner --output build/native-regression
-      - name: Build optional baseline Release simulator app
-        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
-        env:
-          PROFILE_BASELINE_SHA: ${{ inputs.profile_baseline_sha }}
-          DELIVERED_SHA: ${{ needs.quality.outputs.source_sha }}
-          CI: "1"
-        run: |
-          [[ "$PROFILE_BASELINE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git merge-base --is-ancestor "$PROFILE_BASELINE_SHA" "$DELIVERED_SHA"
-          BASELINE_ROOT="$RUNNER_TEMP/ftc-native-baseline"
-          mkdir -p "$BASELINE_ROOT"
-          git archive "$PROFILE_BASELINE_SHA" | tar -x -C "$BASELINE_ROOT"
-          cd "$BASELINE_ROOT/mobile"
-          npm ci
-          npx expo prebuild --platform ios --clean --no-install
-          npx pod-install ios
-          WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
-          test -n "$WORKSPACE_PATH"
-          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
-          test -n "$SCHEME"
-          mkdir -p "$GITHUB_WORKSPACE/mobile/build/native-baseline"
-          if ! xcodebuild \
-            -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" \
-            -configuration Release -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
-            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
-            build > "$GITHUB_WORKSPACE/mobile/build/native-baseline/app-build.log" 2>&1; then
-            tail -n 160 "$GITHUB_WORKSPACE/mobile/build/native-baseline/app-build.log"
-            exit 1
-          fi
-      - name: Measure optional baseline with identical native scroll fixture
-        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
-        working-directory: mobile
-        env:
-          SOURCE_SHA: ${{ inputs.profile_baseline_sha }}
-        run: |
-          APP_PATH=$(find "$RUNNER_TEMP/ftc-native-baseline/mobile/build/simulator/Build/Products/Release-iphonesimulator" -maxdepth 1 -name '*.app' -print -quit)
-          test -n "$APP_PATH"
-          python3 scripts/smoke-ios-regression.py "$APP_PATH" --profile-only --runner-build build/native-runner --output build/native-baseline
-      - name: Preserve native playback and layout evidence
-        if: always() && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+      - name: Preserve local native regression evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FamilyTimeCapsule-ios-native-regression
-          path: |
-            mobile/build/native-runner-build.log
-            mobile/build/native-regression/*.json
-            mobile/build/native-regression/*.log
-            mobile/build/native-regression/*.xctestrun
-            mobile/build/native-regression/*.xcresult/
-            mobile/build/native-regression/*-attachments/
-            mobile/build/native-regression/fixtures/media-probes.json
-            mobile/build/native-baseline/*.json
-            mobile/build/native-baseline/*.log
-            mobile/build/native-baseline/*.xctestrun
-            mobile/build/native-baseline/*.xcresult/
-            mobile/build/native-baseline/*-attachments/
-          if-no-files-found: error
-          retention-days: 30
-      - name: Compare baseline and delivered native scrolling metrics
-        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
-        working-directory: mobile
-        run: |
-          python3 scripts/ios-regression/compare-profiles.py build/native-baseline/result.json build/native-regression/result.json > build/native-profile-comparison.md
-          cat build/native-profile-comparison.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Preserve native profile comparison
-        if: inputs.profile_baseline_sha != '' && hashFiles('mobile/build/native-profile-comparison.md') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: FamilyTimeCapsule-ios-profile-comparison
-          path: mobile/build/native-profile-comparison.md
+          name: FamilyTimeCapsule-ios-local-regression
+          path: mobile/build/native-regression/
           if-no-files-found: error
           retention-days: 30
       - name: Create unsigned device archive
@@ -410,167 +328,3 @@ jobs:
           path: mobile/build/FamilyTimeCapsule-ios-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
-
-  docker-image:
-    name: Server image (linux/amd64)
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      image: ${{ steps.refs.outputs.image }}
-      digest: ${{ steps.digest.outputs.digest }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - uses: docker/setup-buildx-action@v3
-      - name: Resolve image name and tags
-        id: refs
-        run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/family-time-capsule"
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-      - name: Log in to ghcr
-        run: echo "${{ github.token }}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/Dockerfile
-          platforms: linux/amd64
-          push: true
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ env.VERSION }}
-          tags: |
-            ${{ env.IMAGE }}:${{ env.VERSION }}
-            ${{ env.IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Record pushed digest
-        id: digest
-        run: |
-          DIGEST="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}' | tr -d '"')"
-          test -n "$DIGEST"
-          echo "$IMAGE@$DIGEST"
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-
-  release:
-    name: GitHub release (packages + ops + manifest)
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    needs: [android, ios, docker-image]
-    permissions:
-      contents: write
-      actions: read
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: FamilyTimeCapsule-*
-          path: release-assets
-          merge-multiple: true
-      - name: Package ops toolkit
-        run: |
-          test -x scripts/ops/ftc
-          bash scripts/ops/ftc version
-          VERSION="${GITHUB_REF_NAME#v}"
-          zip -qry "release-assets/family-time-capsule-ops-$VERSION.zip" scripts/ops
-      - name: Verify assets and build release manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          IMAGE_REF: ${{ needs.docker-image.outputs.image }}@${{ needs.docker-image.outputs.digest }}
-        run: |
-          set -eu
-          # Release evidence must come from this exact main commit.
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=completed" \
-            --jq '.workflow_runs | any(.conclusion == "success" and .head_branch == "main")' | grep -Fx true
-          test -f release-assets/FamilyTimeCapsule-android.apk
-          test -f release-assets/FamilyTimeCapsule-ios-unsigned.ipa
-          ls release-assets/family-time-capsule-ops-*.zip >/dev/null
-          cd release-assets
-          sha256sum FamilyTimeCapsule-android.apk FamilyTimeCapsule-ios-unsigned.ipa family-time-capsule-ops-*.zip > SHA256SUMS.txt
-          sha256sum --check SHA256SUMS.txt
-          VERSION="${GITHUB_REF_NAME#v}"
-          APK_SHA=$(sha256sum FamilyTimeCapsule-android.apk | cut -d" " -f1)
-          IPA_SHA=$(sha256sum FamilyTimeCapsule-ios-unsigned.ipa | cut -d" " -f1)
-          OPS_FILE=$(basename "$(ls family-time-capsule-ops-*.zip | head -1)")
-          OPS_SHA=$(sha256sum "$OPS_FILE" | cut -d" " -f1)
-          python3 - "$VERSION" "$GITHUB_REF_NAME" "$GITHUB_SHA" "$IMAGE_REF" "$APK_SHA" "$IPA_SHA" "$OPS_FILE" "$OPS_SHA" > release-manifest.json <<'PY'
-          import json, sys
-          version, tag, sha, image, apk, ipa, ops_file, ops = sys.argv[1:9]
-          native = json.load(open("../mobile/app.json"))["expo"]
-          migrations = json.load(open("../db/migrations/meta/_journal.json"))["entries"]
-          print(json.dumps({
-              "version": version,
-              "tag": tag,
-              "gitSha": sha,
-              "nativeBuild": {"android": native["android"]["versionCode"], "ios": native["ios"]["buildNumber"]},
-              "image": {"ref": image, "platforms": ["linux/amd64"],
-                        "note": "app/worker 共用同一镜像；部署建议固定 digest"},
-              "packages": {
-                  "android-apk": {"file": "FamilyTimeCapsule-android.apk", "sha256": apk,
-                                  "signing": "test-key", "note": "同签名才能覆盖升级；真机验收未完成"},
-                  "ios-ipa": {"file": "FamilyTimeCapsule-ios-unsigned.ipa", "sha256": ipa,
-                              "signing": "unsigned", "note": "需自行签名后部署"},
-                  "ops-scripts": {"file": ops_file, "sha256": ops},
-              },
-              "api": {
-                  "added": [],
-                  "changed": [],
-                  "minimumNativeBuild": 15,
-                  "note": "构建 15 及以上沿现有协议兼容；构建 14 及更早版本需更新。服务端部署不会更新已安装 App 的界面。",
-              },
-              "migrations": [entry["tag"] + ".sql" for entry in migrations],
-              "verification": "同一提交的 CI 与原生构建通过；iOS Release 模拟器覆盖八个启动及显示场景。实际设备验收未完成，不以本 manifest 替代。",
-          }, ensure_ascii=False, indent=2))
-          PY
-          python3 -m json.tool release-manifest.json >/dev/null
-          echo "manifest image: $IMAGE_REF"
-          # 通道判定来自发布注册表，不用“是否带连字符”猜测：
-          # stable → 正式 Release；development/candidate/exploration → prerelease。
-          CHANNEL="$(python3 -c '
-          import json, os
-          version = os.environ["GITHUB_REF_NAME"][1:]
-          registry = json.load(open(os.path.join(os.environ["GITHUB_WORKSPACE"], "scripts/ops/lib/releases.json")))
-          entry = next(r for r in registry["releases"] if r["version"] == version)
-          print(entry["channel"])
-          ')"
-          if [[ "$CHANNEL" == "stable" ]]; then
-            RELEASE_KIND=()
-          else
-            RELEASE_KIND=(--prerelease)
-          fi
-          printf '%s\n' \
-            'Native packages generated from the tagged origin/main history.' \
-            '' \
-            'The iOS IPA is unsigned. Real-device acceptance has not been completed and is not claimed by this release.' \
-            > RELEASE_NOTES.md
-          EXACT_NOTES_PATH="../docs/releases/${GITHUB_REF_NAME#v}.md"
-          NOTES_VERSION="${GITHUB_REF_NAME#v}"
-          NOTES_VERSION="${NOTES_VERSION%%-*}"
-          NOTES_VERSION="${NOTES_VERSION%.*}"
-          NOTES_PATH="../docs/RELEASE_NOTES_${NOTES_VERSION//./_}.md"
-          if [ -f "$EXACT_NOTES_PATH" ]; then
-            cp "$EXACT_NOTES_PATH" RELEASE_NOTES.md
-          elif [ -f "$NOTES_PATH" ]; then
-            cp "$NOTES_PATH" RELEASE_NOTES.md
-          fi
-          gh release create "$GITHUB_REF_NAME" \
-            FamilyTimeCapsule-android.apk \
-            FamilyTimeCapsule-ios-unsigned.ipa \
-            family-time-capsule-ops-*.zip \
-            release-manifest.json \
-            SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file RELEASE_NOTES.md \
-            "${RELEASE_KIND[@]}"
