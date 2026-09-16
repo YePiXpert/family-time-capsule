@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { Text } from "./typography";
 import { Image, Platform, Pressable, StyleSheet, View } from "react-native";
-import { journalFont, journalRadius } from "../design/tokens";
+import { journalFont, journalRadius, journalType } from "../design/tokens";
 import { useColorTheme } from "../theme";
 import { JournalIcon } from "./JournalIcon";
 import type { LocalTimelineEvent } from "../types";
@@ -39,7 +39,7 @@ export const TimelineCard = memo(function TimelineCard({
       style={({ pressed }) => [
         styles.card,
         textOnly && styles.textCard,
-        { backgroundColor: colors.card, borderColor: highlighted ? colors.coral : colors.line },
+        { backgroundColor: colors.paper, borderColor: highlighted ? colors.coral : colors.line },
         pressed && styles.pressed,
       ]}
     >
@@ -106,13 +106,13 @@ const styles = StyleSheet.create({
   card: {
     overflow: "hidden",
     borderRadius: journalRadius.card,
-    borderWidth: 1,
+    borderWidth: 0,
   },
   pressed: { opacity: 0.72 },
   textCard: { borderWidth: 0, borderBottomWidth: 1, borderRadius: 0 },
   selectedRing: { borderWidth: 2, borderRadius: journalRadius.card, zIndex: 1 },
   coverStatus: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
-  cover: { width: "100%", aspectRatio: 4 / 3 },
+  cover: { width: "100%", aspectRatio: 4 / 3, borderRadius: journalRadius.card, overflow: "hidden" },
   placeholder: {
     minHeight: 52,
     padding: 16,
@@ -132,12 +132,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  body: { padding: 20, gap: 10 },
+  body: { paddingVertical: 16, paddingHorizontal: 4, gap: 8 },
   localStatus: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
   localBadge: { fontSize: 12, flexShrink: 1 },
-  date: { fontSize: 12, fontWeight: "500", letterSpacing: 0.3 },
+  date: { fontSize: journalType.caption, fontWeight: "500", letterSpacing: 0.3 },
   story: { fontSize: 16, lineHeight: 26 },
-  title: { fontSize: 22, fontFamily: Platform.OS === "ios" ? journalFont.editorialIOS : journalFont.editorialAndroid, fontWeight: "400" },
+  title: { fontSize: journalType.recordTitle, fontFamily: Platform.OS === "ios" ? journalFont.editorialIOS : journalFont.editorialAndroid, fontWeight: "600" },
   milestoneRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   meta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2 },
   age: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, fontSize: 13, fontWeight: "600" },
