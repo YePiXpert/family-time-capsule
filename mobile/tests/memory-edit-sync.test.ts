@@ -2,10 +2,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { MobileMemory } from "../src/types";
 import type { LocalMemoryEdit } from "../src/memories/edit-model";
 
-const api = vi.hoisted(() => ({ patch: vi.fn(), fetch: vi.fn() }));
+const api = vi.hoisted(() => ({ patch: vi.fn(), fetch: vi.fn(), request: vi.fn(), upload: vi.fn() }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
+vi.mock("../src/storage/files", () => ({ uploadMediaCaptureReceipt: api.upload }));
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));
-vi.mock("../src/api/client", async original => ({ ...await original<object>(), patchMobileMemory: api.patch, fetchMobileMemory: api.fetch }));
+vi.mock("../src/api/client", async original => ({ ...await original<object>(), patchMobileMemory: api.patch, fetchMobileMemory: api.fetch, requestMobileJson: api.request }));
 const { ApiError } = await import("../src/api/client");
 const { initializeLocalStore, clearLocalArchive, clearServerCaches, getCachedMemoryDetail } = await import("../src/storage/database");
 const { changeMemoryEdit, getMemoryEdit, drainMemoryEditWrites } = await import("../src/memories/edit-store");
@@ -28,7 +29,7 @@ function draft(text = "后来补写的一句", queued = true): LocalMemoryEdit {
 const sync = (isCurrent = () => true) => syncMemoryEdits(credentials, scope, "author", "family", isCurrent);
 beforeEach(async () => {
   await drainMemoryEditWrites(); await initializeLocalStore(); await clearLocalArchive();
-  api.patch.mockReset(); api.fetch.mockReset();
+  api.patch.mockReset(); api.fetch.mockReset(); api.request.mockReset(); api.upload.mockReset();
 });
 
 it("retains unsent input over storage reopening and server cache resets, scoped to its account", async () => {
@@ -142,4 +143,88 @@ it("keeps date precision, family timezone and participant IDs in the queued wire
   api.patch.mockResolvedValueOnce({ ...memory, titleRevision: 4 });
   await sync();
   expect(JSON.parse(JSON.stringify(api.patch.mock.calls[1]![2]))).not.toHaveProperty("occurredAtWall");
+});
+
+
+const originalPayload = { localUri: "file:///captures/new-image.jpg", fileName: "new-image.jpg", mediaType: "image" as const,
+  mimeType: "image/jpeg", source: "library" as const, lastModified: null };
+async function stageEdit() {
+  const row = draft("补上照片和私密说明");
+  const item = { id: "item-new", assetId: null, localCaptureRef: "original-new", caption: "海边" };
+  row.atomicEditVersion = 1;
+  row.content = { ...row.content, items: [item], newCoverItemId: item.id, visibility: "private", readerUserIds: [] };
+  row.savedContent = row.content;
+  await changeMemoryEdit(scope, memory.id, () => row, [{ id: "original-new", payload: originalPayload }]);
+  api.fetch.mockResolvedValue({ ...memory, atomicEditVersion: 1 });
+  api.request.mockResolvedValue({ revision: 1 });
+  api.upload.mockResolvedValue({ assetId: "private-asset-new", inboxItemId: null });
+  return row;
+}
+const syncWithOriginals = (isCurrent = () => true) => syncMemoryEdits(credentials, scope, "author", "family", isCurrent, () => true);
+
+it("stages originals privately and retries a lost atomic receipt without uploading or creating another draft", async () => {
+  await stageEdit();
+  api.patch.mockRejectedValueOnce(new ApiError("lost receipt", 0));
+  expect(await syncWithOriginals()).toEqual({ saved: 0, needsAttention: 1 });
+  const first = api.patch.mock.calls[0]![2];
+  const stage = JSON.parse(api.request.mock.calls[0]![2].body);
+  expect(stage).toMatchObject({ purpose: "memory_edit", editTargetMemoryId: memory.id, expectedRevision: 0,
+    content: { visibility: "private", readerUserIds: [], items: [{ id: "item-new", localCaptureRef: "original-new", assetId: null }] } });
+  expect(first).toMatchObject({ expectedRevision: 3, bodyText: "补上照片和私密说明", visibility: "private", readerUserIds: [], editDraftRevision: 1, coverAssetId: "private-asset-new",
+    appendItems: [{ assetId: "private-asset-new", localCaptureRef: "original-new", caption: "海边" }] });
+  expect(api.request.mock.calls.every(call => !call[1].includes("publish") && !call[1].includes("submit"))).toBe(true);
+  await initializeLocalStore();
+  api.patch.mockResolvedValueOnce({ ...memory, atomicEditVersion: 1, titleRevision: 5, bodyText: "家人在首次保存后又补了一句", visibility: "private",
+    mutationReceipt: { mutationId: first.mutationId, resultRevision: 4, replayed: true } });
+  expect(await syncWithOriginals()).toEqual({ saved: 1, needsAttention: 0 });
+  expect(api.patch.mock.calls[1]![2]).toEqual(first);
+  expect(api.request).toHaveBeenCalledOnce(); expect(api.upload).toHaveBeenCalledOnce();
+  expect(await getMemoryEdit(scope, memory.id)).toMatchObject({ baseRevision: 5, content: { items: [], bodyText: "家人在首次保存后又补了一句" }, savedContent: null, submission: null });
+  const capture = getRawMockDatabase().prepare("SELECT payload_json,memory_event_id,sync_state FROM local_capture WHERE id='original-new'").get() as { payload_json: string; memory_event_id: string; sync_state: string };
+  expect(JSON.parse(capture.payload_json)).toMatchObject({ memoryEditOwnerScope: scope, memoryEditTarget: memory.id });
+  expect(capture).toMatchObject({ memory_event_id: memory.id, sync_state: "archived" });
+});
+
+it("sends no stage or partial body change without original consent or atomic server capability", async () => {
+  await stageEdit();
+  await sync();
+  expect(api.upload).not.toHaveBeenCalled(); expect(api.request).not.toHaveBeenCalled(); expect(api.patch).not.toHaveBeenCalled();
+  api.fetch.mockResolvedValue(memory);
+  await syncWithOriginals();
+  expect(api.patch).not.toHaveBeenCalled(); expect(api.request).not.toHaveBeenCalled();
+  expect(await getMemoryEdit(scope, memory.id)).toMatchObject({ blocked: true, content: { items: [{ localCaptureRef: "original-new" }] } });
+});
+
+it("keeps later input and removes only acknowledged original references from the next save", async () => {
+  await stageEdit();
+  let finish!: (remote: MobileMemory) => void;
+  api.patch.mockReturnValueOnce(new Promise<MobileMemory>(resolve => { finish = resolve; }));
+  const running = syncWithOriginals();
+  await vi.waitFor(() => expect(api.patch).toHaveBeenCalledOnce());
+  const sent = api.patch.mock.calls[0]![2];
+  await changeMemoryEdit(scope, memory.id, row => ({ ...row!, content: { ...row!.content, bodyText: "又补上当天的心情" }, savedContent: { ...row!.content, bodyText: "又补上当天的心情" } }));
+  finish({ ...memory, atomicEditVersion: 1, titleRevision: 4, bodyText: "补上照片和私密说明", visibility: "private", mutationReceipt: { mutationId: sent.mutationId, resultRevision: 4, replayed: false } });
+  await running;
+  expect(await getMemoryEdit(scope, memory.id)).toMatchObject({ content: { bodyText: "又补上当天的心情", items: [] }, savedContent: { bodyText: "又补上当天的心情", items: [] }, appliedItemIds: ["item-new"] });
+  api.patch.mockImplementationOnce(async (_credentials, _id, patch) => ({ ...memory, atomicEditVersion: 1, titleRevision: 5, bodyText: patch.bodyText, mutationReceipt: { mutationId: patch.mutationId, resultRevision: 5, replayed: false } }));
+  await syncWithOriginals();
+  expect(api.patch.mock.calls[1]![2]).toMatchObject({ bodyText: "又补上当天的心情", expectedRevision: 4 });
+  expect(api.patch.mock.calls[1]![2].appendItems).toBeUndefined(); expect(api.upload).toHaveBeenCalledOnce();
+});
+
+it("preserves uploaded additions and both audiences after a revision conflict, with no silent retry", async () => {
+  await stageEdit();
+  api.patch.mockRejectedValueOnce(new ApiError("newer family edit", 409));
+  api.fetch.mockResolvedValue({ ...memory, atomicEditVersion: 1, titleRevision: 8, visibility: "members", readerUserIds: ["family-reader"] });
+  await syncWithOriginals(); await initializeLocalStore(); await syncWithOriginals();
+  expect(api.patch).toHaveBeenCalledOnce();
+  expect(await getMemoryEdit(scope, memory.id)).toMatchObject({ content: { visibility: "private", items: [{ localCaptureRef: "original-new" }] }, conflict: { revision: 8, content: { visibility: "members", readerUserIds: ["family-reader"] } } });
+});
+
+it("stops after upload when the account changes and preserves the immutable stage for its original owner", async () => {
+  await stageEdit(); let current = true;
+  api.upload.mockImplementationOnce(async () => { current = false; return { assetId: "old-account-original", inboxItemId: null }; });
+  await syncWithOriginals(() => current);
+  expect(api.patch).not.toHaveBeenCalled();
+  expect((await getMemoryEdit(scope, memory.id))!.submission!.stage).toMatchObject({ revision: 1, items: [{ assetId: null, localCaptureRef: "original-new" }] });
 });

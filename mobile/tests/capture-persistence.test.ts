@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  preventRemove: null as unknown,
   alert: vi.fn(), confirm: vi.fn(async (_options?: unknown) => false), keyboard: new Map<string, () => void>(),
   connected: false, syncing: false,
   credentials: { serverUrl: "https://fixture.invalid", instanceId: "instance", token: "test-session" },
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   enqueueText: vi.fn(), enqueueMedia: vi.fn(), preserveMedia: vi.fn(),
   preserveAudio: vi.fn(), removeFile: vi.fn(), reloadLocal: async () => {}, queued: vi.fn(),
   setParams: vi.fn(), focus: vi.fn(), scrollTo: vi.fn(),
-  route: { params: {} as { intent?: string; localDraftId?: string; editSaved?: boolean } },
+  route: { params: {} as { intent?: string; scope?: string; target?: import("../src/navigation/types").CaptureTarget } },
   draft: {
     id: "draft-id", status: "editing", serverRevision: 0,
     content: {
@@ -44,11 +45,12 @@ vi.mock("react-native", () => ({
   Platform: { OS: "ios", select: (v: { ios: unknown }) => v.ios },
 }));
 vi.mock("@react-navigation/native", () => ({
+  usePreventRemove: (_enabled: boolean, callback: unknown) => { mocks.preventRemove = callback; },
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
   useNavigation: () => navigation,
   useRoute: () => mocks.route,
 }));
-const navigation = { setParams: mocks.setParams, navigate: vi.fn() };
+const navigation = { setParams: mocks.setParams, navigate: vi.fn(), goBack: vi.fn(), dispatch: vi.fn(), replace: vi.fn(), popTo: vi.fn() };
 vi.mock("../src/state/AppContext", () => ((() => {
   const mock = {
   useApp: () => ({ syncing: mocks.syncing,
@@ -105,11 +107,6 @@ vi.mock("../src/api/client", () => ({ requestMobileJson: vi.fn(async (_credentia
   if (path === "/api/mobile/v1/draft-readers") return { members: [{ id: "user-b", name: "妈妈" }, { id: "user-c", name: "另一成员" }] };
   return { drafts: [] };
 }) }));
-const { JournalDockHeightContext, JournalKeyboardContext, useJournalKeyboardState } = await import("../src/navigation/dock-metrics");
-function CaptureWithKeyboard() {
-  const open = useJournalKeyboardState();
-  return createElement(JournalKeyboardContext.Provider, { value: open }, createElement(JournalDockHeightContext.Provider, { value: 106 }, createElement(CaptureScreen)));
-}
 const { CaptureScreen } = await import("../src/screens/CaptureScreen");
 const { initializeLocalStore } = await import("../src/storage/database");
 const { listLocalDrafts, saveLocalDraft } = await import("../src/drafts/store");
@@ -121,7 +118,7 @@ beforeEach(async () => {
   mocks.alert.mockClear();
   mocks.confirm.mockClear().mockResolvedValue(false);
   mocks.connected = false; mocks.syncing = false;
-  mocks.route.params = {}; navigation.navigate.mockClear();
+  mocks.route.params = {}; navigation.navigate.mockClear(); navigation.replace.mockClear(); navigation.popTo.mockClear(); navigation.dispatch.mockClear();
   vi.mocked(preservePreparedMedia).mockReset().mockResolvedValue(undefined);
   mocks.grantSyncConsent.mockClear();
   await initializeLocalStore();
@@ -185,7 +182,6 @@ it("keeps the current reader choice visible and private through sheet dismissal,
   await act(async () => readerControl().props.onPress());
   expect(radios()).toHaveLength(3);
   await press("仅自己");
-  await press("完成选择");
   expect(radios()).toHaveLength(0);
   expect(readerControl().props.accessibilityLabel).toBe("保存后的读者：仅自己可见");
   await act(async () => tree!.unmount());
@@ -210,14 +206,14 @@ it("R03: the recording page and real save hook persist unknown time through reop
   await seedMetadata({ occurredAtPrecision: "unknown" });
   await press("保存");
   const rows = await listLocalDrafts("local");
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(1);
   expect(rows.find(d => d.status === "queued")).toMatchObject({ status: "queued", syncIntent: "publish", content: { occurredAt: null, occurredAtPrecision: "unknown", text: "那次一起去江边，日期已经记不清" } });
-  expect(navigation.navigate).toHaveBeenLastCalledWith("Timeline", { saved: { draftId: rows.find(d => d.status === "queued")!.id, scope: "local", requestKey: expect.any(String) } });
+  expect(navigation.replace).toHaveBeenLastCalledWith("SavedMemory", { draftId: rows.find(d => d.status === "queued")!.id, scope: "local" });
   await act(async () => tree!.unmount());
   await initializeLocalStore();
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   expect(await listLocalDrafts("local")).toEqual(rows);
-  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("那次一起去江边，日期已经记不清");
   expect((await listLocalDrafts("local")).find(d => d.status === "queued")?.content.occurredAtPrecision).toBe("unknown");
 });
 
@@ -227,7 +223,7 @@ it("preserves the saved story during a restarted supplement and restores it when
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("已经留下的完整故事"));
   await press("保存");
   const saved = (await listLocalDrafts("local")).find(row => row.status === "queued")!;
-  mocks.route.params = { localDraftId: saved.id, editSaved: true };
+  mocks.route.params = { scope: "local", target: { kind: "local", draftId: saved.id, editSaved: true } };
   await act(async () => tree!.update(createElement(CaptureScreen)));
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("补到一半的内容"));
   expect((await listTimeline(null, "local")).find(row => row.localDraftId === saved.id)?.bodyText).toBe("已经留下的完整故事");
@@ -329,19 +325,18 @@ it("pairs separately imported image and video only after an explicit user action
   expect(items[0]!.livePhotoGroupId).toBe(items[1]!.livePhotoGroupId);
 });
 
-it("quick capture queues text with the current time and prepares the next record without menus", async () => {
+it("quick capture queues text with the current time and opens that saved record", async () => {
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   expect(tree!.root.findAllByProps({ accessibilityLabel: "记忆标题" })).toHaveLength(0);
   expect(tree!.root.findAllByType("Pressable" as never).filter(node => node.props.accessibilityRole === "checkbox")).toHaveLength(0);
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("只写一句话，先留下来"));
   await press("保存");
   expect((await listLocalDrafts("local")).find(d => d.status === "queued")).toMatchObject({ status: "queued", syncIntent: "publish", organizeOnPublish: false, content: { title: "", occurredAt: expect.any(String), text: "只写一句话，先留下来" } });
-  const saveBar = tree!.root.findByProps({ testID: "capture-save-bar" });
-  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
-  expect(saveBar.findByProps({ testID: "capture-save" }).props.disabled).toBe(true);
+  expect(navigation.replace).toHaveBeenLastCalledWith("SavedMemory", { scope: "local", draftId: (await listLocalDrafts("local"))[0]!.id });
+  expect(await listLocalDrafts("local")).toHaveLength(1);
 });
 
-it("refreshes publication status after sync and starts the next record without losing the saved one", async () => {
+it("opens the same published memory when a saved draft finishes syncing", async () => {
   await act(async () => { tree = create(createElement(CaptureScreen)); });
   await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("小美今天的笑脸"));
   await press("保存");
@@ -349,8 +344,7 @@ it("refreshes publication status after sync and starts the next record without l
   await act(async () => { mocks.syncing = true; tree!.update(createElement(CaptureScreen)); });
   await saveLocalDraft({ ...draft, status: "published", memoryEventId: "saved-memory", revision: draft.revision + 1 }, draft.revision);
   await act(async () => { mocks.syncing = false; tree!.update(createElement(CaptureScreen)); });
-  expect(JSON.stringify(tree!.toJSON())).not.toContain("记录下一刻");
-  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  expect(navigation.replace).toHaveBeenLastCalledWith("Capture", { scope: "local", target: { kind: "memory", memoryId: "saved-memory" } });
   expect((await listLocalDrafts("local")).find(row => row.id === draft.id)).toMatchObject({ status: "published", content: { text: "小美今天的笑脸" } });
 });
 
@@ -363,10 +357,10 @@ async function seedMetadata(patch: Partial<import("../src/drafts/model").DraftCo
 }
 
 it("keeps save reachable above the keyboard and retains the chosen audience for the next note", async () => {
-  await act(async () => { tree = create(createElement(CaptureWithKeyboard)); });
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
   const closedMargin = tree!.root.findByProps({ testID: "capture-save-bar" }).props.style.at(-1).marginBottom;
   const scrollStyle = tree!.root.findByProps({ testID: "capture-content" }).props.contentContainerStyle;
-  expect(closedMargin).toBe(114);
+  expect(closedMargin).toBe(12);
   await press("仅自己");
   await act(async () => {
     tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("键盘打开也能直接保存");
@@ -382,7 +376,8 @@ it("keeps save reachable above the keyboard and retains the chosen audience for 
   await press("保存");
   const rows = await listLocalDrafts("local");
   expect(rows.find(d => d.status === "queued")?.content).toMatchObject({ visibility: "private", text: "键盘打开也能直接保存" });
-  expect(rows.find(d => d.status === "editing")?.content).toMatchObject({ visibility: "private", text: "" });
+  expect(rows.find(d => d.status === "editing")).toBeUndefined();
+  expect(navigation.replace).toHaveBeenLastCalledWith("SavedMemory", { draftId: rows[0]!.id, scope: "local" });
 });
 
 it("clears only after confirmation and keeps the discarded record durable", async () => {
@@ -411,7 +406,7 @@ it("retains the same record when queueing fails and retries without duplicate pu
     expect(await listLocalDrafts("local")).toHaveLength(1);
     await press("继续同步");
     expect((await listLocalDrafts("local")).filter(d => d.content.text)).toMatchObject([{ id: original.id, status: "queued" }]);
-    expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+    expect(navigation.replace).toHaveBeenLastCalledWith("SavedMemory", { scope: "local", draftId: original.id });
   } finally { queue.mockRestore(); }
 });
 
@@ -423,5 +418,44 @@ it("offers the queued record in pending work while the composer is ready for the
   const { PendingScreen } = await import("../src/screens/PendingScreen");
   await act(async () => { tree!.update(createElement(PendingScreen)); });
   await press("从待处理找回的记录");
-  expect(navigation.navigate).toHaveBeenLastCalledWith("Capture", { localDraftId: queued.id });
+  expect(navigation.navigate).toHaveBeenLastCalledWith("Capture", { scope: "local", target: { kind: "local", draftId: queued.id, editSaved: true } });
+});
+
+
+it("keeps new input and an existing record's supplement separate across back and reopen", async () => {
+  mocks.route.params = { scope: "local", target: { kind: "new" } };
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("还没完成的新记录"));
+  const first = (await listLocalDrafts("local"))[0]!;
+  await act(async () => tree!.unmount());
+  mocks.route.params = { scope: "local", target: { kind: "new" } };
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("");
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("另一条独立记录"));
+  await press("保存");
+  const second = (await listLocalDrafts("local")).find(row => row.status === "queued")!;
+  expect(second.id).not.toBe(first.id);
+  await act(async () => tree!.unmount());
+  mocks.route.params = { scope: "local", target: { kind: "local", draftId: first.id } };
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("还没完成的新记录");
+  expect((await listLocalDrafts("local")).find(row => row.id === second.id)?.content.text).toBe("另一条独立记录");
+});
+
+it("blocks native back on a failed input write and permits it only after the durable retry", async () => {
+  const { getRawMockDatabase } = await import("../../tests/mocks/expo-sqlite");
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  const db = getRawMockDatabase();
+  const back = () => (mocks.preventRemove as (event: { data: { action: { type: string } } }) => void)({ data: { action: { type: "GO_BACK" } } });
+  db.exec("CREATE TRIGGER deny_back_write BEFORE UPDATE ON local_draft BEGIN SELECT RAISE(ABORT, 'disk full'); END");
+  try {
+    await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("最后输入必须先保存"));
+    await act(async () => back());
+    expect(navigation.dispatch).not.toHaveBeenCalled();
+    expect(tree!.root.findByProps({ testID: "capture-text" }).props.value).toBe("最后输入必须先保存");
+  } finally { db.exec("DROP TRIGGER deny_back_write"); }
+  await press("重试本机保存");
+  await act(async () => back());
+  expect(navigation.dispatch).toHaveBeenCalledWith({ type: "GO_BACK" });
+  expect((await listLocalDrafts("local"))[0]!.content.text).toBe("最后输入必须先保存");
 });

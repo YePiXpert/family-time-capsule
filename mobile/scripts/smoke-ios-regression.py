@@ -105,6 +105,8 @@ def verify_import(db_path):
         draft = json.loads(db.execute("SELECT snapshot_json FROM local_draft WHERE scope='local' AND id=?", (choice[1],)).fetchone()[0])
         references = {item["localCaptureRef"] for item in draft["content"]["items"]}
         assert references == chosen, "Unselected original was included in the new draft"
+        assert draft["content"]["text"] == "Offline photos and a little story."
+        assert draft["status"] == "queued", "Photo record was not explicitly saved before relaunch"
         cover = next(item for item in draft["content"]["items"] if item["id"] == draft["content"]["coverItemId"])
         assert cover["localCaptureRef"] == "fixture-pick-two"
         originals = db.execute("SELECT id,local_uri FROM local_capture WHERE id LIKE 'fixture-pick-%'").fetchall()
@@ -139,6 +141,10 @@ def main():
                   for device in entries if device.get("isAvailable") and device["name"].startswith("iPhone")]
     assert candidates, "No iPhone simulator runtime"
     runtime, device = max(candidates, key=lambda pair: tuple(int(n) for n in re.findall(r"\d+", pair[0])))
+    types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
+    compact = next((item for item in types if item["identifier"] == "com.apple.CoreSimulator.SimDeviceType.iPhone-16e"), None)
+    if compact:
+        device = {"name": compact["name"], "deviceTypeIdentifier": compact["identifier"]}
     udid = run("xcrun", "simctl", "create", "FTC Release playback regression", device["deviceTypeIdentifier"], runtime)
     report.update(runtime=runtime, device=device["name"])
     server = FixtureServer(media)
@@ -265,6 +271,12 @@ def main():
             assert len(journal) == 1 and journal[0]["status"] == "queued", "Saved supplement must remain one durable local record"
             assert not journal[0].get("savedContent"), "Confirmed save must replace the prior reading snapshot"
             report["journalSave"] = dict(recordCount=len(journal), revision=journal[0]["revision"], status=journal[0]["status"])
+            with sqlite3.connect(db_path) as db:
+                albums = [json.loads(row[0]) for row in db.execute("SELECT snapshot_json FROM local_album WHERE scope='local'")]
+            assert len(albums) == 1 and len(albums[0]["items"]) == 1, "Offline album must preserve exactly one selected item"
+            assert albums[0]["items"][0]["ref"]["id"] == journal[0]["id"], "Album must retain the saved draft identity"
+            assert albums[0].get("remoteId") is None and albums[0].get("consent") is None, "Creating a local album must not authorize sharing"
+            report["offlineAlbum"] = dict(itemCount=1, linkedToSavedRecord=True, sharingAuthorized=False)
         with checkpoints.check("local-playback"):
             test("local-playback", ["testLocalMP4AndMOVPlayback"])
         with checkpoints.check("layout-and-scroll"):

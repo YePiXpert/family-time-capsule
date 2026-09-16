@@ -1,3 +1,4 @@
+import { recoverMemoryEditFile, recoverMemoryEditLivePhoto } from "../memories/picker-recovery";
 import { recoverLivePhotoDraft } from "./live-photo-recovery";
 import { Directory, File, Paths } from "expo-file-system";
 import { ingestLocalImportSession } from "../storage/database";
@@ -33,7 +34,8 @@ export async function recoverPickerIntake(queue: boolean) {
     try { raw = JSON.parse(file.textSync()); } catch { continue; }
     const pair = parseLivePhotoPickerReceipt(raw, new Directory(Paths.document, "captures").uri);
     if (pair && pair.captureId === captureId) {
-      await recoverLivePhotoDraft(pair, uri => new File(uri).exists);
+      if (pair.memoryEditTarget) await recoverMemoryEditLivePhoto(pair, uri => new File(uri).exists);
+      else await recoverLivePhotoDraft(pair, uri => new File(uri).exists);
       file.delete(); totals.manifests++; totals.retainedReadonly++;
       continue;
     }
@@ -43,6 +45,11 @@ export async function recoverPickerIntake(queue: boolean) {
         (uri) => new File(uri).exists);
     } catch { continue; }
     if (!receipt || receipt.items[0]?.captureId !== captureId) continue;
+    if (receipt.memoryEditTarget && receipt.scope && receipt.itemId) {
+      await recoverMemoryEditFile(receipt.scope, receipt.memoryEditTarget, receipt.itemId, receipt.items[0]!);
+      file.delete(); totals.manifests++; totals.retainedReadonly++;
+      continue;
+    }
     const result = await ingestLocalImportSession({ ...receipt, source: "files", queue });
     totals.manifests++;
     totals.queued += result.queued;

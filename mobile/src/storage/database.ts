@@ -355,10 +355,14 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
         }>("SELECT * FROM timeline_event WHERE scope = ? ORDER BY occurred_at DESC, id DESC", scope)
       : Promise.resolve([]),
     db.getAllAsync<LocalCaptureRow>(
-      `SELECT * FROM local_capture WHERE sync_state <> 'archived' AND NOT EXISTS (
+      `SELECT * FROM local_capture WHERE sync_state <> 'archived' AND json_extract(payload_json, '$.memoryEditOwnerScope') IS NULL AND NOT EXISTS (
         SELECT 1 FROM local_draft d, json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
         WHERE json_extract(i.value, '$.localCaptureRef') = local_capture.id
           AND json_extract(d.snapshot_json, '$.status') <> 'discarded'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM local_memory_edit e,
+        json_each(json_array(json_extract(e.snapshot_json, '$.content.items'), json_extract(e.snapshot_json, '$.savedContent.items'), json_extract(e.snapshot_json, '$.submission.content.items'))) snapshots,
+        json_each(snapshots.value) item WHERE json_extract(item.value, '$.localCaptureRef') = local_capture.id
       ) ORDER BY occurred_at DESC, id DESC`,
     ),
   ]);
@@ -378,7 +382,7 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
     id: row.id,
     title: edit?.title ?? row.title,
     bodyText: edit?.bodyText ?? row.body_text,
-    milestoneType: row.milestone_type,
+    milestoneType: edit?.milestoneType !== undefined ? edit.milestoneType : row.milestone_type,
     occurredAt: edit?.occurredAt ?? row.occurred_at,
     occurredAtPrecision: edit?.precision ?? row.occurred_at_precision,
     locationText: edit?.location ?? row.location_text,
@@ -386,7 +390,7 @@ export async function listTimeline(scope: string | null, draftScope: string | nu
     ageDays: dateChanged ? null : row.age_days,
     ageLabel: dateChanged ? null : row.age_label,
     updatedAt: row.updated_at,
-    assetCount: row.asset_count,
+    assetCount: row.asset_count + (edit?.items?.length ?? 0),
     participantNames: edit ? edit.participants.map(id => participantNames.get(id) ?? "未载入人物") : JSON.parse(row.participant_names_json) as string[],
     participantIds: edit?.participants ?? (JSON.parse(row.participant_ids_json) as string[]),
     captureIds: [],
@@ -450,15 +454,16 @@ export async function listLocalMemoryMedia(
        AND local_uri IS NOT NULL
        AND media_type IS NOT NULL
        AND (
-         EXISTS (SELECT 1 FROM local_draft d, json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
+         (json_extract(payload_json, '$.memoryEditOwnerScope') = ? AND json_extract(payload_json, '$.memoryEditTarget') = memory_event_id)
+         OR EXISTS (SELECT 1 FROM local_draft d, json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
            WHERE d.scope = ? AND json_extract(d.snapshot_json, '$.status') <> 'discarded'
              AND json_extract(i.value, '$.localCaptureRef') = local_capture.id)
-         OR (? = 'local' AND NOT EXISTS (
+         OR (? = 'local' AND json_extract(payload_json, '$.memoryEditOwnerScope') IS NULL AND NOT EXISTS (
            SELECT 1 FROM local_draft d, json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
            WHERE json_extract(i.value, '$.localCaptureRef') = local_capture.id))
        )
      ORDER BY occurred_at, id`,
-    memoryEventId, ownDraftScope, ownDraftScope,
+    memoryEventId, ownDraftScope, ownDraftScope, ownDraftScope,
   );
   return rows.map((row) => ({
     captureId: row.id,
@@ -1076,6 +1081,8 @@ export async function clearLocalArchive(): Promise<void> {
     DELETE FROM outbox;
     DELETE FROM local_draft;
     DELETE FROM local_memory_edit;
+    DELETE FROM local_album;
+    DELETE FROM local_work_session;
     DELETE FROM local_import_selection;
     DELETE FROM local_capture;
     DELETE FROM local_import_item;
@@ -1187,6 +1194,29 @@ export async function getLocalCaptureDetail(
   };
 }
 
+/** Pending snapshots and local albums keep their originals until all references are gone. */
+export async function hasProtectedOriginalReference(db: Pick<SQLite.SQLiteDatabase, "getFirstAsync">, captureId: string): Promise<boolean> {
+  const reference = await db.getFirstAsync(`
+    SELECT d.id FROM local_draft d,
+      json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) snapshots,
+      json_each(snapshots.value) item
+    WHERE json_extract(item.value, '$.localCaptureRef') = ? AND (
+      json_extract(d.snapshot_json, '$.status') IN ('editing','queued') OR EXISTS (
+        SELECT 1 FROM local_album a, json_each(json_extract(a.snapshot_json, '$.items')) album_item
+        WHERE json_extract(album_item.value, '$.ref.kind')='localDraft'
+          AND json_extract(album_item.value, '$.ref.scope')=d.scope
+          AND json_extract(album_item.value, '$.ref.id')=d.id
+      )
+    )
+    UNION ALL
+    SELECT e.memory_id FROM local_memory_edit e,
+      json_each(json_array(json_extract(e.snapshot_json, '$.content.items'), json_extract(e.snapshot_json, '$.savedContent.items'), json_extract(e.snapshot_json, '$.submission.content.items'))) snapshots,
+      json_each(snapshots.value) item
+    WHERE json_extract(item.value, '$.localCaptureRef') = ?
+    LIMIT 1`, captureId, captureId);
+  return Boolean(reference);
+}
+
 /**
  * 移除一条本机记录条目（不删除本机原件文件）。
  * 用于原件已丢失的残留记录，或用户明确选择只移除条目的场景。
@@ -1194,11 +1224,7 @@ export async function getLocalCaptureDetail(
 export async function removeLocalCaptureRecord(captureId: string): Promise<void> {
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async tx => {
-    const reference = await tx.getFirstAsync<{ id: string }>(`SELECT d.id FROM local_draft d,
-      json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
-      WHERE json_extract(i.value, '$.localCaptureRef') = ?
-      AND json_extract(d.snapshot_json, '$.status') IN ('editing', 'queued') LIMIT 1`, captureId);
-    if (reference) throw new Error("这份原件仍在草稿中，请先从草稿移除引用。");
+    if (await hasProtectedOriginalReference(tx, captureId)) throw new Error("这份原件仍被记录编辑或相册引用，请先处理对应内容。");
     await tx.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
     await tx.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
   });
@@ -1268,11 +1294,7 @@ export async function keepOutboxItemLocal(itemId: string): Promise<void> {
 export async function deleteLocalCaptureRecord(captureId: string): Promise<void> {
   const db = await getDatabase();
   await db.withExclusiveTransactionAsync(async tx => {
-    const reference = await tx.getFirstAsync<{ id: string }>(`SELECT d.id FROM local_draft d,
-      json_each(json_array(json_extract(d.snapshot_json, '$.content.items'), json_extract(d.snapshot_json, '$.savedContent.items'))) draft_items, json_each(draft_items.value) i
-      WHERE json_extract(i.value, '$.localCaptureRef') = ?
-      AND json_extract(d.snapshot_json, '$.status') IN ('editing', 'queued') LIMIT 1`, captureId);
-    if (reference) throw new Error("这份原件仍在草稿中，请先从草稿移除引用。");
+    if (await hasProtectedOriginalReference(tx, captureId)) throw new Error("这份原件仍被记录编辑或相册引用，请先处理对应内容。");
     await tx.runAsync("DELETE FROM outbox WHERE id = ?", captureId);
     await tx.runAsync("DELETE FROM local_capture WHERE id = ?", captureId);
   });
@@ -1379,7 +1401,10 @@ export async function listPendingRescueItems(): Promise<PendingRescueItem[]> {
   }>(
     `SELECT l.id, l.kind, l.title, l.occurred_at, l.local_uri, l.media_type, COALESCE(l.payload_json, o.payload_json) AS payload_json
      FROM local_capture l LEFT JOIN outbox o ON o.id = l.id
-     WHERE l.sync_state <> 'archived'
+     WHERE l.sync_state <> 'archived' AND json_extract(l.payload_json,'$.memoryEditOwnerScope') IS NULL
+       AND NOT EXISTS (SELECT 1 FROM local_memory_edit e,
+         json_each(json_array(json_extract(e.snapshot_json,'$.content.items'),json_extract(e.snapshot_json,'$.savedContent.items'),json_extract(e.snapshot_json,'$.submission.content.items'))) snapshots,
+         json_each(snapshots.value) item WHERE json_extract(item.value,'$.localCaptureRef')=l.id)
      ORDER BY l.occurred_at DESC, l.id DESC`,
   );
   return rows.map((row) => {
@@ -1412,4 +1437,59 @@ export async function listPendingRescueItems(): Promise<PendingRescueItem[]> {
       text,
     };
   });
+}
+
+
+export type MemoryEditRescueGroup = {
+  scope: string;
+  memoryId: string;
+  snapshot: import("../memories/edit-model").LocalMemoryEdit;
+  originals: { id: string; title: string; occurredAt: string; payload: MediaCapturePayload }[];
+};
+
+export async function listMemoryEditRescueGroups(): Promise<MemoryEditRescueGroup[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ snapshot_json: string }>("SELECT snapshot_json FROM local_memory_edit ORDER BY scope,memory_id");
+  const groups: MemoryEditRescueGroup[] = [];
+  for (const row of rows) {
+    const snapshot = JSON.parse(row.snapshot_json) as MemoryEditRescueGroup["snapshot"];
+    const refs = [...new Set([snapshot.content, snapshot.savedContent, snapshot.submission?.content].flatMap(content => content?.items?.flatMap(item => item.localCaptureRef ? [item.localCaptureRef] : []) ?? []))];
+    const originals: MemoryEditRescueGroup["originals"] = [];
+    for (const id of refs) {
+      const original = await db.getFirstAsync<{ title: string; occurred_at: string; payload_json: string | null }>("SELECT title,occurred_at,payload_json FROM local_capture WHERE id=?", id);
+      if (!original?.payload_json) throw new Error("记录编辑中的原件信息缺失，请先核对这条记录；未生成不完整救援包。");
+      originals.push({ id, title: original.title, occurredAt: original.occurred_at, payload: JSON.parse(original.payload_json) as MediaCapturePayload });
+    }
+    groups.push({ scope: snapshot.scope, memoryId: snapshot.memoryId, snapshot, originals });
+  }
+  return groups;
+}
+
+/** The importer validates the archive before invoking this atomic private restore. */
+export async function restoreMemoryEditRescueGroup(group: MemoryEditRescueGroup): Promise<boolean> {
+  const db = await getDatabase();
+  let restored = false;
+  await db.withExclusiveTransactionAsync(async tx => {
+    if (await tx.getFirstAsync("SELECT memory_id FROM local_memory_edit WHERE scope=? AND memory_id=?", group.scope, group.memoryId)) return;
+    if (group.scope !== group.snapshot.scope || group.memoryId !== group.snapshot.memoryId) throw new Error("救援包的编辑身份不一致。");
+    for (const original of group.originals) {
+      const existing = await tx.getFirstAsync<{ payload_json: string | null }>("SELECT payload_json FROM local_capture WHERE id=?", original.id);
+      if (existing) {
+        const owner = JSON.parse(existing.payload_json ?? "{}") as { memoryEditOwnerScope?: string; memoryEditTarget?: string };
+        if (owner.memoryEditOwnerScope !== group.scope || owner.memoryEditTarget !== group.memoryId) throw new Error("原件已属于另一条记录，未覆盖现有资料。");
+        // The importer has verified these bytes and written a fresh private file.
+        // A surviving metadata row may still point at a file lost before recovery.
+        const repaired = { ...owner, localUri: original.payload.localUri };
+        await tx.runAsync("UPDATE local_capture SET local_uri=?,payload_json=? WHERE id=?", repaired.localUri, JSON.stringify(repaired), original.id);
+      } else {
+        const payload = { ...original.payload, memoryEditOwnerScope: group.scope, memoryEditTarget: group.memoryId };
+        await tx.runAsync("INSERT INTO local_capture(id,kind,title,occurred_at,local_uri,media_type,payload_json,sync_state) VALUES(?,'media_capture',?,?,?,?,?,'pending')", original.id, original.title, original.occurredAt, payload.localUri, payload.mediaType, JSON.stringify(payload));
+      }
+      await tx.runAsync("DELETE FROM outbox WHERE id=?", original.id);
+    }
+    const snapshot = { ...group.snapshot, blocked: true, problem: "已从救援包恢复。请核对原家庭与服务器版本后重新保存。", revision: group.snapshot.revision + 1 };
+    await tx.runAsync("INSERT INTO local_memory_edit(scope,memory_id,snapshot_json,updated_at) VALUES(?,?,?,?)", group.scope, group.memoryId, JSON.stringify(snapshot), snapshot.updatedAt);
+    restored = true;
+  });
+  return restored;
 }

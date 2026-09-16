@@ -3,6 +3,8 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ReadingError } from "../src/reading/engine";
 const mocks = vi.hoisted(() => ({
+  session: vi.fn(async () => ({ id: "append-session" })),
+  canEdit: false,
   navigate: vi.fn(),
   alert: vi.fn(),
   confirm: vi.fn(async (_options?: unknown) => true),
@@ -36,9 +38,11 @@ vi.mock("@react-navigation/native", () => ({
 }));
 const credentials = {
   serverUrl: "https://fictional.example.test",
+  instanceId: "instance",
   token: "fictional-token",
 };
-vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials, online: mocks.online, family: mocks.familyId ? { id: mocks.familyId } : undefined, viewer: mocks.viewerId ? { id: mocks.viewerId } : undefined }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials, online: mocks.online, family: mocks.familyId ? { id: mocks.familyId } : undefined, viewer: mocks.viewerId ? { id: mocks.viewerId, canEditEvents: mocks.canEdit } : undefined }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
+vi.mock("../src/worksession/store", () => ({ createWorkSession: mocks.session }));
 vi.mock("../src/media/NativeMediaReader", () => ({
   NativeMediaReader: "NativeMediaReader",
 }));
@@ -69,7 +73,7 @@ const { ReadingDownloadButton } = await import("../src/reading/DownloadButton"),
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
-beforeEach(() => { mocks.familyId = undefined; mocks.viewerId = undefined; mocks.online = false; });
+beforeEach(() => { mocks.familyId = undefined; mocks.viewerId = undefined; mocks.online = false; mocks.canEdit = false; });
 afterEach(async () => {
   if (tree) await act(() => tree!.unmount());
   tree = undefined;
@@ -261,6 +265,17 @@ it("offers family viewing from an already opened offline album using the same do
   await press("给家人看");
   expect(mocks.navigate).toHaveBeenCalledWith("FamilyViewing", { collectionId: "album", downloadKey: album.key });
   expect(mocks.queue).not.toHaveBeenCalled(); expect(mocks.resume).not.toHaveBeenCalled();
+});
+it("opens persistent selection directly from a verified offline album without uploading", async () => {
+  mocks.familyId = "family"; mocks.viewerId = "user"; mocks.canEdit = true;
+  const album = { ...entry, kind: "collection", id: "album", key: `${scope.key}/collection-album`, manifest: { ...manifest, kind: "collection", id: "album" } };
+  mocks.scope.mockResolvedValue({ scope, online: false }); mocks.get.mockResolvedValue(album);
+  await act(async () => { tree = create(createElement(OfflineReadingScreen, { route: { params: { key: album.key } }, navigation: { navigate: mocks.navigate } } as never)); });
+  await press("添加记录");
+  const owner = JSON.stringify([credentials.serverUrl, "instance", "user", "family"]);
+  expect(mocks.session).toHaveBeenCalledWith(owner, { mode: "append", kind: "collection", id: "album", revision: manifest.revision });
+  expect(mocks.navigate).toHaveBeenCalledWith("MaterialPicker", { scope: owner, sessionId: "append-session" });
+  expect(mocks.queue).not.toHaveBeenCalled();
 });
 
 it("hides the open reading copy while reconnecting and keeps it hidden after revocation", async () => {

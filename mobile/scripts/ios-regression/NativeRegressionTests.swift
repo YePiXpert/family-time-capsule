@@ -215,7 +215,7 @@ final class NativeRegressionTests: XCTestCase {
 
     func testSavedJournalReadingAndSupplementAfterRelaunch() {
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
-        tap("记录一刻")
+        tap("记一刻")
         let input = element("capture-text")
         wait("Capture input did not become usable", timeout: 30) { input.exists && input.isEnabled && input.isHittable }
         let original = "Synthetic journal seaside story"
@@ -230,32 +230,59 @@ final class NativeRegressionTests: XCTestCase {
         resume.name = "home-resume-draft"; resume.lifetime = .keepAlways; add(resume)
         tap("timeline-resume-draft")
         wait("Resumed draft lost its text") { input.exists && input.value as? String == original }
+        let editor = XCTAttachment(screenshot: app.screenshot())
+        editor.name = "fullscreen-journal-editor"; editor.lifetime = .keepAlways; add(editor)
         tap("capture-save")
-        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 15), "Save did not return to the timeline")
+        XCTAssertTrue(element("record-edit").waitForExistence(timeout: 15), "Save did not open the saved record")
+        XCTAssertTrue(textContains(original))
+        backToTimeline()
         let savedCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "timeline-card-draft:", "Synthetic journal seaside story")).firstMatch
         XCTAssertTrue(savedCard.waitForExistence(timeout: 10), "Saved record was not visible")
         let identifier = savedCard.identifier
         savedCard.tap()
-        XCTAssertTrue(element("补记").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("record-edit").waitForExistence(timeout: 10))
         XCTAssertTrue(textContains("Synthetic journal seaside story"))
         XCTAssertFalse(input.isHittable, "Saved record opened as an editor")
         let reading = XCTAttachment(screenshot: app.screenshot())
         reading.name = "saved-journal-reading"; reading.lifetime = .keepAlways; add(reading)
-        tap("补记")
+        tap("record-edit")
         XCTAssertTrue(input.waitForExistence(timeout: 10))
         enterVerifiedText(supplement, into: input, initialText: original)
         XCTAssertEqual(input.value as? String, original + supplement, "Supplement was not entered correctly before saving")
         record("journal-input-before-save", ["nativeText": input.value as? String ?? ""])
         tap("capture-save")
-        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 15))
+        XCTAssertTrue(element("record-edit").waitForExistence(timeout: 15))
+        XCTAssertTrue(textContains("A saved supplement."))
+        backToTimeline()
         XCTAssertTrue(element(identifier).waitForExistence(timeout: 10), "Supplement replaced the record identity")
         app.terminate(); app.launch()
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
         card(String(identifier.dropFirst("timeline-card-".count))).tap()
-        XCTAssertTrue(element("补记").waitForExistence(timeout: 10))
+        XCTAssertTrue(element("record-edit").waitForExistence(timeout: 10))
         XCTAssertTrue(textContains("A saved supplement."), "Saved supplement did not survive relaunch")
         XCTAssertFalse(input.isHittable)
-        record("saved-journal", ["recordIdentifier": identifier, "draftResumedAfterRelaunch": true, "returnedToTimeline": true, "readBeforeEdit": true, "supplementSurvivedRelaunch": true])
+        record("saved-journal", ["recordIdentifier": identifier, "draftResumedAfterRelaunch": true, "openedSavedReader": true, "readBeforeEdit": true, "supplementSurvivedRelaunch": true])
+        backToTimeline()
+        tap("tab-works")
+        tap("新建相册")
+        XCTAssertTrue(element("material-picker-list").waitForExistence(timeout: 10))
+        let selection = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "material-row-", original)).firstMatch
+        tapControl(selection, label: "saved journal material")
+        let picker = XCTAttachment(screenshot: app.screenshot())
+        picker.name = "album-material-selection"; picker.lifetime = .keepAlways; add(picker)
+        tap("material-picker-done")
+        tap("preview-save")
+        XCTAssertTrue(element("local-album-reading").waitForExistence(timeout: 15))
+        XCTAssertTrue(textContains("A saved supplement."))
+        let album = XCTAttachment(screenshot: app.screenshot())
+        album.name = "offline-album-reading"; album.lifetime = .keepAlways; add(album)
+        app.terminate(); app.launch()
+        XCTAssertTrue(element("tab-works").waitForExistence(timeout: 20))
+        tap("tab-works")
+        tap("新相册")
+        XCTAssertTrue(element("local-album-reading").waitForExistence(timeout: 10))
+        XCTAssertTrue(textContains("A saved supplement."), "Local album did not retain its saved record after relaunch")
+        record("offline-album", ["createdThroughPersistentSelection": true, "savedRecordSurvivedRelaunch": true])
     }
 
     func testLocalMP4AndMOVPlayback() {
@@ -298,7 +325,7 @@ final class NativeRegressionTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         assertFrame(missingRow.frame, failedFrame, "Failed cover changed card height")
         XCTAssertEqual(failedFrame.height, frame.height, accuracy: 2, "Failed cover lost its reserved area")
-        tap("记录一刻")
+        tap("记一刻")
         let input = element("capture-text")
         let save = element("capture-save-bar")
         XCTAssertTrue(input.waitForExistence(timeout: 10))
@@ -462,7 +489,21 @@ final class NativeRegressionTests: XCTestCase {
         tap("将所选加入新草稿")
         XCTAssertTrue(element("capture-text").waitForExistence(timeout: 15))
         wait("Selected draft references did not persist") { self.textContains("草稿已暂存") }
-        record("import-selection-ui", ["selected": 2, "originals": 3, "relaunchPreserved": true])
+        let story = "Offline photos and a little story."
+        enterVerifiedText(story, into: element("capture-text"))
+        tap("capture-save")
+        XCTAssertTrue(element("record-edit").waitForExistence(timeout: 15))
+        XCTAssertTrue(textContains(story))
+        let reading = XCTAttachment(screenshot: app.screenshot())
+        reading.name = "offline-photo-record-reading"; reading.lifetime = .keepAlways; add(reading)
+        app.terminate(); app.launch()
+        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
+        let saved = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "timeline-card-draft:", story)).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 10))
+        saved.tap()
+        XCTAssertTrue(element("record-edit").waitForExistence(timeout: 15))
+        XCTAssertTrue(textContains(story), "Offline photo record lost its saved text after relaunch")
+        record("import-selection-ui", ["selected": 2, "originals": 3, "relaunchPreserved": true, "savedPhotoRecordSurvivedRelaunch": true])
         // The host verifies the exact IDs, cover, groups, file preservation and
         // absence of upload intent in SQLite after this actual native UI flow.
     }
@@ -470,7 +511,6 @@ final class NativeRegressionTests: XCTestCase {
     func testFamilyViewingHidesEditingAndRequiresOwnerExit() {
         XCTAssertTrue(element("tab-works").waitForExistence(timeout: 20))
         tap("tab-works")
-        tap("相册")
         tapContaining("Fixture family album")
         tap("更多")
         fixtureControl(["phase": "family-viewing"])
@@ -479,7 +519,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertFalse(element("更多素材操作").exists)
         XCTAssertFalse(element("关闭阅读器").exists)
         XCTAssertFalse(element("导出原件").exists)
-        XCTAssertFalse(element("记录一刻").exists && element("记录一刻").isHittable)
+        XCTAssertFalse(element("记一刻").exists && element("记一刻").isHittable)
         XCTAssertFalse(element("tab-profile").exists && element("tab-profile").isHittable)
         tapControl(ownerExitControl(), label: "长按退出观看")
         XCTAssertTrue(hasNativeFrame(), "A short tap exited family viewing")

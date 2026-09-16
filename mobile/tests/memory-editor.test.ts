@@ -3,6 +3,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MobileMemory } from "../src/types";
 const mocks = vi.hoisted(() => ({ patch: vi.fn(), fetch: vi.fn(), share: vi.fn(), queued: vi.fn(), online: true }));
+vi.mock("../src/components/Disclosure", () => ({ Disclosure: "Disclosure" }));
 vi.mock("react-native", () => ({ Text: "Text", TextInput: "TextInput", Pressable: "Pressable", View: "View", Modal: "Modal", Platform: { OS: "ios" }, StyleSheet: { create: (v: unknown) => v, hairlineWidth: 1 } }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => crypto.randomUUID() }));
 vi.mock("expo-sqlite", async () => await import("../../tests/mocks/expo-sqlite"));

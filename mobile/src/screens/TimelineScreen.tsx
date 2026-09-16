@@ -3,6 +3,8 @@ import { findSavedRecord, timelineRecordKey } from "../navigation/records";
 import { draftReadingScope } from "../drafts/reading";
 import { useResumableDrafts } from "../drafts/use-resumable-drafts";
 import { resumableDraftTitle } from "../drafts/resumable";
+import { useResumableMemoryEdits } from "../memories/use-resumable-edits";
+import { resumableMemoryEditTitle } from "../memories/resumable-edits";
 import { growthStages, eventGrowthStage } from "../design/growth-stages";
 import { calendarDate } from "../utils/calendar";
 import { onThisDay } from "../utils/on-this-day";
@@ -25,6 +27,7 @@ import { JournalIcon } from "../components/JournalIcon";
 import { Button, Chip, EmptyState, IconButton } from "../components/ui";
 import { useColorTheme } from "../theme";
 import { journalRadius, journalSpace } from "../design/tokens";
+import type { MaterialRef } from "../collections/local";
 import type { LocalTimelineEvent } from "../types";
 import type { AppNavigation, MainTabParamList } from "../navigation/types";
 
@@ -52,6 +55,8 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
   const draftScope = draftReadingScope(credentials, userId, viewer?.id, family?.id);
   const unfinished = useResumableDrafts(draftScope, !credentials || Boolean(viewer?.canCapture));
   const resume = unfinished?.rows[0];
+  const unfinishedEdits = useResumableMemoryEdits(draftScope, Boolean(credentials && viewer?.canEditEvents));
+  const resumeEdit = unfinishedEdits?.rows[0];
   const [selectionScope, setSelectionScope] = useState(draftScope);
   if (selectionScope !== draftScope) {
     setSelectionScope(draftScope);
@@ -107,7 +112,7 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
   const belongsToChild = useCallback((event: LocalTimelineEvent) => event.childPersonId ? event.childPersonId === growth.childId : event.participantIds?.length ? event.participantIds.includes(growth.childId ?? "") : childCount === 1 && event.participantNames.length === 0, [growth.childId, childCount]);
   const visibleEvents = useMemo(() => events.filter(event => {
     if (month && monthIndex.byId.get(event.id) !== month) return false;
-    if (important && !event.milestoneType) return false;
+    if (important && event.milestoneType !== "first_time") return false;
     if (!stage) return true;
     if (!belongsToChild(event)) return false;
     if (!["exact", "approximate", "date_only"].includes(event.occurredAtPrecision)) return false;
@@ -126,11 +131,12 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
     const labels = visibleEvents.map(event => stage?.label ?? (childBirthDate && belongsToChild(event) ? eventGrowthStage(childBirthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : null));
     return labels.map((label, index) => label === labels[index - 1] ? null : label);
   }, [visibleEvents, stage, childBirthDate, belongsToChild, timezone]);
+  const selectedRefs: MaterialRef[] = draftScope ? events.filter(event => selected.includes(event.id)).flatMap<MaterialRef>(event => event.source === "server" ? [{ kind: "memory" as const, scope: draftScope, id: event.id }] : event.localDraftId ? [{ kind: "localDraft" as const, scope: draftScope, id: event.localDraftId }] : []) : [];
   const selectedIds = useMemo(() => new Set(selected), [selected]);
   const toggleSelected = useCallback((id: string) => setSelected(ids => ids.includes(id) ? ids.filter(value => value !== id) : ids.length < 100 ? [...ids, id] : ids), []);
   const enterSelection = useCallback((id: string) => { setSelecting(true); setSelected(ids => ids.includes(id) || ids.length >= 100 ? ids : [...ids, id]); }, []);
   const renderItem = useCallback(({ item, index }: { item: LocalTimelineEvent; index: number }) => (
-    <TimelineRow item={item} draftScope={draftScope} highlighted={item.localDraftId === currentNotice?.draftId && Boolean(currentNotice)} groupLabel={groupHeaders[index] ?? null} canEdit={Boolean(viewer?.canEditEvents)} timeZone={family?.timezone} selected={selecting && item.source === "server" ? selectedIds.has(item.id) : undefined} toggleSelected={toggleSelected} enterSelection={enterSelection} openMenu={openMenu} />
+    <TimelineRow item={item} draftScope={draftScope} highlighted={item.localDraftId === currentNotice?.draftId && Boolean(currentNotice)} groupLabel={groupHeaders[index] ?? null} canEdit={Boolean(viewer?.canEditEvents)} timeZone={family?.timezone} selected={selecting && (item.source === "server" || item.localDraftId) ? selectedIds.has(item.id) : undefined} toggleSelected={toggleSelected} enterSelection={enterSelection} openMenu={openMenu} />
   ), [groupHeaders, viewer?.canEditEvents, family?.timezone, selecting, selectedIds, toggleSelected, enterSelection, openMenu, draftScope, currentNotice]);
   const inboxCount = (viewer?.canReviewInbox ? home?.inbox.count ?? 0 : 0) + imports.length;
   return (
@@ -161,7 +167,7 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
           art={<JournalArtwork kind="keepsake" />}
           title={month ? monthIndex.counts.has(month) ? "没有符合筛选的记录" : "本机暂无这个月的记录" : stage || important ? "这里还没有记录" : "第一篇成长记，从今天开始"}
           body={month ? monthIndex.counts.has(month) ? "可以查看全部月份，或调整月龄和重要时刻筛选。" : credentials ? "这个月的资料可能尚未同步到本机。可以下拉同步，或先查看全部记录。" : "选一张照片，或为已有记录补充发生日期；只明确到年份的记录仍在全部月份中。" : "选一张照片，留下一句想对宝宝说的话。"}
-          action={month ? <Button title="查看全部记录" onPress={() => { setMonth(""); setStageKey(""); setImportant(false); setSelected([]); }} full={false} /> : <Button title="记录一刻" variant="primary" icon="plus" onPress={() => navigation.navigate("Capture")} full={false} />}
+          action={month ? <Button title="查看全部记录" onPress={() => { setMonth(""); setStageKey(""); setImportant(false); setSelected([]); }} full={false} /> : <Button title="记一刻" variant="primary" icon="plus" onPress={() => draftScope && navigation.navigate("Capture", { scope: draftScope, target: { kind: "new" } })} full={false} />}
         />
       }
       ListHeaderComponent={
@@ -169,16 +175,21 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
           <JournalHomeHeader
             title={growth.title}
             summary={summary}
-            filtered={Boolean(month || stage || important)} expanded={filtersOpen}
-            onFilter={() => setFiltersOpen(value => !value)}
+            selecting={selecting}
+            onSelect={() => { setSelecting(value => !value); setSelected([]); }}
             onSearch={() => navigation.navigate("Search")}
           />
-          {resume ? <Pressable testID="timeline-resume-draft" accessibilityRole="button" accessibilityLabel={`${resume.savedContent ? "继续补记" : "继续记录"}：${resumableDraftTitle(resume)}`} onPress={() => navigation.navigate("Capture", { localDraftId: resume.id })} style={[styles.resumeCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+          {resume ? <Pressable testID="timeline-resume-draft" accessibilityRole="button" accessibilityLabel={`${resume.savedContent ? "继续补记" : "继续记录"}：${resumableDraftTitle(resume)}`} onPress={() => draftScope && navigation.navigate("Capture", { scope: draftScope, target: { kind: "local", draftId: resume.id, editSaved: Boolean(resume.savedContent) } })} style={[styles.resumeCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
             <View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.coralDark, fontSize: 13 }}>{resume.savedContent ? "继续上次的补记" : "继续上次没写完的记录"}</Text><Text numberOfLines={2} style={{ color: colors.ink, fontSize: 15 }}>{resumableDraftTitle(resume)}</Text></View>
             <JournalIcon name="chevron-right" color={colors.coralDark} size={18} />
           </Pressable> : null}
           {unfinished && unfinished.rows.length > 1 ? <Button title={`查看 ${unfinished.rows.length} 条未完成记录`} variant="ghost" full={false} onPress={() => navigation.navigate("Pending")} /> : null}
           {unfinished?.error ? <Button title="查看未完成记录" variant="ghost" full={false} onPress={() => navigation.navigate("Pending")} /> : null}
+          {resumeEdit ? <Pressable testID="timeline-resume-memory-edit" accessibilityRole="button" accessibilityLabel={`继续补记：${resumableMemoryEditTitle(resumeEdit)}`} onPress={() => draftScope && navigation.navigate("Capture", { scope: draftScope, target: { kind: "memory", memoryId: resumeEdit.memoryId } })} style={[styles.resumeCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+            <View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.coralDark, fontSize: 13 }}>继续上次的补记</Text><Text numberOfLines={2} style={{ color: colors.ink, fontSize: 15 }}>{resumableMemoryEditTitle(resumeEdit)}</Text></View>
+            <JournalIcon name="chevron-right" color={colors.coralDark} size={18} />
+          </Pressable> : null}
+          {unfinishedEdits?.error ? <Text accessibilityLiveRegion="polite" style={{ color: colors.muted, fontSize: 13 }}>{unfinishedEdits.error}</Text> : null}
           {revisit && !month && !stage && !important && !selecting && !currentNotice ? <Pressable testID="timeline-on-this-day" accessibilityRole="button" accessibilityLabel={`${revisit.yearsAgo} 年前的今天：${revisit.event.title}`} onPress={() => openRecord(revisit.event)} style={[styles.revisitCard, { backgroundColor: colors.softCoral }]}>
             <Text style={{ color: colors.coralDark, fontSize: 12 }}>{revisit.yearsAgo} 年前的今天</Text>
             <View style={styles.toolRow}><Text numberOfLines={2} style={{ flex: 1, color: colors.ink, fontSize: 18 }}>{revisit.event.title}</Text><JournalIcon name="chevron-right" color={colors.coralDark} size={18} /></View>
@@ -191,33 +202,27 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
               else navigation.navigate("SavedMemory", { draftId: currentNotice.draftId, scope: currentNotice.scope });
             }} />
           </View> : null}
-          {filtersOpen ? <View style={[styles.filterPanel, { backgroundColor: colors.card, borderColor: colors.line }]}>
-          <MonthPicker value={month} currentMonth={today.slice(0, 7)} counts={monthIndex.counts} allowAll onChange={next => { setMonth(next); setSelected([]); }} />
-
-          {/* 月龄轨迹：轻量胶囊，内容为主角 */}
-          {stages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }} accessibilityLabel="按月龄回看">
-            {[{ key: "", label: "全部" }, ...stages].map(item => <Chip key={item.key} label={item.label} selected={(stage?.key ?? "") === item.key} onPress={() => { setStageKey(item.key); setSelected([]); }} />)}
-          </ScrollView> : <Button title="填写宝宝生日，按月龄回看" icon="calendar" onPress={() => navigation.navigate("People")} />}
-
-          {/* 次级工具行：筛选与管理退到一行小控件 */}
-          <View style={styles.toolRow}>
-            <Chip accessibilityRole="button" icon="star" label={important ? "查看所有时刻" : "第一次与值得记住"} selected={important} onPress={() => setImportant(v => !v)} />
-            <View style={styles.tools}>
-            <IconButton icon="calendar" label="日期与人物" onPress={() => navigation.navigate("Calendar")} />
-            {viewer?.canEditEvents ? (
-              <IconButton icon="check" label={selecting ? "取消选择" : "选择"} tone={selecting ? "accent" : "plain"} onPress={() => { setSelecting(!selecting); setSelected([]); }} />
-            ) : null}
+          <View style={{ gap: 8 }}>
+            <MonthPicker compact value={month} currentMonth={today.slice(0, 7)} counts={monthIndex.counts} allowAll onChange={setMonth} />
+            <View style={styles.toolRow}>
+              <Chip accessibilityRole="button" icon="star" label="第一次" selected={important} onPress={() => setImportant(value => !value)} />
+              <View style={styles.tools}>
+                {stages.length ? <Button title={stage?.label ?? "按月龄"} variant="ghost" full={false} onPress={() => setFiltersOpen(value => !value)} /> : null}
+                <IconButton icon="calendar" label="日历" onPress={() => navigation.navigate("Calendar")} />
+              </View>
             </View>
+            {filtersOpen && stages.length ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} accessibilityLabel="按月龄回看">
+              {[{ key: "", label: "全部月龄" }, ...stages].map(item => <Chip key={item.key} label={item.label} selected={(stage?.key ?? "") === item.key} onPress={() => setStageKey(item.key)} />)}
+            </ScrollView> : null}
+            {month || stage || important ? <Button title="清除筛选" variant="ghost" full={false} onPress={() => { setMonth(""); setStageKey(""); setImportant(false); }} /> : null}
           </View>
-          {month || stage || important ? <Button title="查看全部记录" variant="ghost" onPress={() => { setMonth(""); setStageKey(""); setImportant(false); setSelected([]); setFiltersOpen(false); }} /> : null}
-          </View> : null}
 
           {selecting ? (
             <View style={[styles.selectionCard, { backgroundColor: colors.softCoral, borderColor: colors.peach }]}>
               <Text style={[styles.selectionText, { color: colors.coralDark }]}>已选 {selected.length} 条{selected.length >= 100 ? " · 一本最多 100 条" : ""}</Text>
               <View style={styles.selectionActions}>
-                <Button title="预览成长册" variant="primary" disabled={!selected.length || !credentials || !draftScope || draftScope === "local"} onPress={() => { if (draftScope && draftScope !== "local") navigation.navigate("BookCreate", { eventIds: selected, scope: draftScope }); }} full={false} />
-                <Button title={`加入相册 · ${selected.length} 条`} variant="ghost" disabled={!selected.length} onPress={() => navigation.navigate("Collections", { eventIds: selected })} full={false} />
+                <Button title="预览成长册" variant="primary" disabled={!selected.length || !credentials || !draftScope || draftScope === "local" || selected.some(id => events.find(event => event.id === id)?.source !== "server")} onPress={() => { if (draftScope && draftScope !== "local") navigation.navigate("BookCreate", { eventIds: selected, scope: draftScope }); }} full={false} />
+                <Button title={`加入相册 · ${selected.length} 条`} variant="ghost" disabled={!selected.length} onPress={() => draftScope && navigation.navigate("Collections", { refs: selectedRefs, scope: draftScope })} full={false} />
               </View>
             </View>
           ) : null}
@@ -270,15 +275,15 @@ const TimelineRow = memo(function TimelineRow({ item, draftScope, highlighted, g
 }) {
   const navigation = useNavigation<AppNavigation>();
   const { colors } = useColorTheme();
-  const canOrganize = item.source === "server" && canEdit;
+  const canOrganize = Boolean(item.localDraftId) || (item.source === "server" && canEdit);
   const open = () => item.source === "server" ? navigation.navigate("Memory", { id: item.id }) : item.localDraftId && draftScope ? navigation.navigate("SavedMemory", { draftId: item.localDraftId, scope: draftScope }) : navigation.navigate("LocalCapture", { captureId: item.id });
   const select = () => enterSelection(item.id);
-  const collect = () => navigation.navigate("Collections", { eventIds: [item.id] });
+  const collect = () => draftScope && navigation.navigate("Collections", { scope: draftScope, refs: [{ kind: item.source === "server" ? "memory" : "localDraft", scope: draftScope, id: item.source === "server" ? item.id : item.localDraftId! }] });
   const card = <TimelineCard item={item} highlighted={highlighted} timeZone={timeZone} selected={selected} onPress={() => selected !== undefined ? toggleSelected(item.id) : open()} onLongPress={event => {
     if (canOrganize) select();
     openMenu([
       ...(canOrganize ? [
-        ...(draftScope && draftScope !== "local" ? [{ key: "book", label: "做成成长册", icon: "book" as const, onPress: () => navigation.navigate("BookCreate", { eventIds: [item.id], scope: draftScope }) }] : []),
+        ...(item.source === "server" && draftScope && draftScope !== "local" ? [{ key: "book", label: "做成成长册", icon: "book" as const, onPress: () => navigation.navigate("BookCreate", { eventIds: [item.id], scope: draftScope }) }] : []),
         { key: "collect", label: "加入相册", icon: "image" as const, onPress: collect },
         { key: "select", label: "选择", icon: "check" as const, onPress: select },
       ] : []),
@@ -298,7 +303,7 @@ const styles = StyleSheet.create({
   resumeCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderWidth: 1, borderRadius: journalRadius.control },
   revisitCard: { gap: 7, padding: 16, borderRadius: journalRadius.control },
   savedNotice: { borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: 8, gap: 4 },
-  filterPanel: { borderWidth: 1, borderRadius: journalRadius.card, padding: 16, gap: 16 },
+
   toolRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 },
   tools: { flexDirection: "row", alignItems: "center", gap: 8 },
   selectionCard: {

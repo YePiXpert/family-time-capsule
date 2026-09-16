@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  preventRemove: null as unknown,
   items: [] as unknown[],
   alert: vi.fn(), constructor: vi.fn(), permission: vi.fn(), audioMode: vi.fn(),
   prepare: vi.fn(), record: vi.fn(), stop: vi.fn(), release: vi.fn(),
@@ -39,11 +40,12 @@ vi.mock("react-native", () => ({
   Platform: { OS: "ios", select: (v: { ios: unknown }) => v.ios },
 }));
 vi.mock("@react-navigation/native", () => ({
+  usePreventRemove: (_enabled: boolean, callback: unknown) => { mocks.preventRemove = callback; },
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
   useNavigation: () => navigation,
   useRoute: () => mocks.route,
 }));
-const navigation = { setParams: mocks.setParams };
+const navigation = { setParams: mocks.setParams, goBack: vi.fn(), dispatch: vi.fn(), replace: vi.fn(), popTo: vi.fn() };
 vi.mock("../src/state/AppContext", () => ((() => {
   const mock = {
   useApp: () => ({
@@ -97,7 +99,7 @@ vi.mock("@react-native-community/datetimepicker", () => ({
 vi.mock("../src/drafts/use-draft", () => ({
   usePersistentDraft: () => ({
     draft: mocks.draft,
-    drafts: [], saved: true, error: null, reload: async () => [],
+    drafts: [], saved: true, error: null, reload: async () => [], barrier: vi.fn().mockResolvedValue(undefined),
     change: mocks.enqueueText, addOriginal: mocks.enqueueMedia, save: vi.fn(),
     create: vi.fn(), resume: vi.fn(), discard: vi.fn(), retry: vi.fn(),
   }),
@@ -155,7 +157,7 @@ it.each(["text", "photo", "library", "audio"])("opens %s without initializing au
     await act(() => input.props.onChangeText("今天一起散步"));
     expect(mocks.enqueueText).toHaveBeenCalledWith({ text: "今天一起散步" });
   } else if (intent === "audio") {
-    expect(tree!.root.findByProps({ accessibilityLabel: "拍摄、录音与文件" }).props.accessibilityState.expanded).toBe(true);
+    expect(tree!.root.findByProps({ accessibilityLabel: "更多素材方式" }).props.accessibilityState.expanded).toBe(true);
     expect(tree!.root.findAllByType("Pressable" as never).find(node => node.props.accessibilityLabel === "录音")?.props.disabled).toBe(false);
   } else {
     expect(intent === "photo" ? mocks.camera : mocks.library).toHaveBeenCalledOnce();
@@ -315,13 +317,15 @@ async function renderDateField() {
   })); });
 }
 
-it("keeps the active recording stop available after the optional tools are collapsed", async () => {
+it("keeps recording directly reachable and its stop available while more tools are open", async () => {
   await render();
-  const tools = () => tree!.root.findByProps({ accessibilityLabel: "拍摄、录音与文件" });
+  const tools = () => tree!.root.findByProps({ accessibilityLabel: "更多素材方式" });
   expect(tools().props.accessibilityState.expanded).toBe(false);
   await press("录音");
+  expect(tools().props.accessibilityState.expanded).toBe(false);
+  await press("更多素材方式");
   expect(tools().props.accessibilityState.expanded).toBe(true);
-  await press("拍摄、录音与文件");
+  await press("更多素材方式");
   expect(tools().props.accessibilityState.expanded).toBe(false);
   await press("完成录音");
   expect(mocks.stop).toHaveBeenCalledOnce();
@@ -361,4 +365,26 @@ it("does not let a prompt exceed the draft body limit or write while the draft i
   expect(control("加入正文").props.disabled).toBe(true);
   await act(() => control("加入正文").props.onPress());
   expect(onUse).not.toHaveBeenCalled();
+});
+
+
+it("finishes and durably attaches recording before allowing native back", async () => {
+  await render(); await press("录音");
+  expect(mocks.enqueueMedia).not.toHaveBeenCalled();
+  await act(async () => { (mocks.preventRemove as (event: unknown) => void)({ data: { action: { type: "GO_BACK" } } }); });
+  expect(mocks.stop).toHaveBeenCalledOnce();
+  expect(mocks.enqueueMedia).toHaveBeenCalledWith("capture-id", { localUri: "file:///private/recording.m4a" });
+  expect(navigation.dispatch).toHaveBeenCalledWith({ type: "GO_BACK" });
+});
+
+it("retains a stopped recording for retry if attaching the private copy fails", async () => {
+  await render(); await press("录音");
+  mocks.enqueueMedia.mockRejectedValueOnce(new Error("disk full"));
+  await press("完成录音");
+  expect(mocks.release).not.toHaveBeenCalled();
+  expect(tree!.root.findAllByType("Pressable" as never).some(node => node.props.accessibilityLabel === "完成录音")).toBe(true);
+  await press("完成录音");
+  expect(mocks.stop).toHaveBeenCalledOnce();
+  expect(mocks.enqueueMedia).toHaveBeenCalledTimes(2);
+  expect(mocks.release).toHaveBeenCalledOnce();
 });

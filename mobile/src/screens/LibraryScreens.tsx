@@ -240,7 +240,7 @@ function LocalImportSessions() {
   return <View style={s.card}>
     <Text style={s.cardTitle}>收到的内容 · {sessions.length}</Text>
     {sessions.map((session) => <Pressable accessibilityRole="button" onPress={() => navigation.navigate("LocalIntake", { id: session.id })} key={session.id} style={s.secondaryButton}><Text style={styles.itemTitle}>{session.source === "share" ? "系统分享" : "文件导入"}</Text><Text style={styles.meta}>{statusLabel(session.status)} · {session.completedCount}/{session.totalCount}{session.failedCount ? ` · ${session.failedCount} 项需重试` : ""}</Text></Pressable>)}
-    <Pressable onPress={() => navigation.navigate("MainTabs", { screen: "Capture", params: { intent: "library", requestKey: Date.now() } })} style={s.secondaryButton}><Text style={s.secondaryText}>从 Files 继续导入</Text></Pressable>
+    <Pressable onPress={() => navigation.navigate("Capture", { scope, target: { kind: "new" }, intent: "library" })} style={s.secondaryButton}><Text style={s.secondaryText}>从 Files 继续导入</Text></Pressable>
   </View>;
 }
 

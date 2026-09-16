@@ -1,3 +1,6 @@
+import { draftReadingScope } from "../drafts/reading";
+import { createWorkSession } from "../worksession/store";
+import { useServerPermissionRevision } from "../storage/cache-lifecycle";
 import { useJournalContentInset, useJournalTitleInset } from "../navigation/dock-metrics";
 import { NativeMediaReader } from "../media/NativeMediaReader";
 import { GrowthBookCard } from "../growth/GrowthBookCard";
@@ -18,9 +21,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchBook,
   fetchBooks,
-  fetchBookMaterials,
   mutateBook,
-  type BookMaterials,
+  ApiError,
 } from "../api/client";
 import {
   BOOK_TEMPLATES,
@@ -33,7 +35,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { useAppData } from "../state/AppContext";
 import { useColorTheme, useSharedStyles } from "../theme";
 import { journalRadius, journalShadow, journalType } from "../design/tokens";
-import { useConfirmSheet } from "../components/GlassSheet";
+import { GlassSheet, useConfirmSheet } from "../components/GlassSheet";
 import { haptics } from "../design/haptics";
 import {
   Button,
@@ -263,11 +265,16 @@ function Bookshelf({ navigation }: BooksProps) {
 
   </View>;
 }
-export function BookDetailScreen({
+export function BookDetailScreen(props: NativeStackScreenProps<RootStackParamList, "BookDetail">) {
+  const { credentials, family, viewer, userId } = useAppData();
+  const permissionRevision = useServerPermissionRevision();
+  return <BookDetailContent key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, credentials?.token, userId, viewer?.id, family?.id, props.route.params.id, permissionRevision])} {...props} />;
+}
+function BookDetailContent({
   navigation,
   route,
 }: NativeStackScreenProps<RootStackParamList, "BookDetail">) {
-  const { credentials } = useAppData();
+  const { credentials, family, viewer } = useAppData();
   const insets = useSafeAreaInsets();
   const s = useSharedStyles();
   const { colors } = useColorTheme();
@@ -279,23 +286,24 @@ export function BookDetailScreen({
     [saving, setSaving] = useState(false),
     [operation, setOperation] = useState(false),
     [editing, setEditing] = useState(false),
-    [tool, setTool] = useState<"content" | "layout" | "settings">("content"),
+    [tool, setTool] = useState<"content" | "layout" | "export">("content"),
     [activeBlock, setActiveBlock] = useState<string | null>(null),
     [chapterIndex, setChapterIndex] = useState(0),
     [blockPage, setBlockPage] = useState(0),
-    [selecting, setSelecting] = useState(false),
-    [materialKind, setMaterialKind] = useState<
-      "memory" | "collection"
-    >("memory"),
-    [materials, setMaterials] = useState<BookMaterials | null>(null),
-    [selected, setSelected] = useState<string[]>([]),
     [coverPicker, setCoverPicker] = useState(false);
   const current = useRef(book),
     sequence = useRef(0),
     savedSequence = useRef(0),
     inflight = useRef<Promise<boolean> | null>(null),
-    scroll = useRef<ScrollView>(null),
-    materialGeneration = useRef(0);
+    scroll = useRef<ScrollView>(null);
+  const handleFailure = useCallback((reason: unknown) => {
+    if (reason instanceof ApiError && [401, 403, 404, 410].includes(reason.status)) {
+      current.current = null;
+      setBook(null);
+      setDirty(false);
+    }
+    setError(reason instanceof Error ? reason.message : "暂时无法打开成长册。");
+  }, []);
   function accept(doc: BookDetail) {
     current.current = doc;
     setBook(doc);
@@ -313,9 +321,9 @@ export function BookDetailScreen({
       setDirty(false);
       setError("");
     } catch (e) {
-      setError((e as Error).message);
+      handleFailure(e);
     }
-  }, [credentials, id]);
+  }, [credentials, id, handleFailure]);
   useFocusEffect(
     useCallback(() => {
       if (sequence.current === savedSequence.current) void load();
@@ -353,7 +361,7 @@ export function BookDetailScreen({
         setError("");
         return true;
       } catch (e) {
-        setError((e as Error).message);
+        handleFailure(e);
         return false;
       } finally {
         setSaving(false);
@@ -362,7 +370,7 @@ export function BookDetailScreen({
     })();
     inflight.current = request;
     return request;
-  }, [credentials, id]);
+  }, [credentials, id, handleFailure]);
   useEffect(() => {
     if (!dirty || error || operation) return;
     const timer = setTimeout(() => void save(), 900);
@@ -407,43 +415,27 @@ export function BookDetailScreen({
       });
       if (op === "copy") navigation.replace("BookDetail", {id:next.id});
       else accept(next);
-      if (op === "add") {
-        setSelecting(false);
-        setSelected([]);
-      }
     } catch (e) {
-      setError((e as Error).message);
+      handleFailure(e);
     } finally {
       setOperation(false);
     }
   }
-  const audience = book?.audience;
-  const loadMaterials = useCallback(
-    async (cursor = "") => {
-      if (!credentials || !audience) return;
-      const gen = ++materialGeneration.current;
-      try {
-        const next = await fetchBookMaterials(
-          credentials,
-          materialKind,
-          audience,
-          cursor,
-        );
-        if (gen !== materialGeneration.current) return;
-        setMaterials((p) =>
-          cursor && p
-            ? { ...next, entries: [...p.entries, ...next.entries] }
-            : next,
-        );
-      } catch (e) {
-        if (gen === materialGeneration.current) setError((e as Error).message);
-      }
-    },
-    [credentials, materialKind, audience],
-  );
-  useEffect(() => {
-    if (selecting) void Promise.resolve().then(() => loadMaterials());
-  }, [selecting, loadMaterials]);
+  async function addMaterials() {
+    const scope = draftReadingScope(credentials, null, viewer?.id, family?.id);
+    if (!scope || !current.current || operation) return;
+    setOperation(true);
+    try {
+      if (!(await save())) return;
+      const session = await createWorkSession(scope, { mode: "append", kind: "book", id,
+        revision: current.current.revision, chapterId: current.current.chapters[chapterIndex]?.id });
+      session.audience = current.current.audience;
+      const { saveWorkSession } = await import("../worksession/store");
+      await saveWorkSession(session);
+      navigation.navigate("MaterialPicker", { scope, sessionId: session.id });
+    } catch (cause) { setError((cause as Error).message); }
+    finally { setOperation(false); }
+  }
   function patchBlock(block: BookBlock, patch: Partial<BookBlock>) {
     update({
       blocks: book!.blocks.map((b) =>
@@ -550,107 +542,44 @@ export function BookDetailScreen({
         </View>
       ) : null}
       {book.readingMedia?.length ? <View style={s.card}><Text style={s.cardTitle}>声音与视频</Text><NativeMediaReader credentials={credentials} assets={book.readingMedia.flatMap(state => state.asset ? [{ id: state.asset.id, type: state.asset.type, filename: state.label || state.asset.filename, mimeType: state.asset.mimeType }] : [])} /></View> : null}
-      {canEdit ? (
-        <>
-          {editing ? <SectionHeader title="调整成长册" /> : null}
-          <View pointerEvents={busy ? "none" : "auto"}>
-            <ListGroup>
-              <ListRow
-                icon="edit"
-                title={editing ? "保存并阅读" : "调整这本成长册"}
-                last={!(editing && tool === "content")}
-                onPress={() => {
-                  if (editing) {
-                    setOperation(true);
-                    void save()
-                      .then(async (ok) => {
-                        if (ok && credentials) {
-                          accept(await fetchBook(credentials, id));
-                          setEditing(false);
-                        }
-                      })
-                      .catch((e) => setError((e as Error).message))
-                      .finally(() => setOperation(false));
-                  } else setEditing(true);
-                }}
-              />
-              {editing && tool === "content" ? <ListRow
-                icon="plus"
-                title={selecting ? "关闭选材" : "添加记忆或相册"}
-                last
-                onPress={() => {
-                  setSelected([]);
-                  setMaterials(null);
-                  setSelecting(!selecting);
-                }}
-              /> : null}
-            </ListGroup>
+      {canEdit ? <Button title="换封面" icon="image" full={false} disabled={busy} onPress={() => setCoverPicker(true)} /> : null}
+      <GlassSheet visible={coverPicker} onClose={() => setCoverPicker(false)}>
+        <Text accessibilityRole="header" style={s.cardTitle}>选择封面照片</Text>
+        <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ gap: 12, paddingVertical: 12 }}>
+          <Button title="使用标题封面" disabled={busy} onPress={() => { update({ coverAssetId: null }); setCoverPicker(false); }} />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+            {imageRefs.map(ref => {
+              const asset = book.sourceStates[ref.id]?.asset;
+              if (!asset) return null;
+              return <Pressable key={ref.id} accessibilityRole="button" accessibilityLabel={`使用封面：${ref.label}`} accessibilityState={{ selected: book.coverAssetId === asset.id }} disabled={busy} onPress={() => { update({ coverAssetId: asset.id }); setCoverPicker(false); }} style={{ width: "46%", gap: 6 }}>
+                <View style={{ aspectRatio: 1, overflow: "hidden", borderRadius: 12, borderWidth: book.coverAssetId === asset.id ? 2 : 0, borderColor: colors.coral }}>{photo(asset.previewAssetId || asset.id, ref.label)}</View>
+                <Text numberOfLines={2} style={{ color: colors.muted, fontSize: 13 }}>{ref.label}</Text>
+              </Pressable>;
+            })}
           </View>
-        </>
-      ) : null}
-      {editing && canEdit ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {(["content", "layout", "settings"] as const).map((value, i) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tool === value }} onPress={() => setTool(value)} style={{
-          minHeight: 44,
-          alignItems: "center",
-          justifyContent: "center",
-          paddingHorizontal: 16,
-          borderRadius: journalRadius.pill,
-          borderWidth: 1,
-          backgroundColor: tool === value ? colors.softCoral : colors.card,
-          borderColor: tool === value ? colors.peach : colors.line,
-        }}><Text style={{ color: tool === value ? colors.coralDark : colors.muted, fontSize: 14, fontWeight: "600" }}>{["内容", "版式", "整本设置"][i]}</Text></Pressable>)}
-      </View> : null}
-      {selecting && canEdit && editing && tool === "content" ? (
-        <View style={[s.card, { gap: 12 }]} pointerEvents={busy ? "none" : "auto"}>
-          <Text style={s.cardTitle}>从已确认内容选材</Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            {(["memory", "collection"] as const).map((kind, i) => (
-              <Chip
-                key={kind}
-                label={`${materialKind === kind ? "✓ " : ""}${["记忆", "相册"][i]}`}
-                selected={materialKind === kind}
-                onPress={() => {
-                  setSelected([]);
-                  setMaterials(null);
-                  setMaterialKind(kind);
-                }}
-              />
-            ))}
-          </View>
-          <View style={{ gap: 8 }}>
-            {materials?.entries.map((m) => (
-              <Chip
-                key={m.id}
-                label={`${selected.includes(m.id) ? "✓ " : ""}${m.title}`}
-                selected={selected.includes(m.id)}
-                onPress={() =>
-                  setSelected((v) =>
-                    v.includes(m.id) ? v.filter((x) => x !== m.id) : [...v, m.id],
-                  )
-                }
-              />
-            ))}
-          </View>
-          {materials?.nextCursor ? (
-            <Button
-              title="更多素材"
-              onPress={() => void loadMaterials(materials.nextCursor!)}
-            />
+          {!imageRefs.length ? <Text style={s.body}>本册还没有可用照片，先添加记录即可换封面。</Text> : null}
+        </ScrollView>
+      </GlassSheet>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <Chip label="阅读" selected={!editing} onPress={() => setEditing(false)} />
+        {(canEdit ? ["content", "layout", "export"] as const : ["export"] as const).map(value => <Chip key={value} label={{ content: "内容", layout: "样式", export: "导出" }[value]} selected={editing && tool === value} onPress={() => { setEditing(true); setTool(value); }} />)}
+      </View>
+      {editing && canEdit && tool === "content" ? <Button title="添加记录或相册" icon="plus" disabled={busy} onPress={() => void addMaterials()} /> : null}
+      {editing && tool === "export" ? <View style={{ gap: 12 }}>
+        <Text accessibilityRole="header" style={s.cardTitle}>导出与下载</Text>
+        <View style={{ gap: 10 }}>
+          {!book.deletedAt ? <ReadingDownloadButton kind="book" id={id} prepare={async () => { setOperation(true); try { return await save() && sequence.current === savedSequence.current; } finally { setOperation(false); } }} /> : null}
+          {credentials && !book.deletedAt ? (
+            <NativeBookPublication credentials={credentials} id={id} audience={book.audience}
+              prepare={async () => {
+                setOperation(true);
+                try { return await save() && sequence.current === savedSequence.current ? current.current!.revision : null; }
+                finally { setOperation(false); }
+              }} />
           ) : null}
-          <Button
-            variant="primary"
-            icon="plus"
-            title={`加入 ${selected.length} 项`}
-            disabled={busy || !selected.length}
-            onPress={() =>
-              void act("add", {
-                selection: selected.map((id) => ({ kind: materialKind, id })),
-              })
-            }
-          />
         </View>
-      ) : null}
-      {editing && canEdit && tool === "settings" ? (
+      </View> : null}
+      {editing && canEdit && tool === "layout" ? (
         <View style={[s.card, { gap: 12 }]}>
           <Field
             label="作品标题"
@@ -694,34 +623,6 @@ export function BookDetailScreen({
               update({ pageSize: book.pageSize === "A4" ? "A5" : "A4" })
             }
           />
-          <Button
-            title={`封面：${imageRefs.find((r) => r.assetId === book.coverAssetId)?.label ?? "未设置"}${coverPicker ? " ∨" : " ›"}`}
-            disabled={busy}
-            onPress={() => setCoverPicker(!coverPicker)}
-          />
-          {coverPicker ? (
-            <View style={{ gap: 6 }}>
-              <Button
-                title={`${book.coverAssetId ? "" : "✓ "}无封面（默认）`}
-                disabled={busy}
-                onPress={() => {
-                  update({ coverAssetId: null });
-                  setCoverPicker(false);
-                }}
-              />
-              {imageRefs.map((r) => (
-                <Button
-                  key={r.id}
-                  title={`${book.coverAssetId === r.assetId ? "✓ " : ""}${r.label}`}
-                  disabled={busy}
-                  onPress={() => {
-                    update({ coverAssetId: r.assetId });
-                    setCoverPicker(false);
-                  }}
-                />
-              ))}
-            </View>
-          ) : null}
           <Button
             title="添加章节"
             disabled={busy || book.chapters.length >= 50}
@@ -865,7 +766,7 @@ export function BookDetailScreen({
               },
             ]}
           >
-            {editing && canEdit && tool !== "settings" ? <Button title={activeBlock === b.id ? "收起此内容" : "选择此内容"} onPress={() => setActiveBlock(value => value === b.id ? null : b.id)} /> : null}
+            {editing && canEdit && tool !== "export" ? <Button title={activeBlock === b.id ? "收起此内容" : "选择此内容"} onPress={() => setActiveBlock(value => value === b.id ? null : b.id)} /> : null}
             {blocked ? (
               <Text style={s.body}>来源已删除或当前不可见，内容已撤下。</Text>
             ) : (
@@ -918,7 +819,7 @@ export function BookDetailScreen({
                     />
                   ) : null;
                 })}</ToolDisclosure>
-                {editing && canEdit && activeBlock === b.id && tool !== "settings" ? (
+                {editing && canEdit && activeBlock === b.id && tool !== "export" ? (
                   <>
                     {tool === "content" ? <>
                     <Field
@@ -1078,29 +979,6 @@ export function BookDetailScreen({
           }}
         />
       </View>
-      {canEdit && !editing ? <ToolDisclosure title="调整封面、寄语与收录内容">
-        <View style={[s.card, { gap: 12 }]}>
-          <Field label="给宝宝的寄语" value={book.subtitle} onChange={subtitle => update({ subtitle: subtitle.slice(0, 500) })} multiline />
-          <Text style={s.label}>封面照片</Text>
-          <Button title="只用标题封面" onPress={() => update({ coverAssetId: null })} disabled={busy} />
-          {[...new Map(Object.values(book.sourceStates).filter(state => state.available && state.asset?.type === "image").map(state => [state.asset!.id, state])).values()].map((state, i) => <Button key={state.asset!.id} title={`${book.coverAssetId === state.asset!.id ? "已选 · " : ""}照片 ${i + 1} · ${state.asset!.filename}`} onPress={() => update({ coverAssetId: state.asset!.id })} disabled={busy} />)}
-          <Text style={s.body}>从本册移除不会删除原记录，也不会自动加回来。</Text>
-          {book.sources.filter(source => source.kind === "memory" && book.blocks.some(b => b.sourceIds.includes(source.id))).map(source => <Button key={source.id} title={`从本册移除：${book.sourceStates[source.id]?.label || "暂不可见的记录"}`} onPress={() => update({ blocks: book.blocks.filter(b => !b.sourceIds.includes(source.id)) })} disabled={busy} />)}
-        </View>
-      </ToolDisclosure> : null}
-      <ToolDisclosure title="导出与下载">
-        <View style={{ gap: 10 }}>
-          {!book.deletedAt ? <ReadingDownloadButton kind="book" id={id} prepare={async () => { setOperation(true); try { return await save() && sequence.current === savedSequence.current; } finally { setOperation(false); } }} /> : null}
-          {credentials && !book.deletedAt ? (
-            <NativeBookPublication credentials={credentials} id={id} audience={book.audience}
-              prepare={async () => {
-                setOperation(true);
-                try { return await save() && sequence.current === savedSequence.current ? current.current!.revision : null; }
-                finally { setOperation(false); }
-              }} />
-          ) : null}
-        </View>
-      </ToolDisclosure>
       <ToolDisclosure title="作品管理">
         <View style={{ gap: 10 }} pointerEvents={busy ? "none" : "auto"}>
           {canEdit ? <ListGroup>

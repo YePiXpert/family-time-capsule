@@ -3,6 +3,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -20,6 +21,23 @@ const updated = () =>
   integer("updated_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date());
+
+/** Device IDs and immutable receipts make native album retries idempotent. */
+export const collectionSyncIdentity = sqliteTable("collection_sync_identity", {
+  familyId: text("family_id").notNull().references(() => family.id, { onDelete: "cascade" }),
+  actorUserId: text("actor_user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  clientAlbumId: text("client_album_id").notNull(),
+  collectionId: text("collection_id").notNull().references(() => collection.id, { onDelete: "cascade" }),
+}, t => [primaryKey({ columns: [t.familyId, t.actorUserId, t.clientAlbumId] })]);
+
+export const collectionSyncMutation = sqliteTable("collection_sync_mutation", {
+  familyId: text("family_id").notNull().references(() => family.id, { onDelete: "cascade" }),
+  actorUserId: text("actor_user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  mutationId: text("mutation_id").notNull(),
+  collectionId: text("collection_id").notNull().references(() => collection.id, { onDelete: "cascade" }),
+  payloadHash: text("payload_hash").notNull(),
+  resultJson: text("result_json").notNull(),
+}, t => [primaryKey({ columns: [t.familyId, t.actorUserId, t.mutationId] })]);
 export const collection = sqliteTable(
   "collection",
   {

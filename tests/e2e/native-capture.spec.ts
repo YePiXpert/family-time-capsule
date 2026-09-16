@@ -42,7 +42,7 @@ test("native recording controls and save hook publish specified readers through 
   const verify = new Database(path.join(process.cwd(), "data/e2e-native-capture/db/capsule.sqlite"));
   try {
     const originals=verify.prepare("select id,visibility from asset where created_by_user_id=? and original_asset_id is null").all(fixture.userId);
-    expect(originals).toHaveLength(5);
+    expect(originals).toHaveLength(6);
     expect(originals.every(a=>(a as {visibility:string}).visibility==='private')).toBe(true);
     expect(verify.prepare("select count(*) n from inbox_item_asset where asset_id in (select id from asset where created_by_user_id=?)").get(fixture.userId)).toEqual({n:0});
     const voice = verify.prepare("select a.id assetId,ma.memory_event_id eventId,a.family_id familyId from asset a join memory_event_asset ma on ma.asset_id=a.id where a.created_by_user_id=? and a.type='audio' and a.original_asset_id is null limit 1").get(fixture.userId) as { assetId: string; eventId: string; familyId: string };

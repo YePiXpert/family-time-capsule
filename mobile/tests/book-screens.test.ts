@@ -6,12 +6,14 @@ import { ApiError } from "../src/api/client";
 import type { Credentials } from "../src/types";
 import type { DownloadEntry } from "../src/reading/engine";
 vi.mock("../src/media/NativeMediaReader", () => ({ NativeMediaReader: () => null }));
-vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? children : null, GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
 vi.mock("../src/components/CollapsingHero", () => ({ useCollapsingHeroScroll: () => ({ scrollY: { interpolate: () => 0 }, onScroll: () => {} }), CollapsingHero: "CollapsingHero", CollapsingHeroBar: "CollapsingHeroBar" }));
 vi.mock("../src/design/haptics", () => ({ haptics: { success: vi.fn(), warning: vi.fn(), selection: vi.fn(), impact: vi.fn() }, setHapticsEnabled: vi.fn(), areHapticsEnabled: () => true }));
 vi.mock("../src/growth/GrowthBookCard", () => ({ GrowthBookCard: () => null }));
 vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
 const mocks = vi.hoisted(() => ({
+  session: vi.fn(async () => ({ id: "session", scope: "scope", audience: "family" })),
+  saveSession: vi.fn(),
   get: vi.fn(),
   list: vi.fn(),
   mutate: vi.fn(),
@@ -29,6 +31,9 @@ const mocks = vi.hoisted(() => ({
     token: "fictional-component-token",
   } as Credentials,
 }));
+vi.mock("../src/worksession/store", () => ({ createWorkSession: mocks.session, saveWorkSession: mocks.saveSession }));
+vi.mock("../src/drafts/reading", () => ({ draftReadingScope: () => "scope" }));
+vi.mock("../src/storage/cache-lifecycle", () => ({ useServerPermissionRevision: () => 0 }));
 vi.mock("react-native", () => ({
   Animated: { ScrollView: "ScrollView" },
   Image: "Image",
@@ -45,6 +50,7 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 vi.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ navigate: mocks.navigate }),
   useFocusEffect: (fn: () => void | (() => void)) => useEffect(fn, [fn]),
   usePreventRemove: vi.fn(),
 }));
@@ -134,18 +140,15 @@ async function field(label: string, value: string, index = 0) {
   expect(input).toBeTruthy();
   await act(() => input.props.onChangeText(value));
 }
-it("creates a work from selected memories without a title or template form", async () => {
-  mocks.list.mockResolvedValue({entries:[],nextCursor:null,canWrite:true});
-  mocks.materials.mockResolvedValue({entries:[{id:"memory",kind:"memory",title:"窗边阅读"}],nextCursor:null});
-  mocks.create.mockResolvedValue({id:"new-book",kind:"book"});
-  await act(async () => { tree = create(createElement(BooksScreen,{navigation:{navigate:mocks.navigate}} as unknown as Parameters<typeof BooksScreen>[0])); });
-  expect(tree!.root.findAllByType("TextInput" as never)).toHaveLength(0);
+it("opens the persistent selection screen from the legacy bookshelf entry", async () => {
+  mocks.list.mockResolvedValue({ entries: [], nextCursor: null, canWrite: true });
+  await act(async () => { tree = create(createElement(BooksScreen, { navigation: { navigate: mocks.navigate } } as never)); });
   await press("新建成长册");
-  await press("窗边阅读");
-  await press("生成预览");
-  expect(mocks.create).toHaveBeenCalledWith(mocks.credentials,"/api/works",expect.objectContaining({method:"POST",body:JSON.stringify({kind:"book",audience:"family",template:"growth",selection:[{id:"memory",kind:"memory"}]})}));
-  expect(mocks.navigate).toHaveBeenCalledWith("BookDetail",{id:"new-book"});
+  await press("选择成长册内容");
+  expect(mocks.session).toHaveBeenCalledWith("scope", { mode: "create", kind: "book" }, []);
+  expect(mocks.navigate).toHaveBeenCalledWith("MaterialPicker", { scope: "scope", sessionId: "session" });
 });
+
 it("reads consecutive chapters without opening the editor or making a mutation", async () => {
   const book = detail();
   book.chapters.push({ id: "chapter-two", title: "第二章" });
@@ -162,6 +165,30 @@ it("reads consecutive chapters without opening the editor or making a mutation",
   expect(JSON.stringify(tree!.toJSON())).toContain("虚构内容 first");
   expect(mocks.mutate).not.toHaveBeenCalled();
 });
+it("removes the previous account's book while a different token is being verified", async () => {
+  mocks.get.mockResolvedValue(detail());
+  const props = { navigation: { navigate: mocks.navigate }, route: { params: { id: "book" } } } as unknown as Parameters<typeof BookDetailScreen>[0];
+  await act(async () => { tree = create(createElement(BookDetailScreen, props)); });
+  expect(JSON.stringify(tree!.toJSON())).toContain("虚构内容 first");
+  mocks.credentials = { ...mocks.credentials, token: "another-account" };
+  mocks.get.mockRejectedValue(new ApiError("没有权限", 403));
+  await act(async () => tree!.update(createElement(BookDetailScreen, props)));
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("虚构内容 first");
+  expect(JSON.stringify(tree!.toJSON())).toContain("没有权限");
+});
+it("hides a book after permission is revoked during save while conflicts still keep edits", async () => {
+  mocks.get.mockResolvedValue(detail());
+  mocks.mutate.mockRejectedValue(new ApiError("这本成长册已不可用", 404));
+  await act(async () => { tree = create(createElement(BookDetailScreen, { navigation: { navigate: mocks.navigate }, route: { params: { id: "book" } } } as unknown as Parameters<typeof BookDetailScreen>[0])); });
+  await press("内容");
+  await press("选择此内容");
+  await field("正文", "未提交的内容");
+  await press("作品管理");
+  await press("保存版本快照");
+  expect(JSON.stringify(tree!.toJSON())).toContain("这本成长册已不可用");
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("未提交的内容");
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("虚构内容 second");
+});
 it("edits and reorders native content, keeps text on conflict and selects actual server materials", async () => {
   mocks.get.mockResolvedValue(detail());
   mocks.mutate.mockRejectedValue(new Error("其他家人已保存修改"));
@@ -177,7 +204,7 @@ it("edits and reorders native content, keeps text on conflict and selects actual
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("调整这本成长册");
+  await press("内容");
   await press("选择此内容");
   await field("正文", "我保留的手工文字");
   await press("内容下移");
@@ -201,15 +228,10 @@ it("edits and reorders native content, keeps text on conflict and selects actual
       : { ...detail(), revision: 4 },
   );
   await press("重试保存");
-  await press("添加记忆或相册");
-  await press("虚构窗边阅读");
-  await press("加入 1 项");
-  expect(mocks.mutate.mock.lastCall?.[2]).toEqual({
-    operation: "add",
-    revision: 3,
-    selection: [{ kind: "memory", id: "memory" }],
-  });
-  expect(JSON.stringify(tree!.toJSON())).toContain("已保存 · 版本 4");
+  await press("添加记录或相册");
+  expect(mocks.session).toHaveBeenCalledWith("scope", { mode: "append", kind: "book", id: "book", revision: 3, chapterId: "chapter" });
+  expect(mocks.navigate).toHaveBeenCalledWith("MaterialPicker", { scope: "scope", sessionId: "session" });
+  expect(mocks.saveSession).toHaveBeenCalledWith(expect.objectContaining({ audience: "family" }));
 });
 it("does not replace typing made while autosave is in flight", async () => {
   mocks.get.mockResolvedValue(detail());
@@ -228,8 +250,8 @@ it("does not replace typing made while autosave is in flight", async () => {
       } as unknown as Parameters<typeof BookDetailScreen>[0]),
     );
   });
-  await press("调整这本成长册");
-  await press("整本设置");
+  await press("内容");
+  await press("样式");
   await field("副标题", "第一次输入");
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 950));

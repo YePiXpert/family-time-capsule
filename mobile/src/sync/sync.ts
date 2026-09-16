@@ -1,3 +1,5 @@
+import { syncLocalAlbums } from "../collections/sync";
+import { albumUploadAuthorized } from "../collections/local";
 import { syncLocalIntake } from "../native/intake-sync";
 import { canUploadDraftOriginal } from "../drafts/store";
 import { syncLocalDrafts } from "../drafts/sync";
@@ -43,7 +45,15 @@ export async function syncArchive(
   options: SyncArchiveOptions = {},
 ): Promise<SyncSummary> {
   return syncArchiveWithDependencies(credentials, {
-    afterUpload: async () => { await syncLocalDrafts(credentials, options); await syncLocalIntake(credentials, options); },
+    afterUpload: async () => {
+      await syncLocalDrafts(credentials, { ...options, authorizeUpload: async item => {
+        if (await options.authorizeUpload?.(item)) return true;
+        const scope = await getActiveDestination();
+        return Boolean(scope && options.isCurrent?.() !== false && await albumUploadAuthorized(scope, item.id));
+      } });
+      await syncLocalAlbums(credentials, { isCurrent: options.isCurrent ?? (() => true) });
+      await syncLocalIntake(credentials, options);
+    },
     isConnected: async () => (await Network.getNetworkStateAsync()).isConnected,
     createSnapshotId: () => Crypto.randomUUID(),
     listOutbox,

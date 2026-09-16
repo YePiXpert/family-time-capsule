@@ -7,6 +7,8 @@ import { NativeMediaReader } from "../media/NativeMediaReader";
 import { useAppData } from "../state/AppContext";
 import { useConfirmSheet } from "../components/GlassSheet";
 import { useSharedStyles } from "../theme";
+import { draftReadingScope } from "../drafts/reading";
+import { createWorkSession } from "../worksession/store";
 import type { RootStackParamList } from "../navigation/types";
 import {
   nativeReadingStore,
@@ -247,6 +249,7 @@ function ScopedOfflineReading({
     familyId = family?.id, userId = viewer?.id,
     key = route.params.key,
     [entry, setEntry] = useState<DownloadEntry | null>(null),
+    [appendScope, setAppendScope] = useState<string | null>(null),
     [error, setError] = useState(""),
     [mode, setMode] = useState("正在校验阅读权限…"),
     [chapter, setChapter] = useState(0),
@@ -260,6 +263,7 @@ function ScopedOfflineReading({
       let alive = true;
       revoked.current = false;
       setEntry(null);
+      setAppendScope(null);
       void (async () => {
         try {
           if (!credentials) throw Error("请连接原来的账号。");
@@ -289,6 +293,7 @@ function ScopedOfflineReading({
           );
           setPage(doc.progress.page);
           setEntry(doc);
+          setAppendScope(draftReadingScope(credentials, scope.userId, scope.userId, scope.familyId));
           setMode(
             check === "offline"
               ? "离线阅读：上次校验通过的副本，联网后会重新校验权限。"
@@ -358,7 +363,13 @@ function ScopedOfflineReading({
         下载版本 {doc.revision}
       </Text>
       <Text style={s.title}>{doc.title}</Text>
+      {doc.kind === "collection" && viewer?.canEditEvents && appendScope ? <Button title="添加记录" onPress={() => {
+        void createWorkSession(appendScope, { mode: "append", kind: "collection", id: doc.id, revision: doc.revision })
+          .then(session => navigation.navigate("MaterialPicker", { scope: appendScope, sessionId: session.id }))
+          .catch(reason => setError(reason instanceof Error ? reason.message : "暂时无法开始选材。"));
+      }} /> : null}
       {doc.kind === "collection" ? <Button title="给家人看" onPress={() => navigation.navigate("FamilyViewing", { collectionId: doc.id, downloadKey: key })} /> : null}
+      {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
       <Text style={s.body}>{doc.subtitle}</Text>
       <Text style={s.body}>{mode}</Text>
       <Text style={s.body}>
