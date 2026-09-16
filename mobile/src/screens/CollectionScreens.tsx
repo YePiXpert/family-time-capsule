@@ -2,6 +2,8 @@ import { Text, TextInput } from "../components/typography";
 import { WorkCreator } from "./WorkCreator";
 import { Disclosure } from "../components/Disclosure";
 import { ReadingDownloadButton } from "../reading/DownloadButton";
+import { downloadedCoverUri } from "../reading/shelf";
+import { useReadingShelf } from "../reading/useReadingShelf";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -39,43 +41,29 @@ function Button({
     </Pressable>
   );
 }
-export function CollectionsScreen({
+type CollectionsProps = { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Collections">["navigation"], "navigate">; route: NativeStackScreenProps<RootStackParamList, "Collections">["route"] };
+export function CollectionsScreen(props: CollectionsProps) {
+  const { credentials, family, viewer } = useAppData();
+  return <CollectionShelf key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, credentials?.token, family?.id, viewer?.id])} {...props} />;
+}
+function CollectionShelf({
   navigation,
   route,
-}: { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Collections">["navigation"], "navigate">; route: NativeStackScreenProps<RootStackParamList, "Collections">["route"] }) {
+}: CollectionsProps) {
   const s = useSharedStyles();
   const { credentials } = useAppData();
-  const [page, setPage] = useState<CollectionPage | null>(null),
-    [error, setError] = useState(""),
+  const [error, setError] = useState(""),
     [creating, setCreating] = useState(false),
     [deleted, setDeleted] = useState(false),
     [busy, setBusy] = useState(false);
-  const load = useCallback(
-    async (cursor = "") => {
-      if (!credentials) {
-        setError("连接家庭服务器后可以整理相册。");
-        return;
-      }
-      try {
-        const data = await fetchCollections(credentials, deleted, cursor);
-        setPage((p) =>
-          cursor && p
-            ? { ...data, entries: [...p.entries, ...data.entries] }
-            : data,
-        );
-        setError("");
-      } catch (e) {
-        setPage(null);
-        setError((e as Error).message);
-      }
-    },
-    [credentials, deleted],
-  );
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load]),
-  );
+  const { page, downloads, offline, error: loadError, loading, load } = useReadingShelf("collection", deleted, fetchCollections);
+  const collections: (CollectionPage["entries"][number] & { localCoverUri?: string; downloadKey?: string })[] = offline
+    ? downloads.map(entry => ({ id: entry.id, title: entry.manifest.title, kind: "album", description: entry.manifest.subtitle,
+      count: entry.manifest.chapters.reduce((total, chapter) => total + chapter.blocks.length, 0),
+      coverAssetId: null, revision: entry.manifest.revision, deletedAt: null,
+      localCoverUri: downloadedCoverUri(entry), downloadKey: entry.key }))
+    : page?.entries ?? [];
+  const adding = !!route.params?.eventIds?.length;
   async function choose(id: string, revision: number) {
     if (!credentials) return;
     if (!route.params?.eventIds?.length || !page?.canWrite || deleted) {
@@ -105,38 +93,40 @@ export function CollectionsScreen({
 
       <Text style={s.intro}>
         {route.params?.eventIds?.length
-          ? `将所选 ${route.params.eventIds.length} 条记忆加入相册。只建立关系，原件不会复制。`
+          ? `将所选 ${route.params.eventIds.length} 条记忆加入相册。`
           : "把一段真实的家庭经历整理在一起。"}
       </Text>
-      <Disclosure title="管理"><Button
-        title={deleted ? "返回相册" : "相册回收站"}
-        onPress={() => setDeleted(!deleted)}
-      /></Disclosure>
-      {error ? (
+      {!credentials ? <Text style={s.body}>连接原来的家庭账号后，相册会出现在这里。</Text> : null}
+      {loading ? <Text style={s.body}>正在打开相册…</Text> : null}
+      {offline ? <Text style={s.body}>{adding ? "联网后可以把所选记忆加入相册。" : "已下载的相册可以继续翻阅。"}</Text> : null}
+      {error || loadError ? (
         <>
           <Text style={s.error} accessibilityRole="alert">
-            {error}
+            {error || loadError}
           </Text>
           <Button title="重试" onPress={() => void load()} />
         </>
       ) : null}
       {page?.canWrite && !deleted && !creating ? <Button title="新建相册" onPress={() => setCreating(true)} /> : null}
       {creating ? <WorkCreator kind="album" onCancel={() => setCreating(false)} onCreated={id => { setCreating(false); navigation.navigate("CollectionDetail", { id }); }} /> : null}
-      {page?.entries.map((c) => (
+      {collections.map((c) => (
         <Pressable
           key={c.id}
-          disabled={busy}
-          onPress={() => void choose(c.id, c.revision)}
+          accessibilityRole="button"
+          accessibilityLabel={c.title}
+          disabled={busy || (offline && adding)}
+          onPress={() => c.downloadKey ? navigation.navigate("OfflineReading", { key: c.downloadKey }) : void choose(c.id, c.revision)}
           style={s.card}
         >
-          {c.coverAssetId && credentials ? (
+          {c.localCoverUri || (c.coverAssetId && credentials) ? (
             <Image
-              source={{
+              source={c.localCoverUri ? { uri: c.localCoverUri } : credentials && c.coverAssetId ? {
                 uri: `${credentials.serverUrl}/api/media/${encodeURIComponent(c.coverAssetId)}`,
                 headers: { Authorization: `Bearer ${credentials.token}` },
-              }}
+              } : undefined}
               accessibilityLabel="相册封面"
-              style={{ height: 170, width: "100%", borderRadius: 12 }}
+              resizeMode="contain"
+              style={{ aspectRatio: 4 / 3, width: "100%", borderRadius: 12 }}
             />
           ) : null}
           <Text style={s.cardTitle}>{c.title}</Text>
@@ -146,6 +136,7 @@ export function CollectionsScreen({
           <Text style={s.body}>{c.description}</Text>
         </Pressable>
       ))}
+      {offline && !collections.length ? <Text style={s.body}>这里还没有下载的相册。联网打开相册，选择“下载供离线阅读”，下次就能从这里继续翻。</Text> : null}
       {page && !page.entries.length ? (
         <Text style={s.body}>
           这里还没有相册，可以先取个名字，再从时间轴多选记忆。
@@ -154,6 +145,10 @@ export function CollectionsScreen({
       {page?.nextCursor ? (
         <Button title="更多相册" onPress={() => void load(page.nextCursor!)} />
       ) : null}
+      <Disclosure title="管理相册">
+        <Button title={deleted ? "返回相册" : "相册回收站"} onPress={() => setDeleted(!deleted)} />
+        <Button title="管理阅读下载" onPress={() => navigation.navigate("ReadingDownloads")} />
+      </Disclosure>
     </ScrollView>
   );
 }
