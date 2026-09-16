@@ -23,7 +23,6 @@ import { File, Paths } from "expo-file-system";
 import { useLibrary, useStore } from "./context";
 import {
   clone,
-  saveRecord,
   type RecordContent,
   type RecordDraft,
   type LocalMedia,
@@ -42,7 +41,14 @@ import {
   useStyles,
   useTheme,
 } from "./ui";
-import { Photo } from "./Media";
+import { Photo, PhotoDetails } from "./Media";
+import {
+  applyPhotoMetadata,
+  readPhotoMetadata,
+  photoDayGroups,
+  savePhotoDays,
+  movePhotoToEvent,
+} from "./photo-metadata";
 export function Editor({ route, navigation }: Props<"Editor">) {
   const store = useStore(),
     state = useLibrary(),
@@ -56,9 +62,14 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [busy, setBusy] = useState(false),
     [details, setDetails] = useState(false),
     [dateOpen, setDateOpen] = useState(false),
+    [movingPhoto, setMovingPhoto] = useState<string | null>(null),
+    [eventDate, setEventDate] = useState<number | null>(null),
     [recording, setRecording] = useState(false),
     [allowExit, setAllowExit] = useState(false);
   const pendingMedia = useRef<Record<string, LocalMedia>>({});
+  const [importedMedia, setImportedMedia] = useState<
+    Record<string, LocalMedia>
+  >({});
   const recorder = useRef<AudioRecorder | null>(null),
     nextAction = useRef<(() => void) | null>(null),
     pending = useRef<Promise<unknown>>(Promise.resolve()),
@@ -68,6 +79,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       current.current = next;
       setDraft(next);
       for (const m of media) pendingMedia.current[m.id] = m;
+      if (media.length) setImportedMedia({ ...pendingMedia.current });
       const originals = Object.values(pendingMedia.current);
       const job = store.change((s) => {
         for (const m of originals) s.media[m.id] = m;
@@ -87,6 +99,21 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     if (!current.current) return;
     void persist({
       ...current.current,
+      ...(patch.date !== undefined
+        ? { autoDate: false, groupPhotosByDay: !!current.current.photoEvents }
+        : {}),
+      ...(patch.location !== undefined
+        ? { autoLocation: false, manualLocation: true }
+        : {}),
+      ...(patch.coverId && current.current.photoEvents
+        ? {
+            photoEvents: current.current.photoEvents.map((event) =>
+              event.mediaIds.includes(patch.coverId!)
+                ? { ...event, coverId: patch.coverId! }
+                : event,
+            ),
+          }
+        : {}),
       content: { ...current.current.content, ...patch },
       updatedAt: now(),
     });
@@ -106,8 +133,11 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     }
   };
   const attach = async (media: LocalMedia[]) => {
-    const d = current.current;
-    if (!d) return;
+    if (!current.current) return;
+    const d = media.reduce(
+      (next, item) => applyPhotoMetadata(next, item.photoMetadata),
+      current.current,
+    );
     await persist(
       {
         ...d,
@@ -252,21 +282,54 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       ? await ImagePicker.launchCameraAsync({
           mediaTypes: ["images", "videos"],
           quality: 1,
+          exif: true,
         })
       : await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ["images", "videos"],
           allowsMultipleSelection: true,
+          orderedSelection: true,
           quality: 1,
+          exif: true,
         });
     if (result.canceled) return;
-    for (const asset of result.assets)
-      await attach([
-        await preserveMedia(
-          asset.uri,
-          asset.fileName ?? (asset.type === "video" ? "视频.mp4" : "照片.jpg"),
-          asset.type === "video" ? "video" : "image",
-        ),
-      ]);
+    for (const asset of result.assets) {
+      const media = await preserveMedia(
+        asset.uri,
+        asset.fileName ?? (asset.type === "video" ? "视频.mp4" : "照片.jpg"),
+        asset.type === "video" ? "video" : "image",
+      );
+      if (media.kind === "image")
+        media.photoMetadata = readPhotoMetadata(asset.exif);
+      await attach([media]);
+    }
+  };
+  const dayGroups = photoDayGroups(draft, { ...state.media, ...importedMedia });
+  const editEvent = (index: number, patch: Partial<RecordContent>) => {
+    const events = photoDayGroups(current.current!, {
+      ...store.get().media,
+      ...pendingMedia.current,
+    });
+    events[index] = { ...events[index]!, ...patch };
+    void persist({
+      ...current.current!,
+      photoEvents: events,
+      updatedAt: now(),
+    });
+  };
+  const moveToEvent = (id: string, target: number | "new") => {
+    const events = photoDayGroups(current.current!, {
+      ...store.get().media,
+      ...pendingMedia.current,
+    });
+    void persist({
+      ...current.current!,
+      photoEvents: movePhotoToEvent(events, id, target, {
+        ...store.get().media,
+        ...pendingMedia.current,
+      }),
+      updatedAt: now(),
+    });
+    setMovingPhoto(null);
   };
   return (
     <Page scroll={false}>
@@ -287,6 +350,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             <Button
               title={dateLabel(draft.content.date)}
               icon="calendar"
+              disabled={
+                !!draft.groupPhotosByDay && draft.content.mediaIds.length > 0
+              }
               onPress={() => setDateOpen(!dateOpen)}
             />
           </View>
@@ -306,16 +372,97 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               )}
             </>
           )}
-          <Field
-            label="这一刻发生了什么"
-            testID="capture-text"
-            editable={!busy}
-            multiline
-            placeholder="今天，你又带来了什么小惊喜？"
-            value={draft.content.text}
-            onChangeText={(text) => change({ text })}
-            style={{ minHeight: 160, textAlignVertical: "top" }}
-          />
+          {!draft.recordId && draft.content.mediaIds.length > 0 && (
+            <View style={s.section}>
+              <Button
+                title={
+                  draft.photoEvents
+                    ? "已按事情分组"
+                    : draft.groupPhotosByDay
+                      ? "按拍摄日期建议分组：已开启"
+                      : "按拍摄日期建议分组：已关闭"
+                }
+                selected={!!draft.groupPhotosByDay}
+                disabled={busy || !!draft.photoEvents}
+                onPress={() => {
+                  void persist({
+                    ...current.current!,
+                    groupPhotosByDay: !draft.groupPhotosByDay,
+                    updatedAt: now(),
+                  });
+                }}
+              />
+              {draft.groupPhotosByDay && (
+                <>
+                  <Text style={s.muted}>
+                    将保存 {dayGroups.length}{" "}
+                    条记录。同一天也可以分开记，在照片下选择「调整归属」。不会合并已有记录。
+                  </Text>
+                  <Text style={s.muted}>
+                    没有拍摄时间的素材单独成组，日期可修改。
+                  </Text>
+                  {dayGroups.map((group, index) => (
+                    <View key={index} style={s.section}>
+                      <Text>
+                        事情 {index + 1} · {group.mediaIds.length} 份素材
+                      </Text>
+                      <Button
+                        title={dateLabel(group.date)}
+                        icon="calendar"
+                        onPress={() =>
+                          setEventDate(eventDate === index ? null : index)
+                        }
+                      />
+                      {eventDate === index && (
+                        <DateTimePicker
+                          value={new Date(group.date)}
+                          mode="date"
+                          onChange={(_, date) => {
+                            setEventDate(null);
+                            if (date)
+                              editEvent(index, { date: date.toISOString() });
+                          }}
+                        />
+                      )}
+                      <Field
+                        label="这件事的标题"
+                        value={group.title}
+                        editable={!busy}
+                        onChangeText={(title) => editEvent(index, { title })}
+                      />
+                      <Field
+                        label="这件事发生了什么"
+                        value={group.text}
+                        multiline
+                        editable={!busy}
+                        onChangeText={(text) => editEvent(index, { text })}
+                      />
+                      <Field
+                        label="这件事的地点"
+                        value={group.location}
+                        editable={!busy}
+                        onChangeText={(location) =>
+                          editEvent(index, { location })
+                        }
+                      />
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+          )}
+          {!(draft.groupPhotosByDay && draft.content.mediaIds.length > 0) && (
+            <Field
+              label="这一刻发生了什么"
+              testID="capture-text"
+              editable={!busy}
+              multiline
+              placeholder="今天，你又带来了什么小惊喜？"
+              value={draft.content.text}
+              onChangeText={(text) => change({ text })}
+              style={{ minHeight: 160, textAlignVertical: "top" }}
+            />
+          )}
           <View style={s.row}>
             <Button
               title="照片"
@@ -415,13 +562,54 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             </View>
           )}
           {draft.content.mediaIds.map((id) => {
-            const m = state.media[id];
+            const m = state.media[id] ?? importedMedia[id];
             return m ? (
               <View key={id} style={{ gap: 8 }}>
                 {m.kind === "image" ? (
                   <Photo media={m} />
                 ) : (
                   <Text>{m.name}</Text>
+                )}
+                <PhotoDetails media={m} />
+                {!draft.recordId && draft.groupPhotosByDay && (
+                  <View style={{ gap: 8 }}>
+                    <Text style={s.muted}>
+                      事情{" "}
+                      {dayGroups.findIndex((group) =>
+                        group.mediaIds.includes(id),
+                      ) + 1}
+                    </Text>
+                    <Button
+                      title="调整归属"
+                      disabled={busy}
+                      onPress={() =>
+                        setMovingPhoto(movingPhoto === id ? null : id)
+                      }
+                    />
+                    {movingPhoto === id && (
+                      <>
+                        <Button
+                          title="单独记一件事"
+                          disabled={
+                            dayGroups.find((group) =>
+                              group.mediaIds.includes(id),
+                            )?.mediaIds.length === 1
+                          }
+                          onPress={() => moveToEvent(id, "new")}
+                        />
+                        {dayGroups.map(
+                          (group, index) =>
+                            !group.mediaIds.includes(id) && (
+                              <Button
+                                key={index}
+                                title={`移到事情 ${index + 1}${group.title ? `：${group.title}` : ""}`}
+                                onPress={() => moveToEvent(id, index)}
+                              />
+                            ),
+                        )}
+                      </>
+                    )}
+                  </View>
                 )}
                 <View style={s.row}>
                   <Button
@@ -456,21 +644,31 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             ) : null;
           })}
           <Button
-            title={details ? "收起补充信息" : "补充标题、地点"}
+            title={
+              details
+                ? "收起补充信息"
+                : draft.groupPhotosByDay && draft.content.mediaIds.length
+                  ? "从文件添加素材"
+                  : "补充标题、地点"
+            }
             onPress={() => setDetails(!details)}
           />
           {details && (
             <>
-              <Field
-                label="标题（可选）"
-                value={draft.content.title}
-                onChangeText={(title) => change({ title })}
-              />
-              <Field
-                label="地点（可选）"
-                value={draft.content.location}
-                onChangeText={(location) => change({ location })}
-              />
+              {!(draft.groupPhotosByDay && draft.content.mediaIds.length) && (
+                <>
+                  <Field
+                    label="标题（可选）"
+                    value={draft.content.title}
+                    onChangeText={(title) => change({ title })}
+                  />
+                  <Field
+                    label="地点（可选）"
+                    value={draft.content.location}
+                    onChangeText={(location) => change({ location })}
+                  />
+                </>
+              )}
               <Button
                 title="从文件添加素材"
                 icon="file"
@@ -557,7 +755,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           }}
         >
           <Button
-            title={busy ? "正在保存…" : "保存这一刻"}
+            title={
+              busy
+                ? "正在保存…"
+                : dayGroups.length > 1
+                  ? `保存 ${dayGroups.length} 条记录`
+                  : "保存这一刻"
+            }
             primary
             testID="capture-save"
             disabled={busy}
@@ -570,11 +774,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   if (!media) throw new Error("素材尚未写入，请重试。");
                   await verifyMedia(media);
                 }
-                const record = await store.change((s) =>
-                  saveRecord(s, draft.id, newId(), now()),
+                const records = await store.change((s) =>
+                  savePhotoDays(s, draft.id, newId, now()),
                 );
                 nextAction.current = () =>
-                  navigation.popTo("Record", { id: record.id });
+                  records.length === 1
+                    ? navigation.popTo("Record", { id: records[0]!.id })
+                    : navigation.popToTop();
                 setAllowExit(true);
               });
             }}

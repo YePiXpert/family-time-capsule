@@ -33,6 +33,9 @@ export async function beginDraft(
       id,
       recordId,
       baseRevision: record?.revision ?? 0,
+      autoDate: !record,
+      autoLocation: !record,
+      groupPhotosByDay: !record,
       content: record ? clone(record) : emptyContent(),
       updatedAt: now(),
     };

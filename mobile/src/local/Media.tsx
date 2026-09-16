@@ -8,6 +8,26 @@ import { mediaFile, mediaUri } from "./files";
 import type { LocalMedia } from "./model";
 import type { Props } from "./navigation";
 import { Button, ErrorText, Page, Text, messageOf, useStyles } from "./ui";
+export function PhotoDetails({ media }: { media: LocalMedia }) {
+  const s = useStyles();
+  const metadata = media.photoMetadata;
+  if (media.kind !== "image") return null;
+  return (
+    <View style={{ gap: 4 }}>
+      <Text style={s.muted}>
+        {metadata?.capturedAt
+          ? `拍摄时间：${metadata.capturedAt.replace("T", " ")}`
+          : "照片未提供拍摄时间"}
+      </Text>
+      {metadata?.latitude !== undefined && metadata.longitude !== undefined && (
+        <Text style={s.muted}>
+          拍摄坐标：{metadata.latitude.toFixed(6)},{" "}
+          {metadata.longitude.toFixed(6)}
+        </Text>
+      )}
+    </View>
+  );
+}
 export function Photo({
   media,
   contain = false,
@@ -126,6 +146,7 @@ export function MediaScreen({ route }: Props<"Media">) {
       ) : (
         <Text>使用下方按钮打开或保存这份文件。</Text>
       )}
+      <PhotoDetails media={media} />
       <ErrorText message={error} />
       <Button
         title="导出原件"

@@ -1,4 +1,10 @@
 /** Device-owned data. No account identity or transport state belongs here. */
+export type PhotoMetadata = {
+  /** Camera-local wall time, without timezone conversion, to preserve the photographed day. */
+  capturedAt?: string;
+  latitude?: number;
+  longitude?: number;
+};
 export type MediaKind = "image" | "video" | "audio" | "document";
 export type LocalMedia = {
   id: string;
@@ -7,6 +13,7 @@ export type LocalMedia = {
   kind: MediaKind;
   bytes: number;
   sha256: string;
+  photoMetadata?: PhotoMetadata;
 };
 export type RecordContent = {
   title: string;
@@ -29,6 +36,11 @@ export type RecordDraft = {
   content: RecordContent;
   updatedAt: string;
   recordingFile?: string;
+  autoDate?: boolean;
+  autoLocation?: boolean;
+  groupPhotosByDay?: boolean;
+  manualLocation?: boolean;
+  photoEvents?: RecordContent[];
 };
 export type LocalAlbum = {
   id: string;
@@ -253,7 +265,21 @@ export function validateLibrary(value: unknown): asserts value is Library {
       !["image", "video", "audio", "document"].includes(m.kind) ||
       !Number.isSafeInteger(m.bytes) ||
       m.bytes < 1 ||
-      !/^[a-f0-9]{64}$/.test(m.sha256)
+      !/^[a-f0-9]{64}$/.test(m.sha256) ||
+      (m.photoMetadata !== undefined &&
+        (!m.photoMetadata ||
+          typeof m.photoMetadata !== "object" ||
+          (m.photoMetadata.capturedAt !== undefined &&
+            (!str(m.photoMetadata.capturedAt) ||
+              !Number.isFinite(Date.parse(m.photoMetadata.capturedAt)))) ||
+          ((m.photoMetadata.latitude !== undefined ||
+            m.photoMetadata.longitude !== undefined) &&
+            (typeof m.photoMetadata.latitude !== "number" ||
+              !Number.isFinite(m.photoMetadata.latitude) ||
+              Math.abs(m.photoMetadata.latitude) > 90 ||
+              typeof m.photoMetadata.longitude !== "number" ||
+              !Number.isFinite(m.photoMetadata.longitude) ||
+              Math.abs(m.photoMetadata.longitude) > 180))))
     )
       return fail();
   const content = (c: RecordContent) =>
@@ -280,6 +306,26 @@ export function validateLibrary(value: unknown): asserts value is Library {
     if (
       key !== d.id ||
       !content(d.content) ||
+      (d.autoDate !== undefined && typeof d.autoDate !== "boolean") ||
+      (d.groupPhotosByDay !== undefined &&
+        typeof d.groupPhotosByDay !== "boolean") ||
+      (d.manualLocation !== undefined &&
+        typeof d.manualLocation !== "boolean") ||
+      (d.photoEvents !== undefined &&
+        (!Array.isArray(d.photoEvents) ||
+          d.photoEvents.some(
+            (event) =>
+              !event ||
+              !str(event.title) ||
+              !str(event.text) ||
+              !str(event.location) ||
+              !str(event.date) ||
+              !Number.isFinite(Date.parse(event.date)) ||
+              typeof event.first !== "boolean" ||
+              !ids(event.mediaIds) ||
+              (event.coverId !== null && !id(event.coverId)),
+          ))) ||
+      (d.autoLocation !== undefined && typeof d.autoLocation !== "boolean") ||
       (d.recordId !== null && !s.records[d.recordId]) ||
       !Number.isInteger(d.baseRevision) ||
       !Number.isFinite(Date.parse(d.updatedAt)) ||
