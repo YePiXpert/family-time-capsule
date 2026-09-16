@@ -53,34 +53,34 @@ export function AIEditor({
     proposal = draft.aiProposal;
   const generate = async (kind: "group" | "write", fresh = false) => {
     if (active.current || disabled) return;
-    if (!(await getToken())) {
-      nav.navigate("AISettings");
-      return;
-    }
-    if (!(await hasConsent())) {
-      Alert.alert(
-        "使用 AI 整理照片",
-        "将把这份草稿中参与分析的照片缩略图、拍摄时间及相关文字，经主人的服务发送给所选 AI。原图和精确 GPS 不发送，结果由你确认。",
-        [
-          { text: "取消", style: "cancel" },
-          {
-            text: "同意并继续",
-            onPress: () => {
-              void giveConsent()
-                .then(() => generate(kind, fresh))
-                .catch((e) => setError(messageOf(e)));
-            },
-          },
-        ],
-      );
-      return;
-    }
     active.current = true;
-    setBusy(true);
-    setError("");
-    setLastKind(kind);
-    abort.current = new AbortController();
     try {
+      if (!(await getToken())) {
+        nav.navigate("AISettings");
+        return;
+      }
+      if (!(await hasConsent())) {
+        Alert.alert(
+          "使用 AI 整理照片",
+          "将把这份草稿中参与分析的照片缩略图、拍摄时间及相关文字，经主人的服务发送给所选 AI。原图和精确 GPS 不发送，结果由你确认。",
+          [
+            { text: "取消", style: "cancel" },
+            {
+              text: "同意并继续",
+              onPress: () => {
+                void giveConsent()
+                  .then(() => generate(kind, fresh))
+                  .catch((e) => setError(messageOf(e)));
+              },
+            },
+          ],
+        );
+        return;
+      }
+      setBusy(true);
+      setError("");
+      setLastKind(kind);
+      abort.current = new AbortController();
       const snapshot = latest.current,
         fp = sourceFingerprint(snapshot.draft, snapshot.media);
       const selected = photoDayGroups(snapshot.draft, snapshot.media)[
