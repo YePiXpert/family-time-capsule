@@ -49,7 +49,7 @@ function Audio({ media }: { media: LocalMedia }) {
       <Text>
         {Math.floor(status.currentTime)} 秒 / {Math.floor(status.duration)} 秒
       </Text>
-      <ErrorText message={error} />
+      <ErrorText message={error || status.error || ""} />
       <Button
         title={status.playing ? "暂停" : "播放录音"}
         icon={status.playing ? "pause" : "play"}

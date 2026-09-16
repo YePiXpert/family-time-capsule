@@ -121,7 +121,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       media,
     );
   };
-  const finishAudio = async () => {
+  const finishJob = useRef<Promise<void> | null>(null);
+  const finishAudioImpl = async () => {
     if (recorder.current) {
       await recorder.current.stop();
       recorder.current.release();
@@ -144,6 +145,14 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     };
     delete next.recordingFile;
     await persist(next, [media]);
+  };
+  const finishAudio = () => {
+    if (finishJob.current) return finishJob.current;
+    const job = finishAudioImpl().finally(() => {
+      finishJob.current = null;
+    });
+    finishJob.current = job;
+    return job;
   };
   const finishRef = useRef(finishAudio);
   useEffect(() => {
@@ -297,6 +306,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           <Field
             label="这一刻发生了什么"
             testID="capture-text"
+            editable={!busy}
             multiline
             placeholder="今天，你又带来了什么小惊喜？"
             value={draft.content.text}
@@ -341,6 +351,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   // eslint-disable-next-line import/namespace
                   const audio = new AudioModule.AudioRecorder({
                     ...RecordingPresets.HIGH_QUALITY,
+                    ...(Platform.OS === "ios"
+                      ? RecordingPresets.HIGH_QUALITY.ios
+                      : RecordingPresets.HIGH_QUALITY.android),
                     directory: "document",
                   });
                   recorder.current = audio;

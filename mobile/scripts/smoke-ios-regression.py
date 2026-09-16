@@ -30,7 +30,7 @@ def main():
     udid = run('xcrun','simctl','create','Xiaomei offline regression','com.apple.CoreSimulator.SimDeviceType.iPhone-16e',runtime['identifier'])
     report = dict(gitSha=os.environ.get('SOURCE_SHA'), buildNumber=info['CFBundleVersion'], success=False)
     try:
-        boot_simulator(udid, out); run('xcrun','simctl','install',udid,str(args.app.resolve())); run('xcrun','simctl','launch',udid,bundle); time.sleep(12)
+        boot_simulator(udid, out); run('xcrun','simctl','install',udid,str(args.app.resolve())); run('xcrun','simctl','privacy',udid,'grant','microphone',bundle); run('xcrun','simctl','launch',udid,bundle); time.sleep(12)
         container = Path(run('xcrun','simctl','get_app_container',udid,bundle,'data')); database = container / 'Documents' / 'SQLite' / 'xiaomei-local-v1.sqlite'
         run('xcrun','simctl','terminate',udid,bundle); baseline = seed(container, database)
         xctest = next(args.runner_build.resolve().glob('Build/Products/*.xctestrun'))
@@ -46,6 +46,7 @@ def main():
         for backup in backups:
             data=backup.read_bytes(); assert data[:8] == b'XIAOMEI1'; n=struct.unpack('>I',data[8:12])[0]; manifest=json.loads(data[12:12+n]); manifests.append(manifest)
         before=next(m for m in manifests if m['library']['albums']); records=before['library']['records']; own=[r for r in records.values() if r['text']=='A little story. More memories.']; assert len(own)==1 and own[0]['revision']==2
+        assert any(before['library']['media'][i]['kind']=='audio' for i in own[0]['mediaIds']), 'Recorded audio was not preserved'
         album=next(iter(before['library']['albums'].values())); assert album['name']=='Our days' and len(album['items'])==3
         assert not before['library']['drafts']
         report.update(success=True, recordIdentityPreserved=True, albumSurvivedRelaunch=True, crossMonthSelection=True, fullBackupRestored=True, backupFiles=len(backups))
