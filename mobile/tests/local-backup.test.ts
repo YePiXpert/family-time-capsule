@@ -8,6 +8,7 @@ const env = vi.hoisted(() => ({
   root: "",
   shares: [] as NativeShareManifest[],
   acknowledged: [] as string[],
+  rejectActivation: false,
   database: null as DatabaseSync | null,
 }));
 vi.mock("../modules/share-intake/src", () => ({
@@ -59,6 +60,12 @@ vi.mock("expo-file-system", () => {
     create() {
       fs.writeFileSync(this.uri, "", { flag: "wx" });
     }
+    write(value: string) {
+      fs.writeFileSync(this.uri, value);
+    }
+    async text() {
+      return fs.readFileSync(this.uri, "utf8");
+    }
     delete() {
       fs.unlinkSync(this.uri);
     }
@@ -66,6 +73,12 @@ vi.mock("expo-file-system", () => {
       fs.copyFileSync(this.uri, to.uri, fs.constants.COPYFILE_EXCL);
     }
     async move(to: File) {
+      if (
+        env.rejectActivation &&
+        to.uri.includes("libraries/") &&
+        to.uri.endsWith(".json")
+      )
+        throw new Error("activation write failed");
       fs.renameSync(this.uri, to.uri);
       this.uri = to.uri;
     }
@@ -109,7 +122,10 @@ vi.mock("expo-sqlite", () => ({
       getFirstAsync: async (sql: string) => db.prepare(sql).get(),
       runAsync: async (sql: string, ...args: (string | number)[]) =>
         db.prepare(sql).run(...args),
-      closeAsync: async () => db.close(),
+      closeAsync: async () => {
+        db.close();
+        if (env.database === db) env.database = null;
+      },
       withExclusiveTransactionAsync: async (
         fn: (tx: unknown) => Promise<void>,
       ) => {
@@ -128,6 +144,7 @@ vi.mock("expo-sqlite", () => ({
 }));
 beforeEach(() => {
   vi.resetModules();
+  env.rejectActivation = false;
   env.shares = [];
   env.acknowledged = [];
   env.root = fs.mkdtempSync(path.join(os.tmpdir(), "xiaomei-test-"));
@@ -316,4 +333,42 @@ it("resumes the same material session with its input, cover and scroll position"
     name: "生日",
     coverId: media.id,
   });
+});
+it("recovers an unreadable startup library into a verified new database and retains the original", async () => {
+  const { store, backup } = await setup();
+  const file = await backup.createBackup(store.get());
+  env.database!.exec("UPDATE library SET snapshot='broken' WHERE id=1");
+  env.database!.close();
+  env.database = null;
+  await backup.recoverStartupBackup(file);
+  const { activeLibraryName } = await import("../src/local/activation");
+  const name = await activeLibraryName();
+  expect(name).toMatch(/^xiaomei-recovered-/);
+  const recovered = new DatabaseSync(path.join(env.root, name));
+  const row = recovered.prepare("SELECT snapshot FROM library").get() as {
+    snapshot: string;
+  };
+  expect(JSON.parse(row.snapshot).records.r.text).toBe("第一步");
+  recovered.close();
+  const original = new DatabaseSync(
+    path.join(env.root, "xiaomei-local-v1.sqlite"),
+  );
+  expect(original.prepare("SELECT snapshot FROM library").get()!.snapshot).toBe(
+    "broken",
+  );
+  original.close();
+});
+it("interrupted startup recovery never switches to a partial library or deletes prior media", async () => {
+  const { store, backup, files } = await setup();
+  const file = await backup.createBackup(store.get());
+  const count = fs.readdirSync(files.mediaDirectory.uri).length;
+  env.database!.close();
+  env.database = null;
+  env.rejectActivation = true;
+  await expect(backup.recoverStartupBackup(file)).rejects.toThrow(
+    "activation write failed",
+  );
+  const { activeLibraryName } = await import("../src/local/activation");
+  expect(await activeLibraryName()).toBe("xiaomei-local-v1.sqlite");
+  expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(count);
 });

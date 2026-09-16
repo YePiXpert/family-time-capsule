@@ -154,3 +154,18 @@ export async function shareBackup(file: File) {
     dialogTitle: "保存本机备份",
   });
 }
+
+/** Used only before a library could be opened. The unreadable original database stays in place. */
+export async function recoverStartupBackup(file: File): Promise<void> {
+  const restored = await inspectBackup(file, true);
+  try {
+    const { activateRecoveredLibrary } = await import("./activation");
+    await activateRecoveredLibrary(restored);
+  } catch (e) {
+    for (const media of Object.values(restored.media)) {
+      const f = mediaFile(media);
+      if (f.exists) f.delete();
+    }
+    throw e;
+  }
+}
