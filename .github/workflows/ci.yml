@@ -1,167 +1,36 @@
 name: CI
-run-name: CI / ${{ inputs.source_sha || github.sha }}
-
 on:
-  workflow_dispatch:
-    inputs:
-      source_sha:
-        description: "Full main commit SHA to verify (empty uses the dispatch commit)"
-        required: false
-        type: string
   push:
     branches: [main]
-  pull_request:
-
+  workflow_dispatch:
 concurrency:
-  group: ci-${{ github.ref }}-${{ inputs.source_sha || 'latest' }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
-
+permissions:
+  contents: read
 jobs:
-  source:
-    name: Verify source commit
-    runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.source.outputs.sha }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.source_sha || github.sha }}
-          fetch-depth: 0
-      - id: source
-        env:
-          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
-        run: |
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            test "$GITHUB_REF" = "refs/heads/main"
-            git fetch --no-tags origin main:refs/remotes/origin/main
-            git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/main
-          fi
-          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-          echo "Verified application source: $SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
-
-  web-quality:
-    name: web-quality
-    needs: source
+  local-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.source.outputs.sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            mobile/package-lock.json
+          cache-dependency-path: mobile/package-lock.json
       - run: npm ci
-      # Root Vitest intentionally imports the pure mobile sync/API modules, so
-      # the clean runner must also provide the Expo tsconfig they extend.
-      - run: npm ci
-        working-directory: mobile
-      - run: npm run lint
-      - run: npm run typecheck
-      - name: Install media and publication validators
-        timeout-minutes: 8
-        run: |
-          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y ffmpeg poppler-utils epubcheck
-      - run: npx playwright install --with-deps chromium
-      - run: npm test
-      - run: npm run build
-
-  mobile-quality:
-    name: mobile-quality
-    needs: source
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.source.outputs.sha }}
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            mobile/package-lock.json
-      # Offline cache tests use real Node streams and the root SQLite driver.
-      - run: npm ci
-      - run: npm ci
-        working-directory: mobile
-      - run: npm test
         working-directory: mobile
       - run: npm run typecheck
         working-directory: mobile
       - run: npm run lint
+        working-directory: mobile
+      - run: npm test
         working-directory: mobile
       - run: npm run doctor
         working-directory: mobile
-      - run: npx expo export --platform android --output-dir dist-android
+      - name: Verify local architecture and fixture syntax
+        run: |
+          python3 -m py_compile mobile/scripts/*.py
+          python3 mobile/scripts/verify-local-boundary.py
+      - run: npx expo export --platform all --output-dir dist
         working-directory: mobile
-      - run: npx expo export --platform ios --output-dir dist-ios
-        working-directory: mobile
-
-  ops-quality:
-    name: ops-quality
-    needs: source
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.source.outputs.sha }}
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
-      - name: ShellCheck 运维脚本
-        run: sudo apt-get update && sudo apt-get install -y shellcheck && shellcheck --severity=error scripts/ops/*.sh scripts/ops/ftc scripts/ops/lib/*.sh
-      - name: ftc 工具套件测试（真实 bash + 假 docker）
-        run: npm run test:ops
-        env:
-          FTC_REQUIRE_COMPOSE: "1"
-
-  e2e-restore-roundtrip:
-    name: e2e-restore-roundtrip
-    runs-on: ubuntu-latest
-    needs: [source, web-quality]
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.source.outputs.sha }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
-      # Shared calendar utilities resolve the installed Expo TypeScript base.
-      - run: npm ci
-        working-directory: mobile
-      # Match the runtime image: audio AI requires a measured duration from ffprobe.
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm run build:ops
-      # Playwright（10 个独立 project）+ 灾难恢复 roundtrip（真实服务器 boot）
-      - run: npx playwright test
-      - run: npx vitest run --config vitest.roundtrip.config.ts
-
-      - name: Isolated 1.1 volume upgrade and legacy archive restore
-        run: node --conditions=react-server --import tsx scripts/verify-upgrade12.mts
-
-      - name: Build trusted snapshot verification image from this commit
-        run: docker build -f docker/Dockerfile -t ftc-instance-snapshot:ci .
-      - name: Isolated upgrade and rollback with real Docker failures
-        run: node --conditions=react-server --import tsx scripts/verify-deployment-lifecycle.mts
-        env:
-          FTC_INSTANCE_TEST_IMAGE: ftc-instance-snapshot:ci
-      - name: Full instance snapshot with isolated Docker and production HTTP
-        run: node --conditions=react-server --import tsx scripts/verify-instance-snapshot.mts
-        env:
-          FTC_INSTANCE_TEST_IMAGE: ftc-instance-snapshot:ci

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "小美成长记",
+    "name": "\u5c0f\u7f8e\u6210\u957f\u8bb0",
     "slug": "family-time-capsule",
     "platforms": [
       "ios",
@@ -13,20 +13,20 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "app.familytimecapsule.mobile",
-      "buildNumber": "42",
+      "buildNumber": "43",
       "supportsTablet": true,
       "infoPlist": {
-        "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true
-        },
-        "NSPhotoLibraryUsageDescription": "选择要保存到小美成长记的照片或视频。"
+        "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002"
       }
     },
     "android": {
       "package": "app.familytimecapsule.mobile",
-      "versionCode": 42,
+      "versionCode": 43,
       "blockedPermissions": [
-        "android.permission.SYSTEM_ALERT_WINDOW"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.RECORD_AUDIO_BACKGROUND"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#F7F8F5",
@@ -37,39 +37,20 @@
     },
     "plugins": [
       "./plugins/with-native-share-intake",
-      "expo-notifications",
       "expo-sqlite",
       "expo-document-picker",
       [
-        "expo-secure-store",
-        {
-          "configureAndroidBackup": true,
-          "faceIDPermission": "允许小美成长记安全读取登录凭据。"
-        }
-      ],
-      [
         "expo-image-picker",
         {
-          "photosPermission": "选择要保存到小美成长记的照片或视频。",
-          "cameraPermission": "拍摄要保存到小美成长记的照片或视频。",
-          "microphonePermission": "录制要保存到小美成长记的视频声音。"
-        }
-      ],
-      [
-        "expo-media-library",
-        {
-          "photosPermission": "读取所选素材的可靠创建时间，避免把导入时间误作拍摄时间。",
-          "savePhotosPermission": "允许将明确选择保存的素材写入系统相册。",
-          "granularPermissions": [
-            "photo",
-            "video"
-          ]
+          "photosPermission": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
+          "cameraPermission": "\u62cd\u6444\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
+          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u89c6\u9891\u58f0\u97f3\u3002"
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "录制要保存到小美成长记的家庭声音。",
+          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u5bb6\u5ead\u58f0\u97f3\u3002",
           "recordAudioAndroid": true,
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false

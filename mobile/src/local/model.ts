@@ -271,7 +271,7 @@ export function validateLibrary(value: unknown): asserts value is Library {
       !Number.isInteger(d.baseRevision) ||
       !Number.isFinite(Date.parse(d.updatedAt)) ||
       (d.recordingFile !== undefined &&
-        !/^(?:Audio\/)?[a-zA-Z0-9_-]+\.m4a$/.test(d.recordingFile))
+        !/^(?:(?:Audio|ExpoAudio)\/)?[a-zA-Z0-9_-]+\.m4a$/.test(d.recordingFile))
     )
       return fail();
   for (const [key, a] of Object.entries(s.albums))
