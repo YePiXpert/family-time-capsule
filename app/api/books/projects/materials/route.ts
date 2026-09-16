@@ -6,6 +6,9 @@ import { createBookSourceResolver } from "@/lib/books/projects/sources";
 import { getTimelinePage } from "@/lib/memories/service";
 import { listCollections } from "@/lib/collections/service";
 import type { BookAudience, BookSourceKind } from "@/mobile/src/books/types";
+import { getDb } from "@/db";
+import { memoryEvent } from "@/db/schema/memory";
+import { and, eq } from "drizzle-orm";
 export async function GET(request: Request) {
   const auth = await authorizeApiFamilyRequest(request.headers, "archive:view");
   if (!auth.ok)
@@ -14,19 +17,26 @@ export async function GET(request: Request) {
     const query = new URL(request.url).searchParams,
       kind = query.get("kind") || "memory",
       audience = query.get("audience") || "family",
-      cursor = query.get("cursor");
+      cursor = query.get("cursor"),
+      ids = query.getAll("id");
     if (
       !["personal", "family"].includes(audience) ||
       !["memory", "collection"].includes(kind)
     )
       throw new BookError("invalid_filter");
+    if (ids.length && (ids.length > 100 || ids.some(id => !id || id.length > 128) || new Set(ids).size !== ids.length || cursor || query.get("month")))
+      throw new BookError("invalid_selection");
     const resolve = createBookSourceResolver(
       auth.context,
       audience as BookAudience,
     );
     let rows: { id: string; title: string }[] = [],
       nextCursor: string | null = null;
-    if (kind === "memory") {
+    if (ids.length) {
+      // Resolve the exact carried selection even when it is outside the first page.
+      // Each row still passes the same principal and intended-reader checks below.
+      rows = ids.map(id => ({ id, title: "" }));
+    } else if (kind === "memory") {
       const month = query.get("month") || "";
       if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new BookError("invalid_filter");
       const nextMonth = month ? new Date(Date.UTC(Number(month.slice(0,4)), Number(month.slice(5,7)), 1)).toISOString().slice(0,7) : "";
@@ -48,11 +58,19 @@ export async function GET(request: Request) {
     return mobileJson({
       entries: rows.flatMap((row) => {
         const state = resolve(kind as BookSourceKind, row.id);
+        const date = state.state.available && kind === "memory" ? getDb()
+          .select({ occurredAtPrecision: memoryEvent.occurredAtPrecision })
+          .from(memoryEvent)
+          .where(and(eq(memoryEvent.id, row.id), eq(memoryEvent.familyId, auth.context.familyId)))
+          .get() : undefined;
         return state.state.available
           ? [
               {
                 ...row,
+                title: state.state.label,
                 kind,
+                occurredAt: state.state.occurredAt,
+                occurredAtPrecision: date?.occurredAtPrecision,
                 images: state.images.flatMap((id) => {
                   const asset = resolve("asset", id).state.asset;
                   return asset ? [asset] : [];

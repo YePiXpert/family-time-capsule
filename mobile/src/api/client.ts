@@ -1245,9 +1245,11 @@ export async function mutateBook(credentials:Credentials,id:string,input:Record<
   try {return await requestMobileJson(credentials,`/api/books/projects/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(input)}) as import('../books/types').BookDetail;}
   catch(e){if(e instanceof ApiError&&e.status===409)throw new ApiError('其他家人已保存修改。你的输入仍保留，请复制需要的文字，再重新载入核对。',409);throw e;}
 }
-export type BookMaterials={entries:{id:string;title:string;kind:'memory'|'collection'}[];nextCursor:string|null};
-export async function fetchBookMaterials(credentials:Credentials,kind:string,audience:string,cursor='',month=''):Promise<BookMaterials>{
-  const value=await requestMobileJson(credentials,`/api/books/projects/materials?${new URLSearchParams({kind,audience,cursor,month})}`);
+export type BookMaterials={entries:{id:string;title:string;kind:'memory'|'collection';occurredAt?:string|null;occurredAtPrecision?:import('../utils/occurred-precision').OccurredAtPrecision;images?:NonNullable<import('../books/types').BookSourceState['asset']>[]}[];nextCursor:string|null};
+export async function fetchBookMaterials(credentials:Credentials,kind:string,audience:string,cursor='',month='',ids:readonly string[]=[]):Promise<BookMaterials>{
+  const query = new URLSearchParams({kind,audience,cursor,month});
+  for (const id of ids) query.append('id', id);
+  const value=await requestMobileJson(credentials,`/api/books/projects/materials?${query}`);
   if(!isRecord(value)||!Array.isArray(value.entries)||!hasCursor(value))throw new Error('选材响应无效');return value as BookMaterials;
 }
 
