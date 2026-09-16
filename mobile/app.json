@@ -13,7 +13,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "app.familytimecapsule.mobile",
-      "buildNumber": "44",
+      "buildNumber": "45",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002"
@@ -21,10 +21,9 @@
     },
     "android": {
       "package": "app.familytimecapsule.mobile",
-      "versionCode": 44,
+      "versionCode": 45,
       "blockedPermissions": [
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.INTERNET",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.RECORD_AUDIO_BACKGROUND"
       ],
@@ -33,7 +32,10 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.INTERNET"
+      ]
     },
     "plugins": [
       "./plugins/with-native-share-intake",
@@ -56,7 +58,8 @@
           "enableBackgroundPlayback": false
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-secure-store"
     ]
   }
 }

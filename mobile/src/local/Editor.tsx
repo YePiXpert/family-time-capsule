@@ -1,3 +1,5 @@
+import { AIEditor } from "../ai/Editor";
+import { proposalEvents } from "../ai/state";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -560,6 +562,41 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 }
               />
             </View>
+          )}
+          {draft.content.mediaIds.some(
+            (id) => (state.media[id] ?? importedMedia[id])?.kind === "image",
+          ) && (
+            <AIEditor
+              draft={draft}
+              media={{ ...state.media, ...importedMedia }}
+              disabled={busy || recording}
+              onPatch={(patch) =>
+                persist({ ...current.current!, ...patch, updatedAt: now() })
+              }
+              onApply={async (proposal, part) => {
+                const accepted =
+                  part === "title"
+                    ? { ...proposal, text: undefined }
+                    : part === "text"
+                      ? { ...proposal, title: undefined }
+                      : proposal;
+                const d = current.current!;
+                const events = proposalEvents(
+                  d,
+                  { ...store.get().media, ...pendingMedia.current },
+                  accepted,
+                );
+                await persist({
+                  ...d,
+                  ...(d.recordId
+                    ? { content: events[0]! }
+                    : { photoEvents: events, groupPhotosByDay: true }),
+                  aiProposal: undefined,
+                  aiJob: undefined,
+                  updatedAt: now(),
+                });
+              }}
+            />
           )}
           {draft.content.mediaIds.map((id) => {
             const m = state.media[id] ?? importedMedia[id];

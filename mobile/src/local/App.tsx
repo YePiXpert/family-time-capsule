@@ -1,3 +1,4 @@
+import { AISettingsScreen } from "../ai/Settings";
 import {
   Component,
   useCallback,
@@ -207,7 +208,9 @@ function Root() {
               borderBottomWidth: StyleSheet.hairlineWidth,
               borderBottomColor: theme.colors.glassLine,
             }}
-          > <ErrorText message={error} />
+          >
+            {" "}
+            <ErrorText message={error} />
             <Button
               title="重试接收素材"
               onPress={() => {
@@ -277,6 +280,11 @@ function Root() {
             name="Backup"
             component={Backup}
             options={{ title: "备份与恢复" }}
+          />
+          <Stack.Screen
+            name="AISettings"
+            component={AISettingsScreen}
+            options={{ title: "AI 设置" }}
           />
           <Stack.Screen
             name="Appearance"

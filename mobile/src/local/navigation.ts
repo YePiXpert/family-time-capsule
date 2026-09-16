@@ -15,6 +15,7 @@ export type Routes = {
   Storage: undefined;
   Backup: undefined;
   Appearance: undefined;
+  AISettings: undefined;
 };
 export type Props<T extends keyof Routes> = NativeStackScreenProps<Routes, T>;
 export const useNav = () => useNavigation<NativeStackNavigationProp<Routes>>();

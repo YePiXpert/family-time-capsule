@@ -47,6 +47,8 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-reading")
         app.terminate(); app.launch(); tap("tab-albums"); tap("Our days")
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-after-relaunch")
+        app.terminate(); app.launch(); tap("tab-profile"); tap("AI 设置")
+        XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-settings")
         app.terminate(); app.launch(); tap("tab-profile"); tap("备份与恢复")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
