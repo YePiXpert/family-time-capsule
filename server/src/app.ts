@@ -1,7 +1,8 @@
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
-import { Store, Problem, digest, MODEL_IDS, type Member } from './store.ts';
+import { Store, Problem, digest, type Member } from './store.ts';
 import { inputSchema, parseResult } from './contracts.ts';
+import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
 import type { Provider } from './provider.ts';
 export function createApp(store:Store,provider:Provider,version='dev') {
  const app=Fastify({logger:false,bodyLimit:15*1024*1024,requestTimeout:120000,connectionTimeout:125000});
@@ -29,7 +30,7 @@ export function createApp(store:Store,provider:Provider,version='dev') {
   return reply.code(201).send(store.enroll(input.code,input.deviceName));
  });
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
- app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,models:config.enabledModels.map(id=>({id,label:id.startsWith('deepseek')?'DeepSeek':`GPT · ${id}`}))};});
+ app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'high',models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
  for(const kind of ['group','write'] as const)app.post(`/api/v1/ai/${kind}`,async req=>{
   const member=auth(req.headers.authorization), input=inputSchema.parse(req.body);
   if((input.mode==='photos'&&!input.photos.length)||(input.mode==='merge'&&(kind!=='group'||input.photos.length||!input.groups?.length)))throw new Problem(400,'INVALID_INPUT','请先选择照片。');
@@ -80,9 +81,8 @@ export function createApp(store:Store,provider:Provider,version='dev') {
  });
  app.put('/api/v1/admin/settings',async req=>{
   owner(req.headers.authorization);
-  const input=z.object({paused:z.boolean(),defaultModel:z.enum(MODEL_IDS),enabledModels:z.array(z.enum(MODEL_IDS)).min(1).max(4),globalPhotos:z.number().int().min(0).max(50000),globalWrites:z.number().int().min(0).max(10000)}).strict().parse(req.body);
-  if(!input.enabledModels.includes(input.defaultModel))throw new Problem(400,'INVALID_INPUT','默认模型必须处于启用状态。');
-  store.setSettings(input);return {ok:true};
+  const input=z.object({paused:z.boolean(),defaultModel:z.enum(LEGACY_MODEL_IDS).optional(),enabledModels:z.array(z.enum(LEGACY_MODEL_IDS)).max(4).optional(),globalPhotos:z.number().int().min(0).max(50000),globalWrites:z.number().int().min(0).max(10000)}).strict().parse(req.body);
+  store.setSettings({...input,defaultModel:MODEL_ID,enabledModels:[MODEL_ID]});return {ok:true};
  });
  return app;
 }

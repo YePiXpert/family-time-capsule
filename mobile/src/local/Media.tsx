@@ -31,15 +31,17 @@ export function PhotoDetails({ media }: { media: LocalMedia }) {
 export function Photo({
   media,
   contain = false,
+  size,
 }: {
   media: LocalMedia | undefined;
   contain?: boolean;
+  size?: number;
 }) {
   const s = useStyles();
   const [error, setError] = useState(false);
   if (!media || !mediaFile(media).exists || error)
     return (
-      <View style={[s.section, { minHeight: 120 }]}>
+      <View style={[s.section, { minHeight: size ?? 120, width: size }]}>
         <Text>照片暂时无法读取</Text>
         <Text style={s.muted}>原记录仍保留，可从备份恢复缺失素材。</Text>
       </View>
@@ -50,7 +52,7 @@ export function Photo({
       source={{ uri: mediaUri(media) }}
       resizeMode={contain ? "contain" : "cover"}
       onError={() => setError(true)}
-      style={s.image}
+      style={[s.image, size ? { width: size, height: size } : undefined]}
     />
   );
 }

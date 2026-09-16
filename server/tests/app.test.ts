@@ -52,7 +52,7 @@ test('quota is checked before upstream; pause and model allowlist are enforced',
  f.store.setSettings({...f.store.settings(),paused:true});
  assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(f.owner.token),payload:f.input()})).statusCode,503);
  f.store.setSettings({...f.store.settings(),paused:false});
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(f.owner.token),payload:{...f.input(),model:'gpt-6-astra'}})).statusCode,400);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(f.owner.token),payload:{...f.input(),model:'unknown-model'}})).statusCode,400);
  await f.app.close();f.store.close();
 });
 test('concurrent duplicate requests do not repeat upstream work',async()=>{
@@ -76,5 +76,23 @@ test('server restart cannot repeat an uncertain paid request',async()=>{
  const f=fixture();const id=randomUUID();
  f.store.reserve(f.member.member,id,'hash',1,0,'deepseek-flash');f.store.recover();
  assert.equal(f.store.reserve(f.member.member,id,'hash',1,0,'deepseek-flash'),'failed');
+ await f.app.close();f.store.close();
+});
+
+test('fixed Flash configuration preserves quotas and normalizes previous app selections',async()=>{
+ let actualModel='';
+ const f=fixture(async(_kind,input)=>{actualModel=input.model;return {tokens:1,result:{title:'记录',text:'照片中的画面。'}};});
+ f.store.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({paused:false,defaultModel:'gpt-6-astra',enabledModels:['gpt-6-astra'],globalPhotos:123,globalWrites:17}));
+ const config=(await f.app.inject({url:'/api/v1/ai/config',headers:f.headers()})).json();
+ assert.equal(config.defaultModel,'deepseek-flash');assert.equal(config.reasoningEffort,'high');
+ assert.deepEqual(config.models,[{id:'deepseek-flash',label:'DeepSeek Flash High'}]);
+ assert.equal(config.globalPhotos,123);assert.equal(config.globalWrites,17);
+ const update=await f.app.inject({method:'PUT',url:'/api/v1/admin/settings',headers:f.headers(f.owner.token),payload:{paused:false,defaultModel:'gpt-5.6-luna',enabledModels:['gpt-5.6-luna'],globalPhotos:90,globalWrites:9}});
+ assert.equal(update.statusCode,200);assert.deepEqual(f.store.settings().enabledModels,['deepseek-flash']);
+ assert.equal(f.store.settings().globalPhotos,90);
+ for(const model of ['gpt-5.6-luna',undefined]){
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...f.input(),model}});
+  assert.equal(response.statusCode,200);assert.equal(actualModel,'deepseek-flash');assert.equal(response.json().model,'deepseek-flash');
+ }
  await f.app.close();f.store.close();
 });

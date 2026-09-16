@@ -10,11 +10,13 @@
 docker compose --env-file /opt/xiaomei-ai/service.env -p xiaomei-ai -f deploy/compose.yaml up -d --build
 ```
 
-运行 `docker compose ... exec -T ai node src/manage.ts owner` 生成 24 小时有效的一次性主人激活码。在手机「我的 → AI 设置」输入。后续邀请、设备撤销、默认模型、全局及成员额度在主人管理页调整。重新运行 owner 命令可以恢复主人访问，不会修改本机相册。
+运行 `docker compose ... exec -T ai node src/manage.ts owner` 生成 24 小时有效的一次性主人激活码。在手机「我的 → AI 设置」输入。后续邀请、设备撤销、全局及成员额度在主人管理页调整。重新运行 owner 命令可以恢复主人访问，不会修改本机相册。
+
+AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort: high`。旧版保存的模型选择会归一为 Flash；已有额度、暂停状态和成员权限保留。
 
 ## 配额与数据
 
-默认每人每天 100 张分析图片、20 次文案；全局 500 张、100 次。图片文案分析计入图片额度。每天 UTC 00:00 重置；上游调用最多并发 2，每人最多 200 次/日、全局 1000 次/日，避免只用摘要绕过额度。暂停、禁用模型与成员额度在发起上游之前检查。
+默认每人每天 100 张分析图片、20 次文案；全局 500 张、100 次。图片文案分析计入图片额度。每天 UTC 00:00 重置；上游调用最多并发 2，每人最多 200 次/日、全局 1000 次/日，避免只用摘要绕过额度。暂停与成员额度在发起上游之前检查。
 
 相同成员、同一请求 ID 不能再次调用上游；成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。超时调用可能已经被上游计费，因此保留额度占用，不自动退款或换模型。
 
@@ -28,4 +30,4 @@ docker compose --env-file /opt/xiaomei-ai/service.env -p xiaomei-ai -f deploy/co
 
 ## 验证
 
-`server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 分别验证两家的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、受邀成员功能与主人权限。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。
+`server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 验证 DeepSeek Flash High 的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、受邀成员功能与主人权限。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。

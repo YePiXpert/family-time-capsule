@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import { MODEL_IDS, Problem } from './store.ts';
+import { Problem } from './store.ts';
+import { MODEL_ID, LEGACY_MODEL_IDS } from './ai-model.ts';
 export const photoSchema=z.object({id:z.string().min(1).max(100),date:z.string().max(40).optional(),place:z.string().max(50).optional(),image:z.string().max(710000).regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/)}).strict();
 export const groupSchema=z.object({photoIds:z.array(z.string().min(1).max(100)).min(1).max(100),title:z.string().max(100),summary:z.string().max(600)}).strict();
 export const inputSchema=z.object({
- requestId:z.string().uuid(),model:z.enum(MODEL_IDS),
+ requestId:z.string().uuid(),model:z.enum(LEGACY_MODEL_IDS).optional().transform(()=>MODEL_ID),
  photos:z.array(photoSchema).max(20).default([]),
  context:z.string().max(4000).default(''),
  groups:z.array(groupSchema).max(100).optional(),

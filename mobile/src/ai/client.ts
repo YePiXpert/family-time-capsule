@@ -1,7 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 const BASE = "https://capsule.yep.li/api/v1";
 const SESSION = "xiaomei-ai-device-v1",
-  PREFERENCE = "xiaomei-ai-model-v1",
   CONSENT = "xiaomei-ai-consent-v1";
 const options = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -15,11 +14,6 @@ export class AIError extends Error {
 }
 export const getToken = () => SecureStore.getItemAsync(SESSION);
 export const disconnect = () => SecureStore.deleteItemAsync(SESSION);
-export const getPreferredModel = () => SecureStore.getItemAsync(PREFERENCE);
-export const preferModel = (id: string) =>
-  id
-    ? SecureStore.setItemAsync(PREFERENCE, id, options)
-    : SecureStore.deleteItemAsync(PREFERENCE);
 export const hasConsent = async () =>
   (await SecureStore.getItemAsync(CONSENT)) === "yes";
 export const giveConsent = () =>

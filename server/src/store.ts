@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { MODEL_ID } from './ai-model.ts';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -8,8 +9,7 @@ export class Problem extends Error {
 }
 export type Member = { id: string; name: string; role: 'owner'|'member'; enabled: number; photo_limit: number; write_limit: number; deviceId?: string };
 export type Settings = { paused: boolean; defaultModel: string; enabledModels: string[]; globalPhotos: number; globalWrites: number };
-export const MODEL_IDS = ['deepseek-flash', 'gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-6-astra'] as const;
-export const initialSettings: Settings = { paused: false, defaultModel: 'deepseek-flash', enabledModels: ['deepseek-flash','gpt-5.6-luna'], globalPhotos: 500, globalWrites: 100 };
+export const initialSettings: Settings = { paused: false, defaultModel: MODEL_ID, enabledModels: [MODEL_ID], globalPhotos: 500, globalWrites: 100 };
 export class Store {
   db: Database.Database;
   constructor(file: string) {
@@ -24,10 +24,11 @@ export class Store {
       CREATE INDEX IF NOT EXISTS requests_day ON requests(day,member_id);
     `);
     this.db.prepare('INSERT OR IGNORE INTO settings VALUES(1,?)').run(JSON.stringify(initialSettings));
+    this.setSettings(this.settings());
   }
   recover() { this.db.prepare("UPDATE requests SET status='failed',error_code='SERVER_RESTARTED' WHERE status='processing'").run(); }
-  settings(): Settings { return JSON.parse((this.db.prepare('SELECT value FROM settings WHERE id=1').get() as { value: string }).value); }
-  setSettings(value: Settings) { this.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify(value)); }
+  settings(): Settings { return { ...JSON.parse((this.db.prepare('SELECT value FROM settings WHERE id=1').get() as { value: string }).value), defaultModel: MODEL_ID, enabledModels: [MODEL_ID] }; }
+  setSettings(value: Settings) { this.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({ ...value, defaultModel: MODEL_ID, enabledModels: [MODEL_ID] })); }
   invite(name: string, memberId?: string, owner = false) {
     return this.db.transaction(() => {
       const id = memberId ?? randomUUID();
@@ -72,7 +73,7 @@ export class Store {
       }
       const settings=this.settings(), mine=this.usage(member.id), all=this.usage();
       if (settings.paused) throw new Problem(503,'AI_PAUSED','主人已暂停 AI，仍可手动编辑。');
-      if (!settings.enabledModels.includes(model)) throw new Problem(400,'MODEL_DISABLED','该模型暂未启用，请重新选择。');
+      if (!settings.enabledModels.includes(model)) throw new Problem(400,'MODEL_DISABLED','AI 服务配置已更新，请重新生成。');
       if (mine.photos+photos>member.photo_limit || mine.writes+writes>member.write_limit || mine.calls>=200 || all.photos+photos>settings.globalPhotos || all.writes+writes>settings.globalWrites || all.calls>=1000)
         throw new Problem(429,'QUOTA_EXCEEDED','今日 AI 额度已用完，请联系主人或明天再试。');
       const recent=this.db.prepare('SELECT COUNT(*) n FROM requests WHERE member_id=? AND created_at>?').get(member.id,Date.now()-60000) as {n:number};
