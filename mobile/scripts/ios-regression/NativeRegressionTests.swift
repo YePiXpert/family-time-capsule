@@ -31,6 +31,10 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20)); shot("home")
         tap("record-fixture"); tap("record-edit"); tap("帮这件事写记录")
         XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-enrollment-from-photo")
+        // Opening the editor persists a draft. Discard this enrollment-only draft
+        // so the later backup check can still require no unfinished edits.
+        tap("BackButton"); tap("放弃这份草稿"); tap("放弃")
+        XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20))
         app.terminate(); app.launch()
         tap("capture-new"); type("A little story.", "capture-text"); shot("editor-keyboard")
         app.terminate(); app.launch()
