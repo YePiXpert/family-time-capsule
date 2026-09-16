@@ -109,5 +109,11 @@ test('polish carries only the stored text with an explicit length ceiling',async
  const tooLong=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),context:'字'.repeat(2201)}});
  assert.equal(tooLong.statusCode,400);assert.equal(tooLong.json().code,'POLISH_TOO_LONG');
  assert.equal(f.store.usage(f.member.member.id).writes,1);
+ // 上限只看正文：长标题加 2000 字正文仍然通过，正文多一个字就被拒绝。
+ const longTitle={...polish(),context:`标题：${'题'.repeat(300)}\n正文：\n${'字'.repeat(2000)}`};
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:longTitle})).statusCode,200);
+ const bodyOver=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),context:`正文：\n${'字'.repeat(2001)}`}});
+ assert.equal(bodyOver.statusCode,400);assert.equal(bodyOver.json().code,'POLISH_TOO_LONG');
+ assert.equal(f.store.usage(f.member.member.id).writes,2);
  await f.app.close();f.store.close();
 });
