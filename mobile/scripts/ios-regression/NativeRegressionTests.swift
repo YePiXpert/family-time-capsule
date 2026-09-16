@@ -222,6 +222,14 @@ final class NativeRegressionTests: XCTestCase {
         let supplement = "\nA saved supplement."
         enterVerifiedText(original, into: input)
         XCTAssertEqual(input.value as? String, original, "Original text was not entered correctly before saving")
+        wait("Unfinished writing was not durably saved") { self.textContains("草稿已暂存") }
+        app.terminate(); app.launch()
+        XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 20))
+        XCTAssertTrue(element("timeline-resume-draft").waitForExistence(timeout: 10), "Home did not offer unfinished writing")
+        let resume = XCTAttachment(screenshot: app.screenshot())
+        resume.name = "home-resume-draft"; resume.lifetime = .keepAlways; add(resume)
+        tap("timeline-resume-draft")
+        wait("Resumed draft lost its text") { input.exists && input.value as? String == original }
         tap("capture-save")
         XCTAssertTrue(element("timeline-list").waitForExistence(timeout: 15), "Save did not return to the timeline")
         let savedCard = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "timeline-card-draft:", "Synthetic journal seaside story")).firstMatch
@@ -247,7 +255,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("补记").waitForExistence(timeout: 10))
         XCTAssertTrue(textContains("A saved supplement."), "Saved supplement did not survive relaunch")
         XCTAssertFalse(input.isHittable)
-        record("saved-journal", ["recordIdentifier": identifier, "returnedToTimeline": true, "readBeforeEdit": true, "supplementSurvivedRelaunch": true])
+        record("saved-journal", ["recordIdentifier": identifier, "draftResumedAfterRelaunch": true, "returnedToTimeline": true, "readBeforeEdit": true, "supplementSurvivedRelaunch": true])
     }
 
     func testLocalMP4AndMOVPlayback() {
@@ -462,7 +470,7 @@ final class NativeRegressionTests: XCTestCase {
     func testFamilyViewingHidesEditingAndRequiresOwnerExit() {
         XCTAssertTrue(element("tab-works").waitForExistence(timeout: 20))
         tap("tab-works")
-        tap("整理素材相册")
+        tap("相册")
         tapContaining("Fixture family album")
         tap("更多")
         fixtureControl(["phase": "family-viewing"])

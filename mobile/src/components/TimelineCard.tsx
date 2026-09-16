@@ -25,6 +25,7 @@ export const TimelineCard = memo(function TimelineCard({
   const { colors } = useColorTheme();
   const [failedCover, setFailedCover] = useState<string | null>(null);
   const hasCover = Boolean(item.cover || item.localCoverUri);
+  const textOnly = !hasCover && item.assetCount === 0;
   const age = item.ageLabel;
   const milestone = item.milestoneType ? (item.milestoneType === "first_time" ? "第一次" : "值得记住") : null;
   return (
@@ -37,6 +38,7 @@ export const TimelineCard = memo(function TimelineCard({
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.card,
+        textOnly && styles.textCard,
         { backgroundColor: colors.card, borderColor: highlighted ? colors.coral : colors.line },
         pressed && styles.pressed,
       ]}
@@ -87,11 +89,11 @@ export const TimelineCard = memo(function TimelineCard({
           ) : null}
         </View> : null}
         {item.locationText ? <Text style={[styles.location, { color: colors.muted }]}>{item.locationText}</Text> : null}
-        {item.source === "local" ? (
+        {item.source === "local" && (item.hasUnsavedChanges || item.syncState === "inbox") ? (
           <View style={[styles.localStatus, { borderTopColor: colors.line }]}>
             <JournalIcon name="check" color={colors.sage} size={14} />
             <Text style={[styles.localBadge, { color: colors.sage }]}>
-              {item.hasUnsavedChanges ? "已保存 · 有未完成的补记" : item.syncState === "inbox" ? "已提交，等待家人确认" : "已保存在本机 · 等待同步"}
+              {item.hasUnsavedChanges ? "有未完成的补记" : "已提交，等待家人确认"}
             </Text>
           </View>
         ) : null}
@@ -107,6 +109,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pressed: { opacity: 0.72 },
+  textCard: { borderWidth: 0, borderBottomWidth: 1, borderRadius: 0 },
   selectedRing: { borderWidth: 2, borderRadius: journalRadius.card, zIndex: 1 },
   coverStatus: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
   cover: { width: "100%", aspectRatio: 4 / 3 },

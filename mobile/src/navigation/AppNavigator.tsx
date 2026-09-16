@@ -36,6 +36,7 @@ import {
 } from "../screens/LibraryScreens";
 import { CollectionsScreen, CollectionDetailScreen } from "../screens/CollectionScreens";
 import { BooksScreen, BookDetailScreen } from "../screens/BookScreens";
+import { BookCreateScreen } from "../screens/BookCreateScreen";
 import { CalendarScreen } from "../screens/CalendarScreen";
 import { InviteFamilyScreen } from "../screens/InviteFamilyScreen";
 import { LocalCaptureDetailScreen } from "../screens/LocalCaptureDetailScreen";
@@ -61,8 +62,8 @@ function navigationTheme(palette: JournalPalette, dark: boolean): Theme {
 }
 
 const tabMeta: Record<string, { label: string; icon: JournalIconName }> = {
-  Timeline: { label: "成长", icon: "growth" },
-  Works: { label: "成长册", icon: "book" },
+  Timeline: { label: "日常", icon: "growth" },
+  Works: { label: "回看", icon: "book" },
   Profile: { label: "我的", icon: "person" },
 };
 
@@ -122,7 +123,7 @@ function MainTabs() {
       animation: reducedMotion ? "none" : "fade", transitionSpec: { animation: "timing", config: { duration: reducedMotion ? 0 : journalMotion.duration } },
     }}>
     <Tabs.Screen component={TimelineScreen} name="Timeline" options={{ headerShown: false }} />
-    <Tabs.Screen component={WorksScreen} name="Works" options={{ title: "成长册", headerShown: false }} />
+    <Tabs.Screen component={WorksScreen} name="Works" options={{ title: "回看", headerShown: false }} />
     <Tabs.Screen component={SettingsHubScreen} name="Profile" options={{ title: "我的", headerShown: false }} />
     {/* Keep the existing capture route for pending shares and durable draft links. */}
     <Tabs.Screen component={CaptureScreen} name="Capture" options={{ title: "记录一刻", headerShown: false, animation: "none", transitionSpec: { animation: "timing", config: { duration: 0 } } }} />
@@ -150,13 +151,14 @@ const NavigationContent = memo(function NavigationContent({ onViewingChange }: {
         <Stack.Screen component={LocalIntakeScreen} name="LocalIntake" options={{ title: "收到的内容" }} />
         <Stack.Screen component={ImportSessionsScreen} name="ImportSessions" options={{ title: "导入会话" }} />
         <Stack.Screen component={ImportSessionDetailScreen} name="ImportSessionDetail" options={{ title: "导入进度" }} />
-        <Stack.Screen component={CollectionsScreen} name="Collections" options={{title:"相册与章节"}} />
+        <Stack.Screen component={CollectionsScreen} name="Collections" options={{title:"相册"}} />
         <Stack.Screen component={CollectionDetailScreen} name="CollectionDetail" options={{title:"相册"}} />
         <Stack.Screen component={FamilyViewingScreen} name="FamilyViewing" options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, animation: "none" }} />
         <Stack.Screen component={ReadingDownloadsScreen} name="ReadingDownloads" options={{title:"离线收藏"}} />
         <Stack.Screen component={OfflineReadingScreen} name="OfflineReading" options={{title:"离线阅读"}} />
-        <Stack.Screen component={BooksScreen} name="Books" options={{title:"家庭书架"}} />
-        <Stack.Screen component={BookDetailScreen} name="BookDetail" options={{title:"家庭作品"}} />
+        <Stack.Screen component={BooksScreen} name="Books" options={{title:"回看"}} />
+        <Stack.Screen component={BookCreateScreen} name="BookCreate" options={{title:"做成成长册"}} />
+        <Stack.Screen component={BookDetailScreen} name="BookDetail" options={{title:"成长册"}} />
         <Stack.Screen component={CalendarScreen} name="Calendar" options={{ title: "记忆日历" }} />
         <Stack.Screen component={InviteFamilyScreen} name="InviteFamily" options={{ title: "邀请家人加入" }} />
         <Stack.Screen component={LocalCaptureDetailScreen} name="LocalCapture" options={{ title: "本机记录" }} />

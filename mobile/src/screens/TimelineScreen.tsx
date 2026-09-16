@@ -1,8 +1,11 @@
 import { useJournalContentInset } from "../navigation/dock-metrics";
 import { findSavedRecord, timelineRecordKey } from "../navigation/records";
 import { draftReadingScope } from "../drafts/reading";
+import { useResumableDrafts } from "../drafts/use-resumable-drafts";
+import { resumableDraftTitle } from "../drafts/resumable";
 import { growthStages, eventGrowthStage } from "../design/growth-stages";
 import { calendarDate } from "../utils/calendar";
+import { onThisDay } from "../utils/on-this-day";
 import { indexCalendarMonths } from "../utils/calendar-months";
 import { growthHeading } from "../design/growth";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,7 +15,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useAppData, useAppActions } from "../state/AppContext";
-import { CollapsingHero } from "../components/CollapsingHero";
+import { JournalHomeHeader } from "../components/JournalHomeHeader";
 import { MonthPicker } from "../components/MonthPicker";
 import { useContextMenu } from "../components/ContextMenu";
 import { SwipeActions } from "../components/SwipeActions";
@@ -47,6 +50,13 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
   } = useAppData();
   const { runSync, reloadLocal } = useAppActions();
   const draftScope = draftReadingScope(credentials, userId, viewer?.id, family?.id);
+  const unfinished = useResumableDrafts(draftScope, !credentials || Boolean(viewer?.canCapture));
+  const resume = unfinished?.rows[0];
+  const [selectionScope, setSelectionScope] = useState(draftScope);
+  if (selectionScope !== draftScope) {
+    setSelectionScope(draftScope);
+    setSelected([]); setSelecting(false);
+  }
   const [savedNotice, setSavedNotice] = useState<NonNullable<MainTabParamList["Timeline"]>["saved"]>();
   const focusRequest = useRef<string | null>(null);
   const scrollRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,6 +88,13 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
   const childBirthDate = child?.birthDate ?? null;
   const timezone = family?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today = calendarDate(new Date(), timezone);
+  const revisit = useMemo(() => onThisDay(events, today, timezone), [events, today, timezone]);
+  const localCount = useMemo(() => events.filter(event => event.source === "local").length, [events]);
+  const summary = [growth.age, !credentials ? `本机保存 · ${events.length} 段记录` : localCount ? `${localCount} 段记录保存在本机` : `${events.length} 段回忆`].filter(Boolean).join(" · ");
+  const openRecord = (record: LocalTimelineEvent) => record.source === "server"
+    ? navigation.navigate("Memory", { id: record.id })
+    : record.localDraftId && draftScope ? navigation.navigate("SavedMemory", { draftId: record.localDraftId, scope: draftScope })
+      : navigation.navigate("LocalCapture", { captureId: record.id });
   const monthIndex = useMemo(() => indexCalendarMonths(events, timezone), [events, timezone]);
   useEffect(() => {
     if (previousMonth.current === month) return;
@@ -106,12 +123,12 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
     scrollRetry.current = setTimeout(() => list.current?.scrollToIndex({ index, animated: false, viewPosition: 0.1 }), 100);
   }, [currentNotice, noticeEvent, visibleEvents]);
   const groupHeaders = useMemo(() => {
-    const labels = visibleEvents.map(event => stage?.label ?? (childBirthDate && belongsToChild(event) ? eventGrowthStage(childBirthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : "成长点滴"));
+    const labels = visibleEvents.map(event => stage?.label ?? (childBirthDate && belongsToChild(event) ? eventGrowthStage(childBirthDate, event.occurredAt, event.occurredAtPrecision, timezone)?.label : null) ?? (event.occurredAtPrecision === "unknown" ? "时间待补充" : null));
     return labels.map((label, index) => label === labels[index - 1] ? null : label);
   }, [visibleEvents, stage, childBirthDate, belongsToChild, timezone]);
   const selectedIds = useMemo(() => new Set(selected), [selected]);
-  const toggleSelected = useCallback((id: string) => setSelected(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id]), []);
-  const enterSelection = useCallback((id: string) => { setSelecting(true); setSelected([id]); }, []);
+  const toggleSelected = useCallback((id: string) => setSelected(ids => ids.includes(id) ? ids.filter(value => value !== id) : ids.length < 100 ? [...ids, id] : ids), []);
+  const enterSelection = useCallback((id: string) => { setSelecting(true); setSelected(ids => ids.includes(id) || ids.length >= 100 ? ids : [...ids, id]); }, []);
   const renderItem = useCallback(({ item, index }: { item: LocalTimelineEvent; index: number }) => (
     <TimelineRow item={item} draftScope={draftScope} highlighted={item.localDraftId === currentNotice?.draftId && Boolean(currentNotice)} groupLabel={groupHeaders[index] ?? null} canEdit={Boolean(viewer?.canEditEvents)} timeZone={family?.timezone} selected={selecting && item.source === "server" ? selectedIds.has(item.id) : undefined} toggleSelected={toggleSelected} enterSelection={enterSelection} openMenu={openMenu} />
   ), [groupHeaders, viewer?.canEditEvents, family?.timezone, selecting, selectedIds, toggleSelected, enterSelection, openMenu, draftScope, currentNotice]);
@@ -148,15 +165,24 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
         />
       }
       ListHeaderComponent={
-        <View style={{ gap: 20 }}>
-          {/* Hero：宝宝是主角——名字、真实月龄、一句话寄语，插画融入右侧 */}
-          <CollapsingHero
-            compact
-            testID="timeline-heading"
-            eyebrow="一点一滴，慢慢长大"
+        <View style={{ gap: 12 }}>
+          <JournalHomeHeader
             title={growth.title}
-            subtitle={[growth.age, "留下今天，送给长大的你。"].filter(Boolean).join(" · ")}
+            summary={summary}
+            filtered={Boolean(month || stage || important)} expanded={filtersOpen}
+            onFilter={() => setFiltersOpen(value => !value)}
+            onSearch={() => navigation.navigate("Search")}
           />
+          {resume ? <Pressable testID="timeline-resume-draft" accessibilityRole="button" accessibilityLabel={`${resume.savedContent ? "继续补记" : "继续记录"}：${resumableDraftTitle(resume)}`} onPress={() => navigation.navigate("Capture", { localDraftId: resume.id })} style={[styles.resumeCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
+            <View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.coralDark, fontSize: 13 }}>{resume.savedContent ? "继续上次的补记" : "继续上次没写完的记录"}</Text><Text numberOfLines={2} style={{ color: colors.ink, fontSize: 15 }}>{resumableDraftTitle(resume)}</Text></View>
+            <JournalIcon name="chevron-right" color={colors.coralDark} size={18} />
+          </Pressable> : null}
+          {unfinished && unfinished.rows.length > 1 ? <Button title={`查看 ${unfinished.rows.length} 条未完成记录`} variant="ghost" full={false} onPress={() => navigation.navigate("Pending")} /> : null}
+          {unfinished?.error ? <Button title="查看未完成记录" variant="ghost" full={false} onPress={() => navigation.navigate("Pending")} /> : null}
+          {revisit && !month && !stage && !important && !selecting && !currentNotice ? <Pressable testID="timeline-on-this-day" accessibilityRole="button" accessibilityLabel={`${revisit.yearsAgo} 年前的今天：${revisit.event.title}`} onPress={() => openRecord(revisit.event)} style={[styles.revisitCard, { backgroundColor: colors.softCoral }]}>
+            <Text style={{ color: colors.coralDark, fontSize: 12 }}>{revisit.yearsAgo} 年前的今天</Text>
+            <View style={styles.toolRow}><Text numberOfLines={2} style={{ flex: 1, color: colors.ink, fontSize: 18 }}>{revisit.event.title}</Text><JournalIcon name="chevron-right" color={colors.coralDark} size={18} /></View>
+          </Pressable> : null}
           {currentNotice ? <View style={[styles.savedNotice, { borderColor: colors.line }]}>
             <Text accessibilityLiveRegion="polite" style={{ color: colors.sage, fontSize: 13 }}>这一刻已保存。按发生日期收进成长记。</Text>
             <Button title="查看刚保存的记录" variant="ghost" full={false} onPress={() => {
@@ -165,13 +191,6 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
               else navigation.navigate("SavedMemory", { draftId: currentNotice.draftId, scope: currentNotice.scope });
             }} />
           </View> : null}
-          <View style={styles.toolRow}>
-            <Pressable accessibilityRole="button" accessibilityLabel="回看与筛选" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen(value => !value)} style={styles.filterTrigger}>
-              <JournalIcon name="calendar" color={colors.coral} size={18} />
-              <Text style={{ color: colors.coralDark, fontSize: 14 }}>{month || stage || important ? "回看与筛选 · 已筛选" : "回看与筛选"}</Text>
-            </Pressable>
-            <IconButton icon="search" label="搜索" onPress={() => navigation.navigate("Search")} />
-          </View>
           {filtersOpen ? <View style={[styles.filterPanel, { backgroundColor: colors.card, borderColor: colors.line }]}>
           <MonthPicker value={month} currentMonth={today.slice(0, 7)} counts={monthIndex.counts} allowAll onChange={next => { setMonth(next); setSelected([]); }} />
 
@@ -195,16 +214,17 @@ export function TimelineScreen({ route }: { route?: { params?: MainTabParamList[
 
           {selecting ? (
             <View style={[styles.selectionCard, { backgroundColor: colors.softCoral, borderColor: colors.peach }]}>
-              <Text style={[styles.selectionText, { color: colors.coralDark }]}>已选 {selected.length} 条</Text>
+              <Text style={[styles.selectionText, { color: colors.coralDark }]}>已选 {selected.length} 条{selected.length >= 100 ? " · 一本最多 100 条" : ""}</Text>
               <View style={styles.selectionActions}>
-                <Button title={`将所选 ${selected.length} 条加入相册`} variant="primary" disabled={!selected.length} onPress={() => navigation.navigate("Collections", { eventIds: selected })} full={false} />
+                <Button title="预览成长册" variant="primary" disabled={!selected.length || !credentials || !draftScope || draftScope === "local"} onPress={() => { if (draftScope && draftScope !== "local") navigation.navigate("BookCreate", { eventIds: selected, scope: draftScope }); }} full={false} />
+                <Button title={`加入相册 · ${selected.length} 条`} variant="ghost" disabled={!selected.length} onPress={() => navigation.navigate("Collections", { eventIds: selected })} full={false} />
               </View>
             </View>
           ) : null}
 
           {inboxCount > 0 ? (
             <Pressable accessibilityRole="button" onPress={() => navigation.navigate("Pending")} style={[styles.inboxCard, { backgroundColor: colors.card, borderColor: colors.line }]}>
-              <Text style={[styles.inboxText, { color: colors.ink }]}>待处理 {inboxCount > 99 ? "99+" : inboxCount} 条</Text>
+              <Text style={[styles.inboxText, { color: colors.ink }]}>有 {inboxCount > 99 ? "99+" : inboxCount} 条内容需要确认</Text>
             </Pressable>
           ) : null}
 
@@ -258,7 +278,8 @@ const TimelineRow = memo(function TimelineRow({ item, draftScope, highlighted, g
     if (canOrganize) select();
     openMenu([
       ...(canOrganize ? [
-        { key: "collect", label: "加入合集", icon: "image" as const, onPress: collect },
+        ...(draftScope && draftScope !== "local" ? [{ key: "book", label: "做成成长册", icon: "book" as const, onPress: () => navigation.navigate("BookCreate", { eventIds: [item.id], scope: draftScope }) }] : []),
+        { key: "collect", label: "加入相册", icon: "image" as const, onPress: collect },
         { key: "select", label: "选择", icon: "check" as const, onPress: select },
       ] : []),
       { key: "detail", label: "查看详情", icon: "chevron-right" as const, onPress: open },
@@ -267,15 +288,16 @@ const TimelineRow = memo(function TimelineRow({ item, draftScope, highlighted, g
   return <View>
     {groupLabel ? <View style={styles.groupHeader}><Text accessibilityRole="header" style={[styles.groupLabel, { color: colors.muted }]}>{groupLabel}</Text><View style={[styles.groupRule, { backgroundColor: colors.line }]} /></View> : null}
     {canOrganize ? <SwipeActions actions={[
-      { key: "collect", label: "加入合集", color: colors.sage, onPress: collect },
+      { key: "collect", label: "加入相册", color: colors.sage, onPress: collect },
       { key: "select", label: "选择", color: colors.coral, onPress: select },
     ]}>{card}</SwipeActions> : card}
   </View>;
 });
 
 const styles = StyleSheet.create({
+  resumeCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderWidth: 1, borderRadius: journalRadius.control },
+  revisitCard: { gap: 7, padding: 16, borderRadius: journalRadius.control },
   savedNotice: { borderBottomWidth: StyleSheet.hairlineWidth, paddingBottom: 8, gap: 4 },
-  filterTrigger: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
   filterPanel: { borderWidth: 1, borderRadius: journalRadius.card, padding: 16, gap: 16 },
   toolRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 },
   tools: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -286,7 +308,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   selectionText: { fontSize: 14, fontWeight: "700" },
-  selectionActions: { flexDirection: "row" },
+  selectionActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   inboxCard: {
     borderRadius: journalRadius.control,
     borderWidth: 1,
