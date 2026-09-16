@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Alert, Switch, View } from "react-native";
+import { Alert, ScrollView, Switch, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useLibrary, useStore } from "./context";
 import { useNav } from "./navigation";
 import { backupDirectory, preserveMedia } from "./files";
@@ -26,12 +27,18 @@ import {
 import { CaptureDock } from "./Home";
 import { Photo } from "./Media";
 export function Settings() {
+  const tabBarHeight = useBottomTabBarHeight();
   const state = useLibrary(),
     nav = useNav(),
     s = useStyles();
   return (
     <Page scroll={false} top>
-      <View style={[s.content, { flex: 1 }]}>
+      <ScrollView
+        contentContainerStyle={[
+          s.content,
+          { paddingBottom: tabBarHeight + 84 },
+        ]}
+      >
         <Text style={s.title}>我的</Text>
         <Text style={s.muted}>
           {state.profile.name || "小美成长记"} · 留住每一个值得记住的日子
@@ -63,7 +70,7 @@ export function Settings() {
             onPress={() => nav.navigate("Appearance")}
           />
         </View>
-      </View>
+      </ScrollView>
       <CaptureDock />
     </Page>
   );

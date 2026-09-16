@@ -114,7 +114,11 @@ export function GlassBackdrop() {
             r={width * 0.95}
             gradientUnits="userSpaceOnUse"
           >
-            <Stop offset="0" stopColor={colors.glow1} stopOpacity={glowOpacity} />
+            <Stop
+              offset="0"
+              stopColor={colors.glow1}
+              stopOpacity={glowOpacity}
+            />
             <Stop offset="1" stopColor={colors.glow1} stopOpacity="0" />
           </RadialGradient>
           <RadialGradient
@@ -124,7 +128,11 @@ export function GlassBackdrop() {
             r={width * 0.85}
             gradientUnits="userSpaceOnUse"
           >
-            <Stop offset="0" stopColor={colors.glow2} stopOpacity={glowOpacity} />
+            <Stop
+              offset="0"
+              stopColor={colors.glow2}
+              stopOpacity={glowOpacity}
+            />
             <Stop offset="1" stopColor={colors.glow2} stopOpacity="0" />
           </RadialGradient>
           <RadialGradient
@@ -134,7 +142,11 @@ export function GlassBackdrop() {
             r={width * 1.05}
             gradientUnits="userSpaceOnUse"
           >
-            <Stop offset="0" stopColor={colors.glow3} stopOpacity={glowOpacity} />
+            <Stop
+              offset="0"
+              stopColor={colors.glow3}
+              stopOpacity={glowOpacity}
+            />
             <Stop offset="1" stopColor={colors.glow3} stopOpacity="0" />
           </RadialGradient>
         </Defs>
@@ -234,7 +246,10 @@ export function useStyles() {
           padding: 16,
           gap: 12,
         },
-        line: { height: StyleSheet.hairlineWidth, backgroundColor: c.glassLine },
+        line: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: c.glassLine,
+        },
         image: {
           width: "100%",
           aspectRatio: 4 / 3,
@@ -242,6 +257,42 @@ export function useStyles() {
           backgroundColor: c.selected,
         },
         empty: { paddingVertical: 32, gap: 12 },
+        galleryRow: {
+          flexDirection: "row",
+          gap: 12,
+          marginBottom: 16,
+          alignItems: "flex-start",
+        },
+        galleryCaption: { gap: 2, paddingTop: 8, minHeight: 44 },
+        galleryTitle: { fontSize: 14, lineHeight: 21, fontWeight: "600" },
+        recordRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          padding: 12,
+          borderRadius: 16,
+          backgroundColor: c.glass,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: c.glassLine,
+          marginBottom: 12,
+        },
+        compactPanel: {
+          paddingHorizontal: 12,
+          paddingVertical: 8,
+          borderRadius: 12,
+          gap: 8,
+          backgroundColor: c.glass,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: c.glassLine,
+        },
+        dateHeading: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingTop: 8,
+          paddingBottom: 12,
+          gap: 8,
+        },
       }),
     [c],
   );
@@ -286,6 +337,7 @@ export function Button({
   icon,
   testID,
   selected,
+  compact = false,
 }: {
   title: string;
   onPress: () => void;
@@ -294,6 +346,7 @@ export function Button({
   icon?: JournalIconName;
   testID?: string;
   selected?: boolean;
+  compact?: boolean;
 }) {
   const { colors: c } = useTheme();
   const color = primary ? c.onAccent : c.accent;
@@ -318,9 +371,9 @@ export function Button({
         tint={primary ? c.accentGlass : selected ? c.selectedGlass : undefined}
         intensity={primary ? 55 : 40}
         style={{
-          minHeight: 48,
-          paddingHorizontal: 16,
-          paddingVertical: 10,
+          minHeight: compact ? 44 : 48,
+          paddingHorizontal: compact ? 12 : 16,
+          paddingVertical: compact ? 6 : 10,
           flexDirection: "row",
           gap: 8,
           alignItems: "center",
@@ -329,7 +382,13 @@ export function Button({
       >
         {icon && <JournalIcon name={icon} color={color} size={20} />}
         <Text
-          style={{ color, fontWeight: "600", flexShrink: 1, textAlign: "center" }}
+          style={{
+            color,
+            fontWeight: "600",
+            flexShrink: 1,
+            textAlign: "center",
+            ...(compact ? { fontSize: 14, lineHeight: 21 } : {}),
+          }}
         >
           {title}
         </Text>
@@ -337,12 +396,48 @@ export function Button({
     </Pressable>
   );
 }
-export function Field({ label, ...props }: TextInputProps & { label: string }) {
-  const s = useStyles(),
-    { colors, large } = useTheme();
+export function IconButton({
+  label,
+  icon,
+  onPress,
+  selected = false,
+}: {
+  label: string;
+  icon: JournalIconName;
+  onPress: () => void;
+  selected?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: 44,
+        height: 44,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 22,
+        backgroundColor: selected ? colors.selectedGlass : "transparent",
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <JournalIcon name={icon} color={colors.accent} size={22} />
+    </Pressable>
+  );
+}
+export function Field({
+  label,
+  hideLabel = false,
+  ...props
+}: TextInputProps & { label: string; hideLabel?: boolean }) {
+  const s = useStyles();
+  const { colors, large } = useTheme();
   return (
     <View style={{ gap: 8 }}>
-      <Text style={s.muted}>{label}</Text>
+      {!hideLabel && <Text style={s.muted}>{label}</Text>}
       <TextInput
         {...props}
         accessibilityLabel={label}

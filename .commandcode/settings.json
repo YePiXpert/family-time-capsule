@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(ls:*)",
+      "Shell(git:*)",
+      "Shell(ls /workspace/family-time-capsule/node_modules/next/dist/docs/ 2>/dev/null; echo \"---\"; grep -rn \"unstable_retry\\|retry\" /workspace/family-time-capsule/node_modules/next/dist/docs/*error* 2>/dev/null | head -30)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

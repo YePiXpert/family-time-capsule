@@ -52,7 +52,10 @@ export function Photo({
       source={{ uri: mediaUri(media) }}
       resizeMode={contain ? "contain" : "cover"}
       onError={() => setError(true)}
-      style={[s.image, size ? { width: size, height: size } : undefined]}
+      style={[
+        s.image,
+        size ? { width: size, height: size, aspectRatio: 1 } : undefined,
+      ]}
     />
   );
 }
