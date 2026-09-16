@@ -34,3 +34,19 @@ jobs:
           python3 mobile/scripts/verify-local-boundary.py
       - run: npx expo export --platform all --output-dir dist
         working-directory: mobile
+
+  ai-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm run typecheck
+        working-directory: server
+      - run: npm test
+        working-directory: server
