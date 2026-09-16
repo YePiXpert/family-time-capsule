@@ -13,7 +13,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "app.familytimecapsule.mobile",
-      "buildNumber": "48",
+      "buildNumber": "49",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002"
@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "app.familytimecapsule.mobile",
-      "versionCode": 48,
+      "versionCode": 49,
       "blockedPermissions": [
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.SYSTEM_ALERT_WINDOW",

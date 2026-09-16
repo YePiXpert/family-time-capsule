@@ -35,6 +35,7 @@ export function createApp(store:Store,provider:Provider,version='dev') {
   const member=auth(req.headers.authorization), input=inputSchema.parse(req.body);
   const polish=kind==='write'&&input.writingMode==='polish';
   if(polish&&(!input.context.trim()||input.photos.length||input.mode!=='photos'))throw new Problem(400,'INVALID_INPUT','请先写下正文再润色。');
+  if(polish&&input.context.length>2200)throw new Problem(400,'POLISH_TOO_LONG','单次润色的正文超过 2000 字上限，请精简后再试。');
   if((input.mode==='photos'&&!input.photos.length&&!polish)||(input.mode==='merge'&&(kind!=='group'||input.photos.length||!input.groups?.length)))throw new Problem(400,'INVALID_INPUT','请先选择照片。');
   const ids=input.mode==='photos'?input.photos.map(p=>p.id):input.groups!.flatMap(g=>g.photoIds);
   if(new Set(ids).size!==ids.length||ids.length>100)throw new Problem(400,'INVALID_INPUT','照片列表重复或超出限制。');

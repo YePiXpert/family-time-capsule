@@ -37,7 +37,7 @@ try:
     adb('shell','svc','wifi','disable');adb('shell','svc','data','disable')
     adb('shell','wm','size','390x844');adb('shell','wm','density','160')
     launch();tap('welcome-start');shot('home-390')
-    tap('capture-new');tap('capture-text');write('Offline little story.');adb('shell','input','keyevent','4');shot('editor')
+    tap('capture-new');tap('capture-text');write('Offline little story.');find('AI 助手');adb('shell','input','keyevent','4');shot('editor')
     restart();tap('继续编辑');assert find('capture-text').get('text')=='Offline little story.'
     tap('capture-save');find('record-edit');shot('record-reading')
     tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit')

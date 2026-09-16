@@ -125,7 +125,9 @@ export function RecordCard({
             }}
           >
             <Text style={s.muted}>
-              {record.first ? "第一次" : `${images.length} 张`}
+              {images.length > 1
+                ? `${images.length} 张${record.first ? " · 第一次" : ""}`
+                : "第一次"}
             </Text>
           </View>
         ) : null}
@@ -190,6 +192,7 @@ export function CaptureDock() {
         title="记一刻"
         icon="plus"
         primary
+        compact
         testID="capture-new"
         disabled={busy}
         onPress={() => {
