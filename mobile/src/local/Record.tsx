@@ -13,7 +13,7 @@ import {
   messageOf,
   useStyles,
 } from "./ui";
-import { Photo } from "./Media";
+import { Photo, PhotoDetails } from "./Media";
 export function RecordScreen({ route, navigation }: Props<"Record">) {
   const state = useLibrary(),
     store = useStore(),
@@ -88,6 +88,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
         return media ? (
           <View key={id} style={{ gap: 8 }}>
             {media.kind === "image" && <Photo media={media} contain />}
+            <PhotoDetails media={media} />
             <Button
               title={media.kind === "image" ? "查看原图" : media.name}
               icon={
