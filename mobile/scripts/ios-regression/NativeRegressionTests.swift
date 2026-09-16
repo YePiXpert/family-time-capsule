@@ -29,6 +29,9 @@ final class NativeRegressionTests: XCTestCase {
     }
     func testLocalRecordAlbumAndBackup() throws {
         XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20)); shot("home")
+        tap("record-fixture"); tap("record-edit"); tap("帮这件事写记录")
+        XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-enrollment-from-photo")
+        app.terminate(); app.launch()
         tap("capture-new"); type("A little story.", "capture-text"); shot("editor-keyboard")
         app.terminate(); app.launch()
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
