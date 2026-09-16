@@ -29,14 +29,15 @@ const mocks = vi.hoisted(() => ({
 vi.mock("expo-blur", () => ({ BlurTargetView: "BlurTargetView", BlurView: "BlurView" }));
 vi.mock("expo-linear-gradient", () => ({ LinearGradient: "LinearGradient" }));
 vi.mock("expo-glass-effect", () => ({ GlassView: "GlassView", isGlassEffectAPIAvailable: () => false, isLiquidGlassAvailable: () => false }));
-vi.mock("../src/components/GlassSheet", () => ({ GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => mocks.confirm, useAlertSheet: () => vi.fn(async () => {}), confirmSheet: (options: unknown) => mocks.confirm(options), alertSheet: vi.fn(async () => {}) }));
+vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null, GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => mocks.confirm, useAlertSheet: () => vi.fn(async () => {}), confirmSheet: (options: unknown) => mocks.confirm(options), alertSheet: vi.fn(async () => {}) }));
 vi.mock("../src/design/haptics", () => ({ haptics: { success: vi.fn(), warning: vi.fn(), selection: vi.fn(), impact: vi.fn() }, setHapticsEnabled: vi.fn(), areHapticsEnabled: () => true }));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 vi.mock("react-native", () => ({
   AccessibilityInfo: { addEventListener: () => ({ remove: () => {} }), isReduceMotionEnabled: async () => true, isReduceTransparencyEnabled: async () => true },
   Alert: { alert: mocks.alert },
-  Keyboard: { scheduleLayoutAnimation: vi.fn(), addListener: (event: string, listener: () => void) => { mocks.keyboard.set(event, listener); return { remove: () => mocks.keyboard.delete(event) }; } },
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
+  Keyboard: { dismiss: vi.fn(), scheduleLayoutAnimation: vi.fn(), addListener: (event: string, listener: () => void) => { mocks.keyboard.set(event, listener); return { remove: () => mocks.keyboard.delete(event) }; } },
   Image: "Image", ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", ScrollView: "ScrollView", KeyboardAvoidingView: "KeyboardAvoidingView",
   Text: "Text", TextInput: "TextInput", View: "View",
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 },
@@ -173,6 +174,26 @@ it("retries reader lookup after network recovery and lets the author remove a de
     await press("已选成员（待联网核对，点按移除）");
     expect((await listLocalDrafts(scope))[0]?.content).toMatchObject({ visibility: "members", readerUserIds: [] });
   } finally { request.mockImplementation(original); }
+});
+it("keeps the current reader choice visible and private through sheet dismissal, restart and save", async () => {
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  await act(async () => tree!.root.findByProps({ testID: "capture-text" }).props.onChangeText("只想留给自己的这一刻"));
+  const readerControl = () => tree!.root.findByProps({ testID: "capture-save-bar" }).findByProps({ testID: "capture-readers" });
+  const radios = () => tree!.root.findAllByType("Pressable" as never).filter(node => node.props.accessibilityRole === "radio");
+  expect(radios()).toHaveLength(0);
+  expect(readerControl().props.accessibilityLabel).toBe("保存后的读者：全家可见");
+  await act(async () => readerControl().props.onPress());
+  expect(radios()).toHaveLength(3);
+  await press("仅自己");
+  await press("完成选择");
+  expect(radios()).toHaveLength(0);
+  expect(readerControl().props.accessibilityLabel).toBe("保存后的读者：仅自己可见");
+  await act(async () => tree!.unmount());
+  await initializeLocalStore();
+  await act(async () => { tree = create(createElement(CaptureScreen)); });
+  expect(readerControl().props.accessibilityLabel).toBe("保存后的读者：仅自己可见");
+  await press("保存");
+  expect((await listLocalDrafts("local")).find(row => row.status === "queued")).toMatchObject({ content: { visibility: "private", readerUserIds: [], text: "只想留给自己的这一刻" } });
 });
 afterEach(async () => { if (tree) await act(async () => tree!.unmount()); });
 async function press(label: string) {
