@@ -25,8 +25,13 @@ vi.mock("expo-sharing", () => ({
   shareAsync: async () => {},
 }));
 vi.mock("expo-file-system", () => {
+  // Expo 的 uri 始终是 POSIX 写法；Windows 上 path.join 会产生反斜杠，
+  // 让按 "/" 校验的正式代码误判，因此这里统一成 POSIX 分隔符。
   function target(parts: (string | { uri: string })[]) {
-    return path.join(...parts.map((x) => (typeof x === "string" ? x : x.uri)));
+    return parts
+      .map((x) => (typeof x === "string" ? x : x.uri))
+      .join("/")
+      .replace(/\\/g, "/");
   }
   class Directory {
     uri: string;
@@ -248,10 +253,7 @@ it("failed database commit rolls back the library and removes extracted new file
 it("receives a native shared original once and acknowledges only its committed draft", async () => {
   const { store, files } = await setup();
   const { receiveShares } = await import("../src/local/services");
-  const original = path.join(
-    env.root,
-    "xiaomei-v1/intake/originals/shared.jpg",
-  );
+  const original = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals/shared.jpg`;
   fs.mkdirSync(path.dirname(original), { recursive: true });
   fs.writeFileSync(original, Buffer.alloc(32, 15));
   env.shares = [
