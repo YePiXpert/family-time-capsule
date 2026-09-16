@@ -1,0 +1,31 @@
+services:
+  ai:
+    image: xiaomei-ai:${SOURCE_SHA:?Set SOURCE_SHA}
+    build: ../server
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${APP_PORT:-3140}:3000"
+      - "10.66.66.2:${APP_PORT:-3140}:3000"
+    environment:
+      SOURCE_SHA: ${SOURCE_SHA}
+      CPA_BASE_URL: http://10.66.66.2:8317/v1
+    volumes:
+      - ${AI_DATA_DIR:?Set AI_DATA_DIR}:/data
+      - ${CPA_KEY_PATH:?Set CPA_KEY_PATH}:/run/secrets/cpa-key:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
