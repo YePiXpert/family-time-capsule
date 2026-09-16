@@ -137,7 +137,7 @@ function Root() {
   }, [store]);
   if (!state.welcome)
     return (
-      <Page>
+      <Page top>
         <View style={{ minHeight: 140 }} />
         <Text style={s.muted}>小美成长记</Text>
         <Text style={s.title}>记下今天的小事</Text>

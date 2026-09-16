@@ -1,4 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  usePreventRemove,
+  type NavigationAction,
+} from "@react-navigation/native";
 import { Alert, FlatList, Pressable, ScrollView, View } from "react-native";
 import { useLibrary, useStore } from "./context";
 import { beginSelection, newId, now } from "./services";
@@ -28,7 +32,7 @@ export function Albums() {
       b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
   );
   return (
-    <Page scroll={false}>
+    <Page scroll={false} top>
       <View style={s.content}>
         <View style={s.between}>
           <Text style={s.title}>把回忆放在一起</Text>
@@ -431,7 +435,23 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
     s = useStyles(),
     q = state.selections[route.params.sessionId];
   const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [name, setName] = useState(q?.name ?? ""),
+    [returnAction, setReturnAction] = useState<NavigationAction | null>(null);
+  usePreventRemove(Boolean(q && name !== q.name), ({ data }) => {
+    void store
+      .change((s) => {
+        const session = s.selections[route.params.sessionId];
+        if (session) session.name = name;
+      })
+      .then(() => setReturnAction(data.action))
+      .catch((e) => setError(messageOf(e)));
+  });
+  useEffect(() => {
+    if (returnAction && (!q || q.name === name)) {
+      navigation.dispatch(returnAction);
+    }
+  }, [returnAction, q, name, navigation]);
   if (!q)
     return (
       <Page>
@@ -456,12 +476,14 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
         label="相册名称"
         testID="album-name"
         placeholder="例如：一岁以前"
-        value={q.name}
-        onChangeText={(name) =>
+        value={name}
+        editable={!busy}
+        onChangeText={(value) => {
+          setName(value);
           patch((q) => {
-            q.name = name;
-          })
-        }
+            q.name = value;
+          });
+        }}
       />
       <Text>已选 {q.selected.length} 条记录</Text>
       <Button title="返回调整内容" onPress={() => navigation.goBack()} />
@@ -491,7 +513,11 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
         onPress={() => {
           setBusy(true);
           void store
-            .change((s) => finishSelection(s, q.id, newId(), newId, now()))
+            .change((s) => {
+              const session = s.selections[q.id];
+              if (session) session.name = name;
+              return finishSelection(s, q.id, newId(), newId, now());
+            })
             .then((album) => {
               navigation.popTo("Home");
               navigation.navigate("Album", { id: album.id });

@@ -30,7 +30,7 @@ export function Settings() {
     nav = useNav(),
     s = useStyles();
   return (
-    <Page scroll={false}>
+    <Page scroll={false} top>
       <View style={[s.content, { flex: 1 }]}>
         <Text style={s.title}>我的</Text>
         <Text style={s.muted}>
