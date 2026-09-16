@@ -53,6 +53,11 @@ export function Settings() {
             onPress={() => nav.navigate("Backup")}
           />
           <Button
+            title="AI 设置"
+            icon="settings"
+            onPress={() => nav.navigate("AISettings")}
+          />
+          <Button
             title="外观设置"
             icon="settings"
             onPress={() => nav.navigate("Appearance")}

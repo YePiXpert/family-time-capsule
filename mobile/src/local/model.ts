@@ -1,3 +1,5 @@
+import type { AIJob, AIProposal } from "../ai/types";
+import { validateStoredAI } from "../ai/state";
 /** Device-owned data. No account identity or transport state belongs here. */
 export type PhotoMetadata = {
   /** Camera-local wall time, without timezone conversion, to preserve the photographed day. */
@@ -41,6 +43,8 @@ export type RecordDraft = {
   groupPhotosByDay?: boolean;
   manualLocation?: boolean;
   photoEvents?: RecordContent[];
+  aiJob?: AIJob;
+  aiProposal?: AIProposal;
 };
 export type LocalAlbum = {
   id: string;
@@ -306,6 +310,8 @@ export function validateLibrary(value: unknown): asserts value is Library {
     if (
       key !== d.id ||
       !content(d.content) ||
+      !validateStoredAI(d.aiJob) ||
+      !validateStoredAI(d.aiProposal) ||
       (d.autoDate !== undefined && typeof d.autoDate !== "boolean") ||
       (d.groupPhotosByDay !== undefined &&
         typeof d.groupPhotosByDay !== "boolean") ||

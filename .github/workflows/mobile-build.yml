@@ -134,9 +134,7 @@ jobs:
           echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND'
           echo "$MANIFEST_REPORT" | grep -F 'android.intent.action.SEND_MULTIPLE'
           echo "$MANIFEST_REPORT" | grep -F 'application/pdf'
-          if echo "$MANIFEST_REPORT" | grep -F 'android.permission.INTERNET'; then
-            echo 'Release app must not request internet access'; exit 1
-          fi
+          echo "$MANIFEST_REPORT" | grep -F 'android.permission.INTERNET'
           unzip -l "$APK" | grep -F 'assets/index.android.bundle'
       - name: Enable KVM for Android verification
         run: |

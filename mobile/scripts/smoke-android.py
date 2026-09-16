@@ -46,8 +46,9 @@ try:
     tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')
     restart();tap('tab-albums');tap('Our days');find('album-reading')
     restart();adb('shell','wm','size','320x720');shot('home-320')
-    tap('tab-profile');tap('外观设置');tap('深色');shot('dark-320')
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,widths=[320,390])
+    tap('tab-profile');tap('AI 设置');find('加入 AI 服务');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
+    tap('外观设置');tap('深色');shot('dark-320')
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')

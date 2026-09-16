@@ -8,10 +8,11 @@ services:
       - "10.66.66.2:${APP_PORT:-3140}:3000"
     environment:
       SOURCE_SHA: ${SOURCE_SHA}
-      CPA_BASE_URL: http://10.66.66.2:8317/v1
+      CPA_BASE_URL: http://cli-proxy-api:8317/v1
     volumes:
       - ${AI_DATA_DIR:?Set AI_DATA_DIR}:/data
       - ${CPA_KEY_PATH:?Set CPA_KEY_PATH}:/run/secrets/cpa-key:ro
+    networks: [default, cpa]
     read_only: true
     tmpfs:
       - /tmp:size=32m
@@ -29,3 +30,8 @@ services:
       options:
         max-size: 5m
         max-file: "3"
+
+networks:
+  cpa:
+    external: true
+    name: shared-services
