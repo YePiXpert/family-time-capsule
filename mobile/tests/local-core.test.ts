@@ -95,6 +95,47 @@ describe("device record lifecycle", () => {
     expect(referencedMedia(s).has("photo")).toBe(true);
     validateLibrary(s);
   });
+  it.each(["edit", "delete"])(
+    "clears unavailable album and selection covers on %s without deleting originals",
+    (operation) => {
+      const s = fixture();
+      saveRecord(s, "draft", "r", date);
+      s.albums.a = {
+        id: "a",
+        name: "Album",
+        items: [{ id: "i", recordId: "r" }],
+        coverId: "photo",
+        updatedAt: date,
+      };
+      s.selections.q = {
+        id: "q",
+        albumId: null,
+        selected: ["r"],
+        name: "Draft album",
+        month: "",
+        offset: 42,
+        coverId: "photo",
+      };
+      if (operation === "delete") deleteRecord(s, "r");
+      else {
+        s.drafts.edit = {
+          id: "edit",
+          recordId: "r",
+          baseRevision: 1,
+          content: { ...clone(s.records.r!), mediaIds: [], coverId: null },
+          updatedAt: date,
+        };
+        saveRecord(s, "edit", "unused", date);
+        expect(s.albums.a.items).toHaveLength(1);
+        expect(s.records.r!.revision).toBe(2);
+      }
+      expect(s.albums.a.coverId).toBeNull();
+      expect(s.selections.q.coverId).toBeNull();
+      expect(s.selections.q.name).toBe("Draft album");
+      expect(s.media.photo).toBeDefined();
+      validateLibrary(s);
+    },
+  );
   it("protects media used only in an unfinished draft or avatar", () => {
     const s = fixture();
     expect(referencedMedia(s).has("photo")).toBe(true);

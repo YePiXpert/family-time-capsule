@@ -139,6 +139,7 @@ export function saveRecord(
   };
   s.records[id] = r;
   delete s.drafts[draftId];
+  clearUnavailableCovers(s);
   return r;
 }
 export function deleteRecord(s: Library, id: string): void {
@@ -147,6 +148,13 @@ export function deleteRecord(s: Library, id: string): void {
     if (d.recordId === id) delete s.drafts[key];
   for (const album of Object.values(s.albums)) {
     album.items = album.items.filter((i) => i.recordId !== id);
+  }
+  for (const selection of Object.values(s.selections))
+    selection.selected = selection.selected.filter((x) => x !== id);
+  clearUnavailableCovers(s);
+}
+function clearUnavailableCovers(s: Library): void {
+  for (const album of Object.values(s.albums))
     if (
       album.coverId &&
       !album.items.some((i) =>
@@ -154,9 +162,14 @@ export function deleteRecord(s: Library, id: string): void {
       )
     )
       album.coverId = null;
-  }
   for (const selection of Object.values(s.selections))
-    selection.selected = selection.selected.filter((x) => x !== id);
+    if (
+      selection.coverId &&
+      !selection.selected.some((id) =>
+        s.records[id]?.mediaIds.includes(selection.coverId!),
+      )
+    )
+      selection.coverId = null;
 }
 export function finishSelection(
   s: Library,
