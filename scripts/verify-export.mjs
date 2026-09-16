@@ -117,7 +117,7 @@ const bookGraph = hasBooks ? await Promise.all(BOOK_FILES.map(name=>readJsonAsyn
 const hasNameReviews = await zipEntryExists("name-reviews.json");
 if (manifest.modules?.nameReviews !== undefined && (manifest.modules.nameReviews !== 1 || !hasNameReviews)) fail("声明的名称审核模块缺失或不支持");
 const hasDrafts = await zipEntryExists("drafts.json");
-if (manifest.modules?.drafts !== undefined && (manifest.modules.drafts !== 1 || !hasDrafts)) fail("声明的草稿模块缺失或不支持");
+if (manifest.modules?.drafts !== undefined && (![1, 2].includes(manifest.modules.drafts) || !hasDrafts)) fail("声明的草稿模块缺失或不支持");
 const hasAssetDeletions = await zipEntryExists("asset-deletions.json");
 if (manifest.modules?.assetDeletions !== undefined && (manifest.modules.assetDeletions !== 1 || !hasAssetDeletions)) fail("声明的原件删除记录缺失或不支持");
 const expectedNonAssetCount =
@@ -174,8 +174,13 @@ if (hasDrafts) {
   try {
     if (!Array.isArray(drafts)) throw new Error();
     for (const row of drafts) {
-      if (!row || typeof row.id !== "string" || ids.has(row.id) || Object.hasOwn(row, "authorUserId") || Object.hasOwn(row, "familyId") || !["editing", "published", "discarded"].includes(row.status) || !["family", "members", "private"].includes(row.visibility)) throw new Error();
-      ids.add(row.id); intakeDraftIds.add(row.id);
+      if (!row || typeof row.id !== "string" || ids.has(row.id) || Object.hasOwn(row, "authorUserId") || Object.hasOwn(row, "familyId") || !["editing", "published", "discarded", "applied"].includes(row.status) || !["family", "members", "private"].includes(row.visibility)) throw new Error();
+      ids.add(row.id);
+      const purpose = row.purpose ?? "capture";
+      if (!["capture", "memory_edit"].includes(purpose) || (manifest.modules?.drafts !== 2 && (purpose !== "capture" || row.editTargetMemoryId))) throw new Error();
+      if (purpose === "memory_edit") {
+        if (!["editing", "applied", "discarded"].includes(row.status) || row.visibility !== "private" || row.readerUserIds?.length || row.inboxItemId !== null || row.memoryEventId !== null || (row.editTargetMemoryId === null ? row.status !== "discarded" : !eventIds.has(row.editTargetMemoryId))) throw new Error();
+      } else { if (row.status === "applied" || row.editTargetMemoryId) throw new Error(); intakeDraftIds.add(row.id); }
       if ((row.authorPersonId !== null && !personIds.has(row.authorPersonId)) || (row.inboxItemId !== null && !inboxItemIds.has(row.inboxItemId)) || (row.memoryEventId !== null && (!eventIds.has(row.memoryEventId) || row.status !== "published"))) throw new Error();
       if (!Array.isArray(row.participantIds) || row.participantIds.some(id => !personIds.has(id)) || !Array.isArray(row.items)) throw new Error();
       validateLivePhotoReferences(row.items);

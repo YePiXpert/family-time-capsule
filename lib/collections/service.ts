@@ -23,10 +23,11 @@ import type {
   CollectionPage,
 } from "@/mobile/src/collections/types";
 import { CollectionError, validateCollectionEdit } from "./validation";
+import { isUnappliedEditOriginal } from "@/lib/drafts/staging";
 export { CollectionError } from "./validation";
 
 /** Run inside the same SQLite transaction as mutations; stale contexts fail closed. */
-function authorize(context: FamilyContext, write = false) {
+export function authorizeCollection(context: FamilyContext, write = false) {
   if (
     !hasFamilyCapability(context.role, write ? "event:write" : "archive:view")
   )
@@ -38,6 +39,7 @@ function authorize(context: FamilyContext, write = false) {
     and f.timezone=${context.familyTimezone} and f.child_later_unlock_age=${context.childLaterUnlockAge}`);
   if (!row) throw new CollectionError("forbidden", 403);
 }
+const authorize = authorizeCollection;
 function find(context: FamilyContext, id: string) {
   const row = getDb()
     .select()
@@ -260,6 +262,7 @@ export function listCollections(
       kind: row.kind as CollectionEdit["kind"],
       description: row.description,
       count: counts.find((c) => c.id === row.id)?.count ?? 0,
+      updatedAt: row.updatedAt.toISOString(),
       coverAssetId: covers.find((c) => c.id === row.id)?.assetId ?? null,
       revision: row.revision,
       deletedAt: row.deletedAt?.toISOString() ?? null,
@@ -315,6 +318,7 @@ export function saveCollection(
       if (item.assetId) {
         const original = tx.select({ id: asset.id }).from(asset).where(and(eq(asset.id, item.assetId), eq(asset.familyId, context.familyId), isNull(asset.originalAssetId), readableAssetPredicate(createContributionAccessSnapshot(context), sql`${asset.id}`))).get();
         const retained = previous.some(p => p.id === item.id && p.assetId === item.assetId);
+        if (!retained && isUnappliedEditOriginal(tx, context.familyId, item.assetId)) throw new CollectionError("source_unavailable", 404);
         if (!original && !retained) throw new CollectionError("source_unavailable", 404);
         continue;
       }

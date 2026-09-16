@@ -19,6 +19,7 @@ import { createContributionAccessSnapshot, getContributionAssetAccessInTransacti
 import { indexMemoryEvent, indexDocumentAssetsForEvent } from "@/lib/search/service";
 import { isDraftDateComplete, parseDraftContent, type Draft, type DraftContent } from "./model";
 import { inferCaptureTime } from "./capture-time";
+import { canStageMemoryEdit, isUnappliedEditOriginal, type DraftPurposeInput } from "./staging";
 
 export class DraftError extends Error {
   constructor(readonly code: string, readonly status = 400) { super(code); }
@@ -37,12 +38,12 @@ function hydrate(tx: ContributionAccessTransaction, row: typeof draft.$inferSele
   const items = tx.select().from(draftItem).where(eq(draftItem.draftId, row.id)).orderBy(asc(draftItem.sortOrder)).all();
   let readerUserIds: string[] = [];
   try { readerUserIds = JSON.parse(row.readerUserIdsJson ?? "[]") as string[]; } catch { readerUserIds = []; }
-  return { ...parseDraftContent({ ...row, participantIds: JSON.parse(row.participantIdsJson), readerUserIds, items: items.map(item => ({ ...item, ...(!item.assetId && !item.localCaptureRef ? { preservationState: "missing" } : {}) })) }), id: row.id, revision: row.revision, mutationId: row.mutationId, status: row.status as Draft["status"], memoryEventId: row.memoryEventId, createdAt: row.createdAt, updatedAt: row.updatedAt };
+  return { ...parseDraftContent({ ...row, milestoneType: row.milestoneType ?? undefined, participantIds: JSON.parse(row.participantIdsJson), readerUserIds, items: items.map(item => ({ ...item, ...(!item.assetId && !item.localCaptureRef ? { preservationState: "missing" } : {}) })) }), ...(row.purpose === "memory_edit" ? { purpose: row.purpose, editTargetMemoryId: row.editTargetMemoryId } : {}), id: row.id, revision: row.revision, mutationId: row.mutationId, status: row.status as Draft["status"], memoryEventId: row.memoryEventId, createdAt: row.createdAt, updatedAt: row.updatedAt };
 }
 export function listDrafts(context: FamilyContext): Draft[] {
   return getDb().transaction(tx => {
     assertActor(tx, context);
-    return tx.select().from(draft).where(and(eq(draft.familyId, context.familyId), authorship(context), eq(draft.status, "editing"))).orderBy(desc(draft.updatedAt)).all().map(row => hydrate(tx, row));
+    return tx.select().from(draft).where(and(eq(draft.familyId, context.familyId), authorship(context), eq(draft.status, "editing"), eq(draft.purpose, "capture"))).orderBy(desc(draft.updatedAt)).all().map(row => hydrate(tx, row));
   });
 }
 /** Reader selection is not account administration. Return only public display names and User IDs. */
@@ -59,6 +60,7 @@ export function getDraft(context: FamilyContext, id: string): Draft {
     assertActor(tx, context);
     const row = tx.select().from(draft).where(owned(context, id)).get();
     if (!row) throw new DraftError("not_found", 404);
+    if (row.purpose === "memory_edit" && !canStageMemoryEdit(tx, context, row.editTargetMemoryId)) throw new DraftError("not_found", 404);
     return hydrate(tx, row);
   });
 }
@@ -76,20 +78,34 @@ function validateReferences(tx: ContributionAccessTransaction, context: FamilyCo
       const original = tx.select().from(asset).where(and(eq(asset.id, item.assetId), eq(asset.familyId, context.familyId), isNull(asset.originalAssetId))).get();
       if (original && item.livePhotoRole && original.type !== item.livePhotoRole) throw new DraftError("invalid_live_photo");
       if (!original || !getContributionAssetAccessInTransaction(tx, snapshot, item.assetId).readable) throw new DraftError("asset_unavailable", 403);
-      if (!canManageOriginalInTransaction(tx, context, original)) throw new DraftError("asset_reshare_forbidden", 403);
+      if (isUnappliedEditOriginal(tx, context.familyId, original.id) || !canManageOriginalInTransaction(tx, context, original)) throw new DraftError("asset_reshare_forbidden", 403);
     }
     const existing = tx.select({ draftId: draftItem.draftId }).from(draftItem).where(eq(draftItem.id, item.id)).get();
     if (existing && existing.draftId !== draftId) throw new DraftError("item_conflict", 409);
   }
 }
-export function saveDraft(context: FamilyContext, id: string, expectedRevision: number, mutationId: string, value: unknown): Draft {
+export function saveDraft(context: FamilyContext, id: string, expectedRevision: number, mutationId: string, value: unknown, options: DraftPurposeInput = {}): Draft {
   let content: DraftContent;
   try { content = parseDraftContent(value); } catch { throw new DraftError("invalid_draft"); }
   if (typeof id !== "string" || typeof mutationId !== "string" || !/^[\w-]{1,128}$/u.test(id) || !/^[\w-]{1,128}$/u.test(mutationId) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new DraftError("invalid_draft");
+  const purpose = options.purpose ?? "capture";
+  const target = options.editTargetMemoryId ?? null;
+  if (!["capture", "memory_edit"].includes(String(purpose)) ||
+    (purpose === "capture" ? target !== null : typeof target !== "string" || !/^[\w-]{1,128}$/u.test(target)) ||
+    (purpose === "memory_edit" && (content.visibility !== "private" || content.readerUserIds.length))) throw new DraftError("invalid_draft");
   return getDb().transaction(tx => {
     assertActor(tx, context);
     const current = tx.select().from(draft).where(eq(draft.id, id)).get();
     if (current && (current.familyId !== context.familyId || (current.authorUserId !== context.userId && !(current.authorUserId === null && context.personId && current.authorPersonId === context.personId)))) throw new DraftError("not_found", 404);
+    if (current && (current.purpose !== purpose || current.editTargetMemoryId !== target)) throw new DraftError("draft_purpose_conflict", 409);
+    if (purpose === "memory_edit") {
+      if (!canStageMemoryEdit(tx, context, target as string)) throw new DraftError("not_found", 404);
+      if (current) {
+        if (current.status !== "editing") throw new DraftError("draft_closed", 409);
+        if (expectedRevision !== current.revision - 1 || current.mutationId !== mutationId || JSON.stringify({ ...parseDraftContent(hydrate(tx, current)), milestoneType: current.milestoneType ?? null }) !== JSON.stringify({ ...content, milestoneType: content.milestoneType ?? null })) throw new DraftError("draft_immutable", 409);
+        return hydrate(tx, current);
+      }
+    }
     if (current?.mutationId === mutationId) return hydrate(tx, current);
     if (current && current.status !== "editing") throw new DraftError("draft_closed", 409);
     if ((current?.revision ?? 0) !== expectedRevision) throw new DraftError("revision_conflict", 409);
@@ -104,9 +120,9 @@ export function saveDraft(context: FamilyContext, id: string, expectedRevision: 
     }
     validateReferences(tx, context, content, id);
     const now = new Date().toISOString();
-    const fields = { authorUserId: context.userId, authorPersonId: context.personId, authorName: context.userName, title: content.title, text: content.text, occurredAt: content.occurredAt, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText, participantIdsJson: JSON.stringify(content.participantIds), visibility: content.visibility, readerUserIdsJson: JSON.stringify(content.readerUserIds), coverItemId: content.coverItemId, revision: expectedRevision + 1, mutationId, updatedAt: now };
+    const fields = { authorUserId: context.userId, authorPersonId: context.personId, authorName: context.userName, title: content.title, text: content.text, milestoneType: content.milestoneType === undefined ? current?.milestoneType ?? null : content.milestoneType, occurredAt: content.occurredAt, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText, participantIdsJson: JSON.stringify(content.participantIds), visibility: content.visibility, readerUserIdsJson: JSON.stringify(content.readerUserIds), coverItemId: content.coverItemId, revision: expectedRevision + 1, mutationId, updatedAt: now };
     if (current) tx.update(draft).set(fields).where(owned(context, id)).run();
-    else tx.insert(draft).values({ ...fields, id, familyId: context.familyId, authorUserId: context.userId, createdAt: now }).run();
+    else tx.insert(draft).values({ ...fields, id, purpose: purpose as string, editTargetMemoryId: target as string | null, familyId: context.familyId, authorUserId: context.userId, createdAt: now }).run();
     tx.delete(draftItem).where(eq(draftItem.draftId, id)).run();
     if (current?.inboxItemId) {
       if (content.visibility !== "family") throw new DraftError("already_shared", 409);
@@ -134,6 +150,7 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     assertActor(tx, context, true);
     const row = tx.select().from(draft).where(owned(context, id)).get();
     if (!row) throw new DraftError("not_found", 404);
+    if (row.purpose !== "capture") throw new DraftError("draft_purpose_conflict", 409);
     if (row.status === "published") return hydrate(tx, row);
     if (row.status !== "editing" || row.revision !== expectedRevision) throw new DraftError("revision_conflict", 409);
     const content = hydrate(tx, row);
@@ -164,7 +181,7 @@ export function publishDraft(context: FamilyContext, id: string, expectedRevisio
     const beforeBirth = defaultChild?.birthDate && precisionHasDay(content.occurredAtPrecision) && calendarDate(anchor, context.familyTimezone) < defaultChild.birthDate;
     const child = selectedChildren.length === 1 ? selectedChildren[0]! : content.participantIds.length || beforeBirth ? null : defaultChild;
     const ageDays = child?.birthDate && precisionHasDay(content.occurredAtPrecision) ? computeAgeDays(child.birthDate, anchor, context.familyTimezone) : null;
-    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, bodyText: content.text, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: child?.id ?? null, ageDays, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
+    tx.insert(memoryEvent).values({ id: eventId, familyId: context.familyId, title, bodyText: content.text, milestoneType: content.milestoneType ?? null, titleSource: content.title.trim() ? "manual" : "rule_generated", childPersonId: child?.id ?? null, ageDays, occurredAt: anchor, occurredAtPrecision: content.occurredAtPrecision, locationText: content.locationText || null, coverAssetId, visibility: content.visibility, createdByUserId: context.userId, lastEditedByUserId: context.userId, createdAt: now, updatedAt: now }).run();
     for (const [sortOrder, item] of content.items.entries()) tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder, caption: item.caption, livePhotoGroupId: item.livePhotoGroupId, livePhotoRole: item.livePhotoRole, createdAt: now }).run();
     for (const personId of new Set([...content.participantIds, ...(child ? [child.id] : [])])) tx.insert(memoryEventParticipant).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, personId, createdAt: now }).run();
     if (content.visibility === "members") {
@@ -210,6 +227,7 @@ export function submitDraftForReview(context: FamilyContext, id: string, expecte
     assertActor(tx, context);
     const row = tx.select().from(draft).where(owned(context, id)).get();
     if (!row) throw new DraftError("not_found", 404);
+    if (row.purpose !== "capture") throw new DraftError("draft_purpose_conflict", 409);
     if (row.status !== "editing" || row.revision !== expectedRevision) throw new DraftError("revision_conflict", 409);
     const content = hydrate(tx, row);
     validateReferences(tx, context, content, id);

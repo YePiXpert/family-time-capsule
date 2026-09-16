@@ -17,6 +17,7 @@ export type DraftVisibility = "family" | "members" | "private";
 export type DraftContent = {
   title: string;
   text: string;
+  milestoneType?: "first_time" | null;
   /**
    * UTC 锚点（排序/分组用）。按 §6：month/year 精度锚点为该期首日；
    * unknown 精度为 null（服务端用创建时刻做内部锚点，永不显示为发生时间）。
@@ -97,7 +98,8 @@ export function parseDraftContent(value: unknown): DraftContent {
       : invalid();
   if (new Set(readerUserIds).size !== readerUserIds.length) return invalid();
   if (visibility !== "members" && readerUserIds.length > 0) return invalid();
-  return { title: string(v.title, 100), text: string(v.text, 5000), occurredAt, occurredAtPrecision: v.occurredAtPrecision as DraftContent["occurredAtPrecision"], locationText: string(v.locationText, 200), participantIds, visibility, readerUserIds, coverItemId, items };
+  if (v.milestoneType !== undefined && v.milestoneType !== null && v.milestoneType !== "first_time") return invalid();
+  return { ...(v.milestoneType !== undefined ? { milestoneType: v.milestoneType as "first_time" | null } : {}), title: string(v.title, 100), text: string(v.text, 5000), occurredAt, occurredAtPrecision: v.occurredAtPrecision as DraftContent["occurredAtPrecision"], locationText: string(v.locationText, 200), participantIds, visibility, readerUserIds, coverItemId, items };
 }
 
 /** Relationship is explicit; missing originals retain both placeholders but cannot publish. */

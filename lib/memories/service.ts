@@ -1,4 +1,6 @@
 import { assertMemoryShareSources, attachMemoryCoverInTransaction, MemoryShareSourceError } from "./share-access";
+import { MemoryEditStagingError, parseAppendItems, validateEditStaging } from "./edit-staging";
+import type { DraftItem } from "@/lib/drafts/model";
 import { isOccurredAtPrecision, precisionHasDay, precisionLevel } from "@/lib/metadata/precision";
 import { InvalidUserBindingError } from "@/lib/family/service";
 import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
@@ -124,11 +126,16 @@ export type EditMemoryEventPatch = {
   childPersonId?: string | null;
   milestoneType?: MilestoneType | null;
   isPinned?: boolean;
+  visibility?: EventVisibility;
+  readerUserIds?: string[];
+  editDraftId?: string;
+  editDraftRevision?: number;
+  appendItems?: DraftItem[];
 };
 
 export type EditResult =
-  | { ok: true; event: MemoryEventRow }
-  | { ok: false; error: "not_found" | "invalid" | "bad_person" | "bad_cover" | "conflict" };
+  | { ok: true; event: MemoryEventRow; mutationReceipt?: { mutationId: string; resultRevision: number; replayed: boolean } }
+  | { ok: false; error: "not_found" | "invalid" | "bad_person" | "bad_cover" | "conflict" | "invalid_reader" | "source_reshare_forbidden" | "bad_asset" | "edit_draft_conflict" | "asset_reshare_forbidden" };
 
 export async function updateMemoryEvent(
   familyId: string,
@@ -148,17 +155,33 @@ export async function updateMemoryEvent(
   const snapshot = createEventAccessSnapshot(context);
   if (patch.expectedTitleRevision !== undefined && (!Number.isSafeInteger(patch.expectedTitleRevision) || patch.expectedTitleRevision < 0)) return { ok: false, error: "invalid" };
   if (patch.mutationId !== undefined && (!/^[\w-]{1,128}$/u.test(patch.mutationId) || patch.expectedTitleRevision === undefined)) return { ok: false, error: "invalid" };
+  let appendItems: DraftItem[] | undefined;
+  if (patch.appendItems !== undefined || patch.editDraftId !== undefined || patch.editDraftRevision !== undefined) {
+    if (!patch.mutationId || typeof patch.editDraftId !== "string" || !/^[\w-]{1,128}$/u.test(patch.editDraftId) ||
+      !Number.isSafeInteger(patch.editDraftRevision) || Number(patch.editDraftRevision) < 1) return { ok: false, error: "invalid" };
+    try { appendItems = parseAppendItems(patch.appendItems); } catch { return { ok: false, error: "invalid" }; }
+  }
+  if (patch.visibility !== undefined && !isEventVisibility(patch.visibility)) return { ok: false, error: "invalid" };
+  if (patch.readerUserIds !== undefined && (!Array.isArray(patch.readerUserIds) || patch.readerUserIds.length > 20 || patch.readerUserIds.some(id => typeof id !== "string" || !/^[\w-]{1,128}$/u.test(id)))) return { ok: false, error: "invalid_reader" };
   const requestHash = createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(patch).sort(([a], [b]) => a.localeCompare(b))))).digest("hex");
-  return getDb().transaction((tx): EditResult => {
-    if (!canManageEventVisibilityInTransaction(tx, snapshot, eventId)) return { ok: false, error: "not_found" };
+  try { return getDb().transaction((tx): EditResult => {
+    if (!tx.select({ id: userTable.id }).from(userTable).where(and(eq(userTable.id, editorUserId), eq(userTable.familyId, familyId), eq(userTable.role, principal.role), isNull(userTable.disabledAt))).get() || !canManageEventVisibilityInTransaction(tx, snapshot, eventId)) return { ok: false, error: "not_found" };
     const current = tx.select().from(memoryEvent).where(and(eq(memoryEvent.id, eventId), eq(memoryEvent.familyId, familyId), isNull(memoryEvent.deletedAt))).get();
     if (!current) return { ok: false, error: "not_found" };
     if (patch.mutationId) {
       const receipt = tx.select().from(memoryMutation).where(and(eq(memoryMutation.familyId, familyId), eq(memoryMutation.actorUserId, editorUserId), eq(memoryMutation.mutationId, patch.mutationId))).get();
-      if (receipt) return receipt.memoryEventId === eventId && receipt.operation === "edit" && receipt.requestHash === requestHash && receipt.resultRevision === current.titleRevision
-        ? { ok: true, event: current } : { ok: false, error: "conflict" };
+      if (receipt) return receipt.memoryEventId === eventId && receipt.operation === "edit" && receipt.requestHash === requestHash
+        ? { ok: true, event: current, mutationReceipt: { mutationId: patch.mutationId, resultRevision: receipt.resultRevision, replayed: true } } : { ok: false, error: "conflict" };
     }
     if (patch.expectedTitleRevision !== undefined && patch.expectedTitleRevision !== current.titleRevision) return { ok: false, error: "conflict" };
+    const stage = appendItems ? validateEditStaging(tx, context, eventId, patch.editDraftId!, patch.editDraftRevision!, appendItems) : null;
+    const previousReaders = tx.select({ id: memoryEventReader.userId }).from(memoryEventReader).where(and(eq(memoryEventReader.familyId, familyId), eq(memoryEventReader.memoryEventId, eventId))).all().map(row => row.id);
+    const visibility = patch.visibility ?? current.visibility;
+    const readers = [...new Set(patch.readerUserIds ?? (patch.visibility !== undefined && patch.visibility !== "members" ? [] : previousReaders))].sort();
+    if (!isEventVisibility(visibility) || (visibility === "members" ? !readers.length : readers.length > 0) || (visibility !== "family" && !current.createdByUserId)) return { ok: false, error: "invalid_reader" };
+    if (readers.length && tx.select({ id: userTable.id }).from(userTable).where(and(eq(userTable.familyId, familyId), inArray(userTable.id, readers), isNull(userTable.disabledAt))).all().length !== readers.length) return { ok: false, error: "invalid_reader" };
+    const addedReaders = readers.filter(id => id !== current.createdByUserId && !previousReaders.includes(id));
+    const widening = current.visibility !== "family" && (visibility === "family" || (visibility === "members" && addedReaders.length > 0));
     const title = patch.title === undefined ? current.title : patch.title.trim();
     const bodyText = patch.bodyText ?? current.bodyText;
     if (!title || title.length > 100 || bodyText.length > 100_000) return { ok: false, error: "invalid" };
@@ -183,26 +206,47 @@ export async function updateMemoryEvent(
     if (coverAssetId && patch.coverAssetId !== undefined) {
       const cover = tx.select().from(assetTable).where(and(eq(assetTable.id, coverAssetId), eq(assetTable.familyId, familyId), readableAssetPredicate(createContributionAccessSnapshot(context), sql`${coverAssetId}`))).get();
       if (!cover || (coverAssetId !== current.coverAssetId && !canManageOriginalInTransaction(tx, context, cover))) return { ok: false, error: "bad_cover" };
-      if (coverAssetId !== current.coverAssetId && !attachMemoryCoverInTransaction(tx, context, eventId, coverAssetId)) return { ok: false, error: "bad_cover" };
+      if (coverAssetId !== current.coverAssetId && !appendItems?.some(item => item.assetId === coverAssetId) && !attachMemoryCoverInTransaction(tx, context, eventId, coverAssetId)) return { ok: false, error: "bad_cover" };
     }
     const family = tx.select().from(familyTable).where(eq(familyTable.id, familyId)).get();
     const ageDays = precisionHasDay(precision) && child?.birthDate ? computeAgeDays(child.birthDate, occurredAt, family?.timezone ?? "UTC") : null;
     const now = new Date();
     tx.insert(memoryEventRevision).values({ id: randomUUID(), familyId, memoryEventId: eventId, editedByUserId: editorUserId,
-      snapshotJson: JSON.stringify({ ...current, participantPersonIds: participantIdsBefore }), createdAt: now }).run();
+      snapshotJson: JSON.stringify({ ...current, participantPersonIds: participantIdsBefore, readerUserIds: previousReaders }), createdAt: now }).run();
     const event = tx.update(memoryEvent).set({ title, bodyText, titleSource: patch.title !== undefined ? "manual" : current.titleSource,
       titleRevision: current.titleRevision + 1, occurredAt, occurredAtPrecision: precision, locationText, coverAssetId, childPersonId,
-      milestoneType, isPinned: patch.isPinned ?? current.isPinned, ageDays, lastEditedByUserId: editorUserId, updatedAt: now,
+      milestoneType, isPinned: patch.isPinned ?? current.isPinned, ageDays, visibility, lastEditedByUserId: editorUserId, updatedAt: now,
     }).where(eq(memoryEvent.id, eventId)).returning().get();
     if (patch.participantPersonIds !== undefined) {
       tx.delete(memoryEventParticipant).where(eq(memoryEventParticipant.memoryEventId, eventId)).run();
       if (participantIds.length) tx.insert(memoryEventParticipant).values(participantIds.map(personId => ({ id: randomUUID(), memoryEventId: eventId, personId, familyId, createdAt: now }))).run();
     }
+    if (patch.visibility !== undefined || patch.readerUserIds !== undefined) {
+      tx.delete(memoryEventReader).where(eq(memoryEventReader.memoryEventId, eventId)).run();
+      if (readers.length) tx.insert(memoryEventReader).values(readers.map(userId => ({ id: randomUUID(), familyId, memoryEventId: eventId, userId, createdAt: now }))).run();
+    }
+    if (appendItems?.length) {
+      const last = tx.select({ order: sql<number>`coalesce(max(${memoryEventAsset.sortOrder}), -1)` }).from(memoryEventAsset).where(eq(memoryEventAsset.memoryEventId, eventId)).get();
+      for (const [index, item] of appendItems.entries()) {
+        tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId, memoryEventId: eventId, assetId: item.assetId!, sortOrder: (last?.order ?? -1) + index + 1, caption: item.caption, livePhotoGroupId: item.livePhotoGroupId, livePhotoRole: item.livePhotoRole, createdAt: now }).run();
+      }
+    }
+    if (widening) assertMemoryShareSources(tx, context, event, visibility, addedReaders);
+    if (stage) {
+      tx.delete(draftItem).where(eq(draftItem.draftId, stage.id)).run();
+      tx.update(draft).set({ status: "applied", coverItemId: null, revision: stage.revision + 1, updatedAt: now.toISOString() }).where(eq(draft.id, stage.id)).run();
+    }
     if (patch.mutationId) tx.insert(memoryMutation).values({ id: randomUUID(), familyId, memoryEventId: eventId, actorUserId: editorUserId,
       mutationId: patch.mutationId, operation: "edit", requestHash, resultRevision: event.titleRevision, createdAt: now }).run();
     indexMemoryEvent(event);
-    return { ok: true, event };
-  }, { behavior: "immediate" });
+    indexDocumentAssetsForEvent(familyId, eventId, appendItems?.flatMap(item => item.assetId ? [item.assetId] : []) ?? []);
+    return { ok: true, event, ...(patch.mutationId ? { mutationReceipt: { mutationId: patch.mutationId, resultRevision: event.titleRevision, replayed: false } } : {}) };
+  }, { behavior: "immediate" }); }
+  catch (error) {
+    if (error instanceof MemoryShareSourceError) return { ok: false, error: "source_reshare_forbidden" };
+    if (error instanceof MemoryEditStagingError) return { ok: false, error: error.code };
+    throw error;
+  }
 }
 
 /** occurredAt 默认值：最早的可信 capturedAt；全都没有时用最早 importedAt */
@@ -403,6 +447,7 @@ export async function confirmInboxEntry(
         childPersonId,
         title,
         bodyText: current.rawText ?? "",
+        milestoneType: latestDraft?.milestoneType ?? null,
         titleSource: title !== fallbackTitle ? "manual" : entry.item.draftTitle ? entry.item.titleSource : "rule_generated",
         occurredAt,
         occurredAtPrecision: precision,

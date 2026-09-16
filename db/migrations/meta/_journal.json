@@ -519,6 +519,20 @@
       "when": 1788939344016,
       "tag": "0073_simplify_product",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1788939344017,
+      "tag": "0074_memory_edit_staging",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1788939344018,
+      "tag": "0075_collection_sync",
+      "breakpoints": true
     }
   ]
 }

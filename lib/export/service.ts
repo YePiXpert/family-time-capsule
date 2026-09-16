@@ -247,7 +247,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
     factSources = factSources.filter(row => factIds.has(row.factId));
     tags = tags.filter(row => readableEvents.has(row.memoryEventId));
     const ownDrafts = new Set(db.select({ id: draftTable.id }).from(draftTable).where(and(eq(draftTable.familyId, familyId), or(eq(draftTable.authorUserId, context.userId), context.personId ? and(isNull(draftTable.authorUserId), eq(draftTable.authorPersonId, context.personId)) : undefined))).all().map(r => r.id));
-    draftArchive = draftArchive.filter(row => ownDrafts.has(row.id) && row.items.every(item => !item.assetId || readableAssets.has(item.assetId))).map(row => ({ ...row, memoryEventId: row.memoryEventId && readableEvents.has(row.memoryEventId) ? row.memoryEventId : null }));
+    draftArchive = draftArchive.filter(row => ownDrafts.has(row.id) && row.items.every(item => !item.assetId || readableAssets.has(item.assetId))).map(row => ({ ...row, ...(row.purpose === "memory_edit" && (!row.editTargetMemoryId || !readableEvents.has(row.editTargetMemoryId)) ? { editTargetMemoryId: null, status: "discarded" as const } : {}), memoryEventId: row.memoryEventId && readableEvents.has(row.memoryEventId) ? row.memoryEventId : null }));
     inboxItems = inboxItems.filter(row => (!row.memoryEventId || readableEvents.has(row.memoryEventId)) && inboxItemAssets.filter(l => l.inboxItemId === row.id).every(l => readableAssets.has(l.assetId)));
     const inboxIds = new Set(inboxItems.map(i => i.id));
     draftArchive = draftArchive.map(row => ({ ...row, inboxItemId: row.inboxItemId && inboxIds.has(row.inboxItemId) ? row.inboxItemId : null }));
@@ -502,7 +502,7 @@ async function buildExport(familyId: string, opts: { actorUserId?: string | null
 
   const manifest = {
     exportVersion: EXPORT_VERSION,
-    modules: { collections: 1, bookProjects: 1, nameReviews: 1, drafts: 1, assetDeletions: 1 },
+    modules: { collections: 1, bookProjects: 1, nameReviews: 1, drafts: 2, assetDeletions: 1 },
     appVersion: getAppVersion(),
     exportedAt: new Date().toISOString(),
     familyId,

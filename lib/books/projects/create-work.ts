@@ -12,6 +12,7 @@ export function createWork(context: FamilyContext, input: Record<string, unknown
   const kind = input.kind;
   const audience = input.audience ?? "family";
   const template = input.template ?? "growth";
+  if (kind === "book" && input.title !== undefined && (typeof input.title !== "string" || !input.title.trim() || input.title.length > 200)) throw new BookError("invalid_title");
   if (kind === "book" && template !== "growth" && template !== "photos") throw new BookError("invalid_template");
   if (kind !== "album" && kind !== "book") throw new BookError("invalid_work");
   if (audience !== "family" && audience !== "personal") throw new BookError("invalid_audience");
@@ -27,7 +28,7 @@ export function createWork(context: FamilyContext, input: Record<string, unknown
     if (sources.some(s => !s.state.available)) throw new BookError("source_unavailable", 403);
     // Album names are visible to the family even when some source memories are private.
     const publicTitle = kind !== "album" || createBookSourceResolver(context, "family")(selection[0]!.kind, selection[0]!.id).state.available;
-    const title = `${publicTitle ? sources[0]!.state.label || "家庭记忆" : "家庭记忆"} · ${kind === "album" ? "相册" : "家庭书"}`.slice(0, 200);
+    const title = kind === "book" && typeof input.title === "string" ? input.title.trim() : `${publicTitle ? sources[0]!.state.label || "家庭记忆" : "家庭记忆"} · ${kind === "album" ? "相册" : "家庭书"}`.slice(0, 200);
     if (kind === "album") {
       const id = createCollection(context, title, "album");
       const album = getCollection(context, id);
