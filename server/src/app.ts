@@ -33,7 +33,9 @@ export function createApp(store:Store,provider:Provider,version='dev') {
  app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'high',models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
  for(const kind of ['group','write'] as const)app.post(`/api/v1/ai/${kind}`,async req=>{
   const member=auth(req.headers.authorization), input=inputSchema.parse(req.body);
-  if((input.mode==='photos'&&!input.photos.length)||(input.mode==='merge'&&(kind!=='group'||input.photos.length||!input.groups?.length)))throw new Problem(400,'INVALID_INPUT','请先选择照片。');
+  const polish=kind==='write'&&input.writingMode==='polish';
+  if(polish&&(!input.context.trim()||input.photos.length||input.mode!=='photos'))throw new Problem(400,'INVALID_INPUT','请先写下正文再润色。');
+  if((input.mode==='photos'&&!input.photos.length&&!polish)||(input.mode==='merge'&&(kind!=='group'||input.photos.length||!input.groups?.length)))throw new Problem(400,'INVALID_INPUT','请先选择照片。');
   const ids=input.mode==='photos'?input.photos.map(p=>p.id):input.groups!.flatMap(g=>g.photoIds);
   if(new Set(ids).size!==ids.length||ids.length>100)throw new Problem(400,'INVALID_INPUT','照片列表重复或超出限制。');
   for(const photo of input.photos) {

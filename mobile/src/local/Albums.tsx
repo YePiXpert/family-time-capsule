@@ -3,7 +3,15 @@ import {
   usePreventRemove,
   type NavigationAction,
 } from "@react-navigation/native";
-import { Alert, FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useLibrary, useStore } from "./context";
 import { beginSelection, newId, now } from "./services";
 import { finishSelection, monthKey, sortedRecords } from "./model";
@@ -21,6 +29,7 @@ import {
 import { CaptureDock, RecordCard } from "./Home";
 import { Photo } from "./Media";
 export function Albums() {
+  const tabBarHeight = useBottomTabBarHeight();
   const state = useLibrary(),
     store = useStore(),
     nav = useNav(),
@@ -53,7 +62,10 @@ export function Albums() {
         numColumns={large ? 1 : 2}
         data={albums}
         keyExtractor={(a) => a.id}
-        contentContainerStyle={{ paddingHorizontal: 20 }}
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingBottom: tabBarHeight + 84,
+        }}
         columnWrapperStyle={large ? undefined : { gap: 16 }}
         renderItem={({ item }) => {
           const coverId =

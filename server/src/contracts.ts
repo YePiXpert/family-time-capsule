@@ -7,6 +7,7 @@ export const inputSchema=z.object({
  requestId:z.string().uuid(),model:z.enum(LEGACY_MODEL_IDS).optional().transform(()=>MODEL_ID),
  photos:z.array(photoSchema).max(20).default([]),
  context:z.string().max(4000).default(''),
+ writingMode:z.enum(['generate','polish']).optional(),
  groups:z.array(groupSchema).max(100).optional(),
  mode:z.enum(['photos','merge']).default('photos'),
 }).strict();

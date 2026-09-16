@@ -563,9 +563,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               />
             </View>
           )}
-          {draft.content.mediaIds.some(
+          {(draft.content.mediaIds.some(
             (id) => (state.media[id] ?? importedMedia[id])?.kind === "image",
-          ) && (
+          ) || !!draft.content.text.trim() || draft.photoEvents?.some((event) => event.text.trim())) && (
             <AIEditor
               draft={draft}
               media={{ ...state.media, ...importedMedia }}

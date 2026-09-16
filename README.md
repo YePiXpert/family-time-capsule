@@ -39,7 +39,11 @@ npm run lint
 
 只从 main 构建。`ci.yml` 检查本机存储与备份测试、类型、代码规范和移动端打包；`mobile-build.yml` 检查 Android／iOS 原生流程并生成 APK 与未签名设备 IPA。IPA 需要持有者自行签名安装。
 
-当前本机版：Build 45。两个包必须来自同一 main 提交。设计规则见 [DESIGN.md](DESIGN.md)。
+当前本机版：Build 48。两个包必须来自同一 main 提交。设计规则见 [DESIGN.md](DESIGN.md)。
+
+## 照片浏览
+
+首页按日期展示小图网格，点击记录查看大图和全文。搜索按需展开，草稿集中在一条入口，点击箭头查看其他草稿。「记一刻」位于底部导航上方的悬浮按钮。
 
 ## AI 使用
 

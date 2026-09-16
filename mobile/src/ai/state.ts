@@ -164,6 +164,7 @@ export function validateStoredAI(value: unknown): boolean {
     !/^[a-f0-9]{64}$/.test(v.fingerprint) ||
     !["group", "write"].includes(String(v.kind)) ||
     !Number.isInteger(v.eventIndex) ||
+    (v.writingMode !== undefined && !["generate", "polish"].includes(String(v.writingMode))) ||
     typeof v.model !== "string"
   )
     return false;
