@@ -5,6 +5,8 @@ import { FocusedImage } from "../components/FocusedImage";
 import { Text, TextInput } from "../components/typography";
 import { WorkCreator } from "./WorkCreator";
 import { ReadingDownloadButton } from "../reading/DownloadButton";
+import { downloadedCoverUri } from "../reading/shelf";
+import { useReadingShelf } from "../reading/useReadingShelf";
 import { NativeBookPublication } from "../books/NativeBookPublication";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFocusEffect, usePreventRemove } from "@react-navigation/native";
@@ -32,7 +34,6 @@ import { useAppData } from "../state/AppContext";
 import { useColorTheme, useSharedStyles } from "../theme";
 import { journalRadius, journalShadow, journalType } from "../design/tokens";
 import { useConfirmSheet } from "../components/GlassSheet";
-import { CollapsingHero } from "../components/CollapsingHero";
 import { haptics } from "../design/haptics";
 import {
   Button,
@@ -114,17 +115,26 @@ function Field({
   );
 }
 
+type ShelfBook = Pick<BookPage["entries"][number], "id" | "title" | "subtitle" | "updatedAt" | "coverAssetId"> & {
+  status?: "active" | "finished";
+  localCoverUri?: string;
+  downloadKey?: string;
+};
 function BookCoverCell({
   book,
   credentials,
   onPress,
 }: {
-  book: BookPage["entries"][number];
+  book: ShelfBook;
   credentials: Credentials | null;
   onPress: () => void;
 }) {
   const { colors } = useColorTheme();
   const [failedCover, setFailedCover] = useState<string | null>(null);
+  const coverKey = book.localCoverUri ?? book.coverAssetId;
+  const cover = book.localCoverUri ? { uri: book.localCoverUri }
+    : credentials && book.coverAssetId ? { uri: `${credentials.serverUrl}/api/media/${encodeURIComponent(book.coverAssetId)}`, headers: { Authorization: `Bearer ${credentials.token}` } }
+      : null;
   const meta = (() => {
     if (book.subtitle) return book.subtitle;
     try {
@@ -170,7 +180,7 @@ function BookCoverCell({
           <View style={{ flex: 1, backgroundColor: colors.softCoral }} />
           <View style={{ width: 1, backgroundColor: colors.line }} />
         </View>
-        {credentials && book.coverAssetId && failedCover !== book.coverAssetId ? <Image accessibilityLabel={`${book.title}的封面`} source={{ uri: `${credentials.serverUrl}/api/media/${encodeURIComponent(book.coverAssetId)}`, headers: { Authorization: `Bearer ${credentials.token}` } }} resizeMode="contain" style={{ width: "100%", height: "100%" }} onError={() => setFailedCover(book.coverAssetId)} /> : <>
+        {cover && failedCover !== coverKey ? <Image accessibilityLabel={`${book.title}的封面`} source={cover} resizeMode="contain" style={{ width: "100%", height: "100%" }} onError={() => setFailedCover(coverKey)} /> : <>
           <JournalIcon name="book" color={colors.coral} size={28} />
           <Text style={{ color: colors.ink, fontSize: 18, lineHeight: 28, textAlign: "center", paddingHorizontal: 20 }} numberOfLines={4}>{book.title}</Text>
         </>}
@@ -196,59 +206,59 @@ function BookCoverCell({
 type BooksProps = { navigation: Pick<NativeStackScreenProps<RootStackParamList, "Books">["navigation"], "navigate"> };
 export function BooksScreen(props: BooksProps) {
   const { credentials, family, viewer } = useAppData();
-  return <Bookshelf key={JSON.stringify([credentials?.serverUrl, credentials?.token, family?.id, viewer?.id])} {...props} />;
+  return <Bookshelf key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, credentials?.token, family?.id, viewer?.id])} {...props} />;
 }
 function Bookshelf({ navigation }: BooksProps) {
   const { credentials, family, viewer } = useAppData();
   const contentBottom = useJournalContentInset();
   const titleInset = useJournalTitleInset();
   const s = useSharedStyles();
-  const [page, setPage] = useState<BookPage | null>(null);
   const [deleted, setDeleted] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState("");
-  const load = useCallback(async (cursor = "") => {
-    if (!credentials) return;
-    try { const next = await fetchBooks(credentials, deleted, cursor); setPage(old => cursor && old ? { ...next, entries: [...old.entries, ...next.entries] } : next); setError(""); }
-    catch (e) { setError((e as Error).message); }
-  }, [credentials, deleted]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  const { page, downloads, offline, error, loading, load } = useReadingShelf("book", deleted, fetchBooks);
+  const books: ShelfBook[] = offline ? downloads.map(entry => ({
+    id: entry.id, title: entry.manifest.title, subtitle: entry.manifest.subtitle,
+    updatedAt: new Date(entry.updatedAt).toISOString(), coverAssetId: null,
+    localCoverUri: downloadedCoverUri(entry), downloadKey: entry.key,
+  })) : page?.entries ?? [];
   return <View style={s.screen}>
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={[s.content, { paddingTop: titleInset + 20, paddingBottom: contentBottom }]}
     >
-    <CollapsingHero
-      eyebrow="一本一本，慢慢攒"
-      title="成长册"
-      subtitle="把一段时间，订成一本可以翻的书。"
-    />
-    {!deleted && !creating ? <GrowthBookCard key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, family?.id, viewer?.id])} /> : null}
-    <SectionHeader title="我的书架" />
+    <Text accessibilityRole="header" style={s.title}>回看</Text>
+    {!deleted && !creating ? <ListGroup><ListRow icon="image" title="相册" detail="按一段经历，翻看照片与故事" onPress={() => navigation.navigate("Collections")} last /></ListGroup> : null}
+    <SectionHeader title={deleted ? "成长册回收站" : "成长册"} />
     {creating ? <WorkCreator kind="book" onCancel={() => setCreating(false)} onCreated={id => { setCreating(false); navigation.navigate("BookDetail", { id }); }} /> : null}
     {error ? <><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button title="重试" onPress={() => void load()} /></> : null}
-    {!credentials ? <Text style={s.body}>连接家庭服务器后可以创建家庭书；已下载的作品仍可离线阅读。</Text> : null}
-    {page?.entries.length ? (
+    {!credentials ? <Text style={s.body}>连接原来的家庭账号后，成长册会出现在这里。</Text> : null}
+    {loading ? <Text style={s.body}>正在打开书架…</Text> : null}
+    {offline && books.length ? <Text style={s.body}>已下载的成长册可以继续翻阅。</Text> : null}
+    {books.length ? (
       <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 20 }}>
-        {page.entries.map(book => <BookCoverCell key={book.id} book={book} credentials={credentials} onPress={() => navigation.navigate("BookDetail", { id: book.id })} />)}
+        {books.map(book => <BookCoverCell key={book.id} book={book} credentials={credentials} onPress={() => book.downloadKey ? navigation.navigate("OfflineReading", { key: book.downloadKey }) : navigation.navigate("BookDetail", { id: book.id })} />)}
       </View>
     ) : null}
+    {offline && !books.length ? <EmptyState title="这里还没有下载的成长册" body="联网打开一本成长册，选择“下载供离线阅读”，下次就能从这里继续翻。" /> : null}
     {page && !page.entries.length ? (
       deleted
         ? <Text style={s.body}>回收站没有作品。</Text>
         : <EmptyState
             art={<JournalArtwork kind="album" />}
-            title="选一些记忆，做成第一本家庭书。"
-            action={page.canWrite && !creating ? <Button variant="primary" icon="plus" title="新建家庭书" onPress={() => setCreating(true)} /> : undefined}
+            title="选一些记忆，做成第一本成长册。"
+            action={page.canWrite && !creating ? <Button variant="primary" icon="plus" title="新建成长册" onPress={() => setCreating(true)} /> : undefined}
           />
     ) : null}
-    {page?.nextCursor ? <Button title="更多作品" onPress={() => void load(page.nextCursor!)} /> : null}
+    {page?.nextCursor ? <Button title="更多成长册" onPress={() => void load(page.nextCursor!)} /> : null}
+    {page?.canWrite && !deleted && !creating && page.entries.length ? <Button title="新建成长册" icon="plus" onPress={() => setCreating(true)} /> : null}
+    {!deleted && !creating && !offline ? <GrowthBookCard key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId, family?.id, viewer?.id])} /> : null}
+    <ToolDisclosure title="管理书架">
     <ListGroup>
-      {page?.canWrite && !deleted && !creating && page.entries.length ? <ListRow icon="plus" title="新建家庭书" onPress={() => setCreating(true)} /> : null}
-      <ListRow icon="image" title="整理素材相册" onPress={() => navigation.navigate("Collections")} />
-      <ListRow icon={deleted ? "arrow-left" : "trash"} title={deleted ? "返回家庭书" : "作品回收站"} onPress={() => { setDeleted(value => !value); setCreating(false); }} />
+      <ListRow icon={deleted ? "arrow-left" : "trash"} title={deleted ? "返回成长册" : "成长册回收站"} onPress={() => { setDeleted(value => !value); setCreating(false); }} />
+      <ListRow icon="book" title="管理阅读下载" onPress={() => navigation.navigate("ReadingDownloads")} />
       <ListRow icon="settings" title="刷新" onPress={() => void load()} last />
     </ListGroup>
+    </ToolDisclosure>
     </ScrollView>
 
   </View>;

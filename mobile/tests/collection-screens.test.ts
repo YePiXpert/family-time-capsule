@@ -1,19 +1,21 @@
 import { createElement, useEffect } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CollectionDetail } from '../src/collections/types';
 vi.mock("../src/reading/DownloadButton", () => ({ ReadingDownloadButton: () => null }));
 vi.mock("../src/components/GlassSheet", () => ({ GlassSheet: ({ visible, children }: { visible: boolean; children: unknown }) => visible ? createElement("GlassSheet", {}, children as never) : null, GlassSheetProvider: ({ children }: { children: unknown }) => children, useConfirmSheet: () => vi.fn(async () => true), useAlertSheet: () => vi.fn(async () => {}), confirmSheet: vi.fn(async () => true), alertSheet: vi.fn(async () => {}) }));
-const mocks=vi.hoisted(()=>({get:vi.fn(),list:vi.fn(),mutate:vi.fn(),navigate:vi.fn(),credentials:{serverUrl:'https://fictional.example.test',token:'fictional-component-token'}}));
+const mocks=vi.hoisted(()=>({get:vi.fn(),list:vi.fn(),mutate:vi.fn(),navigate:vi.fn(),online:true,scope:vi.fn(),downloads:vi.fn(),download:vi.fn(),credentials:{serverUrl:'https://fictional.example.test',token:'fictional-component-token'}}));
 vi.mock('react-native',()=>({ActivityIndicator:'ActivityIndicator',Image:'Image',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',TextInput:'TextInput',View:'View',StyleSheet:{create:(s:unknown)=>s},Alert:{alert:vi.fn()}}));
 vi.mock("react-native-svg", () => ({ default: "Svg", Path: "Path", Rect: "Rect", Circle: "Circle" }));
 vi.mock('@react-navigation/native',()=>({useFocusEffect:(fn:()=>void|(()=>void))=>useEffect(fn,[fn])}));
 vi.mock('expo-crypto',()=>({randomUUID:()=> 'fictional-new-section'}));
-vi.mock('../src/state/AppContext',()=>{ const useApp = ()=>({credentials:mocks.credentials}); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
+vi.mock('../src/state/AppContext',()=>{ const useApp = ()=>({credentials:mocks.credentials,online:mocks.online}); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
+vi.mock('../src/reading/native',()=>({resolveReadingScope:mocks.scope,invalidateReadingCredentials:vi.fn(),nativeReadingStore:{list:mocks.downloads,get:mocks.download},readingFileUri:(key:string,media:{id:string})=>`file:///downloads/${key}/${media.id}.jpg`,readingDownloads:{subscribe:()=>()=>{}}}));
 vi.mock('../src/api/client',async(original)=>({...await original<object>(),fetchCollection:mocks.get,fetchCollections:mocks.list,mutateCollection:mocks.mutate}));
 const {CollectionDetailScreen,CollectionsScreen}=await import('../src/screens/CollectionScreens');
 (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let tree:ReactTestRenderer|undefined;
+beforeEach(()=>{mocks.online=true;});
 afterEach(async()=>{if(tree)await act(()=>tree!.unmount());tree=undefined;vi.clearAllMocks();});
 function detail():CollectionDetail{return {id:'collection',kind:'chapter',title:'出生第一周',description:'虚构家庭的记忆',timezone:'Asia/Shanghai',coverAssetId:null,startDate:null,endDate:null,revision:2,updatedAt:'2026-09-01T00:00:00Z',deletedAt:null,sortMode:'manual',canWrite:true,sections:[],items:['first','second'].map((id,i)=>({id,memoryEventId:`event-${id}`,sectionId:null,caption:`说明 ${i}`,source:{title:`记忆 ${i}`,occurredAt:'2026-09-01T00:00:00Z',coverAssetId:null,previewAssetId:null}}))};}
 async function press(label:string,index=0){const button=tree!.root.findAll(n=>String(n.type)==='Pressable'&&n.findAll(c=>String(c.type)==='Text'&&c.props.children===label).length>0)[index]!;expect(button).toBeTruthy();await act(async()=>button.props.onPress());}
@@ -51,4 +53,35 @@ it('keeps family viewing closed if pending album edits cannot be saved',async()=
   const title=tree!.root.findAll(n=>String(n.type)==='TextInput'&&n.props.accessibilityLabel==='名称')[0]!;
   await act(()=>title.props.onChangeText('待保存的标题')); await press('更多'); await press('给家人看');
   expect(mocks.mutate).toHaveBeenCalledOnce(); expect(mocks.navigate).not.toHaveBeenCalled();
+});
+
+function downloadedAlbum() {
+  mocks.online = false;
+  const scope = { key: 'a'.repeat(64), serverUrl: mocks.credentials.serverUrl, userId: 'reader', familyId: 'family' };
+  const entry = { key: `${scope.key}/collection-album`, scope: scope.key, kind: 'collection', id: 'album', title: '周末野餐', state: 'ready',
+    updatedAt: 1, completed: [], manifest: { kind: 'collection', id: 'album', userId: scope.userId, familyId: scope.familyId,
+      title: '周末野餐', subtitle: '阳光下的一天', revision: 1, chapters: [], media: [] } };
+  mocks.scope.mockResolvedValue({ scope, online: false });
+  mocks.downloads.mockResolvedValue([entry]);
+  mocks.download.mockResolvedValue(entry);
+  return entry;
+}
+
+it('opens a ready downloaded album from the album list while offline', async () => {
+  const entry = downloadedAlbum();
+  await act(async () => { tree = create(createElement(CollectionsScreen, { route: { params: undefined }, navigation: { navigate: mocks.navigate } } as never)); });
+  await press(entry.title);
+  expect(mocks.navigate).toHaveBeenCalledWith('OfflineReading', { key: entry.key });
+  expect(mocks.list).not.toHaveBeenCalled();
+  expect(mocks.mutate).not.toHaveBeenCalled();
+});
+
+it('keeps adding selected memories unavailable offline instead of dropping their selection', async () => {
+  const entry = downloadedAlbum();
+  await act(async () => { tree = create(createElement(CollectionsScreen, { route: { params: { eventIds: ['picked'] } }, navigation: { navigate: mocks.navigate } } as never)); });
+  const card = tree!.root.findAll(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === entry.title)[0]!;
+  expect(card.props.disabled).toBe(true);
+  expect(JSON.stringify(tree!.toJSON())).toContain('联网后可以把所选记忆加入相册');
+  expect(mocks.mutate).not.toHaveBeenCalled();
+  expect(mocks.navigate).not.toHaveBeenCalled();
 });

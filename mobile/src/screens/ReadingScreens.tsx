@@ -233,12 +233,18 @@ export function ReadingDownloadsScreen({
     </ScrollView>
   );
 }
-export function OfflineReadingScreen({
+export function OfflineReadingScreen(props: NativeStackScreenProps<RootStackParamList, "OfflineReading">) {
+  const { credentials, family, viewer, online } = useAppData();
+  return <ScopedOfflineReading key={JSON.stringify([credentials?.serverUrl, credentials?.instanceId,
+    credentials?.token, family?.id, viewer?.id, online, props.route.params.key])} {...props} />;
+}
+function ScopedOfflineReading({
   route,
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "OfflineReading">) {
   const s = useSharedStyles();
-  const { credentials, online: connected } = useAppData(),
+  const { credentials, family, viewer, online: connected } = useAppData(),
+    familyId = family?.id, userId = viewer?.id,
     key = route.params.key,
     [entry, setEntry] = useState<DownloadEntry | null>(null),
     [error, setError] = useState(""),
@@ -247,16 +253,22 @@ export function OfflineReadingScreen({
     [page, setPage] = useState(0),
     [mediaPage, setMediaPage] = useState(0);
   const scroll = useRef<ScrollView>(null),
+    revoked = useRef(false),
     progress = useRef<ReadingProgress>({ chapter: 0, page: 0, media: {} });
   useFocusEffect(
     useCallback(() => {
       let alive = true;
+      revoked.current = false;
+      setEntry(null);
       void (async () => {
         try {
           if (!credentials) throw Error("请连接原来的账号。");
           const { scope, online } = await resolveReadingScope(credentials, {
             offline: connected === false,
           });
+          if ((familyId && scope.familyId !== familyId) || (userId && scope.userId !== userId)) {
+            throw Error("请连接原来的家庭账号后查看下载。");
+          }
           const check = online
             ? await readingDownloads.revalidate(
                 scope,
@@ -267,7 +279,7 @@ export function OfflineReadingScreen({
           const doc = await nativeReadingStore.get(key);
           if (!doc || doc.state !== "ready" || doc.scope !== scope.key)
             throw Error("这份内容尚未下载完成。");
-          if (!alive) return;
+          if (!alive || revoked.current) return;
           progress.current = doc.progress;
           setChapter(
             Math.min(
@@ -293,12 +305,13 @@ export function OfflineReadingScreen({
       return () => {
         alive = false;
       };
-    }, [credentials, key, connected]),
+    }, [credentials, key, connected, familyId, userId]),
   );
   useEffect(
     () =>
       readingDownloads.subscribe((removed) => {
         if (removed === key) {
+          revoked.current = true;
           setEntry(null);
           setError("作品或权限变化，旧缓存已撤下。请重新下载。");
         }
@@ -329,7 +342,7 @@ export function OfflineReadingScreen({
         <Text style={s.error} accessibilityRole="alert">
           {error || mode}
         </Text>
-        <Button title="返回离线收藏" onPress={() => navigation.goBack()} />
+        <Button title="返回" onPress={() => navigation.goBack()} />
       </ScrollView>
     );
   const doc = entry.manifest,

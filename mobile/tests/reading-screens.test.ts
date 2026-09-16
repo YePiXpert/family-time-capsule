@@ -1,6 +1,7 @@
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ReadingError } from "../src/reading/engine";
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   alert: vi.fn(),
@@ -16,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   listeners: new Set<(key?: string) => void>(),
   online: false,
   prepare: vi.fn(),
+  revalidate: vi.fn(),
+  familyId: undefined as string | undefined,
+  viewerId: undefined as string | undefined,
 }));
 vi.mock("react-native", () => ({
   Pressable: "Pressable",
@@ -34,7 +38,7 @@ const credentials = {
   serverUrl: "https://fictional.example.test",
   token: "fictional-token",
 };
-vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials, online: mocks.online }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
+vi.mock("../src/state/AppContext", () => { const useApp = () => ({ credentials, online: mocks.online, family: mocks.familyId ? { id: mocks.familyId } : undefined, viewer: mocks.viewerId ? { id: mocks.viewerId } : undefined }); return { useApp, useAppData: useApp, useAppActions: useApp, useSyncStatus: useApp }; });
 vi.mock("../src/media/NativeMediaReader", () => ({
   NativeMediaReader: "NativeMediaReader",
 }));
@@ -45,6 +49,7 @@ vi.mock("../src/reading/native", () => ({
     queue: mocks.queue,
     resume: mocks.resume,
     remove: mocks.remove,
+    revalidate: mocks.revalidate,
     subscribe: (fn: (key?: string) => void) => {
       mocks.listeners.add(fn);
       return () => mocks.listeners.delete(fn);
@@ -64,6 +69,7 @@ const { ReadingDownloadButton } = await import("../src/reading/DownloadButton"),
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 let tree: ReactTestRenderer | undefined;
+beforeEach(() => { mocks.familyId = undefined; mocks.viewerId = undefined; mocks.online = false; });
 afterEach(async () => {
   if (tree) await act(() => tree!.unmount());
   tree = undefined;
@@ -255,4 +261,48 @@ it("offers family viewing from an already opened offline album using the same do
   await press("给家人看");
   expect(mocks.navigate).toHaveBeenCalledWith("FamilyViewing", { collectionId: "album", downloadKey: album.key });
   expect(mocks.queue).not.toHaveBeenCalled(); expect(mocks.resume).not.toHaveBeenCalled();
+});
+
+it("hides the open reading copy while reconnecting and keeps it hidden after revocation", async () => {
+  mocks.scope.mockResolvedValue({ scope, online: false });
+  mocks.get.mockResolvedValue(entry);
+  const props = { route: { params: { key } }, navigation: { navigate: mocks.navigate } };
+  await act(async () => { tree = create(createElement(OfflineReadingScreen, props as never)); });
+  expect(JSON.stringify(tree!.toJSON())).toContain("虚构内容 1");
+  let revoke!: (error: Error) => void;
+  mocks.scope.mockResolvedValue({ scope, online: true });
+  mocks.revalidate.mockReturnValue(new Promise((_resolve, reject) => { revoke = reject; }));
+  mocks.online = true;
+  await act(async () => { tree!.update(createElement(OfflineReadingScreen, props as never)); });
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("虚构内容 1");
+  expect(tree!.root.findAllByType("NativeMediaReader" as never)).toHaveLength(0);
+  expect(mocks.revalidate).toHaveBeenCalledWith(scope, key, expect.anything());
+  await act(async () => { revoke(new ReadingError("阅读权限已撤销", 403)); });
+  expect(JSON.stringify(tree!.toJSON())).toContain("阅读权限已撤销");
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("虚构内容 1");
+  expect(mocks.get).toHaveBeenCalledTimes(1);
+});
+
+it.each(["familyId", "viewerId"] as const)("immediately hides reading content after %s changes", async field => {
+  mocks.scope.mockResolvedValue({ scope, online: false });
+  mocks.get.mockResolvedValue(entry);
+  const props = { route: { params: { key } }, navigation: { navigate: mocks.navigate } };
+  await act(async () => { tree = create(createElement(OfflineReadingScreen, props as never)); });
+  expect(JSON.stringify(tree!.toJSON())).toContain("虚构内容 1");
+  mocks[field] = "another-account-or-family";
+  mocks.scope.mockImplementation(() => new Promise(() => {}));
+  await act(async () => { tree!.update(createElement(OfflineReadingScreen, props as never)); });
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("虚构内容 1");
+  expect(tree!.root.findAllByType("NativeMediaReader" as never)).toHaveLength(0);
+});
+
+it("does not render a revoked reading copy when its storage read finishes later", async () => {
+  mocks.scope.mockResolvedValue({ scope, online: false });
+  let finish!: (value: typeof entry) => void;
+  mocks.get.mockReturnValue(new Promise<typeof entry>(resolve => { finish = resolve; }));
+  await act(async () => { tree = create(createElement(OfflineReadingScreen, { route: { params: { key } }, navigation: { navigate: mocks.navigate } } as never)); });
+  await act(async () => { mocks.listeners.forEach(listener => listener(key)); });
+  await act(async () => { finish(entry); });
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("虚构内容 1");
+  expect(JSON.stringify(tree!.toJSON())).toContain("旧缓存已撤下");
 });
