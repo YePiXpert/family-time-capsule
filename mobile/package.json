@@ -54,6 +54,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "doctor": "expo-doctor"
+    "doctor": "expo-doctor",
+    "build:android": "expo export --platform android --output-dir dist-android",
+    "build:ios": "expo export --platform ios --output-dir dist-ios"
   }
 }

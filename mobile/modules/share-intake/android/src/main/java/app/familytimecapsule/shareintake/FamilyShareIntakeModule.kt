@@ -35,7 +35,7 @@ class FamilyShareIntakeModule : Module() {
       // manifests whose app-private files are already durable.
       copyExecutor.submit<String> {
         val context = requireNotNull(appContext.reactContext) { "React context is unavailable" }
-        val manifests = File(context.filesDir, "share-intake/manifests")
+        val manifests = File(context.filesDir, "xiaomei-v1/intake/manifests")
         val result = JSONArray()
         manifests.listFiles()
           ?.filter { it.isFile && it.extension == "json" }
@@ -50,7 +50,7 @@ class FamilyShareIntakeModule : Module() {
     AsyncFunction("acknowledgeAsync") { manifestId: String ->
       require(manifestId.matches(Regex("^[0-9a-fA-F-]{36}$"))) { "Invalid manifest id" }
       val context = requireNotNull(appContext.reactContext) { "React context is unavailable" }
-      File(context.filesDir, "share-intake/manifests/$manifestId.json").delete()
+      File(context.filesDir, "xiaomei-v1/intake/manifests/$manifestId.json").delete()
     }
 
     OnDestroy {
@@ -126,7 +126,7 @@ class FamilyShareIntakeModule : Module() {
   }
 
   private fun writeManifest(root: File, manifestId: String, manifest: JSONObject) {
-    val directory = File(root, "share-intake/manifests").apply { mkdirs() }
+    val directory = File(root, "xiaomei-v1/intake/manifests").apply { mkdirs() }
     val file = AtomicFile(File(directory, "$manifestId.json"))
     val output = file.startWrite()
     try {
@@ -156,7 +156,7 @@ class FamilyShareIntakeModule : Module() {
       val mediaType = mediaType(mime, declaredName)
         ?: throw IllegalArgumentException("unsupported_type")
       val extension = safeExtension(declaredName, mime)
-      val destination = File(context.filesDir, "captures/$captureId$extension")
+      val destination = File(context.filesDir, "xiaomei-v1/intake/originals/$captureId$extension")
       destination.parentFile?.mkdirs()
       val temporary = File(destination.parentFile, ".${destination.name}.$manifestId.part")
       val declaration = JSONObject().apply {

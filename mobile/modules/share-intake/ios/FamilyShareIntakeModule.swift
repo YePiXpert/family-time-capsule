@@ -32,7 +32,7 @@ public final class FamilyShareIntakeModule: Module {
       in: .userDomainMask,
       appropriateFor: nil,
       create: true)
-    let directory = documents.appendingPathComponent("share-intake/manifests", isDirectory: true)
+    let directory = documents.appendingPathComponent("xiaomei-v1/intake/manifests", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory
   }
@@ -43,7 +43,7 @@ public final class FamilyShareIntakeModule: Module {
       in: .userDomainMask,
       appropriateFor: nil,
       create: true)
-    let directory = documents.appendingPathComponent("captures", isDirectory: true)
+    let directory = documents.appendingPathComponent("xiaomei-v1/intake/originals", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory
   }
@@ -59,7 +59,7 @@ public final class FamilyShareIntakeModule: Module {
   private func takeOverSharedManifests() throws {
     guard let container = FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: shareGroup) else { return }
-    let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
+    let inbox = container.appendingPathComponent("XiaomeiLocalInbox", isDirectory: true)
     guard let batches = try? FileManager.default.contentsOfDirectory(
       at: inbox,
       includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
