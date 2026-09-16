@@ -134,13 +134,18 @@ export function useStyles() {
 export function Page({
   children,
   scroll = true,
+  top = false,
 }: {
   children: ReactNode;
   scroll?: boolean;
+  top?: boolean;
 }) {
   const s = useStyles();
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={s.page}>
+    <SafeAreaView
+      edges={top ? ["top", "left", "right"] : ["left", "right"]}
+      style={s.page}
+    >
       {scroll ? (
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -238,9 +243,6 @@ export function ErrorText({ message }: { message: string }) {
 export const messageOf = (e: unknown) =>
   e instanceof Error ? e.message : "操作未完成，请重试。";
 export function dateLabel(date: string) {
-  return new Date(date).toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const d = new Date(date);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }

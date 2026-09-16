@@ -120,7 +120,7 @@ export function Timeline() {
     b.updatedAt.localeCompare(a.updatedAt),
   );
   return (
-    <Page scroll={false}>
+    <Page scroll={false} top>
       <FlatList
         data={visible}
         keyExtractor={(r) => r.id}
