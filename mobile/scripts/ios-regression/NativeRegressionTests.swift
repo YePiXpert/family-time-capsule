@@ -55,4 +55,12 @@ final class NativeRegressionTests: XCTestCase {
         // Export is complete before the OS share sheet opens; Python verifies the bytes.
         sleep(3); shot("backup-export-share-sheet")
     }
+    func testUnreadableLibraryRecoversFromLocalBackup() throws {
+        XCTAssertTrue(element("本机资料暂时无法打开").waitForExistence(timeout: 20)); shot("unreadable-library")
+        tap("从最近的本机备份恢复"); tap("恢复备份")
+        XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 30)); shot("startup-backup-recovered")
+        app.terminate(); app.launch()
+        XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20)); shot("recovered-library-relaunch")
+    }
+
 }

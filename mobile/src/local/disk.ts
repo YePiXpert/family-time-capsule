@@ -1,13 +1,14 @@
 import { openDatabaseAsync } from "expo-sqlite";
+import { activeLibraryName, librarySchema } from "./activation";
 import { LocalStore } from "./store";
 import type { Library } from "./model";
 let store: LocalStore | null = null;
 export async function openLocalStore(): Promise<LocalStore> {
   if (store) return store;
-  const db = await openDatabaseAsync("xiaomei-local-v1.sqlite");
+  const db = await openDatabaseAsync(await activeLibraryName());
   try {
     await db.execAsync(
-      "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS library (id INTEGER PRIMARY KEY CHECK(id=1), snapshot TEXT NOT NULL);",
+      `PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; ${librarySchema}`,
     );
     const candidate = new LocalStore({
       read: async () => {

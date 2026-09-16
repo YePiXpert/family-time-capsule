@@ -2,6 +2,8 @@
 """Native local record/edit/album/relaunch/backup checks against the Release app."""
 import argparse
 import json
+import hashlib
+import sqlite3
 import os
 from pathlib import Path
 import plistlib
@@ -34,7 +36,7 @@ def main():
         container = Path(run('xcrun','simctl','get_app_container',udid,bundle,'data')); database = container / 'Documents' / 'SQLite' / 'xiaomei-local-v1.sqlite'
         run('xcrun','simctl','terminate',udid,bundle); baseline = seed(container, database)
         xctest = next(args.runner_build.resolve().glob('Build/Products/*.xctestrun'))
-        command = ['xcodebuild','test-without-building','-xctestrun',str(xctest),'-destination',f'platform=iOS Simulator,id={udid}','-resultBundlePath',str(out/'local.xcresult'),'-parallel-testing-enabled','NO']
+        command = ['xcodebuild','test-without-building','-xctestrun',str(xctest),'-destination',f'platform=iOS Simulator,id={udid}','-resultBundlePath',str(out/'local.xcresult'),'-parallel-testing-enabled','NO','-only-testing:NativeRegression/NativeRegressionTests/testLocalRecordAlbumAndBackup']
         result = subprocess.run(command, capture_output=True, text=True, timeout=900); (out/'xctest.log').write_text(result.stdout + result.stderr)
         subprocess.run(['xcrun','xcresulttool','export','attachments','--path',str(out/'local.xcresult'),'--output-path',str(out/'screenshots')],capture_output=True)
         if result.returncode: print(result.stdout[-12000:] + result.stderr[-12000:]); raise AssertionError('Native local flow failed')
@@ -49,7 +51,29 @@ def main():
         assert any(before['library']['media'][i]['kind']=='audio' for i in own[0]['mediaIds']), 'Recorded audio was not preserved'
         album=next(iter(before['library']['albums'].values())); assert album['name']=='Our days' and len(album['items'])==3
         assert not before['library']['drafts']
-        report.update(success=True, recordIdentityPreserved=True, albumSurvivedRelaunch=True, crossMonthSelection=True, fullBackupRestored=True, backupFiles=len(backups))
+        # Force startup failure after validating the ordinary restore. Recovery must
+        # activate an independent database and leave the unreadable original intact.
+        with sqlite3.connect(database) as db:
+            db.execute("UPDATE library SET snapshot='broken' WHERE id=1")
+        recovery_command = command.copy()
+        recovery_command[recovery_command.index(str(out/'local.xcresult'))] = str(out/'recovery.xcresult')
+        recovery_command[-1] = '-only-testing:NativeRegression/NativeRegressionTests/testUnreadableLibraryRecoversFromLocalBackup'
+        recovery = subprocess.run(recovery_command, capture_output=True, text=True, timeout=600)
+        (out/'recovery-xctest.log').write_text(recovery.stdout + recovery.stderr)
+        subprocess.run(['xcrun','xcresulttool','export','attachments','--path',str(out/'recovery.xcresult'),'--output-path',str(out/'recovery-screenshots')],capture_output=True)
+        if recovery.returncode:
+            print(recovery.stdout[-12000:] + recovery.stderr[-12000:]); raise AssertionError('Native startup recovery failed')
+        registry = container/'Documents'/'xiaomei-v1'/'libraries'
+        marker = max(registry.glob('generation-*.json'), key=lambda f: int(f.name.split('-')[1]))
+        activated = database.parent/json.loads(marker.read_text())['database']
+        restored = read_state(activated)
+        assert restored['records'] == baseline['records'], 'Startup recovery changed records'
+        with sqlite3.connect(database) as db:
+            assert db.execute('SELECT snapshot FROM library WHERE id=1').fetchone()[0] == 'broken', 'Recovery overwrote original database'
+        for media in restored['media'].values():
+            original = container/'Documents'/'xiaomei-v1'/'media'/media['file']
+            assert hashlib.sha256(original.read_bytes()).hexdigest() == media['sha256']
+        report.update(success=True, recordIdentityPreserved=True, albumSurvivedRelaunch=True, crossMonthSelection=True, fullBackupRestored=True, unreadableLibraryRecovered=True, originalDatabasePreserved=True, backupFiles=len(backups))
     finally:
         (out/'result.json').write_text(json.dumps(report,indent=2)+'\n'); cleanup_simulator(udid,out)
 

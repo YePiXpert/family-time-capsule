@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Text as NativeText,
   View,
@@ -21,10 +22,13 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
+import { inspectBackup, recoverStartupBackup } from "./backup";
 import { StatusBar } from "expo-status-bar";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
 import { openLocalStore } from "./disk";
-import { ensureDirectories } from "./files";
+import { backupDirectory, ensureDirectories } from "./files";
 import { StoreContext, useLibrary, useStore } from "./context";
 import {
   LocalTheme,
@@ -261,7 +265,7 @@ function Root() {
 class Boundary extends Component<{ children: ReactNode }, { error: string }> {
   state = { error: "" };
   static getDerivedStateFromError(e: Error) {
-    return { error: e.message };
+    return { error: messageOf(e) };
   }
   render() {
     if (this.state.error)
@@ -299,6 +303,55 @@ export default function App() {
     }, 0);
     return () => clearTimeout(timer);
   }, [initialize]);
+  const [recovering, setRecovering] = useState(false);
+  const recover = async (existing?: File) => {
+    if (recovering) return;
+    setRecovering(true);
+    try {
+      let file = existing;
+      if (!file) {
+        const selected = await DocumentPicker.getDocumentAsync({
+          type: "*/*",
+          copyToCacheDirectory: true,
+        });
+        if (selected.canceled) return;
+        file = new File(selected.assets[0]!.uri);
+      }
+      const selectedFile = file;
+      const library = await inspectBackup(selectedFile);
+      Alert.alert(
+        "从备份恢复？",
+        `备份包含 ${Object.keys(library.records).length} 条记录、${Object.keys(library.albums).length} 本相册。原有文件会保留，恢复后以这份备份继续使用。`,
+        [
+          { text: "取消", style: "cancel" },
+          {
+            text: "恢复备份",
+            onPress: () => {
+              setRecovering(true);
+              void recoverStartupBackup(selectedFile)
+                .then(initialize)
+                .catch((e) => setError(messageOf(e)))
+                .finally(() => setRecovering(false));
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setRecovering(false);
+    }
+  };
+
+  const recentBackup =
+    error && !store && backupDirectory.exists
+      ? backupDirectory
+          .list()
+          .filter(
+            (f): f is File => f instanceof File && f.name.endsWith(".xmb"),
+          )
+          .sort((a, b) => b.name.localeCompare(a.name))[0]
+      : undefined;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -331,6 +384,30 @@ export default function App() {
                     style={{ padding: 20 }}
                   >
                     <NativeText>重试读取</NativeText>
+                  </Pressable>
+                  {recentBackup && (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={recovering}
+                      onPress={() => {
+                        void recover(recentBackup);
+                      }}
+                      style={{ padding: 20 }}
+                    >
+                      <NativeText>从最近的本机备份恢复</NativeText>
+                    </Pressable>
+                  )}
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={recovering}
+                    onPress={() => {
+                      void recover();
+                    }}
+                    style={{ padding: 20 }}
+                  >
+                    <NativeText>
+                      {recovering ? "正在恢复…" : "从完整备份恢复"}
+                    </NativeText>
                   </Pressable>
                 </>
               ) : (
