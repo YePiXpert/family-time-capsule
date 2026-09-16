@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StyleSheet,
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
@@ -39,12 +40,14 @@ import {
   dateLabel,
   messageOf,
   useStyles,
+  useTheme,
 } from "./ui";
 import { Photo } from "./Media";
 export function Editor({ route, navigation }: Props<"Editor">) {
   const store = useStore(),
     state = useLibrary(),
-    s = useStyles();
+    s = useStyles(),
+    { colors } = useTheme();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
     clone(store.get().drafts[route.params.draftId]),
   );
@@ -545,7 +548,14 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             }
           />
         </ScrollView>
-        <View style={{ padding: 16 }}>
+        <View
+          style={{
+            padding: 16,
+            backgroundColor: colors.glass,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: colors.glassLine,
+          }}
+        >
           <Button
             title={busy ? "正在保存…" : "保存这一刻"}
             primary

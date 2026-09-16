@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { FlatList, Pressable, ScrollView, View } from "react-native";
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection } from "./services";
 import {
@@ -45,7 +46,15 @@ export function RecordCard({
       accessibilityState={selected === undefined ? {} : { checked: selected }}
       accessibilityLabel={`${selected === undefined ? "" : selected ? "已选，" : "未选，"}${recordTitle(record)}`}
       onPress={onPress}
-      style={{ gap: 8, paddingBottom: 24 }}
+      style={{
+        gap: 8,
+        marginBottom: 16,
+        padding: 12,
+        backgroundColor: colors.glass,
+        borderRadius: 16,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.glassLine,
+      }}
     >
       {cover?.kind === "image" && <Photo media={cover} />}
       <View style={s.between}>
@@ -71,10 +80,17 @@ export function CaptureDock() {
   const store = useStore(),
     nav = useNav(),
     s = useStyles();
+  const tabBarHeight = useBottomTabBarHeight();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   return (
-    <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
+    <View
+      style={{
+        paddingHorizontal: 20,
+        paddingTop: 8,
+        marginBottom: tabBarHeight,
+      }}
+    >
       <ErrorText message={error} />
       <View style={s.row}>
         <View style={{ flex: 1 }}>
