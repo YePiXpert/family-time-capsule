@@ -1,4 +1,5 @@
 import "server-only";
+import { isUnappliedEditOriginal } from "@/lib/drafts/staging";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { asset } from "@/db/schema/asset";
@@ -57,7 +58,7 @@ export function assertMemoryShareSources(tx: ContributionAccessTransaction, cont
 export function attachMemoryCoverInTransaction(tx: ContributionAccessTransaction, context: FamilyContext, eventId: string, coverAssetId: string): boolean {
   if (tx.select({ id: memoryEventAsset.id }).from(memoryEventAsset).where(and(eq(memoryEventAsset.memoryEventId, eventId), eq(memoryEventAsset.familyId, context.familyId), eq(memoryEventAsset.assetId, coverAssetId))).get()) return true;
   const cover = tx.select().from(asset).where(and(eq(asset.id, coverAssetId), eq(asset.familyId, context.familyId), readableAssetPredicate(createContributionAccessSnapshot(context), sql`${asset.id}`))).get();
-  if (!cover || !canManageOriginalInTransaction(tx, context, cover)) return false;
+  if (!cover || isUnappliedEditOriginal(tx, context.familyId, cover.id) || !canManageOriginalInTransaction(tx, context, cover)) return false;
   const last = tx.select({ order: sql<number>`coalesce(max(${memoryEventAsset.sortOrder}), -1)` }).from(memoryEventAsset).where(and(eq(memoryEventAsset.memoryEventId, eventId), eq(memoryEventAsset.familyId, context.familyId))).get();
   tx.insert(memoryEventAsset).values({ id: randomUUID(), familyId: context.familyId, memoryEventId: eventId, assetId: coverAssetId, sortOrder: (last?.order ?? -1) + 1 }).run();
   return true;

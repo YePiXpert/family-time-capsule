@@ -10,6 +10,7 @@ import { user } from "@/db/schema/auth";
 import { withTransferLock, TransferBusyError } from "./transfer-lock";
 import { getInstanceId } from "@/lib/instance/service";
 import { hasFamilyCapability, isFamilyRole } from "@/lib/authz/policy";
+import { canManageEventVisibilityInTransaction } from "@/lib/authz/event-access";
 import { asset, documentText } from "@/db/schema/asset";
 import { documentTextCollector } from "@/lib/assets/document-text";
 import {
@@ -577,6 +578,15 @@ function assertDraftUpload(row: { familyId: string; userId: string | null; draft
   if (!actor || !isFamilyRole(actor.role) || !hasFamilyCapability(actor.role, "capture:create")) throw new UploadServiceError("forbidden", 403);
   const parent = db.select().from(draft).where(and(eq(draft.id, row.draftId), eq(draft.familyId, row.familyId), eq(draft.authorUserId, actor.id))).get();
   if (!parent) throw new UploadServiceError("not_found", 404);
+  if (parent.purpose === "memory_edit") {
+    const role = actor.role;
+    if (!parent.editTargetMemoryId || !db.transaction(tx => canManageEventVisibilityInTransaction(tx, {
+      principal: { userId: actor.id, familyId: row.familyId, role, accountEnabled: true }, evaluatedAt: new Date(),
+    }, parent.editTargetMemoryId!))) throw new UploadServiceError("not_found", 404);
+    // An already completed transfer remains a receipt after the atomic edit seals
+    // and releases staging references. It cannot authorize a new byte upload.
+    if (allowCompleted && parent.status === "applied") return;
+  }
   const item = db.select().from(draftItem).where(and(eq(draftItem.draftId, row.draftId), eq(draftItem.localCaptureRef, row.captureId))).get();
   if (!item || (parent.status !== "editing" && !(allowCompleted && parent.status === "published"))) throw new UploadServiceError("draft_changed", 409);
 }

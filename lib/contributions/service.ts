@@ -1,3 +1,4 @@
+import { isUnappliedEditOriginal } from "@/lib/drafts/staging";
 import { canManageOriginalInTransaction } from "@/lib/authz/asset-management";
 import { draft as draftTable, draftItem } from "@/db/schema/draft";
 import "server-only";
@@ -179,7 +180,7 @@ export async function createContribution(
     }
 
     const sourceDraft = input.sourceDraftId ? tx.select().from(draftTable).where(and(eq(draftTable.id, input.sourceDraftId), eq(draftTable.familyId, familyId), eq(draftTable.authorUserId, input.recordedByUserId))).get() : null;
-    if (input.sourceDraftId && (!sourceDraft || !input.audioAssetId || !tx.select().from(draftItem).where(and(eq(draftItem.draftId, input.sourceDraftId), eq(draftItem.assetId, input.audioAssetId))).get())) return { ok: false, error: "forbidden" } as const;
+    if (input.sourceDraftId && (!sourceDraft || sourceDraft.purpose !== "capture" || !input.audioAssetId || !tx.select().from(draftItem).where(and(eq(draftItem.draftId, input.sourceDraftId), eq(draftItem.assetId, input.audioAssetId))).get())) return { ok: false, error: "forbidden" } as const;
     const existing = tx.select().from(contribution).where(eq(contribution.id, id)).get();
     if (existing) {
       const same = existing.memoryEventId === input.memoryEventId && existing.recordedByUserId === input.recordedByUserId && existing.authorPersonId === input.authorPersonId && existing.audioAssetId === (input.audioAssetId ?? null) && existing.rawText === (input.rawText?.trim() || null) && existing.editedText === (input.editedText?.trim() || null) && existing.visibility === (input.visibility ?? "family") && !existing.deletedAt;
@@ -198,7 +199,7 @@ export async function createContribution(
       const access = createContributionAccessSnapshot(audioContext, now);
       if (!audio || audio.type !== "audio" ||
         !getContributionAssetAccessInTransaction(tx, access, audio.id).readable ||
-        !canManageOriginalInTransaction(tx, audioContext, audio)) return { ok: false, error: "forbidden" } as const;
+        (isUnappliedEditOriginal(tx, familyId, audio.id) || !canManageOriginalInTransaction(tx, audioContext, audio))) return { ok: false, error: "forbidden" } as const;
     }
     tx.insert(contribution)
       .values({

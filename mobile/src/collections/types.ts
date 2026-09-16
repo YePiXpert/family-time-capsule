@@ -40,6 +40,7 @@ export type CollectionPage = {
     kind: "album" | "chapter";
     description: string;
     count: number;
+    updatedAt?: string;
     coverAssetId: string | null;
     revision: number;
     deletedAt: string | null;

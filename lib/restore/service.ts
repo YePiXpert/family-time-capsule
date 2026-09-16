@@ -1740,12 +1740,12 @@ async function loadAndVerifyZip(
   try { bookGraph = parseBookArchive(bookRaw, manifest.familyId, { memory: new Set(memoriesJson.map(m=>m.id)), asset: assetIds, person: new Set(peopleJson.map(p=>p.id)), contribution: new Set(contributionsJson.map(c=>c.id)), collection: new Set(collectionGraph.collections.map(c=>c.id)) }); }
   catch { throw new RestoreError("bad_refs", "年册编辑与历史版本关系图无效"); }
 
-  requireCondition(manifest.modules?.drafts === undefined || (manifest.modules.drafts === 1 && archive.has(`${EXPORT_ROOT_DIR}/drafts.json`)), "missing_json", "声明的草稿模块缺失或不支持");
+  requireCondition(manifest.modules?.drafts === undefined || ([1, 2].includes(manifest.modules.drafts) && archive.has(`${EXPORT_ROOT_DIR}/drafts.json`)), "missing_json", "声明的草稿模块缺失或不支持");
   let drafts;
   try {
     const rawDrafts = archive.has(`${EXPORT_ROOT_DIR}/drafts.json`) ? await readJson<unknown>("drafts.json") : [];
-    drafts = parseDraftArchive(rawDrafts, { inbox: new Set(inboxItemsJson.map(i => i.id)), assets: assetIds, events: new Set(memoriesJson.map(m => m.id)), people: new Set(peopleJson.map(p => p.id)) });
-    const draftIds = new Set(drafts.map(row => row.id));
+    drafts = parseDraftArchive(rawDrafts, { inbox: new Set(inboxItemsJson.map(i => i.id)), assets: assetIds, events: new Set(memoriesJson.map(m => m.id)), people: new Set(peopleJson.map(p => p.id)) }, manifest.modules?.drafts ?? 1);
+    const draftIds = new Set(drafts.filter(row => row.purpose === "capture").map(row => row.id));
     requireCondition(importSessionsJson.every(row => !row.intakeDraftId || draftIds.has(row.intakeDraftId)), "bad_json", "收件引用的草稿不存在");
   } catch { throw new RestoreError("bad_refs", "草稿聚合与原件引用无效"); }
 
@@ -2194,7 +2194,7 @@ async function restoreFromArchive(
       if (assetDeletions.length) tx.insert(assetDeletion).values(assetDeletions.map(row => ({ ...row, familyId, requestedByUserId: null, storageKeysJson: "[]", cleanedAt: new Date().toISOString() }))).run();
       for (const receipt of data.privacy?.reviewAssets ?? []) tx.run(sql`insert into restored_review_asset(family_id,inbox_item_id,asset_id) values (${familyId},${receipt.inboxItemId},${receipt.assetId})`);
       for (const row of drafts) {
-        tx.insert(draft).values({ id: row.id, inboxItemId: row.inboxItemId, familyId, authorUserId: restoredOwner(draftPrivacy.get(row.id)?.owner), readerUserIdsJson: JSON.stringify([...new Set((draftPrivacy.get(row.id)?.readers ?? []).map(id => principalUsers.get(id)!))]), authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: draftPrivacy.get(row.id)?.visibility ?? row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, reviewedRevision: row.inboxItemId && !row.reviewPending ? 0 : null, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
+        tx.insert(draft).values({ id: row.id, purpose: row.purpose, editTargetMemoryId: row.editTargetMemoryId, inboxItemId: row.inboxItemId, familyId, authorUserId: restoredOwner(draftPrivacy.get(row.id)?.owner), readerUserIdsJson: JSON.stringify([...new Set((draftPrivacy.get(row.id)?.readers ?? []).map(id => principalUsers.get(id)!))]), authorPersonId: row.authorPersonId, authorName: row.authorName, title: row.title, text: row.text, milestoneType: row.milestoneType ?? null, occurredAt: row.occurredAt, occurredAtPrecision: row.occurredAtPrecision, locationText: row.locationText, participantIdsJson: JSON.stringify(row.participantIds), visibility: draftPrivacy.get(row.id)?.visibility ?? row.visibility, coverItemId: row.coverItemId, status: row.status, memoryEventId: row.memoryEventId, revision: 0, reviewedRevision: row.inboxItemId && !row.reviewPending ? 0 : null, mutationId: randomUUID(), createdAt: row.createdAt, updatedAt: row.updatedAt }).run();
         for (const [sortOrder, item] of row.items.entries()) tx.insert(draftItem).values({ ...item, draftId: row.id, sortOrder }).run();
       }
       for (const row of importSessionsJson) if (row.intakeDraftId) tx.update(importSessionTable).set({ intakeDraftId: row.intakeDraftId }).where(eq(importSessionTable.id, row.id)).run();

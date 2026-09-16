@@ -95,6 +95,8 @@ export async function getMobileMemory(context: FamilyContext, eventId: string) {
     titleSource: detail.event.titleSource,
     titleRevision: detail.event.titleRevision,
     bodyText: detail.event.bodyText,
+    atomicEditVersion: 1,
+    coverAssetId: detail.event.coverAssetId,
     canWrite: current.canWrite,
     visibility: detail.event.visibility,
     readerUserIds: current.readerUserIds,

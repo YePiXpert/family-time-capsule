@@ -11,6 +11,9 @@ export const draft = sqliteTable("draft", {
   authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
   authorPersonId: text("author_person_id").references(() => person.id, { onDelete: "set null" }),
   authorName: text("author_name").notNull().default(""),
+  purpose: text("purpose").notNull().default("capture"),
+  editTargetMemoryId: text("edit_target_memory_id").references(() => memoryEvent.id, { onDelete: "set null" }),
+  milestoneType: text("milestone_type"),
   title: text("title").notNull().default(""),
   text: text("text").notNull().default(""),
   occurredAt: text("occurred_at"),
@@ -29,7 +32,8 @@ export const draft = sqliteTable("draft", {
   memoryEventId: text("memory_event_id").references(() => memoryEvent.id, { onDelete: "set null" }),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
-}, t => [index("draft_author_updated_idx").on(t.familyId, t.authorUserId, t.updatedAt)]);
+}, t => [index("draft_author_updated_idx").on(t.familyId, t.authorUserId, t.updatedAt),
+  index("draft_edit_target_idx").on(t.familyId, t.editTargetMemoryId, t.purpose)]);
 
 export const draftItem = sqliteTable("draft_item", {
   id: text("id").primaryKey(),

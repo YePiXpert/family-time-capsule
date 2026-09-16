@@ -8,6 +8,7 @@ import { user } from "@/db/schema/auth";
 import { hasFamilyCapability } from "@/lib/authz/policy";
 import type { FamilyContext } from "@/lib/family/context";
 import { DraftError, getDraft, saveDraft } from "@/lib/drafts/service";
+import { draft as draftTable } from "@/db/schema/draft";
 import { emptyDraftContent } from "@/lib/drafts/model";
 
 /** Author-owned intake destination, separate from transfer and memory status. */
@@ -33,6 +34,7 @@ export function chooseIntake(context: FamilyContext, id: string, input: { destin
         // The native aggregate has already arrived/published. Link its receipt;
         // do not append the same text or resurrect removed item references.
         getDraft(context, draftId);
+        if (tx.select({ purpose: draftTable.purpose }).from(draftTable).where(eq(draftTable.id, draftId)).get()?.purpose !== "capture") throw new DraftError("draft_purpose_conflict", 409);
       } else {
       const existing = (input.draftRevision ?? 0) > 0 ? getDraft(context, draftId) : null;
       const content = existing ?? emptyDraftContent();

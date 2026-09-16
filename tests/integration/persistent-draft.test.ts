@@ -41,7 +41,7 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
   const audio = await ingestMedia({ kind: "audio", familyId: ctx.familyId, createdByUserId: ctx.userId, filename: "口述.wav", declaredMime: "audio/wav", buffer: readFileSync(path.join(__dirname, "../fixtures/sample.wav")), clientLastModifiedMs: null });
   if (audio.status !== "stored") throw new Error(audio.status); assets.push(audio.asset.id);
   const id = randomUUID();
-  const content = { ...emptyDraftContent(), title: "一件混合记录", text: "江边划船的完整回忆只在正文里", occurredAt: "1980-08-12T09:30:00.000Z", participantIds: [ctx.personId!], items: assets.map(assetId => ({ id: randomUUID(), assetId, localCaptureRef: null, caption: "原始顺序" })) };
+  const content = { ...emptyDraftContent(), title: "一件混合记录", milestoneType: "first_time" as const, text: "江边划船的完整回忆只在正文里", occurredAt: "1980-08-12T09:30:00.000Z", participantIds: [ctx.personId!], items: assets.map(assetId => ({ id: randomUUID(), assetId, localCaptureRef: null, caption: "原始顺序" })) };
   const mutationId = randomUUID();
   const saved = saveDraft(ctx, id, 0, mutationId, content);
   expect(saved.revision).toBe(1);
@@ -77,6 +77,7 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
   const detail = (await getMemoryEventDetail(ctx.familyId, published.memoryEventId))!;
   expect(detail.assets.map(a => a.id)).toEqual([...assets].reverse());
   expect(detail.event.coverAssetId).toBe(assets[1]);
+  expect(detail.event.milestoneType).toBe("first_time");
   expect(detail.event.childPersonId).toBeNull();
   expect(detail.sourceNotes.map(n => n.rawText)).toEqual([content.text]);
   expect(searchFamily(ctx, { q: "划船" }).events.map(e => e.id)).toContain(detail.event.id);
@@ -111,6 +112,7 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
   expect(await metadata.json()).toMatchObject({ id: assets[0], type: "image", mimeType: "image/jpeg" });
   expect((await readMetadata(metadataRequest, { params: Promise.resolve({ assetId: "another-family-asset" }) })).status).toBe(404);
   const draft2 = saveDraft(ctx, randomUUID(), 0, randomUUID(), { ...content, items: [{ ...content.items[0]!, id: randomUUID() }] });
+  const editStage = saveDraft(ctx, randomUUID(), 0, randomUUID(), { ...emptyDraftContent(), visibility: "private", items: [{ id: randomUUID(), assetId: assets[0], localCaptureRef: null, caption: "已上传、还未追加" }] }, { purpose: "memory_edit", editTargetMemoryId: detail.event.id });
   const draft3 = saveDraft(ctx, randomUUID(), 0, randomUUID(), { ...emptyDraftContent(), text: "尚未填时间" });
   expect(() => publishDraft(ctx, draft3.id, draft3.revision)).toThrow("occurred_at_required");
   discardDraft(ctx, draft3.id, draft3.revision);
@@ -163,6 +165,11 @@ it("persistent mixed draft survives reopen, HTTP retries, reordering, permission
     (await import("@/lib/restore/principals")).bindRestoredPrincipal(ctx.familyId, principal.archive_principal_id, resumedUser, operator.id);
     const restoredDraft = restoredDraftService.getDraft({ ...ctx, userId: resumedUser, role: "editor" }, draft2.id);
     expect(restoredDraft.text).toBe(content.text);
+    expect(restoredDraft.milestoneType).toBe("first_time");
+    const restoredStage = restoredDraftService.getDraft({ ...ctx, userId: resumedUser, role: "editor" }, editStage.id);
+    expect(restoredStage).toMatchObject({ purpose: "memory_edit", editTargetMemoryId: detail.event.id, visibility: "private", status: "editing", items: [{ assetId: assets[0] }] });
+    expect(restoredDraftService.listDrafts({ ...ctx, userId: resumedUser, role: "editor" }).some(d => d.id === editStage.id)).toBe(false);
+    expect(() => restoredDraftService.publishDraft({ ...ctx, userId: resumedUser, role: "editor" }, editStage.id, 0)).toThrow("draft_purpose_conflict");
     expect(restoredDraft.items.map(i => i.assetId)).toEqual([assets[0]]);
   } finally { target.closeDatabase(); }
 });

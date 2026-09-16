@@ -113,6 +113,12 @@ it("resolves exact off-page selections with dates and rechecks the intended read
   expect((await request(query)).status).toBe(400);
 });
 
+it("uses the explicit book preview title and rejects invalid titles", () => {
+  const result=createWork(context,{kind:"book",title:"我们一起长大",audience:"personal",selection:[{kind:"memory",id:memoryId}]});
+  expect(books.getBookProject(context,result.id).title).toBe("我们一起长大");
+  expect(()=>createWork(context,{kind:"book",title:"   ",selection:[{kind:"memory",id:memoryId}]})).toThrow("invalid_title");
+});
+
 it("accepts native bearer creation and rejects a viewer or client-selected family", async () => {
   const token = randomUUID();
   getDb().insert(session).values({ id: randomUUID(), token, userId: actor.id, expiresAt: new Date(Date.now() + 60000) }).run();

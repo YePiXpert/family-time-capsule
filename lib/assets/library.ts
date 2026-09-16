@@ -1,4 +1,5 @@
 import "server-only";
+import { isUnappliedEditOriginal } from "@/lib/drafts/staging";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -77,7 +78,7 @@ export function editLibraryAsset(ctx: FamilyContext, id: string, revision: numbe
 }
 function originals(tx: Tx, ctx: FamilyContext, ids: string[]) {
   if (!Array.isArray(ids) || !ids.length || ids.length > 200 || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new AssetLibraryError("invalid_assets");
-  return ids.map(id => find(tx, ctx, id));
+  return ids.map(id => { if (isUnappliedEditOriginal(tx, ctx.familyId, id)) throw new AssetLibraryError("edit_original_staged", 409); return find(tx, ctx, id); });
 }
 export function addLibraryAssetsToDraft(ctx: FamilyContext, ids: string[], draftId: string, expectedRevision: number, mutationId: string) {
   return getDb().transaction(tx => {

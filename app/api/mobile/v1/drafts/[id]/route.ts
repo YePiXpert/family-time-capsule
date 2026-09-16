@@ -15,7 +15,7 @@ export async function PUT(request: Request, route: Route) {
   if (!auth.ok) return mobileJson({ error: auth.error }, { status: auth.status });
   try {
     const body = asRecord(await readMobileJson(request, 1024 * 1024));
-    return mobileJson(saveDraft(auth.context, (await route.params).id, body.expectedRevision as number, body.mutationId as string, body.content));
+    return mobileJson(saveDraft(auth.context, (await route.params).id, body.expectedRevision as number, body.mutationId as string, body.content, { purpose: body.purpose, editTargetMemoryId: body.editTargetMemoryId }));
   } catch (error) { return draftResponseError(error); }
 }
 export async function DELETE(request: Request, route: Route) {

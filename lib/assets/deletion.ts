@@ -27,6 +27,9 @@ function assertUnreferenced(tx: Tx, ids: string[]) {
       if (tx.get(sql`select 1 from ${identifier(table.name)} where ${identifier(key.from)} in (select value from json_each(${json})) limit 1`)) throw new AssetLibraryError("asset_in_use", 409);
     }
   }
+  // Staging registration stays immutable; the completed upload receipt is its
+  // original reference until the memory edit commits or the stage is discarded.
+  if (tx.get(sql`select 1 from upload_session u join draft d on d.id=u.draft_id where u.final_asset_id in (select value from json_each(${json})) and d.purpose='memory_edit' and d.status='editing' limit 1`)) throw new AssetLibraryError("asset_in_use", 409);
   // Historical avatar pointers predate FKs.
   if (tx.get(sql`select 1 from person where avatar_asset_id in (select value from json_each(${json})) limit 1`)) throw new AssetLibraryError("asset_in_use", 409);
   // A confirmed intake remains provenance even if its event link was damaged.
