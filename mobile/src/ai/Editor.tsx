@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert, ScrollView, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import type { Library, RecordDraft } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
-import { Button, ErrorText, Text, useStyles, messageOf } from "../local/ui";
-import { useNav } from "../local/navigation";
 import {
-  api,
-  getToken,
-  getPreferredModel,
-  hasConsent,
-  giveConsent,
-  AIError,
-} from "./client";
+  Button,
+  ErrorText,
+  Text,
+  useStyles,
+  messageOf,
+  dateLabel,
+} from "../local/ui";
+import { useNav } from "../local/navigation";
+import { api, getToken, hasConsent, giveConsent, AIError } from "./client";
+import { Photo } from "../local/Media";
 import { thumbnail } from "./images";
 import {
   sourceFingerprint,
@@ -20,7 +21,7 @@ import {
   validateResult,
   localPlaceTags,
 } from "./state";
-import type { AIGroup, AIJob, AIProposal, AIResult, Config } from "./types";
+import type { AIGroup, AIJob, AIProposal, AIResult } from "./types";
 type Patch = Partial<Pick<RecordDraft, "aiJob" | "aiProposal">>;
 export function AIEditor({
   draft,
@@ -40,7 +41,15 @@ export function AIEditor({
   const [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(""),
     [error, setError] = useState(""),
-    [eventIndex, setEventIndex] = useState(0),
+    [chosenEventIndex, setEventIndex] = useState(0),
+    [task, setTask] = useState<"group" | "write">(
+      draft.aiProposal?.kind ??
+        (draft.recordId ||
+        draft.content.mediaIds.filter((id) => media[id]?.kind === "image")
+          .length < 2
+          ? "write"
+          : "group"),
+    ),
     [lastKind, setLastKind] = useState<"group" | "write">("group");
   const active = useRef(false),
     abort = useRef<AbortController | null>(null),
@@ -50,7 +59,26 @@ export function AIEditor({
   }, [draft, media]);
   useEffect(() => () => abort.current?.abort(), []);
   const events = photoDayGroups(draft, media),
-    proposal = draft.aiProposal;
+    proposal = draft.aiProposal,
+    eventIndex = Math.min(chosenEventIndex, Math.max(0, events.length - 1));
+  const chooseTask = (kind: "group" | "write") => {
+    setTask(kind);
+    setError("");
+    setProgress("");
+  };
+  const photoStrip = (ids: string[]) => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator
+      contentContainerStyle={{ gap: 8 }}
+    >
+      {ids
+        .filter((id) => media[id]?.kind === "image")
+        .map((id) => (
+          <Photo key={id} media={media[id]} size={72} />
+        ))}
+    </ScrollView>
+  );
   const generate = async (kind: "group" | "write", fresh = false) => {
     if (active.current || disabled) return;
     active.current = true;
@@ -62,7 +90,7 @@ export function AIEditor({
       if (!(await hasConsent())) {
         Alert.alert(
           "使用 AI 整理照片",
-          "将把这份草稿中参与分析的照片缩略图、拍摄时间及相关文字，经主人的服务发送给所选 AI。原图和精确 GPS 不发送，结果由你确认。",
+          "将把这份草稿中参与分析的照片缩略图、拍摄时间及相关文字，经主人的服务发送给 DeepSeek Flash High。原图和精确 GPS 不发送，结果由你确认。",
           [
             { text: "取消", style: "cancel" },
             {
@@ -94,18 +122,8 @@ export function AIEditor({
       if (!ids.length) throw new Error("请先为这件事添加照片。");
       if (ids.length > 100)
         throw new Error("一次最多整理 100 张照片，请分几份草稿处理。");
-      setProgress("正在读取 AI 配置…");
-      const config = await api<Config>(
-        "/ai/config",
-        undefined,
-        "GET",
-        abort.current.signal,
-      );
-      const preferred = await getPreferredModel(),
-        model =
-          preferred && config.enabledModels.includes(preferred)
-            ? preferred
-            : config.defaultModel;
+      // A profile change starts a new job; old partial results stay in the draft.
+      const model = "deepseek-flash:high";
       const previous = snapshot.draft.aiJob;
       const job: AIJob =
         !fresh &&
@@ -155,7 +173,7 @@ export function AIEditor({
         check();
         const result = await api<AIResult>(
           `/ai/${operation}`,
-          { requestId: step.requestId, model, photos, ...extra },
+          { requestId: step.requestId, photos, ...extra },
           "POST",
           abort.current!.signal,
         );
@@ -170,7 +188,7 @@ export function AIEditor({
       };
       let result: AIResult;
       if (kind === "write" && ids.length <= 20) {
-        setProgress(`正在用 ${model} 写记录…`);
+        setProgress("正在生成这件事的标题和正文…");
         result = await perform("write", "write", ids, { context });
       } else {
         const daySets = sameDayChunks(ids, snapshot.media),
@@ -229,52 +247,98 @@ export function AIEditor({
     try {
       await onApply(proposal, part);
       setError("");
-      setProgress("已采用，保存记录后生效。");
+      if (proposal.kind === "group") {
+        setTask("write");
+        setEventIndex(0);
+        setProgress("照片已分好，选一件事写记录，也可以直接保存。");
+      } else setProgress("标题和正文已填入，保存记录后生效。");
     } catch (e) {
       setError(messageOf(e));
     }
   };
+  const pendingOtherTask = proposal && proposal.kind !== task;
+  const selectedEvent = events[eventIndex];
   return (
     <View style={s.section}>
       <Text>AI 帮你整理</Text>
-      <Text style={s.muted}>
-        先给建议，你确认后再保存。只分析当前草稿中参与整理的照片。
-      </Text>
-      <Button
-        title="AI 设置 / 选择模型"
-        disabled={busy || disabled}
-        onPress={() => nav.navigate("AISettings")}
-      />
       {!draft.recordId && (
-        <Button
-          title="AI 按事情分组"
-          disabled={busy || disabled}
-          onPress={() => {
-            void generate("group");
-          }}
-        />
+        <View style={s.row}>
+          <Button
+            title="分照片"
+            selected={task === "group"}
+            disabled={busy || disabled}
+            onPress={() => chooseTask("group")}
+          />
+          <Button
+            title="写记录"
+            selected={task === "write"}
+            disabled={busy || disabled}
+            onPress={() => chooseTask("write")}
+          />
+        </View>
       )}
-      {events.length > 1 && (
+      {task === "group" ? (
         <>
-          <Text style={s.muted}>选择要写文案的事情</Text>
-          {events.map((event, index) => (
-            <Button
-              key={index}
-              title={`事情 ${index + 1}${event.title ? `：${event.title}` : ""}`}
-              selected={eventIndex === index}
-              disabled={busy || disabled}
-              onPress={() => setEventIndex(index)}
-            />
-          ))}
+          <Text>把照片分成几件事</Text>
+          <Text style={s.muted}>
+            根据拍摄时间和画面整理照片，同一天可以有多件事。每件事保存为一条记录。
+          </Text>
+          <Button
+            title="按事情分照片"
+            disabled={busy || disabled || !!pendingOtherTask}
+            onPress={() => {
+              void generate("group");
+            }}
+          />
+        </>
+      ) : (
+        <>
+          <Text>给一件事写标题和正文</Text>
+          <Text style={s.muted}>
+            选好照片所属的事情，生成后预览，再填入这件事的记录。
+          </Text>
+          {events.length > 1 &&
+            events.map((event, index) => (
+              <Button
+                key={index}
+                title={`事情 ${index + 1}${event.title ? `：${event.title}` : ""} · ${dateLabel(event.date)} · ${event.mediaIds.filter((id) => media[id]?.kind === "image").length} 张照片`}
+                selected={eventIndex === index}
+                disabled={busy || disabled || proposal?.kind === "write"}
+                onPress={() => setEventIndex(index)}
+              />
+            ))}
+          {selectedEvent && (
+            <View style={{ gap: 8 }}>
+              <Text style={s.muted}>
+                本次写记录的照片 · 事情 {eventIndex + 1}
+              </Text>
+              {photoStrip(selectedEvent.mediaIds)}
+            </View>
+          )}
+          <Button
+            title="帮这件事写记录"
+            disabled={busy || disabled || !!pendingOtherTask}
+            onPress={() => {
+              void generate("write");
+            }}
+          />
         </>
       )}
-      <Button
-        title="帮这件事写记录"
-        disabled={busy || disabled}
-        onPress={() => {
-          void generate("write");
-        }}
-      />
+      {pendingOtherTask && (
+        <View style={{ gap: 8 }}>
+          <Text style={s.muted}>
+            还有一份{proposal.kind === "group" ? "分组" : "标题和正文"}
+            建议待确认。
+          </Text>
+          <Button
+            title={
+              proposal.kind === "group" ? "查看分组建议" : "查看标题和正文"
+            }
+            onPress={() => chooseTask(proposal.kind)}
+            disabled={busy || disabled}
+          />
+        </View>
+      )}
       {!!progress && (
         <Text style={s.muted} accessibilityLiveRegion="polite">
           {progress}
@@ -302,27 +366,36 @@ export function AIEditor({
           />
         </>
       )}
-      {proposal && (
+      {proposal && proposal.kind === task && (
         <View style={s.section}>
-          <Text>AI 建议 · {proposal.model}</Text>
           {proposal.kind === "group" ? (
-            proposal.groups?.map((group, index) => (
-              <View key={index} style={{ gap: 4 }}>
-                <Text>
-                  {index + 1}. {group.title} · {group.photoIds.length} 张
-                </Text>
-                <Text style={s.muted}>{group.summary}</Text>
-              </View>
-            ))
+            <>
+              <Text>分组预览 · {proposal.groups?.length} 件事</Text>
+              <Text style={s.muted}>
+                核对每件事包含的照片。画面摘要帮助辨认分组，记录正文在「写记录」中生成。
+              </Text>
+              {proposal.groups?.map((group, index) => (
+                <View key={index} style={{ gap: 8 }}>
+                  <Text>
+                    事情 {index + 1}：{group.title} · {group.photoIds.length} 张
+                  </Text>
+                  {photoStrip(group.photoIds)}
+                  <Text style={s.muted}>画面摘要：{group.summary}</Text>
+                </View>
+              ))}
+            </>
           ) : (
             <>
+              <Text>事情 {proposal.eventIndex + 1} · 文字预览</Text>
+              <Text style={s.muted}>标题</Text>
               <Text>{proposal.title}</Text>
+              <Text style={s.muted}>正文</Text>
               <Text>{proposal.text}</Text>
             </>
           )}
           <Button
             title={
-              proposal.kind === "group" ? "采用分组建议" : "采用标题和正文"
+              proposal.kind === "group" ? "确认照片分组" : "填入标题和正文"
             }
             primary
             disabled={busy || disabled}
@@ -333,14 +406,14 @@ export function AIEditor({
           {proposal.kind === "write" && (
             <>
               <Button
-                title="只采用标题"
+                title="只填入标题"
                 disabled={busy || disabled}
                 onPress={() => {
                   void apply("title");
                 }}
               />
               <Button
-                title="只采用正文"
+                title="只填入正文"
                 disabled={busy || disabled}
                 onPress={() => {
                   void apply("text");
@@ -359,6 +432,7 @@ export function AIEditor({
           />
         </View>
       )}
+      <Text style={s.muted}>DeepSeek Flash High</Text>
     </View>
   );
 }

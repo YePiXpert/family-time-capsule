@@ -29,7 +29,9 @@ final class NativeRegressionTests: XCTestCase {
     }
     func testLocalRecordAlbumAndBackup() throws {
         XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20)); shot("home")
-        tap("record-fixture"); tap("record-edit"); tap("帮这件事写记录")
+        tap("record-fixture"); tap("record-edit")
+        XCTAssertTrue(element("给一件事写标题和正文").waitForExistence(timeout: 20)); shot("ai-write-entry")
+        tap("帮这件事写记录")
         XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-enrollment-from-photo")
         // Opening the editor persists a draft. Discard this enrollment-only draft
         // so the later backup check can still require no unfinished edits.

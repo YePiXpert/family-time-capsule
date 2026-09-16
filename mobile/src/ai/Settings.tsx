@@ -9,15 +9,8 @@ import {
   messageOf,
   useStyles,
 } from "../local/ui";
-import {
-  api,
-  disconnect,
-  enroll,
-  getPreferredModel,
-  getToken,
-  preferModel,
-} from "./client";
-import type { Config, Member, Overview, Usage, AISettings } from "./types";
+import { api, disconnect, enroll, getToken } from "./client";
+import type { Member, Overview, Usage, AISettings } from "./types";
 function MemberRow({
   member,
   reload,
@@ -112,7 +105,6 @@ function MemberRow({
 export function AISettingsScreen() {
   const s = useStyles(),
     [me, setMe] = useState<{ member: Member; usage: Usage } | null>(null),
-    [config, setConfig] = useState<Config | null>(null),
     [overview, setOverview] = useState<Overview | null>(null),
     [settings, setSettings] = useState<AISettings | null>(null),
     [code, setCode] = useState(""),
@@ -121,23 +113,16 @@ export function AISettingsScreen() {
     ),
     [inviteName, setInviteName] = useState(""),
     [inviteCode, setInviteCode] = useState(""),
-    [preferred, setPreferred] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const refresh = async () => {
-    setPreferred((await getPreferredModel()) ?? "");
     if (!(await getToken())) {
       setMe(null);
-      setConfig(null);
       setOverview(null);
       return;
     }
-    const [member, configuration] = await Promise.all([
-      api<{ member: Member; usage: Usage }>("/me"),
-      api<Config>("/ai/config"),
-    ]);
+    const member = await api<{ member: Member; usage: Usage }>("/me");
     setMe(member);
-    setConfig(configuration);
     if (member.member.role === "owner") {
       const data = await api<Overview>("/admin/overview");
       setOverview(data);
@@ -172,7 +157,8 @@ export function AISettingsScreen() {
     <Page>
       <Text style={s.title}>AI 设置</Text>
       <Text style={s.muted}>
-        AI 仅在你主动整理或写记录时分析照片。原图和成长记录继续保存在本机。
+        使用 DeepSeek Flash High
+        整理照片和写记录。原图和成长记录继续保存在本机。
       </Text>
       {me ? (
         <>
@@ -186,31 +172,6 @@ export function AISettingsScreen() {
           <Text style={s.muted}>
             额度每天 UTC 00:00 重置；生成文案使用的图片也计入分析额度。
           </Text>
-          <Button
-            title="使用主人默认模型"
-            selected={!preferred}
-            disabled={busy}
-            onPress={() => {
-              void run(async () => {
-                await preferModel("");
-                setPreferred("");
-              });
-            }}
-          />
-          {config?.models.map((model) => (
-            <Button
-              key={model.id}
-              title={model.label}
-              selected={preferred === model.id}
-              disabled={busy}
-              onPress={() => {
-                void run(async () => {
-                  await preferModel(model.id);
-                  setPreferred(model.id);
-                });
-              }}
-            />
-          ))}
           <Button
             title="断开本机 AI 访问"
             disabled={busy}
@@ -353,35 +314,6 @@ export function AISettingsScreen() {
               setSettings({ ...settings, globalWrites: Number(v) })
             }
           />
-          <Text>允许使用的模型</Text>
-          {overview.availableModels.map((id) => (
-            <View key={id} style={{ gap: 8 }}>
-              <Button
-                title={id}
-                selected={settings.enabledModels.includes(id)}
-                onPress={() => {
-                  const enabled = settings.enabledModels.includes(id)
-                    ? settings.enabledModels.filter((x) => x !== id)
-                    : [...settings.enabledModels, id];
-                  if (enabled.length)
-                    setSettings({
-                      ...settings,
-                      enabledModels: enabled,
-                      defaultModel: enabled.includes(settings.defaultModel)
-                        ? settings.defaultModel
-                        : enabled[0]!,
-                    });
-                }}
-              />
-              {settings.enabledModels.includes(id) && (
-                <Button
-                  title={settings.defaultModel === id ? "当前默认" : "设为默认"}
-                  selected={settings.defaultModel === id}
-                  onPress={() => setSettings({ ...settings, defaultModel: id })}
-                />
-              )}
-            </View>
-          ))}
           <Button
             title="保存全局设置"
             disabled={busy}

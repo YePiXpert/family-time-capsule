@@ -20,11 +20,14 @@ print('health ready');assert call('/api/v1/me')[0]==401
 code=json.loads(subprocess.check_output(['docker','exec',args.container,'node','src/manage.ts','owner']))['code']
 status,owner=call('/api/v1/enroll',{'code':code,'deviceName':'deployment-verification'});assert status==201
 token=owner['token']
+status,config=call('/api/v1/ai/config',token=token);assert status==200
+assert config['defaultModel']=='deepseek-flash' and config['reasoningEffort']=='high'
+assert config['enabledModels']==['deepseek-flash']
 status,invitation=call('/api/v1/admin/invites',{'name':'verification-member'},token);assert status==200
 status,member=call('/api/v1/enroll',{'code':invitation['code'],'deviceName':'synthetic-test'});assert status==201
 assert call('/api/v1/admin/overview',token=member['token'])[0]==403
 image='data:image/jpeg;base64,'+base64.b64encode((Path(__file__).parent.parent/'tests/fixtures/shapes.jpg').read_bytes()).decode()
-for model in ['deepseek-flash','gpt-5.6-luna']:
+for model in ['deepseek-flash']:
  for kind in ['group','write']:
   body={'requestId':str(uuid.uuid4()),'model':model,'photos':[{'id':'shapes','date':'2020-01-01T12:00:00','image':image}],'context':'这是几何图形测试，请客观描述形状和颜色。'}
   status,result=call('/api/v1/ai/'+kind,body,member['token']);assert status==200,(model,kind,status,result)
