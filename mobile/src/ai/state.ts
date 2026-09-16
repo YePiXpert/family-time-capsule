@@ -2,7 +2,9 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import type { Library, RecordDraft, RecordContent } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
-import type { AIGroup, AIProposal, AIResult } from "./types";
+import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
+/** 单次润色的正文上限；超限必须明确提示，不允许静默截断。 */
+export const POLISH_BODY_LIMIT = 2000;
 export function sourceFingerprint(draft: RecordDraft, media: Library["media"]) {
   return bytesToHex(
     sha256(
@@ -20,6 +22,75 @@ export function sourceFingerprint(draft: RecordDraft, media: Library["media"]) {
       ),
     ),
   );
+}
+/** 只发送当前事情的标题与正文；不发送照片，也不截断超限文字。 */
+export function polishRequest(event: {
+  title: string;
+  text: string;
+}): { context: string; error?: string } {
+  const body = event.text.trim();
+  if (!body)
+    return {
+      context: "",
+      error: "还没有可润色的正文。先写下几句话，再来润色。",
+    };
+  if (event.text.length > POLISH_BODY_LIMIT)
+    return {
+      context: "",
+      error: `正文已有 ${event.text.length} 字，一次最多润色 ${POLISH_BODY_LIMIT} 字。请先精简或分成几段，不会自动截断。`,
+    };
+  return {
+    context: `${event.title.trim() ? `标题：${event.title.trim()}\n` : ""}正文：\n${event.text}`,
+  };
+}
+const modeOf = (value: { writingMode?: WritingMode }): WritingMode =>
+  value.writingMode ?? "generate";
+/** 生成与润色即使输入指纹相同也不能复用彼此的请求与结果。 */
+export function sameJob(
+  previous: AIJob | undefined,
+  next: Omit<AIJob, "steps">,
+): previous is AIJob {
+  return (
+    !!previous &&
+    previous.fingerprint === next.fingerprint &&
+    previous.kind === next.kind &&
+    previous.eventIndex === next.eventIndex &&
+    previous.model === next.model &&
+    modeOf(previous) === modeOf(next)
+  );
+}
+/** 采用建议时写回的位置：分组草稿写 photoEvents，其余直接写 content。 */
+export function proposalPatch(
+  draft: RecordDraft,
+  media: Library["media"],
+  proposal: AIProposal,
+  part?: "title" | "text",
+): Pick<RecordDraft, "content"> | Pick<RecordDraft, "photoEvents"> {
+  const accepted =
+    part === "title"
+      ? { ...proposal, text: undefined }
+      : part === "text"
+        ? { ...proposal, title: undefined }
+        : proposal;
+  const events = proposalEvents(draft, media, accepted);
+  const grouped =
+    !draft.recordId && draft.groupPhotosByDay && draft.content.mediaIds.length;
+  return grouped ? { photoEvents: events } : { content: events[0]! };
+}
+/** 在分组预览中调整一张照片的归属；每张照片仍恰好归属一次。 */
+export function moveProposalPhoto(
+  proposal: AIProposal,
+  mediaId: string,
+  targetIndex: number,
+): AIProposal {
+  if (proposal.kind !== "group" || !proposal.groups) return proposal;
+  const groups = proposal.groups.map((g) => ({ ...g, photoIds: [...g.photoIds] }));
+  const source = groups.find((g) => g.photoIds.includes(mediaId));
+  const target = groups[targetIndex];
+  if (!source || !target || source === target) return proposal;
+  target.photoIds.push(mediaId);
+  source.photoIds = source.photoIds.filter((id) => id !== mediaId);
+  return { ...proposal, groups: groups.filter((g) => g.photoIds.length) };
 }
 export function validateResult(
   value: unknown,

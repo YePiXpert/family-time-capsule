@@ -1,28 +1,38 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
 import type { Library, RecordDraft } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
 import {
   Button,
   ErrorText,
+  Glass,
   Text,
   useStyles,
   messageOf,
   dateLabel,
+  useTheme,
 } from "../local/ui";
 import { useNav } from "../local/navigation";
+import { JournalIcon } from "../components/JournalIcon";
 import { api, getToken, hasConsent, giveConsent, AIError } from "./client";
 import { Photo } from "../local/Media";
 import { thumbnail } from "./images";
 import {
   sourceFingerprint,
   sameDayChunks,
+  sameJob,
+  polishRequest,
+  moveProposalPhoto,
   validateResult,
   localPlaceTags,
 } from "./state";
-import type { AIGroup, AIJob, AIProposal, AIResult } from "./types";
+import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
 type Patch = Partial<Pick<RecordDraft, "aiJob" | "aiProposal">>;
+type Run = { kind: "group" | "write"; mode: WritingMode };
+const modeOf = (proposal: AIProposal): WritingMode =>
+  proposal.writingMode ?? "generate";
 export function AIEditor({
   draft,
   media,
@@ -37,20 +47,23 @@ export function AIEditor({
   onApply: (proposal: AIProposal, part?: "title" | "text") => Promise<unknown>;
 }) {
   const s = useStyles(),
-    nav = useNav();
-  const [busy, setBusy] = useState(false),
+    nav = useNav(),
+    { colors } = useTheme(),
+    insets = useSafeAreaInsets();
+  const [open, setOpen] = useState(false),
+    [seen, setSeen] = useState(false),
+    [busy, setBusy] = useState(false),
     [progress, setProgress] = useState(""),
     [error, setError] = useState(""),
     [chosenEventIndex, setEventIndex] = useState(0),
     [task, setTask] = useState<"group" | "write">(
-      draft.aiProposal?.kind ??
-        (draft.recordId ||
-        draft.content.mediaIds.filter((id) => media[id]?.kind === "image")
-          .length < 2
-          ? "write"
-          : "group"),
+      draft.aiProposal?.kind ?? "write",
     ),
-    [lastKind, setLastKind] = useState<"group" | "write">("group");
+    [writeMode, setWriteMode] = useState<WritingMode>(
+      draft.aiProposal?.kind === "write" ? modeOf(draft.aiProposal) : "generate",
+    ),
+    [lastRun, setLastRun] = useState<Run>({ kind: "write", mode: "generate" }),
+    [adjusting, setAdjusting] = useState(false);
   const active = useRef(false),
     abort = useRef<AbortController | null>(null),
     latest = useRef({ draft, media });
@@ -60,9 +73,23 @@ export function AIEditor({
   useEffect(() => () => abort.current?.abort(), []);
   const events = photoDayGroups(draft, media),
     proposal = draft.aiProposal,
-    eventIndex = Math.min(chosenEventIndex, Math.max(0, events.length - 1));
+    eventIndex = Math.min(chosenEventIndex, Math.max(0, events.length - 1)),
+    selectedEvent = events[eventIndex],
+    totalImages = draft.content.mediaIds.filter(
+      (id) => media[id]?.kind === "image",
+    ),
+    eventImages = (selectedEvent?.mediaIds ?? []).filter(
+      (id) => media[id]?.kind === "image",
+    ),
+    stale = !!proposal && sourceFingerprint(draft, media) !== proposal.fingerprint,
+    unseen = !!proposal && !seen;
   const chooseTask = (kind: "group" | "write") => {
     setTask(kind);
+    setError("");
+    setProgress("");
+  };
+  const chooseWriteMode = (mode: WritingMode) => {
+    setWriteMode(mode);
     setError("");
     setProgress("");
   };
@@ -79,7 +106,11 @@ export function AIEditor({
         ))}
     </ScrollView>
   );
-  const generate = async (kind: "group" | "write", fresh = false) => {
+  const generate = async (
+    kind: "group" | "write",
+    mode: WritingMode = "generate",
+    fresh = false,
+  ) => {
     if (active.current || disabled) return;
     active.current = true;
     try {
@@ -89,15 +120,15 @@ export function AIEditor({
       }
       if (!(await hasConsent())) {
         Alert.alert(
-          "使用 AI 整理照片",
-          "将把这份草稿中参与分析的照片缩略图、拍摄时间及相关文字，经主人的服务发送给 DeepSeek Flash High。原图和精确 GPS 不发送，结果由你确认。",
+          "使用 AI 整理",
+          "生成和分组会把这件事的照片缩略图、拍摄时间及相关文字，润色只把标题和正文，经主人的服务发送给 DeepSeek Flash High。原图和精确 GPS 不发送，结果由你确认。",
           [
             { text: "取消", style: "cancel" },
             {
               text: "同意并继续",
               onPress: () => {
                 void giveConsent()
-                  .then(() => generate(kind, fresh))
+                  .then(() => generate(kind, mode, fresh))
                   .catch((e) => setError(messageOf(e)));
               },
             },
@@ -107,33 +138,60 @@ export function AIEditor({
       }
       setBusy(true);
       setError("");
-      setLastKind(kind);
+      setLastRun({ kind, mode });
       abort.current = new AbortController();
       const snapshot = latest.current,
         fp = sourceFingerprint(snapshot.draft, snapshot.media);
-      const selected = photoDayGroups(snapshot.draft, snapshot.media)[
-        eventIndex
-      ];
+      const snapshotEvents = photoDayGroups(snapshot.draft, snapshot.media),
+        selected =
+          snapshotEvents[
+            Math.min(eventIndex, Math.max(0, snapshotEvents.length - 1))
+          ];
+      if (kind === "group") {
+        if (snapshot.draft.recordId)
+          throw new Error(
+            "按事情分组只在整理新建草稿的照片时使用，已保存的记录请用「调整归属」。",
+          );
+        const images = snapshot.draft.content.mediaIds.filter(
+          (id) => snapshot.media[id]?.kind === "image",
+        );
+        if (images.length < 2)
+          throw new Error("按事情分组至少需要两张照片，先再多选几张。");
+      }
       const ids = (
-        kind === "write"
-          ? (selected?.mediaIds ?? [])
-          : snapshot.draft.content.mediaIds
+        kind === "write" ? (selected?.mediaIds ?? []) : []
       ).filter((id) => snapshot.media[id]?.kind === "image");
-      if (!ids.length) throw new Error("请先为这件事添加照片。");
-      if (ids.length > 100)
-        throw new Error("一次最多整理 100 张照片，请分几份草稿处理。");
+      if (kind === "write" && mode === "polish") {
+        const request = polishRequest({
+          title: selected?.title ?? "",
+          text: selected?.text ?? "",
+        });
+        if (request.error) throw new Error(request.error);
+      } else if (kind === "write") {
+        if (!ids.length)
+          throw new Error(
+            "这件事还没有照片。先添加照片再生成，或写下文字后用「润色我的文字」。",
+          );
+        if (ids.length > 100)
+          throw new Error("一次最多整理 100 张照片，请分几份草稿处理。");
+      }
       // A profile change starts a new job; old partial results stay in the draft.
       const model = "deepseek-flash:high";
+      const jobSpec = {
+        fingerprint: fp,
+        kind,
+        eventIndex,
+        model,
+        ...(kind === "write" ? { writingMode: mode } : {}),
+      };
       const previous = snapshot.draft.aiJob;
-      const job: AIJob =
-        !fresh &&
-        previous?.fingerprint === fp &&
-        previous.kind === kind &&
-        previous.eventIndex === eventIndex &&
-        previous.model === model
-          ? JSON.parse(JSON.stringify(previous))
-          : { fingerprint: fp, kind, eventIndex, model, steps: [] };
-      const places = localPlaceTags(ids, snapshot.media);
+      const job: AIJob = !fresh && sameJob(previous, jobSpec)
+        ? JSON.parse(JSON.stringify(previous))
+        : { ...jobSpec, steps: [] };
+      const places = localPlaceTags(
+        kind === "write" ? ids : snapshot.draft.content.mediaIds,
+        snapshot.media,
+      );
       const context =
         kind === "write"
           ? [selected?.title, selected?.text]
@@ -187,9 +245,22 @@ export function AIEditor({
         return valid;
       };
       let result: AIResult;
-      if (kind === "write" && ids.length <= 20) {
+      if (kind === "write" && mode === "polish") {
+        const request = polishRequest({
+          title: selected?.title ?? "",
+          text: selected?.text ?? "",
+        });
+        setProgress("正在润色这段文字…");
+        result = await perform("polish", "write", [], {
+          context: request.context,
+          writingMode: "polish",
+        });
+      } else if (kind === "write" && ids.length <= 20) {
         setProgress("正在生成这件事的标题和正文…");
-        result = await perform("write", "write", ids, { context });
+        result = await perform("write", "write", ids, {
+          context,
+          writingMode: "generate",
+        });
       } else {
         const daySets = sameDayChunks(ids, snapshot.media),
           allGroups: AIGroup[] = [];
@@ -226,14 +297,28 @@ export function AIEditor({
             .slice(0, 2000);
           result = await perform("write", "write", ids.slice(0, 1), {
             context: `${context.slice(0, 1500)}\n照片分析摘要（仅作参考）：\n${summaries}`,
+            writingMode: "generate",
           });
         }
       }
       check();
       await onPatch({
-        aiProposal: { ...result, fingerprint: fp, kind, eventIndex, model },
+        aiProposal: {
+          ...result,
+          fingerprint: fp,
+          kind,
+          eventIndex,
+          model,
+          ...(kind === "write" ? { writingMode: mode } : {}),
+        },
       });
-      setProgress("建议已保存，请预览后采用。");
+      setProgress(
+        kind === "group"
+          ? "分组建议已保存，核对后确认。"
+          : mode === "polish"
+            ? "润色结果已保存，与原文对照后采用。"
+            : "建议已保存，请预览后采用。",
+      );
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -247,192 +332,433 @@ export function AIEditor({
     try {
       await onApply(proposal, part);
       setError("");
+      setAdjusting(false);
       if (proposal.kind === "group") {
         setTask("write");
+        setWriteMode("generate");
         setEventIndex(0);
         setProgress("照片已分好，选一件事写记录，也可以直接保存。");
-      } else setProgress("标题和正文已填入，保存记录后生效。");
+      } else setProgress("已填入草稿，保存记录后生效。");
     } catch (e) {
       setError(messageOf(e));
     }
   };
-  const pendingOtherTask = proposal && proposal.kind !== task;
-  const selectedEvent = events[eventIndex];
-  return (
-    <View style={s.section}>
-      <Text>AI 帮你整理</Text>
-      {!draft.recordId && (
-        <View style={s.row}>
-          <Button
-            title="分照片"
-            selected={task === "group"}
-            disabled={busy || disabled}
-            onPress={() => chooseTask("group")}
-          />
-          <Button
-            title="写记录"
-            selected={task === "write"}
-            disabled={busy || disabled}
-            onPress={() => chooseTask("write")}
-          />
-        </View>
-      )}
-      {task === "group" ? (
-        <>
-          <Text>把照片分成几件事</Text>
-          <Text style={s.muted}>
-            根据拍摄时间和画面整理照片，同一天可以有多件事。每件事保存为一条记录。
-          </Text>
-          <Button
-            title="按事情分照片"
-            disabled={busy || disabled || !!pendingOtherTask}
-            onPress={() => {
-              void generate("group");
-            }}
-          />
-        </>
-      ) : (
-        <>
-          <Text>给一件事写标题和正文</Text>
-          <Text style={s.muted}>
-            选好照片所属的事情，生成后预览，再填入这件事的记录。
-          </Text>
-          {events.length > 1 &&
-            events.map((event, index) => (
-              <Button
-                key={index}
-                title={`事情 ${index + 1}${event.title ? `：${event.title}` : ""} · ${dateLabel(event.date)} · ${event.mediaIds.filter((id) => media[id]?.kind === "image").length} 张照片`}
-                selected={eventIndex === index}
-                disabled={busy || disabled || proposal?.kind === "write"}
-                onPress={() => setEventIndex(index)}
-              />
-            ))}
-          {selectedEvent && (
+  const matchesView =
+    !!proposal &&
+    (proposal.kind === task
+      ? task === "group" || modeOf(proposal) === writeMode
+      : false);
+  const pendingOther =
+    !!proposal &&
+    (proposal.kind !== task ||
+      (task === "write" && modeOf(proposal) !== writeMode));
+  const viewProposal = () => {
+    if (!proposal) return;
+    setTask(proposal.kind);
+    if (proposal.kind === "write") setWriteMode(modeOf(proposal));
+    setError("");
+    setProgress("");
+  };
+  const movePhoto = (id: string, target: number) => {
+    if (!proposal) return;
+    void onPatch({ aiProposal: moveProposalPhoto(proposal, id, target) }).catch(
+      (e) => setError(messageOf(e)),
+    );
+  };
+  const sheet = (
+    <Modal
+      visible={open}
+      animationType="slide"
+      transparent
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={() => setOpen(false)}
+    >
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="收起 AI 面板"
+          testID="ai-close"
+          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(15,20,17,0.35)" }}
+          onPress={() => setOpen(false)}
+        />
+        <Glass
+          radius={24}
+          style={{
+            maxHeight: "82%",
+            paddingTop: 16,
+            paddingHorizontal: 20,
+            paddingBottom: insets.bottom + 12,
+          }}
+        >
+          <View style={s.between}>
+            <Text style={s.heading}>AI 帮你整理</Text>
+            <Button
+              title="收起"
+              compact
+              testID="ai-collapse"
+              onPress={() => setOpen(false)}
+            />
+          </View>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: 8 }}
+          >
             <View style={{ gap: 8 }}>
+              <Text style={s.muted}>写记录</Text>
+              <View style={s.row}>
+                <Button
+                  title="AI 生成"
+                  icon="sparkle"
+                  compact
+                  selected={task === "write" && writeMode === "generate"}
+                  testID="ai-generate"
+                  disabled={busy || disabled}
+                  onPress={() => {
+                    chooseWriteMode("generate");
+                    void generate("write", "generate");
+                  }}
+                />
+                <Button
+                  title="润色我的文字"
+                  icon="edit"
+                  compact
+                  selected={task === "write" && writeMode === "polish"}
+                  testID="ai-polish"
+                  disabled={busy || disabled}
+                  onPress={() => {
+                    chooseWriteMode("polish");
+                    void generate("write", "polish");
+                  }}
+                />
+              </View>
               <Text style={s.muted}>
-                本次写记录的照片 · 事情 {eventIndex + 1}
+                {writeMode === "generate"
+                  ? task === "write" && !eventImages.length
+                    ? "这件事还没有照片，暂不能生成。先添加照片，或写下文字后改用润色。"
+                    : "根据这件事的照片和已知拍摄信息，写出短标题和一小段正文。"
+                  : !selectedEvent?.text.trim()
+                    ? "还没有可润色的正文。先写下几句话，再来润色。"
+                    : polishRequest({
+                        title: selectedEvent?.title ?? "",
+                        text: selectedEvent?.text ?? "",
+                      }).error ??
+                      "只发送这件事的标题和正文，保留你的原意、语气和事实，不发送照片。"}
               </Text>
-              {photoStrip(selectedEvent.mediaIds)}
-            </View>
-          )}
-          <Button
-            title="帮这件事写记录"
-            disabled={busy || disabled || !!pendingOtherTask}
-            onPress={() => {
-              void generate("write");
-            }}
-          />
-        </>
-      )}
-      {pendingOtherTask && (
-        <View style={{ gap: 8 }}>
-          <Text style={s.muted}>
-            还有一份{proposal.kind === "group" ? "分组" : "标题和正文"}
-            建议待确认。
-          </Text>
-          <Button
-            title={
-              proposal.kind === "group" ? "查看分组建议" : "查看标题和正文"
-            }
-            onPress={() => chooseTask(proposal.kind)}
-            disabled={busy || disabled}
-          />
-        </View>
-      )}
-      {!!progress && (
-        <Text style={s.muted} accessibilityLiveRegion="polite">
-          {progress}
-        </Text>
-      )}
-      {busy && (
-        <Button title="停止等待" onPress={() => abort.current?.abort()} />
-      )}
-      <ErrorText message={error} />
-      {!!error && !busy && (
-        <>
-          <Button
-            title="重试原请求"
-            disabled={disabled}
-            onPress={() => {
-              void generate(lastKind);
-            }}
-          />
-          <Button
-            title="重新生成（使用新的额度）"
-            disabled={disabled}
-            onPress={() => {
-              void generate(lastKind, true);
-            }}
-          />
-        </>
-      )}
-      {proposal && proposal.kind === task && (
-        <View style={s.section}>
-          {proposal.kind === "group" ? (
-            <>
-              <Text>分组预览 · {proposal.groups?.length} 件事</Text>
-              <Text style={s.muted}>
-                核对每件事包含的照片。画面摘要帮助辨认分组，记录正文在「写记录」中生成。
-              </Text>
-              {proposal.groups?.map((group, index) => (
-                <View key={index} style={{ gap: 8 }}>
-                  <Text>
-                    事情 {index + 1}：{group.title} · {group.photoIds.length} 张
-                  </Text>
-                  {photoStrip(group.photoIds)}
-                  <Text style={s.muted}>画面摘要：{group.summary}</Text>
+              {events.length > 1 && task === "write" && (
+                <View style={{ gap: 8 }}>
+                  <Text style={s.muted}>先选择要处理的事情</Text>
+                  {events.map((event, index) => (
+                    <Button
+                      key={index}
+                      title={`事情 ${index + 1}${event.title ? `：${event.title}` : ""} · ${dateLabel(event.date)}`}
+                      compact
+                      selected={eventIndex === index}
+                      disabled={busy || disabled || matchesView}
+                      onPress={() => setEventIndex(index)}
+                    />
+                  ))}
                 </View>
-              ))}
-            </>
-          ) : (
-            <>
-              <Text>事情 {proposal.eventIndex + 1} · 文字预览</Text>
-              <Text style={s.muted}>标题</Text>
-              <Text>{proposal.title}</Text>
-              <Text style={s.muted}>正文</Text>
-              <Text>{proposal.text}</Text>
-            </>
+              )}
+              {task === "write" && !!eventImages.length && (
+                <View style={{ gap: 8 }}>
+                  <Text style={s.muted}>
+                    本次的照片 · 事情 {eventIndex + 1}
+                  </Text>
+                  {photoStrip(selectedEvent!.mediaIds)}
+                </View>
+              )}
+            </View>
+            {!draft.recordId && (
+              <View style={{ gap: 8 }}>
+                <Text style={s.muted}>整理照片</Text>
+                <Button
+                  title="按事情分组"
+                  icon="image"
+                  compact
+                  selected={task === "group"}
+                  testID="ai-group"
+                  disabled={busy || disabled}
+                  onPress={() => {
+                    chooseTask("group");
+                    void generate("group");
+                  }}
+                />
+                <Text style={s.muted}>
+                  {totalImages.length < 2
+                    ? "至少需要两张照片才能按事情分组。"
+                    : "结合拍摄时间、匿名地点组和画面，把照片分成几件事，每件事保存为一条记录。"}
+                </Text>
+              </View>
+            )}
+            {pendingOther && !matchesView && (
+              <View style={{ gap: 8 }}>
+                <Text style={s.muted}>
+                  还有一份
+                  {proposal!.kind === "group"
+                    ? "分组"
+                    : modeOf(proposal!) === "polish"
+                      ? "润色"
+                      : "生成"}
+                  建议待确认。
+                </Text>
+                <Button
+                  title={
+                    proposal!.kind === "group"
+                      ? "查看分组建议"
+                      : modeOf(proposal!) === "polish"
+                        ? "查看润色建议"
+                        : "查看生成建议"
+                  }
+                  compact
+                  disabled={busy || disabled}
+                  onPress={viewProposal}
+                />
+              </View>
+            )}
+            {!!progress && (
+              <Text style={s.muted} accessibilityLiveRegion="polite">
+                {progress}
+              </Text>
+            )}
+            {busy && (
+              <Button title="停止等待" onPress={() => abort.current?.abort()} />
+            )}
+            <ErrorText message={error} />
+            {!!error && !busy && (
+              <View style={s.row}>
+                <Button
+                  title="重试原请求"
+                  compact
+                  disabled={disabled}
+                  onPress={() => {
+                    void generate(lastRun.kind, lastRun.mode);
+                  }}
+                />
+                <Button
+                  title="重新生成（使用新的额度）"
+                  compact
+                  disabled={disabled}
+                  onPress={() => {
+                    void generate(lastRun.kind, lastRun.mode, true);
+                  }}
+                />
+              </View>
+            )}
+            {matchesView && proposal && (
+              <View style={s.section}>
+                {stale && (
+                  <Text style={{ color: colors.error }}>
+                    你已修改照片或文字，这份建议已过期。重新生成后再采用，当前编辑已保留。
+                  </Text>
+                )}
+                {proposal.kind === "group" ? (
+                  <>
+                    <Text>
+                      分组预览 · {proposal.groups?.length} 件事
+                    </Text>
+                    <Text style={s.muted}>
+                      核对每件事包含的照片；摘要只帮助辨认分组，不会写入记录正文。
+                    </Text>
+                    {adjusting ? (
+                      proposal.groups?.map((group, index) => (
+                        <View key={index} style={{ gap: 8 }}>
+                          <Text>
+                            事情 {index + 1}：{group.title}
+                          </Text>
+                          {group.photoIds.map((id) => (
+                            <View
+                              key={id}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              <Photo media={media[id]} size={48} />
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={{ gap: 8 }}
+                              >
+                                {proposal.groups!.map((_, target) =>
+                                  target === index ? null : (
+                                    <Button
+                                      key={target}
+                                      title={`移到事情 ${target + 1}`}
+                                      compact
+                                      disabled={busy}
+                                      onPress={() => movePhoto(id, target)}
+                                    />
+                                  ),
+                                )}
+                              </ScrollView>
+                            </View>
+                          ))}
+                        </View>
+                      ))
+                    ) : (
+                      proposal.groups?.map((group, index) => (
+                        <View key={index} style={{ gap: 8 }}>
+                          <Text>
+                            事情 {index + 1}：{group.title} ·{" "}
+                            {group.photoIds.length} 张
+                          </Text>
+                          {photoStrip(group.photoIds)}
+                          <Text style={s.muted}>画面摘要：{group.summary}</Text>
+                        </View>
+                      ))
+                    )}
+                    <Button
+                      title={adjusting ? "完成调整" : "调整照片归属"}
+                      compact
+                      disabled={busy || disabled}
+                      onPress={() => setAdjusting(!adjusting)}
+                    />
+                    <Button
+                      title="确认照片分组"
+                      primary
+                      disabled={busy || disabled || stale || adjusting}
+                      onPress={() => {
+                        void apply();
+                      }}
+                    />
+                  </>
+                ) : modeOf(proposal) === "polish" ? (
+                  <>
+                    <Text>润色预览 · 与原文对照</Text>
+                    {!stale ? (
+                      <>
+                        <Text style={s.muted}>你的原文</Text>
+                        {!!selectedEvent?.title.trim() && (
+                          <Text>{selectedEvent.title}</Text>
+                        )}
+                        <Text>{selectedEvent?.text}</Text>
+                        <View style={s.line} />
+                      </>
+                    ) : null}
+                    <Text style={s.muted}>润色后</Text>
+                    <Text>{proposal.title}</Text>
+                    <Text>{proposal.text}</Text>
+                    <Button
+                      title="采用润色结果"
+                      primary
+                      disabled={busy || disabled || stale}
+                      onPress={() => {
+                        void apply();
+                      }}
+                    />
+                    <Button
+                      title="只采用标题"
+                      compact
+                      disabled={busy || disabled || stale}
+                      onPress={() => {
+                        void apply("title");
+                      }}
+                    />
+                    <Button
+                      title="只采用正文"
+                      compact
+                      disabled={busy || disabled || stale}
+                      onPress={() => {
+                        void apply("text");
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text>
+                      事情 {proposal.eventIndex + 1} · 文字预览
+                    </Text>
+                    <Text style={s.muted}>标题</Text>
+                    <Text>{proposal.title}</Text>
+                    <Text style={s.muted}>正文</Text>
+                    <Text>{proposal.text}</Text>
+                    <Button
+                      title="填入标题和正文"
+                      primary
+                      disabled={busy || disabled || stale}
+                      onPress={() => {
+                        void apply();
+                      }}
+                    />
+                    <Button
+                      title="只填入标题"
+                      compact
+                      disabled={busy || disabled || stale}
+                      onPress={() => {
+                        void apply("title");
+                      }}
+                    />
+                    <Button
+                      title="只填入正文"
+                      compact
+                      disabled={busy || disabled || stale}
+                      onPress={() => {
+                        void apply("text");
+                      }}
+                    />
+                  </>
+                )}
+                <Button
+                  title="放弃这份建议"
+                  compact
+                  disabled={busy || disabled}
+                  onPress={() => {
+                    setAdjusting(false);
+                    void onPatch({ aiProposal: undefined }).catch((e) =>
+                      setError(messageOf(e)),
+                    );
+                  }}
+                />
+              </View>
+            )}
+            <Text style={s.muted}>DeepSeek Flash High</Text>
+          </ScrollView>
+        </Glass>
+      </View>
+    </Modal>
+  );
+  return (
+    <View>
+      <Pressable
+        testID="ai-open"
+        accessibilityRole="button"
+        accessibilityLabel={unseen ? "AI 助手，有结果待查看" : "AI 助手"}
+        accessibilityState={{ selected: open }}
+        disabled={disabled}
+        onPress={() => {
+          setOpen(true);
+          setSeen(true);
+        }}
+        style={({ pressed }) => ({
+          width: 44,
+          height: 44,
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 22,
+          backgroundColor: open ? colors.selectedGlass : "transparent",
+          opacity: pressed || disabled ? 0.6 : 1,
+        })}
+      >
+        <View>
+          <JournalIcon name="sparkle" color={colors.accent} size={22} />
+          {unseen && (
+            <View
+              style={{
+                position: "absolute",
+                top: -2,
+                right: -4,
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: colors.accent,
+              }}
+            />
           )}
-          <Button
-            title={
-              proposal.kind === "group" ? "确认照片分组" : "填入标题和正文"
-            }
-            primary
-            disabled={busy || disabled}
-            onPress={() => {
-              void apply();
-            }}
-          />
-          {proposal.kind === "write" && (
-            <>
-              <Button
-                title="只填入标题"
-                disabled={busy || disabled}
-                onPress={() => {
-                  void apply("title");
-                }}
-              />
-              <Button
-                title="只填入正文"
-                disabled={busy || disabled}
-                onPress={() => {
-                  void apply("text");
-                }}
-              />
-            </>
-          )}
-          <Button
-            title="放弃这份建议"
-            disabled={busy || disabled}
-            onPress={() => {
-              void onPatch({ aiProposal: undefined }).catch((e) =>
-                setError(messageOf(e)),
-              );
-            }}
-          />
         </View>
-      )}
-      <Text style={s.muted}>DeepSeek Flash High</Text>
+      </Pressable>
+      {sheet}
     </View>
   );
 }

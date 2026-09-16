@@ -96,3 +96,18 @@ test('fixed Flash configuration preserves quotas and normalizes previous app sel
  }
  await f.app.close();f.store.close();
 });
+
+test('polish carries only the stored text with an explicit length ceiling',async()=>{
+ let seen:unknown;
+ const f=fixture(async(_kind,input)=>{seen=input;return {tokens:2,result:{title:'一起散步',text:'今天我们去公园走了走。'}};});
+ const polish=()=>({requestId:randomUUID(),model:'deepseek-flash',photos:[],mode:'photos',writingMode:'polish' as const,context:'标题：原稿\n正文：\n我们一起去公园。'});
+ const ok=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:polish()});
+ assert.equal(ok.statusCode,200);assert.equal((seen as {photos:unknown[]}).photos.length,0);
+ assert.equal(f.store.usage(f.member.member.id).writes,1);assert.equal(f.store.usage(f.member.member.id).photos,0);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),photos:f.input().photos}})).statusCode,400);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),context:'   '}})).statusCode,400);
+ const tooLong=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),context:'字'.repeat(2201)}});
+ assert.equal(tooLong.statusCode,400);assert.equal(tooLong.json().code,'POLISH_TOO_LONG');
+ assert.equal(f.store.usage(f.member.member.id).writes,1);
+ await f.app.close();f.store.close();
+});

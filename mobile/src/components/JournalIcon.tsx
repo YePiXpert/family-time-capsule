@@ -4,7 +4,7 @@ export type JournalIconName =
   | "growth" | "book" | "person" | "plus" | "image" | "camera" | "microphone" | "file"
   | "settings" | "search" | "calendar" | "star" | "play" | "pause" | "check"
   | "chevron-right" | "chevron-down" | "arrow-left" | "trash" | "edit" | "lock"
-  | "download" | "close" | "video" | "audio" | "users" | "heart";
+  | "download" | "close" | "video" | "audio" | "users" | "heart" | "sparkle";
 
 /**
  * 统一图标语言：24px 网格、1.8px 描边、圆角端点。
@@ -92,6 +92,10 @@ const paths: Record<JournalIconName, React.ReactNode> = {
     <Path d="M6 3.8h7.5L18.5 9v11.2H6zM13.2 3.8V9h5.3M9.2 12.6h5.6M9.2 16h5.6" />
   </>,
   plus: <Path d="M12 5.6v12.8M5.6 12h12.8" />,
+  sparkle: <>
+    <Path d="M12 3.8l1.9 5.4 5.4 1.9-5.4 1.9L12 18.4l-1.9-5.4-5.4-1.9 5.4-1.9z" />
+    <Path d="M18.6 16.2l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
+  </>,
 };
 
 export function JournalIcon({ name, color, size = 24 }: { name: JournalIconName; color: string; size?: number }) {

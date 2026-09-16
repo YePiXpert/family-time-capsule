@@ -6,10 +6,15 @@ import {
   type RecordDraft,
 } from "../src/local/model";
 import {
+  moveProposalPhoto,
+  polishRequest,
+  proposalPatch,
   proposalEvents,
   sameDayChunks,
+  sameJob,
   sourceFingerprint,
   validateResult,
+  POLISH_BODY_LIMIT,
 } from "../src/ai/state";
 function fixture() {
   const library = emptyLibrary();
@@ -156,5 +161,125 @@ describe("AI suggestions remain reviewable local drafts", () => {
       [1],
     ]);
     expect(days.flatMap((d) => d.chunks.flat())).toHaveLength(46);
+  });
+  it("builds polish requests from title and body only, refusing instead of truncating", () => {
+    expect(polishRequest({ title: "公园", text: "今天去公园。" }).context).toBe(
+      "标题：公园\n正文：\n今天去公园。",
+    );
+    expect(polishRequest({ title: "", text: "只写正文" }).context).toBe(
+      "正文：\n只写正文",
+    );
+    // Whitespace is preserved verbatim: polishing never rewrites the original.
+    expect(
+      polishRequest({ title: "公园", text: "  今天去公园。  " }).context,
+    ).toBe("标题：公园\n正文：\n  今天去公园。  ");
+    const empty = polishRequest({ title: "只有标题", text: "   " });
+    expect(empty.error).toContain("正文");
+    const long = polishRequest({
+      title: "",
+      text: "长".repeat(POLISH_BODY_LIMIT + 1),
+    });
+    expect(long.error).toContain(String(POLISH_BODY_LIMIT));
+    expect(long.error).toContain("不会自动截断");
+    expect(long.context).toBe("");
+  });
+  it("never reuses a generate job for polish, and treats stored jobs without a mode as generate", () => {
+    const next = {
+      fingerprint: "f".repeat(64),
+      kind: "write" as const,
+      eventIndex: 0,
+      model: "deepseek-flash:high",
+      writingMode: "polish" as const,
+    };
+    expect(sameJob(undefined, next)).toBe(false);
+    expect(
+      sameJob({ ...next, writingMode: undefined, steps: [] }, next),
+    ).toBe(false);
+    expect(sameJob({ ...next, steps: [] }, next)).toBe(true);
+    expect(
+      sameJob(
+        { ...next, steps: [], writingMode: "generate" as const },
+        { ...next, writingMode: "generate" as const },
+      ),
+    ).toBe(true);
+  });
+  it("writes polished text straight into a text-only draft that survives save and restore", () => {
+    const { library } = fixture();
+    const draft: RecordDraft = {
+      id: "text-only",
+      recordId: null,
+      baseRevision: 0,
+      content: { ...emptyContent(), title: "我的原稿", text: "今天第一次自己走完了全园。" },
+      updatedAt: new Date().toISOString(),
+    };
+    library.drafts[draft.id] = draft;
+    const patch = proposalPatch(
+      draft,
+      library.media,
+      {
+        fingerprint: sourceFingerprint(draft, library.media),
+        kind: "write",
+        eventIndex: 0,
+        model: "deepseek-flash:high",
+        writingMode: "polish",
+        title: "自己走完",
+        text: "今天第一次自己走完了整个园子。",
+      },
+    );
+    expect(patch).toEqual({
+      content: {
+        ...draft.content,
+        title: "自己走完",
+        text: "今天第一次自己走完了整个园子。",
+      },
+    });
+    if (!("content" in patch)) throw new Error("text-only draft must patch content");
+    draft.content = patch.content;
+    const restored = JSON.parse(JSON.stringify(library));
+    validateLibrary(restored);
+    expect(restored.drafts["text-only"]!.content.text).toBe(
+      "今天第一次自己走完了整个园子。",
+    );
+  });
+  it("keeps grouped drafts on photoEvents and honors partial adoption", () => {
+    const { library, draft } = fixture();
+    const proposal = {
+      fingerprint: sourceFingerprint(draft, library.media),
+      kind: "write" as const,
+      eventIndex: 1,
+      model: "deepseek-flash:high",
+      writingMode: "generate" as const,
+      title: "第二天的事",
+      text: "新的画面。",
+    };
+    const full = proposalPatch(draft, library.media, proposal);
+    expect("photoEvents" in full && full.photoEvents).toHaveLength(2);
+    expect(
+      "photoEvents" in full && full.photoEvents?.[1]!.title === "第二天的事",
+    ).toBe(true);
+    const bodyOnly = proposalPatch(draft, library.media, proposal, "text");
+    expect(
+      "photoEvents" in bodyOnly &&
+        bodyOnly.photoEvents?.[1]!.title === "" &&
+        bodyOnly.photoEvents?.[1]!.text === "新的画面。",
+    ).toBe(true);
+  });
+  it("adjusts group preview membership without losing or duplicating photos", () => {
+    const { library, draft } = fixture();
+    const proposal = {
+      fingerprint: sourceFingerprint(draft, library.media),
+      kind: "group" as const,
+      eventIndex: 0,
+      model: "deepseek-flash:high",
+      groups: [
+        { photoIds: ["a", "b"], title: "上午", summary: "室内" },
+        { photoIds: ["c"], title: "第二天", summary: "照片" },
+      ],
+    };
+    const moved = moveProposalPhoto(proposal, "a", 1);
+    expect(moved.groups?.map((g) => g.photoIds)).toEqual([["b"], ["c", "a"]]);
+    expect(moveProposalPhoto(proposal, "a", 0).groups).toBe(proposal.groups);
+    const emptied = moveProposalPhoto(proposal, "c", 0);
+    expect(emptied.groups?.map((g) => g.photoIds)).toEqual([["a", "b", "c"]]);
   });
 });
