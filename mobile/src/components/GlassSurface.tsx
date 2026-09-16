@@ -43,7 +43,7 @@ export function GlassSurface({
   const corner = radius ?? tierRadius[tier];
   const pointerEvents = interactive ? undefined : "none";
   const supported = Platform.OS === "ios" || (Platform.OS === "android" && Number(Platform.Version) >= 31 && target);
-  if (reducedTransparency || !supported) {
+  if (tier === "card" || tier === "dock" || reducedTransparency || !supported) {
     const solid = tier === "sheet" || tier === "overlay" ? colors.elevated : colors.card;
     return <View pointerEvents={pointerEvents} style={[StyleSheet.absoluteFill, { backgroundColor: solid, borderRadius: corner }]} />;
   }

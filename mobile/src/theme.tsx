@@ -45,7 +45,7 @@ export function createSharedStyles(palette: JournalPalette) {
       backgroundColor: palette.card,
       borderColor: palette.line,
       borderRadius: journalRadius.card,
-      borderWidth: 1,
+      borderWidth: 0,
       padding: 16,
       gap: 9,
     },

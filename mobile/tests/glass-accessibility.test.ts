@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 it("uses an opaque fallback until preferences load and immediately disables blur when transparency is reduced", async () => {
   let tree: ReturnType<typeof create>;
-  await act(async () => { tree = create(createElement(GlassSurface, { target: { current: null } })); });
+  await act(async () => { tree = create(createElement(GlassSurface, { tier: "sheet", target: { current: null } })); });
   expect(tree!.root.findAllByType("BlurView" as never)).toHaveLength(0);
   await act(async () => { state.finish!(false); });
   expect(tree!.root.findAllByType("BlurView" as never)).toHaveLength(1);
@@ -34,7 +34,7 @@ it("uses an opaque fallback until preferences load and immediately disables blur
 });
 it("does not overwrite a newer accessibility event with a stale initial query", async () => {
   let tree: ReturnType<typeof create>;
-  await act(async () => { tree = create(createElement(GlassSurface, { target: { current: null } })); });
+  await act(async () => { tree = create(createElement(GlassSurface, { tier: "sheet", target: { current: null } })); });
   await act(async () => { state.handlers.get("reduceTransparencyChanged")!(true); state.finish!(false); });
   expect(tree!.root.findAllByType("BlurView" as never)).toHaveLength(0);
   await act(() => tree!.unmount());
@@ -43,7 +43,7 @@ it("does not overwrite a newer accessibility event with a stale initial query", 
 it("uses native Liquid Glass on supported iOS and removes it as soon as transparency is reduced", async () => {
   state.platform.OS = "ios"; state.platform.Version = 26;
   let tree: ReturnType<typeof create>;
-  await act(async () => { tree = create(createElement(GlassSurface)); });
+  await act(async () => { tree = create(createElement(GlassSurface, { tier: "sheet" })); });
   expect(tree!.root.findAllByType("GlassView" as never)).toHaveLength(0);
   await act(async () => { state.finish!(false); });
   expect(tree!.root.findAllByType("GlassView" as never)).toHaveLength(1);
@@ -57,7 +57,7 @@ it("uses native Liquid Glass on supported iOS and removes it as soon as transpar
 it.each([[false, true], [true, false]])("falls back safely when iOS API availability is %s and compiled glass support is %s", async (api, glass) => {
   state.platform.OS = "ios"; state.apiAvailable = api; state.glassAvailable = glass;
   let tree: ReturnType<typeof create>;
-  await act(async () => { tree = create(createElement(GlassSurface)); });
+  await act(async () => { tree = create(createElement(GlassSurface, { tier: "sheet" })); });
   await act(async () => { state.finish!(false); });
   expect(tree!.root.findAllByType("GlassView" as never)).toHaveLength(0);
   expect(tree!.root.findAllByType("BlurView" as never)).toHaveLength(1);
@@ -67,7 +67,7 @@ it.each([[false, true], [true, false]])("falls back safely when iOS API availabi
 it.each([30, 33])("keeps Android %s opaque when no screen blur target is supplied", async version => {
   state.platform.Version = version;
   let tree: ReturnType<typeof create>;
-  await act(async () => { tree = create(createElement(GlassSurface)); });
+  await act(async () => { tree = create(createElement(GlassSurface, { tier: "sheet" })); });
   await act(async () => { state.finish!(false); });
   expect(tree!.root.findAllByType("BlurView" as never)).toHaveLength(0);
   expect(tree!.root.findAllByType("GlassView" as never)).toHaveLength(0);
