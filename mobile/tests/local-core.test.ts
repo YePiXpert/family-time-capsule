@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   clone,
   deleteRecord,
@@ -352,5 +354,44 @@ describe("last export timestamp", () => {
   });
   it("accepts libraries written before the field existed", () => {
     expect(() => validateLibrary(fixture())).not.toThrow();
+  });
+});
+
+describe("python fixture shape", () => {
+  /** Collects the top-level keys of the dict(...) call in local_fixture.py's empty(). */
+  function fixtureKeys(): string[] {
+    const source = readFileSync(
+      join(__dirname, "../scripts/local_fixture.py"),
+      "utf8",
+    );
+    const section = source.slice(
+      source.indexOf("def empty("),
+      source.indexOf("def record("),
+    );
+    const start = section.indexOf("dict(");
+    const keys: string[] = [];
+    let depth = 0;
+    for (let i = start; i < section.length; i++) {
+      const c = section[i]!;
+      if (c === "(" || c === "[") depth++;
+      else if (c === ")" || c === "]") {
+        depth--;
+        if (depth === 0) break;
+      } else if (depth === 1 && /[A-Za-z_]/.test(c)) {
+        const rest = section.slice(i);
+        const word = /^[A-Za-z_][A-Za-z0-9_]*/.exec(rest)![0];
+        const after = rest.slice(word.length);
+        if (/^=(?!=)/.test(after)) {
+          keys.push(word);
+          i += word.length;
+        }
+      }
+    }
+    return keys;
+  }
+  it("keeps the seeded library shape in lockstep with emptyLibrary", () => {
+    // 模型加字段而 fixture 没跟上（或反之）会让原生回归在真机上以别的方式失败，
+    // 在这里直接红掉更容易定位。
+    expect(fixtureKeys()).toEqual(Object.keys(emptyLibrary()));
   });
 });

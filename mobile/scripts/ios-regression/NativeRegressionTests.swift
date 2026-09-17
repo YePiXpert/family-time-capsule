@@ -65,6 +65,20 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-after-relaunch")
         app.terminate(); app.launch(); tap("open-settings"); tap("AI 设置")
         XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-settings")
+        app.terminate(); app.launch()
+        tap("volume-year-2026")
+        tap("year-note-edit")
+        type("Grow slowly, little one.", "year-note-input")
+        tap("year-note-save")
+        wait("Year note did not save") {
+          self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
+        }
+        app.terminate(); app.launch()
+        tap("volume-year-2026")
+        wait("Year note did not survive relaunch") {
+          self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
+        }
+        shot("year-note-after-relaunch")
         app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }

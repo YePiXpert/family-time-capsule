@@ -25,6 +25,15 @@ def find(label):
     raise AssertionError(f'Missing {label}')
 def tap(label):
     node=find(label); nums=list(map(int,re.findall(r'\d+',node.attrib['bounds']))); x=(nums[0]+nums[2])//2;y=(nums[1]+nums[3])//2;adb('shell','input','tap',str(x),str(y));time.sleep(1)
+def tap_last(label):
+    # 确认对话框与页面元素同名时，取层级里最后一个（对话框在最后）。
+    node=None
+    for _ in range(15):
+        tree=hierarchy();nodes=[n for n in tree.iter('node') if matches(n,label)]
+        if nodes:node=nodes[-1];break
+        time.sleep(1)
+    if node is None:raise AssertionError(f'Missing {label}')
+    nums=list(map(int,re.findall(r'\d+',node.attrib['bounds'])));x=(nums[0]+nums[2])//2;y=(nums[1]+nums[3])//2;adb('shell','input','tap',str(x),str(y));time.sleep(1)
 def shot(name):
     (args.output/f'{name}.png').write_bytes(subprocess.check_output(['adb','exec-out','screencap','-p']))
     (args.output/f'{name}.xml').write_text(ET.tostring(hierarchy(),encoding='unicode'))
@@ -42,14 +51,25 @@ try:
     restart();tap('继续编辑');assert find('capture-text').get('text')=='Offline little story.'
     tap('capture-save');find('record-edit');shot('record-reading')
     tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit')
-    restart();find(f'volume-{month}');tap('album-new')
+    restart();find(f'volume-{month}');find(f"volume-year-{time.strftime('%Y')}");tap('album-new')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'));shot('selection')
     tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')
     restart();tap('Our days');find('album-reading')
     restart();adb('shell','wm','size','320x720');shot('home-320')
     tap('打开设置');tap('AI 设置');find('加入 AI 服务');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,widths=[320,390])
+    # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
+    restart();tap('打开设置');tap('备份与恢复');tap('backup-export')
+    time.sleep(3);adb('shell','input','keyevent','4');time.sleep(1)  # 退出系统分享面板
+    restart();tap(f'volume-{month}')
+    tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
+    tap('删除记录');tap_last('删除记录')
+    restart();tap('打开设置');tap('备份与恢复');tap('恢复这份备份');tap('恢复并替换')
+    find('恢复完成。')
+    restart();tap(f'volume-{month}')
+    tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
+    find('Offline little story. More.');shot('backup-roundtrip')
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')

@@ -127,6 +127,11 @@ jobs:
           SIGNATURE_REPORT=$("$APKSIGNER" verify --verbose "$APK")
           echo "$SIGNATURE_REPORT"
           echo "$SIGNATURE_REPORT" | grep -F 'Verified using v2 scheme (APK Signature Scheme v2): true'
+          # 覆盖安装要求签名一致。钉住 runner 模板 debug 证书指纹，模板漂移立即变红，
+          # 避免交付无法覆盖安装的 APK（用户被迫卸载重装会丢失未导出的记录）。
+          CERT_REPORT=$("$APKSIGNER" verify --print-certs "$APK")
+          echo "$CERT_REPORT"
+          echo "$CERT_REPORT" | grep -F 'Signer #1 certificate SHA-256 digest: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c'
           "$AAPT2" dump badging "$APK" | grep -F "package: name='app.familytimecapsule.mobile'"
           "$AAPT2" dump badging "$APK" | grep -F "versionCode='$EXPECTED_VERSION_CODE'"
           "$AAPT2" dump badging "$APK" | grep -F "versionName='$EXPECTED_VERSION'"
