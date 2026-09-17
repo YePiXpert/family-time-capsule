@@ -16,6 +16,11 @@ export type LocalMedia = {
   bytes: number;
   sha256: string;
   photoMetadata?: PhotoMetadata;
+  /** 像素尺寸（保存时可由缩略图渲染得出），仅用于版面比例；旧素材缺省。 */
+  width?: number;
+  height?: number;
+  /** mediaDirectory 内的持久 512px JPEG 缩略图文件名；旧素材缺省。 */
+  thumb?: string;
 };
 export type RecordContent = {
   title: string;
@@ -298,6 +303,13 @@ export function validateLibrary(value: unknown): asserts value is Library {
       !Number.isSafeInteger(m.bytes) ||
       m.bytes < 1 ||
       !/^[a-f0-9]{64}$/.test(m.sha256) ||
+      (m.thumb !== undefined &&
+        !/^[a-zA-Z0-9_-]+\.[a-z0-9]{1,8}$/.test(m.thumb)) ||
+      ((m.width !== undefined || m.height !== undefined) &&
+        (!Number.isSafeInteger(m.width) ||
+          !Number.isSafeInteger(m.height) ||
+          (m.width ?? 0) < 1 ||
+          (m.height ?? 0) < 1)) ||
       (m.photoMetadata !== undefined &&
         (!m.photoMetadata ||
           typeof m.photoMetadata !== "object" ||

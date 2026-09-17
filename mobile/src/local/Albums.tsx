@@ -115,7 +115,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                       setCover(false);
                     }}
                   >
-                    <Photo media={state.media[id]} />
+                    <Photo media={state.media[id]} preview />
                   </Pressable>
                 ))}
               </View>
@@ -449,7 +449,7 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
             })
           }
         >
-          <Photo media={state.media[id]} />
+          <Photo media={state.media[id]} preview />
           {q.coverId === id && <Text>已选封面</Text>}
         </Pressable>
       ))}

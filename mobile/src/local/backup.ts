@@ -5,9 +5,12 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import * as Sharing from "expo-sharing";
 import {
   backupDirectory,
+  deleteMediaFiles,
   ensureDirectories,
   mediaDirectory,
   mediaFile,
+  mediaUri,
+  renderThumb,
   verifyMedia,
 } from "./files";
 import {
@@ -167,13 +170,18 @@ export async function restoreBackup(
       prior = await createBackup(current);
       restored = await inspectBackup(file, true);
       Object.assign(current, restored);
+      // 备份不含缩略图字节；用全新随机名重生成，避免与当前库的缩略图文件
+      // 同名——失败清理才能只删本次恢复新产生的文件。
+      for (const m of Object.values(current.media)) {
+        if (m.kind !== "image" && m.kind !== "video") continue;
+        const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
+        if (thumb) Object.assign(m, thumb);
+      }
     });
   } catch (e) {
     if (restored)
-      for (const m of Object.values((restored as Library).media)) {
-        const f = mediaFile(m);
-        if (f.exists) f.delete();
-      }
+      for (const m of Object.values((restored as Library).media))
+        deleteMediaFiles(m);
     throw e;
   }
   return prior!;
@@ -191,14 +199,17 @@ export async function shareBackup(file: File) {
 /** Used only before a library could be opened. The unreadable original database stays in place. */
 export async function recoverStartupBackup(file: File): Promise<void> {
   const restored = await inspectBackup(file, true);
+  // 与 restoreBackup 相同：恢复后的缩略图用全新随机名重建。
+  for (const m of Object.values(restored.media)) {
+    if (m.kind !== "image" && m.kind !== "video") continue;
+    const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
+    if (thumb) Object.assign(m, thumb);
+  }
   try {
     const { activateRecoveredLibrary } = await import("./activation");
     await activateRecoveredLibrary(restored);
   } catch (e) {
-    for (const media of Object.values(restored.media)) {
-      const f = mediaFile(media);
-      if (f.exists) f.delete();
-    }
+    for (const media of Object.values(restored.media)) deleteMediaFiles(media);
     throw e;
   }
 }

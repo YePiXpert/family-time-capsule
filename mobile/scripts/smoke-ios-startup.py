@@ -88,10 +88,17 @@ for result in request.results ?? [] {
                 time.sleep(2)
                 os.kill(pid, 0)  # Simulator apps are host processes; fail on a fatal native/JS exit.
             screenshot = output / (label + ".png")
-            run("xcrun", "simctl", "io", udid, "screenshot", str(screenshot))
-            recognized = run("swift", str(ocr), str(screenshot))
+            recognized = ""
+            # 系统横幅（如「Ready for Apple Intelligence」提示）可能恰好盖住标题；
+            # 横幅几秒后自动消失，重试截图再判失败。
+            for attempt in range(3):
+                run("xcrun", "simctl", "io", udid, "screenshot", str(screenshot))
+                recognized = run("swift", str(ocr), str(screenshot))
+                compact = re.sub(r"\s+", "", recognized)
+                if expected in compact:
+                    break
+                time.sleep(8)
             (output / (label + ".txt")).write_text(recognized + "\n")
-            compact = re.sub(r"\s+", "", recognized)
             assert expected in compact, f"Expected screen was not visible in {label}"
             report["checks"].append(label)
             print(f"Native release startup passed: {label}", flush=True)

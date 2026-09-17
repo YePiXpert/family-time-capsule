@@ -4,7 +4,8 @@ import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as Sharing from "expo-sharing";
 import { useLibrary } from "./context";
-import { mediaFile, mediaUri } from "./files";
+import { mediaDirectory, mediaFile, mediaUri } from "./files";
+import { File } from "expo-file-system";
 import type { LocalMedia } from "./model";
 import type { Props } from "./navigation";
 import { Button, ErrorText, Page, Text, messageOf, useStyles } from "./ui";
@@ -32,10 +33,13 @@ export function Photo({
   media,
   contain = false,
   size,
+  preview = false,
 }: {
   media: LocalMedia | undefined;
   contain?: boolean;
   size?: number;
+  /** 列表/封面等小图场景：优先渲染持久缩略图。 */
+  preview?: boolean;
 }) {
   const s = useStyles();
   const [error, setError] = useState(false);
@@ -46,15 +50,27 @@ export function Photo({
         <Text style={s.muted}>原记录仍保留，可从备份恢复缺失素材。</Text>
       </View>
     );
+  const thumb =
+    !contain && (preview || size !== undefined) && media.thumb
+      ? new File(mediaDirectory, media.thumb)
+      : null;
   return (
     <Image
       accessibilityLabel={media.name}
-      source={{ uri: mediaUri(media) }}
+      source={{ uri: thumb?.exists ? thumb.uri : mediaUri(media) }}
       resizeMode={contain ? "contain" : "cover"}
       onError={() => setError(true)}
       style={[
-        s.image,
-        size ? { width: size, height: size, aspectRatio: 1 } : undefined,
+        {
+          width: "100%",
+          borderRadius: 12,
+          aspectRatio: size
+            ? 1
+            : media.width && media.height
+              ? media.width / media.height
+              : 4 / 3,
+        },
+        size ? { width: size, height: size } : undefined,
       ]}
     />
   );
@@ -121,7 +137,11 @@ function Video({ media }: { media: LocalMedia }) {
       <VideoView
         player={player}
         nativeControls
-        style={{ width: "100%", aspectRatio: 3 / 4 }}
+        style={{
+          width: "100%",
+          aspectRatio:
+            media.width && media.height ? media.width / media.height : 3 / 4,
+        }}
       />
       <ErrorText message={error} />
     </View>
