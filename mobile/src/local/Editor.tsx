@@ -674,15 +674,28 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   <Button
                     title="移除"
                     onPress={() =>
-                      change({
-                        mediaIds: draft.content.mediaIds.filter(
-                          (x) => x !== id,
-                        ),
-                        coverId:
-                          draft.content.coverId === id
-                            ? null
-                            : draft.content.coverId,
-                      })
+                      Alert.alert(
+                        "移除这份素材？",
+                        `「${m.name}」只从这份草稿移出，明确保存后才生效。`,
+                        [
+                          { text: "取消", style: "cancel" },
+                          {
+                            text: "移除",
+                            style: "destructive",
+                            onPress: () =>
+                              change({
+                                mediaIds:
+                                  draft.content.mediaIds.filter(
+                                    (x) => x !== id,
+                                  ),
+                                coverId:
+                                  draft.content.coverId === id
+                                    ? null
+                                    : draft.content.coverId,
+                              }),
+                          },
+                        ],
+                      )
                     }
                   />
                 </View>
