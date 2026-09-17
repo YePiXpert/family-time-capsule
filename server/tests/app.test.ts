@@ -89,6 +89,18 @@ test('server restart cannot repeat an uncertain paid request',async()=>{
  assert.equal(f.store.reserve(f.member.member,id,'hash',1,0,'deepseek-flash'),'failed');
  await f.app.close();f.store.close();
 });
+test('recap drafts a year note from text only and counts as one write',async()=>{
+ const f=fixture(async()=>({tokens:9,result:{title:'这一年想说的话',text:'慢慢长大，慢慢来。'}}));
+ const payload=()=>({requestId:randomUUID(),writingMode:'recap',photos:[],context:'这一年共有 3 条记录。\n第一次：第一次挥手'});
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload(),photos:[{id:'a',image}]}})).statusCode,400);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload(),context:'   '}})).statusCode,400);
+ const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:payload()});
+ assert.equal(response.statusCode,200);
+ assert.equal(response.json().text,'慢慢长大，慢慢来。');
+ assert.equal(f.store.usage(f.member.member.id).writes,1);
+ assert.equal(f.store.usage(f.member.member.id).photos,0);
+ await f.app.close();f.store.close();
+});
 
 test('fixed Flash configuration preserves quotas and normalizes previous app selections',async()=>{
  let actualModel='';

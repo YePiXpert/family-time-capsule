@@ -262,7 +262,7 @@ export function validateStoredAI(value: unknown): boolean {
     !/^[a-f0-9]{64}$/.test(v.fingerprint) ||
     !["group", "write"].includes(String(v.kind)) ||
     !Number.isInteger(v.eventIndex) ||
-    (v.writingMode !== undefined && !["generate", "polish"].includes(String(v.writingMode))) ||
+    (v.writingMode !== undefined && !["generate", "polish", "recap"].includes(String(v.writingMode))) ||
     typeof v.model !== "string"
   )
     return false;
@@ -291,6 +291,25 @@ export function validateStoredAI(value: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+/** 年度寄语起草的输入：只发送记录标题与第一次清单，纯文字、无照片。 */
+export function recapContext(
+  records: { title: string; text: string; first: boolean }[],
+  existingNote = "",
+): string {
+  const titleOf = (r: { title: string; text: string }) =>
+    r.title.trim() || r.text.trim().split("\n")[0]?.slice(0, 30) || "这一刻";
+  const firsts = records.filter((r) => r.first).map(titleOf);
+  const parts = [
+    `这一年共有 ${records.length} 条记录。`,
+    firsts.length ? `第一次：${firsts.join("、")}` : "",
+    `记录标题：\n${records.map(titleOf).slice(0, 80).join("\n")}`,
+    existingNote.trim()
+      ? `已写的寄语（仅参考语气与已覆盖内容，不要重复）：\n${existingNote.trim().slice(0, 500)}`
+      : "",
+  ].filter(Boolean);
+  return parts.join("\n").slice(0, 3800);
 }
 
 /** 失败后的重试选项；RESULT_EXPIRED 表示原请求已终结，只能重新生成并计入新额度。 */

@@ -10,6 +10,7 @@ import {
   polishRequest,
   proposalPatch,
   proposalEvents,
+  recapContext,
   requestImageIds,
   retryPlan,
   sameDayChunks,
@@ -341,6 +342,38 @@ describe("AI suggestions remain reviewable local drafts", () => {
         text: "正文。",
       }).context,
     ).not.toBe("");
+  });
+});
+
+describe("annual note recap", () => {
+  it("builds the recap context from titles and firsts, text only", () => {
+    const records = [
+      { title: "第一次挥手", text: "她在餐椅上挥了挥手。", first: true },
+      { title: "", text: "公园里走了很远\n下午睡得很沉", first: false },
+    ];
+    const context = recapContext(records, "已写的话");
+    expect(context).toContain("第一次：第一次挥手");
+    expect(context).toContain("公园里走了很远");
+    expect(context).toContain("已写的寄语");
+    expect(context.length).toBeLessThanOrEqual(3800);
+    expect(recapContext(records)).not.toContain("已写的寄语");
+  });
+  it("accepts stored recap jobs beside generate and polish", () => {
+    const { library, draft } = fixture();
+    const fingerprint = sourceFingerprint(draft, library.media);
+    draft.aiJob = {
+      fingerprint,
+      kind: "write",
+      eventIndex: 0,
+      model: "x",
+      writingMode: "recap",
+      steps: [],
+    };
+    const restored = JSON.parse(JSON.stringify(library));
+    validateLibrary(restored);
+    (restored.drafts.draft!.aiJob as { writingMode?: string }).writingMode =
+      "recap-up";
+    expect(() => validateLibrary(restored)).toThrow();
   });
 });
 

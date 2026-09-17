@@ -1,6 +1,7 @@
 import { useMemo } from "react";
-import { Pressable, View, useWindowDimensions } from "react-native";
+import { Alert, Pressable, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { randomUUID } from "expo-crypto";
 import { useLibrary, useStore } from "./context";
 import {
   monthKey,
@@ -11,6 +12,8 @@ import {
 import { useNav, type Props } from "./navigation";
 import { coverForRecords, Volume } from "./Shelf";
 import { NoteCard } from "./NoteCard";
+import { recapContext } from "../ai/state";
+import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
   Ornament,
   Page,
@@ -24,19 +27,67 @@ import {
 
 function YearNote({ year }: { year: string }) {
   const state = useLibrary(),
-    store = useStore();
+    store = useStore(),
+    nav = useNav();
+  const note = state.yearNotes[year] ?? "";
   return (
     <NoteCard
       heading="爸爸妈妈的话"
       placeholder="写几句想对她说的话…"
       emptyHint="这一年快要过去时，留几句想对她说的话。"
-      note={state.yearNotes[year] ?? ""}
+      note={note}
       testPrefix="year-note"
       onSave={async (value) => {
         await store.change((s) => {
           if (value) s.yearNotes[year] = value;
           else delete s.yearNotes[year];
         });
+      }}
+      assist={{
+        generate: async () => {
+          if (!(await getToken())) {
+            nav.navigate("AISettings");
+            throw new Error("先在「AI 设置」加入服务，再来起草寄语。");
+          }
+          if (!(await hasConsent())) {
+            const agreed = await new Promise<boolean>((resolve) =>
+              Alert.alert(
+                "用 AI 起草寄语",
+                "起草会把这一年的记录标题和「第一次」清单（纯文字，不含照片与精确位置）经主人的服务发送给 DeepSeek Flash High，结果由你核对修改后才保存。",
+                [
+                  { text: "取消", style: "cancel", onPress: () => resolve(false) },
+                  {
+                    text: "同意并继续",
+                    onPress: () => {
+                      void giveConsent()
+                        .then(() => resolve(true))
+                        .catch(() => resolve(false));
+                    },
+                  },
+                ],
+              ),
+            );
+            if (!agreed) throw new Error("没有开始起草。");
+          }
+          const records = sortedRecords(state).filter(
+            (r) => yearKey(r.date) === year,
+          );
+          if (!records.length)
+            throw new Error("这一年还没有记录，写下几句后再让 AI 帮忙。");
+          const result = await api<{ title: string; text: string }>(
+            "/ai/write",
+            {
+              requestId: randomUUID(),
+              photos: [],
+              context: recapContext(records, note),
+              writingMode: "recap",
+            },
+            "POST",
+          );
+          if (typeof result.text !== "string" || !result.text.trim())
+            throw new Error("AI 草稿不完整，请重试。");
+          return result.text.trim().slice(0, 2000);
+        },
       }}
     />
   );
