@@ -16,7 +16,7 @@ import {
   type PhotoMetadata,
   type RecordDraft,
 } from "./model";
-import { mediaFile, preserveMedia } from "./files";
+import { deleteMediaFiles, preserveMedia } from "./files";
 import { applyPhotoMetadata } from "./photo-metadata";
 import type { LocalStore } from "./store";
 export const newId = () => randomUUID();
@@ -84,10 +84,7 @@ export async function collectUnusedMedia(store: LocalStore) {
     for (const m of unused) delete s.media[m.id];
     return unused;
   });
-  for (const m of removed) {
-    const f = mediaFile(m);
-    if (f.exists) f.delete();
-  }
+  for (const m of removed) deleteMediaFiles(m);
   return removed.reduce((n, m) => n + m.bytes, 0);
 }
 /** Native capture fields are optional and untrusted; keep only what validateLibrary would accept. */
@@ -188,11 +185,8 @@ async function receiveOneShare(
       s.receivedShares.push(manifest.manifestId);
     });
   } catch (e) {
-    // 库写入失败时收回已复制的文件，避免重试时静默膨胀。
-    for (const m of media) {
-      const f = mediaFile(m);
-      if (f.exists) f.delete();
-    }
+    // 库写入失败时收回已复制的文件（含缩略图），避免重试时静默膨胀。
+    for (const m of media) deleteMediaFiles(m);
     throw e;
   }
   await acknowledgeNativeShare(manifest.manifestId);

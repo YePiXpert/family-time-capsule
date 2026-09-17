@@ -24,6 +24,29 @@ vi.mock("expo-sharing", () => ({
   isAvailableAsync: async () => true,
   shareAsync: async () => {},
 }));
+vi.mock("expo-image-manipulator", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  return {
+    SaveFormat: { JPEG: "jpeg" },
+    manipulateAsync: async () => {
+      const p = path.join(env.root, "cache-thumb.jpg");
+      fs.writeFileSync(p, "thumb-bytes");
+      return { uri: p, width: 512, height: 384 };
+    },
+  };
+});
+vi.mock("expo-video-thumbnails", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  return {
+    getThumbnailAsync: async () => {
+      const p = path.join(env.root, "cache-vthumb.jpg");
+      fs.writeFileSync(p, "vthumb-bytes");
+      return { uri: p, width: 640, height: 480 };
+    },
+  };
+});
 vi.mock("expo-file-system", () => {
   // Expo 的 uri 始终是 POSIX 写法；Windows 上 path.join 会产生反斜杠，
   // 让按 "/" 校验的正式代码误判，因此这里统一成 POSIX 分隔符。
@@ -547,6 +570,20 @@ it("interrupted startup recovery never switches to a partial library or deletes 
   const { activeLibraryName } = await import("../src/local/activation");
   expect(await activeLibraryName()).toBe("xiaomei-local-v1.sqlite");
   expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(count);
+});
+it("persists a thumbnail with aspect-bearing dimensions at preserve time", async () => {
+  const { files } = await setup();
+  const original = path.join(env.root, "source.jpg");
+  fs.writeFileSync(original, Buffer.alloc(64, 21));
+  const media = await files.preserveMedia(original, "照片.jpg", "image");
+  expect(media.thumb).toMatch(/^[a-f0-9-]+_t\.jpg$/);
+  expect(media.width).toBe(512);
+  expect(media.height).toBe(384);
+  const thumbPath = path.join(files.mediaDirectory.uri, media.thumb!);
+  expect(fs.readFileSync(thumbPath).toString()).toBe("thumb-bytes");
+  files.deleteMediaFiles(media);
+  expect(fs.existsSync(thumbPath)).toBe(false);
+  expect(fs.existsSync(files.mediaFile(media).uri)).toBe(false);
 });
 it("names retention copies readably and prunes beyond the newest three", async () => {
   const { store, backup, files } = await setup();

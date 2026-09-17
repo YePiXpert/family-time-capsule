@@ -134,7 +134,7 @@ export function Volume({
         style={{ gap: 8 }}
       >
         {cover ? (
-          <Photo media={cover} />
+          <Photo media={cover} preview />
         ) : (
           <View
             style={[
