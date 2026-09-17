@@ -284,6 +284,125 @@ it("receives a native shared original once and acknowledges only its committed d
     Buffer.alloc(32, 15),
   );
 });
+it("skips unusable share items without poisoning their batch or later ones", async () => {
+  const { store } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  const original = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals/shared.jpg`;
+  fs.mkdirSync(path.dirname(original), { recursive: true });
+  fs.writeFileSync(original, Buffer.alloc(24, 9));
+  env.shares = [
+    {
+      manifestId: "mixed",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "gone",
+          captureId: "capture",
+          kind: "error",
+          error: "vanished",
+        },
+        {
+          externalId: "shared",
+          captureId: "capture",
+          kind: "file",
+          localUri: original,
+          fileName: "shared.jpg",
+          mediaType: "image",
+        },
+        {
+          externalId: "escape",
+          captureId: "capture",
+          kind: "file",
+          localUri: `${env.root.replace(/\\/g, "/")}/outside.jpg`,
+          fileName: "outside.jpg",
+          mediaType: "image",
+        },
+      ],
+    },
+    {
+      manifestId: "later",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "text",
+          captureId: "capture",
+          kind: "text",
+          text: "Later story",
+        },
+      ],
+    },
+  ];
+  await expect(receiveShares(store)).rejects.toThrow(
+    "有 2 份分享素材未能保存",
+  );
+  const drafts = Object.values(store.get().drafts);
+  expect(drafts).toHaveLength(2);
+  expect(drafts.some((d) => d.content.mediaIds.length === 1)).toBe(true);
+  expect(drafts.some((d) => d.content.text === "Later story")).toBe(true);
+  expect(env.acknowledged.sort()).toEqual(["later", "mixed"]);
+});
+it("acknowledges a share with nothing usable instead of replaying it forever", async () => {
+  const { store } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  env.shares = [
+    {
+      manifestId: "broken",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "gone",
+          captureId: "capture",
+          kind: "error",
+          error: "vanished",
+        },
+      ],
+    },
+  ];
+  await expect(receiveShares(store)).rejects.toThrow(
+    "有 1 份分享素材未能保存",
+  );
+  expect(Object.values(store.get().drafts)).toEqual([]);
+  expect(env.acknowledged).toEqual(["broken"]);
+});
+it("removes copied files when the library write fails mid-batch", async () => {
+  const { store, files } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  const original = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals/shared.jpg`;
+  fs.mkdirSync(path.dirname(original), { recursive: true });
+  fs.writeFileSync(original, Buffer.alloc(24, 9));
+  const before = fs.readdirSync(files.mediaDirectory.uri).length;
+  env.shares = [
+    {
+      manifestId: "doomed",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "shared",
+          captureId: "capture",
+          kind: "file",
+          localUri: original,
+          fileName: "shared.jpg",
+          mediaType: "image",
+        },
+      ],
+    },
+  ];
+  env.database!.exec(
+    "CREATE TRIGGER reject_share BEFORE UPDATE ON library BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+  );
+  await expect(receiveShares(store)).rejects.toThrow("原接收任务已保留");
+  expect(env.acknowledged).toEqual([]);
+  expect(Object.values(store.get().drafts)).toEqual([]);
+  expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(before);
+});
 it("retains the native share receipt on a failed write and safely retries", async () => {
   const { store } = await setup();
   const { receiveShares } = await import("../src/local/services");

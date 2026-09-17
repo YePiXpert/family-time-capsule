@@ -3,6 +3,7 @@ import { Paths } from "expo-file-system";
 import {
   consumePendingNativeShares,
   acknowledgeNativeShare,
+  type NativeShareManifest,
 } from "../../modules/share-intake/src";
 import {
   clone,
@@ -86,41 +87,53 @@ export async function collectUnusedMedia(store: LocalStore) {
   }
   return removed.reduce((n, m) => n + m.bytes, 0);
 }
-export async function receiveShares(store: LocalStore): Promise<void> {
-  for (const manifest of await consumePendingNativeShares()) {
+/** Handles one manifest; returns how many of its items were skipped as unusable. */
+async function receiveOneShare(
+  store: LocalStore,
+  manifest: NativeShareManifest,
+): Promise<number> {
+  const base = `${Paths.document.uri.replace(/\/$/, "")}/xiaomei-v1/intake/originals/`;
+  const media: LocalMedia[] = [];
+  const text: string[] = [];
+  let skipped = 0;
+  for (const item of manifest.items) {
+    if (item.kind === "text" && item.text) {
+      text.push(item.text);
+      continue;
+    }
+    if (item.kind !== "file" || !item.localUri || !item.fileName) {
+      skipped++;
+      continue;
+    }
     if (
-      !manifest.complete ||
-      !/^[a-zA-Z0-9_-]{1,128}$/.test(manifest.manifestId)
-    )
-      continue;
-    if (store.get().receivedShares.includes(manifest.manifestId)) {
-      await acknowledgeNativeShare(manifest.manifestId);
+      !item.localUri.startsWith(base) ||
+      item.localUri.slice(base.length).includes("/") ||
+      item.localUri.includes("..")
+    ) {
+      skipped++;
       continue;
     }
-    const media: LocalMedia[] = [];
-    const text: string[] = [];
-    for (const item of manifest.items) {
-      if (item.kind === "text" && item.text) text.push(item.text);
-      else if (item.kind === "file" && item.localUri && item.fileName) {
-        const base = `${Paths.document.uri.replace(/\/$/, "")}/xiaomei-v1/intake/originals/`;
-        if (
-          !item.localUri.startsWith(base) ||
-          item.localUri.slice(base.length).includes("/") ||
-          item.localUri.includes("..")
-        )
-          throw new Error("收到的素材路径无效。");
-        const kind: MediaKind =
-          item.mediaType ??
-          (item.mimeType?.startsWith("image/")
-            ? "image"
-            : item.mimeType?.startsWith("video/")
-              ? "video"
-              : item.mimeType?.startsWith("audio/")
-                ? "audio"
-                : "document");
-        media.push(await preserveMedia(item.localUri, item.fileName, kind));
-      } else throw new Error("有分享素材未能保存，原接收任务已保留，请重试。");
+    const kind: MediaKind =
+      item.mediaType ??
+      (item.mimeType?.startsWith("image/")
+        ? "image"
+        : item.mimeType?.startsWith("video/")
+          ? "video"
+          : item.mimeType?.startsWith("audio/")
+            ? "audio"
+            : "document");
+    try {
+      media.push(await preserveMedia(item.localUri, item.fileName, kind));
+    } catch {
+      skipped++;
     }
+  }
+  if (!text.length && !media.length) {
+    // 无可保存内容时不建空草稿；确认接收以免这条任务每次启动都重放。
+    await acknowledgeNativeShare(manifest.manifestId);
+    return Math.max(skipped, 1);
+  }
+  try {
     await store.change((s) => {
       if (s.receivedShares.includes(manifest.manifestId)) return;
       const id = newId(),
@@ -138,6 +151,51 @@ export async function receiveShares(store: LocalStore): Promise<void> {
       };
       s.receivedShares.push(manifest.manifestId);
     });
-    await acknowledgeNativeShare(manifest.manifestId);
+  } catch (e) {
+    // 库写入失败时收回已复制的文件，避免重试时静默膨胀。
+    for (const m of media) {
+      const f = mediaFile(m);
+      if (f.exists) f.delete();
+    }
+    throw e;
   }
+  await acknowledgeNativeShare(manifest.manifestId);
+  return skipped;
+}
+export async function receiveShares(store: LocalStore): Promise<void> {
+  const failed: string[] = [];
+  let skipped = 0;
+  for (const manifest of await consumePendingNativeShares()) {
+    if (
+      !manifest.complete ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(manifest.manifestId)
+    )
+      continue;
+    if (store.get().receivedShares.includes(manifest.manifestId)) {
+      await acknowledgeNativeShare(manifest.manifestId);
+      continue;
+    }
+    try {
+      skipped += await receiveOneShare(store, manifest);
+    } catch (e) {
+      failed.push(
+        `一份分享未能保存：${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+  // 单批失败不影响其余批次；有批未确认时会保留原生任务，下次启动重试。
+  if (failed.length)
+    throw new Error(
+      [
+        ...failed,
+        "原接收任务已保留，请重试。",
+        ...(skipped
+          ? [`另有 ${skipped} 份分享素材未能保存，其余已存为草稿。`]
+          : []),
+      ].join("\n"),
+    );
+  if (skipped)
+    throw new Error(
+      `有 ${skipped} 份分享素材未能保存，其余已存为草稿。这些素材已确认接收，不会重复导入。`,
+    );
 }
