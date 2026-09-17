@@ -14,6 +14,7 @@ import {
 } from "./backup";
 import { collectUnusedMedia } from "./services";
 import { referencedMedia } from "./model";
+import { daysSinceExport } from "./backup";
 import {
   Button,
   ErrorText,
@@ -225,11 +226,13 @@ export function Storage() {
   );
 }
 export function Backup() {
-  const store = useStore(),
+  const state = useLibrary(),
+    store = useStore(),
     s = useStyles();
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
+  const exportedDays = daysSinceExport(state);
   const perform = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -254,6 +257,14 @@ export function Backup() {
         备份包含宝宝资料、记录、草稿、素材和相册。请选择应用之外的位置保存。
       </Text>
       <Text style={s.muted}>
+        上次导出：
+        {exportedDays === null
+          ? "尚未导出过"
+          : exportedDays === 0
+            ? "今天"
+            : `${exportedDays} 天前`}
+      </Text>
+      <Text style={s.muted}>
         备份文件为 .xmb 格式。导出面板关闭后，请确认文件已保存到选定位置。
       </Text>
       <ErrorText message={error} />
@@ -269,6 +280,9 @@ export function Backup() {
           void perform(async () => {
             const file = await store.change((s) => createBackup(s));
             await shareBackup(file);
+            await store.change((s) => {
+              s.lastExportAt = new Date().toISOString();
+            });
             setMessage("备份已生成。请确认已保存到应用之外的位置。");
           });
         }}
@@ -345,6 +359,27 @@ export function Backup() {
                 );
               });
             }}
+          />
+          <Button
+            title="删除这份备份"
+            disabled={busy}
+            onPress={() =>
+              Alert.alert(
+                "删除这份备份？",
+                "只删除应用内保留的这一份；已保存到应用之外的备份不受影响。",
+                [
+                  { text: "取消", style: "cancel" },
+                  {
+                    text: "删除",
+                    style: "destructive",
+                    onPress: () => {
+                      file.delete();
+                      setMessage("这份本机备份已删除。");
+                    },
+                  },
+                ],
+              )
+            }
           />
         </View>
       ))}

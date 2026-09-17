@@ -333,15 +333,32 @@ export default function App() {
     }
   };
 
-  const recentBackup =
-    error && !store && backupDirectory.exists
-      ? backupDirectory
-          .list()
-          .filter(
-            (f): f is File => f instanceof File && f.name.endsWith(".xmb"),
-          )
-          .sort((a, b) => b.name.localeCompare(a.name))[0]
-      : undefined;
+  const [verifiedBackup, setVerifiedBackup] = useState<File | null>(null);
+  useEffect(() => {
+    if (!error || store || !backupDirectory.exists) return;
+    let cancelled = false;
+    void (async () => {
+      const candidates = backupDirectory
+        .list()
+        .filter(
+          (f): f is File => f instanceof File && f.name.endsWith(".xmb"),
+        )
+        .sort((a, b) => b.name.localeCompare(a.name));
+      // 推荐位只放完整可读的备份；损坏文件静默跳过，不留一个必然失败的按钮。
+      for (const file of candidates) {
+        try {
+          await inspectBackup(file);
+          if (!cancelled) setVerifiedBackup(file);
+          return;
+        } catch {
+          // try the next candidate
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [error, store]);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -375,12 +392,12 @@ export default function App() {
                   >
                     <NativeText>重试读取</NativeText>
                   </Pressable>
-                  {recentBackup && (
+                  {verifiedBackup && (
                     <Pressable
                       accessibilityRole="button"
                       disabled={recovering}
                       onPress={() => {
-                        void recover(recentBackup);
+                        void recover(verifiedBackup);
                       }}
                       style={{ padding: 20 }}
                     >

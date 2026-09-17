@@ -81,6 +81,8 @@ export type Library = {
   /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
   yearNotes: Record<string, string>;
   receivedShares: string[];
+  /** ISO timestamp of the last successful export; undefined until the first one. */
+  lastExportAt?: string;
 };
 export const emptyLibrary = (): Library => ({
   version: 1,
@@ -280,7 +282,9 @@ export function validateLibrary(value: unknown): asserts value is Library {
     !s.settings ||
     !["auto", "light", "dark"].includes(s.settings.theme) ||
     typeof s.settings.largeText !== "boolean" ||
-    !ids(s.receivedShares)
+    !ids(s.receivedShares) ||
+    (s.lastExportAt !== undefined &&
+      (!str(s.lastExportAt) || !Number.isFinite(Date.parse(s.lastExportAt))))
   )
     return fail();
   for (const [key, m] of Object.entries(s.media))

@@ -19,12 +19,39 @@ import {
 import { clone, type Library } from "./model";
 import type { LocalStore } from "./store";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Local retention names sort lexicographically in creation order, across formats. */
+export function backupFileName(at: Date, id: string): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `xiaomei-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}-${id}.xmb`;
+}
+/** Calendar days since the last export; null when there has never been a valid one. */
+export function daysSinceExport(
+  state: Pick<Library, "lastExportAt">,
+  today = new Date(),
+): number | null {
+  if (!state.lastExportAt) return null;
+  const exported = new Date(state.lastExportAt);
+  if (Number.isNaN(exported.getTime())) return null;
+  const start = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.floor((start(today) - start(exported)) / 86400000);
+}
+/** Keeps only the newest local retention copies; exports outside the app are untouched. */
+export function pruneBackups(keep = 3, protect?: File): void {
+  if (!backupDirectory.exists) return;
+  const files = backupDirectory
+    .list()
+    .filter((f): f is File => f instanceof File && f.name.endsWith(".xmb"))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  for (const file of files.slice(keep))
+    if (file.exists && file.uri !== protect?.uri) file.delete();
+}
 export async function createBackup(state: Library): Promise<File> {
   ensureDirectories();
   const header = encodeHeader(state),
     out = new File(
       backupDirectory,
-      `xiaomei-${Date.now()}-${randomUUID()}.xmb`,
+      backupFileName(new Date(), randomUUID().slice(0, 8)),
     );
   out.create();
   const handle = out.open(FileMode.WriteOnly);
@@ -55,6 +82,7 @@ export async function createBackup(state: Library): Promise<File> {
   handle.close();
   try {
     await inspectBackup(out);
+    pruneBackups(3, out);
     return out;
   } catch (e) {
     out.delete();
