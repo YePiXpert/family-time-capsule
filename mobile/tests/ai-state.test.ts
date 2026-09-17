@@ -11,6 +11,7 @@ import {
   proposalPatch,
   proposalEvents,
   requestImageIds,
+  retryPlan,
   sameDayChunks,
   sameJob,
   sourceFingerprint,
@@ -340,5 +341,17 @@ describe("AI suggestions remain reviewable local drafts", () => {
         text: "正文。",
       }).context,
     ).not.toBe("");
+  });
+});
+
+describe("retry guidance after failures", () => {
+  it("keeps retrying the original request after recoverable errors", () => {
+    for (const code of ["NETWORK", "CANCELED", "QUOTA_EXCEEDED", null])
+      expect(retryPlan(code).retryOriginal).toBe(true);
+  });
+  it("only offers regeneration once the server retired the request", () => {
+    const plan = retryPlan("RESULT_EXPIRED");
+    expect(plan.retryOriginal).toBe(false);
+    expect(plan.notice).toContain("重新生成");
   });
 });

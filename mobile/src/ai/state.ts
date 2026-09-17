@@ -293,6 +293,19 @@ export function validateStoredAI(value: unknown): boolean {
   }
 }
 
+/** 失败后的重试选项；RESULT_EXPIRED 表示原请求已终结，只能重新生成并计入新额度。 */
+export function retryPlan(errorCode: string | null): {
+  retryOriginal: boolean;
+  notice: string;
+} {
+  return errorCode === "RESULT_EXPIRED"
+    ? {
+        retryOriginal: false,
+        notice: "这次请求已结束，结果无法恢复；点「重新生成」才会计入今日额度。",
+      }
+    : { retryOriginal: true, notice: "" };
+}
+
 /** Only anonymous proximity labels leave the phone; precise coordinates remain local. */
 export function localPlaceTags(
   ids: string[],

@@ -26,6 +26,7 @@ import {
   polishRequest,
   moveProposalPhoto,
   requestImageIds,
+  retryPlan,
   validateResult,
   localPlaceTags,
 } from "./state";
@@ -65,6 +66,7 @@ export function AIEditor({
       draft.aiProposal?.kind === "write" ? modeOf(draft.aiProposal) : "generate",
     ),
     [retryable, setRetryable] = useState<Run | null>(null),
+    [errorCode, setErrorCode] = useState<string | null>(null),
     [adjusting, setAdjusting] = useState(false);
   const active = useRef(false),
     openRef = useRef(false),
@@ -153,6 +155,7 @@ export function AIEditor({
       setError("");
       setNotice("");
       setRetryable(null);
+      setErrorCode(null);
       abort.current = new AbortController();
       const snapshot = latest.current,
         fp = sourceFingerprint(snapshot.draft, snapshot.media);
@@ -343,6 +346,7 @@ export function AIEditor({
       );
     } catch (e) {
       setError(messageOf(e));
+      setErrorCode(e instanceof AIError ? e.code : null);
     } finally {
       active.current = false;
       setBusy(false);
@@ -551,23 +555,30 @@ export function AIEditor({
             )}
             <ErrorText message={error} />
             {!!error && !busy && retryable && (
-              <View style={s.row}>
-                <Button
-                  title="重试原请求"
-                  compact
-                  disabled={disabled}
-                  onPress={() => {
-                    void generate(retryable.kind, retryable.mode);
-                  }}
-                />
-                <Button
-                  title="重新生成（使用新的额度）"
-                  compact
-                  disabled={disabled}
-                  onPress={() => {
-                    void generate(retryable.kind, retryable.mode, true);
-                  }}
-                />
+              <View style={s.section}>
+                {!retryPlan(errorCode).retryOriginal && (
+                  <Text style={s.muted}>{retryPlan(errorCode).notice}</Text>
+                )}
+                <View style={s.row}>
+                  {retryPlan(errorCode).retryOriginal && (
+                    <Button
+                      title="重试原请求"
+                      compact
+                      disabled={disabled}
+                      onPress={() => {
+                        void generate(retryable.kind, retryable.mode);
+                      }}
+                    />
+                  )}
+                  <Button
+                    title="重新生成（使用新的额度）"
+                    compact
+                    disabled={disabled}
+                    onPress={() => {
+                      void generate(retryable.kind, retryable.mode, true);
+                    }}
+                  />
+                </View>
               </View>
             )}
             {matchesView && proposal && (
