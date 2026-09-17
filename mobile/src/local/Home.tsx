@@ -1,22 +1,10 @@
 import { useMemo, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  SectionList,
-  View,
-  useWindowDimensions,
-} from "react-native";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { Pressable, SectionList, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
-import { beginDraft, beginSelection } from "./services";
-import {
-  monthKey,
-  recordTitle,
-  sortedRecords,
-  type LocalRecord,
-} from "./model";
-import { useNav } from "./navigation";
+import { beginDraft } from "./services";
+import { monthKey, type LocalRecord } from "./model";
+import { useNav, type Props } from "./navigation";
 import {
   Button,
   ErrorText,
@@ -26,6 +14,7 @@ import {
   Text,
   dateLabel,
   messageOf,
+  monthLabel,
   useStyles,
   useTheme,
 } from "./ui";
@@ -172,7 +161,7 @@ export function RecordCard({
 export function CaptureDock() {
   const store = useStore(),
     nav = useNav();
-  const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   return (
@@ -182,7 +171,7 @@ export function CaptureDock() {
         position: "absolute",
         left: 20,
         right: 20,
-        bottom: tabBarHeight + 12,
+        bottom: insets.bottom + 12,
         gap: 8,
         alignItems: "flex-end",
       }}
@@ -207,36 +196,32 @@ export function CaptureDock() {
   );
 }
 
-export function Timeline() {
+export function Month({ route }: Props<"Month">) {
   const state = useLibrary(),
-    store = useStore(),
     nav = useNav(),
     s = useStyles(),
     { colors, large } = useTheme();
-  const tabBarHeight = useBottomTabBarHeight(),
-    insets = useSafeAreaInsets(),
+  const insets = useSafeAreaInsets(),
     { width, fontScale } = useWindowDimensions();
   const columns = large || fontScale >= 1.4 ? 1 : width >= 600 ? 3 : 2;
   const tileSize =
     (width - insets.left - insets.right - 40 - 12 * (columns - 1)) / columns;
   const [query, setQuery] = useState(""),
-    [searchOpen, setSearchOpen] = useState(false),
-    [month, setMonth] = useState(""),
-    [first, setFirst] = useState(false),
-    [draftsOpen, setDraftsOpen] = useState(false),
-    [error, setError] = useState("");
-  const records = useMemo(() => sortedRecords(state), [state]);
-  const months = [...new Set(records.map((r) => monthKey(r.date)))];
-  const visible = records.filter(
-    (r) =>
-      (!month || monthKey(r.date) === month) &&
-      (!first || r.first) &&
-      `${r.title}\n${r.text}\n${r.location}`
-        .toLocaleLowerCase()
-        .includes(query.toLocaleLowerCase()),
-  );
+    [searchOpen, setSearchOpen] = useState(false);
+  const records = useMemo(() => {
+    return Object.values(state.records)
+      .filter((r) => monthKey(r.date) === route.params.month)
+      .filter(
+        (r) =>
+          !query ||
+          `${r.title}\n${r.text}\n${r.location}`
+            .toLocaleLowerCase()
+            .includes(query.toLocaleLowerCase()),
+      )
+      .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  }, [state, query, route.params.month]);
   const byDay = new Map<string, LocalRecord[]>();
-  for (const record of visible) {
+  for (const record of records) {
     const day = dateLabel(record.date);
     const group = byDay.get(day) ?? [];
     group.push(record);
@@ -248,10 +233,6 @@ export function Timeline() {
       data.push(dayRecords.slice(i, i + columns));
     return { title, count: dayRecords.length, data };
   });
-  const drafts = Object.values(state.drafts).sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt),
-  );
-  const latestDraft = drafts[0];
   return (
     <Page scroll={false} top>
       <SectionList
@@ -260,7 +241,7 @@ export function Timeline() {
         contentContainerStyle={{
           paddingHorizontal: 20,
           paddingTop: 12,
-          paddingBottom: tabBarHeight + 84,
+          paddingBottom: 96,
         }}
         keyboardShouldPersistTaps="handled"
         stickySectionHeadersEnabled={false}
@@ -272,36 +253,20 @@ export function Timeline() {
             >
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={s.title} numberOfLines={2}>
-                  {state.profile.name
-                    ? `${state.profile.name}的成长记`
-                    : "成长中的每一天"}
+                  {monthLabel(route.params.month)}
                 </Text>
-                <Text style={s.muted}>
-                  {records.length
-                    ? `${records.length} 段珍贵时光`
-                    : "从今天的一件小事开始"}
-                </Text>
+                <Text style={s.muted}>{records.length} 段时光</Text>
               </View>
               <IconButton
-                label="搜索记录"
+                label="搜索本册"
                 icon="search"
                 selected={searchOpen}
                 onPress={() => setSearchOpen(!searchOpen)}
               />
-              <Button
-                title="选择"
-                compact
-                testID="timeline-select"
-                onPress={() => {
-                  void beginSelection(store)
-                    .then((sessionId) => nav.navigate("Picker", { sessionId }))
-                    .catch((e) => setError(messageOf(e)));
-                }}
-              />
             </View>
             {(searchOpen || !!query) && (
               <Field
-                label="搜索记录"
+                label="搜索本册"
                 hideLabel
                 placeholder="搜索标题、内容或地点"
                 value={query}
@@ -310,87 +275,13 @@ export function Timeline() {
                 returnKeyType="search"
               />
             )}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={s.row}>
-                <Button
-                  title="全部月份"
-                  compact
-                  selected={!month}
-                  onPress={() => setMonth("")}
-                />
-                {months.map((m) => (
-                  <Button
-                    key={m}
-                    title={m}
-                    compact
-                    selected={month === m}
-                    onPress={() => setMonth(m)}
-                  />
-                ))}
-                <Button
-                  title="第一次"
-                  compact
-                  selected={first}
-                  onPress={() => setFirst(!first)}
-                />
-              </View>
-            </ScrollView>
-            {latestDraft && (
-              <View style={s.compactPanel}>
-                <View style={s.between}>
-                  <Text style={s.muted}>{drafts.length} 份草稿</Text>
-                  <View style={s.row}>
-                    <Button
-                      title="继续编辑"
-                      compact
-                      testID={`resume-${latestDraft.id}`}
-                      onPress={() =>
-                        nav.navigate("Editor", { draftId: latestDraft.id })
-                      }
-                    />
-                    {drafts.length > 1 && (
-                      <IconButton
-                        label={draftsOpen ? "收起其他草稿" : "查看其他草稿"}
-                        icon={draftsOpen ? "close" : "chevron-down"}
-                        selected={draftsOpen}
-                        onPress={() => setDraftsOpen(!draftsOpen)}
-                      />
-                    )}
-                  </View>
-                </View>
-                {draftsOpen &&
-                  drafts.slice(1).map((draft) => (
-                    <Pressable
-                      key={draft.id}
-                      testID={`resume-${draft.id}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`继续编辑：${recordTitle(draft.content)}`}
-                      onPress={() =>
-                        nav.navigate("Editor", { draftId: draft.id })
-                      }
-                      style={{
-                        minHeight: 44,
-                        justifyContent: "center",
-                        gap: 2,
-                      }}
-                    >
-                      <Text numberOfLines={1}>
-                        {recordTitle(draft.content)}
-                      </Text>
-                      <Text style={s.muted}>
-                        {dateLabel(draft.updatedAt)} ·{" "}
-                        {draft.content.mediaIds.length} 份素材
-                      </Text>
-                    </Pressable>
-                  ))}
-              </View>
-            )}
-            <ErrorText message={error} />
           </View>
         }
         renderSectionHeader={({ section }) => (
           <View style={s.dateHeading}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
               <View
                 style={{
                   width: 4,
@@ -419,12 +310,12 @@ export function Timeline() {
         ListEmptyComponent={
           <View style={s.empty}>
             <Text style={s.heading}>
-              {records.length ? "没有找到这段记录" : "把今天的小事留下来"}
+              {query ? "没有找到这段记录" : "这一册还是空的"}
             </Text>
             <Text style={s.muted}>
-              {records.length
-                ? "试试其他关键词或月份。"
-                : "点「记一刻」，写几句话，留一张照片。"}
+              {query
+                ? "试试其他关键词。"
+                : "点右下角「记一刻」，写几句话，留一张照片。"}
             </Text>
           </View>
         }

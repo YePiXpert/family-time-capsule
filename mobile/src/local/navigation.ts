@@ -4,7 +4,11 @@ import type {
   NativeStackScreenProps,
 } from "@react-navigation/native-stack";
 export type Routes = {
-  Home: undefined;
+  Shelf: undefined;
+  Month: { month: string };
+  Firsts: undefined;
+  Title: undefined;
+  Settings: undefined;
   Editor: { draftId: string };
   Record: { id: string };
   Album: { id: string };

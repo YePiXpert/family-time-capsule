@@ -21,7 +21,6 @@ import {
   DarkTheme,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as DocumentPicker from "expo-document-picker";
@@ -45,85 +44,15 @@ import {
 } from "./ui";
 import type { LocalStore } from "./store";
 import type { Routes } from "./navigation";
-import { JournalIcon } from "../components/JournalIcon";
-import { Timeline } from "./Home";
-import { Albums, AlbumScreen, Picker, AlbumDetails } from "./Albums";
+import { Month } from "./Home";
+import { Firsts, Shelf, TitlePage } from "./Shelf";
+import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
 import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
 import { MediaScreen } from "./Media";
 import { receiveShares } from "./services";
 const Stack = createNativeStackNavigator<Routes>();
-const Tabs = createBottomTabNavigator<{
-  Timeline: undefined;
-  Albums: undefined;
-  Settings: undefined;
-}>();
-function Home() {
-  const { colors } = useTheme();
-  return (
-    <Tabs.Navigator
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarBackground: () => (
-          <Glass
-            radius={0}
-            intensity={55}
-            style={{
-              flex: 1,
-              borderWidth: 0,
-              borderTopWidth: StyleSheet.hairlineWidth,
-              borderRadius: 0,
-            }}
-          />
-        ),
-        tabBarStyle: {
-          position: "absolute",
-          backgroundColor: "transparent",
-          borderTopWidth: 0,
-          elevation: 0,
-        },
-        tabBarLabelStyle: { fontSize: 13 },
-      }}
-    >
-      <Tabs.Screen
-        name="Timeline"
-        component={Timeline}
-        options={{
-          title: "记录",
-          tabBarButtonTestID: "tab-records",
-          tabBarIcon: ({ color }) => (
-            <JournalIcon name="growth" color={color} size={24} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="Albums"
-        component={Albums}
-        options={{
-          title: "相册",
-          tabBarButtonTestID: "tab-albums",
-          tabBarIcon: ({ color }) => (
-            <JournalIcon name="book" color={color} size={24} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="Settings"
-        component={Settings}
-        options={{
-          title: "我的",
-          tabBarButtonTestID: "tab-profile",
-          tabBarIcon: ({ color }) => (
-            <JournalIcon name="person" color={color} size={24} />
-          ),
-        }}
-      />
-    </Tabs.Navigator>
-  );
-}
 function Root() {
   const state = useLibrary(),
     store = useStore(),
@@ -231,9 +160,29 @@ function Root() {
           }}
         >
           <Stack.Screen
-            name="Home"
-            component={Home}
+            name="Shelf"
+            component={Shelf}
             options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Month"
+            component={Month}
+            options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="Firsts"
+            component={Firsts}
+            options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="Title"
+            component={TitlePage}
+            options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={Settings}
+            options={{ title: "我的" }}
           />
           <Stack.Screen
             name="Editor"

@@ -1,0 +1,482 @@
+import { useMemo, useState } from "react";
+import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLibrary, useStore } from "./context";
+import { beginDraft, beginSelection } from "./services";
+import { monthKey, recordTitle, sortedRecords, type LocalMedia } from "./model";
+import { useNav } from "./navigation";
+import {
+  Button,
+  ErrorText,
+  Glass,
+  IconButton,
+  Page,
+  Text,
+  dateLabel,
+  messageOf,
+  monthLabel,
+  serif,
+  useStyles,
+  useTheme,
+} from "./ui";
+import { JournalIcon } from "../components/JournalIcon";
+import { Photo } from "./Media";
+
+function Volume({
+  title,
+  caption,
+  cover,
+  fallbackIcon,
+  onPress,
+  testID,
+  width,
+}: {
+  title: string;
+  caption: string;
+  cover?: LocalMedia;
+  fallbackIcon?: "book" | "star" | "plus";
+  onPress: () => void;
+  testID?: string;
+  width: number;
+}) {
+  const s = useStyles(),
+    { colors } = useTheme();
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={`${title}，${caption}`}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width,
+        gap: 8,
+        marginBottom: 24,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      {cover ? (
+        <Photo media={cover} />
+      ) : (
+        <View
+          style={[
+            s.section,
+            {
+              aspectRatio: 4 / 3,
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 8,
+            },
+          ]}
+        >
+          <JournalIcon
+            name={fallbackIcon ?? "book"}
+            color={colors.accent}
+            size={28}
+          />
+        </View>
+      )}
+      <Text numberOfLines={1} style={{ fontFamily: serif, fontWeight: "600" }}>
+        {title}
+      </Text>
+      <Text numberOfLines={1} style={s.muted}>
+        {caption}
+      </Text>
+    </Pressable>
+  );
+}
+
+function CapturePen() {
+  const store = useStore(),
+    nav = useNav(),
+    { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  return (
+    <View
+      pointerEvents="box-none"
+      style={{
+        position: "absolute",
+        right: 20,
+        bottom: insets.bottom + 20,
+        alignItems: "flex-end",
+        gap: 8,
+      }}
+    >
+      <ErrorText message={error} />
+      <Pressable
+        testID="capture-new"
+        accessibilityRole="button"
+        accessibilityLabel="记一刻"
+        disabled={busy}
+        onPress={() => {
+          setBusy(true);
+          void beginDraft(store)
+            .then((draftId) => nav.navigate("Editor", { draftId }))
+            .catch((e) => setError(messageOf(e)))
+            .finally(() => setBusy(false));
+        }}
+        style={({ pressed }) => ({
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.accent,
+          opacity: busy ? 0.5 : pressed ? 0.7 : 1,
+          shadowColor: "#000000",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 10,
+          elevation: 4,
+        })}
+      >
+        <JournalIcon name="plus" color={colors.onAccent} size={26} />
+      </Pressable>
+    </View>
+  );
+}
+
+export function Shelf() {
+  const state = useLibrary(),
+    store = useStore(),
+    nav = useNav(),
+    s = useStyles(),
+    { colors, large } = useTheme();
+  const { width, fontScale } = useWindowDimensions(),
+    insets = useSafeAreaInsets();
+  const columns = large || fontScale >= 1.4 ? 1 : 2;
+  const volumeWidth =
+    (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
+  const [draftsOpen, setDraftsOpen] = useState(false),
+    [error, setError] = useState("");
+  const records = useMemo(() => sortedRecords(state), [state]);
+  const months = [...new Set(records.map((r) => monthKey(r.date)))];
+  const firsts = records
+    .filter((r) => r.first)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const today = new Date();
+  const anniversary = records.find((r) => {
+    const d = new Date(r.date);
+    return (
+      d.getFullYear() < today.getFullYear() &&
+      d.getMonth() === today.getMonth() &&
+      d.getDate() === today.getDate()
+    );
+  });
+  const albums = Object.values(state.albums).sort(
+    (a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+  );
+  const drafts = Object.values(state.drafts).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
+  const latestDraft = drafts[0];
+  return (
+    <Page scroll={false} top>
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingTop: 16,
+          paddingBottom: 120,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={s.between}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="翻开扉页"
+            onPress={() => nav.navigate("Title")}
+            style={{ flex: 1, minWidth: 0 }}
+          >
+            <Text numberOfLines={2} style={s.title}>
+              {state.profile.name
+                ? `${state.profile.name}的成长记`
+                : "成长中的每一天"}
+            </Text>
+            <Text style={s.muted}>
+              {records.length
+                ? `${months.length} 册 · ${records.length} 段时光`
+                : "从今天的一件小事开始"}
+            </Text>
+          </Pressable>
+          <IconButton
+            label="打开设置"
+            icon="settings"
+            onPress={() => nav.navigate("Settings")}
+          />
+        </View>
+        {anniversary && (
+          <Pressable
+            testID="anniversary"
+            accessibilityRole="button"
+            accessibilityLabel={`那年今日，${recordTitle(anniversary)}`}
+            onPress={() => nav.navigate("Record", { id: anniversary.id })}
+          >
+            <Glass radius={16} style={{ padding: 16, gap: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <JournalIcon name="heart" color={colors.accent} size={18} />
+                <Text style={[s.muted, { color: colors.accent }]}>
+                  {today.getFullYear() - new Date(anniversary.date).getFullYear()}{" "}
+                  年前的今天
+                </Text>
+              </View>
+              <Text style={{ fontFamily: serif, fontWeight: "600", fontSize: 18, lineHeight: 27 }}>
+                {recordTitle(anniversary)}
+              </Text>
+              <Text style={s.muted}>{dateLabel(anniversary.date)}</Text>
+            </Glass>
+          </Pressable>
+        )}
+        {latestDraft && (
+          <View style={s.compactPanel}>
+            <View style={s.between}>
+              <Text style={s.muted}>{drafts.length} 份草稿</Text>
+              <View style={s.row}>
+                <Button
+                  title="继续编辑"
+                  compact
+                  testID={`resume-${latestDraft.id}`}
+                  onPress={() =>
+                    nav.navigate("Editor", { draftId: latestDraft.id })
+                  }
+                />
+                {drafts.length > 1 && (
+                  <IconButton
+                    label={draftsOpen ? "收起其他草稿" : "查看其他草稿"}
+                    icon={draftsOpen ? "close" : "chevron-down"}
+                    selected={draftsOpen}
+                    onPress={() => setDraftsOpen(!draftsOpen)}
+                  />
+                )}
+              </View>
+            </View>
+            {draftsOpen &&
+              drafts.slice(1).map((draft) => (
+                <Pressable
+                  key={draft.id}
+                  testID={`resume-${draft.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`继续编辑：${recordTitle(draft.content)}`}
+                  onPress={() => nav.navigate("Editor", { draftId: draft.id })}
+                  style={{ minHeight: 44, justifyContent: "center", gap: 2 }}
+                >
+                  <Text numberOfLines={1}>{recordTitle(draft.content)}</Text>
+                  <Text style={s.muted}>
+                    {dateLabel(draft.updatedAt)} ·{" "}
+                    {draft.content.mediaIds.length} 份素材
+                  </Text>
+                </Pressable>
+              ))}
+          </View>
+        )}
+        <ErrorText message={error} />
+        {months.length > 0 && (
+          <View style={{ gap: 16, marginTop: 8 }}>
+            <Text style={[s.muted, { fontFamily: serif }]}>月度册</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 16,
+              }}
+            >
+              {firsts.length > 0 && (
+                <Volume
+                  title="第一次合集"
+                  caption={`${firsts.length} 个第一次`}
+                  fallbackIcon="star"
+                  testID="volume-firsts"
+                  width={volumeWidth}
+                  onPress={() => nav.navigate("Firsts")}
+                />
+              )}
+              {months.map((m) => {
+                const monthRecords = records.filter(
+                  (r) => monthKey(r.date) === m,
+                );
+                const cover = coverForRecords(monthRecords, state.media);
+                return (
+                  <Volume
+                    key={m}
+                    title={monthLabel(m)}
+                    caption={`${monthRecords.length} 段时光`}
+                    cover={cover}
+                    testID={`volume-${m}`}
+                    width={volumeWidth}
+                    onPress={() => nav.navigate("Month", { month: m })}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        )}
+        <View style={{ gap: 16, marginTop: 8 }}>
+          <Text style={[s.muted, { fontFamily: serif }]}>专题册</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+            {albums.map((album) => (
+              <Volume
+                key={album.id}
+                title={album.name}
+                caption={`${album.items.length} 段记录`}
+                cover={coverForAlbum(album, state)}
+                testID={`album-${album.id}`}
+                width={volumeWidth}
+                onPress={() => nav.navigate("Album", { id: album.id })}
+              />
+            ))}
+            <Volume
+              title="新建相册"
+              caption="把回忆放在一起"
+              fallbackIcon="plus"
+              testID="album-new"
+              width={volumeWidth}
+              onPress={() => {
+                void beginSelection(store)
+                  .then((sessionId) => nav.navigate("Picker", { sessionId }))
+                  .catch((e) => setError(messageOf(e)));
+              }}
+            />
+          </View>
+        </View>
+        {records.length === 0 && (
+          <View style={s.empty}>
+            <Text style={s.heading}>把今天的小事留下来</Text>
+            <Text style={s.muted}>
+              点右下角的笔，写几句话，留一张照片。日子会慢慢长成一册册书。
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+      <CapturePen />
+    </Page>
+  );
+}
+
+function coverForRecords(
+  monthRecords: { mediaIds: string[]; coverId: string | null }[],
+  media: Record<string, LocalMedia>,
+): LocalMedia | undefined {
+  for (const r of monthRecords) {
+    const candidate = r.coverId ? media[r.coverId] : undefined;
+    if (candidate?.kind === "image") return candidate;
+    for (const id of r.mediaIds) {
+      const m = media[id];
+      if (m?.kind === "image") return m;
+    }
+  }
+  return undefined;
+}
+
+function coverForAlbum(
+  album: { coverId: string | null; items: { recordId: string }[] },
+  state: ReturnType<typeof useLibrary>,
+): LocalMedia | undefined {
+  if (album.coverId) {
+    const candidate = state.media[album.coverId];
+    if (candidate?.kind === "image") return candidate;
+  }
+  for (const item of album.items) {
+    const record = state.records[item.recordId];
+    if (!record) continue;
+    const cover = coverForRecords([record], state.media);
+    if (cover) return cover;
+  }
+  return undefined;
+}
+
+export function Firsts() {
+  const state = useLibrary(),
+    s = useStyles();
+  const nav = useNav();
+  const firsts = sortedRecords(state)
+    .filter((r) => r.first)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return (
+    <Page>
+      <Text style={s.title}>第一次合集</Text>
+      <Text style={s.muted}>
+        {firsts.length ? `${firsts.length} 个第一次，按日子排好。` : ""}
+      </Text>
+      {firsts.map((record) => (
+        <Pressable
+          key={record.id}
+          testID={`first-${record.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`${recordTitle(record)}，${dateLabel(record.date)}`}
+          onPress={() => nav.navigate("Record", { id: record.id })}
+          style={[s.compactPanel, { paddingVertical: 12 }]}
+        >
+          <Text style={s.muted}>{dateLabel(record.date)}</Text>
+          <Text style={{ fontFamily: serif, fontWeight: "600", fontSize: 18, lineHeight: 27 }}>
+            {recordTitle(record)}
+          </Text>
+          {!!record.text.trim() && (
+            <Text numberOfLines={2} style={s.muted}>
+              {record.text.trim()}
+            </Text>
+          )}
+        </Pressable>
+      ))}
+      {firsts.length === 0 && (
+        <View style={s.empty}>
+          <Text style={s.heading}>还没有第一次</Text>
+          <Text style={s.muted}>
+            在阅读页点亮「第一次」，它就会收进这一册。
+          </Text>
+        </View>
+      )}
+    </Page>
+  );
+}
+
+export function TitlePage() {
+  const state = useLibrary(),
+    s = useStyles(),
+    { colors } = useTheme();
+  const nav = useNav();
+  const initial = (state.profile.name.trim() || "美")[0]!;
+  return (
+    <Page>
+      <View style={{ alignItems: "center", paddingVertical: 48, gap: 20 }}>
+        <View
+          style={{
+            width: 88,
+            height: 88,
+            borderRadius: 44,
+            borderWidth: 2,
+            borderColor: colors.accent,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: serif,
+              fontSize: 40,
+              lineHeight: 48,
+              color: colors.accent,
+              fontWeight: "600",
+            }}
+          >
+            {initial}
+          </Text>
+        </View>
+        <Text style={[s.title, { textAlign: "center" }]}>
+          {state.profile.name || "小美成长记"}
+        </Text>
+        {!!state.profile.birthday && (
+          <Text style={s.muted}>生于 {dateLabel(state.profile.birthday)}</Text>
+        )}
+        <Text style={[s.muted, { textAlign: "center" }]}>
+          记录保存在这台设备，慢慢长成一册册书。
+        </Text>
+        <Button
+          title="完善宝宝资料"
+          icon="person"
+          onPress={() => nav.navigate("Profile")}
+        />
+      </View>
+    </Page>
+  );
+}
