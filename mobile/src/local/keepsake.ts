@@ -117,12 +117,21 @@ export function layoutKeepSake(input: KeepSakeInput): KeepSakeLayout {
   };
 }
 
-/** "data:image/png;base64,AAAA" → PNG 字节；非 PNG 前缀抛错。 */
+/** toDataURL 的回调在 iOS 给完整 data URL，Android 只给裸 base64；两者都收。 */
 export function pngBytesOfDataUrl(dataUrl: string): Uint8Array {
-  const comma = dataUrl.indexOf(",");
-  if (!dataUrl.startsWith("data:image/png;base64,") || comma < 0)
+  const trimmed = dataUrl.trim();
+  const comma = trimmed.indexOf(",");
+  const payload = comma >= 0 ? trimmed.slice(comma + 1) : trimmed;
+  if (
+    comma >= 0 &&
+    !/^data:image\/png;base64,$/.test(trimmed.slice(0, comma + 1))
+  )
     throw new Error("纪念卡生成失败，请重试。");
-  return base64ToBytes(dataUrl.slice(comma + 1));
+  const bytes = base64ToBytes(payload);
+  // PNG 魔数，防止把别的格式当图片写盘。
+  if (bytes.length < 8 || bytes[0] !== 0x89 || bytes[1] !== 0x50)
+    throw new Error("纪念卡生成失败，请重试。");
+  return bytes;
 }
 
 export function base64ToBytes(value: string): Uint8Array {
