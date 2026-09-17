@@ -52,6 +52,8 @@ export type LocalAlbum = {
   items: { id: string; recordId: string }[];
   coverId: string | null;
   updatedAt: string;
+  /** 扉页寄语，最多 2000 字；旧相册无此字段。 */
+  note?: string;
 };
 export type SelectionSession = {
   id: string;
@@ -371,6 +373,8 @@ export function validateLibrary(value: unknown): asserts value is Library {
     if (
       key !== a.id ||
       !str(a.name) ||
+      (a.note !== undefined &&
+        (typeof a.note !== "string" || a.note.length > 2000)) ||
       !Array.isArray(a.items) ||
       !ids(a.items.map((i) => i.id)) ||
       !ids(a.items.map((i) => i.recordId)) ||
