@@ -13,16 +13,23 @@ p=argparse.ArgumentParser();p.add_argument('apk');p.add_argument('--output',type
 package='app.familytimecapsule.mobile'
 def adb(*args): return subprocess.check_output(['adb',*args],timeout=60).decode(errors='replace')
 def hierarchy():
-    adb('shell','uiautomator','dump','/sdcard/window.xml')
-    return ET.fromstring(adb('shell','cat','/sdcard/window.xml'))
+  # 冷启动或改分辨率后 dump 可能失败一两次；重试避免把环境抖动当代码红。
+  last:Exception|None=None
+  for _ in range(3):
+    try:
+      adb('shell','uiautomator','dump','/sdcard/window.xml')
+      return ET.fromstring(adb('shell','cat','/sdcard/window.xml'))
+    except Exception as e:
+      last=e;time.sleep(2)
+  raise last
 def matches(node,label): return node.get('resource-id','').endswith(label) or node.get('text')==label or node.get('content-desc')==label
 def find(label):
-    for _ in range(15):
-        tree=hierarchy()
-        for node in tree.iter('node'):
-            if matches(node,label):return node
-        time.sleep(1)
-    raise AssertionError(f'Missing {label}')
+  for _ in range(30):
+    tree=hierarchy()
+    for node in tree.iter('node'):
+      if matches(node,label):return node
+    time.sleep(1)
+  raise AssertionError(f'Missing {label}')
 def tap(label):
     node=find(label); nums=list(map(int,re.findall(r'\d+',node.attrib['bounds']))); x=(nums[0]+nums[2])//2;y=(nums[1]+nums[3])//2;adb('shell','input','tap',str(x),str(y));time.sleep(1)
 def tap_last(label):
