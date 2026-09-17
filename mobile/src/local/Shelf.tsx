@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Pressable,
   ScrollView,
@@ -45,11 +45,52 @@ import { Photo } from "./Media";
 
 const PRESS_SPRING = { damping: 14, stiffness: 220 };
 
+/** 双线印章圆环：扉页名字首字与年度册封面共用。 */
+export function Stamp({
+  size,
+  children,
+}: {
+  size: number;
+  children: ReactNode;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 2,
+        borderColor: colors.accent,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 5,
+          left: 5,
+          right: 5,
+          bottom: 5,
+          borderRadius: size / 2 - 5,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.accent,
+          opacity: 0.5,
+        }}
+      />
+      {children}
+    </View>
+  );
+}
+
 export function Volume({
   title,
   caption,
   cover,
   fallbackIcon,
+  stamp,
   onPress,
   testID,
   width,
@@ -59,6 +100,8 @@ export function Volume({
   caption: string;
   cover?: LocalMedia;
   fallbackIcon?: "book" | "star" | "plus";
+  /** 无封面时盖在纸封面上的印章文字（年度册年份）。 */
+  stamp?: string;
   onPress: () => void;
   testID?: string;
   width: number;
@@ -117,11 +160,27 @@ export function Volume({
                 opacity: 0.7,
               }}
             />
-            <JournalIcon
-              name={fallbackIcon ?? "book"}
-              color={colors.accent}
-              size={28}
-            />
+            {stamp ? (
+              <Stamp size={56}>
+                <Text
+                  style={{
+                    fontFamily: serif,
+                    fontSize: stamp.length > 3 ? 15 : 19,
+                    color: colors.accent,
+                    fontWeight: "600",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  {stamp}
+                </Text>
+              </Stamp>
+            ) : (
+              <JournalIcon
+                name={fallbackIcon ?? "book"}
+                color={colors.accent}
+                size={28}
+              />
+            )}
           </View>
         )}
         <Text
@@ -498,6 +557,7 @@ export function Shelf() {
                         : `${yearRecords.length} 段时光`
                     }
                     cover={coverForRecords(yearRecords, state.media)}
+                    stamp={y}
                     testID={`volume-year-${y}`}
                     width={volumeWidth}
                     index={i}
@@ -680,31 +740,7 @@ export function TitlePage() {
   return (
     <Page>
       <View style={{ alignItems: "center", paddingVertical: 48, gap: 20 }}>
-        <View
-          style={{
-            width: 96,
-            height: 96,
-            borderRadius: 48,
-            borderWidth: 2,
-            borderColor: colors.accent,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              top: 5,
-              left: 5,
-              right: 5,
-              bottom: 5,
-              borderRadius: 43,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.accent,
-              opacity: 0.5,
-            }}
-          />
+        <Stamp size={96}>
           <Text
             style={{
               fontFamily: serif,
@@ -716,7 +752,7 @@ export function TitlePage() {
           >
             {initial}
           </Text>
-        </View>
+        </Stamp>
         <Text style={[s.title, { textAlign: "center" }]}>
           {state.profile.name || "小美成长记"}
         </Text>
