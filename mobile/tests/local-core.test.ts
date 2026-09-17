@@ -362,6 +362,17 @@ describe("last export timestamp", () => {
   it("accepts libraries written before the field existed", () => {
     expect(() => validateLibrary(fixture())).not.toThrow();
   });
+  it("validates the app-lock setting and keeps it optional", () => {
+    const on = fixture();
+    on.settings.lockEnabled = true;
+    validateLibrary(on);
+    const off = fixture();
+    off.settings.lockEnabled = false;
+    validateLibrary(off);
+    const bad = fixture();
+    (bad.settings as { lockEnabled?: unknown }).lockEnabled = "yes";
+    expect(() => validateLibrary(bad)).toThrow();
+  });
 });
 
 describe("keepsake dates", () => {
