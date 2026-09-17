@@ -15,6 +15,7 @@ import { NoteCard } from "./NoteCard";
 import { recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
+  Button,
   Ornament,
   Page,
   Text,
@@ -142,6 +143,11 @@ export function Year({ route }: Props<"Year">) {
     <Page>
       <Text style={s.title}>{year} 年</Text>
       {!!stats && <Text style={s.muted}>{stats}</Text>}
+      <Button
+        title="这一年回顾"
+        testID="year-recap"
+        onPress={() => nav.navigate("Recap", { year })}
+      />
       <YearNote year={year} />
       {firsts.length > 0 && (
         <View style={{ gap: 12 }}>

@@ -50,6 +50,7 @@ import type { Routes } from "./navigation";
 import { Month } from "./Home";
 import { Year } from "./Year";
 import { SearchScreen } from "./SearchScreen";
+import { RecapScreen } from "./RecapScreen";
 import { Firsts, Shelf, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
@@ -261,6 +262,11 @@ function Root() {
             name="Year"
             component={Year}
             options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="Recap"
+            component={RecapScreen}
+            options={{ title: "年度回顾" }}
           />
           <Stack.Screen
             name="Firsts"

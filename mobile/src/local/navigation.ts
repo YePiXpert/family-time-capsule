@@ -8,6 +8,7 @@ export type Routes = {
   Search: undefined;
   Month: { month: string };
   Year: { year: string };
+  Recap: { year: string };
   Firsts: undefined;
   Title: undefined;
   Settings: undefined;
