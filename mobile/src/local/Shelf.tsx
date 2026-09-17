@@ -24,6 +24,7 @@ import {
 } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
+import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
 import {
   Button,
   ErrorText,
@@ -245,6 +246,8 @@ export function Shelf() {
   const exportedDays = daysSinceExport(state),
     backupDue =
       records.length > 0 && (exportedDays === null || exportedDays > 30);
+  const age = ageLine(state.profile.birthday),
+    milestone = milestoneOf(state.profile.birthday);
   return (
     <Page scroll={false} top>
       <ScrollView
@@ -272,6 +275,12 @@ export function Shelf() {
                 ? `${months.length} 册 · ${records.length} 段时光`
                 : "从今天的一件小事开始"}
             </Text>
+            {age && (
+              <Text style={s.muted} testID="shelf-age">
+                {state.profile.name ? `${state.profile.name} · ` : ""}
+                {age}
+              </Text>
+            )}
           </Pressable>
           <IconButton
             label="打开设置"
@@ -280,6 +289,69 @@ export function Shelf() {
             onPress={() => nav.navigate("Settings")}
           />
         </View>
+        {milestone && (
+          <Animated.View entering={FadeInUp.duration(320)}>
+            <Pressable
+              testID="milestone-card"
+              accessibilityRole="button"
+              accessibilityLabel={`${milestoneLabel(milestone)}，记下这一天`}
+              onPress={() => {
+                void beginDraft(store)
+                  .then((draftId) => nav.navigate("Editor", { draftId }))
+                  .catch((e) => setError(messageOf(e)));
+              }}
+            >
+              <Glass radius={16} style={{ padding: 16, gap: 10 }}>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
+                >
+                  <View
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 22,
+                      borderWidth: 2,
+                      borderColor: colors.accent,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <View
+                      pointerEvents="none"
+                      style={{
+                        position: "absolute",
+                        top: 3,
+                        left: 3,
+                        right: 3,
+                        bottom: 3,
+                        borderRadius: 19,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: colors.accent,
+                        opacity: 0.5,
+                      }}
+                    />
+                    <Text
+                      style={{
+                        fontFamily: serif,
+                        fontSize: milestone!.kind === "hundred" ? 14 : 17,
+                        color: colors.accent,
+                        fontWeight: "600",
+                      }}
+                    >
+                      {milestoneNumeral(milestone!)}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                    <Text style={[s.muted, { color: colors.accent }]}>
+                      {milestoneLabel(milestone!)}
+                    </Text>
+                    <Text style={s.heading}>把今天好好记下来</Text>
+                  </View>
+                </View>
+              </Glass>
+            </Pressable>
+          </Animated.View>
+        )}
         {backupDue && (
           <Animated.View entering={FadeInUp.duration(320)}>
             <Pressable
