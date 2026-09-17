@@ -342,6 +342,12 @@ export function Shelf() {
             )}
           </Pressable>
           <IconButton
+            label="搜索全部记录"
+            icon="search"
+            testID="open-search"
+            onPress={() => nav.navigate("Search")}
+          />
+          <IconButton
             label="打开设置"
             icon="settings"
             testID="open-settings"
