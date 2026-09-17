@@ -44,7 +44,7 @@ def tap_last(label):
 def shot(name):
     (args.output/f'{name}.png').write_bytes(subprocess.check_output(['adb','exec-out','screencap','-p']))
     (args.output/f'{name}.xml').write_text(ET.tostring(hierarchy(),encoding='unicode'))
-def launch(): adb('shell','am','start','-n',package+'/.MainActivity');time.sleep(3)
+def launch(): adb('shell','am','start','-W','-n',package+'/.MainActivity');time.sleep(4)
 def restart(): adb('shell','am','force-stop',package);launch()
 def write(text): adb('shell','input','text',text.replace(' ','%s'));time.sleep(1)
 report=dict(gitSha=os.environ.get('SOURCE_SHA'),success=False)
