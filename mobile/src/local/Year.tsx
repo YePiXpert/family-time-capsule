@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Pressable, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
@@ -10,115 +10,35 @@ import {
 } from "./model";
 import { useNav, type Props } from "./navigation";
 import { coverForRecords, Volume } from "./Shelf";
+import { NoteCard } from "./NoteCard";
 import {
-  Button,
-  ErrorText,
-  Field,
-  Glass,
   Ornament,
   Page,
   Text,
   dateLabel,
-  messageOf,
   monthLabel,
   serif,
   useStyles,
   useTheme,
 } from "./ui";
-import { JournalIcon } from "../components/JournalIcon";
-
-const NOTE_LIMIT = 2000;
 
 function YearNote({ year }: { year: string }) {
   const state = useLibrary(),
-    store = useStore(),
-    s = useStyles(),
-    { colors } = useTheme();
-  const note = state.yearNotes[year] ?? "";
-  const [editing, setEditing] = useState(false),
-    [draft, setDraft] = useState(note),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const save = () => {
-    setBusy(true);
-    setError("");
-    void store
-      .change((s) => {
-        const value = draft.trim();
-        if (value) s.yearNotes[year] = value;
-        else delete s.yearNotes[year];
-      })
-      .then(() => setEditing(false))
-      .catch((e) => setError(messageOf(e)))
-      .finally(() => setBusy(false));
-  };
+    store = useStore();
   return (
-    <Glass radius={16} style={{ padding: 16, gap: 12 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <JournalIcon name="heart" color={colors.accent} size={18} />
-        <Text style={s.heading}>爸爸妈妈的话</Text>
-      </View>
-      {editing ? (
-        <>
-          <Field
-            label="年度寄语"
-            hideLabel
-            placeholder="写几句想对她说的话…"
-            value={draft}
-            onChangeText={setDraft}
-            multiline
-            maxLength={NOTE_LIMIT}
-            testID="year-note-input"
-            style={{ minHeight: 120, textAlignVertical: "top" }}
-          />
-          <Text style={s.muted}>
-            {draft.trim().length} / {NOTE_LIMIT} 字
-          </Text>
-          <ErrorText message={error} />
-          <View style={s.row}>
-            <Button
-              title="保存寄语"
-              primary
-              compact
-              testID="year-note-save"
-              disabled={busy}
-              onPress={save}
-            />
-            <Button
-              title="取消"
-              compact
-              disabled={busy}
-              onPress={() => {
-                setDraft(note);
-                setEditing(false);
-                setError("");
-              }}
-            />
-          </View>
-        </>
-      ) : (
-        <>
-          {note ? (
-            <Text>{note}</Text>
-          ) : (
-            <Text style={s.muted}>
-              这一年快要过去时，留几句想对她说的话。
-            </Text>
-          )}
-          <View style={s.row}>
-            <Button
-              title={note ? "修改寄语" : "写下这一年的话"}
-              compact
-              testID="year-note-edit"
-              onPress={() => {
-                setDraft(note);
-                setEditing(true);
-              }}
-            />
-          </View>
-        </>
-      )}
-    </Glass>
+    <NoteCard
+      heading="爸爸妈妈的话"
+      placeholder="写几句想对她说的话…"
+      emptyHint="这一年快要过去时，留几句想对她说的话。"
+      note={state.yearNotes[year] ?? ""}
+      testPrefix="year-note"
+      onSave={async (value) => {
+        await store.change((s) => {
+          if (value) s.yearNotes[year] = value;
+          else delete s.yearNotes[year];
+        });
+      }}
+    />
   );
 }
 
@@ -126,8 +46,7 @@ export function Year({ route }: Props<"Year">) {
   const state = useLibrary(),
     nav = useNav(),
     s = useStyles(),
-    { large } = useTheme();
-  const { width, fontScale } = useWindowDimensions(),
+    { large } = useTheme();  const { width, fontScale } = useWindowDimensions(),
     insets = useSafeAreaInsets();
   const year = route.params.year;
   const records = useMemo(

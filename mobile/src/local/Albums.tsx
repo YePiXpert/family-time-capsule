@@ -26,6 +26,7 @@ import {
   useTheme,
 } from "./ui";
 import { RecordCard } from "./Home";
+import { NoteCard } from "./NoteCard";
 import { Photo } from "./Media";
 export function AlbumScreen({ route, navigation }: Props<"Album">) {
   const store = useStore(),
@@ -61,6 +62,22 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
           <View style={{ gap: 16 }}>
             <Text style={s.title}>{album.name}</Text>
             <Text style={s.muted}>{album.items.length} 段记录</Text>
+            <NoteCard
+              heading="这本相册的话"
+              placeholder="写几句这本相册想说的话…"
+              emptyHint="翻完这些记录，留几句想对她说的话。"
+              note={album.note ?? ""}
+              testPrefix="album-note"
+              onSave={async (value) => {
+                await store.change((s) => {
+                  const target = s.albums[album.id];
+                  if (!target) throw new Error("相册已删除。");
+                  if (value) target.note = value;
+                  else delete target.note;
+                  target.updatedAt = now();
+                });
+              }}
+            />
             <View style={s.row}>
               <Button
                 title="添加记录"

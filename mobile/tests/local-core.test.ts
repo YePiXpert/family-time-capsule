@@ -403,6 +403,45 @@ describe("keepsake dates", () => {
   });
 });
 
+describe("album keepsake notes", () => {
+  it("roundtrips an album note through the backup manifest", () => {
+    const s = fixture();
+    saveRecord(s, "draft", "record", date);
+    s.albums.a = {
+      id: "a",
+      name: "一岁相册",
+      items: [{ id: "i", recordId: "record" }],
+      coverId: null,
+      updatedAt: date,
+      note: "这一年的照片，都在这里。",
+    };
+    validateLibrary(s);
+    expect(decodeManifest(encodeHeader(s).slice(12)).library.albums.a?.note).toBe(
+      "这一年的照片，都在这里。",
+    );
+  });
+  it("rejects non-string and overlong album notes, accepts legacy albums", () => {
+    const s = fixture();
+    saveRecord(s, "draft", "record", date);
+    const album = {
+      id: "a",
+      name: "一岁相册",
+      items: [{ id: "i", recordId: "record" }],
+      coverId: null as string | null,
+      updatedAt: date,
+    };
+    const withNote = { ...album, note: "留几句话。" };
+    validateLibrary({ ...s, albums: { a: withNote } });
+    const overlong = { ...album, note: "长".repeat(2001) };
+    expect(() => validateLibrary({ ...s, albums: { a: overlong } })).toThrow();
+    const nonString = { ...album, note: 42 } as unknown as typeof album;
+    expect(() =>
+      validateLibrary({ ...s, albums: { a: nonString } }),
+    ).toThrow();
+    validateLibrary({ ...s, albums: { a: album } });
+  });
+});
+
 describe("python fixture shape", () => {
   /** Collects the top-level keys of the dict(...) call in local_fixture.py's empty(). */
   function fixtureKeys(): string[] {
