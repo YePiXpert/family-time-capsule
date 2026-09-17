@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import Animated, {
   FadeInUp,
   useAnimatedStyle,
@@ -16,6 +22,7 @@ import {
   ErrorText,
   Glass,
   IconButton,
+  Ornament,
   Page,
   Text,
   dateLabel,
@@ -89,6 +96,19 @@ function Volume({
               },
             ]}
           >
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                left: 10,
+                top: 12,
+                bottom: 12,
+                width: 4,
+                borderRadius: 2,
+                backgroundColor: colors.accent,
+                opacity: 0.7,
+              }}
+            />
             <JournalIcon
               name={fallbackIcon ?? "book"}
               color={colors.accent}
@@ -98,7 +118,7 @@ function Volume({
         )}
         <Text
           numberOfLines={1}
-          style={{ fontFamily: serif, fontWeight: "600" }}
+          style={{ fontFamily: serif, fontWeight: "600", letterSpacing: 0.3 }}
         >
           {title}
         </Text>
@@ -267,14 +287,7 @@ export function Shelf() {
                     年前的今天
                   </Text>
                 </View>
-                <Text
-                  style={{
-                    fontFamily: serif,
-                    fontWeight: "600",
-                    fontSize: 18,
-                    lineHeight: 27,
-                  }}
-                >
+                <Text style={s.heading}>
                   {recordTitle(anniversary)}
                 </Text>
                 <Text style={s.muted}>{dateLabel(anniversary.date)}</Text>
@@ -466,9 +479,7 @@ export function Firsts() {
           style={[s.compactPanel, { paddingVertical: 12 }]}
         >
           <Text style={s.muted}>{dateLabel(record.date)}</Text>
-          <Text style={{ fontFamily: serif, fontWeight: "600", fontSize: 18, lineHeight: 27 }}>
-            {recordTitle(record)}
-          </Text>
+          <Text style={s.heading}>{recordTitle(record)}</Text>
           {!!record.text.trim() && (
             <Text numberOfLines={2} style={s.muted}>
               {record.text.trim()}
@@ -499,15 +510,29 @@ export function TitlePage() {
       <View style={{ alignItems: "center", paddingVertical: 48, gap: 20 }}>
         <View
           style={{
-            width: 88,
-            height: 88,
-            borderRadius: 44,
+            width: 96,
+            height: 96,
+            borderRadius: 48,
             borderWidth: 2,
             borderColor: colors.accent,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 5,
+              left: 5,
+              right: 5,
+              bottom: 5,
+              borderRadius: 43,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.accent,
+              opacity: 0.5,
+            }}
+          />
           <Text
             style={{
               fontFamily: serif,
@@ -529,6 +554,7 @@ export function TitlePage() {
         <Text style={[s.muted, { textAlign: "center" }]}>
           记录保存在这台设备，慢慢长成一册册书。
         </Text>
+        <Ornament />
         <Button
           title="完善宝宝资料"
           icon="person"

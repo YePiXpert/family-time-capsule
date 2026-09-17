@@ -23,6 +23,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useReducedMotion } from "react-native-reanimated";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { inspectBackup, recoverStartupBackup } from "./backup";
@@ -58,6 +59,7 @@ function Root() {
     store = useStore(),
     s = useStyles(),
     theme = useTheme();
+  const reduceMotion = useReducedMotion();
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -156,7 +158,7 @@ function Root() {
             headerShadowVisible: false,
             headerStyle: { backgroundColor: theme.colors.card },
             contentStyle: { backgroundColor: theme.colors.paper },
-            animation: "none",
+            animation: reduceMotion ? "none" : "fade",
           }}
         >
           <Stack.Screen
