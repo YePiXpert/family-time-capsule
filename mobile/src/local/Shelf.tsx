@@ -272,6 +272,7 @@ export function Shelf() {
           <IconButton
             label="打开设置"
             icon="settings"
+            testID="open-settings"
             onPress={() => nav.navigate("Settings")}
           />
         </View>
