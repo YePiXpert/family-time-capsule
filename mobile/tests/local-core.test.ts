@@ -20,6 +20,7 @@ import {
   milestoneNumeral,
   milestoneOf,
 } from "../src/local/dates";
+import { looksLikeCoordinates, placeLabel } from "../src/local/places";
 const date = "2026-09-16T12:00:00.000Z";
 function fixture() {
   const s = emptyLibrary();
@@ -439,6 +440,28 @@ describe("album keepsake notes", () => {
       validateLibrary({ ...s, albums: { a: nonString } }),
     ).toThrow();
     validateLibrary({ ...s, albums: { a: album } });
+  });
+});
+
+describe("on-demand place naming", () => {
+  it("recognizes bare coordinates filled from photo metadata", () => {
+    expect(looksLikeCoordinates("31.200000, 121.500000")).toBe(true);
+    expect(looksLikeCoordinates("-33.000000, -70.000000")).toBe(true);
+    expect(looksLikeCoordinates("31.2,121.5")).toBe(true);
+    expect(looksLikeCoordinates("")).toBe(false);
+    expect(looksLikeCoordinates("公园的湖边")).toBe(false);
+    expect(looksLikeCoordinates("31.2, 121.5, 5")).toBe(false);
+  });
+  it("prefers landmarks, then city/district/street, then region", () => {
+    expect(placeLabel({ name: "鲁迅公园" }, "31.2, 121.5")).toBe("鲁迅公园");
+    expect(
+      placeLabel({ city: "上海市", district: "虹口区", street: "四川北路" }, "x"),
+    ).toBe("上海市虹口区四川北路");
+    expect(placeLabel({ region: "上海", country: "中国" }, "x")).toBe(
+      "上海 · 中国",
+    );
+    expect(placeLabel(undefined, "31.2, 121.5")).toBe("31.2, 121.5");
+    expect(placeLabel({}, "31.2, 121.5")).toBe("31.2, 121.5");
   });
 });
 
