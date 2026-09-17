@@ -28,7 +28,8 @@ final class NativeRegressionTests: XCTestCase {
         for c in text { field.typeText(String(c)); expected.append(c); let value = expected; wait("Input lost: \(value)") { field.value as? String == value } }
     }
     func testLocalRecordAlbumAndBackup() throws {
-        XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20)); shot("home")
+        XCTAssertTrue(element("volume-2026-09").waitForExistence(timeout: 20)); shot("home")
+        tap("volume-2026-09"); XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20))
         tap("record-fixture"); tap("record-edit")
         XCTAssertTrue(element("ai-open").waitForExistence(timeout: 20)); shot("ai-entry")
         tap("ai-open")
@@ -48,7 +49,7 @@ final class NativeRegressionTests: XCTestCase {
         tap("record-edit"); type(" More memories.", "capture-text", initial: "A little story."); tap("capture-save")
         XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20))
         app.terminate(); app.launch()
-        tap("tab-albums"); tap("album-new")
+        tap("album-new")
         let own = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "A little story.")).firstMatch
         XCTAssertTrue(own.waitForExistence(timeout: 20)); own.tap()
         tap("record-fixture"); shot("material-selection")
