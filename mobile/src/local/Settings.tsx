@@ -278,7 +278,8 @@ export function Backup() {
         disabled={busy}
         onPress={() => {
           void perform(async () => {
-            const file = await store.change((s) => createBackup(s));
+            // 备份只读快照，不占写队列、不虚增 revision。
+            const file = await createBackup(store.get());
             await shareBackup(file);
             await store.change((s) => {
               s.lastExportAt = new Date().toISOString();
