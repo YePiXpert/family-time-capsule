@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, ScrollView, Switch, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as LocalAuthentication from "expo-local-authentication";
 import { File } from "expo-file-system";
 import { useLibrary, useStore } from "./context";
 import { useNav } from "./navigation";
@@ -143,6 +144,14 @@ export function Appearance() {
     store = useStore(),
     s = useStyles();
   const [error, setError] = useState("");
+  const [lockAvailable, setLockAvailable] = useState(false);
+  useEffect(() => {
+    void (async () => {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const enrolled = await LocalAuthentication.isEnrolledAsync();
+      setLockAvailable(Boolean(hasHardware && enrolled));
+    })();
+  }, []);
   return (
     <Page>
       <Text style={s.title}>外观设置</Text>
@@ -169,6 +178,30 @@ export function Appearance() {
             void store
               .change((s) => {
                 s.settings.largeText = value;
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+        />
+      </View>
+      <Text style={s.heading}>隐私</Text>
+      <View style={s.between}>
+        <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+          <Text>应用锁</Text>
+          <Text style={s.muted}>
+            {lockAvailable
+              ? "打开应用或回到前台时，需要指纹、面容或锁屏密码。"
+              : "先在系统设置里录入指纹、面容或设置锁屏密码，再开启。"}
+          </Text>
+        </View>
+        <Switch
+          accessibilityLabel="应用锁"
+          testID="lock-toggle"
+          value={state.settings.lockEnabled === true}
+          disabled={!lockAvailable}
+          onValueChange={(value) => {
+            void store
+              .change((s) => {
+                s.settings.lockEnabled = value;
               })
               .catch((e) => setError(messageOf(e)));
           }}

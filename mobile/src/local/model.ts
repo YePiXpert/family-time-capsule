@@ -79,7 +79,7 @@ export type Library = {
   revision: number;
   welcome: boolean;
   profile: LocalProfile;
-  settings: { theme: "auto" | "light" | "dark"; largeText: boolean };
+  settings: { theme: "auto" | "light" | "dark"; largeText: boolean; lockEnabled?: boolean };
   records: Record<string, LocalRecord>;
   drafts: Record<string, RecordDraft>;
   media: Record<string, LocalMedia>;
@@ -289,6 +289,8 @@ export function validateLibrary(value: unknown): asserts value is Library {
     !s.settings ||
     !["auto", "light", "dark"].includes(s.settings.theme) ||
     typeof s.settings.largeText !== "boolean" ||
+    (s.settings.lockEnabled !== undefined &&
+      typeof s.settings.lockEnabled !== "boolean") ||
     !ids(s.receivedShares) ||
     (s.lastExportAt !== undefined &&
       (!str(s.lastExportAt) || !Number.isFinite(Date.parse(s.lastExportAt))))

@@ -32,6 +32,7 @@ import { StatusBar } from "expo-status-bar";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
 import { openLocalStore } from "./disk";
 import { backupDirectory, ensureDirectories, verifyMedia } from "./files";
+import * as LocalAuthentication from "expo-local-authentication";
 import { StoreContext, useLibrary, useStore } from "./context";
 import {
   LocalTheme,
@@ -56,6 +57,51 @@ import { RecordScreen } from "./Record";
 import { MediaScreen } from "./Media";
 import { receiveShares } from "./services";
 const Stack = createNativeStackNavigator<Routes>();
+function LockGate({ onUnlock }: { onUnlock: () => void }) {
+  const s = useStyles();
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const unlock = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "解锁成长记",
+        cancelLabel: "取消",
+      });
+      if (result.success) onUnlock();
+      else setError("没有解锁成功，再试一次。");
+    } catch {
+      // 设备未设置任何锁屏方式时不把用户锁死在门外。
+      setError("此设备没有可用的锁屏验证，已暂时放行。");
+      onUnlock();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Page top>
+      <View style={{ minHeight: 140 }} />
+      <Glass radius={24} style={{ padding: 20, gap: 12 }}>
+        <Text style={s.muted}>小美成长记</Text>
+        <Text style={s.title}>这些时光只属于你们</Text>
+        <Text style={s.muted}>用指纹、面容或锁屏密码解锁继续。</Text>
+        <ErrorText message={error} />
+        <Button
+          title={busy ? "正在验证…" : "解锁"}
+          primary
+          testID="lock-unlock"
+          disabled={busy}
+          onPress={() => {
+            void unlock();
+          }}
+        />
+      </Glass>
+    </Page>
+  );
+}
+
 function Root() {
   const state = useLibrary(),
     store = useStore(),
@@ -63,7 +109,15 @@ function Root() {
     theme = useTheme();
   const reduceMotion = useReducedMotion();
   const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [locked, setLocked] = useState(state.settings.lockEnabled === true);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (status) => {
+      // 退到后台即重新上锁；回到前台由解锁门接管。
+      if (status !== "active" && state.settings.lockEnabled) setLocked(true);
+    });
+    return () => sub.remove();
+  }, [state.settings.lockEnabled]);
   // 闲时巡检：每次退到后台完整校验少量素材，跨会话逐步覆盖全库。
   const patrolled = useRef(new Set<string>());
   useEffect(() => {
@@ -133,6 +187,13 @@ function Root() {
           />
         </Glass>
       </Page>
+    );
+  if (locked)
+    return (
+      <>
+        <StatusBar style={theme.dark ? "light" : "dark"} />
+        <LockGate onUnlock={() => setLocked(false)} />
+      </>
     );
   return (
     <>
