@@ -1,6 +1,6 @@
 import { AIEditor } from "../ai/Editor";
 import { proposalPatch } from "../ai/state";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppState,
@@ -14,14 +14,6 @@ import { usePreventRemove } from "@react-navigation/native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import {
-  AudioModule,
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  type AudioRecorder,
-} from "expo-audio";
-import { File, Paths } from "expo-file-system";
 import { useLibrary, useStore } from "./context";
 import {
   clone,
@@ -29,8 +21,9 @@ import {
   type RecordDraft,
   type LocalMedia,
 } from "./model";
-import { newId, now, updateDraft } from "./services";
+import { newId, now } from "./services";
 import { preserveMedia, verifyMedia } from "./files";
+import { useDraftPersist, useRecorder } from "./editorHooks";
 import type { Props } from "./navigation";
 import {
   Button,
@@ -58,83 +51,20 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     { colors } = useTheme();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
     clone(store.get().drafts[route.params.draftId]),
-  );
-  const current = useRef(draft),
+  ),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [details, setDetails] = useState(false),
     [dateOpen, setDateOpen] = useState(false),
     [movingPhoto, setMovingPhoto] = useState<string | null>(null),
     [eventDate, setEventDate] = useState<number | null>(null),
-    [recording, setRecording] = useState(false),
     [allowExit, setAllowExit] = useState(false);
-  const pendingMedia = useRef<Record<string, LocalMedia>>({});
-  /** 本会话已在导入/保存时完整校验过的素材，保存时跳过重复哈希。 */
-  const verified = useRef<Set<string>>(new Set());
-  const [importedMedia, setImportedMedia] = useState<
-    Record<string, LocalMedia>
-  >({});
-  const recorder = useRef<AudioRecorder | null>(null),
-    nextAction = useRef<(() => void) | null>(null),
-    pending = useRef<Promise<unknown>>(Promise.resolve()),
+  const nextAction = useRef<(() => void) | null>(null),
     operation = useRef(false);
-  const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
-    mounted = useRef(true);
-  const writeNow = useCallback(() => {
-    if (!current.current) return Promise.resolve();
-    const originals = Object.values(pendingMedia.current);
-    const job = store.change((s) => {
-      for (const m of originals) s.media[m.id] = m;
-      updateDraft(s, current.current!);
-    });
-    pending.current = job;
-    void job.catch((e) => {
-      if (mounted.current) setError(messageOf(e));
-    });
-    return job;
-  }, [store]);
-  const persist = useCallback(
-    (next: RecordDraft, media: LocalMedia[] = []) => {
-      current.current = next;
-      setDraft(next);
-      for (const m of media) pendingMedia.current[m.id] = m;
-      if (media.length) setImportedMedia({ ...pendingMedia.current });
-      return writeNow();
-    },
-    [writeNow],
-  );
-  /** 文字类改动：界面即时生效，落盘延后合并，避免每个击键全库写一次。 */
-  const persistDebounced = useCallback(
-    (next: RecordDraft) => {
-      current.current = next;
-      setDraft(next);
-      if (writeTimer.current) clearTimeout(writeTimer.current);
-      writeTimer.current = setTimeout(() => {
-        writeTimer.current = null;
-        void writeNow();
-      }, 400);
-    },
-    [writeNow],
-  );
-  const flush = useCallback(async () => {
-    if (writeTimer.current) {
-      clearTimeout(writeTimer.current);
-      writeTimer.current = null;
-    }
-    if (current.current) await persist({ ...current.current, updatedAt: now() });
-  }, [persist]);
-  useEffect(
-    () => () => {
-      mounted.current = false;
-      // 卸载时把还挂在防抖上的文字改动落盘。
-      if (writeTimer.current) {
-        clearTimeout(writeTimer.current);
-        writeTimer.current = null;
-        void writeNow();
-      }
-    },
-    [writeNow],
-  );
+  const { current, pendingMedia, verified, importedMedia, persist, persistDebounced, flush } =
+    useDraftPersist(store, setError, setDraft, draft);
+  const { recording, start: startRecording, finishAudio, discardAudio } =
+    useRecorder({ draftRef: current, verified, persist });
   const change = (patch: Partial<RecordContent>) => {
     if (!current.current) return;
     const next = {
@@ -203,43 +133,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       media,
     );
   };
-  const finishJob = useRef<Promise<void> | null>(null);
-  const finishAudioImpl = async () => {
-    if (recorder.current) {
-      await recorder.current.stop();
-      recorder.current.release();
-      recorder.current = null;
-      setRecording(false);
-      await setAudioModeAsync({ allowsRecording: false });
-    }
-    const d = current.current;
-    if (!d?.recordingFile) return;
-    const f = new File(Paths.document, d.recordingFile);
-    if (!f.exists || !f.size)
-      throw new Error("录音未形成可读取的文件，可以明确放弃后继续编辑。");
-    const media = await preserveMedia(f.uri, "录音.m4a", "audio");
-    await verifyMedia(media);
-    verified.current.add(media.id);
-    const next = {
-      ...current.current!,
-      content: {
-        ...current.current!.content,
-        mediaIds: [...current.current!.content.mediaIds, media.id],
-      },
-    };
-    delete next.recordingFile;
-    await persist(next, [media]);
-    // preserveMedia 是复制而非移动；入库成功后收回 document 下的原始录音。
-    if (f.exists) f.delete();
-  };
-  const finishAudio = () => {
-    if (finishJob.current) return finishJob.current;
-    const job = finishAudioImpl().finally(() => {
-      finishJob.current = null;
-    });
-    finishJob.current = job;
-    return job;
-  };
   const finishRef = useRef(finishAudio);
   useEffect(() => {
     finishRef.current = finishAudio;
@@ -248,19 +141,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     const sub = AppState.addEventListener("change", (status) => {
       if (status !== "active") {
         void (async () => {
-          if (recorder.current) await finishRef.current();
+          await finishRef.current();
           await flush();
         })().catch((e) => setError(messageOf(e)));
       }
     });
     return () => sub.remove();
   }, [flush]);
-  useEffect(
-    () => () => {
-      recorder.current?.release();
-    },
-    [],
-  );
   useEffect(() => {
     if (allowExit) {
       const action = nextAction.current;
@@ -272,26 +159,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     await flush();
     nextAction.current = action;
     setAllowExit(true);
-  };
-  const discardAudio = async () => {
-    if (recorder.current) {
-      await recorder.current.stop();
-      recorder.current.release();
-      recorder.current = null;
-      setRecording(false);
-    }
-    const d = current.current;
-    if (d) {
-      const next = { ...d },
-        originalName = d.recordingFile;
-      delete next.recordingFile;
-      await persist(next);
-      if (originalName) {
-        const original = new File(Paths.document, originalName);
-        if (original.exists) original.delete();
-      }
-    }
-    await setAudioModeAsync({ allowsRecording: false });
   };
   usePreventRemove(!allowExit, ({ data }) => {
     if (operation.current) {
@@ -569,41 +436,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                     await finishAudio();
                     return;
                   }
-                  const permission = await requestRecordingPermissionsAsync();
-                  if (!permission.granted)
-                    throw new Error("请在系统设置中允许使用麦克风。");
-                  await setAudioModeAsync({
-                    allowsRecording: true,
-                    playsInSilentMode: true,
-                    shouldPlayInBackground: false,
-                  });
-                  // eslint-disable-next-line import/namespace
-                  const audio = new AudioModule.AudioRecorder({
-                    ...RecordingPresets.HIGH_QUALITY,
-                    ...(Platform.OS === "ios"
-                      ? RecordingPresets.HIGH_QUALITY.ios
-                      : RecordingPresets.HIGH_QUALITY.android),
-                    directory: "document",
-                  });
-                  recorder.current = audio;
-                  try {
-                    await audio.prepareToRecordAsync();
-                    const uri = audio.uri;
-                    const base = Paths.document.uri.replace(/\/$/, "") + "/";
-                    if (!uri?.startsWith(base))
-                      throw new Error("录音保存位置不可用。");
-                    await persist({
-                      ...current.current!,
-                      recordingFile: uri.slice(base.length),
-                    });
-                    audio.record();
-                    setRecording(true);
-                  } catch (e) {
-                    audio.release();
-                    recorder.current = null;
-                    await setAudioModeAsync({ allowsRecording: false });
-                    throw e;
-                  }
+                  await startRecording();
                 });
               }}
             />

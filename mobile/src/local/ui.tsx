@@ -167,7 +167,6 @@ export function Glass({
   style?: StyleProp<ViewStyle>;
   radius?: number;
   tint?: string;
-  intensity?: number;
   accessibilityViewIsModal?: boolean;
 }) {
   const { colors, dark } = useTheme();
@@ -431,7 +430,6 @@ export function Button({
       <Glass
         radius={14}
         tint={primary ? c.accentGlass : selected ? c.selectedGlass : undefined}
-        intensity={primary ? 55 : 40}
         style={{
           minHeight: compact ? 44 : 48,
           paddingHorizontal: compact ? 12 : 16,
