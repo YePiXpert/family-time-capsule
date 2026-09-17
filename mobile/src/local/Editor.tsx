@@ -180,6 +180,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     };
     delete next.recordingFile;
     await persist(next, [media]);
+    // preserveMedia 是复制而非移动；入库成功后收回 document 下的原始录音。
+    if (f.exists) f.delete();
   };
   const finishAudio = () => {
     if (finishJob.current) return finishJob.current;
@@ -231,14 +233,22 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     }
     const d = current.current;
     if (d) {
-      const next = { ...d };
+      const next = { ...d },
+        originalName = d.recordingFile;
       delete next.recordingFile;
       await persist(next);
+      if (originalName) {
+        const original = new File(Paths.document, originalName);
+        if (original.exists) original.delete();
+      }
     }
     await setAudioModeAsync({ allowsRecording: false });
   };
   usePreventRemove(!allowExit, ({ data }) => {
-    if (operation.current) return;
+    if (operation.current) {
+      setError("正在保存，请稍候再返回。");
+      return;
+    }
     const exit = () => navigation.dispatch(data.action);
     if (current.current?.recordingFile)
       Alert.alert("保存这段录音？", "结束并保存后返回，或明确放弃本段录音。", [
@@ -416,15 +426,26 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         }
                       />
                       {eventDate === index && (
-                        <DateTimePicker
-                          value={new Date(group.date)}
-                          mode="date"
-                          onChange={(_, date) => {
-                            setEventDate(null);
-                            if (date)
-                              editEvent(index, { date: date.toISOString() });
-                          }}
-                        />
+                        <>
+                          <DateTimePicker
+                            value={new Date(group.date)}
+                            mode="date"
+                            display={
+                              Platform.OS === "ios" ? "spinner" : "default"
+                            }
+                            onChange={(_, date) => {
+                              if (Platform.OS !== "ios") setEventDate(null);
+                              if (date)
+                                editEvent(index, { date: date.toISOString() });
+                            }}
+                          />
+                          {Platform.OS === "ios" && (
+                            <Button
+                              title="日期选好了"
+                              onPress={() => setEventDate(null)}
+                            />
+                          )}
+                        </>
                       )}
                       <Field
                         label="这件事的标题"
