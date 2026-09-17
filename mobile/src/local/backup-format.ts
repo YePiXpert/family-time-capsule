@@ -1,4 +1,4 @@
-import { validateLibrary, type Library } from "./model";
+import { normalizeLibrary, validateLibrary, type Library } from "./model";
 export const BACKUP_MAGIC = new TextEncoder().encode("XIAOMEI1");
 export const HEADER_LIMIT = 16 * 1024 * 1024;
 export type BackupManifest = {
@@ -38,6 +38,7 @@ export function decodeManifest(json: Uint8Array): BackupManifest {
     !Array.isArray(m.mediaOrder)
   )
     throw new Error("不是受支持的小美成长记备份。");
+  normalizeLibrary(m.library);
   validateLibrary(m.library);
   const ids = Object.keys(m.library.media).sort();
   if (

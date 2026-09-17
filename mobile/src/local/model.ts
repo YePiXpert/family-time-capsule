@@ -78,6 +78,8 @@ export type Library = {
   media: Record<string, LocalMedia>;
   albums: Record<string, LocalAlbum>;
   selections: Record<string, SelectionSession>;
+  /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
+  yearNotes: Record<string, string>;
   receivedShares: string[];
 };
 export const emptyLibrary = (): Library => ({
@@ -91,8 +93,15 @@ export const emptyLibrary = (): Library => ({
   media: {},
   albums: {},
   selections: {},
+  yearNotes: {},
   receivedShares: [],
 });
+/** Fills fields added after the first release so older stores and backups still open. */
+export function normalizeLibrary(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  const s = value as Partial<Library>;
+  if (s.yearNotes === undefined) s.yearNotes = {};
+}
 export const emptyContent = (): RecordContent => ({
   title: "",
   text: "",
@@ -112,6 +121,9 @@ export function recordTitle(r: RecordContent): string {
 export function monthKey(date: string): string {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+export function yearKey(date: string): string {
+  return String(new Date(date).getFullYear());
 }
 export function sortedRecords(s: Library): LocalRecord[] {
   return Object.values(s.records).sort(
@@ -246,6 +258,16 @@ export function validateLibrary(value: unknown): asserts value is Library {
     !Array.isArray(v) &&
     Object.keys(v).every(id);
   if (![s.records, s.drafts, s.media, s.albums, s.selections].every(map))
+    return fail();
+  if (
+    !s.yearNotes ||
+    typeof s.yearNotes !== "object" ||
+    Array.isArray(s.yearNotes) ||
+    Object.entries(s.yearNotes).some(
+      ([year, note]) =>
+        !/^\d{4}$/.test(year) || typeof note !== "string" || note.length > 2000,
+    )
+  )
     return fail();
   if (
     !s.profile ||

@@ -15,7 +15,13 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection } from "./services";
-import { monthKey, recordTitle, sortedRecords, type LocalMedia } from "./model";
+import {
+  monthKey,
+  recordTitle,
+  sortedRecords,
+  yearKey,
+  type LocalMedia,
+} from "./model";
 import { useNav } from "./navigation";
 import {
   Button,
@@ -37,7 +43,7 @@ import { Photo } from "./Media";
 
 const PRESS_SPRING = { damping: 14, stiffness: 220 };
 
-function Volume({
+export function Volume({
   title,
   caption,
   cover,
@@ -214,6 +220,7 @@ export function Shelf() {
     [error, setError] = useState("");
   const records = useMemo(() => sortedRecords(state), [state]);
   const months = [...new Set(records.map((r) => monthKey(r.date)))];
+  const years = [...new Set(records.map((r) => yearKey(r.date)))];
   const firsts = records
     .filter((r) => r.first)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -338,6 +345,41 @@ export function Shelf() {
           </View>
         )}
         <ErrorText message={error} />
+        {years.length > 0 && (
+          <View style={{ gap: 16, marginTop: 8 }}>
+            <Text style={[s.muted, { fontFamily: serif }]}>年度册</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 16,
+              }}
+            >
+              {years.map((y, i) => {
+                const yearRecords = records.filter(
+                  (r) => yearKey(r.date) === y,
+                );
+                const yearFirsts = yearRecords.filter((r) => r.first).length;
+                return (
+                  <Volume
+                    key={y}
+                    title={`${y} 年`}
+                    caption={
+                      yearFirsts
+                        ? `${yearRecords.length} 段时光 · ${yearFirsts} 个第一次`
+                        : `${yearRecords.length} 段时光`
+                    }
+                    cover={coverForRecords(yearRecords, state.media)}
+                    testID={`volume-year-${y}`}
+                    width={volumeWidth}
+                    index={i}
+                    onPress={() => nav.navigate("Year", { year: y })}
+                  />
+                );
+              })}
+            </View>
+          </View>
+        )}
         {months.length > 0 && (
           <View style={{ gap: 16, marginTop: 8 }}>
             <Text style={[s.muted, { fontFamily: serif }]}>月度册</Text>
@@ -424,7 +466,7 @@ export function Shelf() {
   );
 }
 
-function coverForRecords(
+export function coverForRecords(
   monthRecords: { mediaIds: string[]; coverId: string | null }[],
   media: Record<string, LocalMedia>,
 ): LocalMedia | undefined {

@@ -6,6 +6,7 @@ import type {
 export type Routes = {
   Shelf: undefined;
   Month: { month: string };
+  Year: { year: string };
   Firsts: undefined;
   Title: undefined;
   Settings: undefined;

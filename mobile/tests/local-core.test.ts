@@ -294,3 +294,41 @@ describe("complete backup manifest", () => {
     expect(() => validateLibrary(old)).toThrow();
   });
 });
+describe("annual notes", () => {
+  it("roundtrips year notes through the backup manifest", () => {
+    const s = fixture();
+    s.yearNotes["2026"] = "这一年你学会了走路。";
+    validateLibrary(s);
+    const header = encodeHeader(s);
+    expect(decodeManifest(header.slice(12)).library).toEqual(s);
+  });
+  it("rejects invalid year keys, non-string notes and overlong notes", () => {
+    const badKey = fixture();
+    badKey.yearNotes["26"] = "bad key";
+    expect(() => validateLibrary(badKey)).toThrow();
+    const overlong = fixture();
+    overlong.yearNotes["2026"] = "长".repeat(2001);
+    expect(() => validateLibrary(overlong)).toThrow();
+    const nonString = fixture();
+    (nonString.yearNotes as Record<string, unknown>)["2026"] = 42;
+    expect(() => validateLibrary(nonString)).toThrow();
+  });
+  it("opens stores and backups written before year notes existed", async () => {
+    const legacy = clone(fixture()) as Partial<Library>;
+    delete legacy.yearNotes;
+    const store = new LocalStore({
+      read: async () => legacy,
+      write: async () => {},
+    });
+    await store.open();
+    expect(store.get().yearNotes).toEqual({});
+    const manifest = JSON.parse(
+      new TextDecoder().decode(encodeHeader(fixture()).slice(12)),
+    ) as { library: Partial<Library> };
+    delete manifest.library.yearNotes;
+    const decoded = decodeManifest(
+      new TextEncoder().encode(JSON.stringify(manifest)),
+    );
+    expect(decoded.library.yearNotes).toEqual({});
+  });
+});
