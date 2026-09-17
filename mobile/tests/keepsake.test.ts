@@ -60,11 +60,20 @@ describe("keepsake card layout", () => {
     expect(wide.photo!.h).toBeLessThan(tall.photo!.h);
     expect(tall.photo!.h / tall.photo!.w).toBeLessThanOrEqual(1.2);
   });
-  it("decodes PNG data URLs and base64 back to the original bytes", () => {
+  it("decodes PNG data URLs and bare base64 back to the original bytes", () => {
     expect(() => pngBytesOfDataUrl("data:image/jpeg;base64,QUJD")).toThrow();
-    expect([...pngBytesOfDataUrl("data:image/png;base64,QUJD")]).toEqual([
-      65, 66, 67,
+    // PNG 魔数 89 50 4E 47 0D 0A 1A 0A + 'ABC'。
+    const png = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 65, 66, 67,
+    ]).toString("base64");
+    expect([
+      ...pngBytesOfDataUrl(`data:image/png;base64,${png}`),
+    ]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 65, 66, 67]);
+    // Android 的 toDataURL 回调只给裸 base64。
+    expect([...pngBytesOfDataUrl(png)]).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 65, 66, 67,
     ]);
+    expect(() => pngBytesOfDataUrl("data:image/png;base64,QUJD")).toThrow();
     // RFC 4648 test vectors。
     expect([...base64ToBytes("")]).toEqual([]);
     expect([...base64ToBytes("QQ==")]).toEqual([65]);
