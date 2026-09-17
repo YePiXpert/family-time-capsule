@@ -204,13 +204,36 @@ class FamilyShareIntakeModule : Module() {
           val date = raw.substring(0, 10).replace(':', '-')
           declaration.put("capturedAt", "${date}T${raw.substring(11)}")
         }
-      // getLatLong() 与 setLatLong(double, double) 签名不匹配，Kotlin 不合成 latLong 属性，必须显式调用。
-      val coords = exif.getLatLong()
-      if (coords != null && coords.size == 2 && coords[0].isFinite() && coords[1].isFinite()) {
-        declaration.put("latitude", coords[0])
-        declaration.put("longitude", coords[1])
+      // getLatLong 与 setLatLong(double,double) 的重载组合让 Kotlin 无法稳定推断，改为
+      // 直接解析 TAG_GPS_* 的度分秒有理数字符串（与 ImageIO 侧一致）。
+      val latitude = gpsCoordinate(exif, android.media.ExifInterface.TAG_GPS_LATITUDE, android.media.ExifInterface.TAG_GPS_LATITUDE_REF, 90.0)
+      val longitude = gpsCoordinate(exif, android.media.ExifInterface.TAG_GPS_LONGITUDE, android.media.ExifInterface.TAG_GPS_LONGITUDE_REF, 180.0)
+      if (latitude != null && longitude != null) {
+        declaration.put("latitude", latitude)
+        declaration.put("longitude", longitude)
       }
     }
+  }
+
+  /** "num1/denom1,num2/denom2,num3/denom3"（度/分/秒）→ 带方向的十进制度；越界或残缺返回 null。 */
+  private fun gpsCoordinate(exif: android.media.ExifInterface, valueTag: String, refTag: String, limit: Double): Double? {
+    val value = exif.getAttribute(valueTag) ?: return null
+    var total = 0.0
+    var divisor = 1.0
+    var parts = 0
+    for (part in value.split(',')) {
+      val pieces = part.split('/')
+      val numerator = pieces.getOrNull(0)?.trim()?.toDoubleOrNull() ?: return null
+      val denominator = pieces.getOrNull(1)?.trim()?.toDoubleOrNull() ?: 1.0
+      if (!denominator.isFinite() || denominator == 0.0 || !numerator.isFinite()) return null
+      total += numerator / denominator / divisor
+      divisor *= 60.0
+      parts++
+    }
+    if (parts == 0 || !total.isFinite()) return null
+    val southWest = exif.getAttribute(refTag)?.trim() == "S" || exif.getAttribute(refTag)?.trim() == "W"
+    val result = if (southWest) -kotlin.math.abs(total) else total
+    return if (kotlin.math.abs(result) <= limit) result else null
   }
 
   private fun queryDisplayName(uri: Uri): String? {
