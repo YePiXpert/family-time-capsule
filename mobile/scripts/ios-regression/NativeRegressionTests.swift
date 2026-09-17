@@ -42,6 +42,8 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20))
         app.terminate(); app.launch()
         tap("capture-new"); type("A little story.", "capture-text"); shot("editor-keyboard")
+        // 文字落盘有 400ms 防抖；留出窗口再终止进程，验证草稿恢复。
+        sleep(2)
         app.terminate(); app.launch()
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
         tap("录音"); XCTAssertTrue(element("完成录音").waitForExistence(timeout: 20)); sleep(2); tap("完成录音")
