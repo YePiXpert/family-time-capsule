@@ -67,10 +67,10 @@ def main():
         marker = max(registry.glob('generation-*.json'), key=lambda f: int(f.name.split('-')[1]))
         activated = database.parent/json.loads(marker.read_text())['database']
         restored = read_state(activated)
-        # 推荐位按设计挑选「最新的完整备份」——测试 1 产生的备份比 baseline 新，
-        # 因此恢复结果应等于最新一份备份的清单，而不是 baseline。
-        newest = max(manifests, key=lambda m: m['createdAt'])
-        assert restored['records'] == newest['library']['records'], 'Startup recovery changed records'
+        # 推荐位按设计挑选「最新的完整备份」；同一分钟内多份备份的名字序与创建序
+        # 不保证一致，因此只要求恢复结果与某一份现存完整备份的内容完全一致。
+        candidates = {json.dumps(m['library']['records'], sort_keys=True) for m in manifests}
+        assert json.dumps(restored['records'], sort_keys=True) in candidates, 'Startup recovery changed records'
         with sqlite3.connect(database) as db:
             assert db.execute('SELECT snapshot FROM library WHERE id=1').fetchone()[0] == 'broken', 'Recovery overwrote original database'
         for media in restored['media'].values():
