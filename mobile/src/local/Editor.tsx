@@ -69,6 +69,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [recording, setRecording] = useState(false),
     [allowExit, setAllowExit] = useState(false);
   const pendingMedia = useRef<Record<string, LocalMedia>>({});
+  /** 本会话已在导入/保存时完整校验过的素材，保存时跳过重复哈希。 */
+  const verified = useRef<Set<string>>(new Set());
   const [importedMedia, setImportedMedia] = useState<
     Record<string, LocalMedia>
   >({});
@@ -177,6 +179,10 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   };
   const attach = async (media: LocalMedia[]) => {
     if (!current.current) return;
+    for (const m of media) {
+      await verifyMedia(m);
+      verified.current.add(m.id);
+    }
     const d = media.reduce(
       (next, item) => applyPhotoMetadata(next, item.photoMetadata),
       current.current,
@@ -212,6 +218,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     if (!f.exists || !f.size)
       throw new Error("录音未形成可读取的文件，可以明确放弃后继续编辑。");
     const media = await preserveMedia(f.uri, "录音.m4a", "audio");
+    await verifyMedia(media);
+    verified.current.add(media.id);
     const next = {
       ...current.current!,
       content: {
@@ -879,10 +887,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               void run(async () => {
                 if (current.current?.recordingFile) await finishAudio();
                 await flush();
+                // 导入时已校验过的素材不再重复读盘哈希；只查本次会话新增的。
                 for (const id of current.current!.content.mediaIds) {
+                  if (verified.current.has(id)) continue;
                   const media = store.get().media[id];
                   if (!media) throw new Error("素材尚未写入，请重试。");
                   await verifyMedia(media);
+                  verified.current.add(id);
                 }
                 const records = await store.change((s) =>
                   savePhotoDays(s, draft.id, newId, now()),

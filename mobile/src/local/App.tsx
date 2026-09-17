@@ -3,6 +3,7 @@ import {
   Component,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -30,7 +31,7 @@ import { inspectBackup, recoverStartupBackup } from "./backup";
 import { StatusBar } from "expo-status-bar";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
 import { openLocalStore } from "./disk";
-import { backupDirectory, ensureDirectories } from "./files";
+import { backupDirectory, ensureDirectories, verifyMedia } from "./files";
 import { StoreContext, useLibrary, useStore } from "./context";
 import {
   LocalTheme,
@@ -63,6 +64,8 @@ function Root() {
   const reduceMotion = useReducedMotion();
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  // 闲时巡检：每次退到后台完整校验少量素材，跨会话逐步覆盖全库。
+  const patrolled = useRef(new Set<string>());
   useEffect(() => {
     let draining = false;
     const drain = async () => {
@@ -77,8 +80,23 @@ function Root() {
       }
     };
     void drain();
+    const patrolSome = async () => {
+      let checked = 0;
+      for (const m of Object.values(store.get().media)) {
+        if (checked >= 3) break;
+        if (patrolled.current.has(m.id)) continue;
+        patrolled.current.add(m.id);
+        checked++;
+        try {
+          await verifyMedia(m);
+        } catch {
+          // 巡检只读不写；损坏素材由保存/备份路径报告。
+        }
+      }
+    };
     const sub = AppState.addEventListener("change", (status) => {
       if (status === "active") void drain();
+      else void patrolSome();
     });
     const unsubscribe = subscribeToPendingNativeShares(() => {
       void drain();
