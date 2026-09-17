@@ -12,12 +12,14 @@ import {
   dateLabel,
   messageOf,
   useStyles,
+  useTheme,
 } from "./ui";
 import { Photo, PhotoDetails } from "./Media";
 export function RecordScreen({ route, navigation }: Props<"Record">) {
   const state = useLibrary(),
     store = useStore(),
-    s = useStyles();
+    s = useStyles(),
+    { colors } = useTheme();
   const record = state.records[route.params.id],
     [error, setError] = useState(""),
     [chooseAlbum, setChooseAlbum] = useState(false);
@@ -34,7 +36,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   };
   return (
     <Page>
-      <Text style={s.muted}>
+      <Text style={[s.muted, { color: colors.accent }]}>
         {dateLabel(record.date)}
         {record.first ? " · 第一次" : ""}
       </Text>

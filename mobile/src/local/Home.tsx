@@ -121,7 +121,7 @@ export function RecordCard({
               paddingHorizontal: 8,
               paddingVertical: 2,
               borderRadius: 10,
-              backgroundColor: colors.paper,
+              backgroundColor: colors.card,
             }}
           >
             <Text style={s.muted}>
@@ -212,7 +212,7 @@ export function Timeline() {
     store = useStore(),
     nav = useNav(),
     s = useStyles(),
-    { large } = useTheme();
+    { colors, large } = useTheme();
   const tabBarHeight = useBottomTabBarHeight(),
     insets = useSafeAreaInsets(),
     { width, fontScale } = useWindowDimensions();
@@ -390,7 +390,17 @@ export function Timeline() {
         }
         renderSectionHeader={({ section }) => (
           <View style={s.dateHeading}>
-            <Text style={s.galleryTitle}>{section.title}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View
+                style={{
+                  width: 4,
+                  height: 16,
+                  borderRadius: 2,
+                  backgroundColor: colors.accent,
+                }}
+              />
+              <Text style={s.galleryTitle}>{section.title}</Text>
+            </View>
             <Text style={s.muted}>{section.count} 条</Text>
           </View>
         )}

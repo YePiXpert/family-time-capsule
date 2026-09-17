@@ -402,7 +402,7 @@ export function AIEditor({
           accessibilityRole="button"
           accessibilityLabel="收起 AI 面板"
           testID="ai-close"
-          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(15,20,17,0.35)" }}
+          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(34,28,22,0.35)" }}
           onPress={() => setPanel(false)}
         />
         <Glass

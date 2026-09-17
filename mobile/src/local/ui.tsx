@@ -15,47 +15,46 @@ import {
   type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { useLibrary } from "./context";
 const light = {
-  paper: "#F7F8F5",
+  paper: "#FAF5EC",
   card: "#FFFFFF",
-  ink: "#202923",
-  muted: "#616B64",
-  line: "#E1E6DF",
-  accent: "#426A58",
+  ink: "#3B3129",
+  muted: "#8C7C6A",
+  line: "#EBDFCC",
+  accent: "#B4553C",
   onAccent: "#FFFFFF",
-  selected: "#E8F0E9",
+  selected: "#F5E7D3",
   error: "#A03C36",
-  glass: "rgba(255,255,255,0.55)",
-  glassLine: "rgba(255,255,255,0.75)",
-  accentGlass: "rgba(66,106,88,0.88)",
-  selectedGlass: "rgba(232,240,233,0.72)",
-  glow1: "#B9D9C4",
-  glow2: "#F0DEC4",
-  glow3: "#C4D8E4",
+  glass: "#FFFDF8",
+  glassLine: "#EBDFCC",
+  accentGlass: "#B4553C",
+  selectedGlass: "#F5E7D3",
+  glow1: "#F3D9B8",
+  glow2: "#EFC5B0",
+  glow3: "#E8DCC4",
 };
 const dark: typeof light = {
-  paper: "#171C19",
-  card: "#202722",
-  ink: "#F0F4EF",
-  muted: "#B7C2B8",
-  line: "#3A463D",
-  accent: "#A6CCB5",
-  onAccent: "#173224",
-  selected: "#2B4033",
+  paper: "#221C16",
+  card: "#2C241C",
+  ink: "#F2E9DC",
+  muted: "#B8A88F",
+  line: "#453A2E",
+  accent: "#E09B76",
+  onAccent: "#2A1A12",
+  selected: "#3A2D20",
   error: "#F0A59D",
-  glass: "rgba(32,39,34,0.52)",
-  glassLine: "rgba(255,255,255,0.14)",
-  accentGlass: "rgba(166,204,181,0.85)",
-  selectedGlass: "rgba(43,64,51,0.66)",
-  glow1: "#24402F",
-  glow2: "#3D3423",
-  glow3: "#22343F",
+  glass: "#2C241C",
+  glassLine: "#453A2E",
+  accentGlass: "#E09B76",
+  selectedGlass: "#3A2D20",
+  glow1: "#3A2A1C",
+  glow2: "#40241C",
+  glow3: "#2E2A1E",
 };
+export const serif = Platform.select({ ios: "Georgia", android: "serif" });
 const ThemeContext = createContext({
   colors: light,
   large: false,
@@ -99,7 +98,7 @@ export function Text({ style, ...props }: TextProps) {
 export function GlassBackdrop() {
   const { colors, dark } = useTheme();
   const { width, height } = useWindowDimensions();
-  const glowOpacity = dark ? 0.55 : 0.8;
+  const glowOpacity = dark ? 0.5 : 0.55;
   return (
     <View
       pointerEvents="none"
@@ -162,7 +161,6 @@ export function Glass({
   style,
   radius = 16,
   tint,
-  intensity = 45,
   accessibilityViewIsModal,
 }: {
   children?: ReactNode;
@@ -173,38 +171,37 @@ export function Glass({
   accessibilityViewIsModal?: boolean;
 }) {
   const { colors, dark } = useTheme();
-  const base: ViewStyle = {
-    borderRadius: radius,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.glassLine,
-    overflow: "hidden",
-  };
-  if (Platform.OS === "ios" && isLiquidGlassAvailable())
-    return (
-      <GlassView
-        glassEffectStyle="regular"
-        colorScheme={dark ? "dark" : "light"}
-        tintColor={tint}
-        accessibilityViewIsModal={accessibilityViewIsModal}
-        style={[base, style]}
-      >
-        {children}
-      </GlassView>
-    );
   return (
-    <BlurView
-      intensity={intensity}
-      tint={dark ? "dark" : "light"}
-      blurMethod="dimezisBlurViewSdk31Plus"
+    <View
       accessibilityViewIsModal={accessibilityViewIsModal}
-      style={[base, { backgroundColor: tint ?? colors.glass }, style]}
+      style={[
+        {
+          borderRadius: radius,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: colors.glassLine,
+          backgroundColor: tint ?? colors.glass,
+          shadowColor: dark ? "#000000" : "#7A5C3E",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: dark ? 0.3 : 0.08,
+          shadowRadius: 10,
+          elevation: 2,
+        },
+        style,
+      ]}
     >
       {children}
-    </BlurView>
+    </View>
   );
 }
 export function useStyles() {
-  const { colors: c } = useTheme();
+  const { colors: c, dark } = useTheme();
+  const cardShadow: ViewStyle = {
+    shadowColor: dark ? "#000000" : "#7A5C3E",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: dark ? 0.3 : 0.07,
+    shadowRadius: 8,
+    elevation: 1,
+  };
   return useMemo(
     () =>
       StyleSheet.create({
@@ -228,9 +225,10 @@ export function useStyles() {
           fontSize: 24,
           lineHeight: 33,
           fontWeight: "600",
+          fontFamily: serif,
           color: c.ink,
         },
-        heading: { fontSize: 18, lineHeight: 27, fontWeight: "600" },
+        heading: { fontSize: 18, lineHeight: 27, fontWeight: "600", fontFamily: serif },
         muted: { fontSize: 13, lineHeight: 21, color: c.muted },
         input: {
           backgroundColor: c.glass,
@@ -249,6 +247,7 @@ export function useStyles() {
           borderColor: c.glassLine,
           padding: 16,
           gap: 12,
+          ...cardShadow,
         },
         line: {
           height: StyleSheet.hairlineWidth,
@@ -257,7 +256,7 @@ export function useStyles() {
         image: {
           width: "100%",
           aspectRatio: 4 / 3,
-          borderRadius: 16,
+          borderRadius: 12,
           backgroundColor: c.selected,
         },
         empty: { paddingVertical: 32, gap: 12 },
@@ -268,7 +267,12 @@ export function useStyles() {
           alignItems: "flex-start",
         },
         galleryCaption: { gap: 2, paddingTop: 8, minHeight: 44 },
-        galleryTitle: { fontSize: 14, lineHeight: 21, fontWeight: "600" },
+        galleryTitle: {
+          fontSize: 14,
+          lineHeight: 21,
+          fontWeight: "600",
+          fontFamily: serif,
+        },
         recordRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -279,6 +283,7 @@ export function useStyles() {
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: c.glassLine,
           marginBottom: 12,
+          ...cardShadow,
         },
         compactPanel: {
           paddingHorizontal: 12,
@@ -288,6 +293,7 @@ export function useStyles() {
           backgroundColor: c.glass,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: c.glassLine,
+          ...cardShadow,
         },
         dateHeading: {
           flexDirection: "row",
@@ -371,7 +377,7 @@ export function Button({
       })}
     >
       <Glass
-        radius={24}
+        radius={14}
         tint={primary ? c.accentGlass : selected ? c.selectedGlass : undefined}
         intensity={primary ? 55 : 40}
         style={{
