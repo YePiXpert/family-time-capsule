@@ -146,16 +146,50 @@ function batchFixture() {
   return s;
 }
 describe("batch photo events", () => {
-  it("suggests days while keeping undated photos separate", () => {
+  it("suggests days and folds undated media into the nearest neighbor day", () => {
     const s = batchFixture();
     const groups = photoDayGroups(s.drafts.draft!, s.media);
     expect(groups.map((g) => g.mediaIds)).toEqual([
       ["a", "b"],
-      ["c"],
-      ["unknown"],
+      ["c", "unknown"],
     ]);
     expect(groups[0]!.coverId).toBe("b");
     expect(groups[0]!.date.slice(0, 10)).toBe("2020-01-01");
+  });
+  it("keeps draft title and text in the first day group only", () => {
+    const s = batchFixture();
+    const d = s.drafts.draft!;
+    d.content.title = "生日聚会";
+    d.content.text = "小美吹蜡烛";
+    const groups = photoDayGroups(d, s.media);
+    expect(groups[0]!.title).toBe("生日聚会");
+    expect(groups[0]!.text).toBe("小美吹蜡烛");
+    expect(
+      groups.slice(1).every((g) => g.title === "" && g.text === ""),
+    ).toBe(true);
+  });
+  it("groups an undated video with its neighboring photo day", () => {
+    const s = batchFixture();
+    s.media.video = {
+      id: "video",
+      file: "video.mp4",
+      name: "video.mp4",
+      kind: "video",
+      bytes: 1,
+      sha256: "b".repeat(64),
+    };
+    const d = s.drafts.draft!;
+    d.content.mediaIds = ["a", "b", "video", "c"];
+    const groups = photoDayGroups(d, s.media);
+    expect(groups.map((g) => g.mediaIds)).toEqual([["a", "b", "video"], ["c"]]);
+    expect(groups[0]!.date.slice(0, 10)).toBe("2020-01-01");
+  });
+  it("keeps one undated group when the whole batch lacks capture times", () => {
+    const s = batchFixture();
+    const d = s.drafts.draft!;
+    d.content.mediaIds = ["unknown"];
+    const groups = photoDayGroups(d, s.media);
+    expect(groups.map((g) => g.mediaIds)).toEqual([["unknown"]]);
   });
   it("splits same-day events, edits independently, and persists a reopened batch", () => {
     const s = batchFixture();
@@ -166,8 +200,8 @@ describe("batch photo events", () => {
       s.media,
     );
     groups[0]!.title = "打疫苗";
-    groups[3]!.title = "去公园";
-    groups[3]!.text = "下午散步";
+    groups[2]!.title = "去公园";
+    groups[2]!.text = "下午散步";
     s.drafts.draft!.photoEvents = groups;
     const restored = JSON.parse(JSON.stringify(s));
     validateLibrary(restored);
@@ -179,11 +213,11 @@ describe("batch photo events", () => {
       new Date().toISOString(),
     );
     validateLibrary(restored);
-    expect(records).toHaveLength(4);
+    expect(records).toHaveLength(3);
     expect(records[0]!.title).toBe("打疫苗");
-    expect(records[3]!.title).toBe("去公园");
-    expect(records[3]!.text).toBe("下午散步");
-    expect(records[0]!.date.slice(0, 10)).toBe(records[3]!.date.slice(0, 10));
+    expect(records[2]!.title).toBe("去公园");
+    expect(records[2]!.text).toBe("下午散步");
+    expect(records[0]!.date.slice(0, 10)).toBe(records[2]!.date.slice(0, 10));
     expect(restored.drafts.draft).toBeUndefined();
   });
   it("moves photos once, handles removal and later imports without losing event edits", () => {
@@ -198,7 +232,7 @@ describe("batch photo events", () => {
     d.photoEvents[1]!.text = "一起记录";
     d.content.mediaIds = ["b", "c", "unknown"];
     const groups = photoDayGroups(d, s.media);
-    expect(groups.map((g) => g.mediaIds)).toEqual([["c", "b"], ["unknown"]]);
+    expect(groups.map((g) => g.mediaIds)).toEqual([["c", "unknown", "b"]]);
     expect(groups[0]!.text).toBe("一起记录");
     d.content.mediaIds.push("a");
     expect(
@@ -225,7 +259,7 @@ describe("batch photo events", () => {
       new Date().toISOString(),
     );
     expect(s.records.existing!.text).toBe("已有记录");
-    expect(Object.keys(s.records)).toHaveLength(4);
+    expect(Object.keys(s.records)).toHaveLength(3);
     const d = {
       ...draft(),
       recordId: "existing",
