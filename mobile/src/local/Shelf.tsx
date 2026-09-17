@@ -493,6 +493,7 @@ export function Shelf() {
             <Text style={s.muted}>
               点右下角的笔，写几句话，留一张照片。日子会慢慢长成一册册书。
             </Text>
+            <Ornament />
           </View>
         )}
       </ScrollView>
@@ -570,6 +571,7 @@ export function Firsts() {
           <Text style={s.muted}>
             在阅读页点亮「第一次」，它就会收进这一册。
           </Text>
+          <Ornament />
         </View>
       )}
     </Page>

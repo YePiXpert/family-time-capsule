@@ -22,7 +22,7 @@ const light = {
   paper: "#FAF5EC",
   card: "#FFFFFF",
   ink: "#3B3129",
-  muted: "#8C7C6A",
+  muted: "#7A6A58",
   line: "#EBDFCC",
   accent: "#B4553C",
   onAccent: "#FFFFFF",

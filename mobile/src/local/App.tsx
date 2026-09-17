@@ -260,15 +260,24 @@ class Boundary extends Component<{ children: ReactNode }, { error: string }> {
   render() {
     if (this.state.error)
       return (
-        <View style={{ padding: 32, flex: 1, justifyContent: "center" }}>
-          <NativeText>页面暂时无法打开，已保存的资料仍在本机。</NativeText>
-          <NativeText>{this.state.error}</NativeText>
+        <View
+          style={{
+            padding: 32,
+            flex: 1,
+            justifyContent: "center",
+            backgroundColor: "#FAF5EC",
+          }}
+        >
+          <NativeText style={{ color: "#3B3129" }}>
+            页面暂时无法打开，已保存的资料仍在本机。
+          </NativeText>
+          <NativeText style={{ color: "#3B3129" }}>{this.state.error}</NativeText>
           <Pressable
             accessibilityRole="button"
             onPress={() => this.setState({ error: "" })}
             style={{ padding: 20 }}
           >
-            <NativeText>重试</NativeText>
+            <NativeText style={{ color: "#3B3129" }}>重试</NativeText>
           </Pressable>
         </View>
       );

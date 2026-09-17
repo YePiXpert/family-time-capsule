@@ -30,7 +30,7 @@ export function Settings() {
     nav = useNav(),
     s = useStyles();
   return (
-    <Page scroll={false} top>
+    <Page scroll={false}>
       <ScrollView contentContainerStyle={s.content}>
         <Text style={s.title}>我的</Text>
         <Text style={s.muted}>
