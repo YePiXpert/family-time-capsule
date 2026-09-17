@@ -22,7 +22,12 @@ def hierarchy():
     except Exception as e:
       last=e;time.sleep(2)
   raise last
-def matches(node,label): return node.get('resource-id','').endswith(label) or node.get('text')==label or node.get('content-desc')==label
+def matches(node,label):
+  rid=node.get('resource-id','')
+  desc=node.get('content-desc','')
+  # 书架 Volume 的标题常被折叠成「标题，副题」复合 desc（贴屏底时文本节点还会被裁掉），
+  # 因此前缀匹配复合标签；testID 仍走 resource-id。
+  return rid.endswith(label) or node.get('text')==label or desc==label or desc.startswith(label+'，')
 def find(label):
   for _ in range(30):
     tree=hierarchy()
