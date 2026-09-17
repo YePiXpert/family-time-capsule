@@ -22,6 +22,7 @@ export function NoteCard({
   note,
   testPrefix,
   onSave,
+  assist,
 }: {
   heading: string;
   placeholder: string;
@@ -30,12 +31,15 @@ export function NoteCard({
   testPrefix: string;
   /** 收到去除首尾空白后的内容；空串由调用方落实为删除。 */
   onSave: (value: string) => Promise<void>;
+  /** 可选的 AI 起草：返回草稿文本，由用户核对后再保存。 */
+  assist?: { generate: () => Promise<string> };
 }) {
   const s = useStyles(),
     { colors } = useTheme();
   const [editing, setEditing] = useState(false),
     [draft, setDraft] = useState(note),
     [busy, setBusy] = useState(false),
+    [assistBusy, setAssistBusy] = useState(false),
     [error, setError] = useState("");
   const save = () => {
     setBusy(true);
@@ -44,6 +48,16 @@ export function NoteCard({
       .then(() => setEditing(false))
       .catch((e) => setError(messageOf(e)))
       .finally(() => setBusy(false));
+  };
+  const draftWithAI = () => {
+    if (!assist) return;
+    setAssistBusy(true);
+    setError("");
+    void assist
+      .generate()
+      .then((text) => setDraft(text))
+      .catch((e) => setError(messageOf(e)))
+      .finally(() => setAssistBusy(false));
   };
   return (
     <Glass radius={16} style={{ padding: 16, gap: 12 }}>
@@ -77,6 +91,16 @@ export function NoteCard({
               disabled={busy}
               onPress={save}
             />
+            {!!assist && (
+              <Button
+                title={assistBusy ? "AI 起草中…" : "AI 帮我起草"}
+                icon="sparkle"
+                compact
+                testID={`${testPrefix}-assist`}
+                disabled={busy || assistBusy}
+                onPress={draftWithAI}
+              />
+            )}
             <Button
               title="取消"
               compact
