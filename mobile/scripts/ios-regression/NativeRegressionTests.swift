@@ -76,8 +76,11 @@ final class NativeRegressionTests: XCTestCase {
     func testUnreadableLibraryRecoversFromLocalBackup() throws {
         XCTAssertTrue(element("本机资料暂时无法打开").waitForExistence(timeout: 20)); shot("unreadable-library")
         tap("从最近的本机备份恢复"); tap("恢复备份")
+        XCTAssertTrue(element("volume-2026-09").waitForExistence(timeout: 30))
+        tap("volume-2026-09")
         XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 30)); shot("startup-backup-recovered")
         app.terminate(); app.launch()
+        tap("volume-2026-09")
         XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20)); shot("recovered-library-relaunch")
     }
 
