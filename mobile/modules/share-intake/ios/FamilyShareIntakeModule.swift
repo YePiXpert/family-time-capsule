@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Foundation
+import ImageIO
 
 private let shareGroup = "group.app.familytimecapsule.mobile.share"
 
@@ -23,6 +24,32 @@ public final class FamilyShareIntakeModule: Module {
       }
       try? FileManager.default.removeItem(at: self.localManifestDirectory()
         .appendingPathComponent("\(manifestId).json"))
+    }
+  }
+
+  /** Best-effort EXIF capture time and GPS for shared photos; never fails the takeover. */
+  private func attachCaptureMetadata(_ item: inout [String: Any], at url: URL) {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]
+    else { return }
+    if let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any],
+       let taken = exif[kCGImagePropertyExifDateTimeOriginal as String] as? String {
+      let parts = taken.split(separator: " ")
+      if parts.count == 2 {
+        let day = parts[0].split(separator: ":").joined(separator: "-")
+        if day.count == 10, parts[1].split(separator: ":").count == 3 {
+          item["capturedAt"] = "\(day)T\(parts[1])"
+        }
+      }
+    }
+    if let gps = properties[kCGImagePropertyGPSDictionary as String] as? [String: Any],
+       let latitude = gps[kCGImagePropertyGPSLatitude as String] as? Double,
+       let longitude = gps[kCGImagePropertyGPSLongitude as String] as? Double,
+       abs(latitude) <= 90, abs(longitude) <= 180 {
+      item["latitude"] = (gps[kCGImagePropertyGPSLatitudeRef as String] as? String) == "S"
+        ? -abs(latitude) : latitude
+      item["longitude"] = (gps[kCGImagePropertyGPSLongitudeRef as String] as? String) == "W"
+        ? -abs(longitude) : longitude
     }
   }
 
@@ -113,6 +140,7 @@ public final class FamilyShareIntakeModule: Module {
           }
           localItem.removeValue(forKey: "relativePath")
           localItem["localUri"] = destination.absoluteString
+          self.attachCaptureMetadata(&localItem, at: destination)
           localItems.append(localItem)
         } catch {
           allCopied = false

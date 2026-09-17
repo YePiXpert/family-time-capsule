@@ -3,6 +3,7 @@ import { Paths } from "expo-file-system";
 import {
   consumePendingNativeShares,
   acknowledgeNativeShare,
+  type NativeShareItem,
   type NativeShareManifest,
 } from "../../modules/share-intake/src";
 import {
@@ -12,9 +13,11 @@ import {
   type Library,
   type MediaKind,
   type LocalMedia,
+  type PhotoMetadata,
   type RecordDraft,
 } from "./model";
 import { mediaFile, preserveMedia } from "./files";
+import { applyPhotoMetadata } from "./photo-metadata";
 import type { LocalStore } from "./store";
 export const newId = () => randomUUID();
 export const now = () => new Date().toISOString();
@@ -87,6 +90,28 @@ export async function collectUnusedMedia(store: LocalStore) {
   }
   return removed.reduce((n, m) => n + m.bytes, 0);
 }
+/** Native capture fields are optional and untrusted; keep only what validateLibrary would accept. */
+function shareItemPhotoMetadata(item: NativeShareItem): PhotoMetadata | undefined {
+  const result: PhotoMetadata = {};
+  if (
+    typeof item.capturedAt === "string" &&
+    Number.isFinite(Date.parse(item.capturedAt))
+  )
+    result.capturedAt = item.capturedAt;
+  if (
+    typeof item.latitude === "number" &&
+    typeof item.longitude === "number" &&
+    Number.isFinite(item.latitude) &&
+    Number.isFinite(item.longitude) &&
+    Math.abs(item.latitude) <= 90 &&
+    Math.abs(item.longitude) <= 180
+  ) {
+    result.latitude = item.latitude;
+    result.longitude = item.longitude;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
 /** Handles one manifest; returns how many of its items were skipped as unusable. */
 async function receiveOneShare(
   store: LocalStore,
@@ -123,7 +148,10 @@ async function receiveOneShare(
             ? "audio"
             : "document");
     try {
-      media.push(await preserveMedia(item.localUri, item.fileName, kind));
+      const preserved = await preserveMedia(item.localUri, item.fileName, kind);
+      const photo = shareItemPhotoMetadata(item);
+      if (photo) preserved.photoMetadata = photo;
+      media.push(preserved);
     } catch {
       skipped++;
     }
@@ -136,19 +164,27 @@ async function receiveOneShare(
   try {
     await store.change((s) => {
       if (s.receivedShares.includes(manifest.manifestId)) return;
-      const id = newId(),
-        content = emptyContent();
+      const id = newId();
+      const content = emptyContent();
       content.text = text.join("\n");
       content.mediaIds = media.map((m) => m.id);
       content.coverId = media.find((m) => m.kind === "image")?.id ?? null;
       for (const m of media) s.media[m.id] = m;
-      s.drafts[id] = {
+      // 与编辑器导入一致：按拍摄信息自动落日期地点，并建议按天分组。
+      const draft: RecordDraft = {
         id,
         recordId: null,
         baseRevision: 0,
+        autoDate: true,
+        autoLocation: true,
+        groupPhotosByDay: true,
         content,
         updatedAt: now(),
       };
+      s.drafts[id] = media.reduce(
+        (next, item) => applyPhotoMetadata(next, item.photoMetadata),
+        draft,
+      );
       s.receivedShares.push(manifest.manifestId);
     });
   } catch (e) {

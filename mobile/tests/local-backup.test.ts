@@ -403,6 +403,61 @@ it("removes copied files when the library write fails mid-batch", async () => {
   expect(Object.values(store.get().drafts)).toEqual([]);
   expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(before);
 });
+it("applies shared capture time and place to the intake draft", async () => {
+  const { store } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  const originals = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals`;
+  fs.mkdirSync(originals, { recursive: true });
+  fs.writeFileSync(`${originals}/old.jpg`, Buffer.alloc(24, 3));
+  fs.writeFileSync(`${originals}/plain.jpg`, Buffer.alloc(24, 4));
+  env.shares = [
+    {
+      manifestId: "meta",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "old",
+          captureId: "capture",
+          kind: "file",
+          localUri: `${originals}/old.jpg`,
+          fileName: "old.jpg",
+          mediaType: "image",
+          capturedAt: "2025-06-01T10:20:30",
+          latitude: 31.2,
+          longitude: 121.5,
+        },
+        {
+          externalId: "plain",
+          captureId: "capture2",
+          kind: "file",
+          localUri: `${originals}/plain.jpg`,
+          fileName: "plain.jpg",
+          mediaType: "image",
+          capturedAt: "not-a-date",
+          latitude: 999,
+          longitude: 999,
+        },
+      ],
+    },
+  ];
+  await receiveShares(store);
+  const draft = Object.values(store.get().drafts)[0]!;
+  expect(draft.content.date).toBe("2025-06-01T10:20:30");
+  expect(draft.content.location).toBe("31.200000, 121.500000");
+  expect(draft.groupPhotosByDay).toBe(true);
+  expect(draft.autoDate).toBe(false);
+  expect(draft.autoLocation).toBe(false);
+  expect(store.get().media[draft.content.mediaIds[0]!]!.photoMetadata).toEqual({
+    capturedAt: "2025-06-01T10:20:30",
+    latitude: 31.2,
+    longitude: 121.5,
+  });
+  expect(
+    store.get().media[draft.content.mediaIds[1]!]!.photoMetadata,
+  ).toBeUndefined();
+});
 it("retains the native share receipt on a failed write and safely retries", async () => {
   const { store } = await setup();
   const { receiveShares } = await import("../src/local/services");

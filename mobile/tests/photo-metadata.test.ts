@@ -88,6 +88,19 @@ describe("photo capture metadata", () => {
     expect(second.content.location).toBe("30.000000, 120.000000");
     expect(original.content.location).toBe("");
   });
+  it("gives a shared-photo draft its capture day and place like an imported one", () => {
+    const shared = { ...draft(), groupPhotosByDay: true };
+    const applied = applyPhotoMetadata(shared, {
+      capturedAt: "2025-06-01T10:20:30",
+      latitude: -33,
+      longitude: -70,
+    });
+    expect(applied.content.date).toBe("2025-06-01T10:20:30");
+    expect(applied.content.location).toBe("-33.000000, -70.000000");
+    expect(applied.autoDate).toBe(false);
+    expect(applied.autoLocation).toBe(false);
+    expect(applied.groupPhotosByDay).toBe(true);
+  });
   it("preserves manual choices, existing records, and legacy drafts", () => {
     const metadata = {
       capturedAt: "2020-01-01T12:00:00",
