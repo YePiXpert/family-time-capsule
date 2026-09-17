@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, Platform, Pressable, View } from "react-native";
 import type { Svg } from "react-native-svg";
+import * as Location from "expo-location";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection, now } from "./services";
 import { deleteRecord, recordTitle } from "./model";
+import { looksLikeCoordinates, placeLabel } from "./places";
 import type { Props } from "./navigation";
 import {
   Button,
@@ -33,7 +35,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
     [card, setCard] = useState<{
       photo?: { uri: string; aspect: number };
     } | null>(null),
-    [cardBusy, setCardBusy] = useState(false);
+    [cardBusy, setCardBusy] = useState(false),
+    [placeBusy, setPlaceBusy] = useState(false);
   useEffect(() => {
     if (!card || !cardBusy || !record) return;
     let cancelled = false;
@@ -77,6 +80,53 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
     } catch (e) {
       setError(messageOf(e));
       setCardBusy(false);
+    }
+  };
+  const photoPlace = record.mediaIds
+    .map((id) => state.media[id]?.photoMetadata)
+    .find(
+      (m) => m?.latitude !== undefined && m.longitude !== undefined,
+    );
+  const canNamePlace =
+    !!photoPlace &&
+    (!record.location.trim() || looksLikeCoordinates(record.location));
+  const namePlace = async () => {
+    if (!photoPlace) return;
+    setPlaceBusy(true);
+    setError("");
+    try {
+      // 逆地理只需要把已知坐标换成地名；Android 的 Geocoder 前置要求定位权限。
+      if (Platform.OS === "android") {
+        const permission =
+          await Location.requestForegroundPermissionsAsync();
+        if (!permission.granted)
+          throw new Error("请在系统设置中允许使用定位后，再查拍摄地点的地名。");
+      }
+      const [candidate] = await Location.reverseGeocodeAsync({
+        latitude: photoPlace.latitude!,
+        longitude: photoPlace.longitude!,
+      });
+      const label = placeLabel(candidate, record.location);
+      if (label === record.location)
+        throw new Error("没有查到这组坐标的地名，地点保持原样。");
+      Alert.alert("用这个地名？", label, [
+        { text: "取消", style: "cancel" },
+        {
+          text: "写入地点",
+          onPress: () => {
+            void store
+              .change((s) => {
+                const target = s.records[record.id];
+                if (target) target.location = label;
+              })
+              .catch((e) => setError(messageOf(e)));
+          },
+        },
+      ]);
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setPlaceBusy(false);
     }
   };
   const add = (albumId: string | null) => {
@@ -155,7 +205,22 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
         </View>
       )}
       {record.text && <Text selectable>{record.text}</Text>}
-      {record.location && <Text style={s.muted}>{record.location}</Text>}
+      {record.location && (
+        <Text style={s.muted} selectable>
+          {record.location}
+        </Text>
+      )}
+      {canNamePlace && (
+        <Button
+          title={placeBusy ? "正在查询地名…" : "把地点换成地名"}
+          icon="heart"
+          testID="place-resolve"
+          disabled={placeBusy}
+          onPress={() => {
+            void namePlace();
+          }}
+        />
+      )}
       <View style={{ gap: 16 }}>
         {record.mediaIds.map((id) => {
           const media = state.media[id];

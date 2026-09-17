@@ -60,7 +60,13 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "\u628a\u62cd\u6444\u5750\u6807\u6362\u6210\u5730\u540d\u65f6\u4f7f\u7528\u5b9a\u4f4d\u3002"
+        }
+      ]
     ]
   }
 }
