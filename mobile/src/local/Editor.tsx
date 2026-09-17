@@ -400,9 +400,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                     将保存 {dayGroups.length}{" "}
                     条记录。同一天也可以分开记，在照片下选择「调整归属」。不会合并已有记录。
                   </Text>
-                  <Text style={s.muted}>
-                    没有拍摄时间的素材单独成组，日期可修改。
-                  </Text>
+                      <Text style={s.muted}>
+                        没有拍摄时间的素材会跟相邻素材记入同一天，日期可修改。
+                      </Text>
                   {dayGroups.map((group, index) => (
                     <View key={index} style={s.section}>
                       <Text>

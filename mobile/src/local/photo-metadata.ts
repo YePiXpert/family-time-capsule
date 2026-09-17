@@ -117,14 +117,20 @@ export function photoDayGroups(
     return events;
   }
   const groups = new Map<string, RecordDraft["content"]>();
-  for (const id of draft.content.mediaIds) {
-    const item = media[id];
-    const capturedAt = item?.photoMetadata?.capturedAt;
-    const day = capturedAt?.slice(0, 10) ?? "undated";
+  const dayOf = draft.content.mediaIds.map(
+    (id) => media[id]?.photoMetadata?.capturedAt?.slice(0, 10),
+  );
+  const addTo = (day: string, id: string, capturedAt?: string) => {
     let group = groups.get(day);
     if (!group) {
+      const base = clone(draft.content);
+      // 标题正文只留在第一组，避免按天拆出的每条记录都挂同一段话。
+      if (groups.size) {
+        base.title = "";
+        base.text = "";
+      }
       group = {
-        ...clone(draft.content),
+        ...base,
         date: capturedAt ?? draft.content.date,
         location: draft.manualLocation ? draft.content.location : "",
         mediaIds: [],
@@ -133,20 +139,32 @@ export function photoDayGroups(
       groups.set(day, group);
     }
     group.mediaIds.push(id);
+    const item = media[id];
     if (
       item?.kind === "image" &&
       (!group.coverId || id === draft.content.coverId)
     )
       group.coverId = id;
-    const metadata = item?.photoMetadata;
     if (
       !draft.manualLocation &&
       !group.location &&
-      metadata?.latitude !== undefined &&
-      metadata.longitude !== undefined
+      item?.photoMetadata?.latitude !== undefined &&
+      item.photoMetadata.longitude !== undefined
     )
-      group.location = `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`;
-  }
+      group.location = `${item.photoMetadata.latitude.toFixed(6)}, ${item.photoMetadata.longitude.toFixed(6)}`;
+  };
+  draft.content.mediaIds.forEach((id, index) => {
+    if (dayOf[index]) addTo(dayOf[index]!, id, media[id]?.photoMetadata?.capturedAt);
+  });
+  draft.content.mediaIds.forEach((id, index) => {
+    if (dayOf[index]) return;
+    // 无拍摄时间的素材（如视频）跟随最近的有日期邻居，优先前一天，避免同一场合被拆散。
+    let neighbor: string | undefined;
+    for (let j = index - 1; j >= 0 && !neighbor; j--) neighbor = dayOf[j];
+    for (let j = index + 1; neighbor === undefined && j < dayOf.length; j++)
+      neighbor = dayOf[j];
+    addTo(neighbor ?? "undated", id);
+  });
   return [...groups.values()];
 }
 
