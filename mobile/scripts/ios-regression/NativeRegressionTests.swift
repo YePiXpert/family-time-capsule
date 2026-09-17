@@ -57,11 +57,15 @@ final class NativeRegressionTests: XCTestCase {
         type("Our days", "album-name"); tap("返回调整内容"); tap("material-done")
         XCTAssertEqual(element("album-name").value as? String, "Our days"); tap("album-save")
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-reading")
-        app.terminate(); app.launch(); tap("tab-albums"); tap("Our days")
+        app.terminate(); app.launch()
+        let albumCard = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Our days")).firstMatch
+        XCTAssertTrue(albumCard.waitForExistence(timeout: 20), "Missing album volume")
+        for _ in 0..<12 { if albumCard.isHittable { break }; app.swipeUp() }
+        albumCard.tap()
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-after-relaunch")
-        app.terminate(); app.launch(); tap("tab-profile"); tap("AI 设置")
+        app.terminate(); app.launch(); tap("open-settings"); tap("AI 设置")
         XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-settings")
-        app.terminate(); app.launch(); tap("tab-profile"); tap("备份与恢复")
+        app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
         shot("backup-restored")

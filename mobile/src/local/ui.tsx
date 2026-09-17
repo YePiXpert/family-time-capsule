@@ -463,15 +463,18 @@ export function IconButton({
   icon,
   onPress,
   selected = false,
+  testID,
 }: {
   label: string;
   icon: JournalIconName;
   onPress: () => void;
   selected?: boolean;
+  testID?: string;
 }) {
   const { colors } = useTheme();
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected }}
