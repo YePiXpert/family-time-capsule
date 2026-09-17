@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import Animated, {
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection } from "./services";
@@ -22,6 +28,8 @@ import {
 import { JournalIcon } from "../components/JournalIcon";
 import { Photo } from "./Media";
 
+const PRESS_SPRING = { damping: 14, stiffness: 220 };
+
 function Volume({
   title,
   caption,
@@ -30,6 +38,7 @@ function Volume({
   onPress,
   testID,
   width,
+  index = 0,
 }: {
   title: string;
   caption: string;
@@ -38,50 +47,66 @@ function Volume({
   onPress: () => void;
   testID?: string;
   width: number;
+  index?: number;
 }) {
   const s = useStyles(),
     { colors } = useTheme();
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
   return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={`${title}，${caption}`}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        width,
-        gap: 8,
-        marginBottom: 24,
-        opacity: pressed ? 0.7 : 1,
-      })}
+    <Animated.View
+      entering={FadeInUp.delay(Math.min(index, 8) * 60).duration(320)}
+      style={[{ width, marginBottom: 24 }, pressStyle]}
     >
-      {cover ? (
-        <Photo media={cover} />
-      ) : (
-        <View
-          style={[
-            s.section,
-            {
-              aspectRatio: 4 / 3,
-              justifyContent: "center",
-              alignItems: "center",
-              gap: 8,
-            },
-          ]}
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={`${title}，${caption}`}
+        onPress={onPress}
+        onPressIn={() => {
+          // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+          scale.value = withSpring(0.96, PRESS_SPRING);
+        }}
+        onPressOut={() => {
+          // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+          scale.value = withSpring(1, PRESS_SPRING);
+        }}
+        style={{ gap: 8 }}
+      >
+        {cover ? (
+          <Photo media={cover} />
+        ) : (
+          <View
+            style={[
+              s.section,
+              {
+                aspectRatio: 4 / 3,
+                justifyContent: "center",
+                alignItems: "center",
+                gap: 8,
+              },
+            ]}
+          >
+            <JournalIcon
+              name={fallbackIcon ?? "book"}
+              color={colors.accent}
+              size={28}
+            />
+          </View>
+        )}
+        <Text
+          numberOfLines={1}
+          style={{ fontFamily: serif, fontWeight: "600" }}
         >
-          <JournalIcon
-            name={fallbackIcon ?? "book"}
-            color={colors.accent}
-            size={28}
-          />
-        </View>
-      )}
-      <Text numberOfLines={1} style={{ fontFamily: serif, fontWeight: "600" }}>
-        {title}
-      </Text>
-      <Text numberOfLines={1} style={s.muted}>
-        {caption}
-      </Text>
-    </Pressable>
+          {title}
+        </Text>
+        <Text numberOfLines={1} style={s.muted}>
+          {caption}
+        </Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -92,6 +117,10 @@ function CapturePen() {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
   return (
     <View
       pointerEvents="box-none"
@@ -104,35 +133,48 @@ function CapturePen() {
       }}
     >
       <ErrorText message={error} />
-      <Pressable
-        testID="capture-new"
-        accessibilityRole="button"
-        accessibilityLabel="记一刻"
-        disabled={busy}
-        onPress={() => {
-          setBusy(true);
-          void beginDraft(store)
-            .then((draftId) => nav.navigate("Editor", { draftId }))
-            .catch((e) => setError(messageOf(e)))
-            .finally(() => setBusy(false));
-        }}
-        style={({ pressed }) => ({
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: colors.accent,
-          opacity: busy ? 0.5 : pressed ? 0.7 : 1,
-          shadowColor: "#000000",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.25,
-          shadowRadius: 10,
-          elevation: 4,
-        })}
+      <Animated.View
+        entering={FadeInUp.delay(240).duration(360)}
+        style={pressStyle}
       >
-        <JournalIcon name="plus" color={colors.onAccent} size={26} />
-      </Pressable>
+        <Pressable
+          testID="capture-new"
+          accessibilityRole="button"
+          accessibilityLabel="记一刻"
+          disabled={busy}
+          onPress={() => {
+            setBusy(true);
+            void beginDraft(store)
+              .then((draftId) => nav.navigate("Editor", { draftId }))
+              .catch((e) => setError(messageOf(e)))
+              .finally(() => setBusy(false));
+          }}
+          onPressIn={() => {
+            // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+            scale.value = withSpring(0.92, PRESS_SPRING);
+          }}
+          onPressOut={() => {
+            // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+            scale.value = withSpring(1, PRESS_SPRING);
+          }}
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.accent,
+            opacity: busy ? 0.5 : 1,
+            shadowColor: "#000000",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            elevation: 4,
+          }}
+        >
+          <JournalIcon name="plus" color={colors.onAccent} size={26} />
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }
@@ -207,26 +249,38 @@ export function Shelf() {
           />
         </View>
         {anniversary && (
-          <Pressable
-            testID="anniversary"
-            accessibilityRole="button"
-            accessibilityLabel={`那年今日，${recordTitle(anniversary)}`}
-            onPress={() => nav.navigate("Record", { id: anniversary.id })}
-          >
-            <Glass radius={16} style={{ padding: 16, gap: 6 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <JournalIcon name="heart" color={colors.accent} size={18} />
-                <Text style={[s.muted, { color: colors.accent }]}>
-                  {today.getFullYear() - new Date(anniversary.date).getFullYear()}{" "}
-                  年前的今天
+          <Animated.View entering={FadeInUp.duration(320)}>
+            <Pressable
+              testID="anniversary"
+              accessibilityRole="button"
+              accessibilityLabel={`那年今日，${recordTitle(anniversary)}`}
+              onPress={() => nav.navigate("Record", { id: anniversary.id })}
+            >
+              <Glass radius={16} style={{ padding: 16, gap: 6 }}>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                >
+                  <JournalIcon name="heart" color={colors.accent} size={18} />
+                  <Text style={[s.muted, { color: colors.accent }]}>
+                    {today.getFullYear() -
+                      new Date(anniversary.date).getFullYear()}{" "}
+                    年前的今天
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontFamily: serif,
+                    fontWeight: "600",
+                    fontSize: 18,
+                    lineHeight: 27,
+                  }}
+                >
+                  {recordTitle(anniversary)}
                 </Text>
-              </View>
-              <Text style={{ fontFamily: serif, fontWeight: "600", fontSize: 18, lineHeight: 27 }}>
-                {recordTitle(anniversary)}
-              </Text>
-              <Text style={s.muted}>{dateLabel(anniversary.date)}</Text>
-            </Glass>
-          </Pressable>
+                <Text style={s.muted}>{dateLabel(anniversary.date)}</Text>
+              </Glass>
+            </Pressable>
+          </Animated.View>
         )}
         {latestDraft && (
           <View style={s.compactPanel}>
@@ -288,10 +342,11 @@ export function Shelf() {
                   fallbackIcon="star"
                   testID="volume-firsts"
                   width={volumeWidth}
+                  index={0}
                   onPress={() => nav.navigate("Firsts")}
                 />
               )}
-              {months.map((m) => {
+              {months.map((m, i) => {
                 const monthRecords = records.filter(
                   (r) => monthKey(r.date) === m,
                 );
@@ -304,6 +359,7 @@ export function Shelf() {
                     cover={cover}
                     testID={`volume-${m}`}
                     width={volumeWidth}
+                    index={firsts.length > 0 ? i + 1 : i}
                     onPress={() => nav.navigate("Month", { month: m })}
                   />
                 );
@@ -314,7 +370,7 @@ export function Shelf() {
         <View style={{ gap: 16, marginTop: 8 }}>
           <Text style={[s.muted, { fontFamily: serif }]}>专题册</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {albums.map((album) => (
+            {albums.map((album, i) => (
               <Volume
                 key={album.id}
                 title={album.name}
@@ -322,6 +378,7 @@ export function Shelf() {
                 cover={coverForAlbum(album, state)}
                 testID={`album-${album.id}`}
                 width={volumeWidth}
+                index={i}
                 onPress={() => nav.navigate("Album", { id: album.id })}
               />
             ))}
@@ -331,6 +388,7 @@ export function Shelf() {
               fallbackIcon="plus"
               testID="album-new"
               width={volumeWidth}
+              index={albums.length}
               onPress={() => {
                 void beginSelection(store)
                   .then((sessionId) => nav.navigate("Picker", { sessionId }))
