@@ -304,6 +304,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           exif: true,
         });
     if (result.canceled) return;
+    // 循环内只做复制与读元数据，循环外一次 attach 一次落盘，避免整批照片逐张全库写。
+    const imported: LocalMedia[] = [];
     for (const asset of result.assets) {
       const media = await preserveMedia(
         asset.uri,
@@ -312,8 +314,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       );
       if (media.kind === "image")
         media.photoMetadata = readPhotoMetadata(asset.exif);
-      await attach([media]);
+      imported.push(media);
     }
+    await attach(imported);
   };
   const dayGroups = photoDayGroups(draft, { ...state.media, ...importedMedia });
   const editEvent = (index: number, patch: Partial<RecordContent>) => {
@@ -745,9 +748,10 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         "text/plain",
                       ],
                     });
-                    if (!r.canceled)
+                    if (!r.canceled) {
+                      const picked: LocalMedia[] = [];
                       for (const a of r.assets)
-                        await attach([
+                        picked.push(
                           await preserveMedia(
                             a.uri,
                             a.name,
@@ -759,7 +763,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                                   ? "audio"
                                   : "document",
                           ),
-                        ]);
+                        );
+                      await attach(picked);
+                    }
                   });
                 }}
               />
