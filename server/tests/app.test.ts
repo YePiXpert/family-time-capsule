@@ -69,7 +69,18 @@ test('concurrent duplicate requests do not repeat upstream work',async()=>{
 test('invalid model output cannot omit, invent or duplicate photo IDs',async()=>{
  const f=fixture(async()=>({tokens:1,result:{groups:[{photoIds:['invented'],title:'x',summary:'x'}]}}));
  assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()})).statusCode,502);
- assert.equal(f.store.usage(f.member.member.id).calls,1);
+ // 无效结果属于服务端失败，不再计入当日额度。
+ assert.equal(f.store.usage(f.member.member.id).calls,0);
+ await f.app.close();f.store.close();
+});
+test('failed upstream requests do not burn the daily quota',async()=>{
+ let fail=true;
+ const f=fixture(async kind=>{if(fail){fail=false;throw new Error('upstream down');}return {tokens:5,result:kind==='write'?{title:'公园',text:'散步。'}:{groups:[{photoIds:['a'],title:'公园',summary:'散步'}]}};});
+ f.store.editMember(f.member.member.id,{enabled:true,photoLimit:1,writeLimit:1});
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()})).statusCode,502);
+ assert.equal(f.store.usage(f.member.member.id).photos,0);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()})).statusCode,200);
+ assert.equal(f.store.usage(f.member.member.id).photos,1);
  await f.app.close();f.store.close();
 });
 test('server restart cannot repeat an uncertain paid request',async()=>{
