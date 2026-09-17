@@ -204,11 +204,11 @@ class FamilyShareIntakeModule : Module() {
           val date = raw.substring(0, 10).replace(':', '-')
           declaration.put("capturedAt", "${date}T${raw.substring(11)}")
         }
-      exif.latLong?.let { coords ->
-        if (coords.size == 2 && coords[0].isFinite() && coords[1].isFinite()) {
-          declaration.put("latitude", coords[0])
-          declaration.put("longitude", coords[1])
-        }
+      // getLatLong() 与 setLatLong(double, double) 签名不匹配，Kotlin 不合成 latLong 属性，必须显式调用。
+      val coords = exif.getLatLong()
+      if (coords != null && coords.size == 2 && coords[0].isFinite() && coords[1].isFinite()) {
+        declaration.put("latitude", coords[0])
+        declaration.put("longitude", coords[1])
       }
     }
   }
