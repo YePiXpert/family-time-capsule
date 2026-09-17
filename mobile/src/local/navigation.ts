@@ -15,7 +15,7 @@ export type Routes = {
   Album: { id: string };
   Picker: { sessionId: string };
   AlbumDetails: { sessionId: string };
-  Media: { id: string };
+  Media: { id: string; recordId?: string };
   Profile: undefined;
   Storage: undefined;
   Backup: undefined;

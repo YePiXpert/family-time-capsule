@@ -147,9 +147,23 @@ function Video({ media }: { media: LocalMedia }) {
     </View>
   );
 }
-export function MediaScreen({ route }: Props<"Media">) {
+export function MediaScreen({ route, navigation }: Props<"Media">) {
   const state = useLibrary(),
     media = state.media[route.params.id];
+  const record = route.params.recordId
+    ? state.records[route.params.recordId]
+    : undefined;
+  const siblings =
+    record?.mediaIds.filter((id) => state.media[id]?.kind === "image") ?? [];
+  const index = siblings.indexOf(route.params.id);
+  const step = (delta: number) => {
+    const next = siblings[index + delta];
+    if (next)
+      navigation.replace("Media", {
+        id: next,
+        recordId: route.params.recordId,
+      });
+  };
   const [error, setError] = useState("");
   if (!media || !mediaFile(media).exists)
     return (
@@ -160,6 +174,23 @@ export function MediaScreen({ route }: Props<"Media">) {
   return (
     <Page>
       <Text>{media.name}</Text>
+      {siblings.length > 1 && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Button
+            title="上一张"
+            disabled={index <= 0}
+            onPress={() => step(-1)}
+          />
+          <Text>
+            第 {index + 1} / {siblings.length} 张
+          </Text>
+          <Button
+            title="下一张"
+            disabled={index >= siblings.length - 1}
+            onPress={() => step(1)}
+          />
+        </View>
+      )}
       {media.kind === "image" ? (
         <ScrollView maximumZoomScale={4} minimumZoomScale={1}>
           <Photo media={media} contain />
