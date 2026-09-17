@@ -182,14 +182,58 @@ export function Glass({
           backgroundColor: tint ?? colors.glass,
           shadowColor: dark ? "#000000" : "#7A5C3E",
           shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: dark ? 0.3 : 0.08,
-          shadowRadius: 10,
+          shadowOpacity: dark ? 0.3 : 0.06,
+          shadowRadius: 14,
           elevation: 2,
         },
         style,
       ]}
     >
       {children}
+    </View>
+  );
+}
+export function Ornament() {
+  const { colors } = useTheme();
+  return (
+    <View
+      pointerEvents="none"
+      accessible={false}
+      importantForAccessibility="no"
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        paddingVertical: 4,
+      }}
+    >
+      <View
+        style={{
+          width: 28,
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.accent,
+          opacity: 0.4,
+        }}
+      />
+      <View
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: 2.5,
+          backgroundColor: colors.accent,
+          opacity: 0.55,
+          transform: [{ rotate: "45deg" }],
+        }}
+      />
+      <View
+        style={{
+          width: 28,
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: colors.accent,
+          opacity: 0.4,
+        }}
+      />
     </View>
   );
 }
@@ -200,8 +244,8 @@ export function useStyles() {
       const cardShadow: ViewStyle = {
         shadowColor: dark ? "#000000" : "#7A5C3E",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: dark ? 0.3 : 0.07,
-        shadowRadius: 8,
+        shadowOpacity: dark ? 0.3 : 0.06,
+        shadowRadius: 12,
         elevation: 1,
       };
       return StyleSheet.create({
@@ -223,12 +267,19 @@ export function useStyles() {
         },
         title: {
           fontSize: 24,
-          lineHeight: 33,
+          lineHeight: 34,
           fontWeight: "600",
           fontFamily: serif,
+          letterSpacing: 0.3,
           color: c.ink,
         },
-        heading: { fontSize: 18, lineHeight: 27, fontWeight: "600", fontFamily: serif },
+        heading: {
+          fontSize: 18,
+          lineHeight: 27,
+          fontWeight: "600",
+          fontFamily: serif,
+          letterSpacing: 0.3,
+        },
         muted: { fontSize: 13, lineHeight: 21, color: c.muted },
         input: {
           backgroundColor: c.glass,

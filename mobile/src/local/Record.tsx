@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection, now } from "./services";
 import { deleteRecord, recordTitle } from "./model";
@@ -36,10 +36,20 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   };
   return (
     <Page>
-      <Text style={[s.muted, { color: colors.accent }]}>
-        {dateLabel(record.date)}
-        {record.first ? " · 第一次" : ""}
-      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <View
+          style={{
+            width: 4,
+            height: 16,
+            borderRadius: 2,
+            backgroundColor: colors.accent,
+          }}
+        />
+        <Text style={[s.muted, { color: colors.accent }]}>
+          {dateLabel(record.date)}
+          {record.first ? " · 第一次" : ""}
+        </Text>
+      </View>
       <Text style={s.title}>{recordTitle(record)}</Text>
       <View style={s.row}>
         <Button
@@ -85,29 +95,32 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
       )}
       {record.text && <Text>{record.text}</Text>}
       {record.location && <Text style={s.muted}>{record.location}</Text>}
-      {record.mediaIds.map((id) => {
-        const media = state.media[id];
-        return media ? (
-          <View key={id} style={{ gap: 8 }}>
-            {media.kind === "image" && <Photo media={media} contain />}
-            <PhotoDetails media={media} />
-            <Button
-              title={media.kind === "image" ? "查看原图" : media.name}
-              icon={
-                media.kind === "audio"
-                  ? "audio"
-                  : media.kind === "video"
-                    ? "video"
-                    : "file"
-              }
-              onPress={() => navigation.navigate("Media", { id })}
-            />
-          </View>
-        ) : null;
-      })}
+      <View style={{ gap: 16 }}>
+        {record.mediaIds.map((id) => {
+          const media = state.media[id];
+          return media ? (
+            <View key={id} style={{ gap: 8 }}>
+              {media.kind === "image" && <Photo media={media} contain />}
+              <PhotoDetails media={media} />
+              <Button
+                title={media.kind === "image" ? "查看原图" : media.name}
+                icon={
+                  media.kind === "audio"
+                    ? "audio"
+                    : media.kind === "video"
+                      ? "video"
+                      : "file"
+                }
+                onPress={() => navigation.navigate("Media", { id })}
+              />
+            </View>
+          ) : null;
+        })}
+      </View>
       <ErrorText message={error} />
-      <Button
-        title="删除记录"
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="删除记录"
         onPress={() =>
           Alert.alert(
             "删除这条记录？",
@@ -127,7 +140,16 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
             ],
           )
         }
-      />
+        style={({ pressed }) => ({
+          alignSelf: "center",
+          minHeight: 44,
+          justifyContent: "center",
+          paddingHorizontal: 16,
+          opacity: pressed ? 0.6 : 1,
+        })}
+      >
+        <Text style={[s.muted, { fontSize: 14 }]}>删除记录</Text>
+      </Pressable>
     </Page>
   );
 }

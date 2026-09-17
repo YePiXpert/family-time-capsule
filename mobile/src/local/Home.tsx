@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
-import { Pressable, SectionList, View, useWindowDimensions } from "react-native";
+import {
+  Pressable,
+  SectionList,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { beginDraft } from "./services";
@@ -110,7 +116,9 @@ export function RecordCard({
               paddingHorizontal: 8,
               paddingVertical: 2,
               borderRadius: 10,
-              backgroundColor: colors.card,
+              backgroundColor: colors.glass,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.glassLine,
             }}
           >
             <Text style={s.muted}>
