@@ -102,12 +102,12 @@ for result in request.results ?? [] {
         run("xcrun", "simctl", "terminate", udid, bundle)
         state = empty()
         write_state(db_path, state)
-        launch("saved-local-mode-empty", "相册")
+        launch("saved-local-mode-empty", "记一刻")
         run("xcrun", "simctl", "terminate", udid, bundle)
         state['records']['startup'] = record('startup', '今天，第一次向我挥手')
         write_state(db_path, state)
         for label in ("saved-local-mode-with-record", "local-mode-relaunch"):
-            launch(label, "相册")
+            launch(label, "记一刻")
             run("xcrun", "simctl", "terminate", udid, bundle)
             assert read_state(db_path) == state
         with sqlite3.connect(db_path) as db:
@@ -117,16 +117,16 @@ for result in request.results ?? [] {
         with sqlite3.connect(db_path) as db:
             assert db.execute('SELECT snapshot FROM library').fetchone()[0] == 'broken'
         write_state(db_path, state)
-        launch("repaired-local-mode-relaunch", "相册")
+        launch("repaired-local-mode-relaunch", "记一刻")
         run("xcrun", "simctl", "terminate", udid, bundle)
         state['settings']['theme'] = 'dark'
         write_state(db_path, state)
-        launch("local-mode-dark", "相册")
+        launch("local-mode-dark", "记一刻")
         run("xcrun", "simctl", "terminate", udid, bundle)
         state['settings'] = dict(theme='light', largeText=True)
         write_state(db_path, state)
         run("xcrun", "simctl", "ui", udid, "content_size", "extra-extra-extra-large")
-        launch("local-mode-large-text", "相册")
+        launch("local-mode-large-text", "记一刻")
         run("xcrun", "simctl", "terminate", udid, bundle)
         assert read_state(db_path) == state
         report["localRecordsPreserved"] = True

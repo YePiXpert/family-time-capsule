@@ -32,6 +32,7 @@ def launch(): adb('shell','am','start','-n',package+'/.MainActivity');time.sleep
 def restart(): adb('shell','am','force-stop',package);launch()
 def write(text): adb('shell','input','text',text.replace(' ','%s'));time.sleep(1)
 report=dict(gitSha=os.environ.get('SOURCE_SHA'),success=False)
+month=time.strftime('%Y-%m')
 try:
     adb('install','-r',args.apk)
     adb('shell','svc','wifi','disable');adb('shell','svc','data','disable')
@@ -41,12 +42,12 @@ try:
     restart();tap('继续编辑');assert find('capture-text').get('text')=='Offline little story.'
     tap('capture-save');find('record-edit');shot('record-reading')
     tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit')
-    restart();tap('tab-albums');tap('album-new')
+    restart();find(f'volume-{month}');tap('album-new')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'));shot('selection')
     tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')
-    restart();tap('tab-albums');tap('Our days');find('album-reading')
+    restart();tap('Our days');find('album-reading')
     restart();adb('shell','wm','size','320x720');shot('home-320')
-    tap('tab-profile');tap('AI 设置');find('加入 AI 服务');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
+    tap('打开设置');tap('AI 设置');find('加入 AI 服务');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')
     report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,widths=[320,390])
 finally:
