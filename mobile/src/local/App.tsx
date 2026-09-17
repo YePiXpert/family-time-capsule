@@ -225,8 +225,7 @@ function Root() {
           screenOptions={{
             headerBackTitle: "返回",
             headerShadowVisible: false,
-            headerBlurEffect: theme.dark ? "prominent" : "regular",
-            headerStyle: { backgroundColor: theme.colors.glass },
+            headerStyle: { backgroundColor: theme.colors.card },
             contentStyle: { backgroundColor: theme.colors.paper },
             animation: "none",
           }}
@@ -403,7 +402,7 @@ export default function App() {
                 padding: 32,
                 justifyContent: "center",
                 gap: 20,
-                backgroundColor: "#F7F8F5",
+                backgroundColor: "#FAF5EC",
               }}
             >
               {error ? (
@@ -445,7 +444,7 @@ export default function App() {
                   </Pressable>
                 </>
               ) : (
-                <ActivityIndicator color="#426A58" />
+                <ActivityIndicator color="#B4553C" />
               )}
             </View>
           )}
