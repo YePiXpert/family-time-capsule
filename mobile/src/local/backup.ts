@@ -39,12 +39,17 @@ export function daysSinceExport(
 /** Keeps only the newest local retention copies; exports outside the app are untouched. */
 export function pruneBackups(keep = 3, protect?: File): void {
   if (!backupDirectory.exists) return;
-  const files = backupDirectory
+  const others = backupDirectory
     .list()
-    .filter((f): f is File => f instanceof File && f.name.endsWith(".xmb"))
+    .filter(
+      (f): f is File =>
+        f instanceof File && f.name.endsWith(".xmb") && f.uri !== protect?.uri,
+    )
     .sort((a, b) => b.name.localeCompare(a.name));
-  for (const file of files.slice(keep))
-    if (file.exists && file.uri !== protect?.uri) file.delete();
+  // 同一分钟内名字的字典序不等于创建顺序，因此给刚创建的这份预留一个保留位，
+  // 再按名字清掉最旧的其余备份。
+  const doomed = protect ? others.slice(keep - 1) : others.slice(keep);
+  for (const file of doomed) if (file.exists) file.delete();
 }
 export async function createBackup(state: Library): Promise<File> {
   ensureDirectories();
