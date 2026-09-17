@@ -240,7 +240,8 @@ export function Picker({ route, navigation }: Props<"Picker">) {
   const q = state.selections[route.params.sessionId];
   const list = useRef<FlatList>(null),
     restored = useRef(false),
-    offset = useRef(q?.offset ?? 0);
+    offset = useRef(q?.offset ?? 0),
+    offsetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const records = sortedRecords(state),
@@ -253,6 +254,31 @@ export function Picker({ route, navigation }: Props<"Picker">) {
       })
       .catch((e) => setError(messageOf(e)));
   };
+  // 滚动结束只做去抖落盘：拖动与惯性各触发一次，不能每次都整库写。
+  const persistOffset = () => {
+    if (offsetTimer.current) clearTimeout(offsetTimer.current);
+    offsetTimer.current = setTimeout(() => {
+      offsetTimer.current = null;
+      patch((next) => {
+        next.offset = Math.max(0, offset.current);
+      });
+    }, 700);
+  };
+  useEffect(
+    () => () => {
+      if (offsetTimer.current) {
+        clearTimeout(offsetTimer.current);
+        offsetTimer.current = null;
+        void store
+          .change((s) => {
+            const next = s.selections[route.params.sessionId];
+            if (next) next.offset = Math.max(0, offset.current);
+          })
+          .catch(() => {});
+      }
+    },
+    [route.params.sessionId, store],
+  );
   if (!q)
     return (
       <Page>
@@ -310,16 +336,8 @@ export function Picker({ route, navigation }: Props<"Picker">) {
           offset.current = e.nativeEvent.contentOffset.y;
         }}
         scrollEventThrottle={100}
-        onScrollEndDrag={() =>
-          patch((q) => {
-            q.offset = Math.max(0, offset.current);
-          })
-        }
-        onMomentumScrollEnd={() =>
-          patch((q) => {
-            q.offset = Math.max(0, offset.current);
-          })
-        }
+        onScrollEndDrag={persistOffset}
+        onMomentumScrollEnd={persistOffset}
         renderItem={({ item }) => (
           <RecordCard
             record={item}
@@ -427,12 +445,12 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
         placeholder="例如：一岁以前"
         value={name}
         editable={!busy}
-        onChangeText={(value) => {
-          setName(value);
+        onChangeText={setName}
+        onEndEditing={() =>
           patch((q) => {
-            q.name = value;
-          });
-        }}
+            q.name = name;
+          })
+        }
       />
       <Text>已选 {q.selected.length} 条记录</Text>
       <Button title="返回调整内容" onPress={() => navigation.goBack()} />

@@ -76,30 +76,66 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     nextAction = useRef<(() => void) | null>(null),
     pending = useRef<Promise<unknown>>(Promise.resolve()),
     operation = useRef(false);
+  const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
+    mounted = useRef(true);
+  const writeNow = useCallback(() => {
+    if (!current.current) return Promise.resolve();
+    const originals = Object.values(pendingMedia.current);
+    const job = store.change((s) => {
+      for (const m of originals) s.media[m.id] = m;
+      updateDraft(s, current.current!);
+    });
+    pending.current = job;
+    void job.catch((e) => {
+      if (mounted.current) setError(messageOf(e));
+    });
+    return job;
+  }, [store]);
   const persist = useCallback(
     (next: RecordDraft, media: LocalMedia[] = []) => {
       current.current = next;
       setDraft(next);
       for (const m of media) pendingMedia.current[m.id] = m;
       if (media.length) setImportedMedia({ ...pendingMedia.current });
-      const originals = Object.values(pendingMedia.current);
-      const job = store.change((s) => {
-        for (const m of originals) s.media[m.id] = m;
-        updateDraft(s, next);
-      });
-      pending.current = job;
-      void job.catch((e) => setError(messageOf(e)));
-      return job;
+      return writeNow();
     },
-    [store],
+    [writeNow],
+  );
+  /** 文字类改动：界面即时生效，落盘延后合并，避免每个击键全库写一次。 */
+  const persistDebounced = useCallback(
+    (next: RecordDraft) => {
+      current.current = next;
+      setDraft(next);
+      if (writeTimer.current) clearTimeout(writeTimer.current);
+      writeTimer.current = setTimeout(() => {
+        writeTimer.current = null;
+        void writeNow();
+      }, 400);
+    },
+    [writeNow],
   );
   const flush = useCallback(async () => {
-    if (current.current)
-      await persist({ ...current.current, updatedAt: now() });
+    if (writeTimer.current) {
+      clearTimeout(writeTimer.current);
+      writeTimer.current = null;
+    }
+    if (current.current) await persist({ ...current.current, updatedAt: now() });
   }, [persist]);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+      // 卸载时把还挂在防抖上的文字改动落盘。
+      if (writeTimer.current) {
+        clearTimeout(writeTimer.current);
+        writeTimer.current = null;
+        void writeNow();
+      }
+    },
+    [writeNow],
+  );
   const change = (patch: Partial<RecordContent>) => {
     if (!current.current) return;
-    void persist({
+    const next = {
       ...current.current,
       ...(patch.date !== undefined
         ? { autoDate: false, groupPhotosByDay: !!current.current.photoEvents }
@@ -118,7 +154,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
         : {}),
       content: { ...current.current.content, ...patch },
       updatedAt: now(),
-    });
+    };
+    const keystrokeOnly =
+      Object.keys(patch).length > 0 &&
+      Object.keys(patch).every((key) => key === "text" || key === "title");
+    if (keystrokeOnly) persistDebounced(next);
+    else void persist(next);
   };
   const run = async (fn: () => Promise<void>) => {
     if (operation.current) return;
@@ -325,11 +366,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       ...pendingMedia.current,
     });
     events[index] = { ...events[index]!, ...patch };
-    void persist({
-      ...current.current!,
-      photoEvents: events,
-      updatedAt: now(),
-    });
+    const next = { ...current.current!, photoEvents: events, updatedAt: now() };
+    const keystrokeOnly =
+      Object.keys(patch).length > 0 &&
+      Object.keys(patch).every((key) => key === "text" || key === "title");
+    if (keystrokeOnly) persistDebounced(next);
+    else void persist(next);
   };
   const moveToEvent = (id: string, target: number | "new") => {
     const events = photoDayGroups(current.current!, {
@@ -455,6 +497,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         value={group.title}
                         editable={!busy}
                         onChangeText={(title) => editEvent(index, { title })}
+                        onEndEditing={() => void flush()}
                       />
                       <Field
                         label="这件事发生了什么"
@@ -462,6 +505,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         multiline
                         editable={!busy}
                         onChangeText={(text) => editEvent(index, { text })}
+                        onEndEditing={() => void flush()}
                       />
                       <Field
                         label="这件事的地点"
@@ -486,6 +530,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               placeholder="今天，你又带来了什么小惊喜？"
               value={draft.content.text}
               onChangeText={(text) => change({ text })}
+              onEndEditing={() => void flush()}
               style={{ minHeight: 160, textAlignVertical: "top" }}
             />
           )}
