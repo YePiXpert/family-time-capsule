@@ -5,6 +5,7 @@ import type {
 } from "@react-navigation/native-stack";
 export type Routes = {
   Shelf: undefined;
+  Search: undefined;
   Month: { month: string };
   Year: { year: string };
   Firsts: undefined;

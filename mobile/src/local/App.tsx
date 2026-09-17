@@ -49,6 +49,7 @@ import type { LocalStore } from "./store";
 import type { Routes } from "./navigation";
 import { Month } from "./Home";
 import { Year } from "./Year";
+import { SearchScreen } from "./SearchScreen";
 import { Firsts, Shelf, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
@@ -245,6 +246,11 @@ function Root() {
             name="Shelf"
             component={Shelf}
             options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Search"
+            component={SearchScreen}
+            options={{ title: "搜索" }}
           />
           <Stack.Screen
             name="Month"
