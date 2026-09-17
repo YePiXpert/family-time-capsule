@@ -237,7 +237,12 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
                       ? "video"
                       : "file"
                 }
-                onPress={() => navigation.navigate("Media", { id })}
+                onPress={() =>
+                  navigation.navigate("Media", {
+                    id,
+                    recordId: record.id,
+                  })
+                }
               />
             </View>
           ) : null;
