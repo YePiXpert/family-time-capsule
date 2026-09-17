@@ -14,6 +14,12 @@ import {
 } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
 import { decodeManifest, encodeHeader } from "../src/local/backup-format";
+import {
+  ageLine,
+  milestoneLabel,
+  milestoneNumeral,
+  milestoneOf,
+} from "../src/local/dates";
 const date = "2026-09-16T12:00:00.000Z";
 function fixture() {
   const s = emptyLibrary();
@@ -354,6 +360,46 @@ describe("last export timestamp", () => {
   });
   it("accepts libraries written before the field existed", () => {
     expect(() => validateLibrary(fixture())).not.toThrow();
+  });
+});
+
+describe("keepsake dates", () => {
+  it("composes the age line with calendar precision, counting the birth day as day one", () => {
+    expect(ageLine("2024-06-15", new Date(2026, 8, 17))).toBe(
+      "2 岁 3 个月 · 来到世界第 825 天",
+    );
+    expect(ageLine("2026-09-17", new Date(2026, 8, 17))).toBe(
+      "来到世界第 1 天",
+    );
+    expect(ageLine("2026-08-17", new Date(2026, 8, 17))).toBe(
+      "1 个月 · 来到世界第 32 天",
+    );
+    // 闰日出生：周年前一天按「差一天满 N 岁」折算为 11 个月。
+    expect(ageLine("2024-02-29", new Date(2025, 1, 28))).toBe(
+      "11 个月 · 来到世界第 366 天",
+    );
+  });
+  it("returns no age line without a usable birthday", () => {
+    expect(ageLine("", new Date(2026, 8, 17))).toBeNull();
+    expect(ageLine("not-a-date", new Date())).toBeNull();
+    expect(ageLine("2026-09-18", new Date(2026, 8, 17))).toBeNull();
+  });
+  it("marks the birth day, the hundredth day and each birthday", () => {
+    expect(milestoneOf("2026-09-17", new Date(2026, 8, 17))).toEqual({
+      kind: "birthday",
+    });
+    const hundred = milestoneOf("2026-06-08", new Date(2026, 8, 15));
+    expect(hundred).toEqual({ kind: "hundred" });
+    expect(milestoneLabel(hundred!)).toBe("来到世界第 100 天");
+    expect(milestoneNumeral(hundred!)).toBe("100");
+    const anniversary = milestoneOf("2024-09-17", new Date(2026, 8, 17));
+    expect(anniversary).toEqual({ kind: "anniversary", years: 2 });
+    expect(milestoneLabel(anniversary!)).toBe("2 周岁生日");
+    expect(milestoneNumeral(anniversary!)).toBe("2");
+    // 出生当天之后的第 100 天只命中一次，其余日子与无效生日都为空。
+    expect(milestoneOf("2026-06-08", new Date(2026, 8, 16))).toBeNull();
+    expect(milestoneOf("2024-06-15", new Date(2026, 8, 17))).toBeNull();
+    expect(milestoneOf("", new Date())).toBeNull();
   });
 });
 

@@ -17,7 +17,6 @@ def record(identifier, title, date='2026-09-15T10:00:00.000Z', media=None):
     return dict(id=identifier, title=title, text='今天的小小进步，值得好好记住。', date=date, location='', first=False,
                 mediaIds=media or [], coverId=(media or [None])[0], revision=1, updatedAt=date)
 
-
 def write_state(database, state):
     with sqlite3.connect(database) as db:
         db.execute('UPDATE library SET snapshot=? WHERE id=1', (json.dumps(state, ensure_ascii=False),))
@@ -39,6 +38,7 @@ def make_photo():
 
 def seed(container: Path, database: Path):
     s = empty(); root = container / 'Documents' / 'xiaomei-v1'; media = root / 'media'; media.mkdir(parents=True, exist_ok=True)
+    s['profile']['birthday'] = '2024-06-15'
     photo = make_photo(); (media / 'fixture.png').write_bytes(photo)
     s['media']['photo'] = dict(id='photo', file='fixture.png', name='Synthetic colors.png', kind='image', bytes=len(photo), sha256=hashlib.sha256(photo).hexdigest())
     s['records']['fixture'] = record('fixture', 'First little wave', media=['photo'])
