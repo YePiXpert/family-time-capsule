@@ -332,3 +332,25 @@ describe("annual notes", () => {
     expect(decoded.library.yearNotes).toEqual({});
   });
 });
+
+describe("last export timestamp", () => {
+  it("roundtrips the timestamp through the backup manifest", () => {
+    const s = fixture();
+    s.lastExportAt = "2026-09-01T08:00:00.000Z";
+    validateLibrary(s);
+    expect(
+      decodeManifest(encodeHeader(s).slice(12)).library.lastExportAt,
+    ).toBe("2026-09-01T08:00:00.000Z");
+  });
+  it("rejects non-string and unparsable timestamps", () => {
+    const nonString = fixture();
+    (nonString as unknown as { lastExportAt: number }).lastExportAt = 123;
+    expect(() => validateLibrary(nonString)).toThrow();
+    const unparsable = fixture();
+    unparsable.lastExportAt = "yesterday";
+    expect(() => validateLibrary(unparsable)).toThrow();
+  });
+  it("accepts libraries written before the field existed", () => {
+    expect(() => validateLibrary(fixture())).not.toThrow();
+  });
+});

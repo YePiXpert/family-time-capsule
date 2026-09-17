@@ -548,3 +548,31 @@ it("interrupted startup recovery never switches to a partial library or deletes 
   expect(await activeLibraryName()).toBe("xiaomei-local-v1.sqlite");
   expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(count);
 });
+it("names retention copies readably and prunes beyond the newest three", async () => {
+  const { store, backup, files } = await setup();
+  expect((await backup.createBackup(store.get())).name).toMatch(
+    /^xiaomei-\d{8}-\d{4}-[a-f0-9]{8}\.xmb$/,
+  );
+  expect(fs.readdirSync(files.backupDirectory.uri)).toHaveLength(1);
+  for (let i = 0; i < 3; i++) await backup.createBackup(store.get());
+  const kept = fs.readdirSync(files.backupDirectory.uri);
+  expect(kept).toHaveLength(3);
+  expect(kept.every((name) => name.endsWith(".xmb"))).toBe(true);
+});
+it("counts calendar days since the last export and flags never-exported libraries", async () => {
+  const { backup } = await setup();
+  expect(backup.daysSinceExport({})).toBeNull();
+  expect(backup.daysSinceExport({ lastExportAt: "not-a-date" })).toBeNull();
+  expect(
+    backup.daysSinceExport(
+      { lastExportAt: "2026-08-15T10:00:00" },
+      new Date(2026, 8, 17),
+    ),
+  ).toBe(33);
+  expect(
+    backup.daysSinceExport(
+      { lastExportAt: "2026-08-15T10:00:00" },
+      new Date(2026, 7, 15),
+    ),
+  ).toBe(0);
+});

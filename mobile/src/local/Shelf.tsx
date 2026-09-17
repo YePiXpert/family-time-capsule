@@ -23,6 +23,7 @@ import {
   type LocalMedia,
 } from "./model";
 import { useNav } from "./navigation";
+import { daysSinceExport } from "./backup";
 import {
   Button,
   ErrorText,
@@ -241,6 +242,9 @@ export function Shelf() {
     b.updatedAt.localeCompare(a.updatedAt),
   );
   const latestDraft = drafts[0];
+  const exportedDays = daysSinceExport(state),
+    backupDue =
+      records.length > 0 && (exportedDays === null || exportedDays > 30);
   return (
     <Page scroll={false} top>
       <ScrollView
@@ -276,6 +280,36 @@ export function Shelf() {
             onPress={() => nav.navigate("Settings")}
           />
         </View>
+        {backupDue && (
+          <Animated.View entering={FadeInUp.duration(320)}>
+            <Pressable
+              testID="backup-reminder"
+              accessibilityRole="button"
+              accessibilityLabel={
+                exportedDays === null
+                  ? "还没有导出过备份，去备份"
+                  : `已经 ${exportedDays} 天没有备份了，去备份`
+              }
+              onPress={() => nav.navigate("Backup")}
+            >
+              <Glass radius={16} style={{ padding: 16, gap: 6 }}>
+                <Text style={s.heading}>
+                  {exportedDays === null
+                    ? "还没有导出过备份"
+                    : `已经 ${exportedDays} 天没有备份了`}
+                </Text>
+                <Text style={s.muted}>
+                  记录只保存在这台设备。定期导出一份，把这段时光留到应用之外。
+                </Text>
+                <Button
+                  title="去备份"
+                  compact
+                  onPress={() => nav.navigate("Backup")}
+                />
+              </Glass>
+            </Pressable>
+          </Animated.View>
+        )}
         {anniversary && (
           <Animated.View entering={FadeInUp.duration(320)}>
             <Pressable
