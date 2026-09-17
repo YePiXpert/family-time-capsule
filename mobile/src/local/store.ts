@@ -1,4 +1,10 @@
-import { clone, emptyLibrary, validateLibrary, type Library } from "./model";
+import {
+  clone,
+  emptyLibrary,
+  normalizeLibrary,
+  validateLibrary,
+  type Library,
+} from "./model";
 export interface LibraryDisk {
   read(): Promise<unknown | null>;
   write(state: Library): Promise<void>;
@@ -12,6 +18,7 @@ export class LocalStore {
   async open() {
     const state = await this.disk.read();
     if (state !== null) {
+      normalizeLibrary(state);
       validateLibrary(state);
       this.state = state;
     } else await this.disk.write(this.state);

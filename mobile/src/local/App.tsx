@@ -46,6 +46,7 @@ import {
 import type { LocalStore } from "./store";
 import type { Routes } from "./navigation";
 import { Month } from "./Home";
+import { Year } from "./Year";
 import { Firsts, Shelf, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
@@ -169,6 +170,11 @@ function Root() {
           <Stack.Screen
             name="Month"
             component={Month}
+            options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="Year"
+            component={Year}
             options={{ title: "" }}
           />
           <Stack.Screen
