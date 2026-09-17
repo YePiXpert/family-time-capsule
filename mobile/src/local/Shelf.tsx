@@ -227,7 +227,7 @@ export function Shelf() {
     .filter((r) => r.first)
     .sort((a, b) => a.date.localeCompare(b.date));
   const today = new Date();
-  const anniversary = records.find((r) => {
+  const anniversaries = records.filter((r) => {
     const d = new Date(r.date);
     return (
       d.getFullYear() < today.getFullYear() &&
@@ -382,31 +382,52 @@ export function Shelf() {
             </Pressable>
           </Animated.View>
         )}
-        {anniversary && (
+        {anniversaries.length > 0 && (
           <Animated.View entering={FadeInUp.duration(320)}>
-            <Pressable
-              testID="anniversary"
-              accessibilityRole="button"
-              accessibilityLabel={`那年今日，${recordTitle(anniversary)}`}
-              onPress={() => nav.navigate("Record", { id: anniversary.id })}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingRight: 20 }}
             >
-              <Glass radius={16} style={{ padding: 16, gap: 6 }}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              {anniversaries.map((record, index) => (
+                <Pressable
+                  key={record.id}
+                  testID={index === 0 ? "anniversary" : `anniversary-${index}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`那年今日，${recordTitle(record)}`}
+                  onPress={() => nav.navigate("Record", { id: record.id })}
+                  style={{ width: 248 }}
                 >
-                  <JournalIcon name="heart" color={colors.accent} size={18} />
-                  <Text style={[s.muted, { color: colors.accent }]}>
-                    {today.getFullYear() -
-                      new Date(anniversary.date).getFullYear()}{" "}
-                    年前的今天
-                  </Text>
-                </View>
-                <Text style={s.heading}>
-                  {recordTitle(anniversary)}
-                </Text>
-                <Text style={s.muted}>{dateLabel(anniversary.date)}</Text>
-              </Glass>
-            </Pressable>
+                  <Glass radius={16} style={{ padding: 16, gap: 6 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <JournalIcon
+                        name="heart"
+                        color={colors.accent}
+                        size={18}
+                      />
+                      <Text style={[s.muted, { color: colors.accent }]}>
+                        {today.getFullYear() -
+                          new Date(record.date).getFullYear()}{" "}
+                        年前的今天
+                      </Text>
+                    </View>
+                    <Text numberOfLines={2} style={s.heading}>
+                      {recordTitle(record)}
+                    </Text>
+                    <Text style={s.muted}>{dateLabel(record.date)}</Text>
+                  </Glass>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {anniversaries.length > 1 && (
+              <Text style={s.muted}>左右滑动，翻看每一个那年的今天。</Text>
+            )}
           </Animated.View>
         )}
         {latestDraft && (
