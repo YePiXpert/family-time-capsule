@@ -93,7 +93,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           <Button title="新建相册" onPress={() => add(null)} />
         </View>
       )}
-      {record.text && <Text>{record.text}</Text>}
+      {record.text && <Text selectable>{record.text}</Text>}
       {record.location && <Text style={s.muted}>{record.location}</Text>}
       <View style={{ gap: 16 }}>
         {record.mediaIds.map((id) => {

@@ -16,6 +16,7 @@ import {
   ErrorText,
   Field,
   IconButton,
+  Ornament,
   Page,
   Text,
   dateLabel,
@@ -242,7 +243,7 @@ export function Month({ route }: Props<"Month">) {
     return { title, count: dayRecords.length, data };
   });
   return (
-    <Page scroll={false} top>
+    <Page scroll={false}>
       <SectionList
         sections={sections}
         keyExtractor={(row) => row.map((r) => r.id).join("/")}
@@ -325,6 +326,7 @@ export function Month({ route }: Props<"Month">) {
                 ? "试试其他关键词。"
                 : "点右下角「记一刻」，写几句话，留一张照片。"}
             </Text>
+            <Ornament />
           </View>
         }
       />

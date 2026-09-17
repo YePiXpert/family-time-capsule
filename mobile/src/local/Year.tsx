@@ -169,7 +169,7 @@ export function Year({ route }: Props<"Year">) {
     .filter(Boolean)
     .join(" · ");
   return (
-    <Page top>
+    <Page>
       <Text style={s.title}>{year} 年</Text>
       {!!stats && <Text style={s.muted}>{stats}</Text>}
       <YearNote year={year} />
