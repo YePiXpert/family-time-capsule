@@ -9,10 +9,11 @@ from pathlib import Path
 
 def empty():
     return dict(version=1, revision=0, welcome=True, profile=dict(name='小美', birthday='', avatarId=None),
-                settings=dict(theme='auto', largeText=False), records={}, drafts={}, media={}, albums={}, selections={}, receivedShares=[])
+                settings=dict(theme='auto', largeText=False), records={}, drafts={}, media={}, albums={}, selections={},
+                yearNotes={}, receivedShares=[])
 
 
-def record(identifier, title, date='2026-09-16T10:00:00.000Z', media=None):
+def record(identifier, title, date='2026-09-15T10:00:00.000Z', media=None):
     return dict(id=identifier, title=title, text='今天的小小进步，值得好好记住。', date=date, location='', first=False,
                 mediaIds=media or [], coverId=(media or [None])[0], revision=1, updatedAt=date)
 
@@ -41,12 +42,12 @@ def seed(container: Path, database: Path):
     photo = make_photo(); (media / 'fixture.png').write_bytes(photo)
     s['media']['photo'] = dict(id='photo', file='fixture.png', name='Synthetic colors.png', kind='image', bytes=len(photo), sha256=hashlib.sha256(photo).hexdigest())
     s['records']['fixture'] = record('fixture', 'First little wave', media=['photo'])
-    s['records']['earlier'] = record('earlier', 'Summer day', '2026-08-01T10:00:00.000Z')
+    s['records']['earlier'] = record('earlier', 'Summer day', '2026-08-15T10:00:00.000Z')
     for i in range(120):
-        identifier = f'older-{i:03d}'; s['records'][identifier] = record(identifier, f'Old memory {i:03d}', '2025-01-01T10:00:00.000Z')
+        identifier = f'older-{i:03d}'; s['records'][identifier] = record(identifier, f'Old memory {i:03d}', '2025-01-15T10:00:00.000Z')
     write_state(database, s)
     backups = root / 'backups'; backups.mkdir(exist_ok=True)
-    manifest = dict(format='xiaomei-local', version=1, createdAt='2026-09-16T10:00:00.000Z', library=s, mediaOrder=['photo'])
+    manifest = dict(format='xiaomei-local', version=1, createdAt='2026-09-15T10:00:00.000Z', library=s, mediaOrder=['photo'])
     raw = json.dumps(manifest, ensure_ascii=False).encode()
     (backups / 'baseline.xmb').write_bytes(b'XIAOMEI1' + struct.pack('>I', len(raw)) + raw + photo)
     return s
