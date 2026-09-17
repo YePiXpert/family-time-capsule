@@ -69,7 +69,9 @@ try:
     restart();tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
     find('Offline little story. More.');shot('backup-roundtrip')
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,widths=[320,390])
+    tap('keepsake-make');time.sleep(4);shot('keepsake-share-sheet');adb('shell','input','keyevent','4')
+    find('record-edit')
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')

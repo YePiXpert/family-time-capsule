@@ -48,6 +48,9 @@ final class NativeRegressionTests: XCTestCase {
         tap("capture-save"); XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20)); shot("record-reading")
         tap("record-edit"); type(" More memories.", "capture-text", initial: "A little story."); tap("capture-save")
         XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20))
+        tap("keepsake-make")
+        // 生成成功后系统分享面板弹出；截图留证，重启后自然收起。
+        sleep(5); shot("keepsake-share-sheet")
         app.terminate(); app.launch()
         tap("album-new")
         let own = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "A little story.")).firstMatch

@@ -1,0 +1,78 @@
+import { describe, expect, it } from "vitest";
+import {
+  CARD_WIDTH,
+  base64ToBytes,
+  layoutKeepSake,
+  pngBytesOfDataUrl,
+  wrapText,
+} from "../src/local/keepsake";
+
+describe("keepsake card layout", () => {
+  it("wraps CJK and ASCII within the given width", () => {
+    const cjk = wrapText("小美在公园里学会了放手走路", {
+      fontSize: 40,
+      maxWidth: 120,
+      maxLines: 5,
+    });
+    expect(cjk.length).toBeGreaterThan(1);
+    expect(cjk.join("")).toBe("小美在公园里学会了放手走路");
+    // 混排 ASCII 更省宽度：同样宽度能装更多字符。
+    const ascii = wrapText("walking in the park", {
+      fontSize: 40,
+      maxWidth: 120,
+      maxLines: 5,
+    });
+    expect(ascii.length).toBeLessThan(cjk.length);
+    // 显式换行被保留，空段落成空行。
+    expect(
+      wrapText("一\n\n二", { fontSize: 26, maxWidth: 600, maxLines: 9 }),
+    ).toEqual(["一", "", "二"]);
+  });
+  it("clamps long text with an ellipsis on the last line", () => {
+    const lines = wrapText("很".repeat(100), {
+      fontSize: 40,
+      maxWidth: 200,
+      maxLines: 3,
+    });
+    expect(lines).toHaveLength(3);
+    expect(lines[2]!.endsWith("…")).toBe(true);
+    expect(lines[2]!.length).toBeLessThanOrEqual(6);
+  });
+  it("grows the card with body text and clamps photo height by aspect", () => {
+    const bare = layoutKeepSake({
+      date: "2026-09-17",
+      title: "第一步",
+      text: "短短一句。",
+    });
+    const richInput = {
+      date: "2026-09-17",
+      title: "第一步",
+      text: "很长的一段话。".repeat(12),
+      location: "31.2, 121.5",
+      photoAspect: 1,
+    };
+    const rich = layoutKeepSake(richInput);
+    expect(rich.height).toBeGreaterThan(bare.height);
+    expect(rich.photo?.h).toBeGreaterThan(0);
+    // 极端宽/窄照片都被夹在纸面可接受范围内。
+    const wide = layoutKeepSake({ ...richInput, photoAspect: 4 });
+    const tall = layoutKeepSake({ ...richInput, photoAspect: 0.5 });
+    expect(wide.photo!.h).toBeLessThan(tall.photo!.h);
+    expect(tall.photo!.h / tall.photo!.w).toBeLessThanOrEqual(1.2);
+  });
+  it("decodes PNG data URLs and base64 back to the original bytes", () => {
+    expect(() => pngBytesOfDataUrl("data:image/jpeg;base64,QUJD")).toThrow();
+    expect([...pngBytesOfDataUrl("data:image/png;base64,QUJD")]).toEqual([
+      65, 66, 67,
+    ]);
+    // RFC 4648 test vectors。
+    expect([...base64ToBytes("")]).toEqual([]);
+    expect([...base64ToBytes("QQ==")]).toEqual([65]);
+    expect([...base64ToBytes("QUJD")]).toEqual([65, 66, 67]);
+    expect([...base64ToBytes("QUJDRA==")]).toEqual([65, 66, 67, 68]);
+    const arbitrary = [0, 1, 2, 250, 251, 255];
+    const encoded = Buffer.from(arbitrary).toString("base64");
+    expect([...base64ToBytes(encoded)]).toEqual(arbitrary);
+    expect(CARD_WIDTH).toBe(750);
+  });
+});

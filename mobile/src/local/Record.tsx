@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
+import type { Svg } from "react-native-svg";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection, now } from "./services";
 import { deleteRecord, recordTitle } from "./model";
@@ -15,6 +16,11 @@ import {
   useTheme,
 } from "./ui";
 import { Photo, PhotoDetails } from "./Media";
+import {
+  KeepSakeCard,
+  exportKeepSakeCard,
+  prepareKeepSakePhoto,
+} from "./KeepSakeCard";
 export function RecordScreen({ route, navigation }: Props<"Record">) {
   const state = useLibrary(),
     store = useStore(),
@@ -23,12 +29,56 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   const record = state.records[route.params.id],
     [error, setError] = useState(""),
     [chooseAlbum, setChooseAlbum] = useState(false);
+  const cardRef = useRef<Svg | null>(null),
+    [card, setCard] = useState<{
+      photo?: { uri: string; aspect: number };
+    } | null>(null),
+    [cardBusy, setCardBusy] = useState(false);
+  useEffect(() => {
+    if (!card || !cardBusy || !record) return;
+    let cancelled = false;
+    // 两帧之后再取图，确保离屏 Svg 完成布局与位图合成。
+    const first = requestAnimationFrame(() =>
+      requestAnimationFrame(async () => {
+        if (cancelled) return;
+        try {
+          await exportKeepSakeCard(cardRef.current, record.id);
+        } catch (e) {
+          setError(messageOf(e));
+        } finally {
+          setCardBusy(false);
+          setCard(null);
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(first);
+    };
+  }, [card, cardBusy, record]);
   if (!record)
     return (
       <Page>
         <Text>这条记录已删除。</Text>
       </Page>
     );
+  const makeKeepSake = async () => {
+    setCardBusy(true);
+    setError("");
+    try {
+      const cover =
+        (record.coverId ? state.media[record.coverId] : undefined)?.kind ===
+        "image"
+          ? state.media[record.coverId!]
+          : Object.values(state.media).find(
+              (m) => m.kind === "image" && record.mediaIds.includes(m.id),
+            );
+      setCard({ photo: await prepareKeepSakePhoto(cover) });
+    } catch (e) {
+      setError(messageOf(e));
+      setCardBusy(false);
+    }
+  };
   const add = (albumId: string | null) => {
     void beginSelection(store, albumId, [record.id])
       .then((sessionId) => navigation.navigate("Picker", { sessionId }))
@@ -85,6 +135,17 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           onPress={() => setChooseAlbum(!chooseAlbum)}
         />
       </View>
+      <View style={s.row}>
+        <Button
+          title={cardBusy ? "正在生成纪念卡…" : "做成纪念卡"}
+          icon="heart"
+          testID="keepsake-make"
+          disabled={cardBusy}
+          onPress={() => {
+            void makeKeepSake();
+          }}
+        />
+      </View>
       {chooseAlbum && (
         <View style={s.section}>
           {Object.values(state.albums).map((a) => (
@@ -118,6 +179,19 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
         })}
       </View>
       <ErrorText message={error} />
+      {card && (
+        <View
+          pointerEvents="none"
+          style={{ position: "absolute", left: -10000, top: 0, opacity: 0 }}
+        >
+          <KeepSakeCard
+            ref={cardRef}
+            record={record}
+            profileName={state.profile.name}
+            photo={card.photo}
+          />
+        </View>
+      )}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="删除记录"
