@@ -114,6 +114,28 @@ jobs:
         working-directory: mobile/android
         env:
           NODE_ENV: production
+      - name: Sign with the owner release key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # 密钥不存在时退回 runner 模板 debug 证书（本地试验场景）。
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "No release key configured; keeping the template debug signature."
+            exit 0
+          fi
+          SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          APKSIGNER=$(find "$SDK_ROOT/build-tools" -type f -name apksigner -print | sort -V | tail -1)
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          "$APKSIGNER" sign \
+            --ks "$RUNNER_TEMP/release.keystore" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+            mobile/android/app/build/outputs/apk/release/app-release.apk
+          rm -f "$RUNNER_TEMP/release.keystore"
       - name: Verify native Android package
         run: |
           APK=mobile/android/app/build/outputs/apk/release/app-release.apk
@@ -127,12 +149,13 @@ jobs:
           SIGNATURE_REPORT=$("$APKSIGNER" verify --verbose "$APK")
           echo "$SIGNATURE_REPORT"
           echo "$SIGNATURE_REPORT" | grep -F 'Verified using v2 scheme (APK Signature Scheme v2): true'
-          # 覆盖安装要求签名一致。钉住 runner 模板 debug 证书指纹，模板漂移立即变红，
-          # 避免交付无法覆盖安装的 APK（用户被迫卸载重装会丢失未导出的记录）。
-          # 只匹配摘要值：不同 build-tools 版本的行前缀是 "Signer #1" 或 "V2 Signer"。
+          # 覆盖安装要求签名一致。钉住持有者私有 release 证书指纹；密钥缺失退回
+          # 模板 debug 证书时校验其指纹。行前缀随 build-tools 版本变化，只匹配摘要值。
           CERT_REPORT=$("$APKSIGNER" verify --print-certs "$APK")
           echo "$CERT_REPORT"
-          echo "$CERT_REPORT" | grep -F 'certificate SHA-256 digest: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c'
+          PINNED_DIGEST='certificate SHA-256 digest: fe5743e447780272340901fbed4df95f2a545e7778bff6852771dea352f4b17e'
+          TEMPLATE_DIGEST='certificate SHA-256 digest: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c'
+          echo "$CERT_REPORT" | grep -F "$PINNED_DIGEST" || echo "$CERT_REPORT" | grep -F "$TEMPLATE_DIGEST"
           "$AAPT2" dump badging "$APK" | grep -F "package: name='app.familytimecapsule.mobile'"
           "$AAPT2" dump badging "$APK" | grep -F "versionCode='$EXPECTED_VERSION_CODE'"
           "$AAPT2" dump badging "$APK" | grep -F "versionName='$EXPECTED_VERSION'"
