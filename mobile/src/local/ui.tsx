@@ -195,16 +195,16 @@ export function Glass({
 }
 export function useStyles() {
   const { colors: c, dark } = useTheme();
-  const cardShadow: ViewStyle = {
-    shadowColor: dark ? "#000000" : "#7A5C3E",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: dark ? 0.3 : 0.07,
-    shadowRadius: 8,
-    elevation: 1,
-  };
   return useMemo(
-    () =>
-      StyleSheet.create({
+    () => {
+      const cardShadow: ViewStyle = {
+        shadowColor: dark ? "#000000" : "#7A5C3E",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: dark ? 0.3 : 0.07,
+        shadowRadius: 8,
+        elevation: 1,
+      };
+      return StyleSheet.create({
         page: { flex: 1, backgroundColor: c.paper },
         content: { padding: 20, gap: 20, paddingBottom: 32 },
         tabContent: { paddingBottom: 112 },
@@ -303,8 +303,9 @@ export function useStyles() {
           paddingBottom: 12,
           gap: 8,
         },
-      }),
-    [c],
+      });
+    },
+    [c, dark],
   );
 }
 export function Page({
