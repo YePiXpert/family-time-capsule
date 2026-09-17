@@ -180,6 +180,7 @@ class FamilyShareIntakeModule : Module() {
         temporary.delete()
         throw IllegalStateException("copy_failed")
       }
+      attachCaptureMetadata(declaration, destination, mediaType)
       declaration
     } catch (error: Throwable) {
       JSONObject().apply {
@@ -187,6 +188,27 @@ class FamilyShareIntakeModule : Module() {
         put("captureId", captureId)
         put("kind", "error")
         put("error", (error.message ?: "copy_failed").take(160))
+      }
+    }
+  }
+
+  /** Best-effort EXIF capture time and GPS for shared photos; never fails the copy. */
+  private fun attachCaptureMetadata(declaration: JSONObject, file: File, mediaType: String) {
+    if (mediaType != "image") return
+    runCatching {
+      val exif = android.media.ExifInterface(file.absolutePath)
+      exif.getAttribute(android.media.ExifInterface.TAG_DATETIME_ORIGINAL)
+        ?.trim()
+        ?.takeIf { Regex("^\\d{4}:\\d{2}:\\d{2} \\d{2}:\\d{2}:\\d{2}$").matches(it) }
+        ?.let { raw ->
+          val date = raw.substring(0, 10).replace(':', '-')
+          declaration.put("capturedAt", "${date}T${raw.substring(11)}")
+        }
+      exif.latLong?.let { coords ->
+        if (coords.size == 2 && coords[0].isFinite() && coords[1].isFinite()) {
+          declaration.put("latitude", coords[0])
+          declaration.put("longitude", coords[1])
+        }
       }
     }
   }

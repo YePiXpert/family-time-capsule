@@ -11,6 +11,10 @@ export type NativeShareItem = {
   mediaType?: "image" | "video" | "audio" | "document";
   text?: string;
   error?: string;
+  /** Camera-local capture time "yyyy-MM-ddTHH:mm:ss", extracted natively when possible. */
+  capturedAt?: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 export type NativeShareManifest = {
