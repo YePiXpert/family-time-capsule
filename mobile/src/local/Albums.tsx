@@ -11,11 +11,10 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useLibrary, useStore } from "./context";
 import { beginSelection, newId, now } from "./services";
 import { finishSelection, monthKey, sortedRecords } from "./model";
-import { useNav, type Props } from "./navigation";
+import type { Props } from "./navigation";
 import {
   Button,
   ErrorText,
@@ -26,96 +25,8 @@ import {
   useStyles,
   useTheme,
 } from "./ui";
-import { CaptureDock, RecordCard } from "./Home";
+import { RecordCard } from "./Home";
 import { Photo } from "./Media";
-export function Albums() {
-  const tabBarHeight = useBottomTabBarHeight();
-  const state = useLibrary(),
-    store = useStore(),
-    nav = useNav(),
-    s = useStyles(),
-    { large } = useTheme();
-  const [error, setError] = useState("");
-  const albums = Object.values(state.albums).sort(
-    (a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
-  );
-  return (
-    <Page scroll={false} top>
-      <View style={s.content}>
-        <View style={s.between}>
-          <Text style={s.title}>把回忆放在一起</Text>
-          <Button
-            title="新建相册"
-            testID="album-new"
-            onPress={() => {
-              void beginSelection(store)
-                .then((sessionId) => nav.navigate("Picker", { sessionId }))
-                .catch((e) => setError(messageOf(e)));
-            }}
-          />
-        </View>
-        <ErrorText message={error} />
-      </View>
-      <FlatList
-        key={large ? "one" : "two"}
-        numColumns={large ? 1 : 2}
-        data={albums}
-        keyExtractor={(a) => a.id}
-        contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingBottom: tabBarHeight + 84,
-        }}
-        columnWrapperStyle={large ? undefined : { gap: 16 }}
-        renderItem={({ item }) => {
-          const coverId =
-            item.coverId ??
-            item.items
-              .flatMap((i) => state.records[i.recordId]?.mediaIds ?? [])
-              .find((id) => state.media[id]?.kind === "image");
-          return (
-            <Pressable
-              testID={`album-${item.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={item.name}
-              onPress={() => nav.navigate("Album", { id: item.id })}
-              style={{
-                flex: 1,
-                maxWidth: large ? "100%" : "50%",
-                gap: 8,
-                marginBottom: 24,
-              }}
-            >
-              {coverId ? (
-                <Photo media={state.media[coverId]} />
-              ) : (
-                <View
-                  style={[
-                    s.section,
-                    { aspectRatio: 4 / 3, justifyContent: "center" },
-                  ]}
-                >
-                  <Text style={s.heading}>时光相册</Text>
-                </View>
-              )}
-              <Text style={s.heading}>{item.name}</Text>
-              <Text style={s.muted}>{item.items.length} 段记录</Text>
-            </Pressable>
-          );
-        }}
-        ListEmptyComponent={
-          <View style={s.empty}>
-            <Text style={s.heading}>给回忆一个名字</Text>
-            <Text style={s.muted}>
-              把旅行、生日或平凡日子里的记录，整理成自己的相册。
-            </Text>
-          </View>
-        }
-      />
-      <CaptureDock />
-    </Page>
-  );
-}
 export function AlbumScreen({ route, navigation }: Props<"Album">) {
   const store = useStore(),
     state = useLibrary(),
@@ -540,7 +451,7 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
               return finishSelection(s, q.id, newId(), newId, now());
             })
             .then((album) => {
-              navigation.popTo("Home");
+              navigation.popTo("Shelf");
               navigation.navigate("Album", { id: album.id });
             })
             .catch((e) => setError(messageOf(e)))
