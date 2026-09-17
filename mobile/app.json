@@ -34,7 +34,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.INTERNET"
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_MEDIA_LOCATION"
       ]
     },
     "plugins": [
