@@ -250,25 +250,11 @@ export function Shelf() {
     (a, b) =>
       b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
   );
-  // store 每次变更都是全库克隆，引用级 useMemo 会失效；
-  // 用带坐标媒体的廉价指纹做依赖，只有照片集真的变了才重新聚类。
-  const geoSig = (() => {
-    let n = 0,
-      sig = 0;
-    for (const m of Object.values(state.media)) {
-      const md = m.photoMetadata;
-      if (md?.latitude !== undefined && md.longitude !== undefined) {
-        n++;
-        for (let i = 0; i < m.id.length; i++)
-          sig = (sig * 31 + m.id.charCodeAt(i)) | 0;
-      }
-    }
-    return `${n}:${sig}`;
-  })();
+  // store 每次变更都是全库克隆，state.media 的引用随之变化——正好是「重算」的
+  // 准确时机：主题、尺寸与本页 useState 引起的重渲染都命中缓存。与 Footprint 同款。
   const clusters = useMemo(
     () => clusterPlaces(Object.values(state.media)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- geoSig 已覆盖媒体集变化
-    [geoSig],
+    [state.media],
   );
   const drafts = Object.values(state.drafts).sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
