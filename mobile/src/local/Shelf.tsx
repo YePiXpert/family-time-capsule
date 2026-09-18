@@ -25,6 +25,7 @@ import {
 } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
+import { nudgeOf } from "./nudge";
 import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
 import {
   Button,
@@ -279,7 +280,8 @@ export function Shelf() {
   const volumeWidth =
     (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
   const [draftsOpen, setDraftsOpen] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [nudgeClosed, setNudgeClosed] = useState(false);
   const records = useMemo(() => sortedRecords(state), [state]);
   const months = [...new Set(records.map((r) => monthKey(r.date)))];
   const years = [...new Set(records.map((r) => yearKey(r.date)))];
@@ -307,6 +309,11 @@ export function Shelf() {
     b.updatedAt.localeCompare(a.updatedAt),
   );
   const latestDraft = drafts[0];
+  const nudge = nudgeOf(
+    records[0]?.date ?? null,
+    latestDraft?.updatedAt ?? null,
+    drafts.length,
+  );
   const exportedDays = daysSinceExport(state),
     backupDue =
       records.length > 0 && (exportedDays === null || exportedDays > 30);
@@ -450,6 +457,45 @@ export function Shelf() {
                 />
               </Glass>
             </Pressable>
+          </Animated.View>
+        )}
+        {nudge && !nudgeClosed && (
+          <Animated.View entering={FadeInUp.duration(320)}>
+            <Glass radius={16} style={{ padding: 16, gap: 10 }}>
+              <View style={s.between}>
+                <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                  <Text style={s.heading} testID="rhythm-nudge">
+                    {nudge.kind === "draft"
+                      ? "有一份草稿还没写完"
+                      : `有 ${nudge.days} 天没记啦`}
+                  </Text>
+                  <Text style={s.muted}>
+                    {nudge.kind === "draft"
+                      ? "接着上次的话头写下去吧。"
+                      : "日子过得快，挑一件小事写下来。"}
+                  </Text>
+                </View>
+                <IconButton
+                  label="今天不再提醒"
+                  icon="close"
+                  onPress={() => setNudgeClosed(true)}
+                />
+              </View>
+              <Button
+                title={nudge.kind === "draft" ? "继续写" : "记一刻"}
+                compact
+                testID="rhythm-nudge-action"
+                onPress={() => {
+                  if (nudge.kind === "draft" && latestDraft) {
+                    nav.navigate("Editor", { draftId: latestDraft.id });
+                    return;
+                  }
+                  void beginDraft(store)
+                    .then((draftId) => nav.navigate("Editor", { draftId }))
+                    .catch((e) => setError(messageOf(e)));
+                }}
+              />
+            </Glass>
           </Animated.View>
         )}
         {anniversaries.length > 0 && (
