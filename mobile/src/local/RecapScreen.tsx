@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, View } from "react-native";
 import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
+import { useAudioPlayer } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLibrary } from "./context";
+import { useLibrary, useStore } from "./context";
 import { monthKey, recordTitle, sortedRecords, yearKey } from "./model";
 import { useNav, type Props } from "./navigation";
 import { Stamp } from "./Shelf";
@@ -11,6 +12,7 @@ import { replayPhotos } from "./replay";
 import { mediaUri } from "./files";
 import { Photo } from "./Media";
 import {
+  Button,
   Ornament,
   Page,
   Text,
@@ -125,10 +127,29 @@ export function RecapScreen({ route }: Props<"Recap">) {
 /** 全屏年度重放：照片整屏淡入淡出，4 秒或点击前进，末页收统计与寄语。 */
 export function ReplayModal({ year, onClose }: { year: string; onClose: () => void }) {
   const state = useLibrary(),
+    store = useStore(),
     { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(0),
+    [chooseMusic, setChooseMusic] = useState(false);
+  // 配乐完全可选，默认无声；选乐只在本机音频素材里挑。
+  const audioId = state.settings.replayAudioId;
+  const audioMedia = audioId ? state.media[audioId] : undefined;
+  const music = useAudioPlayer(
+    audioMedia ? mediaUri(audioMedia) : undefined,
+  );
+  useEffect(() => {
+    music.loop = true;
+    music.volume = 0.6;
+  }, [music]);
+  useEffect(() => {
+    // 选乐浮层打开时静音暂停，自动前进也一并停下（见下方 effect）。
+    if (audioMedia && !chooseMusic) music.play();
+    else music.pause();
+    return () => music.pause();
+  }, [audioMedia, chooseMusic, music]);
+
   const records = useMemo(
     () => sortedRecords(state).filter((r) => yearKey(r.date) === year),
     [state, year],
@@ -144,13 +165,13 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
   const note = state.yearNotes[year];
   const done = index >= slides.length;
   useEffect(() => {
-    if (done) return;
+    if (done || chooseMusic) return;
     const timer = setTimeout(
       () => setIndex((i) => Math.min(i + 1, slides.length)),
       4000,
     );
     return () => clearTimeout(timer);
-  }, [index, done, slides.length]);
+  }, [index, done, slides.length, chooseMusic]);
   const advance = () => setIndex((i) => Math.min(i + 1, slides.length));
   const stats = [
     `${records.length} 段时光`,
@@ -162,6 +183,75 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
     .filter(Boolean)
     .join(" · ");
   const slide = slides[index];
+  const scores = Object.values(state.media).filter((m) => m.kind === "audio");
+  const setScore = (id: string | null) => {
+    void store.change((s) => {
+      if (id) s.settings.replayAudioId = id;
+      else delete s.settings.replayAudioId;
+    });
+    setChooseMusic(false);
+  };
+  const musicButton = scores.length > 0 && (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={audioMedia ? "更换配乐" : "加一段配乐"}
+      testID="replay-music"
+      onPress={() => setChooseMusic(true)}
+      style={{
+        minHeight: 44,
+        paddingHorizontal: 14,
+        borderRadius: 14,
+        justifyContent: "center",
+        backgroundColor: "#FFFFFF26",
+      }}
+    >
+      <Text style={{ color: "#F2E9DC", fontSize: 14, fontWeight: "600" }}>
+        {audioMedia ? "更换配乐" : "加一段配乐"}
+      </Text>
+    </Pressable>
+  );
+  const musicPicker = chooseMusic && (
+    // 吸收点击，避免选乐时误触父级「看下一张」。
+    <Pressable
+      onPress={() => {}}
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        padding: 20,
+        paddingBottom: insets.bottom + 20,
+        gap: 12,
+        backgroundColor: "#14100CF2",
+      }}
+      testID="replay-music-sheet"
+    >
+      <Text style={{ color: "#F2E9DC", fontFamily: serif, fontSize: 20 }}>
+        选一段记录里的声音
+      </Text>
+      <Text style={{ color: "#B8A88F", fontSize: 13 }}>
+        配乐来自你已经记下的录音，只在这台设备播放。
+      </Text>
+      <Button
+        title={audioId ? "播放时不配乐" : "保持安静"}
+        compact
+        selected={!audioId}
+        testID="replay-music-none"
+        onPress={() => setScore(null)}
+      />
+      {scores.map((score) => (
+        <Button
+          key={score.id}
+          title={score.name}
+          compact
+          selected={audioId === score.id}
+          testID={`replay-music-${score.id}`}
+          onPress={() => setScore(score.id)}
+        />
+      ))}
+      <Button title="收起" compact onPress={() => setChooseMusic(false)} />
+    </Pressable>
+  );
   return (
     <Modal
       visible
@@ -259,7 +349,15 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
                 </Text>
               ) : null}
               <Ornament />
-              <View style={{ flexDirection: "row", gap: 12 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                }}
+              >
+                {musicButton}
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="再放一次"
@@ -323,7 +421,18 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
             ))}
           </View>
         )}
-        <View style={{ position: "absolute", top: insets.top + 8, right: 20 }}>
+        {musicPicker}
+        <View
+          style={{
+            position: "absolute",
+            top: insets.top + 8,
+            right: 20,
+            flexDirection: "row",
+            gap: 10,
+            alignItems: "center",
+          }}
+        >
+          {musicButton}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="结束重放"

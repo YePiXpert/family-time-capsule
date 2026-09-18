@@ -94,7 +94,13 @@ export type Library = {
   revision: number;
   welcome: boolean;
   profile: LocalProfile;
-  settings: { theme: "auto" | "light" | "dark"; largeText: boolean; lockEnabled?: boolean };
+  settings: {
+    theme: "auto" | "light" | "dark";
+    largeText: boolean;
+    lockEnabled?: boolean;
+    /** 年度重放的配乐：本机音频素材 id；缺省或空表示不配乐。 */
+    replayAudioId?: string;
+  };
   records: Record<string, LocalRecord>;
   drafts: Record<string, RecordDraft>;
   media: Record<string, LocalMedia>;
@@ -188,6 +194,8 @@ export function recordsOfPerson(
 export function referencedMedia(s: Library): Set<string> {
   return new Set([
     ...(s.profile.avatarId ? [s.profile.avatarId] : []),
+    // 用户为年度重放亲自选的配乐，即使在记录被删后也保留，避免静默换歌或丢失。
+    ...(s.settings.replayAudioId ? [s.settings.replayAudioId] : []),
     ...Object.values(s.records).flatMap((r) => r.mediaIds),
     ...Object.values(s.drafts).flatMap((d) => d.content.mediaIds),
   ]);
@@ -255,6 +263,12 @@ function clearUnavailableCovers(s: Library): void {
       )
     )
       selection.coverId = null;
+  // 配乐素材在 referencedMedia 里受保护；这里兜住外部写坏的悬空 id。
+  if (
+    s.settings.replayAudioId &&
+    s.media[s.settings.replayAudioId]?.kind !== "audio"
+  )
+    delete s.settings.replayAudioId;
   // 记录编辑删掉某张照片时，系列里指向它的条目一并退场。
   for (const series of Object.values(s.series))
     series.items = series.items.filter((i) =>
@@ -344,6 +358,9 @@ export function validateLibrary(value: unknown): asserts value is Library {
     typeof s.settings.largeText !== "boolean" ||
     (s.settings.lockEnabled !== undefined &&
       typeof s.settings.lockEnabled !== "boolean") ||
+    (s.settings.replayAudioId !== undefined &&
+      (typeof s.settings.replayAudioId !== "string" ||
+        s.media[s.settings.replayAudioId]?.kind !== "audio")) ||
     !ids(s.receivedShares) ||
     (s.lastExportAt !== undefined &&
       (!str(s.lastExportAt) || !Number.isFinite(Date.parse(s.lastExportAt))))
