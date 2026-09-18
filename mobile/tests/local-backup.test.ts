@@ -533,6 +533,23 @@ it("resumes the same material session with its input, cover and scroll position"
     coverId: media.id,
   });
 });
+it("creates, reuses and renames people within the stored name limits", async () => {
+  const { store } = await setup();
+  const { createPerson, renamePerson } = await import("../src/local/services");
+  const id = await createPerson(store, "  外婆  ");
+  expect(store.get().persons[id]!.name).toBe("外婆");
+  // 同名复用既有身份，不会多出一个人
+  expect(await createPerson(store, "外婆")).toBe(id);
+  expect(Object.keys(store.get().persons)).toEqual([id]);
+  await renamePerson(store, id, "  姥姥 ");
+  expect(store.get().persons[id]!.name).toBe("姥姥");
+  await renamePerson(store, id, "长".repeat(60));
+  expect(store.get().persons[id]!.name).toBe("长".repeat(50));
+  // 空名与不存在的人都要报错，且不改动已存内容
+  await expect(renamePerson(store, id, "   ")).rejects.toThrow();
+  await expect(renamePerson(store, "nobody", "谁")).rejects.toThrow();
+  expect(store.get().persons[id]!.name).toBe("长".repeat(50));
+});
 it("recovers an unreadable startup library into a verified new database and retains the original", async () => {
   const { store, backup } = await setup();
   const file = await backup.createBackup(store.get());
