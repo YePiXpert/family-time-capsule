@@ -296,32 +296,51 @@ export async function inspectBackup(
   }
 }
 
+/** 恢复的进度播报；只用于界面提示，回调抛错不影响恢复本身。 */
+export type RestoreProgress = (stage: string) => void;
+/** 备份不含缩略图字节；用全新随机名重建，失败清理才能只删本次恢复产生的文件。 */
+async function rebuildThumbs(
+  state: Library,
+  onProgress?: RestoreProgress,
+): Promise<void> {
+  const pending = Object.entries(state.media).filter(
+    ([, m]) => m.kind === "image" || m.kind === "video",
+  );
+  let done = 0;
+  for (const [id, m] of pending) {
+    const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
+    if (thumb) state.media[id] = { ...m, ...thumb };
+    onProgress?.(`正在重建缩略图 ${++done}/${pending.length}`);
+  }
+}
+/**
+ * 解包、校验与重建缩略图都在写队列之外做——这几步会读写整库的素材，扣着写队列
+ * 就是把界面连同自动保存一起卡住，而且没有任何进度。全部准备好之后，只用一次很短
+ * 的 change 整体切换；中途任何一步失败，当前库一个字节都没动过。
+ */
 export async function restoreBackup(
   store: LocalStore,
   file: File,
+  onProgress?: RestoreProgress,
 ): Promise<File> {
-  let prior: File | null = null;
+  onProgress?.("正在备份当前内容…");
+  const prior = await createBackup(store.get());
   let restored: Library | null = null;
   try {
-    await store.change(async (current) => {
-      prior = await createBackup(current);
-      restored = await inspectBackup(file, true);
-      Object.assign(current, restored);
-      // 备份不含缩略图字节；用全新随机名重生成，避免与当前库的缩略图文件
-      // 同名——失败清理才能只删本次恢复新产生的文件。
-      for (const [id, m] of Object.entries(current.media)) {
-        if (m.kind !== "image" && m.kind !== "video") continue;
-        const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
-        if (thumb) current.media[id] = { ...m, ...thumb };
-      }
+    onProgress?.("正在校验并解包备份…");
+    restored = await inspectBackup(file, true);
+    await rebuildThumbs(restored, onProgress);
+    onProgress?.("正在写入本机资料…");
+    const next = restored;
+    await store.change((current) => {
+      Object.assign(current, next);
     });
   } catch (e) {
     if (restored)
-      for (const m of Object.values((restored as Library).media))
-        deleteMediaFiles(m);
+      for (const m of Object.values(restored.media)) deleteMediaFiles(m);
     throw e;
   }
-  return prior!;
+  return prior;
 }
 export async function shareBackup(file: File) {
   if (!(await Sharing.isAvailableAsync()))
@@ -334,14 +353,12 @@ export async function shareBackup(file: File) {
 }
 
 /** Used only before a library could be opened. The unreadable original database stays in place. */
-export async function recoverStartupBackup(file: File): Promise<void> {
+export async function recoverStartupBackup(
+  file: File,
+  onProgress?: RestoreProgress,
+): Promise<void> {
   const restored = await inspectBackup(file, true);
-  // 与 restoreBackup 相同：恢复后的缩略图用全新随机名重建。
-  for (const [id, m] of Object.entries(restored.media)) {
-    if (m.kind !== "image" && m.kind !== "video") continue;
-    const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
-    if (thumb) restored.media[id] = { ...m, ...thumb };
-  }
+  await rebuildThumbs(restored, onProgress);
   try {
     const { activateRecoveredLibrary } = await import("./activation");
     await activateRecoveredLibrary(restored);
