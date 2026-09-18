@@ -9,19 +9,32 @@
 
 ---
 
-## Build 62「成长册」— 把一年装订成书（进行中）
+## Build 62「成长册」— 把一年装订成书（已交付）
 
 | 任务 | 状态 |
 | --- | --- |
 | 年度成长册导出：`yearbook.ts` 纯布局（750 宽长卷：年份印章封面、寄语、十二月网格、第一次、落款）+ `YearBookCard.tsx` 离屏渲染 + 年度册「导出成长册」入口 + Android 冒烟与 iOS XCUITest 同步断言 | ✅ 已交付 `6842ef9`，canary 打包 run 35312957611 |
 | 年度重放配乐：`settings.replayAudioId`（可选项，`referencedMedia` 保护不被清理）+ ReplayModal 选乐浮层（只从本机已有录音里挑）+ expo-audio 循环低音量、选乐时暂停自动前进、默认无声 | ✅ 已交付 `018c86a`（lint 豁免 `8649d33`） |
-| 人物管理：`deletePerson`/`mergePersons` 纯函数（级联剥离 records/drafts/photoEvents 标记）+ `renamePerson` + `People` 页（改名/合并/删除 + 引用计数）+ 编辑器「整理人物」入口 | ✅ 代码已入库 `1b905a9`，**测试待补**（见下一步） |
-| 发布：CHANGELOG/README/DESIGN + `PLAN-BUILD-62.md` 若有追加 + app.json 61→62 + 全套绿 + mobile-build 双绿交付 | ⏳ 待做 |
+| 人物管理：`deletePerson`/`mergePersons` 纯函数（级联剥离 records/drafts/photoEvents 标记）+ `renamePerson` + `People` 页（改名/合并/删除 + 引用计数）+ 编辑器「整理人物」入口 | ✅ 已交付 `1b905a9`，测试补于 `c51f1b7`；`3985309` 另补 photoEvents 人物引用的校验与开库自愈 |
+| 发布：CHANGELOG/README/DESIGN + app.json 61→62 + 全套绿 + mobile-build 双绿交付 | ✅ 见本节末「交付实况」 |
 
-**下一轮会话的第一件事（按序）**：
-1. 补 62-3 测试：deletePerson 剥离引用且 `personIds` 剥空删字段、mergePersons 去重合并且 source 消失、renamePerson 空名/超长边界、People 页入口可达（参照 `tests/local-core.test.ts` 的 person tags 组）。
-2. 确认 canary run 35312957611 双绿（它验证成长册冒烟步：Android `yearbook-share-sheet` 截图 + iOS `yearbook-share-sheet`）；若红，按日志修冒烟步而非功能。
-3. 走完 62-4 发布（含 HANDOFF.md 更新为 Build 62 交付态）。
+**交付实况（超出原计划的部分）**：本轮实际交付远大于上表三项，另含一整批 UI 改造
+（iOS 26 液态玻璃基元、触感反馈、减少动画、重放浮层重建、大字与间距统一、Android 双指缩放）
+与一轮全面 review 清理，详见 CHANGELOG「Build 62 — 成长册」。
+
+review 中修掉的三个真问题值得记住：
+1. **Android 原图缩放必崩**（`5430c7e`）：手势回调被 worklets 插件自动 workletize，
+   里面调用普通 JS 闭包会变成 Remote Function，UI 线程同步调用直接抛。写手势回调时，
+   凡是被它们调用的函数都要标 `"worklet"`。
+2. **两处逐字重复的组件已经分叉**（`9882965`）：书架与月册的悬浮钮是相同的 88 行，
+   只有书架那份加了减少动画门。同一个东西出现第二遍时就该合并，别等它长歪。
+3. **新写的「虚拟化」其实没生效**（`605f531`）：FlatList 落在会滚动的 `Page` 里就是
+   同向嵌套的 VirtualizedList，窗口化直接失效。选择器一律 Modal + `Page scroll={false}`。
+
+**canary run 35312957611 的 iOS 红已定位并修复**（`94208ec`）：不是功能问题——模拟器卡在
+`Waiting on System App`，而 `boot_simulator` 的一次重试被两次尝试之间那句未加保护的
+`simctl shutdown` 抛出的 `TimeoutExpired` 干掉了。现已把清理调用各自包进 try 并补 `erase`，
+保证重试必然发生；两个 iOS 冒烟脚本共用该 helper。
 
 **设计备忘**：成长册 v1 是单张可打印长图（expo-sharing 单文件约束下的稳妥形态）；分页 PDF 导出列入 Build 63 候选（需引 PDF 生成或自写 DCTDecode 嵌入，见 PLAN-BUILD-60-61 的工程调研）。
 
