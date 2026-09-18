@@ -6,7 +6,6 @@ import {
 import {
   Alert,
   FlatList,
-  Modal,
   Pressable,
   ScrollView,
   View,
@@ -27,6 +26,7 @@ import {
   messageOf,
   useStyles,
 } from "./ui";
+import { PhotoPicker } from "./PhotoPicker";
 import { RecordCard } from "./Home";
 import { NoteCard } from "./NoteCard";
 import { Photo } from "./Media";
@@ -39,7 +39,6 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
     [cover, setCover] = useState(false),
     [name, setName] = useState(album?.name ?? ""),
     [error, setError] = useState("");
-  const { width } = useWindowDimensions();
   const action = (fn: Parameters<typeof store.change>[0]) => {
     void store.change(fn).catch((e) => setError(messageOf(e)));
   };
@@ -56,7 +55,6 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
   ].filter((id) => state.media[id]?.kind === "image");
   const coverMedia =
     state.media[album.coverId ?? ""] ?? state.media[photos[0] ?? ""];
-  const coverTile = (width - 40 - 12) / 2;
   return (
     <Page scroll={false}>
       <FlatList
@@ -215,45 +213,23 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
           <Text>相册还没有记录，点「添加记录」开始整理。</Text>
         }
       />
-      <Modal
+      <PhotoPicker
         visible={cover}
-        animationType="slide"
-        onRequestClose={() => setCover(false)}
-      >
-        <Page top>
-          <View style={s.between}>
-            <Text style={s.heading}>选一张封面</Text>
-            <Button title="取消" compact onPress={() => setCover(false)} />
-          </View>
-          {photos.length === 0 ? (
-            <Text>先添加含照片的记录，就能选择封面。</Text>
-          ) : (
-            <FlatList
-              data={photos}
-              keyExtractor={(id) => id}
-              numColumns={2}
-              accessibilityRole="radiogroup"
-              columnWrapperStyle={{ gap: 12 }}
-              contentContainerStyle={{ gap: 12, paddingBottom: 32 }}
-              renderItem={({ item }) => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="选为相册封面"
-                  onPress={() => {
-                    action((s) => {
-                      s.albums[album.id]!.coverId = item;
-                      s.albums[album.id]!.updatedAt = now();
-                    });
-                    setCover(false);
-                  }}
-                >
-                  <Photo media={state.media[item]} size={coverTile} />
-                </Pressable>
-              )}
-            />
-          )}
-        </Page>
-      </Modal>
+        title="选一张封面"
+        empty="先添加含照片的记录，就能选择封面。"
+        choices={photos.map((id) => ({
+          mediaId: id,
+          label: "选为相册封面",
+        }))}
+        onPick={(choice) => {
+          action((s) => {
+            s.albums[album.id]!.coverId = choice.mediaId;
+            s.albums[album.id]!.updatedAt = now();
+          });
+          setCover(false);
+        }}
+        onClose={() => setCover(false)}
+      />
     </Page>
   );
 }
