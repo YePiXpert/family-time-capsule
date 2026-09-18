@@ -59,6 +59,8 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
     <Page scroll={false}>
       <FlatList
         testID="album-reading"
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
         data={album.items}
         keyExtractor={(i) => i.id}
         contentContainerStyle={s.content}
@@ -460,6 +462,10 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
   return (
     <Page scroll={false}>
       <FlatList
+        // 名称输入框在列表头里：列表默认会把键盘弹起时的第一次点击吃掉当作收键盘，
+        // 「返回调整内容」「保存相册」和选封面都会失灵一次，必须显式放行。
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
         data={photos}
         keyExtractor={(id) => id}
         numColumns={2}
