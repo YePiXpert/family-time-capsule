@@ -20,6 +20,7 @@
     "expo-document-picker": "~57.0.2",
     "expo-file-system": "~57.0.7",
     "expo-glass-effect": "~57.0.3",
+    "expo-haptics": "~57.0.3",
     "expo-image-manipulator": "~57.0.18",
     "expo-image-picker": "~57.0.18",
     "expo-local-authentication": "~57.0.3",

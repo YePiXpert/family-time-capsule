@@ -26,6 +26,7 @@ import {
   Page,
   Text,
   dateLabel,
+  hapticLight,
   messageOf,
   monthLabel,
   useStyles,
@@ -216,6 +217,7 @@ export function CaptureDock() {
           accessibilityLabel="记一刻"
           disabled={busy}
           onPress={() => {
+            hapticLight();
             setBusy(true);
             void beginDraft(store)
               .then((draftId) => nav.navigate("Editor", { draftId }))

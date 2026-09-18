@@ -40,6 +40,7 @@ import {
   Page,
   Text,
   dateLabel,
+  hapticLight,
   messageOf,
   monthLabel,
   serif,
@@ -244,6 +245,7 @@ function CapturePen() {
           accessibilityLabel="记一刻"
           disabled={busy}
           onPress={() => {
+            hapticLight();
             setBusy(true);
             void beginDraft(store)
               .then((draftId) => nav.navigate("Editor", { draftId }))
@@ -408,6 +410,7 @@ export function Shelf() {
               accessibilityRole="button"
               accessibilityLabel={`${milestoneLabel(milestone)}，记下这一天`}
               onPress={() => {
+                hapticLight();
                 void beginDraft(store)
                   .then((draftId) => nav.navigate("Editor", { draftId }))
                   .catch((e) => setError(messageOf(e)));
