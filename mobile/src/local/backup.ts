@@ -162,7 +162,10 @@ function readV2Head(h: Handle, size: number, head: Uint8Array) {
   const meta = decodeMetaV2(h.readBytes(metaBytes));
   if (meta.entityBytes > size - 12 - metaBytes)
     throw new Error("备份内容不完整。");
-  const entities = h.readBytes(meta.entityBytes);
+  // 全新的库一条实体都没有，这一段长度就是 0：别去读 0 字节，各平台的行为不一样。
+  const entities = meta.entityBytes
+    ? h.readBytes(meta.entityBytes)
+    : new Uint8Array(0);
   if (entities.length !== meta.entityBytes)
     throw new Error("备份内容不完整。");
   return { meta, entities, headerBytes: 12 + metaBytes + meta.entityBytes };
