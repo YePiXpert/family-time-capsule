@@ -30,6 +30,8 @@ export type RecordContent = {
   first: boolean;
   mediaIds: string[];
   coverId: string | null;
+  /** 出现的人物；旧记录无此字段。 */
+  personIds?: string[];
 };
 export type LocalRecord = RecordContent & {
   id: string;
@@ -81,6 +83,7 @@ export type LocalSeries = {
   items: SeriesItem[];
   updatedAt: string;
 };
+export type LocalPerson = { id: string; name: string };
 export type LocalProfile = {
   name: string;
   birthday: string;
@@ -99,6 +102,8 @@ export type Library = {
   selections: Record<string, SelectionSession>;
   /** 同款时光对比系列；旧库无此字段。 */
   series: Record<string, LocalSeries>;
+  /** 记录里出现的人物；旧库无此字段。 */
+  persons: Record<string, LocalPerson>;
   /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
   yearNotes: Record<string, string>;
   receivedShares: string[];
@@ -117,6 +122,7 @@ export const emptyLibrary = (): Library => ({
   albums: {},
   selections: {},
   series: {},
+  persons: {},
   yearNotes: {},
   receivedShares: [],
 });
@@ -126,6 +132,7 @@ export function normalizeLibrary(value: unknown): void {
   const s = value as Partial<Library>;
   if (s.yearNotes === undefined) s.yearNotes = {};
   if (s.series === undefined) s.series = {};
+  if (s.persons === undefined) s.persons = {};
 }
 export const emptyContent = (): RecordContent => ({
   title: "",
@@ -171,6 +178,12 @@ export function sortedRecords(s: Library): LocalRecord[] {
   return Object.values(s.records).sort(
     (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
   );
+}
+export function recordsOfPerson(
+  records: LocalRecord[],
+  personId: string,
+): LocalRecord[] {
+  return records.filter((r) => r.personIds?.includes(personId));
 }
 export function referencedMedia(s: Library): Set<string> {
   return new Set([
@@ -378,7 +391,9 @@ export function validateLibrary(value: unknown): asserts value is Library {
     typeof c.first === "boolean" &&
     ids(c.mediaIds) &&
     c.mediaIds.every((i) => !!s.media[i]) &&
-    (c.coverId === null || c.mediaIds.includes(c.coverId));
+    (c.coverId === null || c.mediaIds.includes(c.coverId)) &&
+    (c.personIds === undefined ||
+      (ids(c.personIds) && c.personIds.every((p) => !!s.persons[p])));
   for (const [key, r] of Object.entries(s.records))
     if (
       key !== r.id ||
@@ -476,6 +491,20 @@ export function validateLibrary(value: unknown): asserts value is Library {
         ) ||
         new Set(v.items.map((i) => i.month)).size !== v.items.length ||
         !Number.isFinite(Date.parse(v.updatedAt)),
+    )
+  )
+    return fail();
+  if (
+    !s.persons ||
+    typeof s.persons !== "object" ||
+    Array.isArray(s.persons) ||
+    !Object.keys(s.persons).every(id) ||
+    Object.entries(s.persons).some(
+      ([key, p]) =>
+        key !== p.id ||
+        !str(p.name) ||
+        p.name.trim().length < 1 ||
+        p.name.length > 50,
     )
   )
     return fail();

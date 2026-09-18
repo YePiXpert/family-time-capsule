@@ -121,6 +121,18 @@ export async function addToSeries(
     series.updatedAt = now();
   });
 }
+/** 新建人物（同名复用既有 id），供编辑器人物 chips 调用。 */
+export async function createPerson(store: LocalStore, name: string) {
+  return store.change((s) => {
+    const trimmed = name.trim().slice(0, 50);
+    if (!trimmed) throw new Error("先写上名字。");
+    const existing = Object.values(s.persons).find((p) => p.name === trimmed);
+    if (existing) return existing.id;
+    const id = newId();
+    s.persons[id] = { id, name: trimmed };
+    return id;
+  });
+}
 /** Native capture fields are optional and untrusted; keep only what validateLibrary would accept. */
 function shareItemPhotoMetadata(item: NativeShareItem): PhotoMetadata | undefined {
   const result: PhotoMetadata = {};

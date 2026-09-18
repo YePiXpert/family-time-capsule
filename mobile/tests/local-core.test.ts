@@ -8,6 +8,7 @@ import {
   emptyLibrary,
   finishSelection,
   monthOfItem,
+  recordsOfPerson,
   referencedMedia,
   saveRecord,
   validateLibrary,
@@ -585,6 +586,76 @@ describe("time series", () => {
         photoMetadata: { capturedAt: "2026-08-15T10:00:00.000Z" },
       }),
     ).toBe("2026-08");
+  });
+});
+
+describe("person tags", () => {
+  function personFixture() {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    s.persons.mom = { id: "mom", name: "妈妈" };
+    s.persons.grandma = { id: "grandma", name: "外婆" };
+    s.records.r!.personIds = ["mom", "grandma"];
+    return s;
+  }
+  it("roundtrips persons and record tags through the backup manifest", () => {
+    const s = personFixture();
+    validateLibrary(s);
+    const decoded = decodeManifest(encodeHeader(s).slice(12)).library;
+    expect(decoded.persons).toEqual(s.persons);
+    expect(decoded.records.r!.personIds).toEqual(["mom", "grandma"]);
+  });
+  it("rejects unknown persons, duplicates, and blank or overlong names", () => {
+    const unknown = personFixture();
+    unknown.records.r!.personIds = ["missing"];
+    expect(() => validateLibrary(unknown)).toThrow();
+    const duplicate = personFixture();
+    duplicate.records.r!.personIds = ["mom", "mom"];
+    expect(() => validateLibrary(duplicate)).toThrow();
+    const blank = personFixture();
+    blank.persons.blank = { id: "blank", name: "  " };
+    expect(() => validateLibrary(blank)).toThrow();
+    const overlong = personFixture();
+    overlong.persons.long = { id: "long", name: "长".repeat(51) };
+    expect(() => validateLibrary(overlong)).toThrow();
+  });
+  it("keeps personIds optional and opens stores written before persons existed", async () => {
+    const bare = personFixture();
+    delete bare.records.r!.personIds;
+    validateLibrary(bare);
+    const legacy = clone(personFixture()) as Partial<Library>;
+    delete legacy.persons;
+    legacy.records!.r!.personIds = undefined;
+    const store = new LocalStore({
+      read: async () => legacy,
+      write: async () => {},
+    });
+    await store.open();
+    expect(store.get().persons).toEqual({});
+    const manifest = JSON.parse(
+      new TextDecoder().decode(encodeHeader(bare).slice(12)),
+    ) as { library: Partial<Library> };
+    delete manifest.library.persons;
+    const decoded = decodeManifest(
+      new TextEncoder().encode(JSON.stringify(manifest)),
+    );
+    expect(decoded.library.persons).toEqual({});
+  });
+  it("filters records by person", () => {
+    const s = personFixture();
+    s.records.two = {
+      ...s.records.r!,
+      id: "two",
+      personIds: ["mom"],
+    };
+    const records = Object.values(s.records);
+    expect(recordsOfPerson(records, "mom").map((r) => r.id)).toEqual([
+      "r",
+      "two",
+    ]);
+    expect(recordsOfPerson(records, "grandma").map((r) => r.id)).toEqual([
+      "r",
+    ]);
   });
 });
 

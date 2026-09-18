@@ -1,6 +1,6 @@
 import { AIEditor } from "../ai/Editor";
 import { proposalPatch } from "../ai/state";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AppState,
@@ -21,7 +21,7 @@ import {
   type RecordDraft,
   type LocalMedia,
 } from "./model";
-import { newId, now } from "./services";
+import { newId, now, createPerson } from "./services";
 import { promptOf } from "./prompts";
 import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
@@ -61,7 +61,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [eventDate, setEventDate] = useState<number | null>(null),
     [allowExit, setAllowExit] = useState(false),
     [promptSeed, setPromptSeed] = useState(0),
-    [promptOff, setPromptOff] = useState(false);
+    [promptOff, setPromptOff] = useState(false),
+    [newPerson, setNewPerson] = useState("");
+  const personList = useMemo(
+    () => Object.values(state.persons).sort((a, b) => a.name.localeCompare(b.name, "zh")),
+    [state.persons],
+  );
   const nextAction = useRef<(() => void) | null>(null),
     operation = useRef(false);
   const { current, pendingMedia, verified, importedMedia, persist, persistDebounced, flush } =
@@ -651,6 +656,68 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   />
                 </>
               )}
+              <View style={{ gap: 8 }}>
+                <Text style={s.muted}>这一刻有谁（可选）</Text>
+                {personList.length > 0 && (
+                  <View style={s.row}>
+                    {personList.map((person) => {
+                      const selected = (
+                        draft.content.personIds ?? []
+                      ).includes(person.id);
+                      return (
+                        <Button
+                          key={person.id}
+                          compact
+                          title={person.name}
+                          selected={selected}
+                          testID={`person-chip-${person.id}`}
+                          onPress={() => {
+                            const currentIds = draft.content.personIds ?? [];
+                            change({
+                              personIds: selected
+                                ? currentIds.filter((id) => id !== person.id)
+                                : [...currentIds, person.id],
+                            });
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
+                )}
+                <View style={s.row}>
+                  <View style={{ flex: 1, minWidth: 200 }}>
+                    <Field
+                      label="添加人物"
+                      hideLabel
+                      testID="person-new-name"
+                      placeholder="例如：妈妈、外婆、小姨"
+                      value={newPerson}
+                      onChangeText={setNewPerson}
+                      editable={!busy}
+                    />
+                  </View>
+                  <Button
+                    title="添加"
+                    testID="person-new-add"
+                    disabled={!newPerson.trim() || busy}
+                    onPress={() => {
+                      void run(async () => {
+                        const id = await createPerson(store, newPerson);
+                        const currentIds = current.current?.content.personIds ?? [];
+                        await persist({
+                          ...current.current!,
+                          content: {
+                            ...current.current!.content,
+                            personIds: [...new Set([...currentIds, id])],
+                          },
+                          updatedAt: now(),
+                        });
+                        setNewPerson("");
+                      });
+                    }}
+                  />
+                </View>
+              </View>
               <Button
                 title="从文件添加素材"
                 icon="file"

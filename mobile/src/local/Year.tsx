@@ -5,6 +5,7 @@ import { randomUUID } from "expo-crypto";
 import { useLibrary, useStore } from "./context";
 import {
   monthKey,
+  recordsOfPerson,
   recordTitle,
   sortedRecords,
   yearKey,
@@ -103,7 +104,8 @@ export function Year({ route }: Props<"Year">) {
     { large } = useTheme();  const { width, fontScale } = useWindowDimensions(),
     insets = useSafeAreaInsets();
   const year = route.params.year;
-  const [replayOpen, setReplayOpen] = useState(false);
+  const [replayOpen, setReplayOpen] = useState(false),
+    [person, setPerson] = useState("");
   const records = useMemo(
     () => sortedRecords(state).filter((r) => yearKey(r.date) === year),
     [state, year],
@@ -112,10 +114,16 @@ export function Year({ route }: Props<"Year">) {
     () => replayPhotos(records, state.media),
     [records, state.media],
   );
-  const firsts = records
+  const personList = Object.values(state.persons).sort((a, b) =>
+    a.name.localeCompare(b.name, "zh"),
+  );
+  const visibleRecords = person
+    ? recordsOfPerson(records, person)
+    : records;
+  const firsts = visibleRecords
     .filter((r) => r.first)
     .sort((a, b) => a.date.localeCompare(b.date));
-  const months = [...new Set(records.map((r) => monthKey(r.date)))];
+  const months = [...new Set(visibleRecords.map((r) => monthKey(r.date)))];
   const photos = records.reduce(
     (n, r) =>
       n + r.mediaIds.filter((id) => state.media[id]?.kind === "image").length,
@@ -164,6 +172,25 @@ export function Year({ route }: Props<"Year">) {
         />
       </View>
       {replayOpen && <ReplayModal year={year} onClose={() => setReplayOpen(false)} />}
+      {personList.length > 0 && (
+        <View style={s.row}>
+          <Button
+            title="全部人物"
+            compact
+            selected={!person}
+            onPress={() => setPerson("")}
+          />
+          {personList.map((p) => (
+            <Button
+              key={p.id}
+              compact
+              title={p.name}
+              selected={person === p.id}
+              onPress={() => setPerson(person === p.id ? "" : p.id)}
+            />
+          ))}
+        </View>
+      )}
       <YearNote year={year} />
       {firsts.length > 0 && (
         <View style={{ gap: 12 }}>
@@ -193,7 +220,7 @@ export function Year({ route }: Props<"Year">) {
           <Text style={[s.muted, { fontFamily: serif }]}>这一年的月册</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
             {months.map((m, i) => {
-              const monthRecords = records.filter(
+              const monthRecords = visibleRecords.filter(
                 (r) => monthKey(r.date) === m,
               );
               return (
