@@ -41,17 +41,18 @@ function Ornament({ y }: { y: number }) {
 
 /**
  * 一页纸的离屏渲染。坐标全部来自 book.ts 的纯排版，这里只管画。
- * 取图时给 toDataURL 显式尺寸，所以成品分辨率由调用方定，不随设备像素比漂。
+ * `points` 是这张舞台的点数：iOS 按它决定成品像素，安卓只看 toDataURL 的入参，
+ * 两边的换算都在 book-export.ts 的 captureGeometry 里。
  */
 export const BookPageCard = forwardRef<
   SvgRef,
-  { page: Page; photos: Record<string, string>; pixels: number }
->(function BookPageCard({ page, photos, pixels }, ref) {
+  { page: Page; photos: Record<string, string>; points: number }
+>(function BookPageCard({ page, photos, points }, ref) {
   return (
     <Svg
       ref={ref}
-      width={pixels}
-      height={pixels}
+      width={points}
+      height={points}
       viewBox={`0 0 ${SHEET_PT} ${SHEET_PT}`}
     >
       <Defs>
@@ -100,6 +101,18 @@ export const BookPageCard = forwardRef<
             />
           );
         }
+        if (element.kind === "scrim")
+          return (
+            <Rect
+              key={index}
+              x={0}
+              y={element.y}
+              width={SHEET_PT}
+              height={element.h}
+              fill={PAPER}
+              opacity={0.9}
+            />
+          );
         if (element.kind === "ornament") return <Ornament key={index} y={element.y} />;
         if (element.kind === "rule")
           return (

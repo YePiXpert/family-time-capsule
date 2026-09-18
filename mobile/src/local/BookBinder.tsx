@@ -187,7 +187,7 @@ export function useBookBinder() {
             ref={svg}
             page={job.layout.pages[index]!}
             photos={staged}
-            pixels={STAGE_PT}
+            points={STAGE_PT}
           />
         </View>
       ) : null,

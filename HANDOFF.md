@@ -18,7 +18,7 @@
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install。
 4. 验证三件套：npm test、npm run typecheck、npm run lint（根目录命令即可，全部应绿；
-   mobile 194 个测试、server 13 个）。
+   mobile 195 个测试、server 13 个）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
 第二步·继续 Build 65：
