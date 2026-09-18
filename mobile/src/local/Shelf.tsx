@@ -51,7 +51,6 @@ import {
 import { JournalIcon } from "../components/JournalIcon";
 import { Photo } from "./Media";
 
-
 /** 双线印章圆环：扉页名字首字与年度册封面共用。 */
 export function Stamp({
   size,
