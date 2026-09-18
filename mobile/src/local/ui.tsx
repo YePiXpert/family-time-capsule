@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AccessibilityInfo,
   Platform,
@@ -158,7 +158,7 @@ export function Text({ style, ...props }: TextProps) {
     />
   );
 }
-export function GlassBackdrop() {
+export const GlassBackdrop = memo(function GlassBackdrop() {
   const { colors, dark } = useTheme();
   const { width, height } = useWindowDimensions();
   const glowOpacity = dark ? 0.5 : 0.55;
@@ -218,7 +218,7 @@ export function GlassBackdrop() {
       </Svg>
     </View>
   );
-}
+});
 export function Glass({
   children,
   style,
