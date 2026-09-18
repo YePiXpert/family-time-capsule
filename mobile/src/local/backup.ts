@@ -3,7 +3,7 @@ import { randomUUID } from "expo-crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import * as Sharing from "expo-sharing";
-import { APP_NAME } from "./brand";
+import { APP_NAME, BACKUP_PREFIX } from "./brand";
 import {
   backupDirectory,
   deleteMediaFiles,
@@ -34,11 +34,13 @@ import {
 } from "./model";
 import type { LocalStore } from "./store";
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-/** Local retention names sort lexicographically in creation order, across formats. */
+/** 名字里的 YYYYMMDD-HHMM 段就是创建顺序；前缀改过名，所以不能拿整个文件名比大小。 */
 export function backupFileName(at: Date, id: string): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `xiaomei-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}-${id}.xmb`;
+  return `${BACKUP_PREFIX}-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}-${id}.xmb`;
 }
+/** 备份名里的时间戳；取不到的（外部改过名的文件）排到最后。 */
+const backupStamp = (name: string) => name.match(/-(\d{8}-\d{4})-/)?.[1] ?? "";
 /** Calendar days since the last export; null when there has never been a valid one. */
 export function daysSinceExport(
   state: Pick<Library, "lastExportAt">,
@@ -60,7 +62,11 @@ export function pruneBackups(keep = 3, protect?: File): void {
       (f): f is File =>
         f instanceof File && f.name.endsWith(".xmb") && f.uri !== protect?.uri,
     )
-    .sort((a, b) => b.name.localeCompare(a.name));
+    .sort(
+      (a, b) =>
+        backupStamp(b.name).localeCompare(backupStamp(a.name)) ||
+        b.name.localeCompare(a.name),
+    );
   // 同一分钟内名字的字典序不等于创建顺序，因此给刚创建的这份预留一个保留位，
   // 再按名字清掉最旧的其余备份。
   const doomed = protect ? others.slice(keep - 1) : others.slice(keep);

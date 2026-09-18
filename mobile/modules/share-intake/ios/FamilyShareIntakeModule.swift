@@ -3,6 +3,10 @@ import Foundation
 import ImageIO
 
 private let shareGroup = "group.app.familytimecapsule.mobile.share"
+/// 与 JS 的 brand.ts 对齐；旧名字只出现在一次性迁移与排空旧收件箱的路上。
+private let documentsRoot = "anan-v1"
+private let sharedInbox = "AnanLocalInbox"
+private let legacySharedInbox = "XiaomeiLocalInbox"
 
 public final class FamilyShareIntakeModule: Module {
   public func definition() -> ModuleDefinition {
@@ -59,7 +63,7 @@ public final class FamilyShareIntakeModule: Module {
       in: .userDomainMask,
       appropriateFor: nil,
       create: true)
-    let directory = documents.appendingPathComponent("xiaomei-v1/intake/manifests", isDirectory: true)
+    let directory = documents.appendingPathComponent("\(documentsRoot)/intake/manifests", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory
   }
@@ -70,7 +74,7 @@ public final class FamilyShareIntakeModule: Module {
       in: .userDomainMask,
       appropriateFor: nil,
       create: true)
-    let directory = documents.appendingPathComponent("xiaomei-v1/intake/originals", isDirectory: true)
+    let directory = documents.appendingPathComponent("\(documentsRoot)/intake/originals", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory
   }
@@ -86,7 +90,13 @@ public final class FamilyShareIntakeModule: Module {
   private func takeOverSharedManifests() throws {
     guard let container = FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: shareGroup) else { return }
-    let inbox = container.appendingPathComponent("XiaomeiLocalInbox", isDirectory: true)
+    // 改名前排队的分享还躺在旧收件箱里，一并排空；扩展只往新的那个写。
+    for name in [sharedInbox, legacySharedInbox] {
+      try takeOverSharedManifests(in: container.appendingPathComponent(name, isDirectory: true))
+    }
+  }
+
+  private func takeOverSharedManifests(in inbox: URL) throws {
     guard let batches = try? FileManager.default.contentsOfDirectory(
       at: inbox,
       includingPropertiesForKeys: [.contentModificationDateKey]) else { return }

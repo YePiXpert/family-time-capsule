@@ -439,8 +439,11 @@ export default function App() {
   const initialize = useCallback(async () => {
     setError("");
     try {
+      // 先开库（里面做改名迁移），再建目录：反过来会先把新名字的目录建出来，
+      // 改名那一步就以为新目录已经有人了，直接跳过。
+      const opened = await openLocalStore();
       ensureDirectories();
-      setStore(await openLocalStore());
+      setStore(opened);
     } catch (e) {
       setError(messageOf(e));
     }

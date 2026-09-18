@@ -97,7 +97,7 @@ def make_photo():
 def seed(container: Path, database: Path, records: int = 122):
     """records 是库内记录总数，含 fixture 与 earlier 两条固定记录。
     默认 122 条与原生冒烟的断言一致；量规模时传大数字，别改默认值。"""
-    s = empty(); root = container / 'Documents' / 'xiaomei-v1'; media = root / 'media'; media.mkdir(parents=True, exist_ok=True)
+    s = empty(); root = container / 'Documents' / 'anan-v1'; media = root / 'media'; media.mkdir(parents=True, exist_ok=True)
     s['profile']['birthday'] = '2024-06-15'
     photo = make_photo(); (media / 'fixture.png').write_bytes(photo)
     s['media']['photo'] = dict(id='photo', file='fixture.png', name='Synthetic colors.png', kind='image', bytes=len(photo), sha256=hashlib.sha256(photo).hexdigest())
