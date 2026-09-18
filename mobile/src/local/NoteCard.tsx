@@ -67,21 +67,8 @@ export function NoteCard({
       </View>
       {editing ? (
         <>
-          <Field
-            label={heading}
-            hideLabel
-            placeholder={placeholder}
-            value={draft}
-            onChangeText={setDraft}
-            multiline
-            maxLength={NOTE_LIMIT}
-            testID={`${testPrefix}-input`}
-            style={{ minHeight: 120, textAlignVertical: "top" }}
-          />
-          <Text style={s.muted}>
-            {draft.trim().length} / {NOTE_LIMIT} 字
-          </Text>
-          <ErrorText message={error} />
+          {/* 多行输入聚焦后键盘会盖住卡片下半部分。动作行放在输入框上方，
+              「保存寄语」在键盘弹起时仍然可见可点（DESIGN.md：键盘下主要动作仍可用）。 */}
           <View style={s.row}>
             <Button
               title="保存寄语"
@@ -112,6 +99,21 @@ export function NoteCard({
               }}
             />
           </View>
+          <ErrorText message={error} />
+          <Text style={s.muted}>
+            {draft.trim().length} / {NOTE_LIMIT} 字
+          </Text>
+          <Field
+            label={heading}
+            hideLabel
+            placeholder={placeholder}
+            value={draft}
+            onChangeText={setDraft}
+            multiline
+            maxLength={NOTE_LIMIT}
+            testID={`${testPrefix}-input`}
+            style={{ minHeight: 120, textAlignVertical: "top" }}
+          />
         </>
       ) : (
         <>
