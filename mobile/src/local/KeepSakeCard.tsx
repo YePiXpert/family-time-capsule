@@ -26,7 +26,13 @@ import {
   wrapText,
 } from "./keepsake";
 
-const { ink: INK, muted: MUTED, accent: ACCENT, line: LINE } = paperPalette;
+const {
+  ink: INK,
+  muted: MUTED,
+  accent: ACCENT,
+  line: LINE,
+  paper: PAPER,
+} = paperPalette;
 
 function OrnamentLine({ y }: { y: number }) {
   const midX = CARD_WIDTH / 2;
@@ -88,7 +94,7 @@ export const KeepSakeCard = forwardRef<
         y={0}
         width={layout.width}
         height={layout.height}
-        fill="#FAF5EC"
+        fill={PAPER}
       />
       <Rect
         x={26}
@@ -218,7 +224,7 @@ export const SeriesStrip = forwardRef<
         y={0}
         width={layout.width}
         height={layout.height}
-        fill="#FAF5EC"
+        fill={PAPER}
       />
       <Rect
         x={26}
