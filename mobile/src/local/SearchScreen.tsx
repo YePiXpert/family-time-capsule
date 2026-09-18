@@ -21,8 +21,9 @@ export function SearchScreen(_: Props<"Search">) {
   const [query, setQuery] = useState(""),
     [first, setFirst] = useState(false),
     [media, setMedia] = useState<MediaFilter>("any"),
-    [year, setYear] = useState("");
-  const { results, years } = useMemo(() => {
+    [year, setYear] = useState(""),
+    [person, setPerson] = useState("");
+  const { results, years, persons } = useMemo(() => {
     const all = sortedRecords(state);
     const kinds = Object.fromEntries(
       Object.values(state.media).map((m) => [m.id, m.kind] as const),
@@ -31,15 +32,19 @@ export function SearchScreen(_: Props<"Search">) {
       results: searchRecords(
         all,
         query,
-        { first, media, year: year || undefined },
+        { first, media, year: year || undefined, person: person || undefined },
         kinds,
       ),
       years: [...new Set(all.map((r) => r.date.slice(0, 4)))].sort((a, b) =>
         b.localeCompare(a),
       ),
+      persons: Object.values(state.persons).sort((a, b) =>
+        a.name.localeCompare(b.name, "zh"),
+      ),
     };
-  }, [state, query, first, media, year]);
-  const filtered = query.trim() || first || media !== "any" || !!year;
+  }, [state, query, first, media, year, person]);
+  const filtered =
+    query.trim() || first || media !== "any" || !!year || !!person;
   return (
     <Page scroll={false}>
       <Field
@@ -62,6 +67,11 @@ export function SearchScreen(_: Props<"Search">) {
             title: `${y} 年`,
             active: year === y,
           })),
+          ...persons.map((p) => ({
+            key: `p-${p.id}`,
+            title: p.name,
+            active: person === p.id,
+          })),
           { key: "f-first", title: "第一次", active: first },
           { key: "m-av", title: "有声像", active: media === "av" },
           { key: "m-none", title: "纯文字", active: media === "none" },
@@ -76,6 +86,9 @@ export function SearchScreen(_: Props<"Search">) {
               if (item.key.startsWith("y-")) {
                 const y = item.key.slice(2);
                 setYear(year === y ? "" : y);
+              } else if (item.key.startsWith("p-")) {
+                const p = item.key.slice(2);
+                setPerson(person === p ? "" : p);
               } else if (item.key === "f-first") setFirst(!first);
               else if (item.key === "m-av")
                 setMedia(media === "av" ? "any" : "av");

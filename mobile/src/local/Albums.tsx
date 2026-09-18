@@ -243,9 +243,13 @@ export function Picker({ route, navigation }: Props<"Picker">) {
     offset = useRef(q?.offset ?? 0),
     offsetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [person, setPerson] = useState("");
   const records = sortedRecords(state),
     months = [...new Set(records.map((r) => monthKey(r.date)))];
+  const personList = Object.values(state.persons).sort((a, b) =>
+      a.name.localeCompare(b.name, "zh"),
+    );
   const patch = (fn: (next: NonNullable<typeof q>) => void) => {
     void store
       .change((s) => {
@@ -318,12 +322,35 @@ export function Picker({ route, navigation }: Props<"Picker">) {
             ))}
           </View>
         </ScrollView>
+        {personList.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={s.row}>
+              <Button
+                title="全部人物"
+                selected={!person}
+                onPress={() => setPerson("")}
+              />
+              {personList.map((p) => (
+                <Button
+                  key={p.id}
+                  title={p.name}
+                  selected={person === p.id}
+                  onPress={() => setPerson(person === p.id ? "" : p.id)}
+                />
+              ))}
+            </View>
+          </ScrollView>
+        )}
         <ErrorText message={error} />
       </View>
       <FlatList
         ref={list}
         testID="material-list"
-        data={records.filter((r) => !q.month || monthKey(r.date) === q.month)}
+        data={records.filter(
+          (r) =>
+            (!q.month || monthKey(r.date) === q.month) &&
+            (!person || r.personIds?.includes(person)),
+        )}
         keyExtractor={(r) => r.id}
         contentContainerStyle={{ paddingHorizontal: 20 }}
         onContentSizeChange={() => {

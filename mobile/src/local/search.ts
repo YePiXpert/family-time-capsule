@@ -1,7 +1,12 @@
 import { yearKey, type LocalRecord } from "./model";
 
 export type MediaFilter = "any" | "av" | "none";
-export type SearchFilters = { first?: boolean; media?: MediaFilter; year?: string };
+export type SearchFilters = {
+  first?: boolean;
+  media?: MediaFilter;
+  year?: string;
+  person?: string;
+};
 
 function hasAV(record: LocalRecord, kinds: Record<string, string>): boolean {
   return record.mediaIds.some((id) => {
@@ -23,6 +28,8 @@ export function searchRecords(
     .filter((r) => {
       if (filters.first && !r.first) return false;
       if (filters.year && yearKey(r.date) !== filters.year) return false;
+      if (filters.person && !r.personIds?.includes(filters.person))
+        return false;
       if (media === "av" && !hasAV(r, kinds)) return false;
       if (media === "none" && r.mediaIds.length) return false;
       if (!needle) return true;

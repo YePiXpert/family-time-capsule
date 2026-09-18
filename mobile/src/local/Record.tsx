@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Platform, Pressable, View } from "react-native";
+import { Alert, Platform, Pressable, StyleSheet, View } from "react-native";
 import type { Svg } from "react-native-svg";
 import * as Location from "expo-location";
 import { useLibrary, useStore } from "./context";
@@ -150,6 +150,27 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           {record.first ? " · 第一次" : ""}
         </Text>
       </View>
+      {(record.personIds?.length ?? 0) > 0 && (
+        <View style={s.row}>
+          {record.personIds!
+            .map((id) => state.persons[id])
+            .filter((p): p is NonNullable<typeof p> => !!p)
+            .map((person) => (
+              <View
+                key={person.id}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 3,
+                  borderRadius: 12,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: colors.glassLine,
+                }}
+              >
+                <Text style={s.muted}>{person.name}</Text>
+              </View>
+            ))}
+        </View>
+      )}
       <Text style={s.title}>{recordTitle(record)}</Text>
       <View style={s.row}>
         <Button
