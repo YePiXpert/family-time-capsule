@@ -188,6 +188,25 @@ describe("成册版面", () => {
     expect(layout.pages.map((p) => p.kind)).toEqual(["cover", "title", "colophon"]);
   });
 
+  it("满版封面的书名垫着纸色横带，深色照片吞不掉它", () => {
+    const cover = layoutBook(input({ cover: { key: "c", aspect: 1 } })).pages[0]!;
+    const photoAt = cover.elements.findIndex((e) => e.kind === "photo");
+    const scrimAt = cover.elements.findIndex((e) => e.kind === "scrim");
+    const titleAt = cover.elements.findIndex((e) => e.kind === "text");
+    // 画的顺序就是叠的顺序：照片、横带、书名。
+    expect(photoAt).toBeGreaterThanOrEqual(0);
+    expect(scrimAt).toBeGreaterThan(photoAt);
+    expect(titleAt).toBeGreaterThan(scrimAt);
+    const scrim = cover.elements[scrimAt]!;
+    const title = cover.elements[titleAt]!;
+    if (scrim.kind !== "scrim" || title.kind !== "text")
+      throw new Error("封面少了横带或书名");
+    // 横带压到纸的下边，裁切之后不会露出一条缝。
+    expect(scrim.y + scrim.h).toBeCloseTo(SHEET_PT, 6);
+    expect(title.y).toBeGreaterThan(scrim.y);
+    expect(title.y).toBeLessThan(scrim.y + scrim.h);
+  });
+
   it("版位像素按 300 DPI 算，取版位长边", () => {
     const layout = layoutBook(input({ cover: { key: "c", aspect: 1 } }));
     // 封面满版压到出血边，所以要的就是整张纸。

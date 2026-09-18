@@ -69,6 +69,8 @@ export type BookElement =
       tone: "body" | "muted" | "accent";
     }
   | { kind: "stamp"; cx: number; cy: number; r: number; text: string }
+  /** 满版封面上垫在书名底下的纸色横带：照片深一点，黑字就读不出来了。 */
+  | { kind: "scrim"; y: number; h: number }
   | { kind: "ornament"; y: number }
   | { kind: "rule"; y: number };
 export type BookPageKind =
@@ -220,6 +222,8 @@ export function layoutBook(input: BookInput): BookLayout {
       w: SHEET_PT,
       h: SHEET_PT,
     });
+    const band = BLEED_PT + TRIM_PT - 40 * MM;
+    cover.elements.push({ kind: "scrim", y: band, h: SHEET_PT - band });
     cover.elements.push(
       text(input.title, middle, BLEED_PT + TRIM_PT - 24 * MM, TITLE_SIZE, {
         align: "center",
