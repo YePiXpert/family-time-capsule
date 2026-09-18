@@ -86,7 +86,23 @@ try:
     restart();tap(f"volume-year-{time.strftime('%Y')}")
     tap('year-yearbook');tap('长图');time.sleep(8);shot('yearbook-share-sheet');adb('shell','input','keyevent','4')
     find('year-yearbook');yearbookExport=True
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,widths=[320,390])
+    # 纪念册：一页 300 DPI 是 2433² 位图，安卓这一步最吃内存，必须真装订一本出来。
+    tap('year-yearbook');tap('纪念册 PDF')
+    tap('book-preview-next');shot('book-preview');tap('book-preview-bind')
+    find('year-book-cancel')
+    # 装订完会弹系统分享，盖住进度卡片；卡片从层级里消失就是这一页取完了最后一页。
+    for _ in range(300):
+        try:binding=any(matches(n,'year-book-cancel') for n in hierarchy().iter('node'))
+        except Exception:binding=True  # dump 抖动不算装订失败
+        if not binding:break
+        time.sleep(1)
+    else:raise AssertionError('Book binding never finished')
+    shot('book-share-sheet');adb('shell','input','keyevent','4');time.sleep(2)
+    # 导出失败只在页面上留一行红字，截图看不出来，显式断言。
+    broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
+    assert not broken,f'Book export reported {broken}'
+    find('year-yearbook');bookExport=True
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')
