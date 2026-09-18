@@ -14,7 +14,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { useLibrary } from "./context";
@@ -32,6 +32,7 @@ const light = {
   glassLine: "#EBDFCC",
   accentGlass: "#B4553C",
   selectedGlass: "#F5E7D3",
+  scrim: "rgba(59,49,41,0.32)",
   glow1: "#F3D9B8",
   glow2: "#EFC5B0",
   glow3: "#E8DCC4",
@@ -50,9 +51,29 @@ const dark: typeof light = {
   glassLine: "#453A2E",
   accentGlass: "#E09B76",
   selectedGlass: "#3A2D20",
+  scrim: "rgba(0,0,0,0.45)",
   glow1: "#3A2A1C",
   glow2: "#40241C",
   glow3: "#2E2A1E",
+};
+// 全屏剧场（重放）固定为暖黑语义，不随浅色/深色切换；页面不得另写 hex。
+export const overlay = {
+  bg: "#14100C",
+  bgSoft: "rgba(20,16,12,0.95)",
+  ink: "#F2E9DC",
+  muted: "#B8A88F",
+  line: "rgba(255,255,255,0.12)",
+  card: "rgba(255,255,255,0.08)",
+  textScrim: "rgba(20,16,12,0.72)",
+};
+// 导出图片（纪念卡/年册）固定纸面浅色，与浅色色板单源。
+export const paperPalette = {
+  ink: light.ink,
+  muted: light.muted,
+  accent: light.accent,
+  line: light.line,
+  paper: light.paper,
+  emptyCell: "#F5EDE1",
 };
 export const serif = Platform.select({ ios: "Georgia", android: "serif" });
 const ThemeContext = createContext({
@@ -66,16 +87,16 @@ export function LocalTheme({ children }: { children: ReactNode }) {
   const isDark =
     s.settings.theme === "dark" ||
     (s.settings.theme === "auto" && system === "dark");
+  const value = useMemo(
+    () => ({
+      colors: isDark ? dark : light,
+      large: s.settings.largeText,
+      dark: isDark,
+    }),
+    [isDark, s.settings.largeText],
+  );
   return (
-    <ThemeContext.Provider
-      value={{
-        colors: isDark ? dark : light,
-        large: s.settings.largeText,
-        dark: isDark,
-      }}
-    >
-      {children}
-    </ThemeContext.Provider>
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
 }
 export const useTheme = () => useContext(ThemeContext);
@@ -83,6 +104,7 @@ export function Text({ style, ...props }: TextProps) {
   const { colors, large } = useTheme();
   return (
     <NativeText
+      maxFontSizeMultiplier={1.6}
       {...props}
       style={[
         {
@@ -237,7 +259,7 @@ export function Ornament() {
   );
 }
 export function useStyles() {
-  const { colors: c, dark } = useTheme();
+  const { colors: c, dark, large } = useTheme();
   return useMemo(
     () => {
       const cardShadow: ViewStyle = {
@@ -265,21 +287,25 @@ export function useStyles() {
           gap: 8,
         },
         title: {
-          fontSize: 24,
-          lineHeight: 34,
+          fontSize: large ? 28 : 24,
+          lineHeight: large ? 38 : 34,
           fontWeight: "600",
           fontFamily: serif,
           letterSpacing: 0.3,
           color: c.ink,
         },
         heading: {
-          fontSize: 18,
-          lineHeight: 27,
+          fontSize: large ? 21 : 18,
+          lineHeight: large ? 31 : 27,
           fontWeight: "600",
           fontFamily: serif,
           letterSpacing: 0.3,
         },
-        muted: { fontSize: 13, lineHeight: 21, color: c.muted },
+        muted: {
+          fontSize: large ? 15 : 13,
+          lineHeight: large ? 24 : 21,
+          color: c.muted,
+        },
         input: {
           backgroundColor: c.glass,
           color: c.ink,
@@ -355,7 +381,7 @@ export function useStyles() {
         },
       });
     },
-    [c, dark],
+    [c, dark, large],
   );
 }
 export function Page({
@@ -454,6 +480,30 @@ export function Button({
         </Text>
       </Glass>
     </Pressable>
+  );
+}
+export function BottomBar({
+  children,
+  gap = 8,
+}: {
+  children: ReactNode;
+  gap?: number;
+}) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={{
+        padding: 16,
+        paddingBottom: 16 + insets.bottom,
+        gap,
+        backgroundColor: colors.glass,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: colors.glassLine,
+      }}
+    >
+      {children}
+    </View>
   );
 }
 export function IconButton({

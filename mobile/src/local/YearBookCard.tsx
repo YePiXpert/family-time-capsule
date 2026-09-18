@@ -15,13 +15,16 @@ import {
   layoutYearbook,
   type YearbookInput,
 } from "./yearbook";
+import { paperPalette } from "./ui";
 
-const INK = "#3B3129";
-const MUTED = "#7A6A58";
-const ACCENT = "#B4553C";
-const LINE = "#EBDFCC";
-const PAPER = "#FAF5EC";
-const EMPTY_CELL = "#F5EDE1";
+const {
+  ink: INK,
+  muted: MUTED,
+  accent: ACCENT,
+  line: LINE,
+  paper: PAPER,
+  emptyCell: EMPTY_CELL,
+} = paperPalette;
 const PADDING_X = 48 + 6;
 
 export type YearbookPhoto = { uri: string; aspect: number };

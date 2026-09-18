@@ -203,7 +203,7 @@ export function Volume({
 function CapturePen() {
   const store = useStore(),
     nav = useNav(),
-    { colors } = useTheme();
+    { colors, dark } = useTheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -255,7 +255,7 @@ function CapturePen() {
             justifyContent: "center",
             backgroundColor: colors.accent,
             opacity: busy ? 0.5 : 1,
-            shadowColor: "#000000",
+            shadowColor: dark ? "#000000" : "#7A5C3E",
             shadowOffset: { width: 0, height: 4 },
             shadowOpacity: 0.25,
             shadowRadius: 10,

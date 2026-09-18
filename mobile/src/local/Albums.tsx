@@ -16,6 +16,7 @@ import { beginSelection, newId, now } from "./services";
 import { finishSelection, monthKey, sortedRecords } from "./model";
 import type { Props } from "./navigation";
 import {
+  BottomBar,
   Button,
   ErrorText,
   Field,
@@ -391,15 +392,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
           </View>
         }
       />
-      <View
-        style={{
-          padding: 20,
-          gap: 8,
-          backgroundColor: colors.glass,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.glassLine,
-        }}
-      >
+      <BottomBar>
         <Text>已选 {q.selected.length} 条</Text>
         <Button
           title={q.albumId ? "加入此相册" : "下一步"}
@@ -419,7 +412,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
               .finally(() => setBusy(false));
           }}
         />
-      </View>
+      </BottomBar>
     </Page>
   );
 }
