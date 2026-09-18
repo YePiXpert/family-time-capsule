@@ -9,6 +9,7 @@ import {
 import Animated, {
   FadeInUp,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
@@ -112,13 +113,18 @@ export function Volume({
 }) {
   const s = useStyles(),
     { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
   return (
     <Animated.View
-      entering={FadeInUp.delay(Math.min(index, 8) * 60).duration(320)}
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInUp.delay(Math.min(index, 8) * 60).duration(320)
+      }
       style={[{ width, marginBottom: 24 }, pressStyle]}
     >
       <Pressable
@@ -127,10 +133,12 @@ export function Volume({
         accessibilityLabel={`${title}，${caption}`}
         onPress={onPress}
         onPressIn={() => {
+          if (reduceMotion) return;
           // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
           scale.value = withSpring(0.96, PRESS_SPRING);
         }}
         onPressOut={() => {
+          if (reduceMotion) return;
           // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
           scale.value = withSpring(1, PRESS_SPRING);
         }}
@@ -168,7 +176,7 @@ export function Volume({
                 <Text
                   style={{
                     fontFamily: serif,
-                    fontSize: stamp.length > 3 ? 15 : 19,
+                    fontSize: stamp.length > 3 ? 13 : 18,
                     color: colors.accent,
                     fontWeight: "600",
                     letterSpacing: 0.3,
@@ -207,6 +215,7 @@ function CapturePen() {
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const reduceMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -224,7 +233,7 @@ function CapturePen() {
     >
       <ErrorText message={error} />
       <Animated.View
-        entering={FadeInUp.delay(240).duration(360)}
+        entering={reduceMotion ? undefined : FadeInUp.delay(240).duration(360)}
         style={pressStyle}
       >
         <Pressable
@@ -240,10 +249,12 @@ function CapturePen() {
               .finally(() => setBusy(false));
           }}
           onPressIn={() => {
+            if (reduceMotion) return;
             // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
             scale.value = withSpring(0.92, PRESS_SPRING);
           }}
           onPressOut={() => {
+            if (reduceMotion) return;
             // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
             scale.value = withSpring(1, PRESS_SPRING);
           }}
@@ -277,7 +288,9 @@ export function Shelf() {
     { colors, large } = useTheme();
   const { width, fontScale } = useWindowDimensions(),
     insets = useSafeAreaInsets();
-  const columns = large || fontScale >= 1.4 ? 1 : 2;
+  const columns = large || fontScale >= 1.3 ? 1 : 2;
+  const reduceMotion = useReducedMotion();
+  const entrance = reduceMotion ? undefined : FadeInUp.duration(320);
   const volumeWidth =
     (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
   const [draftsOpen, setDraftsOpen] = useState(false),
@@ -369,7 +382,7 @@ export function Shelf() {
           />
         </View>
         {milestone && (
-          <Animated.View entering={FadeInUp.duration(320)}>
+          <Animated.View entering={entrance}>
             <Pressable
               testID="milestone-card"
               accessibilityRole="button"
@@ -380,7 +393,7 @@ export function Shelf() {
                   .catch((e) => setError(messageOf(e)));
               }}
             >
-              <Glass radius={16} style={{ padding: 16, gap: 10 }}>
+              <Glass radius={16} style={{ padding: 16, gap: 8 }}>
                 <View
                   style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
                 >
@@ -412,7 +425,7 @@ export function Shelf() {
                     <Text
                       style={{
                         fontFamily: serif,
-                        fontSize: milestone!.kind === "hundred" ? 14 : 17,
+                        fontSize: milestone!.kind === "hundred" ? 13 : 18,
                         color: colors.accent,
                         fontWeight: "600",
                       }}
@@ -421,7 +434,9 @@ export function Shelf() {
                     </Text>
                   </View>
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Text style={[s.muted, { color: colors.accent }]}>
+                    <Text
+                      style={[s.muted, { color: colors.accent, fontWeight: "600" }]}
+                    >
                       {milestoneLabel(milestone!)}
                     </Text>
                     <Text style={s.heading}>把今天好好记下来</Text>
@@ -432,7 +447,7 @@ export function Shelf() {
           </Animated.View>
         )}
         {backupDue && (
-          <Animated.View entering={FadeInUp.duration(320)}>
+          <Animated.View entering={entrance}>
             <Pressable
               testID="backup-reminder"
               accessibilityRole="button"
@@ -462,8 +477,8 @@ export function Shelf() {
           </Animated.View>
         )}
         {nudge && !nudgeClosed && (
-          <Animated.View entering={FadeInUp.duration(320)}>
-            <Glass radius={16} style={{ padding: 16, gap: 10 }}>
+          <Animated.View entering={entrance}>
+            <Glass radius={16} style={{ padding: 16, gap: 8 }}>
               <View style={s.between}>
                 <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
                   <Text style={s.heading} testID="rhythm-nudge">
@@ -501,7 +516,7 @@ export function Shelf() {
           </Animated.View>
         )}
         {anniversaries.length > 0 && (
-          <Animated.View entering={FadeInUp.duration(320)}>
+          <Animated.View entering={entrance}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -529,7 +544,12 @@ export function Shelf() {
                         color={colors.accent}
                         size={18}
                       />
-                      <Text style={[s.muted, { color: colors.accent }]}>
+                      <Text
+                        style={[
+                          s.muted,
+                          { color: colors.accent, fontWeight: "600" },
+                        ]}
+                      >
                         {today.getFullYear() -
                           new Date(record.date).getFullYear()}{" "}
                         年前的今天

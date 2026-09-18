@@ -8,7 +8,6 @@ import {
   FlatList,
   Pressable,
   ScrollView,
-  StyleSheet,
   View,
 } from "react-native";
 import { useLibrary, useStore } from "./context";
@@ -24,7 +23,6 @@ import {
   Text,
   messageOf,
   useStyles,
-  useTheme,
 } from "./ui";
 import { RecordCard } from "./Home";
 import { NoteCard } from "./NoteCard";
@@ -241,8 +239,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
 export function Picker({ route, navigation }: Props<"Picker">) {
   const store = useStore(),
     state = useLibrary(),
-    s = useStyles(),
-    { colors } = useTheme();
+    s = useStyles();
   const q = state.selections[route.params.sessionId];
   const list = useRef<FlatList>(null),
     restored = useRef(false),

@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { AppState, Image, ScrollView, View } from "react-native";
+import { AppState, Image, Platform, ScrollView, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as Sharing from "expo-sharing";
@@ -153,6 +159,66 @@ function Video({ media }: { media: LocalMedia }) {
     </View>
   );
 }
+/** Android 原图查看：双指缩放、缩放后拖动、双击放大/还原（iOS 走 ScrollView 原生缩放）。 */
+function ZoomablePhoto({ media }: { media: LocalMedia }) {
+  const scale = useSharedValue(1),
+    savedScale = useSharedValue(1),
+    tx = useSharedValue(0),
+    ty = useSharedValue(0),
+    startX = useSharedValue(0),
+    startY = useSharedValue(0);
+  const reset = () => {
+    scale.value = withTiming(1);
+    tx.value = withTiming(0);
+    ty.value = withTiming(0);
+  };
+  const pinch = Gesture.Pinch()
+    .onStart(() => {
+      savedScale.value = scale.value;
+    })
+    .onUpdate((e) => {
+      scale.value = Math.min(4, Math.max(1, savedScale.value * e.scale));
+    })
+    .onEnd(() => {
+      if (scale.value <= 1) reset();
+    });
+  const pan = Gesture.Pan()
+    .minPointers(1)
+    .maxPointers(1)
+    .onStart(() => {
+      startX.value = tx.value;
+      startY.value = ty.value;
+    })
+    .onUpdate((e) => {
+      if (scale.value <= 1) return;
+      tx.value = startX.value + e.translationX;
+      ty.value = startY.value + e.translationY;
+    });
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (scale.value > 1) reset();
+      else scale.value = withTiming(2);
+    });
+  const gesture = Gesture.Race(
+    doubleTap,
+    Gesture.Simultaneous(pinch, pan),
+  );
+  const style = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: tx.value },
+      { translateY: ty.value },
+      { scale: scale.value },
+    ],
+  }));
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View style={style} collapsable={false}>
+        <Photo media={media} contain label="原图，双指可缩放" />
+      </Animated.View>
+    </GestureDetector>
+  );
+}
 export function MediaScreen({ route, navigation }: Props<"Media">) {
   const state = useLibrary(),
     media = state.media[route.params.id];
@@ -198,9 +264,13 @@ export function MediaScreen({ route, navigation }: Props<"Media">) {
         </View>
       )}
       {media.kind === "image" ? (
-        <ScrollView maximumZoomScale={4} minimumZoomScale={1}>
-          <Photo media={media} contain />
-        </ScrollView>
+        Platform.OS === "ios" ? (
+          <ScrollView maximumZoomScale={4} minimumZoomScale={1}>
+            <Photo media={media} contain label="原图，双指可缩放" />
+          </ScrollView>
+        ) : (
+          <ZoomablePhoto media={media} />
+        )
       ) : media.kind === "audio" ? (
         <Audio media={media} />
       ) : media.kind === "video" ? (

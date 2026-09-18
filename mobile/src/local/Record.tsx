@@ -145,7 +145,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
             backgroundColor: colors.accent,
           }}
         />
-        <Text style={[s.muted, { color: colors.accent }]}>
+        <Text style={[s.muted, { color: colors.accent, fontWeight: "600" }]}>
           {dateLabel(record.date)}
           {record.first ? " · 第一次" : ""}
         </Text>
@@ -159,8 +159,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
               <View
                 key={person.id}
                 style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 3,
+                  paddingHorizontal: 12,
+                  paddingVertical: 4,
                   borderRadius: 12,
                   borderWidth: StyleSheet.hairlineWidth,
                   borderColor: colors.glassLine,

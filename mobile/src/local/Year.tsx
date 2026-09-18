@@ -155,7 +155,7 @@ export function Year({ route }: Props<"Year">) {
     (n, r) => n + r.title.trim().length + r.text.trim().length,
     0,
   );
-  const columns = large || fontScale >= 1.4 ? 1 : 2;
+  const columns = large || fontScale >= 1.3 ? 1 : 2;
   const volumeWidth =
     (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
   const stats = [
