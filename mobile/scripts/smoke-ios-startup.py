@@ -108,12 +108,12 @@ for result in request.results ?? [] {
         run("xcrun", "simctl", "terminate", udid, bundle)
         state = empty()
         write_state(db_path, state)
-        launch("saved-local-mode-empty", "小美的成长记")
+        launch("saved-local-mode-empty", "桉桉的成长记")
         run("xcrun", "simctl", "terminate", udid, bundle)
         state['records']['startup'] = record('startup', '今天，第一次向我挥手')
         write_state(db_path, state)
         for label in ("saved-local-mode-with-record", "local-mode-relaunch"):
-            launch(label, "小美的成长记")
+            launch(label, "桉桉的成长记")
             run("xcrun", "simctl", "terminate", udid, bundle)
             assert read_state(db_path) == state
         break_state(db_path)
@@ -122,21 +122,21 @@ for result in request.results ?? [] {
         assert broken_root(db_path) == 'broken'
         # Build 62 及更早的整库单行快照：开库应自动切成实体表，内容一条不差。
         write_legacy_state(db_path, state)
-        launch("legacy-snapshot-migrated", "小美的成长记")
+        launch("legacy-snapshot-migrated", "桉桉的成长记")
         run("xcrun", "simctl", "terminate", udid, bundle)
         assert read_state(db_path) == state
         report["legacySnapshotMigrated"] = True
         write_state(db_path, state)
-        launch("repaired-local-mode-relaunch", "小美的成长记")
+        launch("repaired-local-mode-relaunch", "桉桉的成长记")
         run("xcrun", "simctl", "terminate", udid, bundle)
         state['settings']['theme'] = 'dark'
         write_state(db_path, state)
-        launch("local-mode-dark", "小美的成长记")
+        launch("local-mode-dark", "桉桉的成长记")
         run("xcrun", "simctl", "terminate", udid, bundle)
         state['settings'] = dict(theme='light', largeText=True)
         write_state(db_path, state)
         run("xcrun", "simctl", "ui", udid, "content_size", "extra-extra-extra-large")
-        launch("local-mode-large-text", "小美的成长记")
+        launch("local-mode-large-text", "桉桉的成长记")
         run("xcrun", "simctl", "terminate", udid, bundle)
         assert read_state(db_path) == state
         report["localRecordsPreserved"] = True

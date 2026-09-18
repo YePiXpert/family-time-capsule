@@ -3,6 +3,7 @@ import { randomUUID } from "expo-crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import * as Sharing from "expo-sharing";
+import { APP_NAME } from "./brand";
 import {
   backupDirectory,
   deleteMediaFiles,
@@ -290,7 +291,7 @@ export async function inspectBackup(
       return await inspectV2(h, file, head, extract, written);
     if (isMagic(head, BACKUP_MAGIC))
       return await inspectV1(h, file, head, extract, written);
-    throw new Error("请选择小美成长记 .xmb 备份文件。");
+    throw new Error(`请选择${APP_NAME} .xmb 备份文件。`);
   } catch (e) {
     for (const f of written) if (f.exists) f.delete();
     throw e;

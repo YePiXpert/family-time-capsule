@@ -18,7 +18,7 @@ const months = (n: number, withPhoto: number[]) =>
 function input(overrides: Partial<YearbookInput> = {}): YearbookInput {
   return {
     year: "2026",
-    profileName: "小美",
+    profileName: "桉桉",
     stats: "12 段时光 · 20 张照片",
     note: "",
     months: [],

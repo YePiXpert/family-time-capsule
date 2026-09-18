@@ -27,6 +27,7 @@ import {
 } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
+import { APP_NAME, CHILD_FALLBACK } from "./brand";
 import { nudgeOf } from "./nudge";
 import { clusterPlaces } from "./places";
 import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
@@ -816,7 +817,7 @@ export function TitlePage() {
     s = useStyles(),
     { colors } = useTheme();
   const nav = useNav();
-  const initial = (state.profile.name.trim() || "美")[0]!;
+  const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
   return (
     <Page>
       <View style={{ alignItems: "center", paddingVertical: 48, gap: 20 }}>
@@ -834,7 +835,7 @@ export function TitlePage() {
           </Text>
         </Stamp>
         <Text style={[s.title, { textAlign: "center" }]}>
-          {state.profile.name || "小美成长记"}
+          {state.profile.name || APP_NAME}
         </Text>
         {!!state.profile.birthday && (
           <Text style={s.muted}>生于 {dateLabel(state.profile.birthday)}</Text>

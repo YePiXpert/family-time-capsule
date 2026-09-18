@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "\u5c0f\u7f8e\u6210\u957f\u8bb0",
+    "name": "\u6849\u6849\u6210\u957f\u8bb0",
     "slug": "family-time-capsule",
     "platforms": [
       "ios",
@@ -16,7 +16,7 @@
       "buildNumber": "63",
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002"
+        "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002"
       }
     },
     "android": {
@@ -45,15 +45,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
-          "cameraPermission": "\u62cd\u6444\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
-          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u89c6\u9891\u58f0\u97f3\u3002"
+          "photosPermission": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
+          "cameraPermission": "\u62cd\u6444\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
+          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u89c6\u9891\u58f0\u97f3\u3002"
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u5c0f\u7f8e\u6210\u957f\u8bb0\u7684\u5bb6\u5ead\u58f0\u97f3\u3002",
+          "microphonePermission": "\u5f55\u5236\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u5bb6\u5ead\u58f0\u97f3\u3002",
           "recordAudioAndroid": true,
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false

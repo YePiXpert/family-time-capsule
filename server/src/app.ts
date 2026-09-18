@@ -18,7 +18,7 @@ export function createApp(store:Store,provider:Provider,version='dev') {
  });
  app.addHook('onSend',async (_request,reply)=>{reply.header('Cache-Control','no-store');reply.header('X-Content-Type-Options','nosniff');});
  app.get('/healthz',async ()=>{store.db.prepare('SELECT 1').get();return {status:'ok',version};});
- app.get('/',async (_request,reply)=>reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>小美成长记</title><style>body{font:18px system-ui;max-width:600px;margin:15vh auto;padding:24px;background:#F7F8F5;color:#202923;line-height:1.8}h1{font-size:28px}</style><h1>小美成长记</h1><p>留住每一个值得记住的日子。</p><p>请在手机应用中记录、整理照片和使用 AI。照片与成长记录保存在你的手机，AI 功能通过主人的邀请开通。</p></html>'));
+ app.get('/',async (_request,reply)=>reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>桉桉成长记</title><style>body{font:18px system-ui;max-width:600px;margin:15vh auto;padding:24px;background:#F7F8F5;color:#202923;line-height:1.8}h1{font-size:28px}</style><h1>桉桉成长记</h1><p>留住每一个值得记住的日子。</p><p>请在手机应用中记录、整理照片和使用 AI。照片与成长记录保存在你的手机，AI 功能通过主人的邀请开通。</p></html>'));
  app.post('/api/v1/enroll',async (req,reply)=>{
   for(const [key,value] of attempts)if(value.expires<Date.now())attempts.delete(key);
   // Per-connection-address plus global throttle; do not trust spoofable forwarded headers.

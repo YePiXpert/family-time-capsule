@@ -16,6 +16,7 @@ import {
   type YearbookInput,
 } from "./yearbook";
 import { paperPalette } from "./ui";
+import { CHILD_FALLBACK } from "./brand";
 
 const {
   ink: INK,
@@ -321,7 +322,7 @@ export const YearBookCard = forwardRef<
         letterSpacing={2}
         textAnchor="middle"
       >
-        {`${profileName || "小美"}的成长记 · ${input.colophon}`}
+        {`${profileName || CHILD_FALLBACK}的成长记 · ${input.colophon}`}
       </SvgText>
     </Svg>
   );
