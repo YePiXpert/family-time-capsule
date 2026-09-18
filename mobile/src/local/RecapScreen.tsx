@@ -215,9 +215,8 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
     </Pressable>
   );
   const musicPicker = chooseMusic && (
-    // 吸收点击，避免选乐时误触父级「看下一张」。
-    <Pressable
-      onPress={() => {}}
+    // 与「看下一张」是兄弟节点，落在这里的点击不会传下去，无需再套 Pressable。
+    <View
       style={{
         position: "absolute",
         left: 0,
@@ -254,7 +253,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
         />
       ))}
       <Button title="收起" compact onPress={() => setChooseMusic(false)} />
-    </Pressable>
+    </View>
   );
   return (
     <Modal
@@ -283,6 +282,8 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
               />
             </Pressable>
             <View
+              // 字幕是「看下一张」Pressable 的兄弟节点，不放行就会在底部留出死区。
+              pointerEvents="none"
               style={{
                 position: "absolute",
                 left: 20,
