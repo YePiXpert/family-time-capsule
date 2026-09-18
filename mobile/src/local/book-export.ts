@@ -53,14 +53,21 @@ function readAll(file: File): Uint8Array {
 }
 
 /**
- * 两个平台对 toDataURL 的尺寸理解不一样，必须分别换算：
- * 安卓 `Bitmap.createBitmap(w,h)` 要的就是像素；iOS 的 `UIGraphicsImageRenderer`
- * 按点建画布再乘屏幕倍率，直接传 2433 会渲成 7299² 的位图，当场 OOM。
+ * 两个平台的 toDataURL 根本不是同一件事，尺寸必须分开算（都照原生源码核过）：
+ *
+ * 安卓 `SvgView.toDataURL(w,h)` 按给的像素另开一张位图，viewBox 缩放按位图算
+ * （`drawChildren` 用 `canvas.getWidth()`），所以舞台多大都不影响成品，给像素即可。
+ *
+ * iOS 的 `getDataURLWithBounds:` 虽然按给的尺寸建 `UIGraphicsImageRenderer`，
+ * 但真正画的时候 `drawRect:` 用的是 `[self bounds]`——画布多大，内容还是按视图
+ * 自己的点数画。所以 iOS 上舞台必须就是目标尺寸，画布再乘屏幕倍率才是成品像素；
+ * 舞台留 200 点、画布传 2433，只会得到一张右上角缩着一小块的空图。
  */
-function captureRequest(pixels: number) {
-  const scale = Platform.OS === "ios" ? PixelRatio.get() : 1;
-  // iOS 原生把点数取整，向上取整才保证不低于目标像素。
-  return Math.ceil(pixels / scale);
+export function captureGeometry(pixels = SHEET_PX) {
+  if (Platform.OS !== "ios") return { stage: 200, request: pixels };
+  // 原生把点数截成整数，向上取整才保证不低于目标像素。
+  const side = Math.ceil(pixels / PixelRatio.get());
+  return { stage: side, request: side };
 }
 
 /** 取一页：显式给 toDataURL 尺寸，成品分辨率因此与设备像素比无关。 */
@@ -76,7 +83,7 @@ export async function captureBookPage(
       if (!settled) reject(new Error("成册生成超时，请重试。"));
       settled = true;
     }, CAPTURE_TIMEOUT_MS);
-    const side = captureRequest(pixels);
+    const side = captureGeometry(pixels).request;
     svg.toDataURL(
       (url: string) => {
         if (settled) return;

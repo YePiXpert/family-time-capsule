@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-18，Build 63 交付中。
+> 最后更新：2026-09-18，Build 64 交付中。
 
 ---
 
@@ -18,12 +18,17 @@
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install。
 4. 验证三件套：npm test、npm run typecheck、npm run lint（根目录命令即可，全部应绿；
-   mobile 163 个测试、server 13 个）。
+   mobile 194 个测试、server 13 个）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·继续 Build 64：
-Build 63「十年之库·上」已交付（写入层、备份格式、恢复体验、分页 PDF 成长册）。
-Build 64「十年之库·下」的清单见 PLAN-BUILD-62-65.md，另加一件从 63 顺延过来的：
+第二步·继续 Build 65：
+Build 64「桉桉 · 上」已交付（改名到桉桉含内部标识迁移、成册排版引擎、年度册真成册 PDF）。
+Build 65「桉桉 · 下」的清单见 /root 里那份已批准的计划与 CHANGELOG：给专题相册接上成册导出
+（它已经有手动排序、选封面、扉页寄语，只差出口），再加 `books` 实体做自由编排
+（接进 ENTITY_KINDS、validateLibrary、normalizeLibrary、备份 v2 与 referencedMedia，
+否则册子封面会被「清理未使用素材」误删），并放开「一条记录只能进一张照片」。
+Build 66 是 AI 成册（序言/章节引子/图注、帮挑照片、月度回顾）。
+下面这些从 Build 63/64 顺延到 Build 67：
   - 本机保留的备份改成共享 blob 库（现在三份全量副本，库 + 备份约占 4 倍空间；
     改成 blobs/<sha256> + 清单后约 2 倍）。备份 v2 的格式机械已经就位，直接接着做。
   - 媒体治理：导入降采样与视频上限、孤儿自动回收、巡检进度持久化、消除重复哈希 I/O。
@@ -38,6 +43,11 @@ AGENTS 发布纪律）。
 - 改原生 Kotlin 前先用独立 kotlinc 对 $ANDROID_HOME/platforms/android-36/android.jar
   编译一份用法一致的 snippet 验证（Build 56/57 的教训）。
 - mobile-build 派发必须用完整 40 位 SHA。
+- 成册取图两个平台不一样：安卓 toDataURL 按传入像素另开位图，iOS 只按视图自身点数画
+  （原生 drawRect: 用的是 [self bounds]），所以 iOS 的屏外舞台必须就是目标尺寸。
+  见 book-export.ts 的 captureGeometry。
+- 素材行里的 width/height 是 512 缩略图的尺寸，不是原图尺寸；要原图尺寸得自己
+  renderAsync 一次（prepareBookPhoto 就是这么做的）。
 - app.json 含 \uXXXX 转义，定点编辑，别整文件重写。
 - 手势回调里调用的每个函数都要标 "worklet"（Build 62 的 Android 原图缩放必崩）。
 - 页面改成 Page scroll={false} 自带列表时，必须补回 keyboardShouldPersistTaps="handled"
