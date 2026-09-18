@@ -44,15 +44,45 @@ review 中修掉的三个真问题值得记住：
 
 目标：5 年 · 万条记录 · 万段媒体的库，编辑仍即时、备份不撞墙、恢复不锁死。**每步先扩 `scripts/local_fixture.py` 立大库基准（现有 122 条记录量级不够），给 `health.json` 已有的 `changeMaxMs` 加性能断言，再动刀。**
 
-### Build 63：存储与备份演进
-1. **快照写放大治理**：现状每次 `change` 全库 clone + validate + `JSON.stringify` 整行重写（`mobile/src/local/store.ts:42-47`、`disk.ts:25-32`），编辑器 400ms 防抖即全库写盘（`editorHooks.ts:61`）。把 media 元数据与 records/drafts 拆入独立 SQLite 表，`change()` 只重写脏分片；旧库启动自动迁移（沿用 `activation.ts` 的 append-only 切代，绝不原地覆盖）。
-2. **备份 v2**：媒体按既有 sha256 内容寻址去重 + 增量清单，消灭 `HEADER_LIMIT 16MB` 悬崖（`backup-format.ts:3`，超限分支目前零测试）；v1 `.xmb` 保留只读兼容；恢复移出写队列、分批重建缩略图并给进度 UI（现状 restore 全程一个 `store.change`，`backup.ts:169-180`）。
-3. **服务端 AI 闭环**（owner 侧，app 零风险）：结果缓存落 SQLite（现在纯内存 Map 10 分钟/200 条，重启即 `RESULT_EXPIRED` 迫使用户重复计费，`server/src/app.ts:9,60-61`）；requests 表 90 天保留裁剪（现在永不清理）；Editor AI 面板显示剩余额度（`/me` 已有）；`overview.recent` 30 天用量渲染（`types.ts:54-62` 已采集未展示）。
+### Build 63「十年之库·上」（已交付）
 
-### Build 64：媒体治理
+| 任务 | 状态 |
+| --- | --- |
+| 大库基准：`local_fixture.py` 参数化规模 + `local-scale.test.ts` 钉住「一次改动写多少字节」 | ✅ `8619f84` |
+| 写放大治理：`forkLibrary` 结构共享 + `Stored<T>` 只读实体 + `editEntity` + 冻结哨兵 | ✅ `1fff90b` |
+| 存储演进：整库单行 → `root` + `entity(kind,id)` 两张表，只写脏实体；开库自动切代 | ✅ `bb56c21`，切代前读回校验 `b29d2fc` |
+| 增量校验：`validateLibrary` 拆成根与逐实体两层，只增只改只校验改动、有删就全量 | ✅ `3fe8a92` |
+| 备份 v2：分段清单 + 内容寻址去重，v1 只读兼容 | ✅ `62bb9ce`，空库边界 `7781e6e` |
+| 恢复移出写队列 + 进度 | ✅ `b2adaaf` |
+| 礼物：分页 PDF 成长册 | ✅ `b267e5a` |
+| 发布：文档 + app.json 62→63 | ✅ `7fa5bd8` |
+
+**实测账**（node 24，10000 记录 / 10000 素材，整库 6.2MB）：一次改一个字
+90ms / 落盘 6.2MB → 10ms / 落盘 489 字节。拆开看：fork 4.8ms（原来深拷贝 35.3ms）、
+全库校验 24.5ms（现在只校验改动）、整库序列化 21.4ms（现在只序列化脏实体）。
+
+**本轮学到的**：
+1. **让类型系统去做审计**。把七个集合的值类型改成 `Stored<T>`（属性与数组只读）之后，
+   `tsc` 一次列出全部 65 处原地改写。靠人眼 grep 一定会漏。
+2. **类型挡不住 `Object.assign`**。运行期的冻结哨兵在第一次跑测试时就抓到了一处——
+   两道防线都要有。
+3. **删旧数据是单向门**。切代清掉旧快照之前，要在同一个事务里把写进去的整库读回来
+   重新校验，过了才删。
+
+### Build 64「十年之库·下」：媒体治理 + 服务端闭环
+0. **（从 63 顺延）本机保留改成共享 blob 库**：现在每份 `.xmb` 都自带全部素材字节、
+   还保留 3 份，库 + 备份约占 **4 倍**空间。改成 `backups/blobs/<sha256>` + 清单
+   （`.xmbm`，就是 v2 的头部不带素材字节），按引用计数回收，降到约 2 倍。备份 v2 的
+   格式机械已经就位，直接接着做。顺带做**分卷导出**（超阈值切成多卷，系统分享面板
+   才扛得住几 GB 的单文件）。
 1. 导入策略：大图可选降采样存档、视频大小/时长上限与明确提示（现状 `quality:1` 且唯一约束是 `bytes>=1`，`Editor.tsx:220`、`model.ts:358`）。
 2. 孤儿自动回收：删记录/弃稿后闲时自动清未引用媒体（复用 `collectUnusedMedia` + AppState 巡检）；巡检进度持久化（现状 `patrolled` 每次启动清零，`App.tsx:127`）。
 3. 消除重复哈希 I/O：verify 状态落库（现状导入双哈希、备份双遍读、巡检永远从头来）。
+4. **服务端 AI 闭环**（owner 侧，app 零风险）：结果落 SQLite 但**24 小时后物理删除正文**
+   （持有者已拍板；照片依旧永不落库，`deploy/README.md` 的隐私承诺要如实改写）；
+   requests 表 90 天裁剪（注意与 `reserve()` 的幂等检查有交互）；Editor AI 面板显示剩余
+   额度（`/me` 已够用，纯前端）；`overview.recent` 30 天用量渲染；设备自助撤销。
+5. 礼物：**月度 AI 回顾**（RECAP 提示词管线已验证，按需生成，不做定时任务与推送）。
 
 ---
 
@@ -67,8 +97,10 @@ review 中修掉的三个真问题值得记住：
 
 ---
 
-## 旁路候选（未排期，按需插入）
+## 持有者已拍板的三件事（2026-09-18）
 
-- **真地图足迹**：react-native-maps + `plugins/with-maps.js`（Android 注入 `GOOGLE_MAPS_API_KEY` meta-data，Key 缺省空串保证构建绿）；接线模式照 `plugins/with-native-share-intake.js`；需持有者先在 Google Cloud 建 Key 存 GitHub Secret。数据侧 `places.clusterPlaces` 已就绪。
-- **月度 AI 回顾**：RECAP 提示词管线已验证（`prompts.ts:33-40`），做本地通知 + 按需生成，不需要服务端定时任务。
-- **设备自助撤销**：`/me` 加非 owner 的 `DELETE devices/:id` 分支（现在断开只删本地 token，服务端 device 仍有效）。
+1. **服务端 AI 结果落库，但 24 小时后物理删除正文**；照片依旧永不落库。
+2. **真地图足迹跳过**，继续用轻量足迹，不引 `react-native-maps`。
+3. **家庭共享全量同步，含原图**——两台设备各持完整一份、互为备份，代价是 VPS 要放得下
+   整库的加密副本（按十年 3 万张、均 3MB 估，80–100GB 量级）与首次同步的上行流量。
+   若届时改主意，「文字全同步 + 原图按需拉」在 Build 66 里是一个开关。
