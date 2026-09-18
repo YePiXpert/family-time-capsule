@@ -1,14 +1,19 @@
 import {
+  diffLibrary,
   emptyLibrary,
   forkLibrary,
   freezeLibrary,
   normalizeLibrary,
   validateLibrary,
   type Library,
+  type LibraryDelta,
 } from "./model";
 export interface LibraryDisk {
   read(): Promise<unknown | null>;
-  write(state: Library): Promise<void>;
+  /** delta 为 null 表示整库重写（首次落库、切代、恢复）。 */
+  write(state: Library, delta: LibraryDelta | null): Promise<void>;
+  /** read() 读到的是旧版整库快照时为 true：校验通过后整库重写一次完成切代。 */
+  legacy?: boolean;
 }
 /** 本机健康采集点；全部可选，测试与无健康文件环境静默跳过。 */
 export interface StoreEvents {
@@ -30,7 +35,8 @@ export class LocalStore {
       normalizeLibrary(state);
       validateLibrary(state);
       this.state = state;
-    } else await this.disk.write(this.state);
+      if (this.disk.legacy) await this.disk.write(this.state, null);
+    } else await this.disk.write(this.state, null);
     freezeLibrary(this.state);
   }
   get = (): Library => this.state;
@@ -48,7 +54,7 @@ export class LocalStore {
       state.revision = this.state.revision + 1;
       validateLibrary(state);
       try {
-        await this.disk.write(state);
+        await this.disk.write(state, diffLibrary(this.state, state));
       } catch (e) {
         this.events.onWriteFailure?.(
           e instanceof Error ? e.message : String(e),

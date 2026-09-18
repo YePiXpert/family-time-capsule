@@ -4,6 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import type { NativeShareManifest } from "../modules/share-intake/src";
+import { ENTITY_KINDS } from "../src/local/model";
 const env = vi.hoisted(() => ({
   root: "",
   shares: [] as NativeShareManifest[],
@@ -148,6 +149,7 @@ vi.mock("expo-sqlite", () => ({
         db.exec(sql);
       },
       getFirstAsync: async (sql: string) => db.prepare(sql).get(),
+      getAllAsync: async (sql: string) => db.prepare(sql).all(),
       runAsync: async (sql: string, ...args: (string | number)[]) =>
         db.prepare(sql).run(...args),
       closeAsync: async () => {
@@ -219,13 +221,47 @@ async function setup() {
   });
   return { files, backup, store, model, media };
 }
+/** 把实体表拼回整库，和 disk.read() 同一套拼法。 */
+function readLibrary(db: DatabaseSync): Record<string, unknown> | null {
+  const root = db.prepare("SELECT json FROM root WHERE id=1").get() as
+    | { json: string }
+    | undefined;
+  if (!root) return null;
+  const state = JSON.parse(root.json) as Record<string, unknown>;
+  for (const kind of ENTITY_KINDS) state[kind] = {};
+  const rows = db.prepare("SELECT kind,id,json FROM entity").all() as {
+    kind: string;
+    id: string;
+    json: string;
+  }[];
+  for (const row of rows)
+    (state[row.kind] as Record<string, unknown>)[row.id] = JSON.parse(row.json);
+  return state;
+}
 it("runs production SQLite writes and reopens its complete snapshot", async () => {
   const { store } = await setup();
-  const row = env
-    .database!.prepare("SELECT snapshot FROM library WHERE id=1")
-    .get() as { snapshot: string };
-  expect(JSON.parse(row.snapshot)).toEqual(store.get());
+  expect(readLibrary(env.database!)).toEqual(store.get());
   expect(store.get().records.r?.text).toBe("第一步");
+});
+it("moves a Build 62 single-row library into entity tables on open", async () => {
+  const { store } = await setup();
+  const before = store.get();
+  // 造一个旧库：整库塞回 library 单行，清空实体表。
+  env.database!.exec("DELETE FROM entity; DELETE FROM root;");
+  env.database!
+    .prepare("INSERT INTO library(id,snapshot) VALUES(1,?)")
+    .run(JSON.stringify(before));
+  env.database!.close();
+  env.database = null;
+  vi.resetModules();
+  const { openLocalStore } = await import("../src/local/disk");
+  const reopened = await openLocalStore();
+  expect(reopened.get()).toEqual(before);
+  // 切代完成后旧单行退场，之后只读实体表。
+  expect(
+    env.database!.prepare("SELECT COUNT(*) n FROM library").get(),
+  ).toEqual({ n: 0 });
+  expect(readLibrary(env.database!)).toEqual(before);
 });
 it("exports and restores real original bytes and relationships with a before-restore backup", async () => {
   const { store, backup, files, model, media } = await setup();
@@ -266,7 +302,7 @@ it("failed database commit rolls back the library and removes extracted new file
   const out = await backup.createBackup(store.get());
   const count = fs.readdirSync(files.mediaDirectory.uri).length;
   env.database!.exec(
-    "CREATE TRIGGER reject_update BEFORE UPDATE ON library BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    "CREATE TRIGGER reject_update BEFORE UPDATE ON root BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
   );
   const before = JSON.stringify(store.get());
   await expect(backup.restoreBackup(store, out)).rejects.toThrow("disk full");
@@ -419,7 +455,7 @@ it("removes copied files when the library write fails mid-batch", async () => {
     },
   ];
   env.database!.exec(
-    "CREATE TRIGGER reject_share BEFORE UPDATE ON library BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    "CREATE TRIGGER reject_share BEFORE UPDATE ON root BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
   );
   await expect(receiveShares(store)).rejects.toThrow("原接收任务已保留");
   expect(env.acknowledged).toEqual([]);
@@ -501,7 +537,7 @@ it("retains the native share receipt on a failed write and safely retries", asyn
     },
   ];
   env.database!.exec(
-    "CREATE TRIGGER reject_share BEFORE UPDATE ON library BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    "CREATE TRIGGER reject_share BEFORE UPDATE ON root BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
   );
   await expect(receiveShares(store)).rejects.toThrow("disk full");
   expect(env.acknowledged).toEqual([]);
@@ -554,7 +590,7 @@ it("creates, reuses and renames people within the stored name limits", async () 
 it("recovers an unreadable startup library into a verified new database and retains the original", async () => {
   const { store, backup } = await setup();
   const file = await backup.createBackup(store.get());
-  env.database!.exec("UPDATE library SET snapshot='broken' WHERE id=1");
+  env.database!.exec("UPDATE root SET json='broken' WHERE id=1");
   env.database!.close();
   env.database = null;
   await backup.recoverStartupBackup(file);
@@ -562,17 +598,13 @@ it("recovers an unreadable startup library into a verified new database and reta
   const name = await activeLibraryName();
   expect(name).toMatch(/^xiaomei-recovered-/);
   const recovered = new DatabaseSync(path.join(env.root, name));
-  const row = recovered.prepare("SELECT snapshot FROM library").get() as {
-    snapshot: string;
-  };
-  expect(JSON.parse(row.snapshot).records.r.text).toBe("第一步");
+  const state = readLibrary(recovered) as { records: Record<string, { text: string }> };
+  expect(state.records.r!.text).toBe("第一步");
   recovered.close();
   const original = new DatabaseSync(
     path.join(env.root, "xiaomei-local-v1.sqlite"),
   );
-  expect(original.prepare("SELECT snapshot FROM library").get()!.snapshot).toBe(
-    "broken",
-  );
+  expect(original.prepare("SELECT json FROM root").get()!.json).toBe("broken");
   original.close();
 });
 it("interrupted startup recovery never switches to a partial library or deletes prior media", async () => {

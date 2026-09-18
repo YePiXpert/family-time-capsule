@@ -222,6 +222,31 @@ export function editEntity<K extends EntityKind>(
   apply(draft);
   collection[id] = draft;
 }
+/** 一次 change 动过哪些实体：落盘只需要重写这些，不必整库重来。 */
+export type LibraryDelta = {
+  changed: { kind: EntityKind; id: string }[];
+  removed: { kind: EntityKind; id: string }[];
+};
+/** 按引用比对算出脏实体——实体只会被整个替换，所以引用变了就是改了。 */
+export function diffLibrary(prev: Library, next: Library): LibraryDelta {
+  const changed: LibraryDelta["changed"] = [];
+  const removed: LibraryDelta["removed"] = [];
+  for (const kind of ENTITY_KINDS) {
+    const before = prev[kind] as Record<string, unknown>;
+    const after = next[kind] as Record<string, unknown>;
+    for (const id of Object.keys(after))
+      if (before[id] !== after[id]) changed.push({ kind, id });
+    for (const id of Object.keys(before))
+      if (!(id in after)) removed.push({ kind, id });
+  }
+  return { changed, removed };
+}
+/** 库里除七个集合之外的部分：版本、profile、settings、yearNotes 这些，很小。 */
+export function rootOf(s: Library): Partial<Library> {
+  const root: Partial<Library> = { ...s };
+  for (const kind of ENTITY_KINDS) delete root[kind];
+  return root;
+}
 /** 冻结实体及其数组与嵌套对象：谁原地改共享对象，就在那一行当场抛错。 */
 export function freezeEntity<T>(value: T): T {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;

@@ -3,6 +3,7 @@ import { LocalStore, type LibraryDisk } from "../src/local/store";
 import {
   emptyContent,
   emptyLibrary,
+  rootOf,
   type Library,
   type LocalMedia,
   type LocalRecord,
@@ -21,7 +22,7 @@ const ALBUMS = 40;
 /** 预算见文件末尾「基线」。收紧时连同那段一起改。 */
 const OPEN_MS_BUDGET = 1500;
 const CHANGE_MS_BUDGET = 1500;
-const CHANGE_BYTE_BUDGET = 8 * 1024 * 1024;
+const CHANGE_BYTE_BUDGET = 64 * 1024;
 
 const hex = (n: number) => n.toString(16).padStart(64, "0");
 const day = (i: number) =>
@@ -88,14 +89,23 @@ function bigLibrary(): Library {
   return s;
 }
 
-/** 记录每次落盘真正要序列化多少字节——今天是整库，将来应该只有脏实体。 */
+/** 记录每次落盘真正要序列化多少字节：根一份，加上这次动过的实体。 */
 function openBig() {
   const writes: number[] = [];
   const library = bigLibrary();
   const disk: LibraryDisk = {
     read: async () => library,
-    write: async (state) => {
-      writes.push(JSON.stringify(state).length);
+    write: async (state, delta) => {
+      if (!delta) {
+        writes.push(JSON.stringify(state).length);
+        return;
+      }
+      let bytes = JSON.stringify(rootOf(state)).length;
+      for (const { kind, id } of delta.changed)
+        bytes += JSON.stringify(
+          (state[kind] as Record<string, unknown>)[id],
+        ).length;
+      writes.push(bytes);
     },
   };
   const store = new LocalStore(disk);
@@ -127,7 +137,7 @@ it("keeps one keystroke edit inside the change budget", async () => {
   const libraryBytes = JSON.stringify(store.get()).length;
   console.log(
     `[scale] ${RECORDS} 记录 / ${MEDIA} 素材：整库 ${(libraryBytes / 1048576).toFixed(1)}MB，` +
-      `开库 ${openMs}ms，改一个字 ${changeMs}ms，落盘 ${(writes[0]! / 1048576).toFixed(1)}MB`,
+      `开库 ${openMs}ms，改一个字 ${changeMs}ms，落盘 ${writes[0]!} 字节`,
   );
   expect(store.get().records[id]!.text.endsWith("啊")).toBe(true);
   expect(writes).toHaveLength(1);
@@ -137,10 +147,9 @@ it("keeps one keystroke edit inside the change budget", async () => {
 
 /**
  * 基线（node 24 开发机，10000 记录 / 10000 素材，整库 6.2MB）：
- *   Build 62：开库 32ms，改一个字 90ms，落盘 6.2MB。
- *   结构共享之后：开库 53ms（多出来的是开库时冻结全部实体），改一个字 52ms。
- *     一次 change 的成本拆开是 fork 4.8ms（原来深拷贝 35.3ms）、全库校验 24.5ms、
- *     整库序列化 21.4ms。
- * 改一个字仍然把整个库重写一遍：实体表落地后 CHANGE_BYTE_BUDGET 收到 64KB，
- * 增量校验落地后 CHANGE_MS_BUDGET 一起收紧。
+ *   Build 62：开库 32ms，改一个字 90ms，落盘 6.2MB（整库重写）。
+ *   结构共享之后：改一个字 52ms，其中 fork 4.8ms（原来深拷贝 35.3ms）。
+ *   实体表之后：改一个字 57ms，落盘 489 字节——只写根与这一个实体。
+ * 剩下的耗时几乎全在每次 change 的全库 validateLibrary（约 24.5ms）；
+ * 增量校验落地后再收紧 CHANGE_MS_BUDGET。
  */

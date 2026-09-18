@@ -17,15 +17,55 @@ def record(identifier, title, date='2026-09-15T10:00:00.000Z', media=None):
     return dict(id=identifier, title=title, text='今天的小小进步，值得好好记住。', date=date, location='', first=False,
                 mediaIds=media or [], coverId=(media or [None])[0], revision=1, updatedAt=date)
 
+ENTITY_KINDS = ('records', 'drafts', 'media', 'albums', 'selections', 'series', 'persons')
+
+
 def write_state(database, state):
+    """按应用当前的库结构落库：根一行，实体每条一行，旧版整库单行清空。"""
+    root = {k: v for k, v in state.items() if k not in ENTITY_KINDS}
     with sqlite3.connect(database) as db:
-        db.execute('UPDATE library SET snapshot=? WHERE id=1', (json.dumps(state, ensure_ascii=False),))
+        db.execute('DELETE FROM library')
+        db.execute('DELETE FROM entity')
+        db.execute('INSERT INTO root(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json',
+                   (json.dumps(root, ensure_ascii=False),))
+        for kind in ENTITY_KINDS:
+            for identifier, entity in state.get(kind, {}).items():
+                db.execute('INSERT INTO entity(kind,id,json) VALUES(?,?,?)',
+                           (kind, identifier, json.dumps(entity, ensure_ascii=False)))
+
+
+def write_legacy_state(database, state):
+    """Build 62 及更早的整库单行快照，用来验开库切代。"""
+    with sqlite3.connect(database) as db:
+        db.execute('DELETE FROM entity')
+        db.execute('DELETE FROM root')
+        db.execute('INSERT INTO library(id,snapshot) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET snapshot=excluded.snapshot',
+                   (json.dumps(state, ensure_ascii=False),))
+
+
+def break_state(database):
+    """把根写坏，模拟开库时资料读不出来。"""
+    with sqlite3.connect(database) as db:
+        db.execute("UPDATE root SET json='broken' WHERE id=1")
+
+
+def broken_root(database):
+    with sqlite3.connect(database) as db:
+        return db.execute('SELECT json FROM root WHERE id=1').fetchone()[0]
 
 
 def read_state(database):
     with sqlite3.connect(database) as db:
         assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
-        return json.loads(db.execute('SELECT snapshot FROM library WHERE id=1').fetchone()[0])
+        row = db.execute('SELECT json FROM root WHERE id=1').fetchone()
+        if not row:
+            return None
+        state = json.loads(row[0])
+        for kind in ENTITY_KINDS:
+            state[kind] = {}
+        for kind, identifier, raw in db.execute('SELECT kind,id,json FROM entity'):
+            state.setdefault(kind, {})[identifier] = json.loads(raw)
+        return state
 
 
 def make_photo():
