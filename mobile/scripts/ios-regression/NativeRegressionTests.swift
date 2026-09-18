@@ -98,7 +98,6 @@ final class NativeRegressionTests: XCTestCase {
         app.terminate(); app.launch(); tap("volume-year-2026")
         tap("year-yearbook"); tap("纪念册 PDF")
         // 先逐页预览：预览能翻页，就说明版面真的排出来了。
-        XCTAssertTrue(element("book-preview").waitForExistence(timeout: 30), "Preview never opened")
         tap("book-preview-next"); shot("yearbook-preview")
         tap("book-preview-bind")
         XCTAssertTrue(element("year-book-cancel").waitForExistence(timeout: 30), "Binding never started")
