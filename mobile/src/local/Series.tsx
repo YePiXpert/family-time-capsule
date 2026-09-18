@@ -3,6 +3,7 @@ import { Alert, Pressable, View } from "react-native";
 import type { Svg } from "react-native-svg";
 import { useLibrary, useStore } from "./context";
 import {
+  editEntity,
   indexMonth,
   monthIndex,
   monthKey,
@@ -184,10 +185,12 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
             title="保存名称"
             onPress={() =>
               action((s) => {
-                const target = s.series[route.params.id];
-                if (!target) throw new Error("时光系列已删除。");
-                target.name = name.trim() || "新时光系列";
-                target.updatedAt = now();
+                if (!s.series[route.params.id])
+                  throw new Error("时光系列已删除。");
+                editEntity(s, "series", route.params.id, (target) => {
+                  target.name = name.trim() || "新时光系列";
+                  target.updatedAt = now();
+                });
               })
             }
           />
@@ -258,12 +261,14 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
                     compact
                     onPress={() =>
                       action((s) => {
-                        const target = s.series[route.params.id];
-                        if (!target) throw new Error("时光系列已删除。");
-                        target.items = target.items.filter(
-                          (i) => i.month !== month,
-                        );
-                        target.updatedAt = now();
+                        if (!s.series[route.params.id])
+                          throw new Error("时光系列已删除。");
+                        editEntity(s, "series", route.params.id, (target) => {
+                          target.items = target.items.filter(
+                            (i) => i.month !== month,
+                          );
+                          target.updatedAt = now();
+                        });
                       })
                     }
                   />

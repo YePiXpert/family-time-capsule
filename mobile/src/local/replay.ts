@@ -4,6 +4,7 @@ import {
   recordTitle,
   type LocalMedia,
   type LocalRecord,
+  type Stored,
 } from "./model";
 
 export const REPLAY_LIMIT = 15;
@@ -16,7 +17,7 @@ export type ReplaySlide = {
 
 /** 一条记录的封面图：优先记录封面，再取第一张图片素材。 */
 function coverIdOf(
-  record: LocalRecord,
+  record: Stored<LocalRecord>,
   media: Record<string, LocalMedia>,
 ): string | undefined {
   if (record.coverId && media[record.coverId]?.kind === "image")
@@ -26,13 +27,13 @@ function coverIdOf(
 
 /** 全部「第一次」的封面先进片，再按月补封面（同图去重、每月一张）。 */
 export function replayPhotos(
-  records: LocalRecord[],
+  records: Stored<LocalRecord>[],
   media: Record<string, LocalMedia>,
 ): ReplaySlide[] {
   const byDate = [...records].sort((a, b) => a.date.localeCompare(b.date));
   const used = new Set<string>();
   const slides: ReplaySlide[] = [];
-  const push = (record: LocalRecord, mediaId: string) => {
+  const push = (record: Stored<LocalRecord>, mediaId: string) => {
     used.add(mediaId);
     slides.push({
       mediaId,

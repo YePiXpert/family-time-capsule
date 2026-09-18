@@ -16,6 +16,7 @@ import {
   saveRecord,
   validateLibrary,
   type Library,
+  type Mutable,
  LocalMedia } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
 import { decodeManifest, encodeHeader } from "../src/local/backup-format";
@@ -31,6 +32,8 @@ import {
   looksLikeCoordinates,
   placeLabel,
 } from "../src/local/places";
+/** 测试里的库都是现造现用的裸对象，没进过 store、没被冻结，可以直接改。 */
+const mut = <T,>(value: T): Mutable<T> => value as Mutable<T>;
 const date = "2026-09-16T12:00:00.000Z";
 function fixture() {
   const s = emptyLibrary();
@@ -65,7 +68,7 @@ describe("device record lifecycle", () => {
       id: "edit",
       recordId: "record",
       baseRevision: 1,
-      content: { ...clone(s.records.record!), text: "补记" },
+      content: { ...mut(clone(s.records.record!)), text: "补记" },
       updatedAt: date,
     };
     expect(s.records.record!.text).toBe("第一次挥手");
@@ -92,7 +95,7 @@ describe("device record lifecycle", () => {
   });
   it("rejects empty records", () => {
     const s = fixture();
-    s.drafts.draft!.content = emptyContent();
+    mut(s.drafts.draft!).content = emptyContent();
     expect(() => saveRecord(s, "draft", "r", date)).toThrow("写几句话");
   });
   it("deletes record references without deleting other records or their originals", () => {
@@ -287,7 +290,7 @@ describe("complete backup manifest", () => {
     "rejects unsafe media paths %s",
     (file) => {
       const s = fixture();
-      s.media.photo!.file = file;
+      mut(s.media.photo!).file = file;
       expect(() => encodeHeader(s)).toThrow();
     },
   );
@@ -307,7 +310,7 @@ describe("complete backup manifest", () => {
   });
   it("rejects unsupported versions and active recording snapshots", () => {
     const s = fixture();
-    s.drafts.draft!.recordingFile = "recording-test.m4a";
+    mut(s.drafts.draft!).recordingFile = "recording-test.m4a";
     expect(() => encodeHeader(s)).toThrow("录音");
     const old = { ...emptyLibrary(), version: 2 };
     expect(() => validateLibrary(old)).toThrow();
@@ -508,14 +511,14 @@ describe("time series", () => {
   it("rejects duplicate months, dangling media and non-image media", () => {
     const dup = seriesFixture();
     dup.records.two = { ...dup.records.r!, id: "two" };
-    dup.series.grow!.items.push({
+    mut(dup.series.grow!).items.push({
       recordId: "two",
       mediaId: "photo",
       month: "2026-09",
     });
     expect(() => validateLibrary(dup)).toThrow();
     const dangling = seriesFixture();
-    dangling.series.grow!.items = [
+    mut(dangling.series.grow!).items = [
       { recordId: "missing", mediaId: "photo", month: "2026-09" },
     ];
     expect(() => validateLibrary(dangling)).toThrow();
@@ -528,7 +531,7 @@ describe("time series", () => {
       bytes: 4,
       sha256: "b".repeat(64),
     };
-    outside.series.grow!.items = [
+    mut(outside.series.grow!).items = [
       { recordId: "r", mediaId: "standalone", month: "2026-09" },
     ];
     expect(() => validateLibrary(outside)).toThrow();
@@ -541,10 +544,10 @@ describe("time series", () => {
     badMonth2.series.grow!.items[0]!.month = "2026-13";
     expect(() => validateLibrary(badMonth2)).toThrow();
     const overlong = seriesFixture();
-    overlong.series.grow!.name = "长".repeat(101);
+    mut(overlong.series.grow!).name = "长".repeat(101);
     expect(() => validateLibrary(overlong)).toThrow();
     const empty = seriesFixture();
-    empty.series.grow!.items = [];
+    mut(empty.series.grow!).items = [];
     validateLibrary(empty);
   });
   it("opens stores and backups written before series existed", async () => {
@@ -603,7 +606,7 @@ describe("person tags", () => {
     saveRecord(s, "draft", "r", date);
     s.persons.mom = { id: "mom", name: "妈妈" };
     s.persons.grandma = { id: "grandma", name: "外婆" };
-    s.records.r!.personIds = ["mom", "grandma"];
+    mut(s.records.r!).personIds = ["mom", "grandma"];
     return s;
   }
   it("roundtrips persons and record tags through the backup manifest", () => {
@@ -615,10 +618,10 @@ describe("person tags", () => {
   });
   it("rejects unknown persons, duplicates, and blank or overlong names", () => {
     const unknown = personFixture();
-    unknown.records.r!.personIds = ["missing"];
+    mut(unknown.records.r!).personIds = ["missing"];
     expect(() => validateLibrary(unknown)).toThrow();
     const duplicate = personFixture();
-    duplicate.records.r!.personIds = ["mom", "mom"];
+    mut(duplicate.records.r!).personIds = ["mom", "mom"];
     expect(() => validateLibrary(duplicate)).toThrow();
     const blank = personFixture();
     blank.persons.blank = { id: "blank", name: "  " };
@@ -629,11 +632,11 @@ describe("person tags", () => {
   });
   it("keeps personIds optional and opens stores written before persons existed", async () => {
     const bare = personFixture();
-    delete bare.records.r!.personIds;
+    delete mut(bare.records.r!).personIds;
     validateLibrary(bare);
     const legacy = clone(personFixture()) as Partial<Library>;
     delete legacy.persons;
-    legacy.records!.r!.personIds = undefined;
+    mut(legacy.records!.r!).personIds = undefined;
     const store = new LocalStore({
       read: async () => legacy,
       write: async () => {},
@@ -703,7 +706,7 @@ describe("person tags", () => {
     const s = cascadeFixture();
     // 只在「按事情分组」的某一件事上留下外婆：记录与草稿正文都不带，
     // 把 content() 本来就有的那条检查排除掉，单独验 photoEvents 这条分支
-    s.records.r!.personIds = ["mom"];
+    mut(s.records.r!).personIds = ["mom"];
     s.drafts.d!.content.personIds = ["mom"];
     s.drafts.d!.photoEvents![1]!.personIds = ["mom"];
     validateLibrary(s);

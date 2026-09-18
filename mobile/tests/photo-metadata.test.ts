@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { emptyContent, type RecordDraft } from "../src/local/model";
+import {
+  emptyContent,
+  type Mutable,
+  type RecordDraft,
+} from "../src/local/model";
 import {
   applyPhotoMetadata,
   readPhotoMetadata,
@@ -10,6 +14,8 @@ import {
 
 import { emptyLibrary, validateLibrary } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
+/** 测试里的库都是现造现用的裸对象，没进过 store、没被冻结，可以直接改。 */
+const mut = <T,>(value: T): Mutable<T> => value as Mutable<T>;
 
 const draft = (): RecordDraft => ({
   id: "draft",
@@ -202,7 +208,7 @@ describe("batch photo events", () => {
     groups[0]!.title = "打疫苗";
     groups[2]!.title = "去公园";
     groups[2]!.text = "下午散步";
-    s.drafts.draft!.photoEvents = groups;
+    mut(s.drafts.draft!).photoEvents = groups;
     const restored = JSON.parse(JSON.stringify(s));
     validateLibrary(restored);
     let counter = 0;
@@ -223,13 +229,13 @@ describe("batch photo events", () => {
   it("moves photos once, handles removal and later imports without losing event edits", () => {
     const s = batchFixture();
     const d = s.drafts.draft!;
-    d.photoEvents = movePhotoToEvent(
+    mut(d).photoEvents = movePhotoToEvent(
       photoDayGroups(d, s.media),
       "b",
       1,
       s.media,
     );
-    d.photoEvents[1]!.text = "一起记录";
+    d.photoEvents![1]!.text = "一起记录";
     d.content.mediaIds = ["b", "c", "unknown"];
     const groups = photoDayGroups(d, s.media);
     expect(groups.map((g) => g.mediaIds)).toEqual([["c", "unknown", "b"]]);
