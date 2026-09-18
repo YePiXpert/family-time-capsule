@@ -15,6 +15,8 @@ import {
   shareBackup,
 } from "./backup";
 import { collectUnusedMedia } from "./services";
+import { healthFile } from "./health-file";
+import { changeAvgMs } from "./health";
 import { referencedMedia } from "./model";
 import {
   Button,
@@ -22,6 +24,7 @@ import {
   Field,
   Page,
   Text,
+  dateLabel,
   messageOf,
   useStyles,
 } from "./ui";
@@ -216,6 +219,7 @@ export function Storage() {
     store = useStore(),
     s = useStyles();
   const [message, setMessage] = useState("");
+  const health = healthFile().get();
   const refs = referencedMedia(state);
   const bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0),
     unused = Object.values(state.media).filter((m) => !refs.has(m.id));
@@ -232,6 +236,26 @@ export function Storage() {
         清理只处理没有被记录、草稿或头像使用的素材。卸载应用会删除本机内容，请定期导出备份。
       </Text>
       <Text>{message}</Text>
+      <View style={s.section}>
+        <Text style={s.heading}>本机健康</Text>
+        <Text style={s.muted}>
+          启动 {health.launches} 次 · 最近一次 {health.lastLaunchMs} 毫秒
+        </Text>
+        <Text style={s.muted}>
+          写库 {health.changeCount} 次 · 平均 {changeAvgMs(health).toFixed(1)}{" "}
+          毫秒 · 最长 {health.changeMaxMs} 毫秒
+        </Text>
+        <Text style={s.muted}>
+          {health.diskFailures
+            ? `写盘失败 ${health.diskFailures} 次 · 最近：${health.lastDiskError ?? "无摘要"}`
+            : "写盘失败 0 次"}
+        </Text>
+        <Text style={s.muted}>
+          最近备份：
+          {state.lastExportAt ? dateLabel(state.lastExportAt) : "尚未导出过"}
+        </Text>
+        <Text style={s.muted}>这些数字只保存在本机，不会上传。</Text>
+      </View>
       <Button
         title={`清理未使用素材（${unused.length} 份）`}
         disabled={!unused.length}

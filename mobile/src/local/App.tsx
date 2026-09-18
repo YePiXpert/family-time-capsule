@@ -59,6 +59,7 @@ import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
 import { MediaScreen } from "./Media";
 import { receiveShares } from "./services";
+import { healthFile } from "./health-file";
 const Stack = createNativeStackNavigator<Routes>();
 function LockGate({ onUnlock }: { onUnlock: () => void }) {
   const s = useStyles();
@@ -153,7 +154,11 @@ function Root() {
     };
     const sub = AppState.addEventListener("change", (status) => {
       if (status === "active") void drain();
-      else void patrolSome();
+      else {
+        void patrolSome();
+        // 退后台顺手把健康统计落盘。
+        void healthFile().flush();
+      }
     });
     const unsubscribe = subscribeToPendingNativeShares(() => {
       void drain();
