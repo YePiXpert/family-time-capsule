@@ -18,6 +18,7 @@ import {
   Text,
   dateLabel,
   monthLabel,
+  overlay,
   serif,
   useStyles,
   useTheme,
@@ -200,13 +201,13 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
       onPress={() => setChooseMusic(true)}
       style={{
         minHeight: 44,
-        paddingHorizontal: 14,
+        paddingHorizontal: 16,
         borderRadius: 14,
         justifyContent: "center",
-        backgroundColor: "#FFFFFF26",
+        backgroundColor: overlay.card,
       }}
     >
-      <Text style={{ color: "#F2E9DC", fontSize: 14, fontWeight: "600" }}>
+      <Text style={{ color: overlay.ink, fontSize: 14, fontWeight: "600" }}>
         {audioMedia ? "更换配乐" : "加一段配乐"}
       </Text>
     </Pressable>
@@ -223,14 +224,14 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
         padding: 20,
         paddingBottom: insets.bottom + 20,
         gap: 12,
-        backgroundColor: "#14100CF2",
+        backgroundColor: overlay.bgSoft,
       }}
       testID="replay-music-sheet"
     >
-      <Text style={{ color: "#F2E9DC", fontFamily: serif, fontSize: 20 }}>
+      <Text style={{ color: overlay.ink, fontFamily: serif, fontSize: 18 }}>
         选一段记录里的声音
       </Text>
-      <Text style={{ color: "#B8A88F", fontSize: 13 }}>
+      <Text style={{ color: overlay.muted, fontSize: 13 }}>
         配乐来自你已经记下的录音，只在这台设备播放。
       </Text>
       <Button
@@ -260,41 +261,45 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable
-        accessibilityLabel={done ? "重放结束" : "看下一张"}
-        onPress={advance}
-        style={{ flex: 1, backgroundColor: "#14100C" }}
-      >
+      <View style={{ flex: 1, backgroundColor: overlay.bg }}>
         {slide && (
           <Animated.View
             key={slide.mediaId}
             entering={reduceMotion ? undefined : FadeIn.duration(700)}
             style={{ flex: 1 }}
           >
-            <Image
-              source={{ uri: mediaUri(state.media[slide.mediaId]!) }}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="看下一张"
+              onPress={advance}
               style={{ flex: 1 }}
-              resizeMode="cover"
-            />
+            >
+              <Image
+                source={{ uri: mediaUri(state.media[slide.mediaId]!) }}
+                style={{ flex: 1 }}
+                resizeMode="cover"
+              />
+            </Pressable>
             <View
-              pointerEvents="none"
               style={{
                 position: "absolute",
                 left: 20,
                 right: 20,
                 bottom: insets.bottom + 76,
                 gap: 4,
+                backgroundColor: overlay.textScrim,
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
               }}
             >
-              <Text
-                style={{ color: "#F2E9DC", fontSize: 13, opacity: 0.85 }}
-              >
+              <Text style={{ color: overlay.ink, fontSize: 13 }}>
                 {monthLabel(monthKey(slide.date))}
               </Text>
               <Text
                 style={{
-                  color: "#F2E9DC",
-                  fontSize: 20,
+                  color: overlay.ink,
+                  fontSize: 18,
                   fontFamily: serif,
                   fontWeight: "600",
                 }}
@@ -330,7 +335,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
               </Stamp>
               <Text
                 style={{
-                  color: "#F2E9DC",
+                  color: overlay.ink,
                   fontSize: 24,
                   fontFamily: serif,
                   fontWeight: "600",
@@ -340,12 +345,18 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
                 {year} 年，就这样过来了
               </Text>
               {!!stats && (
-                <Text style={{ color: "#B8A88F", fontSize: 13, textAlign: "center" }}>
+                <Text
+                  style={{
+                    color: overlay.muted,
+                    fontSize: 13,
+                    textAlign: "center",
+                  }}
+                >
                   {stats}
                 </Text>
               )}
               {note ? (
-                <Text style={{ color: "#F2E9DC", textAlign: "center" }}>
+                <Text style={{ color: overlay.ink, textAlign: "center" }}>
                   {note}
                 </Text>
               ) : null}
@@ -368,10 +379,10 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
                     justifyContent: "center",
                     paddingHorizontal: 16,
                     borderRadius: 14,
-                    backgroundColor: "#FFFFFF1A",
+                    backgroundColor: overlay.card,
                   }}
                 >
-                  <Text style={{ color: "#F2E9DC", fontWeight: "600" }}>
+                  <Text style={{ color: overlay.ink, fontWeight: "600" }}>
                     再放一次
                   </Text>
                 </Pressable>
@@ -405,7 +416,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
               bottom: insets.bottom + 20,
               flexDirection: "row",
               justifyContent: "center",
-              gap: 6,
+              gap: 4,
             }}
           >
             {slides.map((item, i) => (
@@ -415,7 +426,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
                   width: 6,
                   height: 6,
                   borderRadius: 3,
-                  backgroundColor: "#F2E9DC",
+                  backgroundColor: overlay.ink,
                   opacity: i === index ? 1 : 0.35,
                 }}
               />
@@ -429,11 +440,11 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
             top: insets.top + 8,
             right: 20,
             flexDirection: "row",
-            gap: 10,
+            gap: 8,
             alignItems: "center",
           }}
         >
-          {musicButton}
+          {!done && musicButton}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="结束重放"
@@ -444,13 +455,13 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
               borderRadius: 22,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: "#FFFFFF26",
+              backgroundColor: overlay.card,
             }}
           >
-            <Text style={{ color: "#F2E9DC", fontSize: 18 }}>✕</Text>
+            <Text style={{ color: overlay.ink, fontSize: 18 }}>✕</Text>
           </Pressable>
         </View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
