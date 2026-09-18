@@ -97,8 +97,10 @@ final class NativeRegressionTests: XCTestCase {
         // 再走一遍纪念册 PDF：真分页、逐页取图再写 PDF，比长图慢得多。
         app.terminate(); app.launch(); tap("volume-year-2026")
         tap("year-yearbook"); tap("纪念册 PDF")
-        // 开工前先报总页数；这一句点得动，就说明版面真的排出来了。
-        tap("开始装订")
+        // 先逐页预览：预览能翻页，就说明版面真的排出来了。
+        XCTAssertTrue(element("book-preview").waitForExistence(timeout: 30), "Preview never opened")
+        tap("book-preview-next"); shot("yearbook-preview")
+        tap("book-preview-bind")
         XCTAssertTrue(element("year-book-cancel").waitForExistence(timeout: 30), "Binding never started")
         shot("yearbook-binding")
         sleep(90); shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
