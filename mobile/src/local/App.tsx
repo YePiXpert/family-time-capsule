@@ -15,6 +15,7 @@ import {
   Text as NativeText,
   View,
   Pressable,
+  useColorScheme,
 } from "react-native";
 import {
   NavigationContainer,
@@ -42,6 +43,7 @@ import {
   Page,
   Text,
   messageOf,
+  paletteOf,
   useStyles,
   useTheme,
 } from "./ui";
@@ -374,6 +376,37 @@ function Root() {
     </>
   );
 }
+function BoundaryFallback({
+  error,
+  onRetry,
+}: {
+  error: string;
+  onRetry: () => void;
+}) {
+  const c = paletteOf(useColorScheme() === "dark");
+  return (
+    <View
+      style={{
+        padding: 32,
+        flex: 1,
+        justifyContent: "center",
+        backgroundColor: c.paper,
+      }}
+    >
+      <NativeText style={{ color: c.ink }}>
+        页面暂时无法打开，已保存的资料仍在本机。
+      </NativeText>
+      <NativeText style={{ color: c.muted }}>{error}</NativeText>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onRetry}
+        style={{ padding: 20 }}
+      >
+        <NativeText style={{ color: c.accent }}>重试</NativeText>
+      </Pressable>
+    </View>
+  );
+}
 class Boundary extends Component<{ children: ReactNode }, { error: string }> {
   state = { error: "" };
   static getDerivedStateFromError(e: Error) {
@@ -382,26 +415,10 @@ class Boundary extends Component<{ children: ReactNode }, { error: string }> {
   render() {
     if (this.state.error)
       return (
-        <View
-          style={{
-            padding: 32,
-            flex: 1,
-            justifyContent: "center",
-            backgroundColor: "#FAF5EC",
-          }}
-        >
-          <NativeText style={{ color: "#3B3129" }}>
-            页面暂时无法打开，已保存的资料仍在本机。
-          </NativeText>
-          <NativeText style={{ color: "#3B3129" }}>{this.state.error}</NativeText>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => this.setState({ error: "" })}
-            style={{ padding: 20 }}
-          >
-            <NativeText style={{ color: "#3B3129" }}>重试</NativeText>
-          </Pressable>
-        </View>
+        <BoundaryFallback
+          error={this.state.error}
+          onRetry={() => this.setState({ error: "" })}
+        />
       );
     return this.props.children;
   }
@@ -409,6 +426,7 @@ class Boundary extends Component<{ children: ReactNode }, { error: string }> {
 export default function App() {
   const [store, setStore] = useState<LocalStore | null>(null),
     [error, setError] = useState("");
+  const boot = paletteOf(useColorScheme() === "dark");
   const initialize = useCallback(async () => {
     setError("");
     try {
@@ -507,13 +525,15 @@ export default function App() {
                 padding: 32,
                 justifyContent: "center",
                 gap: 20,
-                backgroundColor: "#FAF5EC",
+                backgroundColor: boot.paper,
               }}
             >
               {error ? (
                 <>
-                  <NativeText>本机资料暂时无法打开</NativeText>
-                  <NativeText>{error}</NativeText>
+                  <NativeText style={{ color: boot.ink }}>
+                    本机资料暂时无法打开
+                  </NativeText>
+                  <NativeText style={{ color: boot.muted }}>{error}</NativeText>
                   <Pressable
                     accessibilityRole="button"
                     onPress={() => {
@@ -521,7 +541,9 @@ export default function App() {
                     }}
                     style={{ padding: 20 }}
                   >
-                    <NativeText>重试读取</NativeText>
+                    <NativeText style={{ color: boot.accent }}>
+                      重试读取
+                    </NativeText>
                   </Pressable>
                   {verifiedBackup && (
                     <Pressable
@@ -532,7 +554,9 @@ export default function App() {
                       }}
                       style={{ padding: 20 }}
                     >
-                      <NativeText>从最近的本机备份恢复</NativeText>
+                      <NativeText style={{ color: boot.accent }}>
+                        从最近的本机备份恢复
+                      </NativeText>
                     </Pressable>
                   )}
                   <Pressable
@@ -543,13 +567,13 @@ export default function App() {
                     }}
                     style={{ padding: 20 }}
                   >
-                    <NativeText>
+                    <NativeText style={{ color: boot.accent }}>
                       {recovering ? "正在恢复…" : "从完整备份恢复"}
                     </NativeText>
                   </Pressable>
                 </>
               ) : (
-                <ActivityIndicator color="#B4553C" />
+                <ActivityIndicator color={boot.accent} />
               )}
             </View>
           )}

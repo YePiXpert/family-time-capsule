@@ -6,13 +6,18 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import Animated, {
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { beginDraft } from "./services";
 import { monthKey, type LocalRecord } from "./model";
 import { useNav, type Props } from "./navigation";
 import {
-  Button,
   ErrorText,
   Field,
   IconButton,
@@ -27,6 +32,8 @@ import {
 } from "./ui";
 import { JournalIcon } from "../components/JournalIcon";
 import { Photo } from "./Media";
+
+const PRESS_SPRING = { damping: 14, stiffness: 220 };
 
 export function RecordCard({
   record,
@@ -169,38 +176,69 @@ export function RecordCard({
 
 export function CaptureDock() {
   const store = useStore(),
-    nav = useNav();
+    nav = useNav(),
+    { colors, dark } = useTheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
   return (
     <View
       pointerEvents="box-none"
       style={{
         position: "absolute",
-        left: 20,
         right: 20,
-        bottom: insets.bottom + 12,
-        gap: 8,
+        bottom: insets.bottom + 20,
         alignItems: "flex-end",
+        gap: 8,
       }}
     >
       <ErrorText message={error} />
-      <Button
-        title="记一刻"
-        icon="plus"
-        primary
-        compact
-        testID="capture-new"
-        disabled={busy}
-        onPress={() => {
-          setBusy(true);
-          void beginDraft(store)
-            .then((draftId) => nav.navigate("Editor", { draftId }))
-            .catch((e) => setError(messageOf(e)))
-            .finally(() => setBusy(false));
-        }}
-      />
+      <Animated.View
+        entering={FadeInUp.delay(240).duration(360)}
+        style={pressStyle}
+      >
+        <Pressable
+          testID="capture-new"
+          accessibilityRole="button"
+          accessibilityLabel="记一刻"
+          disabled={busy}
+          onPress={() => {
+            setBusy(true);
+            void beginDraft(store)
+              .then((draftId) => nav.navigate("Editor", { draftId }))
+              .catch((e) => setError(messageOf(e)))
+              .finally(() => setBusy(false));
+          }}
+          onPressIn={() => {
+            // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+            scale.value = withSpring(0.92, PRESS_SPRING);
+          }}
+          onPressOut={() => {
+            // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+            scale.value = withSpring(1, PRESS_SPRING);
+          }}
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: colors.accent,
+            opacity: busy ? 0.5 : 1,
+            shadowColor: dark ? "#000000" : "#7A5C3E",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 10,
+            elevation: 4,
+          }}
+        >
+          <JournalIcon name="plus" color={colors.onAccent} size={26} />
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }

@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
+import { useHeaderHeight } from "@react-navigation/elements";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -272,17 +273,17 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     });
     setMovingPhoto(null);
   };
+  const headerHeight = useHeaderHeight();
   return (
     <Page scroll={false}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={100}
+        keyboardVerticalOffset={headerHeight}
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.content}
-          automaticallyAdjustKeyboardInsets
         >
           <View style={s.between}>
             <Text style={s.title}>

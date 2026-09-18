@@ -4,7 +4,8 @@ export type JournalIconName =
   | "growth" | "book" | "person" | "plus" | "image" | "camera" | "microphone" | "file"
   | "settings" | "search" | "calendar" | "star" | "play" | "pause" | "check"
   | "chevron-right" | "chevron-down" | "arrow-left" | "trash" | "edit" | "lock"
-  | "download" | "close" | "video" | "audio" | "users" | "heart" | "sparkle";
+  | "download" | "close" | "video" | "audio" | "users" | "heart" | "sparkle"
+  | "seal";
 
 /**
  * 统一图标语言：24px 网格、1.8px 描边、圆角端点。
@@ -95,6 +96,11 @@ const paths: Record<JournalIconName, React.ReactNode> = {
   sparkle: <>
     <Path d="M12 3.8l1.9 5.4 5.4 1.9-5.4 1.9L12 18.4l-1.9-5.4-5.4-1.9 5.4-1.9z" />
     <Path d="M18.6 16.2l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
+  </>,
+  seal: <>
+    <Circle cx={12} cy={12} r={8.4} />
+    <Circle cx={12} cy={12} r={5.6} />
+    <Path d="M12 10.3l1.7 1.7-1.7 1.7-1.7-1.7z" />
   </>,
 };
 

@@ -76,6 +76,8 @@ export const paperPalette = {
   emptyCell: "#F5EDE1",
 };
 export const serif = Platform.select({ ios: "Georgia", android: "serif" });
+// 启动/错误页在 LocalTheme 之外渲染，只能按系统深浅色取色板。
+export const paletteOf = (isDark: boolean) => (isDark ? dark : light);
 const ThemeContext = createContext({
   colors: light,
   large: false,

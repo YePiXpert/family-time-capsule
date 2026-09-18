@@ -363,7 +363,7 @@ export function Shelf() {
           />
           <IconButton
             label="打开设置"
-            icon="settings"
+            icon="seal"
             testID="open-settings"
             onPress={() => nav.navigate("Settings")}
           />

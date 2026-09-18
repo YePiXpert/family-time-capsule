@@ -60,6 +60,7 @@ export function SearchScreen(_: Props<"Search">) {
       <FlatList
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0, flexShrink: 0 }}
         contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
         data={[
           ...years.map((y) => ({
@@ -113,7 +114,7 @@ export function SearchScreen(_: Props<"Search">) {
               {filtered ? "没有找到匹配的记录" : "写下第一段时光"}
             </Text>
             <Text style={s.muted}>
-              {filtered ? "换个关键词，或去掉筛选再试。" : "回到书架，点右下角的笔记下这一刻。"}
+              {filtered ? "换个关键词，或去掉筛选再试。" : "回到书架，点右下角的记一刻。"}
             </Text>
             <Ornament />
           </View>
