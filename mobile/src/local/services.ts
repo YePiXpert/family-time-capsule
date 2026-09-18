@@ -1,5 +1,6 @@
 import { randomUUID } from "expo-crypto";
 import { Paths } from "expo-file-system";
+import { DOCS_DIR, LEGACY_DOCS_DIR } from "./brand";
 import {
   consumePendingNativeShares,
   acknowledgeNativeShare,
@@ -188,7 +189,10 @@ async function receiveOneShare(
   store: LocalStore,
   manifest: NativeShareManifest,
 ): Promise<number> {
-  const base = `${Paths.document.uri.replace(/\/$/, "")}/xiaomei-v1/intake/originals/`;
+  const documents = Paths.document.uri.replace(/\/$/, "");
+  const base = `${documents}/${DOCS_DIR}/intake/originals/`;
+  // 改名前排队的清单里记的还是旧目录的绝对路径；文件本身已随目录搬过去了。
+  const legacyBase = `${documents}/${LEGACY_DOCS_DIR}/intake/originals/`;
   const media: LocalMedia[] = [];
   const text: string[] = [];
   let skipped = 0;
@@ -201,10 +205,13 @@ async function receiveOneShare(
       skipped++;
       continue;
     }
+    const localUri = item.localUri.startsWith(legacyBase)
+      ? base + item.localUri.slice(legacyBase.length)
+      : item.localUri;
     if (
-      !item.localUri.startsWith(base) ||
-      item.localUri.slice(base.length).includes("/") ||
-      item.localUri.includes("..")
+      !localUri.startsWith(base) ||
+      localUri.slice(base.length).includes("/") ||
+      localUri.includes("..")
     ) {
       skipped++;
       continue;
@@ -219,7 +226,7 @@ async function receiveOneShare(
             ? "audio"
             : "document");
     try {
-      const preserved = await preserveMedia(item.localUri, item.fileName, kind);
+      const preserved = await preserveMedia(localUri, item.fileName, kind);
       const photo = shareItemPhotoMetadata(item);
       if (photo) preserved.photoMetadata = photo;
       media.push(preserved);

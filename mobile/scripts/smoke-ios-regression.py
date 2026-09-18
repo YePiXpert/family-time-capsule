@@ -27,11 +27,11 @@ def main():
     info = plistlib.loads((args.app / 'Info.plist').read_bytes()); bundle = info['CFBundleIdentifier']
     runtimes = json.loads(run('xcrun','simctl','list','runtimes','--json'))['runtimes']
     runtime = max((r for r in runtimes if r.get('isAvailable') and '.iOS-' in r['identifier']), key=lambda r: tuple(int(n) for n in r['version'].split('.')))
-    udid = run('xcrun','simctl','create','Xiaomei offline regression','com.apple.CoreSimulator.SimDeviceType.iPhone-16e',runtime['identifier'])
+    udid = run('xcrun','simctl','create','Anan offline regression','com.apple.CoreSimulator.SimDeviceType.iPhone-16e',runtime['identifier'])
     report = dict(gitSha=os.environ.get('SOURCE_SHA'), buildNumber=info['CFBundleVersion'], success=False)
     try:
         boot_simulator(udid, out); run('xcrun','simctl','install',udid,str(args.app.resolve())); run('xcrun','simctl','privacy',udid,'grant','microphone',bundle); run('xcrun','simctl','launch',udid,bundle); time.sleep(12)
-        container = Path(run('xcrun','simctl','get_app_container',udid,bundle,'data')); database = container / 'Documents' / 'SQLite' / 'xiaomei-local-v1.sqlite'
+        container = Path(run('xcrun','simctl','get_app_container',udid,bundle,'data')); database = container / 'Documents' / 'SQLite' / 'anan-local-v1.sqlite'
         run('xcrun','simctl','terminate',udid,bundle); baseline = seed(container, database)
         xctest = next(args.runner_build.resolve().glob('Build/Products/*.xctestrun'))
         command = ['xcodebuild','test-without-building','-xctestrun',str(xctest),'-destination',f'platform=iOS Simulator,id={udid}','-resultBundlePath',str(out/'local.xcresult'),'-parallel-testing-enabled','NO','-only-testing:NativeRegression/NativeRegressionTests/testLocalRecordAlbumAndBackup']
@@ -41,7 +41,7 @@ def main():
         state = read_state(database)
         assert state['records'] == baseline['records'], 'Full restore did not replace records'
         assert not state['albums'] and not state['drafts'], 'Restore left behind post-backup content'
-        backups = list((container/'Documents'/'xiaomei-v1'/'backups').glob('xiaomei-*.xmb')); assert len(backups) >= 2
+        backups = list((container/'Documents'/'anan-v1'/'backups').glob('anan-*.xmb')); assert len(backups) >= 2
         manifests=[read_backup(backup) for backup in backups]
         before=next(m for m in manifests if m['albums']); records=before['records']; own=[r for r in records.values() if r['text']=='A little story. More memories.']; assert len(own)==1 and own[0]['revision']==2
         assert any(before['media'][i]['kind']=='audio' for i in own[0]['mediaIds']), 'Recorded audio was not preserved'
@@ -58,7 +58,7 @@ def main():
         subprocess.run(['xcrun','xcresulttool','export','attachments','--path',str(out/'recovery.xcresult'),'--output-path',str(out/'recovery-screenshots')],capture_output=True)
         if recovery.returncode:
             print(recovery.stdout[-12000:] + recovery.stderr[-12000:]); raise AssertionError('Native startup recovery failed')
-        registry = container/'Documents'/'xiaomei-v1'/'libraries'
+        registry = container/'Documents'/'anan-v1'/'libraries'
         marker = max(registry.glob('generation-*.json'), key=lambda f: int(f.name.split('-')[1]))
         activated = database.parent/json.loads(marker.read_text())['database']
         restored = read_state(activated)
@@ -68,7 +68,7 @@ def main():
         assert json.dumps(restored['records'], sort_keys=True) in candidates, 'Startup recovery changed records'
         assert broken_root(database) == 'broken', 'Recovery overwrote original database'
         for media in restored['media'].values():
-            original = container/'Documents'/'xiaomei-v1'/'media'/media['file']
+            original = container/'Documents'/'anan-v1'/'media'/media['file']
             assert hashlib.sha256(original.read_bytes()).hexdigest() == media['sha256']
         report.update(success=True, recordIdentityPreserved=True, albumSurvivedRelaunch=True, crossMonthSelection=True, fullBackupRestored=True, unreadableLibraryRecovered=True, originalDatabasePreserved=True, backupFiles=len(backups))
     finally:

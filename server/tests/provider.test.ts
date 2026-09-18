@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { cpaProvider } from '../src/provider.ts';
 
 test('CPA receives Flash with High thinking for grouping and writing', async () => {
- const dir=mkdtempSync(join(tmpdir(),'xiaomei-provider-'));
+ const dir=mkdtempSync(join(tmpdir(),'anan-provider-'));
  const keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key');
  const sent:Record<string,unknown>[]=[];
  const server=createServer(async(req,res)=>{
@@ -42,7 +42,7 @@ test('CPA receives Flash with High thinking for grouping and writing', async () 
 });
 
 test('recap requests use the year-note prompt and send no images', async () => {
- const dir=mkdtempSync(join(tmpdir(),'xiaomei-provider-'));
+ const dir=mkdtempSync(join(tmpdir(),'anan-provider-'));
  const keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key');
  let sentBody:Record<string,unknown>|undefined;
  const server=createServer(async(req,res)=>{

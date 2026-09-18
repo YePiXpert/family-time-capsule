@@ -5,14 +5,15 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import type { LocalMedia, MediaKind } from "./model";
+import { DOCS_DIR } from "./brand";
 export const mediaDirectory = new Directory(
   Paths.document,
-  "xiaomei-v1",
+  DOCS_DIR,
   "media",
 );
 export const backupDirectory = new Directory(
   Paths.document,
-  "xiaomei-v1",
+  DOCS_DIR,
   "backups",
 );
 export const mediaFile = (m: LocalMedia) => new File(mediaDirectory, m.file);

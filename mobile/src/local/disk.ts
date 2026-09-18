@@ -3,11 +3,15 @@ import { activeLibraryName, librarySchema } from "./activation";
 import { LocalStore, type LibraryDisk } from "./store";
 import { ENTITY_KINDS, rootOf, validateLibrary } from "./model";
 import { healthFile } from "./health-file";
+import { migrateLegacyNames } from "./rename";
 let store: LocalStore | null = null;
 export async function openLocalStore(): Promise<LocalStore> {
   if (store) return store;
+  // 改名迁移必须跑在这三行之前：健康文件与库文件都在被搬的路径上。
+  const renameFailures = await migrateLegacyNames();
   const health = healthFile();
   await health.load();
+  for (const failure of renameFailures) health.diskFailure(failure);
   const started = Date.now();
   const db = await openDatabaseAsync(await activeLibraryName());
   try {

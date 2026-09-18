@@ -71,6 +71,11 @@ vi.mock("expo-file-system", () => {
     list() {
       return fs.readdirSync(this.uri).map((n) => new File(this, n));
     }
+    rename(name: string) {
+      const to = target([path.dirname(this.uri), name]);
+      fs.renameSync(this.uri, to);
+      this.uri = to;
+    }
   }
   class File {
     uri: string;
@@ -97,6 +102,11 @@ vi.mock("expo-file-system", () => {
     }
     delete() {
       fs.unlinkSync(this.uri);
+    }
+    rename(name: string) {
+      const to = target([path.dirname(this.uri), name]);
+      fs.renameSync(this.uri, to);
+      this.uri = to;
     }
     async copy(to: File) {
       fs.copyFileSync(this.uri, to.uri, fs.constants.COPYFILE_EXCL);
@@ -177,7 +187,7 @@ beforeEach(() => {
   env.rejectActivation = false;
   env.shares = [];
   env.acknowledged = [];
-  env.root = fs.mkdtempSync(path.join(os.tmpdir(), "xiaomei-test-"));
+  env.root = fs.mkdtempSync(path.join(os.tmpdir(), "anan-test-"));
 });
 afterEach(() => {
   env.database?.close();
@@ -309,10 +319,43 @@ it("failed database commit rolls back the library and removes extracted new file
   expect(JSON.stringify(store.get())).toBe(before);
   expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(count);
 });
+it("still receives a share that was queued under the former directory name", async () => {
+  const { store, files } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  const root = env.root.replace(/\\/g, "/");
+  // 清单是改名前写的，记的是旧路径；文件本身已经随目录搬到新名字下了。
+  const queued = `${root}/xiaomei-v1/intake/originals/shared.jpg`;
+  const moved = `${root}/anan-v1/intake/originals/shared.jpg`;
+  fs.mkdirSync(path.dirname(moved), { recursive: true });
+  fs.writeFileSync(moved, Buffer.alloc(32, 9));
+  env.shares = [
+    {
+      manifestId: "carried",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "shared",
+          captureId: "capture",
+          kind: "file",
+          localUri: queued,
+          fileName: "shared.jpg",
+          mediaType: "image",
+        },
+      ],
+    },
+  ];
+  await receiveShares(store);
+  const drafts = Object.values(store.get().drafts);
+  expect(drafts).toHaveLength(1);
+  expect(drafts[0]!.content.mediaIds).toHaveLength(1);
+  expect(fs.readdirSync(files.mediaDirectory.uri).length).toBeGreaterThan(0);
+});
 it("receives a native shared original once and acknowledges only its committed draft", async () => {
   const { store, files } = await setup();
   const { receiveShares } = await import("../src/local/services");
-  const original = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals/shared.jpg`;
+  const original = `${env.root.replace(/\\/g, "/")}/anan-v1/intake/originals/shared.jpg`;
   fs.mkdirSync(path.dirname(original), { recursive: true });
   fs.writeFileSync(original, Buffer.alloc(32, 15));
   env.shares = [
@@ -346,7 +389,7 @@ it("receives a native shared original once and acknowledges only its committed d
 it("skips unusable share items without poisoning their batch or later ones", async () => {
   const { store } = await setup();
   const { receiveShares } = await import("../src/local/services");
-  const original = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals/shared.jpg`;
+  const original = `${env.root.replace(/\\/g, "/")}/anan-v1/intake/originals/shared.jpg`;
   fs.mkdirSync(path.dirname(original), { recursive: true });
   fs.writeFileSync(original, Buffer.alloc(24, 9));
   env.shares = [
@@ -432,7 +475,7 @@ it("acknowledges a share with nothing usable instead of replaying it forever", a
 it("removes copied files when the library write fails mid-batch", async () => {
   const { store, files } = await setup();
   const { receiveShares } = await import("../src/local/services");
-  const original = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals/shared.jpg`;
+  const original = `${env.root.replace(/\\/g, "/")}/anan-v1/intake/originals/shared.jpg`;
   fs.mkdirSync(path.dirname(original), { recursive: true });
   fs.writeFileSync(original, Buffer.alloc(24, 9));
   const before = fs.readdirSync(files.mediaDirectory.uri).length;
@@ -465,7 +508,7 @@ it("removes copied files when the library write fails mid-batch", async () => {
 it("applies shared capture time and place to the intake draft", async () => {
   const { store } = await setup();
   const { receiveShares } = await import("../src/local/services");
-  const originals = `${env.root.replace(/\\/g, "/")}/xiaomei-v1/intake/originals`;
+  const originals = `${env.root.replace(/\\/g, "/")}/anan-v1/intake/originals`;
   fs.mkdirSync(originals, { recursive: true });
   fs.writeFileSync(`${originals}/old.jpg`, Buffer.alloc(24, 3));
   fs.writeFileSync(`${originals}/plain.jpg`, Buffer.alloc(24, 4));
@@ -596,13 +639,13 @@ it("recovers an unreadable startup library into a verified new database and reta
   await backup.recoverStartupBackup(file);
   const { activeLibraryName } = await import("../src/local/activation");
   const name = await activeLibraryName();
-  expect(name).toMatch(/^xiaomei-recovered-/);
+  expect(name).toMatch(/^anan-recovered-/);
   const recovered = new DatabaseSync(path.join(env.root, name));
   const state = readLibrary(recovered) as { records: Record<string, { text: string }> };
   expect(state.records.r!.text).toBe("第一步");
   recovered.close();
   const original = new DatabaseSync(
-    path.join(env.root, "xiaomei-local-v1.sqlite"),
+    path.join(env.root, "anan-local-v1.sqlite"),
   );
   expect(original.prepare("SELECT json FROM root").get()!.json).toBe("broken");
   original.close();
@@ -618,7 +661,7 @@ it("interrupted startup recovery never switches to a partial library or deletes 
     "activation write failed",
   );
   const { activeLibraryName } = await import("../src/local/activation");
-  expect(await activeLibraryName()).toBe("xiaomei-local-v1.sqlite");
+  expect(await activeLibraryName()).toBe("anan-local-v1.sqlite");
   expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(count);
 });
 it("persists a thumbnail with aspect-bearing dimensions at preserve time", async () => {
@@ -638,13 +681,31 @@ it("persists a thumbnail with aspect-bearing dimensions at preserve time", async
 it("names retention copies readably and prunes beyond the newest three", async () => {
   const { store, backup, files } = await setup();
   expect((await backup.createBackup(store.get())).name).toMatch(
-    /^xiaomei-\d{8}-\d{4}-[a-f0-9]{8}\.xmb$/,
+    /^anan-\d{8}-\d{4}-[a-f0-9]{8}\.xmb$/,
   );
   expect(fs.readdirSync(files.backupDirectory.uri)).toHaveLength(1);
   for (let i = 0; i < 3; i++) await backup.createBackup(store.get());
   const kept = fs.readdirSync(files.backupDirectory.uri);
   expect(kept).toHaveLength(3);
   expect(kept.every((name) => name.endsWith(".xmb"))).toBe(true);
+});
+it("keeps the newest retention copy when older ones still carry the former prefix", async () => {
+  const { backup, files } = await setup();
+  files.ensureDirectories();
+  for (const name of [
+    "xiaomei-20250101-0900-aaaaaaaa.xmb",
+    "xiaomei-20250102-0900-bbbbbbbb.xmb",
+    "xiaomei-20250103-0900-cccccccc.xmb",
+  ])
+    fs.writeFileSync(path.join(files.backupDirectory.uri, name), "old");
+  const fresh = "anan-20260918-0900-dddddddd.xmb";
+  fs.writeFileSync(path.join(files.backupDirectory.uri, fresh), "new");
+  backup.pruneBackups(3);
+  const kept = fs.readdirSync(files.backupDirectory.uri);
+  // 按整个文件名排序的话 anan-* 排在所有 xiaomei-* 前面，最新的这份会第一个被删。
+  expect(kept).toContain(fresh);
+  expect(kept).toHaveLength(3);
+  expect(kept).not.toContain("xiaomei-20250101-0900-aaaaaaaa.xmb");
 });
 it("counts calendar days since the last export and flags never-exported libraries", async () => {
   const { backup } = await setup();
@@ -766,7 +827,7 @@ it("keeps the old single-row library when the cutover cannot finish", async () =
   vi.resetModules();
   const { openLocalStore } = await import("../src/local/disk");
   await expect(openLocalStore()).rejects.toThrow();
-  const db = new DatabaseSync(path.join(env.root, "xiaomei-local-v1.sqlite"));
+  const db = new DatabaseSync(path.join(env.root, "anan-local-v1.sqlite"));
   expect(db.prepare("SELECT COUNT(*) n FROM library").get()).toEqual({ n: 1 });
   expect(db.prepare("SELECT COUNT(*) n FROM root").get()).toEqual({ n: 0 });
   expect(db.prepare("SELECT COUNT(*) n FROM entity").get()).toEqual({ n: 0 });
