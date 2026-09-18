@@ -1,5 +1,6 @@
 /** 年度成长册的纯排版：封面、寄语、十二月网格、第一次、落款，固定 750 宽长卷。 */
 import { wrapText } from "./keepsake";
+import { CHILD_FALLBACK } from "./brand";
 
 export const YEARBOOK_WIDTH = 750;
 const PADDING = 48;
@@ -69,7 +70,7 @@ export function layoutYearbook(input: YearbookInput): YearbookLayout {
   const stamp = { cx: YEARBOOK_WIDTH / 2, cy: y + r, r };
   y += r * 2 + 30;
 
-  const name = input.profileName.trim() || "小美";
+  const name = input.profileName.trim() || CHILD_FALLBACK;
   const titleLines = wrapText(`${name}的 ${input.year} 年`, {
     fontSize: 40,
     maxWidth: CONTENT_W,

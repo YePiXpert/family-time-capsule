@@ -17,6 +17,7 @@ import {
 import { collectUnusedMedia } from "./services";
 import { healthFile } from "./health-file";
 import { changeAvgMs } from "./health";
+import { APP_NAME } from "./brand";
 import { referencedMedia } from "./model";
 import {
   Button,
@@ -39,7 +40,7 @@ export function Settings() {
       <ScrollView contentContainerStyle={s.content}>
         <Text style={s.title}>我的</Text>
         <Text style={s.muted}>
-          {state.profile.name || "小美成长记"} · 留住每一个值得记住的日子
+          {state.profile.name || APP_NAME} · 留住每一个值得记住的日子
         </Text>
         <Card>
           <Button

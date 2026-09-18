@@ -166,10 +166,10 @@ describe("batch photo events", () => {
     const s = batchFixture();
     const d = s.drafts.draft!;
     d.content.title = "生日聚会";
-    d.content.text = "小美吹蜡烛";
+    d.content.text = "桉桉吹蜡烛";
     const groups = photoDayGroups(d, s.media);
     expect(groups[0]!.title).toBe("生日聚会");
-    expect(groups[0]!.text).toBe("小美吹蜡烛");
+    expect(groups[0]!.text).toBe("桉桉吹蜡烛");
     expect(
       groups.slice(1).every((g) => g.title === "" && g.text === ""),
     ).toBe(true);

@@ -30,7 +30,7 @@ const day = (i: number) =>
 
 function bigLibrary(): Library {
   const s = emptyLibrary();
-  s.profile.name = "小美";
+  s.profile.name = "桉桉";
   s.profile.birthday = "2021-01-01";
   for (let i = 0; i < PERSONS; i++)
     s.persons[`p${i}`] = { id: `p${i}`, name: `家人${i}` };

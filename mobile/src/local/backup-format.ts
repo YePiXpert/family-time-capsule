@@ -7,6 +7,7 @@ import {
   type EntityKind,
   type Library,
 } from "./model";
+import { APP_NAME } from "./brand";
 /** v1：魔数 + 整库 JSON 清单 + 素材原始字节。只读兼容，不再产出。 */
 export const BACKUP_MAGIC = new TextEncoder().encode("XIAOMEI1");
 export const HEADER_LIMIT = 16 * 1024 * 1024;
@@ -64,7 +65,7 @@ export function decodeManifest(json: Uint8Array): BackupManifest {
     m.version !== 1 ||
     !Array.isArray(m.mediaOrder)
   )
-    throw new Error("不是受支持的小美成长记备份。");
+    throw new Error(`不是受支持的${APP_NAME}备份。`);
   normalizeLibrary(m.library);
   validateLibrary(m.library);
   const ids = Object.keys(m.library.media).sort();
@@ -149,7 +150,7 @@ export function decodeMetaV2(json: Uint8Array): BackupMetaV2 {
     ) ||
     new Set(m.blobs.map((b) => b.sha256)).size !== m.blobs.length
   )
-    throw new Error("不是受支持的小美成长记备份。");
+    throw new Error(`不是受支持的${APP_NAME}备份。`);
   return m;
 }
 /** 把 meta 的根与 NDJSON 段拼回整库，并按开库同一套规则校验。 */
@@ -167,7 +168,7 @@ export function decodeLibraryV2(meta: BackupMetaV2, entities: Uint8Array): Libra
       | Record<string, unknown>
       | undefined;
     if (!collection || !ENTITY_KINDS.includes(row.kind) || typeof row.id !== "string")
-      throw new Error("不是受支持的小美成长记备份。");
+      throw new Error(`不是受支持的${APP_NAME}备份。`);
     collection[row.id] = row.e;
   }
   normalizeLibrary(state);

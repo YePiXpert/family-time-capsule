@@ -274,7 +274,7 @@ describe("complete backup manifest", () => {
   it("roundtrips records, edits, profile, albums, selection position and preferences", () => {
     const s = fixture();
     saveRecord(s, "draft", "r", date);
-    s.profile = { name: "小美", birthday: "2025-09-10", avatarId: "photo" };
+    s.profile = { name: "桉桉", birthday: "2025-09-10", avatarId: "photo" };
     s.settings.theme = "dark";
     s.selections.q = {
       id: "q",

@@ -14,6 +14,7 @@ import * as Sharing from "expo-sharing";
 import * as ImageManipulator from "expo-image-manipulator";
 import type { LocalMedia, LocalRecord } from "./model";
 import { mediaUri } from "./files";
+import { CHILD_FALLBACK } from "./brand";
 import { dateLabel, paperPalette } from "./ui";
 import { buildPdf, pdfPageSlices, type PdfPage } from "./pdf";
 import {
@@ -190,7 +191,7 @@ export const KeepSakeCard = forwardRef<
         letterSpacing={2}
         textAnchor="middle"
       >
-        {`${profileName || "小美"}的成长记`}
+        {`${profileName || CHILD_FALLBACK}的成长记`}
       </SvgText>
     </Svg>
   );
@@ -268,7 +269,7 @@ export const SeriesStrip = forwardRef<
         letterSpacing={2}
         textAnchor="middle"
       >
-        {`${profileName || "小美"}的成长记`}
+        {`${profileName || CHILD_FALLBACK}的成长记`}
       </SvgText>
     </Svg>
   );
