@@ -17,12 +17,12 @@ import { NoteCard } from "./NoteCard";
 import { ReplayModal } from "./RecapScreen";
 import { replayPhotos } from "./replay";
 import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
-import {
-  prepareKeepSakePhoto,
-  exportKeepSakeCard,
-  exportYearBookPdf,
-} from "./KeepSakeCard";
-import type { YearbookInput } from "./yearbook";
+import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
+import { yearBookInput, type YearbookInput } from "./yearbook";
+import { planBook, useBookBinder } from "./BookBinder";
+import type { BookPhoto } from "./book";
+import { PhotoPicker } from "./PhotoPicker";
+import { CHILD_FALLBACK } from "./brand";
 import { recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
@@ -110,6 +110,7 @@ function YearNote({ year }: { year: string }) {
 
 export function Year({ route }: Props<"Year">) {
   const state = useLibrary(),
+    store = useStore(),
     nav = useNav(),
     s = useStyles(),
     { large } = useTheme();  const { width, fontScale } = useWindowDimensions(),
@@ -118,8 +119,9 @@ export function Year({ route }: Props<"Year">) {
   const [replayOpen, setReplayOpen] = useState(false),
     [person, setPerson] = useState(""),
     [bookBusy, setBookBusy] = useState(false),
-    [bookFormat, setBookFormat] = useState<"image" | "pdf">("image"),
+    [coverPick, setCoverPick] = useState(false),
     [error, setError] = useState("");
+  const binder = useBookBinder();
   const bookRef = useRef<Svg | null>(null);
   const [book, setBook] = useState<{
     input: YearbookInput;
@@ -177,8 +179,92 @@ export function Year({ route }: Props<"Year">) {
     { length: 12 },
     (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`,
   );
-  const makeYearbook = async (format: "image" | "pdf") => {
-    setBookFormat(format);
+  // 册子收整年，不跟着人物筛选走：翻一本缺了人的年册没有意义。
+  const yearFirsts = records
+    .filter((r) => r.first)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const yearPhotoIds = useMemo(
+    () => [
+      ...new Set(
+        records
+          .flatMap((r) => r.mediaIds)
+          .filter((id) => state.media[id]?.kind === "image"),
+      ),
+    ],
+    [records, state.media],
+  );
+  const pickedCover = state.yearCovers[year];
+  const coverMedia =
+    (pickedCover ? state.media[pickedCover] : undefined) ??
+    coverForRecords(records, state.media);
+  const bookPhoto = (id: string): BookPhoto | undefined => {
+    const m = state.media[id];
+    if (m?.kind !== "image") return undefined;
+    return { key: id, aspect: m.width && m.height ? m.width / m.height : 4 / 3 };
+  };
+  const makeBook = () => {
+    const layout = planBook(
+      yearBookInput({
+        year,
+        profileName: state.profile.name,
+        birthday: state.profile.birthday,
+        stats,
+        note: state.yearNotes[year] ?? "",
+        months: monthKeys.map((key) => {
+          const monthRecords = records.filter((r) => monthKey(r.date) === key);
+          const shots = monthRecords.reduce(
+            (n, r) =>
+              n +
+              r.mediaIds.filter((id) => state.media[id]?.kind === "image")
+                .length,
+            0,
+          );
+          return {
+            label: monthLabel(key),
+            lead: [
+              `${monthRecords.length} 段时光`,
+              shots ? `${shots} 张照片` : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            records: monthRecords.map((r) => ({
+              title: recordTitle(r),
+              date: dateLabel(r.date),
+              text: r.text,
+              photos: r.mediaIds
+                .map(bookPhoto)
+                .filter((photo): photo is BookPhoto => !!photo),
+            })),
+          };
+        }),
+        firsts: yearFirsts.map((r) => ({
+          title: recordTitle(r),
+          date: dateLabel(r.date),
+        })),
+        cover: coverMedia ? bookPhoto(coverMedia.id) : undefined,
+        colophon: `${year} 年`,
+      }),
+    );
+    const name = state.profile.name.trim() || CHILD_FALLBACK;
+    Alert.alert(
+      "装订纪念册",
+      `共 ${layout.pages.length} 页，20×20cm 方形开本，300 DPI 可直接送印。装订要一会儿，请留在这一页。`,
+      [
+        { text: "再等等", style: "cancel" },
+        {
+          text: "开始装订",
+          onPress: () =>
+            binder.start({
+              layout,
+              name: `yearbook-${year}`,
+              title: `${name}的 ${year} 年`,
+              media: state.media,
+            }),
+        },
+      ],
+    );
+  };
+  const makeYearbook = async () => {
     setBookBusy(true);
     setError("");
     try {
@@ -228,10 +314,7 @@ export function Year({ route }: Props<"Year">) {
       requestAnimationFrame(async () => {
         if (cancelled) return;
         try {
-          const name = `yearbook-${year}`;
-          if (bookFormat === "pdf")
-            await exportYearBookPdf(bookRef.current, name);
-          else await exportKeepSakeCard(bookRef.current, name);
+          await exportKeepSakeCard(bookRef.current, `yearbook-${year}`);
         } catch (e) {
           setError(messageOf(e));
         } finally {
@@ -244,7 +327,7 @@ export function Year({ route }: Props<"Year">) {
       cancelled = true;
       cancelAnimationFrame(first);
     };
-  }, [book, bookBusy, bookFormat, year]);
+  }, [book, bookBusy, year]);
   return (
     <Page>
       <Text style={s.title}>{year} 年</Text>
@@ -262,22 +345,53 @@ export function Year({ route }: Props<"Year">) {
           onPress={() => setReplayOpen(true)}
         />
       </View>
-      <Button
-        title={bookBusy ? "正在装订这一年的成长册…" : "导出成长册"}
-        testID="year-yearbook"
-        disabled={bookBusy || records.length === 0}
-        onPress={() =>
-          Alert.alert("导出成长册", "长图适合分享，PDF 按 A4 分页，适合打印成册。", [
-            { text: "取消", style: "cancel" },
-            { text: "长图", onPress: () => void makeYearbook("image") },
-            { text: "可打印 PDF", onPress: () => void makeYearbook("pdf") },
-          ])
-        }
-      />
+      <View style={s.row}>
+        <Button
+          title={bookBusy ? "正在生成长图…" : "导出成长册"}
+          testID="year-yearbook"
+          disabled={bookBusy || !!binder.job || records.length === 0}
+          onPress={() =>
+            Alert.alert(
+              "导出成长册",
+              "长图一张，适合发给家人；纪念册是 20×20cm 方形开本的 PDF，真分页、带页码，可直接送印。",
+              [
+                { text: "取消", style: "cancel" },
+                { text: "长图", onPress: () => void makeYearbook() },
+                { text: "纪念册 PDF", onPress: makeBook },
+              ],
+            )
+          }
+        />
+        {yearPhotoIds.length > 0 && (
+          <Button
+            title={
+              pickedCover && state.media[pickedCover]
+                ? "换纪念册封面"
+                : "选纪念册封面"
+            }
+            testID="year-book-cover"
+            disabled={!!binder.job}
+            onPress={() => setCoverPick(true)}
+          />
+        )}
+      </View>
+      {binder.progress && (
+        <Card compact>
+          <Text style={s.heading}>
+            正在装订 {binder.progress.done + 1}/{binder.progress.total} 页
+          </Text>
+          <Text style={s.muted}>
+            装订完会弹出保存与分享。请留在这一页，离开会中断。
+          </Text>
+          <Button title="停止装订" testID="year-book-cancel" onPress={binder.cancel} />
+        </Card>
+      )}
       {records.length === 0 && !bookBusy && (
         <Text style={s.muted}>这一年还没有记录，先记下几段时光。</Text>
       )}
+      {!!binder.notice && <Text style={s.muted}>{binder.notice}</Text>}
       <ErrorText message={error} />
+      <ErrorText message={binder.error} />
       {replayOpen && <ReplayModal year={year} onClose={() => setReplayOpen(false)} />}
       {personList.length > 0 && (
         <View style={s.row}>
@@ -354,6 +468,28 @@ export function Year({ route }: Props<"Year">) {
         </View>
       )}
       <Ornament />
+      <PhotoPicker
+        visible={coverPick}
+        title="选一张纪念册封面"
+        hint="不选就用这一年最新的一张照片。"
+        empty="这一年还没有照片。"
+        testID="year-cover-picker"
+        choices={yearPhotoIds.map((id) => ({
+          mediaId: id,
+          label: "选为纪念册封面",
+          caption: pickedCover === id ? "当前封面" : undefined,
+        }))}
+        onPick={(choice) => {
+          setCoverPick(false);
+          void store
+            .change((s) => {
+              s.yearCovers[year] = choice.mediaId;
+            })
+            .catch((e: unknown) => setError(messageOf(e)));
+        }}
+        onClose={() => setCoverPick(false)}
+      />
+      {binder.stage}
       {book && (
         <View
           pointerEvents="none"

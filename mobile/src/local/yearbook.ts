@@ -1,6 +1,7 @@
 /** 年度成长册的纯排版：封面、寄语、十二月网格、第一次、落款，固定 750 宽长卷。 */
 import { wrapText } from "./keepsake";
 import { CHILD_FALLBACK } from "./brand";
+import type { BookBlock, BookChapter, BookInput, BookPhoto } from "./book";
 
 export const YEARBOOK_WIDTH = 750;
 const PADDING = 48;
@@ -177,5 +178,77 @@ export function layoutYearbook(input: YearbookInput): YearbookLayout {
     firstsHeadingY,
     firsts,
     colophonY,
+  };
+}
+
+/** 成册用的一年：照月分章，每条记录先文字后照片，清单与寄语都不再截断。 */
+export type YearBookSource = {
+  year: string;
+  profileName: string;
+  birthday?: string;
+  stats: string;
+  note: string;
+  months: {
+    label: string;
+    lead?: string;
+    records: {
+      title: string;
+      date: string;
+      text: string;
+      photos: BookPhoto[];
+    }[];
+  }[];
+  firsts: { title: string; date: string }[];
+  cover?: BookPhoto;
+  colophon: string;
+};
+
+export function yearBookInput(source: YearBookSource): BookInput {
+  const name = source.profileName.trim() || CHILD_FALLBACK;
+  const chapters: BookChapter[] = [];
+  const note = source.note.trim();
+  if (note)
+    chapters.push({
+      heading: "爸爸妈妈的话",
+      blocks: [{ kind: "text", body: note }],
+    });
+  for (const month of source.months) {
+    const blocks: BookBlock[] = [];
+    for (const record of month.records) {
+      const title = record.title.trim();
+      const text = record.text.trim();
+      if (title || text)
+        blocks.push({
+          kind: "text",
+          ...(title ? { title } : {}),
+          date: record.date,
+          body: text,
+        });
+      if (record.photos.length)
+        blocks.push({ kind: "photos", photos: record.photos });
+    }
+    if (blocks.length)
+      chapters.push({
+        heading: month.label,
+        ...(month.lead ? { lead: month.lead } : {}),
+        blocks,
+      });
+  }
+  if (source.firsts.length)
+    chapters.push({
+      heading: "这一年的第一次",
+      blocks: [{ kind: "list", entries: source.firsts }],
+    });
+  return {
+    title: `${name}的 ${source.year} 年`,
+    subtitle: source.stats,
+    stamp: source.year,
+    ...(source.cover ? { cover: source.cover } : {}),
+    titlePage: {
+      name,
+      ...(source.birthday ? { birthday: source.birthday } : {}),
+    },
+    chapters,
+    colophon: source.colophon,
   };
 }

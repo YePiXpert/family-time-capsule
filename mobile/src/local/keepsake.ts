@@ -46,6 +46,9 @@ export function wrapText(
   return lines;
 }
 
+/** 不截断的换行：册子按页续排，靠翻页而不是省略号收尾。 */
+export const wrapAll = (text: string, fontSize: number, maxWidth: number) =>
+  wrapText(text, { fontSize, maxWidth, maxLines: Number.MAX_SAFE_INTEGER });
 export type KeepSakeLayout = {
   width: number;
   height: number;
