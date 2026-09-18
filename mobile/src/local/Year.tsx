@@ -20,7 +20,8 @@ import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
 import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
 import { yearBookInput, type YearbookInput } from "./yearbook";
 import { planBook, useBookBinder } from "./BookBinder";
-import type { BookPhoto } from "./book";
+import { BookPreview } from "./BookPreview";
+import type { BookLayout, BookPhoto } from "./book";
 import { PhotoPicker } from "./PhotoPicker";
 import { CHILD_FALLBACK } from "./brand";
 import { recapContext } from "../ai/state";
@@ -120,6 +121,7 @@ export function Year({ route }: Props<"Year">) {
     [person, setPerson] = useState(""),
     [bookBusy, setBookBusy] = useState(false),
     [coverPick, setCoverPick] = useState(false),
+    [preview, setPreview] = useState<BookLayout | null>(null),
     [error, setError] = useState("");
   const binder = useBookBinder();
   const bookRef = useRef<Svg | null>(null);
@@ -245,24 +247,16 @@ export function Year({ route }: Props<"Year">) {
         colophon: `${year} 年`,
       }),
     );
-    const name = state.profile.name.trim() || CHILD_FALLBACK;
-    Alert.alert(
-      "装订纪念册",
-      `共 ${layout.pages.length} 页，20×20cm 方形开本，300 DPI 可直接送印。装订要一会儿，请留在这一页。`,
-      [
-        { text: "再等等", style: "cancel" },
-        {
-          text: "开始装订",
-          onPress: () =>
-            binder.start({
-              layout,
-              name: `yearbook-${year}`,
-              title: `${name}的 ${year} 年`,
-              media: state.media,
-            }),
-        },
-      ],
-    );
+    setPreview(layout);
+  };
+  const bindBook = (layout: BookLayout) => {
+    setPreview(null);
+    binder.start({
+      layout,
+      name: `yearbook-${year}`,
+      title: `${state.profile.name.trim() || CHILD_FALLBACK}的 ${year} 年`,
+      media: state.media,
+    });
   };
   const makeYearbook = async () => {
     setBookBusy(true);
@@ -489,6 +483,14 @@ export function Year({ route }: Props<"Year">) {
         }}
         onClose={() => setCoverPick(false)}
       />
+      {preview && (
+        <BookPreview
+          layout={preview}
+          media={state.media}
+          onClose={() => setPreview(null)}
+          onBind={() => bindBook(preview)}
+        />
+      )}
       {binder.stage}
       {book && (
         <View
