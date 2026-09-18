@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Alert, Pressable, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
@@ -12,6 +12,8 @@ import {
 import { useNav, type Props } from "./navigation";
 import { coverForRecords, Volume } from "./Shelf";
 import { NoteCard } from "./NoteCard";
+import { ReplayModal } from "./RecapScreen";
+import { replayPhotos } from "./replay";
 import { recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
@@ -101,9 +103,14 @@ export function Year({ route }: Props<"Year">) {
     { large } = useTheme();  const { width, fontScale } = useWindowDimensions(),
     insets = useSafeAreaInsets();
   const year = route.params.year;
+  const [replayOpen, setReplayOpen] = useState(false);
   const records = useMemo(
     () => sortedRecords(state).filter((r) => yearKey(r.date) === year),
     [state, year],
+  );
+  const replay = useMemo(
+    () => replayPhotos(records, state.media),
+    [records, state.media],
   );
   const firsts = records
     .filter((r) => r.first)
@@ -143,11 +150,20 @@ export function Year({ route }: Props<"Year">) {
     <Page>
       <Text style={s.title}>{year} 年</Text>
       {!!stats && <Text style={s.muted}>{stats}</Text>}
-      <Button
-        title="这一年回顾"
-        testID="year-recap"
-        onPress={() => nav.navigate("Recap", { year })}
-      />
+      <View style={s.row}>
+        <Button
+          title="这一年回顾"
+          testID="year-recap"
+          onPress={() => nav.navigate("Recap", { year })}
+        />
+        <Button
+          title={replay.length ? "重放这一年" : "这一年没有照片"}
+          testID="year-replay"
+          disabled={!replay.length}
+          onPress={() => setReplayOpen(true)}
+        />
+      </View>
+      {replayOpen && <ReplayModal year={year} onClose={() => setReplayOpen(false)} />}
       <YearNote year={year} />
       {firsts.length > 0 && (
         <View style={{ gap: 12 }}>
