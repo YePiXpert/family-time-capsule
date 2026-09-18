@@ -27,6 +27,7 @@ import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
 import type { Props } from "./navigation";
 import {
+  BottomBar,
   Button,
   ErrorText,
   Field,
@@ -806,14 +807,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             }
           />
         </ScrollView>
-        <View
-          style={{
-            padding: 16,
-            backgroundColor: colors.glass,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: colors.glassLine,
-          }}
-        >
+        <BottomBar>
           <Button
             title={
               busy
@@ -848,7 +842,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               });
             }}
           />
-        </View>
+        </BottomBar>
       </KeyboardAvoidingView>
     </Page>
   );

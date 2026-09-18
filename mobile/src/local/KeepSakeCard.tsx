@@ -14,7 +14,7 @@ import * as Sharing from "expo-sharing";
 import * as ImageManipulator from "expo-image-manipulator";
 import type { LocalMedia, LocalRecord } from "./model";
 import { mediaUri } from "./files";
-import { dateLabel } from "./ui";
+import { dateLabel, paperPalette } from "./ui";
 import {
   CARD_WIDTH,
   SERIES_STRIP_MAX,
@@ -26,10 +26,7 @@ import {
   wrapText,
 } from "./keepsake";
 
-const INK = "#3B3129";
-const MUTED = "#7A6A58";
-const ACCENT = "#B4553C";
-const LINE = "#EBDFCC";
+const { ink: INK, muted: MUTED, accent: ACCENT, line: LINE } = paperPalette;
 
 function OrnamentLine({ y }: { y: number }) {
   const midX = CARD_WIDTH / 2;

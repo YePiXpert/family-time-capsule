@@ -230,7 +230,6 @@ function Root() {
               borderBottomColor: theme.colors.glassLine,
             }}
           >
-            {" "}
             <ErrorText message={error} />
             <Button
               title="重试接收素材"
@@ -246,7 +245,16 @@ function Root() {
           screenOptions={{
             headerBackTitle: "返回",
             headerShadowVisible: false,
-            headerStyle: { backgroundColor: theme.colors.card },
+            headerBackground: () => (
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: theme.colors.glass,
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  borderBottomColor: theme.colors.glassLine,
+                }}
+              />
+            ),
             contentStyle: { backgroundColor: theme.colors.paper },
             animation: reduceMotion ? "none" : "fade",
           }}
