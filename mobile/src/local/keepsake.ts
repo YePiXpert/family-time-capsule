@@ -178,6 +178,17 @@ export function layoutSeriesStrip(
   };
 }
 
+/** PNG 的 IHDR 就在头 24 字节里：离屏渲染出来的实际像素尺寸随设备缩放变，
+ * 裁页之前必须按真实尺寸换算，不能拿版面上的 750 当真。 */
+export function pngSize(bytes: Uint8Array): { width: number; height: number } {
+  if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50)
+    throw new Error("成长册生成失败，请重试。");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const width = view.getUint32(16),
+    height = view.getUint32(20);
+  if (width < 1 || height < 1) throw new Error("成长册生成失败，请重试。");
+  return { width, height };
+}
 /** toDataURL 的回调在 iOS 给完整 data URL，Android 只给裸 base64；两者都收。 */export function pngBytesOfDataUrl(dataUrl: string): Uint8Array {
   const trimmed = dataUrl.trim();
   const comma = trimmed.indexOf(",");

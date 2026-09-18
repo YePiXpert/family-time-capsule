@@ -17,7 +17,11 @@ import { NoteCard } from "./NoteCard";
 import { ReplayModal } from "./RecapScreen";
 import { replayPhotos } from "./replay";
 import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
-import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
+import {
+  prepareKeepSakePhoto,
+  exportKeepSakeCard,
+  exportYearBookPdf,
+} from "./KeepSakeCard";
 import type { YearbookInput } from "./yearbook";
 import { recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
@@ -114,6 +118,7 @@ export function Year({ route }: Props<"Year">) {
   const [replayOpen, setReplayOpen] = useState(false),
     [person, setPerson] = useState(""),
     [bookBusy, setBookBusy] = useState(false),
+    [bookFormat, setBookFormat] = useState<"image" | "pdf">("image"),
     [error, setError] = useState("");
   const bookRef = useRef<Svg | null>(null);
   const [book, setBook] = useState<{
@@ -172,7 +177,8 @@ export function Year({ route }: Props<"Year">) {
     { length: 12 },
     (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`,
   );
-  const makeYearbook = async () => {
+  const makeYearbook = async (format: "image" | "pdf") => {
+    setBookFormat(format);
     setBookBusy(true);
     setError("");
     try {
@@ -222,7 +228,10 @@ export function Year({ route }: Props<"Year">) {
       requestAnimationFrame(async () => {
         if (cancelled) return;
         try {
-          await exportKeepSakeCard(bookRef.current, `yearbook-${year}`);
+          const name = `yearbook-${year}`;
+          if (bookFormat === "pdf")
+            await exportYearBookPdf(bookRef.current, name);
+          else await exportKeepSakeCard(bookRef.current, name);
         } catch (e) {
           setError(messageOf(e));
         } finally {
@@ -235,7 +244,7 @@ export function Year({ route }: Props<"Year">) {
       cancelled = true;
       cancelAnimationFrame(first);
     };
-  }, [book, bookBusy, year]);
+  }, [book, bookBusy, bookFormat, year]);
   return (
     <Page>
       <Text style={s.title}>{year} 年</Text>
@@ -257,9 +266,13 @@ export function Year({ route }: Props<"Year">) {
         title={bookBusy ? "正在装订这一年的成长册…" : "导出成长册"}
         testID="year-yearbook"
         disabled={bookBusy || records.length === 0}
-        onPress={() => {
-          void makeYearbook();
-        }}
+        onPress={() =>
+          Alert.alert("导出成长册", "长图适合分享，PDF 按 A4 分页，适合打印成册。", [
+            { text: "取消", style: "cancel" },
+            { text: "长图", onPress: () => void makeYearbook("image") },
+            { text: "可打印 PDF", onPress: () => void makeYearbook("pdf") },
+          ])
+        }
       />
       {records.length === 0 && !bookBusy && (
         <Text style={s.muted}>这一年还没有记录，先记下几段时光。</Text>

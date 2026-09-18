@@ -84,7 +84,7 @@ try:
     tap('keepsake-make');time.sleep(4);shot('keepsake-share-sheet');adb('shell','input','keyevent','4')
     find('record-edit')
     restart();tap(f"volume-year-{time.strftime('%Y')}")
-    tap('year-yearbook');time.sleep(8);shot('yearbook-share-sheet');adb('shell','input','keyevent','4')
+    tap('year-yearbook');tap('长图');time.sleep(8);shot('yearbook-share-sheet');adb('shell','input','keyevent','4')
     find('year-yearbook');yearbookExport=True
     report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,widths=[320,390])
 finally:
