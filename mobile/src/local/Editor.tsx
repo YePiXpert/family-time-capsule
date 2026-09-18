@@ -7,7 +7,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
@@ -37,7 +36,6 @@ import {
   dateLabel,
   messageOf,
   useStyles,
-  useTheme,
 } from "./ui";
 import { Photo, PhotoDetails } from "./Media";
 import {
@@ -50,8 +48,8 @@ import {
 export function Editor({ route, navigation }: Props<"Editor">) {
   const store = useStore(),
     state = useLibrary(),
-    s = useStyles(),
-    { colors } = useTheme();
+    s = useStyles();
+  const headerHeight = useHeaderHeight();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
     clone(store.get().drafts[route.params.draftId]),
   ),
@@ -273,7 +271,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     });
     setMovingPhoto(null);
   };
-  const headerHeight = useHeaderHeight();
   return (
     <Page scroll={false}>
       <KeyboardAvoidingView

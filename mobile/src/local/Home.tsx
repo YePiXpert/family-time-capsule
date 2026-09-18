@@ -250,7 +250,7 @@ export function Month({ route }: Props<"Month">) {
     { colors, large } = useTheme();
   const insets = useSafeAreaInsets(),
     { width, fontScale } = useWindowDimensions();
-  const columns = large || fontScale >= 1.4 ? 1 : width >= 600 ? 3 : 2;
+  const columns = large || fontScale >= 1.3 ? 1 : width >= 600 ? 3 : 2;
   const tileSize =
     (width - insets.left - insets.right - 40 - 12 * (columns - 1)) / columns;
   const [query, setQuery] = useState(""),

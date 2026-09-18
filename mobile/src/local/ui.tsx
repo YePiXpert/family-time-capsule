@@ -227,7 +227,7 @@ export function Ornament() {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        gap: 10,
+        gap: 8,
         paddingVertical: 4,
       }}
     >
