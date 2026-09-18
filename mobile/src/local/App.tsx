@@ -248,7 +248,10 @@ function Root() {
           screenOptions={{
             headerBackTitle: "返回",
             headerShadowVisible: Platform.OS !== "ios",
-            // iOS 26 交给系统液态玻璃页头，透出暖色光斑；Android 用纸面+细描边。
+            // 页头取纸色与页面底色连成一片：iOS 由导航主题 colors.card（已设为 paper）
+            // 直接上色并去掉分隔线，Android 自绘纸面 + 细描边。
+            // 注：react-native-screens 的 buildAppearance 只有不透明／全透明两条分支，
+            // 从不调用 configureWithDefaultBackground，所以这里拿不到 iOS 26 系统材质。
             headerBackground:
               Platform.OS === "ios"
                 ? undefined
