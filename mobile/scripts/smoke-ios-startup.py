@@ -10,11 +10,10 @@ import os
 from pathlib import Path
 import plistlib
 import re
-import sqlite3
 import subprocess
 import time
 from ios_simulator import boot_simulator, cleanup_simulator
-from local_fixture import empty, record, write_state, read_state
+from local_fixture import break_state, broken_root, empty, record, write_legacy_state, write_state, read_state
 
 
 def run(*args, timeout=180):
@@ -117,12 +116,16 @@ for result in request.results ?? [] {
             launch(label, "小美的成长记")
             run("xcrun", "simctl", "terminate", udid, bundle)
             assert read_state(db_path) == state
-        with sqlite3.connect(db_path) as db:
-            db.execute("UPDATE library SET snapshot='broken' WHERE id=1")
+        break_state(db_path)
         launch("local-read-recovery", "本机资料暂时无法打开")
         run("xcrun", "simctl", "terminate", udid, bundle)
-        with sqlite3.connect(db_path) as db:
-            assert db.execute('SELECT snapshot FROM library').fetchone()[0] == 'broken'
+        assert broken_root(db_path) == 'broken'
+        # Build 62 及更早的整库单行快照：开库应自动切成实体表，内容一条不差。
+        write_legacy_state(db_path, state)
+        launch("legacy-snapshot-migrated", "小美的成长记")
+        run("xcrun", "simctl", "terminate", udid, bundle)
+        assert read_state(db_path) == state
+        report["legacySnapshotMigrated"] = True
         write_state(db_path, state)
         launch("repaired-local-mode-relaunch", "小美的成长记")
         run("xcrun", "simctl", "terminate", udid, bundle)
