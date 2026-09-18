@@ -740,3 +740,13 @@ it("restores with progress and lets other writes through while it unpacks", asyn
   expect(stages[stages.length - 1]).toContain("写入本机资料");
   expect(store.get().records.r?.text).toBe("第一步");
 });
+it("backs up and restores a brand-new library with nothing in it yet", async () => {
+  const { openLocalStore } = await import("../src/local/disk");
+  const backup = await import("../src/local/backup");
+  const store = await openLocalStore();
+  const out = await backup.createBackup(store.get());
+  const restored = await backup.inspectBackup(out, true);
+  expect(Object.keys(restored.records)).toEqual([]);
+  expect(Object.keys(restored.media)).toEqual([]);
+  expect(restored.welcome).toBe(false);
+});
