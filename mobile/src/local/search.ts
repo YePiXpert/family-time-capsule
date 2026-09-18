@@ -1,4 +1,4 @@
-import { yearKey, type LocalRecord } from "./model";
+import { yearKey, type LocalRecord, type Stored } from "./model";
 
 export type MediaFilter = "any" | "av" | "none";
 export type SearchFilters = {
@@ -8,7 +8,10 @@ export type SearchFilters = {
   person?: string;
 };
 
-function hasAV(record: LocalRecord, kinds: Record<string, string>): boolean {
+function hasAV(
+  record: Stored<LocalRecord>,
+  kinds: Record<string, string>,
+): boolean {
   return record.mediaIds.some((id) => {
     const kind = kinds[id];
     return kind === "video" || kind === "audio";
@@ -17,11 +20,11 @@ function hasAV(record: LocalRecord, kinds: Record<string, string>): boolean {
 
 /** 全库搜索：标题/正文/地点不区分大小写包含 + 可选筛选，按日期倒序，最多 100 条。 */
 export function searchRecords(
-  records: LocalRecord[],
+  records: Stored<LocalRecord>[],
   query: string,
   filters: SearchFilters = {},
   kinds: Record<string, string> = {},
-): LocalRecord[] {
+): Stored<LocalRecord>[] {
   const needle = query.trim().toLowerCase();
   const media = filters.media ?? "any";
   return records

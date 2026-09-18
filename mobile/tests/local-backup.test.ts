@@ -516,13 +516,14 @@ it("resumes the same material session with its input, cover and scroll position"
   const { store, media } = await setup();
   const { beginSelection } = await import("../src/local/services");
   const id = await beginSelection(store);
+  const { editEntity } = await import("../src/local/model");
   await store.change((s) => {
-    Object.assign(s.selections[id]!, {
-      selected: ["r"],
-      month: "2026-09",
-      offset: 444,
-      name: "生日",
-      coverId: media.id,
+    editEntity(s, "selections", id, (q) => {
+      q.selected = ["r"];
+      q.month = "2026-09";
+      q.offset = 444;
+      q.name = "生日";
+      q.coverId = media.id;
     });
   });
   expect(await beginSelection(store, null, ["r"])).toBe(id);

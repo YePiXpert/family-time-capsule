@@ -8,7 +8,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary } from "./context";
 import { CaptureFab } from "./CaptureFab";
-import { monthKey, type LocalRecord } from "./model";
+import { monthKey, type LocalRecord, type Stored } from "./model";
 import { useNav, type Props } from "./navigation";
 import {
   Field,
@@ -31,7 +31,7 @@ export function RecordCard({
   onPress,
   tileSize,
 }: {
-  record: LocalRecord;
+  record: Stored<LocalRecord>;
   selected?: boolean;
   onPress: () => void;
   tileSize?: number;
@@ -196,7 +196,7 @@ export function Month({ route }: Props<"Month">) {
       )
       .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
   }, [state, query, route.params.month]);
-  const byDay = new Map<string, LocalRecord[]>();
+  const byDay = new Map<string, Stored<LocalRecord>[]>();
   for (const record of records) {
     const day = dateLabel(record.date);
     const group = byDay.get(day) ?? [];
@@ -204,7 +204,7 @@ export function Month({ route }: Props<"Month">) {
     byDay.set(day, group);
   }
   const sections = [...byDay].map(([title, dayRecords]) => {
-    const data: LocalRecord[][] = [];
+    const data: Stored<LocalRecord>[][] = [];
     for (let i = 0; i < dayRecords.length; i += columns)
       data.push(dayRecords.slice(i, i + columns));
     return { title, count: dayRecords.length, data };

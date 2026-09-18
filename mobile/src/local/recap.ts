@@ -2,11 +2,12 @@ import {
   monthKey,
   type LocalMedia,
   type LocalRecord,
+  type Stored,
 } from "./model";
 
 export type YearRecap = {
   months: { month: string; count: number; cover?: LocalMedia }[];
-  firsts: LocalRecord[];
+  firsts: Stored<LocalRecord>[];
   photos: number;
   av: number;
   chars: number;
@@ -14,17 +15,17 @@ export type YearRecap = {
 
 /** 年度回顾的纯汇总：各月封面、第一次清单、照片/影音/字数统计。 */
 export function recapOf(
-  records: LocalRecord[],
+  records: Stored<LocalRecord>[],
   media: Record<string, LocalMedia>,
 ): YearRecap {
-  const byMonth = new Map<string, LocalRecord[]>();
+  const byMonth = new Map<string, Stored<LocalRecord>[]>();
   for (const record of records) {
     const key = monthKey(record.date);
     const list = byMonth.get(key) ?? [];
     list.push(record);
     byMonth.set(key, list);
   }
-  const coverOf = (list: LocalRecord[]): LocalMedia | undefined => {
+  const coverOf = (list: Stored<LocalRecord>[]): Stored<LocalMedia> | undefined => {
     for (const r of list) {
       const candidate = r.coverId ? media[r.coverId] : undefined;
       if (candidate?.kind === "image") return candidate;

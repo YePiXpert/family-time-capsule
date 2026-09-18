@@ -8,14 +8,18 @@ import {
 } from "../../modules/share-intake/src";
 import {
   clone,
+  editEntity,
   emptyContent,
   monthOfItem,
   referencedMedia,
   type Library,
   type MediaKind,
   type LocalMedia,
+  type LocalRecord,
+  type Mutable,
   type PhotoMetadata,
   type RecordDraft,
+  type Stored,
 } from "./model";
 import { deleteMediaFiles, preserveMedia } from "./files";
 import { applyPhotoMetadata } from "./photo-metadata";
@@ -41,7 +45,9 @@ export async function beginDraft(
       autoDate: !record,
       autoLocation: !record,
       groupPhotosByDay: !record,
-      content: record ? clone(record) : emptyContent(),
+      content: record
+        ? (clone(record) as Mutable<Stored<LocalRecord>>)
+        : emptyContent(),
       updatedAt: now(),
     };
     return id;
@@ -62,7 +68,9 @@ export async function beginSelection(
       (q) => q.albumId === albumId,
     );
     if (previous) {
-      previous.selected = [...new Set([...previous.selected, ...selected])];
+      editEntity(s, "selections", previous.id, (q) => {
+        q.selected = [...new Set([...q.selected, ...selected])];
+      });
       return previous.id;
     }
     const id = newId();
@@ -116,9 +124,13 @@ export async function addToSeries(
     if (!record.mediaIds.includes(mediaId) || media?.kind !== "image")
       throw new Error("请从这条记录的照片中选择。");
     const month = monthOfItem(record, media);
-    series.items = series.items.filter((i) => i.month !== month);
-    series.items.push({ recordId, mediaId, month });
-    series.updatedAt = now();
+    editEntity(s, "series", seriesId, (t) => {
+      t.items = [
+        ...t.items.filter((i) => i.month !== month),
+        { recordId, mediaId, month },
+      ];
+      t.updatedAt = now();
+    });
   });
 }
 /** 改人物名；trim 后 1-50 字，同名复用规则不适用于改名（保留身份）。 */
@@ -132,7 +144,9 @@ export async function renamePerson(
     if (!person) throw new Error("没有这个人。");
     const trimmed = name.trim().slice(0, 50);
     if (!trimmed) throw new Error("名字不能是空的。");
-    person.name = trimmed;
+    editEntity(s, "persons", id, (p) => {
+      p.name = trimmed;
+    });
   });
 }
 /** 新建人物（同名复用既有 id），供编辑器人物 chips 调用。 */

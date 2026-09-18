@@ -13,7 +13,15 @@ import {
 } from "react-native";
 import { useLibrary, useStore } from "./context";
 import { beginSelection, newId, now } from "./services";
-import { finishSelection, monthKey, sortedRecords } from "./model";
+import {
+  editEntity,
+  finishSelection,
+  monthKey,
+  sortedRecords,
+  type Mutable,
+  type SelectionSession,
+  type Stored,
+} from "./model";
 import type { Props } from "./navigation";
 import {
   BottomBar,
@@ -79,11 +87,12 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
               testPrefix="album-note"
               onSave={async (value) => {
                 await store.change((s) => {
-                  const target = s.albums[album.id];
-                  if (!target) throw new Error("相册已删除。");
-                  if (value) target.note = value;
-                  else delete target.note;
-                  target.updatedAt = now();
+                  if (!s.albums[album.id]) throw new Error("相册已删除。");
+                  editEntity(s, "albums", album.id, (target) => {
+                    if (value) target.note = value;
+                    else delete target.note;
+                    target.updatedAt = now();
+                  });
                 });
               }}
             />
@@ -112,10 +121,12 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                 <Button
                   title="保存名称"
                   onPress={() =>
-                    action((s) => {
-                      s.albums[album.id]!.name = name.trim() || "新相册";
-                      s.albums[album.id]!.updatedAt = now();
-                    })
+                    action((s) =>
+                      editEntity(s, "albums", album.id, (a) => {
+                        a.name = name.trim() || "新相册";
+                        a.updatedAt = now();
+                      }),
+                    )
                   }
                 />
                 <Button
@@ -163,47 +174,50 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                     title="上移"
                     disabled={index === 0}
                     onPress={() =>
-                      action((s) => {
-                        const items = s.albums[album.id]!.items;
-                        [items[index - 1], items[index]] = [
-                          items[index]!,
-                          items[index - 1]!,
-                        ];
-                        s.albums[album.id]!.updatedAt = now();
-                      })
+                      action((s) =>
+                        editEntity(s, "albums", album.id, (a) => {
+                          [a.items[index - 1], a.items[index]] = [
+                            a.items[index]!,
+                            a.items[index - 1]!,
+                          ];
+                          a.updatedAt = now();
+                        }),
+                      )
                     }
                   />
                   <Button
                     title="下移"
                     disabled={index === album.items.length - 1}
                     onPress={() =>
-                      action((s) => {
-                        const items = s.albums[album.id]!.items;
-                        [items[index + 1], items[index]] = [
-                          items[index]!,
-                          items[index + 1]!,
-                        ];
-                        s.albums[album.id]!.updatedAt = now();
-                      })
+                      action((s) =>
+                        editEntity(s, "albums", album.id, (a) => {
+                          [a.items[index + 1], a.items[index]] = [
+                            a.items[index]!,
+                            a.items[index + 1]!,
+                          ];
+                          a.updatedAt = now();
+                        }),
+                      )
                     }
                   />
                   <Button
                     title="移出相册"
                     onPress={() =>
-                      action((s) => {
-                        const a = s.albums[album.id]!;
-                        a.items = a.items.filter((i) => i.id !== item.id);
-                        if (
-                          a.coverId &&
-                          !a.items.some((i) =>
-                            s.records[i.recordId]?.mediaIds.includes(
-                              a.coverId!,
-                            ),
+                      action((s) =>
+                        editEntity(s, "albums", album.id, (a) => {
+                          a.items = a.items.filter((i) => i.id !== item.id);
+                          if (
+                            a.coverId &&
+                            !a.items.some((i) =>
+                              s.records[i.recordId]?.mediaIds.includes(
+                                a.coverId!,
+                              ),
+                            )
                           )
-                        )
-                          a.coverId = null;
-                        a.updatedAt = now();
-                      })
+                            a.coverId = null;
+                          a.updatedAt = now();
+                        }),
+                      )
                     }
                   />
                 </View>
@@ -224,10 +238,12 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
           label: "选为相册封面",
         }))}
         onPick={(choice) => {
-          action((s) => {
-            s.albums[album.id]!.coverId = choice.mediaId;
-            s.albums[album.id]!.updatedAt = now();
-          });
+          action((s) =>
+            editEntity(s, "albums", album.id, (a) => {
+              a.coverId = choice.mediaId;
+              a.updatedAt = now();
+            }),
+          );
           setCover(false);
         }}
         onClose={() => setCover(false)}
@@ -252,11 +268,10 @@ export function Picker({ route, navigation }: Props<"Picker">) {
   const personList = Object.values(state.persons).sort((a, b) =>
       a.name.localeCompare(b.name, "zh"),
     );
-  const patch = (fn: (next: NonNullable<typeof q>) => void) => {
+  const patch = (fn: (next: Mutable<Stored<SelectionSession>>) => void) => {
     void store
       .change((s) => {
-        const next = s.selections[route.params.sessionId];
-        if (next) fn(next);
+        editEntity(s, "selections", route.params.sessionId, fn);
       })
       .catch((e) => setError(messageOf(e)));
   };
@@ -277,8 +292,9 @@ export function Picker({ route, navigation }: Props<"Picker">) {
         offsetTimer.current = null;
         void store
           .change((s) => {
-            const next = s.selections[route.params.sessionId];
-            if (next) next.offset = Math.max(0, offset.current);
+            editEntity(s, "selections", route.params.sessionId, (next) => {
+              next.offset = Math.max(0, offset.current);
+            });
           })
           .catch(() => {});
       }
@@ -430,8 +446,9 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
   usePreventRemove(Boolean(q && name !== q.name), ({ data }) => {
     void store
       .change((s) => {
-        const session = s.selections[route.params.sessionId];
-        if (session) session.name = name;
+        editEntity(s, "selections", route.params.sessionId, (session) => {
+          session.name = name;
+        });
       })
       .then(() => setReturnAction(data.action))
       .catch((e) => setError(messageOf(e)));
@@ -450,11 +467,10 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
   const photos = [
     ...new Set(q.selected.flatMap((id) => state.records[id]?.mediaIds ?? [])),
   ].filter((id) => state.media[id]?.kind === "image");
-  const patch = (fn: (next: NonNullable<typeof q>) => void) => {
+  const patch = (fn: (next: Mutable<Stored<SelectionSession>>) => void) => {
     void store
       .change((s) => {
-        const next = s.selections[q.id];
-        if (next) fn(next);
+        editEntity(s, "selections", q.id, fn);
       })
       .catch((e) => setError(messageOf(e)));
   };
@@ -521,8 +537,9 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
                 setBusy(true);
                 void store
                   .change((s) => {
-                    const session = s.selections[q.id];
-                    if (session) session.name = name;
+                    editEntity(s, "selections", q.id, (session) => {
+                      session.name = name;
+                    });
                     return finishSelection(s, q.id, newId(), newId, now());
                   })
                   .then((album) => {

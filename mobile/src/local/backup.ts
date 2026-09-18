@@ -149,7 +149,7 @@ export async function inspectBackup(
       } finally {
         output?.close();
       }
-      if (target) m.file = target.name;
+      if (target) state.media[id] = { ...m, file: target.name };
     }
     return state;
   } catch (e) {
@@ -172,10 +172,10 @@ export async function restoreBackup(
       Object.assign(current, restored);
       // 备份不含缩略图字节；用全新随机名重生成，避免与当前库的缩略图文件
       // 同名——失败清理才能只删本次恢复新产生的文件。
-      for (const m of Object.values(current.media)) {
+      for (const [id, m] of Object.entries(current.media)) {
         if (m.kind !== "image" && m.kind !== "video") continue;
         const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
-        if (thumb) Object.assign(m, thumb);
+        if (thumb) current.media[id] = { ...m, ...thumb };
       }
     });
   } catch (e) {
@@ -200,10 +200,10 @@ export async function shareBackup(file: File) {
 export async function recoverStartupBackup(file: File): Promise<void> {
   const restored = await inspectBackup(file, true);
   // 与 restoreBackup 相同：恢复后的缩略图用全新随机名重建。
-  for (const m of Object.values(restored.media)) {
+  for (const [id, m] of Object.entries(restored.media)) {
     if (m.kind !== "image" && m.kind !== "video") continue;
     const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
-    if (thumb) Object.assign(m, thumb);
+    if (thumb) restored.media[id] = { ...m, ...thumb };
   }
   try {
     const { activateRecoveredLibrary } = await import("./activation");
