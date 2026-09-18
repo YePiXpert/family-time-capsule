@@ -716,6 +716,54 @@ describe("place clustering", () => {
   });
 });
 
+describe("replay score", () => {
+  function audioFixture() {
+    const s = fixture();
+    s.media.song = {
+      id: "song",
+      file: "song.m4a",
+      name: "哄睡小调.m4a",
+      kind: "audio",
+      bytes: 12,
+      sha256: "c".repeat(64),
+    };
+    return s;
+  }
+  it("roundtrips the chosen score and keeps it optional", () => {
+    const bare = audioFixture();
+    validateLibrary(bare);
+    expect(bare.settings.replayAudioId).toBeUndefined();
+    const s = audioFixture();
+    s.settings.replayAudioId = "song";
+    validateLibrary(s);
+    expect(
+      decodeManifest(encodeHeader(s).slice(12)).library.settings.replayAudioId,
+    ).toBe("song");
+  });
+  it("rejects unknown and non-audio scores", () => {
+    const unknown = audioFixture();
+    unknown.settings.replayAudioId = "missing";
+    expect(() => validateLibrary(unknown)).toThrow();
+    const nonAudio = fixture();
+    nonAudio.settings.replayAudioId = "photo";
+    expect(() => validateLibrary(nonAudio)).toThrow();
+  });
+  it("protects the chosen score from the unused-media sweep", () => {
+    const s = audioFixture();
+    s.settings.replayAudioId = "song";
+    expect(referencedMedia(s).has("song")).toBe(true);
+  });
+  it("clears a score whose audio is gone instead of failing validation", () => {
+    const s = audioFixture();
+    s.settings.replayAudioId = "song";
+    delete s.media.song;
+    deleteRecord(s, "missing");
+    // deleteRecord 走清理路径，悬空 id 被移除后库仍合法。
+    expect(s.settings.replayAudioId).toBeUndefined();
+    validateLibrary(s);
+  });
+});
+
 describe("python fixture shape", () => {
   /** Collects the top-level keys of the dict(...) call in local_fixture.py's empty(). */
   function fixtureKeys(): string[] {
