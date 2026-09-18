@@ -9,12 +9,13 @@ import Svg, {
   Text as SvgText,
 } from "react-native-svg";
 import type { Svg as SvgRef } from "react-native-svg";
-import { Directory, File, Paths } from "expo-file-system";
+import { Directory, File, FileMode, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as ImageManipulator from "expo-image-manipulator";
 import type { LocalMedia, LocalRecord } from "./model";
 import { mediaUri } from "./files";
 import { dateLabel, paperPalette } from "./ui";
+import { buildPdf, pdfPageSlices, type PdfPage } from "./pdf";
 import {
   CARD_WIDTH,
   SERIES_STRIP_MAX,
@@ -22,6 +23,7 @@ import {
   layoutKeepSake,
   layoutSeriesStrip,
   pngBytesOfDataUrl,
+  pngSize,
   sampledIndices,
   wrapText,
 } from "./keepsake";
@@ -326,10 +328,8 @@ function monthLabelOf(key: string) {
 }
 
 /** 把渲染好的卡片导出为 PNG 文件并呼出系统分享面板。 */
-export async function exportKeepSakeCard(
-  svg: SvgRef | null,
-  recordId: string,
-): Promise<File> {
+/** 离屏 Svg 取图：两个导出口共用这一段。 */
+async function renderPng(svg: SvgRef | null): Promise<Uint8Array> {
   if (!svg) throw new Error("纪念卡尚未就绪，请重试。");
   const dataUrl = await new Promise<string>((resolve, reject) => {
     let settled = false;
@@ -346,6 +346,81 @@ export async function exportKeepSakeCard(
   });
   const bytes = pngBytesOfDataUrl(dataUrl);
   if (!bytes.length) throw new Error("纪念卡生成失败，请重试。");
+  return bytes;
+}
+function readAll(file: File): Uint8Array {
+  const handle = file.open(FileMode.ReadOnly);
+  try {
+    const out = new Uint8Array(file.size);
+    let at = 0;
+    while (at < out.length) {
+      const chunk = handle.readBytes(Math.min(262144, out.length - at));
+      if (!chunk.length) throw new Error("成长册生成失败，请重试。");
+      out.set(chunk, at);
+      at += chunk.length;
+    }
+    return out;
+  } finally {
+    handle.close();
+  }
+}
+/**
+ * 把长卷切成 A4 比例的若干页，逐页嵌进一份 PDF。本机生成，不走网络，也不新增依赖。
+ */
+export async function exportYearBookPdf(
+  svg: SvgRef | null,
+  name: string,
+): Promise<File> {
+  const bytes = await renderPng(svg);
+  const { width, height } = pngSize(bytes);
+  const directory = new Directory(Paths.cache, "keepsake");
+  directory.create({ intermediates: true, idempotent: true });
+  const source = new File(directory, `${name}.png`);
+  source.write(bytes);
+  const pageHeight = Math.max(1, Math.round((width * 842) / 595));
+  const pages: PdfPage[] = [];
+  try {
+    for (const slice of pdfPageSlices(height, pageHeight)) {
+      const page = await ImageManipulator.manipulateAsync(
+        source.uri,
+        [{ crop: { originX: 0, originY: slice.originY, width, height: slice.height } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
+      );
+      const cropped = new File(page.uri);
+      pages.push({
+        jpeg: readAll(cropped),
+        width: page.width,
+        height: page.height,
+      });
+      try {
+        cropped.delete();
+      } catch {
+        // 系统缓存目录的清理尽力而为。
+      }
+    }
+  } finally {
+    try {
+      source.delete();
+    } catch {
+      // 同上。
+    }
+  }
+  const out = new File(directory, `${name}.pdf`);
+  out.write(buildPdf(pages));
+  if (!(await Sharing.isAvailableAsync()))
+    throw new Error("此设备暂不支持分享成长册。");
+  await Sharing.shareAsync(out.uri, {
+    mimeType: "application/pdf",
+    UTI: "com.adobe.pdf",
+    dialogTitle: "保存或打印这本成长册",
+  });
+  return out;
+}
+export async function exportKeepSakeCard(
+  svg: SvgRef | null,
+  recordId: string,
+): Promise<File> {
+  const bytes = await renderPng(svg);
   const directory = new Directory(Paths.cache, "keepsake");
   directory.create({ intermediates: true, idempotent: true });
   const out = new File(directory, `${recordId}.png`);
