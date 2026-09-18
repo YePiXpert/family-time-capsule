@@ -17,9 +17,13 @@ import { mediaUri } from "./files";
 import { dateLabel } from "./ui";
 import {
   CARD_WIDTH,
+  SERIES_STRIP_MAX,
   base64ToBytes,
   layoutKeepSake,
+  layoutSeriesStrip,
   pngBytesOfDataUrl,
+  sampledIndices,
+  wrapText,
 } from "./keepsake";
 
 const INK = "#3B3129";
@@ -186,6 +190,137 @@ export const KeepSakeCard = forwardRef<
     </Svg>
   );
 });
+
+/** 时光系列对比条：横排照片、月份标签，供离屏导出。 */
+export const SeriesStrip = forwardRef<
+  SvgRef,
+  {
+    name: string;
+    profileName: string;
+    items: { month: string; photo?: { uri: string; aspect: number } }[];
+  }
+>(function SeriesStrip({ name, profileName, items }, ref) {
+  const layout = layoutSeriesStrip(items);
+  const picked = sampledIndices(items.length, SERIES_STRIP_MAX).map(
+    (i) => items[i]!,
+  );
+  const title = wrapText(name.trim() || "时光系列", {
+    fontSize: 36,
+    maxWidth: CARD_WIDTH - 96,
+    maxLines: 1,
+  })[0]!;
+  return (
+    <Svg
+      ref={ref}
+      width={layout.width}
+      height={layout.height}
+      testID="series-strip"
+    >
+      <Rect
+        x={0}
+        y={0}
+        width={layout.width}
+        height={layout.height}
+        fill="#FAF5EC"
+      />
+      <Rect
+        x={26}
+        y={26}
+        width={layout.width - 52}
+        height={layout.height - 52}
+        rx={14}
+        fill="none"
+        stroke={LINE}
+        strokeWidth={1}
+      />
+      <SvgText
+        x={CARD_WIDTH / 2}
+        y={layout.titleY}
+        fontSize={36}
+        fontFamily="Georgia, serif"
+        fontWeight="600"
+        letterSpacing={1}
+        fill={INK}
+        textAnchor="middle"
+      >
+        {title}
+      </SvgText>
+      <OrnamentLine y={layout.ornamentTopY} />
+      {layout.cells.map((cell, i) => (
+        <SeriesCell
+          key={cell.month}
+          index={i}
+          cell={cell}
+          photo={picked[i]?.photo}
+        />
+      ))}
+      <OrnamentLine y={layout.ornamentBottomY} />
+      <SvgText
+        x={CARD_WIDTH / 2}
+        y={layout.footerY}
+        fontSize={20}
+        fill={MUTED}
+        letterSpacing={2}
+        textAnchor="middle"
+      >
+        {`${profileName || "小美"}的成长记`}
+      </SvgText>
+    </Svg>
+  );
+});
+
+function SeriesCell({
+  index,
+  cell,
+  photo,
+}: {
+  index: number;
+  cell: ReturnType<typeof layoutSeriesStrip>["cells"][number];
+  photo?: { uri: string; aspect: number };
+}) {
+  return (
+    <>
+      {photo && (
+        <>
+          <Defs>
+            <ClipPath id={`series-cell-${index}`}>
+              <Rect
+                x={cell.x}
+                y={cell.y}
+                width={cell.w}
+                height={cell.h}
+                rx={10}
+              />
+            </ClipPath>
+          </Defs>
+          <SvgImage
+            href={photo.uri}
+            x={cell.x}
+            y={cell.y}
+            width={cell.w}
+            height={cell.h}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#series-cell-${index})`}
+          />
+        </>
+      )}
+      <SvgText
+        x={cell.x + cell.w / 2}
+        y={cell.labelY}
+        fontSize={22}
+        fill={MUTED}
+        textAnchor="middle"
+      >
+        {monthLabelOf(cell.month)}
+      </SvgText>
+    </>
+  );
+}
+
+function monthLabelOf(key: string) {
+  const [y, m] = key.split("-");
+  return `${y}年${Number(m)}月`;
+}
 
 /** 把渲染好的卡片导出为 PNG 文件并呼出系统分享面板。 */
 export async function exportKeepSakeCard(

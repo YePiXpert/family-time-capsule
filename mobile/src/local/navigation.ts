@@ -15,6 +15,7 @@ export type Routes = {
   Editor: { draftId: string };
   Record: { id: string };
   Album: { id: string };
+  Series: { id: string };
   Picker: { sessionId: string };
   AlbumDetails: { sessionId: string };
   Media: { id: string; recordId?: string };

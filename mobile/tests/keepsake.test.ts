@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CARD_WIDTH,
+  SERIES_STRIP_MAX,
   base64ToBytes,
   layoutKeepSake,
+  layoutSeriesStrip,
   pngBytesOfDataUrl,
+  sampledIndices,
   wrapText,
 } from "../src/local/keepsake";
 
@@ -83,5 +86,57 @@ describe("keepsake card layout", () => {
     const encoded = Buffer.from(arbitrary).toString("base64");
     expect([...base64ToBytes(encoded)]).toEqual(arbitrary);
     expect(CARD_WIDTH).toBe(750);
+  });
+});
+
+describe("series strip layout", () => {
+  it("lays out one cell per photo with month labels under each", () => {
+    const layout = layoutSeriesStrip([
+      { month: "2026-06" },
+      { month: "2026-08" },
+    ]);
+    expect(layout.cells.map((c) => c.month)).toEqual(["2026-06", "2026-08"]);
+    const gap = 18;
+    const contentW = CARD_WIDTH - 48 * 2;
+    const w = (contentW - gap) / 2;
+    expect(layout.cells[0]).toMatchObject({
+      x: 48,
+      w,
+      h: 440,
+      labelY: layout.cells[0]!.y + 440 + 36,
+    });
+    expect(layout.cells[1]!.x).toBeCloseTo(48 + w + gap);
+    expect(layout.cells[1]!.w).toBeCloseTo(w);
+  });
+  it("keeps geometry independent of which months are missing", () => {
+    const contiguous = layoutSeriesStrip([
+      { month: "2026-01" },
+      { month: "2026-02" },
+      { month: "2026-03" },
+    ]);
+    const gappy = layoutSeriesStrip([
+      { month: "2025-04" },
+      { month: "2026-02" },
+      { month: "2026-11" },
+    ]);
+    expect(gappy.cells.map(({ x, y, w, h }) => ({ x, y, w, h }))).toEqual(
+      contiguous.cells.map(({ x, y, w, h }) => ({ x, y, w, h })),
+    );
+    expect(gappy.height).toBe(contiguous.height);
+  });
+  it("truncates long series to the cap, keeping both ends", () => {
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      month: `2025-${String((i % 12) + 1).padStart(2, "0")}`,
+    }));
+    expect(sampledIndices(12, SERIES_STRIP_MAX)).toEqual([0, 4, 7, 11]);
+    const layout = layoutSeriesStrip(months);
+    expect(layout.cells).toHaveLength(4);
+    expect(layout.cells[0]!.month).toBe(months[0]!.month);
+    expect(layout.cells[3]!.month).toBe(months[11]!.month);
+  });
+  it("handles a single photo without dividing by zero", () => {
+    const layout = layoutSeriesStrip([{ month: "2026-09" }]);
+    expect(layout.cells).toHaveLength(1);
+    expect(layout.cells[0]!.w).toBe(CARD_WIDTH - 96);
   });
 });

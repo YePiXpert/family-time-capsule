@@ -69,6 +69,18 @@ export type SelectionSession = {
   name: string;
   coverId: string | null;
 };
+export type SeriesItem = {
+  recordId: string;
+  mediaId: string;
+  /** 形如 "2026-09"，每系列内唯一；取自素材拍摄时间，缺省用记录日期。 */
+  month: string;
+};
+export type LocalSeries = {
+  id: string;
+  name: string;
+  items: SeriesItem[];
+  updatedAt: string;
+};
 export type LocalProfile = {
   name: string;
   birthday: string;
@@ -85,6 +97,8 @@ export type Library = {
   media: Record<string, LocalMedia>;
   albums: Record<string, LocalAlbum>;
   selections: Record<string, SelectionSession>;
+  /** 同款时光对比系列；旧库无此字段。 */
+  series: Record<string, LocalSeries>;
   /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
   yearNotes: Record<string, string>;
   receivedShares: string[];
@@ -102,6 +116,7 @@ export const emptyLibrary = (): Library => ({
   media: {},
   albums: {},
   selections: {},
+  series: {},
   yearNotes: {},
   receivedShares: [],
 });
@@ -110,6 +125,7 @@ export function normalizeLibrary(value: unknown): void {
   if (!value || typeof value !== "object") return;
   const s = value as Partial<Library>;
   if (s.yearNotes === undefined) s.yearNotes = {};
+  if (s.series === undefined) s.series = {};
 }
 export const emptyContent = (): RecordContent => ({
   title: "",
@@ -131,8 +147,25 @@ export function monthKey(date: string): string {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+/** 系列条目归属的月份：优先照片拍摄时间，缺省退回记录日期。 */
+export function monthOfItem(
+  record: { date: string },
+  media?: { photoMetadata?: PhotoMetadata },
+): string {
+  return monthKey(media?.photoMetadata?.capturedAt ?? record.date);
+}
 export function yearKey(date: string): string {
   return String(new Date(date).getFullYear());
+}
+/** 把 "YYYY-MM" 折成可比加减的序号。 */
+export function monthIndex(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return y! * 12 + (m! - 1);
+}
+export function indexMonth(index: number): string {
+  const y = Math.floor(index / 12),
+    m = (index % 12) + 1;
+  return `${y}-${String(m).padStart(2, "0")}`;
 }
 export function sortedRecords(s: Library): LocalRecord[] {
   return Object.values(s.records).sort(
@@ -188,6 +221,8 @@ export function deleteRecord(s: Library, id: string): void {
   }
   for (const selection of Object.values(s.selections))
     selection.selected = selection.selected.filter((x) => x !== id);
+  for (const series of Object.values(s.series))
+    series.items = series.items.filter((i) => i.recordId !== id);
   clearUnavailableCovers(s);
 }
 function clearUnavailableCovers(s: Library): void {
@@ -207,6 +242,11 @@ function clearUnavailableCovers(s: Library): void {
       )
     )
       selection.coverId = null;
+  // 记录编辑删掉某张照片时，系列里指向它的条目一并退场。
+  for (const series of Object.values(s.series))
+    series.items = series.items.filter((i) =>
+      s.records[i.recordId]?.mediaIds.includes(i.mediaId),
+    );
 }
 export function finishSelection(
   s: Library,
@@ -414,6 +454,31 @@ export function validateLibrary(value: unknown): asserts value is Library {
         !q.selected.some((i) => s.records[i]?.mediaIds.includes(q.coverId!)))
     )
       return fail();
+  if (
+    !s.series ||
+    typeof s.series !== "object" ||
+    Array.isArray(s.series) ||
+    !Object.keys(s.series).every(id) ||
+    Object.entries(s.series).some(
+      ([key, v]) =>
+        key !== v.id ||
+        !str(v.name) ||
+        v.name.length > 100 ||
+        !Array.isArray(v.items) ||
+        !ids(v.items.map((i) => i.recordId)) ||
+        !ids(v.items.map((i) => i.mediaId)) ||
+        v.items.some(
+          (i) =>
+            !s.records[i.recordId] ||
+            !s.records[i.recordId]!.mediaIds.includes(i.mediaId) ||
+            s.media[i.mediaId]?.kind !== "image" ||
+            !/^\d{4}-(0[1-9]|1[0-2])$/.test(i.month),
+        ) ||
+        new Set(v.items.map((i) => i.month)).size !== v.items.length ||
+        !Number.isFinite(Date.parse(v.updatedAt)),
+    )
+  )
+    return fail();
   if (
     s.profile.avatarId &&
     (!s.media[s.profile.avatarId] ||
