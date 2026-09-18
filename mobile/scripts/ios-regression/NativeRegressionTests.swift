@@ -94,10 +94,14 @@ final class NativeRegressionTests: XCTestCase {
         tap("year-yearbook"); tap("长图")
         // 长卷渲染成功后系统分享面板弹出；截图留证，下面的重启会收起它。
         sleep(8); shot("yearbook-share-sheet"); assertNoFailure("Yearbook image export")
-        // 再走一遍分页 PDF：切页与嵌图比长图慢，多给一点时间。
+        // 再走一遍纪念册 PDF：真分页、逐页取图再写 PDF，比长图慢得多。
         app.terminate(); app.launch(); tap("volume-year-2026")
-        tap("year-yearbook"); tap("可打印 PDF")
-        sleep(20); shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
+        tap("year-yearbook"); tap("纪念册 PDF")
+        // 开工前先报总页数；这一句点得动，就说明版面真的排出来了。
+        tap("开始装订")
+        XCTAssertTrue(element("year-book-cancel").waitForExistence(timeout: 30), "Binding never started")
+        shot("yearbook-binding")
+        sleep(90); shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
         app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }

@@ -16,6 +16,7 @@ import {
 } from "./book";
 import {
   captureBookPage,
+  captureGeometry,
   discardBoundPages,
   prepareBookPhoto,
   shareBook,
@@ -25,8 +26,8 @@ import {
 import type { LocalMedia, Stored } from "./model";
 import { messageOf } from "./ui";
 
-/** 屏外容器的显示尺寸：只要真的走过一次布局就行，取图尺寸由 toDataURL 决定。 */
-const STAGE_PT = 200;
+/** 屏外舞台的点数：iOS 按舞台自身尺寸画图，所以它就是成品尺寸（见 captureGeometry）。 */
+const STAGE_PT = captureGeometry().stage;
 
 export type BookJob = {
   layout: BookLayout;
