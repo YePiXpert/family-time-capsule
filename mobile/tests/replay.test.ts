@@ -21,6 +21,7 @@ function libraryWithPhotos(): { library: Library; mediaId: (n: number) => string
     series: {},
     persons: {},
     yearNotes: {},
+    yearCovers: {},
     receivedShares: [],
   };
   return { library: s, mediaId: (n) => `img${n}` };

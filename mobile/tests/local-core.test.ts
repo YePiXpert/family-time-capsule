@@ -354,6 +354,29 @@ describe("annual notes", () => {
       new TextEncoder().encode(JSON.stringify(manifest)),
     );
     expect(decoded.library.yearNotes).toEqual({});
+    expect(decoded.library.yearCovers).toEqual({});
+  });
+});
+describe("annual book covers", () => {
+  it("keeps a hand-picked cover per year and rejects malformed ones", () => {
+    const s = fixture();
+    s.yearCovers["2026"] = "11111111-1111-4111-8111-111111111111";
+    validateLibrary(s);
+    const header = encodeHeader(s);
+    expect(decodeManifest(header.slice(12)).library).toEqual(s);
+    const badYear = fixture();
+    badYear.yearCovers["26"] = "11111111-1111-4111-8111-111111111111";
+    expect(() => validateLibrary(badYear)).toThrow();
+    const badId = fixture();
+    badId.yearCovers["2026"] = "这不是素材 id";
+    expect(() => validateLibrary(badId)).toThrow();
+  });
+  it("tolerates a cover whose photo has since been deleted", () => {
+    // 选完封面又删照片，只该回落到自动封面，不该让整库打不开。
+    const s = fixture();
+    s.yearCovers["2026"] = "22222222-2222-4222-8222-222222222222";
+    expect(s.media["22222222-2222-4222-8222-222222222222"]).toBeUndefined();
+    expect(() => validateLibrary(s)).not.toThrow();
   });
 });
 
