@@ -84,6 +84,9 @@ final class NativeRegressionTests: XCTestCase {
           self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
         }
         shot("year-note-after-relaunch")
+        tap("year-yearbook")
+        // 长卷渲染成功后系统分享面板弹出；截图留证，下面的重启会收起它。
+        sleep(8); shot("yearbook-share-sheet")
         app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
