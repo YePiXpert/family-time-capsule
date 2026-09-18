@@ -52,23 +52,31 @@ export function Photo({
 }) {
   const s = useStyles();
   const [error, setError] = useState(false);
-  if (!media || !mediaFile(media).exists || error)
+  const [thumbFailed, setThumbFailed] = useState(false);
+  if (!media || error)
     return (
       <View style={[s.section, { minHeight: size ?? 120, width: size }]}>
         <Text>照片暂时无法读取</Text>
         <Text style={s.muted}>原记录仍保留，可从备份恢复缺失素材。</Text>
       </View>
     );
+  // 不在渲染期同步查盘：先乐观渲染，加载失败再逐级回退（缩略图→原图→占位）。
   const thumb =
-    !contain && (preview || size !== undefined) && media.thumb
+    !contain &&
+    (preview || size !== undefined) &&
+    media.thumb &&
+    !thumbFailed
       ? new File(mediaDirectory, media.thumb)
       : null;
   return (
     <Image
       accessibilityLabel={label ?? "照片"}
-      source={{ uri: thumb?.exists ? thumb.uri : mediaUri(media) }}
+      source={{ uri: thumb ? thumb.uri : mediaUri(media) }}
       resizeMode={contain ? "contain" : "cover"}
-      onError={() => setError(true)}
+      onError={() => {
+        if (thumb) setThumbFailed(true);
+        else setError(true);
+      }}
       style={[
         {
           width: "100%",
