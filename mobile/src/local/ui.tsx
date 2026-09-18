@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  AccessibilityInfo,
   Platform,
   Pressable,
   ScrollView,
@@ -16,6 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
+import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { useLibrary } from "./context";
 const light = {
@@ -33,6 +35,7 @@ const light = {
   accentGlass: "#B4553C",
   selectedGlass: "#F5E7D3",
   scrim: "rgba(59,49,41,0.32)",
+  accentSoft: "rgba(180,85,60,0.28)",
   glow1: "#F3D9B8",
   glow2: "#EFC5B0",
   glow3: "#E8DCC4",
@@ -52,6 +55,7 @@ const dark: typeof light = {
   accentGlass: "#E09B76",
   selectedGlass: "#3A2D20",
   scrim: "rgba(0,0,0,0.45)",
+  accentSoft: "rgba(224,155,118,0.32)",
   glow1: "#3A2A1C",
   glow2: "#40241C",
   glow3: "#2E2A1E",
@@ -82,20 +86,44 @@ const ThemeContext = createContext({
   colors: light,
   large: false,
   dark: false,
+  liquid: false,
 });
+function useReduceTransparency() {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    let alive = true;
+    void AccessibilityInfo.isReduceTransparencyEnabled().then((v) => {
+      if (alive) setReduce(v);
+    });
+    const sub = AccessibilityInfo.addEventListener(
+      "reduceTransparencyChanged",
+      (v: boolean) => setReduce(v),
+    );
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+  return reduce;
+}
 export function LocalTheme({ children }: { children: ReactNode }) {
   const s = useLibrary(),
     system = useColorScheme();
   const isDark =
     s.settings.theme === "dark" ||
     (s.settings.theme === "auto" && system === "dark");
+  const reduceTransparency = useReduceTransparency();
+  const liquid =
+    Platform.OS === "ios" && isLiquidGlassAvailable() && !reduceTransparency;
   const value = useMemo(
     () => ({
       colors: isDark ? dark : light,
       large: s.settings.largeText,
       dark: isDark,
+      liquid,
     }),
-    [isDark, s.settings.largeText],
+    [isDark, s.settings.largeText, liquid],
   );
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
@@ -186,17 +214,44 @@ export function Glass({
   radius = 16,
   tint,
   accessibilityViewIsModal,
+  interactive = false,
+  testID,
 }: {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
   radius?: number;
   tint?: string;
   accessibilityViewIsModal?: boolean;
+  /** iOS 液态玻璃下启用系统按压微光反馈。 */
+  interactive?: boolean;
+  testID?: string;
 }) {
-  const { colors, dark } = useTheme();
+  const { colors, dark, liquid } = useTheme();
+  if (liquid) {
+    const tintColor =
+      tint === colors.accentGlass
+        ? colors.accent
+        : tint === colors.selectedGlass
+          ? colors.accentSoft
+          : undefined;
+    return (
+      <GlassView
+        glassEffectStyle="regular"
+        colorScheme={dark ? "dark" : "light"}
+        tintColor={tintColor}
+        isInteractive={interactive}
+        accessibilityViewIsModal={accessibilityViewIsModal}
+        testID={testID}
+        style={[{ borderRadius: radius }, style]}
+      >
+        {children}
+      </GlassView>
+    );
+  }
   return (
     <View
       accessibilityViewIsModal={accessibilityViewIsModal}
+      testID={testID}
       style={[
         {
           borderRadius: radius,
@@ -214,6 +269,33 @@ export function Glass({
     >
       {children}
     </View>
+  );
+}
+/** 内容卡片：iOS 液态玻璃 / Android 与降级实色纸面，compact 为紧凑面板。 */
+export function Card({
+  children,
+  compact = false,
+  style,
+  testID,
+}: {
+  children?: ReactNode;
+  compact?: boolean;
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+}) {
+  return (
+    <Glass
+      radius={compact ? 12 : 16}
+      testID={testID}
+      style={[
+        compact
+          ? { paddingHorizontal: 12, paddingVertical: 8, gap: 8 }
+          : { padding: 16, gap: 12 },
+        style,
+      ]}
+    >
+      {children}
+    </Glass>
   );
 }
 export function Ornament() {
@@ -363,6 +445,12 @@ export function useStyles() {
           marginBottom: 12,
           ...cardShadow,
         },
+        recordRowInner: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          padding: 12,
+        },
         compactPanel: {
           paddingHorizontal: 12,
           paddingVertical: 8,
@@ -491,8 +579,22 @@ export function BottomBar({
   children: ReactNode;
   gap?: number;
 }) {
-  const { colors } = useTheme();
+  const { colors, dark, liquid } = useTheme();
   const insets = useSafeAreaInsets();
+  if (liquid)
+    return (
+      <GlassView
+        glassEffectStyle="regular"
+        colorScheme={dark ? "dark" : "light"}
+        style={{
+          padding: 16,
+          paddingBottom: 16 + insets.bottom,
+          gap,
+        }}
+      >
+        {children}
+      </GlassView>
+    );
   return (
     <View
       style={{

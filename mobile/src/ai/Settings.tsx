@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Alert, Platform, Share, View } from "react-native";
+import { Alert, Platform, Share } from "react-native";
 import {
   Button,
+  Card,
   ErrorText,
   Field,
   Page,
@@ -24,7 +25,7 @@ function MemberRow({
     [photos, setPhotos] = useState(String(member.photo_limit)),
     [writes, setWrites] = useState(String(member.write_limit));
   return (
-    <View style={s.section}>
+    <Card>
       <Text>
         {member.name}
         {member.role === "owner" ? " · 主人" : ""}
@@ -99,7 +100,7 @@ function MemberRow({
           )}
         </>
       )}
-    </View>
+    </Card>
   );
 }
 export function AISettingsScreen() {
@@ -265,7 +266,7 @@ export function AISettingsScreen() {
             }}
           />
           {!!inviteCode && (
-            <View style={s.section}>
+            <Card>
               <Text selectable>{inviteCode}</Text>
               <Text style={s.muted}>24 小时有效，使用一次后失效。</Text>
               <Button
@@ -276,7 +277,7 @@ export function AISettingsScreen() {
                   }).catch((e) => setError(messageOf(e)));
                 }}
               />
-            </View>
+            </Card>
           )}
           <Text>
             全局今日：{overview.usage.photos} 张图片 · {overview.usage.writes}{" "}
@@ -336,7 +337,7 @@ export function AISettingsScreen() {
           ))}
           <Text style={s.title}>已加入的设备</Text>
           {overview.devices.map((device) => (
-            <View key={device.id} style={s.section}>
+            <Card key={device.id}>
               <Text>
                 {overview.members.find((m) => m.id === device.member_id)?.name}{" "}
                 · {device.name}
@@ -373,7 +374,7 @@ export function AISettingsScreen() {
                   }
                 />
               )}
-            </View>
+            </Card>
           ))}
         </>
       )}

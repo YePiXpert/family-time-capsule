@@ -13,6 +13,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { GlassView } from "expo-glass-effect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection, beginSeries } from "./services";
@@ -31,6 +32,7 @@ import { clusterPlaces } from "./places";
 import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
 import {
   Button,
+  Card,
   ErrorText,
   Glass,
   IconButton,
@@ -211,7 +213,7 @@ export function Volume({
 function CapturePen() {
   const store = useStore(),
     nav = useNav(),
-    { colors, dark } = useTheme();
+    { colors, dark, liquid } = useTheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -264,15 +266,33 @@ function CapturePen() {
             borderRadius: 28,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: colors.accent,
             opacity: busy ? 0.5 : 1,
-            shadowColor: dark ? "#000000" : "#7A5C3E",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.25,
-            shadowRadius: 10,
-            elevation: 4,
+            ...(liquid
+              ? {}
+              : {
+                  backgroundColor: colors.accent,
+                  shadowColor: dark ? "#000000" : "#7A5C3E",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 10,
+                  elevation: 4,
+                }),
           }}
         >
+          {liquid && (
+            <GlassView
+              glassEffectStyle="regular"
+              colorScheme={dark ? "dark" : "light"}
+              tintColor={colors.accent}
+              isInteractive
+              style={{
+                position: "absolute",
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+              }}
+            />
+          )}
           <JournalIcon name="plus" color={colors.onAccent} size={26} />
         </Pressable>
       </Animated.View>
@@ -569,7 +589,7 @@ export function Shelf() {
           </Animated.View>
         )}
         {latestDraft && (
-          <View style={s.compactPanel}>
+          <Card compact>
             <View style={s.between}>
               <Text style={s.muted}>{drafts.length} 份草稿</Text>
               <View style={s.row}>
@@ -608,7 +628,7 @@ export function Shelf() {
                   </Text>
                 </Pressable>
               ))}
-          </View>
+          </Card>
         )}
         <ErrorText message={error} />
         {years.length > 0 && (
@@ -850,15 +870,16 @@ export function Firsts() {
           accessibilityRole="button"
           accessibilityLabel={`${recordTitle(record)}，${dateLabel(record.date)}`}
           onPress={() => nav.navigate("Record", { id: record.id })}
-          style={[s.compactPanel, { paddingVertical: 12 }]}
         >
-          <Text style={s.muted}>{dateLabel(record.date)}</Text>
-          <Text style={s.heading}>{recordTitle(record)}</Text>
-          {!!record.text.trim() && (
-            <Text numberOfLines={2} style={s.muted}>
-              {record.text.trim()}
-            </Text>
-          )}
+          <Card compact style={{ paddingVertical: 12 }}>
+            <Text style={s.muted}>{dateLabel(record.date)}</Text>
+            <Text style={s.heading}>{recordTitle(record)}</Text>
+            {!!record.text.trim() && (
+              <Text numberOfLines={2} style={s.muted}>
+                {record.text.trim()}
+              </Text>
+            )}
+          </Card>
         </Pressable>
       ))}
       {firsts.length === 0 && (

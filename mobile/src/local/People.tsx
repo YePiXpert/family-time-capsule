@@ -6,6 +6,7 @@ import { renamePerson } from "./services";
 import type { Props } from "./navigation";
 import {
   Button,
+  Card,
   ErrorText,
   Field,
   Page,
@@ -67,7 +68,7 @@ export function People(_: Props<"People">) {
         {people.map((person) => {
           const usage = usageOf(person.id);
           return (
-            <View key={person.id} style={s.compactPanel}>
+            <Card compact key={person.id}>
               <View style={s.between}>
                 <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                   <Text style={s.heading}>{person.name}</Text>
@@ -172,7 +173,7 @@ export function People(_: Props<"People">) {
                   }
                 />
               </View>
-            </View>
+            </Card>
           );
         })}
       </View>

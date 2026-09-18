@@ -14,6 +14,7 @@ import { addToSeries, now } from "./services";
 import type { Props } from "./navigation";
 import {
   Button,
+  Card,
   ErrorText,
   Field,
   Page,
@@ -177,7 +178,7 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
         <Text style={s.muted}>再收进一张，就能导出横排对比卡。</Text>
       )}
       {organize && (
-        <View style={s.section}>
+        <Card>
           <Field label="系列名称" value={name} onChangeText={setName} />
           <Button
             title="保存名称"
@@ -214,10 +215,10 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
               )
             }
           />
-        </View>
+        </Card>
       )}
       {pickMonth && (
-        <View style={s.section}>
+        <Card>
           <Text style={s.heading}>{monthLabel(pickMonth)}的照片</Text>
           {candidates.length === 0 ? (
             <Text>这个月还没有带照片的记录，先去记一刻吧。</Text>
@@ -248,7 +249,7 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
             />
           )}
           <Button title="取消" compact onPress={() => setPickMonth(null)} />
-        </View>
+        </Card>
       )}
       <ErrorText message={error} />
       <View style={{ gap: 16 }}>
@@ -292,10 +293,10 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
               </View>
             );
           return (
-            <View
+            <Card
               key={month}
               testID={`series-gap-${month}`}
-              style={[s.section, { alignItems: "center", paddingVertical: 20 }]}
+              style={{ alignItems: "center", paddingVertical: 20, gap: 12 }}
             >
               <Text style={s.muted}>{monthLabel(month)}</Text>
               <Text style={s.heading}>还缺这一张</Text>
@@ -304,7 +305,7 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
                 compact
                 onPress={() => setPickMonth(month)}
               />
-            </View>
+            </Card>
           );
         })}
       </View>

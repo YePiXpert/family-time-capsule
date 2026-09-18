@@ -23,6 +23,7 @@ import { recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
   Button,
+  Card,
   ErrorText,
   Ornament,
   Page,
@@ -295,15 +296,16 @@ export function Year({ route }: Props<"Year">) {
               accessibilityRole="button"
               accessibilityLabel={`${recordTitle(record)}，${dateLabel(record.date)}`}
               onPress={() => nav.navigate("Record", { id: record.id })}
-              style={[s.compactPanel, { paddingVertical: 12 }]}
             >
-              <Text style={s.muted}>{dateLabel(record.date)}</Text>
-              <Text style={s.heading}>{recordTitle(record)}</Text>
-              {!!record.text.trim() && (
-                <Text numberOfLines={2} style={s.muted}>
-                  {record.text.trim()}
-                </Text>
-              )}
+              <Card compact style={{ paddingVertical: 12 }}>
+                <Text style={s.muted}>{dateLabel(record.date)}</Text>
+                <Text style={s.heading}>{recordTitle(record)}</Text>
+                {!!record.text.trim() && (
+                  <Text numberOfLines={2} style={s.muted}>
+                    {record.text.trim()}
+                  </Text>
+                )}
+              </Card>
             </Pressable>
           ))}
         </View>

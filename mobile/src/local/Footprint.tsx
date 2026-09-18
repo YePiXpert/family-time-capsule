@@ -7,6 +7,7 @@ import { clusterPlaces, type PlaceCluster } from "./places";
 import { RecordCard } from "./Home";
 import { Photo } from "./Media";
 import {
+  Card,
   Ornament,
   Page,
   Text,
@@ -46,7 +47,7 @@ function ClusterCard({
         : `${dateLabel(cluster.firstAt)} – ${dateLabel(cluster.lastAt)}`
       : "";
   return (
-    <View style={s.compactPanel}>
+    <Card compact>
       <Pressable
         testID={`footprint-cluster-${index}`}
         accessibilityRole="button"
@@ -78,7 +79,7 @@ function ClusterCard({
           )}
         </View>
       )}
-    </View>
+    </Card>
   );
 }
 
