@@ -14,8 +14,10 @@ import {
   recordsOfPerson,
   referencedMedia,
   saveRecord,
+  validateChange,
   validateLibrary,
   type Library,
+  type LibraryDelta,
   type Mutable,
  LocalMedia } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
@@ -878,5 +880,96 @@ describe("python fixture shape", () => {
     // 模型加字段而 fixture 没跟上（或反之）会让原生回归在真机上以别的方式失败，
     // 在这里直接红掉更容易定位。
     expect(fixtureKeys()).toEqual(Object.keys(emptyLibrary()));
+  });
+});
+
+describe("incremental validation", () => {
+  /** 一次只增只改的改动：改完返回 delta，与 store.change 里算出来的同形。 */
+  const edits: Record<string, (s: Library) => LibraryDelta> = {
+    "clean edit": (s) => {
+      mut(s.records.r!).title = "新标题";
+      return { changed: [{ kind: "records", id: "r" }], removed: [] };
+    },
+    "record pointing at missing media": (s) => {
+      mut(s.records.r!).mediaIds = ["gone"];
+      return { changed: [{ kind: "records", id: "r" }], removed: [] };
+    },
+    "record cover outside its media": (s) => {
+      mut(s.records.r!).coverId = "photo2";
+      return { changed: [{ kind: "records", id: "r" }], removed: [] };
+    },
+    "record tagged with a missing person": (s) => {
+      mut(s.records.r!).personIds = ["nobody"];
+      return { changed: [{ kind: "records", id: "r" }], removed: [] };
+    },
+    "record revision below one": (s) => {
+      mut(s.records.r!).revision = 0;
+      return { changed: [{ kind: "records", id: "r" }], removed: [] };
+    },
+    "key and id disagree": (s) => {
+      s.records.other = { ...s.records.r!, id: "r" };
+      return { changed: [{ kind: "records", id: "other" }], removed: [] };
+    },
+    "new media with a broken hash": (s) => {
+      s.media.bad = { ...s.media.photo!, id: "bad", sha256: "zz" };
+      return { changed: [{ kind: "media", id: "bad" }], removed: [] };
+    },
+    "new album item pointing nowhere": (s) => {
+      s.albums.a = {
+        id: "a",
+        name: "相册",
+        items: [{ id: "i", recordId: "missing" }],
+        coverId: null,
+        updatedAt: date,
+      };
+      return { changed: [{ kind: "albums", id: "a" }], removed: [] };
+    },
+    "new draft based on a missing record": (s) => {
+      s.drafts.d2 = { ...s.drafts.draft!, id: "d2", recordId: "missing" };
+      return { changed: [{ kind: "drafts", id: "d2" }], removed: [] };
+    },
+    "new person with a blank name": (s) => {
+      s.persons.blank = { id: "blank", name: "   " };
+      return { changed: [{ kind: "persons", id: "blank" }], removed: [] };
+    },
+    "replay score pointing at a photo": (s) => {
+      s.settings.replayAudioId = "photo";
+      return { changed: [], removed: [] };
+    },
+    "series month out of range": (s) => {
+      s.series.grow = {
+        id: "grow",
+        name: "系列",
+        items: [{ recordId: "r", mediaId: "photo", month: "2026-13" }],
+        updatedAt: date,
+      };
+      return { changed: [{ kind: "series", id: "grow" }], removed: [] };
+    },
+  };
+  it.each(Object.keys(edits))("matches the full check for %s", (name) => {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    const delta = edits[name]!(s);
+    const outcome = (run: () => void) => {
+      try {
+        run();
+        return "ok";
+      } catch (e) {
+        return (e as Error).message;
+      }
+    };
+    const scoped = outcome(() => validateChange(s, delta));
+    expect(scoped).toBe(outcome(() => validateLibrary(s)));
+    // 除了那条干净的改动，其余每一条都必须真的被拒——否则这条测试是空的。
+    expect(scoped === "ok").toBe(name === "clean edit");
+  });
+  it("falls back to the full check whenever something was removed", () => {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    // 删掉记录还引用着的素材：只看「动过的实体」是看不见这个破口的。
+    delete s.media.photo;
+    expect(() =>
+      validateChange(s, { changed: [], removed: [{ kind: "media", id: "photo" }] }),
+    ).toThrow();
   });
 });
