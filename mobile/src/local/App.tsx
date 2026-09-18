@@ -55,6 +55,7 @@ import { Firsts, Shelf, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { SeriesScreen } from "./Series";
 import { Footprint } from "./Footprint";
+import { People } from "./People";
 import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
 import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
@@ -284,6 +285,11 @@ function Root() {
             name="Footprint"
             component={Footprint}
             options={{ title: "足迹" }}
+          />
+          <Stack.Screen
+            name="People"
+            component={People}
+            options={{ title: "整理人物" }}
           />
           <Stack.Screen
             name="Title"
