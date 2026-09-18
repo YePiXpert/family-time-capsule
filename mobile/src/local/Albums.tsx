@@ -6,9 +6,11 @@ import {
 import {
   Alert,
   FlatList,
+  Modal,
   Pressable,
   ScrollView,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useLibrary, useStore } from "./context";
 import { beginSelection, newId, now } from "./services";
@@ -36,6 +38,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
     [cover, setCover] = useState(false),
     [name, setName] = useState(album?.name ?? ""),
     [error, setError] = useState("");
+  const { width } = useWindowDimensions();
   const action = (fn: Parameters<typeof store.change>[0]) => {
     void store.change(fn).catch((e) => setError(messageOf(e)));
   };
@@ -52,6 +55,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
   ].filter((id) => state.media[id]?.kind === "image");
   const coverMedia =
     state.media[album.coverId ?? ""] ?? state.media[photos[0] ?? ""];
+  const coverTile = (width - 40 - 12) / 2;
   return (
     <Page scroll={false}>
       <FlatList
@@ -101,29 +105,6 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                 onPress={() => setOrganize(!organize)}
               />
             </View>
-            {cover && (
-              <View style={{ gap: 12 }}>
-                {photos.length === 0 && (
-                  <Text>先添加含照片的记录，就能选择封面。</Text>
-                )}
-                {photos.map((id) => (
-                  <Pressable
-                    key={id}
-                    accessibilityRole="button"
-                    accessibilityLabel="选为相册封面"
-                    onPress={() => {
-                      action((s) => {
-                        s.albums[album.id]!.coverId = id;
-                        s.albums[album.id]!.updatedAt = now();
-                      });
-                      setCover(false);
-                    }}
-                  >
-                    <Photo media={state.media[id]} preview />
-                  </Pressable>
-                ))}
-              </View>
-            )}
             {organize && (
               <View style={s.section}>
                 <Field label="相册名称" value={name} onChangeText={setName} />
@@ -233,6 +214,45 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
           <Text>相册还没有记录，点「添加记录」开始整理。</Text>
         }
       />
+      <Modal
+        visible={cover}
+        animationType="slide"
+        onRequestClose={() => setCover(false)}
+      >
+        <Page top>
+          <View style={s.between}>
+            <Text style={s.heading}>选一张封面</Text>
+            <Button title="取消" compact onPress={() => setCover(false)} />
+          </View>
+          {photos.length === 0 ? (
+            <Text>先添加含照片的记录，就能选择封面。</Text>
+          ) : (
+            <FlatList
+              data={photos}
+              keyExtractor={(id) => id}
+              numColumns={2}
+              accessibilityRole="radiogroup"
+              columnWrapperStyle={{ gap: 12 }}
+              contentContainerStyle={{ gap: 12, paddingBottom: 32 }}
+              renderItem={({ item }) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="选为相册封面"
+                  onPress={() => {
+                    action((s) => {
+                      s.albums[album.id]!.coverId = item;
+                      s.albums[album.id]!.updatedAt = now();
+                    });
+                    setCover(false);
+                  }}
+                >
+                  <Photo media={state.media[item]} size={coverTile} />
+                </Pressable>
+              )}
+            />
+          )}
+        </Page>
+      </Modal>
     </Page>
   );
 }
@@ -423,6 +443,7 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
     state = useLibrary(),
     s = useStyles(),
     q = state.selections[route.params.sessionId];
+  const { width } = useWindowDimensions();
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [name, setName] = useState(q?.name ?? ""),
@@ -458,62 +479,79 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
       })
       .catch((e) => setError(messageOf(e)));
   };
+  const tile = (width - 40 - 12) / 2;
   return (
-    <Page>
-      <Text style={s.title}>给这段时光起个名字</Text>
-      <Field
-        label="相册名称"
-        testID="album-name"
-        placeholder="例如：一岁以前"
-        value={name}
-        editable={!busy}
-        onChangeText={setName}
-        onEndEditing={() =>
-          patch((q) => {
-            q.name = name;
-          })
+    <Page scroll={false}>
+      <FlatList
+        data={photos}
+        keyExtractor={(id) => id}
+        numColumns={2}
+        accessibilityRole="radiogroup"
+        columnWrapperStyle={{ gap: 12 }}
+        contentContainerStyle={[s.content, { gap: 12 }]}
+        ListHeaderComponent={
+          <View style={{ gap: 16 }}>
+            <Text style={s.title}>给这段时光起个名字</Text>
+            <Field
+              label="相册名称"
+              testID="album-name"
+              placeholder="例如：一岁以前"
+              value={name}
+              editable={!busy}
+              onChangeText={setName}
+              onEndEditing={() =>
+                patch((q) => {
+                  q.name = name;
+                })
+              }
+            />
+            <Text>已选 {q.selected.length} 条记录</Text>
+            <Button title="返回调整内容" onPress={() => navigation.goBack()} />
+            <Text style={s.heading}>选择封面</Text>
+          </View>
         }
-      />
-      <Text>已选 {q.selected.length} 条记录</Text>
-      <Button title="返回调整内容" onPress={() => navigation.goBack()} />
-      <Text style={s.heading}>选择封面</Text>
-      {photos.map((id) => (
-        <Pressable
-          key={id}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: q.coverId === id }}
-          accessibilityLabel="选择这张封面"
-          onPress={() =>
-            patch((q) => {
-              q.coverId = id;
-            })
-          }
-        >
-          <Photo media={state.media[id]} preview />
-          {q.coverId === id && <Text>已选封面</Text>}
-        </Pressable>
-      ))}
-      <ErrorText message={error} />
-      <Button
-        title="保存相册"
-        testID="album-save"
-        primary
-        disabled={busy}
-        onPress={() => {
-          setBusy(true);
-          void store
-            .change((s) => {
-              const session = s.selections[q.id];
-              if (session) session.name = name;
-              return finishSelection(s, q.id, newId(), newId, now());
-            })
-            .then((album) => {
-              navigation.popTo("Shelf");
-              navigation.navigate("Album", { id: album.id });
-            })
-            .catch((e) => setError(messageOf(e)))
-            .finally(() => setBusy(false));
-        }}
+        renderItem={({ item }) => (
+          <Pressable
+            accessibilityRole="radio"
+            accessibilityState={{ selected: q.coverId === item }}
+            accessibilityLabel="选择这张封面"
+            onPress={() =>
+              patch((q) => {
+                q.coverId = item;
+              })
+            }
+            style={{ gap: 4 }}
+          >
+            <Photo media={state.media[item]} size={tile} />
+            {q.coverId === item && <Text style={s.muted}>已选封面</Text>}
+          </Pressable>
+        )}
+        ListFooterComponent={
+          <View style={{ gap: 12, marginTop: 16 }}>
+            <ErrorText message={error} />
+            <Button
+              title="保存相册"
+              testID="album-save"
+              primary
+              disabled={busy}
+              onPress={() => {
+                setBusy(true);
+                void store
+                  .change((s) => {
+                    const session = s.selections[q.id];
+                    if (session) session.name = name;
+                    return finishSelection(s, q.id, newId(), newId, now());
+                  })
+                  .then((album) => {
+                    navigation.popTo("Shelf");
+                    navigation.navigate("Album", { id: album.id });
+                  })
+                  .catch((e) => setError(messageOf(e)))
+                  .finally(() => setBusy(false));
+              }}
+            />
+          </View>
+        }
       />
     </Page>
   );

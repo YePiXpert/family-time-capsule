@@ -5,6 +5,7 @@ import {
   Alert,
   AppState,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   View,
@@ -63,6 +64,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [promptSeed, setPromptSeed] = useState(0),
     [promptOff, setPromptOff] = useState(false),
     [newPerson, setNewPerson] = useState("");
+  const [permDenied, setPermDenied] = useState(false);
   const personList = useMemo(
     () => Object.values(state.persons).sort((a, b) => a.name.localeCompare(b.name, "zh")),
     [state.persons],
@@ -106,6 +108,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     operation.current = true;
     setBusy(true);
     setError("");
+    setPermDenied(false);
     try {
       await fn();
     } catch (e) {
@@ -210,10 +213,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     const permission = camera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted)
+    if (!permission.granted) {
+      setPermDenied(true);
       throw new Error(
         camera ? "请在系统设置中允许拍摄。" : "请在系统设置中允许选择照片。",
       );
+    }
     const result = camera
       ? await ImagePicker.launchCameraAsync({
           mediaTypes: ["images", "videos"],
@@ -419,6 +424,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           {!promptOff &&
             !draft.recordId &&
             !draft.content.text.trim() &&
+            !(draft.groupPhotosByDay && draft.content.mediaIds.length > 0) &&
             (() => {
               const question = promptOf(
                 state.profile.birthday,
@@ -539,7 +545,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             return m ? (
               <View key={id} style={{ gap: 8 }}>
                 {m.kind === "image" ? (
-                  <Photo media={m} />
+                  <Photo media={m} preview />
                 ) : (
                   <Text>{m.name}</Text>
                 )}
@@ -766,7 +772,17 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             </>
           )}
           <ErrorText message={error} />
-          {error && (
+          {error && permDenied && (
+            <Button
+              title="去系统设置开启"
+              onPress={() => {
+                setPermDenied(false);
+                void Linking.openSettings();
+              }}
+              disabled={busy}
+            />
+          )}
+          {error && !permDenied && (
             <Button
               title="重试暂存"
               onPress={() => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, FlatList, Pressable, View, useWindowDimensions } from "react-native";
 import type { Svg } from "react-native-svg";
 import { useLibrary, useStore } from "./context";
 import {
@@ -47,6 +47,7 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
   const store = useStore(),
     state = useLibrary(),
     s = useStyles();
+  const { width } = useWindowDimensions();
   const series = state.series[route.params.id];
   const [organize, setOrganize] = useState(false),
     [name, setName] = useState(series?.name ?? ""),
@@ -218,23 +219,34 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
       {pickMonth && (
         <View style={s.section}>
           <Text style={s.heading}>{monthLabel(pickMonth)}的照片</Text>
-          {candidates.length === 0 && (
+          {candidates.length === 0 ? (
             <Text>这个月还没有带照片的记录，先去记一刻吧。</Text>
+          ) : (
+            <FlatList
+              data={candidates}
+              keyExtractor={(candidate) => candidate.mediaId}
+              numColumns={2}
+              columnWrapperStyle={{ gap: 12 }}
+              contentContainerStyle={{ gap: 12 }}
+              style={{ maxHeight: 432 }}
+              renderItem={({ item }) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`收进系列：${item.title}`}
+                  onPress={() => choose(item.recordId, item.mediaId)}
+                  style={{ gap: 4 }}
+                >
+                  <Photo
+                    media={state.media[item.mediaId]}
+                    size={(width - 40 - 32 - 12) / 2}
+                  />
+                  <Text numberOfLines={1} style={s.muted}>
+                    {item.title}
+                  </Text>
+                </Pressable>
+              )}
+            />
           )}
-          {candidates.map((candidate) => (
-            <Pressable
-              key={candidate.mediaId}
-              accessibilityRole="button"
-              accessibilityLabel={`收进系列：${candidate.title}`}
-              onPress={() => choose(candidate.recordId, candidate.mediaId)}
-              style={{ gap: 4 }}
-            >
-              <Photo media={state.media[candidate.mediaId]} preview />
-              <Text numberOfLines={1} style={s.muted}>
-                {candidate.title}
-              </Text>
-            </Pressable>
-          ))}
           <Button title="取消" compact onPress={() => setPickMonth(null)} />
         </View>
       )}
