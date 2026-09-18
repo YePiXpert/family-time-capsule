@@ -22,6 +22,13 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(e.isHittable, "Unreachable \(id)"); wait("Disabled \(id)") { e.isEnabled }; e.tap()
     }
     private func shot(_ name: String) { let a = XCTAttachment(screenshot: app.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a) }
+    /// 导出走的是离屏渲染，失败只会在页面上留一行红字、不弹任何东西——截图看不出来，显式断言。
+    private func assertNoFailure(_ context: String) {
+        for word in ["失败", "超时", "尚未就绪"] {
+            let hit = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", word)).firstMatch
+            XCTAssertFalse(hit.exists, "\(context) reported \(word): \(hit.label)")
+        }
+    }
     private func type(_ text: String, _ id: String, initial: String = "") {
         let field = element(id); tap(id); var expected = initial
         if !initial.isEmpty { field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.9)).tap() }
@@ -52,7 +59,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20))
         tap("keepsake-make")
         // 生成成功后系统分享面板弹出；截图留证，重启后自然收起。
-        sleep(5); shot("keepsake-share-sheet")
+        sleep(5); shot("keepsake-share-sheet"); assertNoFailure("Keepsake export")
         app.terminate(); app.launch()
         tap("album-new")
         let own = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "A little story.")).firstMatch
@@ -86,11 +93,11 @@ final class NativeRegressionTests: XCTestCase {
         shot("year-note-after-relaunch")
         tap("year-yearbook"); tap("长图")
         // 长卷渲染成功后系统分享面板弹出；截图留证，下面的重启会收起它。
-        sleep(8); shot("yearbook-share-sheet")
+        sleep(8); shot("yearbook-share-sheet"); assertNoFailure("Yearbook image export")
         // 再走一遍分页 PDF：切页与嵌图比长图慢，多给一点时间。
         app.terminate(); app.launch(); tap("volume-year-2026")
         tap("year-yearbook"); tap("可打印 PDF")
-        sleep(14); shot("yearbook-pdf-share-sheet")
+        sleep(20); shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
         app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
