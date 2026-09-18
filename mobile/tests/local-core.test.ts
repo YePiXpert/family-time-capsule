@@ -7,6 +7,7 @@ import {
   emptyContent,
   emptyLibrary,
   finishSelection,
+  monthOfItem,
   referencedMedia,
   saveRecord,
   validateLibrary,
@@ -473,6 +474,117 @@ describe("on-demand place naming", () => {
     );
     expect(placeLabel(undefined, "31.2, 121.5")).toBe("31.2, 121.5");
     expect(placeLabel({}, "31.2, 121.5")).toBe("31.2, 121.5");
+  });
+});
+
+describe("time series", () => {
+  function seriesFixture() {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    s.series.grow = {
+      id: "grow",
+      name: "沙发上的每月一张",
+      items: [{ recordId: "r", mediaId: "photo", month: "2026-09" }],
+      updatedAt: date,
+    };
+    return s;
+  }
+  it("roundtrips a series through the backup manifest", () => {
+    const s = seriesFixture();
+    validateLibrary(s);
+    expect(decodeManifest(encodeHeader(s).slice(12)).library.series.grow!).toEqual(
+      s.series.grow,
+    );
+  });
+  it("rejects duplicate months, dangling media and non-image media", () => {
+    const dup = seriesFixture();
+    dup.records.two = { ...dup.records.r!, id: "two" };
+    dup.series.grow!.items.push({
+      recordId: "two",
+      mediaId: "photo",
+      month: "2026-09",
+    });
+    expect(() => validateLibrary(dup)).toThrow();
+    const dangling = seriesFixture();
+    dangling.series.grow!.items = [
+      { recordId: "missing", mediaId: "photo", month: "2026-09" },
+    ];
+    expect(() => validateLibrary(dangling)).toThrow();
+    const outside = seriesFixture();
+    outside.media.standalone = {
+      id: "standalone",
+      file: "standalone.jpg",
+      name: "standalone.jpg",
+      kind: "image",
+      bytes: 4,
+      sha256: "b".repeat(64),
+    };
+    outside.series.grow!.items = [
+      { recordId: "r", mediaId: "standalone", month: "2026-09" },
+    ];
+    expect(() => validateLibrary(outside)).toThrow();
+  });
+  it("rejects malformed months and overlong names, accepts empty series", () => {
+    const badMonth = seriesFixture();
+    badMonth.series.grow!.items[0]!.month = "2026-9";
+    expect(() => validateLibrary(badMonth)).toThrow();
+    const badMonth2 = seriesFixture();
+    badMonth2.series.grow!.items[0]!.month = "2026-13";
+    expect(() => validateLibrary(badMonth2)).toThrow();
+    const overlong = seriesFixture();
+    overlong.series.grow!.name = "长".repeat(101);
+    expect(() => validateLibrary(overlong)).toThrow();
+    const empty = seriesFixture();
+    empty.series.grow!.items = [];
+    validateLibrary(empty);
+  });
+  it("opens stores and backups written before series existed", async () => {
+    const legacy = clone(seriesFixture()) as Partial<Library>;
+    delete legacy.series;
+    const store = new LocalStore({
+      read: async () => legacy,
+      write: async () => {},
+    });
+    await store.open();
+    expect(store.get().series).toEqual({});
+    const manifest = JSON.parse(
+      new TextDecoder().decode(encodeHeader(seriesFixture()).slice(12)),
+    ) as { library: Partial<Library> };
+    delete manifest.library.series;
+    const decoded = decodeManifest(
+      new TextEncoder().encode(JSON.stringify(manifest)),
+    );
+    expect(decoded.library.series).toEqual({});
+  });
+  it("drops series items when their record or photo goes away", () => {
+    const s = seriesFixture();
+    deleteRecord(s, "r");
+    expect(s.series.grow!.items).toEqual([]);
+    validateLibrary(s);
+    const edited = seriesFixture();
+    edited.drafts.edit = {
+      id: "edit",
+      recordId: "r",
+      baseRevision: 1,
+      content: {
+        ...clone(edited.records.r!),
+        mediaIds: [],
+        coverId: null,
+      },
+      updatedAt: date,
+    };
+    saveRecord(edited, "edit", "unused", date);
+    expect(edited.series.grow!.items).toEqual([]);
+    validateLibrary(edited);
+  });
+  it("derives the item month from capture time before the record date", () => {
+    const record = { date };
+    expect(monthOfItem(record)).toBe("2026-09");
+    expect(
+      monthOfItem(record, {
+        photoMetadata: { capturedAt: "2026-08-15T10:00:00.000Z" },
+      }),
+    ).toBe("2026-08");
   });
 });
 

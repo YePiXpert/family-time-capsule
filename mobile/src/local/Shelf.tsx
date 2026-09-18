@@ -14,8 +14,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
-import { beginDraft, beginSelection } from "./services";
+import { beginDraft, beginSelection, beginSeries } from "./services";
 import {
+  monthIndex,
   monthKey,
   recordTitle,
   sortedRecords,
@@ -295,6 +296,10 @@ export function Shelf() {
     );
   });
   const albums = Object.values(state.albums).sort(
+    (a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+  );
+  const seriesList = Object.values(state.series).sort(
     (a, b) =>
       b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
   );
@@ -641,6 +646,55 @@ export function Shelf() {
               onPress={() => {
                 void beginSelection(store)
                   .then((sessionId) => nav.navigate("Picker", { sessionId }))
+                  .catch((e) => setError(messageOf(e)));
+              }}
+            />
+          </View>
+        </View>
+        <View style={{ gap: 16, marginTop: 8 }}>
+          <Text style={[s.muted, { fontFamily: serif }]}>时光系列</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+            {seriesList.map((series, i) => {
+              const items = [...series.items].sort((a, b) =>
+                a.month.localeCompare(b.month),
+              );
+              const latest = items[items.length - 1];
+              const span =
+                items.length > 1
+                  ? monthIndex(items[items.length - 1]!.month) -
+                    monthIndex(items[0]!.month) +
+                    1
+                  : 0;
+              return (
+                <Volume
+                  key={series.id}
+                  title={series.name}
+                  caption={
+                    items.length
+                      ? span > 1
+                        ? `${items.length} 张 · 跨 ${span} 个月`
+                        : `${items.length} 张照片`
+                      : "还没有照片"
+                  }
+                  cover={latest ? state.media[latest.mediaId] : undefined}
+                  stamp={span > 1 ? `${span} 个月` : undefined}
+                  testID={`series-${series.id}`}
+                  width={volumeWidth}
+                  index={i}
+                  onPress={() => nav.navigate("Series", { id: series.id })}
+                />
+              );
+            })}
+            <Volume
+              title="新建时光系列"
+              caption="每月一张，看着长大"
+              fallbackIcon="plus"
+              testID="series-new"
+              width={volumeWidth}
+              index={seriesList.length}
+              onPress={() => {
+                void beginSeries(store)
+                  .then((id) => nav.navigate("Series", { id }))
                   .catch((e) => setError(messageOf(e)));
               }}
             />

@@ -53,6 +53,7 @@ import { SearchScreen } from "./SearchScreen";
 import { RecapScreen } from "./RecapScreen";
 import { Firsts, Shelf, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
+import { SeriesScreen } from "./Series";
 import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
 import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
@@ -297,6 +298,11 @@ function Root() {
             name="Album"
             component={AlbumScreen}
             options={{ title: "相册" }}
+          />
+          <Stack.Screen
+            name="Series"
+            component={SeriesScreen}
+            options={{ title: "时光系列" }}
           />
           <Stack.Screen
             name="Picker"

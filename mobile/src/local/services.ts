@@ -9,6 +9,7 @@ import {
 import {
   clone,
   emptyContent,
+  monthOfItem,
   referencedMedia,
   type Library,
   type MediaKind,
@@ -86,6 +87,39 @@ export async function collectUnusedMedia(store: LocalStore) {
   });
   for (const m of removed) deleteMediaFiles(m);
   return removed.reduce((n, m) => n + m.bytes, 0);
+}
+export async function beginSeries(store: LocalStore, name = "新时光系列") {
+  return store.change((s) => {
+    const id = newId();
+    s.series[id] = {
+      id,
+      name: name.trim() || "新时光系列",
+      items: [],
+      updatedAt: now(),
+    };
+    return id;
+  });
+}
+/** 把一张照片收进系列；同月的旧照片会被替换（调用方先向用户确认）。 */
+export async function addToSeries(
+  store: LocalStore,
+  seriesId: string,
+  recordId: string,
+  mediaId: string,
+) {
+  await store.change((s) => {
+    const series = s.series[seriesId];
+    if (!series) throw new Error("时光系列已删除。");
+    const record = s.records[recordId];
+    const media = s.media[mediaId];
+    if (!record) throw new Error("这条记录已删除。");
+    if (!record.mediaIds.includes(mediaId) || media?.kind !== "image")
+      throw new Error("请从这条记录的照片中选择。");
+    const month = monthOfItem(record, media);
+    series.items = series.items.filter((i) => i.month !== month);
+    series.items.push({ recordId, mediaId, month });
+    series.updatedAt = now();
+  });
 }
 /** Native capture fields are optional and untrusted; keep only what validateLibrary would accept. */
 function shareItemPhotoMetadata(item: NativeShareItem): PhotoMetadata | undefined {
