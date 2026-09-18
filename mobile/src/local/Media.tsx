@@ -175,7 +175,10 @@ function ZoomablePhoto({ media }: { media: LocalMedia }) {
     ty = useSharedValue(0),
     startX = useSharedValue(0),
     startY = useSharedValue(0);
+  // 手势回调由 worklets 插件自动 workletize，被它们调用的函数必须也是 worklet，
+  // 否则会被当成 Remote Function，在 UI 线程同步调用时直接抛错。
   const reset = () => {
+    "worklet";
     scale.value = withTiming(1);
     tx.value = withTiming(0);
     ty.value = withTiming(0);
@@ -204,7 +207,8 @@ function ZoomablePhoto({ media }: { media: LocalMedia }) {
     });
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
-    .onEnd(() => {
+    .onEnd((_event, success) => {
+      if (!success) return;
       if (scale.value > 1) reset();
       else scale.value = withTiming(2);
     });
