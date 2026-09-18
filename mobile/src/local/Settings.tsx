@@ -294,6 +294,7 @@ export function Backup() {
   const perform = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError("");
+    setMessage("");
     try {
       await fn();
     } catch (e) {
@@ -327,7 +328,7 @@ export function Backup() {
       </Text>
       <ErrorText message={error} />
       <Text accessibilityLiveRegion="polite">
-        {busy ? "正在校验和处理文件，请稍候…" : message}
+        {message || (busy ? "正在校验和处理文件，请稍候…" : "")}
       </Text>
       <Button
         title="导出完整备份"
@@ -369,7 +370,7 @@ export function Backup() {
                   style: "destructive",
                   onPress: () => {
                     void perform(async () => {
-                      await restoreBackup(store, file);
+                      await restoreBackup(store, file, setMessage);
                       setMessage("恢复完成。恢复前的备份可在下方另行导出。");
                     });
                   },
@@ -409,7 +410,7 @@ export function Backup() {
                       text: "恢复并替换",
                       onPress: () => {
                         void perform(async () => {
-                          await restoreBackup(store, file);
+                          await restoreBackup(store, file, setMessage);
                           setMessage("恢复完成。");
                         });
                       },

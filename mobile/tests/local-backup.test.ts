@@ -718,3 +718,25 @@ it("carries a library whose text would have blown the old 16MB manifest", async 
   const restored = await backup.inspectBackup(out);
   expect(restored.records.big!.text).toHaveLength(6_000_000);
 });
+it("restores with progress and lets other writes through while it unpacks", async () => {
+  const { store, backup } = await setup();
+  const out = await backup.createBackup(store.get());
+  const stages: string[] = [];
+  const order: string[] = [];
+  let queued: Promise<unknown> | null = null;
+  await backup.restoreBackup(store, out, (stage) => {
+    stages.push(stage);
+    // 解包阶段扣着写队列的话，这次写入只能排在恢复之后。
+    if (stage.includes("解包") && !queued)
+      queued = store.change(() => {
+        order.push("并发写入");
+      });
+  });
+  order.push("恢复完成");
+  await queued;
+  expect(order).toEqual(["并发写入", "恢复完成"]);
+  expect(stages[0]).toContain("备份当前内容");
+  expect(stages.some((s) => s.includes("缩略图"))).toBe(true);
+  expect(stages[stages.length - 1]).toContain("写入本机资料");
+  expect(store.get().records.r?.text).toBe("第一步");
+});
