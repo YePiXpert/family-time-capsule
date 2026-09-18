@@ -20,6 +20,7 @@ import { changeAvgMs } from "./health";
 import { referencedMedia } from "./model";
 import {
   Button,
+  Card,
   ErrorText,
   Field,
   Page,
@@ -40,7 +41,7 @@ export function Settings() {
         <Text style={s.muted}>
           {state.profile.name || "小美成长记"} · 留住每一个值得记住的日子
         </Text>
-        <View style={s.section}>
+        <Card>
           <Button
             title="宝宝资料"
             icon="person"
@@ -66,7 +67,7 @@ export function Settings() {
             icon="settings"
             onPress={() => nav.navigate("Appearance")}
           />
-        </View>
+        </Card>
       </ScrollView>
     </Page>
   );
@@ -236,7 +237,7 @@ export function Storage() {
         清理只处理没有被记录、草稿或头像使用的素材。卸载应用会删除本机内容，请定期导出备份。
       </Text>
       <Text>{message}</Text>
-      <View style={s.section}>
+      <Card>
         <Text style={s.heading}>本机健康</Text>
         <Text style={s.muted}>
           启动 {health.launches} 次 · 最近一次 {health.lastLaunchMs} 毫秒
@@ -255,7 +256,7 @@ export function Storage() {
           {state.lastExportAt ? dateLabel(state.lastExportAt) : "尚未导出过"}
         </Text>
         <Text style={s.muted}>这些数字只保存在本机，不会上传。</Text>
-      </View>
+      </Card>
       <Button
         title={`清理未使用素材（${unused.length} 份）`}
         disabled={!unused.length}
@@ -380,7 +381,7 @@ export function Backup() {
       />
       {backups.length > 0 && <Text style={s.heading}>本机保留的备份</Text>}
       {backups.map((file) => (
-        <View key={file.name} style={s.section}>
+        <Card key={file.name}>
           <Text style={s.muted}>{file.name}</Text>
           <Text>{(file.size / 1048576).toFixed(1)} MB</Text>
           <Button
@@ -439,7 +440,7 @@ export function Backup() {
               )
             }
           />
-        </View>
+        </Card>
       ))}
     </Page>
   );

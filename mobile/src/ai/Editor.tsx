@@ -6,6 +6,7 @@ import type { Library, RecordDraft } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
 import {
   Button,
+  Card,
   ErrorText,
   Glass,
   Text,
@@ -555,7 +556,7 @@ export function AIEditor({
             )}
             <ErrorText message={error} />
             {!!error && !busy && retryable && (
-              <View style={s.section}>
+              <Card>
                 {!retryPlan(errorCode).retryOriginal && (
                   <Text style={s.muted}>{retryPlan(errorCode).notice}</Text>
                 )}
@@ -579,10 +580,10 @@ export function AIEditor({
                     }}
                   />
                 </View>
-              </View>
+              </Card>
             )}
             {matchesView && proposal && (
-              <View style={s.section}>
+              <Card>
                 {stale && (
                   <Text style={{ color: colors.error }}>
                     你已修改照片或文字，这份建议已过期。重新生成后再采用，当前编辑已保留。
@@ -747,7 +748,7 @@ export function AIEditor({
                     );
                   }}
                 />
-              </View>
+              </Card>
             )}
             <Text style={s.muted}>DeepSeek Flash High</Text>
           </ScrollView>

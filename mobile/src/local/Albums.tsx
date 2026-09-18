@@ -19,6 +19,7 @@ import type { Props } from "./navigation";
 import {
   BottomBar,
   Button,
+  Card,
   ErrorText,
   Field,
   Page,
@@ -106,7 +107,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
               />
             </View>
             {organize && (
-              <View style={s.section}>
+              <Card>
                 <Field label="相册名称" value={name} onChangeText={setName} />
                 <Button
                   title="保存名称"
@@ -142,7 +143,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                     ])
                   }
                 />
-              </View>
+              </Card>
             )}
             <ErrorText message={error} />
           </View>

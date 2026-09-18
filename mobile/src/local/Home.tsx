@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   Pressable,
   SectionList,
-  StyleSheet,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -12,6 +11,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { GlassView } from "expo-glass-effect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { beginDraft } from "./services";
@@ -20,6 +20,7 @@ import { useNav, type Props } from "./navigation";
 import {
   ErrorText,
   Field,
+  Glass,
   IconButton,
   Ornament,
   Page,
@@ -48,7 +49,7 @@ export function RecordCard({
 }) {
   const state = useLibrary(),
     s = useStyles(),
-    { colors, large } = useTheme();
+    { colors, large, liquid } = useTheme();
   const images = record.mediaIds
     .map((id) => state.media[id])
     .filter((m) => m?.kind === "image");
@@ -66,7 +67,7 @@ export function RecordCard({
           ? "视频记录"
           : "这一刻");
   const caption = record.title.trim() ? record.text.trim() : record.location;
-  return (
+  const card = (
     <Pressable
       testID={`record-${record.id}`}
       accessibilityRole={selected === undefined ? "button" : "checkbox"}
@@ -74,7 +75,11 @@ export function RecordCard({
       accessibilityLabel={`${selected === undefined ? "" : selected ? "已选，" : "未选，"}${title}，${dateLabel(record.date)}`}
       onPress={onPress}
       style={({ pressed }) => [
-        tileSize ? { width: tileSize } : s.recordRow,
+        tileSize
+          ? { width: tileSize }
+          : liquid
+            ? s.recordRowInner
+            : s.recordRow,
         { opacity: pressed ? 0.7 : 1 },
       ]}
     >
@@ -116,17 +121,14 @@ export function RecordCard({
           </View>
         ) : null}
         {tileSize && (images.length > 1 || record.first) ? (
-          <View
+          <Glass
+            radius={10}
             style={{
               position: "absolute",
               bottom: 8,
               right: 8,
               paddingHorizontal: 8,
               paddingVertical: 2,
-              borderRadius: 10,
-              backgroundColor: colors.glass,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.glassLine,
             }}
           >
             <Text style={s.muted}>
@@ -134,7 +136,7 @@ export function RecordCard({
                 ? `${images.length} 张${record.first ? " · 第一次" : ""}`
                 : "第一次"}
             </Text>
-          </View>
+          </Glass>
         ) : null}
       </View>
       <View
@@ -172,12 +174,19 @@ export function RecordCard({
       )}
     </Pressable>
   );
+  if (!tileSize && liquid)
+    return (
+      <Glass interactive radius={16} style={{ marginBottom: 12 }}>
+        {card}
+      </Glass>
+    );
+  return card;
 }
 
 export function CaptureDock() {
   const store = useStore(),
     nav = useNav(),
-    { colors, dark } = useTheme();
+    { colors, dark, liquid } = useTheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -227,15 +236,33 @@ export function CaptureDock() {
             borderRadius: 28,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: colors.accent,
             opacity: busy ? 0.5 : 1,
-            shadowColor: dark ? "#000000" : "#7A5C3E",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.25,
-            shadowRadius: 10,
-            elevation: 4,
+            ...(liquid
+              ? {}
+              : {
+                  backgroundColor: colors.accent,
+                  shadowColor: dark ? "#000000" : "#7A5C3E",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 10,
+                  elevation: 4,
+                }),
           }}
         >
+          {liquid && (
+            <GlassView
+              glassEffectStyle="regular"
+              colorScheme={dark ? "dark" : "light"}
+              tintColor={colors.accent}
+              isInteractive
+              style={{
+                position: "absolute",
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+              }}
+            />
+          )}
           <JournalIcon name="plus" color={colors.onAccent} size={26} />
         </Pressable>
       </Animated.View>

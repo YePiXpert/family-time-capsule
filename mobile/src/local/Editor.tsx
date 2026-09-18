@@ -30,6 +30,7 @@ import type { Props } from "./navigation";
 import {
   BottomBar,
   Button,
+  Card,
   ErrorText,
   Field,
   Page,
@@ -317,7 +318,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             </>
           )}
           {!draft.recordId && draft.content.mediaIds.length > 0 && (
-            <View style={s.section}>
+            <Card>
               <Button
                 title={
                   draft.photoEvents
@@ -346,7 +347,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         没有拍摄时间的素材会跟相邻素材记入同一天，日期可修改。
                       </Text>
                   {dayGroups.map((group, index) => (
-                    <View key={index} style={s.section}>
+                    <Card key={index}>
                       <Text>
                         事情 {index + 1} · {group.mediaIds.length} 份素材
                       </Text>
@@ -402,11 +403,11 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                           editEvent(index, { location })
                         }
                       />
-                    </View>
+                    </Card>
                   ))}
                 </>
               )}
-            </View>
+            </Card>
           )}
           {!(draft.groupPhotosByDay && draft.content.mediaIds.length > 0) && (
             <Field
@@ -509,7 +510,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             />
           </View>
           {draft.recordingFile && (
-            <View style={s.section}>
+            <Card>
               <Text>
                 {recording
                   ? "正在录音，离开前请结束并保存。"
@@ -538,7 +539,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   ])
                 }
               />
-            </View>
+            </Card>
           )}
           {draft.content.mediaIds.map((id) => {
             const m = state.media[id] ?? importedMedia[id];

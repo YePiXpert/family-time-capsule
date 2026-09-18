@@ -13,6 +13,7 @@ import { mediaUri } from "./files";
 import { Photo } from "./Media";
 import {
   Button,
+  Card,
   Ornament,
   Page,
   Text,
@@ -105,10 +106,11 @@ export function RecapScreen({ route }: Props<"Recap">) {
               accessibilityRole="button"
               accessibilityLabel={`${recordTitle(record)}，${dateLabel(record.date)}`}
               onPress={() => nav.navigate("Record", { id: record.id })}
-              style={[s.compactPanel, { paddingVertical: 12 }]}
             >
-              <Text style={s.muted}>{dateLabel(record.date)}</Text>
-              <Text style={s.heading}>{recordTitle(record)}</Text>
+              <Card compact style={{ paddingVertical: 12 }}>
+                <Text style={s.muted}>{dateLabel(record.date)}</Text>
+                <Text style={s.heading}>{recordTitle(record)}</Text>
+              </Card>
             </Pressable>
           ))}
         </View>

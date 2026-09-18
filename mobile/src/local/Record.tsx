@@ -9,6 +9,7 @@ import { looksLikeCoordinates, placeLabel } from "./places";
 import type { Props } from "./navigation";
 import {
   Button,
+  Card,
   ErrorText,
   Page,
   Text,
@@ -218,12 +219,12 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
         />
       </View>
       {chooseAlbum && (
-        <View style={s.section}>
+        <Card>
           {Object.values(state.albums).map((a) => (
             <Button key={a.id} title={a.name} onPress={() => add(a.id)} />
           ))}
           <Button title="新建相册" onPress={() => add(null)} />
-        </View>
+        </Card>
       )}
       {record.text && <Text selectable>{record.text}</Text>}
       {record.location && (

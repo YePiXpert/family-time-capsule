@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Platform,
   StyleSheet,
   Text as NativeText,
   View,
@@ -246,17 +247,21 @@ function Root() {
         <Stack.Navigator
           screenOptions={{
             headerBackTitle: "返回",
-            headerShadowVisible: false,
-            headerBackground: () => (
-              <View
-                style={{
-                  flex: 1,
-                  backgroundColor: theme.colors.glass,
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  borderBottomColor: theme.colors.glassLine,
-                }}
-              />
-            ),
+            headerShadowVisible: Platform.OS !== "ios",
+            // iOS 26 交给系统液态玻璃页头，透出暖色光斑；Android 用纸面+细描边。
+            headerBackground:
+              Platform.OS === "ios"
+                ? undefined
+                : () => (
+                    <View
+                      style={{
+                        flex: 1,
+                        backgroundColor: theme.colors.glass,
+                        borderBottomWidth: StyleSheet.hairlineWidth,
+                        borderBottomColor: theme.colors.glassLine,
+                      }}
+                    />
+                  ),
             contentStyle: { backgroundColor: theme.colors.paper },
             animation: reduceMotion ? "none" : "fade",
           }}
