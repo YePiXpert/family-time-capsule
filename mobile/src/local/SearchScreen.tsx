@@ -59,6 +59,7 @@ export function SearchScreen(_: Props<"Search">) {
       />
       <FlatList
         horizontal
+        keyboardShouldPersistTaps="handled"
         showsHorizontalScrollIndicator={false}
         style={{ flexGrow: 0, flexShrink: 0 }}
         contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
@@ -99,6 +100,9 @@ export function SearchScreen(_: Props<"Search">) {
         )}
       />
       <FlatList
+        // 搜索框 autoFocus，键盘一直在：不放行的话点筛选或结果的第一下只会收键盘。
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
         data={results}
         keyExtractor={(r) => r.id}
         contentContainerStyle={{ gap: 12, paddingBottom: 32 }}
