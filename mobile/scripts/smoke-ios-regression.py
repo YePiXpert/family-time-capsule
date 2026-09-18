@@ -7,11 +7,10 @@ import os
 from pathlib import Path
 import plistlib
 import re
-import struct
 import subprocess
 import time
 from ios_simulator import boot_simulator, cleanup_simulator
-from local_fixture import break_state, broken_root, seed, read_state
+from local_fixture import break_state, broken_root, read_backup, seed, read_state
 
 
 def run(*args, timeout=180):
@@ -43,13 +42,11 @@ def main():
         assert state['records'] == baseline['records'], 'Full restore did not replace records'
         assert not state['albums'] and not state['drafts'], 'Restore left behind post-backup content'
         backups = list((container/'Documents'/'xiaomei-v1'/'backups').glob('xiaomei-*.xmb')); assert len(backups) >= 2
-        manifests=[]
-        for backup in backups:
-            data=backup.read_bytes(); assert data[:8] == b'XIAOMEI1'; n=struct.unpack('>I',data[8:12])[0]; manifest=json.loads(data[12:12+n]); manifests.append(manifest)
-        before=next(m for m in manifests if m['library']['albums']); records=before['library']['records']; own=[r for r in records.values() if r['text']=='A little story. More memories.']; assert len(own)==1 and own[0]['revision']==2
-        assert any(before['library']['media'][i]['kind']=='audio' for i in own[0]['mediaIds']), 'Recorded audio was not preserved'
-        album=next(iter(before['library']['albums'].values())); assert album['name']=='Our days' and len(album['items'])==3
-        assert not before['library']['drafts']
+        manifests=[read_backup(backup) for backup in backups]
+        before=next(m for m in manifests if m['albums']); records=before['records']; own=[r for r in records.values() if r['text']=='A little story. More memories.']; assert len(own)==1 and own[0]['revision']==2
+        assert any(before['media'][i]['kind']=='audio' for i in own[0]['mediaIds']), 'Recorded audio was not preserved'
+        album=next(iter(before['albums'].values())); assert album['name']=='Our days' and len(album['items'])==3
+        assert not before['drafts']
         # Force startup failure after validating the ordinary restore. Recovery must
         # activate an independent database and leave the unreadable original intact.
         break_state(database)
@@ -67,7 +64,7 @@ def main():
         restored = read_state(activated)
         # 推荐位按设计挑选「最新的完整备份」；同一分钟内多份备份的名字序与创建序
         # 不保证一致，因此只要求恢复结果与某一份现存完整备份的内容完全一致。
-        candidates = {json.dumps(m['library']['records'], sort_keys=True) for m in manifests}
+        candidates = {json.dumps(m['records'], sort_keys=True) for m in manifests}
         assert json.dumps(restored['records'], sort_keys=True) in candidates, 'Startup recovery changed records'
         assert broken_root(database) == 'broken', 'Recovery overwrote original database'
         for media in restored['media'].values():
