@@ -33,7 +33,15 @@ def boot_simulator(udid: str, output: Path):
                 text(error.stdout) + text(error.stderr) + "\n" + str(error) + "\n")
             if attempt == 2:
                 raise
-            # This UDID was freshly created by the caller. Do not reset shared
-            # simulators, and do not retry any application assertion or crash.
-            subprocess.run(["xcrun", "simctl", "shutdown", udid],
-                           capture_output=True, timeout=60)
+            # This UDID was freshly created by the caller, so resetting it cannot
+            # touch a shared simulator. Do not retry any application assertion or
+            # crash. A device wedged on "Waiting on System App" rarely recovers
+            # from a plain reboot, so erase it to hand attempt 2 a clean device.
+            # Neither call may abort the retry this function exists to provide.
+            for action in ("shutdown", "erase"):
+                try:
+                    subprocess.run(["xcrun", "simctl", action, udid],
+                                   capture_output=True, timeout=120)
+                except (subprocess.SubprocessError, OSError) as reset_error:
+                    with (output / f"simulator-boot-{attempt}.log").open("a") as log:
+                        log.write(f"\n{action} before retry: {reset_error}\n")
