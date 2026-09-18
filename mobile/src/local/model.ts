@@ -254,10 +254,15 @@ export function freezeEntity<T>(value: T): T {
   for (const inner of Object.values(value)) freezeEntity(inner);
   return value;
 }
-/** 开库后冻结全部实体；此后只有 change 里替换进来的新实体需要再冻结。 */
+/** 开库后冻结全部实体；此后每次 change 只需要冻结新替换进来的那几个。 */
 export function freezeLibrary(s: Library): void {
   for (const kind of ENTITY_KINDS)
     for (const entity of Object.values(s[kind])) freezeEntity(entity);
+}
+/** 只冻结这次动过的实体：其余的在开库或上一次提交时已经冻结。 */
+export function freezeChanged(s: Library, delta: LibraryDelta): void {
+  for (const { kind, id } of delta.changed)
+    freezeEntity((s[kind] as Record<string, unknown>)[id]);
 }
 export function recordTitle(r: Stored<RecordContent>): string {
   return (
@@ -480,228 +485,235 @@ export function finishSelection(
 }
 
 /** Strict boundary for disk and user-selected backups, before changing live data. */
-export function validateLibrary(value: unknown): asserts value is Library {
-  const fail = () => {
-    throw new Error("本机资料格式无效或版本不支持。");
-  };
-  if (!value || typeof value !== "object") return fail();
-  const s = value as Library;
-  if (
-    s.version !== 1 ||
-    !Number.isInteger(s.revision) ||
-    s.revision < 0 ||
-    typeof s.welcome !== "boolean"
-  )
-    return fail();
-  const str = (v: unknown) => typeof v === "string";
-  const id = (v: unknown) =>
-    typeof v === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(v);
-  const ids = (v: unknown): v is string[] =>
-    Array.isArray(v) && v.every(id) && new Set(v).size === v.length;
-  const map = (v: unknown) =>
-    !!v &&
-    typeof v === "object" &&
-    !Array.isArray(v) &&
-    Object.keys(v).every(id);
-  if (![s.records, s.drafts, s.media, s.albums, s.selections].every(map))
-    return fail();
-  if (
-    !s.yearNotes ||
-    typeof s.yearNotes !== "object" ||
-    Array.isArray(s.yearNotes) ||
-    Object.entries(s.yearNotes).some(
-      ([year, note]) =>
-        !/^\d{4}$/.test(year) || typeof note !== "string" || note.length > 2000,
-    )
-  )
-    return fail();
-  if (
-    !s.profile ||
-    !str(s.profile.name) ||
-    !str(s.profile.birthday) ||
-    (s.profile.avatarId !== null && !id(s.profile.avatarId))
-  )
-    return fail();
-  if (
-    !s.settings ||
-    !["auto", "light", "dark"].includes(s.settings.theme) ||
-    typeof s.settings.largeText !== "boolean" ||
-    (s.settings.lockEnabled !== undefined &&
-      typeof s.settings.lockEnabled !== "boolean") ||
-    (s.settings.replayAudioId !== undefined &&
-      (typeof s.settings.replayAudioId !== "string" ||
-        s.media[s.settings.replayAudioId]?.kind !== "audio")) ||
-    !ids(s.receivedShares) ||
-    (s.lastExportAt !== undefined &&
-      (!str(s.lastExportAt) || !Number.isFinite(Date.parse(s.lastExportAt))))
-  )
-    return fail();
-  for (const [key, m] of Object.entries(s.media))
-    if (
-      key !== m.id ||
-      !/^[a-zA-Z0-9_-]+\.[a-z0-9]{1,8}$/.test(m.file) ||
-      !str(m.name) ||
-      !["image", "video", "audio", "document"].includes(m.kind) ||
-      !Number.isSafeInteger(m.bytes) ||
-      m.bytes < 1 ||
-      !/^[a-f0-9]{64}$/.test(m.sha256) ||
-      (m.thumb !== undefined &&
-        !/^[a-zA-Z0-9_-]+\.[a-z0-9]{1,8}$/.test(m.thumb)) ||
-      ((m.width !== undefined || m.height !== undefined) &&
-        (!Number.isSafeInteger(m.width) ||
-          !Number.isSafeInteger(m.height) ||
-          (m.width ?? 0) < 1 ||
-          (m.height ?? 0) < 1)) ||
-      (m.photoMetadata !== undefined &&
-        (!m.photoMetadata ||
-          typeof m.photoMetadata !== "object" ||
-          (m.photoMetadata.capturedAt !== undefined &&
-            (!str(m.photoMetadata.capturedAt) ||
-              !Number.isFinite(Date.parse(m.photoMetadata.capturedAt)))) ||
-          ((m.photoMetadata.latitude !== undefined ||
-            m.photoMetadata.longitude !== undefined) &&
-            (typeof m.photoMetadata.latitude !== "number" ||
-              !Number.isFinite(m.photoMetadata.latitude) ||
-              Math.abs(m.photoMetadata.latitude) > 90 ||
-              typeof m.photoMetadata.longitude !== "number" ||
-              !Number.isFinite(m.photoMetadata.longitude) ||
-              Math.abs(m.photoMetadata.longitude) > 180))))
-    )
-      return fail();
-  const content = (c: Stored<RecordContent>) =>
-    c &&
-    str(c.title) &&
-    str(c.text) &&
-    str(c.location) &&
-    str(c.date) &&
+const invalidLibrary = () => new Error("本机资料格式无效或版本不支持。");
+const isText = (v: unknown) => typeof v === "string";
+const isId = (v: unknown) =>
+  typeof v === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(v);
+const isIds = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every(isId) && new Set(v).size === v.length;
+const isMap = (v: unknown) =>
+  !!v &&
+  typeof v === "object" &&
+  !Array.isArray(v) &&
+  Object.keys(v).every(isId);
+const isFileName = (v: unknown) =>
+  typeof v === "string" && /^[a-zA-Z0-9_-]+\.[a-z0-9]{1,8}$/.test(v);
+/** 记录与草稿正文共用的一段：文字、日期，以及素材与人物引用都要落到实处。 */
+function validContent(s: Library, c: Stored<RecordContent>): boolean {
+  return (
+    !!c &&
+    isText(c.title) &&
+    isText(c.text) &&
+    isText(c.location) &&
+    isText(c.date) &&
     Number.isFinite(Date.parse(c.date)) &&
     typeof c.first === "boolean" &&
-    ids(c.mediaIds) &&
+    isIds(c.mediaIds) &&
     c.mediaIds.every((i) => !!s.media[i]) &&
     (c.coverId === null || c.mediaIds.includes(c.coverId)) &&
     (c.personIds === undefined ||
-      (ids(c.personIds) && c.personIds.every((p) => !!s.persons[p])));
-  for (const [key, r] of Object.entries(s.records))
-    if (
-      key !== r.id ||
-      !content(r) ||
-      !Number.isInteger(r.revision) ||
-      r.revision < 1 ||
-      !Number.isFinite(Date.parse(r.updatedAt))
-    )
-      return fail();
-  for (const [key, d] of Object.entries(s.drafts))
-    if (
-      key !== d.id ||
-      !content(d.content) ||
-      !validateStoredAI(d.aiJob) ||
-      !validateStoredAI(d.aiProposal) ||
-      (d.autoDate !== undefined && typeof d.autoDate !== "boolean") ||
-      (d.groupPhotosByDay !== undefined &&
-        typeof d.groupPhotosByDay !== "boolean") ||
-      (d.manualLocation !== undefined &&
-        typeof d.manualLocation !== "boolean") ||
-      (d.photoEvents !== undefined &&
-        (!Array.isArray(d.photoEvents) ||
-          d.photoEvents.some(
+      (isIds(c.personIds) && c.personIds.every((p) => !!s.persons[p])))
+  );
+}
+/** 根字段。avatarId 与 replayAudioId 指向素材，所以要看整库。 */
+function validRoot(s: Library): boolean {
+  return (
+    s.version === 1 &&
+    Number.isInteger(s.revision) &&
+    s.revision >= 0 &&
+    typeof s.welcome === "boolean" &&
+    !!s.yearNotes &&
+    typeof s.yearNotes === "object" &&
+    !Array.isArray(s.yearNotes) &&
+    !Object.entries(s.yearNotes).some(
+      ([year, note]) =>
+        !/^\d{4}$/.test(year) || typeof note !== "string" || note.length > 2000,
+    ) &&
+    !!s.profile &&
+    isText(s.profile.name) &&
+    isText(s.profile.birthday) &&
+    (s.profile.avatarId === null || isId(s.profile.avatarId)) &&
+    !!s.settings &&
+    ["auto", "light", "dark"].includes(s.settings.theme) &&
+    typeof s.settings.largeText === "boolean" &&
+    (s.settings.lockEnabled === undefined ||
+      typeof s.settings.lockEnabled === "boolean") &&
+    (s.settings.replayAudioId === undefined ||
+      (typeof s.settings.replayAudioId === "string" &&
+        s.media[s.settings.replayAudioId]?.kind === "audio")) &&
+    isIds(s.receivedShares) &&
+    (s.lastExportAt === undefined ||
+      (isText(s.lastExportAt) && Number.isFinite(Date.parse(s.lastExportAt)))) &&
+    (!s.profile.avatarId || s.media[s.profile.avatarId]?.kind === "image")
+  );
+}
+/** 一个实体自身的形状，以及它指向的东西是否都还在。 */
+function validEntity(s: Library, kind: EntityKind, key: string): boolean {
+  if (!isId(key)) return false;
+  if (kind === "media") {
+    const m = s.media[key];
+    return (
+      !!m &&
+      key === m.id &&
+      isFileName(m.file) &&
+      isText(m.name) &&
+      ["image", "video", "audio", "document"].includes(m.kind) &&
+      Number.isSafeInteger(m.bytes) &&
+      m.bytes >= 1 &&
+      /^[a-f0-9]{64}$/.test(m.sha256) &&
+      (m.thumb === undefined || isFileName(m.thumb)) &&
+      ((m.width === undefined && m.height === undefined) ||
+        (Number.isSafeInteger(m.width) &&
+          Number.isSafeInteger(m.height) &&
+          (m.width ?? 0) >= 1 &&
+          (m.height ?? 0) >= 1)) &&
+      (m.photoMetadata === undefined ||
+        (!!m.photoMetadata &&
+          typeof m.photoMetadata === "object" &&
+          (m.photoMetadata.capturedAt === undefined ||
+            (isText(m.photoMetadata.capturedAt) &&
+              Number.isFinite(Date.parse(m.photoMetadata.capturedAt)))) &&
+          ((m.photoMetadata.latitude === undefined &&
+            m.photoMetadata.longitude === undefined) ||
+            (typeof m.photoMetadata.latitude === "number" &&
+              Number.isFinite(m.photoMetadata.latitude) &&
+              Math.abs(m.photoMetadata.latitude) <= 90 &&
+              typeof m.photoMetadata.longitude === "number" &&
+              Number.isFinite(m.photoMetadata.longitude) &&
+              Math.abs(m.photoMetadata.longitude) <= 180))))
+    );
+  }
+  if (kind === "records") {
+    const r = s.records[key];
+    return (
+      !!r &&
+      key === r.id &&
+      validContent(s, r) &&
+      Number.isInteger(r.revision) &&
+      r.revision >= 1 &&
+      Number.isFinite(Date.parse(r.updatedAt))
+    );
+  }
+  if (kind === "drafts") {
+    const d = s.drafts[key];
+    return (
+      !!d &&
+      key === d.id &&
+      validContent(s, d.content) &&
+      validateStoredAI(d.aiJob) &&
+      validateStoredAI(d.aiProposal) &&
+      (d.autoDate === undefined || typeof d.autoDate === "boolean") &&
+      (d.groupPhotosByDay === undefined ||
+        typeof d.groupPhotosByDay === "boolean") &&
+      (d.manualLocation === undefined ||
+        typeof d.manualLocation === "boolean") &&
+      (d.photoEvents === undefined ||
+        (Array.isArray(d.photoEvents) &&
+          !d.photoEvents.some(
             (event) =>
               !event ||
-              !str(event.title) ||
-              !str(event.text) ||
-              !str(event.location) ||
-              !str(event.date) ||
+              !isText(event.title) ||
+              !isText(event.text) ||
+              !isText(event.location) ||
+              !isText(event.date) ||
               !Number.isFinite(Date.parse(event.date)) ||
               typeof event.first !== "boolean" ||
-              !ids(event.mediaIds) ||
-              (event.coverId !== null && !id(event.coverId)) ||
+              !isIds(event.mediaIds) ||
+              (event.coverId !== null && !isId(event.coverId)) ||
               (event.personIds !== undefined &&
-                (!ids(event.personIds) ||
+                (!isIds(event.personIds) ||
                   !event.personIds.every((p) => !!s.persons[p]))),
-          ))) ||
-      (d.autoLocation !== undefined && typeof d.autoLocation !== "boolean") ||
-      (d.recordId !== null && !s.records[d.recordId]) ||
-      !Number.isInteger(d.baseRevision) ||
-      !Number.isFinite(Date.parse(d.updatedAt)) ||
-      (d.recordingFile !== undefined &&
-        !/^(?:(?:Audio|ExpoAudio)\/)?[a-zA-Z0-9_-]+\.m4a$/.test(
-          d.recordingFile,
-        ))
-    )
-      return fail();
-  for (const [key, a] of Object.entries(s.albums))
-    if (
-      key !== a.id ||
-      !str(a.name) ||
-      (a.note !== undefined &&
-        (typeof a.note !== "string" || a.note.length > 2000)) ||
-      !Array.isArray(a.items) ||
-      !ids(a.items.map((i) => i.id)) ||
-      !ids(a.items.map((i) => i.recordId)) ||
-      a.items.some((i) => !s.records[i.recordId]) ||
-      !Number.isFinite(Date.parse(a.updatedAt)) ||
-      (a.coverId !== null &&
-        !a.items.some((i) =>
+          ))) &&
+      (d.autoLocation === undefined || typeof d.autoLocation === "boolean") &&
+      (d.recordId === null || !!s.records[d.recordId]) &&
+      Number.isInteger(d.baseRevision) &&
+      Number.isFinite(Date.parse(d.updatedAt)) &&
+      (d.recordingFile === undefined ||
+        /^(?:(?:Audio|ExpoAudio)\/)?[a-zA-Z0-9_-]+\.m4a$/.test(d.recordingFile))
+    );
+  }
+  if (kind === "albums") {
+    const a = s.albums[key];
+    return (
+      !!a &&
+      key === a.id &&
+      isText(a.name) &&
+      (a.note === undefined ||
+        (typeof a.note === "string" && a.note.length <= 2000)) &&
+      Array.isArray(a.items) &&
+      isIds(a.items.map((i) => i.id)) &&
+      isIds(a.items.map((i) => i.recordId)) &&
+      !a.items.some((i) => !s.records[i.recordId]) &&
+      Number.isFinite(Date.parse(a.updatedAt)) &&
+      (a.coverId === null ||
+        a.items.some((i) =>
           s.records[i.recordId]?.mediaIds.includes(a.coverId!),
         ))
-    )
-      return fail();
-  for (const [key, q] of Object.entries(s.selections))
-    if (
-      key !== q.id ||
-      !ids(q.selected) ||
-      q.selected.some((i) => !s.records[i]) ||
-      (q.albumId !== null && !s.albums[q.albumId]) ||
-      !str(q.month) ||
-      !str(q.name) ||
-      !Number.isFinite(q.offset) ||
-      q.offset < 0 ||
-      (q.coverId !== null &&
-        !q.selected.some((i) => s.records[i]?.mediaIds.includes(q.coverId!)))
-    )
-      return fail();
-  if (
-    !s.series ||
-    typeof s.series !== "object" ||
-    Array.isArray(s.series) ||
-    !Object.keys(s.series).every(id) ||
-    Object.entries(s.series).some(
-      ([key, v]) =>
-        key !== v.id ||
-        !str(v.name) ||
-        v.name.length > 100 ||
-        !Array.isArray(v.items) ||
-        !ids(v.items.map((i) => i.recordId)) ||
-        !ids(v.items.map((i) => i.mediaId)) ||
-        v.items.some(
-          (i) =>
-            !s.records[i.recordId] ||
-            !s.records[i.recordId]!.mediaIds.includes(i.mediaId) ||
-            s.media[i.mediaId]?.kind !== "image" ||
-            !/^\d{4}-(0[1-9]|1[0-2])$/.test(i.month),
-        ) ||
-        new Set(v.items.map((i) => i.month)).size !== v.items.length ||
-        !Number.isFinite(Date.parse(v.updatedAt)),
-    )
-  )
-    return fail();
-  if (
-    !s.persons ||
-    typeof s.persons !== "object" ||
-    Array.isArray(s.persons) ||
-    !Object.keys(s.persons).every(id) ||
-    Object.entries(s.persons).some(
-      ([key, p]) =>
-        key !== p.id ||
-        !str(p.name) ||
-        p.name.trim().length < 1 ||
-        p.name.length > 50,
-    )
-  )
-    return fail();
-  if (
-    s.profile.avatarId &&
-    (!s.media[s.profile.avatarId] ||
-      s.media[s.profile.avatarId]?.kind !== "image")
-  )
-    return fail();
+    );
+  }
+  if (kind === "selections") {
+    const q = s.selections[key];
+    return (
+      !!q &&
+      key === q.id &&
+      isIds(q.selected) &&
+      !q.selected.some((i) => !s.records[i]) &&
+      (q.albumId === null || !!s.albums[q.albumId]) &&
+      isText(q.month) &&
+      isText(q.name) &&
+      Number.isFinite(q.offset) &&
+      q.offset >= 0 &&
+      (q.coverId === null ||
+        q.selected.some((i) => s.records[i]?.mediaIds.includes(q.coverId!)))
+    );
+  }
+  if (kind === "series") {
+    const v = s.series[key];
+    return (
+      !!v &&
+      key === v.id &&
+      isText(v.name) &&
+      v.name.length <= 100 &&
+      Array.isArray(v.items) &&
+      isIds(v.items.map((i) => i.recordId)) &&
+      isIds(v.items.map((i) => i.mediaId)) &&
+      !v.items.some(
+        (i) =>
+          !s.records[i.recordId] ||
+          !s.records[i.recordId]!.mediaIds.includes(i.mediaId) ||
+          s.media[i.mediaId]?.kind !== "image" ||
+          !/^\d{4}-(0[1-9]|1[0-2])$/.test(i.month),
+      ) &&
+      new Set(v.items.map((i) => i.month)).size === v.items.length &&
+      Number.isFinite(Date.parse(v.updatedAt))
+    );
+  }
+  const p = s.persons[key];
+  return (
+    !!p &&
+    key === p.id &&
+    isText(p.name) &&
+    p.name.trim().length >= 1 &&
+    p.name.length <= 50
+  );
+}
+/** Strict boundary for disk and user-selected backups. */
+export function validateLibrary(value: unknown): asserts value is Library {
+  if (!value || typeof value !== "object") throw invalidLibrary();
+  const s = value as Library;
+  if (!ENTITY_KINDS.every((kind) => isMap(s[kind]))) throw invalidLibrary();
+  if (!validRoot(s)) throw invalidLibrary();
+  for (const kind of ENTITY_KINDS)
+    for (const key of Object.keys(s[kind]))
+      if (!validEntity(s, kind, key)) throw invalidLibrary();
+}
+/**
+ * 一次 change 之后的校验。只增只改时只看根与动过的那几条；一旦有删除就整库重来
+ * ——删掉一条记录会让相册、选材、系列里指向它的引用一起失效，只看改动是看不见的。
+ */
+export function validateChange(s: Library, delta: LibraryDelta): void {
+  if (delta.removed.length) return validateLibrary(s);
+  if (!validRoot(s)) throw invalidLibrary();
+  for (const { kind, id } of delta.changed)
+    if (!validEntity(s, kind, id)) throw invalidLibrary();
 }

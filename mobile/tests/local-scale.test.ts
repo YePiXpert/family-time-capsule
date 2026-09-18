@@ -20,8 +20,8 @@ const PERSONS = 6;
 const ALBUMS = 40;
 
 /** 预算见文件末尾「基线」。收紧时连同那段一起改。 */
-const OPEN_MS_BUDGET = 1500;
-const CHANGE_MS_BUDGET = 1500;
+const OPEN_MS_BUDGET = 1000;
+const CHANGE_MS_BUDGET = 400;
 const CHANGE_BYTE_BUDGET = 64 * 1024;
 
 const hex = (n: number) => n.toString(16).padStart(64, "0");
@@ -148,8 +148,9 @@ it("keeps one keystroke edit inside the change budget", async () => {
 /**
  * 基线（node 24 开发机，10000 记录 / 10000 素材，整库 6.2MB）：
  *   Build 62：开库 32ms，改一个字 90ms，落盘 6.2MB（整库重写）。
- *   结构共享之后：改一个字 52ms，其中 fork 4.8ms（原来深拷贝 35.3ms）。
- *   实体表之后：改一个字 57ms，落盘 489 字节——只写根与这一个实体。
- * 剩下的耗时几乎全在每次 change 的全库 validateLibrary（约 24.5ms）；
- * 增量校验落地后再收紧 CHANGE_MS_BUDGET。
+ *   结构共享：改一个字 52ms，其中 fork 4.8ms（原来深拷贝 35.3ms）。
+ *   实体表：落盘 489 字节——只写根与这一个实体。
+ *   增量校验：改一个字 10ms（全库校验原本就要 24.5ms）。
+ * 剩下的都是 O(实体数) 的轻量遍历：fork、算 delta、冻结改动过的实体。
+ * 预算留了余量兜数量级，真正钉住行为的是落盘字节数。
  */

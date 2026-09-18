@@ -2,8 +2,10 @@ import {
   diffLibrary,
   emptyLibrary,
   forkLibrary,
+  freezeChanged,
   freezeLibrary,
   normalizeLibrary,
+  validateChange,
   validateLibrary,
   type Library,
   type LibraryDelta,
@@ -52,16 +54,17 @@ export class LocalStore {
       const state = forkLibrary(this.state);
       const result = await apply(state);
       state.revision = this.state.revision + 1;
-      validateLibrary(state);
+      const delta = diffLibrary(this.state, state);
+      validateChange(state, delta);
       try {
-        await this.disk.write(state, diffLibrary(this.state, state));
+        await this.disk.write(state, delta);
       } catch (e) {
         this.events.onWriteFailure?.(
           e instanceof Error ? e.message : String(e),
         );
         throw e;
       }
-      freezeLibrary(state);
+      freezeChanged(state, delta);
       this.state = state;
       for (const fn of this.listeners) fn();
       this.events.onChange?.(Date.now() - started);
