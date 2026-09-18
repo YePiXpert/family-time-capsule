@@ -117,6 +117,8 @@ export type Library = {
   persons: Record<string, Stored<LocalPerson>>;
   /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
   yearNotes: Record<string, string>;
+  /** 年度纪念册手选的封面素材，按四位年份存；没选就按当年最新一张照片自动定。 */
+  yearCovers: Record<string, string>;
   receivedShares: string[];
   /** ISO timestamp of the last successful export; undefined until the first one. */
   lastExportAt?: string;
@@ -135,6 +137,7 @@ export const emptyLibrary = (): Library => ({
   series: {},
   persons: {},
   yearNotes: {},
+  yearCovers: {},
   receivedShares: [],
 });
 /** Fills fields added after the first release so older stores and backups still open. */
@@ -142,6 +145,7 @@ export function normalizeLibrary(value: unknown): void {
   if (!value || typeof value !== "object") return;
   const s = value as Partial<Library>;
   if (s.yearNotes === undefined) s.yearNotes = {};
+  if (s.yearCovers === undefined) s.yearCovers = {};
   if (s.series === undefined) s.series = {};
   if (s.persons === undefined) s.persons = {};
   // 指向已删除人物的标记会让 validateLibrary 拒绝整库。打开与解码备份时先剥掉，
@@ -198,6 +202,7 @@ export function forkLibrary(s: Library): Library {
     profile: { ...s.profile },
     settings: { ...s.settings },
     yearNotes: { ...s.yearNotes },
+    yearCovers: { ...s.yearCovers },
     receivedShares: [...s.receivedShares],
     records: { ...s.records },
     drafts: { ...s.drafts },
@@ -528,6 +533,13 @@ function validRoot(s: Library): boolean {
     !Object.entries(s.yearNotes).some(
       ([year, note]) =>
         !/^\d{4}$/.test(year) || typeof note !== "string" || note.length > 2000,
+    ) &&
+    !!s.yearCovers &&
+    typeof s.yearCovers === "object" &&
+    !Array.isArray(s.yearCovers) &&
+    // 素材可能在选完封面后被删掉；那只是回落到自动封面，不该让整库打不开。
+    !Object.entries(s.yearCovers).some(
+      ([year, id]) => !/^\d{4}$/.test(year) || !isId(id),
     ) &&
     !!s.profile &&
     isText(s.profile.name) &&
