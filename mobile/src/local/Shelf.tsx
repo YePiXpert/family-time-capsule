@@ -735,7 +735,7 @@ export function Shelf() {
 }
 
 export function coverForRecords(
-  monthRecords: { mediaIds: string[]; coverId: string | null }[],
+  monthRecords: { mediaIds: readonly string[]; coverId: string | null }[],
   media: Record<string, LocalMedia>,
 ): LocalMedia | undefined {
   for (const r of monthRecords) {
@@ -750,7 +750,7 @@ export function coverForRecords(
 }
 
 function coverForAlbum(
-  album: { coverId: string | null; items: { recordId: string }[] },
+  album: { coverId: string | null; items: readonly { recordId: string }[] },
   state: ReturnType<typeof useLibrary>,
 ): LocalMedia | undefined {
   if (album.coverId) {

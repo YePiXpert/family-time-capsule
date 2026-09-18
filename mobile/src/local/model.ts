@@ -89,6 +89,11 @@ export type LocalProfile = {
   birthday: string;
   avatarId: string | null;
 };
+/** 库里存着的实体是只读的：一次 change 里只能整个替换（见 editEntity），
+ * 不能原地改——共享的是同一个对象，原地改会当场污染界面上的当前状态。 */
+export type Stored<T> = {
+  readonly [K in keyof T]: T[K] extends (infer U)[] ? readonly U[] : T[K];
+};
 export type Library = {
   version: 1;
   revision: number;
@@ -101,15 +106,15 @@ export type Library = {
     /** 年度重放的配乐：本机音频素材 id；缺省或空表示不配乐。 */
     replayAudioId?: string;
   };
-  records: Record<string, LocalRecord>;
-  drafts: Record<string, RecordDraft>;
-  media: Record<string, LocalMedia>;
-  albums: Record<string, LocalAlbum>;
-  selections: Record<string, SelectionSession>;
+  records: Record<string, Stored<LocalRecord>>;
+  drafts: Record<string, Stored<RecordDraft>>;
+  media: Record<string, Stored<LocalMedia>>;
+  albums: Record<string, Stored<LocalAlbum>>;
+  selections: Record<string, Stored<SelectionSession>>;
   /** 同款时光对比系列；旧库无此字段。 */
-  series: Record<string, LocalSeries>;
+  series: Record<string, Stored<LocalSeries>>;
   /** 记录里出现的人物；旧库无此字段。 */
-  persons: Record<string, LocalPerson>;
+  persons: Record<string, Stored<LocalPerson>>;
   /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
   yearNotes: Record<string, string>;
   receivedShares: string[];
@@ -142,13 +147,14 @@ export function normalizeLibrary(value: unknown): void {
   // 指向已删除人物的标记会让 validateLibrary 拒绝整库。打开与解码备份时先剥掉，
   // 让校验只在「本次改动写坏了」时报错，而不是把人锁在自己的资料外面。
   const persons = s.persons ?? {};
+  // 这里拿到的还是刚解析出来的裸对象，尚未进库也尚未冻结，可以原地改。
   for (const content of [
     ...Object.values(s.records ?? {}),
     ...Object.values(s.drafts ?? {}).flatMap((d) => [
       d?.content,
       ...(d?.photoEvents ?? []),
     ]),
-  ]) {
+  ] as (Mutable<RecordContent> | undefined)[]) {
     const tags = content?.personIds;
     if (!Array.isArray(tags)) continue;
     const kept = tags.filter((p) => !!persons[p]);
@@ -168,7 +174,67 @@ export const emptyContent = (): RecordContent => ({
 });
 export const clone = <T>(value: T): T =>
   value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
-export function recordTitle(r: RecordContent): string {
+/** Stored 的逆运算：editEntity 交出去的副本可以随便改。 */
+export type Mutable<T> = {
+  -readonly [K in keyof T]: T[K] extends readonly (infer U)[] ? U[] : T[K];
+};
+export const ENTITY_KINDS = [
+  "records",
+  "drafts",
+  "media",
+  "albums",
+  "selections",
+  "series",
+  "persons",
+] as const;
+export type EntityKind = (typeof ENTITY_KINDS)[number];
+/**
+ * 一次 change 的工作副本：根与各集合各复制一层，实体本身按引用与当前状态共享。
+ * 因此实体只能整个替换，不能原地改——见 editEntity。
+ */
+export function forkLibrary(s: Library): Library {
+  return {
+    ...s,
+    profile: { ...s.profile },
+    settings: { ...s.settings },
+    yearNotes: { ...s.yearNotes },
+    receivedShares: [...s.receivedShares],
+    records: { ...s.records },
+    drafts: { ...s.drafts },
+    media: { ...s.media },
+    albums: { ...s.albums },
+    selections: { ...s.selections },
+    series: { ...s.series },
+    persons: { ...s.persons },
+  };
+}
+/** 改一个实体：拿到的是可以随便改的深拷贝，改完自动放回集合里。实体不存在时什么也不做。 */
+export function editEntity<K extends EntityKind>(
+  s: Library,
+  kind: K,
+  id: string,
+  apply: (draft: Mutable<Library[K][string]>) => void,
+): void {
+  const collection = s[kind] as Record<string, unknown>;
+  const current = collection[id];
+  if (!current) return;
+  const draft = clone(current) as Mutable<Library[K][string]>;
+  apply(draft);
+  collection[id] = draft;
+}
+/** 冻结实体及其数组与嵌套对象：谁原地改共享对象，就在那一行当场抛错。 */
+export function freezeEntity<T>(value: T): T {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  for (const inner of Object.values(value)) freezeEntity(inner);
+  return value;
+}
+/** 开库后冻结全部实体；此后只有 change 里替换进来的新实体需要再冻结。 */
+export function freezeLibrary(s: Library): void {
+  for (const kind of ENTITY_KINDS)
+    for (const entity of Object.values(s[kind])) freezeEntity(entity);
+}
+export function recordTitle(r: Stored<RecordContent>): string {
   return (
     r.title.trim() || r.text.trim().split("\n")[0]?.slice(0, 40) || "这一刻"
   );
@@ -197,42 +263,47 @@ export function indexMonth(index: number): string {
     m = (index % 12) + 1;
   return `${y}-${String(m).padStart(2, "0")}`;
 }
-export function sortedRecords(s: Library): LocalRecord[] {
+export function sortedRecords(s: Library): Stored<LocalRecord>[] {
   return Object.values(s.records).sort(
     (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
   );
 }
 export function recordsOfPerson(
-  records: LocalRecord[],
+  records: Stored<LocalRecord>[],
   personId: string,
-): LocalRecord[] {
+): Stored<LocalRecord>[] {
   return records.filter((r) => r.personIds?.includes(personId));
 }
 
-function stripPerson(
-  contents: RecordContent[],
+/** 把某个人的标记从全部记录与草稿（含「按事情分组」的每件事）上改写；只动标记，不动记录。 */
+function retagPersons(
+  s: Library,
   personId: string,
   retag: (ids: string[]) => string[],
 ): void {
-  for (const c of contents) {
-    if (!c.personIds?.includes(personId)) continue;
+  const rewrite = (c: Mutable<RecordContent>) => {
+    if (!c.personIds?.includes(personId)) return;
     const next = retag(c.personIds);
     if (next.length) c.personIds = next;
     else delete c.personIds;
-  }
+  };
+  const tagged = (c: { personIds?: readonly string[] }) =>
+    !!c.personIds?.includes(personId);
+  for (const [id, record] of Object.entries(s.records))
+    if (tagged(record)) editEntity(s, "records", id, rewrite);
+  for (const [id, draft] of Object.entries(s.drafts))
+    if (tagged(draft.content) || draft.photoEvents?.some(tagged))
+      editEntity(s, "drafts", id, (next) => {
+        rewrite(next.content);
+        for (const event of next.photoEvents ?? []) rewrite(event);
+      });
 }
 
 /** 删除人物并从全部记录/草稿标记里剥离；只取消标记，不动记录。 */
 export function deletePerson(s: Library, id: string): void {
   if (!s.persons[id]) throw new Error("没有这个人。");
   delete s.persons[id];
-  const strip = (ids: string[]) => ids.filter((p) => p !== id);
-  const all = [
-    ...Object.values(s.records),
-    ...Object.values(s.drafts).map((d) => d.content),
-    ...(Object.values(s.drafts).flatMap((d) => d.photoEvents ?? []) as RecordContent[]),
-  ];
-  stripPerson(all, id, strip);
+  retagPersons(s, id, (ids) => ids.filter((p) => p !== id));
 }
 
 /** 把 source 的全部标记并入 target 并删除 source。 */
@@ -245,15 +316,9 @@ export function mergePersons(
   if (!s.persons[sourceId] || !s.persons[targetId])
     throw new Error("没有这个人。");
   delete s.persons[sourceId];
-  const retag = (ids: string[]) => [
+  retagPersons(s, sourceId, (ids) => [
     ...new Set(ids.map((p) => (p === sourceId ? targetId : p))),
-  ];
-  const all = [
-    ...Object.values(s.records),
-    ...Object.values(s.drafts).map((d) => d.content),
-    ...(Object.values(s.drafts).flatMap((d) => d.photoEvents ?? []) as RecordContent[]),
-  ];
-  stripPerson(all, sourceId, retag);
+  ]);
 }
 export function referencedMedia(s: Library): Set<string> {
   return new Set([
@@ -301,32 +366,44 @@ export function deleteRecord(s: Library, id: string): void {
   delete s.records[id];
   for (const [key, d] of Object.entries(s.drafts))
     if (d.recordId === id) delete s.drafts[key];
-  for (const album of Object.values(s.albums)) {
-    album.items = album.items.filter((i) => i.recordId !== id);
-  }
-  for (const selection of Object.values(s.selections))
-    selection.selected = selection.selected.filter((x) => x !== id);
-  for (const series of Object.values(s.series))
-    series.items = series.items.filter((i) => i.recordId !== id);
+  for (const [key, album] of Object.entries(s.albums))
+    if (album.items.some((i) => i.recordId === id))
+      editEntity(s, "albums", key, (a) => {
+        a.items = a.items.filter((i) => i.recordId !== id);
+      });
+  for (const [key, selection] of Object.entries(s.selections))
+    if (selection.selected.includes(id))
+      editEntity(s, "selections", key, (q) => {
+        q.selected = q.selected.filter((x) => x !== id);
+      });
+  for (const [key, series] of Object.entries(s.series))
+    if (series.items.some((i) => i.recordId === id))
+      editEntity(s, "series", key, (t) => {
+        t.items = t.items.filter((i) => i.recordId !== id);
+      });
   clearUnavailableCovers(s);
 }
 function clearUnavailableCovers(s: Library): void {
-  for (const album of Object.values(s.albums))
+  for (const [key, album] of Object.entries(s.albums))
     if (
       album.coverId &&
       !album.items.some((i) =>
         s.records[i.recordId]?.mediaIds.includes(album.coverId!),
       )
     )
-      album.coverId = null;
-  for (const selection of Object.values(s.selections))
+      editEntity(s, "albums", key, (a) => {
+        a.coverId = null;
+      });
+  for (const [key, selection] of Object.entries(s.selections))
     if (
       selection.coverId &&
       !selection.selected.some((id) =>
         s.records[id]?.mediaIds.includes(selection.coverId!),
       )
     )
-      selection.coverId = null;
+      editEntity(s, "selections", key, (q) => {
+        q.coverId = null;
+      });
   // 配乐素材在 referencedMedia 里受保护；这里兜住外部写坏的悬空 id。
   if (
     s.settings.replayAudioId &&
@@ -334,10 +411,13 @@ function clearUnavailableCovers(s: Library): void {
   )
     delete s.settings.replayAudioId;
   // 记录编辑删掉某张照片时，系列里指向它的条目一并退场。
-  for (const series of Object.values(s.series))
-    series.items = series.items.filter((i) =>
-      s.records[i.recordId]?.mediaIds.includes(i.mediaId),
-    );
+  const present = (i: { recordId: string; mediaId: string }) =>
+    !!s.records[i.recordId]?.mediaIds.includes(i.mediaId);
+  for (const [key, series] of Object.entries(s.series))
+    if (!series.items.every(present))
+      editEntity(s, "series", key, (t) => {
+        t.items = t.items.filter(present);
+      });
 }
 export function finishSelection(
   s: Library,
@@ -345,12 +425,14 @@ export function finishSelection(
   albumId: string,
   itemId: () => string,
   now: string,
-): LocalAlbum {
+): Stored<LocalAlbum> {
   const session = s.selections[sessionId];
   if (!session) throw new Error("未找到选材内容。");
   if (!session.selected.length) throw new Error("请先选择记录。");
-  const album = session.albumId
-    ? s.albums[session.albumId]
+  const existingAlbum = session.albumId ? s.albums[session.albumId] : null;
+  if (session.albumId && !existingAlbum) throw new Error("相册已删除。");
+  const album: LocalAlbum = existingAlbum
+    ? { ...existingAlbum, items: [...existingAlbum.items] }
     : {
         id: albumId,
         name: session.name.trim() || "新相册",
@@ -358,7 +440,6 @@ export function finishSelection(
         coverId: session.coverId,
         updatedAt: now,
       };
-  if (!album) throw new Error("相册已删除。");
   const existing = new Set(album.items.map((i) => i.recordId));
   for (const id of session.selected) {
     if (!s.records[id]) throw new Error("所选记录已删除，请重新选择。");
@@ -462,7 +543,7 @@ export function validateLibrary(value: unknown): asserts value is Library {
               Math.abs(m.photoMetadata.longitude) > 180))))
     )
       return fail();
-  const content = (c: RecordContent) =>
+  const content = (c: Stored<RecordContent>) =>
     c &&
     str(c.title) &&
     str(c.text) &&

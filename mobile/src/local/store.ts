@@ -1,6 +1,7 @@
 import {
-  clone,
   emptyLibrary,
+  forkLibrary,
+  freezeLibrary,
   normalizeLibrary,
   validateLibrary,
   type Library,
@@ -30,6 +31,7 @@ export class LocalStore {
       validateLibrary(state);
       this.state = state;
     } else await this.disk.write(this.state);
+    freezeLibrary(this.state);
   }
   get = (): Library => this.state;
   subscribe = (fn: () => void): (() => void) => {
@@ -39,7 +41,9 @@ export class LocalStore {
   change = <T>(apply: (next: Library) => T | Promise<T>): Promise<T> => {
     const next = this.queue.then(async () => {
       const started = Date.now();
-      const state = clone(this.state);
+      // 工作副本与当前状态共享实体对象，所以实体只能整个替换（editEntity），
+      // 不能原地改——共享的那一份已经冻结，原地改会当场抛错。
+      const state = forkLibrary(this.state);
       const result = await apply(state);
       state.revision = this.state.revision + 1;
       validateLibrary(state);
@@ -51,6 +55,7 @@ export class LocalStore {
         );
         throw e;
       }
+      freezeLibrary(state);
       this.state = state;
       for (const fn of this.listeners) fn();
       this.events.onChange?.(Date.now() - started);

@@ -4,7 +4,7 @@ import type { Svg } from "react-native-svg";
 import * as Location from "expo-location";
 import { useLibrary, useStore } from "./context";
 import { beginDraft, beginSelection, now } from "./services";
-import { deleteRecord, recordTitle } from "./model";
+import { deleteRecord, editEntity, recordTitle } from "./model";
 import { looksLikeCoordinates, placeLabel } from "./places";
 import type { Props } from "./navigation";
 import {
@@ -117,8 +117,9 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           onPress: () => {
             void store
               .change((s) => {
-                const target = s.records[record.id];
-                if (target) target.location = label;
+                editEntity(s, "records", record.id, (target) => {
+                  target.location = label;
+                });
               })
               .catch((e) => setError(messageOf(e)));
           },
@@ -191,12 +192,11 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           onPress={() => {
             void store
               .change((s) => {
-                const r = s.records[record.id];
-                if (r) {
+                editEntity(s, "records", record.id, (r) => {
                   r.first = !r.first;
                   r.revision++;
                   r.updatedAt = now();
-                }
+                });
               })
               .catch((e) => setError(messageOf(e)));
           }}

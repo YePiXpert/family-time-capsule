@@ -136,8 +136,11 @@ it("keeps one keystroke edit inside the change budget", async () => {
 });
 
 /**
- * 基线（Build 62，node 24 开发机）：整库 6.2MB，开库 32ms，改一个字 90ms，
- * 落盘 6.2MB——改一个字把整个库重写了一遍。手机上 Hermes 没有 JIT，再叠加
- * synchronous=FULL 的整行写，这一下要慢得多。
- * 63-3 的实体表落地后，CHANGE_BYTE_BUDGET 收到 64KB。
+ * 基线（node 24 开发机，10000 记录 / 10000 素材，整库 6.2MB）：
+ *   Build 62：开库 32ms，改一个字 90ms，落盘 6.2MB。
+ *   结构共享之后：开库 53ms（多出来的是开库时冻结全部实体），改一个字 52ms。
+ *     一次 change 的成本拆开是 fork 4.8ms（原来深拷贝 35.3ms）、全库校验 24.5ms、
+ *     整库序列化 21.4ms。
+ * 改一个字仍然把整个库重写一遍：实体表落地后 CHANGE_BYTE_BUDGET 收到 64KB，
+ * 增量校验落地后 CHANGE_MS_BUDGET 一起收紧。
  */
