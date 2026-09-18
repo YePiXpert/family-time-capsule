@@ -10,9 +10,10 @@ import {
   ErrorText,
   Glass,
   Text,
-  useStyles,
-  messageOf,
   dateLabel,
+  hapticSuccess,
+  messageOf,
+  useStyles,
   useTheme,
 } from "../local/ui";
 import { useNav } from "../local/navigation";
@@ -358,6 +359,7 @@ export function AIEditor({
     if (!proposal) return;
     try {
       await onApply(proposal, part);
+      hapticSuccess();
       setError("");
       setAdjusting(false);
       if (proposal.kind === "group") {

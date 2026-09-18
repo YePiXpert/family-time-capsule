@@ -18,8 +18,19 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import * as Haptics from "expo-haptics";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { useLibrary } from "./context";
+
+/** 主动作触感反馈；设备不支持或调用失败时静默略过。 */
+export const hapticLight = () => {
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+};
+export const hapticSuccess = () => {
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+    () => {},
+  );
+};
 const light = {
   paper: "#FAF5EC",
   card: "#FFFFFF",

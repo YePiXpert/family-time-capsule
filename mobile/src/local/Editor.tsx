@@ -36,6 +36,7 @@ import {
   Page,
   Text,
   dateLabel,
+  hapticSuccess,
   messageOf,
   useStyles,
 } from "./ui";
@@ -849,6 +850,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 const records = await store.change((s) =>
                   savePhotoDays(s, draft.id, newId, now()),
                 );
+                hapticSuccess();
                 nextAction.current = () =>
                   records.length === 1
                     ? navigation.popTo("Record", { id: records[0]!.id })
