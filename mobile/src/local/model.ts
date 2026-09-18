@@ -139,6 +139,23 @@ export function normalizeLibrary(value: unknown): void {
   if (s.yearNotes === undefined) s.yearNotes = {};
   if (s.series === undefined) s.series = {};
   if (s.persons === undefined) s.persons = {};
+  // 指向已删除人物的标记会让 validateLibrary 拒绝整库。打开与解码备份时先剥掉，
+  // 让校验只在「本次改动写坏了」时报错，而不是把人锁在自己的资料外面。
+  const persons = s.persons ?? {};
+  for (const content of [
+    ...Object.values(s.records ?? {}),
+    ...Object.values(s.drafts ?? {}).flatMap((d) => [
+      d?.content,
+      ...(d?.photoEvents ?? []),
+    ]),
+  ]) {
+    const tags = content?.personIds;
+    if (!Array.isArray(tags)) continue;
+    const kept = tags.filter((p) => !!persons[p]);
+    if (kept.length === tags.length) continue;
+    if (kept.length) content!.personIds = kept;
+    else delete content!.personIds;
+  }
 }
 export const emptyContent = (): RecordContent => ({
   title: "",
@@ -490,7 +507,10 @@ export function validateLibrary(value: unknown): asserts value is Library {
               !Number.isFinite(Date.parse(event.date)) ||
               typeof event.first !== "boolean" ||
               !ids(event.mediaIds) ||
-              (event.coverId !== null && !id(event.coverId)),
+              (event.coverId !== null && !id(event.coverId)) ||
+              (event.personIds !== undefined &&
+                (!ids(event.personIds) ||
+                  !event.personIds.every((p) => !!s.persons[p]))),
           ))) ||
       (d.autoLocation !== undefined && typeof d.autoLocation !== "boolean") ||
       (d.recordId !== null && !s.records[d.recordId]) ||

@@ -10,6 +10,7 @@ import {
   finishSelection,
   mergePersons,
   monthOfItem,
+  normalizeLibrary,
   recordsOfPerson,
   referencedMedia,
   saveRecord,
@@ -697,6 +698,28 @@ describe("person tags", () => {
     expect(() => mergePersons(cascadeFixture(), "nobody", "mom")).toThrow();
     expect(() => mergePersons(cascadeFixture(), "mom", "nobody")).toThrow();
     expect(() => mergePersons(cascadeFixture(), "mom", "mom")).toThrow();
+  });
+  it("rejects photo events that point at a person who is gone", () => {
+    const s = cascadeFixture();
+    // 只在「按事情分组」的某一件事上留下外婆：记录与草稿正文都不带，
+    // 把 content() 本来就有的那条检查排除掉，单独验 photoEvents 这条分支
+    s.records.r!.personIds = ["mom"];
+    s.drafts.d!.content.personIds = ["mom"];
+    s.drafts.d!.photoEvents![1]!.personIds = ["mom"];
+    validateLibrary(s);
+    delete s.persons.grandma;
+    expect(() => validateLibrary(s)).toThrow();
+  });
+  it("heals dangling person tags on open instead of locking the library out", () => {
+    const s = cascadeFixture();
+    delete s.persons.grandma;
+    normalizeLibrary(s);
+    expect(s.records.r!.personIds).toEqual(["mom"]);
+    expect(s.drafts.d!.content.personIds).toEqual(["mom"]);
+    expect(s.drafts.d!.photoEvents![1]!.personIds).toEqual(["mom"]);
+    // 剥空的那件事删掉整个字段，与 deletePerson 的行为一致
+    expect("personIds" in s.drafts.d!.photoEvents![0]!).toBe(false);
+    validateLibrary(s);
   });
   it("filters records by person", () => {
     const s = personFixture();
