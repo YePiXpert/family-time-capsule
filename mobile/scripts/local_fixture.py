@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 def empty():
-    return dict(version=1, revision=0, welcome=True, profile=dict(name='小美', birthday='', avatarId=None),
+    return dict(version=1, revision=0, welcome=True, profile=dict(name='桉桉', birthday='', avatarId=None),
                 settings=dict(theme='auto', largeText=False), records={}, drafts={}, media={}, albums={}, selections={},
                 series={}, persons={}, yearNotes={}, receivedShares=[])
 

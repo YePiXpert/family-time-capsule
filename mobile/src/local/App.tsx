@@ -29,6 +29,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useReducedMotion } from "react-native-reanimated";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
+import { APP_NAME } from "./brand";
 import { inspectBackup, recoverStartupBackup } from "./backup";
 import { StatusBar } from "expo-status-bar";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
@@ -93,7 +94,7 @@ function LockGate({ onUnlock }: { onUnlock: () => void }) {
     <Page top>
       <View style={{ minHeight: 140 }} />
       <Glass radius={24} style={{ padding: 20, gap: 12 }}>
-        <Text style={s.muted}>小美成长记</Text>
+        <Text style={s.muted}>{APP_NAME}</Text>
         <Text style={s.title}>这些时光只属于你们</Text>
         <Text style={s.muted}>用指纹、面容或锁屏密码解锁继续。</Text>
         <ErrorText message={error} />
@@ -178,7 +179,7 @@ function Root() {
       <Page top>
         <View style={{ minHeight: 120 }} />
         <Glass radius={24} style={{ padding: 20, gap: 12 }}>
-          <Text style={s.muted}>小美成长记</Text>
+          <Text style={s.muted}>{APP_NAME}</Text>
           <Text style={s.title}>记下今天的小事</Text>
           <Text>写几句话，留一张照片，慢慢整理成相册。</Text>
           <Text style={s.muted}>记录保存在这台设备，随时回看。</Text>

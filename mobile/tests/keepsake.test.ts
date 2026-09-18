@@ -12,13 +12,13 @@ import {
 
 describe("keepsake card layout", () => {
   it("wraps CJK and ASCII within the given width", () => {
-    const cjk = wrapText("小美在公园里学会了放手走路", {
+    const cjk = wrapText("桉桉在公园里学会了放手走路", {
       fontSize: 40,
       maxWidth: 120,
       maxLines: 5,
     });
     expect(cjk.length).toBeGreaterThan(1);
-    expect(cjk.join("")).toBe("小美在公园里学会了放手走路");
+    expect(cjk.join("")).toBe("桉桉在公园里学会了放手走路");
     // 混排 ASCII 更省宽度：同样宽度能装更多字符。
     const ascii = wrapText("walking in the park", {
       fontSize: 40,

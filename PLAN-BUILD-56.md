@@ -1,11 +1,11 @@
-# 小美成长记 · Build 56 执行方案（交接版）
+# 桉桉成长记 · Build 56 执行方案（交接版）
 
 > 给执行者：本文档自包含，无需其他上下文。所有文件路径相对仓库根目录 `C:\vibe-coding\family-time-capsule`。
 > 目标迭代：**Build 56 —— 数据底线与确定性缺陷修复**。文末附 Build 57/58  backlog 概要。
 
 ## 0. 项目速览
 
-- React Native (Expo ~57) 本机优先应用「小美成长记」：父母记录女儿成长（文字/照片/视频/声音），书架首页（年度册/月度册/专题册），AI 辅助（可选，经 `server/` 的 VPS 转发 DeepSeek），本机备份 `.xmb`。
+- React Native (Expo ~57) 本机优先应用「桉桉成长记」：父母记录女儿成长（文字/照片/视频/声音），书架首页（年度册/月度册/专题册），AI 辅助（可选，经 `server/` 的 VPS 转发 DeepSeek），本机备份 `.xmb`。
 - 应用主体在 `mobile/`；根目录命令转发到移动端：`npm test`、`npm run typecheck`、`npm run lint`（也可在 `mobile/` 内直接跑）。
 - 设计规范 `DESIGN.md`：暖纸手账风；主题与公共组件全部集中在 `mobile/src/local/ui.tsx`，**不得在页面另建主题**。
 - 发布纪律（`AGENTS.md`）：只从 `main` 工作，不建分支、不开 PR、不 force-push；小而清晰的提交直接推 `origin main`；每次交付递增 `mobile/app.json` 的 `ios.buildNumber` 与 `android.versionCode`（当前 55 → 本轮 56）；推后检查 GitHub Actions（`ci.yml` 自动跑；`mobile-build.yml` 需手动派发 `gh workflow run mobile-build.yml --ref main -f source_sha=<完整SHA>`，产出 Android APK 与 iOS 未签名 IPA 并验证两者都绿）。

@@ -12,6 +12,7 @@ import {
 } from "../local/ui";
 import { api, disconnect, enroll, getToken } from "./client";
 import type { Member, Overview, Usage, AISettings } from "./types";
+import { APP_NAME } from "../local/brand";
 function MemberRow({
   member,
   reload,
@@ -92,7 +93,7 @@ function MemberRow({
                     memberId: member.id,
                   });
                   await Share.share({
-                    message: `小美成长记 AI 邀请码：${result.code}\n在「我的 → AI 设置」加入。24 小时内有效，只能使用一次。`,
+                    message: `${APP_NAME} AI 邀请码：${result.code}\n在「我的 → AI 设置」加入。24 小时内有效，只能使用一次。`,
                   });
                 })
               }
@@ -273,7 +274,7 @@ export function AISettingsScreen() {
                 title="分享邀请码"
                 onPress={() => {
                   void Share.share({
-                    message: `小美成长记 AI 邀请码：${inviteCode}\n在「我的 → AI 设置」加入。24 小时内有效。`,
+                    message: `${APP_NAME} AI 邀请码：${inviteCode}\n在「我的 → AI 设置」加入。24 小时内有效。`,
                   }).catch((e) => setError(messageOf(e)));
                 }}
               />
