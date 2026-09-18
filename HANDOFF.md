@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-18，Build 59 已交付后。
+> 最后更新：2026-09-18，Build 60 已交付后。
 
 ---
 
@@ -14,28 +14,26 @@
 第一步·环境自检：
 1. 读仓库根目录的 AGENTS.md（发布纪律：只从 main 工作、小提交直接推、推后看 Actions）、
    README.md（架构/命令）、DESIGN.md（设计规范）、CHANGELOG.md（近期变更）、
-   PLAN-BUILD-60-61.md（接下来两轮迭代的任务清单与已知坑）。
+   PLAN-BUILD-60-61.md（Build 61 任务清单与已知坑，Build 60 已完成可作参照）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install。
 4. 验证三件套：npm test、npm run typecheck、npm run lint（根目录命令即可，全部应绿；
-   mobile 91 个测试、server 13 个）。
+   mobile 113 个测试、server 13 个）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·继续执行 Build 60「时光的礼物」：
-严格按 PLAN-BUILD-60-61.md §2 的任务清单顺序做，每组一个提交：
-  1) 时光系列（同款时光对比）：Library.series 四件套（类型/emptyLibrary/validateLibrary/
-     normalizeLibrary，参照 yearNotes 与 lastExportAt 模式）、服务层、书架「时光系列」区、
-     Series 内页（时间线 + 缺口月虚位卡 + 选图，换封面的平铺写法在 Albums.tsx）、
-     keepsake.ts 加 layoutSeriesStrip 横排对比导出；测试见计划文档。
-  2) 每日一问 prompts.ts（按月龄段、同日稳定的纯函数）+ 编辑器空正文时的温和提示。
-  3) 年度重放 replay 选片纯函数 + RecapScreen 全屏幻灯（尊重减少动画设置，v1 不配乐）。
-  4) 记录节奏温和提示卡 nudgeOf 纯函数 + Shelf 卡片。
-  5) 文档（CHANGELOG/README/DESIGN）+ app.json 59→60（定点编辑，保留 \u 转义）→
+第二步·继续执行 Build 61「记忆的秩序」：
+严格按 PLAN-BUILD-60-61.md §3 的任务清单顺序做，每组一个提交：
+  1) 人物标签：Library.persons + RecordContent.personIds（四件套模式，参照 series 的写法，
+     见 mobile/src/local/model.ts）、编辑器人物 chips、阅读页 muted chips、选材与年度册按人物过滤。
+  2) 本机健康页：新 health.ts（xiaomei-v1/health.json 原子写），启动/change 计时与写盘失败摘要，
+     入口在「我的 → 本机存储」内新区块；不上报任何数据。
+  3) 轻量足迹：把 ai/state.ts 的 localPlaceTags 250 米聚类抽成 places.ts 共享纯函数
+     clusterPlaces(media)，新路由 Footprint 地点列表；真地图 react-native-maps 为可整体
+     裁剪的独立提交，先跑轻量版验收。
+  4) 搜索筛选 chips 若 59 未覆盖则补齐（人物 chip 随任务 1）。
+  5) 文档（CHANGELOG/README/DESIGN）+ app.json 60→61（定点编辑，保留 \u 转义）→
      全套绿 → 推送 → ci.yml 绿 → gh workflow run mobile-build.yml --ref main
      -f source_sha=<完整40位SHA> → Android APK 与 iOS IPA 双绿 → 给出 artifacts 下载。
-
-第三步·Build 61「记忆的秩序」：按 PLAN-BUILD-60-61.md §3 执行（人物标签、本机健康页、
-轻量足迹；真地图 react-native-maps 为可整体裁剪的独立提交）。
 
 注意事项（踩过的坑都在 PLAN-BUILD-60-61.md §4，务必先读）：
 - 改原生 Kotlin 前先用独立 kotlinc 对 $ANDROID_HOME/platforms/android-36/android.jar
@@ -51,14 +49,16 @@
 
 ## 二、当前状态快照（2026-09-18）
 
-- **已交付**：Build 57（礼物感）+ 58（性能与媒体）+ 59（数据安全），三打包作业全绿。
-  最新交付提交 `69e39dd`（versionCode 59），产物在 Actions run
-  https://github.com/YePiXpert/family-time-capsule/actions/runs/35267271054
+- **已交付**：Build 60「时光的礼物」（时光系列、每日一问、年度重放、节奏提示），交付提交
+  `af5fffa`（versionCode 60），三打包作业全绿。产物在 Actions run
+  https://github.com/YePiXpert/family-time-capsule/actions/runs/35299805334
   （artifacts 30 天有效期，约 2026-10-18 过期，需要就早下）。
+  本轮未动原生代码；mobile 测试 91→113（series 6 + prompts 5 + replay 4 + nudge 3 +
+  keepsake strip 4）。
 - **签名**：`3cc56d9` 起 APK 用持有者私有 keystore 签名（secrets 已配置，指纹
   `FE:57:43:E4:…:B1:7E` 钉入 mobile-build.yml，与模板证书指纹二选一校验）。
-- **Build 60/61：代码未动工**，完整任务清单在 PLAN-BUILD-60-61.md（含模型四件套写法、
-  每个任务的测试要求、可复用基建清单：NoteCard/Stamp/keepsake/recap/search/dates/places）。
+- **Build 61「记忆的秩序」：代码未动工**，完整任务清单在 PLAN-BUILD-60-61.md §3（人物标签、
+  本机健康页、轻量足迹；真地图 react-native-maps 为可整体裁剪的独立提交）。
 - **工作区**：应只有本文件与 PLAN 文档皆已入库，`git status` 干净（.zcode/ 为本地会话目录，
   不要提交）。
 
