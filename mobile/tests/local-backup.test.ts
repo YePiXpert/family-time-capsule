@@ -750,3 +750,31 @@ it("backs up and restores a brand-new library with nothing in it yet", async () 
   expect(Object.keys(restored.media)).toEqual([]);
   expect(restored.welcome).toBe(false);
 });
+it("keeps the old single-row library when the cutover cannot finish", async () => {
+  const { store } = await setup();
+  const before = store.get();
+  env.database!.exec("DELETE FROM entity; DELETE FROM root;");
+  env
+    .database!.prepare("INSERT INTO library(id,snapshot) VALUES(1,?)")
+    .run(JSON.stringify(before));
+  // 切代的最后一步失败：整笔必须回滚，旧快照原样留着。
+  env.database!.exec(
+    "CREATE TRIGGER reject_cutover BEFORE DELETE ON library BEGIN SELECT RAISE(ABORT, 'cutover failed'); END;",
+  );
+  env.database!.close();
+  env.database = null;
+  vi.resetModules();
+  const { openLocalStore } = await import("../src/local/disk");
+  await expect(openLocalStore()).rejects.toThrow();
+  const db = new DatabaseSync(path.join(env.root, "xiaomei-local-v1.sqlite"));
+  expect(db.prepare("SELECT COUNT(*) n FROM library").get()).toEqual({ n: 1 });
+  expect(db.prepare("SELECT COUNT(*) n FROM root").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT COUNT(*) n FROM entity").get()).toEqual({ n: 0 });
+  expect(
+    JSON.parse(
+      (db.prepare("SELECT snapshot FROM library").get() as { snapshot: string })
+        .snapshot,
+    ).records.r.text,
+  ).toBe("第一步");
+  db.close();
+});
