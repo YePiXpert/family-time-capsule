@@ -13,7 +13,7 @@ import {
   saveRecord,
   validateLibrary,
   type Library,
-} from "../src/local/model";
+ LocalMedia } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
 import { decodeManifest, encodeHeader } from "../src/local/backup-format";
 import {
@@ -22,7 +22,12 @@ import {
   milestoneNumeral,
   milestoneOf,
 } from "../src/local/dates";
-import { looksLikeCoordinates, placeLabel } from "../src/local/places";
+import {
+  clusterPlaces,
+  distanceMeters,
+  looksLikeCoordinates,
+  placeLabel,
+} from "../src/local/places";
 const date = "2026-09-16T12:00:00.000Z";
 function fixture() {
   const s = emptyLibrary();
@@ -656,6 +661,58 @@ describe("person tags", () => {
     expect(recordsOfPerson(records, "grandma").map((r) => r.id)).toEqual([
       "r",
     ]);
+  });
+});
+
+describe("place clustering", () => {
+  const gps = (
+    id: string,
+    latitude: number,
+    longitude: number,
+    capturedAt?: string,
+  ): LocalMedia => ({
+    id,
+    file: `${id}.jpg`,
+    name: `${id}.jpg`,
+    kind: "image",
+    bytes: 4,
+    sha256: id.padEnd(64, "0").slice(0, 64),
+    photoMetadata: {
+      latitude,
+      longitude,
+      ...(capturedAt ? { capturedAt } : {}),
+    },
+  });
+  it("measures real distances in meters", () => {
+    expect(
+      distanceMeters(
+        { latitude: 31.2, longitude: 121.5 },
+        { latitude: 31.2001, longitude: 121.5001 },
+      ),
+    ).toBeLessThan(30);
+    expect(
+      distanceMeters(
+        { latitude: 31.2, longitude: 121.5 },
+        { latitude: 31.21, longitude: 121.5 },
+      ),
+    ).toBeGreaterThan(1000);
+  });
+  it("clusters nearby photos with the first center and skips no-GPS media", () => {
+    const clusters = clusterPlaces([
+      gps("a", 31.2, 121.5, "2026-01-10T09:00:00.000Z"),
+      gps("b", 31.2001, 121.5001, "2026-05-20T09:00:00.000Z"),
+      gps("c", 31.21, 121.5),
+      { ...gps("d", 0, 0), photoMetadata: undefined },
+    ]);
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0]).toMatchObject({
+      center: { latitude: 31.2, longitude: 121.5 },
+      mediaIds: ["a", "b"],
+      firstAt: "2026-01-10T09:00:00.000Z",
+      lastAt: "2026-05-20T09:00:00.000Z",
+    });
+    expect(clusters[1]!.mediaIds).toEqual(["c"]);
+    expect(clusters[1]!.firstAt).toBe("");
   });
 });
 

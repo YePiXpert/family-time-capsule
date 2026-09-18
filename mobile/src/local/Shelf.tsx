@@ -26,6 +26,7 @@ import {
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import { nudgeOf } from "./nudge";
+import { clusterPlaces } from "./places";
 import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
 import {
   Button,
@@ -305,6 +306,7 @@ export function Shelf() {
     (a, b) =>
       b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
   );
+  const clusters = clusterPlaces(Object.values(state.media));
   const drafts = Object.values(state.drafts).sort((a, b) =>
     b.updatedAt.localeCompare(a.updatedAt),
   );
@@ -745,6 +747,21 @@ export function Shelf() {
               }}
             />
           </View>
+          {clusters.length > 0 && (
+            <Pressable
+              testID="open-footprint"
+              accessibilityRole="button"
+              accessibilityLabel={`足迹，${clusters.length} 个常去的地方`}
+              onPress={() => nav.navigate("Footprint")}
+            >
+              <Glass radius={16} style={{ padding: 16, gap: 6 }}>
+                <Text style={s.heading}>足迹</Text>
+                <Text style={s.muted}>
+                  按拍摄位置聚成 {clusters.length} 个地点，看看她常去的地方。
+                </Text>
+              </Glass>
+            </Pressable>
+          )}
         </View>
         {records.length === 0 && (
           <View style={s.empty}>

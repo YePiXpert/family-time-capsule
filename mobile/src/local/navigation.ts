@@ -10,6 +10,7 @@ export type Routes = {
   Year: { year: string };
   Recap: { year: string };
   Firsts: undefined;
+  Footprint: undefined;
   Title: undefined;
   Settings: undefined;
   Editor: { draftId: string };

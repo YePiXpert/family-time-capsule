@@ -2,6 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import type { Library, RecordDraft, RecordContent } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
+import { clusterPlaces } from "../local/places";
 import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
 /** 单次润色的正文上限；超限必须明确提示，不允许静默截断。与服务端一致。 */
 export const POLISH_BODY_LIMIT = 2000;
@@ -330,28 +331,11 @@ export function localPlaceTags(
   ids: string[],
   media: Library["media"],
 ): Map<string, string> {
-  const centers: { latitude: number; longitude: number }[] = [];
   const tags = new Map<string, string>();
-  const rad = (n: number) => (n * Math.PI) / 180;
-  for (const id of ids) {
-    const m = media[id]?.photoMetadata;
-    if (m?.latitude === undefined || m.longitude === undefined) continue;
-    let index = centers.findIndex((c) => {
-      const a =
-        Math.sin(rad(m.latitude! - c.latitude) / 2) ** 2 +
-        Math.cos(rad(c.latitude)) *
-          Math.cos(rad(m.latitude!)) *
-          Math.sin(rad(m.longitude! - c.longitude) / 2) ** 2;
-      return (
-        6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a))) <=
-        250
-      );
-    });
-    if (index < 0) {
-      index = centers.length;
-      centers.push({ latitude: m.latitude, longitude: m.longitude });
-    }
-    tags.set(id, `地点组${index + 1}`);
-  }
+  const list = ids.map((id) => media[id]).filter((m) => !!m);
+  clusterPlaces(list).forEach((cluster, index) => {
+    for (const mediaId of cluster.mediaIds)
+      tags.set(mediaId, `地点组${index + 1}`);
+  });
   return tags;
 }
