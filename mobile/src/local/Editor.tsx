@@ -684,6 +684,14 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                     })}
                   </View>
                 )}
+                {personList.length > 0 && (
+                  <Button
+                    title="整理人物"
+                    compact
+                    testID="open-people"
+                    onPress={() => navigation.navigate("People")}
+                  />
+                )}
                 <View style={s.row}>
                   <View style={{ flex: 1, minWidth: 200 }}>
                     <Field

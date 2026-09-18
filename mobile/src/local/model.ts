@@ -191,6 +191,53 @@ export function recordsOfPerson(
 ): LocalRecord[] {
   return records.filter((r) => r.personIds?.includes(personId));
 }
+
+function stripPerson(
+  contents: RecordContent[],
+  personId: string,
+  retag: (ids: string[]) => string[],
+): void {
+  for (const c of contents) {
+    if (!c.personIds?.includes(personId)) continue;
+    const next = retag(c.personIds);
+    if (next.length) c.personIds = next;
+    else delete c.personIds;
+  }
+}
+
+/** 删除人物并从全部记录/草稿标记里剥离；只取消标记，不动记录。 */
+export function deletePerson(s: Library, id: string): void {
+  if (!s.persons[id]) throw new Error("没有这个人。");
+  delete s.persons[id];
+  const strip = (ids: string[]) => ids.filter((p) => p !== id);
+  const all = [
+    ...Object.values(s.records),
+    ...Object.values(s.drafts).map((d) => d.content),
+    ...(Object.values(s.drafts).flatMap((d) => d.photoEvents ?? []) as RecordContent[]),
+  ];
+  stripPerson(all, id, strip);
+}
+
+/** 把 source 的全部标记并入 target 并删除 source。 */
+export function mergePersons(
+  s: Library,
+  sourceId: string,
+  targetId: string,
+): void {
+  if (sourceId === targetId) throw new Error("请选择另一个人来合并。");
+  if (!s.persons[sourceId] || !s.persons[targetId])
+    throw new Error("没有这个人。");
+  delete s.persons[sourceId];
+  const retag = (ids: string[]) => [
+    ...new Set(ids.map((p) => (p === sourceId ? targetId : p))),
+  ];
+  const all = [
+    ...Object.values(s.records),
+    ...Object.values(s.drafts).map((d) => d.content),
+    ...(Object.values(s.drafts).flatMap((d) => d.photoEvents ?? []) as RecordContent[]),
+  ];
+  stripPerson(all, sourceId, retag);
+}
 export function referencedMedia(s: Library): Set<string> {
   return new Set([
     ...(s.profile.avatarId ? [s.profile.avatarId] : []),

@@ -121,6 +121,20 @@ export async function addToSeries(
     series.updatedAt = now();
   });
 }
+/** 改人物名；trim 后 1-50 字，同名复用规则不适用于改名（保留身份）。 */
+export async function renamePerson(
+  store: LocalStore,
+  id: string,
+  name: string,
+) {
+  await store.change((s) => {
+    const person = s.persons[id];
+    if (!person) throw new Error("没有这个人。");
+    const trimmed = name.trim().slice(0, 50);
+    if (!trimmed) throw new Error("名字不能是空的。");
+    person.name = trimmed;
+  });
+}
 /** 新建人物（同名复用既有 id），供编辑器人物 chips 调用。 */
 export async function createPerson(store: LocalStore, name: string) {
   return store.change((s) => {
