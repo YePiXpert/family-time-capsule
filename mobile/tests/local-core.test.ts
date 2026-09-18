@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   clone,
+  deletePerson,
   deleteRecord,
   emptyContent,
   emptyLibrary,
   finishSelection,
+  mergePersons,
   monthOfItem,
   recordsOfPerson,
   referencedMedia,
@@ -645,6 +647,56 @@ describe("person tags", () => {
       new TextEncoder().encode(JSON.stringify(manifest)),
     );
     expect(decoded.library.persons).toEqual({});
+  });
+  /** 记录、草稿正文与「按事情分组」的每件事都带着标记，用来验证级联剥离。 */
+  function cascadeFixture() {
+    const s = personFixture();
+    s.drafts.d = {
+      id: "d",
+      recordId: null,
+      baseRevision: 0,
+      updatedAt: date,
+      content: {
+        ...emptyContent(),
+        date,
+        text: "外婆来了",
+        personIds: ["mom", "grandma"],
+      },
+      photoEvents: [
+        { ...emptyContent(), date, text: "上午", personIds: ["grandma"] },
+        { ...emptyContent(), date, text: "下午", personIds: ["mom", "grandma"] },
+      ],
+    };
+    return s;
+  }
+  it("strips a deleted person from records, drafts and photo events", () => {
+    const s = cascadeFixture();
+    deletePerson(s, "grandma");
+    expect(s.persons.grandma).toBeUndefined();
+    expect(s.records.r!.personIds).toEqual(["mom"]);
+    expect(s.drafts.d!.content.personIds).toEqual(["mom"]);
+    expect(s.drafts.d!.photoEvents![1]!.personIds).toEqual(["mom"]);
+    // 标记被剥空的那件事要删掉整个字段，不留空数组
+    expect("personIds" in s.drafts.d!.photoEvents![0]!).toBe(false);
+    validateLibrary(s);
+  });
+  it("merges a person into another without leaving duplicates", () => {
+    const s = cascadeFixture();
+    mergePersons(s, "grandma", "mom");
+    expect(s.persons.grandma).toBeUndefined();
+    expect(s.persons.mom).toEqual({ id: "mom", name: "妈妈" });
+    // 两个都在的地方合并后只剩一个，不重复
+    expect(s.records.r!.personIds).toEqual(["mom"]);
+    expect(s.drafts.d!.content.personIds).toEqual(["mom"]);
+    expect(s.drafts.d!.photoEvents![0]!.personIds).toEqual(["mom"]);
+    expect(s.drafts.d!.photoEvents![1]!.personIds).toEqual(["mom"]);
+    validateLibrary(s);
+  });
+  it("refuses to delete or merge people that are not there", () => {
+    expect(() => deletePerson(cascadeFixture(), "nobody")).toThrow();
+    expect(() => mergePersons(cascadeFixture(), "nobody", "mom")).toThrow();
+    expect(() => mergePersons(cascadeFixture(), "mom", "nobody")).toThrow();
+    expect(() => mergePersons(cascadeFixture(), "mom", "mom")).toThrow();
   });
   it("filters records by person", () => {
     const s = personFixture();
