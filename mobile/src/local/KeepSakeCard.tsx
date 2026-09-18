@@ -357,12 +357,15 @@ export async function exportKeepSakeCard(
   return out;
 }
 
-/** 纪念卡用照片：降采样到宽 1080，返回临时文件与宽高比。 */
-export async function prepareKeepSakePhoto(media: LocalMedia | undefined) {
+/** 纪念卡用照片：降采样到指定宽（默认 1080），返回临时文件与宽高比。 */
+export async function prepareKeepSakePhoto(
+  media: LocalMedia | undefined,
+  width = 1080,
+) {
   if (media?.kind !== "image") return undefined;
   const result = await ImageManipulator.manipulateAsync(
     mediaUri(media),
-    [{ resize: { width: 1080 } }],
+    [{ resize: { width } }],
     { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
   );
   const aspect = result.width / Math.max(result.height, 1);

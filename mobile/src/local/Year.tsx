@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { Svg } from "react-native-svg";
 import { randomUUID } from "expo-crypto";
 import { useLibrary, useStore } from "./context";
 import {
@@ -15,14 +16,19 @@ import { coverForRecords, Volume } from "./Shelf";
 import { NoteCard } from "./NoteCard";
 import { ReplayModal } from "./RecapScreen";
 import { replayPhotos } from "./replay";
+import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
+import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
+import type { YearbookInput } from "./yearbook";
 import { recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
   Button,
+  ErrorText,
   Ornament,
   Page,
   Text,
   dateLabel,
+  messageOf,
   monthLabel,
   serif,
   useStyles,
@@ -105,7 +111,14 @@ export function Year({ route }: Props<"Year">) {
     insets = useSafeAreaInsets();
   const year = route.params.year;
   const [replayOpen, setReplayOpen] = useState(false),
-    [person, setPerson] = useState("");
+    [person, setPerson] = useState(""),
+    [bookBusy, setBookBusy] = useState(false),
+    [error, setError] = useState("");
+  const bookRef = useRef<Svg | null>(null);
+  const [book, setBook] = useState<{
+    input: YearbookInput;
+    photos: { cover?: YearbookPhoto; months: (YearbookPhoto | undefined)[] };
+  } | null>(null);
   const records = useMemo(
     () => sortedRecords(state).filter((r) => yearKey(r.date) === year),
     [state, year],
@@ -154,6 +167,74 @@ export function Year({ route }: Props<"Year">) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const monthKeys = Array.from(
+    { length: 12 },
+    (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`,
+  );
+  const makeYearbook = async () => {
+    setBookBusy(true);
+    setError("");
+    try {
+      const coverPhoto = await prepareKeepSakePhoto(
+        coverForRecords(records, state.media),
+      );
+      const monthPhotos: (YearbookPhoto | undefined)[] = [];
+      for (const key of monthKeys) {
+        const monthRecords = records.filter((r) => monthKey(r.date) === key);
+        monthPhotos.push(
+          await prepareKeepSakePhoto(
+            coverForRecords(monthRecords, state.media),
+            400,
+          ),
+        );
+      }
+      setBook({
+        input: {
+          year,
+          profileName: state.profile.name,
+          stats,
+          note: state.yearNotes[year] ?? "",
+          months: monthKeys.map((key, index) => ({
+            label: monthLabel(key),
+            count: records.filter((r) => monthKey(r.date) === key).length,
+            photoAspect: monthPhotos[index]?.aspect,
+          })),
+          firsts: records
+            .filter((r) => r.first)
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map((r) => ({ title: recordTitle(r), date: dateLabel(r.date) })),
+          colophon: `${year} 年`,
+          coverAspect: coverPhoto?.aspect,
+        },
+        photos: { cover: coverPhoto, months: monthPhotos },
+      });
+    } catch (e) {
+      setError(messageOf(e));
+      setBookBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (!book || !bookBusy) return;
+    let cancelled = false;
+    // 两帧之后再取图，确保离屏 Svg 完成布局与位图合成。
+    const first = requestAnimationFrame(() =>
+      requestAnimationFrame(async () => {
+        if (cancelled) return;
+        try {
+          await exportKeepSakeCard(bookRef.current, `yearbook-${year}`);
+        } catch (e) {
+          setError(messageOf(e));
+        } finally {
+          setBookBusy(false);
+          setBook(null);
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(first);
+    };
+  }, [book, bookBusy, year]);
   return (
     <Page>
       <Text style={s.title}>{year} 年</Text>
@@ -171,6 +252,18 @@ export function Year({ route }: Props<"Year">) {
           onPress={() => setReplayOpen(true)}
         />
       </View>
+      <Button
+        title={bookBusy ? "正在装订这一年的成长册…" : "导出成长册"}
+        testID="year-yearbook"
+        disabled={bookBusy || records.length === 0}
+        onPress={() => {
+          void makeYearbook();
+        }}
+      />
+      {records.length === 0 && !bookBusy && (
+        <Text style={s.muted}>这一年还没有记录，先记下几段时光。</Text>
+      )}
+      <ErrorText message={error} />
       {replayOpen && <ReplayModal year={year} onClose={() => setReplayOpen(false)} />}
       {personList.length > 0 && (
         <View style={s.row}>
@@ -246,6 +339,19 @@ export function Year({ route }: Props<"Year">) {
         </View>
       )}
       <Ornament />
+      {book && (
+        <View
+          pointerEvents="none"
+          style={{ position: "absolute", left: -10000, top: 0, opacity: 0 }}
+        >
+          <YearBookCard
+            ref={bookRef}
+            input={book.input}
+            photos={book.photos}
+            profileName={state.profile.name}
+          />
+        </View>
+      )}
     </Page>
   );
 }

@@ -83,7 +83,10 @@ try:
     find('Offline little story. More.');shot('backup-roundtrip')
     tap('keepsake-make');time.sleep(4);shot('keepsake-share-sheet');adb('shell','input','keyevent','4')
     find('record-edit')
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,widths=[320,390])
+    restart();tap(f"volume-year-{time.strftime('%Y')}")
+    tap('year-yearbook');time.sleep(8);shot('yearbook-share-sheet');adb('shell','input','keyevent','4')
+    find('year-yearbook');yearbookExport=True
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')
