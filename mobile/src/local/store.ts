@@ -9,12 +9,20 @@ export interface LibraryDisk {
   read(): Promise<unknown | null>;
   write(state: Library): Promise<void>;
 }
+/** 本机健康采集点；全部可选，测试与无健康文件环境静默跳过。 */
+export interface StoreEvents {
+  onChange?: (ms: number) => void;
+  onWriteFailure?: (message: string) => void;
+}
 /** All mutations, including restore, use one queue. A failed write never advances UI state. */
 export class LocalStore {
   private state: Library = emptyLibrary();
   private queue: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
-  constructor(private disk: LibraryDisk) {}
+  constructor(
+    private disk: LibraryDisk,
+    private events: StoreEvents = {},
+  ) {}
   async open() {
     const state = await this.disk.read();
     if (state !== null) {
@@ -30,13 +38,22 @@ export class LocalStore {
   };
   change = <T>(apply: (next: Library) => T | Promise<T>): Promise<T> => {
     const next = this.queue.then(async () => {
+      const started = Date.now();
       const state = clone(this.state);
       const result = await apply(state);
       state.revision = this.state.revision + 1;
       validateLibrary(state);
-      await this.disk.write(state);
+      try {
+        await this.disk.write(state);
+      } catch (e) {
+        this.events.onWriteFailure?.(
+          e instanceof Error ? e.message : String(e),
+        );
+        throw e;
+      }
       this.state = state;
       for (const fn of this.listeners) fn();
+      this.events.onChange?.(Date.now() - started);
       return result;
     });
     this.queue = next.catch(() => {});
