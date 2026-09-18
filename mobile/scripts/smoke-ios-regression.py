@@ -3,7 +3,6 @@
 import argparse
 import json
 import hashlib
-import sqlite3
 import os
 from pathlib import Path
 import plistlib
@@ -12,7 +11,7 @@ import struct
 import subprocess
 import time
 from ios_simulator import boot_simulator, cleanup_simulator
-from local_fixture import seed, read_state
+from local_fixture import break_state, broken_root, seed, read_state
 
 
 def run(*args, timeout=180):
@@ -53,8 +52,7 @@ def main():
         assert not before['library']['drafts']
         # Force startup failure after validating the ordinary restore. Recovery must
         # activate an independent database and leave the unreadable original intact.
-        with sqlite3.connect(database) as db:
-            db.execute("UPDATE library SET snapshot='broken' WHERE id=1")
+        break_state(database)
         recovery_command = command.copy()
         recovery_command[recovery_command.index(str(out/'local.xcresult'))] = str(out/'recovery.xcresult')
         recovery_command[-1] = '-only-testing:NativeRegression/NativeRegressionTests/testUnreadableLibraryRecoversFromLocalBackup'
@@ -71,8 +69,7 @@ def main():
         # 不保证一致，因此只要求恢复结果与某一份现存完整备份的内容完全一致。
         candidates = {json.dumps(m['library']['records'], sort_keys=True) for m in manifests}
         assert json.dumps(restored['records'], sort_keys=True) in candidates, 'Startup recovery changed records'
-        with sqlite3.connect(database) as db:
-            assert db.execute('SELECT snapshot FROM library WHERE id=1').fetchone()[0] == 'broken', 'Recovery overwrote original database'
+        assert broken_root(database) == 'broken', 'Recovery overwrote original database'
         for media in restored['media'].values():
             original = container/'Documents'/'xiaomei-v1'/'media'/media['file']
             assert hashlib.sha256(original.read_bytes()).hexdigest() == media['sha256']
