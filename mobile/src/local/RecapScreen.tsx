@@ -140,6 +140,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
     audioMedia ? mediaUri(audioMedia) : undefined,
   );
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability -- expo-audio 播放器的循环与音量就是就地属性
     music.loop = true;
     music.volume = 0.6;
   }, [music]);
