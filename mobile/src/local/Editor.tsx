@@ -22,6 +22,7 @@ import {
   type LocalMedia,
 } from "./model";
 import { newId, now } from "./services";
+import { promptOf } from "./prompts";
 import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
 import type { Props } from "./navigation";
@@ -58,7 +59,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [dateOpen, setDateOpen] = useState(false),
     [movingPhoto, setMovingPhoto] = useState<string | null>(null),
     [eventDate, setEventDate] = useState<number | null>(null),
-    [allowExit, setAllowExit] = useState(false);
+    [allowExit, setAllowExit] = useState(false),
+    [promptSeed, setPromptSeed] = useState(0),
+    [promptOff, setPromptOff] = useState(false);
   const nextAction = useRef<(() => void) | null>(null),
     operation = useRef(false);
   const { current, pendingMedia, verified, importedMedia, persist, persistDebounced, flush } =
@@ -409,6 +412,37 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               style={{ minHeight: 160, textAlignVertical: "top" }}
             />
           )}
+          {!promptOff &&
+            !draft.recordId &&
+            !draft.content.text.trim() &&
+            (() => {
+              const question = promptOf(
+                state.profile.birthday,
+                new Date(),
+                promptSeed,
+              );
+              return (
+                <View style={{ gap: 6 }} testID="daily-prompt-card">
+                  <Text style={s.muted} testID="daily-prompt">
+                    今天的小问题：{question}
+                  </Text>
+                  <View style={s.row}>
+                    <Button
+                      title="换一个"
+                      compact
+                      testID="daily-prompt-next"
+                      onPress={() => setPromptSeed(promptSeed + 1)}
+                    />
+                    <Button
+                      title="不问了"
+                      compact
+                      testID="daily-prompt-off"
+                      onPress={() => setPromptOff(true)}
+                    />
+                  </View>
+                </View>
+              );
+            })()}
           <View style={s.row}>
             <Button
               title="照片"
