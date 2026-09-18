@@ -1,6 +1,6 @@
 services:
   ai:
-    image: xiaomei-ai:${SOURCE_SHA:?Set SOURCE_SHA}
+    image: anan-ai:${SOURCE_SHA:?Set SOURCE_SHA}
     build: ../server
     restart: unless-stopped
     ports:

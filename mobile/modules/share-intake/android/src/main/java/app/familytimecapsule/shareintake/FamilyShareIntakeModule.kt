@@ -15,6 +15,8 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.Executors
 
+/** 与 JS 的 brand.ts 对齐；改名前留在旧目录里的清单由 JS 的一次性迁移搬过来。 */
+private const val DOCUMENTS_ROOT = "anan-v1"
 private const val HANDLED_EXTRA = "app.familytimecapsule.shareintake.HANDLED"
 private const val MAX_SHARE_ITEMS = 100
 
@@ -35,7 +37,7 @@ class FamilyShareIntakeModule : Module() {
       // manifests whose app-private files are already durable.
       copyExecutor.submit<String> {
         val context = requireNotNull(appContext.reactContext) { "React context is unavailable" }
-        val manifests = File(context.filesDir, "xiaomei-v1/intake/manifests")
+        val manifests = File(context.filesDir, "$DOCUMENTS_ROOT/intake/manifests")
         val result = JSONArray()
         manifests.listFiles()
           ?.filter { it.isFile && it.extension == "json" }
@@ -50,7 +52,7 @@ class FamilyShareIntakeModule : Module() {
     AsyncFunction("acknowledgeAsync") { manifestId: String ->
       require(manifestId.matches(Regex("^[0-9a-fA-F-]{36}$"))) { "Invalid manifest id" }
       val context = requireNotNull(appContext.reactContext) { "React context is unavailable" }
-      File(context.filesDir, "xiaomei-v1/intake/manifests/$manifestId.json").delete()
+      File(context.filesDir, "$DOCUMENTS_ROOT/intake/manifests/$manifestId.json").delete()
     }
 
     OnDestroy {
@@ -126,7 +128,7 @@ class FamilyShareIntakeModule : Module() {
   }
 
   private fun writeManifest(root: File, manifestId: String, manifest: JSONObject) {
-    val directory = File(root, "xiaomei-v1/intake/manifests").apply { mkdirs() }
+    val directory = File(root, "$DOCUMENTS_ROOT/intake/manifests").apply { mkdirs() }
     val file = AtomicFile(File(directory, "$manifestId.json"))
     val output = file.startWrite()
     try {
@@ -156,7 +158,7 @@ class FamilyShareIntakeModule : Module() {
       val mediaType = mediaType(mime, declaredName)
         ?: throw IllegalArgumentException("unsupported_type")
       val extension = safeExtension(declaredName, mime)
-      val destination = File(context.filesDir, "xiaomei-v1/intake/originals/$captureId$extension")
+      val destination = File(context.filesDir, "$DOCUMENTS_ROOT/intake/originals/$captureId$extension")
       destination.parentFile?.mkdirs()
       val temporary = File(destination.parentFile, ".${destination.name}.$manifestId.part")
       val declaration = JSONObject().apply {

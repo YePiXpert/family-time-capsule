@@ -7,7 +7,7 @@
 使用 `compose.yaml`，设置 `SOURCE_SHA`（完整 main 提交）、`AI_DATA_DIR`、`CPA_KEY_PATH`，临时验证可设置 `APP_PORT=3141`。CPA 密钥文件必须只允许服务器操作人员读取，并允许容器 UID 1000 读取；不加入仓库或日志。生产数据目录需属于 UID 1000。
 
 ```
-docker compose --env-file /opt/xiaomei-ai/service.env -p xiaomei-ai -f deploy/compose.yaml up -d --build
+docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build
 ```
 
 运行 `docker compose ... exec -T ai node src/manage.ts owner` 生成 24 小时有效的一次性主人激活码。在手机「我的 → AI 设置」输入。后续邀请、设备撤销、全局及成员额度在主人管理页调整。重新运行 owner 命令可以恢复主人访问，不会修改本机相册。
@@ -23,6 +23,25 @@ AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort
 相同成员、同一请求 ID 不能再次调用上游；成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。超时调用可能已经被上游计费，因此保留额度占用，不自动退款或换模型。
 
 服务 SQLite 保存成员、凭证哈希、邀请、请求状态和用量，不保存照片或生成正文。日志仅包含服务启动信息。无需 Redis、云相册或账号同步。
+
+## 从 xiaomei-ai 改名到 anan-ai（只做一次）
+
+数据目录、compose 项目名与镜像名都从 `xiaomei-ai` 改成了 `anan-ai`。手机端不受影响——
+它只认 `https://capsule.yep.li/api/v1`，域名没变，设备凭证也不在服务端这一侧。
+
+```sh
+docker compose --env-file /opt/xiaomei-ai/service.env -p xiaomei-ai -f deploy/compose.yaml down
+cp -a /opt/xiaomei-ai /opt/xiaomei-ai.bak          # 先留一份，确认无误再删
+mv /opt/xiaomei-ai /opt/anan-ai
+sed -i 's#/opt/xiaomei-ai#/opt/anan-ai#g' /opt/anan-ai/service.env
+chown -R 1000:1000 /opt/anan-ai/data               # 容器 UID 不变
+chmod 700 /opt/anan-ai/backups/daily
+docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build
+python3 server/scripts/verify-service.py --container anan-ai-ai-1
+```
+
+`verify-service.py` 过了再删 `/opt/xiaomei-ai.bak`。`crontab` 里的 `backup.sh` 路径已随仓库更新，
+旧项目名的容器要手动 `docker rm`。成员、设备与额度都在 SQLite 里，随目录一起搬走，不用重新邀请。
 
 ## 备份与回滚
 

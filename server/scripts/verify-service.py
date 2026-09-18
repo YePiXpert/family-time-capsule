@@ -1,7 +1,7 @@
 """Exercise a running service with synthetic media; never print activation codes or tokens."""
 import argparse,base64,json,subprocess,time,urllib.request,urllib.error,uuid
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='xiaomei-ai-staging-ai-1');args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');args=p.parse_args()
 def call(path,body=None,token=None,method=None):
  headers={} if body is None else {'Content-Type':'application/json'}
  if token:headers['Authorization']='Bearer '+token

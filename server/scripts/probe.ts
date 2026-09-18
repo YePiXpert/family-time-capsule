@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { cpaProvider } from '../src/provider.ts';
-const provider=cpaProvider(process.env.CPA_BASE_URL??'http://10.66.66.2:8317/v1','/opt/xiaomei-ai/secrets/cpa-key');
+const provider=cpaProvider(process.env.CPA_BASE_URL??'http://10.66.66.2:8317/v1','/opt/anan-ai/secrets/cpa-key');
 const image='data:image/jpeg;base64,'+readFileSync(new URL('../tests/fixtures/shapes.jpg',import.meta.url)).toString('base64');
 for(const model of ['deepseek-flash'] as const){
  try{

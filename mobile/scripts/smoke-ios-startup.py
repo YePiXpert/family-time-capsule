@@ -22,7 +22,7 @@ def run(*args, timeout=180):
 
 
 def database(container):
-    matches = list(container.rglob("xiaomei-local-v1.sqlite"))
+    matches = list(container.rglob("anan-local-v1.sqlite"))
     assert len(matches) == 1, "App did not initialize its local database"
     return matches[0]
 

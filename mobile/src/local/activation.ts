@@ -2,14 +2,24 @@ import { Directory, File, Paths } from "expo-file-system";
 import { randomUUID } from "expo-crypto";
 import { openDatabaseAsync } from "expo-sqlite";
 import { ENTITY_KINDS, rootOf, validateLibrary, type Library } from "./model";
-export const defaultLibraryName = "xiaomei-local-v1.sqlite";
+import {
+  DOCS_DIR,
+  LEGACY_RECOVERED_PREFIX,
+  LIBRARY_FILE,
+  RECOVERED_PREFIX,
+} from "./brand";
+export const defaultLibraryName = LIBRARY_FILE;
+/** 改名前恢复出来的库叫 xiaomei-recovered-*，仍然要认——它就是用户的全部资料。 */
+const RECOVERED_NAME = new RegExp(
+  `^(?:${RECOVERED_PREFIX}|${LEGACY_RECOVERED_PREFIX})[a-zA-Z0-9-]+\\.sqlite$`,
+);
 export const librarySchema = [
   // library 是 Build 62 及更早的整库单行快照，只在开库切代时读一次。
   "CREATE TABLE IF NOT EXISTS library (id INTEGER PRIMARY KEY CHECK(id=1), snapshot TEXT NOT NULL);",
   "CREATE TABLE IF NOT EXISTS root (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);",
   "CREATE TABLE IF NOT EXISTS entity (kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(kind,id));",
 ].join(" ");
-const registry = new Directory(Paths.document, "xiaomei-v1", "libraries");
+const registry = new Directory(Paths.document, DOCS_DIR, "libraries");
 function generations(): File[] {
   if (!registry.exists) return [];
   return registry
@@ -32,7 +42,7 @@ export async function activeLibraryName(): Promise<string> {
   };
   if (
     data.version !== 1 ||
-    !/^xiaomei-recovered-[a-zA-Z0-9-]+\.sqlite$/.test(data.database ?? "")
+    !RECOVERED_NAME.test(data.database ?? "")
   )
     throw new Error("本机资料索引无法读取，请从完整备份恢复。");
   return data.database!;
@@ -44,7 +54,7 @@ export async function activeLibraryName(): Promise<string> {
 export async function activateRecoveredLibrary(state: Library): Promise<void> {
   validateLibrary(state);
   registry.create({ intermediates: true, idempotent: true });
-  const database = `xiaomei-recovered-${randomUUID()}.sqlite`;
+  const database = `${RECOVERED_PREFIX}${randomUUID()}.sqlite`;
   const db = await openDatabaseAsync(database);
   try {
     await db.execAsync(

@@ -1,5 +1,6 @@
 /** health.json 的原子落盘与防抖：part → move，失败即时写，平时 10 秒合并。 */
 import { Directory, File, Paths } from "expo-file-system";
+import { DOCS_DIR } from "./brand";
 import {
   normalizeHealth,
   recordChange,
@@ -87,7 +88,7 @@ export class HealthFile {
 let singleton: HealthFile | null = null;
 export function healthFile(): HealthFile {
   if (!singleton) {
-    const directory = new Directory(Paths.document, "xiaomei-v1");
+    const directory = new Directory(Paths.document, DOCS_DIR);
     singleton = new HealthFile(directory, new File(directory, "health.json"));
   }
   return singleton;

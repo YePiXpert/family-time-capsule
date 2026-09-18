@@ -2,6 +2,9 @@ import Foundation
 import Social
 import UniformTypeIdentifiers
 
+/// App Group 里的收件箱目录名；主应用改名后仍会把旧目录一并排空。
+private let sharedInbox = "AnanLocalInbox"
+
 private let appGroup = "group.app.familytimecapsule.mobile.share"
 private let maximumItems = 100
 
@@ -124,7 +127,7 @@ final class ShareViewController: SLComposeServiceViewController {
     guard let container = FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: appGroup) else { throw ShareError.noContainer }
     let itemDirectory = container
-      .appendingPathComponent("XiaomeiLocalInbox/\(manifestId)/items", isDirectory: true)
+      .appendingPathComponent("\(sharedInbox)/\(manifestId)/items", isDirectory: true)
     try FileManager.default.createDirectory(at: itemDirectory, withIntermediateDirectories: true)
     let captureId = UUID().uuidString.lowercased()
     let suppliedName = provider.suggestedName?.components(separatedBy: CharacterSet(charactersIn: "/\\")).last
@@ -165,7 +168,7 @@ final class ShareViewController: SLComposeServiceViewController {
   private func writeManifest(complete: Bool) throws {
     guard let container = FileManager.default.containerURL(
       forSecurityApplicationGroupIdentifier: appGroup) else { throw ShareError.noContainer }
-    let directory = container.appendingPathComponent("XiaomeiLocalInbox/\(manifestId)", isDirectory: true)
+    let directory = container.appendingPathComponent("\(sharedInbox)/\(manifestId)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let manifest: [String: Any] = [
       "manifestId": manifestId,
