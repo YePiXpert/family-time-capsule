@@ -68,6 +68,24 @@ def read_state(database):
         return state
 
 
+def read_backup(path):
+    """解析 .xmb：v2 是 meta 加实体 NDJSON，v1 是整库单清单。都还原成整库 dict。"""
+    data = path.read_bytes()
+    n = struct.unpack('>I', data[8:12])[0]
+    head = json.loads(data[12:12 + n])
+    if data[:8] == b'XIAOMEI2':
+        state = dict(head['root'])
+        for kind in ENTITY_KINDS:
+            state[kind] = {}
+        body = data[12 + n:12 + n + head['entityBytes']].decode()
+        for line in body.splitlines():
+            row = json.loads(line)
+            state.setdefault(row['kind'], {})[row['id']] = row['e']
+        return state
+    assert data[:8] == b'XIAOMEI1', 'Unknown backup magic'
+    return head['library']
+
+
 def make_photo():
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
@@ -90,6 +108,7 @@ def seed(container: Path, database: Path, records: int = 122):
         identifier = f'older-{i:0{width}d}'; s['records'][identifier] = record(identifier, f'Old memory {i:0{width}d}', '2025-01-15T10:00:00.000Z')
     write_state(database, s)
     backups = root / 'backups'; backups.mkdir(exist_ok=True)
+    # 刻意保持 v1 格式：真机冒烟顺带验一次「Build 62 的旧备份仍然能恢复」。
     manifest = dict(format='xiaomei-local', version=1, createdAt='2026-09-15T10:00:00.000Z', library=s, mediaOrder=['photo'])
     raw = json.dumps(manifest, ensure_ascii=False).encode()
     (backups / 'baseline.xmb').write_bytes(b'XIAOMEI1' + struct.pack('>I', len(raw)) + raw + photo)

@@ -663,3 +663,58 @@ it("counts calendar days since the last export and flags never-exported librarie
     ),
   ).toBe(0);
 });
+it("writes one copy of a photo that appears twice and restores both", async () => {
+  const { store, backup, files } = await setup();
+  const twin = path.join(env.root, "twin.jpg");
+  fs.writeFileSync(twin, Buffer.alloc(300000, 7));
+  const a = await files.preserveMedia(twin, "双胞胎-1.jpg", "image");
+  const b = await files.preserveMedia(twin, "双胞胎-2.jpg", "image");
+  await store.change((s) => {
+    s.media[a.id] = a;
+    s.media[b.id] = b;
+  });
+  const out = await backup.createBackup(store.get());
+  // setup 的 600000 字节 + 双胞胎的一份 300000，而不是两份。
+  expect(out.size).toBeLessThan(600000 + 300000 * 2);
+  const restored = await backup.inspectBackup(out, true);
+  const fileA = restored.media[a.id]!.file;
+  const fileB = restored.media[b.id]!.file;
+  // 两条素材各有自己的文件：删掉一条不会把另一条的原件一起带走。
+  expect(fileA).not.toBe(fileB);
+  const read = (name: string) =>
+    fs.readFileSync(path.join(files.mediaDirectory.uri, name));
+  expect(read(fileA).equals(read(fileB))).toBe(true);
+  expect(read(fileA)).toHaveLength(300000);
+});
+it("still restores a Build 62 backup written in the old single-manifest format", async () => {
+  const { store, backup, files } = await setup();
+  const { File } = await import("expo-file-system");
+  const { encodeHeader } = await import("../src/local/backup-format");
+  const state = store.get();
+  const parts = [Buffer.from(encodeHeader(state))];
+  for (const id of Object.keys(state.media).sort())
+    parts.push(fs.readFileSync(files.mediaFile(state.media[id]!).uri));
+  const legacy = path.join(env.root, "legacy.xmb");
+  fs.writeFileSync(legacy, Buffer.concat(parts));
+  const restored = await backup.inspectBackup(new File(legacy), true);
+  expect(restored.records.r!.text).toBe("第一步");
+  expect(Object.keys(restored.media)).toHaveLength(
+    Object.keys(state.media).length,
+  );
+});
+it("carries a library whose text would have blown the old 16MB manifest", async () => {
+  const { store, backup } = await setup();
+  const { encodeHeader } = await import("../src/local/backup-format");
+  await store.change((s) => {
+    s.records.big = {
+      ...s.records.r!,
+      id: "big",
+      text: "长".repeat(6_000_000),
+    };
+  });
+  // 旧格式把整库塞进一条清单里，这一下就撞墙了。
+  expect(() => encodeHeader(store.get())).toThrow("备份清单过大");
+  const out = await backup.createBackup(store.get());
+  const restored = await backup.inspectBackup(out);
+  expect(restored.records.big!.text).toHaveLength(6_000_000);
+});
