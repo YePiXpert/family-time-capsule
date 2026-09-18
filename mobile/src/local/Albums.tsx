@@ -52,6 +52,8 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
       album.items.flatMap((i) => state.records[i.recordId]?.mediaIds ?? []),
     ),
   ].filter((id) => state.media[id]?.kind === "image");
+  const coverMedia =
+    state.media[album.coverId ?? ""] ?? state.media[photos[0] ?? ""];
   return (
     <Page scroll={false}>
       <FlatList
@@ -61,6 +63,9 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
         contentContainerStyle={s.content}
         ListHeaderComponent={
           <View style={{ gap: 16 }}>
+            {coverMedia && (
+              <Photo media={coverMedia} preview label="相册封面" />
+            )}
             <Text style={s.title}>{album.name}</Text>
             <Text style={s.muted}>{album.items.length} 段记录</Text>
             <NoteCard

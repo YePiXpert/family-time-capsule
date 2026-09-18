@@ -34,12 +34,15 @@ export function Photo({
   contain = false,
   size,
   preview = false,
+  label,
 }: {
   media: LocalMedia | undefined;
   contain?: boolean;
   size?: number;
   /** 列表/封面等小图场景：优先渲染持久缩略图。 */
   preview?: boolean;
+  /** 读屏标签；缺省读作「照片」，不读原始文件名。 */
+  label?: string;
 }) {
   const s = useStyles();
   const [error, setError] = useState(false);
@@ -56,7 +59,7 @@ export function Photo({
       : null;
   return (
     <Image
-      accessibilityLabel={media.name}
+      accessibilityLabel={label ?? "照片"}
       source={{ uri: thumb?.exists ? thumb.uri : mediaUri(media) }}
       resizeMode={contain ? "contain" : "cover"}
       onError={() => setError(true)}
@@ -88,7 +91,10 @@ function Audio({ media }: { media: LocalMedia }) {
   return (
     <View style={{ gap: 16 }}>
       <Text>
-        {Math.floor(status.currentTime)} 秒 / {Math.floor(status.duration)} 秒
+        {Math.floor(status.currentTime)} 秒 /{" "}
+        {Number.isFinite(status.duration)
+          ? `${Math.floor(status.duration)} 秒`
+          : "--"}
       </Text>
       <ErrorText message={error || status.error || ""} />
       <Button
