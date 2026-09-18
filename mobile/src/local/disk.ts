@@ -1,7 +1,7 @@
 import { openDatabaseAsync } from "expo-sqlite";
 import { activeLibraryName, librarySchema } from "./activation";
 import { LocalStore, type LibraryDisk } from "./store";
-import { ENTITY_KINDS, rootOf } from "./model";
+import { ENTITY_KINDS, rootOf, validateLibrary } from "./model";
 import { healthFile } from "./health-file";
 let store: LocalStore | null = null;
 export async function openLocalStore(): Promise<LocalStore> {
@@ -75,8 +75,42 @@ export async function openLocalStore(): Promise<LocalStore> {
                 id,
                 JSON.stringify(entity),
               );
-          // 切代成功才清掉旧快照；中途失败整笔回滚，旧快照原样留着。
-          await tx.runAsync("DELETE FROM library");
+          // 清掉旧快照是一道单向门：先把刚写进去的整库读回来、按开库同一套规则校验，
+          // 过了才删。任何一步不对就抛出去，整笔回滚，旧快照原样留着，下次启动重来。
+          if (disk.legacy) {
+            const rootRow = await tx.getFirstAsync<{ json: string }>(
+              "SELECT json FROM root WHERE id=1",
+            );
+            const reread = JSON.parse(rootRow?.json ?? "null") as Record<
+              string,
+              unknown
+            > | null;
+            if (!reread) throw new Error("本机资料换代失败，原有资料已保留。");
+            for (const kind of ENTITY_KINDS) reread[kind] = {};
+            const rows = await tx.getAllAsync<{
+              kind: string;
+              id: string;
+              json: string;
+            }>("SELECT kind,id,json FROM entity");
+            for (const entity of rows) {
+              const collection = reread[entity.kind] as
+                | Record<string, unknown>
+                | undefined;
+              if (collection) collection[entity.id] = JSON.parse(entity.json);
+            }
+            validateLibrary(reread);
+            const written = ENTITY_KINDS.reduce(
+              (n, kind) => n + Object.keys(reread[kind] ?? {}).length,
+              0,
+            );
+            const expected = ENTITY_KINDS.reduce(
+              (n, kind) => n + Object.keys(state[kind]).length,
+              0,
+            );
+            if (written !== expected)
+              throw new Error("本机资料换代失败，原有资料已保留。");
+            await tx.runAsync("DELETE FROM library");
+          }
         });
         disk.legacy = false;
       },
