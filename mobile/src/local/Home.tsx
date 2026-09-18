@@ -5,20 +5,12 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import Animated, {
-  FadeInUp,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
-import { GlassView } from "expo-glass-effect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLibrary, useStore } from "./context";
-import { beginDraft } from "./services";
+import { useLibrary } from "./context";
+import { CaptureFab } from "./CaptureFab";
 import { monthKey, type LocalRecord } from "./model";
 import { useNav, type Props } from "./navigation";
 import {
-  ErrorText,
   Field,
   Glass,
   IconButton,
@@ -26,16 +18,12 @@ import {
   Page,
   Text,
   dateLabel,
-  hapticLight,
-  messageOf,
   monthLabel,
   useStyles,
   useTheme,
 } from "./ui";
 import { JournalIcon } from "../components/JournalIcon";
 import { Photo } from "./Media";
-
-const PRESS_SPRING = { damping: 14, stiffness: 220 };
 
 export function RecordCard({
   record,
@@ -184,94 +172,6 @@ export function RecordCard({
   return card;
 }
 
-export function CaptureDock() {
-  const store = useStore(),
-    nav = useNav(),
-    { colors, dark, liquid } = useTheme();
-  const insets = useSafeAreaInsets();
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const scale = useSharedValue(1);
-  const pressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  return (
-    <View
-      pointerEvents="box-none"
-      style={{
-        position: "absolute",
-        right: 20,
-        bottom: insets.bottom + 20,
-        alignItems: "flex-end",
-        gap: 8,
-      }}
-    >
-      <ErrorText message={error} />
-      <Animated.View
-        entering={FadeInUp.delay(240).duration(360)}
-        style={pressStyle}
-      >
-        <Pressable
-          testID="capture-new"
-          accessibilityRole="button"
-          accessibilityLabel="记一刻"
-          disabled={busy}
-          onPress={() => {
-            hapticLight();
-            setBusy(true);
-            void beginDraft(store)
-              .then((draftId) => nav.navigate("Editor", { draftId }))
-              .catch((e) => setError(messageOf(e)))
-              .finally(() => setBusy(false));
-          }}
-          onPressIn={() => {
-            // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
-            scale.value = withSpring(0.92, PRESS_SPRING);
-          }}
-          onPressOut={() => {
-            // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
-            scale.value = withSpring(1, PRESS_SPRING);
-          }}
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: busy ? 0.5 : 1,
-            ...(liquid
-              ? {}
-              : {
-                  backgroundColor: colors.accent,
-                  shadowColor: dark ? "#000000" : "#7A5C3E",
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.25,
-                  shadowRadius: 10,
-                  elevation: 4,
-                }),
-          }}
-        >
-          {liquid && (
-            <GlassView
-              glassEffectStyle="regular"
-              colorScheme={dark ? "dark" : "light"}
-              tintColor={colors.accent}
-              isInteractive
-              style={{
-                position: "absolute",
-                width: 56,
-                height: 56,
-                borderRadius: 28,
-              }}
-            />
-          )}
-          <JournalIcon name="plus" color={colors.onAccent} size={26} />
-        </Pressable>
-      </Animated.View>
-    </View>
-  );
-}
-
 export function Month({ route }: Props<"Month">) {
   const state = useLibrary(),
     nav = useNav(),
@@ -397,7 +297,7 @@ export function Month({ route }: Props<"Month">) {
           </View>
         }
       />
-      <CaptureDock />
+      <CaptureFab />
     </Page>
   );
 }

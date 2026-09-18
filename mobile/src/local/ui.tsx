@@ -91,6 +91,8 @@ export const paperPalette = {
   emptyCell: "#F5EDE1",
 };
 export const serif = Platform.select({ ios: "Georgia", android: "serif" });
+/** 书册与悬浮钮的统一按压弹簧。 */
+export const PRESS_SPRING = { damping: 14, stiffness: 220 };
 // 启动/错误页在 LocalTheme 之外渲染，只能按系统深浅色取色板。
 export const paletteOf = (isDark: boolean) => (isDark ? dark : light);
 const ThemeContext = createContext({
@@ -456,21 +458,18 @@ export function useStyles() {
           marginBottom: 12,
           ...cardShadow,
         },
+        fabShadow: {
+          shadowColor: dark ? "#000000" : "#7A5C3E",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 10,
+          elevation: 4,
+        },
         recordRowInner: {
           flexDirection: "row",
           alignItems: "center",
           gap: 12,
           padding: 12,
-        },
-        compactPanel: {
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-          borderRadius: 12,
-          gap: 8,
-          backgroundColor: c.glass,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: c.glassLine,
-          ...cardShadow,
         },
         dateHeading: {
           flexDirection: "row",
