@@ -17,7 +17,7 @@
 1. 读仓库根目录的 AGENTS.md（发布纪律：只从 main 工作、小提交直接推、本地三件套绿后推送、
    不等待 CI；开工前查上次 CI 是否红）、
    README.md（架构/命令）、DESIGN.md（设计规范）、CHANGELOG.md（近期变更）、
-   PLAN-BUILD-62-65.md（Build 62→65 三阶段路线，含每一轮踩过的坑）。
+   docs/plans/PLAN-BUILD-62-65.md（Build 62→65 三阶段路线，含每一轮踩过的坑）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install。
 4. 验证三件套：npm test、npm run typecheck、npm run lint（根目录命令即可，全部应绿；
@@ -42,7 +42,7 @@ Build 66 是 AI 成册（序言/章节引子/图注、帮挑照片、月度回�
 动工前先写 PLAN-SHARING.md 并修订两处「宪法」（verify-local-boundary.py 的禁网边界、
 AGENTS 发布纪律）。
 
-注意事项（踩过的坑，务必先读 PLAN-BUILD-62-65.md 的对应小节）：
+注意事项（踩过的坑，务必先读 docs/plans/PLAN-BUILD-62-65.md 的对应小节）：
 - 改原生 Kotlin 前先用独立 kotlinc 对 $ANDROID_HOME/platforms/android-36/android.jar
   编译一份用法一致的 snippet 验证（Build 56/57 的教训）。
 - mobile-build 派发必须用完整 40 位 SHA。
