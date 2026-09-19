@@ -14,7 +14,8 @@
 你是「桉桉成长记」的实现工程师代理。这台是新开发机，请恢复开发并继续执行迭代。
 
 第一步·环境自检：
-1. 读仓库根目录的 AGENTS.md（发布纪律：只从 main 工作、小提交直接推、推后看 Actions）、
+1. 读仓库根目录的 AGENTS.md（发布纪律：只从 main 工作、小提交直接推、本地三件套绿后推送、
+   不等待 CI；开工前查上次 CI 是否红）、
    README.md（架构/命令）、DESIGN.md（设计规范）、CHANGELOG.md（近期变更）、
    PLAN-BUILD-62-65.md（Build 62→65 三阶段路线，含每一轮踩过的坑）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
