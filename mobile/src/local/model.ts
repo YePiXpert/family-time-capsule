@@ -144,6 +144,8 @@ export type Library = {
   yearNotes: Record<string, string>;
   /** 年度纪念册手选的封面素材，按四位年份存；没选就按当年最新一张照片自动定。 */
   yearCovers: Record<string, string>;
+  /** 哪些年的纪念册 PDF 装订过（ISO 时刻，按四位年份存）；书架据此决定要不要提「去年的册子可以装订了」。旧库无此字段。 */
+  yearBooksBoundAt?: Record<string, string>;
   receivedShares: string[];
   /** ISO timestamp of the last successful export; undefined until the first one. */
   lastExportAt?: string;
@@ -575,6 +577,16 @@ function validRoot(s: Library): boolean {
     !Object.entries(s.yearCovers).some(
       ([year, id]) => !/^\d{4}$/.test(year) || !isId(id),
     ) &&
+    (s.yearBooksBoundAt === undefined ||
+      (!!s.yearBooksBoundAt &&
+        typeof s.yearBooksBoundAt === "object" &&
+        !Array.isArray(s.yearBooksBoundAt) &&
+        !Object.entries(s.yearBooksBoundAt).some(
+          ([year, at]) =>
+            !/^\d{4}$/.test(year) ||
+            !isText(at) ||
+            !Number.isFinite(Date.parse(at)),
+        ))) &&
     !!s.profile &&
     isText(s.profile.name) &&
     isText(s.profile.birthday) &&

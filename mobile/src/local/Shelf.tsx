@@ -27,7 +27,7 @@ import {
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import { APP_NAME, CHILD_FALLBACK } from "./brand";
-import { nudgeOf } from "./nudge";
+import { bookNudgeOf, nudgeOf } from "./nudge";
 import { clusterPlaces } from "./places";
 import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
 import {
@@ -228,7 +228,8 @@ export function Shelf() {
   const entrance = reduceMotion ? undefined : FadeInUp.duration(320);
   const [draftsOpen, setDraftsOpen] = useState(false),
     [error, setError] = useState(""),
-    [nudgeClosed, setNudgeClosed] = useState(false);
+    [nudgeClosed, setNudgeClosed] = useState(false),
+    [bookNudgeClosed, setBookNudgeClosed] = useState(false);
   // store 只在某个集合真的动过时才换它的引用，所以按集合记忆：改一条草稿不会
   // 让一万条记录重新排序，主题、尺寸与本页 useState 引起的重渲染都命中缓存。
   const {
@@ -296,6 +297,11 @@ export function Shelf() {
     records[0]?.date ?? null,
     latestDraft?.updatedAt ?? null,
     drafts.length,
+  );
+  const bookNudge = bookNudgeOf(
+    today,
+    years,
+    Object.keys(state.yearBooksBoundAt ?? {}),
   );
   const exportedDays = daysSinceExport(state),
     backupDue =
@@ -456,6 +462,33 @@ export function Shelf() {
                     .then((draftId) => nav.navigate("Editor", { draftId }))
                     .catch((e) => setError(messageOf(e)));
                 }}
+              />
+            </Glass>
+          </Animated.View>
+        )}
+        {bookNudge && !bookNudgeClosed && (
+          <Animated.View entering={entrance}>
+            <Glass radius={16} style={{ padding: 16, gap: 8 }}>
+              <View style={s.between}>
+                <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                  <Text style={s.heading} testID="book-nudge">
+                    去年的纪念册可以装订了
+                  </Text>
+                  <Text style={s.muted}>
+                    {bookNudge.year} 年已经翻过去了，把它排成一本册子，留在书架上。
+                  </Text>
+                </View>
+                <IconButton
+                  label="这次不提醒"
+                  icon="close"
+                  onPress={() => setBookNudgeClosed(true)}
+                />
+              </View>
+              <Button
+                title="去年度册"
+                compact
+                testID="book-nudge-action"
+                onPress={() => nav.navigate("Year", { year: bookNudge.year })}
               />
             </Glass>
           </Animated.View>

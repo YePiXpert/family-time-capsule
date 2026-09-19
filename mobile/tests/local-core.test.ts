@@ -310,6 +310,17 @@ describe("complete backup manifest", () => {
     };
     expect(() => validateLibrary(other)).toThrow();
   });
+  it("keeps the bound-year ledger well-formed", () => {
+    const s = fixture();
+    s.yearBooksBoundAt = { "2026": "2027-01-05T10:00:00.000Z" };
+    validateLibrary(s);
+    s.yearBooksBoundAt = { "26": "2027-01-05T10:00:00.000Z" };
+    expect(() => validateLibrary(s)).toThrow();
+    s.yearBooksBoundAt = { "2026": "someday" };
+    expect(() => validateLibrary(s)).toThrow();
+    delete s.yearBooksBoundAt;
+    validateLibrary(s);
+  });
   it("accepts a boolean quote flag and nothing else", () => {
     const s = fixture();
     saveRecord(s, "draft", "r", date);
