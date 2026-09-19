@@ -84,6 +84,27 @@ export type LocalSeries = {
   updatedAt: string;
 };
 export type LocalPerson = { id: string; name: string };
+/** 时间胶囊信：现在写，封存到 openAt 那天才拆。封存后不再可改。 */
+export type LocalLetter = {
+  id: string;
+  title: string;
+  text: string;
+  /** 落款，如「妈妈」。 */
+  from: string;
+  /** 拆封日，本地日历日 "YYYY-MM-DD"。 */
+  openAt: string;
+  writtenAt: string;
+  sealed: boolean;
+  /** 拆封（含提前拆封）的时刻；缺省表示还没拆。 */
+  openedAt?: string;
+  /** 随信附上的录音或照片。 */
+  mediaIds: string[];
+  coverId: string | null;
+  updatedAt: string;
+};
+export const LETTER_TITLE_LIMIT = 100;
+export const LETTER_TEXT_LIMIT = 5000;
+export const LETTER_FROM_LIMIT = 50;
 export type LocalProfile = {
   name: string;
   birthday: string;
@@ -115,6 +136,8 @@ export type Library = {
   series: Record<string, Stored<LocalSeries>>;
   /** 记录里出现的人物；旧库无此字段。 */
   persons: Record<string, Stored<LocalPerson>>;
+  /** 时间胶囊信；旧库无此字段。 */
+  letters: Record<string, Stored<LocalLetter>>;
   /** 「爸爸妈妈的话」annual notes, keyed by four-digit year like "2026". */
   yearNotes: Record<string, string>;
   /** 年度纪念册手选的封面素材，按四位年份存；没选就按当年最新一张照片自动定。 */
@@ -136,6 +159,7 @@ export const emptyLibrary = (): Library => ({
   selections: {},
   series: {},
   persons: {},
+  letters: {},
   yearNotes: {},
   yearCovers: {},
   receivedShares: [],
@@ -148,6 +172,7 @@ export function normalizeLibrary(value: unknown): void {
   if (s.yearCovers === undefined) s.yearCovers = {};
   if (s.series === undefined) s.series = {};
   if (s.persons === undefined) s.persons = {};
+  if (s.letters === undefined) s.letters = {};
   // 指向已删除人物的标记会让 validateLibrary 拒绝整库。打开与解码备份时先剥掉，
   // 让校验只在「本次改动写坏了」时报错，而不是把人锁在自己的资料外面。
   const persons = s.persons ?? {};
@@ -190,6 +215,7 @@ export const ENTITY_KINDS = [
   "selections",
   "series",
   "persons",
+  "letters",
 ] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 /**
@@ -211,6 +237,7 @@ export function forkLibrary(s: Library): Library {
     selections: { ...s.selections },
     series: { ...s.series },
     persons: { ...s.persons },
+    letters: { ...s.letters },
   };
 }
 /** 改一个实体：拿到的是可以随便改的深拷贝，改完自动放回集合里。实体不存在时什么也不做。 */
@@ -364,6 +391,8 @@ export function referencedMedia(s: Library): Set<string> {
     ...(s.settings.replayAudioId ? [s.settings.replayAudioId] : []),
     ...Object.values(s.records).flatMap((r) => r.mediaIds),
     ...Object.values(s.drafts).flatMap((d) => d.content.mediaIds),
+    // 信里的录音与照片也是资料，「清理未使用素材」不能动。
+    ...Object.values(s.letters).flatMap((l) => l.mediaIds),
   ]);
 }
 export function saveRecord(
@@ -700,6 +729,29 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
       ) &&
       new Set(v.items.map((i) => i.month)).size === v.items.length &&
       Number.isFinite(Date.parse(v.updatedAt))
+    );
+  }
+  if (kind === "letters") {
+    const l = s.letters[key];
+    return (
+      !!l &&
+      key === l.id &&
+      isText(l.title) &&
+      l.title.length <= LETTER_TITLE_LIMIT &&
+      isText(l.text) &&
+      l.text.length <= LETTER_TEXT_LIMIT &&
+      isText(l.from) &&
+      l.from.length <= LETTER_FROM_LIMIT &&
+      /^\d{4}-\d{2}-\d{2}$/.test(l.openAt) &&
+      Number.isFinite(Date.parse(`${l.openAt}T00:00:00`)) &&
+      Number.isFinite(Date.parse(l.writtenAt)) &&
+      typeof l.sealed === "boolean" &&
+      (l.openedAt === undefined ||
+        (isText(l.openedAt) && Number.isFinite(Date.parse(l.openedAt)))) &&
+      isIds(l.mediaIds) &&
+      l.mediaIds.every((i) => !!s.media[i]) &&
+      (l.coverId === null || l.mediaIds.includes(l.coverId)) &&
+      Number.isFinite(Date.parse(l.updatedAt))
     );
   }
   const p = s.persons[key];

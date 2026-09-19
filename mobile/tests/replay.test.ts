@@ -20,6 +20,7 @@ function libraryWithPhotos(): { library: Library; mediaId: (n: number) => string
     selections: {},
     series: {},
     persons: {},
+    letters: {},
     yearNotes: {},
     yearCovers: {},
     receivedShares: [],

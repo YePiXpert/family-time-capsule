@@ -763,6 +763,32 @@ it("still restores a Build 62 backup written in the old single-manifest format",
     Object.keys(state.media).length,
   );
 });
+it("carries sealed letters and their recordings through a backup", async () => {
+  const { store, backup, files } = await setup();
+  const original = path.join(env.root, "voice.m4a");
+  fs.writeFileSync(original, Buffer.alloc(4096, 9));
+  const voice = await files.preserveMedia(original, "录音.m4a", "audio");
+  await store.change((s) => {
+    s.media[voice.id] = voice;
+    s.letters.l1 = {
+      id: "l1",
+      title: "写给十八岁的你",
+      text: "今天你第一次叫了妈妈。",
+      from: "妈妈",
+      openAt: "2042-06-15",
+      writtenAt: new Date().toISOString(),
+      sealed: true,
+      mediaIds: [voice.id],
+      coverId: null,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+  const out = await backup.createBackup(store.get());
+  const restored = await backup.inspectBackup(out);
+  expect(restored.letters.l1!.text).toBe("今天你第一次叫了妈妈。");
+  expect(restored.letters.l1!.mediaIds).toEqual([voice.id]);
+  expect(restored.media[voice.id]!.sha256).toBe(voice.sha256);
+});
 it("carries a library whose text would have blown the old 16MB manifest", async () => {
   const { store, backup } = await setup();
   const { encodeHeader } = await import("../src/local/backup-format");
