@@ -68,7 +68,7 @@ try:
     tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')
     restart();tap('Our days');find('album-reading')
     restart();adb('shell','wm','size','320x720');shot('home-320')
-    tap('打开设置');tap('AI 设置');find('加入 AI 服务');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
+    tap('打开设置');tap('AI 设置');find('ai-join');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')
     # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
     restart();tap('打开设置');tap('备份与恢复');tap('backup-export')

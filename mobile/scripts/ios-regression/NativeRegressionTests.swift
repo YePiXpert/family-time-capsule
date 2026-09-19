@@ -42,7 +42,7 @@ final class NativeRegressionTests: XCTestCase {
         tap("ai-open")
         XCTAssertTrue(element("ai-generate").waitForExistence(timeout: 20)); shot("ai-panel")
         tap("ai-generate")
-        XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-enrollment-from-photo")
+        XCTAssertTrue(element("ai-join").waitForExistence(timeout: 20)); shot("ai-enrollment-from-photo")
         // Opening the editor persists a draft. Discard this enrollment-only draft
         // so the later backup check can still require no unfinished edits.
         tap("BackButton"); tap("放弃这份草稿"); tap("放弃")
@@ -76,7 +76,7 @@ final class NativeRegressionTests: XCTestCase {
         albumCard.tap()
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-after-relaunch")
         app.terminate(); app.launch(); tap("open-settings"); tap("AI 设置")
-        XCTAssertTrue(element("加入 AI 服务").waitForExistence(timeout: 20)); shot("ai-settings")
+        XCTAssertTrue(element("ai-join").waitForExistence(timeout: 20)); shot("ai-settings")
         app.terminate(); app.launch()
         tap("volume-year-2026")
         tap("year-note-edit")
