@@ -128,9 +128,13 @@ export function Year({ route }: Props<"Year">) {
     input: YearbookInput;
     photos: { cover?: YearbookPhoto; months: (YearbookPhoto | undefined)[] };
   } | null>(null);
+  const { records: recordMap } = state;
   const records = useMemo(
-    () => sortedRecords(state).filter((r) => yearKey(r.date) === year),
-    [state, year],
+    () =>
+      sortedRecords({ records: recordMap }).filter(
+        (r) => yearKey(r.date) === year,
+      ),
+    [recordMap, year],
   );
   const replay = useMemo(
     () => replayPhotos(records, state.media),

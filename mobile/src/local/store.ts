@@ -1,4 +1,5 @@
 import {
+  ENTITY_KINDS,
   diffLibrary,
   emptyLibrary,
   forkLibrary,
@@ -55,6 +56,14 @@ export class LocalStore {
       const result = await apply(state);
       state.revision = this.state.revision + 1;
       const delta = diffLibrary(this.state, state);
+      // 没动过的集合换回上一版的对象：引用不变，界面上按集合记忆的派生数据
+      // （书架排序、足迹聚类）才不会因为改了一条草稿就整库重算。
+      const touched = new Set(
+        [...delta.changed, ...delta.removed].map((d) => d.kind),
+      );
+      for (const kind of ENTITY_KINDS)
+        if (!touched.has(kind))
+          (state as Record<string, unknown>)[kind] = this.state[kind];
       validateChange(state, delta);
       try {
         await this.disk.write(state, delta);
