@@ -32,6 +32,8 @@ export type RecordContent = {
   coverId: string | null;
   /** 出现的人物；旧记录无此字段。 */
   personIds?: string[];
+  /** 她说的话：这一条记的是她的原话，收进语录册；旧记录无此字段。 */
+  quote?: boolean;
 };
 export type LocalRecord = RecordContent & {
   id: string;
@@ -544,6 +546,7 @@ function validContent(s: Library, c: Stored<RecordContent>): boolean {
     isText(c.date) &&
     Number.isFinite(Date.parse(c.date)) &&
     typeof c.first === "boolean" &&
+    (c.quote === undefined || typeof c.quote === "boolean") &&
     isIds(c.mediaIds) &&
     c.mediaIds.every((i) => !!s.media[i]) &&
     (c.coverId === null || c.mediaIds.includes(c.coverId)) &&
