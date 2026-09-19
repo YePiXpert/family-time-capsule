@@ -23,10 +23,11 @@ export function SearchScreen(_: Props<"Search">) {
     [media, setMedia] = useState<MediaFilter>("any"),
     [year, setYear] = useState(""),
     [person, setPerson] = useState("");
+  const { records: recordMap, media: mediaMap, persons: personMap } = state;
   const { results, years, persons } = useMemo(() => {
-    const all = sortedRecords(state);
+    const all = sortedRecords({ records: recordMap });
     const kinds = Object.fromEntries(
-      Object.values(state.media).map((m) => [m.id, m.kind] as const),
+      Object.values(mediaMap).map((m) => [m.id, m.kind] as const),
     );
     return {
       results: searchRecords(
@@ -38,11 +39,11 @@ export function SearchScreen(_: Props<"Search">) {
       years: [...new Set(all.map((r) => r.date.slice(0, 4)))].sort((a, b) =>
         b.localeCompare(a),
       ),
-      persons: Object.values(state.persons).sort((a, b) =>
+      persons: Object.values(personMap).sort((a, b) =>
         a.name.localeCompare(b.name, "zh"),
       ),
     };
-  }, [state, query, first, media, year, person]);
+  }, [recordMap, mediaMap, personMap, query, first, media, year, person]);
   const filtered =
     query.trim() || first || media !== "any" || !!year || !!person;
   return (

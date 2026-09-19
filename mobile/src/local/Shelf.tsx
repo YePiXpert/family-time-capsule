@@ -223,7 +223,20 @@ export function Shelf() {
   const [draftsOpen, setDraftsOpen] = useState(false),
     [error, setError] = useState(""),
     [nudgeClosed, setNudgeClosed] = useState(false);
-  const records = useMemo(() => sortedRecords(state), [state]);
+  // store 只在某个集合真的动过时才换它的引用，所以按集合记忆：改一条草稿不会
+  // 让一万条记录重新排序，主题、尺寸与本页 useState 引起的重渲染都命中缓存。
+  const {
+    records: recordMap,
+    albums: albumMap,
+    series: seriesMap,
+    media: mediaMap,
+    drafts: draftMap,
+  } = state;
+  const records = useMemo(
+    () => sortedRecords({ records: recordMap }),
+    [recordMap],
+  );
+  // 下面几项都是对已排序数组的一趟线性遍历，交给 React Compiler 自动记忆即可。
   const months = [...new Set(records.map((r) => monthKey(r.date)))];
   const years = [...new Set(records.map((r) => yearKey(r.date)))];
   const firsts = records
@@ -238,22 +251,32 @@ export function Shelf() {
       d.getDate() === today.getDate()
     );
   });
-  const albums = Object.values(state.albums).sort(
-    (a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+  const albums = useMemo(
+    () =>
+      Object.values(albumMap).sort(
+        (a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+      ),
+    [albumMap],
   );
-  const seriesList = Object.values(state.series).sort(
-    (a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+  const seriesList = useMemo(
+    () =>
+      Object.values(seriesMap).sort(
+        (a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+      ),
+    [seriesMap],
   );
-  // store 每次变更都是全库克隆，state.media 的引用随之变化——正好是「重算」的
-  // 准确时机：主题、尺寸与本页 useState 引起的重渲染都命中缓存。与 Footprint 同款。
   const clusters = useMemo(
-    () => clusterPlaces(Object.values(state.media)),
-    [state.media],
+    () => clusterPlaces(Object.values(mediaMap)),
+    [mediaMap],
   );
-  const drafts = Object.values(state.drafts).sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt),
+  const drafts = useMemo(
+    () =>
+      Object.values(draftMap).sort((a, b) =>
+        b.updatedAt.localeCompare(a.updatedAt),
+      ),
+    [draftMap],
   );
   const latestDraft = drafts[0];
   const nudge = nudgeOf(

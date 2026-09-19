@@ -298,7 +298,9 @@ export function indexMonth(index: number): string {
     m = (index % 12) + 1;
   return `${y}-${String(m).padStart(2, "0")}`;
 }
-export function sortedRecords(s: Library): Stored<LocalRecord>[] {
+export function sortedRecords(
+  s: Pick<Library, "records">,
+): Stored<LocalRecord>[] {
   return Object.values(s.records).sort(
     (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
   );
