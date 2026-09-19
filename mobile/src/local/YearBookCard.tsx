@@ -15,7 +15,7 @@ import {
   layoutYearbook,
   type YearbookInput,
 } from "./yearbook";
-import { paperPalette } from "./ui";
+import { paperPalette, serif } from "./ui";
 import { CHILD_FALLBACK } from "./brand";
 
 const {
@@ -67,7 +67,7 @@ function Heading({ y, text }: { y: number; text: string }) {
       x={YEARBOOK_WIDTH / 2}
       y={y + 20}
       fontSize={24}
-      fontFamily="Georgia, serif"
+      fontFamily={serif}
       letterSpacing={3}
       fill={MUTED}
       textAnchor="middle"
@@ -135,7 +135,7 @@ export const YearBookCard = forwardRef<
         x={layout.stamp.cx}
         y={layout.stamp.cy + 14}
         fontSize={40}
-        fontFamily="Georgia, serif"
+        fontFamily={serif}
         fontWeight="600"
         letterSpacing={1}
         fill={ACCENT}
@@ -149,7 +149,7 @@ export const YearBookCard = forwardRef<
           x={YEARBOOK_WIDTH / 2}
           y={line.y}
           fontSize={40}
-          fontFamily="Georgia, serif"
+          fontFamily={serif}
           fontWeight="600"
           letterSpacing={1}
           fill={INK}
@@ -306,7 +306,7 @@ export const YearBookCard = forwardRef<
             x={PADDING_X}
             y={entry.y + 30}
             fontSize={28}
-            fontFamily="Georgia, serif"
+            fontFamily={serif}
             fontWeight="600"
             fill={INK}
           >

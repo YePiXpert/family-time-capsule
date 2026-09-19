@@ -148,7 +148,7 @@ export function BookPreview({
           <Text style={s.muted}>
             装订要一会儿，中途请留在年度册这一页；完成后会弹出保存与分享。
           </Text>
-          <Button title="开始装订" testID="book-preview-bind" onPress={onBind} />
+          <Button title="开始装订" primary testID="book-preview-bind" onPress={onBind} />
         </Card>
       </Page>
     </Modal>

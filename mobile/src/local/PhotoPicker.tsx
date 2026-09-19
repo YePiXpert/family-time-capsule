@@ -44,6 +44,7 @@ export function PhotoPicker<T extends PhotoChoice>({
       visible={visible}
       animationType="slide"
       onRequestClose={onClose}
+      accessibilityViewIsModal
       testID={testID}
     >
       <Page top scroll={false}>

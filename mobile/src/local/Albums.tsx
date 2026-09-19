@@ -32,6 +32,7 @@ import {
   Page,
   Text,
   messageOf,
+  monthLabel,
   useStyles,
 } from "./ui";
 import { PhotoPicker } from "./PhotoPicker";
@@ -327,7 +328,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
             {months.map((m) => (
               <Button
                 key={m}
-                title={m}
+                title={monthLabel(m)}
                 selected={q.month === m}
                 onPress={() =>
                   patch((q) => {
@@ -404,7 +405,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
           />
         )}
         ListEmptyComponent={
-          <View style={s.content}>
+          <View style={s.empty}>
             <Text>这个月份还没有记录。</Text>
           </View>
         }

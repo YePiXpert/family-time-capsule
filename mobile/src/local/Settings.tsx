@@ -29,6 +29,7 @@ import {
   dateLabel,
   messageOf,
   useStyles,
+  useTheme,
 } from "./ui";
 import { Photo } from "./Media";
 export function Settings() {
@@ -60,7 +61,7 @@ export function Settings() {
           />
           <Button
             title="AI 设置"
-            icon="settings"
+            icon="sparkle"
             onPress={() => nav.navigate("AISettings")}
           />
           <Button
@@ -148,6 +149,7 @@ export function Appearance() {
   const state = useLibrary(),
     store = useStore(),
     s = useStyles();
+  const { colors } = useTheme();
   const [error, setError] = useState("");
   const [lockAvailable, setLockAvailable] = useState(false);
   useEffect(() => {
@@ -179,6 +181,8 @@ export function Appearance() {
         <Switch
           accessibilityLabel="更大文字"
           value={state.settings.largeText}
+          trackColor={{ false: colors.line, true: colors.accentSoft }}
+          thumbColor={state.settings.largeText ? colors.accent : undefined}
           onValueChange={(value) => {
             void store
               .change((s) => {
@@ -203,6 +207,10 @@ export function Appearance() {
           testID="lock-toggle"
           value={state.settings.lockEnabled === true}
           disabled={!lockAvailable}
+          trackColor={{ false: colors.line, true: colors.accentSoft }}
+          thumbColor={
+            state.settings.lockEnabled === true ? colors.accent : undefined
+          }
           onValueChange={(value) => {
             void store
               .change((s) => {

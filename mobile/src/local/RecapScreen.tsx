@@ -130,8 +130,7 @@ export function RecapScreen({ route }: Props<"Recap">) {
 /** 全屏年度重放：照片整屏淡入淡出，4 秒或点击前进，末页收统计与寄语。 */
 export function ReplayModal({ year, onClose }: { year: string; onClose: () => void }) {
   const state = useLibrary(),
-    store = useStore(),
-    { colors } = useTheme();
+    store = useStore();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const [index, setIndex] = useState(0),
@@ -324,12 +323,12 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
             }}
           >
             <View style={{ alignItems: "center", gap: 12 }}>
-              <Stamp size={72}>
+              <Stamp size={72} color={overlay.accent}>
                 <Text
                   style={{
                     fontFamily: serif,
                     fontSize: 22,
-                    color: colors.accent,
+                    color: overlay.accent,
                     fontWeight: "600",
                   }}
                 >
@@ -372,7 +371,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
                   justifyContent: "center",
                 }}
               >
-                {musicButton}
+                {/* 末页只收统计与两个出口，选乐入口只在放映中出现（DESIGN.md 年度册条目）。 */}
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="再放一次"
@@ -398,10 +397,10 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
                     justifyContent: "center",
                     paddingHorizontal: 16,
                     borderRadius: 14,
-                    backgroundColor: colors.accent,
+                    backgroundColor: overlay.accent,
                   }}
                 >
-                  <Text style={{ color: colors.onAccent, fontWeight: "600" }}>
+                  <Text style={{ color: overlay.onAccent, fontWeight: "600" }}>
                     结束重放
                   </Text>
                 </Pressable>

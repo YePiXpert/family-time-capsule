@@ -31,7 +31,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
     { colors } = useTheme();
   const record = state.records[route.params.id],
     [error, setError] = useState(""),
-    [chooseAlbum, setChooseAlbum] = useState(false);
+    [chooseAlbum, setChooseAlbum] = useState(false),
+    [photoIndex, setPhotoIndex] = useState(0);
   const cardRef = useRef<Svg | null>(null),
     [card, setCard] = useState<{
       photo?: { uri: string; aspect: number };
@@ -173,7 +174,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
             ))}
         </View>
       )}
-      <Text style={s.title}>{recordTitle(record)}</Text>
+      <Text style={s.heading}>{recordTitle(record)}</Text>
       <View style={s.row}>
         <Button
           title="编辑"
@@ -243,33 +244,93 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           }}
         />
       )}
-      <View style={{ gap: 16 }}>
-        {record.mediaIds.map((id) => {
-          const media = state.media[id];
-          return media ? (
-            <View key={id} style={{ gap: 8 }}>
-              {media.kind === "image" && <Photo media={media} contain />}
-              <PhotoDetails media={media} />
-              <Button
-                title={media.kind === "image" ? "查看原图" : media.name}
-                icon={
-                  media.kind === "audio"
-                    ? "audio"
-                    : media.kind === "video"
-                      ? "video"
-                      : "file"
-                }
-                onPress={() =>
-                  navigation.navigate("Media", {
-                    id,
-                    recordId: record.id,
-                  })
-                }
-              />
-            </View>
-          ) : null;
-        })}
-      </View>
+      {(() => {
+        // 同一记录多张照片在页内上一张/下一张连翻；其他素材仍逐条列出。
+        const photos = record.mediaIds
+          .map((id) => state.media[id])
+          .filter((m): m is NonNullable<typeof m> => m?.kind === "image");
+        const others = record.mediaIds
+          .map((id) => state.media[id])
+          .filter((m): m is NonNullable<typeof m> => !!m && m.kind !== "image");
+        const current = photos[Math.min(photoIndex, photos.length - 1)];
+        const currentIndex = photos.indexOf(current!);
+        return (
+          <View style={{ gap: 16 }}>
+            {current && (
+              <View style={{ gap: 8 }}>
+                <Photo
+                  media={current}
+                  contain
+                  label={
+                    photos.length > 1
+                      ? `第 ${currentIndex + 1} 张照片，共 ${photos.length} 张`
+                      : undefined
+                  }
+                />
+                {photos.length > 1 && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <Button
+                      title="上一张"
+                      compact
+                      testID="record-photo-prev"
+                      disabled={currentIndex <= 0}
+                      onPress={() => setPhotoIndex(currentIndex - 1)}
+                    />
+                    <Text style={s.muted}>
+                      第 {currentIndex + 1} / {photos.length} 张
+                    </Text>
+                    <Button
+                      title="下一张"
+                      compact
+                      testID="record-photo-next"
+                      disabled={currentIndex >= photos.length - 1}
+                      onPress={() => setPhotoIndex(currentIndex + 1)}
+                    />
+                  </View>
+                )}
+                <PhotoDetails media={current} />
+                <Button
+                  title="查看原图"
+                  icon="file"
+                  onPress={() =>
+                    navigation.navigate("Media", {
+                      id: current.id,
+                      recordId: record.id,
+                    })
+                  }
+                />
+              </View>
+            )}
+            {others.map((media) => (
+              <View key={media.id} style={{ gap: 8 }}>
+                <PhotoDetails media={media} />
+                <Button
+                  title={media.name}
+                  icon={
+                    media.kind === "audio"
+                      ? "audio"
+                      : media.kind === "video"
+                        ? "video"
+                        : "file"
+                  }
+                  onPress={() =>
+                    navigation.navigate("Media", {
+                      id: media.id,
+                      recordId: record.id,
+                    })
+                  }
+                />
+              </View>
+            ))}
+          </View>
+        );
+      })()}
       <ErrorText message={error} />
       {card && (
         <View
@@ -314,7 +375,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           opacity: pressed ? 0.6 : 1,
         })}
       >
-        <Text style={[s.muted, { fontSize: 14 }]}>删除记录</Text>
+        <Text style={s.muted}>删除记录</Text>
       </Pressable>
     </Page>
   );
