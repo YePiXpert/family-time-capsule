@@ -186,12 +186,13 @@ export function Month({ route }: Props<"Month">) {
     (width - insets.left - insets.right - 40 - 12 * (columns - 1)) / columns;
   const [query, setQuery] = useState(""),
     [searchOpen, setSearchOpen] = useState(false);
+  const { records: recordMap } = state;
   const records = useMemo(() => {
-    return Object.values(state.records)
+    return Object.values(recordMap)
       .filter((r) => monthKey(r.date) === route.params.month)
       .filter((r) => recordMatches(r, query))
       .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
-  }, [state, query, route.params.month]);
+  }, [recordMap, query, route.params.month]);
   const byDay = new Map<string, Stored<LocalRecord>[]>();
   for (const record of records) {
     const day = dateLabel(record.date);

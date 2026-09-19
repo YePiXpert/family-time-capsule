@@ -145,6 +145,37 @@ it("keeps one keystroke edit inside the change budget", async () => {
   expect(changeMs).toBeLessThan(CHANGE_MS_BUDGET);
 });
 
+it("keeps untouched collections identical across an unrelated change", async () => {
+  const { store } = await openBig();
+  const before = store.get();
+  const started = Date.now();
+  await store.change((s) => {
+    s.drafts.d1 = {
+      id: "d1",
+      recordId: null,
+      baseRevision: 0,
+      content: { ...emptyContent(), text: "一份新草稿" },
+      updatedAt: day(0),
+    };
+  });
+  const after = store.get();
+  // 只动了草稿：其余六个集合必须还是原来的对象，书架才不会白白重排一万条记录。
+  expect(after.drafts).not.toBe(before.drafts);
+  expect(after.records).toBe(before.records);
+  expect(after.media).toBe(before.media);
+  expect(after.albums).toBe(before.albums);
+  expect(after.persons).toBe(before.persons);
+  expect(after.revision).toBe(before.revision + 1);
+  const sortStarted = Date.now();
+  const sorted = [...Object.values(after.records)].sort(
+    (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
+  );
+  console.log(
+    `[scale] 加一条草稿 ${Date.now() - started}ms；书架整排 ${sorted.length} 条 ${Date.now() - sortStarted}ms`,
+  );
+  expect(sorted).toHaveLength(RECORDS);
+});
+
 /**
  * 基线（node 24 开发机，10000 记录 / 10000 素材，整库 6.2MB）：
  *   Build 62：开库 32ms，改一个字 90ms，落盘 6.2MB（整库重写）。
