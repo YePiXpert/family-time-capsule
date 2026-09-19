@@ -60,6 +60,10 @@ export class Store {
   setPassword(id: string, passwordHash: string) { this.db.prepare('UPDATE members SET password_hash=? WHERE id=?').run(passwordHash,id); }
   byUsername(username: string) { return this.db.prepare('SELECT * FROM members WHERE username=?').get(username) as (Member&{password_hash:string|null})|undefined; }
   fullById(id: string) { return this.db.prepare('SELECT * FROM members WHERE id=?').get(id) as (Member&{password_hash:string|null})|undefined; }
+  /** 兜底命令用：先按登录名找，找不到再按成员名（主人重置登录会改登录名但不改成员名）。 */
+  findByUsernameOrName(name: string) {
+    return this.byUsername(name) ?? this.findExactByName(name);
+  }
   findExactByName(name: string) {
     const rows=this.db.prepare('SELECT * FROM members WHERE name=?').all(name) as Member[];
     if(rows.length!==1) throw new Problem(400,'MEMBER_INVALID',`成员「${name}」不存在或重名，请先确认名字。`);
