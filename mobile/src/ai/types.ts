@@ -39,7 +39,6 @@ export type AISettings = {
   globalPhotos: number;
   globalWrites: number;
 };
-export type Config = AISettings & { models: { id: string; label: string }[] };
 export type Overview = {
   members: (Member & { usage: Usage })[];
   devices: {
