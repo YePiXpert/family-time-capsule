@@ -97,7 +97,6 @@ export type ArchivePlan = {
 export function safeName(raw: string, fallback = "未命名"): string {
   let name = raw
     .normalize("NFC")
-    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
