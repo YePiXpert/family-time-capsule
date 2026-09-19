@@ -96,14 +96,17 @@ export function useDraftPersist(
 }
 
 /** 录音：开始、完成入库（复制后收回原件）、明确放弃。 */
-export function useRecorder({
+export function useRecorder<D extends { recordingFile?: string }>({
   draftRef,
   verified,
   persist,
+  attachRecording,
 }: {
-  draftRef: RefObject<RecordDraft | undefined>;
+  draftRef: RefObject<D | undefined>;
   verified: RefObject<Set<string>>;
-  persist: (next: RecordDraft, media?: LocalMedia[]) => Promise<unknown>;
+  persist: (next: D, media?: LocalMedia[]) => Promise<unknown>;
+  /** 录音入库后把素材 id 挂到草稿上：记录草稿挂在 content.mediaIds，信挂在 mediaIds。 */
+  attachRecording: (draft: D, mediaId: string) => D;
 }) {
   const recorder = useRef<AudioRecorder | null>(null);
   const [recording, setRecording] = useState(false);
@@ -124,13 +127,7 @@ export function useRecorder({
     const media = await preserveMedia(f.uri, "录音.m4a", "audio");
     await verifyMedia(media);
     verified.current.add(media.id);
-    const next = {
-      ...draftRef.current!,
-      content: {
-        ...draftRef.current!.content,
-        mediaIds: [...draftRef.current!.content.mediaIds, media.id],
-      },
-    };
+    const next = attachRecording({ ...draftRef.current! }, media.id);
     delete next.recordingFile;
     await persist(next, [media]);
     // preserveMedia 是复制而非移动；入库成功后收回 document 下的原始录音。

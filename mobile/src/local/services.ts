@@ -158,7 +158,7 @@ export async function beginLetter(store: LocalStore, from = "") {
   });
 }
 /** 草稿信整体替换；封存后的信不能再改。 */
-export function updateLetter(s: Library, letter: LocalLetter) {
+export function updateLetter(s: Library, letter: Stored<LocalLetter>) {
   const existing = s.letters[letter.id];
   if (!existing) throw new Error("这封信已删除。");
   if (existing.sealed) throw new Error("信已封存，不能再改。");

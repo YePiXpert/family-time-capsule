@@ -77,7 +77,15 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   const { current, pendingMedia, verified, importedMedia, persist, persistDebounced, flush } =
     useDraftPersist(store, setError, setDraft, draft);
   const { recording, start: startRecording, finishAudio, discardAudio } =
-    useRecorder({ draftRef: current, verified, persist });
+    useRecorder({
+      draftRef: current,
+      verified,
+      persist,
+      attachRecording: (d, id) => ({
+        ...d,
+        content: { ...d.content, mediaIds: [...d.content.mediaIds, id] },
+      }),
+    });
   const change = (patch: Partial<RecordContent>) => {
     if (!current.current) return;
     const next = {
