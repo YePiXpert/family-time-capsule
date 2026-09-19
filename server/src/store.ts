@@ -108,11 +108,14 @@ export class Store {
     })();
   }
   finish(memberId:string,id:string,tokens:number|null,error?:string) {
-    this.db.prepare('UPDATE requests SET status=?,tokens=?,error_code=? WHERE member_id=? AND id=?').run(error?'failed':'completed',tokens,error??null,memberId,id);
+    // 已完成的请求不可被晚到的失败回写覆盖（例如成功后授权失效）：第二次 finish 静默无效。
+    this.db.prepare("UPDATE requests SET status=?,tokens=?,error_code=? WHERE member_id=? AND id=? AND status!='completed'").run(error?'failed':'completed',tokens,error??null,memberId,id);
   }
   members() { return this.db.prepare('SELECT id,name,role,enabled,photo_limit,write_limit,username FROM members ORDER BY role DESC,name').all() as Member[]; }
   devices() { return this.db.prepare('SELECT id,member_id,name,revoked,created_at FROM devices ORDER BY created_at DESC').all(); }
   revoke(id:string) { this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(id); }
+  revokeOthers(memberId:string,keepDeviceId:string) { this.db.prepare('UPDATE devices SET revoked=1 WHERE member_id=? AND id!=?').run(memberId,keepDeviceId); }
+  revokeAll(memberId:string) { this.db.prepare('UPDATE devices SET revoked=1 WHERE member_id=?').run(memberId); }
   editMember(id:string,patch:{enabled:boolean;photoLimit:number;writeLimit:number}) {
     const member=this.db.prepare('SELECT * FROM members WHERE id=?').get(id) as Member|undefined;
     if(!member) throw new Problem(404,'NOT_FOUND','成员不存在。');

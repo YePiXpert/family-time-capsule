@@ -46,11 +46,14 @@ export function createApp(store:Store,provider:Provider,version='dev') {
   return store.attach(member.id,input.deviceName);
  });
  app.put('/api/v1/password',async req=>{
+  throttle(req,10,60);
   const member=auth(req.headers.authorization);
   const input=z.object({current:z.string().optional(),next:z.string().min(8).max(128)}).strict().parse(req.body);
   const full=store.fullById(member.id);
   if(full?.password_hash&&!(input.current&&await verifyPassword(input.current,full.password_hash)))throw new Problem(401,'PASSWORD_WRONG','当前密码不对。');
   store.setPassword(member.id,await hashPassword(input.next));
+  // 改密后其他设备一律下线，只保留当前这台。
+  store.revokeOthers(member.id,member.deviceId!);
   return {ok:true};
  });
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
@@ -101,7 +104,9 @@ export function createApp(store:Store,provider:Provider,version='dev') {
  app.put('/api/v1/admin/members/:id/login',async req=>{
   owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
   const input=z.object({username,password:z.string().min(8).max(128)}).strict().parse(req.body);
-  store.setLogin(id,input.username,await hashPassword(input.password));return {ok:true};
+  store.setLogin(id,input.username,await hashPassword(input.password));
+  // 主人重置登录后，该成员所有设备全部下线，需用新密码重新登录。
+  store.revokeAll(id);return {ok:true};
  });
  app.patch('/api/v1/admin/members/:id',async req=>{
   owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);

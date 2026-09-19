@@ -154,3 +154,42 @@ test('polish carries only the stored text with an explicit length ceiling',async
  assert.equal(f.store.usage(f.member.member.id).writes,2);
  await f.app.close();f.store.close();
 });
+
+test('password change gates on current password and logs out other devices only',async()=>{
+ const f=fixture();
+ const second=await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'旧手机'}});
+ assert.equal(second.statusCode,200);
+ assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{current:'wrong-password',next:'876543219'}})).statusCode,401);
+ assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{current:PW,next:'876543219'}})).statusCode,200);
+ assert.equal((await f.app.inject({url:'/api/v1/me',headers:f.headers()})).statusCode,200);
+ assert.equal((await f.app.inject({url:'/api/v1/me',headers:{authorization:`Bearer ${second.json().token}`}})).statusCode,401);
+ // 老数据里没有密码哈希的成员可以不带 current 直接设置密码。
+ f.store.db.prepare('UPDATE members SET password_hash=NULL WHERE id=?').run(f.member.member.id);
+ assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{next:'111122223'}})).statusCode,200);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'111122223',deviceName:'手机'}})).statusCode,200);
+ await f.app.close();f.store.close();
+});
+test('rapid logins from one address hit the per-IP throttle',async()=>{
+ const f=fixture();
+ for(let i=0;i<11;i++) {
+  const response=await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'wrong-password',deviceName:'手机'}});
+  assert.equal(response.statusCode,i<10?401:429);
+ }
+ await f.app.close();f.store.close();
+});
+test('auth revoked mid-flight returns 401 but cannot overwrite the completed request',async()=>{
+ const f=fixture(async()=>{f.store.revoke(f.member.member.deviceId!);return {tokens:33,result:{title:'公园',text:'一起散步。'}};});
+ const payload=f.input();
+ const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload});
+ assert.equal(response.statusCode,401);assert.equal(response.json().code,'AUTH_REQUIRED');
+ const row=f.store.db.prepare('SELECT status,tokens FROM requests WHERE member_id=? AND id=?').get(f.member.member.id,payload.requestId) as {status:string;tokens:number|null};
+ assert.equal(row.status,'completed');assert.equal(row.tokens,33);
+ await f.app.close();f.store.close();
+});
+test('admin login reset logs out every device of that member but not the owner',async()=>{
+ const f=fixture();
+ assert.equal((await f.app.inject({method:'PUT',url:`/api/v1/admin/members/${f.member.member.id}/login`,headers:f.headers(f.owner.token),payload:{username:'家人新',password:'87654321'}})).statusCode,200);
+ assert.equal((await f.app.inject({url:'/api/v1/me',headers:f.headers()})).statusCode,401);
+ assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers(f.owner.token)})).statusCode,200);
+ await f.app.close();f.store.close();
+});
