@@ -65,7 +65,7 @@ final class NativeRegressionTests: XCTestCase {
         let own = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "A little story.")).firstMatch
         XCTAssertTrue(own.waitForExistence(timeout: 20)); own.tap()
         tap("record-fixture"); shot("material-selection")
-        tap("2026-08"); tap("record-earlier"); tap("全部月份"); tap("material-done")
+        tap("2026年8月"); tap("record-earlier"); tap("全部月份"); tap("material-done")
         type("Our days", "album-name"); tap("返回调整内容"); tap("material-done")
         XCTAssertEqual(element("album-name").value as? String, "Our days"); tap("album-save")
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-reading")
