@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-19，Build 66 已交付；Build 67（AI 取消邀请码，家人直接加入）源码已交付待打包。
+> 最后更新：2026-09-19，Build 67（AI 账号登录）发布收尾：构建号已占 67，安装包派发中。
 > 实际状态以 GitHub Actions 为准：Build 64 最后一次原生验证失败，并未完成双端交付。
 > Build 65 用于修复交付验证；下文原 Build 65/66/67 功能编号属于旧路线，后续需重新编号。
 
@@ -74,7 +74,7 @@ AGENTS 发布纪律）。
   35345717654。本轮内容见 CHANGELOG「Build 63」。artifacts 保留 30 天，需要就早下。
 - **签名**：`3cc56d9` 起 APK 用持有者私有 keystore 签名（secrets 已配置，指纹
   `FE:57:43:E4:…:B1:7E` 钉入 mobile-build.yml，与模板证书指纹二选一校验）。
-- **Build 67（源码已交付待打包）**：AI 改为账号登录——空库首次在 App 里「创建主人账号」（`/setup`，仅一次），
+- **Build 67（本版）**：AI 改为账号登录——空库首次在 App 里「创建主人账号」（`/setup`，仅一次），
   家人账号由主人在管理页创建（`/admin/members`），`/login` 发设备凭证；换手机直接重新登录；
   全部锁死时 `manage.ts password <成员名> <新密码>` 兜底。密码 scrypt 内置实现（`server/src/passwords.ts`）。
   服务器已于 2026-09-19 部署该提交（capsule.yep.li；同日完成 xiaomei-ai→anan-ai 目录/compose/systemd
