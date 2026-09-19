@@ -23,8 +23,6 @@ import { Photo } from "../local/Media";
 import { thumbnail } from "./images";
 import {
   sourceFingerprint,
-  sameDayChunks,
-  sameJob,
   polishRequest,
   moveProposalPhoto,
   requestImageIds,
@@ -32,11 +30,24 @@ import {
   validateResult,
   localPlaceTags,
 } from "./state";
-import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
+import {
+  assertGenerateInput,
+  batchProgress,
+  expectedPhotoIds,
+  groupedWriteContext,
+  matchesCurrentView,
+  modeOf,
+  pendingOtherProposal,
+  planGroupDays,
+  planStep,
+  reuseJob,
+  runSpec,
+  successProgress,
+  writeContext,
+} from "./plan";
+import type { AIGroup, AIProposal, AIResult, WritingMode } from "./types";
 type Patch = Partial<Pick<RecordDraft, "aiJob" | "aiProposal">>;
 type Run = { kind: "group" | "write"; mode: WritingMode };
-const modeOf = (proposal: AIProposal): WritingMode =>
-  proposal.writingMode ?? "generate";
 export function AIEditor({
   draft,
   media,
@@ -172,54 +183,24 @@ export function AIEditor({
         snapshot.draft,
         snapshot.media,
       );
-      if (kind === "group") {
-        if (snapshot.draft.recordId)
-          throw new Error(
-            "按事情分组只在整理新建草稿的照片时使用，已保存的记录请用「调整归属」。",
-          );
-        if (ids.length < 2)
-          throw new Error("按事情分组至少需要两张照片，先再多选几张。");
-      }
-      if (kind === "write" && mode === "polish") {
-        const request = polishRequest({
-          title: selected?.title ?? "",
-          text: selected?.text ?? "",
-        });
-        if (request.error) throw new Error(request.error);
-      } else if (kind === "write") {
-        if (!ids.length)
-          throw new Error(
-            "这件事还没有照片。先添加照片再生成，或写下文字后用「润色我的文字」。",
-          );
-        if (ids.length > 100)
-          throw new Error("一次最多整理 100 张照片，请分几份草稿处理。");
-      }
+      assertGenerateInput(kind, mode, ids, snapshot.draft.recordId, {
+        title: selected?.title,
+        text: selected?.text,
+      });
       // A profile change starts a new job; old partial results stay in the draft.
-      const model = "deepseek-flash:high";
-      const jobSpec = {
-        fingerprint: fp,
-        kind,
-        eventIndex,
-        model,
-        ...(kind === "write" ? { writingMode: mode } : {}),
-      };
-      const previous = snapshot.draft.aiJob;
-      const job: AIJob = !fresh && sameJob(previous, jobSpec)
-        ? JSON.parse(JSON.stringify(previous))
-        : { ...jobSpec, steps: [] };
+      const job = reuseJob(
+        snapshot.draft.aiJob,
+        runSpec(fp, kind, eventIndex, mode),
+        fresh,
+      );
       const places = localPlaceTags(
         kind === "write" ? ids : snapshot.draft.content.mediaIds,
         snapshot.media,
       );
-      const rawWrite = [selected?.title, selected?.text]
-        .filter(Boolean)
-        .join("\n");
-      const context = kind === "write" ? rawWrite.slice(0, 3500) : "";
-      // 只把前一段发给 AI，本机内容不变；超限必须说明，不静默截断。
-      const clipped = (limit: number) =>
-        rawWrite.length > limit
-          ? `正文较长，本次只把前 ${limit} 字发给 AI，本机内容不变。`
-          : "";
+      const { context, clipped } = writeContext(kind, {
+        title: selected?.title,
+        text: selected?.text,
+      });
       const check = () => {
         if (abort.current?.signal.aborted)
           throw new AIError("CANCELED", "已停止等待，草稿不变。");
@@ -231,13 +212,11 @@ export function AIEditor({
         extra: Record<string, unknown> = {},
       ): Promise<AIResult> => {
         check();
-        let step = job.steps.find((s) => s.key === key);
-        if (step?.result) return step.result;
-        if (!step) {
-          step = { key, requestId: randomUUID() };
-          job.steps.push(step);
+        const planned = planStep(job, key, randomUUID);
+        if (planned.created)
           await onPatch({ aiJob: JSON.parse(JSON.stringify(job)) });
-        }
+        if (planned.result) return planned.result;
+        const step = planned.step;
         const photos = [];
         for (const id of photoIds) {
           check();
@@ -256,11 +235,11 @@ export function AIEditor({
           "POST",
           abort.current!.signal,
         );
-        const expected =
-          extra.mode === "merge"
-            ? (extra.groups as AIGroup[]).flatMap((g) => g.photoIds)
-            : photoIds;
-        const valid = validateResult(result, operation, expected);
+        const valid = validateResult(
+          result,
+          operation,
+          expectedPhotoIds(photoIds, extra),
+        );
         step.result = valid;
         await onPatch({ aiJob: JSON.parse(JSON.stringify(job)) });
         return valid;
@@ -286,24 +265,23 @@ export function AIEditor({
           writingMode: "generate",
         });
       } else {
-        const daySets = sameDayChunks(ids, snapshot.media),
+        const daySets = planGroupDays(ids, snapshot.media),
           allGroups: AIGroup[] = [];
         const total = daySets.reduce((n, day) => n + day.chunks.length, 0);
         let count = 0;
         for (const day of daySets) {
           const groups: AIGroup[] = [];
-          for (let i = 0; i < day.chunks.length; i++) {
-            setProgress(`正在分析第 ${++count}/${total} 批照片…`);
+          for (const chunk of day.chunks) {
+            setProgress(batchProgress(++count, total));
             groups.push(
-              ...(await perform(`${day.day}-${i}`, "group", day.chunks[i]!))
-                .groups!,
+              ...(await perform(chunk.key, "group", chunk.photoIds)).groups!,
             );
           }
-          if (day.chunks.length > 1) {
+          if (day.mergeKey) {
             setProgress("正在连接同一天的事情…");
             allGroups.push(
               ...(
-                await perform(`merge-${day.day}`, "group", [], {
+                await perform(day.mergeKey, "group", [], {
                   mode: "merge",
                   groups,
                 })
@@ -316,36 +294,19 @@ export function AIEditor({
         else {
           if (kind === "write") setNotice(clipped(1500));
           setProgress("正在根据整组照片写记录…");
-          const summaries = allGroups
-            .map((g) => `${g.title}：${g.summary.slice(0, 100)}`)
-            .join("\n")
-            .slice(0, 2000);
           result = await perform("write", "write", ids.slice(0, 1), {
-            context: `${context.slice(0, 1500)}\n照片分析摘要（仅作参考）：\n${summaries}`,
+            context: groupedWriteContext(context, allGroups),
             writingMode: "generate",
           });
         }
       }
       check();
       await onPatch({
-        aiProposal: {
-          ...result,
-          fingerprint: fp,
-          kind,
-          eventIndex,
-          model,
-          ...(kind === "write" ? { writingMode: mode } : {}),
-        },
+        aiProposal: { ...result, ...runSpec(fp, kind, eventIndex, mode) },
       });
       // 面板仍打开时用户正看着结果；收起后才返回的结果用图标小圆点提示。
       setSeen(openRef.current);
-      setProgress(
-        kind === "group"
-          ? "分组建议已保存，核对后确认。"
-          : mode === "polish"
-            ? "润色结果已保存，与原文对照后采用。"
-            : "建议已保存，请预览后采用。",
-      );
+      setProgress(successProgress(kind, mode));
     } catch (e) {
       setError(messageOf(e));
       setErrorCode(e instanceof AIError ? e.code : null);
@@ -372,15 +333,8 @@ export function AIEditor({
       setError(messageOf(e));
     }
   };
-  const matchesView =
-    !!proposal &&
-    (proposal.kind === task
-      ? task === "group" || modeOf(proposal) === writeMode
-      : false);
-  const pendingOther =
-    !!proposal &&
-    (proposal.kind !== task ||
-      (task === "write" && modeOf(proposal) !== writeMode));
+  const matchesView = matchesCurrentView(proposal, task, writeMode),
+    pendingOther = pendingOtherProposal(proposal, task, writeMode);
   const viewProposal = () => {
     if (!proposal) return;
     setTask(proposal.kind);
