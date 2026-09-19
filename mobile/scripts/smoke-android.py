@@ -89,14 +89,17 @@ try:
     # 纪念册：一页 300 DPI 是 2433² 位图，安卓这一步最吃内存，必须真装订一本出来。
     tap('year-yearbook');tap('纪念册 PDF')
     tap('book-preview-next');shot('book-preview');tap('book-preview-bind')
-    find('year-book-cancel')
-    # 装订完会弹系统分享，盖住进度卡片；卡片从层级里消失就是这一页取完了最后一页。
-    for _ in range(300):
-        try:binding=any(matches(n,'year-book-cancel') for n in hierarchy().iter('node'))
-        except Exception:binding=True  # dump 抖动不算装订失败
-        if not binding:break
+    # 小册子可能在第一次 dump 之前就完成，不能要求观察到短暂的进度按钮。
+    # 必须看到系统分享面板里的 PDF 文件名，进度消失或页面无报错都不算成功。
+    deadline=time.monotonic()+300
+    while time.monotonic()<deadline:
+        tree=hierarchy()
+        broken=[n.get('text') for n in tree.iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','还没准备好','尚未就绪'))]
+        assert not broken,f'Book export reported {broken}'
+        if any(n.get('package')=='com.android.intentresolver' and n.get('text')==f"yearbook-{time.strftime('%Y')}.pdf" for n in tree.iter('node')):
+            break
         time.sleep(1)
-    else:raise AssertionError('Book binding never finished')
+    else:raise AssertionError('Book PDF share sheet never appeared')
     shot('book-share-sheet');adb('shell','input','keyevent','4');time.sleep(2)
     # 导出失败只在页面上留一行红字，截图看不出来，显式断言。
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
