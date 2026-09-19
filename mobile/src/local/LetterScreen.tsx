@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 import { useLibrary, useStore } from "./context";
-import { letterCaption, letterState } from "./letters";
+import { letterCaption, letterState, openAtLabel } from "./letters";
 import type { LocalMedia } from "./model";
 import type { Props } from "./navigation";
 import { deleteLetter, openLetter } from "./services";
@@ -50,7 +50,7 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
     if (!confirm) return go();
     Alert.alert(
       "现在就拆开？",
-      `这封信封存到 ${letterCaption(letter, today).replace(/^封存至 /, "").replace(/ · .*$/, "")}。提前拆开，就不再等那一天了。`,
+      `这封信封存到 ${openAtLabel(letter.openAt)}。提前拆开，就不再等那一天了。`,
       [
         { text: "再等等", style: "cancel" },
         { text: "拆开", style: "destructive", onPress: go },
