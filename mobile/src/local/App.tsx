@@ -65,6 +65,8 @@ import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
 import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
 import { MediaScreen } from "./Media";
+import { LetterEditor } from "./LetterEditor";
+import { LetterScreen } from "./LetterScreen";
 import { receiveShares } from "./services";
 import { healthFile } from "./health-file";
 const Stack = createNativeStackNavigator<Routes>();
@@ -382,6 +384,16 @@ function Root() {
           <Stack.Screen
             name="Appearance"
             component={Appearance}
+            options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="LetterEditor"
+            component={LetterEditor}
+            options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="Letter"
+            component={LetterScreen}
             options={{ title: "" }}
           />
         </Stack.Navigator>
