@@ -10,7 +10,7 @@
 docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build
 ```
 
-运行 `docker compose ... exec -T ai node src/manage.ts owner` 生成 24 小时有效的一次性主人激活码。在手机「我的 → AI 设置」输入。后续邀请、设备撤销、全局及成员额度在主人管理页调整。重新运行 owner 命令可以恢复主人访问，不会修改本机相册。
+家人在手机「我的 → AI 设置」输入名字并为设备命名，直接加入即可使用 AI，没有邀请码。第一台加入的设备自动成为主人；之后加入的都是普通成员。设备撤销、全局及成员额度在主人管理页调整。主人设备丢失时：在新手机上重新加入，然后在服务器运行 `docker compose ... exec -T ai node src/manage.ts owner <成员名>` 把该成员升为主人，原有成员与额度不变。
 
 AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort: high`。旧版保存的模型选择会归一为 Flash；已有额度、暂停状态和成员权限保留。
 
@@ -22,7 +22,7 @@ AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort
 
 相同成员、同一请求 ID 不能再次调用上游；成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。超时调用可能已经被上游计费，因此保留额度占用，不自动退款或换模型。
 
-服务 SQLite 保存成员、凭证哈希、邀请、请求状态和用量，不保存照片或生成正文。日志仅包含服务启动信息。无需 Redis、云相册或账号同步。
+服务 SQLite 保存成员、凭证哈希、请求状态和用量，不保存照片或生成正文。日志仅包含服务启动信息。无需 Redis、云相册或账号同步。
 
 ## 从 xiaomei-ai 改名到 anan-ai（只做一次）
 
@@ -41,7 +41,7 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 ```
 
 `verify-service.py` 过了再删 `/opt/xiaomei-ai.bak`。`crontab` 里的 `backup.sh` 路径已随仓库更新，
-旧项目名的容器要手动 `docker rm`。成员、设备与额度都在 SQLite 里，随目录一起搬走，不用重新邀请。
+旧项目名的容器要手动 `docker rm`。成员、设备与额度都在 SQLite 里，随目录一起搬走，手机上无需重新加入。
 
 ## 备份与回滚
 
@@ -51,4 +51,4 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 
 ## 验证
 
-`server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 验证 DeepSeek Flash High 的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、受邀成员功能与主人权限。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。
+`server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 验证 DeepSeek Flash High 的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、成员直接加入与主人权限。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。

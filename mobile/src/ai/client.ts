@@ -86,9 +86,9 @@ export async function api<T>(
     signal?.removeEventListener("abort", cancel);
   }
 }
-export async function enroll(code: string, deviceName: string) {
+export async function enroll(name: string, deviceName: string) {
   const result = await api<{ token: string }>("/enroll", {
-    code: code.trim(),
+    name: name.trim(),
     deviceName: deviceName.trim(),
   });
   if (typeof result.token !== "string" || result.token.length < 32)
