@@ -45,6 +45,16 @@ def main():
         assert pdf.startswith(b'%PDF-') and pdf.rstrip().endswith(b'%%EOF'), 'Bound PDF is incomplete'
         assert len(re.findall(rb'/Type\s*/Page\b', pdf)) >= 2, 'Bound PDF has no real pagination'
         report['yearbookPdf'] = True
+        # 开放归档必须是任何解压工具都认的 zip：zipfile 全量校验，且带离线网页与 fixture 那条记录的文件夹。
+        import zipfile
+        archives = list((container/'Library'/'Caches').rglob('*成长记归档-*.zip'))
+        assert len(archives) == 1, 'Open archive was not retained in the app cache'
+        with zipfile.ZipFile(archives[0]) as z:
+            assert z.testzip() is None, 'Open archive has a corrupt entry'
+            names = z.namelist()
+            assert any(n.endswith('/index.html') for n in names) and any(n.endswith('/library.js') for n in names), 'Open archive lacks the offline page'
+            assert any('/记录/2026/2026-09-15 First little wave/照片1.png' in n for n in names), f'Fixture photo missing from archive: {names[:20]}'
+        report['openArchive'] = True
         state = read_state(database)
         assert state['records'] == baseline['records'], 'Full restore did not replace records'
         assert state['letters'] == baseline['letters'], 'Sealed letter did not survive the restore'
