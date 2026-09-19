@@ -70,6 +70,15 @@ describe("global search", () => {
       "b",
     ]);
   });
+  it("filters her own words", () => {
+    const quoted = [
+      record("q", { text: "妈妈，月亮跟着我走。", quote: true, date: "2026-09-02T10:00:00.000Z" }),
+      ...records,
+    ];
+    expect(searchRecords(quoted, "", { quote: true }).map((r) => r.id)).toEqual(["q"]);
+    expect(searchRecords(quoted, "月亮", {}).map((r) => r.id)).toEqual(["q"]);
+    expect(searchRecords(quoted, "", { quote: true, first: true })).toEqual([]);
+  });
   it("caps results at 100", () => {
     const many = Array.from({ length: 130 }, (_, i) =>
       record(`r${i}`, { date: `2026-01-01T${String(i % 24).padStart(2, "0")}:00:00.000Z` }),

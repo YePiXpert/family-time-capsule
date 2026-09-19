@@ -249,6 +249,8 @@ export function Shelf() {
   const firsts = records
     .filter((r) => r.first)
     .sort((a, b) => a.date.localeCompare(b.date));
+  const quotes = records.filter((r) => r.quote);
+  const leadVolumes = (firsts.length > 0 ? 1 : 0) + (quotes.length > 0 ? 1 : 0);
   const today = new Date();
   const anniversaries = records.filter((r) => {
     const d = new Date(r.date);
@@ -611,6 +613,17 @@ export function Shelf() {
                   onPress={() => nav.navigate("Firsts")}
                 />
               )}
+              {quotes.length > 0 && (
+                <Volume
+                  title="她说的话"
+                  caption={`${quotes.length} 句原话`}
+                  stamp="语"
+                  testID="volume-quotes"
+                  width={volumeWidth}
+                  index={firsts.length > 0 ? 1 : 0}
+                  onPress={() => nav.navigate("Quotes")}
+                />
+              )}
               {months.map((m, i) => {
                 const monthRecords = records.filter(
                   (r) => monthKey(r.date) === m,
@@ -624,7 +637,7 @@ export function Shelf() {
                     cover={cover}
                     testID={`volume-${m}`}
                     width={volumeWidth}
-                    index={firsts.length > 0 ? i + 1 : i}
+                    index={i + leadVolumes}
                     onPress={() => nav.navigate("Month", { month: m })}
                   />
                 );

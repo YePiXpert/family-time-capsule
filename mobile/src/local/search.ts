@@ -3,6 +3,7 @@ import { yearKey, type LocalRecord, type Stored } from "./model";
 export type MediaFilter = "any" | "av" | "none";
 export type SearchFilters = {
   first?: boolean;
+  quote?: boolean;
   media?: MediaFilter;
   year?: string;
   person?: string;
@@ -42,6 +43,7 @@ export function searchRecords(
   return records
     .filter((r) => {
       if (filters.first && !r.first) return false;
+      if (filters.quote && !r.quote) return false;
       if (filters.year && yearKey(r.date) !== filters.year) return false;
       if (filters.person && !r.personIds?.includes(filters.person))
         return false;

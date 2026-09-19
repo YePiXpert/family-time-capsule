@@ -310,6 +310,14 @@ describe("complete backup manifest", () => {
     };
     expect(() => validateLibrary(other)).toThrow();
   });
+  it("accepts a boolean quote flag and nothing else", () => {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    mut(s.records.r!).quote = true;
+    validateLibrary(s);
+    mut(s.records.r!).quote = "yes" as unknown as boolean;
+    expect(() => validateLibrary(s)).toThrow();
+  });
   it("rejects unsupported versions and active recording snapshots", () => {
     const s = fixture();
     mut(s.drafts.draft!).recordingFile = "recording-test.m4a";

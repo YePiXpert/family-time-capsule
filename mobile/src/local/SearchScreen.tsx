@@ -20,6 +20,7 @@ export function SearchScreen(_: Props<"Search">) {
     s = useStyles();
   const [query, setQuery] = useState(""),
     [first, setFirst] = useState(false),
+    [quote, setQuote] = useState(false),
     [media, setMedia] = useState<MediaFilter>("any"),
     [year, setYear] = useState(""),
     [person, setPerson] = useState("");
@@ -33,7 +34,13 @@ export function SearchScreen(_: Props<"Search">) {
       results: searchRecords(
         all,
         query,
-        { first, media, year: year || undefined, person: person || undefined },
+        {
+          first,
+          quote,
+          media,
+          year: year || undefined,
+          person: person || undefined,
+        },
         kinds,
       ),
       years: [...new Set(all.map((r) => r.date.slice(0, 4)))].sort((a, b) =>
@@ -43,9 +50,9 @@ export function SearchScreen(_: Props<"Search">) {
         a.name.localeCompare(b.name, "zh"),
       ),
     };
-  }, [recordMap, mediaMap, personMap, query, first, media, year, person]);
+  }, [recordMap, mediaMap, personMap, query, first, quote, media, year, person]);
   const filtered =
-    query.trim() || first || media !== "any" || !!year || !!person;
+    query.trim() || first || quote || media !== "any" || !!year || !!person;
   return (
     <Page scroll={false}>
       {/* scroll=false 不套 content 边距，这里自行补齐 20 的页面边距。 */}
@@ -78,6 +85,7 @@ export function SearchScreen(_: Props<"Search">) {
               active: person === p.id,
             })),
             { key: "f-first", title: "第一次", active: first },
+            { key: "f-quote", title: "她说的话", active: quote },
             { key: "m-av", title: "有声像", active: media === "av" },
             { key: "m-none", title: "纯文字", active: media === "none" },
           ]}
@@ -95,6 +103,7 @@ export function SearchScreen(_: Props<"Search">) {
                   const p = item.key.slice(2);
                   setPerson(person === p ? "" : p);
                 } else if (item.key === "f-first") setFirst(!first);
+                else if (item.key === "f-quote") setQuote(!quote);
                 else if (item.key === "m-av")
                   setMedia(media === "av" ? "any" : "av");
                 else setMedia(media === "none" ? "any" : "none");

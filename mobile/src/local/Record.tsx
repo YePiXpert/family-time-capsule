@@ -196,6 +196,23 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           }}
         />
         <Button
+          title="她说的话"
+          selected={!!record.quote}
+          icon="sparkle"
+          testID="record-quote"
+          onPress={() => {
+            void store
+              .change((s) => {
+                editEntity(s, "records", record.id, (r) => {
+                  r.quote = !r.quote;
+                  r.revision++;
+                  r.updatedAt = now();
+                });
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+        />
+        <Button
           title="加入相册"
           icon="book"
           onPress={() => setChooseAlbum(!chooseAlbum)}
