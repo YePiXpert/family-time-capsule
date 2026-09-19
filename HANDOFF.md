@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-19，Build 68「传家 · 上」源码交付、构建号已占 68、安装包派发中（见第二节）。
+> 最后更新：2026-09-19，Build 68「传家 · 上」源码与安装包均已交付（run 35450404867 全绿，校验和见第一节）。
 
 ---
 
@@ -17,7 +17,17 @@
   → 开放归档（ZIP 写入器／版面规划／离线网页／导出编排与备份页卡片／双端冒烟）→ 「她说的话」→ 装订提醒 → 收尾。
   服务端改动只有 `passwords.ts`／`store.ts`／`manage.ts`／`app.ts` 的哈希升级，**尚未部署**（部署步骤见 `deploy/README.md`；
   旧哈希兼容，随时可部）。
-- **Build 68 打包**：收尾提交后派发 `mobile-build.yml`（完整 SHA），全绿后把 run 号、APK/IPA 校验和补进本节。
+- **Build 68 打包**：交付提交 `dd0eee7`（收尾 `57d5065` 之后补了一笔双端冒烟可达性修复），
+  `mobile-build.yml` run 35450404867 三作业全绿（quality ／ Android APK + 模拟器冒烟 ／ iOS 启动 + XCUITest 回归），
+  两端冒烟报告 `letterSealed`、`archiveSheet`、`openArchive` 均为 true，IPA 的 CFBundleVersion = 68。
+  首次派发 run 35448431758 双端冒烟红（都是新控件可达性：Android 归档卡把「恢复这份备份」挤出首屏、
+  iOS 键盘挡住「封存」），已在 `dd0eee7` 修复。artifacts 2026-10-19 过期，请尽快下载到 `C:\vibe-coding\releases\build-68\`：
+  `gh run download 35450404867 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
+  APK 66,464,850 字节、IPA 11,074,058 字节；SHA-256（可直接存成 sha256sums.txt 后 `sha256sum -c`）：
+  ```text
+  ee4abfca29bfca45eb623de3d102425bfb2609fd7d1555aa2fd7102af3738a84  FamilyTimeCapsule-android.apk
+  df4b95326eaa7a686563a3c034772715f96232fec093bc92aad4146082a40010  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
 - **下一步**：Build 69「传家 · 中」资料不灭（见第四节）。动工前先看 `docs/plans/PLAN-BUILD-68.md` 末尾的 69/70 路线。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
@@ -40,9 +50,8 @@
    本机 /tmp 若是满的 tmpfs，跑 mobile 测试要 TMPDIR=/var/tmp/anan-tests（先 mkdir）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·先看 HANDOFF 第一节「Build 68 打包」有没有补上 run 号与校验和：
-- 没有 → gh run list --workflow mobile-build.yml 查最近一次派发；红了就修，绿了就把
-  APK/IPA 校验和记进 HANDOFF 第一节并推送。
+第二步·Build 68 安装包已交付（run 35450404867，校验和在 HANDOFF 第一节），不必重新打包：
+- artifacts 2026-10-19 过期；若持有者本地还没有 build-68 的 APK/IPA，提醒先 gh run download 存下来。
 - 服务端 scrypt2 改动尚未部署：按 deploy/README.md 部署一次（旧哈希登录时自动升级，无需迁移）。
 
 第三步·继续 Build 69「传家 · 中」资料不灭（路线见 docs/plans/PLAN-BUILD-68.md 第六节）：
@@ -75,7 +84,8 @@
 | 089941d | 导出编排、备份页「开放归档」卡、双端冒烟 |
 | 68aed3c | 「她说的话」：quote 字段、阅读页切换、语录册、搜索 chip |
 | c89a0fd | 装订提醒：yearBooksBoundAt、bookNudgeOf、书架纸卡 |
-| 收尾 | CHANGELOG／README／HANDOFF／PLAN 归档、app.json 68 |
+| 57d5065 | 收尾：CHANGELOG／README／HANDOFF／PLAN 归档、app.json 68 |
+| dd0eee7 | 双端冒烟可达性修复：写信页按钮进底部固定栏、归档卡移到备份列表之后（打包交付提交） |
 
 实施中与计划的偏离都记在 `docs/plans/PLAN-BUILD-68.md` 顶部注释里（ZIP64 按需而非始终、归档留缓存到下次导出等）。
 
