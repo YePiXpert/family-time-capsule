@@ -292,6 +292,7 @@ export function AISettingsScreen() {
           <Button
             title={initialized === false ? "创建主人账号" : "登录"}
             primary
+            testID="ai-join"
             disabled={
               busy ||
               initialized === null ||
