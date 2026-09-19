@@ -31,6 +31,7 @@ jobs:
       - name: Verify local architecture and fixture syntax
         run: |
           python3 -m py_compile mobile/scripts/*.py
+          python3 -m unittest discover -s mobile/scripts -p 'test_*.py'
           python3 mobile/scripts/verify-local-boundary.py
       - run: npx expo export --platform all --output-dir dist
         working-directory: mobile

@@ -12,7 +12,7 @@ import plistlib
 import re
 import subprocess
 import time
-from ios_simulator import boot_simulator, cleanup_simulator
+from ios_simulator import boot_simulator, cleanup_simulator, launch_simulator_app
 from local_fixture import break_state, broken_root, empty, record, write_legacy_state, write_state, read_state
 
 
@@ -79,7 +79,7 @@ for result in request.results ?? [] {
         run("xcrun", "simctl", "install", udid, str(args.app.resolve()))
 
         def launch(label, expected):
-            result = run("xcrun", "simctl", "launch", "--terminate-running-process", udid, bundle)
+            result = launch_simulator_app(udid, bundle, output, label)
             match = re.search(r": (\d+)\s*$", result)
             assert match, "Simulator did not report an app process"
             pid = int(match[1])

@@ -59,3 +59,24 @@ def boot_simulator(udid: str, output: Path):
                 except (subprocess.SubprocessError, OSError) as reset_error:
                     with (output / f"simulator-boot-{attempt}.log").open("a") as log:
                         log.write(f"\n{action} before retry: {reset_error}\n")
+
+
+def launch_simulator_app(udid: str, bundle: str, output: Path, label: str):
+    """Retry only simctl command timeouts, never app crashes or screen assertions."""
+    command = ["xcrun", "simctl", "launch", "--terminate-running-process", udid, bundle]
+    for attempt in (1, 2):
+        try:
+            result = subprocess.run(command, check=True, capture_output=True,
+                                    text=True, timeout=300)
+            return result.stdout.strip()
+        except subprocess.TimeoutExpired as error:
+            output.mkdir(parents=True, exist_ok=True)
+            def text(value):
+                return value.decode(errors="replace") if isinstance(value, bytes) else value or ""
+            (output / f"{label}-launch-{attempt}.log").write_text(
+                text(error.stdout) + text(error.stderr) + "\n" + str(error) + "\n")
+            if attempt == 2:
+                raise
+            print(f"simctl launch timed out for {label}; retrying once", flush=True)
+            # A timed-out client may have left the app running. The next launch
+            # explicitly terminates it; preserve this simulator and its data.
