@@ -3,11 +3,14 @@ import { MODEL_ID } from './ai-model.ts';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const uniqueProblem = (error: unknown) =>
+  error instanceof Error && String((error as {code?:string}).code ?? error.message).includes('UNIQUE')
+    ? new Problem(409,'USERNAME_TAKEN','这个用户名已经在用了。') : error;
 export class Problem extends Error {
   status: number; code: string;
   constructor(status: number, code: string, message: string) { super(message); this.status = status; this.code = code; }
 }
-export type Member = { id: string; name: string; role: 'owner'|'member'; enabled: number; photo_limit: number; write_limit: number; deviceId?: string };
+export type Member = { id: string; name: string; role: 'owner'|'member'; enabled: number; photo_limit: number; write_limit: number; username: string|null; deviceId?: string };
 export type Settings = { paused: boolean; defaultModel: string; enabledModels: string[]; globalPhotos: number; globalWrites: number };
 export const initialSettings: Settings = { paused: false, defaultModel: MODEL_ID, enabledModels: [MODEL_ID], globalPhotos: 500, globalWrites: 100 };
 export class Store {
@@ -16,40 +19,68 @@ export class Store {
     this.db = new Database(file);
     this.db.pragma('journal_mode = WAL'); this.db.pragma('foreign_keys = ON'); this.db.pragma('busy_timeout = 5000');
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS members(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,photo_limit INTEGER NOT NULL DEFAULT 100,write_limit INTEGER NOT NULL DEFAULT 20);
+      CREATE TABLE IF NOT EXISTS members(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,photo_limit INTEGER NOT NULL DEFAULT 100,write_limit INTEGER NOT NULL DEFAULT 20,username TEXT,password_hash TEXT);
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,member_id TEXT NOT NULL REFERENCES members(id),name TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS requests(member_id TEXT NOT NULL,id TEXT NOT NULL,fingerprint TEXT NOT NULL,day TEXT NOT NULL,photos INTEGER NOT NULL,writes INTEGER NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,tokens INTEGER,error_code TEXT,PRIMARY KEY(member_id,id));
       CREATE INDEX IF NOT EXISTS requests_day ON requests(day,member_id);
       DROP TABLE IF EXISTS invites;
     `);
+    // 旧库补上账号列（唯一索引用部分索引，多个 NULL 不冲突）。
+    const columns=this.db.prepare('PRAGMA table_info(members)').all() as {name:string}[];
+    if(!columns.some(column=>column.name==='username'))this.db.exec('ALTER TABLE members ADD COLUMN username TEXT;ALTER TABLE members ADD COLUMN password_hash TEXT;');
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS members_username ON members(username) WHERE username IS NOT NULL');
     this.db.prepare('INSERT OR IGNORE INTO settings VALUES(1,?)').run(JSON.stringify(initialSettings));
     this.setSettings(this.settings());
   }
   recover() { this.db.prepare("UPDATE requests SET status='failed',error_code='SERVER_RESTARTED' WHERE status='processing'").run(); }
   settings(): Settings { return { ...JSON.parse((this.db.prepare('SELECT value FROM settings WHERE id=1').get() as { value: string }).value), defaultModel: MODEL_ID, enabledModels: [MODEL_ID] }; }
   setSettings(value: Settings) { this.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({ ...value, defaultModel: MODEL_ID, enabledModels: [MODEL_ID] })); }
-  /** 开放加入：家人自用，不再设邀请码。空库的第一位成员自动成为主人，
-   *  之后加入的都是普通成员；主人设备丢失时用 promote 在服务器上找回。 */
-  enroll(name: string, deviceName: string) {
+  initialized() { return !!this.db.prepare('SELECT 1 FROM members LIMIT 1').get(); }
+  /** 空库上的一次性初始化：第一台设备直接成为主人，之后家人账号都由主人创建。 */
+  setup(username: string, passwordHash: string, deviceName: string) {
     return this.db.transaction(() => {
-      const hasOwner = this.db.prepare("SELECT 1 FROM members WHERE role='owner' LIMIT 1").get();
-      const id = randomUUID();
-      this.db.prepare('INSERT INTO members(id,name,role) VALUES(?,?,?)').run(id,name,hasOwner?'member':'owner');
-      const token = randomBytes(32).toString('base64url'); const deviceId=randomUUID();
-      this.db.prepare('INSERT INTO devices VALUES(?,?,?,?,0,?)').run(deviceId,id,deviceName,digest(token),Date.now());
-      const member = this.db.prepare('SELECT * FROM members WHERE id=?').get(id) as Member;
-      return { token, member: { ...member, deviceId } };
+      if(this.initialized()) throw new Problem(409,'SETUP_DONE','这台服务已经初始化过，请直接登录。');
+      const id=randomUUID();
+      this.insertMember(id,username,passwordHash,'owner',username);
+      return this.attach(id,deviceName);
     })();
   }
-  promote(name: string) {
-    const rows = this.db.prepare('SELECT id FROM members WHERE name=?').all(name) as {id:string}[];
-    if(rows.length!==1) throw new Problem(400,'MEMBER_INVALID',`成员「${name}」不存在或重名，请先在管理页确认名字。`);
-    this.db.prepare("UPDATE members SET role='owner' WHERE id=?").run(rows[0]!.id);
+  createMember(username: string, passwordHash: string, name = username) {
+    const id=randomUUID();
+    try { this.insertMember(id,username,passwordHash,'member',name); }
+    catch(error) { throw uniqueProblem(error); }
+    return this.memberById(id);
+  }
+  setLogin(id: string, username: string, passwordHash: string) {
+    if(!this.db.prepare('SELECT 1 FROM members WHERE id=?').get(id)) throw new Problem(404,'NOT_FOUND','成员不存在。');
+    try { this.db.prepare('UPDATE members SET username=?,password_hash=? WHERE id=?').run(username,passwordHash,id); }
+    catch(error) { throw uniqueProblem(error); }
+  }
+  setPassword(id: string, passwordHash: string) { this.db.prepare('UPDATE members SET password_hash=? WHERE id=?').run(passwordHash,id); }
+  byUsername(username: string) { return this.db.prepare('SELECT * FROM members WHERE username=?').get(username) as (Member&{password_hash:string|null})|undefined; }
+  fullById(id: string) { return this.db.prepare('SELECT * FROM members WHERE id=?').get(id) as (Member&{password_hash:string|null})|undefined; }
+  findExactByName(name: string) {
+    const rows=this.db.prepare('SELECT * FROM members WHERE name=?').all(name) as Member[];
+    if(rows.length!==1) throw new Problem(400,'MEMBER_INVALID',`成员「${name}」不存在或重名，请先确认名字。`);
+    return rows[0]!;
+  }
+  insertMember(id: string, username: string, passwordHash: string, role: 'owner'|'member', name: string) {
+    this.db.prepare('INSERT INTO members(id,name,role,username,password_hash) VALUES(?,?,?,?,?)').run(id,name,role,username,passwordHash);
+  }
+  /** 登录成功后给成员发一台设备；返回的成员带 deviceId，绝不含密码哈希。 */
+  attach(memberId: string, deviceName: string) {
+    const token=randomBytes(32).toString('base64url'),deviceId=randomUUID();
+    this.db.prepare('INSERT INTO devices VALUES(?,?,?,?,0,?)').run(deviceId,memberId,deviceName,digest(token),Date.now());
+    return { token, member: this.memberById(memberId,deviceId) };
+  }
+  memberById(id: string, deviceId?: string) {
+    const member=this.db.prepare('SELECT id,name,role,enabled,photo_limit,write_limit,username FROM members WHERE id=?').get(id) as Member;
+    return deviceId?{...member,deviceId}:member;
   }
   auth(token: string): Member {
-    const row = this.db.prepare('SELECT m.*,d.id AS deviceId FROM devices d JOIN members m ON m.id=d.member_id WHERE d.token_hash=? AND d.revoked=0 AND m.enabled=1').get(digest(token)) as Member|undefined;
-    if (!row) throw new Problem(401,'AUTH_REQUIRED','请先加入 AI，或联系主人重新开通此设备。');
+    const row = this.db.prepare('SELECT m.id,m.name,m.role,m.enabled,m.photo_limit,m.write_limit,m.username,d.id AS deviceId FROM devices d JOIN members m ON m.id=d.member_id WHERE d.token_hash=? AND d.revoked=0 AND m.enabled=1').get(digest(token)) as Member|undefined;
+    if (!row) throw new Problem(401,'AUTH_REQUIRED','请先登录，或联系主人重新开通此设备。');
     return row;
   }
   usage(memberId?: string) {
@@ -79,7 +110,7 @@ export class Store {
   finish(memberId:string,id:string,tokens:number|null,error?:string) {
     this.db.prepare('UPDATE requests SET status=?,tokens=?,error_code=? WHERE member_id=? AND id=?').run(error?'failed':'completed',tokens,error??null,memberId,id);
   }
-  members() { return this.db.prepare('SELECT * FROM members ORDER BY role DESC,name').all() as Member[]; }
+  members() { return this.db.prepare('SELECT id,name,role,enabled,photo_limit,write_limit,username FROM members ORDER BY role DESC,name').all() as Member[]; }
   devices() { return this.db.prepare('SELECT id,member_id,name,revoked,created_at FROM devices ORDER BY created_at DESC').all(); }
   revoke(id:string) { this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(id); }
   editMember(id:string,patch:{enabled:boolean;photoLimit:number;writeLimit:number}) {

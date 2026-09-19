@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 import { Store, Problem, digest, type Member } from './store.ts';
 import { inputSchema, parseResult, polishBody, POLISH_BODY_LIMIT } from './contracts.ts';
+import { hashPassword, verifyPassword, timingDummy } from './passwords.ts';
 import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
 import type { Provider } from './provider.ts';
 export function createApp(store:Store,provider:Provider,version='dev') {
@@ -18,16 +19,39 @@ export function createApp(store:Store,provider:Provider,version='dev') {
  });
  app.addHook('onSend',async (_request,reply)=>{reply.header('Cache-Control','no-store');reply.header('X-Content-Type-Options','nosniff');});
  app.get('/healthz',async ()=>{store.db.prepare('SELECT 1').get();return {status:'ok',version};});
- app.get('/',async (_request,reply)=>reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>桉桉成长记</title><style>body{font:18px system-ui;max-width:600px;margin:15vh auto;padding:24px;background:#F7F8F5;color:#202923;line-height:1.8}h1{font-size:28px}</style><h1>桉桉成长记</h1><p>留住每一个值得记住的日子。</p><p>请在手机应用中记录、整理照片和使用 AI。照片与成长记录保存在你的手机，家人在应用中直接加入即可使用 AI。</p></html>'));
- app.post('/api/v1/enroll',async (req,reply)=>{
+ app.get('/',async (_request,reply)=>reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>桉桉成长记</title><style>body{font:18px system-ui;max-width:600px;margin:15vh auto;padding:24px;background:#F7F8F5;color:#202923;line-height:1.8}h1{font-size:28px}</style><h1>桉桉成长记</h1><p>留住每一个值得记住的日子。</p><p>请在手机应用中记录、整理照片和使用 AI。照片与成长记录保存在你的手机，家人用账号登录后即可使用 AI。</p></html>'));
+ app.get('/api/v1/status',async ()=>({initialized:store.initialized()}));
+ // 用户名给家人用：中文、字母、数字、下划线、连字符；密码只限长度，不搞组合规则。
+ const username=z.string().trim().regex(/^[\p{L}\p{N}_-]{2,40}$/u,'用户名需 2–40 个字符，可用中文、字母、数字、下划线或连字符');
+ const credentials=z.object({username,password:z.string().min(8).max(128),deviceName:z.string().trim().min(1).max(80)}).strict();
+ const throttle=(req:{ip:string},perIp:number,globalLimit:number)=>{
   for(const [key,value] of attempts)if(value.expires<Date.now())attempts.delete(key);
   // Per-connection-address plus global throttle; do not trust spoofable forwarded headers.
   for(const key of [req.ip,'global']) {
    const entry=attempts.get(key)??{count:0,expires:Date.now()+60000};entry.count++;attempts.set(key,entry);
-   if(entry.count>(key==='global'?60:20))throw new Problem(429,'RATE_LIMIT','尝试过多，请稍后再试。');
+   if(entry.count>(key==='global'?globalLimit:perIp))throw new Problem(429,'RATE_LIMIT','尝试过多，请稍后再试。');
   }
-  const input=z.object({name:z.string().trim().min(1).max(80),deviceName:z.string().trim().min(1).max(80)}).strict().parse(req.body);
-  return reply.code(201).send(store.enroll(input.name,input.deviceName));
+ };
+ app.post('/api/v1/setup',async (req,reply)=>{
+  throttle(req,20,60);
+  const input=credentials.parse(req.body);
+  return reply.code(201).send(store.setup(input.username,await hashPassword(input.password),input.deviceName));
+ });
+ app.post('/api/v1/login',async req=>{
+  throttle(req,10,60);
+  const input=credentials.parse(req.body);
+  const member=store.byUsername(input.username);
+  const ok=member?await verifyPassword(input.password,member.password_hash):await timingDummy(input.password);
+  if(!member||!ok)throw new Problem(401,'LOGIN_INVALID','用户名或密码不对。');
+  return store.attach(member.id,input.deviceName);
+ });
+ app.put('/api/v1/password',async req=>{
+  const member=auth(req.headers.authorization);
+  const input=z.object({current:z.string().optional(),next:z.string().min(8).max(128)}).strict().parse(req.body);
+  const full=store.fullById(member.id);
+  if(full?.password_hash&&!(input.current&&await verifyPassword(input.current,full.password_hash)))throw new Problem(401,'PASSWORD_WRONG','当前密码不对。');
+  store.setPassword(member.id,await hashPassword(input.next));
+  return {ok:true};
  });
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
  app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'high',models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
@@ -69,6 +93,16 @@ export function createApp(store:Store,provider:Provider,version='dev') {
   }
  });
  app.get('/api/v1/admin/overview',async req=>{owner(req.headers.authorization);return {members:store.members().map(m=>({...m,usage:store.usage(m.id)})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS};});
+ app.post('/api/v1/admin/members',async (req,reply)=>{
+  owner(req.headers.authorization);
+  const input=z.object({username,password:z.string().min(8).max(128)}).strict().parse(req.body);
+  return reply.code(201).send(store.createMember(input.username,await hashPassword(input.password)));
+ });
+ app.put('/api/v1/admin/members/:id/login',async req=>{
+  owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
+  const input=z.object({username,password:z.string().min(8).max(128)}).strict().parse(req.body);
+  store.setLogin(id,input.username,await hashPassword(input.password));return {ok:true};
+ });
  app.patch('/api/v1/admin/members/:id',async req=>{
   owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
   const input=z.object({enabled:z.boolean(),photoLimit:z.number().int().min(0).max(10000),writeLimit:z.number().int().min(0).max(10000)}).strict().parse(req.body);

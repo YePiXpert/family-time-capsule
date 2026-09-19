@@ -10,7 +10,15 @@ import {
   messageOf,
   useStyles,
 } from "../local/ui";
-import { api, disconnect, enroll, getToken } from "./client";
+import {
+  api,
+  changePassword,
+  disconnect,
+  getToken,
+  login,
+  serviceStatus,
+  setupService,
+} from "./client";
 import type { Member, Overview, Usage, AISettings } from "./types";
 function MemberRow({
   member,
@@ -23,13 +31,16 @@ function MemberRow({
 }) {
   const s = useStyles(),
     [photos, setPhotos] = useState(String(member.photo_limit)),
-    [writes, setWrites] = useState(String(member.write_limit));
+    [writes, setWrites] = useState(String(member.write_limit)),
+    [loginName, setLoginName] = useState(member.username ?? ""),
+    [loginPw, setLoginPw] = useState("");
   return (
     <Card>
       <Text>
         {member.name}
         {member.role === "owner" ? " · 主人" : ""}
         {member.enabled ? "" : " · 已停用"}
+        {member.username ? "" : " · 未设登录"}
       </Text>
       <Text style={s.muted}>
         今日 {member.usage.photos} 张图片 / {member.usage.writes} 次文案
@@ -63,6 +74,34 @@ function MemberRow({
           })
         }
       />
+      <Field
+        label="登录名"
+        autoCapitalize="none"
+        autoCorrect={false}
+        value={loginName}
+        onChangeText={setLoginName}
+      />
+      <Field
+        label="登录密码（至少 8 位）"
+        secureTextEntry
+        value={loginPw}
+        onChangeText={setLoginPw}
+      />
+      <Button
+        title="保存登录"
+        disabled={loginName.trim().length < 2 || loginPw.length < 8}
+        onPress={() =>
+          run(async () => {
+            await api(
+              `/admin/members/${member.id}/login`,
+              { username: loginName.trim(), password: loginPw },
+              "PUT",
+            );
+            setLoginPw("");
+            await reload();
+          })
+        }
+      />
       {member.role !== "owner" && (
         <Button
           title={member.enabled ? "停用成员" : "启用成员"}
@@ -90,18 +129,27 @@ export function AISettingsScreen() {
     [me, setMe] = useState<{ member: Member; usage: Usage } | null>(null),
     [overview, setOverview] = useState<Overview | null>(null),
     [settings, setSettings] = useState<AISettings | null>(null),
-    [name, setName] = useState(""),
+    [initialized, setInitialized] = useState<boolean | null>(null),
+    [username, setUsername] = useState(""),
+    [password, setPassword] = useState(""),
     [deviceName, setDeviceName] = useState(
       Platform.OS === "ios" ? "我的 iPhone" : "我的 Android",
     ),
+    [currentPw, setCurrentPw] = useState(""),
+    [nextPw, setNextPw] = useState(""),
+    [newUsername, setNewUsername] = useState(""),
+    [newPassword, setNewPassword] = useState(""),
+    [notice, setNotice] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const refresh = async () => {
     if (!(await getToken())) {
       setMe(null);
       setOverview(null);
+      setInitialized((await serviceStatus()).initialized);
       return;
     }
+    setInitialized(null);
     const member = await api<{ member: Member; usage: Usage }>("/me");
     setMe(member);
     if (member.member.role === "owner") {
@@ -113,6 +161,7 @@ export function AISettingsScreen() {
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await fn();
     } catch (e) {
@@ -154,16 +203,16 @@ export function AISettingsScreen() {
             额度每天 UTC 00:00 重置；生成文案使用的图片也计入分析额度。
           </Text>
           <Button
-            title="断开本机 AI 访问"
+            title="退出登录"
             disabled={busy}
             onPress={() =>
               Alert.alert(
-                "断开 AI？",
-                "本机照片与记录保留。重新加入即可再次使用。",
+                "退出登录？",
+                "只影响这台设备上的 AI 功能，本机照片与记录保留。重新登录即可再次使用。",
                 [
                   { text: "取消", style: "cancel" },
                   {
-                    text: "断开",
+                    text: "退出",
                     onPress: () => {
                       void run(async () => {
                         await disconnect();
@@ -175,13 +224,52 @@ export function AISettingsScreen() {
               )
             }
           />
+          <Text style={s.title}>修改密码</Text>
+          <Field
+            label="当前密码"
+            secureTextEntry
+            value={currentPw}
+            onChangeText={setCurrentPw}
+          />
+          <Field
+            label="新密码（至少 8 位）"
+            secureTextEntry
+            value={nextPw}
+            onChangeText={setNextPw}
+          />
+          <Button
+            title="修改密码"
+            disabled={busy || nextPw.length < 8}
+            onPress={() => {
+              void run(async () => {
+                await changePassword(currentPw, nextPw);
+                setCurrentPw("");
+                setNextPw("");
+                setNotice("密码已更新，下次登录用新密码。");
+              });
+            }}
+          />
         </>
       ) : (
         <>
+          {initialized === false && (
+            <Text style={s.muted}>
+              这台服务还没有账号：现在创建的是主人账号，只此一次；
+              之后家人用主人创建的账号登录。
+            </Text>
+          )}
           <Field
-            label="你的名字"
-            value={name}
-            onChangeText={setName}
+            label="用户名"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={username}
+            onChangeText={setUsername}
+          />
+          <Field
+            label="密码（至少 8 位）"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
           />
           <Field
             label="这台设备的名字"
@@ -189,23 +277,21 @@ export function AISettingsScreen() {
             onChangeText={setDeviceName}
           />
           <Button
-            title="加入 AI 服务"
+            title={initialized === false ? "创建主人账号" : "登录"}
             primary
-            disabled={busy || !name.trim() || !deviceName.trim()}
+            disabled={
+              busy ||
+              initialized === null ||
+              !username.trim() ||
+              password.length < 8 ||
+              !deviceName.trim()
+            }
             onPress={() => {
               void run(async () => {
-                await enroll(name, deviceName);
-                setName("");
-                await refresh();
-              });
-            }}
-          />
-          <Button
-            title="清除失效凭证"
-            disabled={busy}
-            onPress={() => {
-              void run(async () => {
-                await disconnect();
+                if (initialized === false)
+                  await setupService(username, password, deviceName);
+                else await login(username, password, deviceName);
+                setPassword("");
                 await refresh();
               });
             }}
@@ -220,6 +306,7 @@ export function AISettingsScreen() {
         }}
       />
       <ErrorText message={error} />
+      {!!notice && <Text style={s.muted}>{notice}</Text>}
       {overview && settings && (
         <>
           <Text style={s.title}>主人管理</Text>
@@ -265,6 +352,39 @@ export function AISettingsScreen() {
             onPress={() => {
               void run(async () => {
                 await api("/admin/settings", settings, "PUT");
+                await refresh();
+              });
+            }}
+          />
+          <Text style={s.title}>创建家人账号</Text>
+          <Field
+            label="用户名"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={newUsername}
+            onChangeText={setNewUsername}
+          />
+          <Field
+            label="初始密码（至少 8 位）"
+            secureTextEntry
+            value={newPassword}
+            onChangeText={setNewPassword}
+          />
+          <Button
+            title="创建账号"
+            disabled={
+              busy || newUsername.trim().length < 2 || newPassword.length < 8
+            }
+            onPress={() => {
+              void run(async () => {
+                const created = newUsername.trim();
+                await api("/admin/members", {
+                  username: created,
+                  password: newPassword,
+                });
+                setNewUsername("");
+                setNewPassword("");
+                setNotice(`已创建「${created}」，把用户名和初始密码告诉家人即可。`);
                 await refresh();
               });
             }}
