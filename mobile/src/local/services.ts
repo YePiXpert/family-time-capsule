@@ -11,10 +11,12 @@ import {
   clone,
   editEntity,
   emptyContent,
+  LETTER_FROM_LIMIT,
   monthOfItem,
   referencedMedia,
   type Library,
   type MediaKind,
+  type LocalLetter,
   type LocalMedia,
   type LocalRecord,
   type Mutable,
@@ -23,6 +25,7 @@ import {
   type Stored,
 } from "./model";
 import { deleteMediaFiles, preserveMedia } from "./files";
+import { defaultOpenAt, openLetterAt, sealLetterAt } from "./letters";
 import { applyPhotoMetadata } from "./photo-metadata";
 import type { LocalStore } from "./store";
 export const newId = () => randomUUID();
@@ -132,6 +135,53 @@ export async function addToSeries(
       ];
       t.updatedAt = now();
     });
+  });
+}
+/** 新建一封没封存的信；拆封日默认 18 岁生日（没填生日则今天起 18 年）。 */
+export async function beginLetter(store: LocalStore, from = "") {
+  return store.change((s) => {
+    const id = newId(),
+      at = now();
+    s.letters[id] = {
+      id,
+      title: "",
+      text: "",
+      from: from.trim().slice(0, LETTER_FROM_LIMIT),
+      openAt: defaultOpenAt(s.profile.birthday),
+      writtenAt: at,
+      sealed: false,
+      mediaIds: [],
+      coverId: null,
+      updatedAt: at,
+    };
+    return id;
+  });
+}
+/** 草稿信整体替换；封存后的信不能再改。 */
+export function updateLetter(s: Library, letter: LocalLetter) {
+  const existing = s.letters[letter.id];
+  if (!existing) throw new Error("这封信已删除。");
+  if (existing.sealed) throw new Error("信已封存，不能再改。");
+  s.letters[letter.id] = clone(letter);
+}
+export async function sealLetter(store: LocalStore, id: string) {
+  await store.change((s) => {
+    const letter = s.letters[id];
+    if (!letter) throw new Error("这封信已删除。");
+    s.letters[id] = sealLetterAt(letter, now());
+  });
+}
+export async function openLetter(store: LocalStore, id: string) {
+  await store.change((s) => {
+    const letter = s.letters[id];
+    if (!letter) throw new Error("这封信已删除。");
+    s.letters[id] = openLetterAt(letter, now());
+  });
+}
+/** 删信只删实体；信里的录音和记录一样，留给「清理未使用素材」回收。 */
+export async function deleteLetter(store: LocalStore, id: string) {
+  await store.change((s) => {
+    delete s.letters[id];
   });
 }
 /** 改人物名；trim 后 1-50 字，同名复用规则不适用于改名（保留身份）。 */

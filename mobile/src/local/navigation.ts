@@ -26,6 +26,8 @@ export type Routes = {
   Backup: undefined;
   Appearance: undefined;
   AISettings: undefined;
+  LetterEditor: { id: string };
+  Letter: { id: string };
 };
 export type Props<T extends keyof Routes> = NativeStackScreenProps<Routes, T>;
 export const useNav = () => useNavigation<NativeStackNavigationProp<Routes>>();

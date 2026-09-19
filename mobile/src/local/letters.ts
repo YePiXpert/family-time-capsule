@@ -76,3 +76,29 @@ export function sortLetters(
     return a.openAt.localeCompare(b.openAt) || a.id.localeCompare(b.id);
   });
 }
+
+/** 封存：正文不能是空的；标题与落款去掉首尾空白。封存后 updateLetter 会拒绝改动。 */
+export function sealLetterAt(
+  letter: Stored<LocalLetter>,
+  at: string,
+): Stored<LocalLetter> {
+  if (letter.sealed) throw new Error("这封信已经封存了。");
+  if (!letter.text.trim()) throw new Error("信还是空的，先写点什么。");
+  return {
+    ...letter,
+    title: letter.title.trim(),
+    from: letter.from.trim(),
+    sealed: true,
+    writtenAt: at,
+    updatedAt: at,
+  };
+}
+/** 拆封：只对封存的信有效；已拆的原样返回，不改拆封时间。 */
+export function openLetterAt(
+  letter: Stored<LocalLetter>,
+  at: string,
+): Stored<LocalLetter> {
+  if (!letter.sealed) throw new Error("信还没封存。");
+  if (letter.openedAt) return letter;
+  return { ...letter, openedAt: at, updatedAt: at };
+}
