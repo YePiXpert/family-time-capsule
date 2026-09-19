@@ -3,6 +3,7 @@ import { Alert, Pressable, View } from "react-native";
 import type { Svg } from "react-native-svg";
 import { randomUUID } from "expo-crypto";
 import { useLibrary, useStore } from "./context";
+import { now } from "./services";
 import {
   monthKey,
   recordsOfPerson,
@@ -254,6 +255,10 @@ export function Year({ route }: Props<"Year">) {
       name: `yearbook-${year}`,
       title: `${state.profile.name.trim() || CHILD_FALLBACK}的 ${year} 年`,
       media: state.media,
+      onBound: () =>
+        store.change((s) => {
+          s.yearBooksBoundAt = { ...s.yearBooksBoundAt, [year]: now() };
+        }),
     });
   };
   const makeYearbook = async () => {
