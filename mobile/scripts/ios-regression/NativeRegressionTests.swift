@@ -127,6 +127,12 @@ final class NativeRegressionTests: XCTestCase {
         tap("backup-export")
         // Export is complete before the OS share sheet opens; Python verifies the bytes.
         sleep(3); shot("backup-export-share-sheet")
+        // 开放归档：等系统分享面板里出现 zip 文件名；Python 再用 zipfile 校验缓存里那份。
+        app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
+        tap("archive-export")
+        let sharedArchive = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "成长记归档-")).firstMatch
+        XCTAssertTrue(sharedArchive.waitForExistence(timeout: 300), "Archive share sheet never appeared")
+        shot("archive-share-sheet"); assertNoFailure("Archive export")
     }
     func testUnreadableLibraryRecoversFromLocalBackup() throws {
         XCTAssertTrue(element("本机资料暂时无法打开").waitForExistence(timeout: 20)); shot("unreadable-library")

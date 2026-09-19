@@ -87,6 +87,18 @@ try:
     # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
     restart();tap('打开设置');tap('备份与恢复');tap('backup-export')
     time.sleep(3);adb('shell','input','keyevent','4');time.sleep(1)  # 退出系统分享面板
+    # 开放归档：真写一份 zip 出来，必须在系统分享面板里看到 zip 文件名。
+    tap_seek('archive-export')
+    deadline=time.monotonic()+300
+    while time.monotonic()<deadline:
+        tree=hierarchy()
+        broken=[n.get('text') for n in tree.iter('node') if any(w in (n.get('text') or '') for w in ('失败','不够','缺失','损坏'))]
+        assert not broken,f'Archive export reported {broken}'
+        if any(n.get('package')=='com.android.intentresolver' and (n.get('text') or '').startswith('桉桉成长记归档-') and (n.get('text') or '').endswith('.zip') for n in tree.iter('node')):
+            break
+        time.sleep(1)
+    else:raise AssertionError('Archive share sheet never appeared')
+    shot('archive-share-sheet');adb('shell','input','keyevent','4');time.sleep(2);archiveSheet=True
     restart();tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
     tap('删除记录');tap_last('删除记录')
@@ -119,7 +131,7 @@ try:
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
     assert not broken,f'Book export reported {broken}'
     find('year-yearbook');bookExport=True
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,letterSealed=letterSealed,widths=[320,390])
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')

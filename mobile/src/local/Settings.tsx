@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Switch, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -15,10 +15,16 @@ import {
   shareBackup,
 } from "./backup";
 import { collectUnusedMedia } from "./services";
+import {
+  ArchiveStopped,
+  createArchive,
+  shareArchive,
+  type ArchiveProgress,
+} from "./archive";
 import { healthFile } from "./health-file";
 import { changeAvgMs } from "./health";
 import { APP_NAME } from "./brand";
-import { referencedMedia } from "./model";
+import { referencedMedia, yearKey } from "./model";
 import {
   Button,
   Card,
@@ -389,6 +395,7 @@ export function Backup() {
           });
         }}
       />
+      <ArchiveCard busy={busy} />
       {backups.length > 0 && <Text style={s.heading}>本机保留的备份</Text>}
       {backups.map((file) => (
         <Card key={file.name}>
@@ -453,5 +460,116 @@ export function Backup() {
         </Card>
       ))}
     </Page>
+  );
+}
+
+/** 开放归档：普通文件夹压缩包，没有这个 App 也能看。进度与停止都在这张卡里，不弹窗。 */
+function ArchiveCard({ busy }: { busy: boolean }) {
+  const state = useLibrary(),
+    store = useStore(),
+    s = useStyles();
+  const [year, setYear] = useState(""),
+    [sealed, setSealed] = useState(false),
+    [progress, setProgress] = useState<ArchiveProgress | null>(null),
+    [message, setMessage] = useState(""),
+    [error, setError] = useState("");
+  const controller = useRef<AbortController | null>(null);
+  const years = [
+    ...new Set(Object.values(state.records).map((r) => yearKey(r.date))),
+  ]
+    .sort()
+    .reverse();
+  const archiving = !!progress;
+  const exportArchive = async () => {
+    const abort = new AbortController();
+    controller.current = abort;
+    setError("");
+    setMessage("");
+    setProgress({ done: 0, total: 0, bytes: 0, totalBytes: 0 });
+    try {
+      // 归档读的是只读快照，与备份一样不占写队列。
+      const { file } = await createArchive(
+        store.get(),
+        { year: year || undefined, includeSealedLetters: sealed },
+        setProgress,
+        abort.signal,
+      );
+      setProgress(null);
+      await shareArchive(file);
+      setMessage("归档已生成。请确认已保存到应用之外的位置；在电脑上解压后打开 index.html。");
+    } catch (e) {
+      if (e instanceof ArchiveStopped) setMessage(e.message);
+      else setError(messageOf(e));
+    } finally {
+      controller.current = null;
+      setProgress(null);
+    }
+  };
+  return (
+    <Card testID="archive-card">
+      <Text style={s.heading}>开放归档</Text>
+      <Text style={s.muted}>
+        导出成普通文件夹压缩包：原图、Markdown 文字与一个离线网页，没有这个
+        App 也能看。归档里的信是明文保存的。
+      </Text>
+      {years.length > 1 && (
+        <View style={s.row}>
+          <Button
+            compact
+            title="全部"
+            selected={!year}
+            disabled={archiving}
+            onPress={() => setYear("")}
+          />
+          {years.map((y) => (
+            <Button
+              key={y}
+              compact
+              title={`${y} 年`}
+              selected={year === y}
+              disabled={archiving}
+              onPress={() => setYear(year === y ? "" : y)}
+            />
+          ))}
+        </View>
+      )}
+      <View style={s.between}>
+        <Text>包含未拆封的信</Text>
+        <Switch
+          value={sealed}
+          disabled={archiving}
+          onValueChange={setSealed}
+          accessibilityLabel="包含未拆封的信"
+        />
+      </View>
+      <ErrorText message={error} />
+      {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
+      <View style={s.row}>
+        <Button
+          title={
+            progress
+              ? progress.total
+                ? `正在归档 ${progress.done}/${progress.total} 份素材`
+                : "正在准备归档…"
+              : "导出开放归档"
+          }
+          icon="download"
+          primary
+          testID="archive-export"
+          disabled={busy || archiving}
+          onPress={() => {
+            void exportArchive();
+          }}
+        />
+        {archiving && (
+          <Button
+            title="停止"
+            compact
+            testID="archive-stop"
+            onPress={() => controller.current?.abort()}
+          />
+        )}
+      </View>
+    </Card>
   );
 }
