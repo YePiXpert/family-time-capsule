@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Platform, Share } from "react-native";
+import { Alert, Platform } from "react-native";
 import {
   Button,
   Card,
@@ -12,7 +12,6 @@ import {
 } from "../local/ui";
 import { api, disconnect, enroll, getToken } from "./client";
 import type { Member, Overview, Usage, AISettings } from "./types";
-import { APP_NAME } from "../local/brand";
 function MemberRow({
   member,
   reload,
@@ -65,41 +64,23 @@ function MemberRow({
         }
       />
       {member.role !== "owner" && (
-        <>
-          <Button
-            title={member.enabled ? "停用成员" : "启用成员"}
-            onPress={() =>
-              run(async () => {
-                await api(
-                  `/admin/members/${member.id}`,
-                  {
-                    enabled: !member.enabled,
-                    photoLimit: member.photo_limit,
-                    writeLimit: member.write_limit,
-                  },
-                  "PATCH",
-                );
-                await reload();
-              })
-            }
-          />
-          {!!member.enabled && (
-            <Button
-              title="为此成员邀请另一台设备"
-              onPress={() =>
-                run(async () => {
-                  const result = await api<{ code: string }>("/admin/invites", {
-                    name: member.name,
-                    memberId: member.id,
-                  });
-                  await Share.share({
-                    message: `${APP_NAME} AI 邀请码：${result.code}\n在「我的 → AI 设置」加入。24 小时内有效，只能使用一次。`,
-                  });
-                })
-              }
-            />
-          )}
-        </>
+        <Button
+          title={member.enabled ? "停用成员" : "启用成员"}
+          onPress={() =>
+            run(async () => {
+              await api(
+                `/admin/members/${member.id}`,
+                {
+                  enabled: !member.enabled,
+                  photoLimit: member.photo_limit,
+                  writeLimit: member.write_limit,
+                },
+                "PATCH",
+              );
+              await reload();
+            })
+          }
+        />
       )}
     </Card>
   );
@@ -109,12 +90,10 @@ export function AISettingsScreen() {
     [me, setMe] = useState<{ member: Member; usage: Usage } | null>(null),
     [overview, setOverview] = useState<Overview | null>(null),
     [settings, setSettings] = useState<AISettings | null>(null),
-    [code, setCode] = useState(""),
+    [name, setName] = useState(""),
     [deviceName, setDeviceName] = useState(
       Platform.OS === "ios" ? "我的 iPhone" : "我的 Android",
     ),
-    [inviteName, setInviteName] = useState(""),
-    [inviteCode, setInviteCode] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const refresh = async () => {
@@ -180,7 +159,7 @@ export function AISettingsScreen() {
             onPress={() =>
               Alert.alert(
                 "断开 AI？",
-                "本机照片与记录保留。再次使用需要新的邀请码。",
+                "本机照片与记录保留。重新加入即可再次使用。",
                 [
                   { text: "取消", style: "cancel" },
                   {
@@ -200,12 +179,9 @@ export function AISettingsScreen() {
       ) : (
         <>
           <Field
-            label="邀请码 / 主人激活码"
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={code}
-            onChangeText={setCode}
-            secureTextEntry
+            label="你的名字"
+            value={name}
+            onChangeText={setName}
           />
           <Field
             label="这台设备的名字"
@@ -215,11 +191,11 @@ export function AISettingsScreen() {
           <Button
             title="加入 AI 服务"
             primary
-            disabled={busy || !code.trim() || !deviceName.trim()}
+            disabled={busy || !name.trim() || !deviceName.trim()}
             onPress={() => {
               void run(async () => {
-                await enroll(code, deviceName);
-                setCode("");
+                await enroll(name, deviceName);
+                setName("");
                 await refresh();
               });
             }}
@@ -247,39 +223,6 @@ export function AISettingsScreen() {
       {overview && settings && (
         <>
           <Text style={s.title}>主人管理</Text>
-          <Field
-            label="新成员名字"
-            value={inviteName}
-            onChangeText={setInviteName}
-          />
-          <Button
-            title="生成邀请码"
-            disabled={busy || !inviteName.trim()}
-            onPress={() => {
-              void run(async () => {
-                const result = await api<{ code: string }>("/admin/invites", {
-                  name: inviteName,
-                });
-                setInviteCode(result.code);
-                setInviteName("");
-                await refresh();
-              });
-            }}
-          />
-          {!!inviteCode && (
-            <Card>
-              <Text selectable>{inviteCode}</Text>
-              <Text style={s.muted}>24 小时有效，使用一次后失效。</Text>
-              <Button
-                title="分享邀请码"
-                onPress={() => {
-                  void Share.share({
-                    message: `${APP_NAME} AI 邀请码：${inviteCode}\n在「我的 → AI 设置」加入。24 小时内有效。`,
-                  }).catch((e) => setError(messageOf(e)));
-                }}
-              />
-            </Card>
-          )}
           <Text>
             全局今日：{overview.usage.photos} 张图片 · {overview.usage.writes}{" "}
             次文案 · {overview.usage.tokens} tokens

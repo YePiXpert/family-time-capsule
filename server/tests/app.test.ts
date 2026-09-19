@@ -9,21 +9,25 @@ function fixture(provider?:Provider) {
  const store=new Store(':memory:');
  let calls=0;
  const app=createApp(store,provider??(async(kind,input)=>{calls++;return {tokens:20,result:kind==='write'?{title:'公园',text:'一起散步。'}:{groups:[{photoIds:input.photos.map(p=>p.id),title:'公园',summary:'散步'}]}};}));
- const owner=store.enroll(store.ownerInvite().code,'主人手机');
- const member=store.enroll(store.invite('家人').code,'家人手机');
+ const owner=store.enroll('主人','主人手机');
+ const member=store.enroll('家人','家人手机');
  const headers=(token=member.token)=>({authorization:`Bearer ${token}`});
  const input=()=>({requestId:randomUUID(),model:'deepseek-flash',photos:[{id:'a',date:'2020-01-01T12:00:00',image}]});
  return {store,app,owner,member,headers,input,calls:()=>calls};
 }
-test('invites are single-use, expiring and device-specific',async()=>{
+test('enrollment is open; only the first member of an empty server becomes the owner',async()=>{
  const f=fixture();
- const invite=f.store.invite('第二位');
- let response=await f.app.inject({method:'POST',url:'/api/v1/enroll',payload:{code:invite.code,deviceName:'手机'}});
- assert.equal(response.statusCode,201);
- response=await f.app.inject({method:'POST',url:'/api/v1/enroll',payload:{code:invite.code,deviceName:'另一台'}});
- assert.equal(response.statusCode,401);
- const expired=f.store.invite('过期');f.store.db.prepare('UPDATE invites SET expires_at=0 WHERE used=0').run();
- assert.throws(()=>f.store.enroll(expired.code,'手机'));
+ const response=await f.app.inject({method:'POST',url:'/api/v1/enroll',payload:{name:'外婆',deviceName:'手机'}});
+ assert.equal(response.statusCode,201);assert.equal(response.json().member.role,'member');
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/enroll',payload:{deviceName:'手机'}})).statusCode,400);
+ const fresh=new Store(':memory:');
+ assert.equal(fresh.enroll('第一位','手机').member.role,'owner');
+ assert.throws(()=>fresh.promote('不存在'));
+ fresh.close();
+ // 邀请接口已随邀请码一起移除。
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/invites',headers:f.headers(f.owner.token),payload:{name:'x'}})).statusCode,404);
+ f.store.promote('外婆');
+ assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:{authorization:`Bearer ${response.json().token}`}})).statusCode,200);
  f.store.revoke(f.member.member.deviceId!);
  assert.equal((await f.app.inject({url:'/api/v1/me',headers:f.headers()})).statusCode,401);
  await f.app.close();f.store.close();
