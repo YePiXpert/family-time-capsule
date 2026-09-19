@@ -72,6 +72,7 @@ const dark: typeof light = {
   glow3: "#2E2A1E",
 };
 // 全屏剧场（重放）固定为暖黑语义，不随浅色/深色切换；页面不得另写 hex。
+// 剧场里的强调色固定取浅色色板的赤陶，避免同一剧场深浅色下两种主按钮色。
 export const overlay = {
   bg: "#14100C",
   bgSoft: "rgba(20,16,12,0.95)",
@@ -80,6 +81,8 @@ export const overlay = {
   line: "rgba(255,255,255,0.12)",
   card: "rgba(255,255,255,0.08)",
   textScrim: "rgba(20,16,12,0.72)",
+  accent: light.accent,
+  onAccent: light.onAccent,
 };
 // 导出图片（纪念卡/年册）固定纸面浅色，与浅色色板单源。
 export const paperPalette = {

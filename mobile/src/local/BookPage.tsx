@@ -11,7 +11,7 @@ import Svg, {
 } from "react-native-svg";
 import type { Svg as SvgRef } from "react-native-svg";
 import { BLEED_PT, SHEET_PT, TRIM_PT, type BookPage as Page } from "./book";
-import { paperPalette } from "./ui";
+import { paperPalette, serif } from "./ui";
 
 const {
   ink: INK,
@@ -20,7 +20,7 @@ const {
   line: LINE,
   paper: PAPER,
 } = paperPalette;
-const SERIF = "Georgia, serif";
+const SERIF = serif;
 const MIDDLE = BLEED_PT + TRIM_PT / 2;
 
 function Ornament({ y }: { y: number }) {

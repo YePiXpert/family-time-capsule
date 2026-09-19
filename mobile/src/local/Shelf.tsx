@@ -52,15 +52,18 @@ import {
 import { JournalIcon } from "../components/JournalIcon";
 import { Photo } from "./Media";
 
-/** 双线印章圆环：扉页名字首字与年度册封面共用。 */
+/** 双线印章圆环：扉页名字首字与年度册封面共用；固定配色场景（重放剧场）用 color 覆盖。 */
 export function Stamp({
   size,
+  color,
   children,
 }: {
   size: number;
+  color?: string;
   children: ReactNode;
 }) {
   const { colors } = useTheme();
+  const ring = color ?? colors.accent;
   return (
     <View
       style={{
@@ -68,7 +71,7 @@ export function Stamp({
         height: size,
         borderRadius: size / 2,
         borderWidth: 2,
-        borderColor: colors.accent,
+        borderColor: ring,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -83,7 +86,7 @@ export function Stamp({
           bottom: 5,
           borderRadius: size / 2 - 5,
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.accent,
+          borderColor: ring,
           opacity: 0.5,
         }}
       />

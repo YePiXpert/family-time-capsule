@@ -46,6 +46,7 @@ import {
   Text,
   messageOf,
   paletteOf,
+  serif,
   useStyles,
   useTheme,
 } from "./ui";
@@ -249,6 +250,9 @@ function Root() {
           screenOptions={{
             headerBackTitle: "返回",
             headerShadowVisible: Platform.OS !== "ios",
+            // 各页面自带衬线大标题，页头标题只在页面没有自带标题时出现（搜索、查看素材），
+            // 同样走衬线，与统一规则一致。
+            headerTitleStyle: { fontFamily: serif, fontWeight: "600" },
             // 页头取纸色与页面底色连成一片：iOS 由导航主题 colors.card（已设为 paper）
             // 直接上色并去掉分隔线，Android 自绘纸面 + 细描边。
             // 注：react-native-screens 的 buildAppearance 只有不透明／全透明两条分支，
@@ -260,7 +264,7 @@ function Root() {
                     <View
                       style={{
                         flex: 1,
-                        backgroundColor: theme.colors.glass,
+                        backgroundColor: theme.colors.paper,
                         borderBottomWidth: StyleSheet.hairlineWidth,
                         borderBottomColor: theme.colors.glassLine,
                       }}
@@ -293,7 +297,7 @@ function Root() {
           <Stack.Screen
             name="Recap"
             component={RecapScreen}
-            options={{ title: "年度回顾" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Firsts"
@@ -303,12 +307,12 @@ function Root() {
           <Stack.Screen
             name="Footprint"
             component={Footprint}
-            options={{ title: "足迹" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="People"
             component={People}
-            options={{ title: "整理人物" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Title"
@@ -318,37 +322,37 @@ function Root() {
           <Stack.Screen
             name="Settings"
             component={Settings}
-            options={{ title: "我的" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Editor"
             component={Editor}
-            options={{ title: "记一刻" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Record"
             component={RecordScreen}
-            options={{ title: "这一刻" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Album"
             component={AlbumScreen}
-            options={{ title: "相册" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Series"
             component={SeriesScreen}
-            options={{ title: "时光系列" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Picker"
             component={Picker}
-            options={{ title: "选择记录" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="AlbumDetails"
             component={AlbumDetails}
-            options={{ title: "新建相册" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Media"
@@ -358,27 +362,27 @@ function Root() {
           <Stack.Screen
             name="Profile"
             component={Profile}
-            options={{ title: "宝宝资料" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Storage"
             component={Storage}
-            options={{ title: "本机存储" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Backup"
             component={Backup}
-            options={{ title: "备份与恢复" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="AISettings"
             component={AISettingsScreen}
-            options={{ title: "AI 设置" }}
+            options={{ title: "" }}
           />
           <Stack.Screen
             name="Appearance"
             component={Appearance}
-            options={{ title: "外观设置" }}
+            options={{ title: "" }}
           />
         </Stack.Navigator>
       </NavigationContainer>

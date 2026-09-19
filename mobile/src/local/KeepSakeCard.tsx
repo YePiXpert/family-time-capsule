@@ -15,7 +15,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import type { LocalMedia, LocalRecord } from "./model";
 import { mediaUri } from "./files";
 import { CHILD_FALLBACK } from "./brand";
-import { dateLabel, paperPalette } from "./ui";
+import { dateLabel, paperPalette, serif } from "./ui";
 import {
   CARD_WIDTH,
   SERIES_STRIP_MAX,
@@ -148,7 +148,7 @@ export const KeepSakeCard = forwardRef<
           x={CARD_WIDTH / 2}
           y={line.y + 36}
           fontSize={40}
-          fontFamily="Georgia, serif"
+          fontFamily={serif}
           fontWeight="600"
           letterSpacing={1}
           fill={INK}
@@ -241,7 +241,7 @@ export const SeriesStrip = forwardRef<
         x={CARD_WIDTH / 2}
         y={layout.titleY}
         fontSize={36}
-        fontFamily="Georgia, serif"
+        fontFamily={serif}
         fontWeight="600"
         letterSpacing={1}
         fill={INK}
