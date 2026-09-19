@@ -102,7 +102,7 @@ try:
     restart();tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
     tap('删除记录');tap_last('删除记录')
-    restart();tap('打开设置');tap('备份与恢复');tap('恢复这份备份');tap('恢复并替换')
+    restart();tap('打开设置');tap('备份与恢复');tap_seek('恢复这份备份');tap('恢复并替换')
     find('恢复完成。')
     restart();tap(f'volume-{month}')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'))
