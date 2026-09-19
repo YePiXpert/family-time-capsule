@@ -64,3 +64,7 @@ __pycache__/
 *.zip
 /pnpm-lock.yaml
 /pnpm-workspace.yaml
+
+# 本地 AI 会话目录（HANDOFF：不要提交）
+/.zcode/
+/.commandcode/
