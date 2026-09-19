@@ -10,6 +10,7 @@ import type { Props } from "./navigation";
 import {
   Button,
   Card,
+  DateStrip,
   ErrorText,
   Page,
   Text,
@@ -139,20 +140,12 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   };
   return (
     <Page>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <View
-          style={{
-            width: 4,
-            height: 16,
-            borderRadius: 2,
-            backgroundColor: colors.accent,
-          }}
-        />
+      <DateStrip>
         <Text style={[s.muted, { color: colors.accent, fontWeight: "600" }]}>
           {dateLabel(record.date)}
           {record.first ? " · 第一次" : ""}
         </Text>
-      </View>
+      </DateStrip>
       {(record.personIds?.length ?? 0) > 0 && (
         <View style={s.row}>
           {record.personIds!

@@ -20,7 +20,6 @@ export const mediaFile = (m: LocalMedia) => new File(mediaDirectory, m.file);
 export const mediaUri = (m: LocalMedia) => mediaFile(m).uri;
 export const thumbFile = (m: LocalMedia) =>
   m.thumb ? new File(mediaDirectory, m.thumb) : null;
-export const thumbUri = (m: LocalMedia) => thumbFile(m)?.uri ?? mediaUri(m);
 /** 删除素材原件与其持久缩略图；缩略图缺失不报错。 */
 export function deleteMediaFiles(m: LocalMedia): void {
   const file = mediaFile(m);

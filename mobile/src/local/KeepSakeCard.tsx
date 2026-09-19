@@ -15,7 +15,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import type { LocalMedia, LocalRecord } from "./model";
 import { mediaUri } from "./files";
 import { CHILD_FALLBACK } from "./brand";
-import { dateLabel, paperPalette, serif } from "./ui";
+import { dateLabel, monthLabel, paperPalette, serif } from "./ui";
 import {
   CARD_WIDTH,
   SERIES_STRIP_MAX,
@@ -315,15 +315,10 @@ function SeriesCell({
         fill={MUTED}
         textAnchor="middle"
       >
-        {monthLabelOf(cell.month)}
+        {monthLabel(cell.month)}
       </SvgText>
     </>
   );
-}
-
-function monthLabelOf(key: string) {
-  const [y, m] = key.split("-");
-  return `${y}年${Number(m)}月`;
 }
 
 /** 把渲染好的卡片导出为 PNG 文件并呼出系统分享面板。 */

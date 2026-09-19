@@ -18,6 +18,18 @@ function hasAV(
   });
 }
 
+/** 单条记录的检索谓词：标题/正文/地点不区分大小写包含；空关键词一律命中。
+ * 全库搜索与月册内搜索共用；月册走这里，不带全库的 100 条截断。 */
+export function recordMatches(
+  record: Stored<LocalRecord>,
+  query: string,
+): boolean {
+  if (!query) return true;
+  return `${record.title}\n${record.text}\n${record.location}`
+    .toLowerCase()
+    .includes(query.toLowerCase());
+}
+
 /** 全库搜索：标题/正文/地点不区分大小写包含 + 可选筛选，按日期倒序，最多 100 条。 */
 export function searchRecords(
   records: Stored<LocalRecord>[],
@@ -35,10 +47,7 @@ export function searchRecords(
         return false;
       if (media === "av" && !hasAV(r, kinds)) return false;
       if (media === "none" && r.mediaIds.length) return false;
-      if (!needle) return true;
-      return `${r.title}\n${r.text}\n${r.location}`
-        .toLowerCase()
-        .includes(needle);
+      return recordMatches(r, needle);
     })
     .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
     .slice(0, 100);
