@@ -59,7 +59,7 @@ function library(): Library {
     mediaIds: ["a1"],
     personIds: ["mom"],
   });
-  record(s, "r3", { date: "2025-01-15T10:00:00.000", text: "去年的事。" });
+  record(s, "r3", { date: "2025-01-15T10:00:00.000", text: "去年的事。", quote: true });
   s.albums.al = {
     id: "al",
     name: "我们的日子",
@@ -178,6 +178,7 @@ describe("planArchive", () => {
     const body = textOf(planArchive(library(), { now: NOW }).entries, "第一次挥手/正文.md");
     expect(body).toContain("---\n日期: 2026-09-15\n标题: 第一次挥手\n地点: 家里\n人物: 妈妈, 爸爸\n第一次: 是\n---\n");
     expect(body).not.toContain("她说的话");
+    expect(textOf(planArchive(library(), { now: NOW }).entries, "去年的事。/正文.md")).toContain("她说的话: 是");
     expect(body).toContain("# 第一次挥手\n\n今天她朝我们挥手了。\n第二段。\n");
     expect(body).toContain("![照片1.jpg](<照片1.jpg>)");
     expect(body).toContain("[视频1.mp4](<视频1.mp4>)");

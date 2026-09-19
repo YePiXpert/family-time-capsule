@@ -242,7 +242,7 @@ export function planArchive(
       text: r.text,
       location: r.location,
       first: r.first,
-      quote: (r as { quote?: boolean }).quote === true,
+      quote: r.quote === true,
       persons: (r.personIds ?? []).map(personName).filter(Boolean),
       folder,
       media: placeMedia(state, r.mediaIds, folder),

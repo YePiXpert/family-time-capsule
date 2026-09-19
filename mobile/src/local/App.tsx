@@ -67,6 +67,7 @@ import { RecordScreen } from "./Record";
 import { MediaScreen } from "./Media";
 import { LetterEditor } from "./LetterEditor";
 import { LetterScreen } from "./LetterScreen";
+import { Quotes } from "./Quotes";
 import { receiveShares } from "./services";
 import { healthFile } from "./health-file";
 const Stack = createNativeStackNavigator<Routes>();
@@ -394,6 +395,11 @@ function Root() {
           <Stack.Screen
             name="Letter"
             component={LetterScreen}
+            options={{ title: "" }}
+          />
+          <Stack.Screen
+            name="Quotes"
+            component={Quotes}
             options={{ title: "" }}
           />
         </Stack.Navigator>
