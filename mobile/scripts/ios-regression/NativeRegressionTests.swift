@@ -87,7 +87,7 @@ final class NativeRegressionTests: XCTestCase {
         letterVolume.tap()
         XCTAssertTrue(element("letter-open-early").waitForExistence(timeout: 20)); shot("letter-after-relaunch")
         tap("letter-open-early"); tap("拆开")
-        wait("Letter body did not appear") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
+        wait("Letter body did not appear") { self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
         shot("letter-opened")
         app.terminate(); app.launch(); tap("open-settings"); tap("AI 设置")
         XCTAssertTrue(element("ai-join").waitForExistence(timeout: 20)); shot("ai-settings")

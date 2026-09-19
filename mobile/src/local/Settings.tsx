@@ -395,7 +395,6 @@ export function Backup() {
           });
         }}
       />
-      <ArchiveCard busy={busy} />
       {backups.length > 0 && <Text style={s.heading}>本机保留的备份</Text>}
       {backups.map((file) => (
         <Card key={file.name}>
@@ -459,6 +458,7 @@ export function Backup() {
           />
         </Card>
       ))}
+      <ArchiveCard busy={busy} />
     </Page>
   );
 }
