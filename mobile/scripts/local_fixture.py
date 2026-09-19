@@ -103,6 +103,10 @@ def seed(container: Path, database: Path, records: int = 122):
     s['media']['photo'] = dict(id='photo', file='fixture.png', name='Synthetic colors.png', kind='image', bytes=len(photo), sha256=hashlib.sha256(photo).hexdigest())
     s['records']['fixture'] = record('fixture', 'First little wave', media=['photo'])
     s['records']['earlier'] = record('earlier', 'Summer day', '2026-08-15T10:00:00.000Z')
+    # 一封封存到 18 岁生日的信：iOS 回归打开就能看到信封；备份基线也带着它。
+    s['letters']['letter'] = {'id': 'letter', 'title': 'Seeded letter', 'text': 'Kept until you are eighteen.', 'from': '妈妈',
+                              'openAt': '2042-06-15', 'writtenAt': '2026-09-15T10:00:00.000Z', 'sealed': True,
+                              'mediaIds': [], 'coverId': None, 'updatedAt': '2026-09-15T10:00:00.000Z'}
     bulk = max(0, records - 2); width = max(3, len(str(max(0, bulk - 1))))
     for i in range(bulk):
         identifier = f'older-{i:0{width}d}'; s['records'][identifier] = record(identifier, f'Old memory {i:0{width}d}', '2025-01-15T10:00:00.000Z')

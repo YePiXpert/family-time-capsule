@@ -47,6 +47,7 @@ def main():
         report['yearbookPdf'] = True
         state = read_state(database)
         assert state['records'] == baseline['records'], 'Full restore did not replace records'
+        assert state['letters'] == baseline['letters'], 'Sealed letter did not survive the restore'
         assert not state['albums'] and not state['drafts'], 'Restore left behind post-backup content'
         backups = list((container/'Documents'/'anan-v1'/'backups').glob('anan-*.xmb')); assert len(backups) >= 2
         manifests=[read_backup(backup) for backup in backups]

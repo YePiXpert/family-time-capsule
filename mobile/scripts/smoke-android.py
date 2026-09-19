@@ -46,6 +46,14 @@ def tap_last(label):
         time.sleep(1)
     if node is None:raise AssertionError(f'Missing {label}')
     nums=list(map(int,re.findall(r'\d+',node.attrib['bounds'])));x=(nums[0]+nums[2])//2;y=(nums[1]+nums[3])//2;adb('shell','input','tap',str(x),str(y));time.sleep(1)
+def tap_seek(label,tries=6):
+    # 书架与长表单里目标可能在首屏之外：uiautomator 只 dump 看得见的节点，找不到就向下滑再找。
+    for _ in range(tries):
+        for node in hierarchy().iter('node'):
+            if matches(node,label):
+                nums=list(map(int,re.findall(r'\d+',node.attrib['bounds'])));x=(nums[0]+nums[2])//2;y=(nums[1]+nums[3])//2;adb('shell','input','tap',str(x),str(y));time.sleep(1);return node
+        adb('shell','input','swipe','200','650','200','250','300');time.sleep(1)
+    raise AssertionError(f'Missing {label}')
 def shot(name):
     (args.output/f'{name}.png').write_bytes(subprocess.check_output(['adb','exec-out','screencap','-p']))
     (args.output/f'{name}.xml').write_text(ET.tostring(hierarchy(),encoding='unicode'))
@@ -67,6 +75,12 @@ try:
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'));shot('selection')
     tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')
     restart();tap('Our days');find('album-reading')
+    # 时间胶囊：写一封信 → 封存 → 重启后书架仍在 → 打开是「还没到日子」的信封 → 提前拆封能读到正文。
+    restart();tap_seek('letter-new');tap('letter-title');write('Letter for later');adb('shell','input','keyevent','4')
+    tap('letter-text');write('Words kept for the future.');adb('shell','input','keyevent','4')
+    tap_seek('letter-seal');tap_last('封存');find('还没到日子');find('letter-open-early');shot('letter-sealed')
+    restart();tap_seek('Letter for later');find('还没到日子')
+    tap('letter-open-early');tap_last('拆开');find('Words kept for the future.');shot('letter-opened');letterSealed=True
     restart();adb('shell','wm','size','320x720');shot('home-320')
     tap('打开设置');tap('AI 设置');find('ai-join');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')
@@ -105,7 +119,7 @@ try:
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
     assert not broken,f'Book export reported {broken}'
     find('year-yearbook');bookExport=True
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,widths=[320,390])
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,letterSealed=letterSealed,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')

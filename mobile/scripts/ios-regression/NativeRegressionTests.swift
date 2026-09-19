@@ -75,6 +75,20 @@ final class NativeRegressionTests: XCTestCase {
         for _ in 0..<12 { if albumCard.isHittable { break }; app.swipeUp() }
         albumCard.tap()
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-after-relaunch")
+        // 时间胶囊：fixture 里已有一封封存的信；再写一封并封存，重启后仍在书架，打开是「还没到日子」的信封，提前拆封能读到正文。
+        app.terminate(); app.launch()
+        tap("letter-new"); type("Letter for later", "letter-title"); type("Words kept for the future.", "letter-text")
+        tap("letter-seal"); tap("封存")
+        XCTAssertTrue(element("letter-open-early").waitForExistence(timeout: 20)); shot("letter-sealed")
+        app.terminate(); app.launch()
+        let letterVolume = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Letter for later")).firstMatch
+        XCTAssertTrue(letterVolume.waitForExistence(timeout: 20), "Missing letter volume")
+        for _ in 0..<12 { if letterVolume.isHittable { break }; app.swipeUp() }
+        letterVolume.tap()
+        XCTAssertTrue(element("letter-open-early").waitForExistence(timeout: 20)); shot("letter-after-relaunch")
+        tap("letter-open-early"); tap("拆开")
+        wait("Letter body did not appear") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
+        shot("letter-opened")
         app.terminate(); app.launch(); tap("open-settings"); tap("AI 设置")
         XCTAssertTrue(element("ai-join").waitForExistence(timeout: 20)); shot("ai-settings")
         app.terminate(); app.launch()
