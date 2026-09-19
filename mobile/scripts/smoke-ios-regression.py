@@ -9,7 +9,7 @@ import plistlib
 import re
 import subprocess
 import time
-from ios_simulator import boot_simulator, cleanup_simulator
+from ios_simulator import boot_simulator, cleanup_simulator, launch_simulator_app
 from local_fixture import break_state, broken_root, read_backup, seed, read_state
 
 
@@ -30,7 +30,7 @@ def main():
     udid = run('xcrun','simctl','create','Anan offline regression','com.apple.CoreSimulator.SimDeviceType.iPhone-16e',runtime['identifier'])
     report = dict(gitSha=os.environ.get('SOURCE_SHA'), buildNumber=info['CFBundleVersion'], success=False)
     try:
-        boot_simulator(udid, out); run('xcrun','simctl','install',udid,str(args.app.resolve())); run('xcrun','simctl','privacy',udid,'grant','microphone',bundle); run('xcrun','simctl','launch',udid,bundle); time.sleep(12)
+        boot_simulator(udid, out); run('xcrun','simctl','install',udid,str(args.app.resolve())); run('xcrun','simctl','privacy',udid,'grant','microphone',bundle); launch_simulator_app(udid, bundle, out, 'regression-fresh'); time.sleep(12)
         container = Path(run('xcrun','simctl','get_app_container',udid,bundle,'data')); database = container / 'Documents' / 'SQLite' / 'anan-local-v1.sqlite'
         run('xcrun','simctl','terminate',udid,bundle); baseline = seed(container, database)
         xctest = next(args.runner_build.resolve().glob('Build/Products/*.xctestrun'))
@@ -38,6 +38,13 @@ def main():
         result = subprocess.run(command, capture_output=True, text=True, timeout=900); (out/'xctest.log').write_text(result.stdout + result.stderr)
         subprocess.run(['xcrun','xcresulttool','export','attachments','--path',str(out/'local.xcresult'),'--output-path',str(out/'screenshots')],capture_output=True)
         if result.returncode: print(result.stdout[-12000:] + result.stderr[-12000:]); raise AssertionError('Native local flow failed')
+        # 系统分享结果还要对应一份完整的多页 PDF，不能只靠界面没有红字。
+        books = list((container/'Library'/'Caches').rglob('yearbook-2026.pdf'))
+        assert len(books) == 1, 'Bound PDF was not retained in the app cache'
+        pdf = books[0].read_bytes()
+        assert pdf.startswith(b'%PDF-') and pdf.rstrip().endswith(b'%%EOF'), 'Bound PDF is incomplete'
+        assert len(re.findall(rb'/Type\s*/Page\b', pdf)) >= 2, 'Bound PDF has no real pagination'
+        report['yearbookPdf'] = True
         state = read_state(database)
         assert state['records'] == baseline['records'], 'Full restore did not replace records'
         assert not state['albums'] and not state['drafts'], 'Restore left behind post-backup content'

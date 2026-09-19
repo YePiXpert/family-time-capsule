@@ -100,9 +100,12 @@ final class NativeRegressionTests: XCTestCase {
         // 先逐页预览：预览能翻页，就说明版面真的排出来了。
         tap("book-preview-next"); shot("yearbook-preview")
         tap("book-preview-bind")
-        XCTAssertTrue(element("year-book-cancel").waitForExistence(timeout: 30), "Binding never started")
-        shot("yearbook-binding")
-        sleep(90); shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
+        // 等最终文件出现，快速完成也算成功，不能依赖短暂的进度按钮。
+        let sharedBook = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "yearbook-2026")
+        ).firstMatch
+        XCTAssertTrue(sharedBook.waitForExistence(timeout: 300), "Book PDF share sheet never appeared")
+        shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
         app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
