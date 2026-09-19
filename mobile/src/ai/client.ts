@@ -64,7 +64,17 @@ export async function api<T>(
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
     });
-    const value = await response.json();
+    const text = await response.text();
+    let value: { code?: unknown; message?: unknown };
+    try {
+      value = text ? JSON.parse(text) : {};
+    } catch {
+      // 网关塞来 HTML 错误页或空响应体时，别把解析失败谎报成网络中断。
+      throw new AIError(
+        response.ok ? "INVALID_RESULT" : "SERVER_ERROR",
+        response.ok ? "AI 服务返回了无法解析的内容。" : "AI 服务暂时不可用。",
+      );
+    }
     if (!response.ok)
       throw new AIError(
         typeof value.code === "string" ? value.code : "SERVER_ERROR",
@@ -117,6 +127,6 @@ export const login = (
 export const changePassword = (current: string, next: string) =>
   api(
     "/password",
-    { current: current.trim() || undefined, next },
+    { current: current || undefined, next },
     "PUT",
   );

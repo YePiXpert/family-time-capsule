@@ -11,6 +11,7 @@ import {
   useStyles,
 } from "../local/ui";
 import {
+  AIError,
   api,
   changePassword,
   disconnect,
@@ -150,7 +151,19 @@ export function AISettingsScreen() {
       return;
     }
     setInitialized(null);
-    const member = await api<{ member: Member; usage: Usage }>("/me");
+    let member: { member: Member; usage: Usage };
+    try {
+      member = await api<{ member: Member; usage: Usage }>("/me");
+    } catch (e) {
+      if (!(e instanceof AIError && e.code === "AUTH_REQUIRED")) throw e;
+      // 令牌已被服务端作废（重置或撤销）：清掉它并回到登录表单，
+      // 否则按钮永远禁用，用户被困在死胡同；网络故障仍照常报错。
+      await disconnect();
+      setMe(null);
+      setOverview(null);
+      setInitialized((await serviceStatus()).initialized);
+      return;
+    }
     setMe(member);
     if (member.member.role === "owner") {
       const data = await api<Overview>("/admin/overview");
