@@ -47,7 +47,7 @@ npm run lint
 
 只从 main 构建。`ci.yml` 检查本机存储与备份测试、类型、代码规范和移动端打包；`mobile-build.yml` 检查 Android／iOS 原生流程并生成 APK 与未签名设备 IPA。IPA 需要持有者自行签名安装。
 
-当前本机版：Build 67（AI 改为账号登录）。两个包必须来自同一 main 提交。设计规则见 [DESIGN.md](DESIGN.md)。
+当前本机版：Build 68（传家 · 上：时间胶囊信、开放归档、她说的话、装订提醒）。两个包必须来自同一 main 提交。设计规则见 [DESIGN.md](DESIGN.md)。
 
 ## 照片浏览
 
