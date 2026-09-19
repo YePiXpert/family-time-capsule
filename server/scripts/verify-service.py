@@ -1,4 +1,4 @@
-"""Exercise a running service with synthetic media; never print activation codes or tokens."""
+"""Exercise a running service with synthetic media; never print device tokens."""
 import argparse,base64,json,subprocess,time,urllib.request,urllib.error,uuid
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');args=p.parse_args()
@@ -17,14 +17,15 @@ for attempt in range(15):
   if attempt==14: raise
   time.sleep(1)
 print('health ready');assert call('/api/v1/me')[0]==401
-code=json.loads(subprocess.check_output(['docker','exec',args.container,'node','src/manage.ts','owner']))['code']
-status,owner=call('/api/v1/enroll',{'code':code,'deviceName':'deployment-verification'});assert status==201
+status,owner=call('/api/v1/enroll',{'name':'deployment-owner','deviceName':'deployment-verification'});assert status==201
 token=owner['token']
+if owner['member']['role']!='owner':
+ subprocess.run(['docker','exec',args.container,'node','src/manage.ts','owner','deployment-owner'],check=True)
+ me=call('/api/v1/me',token=token);assert me[0]==200 and me[1]['member']['role']=='owner'
 status,config=call('/api/v1/ai/config',token=token);assert status==200
 assert config['defaultModel']=='deepseek-flash' and config['reasoningEffort']=='high'
 assert config['enabledModels']==['deepseek-flash']
-status,invitation=call('/api/v1/admin/invites',{'name':'verification-member'},token);assert status==200
-status,member=call('/api/v1/enroll',{'code':invitation['code'],'deviceName':'synthetic-test'});assert status==201
+status,member=call('/api/v1/enroll',{'name':'verification-member','deviceName':'synthetic-test'});assert status==201
 assert call('/api/v1/admin/overview',token=member['token'])[0]==403
 image='data:image/jpeg;base64,'+base64.b64encode((Path(__file__).parent.parent/'tests/fixtures/shapes.jpg').read_bytes()).decode()
 for model in ['deepseek-flash']:
