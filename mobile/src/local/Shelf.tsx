@@ -9,7 +9,13 @@ import Animated, {
 } from "react-native-reanimated";
 import { useLibrary, useStore } from "./context";
 import { CaptureFab } from "./CaptureFab";
-import { beginDraft, beginSelection, beginSeries } from "./services";
+import {
+  beginDraft,
+  beginLetter,
+  beginSelection,
+  beginSeries,
+} from "./services";
+import { letterCaption, letterState, sortLetters } from "./letters";
 import {
   monthIndex,
   monthKey,
@@ -231,6 +237,7 @@ export function Shelf() {
     series: seriesMap,
     media: mediaMap,
     drafts: draftMap,
+    letters: letterMap,
   } = state;
   const records = useMemo(
     () => sortedRecords({ records: recordMap }),
@@ -277,6 +284,10 @@ export function Shelf() {
         b.updatedAt.localeCompare(a.updatedAt),
       ),
     [draftMap],
+  );
+  const letters = useMemo(
+    () => sortLetters(Object.values(letterMap), new Date()),
+    [letterMap],
   );
   const latestDraft = drafts[0];
   const nudge = nudgeOf(
@@ -646,6 +657,43 @@ export function Shelf() {
               onPress={() => {
                 void beginSelection(store)
                   .then((sessionId) => nav.navigate("Picker", { sessionId }))
+                  .catch((e) => setError(messageOf(e)));
+              }}
+            />
+          </View>
+        </View>
+        <View style={{ gap: 16, marginTop: 8 }}>
+          <Text style={[s.muted, { fontFamily: serif }]}>时间胶囊</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+            {letters.map((letter, i) => (
+              <Volume
+                key={letter.id}
+                title={letter.title || "一封信"}
+                caption={letterCaption(letter, today)}
+                stamp={letter.from.trim().charAt(0) || "信"}
+                testID={`letter-${letter.id}`}
+                width={volumeWidth}
+                index={i}
+                onPress={() =>
+                  nav.navigate(
+                    letterState(letter, today) === "draft"
+                      ? "LetterEditor"
+                      : "Letter",
+                    { id: letter.id },
+                  )
+                }
+              />
+            ))}
+            <Volume
+              title="写一封信"
+              caption="写给多年后的她"
+              fallbackIcon="plus"
+              testID="letter-new"
+              width={volumeWidth}
+              index={letters.length}
+              onPress={() => {
+                void beginLetter(store)
+                  .then((id) => nav.navigate("LetterEditor", { id }))
                   .catch((e) => setError(messageOf(e)));
               }}
             />

@@ -4,6 +4,8 @@ import {
   letterCaption,
   letterState,
   openAtLabel,
+  openLetterAt,
+  sealLetterAt,
   sortLetters,
 } from "../src/local/letters";
 import { nthBirthday, toDayKey } from "../src/local/dates";
@@ -149,5 +151,33 @@ describe("letters in the library", () => {
     normalizeLibrary(s);
     expect(s.letters).toEqual({});
     validateLibrary(s);
+  });
+});
+
+describe("seal and open transitions", () => {
+  it("seals a written draft, trimming title and signature", () => {
+    const sealed = sealLetterAt(
+      letter({ sealed: false, title: " 给你 ", from: " 爸爸 " }),
+      "2026-09-19T12:00:00.000Z",
+    );
+    expect(sealed).toMatchObject({
+      sealed: true,
+      title: "给你",
+      from: "爸爸",
+      writtenAt: "2026-09-19T12:00:00.000Z",
+      updatedAt: "2026-09-19T12:00:00.000Z",
+    });
+  });
+  it("refuses to seal an empty letter or one already sealed", () => {
+    expect(() => sealLetterAt(letter({ sealed: false, text: "  " }), "x")).toThrow(
+      "信还是空的",
+    );
+    expect(() => sealLetterAt(letter(), "x")).toThrow("已经封存");
+  });
+  it("opens a sealed letter once and keeps the first opening time", () => {
+    const opened = openLetterAt(letter(), "2042-06-15T08:00:00.000Z");
+    expect(opened.openedAt).toBe("2042-06-15T08:00:00.000Z");
+    expect(openLetterAt(opened, "2043-01-01T00:00:00.000Z")).toBe(opened);
+    expect(() => openLetterAt(letter({ sealed: false }), "x")).toThrow("还没封存");
   });
 });
