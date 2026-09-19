@@ -38,6 +38,23 @@ export function ageLine(birthday: string, today = new Date()): string | null {
   return age ? `${age} · ${dayText}` : dayText;
 }
 
+/** 第 n 个生日的本地日历日 "YYYY-MM-DD"；2 月 29 日出生的退到 2 月 28。无效生日返回 null。 */
+export function nthBirthday(birthday: string, n: number): string | null {
+  const born = parseBirthday(birthday);
+  if (!born || !Number.isInteger(n) || n < 0) return null;
+  const year = born.getFullYear() + n;
+  const candidate = new Date(year, born.getMonth(), born.getDate());
+  if (candidate.getMonth() !== born.getMonth())
+    candidate.setDate(candidate.getDate() - 1);
+  return toDayKey(candidate);
+}
+
+/** 本地日历日 "YYYY-MM-DD"。 */
+export function toDayKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export type Milestone = { kind: "birthday" | "hundred" | "anniversary"; years?: number };
 
 /** 当天命中的纪念时刻：每年生日（含周岁）、出生后第 100 天。 */
