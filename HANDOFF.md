@@ -77,8 +77,10 @@ AGENTS 发布纪律）。
 - **Build 67（源码已交付待打包）**：AI 改为账号登录——空库首次在 App 里「创建主人账号」（`/setup`，仅一次），
   家人账号由主人在管理页创建（`/admin/members`），`/login` 发设备凭证；换手机直接重新登录；
   全部锁死时 `manage.ts password <成员名> <新密码>` 兜底。密码 scrypt 内置实现（`server/src/passwords.ts`）。
-  服务器要重新部署才生效（compose 重建，SOURCE_SHA 用新提交）；旧库自动补账号列，已有设备照常工作，
-  现有成员的登录名由主人在管理页补设（列表里标「未设登录」）。
+  服务器已于 2026-09-19 部署该提交（capsule.yep.li；同日完成 xiaomei-ai→anan-ai 目录/compose/systemd
+  备份 unit 的改名迁移）。线上按主人指示清库从零开始：/status initialized=false，等新 App 首次
+  「创建主人账号」；旧 Build 66 App 的设备凭证随清库失效，属预期。待办小项：verify-service.py 的
+  生产路径（initialized 但无 deployment-owner 成员时会失败）、manage.ts 补一条 login 一行命令。
   交付后同日做了一轮质量走查修复（失效凭证死锁、记账覆写、改密撤销设备、generate() 拆出 plan.ts、
   本地组件去重），细节见 CHANGELOG Build 67 后半段。
 - **下一步**：Build 64，清单见上面恢复提示词第二步。
