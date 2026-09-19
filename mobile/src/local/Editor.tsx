@@ -34,6 +34,7 @@ import {
   ErrorText,
   Field,
   Page,
+  PersonChips,
   Text,
   dateLabel,
   hapticSuccess,
@@ -68,7 +69,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [newPerson, setNewPerson] = useState("");
   const [permDenied, setPermDenied] = useState(false);
   const personList = useMemo(
-    () => Object.values(state.persons).sort((a, b) => a.name.localeCompare(b.name, "zh")),
+    () => Object.values(state.persons),
     [state.persons],
   );
   const nextAction = useRef<(() => void) | null>(null),
@@ -666,30 +667,20 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               <View style={{ gap: 8 }}>
                 <Text style={s.muted}>这一刻有谁（可选）</Text>
                 {personList.length > 0 && (
-                  <View style={s.row}>
-                    {personList.map((person) => {
-                      const selected = (
-                        draft.content.personIds ?? []
-                      ).includes(person.id);
-                      return (
-                        <Button
-                          key={person.id}
-                          compact
-                          title={person.name}
-                          selected={selected}
-                          testID={`person-chip-${person.id}`}
-                          onPress={() => {
-                            const currentIds = draft.content.personIds ?? [];
-                            change({
-                              personIds: selected
-                                ? currentIds.filter((id) => id !== person.id)
-                                : [...currentIds, person.id],
-                            });
-                          }}
-                        />
-                      );
-                    })}
-                  </View>
+                  <PersonChips
+                    persons={personList}
+                    selected={draft.content.personIds ?? []}
+                    compact
+                    chipTestID={(id) => `person-chip-${id}`}
+                    onToggle={(id) => {
+                      const currentIds = draft.content.personIds ?? [];
+                      change({
+                        personIds: currentIds.includes(id)
+                          ? currentIds.filter((x) => x !== id)
+                          : [...currentIds, id],
+                      });
+                    }}
+                  />
                 )}
                 {personList.length > 0 && (
                   <Button

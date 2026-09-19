@@ -358,6 +358,23 @@ export function Ornament() {
     </View>
   );
 }
+/** 日期行的强调色小竖条：阅读页日期与月册分区标题共用，内容由调用方给出。 */
+export function DateStrip({ children }: { children: ReactNode }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View
+        style={{
+          width: 4,
+          height: 16,
+          borderRadius: 2,
+          backgroundColor: colors.accent,
+        }}
+      />
+      {children}
+    </View>
+  );
+}
 export function useStyles() {
   const { colors: c, dark, large } = useTheme();
   return useMemo(
@@ -487,6 +504,14 @@ export function useStyles() {
     [c, dark, large],
   );
 }
+/** 书架与年度册的册宽：大字单列、页边 20、列间距 16，按安全区取可用宽。 */
+export function useVolumeWidth() {
+  const { large } = useTheme();
+  const { width, fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const columns = large || fontScale >= 1.3 ? 1 : 2;
+  return (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
+}
 export function Page({
   children,
   scroll = true,
@@ -583,6 +608,52 @@ export function Button({
         </Text>
       </Glass>
     </Pressable>
+  );
+}
+/** 人物 chips：按名字 zh 排序统一在内部做；可选「全部」首 chip 表示未选任何人。 */
+export function PersonChips({
+  persons,
+  selected,
+  onToggle,
+  allLabel,
+  onAll,
+  compact = false,
+  chipTestID,
+}: {
+  persons: { id: string; name: string }[];
+  selected: readonly string[];
+  onToggle: (id: string) => void;
+  /** 提供时先渲染「全部」chip，点击回调 onAll 清空选择。 */
+  allLabel?: string;
+  onAll?: () => void;
+  compact?: boolean;
+  chipTestID?: (id: string) => string;
+}) {
+  const s = useStyles();
+  const sorted = [...persons].sort((a, b) =>
+    a.name.localeCompare(b.name, "zh"),
+  );
+  return (
+    <View style={s.row}>
+      {allLabel && (
+        <Button
+          title={allLabel}
+          compact={compact}
+          selected={!selected.length}
+          onPress={() => onAll?.()}
+        />
+      )}
+      {sorted.map((p) => (
+        <Button
+          key={p.id}
+          compact={compact}
+          title={p.name}
+          selected={selected.includes(p.id)}
+          testID={chipTestID?.(p.id)}
+          onPress={() => onToggle(p.id)}
+        />
+      ))}
+    </View>
   );
 }
 export function BottomBar({

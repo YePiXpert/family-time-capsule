@@ -10,7 +10,9 @@ import { useLibrary } from "./context";
 import { CaptureFab } from "./CaptureFab";
 import { monthKey, type LocalRecord, type Stored } from "./model";
 import { useNav, type Props } from "./navigation";
+import { recordMatches } from "./search";
 import {
+  DateStrip,
   Field,
   Glass,
   IconButton,
@@ -176,7 +178,7 @@ export function Month({ route }: Props<"Month">) {
   const state = useLibrary(),
     nav = useNav(),
     s = useStyles(),
-    { colors, large } = useTheme();
+    { large } = useTheme();
   const insets = useSafeAreaInsets(),
     { width, fontScale } = useWindowDimensions();
   const columns = large || fontScale >= 1.3 ? 1 : width >= 600 ? 3 : 2;
@@ -187,13 +189,7 @@ export function Month({ route }: Props<"Month">) {
   const records = useMemo(() => {
     return Object.values(state.records)
       .filter((r) => monthKey(r.date) === route.params.month)
-      .filter(
-        (r) =>
-          !query ||
-          `${r.title}\n${r.text}\n${r.location}`
-            .toLocaleLowerCase()
-            .includes(query.toLocaleLowerCase()),
-      )
+      .filter((r) => recordMatches(r, query))
       .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
   }, [state, query, route.params.month]);
   const byDay = new Map<string, Stored<LocalRecord>[]>();
@@ -255,19 +251,9 @@ export function Month({ route }: Props<"Month">) {
         }
         renderSectionHeader={({ section }) => (
           <View style={s.dateHeading}>
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-            >
-              <View
-                style={{
-                  width: 4,
-                  height: 16,
-                  borderRadius: 2,
-                  backgroundColor: colors.accent,
-                }}
-              />
+            <DateStrip>
               <Text style={s.galleryTitle}>{section.title}</Text>
-            </View>
+            </DateStrip>
             <Text style={s.muted}>{section.count} 条</Text>
           </View>
         )}
