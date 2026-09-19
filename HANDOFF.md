@@ -83,6 +83,12 @@ AGENTS 发布纪律）。
   生产路径（initialized 但无 deployment-owner 成员时会失败）、manage.ts 补一条 login 一行命令。
   交付后同日做了一轮质量走查修复（失效凭证死锁、记账覆写、改密撤销设备、generate() 拆出 plan.ts、
   本地组件去重），细节见 CHANGELOG Build 67 后半段。
+- **Build 67 打包记录**：交付提交 `dfbf592`（构建号 67 在 `ccd8bf3` 占用；首轮 run 35432903706 因双端
+  冒烟仍断言旧按钮文案「加入 AI 服务」而红，改为固定 testID `ai-join` 后重派）。run 35434384089 全绿
+  （quality／Android APK 签名+模拟器冒烟／iOS 启动+XCUITest 回归+IPA 校验）。
+  APK SHA-256 `e484c4a1212c3f4d4165668d7f239fd468501f42a11807e51d16ae76b5bf4953`，
+  未签名 arm64 IPA SHA-256 `0b4f860877be24d18d10bad119013c87356d3f27ca746f636c956004dec2c899`，
+  本地存 `C:\vibe-coding\releases\build-67\`；artifacts 保留至 2026-10-19 左右。
 - **下一步**：Build 64，清单见上面恢复提示词第二步。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，不要提交）。
 
