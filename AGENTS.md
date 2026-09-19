@@ -5,5 +5,5 @@
 - Before starting, run `git checkout main`, `git pull --ff-only origin main`, and inspect `git status --short`.
 - Commit small, clear milestones and push them to `origin main` by default.
 - Do not create pull requests and never force-push.
-- After every push, inspect GitHub Actions; repair red CI directly on `main` and push again until it is green.
-- Mobile is the primary usage target. Every delivered update must include an installable Android APK and an unsigned device IPA for the owner to self-sign, built from the delivered `main` commit. Run and verify `mobile-build.yml`, provide both downloads, and increment native build numbers for each delivered mobile update.
+- Before pushing, run the local quality gate (`npm test`, `npm run typecheck`, `npm run lint` in `mobile/` and `server/`) so pushes are green by default; do not wait on or poll GitHub Actions after routine pushes. Check the latest `main` CI run only when starting new work or preparing a release — if it is red, repair it directly on `main` and push.
+- Mobile is the primary usage target. When the owner explicitly requests an installable release, deliver it from the delivered `main` commit: dispatch and verify `mobile-build.yml` (full source SHA), provide the Android APK and the unsigned device IPA for the owner to self-sign, and increment native build numbers once per release. Routine milestone pushes do not require a mobile build.
