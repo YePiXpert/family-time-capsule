@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 import { Store, Problem, digest, type Member } from './store.ts';
 import { inputSchema, parseResult, polishBody, POLISH_BODY_LIMIT } from './contracts.ts';
-import { hashPassword, verifyPassword, timingDummy } from './passwords.ts';
+import { hashPassword, verifyPassword, timingDummy, needsRehash } from './passwords.ts';
 import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
 import type { Provider } from './provider.ts';
 export function createApp(store:Store,provider:Provider,version='dev') {
@@ -43,6 +43,8 @@ export function createApp(store:Store,provider:Provider,version='dev') {
   const member=store.byUsername(input.username);
   const ok=member?await verifyPassword(input.password,member.password_hash):await timingDummy(input.password);
   if(!member||!ok)throw new Problem(401,'LOGIN_INVALID','用户名或密码不对。');
+  // 旧格式或低成本的哈希趁着手里有明文密码顺手升级。
+  if(needsRehash(member.password_hash))store.setPassword(member.id,await hashPassword(input.password));
   return store.attach(member.id,input.deviceName);
  });
  app.put('/api/v1/password',async req=>{

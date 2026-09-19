@@ -37,6 +37,23 @@ test('账号系统：一次性初始化，登录校验密码，凭证随设备�
  assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{current:'wrong-password',next:'123456789'}})).statusCode,401);
  await f.app.close();f.store.close();
 });
+test('legacy hashes are upgraded on the next successful login',async()=>{
+ const f=fixture();
+ const { scryptSync, randomBytes }=await import('node:crypto');
+ const salt=randomBytes(16);
+ f.store.db.prepare('UPDATE members SET password_hash=? WHERE id=?').run(`scrypt:${salt.toString('hex')}:${scryptSync(PW,salt,32,{N:16384,r:8,p:1}).toString('hex')}`,f.member.member.id);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'wrong-password',deviceName:'手机'}})).statusCode,401);
+ assert.ok(f.store.fullById(f.member.member.id)!.password_hash!.startsWith('scrypt:'));
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'手机'}})).statusCode,200);
+ assert.ok(f.store.fullById(f.member.member.id)!.password_hash!.startsWith('scrypt2:32768:'));
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'手机'}})).statusCode,200);
+ // 兜底命令：登录名优先，改过登录名后旧成员名仍可用。
+ f.store.setLogin(f.member.member.id,'家人新',HASH);
+ assert.equal(f.store.findByUsernameOrName('家人新').id,f.member.member.id);
+ assert.equal(f.store.findByUsernameOrName('家人').id,f.member.member.id);
+ assert.throws(()=>f.store.findByUsernameOrName('没有的人'),/不存在/);
+ await f.app.close();f.store.close();
+});
 test('owner endpoints enforce server-side role and tokens never appear in overview',async()=>{
  const f=fixture();
  assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers()})).statusCode,403);
