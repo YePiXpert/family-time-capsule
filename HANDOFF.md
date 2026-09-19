@@ -21,7 +21,7 @@
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install。
 4. 验证三件套：npm test、npm run typecheck、npm run lint（根目录命令即可，全部应绿；
-   mobile 195 个测试、server 13 个）。
+   mobile 223 个测试、server 18 个）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
 第二步·继续 Build 65：
@@ -79,6 +79,8 @@ AGENTS 发布纪律）。
   全部锁死时 `manage.ts password <成员名> <新密码>` 兜底。密码 scrypt 内置实现（`server/src/passwords.ts`）。
   服务器要重新部署才生效（compose 重建，SOURCE_SHA 用新提交）；旧库自动补账号列，已有设备照常工作，
   现有成员的登录名由主人在管理页补设（列表里标「未设登录」）。
+  交付后同日做了一轮质量走查修复（失效凭证死锁、记账覆写、改密撤销设备、generate() 拆出 plan.ts、
+  本地组件去重），细节见 CHANGELOG Build 67 后半段。
 - **下一步**：Build 64，清单见上面恢复提示词第二步。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，不要提交）。
 
