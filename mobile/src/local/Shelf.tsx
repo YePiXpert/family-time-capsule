@@ -1,11 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import Animated, {
   FadeInUp,
   useAnimatedStyle,
@@ -13,7 +7,6 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { CaptureFab } from "./CaptureFab";
 import { beginDraft, beginSelection, beginSeries } from "./services";
@@ -48,6 +41,7 @@ import {
   serif,
   useStyles,
   useTheme,
+  useVolumeWidth,
 } from "./ui";
 import { JournalIcon } from "../components/JournalIcon";
 import { Photo } from "./Media";
@@ -55,10 +49,13 @@ import { Photo } from "./Media";
 /** 双线印章圆环：扉页名字首字与年度册封面共用；固定配色场景（重放剧场）用 color 覆盖。 */
 export function Stamp({
   size,
+  inset = 5,
   color,
   children,
 }: {
   size: number;
+  /** 内圈细线与外缘的留白；里程碑小印 44 用 3。 */
+  inset?: number;
   color?: string;
   children: ReactNode;
 }) {
@@ -80,11 +77,11 @@ export function Stamp({
         pointerEvents="none"
         style={{
           position: "absolute",
-          top: 5,
-          left: 5,
-          right: 5,
-          bottom: 5,
-          borderRadius: size / 2 - 5,
+          top: inset,
+          left: inset,
+          right: inset,
+          bottom: inset,
+          borderRadius: size / 2 - inset,
           borderWidth: StyleSheet.hairlineWidth,
           borderColor: ring,
           opacity: 0.5,
@@ -219,14 +216,10 @@ export function Shelf() {
     store = useStore(),
     nav = useNav(),
     s = useStyles(),
-    { colors, large } = useTheme();
-  const { width, fontScale } = useWindowDimensions(),
-    insets = useSafeAreaInsets();
-  const columns = large || fontScale >= 1.3 ? 1 : 2;
+    { colors } = useTheme(),
+    volumeWidth = useVolumeWidth();
   const reduceMotion = useReducedMotion();
   const entrance = reduceMotion ? undefined : FadeInUp.duration(320);
-  const volumeWidth =
-    (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
   const [draftsOpen, setDraftsOpen] = useState(false),
     [error, setError] = useState(""),
     [nudgeClosed, setNudgeClosed] = useState(false);
@@ -337,31 +330,7 @@ export function Shelf() {
                 <View
                   style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
                 >
-                  <View
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 22,
-                      borderWidth: 2,
-                      borderColor: colors.accent,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <View
-                      pointerEvents="none"
-                      style={{
-                        position: "absolute",
-                        top: 3,
-                        left: 3,
-                        right: 3,
-                        bottom: 3,
-                        borderRadius: 19,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: colors.accent,
-                        opacity: 0.5,
-                      }}
-                    />
+                  <Stamp size={44} inset={3}>
                     <Text
                       style={{
                         fontFamily: serif,
@@ -372,7 +341,7 @@ export function Shelf() {
                     >
                       {milestoneNumeral(milestone!)}
                     </Text>
-                  </View>
+                  </Stamp>
                   <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                     <Text
                       style={[s.muted, { color: colors.accent, fontWeight: "600" }]}

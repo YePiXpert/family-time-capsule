@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, View, useWindowDimensions } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Alert, Pressable, View } from "react-native";
 import type { Svg } from "react-native-svg";
 import { randomUUID } from "expo-crypto";
 import { useLibrary, useStore } from "./context";
@@ -32,13 +31,14 @@ import {
   ErrorText,
   Ornament,
   Page,
+  PersonChips,
   Text,
   dateLabel,
   messageOf,
   monthLabel,
   serif,
   useStyles,
-  useTheme,
+  useVolumeWidth,
 } from "./ui";
 
 function YearNote({ year }: { year: string }) {
@@ -114,8 +114,7 @@ export function Year({ route }: Props<"Year">) {
     store = useStore(),
     nav = useNav(),
     s = useStyles(),
-    { large } = useTheme();  const { width, fontScale } = useWindowDimensions(),
-    insets = useSafeAreaInsets();
+    volumeWidth = useVolumeWidth();
   const year = route.params.year;
   const [replayOpen, setReplayOpen] = useState(false),
     [person, setPerson] = useState(""),
@@ -137,9 +136,7 @@ export function Year({ route }: Props<"Year">) {
     () => replayPhotos(records, state.media),
     [records, state.media],
   );
-  const personList = Object.values(state.persons).sort((a, b) =>
-    a.name.localeCompare(b.name, "zh"),
-  );
+  const personList = Object.values(state.persons);
   const visibleRecords = person
     ? recordsOfPerson(records, person)
     : records;
@@ -165,9 +162,6 @@ export function Year({ route }: Props<"Year">) {
     (n, r) => n + r.title.trim().length + r.text.trim().length,
     0,
   );
-  const columns = large || fontScale >= 1.3 ? 1 : 2;
-  const volumeWidth =
-    (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
   const stats = [
     `${records.length} 段时光`,
     photos ? `${photos} 张照片` : "",
@@ -385,23 +379,14 @@ export function Year({ route }: Props<"Year">) {
       <ErrorText message={binder.error} />
       {replayOpen && <ReplayModal year={year} onClose={() => setReplayOpen(false)} />}
       {personList.length > 0 && (
-        <View style={s.row}>
-          <Button
-            title="全部人物"
-            compact
-            selected={!person}
-            onPress={() => setPerson("")}
-          />
-          {personList.map((p) => (
-            <Button
-              key={p.id}
-              compact
-              title={p.name}
-              selected={person === p.id}
-              onPress={() => setPerson(person === p.id ? "" : p.id)}
-            />
-          ))}
-        </View>
+        <PersonChips
+          persons={personList}
+          selected={person ? [person] : []}
+          allLabel="全部人物"
+          onAll={() => setPerson("")}
+          onToggle={(id) => setPerson(person === id ? "" : id)}
+          compact
+        />
       )}
       <YearNote year={year} />
       {firsts.length > 0 && (

@@ -30,6 +30,7 @@ import {
   ErrorText,
   Field,
   Page,
+  PersonChips,
   Text,
   messageOf,
   monthLabel,
@@ -266,9 +267,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
     [person, setPerson] = useState("");
   const records = sortedRecords(state),
     months = [...new Set(records.map((r) => monthKey(r.date)))];
-  const personList = Object.values(state.persons).sort((a, b) =>
-      a.name.localeCompare(b.name, "zh"),
-    );
+  const personList = Object.values(state.persons);
   const patch = (fn: (next: Mutable<Stored<SelectionSession>>) => void) => {
     void store
       .change((s) => {
@@ -343,21 +342,13 @@ export function Picker({ route, navigation }: Props<"Picker">) {
         </ScrollView>
         {personList.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={s.row}>
-              <Button
-                title="全部人物"
-                selected={!person}
-                onPress={() => setPerson("")}
-              />
-              {personList.map((p) => (
-                <Button
-                  key={p.id}
-                  title={p.name}
-                  selected={person === p.id}
-                  onPress={() => setPerson(person === p.id ? "" : p.id)}
-                />
-              ))}
-            </View>
+            <PersonChips
+              persons={personList}
+              selected={person ? [person] : []}
+              allLabel="全部人物"
+              onAll={() => setPerson("")}
+              onToggle={(id) => setPerson(person === id ? "" : id)}
+            />
           </ScrollView>
         )}
         <ErrorText message={error} />
