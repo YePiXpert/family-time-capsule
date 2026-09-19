@@ -380,9 +380,6 @@ export function Year({ route }: Props<"Year">) {
           <Button title="停止装订" testID="year-book-cancel" onPress={binder.cancel} />
         </Card>
       )}
-      {records.length === 0 && !bookBusy && (
-        <Text style={s.muted}>这一年还没有记录，先记下几段时光。</Text>
-      )}
       {!!binder.notice && <Text style={s.muted}>{binder.notice}</Text>}
       <ErrorText message={error} />
       <ErrorText message={binder.error} />

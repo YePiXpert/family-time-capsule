@@ -12,7 +12,6 @@ import {
   Page,
   Text,
   dateLabel,
-  serif,
   useStyles,
 } from "./ui";
 import { useNav } from "./navigation";
@@ -122,7 +121,7 @@ export function Footprint(_: Props<"Footprint">) {
           <Ornament />
         </View>
       )}
-      <Text style={[s.muted, { fontFamily: serif }]}>
+      <Text style={s.muted}>
         位置只来自照片的拍摄信息，始终保存在本机。
       </Text>
     </Page>
