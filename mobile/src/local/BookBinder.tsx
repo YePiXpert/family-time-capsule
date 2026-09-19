@@ -36,6 +36,8 @@ export type BookJob = {
   title: string;
   /** 版面里的 photo key → 本机素材。 */
   media: Record<string, Stored<LocalMedia> | undefined>;
+  /** PDF 交给系统分享面板之后的收尾（比如记下「这一年装订过了」）。 */
+  onBound?: () => Promise<unknown> | void;
 };
 
 export function useBookBinder() {
@@ -151,6 +153,7 @@ export function useBookBinder() {
               `有 ${soft} 张照片的原图撑不满版位，印出来会偏软；其余按 300 DPI 出图。`,
             );
           await shareBook(file);
+          await job.onBound?.();
           stop();
         } catch (e) {
           if (cancelled) return;

@@ -15,6 +15,20 @@ export function daysSince(iso: string, today = new Date()): number {
  * 草稿优先：有草稿且最近 3 天没动过 → 提醒接着写（新鲜草稿交给既有草稿入口）；
  * 否则有过记录且距上次记录 ≥3 天 → 提醒有 N 天没记。其余不打扰。
  */
+export type BookNudge = { year: string };
+
+/** 一二月里，去年有记录且还没装订过纪念册 → 提一句「可以装订了」。其余时候不打扰。 */
+export function bookNudgeOf(
+  today: Date,
+  yearsWithRecords: readonly string[],
+  boundYears: readonly string[],
+): BookNudge | null {
+  if (today.getMonth() > 1) return null;
+  const year = String(today.getFullYear() - 1);
+  if (!yearsWithRecords.includes(year) || boundYears.includes(year)) return null;
+  return { year };
+}
+
 export function nudgeOf(
   lastRecordAt: string | null,
   lastDraftEditAt: string | null,
