@@ -3,40 +3,50 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../src/store.ts';
 import { createApp } from '../src/app.ts';
+import { hashPassword } from '../src/passwords.ts';
 import type { Provider } from '../src/provider.ts';
 const image='data:image/jpeg;base64,/9j/2Q==';
+const PW='12345678',HASH=await hashPassword(PW);
 function fixture(provider?:Provider) {
  const store=new Store(':memory:');
  let calls=0;
  const app=createApp(store,provider??(async(kind,input)=>{calls++;return {tokens:20,result:kind==='write'?{title:'公园',text:'一起散步。'}:{groups:[{photoIds:input.photos.map(p=>p.id),title:'公园',summary:'散步'}]}};}));
- const owner=store.enroll('主人','主人手机');
- const member=store.enroll('家人','家人手机');
+ const owner=store.setup('主人',HASH,'主人手机');
+ store.createMember('家人',HASH);
+ const member=store.attach(store.byUsername('家人')!.id,'家人手机');
  const headers=(token=member.token)=>({authorization:`Bearer ${token}`});
  const input=()=>({requestId:randomUUID(),model:'deepseek-flash',photos:[{id:'a',date:'2020-01-01T12:00:00',image}]});
  return {store,app,owner,member,headers,input,calls:()=>calls};
 }
-test('enrollment is open; only the first member of an empty server becomes the owner',async()=>{
+test('账号系统：一次性初始化，登录校验密码，凭证随设备撤销失效',async()=>{
  const f=fixture();
- const response=await f.app.inject({method:'POST',url:'/api/v1/enroll',payload:{name:'外婆',deviceName:'手机'}});
- assert.equal(response.statusCode,201);assert.equal(response.json().member.role,'member');
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/enroll',payload:{deviceName:'手机'}})).statusCode,400);
+ assert.equal((await f.app.inject({url:'/api/v1/status'})).json().initialized,true);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/setup',payload:{username:'新人',password:PW,deviceName:'手机'}})).statusCode,409);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'wrong-password',deviceName:'手机'}})).statusCode,401);
+ const response=await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'手机'}});
+ assert.equal(response.statusCode,200);assert.equal(response.json().member.username,'家人');
+ assert.ok(!response.body.includes('password_hash'));
+ f.store.revoke(response.json().member.deviceId);
+ assert.equal((await f.app.inject({url:'/api/v1/me',headers:{authorization:`Bearer ${response.json().token}`}})).statusCode,401);
+ // 一台新库从零初始化：第一台设备成为主人，用户名全局唯一。
  const fresh=new Store(':memory:');
- assert.equal(fresh.enroll('第一位','手机').member.role,'owner');
- assert.throws(()=>fresh.promote('不存在'));
+ assert.equal(fresh.setup('主人',HASH,'手机').member.role,'owner');
+ assert.throws(()=>fresh.createMember('主人',HASH),/用户名/);
  fresh.close();
- // 邀请接口已随邀请码一起移除。
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/invites',headers:f.headers(f.owner.token),payload:{name:'x'}})).statusCode,404);
- f.store.promote('外婆');
- assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:{authorization:`Bearer ${response.json().token}`}})).statusCode,200);
- f.store.revoke(f.member.member.deviceId!);
- assert.equal((await f.app.inject({url:'/api/v1/me',headers:f.headers()})).statusCode,401);
+ // 修改密码必须先过当前密码这一关。
+ assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{current:'wrong-password',next:'123456789'}})).statusCode,401);
  await f.app.close();f.store.close();
 });
 test('owner endpoints enforce server-side role and tokens never appear in overview',async()=>{
  const f=fixture();
  assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers()})).statusCode,403);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/members',headers:f.headers(),payload:{username:'外婆',password:PW}})).statusCode,403);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/members',headers:f.headers(f.owner.token),payload:{username:'外婆',password:PW}})).statusCode,201);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/members',headers:f.headers(f.owner.token),payload:{username:'外婆',password:PW}})).statusCode,409);
+ assert.equal((await f.app.inject({method:'PUT',url:`/api/v1/admin/members/${f.member.member.id}/login`,headers:f.headers(f.owner.token),payload:{username:'家人新',password:'87654321'}})).statusCode,200);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人新',password:'87654321',deviceName:'手机'}})).statusCode,200);
  const response=await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers(f.owner.token)});
- assert.equal(response.statusCode,200);assert.ok(!response.body.includes('token_hash'));assert.ok(!response.body.includes(f.member.token));
+ assert.equal(response.statusCode,200);assert.ok(!response.body.includes('password_hash'));assert.ok(!response.body.includes(f.member.token));
  await f.app.close();f.store.close();
 });
 test('identical retries replay only to the same member without spending twice',async()=>{

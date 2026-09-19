@@ -23,6 +23,7 @@ export type Member = {
   enabled: number;
   photo_limit: number;
   write_limit: number;
+  username?: string | null;
   deviceId?: string;
 };
 export type Usage = {
