@@ -26,6 +26,7 @@ import {
 import type { Props } from "./navigation";
 import { deleteLetter, now, sealLetter, updateLetter } from "./services";
 import {
+  BottomBar,
   Button,
   Card,
   ErrorText,
@@ -403,27 +404,6 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
             </View>
           ))}
           <ErrorText message={error} />
-          <View style={s.row}>
-            <Button
-              title="保存草稿"
-              testID="letter-save"
-              disabled={busy || recording}
-              onPress={() => {
-                void run(async () => {
-                  await flush();
-                  navigation.goBack();
-                });
-              }}
-            />
-            <Button
-              title="封存"
-              icon="seal"
-              primary
-              testID="letter-seal"
-              disabled={busy || recording || !!draft.recordingFile}
-              onPress={seal}
-            />
-          </View>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="删除这封信"
@@ -457,6 +437,29 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
             <Text style={[s.muted, { color: colors.muted }]}>删除这封信</Text>
           </Pressable>
         </ScrollView>
+        <BottomBar>
+          <View style={s.row}>
+            <Button
+              title="保存草稿"
+              testID="letter-save"
+              disabled={busy || recording}
+              onPress={() => {
+                void run(async () => {
+                  await flush();
+                  navigation.goBack();
+                });
+              }}
+            />
+            <Button
+              title="封存"
+              icon="seal"
+              primary
+              testID="letter-seal"
+              disabled={busy || recording || !!draft.recordingFile}
+              onPress={seal}
+            />
+          </View>
+        </BottomBar>
       </KeyboardAvoidingView>
     </Page>
   );
