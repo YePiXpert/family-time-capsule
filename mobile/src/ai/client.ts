@@ -86,12 +86,37 @@ export async function api<T>(
     signal?.removeEventListener("abort", cancel);
   }
 }
-export async function enroll(name: string, deviceName: string) {
-  const result = await api<{ token: string }>("/enroll", {
-    name: name.trim(),
-    deviceName: deviceName.trim(),
-  });
+export const serviceStatus = () => api<{ initialized: boolean }>("/status");
+async function signIn(path: string, body: Record<string, string>) {
+  const result = await api<{ token: string }>(path, body);
   if (typeof result.token !== "string" || result.token.length < 32)
     throw new AIError("INVALID_RESULT", "设备凭证无效。");
   await SecureStore.setItemAsync(SESSION, result.token, options);
 }
+/** 空库上第一次初始化：这台设备直接成为主人，只允许一次。 */
+export const setupService = (
+  username: string,
+  password: string,
+  deviceName: string,
+) =>
+  signIn("/setup", {
+    username: username.trim(),
+    password,
+    deviceName: deviceName.trim(),
+  });
+export const login = (
+  username: string,
+  password: string,
+  deviceName: string,
+) =>
+  signIn("/login", {
+    username: username.trim(),
+    password,
+    deviceName: deviceName.trim(),
+  });
+export const changePassword = (current: string, next: string) =>
+  api(
+    "/password",
+    { current: current.trim() || undefined, next },
+    "PUT",
+  );

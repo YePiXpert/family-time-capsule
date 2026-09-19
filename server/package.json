@@ -7,7 +7,7 @@
     "start": "node src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.ts",
-    "owner": "node src/manage.ts owner",
+    "password": "node src/manage.ts password",
     "backup": "node src/manage.ts backup"
   },
   "dependencies": {

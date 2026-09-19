@@ -17,15 +17,26 @@ for attempt in range(15):
   if attempt==14: raise
   time.sleep(1)
 print('health ready');assert call('/api/v1/me')[0]==401
-status,owner=call('/api/v1/enroll',{'name':'deployment-owner','deviceName':'deployment-verification'});assert status==201
+password='verification-passphrase'
+status,state=call('/api/v1/status');assert status==200
+if state['initialized']:
+ # 复跑：用兜底命令给既有主人重设密码后登录（这也是丢手机时的找回路径）。
+ subprocess.run(['docker','exec',args.container,'node','src/manage.ts','password','deployment-owner',password],check=True)
+ status,owner=call('/api/v1/login',{'username':'deployment-owner','password':password,'deviceName':'deployment-verification'});assert status==200
+else:
+ status,owner=call('/api/v1/setup',{'username':'deployment-owner','password':password,'deviceName':'deployment-verification'});assert status==201
+assert owner['member']['role']=='owner'
 token=owner['token']
-if owner['member']['role']!='owner':
- subprocess.run(['docker','exec',args.container,'node','src/manage.ts','owner','deployment-owner'],check=True)
- me=call('/api/v1/me',token=token);assert me[0]==200 and me[1]['member']['role']=='owner'
 status,config=call('/api/v1/ai/config',token=token);assert status==200
 assert config['defaultModel']=='deepseek-flash' and config['reasoningEffort']=='high'
 assert config['enabledModels']==['deepseek-flash']
-status,member=call('/api/v1/enroll',{'name':'verification-member','deviceName':'synthetic-test'});assert status==201
+status,created=call('/api/v1/admin/members',{'username':'verification-member','password':password},token);assert status==201 or status==409
+status,member=call('/api/v1/login',{'username':'verification-member','password':password,'deviceName':'synthetic-test'})
+if status!=200:
+ # 开放加入时代留下的旧成员没有密码，补上同一条兜底命令后再登录。
+ subprocess.run(['docker','exec',args.container,'node','src/manage.ts','password','verification-member',password],check=True)
+ status,member=call('/api/v1/login',{'username':'verification-member','password':password,'deviceName':'synthetic-test'})
+assert status==200
 assert call('/api/v1/admin/overview',token=member['token'])[0]==403
 image='data:image/jpeg;base64,'+base64.b64encode((Path(__file__).parent.parent/'tests/fixtures/shapes.jpg').read_bytes()).decode()
 for model in ['deepseek-flash']:
@@ -41,4 +52,4 @@ for device in overview['devices']:
 assert call('/api/v1/me',token=member['token'])[0]==401
 # Revoke the temporary owner device through the local administrator, leaving no test access active.
 subprocess.run(['docker','exec',args.container,'node','--input-type=module','-e',"import{Store}from'./src/store.ts';const s=new Store('/data/ai.sqlite');s.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(process.argv[1]);s.close();",owner['member']['deviceId']],check=True,stdout=subprocess.DEVNULL)
-print('Enrollment, owner isolation, model results, idempotency and revocation verified.')
+print('Accounts, login, owner isolation, model results, idempotency and revocation verified.')

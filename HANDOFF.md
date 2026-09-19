@@ -74,9 +74,11 @@ AGENTS 发布纪律）。
   35345717654。本轮内容见 CHANGELOG「Build 63」。artifacts 保留 30 天，需要就早下。
 - **签名**：`3cc56d9` 起 APK 用持有者私有 keystore 签名（secrets 已配置，指纹
   `FE:57:43:E4:…:B1:7E` 钉入 mobile-build.yml，与模板证书指纹二选一校验）。
-- **Build 67（源码已交付待打包）**：AI 取消邀请码，家人在「我的 → AI 设置」填名字＋设备名
-  直接加入；空库首位自动成为主人，`manage.ts owner <成员名>` 用于找回主人。
-  服务器要重新部署才生效（compose 重建，SOURCE_SHA 用新提交）；线上已有主人时新设备都进为普通成员。
+- **Build 67（源码已交付待打包）**：AI 改为账号登录——空库首次在 App 里「创建主人账号」（`/setup`，仅一次），
+  家人账号由主人在管理页创建（`/admin/members`），`/login` 发设备凭证；换手机直接重新登录；
+  全部锁死时 `manage.ts password <成员名> <新密码>` 兜底。密码 scrypt 内置实现（`server/src/passwords.ts`）。
+  服务器要重新部署才生效（compose 重建，SOURCE_SHA 用新提交）；旧库自动补账号列，已有设备照常工作，
+  现有成员的登录名由主人在管理页补设（列表里标「未设登录」）。
 - **下一步**：Build 64，清单见上面恢复提示词第二步。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，不要提交）。
 
