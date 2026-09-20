@@ -299,7 +299,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
             label="正文"
             hideLabel
             testID="letter-text"
-            placeholder="此刻想对她说的话……"
+            placeholder="此刻想对你说的话…"
             value={letter.text}
             maxLength={LETTER_TEXT_LIMIT}
             editable={!busy}

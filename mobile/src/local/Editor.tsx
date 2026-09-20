@@ -560,7 +560,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                     title="移除"
                     onPress={() =>
                       Alert.alert(
-                        "移除这份素材？",
+                        "从草稿里移出？",
                         "只从这份草稿移出，手机里的原文件不动。",
                         [
                           { text: "取消", style: "cancel" },
@@ -617,7 +617,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   件事、各存一段时光。同一天也可以分开记：在照片下点「调整归属」。
                 </Text>
                 <Text style={s.muted}>
-                  没有拍摄时间的素材跟相邻素材记入同一天；分成几件事后，日期各自在每件事里改。
+                  没有拍摄时间的照片跟相邻的记在同一天；分成几件事后，日期各自在每件事里改。
                 </Text>
                 {dayGroups.map((group, index) => (
                   <Card key={index}>
@@ -766,7 +766,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 </View>
               </View>
               <Button
-                title="从文件添加素材"
+                title="从文件添加"
                 icon="file"
                 disabled={busy || recording}
                 onPress={() => {
@@ -879,7 +879,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 for (const id of current.current!.content.mediaIds) {
                   if (verified.current.has(id)) continue;
                   const media = store.get().media[id];
-                  if (!media) throw new Error("素材尚未写入，请重试。");
+                  if (!media) throw new Error("附件还没写完，请重试。");
                   await verifyMedia(media);
                   verified.current.add(id);
                 }

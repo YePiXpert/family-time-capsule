@@ -112,7 +112,7 @@ export function RecordCard({
                   ? "听听这一刻"
                   : firstMedia?.kind === "video"
                     ? "一段影像"
-                    : "写下的回忆")}
+                    : "写下的一刻")}
             </Text>
           </View>
         ) : null}
@@ -159,7 +159,7 @@ export function RecordCard({
           <Text style={s.muted}>
             {images.length
               ? `${images.length} 张照片`
-              : `${record.mediaIds.length} 份素材`}
+              : `${record.mediaIds.length} 个附件`}
           </Text>
         )}
       </View>

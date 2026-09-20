@@ -417,7 +417,7 @@ export function saveRecord(
     !d.content.title.trim() &&
     !d.content.mediaIds.length
   )
-    throw new Error("写几句话，或添加一份素材再保存。");
+    throw new Error("写几句话，或加一张照片再保存。");
   if (!Number.isFinite(Date.parse(d.content.date)))
     throw new Error("请选择有效日期。");
   const id = d.recordId ?? recordId;
@@ -540,7 +540,7 @@ export function appendToAlbum(
   const album = s.albums[albumId];
   if (!album) throw new Error("相册已删除。");
   const ids = [...new Set(recordIds)];
-  for (const id of ids) if (!s.records[id]) throw new Error("这条记录已删除。");
+  for (const id of ids) if (!s.records[id]) throw new Error("这段时光已删除。");
   const existing = new Set(album.items.map((i) => i.recordId));
   const added = ids.filter((id) => !existing.has(id));
   if (!added.length) return album;
@@ -566,7 +566,7 @@ export function newAlbumFrom(
 ): Stored<LocalAlbum> {
   const ids = [...new Set(recordIds)];
   if (!ids.length) throw new Error("请先选择记录。");
-  for (const id of ids) if (!s.records[id]) throw new Error("这条记录已删除。");
+  for (const id of ids) if (!s.records[id]) throw new Error("这段时光已删除。");
   const first = s.records[ids[0]!]!;
   const coverId =
     first.coverId && s.media[first.coverId]?.kind === "image"

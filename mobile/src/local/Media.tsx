@@ -60,15 +60,12 @@ export function Photo({
     return (
       <View style={[s.section, { minHeight: size ?? 120, width: size }]}>
         <Text>照片暂时无法读取</Text>
-        <Text style={s.muted}>原记录仍保留，可从备份恢复缺失素材。</Text>
+        <Text style={s.muted}>这段时光还在，缺的照片可以从备份恢复。</Text>
       </View>
     );
   // 不在渲染期同步查盘：先乐观渲染，加载失败再逐级回退（缩略图→原图→占位）。
   const thumb =
-    !contain &&
-    (preview || size !== undefined) &&
-    media.thumb &&
-    !thumbFailed
+    !contain && (preview || size !== undefined) && media.thumb && !thumbFailed
       ? new File(mediaDirectory, media.thumb)
       : null;
   return (
@@ -216,10 +213,7 @@ function ZoomablePhoto({ media }: { media: LocalMedia }) {
       if (scale.value > 1) reset();
       else scale.value = withTiming(2);
     });
-  const gesture = Gesture.Race(
-    doubleTap,
-    Gesture.Simultaneous(pinch, pan),
-  );
+  const gesture = Gesture.Race(doubleTap, Gesture.Simultaneous(pinch, pan));
   const style = useAnimatedStyle(() => ({
     transform: [
       { translateX: tx.value },

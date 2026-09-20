@@ -33,9 +33,8 @@ export function People(_: Props<"People">) {
   const usageOf = (id: string) =>
     Object.values(state.records).filter((r) => r.personIds?.includes(id))
       .length +
-    Object.values(state.drafts).filter((d) =>
-      d.content.personIds?.includes(id),
-    ).length;
+    Object.values(state.drafts).filter((d) => d.content.personIds?.includes(id))
+      .length;
   const confirmMerge = (sourceId: string, targetId: string) => {
     const source = state.persons[sourceId]!,
       target = state.persons[targetId]!;
@@ -73,7 +72,7 @@ export function People(_: Props<"People">) {
                   <Text style={s.heading}>{person.name}</Text>
                   <Text style={s.muted}>
                     {usage
-                      ? `出现在 ${usage} 条记录或草稿里`
+                      ? `出现在 ${usage} 段时光或草稿里`
                       : "还没有记录用过这个人物"}
                   </Text>
                 </View>

@@ -510,7 +510,7 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
                 })
               }
             />
-            <Text>已选 {q.selected.length} 条记录</Text>
+            <Text>已选 {q.selected.length} 段时光</Text>
             <Button title="返回调整内容" onPress={() => navigation.goBack()} />
             <Text style={s.heading}>选择封面</Text>
           </View>

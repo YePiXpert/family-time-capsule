@@ -32,7 +32,12 @@ import { daysSinceExport } from "./backup";
 import { CHILD_FALLBACK } from "./brand";
 import { bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
 import { clusterPlaces } from "./places";
-import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
+import {
+  ageLine,
+  milestoneLabel,
+  milestoneNumeral,
+  milestoneOf,
+} from "./dates";
 import {
   Button,
   Card,
@@ -198,7 +203,10 @@ function RecentTile({
             </Text>
           </View>
         )}
-        <Text numberOfLines={1} style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
+        <Text
+          numberOfLines={1}
+          style={[s.muted, { fontSize: 12, lineHeight: 16 }]}
+        >
           {dateLabel(record.date)}
         </Text>
       </Pressable>
@@ -234,11 +242,15 @@ function NudgeCard({
       testID={testID}
     >
       <Card>
-        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+        <View
+          style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}
+        >
           {stamp}
           <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
             {!!eyebrow && (
-              <Text style={[s.muted, { color: colors.accent, fontWeight: "600" }]}>
+              <Text
+                style={[s.muted, { color: colors.accent, fontWeight: "600" }]}
+              >
                 {eyebrow}
               </Text>
             )}
@@ -508,13 +520,19 @@ export function Shelf() {
             onPress={() => nav.navigate("Title")}
             style={{ flex: 1, minWidth: 0, gap: 2 }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
+            >
               <Text numberOfLines={2} style={[s.title, { flexShrink: 1 }]}>
                 {state.profile.name
                   ? `${state.profile.name}的成长记`
                   : "成长中的每一天"}
               </Text>
-              <JournalIcon name="chevron-right" color={colors.muted} size={18} />
+              <JournalIcon
+                name="chevron-right"
+                color={colors.muted}
+                size={18}
+              />
             </View>
             {age ? (
               <Text style={s.muted} testID="shelf-age">
@@ -685,7 +703,9 @@ export function Shelf() {
                 <Text style={s.muted}>
                   {drafts.length > 1 ? `${drafts.length} 份草稿` : "上次没写完"}
                 </Text>
-                <Text numberOfLines={1}>{recordTitle(latestDraft.content)}</Text>
+                <Text numberOfLines={1}>
+                  {recordTitle(latestDraft.content)}
+                </Text>
               </View>
               <Button
                 title="继续编辑"
@@ -878,7 +898,7 @@ export function Shelf() {
                 .catch((e) => setError(messageOf(e)));
             },
           }}
-          empty="还没有相册。把几段回忆放在一起，就是一本。"
+          empty="还没有相册。把几段时光放在一起，就是一本。"
         >
           {albums.length > 0 && (
             <Strip>
@@ -1095,7 +1115,9 @@ export function TitlePage() {
             {state.profile.name}
           </Text>
         ) : (
-          <Text style={[s.heading, { textAlign: "center", color: colors.muted }]}>
+          <Text
+            style={[s.heading, { textAlign: "center", color: colors.muted }]}
+          >
             还没填名字
           </Text>
         )}

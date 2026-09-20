@@ -150,9 +150,9 @@ export async function addToSeries(
     if (!series) throw new Error("时光系列已删除。");
     const record = s.records[recordId];
     const media = s.media[mediaId];
-    if (!record) throw new Error("这条记录已删除。");
+    if (!record) throw new Error("这段时光已删除。");
     if (!record.mediaIds.includes(mediaId) || media?.kind !== "image")
-      throw new Error("请从这条记录的照片中选择。");
+      throw new Error("请从这段时光的照片里选。");
     const month = monthOfItem(record, media);
     editEntity(s, "series", seriesId, (t) => {
       t.items = [
