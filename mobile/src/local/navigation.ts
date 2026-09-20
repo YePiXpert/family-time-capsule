@@ -15,7 +15,8 @@ export type Routes = {
   Title: undefined;
   Settings: undefined;
   Editor: { draftId: string };
-  Record: { id: string };
+  /** shuffle：从「随便翻翻」进来，顶栏右侧给「再翻一页」。 */
+  Record: { id: string; shuffle?: boolean };
   Album: { id: string };
   Series: { id: string };
   Picker: { sessionId: string };

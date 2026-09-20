@@ -57,7 +57,9 @@
 - **书架重排（2026-09-20 晚，未打包）**：主人装上 Build 71 后发来两张真机截图（`/workspace/anan-test/1.png`、`2.png`，iPhone 深色、库里只有 1 段时光）说「ui 布局太丑了」：
   每个区块一条横向封面条，各只有一张封面靠在左边、同一张照片重复四次（最近／年度册／月度册／系列）、区块之间大片空白，首页拉了两屏半。
   改法（CHANGELOG「未打包 — 书架重排」）：横向封面条只留「最近」与每个年份名下的月册，年份成为书架本身（衬线年份标题 + 统计 + 「翻开年度册」，`volume-year-YYYY` 落在这个文字按钮上）；
-  合集／专题册／时间胶囊／时光系列改成书册行（`SettingsRow` 的 `leading` + `serifLabel`）；间距收紧。冒烟 testID 全部不变，本地门禁全绿；**还没出包**，主人要看效果需要 Build 72 的包（家人一起记顺延为 73）或先看下一次 mobile-build 的安卓截图 `home-recent.png`。
+  合集／专题册／时间胶囊／时光系列改成书册行（`SettingsRow` 的 `leading` + `serifLabel`）；间距收紧。冒烟 testID 全部不变（`recent-<id>` 仍在整宽卡上），本地门禁全绿（mobile 341）；**还没出包**，主人要看效果需要 Build 72 的包（家人一起记顺延为 73）或先看下一次 mobile-build 的安卓截图 `home-recent.png`。
+  主人随后拍板两项（已实现，同样未打包）：「最近」改成整宽时光卡左右翻（`RecentFlip`／`RecentCard`，卡宽 = 可用宽 − 56、右内边距 36 让最后一张也对齐页边、按卡吸附、圆点）；
+  「随便翻翻」（`shuffle` testID，≥ 3 段时光才出现）随机进阅读页，`Record` 路由带 `shuffle: true` 时顶栏右侧「再翻一页」（`shuffle-next`）用 `navigation.replace` 换随机另一段（`shuffle.ts` 的 `pickAnother` 保证不重复当前）。
   顺手修了 CI 偶发红：`sweepTemp(0)` 同毫秒漏删（run 35514369969 的 `ai-quality`）。
 - **下一步**：Build 72「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。

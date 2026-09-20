@@ -1,5 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   FadeInUp,
   useAnimatedStyle,
@@ -32,6 +39,7 @@ import { daysSinceExport } from "./backup";
 import { CHILD_FALLBACK } from "./brand";
 import { bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
 import { clusterPlaces } from "./places";
+import { pickAnother } from "./shuffle";
 import {
   ageLine,
   milestoneLabel,
@@ -270,16 +278,97 @@ function BookRow({
     />
   );
 }
-/** 「最近」一格：有图是 104 的正方形缩略图，无图是纸卡首行文字，下面一行日期。 */
-function RecentTile({
+/**
+ * 「最近」翻页条：整宽时光卡左右翻，按卡吸附，右侧露出下一张的一角提示还能翻；
+ * 多于一张时下面一排圆点。只有一段时光时首页顶上就是一张大照片，而不是一个小方块。
+ */
+function RecentFlip({
+  records,
+  media,
+  onOpen,
+}: {
+  records: Stored<LocalRecord>[];
+  media: Record<string, LocalMedia>;
+  onOpen: (id: string) => void;
+}) {
+  const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [index, setIndex] = useState(0);
+  // 卡宽 = 可用宽 − 两侧页边 40 − 16：加上 12 的卡距，下一张露出 24。右内边距 36 让最后一张也能对齐页边。
+  const cardWidth = Math.max(200, width - insets.left - insets.right - 56);
+  const interval = cardWidth + 12;
+  const many = records.length > 1;
+  const settle = (x: number) =>
+    setIndex(
+      Math.min(records.length - 1, Math.max(0, Math.round(x / interval))),
+    );
+  return (
+    <View style={{ gap: 10 }}>
+      <ScrollView
+        horizontal
+        scrollEnabled={many}
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={interval}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        disableIntervalMomentum
+        onMomentumScrollEnd={(e) => settle(e.nativeEvent.contentOffset.x)}
+        onScrollEndDrag={(e) => settle(e.nativeEvent.contentOffset.x)}
+        style={{ marginHorizontal: -20 }}
+        contentContainerStyle={{
+          paddingLeft: 20,
+          paddingRight: 36,
+          gap: 12,
+          alignItems: "flex-start",
+        }}
+      >
+        {records.map((record, i) => (
+          <RecentCard
+            key={record.id}
+            record={record}
+            cover={coverForRecords([record], media)}
+            width={cardWidth}
+            index={i}
+            testID={`recent-${record.id}`}
+            onPress={() => onOpen(record.id)}
+          />
+        ))}
+      </ScrollView>
+      {many && (
+        <View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ flexDirection: "row", justifyContent: "center", gap: 6 }}
+        >
+          {records.map((record, i) => (
+            <View
+              key={record.id}
+              style={{
+                width: i === index ? 16 : 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: i === index ? colors.accent : colors.line,
+              }}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+/** 整宽时光卡：有图时照片 4:3 铺满卡顶，下面日期、衬线标题与正文两行；无图时纸面上正文四行 + 日期。 */
+function RecentCard({
   record,
   cover,
+  width,
   index,
   testID,
   onPress,
 }: {
   record: Stored<LocalRecord>;
   cover?: LocalMedia;
+  width: number;
   index: number;
   testID?: string;
   onPress: () => void;
@@ -287,6 +376,11 @@ function RecentTile({
   const s = useStyles();
   const reduceMotion = useReducedMotion();
   const title = recordTitle(record);
+  const body = record.text.trim();
+  // 标题是拿正文首行凑出来的，就不要再把同一句当摘要重复一遍。
+  const excerpt = record.title.trim()
+    ? body
+    : body.split("\n").slice(1).join(" ").trim();
   return (
     <Animated.View
       entering={
@@ -294,49 +388,62 @@ function RecentTile({
           ? undefined
           : FadeInUp.delay(Math.min(index, 8) * 60).duration(320)
       }
-      style={{ width: 104 }}
+      style={{ width }}
     >
       <Pressable
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={`${title}，${dateLabel(record.date)}`}
         onPress={onPress}
-        style={({ pressed }) => ({ gap: 6, opacity: pressed ? 0.7 : 1 })}
+        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
       >
-        {cover ? (
-          <Photo media={cover} size={104} />
-        ) : (
-          <View
-            style={[
-              s.section,
-              {
-                width: 104,
-                height: 104,
-                padding: 10,
-                borderRadius: 12,
-                justifyContent: "center",
-              },
-            ]}
-          >
-            <Text
-              numberOfLines={3}
+        <Card style={{ padding: 0, gap: 0 }}>
+          {cover ? (
+            <View
               style={{
-                fontFamily: serif,
-                fontSize: 14,
-                lineHeight: 20,
-                letterSpacing: 0.3,
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16,
+                overflow: "hidden",
               }}
             >
-              {title}
-            </Text>
+              <Photo media={cover} preview ratio={4 / 3} radius={0} />
+            </View>
+          ) : (
+            <View
+              style={{
+                paddingHorizontal: 16,
+                paddingTop: 18,
+                minHeight: 120,
+                justifyContent: "center",
+              }}
+            >
+              <Text
+                numberOfLines={4}
+                style={{
+                  fontFamily: serif,
+                  fontSize: 17,
+                  lineHeight: 27,
+                  letterSpacing: 0.3,
+                }}
+              >
+                {body || title}
+              </Text>
+            </View>
+          )}
+          <View style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 2 }}>
+            <Text style={s.footnote}>{dateLabel(record.date)}</Text>
+            {(cover || !!record.title.trim()) && (
+              <Text numberOfLines={1} style={s.heading}>
+                {title}
+              </Text>
+            )}
+            {!!cover && !!excerpt && (
+              <Text numberOfLines={2} style={s.muted}>
+                {excerpt}
+              </Text>
+            )}
           </View>
-        )}
-        <Text
-          numberOfLines={1}
-          style={[s.muted, { fontSize: 12, lineHeight: 16 }]}
-        >
-          {dateLabel(record.date)}
-        </Text>
+        </Card>
       </Pressable>
     </Animated.View>
   );
@@ -822,20 +929,27 @@ export function Shelf() {
             onClose={() => closeNudge("rhythm")}
           />
         )}
-        <ShelfSection title="最近">
+        <ShelfSection
+          title="最近"
+          action={
+            records.length >= 3
+              ? {
+                  label: "随便翻翻",
+                  testID: "shuffle",
+                  onPress: () => {
+                    const id = pickAnother(records.map((r) => r.id));
+                    if (id) nav.navigate("Record", { id, shuffle: true });
+                  },
+                }
+              : undefined
+          }
+        >
           {records.length > 0 ? (
-            <Strip>
-              {records.slice(0, 6).map((record, i) => (
-                <RecentTile
-                  key={record.id}
-                  record={record}
-                  cover={coverForRecords([record], mediaMap)}
-                  index={i}
-                  testID={`recent-${record.id}`}
-                  onPress={() => nav.navigate("Record", { id: record.id })}
-                />
-              ))}
-            </Strip>
+            <RecentFlip
+              records={records.slice(0, 10)}
+              media={mediaMap}
+              onOpen={(id) => nav.navigate("Record", { id })}
+            />
           ) : (
             <Card>
               <Text style={s.heading}>把今天的小事留下来</Text>
