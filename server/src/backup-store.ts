@@ -49,7 +49,8 @@ export class BackupStore {
   }
   /**
    * 边收边算 sha256、边计数。超过上限不再落盘但把请求体读完，好让 413 能送到客户端；
-   * 声明长度、实际长度、密文哈希三者任一对不上都整份丢弃。已存在的对象重传视为成功（created=false）。
+   * 声明长度、实际长度、密文哈希三者任一对不上都整份丢弃。已存在的对象重传视为成功（created=false），
+   * 但配额按「比原来多出的字节」算：对象 id 是手机按内容派生的，服务端认不出同 id 换了内容，不能因为 id 在就免检。
    */
   async receive(
     memberId: string,
@@ -80,11 +81,11 @@ export class BackupStore {
       if (!bytes) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容为空。');
       if (options.declared !== undefined && options.declared !== bytes) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容不完整，请重试。');
       if (hash.digest('hex') !== options.sha256) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容校验失败，请重试。');
-      const existed = this.stat(memberId, id) !== null;
-      if (!existed && options.quotaLeft !== undefined && bytes > options.quotaLeft) throw new Problem(413, 'QUOTA_FULL', '远端备份空间已用完，请联系主人调整。');
+      const previous = this.stat(memberId, id);
+      if (options.quotaLeft !== undefined && bytes - (previous ?? 0) > options.quotaLeft) throw new Problem(413, 'QUOTA_FULL', '远端备份空间已用完，请联系主人调整。');
       mkdirSync(dirname(target), { recursive: true });
       renameSync(temp, target);
-      return { bytes, created: !existed };
+      return { bytes, created: previous === null };
     } catch (e) {
       out.destroy();
       rmSync(temp, { force: true });
@@ -119,7 +120,10 @@ export class BackupStore {
     const rows = this.list(memberId);
     return { objects: rows.length, bytes: rows.reduce((n, r) => n + r.bytes, 0) };
   }
-  /** 只删「不在 keep 里且创建超过 graceMs」的对象：正在上传中的新对象不会被并发的 prune 误伤。 */
+  /**
+   * 只删「不在 keep 里且创建超过 graceMs」的对象：正在上传中的新对象不会被并发的 prune 误伤。
+   * 路由会把当前清单登记的对象并进 keep，所以客户端给错、给漏 keep 也删不掉清单指向的东西。
+   */
   prune(memberId: string, keep: Set<string>, now = Date.now(), graceMs = 3600000): { removed: number; bytes: number } {
     let removed = 0, bytes = 0;
     for (const row of this.list(memberId)) {
@@ -133,7 +137,7 @@ export class BackupStore {
     this.memberDir(memberId);
     rmSync(join(this.root, memberId), { recursive: true, force: true });
   }
-  /** 启动时清掉上次没收完的临时文件。 */
+  /** 清掉没收完的临时文件。启动时传 0：监听前不可能有上传在途，留着的全是上次崩溃的残骸。 */
   sweepTemp(olderThanMs = 3600000, now = Date.now()) {
     const dir = join(this.root, 'tmp');
     for (const name of readdirSync(dir)) {

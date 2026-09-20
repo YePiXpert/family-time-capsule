@@ -63,7 +63,7 @@ test('oversize uploads get 413 whether or not the length was declared',async()=>
  assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
  await f.close();
 });
-test('quota and the disk floor are enforced; a repeat of an existing object always succeeds',async()=>{
+test('quota and the disk floor are enforced; a repeat of an existing object succeeds unless it grows past the quota',async()=>{
  const f=fixture();
  f.store.editMember(f.member.member.id,{enabled:true,photoLimit:100,writeLimit:20,backupLimitBytes:1000});
  const over=await f.put(oid(4),randomBytes(2000));
@@ -76,7 +76,19 @@ test('quota and the disk floor are enforced; a repeat of an existing object alwa
  assert.equal((await f.put(oid(5),fits)).statusCode,201);
  f.store.editMember(f.member.member.id,{enabled:true,photoLimit:100,writeLimit:20,backupLimitBytes:500});
  assert.equal((await f.put(oid(5),fits)).statusCode,200);
- assert.equal((await f.put(oid(6),randomBytes(10))).statusCode,413);
+ // 同 id 换成更大的内容：预检（有 Content-Length）与收完复核（流式、无长度）都要按多出的字节拒掉，原对象不动。
+ const grown=randomBytes(1200);
+ const declaredGrowth=await f.put(oid(5),grown);
+ assert.equal(declaredGrowth.statusCode,413);assert.equal(declaredGrowth.json().code,'QUOTA_FULL');
+ const streamedGrowth=await f.app.inject({method:'PUT',url:`/api/v1/backup/objects/${oid(5)}`,headers:f.headers(f.member.token,{...octet,'x-object-sha256':sha(grown)}),payload:Readable.from([grown])});
+ assert.equal(streamedGrowth.statusCode,413);assert.equal(streamedGrowth.json().code,'QUOTA_FULL');
+ assert.equal(f.backups.stat(f.member.member.id,oid(5)),800);
+ assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
+ // 换成更小的内容不需要余量。
+ const shrunk=randomBytes(300);
+ assert.equal((await f.put(oid(5),shrunk)).statusCode,200);assert.equal(f.backups.stat(f.member.member.id,oid(5)),300);
+ assert.equal((await f.put(oid(6),randomBytes(10))).statusCode,201);
+ assert.equal((await f.put(oid(8),randomBytes(500))).statusCode,413);
  f.backups.freeBytes=async()=>0;
  const full=await f.put(oid(7),randomBytes(10));
  assert.equal(full.statusCode,507);assert.equal(full.json().code,'SERVER_FULL');
@@ -106,10 +118,20 @@ test('have and prune see only the caller; prune spares fresh objects and everyth
  const old=new Date(Date.now()-7200000);
  for(const id of [oid(20),oid(21)])utimesSync(f.backups.objectPath(f.member.member.id,id),old,old);
  utimesSync(f.backups.objectPath(f.other.member.id,oid(22)),old,old);
+ // 清单登记过的对象由服务端护住：keep 漏了它也删不掉；远端已有清单时空 keep 是客户端出错，拒绝。
+ assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/backup/manifest',headers:f.headers(),payload:{keyId:'0123456789abcdef',index:'QUJD',objects:[oid(21)]}})).statusCode,200);
+ assert.deepEqual((await f.app.inject({method:'POST',url:'/api/v1/backup/prune',headers:f.headers(),payload:{keep:[oid(20)]}})).json(),{removed:0,bytes:0});
+ assert.equal(f.backups.stat(f.member.member.id,oid(21)),200);
+ const emptyKeep=await f.app.inject({method:'POST',url:'/api/v1/backup/prune',headers:f.headers(),payload:{keep:[]}});
+ assert.equal(emptyKeep.statusCode,400);assert.equal(emptyKeep.json().code,'INVALID_INPUT');
+ assert.equal(f.backups.stat(f.member.member.id,oid(21)),200);
+ assert.deepEqual((await f.app.inject({method:'POST',url:'/api/v1/backup/prune',headers:f.headers(f.other.token),payload:{keep:[]}})).json(),{removed:1,bytes:50});
+ // 新清单不再登记它，才随 keep 之外的对象一起被收走。
+ assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/backup/manifest',headers:f.headers(),payload:{keyId:'0123456789abcdef',index:'QUJD',objects:[oid(20)]}})).statusCode,200);
  assert.deepEqual((await f.app.inject({method:'POST',url:'/api/v1/backup/prune',headers:f.headers(),payload:{keep:[oid(20)]}})).json(),{removed:1,bytes:200});
  assert.equal(f.backups.stat(f.member.member.id,oid(20)),100);
  assert.equal(f.backups.stat(f.member.member.id,oid(21)),null);
- assert.equal(f.backups.stat(f.other.member.id,oid(22)),50);
+ assert.equal(f.backups.stat(f.other.member.id,oid(22)),null);
  assert.equal((await f.app.inject({method:'POST',url:'/api/v1/backup/objects/have',headers:f.headers(),payload:{ids:['nope']}})).statusCode,400);
  await f.close();
 });
@@ -123,8 +145,11 @@ test('the manifest index round-trips and its key id shows in status',async()=>{
  assert.equal(got.keyId,keyId);assert.equal(got.index,index);assert.equal(got.updatedAt,put.json().updatedAt);
  assert.equal((await f.app.inject({url:'/api/v1/backup/status',headers:f.headers()})).json().keyId,keyId);
  assert.equal((await f.app.inject({url:'/api/v1/backup/manifest',headers:f.headers(f.other.token)})).statusCode,404);
- for(const bad of [{keyId:'short',index},{keyId,index:'not base64!'},{keyId,index:'A'.repeat(90001)},{keyId,index,extra:1}])
+ for(const bad of [{keyId:'short',index},{keyId,index:'not base64!'},{keyId,index:'A'.repeat(90001)},{keyId,index,extra:1},{keyId,index,objects:['nope']}])
   assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/backup/manifest',headers:f.headers(),payload:bad})).statusCode,400);
+ assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/backup/manifest',headers:f.headers(),payload:{keyId,index,objects:[oid(1),oid(2)]}})).statusCode,200);
+ assert.deepEqual(f.store.manifest(f.member.member.id)!.objects,[oid(1),oid(2)]);
+ assert.equal((await f.app.inject({url:'/api/v1/backup/manifest',headers:f.headers()})).json().objects,undefined);
  await f.close();
 });
 test('deleting a backup removes objects and manifest; the owner can do it per member and set the quota',async()=>{
@@ -157,19 +182,27 @@ test('backup routes require a login',async()=>{
   assert.equal((await f.app.inject({method,url,headers:method==='PUT'&&url.includes('objects')?{...octet,'x-object-sha256':oid(1)}:{},payload:method==='GET'||method==='DELETE'?undefined:url.includes('objects/')&&method==='PUT'?Buffer.from('x'):{}})).statusCode,401,`${method} ${url}`);
  await f.close();
 });
-test('older databases gain the quota column with its default and stale temp files are swept',async()=>{
+test('older databases gain the quota and manifest-object columns and stale temp files are swept',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'anan-backup-migrate-'));const file=join(dir,'old.sqlite');
  const raw=new Database(file);
- raw.exec("CREATE TABLE members(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,photo_limit INTEGER NOT NULL DEFAULT 100,write_limit INTEGER NOT NULL DEFAULT 20,username TEXT,password_hash TEXT);INSERT INTO members(id,name,role,username,password_hash) VALUES('00000000-0000-4000-8000-000000000001','旧成员','owner','旧成员','x');");
+ raw.exec("CREATE TABLE members(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,photo_limit INTEGER NOT NULL DEFAULT 100,write_limit INTEGER NOT NULL DEFAULT 20,username TEXT,password_hash TEXT);INSERT INTO members(id,name,role,username,password_hash) VALUES('00000000-0000-4000-8000-000000000001','旧成员','owner','旧成员','x');INSERT INTO members(id,name,role,username,password_hash) VALUES('00000000-0000-4000-8000-000000000002','旧家人','member','旧家人','x');");
+ // Build 70 首版的清单表没有 objects_json 列，已有的一行要能读出来（视为没登记对象）。
+ raw.exec("CREATE TABLE backup_manifests(member_id TEXT PRIMARY KEY REFERENCES members(id),key_id TEXT NOT NULL,index_b64 TEXT NOT NULL,updated_at INTEGER NOT NULL);INSERT INTO backup_manifests VALUES('00000000-0000-4000-8000-000000000002','0123456789abcdef','QUJD',1758000000000);");
  raw.close();
  const store=new Store(file);
  assert.equal(store.members()[0]!.backup_limit_bytes,DEFAULT_BACKUP_LIMIT);
  assert.equal(store.manifest('00000000-0000-4000-8000-000000000001'),undefined);
+ assert.deepEqual(store.manifest('00000000-0000-4000-8000-000000000002'),{keyId:'0123456789abcdef',index:'QUJD',updatedAt:1758000000000,objects:[]});
+ store.putManifest('00000000-0000-4000-8000-000000000002','0123456789abcdef','QUJD',[oid(9)]);
+ assert.deepEqual(store.manifest('00000000-0000-4000-8000-000000000002')!.objects,[oid(9)]);
  store.close();
  const backups=new BackupStore(join(dir,'objects'));
  writeFileSync(join(dir,'objects','tmp','fresh.part'),'a');writeFileSync(join(dir,'objects','tmp','stale.part'),'b');
  const old=new Date(Date.now()-7200000);utimesSync(join(dir,'objects','tmp','stale.part'),old,old);
  backups.sweepTemp();
  assert.deepEqual(readdirSync(join(dir,'objects','tmp')),['fresh.part']);
+ // 启动时按 0 宽限：监听前没有上传在途，刚崩溃留下的也要清。
+ backups.sweepTemp(0);
+ assert.deepEqual(readdirSync(join(dir,'objects','tmp')),[]);
  rmSync(dir,{recursive:true,force:true});
 });

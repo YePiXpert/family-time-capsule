@@ -131,8 +131,9 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   if(declared!==undefined&&!(Number.isSafeInteger(declared)&&declared>=0))throw new Problem(400,'INVALID_INPUT','请求长度无效。');
   if(declared!==undefined&&declared>OBJECT_LIMIT)throw new Problem(413,'TOO_LARGE','这一份太大，请更新应用后重试。');
   if(await backups().freeBytes()<FREE_FLOOR)throw new Problem(507,'SERVER_FULL','服务器空间不足，请联系主人。');
-  const usage=backups().usage(member.id),quotaLeft=Math.max(0,member.backup_limit_bytes-usage.bytes);
-  if(declared!==undefined&&declared>quotaLeft&&backups().stat(member.id,id)===null)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系主人调整。');
+  // 配额按「比原来多出的字节」算：同 id 重传若变大，一样要有余量（receive 收完再按实际字节复核一次）。
+  const usage=backups().usage(member.id),quotaLeft=Math.max(0,member.backup_limit_bytes-usage.bytes),previous=backups().stat(member.id,id)??0;
+  if(declared!==undefined&&declared-previous>quotaLeft)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系主人调整。');
   const active=uploading.get(member.id)??0;
   if(active>=2)throw new Problem(429,'BUSY','正在上传其他内容，请稍后再试。');
   uploading.set(member.id,active+1);
@@ -152,9 +153,10 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  });
  app.put('/api/v1/backup/manifest',async req=>{
   const member=auth(req.headers.authorization);
-  // 索引是手机封好的密文（≤ 64 KiB 明文），服务端只存 keyId 好让换错恢复码在下载前就判出来。
-  const input=z.object({keyId:z.string().regex(/^[a-f0-9]{16}$/),index:z.string().min(4).max(90000).regex(/^[A-Za-z0-9+/]+=*$/)}).strict().parse(req.body);
-  return {updatedAt:new Date(store.putManifest(member.id,input.keyId,input.index)).toISOString()};
+  // 索引是手机封好的密文（≤ 64 KiB 明文），服务端只存 keyId 好让换错恢复码在下载前就判出来；
+  // objects 是清单引用的对象 id，登记下来让 prune 护住它们（Build 70 的手机不传，视为没登记）。
+  const input=z.object({keyId:z.string().regex(/^[a-f0-9]{16}$/),index:z.string().min(4).max(90000).regex(/^[A-Za-z0-9+/]+=*$/),objects:idList(50000).optional()}).strict().parse(req.body);
+  return {updatedAt:new Date(store.putManifest(member.id,input.keyId,input.index,input.objects??[])).toISOString()};
  });
  app.get('/api/v1/backup/manifest',async req=>{
   const member=auth(req.headers.authorization),manifest=store.manifest(member.id);
@@ -164,11 +166,15 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  app.post('/api/v1/backup/prune',async req=>{
   const member=auth(req.headers.authorization);
   const {keep}=z.object({keep:idList(50000)}).strict().parse(req.body);
-  return backups().prune(member.id,new Set(keep));
+  // 当前清单登记的对象由服务端自己护住；远端已有清单时空 keep 一定是客户端出错，宁可不收拾。
+  const manifest=store.manifest(member.id);
+  if(manifest&&keep.length===0)throw new Problem(400,'INVALID_INPUT','远端已有清单，keep 不能为空。');
+  return backups().prune(member.id,new Set([...keep,...(manifest?.objects??[])]));
  });
  app.delete('/api/v1/backup',async req=>{
   const member=auth(req.headers.authorization);
-  backups().wipe(member.id);store.deleteManifest(member.id);
+  // 先删索引再删对象：中途崩溃只会留下没人指着的对象，而不是指着空库的索引。
+  store.deleteManifest(member.id);backups().wipe(member.id);
   return {ok:true};
  });
  app.get('/api/v1/admin/overview',async req=>{owner(req.headers.authorization);return {members:store.members().map(m=>({...m,usage:store.usage(m.id),backup:{...backups().usage(m.id),limitBytes:m.backup_limit_bytes}})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS,backupFreeBytes:await backups().freeBytes()};});
@@ -192,7 +198,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  app.delete('/api/v1/admin/members/:id/backup',async req=>{
   owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
   if(!store.fullById(id))throw new Problem(404,'NOT_FOUND','成员不存在。');
-  backups().wipe(id);store.deleteManifest(id);return {ok:true};
+  store.deleteManifest(id);backups().wipe(id);return {ok:true};
  });
  app.delete('/api/v1/admin/devices/:id',async req=>{
   const member=owner(req.headers.authorization),{id}=z.object({id:z.string().uuid()}).parse(req.params);
