@@ -137,12 +137,15 @@ export class BackupStore {
     this.memberDir(memberId);
     rmSync(join(this.root, memberId), { recursive: true, force: true });
   }
-  /** 清掉没收完的临时文件。启动时传 0：监听前不可能有上传在途，留着的全是上次崩溃的残骸。 */
+  /**
+   * 清掉没收完的临时文件。启动时传 0：监听前不可能有上传在途，留着的全是上次崩溃的残骸，
+   * 所以 0 宽限不看 mtime 一律删（mtime 有亚毫秒精度，刚写下的文件按「mtime < now」比会漏掉）。
+   */
   sweepTemp(olderThanMs = 3600000, now = Date.now()) {
     const dir = join(this.root, 'tmp');
     for (const name of readdirSync(dir)) {
       const file = join(dir, name);
-      try { if (statSync(file).mtimeMs < now - olderThanMs) rmSync(file, { force: true }); } catch { /* 已被别人清掉 */ }
+      try { if (olderThanMs <= 0 || statSync(file).mtimeMs < now - olderThanMs) rmSync(file, { force: true }); } catch { /* 已被别人清掉 */ }
     }
   }
   async freeBytes(): Promise<number> {
