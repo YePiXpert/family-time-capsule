@@ -39,12 +39,15 @@ export function Photo({
   media,
   contain = false,
   size,
+  ratio,
   preview = false,
   label,
 }: {
   media: LocalMedia | undefined;
   contain?: boolean;
   size?: number;
+  /** 固定裁切比例（书架封面 4:3）；缺省按素材真实宽高比。 */
+  ratio?: number;
   /** 列表/封面等小图场景：优先渲染持久缩略图。 */
   preview?: boolean;
   /** 读屏标签；缺省读作「照片」，不读原始文件名。 */
@@ -83,9 +86,10 @@ export function Photo({
           borderRadius: 12,
           aspectRatio: size
             ? 1
-            : media.width && media.height
-              ? media.width / media.height
-              : 4 / 3,
+            : (ratio ??
+              (media.width && media.height
+                ? media.width / media.height
+                : 4 / 3)),
         },
         size ? { width: size, height: size } : undefined,
       ]}
