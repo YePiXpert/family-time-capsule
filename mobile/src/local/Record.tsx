@@ -19,6 +19,7 @@ import {
 } from "./services";
 import { deleteRecord, editEntity } from "./model";
 import { looksLikeCoordinates, placeLabel } from "./places";
+import { pickAnother } from "./shuffle";
 import type { Props } from "./navigation";
 import {
   BottomBar,
@@ -196,8 +197,28 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   };
   const kindLabel = (kind: string) =>
     kind === "audio" ? "听录音" : kind === "video" ? "看视频" : "打开文件";
+  // 从「随便翻翻」进来：顶栏右侧可以一直翻，replace 不让返回栈越积越长。
+  const recordIds = Object.keys(state.records);
   return (
-    <Page scroll={false}>
+    <Page
+      scroll={false}
+      right={
+        route.params.shuffle && recordIds.length > 1 ? (
+          <Button
+            title="再翻一页"
+            kind="text"
+            compact
+            testID="shuffle-next"
+            onPress={() =>
+              navigation.replace("Record", {
+                id: pickAnother(recordIds, record.id)!,
+                shuffle: true,
+              })
+            }
+          />
+        ) : undefined
+      }
+    >
       <ScrollView contentContainerStyle={s.content}>
         {photos.length > 0 && (
           <View style={{ gap: 8 }}>
