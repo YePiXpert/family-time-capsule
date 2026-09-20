@@ -89,7 +89,7 @@ export async function api<T>(
       signal?.aborted ? "CANCELED" : "NETWORK",
       signal?.aborted
         ? "已停止等待，草稿不变。"
-        : "网络中断或等待超时。重试会沿用原请求，避免重复提交。",
+        : "现在连不上服务，请稍后再试。",
     );
   } finally {
     clearTimeout(timeout);
@@ -114,19 +114,11 @@ export const setupService = (
     password,
     deviceName: deviceName.trim(),
   });
-export const login = (
-  username: string,
-  password: string,
-  deviceName: string,
-) =>
+export const login = (username: string, password: string, deviceName: string) =>
   signIn("/login", {
     username: username.trim(),
     password,
     deviceName: deviceName.trim(),
   });
 export const changePassword = (current: string, next: string) =>
-  api(
-    "/password",
-    { current: current || undefined, next },
-    "PUT",
-  );
+  api("/password", { current: current || undefined, next }, "PUT");

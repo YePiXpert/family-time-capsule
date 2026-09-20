@@ -34,6 +34,7 @@ import {
   ErrorText,
   Field,
   Page,
+  SectionHeader,
   SettingsGroup,
   SettingsRow,
   Text,
@@ -210,20 +211,24 @@ export function Appearance() {
   }, []);
   return (
     <Page title="外观设置">
-      {(["auto", "light", "dark"] as const).map((theme, i) => (
-        <Button
-          key={theme}
-          title={["跟随系统", "浅色", "深色"][i]!}
-          selected={state.settings.theme === theme}
-          onPress={() => {
-            void store
-              .change((s) => {
-                s.settings.theme = theme;
-              })
-              .catch((e) => setError(messageOf(e)));
-          }}
-        />
-      ))}
+      <SectionHeader title="主题" />
+      <View style={s.row}>
+        {(["auto", "light", "dark"] as const).map((theme, i) => (
+          <Button
+            key={theme}
+            compact
+            title={["跟随系统", "浅色", "深色"][i]!}
+            selected={state.settings.theme === theme}
+            onPress={() => {
+              void store
+                .change((s) => {
+                  s.settings.theme = theme;
+                })
+                .catch((e) => setError(messageOf(e)));
+            }}
+          />
+        ))}
+      </View>
       <View style={s.between}>
         <Text>更大文字</Text>
         <Switch
@@ -240,7 +245,7 @@ export function Appearance() {
           }}
         />
       </View>
-      <Text style={s.heading}>隐私</Text>
+      <SectionHeader title="隐私" />
       <View style={s.between}>
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
           <Text>应用锁</Text>
@@ -276,7 +281,8 @@ export function Storage() {
   const state = useLibrary(),
     store = useStore(),
     s = useStyles();
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(""),
+    [healthOpen, setHealthOpen] = useState(false);
   const health = healthFile().get();
   const refs = referencedMedia(state);
   const bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0),
@@ -284,42 +290,21 @@ export function Storage() {
   return (
     <Page title="本机存储">
       <Text>
-        {Object.keys(state.records).length} 条记录 ·{" "}
-        {Object.keys(state.albums).length} 本相册
+        {Object.keys(state.records).length} 段时光 ·{" "}
+        {Object.keys(state.albums).length} 本相册 ·{" "}
+        {Object.keys(state.drafts).length} 份草稿
       </Text>
-      <Text>{Object.keys(state.drafts).length} 份未完成记录</Text>
-      <Text>素材占用 {(bytes / 1048576).toFixed(1)} MB</Text>
+      <Text>照片和录音占用 {(bytes / 1048576).toFixed(1)} MB</Text>
       <Text style={s.muted}>
-        清理只处理没有被记录、草稿或头像使用的素材。卸载应用会删除本机内容，请定期导出备份。
+        卸载应用会删掉本机的一切，请定期到「备份与恢复」导出备份。
       </Text>
-      <Text>{message}</Text>
-      <Card>
-        <Text style={s.heading}>本机健康</Text>
-        <Text style={s.muted}>
-          启动 {health.launches} 次 · 最近一次 {health.lastLaunchMs} 毫秒
-        </Text>
-        <Text style={s.muted}>
-          写库 {health.changeCount} 次 · 平均 {changeAvgMs(health).toFixed(1)}{" "}
-          毫秒 · 最长 {health.changeMaxMs} 毫秒
-        </Text>
-        <Text style={s.muted}>
-          {health.diskFailures
-            ? `写盘失败 ${health.diskFailures} 次 · 最近：${health.lastDiskError ?? "无摘要"}`
-            : "写盘失败 0 次"}
-        </Text>
-        <Text style={s.muted}>
-          最近备份：
-          {state.lastExportAt ? dateLabel(state.lastExportAt) : "尚未导出过"}
-        </Text>
-        <Text style={s.muted}>这些数字只保存在本机，不会上传。</Text>
-      </Card>
       <Button
-        title={`清理未使用素材（${unused.length} 份）`}
+        title={`清理没用到的照片和录音（${unused.length} 个）`}
         disabled={!unused.length}
         onPress={() =>
           Alert.alert(
-            "清理未使用素材？",
-            "正在使用的照片、录音和视频都会保留。",
+            "清理没用到的照片和录音？",
+            "只清理没有被任何时光、草稿或头像用到的；正在用的都会留下。",
             [
               { text: "取消", style: "cancel" },
               {
@@ -336,6 +321,38 @@ export function Storage() {
           )
         }
       />
+      <Text accessibilityLiveRegion="polite">{message}</Text>
+      <View style={{ alignItems: "flex-start" }}>
+        <Button
+          title={healthOpen ? "收起本机健康" : "查看本机健康"}
+          kind="text"
+          compact
+          selected={healthOpen}
+          onPress={() => setHealthOpen(!healthOpen)}
+        />
+      </View>
+      {healthOpen && (
+        <Card>
+          <Text style={s.heading}>本机健康</Text>
+          <Text style={s.muted}>
+            启动 {health.launches} 次 · 最近一次 {health.lastLaunchMs} 毫秒
+          </Text>
+          <Text style={s.muted}>
+            写库 {health.changeCount} 次 · 平均 {changeAvgMs(health).toFixed(1)}{" "}
+            毫秒 · 最长 {health.changeMaxMs} 毫秒
+          </Text>
+          <Text style={s.muted}>
+            {health.diskFailures
+              ? `写盘失败 ${health.diskFailures} 次 · 最近：${health.lastDiskError ?? "无摘要"}`
+              : "写盘失败 0 次"}
+          </Text>
+          <Text style={s.muted}>
+            最近备份：
+            {state.lastExportAt ? dateLabel(state.lastExportAt) : "尚未导出过"}
+          </Text>
+          <Text style={s.muted}>这些数字只保存在本机，不会上传。</Text>
+        </Card>
+      )}
     </Page>
   );
 }
