@@ -417,7 +417,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
         }
       />
       <BottomBar>
-        <Text>已选 {q.selected.length} 条</Text>
+        <Text>已选 {q.selected.length} 段时光</Text>
         <Button
           title={q.albumId ? "加入此相册" : "下一步"}
           testID="material-done"

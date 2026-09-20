@@ -17,7 +17,7 @@ import {
   createAlbumWithRecords,
   now,
 } from "./services";
-import { deleteRecord, editEntity, recordTitle } from "./model";
+import { deleteRecord, editEntity } from "./model";
 import { looksLikeCoordinates, placeLabel } from "./places";
 import type { Props } from "./navigation";
 import {
@@ -301,7 +301,10 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
               ))}
           </View>
         )}
-        <Text style={s.heading}>{recordTitle(record)}</Text>
+        {/* 没起标题的记录不再拿正文首行充当标题：正文就在下面，重复一遍只会显得怪。 */}
+        {!!record.title.trim() && (
+          <Text style={s.heading}>{record.title.trim()}</Text>
+        )}
         {!!record.text && <Text selectable>{record.text}</Text>}
         {!!record.location && (
           <Text style={s.muted} selectable>

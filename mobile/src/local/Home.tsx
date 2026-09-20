@@ -262,7 +262,7 @@ export function Month({ route }: Props<"Month">) {
             <DateStrip>
               <Text style={s.galleryTitle}>{section.title}</Text>
             </DateStrip>
-            <Text style={s.muted}>{section.count} 条</Text>
+            <Text style={s.muted}>{section.count} 段时光</Text>
           </View>
         )}
         renderItem={({ item }) => (
