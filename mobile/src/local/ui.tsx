@@ -567,6 +567,12 @@ export function useStyles() {
         lineHeight: large ? 24 : 21,
         color: c.muted,
       },
+      /** 脚注：术语与格式说明只准出现在这一级。 */
+      footnote: {
+        fontSize: large ? 14 : 12,
+        lineHeight: large ? 20 : 17,
+        color: c.muted,
+      },
       input: {
         backgroundColor: c.glass,
         color: c.ink,

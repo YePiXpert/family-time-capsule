@@ -10,6 +10,7 @@ import { getToken } from "../ai/client";
 import { birthdayLabel } from "./dates";
 import { backupDirectory, preserveMedia } from "./files";
 import {
+  backupStampLabel,
   createBackup,
   daysSinceExport,
   inspectBackup,
@@ -338,6 +339,14 @@ export function Storage() {
     </Page>
   );
 }
+/** 一份库里有多少东西，给恢复前的确认弹窗用。 */
+function librarySummary(lib: {
+  records: object;
+  albums: object;
+  media: object;
+}) {
+  return `${Object.keys(lib.records).length} 段时光、${Object.keys(lib.albums).length} 本相册、${Object.keys(lib.media).length} 个附件`;
+}
 export function Backup() {
   const state = useLibrary(),
     store = useStore(),
@@ -364,139 +373,151 @@ export function Backup() {
         .filter((f): f is File => f instanceof File && f.name.endsWith(".xmb"))
         .sort((a, b) => b.name.localeCompare(a.name))
     : [];
+  const restore = (file: File, title: string, done: string) =>
+    perform(async () => {
+      const inside = await inspectBackup(file);
+      Alert.alert(
+        title,
+        `会换成这份备份里的 ${librarySummary(inside)}；现在的内容会先备份一份。`,
+        [
+          { text: "取消", style: "cancel" },
+          {
+            text: "恢复并替换",
+            style: "destructive",
+            onPress: () => {
+              void perform(async () => {
+                await restoreBackup(store, file, setMessage);
+                setMessage(done);
+              });
+            },
+          },
+        ],
+      );
+    });
   return (
     <Page title="备份与恢复">
-      <Text>
-        备份包含宝宝资料、记录、草稿、素材和相册。请选择应用之外的位置保存。
-      </Text>
-      <Text style={s.muted}>
-        上次导出：
-        {exportedDays === null
-          ? "尚未导出过"
-          : exportedDays === 0
-            ? "今天"
-            : `${exportedDays} 天前`}
-      </Text>
-      <Text style={s.muted}>
-        备份文件为 .xmb 格式。导出面板关闭后，请确认文件已保存到选定位置。
-      </Text>
-      <ErrorText message={error} />
-      <Text accessibilityLiveRegion="polite">
-        {message || (busy ? "正在校验和处理文件，请稍候…" : "")}
-      </Text>
-      <Button
-        title="导出完整备份"
-        testID="backup-export"
-        primary
-        disabled={busy}
-        onPress={() => {
-          void perform(async () => {
-            // 备份只读快照，不占写队列、不虚增 revision。
-            const file = await createBackup(store.get());
-            await shareBackup(file);
-            await store.change((s) => {
-              s.lastExportAt = new Date().toISOString();
-            });
-            setMessage("备份已生成。请确认已保存到应用之外的位置。");
-          });
-        }}
-      />
-      <Button
-        title="从备份恢复"
-        testID="backup-restore"
-        disabled={busy}
-        onPress={() => {
-          void perform(async () => {
-            const picked = await DocumentPicker.getDocumentAsync({
-              type: "*/*",
-              copyToCacheDirectory: true,
-            });
-            if (picked.canceled) return;
-            const file = new File(picked.assets[0]!.uri),
-              state = await inspectBackup(file);
-            Alert.alert(
-              "替换当前本机内容？",
-              `备份包含 ${Object.keys(state.records).length} 条记录、${Object.keys(state.albums).length} 本相册、${Object.keys(state.media).length} 份素材。恢复前会保留当前内容的备份。`,
-              [
-                { text: "取消", style: "cancel" },
-                {
-                  text: "恢复并替换",
-                  style: "destructive",
-                  onPress: () => {
-                    void perform(async () => {
-                      await restoreBackup(store, file, setMessage);
-                      setMessage("恢复完成。恢复前的备份可在下方另行导出。");
-                    });
-                  },
-                },
-              ],
-            );
-          });
-        }}
-      />
-      {backups.length > 0 && <Text style={s.heading}>本机保留的备份</Text>}
-      {backups.map((file) => (
-        <Card key={file.name}>
-          <Text style={s.muted}>{file.name}</Text>
-          <Text>{(file.size / 1048576).toFixed(1)} MB</Text>
+      <Card>
+        <Text style={s.heading}>导出与恢复</Text>
+        <Text style={s.muted}>
+          一份备份装下她的资料、每一段时光、草稿、照片、录音和相册。
+        </Text>
+        <View style={s.row}>
           <Button
-            title="另存到应用之外"
+            title="导出完整备份"
+            testID="backup-export"
+            primary
             disabled={busy}
             onPress={() => {
               void perform(async () => {
+                // 备份只读快照，不占写队列、不虚增 revision。
+                const file = await createBackup(store.get());
                 await shareBackup(file);
-                setMessage("请确认已保存到应用之外的位置。");
+                await store.change((s) => {
+                  s.lastExportAt = new Date().toISOString();
+                });
+                setMessage("备份已生成，请确认它已保存到应用之外。");
               });
             }}
           />
           <Button
-            title="恢复这份备份"
+            title="从备份恢复"
+            testID="backup-restore"
             disabled={busy}
             onPress={() => {
               void perform(async () => {
-                const state = await inspectBackup(file);
-                Alert.alert(
-                  "恢复这份备份？",
-                  `将替换当前内容，恢复 ${Object.keys(state.records).length} 条记录。当前内容会先备份。`,
-                  [
-                    { text: "取消", style: "cancel" },
-                    {
-                      text: "恢复并替换",
-                      onPress: () => {
-                        void perform(async () => {
-                          await restoreBackup(store, file, setMessage);
-                          setMessage("恢复完成。");
-                        });
-                      },
-                    },
-                  ],
+                const picked = await DocumentPicker.getDocumentAsync({
+                  type: "*/*",
+                  copyToCacheDirectory: true,
+                });
+                if (picked.canceled) return;
+                await restore(
+                  new File(picked.assets[0]!.uri),
+                  "替换现在的内容？",
+                  "恢复完成。恢复前的内容也留了一份在下面。",
                 );
               });
             }}
           />
-          <Button
-            title="删除这份备份"
-            disabled={busy}
-            onPress={() =>
-              Alert.alert(
-                "删除这份备份？",
-                "只删除应用内保留的这一份；已保存到应用之外的备份不受影响。",
-                [
-                  { text: "取消", style: "cancel" },
-                  {
-                    text: "删除",
-                    style: "destructive",
-                    onPress: () => {
-                      file.delete();
-                      setMessage("这份本机备份已删除。");
-                    },
-                  },
-                ],
-              )
-            }
-          />
+        </View>
+        <ErrorText message={error} />
+        {/* 平时是上次导出的时间，导出与恢复的进度、结果都在这一行上播报。 */}
+        <Text accessibilityLiveRegion="polite">
+          {message ||
+            (busy
+              ? "正在检查文件…"
+              : exportedDays === null
+                ? "还没导出过备份。"
+                : exportedDays === 0
+                  ? "今天导出过。"
+                  : `上次导出是 ${exportedDays} 天前。`)}
+        </Text>
+        <Text style={s.footnote}>
+          备份是 .xmb 文件，请保存到应用之外，比如网盘、电脑或家人的手机。
+        </Text>
+      </Card>
+      {backups.length > 0 && (
+        <Card>
+          <Text style={s.heading}>本机保留的备份</Text>
+          <Text style={s.muted}>
+            最近三份留在应用里；卸载应用会一起消失，所以还是要另存到应用之外。
+          </Text>
+          {backups.map((file) => (
+            <View key={file.name} style={{ gap: 4 }}>
+              <Text>
+                {backupStampLabel(file.name) ?? file.name} ·{" "}
+                {(file.size / 1048576).toFixed(1)} MB
+              </Text>
+              <View style={s.row}>
+                <Button
+                  title="恢复这份备份"
+                  kind="text"
+                  compact
+                  disabled={busy}
+                  onPress={() => {
+                    void restore(file, "恢复这份备份？", "恢复完成。");
+                  }}
+                />
+                <Button
+                  title="另存"
+                  kind="text"
+                  compact
+                  disabled={busy}
+                  onPress={() => {
+                    void perform(async () => {
+                      await shareBackup(file);
+                      setMessage("请确认它已保存到应用之外。");
+                    });
+                  }}
+                />
+                <Button
+                  title="删除这份备份"
+                  kind="text"
+                  compact
+                  danger
+                  disabled={busy}
+                  onPress={() =>
+                    Alert.alert(
+                      "删除这份备份？",
+                      "只删除应用内保留的这一份；已保存到应用之外的备份不受影响。",
+                      [
+                        { text: "取消", style: "cancel" },
+                        {
+                          text: "删除",
+                          style: "destructive",
+                          onPress: () => {
+                            file.delete();
+                            setMessage("这份本机备份已删除。");
+                          },
+                        },
+                      ],
+                    )
+                  }
+                />
+              </View>
+            </View>
+          ))}
         </Card>
-      ))}
+      )}
       <ArchiveCard busy={busy} />
     </Page>
   );
@@ -590,12 +611,11 @@ function ArchiveCard({ busy }: { busy: boolean }) {
           title={
             progress
               ? progress.total
-                ? `正在归档 ${progress.done}/${progress.total} 份素材`
+                ? `正在归档 ${progress.done}/${progress.total} 个附件`
                 : "正在准备归档…"
               : "导出开放归档"
           }
           icon="download"
-          primary
           testID="archive-export"
           disabled={busy || archiving}
           onPress={() => {

@@ -39,6 +39,17 @@ export function backupFileName(at: Date, id: string): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${BACKUP_PREFIX}-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}-${id}.xmb`;
 }
+/** 保留备份在页面上的名字：「9月19日 15:44」，跨年带年份；名字里读不出时间戳时返回 null。 */
+export function backupStampLabel(
+  name: string,
+  today = new Date(),
+): string | null {
+  const m = name.match(/-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})-/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  const day = `${Number(mo)}月${Number(d)}日 ${h}:${mi}`;
+  return Number(y) === today.getFullYear() ? day : `${y}年${day}`;
+}
 /** 备份名里的时间戳；取不到的（外部改过名的文件）排到最后。 */
 const backupStamp = (name: string) => name.match(/-(\d{8}-\d{4})-/)?.[1] ?? "";
 /** Calendar days since the last export; null when there has never been a valid one. */
@@ -142,12 +153,10 @@ async function verifyBackupContainer(file: File): Promise<void> {
   const h = file.open(FileMode.ReadOnly);
   try {
     const head = h.readBytes(12);
-    if (!isMagic(head, BACKUP_MAGIC_V2))
-      throw new Error("备份文件不完整。");
+    if (!isMagic(head, BACKUP_MAGIC_V2)) throw new Error("备份文件不完整。");
     const { meta, entities, headerBytes } = readV2Head(h, file.size, head);
     const state = decodeLibraryV2(meta, entities);
-    const expected =
-      headerBytes + meta.blobs.reduce((n, b) => n + b.bytes, 0);
+    const expected = headerBytes + meta.blobs.reduce((n, b) => n + b.bytes, 0);
     if (!Number.isSafeInteger(expected) || file.size !== expected)
       throw new Error("备份文件长度不完整。");
     if (entityCount(state) !== meta.entityCount)
@@ -173,8 +182,7 @@ function readV2Head(h: Handle, size: number, head: Uint8Array) {
   const entities = meta.entityBytes
     ? h.readBytes(meta.entityBytes)
     : new Uint8Array(0);
-  if (entities.length !== meta.entityBytes)
-    throw new Error("备份内容不完整。");
+  if (entities.length !== meta.entityBytes) throw new Error("备份内容不完整。");
   return { meta, entities, headerBytes: 12 + metaBytes + meta.entityBytes };
 }
 /** 逐块读出一段字节，边读边算哈希；target 为空时只校验不落盘。 */
@@ -221,7 +229,10 @@ async function inspectV2(
   for (const blob of meta.blobs) {
     const owner = owners.get(blob.sha256)!;
     const target = extract
-      ? new File(mediaDirectory, `${randomUUID()}.${owner.file.split(".").pop()}`)
+      ? new File(
+          mediaDirectory,
+          `${randomUUID()}.${owner.file.split(".").pop()}`,
+        )
       : null;
     if (target) {
       target.create();
