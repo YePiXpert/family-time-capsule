@@ -45,7 +45,7 @@ for model in ['deepseek-flash']:
   status,result=call('/api/v1/ai/'+kind,body,member['token']);assert status==200,(model,kind,status,result)
   status,replayed=call('/api/v1/ai/'+kind,body,member['token']);assert replayed==result
   print(model,kind,'passed, replay verified')
-# 远端备份对象库：上传 → 重传幂等 → have → 读回逐字节一致 → 坏哈希拒收 → 清单往返 → prune 不动新对象 → 删库。
+# 远端备份对象库：上传 → 重传幂等 → have → 读回逐字节一致 → 坏哈希拒收 → 清单往返（登记对象）→ 空 keep 拒绝、prune 不动新对象 → 删库。
 import hashlib,os
 def raw(path,data,token,method='PUT',headers=None):
  req=urllib.request.Request(args.base+path,data=data,headers={'Authorization':'Bearer '+token,**(headers or {})},method=method)
@@ -59,10 +59,11 @@ status,body,_=raw(object_path,blob,member['token'],headers=octet);assert status=
 status,have=call('/api/v1/backup/objects/have',{'ids':[object_id,'f'*64]},member['token']);assert status==200 and have['missing']==['f'*64],have
 status,body,ctype=raw(object_path,None,member['token'],method='GET');assert status==200 and body==blob and ctype.startswith('application/octet-stream'),(status,ctype)
 status,body,_=raw(object_path,blob,member['token'],headers={**octet,'X-Object-Sha256':'0'*64});assert status==400,(status,body)
-status,_=call('/api/v1/backup/manifest',{'keyId':'0123456789abcdef','index':base64.b64encode(b'verification-index').decode()},member['token'],method='PUT');assert status==200
+status,_=call('/api/v1/backup/manifest',{'keyId':'0123456789abcdef','index':base64.b64encode(b'verification-index').decode(),'objects':[object_id]},member['token'],method='PUT');assert status==200
 status,manifest=call('/api/v1/backup/manifest',token=member['token']);assert status==200 and manifest['keyId']=='0123456789abcdef'
 status,state=call('/api/v1/backup/status',token=member['token']);assert status==200 and state['objects']==1 and state['bytes']==len(blob) and state['keyId']=='0123456789abcdef',state
-status,pruned=call('/api/v1/backup/prune',{'keep':[]},member['token']);assert status==200 and pruned['removed']==0,pruned
+status,refused=call('/api/v1/backup/prune',{'keep':[]},member['token']);assert status==400 and refused['code']=='INVALID_INPUT',refused
+status,pruned=call('/api/v1/backup/prune',{'keep':[object_id]},member['token']);assert status==200 and pruned['removed']==0,pruned
 assert call('/api/v1/backup',token=member['token'],method='DELETE')[0]==200
 status,state=call('/api/v1/backup/status',token=member['token']);assert state['objects']==0 and state['keyId'] is None,state
 print('backup object store passed')
