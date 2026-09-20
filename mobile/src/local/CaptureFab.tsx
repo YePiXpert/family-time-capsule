@@ -104,7 +104,7 @@ export function CaptureFab() {
               }}
             />
           )}
-          <JournalIcon name="plus" color={colors.onAccent} size={26} />
+          <JournalIcon name="edit" color={colors.onAccent} size={24} />
         </Pressable>
       </Animated.View>
     </View>

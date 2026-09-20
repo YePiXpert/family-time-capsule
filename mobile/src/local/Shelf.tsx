@@ -24,6 +24,8 @@ import {
   sortedRecords,
   yearKey,
   type LocalMedia,
+  type LocalRecord,
+  type Stored,
 } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
@@ -35,11 +37,11 @@ import {
   Button,
   Card,
   ErrorText,
-  Glass,
   IconButton,
   Ornament,
   PRESS_SPRING,
   Page,
+  SectionHeader,
   Text,
   dateLabel,
   hapticLight,
@@ -48,7 +50,6 @@ import {
   serif,
   useStyles,
   useTheme,
-  useVolumeWidth,
 } from "./ui";
 import { JournalIcon } from "../components/JournalIcon";
 import { Photo } from "./Media";
@@ -99,6 +100,111 @@ export function Stamp({
   );
 }
 
+/** 横向封面条：两侧出血到屏幕边，条内间距 12。 */
+function Strip({ children }: { children: ReactNode }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ marginHorizontal: -20 }}
+      contentContainerStyle={{
+        paddingHorizontal: 20,
+        gap: 12,
+        alignItems: "flex-start",
+      }}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+/** 书架区块：区标题 + 右侧文字级新建入口；没内容时一行说明，不摆虚位册。 */
+function ShelfSection({
+  title,
+  action,
+  empty,
+  children,
+}: {
+  title: string;
+  action?: { label: string; onPress: () => void; testID?: string };
+  empty?: string;
+  children?: ReactNode;
+}) {
+  const s = useStyles();
+  return (
+    <View style={{ gap: 12 }}>
+      <SectionHeader title={title} action={action} />
+      {children ? children : !!empty && <Text style={s.muted}>{empty}</Text>}
+    </View>
+  );
+}
+/** 「最近」一格：有图是 104 的正方形缩略图，无图是纸卡首行文字，下面一行日期。 */
+function RecentTile({
+  record,
+  cover,
+  index,
+  testID,
+  onPress,
+}: {
+  record: Stored<LocalRecord>;
+  cover?: LocalMedia;
+  index: number;
+  testID?: string;
+  onPress: () => void;
+}) {
+  const s = useStyles();
+  const reduceMotion = useReducedMotion();
+  const title = recordTitle(record);
+  return (
+    <Animated.View
+      entering={
+        reduceMotion
+          ? undefined
+          : FadeInUp.delay(Math.min(index, 8) * 60).duration(320)
+      }
+      style={{ width: 104 }}
+    >
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={`${title}，${dateLabel(record.date)}`}
+        onPress={onPress}
+        style={({ pressed }) => ({ gap: 6, opacity: pressed ? 0.7 : 1 })}
+      >
+        {cover ? (
+          <Photo media={cover} size={104} />
+        ) : (
+          <View
+            style={[
+              s.section,
+              {
+                width: 104,
+                height: 104,
+                padding: 10,
+                borderRadius: 12,
+                justifyContent: "center",
+              },
+            ]}
+          >
+            <Text
+              numberOfLines={3}
+              style={{
+                fontFamily: serif,
+                fontSize: 14,
+                lineHeight: 20,
+                letterSpacing: 0.3,
+              }}
+            >
+              {title}
+            </Text>
+          </View>
+        )}
+        <Text numberOfLines={1} style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
+          {dateLabel(record.date)}
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
 /** 书架提醒卡：一行标题（可带印章与引导语）、一句说明、一个次级动作，右上 ✕ 关掉。 */
 function NudgeCard({
   testID,
@@ -172,7 +278,7 @@ export function Volume({
   title: string;
   caption: string;
   cover?: LocalMedia;
-  fallbackIcon?: "book" | "star" | "plus";
+  fallbackIcon?: "book" | "star" | "plus" | "pin";
   /** 无封面时盖在纸封面上的印章文字（年度册年份）。 */
   stamp?: string;
   onPress: () => void;
@@ -194,7 +300,7 @@ export function Volume({
           ? undefined
           : FadeInUp.delay(Math.min(index, 8) * 60).duration(320)
       }
-      style={[{ width, marginBottom: 24 }, pressStyle]}
+      style={[{ width }, pressStyle]}
     >
       <Pressable
         testID={testID}
@@ -214,7 +320,7 @@ export function Volume({
         style={{ gap: 8 }}
       >
         {cover ? (
-          <Photo media={cover} preview />
+          <Photo media={cover} preview ratio={4 / 3} />
         ) : (
           <View
             style={[
@@ -282,10 +388,9 @@ export function Shelf() {
     store = useStore(),
     nav = useNav(),
     s = useStyles(),
-    { colors } = useTheme(),
-    volumeWidth = useVolumeWidth();
-  const reduceMotion = useReducedMotion();
-  const entrance = reduceMotion ? undefined : FadeInUp.duration(320);
+    { colors, large } = useTheme();
+  // 横向封面条：封面固定 4:3 裁切，宽 140、大字 200。
+  const stripWidth = large ? 200 : 140;
   const [draftsOpen, setDraftsOpen] = useState(false),
     [error, setError] = useState("");
   // store 只在某个集合真的动过时才换它的引用，所以按集合记忆：改一条草稿不会
@@ -538,13 +643,90 @@ export function Shelf() {
             onClose={() => closeNudge("rhythm")}
           />
         )}
+        <ShelfSection title="最近">
+          {records.length > 0 ? (
+            <Strip>
+              {records.slice(0, 6).map((record, i) => (
+                <RecentTile
+                  key={record.id}
+                  record={record}
+                  cover={coverForRecords([record], mediaMap)}
+                  index={i}
+                  testID={`recent-${record.id}`}
+                  onPress={() => nav.navigate("Record", { id: record.id })}
+                />
+              ))}
+            </Strip>
+          ) : (
+            <Card>
+              <Text style={s.heading}>把今天的小事留下来</Text>
+              <Text style={s.muted}>
+                写几句话，留一张照片。日子会慢慢长成一册册书。
+              </Text>
+              <View style={s.row}>
+                <Button
+                  title="记一刻"
+                  primary
+                  icon="edit"
+                  testID="capture-first"
+                  onPress={captureNow}
+                />
+              </View>
+            </Card>
+          )}
+        </ShelfSection>
+        {latestDraft && (
+          <Card compact>
+            <View style={s.between}>
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <Text style={s.muted}>
+                  {drafts.length > 1 ? `${drafts.length} 份草稿` : "上次没写完"}
+                </Text>
+                <Text numberOfLines={1}>{recordTitle(latestDraft.content)}</Text>
+              </View>
+              <Button
+                title="继续编辑"
+                kind="text"
+                compact
+                testID={`resume-${latestDraft.id}`}
+                onPress={() =>
+                  nav.navigate("Editor", { draftId: latestDraft.id })
+                }
+              />
+              {drafts.length > 1 && (
+                <IconButton
+                  label={draftsOpen ? "收起其他草稿" : "查看其他草稿"}
+                  icon={draftsOpen ? "close" : "chevron-down"}
+                  selected={draftsOpen}
+                  onPress={() => setDraftsOpen(!draftsOpen)}
+                />
+              )}
+            </View>
+            {draftsOpen &&
+              drafts.slice(1).map((draft) => (
+                <Pressable
+                  key={draft.id}
+                  testID={`resume-${draft.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`继续编辑：${recordTitle(draft.content)}`}
+                  onPress={() => nav.navigate("Editor", { draftId: draft.id })}
+                  style={{ minHeight: 44, justifyContent: "center", gap: 2 }}
+                >
+                  <Text numberOfLines={1}>{recordTitle(draft.content)}</Text>
+                  <Text style={s.muted}>
+                    {dateLabel(draft.updatedAt)}
+                    {draft.content.mediaIds.length
+                      ? ` · ${draft.content.mediaIds.length} 个附件`
+                      : ""}
+                  </Text>
+                </Pressable>
+              ))}
+          </Card>
+        )}
+        <ErrorText message={error} />
         {anniversaries.length > 0 && (
-          <Animated.View entering={entrance}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 12, paddingRight: 20 }}
-            >
+          <ShelfSection title="那年今日">
+            <Strip>
               {anniversaries.map((record, index) => (
                 <Pressable
                   key={record.id}
@@ -554,7 +736,7 @@ export function Shelf() {
                   onPress={() => nav.navigate("Record", { id: record.id })}
                   style={{ width: 248 }}
                 >
-                  <Glass radius={16} style={{ padding: 16, gap: 6 }}>
+                  <Card style={{ gap: 6 }}>
                     <View
                       style={{
                         flexDirection: "row",
@@ -563,7 +745,7 @@ export function Shelf() {
                       }}
                     >
                       <JournalIcon
-                        name="heart"
+                        name="calendar"
                         color={colors.accent}
                         size={18}
                       />
@@ -582,68 +764,15 @@ export function Shelf() {
                       {recordTitle(record)}
                     </Text>
                     <Text style={s.muted}>{dateLabel(record.date)}</Text>
-                  </Glass>
+                  </Card>
                 </Pressable>
               ))}
-            </ScrollView>
-            {anniversaries.length > 1 && (
-              <Text style={s.muted}>左右滑动，翻看每一个那年的今天。</Text>
-            )}
-          </Animated.View>
+            </Strip>
+          </ShelfSection>
         )}
-        {latestDraft && (
-          <Card compact>
-            <View style={s.between}>
-              <Text style={s.muted}>{drafts.length} 份草稿</Text>
-              <View style={s.row}>
-                <Button
-                  title="继续编辑"
-                  compact
-                  testID={`resume-${latestDraft.id}`}
-                  onPress={() =>
-                    nav.navigate("Editor", { draftId: latestDraft.id })
-                  }
-                />
-                {drafts.length > 1 && (
-                  <IconButton
-                    label={draftsOpen ? "收起其他草稿" : "查看其他草稿"}
-                    icon={draftsOpen ? "close" : "chevron-down"}
-                    selected={draftsOpen}
-                    onPress={() => setDraftsOpen(!draftsOpen)}
-                  />
-                )}
-              </View>
-            </View>
-            {draftsOpen &&
-              drafts.slice(1).map((draft) => (
-                <Pressable
-                  key={draft.id}
-                  testID={`resume-${draft.id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`继续编辑：${recordTitle(draft.content)}`}
-                  onPress={() => nav.navigate("Editor", { draftId: draft.id })}
-                  style={{ minHeight: 44, justifyContent: "center", gap: 2 }}
-                >
-                  <Text numberOfLines={1}>{recordTitle(draft.content)}</Text>
-                  <Text style={s.muted}>
-                    {dateLabel(draft.updatedAt)} ·{" "}
-                    {draft.content.mediaIds.length} 份素材
-                  </Text>
-                </Pressable>
-              ))}
-          </Card>
-        )}
-        <ErrorText message={error} />
         {years.length > 0 && (
-          <View style={{ gap: 16 }}>
-            <Text style={[s.muted, { fontFamily: serif }]}>年度册</Text>
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 16,
-              }}
-            >
+          <ShelfSection title="年度册">
+            <Strip>
               {years.map((y, i) => {
                 const yearRecords = records.filter(
                   (r) => yearKey(r.date) === y,
@@ -661,32 +790,51 @@ export function Shelf() {
                     cover={coverForRecords(yearRecords, state.media)}
                     stamp={y}
                     testID={`volume-year-${y}`}
-                    width={volumeWidth}
+                    width={stripWidth}
                     index={i}
                     onPress={() => nav.navigate("Year", { year: y })}
                   />
                 );
               })}
-            </View>
-          </View>
+            </Strip>
+          </ShelfSection>
         )}
         {months.length > 0 && (
-          <View style={{ gap: 16 }}>
-            <Text style={[s.muted, { fontFamily: serif }]}>月度册</Text>
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 16,
-              }}
-            >
+          <ShelfSection title="月度册">
+            <Strip>
+              {months.slice(0, 6).map((m, i) => {
+                const monthRecords = records.filter(
+                  (r) => monthKey(r.date) === m,
+                );
+                return (
+                  <Volume
+                    key={m}
+                    title={monthLabel(m)}
+                    caption={`${monthRecords.length} 段时光`}
+                    cover={coverForRecords(monthRecords, state.media)}
+                    testID={`volume-${m}`}
+                    width={stripWidth}
+                    index={i}
+                    onPress={() => nav.navigate("Month", { month: m })}
+                  />
+                );
+              })}
+            </Strip>
+            {months.length > 6 && (
+              <Text style={s.muted}>更早的月份，从年度册里翻。</Text>
+            )}
+          </ShelfSection>
+        )}
+        {(firsts.length > 0 || quotes.length > 0 || clusters.length > 0) && (
+          <ShelfSection title="合集">
+            <Strip>
               {firsts.length > 0 && (
                 <Volume
                   title="第一次合集"
                   caption={`${firsts.length} 个第一次`}
                   fallbackIcon="star"
                   testID="volume-firsts"
-                  width={volumeWidth}
+                  width={stripWidth}
                   index={0}
                   onPress={() => nav.navigate("Firsts")}
                 />
@@ -697,172 +845,141 @@ export function Shelf() {
                   caption={`${quotes.length} 句原话`}
                   stamp="语"
                   testID="volume-quotes"
-                  width={volumeWidth}
+                  width={stripWidth}
                   index={firsts.length > 0 ? 1 : 0}
                   onPress={() => nav.navigate("Quotes")}
                 />
               )}
-              {months.map((m, i) => {
-                const monthRecords = records.filter(
-                  (r) => monthKey(r.date) === m,
+              {clusters.length > 0 && (
+                <Volume
+                  title="足迹"
+                  caption={`${clusters.length} 个常去的地方`}
+                  fallbackIcon="pin"
+                  testID="open-footprint"
+                  width={stripWidth}
+                  index={leadVolumes}
+                  onPress={() => nav.navigate("Footprint")}
+                />
+              )}
+            </Strip>
+          </ShelfSection>
+        )}
+        <ShelfSection
+          title="专题册"
+          action={{
+            label: "新建相册",
+            testID: "album-new",
+            onPress: () => {
+              void beginSelection(store)
+                .then((sessionId) => nav.navigate("Picker", { sessionId }))
+                .catch((e) => setError(messageOf(e)));
+            },
+          }}
+          empty="还没有相册。把几段回忆放在一起，就是一本。"
+        >
+          {albums.length > 0 && (
+            <Strip>
+              {albums.map((album, i) => (
+                <Volume
+                  key={album.id}
+                  title={album.name}
+                  caption={`${album.items.length} 段时光`}
+                  cover={coverForAlbum(album, state)}
+                  testID={`album-${album.id}`}
+                  width={stripWidth}
+                  index={i}
+                  onPress={() => nav.navigate("Album", { id: album.id })}
+                />
+              ))}
+            </Strip>
+          )}
+        </ShelfSection>
+        <ShelfSection
+          title="时间胶囊"
+          action={{
+            label: "写一封信",
+            testID: "letter-new",
+            onPress: () => {
+              void beginLetter(store)
+                .then((id) => nav.navigate("LetterEditor", { id }))
+                .catch((e) => setError(messageOf(e)));
+            },
+          }}
+          empty="给多年后的她写一封信，到日子再拆。"
+        >
+          {letters.length > 0 && (
+            <Strip>
+              {letters.map((letter, i) => (
+                <Volume
+                  key={letter.id}
+                  title={letter.title || "一封信"}
+                  caption={letterCaption(letter, today)}
+                  stamp={letter.from.trim().charAt(0) || "信"}
+                  testID={`letter-${letter.id}`}
+                  width={stripWidth}
+                  index={i}
+                  onPress={() =>
+                    nav.navigate(
+                      letterState(letter, today) === "draft"
+                        ? "LetterEditor"
+                        : "Letter",
+                      { id: letter.id },
+                    )
+                  }
+                />
+              ))}
+            </Strip>
+          )}
+        </ShelfSection>
+        <ShelfSection
+          title="时光系列"
+          action={{
+            label: "新建系列",
+            testID: "series-new",
+            onPress: () => {
+              void beginSeries(store)
+                .then((id) => nav.navigate("Series", { id }))
+                .catch((e) => setError(messageOf(e)));
+            },
+          }}
+          empty="每月一张同款照片，看着她慢慢长大。"
+        >
+          {seriesList.length > 0 && (
+            <Strip>
+              {seriesList.map((series, i) => {
+                const items = [...series.items].sort((a, b) =>
+                  a.month.localeCompare(b.month),
                 );
-                const cover = coverForRecords(monthRecords, state.media);
+                const latest = items[items.length - 1];
+                const span =
+                  items.length > 1
+                    ? monthIndex(items[items.length - 1]!.month) -
+                      monthIndex(items[0]!.month) +
+                      1
+                    : 0;
                 return (
                   <Volume
-                    key={m}
-                    title={monthLabel(m)}
-                    caption={`${monthRecords.length} 段时光`}
-                    cover={cover}
-                    testID={`volume-${m}`}
-                    width={volumeWidth}
-                    index={i + leadVolumes}
-                    onPress={() => nav.navigate("Month", { month: m })}
+                    key={series.id}
+                    title={series.name}
+                    caption={
+                      items.length
+                        ? span > 1
+                          ? `${items.length} 张 · 跨 ${span} 个月`
+                          : `${items.length} 张照片`
+                        : "还没有照片"
+                    }
+                    cover={latest ? state.media[latest.mediaId] : undefined}
+                    stamp={span > 1 ? `${span} 个月` : undefined}
+                    testID={`series-${series.id}`}
+                    width={stripWidth}
+                    index={i}
+                    onPress={() => nav.navigate("Series", { id: series.id })}
                   />
                 );
               })}
-            </View>
-          </View>
-        )}
-        <View style={{ gap: 16 }}>
-          <Text style={[s.muted, { fontFamily: serif }]}>专题册</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {albums.map((album, i) => (
-              <Volume
-                key={album.id}
-                title={album.name}
-                caption={`${album.items.length} 段记录`}
-                cover={coverForAlbum(album, state)}
-                testID={`album-${album.id}`}
-                width={volumeWidth}
-                index={i}
-                onPress={() => nav.navigate("Album", { id: album.id })}
-              />
-            ))}
-            <Volume
-              title="新建相册"
-              caption="把回忆放在一起"
-              fallbackIcon="plus"
-              testID="album-new"
-              width={volumeWidth}
-              index={albums.length}
-              onPress={() => {
-                void beginSelection(store)
-                  .then((sessionId) => nav.navigate("Picker", { sessionId }))
-                  .catch((e) => setError(messageOf(e)));
-              }}
-            />
-          </View>
-        </View>
-        <View style={{ gap: 16 }}>
-          <Text style={[s.muted, { fontFamily: serif }]}>时间胶囊</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {letters.map((letter, i) => (
-              <Volume
-                key={letter.id}
-                title={letter.title || "一封信"}
-                caption={letterCaption(letter, today)}
-                stamp={letter.from.trim().charAt(0) || "信"}
-                testID={`letter-${letter.id}`}
-                width={volumeWidth}
-                index={i}
-                onPress={() =>
-                  nav.navigate(
-                    letterState(letter, today) === "draft"
-                      ? "LetterEditor"
-                      : "Letter",
-                    { id: letter.id },
-                  )
-                }
-              />
-            ))}
-            <Volume
-              title="写一封信"
-              caption="写给多年后的她"
-              fallbackIcon="plus"
-              testID="letter-new"
-              width={volumeWidth}
-              index={letters.length}
-              onPress={() => {
-                void beginLetter(store)
-                  .then((id) => nav.navigate("LetterEditor", { id }))
-                  .catch((e) => setError(messageOf(e)));
-              }}
-            />
-          </View>
-        </View>
-        <View style={{ gap: 16 }}>
-          <Text style={[s.muted, { fontFamily: serif }]}>时光系列</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {seriesList.map((series, i) => {
-              const items = [...series.items].sort((a, b) =>
-                a.month.localeCompare(b.month),
-              );
-              const latest = items[items.length - 1];
-              const span =
-                items.length > 1
-                  ? monthIndex(items[items.length - 1]!.month) -
-                    monthIndex(items[0]!.month) +
-                    1
-                  : 0;
-              return (
-                <Volume
-                  key={series.id}
-                  title={series.name}
-                  caption={
-                    items.length
-                      ? span > 1
-                        ? `${items.length} 张 · 跨 ${span} 个月`
-                        : `${items.length} 张照片`
-                      : "还没有照片"
-                  }
-                  cover={latest ? state.media[latest.mediaId] : undefined}
-                  stamp={span > 1 ? `${span} 个月` : undefined}
-                  testID={`series-${series.id}`}
-                  width={volumeWidth}
-                  index={i}
-                  onPress={() => nav.navigate("Series", { id: series.id })}
-                />
-              );
-            })}
-            <Volume
-              title="新建时光系列"
-              caption="每月一张，看着长大"
-              fallbackIcon="plus"
-              testID="series-new"
-              width={volumeWidth}
-              index={seriesList.length}
-              onPress={() => {
-                void beginSeries(store)
-                  .then((id) => nav.navigate("Series", { id }))
-                  .catch((e) => setError(messageOf(e)));
-              }}
-            />
-          </View>
-          {clusters.length > 0 && (
-            <Pressable
-              testID="open-footprint"
-              accessibilityRole="button"
-              accessibilityLabel={`足迹，${clusters.length} 个常去的地方`}
-              onPress={() => nav.navigate("Footprint")}
-            >
-              <Glass radius={16} style={{ padding: 16, gap: 6 }}>
-                <Text style={s.heading}>足迹</Text>
-                <Text style={s.muted}>
-                  按拍摄位置聚成 {clusters.length} 个地点，看看她常去的地方。
-                </Text>
-              </Glass>
-            </Pressable>
+            </Strip>
           )}
-        </View>
-        {records.length === 0 && (
-          <View style={s.empty}>
-            <Text style={s.heading}>把今天的小事留下来</Text>
-            <Text style={s.muted}>
-              点右下角的笔，写几句话，留一张照片。日子会慢慢长成一册册书。
-            </Text>
-            <Ornament />
-          </View>
-        )}
+        </ShelfSection>
       </ScrollView>
       <CaptureFab />
     </Page>
