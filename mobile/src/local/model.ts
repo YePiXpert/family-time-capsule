@@ -526,6 +526,57 @@ export function finishSelection(
   return album;
 }
 
+/** 把几条记录追加进已有相册：去重、不经过选材页；没有新记录时不动 updatedAt。 */
+export function appendToAlbum(
+  s: Library,
+  albumId: string,
+  recordIds: readonly string[],
+  itemId: () => string,
+  now: string,
+): Stored<LocalAlbum> {
+  const album = s.albums[albumId];
+  if (!album) throw new Error("相册已删除。");
+  const ids = [...new Set(recordIds)];
+  for (const id of ids) if (!s.records[id]) throw new Error("这条记录已删除。");
+  const existing = new Set(album.items.map((i) => i.recordId));
+  const added = ids.filter((id) => !existing.has(id));
+  if (!added.length) return album;
+  const next: LocalAlbum = {
+    ...album,
+    items: [...album.items, ...added.map((recordId) => ({ id: itemId(), recordId }))],
+    updatedAt: now,
+  };
+  s.albums[albumId] = next;
+  return next;
+}
+/** 用这几条记录直接建一本相册：名字缺省「新相册」，封面取第一条记录的封面照。 */
+export function newAlbumFrom(
+  s: Library,
+  albumId: string,
+  recordIds: readonly string[],
+  itemId: () => string,
+  now: string,
+  name = "",
+): Stored<LocalAlbum> {
+  const ids = [...new Set(recordIds)];
+  if (!ids.length) throw new Error("请先选择记录。");
+  for (const id of ids) if (!s.records[id]) throw new Error("这条记录已删除。");
+  const first = s.records[ids[0]!]!;
+  const coverId =
+    first.coverId && s.media[first.coverId]?.kind === "image"
+      ? first.coverId
+      : (first.mediaIds.find((m) => s.media[m]?.kind === "image") ?? null);
+  const album: LocalAlbum = {
+    id: albumId,
+    name: name.trim() || "新相册",
+    items: ids.map((recordId) => ({ id: itemId(), recordId })),
+    coverId,
+    updatedAt: now,
+  };
+  s.albums[albumId] = album;
+  return album;
+}
+
 /** Strict boundary for disk and user-selected backups, before changing live data. */
 const invalidLibrary = () => new Error("本机资料格式无效或版本不支持。");
 const isText = (v: unknown) => typeof v === "string";
