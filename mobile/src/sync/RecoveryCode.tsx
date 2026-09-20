@@ -59,7 +59,7 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
         onProgress: setProgress,
         signal: abort.signal,
       });
-      await restoreBackup(store, file, setProgress);
+      await restoreBackup(store, file, setProgress, abort.signal);
       // 拿回来了，之后这台手机就用这把钥匙继续往远端备份。
       await storeKey(key);
       writeRemoteState({ version: 1, enabled: true, keyId: keyIdOf(key) });

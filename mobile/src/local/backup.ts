@@ -1,10 +1,11 @@
-import { Directory, File, FileMode } from "expo-file-system";
+import { Directory, File, FileMode, Paths } from "expo-file-system";
 import { randomUUID } from "expo-crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import * as Sharing from "expo-sharing";
 import { APP_NAME, BACKUP_PREFIX } from "./brand";
 import {
+  READ_INCOMPLETE,
   backupDirectory,
   blobDirectory,
   blobFile,
@@ -50,11 +51,24 @@ export class BackupStopped extends Error {
     this.name = "BackupStopped";
   }
 }
+const stampOf = (at: Date) => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}`;
+};
 /** 名字里的 YYYYMMDD-HHMM 段就是创建顺序；前缀改过名，所以不能拿整个文件名比大小。 */
 export function backupFileName(at: Date, id: string, ext = "xmb"): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${BACKUP_PREFIX}-${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}-${id}.${ext}`;
+  return `${BACKUP_PREFIX}-${stampOf(at)}-${id}.${ext}`;
 }
+/**
+ * 远端恢复进行中的「钉子」：清单先以这个名字落地，blob 回收就认得下载到一半的照片是有人要的，
+ * 中断后再来才真是续传。它不算保留备份（列表、启动救援、保留位都不认它），七天没动就当废弃清掉。
+ */
+export const restorePinName = (at: Date, id: string) =>
+  `restoring-${stampOf(at)}-${id}.xmbm.part`;
+const isRestorePin = (name: string) => /^restoring-.*\.xmbm\.part$/.test(name);
+const PIN_TTL_MS = 7 * 86400000;
+/** 素材进 blob 库之外还要给系统留的余量。 */
+const BLOB_MARGIN = 64 * 1024 * 1024;
 /** 保留备份在页面上的名字：「9月19日 15:44」，跨年带年份；名字里读不出时间戳时返回 null。 */
 export function backupStampLabel(
   name: string,
@@ -94,6 +108,13 @@ export function retainedBackups(): File[] {
         b.name.localeCompare(a.name),
     );
 }
+/** 远端恢复留下的钉子（见 restorePinName）。 */
+export function restorePins(): File[] {
+  if (!backupDirectory.exists) return [];
+  return backupDirectory
+    .list()
+    .filter((f): f is File => f instanceof File && isRestorePin(f.name));
+}
 /**
  * Keeps only the newest local retention copies; exports outside the app are untouched.
  * protect 的第一份是刚创建的那份，占一个保留位；其余（正要恢复的）只是这一轮不动。
@@ -107,6 +128,10 @@ export function pruneBackups(keep = 3, protect: File | File[] = []): void {
   // 再按名字清掉最旧的其余备份。
   const doomed = shielded.size ? others.slice(keep - 1) : others.slice(keep);
   for (const file of doomed) if (file.exists) file.delete();
+  // 七天前的钉子：那次远端恢复没有再继续，别让它永远护着一堆没人要的 blob。
+  const cutoff = stampOf(new Date(Date.now() - PIN_TTL_MS));
+  for (const pin of restorePins())
+    if (backupStamp(pin.name) < cutoff && pin.exists) pin.delete();
 }
 const entityCount = (state: Library) =>
   ENTITY_KINDS.reduce((n, kind) => n + Object.keys(state[kind]).length, 0);
@@ -143,7 +168,13 @@ export async function ensureBlob(
   part.create();
   try {
     const input = source.open(FileMode.ReadOnly);
-    const output = part.open(FileMode.WriteOnly);
+    let output: Handle;
+    try {
+      output = part.open(FileMode.WriteOnly);
+    } catch (e) {
+      input.close();
+      throw e;
+    }
     let hash: string;
     try {
       hash = await pumpBytes(input, blob.bytes, output);
@@ -185,6 +216,13 @@ async function writeManifest(
   });
   const owners = blobOwners(state);
   const blobs = backupBlobs(state);
+  // 第一次做清单备份要把整个素材库复制一份进 blob 库：空间不够先说清楚，一个字节都不写。
+  assertBlobSpace(
+    blobs.reduce((n, blob) => {
+      const stored = blobFile(blob.sha256);
+      return stored.exists && stored.size === blob.bytes ? n : n + blob.bytes;
+    }, 0),
+  );
   let done = 0;
   for (const blob of blobs) {
     if (signal?.aborted) throw new BackupStopped();
@@ -208,13 +246,31 @@ async function writeManifest(
   handle.close();
   try {
     await verifyManifest(out);
-    pruneBackups(3, [out, ...protect]);
-    collectBlobs();
-    return out;
   } catch (e) {
     out.delete();
     throw e;
   }
+  // 收拾是顺手的事：清旧份或回收 blob 出错，不能把刚写好、核对过的这份也删掉再报失败。
+  tidyBackups([out, ...protect]);
+  return out;
+}
+/** 清旧份 + 回收 blob；失败吞掉——备份或恢复本身已经完成，下次再收拾。 */
+function tidyBackups(protect: File[]): void {
+  try {
+    pruneBackups(3, protect);
+    collectBlobs();
+  } catch {
+    // 下一次备份会再来一遍。
+  }
+}
+/** 素材进 blob 库前的空间预检：查不到剩余空间就放行。 */
+function assertBlobSpace(bytes: number): void {
+  if (!bytes) return;
+  const free = Paths.availableDiskSpace;
+  if (Number.isFinite(free) && free < bytes + BLOB_MARGIN)
+    throw new Error(
+      `本机空间不足：把照片整理进备份库还需要约 ${Math.ceil((bytes + BLOB_MARGIN) / 1048576)} MB，请先清理一些空间再备份。`,
+    );
 }
 const isMagic = (head: Uint8Array, magic: Uint8Array) =>
   head.length === 12 && magic.every((b, i) => head[i] === b);
@@ -236,7 +292,11 @@ function readV2Head(h: Handle, size: number, head: Uint8Array) {
   return { meta, entities, headerBytes: 12 + metaBytes + meta.entityBytes };
 }
 /** 只读魔数与 meta（不读实体段）：列表、回收与分卷校验都只需要这些。 */
-function peekMeta(file: File): { magic: Uint8Array; meta: BackupMetaV2 } {
+function peekMeta(file: File): {
+  magic: Uint8Array;
+  meta: BackupMetaV2;
+  metaBytes: number;
+} {
   const h = file.open(FileMode.ReadOnly);
   try {
     const head = h.readBytes(12);
@@ -249,7 +309,7 @@ function peekMeta(file: File): { magic: Uint8Array; meta: BackupMetaV2 } {
     const metaBytes = headLength(head);
     if (metaBytes > META_LIMIT || metaBytes > file.size - 12)
       throw new Error("备份清单损坏。");
-    return { magic, meta: decodeMetaV2(h.readBytes(metaBytes)) };
+    return { magic, meta: decodeMetaV2(h.readBytes(metaBytes)), metaBytes };
   } finally {
     h.close();
   }
@@ -292,6 +352,7 @@ export async function streamBlob(
   output: Handle,
   name: string,
   onChunk?: (chunk: Uint8Array) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const stored = blobFile(blob.sha256);
   if (!stored.exists || stored.size !== blob.bytes)
@@ -299,9 +360,16 @@ export async function streamBlob(
   const input = stored.open(FileMode.ReadOnly);
   let hash: string;
   try {
-    hash = await pumpBytes(input, blob.bytes, output, onChunk);
-  } catch {
-    throw new Error("备份素材不完整。");
+    hash = await pumpBytes(input, blob.bytes, output, (chunk) => {
+      // 停止要到块：一段几 GB 的视频不能在按下停止后还整个写完。
+      if (signal?.aborted) throw new BackupStopped();
+      onChunk?.(chunk);
+    });
+  } catch (e) {
+    // 只有源文件读不满才是备份坏了；目标写不进去（多半是空间不足）要原样说，别把好备份说成坏的。
+    if (e instanceof Error && e.message === READ_INCOMPLETE)
+      throw new Error("备份素材不完整。");
+    throw e;
   } finally {
     input.close();
   }
@@ -327,6 +395,15 @@ export function collectBlobs(): { removed: number; bytes: number } | null {
     if (!file.name.endsWith(".xmbm")) continue;
     const blobs = manifestBlobs(file);
     if (!blobs) return null;
+    for (const blob of blobs) keep.add(blob.sha256);
+  }
+  // 远端恢复的钉子也算：读得出就护住它引用的 blob；读不出的钉子是废弃的半成品，直接清掉。
+  for (const pin of restorePins()) {
+    const blobs = manifestBlobs(pin);
+    if (!blobs) {
+      pin.delete();
+      continue;
+    }
     for (const blob of blobs) keep.add(blob.sha256);
   }
   let removed = 0,
@@ -371,13 +448,18 @@ async function drainBlob(
   target: File | null,
   expected: string,
   name: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const output = target?.open(FileMode.WriteOnly) ?? null;
   let hash: string;
   try {
-    hash = await pumpBytes(h, bytes, output);
-  } catch {
-    throw new Error("备份素材不完整。");
+    hash = await pumpBytes(h, bytes, output, () => {
+      if (signal?.aborted) throw new BackupStopped();
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === READ_INCOMPLETE)
+      throw new Error("备份素材不完整。");
+    throw e;
   } finally {
     output?.close();
   }
@@ -403,8 +485,9 @@ async function assignExtracted(
       continue;
     }
     const copy = extractTarget(m);
-    await source.copy(copy, { overwrite: false });
+    // 先登记再复制：复制到一半失败，清理时才找得到这个半成品。
     written.push(copy);
+    await source.copy(copy, { overwrite: false });
     state.media[id] = { ...m, file: copy.name };
   }
 }
@@ -415,6 +498,7 @@ async function inspectManifest(
   head: Uint8Array,
   extract: boolean,
   written: File[],
+  signal?: AbortSignal,
 ): Promise<Library> {
   const { meta, entities, headerBytes } = readV2Head(h, file.size, head);
   const state = decodeLibraryV2(meta, entities);
@@ -423,6 +507,7 @@ async function inspectManifest(
   const owners = blobOwners(state);
   const extracted = new Map<string, File>();
   for (const blob of meta.blobs) {
+    if (signal?.aborted) throw new BackupStopped();
     const owner = owners.get(blob.sha256)!;
     const stored = blobFile(blob.sha256);
     if (!stored.exists || stored.size !== blob.bytes)
@@ -435,7 +520,14 @@ async function inspectManifest(
     }
     const input = stored.open(FileMode.ReadOnly);
     try {
-      await drainBlob(input, blob.bytes, target, blob.sha256, owner.name);
+      await drainBlob(
+        input,
+        blob.bytes,
+        target,
+        blob.sha256,
+        owner.name,
+        signal,
+      );
     } finally {
       input.close();
     }
@@ -443,7 +535,7 @@ async function inspectManifest(
   if (extract) await assignExtracted(state, extracted, written);
   return state;
 }
-type VolumeHead = { file: File; meta: BackupMetaV2 };
+type VolumeHead = { file: File; meta: BackupMetaV2; metaBytes: number };
 /** 分卷一致性：同一个 set、卷数对、每卷各一份、区间首尾相接盖住全部 blobs。 */
 function orderVolumes(heads: VolumeHead[]): VolumeHead[] {
   const first = heads[0]!.meta;
@@ -489,6 +581,7 @@ async function inspectVolumes(
   ordered: VolumeHead[],
   extract: boolean,
   written: File[],
+  signal?: AbortSignal,
 ): Promise<Library> {
   let state: Library | null = null;
   let entityHash: string | null = null;
@@ -517,6 +610,7 @@ async function inspectVolumes(
       if (!Number.isSafeInteger(expected) || volume.file.size !== expected)
         throw new Error("备份文件长度不完整。");
       for (const blob of slice) {
+        if (signal?.aborted) throw new BackupStopped();
         const owner = owners!.get(blob.sha256)!;
         const target = extract ? extractTarget(owner) : null;
         if (target) {
@@ -524,7 +618,7 @@ async function inspectVolumes(
           written.push(target);
           extracted.set(blob.sha256, target);
         }
-        await drainBlob(h, blob.bytes, target, blob.sha256, owner.name);
+        await drainBlob(h, blob.bytes, target, blob.sha256, owner.name, signal);
       }
     } finally {
       h.close();
@@ -570,6 +664,7 @@ async function inspectV1(
 export async function inspectBackup(
   input: File | File[],
   extract = false,
+  signal?: AbortSignal,
 ): Promise<Library> {
   const files = Array.isArray(input) ? input : [input];
   if (!files.length) throw new Error("请选择备份文件。");
@@ -583,7 +678,7 @@ export async function inspectBackup(
       try {
         const head = h.readBytes(12);
         if (isMagic(head, BACKUP_MAGIC_V3))
-          return await inspectManifest(h, file, head, extract, written);
+          return await inspectManifest(h, file, head, extract, written, signal);
         if (isMagic(head, BACKUP_MAGIC))
           return await inspectV1(h, file, head, extract, written);
         if (!isMagic(head, BACKUP_MAGIC_V2))
@@ -593,17 +688,32 @@ export async function inspectBackup(
       }
     }
     const heads = files.map((file) => {
-      const { magic, meta } = peekMeta(file);
+      const { magic, meta, metaBytes } = peekMeta(file);
       if (magic !== BACKUP_MAGIC_V2)
         throw new Error("请一次只恢复一份备份：多选时只能是同一份备份的分卷。");
-      return { file, meta };
+      return { file, meta, metaBytes };
     });
     const set = heads[0]!.meta.set;
     if (heads.length === 1 && set && set.count > 1)
       throw new Error(
         `这份备份有 ${set.count} 卷，请一起选中全部 ${set.count} 卷。`,
       );
-    return await inspectVolumes(orderVolumes(heads), extract, written);
+    const ordered = orderVolumes(heads);
+    // 每一卷的长度先一起核对：第三卷被截断，不该等前两卷几个 GB 都解完了才发现。
+    for (const volume of ordered) {
+      const from = volume.meta.set?.from ?? 0,
+        take = volume.meta.set?.take ?? volume.meta.blobs.length;
+      const expected =
+        12 +
+        volume.metaBytes +
+        volume.meta.entityBytes +
+        volume.meta.blobs
+          .slice(from, from + take)
+          .reduce((n, b) => n + b.bytes, 0);
+      if (!Number.isSafeInteger(expected) || volume.file.size !== expected)
+        throw new Error("备份文件长度不完整。");
+    }
+    return await inspectVolumes(ordered, extract, written, signal);
   } catch (e) {
     for (const f of written) if (f.exists) f.delete();
     throw e;
@@ -613,12 +723,14 @@ export async function inspectBackup(
 async function rebuildThumbs(
   state: Library,
   onProgress?: RestoreProgress,
+  signal?: AbortSignal,
 ): Promise<void> {
   const pending = Object.entries(state.media).filter(
     ([, m]) => m.kind === "image" || m.kind === "video",
   );
   let done = 0;
   for (const [id, m] of pending) {
+    if (signal?.aborted) throw new BackupStopped();
     const thumb = await renderThumb(m.kind, mediaUri(m), randomUUID());
     if (thumb) state.media[id] = { ...m, ...thumb };
     onProgress?.(`正在重建缩略图 ${++done}/${pending.length}`);
@@ -633,16 +745,17 @@ export async function restoreBackup(
   store: LocalStore,
   input: File | File[],
   onProgress?: RestoreProgress,
+  signal?: AbortSignal,
 ): Promise<File> {
   const inputs = Array.isArray(input) ? input : [input];
   onProgress?.("正在备份当前内容…");
   // 正要恢复的那份可能就是最旧的保留备份：先保护它不被清掉，恢复完再按常规收拾。
-  const prior = await writeManifest(store.get(), onProgress, undefined, inputs);
+  const prior = await writeManifest(store.get(), onProgress, signal, inputs);
   let restored: Library | null = null;
   try {
     onProgress?.("正在校验并解包备份…");
-    restored = await inspectBackup(inputs, true);
-    await rebuildThumbs(restored, onProgress);
+    restored = await inspectBackup(inputs, true, signal);
+    await rebuildThumbs(restored, onProgress, signal);
     onProgress?.("正在写入本机资料…");
     const next = restored;
     await store.change((current) => {
@@ -653,9 +766,8 @@ export async function restoreBackup(
       for (const m of Object.values(restored.media)) deleteMediaFiles(m);
     throw e;
   }
-  // 恢复完按常规只留三份；刚写的「恢复前」那份占一个位，最旧的让位。
-  pruneBackups(3, prior);
-  collectBlobs();
+  // 恢复完按常规只留三份；刚写的「恢复前」那份占一个位，最旧的让位。收拾出错不影响已完成的恢复。
+  tidyBackups([prior]);
   return prior;
 }
 export async function shareBackup(file: File) {
@@ -674,8 +786,8 @@ export async function recoverStartupBackup(
   onProgress?: RestoreProgress,
 ): Promise<void> {
   const restored = await inspectBackup(input, true);
-  await rebuildThumbs(restored, onProgress);
   try {
+    await rebuildThumbs(restored, onProgress);
     const { activateRecoveredLibrary } = await import("./activation");
     await activateRecoveredLibrary(restored);
   } catch (e) {
