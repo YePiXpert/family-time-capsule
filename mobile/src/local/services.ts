@@ -8,11 +8,13 @@ import {
   type NativeShareManifest,
 } from "../../modules/share-intake/src";
 import {
+  appendToAlbum,
   clone,
   editEntity,
   emptyContent,
   LETTER_FROM_LIMIT,
   monthOfItem,
+  newAlbumFrom,
   referencedMedia,
   type Library,
   type MediaKind,
@@ -89,6 +91,24 @@ export async function beginSelection(
     };
     return id;
   });
+}
+/** 把几条记录直接收进已有相册（阅读页「加入相册」）；返回相册。 */
+export async function addRecordsToAlbum(
+  store: LocalStore,
+  albumId: string,
+  recordIds: readonly string[],
+) {
+  return store.change((s) => appendToAlbum(s, albumId, recordIds, newId, now()));
+}
+/** 用这几条记录直接建一本相册；返回相册 id。 */
+export async function createAlbumWithRecords(
+  store: LocalStore,
+  recordIds: readonly string[],
+  name = "",
+) {
+  return store.change(
+    (s) => newAlbumFrom(s, newId(), recordIds, newId, now(), name).id,
+  );
 }
 export async function collectUnusedMedia(store: LocalStore) {
   const removed = await store.change((s) => {
