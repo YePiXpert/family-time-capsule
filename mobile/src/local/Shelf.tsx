@@ -274,6 +274,7 @@ export function Volume({
   testID,
   width,
   index = 0,
+  ratio = 4 / 3,
 }: {
   title: string;
   caption: string;
@@ -285,6 +286,8 @@ export function Volume({
   testID?: string;
   width: number;
   index?: number;
+  /** 封面裁切比例：书架条 4:3，年度册里的月册网格用 1。 */
+  ratio?: number;
 }) {
   const s = useStyles(),
     { colors } = useTheme();
@@ -320,13 +323,13 @@ export function Volume({
         style={{ gap: 8 }}
       >
         {cover ? (
-          <Photo media={cover} preview ratio={4 / 3} />
+          <Photo media={cover} preview ratio={ratio} />
         ) : (
           <View
             style={[
               s.section,
               {
-                aspectRatio: 4 / 3,
+                aspectRatio: ratio,
                 justifyContent: "center",
                 alignItems: "center",
                 gap: 8,

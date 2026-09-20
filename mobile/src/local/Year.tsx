@@ -32,12 +32,12 @@ import {
   ErrorText,
   Ornament,
   Page,
+  SectionHeader,
   PersonChips,
   Text,
   dateLabel,
   messageOf,
   monthLabel,
-  serif,
   useStyles,
   useVolumeWidth,
 } from "./ui";
@@ -121,6 +121,7 @@ export function Year({ route }: Props<"Year">) {
     [person, setPerson] = useState(""),
     [bookBusy, setBookBusy] = useState(false),
     [coverPick, setCoverPick] = useState(false),
+    [exportOpen, setExportOpen] = useState(false),
     [preview, setPreview] = useState<BookLayout | null>(null),
     [error, setError] = useState("");
   const binder = useBookBinder();
@@ -163,16 +164,11 @@ export function Year({ route }: Props<"Year">) {
       }).length,
     0,
   );
-  const chars = records.reduce(
-    (n, r) => n + r.title.trim().length + r.text.trim().length,
-    0,
-  );
   const stats = [
     `${records.length} 段时光`,
     photos ? `${photos} 张照片` : "",
     av ? `${av} 段影音` : "",
     firsts.length ? `${firsts.length} 个第一次` : "",
-    chars ? `共 ${chars} 字` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -332,46 +328,68 @@ export function Year({ route }: Props<"Year">) {
       <View style={s.row}>
         <Button
           title="这一年回顾"
+          compact
           testID="year-recap"
           onPress={() => nav.navigate("Recap", { year })}
         />
-        <Button
-          title={replay.length ? "重放这一年" : "这一年没有照片"}
-          testID="year-replay"
-          disabled={!replay.length}
-          onPress={() => setReplayOpen(true)}
-        />
-      </View>
-      <View style={s.row}>
-        <Button
-          title={bookBusy ? "正在生成长图…" : "导出成长册"}
-          testID="year-yearbook"
-          disabled={bookBusy || !!binder.job || records.length === 0}
-          onPress={() =>
-            Alert.alert(
-              "导出成长册",
-              "长图一张，适合发给家人；纪念册是 20×20cm 方形开本的 PDF，真分页、带页码，可直接送印。",
-              [
-                { text: "取消", style: "cancel" },
-                { text: "长图", onPress: () => void makeYearbook() },
-                { text: "纪念册 PDF", onPress: makeBook },
-              ],
-            )
-          }
-        />
-        {yearPhotoIds.length > 0 && (
+        {replay.length > 0 && (
           <Button
-            title={
-              pickedCover && state.media[pickedCover]
-                ? "换纪念册封面"
-                : "选纪念册封面"
-            }
-            testID="year-book-cover"
-            disabled={!!binder.job}
-            onPress={() => setCoverPick(true)}
+            title="重放这一年"
+            compact
+            testID="year-replay"
+            onPress={() => setReplayOpen(true)}
           />
         )}
+        <Button
+          title={bookBusy ? "正在生成长图…" : "导出成长册"}
+          compact
+          testID="year-yearbook"
+          disabled={bookBusy || !!binder.job || records.length === 0}
+          onPress={() => setExportOpen(!exportOpen)}
+        />
       </View>
+      {replay.length === 0 && records.length > 0 && (
+        <Text style={s.muted}>这一年还没有照片，加几张就能整屏重放。</Text>
+      )}
+      {exportOpen && (
+        <Card compact>
+          <Text style={s.muted}>
+            长图一张，适合发给家人；纪念册是 20×20cm 方形开本的 PDF，真分页、带页码，可直接送印。
+          </Text>
+          <View style={s.row}>
+            <Button
+              title="长图"
+              compact
+              onPress={() => {
+                setExportOpen(false);
+                void makeYearbook();
+              }}
+            />
+            <Button
+              title="纪念册 PDF"
+              compact
+              onPress={() => {
+                setExportOpen(false);
+                makeBook();
+              }}
+            />
+            {yearPhotoIds.length > 0 && (
+              <Button
+                title={
+                  pickedCover && state.media[pickedCover]
+                    ? "换纪念册封面"
+                    : "选纪念册封面"
+                }
+                kind="text"
+                compact
+                testID="year-book-cover"
+                disabled={!!binder.job}
+                onPress={() => setCoverPick(true)}
+              />
+            )}
+          </View>
+        </Card>
+      )}
       {binder.progress && (
         <Card compact>
           <Text style={s.heading}>
@@ -397,10 +415,34 @@ export function Year({ route }: Props<"Year">) {
           compact
         />
       )}
-      <YearNote year={year} />
+      {months.length > 0 && (
+        <View style={{ gap: 16 }}>
+          <SectionHeader title="这一年的月册" />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+            {months.map((m, i) => {
+              const monthRecords = visibleRecords.filter(
+                (r) => monthKey(r.date) === m,
+              );
+              return (
+                <Volume
+                  key={m}
+                  title={monthLabel(m)}
+                  caption={`${monthRecords.length} 段时光`}
+                  cover={coverForRecords(monthRecords, state.media)}
+                  testID={`year-volume-${m}`}
+                  width={volumeWidth}
+                  index={i}
+                  ratio={1}
+                  onPress={() => nav.navigate("Month", { month: m })}
+                />
+              );
+            })}
+          </View>
+        </View>
+      )}
       {firsts.length > 0 && (
         <View style={{ gap: 12 }}>
-          <Text style={[s.muted, { fontFamily: serif }]}>这一年的第一次</Text>
+          <SectionHeader title="这一年的第一次" />
           {firsts.map((record) => (
             <Pressable
               key={record.id}
@@ -422,30 +464,7 @@ export function Year({ route }: Props<"Year">) {
           ))}
         </View>
       )}
-      {months.length > 0 && (
-        <View style={{ gap: 16 }}>
-          <Text style={[s.muted, { fontFamily: serif }]}>这一年的月册</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {months.map((m, i) => {
-              const monthRecords = visibleRecords.filter(
-                (r) => monthKey(r.date) === m,
-              );
-              return (
-                <Volume
-                  key={m}
-                  title={monthLabel(m)}
-                  caption={`${monthRecords.length} 段时光`}
-                  cover={coverForRecords(monthRecords, state.media)}
-                  testID={`year-volume-${m}`}
-                  width={volumeWidth}
-                  index={i}
-                  onPress={() => nav.navigate("Month", { month: m })}
-                />
-              );
-            })}
-          </View>
-        </View>
-      )}
+      <YearNote year={year} />
       {records.length === 0 && (
         <View style={s.empty}>
           <Text style={s.heading}>这一年还没有记录</Text>

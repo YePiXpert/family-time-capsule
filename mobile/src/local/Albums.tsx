@@ -80,24 +80,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
               <Photo media={coverMedia} preview label="相册封面" />
             )}
             <Text style={s.title}>{album.name}</Text>
-            <Text style={s.muted}>{album.items.length} 段记录</Text>
-            <NoteCard
-              heading="这本相册的话"
-              placeholder="写几句这本相册想说的话…"
-              emptyHint="翻完这些记录，留几句想对她说的话。"
-              note={album.note ?? ""}
-              testPrefix="album-note"
-              onSave={async (value) => {
-                await store.change((s) => {
-                  if (!s.albums[album.id]) throw new Error("相册已删除。");
-                  editEntity(s, "albums", album.id, (target) => {
-                    if (value) target.note = value;
-                    else delete target.note;
-                    target.updatedAt = now();
-                  });
-                });
-              }}
-            />
+            <Text style={s.muted}>{album.items.length} 段时光</Text>
             <View style={s.row}>
               <Button
                 title="添加记录"
@@ -111,9 +94,19 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                     .catch((e) => setError(messageOf(e)));
                 }}
               />
-              <Button title="换封面" onPress={() => setCover(!cover)} />
+              {photos.length > 0 && (
+                <Button
+                  title="换封面"
+                  kind="text"
+                  compact
+                  onPress={() => setCover(!cover)}
+                />
+              )}
               <Button
                 title={organize ? "完成整理" : "整理"}
+                kind="text"
+                compact
+                selected={organize || undefined}
                 onPress={() => setOrganize(!organize)}
               />
             </View>
@@ -133,6 +126,8 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                 />
                 <Button
                   title="删除相册"
+                  kind="text"
+                  danger
                   onPress={() =>
                     Alert.alert("删除这个相册？", "其中的原记录会保留。", [
                       { text: "取消", style: "cancel" },
@@ -228,7 +223,28 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
           );
         }}
         ListEmptyComponent={
-          <Text>相册还没有记录，点「添加记录」开始整理。</Text>
+          <Text style={s.muted}>相册还没有记录，点「添加记录」开始整理。</Text>
+        }
+        ListFooterComponent={
+          <View style={{ paddingTop: 16 }}>
+            <NoteCard
+              heading="这本相册的话"
+              placeholder="写几句这本相册想说的话…"
+              emptyHint="翻完这些记录，留几句想对她说的话。"
+              note={album.note ?? ""}
+              testPrefix="album-note"
+              onSave={async (value) => {
+                await store.change((s) => {
+                  if (!s.albums[album.id]) throw new Error("相册已删除。");
+                  editEntity(s, "albums", album.id, (target) => {
+                    if (value) target.note = value;
+                    else delete target.note;
+                    target.updatedAt = now();
+                  });
+                });
+              }}
+            />
+          </View>
         }
       />
       <PhotoPicker

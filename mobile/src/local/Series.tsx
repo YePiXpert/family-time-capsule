@@ -172,6 +172,8 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
         />
         <Button
           title={organize ? "完成整理" : "整理"}
+          kind="text"
+          compact
           onPress={() => setOrganize(!organize)}
         />
       </View>
@@ -196,6 +198,8 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
           />
           <Button
             title="删除系列"
+            kind="text"
+            danger
             onPress={() =>
               Alert.alert(
                 "删除这个时光系列？",
