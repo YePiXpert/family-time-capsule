@@ -325,8 +325,7 @@ export function Backup() {
         .sort((a, b) => b.name.localeCompare(a.name))
     : [];
   return (
-    <Page>
-      <Text style={s.title}>备份与恢复</Text>
+    <Page title="备份与恢复">
       <Text>
         备份包含宝宝资料、记录、草稿、素材和相册。请选择应用之外的位置保存。
       </Text>

@@ -233,6 +233,7 @@ function ZoomablePhoto({ media }: { media: LocalMedia }) {
 }
 export function MediaScreen({ route, navigation }: Props<"Media">) {
   const state = useLibrary(),
+    s = useStyles(),
     media = state.media[route.params.id];
   const record = route.params.recordId
     ? state.records[route.params.recordId]
@@ -249,15 +250,23 @@ export function MediaScreen({ route, navigation }: Props<"Media">) {
       });
   };
   const [error, setError] = useState("");
+  const title = !media
+    ? "查看照片"
+    : media.kind === "image"
+      ? "查看照片"
+      : media.kind === "audio"
+        ? "听录音"
+        : media.kind === "video"
+          ? "看视频"
+          : "查看文件";
   if (!media || !mediaFile(media).exists)
     return (
-      <Page>
-        <Text>素材文件缺失，记录信息仍保留。</Text>
+      <Page title={title}>
+        <Text>这份文件已经不在手机里了，记录本身仍保留。</Text>
       </Page>
     );
   return (
-    <Page>
-      <Text>{media.name}</Text>
+    <Page title={title}>
       {siblings.length > 1 && (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Button
@@ -288,7 +297,10 @@ export function MediaScreen({ route, navigation }: Props<"Media">) {
       ) : media.kind === "video" ? (
         <Video media={media} />
       ) : (
-        <Text>使用下方按钮打开或保存这份文件。</Text>
+        <View style={{ gap: 4 }}>
+          <Text>{media.name}</Text>
+          <Text style={s.muted}>用下方按钮打开或保存这份文件。</Text>
+        </View>
       )}
       <PhotoDetails media={media} />
       <ErrorText message={error} />

@@ -16,6 +16,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { NavigationContext } from "@react-navigation/native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
@@ -389,7 +390,25 @@ export function useStyles() {
       return StyleSheet.create({
         page: { flex: 1, backgroundColor: c.paper },
         content: { padding: 20, gap: 20, paddingBottom: 32 },
-        tabContent: { paddingBottom: 112 },
+        // 页内顶栏：返回钮 44 居中于 8 内边距，图标左沿恰与 20 的页边对齐。
+        topBar: {
+          minHeight: 52,
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: 8,
+          gap: 4,
+        },
+        topTitleBox: { flex: 1, paddingVertical: 8 },
+        topTitleFlush: { paddingLeft: 12 },
+        topTitle: {
+          fontFamily: serif,
+          fontSize: large ? 26 : 22,
+          lineHeight: large ? 32 : 28,
+          fontWeight: "600",
+          letterSpacing: 0.3,
+          color: c.ink,
+        },
+        topRight: { flexDirection: "row", alignItems: "center", gap: 4 },
         row: {
           flexDirection: "row",
           flexWrap: "wrap",
@@ -512,29 +531,68 @@ export function useVolumeWidth() {
   const columns = large || fontScale >= 1.3 ? 1 : 2;
   return (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
 }
+/**
+ * 页面容器：安全区 + 氛围底 + 可选滚动。原生页头已下线，返回与标题由这里的顶栏绘制：
+ * 表单与设置类页面传 `title`（标题在顶栏），内容类页面不传（顶栏只有返回，标题随内容）；
+ * `back` 缺省时看导航栈能否返回，首页自然没有返回钮；弹层（Modal）请显式传 `back={false}`
+ * 或用 `onBack` 关闭自己。顶栏在滚动区之外，`scroll={false}` 的页面同样可用。
+ */
 export function Page({
   children,
   scroll = true,
-  top = false,
-  tab = false,
+  top = true,
+  title,
+  back,
+  onBack,
+  right,
+  testID,
 }: {
   children: ReactNode;
   scroll?: boolean;
   top?: boolean;
-  tab?: boolean;
+  title?: string;
+  back?: boolean;
+  onBack?: () => void;
+  right?: ReactNode;
+  testID?: string;
 }) {
   const s = useStyles();
+  const navigation = useContext(NavigationContext);
+  const showBack =
+    back ?? (onBack !== undefined || (navigation?.canGoBack() ?? false));
+  const hasBar = showBack || title !== undefined || right !== undefined;
   return (
     <SafeAreaView
       edges={top ? ["top", "left", "right"] : ["left", "right"]}
       style={s.page}
+      testID={testID}
     >
       <GlassBackdrop />
+      {hasBar && (
+        <View style={s.topBar}>
+          {showBack && (
+            <IconButton
+              label="返回"
+              icon="arrow-left"
+              testID="page-back"
+              onPress={onBack ?? (() => navigation?.goBack())}
+            />
+          )}
+          <View style={[s.topTitleBox, !showBack && s.topTitleFlush]}>
+            {title !== undefined && (
+              <Text accessibilityRole="header" style={s.topTitle}>
+                {title}
+              </Text>
+            )}
+          </View>
+          {right !== undefined && <View style={s.topRight}>{right}</View>}
+        </View>
+      )}
       {scroll ? (
         <ScrollView
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
-          contentContainerStyle={[s.content, tab && s.tabContent]}
+          contentContainerStyle={s.content}
         >
           {children}
         </ScrollView>

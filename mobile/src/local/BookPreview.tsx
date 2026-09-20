@@ -101,7 +101,7 @@ export function BookPreview({
       onRequestClose={onClose}
       testID="book-preview"
     >
-      <Page top scroll={false}>
+      <Page back={false} scroll={false}>
         <View style={s.between}>
           <Text style={s.heading}>翻一遍再装订</Text>
           <Button title="返回" compact onPress={onClose} />

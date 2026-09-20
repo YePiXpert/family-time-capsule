@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
-  Platform,
   StyleSheet,
   Text as NativeText,
   View,
@@ -46,7 +45,6 @@ import {
   Text,
   messageOf,
   paletteOf,
-  serif,
   useStyles,
   useTheme,
 } from "./ui";
@@ -251,157 +249,37 @@ function Root() {
         ) : null}
         <Stack.Navigator
           screenOptions={{
-            headerBackTitle: "返回",
-            headerShadowVisible: Platform.OS !== "ios",
-            // 各页面自带衬线大标题，页头标题只在页面没有自带标题时出现（搜索、查看素材），
-            // 同样走衬线，与统一规则一致。
-            headerTitleStyle: { fontFamily: serif, fontWeight: "600" },
-            // 页头取纸色与页面底色连成一片：iOS 由导航主题 colors.card（已设为 paper）
-            // 直接上色并去掉分隔线，Android 自绘纸面 + 细描边。
-            // 注：react-native-screens 的 buildAppearance 只有不透明／全透明两条分支，
-            // 从不调用 configureWithDefaultBackground，所以这里拿不到 iOS 26 系统材质。
-            headerBackground:
-              Platform.OS === "ios"
-                ? undefined
-                : () => (
-                    <View
-                      style={{
-                        flex: 1,
-                        backgroundColor: theme.colors.paper,
-                        borderBottomWidth: StyleSheet.hairlineWidth,
-                        borderBottomColor: theme.colors.glassLine,
-                      }}
-                    />
-                  ),
+            // 原生页头下线：返回与标题由 Page 基元的页内顶栏绘制（见 DESIGN.md 统一规则）。
+            headerShown: false,
             contentStyle: { backgroundColor: theme.colors.paper },
             animation: reduceMotion ? "none" : "fade",
           }}
         >
-          <Stack.Screen
-            name="Shelf"
-            component={Shelf}
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen
-            name="Search"
-            component={SearchScreen}
-            options={{ title: "搜索" }}
-          />
-          <Stack.Screen
-            name="Month"
-            component={Month}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Year"
-            component={Year}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Recap"
-            component={RecapScreen}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Firsts"
-            component={Firsts}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Footprint"
-            component={Footprint}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="People"
-            component={People}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Title"
-            component={TitlePage}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Settings"
-            component={Settings}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Editor"
-            component={Editor}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Record"
-            component={RecordScreen}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Album"
-            component={AlbumScreen}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Series"
-            component={SeriesScreen}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Picker"
-            component={Picker}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="AlbumDetails"
-            component={AlbumDetails}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Media"
-            component={MediaScreen}
-            options={{ title: "查看素材" }}
-          />
-          <Stack.Screen
-            name="Profile"
-            component={Profile}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Storage"
-            component={Storage}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Backup"
-            component={Backup}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="AISettings"
-            component={AISettingsScreen}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Appearance"
-            component={Appearance}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="LetterEditor"
-            component={LetterEditor}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Letter"
-            component={LetterScreen}
-            options={{ title: "" }}
-          />
-          <Stack.Screen
-            name="Quotes"
-            component={Quotes}
-            options={{ title: "" }}
-          />
+          <Stack.Screen name="Shelf" component={Shelf} />
+          <Stack.Screen name="Search" component={SearchScreen} />
+          <Stack.Screen name="Month" component={Month} />
+          <Stack.Screen name="Year" component={Year} />
+          <Stack.Screen name="Recap" component={RecapScreen} />
+          <Stack.Screen name="Firsts" component={Firsts} />
+          <Stack.Screen name="Footprint" component={Footprint} />
+          <Stack.Screen name="People" component={People} />
+          <Stack.Screen name="Title" component={TitlePage} />
+          <Stack.Screen name="Settings" component={Settings} />
+          <Stack.Screen name="Editor" component={Editor} />
+          <Stack.Screen name="Record" component={RecordScreen} />
+          <Stack.Screen name="Album" component={AlbumScreen} />
+          <Stack.Screen name="Series" component={SeriesScreen} />
+          <Stack.Screen name="Picker" component={Picker} />
+          <Stack.Screen name="AlbumDetails" component={AlbumDetails} />
+          <Stack.Screen name="Media" component={MediaScreen} />
+          <Stack.Screen name="Profile" component={Profile} />
+          <Stack.Screen name="Storage" component={Storage} />
+          <Stack.Screen name="Backup" component={Backup} />
+          <Stack.Screen name="AISettings" component={AISettingsScreen} />
+          <Stack.Screen name="Appearance" component={Appearance} />
+          <Stack.Screen name="LetterEditor" component={LetterEditor} />
+          <Stack.Screen name="Letter" component={LetterScreen} />
+          <Stack.Screen name="Quotes" component={Quotes} />
         </Stack.Navigator>
       </NavigationContainer>
     </>
