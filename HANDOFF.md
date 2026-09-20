@@ -3,7 +3,7 @@
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
 > 最后更新：2026-09-20，Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
-> 服务端已切到生产（SOURCE_SHA `81d1ffe`），主人拍板出 **Build 71 = 复查修复版安装包**（打包状态见第一节）；下一步 Build 72 家人一起记。
+> 服务端已切到生产（SOURCE_SHA `81d1ffe`）；**Build 71（复查修复版）已交付**：源码 `412f8e0`，run 35511463957 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 72 家人一起记。
 
 ---
 
@@ -22,7 +22,7 @@
   本机 blob 库（`.xmbm` 清单 + `blobs/ab/<sha256>`，三份保留备份只占一份照片）→ 分卷导出（单卷与 Build 68 逐字节同形，> 2 GiB 分卷，乱序多选恢复）
   → 服务端对象库 → 密码学（12 词恢复码即钥匙，XChaCha20-Poly1305，id／nonce 按内容派生）→ 状态／规划器／传输层（XHR）→ 引擎（只传缺的、核对、远端恢复进 blob 库）
   → 备份页末尾「远端备份」卡 + 恢复码页 → 真服务端端到端 → 收尾。CHANGELOG「Build 70」有逐条说明，`docs/plans/PLAN-BUILD-70.md` 顶部记了 8 条实施偏离。
-- **Build 70 打包（已交付）**：交付提交 `7477504`（`mobile/app.json` 70），run 35494972998 三作业全绿（quality／Android APK／iOS unsigned IPA），
+- **Build 70 打包（已交付，已被 Build 71 取代，不必再存）**：交付提交 `7477504`（`mobile/app.json` 70），run 35494972998 三作业全绿（quality／Android APK／iOS unsigned IPA），
   `build-source.json` 的 gitSha = `7477504e59b6489dbaadb9db8f06fb51e3d0f65b`；双端冒烟 `result.json` 全 true（含新键 `remoteCardOffline`）。
   artifacts 2026-10-20 过期，请尽快下载到 `C:\vibe-coding\releases\build-70\`：
   `gh run download 35494972998 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
@@ -42,8 +42,18 @@
   `81d1ffe`（收拾出错把成功报成失败、入库无空间预检、写不进去被说成备份坏了、多卷长度晚验、停止不到块、远端恢复中断即丢续传、句柄与半成品清理）。
   手机端这两笔不在 Build 70 的安装包里（包是 `7477504`）：主人拍板出 **Build 71**（复查修复版），见下一条。
   没修的一条：服务端 `usage()` 每次 PUT 都全量 stat 一遍成员的对象目录（几千个对象几十毫秒，家庭规模够用；上万再做缓存）。
-- **Build 71 打包（复查修复版）**：本提交把 `mobile/app.json` 改到 71（buildNumber／versionCode 各改一次），随后用它的完整 SHA 派发 `mobile-build.yml`；
-  三作业全绿后把 run 号、APK／IPA 大小与 SHA-256 记到这里（交付提交），Build 70 的包随之作废。
+- **Build 71 打包（复查修复版，已交付）**：交付提交 `412f8e0`（`mobile/app.json` 71），run 35511463957 三作业全绿（quality 1.5 分钟／Android 16 分钟／iOS 52 分钟），
+  `build-source.json` 的 gitSha = `412f8e032dd38ec3721d90fbee0df939af89f984`、androidVersionCode 71、iosBuildNumber "71"；双端冒烟 `result.json` 的布尔项全 true（安卓 12 项、iOS 回归 9 项、iOS 启动 3 项）。
+  artifacts 2026-10-20 过期，请尽快下载到 `C:\vibe-coding\releases\build-71\`：
+  `gh run download 35511463957 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`（VPS 上另有一份在 `/var/tmp/anan-tests/artifacts-35511463957/`）。
+  APK 66,620,498 字节、IPA 11,164,958 字节（IPA 未签名，由主人自签后装机）；SHA-256（可直接存成 sha256sums.txt 后 `sha256sum -c`）：
+
+  ```text
+  b6dab5075519a304db0fb868f9d677c120e5ad473cda7e85fa78309f81757af8  FamilyTimeCapsule-android.apk
+  0480eed1f11e71747f1bdacb0c1960914dbd773461747f9e06491796d6e59956  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
+
+  装上 Build 71 后请在「远端备份 → 现在备份」看一次 4 MiB 以上照片的上传节奏，把真机 MB/s 记到上面 Build 70 那段的位置（阈值 5 MB/s）。
 - **下一步**：Build 72「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
@@ -67,10 +77,9 @@
    本机若设置了 http_proxy/https_proxy，对 127.0.0.1 的请求要 env -u http_proxy -u https_proxy -u ALL_PROXY … 绕过。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 71（复查修复版）安装包：第一节「Build 71 打包」若已记了 run 号与校验和就是已交付；若还没有，说明打包没走完——
-   用第三节表里「Build 71 收尾」那一笔的完整 40 位 SHA 派发 mobile-build.yml，三作业全绿后 gh run download 两端包、算 SHA-256 记进第一节。
-   过期后要重出同一版就用同一个 SHA 重新派发（源码没变就不加构建号）。真机 XChaCha20 MB/s 由主人装机后观察，记在第一节。
-   服务端已是 81d1ffe（第一节），不用再部。
+第二步·Build 71（复查修复版）安装包已交付（源码 412f8e0，run 35511463957，校验和在 HANDOFF 第一节，artifacts 2026-10-20 过期）：
+   若主人本地还没存下 build-71 的 APK/IPA，提醒先 gh run download 存下来；过期后要重出同一版就用 412f8e0 的完整 40 位 SHA 重新派发
+   mobile-build.yml（源码没变就不加构建号）。真机 XChaCha20 MB/s 由主人装机后观察，记在第一节。服务端已是 81d1ffe，不用再部。
 
 第三步·Build 72「传家 · 下」家人一起记：
 - 先写 docs/plans/PLAN-SHARING.md 给主人批：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；
@@ -105,7 +114,8 @@
 | 347200a | 复查·远端界面与状态：`moveSync`、整页锁、停止与离开、钥匙串出错说明、清单登记 objects（未打包） |
 | 81d1ffe | 复查·本机备份：收拾吞错、空间预检、读坏与写不进分清、多卷先验长度、停止到块、远端恢复钉子（未打包） |
 | c62e744 | 复查收尾：CHANGELOG、HANDOFF、deploy/README 契约、`verify-service.py` 备份段 |
-| （本次） | Build 71 收尾：app.json 71、CHANGELOG「Build 71 — 复查修复」、README、HANDOFF（**Build 71 打包源码 SHA**） |
+| 412f8e0 | Build 71 收尾：app.json 71、CHANGELOG「Build 71 — 复查修复」、README、HANDOFF（**Build 71 打包源码 SHA**） |
+| （本次） | 交付：HANDOFF 记 run 35511463957 与 Build 71 的 APK／IPA 校验和 |
 
 ## 四、后续路线
 
