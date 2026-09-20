@@ -1,8 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { getToken } from "../ai/session";
+import { BackupStopped } from "../local/backup";
 import { useLibrary, useStore } from "../local/context";
 import { useNav } from "../local/navigation";
 import {
@@ -31,8 +32,16 @@ import { SyncError, createTransport } from "./transport";
  * 备份页最后一张卡：远端备份的全部入口都在这里，普通记录流程见不到服务器。
  * 三态：未登录 → 去登录；已登录未开启 → 开启（生成钥匙、看恢复码）或从远端恢复；
  * 已开启 → 现在备份／查看恢复码／验证／从远端恢复／关闭。进度写在按钮标题里，错误是卡内一行红字。
+ * 卡里有操作在跑时通过 onRunningChange 告诉备份页：本机备份、恢复、删除与远端上传都读写同一个
+ * blob 库，不能同时进行。
  */
-export function RemoteBackupCard({ busy }: { busy: boolean }) {
+export function RemoteBackupCard({
+  busy,
+  onRunningChange,
+}: {
+  busy: boolean;
+  onRunningChange?: (running: boolean) => void;
+}) {
   const library = useLibrary(),
     store = useStore(),
     nav = useNav(),
@@ -46,16 +55,31 @@ export function RemoteBackupCard({ busy }: { busy: boolean }) {
   const refresh = useCallback(() => {
     let cancelled = false;
     void (async () => {
-      const [token, state] = await Promise.all([getToken(), readRemoteState()]);
-      if (cancelled) return;
-      setSignedIn(!!token);
-      setRemote(state);
+      try {
+        const [token, state] = await Promise.all([
+          getToken(),
+          readRemoteState(),
+        ]);
+        if (cancelled) return;
+        setSignedIn(!!token);
+        setRemote(state);
+      } catch (e) {
+        // 钥匙串读不出来：别让卡上的按钮全灰着不说话。
+        if (cancelled) return;
+        setSignedIn(false);
+        setError(messageOf(e));
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
   useFocusEffect(refresh);
+  // 离开这一页就停止还在跑的上传：停止键跟着卡一起消失，不能让它在背后继续。
+  useEffect(() => {
+    const active = controller;
+    return () => active.current?.abort();
+  }, []);
   const running = !!progress;
   const perform = async (fn: (signal: AbortSignal) => Promise<void>) => {
     const abort = new AbortController();
@@ -63,15 +87,21 @@ export function RemoteBackupCard({ busy }: { busy: boolean }) {
     setError("");
     setMessage("");
     setProgress("正在准备…");
+    onRunningChange?.(true);
     try {
       await fn(abort.signal);
     } catch (e) {
-      if (e instanceof SyncError && e.code === "CANCELED")
+      // 「正在整理照片」阶段的停止来自本机备份（BackupStopped），之后的来自传输层。
+      if (
+        e instanceof BackupStopped ||
+        (e instanceof SyncError && e.code === "CANCELED")
+      )
         setMessage("已停止。");
       else setError(messageOf(e));
     } finally {
       controller.current = null;
       setProgress("");
+      onRunningChange?.(false);
       setRemote(await readRemoteState());
     }
   };
@@ -190,6 +220,7 @@ export function RemoteBackupCard({ busy }: { busy: boolean }) {
           <Text style={s.muted}>
             登录家人账号后，可以把加密后的照片和记录存到家人服务上。钥匙只在这台手机和你抄下的恢复码里，服务器看不到内容。
           </Text>
+          <ErrorText message={error} />
           <View style={{ alignItems: "flex-start" }}>
             <Button
               title="去登录"

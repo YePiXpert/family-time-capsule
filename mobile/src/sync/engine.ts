@@ -195,17 +195,17 @@ export async function runRemoteBackup(
     blobBytes: blobBytesOf(meta),
   };
   deps.onProgress?.("正在写远端清单…");
+  // 清单引用的对象随索引一起登记，服务端 prune 时自己护住它们；
+  // 服务端一次最多认 50000 个 id，超过就这轮既不登记也不收拾，宁可多占。
+  const ids = all.map((item) => item.id);
+  const registered = ids.length <= 50000 ? ids : [];
   await deps.transport.putManifest(
     keyId,
     toBase64(sealSmall(deps.key, INDEX_LABEL, utf8(JSON.stringify(index)))),
+    registered,
     deps.signal,
   );
-  // 服务端一次最多认 50000 个 keep；超过就这轮不收拾，宁可多占。
-  if (all.length <= 50000)
-    await deps.transport.prune(
-      all.map((item) => item.id),
-      deps.signal,
-    );
+  if (registered.length) await deps.transport.prune(registered, deps.signal);
   const remote: RemoteState = {
     version: 1,
     enabled: true,
@@ -386,8 +386,12 @@ export async function restoreFromRemote(deps: EngineDeps): Promise<File> {
   const h = out.open(FileMode.WriteOnly);
   try {
     h.writeBytes(bytes);
-  } finally {
+  } catch (e) {
+    // 写不进去就别留一个空清单：任何一份清单读不出来，blob 回收都会停手。
     h.close();
+    out.delete();
+    throw e;
   }
+  h.close();
   return out;
 }

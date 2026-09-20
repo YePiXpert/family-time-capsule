@@ -93,9 +93,11 @@ export type Transport = {
     signal?: AbortSignal,
   ): Promise<{ created: boolean }>;
   get(id: string, signal?: AbortSignal): Promise<Uint8Array>;
+  /** objects 是清单引用的全部对象 id：服务端据此在 prune 时护住它们（对象名本来就在服务端的文件系统里）。 */
   putManifest(
     keyId: string,
     index: string,
+    objects: readonly string[],
     signal?: AbortSignal,
   ): Promise<string>;
   /** 远端还没有清单时返回 null。 */
@@ -241,9 +243,9 @@ export function createTransport(
       });
       return body;
     },
-    async putManifest(keyId, index, signal) {
+    async putManifest(keyId, index, objects, signal) {
       const { json } = await call("PUT", "/backup/manifest", {
-        body: JSON.stringify({ keyId, index }),
+        body: JSON.stringify({ keyId, index, objects }),
         signal,
       });
       return String(json.updatedAt ?? "");

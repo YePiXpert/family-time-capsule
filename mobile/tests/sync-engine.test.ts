@@ -96,8 +96,8 @@ function fakeRemote() {
       if (!found) throw new SyncError("NOT_FOUND", "远端没有这一份。", 404);
       return found;
     },
-    async putManifest(keyId, index) {
-      log.push("putManifest");
+    async putManifest(keyId, index, objects) {
+      log.push(`putManifest ${objects.length}`);
       manifest = { keyId, index, updatedAt: new Date().toISOString() };
       return manifest.updatedAt;
     },
@@ -208,7 +208,8 @@ it("uploads every object once, seals the index, records state, and leaks no plai
   expect(result.lastBackupBytes).toBeGreaterThan(4 * 1048576 + 3000);
   expect(await state.readRemoteState()).toEqual(result);
   expect(stages).toContain("正在上传 4/4");
-  expect(remote.log.at(-1)).toBe("prune 4");
+  // 清单登记全部 4 个对象，prune 的 keep 也是这 4 个。
+  expect(remote.log.slice(-2)).toEqual(["putManifest 4", "prune 4"]);
   // 对象 id 不是照片哈希，密文里也没有照片的字节。
   expect(remote.objects.has(big.sha256)).toBe(false);
   const run = Buffer.alloc(4096, 17);

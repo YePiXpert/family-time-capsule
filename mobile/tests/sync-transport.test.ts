@@ -155,12 +155,13 @@ it("round-trips the manifest index, treats 404 as no manifest yet, and passes ke
     status: 200,
     body: encode({ updatedAt: "2026-09-20T00:00:00.000Z" }),
   });
-  expect(await transport().putManifest("ab".repeat(8), "QUJD")).toBe(
-    "2026-09-20T00:00:00.000Z",
-  );
+  expect(
+    await transport().putManifest("ab".repeat(8), "QUJD", ["a", "b"]),
+  ).toBe("2026-09-20T00:00:00.000Z");
   expect(JSON.parse(seen[0]!.body as string)).toEqual({
     keyId: "ab".repeat(8),
     index: "QUJD",
+    objects: ["a", "b"],
   });
   answer = () => ({
     status: 404,

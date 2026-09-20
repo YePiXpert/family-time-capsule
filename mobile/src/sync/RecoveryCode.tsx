@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
-import { restoreBackup } from "../local/backup";
+import { BackupStopped, restoreBackup } from "../local/backup";
 import { useStore } from "../local/context";
 import type { Props } from "../local/navigation";
 import {
@@ -32,10 +32,19 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
   const show = route.params.mode === "show";
   useEffect(() => {
     if (!show) return;
-    void loadKey().then((key) =>
-      setWords(key ? mnemonicOf(key).split(" ") : []),
-    );
+    loadKey()
+      .then((key) => setWords(key ? mnemonicOf(key).split(" ") : []))
+      .catch((e: unknown) => {
+        // 钥匙串读不出来：说清楚，别停在「正在读取…」。
+        setError(messageOf(e));
+        setWords([]);
+      });
   }, [show]);
+  // 离开这一页就停止还在跑的恢复。
+  useEffect(() => {
+    const active = controller;
+    return () => active.current?.abort();
+  }, []);
   const restore = async () => {
     const abort = new AbortController();
     controller.current = abort;
@@ -56,7 +65,10 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
       writeRemoteState({ version: 1, enabled: true, keyId: keyIdOf(key) });
       setMessage("恢复完成。这台手机之后会用这份恢复码继续备份。");
     } catch (e) {
-      if (e instanceof SyncError && e.code === "CANCELED")
+      if (
+        e instanceof BackupStopped ||
+        (e instanceof SyncError && e.code === "CANCELED")
+      )
         setMessage("已停止。");
       else setError(messageOf(e));
     } finally {
@@ -76,7 +88,7 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
           {words === null ? (
             <Text>正在读取…</Text>
           ) : words.length === 0 ? (
-            <ErrorText message="这台手机上还没有远端备份的钥匙。" />
+            <ErrorText message={error || "这台手机上还没有远端备份的钥匙。"} />
           ) : (
             <View
               style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 12 }}
