@@ -29,7 +29,7 @@ import {
 } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
-import { APP_NAME, CHILD_FALLBACK } from "./brand";
+import { CHILD_FALLBACK } from "./brand";
 import { bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
 import { clusterPlaces } from "./places";
 import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
@@ -736,7 +736,7 @@ export function Shelf() {
                   onPress={() => nav.navigate("Record", { id: record.id })}
                   style={{ width: 248 }}
                 >
-                  <Card style={{ gap: 6 }}>
+                  <Card compact style={{ gap: 4 }}>
                     <View
                       style={{
                         flexDirection: "row",
@@ -1085,18 +1085,24 @@ export function TitlePage() {
             {initial}
           </Text>
         </Stamp>
-        <Text style={[s.title, { textAlign: "center" }]}>
-          {state.profile.name || APP_NAME}
-        </Text>
+        {state.profile.name ? (
+          <Text style={[s.title, { textAlign: "center" }]}>
+            {state.profile.name}
+          </Text>
+        ) : (
+          <Text style={[s.heading, { textAlign: "center", color: colors.muted }]}>
+            还没填名字
+          </Text>
+        )}
         {!!state.profile.birthday && (
           <Text style={s.muted}>生于 {dateLabel(state.profile.birthday)}</Text>
         )}
         <Text style={[s.muted, { textAlign: "center" }]}>
-          记录保存在这台设备，慢慢长成一册册书。
+          记录保存在这台手机上，慢慢长成一册册书。
         </Text>
         <Ornament />
         <Button
-          title="完善宝宝资料"
+          title="完善资料"
           icon="person"
           onPress={() => nav.navigate("Profile")}
         />
