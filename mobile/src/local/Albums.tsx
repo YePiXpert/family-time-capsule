@@ -308,9 +308,8 @@ export function Picker({ route, navigation }: Props<"Picker">) {
       </Page>
     );
   return (
-    <Page scroll={false}>
-      <View style={{ padding: 20, gap: 12 }}>
-        <Text style={s.title}>选择回忆</Text>
+    <Page scroll={false} title="选记录">
+      <View style={{ padding: 20, paddingTop: 4, gap: 12 }}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={s.row}>
             <Button
@@ -468,7 +467,7 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
   };
   const tile = (width - 40 - 12) / 2;
   return (
-    <Page scroll={false}>
+    <Page scroll={false} title="给这段时光起个名字">
       <FlatList
         // 名称输入框在列表头里：列表默认会把键盘弹起时的第一次点击吃掉当作收键盘，
         // 「返回调整内容」「保存相册」和选封面都会失灵一次，必须显式放行。
@@ -482,7 +481,6 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
         contentContainerStyle={[s.content, { gap: 12 }]}
         ListHeaderComponent={
           <View style={{ gap: 16 }}>
-            <Text style={s.title}>给这段时光起个名字</Text>
             <Field
               label="相册名称"
               testID="album-name"

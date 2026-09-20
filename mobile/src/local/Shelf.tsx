@@ -1026,8 +1026,7 @@ export function Firsts() {
     .filter((r) => r.first)
     .sort((a, b) => a.date.localeCompare(b.date));
   return (
-    <Page>
-      <Text style={s.title}>第一次合集</Text>
+    <Page title="第一次合集">
       <Text style={s.muted}>
         {firsts.length ? `${firsts.length} 个第一次，按日子排好。` : ""}
       </Text>

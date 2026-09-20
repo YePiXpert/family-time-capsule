@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, ScrollView, Switch, View } from "react-native";
+import { Alert, Switch, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -43,40 +43,37 @@ export function Settings() {
     nav = useNav(),
     s = useStyles();
   return (
-    <Page scroll={false}>
-      <ScrollView contentContainerStyle={s.content}>
-        <Text style={s.title}>我的</Text>
-        <Text style={s.muted}>
-          {state.profile.name || APP_NAME} · 留住每一个值得记住的日子
-        </Text>
-        <Card>
-          <Button
-            title="宝宝资料"
-            icon="person"
-            onPress={() => nav.navigate("Profile")}
-          />
-          <Button
-            title="本机存储"
-            icon="file"
-            onPress={() => nav.navigate("Storage")}
-          />
-          <Button
-            title="备份与恢复"
-            icon="download"
-            onPress={() => nav.navigate("Backup")}
-          />
-          <Button
-            title="AI 设置"
-            icon="sparkle"
-            onPress={() => nav.navigate("AISettings")}
-          />
-          <Button
-            title="外观设置"
-            icon="settings"
-            onPress={() => nav.navigate("Appearance")}
-          />
-        </Card>
-      </ScrollView>
+    <Page title="我的">
+      <Text style={s.muted}>
+        {state.profile.name || APP_NAME} · 留住每一个值得记住的日子
+      </Text>
+      <Card>
+        <Button
+          title="宝宝资料"
+          icon="person"
+          onPress={() => nav.navigate("Profile")}
+        />
+        <Button
+          title="本机存储"
+          icon="file"
+          onPress={() => nav.navigate("Storage")}
+        />
+        <Button
+          title="备份与恢复"
+          icon="download"
+          onPress={() => nav.navigate("Backup")}
+        />
+        <Button
+          title="AI 设置"
+          icon="sparkle"
+          onPress={() => nav.navigate("AISettings")}
+        />
+        <Button
+          title="外观设置"
+          icon="settings"
+          onPress={() => nav.navigate("Appearance")}
+        />
+      </Card>
     </Page>
   );
 }
@@ -88,8 +85,7 @@ export function Profile() {
     [birthday, setBirthday] = useState(state.profile.birthday),
     [message, setMessage] = useState("");
   return (
-    <Page>
-      <Text style={s.title}>宝宝资料</Text>
+    <Page title="宝宝资料">
       <Text style={s.muted}>资料可以随时补充，不影响记录。</Text>
       {state.profile.avatarId && (
         <Photo media={state.media[state.profile.avatarId]} />
@@ -166,8 +162,7 @@ export function Appearance() {
     })();
   }, []);
   return (
-    <Page>
-      <Text style={s.title}>外观设置</Text>
+    <Page title="外观设置">
       {(["auto", "light", "dark"] as const).map((theme, i) => (
         <Button
           key={theme}
@@ -240,8 +235,7 @@ export function Storage() {
   const bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0),
     unused = Object.values(state.media).filter((m) => !refs.has(m.id));
   return (
-    <Page>
-      <Text style={s.title}>本机存储</Text>
+    <Page title="本机存储">
       <Text>
         {Object.keys(state.records).length} 条记录 ·{" "}
         {Object.keys(state.albums).length} 本相册
@@ -495,7 +489,9 @@ function ArchiveCard({ busy }: { busy: boolean }) {
       );
       setProgress(null);
       await shareArchive(file);
-      setMessage("归档已生成。请确认已保存到应用之外的位置；在电脑上解压后打开 index.html。");
+      setMessage(
+        "归档已生成。请确认已保存到应用之外的位置；在电脑上解压后打开 index.html。",
+      );
     } catch (e) {
       if (e instanceof ArchiveStopped) setMessage(e.message);
       else setError(messageOf(e));
@@ -508,8 +504,8 @@ function ArchiveCard({ busy }: { busy: boolean }) {
     <Card testID="archive-card">
       <Text style={s.heading}>开放归档</Text>
       <Text style={s.muted}>
-        导出成普通文件夹压缩包：原图、Markdown 文字与一个离线网页，没有这个
-        App 也能看。归档里的信是明文保存的。
+        导出成普通文件夹压缩包：原图、Markdown 文字与一个离线网页，没有这个 App
+        也能看。归档里的信是明文保存的。
       </Text>
       {years.length > 1 && (
         <View style={s.row}>

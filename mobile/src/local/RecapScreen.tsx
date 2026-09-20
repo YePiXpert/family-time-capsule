@@ -11,6 +11,7 @@ import { recapOf } from "./recap";
 import { replayPhotos } from "./replay";
 import { mediaUri } from "./files";
 import { Photo } from "./Media";
+import { JournalIcon } from "../components/JournalIcon";
 import {
   Button,
   Card,
@@ -460,7 +461,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
               backgroundColor: overlay.card,
             }}
           >
-            <Text style={{ color: overlay.ink, fontSize: 18 }}>✕</Text>
+            <JournalIcon name="close" color={overlay.ink} size={20} />
           </Pressable>
         </View>
       </View>

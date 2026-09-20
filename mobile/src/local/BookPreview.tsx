@@ -6,12 +6,22 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, PixelRatio, View, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { File } from "expo-file-system";
 import { BookPageCard } from "./BookPage";
 import { SCALE, SHEET_PT, slotPixels, type BookLayout } from "./book";
 import { prepareBookPhoto } from "./book-export";
 import type { LocalMedia, Stored } from "./model";
-import { Button, Card, ErrorText, Page, Text, messageOf, useStyles } from "./ui";
+import {
+  Button,
+  Card,
+  ErrorText,
+  Page,
+  Text,
+  messageOf,
+  useStyles,
+  useTheme,
+} from "./ui";
 
 export function BookPreview({
   layout,
@@ -24,7 +34,10 @@ export function BookPreview({
   onClose: () => void;
   onBind: () => void;
 }) {
-  const s = useStyles();
+  const s = useStyles(),
+    { colors } = useTheme();
+  // Modal 自成一个窗口，安全区从应用级 provider 取值手动补，别指望 SafeAreaView 在这里量对。
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const side = Math.min(width - 40, 420);
   const [index, setIndex] = useState(0);
@@ -65,9 +78,14 @@ export function BookPreview({
         for (const key of keys) {
           // 预览按屏幕上的实际大小取图：版位占整页多少，就要屏幕上那么多像素。
           const onScreen = Math.ceil(
-            (slotPixels(page, key) / (SHEET_PT * SCALE)) * side * PixelRatio.get(),
+            (slotPixels(page, key) / (SHEET_PT * SCALE)) *
+              side *
+              PixelRatio.get(),
           );
-          const photo = await prepareBookPhoto(media[key], Math.max(onScreen, 64));
+          const photo = await prepareBookPhoto(
+            media[key],
+            Math.max(onScreen, 64),
+          );
           if (photo) {
             prepared[key] = photo.uri;
             fresh.push(photo.uri);
@@ -101,56 +119,67 @@ export function BookPreview({
       onRequestClose={onClose}
       testID="book-preview"
     >
-      <Page back={false} scroll={false}>
-        <View style={s.between}>
-          <Text style={s.heading}>翻一遍再装订</Text>
-          <Button title="返回" compact onPress={onClose} />
-        </View>
-        <Text style={s.muted}>
-          共 {layout.pages.length} 页 · 20×20cm 方形开本 · 300 DPI 可送印
-        </Text>
-        <View style={{ alignItems: "center", gap: 12 }}>
-          <View
-            style={{
-              width: side,
-              height: side,
-              // 纸是白的，衬一条细边才看得出页面边界。
-              borderWidth: 1,
-              borderColor: "rgba(0,0,0,0.12)",
-              borderRadius: 2,
-              overflow: "hidden",
-            }}
-          >
-            <BookPageCard page={page} photos={photos} points={side} />
-          </View>
-          <View style={s.row}>
-            <Button
-              title="上一页"
-              compact
-              testID="book-preview-prev"
-              disabled={index === 0}
-              onPress={() => setIndex(index - 1)}
-            />
+      <View
+        style={{
+          flex: 1,
+          paddingTop: insets.top,
+          backgroundColor: colors.paper,
+        }}
+      >
+        <Page top={false} scroll={false} title="翻一遍再装订" onBack={onClose}>
+          <View style={{ flex: 1, padding: 20, paddingTop: 4, gap: 16 }}>
             <Text style={s.muted}>
-              第 {index + 1} / {layout.pages.length} 页
+              共 {layout.pages.length} 页 · 20×20cm 方形开本 · 300 DPI 可送印
             </Text>
-            <Button
-              title="下一页"
-              compact
-              testID="book-preview-next"
-              disabled={index + 1 >= layout.pages.length}
-              onPress={() => setIndex(index + 1)}
-            />
+            <View style={{ alignItems: "center", gap: 12 }}>
+              <View
+                style={{
+                  width: side,
+                  height: side,
+                  // 纸是白的，衬一条细边才看得出页面边界。
+                  borderWidth: 1,
+                  borderColor: colors.line,
+                  borderRadius: 2,
+                  overflow: "hidden",
+                }}
+              >
+                <BookPageCard page={page} photos={photos} points={side} />
+              </View>
+              <View style={s.row}>
+                <Button
+                  title="上一页"
+                  compact
+                  testID="book-preview-prev"
+                  disabled={index === 0}
+                  onPress={() => setIndex(index - 1)}
+                />
+                <Text style={s.muted}>
+                  第 {index + 1} / {layout.pages.length} 页
+                </Text>
+                <Button
+                  title="下一页"
+                  compact
+                  testID="book-preview-next"
+                  disabled={index + 1 >= layout.pages.length}
+                  onPress={() => setIndex(index + 1)}
+                />
+              </View>
+            </View>
+            <ErrorText message={error} />
+            <Card compact>
+              <Text style={s.muted}>
+                装订要一会儿，中途请留在年度册这一页；完成后会弹出保存与分享。
+              </Text>
+              <Button
+                title="开始装订"
+                primary
+                testID="book-preview-bind"
+                onPress={onBind}
+              />
+            </Card>
           </View>
-        </View>
-        <ErrorText message={error} />
-        <Card compact>
-          <Text style={s.muted}>
-            装订要一会儿，中途请留在年度册这一页；完成后会弹出保存与分享。
-          </Text>
-          <Button title="开始装订" primary testID="book-preview-bind" onPress={onBind} />
-        </Card>
-      </Page>
+        </Page>
+      </View>
     </Modal>
   );
 }
