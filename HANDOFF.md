@@ -2,31 +2,27 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-20，Build 69「界面整顿」源码与安装包均已交付（交付提交 `7a82903`，run 35489556795 全绿，校验和见第一节）。
+> 最后更新：2026-09-20，Build 70「传家 · 中」源码已全部在 main，安装包派发中（校验和在拿到全绿的 run 后补进第一节）。
 
 ---
 
 ## 一、当前状态快照（2026-09-20）
 
-- **Build 68「传家 · 上」**：交付提交 `dd0eee7`，打包 run 35450404867 全绿。APK SHA-256 `ee4abfca…3738a84`（66,464,850 字节）、
-  未签名 arm64 IPA SHA-256 `df4b9532…a40010`（11,074,058 字节），本地存 `C:\vibe-coding\releases\build-68\`（artifacts 2026-10-19 过期）。
-- **服务端**：2026-09-20 主人已把 main 最新（含 scrypt2 带参数哈希、旧哈希登录自动升级）部署到 capsule.yep.li。Build 69 没有服务端改动。
-- **Build 69「界面整顿」（本版）**：一天内 18 个小提交直推 main（清单见第三节），纯手机端、不改数据格式：
-  原生页头下线改 `Page` 页内顶栏 → 控件四级与 `GlassDepth` → 书架横向封面条 + 单张可关提醒 → 阅读页内容先行 + 底栏 + 就地加入相册
-  → 相册／年度册／系列动作分主次 → 编辑器正文永不消失、分组改开关 → 空草稿／空信／空系列静默清理 → 「我的」分组列表 + 备份页三卡
-  → 外观／存储／AI 设置 → 文案与图标统一 → 双端冒烟对齐。CHANGELOG「Build 69」有逐条说明。
-- **Build 69 打包**：交付提交 `7a82903`（收尾 `d83a955` 之后按双端截图走查补了一笔：阅读页不再拿正文首行充当标题、两处计数改「段时光」），
-  `mobile-build.yml` run 35489556795 三作业全绿（quality ／ Android APK + 模拟器冒烟 ／ iOS 启动 + XCUITest 回归），
-  两端冒烟报告全部键为 true（Android 宽 320/390，iOS `buildNumber` 69），IPA 的 CFBundleVersion = 69，build-source 的 versionCode = 69。
-  收尾提交 `d83a955` 的首次派发 run 35487426440 同样三作业全绿，未交付、被本次取代。
-  artifacts 2026-10-20 过期，请尽快下载到 `C:\vibe-coding\releases\build-69\`：
-  `gh run download 35489556795 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
-  APK 66,481,234 字节、IPA 11,084,240 字节；SHA-256（可直接存成 sha256sums.txt 后 `sha256sum -c`）：
-  ```text
-  3201aa547692e179bc2b20834a9a93b1ed53e41f4971f2aaa19658db235083c8  FamilyTimeCapsule-android.apk
-  7fac29f2e351e5fe587a19e34da07cbe9fad8a367286961ff46e3a940bf336f0  FamilyTimeCapsule-ios-unsigned.ipa
-  ```
-- **下一步**：Build 70「传家 · 中」资料不灭（见第四节；约束与提交概要在 `docs/plans/PLAN-BUILD-69.md` 第二部分，开工第一天先展开成 `docs/plans/PLAN-BUILD-70.md`）。
+- **Build 69「界面整顿」**：交付提交 `7a82903`，run 35489556795 全绿。APK SHA-256 `3201aa54…5083c8`（66,481,234 字节）、
+  未签名 arm64 IPA SHA-256 `7fac29f2…f336f0`（11,084,240 字节），本地存 `C:\vibe-coding\releases\build-69\`（artifacts 2026-10-20 过期）。
+- **服务端**：2026-09-20 已把 Build 70 的服务端（`/api/v1/backup/*` 对象库、配额、管理端）部署到 capsule.yep.li，
+  `/opt/anan-ai/service.env` 的 SOURCE_SHA = `6672e661411f3bbca257a72becf51bb8d21d9311`，`/healthz` 本机与 HTTPS 都对得上；
+  对旧版 App 完全向后兼容。staging 容器（3141）跑过 `verify-service.py` 全绿后已 down；匿名 `probe-upload-limit.py` 探过
+  0.5／4／9／16 MB 全部直达服务（我们的 JSON 401），反代无需改动。**这台开发机就是 VPS**（hostname `gateway`），部署命令见 `deploy/README.md`。
+- **Build 70「传家 · 中」（本版）**：一天内 12 个提交直推 main（清单见第三节）。
+  本机 blob 库（`.xmbm` 清单 + `blobs/ab/<sha256>`，三份保留备份只占一份照片）→ 分卷导出（单卷与 Build 68 逐字节同形，> 2 GiB 分卷，乱序多选恢复）
+  → 服务端对象库 → 密码学（12 词恢复码即钥匙，XChaCha20-Poly1305，id／nonce 按内容派生）→ 状态／规划器／传输层（XHR）→ 引擎（只传缺的、核对、远端恢复进 blob 库）
+  → 备份页末尾「远端备份」卡 + 恢复码页 → 真服务端端到端 → 收尾。CHANGELOG「Build 70」有逐条说明，`docs/plans/PLAN-BUILD-70.md` 顶部记了 8 条实施偏离。
+- **Build 70 打包**：收尾提交把 `mobile/app.json` 提到 70 并派发 `mobile-build.yml`（完整 SHA）；三作业全绿后把 APK／IPA 的 SHA-256 与 run 号补到这里，
+  下载到 `C:\vibe-coding\releases\build-70\`：`gh run download <run> -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
+  **真机 XChaCha20 MB/s 还没有实测**：装上 Build 70 后在「远端备份 → 现在备份」看一次 4 MiB 以上照片的上传节奏，把 MB/s 记到这里；
+  低于 5 MB/s 就用对象头的 `alg` 字节换 `expo-crypto` 的原生 AES-GCM，格式不用换。Node 26 基准：封装 64 MiB 约 220 MB/s。
+- **下一步**：Build 71「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
 ## 二、恢复提示词（直接复制粘贴）
@@ -36,67 +32,57 @@
 
 第一步·环境自检：
 1. 读仓库根目录的 AGENTS.md（发布纪律：只从 main 工作、小提交直接推、本地三件套绿后推送、
-   不等待 CI；开工前查上次 CI 是否红）、README.md（架构/命令）、DESIGN.md（设计规范，UI 只用
+   不等待 CI；开工前查上次 CI 是否红；备份传输只走 src/sync）、README.md（架构/命令）、DESIGN.md（设计规范，UI 只用
    mobile/src/local/ui.tsx 的基元）、CHANGELOG.md（近期变更）、HANDOFF.md（本文件）、
-   docs/plans/PLAN-BUILD-69.md（Build 69 已批准计划原文 + 实施偏离；第二部分是 Build 70 的约束清单与提交概要）。
+   docs/plans/PLAN-BUILD-70.md（Build 70 计划 + 顶部实施偏离）、deploy/README.md（服务端部署与远端备份对象库）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
-3. cd mobile && npm install；cd ../server && npm install。
-4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（299 个测试）；
-   server 下 npm test、npm run typecheck（20 个测试，server 没有 lint 脚本）；
+3. cd mobile && npm install；cd ../server && npm install（mobile 的 tests/sync-e2e.test.ts 会拉起真实服务端子进程，server 依赖必须装）。
+4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（335 个测试）；
+   server 下 npm test、npm run typecheck（30 个测试，server 没有 lint 脚本）；
    python3 mobile/scripts/verify-local-boundary.py；
    python3 -m unittest discover -s mobile/scripts -p 'test_*.py'。
-   本机 /tmp 若是满的 tmpfs，跑 mobile 测试要 TMPDIR=/var/tmp/anan-tests（先 mkdir）。
+   本机 /tmp 若是满的 tmpfs，跑 mobile 与 server 测试都要 TMPDIR=/var/tmp/anan-tests（先 mkdir）。
+   本机若设置了 http_proxy/https_proxy，对 127.0.0.1 的请求要 env -u http_proxy -u https_proxy -u ALL_PROXY … 绕过。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 69 安装包已交付（run 35489556795，校验和在 HANDOFF 第一节），不必重新打包：
-- artifacts 2026-10-20 过期；若持有者本地还没有 build-69 的 APK/IPA，提醒先 gh run download 存下来。
+第二步·Build 70 安装包：看 HANDOFF 第一节有没有 run 号与校验和。没有就是派发过但还没记录——
+   gh run list --workflow=mobile-build.yml 找最近一次以 Build 70 收尾提交派发的 run，三作业全绿就下载、算 SHA-256、补进第一节并推 main；
+   红了就在 main 上修好再用完整 40 位 SHA 重新派发。真机 MB/s 的实测也记在第一节。
 
-第三步·Build 70「传家 · 中」资料不灭（一个安装包，主人已拍板）：
-0. 先把 docs/plans/PLAN-BUILD-69.md 第二部分展开成 docs/plans/PLAN-BUILD-70.md（每个提交的函数签名与测试清单），
-   已定决策：远端备份密钥 = 12 词恢复码即密钥（无口令、无 scrypt）；VPS 可用磁盘 50–200 GB；手机资料 < 5 GB；
-   主密钥必须用 expo-crypto getRandomBytes（Hermes 没有 crypto.getRandomValues）。
-1. 先做服务端对象库与路由（提交 11–12）并部署；用一次性 token 探反代：4 MB PUT 期望 200、9 MB PUT 期望我们的 JSON 413，
-   不符就改 nginx 三行（client_max_body_size 16m; proxy_request_buffering off; proxy_read_timeout 130s）再探。
-2. 再做手机端：宪法重构（local_boundary.py + SERVICE_URL 进 brand.ts）→ 格式层与 blob 库 → .xmb 分卷 → src/sync 密码学／状态／传输／引擎
-   → 备份页末尾的远端卡与恢复码页 → 真服务端 e2e → 收尾（CHANGELOG 降级警告：.xmbm 与分卷 .xmb 只有 70 起能读）。
-3. 首个真机版记录 XChaCha20 的 MB/s 到 HANDOFF；若 < 5 MB/s 用对象头的 alg 字节换 expo-crypto 的 AES-GCM。
-明确不做：实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
+第三步·Build 71「传家 · 下」家人一起记：
+- 先写 docs/plans/PLAN-SHARING.md 给主人批：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；
+  记录 last-writer-wins（revision + updatedAt），媒体按 sha256 增量（远端对象 id 两台设备算得出同一个）；
+  只在同一记录两端都改时提示冲突。改 Library 加设备 id 前不要动代码。
+- 复用 Build 70 的 src/sync（crypto/planner/transport/engine）与服务端对象库；不做实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
 ```
 
-## 三、Build 69 交付清单（源码已在 main）
+## 三、Build 70 交付清单（源码已在 main）
 
 | 提交 | 内容 |
 | --- | --- |
-| 89e2bac | 页内顶栏：`Page` 自绘「‹ 返回 + 标题」，原生页头下线（`headerShown: false`） |
-| ce4d60e | 控件四级与玻璃深度：`Button` 文字级／危险级、选中带勾；`Card`／底栏内不再套玻璃 |
-| b298c2f | 提醒策略：`pickNudge` 同屏只挑一张卡，关闭状态入库 `nudgeClosedAt` |
-| beeebff | 书架头部与单张提醒：名字圆章进「我的」，提醒卡都可关 |
-| 58df185 | 书架改横向封面条：「最近」在最上，区标题右侧文字级新建，不再摆「+」虚位册 |
-| 2e30460 | 书架收尾：那年今日卡紧凑化、「右下角的笔」改「记一刻」、扉页没名字不再拿应用名充数 |
-| 7cfdfe5 | 全部页面迁到 `Page` 顶栏：表单与设置页标题进顶栏，内容页只留返回 |
-| a424087 | 阅读页内容先行：照片分页、动作进底栏、就地加入相册（`appendToAlbum`／`newAlbumFrom`） |
-| addd9e4 | 相册、年度册、系列页：动作一行分主次，寄语卡移到页尾，导出成长册就地展开 |
-| 1f75538 | 空态给出下一步；编辑页保存中按返回改为等保存完再走 |
-| 7df32df | 编辑器：正文永不消失、按天分组改为按需开关、次要动作降级；AI 面板实色底板 |
-| 0ffb5bb | 空草稿、空信、空系列退出时静默清理（`empties.ts`） |
-| 481a627 | 「我的」改为分组设置行（`SettingsGroup`／`SettingsRow`），副题带出状态 |
-| 46503c8 | 备份页重排：三张纸卡、一个主按钮、不露文件名（`backupStampLabel`） |
-| b63eb37 | 外观、本机存储、AI 设置：主题勾选一行、术语退出正文、模型名进脚注 |
-| ab6cabc | 文案与图标统一：记录数成「段时光」，附件按种类，术语退出正文 |
-| 86fb958 | 双端冒烟对齐：iOS 返回改点 page-back，补 home-recent 与 record-bottom-bar 截图 |
-| d83a955 | 收尾：CHANGELOG／README／HANDOFF／PLAN 归档、DESIGN 一致性、app.json 69 |
-| 7a82903 | 截图走查修复：阅读页不再拿正文首行充当标题，月册与选材的「N 条」改「N 段时光」（打包交付提交） |
-
-实施中与计划的偏离都记在 `docs/plans/PLAN-BUILD-69.md` 顶部注释里。
+| 47840da | 计划展开：`docs/plans/PLAN-BUILD-70.md`（环境事实、五条设计定稿、21 个提交的签名与测试清单） |
+| 4c3fa16 | 宪法重构：`local_boundary.py` + 6 例测试；`SERVICE_URL` 进 brand.ts；AGENTS 新句 |
+| 397bb90 | 服务端对象库与路由：`backup-store.ts` 流式落盘、`/api/v1/backup/*` 八个端点、配额列与清单表、管理端、`wipe-backup`；10 例测试 |
+| 6672e66 | 主人视角与部署：`verify-service.py` 备份段、`probe-upload-limit.py`、deploy/README 新节（**生产部署的 SHA**） |
+| 93c73f2 | 反代探测匿名模式；README 记录 2026-09-20 部署与探测结果 |
+| 04d7cc7 | 格式层：`XIAOMEI3`、`BackupSet`、`VOLUME_LIMIT` 2 GiB、`planVolumes` |
+| faf1cb8 | 文件层与夹具：`CHUNK`、`blobDirectory`／`blobFile`／`blobPartFile`；vitest 假件补齐 |
+| 22a889e | 本机 blob 库：`.xmbm` 清单 + 按 sha256 存一份照片；读回、保守回收、列表；恢复时保护正要恢复的那份 |
+| b1082ca | 分卷导出：`backup-export.ts`（单卷逐字节同旧格式、分卷 `-vol1of3`、空间预检）；备份页导出状态机、停止、多选恢复 |
+| 923c30d | DESIGN：备份页补上 blob 库、分卷、停止、多选恢复的规则 |
+| 1053d99 | 密码学：`src/sync/crypto.ts`（恢复码即钥匙、HKDF 派生 id／nonce、`ANANOBJ1` 对象格式、`sealSmall`、自带 base64）；依赖钉版 |
+| dbc6b46 | 状态、规划器、传输层（XHR、可注入 HttpClient、错误映射）；`ai/session.ts` 抽出凭证读写 |
+| 3ce80b0 | 引擎：`runRemoteBackup`／`verifyRemoteBackup`／`restoreFromRemote`；测试假件抽到 `tests/helpers/` |
+| 6f2aecf | 界面：`RemoteBackupCard`（三态）与 `RecoveryCode` 页；双端冒烟断言离线只有「去登录」 |
+| 879f51f | 端到端：真服务端子进程跑完整闭环；CI quality 作业多装一次 server 依赖 |
+| （本次） | 收尾：CHANGELOG／README／HANDOFF／PLAN 实施偏离、app.json 70 |
 
 ## 四、后续路线
 
-- **Build 70「传家 · 中」资料不灭**（一个包）：A 本机 blob 备份库（`blobs/<sha256>` + `.xmbm` 清单，库 + 备份从约 4 倍降到约 2 倍）
-  → B `.xmb` 分卷导出与多卷读取 → C 加密远端单向备份 + 远端恢复（客户端 XChaCha20-Poly1305 逐块加密、HKDF 派生、
-  12 词 BIP39 恢复码即密钥；服务端 `/backup/*` 对象库按成员配额存到 `/data/backup/`）→ D 宪法修订（`src/sync` 是唯一第二个 `fetch(`）。
-  34 条约束与 21 个提交概要见 `docs/plans/PLAN-BUILD-69.md` 第二部分。
 - **Build 71「传家 · 下」家人一起记**：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；记录 last-writer-wins（revision + updatedAt），
-  媒体按 sha256 增量；只在同一记录两端都改时提示冲突。前置：70 的远端对象与清单；改 `Library` 加设备 id 前先出 PLAN-SHARING.md。
+  媒体按 sha256 增量（Build 70 的对象 id 由钥匙 + 内容派生，两台设备天然一致）；只在同一记录两端都改时提示冲突。
+  前置：70 的远端对象与清单已就位；改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
+- 可选小件：`mobile-build.yml` 加 `release_tag` → GitHub Release（解决 artifacts 30 天过期）；远端备份的自动提醒（书架备份提醒里带上「远端」一句）。
 
 ## 五、踩坑清单（务必先读，历史细节在 docs/plans/ 各计划的对应小节）
 
@@ -115,8 +101,9 @@
   validEntity（放在 persons 兜底分支之前）、referencedMedia，以及 scripts/local_fixture.py 的 empty() 与 ENTITY_KINDS
   （local-core 有一条测试盯着 fixture 与 emptyLibrary 键序一致）。Build 68 的 letters 就是这么接的。
 - React Compiler 的 lint 很严：渲染期不能读 ref（录音入库后的素材要放 useState 里再读）；useMemo 的依赖要缩到真正用到的集合
-  （state.records 而不是 state），派生量交给编译器自动记忆时别再手写 useMemo，否则报「memoization could not be preserved」。
-- uiautomator 只 dump 看得见的节点：书架与长表单里首屏之外的目标用 smoke-android.py 的 tap_seek（滑动再找）。
+  （state.records 而不是 state），派生量交给编译器自动记忆时别再手写 useMemo，否则报「memoization could not be preserved」；
+  useMemo 里没用到的依赖会被报「unnecessary dependency」——列表这种「操作结束后重读」的东西用 useState + 显式刷新。
+- uiautomator 只 dump 看得见的节点：书架与长表单里首屏之外的目标用 smoke-android.py 的 tap_seek（滑动再找）／seek（只找不点）。
 - Android APK 用持有者私有 release 密钥签名（GitHub Secrets：ANDROID_KEYSTORE_BASE64/PASSWORD/ALIAS/KEY_PASSWORD），
   指纹钉在 mobile-build.yml。
 - （Build 69）原生页头已下线：返回是 `Page` 里的 `IconButton`（testID `page-back`），iOS 冒烟点返回不能再用 `BackButton`；
@@ -127,14 +114,31 @@
   按钮四级里一页只放一个 `primary`。
 - （Build 69）冒烟标签：「我的」入口的 accessibilityLabel 是「我的」（testID `open-settings` 不变）；`SettingsRow` 的副题放在
   accessibilityValue 里、标签保持原文，双端冒烟才能按「AI 设置」「备份与恢复」文本命中；Android 的 desc 会拼成「标签, 值」。
+- （Build 70）server 用 Node 原生类型剥离跑 `.ts`：**不能写 TS 参数属性**（`constructor(public x)`），要显式声明字段；
+  store.ts 与 backup-store.ts 不能互相 import（`DEFAULT_BACKUP_LIMIT` 只放 store.ts）。
+- （Build 70）Fastify 的 4xx（如 `FST_ERR_CTP_INVALID_CONTENT_LENGTH`）要在错误处理器里原样透传状态码，否则会变成 500；
+  `application/octet-stream` 走 passthrough 解析器，不受 bodyLimit 保护，得自己按 Content-Length 预检 + 落盘计数双重限流。
+- （Build 70）这台开发机就是 VPS：**别对生产 3140 跑 verify-service.py**（会建测试账号并调模型），起一个 3141 的 staging 容器跑完再 down；
+  shell 里有 http_proxy，对 127.0.0.1 要 `env -u http_proxy -u https_proxy -u ALL_PROXY …`；`/tmp` 是满的 tmpfs，mobile 与 server 测试都要 TMPDIR。
+- （Build 70）Hermes 没有 `crypto.getRandomValues`：主密钥只能 `expo-crypto` 的 `getRandomBytes`，noble／scure 的随机函数真机上会抛；
+  所以 nonce 全部按内容派生（HKDF(K, 内容 sha256)），连清单索引也不用随机数。`btoa`／`atob` 不保证有，crypto.ts 自带 base64。
+- （Build 70）vitest 里 `vi.resetModules()` 之后动态 import 的模块里的类是另一份定义：`toBeInstanceOf(SyncError)` 会假失败，按 `name`／`code` 认；
+  4 MiB 的 Buffer 别交给 `toEqual` 深比较（几秒起步，会撞 5 s 超时），用 `Buffer.equals`。
+- （Build 70）expo-file-system／expo-sqlite 的假件在 `tests/helpers/`，用 `vi.mock(mod, async () => (await import("./helpers/…")).create…(env))`，
+  env 由 `vi.hoisted` 提供；假件的 `list()` 会区分子目录（blob 库是两级目录）。
+- （Build 70）服务端 prune 有一小时宽限：刚被替换的旧清单对象在测试里还在，断言对象数时要算上。
+- （Build 70）iOS 冒烟「恢复这份备份」恢复的是 seed 的 v1 `baseline.xmb`（列表里唯一一份）；别在 seed 里再预置 `.xmbm`，会排到它前面。
 
 ## 六、环境备忘
 
 - Node.js 24（本机 26 也能跑）；要跑 Android 真机需 Java 21 + Android SDK（ANDROID_HOME）；
   iOS 打包不需要本机 macOS——全部走 GitHub Actions。
 - `gh` CLI 并 `gh auth login`（派发打包、查 Actions、设 Secrets 用）；git 凭据（HTTPS PAT 或 SSH 均可）。
-- `npm run doctor`（expo-doctor）有两项需要连 exp.host，离线机器上会红，CI 上是绿的。
+- `npm run doctor`（expo-doctor）有两项需要连 exp.host，离线机器上会红（19/21），CI 上是绿的。
 - 仓库根目录若有 `node_modules/`、`.next/`、`build/`（上一代 Next.js 残留，已被 .gitignore），可直接删。
+- 生产服务在这台机：容器 `anan-ai-ai-1`，compose 项目 `anan-ai`，环境 `/opt/anan-ai/service.env`（改前先 `cp` 一份 `.bak-<时间>`），
+  数据 `/opt/anan-ai/data`（含 `backup/` 对象库，UID 1000）。部署：设 SOURCE_SHA 后
+  `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build`。
 - （可选但强烈建议）从旧机复制 `release-keystore/xiaomei-release.keystore` 母本另存；日常开发与 CI 打包都不需要它，只有轮换 Secrets 时用。
 
 ## 七、命令速查
@@ -142,11 +146,14 @@
 ```sh
 git clone https://github.com/YePiXpert/family-time-capsule.git
 cd family-time-capsule/mobile && npm install && cd ../server && npm install && cd ..
-npm test && npm run typecheck && npm run lint        # 根目录命令 = mobile 三件套
-(cd server && npm test && npm run typecheck)
+TMPDIR=/var/tmp/anan-tests npm test && npm run typecheck && npm run lint        # 根目录命令 = mobile 三件套
+(cd server && TMPDIR=/var/tmp/anan-tests npm test && npm run typecheck)
 python3 mobile/scripts/verify-local-boundary.py
+python3 -m unittest discover -s mobile/scripts -p 'test_*.py'
 # 出安装包（替换为最终交付提交的完整 SHA）：
 gh workflow run mobile-build.yml --ref main -f source_sha=<完整40位SHA>
 # 只跑规模基准：
 npx --prefix mobile vitest run --root mobile tests/local-scale.test.ts --reporter=verbose
+# 服务端 staging 验证（别对生产 3140 跑）：
+#   起 3141 容器 → env -u http_proxy -u https_proxy python3 server/scripts/verify-service.py --base http://127.0.0.1:3141 --container <staging容器> → down
 ```
