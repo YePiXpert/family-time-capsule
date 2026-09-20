@@ -94,8 +94,7 @@ export function Footprint(_: Props<"Footprint">) {
     [state.media],
   );
   return (
-    <Page>
-      <Text style={s.title}>足迹</Text>
+    <Page title="足迹">
       <Text style={s.muted}>
         {clusters.length
           ? `按照片拍摄位置聚成 ${clusters.length} 个地点，从最常去的地方排起。`

@@ -11,7 +11,6 @@ import {
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
-import { useHeaderHeight } from "@react-navigation/elements";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -34,6 +33,7 @@ import {
   ErrorText,
   Field,
   Page,
+  useTopBarOffset,
   PersonChips,
   Text,
   dateLabel,
@@ -53,7 +53,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   const store = useStore(),
     state = useLibrary(),
     s = useStyles();
-  const headerHeight = useHeaderHeight();
+  const headerHeight = useTopBarOffset();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
     clone(store.get().drafts[route.params.draftId]),
   ),
@@ -288,7 +288,22 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     setMovingPhoto(null);
   };
   return (
-    <Page scroll={false}>
+    <Page
+      scroll={false}
+      title={draft.recordId ? "编辑这一刻" : "记下这一刻"}
+      right={
+        <Button
+          title={dateLabel(draft.content.date)}
+          icon="calendar"
+          kind="text"
+          compact
+          disabled={
+            !!draft.groupPhotosByDay && draft.content.mediaIds.length > 0
+          }
+          onPress={() => setDateOpen(!dateOpen)}
+        />
+      }
+    >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -298,19 +313,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.content}
         >
-          <View style={s.between}>
-            <Text style={s.title}>
-              {draft.recordId ? "编辑这一刻" : "记下这一刻"}
-            </Text>
-            <Button
-              title={dateLabel(draft.content.date)}
-              icon="calendar"
-              disabled={
-                !!draft.groupPhotosByDay && draft.content.mediaIds.length > 0
-              }
-              onPress={() => setDateOpen(!dateOpen)}
-            />
-          </View>
           {dateOpen && (
             <>
               <DateTimePicker

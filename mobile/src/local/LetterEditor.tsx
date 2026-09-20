@@ -9,7 +9,6 @@ import {
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
-import { useHeaderHeight } from "@react-navigation/elements";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLibrary, useStore } from "./context";
 import { useRecorder } from "./editorHooks";
@@ -32,6 +31,7 @@ import {
   ErrorText,
   Field,
   Page,
+  useTopBarOffset,
   Text,
   messageOf,
   serif,
@@ -47,7 +47,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     store = useStore(),
     s = useStyles(),
     { colors, large } = useTheme();
-  const headerHeight = useHeaderHeight();
+  const headerHeight = useTopBarOffset();
   const stored = state.letters[route.params.id];
   const initial: LetterDraft | undefined = stored
     ? { letter: stored }
@@ -251,7 +251,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     );
   };
   return (
-    <Page scroll={false}>
+    <Page scroll={false} title="写一封信">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -261,12 +261,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.content}
         >
-          <View style={{ gap: 4 }}>
-            <Text style={s.title}>写一封信</Text>
-            <Text style={s.muted}>
-              写给多年后的她。封存以后，要到拆封那天才能打开。
-            </Text>
-          </View>
+          <Text style={s.muted}>
+            写给多年后的她。封存以后，要到拆封那天才能打开。
+          </Text>
           <Field
             label="标题"
             testID="letter-title"

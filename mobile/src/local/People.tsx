@@ -56,8 +56,7 @@ export function People(_: Props<"People">) {
     );
   };
   return (
-    <Page>
-      <Text style={s.title}>整理人物</Text>
+    <Page title="整理人物">
       <Text style={s.muted}>
         {people.length
           ? "改名、合并同一个人，或取消标记；记录本身不会被动到。"

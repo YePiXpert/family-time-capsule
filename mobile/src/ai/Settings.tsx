@@ -197,8 +197,7 @@ export function AISettingsScreen() {
     };
   }, []); // This page is opened explicitly; normal journal screens never connect.
   return (
-    <Page>
-      <Text style={s.title}>AI 设置</Text>
+    <Page title="AI 设置">
       <Text style={s.muted}>
         使用 DeepSeek Flash High
         整理照片和写记录。原图和成长记录继续保存在本机。
@@ -237,7 +236,7 @@ export function AISettingsScreen() {
               )
             }
           />
-          <Text style={s.title}>修改密码</Text>
+          <Text style={s.heading}>修改密码</Text>
           <Field
             label="当前密码"
             secureTextEntry
@@ -323,7 +322,7 @@ export function AISettingsScreen() {
       {!!notice && <Text style={s.muted}>{notice}</Text>}
       {overview && settings && (
         <>
-          <Text style={s.title}>主人管理</Text>
+          <Text style={s.heading}>主人管理</Text>
           <Text>
             全局今日：{overview.usage.photos} 张图片 · {overview.usage.writes}{" "}
             次文案 · {overview.usage.tokens} tokens
@@ -370,7 +369,7 @@ export function AISettingsScreen() {
               });
             }}
           />
-          <Text style={s.title}>创建家人账号</Text>
+          <Text style={s.heading}>创建家人账号</Text>
           <Field
             label="用户名"
             autoCapitalize="none"
@@ -413,7 +412,7 @@ export function AISettingsScreen() {
               }}
             />
           ))}
-          <Text style={s.title}>已加入的设备</Text>
+          <Text style={s.heading}>已加入的设备</Text>
           {overview.devices.map((device) => (
             <Card key={device.id}>
               <Text>

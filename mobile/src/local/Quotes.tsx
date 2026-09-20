@@ -27,8 +27,7 @@ export function Quotes() {
     .filter((r) => r.quote)
     .sort((a, b) => a.date.localeCompare(b.date));
   return (
-    <Page>
-      <Text style={s.title}>她说的话</Text>
+    <Page title="她说的话">
       <Text style={s.muted}>
         {quotes.length ? `${quotes.length} 句原话，按日子排好。` : ""}
       </Text>

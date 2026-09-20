@@ -1,7 +1,14 @@
-import { FlatList, Modal, Pressable, View, useWindowDimensions } from "react-native";
+import {
+  FlatList,
+  Modal,
+  Pressable,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary } from "./context";
 import { Photo } from "./Media";
-import { Button, Page, Text, useStyles } from "./ui";
+import { Button, Page, Text, useStyles, useTheme } from "./ui";
 
 /** 一格候选照片：mediaId 兼作 key，label 给读屏，caption 是图下一行说明。 */
 export type PhotoChoice = {
@@ -36,7 +43,10 @@ export function PhotoPicker<T extends PhotoChoice>({
   testID?: string;
 }) {
   const state = useLibrary(),
-    s = useStyles();
+    s = useStyles(),
+    { colors } = useTheme();
+  // Modal 自成一个窗口，安全区从应用级 provider 取值手动补。
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const tile = (width - 40 - 12) / 2;
   return (
@@ -47,40 +57,48 @@ export function PhotoPicker<T extends PhotoChoice>({
       accessibilityViewIsModal
       testID={testID}
     >
-      <Page back={false} scroll={false}>
-        <FlatList
-          data={choices}
-          keyExtractor={(choice) => choice.mediaId}
-          numColumns={2}
-          columnWrapperStyle={{ gap: 12 }}
-          contentContainerStyle={[s.content, { gap: 12 }]}
-          ListHeaderComponent={
-            <View style={{ gap: 8, paddingBottom: 4 }}>
-              <View style={s.between}>
-                <Text style={s.heading}>{title}</Text>
-                <Button title="取消" compact onPress={onClose} />
+      <View
+        style={{
+          flex: 1,
+          paddingTop: insets.top,
+          backgroundColor: colors.paper,
+        }}
+      >
+        <Page top={false} back={false} scroll={false}>
+          <FlatList
+            data={choices}
+            keyExtractor={(choice) => choice.mediaId}
+            numColumns={2}
+            columnWrapperStyle={{ gap: 12 }}
+            contentContainerStyle={[s.content, { gap: 12 }]}
+            ListHeaderComponent={
+              <View style={{ gap: 8, paddingBottom: 4 }}>
+                <View style={s.between}>
+                  <Text style={s.heading}>{title}</Text>
+                  <Button title="取消" compact onPress={onClose} />
+                </View>
+                {!!hint && <Text style={s.muted}>{hint}</Text>}
               </View>
-              {!!hint && <Text style={s.muted}>{hint}</Text>}
-            </View>
-          }
-          ListEmptyComponent={<Text>{empty}</Text>}
-          renderItem={({ item }) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              onPress={() => onPick(item)}
-              style={{ gap: 4 }}
-            >
-              <Photo media={state.media[item.mediaId]} size={tile} />
-              {!!item.caption && (
-                <Text numberOfLines={1} style={s.muted}>
-                  {item.caption}
-                </Text>
-              )}
-            </Pressable>
-          )}
-        />
-      </Page>
+            }
+            ListEmptyComponent={<Text>{empty}</Text>}
+            renderItem={({ item }) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={item.label}
+                onPress={() => onPick(item)}
+                style={{ gap: 4 }}
+              >
+                <Photo media={state.media[item.mediaId]} size={tile} />
+                {!!item.caption && (
+                  <Text numberOfLines={1} style={s.muted}>
+                    {item.caption}
+                  </Text>
+                )}
+              </Pressable>
+            )}
+          />
+        </Page>
+      </View>
     </Modal>
   );
 }

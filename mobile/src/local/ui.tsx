@@ -484,7 +484,7 @@ export function useStyles() {
         content: { padding: 20, gap: 20, paddingBottom: 32 },
         // 页内顶栏：返回钮 44 居中于 8 内边距，图标左沿恰与 20 的页边对齐。
         topBar: {
-          minHeight: 52,
+          minHeight: TOP_BAR_HEIGHT,
           flexDirection: "row",
           alignItems: "center",
           paddingHorizontal: 8,
@@ -629,6 +629,12 @@ export function useVolumeWidth() {
   const insets = useSafeAreaInsets();
   const columns = large || fontScale >= 1.3 ? 1 : 2;
   return (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
+}
+/** 页内顶栏高度；键盘避让偏移 = 顶部安全区 + 这一行（原生页头下线后 useHeaderHeight 恒为 0）。 */
+export const TOP_BAR_HEIGHT = 52;
+export function useTopBarOffset() {
+  const insets = useSafeAreaInsets();
+  return insets.top + TOP_BAR_HEIGHT;
 }
 /**
  * 页面容器：安全区 + 氛围底 + 可选滚动。原生页头已下线，返回与标题由这里的顶栏绘制：
