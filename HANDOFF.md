@@ -2,33 +2,22 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-19，Build 68「传家 · 上」源码与安装包均已交付（run 35450404867 全绿，校验和见第一节）。
+> 最后更新：2026-09-20，Build 69「界面整顿」源码已在 main；安装包的 run 号与校验和见第一节末尾（交付后补写）。
 
 ---
 
-## 一、当前状态快照（2026-09-19）
+## 一、当前状态快照（2026-09-20）
 
-- **Build 67「AI 改为账号登录」**：交付提交 `dfbf592`，打包 run 35434384089 全绿。
-  服务端同日部署到 capsule.yep.li 并按主人指示清库从零（/status initialized=false，等新 App
-  首次「创建主人账号」）。APK SHA-256 `e484c4a1…bf4953`，未签名 arm64 IPA SHA-256 `0b4f8608…dec2c899`，
-  本地存 `C:\vibe-coding\releases\build-67\`。
-- **Build 68「传家 · 上」（本版）**：一天内 15 个小提交直推 main，内容见 CHANGELOG「Build 68」：
-  工程债（仓库卫生、scrypt2 密码哈希、未改动集合引用稳定）→ 时间胶囊信（模型／书架区／写信读信页／双端冒烟）
-  → 开放归档（ZIP 写入器／版面规划／离线网页／导出编排与备份页卡片／双端冒烟）→ 「她说的话」→ 装订提醒 → 收尾。
-  服务端改动只有 `passwords.ts`／`store.ts`／`manage.ts`／`app.ts` 的哈希升级，**尚未部署**（部署步骤见 `deploy/README.md`；
-  旧哈希兼容，随时可部）。
-- **Build 68 打包**：交付提交 `dd0eee7`（收尾 `57d5065` 之后补了一笔双端冒烟可达性修复），
-  `mobile-build.yml` run 35450404867 三作业全绿（quality ／ Android APK + 模拟器冒烟 ／ iOS 启动 + XCUITest 回归），
-  两端冒烟报告 `letterSealed`、`archiveSheet`、`openArchive` 均为 true，IPA 的 CFBundleVersion = 68。
-  首次派发 run 35448431758 双端冒烟红（都是新控件可达性：Android 归档卡把「恢复这份备份」挤出首屏、
-  iOS 键盘挡住「封存」），已在 `dd0eee7` 修复。artifacts 2026-10-19 过期，请尽快下载到 `C:\vibe-coding\releases\build-68\`：
-  `gh run download 35450404867 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
-  APK 66,464,850 字节、IPA 11,074,058 字节；SHA-256（可直接存成 sha256sums.txt 后 `sha256sum -c`）：
-  ```text
-  ee4abfca29bfca45eb623de3d102425bfb2609fd7d1555aa2fd7102af3738a84  FamilyTimeCapsule-android.apk
-  df4b95326eaa7a686563a3c034772715f96232fec093bc92aad4146082a40010  FamilyTimeCapsule-ios-unsigned.ipa
-  ```
-- **下一步**：Build 69「传家 · 中」资料不灭（见第四节）。动工前先看 `docs/plans/PLAN-BUILD-68.md` 末尾的 69/70 路线。
+- **Build 68「传家 · 上」**：交付提交 `dd0eee7`，打包 run 35450404867 全绿。APK SHA-256 `ee4abfca…3738a84`（66,464,850 字节）、
+  未签名 arm64 IPA SHA-256 `df4b9532…a40010`（11,074,058 字节），本地存 `C:\vibe-coding\releases\build-68\`（artifacts 2026-10-19 过期）。
+- **服务端**：2026-09-20 主人已把 main 最新（含 scrypt2 带参数哈希、旧哈希登录自动升级）部署到 capsule.yep.li。Build 69 没有服务端改动。
+- **Build 69「界面整顿」（本版）**：一天内 18 个小提交直推 main（清单见第三节），纯手机端、不改数据格式：
+  原生页头下线改 `Page` 页内顶栏 → 控件四级与 `GlassDepth` → 书架横向封面条 + 单张可关提醒 → 阅读页内容先行 + 底栏 + 就地加入相册
+  → 相册／年度册／系列动作分主次 → 编辑器正文永不消失、分组改开关 → 空草稿／空信／空系列静默清理 → 「我的」分组列表 + 备份页三卡
+  → 外观／存储／AI 设置 → 文案与图标统一 → 双端冒烟对齐。CHANGELOG「Build 69」有逐条说明。
+- **Build 69 打包**：收尾提交（app.json 69）推上 main 后派发 `mobile-build.yml`；三作业全绿后，run 号、APK／IPA 大小与 SHA-256
+  由一笔补充提交写在本节末尾。若本节末尾还没有这段，说明包还没交付：先看 `gh run list --workflow=mobile-build.yml`。
+- **下一步**：Build 70「传家 · 中」资料不灭（见第四节；约束与提交概要在 `docs/plans/PLAN-BUILD-69.md` 第二部分，开工第一天先展开成 `docs/plans/PLAN-BUILD-70.md`）。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
 ## 二、恢复提示词（直接复制粘贴）
@@ -38,63 +27,68 @@
 
 第一步·环境自检：
 1. 读仓库根目录的 AGENTS.md（发布纪律：只从 main 工作、小提交直接推、本地三件套绿后推送、
-   不等待 CI；开工前查上次 CI 是否红）、README.md（架构/命令）、DESIGN.md（设计规范）、
-   CHANGELOG.md（近期变更）、HANDOFF.md（本文件）、docs/plans/PLAN-BUILD-68.md
-   （Build 68 已批准计划原文 + 实施偏离 + Build 69/70 路线）。
+   不等待 CI；开工前查上次 CI 是否红）、README.md（架构/命令）、DESIGN.md（设计规范，UI 只用
+   mobile/src/local/ui.tsx 的基元）、CHANGELOG.md（近期变更）、HANDOFF.md（本文件）、
+   docs/plans/PLAN-BUILD-69.md（Build 69 已批准计划原文 + 实施偏离；第二部分是 Build 70 的约束清单与提交概要）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install。
-4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（275 个测试）；
+4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（299 个测试）；
    server 下 npm test、npm run typecheck（20 个测试，server 没有 lint 脚本）；
    python3 mobile/scripts/verify-local-boundary.py；
    python3 -m unittest discover -s mobile/scripts -p 'test_*.py'。
    本机 /tmp 若是满的 tmpfs，跑 mobile 测试要 TMPDIR=/var/tmp/anan-tests（先 mkdir）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 68 安装包已交付（run 35450404867，校验和在 HANDOFF 第一节），不必重新打包：
-- artifacts 2026-10-19 过期；若持有者本地还没有 build-68 的 APK/IPA，提醒先 gh run download 存下来。
-- 服务端 scrypt2 改动尚未部署：按 deploy/README.md 部署一次（旧哈希登录时自动升级，无需迁移）。
+第二步·Build 69 安装包：看 HANDOFF 第一节末尾有没有 run 号与校验和。
+- 有：已交付，不必重新打包；artifacts 30 天过期，提醒持有者 gh run download 存到本地 releases/build-69/。
+- 没有：查 gh run list --workflow=mobile-build.yml；红就按 Build 68 的经验先看双端冒烟的可达性
+  （uiautomator 只 dump 可见节点、iOS 键盘遮挡），修好直推 main 再派发；绿就下载两端包、算 SHA-256 写进第一节。
 
-第三步·继续 Build 69「传家 · 中」资料不灭（路线见 docs/plans/PLAN-BUILD-68.md 第六节）：
-1. 本机备份改 blob 库：backups/blobs/<sha256> + 清单 .xmbm（v2 头不带素材字节），引用计数回收，
-   库 + 备份从约 4 倍降到约 2 倍；.xmb 分卷导出（阈值切多卷，读取端支持拼接）。
-2. 加密单向远端备份：客户端 @noble/hashes/scrypt 派生密钥 + @noble/ciphers（新增）
-   XChaCha20-Poly1305 逐块加密；服务端 PUT /backup/blobs/:sha256、PUT/GET /backup/manifest，
-   按成员配额存到 AI_DATA_DIR/backup/。前置：blob 库。要修订两条「宪法」：
-   verify-local-boundary.py 允许 src/sync/ 目录 fetch，AGENTS 加一条「备份传输只走 src/sync」。
-   决策点（问持有者）：口令丢失即不可恢复，要不要在 App 内生成 12 词恢复码让家长抄写。
-3. 顺手的小项（可选）：mobile-build.yml 加 release_tag 输入，把 APK/IPA/sha256 挂到 GitHub Release，
-   解决 artifacts 30 天过期（Build 68 计划里的可选提交 16，未做）。
+第三步·Build 70「传家 · 中」资料不灭（一个安装包，主人已拍板）：
+0. 先把 docs/plans/PLAN-BUILD-69.md 第二部分展开成 docs/plans/PLAN-BUILD-70.md（每个提交的函数签名与测试清单），
+   已定决策：远端备份密钥 = 12 词恢复码即密钥（无口令、无 scrypt）；VPS 可用磁盘 50–200 GB；手机资料 < 5 GB；
+   主密钥必须用 expo-crypto getRandomBytes（Hermes 没有 crypto.getRandomValues）。
+1. 先做服务端对象库与路由（提交 11–12）并部署；用一次性 token 探反代：4 MB PUT 期望 200、9 MB PUT 期望我们的 JSON 413，
+   不符就改 nginx 三行（client_max_body_size 16m; proxy_request_buffering off; proxy_read_timeout 130s）再探。
+2. 再做手机端：宪法重构（local_boundary.py + SERVICE_URL 进 brand.ts）→ 格式层与 blob 库 → .xmb 分卷 → src/sync 密码学／状态／传输／引擎
+   → 备份页末尾的远端卡与恢复码页 → 真服务端 e2e → 收尾（CHANGELOG 降级警告：.xmbm 与分卷 .xmb 只有 70 起能读）。
+3. 首个真机版记录 XChaCha20 的 MB/s 到 HANDOFF；若 < 5 MB/s 用对象头的 alg 字节换 expo-crypto 的 AES-GCM。
 明确不做：实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
 ```
 
-## 三、Build 68 交付清单（源码已在 main）
+## 三、Build 69 交付清单（源码已在 main）
 
 | 提交 | 内容 |
 | --- | --- |
-| 1869bfb | 仓库卫生：.commandcode 出库、四个零引用依赖、PLAN 归档到 docs/plans、.nvmrc |
-| 5f83be3 | 服务端：scrypt2 带参数哈希、旧哈希登录自动升级、兜底命令按登录名找人 |
-| d889f31 | 没动过的集合保持引用不变，书架／年度册／搜索按集合记忆 |
-| f830bc1 | letters 实体：校验、素材保护、备份往返、纯函数状态 |
-| 8fec661 | 书架「时间胶囊」区、信件路由与服务 |
-| 132d3a6 | 写信页与读信页（useRecorder 泛化） |
-| 52d1314 | 双端冒烟：写信 → 封存 → 重启 → 提前拆封；fixture 带一封封存的信 |
-| cdd33e2 | 零依赖流式 ZIP 写入器（Python zipfile 校验） |
-| 98bdfed | 归档版面规划（纯函数） |
-| 731ca5c | 离线网页 index.html（桩 DOM 测试） |
-| 089941d | 导出编排、备份页「开放归档」卡、双端冒烟 |
-| 68aed3c | 「她说的话」：quote 字段、阅读页切换、语录册、搜索 chip |
-| c89a0fd | 装订提醒：yearBooksBoundAt、bookNudgeOf、书架纸卡 |
-| 57d5065 | 收尾：CHANGELOG／README／HANDOFF／PLAN 归档、app.json 68 |
-| dd0eee7 | 双端冒烟可达性修复：写信页按钮进底部固定栏、归档卡移到备份列表之后（打包交付提交） |
+| 89e2bac | 页内顶栏：`Page` 自绘「‹ 返回 + 标题」，原生页头下线（`headerShown: false`） |
+| ce4d60e | 控件四级与玻璃深度：`Button` 文字级／危险级、选中带勾；`Card`／底栏内不再套玻璃 |
+| b298c2f | 提醒策略：`pickNudge` 同屏只挑一张卡，关闭状态入库 `nudgeClosedAt` |
+| beeebff | 书架头部与单张提醒：名字圆章进「我的」，提醒卡都可关 |
+| 58df185 | 书架改横向封面条：「最近」在最上，区标题右侧文字级新建，不再摆「+」虚位册 |
+| 2e30460 | 书架收尾：那年今日卡紧凑化、「右下角的笔」改「记一刻」、扉页没名字不再拿应用名充数 |
+| 7cfdfe5 | 全部页面迁到 `Page` 顶栏：表单与设置页标题进顶栏，内容页只留返回 |
+| a424087 | 阅读页内容先行：照片分页、动作进底栏、就地加入相册（`appendToAlbum`／`newAlbumFrom`） |
+| addd9e4 | 相册、年度册、系列页：动作一行分主次，寄语卡移到页尾，导出成长册就地展开 |
+| 1f75538 | 空态给出下一步；编辑页保存中按返回改为等保存完再走 |
+| 7df32df | 编辑器：正文永不消失、按天分组改为按需开关、次要动作降级；AI 面板实色底板 |
+| 0ffb5bb | 空草稿、空信、空系列退出时静默清理（`empties.ts`） |
+| 481a627 | 「我的」改为分组设置行（`SettingsGroup`／`SettingsRow`），副题带出状态 |
+| 46503c8 | 备份页重排：三张纸卡、一个主按钮、不露文件名（`backupStampLabel`） |
+| b63eb37 | 外观、本机存储、AI 设置：主题勾选一行、术语退出正文、模型名进脚注 |
+| ab6cabc | 文案与图标统一：记录数成「段时光」，附件按种类，术语退出正文 |
+| 86fb958 | 双端冒烟对齐：iOS 返回改点 page-back，补 home-recent 与 record-bottom-bar 截图 |
+| （收尾） | CHANGELOG／README／HANDOFF／PLAN 归档、DESIGN 一致性、app.json 69（本提交） |
 
-实施中与计划的偏离都记在 `docs/plans/PLAN-BUILD-68.md` 顶部注释里（ZIP64 按需而非始终、归档留缓存到下次导出等）。
+实施中与计划的偏离都记在 `docs/plans/PLAN-BUILD-69.md` 顶部注释里。
 
 ## 四、后续路线
 
-- **Build 69「传家 · 中」资料不灭**：本机 blob 备份库 + 分卷 + 加密远端单向备份（见第二节第三步）。
-- **Build 70「传家 · 下」家人一起记**：第二台设备登录同一家庭账号后从远端清单拉全量（含原图，已拍板），
-  记录 last-writer-wins 合并（revision + updatedAt），媒体按 sha256 增量；只在同一记录两端都改时提示冲突。
-  前置：69 的远端 blob 与清单；改 Library 加设备 id／向量时钟前先出 PLAN-SHARING.md。
+- **Build 70「传家 · 中」资料不灭**（一个包）：A 本机 blob 备份库（`blobs/<sha256>` + `.xmbm` 清单，库 + 备份从约 4 倍降到约 2 倍）
+  → B `.xmb` 分卷导出与多卷读取 → C 加密远端单向备份 + 远端恢复（客户端 XChaCha20-Poly1305 逐块加密、HKDF 派生、
+  12 词 BIP39 恢复码即密钥；服务端 `/backup/*` 对象库按成员配额存到 `/data/backup/`）→ D 宪法修订（`src/sync` 是唯一第二个 `fetch(`）。
+  34 条约束与 21 个提交概要见 `docs/plans/PLAN-BUILD-69.md` 第二部分。
+- **Build 71「传家 · 下」家人一起记**：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；记录 last-writer-wins（revision + updatedAt），
+  媒体按 sha256 增量；只在同一记录两端都改时提示冲突。前置：70 的远端对象与清单；改 `Library` 加设备 id 前先出 PLAN-SHARING.md。
 
 ## 五、踩坑清单（务必先读，历史细节在 docs/plans/ 各计划的对应小节）
 
@@ -117,6 +111,14 @@
 - uiautomator 只 dump 看得见的节点：书架与长表单里首屏之外的目标用 smoke-android.py 的 tap_seek（滑动再找）。
 - Android APK 用持有者私有 release 密钥签名（GitHub Secrets：ANDROID_KEYSTORE_BASE64/PASSWORD/ALIAS/KEY_PASSWORD），
   指纹钉在 mobile-build.yml。
+- （Build 69）原生页头已下线：返回是 `Page` 里的 `IconButton`（testID `page-back`），iOS 冒烟点返回不能再用 `BackButton`；
+  编辑页与写信页用 `usePreventRemove(!allowExit)` 拦全部退出，保存中按返回记到 `pendingExit`、本轮结束再放行；
+  隐藏原生页头后 `useHeaderHeight()` 为 0，键盘偏移用 `useTopBarOffset()`；`Modal` 里 SafeAreaView 不可靠，
+  BookPreview／PhotoPicker 用 `useSafeAreaInsets().top` 自己垫 + `Page top={false}`。
+- （Build 69）`GlassDepth`：`Card`／`BottomBar` 给深度 +1，里面的 `Button`／`Glass` 渲染实色纸面，别指望卡里再套一层液态玻璃；
+  按钮四级里一页只放一个 `primary`。
+- （Build 69）冒烟标签：「我的」入口的 accessibilityLabel 是「我的」（testID `open-settings` 不变）；`SettingsRow` 的副题放在
+  accessibilityValue 里、标签保持原文，双端冒烟才能按「AI 设置」「备份与恢复」文本命中；Android 的 desc 会拼成「标签, 值」。
 
 ## 六、环境备忘
 
