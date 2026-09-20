@@ -6,16 +6,26 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as VideoThumbnails from "expo-video-thumbnails";
 import type { LocalMedia, MediaKind } from "./model";
 import { DOCS_DIR } from "./brand";
-export const mediaDirectory = new Directory(
-  Paths.document,
-  DOCS_DIR,
-  "media",
-);
+export const mediaDirectory = new Directory(Paths.document, DOCS_DIR, "media");
 export const backupDirectory = new Directory(
   Paths.document,
   DOCS_DIR,
   "backups",
 );
+/** 分块读写素材时的块大小：任何时刻内存里只有这么一块。 */
+export const CHUNK = 262144;
+/**
+ * 本机 blob 库：按内容 sha256 存一份素材字节，供保留备份（.xmbm）、导出分卷与远端恢复共用。
+ * 两级前缀目录（blobs/ab/ab…）避免一个目录里堆几万个文件。
+ */
+export const blobDirectory = new Directory(Paths.document, DOCS_DIR, "blobs");
+export const blobPrefixDirectory = (sha256: string) =>
+  new Directory(blobDirectory, sha256.slice(0, 2));
+export const blobFile = (sha256: string) =>
+  new File(blobPrefixDirectory(sha256), sha256);
+/** 正在写入的半成品；长度与哈希都核过才换成正式名字。 */
+export const blobPartFile = (sha256: string) =>
+  new File(blobPrefixDirectory(sha256), `${sha256}.part`);
 export const mediaFile = (m: LocalMedia) => new File(mediaDirectory, m.file);
 export const mediaUri = (m: LocalMedia) => mediaFile(m).uri;
 export const thumbFile = (m: LocalMedia) =>
@@ -30,6 +40,7 @@ export function deleteMediaFiles(m: LocalMedia): void {
 export function ensureDirectories() {
   mediaDirectory.create({ intermediates: true, idempotent: true });
   backupDirectory.create({ intermediates: true, idempotent: true });
+  blobDirectory.create({ intermediates: true, idempotent: true });
 }
 export async function hashFile(file: File): Promise<string> {
   const h = file.open(FileMode.ReadOnly);
@@ -37,7 +48,7 @@ export async function hashFile(file: File): Promise<string> {
   try {
     let remaining = file.size;
     while (remaining > 0) {
-      const bytes = h.readBytes(Math.min(262144, remaining));
+      const bytes = h.readBytes(Math.min(CHUNK, remaining));
       if (!bytes.length) throw new Error("文件读取不完整。");
       hash.update(bytes);
       remaining -= bytes.length;
