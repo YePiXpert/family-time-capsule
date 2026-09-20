@@ -28,7 +28,7 @@ import {
 } from "./model";
 import { deleteMediaFiles, preserveMedia } from "./files";
 import { defaultOpenAt, openLetterAt, sealLetterAt } from "./letters";
-import { applyPhotoMetadata } from "./photo-metadata";
+import { applyPhotoMetadata, captureDayCount } from "./photo-metadata";
 import type { LocalStore } from "./store";
 export const newId = () => randomUUID();
 export const now = () => new Date().toISOString();
@@ -50,7 +50,7 @@ export async function beginDraft(
       baseRevision: record?.revision ?? 0,
       autoDate: !record,
       autoLocation: !record,
-      groupPhotosByDay: !record,
+      groupPhotosByDay: false,
       content: record
         ? (clone(record) as Mutable<Stored<LocalRecord>>)
         : emptyContent(),
@@ -318,14 +318,14 @@ async function receiveOneShare(
       content.mediaIds = media.map((m) => m.id);
       content.coverId = media.find((m) => m.kind === "image")?.id ?? null;
       for (const m of media) s.media[m.id] = m;
-      // 与编辑器导入一致：按拍摄信息自动落日期地点，并建议按天分组。
+      // 与编辑器导入一致：按拍摄信息自动落日期地点；照片横跨多天才建议分成几件事。
       const draft: RecordDraft = {
         id,
         recordId: null,
         baseRevision: 0,
         autoDate: true,
         autoLocation: true,
-        groupPhotosByDay: true,
+        groupPhotosByDay: captureDayCount(media) > 1,
         content,
         updatedAt: now(),
       };

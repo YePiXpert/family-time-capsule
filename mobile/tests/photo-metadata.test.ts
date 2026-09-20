@@ -6,6 +6,7 @@ import {
 } from "../src/local/model";
 import {
   applyPhotoMetadata,
+  captureDayCount,
   readPhotoMetadata,
   photoDayGroups,
   movePhotoToEvent,
@@ -296,5 +297,26 @@ describe("batch photo events", () => {
     ).rejects.toThrow("disk full");
     expect(store.get().drafts.draft!.content.mediaIds).toHaveLength(4);
     expect(Object.keys(store.get().records)).toHaveLength(0);
+  });
+});
+
+describe("capture day span", () => {
+  it("counts distinct capture days and ignores undated media", () => {
+    expect(captureDayCount([])).toBe(0);
+    expect(
+      captureDayCount([
+        { photoMetadata: { capturedAt: "2026-09-18T09:00:00" } },
+        { photoMetadata: { capturedAt: "2026-09-18T20:00:00" } },
+        {},
+      ]),
+    ).toBe(1);
+  });
+  it("spans two days when photos were taken on different calendar days", () => {
+    expect(
+      captureDayCount([
+        { photoMetadata: { capturedAt: "2026-09-18T23:59:00" } },
+        { photoMetadata: { capturedAt: "2026-09-19T00:01:00" } },
+      ]),
+    ).toBe(2);
   });
 });

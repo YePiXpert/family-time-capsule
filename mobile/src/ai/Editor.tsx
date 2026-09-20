@@ -8,7 +8,6 @@ import {
   Button,
   Card,
   ErrorText,
-  Glass,
   Text,
   dateLabel,
   hapticSuccess,
@@ -76,7 +75,9 @@ export function AIEditor({
       draft.aiProposal?.kind ?? "write",
     ),
     [writeMode, setWriteMode] = useState<WritingMode>(
-      draft.aiProposal?.kind === "write" ? modeOf(draft.aiProposal) : "generate",
+      draft.aiProposal?.kind === "write"
+        ? modeOf(draft.aiProposal)
+        : "generate",
     ),
     [retryable, setRetryable] = useState<Run | null>(null),
     [errorCode, setErrorCode] = useState<string | null>(null),
@@ -105,7 +106,8 @@ export function AIEditor({
     eventImages = (selectedEvent?.mediaIds ?? []).filter(
       (id) => media[id]?.kind === "image",
     ),
-    stale = !!proposal && sourceFingerprint(draft, media) !== proposal.fingerprint,
+    stale =
+      !!proposal && sourceFingerprint(draft, media) !== proposal.fingerprint,
     unseen = !!proposal && !seen;
   const chooseTask = (kind: "group" | "write") => {
     setTask(kind);
@@ -278,7 +280,7 @@ export function AIEditor({
             );
           }
           if (day.mergeKey) {
-            setProgress("正在连接同一天的事情…");
+            setProgress("正在把同一天的照片归到一起…");
             allGroups.push(
               ...(
                 await perform(day.mergeKey, "group", [], {
@@ -363,13 +365,23 @@ export function AIEditor({
           accessibilityRole="button"
           accessibilityLabel="收起 AI 面板"
           testID="ai-close"
-          style={{ position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.scrim }}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+            backgroundColor: colors.scrim,
+          }}
           onPress={() => setPanel(false)}
         />
-        <Glass
-          radius={24}
+        <View
           accessibilityViewIsModal
           style={{
+            // 实色纸面：半透明玻璃会把编辑页底栏透出来。
+            backgroundColor: colors.paper,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
             maxHeight: "82%",
             paddingTop: 16,
             paddingHorizontal: 20,
@@ -387,7 +399,11 @@ export function AIEditor({
           </View>
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ gap: 12, paddingTop: 12, paddingBottom: 8 }}
+            contentContainerStyle={{
+              gap: 12,
+              paddingTop: 12,
+              paddingBottom: 8,
+            }}
           >
             <View style={{ gap: 8 }}>
               <Text style={s.muted}>写记录</Text>
@@ -424,19 +440,19 @@ export function AIEditor({
                     : "根据这件事的照片和已知拍摄信息，写出短标题和一小段正文。"
                   : !selectedEvent?.text.trim()
                     ? "还没有可润色的正文。先写下几句话，再来润色。"
-                    : polishRequest({
+                    : (polishRequest({
                         title: selectedEvent?.title ?? "",
                         text: selectedEvent?.text ?? "",
                       }).error ??
-                      "只发送这件事的标题和正文，保留你的原意、语气和事实，不发送照片。"}
+                      "只发送这件事的标题和正文，保留你的原意、语气和事实，不发送照片。")}
               </Text>
               {events.length > 1 && task === "write" && (
                 <View style={{ gap: 8 }}>
-                  <Text style={s.muted}>先选择要处理的事情</Text>
+                  <Text style={s.muted}>先选一件事</Text>
                   {events.map((event, index) => (
                     <Button
                       key={index}
-                      title={`事情 ${index + 1}${event.title ? `：${event.title}` : ""} · ${dateLabel(event.date)}`}
+                      title={`第 ${index + 1} 件事${event.title ? `：${event.title}` : ""} · ${dateLabel(event.date)}`}
                       compact
                       selected={eventIndex === index}
                       disabled={busy || disabled || matchesView}
@@ -448,7 +464,7 @@ export function AIEditor({
               {task === "write" && !!eventImages.length && (
                 <View style={{ gap: 8 }}>
                   <Text style={s.muted}>
-                    本次的照片 · 事情 {eventIndex + 1}
+                    这次的照片 · 第 {eventIndex + 1} 件事
                   </Text>
                   {photoStrip(selectedEvent!.mediaIds)}
                 </View>
@@ -458,7 +474,7 @@ export function AIEditor({
               <View style={{ gap: 8 }}>
                 <Text style={s.muted}>整理照片</Text>
                 <Button
-                  title="按事情分组"
+                  title="分成几件事"
                   icon="image"
                   compact
                   selected={task === "group"}
@@ -471,7 +487,7 @@ export function AIEditor({
                 />
                 <Text style={s.muted}>
                   {totalImages.length < 2
-                    ? "至少需要两张照片才能按事情分组。"
+                    ? "至少需要两张照片才能分成几件事。"
                     : "结合拍摄时间、匿名地点组和画面，把照片分成几件事，每件事保存为一条记录。"}
                 </Text>
               </View>
@@ -547,61 +563,59 @@ export function AIEditor({
                 )}
                 {proposal.kind === "group" ? (
                   <>
-                    <Text>
-                      分组预览 · {proposal.groups?.length} 件事
-                    </Text>
+                    <Text>分组预览 · {proposal.groups?.length} 件事</Text>
                     <Text style={s.muted}>
                       核对每件事包含的照片；摘要只帮助辨认分组，不会写入记录正文。
                     </Text>
-                    {adjusting ? (
-                      proposal.groups?.map((group, index) => (
-                        <View key={index} style={{ gap: 8 }}>
-                          <Text>
-                            事情 {index + 1}：{group.title}
-                          </Text>
-                          {group.photoIds.map((id) => (
-                            <View
-                              key={id}
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: 8,
-                              }}
-                            >
-                              <Photo media={media[id]} size={48} />
-                              <ScrollView
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={{ gap: 8 }}
+                    {adjusting
+                      ? proposal.groups?.map((group, index) => (
+                          <View key={index} style={{ gap: 8 }}>
+                            <Text>
+                              第 {index + 1} 件事：{group.title}
+                            </Text>
+                            {group.photoIds.map((id) => (
+                              <View
+                                key={id}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 8,
+                                }}
                               >
-                                {proposal.groups!.map((_, target) =>
-                                  target === index ? null : (
-                                    <Button
-                                      key={target}
-                                      title={`移到事情 ${target + 1}`}
-                                      compact
-                                      disabled={busy}
-                                      onPress={() => movePhoto(id, target)}
-                                    />
-                                  ),
-                                )}
-                              </ScrollView>
-                            </View>
-                          ))}
-                        </View>
-                      ))
-                    ) : (
-                      proposal.groups?.map((group, index) => (
-                        <View key={index} style={{ gap: 8 }}>
-                          <Text>
-                            事情 {index + 1}：{group.title} ·{" "}
-                            {group.photoIds.length} 张
-                          </Text>
-                          {photoStrip(group.photoIds)}
-                          <Text style={s.muted}>画面摘要：{group.summary}</Text>
-                        </View>
-                      ))
-                    )}
+                                <Photo media={media[id]} size={48} />
+                                <ScrollView
+                                  horizontal
+                                  showsHorizontalScrollIndicator={false}
+                                  contentContainerStyle={{ gap: 8 }}
+                                >
+                                  {proposal.groups!.map((_, target) =>
+                                    target === index ? null : (
+                                      <Button
+                                        key={target}
+                                        title={`移到第 ${target + 1} 件事`}
+                                        compact
+                                        disabled={busy}
+                                        onPress={() => movePhoto(id, target)}
+                                      />
+                                    ),
+                                  )}
+                                </ScrollView>
+                              </View>
+                            ))}
+                          </View>
+                        ))
+                      : proposal.groups?.map((group, index) => (
+                          <View key={index} style={{ gap: 8 }}>
+                            <Text>
+                              第 {index + 1} 件事：{group.title} ·{" "}
+                              {group.photoIds.length} 张
+                            </Text>
+                            {photoStrip(group.photoIds)}
+                            <Text style={s.muted}>
+                              画面摘要：{group.summary}
+                            </Text>
+                          </View>
+                        ))}
                     <Button
                       title={adjusting ? "完成调整" : "调整照片归属"}
                       compact
@@ -660,9 +674,7 @@ export function AIEditor({
                   </>
                 ) : (
                   <>
-                    <Text>
-                      事情 {proposal.eventIndex + 1} · 文字预览
-                    </Text>
+                    <Text>第 {proposal.eventIndex + 1} 件事 · 文字预览</Text>
                     <Text style={s.muted}>标题</Text>
                     <Text>{proposal.title}</Text>
                     <Text style={s.muted}>正文</Text>
@@ -706,9 +718,11 @@ export function AIEditor({
                 />
               </Card>
             )}
-            <Text style={s.muted}>DeepSeek Flash High</Text>
+            <Text style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
+              由 DeepSeek Flash High 提供
+            </Text>
           </ScrollView>
-        </Glass>
+        </View>
       </View>
     </Modal>
   );

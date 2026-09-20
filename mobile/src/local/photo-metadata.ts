@@ -77,6 +77,17 @@ export function applyPhotoMetadata(
   return next;
 }
 
+/** 这批素材横跨几个拍摄日（按 capturedAt 的日历日计，没有拍摄时间的不算）。 */
+export function captureDayCount(
+  media: readonly { photoMetadata?: PhotoMetadata }[],
+): number {
+  return new Set(
+    media
+      .map((m) => m.photoMetadata?.capturedAt?.slice(0, 10))
+      .filter((day): day is string => !!day),
+  ).size;
+}
+
 export function photoDayGroups(
   draft: RecordDraft,
   media: Library["media"],
