@@ -6,13 +6,16 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useLibrary } from "./context";
+import { useLibrary, useStore } from "./context";
 import { CaptureFab } from "./CaptureFab";
 import { monthKey, type LocalRecord, type Stored } from "./model";
 import { useNav, type Props } from "./navigation";
 import { recordMatches } from "./search";
+import { beginDraft } from "./services";
 import {
+  Button,
   DateStrip,
+  ErrorText,
   Field,
   Glass,
   IconButton,
@@ -20,6 +23,8 @@ import {
   Page,
   Text,
   dateLabel,
+  hapticLight,
+  messageOf,
   monthLabel,
   useStyles,
   useTheme,
@@ -176,6 +181,7 @@ export function RecordCard({
 
 export function Month({ route }: Props<"Month">) {
   const state = useLibrary(),
+    store = useStore(),
     nav = useNav(),
     s = useStyles(),
     { large } = useTheme();
@@ -185,7 +191,8 @@ export function Month({ route }: Props<"Month">) {
   const tileSize =
     (width - insets.left - insets.right - 40 - 12 * (columns - 1)) / columns;
   const [query, setQuery] = useState(""),
-    [searchOpen, setSearchOpen] = useState(false);
+    [searchOpen, setSearchOpen] = useState(false),
+    [error, setError] = useState("");
   const { records: recordMap } = state;
   const records = useMemo(() => {
     return Object.values(recordMap)
@@ -273,13 +280,26 @@ export function Month({ route }: Props<"Month">) {
         ListEmptyComponent={
           <View style={s.empty}>
             <Text style={s.heading}>
-              {query ? "没有找到这段记录" : "这一册还是空的"}
+              {query ? "没有找到这段时光" : "这一册还是空的"}
             </Text>
             <Text style={s.muted}>
-              {query
-                ? "试试其他关键词。"
-                : "点右下角「记一刻」，写几句话，留一张照片。"}
+              {query ? "试试其他关键词。" : "写几句话，留一张照片。"}
             </Text>
+            {!query && (
+              <View style={s.row}>
+                <Button
+                  title="记一刻"
+                  icon="edit"
+                  onPress={() => {
+                    hapticLight();
+                    void beginDraft(store)
+                      .then((draftId) => nav.navigate("Editor", { draftId }))
+                      .catch((e) => setError(messageOf(e)));
+                  }}
+                />
+              </View>
+            )}
+            <ErrorText message={error} />
             <Ornament />
           </View>
         }

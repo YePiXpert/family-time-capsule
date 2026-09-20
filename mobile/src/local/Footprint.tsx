@@ -7,6 +7,7 @@ import { clusterPlaces, type PlaceCluster } from "./places";
 import { RecordCard } from "./Home";
 import { Photo } from "./Media";
 import {
+  Button,
   Card,
   Ornament,
   Page,
@@ -84,6 +85,7 @@ function ClusterCard({
 
 export function Footprint(_: Props<"Footprint">) {
   const state = useLibrary(),
+    nav = useNav(),
     s = useStyles();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const clusters = useMemo(
@@ -117,6 +119,9 @@ export function Footprint(_: Props<"Footprint">) {
           <Text style={s.muted}>
             用相机拍照并允许使用位置，导入后这里会慢慢长出她常去的地方。
           </Text>
+          <View style={s.row}>
+            <Button title="回书架" kind="text" onPress={() => nav.goBack()} />
+          </View>
           <Ornament />
         </View>
       )}
