@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-20，Build 69「界面整顿」源码已在 main；安装包的 run 号与校验和见第一节末尾（交付后补写）。
+> 最后更新：2026-09-20，Build 69「界面整顿」源码与安装包均已交付（交付提交 `7a82903`，run 35489556795 全绿，校验和见第一节）。
 
 ---
 
@@ -15,8 +15,17 @@
   原生页头下线改 `Page` 页内顶栏 → 控件四级与 `GlassDepth` → 书架横向封面条 + 单张可关提醒 → 阅读页内容先行 + 底栏 + 就地加入相册
   → 相册／年度册／系列动作分主次 → 编辑器正文永不消失、分组改开关 → 空草稿／空信／空系列静默清理 → 「我的」分组列表 + 备份页三卡
   → 外观／存储／AI 设置 → 文案与图标统一 → 双端冒烟对齐。CHANGELOG「Build 69」有逐条说明。
-- **Build 69 打包**：收尾提交（app.json 69）推上 main 后派发 `mobile-build.yml`；三作业全绿后，run 号、APK／IPA 大小与 SHA-256
-  由一笔补充提交写在本节末尾。若本节末尾还没有这段，说明包还没交付：先看 `gh run list --workflow=mobile-build.yml`。
+- **Build 69 打包**：交付提交 `7a82903`（收尾 `d83a955` 之后按双端截图走查补了一笔：阅读页不再拿正文首行充当标题、两处计数改「段时光」），
+  `mobile-build.yml` run 35489556795 三作业全绿（quality ／ Android APK + 模拟器冒烟 ／ iOS 启动 + XCUITest 回归），
+  两端冒烟报告全部键为 true（Android 宽 320/390，iOS `buildNumber` 69），IPA 的 CFBundleVersion = 69，build-source 的 versionCode = 69。
+  收尾提交 `d83a955` 的首次派发 run 35487426440 同样三作业全绿，未交付、被本次取代。
+  artifacts 2026-10-20 过期，请尽快下载到 `C:\vibe-coding\releases\build-69\`：
+  `gh run download 35489556795 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
+  APK 66,481,234 字节、IPA 11,084,240 字节；SHA-256（可直接存成 sha256sums.txt 后 `sha256sum -c`）：
+  ```text
+  3201aa547692e179bc2b20834a9a93b1ed53e41f4971f2aaa19658db235083c8  FamilyTimeCapsule-android.apk
+  7fac29f2e351e5fe587a19e34da07cbe9fad8a367286961ff46e3a940bf336f0  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
 - **下一步**：Build 70「传家 · 中」资料不灭（见第四节；约束与提交概要在 `docs/plans/PLAN-BUILD-69.md` 第二部分，开工第一天先展开成 `docs/plans/PLAN-BUILD-70.md`）。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
@@ -39,10 +48,8 @@
    本机 /tmp 若是满的 tmpfs，跑 mobile 测试要 TMPDIR=/var/tmp/anan-tests（先 mkdir）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 69 安装包：看 HANDOFF 第一节末尾有没有 run 号与校验和。
-- 有：已交付，不必重新打包；artifacts 30 天过期，提醒持有者 gh run download 存到本地 releases/build-69/。
-- 没有：查 gh run list --workflow=mobile-build.yml；红就按 Build 68 的经验先看双端冒烟的可达性
-  （uiautomator 只 dump 可见节点、iOS 键盘遮挡），修好直推 main 再派发；绿就下载两端包、算 SHA-256 写进第一节。
+第二步·Build 69 安装包已交付（run 35489556795，校验和在 HANDOFF 第一节），不必重新打包：
+- artifacts 2026-10-20 过期；若持有者本地还没有 build-69 的 APK/IPA，提醒先 gh run download 存下来。
 
 第三步·Build 70「传家 · 中」资料不灭（一个安装包，主人已拍板）：
 0. 先把 docs/plans/PLAN-BUILD-69.md 第二部分展开成 docs/plans/PLAN-BUILD-70.md（每个提交的函数签名与测试清单），
@@ -77,7 +84,8 @@
 | b63eb37 | 外观、本机存储、AI 设置：主题勾选一行、术语退出正文、模型名进脚注 |
 | ab6cabc | 文案与图标统一：记录数成「段时光」，附件按种类，术语退出正文 |
 | 86fb958 | 双端冒烟对齐：iOS 返回改点 page-back，补 home-recent 与 record-bottom-bar 截图 |
-| （收尾） | CHANGELOG／README／HANDOFF／PLAN 归档、DESIGN 一致性、app.json 69（本提交） |
+| d83a955 | 收尾：CHANGELOG／README／HANDOFF／PLAN 归档、DESIGN 一致性、app.json 69 |
+| 7a82903 | 截图走查修复：阅读页不再拿正文首行充当标题，月册与选材的「N 条」改「N 段时光」（打包交付提交） |
 
 实施中与计划的偏离都记在 `docs/plans/PLAN-BUILD-69.md` 顶部注释里。
 
