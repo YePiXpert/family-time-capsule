@@ -42,19 +42,35 @@ export function ensureDirectories() {
   backupDirectory.create({ intermediates: true, idempotent: true });
   blobDirectory.create({ intermediates: true, idempotent: true });
 }
+export type FileHandle = ReturnType<File["open"]>;
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * 逐块把一段字节从一个句柄搬到另一个，边搬边算 sha256，每块之间让出主线程；
+ * output 为空时只读只算。返回十六进制哈希。
+ */
+export async function pumpBytes(
+  input: FileHandle,
+  bytes: number,
+  output: FileHandle | null,
+  onChunk?: (chunk: Uint8Array) => void,
+): Promise<string> {
+  const digest = sha256.create();
+  let remaining = bytes;
+  while (remaining > 0) {
+    const chunk = input.readBytes(Math.min(CHUNK, remaining));
+    if (!chunk.length) throw new Error("文件读取不完整。");
+    digest.update(chunk);
+    output?.writeBytes(chunk);
+    onChunk?.(chunk);
+    remaining -= chunk.length;
+    await tick();
+  }
+  return bytesToHex(digest.digest());
+}
 export async function hashFile(file: File): Promise<string> {
   const h = file.open(FileMode.ReadOnly);
-  const hash = sha256.create();
   try {
-    let remaining = file.size;
-    while (remaining > 0) {
-      const bytes = h.readBytes(Math.min(CHUNK, remaining));
-      if (!bytes.length) throw new Error("文件读取不完整。");
-      hash.update(bytes);
-      remaining -= bytes.length;
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    return bytesToHex(hash.digest());
+    return await pumpBytes(h, file.size, null);
   } finally {
     h.close();
   }

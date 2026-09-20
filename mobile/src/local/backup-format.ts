@@ -91,6 +91,16 @@ const validSet = (set: unknown, blobCount: number): boolean => {
     s.from + s.take <= blobCount
   );
 };
+/** 备份里的 JSON 段坏了给一句人话，不把解析器的英文原话抛到界面上。 */
+function parseJson<T>(bytes: Uint8Array, broken: string): T {
+  try {
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    ) as T;
+  } catch {
+    throw new Error(broken);
+  }
+}
 export type BackupManifest = {
   format: "xiaomei-local";
   version: 1;
@@ -119,9 +129,7 @@ export function encodeHeader(library: Library): Uint8Array {
 }
 export function decodeManifest(json: Uint8Array): BackupManifest {
   if (json.length > HEADER_LIMIT) throw new Error("备份清单过大。");
-  const m = JSON.parse(
-    new TextDecoder("utf-8", { fatal: true }).decode(json),
-  ) as BackupManifest;
+  const m = parseJson<BackupManifest>(json, "备份清单损坏。");
   if (
     m.format !== "xiaomei-local" ||
     m.version !== 1 ||
@@ -191,19 +199,24 @@ export function encodeMetaV2(
     blobs: backupBlobs(library),
     ...(options.set ? { set: options.set } : {}),
   };
+  return encodeMetaHead(meta, options.magic);
+}
+/** 把一份 meta 原样封成外壳（魔数 + 长度 + JSON）：分卷复用清单备份里的 meta，各卷字节一致。 */
+export function encodeMetaHead(
+  meta: BackupMetaV2,
+  magic: Uint8Array = BACKUP_MAGIC_V2,
+): Uint8Array {
   const json = new TextEncoder().encode(JSON.stringify(meta));
   if (json.length > META_LIMIT) throw new Error("备份清单过大。");
   const head = new Uint8Array(12 + json.length);
-  head.set(options.magic ?? BACKUP_MAGIC_V2);
+  head.set(magic);
   new DataView(head.buffer).setUint32(8, json.length);
   head.set(json, 12);
   return head;
 }
 export function decodeMetaV2(json: Uint8Array): BackupMetaV2 {
   if (json.length > META_LIMIT) throw new Error("备份清单过大。");
-  const m = JSON.parse(
-    new TextDecoder("utf-8", { fatal: true }).decode(json),
-  ) as BackupMetaV2;
+  const m = parseJson<BackupMetaV2>(json, "备份清单损坏。");
   if (
     m.format !== "xiaomei-local" ||
     m.version !== 2 ||
@@ -235,15 +248,21 @@ export function decodeLibraryV2(
   const state = { ...emptyLibrary(), ...meta.root } as Library;
   for (const kind of ENTITY_KINDS)
     (state as unknown as Record<string, unknown>)[kind] = {};
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(entities);
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(entities);
+  } catch {
+    throw new Error("备份内容损坏。");
+  }
   const lines = text.length ? text.replace(/\n$/, "").split("\n") : [];
   if (lines.length !== meta.entityCount) throw new Error("备份内容不完整。");
   for (const line of lines) {
-    const row = JSON.parse(line) as {
-      kind: EntityKind;
-      id: string;
-      e: unknown;
-    };
+    let row: { kind: EntityKind; id: string; e: unknown };
+    try {
+      row = JSON.parse(line) as typeof row;
+    } catch {
+      throw new Error("备份内容损坏。");
+    }
     const collection = (state as unknown as Record<string, unknown>)[
       row.kind
     ] as Record<string, unknown> | undefined;

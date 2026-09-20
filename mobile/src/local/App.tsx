@@ -29,11 +29,11 @@ import { useReducedMotion } from "react-native-reanimated";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { APP_NAME } from "./brand";
-import { inspectBackup, recoverStartupBackup } from "./backup";
+import { inspectBackup, recoverStartupBackup, retainedBackups } from "./backup";
 import { StatusBar } from "expo-status-bar";
 import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
 import { openLocalStore } from "./disk";
-import { backupDirectory, ensureDirectories, verifyMedia } from "./files";
+import { ensureDirectories, verifyMedia } from "./files";
 import * as LocalAuthentication from "expo-local-authentication";
 import { StoreContext, useLibrary, useStore } from "./context";
 import {
@@ -359,17 +359,19 @@ export default function App() {
     if (recovering) return;
     setRecovering(true);
     try {
-      let file = existing;
-      if (!file) {
+      let files = existing ? [existing] : [];
+      if (!files.length) {
+        // 分卷备份要把几卷一起选中；单份备份多选一个就行。
         const selected = await DocumentPicker.getDocumentAsync({
           type: "*/*",
           copyToCacheDirectory: true,
+          multiple: true,
         });
         if (selected.canceled) return;
-        file = new File(selected.assets[0]!.uri);
+        files = selected.assets.map((asset) => new File(asset.uri));
       }
-      const selectedFile = file;
-      const library = await inspectBackup(selectedFile);
+      const selectedFiles = files;
+      const library = await inspectBackup(selectedFiles);
       Alert.alert(
         "从备份恢复？",
         `这份备份里有 ${Object.keys(library.records).length} 段时光、${Object.keys(library.albums).length} 本相册。原有文件会保留，恢复后以这份备份继续使用。`,
@@ -379,7 +381,7 @@ export default function App() {
             text: "恢复备份",
             onPress: () => {
               setRecovering(true);
-              void recoverStartupBackup(selectedFile)
+              void recoverStartupBackup(selectedFiles)
                 .then(initialize)
                 .catch((e) => setError(messageOf(e)))
                 .finally(() => setRecovering(false));
@@ -396,13 +398,11 @@ export default function App() {
 
   const [verifiedBackup, setVerifiedBackup] = useState<File | null>(null);
   useEffect(() => {
-    if (!error || store || !backupDirectory.exists) return;
+    if (!error || store) return;
     let cancelled = false;
     void (async () => {
-      const candidates = backupDirectory
-        .list()
-        .filter((f): f is File => f instanceof File && f.name.endsWith(".xmb"))
-        .sort((a, b) => b.name.localeCompare(a.name));
+      // 清单备份（.xmbm）与旧的整份 .xmb 都算候选，最新的在前。
+      const candidates = retainedBackups();
       // 推荐位只放完整可读的备份；损坏文件静默跳过，不留一个必然失败的按钮。
       for (const file of candidates) {
         try {

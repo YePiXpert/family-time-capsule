@@ -10,7 +10,7 @@ import re
 import subprocess
 import time
 from ios_simulator import boot_simulator, cleanup_simulator, launch_simulator_app
-from local_fixture import break_state, broken_root, read_backup, seed, read_state
+from local_fixture import break_state, broken_root, check_blob_store, read_backup, seed, read_state
 
 
 def run(*args, timeout=180):
@@ -59,7 +59,10 @@ def main():
         assert state['records'] == baseline['records'], 'Full restore did not replace records'
         assert state['letters'] == baseline['letters'], 'Sealed letter did not survive the restore'
         assert not state['albums'] and not state['drafts'], 'Restore left behind post-backup content'
-        backups = list((container/'Documents'/'anan-v1'/'backups').glob('anan-*.xmb')); assert len(backups) >= 2
+        # Build 70 起应用内保留的是清单备份（.xmbm）+ 内容寻址的 blob 库；旧的整份 .xmb 也仍然认。
+        backups = list((container/'Documents'/'anan-v1'/'backups').glob('anan-*.xmb*')); assert len(backups) >= 2
+        assert all(backup.suffix == '.xmbm' for backup in backups), f'Retention copies should be manifests: {[b.name for b in backups]}'
+        check_blob_store(container/'Documents'/'anan-v1', backups)
         manifests=[read_backup(backup) for backup in backups]
         before=next(m for m in manifests if m['albums']); records=before['records']; own=[r for r in records.values() if r['text']=='A little story. More memories.']; assert len(own)==1 and own[0]['revision']==2
         assert any(before['media'][i]['kind']=='audio' for i in own[0]['mediaIds']), 'Recorded audio was not preserved'
