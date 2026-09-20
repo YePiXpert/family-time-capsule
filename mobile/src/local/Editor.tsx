@@ -26,6 +26,7 @@ import { newId, now, createPerson } from "./services";
 import { promptOf } from "./prompts";
 import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
+import { isEmptyDraft } from "./empties";
 import type { Props } from "./navigation";
 import {
   BottomBar,
@@ -85,6 +86,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     persist,
     persistDebounced,
     flush,
+    drop,
   } = useDraftPersist(store, setError, setDraft, draft);
   const {
     recording,
@@ -197,7 +199,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     }
   }, [allowExit]);
   const leave = async (action: () => void) => {
-    await flush();
+    // 什么都没写就走：草稿静默清理，不留「继续编辑」也不弹确认。
+    if (current.current && isEmptyDraft(current.current)) await drop();
+    else await flush();
     nextAction.current = action;
     setAllowExit(true);
   };

@@ -79,6 +79,8 @@ export type SeriesItem = {
   /** 形如 "2026-09"，每系列内唯一；取自素材拍摄时间，缺省用记录日期。 */
   month: string;
 };
+/** 新建时光系列的占位名；还叫这个名字又没照片的系列，退出时会被静默清理。 */
+export const SERIES_DEFAULT_NAME = "新时光系列";
 export type LocalSeries = {
   id: string;
   name: string;
@@ -287,7 +289,8 @@ export function rootOf(s: Library): Partial<Library> {
 }
 /** 冻结实体及其数组与嵌套对象：谁原地改共享对象，就在那一行当场抛错。 */
 export function freezeEntity<T>(value: T): T {
-  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  if (!value || typeof value !== "object" || Object.isFrozen(value))
+    return value;
   Object.freeze(value);
   for (const inner of Object.values(value)) freezeEntity(inner);
   return value;
@@ -543,7 +546,10 @@ export function appendToAlbum(
   if (!added.length) return album;
   const next: LocalAlbum = {
     ...album,
-    items: [...album.items, ...added.map((recordId) => ({ id: itemId(), recordId }))],
+    items: [
+      ...album.items,
+      ...added.map((recordId) => ({ id: itemId(), recordId })),
+    ],
     updatedAt: now,
   };
   s.albums[albumId] = next;
@@ -664,7 +670,8 @@ function validRoot(s: Library): boolean {
         s.media[s.settings.replayAudioId]?.kind === "audio")) &&
     isIds(s.receivedShares) &&
     (s.lastExportAt === undefined ||
-      (isText(s.lastExportAt) && Number.isFinite(Date.parse(s.lastExportAt)))) &&
+      (isText(s.lastExportAt) &&
+        Number.isFinite(Date.parse(s.lastExportAt)))) &&
     (!s.profile.avatarId || s.media[s.profile.avatarId]?.kind === "image")
   );
 }

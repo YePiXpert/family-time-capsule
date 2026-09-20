@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { Platform } from "react-native";
 import {
   AudioModule,
@@ -27,9 +33,9 @@ export function useDraftPersist(
     verified = useRef<Set<string>>(new Set()),
     writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     mounted = useRef(true);
-  const [importedMedia, setImportedMedia] = useState<Record<string, LocalMedia>>(
-    {},
-  );
+  const [importedMedia, setImportedMedia] = useState<
+    Record<string, LocalMedia>
+  >({});
   const writeNow = useCallback(() => {
     if (!current.current) return Promise.resolve();
     const originals = Object.values(pendingMedia.current);
@@ -70,8 +76,22 @@ export function useDraftPersist(
       clearTimeout(writeTimer.current);
       writeTimer.current = null;
     }
-    if (current.current) await persist({ ...current.current, updatedAt: now() });
+    if (current.current)
+      await persist({ ...current.current, updatedAt: now() });
   }, [persist]);
+  /** 空草稿静默退场：撤掉挂起的落盘，把草稿从库里删掉；删成功后这份引用不再写回。 */
+  const drop = useCallback(async () => {
+    if (writeTimer.current) {
+      clearTimeout(writeTimer.current);
+      writeTimer.current = null;
+    }
+    const d = current.current;
+    if (!d) return;
+    await store.change((s) => {
+      delete s.drafts[d.id];
+    });
+    current.current = undefined;
+  }, [store]);
   useEffect(
     () => () => {
       mounted.current = false;
@@ -92,6 +112,7 @@ export function useDraftPersist(
     persist,
     persistDebounced,
     flush,
+    drop,
   };
 }
 
@@ -163,8 +184,7 @@ export function useRecorder<D extends { recordingFile?: string }>({
   };
   const start = async () => {
     const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted)
-      throw new Error("请在系统设置中允许使用麦克风。");
+    if (!permission.granted) throw new Error("请在系统设置中允许使用麦克风。");
     await setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,

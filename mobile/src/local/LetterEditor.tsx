@@ -12,6 +12,7 @@ import { usePreventRemove } from "@react-navigation/native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLibrary, useStore } from "./context";
 import { useRecorder } from "./editorHooks";
+import { isEmptyLetter } from "./empties";
 import { toDayKey } from "./dates";
 import { openAtLabel } from "./letters";
 import {
@@ -66,7 +67,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     mounted = useRef(true),
     operation = useRef(false),
-    nextAction = useRef<(() => void) | null>(null);
+    nextAction = useRef<(() => void) | null>(null),
+    // 保存进行中按了返回：记下来，这一轮操作结束后再走，不用一行红字拦人。
+    pendingExit = useRef<(() => void) | null>(null);
   const writeNow = useCallback(() => {
     const d = current.current;
     if (!d) return Promise.resolve();
@@ -178,40 +181,56 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       operation.current = false;
       if (mounted.current) setBusy(false);
     }
+    const exit = pendingExit.current;
+    if (exit) {
+      pendingExit.current = null;
+      void run(() => leave(exit));
+    }
   };
   const leave = async (action: () => void) => {
-    await flush();
+    const d = current.current;
+    if (d && !d.recordingFile && isEmptyLetter(d.letter)) {
+      // 什么都没写就走：这封空信静默删掉，不在书架上留一封「还没封存的草稿」。
+      if (writeTimer.current) {
+        clearTimeout(writeTimer.current);
+        writeTimer.current = null;
+      }
+      await deleteLetter(store, d.letter.id);
+      current.current = undefined;
+    } else await flush();
     nextAction.current = action;
     setAllowExit(true);
   };
-  usePreventRemove(!allowExit && !!draft?.recordingFile, ({ data }) => {
+  usePreventRemove(!allowExit, ({ data }) => {
+    const exit = () => navigation.dispatch(data.action);
     if (operation.current) {
-      setError("正在保存，请稍候再返回。");
+      pendingExit.current = exit;
       return;
     }
-    const exit = () => navigation.dispatch(data.action);
-    Alert.alert("保存这段录音？", "结束并保存后返回，或明确放弃本段录音。", [
-      { text: "继续写", style: "cancel" },
-      {
-        text: "放弃录音",
-        style: "destructive",
-        onPress: () => {
-          void run(async () => {
-            await discardAudio();
-            await leave(exit);
-          });
+    if (current.current?.recordingFile)
+      Alert.alert("保存这段录音？", "结束并保存后返回，或明确放弃本段录音。", [
+        { text: "继续写", style: "cancel" },
+        {
+          text: "放弃录音",
+          style: "destructive",
+          onPress: () => {
+            void run(async () => {
+              await discardAudio();
+              await leave(exit);
+            });
+          },
         },
-      },
-      {
-        text: "结束并保存",
-        onPress: () => {
-          void run(async () => {
-            await finishAudio();
-            await leave(exit);
-          });
+        {
+          text: "结束并保存",
+          onPress: () => {
+            void run(async () => {
+              await finishAudio();
+              await leave(exit);
+            });
+          },
         },
-      },
-    ]);
+      ]);
+    else void run(() => leave(exit));
   });
   if (!draft)
     return (
@@ -243,7 +262,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
               await sealLetter(store, letter.id);
               // 封存后这份草稿不再写回：任何迟到的落盘都会被「信已封存」拒绝。
               current.current = undefined;
-              navigation.replace("Letter", { id: letter.id });
+              await leave(() =>
+                navigation.replace("Letter", { id: letter.id }),
+              );
             });
           },
         },
@@ -417,7 +438,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                       if (current.current?.recordingFile) await discardAudio();
                       current.current = undefined;
                       await deleteLetter(store, letter.id);
-                      navigation.goBack();
+                      await leave(() => navigation.goBack());
                     });
                   },
                 },
@@ -441,10 +462,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
               testID="letter-save"
               disabled={busy || recording}
               onPress={() => {
-                void run(async () => {
-                  await flush();
-                  navigation.goBack();
-                });
+                void run(() => leave(() => navigation.goBack()));
               }}
             />
             <Button

@@ -9,8 +9,10 @@ import {
   monthKey,
   monthOfItem,
   recordTitle,
+  SERIES_DEFAULT_NAME,
   sortedRecords,
 } from "./model";
+import { isEmptySeries } from "./empties";
 import { addToSeries, now } from "./services";
 import type { Props } from "./navigation";
 import {
@@ -83,6 +85,22 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
       cancelAnimationFrame(first);
     };
   }, [card, cardBusy, series]);
+  // 点「新建系列」时实体就建好了：还叫默认名又没收进照片就离开，静默清掉，不在书架留空册。
+  useEffect(
+    () =>
+      navigation.addListener("beforeRemove", () => {
+        const id = route.params.id,
+          latest = store.get().series[id];
+        if (!latest || !isEmptySeries(latest)) return;
+        // 清不掉也不拦人：空系列留到下次进来再清。
+        void store
+          .change((s) => {
+            delete s.series[id];
+          })
+          .catch(() => undefined);
+      }),
+    [navigation, route.params.id, store],
+  );
   if (!series)
     return (
       <Page>
@@ -136,10 +154,9 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
     setCardBusy(true);
     setError("");
     try {
-      const picked = sampledIndices(
-        sortedItems.length,
-        SERIES_STRIP_MAX,
-      ).map((i) => sortedItems[i]!);
+      const picked = sampledIndices(sortedItems.length, SERIES_STRIP_MAX).map(
+        (i) => sortedItems[i]!,
+      );
       const items = [];
       for (const item of picked)
         items.push({
@@ -190,7 +207,7 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
                 if (!s.series[route.params.id])
                   throw new Error("时光系列已删除。");
                 editEntity(s, "series", route.params.id, (target) => {
-                  target.name = name.trim() || "新时光系列";
+                  target.name = name.trim() || SERIES_DEFAULT_NAME;
                   target.updatedAt = now();
                 });
               })
@@ -201,25 +218,21 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
             kind="text"
             danger
             onPress={() =>
-              Alert.alert(
-                "删除这个时光系列？",
-                "其中的照片与记录都会保留。",
-                [
-                  { text: "取消", style: "cancel" },
-                  {
-                    text: "删除系列",
-                    style: "destructive",
-                    onPress: () => {
-                      void store
-                        .change((s) => {
-                          delete s.series[route.params.id];
-                        })
-                        .then(() => navigation.goBack())
-                        .catch((e) => setError(messageOf(e)));
-                    },
+              Alert.alert("删除这个时光系列？", "其中的照片与记录都会保留。", [
+                { text: "取消", style: "cancel" },
+                {
+                  text: "删除系列",
+                  style: "destructive",
+                  onPress: () => {
+                    void store
+                      .change((s) => {
+                        delete s.series[route.params.id];
+                      })
+                      .then(() => navigation.goBack())
+                      .catch((e) => setError(messageOf(e)));
                   },
-                ],
-              )
+                },
+              ])
             }
           />
         </Card>
