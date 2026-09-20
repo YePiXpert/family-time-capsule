@@ -234,8 +234,7 @@ async function setup() {
 /** 把实体表拼回整库，和 disk.read() 同一套拼法。 */
 function readLibrary(db: DatabaseSync): Record<string, unknown> | null {
   const root = db.prepare("SELECT json FROM root WHERE id=1").get() as
-    | { json: string }
-    | undefined;
+    { json: string } | undefined;
   if (!root) return null;
   const state = JSON.parse(root.json) as Record<string, unknown>;
   for (const kind of ENTITY_KINDS) state[kind] = {};
@@ -258,8 +257,8 @@ it("moves a Build 62 single-row library into entity tables on open", async () =>
   const before = store.get();
   // 造一个旧库：整库塞回 library 单行，清空实体表。
   env.database!.exec("DELETE FROM entity; DELETE FROM root;");
-  env.database!
-    .prepare("INSERT INTO library(id,snapshot) VALUES(1,?)")
+  env
+    .database!.prepare("INSERT INTO library(id,snapshot) VALUES(1,?)")
     .run(JSON.stringify(before));
   env.database!.close();
   env.database = null;
@@ -268,9 +267,9 @@ it("moves a Build 62 single-row library into entity tables on open", async () =>
   const reopened = await openLocalStore();
   expect(reopened.get()).toEqual(before);
   // 切代完成后旧单行退场，之后只读实体表。
-  expect(
-    env.database!.prepare("SELECT COUNT(*) n FROM library").get(),
-  ).toEqual({ n: 0 });
+  expect(env.database!.prepare("SELECT COUNT(*) n FROM library").get()).toEqual(
+    { n: 0 },
+  );
   expect(readLibrary(env.database!)).toEqual(before);
 });
 it("exports and restores real original bytes and relationships with a before-restore backup", async () => {
@@ -438,9 +437,7 @@ it("skips unusable share items without poisoning their batch or later ones", asy
       ],
     },
   ];
-  await expect(receiveShares(store)).rejects.toThrow(
-    "有 2 份分享素材未能保存",
-  );
+  await expect(receiveShares(store)).rejects.toThrow("有 2 份分享素材未能保存");
   const drafts = Object.values(store.get().drafts);
   expect(drafts).toHaveLength(2);
   expect(drafts.some((d) => d.content.mediaIds.length === 1)).toBe(true);
@@ -466,9 +463,7 @@ it("acknowledges a share with nothing usable instead of replaying it forever", a
       ],
     },
   ];
-  await expect(receiveShares(store)).rejects.toThrow(
-    "有 1 份分享素材未能保存",
-  );
+  await expect(receiveShares(store)).rejects.toThrow("有 1 份分享素材未能保存");
   expect(Object.values(store.get().drafts)).toEqual([]);
   expect(env.acknowledged).toEqual(["broken"]);
 });
@@ -682,7 +677,9 @@ it("recovers an unreadable startup library into a verified new database and reta
   const name = await activeLibraryName();
   expect(name).toMatch(/^anan-recovered-/);
   const recovered = new DatabaseSync(path.join(env.root, name));
-  const state = readLibrary(recovered) as { records: Record<string, { text: string }> };
+  const state = readLibrary(recovered) as {
+    records: Record<string, { text: string }>;
+  };
   expect(state.records.r!.text).toBe("第一步");
   recovered.close();
   const original = new DatabaseSync(
@@ -867,6 +864,17 @@ it("restores with progress and lets other writes through while it unpacks", asyn
   expect(stages.some((s) => s.includes("缩略图"))).toBe(true);
   expect(stages[stages.length - 1]).toContain("写入本机资料");
   expect(store.get().records.r?.text).toBe("第一步");
+});
+it("labels a retained backup by its local day and minute, never by file name", async () => {
+  const backup = await import("../src/local/backup");
+  const at = new Date(2026, 8, 19, 15, 44);
+  expect(backup.backupStampLabel(backup.backupFileName(at, "abc"), at)).toBe(
+    "9月19日 15:44",
+  );
+  expect(backup.backupStampLabel("anan-20250102-0905-x.xmb", at)).toBe(
+    "2025年1月2日 09:05",
+  );
+  expect(backup.backupStampLabel("renamed.xmb", at)).toBeNull();
 });
 it("backs up and restores a brand-new library with nothing in it yet", async () => {
   const { openLocalStore } = await import("../src/local/disk");
