@@ -71,6 +71,9 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
         working-directory: mobile
+      # tests/sync-e2e.test.ts 拉起真实服务端子进程，所以 server 也要装一次依赖。
+      - run: npm ci
+        working-directory: server
       - run: npm run typecheck
         working-directory: mobile
       - run: npm run lint

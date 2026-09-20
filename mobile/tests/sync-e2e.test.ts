@@ -1,0 +1,257 @@
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  afterEach,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { spawn, type ChildProcess } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import { createTransport, type HttpClient } from "../src/sync/transport";
+import { keyIdOf } from "../src/sync/crypto";
+/**
+ * 真端到端：拉起仓库里的真实服务端子进程（SQLite 临时库、对象库临时目录），
+ * 手机端引擎经 Node fetch 版 HttpClient 跑「开启 → 上传 → 核对 → 换手机恢复」。
+ * 需要 server/ 已 npm ci（CI 的 quality 作业多装一次）。
+ */
+const env = vi.hoisted(() => ({
+  root: "",
+  free: Number.POSITIVE_INFINITY,
+  rejectActivation: false,
+  database: null as DatabaseSync | null,
+}));
+vi.mock("expo-file-system", async () =>
+  (await import("./helpers/expo-file-system-fake")).createExpoFileSystemFake(
+    env,
+  ),
+);
+vi.mock("expo-sqlite", async () =>
+  (await import("./helpers/expo-sqlite-fake")).createExpoSqliteFake(env),
+);
+vi.mock("expo-crypto", () => ({
+  randomUUID,
+  getRandomBytes: (n: number) => new Uint8Array(randomBytes(n)),
+}));
+vi.mock("expo-sharing", () => ({
+  isAvailableAsync: async () => true,
+  shareAsync: async () => {},
+}));
+vi.mock("expo-image-manipulator", () => ({
+  SaveFormat: { JPEG: "jpeg" },
+  manipulateAsync: async () => {
+    const p = path.join(env.root, "cache-thumb.jpg");
+    fs.writeFileSync(p, "thumb-bytes");
+    return { uri: p, width: 512, height: 384 };
+  },
+}));
+vi.mock("expo-video-thumbnails", () => ({
+  getThumbnailAsync: async () => ({ uri: "", width: 0, height: 0 }),
+}));
+vi.mock("expo-secure-store", () => ({
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: "unlocked",
+  getItemAsync: async () => null,
+  setItemAsync: async () => {},
+  deleteItemAsync: async () => {},
+}));
+const serverDir = path.resolve(__dirname, "..", "..", "server");
+let child: ChildProcess | null = null;
+let serverRoot = "";
+let base = "";
+let token = "";
+const nodeHttp: HttpClient = async (request) => {
+  const response = await fetch(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body as BodyInit | undefined,
+    signal: request.signal ?? AbortSignal.timeout(request.timeoutMs),
+  });
+  return {
+    status: response.status,
+    body: new Uint8Array(await response.arrayBuffer()),
+  };
+};
+beforeAll(async () => {
+  if (!fs.existsSync(path.join(serverDir, "node_modules")))
+    throw new Error(
+      "server/node_modules 不在：先在 server/ 里 npm ci，再跑端到端。",
+    );
+  serverRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anan-e2e-server-"));
+  fs.writeFileSync(path.join(serverRoot, "cpa-key"), "unused-in-e2e\n");
+  const port = 20000 + Math.floor(Math.random() * 20000);
+  base = `http://127.0.0.1:${port}/api/v1`;
+  const clean = { ...process.env };
+  for (const name of Object.keys(clean))
+    if (/^(https?|all)_proxy$/i.test(name)) delete clean[name];
+  const logs: string[] = [];
+  child = spawn(process.execPath, ["src/index.ts"], {
+    cwd: serverDir,
+    env: {
+      ...clean,
+      DB_FILE: path.join(serverRoot, "ai.sqlite"),
+      BACKUP_DIR: path.join(serverRoot, "backup"),
+      CPA_KEY_FILE: path.join(serverRoot, "cpa-key"),
+      PORT: String(port),
+      SOURCE_SHA: "e2e",
+      NODE_NO_WARNINGS: "1",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout?.on("data", (d: Buffer) => logs.push(d.toString()));
+  child.stderr?.on("data", (d: Buffer) => logs.push(d.toString()));
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null)
+      throw new Error(`服务端子进程退出了：\n${logs.join("")}`);
+    try {
+      const health = await fetch(`${base.replace(/\/api\/v1$/, "")}/healthz`);
+      if (health.ok) break;
+    } catch {
+      // 还没起来
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  const setup = await fetch(`${base}/setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username: "e2eowner",
+      password: "e2e-password-123",
+      deviceName: "vitest",
+    }),
+  });
+  if (setup.status !== 201)
+    throw new Error(
+      `setup 失败：${setup.status} ${await setup.text()}\n${logs.join("")}`,
+    );
+  token = ((await setup.json()) as { token: string }).token;
+}, 60000);
+afterAll(async () => {
+  if (child && child.exitCode === null) {
+    const exited = new Promise((resolve) => child?.once("exit", resolve));
+    child.kill("SIGTERM");
+    await Promise.race([
+      exited,
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+    if (child.exitCode === null) child.kill("SIGKILL");
+  }
+  if (serverRoot) fs.rmSync(serverRoot, { recursive: true, force: true });
+});
+beforeEach(() => {
+  vi.resetModules();
+  env.free = Number.POSITIVE_INFINITY;
+  env.rejectActivation = false;
+  env.root = fs.mkdtempSync(path.join(os.tmpdir(), "anan-e2e-phone-"));
+});
+afterEach(() => {
+  env.database?.close();
+  env.database = null;
+  fs.rmSync(env.root, { recursive: true, force: true });
+});
+it("backs up to the real service, verifies, and restores onto a wiped phone", async () => {
+  const files = await import("../src/local/files");
+  const backup = await import("../src/local/backup");
+  const engine = await import("../src/sync/engine");
+  const model = await import("../src/local/model");
+  const { openLocalStore } = await import("../src/local/disk");
+  const store = await openLocalStore();
+  files.ensureDirectories();
+  const bigBytes = Buffer.alloc(4 * 1048576 + 7, 23);
+  const photos: { id: string; bytes: Buffer }[] = [
+    { id: "big", bytes: bigBytes },
+    { id: "small", bytes: Buffer.alloc(2048, 91) },
+  ];
+  const mediaIds: Record<string, string> = {};
+  for (const photo of photos) {
+    const source = path.join(env.root, `${photo.id}.jpg`);
+    fs.writeFileSync(source, photo.bytes);
+    const media = await files.preserveMedia(source, `${photo.id}.jpg`, "image");
+    mediaIds[photo.id] = media.id;
+    await store.change((s) => {
+      s.welcome = true;
+      s.media[media.id] = media;
+      s.drafts[photo.id] = {
+        id: photo.id,
+        recordId: null,
+        baseRevision: 0,
+        updatedAt: new Date().toISOString(),
+        content: {
+          ...model.emptyContent(),
+          text: `记录 ${photo.id}`,
+          mediaIds: [media.id],
+          coverId: media.id,
+        },
+      };
+      model.saveRecord(s, photo.id, `r-${photo.id}`, new Date().toISOString());
+    });
+  }
+  const key = new Uint8Array(randomBytes(16));
+  const transport = createTransport(nodeHttp, base, async () => token);
+  const stages: string[] = [];
+  const result = await engine.runRemoteBackup(store.get(), {
+    transport,
+    key,
+    onProgress: (stage) => stages.push(stage),
+  });
+  expect(result.lastBackupObjects).toBe(4);
+  const status = await transport.status();
+  expect(status.keyId).toBe(keyIdOf(key));
+  expect(status.objects).toBe(4);
+  expect(status.bytes).toBeGreaterThan(4 * 1048576);
+  // 服务器磁盘上只有密文：对象文件里找不到照片的字节。
+  const stored = fs
+    .readdirSync(path.join(serverRoot, "backup"), { recursive: true })
+    .map(String)
+    .filter((n) => /[a-f0-9]{64}$/.test(n) && !n.endsWith(".part"));
+  expect(stored).toHaveLength(4);
+  const run = Buffer.alloc(4096, 23);
+  for (const name of stored) {
+    const bytes = fs.readFileSync(path.join(serverRoot, "backup", name));
+    expect(bytes.includes(run)).toBe(false);
+    expect(bytes.subarray(0, 8).toString()).toBe("ANANOBJ1");
+  }
+  const summary = await engine.verifyRemoteBackup({ transport, key });
+  expect(summary.objects).toBe(4);
+  // 再备份一次：只多传一份清单；旧清单对象不在 keep 里，但服务端 prune 给一小时宽限，此刻还在。
+  await engine.runRemoteBackup(store.get(), { transport, key });
+  expect((await transport.status()).objects).toBe(5);
+  // 换手机：blob 库、保留备份与记录都没了，只剩恢复码。
+  fs.rmSync(files.blobDirectory.uri, { recursive: true });
+  for (const f of fs.readdirSync(files.backupDirectory.uri))
+    fs.unlinkSync(path.join(files.backupDirectory.uri, f));
+  await store.change((s) => {
+    model.deleteRecord(s, "r-big");
+    model.deleteRecord(s, "r-small");
+  });
+  expect(Object.keys(store.get().records)).toEqual([]);
+  const manifest = await engine.restoreFromRemote({
+    transport,
+    key,
+    onProgress: (s) => stages.push(s),
+  });
+  await backup.restoreBackup(store, manifest);
+  expect(store.get().records["r-big"]?.text).toBe("记录 big");
+  expect(store.get().records["r-small"]?.text).toBe("记录 small");
+  const restoredBig = fs.readFileSync(
+    files.mediaFile(store.get().media[mediaIds.big!]!).uri,
+  );
+  expect(restoredBig.equals(bigBytes)).toBe(true);
+  expect(stages).toContain("正在下载 2/2");
+  // 错的恢复码：服务端存的 keyId 让它在下载任何对象前就被判出。
+  await expect(
+    engine.restoreFromRemote({
+      transport,
+      key: new Uint8Array(randomBytes(16)),
+    }),
+  ).rejects.toThrow("恢复码");
+  // 删库：状态归零。
+  await transport.wipe();
+  expect((await transport.status()).objects).toBe(0);
+  expect(await transport.getManifest()).toBeNull();
+}, 120000);
