@@ -7,6 +7,7 @@ import type { NativeShareManifest } from "../modules/share-intake/src";
 import { ENTITY_KINDS } from "../src/local/model";
 const env = vi.hoisted(() => ({
   root: "",
+  free: Number.POSITIVE_INFINITY,
   shares: [] as NativeShareManifest[],
   acknowledged: [] as string[],
   rejectActivation: false,
@@ -69,7 +70,16 @@ vi.mock("expo-file-system", () => {
       fs.mkdirSync(this.uri, { recursive: true });
     }
     list() {
-      return fs.readdirSync(this.uri).map((n) => new File(this, n));
+      return fs
+        .readdirSync(this.uri)
+        .map((n) =>
+          fs.statSync(target([this.uri, n])).isDirectory()
+            ? new Directory(this, n)
+            : new File(this, n),
+        );
+    }
+    delete() {
+      fs.rmSync(this.uri, { recursive: true });
     }
     rename(name: string) {
       const to = target([path.dirname(this.uri), name]);
@@ -91,10 +101,12 @@ vi.mock("expo-file-system", () => {
     get size() {
       return fs.statSync(this.uri).size;
     }
-    create() {
-      fs.writeFileSync(this.uri, "", { flag: "wx" });
+    create(options?: { overwrite?: boolean; intermediates?: boolean }) {
+      if (options?.intermediates)
+        fs.mkdirSync(path.dirname(this.uri), { recursive: true });
+      fs.writeFileSync(this.uri, "", { flag: options?.overwrite ? "w" : "wx" });
     }
-    write(value: string) {
+    write(value: string | Uint8Array) {
       fs.writeFileSync(this.uri, value);
     }
     async text() {
@@ -147,6 +159,12 @@ vi.mock("expo-file-system", () => {
       get document() {
         return new Directory(env.root);
       },
+      get cache() {
+        return new Directory(env.root, "cache");
+      },
+      get availableDiskSpace() {
+        return env.free;
+      },
     },
   };
 });
@@ -184,6 +202,7 @@ vi.mock("expo-sqlite", () => ({
 }));
 beforeEach(() => {
   vi.resetModules();
+  env.free = Number.POSITIVE_INFINITY;
   env.rejectActivation = false;
   env.shares = [];
   env.acknowledged = [];

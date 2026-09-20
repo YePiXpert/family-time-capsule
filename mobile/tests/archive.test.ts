@@ -3,9 +3,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { ArchiveStopped, createArchive, estimateArchiveBytes } from "../src/local/archive";
+import {
+  ArchiveStopped,
+  createArchive,
+  estimateArchiveBytes,
+} from "../src/local/archive";
 import { planArchive } from "../src/local/archive-layout";
-import { emptyLibrary, type Library, type LocalMedia } from "../src/local/model";
+import {
+  emptyLibrary,
+  type Library,
+  type LocalMedia,
+} from "../src/local/model";
 
 // mediaDirectory 在 files.ts 加载时就按 Paths.document 定死，所以根目录要在 import 之前定下来；
 // vi.hoisted 里拿不到 import 的模块，只能用全局的 process 拼路径，目录在 beforeEach 里建。
@@ -27,7 +35,10 @@ vi.mock("expo-image-manipulator", () => ({ SaveFormat: { JPEG: "jpeg" } }));
 vi.mock("expo-video-thumbnails", () => ({}));
 vi.mock("expo-file-system", () => {
   const target = (parts: (string | { uri: string })[]) =>
-    parts.map((x) => (typeof x === "string" ? x : x.uri)).join("/").replace(/\\/g, "/");
+    parts
+      .map((x) => (typeof x === "string" ? x : x.uri))
+      .join("/")
+      .replace(/\\/g, "/");
   class Directory {
     uri: string;
     constructor(...parts: (string | { uri: string })[]) {
@@ -40,7 +51,13 @@ vi.mock("expo-file-system", () => {
       fs.mkdirSync(this.uri, { recursive: true });
     }
     list() {
-      return fs.readdirSync(this.uri).map((n) => new File(this, n));
+      return fs
+        .readdirSync(this.uri)
+        .map((n) =>
+          fs.statSync(target([this.uri, n])).isDirectory()
+            ? new Directory(this, n)
+            : new File(this, n),
+        );
     }
   }
   class File {
@@ -99,7 +116,6 @@ vi.mock("expo-file-system", () => {
   };
 });
 
-
 const NOW_YEAR = String(new Date().getFullYear());
 
 function inspect(file: string) {
@@ -113,12 +129,14 @@ function inspect(file: string) {
     const run = spawnSync(python, ["-c", script, file], { encoding: "utf8" });
     if (run.error) continue;
     if (run.status !== 0) throw new Error(run.stderr || run.stdout);
-    return JSON.parse(run.stdout) as { names: string[]; sha: Record<string, string> };
+    return JSON.parse(run.stdout) as {
+      names: string[];
+      sha: Record<string, string>;
+    };
   }
   throw new Error("python3 is required to verify ZIP output");
 }
-const sha256 = (b: Uint8Array) =>
-  createHash("sha256").update(b).digest("hex");
+const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 
 function seed(): { state: Library; photo: Uint8Array } {
   const mediaDir = path.join(env.root, "documents", "anan-v1", "media");
@@ -129,14 +147,32 @@ function seed(): { state: Library; photo: Uint8Array } {
   fs.writeFileSync(path.join(mediaDir, "a.m4a"), Buffer.alloc(1000, 7));
   const s = emptyLibrary();
   s.profile.name = "桉桉";
-  const m = (id: string, ext: string, kind: LocalMedia["kind"], bytes: number): LocalMedia => ({
-    id, file: `${id}.${ext}`, name: `${id}.${ext}`, kind, bytes, sha256: "a".repeat(64),
+  const m = (
+    id: string,
+    ext: string,
+    kind: LocalMedia["kind"],
+    bytes: number,
+  ): LocalMedia => ({
+    id,
+    file: `${id}.${ext}`,
+    name: `${id}.${ext}`,
+    kind,
+    bytes,
+    sha256: "a".repeat(64),
   });
   s.media.p = m("p", "jpg", "image", photo.length);
   s.media.a = m("a", "m4a", "audio", 1000);
   s.records.r = {
-    id: "r", title: "第一次挥手", text: "正文", date: "2026-09-15T10:00:00.000", location: "",
-    first: true, mediaIds: ["p", "a"], coverId: "p", revision: 1, updatedAt: "2026-09-15T10:00:00.000",
+    id: "r",
+    title: "第一次挥手",
+    text: "正文",
+    date: "2026-09-15T10:00:00.000",
+    location: "",
+    first: true,
+    mediaIds: ["p", "a"],
+    coverId: "p",
+    revision: 1,
+    updatedAt: "2026-09-15T10:00:00.000",
   };
   return { state: s, photo };
 }
@@ -150,7 +186,9 @@ describe("createArchive", () => {
   it("streams a zip into the cache that python can open, reporting progress", async () => {
     const { state, photo } = seed();
     const progress: number[] = [];
-    const { file, plan } = await createArchive(state, {}, (p) => progress.push(p.done));
+    const { file, plan } = await createArchive(state, {}, (p) =>
+      progress.push(p.done),
+    );
     expect(file.uri.startsWith(`${env.root}/cache/archive/`)).toBe(true);
     expect(file.name.endsWith(".zip")).toBe(true);
     expect(progress).toEqual([0, 1, 2]);
@@ -159,13 +197,21 @@ describe("createArchive", () => {
     expect(seen.names).toContain(`${root}/index.html`);
     expect(seen.names).toContain(`${root}/library.js`);
     expect(seen.names).toContain(`${root}/README.txt`);
-    expect(seen.names).toContain(`${root}/记录/2026/2026-09-15 第一次挥手/正文.md`);
-    expect(seen.sha[`${root}/记录/2026/2026-09-15 第一次挥手/照片1.jpg`]).toBe(sha256(photo));
-    expect(seen.sha[`${root}/记录/2026/2026-09-15 第一次挥手/录音1.m4a`]).toBe(sha256(Buffer.alloc(1000, 7)));
+    expect(seen.names).toContain(
+      `${root}/记录/2026/2026-09-15 第一次挥手/正文.md`,
+    );
+    expect(seen.sha[`${root}/记录/2026/2026-09-15 第一次挥手/照片1.jpg`]).toBe(
+      sha256(photo),
+    );
+    expect(seen.sha[`${root}/记录/2026/2026-09-15 第一次挥手/录音1.m4a`]).toBe(
+      sha256(Buffer.alloc(1000, 7)),
+    );
     // 下一次导出清掉上一份。
     fs.writeFileSync(path.join(env.root, "cache", "archive", "old.zip"), "x");
     await createArchive(state, { year: NOW_YEAR });
-    expect(fs.existsSync(path.join(env.root, "cache", "archive", "old.zip"))).toBe(false);
+    expect(
+      fs.existsSync(path.join(env.root, "cache", "archive", "old.zip")),
+    ).toBe(false);
   });
   it("refuses when the device is short on space and leaves nothing behind", async () => {
     const { state } = seed();
@@ -179,16 +225,26 @@ describe("createArchive", () => {
     const { state } = seed();
     const controller = new AbortController();
     await expect(
-      createArchive(state, {}, (p) => {
-        if (p.done === 1) controller.abort();
-      }, controller.signal),
+      createArchive(
+        state,
+        {},
+        (p) => {
+          if (p.done === 1) controller.abort();
+        },
+        controller.signal,
+      ),
     ).rejects.toBeInstanceOf(ArchiveStopped);
     expect(fs.readdirSync(path.join(env.root, "cache", "archive"))).toEqual([]);
   });
   it("fails whole when a media file is missing or truncated", async () => {
     const { state } = seed();
-    fs.truncateSync(path.join(env.root, "documents", "anan-v1", "media", "a.m4a"), 10);
-    await expect(createArchive(state, {})).rejects.toThrow("素材缺失或损坏：a.m4a");
+    fs.truncateSync(
+      path.join(env.root, "documents", "anan-v1", "media", "a.m4a"),
+      10,
+    );
+    await expect(createArchive(state, {})).rejects.toThrow(
+      "素材缺失或损坏：a.m4a",
+    );
     expect(fs.readdirSync(path.join(env.root, "cache", "archive"))).toEqual([]);
   });
 });
