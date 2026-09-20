@@ -2,7 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-20，Build 70「传家 · 中」已交付：源码 `7477504`，run 35494972998 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 71。
+> 最后更新：2026-09-20，Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998 三作业全绿，校验和在第一节）；同日复查修了 4 笔
+> （`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`，见第一节「交付后复查」）：服务端新版 staging 全绿、**生产部署待主人放行**，手机端修复待下一版安装包；下一步 Build 71。
 
 ---
 
@@ -14,6 +15,11 @@
   `/opt/anan-ai/service.env` 的 SOURCE_SHA = `6672e661411f3bbca257a72becf51bb8d21d9311`，`/healthz` 本机与 HTTPS 都对得上；
   对旧版 App 完全向后兼容。staging 容器（3141）跑过 `verify-service.py` 全绿后已 down；匿名 `probe-upload-limit.py` 探过
   0.5／4／9／16 MB 全部直达服务（我们的 JSON 401），反代无需改动。**这台开发机就是 VPS**（hostname `gateway`），部署命令见 `deploy/README.md`。
+  **待办：复查修复后的服务端（`26e4e19`，随 main 头 `81d1ffe` 打成镜像 `anan-ai:81d1ffe…`）已在 staging 3141 跑过新版 `verify-service.py` 全绿并 down，
+  生产尚未切换**（代理会话的自动模式不放行生产部署）。主人放行后的步骤：`cp /opt/anan-ai/service.env /opt/anan-ai/service.env.bak-$(date +%Y%m%d%H%M)`
+  → 把 SOURCE_SHA 改成 `81d1ffe37d7e68141efee1baac27a70b353f73f8` → `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build`
+  → `env -u http_proxy -u https_proxy curl -fsS http://127.0.0.1:3140/healthz` 与 `https://capsule.yep.li/healthz` 的 version 都应是这个 SHA。
+  新版对 Build 70 的 App 向后兼容（`objects` 可选）；但下一版 App 会带 `objects` 字段，旧服务端的 `.strict()` 会回 400——**先部服务端，再出手机包**。
 - **Build 70「传家 · 中」（本版）**：一天内 17 个小提交直推 main（清单见第三节）。
   本机 blob 库（`.xmbm` 清单 + `blobs/ab/<sha256>`，三份保留备份只占一份照片）→ 分卷导出（单卷与 Build 68 逐字节同形，> 2 GiB 分卷，乱序多选恢复）
   → 服务端对象库 → 密码学（12 词恢复码即钥匙，XChaCha20-Poly1305，id／nonce 按内容派生）→ 状态／规划器／传输层（XHR）→ 引擎（只传缺的、核对、远端恢复进 blob 库）
@@ -31,6 +37,13 @@
 
   **真机 XChaCha20 MB/s 还没有实测**：装上 Build 70 后在「远端备份 → 现在备份」看一次 4 MiB 以上照片的上传节奏，把 MB/s 记到这里；
   低于 5 MB/s 就用对象头的 `alg` 字节换 `expo-crypto` 的原生 AES-GCM，格式不用换。Node 26 基准：封装 64 MiB 约 220 MB/s。
+- **交付后复查（2026-09-20）**：主人说「前期累积太多 CI 出错」，查明 main 连红三次只有一个原因——`879f51f` 只给 `mobile-build.yml` 补了 server 的 `npm ci`，
+  push 触发的 `ci.yml` 漏了，端到端测试在 CI 上起不了服务端（`dfdcad8` 修，run 35509330400 全绿）。随后三路并行读码复查 Build 70 的 4,600 行，修了：
+  服务端 `26e4e19`（同 id 换大免配额、prune 全信客户端 keep 能删掉清单指向的对象、删库顺序、启动 sweepTemp(0)）、
+  手机端 `347200a`（`state.json` 异步 move 没等、远端上传时整页不锁、停止被当错误、离开页面不中止、钥匙串出错卡死、清单登记 objects）、
+  `81d1ffe`（收拾出错把成功报成失败、入库无空间预检、写不进去被说成备份坏了、多卷长度晚验、停止不到块、远端恢复中断即丢续传、句柄与半成品清理）。
+  **手机端这两笔不在已交付的 Build 70 安装包里**（包是 `7477504`）：要上真机需再出一版（`app.json` 构建号 71，由主人决定何时）。
+  没修的一条：服务端 `usage()` 每次 PUT 都全量 stat 一遍成员的对象目录（几千个对象几十毫秒，家庭规模够用；上万再做缓存）。
 - **下一步**：Build 71「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
@@ -46,7 +59,7 @@
    docs/plans/PLAN-BUILD-70.md（Build 70 计划 + 顶部实施偏离）、deploy/README.md（服务端部署与远端备份对象库）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install（mobile 的 tests/sync-e2e.test.ts 会拉起真实服务端子进程，server 依赖必须装）。
-4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（335 个测试）；
+4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（338 个测试）；
    server 下 npm test、npm run typecheck（30 个测试，server 没有 lint 脚本）；
    python3 mobile/scripts/verify-local-boundary.py；
    python3 -m unittest discover -s mobile/scripts -p 'test_*.py'。
@@ -57,6 +70,8 @@
 第二步·Build 70 安装包已交付（run 35494972998，校验和在 HANDOFF 第一节，artifacts 2026-10-20 过期）：
    若主人本地还没存下 build-70 的 APK/IPA，提醒先 gh run download 存下来；过期后要重出同一版就用完整 40 位 SHA 重新派发
    mobile-build.yml（源码没变就不加构建号）。真机 XChaCha20 MB/s 由主人装机后观察，记在第一节。
+   交付后复查的 4 笔修复（dfdcad8／26e4e19／347200a／81d1ffe）已在 main 但不在这个包里：服务端新版待主人放行部署（第一节有步骤，先部服务端再出手机包），
+   手机端修复随下一版安装包（构建号 71）。
 
 第三步·Build 71「传家 · 下」家人一起记：
 - 先写 docs/plans/PLAN-SHARING.md 给主人批：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；
@@ -85,7 +100,12 @@
 | 6f2aecf | 界面：`RemoteBackupCard`（三态）与 `RecoveryCode` 页；双端冒烟断言离线只有「去登录」 |
 | 879f51f | 端到端：真服务端子进程跑完整闭环；CI quality 作业多装一次 server 依赖 |
 | 7477504 | 收尾：CHANGELOG／README／HANDOFF／PLAN 实施偏离、app.json 70（**打包源码 SHA**） |
-| （本次） | 交付：HANDOFF 记 run 35494972998 与 APK／IPA 校验和 |
+| da198e7 | 交付：HANDOFF 记 run 35494972998 与 APK／IPA 校验和 |
+| dfdcad8 | 复查·CI：`ci.yml` 也给 server 装依赖，main 恢复全绿（run 35509330400） |
+| 26e4e19 | 复查·服务端：换大不免配额、清单登记的对象 prune 不删、先删索引再删对象、启动清空临时目录（**待部署生产**） |
+| 347200a | 复查·远端界面与状态：`moveSync`、整页锁、停止与离开、钥匙串出错说明、清单登记 objects（未打包） |
+| 81d1ffe | 复查·本机备份：收拾吞错、空间预检、读坏与写不进分清、多卷先验长度、停止到块、远端恢复钉子（未打包） |
+| （本次） | 复查收尾：CHANGELOG「未打包」节、HANDOFF、deploy/README 契约、`verify-service.py` 备份段 |
 
 ## 四、后续路线
 
@@ -138,6 +158,16 @@
   env 由 `vi.hoisted` 提供；假件的 `list()` 会区分子目录（blob 库是两级目录）。
 - （Build 70）服务端 prune 有一小时宽限：刚被替换的旧清单对象在测试里还在，断言对象数时要算上。
 - （Build 70）iOS 冒烟「恢复这份备份」恢复的是 seed 的 v1 `baseline.xmb`（列表里唯一一份）；别在 seed 里再预置 `.xmbm`，会排到它前面。
+- （Build 70 复查）`ci.yml` 与 `mobile-build.yml` 的 quality 步骤要一起改：端到端测试拉起真实服务端，两处都得 `npm ci` server；
+  只改一处 main 就连红（879f51f 的教训）。修 CI 红时看 `gh api repos/{owner}/{repo}/actions/jobs/<id>/logs`，`--log-failed` 有时是空的。
+- （Build 70 复查）服务端 prune 契约：`PUT /backup/manifest` 带 `objects`，服务端并入 keep；远端已有清单时 `keep: []` 一律 400
+  （`verify-service.py` 备份段据此改过，别再传空 keep）；同 id 重传按多出的字节算配额。服务端 `.strict()` 不认未知字段——**先部服务端再出手机包**。
+- （Build 70 复查）expo-file-system 的 `File.move` 返回 Promise：同步函数里要用 `moveSync`（`state.ts` 吃过亏）；
+  `tests/helpers` 假件的 `move` 现在故意晚一拍，忘了 await 会被测出来。
+- （Build 70 复查）远端恢复的钉子 `restoring-<stamp>-<sha8>.xmbm.part` 放在 backups 目录：`collectBlobs` 认它、`retainedBackups`／列表／启动救援不认
+  （`isRetainedBackup` 只认 `.xmb`／`.xmbm` 结尾），`pruneBackups` 七天后清；iOS 冒烟的 glob `anan-*.xmb*` 碰不到它（前缀不同）。
+- （Build 70 复查）备份页的本机按钮与远端卡共用一把锁：`locked = busy || remoteRunning`，新加按钮用 `locked` 别用 `busy`；
+  `restoreBackup` 现在接受 `signal`，停止会以 `BackupStopped` 抛出。
 
 ## 六、环境备忘
 
