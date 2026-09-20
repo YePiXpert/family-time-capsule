@@ -1,4 +1,5 @@
 import { AISettingsScreen } from "../ai/Settings";
+import { RecoveryCode } from "../sync/RecoveryCode";
 import {
   Component,
   useCallback,
@@ -280,6 +281,7 @@ function Root() {
           <Stack.Screen name="LetterEditor" component={LetterEditor} />
           <Stack.Screen name="Letter" component={LetterScreen} />
           <Stack.Screen name="Quotes" component={Quotes} />
+          <Stack.Screen name="RecoveryCode" component={RecoveryCode} />
         </Stack.Navigator>
       </NavigationContainer>
     </>

@@ -54,6 +54,13 @@ def tap_seek(label,tries=6):
                 nums=list(map(int,re.findall(r'\d+',node.attrib['bounds'])));x=(nums[0]+nums[2])//2;y=(nums[1]+nums[3])//2;adb('shell','input','tap',str(x),str(y));time.sleep(1);return node
         adb('shell','input','swipe','200','650','200','250','300');time.sleep(1)
     raise AssertionError(f'Missing {label}')
+def seek(label,tries=6):
+    # 只找不点：核对某个节点在页面里，找不到就向下滑再找。
+    for _ in range(tries):
+        for node in hierarchy().iter('node'):
+            if matches(node,label):return node
+        adb('shell','input','swipe','200','650','200','250','300');time.sleep(1)
+    raise AssertionError(f'Missing {label}')
 def shot(name):
     (args.output/f'{name}.png').write_bytes(subprocess.check_output(['adb','exec-out','screencap','-p']))
     (args.output/f'{name}.xml').write_text(ET.tostring(hierarchy(),encoding='unicode'))
@@ -84,6 +91,8 @@ try:
     restart();adb('shell','wm','size','320x720');shot('home-320')
     tap('我的');tap('AI 设置');find('ai-join');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')
+    # 远端备份卡：离线、未登录时只有一句说明与「去登录」，没有任何上传入口。
+    restart();tap('我的');tap('备份与恢复');seek('remote-card');seek('去登录');shot('backup-remote-offline');remoteCardOffline=True
     # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
     restart();tap('我的');tap('备份与恢复');tap('backup-export')
     time.sleep(3);adb('shell','input','keyevent','4');time.sleep(1)  # 退出系统分享面板
@@ -131,7 +140,7 @@ try:
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
     assert not broken,f'Book export reported {broken}'
     find('year-yearbook');bookExport=True
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')

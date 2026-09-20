@@ -28,6 +28,7 @@ import {
   type ArchiveProgress,
 } from "./archive";
 import { healthFile } from "./health-file";
+import { RemoteBackupCard } from "../sync/RemoteBackupCard";
 import { changeAvgMs } from "./health";
 import { APP_NAME } from "./brand";
 import { referencedMedia, yearKey } from "./model";
@@ -583,6 +584,7 @@ export function Backup() {
         </Card>
       )}
       <ArchiveCard busy={busy} />
+      <RemoteBackupCard busy={busy} />
     </Page>
   );
 }

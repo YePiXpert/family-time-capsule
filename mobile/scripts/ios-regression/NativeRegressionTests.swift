@@ -124,6 +124,10 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(sharedBook.waitForExistence(timeout: 300), "Book PDF share sheet never appeared")
         shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
         app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
+        // 远端备份卡在最后：离线、未登录时只有「去登录」，没有上传入口。
+        XCTAssertTrue(element("remote-card").waitForExistence(timeout: 20), "Remote backup card missing")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "去登录")).firstMatch.waitForExistence(timeout: 20), "Remote card should ask to sign in")
+        XCTAssertFalse(element("remote-backup").exists, "Remote card must not offer uploads while signed out")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
         shot("backup-restored")
