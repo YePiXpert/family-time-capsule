@@ -47,6 +47,7 @@ import {
   PRESS_SPRING,
   Page,
   SectionHeader,
+  SettingsRow,
   Text,
   dateLabel,
   hapticLight,
@@ -56,7 +57,7 @@ import {
   useStyles,
   useTheme,
 } from "./ui";
-import { JournalIcon } from "../components/JournalIcon";
+import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { Photo } from "./Media";
 
 /** 双线印章圆环：扉页名字首字与年度册封面共用；固定配色场景（重放剧场）用 color 覆盖。 */
@@ -122,24 +123,151 @@ function Strip({ children }: { children: ReactNode }) {
     </ScrollView>
   );
 }
-/** 书架区块：区标题 + 右侧文字级新建入口；没内容时一行说明，不摆虚位册。 */
+/**
+ * 书架区块：区标题 + 右侧文字级入口；没内容时一行说明，不摆虚位册。
+ * heading 版给年份用：衬线大标题 + 一行统计——年份就是书架，月册摆在它名下。
+ */
 function ShelfSection({
   title,
+  caption,
+  heading = false,
   action,
   empty,
   children,
 }: {
   title: string;
+  caption?: string;
+  heading?: boolean;
   action?: { label: string; onPress: () => void; testID?: string };
   empty?: string;
   children?: ReactNode;
 }) {
   const s = useStyles();
   return (
-    <View style={{ gap: 12 }}>
-      <SectionHeader title={title} action={action} />
+    <View style={{ gap: 8 }}>
+      {heading ? (
+        <View>
+          <View style={s.between}>
+            <Text
+              accessibilityRole="header"
+              style={[s.heading, { flex: 1, minWidth: 0 }]}
+            >
+              {title}
+            </Text>
+            {action && (
+              <Button
+                title={action.label}
+                kind="text"
+                compact
+                onPress={action.onPress}
+                testID={action.testID}
+              />
+            )}
+          </View>
+          {!!caption && <Text style={s.muted}>{caption}</Text>}
+        </View>
+      ) : (
+        <SectionHeader title={title} action={action} />
+      )}
       {children ? children : !!empty && <Text style={s.muted}>{empty}</Text>}
     </View>
+  );
+}
+/** 几本书册成组的纸卡：行与行之间只有一条细线。 */
+function BookRows({ children }: { children: ReactNode }) {
+  return <Card style={{ gap: 0, paddingVertical: 4 }}>{children}</Card>;
+}
+/** 纸面小签：没有照片的书册在行里的封面——纸底、细描边、左侧书脊细条，中间一个图标或一枚小印章。 */
+function PaperTile({
+  icon,
+  stamp,
+}: {
+  icon?: JournalIconName;
+  stamp?: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        width: 60,
+        height: 45,
+        borderRadius: 8,
+        backgroundColor: colors.paper,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.line,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          left: 5,
+          top: 7,
+          bottom: 7,
+          width: 2,
+          borderRadius: 1,
+          backgroundColor: colors.accent,
+          opacity: 0.7,
+        }}
+      />
+      {stamp ? (
+        <Stamp size={30} inset={3}>
+          <Text
+            style={{
+              fontFamily: serif,
+              fontSize: stamp.length > 1 ? 9 : 13,
+              lineHeight: 16,
+              color: colors.accent,
+              fontWeight: "600",
+            }}
+          >
+            {stamp}
+          </Text>
+        </Stamp>
+      ) : (
+        <JournalIcon name={icon ?? "book"} color={colors.accent} size={20} />
+      )}
+    </View>
+  );
+}
+/** 书册行：小封面（照片缩略图，没有就纸面小签）+ 衬线书名 + 说明 + 右箭头。 */
+function BookRow({
+  title,
+  caption,
+  cover,
+  tile,
+  testID,
+  onPress,
+  last = false,
+}: {
+  title: string;
+  caption: string;
+  cover?: LocalMedia;
+  tile: ReactNode;
+  testID?: string;
+  onPress: () => void;
+  last?: boolean;
+}) {
+  return (
+    <SettingsRow
+      leading={
+        cover ? (
+          <View style={{ width: 60 }}>
+            <Photo media={cover} preview ratio={4 / 3} radius={8} />
+          </View>
+        ) : (
+          tile
+        )
+      }
+      serifLabel
+      label={title}
+      subtitle={caption}
+      onPress={onPress}
+      testID={testID}
+      last={last}
+    />
   );
 }
 /** 「最近」一格：有图是 104 的正方形缩略图，无图是纸卡首行文字，下面一行日期。 */
@@ -302,7 +430,7 @@ export function Volume({
   ratio?: number;
 }) {
   const s = useStyles(),
-    { colors } = useTheme();
+    { colors, large } = useTheme();
   const reduceMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({
@@ -332,7 +460,7 @@ export function Volume({
           // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
           scale.value = withSpring(1, PRESS_SPRING);
         }}
-        style={{ gap: 8 }}
+        style={{ gap: 6 }}
       >
         {cover ? (
           <Photo media={cover} preview ratio={ratio} />
@@ -384,15 +512,25 @@ export function Volume({
             )}
           </View>
         )}
-        <Text
-          numberOfLines={1}
-          style={{ fontFamily: serif, fontWeight: "600", letterSpacing: 0.3 }}
-        >
-          {title}
-        </Text>
-        <Text numberOfLines={1} style={s.muted}>
-          {caption}
-        </Text>
+        <View style={{ gap: 1 }}>
+          <Text
+            numberOfLines={1}
+            style={{
+              fontFamily: serif,
+              fontWeight: "600",
+              letterSpacing: 0.3,
+              lineHeight: large ? 26 : 22,
+            }}
+          >
+            {title}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={[s.muted, { lineHeight: large ? 20 : 18 }]}
+          >
+            {caption}
+          </Text>
+        </View>
       </Pressable>
     </Animated.View>
   );
@@ -429,7 +567,27 @@ export function Shelf() {
     .filter((r) => r.first)
     .sort((a, b) => a.date.localeCompare(b.date));
   const quotes = records.filter((r) => r.quote);
-  const leadVolumes = (firsts.length > 0 ? 1 : 0) + (quotes.length > 0 ? 1 : 0);
+  // 年份就是书架：最近 6 个月按年归组，每年一条月册封面条；更早的年份收成「往年」几行。
+  const shelfMonths = months.slice(0, 6);
+  const shelfYearKeys = [...new Set(shelfMonths.map((m) => m.slice(0, 4)))];
+  const yearStats = (year: string) => {
+    const yearRecords = records.filter((r) => yearKey(r.date) === year);
+    const yearFirsts = yearRecords.filter((r) => r.first).length;
+    return {
+      year,
+      caption: yearFirsts
+        ? `${yearRecords.length} 段时光 · ${yearFirsts} 个第一次`
+        : `${yearRecords.length} 段时光`,
+      cover: coverForRecords(yearRecords, mediaMap),
+    };
+  };
+  const shelfYears = shelfYearKeys.map((year) => ({
+    ...yearStats(year),
+    months: shelfMonths.filter((m) => m.startsWith(year)),
+  }));
+  const olderYears = years
+    .filter((year) => !shelfYearKeys.includes(year))
+    .map(yearStats);
   const today = new Date();
   const anniversaries = records.filter((r) => {
     const d = new Date(r.date);
@@ -510,7 +668,7 @@ export function Shelf() {
   return (
     <Page scroll={false} top>
       <ScrollView
-        contentContainerStyle={[s.content, { paddingBottom: 120 }]}
+        contentContainerStyle={[s.content, { gap: 24, paddingBottom: 120 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={s.between}>
@@ -793,39 +951,20 @@ export function Shelf() {
             </Strip>
           </ShelfSection>
         )}
-        {years.length > 0 && (
-          <ShelfSection title="年度册">
+        {shelfYears.map((shelf) => (
+          <ShelfSection
+            key={shelf.year}
+            heading
+            title={`${shelf.year} 年`}
+            caption={shelf.caption}
+            action={{
+              label: "翻开年度册",
+              testID: `volume-year-${shelf.year}`,
+              onPress: () => nav.navigate("Year", { year: shelf.year }),
+            }}
+          >
             <Strip>
-              {years.map((y, i) => {
-                const yearRecords = records.filter(
-                  (r) => yearKey(r.date) === y,
-                );
-                const yearFirsts = yearRecords.filter((r) => r.first).length;
-                return (
-                  <Volume
-                    key={y}
-                    title={`${y} 年`}
-                    caption={
-                      yearFirsts
-                        ? `${yearRecords.length} 段时光 · ${yearFirsts} 个第一次`
-                        : `${yearRecords.length} 段时光`
-                    }
-                    cover={coverForRecords(yearRecords, state.media)}
-                    stamp={y}
-                    testID={`volume-year-${y}`}
-                    width={stripWidth}
-                    index={i}
-                    onPress={() => nav.navigate("Year", { year: y })}
-                  />
-                );
-              })}
-            </Strip>
-          </ShelfSection>
-        )}
-        {months.length > 0 && (
-          <ShelfSection title="月度册">
-            <Strip>
-              {months.slice(0, 6).map((m, i) => {
+              {shelf.months.map((m, i) => {
                 const monthRecords = records.filter(
                   (r) => monthKey(r.date) === m,
                 );
@@ -834,7 +973,7 @@ export function Shelf() {
                     key={m}
                     title={monthLabel(m)}
                     caption={`${monthRecords.length} 段时光`}
-                    cover={coverForRecords(monthRecords, state.media)}
+                    cover={coverForRecords(monthRecords, mediaMap)}
                     testID={`volume-${m}`}
                     width={stripWidth}
                     index={i}
@@ -843,48 +982,60 @@ export function Shelf() {
                 );
               })}
             </Strip>
-            {months.length > 6 && (
-              <Text style={s.muted}>更早的月份，从年度册里翻。</Text>
-            )}
+          </ShelfSection>
+        ))}
+        {olderYears.length > 0 && (
+          <ShelfSection title="往年">
+            <BookRows>
+              {olderYears.map((shelf, i) => (
+                <BookRow
+                  key={shelf.year}
+                  title={`${shelf.year} 年`}
+                  caption={shelf.caption}
+                  cover={shelf.cover}
+                  tile={<PaperTile icon="book" />}
+                  testID={`volume-year-${shelf.year}`}
+                  onPress={() => nav.navigate("Year", { year: shelf.year })}
+                  last={i === olderYears.length - 1}
+                />
+              ))}
+            </BookRows>
           </ShelfSection>
         )}
         {(firsts.length > 0 || quotes.length > 0 || clusters.length > 0) && (
           <ShelfSection title="合集">
-            <Strip>
+            <BookRows>
               {firsts.length > 0 && (
-                <Volume
+                <BookRow
                   title="第一次合集"
                   caption={`${firsts.length} 个第一次`}
-                  fallbackIcon="star"
+                  tile={<PaperTile icon="star" />}
                   testID="volume-firsts"
-                  width={stripWidth}
-                  index={0}
                   onPress={() => nav.navigate("Firsts")}
+                  last={quotes.length === 0 && clusters.length === 0}
                 />
               )}
               {quotes.length > 0 && (
-                <Volume
+                <BookRow
                   title="她说的话"
                   caption={`${quotes.length} 句原话`}
-                  stamp="语"
+                  tile={<PaperTile stamp="语" />}
                   testID="volume-quotes"
-                  width={stripWidth}
-                  index={firsts.length > 0 ? 1 : 0}
                   onPress={() => nav.navigate("Quotes")}
+                  last={clusters.length === 0}
                 />
               )}
               {clusters.length > 0 && (
-                <Volume
+                <BookRow
                   title="足迹"
                   caption={`${clusters.length} 个常去的地方`}
-                  fallbackIcon="pin"
+                  tile={<PaperTile icon="pin" />}
                   testID="open-footprint"
-                  width={stripWidth}
-                  index={leadVolumes}
                   onPress={() => nav.navigate("Footprint")}
+                  last
                 />
               )}
-            </Strip>
+            </BookRows>
           </ShelfSection>
         )}
         <ShelfSection
@@ -901,20 +1052,20 @@ export function Shelf() {
           empty="还没有相册。把几段时光放在一起，就是一本。"
         >
           {albums.length > 0 && (
-            <Strip>
+            <BookRows>
               {albums.map((album, i) => (
-                <Volume
+                <BookRow
                   key={album.id}
                   title={album.name}
                   caption={`${album.items.length} 段时光`}
                   cover={coverForAlbum(album, state)}
+                  tile={<PaperTile icon="book" />}
                   testID={`album-${album.id}`}
-                  width={stripWidth}
-                  index={i}
                   onPress={() => nav.navigate("Album", { id: album.id })}
+                  last={i === albums.length - 1}
                 />
               ))}
-            </Strip>
+            </BookRows>
           )}
         </ShelfSection>
         <ShelfSection
@@ -931,16 +1082,16 @@ export function Shelf() {
           empty="给多年后的她写一封信，到日子再拆。"
         >
           {letters.length > 0 && (
-            <Strip>
+            <BookRows>
               {letters.map((letter, i) => (
-                <Volume
+                <BookRow
                   key={letter.id}
                   title={letter.title || "一封信"}
                   caption={letterCaption(letter, today)}
-                  stamp={letter.from.trim().charAt(0) || "信"}
+                  tile={
+                    <PaperTile stamp={letter.from.trim().charAt(0) || "信"} />
+                  }
                   testID={`letter-${letter.id}`}
-                  width={stripWidth}
-                  index={i}
                   onPress={() =>
                     nav.navigate(
                       letterState(letter, today) === "draft"
@@ -949,9 +1100,10 @@ export function Shelf() {
                       { id: letter.id },
                     )
                   }
+                  last={i === letters.length - 1}
                 />
               ))}
-            </Strip>
+            </BookRows>
           )}
         </ShelfSection>
         <ShelfSection
@@ -968,7 +1120,7 @@ export function Shelf() {
           empty="每月一张同款照片，看着她慢慢长大。"
         >
           {seriesList.length > 0 && (
-            <Strip>
+            <BookRows>
               {seriesList.map((series, i) => {
                 const items = [...series.items].sort((a, b) =>
                   a.month.localeCompare(b.month),
@@ -981,7 +1133,7 @@ export function Shelf() {
                       1
                     : 0;
                 return (
-                  <Volume
+                  <BookRow
                     key={series.id}
                     title={series.name}
                     caption={
@@ -991,16 +1143,15 @@ export function Shelf() {
                           : `${items.length} 张照片`
                         : "还没有照片"
                     }
-                    cover={latest ? state.media[latest.mediaId] : undefined}
-                    stamp={span > 1 ? `${span} 个月` : undefined}
+                    cover={latest ? mediaMap[latest.mediaId] : undefined}
+                    tile={<PaperTile icon="image" />}
                     testID={`series-${series.id}`}
-                    width={stripWidth}
-                    index={i}
                     onPress={() => nav.navigate("Series", { id: series.id })}
+                    last={i === seriesList.length - 1}
                   />
                 );
               })}
-            </Strip>
+            </BookRows>
           )}
         </ShelfSection>
       </ScrollView>

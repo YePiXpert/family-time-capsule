@@ -389,16 +389,25 @@ export function SettingsGroup({
     </View>
   );
 }
-/** 设置行：图标 + 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。 */
+/**
+ * 设置行：图标 + 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。
+ * 书架的书册行也用它：`leading` 换成小封面，`serifLabel` 让标签走衬线（书名）。
+ */
 export function SettingsRow({
   icon,
+  leading,
+  serifLabel = false,
   label,
   subtitle,
   onPress,
   testID,
   last = false,
 }: {
-  icon: JournalIconName;
+  icon?: JournalIconName;
+  /** 代替图标的前导视图（书册行的小封面）。 */
+  leading?: ReactNode;
+  /** 标签走衬线：这一行是一本书。 */
+  serifLabel?: boolean;
   label: string;
   subtitle?: string;
   onPress: () => void;
@@ -425,10 +434,24 @@ export function SettingsRow({
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      <JournalIcon name={icon} color={colors.accent} size={22} />
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text>{label}</Text>
-        {!!subtitle && <Text style={s.muted}>{subtitle}</Text>}
+      {leading ??
+        (icon && <JournalIcon name={icon} color={colors.accent} size={22} />)}
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text
+          numberOfLines={serifLabel ? 2 : undefined}
+          style={
+            serifLabel
+              ? { fontFamily: serif, fontWeight: "600", letterSpacing: 0.3 }
+              : undefined
+          }
+        >
+          {label}
+        </Text>
+        {!!subtitle && (
+          <Text numberOfLines={serifLabel ? 1 : undefined} style={s.muted}>
+            {subtitle}
+          </Text>
+        )}
       </View>
       <JournalIcon name="chevron-right" color={colors.muted} size={20} />
     </Pressable>

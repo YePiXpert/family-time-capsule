@@ -54,6 +54,11 @@
   ```
 
   装上 Build 71 后请在「远端备份 → 现在备份」看一次 4 MiB 以上照片的上传节奏，把真机 MB/s 记到上面 Build 70 那段的位置（阈值 5 MB/s）。
+- **书架重排（2026-09-20 晚，未打包）**：主人装上 Build 71 后发来两张真机截图（`/workspace/anan-test/1.png`、`2.png`，iPhone 深色、库里只有 1 段时光）说「ui 布局太丑了」：
+  每个区块一条横向封面条，各只有一张封面靠在左边、同一张照片重复四次（最近／年度册／月度册／系列）、区块之间大片空白，首页拉了两屏半。
+  改法（CHANGELOG「未打包 — 书架重排」）：横向封面条只留「最近」与每个年份名下的月册，年份成为书架本身（衬线年份标题 + 统计 + 「翻开年度册」，`volume-year-YYYY` 落在这个文字按钮上）；
+  合集／专题册／时间胶囊／时光系列改成书册行（`SettingsRow` 的 `leading` + `serifLabel`）；间距收紧。冒烟 testID 全部不变，本地门禁全绿；**还没出包**，主人要看效果需要 Build 72 的包（家人一起记顺延为 73）或先看下一次 mobile-build 的安卓截图 `home-recent.png`。
+  顺手修了 CI 偶发红：`sweepTemp(0)` 同毫秒漏删（run 35514369969 的 `ai-quality`）。
 - **下一步**：Build 72「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
@@ -178,6 +183,10 @@
   （`isRetainedBackup` 只认 `.xmb`／`.xmbm` 结尾），`pruneBackups` 七天后清；iOS 冒烟的 glob `anan-*.xmb*` 碰不到它（前缀不同）。
 - （Build 70 复查）备份页的本机按钮与远端卡共用一把锁：`locked = busy || remoteRunning`，新加按钮用 `locked` 别用 `busy`；
   `restoreBackup` 现在接受 `signal`，停止会以 `BackupStopped` 抛出。
+
+- （书架重排）横向封面条只适合「一条里有好几张」的区块：每区一条、每条一张时就是一列孤零零靠左的封面（主人 2026-09-20 真机截图）。
+  数据稀疏时的首页要按「一段时光、一个月、一年」的家庭来看，不能只看夹具数据的 `home-390.png`；新增区块先问「只有一本时长什么样」。
+- （CI 偶发）`statSync().mtimeMs` 有亚毫秒精度，`mtime < Date.now()` 对刚写下的文件不成立：0 宽限的清理要显式短路，别拿时间比。
 
 ## 六、环境备忘
 
