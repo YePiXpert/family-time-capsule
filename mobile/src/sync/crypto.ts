@@ -9,6 +9,7 @@ import {
   validateMnemonic,
 } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
+import { CHUNKS_PER_OBJECT } from "./planner";
 /**
  * 远端备份的零知识层。主密钥 K 就是 12 词恢复码（128 位熵，BIP39），没有口令、没有 scrypt：
  * 抄在纸上的那 12 个词能且只能在这台或下一台手机上解开远端的字节。
@@ -93,8 +94,6 @@ export type ObjectRef = {
   /** 这是该内容的最后一个对象。 */
   final: boolean;
 };
-/** 每个对象最多几块、每块多大：与 planner 保持一致，这里只用来算全局块序。 */
-export const CHUNKS_PER_OBJECT = 4;
 function chunkNonce(key: Uint8Array, ref: ObjectRef, index: number) {
   return concat(
     noncePrefixOf(key, ref.sha256),

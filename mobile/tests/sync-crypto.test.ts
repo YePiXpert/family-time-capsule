@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { randomBytes } from "node:crypto";
+import { CHUNKS_PER_OBJECT } from "../src/sync/planner";
 import {
-  CHUNKS_PER_OBJECT,
   KEY_BYTES,
   OBJECT_HEADER_BYTES,
   fromBase64,
