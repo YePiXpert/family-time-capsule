@@ -829,6 +829,102 @@ it("restoring the oldest retained backup does not prune it first", async () => {
   expect(kept).toContain(prior.name);
   expect(kept).not.toContain(oldest.name);
 });
+it("exports one volume byte-identical to the Build 68 whole file and restores it without the blob store", async () => {
+  const { store, backup, files, media } = await setup();
+  const exporter = await import("../src/local/backup-export");
+  const { encodeEntities, encodeMetaV2 } =
+    await import("../src/local/backup-format");
+  const manifest = await backup.createBackup(store.get());
+  const plan = exporter.planExport(manifest);
+  expect(plan.volumes).toHaveLength(1);
+  const volume = await exporter.writeVolume(plan, 0);
+  expect(volume.name).toBe(manifest.name.replace(/\.xmbm$/, ".xmb"));
+  // Build 68 的写法：v2 魔数 + 同一份 meta + 实体 NDJSON + 素材字节，逐字节相同。
+  const state = store.get();
+  const entities = encodeEntities(state);
+  const count = ENTITY_KINDS.reduce(
+    (n, kind) => n + Object.keys(state[kind]).length,
+    0,
+  );
+  const expected = Buffer.concat([
+    encodeMetaV2(state, entities.length, count, {
+      createdAt: plan.meta.createdAt,
+    }),
+    entities,
+    Buffer.alloc(600000, 17),
+  ]);
+  expect(fs.readFileSync(volume.uri).equals(expected)).toBe(true);
+  fs.rmSync(files.blobDirectory.uri, { recursive: true });
+  const restored = await backup.inspectBackup(volume, true);
+  expect(restored.records.r!.text).toBe("第一步");
+  expect(
+    fs.readFileSync(
+      path.join(files.mediaDirectory.uri, restored.media[media.id]!.file),
+    ),
+  ).toEqual(Buffer.alloc(600000, 17));
+  exporter.purgeExports();
+  expect(fs.existsSync(exporter.exportDirectory.uri)).toBe(false);
+});
+it("splits an export into volumes, restores them in any order and names what is missing", async () => {
+  const { store, backup, files } = await setup();
+  const exporter = await import("../src/local/backup-export");
+  for (const [name, fill] of [
+    ["b", 5],
+    ["c", 6],
+  ] as const) {
+    const source = path.join(env.root, `${name}.jpg`);
+    fs.writeFileSync(source, Buffer.alloc(200000, fill));
+    const m = await files.preserveMedia(source, `${name}.jpg`, "image");
+    await store.change((s) => {
+      s.media[m.id] = m;
+    });
+  }
+  const manifest = await backup.createBackup(store.get());
+  // 上限压到 300 KB：三张照片各自独占一卷。
+  const plan = exporter.planExport(manifest, 300000);
+  expect(plan.volumes.map((v) => v.take)).toEqual([1, 1, 1]);
+  const volumes = [];
+  for (let i = 0; i < 3; i++) volumes.push(await exporter.writeVolume(plan, i));
+  expect(volumes.map((v) => v.name)).toEqual(
+    [1, 2, 3].map((i) => `${plan.stem}-vol${i}of3.xmb`),
+  );
+  fs.rmSync(files.blobDirectory.uri, { recursive: true });
+  const restored = await backup.inspectBackup(
+    [volumes[2]!, volumes[0]!, volumes[1]!],
+    true,
+  );
+  expect(Object.keys(restored.media)).toHaveLength(3);
+  for (const m of Object.values(restored.media))
+    expect(fs.statSync(path.join(files.mediaDirectory.uri, m.file)).size).toBe(
+      m.bytes,
+    );
+  await expect(
+    backup.inspectBackup([volumes[0]!, volumes[2]!]),
+  ).rejects.toThrow("还缺第 2 卷（共 3 卷）");
+  await expect(backup.inspectBackup(volumes[1]!)).rejects.toThrow(
+    "这份备份有 3 卷",
+  );
+  await expect(
+    backup.inspectBackup([volumes[0]!, volumes[0]!]),
+  ).rejects.toThrow("同一卷选了两次");
+  await expect(backup.inspectBackup([volumes[0]!, manifest])).rejects.toThrow(
+    "只能是同一份备份的分卷",
+  );
+  // 另一份备份的卷混进来：set 不同，一眼认出。
+  const other = exporter.planExport(
+    await backup.createBackup(store.get()),
+    300000,
+  );
+  const stranger = await exporter.writeVolume(other, 1);
+  await expect(
+    backup.inspectBackup([volumes[0]!, stranger, volumes[2]!]),
+  ).rejects.toThrow("不是同一份备份");
+  // 空间不够写这一卷：先说清楚，一个字节都不写。
+  exporter.purgeExports();
+  env.free = 1000;
+  await expect(exporter.writeVolume(plan, 0)).rejects.toThrow("空间不足");
+  expect(fs.existsSync(exporter.exportDirectory.uri)).toBe(false);
+});
 it("keeps the newest retention copy when older ones still carry the former prefix", async () => {
   const { backup, files } = await setup();
   files.ensureDirectories();

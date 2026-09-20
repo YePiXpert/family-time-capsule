@@ -8,15 +8,18 @@ import { useLibrary, useStore } from "./context";
 import { useNav } from "./navigation";
 import { getToken } from "../ai/client";
 import { birthdayLabel } from "./dates";
-import { backupDirectory, preserveMedia } from "./files";
+import { preserveMedia } from "./files";
 import {
-  backupStampLabel,
+  BackupStopped,
+  collectBlobs,
   createBackup,
   daysSinceExport,
   inspectBackup,
+  listLocalBackups,
   restoreBackup,
   shareBackup,
 } from "./backup";
+import { planExport, purgeExports, writeVolume } from "./backup-export";
 import { collectUnusedMedia } from "./services";
 import {
   ArchiveStopped,
@@ -370,8 +373,12 @@ export function Backup() {
     s = useStyles();
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [stopper, setStopper] = useState<AbortController | null>(null),
+    // 列表只在一次操作结束或删除后重读：读每份清单的 meta 不是免费的。
+    [backups, setBackups] = useState(() => listLocalBackups());
   const exportedDays = daysSinceExport(state);
+  const refreshList = () => setBackups(listLocalBackups());
   const perform = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -379,20 +386,41 @@ export function Backup() {
     try {
       await fn();
     } catch (e) {
-      setError(messageOf(e));
+      if (e instanceof BackupStopped) setMessage(e.message);
+      else setError(messageOf(e));
     } finally {
       setBusy(false);
+      setStopper(null);
+      refreshList();
     }
   };
-  const backups = backupDirectory.exists
-    ? backupDirectory
-        .list()
-        .filter((f): f is File => f instanceof File && f.name.endsWith(".xmb"))
-        .sort((a, b) => b.name.localeCompare(a.name))
-    : [];
-  const restore = (file: File, title: string, done: string) =>
+  const stoppable = () => {
+    const controller = new AbortController();
+    setStopper(controller);
+    return controller.signal;
+  };
+  /** 把一份清单备份从 blob 库拼成 .xmb 交给系统分享面板；分卷时一卷一卷来。 */
+  const exportManifest = async (manifest: File, signal: AbortSignal) => {
+    purgeExports();
+    try {
+      const plan = planExport(manifest);
+      for (let i = 0; i < plan.volumes.length; i++) {
+        const volume = await writeVolume(plan, i, setMessage, signal);
+        setMessage(
+          plan.volumes.length === 1
+            ? "请把备份保存到应用之外…"
+            : `请保存第 ${i + 1} 卷／共 ${plan.volumes.length} 卷…`,
+        );
+        await shareBackup(volume);
+        volume.delete();
+      }
+    } finally {
+      purgeExports();
+    }
+  };
+  const restore = (files: File[], title: string, done: string) =>
     perform(async () => {
-      const inside = await inspectBackup(file);
+      const inside = await inspectBackup(files);
       Alert.alert(
         title,
         `会换成这份备份里的 ${librarySummary(inside)}；现在的内容会先备份一份。`,
@@ -403,7 +431,7 @@ export function Backup() {
             style: "destructive",
             onPress: () => {
               void perform(async () => {
-                await restoreBackup(store, file, setMessage);
+                await restoreBackup(store, files, setMessage);
                 setMessage(done);
               });
             },
@@ -426,9 +454,14 @@ export function Backup() {
             disabled={busy}
             onPress={() => {
               void perform(async () => {
-                // 备份只读快照，不占写队列、不虚增 revision。
-                const file = await createBackup(store.get());
-                await shareBackup(file);
+                const signal = stoppable();
+                // 备份只读快照，不占写队列、不虚增 revision；照片进本机 blob 库后再拼成 .xmb。
+                const manifest = await createBackup(
+                  store.get(),
+                  setMessage,
+                  signal,
+                );
+                await exportManifest(manifest, signal);
                 await store.change((s) => {
                   s.lastExportAt = new Date().toISOString();
                 });
@@ -445,16 +478,26 @@ export function Backup() {
                 const picked = await DocumentPicker.getDocumentAsync({
                   type: "*/*",
                   copyToCacheDirectory: true,
+                  multiple: true,
                 });
                 if (picked.canceled) return;
                 await restore(
-                  new File(picked.assets[0]!.uri),
+                  picked.assets.map((asset) => new File(asset.uri)),
                   "替换现在的内容？",
                   "恢复完成。恢复前的内容也留了一份在下面。",
                 );
               });
             }}
           />
+          {stopper && (
+            <Button
+              title="停止"
+              testID="backup-stop"
+              kind="text"
+              compact
+              onPress={() => stopper.abort()}
+            />
+          )}
         </View>
         <ErrorText message={error} />
         {/* 平时是上次导出的时间，导出与恢复的进度、结果都在这一行上播报。 */}
@@ -469,20 +512,20 @@ export function Backup() {
                   : `上次导出是 ${exportedDays} 天前。`)}
         </Text>
         <Text style={s.footnote}>
-          备份是 .xmb 文件，请保存到应用之外，比如网盘、电脑或家人的手机。
+          备份是 .xmb 文件，请保存到应用之外，比如网盘、电脑或家人的手机；超过 2
+          GB 会分成几卷，恢复时把几卷一起选中。
         </Text>
       </Card>
       {backups.length > 0 && (
         <Card>
           <Text style={s.heading}>本机保留的备份</Text>
           <Text style={s.muted}>
-            最近三份留在应用里；卸载应用会一起消失，所以还是要另存到应用之外。
+            最近三份留在应用里，照片只存一份；卸载应用会一起消失，所以还是要另存到应用之外。
           </Text>
-          {backups.map((file) => (
+          {backups.map(({ file, label, bytes, manifestOnly }) => (
             <View key={file.name} style={{ gap: 4 }}>
               <Text>
-                {backupStampLabel(file.name) ?? file.name} ·{" "}
-                {(file.size / 1048576).toFixed(1)} MB
+                {label ?? file.name} · {(bytes / 1048576).toFixed(1)} MB
               </Text>
               <View style={s.row}>
                 <Button
@@ -491,7 +534,7 @@ export function Backup() {
                   compact
                   disabled={busy}
                   onPress={() => {
-                    void restore(file, "恢复这份备份？", "恢复完成。");
+                    void restore([file], "恢复这份备份？", "恢复完成。");
                   }}
                 />
                 <Button
@@ -501,7 +544,8 @@ export function Backup() {
                   disabled={busy}
                   onPress={() => {
                     void perform(async () => {
-                      await shareBackup(file);
+                      if (manifestOnly) await exportManifest(file, stoppable());
+                      else await shareBackup(file);
                       setMessage("请确认它已保存到应用之外。");
                     });
                   }}
@@ -523,6 +567,9 @@ export function Backup() {
                           style: "destructive",
                           onPress: () => {
                             file.delete();
+                            // 没人引用的照片字节随手收掉；任何一份清单读不出就先不收。
+                            collectBlobs();
+                            refreshList();
                             setMessage("这份本机备份已删除。");
                           },
                         },
