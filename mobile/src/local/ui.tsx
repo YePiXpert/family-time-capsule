@@ -1,4 +1,12 @@
-import { createContext, memo, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AccessibilityInfo,
   Platform,
@@ -15,7 +23,10 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { NavigationContext } from "@react-navigation/native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
@@ -28,9 +39,9 @@ export const hapticLight = () => {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 };
 export const hapticSuccess = () => {
-  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
-    () => {},
-  );
+  void Haptics.notificationAsync(
+    Haptics.NotificationFeedbackType.Success,
+  ).catch(() => {});
 };
 const light = {
   paper: "#FAF5EC",
@@ -363,7 +374,22 @@ export function SectionHeader({
     </View>
   );
 }
-/** 设置行：图标 + 标签 + 副题 + 右箭头，放在 Card 里成组。 */
+/** 设置分组：可选区标题 + 一张不留行间距的纸卡，里面放 SettingsRow。 */
+export function SettingsGroup({
+  title,
+  children,
+}: {
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      {title !== undefined && <SectionHeader title={title} />}
+      <Card style={{ gap: 0, paddingVertical: 4 }}>{children}</Card>
+    </View>
+  );
+}
+/** 设置行：图标 + 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。 */
 export function SettingsRow({
   icon,
   label,
@@ -385,7 +411,8 @@ export function SettingsRow({
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={subtitle ? `${label}，${subtitle}` : label}
+      accessibilityLabel={label}
+      accessibilityValue={subtitle ? { text: subtitle } : undefined}
       onPress={onPress}
       style={({ pressed }) => ({
         flexDirection: "row",
@@ -470,157 +497,154 @@ export function DateStrip({ children }: { children: ReactNode }) {
 }
 export function useStyles() {
   const { colors: c, dark, large } = useTheme();
-  return useMemo(
-    () => {
-      const cardShadow: ViewStyle = {
+  return useMemo(() => {
+    const cardShadow: ViewStyle = {
+      shadowColor: dark ? "#000000" : "#7A5C3E",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: dark ? 0.3 : 0.06,
+      shadowRadius: 12,
+      elevation: 1,
+    };
+    return StyleSheet.create({
+      page: { flex: 1, backgroundColor: c.paper },
+      content: { padding: 20, gap: 20, paddingBottom: 32 },
+      // 页内顶栏：返回钮 44 居中于 8 内边距，图标左沿恰与 20 的页边对齐。
+      topBar: {
+        minHeight: TOP_BAR_HEIGHT,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 8,
+        gap: 4,
+      },
+      topTitleBox: { flex: 1, paddingVertical: 8 },
+      topTitleFlush: { paddingLeft: 12 },
+      topTitle: {
+        fontFamily: serif,
+        fontSize: large ? 26 : 22,
+        lineHeight: large ? 32 : 28,
+        fontWeight: "600",
+        letterSpacing: 0.3,
+        color: c.ink,
+      },
+      topRight: { flexDirection: "row", alignItems: "center", gap: 4 },
+      sectionTitle: {
+        fontSize: 13,
+        lineHeight: 20,
+        fontWeight: "600",
+        letterSpacing: 0.4,
+        color: c.muted,
+      },
+      row: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 8,
+      },
+      between: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8,
+      },
+      title: {
+        fontSize: large ? 28 : 24,
+        lineHeight: large ? 38 : 34,
+        fontWeight: "600",
+        fontFamily: serif,
+        letterSpacing: 0.3,
+        color: c.ink,
+      },
+      heading: {
+        fontSize: large ? 21 : 18,
+        lineHeight: large ? 31 : 27,
+        fontWeight: "600",
+        fontFamily: serif,
+        letterSpacing: 0.3,
+      },
+      muted: {
+        fontSize: large ? 15 : 13,
+        lineHeight: large ? 24 : 21,
+        color: c.muted,
+      },
+      input: {
+        backgroundColor: c.glass,
+        color: c.ink,
+        minHeight: 48,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: c.glassLine,
+        padding: 12,
+        fontSize: 16,
+      },
+      section: {
+        backgroundColor: c.glass,
+        borderRadius: 16,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: c.glassLine,
+        padding: 16,
+        gap: 12,
+        ...cardShadow,
+      },
+      line: {
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: c.glassLine,
+      },
+      image: {
+        width: "100%",
+        aspectRatio: 4 / 3,
+        borderRadius: 12,
+        backgroundColor: c.selected,
+      },
+      empty: { paddingVertical: 32, gap: 12 },
+      galleryRow: {
+        flexDirection: "row",
+        gap: 12,
+        marginBottom: 16,
+        alignItems: "flex-start",
+      },
+      galleryCaption: { gap: 2, paddingTop: 8, minHeight: 44 },
+      galleryTitle: {
+        fontSize: 14,
+        lineHeight: 21,
+        fontWeight: "600",
+        fontFamily: serif,
+      },
+      recordRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        padding: 12,
+        borderRadius: 16,
+        backgroundColor: c.glass,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: c.glassLine,
+        marginBottom: 12,
+        ...cardShadow,
+      },
+      fabShadow: {
         shadowColor: dark ? "#000000" : "#7A5C3E",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: dark ? 0.3 : 0.06,
-        shadowRadius: 12,
-        elevation: 1,
-      };
-      return StyleSheet.create({
-        page: { flex: 1, backgroundColor: c.paper },
-        content: { padding: 20, gap: 20, paddingBottom: 32 },
-        // 页内顶栏：返回钮 44 居中于 8 内边距，图标左沿恰与 20 的页边对齐。
-        topBar: {
-          minHeight: TOP_BAR_HEIGHT,
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 8,
-          gap: 4,
-        },
-        topTitleBox: { flex: 1, paddingVertical: 8 },
-        topTitleFlush: { paddingLeft: 12 },
-        topTitle: {
-          fontFamily: serif,
-          fontSize: large ? 26 : 22,
-          lineHeight: large ? 32 : 28,
-          fontWeight: "600",
-          letterSpacing: 0.3,
-          color: c.ink,
-        },
-        topRight: { flexDirection: "row", alignItems: "center", gap: 4 },
-        sectionTitle: {
-          fontSize: 13,
-          lineHeight: 20,
-          fontWeight: "600",
-          letterSpacing: 0.4,
-          color: c.muted,
-        },
-        row: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: 8,
-        },
-        between: {
-          flexDirection: "row",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-        },
-        title: {
-          fontSize: large ? 28 : 24,
-          lineHeight: large ? 38 : 34,
-          fontWeight: "600",
-          fontFamily: serif,
-          letterSpacing: 0.3,
-          color: c.ink,
-        },
-        heading: {
-          fontSize: large ? 21 : 18,
-          lineHeight: large ? 31 : 27,
-          fontWeight: "600",
-          fontFamily: serif,
-          letterSpacing: 0.3,
-        },
-        muted: {
-          fontSize: large ? 15 : 13,
-          lineHeight: large ? 24 : 21,
-          color: c.muted,
-        },
-        input: {
-          backgroundColor: c.glass,
-          color: c.ink,
-          minHeight: 48,
-          borderRadius: 12,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: c.glassLine,
-          padding: 12,
-          fontSize: 16,
-        },
-        section: {
-          backgroundColor: c.glass,
-          borderRadius: 16,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: c.glassLine,
-          padding: 16,
-          gap: 12,
-          ...cardShadow,
-        },
-        line: {
-          height: StyleSheet.hairlineWidth,
-          backgroundColor: c.glassLine,
-        },
-        image: {
-          width: "100%",
-          aspectRatio: 4 / 3,
-          borderRadius: 12,
-          backgroundColor: c.selected,
-        },
-        empty: { paddingVertical: 32, gap: 12 },
-        galleryRow: {
-          flexDirection: "row",
-          gap: 12,
-          marginBottom: 16,
-          alignItems: "flex-start",
-        },
-        galleryCaption: { gap: 2, paddingTop: 8, minHeight: 44 },
-        galleryTitle: {
-          fontSize: 14,
-          lineHeight: 21,
-          fontWeight: "600",
-          fontFamily: serif,
-        },
-        recordRow: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 12,
-          padding: 12,
-          borderRadius: 16,
-          backgroundColor: c.glass,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: c.glassLine,
-          marginBottom: 12,
-          ...cardShadow,
-        },
-        fabShadow: {
-          shadowColor: dark ? "#000000" : "#7A5C3E",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.25,
-          shadowRadius: 10,
-          elevation: 4,
-        },
-        recordRowInner: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 12,
-          padding: 12,
-        },
-        dateHeading: {
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingTop: 8,
-          paddingBottom: 12,
-          gap: 8,
-        },
-      });
-    },
-    [c, dark, large],
-  );
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+        elevation: 4,
+      },
+      recordRowInner: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        padding: 12,
+      },
+      dateHeading: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingTop: 8,
+        paddingBottom: 12,
+        gap: 8,
+      },
+    });
+  }, [c, dark, large]);
 }
 /** 书架与年度册的册宽：大字单列、页边 20、列间距 16，按安全区取可用宽。 */
 export function useVolumeWidth() {
@@ -628,7 +652,9 @@ export function useVolumeWidth() {
   const { width, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const columns = large || fontScale >= 1.3 ? 1 : 2;
-  return (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns;
+  return (
+    (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns
+  );
 }
 /** 页内顶栏高度；键盘避让偏移 = 顶部安全区 + 这一行（原生页头下线后 useHeaderHeight 恒为 0）。 */
 export const TOP_BAR_HEIGHT = 52;

@@ -19,11 +19,13 @@ import {
   type Library,
   type LibraryDelta,
   type Mutable,
- LocalMedia } from "../src/local/model";
+  LocalMedia,
+} from "../src/local/model";
 import { LocalStore } from "../src/local/store";
 import { decodeManifest, encodeHeader } from "../src/local/backup-format";
 import {
   ageLine,
+  birthdayLabel,
   milestoneLabel,
   milestoneNumeral,
   milestoneOf,
@@ -35,7 +37,7 @@ import {
   placeLabel,
 } from "../src/local/places";
 /** 测试里的库都是现造现用的裸对象，没进过 store、没被冻结，可以直接改。 */
-const mut = <T,>(value: T): Mutable<T> => value as Mutable<T>;
+const mut = <T>(value: T): Mutable<T> => value as Mutable<T>;
 const date = "2026-09-16T12:00:00.000Z";
 function fixture() {
   const s = emptyLibrary();
@@ -323,7 +325,10 @@ describe("complete backup manifest", () => {
   });
   it("keeps the closed-nudge ledger well-formed", () => {
     const s = fixture();
-    s.nudgeClosedAt = { backup: "2026-09-20T10:00:00.000Z", rhythm: "2026-09-20T10:00:00.000Z" };
+    s.nudgeClosedAt = {
+      backup: "2026-09-20T10:00:00.000Z",
+      rhythm: "2026-09-20T10:00:00.000Z",
+    };
     validateLibrary(s);
     delete s.nudgeClosedAt;
     validateLibrary(s);
@@ -334,7 +339,10 @@ describe("complete backup manifest", () => {
     expect(() => validateLibrary(s)).toThrow();
     s.nudgeClosedAt = { "Backup Card!": "2026-09-20T10:00:00.000Z" };
     expect(() => validateLibrary(s)).toThrow();
-    s.nudgeClosedAt = ["2026-09-20T10:00:00.000Z"] as unknown as Record<string, string>;
+    s.nudgeClosedAt = ["2026-09-20T10:00:00.000Z"] as unknown as Record<
+      string,
+      string
+    >;
     expect(() => validateLibrary(s)).toThrow();
   });
   it("accepts a boolean quote flag and nothing else", () => {
@@ -420,9 +428,9 @@ describe("last export timestamp", () => {
     const s = fixture();
     s.lastExportAt = "2026-09-01T08:00:00.000Z";
     validateLibrary(s);
-    expect(
-      decodeManifest(encodeHeader(s).slice(12)).library.lastExportAt,
-    ).toBe("2026-09-01T08:00:00.000Z");
+    expect(decodeManifest(encodeHeader(s).slice(12)).library.lastExportAt).toBe(
+      "2026-09-01T08:00:00.000Z",
+    );
   });
   it("rejects non-string and unparsable timestamps", () => {
     const nonString = fixture();
@@ -449,6 +457,12 @@ describe("last export timestamp", () => {
 });
 
 describe("keepsake dates", () => {
+  it("labels the birthday as a local calendar day and rejects malformed input", () => {
+    expect(birthdayLabel("2024-06-15")).toBe("2024年6月15日");
+    expect(birthdayLabel("2024-06-01")).toBe("2024年6月1日");
+    expect(birthdayLabel("")).toBeNull();
+    expect(birthdayLabel("2024/06/15")).toBeNull();
+  });
   it("composes the age line with calendar precision, counting the birth day as day one", () => {
     expect(ageLine("2024-06-15", new Date(2026, 8, 17))).toBe(
       "2 岁 3 个月 · 来到世界第 825 天",
@@ -501,9 +515,9 @@ describe("album keepsake notes", () => {
       note: "这一年的照片，都在这里。",
     };
     validateLibrary(s);
-    expect(decodeManifest(encodeHeader(s).slice(12)).library.albums.a?.note).toBe(
-      "这一年的照片，都在这里。",
-    );
+    expect(
+      decodeManifest(encodeHeader(s).slice(12)).library.albums.a?.note,
+    ).toBe("这一年的照片，都在这里。");
   });
   it("rejects non-string and overlong album notes, accepts legacy albums", () => {
     const s = fixture();
@@ -520,9 +534,7 @@ describe("album keepsake notes", () => {
     const overlong = { ...album, note: "长".repeat(2001) };
     expect(() => validateLibrary({ ...s, albums: { a: overlong } })).toThrow();
     const nonString = { ...album, note: 42 } as unknown as typeof album;
-    expect(() =>
-      validateLibrary({ ...s, albums: { a: nonString } }),
-    ).toThrow();
+    expect(() => validateLibrary({ ...s, albums: { a: nonString } })).toThrow();
     validateLibrary({ ...s, albums: { a: album } });
   });
 });
@@ -539,7 +551,10 @@ describe("on-demand place naming", () => {
   it("prefers landmarks, then city/district/street, then region", () => {
     expect(placeLabel({ name: "鲁迅公园" }, "31.2, 121.5")).toBe("鲁迅公园");
     expect(
-      placeLabel({ city: "上海市", district: "虹口区", street: "四川北路" }, "x"),
+      placeLabel(
+        { city: "上海市", district: "虹口区", street: "四川北路" },
+        "x",
+      ),
     ).toBe("上海市虹口区四川北路");
     expect(placeLabel({ region: "上海", country: "中国" }, "x")).toBe(
       "上海 · 中国",
@@ -564,9 +579,9 @@ describe("time series", () => {
   it("roundtrips a series through the backup manifest", () => {
     const s = seriesFixture();
     validateLibrary(s);
-    expect(decodeManifest(encodeHeader(s).slice(12)).library.series.grow!).toEqual(
-      s.series.grow,
-    );
+    expect(
+      decodeManifest(encodeHeader(s).slice(12)).library.series.grow!,
+    ).toEqual(s.series.grow);
   });
   it("rejects duplicate months, dangling media and non-image media", () => {
     const dup = seriesFixture();
@@ -728,7 +743,12 @@ describe("person tags", () => {
       },
       photoEvents: [
         { ...emptyContent(), date, text: "上午", personIds: ["grandma"] },
-        { ...emptyContent(), date, text: "下午", personIds: ["mom", "grandma"] },
+        {
+          ...emptyContent(),
+          date,
+          text: "下午",
+          personIds: ["mom", "grandma"],
+        },
       ],
     };
     return s;
@@ -796,9 +816,7 @@ describe("person tags", () => {
       "r",
       "two",
     ]);
-    expect(recordsOfPerson(records, "grandma").map((r) => r.id)).toEqual([
-      "r",
-    ]);
+    expect(recordsOfPerson(records, "grandma").map((r) => r.id)).toEqual(["r"]);
   });
 });
 
@@ -1027,7 +1045,10 @@ describe("incremental validation", () => {
     // 删掉记录还引用着的素材：只看「动过的实体」是看不见这个破口的。
     delete s.media.photo;
     expect(() =>
-      validateChange(s, { changed: [], removed: [{ kind: "media", id: "photo" }] }),
+      validateChange(s, {
+        changed: [],
+        removed: [{ kind: "media", id: "photo" }],
+      }),
     ).toThrow();
   });
 });

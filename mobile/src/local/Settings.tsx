@@ -6,6 +6,8 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { File } from "expo-file-system";
 import { useLibrary, useStore } from "./context";
 import { useNav } from "./navigation";
+import { getToken } from "../ai/client";
+import { birthdayLabel } from "./dates";
 import { backupDirectory, preserveMedia } from "./files";
 import {
   createBackup,
@@ -31,6 +33,8 @@ import {
   ErrorText,
   Field,
   Page,
+  SettingsGroup,
+  SettingsRow,
   Text,
   dateLabel,
   messageOf,
@@ -38,42 +42,84 @@ import {
   useTheme,
 } from "./ui";
 import { Photo } from "./Media";
+/** 「我的」入口页：分组设置行，副题把最要紧的状态带出来，不用点进去看。 */
 export function Settings() {
   const state = useLibrary(),
     nav = useNav(),
     s = useStyles();
+  const [aiState, setAiState] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    // 只看本机有没有登录令牌，不联网：离线打开「我的」也不该转圈或报错。
+    getToken()
+      .then((token) => {
+        if (live) setAiState(token ? "已登录" : "未登录");
+      })
+      .catch(() => {
+        if (live) setAiState("未登录");
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const name = state.profile.name || "宝宝",
+    birthday = birthdayLabel(state.profile.birthday),
+    exportedDays = daysSinceExport(state),
+    bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0),
+    theme = { auto: "跟随系统", light: "浅色", dark: "深色" }[
+      state.settings.theme
+    ];
   return (
     <Page title="我的">
-      <Text style={s.muted}>
-        {state.profile.name || APP_NAME} · 留住每一个值得记住的日子
-      </Text>
-      <Card>
-        <Button
-          title="宝宝资料"
+      <Text style={s.muted}>{APP_NAME} · 留住每一个值得记住的日子</Text>
+      <SettingsGroup>
+        <SettingsRow
           icon="person"
+          label={`${name}的资料`}
+          subtitle={birthday ? `生日 ${birthday}` : "还没填生日"}
           onPress={() => nav.navigate("Profile")}
+          last
         />
-        <Button
-          title="本机存储"
-          icon="file"
-          onPress={() => nav.navigate("Storage")}
-        />
-        <Button
-          title="备份与恢复"
+      </SettingsGroup>
+      <SettingsGroup title="资料">
+        <SettingsRow
           icon="download"
+          label="备份与恢复"
+          subtitle={
+            exportedDays === null
+              ? "还没导出过备份"
+              : exportedDays === 0
+                ? "今天导出过"
+                : `上次导出 ${exportedDays} 天前`
+          }
           onPress={() => nav.navigate("Backup")}
         />
-        <Button
-          title="AI 设置"
+        <SettingsRow
+          icon="file"
+          label="本机存储"
+          subtitle={`照片和录音占用 ${(bytes / 1048576).toFixed(1)} MB`}
+          onPress={() => nav.navigate("Storage")}
+          last
+        />
+      </SettingsGroup>
+      <SettingsGroup title="家人与 AI">
+        <SettingsRow
           icon="sparkle"
+          label="AI 设置"
+          subtitle={aiState}
           onPress={() => nav.navigate("AISettings")}
+          last
         />
-        <Button
-          title="外观设置"
+      </SettingsGroup>
+      <SettingsGroup title="应用">
+        <SettingsRow
           icon="settings"
+          label="外观设置"
+          subtitle={state.settings.largeText ? `${theme} · 更大文字` : theme}
           onPress={() => nav.navigate("Appearance")}
+          last
         />
-      </Card>
+      </SettingsGroup>
     </Page>
   );
 }
