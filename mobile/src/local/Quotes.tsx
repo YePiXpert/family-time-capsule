@@ -4,6 +4,7 @@ import { ageLine } from "./dates";
 import { recordTitle, sortedRecords } from "./model";
 import { useNav } from "./navigation";
 import {
+  Button,
   Card,
   Ornament,
   Page,
@@ -70,6 +71,9 @@ export function Quotes() {
           <Text style={s.muted}>
             在阅读页点亮「她说的话」，那句原话就会收进这一册。
           </Text>
+          <View style={s.row}>
+            <Button title="回书架" kind="text" onPress={() => nav.goBack()} />
+          </View>
           <Ornament />
         </View>
       )}

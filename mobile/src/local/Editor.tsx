@@ -73,7 +73,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [state.persons],
   );
   const nextAction = useRef<(() => void) | null>(null),
-    operation = useRef(false);
+    operation = useRef(false),
+    // 保存进行中按了返回：记下来，这一轮操作结束后再走，不用一行红字拦人。
+    pendingExit = useRef<(() => void) | null>(null);
   const { current, pendingMedia, verified, importedMedia, persist, persistDebounced, flush } =
     useDraftPersist(store, setError, setDraft, draft);
   const { recording, start: startRecording, finishAudio, discardAudio } =
@@ -127,6 +129,11 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     } finally {
       operation.current = false;
       setBusy(false);
+    }
+    const exit = pendingExit.current;
+    if (exit) {
+      pendingExit.current = null;
+      void run(() => leave(exit));
     }
   };
   const attach = async (media: LocalMedia[]) => {
@@ -183,11 +190,11 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     setAllowExit(true);
   };
   usePreventRemove(!allowExit, ({ data }) => {
+    const exit = () => navigation.dispatch(data.action);
     if (operation.current) {
-      setError("正在保存，请稍候再返回。");
+      pendingExit.current = exit;
       return;
     }
-    const exit = () => navigation.dispatch(data.action);
     if (current.current?.recordingFile)
       Alert.alert("保存这段录音？", "结束并保存后返回，或明确放弃本段录音。", [
         { text: "继续编辑", style: "cancel" },

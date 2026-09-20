@@ -1058,6 +1058,9 @@ export function Firsts() {
           <Text style={s.muted}>
             在阅读页点亮「第一次」，它就会收进这一册。
           </Text>
+          <View style={s.row}>
+            <Button title="回书架" kind="text" onPress={() => nav.goBack()} />
+          </View>
           <Ornament />
         </View>
       )}
