@@ -13,7 +13,7 @@ export class Problem extends Error {
   constructor(status: number, code: string, message: string) { super(message); this.status = status; this.code = code; }
 }
 export type Member = { id: string; name: string; role: 'owner'|'member'; enabled: number; photo_limit: number; write_limit: number; username: string|null; backup_limit_bytes: number; deviceId?: string };
-export type BackupManifest = { keyId: string; index: string; updatedAt: number };
+export type BackupManifest = { keyId: string; index: string; updatedAt: number; objects: string[] };
 export type Settings = { paused: boolean; defaultModel: string; enabledModels: string[]; globalPhotos: number; globalWrites: number };
 export const initialSettings: Settings = { paused: false, defaultModel: MODEL_ID, enabledModels: [MODEL_ID], globalPhotos: 500, globalWrites: 100 };
 export class Store {
@@ -28,13 +28,16 @@ export class Store {
       CREATE TABLE IF NOT EXISTS requests(member_id TEXT NOT NULL,id TEXT NOT NULL,fingerprint TEXT NOT NULL,day TEXT NOT NULL,photos INTEGER NOT NULL,writes INTEGER NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,tokens INTEGER,error_code TEXT,PRIMARY KEY(member_id,id));
       CREATE INDEX IF NOT EXISTS requests_day ON requests(day,member_id);
       DROP TABLE IF EXISTS invites;
-      CREATE TABLE IF NOT EXISTS backup_manifests(member_id TEXT PRIMARY KEY REFERENCES members(id),key_id TEXT NOT NULL,index_b64 TEXT NOT NULL,updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS backup_manifests(member_id TEXT PRIMARY KEY REFERENCES members(id),key_id TEXT NOT NULL,index_b64 TEXT NOT NULL,updated_at INTEGER NOT NULL,objects_json TEXT);
     `);
     // 旧库补上账号列（唯一索引用部分索引，多个 NULL 不冲突）。
     const columns=this.db.prepare('PRAGMA table_info(members)').all() as {name:string}[];
     if(!columns.some(column=>column.name==='username'))this.db.exec('ALTER TABLE members ADD COLUMN username TEXT;ALTER TABLE members ADD COLUMN password_hash TEXT;');
     // Build 70：远端备份配额列；旧库补默认值即可。
     if(!columns.some(column=>column.name==='backup_limit_bytes'))this.db.exec(`ALTER TABLE members ADD COLUMN backup_limit_bytes INTEGER NOT NULL DEFAULT ${DEFAULT_BACKUP_LIMIT}`);
+    // 清单登记自己引用的对象 id，prune 据此护住它们；旧库补列，旧行视为没登记。
+    const manifestColumns=this.db.prepare('PRAGMA table_info(backup_manifests)').all() as {name:string}[];
+    if(!manifestColumns.some(column=>column.name==='objects_json'))this.db.exec('ALTER TABLE backup_manifests ADD COLUMN objects_json TEXT');
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS members_username ON members(username) WHERE username IS NOT NULL');
     this.db.prepare('INSERT OR IGNORE INTO settings VALUES(1,?)').run(JSON.stringify(initialSettings));
     this.setSettings(this.settings());
@@ -132,15 +135,18 @@ export class Store {
     if(member.role==='owner'&&!patch.enabled) throw new Problem(400,'OWNER_REQUIRED','不能停用主人。');
     this.db.prepare('UPDATE members SET enabled=?,photo_limit=?,write_limit=?,backup_limit_bytes=COALESCE(?,backup_limit_bytes) WHERE id=?').run(patch.enabled?1:0,patch.photoLimit,patch.writeLimit,patch.backupLimitBytes??null,id);
   }
-  /** 远端备份的密文索引：服务端只认 keyId 与一段 base64，内容是什么它不知道。 */
-  putManifest(memberId:string,keyId:string,index:string) {
+  /**
+   * 远端备份的密文索引：服务端只认 keyId 与一段 base64，内容是什么它不知道。
+   * objects 是这份清单引用的对象 id（对象名本来就在文件系统里，不多泄露什么），prune 永远不删它们。
+   */
+  putManifest(memberId:string,keyId:string,index:string,objects:readonly string[]=[]) {
     const updatedAt=Date.now();
-    this.db.prepare('INSERT INTO backup_manifests(member_id,key_id,index_b64,updated_at) VALUES(?,?,?,?) ON CONFLICT(member_id) DO UPDATE SET key_id=excluded.key_id,index_b64=excluded.index_b64,updated_at=excluded.updated_at').run(memberId,keyId,index,updatedAt);
+    this.db.prepare('INSERT INTO backup_manifests(member_id,key_id,index_b64,updated_at,objects_json) VALUES(?,?,?,?,?) ON CONFLICT(member_id) DO UPDATE SET key_id=excluded.key_id,index_b64=excluded.index_b64,updated_at=excluded.updated_at,objects_json=excluded.objects_json').run(memberId,keyId,index,updatedAt,JSON.stringify(objects));
     return updatedAt;
   }
   manifest(memberId:string): BackupManifest|undefined {
-    const row=this.db.prepare('SELECT key_id,index_b64,updated_at FROM backup_manifests WHERE member_id=?').get(memberId) as {key_id:string;index_b64:string;updated_at:number}|undefined;
-    return row?{keyId:row.key_id,index:row.index_b64,updatedAt:row.updated_at}:undefined;
+    const row=this.db.prepare('SELECT key_id,index_b64,updated_at,objects_json FROM backup_manifests WHERE member_id=?').get(memberId) as {key_id:string;index_b64:string;updated_at:number;objects_json:string|null}|undefined;
+    return row?{keyId:row.key_id,index:row.index_b64,updatedAt:row.updated_at,objects:row.objects_json?JSON.parse(row.objects_json) as string[]:[]}:undefined;
   }
   deleteManifest(memberId:string) { this.db.prepare('DELETE FROM backup_manifests WHERE member_id=?').run(memberId); }
   recentUsage() { return this.db.prepare('SELECT member_id,day,model,status,COUNT(*) calls,SUM(photos) photos,SUM(writes) writes,SUM(tokens) tokens,error_code FROM requests WHERE created_at>? GROUP BY member_id,day,model,status,error_code ORDER BY day DESC').all(Date.now()-30*86400000); }
