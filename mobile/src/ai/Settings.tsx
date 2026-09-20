@@ -199,8 +199,7 @@ export function AISettingsScreen() {
   return (
     <Page title="AI 设置">
       <Text style={s.muted}>
-        使用 DeepSeek Flash High
-        整理照片和写记录。原图和成长记录继续保存在本机。
+        用家人账号登录后，AI 可以帮你整理照片、写记录。原图和记录仍在本机。
       </Text>
       {me ? (
         <>
@@ -313,6 +312,7 @@ export function AISettingsScreen() {
       )}
       <Button
         title={busy ? "正在读取…" : "刷新状态"}
+        kind="text"
         disabled={busy}
         onPress={() => {
           void run(refresh);
@@ -327,7 +327,7 @@ export function AISettingsScreen() {
             全局今日：{overview.usage.photos} 张图片 · {overview.usage.writes}{" "}
             次文案 · {overview.usage.tokens} tokens
           </Text>
-          <Text style={s.muted}>用量由 CPA 返回，不等同于实际账单。</Text>
+          <Text style={s.muted}>用量以服务端统计为准，不等同于实际账单。</Text>
           <Button
             title={settings.paused ? "AI 已暂停，点击恢复" : "暂停全部 AI"}
             selected={settings.paused}
@@ -397,7 +397,9 @@ export function AISettingsScreen() {
                 });
                 setNewUsername("");
                 setNewPassword("");
-                setNotice(`已创建「${created}」，把用户名和初始密码告诉家人即可。`);
+                setNotice(
+                  `已创建「${created}」，把用户名和初始密码告诉家人即可。`,
+                );
                 await refresh();
               });
             }}
@@ -455,6 +457,7 @@ export function AISettingsScreen() {
           ))}
         </>
       )}
+      <Text style={s.footnote}>由 DeepSeek Flash High 提供</Text>
     </Page>
   );
 }

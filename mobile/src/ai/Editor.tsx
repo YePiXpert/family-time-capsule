@@ -718,9 +718,7 @@ export function AIEditor({
                 />
               </Card>
             )}
-            <Text style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
-              由 DeepSeek Flash High 提供
-            </Text>
+            <Text style={s.footnote}>由 DeepSeek Flash High 提供</Text>
           </ScrollView>
         </View>
       </View>
