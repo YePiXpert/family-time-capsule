@@ -44,6 +44,8 @@ export function ensureDirectories() {
 }
 export type FileHandle = ReturnType<File["open"]>;
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** pumpBytes 读不满时的错误文案：调用方据此区分「源文件短了」与「目标写不进去」。 */
+export const READ_INCOMPLETE = "文件读取不完整。";
 /**
  * 逐块把一段字节从一个句柄搬到另一个，边搬边算 sha256，每块之间让出主线程；
  * output 为空时只读只算。返回十六进制哈希。
@@ -58,7 +60,7 @@ export async function pumpBytes(
   let remaining = bytes;
   while (remaining > 0) {
     const chunk = input.readBytes(Math.min(CHUNK, remaining));
-    if (!chunk.length) throw new Error("文件读取不完整。");
+    if (!chunk.length) throw new Error(READ_INCOMPLETE);
     digest.update(chunk);
     output?.writeBytes(chunk);
     onChunk?.(chunk);

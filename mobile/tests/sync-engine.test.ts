@@ -292,6 +292,43 @@ it("refuses to stack onto another key's backup and stops before uploading", asyn
     }),
   ).rejects.toThrow("已停止");
 });
+it("pins the remote manifest before downloading so an interrupted restore survives blob collection", async () => {
+  const { engine, backup, files, store, big, small } = await setup();
+  const remote = fakeRemote();
+  const deps = { transport: remote.transport, key: key() };
+  await engine.runRemoteBackup(store.get(), deps);
+  fs.rmSync(files.blobDirectory.uri, { recursive: true });
+  for (const f of fs.readdirSync(files.backupDirectory.uri))
+    fs.unlinkSync(path.join(files.backupDirectory.uri, f));
+  // 第一张下载完就停。
+  const controller = new AbortController();
+  await expect(
+    engine.restoreFromRemote({
+      ...deps,
+      signal: controller.signal,
+      onProgress: (stage) => {
+        if (stage === "正在下载 1/2") controller.abort();
+      },
+    }),
+  ).rejects.toThrow("已停止");
+  const left = fs.readdirSync(files.backupDirectory.uri);
+  expect(left).toHaveLength(1);
+  expect(left[0]).toMatch(/^restoring-.*\.xmbm\.part$/);
+  const downloaded = [big, small].filter((m) =>
+    fs.existsSync(files.blobFile(m.sha256).uri),
+  );
+  expect(downloaded).toHaveLength(1);
+  // 中间做了一次本机回收：钉子护住了已下载的那张。
+  expect(backup.collectBlobs()).toEqual({ removed: 0, bytes: 0 });
+  expect(fs.existsSync(files.blobFile(downloaded[0]!.sha256).uri)).toBe(true);
+  // 接着恢复：只拉清单对象和剩下那张照片的对象，钉子换成正式清单。
+  const gets = remote.gets();
+  const manifest = await engine.restoreFromRemote(deps);
+  const remaining = downloaded[0] === big ? 1 : 2;
+  expect(remote.gets()).toBe(gets + 1 + remaining);
+  expect(fs.readdirSync(files.backupDirectory.uri)).toEqual([manifest.name]);
+  expect(manifest.name).toMatch(/\.xmbm$/);
+});
 it("verifies the remote and names how many photo objects are missing", async () => {
   const { engine, store } = await setup();
   const remote = fakeRemote();
@@ -353,7 +390,11 @@ it("restores from the remote into the blob store and hands a manifest to the loc
   ).rejects.toThrow("恢复码");
   expect(remote.gets()).toBe(gets + 1);
   fs.rmSync(files.blobDirectory.uri, { recursive: true });
-  const manifests = fs.readdirSync(files.backupDirectory.uri).length;
+  // 失败的恢复留下的只有钉子（restoring-*.xmbm.part），正式清单一份不多。
+  const manifestsOf = () =>
+    fs.readdirSync(files.backupDirectory.uri).filter((n) => n.endsWith(".xmbm"))
+      .length;
+  const manifests = manifestsOf();
   const smallId = [...remote.objects.entries()].find(
     ([, b]) => b.length < 4000,
   )![0];
@@ -361,7 +402,7 @@ it("restores from the remote into the blob store and hands a manifest to the loc
   tampered[tampered.length - 1]! ^= 1;
   remote.objects.set(smallId, tampered);
   await expect(engine.restoreFromRemote(deps)).rejects.toThrow("对不上");
-  expect(fs.readdirSync(files.backupDirectory.uri)).toHaveLength(manifests);
+  expect(manifestsOf()).toBe(manifests);
   const leftovers = fs
     .readdirSync(files.blobDirectory.uri, { recursive: true })
     .map(String);

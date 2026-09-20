@@ -14,6 +14,8 @@ import {
   blobOwners,
   createBackup,
   readManifest,
+  restorePinName,
+  restorePins,
   type RestoreProgress,
 } from "../local/backup";
 import {
@@ -333,9 +335,16 @@ export async function verifyRemoteBackup(
  * 与本机备份走同一条恢复路径。已经在库里且长度对的 blob 跳过，所以中断后再来就是续传。
  */
 export async function restoreFromRemote(deps: EngineDeps): Promise<File> {
-  const { meta, entities, bytes } = await fetchManifest(deps);
+  const { index, meta, entities, bytes } = await fetchManifest(deps);
   const owners = blobOwners(decodeLibraryV2(meta, entities));
   ensureDirectories();
+  // 清单先以「钉子」落地：下载到一半停下，blob 回收也认得这些照片有人要，下次接着下载才是续传。
+  for (const stale of restorePins()) stale.delete();
+  const pin = new File(
+    backupDirectory,
+    restorePinName(new Date(), index.sha256.slice(0, 8)),
+  );
+  writeWhole(pin, bytes);
   const total = meta.blobs.length;
   let done = 0;
   for (const blob of meta.blobs) {
@@ -382,16 +391,21 @@ export async function restoreFromRemote(deps: EngineDeps): Promise<File> {
     backupDirectory,
     backupFileName(new Date(), randomUUID().slice(0, 8), "xmbm"),
   );
-  out.create();
-  const h = out.open(FileMode.WriteOnly);
+  writeWhole(out, bytes);
+  // 正式清单在位了，钉子功成身退。
+  if (pin.exists) pin.delete();
+  return out;
+}
+/** 一次写完一个小文件；写不进去就别留一个空壳：任何一份清单读不出来，blob 回收都会停手。 */
+function writeWhole(file: File, bytes: Uint8Array): void {
+  file.create();
+  const h = file.open(FileMode.WriteOnly);
   try {
     h.writeBytes(bytes);
   } catch (e) {
-    // 写不进去就别留一个空清单：任何一份清单读不出来，blob 回收都会停手。
     h.close();
-    out.delete();
+    file.delete();
     throw e;
   }
   h.close();
-  return out;
 }

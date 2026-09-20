@@ -115,7 +115,13 @@ export async function writeVolume(
     let done = 0;
     for (const blob of slice) {
       if (signal?.aborted) throw new BackupStopped();
-      await streamBlob(blob, h, plan.owners.get(blob.sha256)!.name);
+      await streamBlob(
+        blob,
+        h,
+        plan.owners.get(blob.sha256)!.name,
+        undefined,
+        signal,
+      );
       done++;
       onProgress?.(
         count === 1

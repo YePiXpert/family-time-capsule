@@ -691,6 +691,55 @@ it("collects only blobs no retained manifest references and stands down when one
   expect(backup.collectBlobs()).toEqual({ removed: 2, bytes: 600006 });
   expect(fs.existsSync(files.blobFile(media.sha256).uri)).toBe(false);
 });
+it("keeps blobs a remote-restore pin references and drops the pin after seven days", async () => {
+  const { store, backup, files, media } = await setup();
+  const out = await backup.createBackup(store.get());
+  // 钉子 = 远端清单的原文，先落地再下载；保留备份删光了，它引用的照片也不能收。
+  const pin = path.join(
+    files.backupDirectory.uri,
+    backup.restorePinName(new Date(), "abcd1234"),
+  );
+  fs.copyFileSync(out.uri, pin);
+  out.delete();
+  expect(backup.collectBlobs()).toEqual({ removed: 0, bytes: 0 });
+  expect(fs.existsSync(files.blobFile(media.sha256).uri)).toBe(true);
+  // 钉子不是保留备份：列表与启动救援都不认它。
+  expect(backup.listLocalBackups()).toEqual([]);
+  expect(backup.retainedBackups()).toEqual([]);
+  // 读不出的钉子是废弃的半成品，回收时顺手清掉。
+  fs.writeFileSync(pin, "XIAOMEI3broken");
+  expect(backup.collectBlobs()).toEqual({ removed: 1, bytes: 600000 });
+  expect(fs.existsSync(pin)).toBe(false);
+  // 七天前的钉子由 pruneBackups 清掉，新的留着。
+  const stale = path.join(
+    files.backupDirectory.uri,
+    backup.restorePinName(new Date(Date.now() - 8 * 86400000), "0ld00000"),
+  );
+  const fresh = path.join(
+    files.backupDirectory.uri,
+    backup.restorePinName(new Date(), "fresh000"),
+  );
+  fs.writeFileSync(stale, "x");
+  fs.writeFileSync(fresh, "x");
+  backup.pruneBackups(3);
+  expect(fs.existsSync(stale)).toBe(false);
+  expect(fs.existsSync(fresh)).toBe(true);
+});
+it("refuses to start a manifest backup when the blob store copy would not fit", async () => {
+  const { store, backup, files } = await setup();
+  env.free = 1000;
+  await expect(backup.createBackup(store.get())).rejects.toThrow("空间不足");
+  expect(backup.retainedBackups()).toEqual([]);
+  expect(
+    files.blobDirectory.exists ? fs.readdirSync(files.blobDirectory.uri) : [],
+  ).toEqual([]);
+  // 已经在库里的照片不占预算：之后的备份不再需要空间。
+  env.free = Number.POSITIVE_INFINITY;
+  await backup.createBackup(store.get());
+  env.free = 1000;
+  await backup.createBackup(store.get());
+  expect(backup.retainedBackups()).toHaveLength(2);
+});
 it("lists retained backups with a readable label and the space they really stand for", async () => {
   const { store, backup } = await setup();
   const out = await backup.createBackup(store.get());
