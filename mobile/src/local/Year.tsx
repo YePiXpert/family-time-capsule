@@ -449,7 +449,7 @@ export function Year({ route }: Props<"Year">) {
       {records.length === 0 && (
         <View style={s.empty}>
           <Text style={s.heading}>这一年还没有记录</Text>
-          <Text style={s.muted}>回到书架，点右下角的笔，从这一刻开始。</Text>
+          <Text style={s.muted}>回到书架，点右下角的「记一刻」，从这一刻开始。</Text>
         </View>
       )}
       <Ornament />
