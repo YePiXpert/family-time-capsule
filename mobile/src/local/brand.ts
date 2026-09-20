@@ -25,3 +25,5 @@ export const AI_SESSION_KEY = "anan-ai-device-v1";
 export const AI_CONSENT_KEY = "anan-ai-consent-v1";
 export const LEGACY_AI_SESSION_KEY = "xiaomei-ai-device-v1";
 export const LEGACY_AI_CONSENT_KEY = "xiaomei-ai-consent-v1";
+/** 远端备份主密钥（恢复码本体）在 SecureStore 里的键名；只在这台设备、解锁后可读。 */
+export const REMOTE_KEY_ITEM = "anan-backup-key-v1";
