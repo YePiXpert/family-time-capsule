@@ -4,8 +4,9 @@ import {
   AI_SESSION_KEY,
   LEGACY_AI_CONSENT_KEY,
   LEGACY_AI_SESSION_KEY,
+  SERVICE_URL,
 } from "../local/brand";
-const BASE = "https://capsule.yep.li/api/v1";
+const BASE = SERVICE_URL;
 const SESSION = AI_SESSION_KEY,
   CONSENT = AI_CONSENT_KEY;
 const options = {
