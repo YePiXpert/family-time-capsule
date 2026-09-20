@@ -42,6 +42,7 @@ export function Photo({
   ratio,
   preview = false,
   label,
+  radius = 12,
 }: {
   media: LocalMedia | undefined;
   contain?: boolean;
@@ -52,6 +53,8 @@ export function Photo({
   preview?: boolean;
   /** 读屏标签；缺省读作「照片」，不读原始文件名。 */
   label?: string;
+  /** 圆角；书册行里 60 宽的小封面用 8。 */
+  radius?: number;
 }) {
   const s = useStyles();
   const [error, setError] = useState(false);
@@ -80,7 +83,7 @@ export function Photo({
       style={[
         {
           width: "100%",
-          borderRadius: 12,
+          borderRadius: radius,
           aspectRatio: size
             ? 1
             : (ratio ??
