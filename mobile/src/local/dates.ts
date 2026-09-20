@@ -7,6 +7,14 @@ export function parseBirthday(value: string): Date | null {
   return date.getFullYear() > 0 ? date : null;
 }
 
+/** 「2024年6月15日」；未填或无效生日返回 null。 */
+export function birthdayLabel(birthday: string): string | null {
+  const born = parseBirthday(birthday);
+  return born
+    ? `${born.getFullYear()}年${born.getMonth() + 1}月${born.getDate()}日`
+    : null;
+}
+
 const dayStart = (d: Date) =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
@@ -55,7 +63,10 @@ export function toDayKey(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export type Milestone = { kind: "birthday" | "hundred" | "anniversary"; years?: number };
+export type Milestone = {
+  kind: "birthday" | "hundred" | "anniversary";
+  years?: number;
+};
 
 /** 当天命中的纪念时刻：每年生日（含周岁）、出生后第 100 天。 */
 export function milestoneOf(
@@ -88,5 +99,9 @@ export function milestoneLabel(m: Milestone): string {
 
 /** 印章圆环里的数字：百天 100、出生 1、周岁 N。 */
 export function milestoneNumeral(m: Milestone): string {
-  return m.kind === "hundred" ? "100" : m.kind === "birthday" ? "1" : String(m.years);
+  return m.kind === "hundred"
+    ? "100"
+    : m.kind === "birthday"
+      ? "1"
+      : String(m.years);
 }
