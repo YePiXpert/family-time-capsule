@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import { MODEL_ID } from './ai-model.ts';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
+/** 成员默认远端备份配额 20 GiB；主人可在管理页调整。 */
+export const DEFAULT_BACKUP_LIMIT = 20 * 1024 ** 3;
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const uniqueProblem = (error: unknown) =>
   error instanceof Error && String((error as {code?:string}).code ?? error.message).includes('UNIQUE')
@@ -10,7 +12,8 @@ export class Problem extends Error {
   status: number; code: string;
   constructor(status: number, code: string, message: string) { super(message); this.status = status; this.code = code; }
 }
-export type Member = { id: string; name: string; role: 'owner'|'member'; enabled: number; photo_limit: number; write_limit: number; username: string|null; deviceId?: string };
+export type Member = { id: string; name: string; role: 'owner'|'member'; enabled: number; photo_limit: number; write_limit: number; username: string|null; backup_limit_bytes: number; deviceId?: string };
+export type BackupManifest = { keyId: string; index: string; updatedAt: number };
 export type Settings = { paused: boolean; defaultModel: string; enabledModels: string[]; globalPhotos: number; globalWrites: number };
 export const initialSettings: Settings = { paused: false, defaultModel: MODEL_ID, enabledModels: [MODEL_ID], globalPhotos: 500, globalWrites: 100 };
 export class Store {
@@ -19,16 +22,19 @@ export class Store {
     this.db = new Database(file);
     this.db.pragma('journal_mode = WAL'); this.db.pragma('foreign_keys = ON'); this.db.pragma('busy_timeout = 5000');
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS members(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,photo_limit INTEGER NOT NULL DEFAULT 100,write_limit INTEGER NOT NULL DEFAULT 20,username TEXT,password_hash TEXT);
+      CREATE TABLE IF NOT EXISTS members(id TEXT PRIMARY KEY,name TEXT NOT NULL,role TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,photo_limit INTEGER NOT NULL DEFAULT 100,write_limit INTEGER NOT NULL DEFAULT 20,username TEXT,password_hash TEXT,backup_limit_bytes INTEGER NOT NULL DEFAULT 21474836480);
       CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY,member_id TEXT NOT NULL REFERENCES members(id),name TEXT NOT NULL,token_hash TEXT UNIQUE NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS requests(member_id TEXT NOT NULL,id TEXT NOT NULL,fingerprint TEXT NOT NULL,day TEXT NOT NULL,photos INTEGER NOT NULL,writes INTEGER NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,tokens INTEGER,error_code TEXT,PRIMARY KEY(member_id,id));
       CREATE INDEX IF NOT EXISTS requests_day ON requests(day,member_id);
       DROP TABLE IF EXISTS invites;
+      CREATE TABLE IF NOT EXISTS backup_manifests(member_id TEXT PRIMARY KEY REFERENCES members(id),key_id TEXT NOT NULL,index_b64 TEXT NOT NULL,updated_at INTEGER NOT NULL);
     `);
     // 旧库补上账号列（唯一索引用部分索引，多个 NULL 不冲突）。
     const columns=this.db.prepare('PRAGMA table_info(members)').all() as {name:string}[];
     if(!columns.some(column=>column.name==='username'))this.db.exec('ALTER TABLE members ADD COLUMN username TEXT;ALTER TABLE members ADD COLUMN password_hash TEXT;');
+    // Build 70：远端备份配额列；旧库补默认值即可。
+    if(!columns.some(column=>column.name==='backup_limit_bytes'))this.db.exec(`ALTER TABLE members ADD COLUMN backup_limit_bytes INTEGER NOT NULL DEFAULT ${DEFAULT_BACKUP_LIMIT}`);
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS members_username ON members(username) WHERE username IS NOT NULL');
     this.db.prepare('INSERT OR IGNORE INTO settings VALUES(1,?)').run(JSON.stringify(initialSettings));
     this.setSettings(this.settings());
@@ -79,11 +85,11 @@ export class Store {
     return { token, member: this.memberById(memberId,deviceId) };
   }
   memberById(id: string, deviceId?: string) {
-    const member=this.db.prepare('SELECT id,name,role,enabled,photo_limit,write_limit,username FROM members WHERE id=?').get(id) as Member;
+    const member=this.db.prepare('SELECT id,name,role,enabled,photo_limit,write_limit,username,backup_limit_bytes FROM members WHERE id=?').get(id) as Member;
     return deviceId?{...member,deviceId}:member;
   }
   auth(token: string): Member {
-    const row = this.db.prepare('SELECT m.id,m.name,m.role,m.enabled,m.photo_limit,m.write_limit,m.username,d.id AS deviceId FROM devices d JOIN members m ON m.id=d.member_id WHERE d.token_hash=? AND d.revoked=0 AND m.enabled=1').get(digest(token)) as Member|undefined;
+    const row = this.db.prepare('SELECT m.id,m.name,m.role,m.enabled,m.photo_limit,m.write_limit,m.username,m.backup_limit_bytes,d.id AS deviceId FROM devices d JOIN members m ON m.id=d.member_id WHERE d.token_hash=? AND d.revoked=0 AND m.enabled=1').get(digest(token)) as Member|undefined;
     if (!row) throw new Problem(401,'AUTH_REQUIRED','请先登录，或联系主人重新开通此设备。');
     return row;
   }
@@ -115,17 +121,28 @@ export class Store {
     // 已完成的请求不可被晚到的失败回写覆盖（例如成功后授权失效）：第二次 finish 静默无效。
     this.db.prepare("UPDATE requests SET status=?,tokens=?,error_code=? WHERE member_id=? AND id=? AND status!='completed'").run(error?'failed':'completed',tokens,error??null,memberId,id);
   }
-  members() { return this.db.prepare('SELECT id,name,role,enabled,photo_limit,write_limit,username FROM members ORDER BY role DESC,name').all() as Member[]; }
+  members() { return this.db.prepare('SELECT id,name,role,enabled,photo_limit,write_limit,username,backup_limit_bytes FROM members ORDER BY role DESC,name').all() as Member[]; }
   devices() { return this.db.prepare('SELECT id,member_id,name,revoked,created_at FROM devices ORDER BY created_at DESC').all(); }
   revoke(id:string) { this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(id); }
   revokeOthers(memberId:string,keepDeviceId:string) { this.db.prepare('UPDATE devices SET revoked=1 WHERE member_id=? AND id!=?').run(memberId,keepDeviceId); }
   revokeAll(memberId:string) { this.db.prepare('UPDATE devices SET revoked=1 WHERE member_id=?').run(memberId); }
-  editMember(id:string,patch:{enabled:boolean;photoLimit:number;writeLimit:number}) {
+  editMember(id:string,patch:{enabled:boolean;photoLimit:number;writeLimit:number;backupLimitBytes?:number}) {
     const member=this.db.prepare('SELECT * FROM members WHERE id=?').get(id) as Member|undefined;
     if(!member) throw new Problem(404,'NOT_FOUND','成员不存在。');
     if(member.role==='owner'&&!patch.enabled) throw new Problem(400,'OWNER_REQUIRED','不能停用主人。');
-    this.db.prepare('UPDATE members SET enabled=?,photo_limit=?,write_limit=? WHERE id=?').run(patch.enabled?1:0,patch.photoLimit,patch.writeLimit,id);
+    this.db.prepare('UPDATE members SET enabled=?,photo_limit=?,write_limit=?,backup_limit_bytes=COALESCE(?,backup_limit_bytes) WHERE id=?').run(patch.enabled?1:0,patch.photoLimit,patch.writeLimit,patch.backupLimitBytes??null,id);
   }
+  /** 远端备份的密文索引：服务端只认 keyId 与一段 base64，内容是什么它不知道。 */
+  putManifest(memberId:string,keyId:string,index:string) {
+    const updatedAt=Date.now();
+    this.db.prepare('INSERT INTO backup_manifests(member_id,key_id,index_b64,updated_at) VALUES(?,?,?,?) ON CONFLICT(member_id) DO UPDATE SET key_id=excluded.key_id,index_b64=excluded.index_b64,updated_at=excluded.updated_at').run(memberId,keyId,index,updatedAt);
+    return updatedAt;
+  }
+  manifest(memberId:string): BackupManifest|undefined {
+    const row=this.db.prepare('SELECT key_id,index_b64,updated_at FROM backup_manifests WHERE member_id=?').get(memberId) as {key_id:string;index_b64:string;updated_at:number}|undefined;
+    return row?{keyId:row.key_id,index:row.index_b64,updatedAt:row.updated_at}:undefined;
+  }
+  deleteManifest(memberId:string) { this.db.prepare('DELETE FROM backup_manifests WHERE member_id=?').run(memberId); }
   recentUsage() { return this.db.prepare('SELECT member_id,day,model,status,COUNT(*) calls,SUM(photos) photos,SUM(writes) writes,SUM(tokens) tokens,error_code FROM requests WHERE created_at>? GROUP BY member_id,day,model,status,error_code ORDER BY day DESC').all(Date.now()-30*86400000); }
   close() { this.db.close(); }
 }

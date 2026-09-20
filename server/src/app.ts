@@ -5,8 +5,17 @@ import { inputSchema, parseResult, polishBody, POLISH_BODY_LIMIT } from './contr
 import { hashPassword, verifyPassword, timingDummy, needsRehash } from './passwords.ts';
 import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
 import type { Provider } from './provider.ts';
-export function createApp(store:Store,provider:Provider,version='dev') {
+import { BackupStore, FREE_FLOOR, OBJECT_ID, OBJECT_LIMIT } from './backup-store.ts';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Readable } from 'node:stream';
+export function createApp(store:Store,provider:Provider,version='dev',backupStore?:BackupStore) {
  const app=Fastify({logger:false,bodyLimit:15*1024*1024,requestTimeout:120000,connectionTimeout:125000});
+ // 测试不传对象库时按需建一个临时目录；生产由 index.ts 传 /data/backup。
+ const backups=()=>backupStore??=new BackupStore(mkdtempSync(join(tmpdir(),'anan-backup-')));
+ // 备份对象按八进制流透传：bodyLimit 管不到透传流，路由自己按 Content-Length 预检并落盘计数。
+ app.addContentTypeParser('application/octet-stream',(_request,payload,done)=>done(null,payload));
  const cache=new Map<string,{expires:number;value:unknown}>();
  const attempts=new Map<string,{count:number;expires:number}>();
  const auth=(header?:string) => store.auth(header?.startsWith('Bearer ')?header.slice(7):'');
@@ -14,7 +23,10 @@ export function createApp(store:Store,provider:Provider,version='dev') {
  app.setErrorHandler((err,_request,reply)=>{
   if(err instanceof Problem) return reply.code(err.status).send({code:err.code,message:err.message});
   if(err instanceof ZodError) return reply.code(400).send({code:'INVALID_INPUT',message:'输入内容无效，请检查后重试。'});
-  if((err as {statusCode?:number}).statusCode===413) return reply.code(413).send({code:'TOO_LARGE',message:'照片批次过大，请减少照片后重试。'});
+  const status=(err as {statusCode?:number}).statusCode;
+  if(status===413) return reply.code(413).send({code:'TOO_LARGE',message:'照片批次过大，请减少照片后重试。'});
+  // Fastify 自己判出的客户端错误（长度对不上、JSON 坏了、内容类型不认识）也按 4xx 回，不伪装成服务故障。
+  if(status&&status>=400&&status<500) return reply.code(status).send({code:'INVALID_INPUT',message:status===415?'请求格式不受支持。':'请求内容无效，请重试。'});
   return reply.code(500).send({code:'INTERNAL',message:'服务暂时不可用，请稍后再试。'});
  });
  app.addHook('onSend',async (_request,reply)=>{reply.header('Cache-Control','no-store');reply.header('X-Content-Type-Options','nosniff');});
@@ -97,7 +109,69 @@ export function createApp(store:Store,provider:Provider,version='dev') {
    throw new Problem(502,'INVALID_RESULT','AI 返回内容无效，草稿仍保留。');
   }
  });
- app.get('/api/v1/admin/overview',async req=>{owner(req.headers.authorization);return {members:store.members().map(m=>({...m,usage:store.usage(m.id)})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS};});
+ // ── 远端备份对象库：成员只能碰自己的库；服务端只见密文、对象 id 与字节数。不走 throttle()（反代后按地址限流是全家共享的）。
+ const objectParams=z.object({id:z.string().regex(OBJECT_ID)});
+ const idList=(max:number)=>z.array(z.string().regex(OBJECT_ID)).max(max);
+ const uploading=new Map<string,number>();
+ app.get('/api/v1/backup/status',async req=>{
+  const member=auth(req.headers.authorization),usage=backups().usage(member.id),manifest=store.manifest(member.id);
+  return {keyId:manifest?.keyId??null,manifestUpdatedAt:manifest?new Date(manifest.updatedAt).toISOString():null,objects:usage.objects,bytes:usage.bytes,limitBytes:member.backup_limit_bytes,freeBytes:await backups().freeBytes()};
+ });
+ app.post('/api/v1/backup/objects/have',async req=>{
+  const member=auth(req.headers.authorization);
+  const {ids}=z.object({ids:idList(5000)}).strict().parse(req.body);
+  const present=backups().have(member.id,ids);
+  return {missing:ids.filter(id=>!present.has(id))};
+ });
+ app.put('/api/v1/backup/objects/:id',async (req,reply)=>{
+  const member=auth(req.headers.authorization),{id}=objectParams.parse(req.params);
+  if(!String(req.headers['content-type']??'').startsWith('application/octet-stream'))throw new Problem(415,'INVALID_INPUT','请求格式不受支持。');
+  const sha256=z.string().regex(OBJECT_ID).parse(req.headers['x-object-sha256']);
+  const declared=req.headers['content-length']===undefined?undefined:Number(req.headers['content-length']);
+  if(declared!==undefined&&!(Number.isSafeInteger(declared)&&declared>=0))throw new Problem(400,'INVALID_INPUT','请求长度无效。');
+  if(declared!==undefined&&declared>OBJECT_LIMIT)throw new Problem(413,'TOO_LARGE','这一份太大，请更新应用后重试。');
+  if(await backups().freeBytes()<FREE_FLOOR)throw new Problem(507,'SERVER_FULL','服务器空间不足，请联系主人。');
+  const usage=backups().usage(member.id),quotaLeft=Math.max(0,member.backup_limit_bytes-usage.bytes);
+  if(declared!==undefined&&declared>quotaLeft&&backups().stat(member.id,id)===null)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系主人调整。');
+  const active=uploading.get(member.id)??0;
+  if(active>=2)throw new Problem(429,'BUSY','正在上传其他内容，请稍后再试。');
+  uploading.set(member.id,active+1);
+  try {
+   const result=await backups().receive(member.id,id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft});
+   return reply.code(result.created?201:200).send({id,bytes:result.bytes});
+  } finally {
+   const left=(uploading.get(member.id)??1)-1;
+   if(left<=0)uploading.delete(member.id);else uploading.set(member.id,left);
+  }
+ });
+ app.get('/api/v1/backup/objects/:id',async (req,reply)=>{
+  const member=auth(req.headers.authorization),{id}=objectParams.parse(req.params);
+  const found=backups().read(member.id,id);
+  if(!found)throw new Problem(404,'NOT_FOUND','远端没有这一份。');
+  return reply.type('application/octet-stream').header('Content-Length',String(found.size)).send(found.stream);
+ });
+ app.put('/api/v1/backup/manifest',async req=>{
+  const member=auth(req.headers.authorization);
+  // 索引是手机封好的密文（≤ 64 KiB 明文），服务端只存 keyId 好让换错恢复码在下载前就判出来。
+  const input=z.object({keyId:z.string().regex(/^[a-f0-9]{16}$/),index:z.string().min(4).max(90000).regex(/^[A-Za-z0-9+/]+=*$/)}).strict().parse(req.body);
+  return {updatedAt:new Date(store.putManifest(member.id,input.keyId,input.index)).toISOString()};
+ });
+ app.get('/api/v1/backup/manifest',async req=>{
+  const member=auth(req.headers.authorization),manifest=store.manifest(member.id);
+  if(!manifest)throw new Problem(404,'NOT_FOUND','远端还没有备份。');
+  return {keyId:manifest.keyId,index:manifest.index,updatedAt:new Date(manifest.updatedAt).toISOString()};
+ });
+ app.post('/api/v1/backup/prune',async req=>{
+  const member=auth(req.headers.authorization);
+  const {keep}=z.object({keep:idList(50000)}).strict().parse(req.body);
+  return backups().prune(member.id,new Set(keep));
+ });
+ app.delete('/api/v1/backup',async req=>{
+  const member=auth(req.headers.authorization);
+  backups().wipe(member.id);store.deleteManifest(member.id);
+  return {ok:true};
+ });
+ app.get('/api/v1/admin/overview',async req=>{owner(req.headers.authorization);return {members:store.members().map(m=>({...m,usage:store.usage(m.id),backup:{...backups().usage(m.id),limitBytes:m.backup_limit_bytes}})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS,backupFreeBytes:await backups().freeBytes()};});
  app.post('/api/v1/admin/members',async (req,reply)=>{
   owner(req.headers.authorization);
   const input=z.object({username,password:z.string().min(8).max(128)}).strict().parse(req.body);
@@ -112,8 +186,13 @@ export function createApp(store:Store,provider:Provider,version='dev') {
  });
  app.patch('/api/v1/admin/members/:id',async req=>{
   owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
-  const input=z.object({enabled:z.boolean(),photoLimit:z.number().int().min(0).max(10000),writeLimit:z.number().int().min(0).max(10000)}).strict().parse(req.body);
+  const input=z.object({enabled:z.boolean(),photoLimit:z.number().int().min(0).max(10000),writeLimit:z.number().int().min(0).max(10000),backupLimitBytes:z.number().int().min(0).max(10*1024**4).optional()}).strict().parse(req.body);
   store.editMember(id,input);return {ok:true};
+ });
+ app.delete('/api/v1/admin/members/:id/backup',async req=>{
+  owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
+  if(!store.fullById(id))throw new Problem(404,'NOT_FOUND','成员不存在。');
+  backups().wipe(id);store.deleteManifest(id);return {ok:true};
  });
  app.delete('/api/v1/admin/devices/:id',async req=>{
   const member=owner(req.headers.authorization),{id}=z.object({id:z.string().uuid()}).parse(req.params);
