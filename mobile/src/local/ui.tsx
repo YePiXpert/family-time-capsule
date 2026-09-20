@@ -225,6 +225,8 @@ export const GlassBackdrop = memo(function GlassBackdrop() {
     </View>
   );
 });
+/** 玻璃层级：Card 内部深度 +1，深度 ≥ 1 的 Glass 退回实色纸面，玻璃不套玻璃、卡不套卡。 */
+export const GlassDepth = createContext(0);
 export function Glass({
   children,
   style,
@@ -244,6 +246,25 @@ export function Glass({
   testID?: string;
 }) {
   const { colors, dark, liquid } = useTheme();
+  const depth = useContext(GlassDepth);
+  if (depth > 0)
+    return (
+      <View
+        accessibilityViewIsModal={accessibilityViewIsModal}
+        testID={testID}
+        style={[
+          {
+            borderRadius: radius,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: colors.glassLine,
+            backgroundColor: tint ?? colors.paper,
+          },
+          style,
+        ]}
+      >
+        {children}
+      </View>
+    );
   if (liquid) {
     const tintColor =
       tint === colors.accentGlass
@@ -300,6 +321,7 @@ export function Card({
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }) {
+  const depth = useContext(GlassDepth);
   return (
     <Glass
       radius={compact ? 12 : 16}
@@ -311,8 +333,78 @@ export function Card({
         style,
       ]}
     >
-      {children}
+      <GlassDepth.Provider value={depth + 1}>{children}</GlassDepth.Provider>
     </Glass>
+  );
+}
+/** 区标题：无衬线辅助色小标题 + 右侧文字级动作（书架各区、设置分组）。 */
+export function SectionHeader({
+  title,
+  action,
+}: {
+  title: string;
+  action?: { label: string; onPress: () => void; testID?: string };
+}) {
+  const s = useStyles();
+  return (
+    <View style={[s.between, { minHeight: 32 }]}>
+      <Text accessibilityRole="header" style={s.sectionTitle}>
+        {title}
+      </Text>
+      {action && (
+        <Button
+          title={action.label}
+          kind="text"
+          compact
+          onPress={action.onPress}
+          testID={action.testID}
+        />
+      )}
+    </View>
+  );
+}
+/** 设置行：图标 + 标签 + 副题 + 右箭头，放在 Card 里成组。 */
+export function SettingsRow({
+  icon,
+  label,
+  subtitle,
+  onPress,
+  testID,
+  last = false,
+}: {
+  icon: JournalIconName;
+  label: string;
+  subtitle?: string;
+  onPress: () => void;
+  testID?: string;
+  last?: boolean;
+}) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={subtitle ? `${label}，${subtitle}` : label}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        minHeight: 52,
+        paddingVertical: 8,
+        borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
+        borderBottomColor: colors.line,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <JournalIcon name={icon} color={colors.accent} size={22} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text>{label}</Text>
+        {!!subtitle && <Text style={s.muted}>{subtitle}</Text>}
+      </View>
+      <JournalIcon name="chevron-right" color={colors.muted} size={20} />
+    </Pressable>
   );
 }
 export function Ornament() {
@@ -409,6 +501,13 @@ export function useStyles() {
           color: c.ink,
         },
         topRight: { flexDirection: "row", alignItems: "center", gap: 4 },
+        sectionTitle: {
+          fontSize: 13,
+          lineHeight: 20,
+          fontWeight: "600",
+          letterSpacing: 0.4,
+          color: c.muted,
+        },
         row: {
           flexDirection: "row",
           flexWrap: "wrap",
@@ -602,10 +701,17 @@ export function Page({
     </SafeAreaView>
   );
 }
+/**
+ * 按钮四级：主（primary，实底，每页至多一个）／次（默认纸面胶囊）／文字（kind="text"，
+ * 辅助动作：新建、更多、另存、停止）／危险文字（kind="text" + danger：删除、放弃、关闭）。
+ * 开关类按钮传 selected，选中时前置勾；禁用态统一 40% 透明。
+ */
 export function Button({
   title,
   onPress,
   primary = false,
+  kind = "pill",
+  danger = false,
   disabled = false,
   icon,
   testID,
@@ -615,6 +721,8 @@ export function Button({
   title: string;
   onPress: () => void;
   primary?: boolean;
+  kind?: "pill" | "text";
+  danger?: boolean;
   disabled?: boolean;
   icon?: JournalIconName;
   testID?: string;
@@ -622,7 +730,24 @@ export function Button({
   compact?: boolean;
 }) {
   const { colors: c } = useTheme();
-  const color = primary ? c.onAccent : c.accent;
+  const color = primary ? c.onAccent : danger ? c.error : c.accent;
+  const glyph = selected ? "check" : icon;
+  const inner = (
+    <>
+      {glyph && <JournalIcon name={glyph} color={color} size={20} />}
+      <Text
+        style={{
+          color,
+          fontWeight: "600",
+          flexShrink: 1,
+          textAlign: "center",
+          ...(compact ? { fontSize: 14, lineHeight: 21 } : {}),
+        }}
+      >
+        {title}
+      </Text>
+    </>
+  );
   return (
     <Pressable
       testID={testID}
@@ -634,37 +759,45 @@ export function Button({
       }}
       disabled={disabled}
       onPress={onPress}
+      hitSlop={kind === "text" ? 6 : undefined}
       style={({ pressed }) => ({
         flexShrink: 1,
-        opacity: disabled ? 0.5 : pressed ? 0.7 : 1,
+        opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
       })}
     >
-      <Glass
-        radius={14}
-        tint={primary ? c.accentGlass : selected ? c.selectedGlass : undefined}
-        style={{
-          minHeight: compact ? 44 : 48,
-          paddingHorizontal: compact ? 12 : 16,
-          paddingVertical: compact ? 6 : 10,
-          flexDirection: "row",
-          gap: 8,
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        {icon && <JournalIcon name={icon} color={color} size={20} />}
-        <Text
+      {kind === "text" ? (
+        <View
           style={{
-            color,
-            fontWeight: "600",
-            flexShrink: 1,
-            textAlign: "center",
-            ...(compact ? { fontSize: 14, lineHeight: 21 } : {}),
+            minHeight: 44,
+            paddingHorizontal: compact ? 8 : 12,
+            paddingVertical: 6,
+            flexDirection: "row",
+            gap: 6,
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
-          {title}
-        </Text>
-      </Glass>
+          {inner}
+        </View>
+      ) : (
+        <Glass
+          radius={14}
+          tint={
+            primary ? c.accentGlass : selected ? c.selectedGlass : undefined
+          }
+          style={{
+            minHeight: compact ? 44 : 48,
+            paddingHorizontal: compact ? 12 : 16,
+            paddingVertical: compact ? 6 : 10,
+            flexDirection: "row",
+            gap: 8,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {inner}
+        </Glass>
+      )}
     </Pressable>
   );
 }
@@ -723,6 +856,11 @@ export function BottomBar({
 }) {
   const { colors, dark, liquid } = useTheme();
   const insets = useSafeAreaInsets();
+  const depth = useContext(GlassDepth);
+  // 底栏里的按钮走纸面平胶囊，不在玻璃上再叠玻璃。
+  const inner = (
+    <GlassDepth.Provider value={depth + 1}>{children}</GlassDepth.Provider>
+  );
   if (liquid)
     return (
       <GlassView
@@ -734,7 +872,7 @@ export function BottomBar({
           gap,
         }}
       >
-        {children}
+        {inner}
       </GlassView>
     );
   return (
@@ -748,7 +886,7 @@ export function BottomBar({
         borderTopColor: colors.glassLine,
       }}
     >
-      {children}
+      {inner}
     </View>
   );
 }
