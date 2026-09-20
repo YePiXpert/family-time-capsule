@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-20，Build 70「传家 · 中」源码已全部在 main，安装包派发中（校验和在拿到全绿的 run 后补进第一节）。
+> 最后更新：2026-09-20，Build 70「传家 · 中」已交付：源码 `7477504`，run 35494972998 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 71。
 
 ---
 
@@ -14,12 +14,21 @@
   `/opt/anan-ai/service.env` 的 SOURCE_SHA = `6672e661411f3bbca257a72becf51bb8d21d9311`，`/healthz` 本机与 HTTPS 都对得上；
   对旧版 App 完全向后兼容。staging 容器（3141）跑过 `verify-service.py` 全绿后已 down；匿名 `probe-upload-limit.py` 探过
   0.5／4／9／16 MB 全部直达服务（我们的 JSON 401），反代无需改动。**这台开发机就是 VPS**（hostname `gateway`），部署命令见 `deploy/README.md`。
-- **Build 70「传家 · 中」（本版）**：一天内 12 个提交直推 main（清单见第三节）。
+- **Build 70「传家 · 中」（本版）**：一天内 17 个小提交直推 main（清单见第三节）。
   本机 blob 库（`.xmbm` 清单 + `blobs/ab/<sha256>`，三份保留备份只占一份照片）→ 分卷导出（单卷与 Build 68 逐字节同形，> 2 GiB 分卷，乱序多选恢复）
   → 服务端对象库 → 密码学（12 词恢复码即钥匙，XChaCha20-Poly1305，id／nonce 按内容派生）→ 状态／规划器／传输层（XHR）→ 引擎（只传缺的、核对、远端恢复进 blob 库）
   → 备份页末尾「远端备份」卡 + 恢复码页 → 真服务端端到端 → 收尾。CHANGELOG「Build 70」有逐条说明，`docs/plans/PLAN-BUILD-70.md` 顶部记了 8 条实施偏离。
-- **Build 70 打包**：收尾提交把 `mobile/app.json` 提到 70 并派发 `mobile-build.yml`（完整 SHA）；三作业全绿后把 APK／IPA 的 SHA-256 与 run 号补到这里，
-  下载到 `C:\vibe-coding\releases\build-70\`：`gh run download <run> -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
+- **Build 70 打包（已交付）**：交付提交 `7477504`（`mobile/app.json` 70），run 35494972998 三作业全绿（quality／Android APK／iOS unsigned IPA），
+  `build-source.json` 的 gitSha = `7477504e59b6489dbaadb9db8f06fb51e3d0f65b`；双端冒烟 `result.json` 全 true（含新键 `remoteCardOffline`）。
+  artifacts 2026-10-20 过期，请尽快下载到 `C:\vibe-coding\releases\build-70\`：
+  `gh run download 35494972998 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`。
+  APK 66,612,306 字节、IPA 11,161,950 字节（IPA 未签名，由主人自签后装机）；SHA-256（可直接存成 sha256sums.txt 后 `sha256sum -c`）：
+
+  ```text
+  f94424fffd3630afefba8f13ade7f2f61141fb3096736f5af4a27c2637abe544  FamilyTimeCapsule-android.apk
+  2e978c240b8baa82d7731d6188e18faa817a224a6a160b268dde08f917ea726d  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
+
   **真机 XChaCha20 MB/s 还没有实测**：装上 Build 70 后在「远端备份 → 现在备份」看一次 4 MiB 以上照片的上传节奏，把 MB/s 记到这里；
   低于 5 MB/s 就用对象头的 `alg` 字节换 `expo-crypto` 的原生 AES-GCM，格式不用换。Node 26 基准：封装 64 MiB 约 220 MB/s。
 - **下一步**：Build 71「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
@@ -45,9 +54,9 @@
    本机若设置了 http_proxy/https_proxy，对 127.0.0.1 的请求要 env -u http_proxy -u https_proxy -u ALL_PROXY … 绕过。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 70 安装包：看 HANDOFF 第一节有没有 run 号与校验和。没有就是派发过但还没记录——
-   gh run list --workflow=mobile-build.yml 找最近一次以 Build 70 收尾提交派发的 run，三作业全绿就下载、算 SHA-256、补进第一节并推 main；
-   红了就在 main 上修好再用完整 40 位 SHA 重新派发。真机 MB/s 的实测也记在第一节。
+第二步·Build 70 安装包已交付（run 35494972998，校验和在 HANDOFF 第一节，artifacts 2026-10-20 过期）：
+   若主人本地还没存下 build-70 的 APK/IPA，提醒先 gh run download 存下来；过期后要重出同一版就用完整 40 位 SHA 重新派发
+   mobile-build.yml（源码没变就不加构建号）。真机 XChaCha20 MB/s 由主人装机后观察，记在第一节。
 
 第三步·Build 71「传家 · 下」家人一起记：
 - 先写 docs/plans/PLAN-SHARING.md 给主人批：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；
@@ -56,7 +65,7 @@
 - 复用 Build 70 的 src/sync（crypto/planner/transport/engine）与服务端对象库；不做实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
 ```
 
-## 三、Build 70 交付清单（源码已在 main）
+## 三、Build 70 交付清单（源码已在 main，安装包 run 35494972998）
 
 | 提交 | 内容 |
 | --- | --- |
@@ -75,7 +84,8 @@
 | 3ce80b0 | 引擎：`runRemoteBackup`／`verifyRemoteBackup`／`restoreFromRemote`；测试假件抽到 `tests/helpers/` |
 | 6f2aecf | 界面：`RemoteBackupCard`（三态）与 `RecoveryCode` 页；双端冒烟断言离线只有「去登录」 |
 | 879f51f | 端到端：真服务端子进程跑完整闭环；CI quality 作业多装一次 server 依赖 |
-| （本次） | 收尾：CHANGELOG／README／HANDOFF／PLAN 实施偏离、app.json 70 |
+| 7477504 | 收尾：CHANGELOG／README／HANDOFF／PLAN 实施偏离、app.json 70（**打包源码 SHA**） |
+| （本次） | 交付：HANDOFF 记 run 35494972998 与 APK／IPA 校验和 |
 
 ## 四、后续路线
 
