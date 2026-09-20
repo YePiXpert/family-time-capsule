@@ -2,8 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-20，Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998 三作业全绿，校验和在第一节）；同日复查修了 4 笔
-> （`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`，见第一节「交付后复查」）：服务端新版 staging 全绿、**生产部署待主人放行**，手机端修复待下一版安装包；下一步 Build 71。
+> 最后更新：2026-09-20，Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
+> 服务端已切到生产（SOURCE_SHA `81d1ffe`），主人拍板出 **Build 71 = 复查修复版安装包**（打包状态见第一节）；下一步 Build 72 家人一起记。
 
 ---
 
@@ -15,11 +15,9 @@
   `/opt/anan-ai/service.env` 的 SOURCE_SHA = `6672e661411f3bbca257a72becf51bb8d21d9311`，`/healthz` 本机与 HTTPS 都对得上；
   对旧版 App 完全向后兼容。staging 容器（3141）跑过 `verify-service.py` 全绿后已 down；匿名 `probe-upload-limit.py` 探过
   0.5／4／9／16 MB 全部直达服务（我们的 JSON 401），反代无需改动。**这台开发机就是 VPS**（hostname `gateway`），部署命令见 `deploy/README.md`。
-  **待办：复查修复后的服务端（`26e4e19`，随 main 头 `81d1ffe` 打成镜像 `anan-ai:81d1ffe…`）已在 staging 3141 跑过新版 `verify-service.py` 全绿并 down，
-  生产尚未切换**（代理会话的自动模式不放行生产部署）。主人放行后的步骤：`cp /opt/anan-ai/service.env /opt/anan-ai/service.env.bak-$(date +%Y%m%d%H%M)`
-  → 把 SOURCE_SHA 改成 `81d1ffe37d7e68141efee1baac27a70b353f73f8` → `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build`
-  → `env -u http_proxy -u https_proxy curl -fsS http://127.0.0.1:3140/healthz` 与 `https://capsule.yep.li/healthz` 的 version 都应是这个 SHA。
-  新版对 Build 70 的 App 向后兼容（`objects` 可选）；但下一版 App 会带 `objects` 字段，旧服务端的 `.strict()` 会回 400——**先部服务端，再出手机包**。
+  **当前生产 = 复查修复版**：2026-09-20 下午主人放行后已切到 SOURCE_SHA `81d1ffe37d7e68141efee1baac27a70b353f73f8`（镜像 `anan-ai:81d1ffe…`；
+  切换前 staging 3141 用新版 `verify-service.py` 跑过全绿并 down），`/healthz` 本机与经代理的 HTTPS 都返回这个 SHA，旧 env 存在 `service.env.bak-<时间>`。
+  新版对 Build 70 的 App 向后兼容（`objects` 可选）；Build 71 的 App 写远端清单会带 `objects`，旧服务端的 `.strict()` 会回 400——服务端不能回退到 `81d1ffe` 之前。
 - **Build 70「传家 · 中」（本版）**：一天内 17 个小提交直推 main（清单见第三节）。
   本机 blob 库（`.xmbm` 清单 + `blobs/ab/<sha256>`，三份保留备份只占一份照片）→ 分卷导出（单卷与 Build 68 逐字节同形，> 2 GiB 分卷，乱序多选恢复）
   → 服务端对象库 → 密码学（12 词恢复码即钥匙，XChaCha20-Poly1305，id／nonce 按内容派生）→ 状态／规划器／传输层（XHR）→ 引擎（只传缺的、核对、远端恢复进 blob 库）
@@ -42,9 +40,11 @@
   服务端 `26e4e19`（同 id 换大免配额、prune 全信客户端 keep 能删掉清单指向的对象、删库顺序、启动 sweepTemp(0)）、
   手机端 `347200a`（`state.json` 异步 move 没等、远端上传时整页不锁、停止被当错误、离开页面不中止、钥匙串出错卡死、清单登记 objects）、
   `81d1ffe`（收拾出错把成功报成失败、入库无空间预检、写不进去被说成备份坏了、多卷长度晚验、停止不到块、远端恢复中断即丢续传、句柄与半成品清理）。
-  **手机端这两笔不在已交付的 Build 70 安装包里**（包是 `7477504`）：要上真机需再出一版（`app.json` 构建号 71，由主人决定何时）。
+  手机端这两笔不在 Build 70 的安装包里（包是 `7477504`）：主人拍板出 **Build 71**（复查修复版），见下一条。
   没修的一条：服务端 `usage()` 每次 PUT 都全量 stat 一遍成员的对象目录（几千个对象几十毫秒，家庭规模够用；上万再做缓存）。
-- **下一步**：Build 71「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
+- **Build 71 打包（复查修复版）**：本提交把 `mobile/app.json` 改到 71（buildNumber／versionCode 各改一次），随后用它的完整 SHA 派发 `mobile-build.yml`；
+  三作业全绿后把 run 号、APK／IPA 大小与 SHA-256 记到这里（交付提交），Build 70 的包随之作废。
+- **下一步**：Build 72「传家 · 下」家人一起记（第四节）。改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
 ## 二、恢复提示词（直接复制粘贴）
@@ -67,20 +67,19 @@
    本机若设置了 http_proxy/https_proxy，对 127.0.0.1 的请求要 env -u http_proxy -u https_proxy -u ALL_PROXY … 绕过。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 70 安装包已交付（run 35494972998，校验和在 HANDOFF 第一节，artifacts 2026-10-20 过期）：
-   若主人本地还没存下 build-70 的 APK/IPA，提醒先 gh run download 存下来；过期后要重出同一版就用完整 40 位 SHA 重新派发
-   mobile-build.yml（源码没变就不加构建号）。真机 XChaCha20 MB/s 由主人装机后观察，记在第一节。
-   交付后复查的 4 笔修复（dfdcad8／26e4e19／347200a／81d1ffe）已在 main 但不在这个包里：服务端新版待主人放行部署（第一节有步骤，先部服务端再出手机包），
-   手机端修复随下一版安装包（构建号 71）。
+第二步·Build 71（复查修复版）安装包：第一节「Build 71 打包」若已记了 run 号与校验和就是已交付；若还没有，说明打包没走完——
+   用第三节表里「Build 71 收尾」那一笔的完整 40 位 SHA 派发 mobile-build.yml，三作业全绿后 gh run download 两端包、算 SHA-256 记进第一节。
+   过期后要重出同一版就用同一个 SHA 重新派发（源码没变就不加构建号）。真机 XChaCha20 MB/s 由主人装机后观察，记在第一节。
+   服务端已是 81d1ffe（第一节），不用再部。
 
-第三步·Build 71「传家 · 下」家人一起记：
+第三步·Build 72「传家 · 下」家人一起记：
 - 先写 docs/plans/PLAN-SHARING.md 给主人批：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；
   记录 last-writer-wins（revision + updatedAt），媒体按 sha256 增量（远端对象 id 两台设备算得出同一个）；
   只在同一记录两端都改时提示冲突。改 Library 加设备 id 前不要动代码。
 - 复用 Build 70 的 src/sync（crypto/planner/transport/engine）与服务端对象库；不做实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
 ```
 
-## 三、Build 70 交付清单（源码已在 main，安装包 run 35494972998）
+## 三、Build 70／71 交付清单（Build 70 安装包 run 35494972998；Build 71 安装包见第一节）
 
 | 提交 | 内容 |
 | --- | --- |
@@ -105,11 +104,12 @@
 | 26e4e19 | 复查·服务端：换大不免配额、清单登记的对象 prune 不删、先删索引再删对象、启动清空临时目录（**待部署生产**） |
 | 347200a | 复查·远端界面与状态：`moveSync`、整页锁、停止与离开、钥匙串出错说明、清单登记 objects（未打包） |
 | 81d1ffe | 复查·本机备份：收拾吞错、空间预检、读坏与写不进分清、多卷先验长度、停止到块、远端恢复钉子（未打包） |
-| （本次） | 复查收尾：CHANGELOG「未打包」节、HANDOFF、deploy/README 契约、`verify-service.py` 备份段 |
+| c62e744 | 复查收尾：CHANGELOG、HANDOFF、deploy/README 契约、`verify-service.py` 备份段 |
+| （本次） | Build 71 收尾：app.json 71、CHANGELOG「Build 71 — 复查修复」、README、HANDOFF（**Build 71 打包源码 SHA**） |
 
 ## 四、后续路线
 
-- **Build 71「传家 · 下」家人一起记**：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；记录 last-writer-wins（revision + updatedAt），
+- **Build 72「传家 · 下」家人一起记**：第二台设备登录同一家庭账号、输入恢复码后从远端清单拉全量；记录 last-writer-wins（revision + updatedAt），
   媒体按 sha256 增量（Build 70 的对象 id 由钥匙 + 内容派生，两台设备天然一致）；只在同一记录两端都改时提示冲突。
   前置：70 的远端对象与清单已就位；改 `Library` 加设备 id 前先出 `docs/plans/PLAN-SHARING.md`。
 - 可选小件：`mobile-build.yml` 加 `release_tag` → GitHub Release（解决 artifacts 30 天过期）；远端备份的自动提醒（书架备份提醒里带上「远端」一句）。
