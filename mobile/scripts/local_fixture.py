@@ -69,11 +69,12 @@ def read_state(database):
 
 
 def read_backup(path):
-    """解析 .xmb：v2 是 meta 加实体 NDJSON，v1 是整库单清单。都还原成整库 dict。"""
+    """解析备份：v2（.xmb）与 v3 清单备份（.xmbm，Build 70 起）都是 meta 加实体 NDJSON，
+    v1 是整库单清单。都还原成整库 dict。这是独立于 App 的第二个读取器。"""
     data = path.read_bytes()
     n = struct.unpack('>I', data[8:12])[0]
     head = json.loads(data[12:12 + n])
-    if data[:8] == b'XIAOMEI2':
+    if data[:8] in (b'XIAOMEI2', b'XIAOMEI3'):
         state = dict(head['root'])
         for kind in ENTITY_KINDS:
             state[kind] = {}
@@ -84,6 +85,26 @@ def read_backup(path):
         return state
     assert data[:8] == b'XIAOMEI1', 'Unknown backup magic'
     return head['library']
+
+
+def manifest_blobs(path):
+    """清单备份（.xmbm）引用的素材：[{sha256, bytes}]，素材本体在 blobs/<前两位>/<sha256>。"""
+    data = path.read_bytes()
+    assert data[:8] == b'XIAOMEI3', 'Not a manifest backup'
+    n = struct.unpack('>I', data[8:12])[0]
+    return json.loads(data[12:12 + n])['blobs']
+
+
+def check_blob_store(root: Path, backups):
+    """每份清单备份引用的 blob 都要在库里、长度对、文件名就是内容的 sha256。"""
+    for backup in backups:
+        if backup.suffix != '.xmbm':
+            continue
+        for blob in manifest_blobs(backup):
+            stored = root / 'blobs' / blob['sha256'][:2] / blob['sha256']
+            assert stored.exists(), f'{backup.name} references a missing blob {blob["sha256"]}'
+            assert stored.stat().st_size == blob['bytes'], f'Blob size mismatch for {backup.name}'
+            assert hashlib.sha256(stored.read_bytes()).hexdigest() == blob['sha256'], f'Blob content mismatch for {backup.name}'
 
 
 def make_photo():

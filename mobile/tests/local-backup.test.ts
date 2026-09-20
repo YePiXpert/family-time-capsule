@@ -307,17 +307,25 @@ it("exports and restores real original bytes and relationships with a before-res
   ).toEqual(Buffer.alloc(600000, 17));
   expect((await backup.inspectBackup(before)).profile.name).toBe("changed");
 });
-it("rejects corrupted and truncated backups before changing current data", async () => {
-  const { store, backup } = await setup();
+it("rejects an altered, lost or truncated backup before changing current data", async () => {
+  const { store, backup, files, media } = await setup();
   const out = await backup.createBackup(store.get());
-  const bytes = fs.readFileSync(out.uri);
-  bytes[bytes.length - 1] = 3;
-  fs.writeFileSync(out.uri, bytes);
+  const blob = files.blobFile(media.sha256).uri;
+  const bytes = fs.readFileSync(blob);
+  bytes[bytes.length - 1] = 0;
+  fs.writeFileSync(blob, bytes);
   const revision = store.get().revision;
   await expect(backup.restoreBackup(store, out)).rejects.toThrow("校验失败");
   expect(store.get().revision).toBe(revision);
-  fs.writeFileSync(out.uri, bytes.subarray(0, bytes.length - 2));
-  await expect(backup.inspectBackup(out)).rejects.toThrow("长度");
+  fs.unlinkSync(blob);
+  await expect(backup.inspectBackup(out)).rejects.toThrow("已不在本机");
+  const manifest = fs.readFileSync(out.uri);
+  fs.writeFileSync(out.uri, manifest.subarray(0, manifest.length - 2));
+  await expect(backup.inspectBackup(out)).rejects.toThrow("不完整");
+  // 实体 JSON 坏了一个字节：报的是人话，不是解析器的英文原话。
+  manifest[manifest.length - 2] = 0x21;
+  fs.writeFileSync(out.uri, manifest);
+  await expect(backup.inspectBackup(out)).rejects.toThrow("备份内容损坏");
 });
 it("refuses to call a missing original a successful complete backup", async () => {
   const { store, backup, files, media } = await setup();
@@ -736,15 +744,90 @@ it("persists a thumbnail with aspect-bearing dimensions at preserve time", async
   expect(fs.existsSync(files.mediaFile(media).uri)).toBe(false);
 });
 it("names retention copies readably and prunes beyond the newest three", async () => {
-  const { store, backup, files } = await setup();
+  const { store, backup, files, media } = await setup();
   expect((await backup.createBackup(store.get())).name).toMatch(
-    /^anan-\d{8}-\d{4}-[a-f0-9]{8}\.xmb$/,
+    /^anan-\d{8}-\d{4}-[a-f0-9]{8}\.xmbm$/,
   );
   expect(fs.readdirSync(files.backupDirectory.uri)).toHaveLength(1);
   for (let i = 0; i < 3; i++) await backup.createBackup(store.get());
   const kept = fs.readdirSync(files.backupDirectory.uri);
   expect(kept).toHaveLength(3);
-  expect(kept.every((name) => name.endsWith(".xmb"))).toBe(true);
+  expect(kept.every((name) => name.endsWith(".xmbm"))).toBe(true);
+  // 四次备份，照片字节只落了一份，按内容哈希命名。
+  expect(
+    fs.readdirSync(
+      path.join(files.blobDirectory.uri, media.sha256.slice(0, 2)),
+    ),
+  ).toEqual([media.sha256]);
+});
+it("stores each photo once by content hash and skips it on the next backup", async () => {
+  const { store, backup, files, media } = await setup();
+  const first = await backup.createBackup(store.get());
+  const stored = files.blobFile(media.sha256);
+  const blob = { sha256: media.sha256, bytes: media.bytes };
+  expect(fs.readFileSync(stored.uri)).toEqual(Buffer.alloc(600000, 17));
+  expect(first.size).toBeLessThan(600000);
+  expect(await backup.ensureBlob(media, blob)).toBe(false);
+  // 长度不对的旧 blob 会被重写，写完不留 .part。
+  fs.writeFileSync(stored.uri, "short");
+  expect(await backup.ensureBlob(media, blob)).toBe(true);
+  expect(fs.readFileSync(stored.uri)).toEqual(Buffer.alloc(600000, 17));
+  expect(fs.readdirSync(path.dirname(stored.uri))).toEqual([media.sha256]);
+  // 原件被改过：哈希对不上就不入库，也不留半成品。
+  fs.unlinkSync(stored.uri);
+  fs.writeFileSync(files.mediaFile(media).uri, Buffer.alloc(600000, 18));
+  await expect(backup.createBackup(store.get())).rejects.toThrow(
+    "素材缺失或损坏",
+  );
+  expect(fs.readdirSync(path.dirname(stored.uri))).toEqual([]);
+});
+it("collects only blobs no retained manifest references and stands down when one is unreadable", async () => {
+  const { store, backup, files, media } = await setup();
+  const out = await backup.createBackup(store.get());
+  const stray = path.join(files.blobDirectory.uri, "ff", "ff".repeat(32));
+  fs.mkdirSync(path.dirname(stray), { recursive: true });
+  fs.writeFileSync(stray, "orphan");
+  fs.writeFileSync(`${stray}.part`, "half");
+  expect(backup.collectBlobs()).toEqual({ removed: 2, bytes: 10 });
+  expect(fs.existsSync(files.blobFile(media.sha256).uri)).toBe(true);
+  // 一份读不出的清单在场：宁可多占空间，也不动任何 blob。
+  const broken = path.join(
+    files.backupDirectory.uri,
+    "anan-20260101-0900-deadbeef.xmbm",
+  );
+  fs.writeFileSync(broken, "XIAOMEI3broken");
+  fs.writeFileSync(stray, "orphan");
+  expect(backup.collectBlobs()).toBeNull();
+  expect(fs.existsSync(stray)).toBe(true);
+  fs.unlinkSync(broken);
+  // 最后一份清单删掉后，它引用的照片字节也随之回收。
+  out.delete();
+  expect(backup.collectBlobs()).toEqual({ removed: 2, bytes: 600006 });
+  expect(fs.existsSync(files.blobFile(media.sha256).uri)).toBe(false);
+});
+it("lists retained backups with a readable label and the space they really stand for", async () => {
+  const { store, backup } = await setup();
+  const out = await backup.createBackup(store.get());
+  const [entry] = backup.listLocalBackups();
+  expect(entry!.file.name).toBe(out.name);
+  expect(entry!.manifestOnly).toBe(true);
+  expect(entry!.bytes).toBe(out.size + 600000);
+  expect(entry!.label).toMatch(/^\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/);
+});
+it("restoring the oldest retained backup does not prune it first", async () => {
+  const { store, backup, model } = await setup();
+  for (let i = 0; i < 3; i++) await backup.createBackup(store.get());
+  const oldest = backup.retainedBackups().at(-1)!;
+  await store.change((s) => {
+    model.deleteRecord(s, "r");
+  });
+  const prior = await backup.restoreBackup(store, oldest);
+  expect(store.get().records.r?.text).toBe("第一步");
+  // 恢复完按常规只留三份：「恢复前」那份在，最旧的那份让位。
+  const kept = backup.retainedBackups().map((f) => f.name);
+  expect(kept).toHaveLength(3);
+  expect(kept).toContain(prior.name);
+  expect(kept).not.toContain(oldest.name);
 });
 it("keeps the newest retention copy when older ones still carry the former prefix", async () => {
   const { backup, files } = await setup();
