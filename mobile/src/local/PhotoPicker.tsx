@@ -47,7 +47,7 @@ export function PhotoPicker<T extends PhotoChoice>({
       accessibilityViewIsModal
       testID={testID}
     >
-      <Page top scroll={false}>
+      <Page back={false} scroll={false}>
         <FlatList
           data={choices}
           keyExtractor={(choice) => choice.mediaId}

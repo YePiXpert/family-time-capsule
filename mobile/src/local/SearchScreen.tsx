@@ -54,7 +54,7 @@ export function SearchScreen(_: Props<"Search">) {
   const filtered =
     query.trim() || first || quote || media !== "any" || !!year || !!person;
   return (
-    <Page scroll={false}>
+    <Page scroll={false} title="搜索">
       {/* scroll=false 不套 content 边距，这里自行补齐 20 的页面边距。 */}
       <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 20 }}>
         <Field
