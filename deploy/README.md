@@ -49,7 +49,8 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 - 配额与水位：每成员默认 20 GiB（`members.backup_limit_bytes`，主人在管理页调整，即 `PATCH /admin/members/:id` 的 `backupLimitBytes`）；单对象硬上限 8 MiB；磁盘剩余低于 5 GiB 一律 507 `SERVER_FULL`；每成员同时最多 2 个上传（429 `BUSY`）。备份路由不走按地址的登录限流。
 - 对象库是副本不是源头，手机才是源头：`backup.sh` 只快照 SQLite（成员、设备、配额、清单索引），不复制也不轮转对象库；对象文件本身就是事实来源，SQLite 回滚后手机下一次备份会自动补齐缺的对象。
 - 删除：成员自己 `DELETE /api/v1/backup`；主人 `DELETE /api/v1/admin/members/:id/backup`；全部锁死时在服务器 `docker compose ... exec -T ai node src/manage.ts wipe-backup <登录名或成员名>`。
-- 反代：上传是 ≤ 8 MiB 的 `application/octet-stream` PUT，nginx 一类反代默认 1 MB 会先于我们拦下并回 HTML 413。每次改反代或升级服务后用 `python3 server/scripts/probe-upload-limit.py --username <成员> --password <密码> --mb 4 9 --container anan-ai-ai-1` 探一次：4 MB 应 201，9 MB 应是我们的 JSON 413（`TOO_LARGE`）。不符就在反代加 `client_max_body_size 16m; proxy_request_buffering off; proxy_read_timeout 130s;` 后重探。
+- 反代：上传是 ≤ 8 MiB 的 `application/octet-stream` PUT，nginx 一类反代默认 1 MB 会先于我们拦下并回 HTML 413。每次改反代或升级服务后用 `python3 server/scripts/probe-upload-limit.py --username <成员> --password <密码> --mb 4 9 --container anan-ai-ai-1` 探一次：4 MB 应 201，9 MB 应是我们的 JSON 413（`TOO_LARGE`）。不符就在反代加 `client_max_body_size 16m; proxy_request_buffering off; proxy_read_timeout 130s;` 后重探。不带账号运行只探反代（匿名 PUT 应得到我们的 JSON 401）。2026-09-20 部署 Build 70 服务端后匿名探过 0.5／4／9／16 MB 全部到达服务，反代无需改动。
+- 验证生产不要直接对 3140 跑 `verify-service.py`（它会建测试账号并调用模型）：按下面「验证」节起一个 3141 的 staging 容器跑完再 `down`。本机若设置了 `http_proxy`，对 127.0.0.1 的请求要 `env -u http_proxy -u https_proxy …` 绕过。
 
 ## 备份与回滚
 
