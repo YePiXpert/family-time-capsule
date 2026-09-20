@@ -45,7 +45,8 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("ai-join").waitForExistence(timeout: 20)); shot("ai-enrollment-from-photo")
         // Opening the editor persists a draft. Discard this enrollment-only draft
         // so the later backup check can still require no unfinished edits.
-        tap("BackButton"); tap("放弃这份草稿"); tap("放弃")
+        // 原生页头已下线：返回是 Page 自绘的「‹」图标钮（page-back）。
+        tap("page-back"); tap("放弃这份草稿"); tap("放弃")
         XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20))
         app.terminate(); app.launch()
         tap("capture-new"); type("A little story.", "capture-text"); shot("editor-keyboard")
@@ -55,6 +56,8 @@ final class NativeRegressionTests: XCTestCase {
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
         tap("录音"); XCTAssertTrue(element("完成录音").waitForExistence(timeout: 20)); sleep(2); tap("完成录音")
         tap("capture-save"); XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20)); shot("record-reading")
+        // 阅读页动作在底栏：滚到页尾后底栏仍在，页尾只剩「删除记录」。
+        app.swipeUp(); shot("record-bottom-bar")
         tap("record-edit"); type(" More memories.", "capture-text", initial: "A little story."); tap("capture-save")
         XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20))
         tap("keepsake-make")
