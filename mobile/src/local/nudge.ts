@@ -45,3 +45,44 @@ export function nudgeOf(
   const days = daysSince(lastRecordAt, today);
   return days >= 3 ? { kind: "days", days } : null;
 }
+
+/** 书架同屏只放一张提醒卡：里程碑 > 装订 > 备份 > 节奏（记录／草稿）。 */
+export type NudgeKind = "milestone" | "book" | "backup" | "rhythm";
+export const NUDGE_ORDER: readonly NudgeKind[] = [
+  "milestone",
+  "book",
+  "backup",
+  "rhythm",
+];
+
+/**
+ * 关掉一张卡后它沉默多久：里程碑与节奏当天、备份 7 天、装订本季（装订只在一二月提，
+ * 关一次等于今年不再提）。关闭时间读不出来当没关过。
+ */
+export function nudgeClosed(
+  kind: NudgeKind,
+  closedAt: string | undefined,
+  today = new Date(),
+): boolean {
+  if (!closedAt || !Number.isFinite(Date.parse(closedAt))) return false;
+  const at = new Date(closedAt);
+  if (kind === "book")
+    return (
+      at.getFullYear() === today.getFullYear() &&
+      Math.floor(at.getMonth() / 3) === Math.floor(today.getMonth() / 3)
+    );
+  const days = daysSince(closedAt, today);
+  return days < (kind === "backup" ? 7 : 1);
+}
+
+/** 候选里优先级最高且没被关掉的一张；都关了就不打扰。 */
+export function pickNudge(
+  candidates: readonly NudgeKind[],
+  closed: Readonly<Record<string, string>> | undefined,
+  today = new Date(),
+): NudgeKind | null {
+  for (const kind of NUDGE_ORDER)
+    if (candidates.includes(kind) && !nudgeClosed(kind, closed?.[kind], today))
+      return kind;
+  return null;
+}

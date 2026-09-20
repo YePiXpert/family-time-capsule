@@ -321,6 +321,22 @@ describe("complete backup manifest", () => {
     delete s.yearBooksBoundAt;
     validateLibrary(s);
   });
+  it("keeps the closed-nudge ledger well-formed", () => {
+    const s = fixture();
+    s.nudgeClosedAt = { backup: "2026-09-20T10:00:00.000Z", rhythm: "2026-09-20T10:00:00.000Z" };
+    validateLibrary(s);
+    delete s.nudgeClosedAt;
+    validateLibrary(s);
+  });
+  it("rejects malformed closed-nudge entries", () => {
+    const s = fixture();
+    s.nudgeClosedAt = { backup: "someday" };
+    expect(() => validateLibrary(s)).toThrow();
+    s.nudgeClosedAt = { "Backup Card!": "2026-09-20T10:00:00.000Z" };
+    expect(() => validateLibrary(s)).toThrow();
+    s.nudgeClosedAt = ["2026-09-20T10:00:00.000Z"] as unknown as Record<string, string>;
+    expect(() => validateLibrary(s)).toThrow();
+  });
   it("accepts a boolean quote flag and nothing else", () => {
     const s = fixture();
     saveRecord(s, "draft", "r", date);

@@ -146,6 +146,8 @@ export type Library = {
   yearCovers: Record<string, string>;
   /** 哪些年的纪念册 PDF 装订过（ISO 时刻，按四位年份存）；书架据此决定要不要提「去年的册子可以装订了」。旧库无此字段。 */
   yearBooksBoundAt?: Record<string, string>;
+  /** 书架提醒卡各自最近一次被关掉的 ISO 时刻，按提醒种类存（milestone／book／backup／rhythm）；沉默期见 nudge.ts。旧库无此字段。 */
+  nudgeClosedAt?: Record<string, string>;
   receivedShares: string[];
   /** ISO timestamp of the last successful export; undefined until the first one. */
   lastExportAt?: string;
@@ -584,6 +586,16 @@ function validRoot(s: Library): boolean {
         !Object.entries(s.yearBooksBoundAt).some(
           ([year, at]) =>
             !/^\d{4}$/.test(year) ||
+            !isText(at) ||
+            !Number.isFinite(Date.parse(at)),
+        ))) &&
+    (s.nudgeClosedAt === undefined ||
+      (!!s.nudgeClosedAt &&
+        typeof s.nudgeClosedAt === "object" &&
+        !Array.isArray(s.nudgeClosedAt) &&
+        !Object.entries(s.nudgeClosedAt).some(
+          ([kind, at]) =>
+            !/^[a-z-]{1,32}$/.test(kind) ||
             !isText(at) ||
             !Number.isFinite(Date.parse(at)),
         ))) &&
