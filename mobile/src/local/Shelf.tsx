@@ -14,6 +14,7 @@ import {
   beginLetter,
   beginSelection,
   beginSeries,
+  now,
 } from "./services";
 import { letterCaption, letterState, sortLetters } from "./letters";
 import {
@@ -27,7 +28,7 @@ import {
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import { APP_NAME, CHILD_FALLBACK } from "./brand";
-import { bookNudgeOf, nudgeOf } from "./nudge";
+import { bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
 import { clusterPlaces } from "./places";
 import { ageLine, milestoneLabel, milestoneNumeral, milestoneOf } from "./dates";
 import {
@@ -95,6 +96,65 @@ export function Stamp({
       />
       {children}
     </View>
+  );
+}
+
+/** 书架提醒卡：一行标题（可带印章与引导语）、一句说明、一个次级动作，右上 ✕ 关掉。 */
+function NudgeCard({
+  testID,
+  titleTestID,
+  stamp,
+  eyebrow,
+  title,
+  body,
+  action,
+  onClose,
+}: {
+  testID?: string;
+  titleTestID?: string;
+  stamp?: ReactNode;
+  eyebrow?: string;
+  title: string;
+  body?: string;
+  action: { label: string; testID?: string; onPress: () => void };
+  onClose: () => void;
+}) {
+  const s = useStyles(),
+    { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
+  return (
+    <Animated.View
+      entering={reduceMotion ? undefined : FadeInUp.duration(320)}
+      testID={testID}
+    >
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+          {stamp}
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+            {!!eyebrow && (
+              <Text style={[s.muted, { color: colors.accent, fontWeight: "600" }]}>
+                {eyebrow}
+              </Text>
+            )}
+            <Text style={s.heading} testID={titleTestID}>
+              {title}
+            </Text>
+            {!!body && <Text style={s.muted}>{body}</Text>}
+          </View>
+          <View style={{ marginTop: -8, marginRight: -8 }}>
+            <IconButton label="关掉这条提醒" icon="close" onPress={onClose} />
+          </View>
+        </View>
+        <View style={s.row}>
+          <Button
+            title={action.label}
+            compact
+            testID={action.testID}
+            onPress={action.onPress}
+          />
+        </View>
+      </Card>
+    </Animated.View>
   );
 }
 
@@ -227,9 +287,7 @@ export function Shelf() {
   const reduceMotion = useReducedMotion();
   const entrance = reduceMotion ? undefined : FadeInUp.duration(320);
   const [draftsOpen, setDraftsOpen] = useState(false),
-    [error, setError] = useState(""),
-    [nudgeClosed, setNudgeClosed] = useState(false),
-    [bookNudgeClosed, setBookNudgeClosed] = useState(false);
+    [error, setError] = useState("");
   // store 只在某个集合真的动过时才换它的引用，所以按集合记忆：改一条草稿不会
   // 让一万条记录重新排序，主题、尺寸与本页 useState 引起的重渲染都命中缓存。
   const {
@@ -308,14 +366,31 @@ export function Shelf() {
       records.length > 0 && (exportedDays === null || exportedDays > 30);
   const age = ageLine(state.profile.birthday),
     milestone = milestoneOf(state.profile.birthday);
+  const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
+  // 同屏只放一张提醒卡：里程碑 > 装订 > 备份 > 节奏；关掉的写进库里，沉默期见 nudge.ts。
+  const candidates: NudgeKind[] = [];
+  if (milestone) candidates.push("milestone");
+  if (bookNudge) candidates.push("book");
+  if (backupDue) candidates.push("backup");
+  if (nudge) candidates.push("rhythm");
+  const nudgeKind = pickNudge(candidates, state.nudgeClosedAt, today);
+  const closeNudge = (kind: NudgeKind) => {
+    void store
+      .change((lib) => {
+        lib.nudgeClosedAt = { ...lib.nudgeClosedAt, [kind]: now() };
+      })
+      .catch((e) => setError(messageOf(e)));
+  };
+  const captureNow = () => {
+    hapticLight();
+    void beginDraft(store)
+      .then((draftId) => nav.navigate("Editor", { draftId }))
+      .catch((e) => setError(messageOf(e)));
+  };
   return (
     <Page scroll={false} top>
       <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingTop: 16,
-          paddingBottom: 120,
-        }}
+        contentContainerStyle={[s.content, { paddingBottom: 120 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={s.between}>
@@ -323,22 +398,25 @@ export function Shelf() {
             accessibilityRole="button"
             accessibilityLabel="翻开扉页"
             onPress={() => nav.navigate("Title")}
-            style={{ flex: 1, minWidth: 0 }}
+            style={{ flex: 1, minWidth: 0, gap: 2 }}
           >
-            <Text numberOfLines={2} style={s.title}>
-              {state.profile.name
-                ? `${state.profile.name}的成长记`
-                : "成长中的每一天"}
-            </Text>
-            <Text style={s.muted}>
-              {records.length
-                ? `${months.length} 册 · ${records.length} 段时光`
-                : "从今天的一件小事开始"}
-            </Text>
-            {age && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+              <Text numberOfLines={2} style={[s.title, { flexShrink: 1 }]}>
+                {state.profile.name
+                  ? `${state.profile.name}的成长记`
+                  : "成长中的每一天"}
+              </Text>
+              <JournalIcon name="chevron-right" color={colors.muted} size={18} />
+            </View>
+            {age ? (
               <Text style={s.muted} testID="shelf-age">
-                {state.profile.name ? `${state.profile.name} · ` : ""}
                 {age}
+              </Text>
+            ) : (
+              <Text style={s.muted}>
+                {records.length
+                  ? `${records.length} 段时光`
+                  : "从今天的一件小事开始"}
               </Text>
             )}
           </Pressable>
@@ -348,150 +426,117 @@ export function Shelf() {
             testID="open-search"
             onPress={() => nav.navigate("Search")}
           />
-          <IconButton
-            label="打开设置"
-            icon="seal"
+          <Pressable
             testID="open-settings"
+            accessibilityRole="button"
+            accessibilityLabel="我的"
             onPress={() => nav.navigate("Settings")}
-          />
-        </View>
-        {milestone && (
-          <Animated.View entering={entrance}>
-            <Pressable
-              testID="milestone-card"
-              accessibilityRole="button"
-              accessibilityLabel={`${milestoneLabel(milestone)}，记下这一天`}
-              onPress={() => {
-                hapticLight();
-                void beginDraft(store)
-                  .then((draftId) => nav.navigate("Editor", { draftId }))
-                  .catch((e) => setError(messageOf(e)));
-              }}
-            >
-              <Glass radius={16} style={{ padding: 16, gap: 8 }}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
-                >
-                  <Stamp size={44} inset={3}>
-                    <Text
-                      style={{
-                        fontFamily: serif,
-                        fontSize: milestone!.kind === "hundred" ? 13 : 18,
-                        color: colors.accent,
-                        fontWeight: "600",
-                      }}
-                    >
-                      {milestoneNumeral(milestone!)}
-                    </Text>
-                  </Stamp>
-                  <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-                    <Text
-                      style={[s.muted, { color: colors.accent, fontWeight: "600" }]}
-                    >
-                      {milestoneLabel(milestone!)}
-                    </Text>
-                    <Text style={s.heading}>把今天好好记下来</Text>
-                  </View>
-                </View>
-              </Glass>
-            </Pressable>
-          </Animated.View>
-        )}
-        {backupDue && (
-          <Animated.View entering={entrance}>
-            <Pressable
-              testID="backup-reminder"
-              accessibilityRole="button"
-              accessibilityLabel={
-                exportedDays === null
-                  ? "还没有导出过备份，去备份"
-                  : `已经 ${exportedDays} 天没有备份了，去备份`
-              }
-              onPress={() => nav.navigate("Backup")}
-            >
-              <Glass radius={16} style={{ padding: 16, gap: 6 }}>
-                <Text style={s.heading}>
-                  {exportedDays === null
-                    ? "还没有导出过备份"
-                    : `已经 ${exportedDays} 天没有备份了`}
-                </Text>
-                <Text style={s.muted}>
-                  记录只保存在这台设备。定期导出一份，把这段时光留到应用之外。
-                </Text>
-                <Button
-                  title="去备份"
-                  compact
-                  onPress={() => nav.navigate("Backup")}
-                />
-              </Glass>
-            </Pressable>
-          </Animated.View>
-        )}
-        {nudge && !nudgeClosed && (
-          <Animated.View entering={entrance}>
-            <Glass radius={16} style={{ padding: 16, gap: 8 }}>
-              <View style={s.between}>
-                <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-                  <Text style={s.heading} testID="rhythm-nudge">
-                    {nudge.kind === "draft"
-                      ? "有一份草稿还没写完"
-                      : `有 ${nudge.days} 天没记啦`}
-                  </Text>
-                  <Text style={s.muted}>
-                    {nudge.kind === "draft"
-                      ? "接着上次的话头写下去吧。"
-                      : "日子过得快，挑一件小事写下来。"}
-                  </Text>
-                </View>
-                <IconButton
-                  label="今天不再提醒"
-                  icon="close"
-                  onPress={() => setNudgeClosed(true)}
-                />
-              </View>
-              <Button
-                title={nudge.kind === "draft" ? "继续写" : "记一刻"}
-                compact
-                testID="rhythm-nudge-action"
-                onPress={() => {
-                  if (nudge.kind === "draft" && latestDraft) {
-                    nav.navigate("Editor", { draftId: latestDraft.id });
-                    return;
-                  }
-                  void beginDraft(store)
-                    .then((draftId) => nav.navigate("Editor", { draftId }))
-                    .catch((e) => setError(messageOf(e)));
+            style={({ pressed }) => ({
+              width: 44,
+              height: 44,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <Stamp size={32} inset={3}>
+              <Text
+                style={{
+                  fontFamily: serif,
+                  fontSize: 15,
+                  lineHeight: 18,
+                  color: colors.accent,
+                  fontWeight: "600",
                 }}
-              />
-            </Glass>
-          </Animated.View>
+              >
+                {initial}
+              </Text>
+            </Stamp>
+          </Pressable>
+        </View>
+        {nudgeKind === "milestone" && milestone && (
+          <NudgeCard
+            testID="milestone-card"
+            eyebrow={milestoneLabel(milestone)}
+            title="把今天好好记下来"
+            stamp={
+              <Stamp size={44} inset={3}>
+                <Text
+                  style={{
+                    fontFamily: serif,
+                    fontSize: milestone.kind === "hundred" ? 13 : 18,
+                    color: colors.accent,
+                    fontWeight: "600",
+                  }}
+                >
+                  {milestoneNumeral(milestone)}
+                </Text>
+              </Stamp>
+            }
+            action={{
+              label: "记一刻",
+              testID: "milestone-card-action",
+              onPress: captureNow,
+            }}
+            onClose={() => closeNudge("milestone")}
+          />
         )}
-        {bookNudge && !bookNudgeClosed && (
-          <Animated.View entering={entrance}>
-            <Glass radius={16} style={{ padding: 16, gap: 8 }}>
-              <View style={s.between}>
-                <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-                  <Text style={s.heading} testID="book-nudge">
-                    去年的纪念册可以装订了
-                  </Text>
-                  <Text style={s.muted}>
-                    {bookNudge.year} 年已经翻过去了，把它排成一本册子，留在书架上。
-                  </Text>
-                </View>
-                <IconButton
-                  label="这次不提醒"
-                  icon="close"
-                  onPress={() => setBookNudgeClosed(true)}
-                />
-              </View>
-              <Button
-                title="去年度册"
-                compact
-                testID="book-nudge-action"
-                onPress={() => nav.navigate("Year", { year: bookNudge.year })}
-              />
-            </Glass>
-          </Animated.View>
+        {nudgeKind === "book" && bookNudge && (
+          <NudgeCard
+            titleTestID="book-nudge"
+            title="去年的纪念册可以装订了"
+            body={`${bookNudge.year} 年已经翻过去了，把它排成一本册子，留在书架上。`}
+            action={{
+              label: "去年度册",
+              testID: "book-nudge-action",
+              onPress: () => nav.navigate("Year", { year: bookNudge.year }),
+            }}
+            onClose={() => closeNudge("book")}
+          />
+        )}
+        {nudgeKind === "backup" && (
+          <NudgeCard
+            testID="backup-reminder"
+            title={
+              exportedDays === null
+                ? "还没有导出过备份"
+                : `已经 ${exportedDays} 天没有备份了`
+            }
+            body="记录只保存在这台手机上。定期导出一份，把这段时光留到应用之外。"
+            action={{
+              label: "去备份",
+              testID: "backup-reminder-action",
+              onPress: () => nav.navigate("Backup"),
+            }}
+            onClose={() => closeNudge("backup")}
+          />
+        )}
+        {nudgeKind === "rhythm" && nudge && (
+          <NudgeCard
+            titleTestID="rhythm-nudge"
+            title={
+              nudge.kind === "draft"
+                ? "有一份草稿还没写完"
+                : `有 ${nudge.days} 天没记啦`
+            }
+            body={
+              nudge.kind === "draft"
+                ? "接着上次的话头写下去吧。"
+                : "日子过得快，挑一件小事写下来。"
+            }
+            action={{
+              label: nudge.kind === "draft" ? "继续写" : "记一刻",
+              testID: "rhythm-nudge-action",
+              onPress: () => {
+                if (nudge.kind === "draft" && latestDraft) {
+                  nav.navigate("Editor", { draftId: latestDraft.id });
+                  return;
+                }
+                captureNow();
+              },
+            }}
+            onClose={() => closeNudge("rhythm")}
+          />
         )}
         {anniversaries.length > 0 && (
           <Animated.View entering={entrance}>
@@ -590,7 +635,7 @@ export function Shelf() {
         )}
         <ErrorText message={error} />
         {years.length > 0 && (
-          <View style={{ gap: 16, marginTop: 8 }}>
+          <View style={{ gap: 16 }}>
             <Text style={[s.muted, { fontFamily: serif }]}>年度册</Text>
             <View
               style={{
@@ -626,7 +671,7 @@ export function Shelf() {
           </View>
         )}
         {months.length > 0 && (
-          <View style={{ gap: 16, marginTop: 8 }}>
+          <View style={{ gap: 16 }}>
             <Text style={[s.muted, { fontFamily: serif }]}>月度册</Text>
             <View
               style={{
@@ -678,7 +723,7 @@ export function Shelf() {
             </View>
           </View>
         )}
-        <View style={{ gap: 16, marginTop: 8 }}>
+        <View style={{ gap: 16 }}>
           <Text style={[s.muted, { fontFamily: serif }]}>专题册</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
             {albums.map((album, i) => (
@@ -708,7 +753,7 @@ export function Shelf() {
             />
           </View>
         </View>
-        <View style={{ gap: 16, marginTop: 8 }}>
+        <View style={{ gap: 16 }}>
           <Text style={[s.muted, { fontFamily: serif }]}>时间胶囊</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
             {letters.map((letter, i) => (
@@ -745,7 +790,7 @@ export function Shelf() {
             />
           </View>
         </View>
-        <View style={{ gap: 16, marginTop: 8 }}>
+        <View style={{ gap: 16 }}>
           <Text style={[s.muted, { fontFamily: serif }]}>时光系列</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
             {seriesList.map((series, i) => {
