@@ -16,6 +16,7 @@ import {
   monthOfItem,
   newAlbumFrom,
   referencedMedia,
+  SERIES_DEFAULT_NAME,
   type Library,
   type MediaKind,
   type LocalLetter,
@@ -98,7 +99,9 @@ export async function addRecordsToAlbum(
   albumId: string,
   recordIds: readonly string[],
 ) {
-  return store.change((s) => appendToAlbum(s, albumId, recordIds, newId, now()));
+  return store.change((s) =>
+    appendToAlbum(s, albumId, recordIds, newId, now()),
+  );
 }
 /** 用这几条记录直接建一本相册；返回相册 id。 */
 export async function createAlbumWithRecords(
@@ -120,12 +123,15 @@ export async function collectUnusedMedia(store: LocalStore) {
   for (const m of removed) deleteMediaFiles(m);
   return removed.reduce((n, m) => n + m.bytes, 0);
 }
-export async function beginSeries(store: LocalStore, name = "新时光系列") {
+export async function beginSeries(
+  store: LocalStore,
+  name = SERIES_DEFAULT_NAME,
+) {
   return store.change((s) => {
     const id = newId();
     s.series[id] = {
       id,
-      name: name.trim() || "新时光系列",
+      name: name.trim() || SERIES_DEFAULT_NAME,
       items: [],
       updatedAt: now(),
     };
@@ -233,7 +239,9 @@ export async function createPerson(store: LocalStore, name: string) {
   });
 }
 /** Native capture fields are optional and untrusted; keep only what validateLibrary would accept. */
-function shareItemPhotoMetadata(item: NativeShareItem): PhotoMetadata | undefined {
+function shareItemPhotoMetadata(
+  item: NativeShareItem,
+): PhotoMetadata | undefined {
   const result: PhotoMetadata = {};
   if (
     typeof item.capturedAt === "string" &&
