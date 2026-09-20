@@ -548,7 +548,8 @@ it("applies shared capture time and place to the intake draft", async () => {
   const draft = Object.values(store.get().drafts)[0]!;
   expect(draft.content.date).toBe("2025-06-01T10:20:30");
   expect(draft.content.location).toBe("31.200000, 121.500000");
-  expect(draft.groupPhotosByDay).toBe(true);
+  // 只有一个可读的拍摄日：不建议分成几件事。
+  expect(draft.groupPhotosByDay).toBe(false);
   expect(draft.autoDate).toBe(false);
   expect(draft.autoLocation).toBe(false);
   expect(store.get().media[draft.content.mediaIds[0]!]!.photoMetadata).toEqual({
@@ -559,6 +560,46 @@ it("applies shared capture time and place to the intake draft", async () => {
   expect(
     store.get().media[draft.content.mediaIds[1]!]!.photoMetadata,
   ).toBeUndefined();
+});
+it("suggests splitting a share into events only when its photos span several days", async () => {
+  const { store } = await setup();
+  const { receiveShares } = await import("../src/local/services");
+  const originals = `${env.root.replace(/\\/g, "/")}/anan-v1/intake/originals`;
+  fs.mkdirSync(originals, { recursive: true });
+  fs.writeFileSync(`${originals}/day1.jpg`, Buffer.alloc(24, 5));
+  fs.writeFileSync(`${originals}/day2.jpg`, Buffer.alloc(24, 6));
+  env.shares = [
+    {
+      manifestId: "days",
+      source: "share",
+      createdAt: new Date().toISOString(),
+      complete: true,
+      items: [
+        {
+          externalId: "day1",
+          captureId: "c1",
+          kind: "file",
+          localUri: `${originals}/day1.jpg`,
+          fileName: "day1.jpg",
+          mediaType: "image",
+          capturedAt: "2025-06-01T10:20:30",
+        },
+        {
+          externalId: "day2",
+          captureId: "c2",
+          kind: "file",
+          localUri: `${originals}/day2.jpg`,
+          fileName: "day2.jpg",
+          mediaType: "image",
+          capturedAt: "2025-06-02T09:00:00",
+        },
+      ],
+    },
+  ];
+  await receiveShares(store);
+  const draft = Object.values(store.get().drafts)[0]!;
+  expect(draft.content.mediaIds).toHaveLength(2);
+  expect(draft.groupPhotosByDay).toBe(true);
 });
 it("retains the native share receipt on a failed write and safely retries", async () => {
   const { store } = await setup();

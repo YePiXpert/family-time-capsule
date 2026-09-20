@@ -8,6 +8,7 @@ import {
   Linking,
   Platform,
   ScrollView,
+  Switch,
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
@@ -55,8 +56,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     s = useStyles();
   const headerHeight = useTopBarOffset();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
-    clone(store.get().drafts[route.params.draftId]),
-  ),
+      clone(store.get().drafts[route.params.draftId]),
+    ),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [details, setDetails] = useState(false),
@@ -76,18 +77,29 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     operation = useRef(false),
     // 保存进行中按了返回：记下来，这一轮操作结束后再走，不用一行红字拦人。
     pendingExit = useRef<(() => void) | null>(null);
-  const { current, pendingMedia, verified, importedMedia, persist, persistDebounced, flush } =
-    useDraftPersist(store, setError, setDraft, draft);
-  const { recording, start: startRecording, finishAudio, discardAudio } =
-    useRecorder({
-      draftRef: current,
-      verified,
-      persist,
-      attachRecording: (d, id) => ({
-        ...d,
-        content: { ...d.content, mediaIds: [...d.content.mediaIds, id] },
-      }),
-    });
+  const {
+    current,
+    pendingMedia,
+    verified,
+    importedMedia,
+    persist,
+    persistDebounced,
+    flush,
+  } = useDraftPersist(store, setError, setDraft, draft);
+  const {
+    recording,
+    start: startRecording,
+    finishAudio,
+    discardAudio,
+  } = useRecorder({
+    draftRef: current,
+    verified,
+    persist,
+    attachRecording: (d, id) => ({
+      ...d,
+      content: { ...d.content, mediaIds: [...d.content.mediaIds, id] },
+    }),
+  });
   const change = (patch: Partial<RecordContent>) => {
     if (!current.current) return;
     const next = {
@@ -336,115 +348,30 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               )}
             </>
           )}
-          {!draft.recordId && draft.content.mediaIds.length > 0 && (
-            <Card>
-              <Button
-                title={
-                  draft.photoEvents
-                    ? "已按事情分组"
-                    : draft.groupPhotosByDay
-                      ? "按拍摄日期建议分组：已开启"
-                      : "按拍摄日期建议分组：已关闭"
-                }
-                selected={!!draft.groupPhotosByDay}
-                disabled={busy || !!draft.photoEvents}
-                onPress={() => {
-                  void persist({
-                    ...current.current!,
-                    groupPhotosByDay: !draft.groupPhotosByDay,
-                    updatedAt: now(),
-                  });
-                }}
+          {draft.photoEvents ? (
+            <Text style={s.muted}>正文已分到下面的每一件事里。</Text>
+          ) : (
+            <View style={{ gap: 6 }}>
+              <Field
+                label="这一刻发生了什么"
+                testID="capture-text"
+                editable={!busy}
+                multiline
+                placeholder="今天，她又带来了什么小惊喜？"
+                value={draft.content.text}
+                onChangeText={(text) => change({ text })}
+                onEndEditing={() => void flush()}
+                style={{ minHeight: 160, textAlignVertical: "top" }}
               />
-              {draft.groupPhotosByDay && (
-                <>
-                  <Text style={s.muted}>
-                    将保存 {dayGroups.length}{" "}
-                    条记录。同一天也可以分开记，在照片下选择「调整归属」。不会合并已有记录。
-                  </Text>
-                      <Text style={s.muted}>
-                        没有拍摄时间的素材会跟相邻素材记入同一天，日期可修改。
-                      </Text>
-                  {dayGroups.map((group, index) => (
-                    <Card key={index}>
-                      <Text>
-                        事情 {index + 1} · {group.mediaIds.length} 份素材
-                      </Text>
-                      <Button
-                        title={dateLabel(group.date)}
-                        icon="calendar"
-                        onPress={() =>
-                          setEventDate(eventDate === index ? null : index)
-                        }
-                      />
-                      {eventDate === index && (
-                        <>
-                          <DateTimePicker
-                            value={new Date(group.date)}
-                            mode="date"
-                            display={
-                              Platform.OS === "ios" ? "spinner" : "default"
-                            }
-                            onChange={(_, date) => {
-                              if (Platform.OS !== "ios") setEventDate(null);
-                              if (date)
-                                editEvent(index, { date: date.toISOString() });
-                            }}
-                          />
-                          {Platform.OS === "ios" && (
-                            <Button
-                              title="日期选好了"
-                              onPress={() => setEventDate(null)}
-                            />
-                          )}
-                        </>
-                      )}
-                      <Field
-                        label="这件事的标题"
-                        value={group.title}
-                        editable={!busy}
-                        onChangeText={(title) => editEvent(index, { title })}
-                        onEndEditing={() => void flush()}
-                      />
-                      <Field
-                        label="这件事发生了什么"
-                        value={group.text}
-                        multiline
-                        editable={!busy}
-                        onChangeText={(text) => editEvent(index, { text })}
-                        onEndEditing={() => void flush()}
-                      />
-                      <Field
-                        label="这件事的地点"
-                        value={group.location}
-                        editable={!busy}
-                        onChangeText={(location) =>
-                          editEvent(index, { location })
-                        }
-                      />
-                    </Card>
-                  ))}
-                </>
-              )}
-            </Card>
-          )}
-          {!(draft.groupPhotosByDay && draft.content.mediaIds.length > 0) && (
-            <Field
-              label="这一刻发生了什么"
-              testID="capture-text"
-              editable={!busy}
-              multiline
-              placeholder="今天，你又带来了什么小惊喜？"
-              value={draft.content.text}
-              onChangeText={(text) => change({ text })}
-              onEndEditing={() => void flush()}
-              style={{ minHeight: 160, textAlignVertical: "top" }}
-            />
+              <Text style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
+                草稿会自动保留。
+              </Text>
+            </View>
           )}
           {!promptOff &&
             !draft.recordId &&
             !draft.content.text.trim() &&
-            !(draft.groupPhotosByDay && draft.content.mediaIds.length > 0) &&
+            !draft.photoEvents &&
             (() => {
               const question = promptOf(
                 state.profile.birthday,
@@ -573,10 +500,11 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 {!draft.recordId && draft.groupPhotosByDay && (
                   <View style={{ gap: 8 }}>
                     <Text style={s.muted}>
-                      事情{" "}
+                      第{" "}
                       {dayGroups.findIndex((group) =>
                         group.mediaIds.includes(id),
-                      ) + 1}
+                      ) + 1}{" "}
+                      件事
                     </Text>
                     <Button
                       title="调整归属"
@@ -601,7 +529,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                             !group.mediaIds.includes(id) && (
                               <Button
                                 key={index}
-                                title={`移到事情 ${index + 1}${group.title ? `：${group.title}` : ""}`}
+                                title={`移到第 ${index + 1} 件事${group.title ? `：${group.title}` : ""}`}
                                 onPress={() => moveToEvent(id, index)}
                               />
                             ),
@@ -629,7 +557,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                     onPress={() =>
                       Alert.alert(
                         "移除这份素材？",
-                        `「${m.name}」只从这份草稿移出，明确保存后才生效。`,
+                        "只从这份草稿移出，手机里的原文件不动。",
                         [
                           { text: "取消", style: "cancel" },
                           {
@@ -637,10 +565,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                             style: "destructive",
                             onPress: () =>
                               change({
-                                mediaIds:
-                                  draft.content.mediaIds.filter(
-                                    (x) => x !== id,
-                                  ),
+                                mediaIds: draft.content.mediaIds.filter(
+                                  (x) => x !== id,
+                                ),
                                 coverId:
                                   draft.content.coverId === id
                                     ? null
@@ -655,16 +582,108 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               </View>
             ) : null;
           })}
-          <Button
-            title={
-              details
-                ? "收起补充信息"
-                : draft.groupPhotosByDay && draft.content.mediaIds.length
-                  ? "从文件添加素材"
-                  : "补充标题、地点"
-            }
-            onPress={() => setDetails(!details)}
-          />
+          {!draft.recordId && draft.content.mediaIds.length >= 2 && (
+            <View style={s.between}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text>按拍摄日期分成几件事</Text>
+                {!!draft.photoEvents && (
+                  <Text style={s.muted}>已手动分好，去每件事里改。</Text>
+                )}
+              </View>
+              <Switch
+                accessibilityLabel="按拍摄日期分成几件事"
+                value={!!draft.groupPhotosByDay}
+                disabled={busy || !!draft.photoEvents}
+                onValueChange={(value) => {
+                  void persist({
+                    ...current.current!,
+                    groupPhotosByDay: value,
+                    updatedAt: now(),
+                  });
+                }}
+              />
+            </View>
+          )}
+          {!draft.recordId &&
+            draft.groupPhotosByDay &&
+            draft.content.mediaIds.length > 0 && (
+              <Card>
+                <Text style={s.muted}>
+                  会分成 {dayGroups.length}{" "}
+                  件事、各存一段时光。同一天也可以分开记：在照片下点「调整归属」。
+                </Text>
+                <Text style={s.muted}>
+                  没有拍摄时间的素材跟相邻素材记入同一天；分成几件事后，日期各自在每件事里改。
+                </Text>
+                {dayGroups.map((group, index) => (
+                  <Card key={index}>
+                    <Text>
+                      第 {index + 1} 件事 · {group.mediaIds.length} 个附件
+                    </Text>
+                    <Button
+                      title={dateLabel(group.date)}
+                      icon="calendar"
+                      onPress={() =>
+                        setEventDate(eventDate === index ? null : index)
+                      }
+                    />
+                    {eventDate === index && (
+                      <>
+                        <DateTimePicker
+                          value={new Date(group.date)}
+                          mode="date"
+                          display={
+                            Platform.OS === "ios" ? "spinner" : "default"
+                          }
+                          onChange={(_, date) => {
+                            if (Platform.OS !== "ios") setEventDate(null);
+                            if (date)
+                              editEvent(index, { date: date.toISOString() });
+                          }}
+                        />
+                        {Platform.OS === "ios" && (
+                          <Button
+                            title="日期选好了"
+                            onPress={() => setEventDate(null)}
+                          />
+                        )}
+                      </>
+                    )}
+                    <Field
+                      label="这件事的标题"
+                      value={group.title}
+                      editable={!busy}
+                      onChangeText={(title) => editEvent(index, { title })}
+                      onEndEditing={() => void flush()}
+                    />
+                    <Field
+                      label="这件事发生了什么"
+                      value={group.text}
+                      multiline
+                      editable={!busy}
+                      onChangeText={(text) => editEvent(index, { text })}
+                      onEndEditing={() => void flush()}
+                    />
+                    <Field
+                      label="这件事的地点"
+                      value={group.location}
+                      editable={!busy}
+                      onChangeText={(location) =>
+                        editEvent(index, { location })
+                      }
+                    />
+                  </Card>
+                ))}
+              </Card>
+            )}
+          <View style={s.row}>
+            <Button
+              title={details ? "收起" : "更多：标题、地点、人物"}
+              kind="text"
+              compact
+              onPress={() => setDetails(!details)}
+            />
+          </View>
           {details && (
             <>
               {!(draft.groupPhotosByDay && draft.content.mediaIds.length) && (
@@ -726,7 +745,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                     onPress={() => {
                       void run(async () => {
                         const id = await createPerson(store, newPerson);
-                        const currentIds = current.current?.content.personIds ?? [];
+                        const currentIds =
+                          current.current?.content.personIds ?? [];
                         await persist({
                           ...current.current!,
                           content: {
@@ -801,35 +821,39 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               disabled={busy}
             />
           )}
-          <Button
-            title="放弃这份草稿"
-            disabled={busy}
-            onPress={() =>
-              Alert.alert(
-                "放弃草稿？",
-                draft.recordId
-                  ? "原先保存的记录不会改变。"
-                  : "这份未保存的记录将被删除。",
-                [
-                  { text: "取消", style: "cancel" },
-                  {
-                    text: "放弃",
-                    style: "destructive",
-                    onPress: () => {
-                      void run(async () => {
-                        await discardAudio();
-                        await store.change((s) => {
-                          delete s.drafts[draft.id];
+          <View style={{ alignItems: "center", paddingTop: 8 }}>
+            <Button
+              title="放弃这份草稿"
+              kind="text"
+              danger
+              disabled={busy}
+              onPress={() =>
+                Alert.alert(
+                  "放弃草稿？",
+                  draft.recordId
+                    ? "原先保存的记录不会改变。"
+                    : "这份草稿将被删除。",
+                  [
+                    { text: "取消", style: "cancel" },
+                    {
+                      text: "放弃",
+                      style: "destructive",
+                      onPress: () => {
+                        void run(async () => {
+                          await discardAudio();
+                          await store.change((s) => {
+                            delete s.drafts[draft.id];
+                          });
+                          nextAction.current = () => navigation.goBack();
+                          setAllowExit(true);
                         });
-                        nextAction.current = () => navigation.goBack();
-                        setAllowExit(true);
-                      });
+                      },
                     },
-                  },
-                ],
-              )
-            }
-          />
+                  ],
+                )
+              }
+            />
+          </View>
         </ScrollView>
         <BottomBar>
           <Button
@@ -837,7 +861,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               busy
                 ? "正在保存…"
                 : dayGroups.length > 1
-                  ? `保存 ${dayGroups.length} 条记录`
+                  ? `保存为 ${dayGroups.length} 段时光`
                   : "保存这一刻"
             }
             primary
