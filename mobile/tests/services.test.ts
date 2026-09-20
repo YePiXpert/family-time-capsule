@@ -57,7 +57,13 @@ describe("adding records to albums from the reading page", () => {
     expect(s.albums.a).toBe(album);
     validateLibrary(s);
     // 再加一遍不重复，也不动 updatedAt。
-    const again = appendToAlbum(s, "a", ["r2"], nextId, "2026-09-21T00:00:00.000Z");
+    const again = appendToAlbum(
+      s,
+      "a",
+      ["r2"],
+      nextId,
+      "2026-09-21T00:00:00.000Z",
+    );
     expect(again.items).toHaveLength(2);
     expect(again.updatedAt).toBe(later);
   });
@@ -75,10 +81,16 @@ describe("adding records to albums from the reading page", () => {
   });
   it("refuses missing albums and missing records", () => {
     const s = fixture();
-    expect(() => appendToAlbum(s, "nope", ["r1"], nextId, later)).toThrow("相册已删除");
-    expect(() => appendToAlbum(s, "a", ["gone"], nextId, later)).toThrow("这条记录已删除");
+    expect(() => appendToAlbum(s, "nope", ["r1"], nextId, later)).toThrow(
+      "相册已删除",
+    );
+    expect(() => appendToAlbum(s, "a", ["gone"], nextId, later)).toThrow(
+      "这段时光已删除",
+    );
     expect(() => newAlbumFrom(s, "b", [], nextId, later)).toThrow("请先选择");
-    expect(() => newAlbumFrom(s, "b", ["gone"], nextId, later)).toThrow("这条记录已删除");
+    expect(() => newAlbumFrom(s, "b", ["gone"], nextId, later)).toThrow(
+      "这段时光已删除",
+    );
     expect(Object.keys(s.albums)).toEqual(["a"]);
     expect(s.albums.a!.items).toHaveLength(1);
   });

@@ -118,9 +118,7 @@ export function RecapScreen({ route }: Props<"Recap">) {
       )}
       {(note || !!recap.months.length) && (
         <View style={{ gap: 12, alignItems: "center" }}>
-          {note && (
-            <Text style={{ textAlign: "center" }}>{note}</Text>
-          )}
+          {note && <Text style={{ textAlign: "center" }}>{note}</Text>}
           <Ornament />
         </View>
       )}
@@ -129,7 +127,13 @@ export function RecapScreen({ route }: Props<"Recap">) {
 }
 
 /** 全屏年度重放：照片整屏淡入淡出，4 秒或点击前进，末页收统计与寄语。 */
-export function ReplayModal({ year, onClose }: { year: string; onClose: () => void }) {
+export function ReplayModal({
+  year,
+  onClose,
+}: {
+  year: string;
+  onClose: () => void;
+}) {
   const state = useLibrary(),
     store = useStore();
   const insets = useSafeAreaInsets();
@@ -139,9 +143,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
   // 配乐完全可选，默认无声；选乐只在本机音频素材里挑。
   const audioId = state.settings.replayAudioId;
   const audioMedia = audioId ? state.media[audioId] : undefined;
-  const music = useAudioPlayer(
-    audioMedia ? mediaUri(audioMedia) : undefined,
-  );
+  const music = useAudioPlayer(audioMedia ? mediaUri(audioMedia) : undefined);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/immutability -- expo-audio 播放器的循环与音量就是就地属性
     music.loop = true;
@@ -230,7 +232,7 @@ export function ReplayModal({ year, onClose }: { year: string; onClose: () => vo
       testID="replay-music-sheet"
     >
       <Text style={{ color: overlay.ink, fontFamily: serif, fontSize: 18 }}>
-        选一段记录里的声音
+        选一段时光里的录音
       </Text>
       <Text style={{ color: overlay.muted, fontSize: 13 }}>
         配乐来自你已经记下的录音，只在这台设备播放。

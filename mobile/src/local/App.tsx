@@ -238,7 +238,7 @@ function Root() {
           >
             <ErrorText message={error} />
             <Button
-              title="重试接收素材"
+              title="重试接收"
               onPress={() => {
                 void receiveShares(store)
                   .then(() => setError(""))
@@ -372,7 +372,7 @@ export default function App() {
       const library = await inspectBackup(selectedFile);
       Alert.alert(
         "从备份恢复？",
-        `备份包含 ${Object.keys(library.records).length} 条记录、${Object.keys(library.albums).length} 本相册。原有文件会保留，恢复后以这份备份继续使用。`,
+        `这份备份里有 ${Object.keys(library.records).length} 段时光、${Object.keys(library.albums).length} 本相册。原有文件会保留，恢复后以这份备份继续使用。`,
         [
           { text: "取消", style: "cancel" },
           {
@@ -401,9 +401,7 @@ export default function App() {
     void (async () => {
       const candidates = backupDirectory
         .list()
-        .filter(
-          (f): f is File => f instanceof File && f.name.endsWith(".xmb"),
-        )
+        .filter((f): f is File => f instanceof File && f.name.endsWith(".xmb"))
         .sort((a, b) => b.name.localeCompare(a.name));
       // 推荐位只放完整可读的备份；损坏文件静默跳过，不留一个必然失败的按钮。
       for (const file of candidates) {

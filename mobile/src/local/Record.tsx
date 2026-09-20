@@ -83,7 +83,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   if (!record)
     return (
       <Page>
-        <Text>这条记录已删除。</Text>
+        <Text>这段时光已删除。</Text>
       </Page>
     );
   const makeKeepSake = async () => {
@@ -105,9 +105,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   };
   const photoPlace = record.mediaIds
     .map((id) => state.media[id]?.photoMetadata)
-    .find(
-      (m) => m?.latitude !== undefined && m.longitude !== undefined,
-    );
+    .find((m) => m?.latitude !== undefined && m.longitude !== undefined);
   const canNamePlace =
     !!photoPlace &&
     (!record.location.trim() || looksLikeCoordinates(record.location));
@@ -118,8 +116,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
     try {
       // 逆地理只需要把已知坐标换成地名；Android 的 Geocoder 前置要求定位权限。
       if (Platform.OS === "android") {
-        const permission =
-          await Location.requestForegroundPermissionsAsync();
+        const permission = await Location.requestForegroundPermissionsAsync();
         if (!permission.granted)
           throw new Error("请在系统设置中允许使用定位后，再查拍摄地点的地名。");
       }
@@ -164,7 +161,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
       .catch((e) => setError(messageOf(e)));
   };
   const albums = Object.values(state.albums).sort(
-    (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
+    (a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
   );
   const addTo = (albumId: string) => {
     void addRecordsToAlbum(store, albumId, [record.id])
@@ -284,8 +282,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
         </DateStrip>
         {(record.personIds?.length ?? 0) > 0 && (
           <View style={s.row}>
-            {record.personIds!
-              .map((id) => state.persons[id])
+            {record
+              .personIds!.map((id) => state.persons[id])
               .filter((p): p is NonNullable<typeof p> => !!p)
               .map((person) => (
                 <View
@@ -431,8 +429,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
             danger
             onPress={() =>
               Alert.alert(
-                "删除这条记录？",
-                "它也会从所有相册中移除。此操作无法撤销。",
+                "删除这段时光？",
+                "它也会从所有相册里移出，删了就找不回来。",
                 [
                   { text: "取消", style: "cancel" },
                   {
@@ -461,9 +459,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
               testID="record-edit"
               onPress={() => {
                 void beginDraft(store, record.id)
-                  .then((draftId) =>
-                    navigation.navigate("Editor", { draftId }),
-                  )
+                  .then((draftId) => navigation.navigate("Editor", { draftId }))
                   .catch((e) => setError(messageOf(e)));
               }}
             />
