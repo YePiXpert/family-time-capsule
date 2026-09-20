@@ -90,6 +90,12 @@ export function createExpoFileSystemFake(env: FakeEnv) {
         to.uri.endsWith(".json")
       )
         throw new Error("activation write failed");
+      // 真机上 move 是异步的：先让出一轮，紧接着的同步读才会像真机一样看到「还没到位」。
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fs.renameSync(this.uri, to.uri);
+      this.uri = to.uri;
+    }
+    moveSync(to: File) {
       fs.renameSync(this.uri, to.uri);
       this.uri = to.uri;
     }

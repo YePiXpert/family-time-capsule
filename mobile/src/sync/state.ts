@@ -33,7 +33,7 @@ export async function readRemoteState(): Promise<RemoteState | null> {
     return null;
   }
 }
-/** 先写 .part 再换名：断电也不会留下半个 JSON。 */
+/** 先写 .part 再同步换名：断电也不会留下半个 JSON，返回时新状态已经在位（异步 move 会让紧接着的读看到「没有状态」）。 */
 export function writeRemoteState(state: RemoteState): void {
   syncDirectory.create({ intermediates: true, idempotent: true });
   const part = new File(syncDirectory, "state.json.part");
@@ -42,7 +42,7 @@ export function writeRemoteState(state: RemoteState): void {
   part.write(JSON.stringify(state));
   const target = stateFile();
   if (target.exists) target.delete();
-  part.move(target);
+  part.moveSync(target);
 }
 export function clearRemoteState(): void {
   const file = stateFile();

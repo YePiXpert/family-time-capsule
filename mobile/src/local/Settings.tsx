@@ -373,12 +373,15 @@ export function Backup() {
     store = useStore(),
     s = useStyles();
   const [busy, setBusy] = useState(false),
+    // 远端备份卡里的上传也在读 blob 库：它在跑时这一页的本机操作一样要等。
+    [remoteRunning, setRemoteRunning] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
     [stopper, setStopper] = useState<AbortController | null>(null),
     // 列表只在一次操作结束或删除后重读：读每份清单的 meta 不是免费的。
     [backups, setBackups] = useState(() => listLocalBackups());
   const exportedDays = daysSinceExport(state);
+  const locked = busy || remoteRunning;
   const refreshList = () => setBackups(listLocalBackups());
   const perform = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -452,7 +455,7 @@ export function Backup() {
             title="导出完整备份"
             testID="backup-export"
             primary
-            disabled={busy}
+            disabled={locked}
             onPress={() => {
               void perform(async () => {
                 const signal = stoppable();
@@ -473,7 +476,7 @@ export function Backup() {
           <Button
             title="从备份恢复"
             testID="backup-restore"
-            disabled={busy}
+            disabled={locked}
             onPress={() => {
               void perform(async () => {
                 const picked = await DocumentPicker.getDocumentAsync({
@@ -533,7 +536,7 @@ export function Backup() {
                   title="恢复这份备份"
                   kind="text"
                   compact
-                  disabled={busy}
+                  disabled={locked}
                   onPress={() => {
                     void restore([file], "恢复这份备份？", "恢复完成。");
                   }}
@@ -542,7 +545,7 @@ export function Backup() {
                   title="另存"
                   kind="text"
                   compact
-                  disabled={busy}
+                  disabled={locked}
                   onPress={() => {
                     void perform(async () => {
                       if (manifestOnly) await exportManifest(file, stoppable());
@@ -556,7 +559,7 @@ export function Backup() {
                   kind="text"
                   compact
                   danger
-                  disabled={busy}
+                  disabled={locked}
                   onPress={() =>
                     Alert.alert(
                       "删除这份备份？",
@@ -567,11 +570,12 @@ export function Backup() {
                           text: "删除",
                           style: "destructive",
                           onPress: () => {
-                            file.delete();
-                            // 没人引用的照片字节随手收掉；任何一份清单读不出就先不收。
-                            collectBlobs();
-                            refreshList();
-                            setMessage("这份本机备份已删除。");
+                            void perform(async () => {
+                              file.delete();
+                              // 没人引用的照片字节随手收掉；任何一份清单读不出就先不收。
+                              collectBlobs();
+                              setMessage("这份本机备份已删除。");
+                            });
                           },
                         },
                       ],
@@ -583,8 +587,8 @@ export function Backup() {
           ))}
         </Card>
       )}
-      <ArchiveCard busy={busy} />
-      <RemoteBackupCard busy={busy} />
+      <ArchiveCard busy={locked} />
+      <RemoteBackupCard busy={busy} onRunningChange={setRemoteRunning} />
     </Page>
   );
 }
