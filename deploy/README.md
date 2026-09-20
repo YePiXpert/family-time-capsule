@@ -43,6 +43,14 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 `verify-service.py` 过了再删 `/opt/xiaomei-ai.bak`。`crontab` 里的 `backup.sh` 路径已随仓库更新，
 旧项目名的容器要手动 `docker rm`。成员、设备与额度都在 SQLite 里，随目录一起搬走，手机上无需重新加入。
 
+## 远端备份对象库（Build 70）
+
+- 路径：容器 `/data/backup/<成员 id>/objects/<对象 id 前两位>/<对象 id>`（宿主机 `/opt/anan-ai/data/backup/`）；临时文件在 `/data/backup/tmp/`，与成品同一文件系统，收完并核对长度与密文哈希后才 `rename` 到位。服务端只见密文、对象 id 与字节数——没有明文、密钥、文件名或照片哈希；密钥只以 12 词恢复码的形式离开手机，换手机时输入恢复码即可从远端恢复。
+- 配额与水位：每成员默认 20 GiB（`members.backup_limit_bytes`，主人在管理页调整，即 `PATCH /admin/members/:id` 的 `backupLimitBytes`）；单对象硬上限 8 MiB；磁盘剩余低于 5 GiB 一律 507 `SERVER_FULL`；每成员同时最多 2 个上传（429 `BUSY`）。备份路由不走按地址的登录限流。
+- 对象库是副本不是源头，手机才是源头：`backup.sh` 只快照 SQLite（成员、设备、配额、清单索引），不复制也不轮转对象库；对象文件本身就是事实来源，SQLite 回滚后手机下一次备份会自动补齐缺的对象。
+- 删除：成员自己 `DELETE /api/v1/backup`；主人 `DELETE /api/v1/admin/members/:id/backup`；全部锁死时在服务器 `docker compose ... exec -T ai node src/manage.ts wipe-backup <登录名或成员名>`。
+- 反代：上传是 ≤ 8 MiB 的 `application/octet-stream` PUT，nginx 一类反代默认 1 MB 会先于我们拦下并回 HTML 413。每次改反代或升级服务后用 `python3 server/scripts/probe-upload-limit.py --username <成员> --password <密码> --mb 4 9 --container anan-ai-ai-1` 探一次：4 MB 应 201，9 MB 应是我们的 JSON 413（`TOO_LARGE`）。不符就在反代加 `client_max_body_size 16m; proxy_request_buffering off; proxy_read_timeout 130s;` 后重探。
+
 ## 备份与回滚
 
 每日运行 `backup.sh`，使用 SQLite 在线备份，保留 7 份。数据库和 CPA 密钥必须分开、限制权限。健康检查每 30 秒执行 `/healthz`。
@@ -51,4 +59,4 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 
 ## 验证
 
-`server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 验证 DeepSeek Flash High 的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、账号登录与主人权限。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。
+`server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 验证 DeepSeek Flash High 的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、账号登录与主人权限；`server/scripts/verify-service.py` 顺带走一遍备份对象库（上传、读回、清单、prune、删库）。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。
