@@ -1,22 +1,17 @@
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 
 export type JournalIconName =
-  | "growth" | "book" | "person" | "plus" | "image" | "camera" | "microphone" | "file"
+  | "book" | "person" | "plus" | "image" | "camera" | "microphone" | "file"
   | "settings" | "search" | "calendar" | "star" | "play" | "pause" | "check"
-  | "chevron-right" | "chevron-down" | "arrow-left" | "trash" | "edit" | "lock"
-  | "download" | "close" | "video" | "audio" | "users" | "heart" | "sparkle"
-  | "seal";
+  | "chevron-right" | "chevron-down" | "arrow-left" | "trash" | "edit"
+  | "download" | "close" | "video" | "audio" | "heart" | "sparkle"
+  | "seal" | "quote" | "pin";
 
 /**
  * 统一图标语言：24px 网格、1.8px 描边、圆角端点。
  * 旧八芒星齿轮在小尺寸下像太阳，设置改用滑杆；植物/书/人形重新绘制，保证 22px 可读。
  */
 const paths: Record<JournalIconName, React.ReactNode> = {
-  growth: <>
-    <Path d="M12 21v-7.5" />
-    <Path d="M12 13.5C12 9.6 9.1 6.8 4.8 6.8c0 3.9 2.9 6.7 7.2 6.7" />
-    <Path d="M12 10.8c0-3.9 2.9-6.8 7.2-6.8 0 3.9-2.9 6.8-7.2 6.8" />
-  </>,
   book: <>
     <Path d="M12 5.8C10.2 4.3 7.7 3.8 4.5 3.8v14.9c3.2 0 5.7.5 7.5 2 1.8-1.5 4.3-2 7.5-2V3.8c-3.2 0-5.7.5-7.5 2z" />
     <Path d="M12 5.8v14.9" />
@@ -55,10 +50,6 @@ const paths: Record<JournalIconName, React.ReactNode> = {
     <Path d="M4.8 19.2l.9-3.8L15.9 5.2l2.9 2.9L8.6 18.3z" />
     <Path d="m14.4 6.7 2.9 2.9" />
   </>,
-  lock: <>
-    <Rect x={5.8} y={10.5} width={12.4} height={9.7} rx={2.6} />
-    <Path d="M8.8 10.5V7.7a3.2 3.2 0 0 1 6.4 0v2.8" />
-  </>,
   download: <Path d="M12 4v10.2M8 10.3l4 4 4-4M5 19.2h14" />,
   close: <Path d="M6.2 6.2l11.6 11.6M17.8 6.2 6.2 17.8" />,
   video: <>
@@ -69,11 +60,6 @@ const paths: Record<JournalIconName, React.ReactNode> = {
     <Path d="M9.5 17.8V6.5l8.5-2.3v11.2" />
     <Circle cx={7} cy={17.8} r={2.5} />
     <Circle cx={15.5} cy={15.4} r={2.5} />
-  </>,
-  users: <>
-    <Circle cx={9.2} cy={8} r={3.1} />
-    <Path d="M3.6 19.6c.7-3.5 2.8-5.4 5.6-5.4s4.9 1.9 5.6 5.4" />
-    <Path d="M15.6 5.2a3.1 3.1 0 0 1 0 5.7M17.3 14.5c1.7.8 2.8 2.4 3.1 5.1" />
   </>,
   heart: <Path d="M12 19.8s-7.3-4.6-7.3-9.6A4.2 4.2 0 0 1 12 7.2a4.2 4.2 0 0 1 7.3 3c0 5-7.3 9.6-7.3 9.6z" />,
   image: <>
@@ -101,6 +87,16 @@ const paths: Record<JournalIconName, React.ReactNode> = {
     <Circle cx={12} cy={12} r={8.4} />
     <Circle cx={12} cy={12} r={5.6} />
     <Path d="M12 10.3l1.7 1.7-1.7 1.7-1.7-1.7z" />
+  </>,
+  // 「她说的话」：一对引号，只表示原话，不与 AI 的 sparkle 混用。
+  quote: <>
+    <Path d="M9.5 7.5H6.2A1.7 1.7 0 0 0 4.5 9.2v3a1.7 1.7 0 0 0 1.7 1.7h1.6v1.2a2.6 2.6 0 0 1-2.6 2.4" />
+    <Path d="M19.5 7.5h-3.3a1.7 1.7 0 0 0-1.7 1.7v3a1.7 1.7 0 0 0 1.7 1.7h1.6v1.2a2.6 2.6 0 0 1-2.6 2.4" />
+  </>,
+  // 地点：图钉。
+  pin: <>
+    <Path d="M12 20.5s-6-5.6-6-10.3a6 6 0 0 1 12 0c0 4.7-6 10.3-6 10.3z" />
+    <Circle cx={12} cy={10.2} r={2.1} />
   </>,
 };
 
