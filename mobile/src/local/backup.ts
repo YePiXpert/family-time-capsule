@@ -67,6 +67,8 @@ export const restorePinName = (at: Date, id: string) =>
   `restoring-${stampOf(at)}-${id}.xmbm.part`;
 const isRestorePin = (name: string) => /^restoring-.*\.xmbm\.part$/.test(name);
 const PIN_TTL_MS = 7 * 86400000;
+/** 清单写入只需片刻；留一小时余量保护正在写的半成品，崩溃残片不必占七天。 */
+const MANIFEST_PART_TTL_MS = 3600000;
 /** 素材进 blob 库之外还要给系统留的余量。 */
 const BLOB_MARGIN = 64 * 1024 * 1024;
 /** 保留备份在页面上的名字：「9月19日 15:44」，跨年带年份；名字里读不出时间戳时返回 null。 */
@@ -132,6 +134,16 @@ export function pruneBackups(keep = 3, protect: File | File[] = []): void {
   const cutoff = stampOf(new Date(Date.now() - PIN_TTL_MS));
   for (const pin of restorePins())
     if (backupStamp(pin.name) < cutoff && pin.exists) pin.delete();
+  const partCutoff = stampOf(new Date(Date.now() - MANIFEST_PART_TTL_MS));
+  if (backupDirectory.exists)
+    for (const file of backupDirectory.list()) {
+      if (
+        !(file instanceof File) || file.name.startsWith("restoring-") ||
+        !file.name.endsWith(".xmbm.part") || shielded.has(file.uri)
+      ) continue;
+      const stamp = backupStamp(file.name);
+      if (stamp && stamp < partCutoff && file.exists) file.delete();
+    }
 }
 const entityCount = (state: Library) =>
   ENTITY_KINDS.reduce((n, kind) => n + Object.keys(state[kind]).length, 0);
@@ -233,21 +245,21 @@ async function writeManifest(
     backupDirectory,
     backupFileName(new Date(), randomUUID().slice(0, 8), "xmbm"),
   );
-  out.create();
-  const handle = out.open(FileMode.WriteOnly);
+  // 被系统中断时只留下半成品，不进入保留列表，也不阻塞 blob 回收。
+  const part = new File(backupDirectory, `${out.name}.part`);
   try {
-    handle.writeBytes(head);
-    handle.writeBytes(entities);
+    part.create();
+    const handle = part.open(FileMode.WriteOnly);
+    try {
+      handle.writeBytes(head);
+      handle.writeBytes(entities);
+    } finally {
+      handle.close();
+    }
+    await verifyManifest(part);
+    await part.move(out, { overwrite: false });
   } catch (e) {
-    handle.close();
-    out.delete();
-    throw e;
-  }
-  handle.close();
-  try {
-    await verifyManifest(out);
-  } catch (e) {
-    out.delete();
+    if (part.exists) part.delete();
     throw e;
   }
   // 收拾是顺手的事：清旧份或回收 blob 出错，不能把刚写好、核对过的这份也删掉再报失败。
@@ -478,17 +490,19 @@ async function assignExtracted(
 ): Promise<void> {
   const taken = new Set<string>();
   for (const [id, m] of Object.entries(state.media)) {
+    // 旧缩略图可能仍被当前库使用；本次恢复只认随后重建出的新名字。
+    const restored = { ...m, thumb: undefined };
     const source = extracted.get(m.sha256)!;
     if (!taken.has(m.sha256)) {
       taken.add(m.sha256);
-      state.media[id] = { ...m, file: source.name };
+      state.media[id] = { ...restored, file: source.name };
       continue;
     }
     const copy = extractTarget(m);
     // 先登记再复制：复制到一半失败，清理时才找得到这个半成品。
     written.push(copy);
     await source.copy(copy, { overwrite: false });
-    state.media[id] = { ...m, file: copy.name };
+    state.media[id] = { ...restored, file: copy.name };
   }
 }
 /** 清单备份（.xmbm）：素材从本机 blob 库取，缺一份、错一字节都整份失败。 */
@@ -653,7 +667,8 @@ async function inspectV1(
       written.push(target);
     }
     await drainBlob(h, m.bytes, target, m.sha256, m.name);
-    if (target) state.media[id] = { ...m, file: target.name };
+    // 旧版备份同样不能把当前库仍在用的缩略图带入恢复失败的清理范围。
+    if (target) state.media[id] = { ...m, file: target.name, thumb: undefined };
   }
   return state;
 }

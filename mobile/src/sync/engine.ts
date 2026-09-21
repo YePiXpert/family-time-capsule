@@ -85,7 +85,7 @@ export const throwIfAborted = (signal?: AbortSignal) => {
   if (signal?.aborted) throw stopped();
 };
 const KEY_MISMATCH =
-  "服务上已有另一份恢复码的备份。要换成这台手机的，先关闭并删除远端备份；要拿回那份，请用它的恢复码恢复。";
+  "家人的远端备份使用另一份恢复码。请在「备份与恢复」选择「加入家人一起写」，输入家庭的 12 词恢复码。";
 const WRONG_CODE = "这份恢复码打不开远端的备份，请核对后再试。";
 /** 从句柄顺序读满 bytes 字节（256 KiB 一口，每口让出主线程）。 */
 async function readExact(h: FileHandle, bytes: number): Promise<Uint8Array> {
@@ -223,7 +223,7 @@ export async function pushManifest(state: Library, deps: EngineDeps) {
   // 清单引用的对象随索引一起登记，服务端 prune 时自己护住它们；
   // 服务端一次最多认 50000 个 id，超过就这轮既不登记也不收拾，宁可多占。
   const ids = all.map((item) => item.id);
-  const registered = ids.length <= 50000 ? ids : [];
+  const registered = ids.length <= 50000 ? ids : undefined;
   throwIfAborted(deps.signal);
   await deps.transport.putManifest(
     keyId,
@@ -231,7 +231,7 @@ export async function pushManifest(state: Library, deps: EngineDeps) {
     registered,
     deps.signal,
   );
-  if (registered.length) await deps.transport.prune(registered, deps.signal);
+  if (registered?.length) await deps.transport.prune(registered, deps.signal);
   return {
     index,
     manifestSha,

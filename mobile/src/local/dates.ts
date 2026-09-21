@@ -1,5 +1,11 @@
 /** Keepsake date derivations: the age line on the shelf and milestone days. */
 
+/** 记录日期的中文显示；界面与 AI 标题清单共用。 */
+export function dateLabel(date: string) {
+  const d = new Date(date);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
 export function parseBirthday(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T00:00:00`);

@@ -67,7 +67,7 @@ vi.mock("expo-secure-store", () => {
 function fakeRemote() {
   const objects = new Map<string, Uint8Array>();
   const manifests = new Map<string, RemoteDeviceManifest>();
-  const refs = new Map<string, readonly string[]>();
+  const refs = new Map<string, readonly string[] | undefined>();
   const log: string[] = [];
   const client = (deviceId: string, memberId = deviceId): Transport => ({
     async me() {
@@ -126,6 +126,8 @@ function fakeRemote() {
       return [...manifests.values()].reverse();
     },
     async prune(keep) {
+      if ([...refs.values()].some((ids) => ids === undefined))
+        return { removed: 0, bytes: 0 };
       const kept = new Set([...keep, ...[...refs.values()].flat()]);
       let removed = 0;
       for (const id of objects.keys())

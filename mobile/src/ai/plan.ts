@@ -1,5 +1,5 @@
 import type { Library, RecordDraft } from "../local/model";
-import { polishRequest, sameDayChunks, sameJob } from "./state";
+import { PHOTO_JOB_LIMIT, polishRequest, sameDayChunks, sameJob } from "./state";
 import type {
   AIGroup,
   AIJob,
@@ -40,8 +40,8 @@ export function assertGenerateInput(
       throw new Error(
         "这件事还没有照片。先添加照片再生成，或写下文字后用「润色我的文字」。",
       );
-    if (ids.length > 100)
-      throw new Error("一次最多整理 100 张照片，请分几份草稿处理。");
+    if (ids.length > PHOTO_JOB_LIMIT)
+      throw new Error(`一次最多整理 ${PHOTO_JOB_LIMIT} 张照片，请分几份草稿处理。`);
   }
 }
 /** 任务与建议共用的身份：指纹、任务、模型；写任务再带写作模式。 */

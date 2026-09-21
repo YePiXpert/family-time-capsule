@@ -1124,10 +1124,7 @@ export const messageOf = (e: unknown) => {
   if (/[一-鿿]/.test(e.message)) return e.message;
   return "操作未完成，现有资料和输入已保留，请重试。";
 };
-export function dateLabel(date: string) {
-  const d = new Date(date);
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-}
+export { dateLabel } from "./dates";
 export function monthLabel(key: string) {
   const [y, m] = key.split("-");
   return `${y}年${Number(m)}月`;

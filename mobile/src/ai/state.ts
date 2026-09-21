@@ -3,7 +3,12 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type { Library, RecordDraft, RecordContent } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
 import { clusterPlaces } from "../local/places";
+import { dateLabel } from "../local/dates";
 import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
+/** 单次请求送给服务端的照片上限，与服务端 photos 契约一致；分批切块与单批写作共用。 */
+export const PHOTO_REQUEST_LIMIT = 20;
+/** 一份草稿一次 AI 作业的照片上限，超出请分几份草稿；分批路径按 PHOTO_REQUEST_LIMIT 切块，因此不是单次请求的上限。 */
+export const PHOTO_JOB_LIMIT = 100;
 /** 单次润色的正文上限；超限必须明确提示，不允许静默截断。与服务端一致。 */
 export const POLISH_BODY_LIMIT = 2000;
 /** 服务端对 context 的整体上限；标题过长时先在本机说明，避免笼统的输入无效。 */
@@ -204,6 +209,11 @@ export function proposalEvents(
       date: dated[0] ?? source?.date ?? draft.content.date,
       location,
       first: false,
+      personIds: draft.content.personIds
+        ? [...draft.content.personIds]
+        : undefined,
+      quote: draft.content.quote,
+      by: source?.by ?? draft.content.by,
       mediaIds: g.photoIds,
       coverId: g.photoIds[0] ?? null,
     };
@@ -248,7 +258,7 @@ export function sameDayChunks(ids: string[], media: Library["media"]) {
         ),
       )
       .reduce<string[][]>((chunks, id, index) => {
-        if (index % 20 === 0) chunks.push([]);
+        if (index % PHOTO_REQUEST_LIMIT === 0) chunks.push([]);
         chunks[chunks.length - 1]!.push(id);
         return chunks;
       }, []),
@@ -294,13 +304,13 @@ export function validateStoredAI(value: unknown): boolean {
   }
 }
 
-/** 年度寄语起草的输入：只发送记录标题与第一次清单，纯文字、无照片。 */
+/** 年度寄语起草的输入：记录标题、第一次清单与已写寄语，不发送记录正文与照片。 */
 export function recapContext(
-  records: { title: string; text: string; first: boolean }[],
+  records: { title: string; date: string; first: boolean }[],
   existingNote = "",
 ): string {
-  const titleOf = (r: { title: string; text: string }) =>
-    r.title.trim() || r.text.trim().split("\n")[0]?.slice(0, 30) || "这一刻";
+  const titleOf = (r: { title: string; date: string }) =>
+    r.title.trim() || `（无标题）· ${dateLabel(r.date)}`;
   const firsts = records.filter((r) => r.first).map(titleOf);
   const parts = [
     `这一年共有 ${records.length} 条记录。`,

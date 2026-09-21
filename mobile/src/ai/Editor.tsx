@@ -21,6 +21,7 @@ import { api, getToken, hasConsent, giveConsent, AIError } from "./client";
 import { Photo } from "../local/Media";
 import { thumbnail } from "./images";
 import {
+  PHOTO_REQUEST_LIMIT,
   sourceFingerprint,
   polishRequest,
   moveProposalPhoto,
@@ -259,7 +260,7 @@ export function AIEditor({
           context: request.context,
           writingMode: "polish",
         });
-      } else if (kind === "write" && ids.length <= 20) {
+      } else if (kind === "write" && ids.length <= PHOTO_REQUEST_LIMIT) {
         setNotice(clipped(3500));
         setProgress("正在生成这件事的标题和正文…");
         result = await perform("write", "write", ids, {

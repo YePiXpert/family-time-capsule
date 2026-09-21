@@ -78,6 +78,22 @@ describe("legacy session key carryover", () => {
   });
 });
 describe("api response parsing and error mapping", () => {
+  it("aborts the underlying fetch when the caller cancels drafting", async () => {
+    const controller = new AbortController();
+    let received: AbortSignal | undefined;
+    globalThis.fetch = vi.fn((_url, init) => {
+      received = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        received?.addEventListener("abort", () => reject(new Error("aborted")));
+        controller.abort();
+      });
+    });
+    const error = await failure(() =>
+      api("/ai/write", {}, "POST", controller.signal),
+    );
+    expect(received?.aborted).toBe(true);
+    expect(error.code).toBe("CANCELED");
+  });
   it("labels a non-JSON gateway error page as SERVER_ERROR, not NETWORK", async () => {
     respondWith("<html>502 Bad Gateway</html>", { status: 502 });
     const e = await failure(() => api("/status"));
