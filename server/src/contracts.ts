@@ -33,3 +33,5 @@ export function parseResult(value:unknown,kind:'group'|'write',input:AIInput) {
   throw new Problem(502,'INVALID_RESULT','AI 混合了不同日期，请重试或手动整理。');
  return result;
 }
+
+export const transcribeResultSchema=z.object({text:z.string().trim().max(5000)}).strict();

@@ -1,7 +1,7 @@
 """Exercise a running service with synthetic media; never print device tokens."""
-import argparse,base64,json,subprocess,time,urllib.request,urllib.error,uuid
+import argparse,base64,json,subprocess,tempfile,time,urllib.request,urllib.error,uuid
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');p.add_argument('--skip-transcribe',action='store_true');args=p.parse_args()
 def call(path,body=None,token=None,method=None):
  headers={} if body is None else {'Content-Type':'application/json'}
  if token:headers['Authorization']='Bearer '+token
@@ -50,10 +50,30 @@ for model in ['deepseek-flash']:
 # → 空 keep 拒绝、prune 不动新对象 → 成员删自己的清单（对象是全家的，一小时内的新对象留着）。不清空家庭空间。
 import hashlib,os
 def raw(path,data,token,method='PUT',headers=None):
- req=urllib.request.Request(args.base+path,data=data,headers={'Authorization':'Bearer '+token,**(headers or {})},method=method)
+ req=urllib.request.Request(args.base+path,data=data,headers={**({'Authorization':'Bearer '+token} if token else {}),**(headers or {})},method=method)
  try:
   with urllib.request.urlopen(req,timeout=115) as r:return r.status,r.read(),r.headers.get('Content-Type','')
  except urllib.error.HTTPError as e:return e.code,e.read(),e.headers.get('Content-Type','')
+# 合成录音验证转写，不输出声音、文字或设备凭证；只在 staging 上运行。
+if not args.skip_transcribe:
+ with tempfile.TemporaryDirectory(prefix='anan-verify-audio-') as directory:
+  path=str(Path(directory)/'tone.m4a')
+  try:subprocess.run(['ffmpeg','-y','-f','lavfi','-i','sine=frequency=440:duration=2','-c:a','aac','-b:a','64k',path],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+  except FileNotFoundError:print('skip transcribe: no ffmpeg')
+  else:
+   audio=Path(path).read_bytes();route='/api/v1/ai/transcribe';headers={'Content-Type':'audio/mp4','X-Audio-Seconds':'2'}
+   status,body,_=raw(route,audio,member['token'],method='POST',headers=headers)
+   assert status==200 and isinstance(json.loads(body).get('text'),str),status
+   print('transcribe response passed')
+   assert raw(route,audio,member['token'],method='POST',headers={**headers,'X-Audio-Seconds':'999'})[0]==413
+   print('transcribe duration limit passed')
+   assert raw(route,b'{}',member['token'],method='POST',headers={'Content-Type':'application/json'})[0]==415
+   print('transcribe content type passed')
+   assert raw(route,audio,None,method='POST',headers=headers)[0]==401
+   print('transcribe authentication passed')
+   remaining=subprocess.run(['docker','exec',args.container,'sh','-c','ls -A /tmp'],check=True,capture_output=True,text=True)
+   assert not remaining.stdout.strip(),'transcribe temporary files remain'
+   print('transcribe temporary files cleaned')
 blob=os.urandom(1000000);octet={'Content-Type':'application/octet-stream','X-Object-Sha256':hashlib.sha256(blob).hexdigest()}
 object_id=hashlib.sha256(b'verification-object').hexdigest();object_path='/api/v1/backup/objects/'+object_id
 status,before=call('/api/v1/backup/status',token=member['token']);assert status==200,before

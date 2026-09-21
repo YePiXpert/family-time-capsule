@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { BackupStore } from '../src/backup-store.ts';
+import { unusedTranscribe } from './helpers.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -8,9 +13,10 @@ import type { Provider } from '../src/provider.ts';
 const image='data:image/jpeg;base64,/9j/2Q==';
 const PW='12345678',HASH=await hashPassword(PW);
 function fixture(provider?:Provider) {
- const store=new Store(':memory:');
+ const store=new Store(':memory:'),dir=mkdtempSync(join(tmpdir(),'anan-app-test-'));
  let calls=0;
- const app=createApp(store,provider??(async(kind,input)=>{calls++;return {tokens:20,result:kind==='write'?{title:'公园',text:'一起散步。'}:{groups:[{photoIds:input.photos.map(p=>p.id),title:'公园',summary:'散步'}]}};}));
+ const app=createApp(store,provider??(async(kind,input)=>{calls++;return {tokens:20,result:kind==='write'?{title:'公园',text:'一起散步。'}:{groups:[{photoIds:input.photos.map(p=>p.id),title:'公园',summary:'散步'}]}};}),'test',new BackupStore(dir),unusedTranscribe);
+ app.addHook('onClose',async()=>{rmSync(dir,{recursive:true,force:true});});
  const owner=store.setup('主人',HASH,'主人手机');
  store.createMember('家人',HASH);
  const member=store.attach(store.byUsername('家人')!.id,'家人手机');

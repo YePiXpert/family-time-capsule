@@ -14,15 +14,17 @@ AI 走账号制：空服务第一次在手机「我的 → AI 设置」创建主
 
 AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort: high`。旧版保存的模型选择会归一为 Flash；已有额度、暂停状态和成员权限保留。
 
+「说一段」转写走 CPA 的 `mimo-v2.5-asr`，使用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。三个可选环境变量：`TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（默认沿用 `CPA_BASE_URL`）、`TRANSCRIBE_KEY_FILE`（默认沿用 `CPA_KEY_FILE`）；后两项可通过 Compose override 的 `environment` 覆盖，密钥文件需另挂载为只读。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
+
 分组与文案提示词内置在 `server/src/prompts.ts`。分组只生成照片归属、短名称和客观画面摘要；文案生成朴素、温柔的标题与短正文，并禁止补造日期、对话和成长里程碑。
 
 ## 配额与数据
 
 默认每人每天 100 张分析图片、20 次文案；全局 500 张、100 次。图片文案分析计入图片额度。每天 UTC 00:00 重置；上游调用最多并发 2，每人最多 200 次/日、全局 1000 次/日，避免只用摘要绕过额度。暂停与成员额度在发起上游之前检查。反向代理后所有客户端共享同一来源地址，登录、初始化与改密接口的按地址限流实际是全家共享的每分钟预算，属预期行为。
 
-相同成员、同一请求 ID 不能再次调用上游；成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。超时调用可能已经被上游计费，因此保留额度占用，不自动退款或换模型。
+相同成员、同一请求 ID 不能再次调用上游；分组与文案的成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。失败或超时不占成员当日额度；上游可能已计费，但不自动重试或换模型。
 
-服务 SQLite 保存成员账号（用户名与密码哈希）、设备凭证哈希、请求状态和用量，不保存照片或生成正文。日志仅包含服务启动信息。无需 Redis、云相册或账号同步。
+服务 SQLite 保存成员账号（用户名与密码哈希）、设备凭证哈希、请求状态和用量，不保存照片或生成正文。日志仅包含服务启动信息及缺失 ffmpeg 的固定诊断，不含音频或转写文字。无需 Redis、云相册或账号同步。
 
 ## 从 xiaomei-ai 改名到 anan-ai（只做一次）
 
@@ -64,3 +66,5 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 ## 验证
 
 `server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 验证 DeepSeek Flash High 的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、账号登录与主人权限；`server/scripts/verify-service.py` 顺带走一遍备份对象库（上传、读回、清单、prune、删库）。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。
+
+`python3 server/scripts/verify-service.py --container anan-ai-staging-ai-1` 默认生成两秒测试录音验证转写契约与 `/tmp` 清理，不打印转写文字或设备 token。本机没有 ffmpeg 时跳过转写；可用 `--skip-transcribe` 主动跳过。

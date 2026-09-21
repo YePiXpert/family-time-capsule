@@ -1,21 +1,20 @@
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 import { Store, Problem, digest, type Member, type BackupManifest } from './store.ts';
-import { inputSchema, parseResult, polishBody, POLISH_BODY_LIMIT } from './contracts.ts';
+import { inputSchema, parseResult, polishBody, POLISH_BODY_LIMIT, transcribeResultSchema } from './contracts.ts';
 import { hashPassword, verifyPassword, timingDummy, needsRehash } from './passwords.ts';
 import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
 import type { Provider } from './provider.ts';
 import { BackupStore, FREE_FLOOR, OBJECT_ID, OBJECT_LIMIT } from './backup-store.ts';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { audioTooLong, type Transcoder, type Transcriber } from './transcribe.ts';
 import type { Readable } from 'node:stream';
-export function createApp(store:Store,provider:Provider,version='dev',backupStore?:BackupStore) {
+export function createApp(store:Store,provider:Provider,version:string,backupStore:BackupStore,transcribe:{transcoder:Transcoder;transcriber:Transcriber;model?:string}) {
+ // 全局关闭 Fastify 日志：请求体、响应体与异常对象都不交给 logger。
  const app=Fastify({logger:false,bodyLimit:15*1024*1024,requestTimeout:120000,connectionTimeout:125000});
- // 测试不传对象库时按需建一个临时目录；生产由 index.ts 传 /data/backup。
- const backups=()=>backupStore??=new BackupStore(mkdtempSync(join(tmpdir(),'anan-backup-')));
  // 备份对象按八进制流透传：bodyLimit 管不到透传流，路由自己按 Content-Length 预检并落盘计数。
  app.addContentTypeParser('application/octet-stream',(_request,payload,done)=>done(null,payload));
+ app.addContentTypeParser(/^audio\/(mp4|m4a|x-m4a)/,(_request,payload,done)=>done(null,payload));
  const cache=new Map<string,{expires:number;value:unknown}>();
  const attempts=new Map<string,{count:number;expires:number}>();
  const auth=(header?:string) => store.auth(header?.startsWith('Bearer ')?header.slice(7):'');
@@ -109,6 +108,56 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
    throw new Problem(502,'INVALID_RESULT','AI 返回内容无效，草稿仍保留。');
   }
  });
+ // 转写只保留请求指纹和额度；声音、文字不进日志或结果缓存。
+ const transcribing=new Map<string,string>(),audioLimit=5*1024*1024;
+ app.post('/api/v1/ai/transcribe',{onRequest:async req=>{
+  auth(req.headers.authorization);
+  if(!/^audio\/(mp4|m4a|x-m4a)/.test(String(req.headers['content-type']??'')))throw new Problem(415,'INVALID_INPUT','请求格式不受支持。');
+  const length=req.headers['content-length'],seconds=req.headers['x-audio-seconds'];
+  if(typeof length!=='string'||!/^\d+$/.test(length)||!Number.isSafeInteger(Number(length)))throw new Problem(400,'INVALID_INPUT','请求长度无效。');
+  if(Number(length)>audioLimit)throw audioTooLong();
+  if(seconds!==undefined){
+   if(typeof seconds!=='string'||!/^\d+$/.test(seconds)||!Number.isSafeInteger(Number(seconds)))throw new Problem(400,'INVALID_INPUT','录音时长无效。');
+   if(Number(seconds)>180)throw audioTooLong();
+  }
+  if(req.headers['x-request-id']!==undefined)z.string().uuid().parse(req.headers['x-request-id']);
+ }},async req=>{
+  const member=auth(req.headers.authorization),lane=member.deviceId??member.id;
+  const requestId=(req.headers['x-request-id'] as string|undefined)??randomUUID(),model=transcribe.model??'mimo-v2.5-asr';
+  const activeId=member.id+':'+requestId;
+  if([...transcribing.values()].includes(activeId))throw new Problem(409,'REQUEST_PENDING','这次请求仍在处理中，请稍后重试。');
+  if(transcribing.size>=2||transcribing.has(lane))throw new Problem(429,'BUSY','正在转写其他录音，请稍后再试。');
+  transcribing.set(lane,activeId);
+  let reserved=false;
+  try {
+   const chunks:Buffer[]=[];let bytes=0;
+   for await(const chunk of req.body as Readable){bytes+=chunk.length;if(bytes>audioLimit)throw audioTooLong();chunks.push(chunk);}
+   if(!bytes||bytes!==Number(req.headers['content-length']))throw new Problem(400,'INVALID_INPUT','录音内容为空或不完整。');
+   const input=Buffer.concat(chunks,bytes),fingerprint=createHash('sha256').update(input).digest('hex');
+   const status=store.reserve(member,requestId,fingerprint,0,1,model,'transcribe');
+   if(status!=='new')throw new Problem(409,status==='processing'?'REQUEST_PENDING':'RESULT_EXPIRED',status==='processing'?'这次请求仍在处理中，请稍后重试。':'这次请求已结束，结果无法恢复；请重新转写。');
+   reserved=true;
+   let audio:{wav:Buffer;seconds:number};
+   try {audio=await transcribe.transcoder(input,{maxSeconds:180});}
+   catch(error){
+    if((error as NodeJS.ErrnoException)?.code==='ENOENT'){console.error('转写不可用：未找到 ffmpeg。');throw new Problem(503,'UPSTREAM_UNAVAILABLE','转文字暂时不可用，请联系主人。');}
+    if(error instanceof Problem&&error.code==='AUDIO_TOO_LONG')throw error;
+    throw new Problem(400,'INVALID_AUDIO','这段录音读不出来，换一段试试。');
+   }
+   if(audio.seconds>180)throw audioTooLong();
+   let output:{text:string;tokens:number|null};
+   try {output=await transcribe.transcriber(audio.wav);}
+   catch(error){if(error instanceof Problem&&error.code==='INVALID_RESULT')throw error;throw new Problem(502,'UPSTREAM_UNAVAILABLE','转文字暂时不可用，请稍后重试。');}
+   const parsed=transcribeResultSchema.safeParse({text:output?.text});
+   if(!parsed.success)throw new Problem(502,'INVALID_RESULT','转文字返回内容无效，请重试。');
+   store.finish(member.id,requestId,output.tokens??null);
+   auth(req.headers.authorization);
+   return parsed.data;
+  } catch(error){
+   if(reserved)store.finish(member.id,requestId,null,error instanceof Problem?error.code:'INVALID_AUDIO');
+   throw error;
+  } finally {transcribing.delete(lane);}
+ });
  // ── 远端备份对象库（Build 72 起一家人共用）：对象 id 由手机按内容与钥匙派生，谁传上来都是同一份；
  // 清单按设备各存一份，家人一起写就是各台手机互相读对方的清单。服务端只见密文、对象 id 与字节数。
  // 不走 throttle()（反代后按地址限流是全家共享的）。
@@ -119,23 +168,23 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  const iso=(ms:number)=>new Date(ms).toISOString();
  const manifestView=(m:BackupManifest)=>({deviceId:m.deviceId,memberId:m.memberId,deviceName:m.deviceName,keyId:m.keyId,index:m.index,updatedAt:iso(m.updatedAt)});
  /** 家庭配额剩余：全家共用主人的上限。 */
- const quotaLeft=()=>Math.max(0,store.familyLimitBytes()-backups().usage().bytes);
+ const quotaLeft=()=>Math.max(0,store.familyLimitBytes()-backupStore.usage().bytes);
  /** 未知清单让整轮停收；已登记清单与未完成上传的持久占位共同保护家庭对象。 */
  const sweep=(keep:readonly string[]=[])=>{
   const now=Date.now(),claims=store.claimedObjects(now);
   if(store.hasUnknownManifestObjects())return {removed:0,bytes:0};
-  return backups().prune(new Set([...keep,...store.manifestObjects(),...claims]),now);
+  return backupStore.prune(new Set([...keep,...store.manifestObjects(),...claims]),now);
  };
  app.get('/api/v1/backup/status',async req=>{
   auth(req.headers.authorization);
-  const usage=backups().usage(),latest=store.latestManifest();
-  return {keyId:latest?.keyId??null,manifestUpdatedAt:latest?iso(latest.updatedAt):null,objects:usage.objects,bytes:usage.bytes,limitBytes:store.familyLimitBytes(),freeBytes:await backups().freeBytes(),manifests:store.manifestCount()};
+  const usage=backupStore.usage(),latest=store.latestManifest();
+  return {keyId:latest?.keyId??null,manifestUpdatedAt:latest?iso(latest.updatedAt):null,objects:usage.objects,bytes:usage.bytes,limitBytes:store.familyLimitBytes(),freeBytes:await backupStore.freeBytes(),manifests:store.manifestCount()};
  });
  app.post('/api/v1/backup/objects/have',async req=>{
   const member=auth(req.headers.authorization);
   const {ids}=z.object({ids:idList(5000)}).strict().parse(req.body);
   store.claimObjects(member.deviceId!,ids);
-  const present=backups().have(ids);
+  const present=backupStore.have(ids);
   return {missing:ids.filter(id=>!present.has(id))};
  });
  app.put('/api/v1/backup/objects/:id',async (req,reply)=>{
@@ -145,9 +194,9 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   const declared=req.headers['content-length']===undefined?undefined:Number(req.headers['content-length']);
   if(declared!==undefined&&!(Number.isSafeInteger(declared)&&declared>=0))throw new Problem(400,'INVALID_INPUT','请求长度无效。');
   if(declared!==undefined&&declared>OBJECT_LIMIT)throw new Problem(413,'TOO_LARGE','这一份太大，请更新应用后重试。');
-  if(await backups().freeBytes()<FREE_FLOOR)throw new Problem(507,'SERVER_FULL','服务器空间不足，请联系主人。');
+  if(await backupStore.freeBytes()<FREE_FLOOR)throw new Problem(507,'SERVER_FULL','服务器空间不足，请联系主人。');
   // 配额按「比原来多出的字节」算：同 id 重传若变大，一样要有余量（receive 收完再按实际字节复核一次）。
-  const left=quotaLeft(),previous=backups().stat(id)??0;
+  const left=quotaLeft(),previous=backupStore.stat(id)??0;
   if(declared!==undefined&&declared-previous>left)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系主人调整。');
   // 每台设备同时最多两个上传：一台手机把服务端撑满时别的手机不受影响。
   const lane=member.deviceId??member.id,active=uploading.get(lane)??0;
@@ -155,7 +204,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   uploading.set(lane,active+1);
   try {
    store.claimObjects(member.deviceId!,[id]);
-   const result=await backups().receive(id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft:left});
+   const result=await backupStore.receive(id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft:left});
    store.claimObjects(member.deviceId!,[id]);
    return reply.code(result.created?201:200).send({id,bytes:result.bytes});
   } finally {
@@ -165,7 +214,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  });
  app.get('/api/v1/backup/objects/:id',async (req,reply)=>{
   auth(req.headers.authorization);const {id}=objectParams.parse(req.params);
-  const found=backups().read(id);
+  const found=backupStore.read(id);
   if(!found)throw new Problem(404,'NOT_FOUND','远端没有这一份。');
   return reply.type('application/octet-stream').header('Content-Length',String(found.size)).send(found.stream);
  });
@@ -210,7 +259,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   owner(req.headers.authorization);
   // 对象空间是全家一份，成员行上只挂各自设备的清单时间；配额取主人的。
   const manifests=store.manifests();
-  return {members:store.members().map(m=>({...m,usage:store.usage(m.id),manifests:manifests.filter(x=>x.memberId===m.id).map(x=>({deviceId:x.deviceId,deviceName:x.deviceName,updatedAt:iso(x.updatedAt)}))})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS,backup:{...backups().usage(),limitBytes:store.familyLimitBytes(),manifests:manifests.length},backupFreeBytes:await backups().freeBytes()};
+  return {members:store.members().map(m=>({...m,usage:store.usage(m.id),manifests:manifests.filter(x=>x.memberId===m.id).map(x=>({deviceId:x.deviceId,deviceName:x.deviceName,updatedAt:iso(x.updatedAt)}))})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS,backup:{...backupStore.usage(),limitBytes:store.familyLimitBytes(),manifests:manifests.length},backupFreeBytes:await backupStore.freeBytes()};
  });
  app.post('/api/v1/admin/members',async (req,reply)=>{
   owner(req.headers.authorization);
@@ -237,7 +286,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  app.delete('/api/v1/admin/backup',async req=>{
   // 主人清空全家远端：先删全部清单再删对象，中途崩溃只会留下没人指着的对象，而不是指着空库的清单。
   owner(req.headers.authorization);
-  store.deleteAllManifests();backups().wipe(store);return {ok:true};
+  store.deleteAllManifests();backupStore.wipe(store);return {ok:true};
  });
  app.delete('/api/v1/admin/devices/:id',async req=>{
   const member=owner(req.headers.authorization),{id}=z.object({id:z.string().uuid()}).parse(req.params);
