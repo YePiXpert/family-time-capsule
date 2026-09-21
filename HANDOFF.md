@@ -2,11 +2,12 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-21 10:50 UTC。Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
+> 最后更新：2026-09-21 12:10 UTC。**Build 72「家人一起写」已交付**：源码 `7cdc42d`，run 35590928208 三作业全绿，校验和在第一节「Build 72 打包」；同日主人拍板**家史不做**，后续路线按模块缺口重排（第四节），Build 73「说一段」计划在 `docs/plans/PLAN-BUILD-73.md`（开工前待主人拍板五项）。
+> 旧记录：Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
 > 服务端已切到生产（SOURCE_SHA `81d1ffe`）；**Build 71（复查修复版）已交付**：源码 `412f8e0`，run 35511463957 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 72「家人一起写」。
 > 2026-09-21 定位重述：新增 `PRODUCT.md`（不是相册，是一家人写给她的传家册；AI 从代笔改为访谈者与整理者），Build 72 改为「家人一起写」（落款先于同步），原 73「分享」不再单列——见第四节。主人同日拍板五项（PRODUCT.md 第九节）：落款用关系称呼、转写先本机后可用小米 MiMo 一类、「起个头」留着、App 一句话待选、1 与 2 都做；提示词整套在 `docs/AI-PROMPTS.md`。同日晚 `docs/plans/PLAN-SHARING.md` 起草完毕（落款 + 家庭对象空间 + 三方合并，16 个提交），主人当晚批准。
-> **2026-09-21 进行中**：Build 72「家人一起写」服务端已上线生产（`473339b`），手机端提交 4–12 已推 main（落款全链路 + 传输层认识全家清单 + 本机状态 v2 + 纯函数三方合并 + 同步引擎 `318274e` + 「家人一起写」卡／冲突页 `f552b95` + 自动同步 `4ee5eaa`）；同日插入一轮全项目审查（`306cee2`／`cebfe13`／`f71f86c`，见 `PROJECT-AUDIT.md`；**服务端那半边未部署**）；
-> 提交 12b（`77b3cbe`）与 13（两台手机端到端、双端冒烟落款、宪法第 6 条：`63e1c14`）**已推**；13b（版本世系：`3b7925a`）与 15 扉页（`f99699f`）**已推**；14 收尾在本提交（`mobile/app.json` 72），出包 run 与校验和见第一节「Build 72 打包」。逐条交接见第三节的 Build 72 小节。
+> **2026-09-21（Build 72 过程，已完成）**：Build 72「家人一起写」服务端已上线生产（`473339b`），手机端提交 4–12 已推 main（落款全链路 + 传输层认识全家清单 + 本机状态 v2 + 纯函数三方合并 + 同步引擎 `318274e` + 「家人一起写」卡／冲突页 `f552b95` + 自动同步 `4ee5eaa`）；同日插入一轮全项目审查（`306cee2`／`cebfe13`／`f71f86c`，见 `PROJECT-AUDIT.md`；**服务端那半边未部署**）；
+> 提交 12b（`77b3cbe`）与 13（两台手机端到端、双端冒烟落款、宪法第 6 条：`63e1c14`）**已推**；13b（版本世系：`3b7925a`）与 15 扉页（`f99699f`）**已推**；14 收尾 `7cdc42d`（`mobile/app.json` 72），出包 run 35590928208 与校验和见第一节「Build 72 打包」。逐条交接见第三节的 Build 72 小节。
 
 ---
 
@@ -64,14 +65,26 @@
   主人随后拍板两项（已实现，同样未打包）：「最近」改成整宽时光卡左右翻（`RecentFlip`／`RecentCard`，卡宽 = 可用宽 − 56、右内边距 36 让最后一张也对齐页边、按卡吸附、圆点）；
   「随便翻翻」（`shuffle` testID，≥ 3 段时光才出现）随机进阅读页，`Record` 路由带 `shuffle: true` 时顶栏右侧「再翻一页」（`shuffle-next`）用 `navigation.replace` 换随机另一段（`shuffle.ts` 的 `pickAnother` 保证不重复当前）。
   顺手修了 CI 偶发红：`sweepTemp(0)` 同毫秒漏删（run 35514369969 的 `ai-quality`）。
-- **Build 72「家人一起写」（执行中，未出包）**：计划 `docs/plans/PLAN-SHARING.md`（16 个提交：服务端家庭空间 1–3 先部署，落款 4–7，同步 8–13，收尾 14，可选 15 扉页本名与诗），
+- **Build 72「家人一起写」（已交付）**：计划 `docs/plans/PLAN-SHARING.md`（16 个提交：服务端家庭空间 1–3 先部署，落款 4–7，同步 8–13，收尾 14，可选 15 扉页本名与诗），
   主人 2026-09-21 晚已批，第七节四条已拍板（自动同步默认开、冲突新者胜加留底、去掉「从远端恢复」、半句话「入淮清洛渐漫漫」+ 可选提交 15 做）。
-  **已推 main：提交 1–12**（服务端 1–3 已部署生产；手机端落款 4–7、传输层与状态 8、纯函数合并 9、同步引擎 10、「家人一起写」卡与冲突页 11、自动同步 12）。12b 已推（`77b3cbe`）、13 已推（`63e1c14`）、13b 已推（`3b7925a`，版本世系 `ancestors`，两台都改时输的一方也留底——计划第五节第 3 条验收实测不成立，见下一步）。15 扉页已推（`f99699f`）。**14 收尾出包 = 本提交**（`app.json` 72，出包结果记第一节）。审查修复 `306cee2`／`cebfe13`／`f71f86c` 已在 main，其中服务端部分**未部署**。
+  **已推 main：提交 1–12**（服务端 1–3 已部署生产；手机端落款 4–7、传输层与状态 8、纯函数合并 9、同步引擎 10、「家人一起写」卡与冲突页 11、自动同步 12）。12b 已推（`77b3cbe`）、13 已推（`63e1c14`）、13b 已推（`3b7925a`，版本世系 `ancestors`，两台都改时输的一方也留底——计划第五节第 3 条验收实测不成立，见下一步）。15 扉页已推（`f99699f`）。14 收尾 = `7cdc42d`（`app.json` 72；出包结果见下一条「Build 72 打包」）。审查修复 `306cee2`／`cebfe13`／`f71f86c` 已在 main，其中服务端部分**未部署**。
   逐条交接（目标／决策／改了哪些文件／验了什么／没验什么／下一步）在第三节的 Build 72 小节。
   - **服务端已部署（2026-09-21 02:20）**：Build 72 提交 1／2（家庭对象空间 + 按设备清单）在 staging 3141 跑过 `verify-service.py` 全绿，并用生产数据副本 + 合成的成员目录／旧清单行演练过迁移（2 moved／1 member dir removed／旧表迁成 `legacy:` 行）后，
     生产切到 SOURCE_SHA `473339b62a5d9e0a984652e2bf7ce91571ad71de`（镜像 `anan-ai:473339b…`，healthy，本机与经代理的 HTTPS `/healthz` 都对得上）。切换前数据整目录拷到 `/opt/anan-ai/data.bak-20260921-0220`，旧 env 在 `service.env.bak-20260921-0220`；
     生产原本没有任何成员对象目录（主人还没用过远端备份），迁移只建了 `backup/family/`。回退到 `81d1ffe` 必须连同 `data.bak` 一起回退（旧版找的是成员目录与旧表）。
     **待主人**：用 Build 71 的手机点一次「远端备份 → 现在备份」确认兼容（旧手机走 `GET/PUT /backup/manifest`，服务端按设备记、按成员回退）。
+- **Build 72 打包（已交付）**：交付提交 `7cdc42d`（`mobile/app.json` 72），run 35590928208 三作业全绿（quality／Android APK／iOS unsigned IPA），
+  `build-source.json` 的 gitSha = `7cdc42d525d9142a1379f664e53dee358d1d50dd`、androidVersionCode 72、iosBuildNumber "72"；双端冒烟 `result.json` 的布尔项全 true（安卓 12 项、iOS 回归 9 项、iOS 启动 3 项）。
+  artifacts 2026-10-21 过期，请尽快下载到 `C:\vibe-coding\releases\build-72\`：
+  `gh run download 35590928208 -n FamilyTimeCapsule-android-apk` 与 `-n FamilyTimeCapsule-ios-unsigned-ipa`（VPS 上另有一份在 `/var/tmp/anan-tests/artifacts-35590928208/`）。
+  APK 66,710,610 字节、IPA 11,219,804 字节（IPA 未签名，由主人自签后装机）；SHA-256（可直接存成 sha256sums.txt 后 `sha256sum -c`）：
+
+  ```text
+  512ba99205a135629b5c1b893e3ba504b37f3a8786ef2969922907e02f5ef6f5  FamilyTimeCapsule-android.apk
+  ad9220669a69a1d52c76bc9f8b6c86decd4a2449f83c1554a9b226774122f6e6  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
+
+  装上后按 `docs/plans/PLAN-SHARING.md` 第五节做真机验收（主人两台 + 家人一台），顺便记真机 XChaCha20 MB/s（Build 70 起欠着，阈值 5 MB/s）。Build 71 的包不必再存。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
 ## 二、恢复提示词（直接复制粘贴）
@@ -94,20 +107,16 @@
    本机若设置了 http_proxy/https_proxy，对 127.0.0.1 的请求要 env -u http_proxy -u https_proxy -u ALL_PROXY … 绕过。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 71（复查修复版）安装包已交付（源码 412f8e0，run 35511463957，校验和在 HANDOFF 第一节，artifacts 2026-10-20 过期）：
-   若主人本地还没存下 build-71 的 APK/IPA，提醒先 gh run download 存下来；过期后要重出同一版就用 412f8e0 的完整 40 位 SHA 重新派发
-   mobile-build.yml（源码没变就不加构建号）。真机 XChaCha20 MB/s 由主人装机后观察，记在第一节。服务端现在是 473339b（Build 72 家庭空间），不用再部。
+第二步·Build 72「家人一起写」安装包已交付（源码 7cdc42d，run 35590928208，校验和在 HANDOFF 第一节，artifacts 2026-10-21 过期）：
+   若主人本地还没存下 build-72 的 APK/IPA，提醒先 gh run download 存下来；过期后要重出同一版就用 7cdc42d 的完整 40 位 SHA 重新派发
+   mobile-build.yml（源码没变就不加构建号）。服务端生产是 473339b（Build 72 家庭空间）；main 上的审查修复（306cee2 那半边）尚未部署，需主人放行：
+   先 cp -a /opt/anan-ai/data /opt/anan-ai/data.bak-<时间>，staging 3141 跑 verify-service.py 全绿再切。
 
-第三步·Build 72「家人一起写」提交 1–15 已在 main（计划 docs/plans/PLAN-SHARING.md 已批；交接在 HANDOFF 第三节）：
-- 已经在 main 上的：服务端家庭空间与按设备清单（已部署生产 473339b）、落款全链路（by／墓碑／编辑页／阅读页／纪念卡纸书归档搜索年度／「我的落款」页与书架落款卡）、
-  传输层 manifests／deleteManifest／wipeFamily、RemoteState v2 与 base.json／conflicts.json、src/sync/merge.ts 纯函数三方合并（36 例测试）。
-- 已完成：10 同步引擎 family.ts、11 界面（FamilyCard／Conflicts／书架冲突卡）、12 自动同步、12b 同步清单不占保留位与内容没变不重传、13 两台手机端到端与冒烟（63e1c14）、
-  13b 版本世系 ancestors 让输的一方也留底（3b7925a）、15 扉页本名与来历（f99699f）、14 收尾（app.json 72、CHANGELOG、README）。
-  接着：按 HANDOFF 第一节「Build 72 打包」核对出包结果；出包后按计划第五节做真机验收（主人两台手机 + 家人一台）。
-  服务端审查修复（306cee2 那半边）尚未部署，需主人放行：先 cp -a /opt/anan-ai/data /opt/anan-ai/data.bak-<时间>。
-- 不做：实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
-- 之后按 PRODUCT.md 第八节：Build 73「说一段」（iPhone 系统本机识别；国内安卓多半没有本机识别，走服务端转写，候选小米 MiMo 音频模型一类，逐段同意、服务端不留声音）
-  → 出生的故事 → 访谈者（新增 writingMode，提示词按 docs/AI-PROMPTS.md 全文进 server/src/prompts.ts，含现有四条的重写）→ 家史 → 年度册的编者。原 73「分享」不再单列。
+第三步·真机验收与下一版：
+- 先按 docs/plans/PLAN-SHARING.md 第五节做真机验收（主人两台手机 + 家人一台）——两台手机真跑同步从未验证过；主人用 Build 71/72 的手机点一次「远端备份 → 现在备份」确认服务端兼容。
+- 后续路线在 HANDOFF 第四节（2026-09-21 按模块缺口重排）：Build 73「说一段」计划 docs/plans/PLAN-BUILD-73.md，开工前主人要拍板其第七节五项；
+  之后 74「出生的故事」→ 75「访谈者」（新增 writingMode，提示词按 docs/AI-PROMPTS.md 全文进 server/src/prompts.ts，含现有四条的重写；先部服务端再出包）→ 76「年度册的编者」。
+- 不做：家史（主人 2026-09-21 拍板）、实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹；原 73「分享」不再单列。
 ```
 
 ## 三、交付清单与 Build 72 进度
@@ -141,7 +150,7 @@
 | 412f8e0 | Build 71 收尾：app.json 71、CHANGELOG「Build 71 — 复查修复」、README、HANDOFF（**Build 71 打包源码 SHA**） |
 | （本次） | 交付：HANDOFF 记 run 35511463957 与 Build 71 的 APK／IPA 校验和 |
 
-### Build 72「家人一起写」（2026-09-21，进行中；未出包，`mobile/app.json` 仍是 71）
+### Build 72「家人一起写」（2026-09-21，已交付：`7cdc42d`，run 35590928208）
 
 **目标**（`docs/plans/PLAN-SHARING.md`，主人 2026-09-21 晚批准，16 个提交）：一是**落款**——每段时光都有「谁写的」，用关系称呼（爸爸／妈妈／外婆…），不是账号名；
 二是**一起写**——一台服务 = 一家人，每台手机发布自己的全量清单（就是现有的 `.xmbm`），拉别人的清单做三方合并，自动同步默认开，冲突不弹窗、输的一版留底可换回。
@@ -163,7 +172,7 @@
 | 12b | `77b3cbe` | 同步清单单独一份 `sync/manifest.xmbm`（不进「本机保留的备份」、不占三份保留位，`collectBlobs` 护住它引用的 blob，退出时删）；`RemoteState.lastPush {entitiesSha, manifestSha}`——实体段与远端里自己的索引都没变就不重传清单、不重发索引；顺手修 `pushManifest` 上传计数放在可选进度回调参数里、自动同步（不传回调）时 `pushed` 永远为 0 | 已推 |
 | 13 | `63e1c14` | `tests/helpers/family-two-phones.ts` 同一段两台手机的故事三种模式跑（假传输内存／假传输 SQLite／真服务端 e2e，第二成员经 `POST /admin/members` + `/login`）；双端冒烟 `editor-by` → `editor-by-爸爸` → `record-by`「—— 爸爸」；宪法第 6 条「`src/sync`／`src/ai` 不得 import 本机页面组件，只放行 `ui`、`context`」（`Photo` 移入 `ui.tsx`）；删 `runRemoteBackup` | 已推 |
 | 13b | `3b7925a` | records／letters 加 `ancestors?: string[]`（前几版内容哈希前 16 位，≤ 8）；`merge.ts`「本机没动」分支：远端版有世系却不含本机哈希 → 本机也留底（loser=本机版、device null）；旧版没世系不出卡；`hash.ts` 从 merge 搬到 local；保存／补落款／改信／封存／拆封／换回留底都延续世系；两台手机故事恢复并发场景（两边各一张留底、重跑幂等）| 已推 |
-| 14 | 见第一节 | CHANGELOG／README／HANDOFF／`app.json` 72（定点改 `\uXXXX`）+ 派发 `mobile-build.yml`（完整 40 位 SHA）、记校验和 | 本提交 |
+| 14 | `7cdc42d` | CHANGELOG／README／HANDOFF／`app.json` 72（定点改 `\uXXXX`）+ 派发 `mobile-build.yml`（完整 40 位 SHA） | 已推 · 已出包（run 35590928208，校验和在第一节） |
 | 15 | `f99699f` | 扉页：`profile.fullName`／`profile.motto`（可选，≤ 20／≤ 60 字）、应用内扉页／纸书扉页／归档页头同序「名字 → 本名·小名 → 来历句 → 生日」、「我的」页那半句改成「入淮清洛渐漫漫」 | 已推 |
 
 **关键决策**
@@ -213,7 +222,7 @@
 2. 提交 12 已推（`4ee5eaa`）。验收决策：iOS `inactive`（拉通知中心、来电）不中止同步，只有 `background` 才中止；自动尝试的暂时性失败（连不上、超时、资料刚变）不记 `lastError`，否则地铁里每次开应用副题都挂着「上次同步没成功」；自动同步进行中家人卡显示「正在同步…」、备份页顶卡状态行写「正在与家人同步，稍等一下。」，被互斥挡住的操作都要在状态行说明，不能静默无反应。
 3. **12b（审查 12 时发现的两个既有机制在「每次回前台都同步」下成了问题）**：`pushManifest` 每次都经 `createBackup` 往 `backupDirectory` 写一份普通命名的 `.xmbm` 并 `pruneBackups(3)`——开三次应用，她自己导出的三份保留备份就被同步快照挤光；`meta.createdAt` 让清单字节每次不同，内容没变也重传清单、重发索引，家人手机再各下一遍。已推 `77b3cbe`（见进度表 12b 行）。
 4. 提交 13 已推 `63e1c14`。**13b 的来由**：用两台手机的真故事跑计划第五节第 3 条（两台各改同一段 → 书架各有一张冲突卡）时发现只有后同步的那台有留底：A 先发布过自己的版本，它就成了 A 的合并之基，B 的版本到 A 时走「本机没动」分支被当普通更新接收——爸爸的字在爸爸手机上被换掉且无提示。修法是给版本加世系（`ancestors`），A 一看 B 版不是在自己那版之上改的就也留底；旧版本没有世系不出卡。任务书 `/tmp/astra-task.wareTx/task-13b.md`。**13b 已推 `3b7925a`**（Astra 一轮通过；沙箱外门禁 43 文件／583 例全绿，含真服务端 e2e 与两台手机并发场景；`validateLibrary` 校验世系形状：≤ 8 枚小写 16 位十六进制；归档输出与阅读器不带世系）。之后 → 14 收尾出包（`app.json` 72，派发 `mobile-build.yml` 用完整 40 位 SHA）→ 15 扉页本名与诗。**15 已推 `f99699f`**（Astra 两轮；首轮打回 4 处：纸书扉页把生日排在来历前（我任务书里坐标写反）、归档阅读器把「本名 · 小名」注进内联 script 字面量再防 `</script>`、只填本名没填昵称时纸书标题为空、资料页来历框顺序与多行高度。定下的规则：三处扉页同序「名字 → 本名 · 小名 → 来历 → 生日」；标题 = 昵称 ‖ 本名 ‖ 兜底，「本名 · 小名」行只在两者都有时出现；纸书两个新字段都没有时坐标不变，任一存在用 0.575／0.615／0.66／0.705／0.76、缺行不补位；应用里不写死本名与诗句，只有「我的」页那半句「入淮清洛渐漫漫」是写死文案）。
-5. 出包前后按计划第五节做真机验收（主人两台手机 + 家人一台），并把 APK／IPA 校验和记回第一节。
+5. 校验和已记回第一节（run 35590928208）；剩真机验收（计划第五节，主人两台手机 + 家人一台）。
 
 **接手提交 13 要用的现成接口**（别重写）
 
@@ -229,20 +238,16 @@
   `unionItems`、`unifyPersons`、`repairReferences`、`SHARED_KINDS`、`KNOWN_LIMIT`／`emptyBase`、类型 `SyncBase`／`Conflict`／`RemoteSnapshot`／`MergeResult`。
   `wantedMedia` 已经剥掉对方的 `thumb`（那是对方手机的产物），物化后再把本机的 `thumb`／`width`／`height` 补回去。
 
-## 四、后续路线
+## 四、后续路线（2026-09-21 按模块缺口重排）
 
-定位与次序以 `PRODUCT.md` 第八节为准（2026-09-21 起草，待主人拍板；主人的想法：不能只做相册，AI 现在太简单，主要是为刚出生的女儿做纪念）。摘要：
+定位与次序以 `PRODUCT.md` 第八节为准。地基（Build 43–72）已齐：本机库、备份分卷、加密远端、开放归档、纸书、信、书架、落款、家人一起写。**主人 2026-09-21 拍板：家史（第八节次序 5）不做。** 3、4、6 仍待拍板；下面是主会话读码 + Astra 只读调查（两份结论一致）后的建议分包，每条写清「复用什么／缺什么／接在哪」：
 
-- **Build 72「家人一起写」**（提交 1–13b 与 15 扉页（`f99699f`）已推 main，14 收尾出包 = 本提交，出包结果记第一节——逐条交接见第三节）：落款先于同步——每段时光有「谁写的」；
-  再做一台服务 = 一家人，每台手机发布自己的全量清单、拉别人的做三方合并（基 `sync/base.json`、删除靠墓碑、冲突留底可换回），自动同步默认开。
-  计划与实施修订都在 `docs/plans/PLAN-SHARING.md`。
-- **Build 73「说一段」**：编辑页录音 → 转写成正文，录音留在这段时光里；iPhone 走系统本机识别，国内安卓走服务端转写（候选小米 MiMo 音频模型一类），逐段同意、服务端不留声音。主人拍板 72 与 73 都做、紧接着做。
-- **出生的故事**：一组带着人写的长故事（出生那天、怀孕、名字、我们怎么认识的），进第一本纸书的第一章。
-- **访谈者**：AI 追问（新的 writingMode，只回问题，不写正文）；今天的小问题带上下文；写信引导。提示词整套（原则、共用底座、八条全文、客户端送什么、怎么验）已写在 `docs/AI-PROMPTS.md`，落地时连现有四条一起换。
-- **家史**：给外公外婆爷爷奶奶的访谈与口述。
-- **年度册的编者**：记录变长后 AI 帮挑、家人拍板；纸书章首引用家人原话。
-- 原 73「分享」不再单列：家人是作者不是观众；不装 App 的亲戚用纪念卡、长图与纸书。
-- 可选小件：`mobile-build.yml` 加 `release_tag` → GitHub Release（解决 artifacts 30 天过期）；远端备份的自动提醒（书架备份提醒里带上「远端」一句）。
+- **Build 73「说一段」**（已拍板；计划 `docs/plans/PLAN-BUILD-73.md`，开工前要主人定五项：识别路线、安卓回退上游、额度口径、是否拆 73/73b、转写进正文的方式）。录音链路已在（`editorHooks.ts:132-226` 的 expo-audio 录音、audio 素材、`Media.tsx` 播放、归档存「录音／m4a」），缺的是：本机识别模块（自写 Expo Module 照 `modules/share-intake` 的模板，或社区包——本机无网未核实）、`app.json` 的 `NSSpeechRecognitionUsageDescription`、编辑页「录完自动转写 → 追加进正文、失败录音照样入库」、安卓回退的 `POST /api/v1/ai/transcribe`（二进制上传只经 `src/ai/client.ts`、逐段同意——现有 `session.ts` 的同意是一次性全局 yes 不能顶替、服务端不落盘不写日志、单次 3 分钟／5 MB、计一次写作）。转写产物只是正文文字，不动 `merge.ts`，归档与纸书自动覆盖。
+- **Build 74「出生的故事」**：不碰服务端、不依赖 AI。`RecordContent.story?: "birth"|"pregnancy"|"name"|"met"`（可选字段自动进合并指纹；旧包校验不拒未知键）、`local/stories.ts` 固定问题清单（纯函数）、书架合集区「出生的故事」书册行 + `Stories` 路由、编辑页把「今天的小问题」卡换成主题问题卡（`Editor.tsx:420-450` 同形）、归档 front matter 加「故事」行 + 搜索筛选、`yearBookInput` 在「爸爸妈妈的话」前插一章且这些记录不再重复进当月。坑：记录日期必须可解析（`model.ts:723`）——记述日期做日期、大概时间写进正文；开放归档按年分卷（`archive-layout.ts:229`），前史会落在出生前那年的卷，首章按 `story` 收。待拍板：章放第一本书开头还是每年印；一题一条长记录（建议）还是多段串联。
+- **Build 75「访谈者」**：服务端 `contracts.ts:10` 枚举加 ask／question／letter、分模式 `parseResult`（1～3 问、每问 ≤ 30 字、禁词只查模型新增句、`first` 布尔）、`prompts.ts` 换手册第三节全文（含旧四条重写）、`app.ts:82`「没照片就 400」守卫放行新模式、`verify-service.py` 三段自检、新脚本 `server/scripts/probe-text.ts`；手机端 `ai/types.ts`／`state.ts:276` 白名单、`askContext`／`questionContext`／`letterContext`（不送照片、不送别的记录正文）、AI 面板「追问我」（问题 chips，`first` 只建议不改）、「今天的小问题」一天一次 + 近 7 天问过的缓存在设备本地 `settings`、离线退回 `prompts.ts`、`LetterEditor` 加引导入口（目前零 AI）；补三处「送得比表里少」（WRITE／POLISH 送落款、RECAP 送她说的话）并升版 `session.ts` 的一次性同意、同步改 `Year.tsx:76` 同意书与 README「AI 使用」。**先部服务端再出包**（`.strict()` 不认新枚举）；旧四条提示词不改契约，可先单独部署让主人试一周。
+- **Build 76「年度册的编者」**（2027 年一二月装订前）：`writingMode: editor` + 校验（picks ⊂ 送去的 id、引语逐字在原文里、书名 4～8 字）；`context.max(4000)` 装不下全年正文，要单独放宽或分月送；手机端「让 AI 帮挑」→ 目录预览 → 落库根字段 `yearPicks[year]`（接 `Library`／`normalizeLibrary`／`validRoot`／`rootOf`／`forkLibrary`；要同步就再接 `merge.ts:170` 的 rootIds、`sync/auto.ts:98` 的 `sharedFields`、`local/store.ts:68` 的引用保留表）；`yearBookInput` 按 picks 过滤、`lead` 用引语；源记录改删后引语重校验。
+- **小件（随最近的部署／出包带上）**：`mobile-build.yml` quality 作业缺 server typecheck（只有 mobile typecheck 与 server test）与 GitHub Release 作业（`v*` tag 已触发但只存 30 天 artifacts，要 `contents: write`）；书架备份提醒（`Shelf.tsx:927-941`「记录只保存在这台手机上」）已加入家庭时改口吻（读 `SyncStatusContext`，Shelf 不 import sync；同步成功不等于应用之外有备份，只改口吻不取消）；`server/src/app.ts:16` 惰性 `BackupStore` 改必填；`backup_object_claims` 每设备行数上限；密文位腐坏无自愈（不急）。三个 admin 端点 403 用例已补（`server/tests/backup.test.ts:532`），PROJECT-AUDIT 那条待办已过时。
+- 不做：家史（主人拍板）、实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹；原 73「分享」不再单列；「把散落的同一件事接成线索」有愿景无契约，不排期。
 
 ## 五、踩坑清单（务必先读，历史细节在 docs/plans/ 各计划的对应小节）
 
