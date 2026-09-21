@@ -175,6 +175,19 @@ describe("batch photo events", () => {
       groups.slice(1).every((g) => g.title === "" && g.text === ""),
     ).toBe(true);
   });
+  it("stamps the draft's signature onto every day group, keeping an event's own", () => {
+    const s = batchFixture();
+    const d = s.drafts.draft!;
+    d.content.by = "妈妈";
+    expect(photoDayGroups(d, s.media).map((g) => g.by)).toEqual(["妈妈", "妈妈"]);
+    d.photoEvents = [
+      { ...emptyContent(), mediaIds: ["a", "b"], coverId: "a", by: "外婆" },
+      { ...emptyContent(), mediaIds: ["c", "unknown"], coverId: null },
+    ];
+    expect(photoDayGroups(d, s.media).map((g) => g.by)).toEqual(["外婆", "妈妈"]);
+    delete d.content.by;
+    expect(photoDayGroups(d, s.media).map((g) => g.by)).toEqual(["外婆", undefined]);
+  });
   it("groups an undated video with its neighboring photo day", () => {
     const s = batchFixture();
     s.media.video = {

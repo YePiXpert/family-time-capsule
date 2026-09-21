@@ -1,3 +1,4 @@
+import { BY_LIMIT } from "./model";
 import {
   createContext,
   memo,
@@ -905,6 +906,104 @@ export function PersonChips({
           onPress={() => onToggle(p.id)}
         />
       ))}
+    </View>
+  );
+}
+/**
+ * 落款行：一行辅助色文字「—— 爸爸」（没落款时「谁写的？」），点开在下面铺一排称呼 chips
+ * （用过的在前、六个常用称呼兜底、末尾「其他…」可以自己写）。再点选中的那个就取消落款。
+ */
+export function SignatureButton({
+  value,
+  options,
+  onChange,
+  disabled = false,
+  testID = "editor-by",
+}: {
+  value: string | undefined;
+  options: readonly string[];
+  onChange: (by: string | undefined) => void;
+  disabled?: boolean;
+  testID?: string;
+}) {
+  const s = useStyles();
+  const { colors: c } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState<string | null>(null);
+  const shown = [...new Set([...(value ? [value] : []), ...options])];
+  const pick = (by: string | undefined) => {
+    onChange(by);
+    setCustom(null);
+    setOpen(false);
+  };
+  return (
+    <View style={{ gap: 8 }}>
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={value ? `落款：${value}` : "谁写的？"}
+        accessibilityState={{ disabled, expanded: open }}
+        disabled={disabled}
+        hitSlop={6}
+        onPress={() => setOpen(!open)}
+        style={({ pressed }) => ({
+          alignSelf: "flex-end",
+          minHeight: 44,
+          justifyContent: "center",
+          paddingHorizontal: 4,
+          opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+        })}
+      >
+        <Text style={[s.muted, { color: value ? c.ink : c.muted }]}>
+          {value ? `—— ${value}` : "谁写的？"}
+        </Text>
+      </Pressable>
+      {open && (
+        <View style={{ gap: 8 }}>
+          <View style={s.row}>
+            {shown.map((by) => (
+              <Button
+                key={by}
+                compact
+                title={by}
+                selected={by === value}
+                testID={`${testID}-${by}`}
+                onPress={() => pick(by === value ? undefined : by)}
+              />
+            ))}
+            <Button
+              compact
+              title="其他…"
+              selected={custom !== null}
+              testID={`${testID}-other`}
+              onPress={() => setCustom(custom === null ? "" : null)}
+            />
+          </View>
+          {custom !== null && (
+            <View style={s.row}>
+              <View style={{ flex: 1, minWidth: 160 }}>
+                <Field
+                  label="落款"
+                  hideLabel
+                  testID={`${testID}-custom`}
+                  placeholder="例如：小姨、干妈"
+                  value={custom}
+                  maxLength={BY_LIMIT}
+                  onChangeText={setCustom}
+                  onSubmitEditing={() => custom.trim() && pick(custom.trim())}
+                />
+              </View>
+              <Button
+                compact
+                title="好"
+                testID={`${testID}-custom-ok`}
+                disabled={!custom.trim()}
+                onPress={() => pick(custom.trim())}
+              />
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }

@@ -17,6 +17,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import { useLibrary, useStore } from "./context";
 import {
+  BY_PRESETS,
   clone,
   type RecordContent,
   type RecordDraft,
@@ -37,6 +38,7 @@ import {
   Page,
   useTopBarOffset,
   PersonChips,
+  SignatureButton,
   Text,
   dateLabel,
   hapticSuccess,
@@ -74,6 +76,22 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     () => Object.values(state.persons),
     [state.persons],
   );
+  // 落款候选：这台手机的默认落款与用过的称呼按次数排前面，六个常用称呼兜底。
+  const byOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of Object.values(state.records))
+      if (r.by) counts.set(r.by, (counts.get(r.by) ?? 0) + 1);
+    const used = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
+      .map(([by]) => by);
+    return [
+      ...new Set([
+        ...(state.settings.by ? [state.settings.by] : []),
+        ...used,
+        ...BY_PRESETS,
+      ]),
+    ];
+  }, [state.records, state.settings.by]);
   const nextAction = useRef<(() => void) | null>(null),
     operation = useRef(false),
     // 保存进行中按了返回：记下来，这一轮操作结束后再走，不用一行红字拦人。
@@ -121,6 +139,15 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             ),
           }
         : {}),
+      // 落款是整份草稿的：分成几件事时每件事都跟着换。
+      ...("by" in patch && current.current.photoEvents
+        ? {
+            photoEvents: current.current.photoEvents.map((event) => ({
+              ...event,
+              by: patch.by,
+            })),
+          }
+        : {}),
       content: { ...current.current.content, ...patch },
       updatedAt: now(),
     };
@@ -129,6 +156,16 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       Object.keys(patch).every((key) => key === "text" || key === "title");
     if (keystrokeOnly) persistDebounced(next);
     else void persist(next);
+  };
+  /** 选了落款就记到草稿上；这台手机还没有默认落款时顺手记下，下一段时光直接带上。 */
+  const sign = (by: string | undefined) => {
+    change({ by });
+    if (by && !state.settings.by)
+      void store
+        .change((s) => {
+          s.settings = { ...s.settings, by };
+        })
+        .catch((e) => setError(messageOf(e)));
   };
   const run = async (fn: () => Promise<void>) => {
     if (operation.current) return;
@@ -367,10 +404,18 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 onEndEditing={() => void flush()}
                 style={{ minHeight: 160, textAlignVertical: "top" }}
               />
-              <Text style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
-                草稿会自动保留。
-              </Text>
             </View>
+          )}
+          <SignatureButton
+            value={draft.content.by}
+            options={byOptions}
+            disabled={busy}
+            onChange={sign}
+          />
+          {!draft.photoEvents && (
+            <Text style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
+              草稿会自动保留。
+            </Text>
           )}
           {!promptOff &&
             !draft.recordId &&
