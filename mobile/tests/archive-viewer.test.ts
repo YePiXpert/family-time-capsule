@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARCHIVE_VIEWER_HTML } from "../src/local/archive-viewer";
-import { planArchive } from "../src/local/archive-layout";
+import { planArchive, type ArchiveLibrary } from "../src/local/archive-layout";
 import { emptyLibrary, type Library } from "../src/local/model";
 
 type Node = {
@@ -9,7 +9,7 @@ type Node = {
   addEventListener: () => void;
 };
 /** 桩 DOM：只提供页面脚本用到的几个入口，渲染结果落在 innerHTML 里。 */
-function run(library: unknown) {
+function run(library: ArchiveLibrary | undefined) {
   const nodes: Record<string, Node> = {};
   const document = {
     getElementById: (id: string) =>
@@ -55,6 +55,36 @@ const libraryOf = (s: Library) =>
   planArchive(s, { now: new Date(2026, 8, 19), includeSealedLetters: true }).library;
 
 describe("offline archive viewer", () => {
+  it("escapes script-closing text in the rendered full name line", () => {
+    const s = sample();
+    s.profile.fullName = "</script><b>";
+    expect(run(libraryOf(s)).nodes["name-story"]!.innerHTML).toContain("&lt;/script&gt;&lt;b&gt; · 小名桉桉");
+  });
+  it("renders escaped full name and origin below the title, omitting absent lines", () => {
+    const s = sample();
+    expect(run(libraryOf(s)).nodes["name-story"]!.innerHTML).toBe("");
+    s.profile.name = "小<夏>";
+    s.profile.fullName = "林<知夏>";
+    s.profile.motto = "风 < 云 & 雨";
+    const { nodes } = run(libraryOf(s));
+    expect(nodes.title!.innerHTML).toBe("小&lt;夏&gt;的成长记录");
+    expect(nodes["name-story"]!.innerHTML).toBe(
+      '<div class="muted">林&lt;知夏&gt; · 小名小&lt;夏&gt;</div><p class="title-motto">风 &lt; 云 &amp; 雨</p>',
+    );
+    expect(ARCHIVE_VIEWER_HTML.indexOf('id="title"')).toBeLessThan(ARCHIVE_VIEWER_HTML.indexOf('id="name-story"'));
+    expect(ARCHIVE_VIEWER_HTML.indexOf('id="name-story"')).toBeLessThan(ARCHIVE_VIEWER_HTML.indexOf('id="subtitle"'));
+    delete s.profile.fullName;
+    expect(run(libraryOf(s)).nodes["name-story"]!.innerHTML).toBe('<p class="title-motto">风 &lt; 云 &amp; 雨</p>');
+    s.profile.fullName = "林知夏";
+    s.profile.name = "";
+    const fullNameOnly = run(libraryOf(s)).nodes;
+    expect(fullNameOnly.title!.innerHTML).toBe("林知夏的成长记录");
+    expect(fullNameOnly["name-story"]!.innerHTML).toBe('<p class="title-motto">风 &lt; 云 &amp; 雨</p>');
+    delete s.profile.motto;
+    const withoutMotto = run(libraryOf(s)).nodes;
+    expect(withoutMotto.title!.innerHTML).toBe("林知夏的成长记录");
+    expect(withoutMotto["name-story"]!.innerHTML).toBe("");
+  });
   it("is self-contained: no network references, data from library.js", () => {
     expect(ARCHIVE_VIEWER_HTML).not.toMatch(/https?:\/\//);
     expect(ARCHIVE_VIEWER_HTML).not.toMatch(/\b(fetch|XMLHttpRequest|WebSocket)\s*\(/);

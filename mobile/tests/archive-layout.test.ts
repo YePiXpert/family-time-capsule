@@ -149,6 +149,25 @@ describe("safeName", () => {
 });
 
 describe("planArchive", () => {
+  it("exports optional name and origin only when filled, keeping archive version 1", () => {
+    const s = library();
+    expect(planArchive(s, { now: NOW }).library.child).not.toHaveProperty("fullName");
+    expect(planArchive(s, { now: NOW }).library.child).not.toHaveProperty("motto");
+    s.profile.fullName = "林知夏";
+    s.profile.motto = "名字来自夏天的第一阵风。";
+    const plan = planArchive(s, { now: NOW });
+    expect(plan.library.child).toEqual({
+      name: s.profile.name, birthday: s.profile.birthday,
+      fullName: s.profile.fullName, motto: s.profile.motto,
+    });
+    expect(plan.library.format).toBe("anan-open-archive");
+    expect(plan.library.version).toBe(1);
+    expect(JSON.parse(textOf(plan.entries, "library.json")).child).toEqual(plan.library.child);
+    delete s.profile.fullName;
+    expect(planArchive(s, { now: NOW }).library.child).not.toHaveProperty("fullName");
+    delete s.profile.motto;
+    expect(planArchive(s, { now: NOW }).library.child).not.toHaveProperty("motto");
+  });
   it("names the root after the child and the export day", () => {
     const s = library();
     expect(archiveRootName(s, NOW)).toBe("桉桉成长记归档-20260919");

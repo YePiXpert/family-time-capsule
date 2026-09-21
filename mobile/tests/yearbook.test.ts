@@ -116,6 +116,16 @@ const march = (
 ) => ({ label, records });
 
 describe("年度册的内容装配", () => {
+  it("把本名与来历带进扉页，未填时不带键，也不凭空补小名", () => {
+    const fields = { fullName: "林知夏", motto: "名字来自夏天的第一阵风。" };
+    expect(yearBookInput(source(fields)).titlePage).toEqual({ name: "桉桉", ...fields });
+    expect(yearBookInput(source()).titlePage).toEqual({ name: "桉桉" });
+    for (const key of ["fullName", "motto"] as const) {
+      expect(yearBookInput(source()).titlePage).not.toHaveProperty(key);
+      expect(yearBookInput(source({ [key]: fields[key] })).titlePage).toEqual({ name: "桉桉", [key]: fields[key] });
+    }
+    expect(yearBookInput(source({ ...fields, profileName: "" })).titlePage).toEqual({ name: "林知夏", motto: fields.motto });
+  });
   it("寄语在最前，空月不出章，「第一次」收在最后", () => {
     const book = yearBookInput(
       source({

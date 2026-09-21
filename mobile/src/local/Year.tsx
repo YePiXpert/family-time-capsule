@@ -211,6 +211,8 @@ export function Year({ route }: Props<"Year">) {
         year,
         profileName: state.profile.name,
         birthday: state.profile.birthday,
+        fullName: state.profile.fullName,
+        motto: state.profile.motto,
         stats,
         note: state.yearNotes[year] ?? "",
         months: monthKeys.map((key) => {

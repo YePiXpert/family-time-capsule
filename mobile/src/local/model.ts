@@ -121,9 +121,17 @@ export const LETTER_TEXT_LIMIT = 5000;
 export const LETTER_FROM_LIMIT = 50;
 export type LocalProfile = {
   name: string;
+  /** 本名；没填时不存空字符串。 */
+  fullName?: string;
+  /** 名字的来历，一句话。 */
+  motto?: string;
   birthday: string;
   avatarId: string | null;
 };
+/** 应用与纸书扉页共用；开放归档阅读器保持相同拼法。 */
+export function fullNameLine(fullName: string, name: string): string {
+  return name.trim() ? `${fullName} · 小名${name.trim()}` : "";
+}
 /** 库里存着的实体是只读的：一次 change 里只能整个替换（见 editEntity），
  * 不能原地改——共享的是同一个对象，原地改会当场污染界面上的当前状态。 */
 export type Stored<T> = {
@@ -776,6 +784,14 @@ function validRoot(s: Library): boolean {
         ))) &&
     !!s.profile &&
     isText(s.profile.name) &&
+    (s.profile.fullName === undefined ||
+      (typeof s.profile.fullName === "string" &&
+        s.profile.fullName === s.profile.fullName.trim() &&
+        s.profile.fullName.length > 0 && s.profile.fullName.length <= 20)) &&
+    (s.profile.motto === undefined ||
+      (typeof s.profile.motto === "string" &&
+        s.profile.motto === s.profile.motto.trim() &&
+        s.profile.motto.length > 0 && s.profile.motto.length <= 60)) &&
     isText(s.profile.birthday) &&
     (s.profile.avatarId === null || isId(s.profile.avatarId)) &&
     !!s.settings &&

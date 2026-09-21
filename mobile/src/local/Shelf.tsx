@@ -26,6 +26,7 @@ import {
 import { letterCaption, letterState, sortLetters } from "./letters";
 import {
   monthIndex,
+  fullNameLine,
   monthKey,
   recordTitle,
   sortedRecords,
@@ -1397,6 +1398,10 @@ export function TitlePage() {
     { colors } = useTheme();
   const nav = useNav();
   const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
+  const name = state.profile.name || state.profile.fullName;
+  const nameLine = state.profile.fullName
+    ? fullNameLine(state.profile.fullName, state.profile.name)
+    : "";
   return (
     <Page>
       <View style={{ alignItems: "center", paddingVertical: 48, gap: 20 }}>
@@ -1413,15 +1418,35 @@ export function TitlePage() {
             {initial}
           </Text>
         </Stamp>
-        {state.profile.name ? (
+        {name ? (
           <Text style={[s.title, { textAlign: "center" }]}>
-            {state.profile.name}
+            {name}
           </Text>
         ) : (
           <Text
             style={[s.heading, { textAlign: "center", color: colors.muted }]}
           >
             还没填名字
+          </Text>
+        )}
+        {!!nameLine && (
+          <Text testID="title-full-name" style={[s.muted, { textAlign: "center" }]}>
+            {nameLine}
+          </Text>
+        )}
+        {!!state.profile.motto && (
+          <Text
+            testID="title-motto"
+            style={{
+              fontFamily: serif,
+              fontSize: 16,
+              lineHeight: 26,
+              color: colors.muted,
+              textAlign: "center",
+              paddingHorizontal: 24,
+            }}
+          >
+            {state.profile.motto}
           </Text>
         )}
         {!!state.profile.birthday && (

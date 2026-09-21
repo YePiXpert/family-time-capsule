@@ -73,7 +73,7 @@ export type ArchiveLibrary = {
   app: string;
   createdAt: string;
   year: string | null;
-  child: { name: string; birthday: string; avatar?: string };
+  child: { name: string; birthday: string; avatar?: string; fullName?: string; motto?: string };
   records: ArchiveRecord[];
   albums: { id: string; name: string; note: string; recordIds: string[] }[];
   series: {
@@ -386,6 +386,8 @@ export function planArchive(
   const child: ArchiveLibrary["child"] = {
     name: state.profile.name,
     birthday: state.profile.birthday,
+    ...(state.profile.fullName ? { fullName: state.profile.fullName } : {}),
+    ...(state.profile.motto ? { motto: state.profile.motto } : {}),
     ...(avatar ? { avatar: `头像.${extensionOf(avatar)}` } : {}),
   };
   const library: ArchiveLibrary = {
