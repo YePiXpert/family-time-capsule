@@ -6,7 +6,7 @@
 > 服务端已切到生产（SOURCE_SHA `81d1ffe`）；**Build 71（复查修复版）已交付**：源码 `412f8e0`，run 35511463957 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 72「家人一起写」。
 > 2026-09-21 定位重述：新增 `PRODUCT.md`（不是相册，是一家人写给她的传家册；AI 从代笔改为访谈者与整理者），Build 72 改为「家人一起写」（落款先于同步），原 73「分享」不再单列——见第四节。主人同日拍板五项（PRODUCT.md 第九节）：落款用关系称呼、转写先本机后可用小米 MiMo 一类、「起个头」留着、App 一句话待选、1 与 2 都做；提示词整套在 `docs/AI-PROMPTS.md`。同日晚 `docs/plans/PLAN-SHARING.md` 起草完毕（落款 + 家庭对象空间 + 三方合并，16 个提交），主人当晚批准。
 > **2026-09-21 进行中**：Build 72「家人一起写」服务端已上线生产（`473339b`），手机端提交 4–12 已推 main（落款全链路 + 传输层认识全家清单 + 本机状态 v2 + 纯函数三方合并 + 同步引擎 `318274e` + 「家人一起写」卡／冲突页 `f552b95` + 自动同步 `4ee5eaa`）；同日插入一轮全项目审查（`306cee2`／`cebfe13`／`f71f86c`，见 `PROJECT-AUDIT.md`；**服务端那半边未部署**）；
-> 提交 12b（同步清单不占保留备份位、内容没变不重传）**执行中**，13–15（端到端、收尾、扉页）**未做**，**未出包**（`mobile/app.json` 仍是 71）。逐条交接见第三节的 Build 72 小节。
+> 提交 12b（同步清单不占保留备份位、内容没变不重传）**已推**（`77b3cbe`），13–15（端到端、收尾、扉页）**未做**，**未出包**（`mobile/app.json` 仍是 71）。逐条交接见第三节的 Build 72 小节。
 
 ---
 
@@ -66,7 +66,7 @@
   顺手修了 CI 偶发红：`sweepTemp(0)` 同毫秒漏删（run 35514369969 的 `ai-quality`）。
 - **Build 72「家人一起写」（执行中，未出包）**：计划 `docs/plans/PLAN-SHARING.md`（16 个提交：服务端家庭空间 1–3 先部署，落款 4–7，同步 8–13，收尾 14，可选 15 扉页本名与诗），
   主人 2026-09-21 晚已批，第七节四条已拍板（自动同步默认开、冲突新者胜加留底、去掉「从远端恢复」、半句话「入淮清洛渐漫漫」+ 可选提交 15 做）。
-  **已推 main：提交 1–12**（服务端 1–3 已部署生产；手机端落款 4–7、传输层与状态 8、纯函数合并 9、同步引擎 10、「家人一起写」卡与冲突页 11、自动同步 12）。**执行中：12b**（同步清单不占保留备份位、内容没变不重传）。**未做：提交 13–15**（端到端、收尾出包、扉页）。审查修复 `306cee2`／`cebfe13`／`f71f86c` 已在 main，其中服务端部分**未部署**。
+  **已推 main：提交 1–12**（服务端 1–3 已部署生产；手机端落款 4–7、传输层与状态 8、纯函数合并 9、同步引擎 10、「家人一起写」卡与冲突页 11、自动同步 12）。12b 已推（同步清单不占保留备份位、内容没变不重传：`77b3cbe`）。**未做：提交 13–15**（端到端、收尾出包、扉页）。审查修复 `306cee2`／`cebfe13`／`f71f86c` 已在 main，其中服务端部分**未部署**。
   逐条交接（目标／决策／改了哪些文件／验了什么／没验什么／下一步）在第三节的 Build 72 小节。
   - **服务端已部署（2026-09-21 02:20）**：Build 72 提交 1／2（家庭对象空间 + 按设备清单）在 staging 3141 跑过 `verify-service.py` 全绿，并用生产数据副本 + 合成的成员目录／旧清单行演练过迁移（2 moved／1 member dir removed／旧表迁成 `legacy:` 行）后，
     生产切到 SOURCE_SHA `473339b62a5d9e0a984652e2bf7ce91571ad71de`（镜像 `anan-ai:473339b…`，healthy，本机与经代理的 HTTPS `/healthz` 都对得上）。切换前数据整目录拷到 `/opt/anan-ai/data.bak-20260921-0220`，旧 env 在 `service.env.bak-20260921-0220`；
@@ -159,7 +159,7 @@
 | 10 | `318274e` | `mobile/src/sync/family.ts`：`runFamilySync`／`joinFamily`／`leaveFamily`；`engine.ts` 抽出 `fetchManifestOf`／`pushManifest`／下载单个 blob；删 `restoreFromRemote` 与 `RecoveryCode` 的恢复态（路由 `mode: "show" | "join"`） | 已推 |
 | 11 | `f552b95` | `FamilyCard.tsx` 取代 `RemoteBackupCard.tsx`（testID `remote-card` 等保留；未加入态按服务状态给「继续一起写／加入／开始一起写」，退出只走 `leaveFamily`）、`Conflicts.tsx` 与路由、纯函数 `sync/conflicts.ts`（`restoreLoser` + `repairReferences`）、`SyncStatusContext`（`local/context.tsx` 类型 + `sync/status.ts`）、书架冲突卡（✕ 当天沉默）、「我的」副题、`dateTimeLabel`、DESIGN | 已推 |
 | 12 | `4ee5eaa` | `src/sync/auto.ts`：`createAutoSync`（单飞、保存后 30 秒防抖、忙时顺延、后台中止、自身写库不触发）+ `useAutoSync`（`AppState` 只认 active／background，`inactive` 不动；冷启动延 2 秒；NETWORK／TIMEOUT／INCOMPLETE 这类暂时失败不记 `lastError`）；`status.ts` `markLocalBusy`；`store.ts` 共享根字段未改时保留引用；`FamilyCard` 读 `SyncStatusContext`，自动同步中显示「正在同步…」并禁用动作；外观页「回到应用时自动同步」开关；备份页与归档卡不与同步并发、只在状态行说明；「我的」副题补「上次同步没成功，点开看看」 | 已推 |
-| 12b | — | 同步清单单独一份 `sync/manifest.xmbm`（不进「本机保留的备份」、不占三份保留位，`collectBlobs` 护住它引用的 blob，退出时删）；`RemoteState.lastPush {entitiesSha, manifestSha}`——实体段与远端里自己的索引都没变就不重传清单、不重发索引 | 执行中 |
+| 12b | `77b3cbe` | 同步清单单独一份 `sync/manifest.xmbm`（不进「本机保留的备份」、不占三份保留位，`collectBlobs` 护住它引用的 blob，退出时删）；`RemoteState.lastPush {entitiesSha, manifestSha}`——实体段与远端里自己的索引都没变就不重传清单、不重发索引；顺手修 `pushManifest` 上传计数放在可选进度回调参数里、自动同步（不传回调）时 `pushed` 永远为 0 | 已推 |
 | 13 | — | 两台手机端到端、双端冒烟走一次落款、宪法补「`src/sync/**` 不得 import `../local/*.tsx`」 | 未做 |
 | 14 | — | CHANGELOG／README／HANDOFF／`app.json` 72（定点改 `\uXXXX`）+ 派发 `mobile-build.yml`（完整 40 位 SHA）、记校验和 | 未做 |
 | 15 | — | 扉页：`profile.fullName`／`profile.motto`、「李清洛 · 小名桉桉」与诗、「我的」页那半句改成「入淮清洛渐漫漫」 | 未做（主人已批准做） |
@@ -209,12 +209,13 @@
 
 1. 提交 10 与 11 已推（见上表）。提交 11 的验收决策：冲突卡 ✕ 改为当天沉默（`nudge.ts` 不再对 conflict 恒不关）；「用这一版」换回后必须 `repairReferences`（否则相册／选材封面与系列条目悬空、坏库落盘、下次开库失败——已有回归测试）。
 2. 提交 12 已推（`4ee5eaa`）。验收决策：iOS `inactive`（拉通知中心、来电）不中止同步，只有 `background` 才中止；自动尝试的暂时性失败（连不上、超时、资料刚变）不记 `lastError`，否则地铁里每次开应用副题都挂着「上次同步没成功」；自动同步进行中家人卡显示「正在同步…」、备份页顶卡状态行写「正在与家人同步，稍等一下。」，被互斥挡住的操作都要在状态行说明，不能静默无反应。
-3. **12b（审查 12 时发现的两个既有机制在「每次回前台都同步」下成了问题）**：`pushManifest` 每次都经 `createBackup` 往 `backupDirectory` 写一份普通命名的 `.xmbm` 并 `pruneBackups(3)`——开三次应用，她自己导出的三份保留备份就被同步快照挤光；`meta.createdAt` 让清单字节每次不同，内容没变也重传清单、重发索引，家人手机再各下一遍。修法见进度表 12b 行，任务书 `/tmp/astra-task.wareTx/task-12b.md`。之后 → 13 端到端与冒烟 → 14 收尾出包（`app.json` 72，派发 `mobile-build.yml` 用完整 40 位 SHA）→ 15 扉页本名与诗。
+3. **12b（审查 12 时发现的两个既有机制在「每次回前台都同步」下成了问题）**：`pushManifest` 每次都经 `createBackup` 往 `backupDirectory` 写一份普通命名的 `.xmbm` 并 `pruneBackups(3)`——开三次应用，她自己导出的三份保留备份就被同步快照挤光；`meta.createdAt` 让清单字节每次不同，内容没变也重传清单、重发索引，家人手机再各下一遍。已推 `77b3cbe`（见进度表 12b 行）。之后 → 13 端到端与冒烟 → 14 收尾出包（`app.json` 72，派发 `mobile-build.yml` 用完整 40 位 SHA）→ 15 扉页本名与诗。
 4. 出包前后按计划第五节做真机验收（主人两台手机 + 家人一台），并把 APK／IPA 校验和记回第一节。
 
 **接手提交 13 要用的现成接口**（别重写）
 
 - `auto.ts`：`createAutoSync(deps)→{onForeground,onBackground,onLibraryChange,dispose}`（纯排期，假定时器可测）、`sharedChanged(prev,next)`、`useAutoSync(store)`（只在 `App.tsx`）；`status.ts`：`markSyncRunning`／`isSyncRunning`／`subscribeSyncRunning`、`markLocalBusy`／`isLocalBusy`、`readSyncStatus`、`useSyncStatusValue`；`local/context.tsx`：`SyncStatus {joined,lastSyncAt?,lastError?,conflicts,running}`、`useSyncStatus`。
+- 12b 之后：`local/backup.ts` `createSyncManifest(state, onProgress?, signal?)` 写固定的 `sync/manifest.xmbm`（`files.ts` `syncManifestFile()`），`collectBlobs` 护住它；`RemoteState.lastPush {entitiesSha, manifestSha}`；`pushManifest` 多返回 `entitiesSha`；`syncFamily` 里 `unchanged` 判定在合并落库之后。
 - 提交 13 的宪法新规不能按计划字面写成「`src/sync/**` 不得 import `../local/*.tsx`」——`FamilyCard`／`Conflicts`／`RecoveryCode` 都用 `../local/ui` 与 `../local/context`；应写成「`src/sync/**` 不得 import 本机页面组件（`Shelf`／`Settings`／`Editor`／`Record`…）」。
 
 - `transport.ts`：`status()→{keyId,manifestUpdatedAt,objects,bytes,limitBytes,freeBytes,manifests}`、`missing`、`put`、`get`、`putManifest(keyId,index,objects)`、
