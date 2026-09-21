@@ -6,6 +6,7 @@ import {
   YEARBOOK_WIDTH,
   layoutYearbook,
   yearBookInput,
+  yearBookMonth,
   yearBookRecordGroups,
   type YearBookSource,
   type YearbookInput,
@@ -246,5 +247,38 @@ describe("故事排在纸书开头", () => {
     });
     expect(JSON.stringify(yearBookInput(original))).toBe(expected);
     expect(JSON.stringify(yearBookInput({ ...original, stories: [] }))).toBe(expected);
+  });
+});
+
+
+describe("annual book editor assembly", () => {
+  const records = [
+    { id: "a", title: "第一段", date: "9月1日", text: "窗边有风。", photos: [{ key: "p", aspect: 1 }] },
+    { id: "b", title: "第二段", date: "9月2日", text: "伸出小脚。", photos: [] },
+    { id: "c", title: "第三段", date: "9月3日", text: "抓住窗帘。", photos: [] },
+  ];
+  const project = ({ id: _id, ...record }: typeof records[number]) => record;
+  it("binds monthly picks in directory order, quotes in lead and a proposed title", () => {
+    const book = yearBookInput(source({ title: "窗边的小脚", months: [
+      { label: "九月", ...yearBookMonth(records, { recordIds: ["b", "a"], quote: { recordId: "c", text: "抓住窗帘。" } }, project) },
+      { label: "十月", ...yearBookMonth(records, undefined, project) },
+    ], note: "给你", firsts: [{ title: "第一次", date: "9月1日" }],
+      stories: [{ topic: "出生那天", lead: "原来的开头", records: [project(records[2]!)] }],
+    }));
+    expect(book.title).toBe("窗边的小脚");
+    expect(book.subtitle).toBe(`桉桉的 2026 年 · ${source().stats}`);
+    expect(book.chapters.map(c => c.heading)).toEqual(["出生那天", "爸爸妈妈的话", "九月", "十月", "这一年的第一次"]);
+    const month = book.chapters[2]!;
+    expect(month.lead).toBe("「抓住窗帘。」\n2 段时光 · 1 张照片");
+    expect(month.blocks.filter(b => b.kind === "text").map(b => b.title)).toEqual(["第二段", "第一段"]);
+    expect(book.chapters[3]!.blocks.filter(b => b.kind === "text")).toHaveLength(3);
+    expect(book.chapters[0]!.blocks[0]).toMatchObject({ body: "抓住窗帘。" });
+  });
+  it("without a directory produces byte-identical book input to the previous assembly", () => {
+    const previous = source({ months: [{ label: "九月", lead: "3 段时光 · 1 张照片", records: records.map(project) }] });
+    const next = source({ months: [{ label: "九月", ...yearBookMonth(records, undefined, project) }] });
+    expect(JSON.stringify(yearBookInput(next))).toBe(JSON.stringify(yearBookInput(previous)));
+    expect(yearBookInput(next).title).toBe("桉桉的 2026 年");
+    expect(yearBookInput(next).subtitle).toBe(source().stats);
   });
 });

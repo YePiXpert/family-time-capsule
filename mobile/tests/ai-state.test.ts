@@ -4,8 +4,13 @@ import {
   emptyContent,
   validateLibrary,
   type RecordDraft,
+  type LocalRecord,
+  type YearPicks,
 } from "../src/local/model";
 import {
+  editorContext,
+  checkEditorResult,
+  applyYearPicks,
   askContext,
   questionContext,
   letterContext,
@@ -525,5 +530,127 @@ describe("interviewer response validation", () => {
   });
   it.each(["ask", "question", "letter", "editor"])("recognizes stored %s jobs", (writingMode) => {
     expect(validateStoredAI({ fingerprint: "a".repeat(64), kind: "write", eventIndex: 0, model: "model", writingMode, steps: [] })).toBe(true);
+  });
+});
+
+const editorRecord = (id: string, patch: Partial<LocalRecord> = {}): LocalRecord => ({
+  ...emptyContent(), id, revision: 1, date: "2026-09-10T12:00:00", updatedAt: "2026-09-21T10:00:00Z",
+  title: "窗边的小脚", text: "她说窗边有风。温馨。" + "字".repeat(40), ...patch,
+});
+const editorRecords = () => [editorRecord("r1"), editorRecord("r2"), editorRecord("r3", { date: "2026-10-10T12:00:00", text: "窗边有风。" })];
+const editorResult = () => ({
+  requestId: "00000000-0000-4000-8000-000000000001", model: "test-model", title: "窗边的小脚",
+  chapters: [
+    { month: "2026-09", picks: ["r1"], quote: { recordId: "r1", text: "窗边有风。" } },
+    { month: "2026-10", picks: ["r3"], quote: { recordId: "r3", text: "窗边有风。" } },
+  ], notes: "每月选一段。",
+});
+describe("editor context privacy and limits", () => {
+  it("projects only this year's allowed text fields and booleans in local date order", () => {
+    const { library } = fixture();
+    const records = [editorRecord("r2", { by: "爸爸", quote: true, first: true, mediaIds: ["a"] }),
+      editorRecord("r1", { date: "2026-01-01T12:00:00", title: "题".repeat(110) }),
+      editorRecord("old", { date: "2025-12-30T12:00:00", text: "OTHER_YEAR_SECRET" })];
+    const context = editorContext("2026", records, library.media);
+    const parsed = JSON.parse(context);
+    expect(Object.keys(parsed).sort()).toEqual(["records", "year"]);
+    expect(parsed.records.map((r: { id: string }) => r.id)).toEqual(["r1", "r2"]);
+    expect(parsed.records[0].date).toBe("2026-01-01");
+    expect(parsed.records[0].title).toHaveLength(100);
+    expect(parsed.records[0].photos).toBe(false);
+    expect(parsed.records[0].quote).toBe(false);
+    expect(parsed.records[0]).not.toHaveProperty("by");
+    expect(Object.keys(parsed.records[1]).sort()).toEqual(["by", "date", "first", "id", "photos", "quote", "text", "title"]);
+    expect(parsed.records[1]).toMatchObject({ by: "爸爸", first: true, quote: true, photos: true });
+    for (const secret of ["OTHER_YEAR_SECRET", "a.jpg", "sha256", "location", "mediaIds", "image", "base64"]) expect(context).not.toContain(secret);
+    expect(records[0]!.id).toBe("r2");
+  });
+  it("caps at the newest 400 records, preserving ascending date order", () => {
+    const records = Array.from({ length: 401 }, (_, i) => editorRecord(`r${String(i).padStart(3, "0")}`, { text: "", title: "" }));
+    const parsed = JSON.parse(editorContext("2026", records.reverse(), {}));
+    expect(parsed.records).toHaveLength(400);
+    expect(parsed.records[0].id).toBe("r001");
+    expect(parsed.records[399].id).toBe("r400");
+  });
+  it.each([[1, 4000], [20, 1500], [50, 600], [100, 200]])("clips %i long records to %i characters including the ellipsis", (count, limit) => {
+    const records = Array.from({ length: count }, (_, i) => editorRecord(`r${i}`, { text: "字".repeat(5000) }));
+    const context = editorContext("2026", records, {}), parsed = JSON.parse(context);
+    expect(context.length).toBeLessThanOrEqual(60000);
+    expect(parsed.records[0].text).toBe("字".repeat(limit - 1) + "…");
+    expect(records[0]!.text).toHaveLength(5000);
+  });
+  it("counts JSON escape bytes as characters and reports a remaining overflow", () => {
+    const records = Array.from({ length: 400 }, (_, i) => editorRecord(`r${i}`, { text: "\n".repeat(4000) }));
+    expect(() => editorContext("2026", records, {})).toThrow(new AIError("INVALID_INPUT", "这一年的记录太多，AI 暂时帮不了。"));
+    expect(() => editorContext("2025", editorRecords(), {})).toThrow(AIError);
+  });
+});
+describe("editor result contract", () => {
+  it("accepts grounded picks, a quote from an unpicked record, trimmed original quotes and Unicode limits", () => {
+    const result = editorResult();
+    result.chapters[0]!.picks = ["r2"];
+    result.chapters[0]!.quote.text = " 温馨 ";
+    const picks = checkEditorResult(result, "2026", editorRecords());
+    expect(picks.months["2026-09"]).toEqual({ recordIds: ["r2"], quote: { recordId: "r1", text: "温馨" } });
+    expect(Number.isFinite(Date.parse(picks.updatedAt))).toBe(true);
+    const unicode = { title: "𠮷".repeat(4), chapters: [{ month: "2026-09", picks: ["r1"] }], notes: "字".repeat(200) };
+    expect(checkEditorResult(unicode, "2026", editorRecords()).title).toBe(unicode.title);
+    result.chapters[0]!.quote.text = "字".repeat(40);
+    expect(checkEditorResult(result, "2026", editorRecords()).months["2026-09"]!.quote!.text).toHaveLength(40);
+    result.chapters[0]!.quote.text = "窗边的小脚";
+    expect(() => checkEditorResult(result, "2026", editorRecords())).not.toThrow();
+  });
+  const bad: Record<string, (v: ReturnType<typeof editorResult>) => void> = {
+    unknown: v => { v.chapters[0]!.picks = ["missing"]; },
+    duplicate: v => { v.chapters[0]!.picks = ["r1", "r1"]; },
+    crossChapterDuplicate: v => { v.chapters[1]!.picks = ["r1"]; },
+    crossMonth: v => { v.chapters[0]!.picks = ["r3"]; },
+    fourPicks: v => { v.chapters[0]!.picks = ["r1", "r2", "r4", "r5"]; },
+    emptyPicks: v => { v.chapters[0]!.picks = []; },
+    inventedQuote: v => { v.chapters[0]!.quote.text = "不在原文里"; },
+    longQuote: v => { v.chapters[0]!.quote.text = "字".repeat(41); },
+    blankQuote: v => { v.chapters[0]!.quote.text = " "; },
+    unknownQuote: v => { v.chapters[0]!.quote.recordId = "missing"; },
+    crossMonthQuote: v => { v.chapters[0]!.quote.recordId = "r3"; },
+    shortTitle: v => { v.title = "三个字"; },
+    longTitle: v => { v.title = "字".repeat(9); },
+    bannedTitle: v => { v.title = "温馨的一年"; },
+    bannedNotes: v => { v.notes = "这些很珍贵"; },
+    longNotes: v => { v.notes = "字".repeat(201); },
+    wrongYear: v => { v.chapters[0]!.month = "2025-09"; },
+    invalidMonth: v => { v.chapters[0]!.month = "2026-13"; },
+    repeatedMonth: v => { v.chapters.push(structuredClone(v.chapters[0]!)); },
+    noChapters: v => { v.chapters = []; },
+    unknownKey: v => { Object.assign(v, { text: "unexpected" }); },
+    unknownChapterKey: v => { Object.assign(v.chapters[0]!, { extra: true }); },
+    unknownQuoteKey: v => { Object.assign(v.chapters[0]!.quote, { extra: true }); },
+  };
+  it.each(Object.keys(bad))("rejects %s with the specific AI error", (key) => {
+    const result = editorResult(); bad[key]!(result);
+    try { checkEditorResult(result, "2026", editorRecords()); throw new Error("unexpected success"); }
+    catch (e) { expect(e).toMatchObject({ code: "INVALID_RESULT", message: "AI 的目录建议不合规矩，请重试。" }); }
+  });
+  it.each([null, [], {}, { title: 1 }, { title: "窗边的小脚", chapters: [null], notes: "" }])("rejects malformed response %j", (value) => {
+    expect(() => checkEditorResult(value, "2026", editorRecords())).toThrow(AIError);
+  });
+});
+describe("applyYearPicks checks the current originals", () => {
+  it("drops removed/moved records and changed quotes, keeps order and leaves the saved directory alone", () => {
+    const picks: YearPicks = { months: {
+      "2026-09": { recordIds: ["r2", "gone", "r1"], quote: { recordId: "r1", text: "旧话" } },
+      "2026-10": { recordIds: ["moved"], quote: { recordId: "gone", text: "原话" } },
+    }, updatedAt: "2026-09-21T10:00:00Z" };
+    const before = structuredClone(picks);
+    expect(applyYearPicks(picks, [...editorRecords(), editorRecord("moved")])).toEqual({
+      months: { "2026-09": { recordIds: ["r2", "r1"] } }, droppedRecords: 2, droppedQuotes: 2,
+    });
+    expect(picks).toEqual(before);
+    expect(applyYearPicks(undefined, editorRecords())).toBeUndefined();
+  });
+  it("retains an exact quote from an unpicked record's title and removes a now-empty month", () => {
+    const picks = checkEditorResult(editorResult(), "2026", editorRecords());
+    picks.months["2026-09"]!.quote = { recordId: "r2", text: "窗边的小脚" };
+    expect(applyYearPicks(picks, editorRecords())!.months).toEqual(picks.months);
+    expect(applyYearPicks(picks, [])).toEqual({ months: {}, droppedRecords: 2, droppedQuotes: 2 });
   });
 });

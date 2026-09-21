@@ -1,10 +1,11 @@
 import { AIError } from "./error";
-import type { DailyQuestionCache, Library, RecordDraft, RecordContent } from "../local/model";
+import type { DailyQuestionCache, Library, LocalRecord, Stored, YearPicks, RecordDraft, RecordContent } from "../local/model";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { photoDayGroups } from "../local/photo-metadata";
 import { clusterPlaces } from "../local/places";
-import { dateLabel } from "../local/dates";
+import { dateLabel, toDayKey } from "../local/dates";
+import { monthKey, recordTitle, yearKey } from "../local/model";
 import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
 /** 单次请求送给服务端的照片上限，与服务端 photos 契约一致；分批切块与单批写作共用。 */
 export const PHOTO_REQUEST_LIMIT = 20;
@@ -442,4 +443,95 @@ export function rememberQuestion(
   const asked = recentQuestions(cache, today).filter((entry) => !question || entry.day !== today);
   if (question) asked.push({ day: today, question });
   return { ...cache, requestedDay: today, ...(question ? { day: today, question } : {}), asked: asked.slice(-7) };
+}
+
+/** 只投影本次确认的年份与文字；最多取最新 400 条，仍按日期升序发出。 */
+export function editorContext(year: string, records: readonly Stored<LocalRecord>[], media: Library["media"]): string {
+  const selected = records.filter((r) => yearKey(r.date) === year)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(-400);
+  if (!/^\d{4}$/.test(year) || !selected.length ||
+    new Set(selected.map((r) => r.id)).size !== selected.length ||
+    selected.some((r) => !r.id || r.id.length > 100))
+    throw new AIError("INVALID_INPUT", "这一年的记录清单格式不对，请检查后重试。");
+  // slice 的限额含省略号，JSON 转义的体积也算在整体限额里。
+  const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  for (const limit of [4000, 1500, 600, 200]) {
+    const context = JSON.stringify({ year, records: selected.map((r) => ({
+      id: r.id, date: toDayKey(new Date(r.date)), ...(r.by ? { by: r.by.slice(0, 20) } : {}),
+      title: recordTitle(r).slice(0, 100), text: clip(r.text, limit),
+      first: r.first, quote: r.quote === true,
+      photos: r.mediaIds.some((id) => media[id]?.kind === "image"),
+    })) });
+    if (context.length <= 60000) return context;
+  }
+  throw new AIError("INVALID_INPUT", "这一年的记录太多，AI 暂时帮不了。");
+}
+
+// 与 server/src/prompts.ts BANNED_WORDS 对齐；只约束 AI 建议，家人的原句不受此限制。
+const editorBannedWords = ["温馨", "时光", "岁月", "静好", "成长的足迹", "珍贵", "满满的爱", "点滴", "绽放", "闪闪发光", "治愈", "见证", "美好", "感恩", "天使", "小公主", "快乐成长", "健康成长", "茁壮"];
+const editorInvalid = () => new AIError("INVALID_RESULT", "AI 的目录建议不合规矩，请重试。");
+const objectWithKeys = (value: unknown, keys: string[]): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((key) => keys.includes(key));
+const originalQuote = (record: Stored<LocalRecord>, text: string) =>
+  record.text.includes(text) || recordTitle(record).includes(text);
+
+/** Year 的编者路径直接调用：无年度记录上下文的通用 validateResult 不负责目录。 */
+export function checkEditorResult(result: unknown, year: string, records: readonly Stored<LocalRecord>[]): YearPicks {
+  if (!/^\d{4}$/.test(year) || !objectWithKeys(result, ["requestId", "model", "title", "chapters", "notes"]) ||
+    typeof result.title !== "string" || [...result.title].length < 4 || [...result.title].length > 8 || !result.title.trim() ||
+    typeof result.notes !== "string" || [...result.notes].length > 200 ||
+    editorBannedWords.some((word) => (result.title as string).includes(word) || (result.notes as string).includes(word)) ||
+    !Array.isArray(result.chapters) || result.chapters.length < 1 || result.chapters.length > 12) throw editorInvalid();
+  const byId = new Map(records.filter((r) => yearKey(r.date) === year).map((r) => [r.id, r]));
+  const seen = new Set<string>();
+  const months: YearPicks["months"] = {};
+  for (const chapter of result.chapters) {
+    if (!objectWithKeys(chapter, ["month", "picks", "quote"]) || typeof chapter.month !== "string" ||
+      !/^\d{4}-(0[1-9]|1[0-2])$/.test(chapter.month) || !chapter.month.startsWith(`${year}-`) || months[chapter.month] ||
+      !Array.isArray(chapter.picks) || chapter.picks.length < 1 || chapter.picks.length > 3) throw editorInvalid();
+    const recordIds: string[] = [];
+    for (const id of chapter.picks) {
+      const record = typeof id === "string" ? byId.get(id) : undefined;
+      if (!record || monthKey(record.date) !== chapter.month || seen.has(id)) throw editorInvalid();
+      seen.add(id);
+      recordIds.push(id);
+    }
+    let quote: YearPicks["months"][string]["quote"];
+    if (chapter.quote !== undefined) {
+      const q = chapter.quote;
+      if (!objectWithKeys(q, ["recordId", "text"]) || typeof q.recordId !== "string" || typeof q.text !== "string") throw editorInvalid();
+      const text = q.text.trim(), record = byId.get(q.recordId);
+      if (!record || monthKey(record.date) !== chapter.month || !text || [...text].length > 40 || !originalQuote(record, text)) throw editorInvalid();
+      quote = { recordId: q.recordId, text };
+    }
+    months[chapter.month] = { recordIds, ...(quote ? { quote } : {}) };
+  }
+  return { title: result.title.trim(), months, notes: result.notes, updatedAt: new Date().toISOString() };
+}
+
+/** 装订前再核原文；不写回目录，也不把改后的正文当成原引语。 */
+export function applyYearPicks(picks: YearPicks | undefined, records: readonly Stored<LocalRecord>[]): {
+  months: YearPicks["months"]; droppedQuotes: number; droppedRecords: number;
+} | undefined {
+  if (!picks) return undefined;
+  const byId = new Map(records.map((r) => [r.id, r]));
+  const months: YearPicks["months"] = {};
+  let droppedQuotes = 0, droppedRecords = 0;
+  for (const [month, entry] of Object.entries(picks.months)) {
+    const recordIds = entry.recordIds.filter((id) => {
+      const r = byId.get(id);
+      return r && monthKey(r.date) === month;
+    });
+    droppedRecords += entry.recordIds.length - recordIds.length;
+    let quote = entry.quote;
+    if (quote) {
+      const r = byId.get(quote.recordId);
+      if (!recordIds.length || !r || monthKey(r.date) !== month || !originalQuote(r, quote.text)) {
+        quote = undefined;
+        droppedQuotes++;
+      }
+    }
+    if (recordIds.length) months[month] = { recordIds, ...(quote ? { quote } : {}) };
+  }
+  return { months, droppedQuotes, droppedRecords };
 }

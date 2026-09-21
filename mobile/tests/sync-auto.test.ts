@@ -384,3 +384,16 @@ describe("App 生命周期接线", () => {
     cleanup();
   });
 });
+
+
+it("yearPicks changes trigger sync; a real store draft save preserves the directory reference", async () => {
+  const local = store(); await local.open(); const before = local.get();
+  await local.change(s => { s.yearPicks = { "2026": { months: { "2026-09": { recordIds: ["r"] } }, updatedAt: "2026-09-21T10:00:00Z" } }; });
+  expect(sharedChanged(before, local.get())).toBe(true);
+  const picked = local.get();
+  await local.change(s => { s.drafts.d = { id: "d", recordId: null, baseRevision: 0, updatedAt: "2026-09-21T10:00:00Z", content: emptyContent() }; });
+  expect(local.get().yearPicks).toBe(picked.yearPicks);
+  expect(sharedChanged(picked, local.get())).toBe(false);
+  await local.change(s => { delete s.yearPicks; });
+  expect(sharedChanged(picked, local.get())).toBe(true);
+});

@@ -37,7 +37,7 @@ import {
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import { CHILD_FALLBACK } from "./brand";
-import { bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
+import { backupNudgeBody, bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
 import { clusterPlaces } from "./places";
 import { storiesWritten } from "./stories";
 import { pickAnother } from "./shuffle";
@@ -936,7 +936,7 @@ export function Shelf() {
                 ? "还没有导出过备份"
                 : `已经 ${exportedDays} 天没有备份了`
             }
-            body="记录只保存在这台手机上。定期导出一份，把这段时光留到应用之外。"
+            body={backupNudgeBody(sync.joined, sync.lastSyncAt, today)}
             action={{
               label: "去备份",
               testID: "backup-reminder-action",

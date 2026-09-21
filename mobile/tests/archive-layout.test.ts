@@ -325,3 +325,10 @@ it("故事主题写入 Markdown 与开放清单，旧记录不多出字段", () 
   expect(plan.library.records.find((r) => r.id === "r3")).not.toHaveProperty("story");
   expect(plan.library.version).toBe(1);
 });
+
+
+it("keeps the annual editor directory out of the open archive", () => {
+  const s = library();
+  s.yearPicks = { "2026": { title: "窗边的小脚", months: { "2026-09": { recordIds: ["r1"] } }, updatedAt: "2026-09-21T10:00:00Z" } };
+  expect(planArchive(s, { now: NOW }).library).not.toHaveProperty("yearPicks");
+});
