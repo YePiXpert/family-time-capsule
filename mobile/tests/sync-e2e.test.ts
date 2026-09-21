@@ -15,6 +15,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { createTransport, type HttpClient } from "../src/sync/transport";
 import { keyIdOf } from "../src/sync/crypto";
+import { twoPhonesWriteTogether } from "./helpers/family-two-phones";
 /**
  * 真端到端：拉起仓库里的真实服务端子进程（SQLite 临时库、对象库临时目录），
  * 手机端引擎经 Node fetch 版 HttpClient 跑「开启 → 上传 → 核对 → 换手机加入」。
@@ -64,6 +65,26 @@ let child: ChildProcess | null = null;
 let serverRoot = "";
 let base = "";
 let token = "";
+const phoneRoots: string[] = [];
+function newPhoneRoot() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anan-e2e-phone-"));
+  phoneRoots.push(root);
+  return root;
+}
+async function openPhone(root = newPhoneRoot()) {
+  env.database?.close();
+  env.database = null;
+  env.root = root;
+  vi.resetModules();
+  const files = await import("../src/local/files");
+  const family = await import("../src/sync/family");
+  const model = await import("../src/local/model");
+  const state = await import("../src/sync/state");
+  const { openLocalStore } = await import("../src/local/disk");
+  const store = await openLocalStore();
+  files.ensureDirectories();
+  return { root, files, family, model, state, store };
+}
 const nodeHttp: HttpClient = async (request) => {
   const response = await fetch(request.url, {
     method: request.method,
@@ -147,17 +168,20 @@ beforeEach(() => {
   vi.resetModules();
   env.free = Number.POSITIVE_INFINITY;
   env.rejectActivation = false;
-  env.root = fs.mkdtempSync(path.join(os.tmpdir(), "anan-e2e-phone-"));
+  env.root = newPhoneRoot();
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   env.database?.close();
   env.database = null;
-  fs.rmSync(env.root, { recursive: true, force: true });
+  for (const root of phoneRoots.splice(0))
+    fs.rmSync(root, { recursive: true, force: true });
 });
 it("backs up to the real service, verifies, and joins from a wiped phone", async () => {
   const files = await import("../src/local/files");
   const family = await import("../src/sync/family");
   const engine = await import("../src/sync/engine");
+  const { clearSyncFiles } = await import("../src/sync/state");
   const model = await import("../src/local/model");
   const { openLocalStore } = await import("../src/local/disk");
   const store = await openLocalStore();
@@ -194,7 +218,7 @@ it("backs up to the real service, verifies, and joins from a wiped phone", async
   const key = new Uint8Array(randomBytes(16));
   const transport = createTransport(nodeHttp, base, async () => token);
   const stages: string[] = [];
-  const result = await engine.runRemoteBackup(store.get(), {
+  const result = await family.runFamilySync(store, {
     transport,
     key,
     onProgress: (stage) => stages.push(stage),
@@ -218,16 +242,17 @@ it("backs up to the real service, verifies, and joins from a wiped phone", async
   }
   const summary = await engine.verifyRemoteBackup({ transport, key });
   expect(summary.objects).toBe(4);
-  // 再备份一次：只多传一份清单；旧清单对象不在 keep 里，但服务端 prune 给一小时宽限，此刻还在。
-  await engine.runRemoteBackup(store.get(), { transport, key });
-  expect((await transport.status()).objects).toBe(5);
-  // 换手机：blob 库、保留备份与记录都没了，只剩恢复码。
+  // 内容没变：不再上传清单对象，也不重发索引。
+  await family.runFamilySync(store, { transport, key });
+  expect((await transport.status()).objects).toBe(4);
+  // 换手机：blob 库、保留备份、记录与本机同步基都没了，只剩恢复码。
   fs.rmSync(files.blobDirectory.uri, { recursive: true });
   for (const f of fs.readdirSync(files.backupDirectory.uri))
     fs.unlinkSync(path.join(files.backupDirectory.uri, f));
   await store.change((s) => {
     Object.assign(s, model.emptyLibrary());
   });
+  clearSyncFiles();
   expect(Object.keys(store.get().records)).toEqual([]);
   await family.joinFamily(store, key, {
     transport,
@@ -249,3 +274,48 @@ it("backs up to the real service, verifies, and joins from a wiped phone", async
   expect(await transport.getManifest()).toBeNull();
   expect((await transport.status()).keyId).toBeNull();
 }, 120000);
+it("两台手机一起写 through the real service", async () => {
+  const member = { username: "e2emom", password: "e2e-password-456" };
+  const created = await fetch(`${base}/admin/members`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(member),
+  });
+  expect(created.status).toBe(201);
+  const login = await fetch(`${base}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...member, deviceName: "vitest-b" }),
+  });
+  expect(login.status).toBe(200);
+  const tokenB = ((await login.json()) as { token: string }).token;
+  expect(tokenB).toBeTruthy();
+  const transportA = createTransport(nodeHttp, base, async () => token);
+  const transportB = createTransport(nodeHttp, base, async () => tokenB);
+  const objectFiles = () =>
+    new Set(
+      fs.readdirSync(path.join(serverRoot, "backup"), { recursive: true })
+        .map((name) => path.basename(String(name)))
+        .filter((name) => /^[a-f0-9]{64}$/.test(name)),
+    );
+  // 前一例撤掉清单后，其密文对象仍在服务端一小时宽限期内。
+  const before = objectFiles();
+  await twoPhonesWriteTogether({
+    openPhone,
+    transportA,
+    transportB,
+    key: new Uint8Array(randomBytes(16)),
+    checkObjects: async (expected) => {
+      const added = new Set(
+        [...objectFiles()].filter((id) => !before.has(id)),
+      );
+      expect(added).toEqual(expected);
+      expect((await transportA.status()).objects).toBe(
+        before.size + expected.size,
+      );
+    },
+  });
+}, 180000);

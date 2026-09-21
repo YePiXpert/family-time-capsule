@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   ErrorText,
+  Photo,
   Text,
   dateLabel,
   hapticSuccess,
@@ -18,7 +19,6 @@ import {
 import { useNav } from "../local/navigation";
 import { JournalIcon } from "../components/JournalIcon";
 import { api, getToken, hasConsent, giveConsent, AIError } from "./client";
-import { Photo } from "../local/Media";
 import { thumbnail } from "./images";
 import {
   PHOTO_REQUEST_LIMIT,

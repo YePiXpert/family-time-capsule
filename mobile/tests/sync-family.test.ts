@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { twoPhonesWriteTogether } from "./helpers/family-two-phones";
 import {
   type RemoteDeviceManifest,
   type Transport,
@@ -165,6 +166,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  env.database?.close();
+  env.database = null;
   for (const root of roots.splice(0))
     fs.rmSync(root, { recursive: true, force: true });
 });
@@ -259,6 +262,39 @@ function directoryBytes(uri: string) {
       ]),
   );
 }
+it.each(["memory", "SQLite"])(
+  "两台手机一起写（%s）：落款、照片、墓碑、冲突留底与退出",
+  async (storage) => {
+    const remote = fakeRemote();
+    const phones = new Map<string, Awaited<ReturnType<typeof phone>>>();
+    await twoPhonesWriteTogether({
+      key,
+      transportA: remote.client("爸爸手机"),
+      transportB: remote.client("妈妈手机"),
+      openPhone: async (root) => {
+        if (storage === "SQLite") {
+          env.database?.close();
+          env.database = null;
+          env.root = root ?? fs.mkdtempSync(path.join(os.tmpdir(), "anan-family-"));
+          if (!root) roots.push(env.root);
+          vi.resetModules();
+          const files = await import("../src/local/files");
+          const family = await import("../src/sync/family");
+          const model = await import("../src/local/model");
+          const state = await import("../src/sync/state");
+          const { openLocalStore } = await import("../src/local/disk");
+          const store = await openLocalStore();
+          files.ensureDirectories();
+          return { root: env.root, files, family, model, state, store };
+        }
+        const p = root ? phones.get(root)! : await phone();
+        phones.set(p.root, p);
+        p.activate();
+        return p;
+      },
+    });
+  },
+);
 it("空库加入拉齐时光、落款、原件与本机缩略图，并登记本机清单", async () => {
   const { receiver: p, remote, deps } = await seeded();
   const result = await p.family.joinFamily(p.store, key, deps);

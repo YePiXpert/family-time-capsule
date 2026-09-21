@@ -42,12 +42,6 @@ import {
   type ObjectPlan,
   type UploadItem,
 } from "./planner";
-import {
-  freshRemoteState,
-  readRemoteState,
-  writeRemoteState,
-  type RemoteState,
-} from "./state";
 import { SyncError, type RemoteManifest, type Transport } from "./transport";
 /**
  * 远端备份引擎：本机清单备份（.xmbm + blob 库）是源头，远端只是它的密文副本。
@@ -147,31 +141,6 @@ export async function assertSameKey(deps: EngineDeps): Promise<string> {
   if (status.keyId && status.keyId !== keyId)
     throw new SyncError("KEY_MISMATCH", KEY_MISMATCH);
   return keyId;
-}
-export async function runRemoteBackup(
-  state: Library,
-  deps: EngineDeps,
-): Promise<RemoteState> {
-  const keyId = await assertSameKey(deps);
-  const pushed = await pushManifest(state, deps);
-  const now = new Date().toISOString();
-  const previous = await readRemoteState(now);
-  const remote: RemoteState = {
-    ...(previous?.keyId === keyId ? previous : freshRemoteState(keyId, now)),
-    enabled: true,
-    lastSyncAt: now,
-    lastSyncSummary: {
-      devices: 1,
-      objects: pushed.objects,
-      bytes: pushed.bytes,
-      pulled: 0,
-      pushed: pushed.pushed,
-      conflicts: 0,
-    },
-  };
-  delete remote.lastError;
-  writeRemoteState(remote);
-  return remote;
 }
 /** 本机清单是上传的唯一来源；已在远端的对象不重复传。 */
 export async function pushManifest(state: Library, deps: EngineDeps) {

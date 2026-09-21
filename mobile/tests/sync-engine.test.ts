@@ -219,30 +219,25 @@ async function setup() {
   const small = await addPhoto("small", Buffer.alloc(3000, 42), "小照片");
   return { files, backup, engine, family, state, model, store, big, small };
 }
-it("uploads every object once, seals the index, records state, and leaks no plaintext", async () => {
+it("uploads every object once, seals the index, and leaks no plaintext", async () => {
   const { engine, state, store, big } = await setup();
   const remote = fakeRemote();
   const stages: string[] = [];
-  const result = await engine.runRemoteBackup(store.get(), {
+  const deps = {
     transport: remote.transport,
     key: key(),
-    onProgress: (stage) => stages.push(stage),
-  });
+    onProgress: (stage: string) => stages.push(stage),
+  };
+  expect(await engine.assertSameKey(deps)).toBe(keyIdOf(key()));
+  const result = await engine.pushManifest(store.get(), deps);
   // 两张照片 = 3 个对象，清单 1 个对象。
   expect(remote.puts()).toBe(4);
   expect(remote.objects.size).toBe(4);
   expect(remote.manifest()?.keyId).toBe(keyIdOf(key()));
-  expect(result).toMatchObject({
-    version: 2,
-    enabled: true,
-    autoSync: true,
-    seen: {},
-    keyId: keyIdOf(key()),
-    lastSyncSummary: { devices: 1, objects: 4, pushed: 4, conflicts: 0 },
-  });
-  expect(result.lastSyncSummary!.bytes).toBeGreaterThan(4 * 1048576 + 3000);
-  expect(result.joinedAt).toBe(result.lastSyncAt);
-  expect(await state.readRemoteState()).toEqual(result);
+  expect(result).toMatchObject({ objects: 4, pushed: 4 });
+  expect(result.bytes).toBeGreaterThan(4 * 1048576 + 3000);
+  // 传输原语不写同步状态；由 family.runFamilySync 管理。
+  expect(await state.readRemoteState()).toBeNull();
   expect(stages).toContain("正在上传 4/4");
   // 清单登记全部 4 个对象，prune 的 keep 也是这 4 个。
   expect(remote.log.slice(-2)).toEqual(["putManifest 4", "prune 4"]);
@@ -257,10 +252,12 @@ it("uploads only what the remote lacks on the next run", async () => {
   const { engine, store, files, model } = await setup();
   const remote = fakeRemote();
   const deps = { transport: remote.transport, key: key() };
-  await engine.runRemoteBackup(store.get(), deps);
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   const before = remote.puts();
   // 照片没变：只传一份新时间戳的清单对象，旧清单对象被 prune 掉。
-  await engine.runRemoteBackup(store.get(), deps);
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   expect(remote.puts()).toBe(before + 1);
   expect(remote.objects.size).toBe(4);
   const source = path.join(env.root, "third.jpg");
@@ -282,7 +279,8 @@ it("uploads only what the remote lacks on the next run", async () => {
     };
     model.saveRecord(s, "t", "r-t", new Date().toISOString());
   });
-  await engine.runRemoteBackup(store.get(), deps);
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   // 新照片 1 个对象 + 新清单 1 个对象。
   expect(remote.puts()).toBe(before + 3);
   expect(remote.objects.size).toBe(5);
@@ -292,13 +290,15 @@ it("keeps uploaded objects when a put fails and resumes from there", async () =>
   const remote = fakeRemote();
   const deps = { transport: remote.transport, key: key() };
   remote.failNextPuts(1);
-  await expect(engine.runRemoteBackup(store.get(), deps)).rejects.toThrow(
+  await engine.assertSameKey(deps);
+  await expect(engine.pushManifest(store.get(), deps)).rejects.toThrow(
     "连不上",
   );
   expect(await state.readRemoteState()).toBeNull();
   expect(remote.objects.size).toBe(0);
   remote.failNextPuts(0);
-  await engine.runRemoteBackup(store.get(), deps);
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   expect(remote.objects.size).toBe(4);
   // 第一轮 1 次失败，第二轮补齐 4 次：一共 5 次 put，没有重复传已到的对象。
   expect(remote.puts()).toBe(5);
@@ -306,13 +306,12 @@ it("keeps uploaded objects when a put fails and resumes from there", async () =>
 it("refuses to stack onto another key's backup and stops before uploading", async () => {
   const { engine, store } = await setup();
   const remote = fakeRemote();
-  await engine.runRemoteBackup(store.get(), {
-    transport: remote.transport,
-    key: key(),
-  });
+  const deps = { transport: remote.transport, key: key() };
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   const other = new Uint8Array(16).fill(77);
   const error = await engine
-    .runRemoteBackup(store.get(), { transport: remote.transport, key: other })
+    .assertSameKey({ transport: remote.transport, key: other })
     .catch((e: unknown) => e as SyncError);
   // vi.resetModules 之后引擎里的 SyncError 是另一份类定义，按名字与 code 认。
   expect((error as SyncError).name).toBe("SyncError");
@@ -323,8 +322,9 @@ it("refuses to stack onto another key's backup and stops before uploading", asyn
   expect(remote.puts()).toBe(4);
   const controller = new AbortController();
   controller.abort();
+  await engine.assertSameKey(deps);
   await expect(
-    engine.runRemoteBackup(store.get(), {
+    engine.pushManifest(store.get(), {
       transport: remote.transport,
       key: key(),
       signal: controller.signal,
@@ -336,7 +336,8 @@ it("pins the remote manifest before downloading so an interrupted join survives 
     await setup();
   const remote = fakeRemote();
   const deps = { transport: remote.transport, key: key() };
-  await engine.runRemoteBackup(store.get(), deps);
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   fs.rmSync(files.blobDirectory.uri, { recursive: true });
   for (const f of fs.readdirSync(files.backupDirectory.uri))
     fs.unlinkSync(path.join(files.backupDirectory.uri, f));
@@ -375,7 +376,8 @@ it("verifies the remote and names how many photo objects are missing", async () 
   const remote = fakeRemote();
   const deps = { transport: remote.transport, key: key() };
   await expect(engine.verifyRemoteBackup(deps)).rejects.toThrow("还没有备份");
-  await engine.runRemoteBackup(store.get(), deps);
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   const summary = await engine.verifyRemoteBackup(deps);
   expect(summary.objects).toBe(4);
   expect(summary.bytes).toBeGreaterThan(4 * 1048576);
@@ -395,7 +397,8 @@ it("joins from the remote through the blob store, resumes, and rejects wrong key
     await setup();
   const remote = fakeRemote();
   const deps = { transport: remote.transport, key: key() };
-  await engine.runRemoteBackup(store.get(), deps);
+  await engine.assertSameKey(deps);
+  await engine.pushManifest(store.get(), deps);
   // 换手机：本机 blob 库与记录都没了。
   fs.rmSync(files.blobDirectory.uri, { recursive: true });
   for (const f of fs.readdirSync(files.backupDirectory.uri))
