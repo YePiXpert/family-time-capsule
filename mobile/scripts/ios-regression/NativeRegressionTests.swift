@@ -54,8 +54,9 @@ final class NativeRegressionTests: XCTestCase {
         sleep(2)
         app.terminate(); app.launch()
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
+        tap("editor-by"); tap("editor-by-爸爸")
         tap("录音"); XCTAssertTrue(element("完成录音").waitForExistence(timeout: 20)); sleep(2); tap("完成录音")
-        tap("capture-save"); XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20)); shot("record-reading")
+        tap("capture-save"); XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20)); XCTAssertEqual(element("record-by").label, "—— 爸爸", "Signature missing on the reading page"); shot("record-reading")
         // 阅读页动作在底栏：滚到页尾后底栏仍在，页尾只剩「删除记录」。
         app.swipeUp(); shot("record-bottom-bar")
         tap("record-edit"); type(" More memories.", "capture-text", initial: "A little story."); tap("capture-save")

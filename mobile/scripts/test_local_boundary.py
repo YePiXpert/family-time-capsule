@@ -50,9 +50,30 @@ class LocalBoundaryTest(unittest.TestCase):
         self.assertTrue(any('serverUrl' in p and 'model.ts' in p for p in problems))
 
     def test_only_app_and_settings_may_import_sync(self):
-        write(self.root, 'src/local/Shelf.tsx', 'import { runRemoteBackup } from "../sync/engine";\n')
+        write(self.root, 'src/local/Shelf.tsx', 'import { pushManifest } from "../sync/engine";\n')
         problems = check(self.root)
         self.assertEqual(problems, ['src/local may not import src/sync: src/local/Shelf.tsx'])
+
+    def test_feature_imports_of_local_pages_are_flagged(self):
+        for feature in ('sync', 'ai'):
+            with self.subTest(feature=feature):
+                relative = f'src/{feature}/feature.ts'
+                write(self.root, relative, 'import { shelf } from "../local/Shelf";\n')
+                self.assertEqual(check(self.root), [
+                    f'Feature module imports a local page component: {relative} -> src/local/Shelf.tsx'
+                ])
+                (self.root / relative).unlink()
+
+    def test_feature_imports_of_shared_ui_and_data_are_allowed(self):
+        write(self.root, 'src/local/ui.tsx', 'export const Button = 1;\n')
+        write(self.root, 'src/local/context.tsx', 'export const useLibrary = 1;\n')
+        write(self.root, 'src/local/model.ts', 'export const emptyLibrary = 1;\n')
+        for feature in ('sync', 'ai'):
+            write(self.root, f'src/{feature}/feature.ts',
+                  'import { Button } from "../local/ui";\n'
+                  'import { useLibrary } from "../local/context";\n'
+                  'import { emptyLibrary } from "../local/model";\n')
+        self.assertEqual(check(self.root), [])
 
     def test_service_address_lives_only_in_brand(self):
         write(self.root, 'src/ai/client.ts', f'const BASE = "{SERVICE_URL}";\nexport const api = () => fetch(BASE);\n')

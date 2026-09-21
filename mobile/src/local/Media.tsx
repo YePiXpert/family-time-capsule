@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppState, Image, Platform, ScrollView, View } from "react-native";
+import { AppState, Platform, ScrollView, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
@@ -10,11 +10,11 @@ import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as Sharing from "expo-sharing";
 import { useLibrary } from "./context";
-import { mediaDirectory, mediaFile, mediaUri } from "./files";
-import { File } from "expo-file-system";
+import { mediaFile, mediaUri } from "./files";
 import type { LocalMedia } from "./model";
 import type { Props } from "./navigation";
-import { Button, ErrorText, Page, Text, messageOf, useStyles } from "./ui";
+import { Button, ErrorText, Page, Photo, Text, messageOf, useStyles } from "./ui";
+export { Photo } from "./ui";
 export function PhotoDetails({ media }: { media: LocalMedia }) {
   const s = useStyles();
   const metadata = media.photoMetadata;
@@ -33,67 +33,6 @@ export function PhotoDetails({ media }: { media: LocalMedia }) {
         </Text>
       )}
     </View>
-  );
-}
-export function Photo({
-  media,
-  contain = false,
-  size,
-  ratio,
-  preview = false,
-  label,
-  radius = 12,
-}: {
-  media: LocalMedia | undefined;
-  contain?: boolean;
-  size?: number;
-  /** 固定裁切比例（书架封面 4:3）；缺省按素材真实宽高比。 */
-  ratio?: number;
-  /** 列表/封面等小图场景：优先渲染持久缩略图。 */
-  preview?: boolean;
-  /** 读屏标签；缺省读作「照片」，不读原始文件名。 */
-  label?: string;
-  /** 圆角；书册行里 60 宽的小封面用 8。 */
-  radius?: number;
-}) {
-  const s = useStyles();
-  const [error, setError] = useState(false);
-  const [thumbFailed, setThumbFailed] = useState(false);
-  if (!media || error)
-    return (
-      <View style={[s.section, { minHeight: size ?? 120, width: size }]}>
-        <Text>照片暂时无法读取</Text>
-        <Text style={s.muted}>这段时光还在，缺的照片可以从备份恢复。</Text>
-      </View>
-    );
-  // 不在渲染期同步查盘：先乐观渲染，加载失败再逐级回退（缩略图→原图→占位）。
-  const thumb =
-    !contain && (preview || size !== undefined) && media.thumb && !thumbFailed
-      ? new File(mediaDirectory, media.thumb)
-      : null;
-  return (
-    <Image
-      accessibilityLabel={label ?? "照片"}
-      source={{ uri: thumb ? thumb.uri : mediaUri(media) }}
-      resizeMode={contain ? "contain" : "cover"}
-      onError={() => {
-        if (thumb) setThumbFailed(true);
-        else setError(true);
-      }}
-      style={[
-        {
-          width: "100%",
-          borderRadius: radius,
-          aspectRatio: size
-            ? 1
-            : (ratio ??
-              (media.width && media.height
-                ? media.width / media.height
-                : 4 / 3)),
-        },
-        size ? { width: size, height: size } : undefined,
-      ]}
-    />
   );
 }
 function Audio({ media }: { media: LocalMedia }) {

@@ -76,8 +76,8 @@ try:
     launch();tap('welcome-start');shot('home-390')
     tap('capture-new');tap('capture-text');write('Offline little story.');find('AI 助手');adb('shell','input','keyevent','4');shot('editor')
     restart();tap('继续编辑');assert find('capture-text').get('text')=='Offline little story.'
-    tap('capture-save');find('record-edit');shot('record-reading')
-    tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit')
+    tap('editor-by');tap('editor-by-爸爸');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸';shot('record-reading')
+    tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸'
     restart();find(f'volume-{month}');find(f"volume-year-{time.strftime('%Y')}");shot('home-recent');tap_seek('album-new')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'));shot('selection')
     tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')

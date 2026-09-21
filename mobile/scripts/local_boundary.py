@@ -8,6 +8,8 @@
    备份传输只走 `src/sync`，本机记录、备份与恢复的代码路径里没有网络。
 4. package.json 不得带 FORBIDDEN_DEPENDENCIES（服务端框架、账号库、网络探测）。
 5. 服务地址字面量只出现在 `src/local/brand.ts`（`SERVICE_URL`），其余文件都从那里 import。
+6. `src/sync/**` 与 `src/ai/**` 不得 import `../local/<name>` 对应的 .tsx 页面组件；
+   仅共享 ui、context 例外（SHARED_LOCAL_TSX），.ts 数据与工具模块不受限。
 """
 import json
 import re
@@ -16,6 +18,8 @@ from pathlib import Path
 NETWORK_FILES = ('src/ai/client.ts', 'src/sync/transport.ts')
 NETWORK_CALL = re.compile(r'\b(fetch|XMLHttpRequest|WebSocket)\s*\(')
 ACCOUNT_WORDS = ('serverUrl', 'credentials')
+SHARED_LOCAL_TSX = ('ui', 'context')
+LOCAL_TSX_IMPORT = re.compile(r'''from\s+["']\.\./local/([^/"']+)["']''')
 LOCAL_MAY_IMPORT_SYNC = ('src/local/App.tsx', 'src/local/Settings.tsx')
 SYNC_IMPORT = re.compile(r'''from\s+["']\.\./sync/''')
 FORBIDDEN_DEPENDENCIES = {'next', 'better-auth', 'drizzle-orm', 'expo-network'}
@@ -42,6 +46,10 @@ def check(root: Path) -> list[str]:
                 problems.append(f'Account dependency ({word}) in {relative}')
         if relative.startswith('src/local/') and relative not in LOCAL_MAY_IMPORT_SYNC and SYNC_IMPORT.search(text):
             problems.append(f'src/local may not import src/sync: {relative}')
+        if relative.startswith(('src/sync/', 'src/ai/')):
+            for name in LOCAL_TSX_IMPORT.findall(text):
+                if name not in SHARED_LOCAL_TSX and (root / 'src/local' / f'{name}.tsx').is_file():
+                    problems.append(f'Feature module imports a local page component: {relative} -> src/local/{name}.tsx')
         if SERVICE_URL in text and relative != SERVICE_URL_FILE:
             problems.append(f'Service address literal outside {SERVICE_URL_FILE}: {relative}')
     brand = root / SERVICE_URL_FILE
@@ -62,5 +70,5 @@ def main(root: Path) -> int:
         print(problem)
     if problems:
         return 1
-    print('Offline journal, isolated transport files and single service address verified.')
+    print('Offline journal, isolated transport files and single service address verified; feature modules stay off the page components.')
     return 0
