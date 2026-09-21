@@ -216,3 +216,76 @@ test('admin login reset logs out every device of that member but not the owner',
  assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers(f.owner.token)})).statusCode,200);
  await f.app.close();f.store.close();
 });
+
+// 文本模式走同一条额度、缓存与重放路径。
+for(const writingMode of ['ask','question','letter','editor'] as const)test(`${writingMode} uses one write, no photos and replays without spending again`,async()=>{
+ const {editorContext,editorResult}=await import('./helpers.ts');
+ const result=writingMode==='ask'?{questions:['谁在旁边？'],first:false}:writingMode==='question'?{question:'谁在旁边？'}:writingMode==='letter'?{questions:['你现在想记下什么？','想给她留哪句话？']}:editorResult;
+ let calls=0;
+ const f=fixture(async()=>{calls++;return {result,tokens:7};});
+ try {
+  const payload={requestId:randomUUID(),writingMode,context:writingMode==='editor'?JSON.stringify(editorContext):'落款：爸爸。今天她笑了。'};
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload});
+  assert.equal(response.statusCode,200,response.body);
+  const {requestId,model,...actual}=response.json();assert.deepEqual(actual,result);
+  assert.equal(f.store.usage(f.member.member.id).writes,1);assert.equal(f.store.usage(f.member.member.id).photos,0);
+  const replay=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload});
+  assert.equal(replay.body,response.body);assert.equal(calls,1);assert.equal(f.store.usage(f.member.member.id).writes,1);
+  assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload,context:payload.context+' '}})).statusCode,409);
+ } finally {await f.app.close();f.store.close();}
+});
+for(const [writingMode,message] of Object.entries({ask:'请先写几句再让 AI 追问。',question:'请提供最近的记录标题。',letter:'请提供落款与拆封日期。',editor:'请先送这一年的记录清单。'}))test(`${writingMode} rejects photos, grouping, merge and blank context before quota`,async()=>{
+ const f=fixture();
+ try {
+  for(const extra of [{photos:f.input().photos},{kind:'group'},{mode:'merge'}, {context:'  '}]){
+   const {kind='write',...overrides}=extra as {kind?:string;photos?:unknown[];mode?:string;context?:string};
+   const response=await f.app.inject({method:'POST',url:`/api/v1/ai/${kind}`,headers:f.headers(),payload:{requestId:randomUUID(),writingMode,context:'合成文字',...overrides}});
+   assert.equal(response.statusCode,400);assert.deepEqual(response.json(),{code:'INVALID_INPUT',message});
+  }
+  assert.equal(f.calls(),0);assert.equal(f.store.usage(f.member.member.id).writes,0);
+ } finally {await f.app.close();f.store.close();}
+});
+test('editor rejects invalid JSON and record shapes before calling provider',async()=>{
+ const {editorContext}=await import('./helpers.ts'),f=fixture();
+ try {
+  for(const context of ['not json','null','{}',JSON.stringify({...editorContext,records:[]}),JSON.stringify({...editorContext,records:[{...editorContext.records[0],id:'字'.repeat(101)}]})]){
+   const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode:'editor',context}});
+   assert.equal(response.statusCode,400);assert.equal(response.json().code,'INVALID_INPUT');
+  }
+  assert.equal(f.calls(),0);assert.equal(f.store.usage(f.member.member.id).writes,0);
+ } finally {await f.app.close();f.store.close();}
+});
+test('context limits are 4000 normally and 60000 for editor, with original JSON forwarded',async()=>{
+ const {editorContext,editorResult}=await import('./helpers.ts');
+ let received='';
+ const f=fixture(async(_kind,input)=>{received=input.context;return {result:editorResult,tokens:1};});
+ try {
+  for(const writingMode of ['ask','question','letter','generate','polish','recap','editor']){
+   const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode,context:'字'.repeat(writingMode==='editor'?60001:4001)}});
+   assert.equal(response.statusCode,400);assert.deepEqual(response.json(),{code:'INVALID_INPUT',message:writingMode==='editor'?'这一年的记录太多，请分月送。':'内容太长'});
+  }
+  const records=structuredClone(editorContext.records);records[0]!.text+='字'.repeat(2300);records[1]!.text+='字'.repeat(2300);
+  const context=JSON.stringify({...editorContext,records});assert.ok(context.length>5000&&context.length<60000);
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode:'editor',context}});
+  assert.equal(response.statusCode,200,response.body);assert.equal(received,context);
+ } finally {await f.app.close();f.store.close();}
+});
+test('invalid text results return 502 without consuming quota',async()=>{
+ const f=fixture(async()=>({result:{questions:['温馨吗？'],first:false},tokens:3}));
+ try {
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode:'ask',context:'今天她笑了'}});
+  assert.equal(response.statusCode,502);assert.equal(response.json().message,'AI 问得不合规矩，请重试。');
+  assert.equal(f.store.usage(f.member.member.id).writes,0);
+ } finally {await f.app.close();f.store.close();}
+});
+test('ask accepts exactly 4000 context characters and editor accepts exactly 60000',async()=>{
+ const {editorContext,editorResult}=await import('./helpers.ts');
+ const f=fixture(async(_kind,input)=>({result:input.writingMode==='editor'?editorResult:{questions:['谁在旁边？'],first:false},tokens:1}));
+ try {
+  const base=JSON.stringify(editorContext);
+  for(const [writingMode,context] of [['ask','字'.repeat(4000)],['editor',base+' '.repeat(60000-base.length)]]){
+   const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode,context}});
+   assert.equal(response.statusCode,200,response.body);
+  }
+ } finally {await f.app.close();f.store.close();}
+});

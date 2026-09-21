@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 import { Store, Problem, digest, type Member, type BackupManifest } from './store.ts';
-import { inputSchema, parseResult, polishBody, POLISH_BODY_LIMIT, transcribeResultSchema } from './contracts.ts';
+import { inputSchema, parseEditorContext, parseResult, polishBody, POLISH_BODY_LIMIT, transcribeResultSchema } from './contracts.ts';
 import { hashPassword, verifyPassword, timingDummy, needsRehash } from './passwords.ts';
 import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
 import type { Provider } from './provider.ts';
@@ -72,13 +72,23 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
  app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'high',models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
  for(const kind of ['group','write'] as const)app.post(`/api/v1/ai/${kind}`,async req=>{
-  const member=auth(req.headers.authorization), input=inputSchema.parse(req.body);
+  const member=auth(req.headers.authorization);
+  // 在 schema 的硬上限之前给超长 editor 清单返回该模式的提示。
+  const raw=req.body as {writingMode?:unknown;context?:unknown}|null;
+  if(typeof raw?.context==='string'&&raw.context.length>(raw.writingMode==='editor'?60000:4000))throw new Problem(400,'INVALID_INPUT',raw.writingMode==='editor'?'这一年的记录太多，请分月送。':'内容太长');
+  const input=inputSchema.parse(req.body);
+  const textMode=input.writingMode==='ask'||input.writingMode==='question'||input.writingMode==='letter'||input.writingMode==='editor';
+  if(input.writingMode==='ask'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请先写几句再让 AI 追问。');
+  if(input.writingMode==='question'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请提供最近的记录标题。');
+  if(input.writingMode==='letter'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请提供落款与拆封日期。');
+  if(input.writingMode==='editor'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请先送这一年的记录清单。');
+  if(input.writingMode==='editor')parseEditorContext(input.context);
   const polish=kind==='write'&&input.writingMode==='polish';
   const recap=kind==='write'&&input.writingMode==='recap';
   if(polish&&(!input.context.trim()||input.photos.length||input.mode!=='photos'))throw new Problem(400,'INVALID_INPUT','请先写下正文再润色。');
   if(recap&&(!input.context.trim()||input.photos.length||input.mode!=='photos'))throw new Problem(400,'INVALID_INPUT','请先补全这一年的记录清单再起草寄语。');
   if(polish&&polishBody(input.context).length>POLISH_BODY_LIMIT)throw new Problem(400,'POLISH_TOO_LONG',`单次润色的正文超过 ${POLISH_BODY_LIMIT} 字上限，请精简后再试。`);
-  if((input.mode==='photos'&&!input.photos.length&&!polish&&!recap)||(input.mode==='merge'&&(kind!=='group'||input.photos.length||!input.groups?.length)))throw new Problem(400,'INVALID_INPUT','请先选择照片。');
+  if((input.mode==='photos'&&!input.photos.length&&!polish&&!recap&&!textMode)||(input.mode==='merge'&&(kind!=='group'||input.photos.length||!input.groups?.length)))throw new Problem(400,'INVALID_INPUT','请先选择照片。');
   const ids=input.mode==='photos'?input.photos.map(p=>p.id):input.groups!.flatMap(g=>g.photoIds);
   if(new Set(ids).size!==ids.length||ids.length>100)throw new Problem(400,'INVALID_INPUT','照片列表重复或超出限制。');
   for(const photo of input.photos) {

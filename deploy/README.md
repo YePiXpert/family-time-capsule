@@ -16,7 +16,7 @@ AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort
 
 「说一段」转写走 CPA 的 `mimo-v2.5-asr`，使用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。三个可选环境变量：`TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（默认沿用 `CPA_BASE_URL`）、`TRANSCRIBE_KEY_FILE`（默认沿用 `CPA_KEY_FILE`）；后两项可通过 Compose override 的 `environment` 覆盖，密钥文件需另挂载为只读。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
 
-分组与文案提示词内置在 `server/src/prompts.ts`。分组只生成照片归属、短名称和客观画面摘要；文案生成朴素、温柔的标题与短正文，并禁止补造日期、对话和成长里程碑。
+八条提示词内置在 `server/src/prompts.ts`：GROUP 按事情分组、WRITE 起个头、POLISH 润色、RECAP 年度寄语、ASK 追问、QUESTION 今天的小问题、LETTER 写信引导、EDITOR 年度册目录建议。提示词全文以 `docs/AI-PROMPTS.md` 为准。editor 的 context 是 JSON，上限 60000 字，服务端不留。
 
 ## 配额与数据
 
