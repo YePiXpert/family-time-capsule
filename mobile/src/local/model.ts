@@ -146,6 +146,17 @@ export function fullNameLine(fullName: string, name: string): string {
 export type Stored<T> = {
   readonly [K in keyof T]: T[K] extends (infer U)[] ? readonly U[] : T[K];
 };
+/** 年度册目录：AI 建议、家人拍板；按年存；归档不带。 */
+export type YearPicks = {
+  /** 家人确认的书名；缺省用「{名}的 {年} 年」。 */
+  title?: string;
+  months: Record<string, {
+    recordIds: string[];
+    quote?: { recordId: string; text: string };
+  }>;
+  notes?: string;
+  updatedAt: string;
+};
 export type Library = {
   version: 1;
   revision: number;
@@ -179,6 +190,7 @@ export type Library = {
   yearNotes: Record<string, string>;
   /** 年度纪念册手选的封面素材，按四位年份存；没选就按当年最新一张照片自动定。 */
   yearCovers: Record<string, string>;
+  yearPicks?: Record<string, YearPicks>;
   /** 哪些年的纪念册 PDF 装订过（ISO 时刻，按四位年份存）；书架据此决定要不要提「去年的册子可以装订了」。旧库无此字段。 */
   yearBooksBoundAt?: Record<string, string>;
   /** 书架提醒卡各自最近一次被关掉的 ISO 时刻，按提醒种类存（conflict／by／milestone／book／backup／rhythm）；沉默期见 nudge.ts。旧库无此字段。 */
@@ -295,6 +307,7 @@ export function forkLibrary(s: Library): Library {
     settings: { ...s.settings },
     yearNotes: { ...s.yearNotes },
     yearCovers: { ...s.yearCovers },
+    ...(s.yearPicks ? { yearPicks: { ...s.yearPicks } } : {}),
     ...(s.tombstones ? { tombstones: { ...s.tombstones } } : {}),
     receivedShares: [...s.receivedShares],
     records: { ...s.records },
@@ -767,6 +780,30 @@ function validDailyQuestion(value: unknown): boolean {
   );
 }
 
+/** 目录可以暂时引用已删记录，装订与同步整理时剔除；坏格式则拒绝整库。 */
+function validYearPicks(value: Library["yearPicks"]): boolean {
+  if (value === undefined) return true;
+  if (!isMap(value)) return false;
+  const trimmed = (v: unknown, max: number): v is string =>
+    typeof v === "string" && v === v.trim() && v.length > 0 && [...v].length <= max;
+  return Object.entries(value!).every(([year, picks]) => {
+    if (!/^\d{4}$/.test(year) || !isMap(picks) || !isMap(picks.months) ||
+      (picks.title !== undefined && !trimmed(picks.title, 20)) ||
+      (picks.notes !== undefined && (typeof picks.notes !== "string" || [...picks.notes].length > 200)) ||
+      typeof picks.updatedAt !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T/.test(picks.updatedAt) || !Number.isFinite(Date.parse(picks.updatedAt))) return false;
+    const seen = new Set<string>();
+    return Object.entries(picks.months).every(([month, entry]) => {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !month.startsWith(`${year}-`) ||
+        !isMap(entry) || !isIds(entry.recordIds) || entry.recordIds.length < 1 || entry.recordIds.length > 3 ||
+        entry.recordIds.some((id) => seen.has(id)) ||
+        (entry.quote !== undefined && (!isMap(entry.quote) || !isId(entry.quote.recordId) || !trimmed(entry.quote.text, 40)))) return false;
+      entry.recordIds.forEach((id) => seen.add(id));
+      return true;
+    });
+  });
+}
+
 /** 根字段。avatarId 与 replayAudioId 指向素材，所以要看整库。 */
 function validRoot(s: Library): boolean {
   return (
@@ -788,6 +825,7 @@ function validRoot(s: Library): boolean {
     !Object.entries(s.yearCovers).some(
       ([year, id]) => !/^\d{4}$/.test(year) || !isId(id),
     ) &&
+    validYearPicks(s.yearPicks) &&
     (s.yearBooksBoundAt === undefined ||
       (!!s.yearBooksBoundAt &&
         typeof s.yearBooksBoundAt === "object" &&

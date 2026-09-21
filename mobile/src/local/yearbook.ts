@@ -1,6 +1,6 @@
 /** 年度成长册的纯排版：封面、寄语、十二月网格、第一次、落款，固定 750 宽长卷。 */
 import { wrapText } from "./keepsake";
-import type { RecordContent } from "./model";
+import type { YearPicks, RecordContent } from "./model";
 import { STORY_TOPICS, storyTitle, storyLead } from "./stories";
 import { CHILD_FALLBACK } from "./brand";
 import type { BookBlock, BookChapter, BookInput, BookPhoto } from "./book";
@@ -186,6 +186,7 @@ export function layoutYearbook(input: YearbookInput): YearbookLayout {
 /** 成册用的一年：照月分章，每条记录先文字后照片，清单与寄语都不再截断。 */
 export type YearBookSource = {
   year: string;
+  title?: string;
   profileName: string;
   fullName?: string;
   motto?: string;
@@ -225,6 +226,25 @@ export function yearBookRecordGroups<T extends Pick<RecordContent, "story">>(
       records: records.filter((r) => r.story === topic),
     })),
     monthlyRecords: records.filter((r) => !r.story),
+  };
+}
+
+/** 每月按目录顺序选材；没收进目录的月照旧全收，故事记录由调用者提前分章。 */
+export function yearBookMonth<T extends { id: string }>(
+  records: readonly T[],
+  selection: YearPicks["months"][string] | undefined,
+  bookRecord: (record: T) => YearBookSource["months"][number]["records"][number],
+) {
+  const byId = new Map(records.map((r) => [r.id, r]));
+  const selected = selection
+    ? selection.recordIds.flatMap((id) => { const r = byId.get(id); return r ? [r] : []; })
+    : records;
+  const content = selected.map(bookRecord);
+  const shots = content.reduce((n, r) => n + r.photos.length, 0);
+  const stats = [`${content.length} 段时光`, shots ? `${shots} 张照片` : ""].filter(Boolean).join(" · ");
+  return {
+    lead: [selection?.quote ? `「${selection.quote.text}」` : "", stats].filter(Boolean).join("\n"),
+    records: content,
   };
 }
 
@@ -279,8 +299,8 @@ export function yearBookInput(source: YearBookSource): BookInput {
       blocks: [{ kind: "list", entries: source.firsts }],
     });
   return {
-    title: `${name}的 ${source.year} 年`,
-    subtitle: source.stats,
+    title: source.title?.trim() || `${name}的 ${source.year} 年`,
+    subtitle: source.title?.trim() ? `${name}的 ${source.year} 年 · ${source.stats}` : source.stats,
     stamp: source.year,
     ...(source.cover ? { cover: source.cover } : {}),
     titlePage: {

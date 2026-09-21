@@ -69,6 +69,7 @@ export class LocalStore {
         "profile",
         "yearNotes",
         "yearCovers",
+        "yearPicks",
         "yearBooksBoundAt",
         "tombstones",
       ] as const) {

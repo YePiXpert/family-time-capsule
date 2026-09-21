@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  backupNudgeBody,
   bookNudgeOf,
   daysSince,
   nudgeClosed,
@@ -111,5 +112,21 @@ describe("one nudge card at a time", () => {
     expect(nudgeClosed("backup", "someday", today)).toBe(false);
     expect(nudgeClosed("backup", undefined, today)).toBe(false);
     expect(pickNudge(["rhythm"], { rhythm: "someday" }, today)).toBe("rhythm");
+  });
+});
+
+
+describe("backup reminder recognizes family sync", () => {
+  const local = "记录只保存在这台手机上。定期导出一份，把这段时光留到应用之外。";
+  const synced = "家人一起写已把记录同步到主人的服务，但那不是应用之外的备份。导出一份，把这段时光留到应用之外。";
+  it("uses the synced wording through day seven", () => {
+    expect(backupNudgeBody(true, "2026-09-18T09:00:00", today)).toBe(synced);
+    expect(backupNudgeBody(true, "2026-09-11T09:00:00", today)).toBe(synced);
+  });
+  it("keeps the original wording when unjoined, never synced, invalid or older than seven days", () => {
+    expect(backupNudgeBody(false, "2026-09-18T09:00:00", today)).toBe(local);
+    expect(backupNudgeBody(true, undefined, today)).toBe(local);
+    expect(backupNudgeBody(true, "invalid", today)).toBe(local);
+    expect(backupNudgeBody(true, "2026-09-10T09:00:00", today)).toBe(local);
   });
 });

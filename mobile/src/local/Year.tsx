@@ -12,6 +12,7 @@ import {
   yearKey,
   type LocalRecord,
   type Stored,
+  type YearPicks,
 } from "./model";
 import { useNav, type Props } from "./navigation";
 import { coverForRecords, Volume } from "./Shelf";
@@ -21,14 +22,14 @@ import { replayPhotos } from "./replay";
 import { byCountsOf, byLine } from "./recap";
 import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
 import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
-import { yearBookInput, yearBookRecordGroups, type YearbookInput } from "./yearbook";
+import { yearBookInput, yearBookMonth, yearBookRecordGroups, type YearbookInput } from "./yearbook";
 import { planBook, useBookBinder } from "./BookBinder";
 import { BookPreview } from "./BookPreview";
 import type { BookLayout, BookPhoto } from "./book";
 import { PhotoPicker } from "./PhotoPicker";
 import { CHILD_FALLBACK } from "./brand";
 import { AI_CONSENT_TEXT } from "../ai/consent";
-import { recapContext } from "../ai/state";
+import { applyYearPicks, checkEditorResult, editorContext, recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
   Button,
@@ -115,6 +116,147 @@ function YearNote({ year }: { year: string }) {
         },
       }}
     />
+  );
+}
+
+/** 整年正文只有这里在两次同意之后发送；建议在采用之前只留在页面 state。 */
+export function YearEditor({ year, records }: { year: string; records: readonly Stored<LocalRecord>[] }) {
+  const state = useLibrary(), store = useStore(), nav = useNav(), s = useStyles();
+  const [preview, setPreview] = useState<YearPicks | null>(null);
+  const [busy, setBusy] = useState(false), [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => { request.current?.abort(); request.current = null; }, []);
+  const stop = () => { request.current?.abort(); request.current = null; setBusy(false); };
+  const saved = state.yearPicks?.[year];
+  const applied = applyYearPicks(saved, records);
+  const byId = new Map(records.map((r) => [r.id, r]));
+  const suggest = async () => {
+    if (request.current || !records.length) return;
+    const controller = new AbortController();
+    request.current = controller;
+    const active = () => request.current === controller && !controller.signal.aborted;
+    setBusy(true);
+    setError("");
+    try {
+      const token = await getToken();
+      if (!active()) return;
+      if (!token) {
+        nav.navigate("AISettings");
+        throw new Error("先在「AI 设置」加入服务，再来建议目录。");
+      }
+      const consent = await hasConsent();
+      if (!active()) return;
+      if (!consent) {
+        const agreed = await new Promise<boolean>((resolve) => Alert.alert(
+          "用 AI 建议目录", AI_CONSENT_TEXT, [
+            { text: "取消", style: "cancel", onPress: () => resolve(false) },
+            { text: "同意并继续", onPress: () => { void giveConsent().then(() => resolve(true)).catch(() => resolve(false)); } },
+          ], { cancelable: true, onDismiss: () => resolve(false) },
+        ));
+        if (!agreed || !active()) return;
+      }
+      const send = await new Promise<boolean>((resolve) => Alert.alert(
+        "送整年文字给 AI？",
+        `会把 ${year} 年全部 ${records.length} 段时光的标题、正文、落款和日期（不含照片、不含别的年份）经主人的服务发送给 AI，只用来建议目录，服务端不保存；结果你可以逐条改。计一次写作额度。${records.length > 400 ? "记录较多，本次只送最新 400 段。" : ""}`,
+        [
+          { text: "取消", style: "cancel", onPress: () => resolve(false) },
+          { text: "发送", onPress: () => resolve(true) },
+        ], { cancelable: true, onDismiss: () => resolve(false) },
+      ));
+      if (!send || !active()) return;
+      const context = editorContext(year, records, state.media);
+      const result = await api<unknown>("/ai/write", {
+        requestId: randomUUID(), photos: [], context, writingMode: "editor",
+      }, "POST", controller.signal);
+      if (!active()) return;
+      // 只接受确实送去的记录，超过 400 条时不能让旧服务选中未发送的 id。
+      const sentIds = new Set<string>((JSON.parse(context) as { records: { id: string }[] }).records.map((r) => r.id));
+      setPreview(checkEditorResult(result, year, records.filter((r) => sentIds.has(r.id))));
+    } catch (e) {
+      if (active()) setError(messageOf(e));
+    } finally {
+      if (active()) { request.current = null; setBusy(false); }
+    }
+  };
+  const save = async (picks: YearPicks | null) => {
+    setSaving(true);
+    setError("");
+    try {
+      await store.change((lib) => {
+        if (picks) lib.yearPicks = { ...lib.yearPicks, [year]: { ...picks, updatedAt: now() } };
+        else if (lib.yearPicks) {
+          delete lib.yearPicks[year];
+          if (!Object.keys(lib.yearPicks).length) delete lib.yearPicks;
+        }
+      });
+      setPreview(null);
+    } catch (e) { setError(messageOf(e)); }
+    finally { setSaving(false); }
+  };
+  const remove = (month: string, id?: string) => setPreview((current) => {
+    if (!current) return current;
+    const months = { ...current.months }, entry = months[month];
+    if (!entry) return current;
+    if (id) {
+      const recordIds = entry.recordIds.filter((value) => value !== id);
+      if (recordIds.length) months[month] = { ...entry, recordIds };
+      else delete months[month];
+    } else months[month] = { recordIds: entry.recordIds };
+    return { ...current, months };
+  });
+  return (
+    <View style={{ gap: 12 }}>
+      <Text style={s.heading}>目录</Text>
+      {saved ? (
+        <>
+          <Text style={s.muted}>目录：AI 建议、你拍板过（{Object.values(saved.months).reduce((n, m) => n + m.recordIds.length, 0)} 条 · {Object.values(saved.months).filter((m) => m.quote).length} 句引语）</Text>
+          <Button title="清除目录" kind="text" compact testID="year-editor-clear" disabled={busy || saving} onPress={() => { void save(null); }} />
+          {applied && (applied.droppedRecords > 0 || applied.droppedQuotes > 0) && (
+            <Text style={s.muted}>有 {applied.droppedRecords} 条记录已删、{applied.droppedQuotes} 句引语与原文对不上，装订时略去；可以重新让 AI 建议。</Text>
+          )}
+        </>
+      ) : (
+        <Text style={s.muted}>AI 可以按这一年的记录建议一份目录：每月挑 1～3 条进正文、每章一句她或你们的原话做引语、起一个书名；你拍板。</Text>
+      )}
+      {!preview && (
+        <View style={s.row}>
+          <Button title={busy ? "正在读这一年…" : "AI 建议目录"} icon="sparkle" compact testID="year-editor-suggest" disabled={busy || saving || records.length === 0} onPress={() => { void suggest(); }} />
+          {busy && <Button title="停止" kind="text" compact onPress={stop} />}
+        </View>
+      )}
+      {preview && (
+        <View style={{ gap: 12 }} testID="year-editor-preview">
+          <Text style={s.heading}>{preview.title}</Text>
+          {Object.entries(preview.months).sort(([a], [b]) => a.localeCompare(b)).map(([month, entry]) => (
+            <View key={month} style={{ gap: 8 }}>
+              <Text style={s.heading}>{monthLabel(month)}</Text>
+              {entry.recordIds.map((id) => {
+                const record = byId.get(id);
+                return (
+                  <View key={id} style={s.row}>
+                    <Text style={{ flex: 1 }}>{record ? `${recordTitle(record)} · ${dateLabel(record.date)}` : "这段时光已删"}</Text>
+                    <Button title="不要" kind="text" compact disabled={saving} onPress={() => remove(month, id)} />
+                  </View>
+                );
+              })}
+              {entry.quote && (
+                <View style={s.row}>
+                  <Text style={[s.muted, { flex: 1 }]}>“{entry.quote.text}” —— 出自《{byId.has(entry.quote.recordId) ? recordTitle(byId.get(entry.quote.recordId)!) : "已删的时光"}》</Text>
+                  <Button title="不引" kind="text" compact disabled={saving} onPress={() => remove(month)} />
+                </View>
+              )}
+            </View>
+          ))}
+          {!!preview.notes && <Text style={s.muted}>{preview.notes}</Text>}
+          <Text style={s.muted}>未列进目录的月份会保留全部记录；故事章、寄语和第一次清单照旧。</Text>
+          <View style={s.row}>
+            <Button title="采用这份目录" primary compact testID="year-editor-apply" disabled={saving} onPress={() => { void save(preview); }} />
+            <Button title="不用" kind="text" compact disabled={saving} onPress={() => setPreview(null)} />
+          </View>
+        </View>
+      )}
+      <ErrorText message={error} />
+    </View>
   );
 }
 
@@ -209,6 +351,7 @@ export function Year({ route }: Props<"Year">) {
     return { key: id, aspect: m.width && m.height ? m.width / m.height : 4 / 3 };
   };
   const makeBook = () => {
+    const applied = applyYearPicks(state.yearPicks?.[year], records);
     const { stories, monthlyRecords } = yearBookRecordGroups(records);
     const bookRecord = (r: Stored<LocalRecord>) => ({
       title: recordTitle(r),
@@ -222,6 +365,7 @@ export function Year({ route }: Props<"Year">) {
     const layout = planBook(
       yearBookInput({
         year,
+        title: state.yearPicks?.[year]?.title,
         profileName: state.profile.name,
         birthday: state.profile.birthday,
         fullName: state.profile.fullName,
@@ -236,22 +380,9 @@ export function Year({ route }: Props<"Year">) {
           const monthRecords = monthlyRecords.filter(
             (r) => monthKey(r.date) === key,
           );
-          const shots = monthRecords.reduce(
-            (n, r) =>
-              n +
-              r.mediaIds.filter((id) => state.media[id]?.kind === "image")
-                .length,
-            0,
-          );
           return {
             label: monthLabel(key),
-            lead: [
-              `${monthRecords.length} 段时光`,
-              shots ? `${shots} 张照片` : "",
-            ]
-              .filter(Boolean)
-              .join(" · "),
-            records: monthRecords.map(bookRecord),
+            ...yearBookMonth(monthRecords, applied?.months[key], bookRecord),
           };
         }),
         firsts: yearFirsts.map((r) => ({
@@ -269,7 +400,7 @@ export function Year({ route }: Props<"Year">) {
     binder.start({
       layout,
       name: `yearbook-${year}`,
-      title: `${state.profile.name.trim() || CHILD_FALLBACK}的 ${year} 年`,
+      title: state.yearPicks?.[year]?.title || `${state.profile.name.trim() || CHILD_FALLBACK}的 ${year} 年`,
       media: state.media,
       onBound: () =>
         store.change((s) => {
@@ -381,6 +512,7 @@ export function Year({ route }: Props<"Year">) {
           <Text style={s.muted}>
             长图一张，适合发给家人；纪念册是 20×20cm 方形开本的 PDF，真分页、带页码，可直接送印。
           </Text>
+          <YearEditor key={year} year={year} records={records} />
           <View style={s.row}>
             <Button
               title="长图"

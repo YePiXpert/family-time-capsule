@@ -26,13 +26,14 @@ import {
   validateChange,
   validateLibrary,
   type Library,
+  type YearPicks,
   type LibraryDelta,
   type Mutable,
   LocalMedia,
 } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
 
-import { decodeManifest, encodeHeader } from "../src/local/backup-format";
+import { BACKUP_MAGIC_V3, decodeLibraryV2, decodeMetaV2, encodeEntities, encodeMetaV2, decodeManifest, encodeHeader } from "../src/local/backup-format";
 import {
   ageLine,
   birthdayLabel,
@@ -1302,5 +1303,53 @@ describe("device-local daily question cache validation", () => {
     expect(() => validateLibrary(state)).toThrow();
     state.settings.dailyQuestion = { requestedDay: "2026-09-21", asked: Array.from({ length: 15 }, () => ({ day: "2026-09-21", question: "问题" })) };
     expect(() => validateLibrary(state)).toThrow();
+  });
+});
+
+
+describe("annual editor directory", () => {
+  const picks = (): YearPicks => ({ title: "窗边的小脚", months: { "2026-09": { recordIds: ["record"], quote: { recordId: "record", text: "伸出小脚" } } }, notes: "每月挑几段。", updatedAt: "2026-09-21T10:00:00.000Z" });
+  it("accepts valid directories and roundtrips the .xmbm root and entities", () => {
+    const s = fixture();
+    s.yearPicks = { "2026": picks() };
+    validateLibrary(s);
+    const entities = encodeEntities(s);
+    const count = new TextDecoder().decode(entities).trimEnd().split("\n").length;
+    const header = encodeMetaV2(s, entities.length, count, { magic: BACKUP_MAGIC_V3 });
+    expect(new TextDecoder().decode(header.slice(0, 8))).toBe("XIAOMEI3");
+    expect(decodeLibraryV2(decodeMetaV2(header.slice(12)), entities)).toEqual(s);
+    const fork = forkLibrary(s);
+    expect(fork.yearPicks).not.toBe(s.yearPicks);
+    expect(fork.yearPicks!["2026"]).toBe(s.yearPicks["2026"]);
+    delete fork.yearPicks!["2026"];
+    expect(s.yearPicks["2026"]).toEqual(picks());
+  });
+  const bad: Record<string, (s: Library) => void> = {
+    year: s => { s.yearPicks = { "26": picks() }; },
+    monthYear: s => { s.yearPicks!["2026"]!.months = { "2025-09": { recordIds: ["r"] } }; },
+    monthNumber: s => { s.yearPicks!["2026"]!.months = { "2026-13": { recordIds: ["r"] } }; },
+    fourPicks: s => { s.yearPicks!["2026"]!.months["2026-09"]!.recordIds = ["a", "b", "c", "d"]; },
+    emptyPicks: s => { s.yearPicks!["2026"]!.months["2026-09"]!.recordIds = []; },
+    badId: s => { s.yearPicks!["2026"]!.months["2026-09"]!.recordIds = ["坏 id"]; },
+    duplicate: s => { s.yearPicks!["2026"]!.months["2026-10"] = { recordIds: ["record"] }; },
+    quote: s => { s.yearPicks!["2026"]!.months["2026-09"]!.quote!.text = "字".repeat(41); },
+    untrimmedQuote: s => { s.yearPicks!["2026"]!.months["2026-09"]!.quote!.text = " 原句 "; },
+    quoteId: s => { s.yearPicks!["2026"]!.months["2026-09"]!.quote!.recordId = "坏 id"; },
+    title: s => { s.yearPicks!["2026"]!.title = "字".repeat(21); },
+    emptyTitle: s => { s.yearPicks!["2026"]!.title = ""; },
+    untrimmedTitle: s => { s.yearPicks!["2026"]!.title = " 小脚 "; },
+    notes: s => { s.yearPicks!["2026"]!.notes = "字".repeat(201); },
+    updatedAt: s => { s.yearPicks!["2026"]!.updatedAt = "not a date"; },
+    nonIso: s => { s.yearPicks!["2026"]!.updatedAt = "2026"; },
+    nullYear: s => { (s.yearPicks as Record<string, unknown>)["2026"] = null; },
+    nullMonths: s => { (s.yearPicks!["2026"] as unknown as Record<string, unknown>).months = null; },
+  };
+  it.each(Object.keys(bad))("rejects %s instead of dropping the bad value", (key) => {
+    const s = fixture(); s.yearPicks = { "2026": picks() }; bad[key]!(s);
+    expect(() => validateLibrary(s)).toThrow();
+  });
+  it("allows a title-only directory after the family removes every month", () => {
+    const s = fixture(); s.yearPicks = { "2026": { title: "小脚", months: {}, updatedAt: picks().updatedAt } };
+    expect(() => validateLibrary(s)).not.toThrow();
   });
 });

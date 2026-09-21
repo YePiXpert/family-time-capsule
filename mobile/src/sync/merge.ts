@@ -173,19 +173,29 @@ function rootIds(lib: Library): RootId[] {
     "profile",
     ...Object.keys(lib.yearNotes).map((y) => `yearNotes:${y}`),
     ...Object.keys(lib.yearCovers).map((y) => `yearCovers:${y}`),
+    ...Object.keys(lib.yearPicks ?? {}).map((y) => `yearPicks:${y}`),
   ];
 }
 function rootValue(lib: Library, id: RootId): unknown {
   if (id === "profile") return lib.profile;
-  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers", string];
-  return lib[field][year];
+  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
+  return lib[field]?.[year];
 }
 function setRoot(lib: Library, id: RootId, value: unknown): void {
   if (id === "profile") {
     lib.profile = value as Library["profile"];
     return;
   }
-  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers", string];
+  const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
+  if (field === "yearPicks") {
+    if (value === undefined) {
+      if (lib.yearPicks) {
+        delete lib.yearPicks[year];
+        if (!Object.keys(lib.yearPicks).length) delete lib.yearPicks;
+      }
+    } else lib.yearPicks = { ...lib.yearPicks, [year]: value as NonNullable<Library["yearPicks"]>[string] };
+    return;
+  }
   if (value === undefined) delete lib[field][year];
   else lib[field][year] = value as string;
 }
@@ -201,6 +211,24 @@ function joinNotes(winner: string, loser: string): string {
  * 校验要求引用都落到实处，这里按「少一个引用」而不是「整库拒绝」处理。
  */
 export function repairReferences(s: Library): void {
+  // 目录只在真的少了引用时才换对象：没变的年份保留引用，草稿保存与合并结果才不会被当成共享改动。
+  for (const [year, picks] of Object.entries(s.yearPicks ?? {})) {
+    let changed = false;
+    const months: typeof picks.months = {};
+    for (const [month, entry] of Object.entries(picks.months)) {
+      const recordIds = entry.recordIds.filter((id) => !!s.records[id]);
+      const quoteOk = !entry.quote || !!s.records[entry.quote.recordId];
+      if (recordIds.length === entry.recordIds.length && quoteOk) {
+        months[month] = entry;
+        continue;
+      }
+      changed = true;
+      if (!recordIds.length) continue;
+      months[month] = { recordIds, ...(entry.quote && quoteOk ? { quote: entry.quote } : {}) };
+    }
+    if (changed)
+      setRoot(s, `yearPicks:${year}`, Object.keys(months).length ? { ...picks, months } : undefined);
+  }
   const mediaOk = (id: string) => !!s.media[id];
   const personOk = (id: string) => !!s.persons[id];
   const fixContent = (c: {
@@ -514,7 +542,7 @@ export function mergeLibraries(
       pulled++;
       continue;
     }
-    // 两边都改了、没有时间可比：按内容哈希定赢家，两台手机得出同一个；年度寄语谁都不丢。
+    // 两边都改：默认按内容哈希；目录先比更新时间；年度寄语谁都不丢。
     const remoteWins = C.fp.localeCompare(fpL) > 0;
     let value = remoteWins ? C.value : localValue;
     if (
@@ -525,6 +553,11 @@ export function mergeLibraries(
       value = remoteWins
         ? joinNotes(C.value, localValue)
         : joinNotes(localValue, C.value);
+    if (id.startsWith("yearPicks:") && C.value && localValue) {
+      const remoteAt = Date.parse((C.value as { updatedAt: string }).updatedAt);
+      const localAt = Date.parse((localValue as { updatedAt: string }).updatedAt);
+      if (remoteAt !== localAt) value = remoteAt > localAt ? C.value : localValue;
+    }
     if (rootFp(value) !== fpL) {
       setRoot(next, id, value);
       pulled++;

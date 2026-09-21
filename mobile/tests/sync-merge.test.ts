@@ -1049,3 +1049,47 @@ describe("version ancestry", () => {
     );
   });
 });
+
+
+describe("yearPicks shared root", () => {
+  const directory = (updatedAt = T0, title = "窗边的小脚"): NonNullable<Library["yearPicks"]>[string] => ({ title, months: { "2026-09": { recordIds: ["r"], quote: { recordId: "r", text: "记录" } } }, updatedAt });
+  const shared = () => lib(s => { s.records.r = record("r"); s.yearPicks = { "2026": directory() }; });
+  it("pulls additions and one-sided changes per year, tracks fingerprints and propagates deletion", () => {
+    const start = shared(), base = baseOf(start), remote = copy(start);
+    remote.yearPicks!["2026"] = directory(T1, "小脚与窗帘");
+    const pulled = merge(copy(start), [snap(remote)], base);
+    expect(pulled.next.yearPicks).toEqual(remote.yearPicks);
+    expect(pulled.base.merged.root!["yearPicks:2026"]).toBe(hashOf(remote.yearPicks!["2026"]));
+    expect(merge(lib(s => { s.records.r = record("r"); }), [snap(remote)]).next.yearPicks).toEqual(remote.yearPicks);
+    delete remote.yearPicks;
+    expect(merge(pulled.next, [snap(remote)], pulled.base).next.yearPicks).toBeUndefined();
+    const deleted = copy(start); delete deleted.yearPicks;
+    expect(merge(deleted, [snap(start)], base).next.yearPicks).toBeUndefined();
+  });
+  it("chooses later updatedAt on both phones; ties use the same hash rule", () => {
+    const start = shared(), base = baseOf(start), a = copy(start), b = copy(start);
+    a.yearPicks!["2026"] = directory(T1, "爸爸的小脚");
+    b.yearPicks!["2026"] = directory(T2, "妈妈的窗帘");
+    const onA = merge(a, [snap(b)], base), onB = merge(b, [snap(a)], base);
+    expect(onA.next.yearPicks).toEqual(b.yearPicks);
+    expect(onA.next.yearPicks).toEqual(onB.next.yearPicks);
+    expect(merge(onA.next, [snap(a)], onA.base).next.yearPicks).toEqual(b.yearPicks);
+    b.yearPicks!["2026"]!.updatedAt = T1;
+    expect(merge(a, [snap(b)], base).next.yearPicks).toEqual(merge(b, [snap(a)], base).next.yearPicks);
+  });
+  it("repairs deleted records and quotes, removes empty months and years without mutating the input", () => {
+    const s = shared();
+    s.yearPicks!["2026"]!.months["2026-09"] = { recordIds: ["r", "gone"], quote: { recordId: "gone", text: "原话" } };
+    s.yearPicks!["2026"]!.months["2026-10"] = { recordIds: ["gone2"] };
+    const original = copy(s);
+    const fixed = merge(s, []);
+    expect(fixed.next.yearPicks!["2026"]!.months).toEqual({ "2026-09": { recordIds: ["r"] } });
+    expect(s).toEqual(original);
+    delete fixed.next.records.r;
+    repairReferences(fixed.next);
+    expect(fixed.next.yearPicks).toBeUndefined();
+    const base = baseOf(shared()), remote = shared();
+    delete remote.records.r; remote.tombstones = { "records:r": T1 };
+    expect(merge(shared(), [snap(remote)], base).next.yearPicks).toBeUndefined();
+  });
+});
