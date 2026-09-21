@@ -98,7 +98,7 @@ export type RemoteDeviceManifest = {
 };
 export type Transport = {
   /** 当前登录的本机设备；不按成员回退到其他手机。 */
-  me(signal?: AbortSignal): Promise<{ deviceId: string | null }>;
+  me(signal?: AbortSignal): Promise<{ deviceId: string | null; role?: "owner" | "member" }>;
   status(signal?: AbortSignal): Promise<RemoteStatus>;
   /** 返回远端还没有的 id。 */
   missing(ids: readonly string[], signal?: AbortSignal): Promise<Set<string>>;
@@ -109,11 +109,11 @@ export type Transport = {
     signal?: AbortSignal,
   ): Promise<{ created: boolean }>;
   get(id: string, signal?: AbortSignal): Promise<Uint8Array>;
-  /** objects 是清单引用的全部对象 id：服务端据此在 prune 时护住它们（对象名本来就在服务端的文件系统里）。 */
+  /** objects 是全部引用；省略表示未知，让服务端整轮停收，[] 则明确表示无引用。JSON 序列化会省略 undefined。 */
   putManifest(
     keyId: string,
     index: string,
-    objects: readonly string[],
+    objects?: readonly string[],
     signal?: AbortSignal,
   ): Promise<string>;
   /** 远端还没有清单时返回 null。 */
@@ -263,7 +263,14 @@ export function createTransport(
         member && typeof member === "object" && "deviceId" in member
           ? member.deviceId
           : null;
-      return { deviceId: isText(deviceId) ? deviceId : null };
+      const role =
+        member && typeof member === "object" && "role" in member
+          ? member.role
+          : null;
+      return {
+        deviceId: isText(deviceId) ? deviceId : null,
+        ...(role === "owner" || role === "member" ? { role } : {}),
+      };
     },
     async status(signal) {
       const { json } = await call("GET", "/backup/status", { signal });

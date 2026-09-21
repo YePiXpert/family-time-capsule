@@ -19,7 +19,7 @@ import { keyIdOf, newMasterKey } from "./crypto";
 import { runRemoteBackup, verifyRemoteBackup } from "./engine";
 import { bytesLabel } from "./planner";
 import {
-  clearRemoteState,
+  clearSyncFiles,
   forgetKey,
   freshRemoteState,
   loadKey,
@@ -31,8 +31,8 @@ import {
 import { SyncError, createTransport } from "./transport";
 /**
  * 备份页最后一张卡：远端备份的全部入口都在这里，普通记录流程见不到服务器。
- * 三态：未登录 → 去登录；已登录未开启 → 开启（生成钥匙、看恢复码）或从远端恢复；
- * 已开启 → 现在备份／查看恢复码／验证／从远端恢复／关闭。进度写在按钮标题里，错误是卡内一行红字。
+ * 三态：未登录 → 去登录；已登录未开启 → 开启（生成钥匙、看恢复码）或加入家人一起写；
+ * 已开启 → 现在备份／查看恢复码／验证／加入家人一起写／关闭。进度写在按钮标题里，错误是卡内一行红字。
  * 卡里有操作在跑时通过 onRunningChange 告诉备份页：本机备份、恢复、删除与远端上传都读写同一个
  * blob 库，不能同时进行。
  */
@@ -52,9 +52,11 @@ export function RemoteBackupCard({
     [progress, setProgress] = useState(""),
     [message, setMessage] = useState(""),
     [error, setError] = useState("");
+  const [isOwner, setIsOwner] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const refresh = useCallback(() => {
     let cancelled = false;
+    setIsOwner(false);
     void (async () => {
       try {
         const [token, state] = await Promise.all([
@@ -64,6 +66,14 @@ export function RemoteBackupCard({
         if (cancelled) return;
         setSignedIn(!!token);
         setRemote(state);
+        if (token) {
+          try {
+            const identity = await createTransport().me();
+            if (!cancelled) setIsOwner(identity.role === "owner");
+          } catch (e) {
+            if (!cancelled) setError(messageOf(e));
+          }
+        }
       } catch (e) {
         // 钥匙串读不出来：别让卡上的按钮全灰着不说话。
         if (cancelled) return;
@@ -177,7 +187,7 @@ export function RemoteBackupCard({
   const disable = () =>
     Alert.alert(
       "关闭远端备份？",
-      "关闭后这台手机不再往远端备份。远端已有的备份可以留着（凭恢复码随时能恢复），也可以一起删掉。",
+      "只关闭会保留远端备份和这台手机的恢复码；只撤下这台手机会删除它发布的远端备份，并让这台手机忘掉恢复码。其他手机的备份仍会保留，请先抄好恢复码。",
       [
         { text: "取消", style: "cancel" },
         {
@@ -190,14 +200,45 @@ export function RemoteBackupCard({
           },
         },
         {
-          text: "同时删除远端",
+          text: "只撤下这台手机",
           style: "destructive",
           onPress: () => {
             void perform(async (signal) => {
-              await createTransport().wipe(signal);
+              const transport = createTransport();
+              const deviceId =
+                remote?.deviceId ?? (await transport.me(signal)).deviceId;
+              if (!deviceId)
+                throw new Error("暂时认不出这台手机，请重新登录后再试。");
+              try {
+                await transport.deleteManifest(deviceId, signal);
+              } catch (e) {
+                // 没发布过或已经撤下时，只需清掉本机的参与状态。
+                if (!(e instanceof SyncError && e.code === "NOT_FOUND"))
+                  throw e;
+              }
               await forgetKey();
-              clearRemoteState();
-              setMessage("已关闭，远端的备份已删除。");
+              clearSyncFiles();
+              setMessage("已撤下这台手机的远端备份，并忘掉恢复码。其他手机的备份仍在。");
+            });
+          },
+        },
+      ],
+    );
+  const wipeFamily = () =>
+    Alert.alert(
+      "删掉全家的远端备份？",
+      "这会删除全家所有手机的远端备份，并关闭这台手机的远端备份、忘掉恢复码。本机记录仍在；其他手机再次备份后，远端会重新出现，请先让家人关闭远端备份并抄好恢复码。",
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "删掉全家的远端备份",
+          style: "destructive",
+          onPress: () => {
+            void perform(async (signal) => {
+              await createTransport().wipeFamily(signal);
+              await forgetKey();
+              clearSyncFiles();
+              setMessage("全家的远端备份已删除，这台手机已关闭远端备份并忘掉恢复码。");
             });
           },
         },
@@ -249,10 +290,10 @@ export function RemoteBackupCard({
               }}
             />
             <Button
-              title="从远端恢复"
+              title="加入家人一起写"
               kind="text"
               compact
-              testID="remote-restore"
+              testID="remote-join"
               disabled={busy || running || signedIn === null}
               onPress={() => nav.navigate("RecoveryCode", { mode: "join" })}
             />
@@ -300,10 +341,10 @@ export function RemoteBackupCard({
               }}
             />
             <Button
-              title="从远端恢复"
+              title="加入家人一起写"
               kind="text"
               compact
-              testID="remote-restore"
+              testID="remote-join"
               disabled={busy || running}
               onPress={() => nav.navigate("RecoveryCode", { mode: "join" })}
             />
@@ -317,6 +358,17 @@ export function RemoteBackupCard({
               onPress={disable}
             />
           </View>
+          {isOwner && (
+            <Button
+              title="删掉全家的远端备份"
+              kind="text"
+              compact
+              danger
+              testID="remote-wipe-family"
+              disabled={busy || running}
+              onPress={wipeFamily}
+            />
+          )}
           <Text style={s.footnote}>
             钥匙指纹 {remote.keyId.slice(0, 8)}
             。恢复码丢了，远端的备份谁也打不开；请抄在纸上收好。

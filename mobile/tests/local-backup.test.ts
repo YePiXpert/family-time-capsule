@@ -12,6 +12,7 @@ const env = vi.hoisted(() => ({
   shares: [] as NativeShareManifest[],
   acknowledged: [] as string[],
   rejectActivation: false,
+  failThumb: false,
   database: null as DatabaseSync | null,
 }));
 vi.mock("../modules/share-intake/src", () => ({
@@ -33,6 +34,7 @@ vi.mock("expo-image-manipulator", async () => {
   return {
     SaveFormat: { JPEG: "jpeg" },
     manipulateAsync: async () => {
+      if (env.failThumb) throw new Error("thumbnail failed");
       const p = path.join(env.root, "cache-thumb.jpg");
       fs.writeFileSync(p, "thumb-bytes");
       return { uri: p, width: 512, height: 384 };
@@ -44,6 +46,7 @@ vi.mock("expo-video-thumbnails", async () => {
   const path = await import("node:path");
   return {
     getThumbnailAsync: async () => {
+      if (env.failThumb) throw new Error("thumbnail failed");
       const p = path.join(env.root, "cache-vthumb.jpg");
       fs.writeFileSync(p, "vthumb-bytes");
       return { uri: p, width: 640, height: 480 };
@@ -91,11 +94,13 @@ beforeEach(() => {
   vi.resetModules();
   env.free = Number.POSITIVE_INFINITY;
   env.rejectActivation = false;
+  env.failThumb = false;
   env.shares = [];
   env.acknowledged = [];
   env.root = fs.mkdtempSync(path.join(os.tmpdir(), "anan-test-"));
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   env.database?.close();
   env.database = null;
   fs.rmSync(env.root, { recursive: true, force: true });
@@ -231,6 +236,56 @@ it("failed database commit rolls back the library and removes extracted new file
   await expect(backup.restoreBackup(store, out)).rejects.toThrow("disk full");
   expect(JSON.stringify(store.get())).toBe(before);
   expect(fs.readdirSync(files.mediaDirectory.uri)).toHaveLength(count);
+});
+it.each(["xmbm", "xmb", "v1"])("keeps current thumbnails when %s restore cannot rebuild thumbnails or commit", async (format) => {
+  const { store, backup, files, media } = await setup();
+  const manifest = await backup.createBackup(store.get());
+  const exporter = await import("../src/local/backup-export");
+  let input = format === "xmb"
+    ? await exporter.writeVolume(exporter.planExport(manifest), 0)
+    : manifest;
+  if (format === "v1") {
+    const { File } = await import("expo-file-system");
+    const { encodeHeader } = await import("../src/local/backup-format");
+    input = new File(files.backupDirectory, "legacy.xmb");
+    fs.writeFileSync(input.uri, Buffer.concat([
+      encodeHeader(store.get()),
+      fs.readFileSync(files.mediaFile(media).uri),
+    ]));
+  }
+  const before = JSON.stringify(store.get());
+  const currentFiles = fs.readdirSync(files.mediaDirectory.uri).sort();
+  const thumb = files.thumbFile(media)!;
+  const thumbBytes = fs.readFileSync(thumb.uri);
+  // 真正走 renderThumb 吞掉渲染异常的分支，再让数据库提交失败。
+  env.failThumb = true;
+  env.database!.exec(
+    "CREATE TRIGGER reject_update BEFORE UPDATE ON root BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+  );
+  await expect(backup.restoreBackup(store, input)).rejects.toThrow("disk full");
+  expect(JSON.stringify(store.get())).toBe(before);
+  expect(thumb.exists).toBe(true);
+  expect(fs.readFileSync(thumb.uri)).toEqual(thumbBytes);
+  expect(fs.readdirSync(files.mediaDirectory.uri).sort()).toEqual(currentFiles);
+});
+it("keeps current thumbnails when startup recovery cannot rebuild thumbnails or activate", async () => {
+  const { store, backup, files, media } = await setup();
+  const input = await backup.createBackup(store.get());
+  const before = JSON.stringify(store.get());
+  const currentFiles = fs.readdirSync(files.mediaDirectory.uri).sort();
+  const thumb = files.thumbFile(media)!;
+  const thumbBytes = fs.readFileSync(thumb.uri);
+  env.database!.close();
+  env.database = null;
+  env.failThumb = true;
+  env.rejectActivation = true;
+  await expect(backup.recoverStartupBackup(input)).rejects.toThrow("activation write failed");
+  expect(JSON.stringify(store.get())).toBe(before);
+  expect(thumb.exists).toBe(true);
+  expect(fs.readFileSync(thumb.uri)).toEqual(thumbBytes);
+  expect(fs.readdirSync(files.mediaDirectory.uri).sort()).toEqual(currentFiles);
+  const { activeLibraryName } = await import("../src/local/activation");
+  expect(await activeLibraryName()).toBe("anan-local-v1.sqlite");
 });
 it("still receives a share that was queued under the former directory name", async () => {
   const { store, files } = await setup();
@@ -668,6 +723,44 @@ it("stores each photo once by content hash and skips it on the next backup", asy
   );
   expect(fs.readdirSync(path.dirname(stored.uri))).toEqual([]);
 });
+it("writes and verifies a manifest part before publishing its final name", async () => {
+  const { store, backup, files } = await setup();
+  const { File, FileMode } = await import("expo-file-system");
+  const open = File.prototype.open;
+  const operations: { name: string; mode?: string }[] = [];
+  const spy = vi.spyOn(File.prototype, "open").mockImplementation(function (this: InstanceType<typeof File>, mode) {
+    if (this.uri.startsWith(files.backupDirectory.uri + "/") && (mode === FileMode.WriteOnly || this.name.endsWith(".part"))) {
+      operations.push({ name: this.name, mode });
+      // 写入与读回校验期间，正式备份列表里都不应出现这份半成品。
+      expect(backup.listLocalBackups()).toEqual([]);
+    }
+    return open.call(this, mode);
+  });
+  const out = await backup.createBackup(store.get());
+  spy.mockRestore();
+  expect(operations).toContainEqual({ name: out.name + ".part", mode: FileMode.WriteOnly });
+  expect(operations).toContainEqual({ name: out.name + ".part", mode: FileMode.ReadOnly });
+  expect((await backup.inspectBackup(out)).records).toEqual(store.get().records);
+  expect(fs.readdirSync(files.backupDirectory.uri)).toEqual([out.name]);
+});
+it("ignores an interrupted manifest part when listing, pruning, collecting blobs and exporting", async () => {
+  const { store, backup, files, media } = await setup();
+  const out = await backup.createBackup(store.get());
+  const partial = path.join(files.backupDirectory.uri, "anan-20260101-0900-deadbeef.xmbm.part");
+  fs.writeFileSync(partial, fs.readFileSync(out.uri).subarray(0, 15));
+  const stray = files.blobFile("ff".repeat(32));
+  fs.mkdirSync(path.dirname(stray.uri), { recursive: true });
+  fs.writeFileSync(stray.uri, "orphan");
+  expect(backup.collectBlobs()).toEqual({ removed: 1, bytes: 6 });
+  expect(files.blobFile(media.sha256).exists).toBe(true);
+  expect(backup.listLocalBackups().map((entry) => entry.file.name)).toEqual([out.name]);
+  expect(backup.restorePins()).toEqual([]);
+  backup.pruneBackups(1);
+  expect(backup.retainedBackups().map((file) => file.name)).toEqual([out.name]);
+  const exporter = await import("../src/local/backup-export");
+  const volume = await exporter.writeVolume(exporter.planExport(out), 0);
+  expect((await backup.inspectBackup(volume)).records).toEqual(store.get().records);
+});
 it("collects only blobs no retained manifest references and stands down when one is unreadable", async () => {
   const { store, backup, files, media } = await setup();
   const out = await backup.createBackup(store.get());
@@ -1101,3 +1194,17 @@ it("deleting an album, a series or a letter through the services leaves tombston
     expect(Object.keys(disk.albums)).toEqual([]);
     for (const at of Object.values(disk.tombstones!)) expect(Number.isFinite(Date.parse(at))).toBe(true);
   });
+
+it("A-14 清掉一小时前的清单写入残片，保留新残片与七天内恢复钉子", async () => {
+  const { backup, files } = await setup();
+  fs.mkdirSync(files.backupDirectory.uri, { recursive: true });
+  const old = new Date(Date.now() - 2 * 3600000);
+  const stale = path.join(files.backupDirectory.uri, backup.backupFileName(old, "stale", "xmbm.part"));
+  const fresh = path.join(files.backupDirectory.uri, backup.backupFileName(new Date(), "fresh", "xmbm.part"));
+  const pin = path.join(files.backupDirectory.uri, backup.restorePinName(old, "pin"));
+  for (const file of [stale, fresh, pin]) fs.writeFileSync(file, "unfinished");
+  backup.pruneBackups();
+  expect(fs.existsSync(stale)).toBe(false);
+  expect(fs.existsSync(fresh)).toBe(true);
+  expect(fs.existsSync(pin)).toBe(true);
+});

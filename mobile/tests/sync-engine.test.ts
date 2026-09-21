@@ -101,7 +101,7 @@ function fakeRemote() {
       return found;
     },
     async putManifest(keyId, index, objects) {
-      log.push(`putManifest ${objects.length}`);
+      log.push(`putManifest ${objects?.length ?? "unknown"}`);
       manifest = {
         deviceId: "device-1",
         keyId,
@@ -317,6 +317,9 @@ it("refuses to stack onto another key's backup and stops before uploading", asyn
   // vi.resetModules 之后引擎里的 SyncError 是另一份类定义，按名字与 code 认。
   expect((error as SyncError).name).toBe("SyncError");
   expect((error as SyncError).code).toBe("KEY_MISMATCH");
+  expect((error as SyncError).message).toContain("加入家人一起写");
+  expect((error as SyncError).message).toContain("12 词恢复码");
+  expect((error as SyncError).message).not.toContain("删除远端备份");
   expect(remote.puts()).toBe(4);
   const controller = new AbortController();
   controller.abort();
@@ -445,4 +448,37 @@ it("joins from the remote through the blob store, resumes, and rejects wrong key
     .readdirSync(files.blobDirectory.uri, { recursive: true })
     .map(String);
   expect(leftovers.some((n) => n.endsWith(".part"))).toBe(false);
+});
+
+it.each([49999, 50000])("registers %i planned blob objects only when the total fits the server limit", async (count) => {
+  const { engine, store } = await setup();
+  const planner = await import("../src/sync/planner");
+  // 只放大规划结果，远端已有全部对象；不构造数十 GB 的假照片。
+  const plans = Array.from({ length: count }, (_, i) => ({
+    id: i.toString(16).padStart(64, "0"),
+    sha256: "a".repeat(64),
+    part: 0,
+    from: 0,
+    final: true,
+    bytes: 1,
+  }));
+  const planned = vi.spyOn(planner, "planUpload").mockReturnValue(plans);
+  const remote = fakeRemote();
+  const putManifest = vi.spyOn(remote.transport, "putManifest").mockResolvedValue("now");
+  const prune = vi.spyOn(remote.transport, "prune");
+  vi.spyOn(remote.transport, "missing").mockResolvedValue(new Set());
+  try {
+    const result = await engine.pushManifest(store.get(), { transport: remote.transport, key: key() });
+    expect(result.objects).toBe(count + 1);
+    const registered = putManifest.mock.calls[0]![2];
+    if (count === 49999) {
+      expect(registered).toHaveLength(50000);
+      expect(prune).toHaveBeenCalledWith(registered, undefined);
+    } else {
+      expect(registered).toBeUndefined();
+      expect(prune).not.toHaveBeenCalled();
+    }
+  } finally {
+    planned.mockRestore();
+  }
 });

@@ -106,6 +106,29 @@ describe("AI suggestions remain reviewable local drafts", () => {
       }),
     ).toThrow("不同日期");
   });
+  it("keeps people, quote and author on every proposed event", () => {
+    const { library, draft } = fixture();
+    draft.content.personIds = ["妈妈", "爸爸"];
+    draft.content.quote = true;
+    draft.content.by = "妈妈";
+    const events = proposalEvents(draft, library.media, {
+      fingerprint: sourceFingerprint(draft, library.media),
+      kind: "group",
+      eventIndex: 0,
+      model: "deepseek-flash",
+      groups: [
+        { photoIds: ["a"], title: "上午", summary: "室内" },
+        { photoIds: ["b"], title: "下午", summary: "户外" },
+        { photoIds: ["c"], title: "第二天", summary: "照片" },
+      ],
+    });
+    expect(events).toHaveLength(3);
+    for (const event of events) {
+      expect(event.personIds).toEqual(["妈妈", "爸爸"]);
+      expect(event.quote).toBe(true);
+      expect(event.by).toBe("妈妈");
+    }
+  });
   it("preserves a manually written title when only adopting generated body", () => {
     const { library, draft } = fixture();
     draft.content.title = "手动标题";
@@ -346,17 +369,31 @@ describe("AI suggestions remain reviewable local drafts", () => {
 });
 
 describe("annual note recap", () => {
-  it("builds the recap context from titles and firsts, text only", () => {
+  it("builds recap context from titles and firsts with dated placeholders, never record bodies", () => {
     const records = [
-      { title: "第一次挥手", text: "她在餐椅上挥了挥手。", first: true },
-      { title: "", text: "公园里走了很远\n下午睡得很沉", first: false },
+      { title: "第一次挥手", text: "她在餐椅上挥了挥手。", first: true, date: "2026-09-20T12:00:00" },
+      { title: "", text: "公园里走了很远\n下午睡得很沉", first: false, date: "2026-09-21T12:00:00" },
     ];
     const context = recapContext(records, "已写的话");
     expect(context).toContain("第一次：第一次挥手");
-    expect(context).toContain("公园里走了很远");
+    expect(context).toContain("（无标题）· 2026年9月21日");
+    expect(context).not.toContain("公园里走了很远");
+    expect(context).not.toContain("下午睡得很沉");
+    expect(context).not.toContain("她在餐椅上挥了挥手。");
     expect(context).toContain("已写的寄语");
     expect(context.length).toBeLessThanOrEqual(3800);
     expect(recapContext(records)).not.toContain("已写的寄语");
+  });
+  it("excludes sensitive body text even from untitled firsts while keeping the existing note", () => {
+    const records = [{ title: "  ", text: "敏感病历：只留在本机", first: true, date: "2026-09-21T12:00:00" }];
+    const context = recapContext(records, "你已经听过的家里话");
+    expect(context).not.toContain("敏感病历");
+    expect(context).not.toContain("只留在本机");
+    expect(context).toContain("第一次：（无标题）· 2026年9月21日");
+    expect(context).toContain("你已经听过的家里话");
+    const capped = recapContext(records, "字".repeat(500) + "超出部分");
+    expect(capped).toContain("字".repeat(500));
+    expect(capped).not.toContain("超出部分");
   });
   it("accepts stored recap jobs beside generate and polish", () => {
     const { library, draft } = fixture();

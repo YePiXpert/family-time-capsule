@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Alert, View } from "react-native";
 import {
   Button,
   ErrorText,
@@ -32,7 +32,7 @@ export function NoteCard({
   /** 收到去除首尾空白后的内容；空串由调用方落实为删除。 */
   onSave: (value: string) => Promise<void>;
   /** 可选的 AI 起草：返回草稿文本，由用户核对后再保存。 */
-  assist?: { generate: () => Promise<string> };
+  assist?: { generate: (signal: AbortSignal) => Promise<string> };
 }) {
   const s = useStyles(),
     { colors } = useTheme();
@@ -41,7 +41,26 @@ export function NoteCard({
     [busy, setBusy] = useState(false),
     [assistBusy, setAssistBusy] = useState(false),
     [error, setError] = useState("");
+  const draftRef = useRef(note);
+  const request = useRef<AbortController | null>(null);
+  const updateDraft = (value: string) => {
+    draftRef.current = value;
+    setDraft(value);
+  };
+  const cancelAssist = () => {
+    request.current?.abort();
+    request.current = null;
+    setAssistBusy(false);
+  };
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      request.current = null;
+    },
+    [],
+  );
   const save = () => {
+    cancelAssist();
     setBusy(true);
     setError("");
     void onSave(draft.trim())
@@ -51,13 +70,39 @@ export function NoteCard({
   };
   const draftWithAI = () => {
     if (!assist) return;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    const snapshot = draftRef.current;
+    // 即使底层请求晚到，取消、卸载或新一轮起草后也不能再写入。
+    const active = () =>
+      request.current === controller && !controller.signal.aborted;
     setAssistBusy(true);
     setError("");
     void assist
-      .generate()
-      .then((text) => setDraft(text))
-      .catch((e) => setError(messageOf(e)))
-      .finally(() => setAssistBusy(false));
+      .generate(controller.signal)
+      .then((text) => {
+        if (!active()) return;
+        if (draftRef.current === snapshot) {
+          updateDraft(text);
+          return;
+        }
+        Alert.alert("寄语有了新内容", "你在等待时改了寄语，要用哪一版？", [
+          { text: "保留我写的", style: "cancel" },
+          {
+            text: "用 AI 这版",
+            onPress: () => {
+              if (active()) updateDraft(text);
+            },
+          },
+        ]);
+      })
+      .catch((e) => {
+        if (active()) setError(messageOf(e));
+      })
+      .finally(() => {
+        if (active()) setAssistBusy(false);
+      });
   };
   return (
     <Glass radius={16} style={{ padding: 16, gap: 12 }}>
@@ -93,7 +138,8 @@ export function NoteCard({
               compact
               disabled={busy}
               onPress={() => {
-                setDraft(note);
+                cancelAssist();
+                updateDraft(note);
                 setEditing(false);
                 setError("");
               }}
@@ -108,7 +154,7 @@ export function NoteCard({
             hideLabel
             placeholder={placeholder}
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={updateDraft}
             multiline
             maxLength={NOTE_LIMIT}
             testID={`${testPrefix}-input`}
@@ -128,7 +174,7 @@ export function NoteCard({
               compact
               testID={`${testPrefix}-edit`}
               onPress={() => {
-                setDraft(note);
+                updateDraft(note);
                 setEditing(true);
               }}
             />

@@ -287,3 +287,19 @@ it("deletes one device's manifest, wipes the family only through the admin route
   expect([error.code, error.status]).toEqual(["OWNER_ONLY", 403]);
   expect(error.message).toContain("主人");
 });
+
+it("omits unknown manifest references but preserves an explicitly empty list", async () => {
+  await transport().putManifest("ab".repeat(8), "QUJD");
+  expect(JSON.parse(seen.at(-1)!.body as string)).toEqual({ keyId: "ab".repeat(8), index: "QUJD" });
+  await transport().putManifest("ab".repeat(8), "QUJD", []);
+  expect(JSON.parse(seen.at(-1)!.body as string)).toEqual({ keyId: "ab".repeat(8), index: "QUJD", objects: [] });
+});
+
+it("A-16 me 只接受已知角色，主人入口不能由未知角色开启", async () => {
+  for (const role of ["owner", "member"] as const) {
+    answer = () => ({ status: 200, body: encode({ member: { deviceId: "B", role } }) });
+    expect(await transport().me()).toEqual({ deviceId: "B", role });
+  }
+  answer = () => ({ status: 200, body: encode({ member: { deviceId: "B", role: "unknown" } }) });
+  expect(await transport().me()).toEqual({ deviceId: "B" });
+});

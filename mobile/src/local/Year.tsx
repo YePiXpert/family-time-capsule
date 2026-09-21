@@ -62,8 +62,10 @@ function YearNote({ year }: { year: string }) {
         });
       }}
       assist={{
-        generate: async () => {
-          if (!(await getToken())) {
+        generate: async (signal) => {
+          const token = await getToken();
+          if (signal.aborted) throw new Error("已停止起草。");
+          if (!token) {
             nav.navigate("AISettings");
             throw new Error("先在「AI 设置」加入服务，再来起草寄语。");
           }
@@ -71,7 +73,7 @@ function YearNote({ year }: { year: string }) {
             const agreed = await new Promise<boolean>((resolve) =>
               Alert.alert(
                 "用 AI 起草寄语",
-                "起草会把这一年的记录标题和「第一次」清单（纯文字，不含照片与精确位置）经主人的服务发送给 DeepSeek Flash High，结果由你核对修改后才保存。",
+                "起草会把这一年的记录标题和「第一次」清单，以及你已经写下的寄语（纯文字，不含照片与精确位置）经主人的服务发送给 DeepSeek Flash High，让 AI 避开你说过的话，结果由你核对修改后才保存。",
                 [
                   { text: "取消", style: "cancel", onPress: () => resolve(false) },
                   {
@@ -87,6 +89,7 @@ function YearNote({ year }: { year: string }) {
             );
             if (!agreed) throw new Error("没有开始起草。");
           }
+          if (signal.aborted) throw new Error("已停止起草。");
           const records = sortedRecords(state).filter(
             (r) => yearKey(r.date) === year,
           );
@@ -101,6 +104,7 @@ function YearNote({ year }: { year: string }) {
               writingMode: "recap",
             },
             "POST",
+            signal,
           );
           if (typeof result.text !== "string" || !result.text.trim())
             throw new Error("AI 草稿不完整，请重试。");

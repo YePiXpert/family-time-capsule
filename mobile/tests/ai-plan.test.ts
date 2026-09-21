@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { emptyLibrary, type Library } from "../src/local/model";
-import { retryPlan } from "../src/ai/state";
+import { PHOTO_REQUEST_LIMIT, retryPlan } from "../src/ai/state";
 import {
   AI_MODEL,
   assertGenerateInput,
@@ -387,4 +387,29 @@ describe("AI editor plan: retry classification", () => {
       notice: "这次请求已结束，结果无法恢复；点「重新生成」才会计入今日额度。",
     });
   });
+});
+
+it("21～100 张照片可作为一次作业，每个分批请求均不超过单次上限", () => {
+  const entries = Array.from(
+    { length: 101 },
+    (_, i): [string, string] => [`p${i}`, "2020-01-01T12:00:00"],
+  );
+  const media = mediaOf(entries);
+  const ids = entries.map(([id]) => id);
+  for (let count = 21; count <= 100; count++) {
+    const selected = ids.slice(0, count);
+    for (const kind of ["write", "group"] as const)
+      expect(() =>
+        assertGenerateInput(kind, "generate", selected, null, {}),
+      ).not.toThrow();
+    const chunks = planGroupDays(selected, media).flatMap((day) => day.chunks);
+    expect(chunks.flatMap((chunk) => chunk.photoIds)).toEqual(selected);
+    for (const chunk of chunks) {
+      expect(chunk.photoIds.length).toBeGreaterThan(0);
+      expect(chunk.photoIds.length).toBeLessThanOrEqual(PHOTO_REQUEST_LIMIT);
+    }
+  }
+  expect(() =>
+    assertGenerateInput("write", "generate", ids, null, {}),
+  ).toThrow("一次最多整理 100 张照片，请分几份草稿处理。");
 });
