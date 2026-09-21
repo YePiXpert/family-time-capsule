@@ -18,6 +18,8 @@ import {
   mediaUri,
   pumpBytes,
   renderThumb,
+  syncDirectory,
+  syncManifestFile,
   type FileHandle,
 } from "./files";
 import {
@@ -221,6 +223,40 @@ async function writeManifest(
   signal?: AbortSignal,
   protect: File[] = [],
 ): Promise<File> {
+  const out = new File(
+    backupDirectory,
+    backupFileName(new Date(), randomUUID().slice(0, 8), "xmbm"),
+  );
+  await writeManifestTo(state, out, backupDirectory, false, onProgress, signal);
+  // 收拾失败不影响已经写好、核对过的备份。
+  tidyBackups([out, ...protect]);
+  return out;
+}
+/** 家人同步只留一份独立清单，不进入保留备份列表，也不挤占三份保留位。 */
+export async function createSyncManifest(
+  state: Library,
+  onProgress?: RestoreProgress,
+  signal?: AbortSignal,
+): Promise<File> {
+  syncDirectory.create({ intermediates: true, idempotent: true });
+  const out = syncManifestFile();
+  await writeManifestTo(state, out, syncDirectory, true, onProgress, signal);
+  try {
+    collectBlobs();
+  } catch {
+    // 清单已经完成，回收失败留到下次再试。
+  }
+  return out;
+}
+/** 两种清单共用素材入库、实体编码、半成品写入与读回校验。 */
+async function writeManifestTo(
+  state: Library,
+  out: File,
+  directory: Directory,
+  overwrite: boolean,
+  onProgress?: RestoreProgress,
+  signal?: AbortSignal,
+): Promise<void> {
   ensureDirectories();
   const entities = encodeEntities(state);
   const head = encodeMetaV2(state, entities.length, entityCount(state), {
@@ -241,13 +277,10 @@ async function writeManifest(
     await ensureBlob(owners.get(blob.sha256)!, blob);
     onProgress?.(`正在整理照片 ${++done}/${blobs.length}`);
   }
-  const out = new File(
-    backupDirectory,
-    backupFileName(new Date(), randomUUID().slice(0, 8), "xmbm"),
-  );
   // 被系统中断时只留下半成品，不进入保留列表，也不阻塞 blob 回收。
-  const part = new File(backupDirectory, `${out.name}.part`);
+  const part = new File(directory, `${out.name}.part`);
   try {
+    if (overwrite && part.exists) part.delete();
     part.create();
     const handle = part.open(FileMode.WriteOnly);
     try {
@@ -257,14 +290,11 @@ async function writeManifest(
       handle.close();
     }
     await verifyManifest(part);
-    await part.move(out, { overwrite: false });
+    await part.move(out, { overwrite });
   } catch (e) {
     if (part.exists) part.delete();
     throw e;
   }
-  // 收拾是顺手的事：清旧份或回收 blob 出错，不能把刚写好、核对过的这份也删掉再报失败。
-  tidyBackups([out, ...protect]);
-  return out;
 }
 /** 清旧份 + 回收 blob；失败吞掉——备份或恢复本身已经完成，下次再收拾。 */
 function tidyBackups(protect: File[]): void {
@@ -409,8 +439,12 @@ export function collectBlobs(): { removed: number; bytes: number } | null {
     if (!blobs) return null;
     for (const blob of blobs) keep.add(blob.sha256);
   }
-  // 远端恢复的钉子也算：读得出就护住它引用的 blob；读不出的钉子是废弃的半成品，直接清掉。
-  for (const pin of restorePins()) {
+  // 独立同步清单与远端恢复的钉子也护住 blob；读不出的文件直接清掉。
+  const syncManifest = syncManifestFile();
+  for (const pin of [
+    ...restorePins(),
+    ...(syncManifest.exists ? [syncManifest] : []),
+  ]) {
     const blobs = manifestBlobs(pin);
     if (!blobs) {
       pin.delete();

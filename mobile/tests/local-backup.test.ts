@@ -28,6 +28,7 @@ vi.mock("expo-sharing", () => ({
   isAvailableAsync: async () => true,
   shareAsync: async () => {},
 }));
+vi.mock("expo-secure-store", () => ({ WHEN_UNLOCKED_THIS_DEVICE_ONLY: "unlocked" }));
 vi.mock("expo-image-manipulator", async () => {
   const fs = await import("node:fs");
   const path = await import("node:path");
@@ -701,6 +702,52 @@ it("names retention copies readably and prunes beyond the newest three", async (
       path.join(files.blobDirectory.uri, media.sha256.slice(0, 2)),
     ),
   ).toEqual([media.sha256]);
+});
+it("同步清单独立保存且重复写入不挤掉三份保留备份", async () => {
+  const { store, backup, files } = await setup();
+  for (let i = 0; i < 3; i++) await backup.createBackup(store.get());
+  const retained = backup.listLocalBackups().map((b) => b.file.uri);
+  const before = retained.map((uri) => fs.readFileSync(uri));
+  const first = await backup.createSyncManifest(store.get());
+  expect(first.uri).toBe(files.syncManifestFile().uri);
+  expect(backup.listLocalBackups().map((b) => b.file.uri)).toEqual(retained);
+  await store.change((s) => { s.records.r = { ...s.records.r!, text: "同步后的内容" }; });
+  // 上次中断的半成品也在同步目录里，重试会替换它。
+  fs.writeFileSync(path.join(files.syncDirectory.uri, "manifest.xmbm.part"), "half");
+  const second = await backup.createSyncManifest(store.get());
+  expect(second.uri).toBe(first.uri);
+  expect((await backup.inspectBackup(second)).records.r!.text).toBe("同步后的内容");
+  expect(fs.readdirSync(files.syncDirectory.uri)).toEqual(["manifest.xmbm"]);
+  expect(backup.listLocalBackups().map((b) => b.file.uri)).toEqual(retained);
+  expect(retained.map((uri) => fs.readFileSync(uri))).toEqual(before);
+});
+it.each(["clear", "corrupt"])("同步清单独占的 blob 受保护，%s 后可回收", async (action) => {
+  const { store, backup, files, media } = await setup();
+  const manifest = await backup.createSyncManifest(store.get());
+  expect(backup.listLocalBackups()).toEqual([]);
+  expect(backup.collectBlobs()).toEqual({ removed: 0, bytes: 0 });
+  expect(files.blobFile(media.sha256).exists).toBe(true);
+  if (action === "clear") {
+    const { clearSyncFiles } = await import("../src/sync/state");
+    clearSyncFiles();
+    expect(manifest.exists).toBe(false);
+  } else manifest.write("bad bytes");
+  expect(backup.collectBlobs()).toEqual({ removed: 1, bytes: media.bytes });
+  expect(manifest.exists).toBe(false);
+  expect(files.blobFile(media.sha256).exists).toBe(false);
+  expect(files.mediaFile(media).exists).toBe(true);
+});
+it("同步清单写入失败保留上一份有效清单，不回收它引用的 blob", async () => {
+  const { store, backup, files, media } = await setup();
+  const manifest = await backup.createSyncManifest(store.get());
+  const before = fs.readFileSync(manifest.uri);
+  const { File } = await import("expo-file-system");
+  vi.spyOn(File.prototype, "move").mockRejectedValueOnce(new Error("写不进去"));
+  await expect(backup.createSyncManifest(store.get())).rejects.toThrow("写不进去");
+  expect(fs.readFileSync(manifest.uri)).toEqual(before);
+  expect(fs.readdirSync(files.syncDirectory.uri)).toEqual(["manifest.xmbm"]);
+  expect(backup.collectBlobs()).toEqual({ removed: 0, bytes: 0 });
+  expect(files.blobFile(media.sha256).exists).toBe(true);
 });
 it("stores each photo once by content hash and skips it on the next backup", async () => {
   const { store, backup, files, media } = await setup();

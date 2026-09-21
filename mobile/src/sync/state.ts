@@ -1,6 +1,7 @@
-import { Directory, File, Paths } from "expo-file-system";
+import { File } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
-import { DOCS_DIR, REMOTE_KEY_ITEM } from "../local/brand";
+import { REMOTE_KEY_ITEM } from "../local/brand";
+import { syncDirectory, syncManifestFile } from "../local/files";
 import { keyFromHex, keyToHex } from "./crypto";
 import {
   CONFLICT_KINDS,
@@ -9,6 +10,7 @@ import {
   type Conflict,
   type SyncBase,
 } from "./merge";
+export { syncDirectory } from "../local/files";
 export { KNOWN_LIMIT, emptyBase, type Conflict, type SyncBase } from "./merge";
 /**
  * 家人一起写的本机状态，三个小 JSON，都在 documents/anan-v1/sync/ 下，都不进 Library
@@ -40,6 +42,8 @@ export type RemoteState = {
   deviceId?: string;
   /** 每台设备上次并入的清单 sha256（索引里的 sha）：清单没变就不再下载。 */
   seen: Record<string, string>;
+  /** 上次成功发布的实体段与整份清单指纹；内容未变时免于重传。 */
+  lastPush?: { entitiesSha: string; manifestSha: string };
   lastSyncAt?: string;
   lastSyncSummary?: SyncSummary;
   lastError?: string;
@@ -62,11 +66,11 @@ export function subscribeSyncFiles(fn: () => void): () => void {
 function notifySyncFiles(): void {
   for (const fn of syncFileListeners) fn();
 }
-export const syncDirectory = new Directory(Paths.document, DOCS_DIR, "sync");
 const stateFile = () => new File(syncDirectory, "state.json");
 const baseFile = () => new File(syncDirectory, "base.json");
 const conflictsFile = () => new File(syncDirectory, "conflicts.json");
 const KEY_ID = /^[a-f0-9]{16}$/;
+const SHA256 = /^[a-f0-9]{64}$/;
 const isTime = (value: unknown): value is string =>
   typeof value === "string" && Number.isFinite(Date.parse(value));
 /** 刚加入时的状态。 */
@@ -131,6 +135,17 @@ export async function readRemoteState(
     for (const [device, sha] of Object.entries(parsed.seen))
       if (typeof sha === "string") seen[device] = sha;
   const summary = parsed.lastSyncSummary;
+  const push = parsed.lastPush as
+    | Partial<NonNullable<RemoteState["lastPush"]>>
+    | null;
+  const lastPush =
+    push &&
+    typeof push.entitiesSha === "string" &&
+    SHA256.test(push.entitiesSha) &&
+    typeof push.manifestSha === "string" &&
+    SHA256.test(push.manifestSha)
+      ? { entitiesSha: push.entitiesSha, manifestSha: push.manifestSha }
+      : undefined;
   return {
     version: 2,
     enabled: parsed.enabled,
@@ -138,6 +153,7 @@ export async function readRemoteState(
     joinedAt: isTime(parsed.joinedAt) ? parsed.joinedAt : now,
     autoSync: parsed.autoSync !== false,
     seen,
+    ...(lastPush ? { lastPush } : {}),
     ...(typeof parsed.deviceId === "string"
       ? { deviceId: parsed.deviceId }
       : {}),
@@ -228,9 +244,11 @@ export async function readConflicts(): Promise<Conflict[]> {
 export function writeConflicts(items: readonly Conflict[]): void {
   writeJson(conflictsFile(), { version: 1, items });
 }
-/** 退出一起写：状态、基、冲突一起删；本机资料一个字节不动。 */
+/** 退出一起写：状态、基、冲突与同步清单一起删；本机资料一个字节不动。 */
 export function clearSyncFiles(): void {
-  for (const file of [stateFile(), baseFile(), conflictsFile()])
+  for (const file of [
+    stateFile(), baseFile(), conflictsFile(), syncManifestFile(),
+  ])
     if (file.exists) file.delete();
   notifySyncFiles();
 }

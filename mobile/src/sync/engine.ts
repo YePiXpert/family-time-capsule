@@ -10,7 +10,7 @@ import {
 } from "../local/backup-format";
 import {
   blobOwners,
-  createBackup,
+  createSyncManifest,
   readManifest,
   type RestoreProgress,
 } from "../local/backup";
@@ -177,8 +177,9 @@ export async function runRemoteBackup(
 export async function pushManifest(state: Library, deps: EngineDeps) {
   const keyId = keyIdOf(deps.key);
   deps.onProgress?.("正在整理照片…");
-  const manifest = await createBackup(state, deps.onProgress, deps.signal);
+  const manifest = await createSyncManifest(state, deps.onProgress, deps.signal);
   const { meta, entities } = readManifest(manifest);
+  const entitiesSha = sha256Hex(entities);
   const owners = blobOwners(decodeLibraryV2(meta, entities));
   const manifestSha = await hashFile(manifest);
   const manifestBytes = manifest.size;
@@ -195,7 +196,11 @@ export async function pushManifest(state: Library, deps: EngineDeps) {
   );
   const total = pendingOf(all, missing).length;
   let done = 0;
-  const uploaded = () => deps.onProgress?.(`正在上传 ${++done}/${total}`);
+  // 计数不能放在可选回调的参数里：没传进度回调时 `?.()` 会连参数一起跳过。
+  const uploaded = () => {
+    done++;
+    deps.onProgress?.(`正在上传 ${done}/${total}`);
+  };
   if (total) deps.onProgress?.(`正在上传 0/${total}`);
   for (const blob of meta.blobs) {
     const plans = blobItems.filter((item) => item.sha256 === blob.sha256);
@@ -235,6 +240,7 @@ export async function pushManifest(state: Library, deps: EngineDeps) {
   return {
     index,
     manifestSha,
+    entitiesSha,
     objects: all.length,
     bytes: index.blobBytes + manifestBytes,
     pushed: done,

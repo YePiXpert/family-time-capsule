@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+vi.mock("expo-image-manipulator", () => ({}));
+vi.mock("expo-video-thumbnails", () => ({}));
 const env = vi.hoisted(() => ({
   root: "",
   free: Number.POSITIVE_INFINITY,
