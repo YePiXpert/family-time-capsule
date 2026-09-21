@@ -27,6 +27,7 @@ import { BookPreview } from "./BookPreview";
 import type { BookLayout, BookPhoto } from "./book";
 import { PhotoPicker } from "./PhotoPicker";
 import { CHILD_FALLBACK } from "./brand";
+import { AI_CONSENT_TEXT } from "../ai/consent";
 import { recapContext } from "../ai/state";
 import { api, getToken, hasConsent, giveConsent } from "../ai/client";
 import {
@@ -75,7 +76,7 @@ function YearNote({ year }: { year: string }) {
             const agreed = await new Promise<boolean>((resolve) =>
               Alert.alert(
                 "用 AI 起草寄语",
-                "起草会把这一年的记录标题和「第一次」清单，以及你已经写下的寄语（纯文字，不含照片与精确位置）经主人的服务发送给 DeepSeek Flash High，让 AI 避开你说过的话，结果由你核对修改后才保存。",
+                AI_CONSENT_TEXT,
                 [
                   { text: "取消", style: "cancel", onPress: () => resolve(false) },
                   {
@@ -102,7 +103,7 @@ function YearNote({ year }: { year: string }) {
             {
               requestId: randomUUID(),
               photos: [],
-              context: recapContext(records, note),
+              context: recapContext(records, note, records.filter((r) => r.quote).map((r) => r.text.trim().split(/\n\s*\n/)[0]?.trim() || r.title)),
               writingMode: "recap",
             },
             "POST",

@@ -24,6 +24,7 @@ import {
   type LocalMedia,
 } from "./model";
 import { newId, now, createPerson } from "./services";
+import { useDailyQuestion } from "./dailyQuestionHooks";
 import { promptOf } from "./prompts";
 import { storyTitle, storyQuestions } from "./stories";
 import { preserveMedia, verifyMedia } from "./files";
@@ -75,6 +76,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [promptOff, setPromptOff] = useState(false),
     [storyQuestion, setStoryQuestion] = useState(0),
     [newPerson, setNewPerson] = useState("");
+  const dailyVisible = !!draft && !draft.content.story && !promptOff && !draft.recordId && !draft.content.text.trim() && !draft.photoEvents;
+  const daily = useDailyQuestion(store, state, dailyVisible);
   const [permDenied, setPermDenied] = useState(false);
   const personList = useMemo(
     () => Object.values(state.persons),
@@ -483,13 +486,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               </View>
             </Card>
           )}
-          {!draft.content.story &&
-            !promptOff &&
-            !draft.recordId &&
-            !draft.content.text.trim() &&
-            !draft.photoEvents &&
+          {dailyVisible &&
             (() => {
-              const question = promptOf(
+              const question = daily.question ?? promptOf(
                 state.profile.birthday,
                 new Date(),
                 promptSeed,
@@ -499,12 +498,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   <Text style={s.muted} testID="daily-prompt">
                     今天的小问题：{question}
                   </Text>
+                  <Text testID="daily-prompt-source" style={{ display: "none" }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{daily.source}</Text>
                   <View style={s.row}>
                     <Button
                       title="换一个"
                       compact
                       testID="daily-prompt-next"
-                      onPress={() => setPromptSeed(promptSeed + 1)}
+                      onPress={() => { daily.useLocal(); setPromptSeed(promptSeed + 1); }}
                     />
                     <Button
                       title="不问了"

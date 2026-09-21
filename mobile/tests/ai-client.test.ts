@@ -3,7 +3,7 @@ import {
   SERVICE_URL,
   AI_SESSION_KEY,
   LEGACY_AI_SESSION_KEY,
-} from "../src/local/brand";
+ AI_CONSENT_KEY, LEGACY_AI_CONSENT_KEY } from "../src/local/brand";
 import {
   AIError,
   upload,
@@ -12,7 +12,8 @@ import {
   getToken,
   login,
   serviceStatus,
-} from "../src/ai/client";
+ hasConsent, giveConsent } from "../src/ai/client";
+
 /** 内存版钥匙串：fails 里的键写入即失败，模拟系统钥匙串暂时不可写。 */
 const secure = vi.hoisted(() => {
   const store = new Map<string, string>();
@@ -227,5 +228,18 @@ describe("binary upload", () => {
   it.each([[200, "INVALID_RESULT"], [502, "SERVER_ERROR"]])("maps non-JSON status %s correctly", async (status, code) => {
     const { promise, xhr } = await start(); xhr.respond("<html>bad gateway</html>", Number(status));
     await expect(promise).rejects.toMatchObject({ code });
+  });
+});
+describe("v2 consent", () => {
+  it("requires renewed consent for the old yes value", async () => {
+    secure.store.set(AI_CONSENT_KEY, "yes");
+    await expect(hasConsent()).resolves.toBe(false);
+    await giveConsent();
+    expect(secure.store.get(AI_CONSENT_KEY)).toBe("v2");
+    await expect(hasConsent()).resolves.toBe(true);
+  });
+  it("also rejects a carried over legacy yes value", async () => {
+    secure.store.set(LEGACY_AI_CONSENT_KEY, "yes");
+    await expect(hasConsent()).resolves.toBe(false);
   });
 });

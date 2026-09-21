@@ -37,6 +37,6 @@ export const disconnect = async () => {
   await SecureStore.deleteItemAsync(LEGACY_AI_SESSION_KEY);
 };
 export const hasConsent = async () =>
-  (await readCarriedOver(CONSENT, LEGACY_AI_CONSENT_KEY)) === "yes";
+  (await readCarriedOver(CONSENT, LEGACY_AI_CONSENT_KEY)) === "v2";
 export const giveConsent = () =>
-  SecureStore.setItemAsync(CONSENT, "yes", options);
+  SecureStore.setItemAsync(CONSENT, "v2", options);

@@ -1280,3 +1280,27 @@ describe("故事主题字段校验", () => {
     expect(() => validateLibrary(bad)).toThrow();
   });
 });
+
+describe("device-local daily question cache validation", () => {
+  it("accepts a valid optional cache", () => {
+    const state = emptyLibrary();
+    state.settings.dailyQuestion = { requestedDay: "2026-09-21", day: "2026-09-21", question: "她今天说了什么？", asked: [{ day: "2026-09-20", question: "谁来看她？" }] };
+    expect(() => validateLibrary(state)).not.toThrow();
+  });
+  it.each(["2026-9-21", "not-a-date", "2026-02-30", "2026-13-01"])("rejects invalid calendar day %s", (date) => {
+    const state = emptyLibrary();
+    state.settings.dailyQuestion = { requestedDay: date, asked: [] };
+    expect(() => validateLibrary(state)).toThrow();
+    state.settings.dailyQuestion = { requestedDay: "2026-09-21", day: date, asked: [] };
+    expect(() => validateLibrary(state)).toThrow();
+    state.settings.dailyQuestion = { requestedDay: "2026-09-21", asked: [{ day: date, question: "问题" }] };
+    expect(() => validateLibrary(state)).toThrow();
+  });
+  it("rejects oversized questions and history", () => {
+    const state = emptyLibrary();
+    state.settings.dailyQuestion = { requestedDay: "2026-09-21", question: "问".repeat(61), asked: [] };
+    expect(() => validateLibrary(state)).toThrow();
+    state.settings.dailyQuestion = { requestedDay: "2026-09-21", asked: Array.from({ length: 15 }, () => ({ day: "2026-09-21", question: "问题" })) };
+    expect(() => validateLibrary(state)).toThrow();
+  });
+});

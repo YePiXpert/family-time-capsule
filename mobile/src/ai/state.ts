@@ -1,6 +1,7 @@
+import { AIError } from "./error";
+import type { DailyQuestionCache, Library, RecordDraft, RecordContent } from "../local/model";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import type { Library, RecordDraft, RecordContent } from "../local/model";
 import { photoDayGroups } from "../local/photo-metadata";
 import { clusterPlaces } from "../local/places";
 import { dateLabel } from "../local/dates";
@@ -42,8 +43,9 @@ export function sourceFingerprint(draft: RecordDraft, media: Library["media"]) {
     ),
   );
 }
-/** 只发送当前事情的标题与正文；不发送照片，也不截断超限文字。 */
+/** 只发送当前事情的标题、正文与落款；不发送照片，也不截断超限文字。 */
 export function polishRequest(event: {
+  by?: string;
   title: string;
   text: string;
 }): { context: string; error?: string } {
@@ -58,7 +60,7 @@ export function polishRequest(event: {
       context: "",
       error: `正文已有 ${event.text.length} 字，一次最多润色 ${POLISH_BODY_LIMIT} 字。请先精简或分成几段，不会自动截断。`,
     };
-  const context = `${event.title.trim() ? `标题：${event.title.trim()}\n` : ""}正文：\n${event.text}`;
+  const context = `${event.by?.trim() ? `落款：${event.by.trim()}\n` : ""}${event.title.trim() ? `标题：${event.title.trim()}\n` : ""}正文：\n${event.text}`;
   if (context.length > POLISH_CONTEXT_LIMIT)
     return {
       context: "",
@@ -129,7 +131,33 @@ export function validateResult(
   value: unknown,
   kind: "group" | "write",
   ids: string[],
+  mode?: WritingMode,
 ): AIResult {
+  if (
+    kind === "write" &&
+    (mode === "ask" || mode === "question" || mode === "letter")
+  ) {
+    const invalid = () => new AIError("INVALID_RESULT", "AI 问得不合规矩，请重试。");
+    if (!value || typeof value !== "object") throw invalid();
+    const result = value as AIResult;
+    const validQuestion = (q: unknown): q is string =>
+      typeof q === "string" && !!q.trim() && q.length <= 30;
+    if (mode === "question") {
+      if (!validQuestion(result.question)) throw invalid();
+      return { question: result.question };
+    }
+    if (
+      !Array.isArray(result.questions) ||
+      result.questions.length < (mode === "ask" ? 1 : 2) ||
+      result.questions.length > 3 ||
+      !result.questions.every(validQuestion) ||
+      (mode === "ask" && typeof result.first !== "boolean")
+    ) throw invalid();
+    return {
+      questions: result.questions,
+      ...(mode === "ask" ? { first: result.first } : {}),
+    };
+  }
   if (!value || typeof value !== "object") throw new Error("AI 建议无效。");
   const result = value as AIResult;
   if (kind === "write") {
@@ -273,7 +301,7 @@ export function validateStoredAI(value: unknown): boolean {
     !/^[a-f0-9]{64}$/.test(v.fingerprint) ||
     !["group", "write"].includes(String(v.kind)) ||
     !Number.isInteger(v.eventIndex) ||
-    (v.writingMode !== undefined && !["generate", "polish", "recap"].includes(String(v.writingMode))) ||
+    (v.writingMode !== undefined && !["generate", "polish", "recap", "ask", "question", "letter", "editor"].includes(String(v.writingMode))) ||
     typeof v.model !== "string"
   )
     return false;
@@ -288,6 +316,7 @@ export function validateStoredAI(value: unknown): boolean {
             step.result,
             step.result.groups ? "group" : "write",
             step.result.groups?.flatMap((g: AIGroup) => g.photoIds) ?? [],
+            v.writingMode as WritingMode | undefined,
           );
       }
     } else
@@ -297,6 +326,7 @@ export function validateStoredAI(value: unknown): boolean {
         Array.isArray(v.groups)
           ? v.groups.flatMap((g: AIGroup) => g.photoIds)
           : [],
+        v.writingMode as WritingMode | undefined,
       );
     return true;
   } catch {
@@ -304,10 +334,11 @@ export function validateStoredAI(value: unknown): boolean {
   }
 }
 
-/** 年度寄语起草的输入：记录标题、第一次清单与已写寄语，不发送记录正文与照片。 */
+/** 年度寄语起草的输入：标题、第一次、她说的话与已写寄语，不发送其他记录正文与照片。 */
 export function recapContext(
   records: { title: string; date: string; first: boolean }[],
   existingNote = "",
+  quotes: string[] = [],
 ): string {
   const titleOf = (r: { title: string; date: string }) =>
     r.title.trim() || `（无标题）· ${dateLabel(r.date)}`;
@@ -315,6 +346,7 @@ export function recapContext(
   const parts = [
     `这一年共有 ${records.length} 条记录。`,
     firsts.length ? `第一次：${firsts.join("、")}` : "",
+    quotes.length ? `她说的话：${quotes.slice(0, 20).map((q) => q.slice(0, 60)).join("、")}` : "",
     `记录标题：\n${records.map(titleOf).slice(0, 80).join("\n")}`,
     existingNote.trim()
       ? `已写的寄语（仅参考语气与已覆盖内容，不要重复）：\n${existingNote.trim().slice(0, 500)}`
@@ -348,4 +380,66 @@ export function localPlaceTags(
       tags.set(mediaId, `地点组${index + 1}`);
   });
   return tags;
+}
+
+/** 显式投影标题与日期：即使调用者传来完整记录，也不序列化其他字段。 */
+const recentTitles = (recent: { title: string; date: string }[]) =>
+  recent.slice(0, 10).map(({ title, date }) => `${date.slice(0, 10)} ${title.slice(0, 40)}`).join("\n");
+const signature = (by?: string, limit = 20) =>
+  by?.trim() ? `落款：${by.trim().slice(0, limit)}\n` : "";
+const ageContext = (ageLabel: string | null) => `她的月龄：${ageLabel?.slice(0, 40) || "（未填写或尚未出生）"}`;
+
+export function askContext(input: {
+  by?: string;
+  ageLabel: string | null;
+  date: string;
+  title: string;
+  text: string;
+  first: boolean;
+  topic?: string;
+  recent: { title: string; date: string }[];
+}): string {
+  const header = `${signature(input.by)}${ageContext(input.ageLabel)}\n记录日期：${input.date.slice(0, 10)}\n已标第一次：${input.first ? "是" : "否"}\n${input.topic ? `主题：${input.topic.slice(0, 30)}\n` : ""}标题：${input.title.slice(0, 100)}\n正文：\n`;
+  const tail = `\n最近的记录（只有标题与日期）：\n${recentTitles(input.recent)}`;
+  const clipped = input.text.length > 3000 ? "\n（正文较长，只送前 3000 字）" : "";
+  return `${header}${input.text.slice(0, Math.min(3000, 3800 - header.length - tail.length - clipped.length))}${clipped}${tail}`;
+}
+export function questionContext(input: {
+  ageLabel: string | null;
+  today: string;
+  recent: { title: string; date: string }[];
+  asked: string[];
+}): string {
+  return `${ageContext(input.ageLabel)}\n今天日期：${input.today.slice(0, 10)}\n最近的记录（只有标题与日期）：\n${recentTitles(input.recent)}\n最近 7 天问过的问题：\n${input.asked.slice(-7).map((q) => q.slice(0, 60)).join("\n")}`.slice(0, 2000);
+}
+export function letterContext(input: {
+  by?: string;
+  ageLabel: string | null;
+  openAt: string;
+  draft: string;
+}): string {
+  return `${signature(input.by, 50)}${ageContext(input.ageLabel)}\n拆封日期：${input.openAt.slice(0, 10)}\n当前草稿：\n${input.draft.trim() ? input.draft.slice(0, 2000) : "（还没写）"}`;
+}
+export function questionPlan(
+  cache: DailyQuestionCache | undefined,
+  today: string,
+): "cached" | "request" | "fallback" {
+  if (cache?.day === today && cache.question) return "cached";
+  return cache?.requestedDay === today ? "fallback" : "request";
+}
+export function recentQuestions(cache: DailyQuestionCache | undefined, today: string) {
+  const end = Date.parse(today);
+  return (cache?.asked ?? []).filter(({ day }) => {
+    const age = end - Date.parse(day);
+    return age >= 0 && age < 7 * 86400000;
+  }).sort((a, b) => a.day.localeCompare(b.day)).slice(-7);
+}
+export function rememberQuestion(
+  cache: DailyQuestionCache | undefined,
+  today: string,
+  question: string | null,
+): DailyQuestionCache {
+  const asked = recentQuestions(cache, today).filter((entry) => !question || entry.day !== today);
+  if (question) asked.push({ day: today, question });
+  return { ...cache, requestedDay: today, ...(question ? { day: today, question } : {}), asked: asked.slice(-7) };
 }

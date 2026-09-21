@@ -6,6 +6,12 @@ import {
   type RecordDraft,
 } from "../src/local/model";
 import {
+  askContext,
+  questionContext,
+  letterContext,
+  questionPlan,
+  rememberQuestion,
+  validateStoredAI,
   moveProposalPhoto,
   polishRequest,
   proposalPatch,
@@ -20,6 +26,9 @@ import {
   POLISH_BODY_LIMIT,
   POLISH_CONTEXT_LIMIT,
 } from "../src/ai/state";
+
+import { writeContext } from "../src/ai/plan";
+import { AIError } from "../src/ai/error";
 function fixture() {
   const library = emptyLibrary();
   for (const [id, day] of [
@@ -423,5 +432,98 @@ describe("retry guidance after failures", () => {
     const plan = retryPlan("RESULT_EXPIRED");
     expect(plan.retryOriginal).toBe(false);
     expect(plan.notice).toContain("重新生成");
+  });
+});
+const recentInterviewRecords = Array.from({ length: 12 }, (_, i) => ({
+  title: `${i}号标题${"题".repeat(50)}`, date: `2026-09-${String(i + 1).padStart(2, "0")}`,
+  text: "别的记录的秘密正文", photos: ["秘密照片"],
+}));
+describe("interviewer contexts", () => {
+  it("asks about this draft, signature, age and topic with only ten short recent titles", () => {
+    const context = askContext({ by: "爸爸", ageLabel: "4 个月", date: "2026-09-05", title: "第一次翻身", text: "当前草稿", first: false, topic: "出生那天", recent: recentInterviewRecords });
+    expect(context).toContain("落款：爸爸\n她的月龄：4 个月\n记录日期：2026-09-05\n已标第一次：否\n主题：出生那天\n标题：第一次翻身\n正文：\n当前草稿");
+    expect(context).toContain(recentInterviewRecords[0]!.title.slice(0, 40));
+    expect(context).not.toContain(recentInterviewRecords[0]!.title.slice(0, 41));
+    expect(context).not.toContain("2026-09-11");
+    expect(context).not.toContain("秘密");
+  });
+  it("bounds long draft and overall context, preserving the clipping explanation", () => {
+    const context = askContext({ by: "爸".repeat(20), ageLabel: "月".repeat(40), date: "2026-09-05", title: "题".repeat(200), text: "文".repeat(5000), first: true, topic: "题".repeat(30), recent: recentInterviewRecords });
+    expect(context.length).toBeLessThanOrEqual(3800);
+    expect(context).toContain("（正文较长，只送前 3000 字）");
+    expect(context).toContain("已标第一次：是");
+    expect(context.match(/文/g)!.length).toBeLessThanOrEqual(3002);
+  });
+  it("handles unknown age and caps recent questions without other bodies or photos", () => {
+    const context = questionContext({ ageLabel: null, today: "2026-09-05", recent: recentInterviewRecords, asked: Array.from({ length: 10 }, (_, i) => `问题${i}${"问".repeat(100)}`) });
+    expect(context).toContain("她的月龄：（未填写或尚未出生）");
+    expect(context).toContain("今天日期：2026-09-05");
+    expect(context).not.toContain("问题2");
+    expect(context).toContain("问题9");
+    expect(context).not.toContain("2026-09-11");
+    expect(context).not.toContain("秘密");
+    expect(context.length).toBeLessThanOrEqual(2000);
+    expect(askContext({ ageLabel: null, date: "2026-09-05", title: "", text: "", first: false, recent: [] })).toContain("（未填写或尚未出生）");
+  });
+  it("guides empty and long letters with signature and opening date", () => {
+    const input = { by: "妈妈", ageLabel: null, openAt: "2044-09-05", draft: "  " };
+    expect(letterContext(input)).toBe("落款：妈妈\n她的月龄：（未填写或尚未出生）\n拆封日期：2044-09-05\n当前草稿：\n（还没写）");
+    expect(letterContext({ ...input, by: "爸".repeat(50) })).toContain(`落款：${"爸".repeat(50)}\n`);
+    expect(letterContext({ ...input, ageLabel: "4 个月", draft: "文".repeat(3000) }).split("当前草稿：\n")[1]).toHaveLength(2000);
+  });
+  it("adds signature and quotes while preserving old output byte for byte", () => {
+    expect(polishRequest({ title: " 标题 ", text: "正文" }).context).toBe("标题：标题\n正文：\n正文");
+    expect(polishRequest({ by: "爸爸", title: " 标题 ", text: "正文" }).context).toBe("落款：爸爸\n标题：标题\n正文：\n正文");
+    expect(writeContext("write", { title: "标题", text: "正文" }).context).toBe("标题\n正文");
+    expect(writeContext("write", { by: "妈妈", title: "标题", text: "正文" }).context).toBe("落款：妈妈\n标题\n正文");
+    expect(writeContext("group", { by: "爸爸", text: "正文" }).context).toBe("");
+    const records = [{ title: "翻身", date: "2026-09-05", first: true }];
+    expect(recapContext(records, "寄语")).toBe("这一年共有 1 条记录。\n第一次：翻身\n记录标题：\n翻身\n已写的寄语（仅参考语气与已覆盖内容，不要重复）：\n寄语");
+    const quotes = Array.from({ length: 22 }, (_, i) => `第${i}句${"话".repeat(80)}`);
+    const recap = recapContext(records, "寄语", quotes);
+    expect(recap).toContain(`第一次：翻身\n她说的话：${quotes[0]!.slice(0, 60)}`);
+    expect(recap).not.toContain(quotes[0]!.slice(0, 61));
+    expect(recap).not.toContain("第20句");
+  });
+});
+describe("daily question memory", () => {
+  it("uses today's cache first and never retries a failed attempt the same day", () => {
+    expect(questionPlan(undefined, "2026-09-21")).toBe("request");
+    const failed = rememberQuestion(undefined, "2026-09-21", null);
+    expect(questionPlan(failed, "2026-09-21")).toBe("fallback");
+    const success = rememberQuestion(failed, "2026-09-21", "她今天说什么？");
+    expect(questionPlan(success, "2026-09-21")).toBe("cached");
+    expect(questionPlan(success, "2026-09-22")).toBe("request");
+  });
+  it("keeps only the last seven calendar days and at most seven questions", () => {
+    const cache = { requestedDay: "2026-09-20", asked: Array.from({ length: 14 }, (_, i) => ({ day: `2026-09-${String(i + 8).padStart(2, "0")}`, question: `问题${i}` })) };
+    const next = rememberQuestion(cache, "2026-09-21", "今天的问题");
+    expect(next.asked.map((q) => q.day)).toEqual(["2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19", "2026-09-20", "2026-09-21"]);
+    expect(next.asked[6]!.question).toBe("今天的问题");
+    expect(rememberQuestion(next, "2026-10-01", null).asked).toEqual([]);
+  });
+});
+describe("interviewer response validation", () => {
+  it.each([
+    ["ask", { questions: ["谁在旁边？"], first: false }],
+    ["ask", { questions: ["一", "二", "三"], first: true }],
+    ["question", { question: "她今天说了什么？" }],
+    ["letter", { questions: ["一", "二"] }],
+    ["letter", { questions: ["一", "二", "三"] }],
+  ] as const)("accepts %s", (mode, result) => {
+    expect(validateResult(result, "write", [], mode)).toEqual(result);
+  });
+  it.each([
+    ["ask", null], ["ask", { questions: ["一"] }], ["ask", { questions: [], first: true }],
+    ["ask", { questions: ["一"], first: "true" }], ["ask", { questions: ["一", "二", "三", "四"], first: true }],
+    ["question", { question: " " }], ["question", { question: "问".repeat(31) }], ["question", { question: 1 }],
+    ["letter", { questions: ["一"] }], ["letter", { questions: ["一", null] }],
+    ["letter", { questions: ["一", " "] }], ["letter", { questions: ["一", "问".repeat(31)] }],
+  ] as const)("rejects invalid %s", (mode, result) => {
+    expect(() => validateResult(result, "write", [], mode)).toThrow(AIError);
+    expect(() => validateResult(result, "write", [], mode)).toThrow("AI 问得不合规矩，请重试。");
+  });
+  it.each(["ask", "question", "letter", "editor"])("recognizes stored %s jobs", (writingMode) => {
+    expect(validateStoredAI({ fingerprint: "a".repeat(64), kind: "write", eventIndex: 0, model: "model", writingMode, steps: [] })).toBe(true);
   });
 });

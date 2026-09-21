@@ -1,6 +1,12 @@
 import { lineage } from "./hash";
 import type { AIJob, AIProposal } from "../ai/types";
 import { validateStoredAI } from "../ai/state";
+export type DailyQuestionCache = {
+  requestedDay: string;
+  day?: string;
+  question?: string;
+  asked: { day: string; question: string }[];
+};
 /** Device-owned data. No account identity or transport state belongs here. */
 export type PhotoMetadata = {
   /** Camera-local wall time, without timezone conversion, to preserve the photographed day. */
@@ -148,6 +154,8 @@ export type Library = {
   settings: {
     theme: "auto" | "light" | "dark";
     largeText: boolean;
+    /** 每天的小问题，仅留在这台手机。 */
+    dailyQuestion?: DailyQuestionCache;
     lockEnabled?: boolean;
     /** 这台手机以后录音转写的同意；与写作 AI 同意分开，不随家人同步。 */
     transcribeConsent?: boolean;
@@ -741,6 +749,24 @@ function validContent(s: Library, c: Stored<RecordContent>): boolean {
       (isIds(c.personIds) && c.personIds.every((p) => !!s.persons[p])))
   );
 }
+/** 本机每日问题缓存：日期须为真实日历日，历史只留短问题。 */
+function validDailyQuestion(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object") return false;
+  const cache = value as DailyQuestionCache;
+  const day = (v: unknown): v is string =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+    Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+  const question = (v: unknown): v is string => typeof v === "string" && !!v.trim() && v.length <= 60;
+  return (
+    day(cache.requestedDay) &&
+    (cache.day === undefined || day(cache.day)) &&
+    (cache.question === undefined || question(cache.question)) &&
+    Array.isArray(cache.asked) && cache.asked.length <= 14 &&
+    cache.asked.every((entry) => !!entry && day(entry.day) && question(entry.question))
+  );
+}
+
 /** 根字段。avatarId 与 replayAudioId 指向素材，所以要看整库。 */
 function validRoot(s: Library): boolean {
   return (
@@ -815,6 +841,7 @@ function validRoot(s: Library): boolean {
       (typeof s.settings.replayAudioId === "string" &&
         s.media[s.settings.replayAudioId]?.kind === "audio")) &&
     validBy(s.settings.by) &&
+    validDailyQuestion(s.settings.dailyQuestion) &&
     isIds(s.receivedShares) &&
     (s.lastExportAt === undefined ||
       (isText(s.lastExportAt) &&
