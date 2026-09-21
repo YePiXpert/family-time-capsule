@@ -1,22 +1,39 @@
 # 桉桉成长记 AI 服务
 
-生产入口 `https://capsule.yep.li/api/v1`。新服务复用旧版的 3140 端口，经原有 HTTPS 反向代理访问；模型上游由环境配置指定，未配置时通过 shared-services Docker 网络访问 CPA 的 cli-proxy-api:8317。首页提供应用说明，不承载照片数据库或旧版登录。
+生产入口 `https://capsule.yep.li/api/v1`，宿主机 3140，经现有 HTTPS 反代。首页仅提供应用说明。
 
-## 配置与启动
+## 当前执行边界（2026-09-21）
 
-使用 `compose.yaml`，设置 `SOURCE_SHA`（完整 main 提交）、`AI_DATA_DIR`、`CPA_KEY_PATH`，临时验证可设置 `APP_PORT=3141`。CPA 密钥文件必须只允许服务器操作人员读取，并允许容器 UID 1000 读取；不加入仓库或日志。生产数据目录需属于 UID 1000。
+**仓库中的 MiMo 内容模型适配尚未部署，真实探测未执行。** 只确认有 Token Plan，不等于允许自定义 App 使用，也不等于授权普通 API 计费。[官方套餐说明](https://mimo.mi.com/docs/zh-CN/tokenplan/Token%20Plan/subscription) 的「套餐使用」限制其用于编程工具，排除自定义应用后端。必须先取得适用于本 App 的官方特别许可，或主人明确批准普通按量 API 的费用，才能调用对应上游；两路分别核对。
 
-文字／看图与语音转写可使用独立上游。在 `service.env` 设置 `CPA_BASE_URL`、`CPA_KEY_PATH` 指定文字／看图服务；`TRANSCRIBE_BASE_URL`、`TRANSCRIBE_KEY_PATH` 指定转写服务（不设置则沿用文字服务）。当前部署使用 DeepSeek `https://api.deepseek.com` + `deepseek-flash`，转写使用 MiMo `https://token-plan-cn.xiaomimimo.com/v1` + `mimo-v2.5-asr`。两份密钥均只存服务器 secrets 目录，以只读文件挂载；env 只保存文件路径。修改地址或挂载路径后用下述命令重建容器。
+现网仍为 `b76439d`：文字／看图是 DeepSeek 普通 API；ASR 使用 MiMo Token Plan。此次按主人要求只报告 ASR 的许可问题，未停止服务、删密钥或更改生产配置。不要把先前技术调用成功当作获得许可。
 
+## 配置与启动（授权后才执行）
+
+配置示例见 [.env.example](.env.example)，完整离线验证与上线／回滚步骤见 [MiMo 适配记录](../docs/MIMO-ADAPTATION.md)。新 Compose 必须使用新配置，不能直接复用旧的 CPA 环境文件。
+
+| 用途 | 提供商／固定模型 | 地址与 secret | 授权记录 |
+| --- | --- | --- | --- |
+| 文字、看图、分组、追问、润色、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.5` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
+| 专用转写 | `TRANSCRIBE_PROVIDER=mimo` / `TRANSCRIBE_MODEL=mimo-v2.5-asr` | `TRANSCRIBE_BASE_URL` / `TRANSCRIBE_KEY_PATH` → `/run/secrets/transcribe-key` | `TRANSCRIBE_ACCESS` |
+
+普通 API 必须配普通 Key 和 `https://api.xiaomimimo.com/v1`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。只有已核验的官方 App 特别许可才可设置 `token-plan-authorized`，并配套餐专用 Key 与许可对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。配置字段仅记录操作人的确认，不能证明许可真实存在。没有默认授权、自动充值、按量回退或跨供应商回退。
+
+密钥只存服务端权限 0600、UID 1000 可读的文件，Compose 只读挂载；env 只放文件路径。直接运行 Node 脚本时使用 `AI_KEY_FILE`／`TRANSCRIBE_KEY_FILE` 的绝对路径。缺少授权、模型不匹配、普通／套餐 Key 与地址混用、错误厂商地址会在启动数据库前拒绝；每次调用仍重读并核对 Key 类型。ASR 不继承文字服务的地址或密钥。旧 `CPA_*` 配置不会静默用于 MiMo。
+
+仅在两路资格与费用授权落实、隔离 staging 验证通过且已保存旧配置／镜像及数据备份后执行：
+
+```sh
+docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --no-build --pull never
 ```
-docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build
-```
+
+部署前须按目标提交另行构建并验证镜像；当前任务没有构建发布包或切换生产。数据目录、端口及 `SOURCE_SHA` 的配置方式不变。
 
 AI 走账号制：空服务第一次在手机「我的 → AI 设置」创建主人账号（仅此一次）；家人账号由主人在管理页创建并分发（用户名＋初始密码），换手机直接登录，一个账号可挂多台设备。设备撤销、全局及成员额度在主人管理页调整。全部锁死时在服务器运行 `docker compose ... exec -T ai node src/manage.ts password <登录名或成员名> <新密码>` 兜底重置（先按登录名找，找不到再按成员名）。从旧版升级后已有成员照常使用，主人可在管理页给现有成员（标记「未设登录」）补设登录名与密码。
 
-AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort: high`。旧版保存的模型选择会归一为 Flash；已有额度、暂停状态和成员权限保留。
+内容模型固定 `mimo-v2.5`，不使用 Pro 替代看图。`question`／`letter`／`ask`／`polish` 关闭思考，`group`（含分组合并）／`generate`／`recap`／`editor` 开启；这是初始策略，未经真实质量或速度验证。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
 
-「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（默认沿用文字服务地址）、`TRANSCRIBE_KEY_PATH`（默认沿用文字服务密钥路径），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
+「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（独立必填）、`TRANSCRIBE_KEY_PATH`（独立必填），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
 
 八条提示词内置在 `server/src/prompts.ts`：GROUP 按事情分组、WRITE 起个头、POLISH 润色、RECAP 年度寄语、ASK 追问、QUESTION 今天的小问题、LETTER 写信引导、EDITOR 年度册目录建议。提示词全文以 `docs/AI-PROMPTS.md` 为准。editor 的 context 是 JSON，上限 60000 字，服务端不留。
 
@@ -41,10 +58,10 @@ sed -i 's#/opt/xiaomei-ai#/opt/anan-ai#g' /opt/anan-ai/service.env
 chown -R 1000:1000 /opt/anan-ai/data               # 容器 UID 不变
 chmod 700 /opt/anan-ai/backups/daily
 docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build
-python3 server/scripts/verify-service.py --container anan-ai-ai-1
+curl --noproxy '*' -fsS http://127.0.0.1:3140/healthz
 ```
 
-`verify-service.py` 过了再删 `/opt/xiaomei-ai.bak`。`crontab` 里的 `backup.sh` 路径已随仓库更新，
+健康版本核对通过后再删 `/opt/xiaomei-ai.bak`。`crontab` 里的 `backup.sh` 路径已随仓库更新，
 旧项目名的容器要手动 `docker rm`。成员、设备与额度都在 SQLite 里，随目录一起搬走，手机上无需重新加入。
 
 ## 家庭远端空间（Build 72；Build 70 起为对象库）
@@ -61,12 +78,16 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 
 ## 备份与回滚
 
-每日运行 `backup.sh`，使用 SQLite 在线备份，保留 7 份。数据库和 CPA 密钥必须分开、限制权限。健康检查每 30 秒执行 `/healthz`。
+每日运行 `backup.sh`，使用 SQLite 在线备份，保留 7 份。数据库和上游密钥必须分开、限制权限。健康检查每 30 秒执行 `/healthz`。
 
 旧版切换前先停止 app/worker 的写入，备份 `/opt/ftc-trial` 的部署配置与旧数据卷，记录旧镜像 ID，再停用旧容器，保留备份至少 30 天。旧数据不自动迁入手机资料库。回滚时停止新版服务，使用保存的旧配置及镜像恢复 3140 端口；不要将 AI SQLite 挂到旧版数据卷。
 
 ## 验证
 
-`server` 内运行 `npm ci && npm run typecheck && npm test`。`server/scripts/probe.ts` 使用仓库的几何图形测试照片，经 CPA 验证 DeepSeek Flash High 的看图和文案能力，不使用家庭照片。生产部署检查 HTTPS `/healthz` 的 SHA、未授权 401、账号登录与主人权限；`server/scripts/verify-service.py` 顺带走一遍备份对象库（上传、读回、清单、prune、删库）。发布来源由镜像标签和 healthz 中的 SOURCE_SHA 核对。
+`server` 内运行 `npm run typecheck && npm test`；Mock 测试不消耗模型额度。另运行 mobile 的 test／typecheck／lint 及本机边界门禁。
 
-`python3 server/scripts/verify-service.py --container anan-ai-staging-ai-1` 默认生成两秒测试录音验证转写契约与 `/tmp` 清理，不打印转写文字或设备 token。本机没有 ffmpeg 时跳过转写；可用 `--skip-transcribe` 主动跳过。
+真实探针默认拒绝执行。仅资格与费用授权落实后，用合成样例在 staging 运行：`node server/scripts/probe.ts --allow-live`（2 次看图调用）与 `node server/scripts/probe-text.ts --allow-live`（6 个文字模式各 1 次）。先设置独立的 `AI_*` 环境与 secret 文件；不得把 Key 放命令行或打印出来。每次最多 16384 completion tokens，不自动重试，只输出模型、模式、思考开关、成功状态、耗时、用量／错误码，不打印生成内容或完整响应。
+
+`python3 server/scripts/verify-service.py --allow-live --container anan-ai-staging-ai-1` 只接受本机 3141 的隔离 staging，先检查容器配置与独立数据挂载，再执行最多 6 次内容生成和 1 次两秒合成音频转写；回放／无效输入应不触发额外上游调用。脚本验证账号、备份与撤销，会写测试数据，禁止对生产运行。可用 `--skip-transcribe`／`--skip-text` 缩小探测范围；转写资格未获准时不能只靠能连通而执行它。
+
+本次仅验证脚本的默认拒绝和 Mock 行为，没有执行以上真实探针。来源由健康版本、镜像 ID 和部署提交核对；手机双端验收仍需真机。

@@ -14,6 +14,9 @@
 
 ## 一、当前状态快照（2026-09-21）
 
+- **MiMo 内容模型适配（未部署）**：仓库目标 `mimo-v2.5`，专用 ASR 仍为 `mimo-v2.5-asr`；最小请求适配与 Mock 验证见 `docs/MIMO-ADAPTATION.md`（server 189、mobile 784、类型检查／lint／边界门禁通过）。当前只确认主人有 Token Plan，官方禁止把套餐用于自定义 App 后端；没有 App 特别许可，也没有新增按量费用授权，所以此次没有真实模型调用或生产切换。
+  生产仍是 `b76439d` + DeepSeek 普通 API；**既有 ASR 已使用 MiMo Token Plan**，按主人要求保持现状，未停服、删密钥或改配置。下面的历史“调用成功”记录只代表技术连通，不代表许可。新代码需要 `AI_*` 与独立 `TRANSCRIBE_*` 配置，不能直接套用旧 `CPA_*` env；上线／回滚按适配记录执行，先补齐两路凭证授权。
+
 - **1.0.0（Build 73–76）**：主人 2026-09-21 拍板「都做吧，做完了作为 1.0.0 发版然后暂不考虑增加新功能了，专注优化就行」。main 上已合（每笔推送前门禁全绿）：
   - Build 73「说一段」：服务端 `8a27c6a`（`POST /api/v1/ai/transcribe`：m4a → ffmpeg → 16 kHz 单声道 wav → CPA `mimo-v2.5-asr` 的 chat-style `input_audio`；不落盘不写日志、最长 3 分钟／5 MiB、一次计一次写作；顺手 `BackupStore` 必填、`claims` 每设备 10 万上限），
     手机端 `59ff497`（自写 Expo 模块 `mobile/modules/speech-recognition`：iOS `SFSpeechRecognizer` `requiresOnDeviceRecognition`，安卓存根回退服务端；`client.ts` 加二进制 `upload()`；编辑页「说一段／说完了」录完自动接在正文后、分组时接第一件事；逐段同意，「以后都同意」记在本机 `settings.transcribeConsent`）。
@@ -36,8 +39,8 @@
     停止生产写入后完整备份数据与 env，再切换已经验证的同一镜像；本机健康恢复耗时约 2 秒。生产本机及 HTTPS `/healthz` 均返回目标完整 SHA；两处账号初始化状态正常，me／管理员／备份清单／写作／转写五类未授权请求均返回 401。生产未运行会创建测试账号的 `verify-service.py`。
     SQLite 完整性检查通过；切换前后成员、设备、设置、备份清单逐行摘要一致。备份与证据目录：`/opt/anan-ai/deployments/20260921T144454Z/`，含 `data.before/`、`service.env.before`、`backup-sha256.json`、`staging-verification.log`、`deployment.json`。
     回退应用：恢复上述 `service.env.before` 到 `/opt/anan-ai/service.env`，用该证据目录的 `source/deploy/compose.yaml` 执行 `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f <compose路径> up -d --no-build --pull never`，核对健康版本回到 `f71f86c`；旧镜像保留。本次未改数据库结构，通常不需恢复数据；如必须还原 `data.before/`，先停服并另存当前数据，避免丢失部署后新增内容。
-  - **AI 上游已改为直连（2026-09-21，主人提供新密钥并授权）**：文字／看图 `deepseek-flash`（High）→ `https://api.deepseek.com`；转写 `mimo-v2.5-asr` → `https://token-plan-cn.xiaomimimo.com/v1`。两份独立密钥只在 `/opt/anan-ai/secrets/`，不进仓库。`service.env` 保存地址及密钥路径，仓库 `deploy/compose.yaml` 已支持对应配置；后续部署使用该文件，别用之前快照中的旧 Compose，否则会退回 CPA。源码镜像仍是 `b76439d`。
-    独立 staging 实际调用通过看图分组、写作、ask／question／letter／editor、MiMo 转写与临时文件清理、账号权限及家庭备份；生产已重建容器，挂载密钥和地址核对通过，本机与公网健康正常。验证及回滚 env 存在 `/opt/anan-ai/deployments/upstreams-20260921T150506Z/`；回退上游时恢复其中 `service.env.before`，再用当前仓库 Compose `up -d --no-build --pull never`，不需要回退数据。
+  - **AI 上游直连的历史部署记录（2026-09-21；套餐许可问题见本节顶部）**：文字／看图 `deepseek-flash`（High）→ `https://api.deepseek.com`；转写 `mimo-v2.5-asr` → `https://token-plan-cn.xiaomimimo.com/v1`。两份独立密钥只在 `/opt/anan-ai/secrets/`，不进仓库。`service.env` 保存地址及密钥路径，当时 `b7eefdf` 的 `deploy/compose.yaml` 支持该配置；MiMo 适配后的 main 已要求新 env，后续操作按 `docs/MIMO-ADAPTATION.md`，不要把新 Compose 套在旧环境上。源码镜像仍是 `b76439d`。
+    独立 staging 实际调用通过看图分组、写作、ask／question／letter／editor、MiMo 转写与临时文件清理、账号权限及家庭备份；生产已重建容器，挂载密钥和地址核对通过，本机与公网健康正常。验证及回滚 env 存在 `/opt/anan-ai/deployments/upstreams-20260921T150506Z/`；回退上游时恢复其中 `service.env.before`，再用保存的 `b7eefdf` 旧 Compose `up -d --no-build --pull never`，不需要回退数据。
   - 真机待验（CI 做不了）：iPhone 中文本机识别可用性与准确度（系统「听写」要有中文离线包）、安卓无离线识别时的同意弹窗与服务转写、RN XHR 二进制上传的 Content-Length（`client.ts` 的 `upload()` 手动设了头）、
     追问／小问题／写信引导三个入口、编者目录预览与装订 PDF 的引语版面、两台手机同步 `story`／`yearPicks` 不出冲突卡。
 - **Build 69「界面整顿」**：交付提交 `7a82903`，run 35489556795 全绿。APK SHA-256 `3201aa54…5083c8`（66,481,234 字节）、

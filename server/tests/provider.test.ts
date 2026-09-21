@@ -1,100 +1,122 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { cpaProvider } from '../src/provider.ts';
+import { mimoProvider } from '../src/provider.ts';
+import { loadMiMoConfig } from '../src/ai-config.ts';
+import { inputSchema, type AIInput } from '../src/contracts.ts';
+import { PROMPTS } from '../src/prompts.ts';
+import { Problem } from '../src/store.ts';
+import { editorContext, editorResult } from './helpers.ts';
 
-test('CPA receives Flash with High thinking for grouping and writing', async () => {
- const dir=mkdtempSync(join(tmpdir(),'anan-provider-'));
- const keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key');
- const sent:Record<string,unknown>[]=[];
- const server=createServer(async(req,res)=>{
-  let raw='';for await(const chunk of req)raw+=chunk;
-  const body=JSON.parse(raw);sent.push(body);
-  assert.equal(req.url,'/v1/chat/completions');
-  assert.equal(req.headers.authorization,'Bearer test-only-key');
-  const result=sent.length===1?{groups:[{photoIds:['photo'],title:'图形',summary:'红色方块'}]}:{title:'图形',text:'一块红色方块。'};
-  res.setHeader('Content-Type','application/json');
-  res.end(JSON.stringify({choices:[{message:{reasoning_content:'private reasoning',content:JSON.stringify(result)}}],usage:{total_tokens:42}}));
+const photo={id:'p',date:'2026-09-01T12:00:00',place:'place-1',image:'data:image/jpeg;base64,/9j/2Q=='};
+const group={groups:[{photoIds:['p'],title:'图形',summary:'方块'}]};
+const write={title:'桌边的积木',text:'我把积木放在桌边。'};
+const input=(extra:Partial<AIInput>={})=>inputSchema.parse({requestId:randomUUID(),photos:[photo],...extra});
+const response=(result:unknown,finish_reason:unknown='stop')=>Response.json({choices:[{finish_reason,message:{content:JSON.stringify(result),reasoning_content:'private reasoning'}}],usage:{total_tokens:42}});
+const invalid=(error:unknown)=>error instanceof Problem&&error.status===502&&error.code==='INVALID_RESULT';
+function fixture(t:TestContext) {
+ const dir=mkdtempSync(join(tmpdir(),'anan-mimo-provider-')),keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key\n');
+ t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const config=loadMiMoConfig('AI',{AI_PROVIDER:'mimo',AI_MODEL:'mimo-v2.5',AI_BASE_URL:'https://api.xiaomimimo.com/v1',AI_KEY_FILE:keyFile,AI_ACCESS:'payg-approved'});
+ let respond:()=>Response=()=>response(write);
+ const sent:{url:string;body:any;authorization:string|null}[]=[];
+ t.mock.method(globalThis,'fetch',async(url:URL,options:RequestInit)=>{
+  assert.equal(url.href,'https://api.xiaomimimo.com/v1/chat/completions');
+  assert.equal(options.method,'POST');assert.equal(options.redirect,'error');assert.ok(options.signal instanceof AbortSignal);
+  sent.push({url:url.href,body:JSON.parse(String(options.body)),authorization:new Headers(options.headers).get('authorization')});
+  return respond();
  });
- await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
- try {
-  const port=(server.address() as {port:number}).port;
-  const provider=cpaProvider(`http://127.0.0.1:${port}/v1`,keyFile);
-  for(const kind of ['group','write'] as const){
-   const output=await provider(kind,{requestId:randomUUID(),model:'deepseek-flash',photos:[{id:'photo',image:'data:image/jpeg;base64,/9j/2Q=='}],mode:'photos',context:''});
-   assert.equal(output.tokens,42);
-   assert.ok(!JSON.stringify(output).includes('private reasoning'));
-  }
-  for(const body of sent){
-   assert.equal(body.model,'deepseek-flash');
-   assert.equal(body.reasoning_effort,'high');
-   assert.deepEqual(body.thinking,{type:'enabled'});
-   assert.ok(Number(body.max_tokens)>=8192,'Thinking and final JSON need a shared output budget');
-  }
- } finally {
-  await new Promise<void>((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
-  rmSync(dir,{recursive:true,force:true});
+ return {provider:mimoProvider(config),sent,keyFile,respond:(fn:()=>Response)=>{respond=fn;}};
+}
+const modes=[
+ ['group','enabled',group],['generate','enabled',write],['polish','disabled',write],['recap','enabled',write],
+ ['ask','disabled',{questions:['谁在旁边？'],first:false}],['question','disabled',{question:'谁在旁边？'}],
+ ['letter','disabled',{questions:['你现在想记下什么？','想给她留哪句话？']}],['editor','enabled',editorResult],
+] as const;
+for(const [mode,thinking,result] of modes)test(`MiMo ${mode}: pinned model, ${thinking} thinking and exact existing prompt`,async t=>{
+ const f=fixture(t);f.respond(()=>response(result));
+ const photos=mode==='group'||mode==='generate'?[photo]:[];
+ const context=mode==='editor'?JSON.stringify(editorContext):'合成上下文';
+ const out=await f.provider(mode==='group'?'group':'write',input({photos,context,writingMode:mode==='group'?undefined:mode}));
+ assert.deepEqual(out,{result,tokens:42});assert.ok(!JSON.stringify(out).includes('private reasoning'));
+ assert.equal(f.sent.length,1);const {body,authorization}=f.sent[0]!;
+ assert.equal(authorization,'Bearer test-only-key');assert.equal(body.model,'mimo-v2.5');
+ assert.deepEqual(body.thinking,{type:thinking});assert.equal(body.max_completion_tokens,16384);
+ for(const field of ['max_tokens','reasoning_effort','temperature','top_p'])assert.equal(field in body,false,field);
+ assert.equal(body.stream,false);assert.deepEqual(body.response_format,{type:'json_object'});
+ assert.equal(body.messages[0].content,PROMPTS[mode]);
+ assert.equal(JSON.parse(body.messages[1].content[0].text).userContext,context);
+ assert.equal(body.messages[1].content.length,photos.length?3:1);
+ if(photos.length){
+  assert.deepEqual(JSON.parse(body.messages[1].content[1].text),{photoId:'p',capturedAt:photo.date,localPlaceGroup:'place-1'});
+  assert.deepEqual(body.messages[1].content[2],{type:'image_url',image_url:{url:photo.image}});
  }
 });
 
-test('recap requests use the year-note prompt and send no images', async () => {
- const dir=mkdtempSync(join(tmpdir(),'anan-provider-'));
- const keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key');
- let sentBody:Record<string,unknown>|undefined;
- const server=createServer(async(req,res)=>{
-  let raw='';for await(const chunk of req)raw+=chunk;
-  sentBody=JSON.parse(raw);
-  res.setHeader('Content-Type','application/json');
-  res.end(JSON.stringify({choices:[{message:{content:JSON.stringify({title:'这一年想说的话',text:'慢慢长大。'})}}],usage:{total_tokens:7}}));
- });
- await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
- try {
-  const port=(server.address() as {port:number}).port;
-  const provider=cpaProvider(`http://127.0.0.1:${port}/v1`,keyFile);
-  const output=await provider('write',{requestId:randomUUID(),model:'deepseek-flash',photos:[],mode:'photos',context:'这一年共有 3 条记录。',writingMode:'recap'});
-  assert.equal((output.result as {title:string;text:string}).text,'慢慢长大。');
-  const messages=(sentBody!.messages as {role:string,content:unknown}[]);
-  assert.ok(String(messages[0]!.content).includes('扉页寄语'),'recap must use the year-note prompt');
-  const userContent=JSON.stringify(messages[1]!.content);
-  assert.ok(!userContent.includes('image_url'),'recap never uploads photos');
-  assert.ok(userContent.includes('年度寄语'));
- } finally {
-  await new Promise<void>((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
-  rmSync(dir,{recursive:true,force:true});
- }
+test('multiple images preserve every thumbnail and ID; merge sends only original group summaries',async t=>{
+ const f=fixture(t),second={...photo,id:'q'},merged={groups:[{photoIds:['p','q'],title:'桌边',summary:'方块'}]};f.respond(()=>response(merged));
+ await f.provider('group',input({photos:[photo,second]}));
+ const content=f.sent[0]!.body.messages[1].content;
+ assert.deepEqual(content.filter((v:any)=>v.type==='image_url'),[photo,second].map(p=>({type:'image_url',image_url:{url:p.image}})));
+ assert.deepEqual([content[1],content[3]].map(v=>JSON.parse(v.text).photoId),['p','q']);
+ const groups=[{photoIds:['p'],title:'桌边',summary:'方块'},{photoIds:['q'],title:'桌边',summary:'另一块'}];
+ await f.provider('group',input({mode:'merge',photos:[],groups}));
+ const body=f.sent[1]!.body;assert.deepEqual(body.thinking,{type:'enabled'});assert.equal(body.messages[0].content,PROMPTS.group);
+ assert.equal(body.messages[1].content.length,1);assert.deepEqual(JSON.parse(body.messages[1].content[0].text),{task:'合并属于同一天同一件事情的分组摘要，保留全部照片ID',userContext:'',groups});
 });
 
-test('each mode sends its exact prompt and preserves text-only context',async(t)=>{
- const {PROMPTS}=await import('../src/prompts.ts');
- const {editorContext,editorResult}=await import('./helpers.ts');
- const dir=mkdtempSync(join(tmpdir(),'anan-provider-modes-')),keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key');
- const provider=cpaProvider('http://gateway.invalid/v1',keyFile);
- let sent:{messages:{role:string;content:unknown}[];max_tokens:number;response_format:unknown;thinking:unknown;reasoning_effort:string}|undefined;
- let result:unknown;
- // 模拟网关的 fetch 边界，不需要监听端口。
- t.mock.method(globalThis,'fetch',async(_url:unknown,options:RequestInit)=>{
-  sent=JSON.parse(String(options.body));
-  return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(result)}}],usage:{total_tokens:8}}));
- });
- try {
-  for(const mode of ['group','generate','polish','recap','ask','question','letter','editor'] as const){
-   result=mode==='group'?{groups:[{photoIds:['p'],title:'图形',summary:'方块'}]}:mode==='ask'?{questions:['谁在旁边？'],first:false}:mode==='question'?{question:'谁在旁边？'}:mode==='letter'?{questions:['你现在想记下什么？','想给她留哪句话？']}:mode==='editor'?editorResult:{title:'标题',text:'正文'};
-   const context=mode==='editor'?JSON.stringify(editorContext):'合成上下文';
-   const photos=mode==='group'||mode==='generate'?[{id:'p',image:'data:image/jpeg;base64,/9j/2Q=='}]:[];
-   const output=await provider(mode==='group'?'group':'write',{requestId:randomUUID(),model:'deepseek-flash',mode:'photos',writingMode:mode==='group'?undefined:mode,photos,context});
-   assert.equal(output.tokens,8);assert.equal(sent!.messages[0]!.content,PROMPTS[mode]);
-   const content=sent!.messages[1]!.content as {type:string;text:string}[];
-   assert.equal(content.length,photos.length?3:1);assert.equal(JSON.parse(content[0]!.text).userContext,context);
-   const task={ask:'像访谈者追问一到三个问题，不写正文',question:'给今天一个小问题',letter:'给写信前的两到三个问题',editor:'提一个目录建议，不改原文'};
-   if(mode in task)assert.equal(JSON.parse(content[0]!.text).task,task[mode as keyof typeof task]);
-   assert.equal(sent!.max_tokens,16384);assert.deepEqual(sent!.response_format,{type:'json_object'});
-   assert.deepEqual(sent!.thinking,{type:'enabled'});assert.equal(sent!.reasoning_effort,'high');
-  }
-  result={questions:['温馨吗？'],first:false};
-  await assert.rejects(()=>provider('write',{requestId:randomUUID(),model:'deepseek-flash',mode:'photos',writingMode:'ask',photos:[],context:'今天她笑了'}),{message:'AI 问得不合规矩，请重试。'});
- } finally {rmSync(dir,{recursive:true,force:true});}
+for(const finish of ['length','content_filter','tool_calls','repetition_truncation',null,'unknown'])test(`reject ${finish} even when final JSON looks valid`,async t=>{
+ const f=fixture(t);f.respond(()=>response(write,finish));await assert.rejects(f.provider('write',input()),invalid);assert.equal(f.sent.length,1);
+});
+for(const [name,body] of [
+ ['missing finish_reason',{choices:[{message:{content:JSON.stringify(write)}}]}],
+ ['no choices',{choices:[]}],['null content',{choices:[{finish_reason:'stop',message:{content:null}}]}],
+ ['empty content',{choices:[{finish_reason:'stop',message:{content:'  '}}]}],
+ ['reasoning is not final content',{choices:[{finish_reason:'stop',message:{reasoning_content:JSON.stringify(write)}}]}],
+ ['bad final JSON',{choices:[{finish_reason:'stop',message:{content:'{"title":'}}]}],
+ ['markdown instead of JSON',{choices:[{finish_reason:'stop',message:{content:'```json\n'+JSON.stringify(write)+'\n```'}}]}],
+] as const)test(name,async t=>{const f=fixture(t);f.respond(()=>Response.json(body));await assert.rejects(f.provider('write',input()),invalid);});
+
+for(const result of [{title:'没有正文'},{title:'标题',text:'正文',extra:'invented'},{title:'标题',text:5}])test('reject invalid business fields',async t=>{
+ const f=fixture(t);f.respond(()=>response(result));await assert.rejects(f.provider('write',input()),invalid);
+});
+for(const ids of [['unknown'],[],['p','p']])test(`reject unknown, missing or duplicate photo IDs: ${ids.join(',')}`,async t=>{
+ const f=fixture(t);f.respond(()=>response({groups:[{photoIds:ids,title:'桌边',summary:'方块'}]}));
+ await assert.rejects(f.provider('group',input()),invalid);
+ await assert.rejects(f.provider('group',input({mode:'merge',photos:[],groups:group.groups})),invalid);
+});
+test('reject unknown annual-record IDs and invented quotations',async t=>{
+ const f=fixture(t),req=input({photos:[],writingMode:'editor',context:JSON.stringify(editorContext)});
+ for(const mutate of [
+  (r:typeof editorResult)=>{r.chapters[0]!.picks=['unknown'];},
+  (r:typeof editorResult)=>{r.chapters[0]!.quote={recordId:'unknown',text:'再搭一层'};},
+  (r:typeof editorResult)=>{r.chapters[0]!.quote.text='并不存在的原话';},
+ ]){const bad=structuredClone(editorResult);mutate(bad);f.respond(()=>response(bad));await assert.rejects(f.provider('write',req),invalid);}
+});
+test('question business validation and cross-date photo grouping remain strict',async t=>{
+ const f=fixture(t);f.respond(()=>response({questions:['温馨吗？'],first:false}));await assert.rejects(f.provider('write',input({photos:[],writingMode:'ask',context:'今天她笑了'})),invalid);
+ f.respond(()=>response({groups:[{photoIds:['p','q'],title:'桌边',summary:'方块'}]}));
+ await assert.rejects(f.provider('group',input({photos:[photo,{...photo,id:'q',date:'2026-09-02'}]})),invalid);
+});
+for(const status of [401,403,429,500,502,503])test(`HTTP ${status} is sanitized, not retried or rerouted`,async t=>{
+ const f=fixture(t);f.respond(()=>new Response('secret upstream body',{status}));
+ await assert.rejects(f.provider('write',input()),(e:unknown)=>e instanceof Problem&&e.status===(status===429?429:502)&&e.code==='UPSTREAM_UNAVAILABLE'&&!e.message.includes('secret'));
+ assert.equal(f.sent.length,1);
+});
+for(const error of [new TypeError('connection failed'),new DOMException('deadline','TimeoutError')])test(`${error.name} maps to connection failure without retry`,async t=>{
+ const f=fixture(t);f.respond(()=>{throw error;});await assert.rejects(f.provider('write',input()),{code:'UPSTREAM_UNAVAILABLE',status:502});assert.equal(f.sent.length,1);
+});
+test('body read failure, malformed JSON and oversized responses fail closed',async t=>{
+ const f=fixture(t);
+ f.respond(()=>new Response(new ReadableStream({start(controller){controller.error(new Error('broken stream'));}})));
+ await assert.rejects(f.provider('write',input()),{code:'UPSTREAM_UNAVAILABLE',status:502});
+ for(const body of ['not JSON','x'.repeat(250001)]){f.respond(()=>new Response(body));await assert.rejects(f.provider('write',input()),invalid);}
+});
+test('read secret on each request; mismatched rotated key is rejected before any request',async t=>{
+ const f=fixture(t);await f.provider('write',input());writeFileSync(f.keyFile,'rotated-test-key');await f.provider('write',input());
+ assert.equal(f.sent[1]!.authorization,'Bearer rotated-test-key');
+ writeFileSync(f.keyFile,'tp-test-only-mismatch');await assert.rejects(f.provider('write',input()),{code:'UPSTREAM_UNAVAILABLE'});assert.equal(f.sent.length,2);
 });

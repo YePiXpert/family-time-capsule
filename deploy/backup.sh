@@ -2,7 +2,8 @@
 set -eu
 cd /workspace/family-time-capsule
 backup_stamp=$(date -u +%Y%m%dT%H%M%SZ)
-docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml exec -T ai node src/manage.ts backup "/data/backup-$backup_stamp.sqlite"
+# Back up the running release without parsing a newer, not-yet-deployed Compose configuration.
+docker exec anan-ai-ai-1 node src/manage.ts backup "/data/backup-$backup_stamp.sqlite"
 mkdir -p /opt/anan-ai/backups/daily
 chmod 700 /opt/anan-ai/backups/daily
 mv "/opt/anan-ai/data/backup-$backup_stamp.sqlite" /opt/anan-ai/backups/daily/

@@ -229,7 +229,7 @@ describe("AI suggestions remain reviewable local drafts", () => {
       fingerprint: "f".repeat(64),
       kind: "write" as const,
       eventIndex: 0,
-      model: "deepseek-flash:high",
+      model: "mimo-v2.5:policy-v1",
       writingMode: "polish" as const,
     };
     expect(sameJob(undefined, next)).toBe(false);
@@ -261,7 +261,7 @@ describe("AI suggestions remain reviewable local drafts", () => {
         fingerprint: sourceFingerprint(draft, library.media),
         kind: "write",
         eventIndex: 0,
-        model: "deepseek-flash:high",
+        model: "mimo-v2.5:policy-v1",
         writingMode: "polish",
         title: "自己走完",
         text: "今天第一次自己走完了整个园子。",
@@ -288,7 +288,7 @@ describe("AI suggestions remain reviewable local drafts", () => {
       fingerprint: sourceFingerprint(draft, library.media),
       kind: "write" as const,
       eventIndex: 1,
-      model: "deepseek-flash:high",
+      model: "mimo-v2.5:policy-v1",
       writingMode: "generate" as const,
       title: "第二天的事",
       text: "新的画面。",
@@ -311,7 +311,7 @@ describe("AI suggestions remain reviewable local drafts", () => {
       fingerprint: sourceFingerprint(draft, library.media),
       kind: "group" as const,
       eventIndex: 0,
-      model: "deepseek-flash:high",
+      model: "mimo-v2.5:policy-v1",
       groups: [
         { photoIds: ["a", "b"], title: "上午", summary: "室内" },
         { photoIds: ["c"], title: "第二天", summary: "照片" },
@@ -352,7 +352,7 @@ describe("AI suggestions remain reviewable local drafts", () => {
       fingerprint: sourceFingerprint(draft, library.media),
       kind: "group" as const,
       eventIndex: 0,
-      model: "deepseek-flash:high",
+      model: "mimo-v2.5:policy-v1",
       groups: [
         { photoIds: ["a", "b"], title: "上午", summary: "室内" },
         { photoIds: ["c"], title: "第二天", summary: "照片" },

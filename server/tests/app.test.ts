@@ -21,7 +21,7 @@ function fixture(provider?:Provider) {
  store.createMember('家人',HASH);
  const member=store.attach(store.byUsername('家人')!.id,'家人手机');
  const headers=(token=member.token)=>({authorization:`Bearer ${token}`});
- const input=()=>({requestId:randomUUID(),model:'deepseek-flash',photos:[{id:'a',date:'2020-01-01T12:00:00',image}]});
+ const input=()=>({requestId:randomUUID(),model:'mimo-v2.5',photos:[{id:'a',date:'2020-01-01T12:00:00',image}]});
  return {store,app,owner,member,headers,input,calls:()=>calls};
 }
 test('账号系统：一次性初始化，登录校验密码，凭证随设备撤销失效',async()=>{
@@ -122,8 +122,8 @@ test('failed upstream requests do not burn the daily quota',async()=>{
 });
 test('server restart cannot repeat an uncertain paid request',async()=>{
  const f=fixture();const id=randomUUID();
- f.store.reserve(f.member.member,id,'hash',1,0,'deepseek-flash');f.store.recover();
- assert.equal(f.store.reserve(f.member.member,id,'hash',1,0,'deepseek-flash'),'failed');
+ f.store.reserve(f.member.member,id,'hash',1,0,'mimo-v2.5');f.store.recover();
+ assert.equal(f.store.reserve(f.member.member,id,'hash',1,0,'mimo-v2.5'),'failed');
  await f.app.close();f.store.close();
 });
 test('recap drafts a year note from text only and counts as one write',async()=>{
@@ -139,20 +139,20 @@ test('recap drafts a year note from text only and counts as one write',async()=>
  await f.app.close();f.store.close();
 });
 
-test('fixed Flash configuration preserves quotas and normalizes previous app selections',async()=>{
+test('fixed MiMo configuration preserves quotas and normalizes previous app selections',async()=>{
  let actualModel='';
  const f=fixture(async(_kind,input)=>{actualModel=input.model;return {tokens:1,result:{title:'记录',text:'照片中的画面。'}};});
  f.store.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({paused:false,defaultModel:'gpt-6-astra',enabledModels:['gpt-6-astra'],globalPhotos:123,globalWrites:17}));
  const config=(await f.app.inject({url:'/api/v1/ai/config',headers:f.headers()})).json();
- assert.equal(config.defaultModel,'deepseek-flash');assert.equal(config.reasoningEffort,'high');
- assert.deepEqual(config.models,[{id:'deepseek-flash',label:'DeepSeek Flash High'}]);
+ assert.equal(config.defaultModel,'mimo-v2.5');assert.equal(config.reasoningEffort,'per-mode');
+ assert.deepEqual(config.models,[{id:'mimo-v2.5',label:'MiMo 2.5'}]);
  assert.equal(config.globalPhotos,123);assert.equal(config.globalWrites,17);
  const update=await f.app.inject({method:'PUT',url:'/api/v1/admin/settings',headers:f.headers(f.owner.token),payload:{paused:false,defaultModel:'gpt-5.6-luna',enabledModels:['gpt-5.6-luna'],globalPhotos:90,globalWrites:9}});
- assert.equal(update.statusCode,200);assert.deepEqual(f.store.settings().enabledModels,['deepseek-flash']);
+ assert.equal(update.statusCode,200);assert.deepEqual(f.store.settings().enabledModels,['mimo-v2.5']);
  assert.equal(f.store.settings().globalPhotos,90);
- for(const model of ['gpt-5.6-luna',undefined]){
+ for(const model of ['deepseek-flash','gpt-5.6-luna',undefined]){
   const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...f.input(),model}});
-  assert.equal(response.statusCode,200);assert.equal(actualModel,'deepseek-flash');assert.equal(response.json().model,'deepseek-flash');
+  assert.equal(response.statusCode,200);assert.equal(actualModel,'mimo-v2.5');assert.equal(response.json().model,'mimo-v2.5');
  }
  await f.app.close();f.store.close();
 });
@@ -160,7 +160,7 @@ test('fixed Flash configuration preserves quotas and normalizes previous app sel
 test('polish carries only the stored text with an explicit length ceiling',async()=>{
  let seen:unknown;
  const f=fixture(async(_kind,input)=>{seen=input;return {tokens:2,result:{title:'一起散步',text:'今天我们去公园走了走。'}};});
- const polish=()=>({requestId:randomUUID(),model:'deepseek-flash',photos:[],mode:'photos',writingMode:'polish' as const,context:'标题：原稿\n正文：\n我们一起去公园。'});
+ const polish=()=>({requestId:randomUUID(),model:'mimo-v2.5',photos:[],mode:'photos',writingMode:'polish' as const,context:'标题：原稿\n正文：\n我们一起去公园。'});
  const ok=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:polish()});
  assert.equal(ok.statusCode,200);assert.equal((seen as {photos:unknown[]}).photos.length,0);
  assert.equal(f.store.usage(f.member.member.id).writes,1);assert.equal(f.store.usage(f.member.member.id).photos,0);

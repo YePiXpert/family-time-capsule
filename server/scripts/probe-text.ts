@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { cpaProvider } from '../src/provider.ts';
+import { liveProbe } from './probe-common.ts';
+import { MODEL_ID } from '../src/ai-model.ts';
 import type { WritingMode } from '../src/contracts.ts';
 // 全部为手写合成样例，不使用家庭照片、正文或真实姓名。
-const provider=cpaProvider(process.env.CPA_BASE_URL??'http://10.66.66.2:8317/v1','/opt/anan-ai/secrets/cpa-key');
+const probe=liveProbe();
 const records=[
  {id:'r1',date:'2026-09-01',by:'爸爸',title:'清早的窗',text:'我抱她站在窗边，楼下有人扫地。',first:false,quote:false,photos:true},
  {id:'r2',date:'2026-09-10',by:'妈妈',title:'翻过去了',text:'她第一次自己翻过去，我正在叠毛巾。',first:true,quote:false,photos:false},
@@ -25,11 +26,9 @@ const samples:{mode:WritingMode;summary:string;context:string}[]=[
  {mode:'polish',summary:'保留昵称与她的原话',context:'落款：妈妈\n标题：兔兔的鞋\n正文：\n小禾把纸放兔兔脚下，说「等兔兔穿鞋」。我我等她摆好，一起出了门。'},
  {mode:'recap',summary:'年度标题、第一次与她说的话',context:'落款：爸爸\n年份：2026\n标题：窗边的风、兔兔的鞋、门口的书包\n第一次：第一次自己背书包\n她说的话：「等兔兔穿鞋」\n已写寄语：无'},
 ];
-for(const {mode,summary,context} of samples){
- try {
-  const {result,tokens}=await provider('write',{requestId:randomUUID(),model:'deepseek-flash',mode:'photos',writingMode:mode,photos:[],context});
-  console.log(JSON.stringify({mode,summary,output:result,tokens}));
- } catch(error) {
-  console.log(JSON.stringify({mode,summary,error:error instanceof Error?error.message:'failed'}));process.exitCode=1;
- }
+// One synthetic example per mode: six calls maximum, no retry or output text.
+const seen=new Set<WritingMode>();
+for(const {mode,context} of samples){
+ if(seen.has(mode))continue;seen.add(mode);
+ await probe('write',{requestId:randomUUID(),model:MODEL_ID,mode:'photos',writingMode:mode,photos:[],context});
 }
