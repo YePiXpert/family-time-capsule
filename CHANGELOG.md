@@ -11,6 +11,7 @@
 - 间距：区块之间 24、区标题到内容 8、封面到书名 6、书名到说明 1；只有一段时光时首页约一屏。
 - 工程：`SettingsRow` 支持 `leading`（自定义前导视图）与 `serifLabel`；`Photo` 支持 `radius`；`Record` 路由多一个可选 `shuffle`；纯函数 `shuffle.ts`（mobile 测试 338 → 341）。冒烟依赖的 testID 不变（`volume-YYYY-MM`、`volume-year-YYYY`、`album-*`、`letter-*`、`series-*`、`album-new`、`letter-new`、`series-new`）。
 - 服务端：`sweepTemp(0)` 不再按 `mtime < now` 比较（mtime 有亚毫秒精度，同一毫秒内写下的临时文件会漏掉，CI 偶发红），0 宽限一律清空；无格式变化。
+- 定位：新增 `PRODUCT.md`——不是相册，是一家人写给她的传家册：文字与声音是主角、照片是插图，每段时光该有落款，AI 从代笔改为访谈者与整理者（只出问题、转写与索引，不写正文），不做云相册／育儿工具／社交／AI 故事书，每个功能过三问。README、DESIGN 开头与 HANDOFF 路线跟着改：Build 72 改为「家人一起写」（落款先于同步），原 73「分享」不再单列。
 
 ## Build 71 — 复查修复
 
