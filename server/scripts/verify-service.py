@@ -107,7 +107,7 @@ if not args.skip_transcribe:
    assert not remaining.stdout.strip(),'transcribe temporary files remain'
    print('transcribe temporary files cleaned')
 blob=os.urandom(1000000);octet={'Content-Type':'application/octet-stream','X-Object-Sha256':hashlib.sha256(blob).hexdigest()}
-object_id=hashlib.sha256(b'verification-object').hexdigest();object_path='/api/v1/backup/objects/'+object_id
+object_id=hashlib.sha256(b'verification-object'+blob).hexdigest();object_path='/api/v1/backup/objects/'+object_id
 status,before=call('/api/v1/backup/status',token=member['token']);assert status==200,before
 status,body,_=raw(object_path,blob,member['token'],headers=octet);assert status in(200,201),(status,body)
 status,body,_=raw(object_path,blob,member['token'],headers=octet);assert status==200,(status,body)
