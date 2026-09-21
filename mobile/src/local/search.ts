@@ -7,6 +7,8 @@ export type SearchFilters = {
   media?: MediaFilter;
   year?: string;
   person?: string;
+  /** 落款：只看这个人写的。 */
+  by?: string;
 };
 
 function hasAV(
@@ -47,6 +49,7 @@ export function searchRecords(
       if (filters.year && yearKey(r.date) !== filters.year) return false;
       if (filters.person && !r.personIds?.includes(filters.person))
         return false;
+      if (filters.by && r.by !== filters.by) return false;
       if (media === "av" && !hasAV(r, kinds)) return false;
       if (media === "none" && r.mediaIds.length) return false;
       return recordMatches(r, needle);

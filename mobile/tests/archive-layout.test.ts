@@ -179,6 +179,17 @@ describe("planArchive", () => {
     expect(body).toContain("---\n日期: 2026-09-15\n标题: 第一次挥手\n地点: 家里\n人物: 妈妈, 爸爸\n第一次: 是\n---\n");
     expect(body).not.toContain("她说的话");
     expect(textOf(planArchive(library(), { now: NOW }).entries, "去年的事。/正文.md")).toContain("她说的话: 是");
+    // 落款：写进头部，也作为正文末尾靠右的一行；没落款的记录两处都没有。
+    const signed = library();
+    signed.records.r3 = { ...signed.records.r3!, by: "外婆" };
+    const plan = planArchive(signed, { now: NOW });
+    const grandma = textOf(plan.entries, "去年的事。/正文.md");
+    expect(grandma).toContain("落款: 外婆\n她说的话: 是\n---\n");
+    expect(grandma).toContain("去年的事。\n\n—— 外婆\n");
+    expect(grandma).not.toContain("第一次: 是");
+    expect(textOf(plan.entries, "第一次挥手/正文.md")).not.toContain("落款");
+    expect(plan.library.records.find((r) => r.id === "r3")?.by).toBe("外婆");
+    expect(plan.library.records.find((r) => r.id === "r1")?.by).toBeUndefined();
     expect(body).toContain("# 第一次挥手\n\n今天她朝我们挥手了。\n第二段。\n");
     expect(body).toContain("![照片1.jpg](<照片1.jpg>)");
     expect(body).toContain("[视频1.mp4](<视频1.mp4>)");

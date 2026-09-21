@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyContent, emptyLibrary, type LocalRecord } from "../src/local/model";
-import { recapOf } from "../src/local/recap";
+import { byCountsOf, byLine, recapOf } from "../src/local/recap";
 
 const record = (id: string, date: string, extra: Partial<LocalRecord> = {}): LocalRecord => ({
   ...emptyContent(),
@@ -56,5 +56,26 @@ describe("year recap", () => {
     expect(recap.months).toEqual([]);
     expect(recap.firsts).toEqual([]);
     expect(recap.photos).toBe(0);
+  });
+});
+
+describe("谁写了几段", () => {
+  it("counts signatures, most first, ties by name, and renders one line", () => {
+    const records = [
+      record("a", "2026-01-01T00:00:00.000Z", { by: "妈妈" }),
+      record("b", "2026-01-02T00:00:00.000Z", { by: "爸爸" }),
+      record("c", "2026-01-03T00:00:00.000Z", { by: "妈妈" }),
+      record("d", "2026-01-04T00:00:00.000Z"),
+      record("e", "2026-01-05T00:00:00.000Z", { by: "外婆" }),
+    ];
+    const counts = byCountsOf(records);
+    expect(counts).toEqual([
+      { by: "妈妈", count: 2 },
+      { by: "爸爸", count: 1 },
+      { by: "外婆", count: 1 },
+    ]);
+    expect(byLine(counts)).toBe("妈妈写了 2 段 · 爸爸写了 1 段 · 外婆写了 1 段");
+    expect(byLine([])).toBe("");
+    expect(recapOf(records, {}).byCounts).toEqual(counts);
   });
 });

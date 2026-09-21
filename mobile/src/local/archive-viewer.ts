@@ -96,6 +96,7 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
     var meta = [];
     if (r.location) meta.push(esc(r.location));
     if (r.persons && r.persons.length) meta.push(r.persons.map(esc).join("、"));
+    if (r.by) meta.push("落款 " + esc(r.by));
     return '<article class="card" id="r-' + esc(r.id) + '"><div>' + head + "</div><h3>" + esc(r.title) + "</h3>" +
       (meta.length ? '<div class="muted">' + meta.join(" · ") + "</div>" : "") +
       (r.text ? '<p class="text">' + esc(r.text) + "</p>" : "") + mediaHtml(r.media) + "</article>";

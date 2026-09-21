@@ -62,6 +62,13 @@ describe("keepsake card layout", () => {
     const tall = layoutKeepSake({ ...richInput, photoAspect: 0.5 });
     expect(wide.photo!.h).toBeLessThan(tall.photo!.h);
     expect(tall.photo!.h / tall.photo!.w).toBeLessThanOrEqual(1.2);
+    // 落款单独占一行，排在正文之后、地点之前；没落款或只有空白时不占位。
+    expect(rich.byY).toBeNull();
+    const signed = layoutKeepSake({ ...richInput, by: "爸爸" });
+    expect(signed.byY).toBe(rich.locationY);
+    expect(signed.locationY).toBe(rich.locationY! + 40);
+    expect(signed.height).toBeGreaterThanOrEqual(rich.height);
+    expect(layoutKeepSake({ ...richInput, by: "  " }).byY).toBeNull();
   });
   it("decodes PNG data URLs and bare base64 back to the original bytes", () => {
     expect(() => pngBytesOfDataUrl("data:image/jpeg;base64,QUJD")).toThrow();

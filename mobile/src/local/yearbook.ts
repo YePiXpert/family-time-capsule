@@ -195,6 +195,8 @@ export type YearBookSource = {
       title: string;
       date: string;
       text: string;
+      /** 落款（谁写的）。 */
+      by?: string;
       photos: BookPhoto[];
     }[];
   }[];
@@ -223,6 +225,7 @@ export function yearBookInput(source: YearBookSource): BookInput {
           ...(title ? { title } : {}),
           date: record.date,
           body: text,
+          ...(record.by ? { by: record.by } : {}),
         });
       if (record.photos.length)
         blocks.push({ kind: "photos", photos: record.photos });

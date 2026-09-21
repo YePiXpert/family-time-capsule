@@ -171,7 +171,13 @@ export const BookPageCard = forwardRef<
                   ? ACCENT
                   : INK
             }
-            textAnchor={element.align === "center" ? "middle" : "start"}
+            textAnchor={
+              element.align === "center"
+                ? "middle"
+                : element.align === "right"
+                  ? "end"
+                  : "start"
+            }
           >
             {element.text}
           </SvgText>

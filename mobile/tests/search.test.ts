@@ -86,3 +86,17 @@ describe("global search", () => {
     expect(searchRecords(many, "", {}, {})).toHaveLength(100);
   });
 });
+
+describe("落款筛选", () => {
+  const signed = [
+    record("d", { text: "爸爸记的", by: "爸爸", date: "2026-09-03T10:00:00.000Z" }),
+    record("m", { text: "妈妈记的", by: "妈妈", date: "2026-09-02T10:00:00.000Z" }),
+    record("n", { text: "没落款", date: "2026-09-01T10:00:00.000Z" }),
+  ];
+  it("keeps only records signed by that person and stacks with the other filters", () => {
+    expect(searchRecords(signed, "", { by: "爸爸" }).map((r) => r.id)).toEqual(["d"]);
+    expect(searchRecords(signed, "记的", { by: "妈妈" }).map((r) => r.id)).toEqual(["m"]);
+    expect(searchRecords(signed, "", { by: "外婆" })).toEqual([]);
+    expect(searchRecords(signed, "").map((r) => r.id)).toEqual(["d", "m", "n"]);
+  });
+});
