@@ -17,7 +17,7 @@ import { createTransport, type HttpClient } from "../src/sync/transport";
 import { keyIdOf } from "../src/sync/crypto";
 /**
  * 真端到端：拉起仓库里的真实服务端子进程（SQLite 临时库、对象库临时目录），
- * 手机端引擎经 Node fetch 版 HttpClient 跑「开启 → 上传 → 核对 → 换手机恢复」。
+ * 手机端引擎经 Node fetch 版 HttpClient 跑「开启 → 上传 → 核对 → 换手机加入」。
  * 需要 server/ 已 npm ci（CI 的 quality 作业多装一次）。
  */
 const env = vi.hoisted(() => ({
@@ -154,9 +154,9 @@ afterEach(() => {
   env.database = null;
   fs.rmSync(env.root, { recursive: true, force: true });
 });
-it("backs up to the real service, verifies, and restores onto a wiped phone", async () => {
+it("backs up to the real service, verifies, and joins from a wiped phone", async () => {
   const files = await import("../src/local/files");
-  const backup = await import("../src/local/backup");
+  const family = await import("../src/sync/family");
   const engine = await import("../src/sync/engine");
   const model = await import("../src/local/model");
   const { openLocalStore } = await import("../src/local/disk");
@@ -226,16 +226,13 @@ it("backs up to the real service, verifies, and restores onto a wiped phone", as
   for (const f of fs.readdirSync(files.backupDirectory.uri))
     fs.unlinkSync(path.join(files.backupDirectory.uri, f));
   await store.change((s) => {
-    model.deleteRecord(s, "r-big");
-    model.deleteRecord(s, "r-small");
+    Object.assign(s, model.emptyLibrary());
   });
   expect(Object.keys(store.get().records)).toEqual([]);
-  const manifest = await engine.restoreFromRemote({
+  await family.joinFamily(store, key, {
     transport,
-    key,
     onProgress: (s) => stages.push(s),
   });
-  await backup.restoreBackup(store, manifest);
   expect(store.get().records["r-big"]?.text).toBe("记录 big");
   expect(store.get().records["r-small"]?.text).toBe("记录 small");
   const restoredBig = fs.readFileSync(
@@ -245,10 +242,7 @@ it("backs up to the real service, verifies, and restores onto a wiped phone", as
   expect(stages).toContain("正在下载 2/2");
   // 错的恢复码：服务端存的 keyId 让它在下载任何对象前就被判出。
   await expect(
-    engine.restoreFromRemote({
-      transport,
-      key: new Uint8Array(randomBytes(16)),
-    }),
+    family.joinFamily(store, new Uint8Array(randomBytes(16)), { transport }),
   ).rejects.toThrow("恢复码");
   // 删库（Build 72 服务端）：只作废自己名下的清单；对象是全家的，一小时内的新对象留给 prune 收。
   await transport.wipe();

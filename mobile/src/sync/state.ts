@@ -36,6 +36,8 @@ export type RemoteState = {
   joinedAt: string;
   /** 回到应用、保存之后自动同步；默认开。 */
   autoSync: boolean;
+  /** 推送成功后确认的本机设备 ID；退出时不能用可能回退到其他手机的清单推断。 */
+  deviceId?: string;
   /** 每台设备上次并入的清单 sha256（索引里的 sha）：清单没变就不再下载。 */
   seen: Record<string, string>;
   lastSyncAt?: string;
@@ -128,6 +130,9 @@ export async function readRemoteState(
     joinedAt: isTime(parsed.joinedAt) ? parsed.joinedAt : now,
     autoSync: parsed.autoSync !== false,
     seen,
+    ...(typeof parsed.deviceId === "string"
+      ? { deviceId: parsed.deviceId }
+      : {}),
     ...(isTime(parsed.lastSyncAt) ? { lastSyncAt: parsed.lastSyncAt } : {}),
     ...(summary && typeof summary === "object"
       ? { lastSyncSummary: summary as SyncSummary }

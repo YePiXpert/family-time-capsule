@@ -97,6 +97,8 @@ export type RemoteDeviceManifest = {
   updatedAt: string;
 };
 export type Transport = {
+  /** 当前登录的本机设备；不按成员回退到其他手机。 */
+  me(signal?: AbortSignal): Promise<{ deviceId: string | null }>;
   status(signal?: AbortSignal): Promise<RemoteStatus>;
   /** 返回远端还没有的 id。 */
   missing(ids: readonly string[], signal?: AbortSignal): Promise<Set<string>>;
@@ -254,6 +256,15 @@ export function createTransport(
     throw new SyncError(code, message, response.status);
   };
   return {
+    async me(signal) {
+      const { json } = await call("GET", "/me", { signal });
+      const member = json.member;
+      const deviceId =
+        member && typeof member === "object" && "deviceId" in member
+          ? member.deviceId
+          : null;
+      return { deviceId: isText(deviceId) ? deviceId : null };
+    },
     async status(signal) {
       const { json } = await call("GET", "/backup/status", { signal });
       return {

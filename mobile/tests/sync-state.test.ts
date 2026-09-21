@@ -101,6 +101,7 @@ it("round-trips a v2 state, tolerates missing optional fields and drops junk in 
   const full = {
     ...fresh,
     autoSync: false,
+    deviceId: "device-1",
     seen: { "device-1": "ab".repeat(32) },
     lastSyncAt: "2026-09-21T02:00:00.000Z",
     lastSyncSummary: {
@@ -125,6 +126,7 @@ it("round-trips a v2 state, tolerates missing optional fields and drops junk in 
       seen: { ok: "sha", bad: 7 },
       joinedAt: "not a time",
       autoSync: "yes",
+      deviceId: 7,
     }),
   );
   expect(await state.readRemoteState("2026-09-21T03:00:00.000Z")).toEqual({

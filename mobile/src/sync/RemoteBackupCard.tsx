@@ -254,7 +254,7 @@ export function RemoteBackupCard({
               compact
               testID="remote-restore"
               disabled={busy || running || signedIn === null}
-              onPress={() => nav.navigate("RecoveryCode", { mode: "enter" })}
+              onPress={() => nav.navigate("RecoveryCode", { mode: "join" })}
             />
           </View>
         </>
@@ -305,7 +305,7 @@ export function RemoteBackupCard({
               compact
               testID="remote-restore"
               disabled={busy || running}
-              onPress={() => nav.navigate("RecoveryCode", { mode: "enter" })}
+              onPress={() => nav.navigate("RecoveryCode", { mode: "join" })}
             />
             <Button
               title="关闭远端备份"

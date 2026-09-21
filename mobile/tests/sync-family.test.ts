@@ -1,0 +1,747 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { randomBytes, randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import {
+  type RemoteDeviceManifest,
+  type Transport,
+} from "../src/sync/transport";
+import {
+  keyIdOf,
+  sha256Hex,
+  objectIdOf,
+  openSmall,
+  fromBase64,
+  sealObject,
+} from "../src/sync/crypto";
+const env = vi.hoisted(() => ({
+  root: "",
+  free: Number.POSITIVE_INFINITY,
+  rejectActivation: false,
+  database: null as DatabaseSync | null,
+}));
+vi.mock("expo-file-system", async () =>
+  (await import("./helpers/expo-file-system-fake")).createExpoFileSystemFake(
+    env,
+  ),
+);
+vi.mock("expo-sqlite", async () =>
+  (await import("./helpers/expo-sqlite-fake")).createExpoSqliteFake(env),
+);
+vi.mock("expo-crypto", () => ({
+  randomUUID,
+  getRandomBytes: (n: number) => new Uint8Array(randomBytes(n)),
+}));
+vi.mock("expo-sharing", () => ({
+  isAvailableAsync: async () => true,
+  shareAsync: async () => {},
+}));
+vi.mock("expo-image-manipulator", () => ({
+  SaveFormat: { JPEG: "jpeg" },
+  manipulateAsync: async () => {
+    const p = path.join(env.root, "cache-thumb.jpg");
+    fs.writeFileSync(p, "thumb-bytes");
+    return { uri: p, width: 512, height: 384 };
+  },
+}));
+vi.mock("expo-video-thumbnails", () => ({
+  getThumbnailAsync: async () => ({ uri: "", width: 0, height: 0 }),
+}));
+vi.mock("expo-secure-store", () => {
+  const store = new Map<string, string>();
+  return {
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: "unlocked",
+    getItemAsync: async (key: string) =>
+      store.get(`${env.root}:${key}`) ?? null,
+    setItemAsync: async (key: string, value: string) => {
+      store.set(`${env.root}:${key}`, value);
+    },
+    deleteItemAsync: async (key: string) => {
+      store.delete(`${env.root}:${key}`);
+    },
+  };
+});
+/** 一家多台手机：对象共用，每台设备只改自己的清单，回收护住全家引用。 */
+function fakeRemote() {
+  const objects = new Map<string, Uint8Array>();
+  const manifests = new Map<string, RemoteDeviceManifest>();
+  const refs = new Map<string, readonly string[]>();
+  const log: string[] = [];
+  const client = (deviceId: string, memberId = deviceId): Transport => ({
+    async me() {
+      return { deviceId };
+    },
+    async status() {
+      const latest = [...manifests.values()].at(-1);
+      return {
+        keyId: latest?.keyId ?? null,
+        manifestUpdatedAt: latest?.updatedAt ?? null,
+        manifests: manifests.size,
+        objects: objects.size,
+        bytes: [...objects.values()].reduce((n, b) => n + b.length, 0),
+        limitBytes: 1024 ** 3,
+        freeBytes: 1024 ** 3,
+      };
+    },
+    async missing(ids) {
+      return new Set(ids.filter((id) => !objects.has(id)));
+    },
+    async put(id, bytes, hash) {
+      expect(sha256Hex(bytes)).toBe(hash);
+      log.push(`put ${id}`);
+      const created = !objects.has(id);
+      objects.set(id, bytes);
+      return { created };
+    },
+    async get(id) {
+      log.push(`get ${id}`);
+      const bytes = objects.get(id);
+      if (!bytes) throw new Error("缺少对象");
+      return bytes;
+    },
+    async putManifest(keyId, index, ids) {
+      const updatedAt = new Date().toISOString();
+      manifests.delete(deviceId);
+      manifests.set(deviceId, {
+        deviceId,
+        memberId,
+        deviceName: deviceId,
+        keyId,
+        index,
+        updatedAt,
+      });
+      refs.set(deviceId, ids);
+      return updatedAt;
+    },
+    async getManifest() {
+      return (
+        manifests.get(deviceId) ??
+        [...manifests.values()].findLast((m) => m.memberId === memberId) ??
+        null
+      );
+    },
+    async manifests() {
+      return [...manifests.values()].reverse();
+    },
+    async prune(keep) {
+      const kept = new Set([...keep, ...[...refs.values()].flat()]);
+      let removed = 0;
+      for (const id of objects.keys())
+        if (!kept.has(id)) {
+          objects.delete(id);
+          removed++;
+        }
+      return { removed, bytes: 0 };
+    },
+    async deleteManifest(id) {
+      if (!manifests.has(id)) {
+        const { SyncError } = await import("../src/sync/transport");
+        throw new SyncError("NOT_FOUND", "远端没有这一份。", 404);
+      }
+      manifests.delete(id);
+      refs.delete(id);
+      return { pruned: 0 };
+    },
+    async wipe() {
+      manifests.delete(deviceId);
+      refs.delete(deviceId);
+    },
+    async wipeFamily() {
+      manifests.clear();
+      refs.clear();
+      objects.clear();
+    },
+  });
+  return { client, objects, manifests, log };
+}
+const key = new Uint8Array(16).fill(31);
+const roots: string[] = [];
+beforeEach(() => {
+  vi.resetModules();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const root of roots.splice(0))
+    fs.rmSync(root, { recursive: true, force: true });
+});
+async function phone() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anan-family-"));
+  roots.push(root);
+  env.root = root;
+  vi.resetModules();
+  const files = await import("../src/local/files");
+  const backup = await import("../src/local/backup");
+  const engine = await import("../src/sync/engine");
+  const family = await import("../src/sync/family");
+  const state = await import("../src/sync/state");
+  const model = await import("../src/local/model");
+  const { LocalStore } = await import("../src/local/store");
+  const disk = { read: async () => null, write: vi.fn(async () => {}) };
+  const store = new LocalStore(disk);
+  await store.open();
+  files.ensureDirectories();
+  const add = async (id: string, text = id, by = "爸爸", photo = true) => {
+    const media = photo
+      ? {
+          id: `m-${id}`,
+          file: `${id}.jpg`,
+          name: `${id}.jpg`,
+          kind: "image" as const,
+          bytes: 3000,
+          sha256: sha256Hex(new Uint8Array(3000).fill(id.charCodeAt(0))),
+        }
+      : null;
+    if (media)
+      fs.writeFileSync(
+        files.mediaFile(media).uri,
+        Buffer.alloc(3000, id.charCodeAt(0)),
+      );
+    await store.change((s) => {
+      if (media) s.media[media.id] = media;
+      s.drafts[id] = {
+        id,
+        recordId: null,
+        baseRevision: 0,
+        updatedAt: "2026-09-20T00:00:00Z",
+        content: {
+          ...model.emptyContent(),
+          text,
+          by,
+          mediaIds: media ? [media.id] : [],
+          coverId: media?.id ?? null,
+        },
+      };
+      model.saveRecord(s, id, `r-${id}`, "2026-09-20T00:00:00Z");
+    });
+    return media;
+  };
+  return {
+    root,
+    files,
+    backup,
+    engine,
+    family,
+    state,
+    model,
+    store,
+    disk,
+    add,
+    activate: () => {
+      env.root = root;
+    },
+  };
+}
+async function seeded() {
+  const remote = fakeRemote();
+  const sender = await phone();
+  await sender.add("a", "她笑了", "爸爸");
+  await sender.add("b", "她翻身了", "妈妈");
+  const published = await sender.engine.pushManifest(sender.store.get(), {
+    transport: remote.client("爸爸手机"),
+    key,
+  });
+  const receiver = await phone();
+  const deps = { transport: remote.client("妈妈手机"), key };
+  return { remote, sender, receiver, deps, published };
+}
+function directoryBytes(uri: string) {
+  return Object.fromEntries(
+    fs
+      .readdirSync(uri)
+      .sort()
+      .map((name) => [
+        name,
+        fs.readFileSync(path.join(uri, name)).toString("hex"),
+      ]),
+  );
+}
+it("空库加入拉齐时光、落款、原件与本机缩略图，并登记本机清单", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  const result = await p.family.joinFamily(p.store, key, deps);
+  expect(p.store.get().records["r-a"]?.by).toBe("爸爸");
+  expect(p.store.get().records["r-b"]?.by).toBe("妈妈");
+  for (const m of Object.values(p.store.get().media)) {
+    expect(sha256Hex(fs.readFileSync(p.files.mediaFile(m).uri))).toBe(m.sha256);
+    expect(fs.readFileSync(p.files.thumbFile(m)!.uri, "utf8")).toBe(
+      "thumb-bytes",
+    );
+    expect(m).toMatchObject({ width: 512, height: 384 });
+  }
+  expect(result.lastSyncSummary).toMatchObject({
+    devices: 2,
+    pulled: 2,
+    conflicts: 0,
+  });
+  expect(result.seen["妈妈手机"]).toBe(
+    p.engine.parseIndex(
+      openSmall(
+        key,
+        p.engine.INDEX_LABEL,
+        fromBase64(remote.manifests.get("妈妈手机")!.index),
+      ),
+    ).sha256,
+  );
+  expect(await p.state.readRemoteState()).toEqual(result);
+  expect(p.backup.restorePins()).toHaveLength(0);
+});
+it("第二次只下载变化的设备，未变设备与本机自己的清单都跳过", async () => {
+  const { receiver: p, sender, remote, deps, published } = await seeded();
+  const third = await phone();
+  await third.add("c", "外婆写的", "外婆");
+  const unchanged = await third.engine.pushManifest(third.store.get(), {
+    transport: remote.client("外婆手机"),
+    key,
+  });
+  p.activate();
+  await p.family.joinFamily(p.store, key, deps);
+  sender.activate();
+  await sender.store.change((s) => {
+    s.records["r-a"] = {
+      ...s.records["r-a"]!,
+      text: "又笑了",
+      updatedAt: "2026-09-22T00:00:00Z",
+    };
+  });
+  const changed = await sender.engine.pushManifest(sender.store.get(), {
+    transport: remote.client("爸爸手机"),
+    key,
+  });
+  p.activate();
+  remote.log.length = 0;
+  await p.family.runFamilySync(p.store, deps);
+  expect(remote.log.filter((l) => l.startsWith("get "))).toEqual([
+    `get ${objectIdOf(key, changed.index.sha256, 0)}`,
+  ]);
+  expect(remote.log).not.toContain(
+    `get ${objectIdOf(key, unchanged.index.sha256, 0)}`,
+  );
+  expect(remote.log).not.toContain(
+    `get ${objectIdOf(key, published.index.sha256, 0)}`,
+  );
+  expect(p.store.get().records["r-a"]?.text).toBe("又笑了");
+});
+it("推送只传缺的对象，已有照片不再传一次", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  const existing = new Set(remote.objects.keys());
+  remote.log.length = 0;
+  await p.family.joinFamily(p.store, key, deps);
+  const puts = remote.log
+    .filter((l) => l.startsWith("put "))
+    .map((l) => l.slice(4));
+  expect(puts).toHaveLength(1);
+  expect(puts.every((id) => !existing.has(id))).toBe(true);
+  remote.log.length = 0;
+  await p.add("c");
+  await p.family.runFamilySync(p.store, deps);
+  expect(remote.log.filter((l) => l.startsWith("put "))).toHaveLength(2);
+});
+it("停止后钉子护住已下好的 blob，回收后重试也不重下", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  const abort = new AbortController();
+  await expect(
+    p.family.joinFamily(p.store, key, {
+      ...deps,
+      signal: abort.signal,
+      onProgress: (s) => {
+        if (s === "正在下载 1/2") abort.abort();
+      },
+    }),
+  ).rejects.toMatchObject({ code: "CANCELED", message: "已停止。" });
+  expect(Object.keys(p.store.get().records)).toHaveLength(0);
+  expect(p.backup.restorePins()).toHaveLength(1);
+  expect(p.backup.collectBlobs()).toEqual({ removed: 0, bytes: 0 });
+  const firstSha = sha256Hex(new Uint8Array(3000).fill("a".charCodeAt(0)));
+  expect(p.files.blobFile(firstSha).exists).toBe(true);
+  remote.log.length = 0;
+  await p.family.runFamilySync(p.store, deps);
+  expect(remote.log).not.toContain(`get ${objectIdOf(key, firstSha, 0)}`);
+  expect(remote.log.filter((l) => l.startsWith("get "))).toHaveLength(2);
+  expect(p.backup.restorePins()).toHaveLength(0);
+});
+it.each(["change", "disk"])(
+  "%s 写入失败时库与 media 目录原样保留，blob 留待续传",
+  async (failure) => {
+    const { receiver: p, deps } = await seeded();
+    await p.add("local");
+    const before = p.store.get();
+    const media = directoryBytes(p.files.mediaDirectory.uri);
+    if (failure === "change")
+      vi.spyOn(p.store, "change").mockRejectedValueOnce(new Error("写不进去"));
+    else p.disk.write.mockRejectedValueOnce(new Error("写不进去"));
+    await expect(p.family.joinFamily(p.store, key, deps)).rejects.toThrow(
+      "写不进去",
+    );
+    expect(p.store.get()).toBe(before);
+    expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual(media);
+    expect(p.backup.collectBlobs()).toEqual({ removed: 0, bytes: 0 });
+    await p.family.runFamilySync(p.store, deps);
+    expect(Object.keys(p.store.get().records)).toHaveLength(3);
+  },
+);
+it("物化同名文件另起名字，不覆盖原件或不在库里的文件", async () => {
+  const { receiver: p, deps } = await seeded();
+  fs.writeFileSync(path.join(p.files.mediaDirectory.uri, "a.jpg"), "本机已有");
+  await p.family.joinFamily(p.store, key, deps);
+  expect(
+    fs.readFileSync(path.join(p.files.mediaDirectory.uri, "a.jpg"), "utf8"),
+  ).toBe("本机已有");
+  expect(p.store.get().media["m-a"]?.file).not.toBe("a.jpg");
+  expect(
+    sha256Hex(
+      fs.readFileSync(p.files.mediaFile(p.store.get().media["m-a"]!).uri),
+    ),
+  ).toBe(p.store.get().media["m-a"]?.sha256);
+});
+it("下载期间本机又写的时光不会被覆盖，写入与推送都包含它", async () => {
+  const { receiver: p, deps } = await seeded();
+  const get = deps.transport.get;
+  let written = false;
+  deps.transport.get = async (id) => {
+    if (
+      !written &&
+      id === objectIdOf(key, sha256Hex(new Uint8Array(3000).fill(97)), 0)
+    ) {
+      written = true;
+      await p.add("local", "下载时刚写的", "妈妈", false);
+    }
+    return get(id);
+  };
+  await p.family.joinFamily(p.store, key, deps);
+  expect(p.store.get().records["r-local"]?.text).toBe("下载时刚写的");
+  const { meta, entities } = await p.engine.fetchManifestOf(
+    (await deps.transport.getManifest())!,
+    deps,
+  );
+  const { decodeLibraryV2 } = await import("../src/local/backup-format");
+  expect(decodeLibraryV2(meta, entities).records["r-local"]?.text).toBe(
+    "下载时刚写的",
+  );
+});
+it("最终合并遇到未准备的素材就拒绝写库，下一轮可补齐", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.add("a");
+  const before = directoryBytes(p.files.mediaDirectory.uri);
+  let pending: Promise<unknown> | undefined;
+  await expect(
+    p.family.joinFamily(p.store, key, {
+      ...deps,
+      onProgress: (stage) => {
+        if (stage === "正在写入本机资料…")
+          pending = p.store.change((s) => {
+            s.records = {};
+            s.media = {};
+          });
+      },
+    }),
+  ).rejects.toMatchObject({ code: "INCOMPLETE" });
+  await pending;
+  expect(p.store.get().records).toEqual({});
+  expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual(before);
+  await p.family.runFamilySync(p.store, deps);
+  expect(Object.keys(p.store.get().records)).toHaveLength(2);
+});
+it("远端清单能解密但全文 sha 对不上时，本机不变且没有半份素材", async () => {
+  const { receiver: p, remote, deps, published } = await seeded();
+  const id = objectIdOf(key, published.index.sha256, 0);
+  const { objectsOf } = await import("../src/sync/planner");
+  const plan = objectsOf(published.index.sha256, published.index.bytes)[0]!;
+  remote.objects.set(id, sealObject(key, plan, [new Uint8Array(plan.bytes)]));
+  const before = p.store.get();
+  await expect(p.family.joinFamily(p.store, key, deps)).rejects.toThrow(
+    "对不上",
+  );
+  expect(p.store.get()).toBe(before);
+  expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual({});
+});
+it("最新钥匙不同则拒绝同步，错误恢复码不会替换钥匙或同步状态", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.state.storeKey(key);
+  p.state.writeRemoteState(p.state.freshRemoteState(keyIdOf(key)));
+  const before = await p.state.readRemoteState();
+  const other = new Uint8Array(16).fill(9);
+  await expect(p.family.joinFamily(p.store, other, deps)).rejects.toMatchObject(
+    { code: "WRONG_CODE" },
+  );
+  expect(await p.state.loadKey()).toEqual(key);
+  expect(await p.state.readRemoteState()).toEqual(before);
+  await expect(
+    p.family.runFamilySync(p.store, { ...deps, key: other }),
+  ).rejects.toMatchObject({ code: "KEY_MISMATCH" });
+});
+it("旧钥匙残留跳过，老服务端没有 deviceId 仍能同步且不造出设备名", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  const latest = remote.manifests.get("爸爸手机")!;
+  remote.manifests.clear();
+  remote.manifests.set("old", {
+    ...latest,
+    deviceId: "old",
+    keyId: "another-key",
+    index: "无法解密",
+  });
+  remote.manifests.set("爸爸手机", latest);
+  deps.transport.me = async () => ({ deviceId: null });
+  const result = await p.family.joinFamily(p.store, key, deps);
+  expect(Object.keys(result.seen)).toEqual(["爸爸手机"]);
+  await p.family.runFamilySync(p.store, deps);
+  expect(Object.keys(p.store.get().records)).toHaveLength(2);
+  expect(await p.state.readConflicts()).toEqual([]);
+});
+it("退出只删本设备的清单与同步状态，库和素材逐字节不变", async () => {
+  const { receiver: p, remote, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  const before = p.store.get();
+  const media = directoryBytes(p.files.mediaDirectory.uri);
+  expect(await p.family.leaveFamily(deps)).toEqual({ removedRemote: true });
+  expect(remote.manifests.has("妈妈手机")).toBe(false);
+  expect(remote.manifests.has("爸爸手机")).toBe(true);
+  expect(await p.state.loadKey()).toBeNull();
+  expect(await p.state.readRemoteState()).toBeNull();
+  expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual([]);
+  expect(p.store.get()).toBe(before);
+  expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual(media);
+});
+it("同成员两台手机中未发布的 B 退出，不删回退得到的 A 清单", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  await a.add("a", "A 独有的时光");
+  await a.engine.pushManifest(a.store.get(), {
+    transport: remote.client("A", "主人"),
+    key,
+  });
+  const p = await phone();
+  await p.add("b", "B 本机的时光");
+  const deps = { transport: remote.client("B", "主人"), key };
+  await p.state.storeKey(key);
+  p.state.writeRemoteState(p.state.freshRemoteState(keyIdOf(key)));
+  p.state.writeBase(p.state.emptyBase());
+  p.state.writeConflicts([]);
+  const { SyncError } = await import("../src/sync/transport");
+  vi.spyOn(deps.transport, "putManifest").mockRejectedValueOnce(
+    new SyncError("NETWORK", "首次发布前断网"),
+  );
+  await expect(p.family.runFamilySync(p.store, deps)).rejects.toMatchObject({
+    code: "NETWORK",
+  });
+  expect(remote.manifests.has("B")).toBe(false);
+  expect((await deps.transport.getManifest())?.deviceId).toBe("A");
+  expect((await p.state.readRemoteState())?.deviceId).toBeUndefined();
+  expect(fs.readdirSync(p.state.syncDirectory.uri).sort()).toEqual([
+    "base.json",
+    "conflicts.json",
+    "state.json",
+  ]);
+  const before = structuredClone(p.store.get());
+  const media = directoryBytes(p.files.mediaDirectory.uri);
+  const manifestA = remote.manifests.get("A");
+  const me = vi.spyOn(deps.transport, "me");
+  const get = vi.spyOn(deps.transport, "getManifest");
+  const remove = vi.spyOn(deps.transport, "deleteManifest");
+  expect(await p.family.leaveFamily(deps)).toEqual({ removedRemote: false });
+  expect(me).toHaveBeenCalledOnce();
+  expect(get).not.toHaveBeenCalled();
+  expect(remove).toHaveBeenCalledWith("B", undefined);
+  expect(remote.manifests.get("A")).toEqual(manifestA);
+  expect(await p.state.loadKey()).toBeNull();
+  expect(await p.state.readRemoteState()).toBeNull();
+  expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual([]);
+  expect(p.store.get()).toEqual(before);
+  expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual(media);
+});
+it("Build 71 升级后未记设备 ID，通过 me 删除自己的清单", async () => {
+  const remote = fakeRemote();
+  const p = await phone();
+  await p.add("a");
+  const deps = { transport: remote.client("A", "主人"), key };
+  await p.engine.pushManifest(p.store.get(), deps);
+  await p.state.storeKey(key);
+  fs.mkdirSync(p.state.syncDirectory.uri, { recursive: true });
+  fs.writeFileSync(
+    path.join(p.state.syncDirectory.uri, "state.json"),
+    JSON.stringify({
+      version: 1,
+      enabled: true,
+      keyId: keyIdOf(key),
+      lastBackupAt: "2026-09-20T00:00:00Z",
+    }),
+  );
+  expect((await p.state.readRemoteState())?.deviceId).toBeUndefined();
+  const me = vi.spyOn(deps.transport, "me");
+  const get = vi.spyOn(deps.transport, "getManifest");
+  const remove = vi.spyOn(deps.transport, "deleteManifest");
+  expect(await p.family.leaveFamily(deps)).toEqual({ removedRemote: true });
+  expect(me).toHaveBeenCalledOnce();
+  expect(get).not.toHaveBeenCalled();
+  expect(remove).toHaveBeenCalledWith("A", undefined);
+  expect(remote.manifests.size).toBe(0);
+  expect(await p.state.loadKey()).toBeNull();
+  expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual([]);
+});
+it("同成员两台手机同步靠 me 认本机，seen 与设备数不受清单回退影响", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  await a.add("a");
+  const publishedA = await a.engine.pushManifest(a.store.get(), {
+    transport: remote.client("A", "主人"),
+    key,
+  });
+  const p = await phone();
+  await p.add("b");
+  const deps = { transport: remote.client("B", "主人"), key };
+  const fallback = await deps.transport.getManifest();
+  expect(fallback?.deviceId).toBe("A");
+  // 即使身份查询时拿到的是同成员 A 的清单，也不能拿它来认本机。
+  const get = vi.spyOn(deps.transport, "getManifest").mockResolvedValue(fallback);
+  const me = vi.spyOn(deps.transport, "me");
+  const signal = new AbortController().signal;
+  const result = await p.family.joinFamily(p.store, key, { ...deps, signal });
+  const publishedB = p.engine.parseIndex(
+    openSmall(key, p.engine.INDEX_LABEL, fromBase64(remote.manifests.get("B")!.index)),
+  );
+  expect(publishedB.sha256).not.toBe(publishedA.index.sha256);
+  expect(result.seen).toEqual({ A: publishedA.index.sha256, B: publishedB.sha256 });
+  expect(result.deviceId).toBe("B");
+  expect(result.lastSyncSummary?.devices).toBe(2);
+  expect(await p.state.readRemoteState()).toEqual(result);
+  expect(me).toHaveBeenCalledExactlyOnceWith(signal);
+  expect(get).not.toHaveBeenCalled();
+});
+it("同步成功记住本机设备 ID，退出直接删除它且保留同成员其他手机", async () => {
+  const remote = fakeRemote();
+  const a = await phone();
+  await a.add("a");
+  await a.engine.pushManifest(a.store.get(), {
+    transport: remote.client("A", "主人"),
+    key,
+  });
+  const p = await phone();
+  const deps = { transport: remote.client("B", "主人"), key };
+  const result = await p.family.joinFamily(p.store, key, deps);
+  expect(result.deviceId).toBe("B");
+  expect((await p.state.readRemoteState())?.deviceId).toBe("B");
+  const me = vi.spyOn(deps.transport, "me").mockRejectedValue(
+    new Error("有本机 ID 时不应再查询身份"),
+  );
+  const get = vi.spyOn(deps.transport, "getManifest").mockRejectedValue(
+    new Error("有本机 ID 时不应查询清单"),
+  );
+  const list = vi.spyOn(deps.transport, "manifests").mockRejectedValue(
+    new Error("有本机 ID 时不应查询清单列表"),
+  );
+  const remove = vi.spyOn(deps.transport, "deleteManifest");
+  expect(await p.family.leaveFamily(deps)).toEqual({ removedRemote: true });
+  expect(me).not.toHaveBeenCalled();
+  expect(get).not.toHaveBeenCalled();
+  expect(list).not.toHaveBeenCalled();
+  expect(remove).toHaveBeenCalledWith("B", undefined);
+  expect(remote.manifests.has("A")).toBe(true);
+  expect(remote.manifests.has("B")).toBe(false);
+});
+it.each([
+  "NETWORK",
+  "TIMEOUT",
+  "AUTH_REQUIRED",
+  "NOT_FOUND",
+  "OWNER_ONLY",
+  "SERVER_ERROR",
+])("退出时 %s 按约定决定是否清除本机状态", async (code) => {
+  const { receiver: p, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  const { SyncError } = await import("../src/sync/transport");
+  deps.transport.deleteManifest = async () => {
+    throw new SyncError(code, "删除失败");
+  };
+  const recoverable = [
+    "NETWORK",
+    "TIMEOUT",
+    "AUTH_REQUIRED",
+    "NOT_FOUND",
+  ].includes(code);
+  if (recoverable) {
+    expect(await p.family.leaveFamily(deps)).toEqual({ removedRemote: false });
+    expect(await p.state.loadKey()).toBeNull();
+    expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual([]);
+  } else {
+    await expect(p.family.leaveFamily(deps)).rejects.toMatchObject({ code });
+    expect(await p.state.loadKey()).toEqual(key);
+    expect(await p.state.readRemoteState()).not.toBeNull();
+    expect(fs.readdirSync(p.state.syncDirectory.uri)).toHaveLength(3);
+  }
+  expect(Object.keys(p.store.get().records)).toHaveLength(2);
+});
+it("上传失败仍保留新旧冲突，同一实体只留最新一次，重试不会丢字", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.add("a", "本机的旧版本", "外婆", false);
+  await p.store.change((s) => {
+    s.records["r-a"] = {
+      ...s.records["r-a"]!,
+      updatedAt: "2026-09-19T00:00:00Z",
+    };
+  });
+  const old = {
+    key: "records:old",
+    kind: "records" as const,
+    entityId: "old",
+    at: "2026-09-18T00:00:00Z",
+    device: null,
+    winner: { updatedAt: "2026-09-18T00:00:00Z" },
+    loser: { ...p.store.get().records["r-a"]!, mediaIds: [], id: "old" },
+  };
+  p.state.writeRemoteState(p.state.freshRemoteState(keyIdOf(key)));
+  p.state.writeConflicts([
+    old,
+    {
+      ...old,
+      key: "records:r-a",
+      entityId: "r-a",
+      loser: { ...p.store.get().records["r-a"]!, mediaIds: [] },
+    },
+  ]);
+  const put = deps.transport.put;
+  deps.transport.put = async () => {
+    throw new Error("上传失败");
+  };
+  await expect(p.family.joinFamily(p.store, key, deps)).rejects.toThrow(
+    "上传失败",
+  );
+  expect(p.store.get().records["r-a"]?.text).toBe("她笑了");
+  const conflicts = await p.state.readConflicts();
+  expect(conflicts).toHaveLength(2);
+  expect(conflicts.find((c) => c.key === "records:old")).toEqual(old);
+  expect(conflicts.find((c) => c.key === "records:r-a")?.loser.text).toBe(
+    "本机的旧版本",
+  );
+  deps.transport.put = put;
+  await p.family.runFamilySync(p.store, deps);
+  expect(await p.state.readConflicts()).toEqual(conflicts);
+});
+it("物化生成缩略图途中失败，清掉本轮原件与半张缩略图", async () => {
+  const { receiver: p, deps } = await seeded();
+  const before = p.store.get();
+  vi.spyOn(p.files, "renderThumb").mockRejectedValueOnce(
+    new Error("缩略图写失败"),
+  );
+  await expect(p.family.joinFamily(p.store, key, deps)).rejects.toThrow(
+    "缩略图写失败",
+  );
+  expect(p.store.get()).toBe(before);
+  expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual({});
+  expect(p.backup.collectBlobs()).toEqual({ removed: 0, bytes: 0 });
+});
+it("物化完后停止仍不写库，文件回到原样", async () => {
+  const { receiver: p, deps } = await seeded();
+  const abort = new AbortController();
+  const before = p.store.get();
+  await expect(
+    p.family.joinFamily(p.store, key, {
+      ...deps,
+      signal: abort.signal,
+      onProgress: (stage) => {
+        if (stage === "正在写入本机资料…") abort.abort();
+      },
+    }),
+  ).rejects.toMatchObject({ code: "CANCELED" });
+  expect(p.store.get()).toBe(before);
+  expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual({});
+});
