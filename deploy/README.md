@@ -43,13 +43,15 @@ python3 server/scripts/verify-service.py --container anan-ai-ai-1
 `verify-service.py` 过了再删 `/opt/xiaomei-ai.bak`。`crontab` 里的 `backup.sh` 路径已随仓库更新，
 旧项目名的容器要手动 `docker rm`。成员、设备与额度都在 SQLite 里，随目录一起搬走，手机上无需重新加入。
 
-## 远端备份对象库（Build 70）
+## 家庭远端空间（Build 72；Build 70 起为对象库）
 
-- 路径：容器 `/data/backup/<成员 id>/objects/<对象 id 前两位>/<对象 id>`（宿主机 `/opt/anan-ai/data/backup/`）；临时文件在 `/data/backup/tmp/`，与成品同一文件系统，收完并核对长度与密文哈希后才 `rename` 到位。服务端只见密文、对象 id 与字节数——没有明文、密钥、文件名或照片哈希；密钥只以 12 词恢复码的形式离开手机，换手机时输入恢复码即可从远端恢复。
-- 配额与水位：每成员默认 20 GiB（`members.backup_limit_bytes`，主人在管理页调整，即 `PATCH /admin/members/:id` 的 `backupLimitBytes`）；单对象硬上限 8 MiB；磁盘剩余低于 5 GiB 一律 507 `SERVER_FULL`；每成员同时最多 2 个上传（429 `BUSY`）。同 id 重传按「比原来多出的字节」算配额（对象 id 是手机按内容派生的，服务端认不出同 id 换了内容）。备份路由不走按地址的登录限流。
-- 清单与回收：`PUT /backup/manifest` 除密文索引外可带 `objects`（清单引用的对象 id，对象名本来就在文件系统里），服务端登记后 prune 永不删它们；远端已有清单时 `POST /backup/prune` 的空 keep 一律 400；prune 另有一小时宽限保护上传中的新对象。`backup_manifests.objects_json` 列由启动迁移补上，旧行视为没登记。删库先删索引再删对象；启动时清空 `tmp/`。
-- 对象库是副本不是源头，手机才是源头：`backup.sh` 只快照 SQLite（成员、设备、配额、清单索引），不复制也不轮转对象库；对象文件本身就是事实来源，SQLite 回滚后手机下一次备份会自动补齐缺的对象。
-- 删除：成员自己 `DELETE /api/v1/backup`；主人 `DELETE /api/v1/admin/members/:id/backup`；全部锁死时在服务器 `docker compose ... exec -T ai node src/manage.ts wipe-backup <登录名或成员名>`。
+- 一台服务就是一家人：对象在容器 `/data/backup/family/objects/<对象 id 前两位>/<对象 id>`（宿主机 `/opt/anan-ai/data/backup/family/`），全家共用；对象 id 由手机按内容与钥匙派生，几台手机传同一张照片只存一份。临时文件在 `/data/backup/tmp/`，与成品同一文件系统，收完并核对长度与密文哈希后才 `rename` 到位。服务端只见密文、对象 id 与字节数——没有明文、密钥、文件名或照片哈希；密钥只以 12 词恢复码的形式离开手机，家人输入同一串恢复码就加入。
+- 清单按设备存：`backup_manifests_v2(device_id, member_id, key_id, index_b64, updated_at, objects_json)`，`PUT /backup/manifest` 记在发请求的设备名下，`GET /backup/manifest` 先给这台设备自己的、没有就给成员名下最新的一份（Build 71 换机恢复照旧），`GET /backup/manifests` 列出全家各台设备的清单（一起写的手机据此合并），`DELETE /backup/manifests/:deviceId` 删自己设备的（主人可删任何一台）。删清单后顺手 prune 一次没人指着的对象（一小时宽限）。
+- 一次性迁移（部署 Build 72 服务端时自动）：启动时 `migrateMemberSpaces()` 把 `/data/backup/<成员 id>/objects/` 里的对象 rename 进家庭空间（同 id 已在就删源文件），搬空的成员目录整个删掉；SQLite 里旧表 `backup_manifests` 逐行迁成 `device_id = 'legacy:<成员 id>'` 后 DROP——成员任一台设备发布过自己的清单，这份旧的就自动作废。两步都幂等。**部署前先 `cp -a /opt/anan-ai/data /opt/anan-ai/data.bak-$(date +%Y%m%d-%H%M)`**，回退到 Build 71 服务端只能连同这份数据一起回退（旧版找的是成员目录与旧表）。
+- 配额与水位：全家共用主人的 `members.backup_limit_bytes`（默认 20 GiB，主人在管理页调自己那行，即 `PATCH /admin/members/:id` 的 `backupLimitBytes`；其他成员的这一列不再起作用）；单对象硬上限 8 MiB；磁盘剩余低于 5 GiB 一律 507 `SERVER_FULL`；每台设备同时最多 2 个上传（429 `BUSY`）。同 id 重传按「比原来多出的字节」算配额（对象 id 是手机按内容派生的，服务端认不出同 id 换了内容）。备份路由不走按地址的登录限流。`GET /backup/status` 是全家的：`{keyId（最新清单的）, manifestUpdatedAt, objects, bytes, limitBytes, freeBytes, manifests}`。
+- 清单与回收：`PUT /backup/manifest` 除密文索引外可带 `objects`（清单引用的对象 id），服务端把**全部设备清单**登记的对象并进保护名单，prune 永不删它们，任一台手机给错、给漏 keep 也删不掉别人清单指向的东西；远端已有任何清单时 `POST /backup/prune` 的空 keep 一律 400；prune 另有一小时宽限保护上传中的新对象。启动时清空 `tmp/`。
+- 对象库是副本不是源头，手机才是源头：`backup.sh` 只快照 SQLite（成员、设备、配额、清单索引），不复制也不轮转对象库；对象文件本身就是事实来源，SQLite 回滚后手机下一次同步会自动补齐缺的对象。
+- 删除：成员自己 `DELETE /api/v1/backup`（Build 71 的「删除远端备份」，只作废自己名下的清单）；主人按成员 `DELETE /api/v1/admin/members/:id/backup`，清空全家 `DELETE /api/v1/admin/backup`；全部锁死时在服务器 `docker compose ... exec -T ai node src/manage.ts wipe-backup family`（清空全家）或 `wipe-backup <登录名或成员名>`（只删清单）。
 - 反代：上传是 ≤ 8 MiB 的 `application/octet-stream` PUT，nginx 一类反代默认 1 MB 会先于我们拦下并回 HTML 413。每次改反代或升级服务后用 `python3 server/scripts/probe-upload-limit.py --username <成员> --password <密码> --mb 4 9 --container anan-ai-ai-1` 探一次：4 MB 应 201，9 MB 应是我们的 JSON 413（`TOO_LARGE`）。不符就在反代加 `client_max_body_size 16m; proxy_request_buffering off; proxy_read_timeout 130s;` 后重探。不带账号运行只探反代（匿名 PUT 应得到我们的 JSON 401）。2026-09-20 部署 Build 70 服务端后匿名探过 0.5／4／9／16 MB 全部到达服务，反代无需改动。
 - 验证生产不要直接对 3140 跑 `verify-service.py`（它会建测试账号并调用模型）：按下面「验证」节起一个 3141 的 staging 容器跑完再 `down`。本机若设置了 `http_proxy`，对 127.0.0.1 的请求要 `env -u http_proxy -u https_proxy …` 绕过。
 
