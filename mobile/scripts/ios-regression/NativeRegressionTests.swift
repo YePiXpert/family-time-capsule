@@ -36,6 +36,7 @@ final class NativeRegressionTests: XCTestCase {
     }
     func testLocalRecordAlbumAndBackup() throws {
         XCTAssertTrue(element("volume-2026-09").waitForExistence(timeout: 20)); shot("home")
+        XCTAssertTrue(element("volume-stories").waitForExistence(timeout: 20), "Missing 出生的故事")
         tap("volume-2026-09"); XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20))
         tap("record-fixture"); tap("record-edit")
         XCTAssertTrue(element("说一段").waitForExistence(timeout: 20))

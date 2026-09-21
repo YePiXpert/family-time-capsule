@@ -10,6 +10,8 @@ import {
   recordTitle,
   sortedRecords,
   yearKey,
+  type LocalRecord,
+  type Stored,
 } from "./model";
 import { useNav, type Props } from "./navigation";
 import { coverForRecords, Volume } from "./Shelf";
@@ -19,7 +21,7 @@ import { replayPhotos } from "./replay";
 import { byCountsOf, byLine } from "./recap";
 import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
 import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
-import { yearBookInput, type YearbookInput } from "./yearbook";
+import { yearBookInput, yearBookRecordGroups, type YearbookInput } from "./yearbook";
 import { planBook, useBookBinder } from "./BookBinder";
 import { BookPreview } from "./BookPreview";
 import type { BookLayout, BookPhoto } from "./book";
@@ -206,6 +208,16 @@ export function Year({ route }: Props<"Year">) {
     return { key: id, aspect: m.width && m.height ? m.width / m.height : 4 / 3 };
   };
   const makeBook = () => {
+    const { stories, monthlyRecords } = yearBookRecordGroups(records);
+    const bookRecord = (r: Stored<LocalRecord>) => ({
+      title: recordTitle(r),
+      date: dateLabel(r.date),
+      text: r.text,
+      ...(r.by ? { by: r.by } : {}),
+      photos: r.mediaIds
+        .map(bookPhoto)
+        .filter((photo): photo is BookPhoto => !!photo),
+    });
     const layout = planBook(
       yearBookInput({
         year,
@@ -215,8 +227,14 @@ export function Year({ route }: Props<"Year">) {
         motto: state.profile.motto,
         stats,
         note: state.yearNotes[year] ?? "",
+        stories: stories.map((story) => ({
+          ...story,
+          records: story.records.map(bookRecord),
+        })),
         months: monthKeys.map((key) => {
-          const monthRecords = records.filter((r) => monthKey(r.date) === key);
+          const monthRecords = monthlyRecords.filter(
+            (r) => monthKey(r.date) === key,
+          );
           const shots = monthRecords.reduce(
             (n, r) =>
               n +
@@ -232,15 +250,7 @@ export function Year({ route }: Props<"Year">) {
             ]
               .filter(Boolean)
               .join(" · "),
-            records: monthRecords.map((r) => ({
-              title: recordTitle(r),
-              date: dateLabel(r.date),
-              text: r.text,
-              ...(r.by ? { by: r.by } : {}),
-              photos: r.mediaIds
-                .map(bookPhoto)
-                .filter((photo): photo is BookPhoto => !!photo),
-            })),
+            records: monthRecords.map(bookRecord),
           };
         }),
         firsts: yearFirsts.map((r) => ({

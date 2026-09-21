@@ -1260,3 +1260,23 @@ describe("device-only transcription consent", () => {
     expect(() => validateLibrary(s)).toThrow();
   });
 });
+
+describe("故事主题字段校验", () => {
+  it("旧记录和四个主题都可保存，草稿与记录拒绝其他值", () => {
+    for (const story of [undefined, "birth", "pregnancy", "name", "met"] as const) {
+      const s = fixture();
+      s.drafts.draft!.content.story = story;
+      validateLibrary(s);
+      saveRecord(s, "draft", "story", date);
+      validateLibrary(s);
+      expect(s.records.story!.story).toBe(story);
+      // 模拟损坏的输入清单，不放宽类型给生产代码。
+      const bad = JSON.parse(JSON.stringify(s));
+      bad.records.story.story = "other";
+      expect(() => validateLibrary(bad)).toThrow();
+    }
+    const bad = JSON.parse(JSON.stringify(fixture()));
+    bad.drafts.draft.content.story = "other";
+    expect(() => validateLibrary(bad)).toThrow();
+  });
+});

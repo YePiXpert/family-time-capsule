@@ -21,6 +21,7 @@ export function SearchScreen(_: Props<"Search">) {
   const [query, setQuery] = useState(""),
     [first, setFirst] = useState(false),
     [quote, setQuote] = useState(false),
+    [story, setStory] = useState(false),
     [media, setMedia] = useState<MediaFilter>("any"),
     [year, setYear] = useState(""),
     [person, setPerson] = useState(""),
@@ -40,6 +41,7 @@ export function SearchScreen(_: Props<"Search">) {
         {
           first,
           quote,
+          story,
           media,
           year: year || undefined,
           person: person || undefined,
@@ -57,11 +59,12 @@ export function SearchScreen(_: Props<"Search">) {
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
         .map(([name]) => name),
     };
-  }, [recordMap, mediaMap, personMap, query, first, quote, media, year, person, by]);
+  }, [recordMap, mediaMap, personMap, query, first, quote, story, media, year, person, by]);
   const filtered =
     query.trim() ||
     first ||
     quote ||
+    story ||
     media !== "any" ||
     !!year ||
     !!person ||
@@ -104,6 +107,7 @@ export function SearchScreen(_: Props<"Search">) {
             })),
             { key: "f-first", title: "第一次", active: first },
             { key: "f-quote", title: "她说的话", active: quote },
+            { key: "f-story", title: "出生的故事", active: story },
             { key: "m-av", title: "有声像", active: media === "av" },
             { key: "m-none", title: "纯文字", active: media === "none" },
           ]}
@@ -125,6 +129,7 @@ export function SearchScreen(_: Props<"Search">) {
                   setBy(by === name ? "" : name);
                 } else if (item.key === "f-first") setFirst(!first);
                 else if (item.key === "f-quote") setQuote(!quote);
+                else if (item.key === "f-story") setStory(!story);
                 else if (item.key === "m-av")
                   setMedia(media === "av" ? "any" : "av");
                 else setMedia(media === "none" ? "any" : "none");

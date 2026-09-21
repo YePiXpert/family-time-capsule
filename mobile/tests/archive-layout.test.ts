@@ -315,3 +315,13 @@ it("keeps version ancestry out of open archive text and viewer data", () => {
   const withAncestry = planArchive(state, { now: NOW, includeSealedLetters: true });
   expect(withAncestry).toEqual(plain);
 });
+
+it("故事主题写入 Markdown 与开放清单，旧记录不多出字段", () => {
+  const s = library();
+  s.records.r1 = { ...s.records.r1!, story: "birth" };
+  const plan = planArchive(s, { now: NOW });
+  expect(textOf(plan.entries, "第一次挥手/正文.md")).toContain("故事: 出生那天");
+  expect(plan.library.records.find((r) => r.id === "r1")!.story).toBe("出生那天");
+  expect(plan.library.records.find((r) => r.id === "r3")).not.toHaveProperty("story");
+  expect(plan.library.version).toBe(1);
+});

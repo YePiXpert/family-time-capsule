@@ -6,6 +6,7 @@ import {
   YEARBOOK_WIDTH,
   layoutYearbook,
   yearBookInput,
+  yearBookRecordGroups,
   type YearBookSource,
   type YearbookInput,
 } from "../src/local/yearbook";
@@ -208,5 +209,42 @@ describe("年度册的内容装配", () => {
     expect(
       yearBookInput(source({ birthday: "2025 年 9 月 10 日" })).titlePage,
     ).toEqual({ name: "桉桉", birthday: "2025 年 9 月 10 日" });
+  });
+});
+
+describe("故事排在纸书开头", () => {
+  it("按主题顺序分组，故事不重复进入月章，文字、照片和落款都保留", () => {
+    const record = (title: string) => ({ title, date: "3月5日", text: `${title}正文`, by: "妈妈", photos: [{ key: title, aspect: 1 }] });
+    const { stories, monthlyRecords } = yearBookRecordGroups([
+      { ...record("相识"), story: "met" as const },
+      { ...record("日常"), story: undefined },
+      { ...record("出生"), story: "birth" as const },
+      { ...record("再记出生"), story: "birth" as const },
+    ]);
+    expect(monthlyRecords.map((r) => r.title)).toEqual(["日常"]);
+    const book = yearBookInput(source({ stories, note: "给你的话", months: [march(monthlyRecords)] }));
+    expect(book.chapters.map((c) => c.heading)).toEqual(["出生那天", "我们怎么认识的", "爸爸妈妈的话", "三月"]);
+    expect(book.chapters[0]!.lead).toBe("你来到这个世界的那一天。");
+    expect(book.chapters[0]!.blocks).toEqual([
+      { kind: "text", title: "出生", date: "3月5日", body: "出生正文", by: "妈妈" },
+      { kind: "photos", photos: [{ key: "出生", aspect: 1 }] },
+      { kind: "text", title: "再记出生", date: "3月5日", body: "再记出生正文", by: "妈妈" },
+      { kind: "photos", photos: [{ key: "再记出生", aspect: 1 }] },
+    ]);
+    expect(JSON.stringify(book.chapters[3])).not.toContain("出生");
+    expect(JSON.stringify(book.chapters[3])).not.toContain("相识");
+  });
+  it("无故事时保持旧输出逐字相同，空故事列表也一样", () => {
+    const original = source({ note: " 给你的话 ", months: [march([{ title: " 日常 ", date: "3月5日", text: " 正文 ", photos: [] }])], firsts: [{ title: "第一次", date: "3月5日" }] });
+    const expected = JSON.stringify({
+      title: "桉桉的 2026 年", subtitle: "2 段时光", stamp: "2026", titlePage: { name: "桉桉" },
+      chapters: [
+        { heading: "爸爸妈妈的话", blocks: [{ kind: "text", body: "给你的话" }] },
+        { heading: "三月", blocks: [{ kind: "text", title: "日常", date: "3月5日", body: "正文" }] },
+        { heading: "这一年的第一次", blocks: [{ kind: "list", entries: [{ title: "第一次", date: "3月5日" }] }] },
+      ], colophon: "2026 年",
+    });
+    expect(JSON.stringify(yearBookInput(original))).toBe(expected);
+    expect(JSON.stringify(yearBookInput({ ...original, stories: [] }))).toBe(expected);
   });
 });

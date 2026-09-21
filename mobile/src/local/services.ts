@@ -30,16 +30,19 @@ import {
   type PhotoMetadata,
   type RecordDraft,
   type Stored,
+  type StoryTopic,
 } from "./model";
 import { deleteMediaFiles, preserveMedia } from "./files";
 import { defaultOpenAt, openLetterAt, sealLetterAt } from "./letters";
 import { applyPhotoMetadata, captureDayCount } from "./photo-metadata";
+import { storyDefaultDate } from "./stories";
 import type { LocalStore } from "./store";
 export const newId = () => randomUUID();
 export const now = () => new Date().toISOString();
 export async function beginDraft(
   store: LocalStore,
   recordId: string | null = null,
+  story?: { topic: StoryTopic; birthday: string },
 ) {
   return store.change((s) => {
     const existing = recordId
@@ -53,16 +56,28 @@ export async function beginDraft(
       id,
       recordId,
       baseRevision: record?.revision ?? 0,
-      autoDate: !record,
+      autoDate: !record && !story,
       autoLocation: !record,
       groupPhotosByDay: false,
       content: record
         ? (clone(record) as Mutable<Stored<LocalRecord>>)
-        : emptyContent(s.settings.by),
+        : {
+            ...emptyContent(s.settings.by),
+            ...(story
+              ? { story: story.topic, date: storyDefaultDate(story.topic, story.birthday) }
+              : {}),
+          },
       updatedAt: now(),
     };
     return id;
   });
+}
+export function beginStoryDraft(
+  store: LocalStore,
+  topic: StoryTopic,
+  birthday: string,
+) {
+  return beginDraft(store, null, { topic, birthday });
 }
 export function updateDraft(s: Library, draft: RecordDraft) {
   if (!s.drafts[draft.id]) throw new Error("草稿已关闭，请重新打开。");

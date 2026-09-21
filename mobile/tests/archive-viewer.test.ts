@@ -138,3 +138,14 @@ describe("offline archive viewer", () => {
     expect(nodes.content!.innerHTML).toContain("妈妈");
   });
 });
+
+it("离线网页显示故事徽标并转义文本", () => {
+  const s = sample();
+  s.records.r1 = { ...s.records.r1!, story: "birth" };
+  const library = libraryOf(s);
+  expect(run(library).nodes.content!.innerHTML).toContain('<span class="badge">出生那天</span>');
+  library.records.find((r) => r.id === "r1")!.story = '<img src=x onerror=alert(1)>';
+  const html = run(library).nodes.content!.innerHTML;
+  expect(html).toContain('<span class="badge">&lt;img src=x onerror=alert(1)&gt;</span>');
+  expect(html).not.toContain('<img src=x');
+});
