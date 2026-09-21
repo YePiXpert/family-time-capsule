@@ -92,6 +92,16 @@ export function photoDayGroups(
   draft: RecordDraft,
   media: Library["media"],
 ): RecordDraft["content"][] {
+  // 落款是整份草稿的：分出来的每件事都带上，事件自己已有的不覆盖。
+  const by = draft.content.by;
+  return photoDayGroupsOf(draft, media).map((content) =>
+    by && !content.by ? { ...content, by } : content,
+  );
+}
+function photoDayGroupsOf(
+  draft: RecordDraft,
+  media: Library["media"],
+): RecordDraft["content"][] {
   if (
     draft.recordId ||
     !draft.groupPhotosByDay ||
