@@ -1,7 +1,7 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -98,15 +98,19 @@ test("the family quota is the owner's limit shared by everyone; a repeat succeed
  assert.equal(streamedGrowth.statusCode,413);assert.equal(streamedGrowth.json().code,'QUOTA_FULL');
  assert.equal(f.backups.stat(oid(5)),800);
  assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
- // 换成更小的内容不需要余量。
+ // 同 id 换成更小的内容仍先到为准：丢弃临时文件，原对象与已用配额不变。
  const shrunk=randomBytes(300);
- assert.equal((await f.put(oid(5),shrunk)).statusCode,200);assert.equal(f.backups.stat(oid(5)),300);
+ assert.equal((await f.put(oid(5),shrunk)).statusCode,200);assert.equal(f.backups.stat(oid(5)),800);
+ assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
+ assert.equal((await f.status()).bytes,800);
+ // 恢复上限后余量仍是 200，继续验证全家的配额记账。
+ f.setLimit(f.owner.member.id,1000);
  assert.equal((await f.put(oid(6),randomBytes(10))).statusCode,201);
  assert.equal((await f.put(oid(8),randomBytes(500))).statusCode,413);
  // 外婆的手机传的也算在同一份配额里。
  assert.equal((await f.put(oid(9),randomBytes(200),f.other.token)).json().code,'QUOTA_FULL');
  assert.equal((await f.put(oid(9),randomBytes(100),f.other.token)).statusCode,201);
- assert.equal((await f.status()).bytes,410);
+ assert.equal((await f.status()).bytes,910);
  f.backups.freeBytes=async()=>0;
  const full=await f.put(oid(7),randomBytes(10));
  assert.equal(full.statusCode,507);assert.equal(full.json().code,'SERVER_FULL');
@@ -278,11 +282,19 @@ test('per-member object directories move into the family space once; duplicates 
  mkdirSync(join(dir,'tmp'),{recursive:true});writeFileSync(join(dir,'tmp','fresh.part'),'a');writeFileSync(join(dir,'tmp','stale.part'),'b');
  const old=new Date(Date.now()-7200000);utimesSync(join(dir,'tmp','stale.part'),old,old);
  const backups=new BackupStore(dir);
- assert.deepEqual(backups.migrateMemberSpaces(),{members:2,moved:3,duplicates:1});
+ assert.deepEqual(backups.migrateMemberSpaces(),{members:2,moved:3,duplicates:1,failed:1});
  assert.deepEqual(backups.list().map(r=>[r.id,r.bytes]).sort(),[[oid(1),1],[oid(2),2],[oid(0xab00),3]].sort());
- assert.ok(!existsSync(join(dir,M1))&&!existsSync(join(dir,M2)));
+ assert.ok(!existsSync(join(dir,M1)));
+ // 不认识的文件原地保留；已搬好的对象不残留在成员目录。
+ assert.equal(readFileSync(join(dir,M2,'objects','zz','junk'),'utf8'),'x');
+ assert.deepEqual(readdirSync(join(dir,M2)),['objects']);
+ assert.deepEqual(readdirSync(join(dir,M2,'objects')),['zz']);
+ assert.deepEqual(readdirSync(join(dir,M2,'objects','zz')),['junk']);
+ assert.deepEqual(readdirSync(dir).sort(),[FAMILY_DIR,M2,'tmp'].sort());
+ assert.deepEqual(backups.migrateMemberSpaces(),{members:1,moved:0,duplicates:0,failed:1});
+ rmSync(join(dir,M2),{recursive:true,force:true});
+ assert.deepEqual(backups.migrateMemberSpaces(),{members:0,moved:0,duplicates:0,failed:0});
  assert.deepEqual(readdirSync(dir).sort(),[FAMILY_DIR,'tmp']);
- assert.deepEqual(backups.migrateMemberSpaces(),{members:0,moved:0,duplicates:0});
  assert.equal(backups.usage().bytes,6);
  backups.sweepTemp();
  assert.deepEqual(readdirSync(join(dir,'tmp')),['fresh.part']);
@@ -290,4 +302,239 @@ test('per-member object directories move into the family space once; duplicates 
  backups.sweepTemp(0);
  assert.deepEqual(readdirSync(join(dir,'tmp')),[]);
  rmSync(dir,{recursive:true,force:true});
+});
+
+// 回归：用 49 小时后的时钟排除上传 claim 的保护，单独检验未知清单。
+const afterClaimsExpire=(t:TestContext)=>{
+ const now=Date.now();t.mock.method(Date,'now',()=>now+49*3600000);
+};
+test('A-1 upload probe never deletes manifests and still revokes only its own device',()=>{
+ const script=readFileSync(new URL('../scripts/probe-upload-limit.py',import.meta.url),'utf8');
+ assert.doesNotMatch(script,/request\([^\n]*['"]DELETE['"]/);
+ assert.match(script,/UPDATE devices SET revoked=1 WHERE id=\?/);
+ assert.match(script,/login\['member'\]\['deviceId'\]/);
+});
+test('A-2 an old phone omitting objects stops the entire prune, including unreferenced objects',async t=>{
+ const f=fixture();t.after(f.close);
+ await f.put(oid(100),Buffer.alloc(100));await f.put(oid(101),Buffer.alloc(50));
+ await f.publish(f.member.token);age(f,oid(100),oid(101));afterClaimsExpire(t);
+ assert.deepEqual((await f.prune(f.other.token,[oid(999)])).json(),{removed:0,bytes:0});
+ assert.equal(f.backups.stat(oid(100)),100);assert.equal(f.backups.stat(oid(101)),50);
+ assert.deepEqual(f.store.db.prepare('SELECT objects_json FROM backup_manifests_v2').get(),{objects_json:null});
+});
+test('A-2 a NULL legacy registration stops the entire prune',async t=>{
+ const f=fixture();t.after(f.close);
+ await f.put(oid(102),Buffer.alloc(100));age(f,oid(102));
+ f.store.db.prepare('INSERT INTO backup_manifests_v2 VALUES(?,?,?,?,?,NULL)').run(`legacy:${f.member.member.id}`,f.member.member.id,KEY,INDEX,Date.now());
+ afterClaimsExpire(t);
+ assert.deepEqual((await f.prune(f.other.token,[oid(999)])).json(),{removed:0,bytes:0});
+ assert.equal(f.backups.stat(oid(102)),100);
+});
+test('A-2 explicit empty objects is known and fully registered manifests still allow collection',async t=>{
+ const f=fixture();t.after(f.close);
+ await f.put(oid(103),Buffer.alloc(100));await f.put(oid(104),Buffer.alloc(50));
+ await f.publish(f.member.token,[oid(103)]);await f.publish(f.other.token,[]);
+ age(f,oid(103),oid(104));afterClaimsExpire(t);
+ assert.deepEqual((await f.prune(f.other.token,[oid(999)])).json(),{removed:1,bytes:50});
+ assert.equal(f.backups.stat(oid(103)),100);assert.equal(f.backups.stat(oid(104)),null);
+ assert.deepEqual(f.store.db.prepare('SELECT objects_json FROM backup_manifests_v2 WHERE device_id=?').get(f.other.member.deviceId),{objects_json:'[]'});
+});
+for(const route of ['member','device','admin-member'])test(`A-2 ${route} deletion sweep stops while another manifest has unknown references`,async t=>{
+ const f=fixture();t.after(f.close);
+ await f.put(oid(105),Buffer.alloc(100));await f.publish(f.member.token);
+ await f.publish(f.other.token,[]);age(f,oid(105));afterClaimsExpire(t);
+ const url=route==='member'?'/api/v1/backup':route==='device'?`/api/v1/backup/manifests/${f.other.member.deviceId}`:`/api/v1/admin/members/${f.other.member.id}/backup`;
+ const result=await f.app.inject({method:'DELETE',url,headers:f.headers(route==='admin-member'?f.owner.token:f.other.token)});
+ assert.deepEqual(result.json(),{ok:true,pruned:{removed:0,bytes:0}});
+ assert.equal(f.store.manifestCount(),1);assert.equal(f.backups.stat(oid(105)),100);
+});
+for(const via of ['have','put'])test(`A-3 ${via} claims protect an unpublished upload beyond one hour, then expire`,async t=>{
+ const f=fixture();t.after(f.close);
+ // 直接存文件，模拟已有对象，避免 PUT 的 claim 掩盖 have 的缺陷。
+ if(via==='have') {
+  await f.backups.receive(oid(106),Readable.from([Buffer.alloc(100)]),{sha256:sha(Buffer.alloc(100))});
+  const result=await f.app.inject({method:'POST',url:'/api/v1/backup/objects/have',headers:f.headers(),payload:{ids:[oid(106),oid(107)]}});
+  assert.deepEqual(result.json(),{missing:[oid(107)]});
+ } else assert.equal((await f.put(oid(106),Buffer.alloc(100))).statusCode,201);
+ age(f,oid(106));
+ const now=Date.now();t.mock.method(Date,'now',()=>now+2*3600000);
+ assert.deepEqual((await f.prune(f.other.token,[])).json(),{removed:0,bytes:0});
+ assert.equal(f.backups.stat(oid(106)),100);
+ t.mock.method(Date,'now',()=>now+49*3600000);
+ assert.deepEqual((await f.prune(f.other.token,[])).json(),{removed:1,bytes:100});
+ assert.equal(f.backups.stat(oid(106)),null);
+ assert.deepEqual(f.store.db.prepare('SELECT * FROM backup_object_claims').all(),[]);
+});
+
+test('A-3 claims survive SQLite reopen, renew per device in batches, and protect deletion sweeps',async t=>{
+ const f=fixture();t.after(f.close);
+ const ids=Array.from({length:5000},(_,i)=>oid(1000+i));
+ const have=()=>f.app.inject({method:'POST',url:'/api/v1/backup/objects/have',headers:f.headers(),payload:{ids}});
+ assert.equal((await have()).statusCode,200);
+ const now=Date.now();t.mock.method(Date,'now',()=>now+47*3600000);
+ assert.equal((await have()).statusCode,200);
+ assert.deepEqual(f.store.db.prepare('SELECT COUNT(*) n, MIN(claimed_at) oldest FROM backup_object_claims WHERE device_id=?').get(f.member.member.deviceId),{n:5000,oldest:now+47*3600000});
+ await f.backups.receive(ids[0]!,Readable.from([Buffer.alloc(100)]),{sha256:sha(Buffer.alloc(100))});age(f,ids[0]!);
+ // 另一台设备发布或退出不能解除上传设备的占位。
+ await f.publish(f.other.token,[]);
+ const file=join(f.dir,'claims.sqlite');await f.store.db.backup(file);
+ const reopened=new Store(file),app=createApp(reopened,async()=>{throw new Error('no provider');},'test',f.backups);
+ try {
+  t.mock.method(Date,'now',()=>now+49*3600000);
+  const left=await app.inject({method:'DELETE',url:'/api/v1/backup',headers:f.headers(f.other.token)});
+  assert.deepEqual(left.json(),{ok:true,pruned:{removed:0,bytes:0}});
+  assert.equal(f.backups.stat(ids[0]!),100);
+ } finally {await app.close();reopened.close();}
+});
+for(const via of ['admin','wipe'])test(`A-3 ${via} family wipe removes all claims`,async t=>{
+ const f=fixture();t.after(f.close);
+ await f.put(oid(108),Buffer.alloc(100));
+ await f.app.inject({method:'POST',url:'/api/v1/backup/objects/have',headers:f.headers(f.other.token),payload:{ids:[oid(109)]}});
+ assert.equal((f.store.db.prepare('SELECT COUNT(*) n FROM backup_object_claims').get() as {n:number}).n,2);
+ if(via==='admin')assert.equal((await f.app.inject({method:'DELETE',url:'/api/v1/admin/backup',headers:f.headers(f.owner.token)})).statusCode,200);
+ else f.backups.wipe(f.store);
+ assert.deepEqual(f.store.db.prepare('SELECT * FROM backup_object_claims').all(),[]);
+ assert.equal(f.backups.stat(oid(108)),null);
+});
+
+test('A-11 已存在的对象先到为准，其他家人不能用不同字节覆盖',async t=>{
+ const f=fixture();t.after(f.close);
+ const a=Buffer.from('原来的密文'),b=Buffer.from('后来传入的不同密文');
+ assert.equal((await f.put(oid(201),a)).statusCode,201);
+ assert.equal((await f.put(oid(201),b,f.other.token)).statusCode,200);
+ assert.deepEqual(readFileSync(f.backups.objectPath(oid(201))),a);
+ assert.deepEqual(await f.backups.receive(oid(201),Readable.from([b]),{sha256:sha(b)}),{bytes:b.length,created:false});
+ assert.deepEqual(readFileSync(f.backups.objectPath(oid(201))),a);
+ assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
+});
+
+test('A-16 同成员设备 B 撤下本机清单，设备 A 的清单仍在',async t=>{
+ const f=fixture();t.after(f.close);
+ const b=f.store.attach(f.member.member.id,'家人手机 B');
+ await f.publish(f.member.token,[]);await f.publish(b.token,[]);
+ const result=await f.app.inject({method:'DELETE',url:`/api/v1/backup/manifests/${b.member.deviceId}`,headers:f.headers(b.token)});
+ assert.equal(result.statusCode,200);
+ assert.ok(f.store.manifestOf(f.member.member.deviceId!));
+ assert.equal(f.store.manifestOf(b.member.deviceId!),undefined);
+});
+test('A-8 主人撤销设备只退出全家合并，备份仍可恢复且对象受保护',async t=>{
+ const f=fixture();t.after(f.close);
+ await f.put(oid(202),Buffer.alloc(12));await f.publish(f.member.token,[oid(202)]);
+ await f.publish(f.other.token,[]);
+ const saved=f.store.manifestOf(f.member.member.deviceId!)!;
+ age(f,oid(202));
+ const result=await f.app.inject({method:'DELETE',url:`/api/v1/admin/devices/${f.member.member.deviceId}`,headers:f.headers(f.owner.token)});
+ await t.test('撤销后同成员的新设备仍能取回清单',async()=>{
+  const replacement=f.store.attach(f.member.member.id,'家人的新手机');
+  assert.equal(f.store.manifestOf(replacement.member.deviceId!),undefined);
+  const restored=await f.app.inject({url:'/api/v1/backup/manifest',headers:f.headers(replacement.token)});
+  assert.equal(restored.statusCode,200);
+  assert.deepEqual(restored.json(),{deviceId:saved.deviceId,keyId:KEY,index:INDEX,updatedAt:new Date(saved.updatedAt).toISOString()});
+ });
+ await t.test('撤销后越过宽限并过期 claim，清单独占的对象仍在',async()=>{
+  afterClaimsExpire(t);
+  assert.deepEqual([...f.store.claimedObjects()],[]);
+  const pruned=await f.prune(f.other.token,[oid(999)]);
+  assert.equal(pruned.statusCode,200);
+  assert.equal(f.backups.stat(oid(202)),12);
+  assert.deepEqual(pruned.json(),{removed:0,bytes:0});
+  assert.deepEqual([...f.store.manifestObjects()],[oid(202)]);
+ });
+ await t.test('撤销响应、合并列表与主人管理页各自遵守契约',async()=>{
+  assert.equal(result.statusCode,200);
+  assert.deepEqual(result.json(),{ok:true});
+  assert.deepEqual(f.store.manifestOf(f.member.member.deviceId!),saved);
+  const listed=await f.app.inject({url:'/api/v1/backup/manifests',headers:f.headers(f.owner.token)});
+  assert.equal(listed.statusCode,200);
+  assert.deepEqual(listed.json().map((m:{deviceId:string})=>m.deviceId),[f.other.member.deviceId]);
+  const overview=await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers(f.owner.token)});
+  assert.equal(overview.statusCode,200);
+  assert.equal(overview.json().backup.manifests,2);
+  assert.deepEqual(overview.json().members.find((m:{id:string})=>m.id===f.member.member.id).manifests.map((m:{deviceId:string})=>m.deviceId),[saved.deviceId]);
+ });
+});
+test('A-8 没有设备行的 legacy 清单仍列入全家合并',async t=>{
+ const f=fixture();t.after(f.close);
+ const legacy=`legacy:${f.member.member.id}`;
+ f.store.putManifest(legacy,f.member.member.id,KEY,INDEX,[oid(203)]);
+ assert.equal(f.store.db.prepare('SELECT id FROM devices WHERE id=?').get(legacy),undefined);
+ await f.publish(f.other.token,[]);
+ const listed=await f.app.inject({url:'/api/v1/backup/manifests',headers:f.headers(f.owner.token)});
+ assert.equal(listed.statusCode,200);
+ assert.deepEqual(listed.json().map((m:{deviceId:string})=>m.deviceId).sort(),[legacy,f.other.member.deviceId].sort());
+ assert.equal(listed.json().find((m:{deviceId:string})=>m.deviceId===legacy).index,INDEX);
+});
+test('A-8 重置成员登录只撤销令牌，保留其设备清单',async t=>{
+ const f=fixture();t.after(f.close);
+ await f.publish(f.member.token,[]);
+ const result=await f.app.inject({method:'PUT',url:`/api/v1/admin/members/${f.member.member.id}/login`,headers:f.headers(f.owner.token),payload:{username:'家人',password:'new-password'}});
+ assert.equal(result.statusCode,200);
+ assert.ok(f.store.manifestOf(f.member.member.deviceId!));
+ assert.equal((await f.app.inject({url:'/api/v1/backup/manifests',headers:f.headers()})).statusCode,401);
+});
+
+// 每次先重扫盘取得真值，再禁止 usage 偷扫；两者必须独立且相等。
+function assertUsage(t:TestContext,backups:BackupStore) {
+ const rows=backups.list(),truth={objects:rows.length,bytes:rows.reduce((n,r)=>n+r.bytes,0)};
+ const scan=t.mock.method(backups,'list',()=>{throw new Error('usage 不应扫描对象库');});
+ try { assert.deepEqual(backups.usage(),truth); } finally { scan.mock.restore(); }
+}
+test('A-15 上传、重传、prune 与 wipe 的计数等于重扫盘真值，usage 不扫盘',async t=>{
+ const f=fixture();t.after(f.close);
+ assertUsage(t,f.backups);
+ for(const [n,size] of [[210,10],[211,20],[212,30]]) {
+  await f.put(oid(n!),Buffer.alloc(size!));assertUsage(t,f.backups);
+ }
+ const before=f.backups.list();
+ await f.put(oid(210),Buffer.from('x'));
+ assert.deepEqual(f.backups.list(),before);assertUsage(t,f.backups);
+ age(f,oid(210),oid(211),oid(212));
+ assert.deepEqual(f.backups.prune(new Set([oid(210)])),{removed:2,bytes:50});assertUsage(t,f.backups);
+ f.backups.wipe(f.store);assertUsage(t,f.backups);assert.deepEqual(f.backups.list(),[]);
+ assert.deepEqual(f.backups.usage(),{objects:0,bytes:0});
+});
+test('A-15 构造、迁移和显式 recount 后计数等于重扫盘真值',async t=>{
+ const f=fixture();t.after(f.close);
+ await f.put(oid(213),Buffer.alloc(7));
+ const reopened=new BackupStore(f.dir);assertUsage(t,reopened);
+ const old=join(f.dir,f.member.member.id,'objects',oid(214).slice(0,2));
+ mkdirSync(old,{recursive:true});writeFileSync(join(old,oid(214)),Buffer.alloc(19));
+ reopened.migrateMemberSpaces();assertUsage(t,reopened);
+ assert.deepEqual(reopened.usage(),{objects:2,bytes:26});
+ writeFileSync(reopened.objectPath(oid(215)),Buffer.alloc(9));
+ reopened.recount();assertUsage(t,reopened);
+ assert.deepEqual(reopened.usage(),{objects:3,bytes:35});
+});
+
+test('迁移加固：单个对象搬运失败不挡其他对象，残留原地保留并可重试',t=>{
+ const f=fixture();t.after(f.close);
+ const bad='ab'.repeat(32),good='cd'.repeat(32);
+ const memberDir=join(f.dir,f.member.member.id);
+ for(const [id,content] of [[bad,'bad'],[good,'good']]) {
+  const dir=join(memberDir,'objects',id!.slice(0,2));mkdirSync(dir,{recursive:true});writeFileSync(join(dir,id!),content!);
+ }
+ // 目标前缀被文件占住，确定性模拟 mkdir／rename 失败，不依赖 root 的权限语义。
+ const blocked=join(f.dir,FAMILY_DIR,'objects','ab');writeFileSync(blocked,'blocked');
+ assert.deepEqual(f.backups.migrateMemberSpaces(),{members:1,moved:1,duplicates:0,failed:1});
+ assert.equal(readFileSync(join(memberDir,'objects','ab',bad),'utf8'),'bad');
+ assert.equal(readFileSync(f.backups.objectPath(good),'utf8'),'good');assertUsage(t,f.backups);
+ rmSync(blocked);
+ assert.deepEqual(f.backups.migrateMemberSpaces(),{members:1,moved:1,duplicates:0,failed:0});
+ assert.ok(!existsSync(memberDir));assertUsage(t,f.backups);
+});
+test('迁移加固：不合法的文件保留在原目录，不递归删掉',t=>{
+ const f=fixture();t.after(f.close);
+ const dir=join(f.dir,f.member.member.id,'objects','zz');mkdirSync(dir,{recursive:true});
+ const junk=join(dir,'junk');writeFileSync(junk,'必须保留');
+ assert.deepEqual(f.backups.migrateMemberSpaces(),{members:1,moved:0,duplicates:0,failed:1});
+ assert.equal(readFileSync(junk,'utf8'),'必须保留');assertUsage(t,f.backups);
+});
+for(const action of ['login','device','settings'] as const) test(`权限加固：家人调用 ${action} 管理入口返回 403`,async t=>{
+ const f=fixture();t.after(f.close);
+ const request=action==='login'
+  ?{method:'PUT' as const,url:`/api/v1/admin/members/${f.other.member.id}/login`,payload:{username:'外婆',password:'new-password'}}
+  :action==='device'?{method:'DELETE' as const,url:`/api/v1/admin/devices/${f.other.member.deviceId}`}
+  :{method:'PUT' as const,url:'/api/v1/admin/settings',payload:{paused:true,globalPhotos:1,globalWrites:1}};
+ const result=await f.app.inject({...request,headers:f.headers()});
+ assert.equal(result.statusCode,403);assert.equal(result.json().code,'OWNER_ONLY');
 });
