@@ -367,8 +367,8 @@ it("pins the remote manifest before downloading so an interrupted join survives 
   await family.runFamilySync(store, deps);
   const remaining = downloaded[0] === big ? 1 : 2;
   expect(remote.gets()).toBe(gets + 1 + remaining);
-  expect(fs.readdirSync(files.backupDirectory.uri)).toHaveLength(1);
-  expect(fs.readdirSync(files.backupDirectory.uri)[0]).toMatch(/\.xmbm$/);
+  expect(fs.readdirSync(files.backupDirectory.uri)).toEqual([]);
+  expect(files.syncManifestFile().exists).toBe(true);
 });
 it("verifies the remote and names how many photo objects are missing", async () => {
   const { engine, store } = await setup();

@@ -291,6 +291,7 @@ it("空库加入拉齐时光、落款、原件与本机缩略图，并登记本�
 it("同步期间关闭自动同步，完成后仍保留关闭状态", async () => {
   const { receiver: p, deps } = await seeded();
   await p.family.joinFamily(p.store, key, deps);
+  await p.add("local", "刚写的", "妈妈", false);
   const publish = deps.transport.putManifest.bind(deps.transport);
   vi.spyOn(deps.transport, "putManifest").mockImplementationOnce(async (...args) => {
     const current = await p.state.readRemoteState();
@@ -301,6 +302,71 @@ it("同步期间关闭自动同步，完成后仍保留关闭状态", async () =
   expect(result.autoSync).toBe(false);
   expect((await p.state.readRemoteState())?.autoSync).toBe(false);
 });
+it.each([false, true])("内容未变不上传、不发布、不回收远端对象（缺少旧统计：%s）", async (withoutSummary) => {
+  const { receiver: p, deps } = await seeded();
+  const first = await p.family.joinFamily(p.store, key, deps);
+  if (withoutSummary) {
+    const state = { ...first };
+    delete state.lastSyncSummary;
+    p.state.writeRemoteState(state);
+  }
+  const put = vi.spyOn(deps.transport, "put");
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const prune = vi.spyOn(deps.transport, "prune");
+  const create = vi.spyOn(p.backup, "createSyncManifest");
+  const second = await p.family.runFamilySync(p.store, deps);
+  expect(put).not.toHaveBeenCalled();
+  expect(publish).not.toHaveBeenCalled();
+  expect(prune).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+  expect(second.lastPush).toEqual(first.lastPush);
+  expect(second.seen).toEqual(first.seen);
+  expect(second.lastSyncSummary).toMatchObject({
+    objects: withoutSummary ? 0 : first.lastSyncSummary!.objects,
+    bytes: withoutSummary ? 0 : first.lastSyncSummary!.bytes,
+    pulled: 0,
+    pushed: 0,
+  });
+  expect(await p.state.readRemoteState()).toEqual(second);
+});
+it("本机改了一段后重新发布，实体指纹随之变化", async () => {
+  const { receiver: p, deps } = await seeded();
+  const first = await p.family.joinFamily(p.store, key, deps);
+  await p.store.change((s) => {
+    s.records["r-a"] = {
+      ...s.records["r-a"]!, text: "今天又笑了", updatedAt: "2026-09-23T00:00:00Z",
+    };
+  });
+  const put = vi.spyOn(deps.transport, "put");
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const prune = vi.spyOn(deps.transport, "prune");
+  const second = await p.family.runFamilySync(p.store, deps);
+  expect(put).toHaveBeenCalled();
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(prune).toHaveBeenCalledTimes(1);
+  expect(second.lastPush!.entitiesSha).not.toBe(first.lastPush!.entitiesSha);
+  // 没传进度回调也要数对上传份数（自动同步不传回调）。
+  expect(second.lastSyncSummary!.pushed).toBeGreaterThan(0);
+  expect(second.lastSyncSummary!.pushed).toBe(put.mock.calls.length);
+});
+it.each(["deleted", "legacy", "unknown-device"])("内容未变但 %s 时仍发布清单", async (reason) => {
+  const { receiver: p, deps } = await seeded();
+  const first = await p.family.joinFamily(p.store, key, deps);
+  if (reason === "deleted") await deps.transport.deleteManifest(first.deviceId!);
+  else {
+    const state = { ...first };
+    if (reason === "legacy") delete state.lastPush;
+    else delete state.deviceId;
+    p.state.writeRemoteState(state);
+  }
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const prune = vi.spyOn(deps.transport, "prune");
+  const second = await p.family.runFamilySync(p.store, deps);
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(prune).toHaveBeenCalledTimes(1);
+  expect(second.lastPush!.entitiesSha).toBe(first.lastPush!.entitiesSha);
+  expect(second.lastPush!.manifestSha).toBe(second.seen[second.deviceId!]);
+});
 it("第二次只下载变化的设备，未变设备与本机自己的清单都跳过", async () => {
   const { receiver: p, sender, remote, deps, published } = await seeded();
   const third = await phone();
@@ -310,7 +376,7 @@ it("第二次只下载变化的设备，未变设备与本机自己的清单都�
     key,
   });
   p.activate();
-  await p.family.joinFamily(p.store, key, deps);
+  const first = await p.family.joinFamily(p.store, key, deps);
   sender.activate();
   await sender.store.change((s) => {
     s.records["r-a"] = {
@@ -325,7 +391,11 @@ it("第二次只下载变化的设备，未变设备与本机自己的清单都�
   });
   p.activate();
   remote.log.length = 0;
-  await p.family.runFamilySync(p.store, deps);
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const second = await p.family.runFamilySync(p.store, deps);
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(second.lastSyncSummary!.pulled).toBeGreaterThan(0);
+  expect(second.lastPush!.entitiesSha).not.toBe(first.lastPush!.entitiesSha);
   expect(remote.log.filter((l) => l.startsWith("get "))).toEqual([
     `get ${objectIdOf(key, changed.index.sha256, 0)}`,
   ]);
@@ -545,6 +615,7 @@ it("同成员两台手机中未发布的 B 退出，不删回退得到的 A 清�
   expect(fs.readdirSync(p.state.syncDirectory.uri).sort()).toEqual([
     "base.json",
     "conflicts.json",
+    "manifest.xmbm",
     "state.json",
   ]);
   const before = structuredClone(p.store.get());
@@ -681,7 +752,7 @@ it.each([
     await expect(p.family.leaveFamily(deps)).rejects.toMatchObject({ code });
     expect(await p.state.loadKey()).toEqual(key);
     expect(await p.state.readRemoteState()).not.toBeNull();
-    expect(fs.readdirSync(p.state.syncDirectory.uri)).toHaveLength(3);
+    expect(fs.readdirSync(p.state.syncDirectory.uri)).toHaveLength(4);
   }
   expect(Object.keys(p.store.get().records)).toHaveLength(2);
 });

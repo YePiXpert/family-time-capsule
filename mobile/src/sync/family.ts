@@ -1,7 +1,7 @@
 import { File, FileMode } from "expo-file-system";
 import { randomUUID } from "expo-crypto";
 import { BackupStopped, restorePinName, restorePins } from "../local/backup";
-import { decodeLibraryV2 } from "../local/backup-format";
+import { decodeLibraryV2, encodeEntities } from "../local/backup-format";
 import {
   backupDirectory,
   blobFile,
@@ -14,7 +14,7 @@ import {
 } from "../local/files";
 import type { LocalMedia } from "../local/model";
 import type { LocalStore } from "../local/store";
-import { fromBase64, keyIdOf, openSmall } from "./crypto";
+import { fromBase64, keyIdOf, openSmall, sha256Hex } from "./crypto";
 import {
   assertSameKey,
   downloadBlob,
@@ -212,16 +212,37 @@ async function syncFamily(
       conflicts.set(conflict.key, conflict);
   }
   writeConflicts([...conflicts.values()]);
-  const pushed = await pushManifest(store.get(), deps);
+  const own = state.deviceId
+    ? entries.find(
+        (entry) => entry.deviceId === state.deviceId && entry.keyId === keyId,
+      )
+    : undefined;
+  const ownIndex = own
+    ? parseIndex(openSmall(deps.key, INDEX_LABEL, fromBase64(own.index)))
+    : undefined;
+  // meta.createdAt 让清单字节每次不同，所以要比实体段而不是整份清单。
+  const unchanged =
+    state.lastPush &&
+    ownIndex?.sha256 === state.lastPush.manifestSha &&
+    sha256Hex(encodeEntities(store.get())) === state.lastPush.entitiesSha;
+  const pushed = unchanged ? null : await pushManifest(store.get(), deps);
   throwIfAborted(deps.signal);
   const { deviceId } = await deps.transport.me(deps.signal);
-  if (deviceId) seen[deviceId] = pushed.index.sha256;
+  if (deviceId && pushed) seen[deviceId] = pushed.index.sha256;
   const result: RemoteState = {
     ...state,
     // 同步期间外观页可能关掉自动同步，不能用开始时的快照覆盖她的选择。
     autoSync: (await readRemoteState())?.autoSync ?? state.autoSync,
     enabled: true,
     seen,
+    ...(pushed
+      ? {
+          lastPush: {
+            entitiesSha: pushed.entitiesSha,
+            manifestSha: pushed.manifestSha,
+          },
+        }
+      : {}),
     ...(deviceId ? { deviceId } : {}),
     lastSyncAt: new Date().toISOString(),
     lastSyncSummary: {
@@ -229,10 +250,10 @@ async function syncFamily(
         ...entries.map((e) => e.deviceId),
         ...(deviceId ? [deviceId] : []),
       ]).size,
-      objects: pushed.objects,
-      bytes: pushed.bytes,
+      objects: pushed?.objects ?? state.lastSyncSummary?.objects ?? 0,
+      bytes: pushed?.bytes ?? state.lastSyncSummary?.bytes ?? 0,
       pulled: merged.pulled,
-      pushed: pushed.pushed,
+      pushed: pushed?.pushed ?? 0,
       conflicts: merged.conflicts.length,
     },
   };

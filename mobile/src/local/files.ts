@@ -7,6 +7,8 @@ import * as VideoThumbnails from "expo-video-thumbnails";
 import type { LocalMedia, MediaKind } from "./model";
 import { DOCS_DIR } from "./brand";
 export const mediaDirectory = new Directory(Paths.document, DOCS_DIR, "media");
+export const syncDirectory = new Directory(Paths.document, DOCS_DIR, "sync");
+export const syncManifestFile = () => new File(syncDirectory, "manifest.xmbm");
 export const backupDirectory = new Directory(
   Paths.document,
   DOCS_DIR,

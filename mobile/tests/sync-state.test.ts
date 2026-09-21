@@ -26,6 +26,8 @@ vi.mock("expo-secure-store", () => ({
   setItemAsync: async () => {},
   deleteItemAsync: async () => {},
 }));
+vi.mock("expo-image-manipulator", () => ({}));
+vi.mock("expo-video-thumbnails", () => ({}));
 const syncDir = () => path.join(env.root, "anan-v1", "sync");
 const put = (name: string, text: string) => {
   fs.mkdirSync(syncDir(), { recursive: true });
@@ -103,6 +105,7 @@ it("round-trips a v2 state, tolerates missing optional fields and drops junk in 
     autoSync: false,
     deviceId: "device-1",
     seen: { "device-1": "ab".repeat(32) },
+    lastPush: { entitiesSha: "ab".repeat(32), manifestSha: "cd".repeat(32) },
     lastSyncAt: "2026-09-21T02:00:00.000Z",
     lastSyncSummary: {
       devices: 2,
@@ -140,6 +143,23 @@ it("round-trips a v2 state, tolerates missing optional fields and drops junk in 
   state.clearRemoteState();
   expect(await state.readRemoteState()).toBeNull();
   state.clearRemoteState();
+});
+it.each([
+  {},
+  { entitiesSha: "a".repeat(64) },
+  { manifestSha: "b".repeat(64) },
+  { entitiesSha: "a".repeat(63), manifestSha: "b".repeat(64) },
+  { entitiesSha: "a".repeat(64), manifestSha: "b".repeat(65) },
+  { entitiesSha: "A".repeat(64), manifestSha: "b".repeat(64) },
+  { entitiesSha: "a".repeat(64), manifestSha: "g".repeat(64) },
+  { entitiesSha: 123, manifestSha: "b".repeat(64) },
+  null,
+  "junk",
+])("丢弃字段不完整或指纹不合法的 lastPush：%j", async (lastPush) => {
+  const state = await load();
+  const fresh = state.freshRemoteState(KEY_ID);
+  put("state.json", JSON.stringify({ ...fresh, lastPush }));
+  expect(await state.readRemoteState()).toEqual(fresh);
 });
 it("treats a corrupt, foreign-version or wrong-key state as not joined", async () => {
   const state = await load();
