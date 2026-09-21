@@ -3,12 +3,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   clone,
+  deleteAlbum,
+  deleteLetter,
   deletePerson,
   deleteRecord,
+  deleteSeries,
   emptyContent,
   emptyLibrary,
   finishSelection,
+  forkLibrary,
   mergePersons,
+  tombstone,
   monthOfItem,
   normalizeLibrary,
   recordsOfPerson,
@@ -1050,5 +1055,91 @@ describe("incremental validation", () => {
         removed: [{ kind: "media", id: "photo" }],
       }),
     ).toThrow();
+  });
+});
+
+describe("落款与墓碑", () => {
+  const withRecord = (by?: string) => {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    if (by !== undefined) s.records.r = { ...s.records.r!, by };
+    return s;
+  };
+  it("accepts a trimmed 1–20 character signature on records, drafts and grouped events", () => {
+    validateLibrary(withRecord("爸爸"));
+    validateLibrary(withRecord("外婆"));
+    validateLibrary(withRecord("一".repeat(20)));
+    expect(() => validateLibrary(withRecord(""))).toThrow();
+    expect(() => validateLibrary(withRecord(" 爸爸"))).toThrow();
+    expect(() => validateLibrary(withRecord("一".repeat(21)))).toThrow();
+    const s = fixture();
+    mut(s.drafts.draft!).content = { ...s.drafts.draft!.content, by: "妈妈" };
+    mut(s.drafts.draft!).photoEvents = [{ ...emptyContent(), by: "妈妈" }];
+    validateLibrary(s);
+    mut(s.drafts.draft!).photoEvents = [{ ...emptyContent(), by: "" }];
+    expect(() => validateLibrary(s)).toThrow();
+  });
+  it("keeps the default signature in device settings and stamps it onto new content only", () => {
+    const s = fixture();
+    s.settings.by = "妈妈";
+    validateLibrary(s);
+    s.settings.by = "";
+    expect(() => validateLibrary(s)).toThrow();
+    expect(emptyContent("妈妈").by).toBe("妈妈");
+    expect("by" in emptyContent()).toBe(false);
+    expect("by" in emptyContent("")).toBe(false);
+  });
+  it("leaves a tombstone for every deletion the family could otherwise resurrect", () => {
+    const s = withRecord("爸爸");
+    s.persons.p = { id: "p", name: "外婆" };
+    s.persons.q = { id: "q", name: "姥姥" };
+    s.albums.a = { id: "a", name: "a", items: [{ id: "i", recordId: "r" }], coverId: null, updatedAt: date };
+    s.selections.sel = { id: "sel", albumId: "a", selected: ["r"], month: "", offset: 0, name: "", coverId: null };
+    s.series.t = { id: "t", name: "t", items: [], updatedAt: date };
+    s.letters.l = { id: "l", title: "", text: "", from: "", openAt: "2042-06-15", writtenAt: date, sealed: false, mediaIds: [], coverId: null, updatedAt: date };
+    const at = "2026-09-21T10:00:00.000Z";
+    deleteAlbum(s, "a", at);
+    expect(s.selections.sel).toBeUndefined();
+    deleteSeries(s, "t", at);
+    deleteLetter(s, "l", at);
+    mergePersons(s, "q", "p", at);
+    deletePerson(s, "p", at);
+    deleteRecord(s, "r", at);
+    expect(s.tombstones).toEqual({
+      "albums:a": at,
+      "series:t": at,
+      "letters:l": at,
+      "persons:q": at,
+      "persons:p": at,
+      "records:r": at,
+    });
+    validateLibrary(s);
+    // 删一个不存在的记录不立碑；重复删只留最新时刻。
+    deleteRecord(s, "nope", at);
+    expect(Object.keys(s.tombstones!)).toHaveLength(6);
+    const later = "2026-09-22T10:00:00.000Z";
+    tombstone(s, "records", "r", later);
+    expect(s.tombstones!["records:r"]).toBe(later);
+    // 墓碑随 fork 复制，不与上一版共享同一个对象。
+    const forked = forkLibrary(s);
+    expect(forked.tombstones).toEqual(s.tombstones);
+    expect(forked.tombstones).not.toBe(s.tombstones);
+    expect("tombstones" in forkLibrary(fixture())).toBe(false);
+  });
+  it("rejects tombstones for unknown kinds, bad ids or unparsable times", () => {
+    for (const bad of [
+      { "drafts:x": date },
+      { "records:": date },
+      { "records:a b": date },
+      { "records:r": "yesterday" },
+      { "records:r": 1 },
+    ]) {
+      const s = fixture();
+      (s as unknown as { tombstones: unknown }).tombstones = bad;
+      expect(() => validateLibrary(s)).toThrow();
+    }
+    const s = fixture();
+    s.tombstones = {};
+    validateLibrary(s);
   });
 });

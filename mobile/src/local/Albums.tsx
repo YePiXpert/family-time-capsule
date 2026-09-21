@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useLibrary, useStore } from "./context";
-import { beginSelection, newId, now } from "./services";
+import { beginSelection, deleteAlbum, newId, now } from "./services";
 import {
   editEntity,
   finishSelection,
@@ -135,15 +135,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
                         text: "删除相册",
                         style: "destructive",
                         onPress: () => {
-                          void store
-                            .change((s) => {
-                              delete s.albums[album.id];
-                              for (const [id, q] of Object.entries(
-                                s.selections,
-                              ))
-                                if (q.albumId === album.id)
-                                  delete s.selections[id];
-                            })
+                          void deleteAlbum(store, album.id)
                             .then(() => navigation.goBack())
                             .catch((e) => setError(messageOf(e)));
                         },

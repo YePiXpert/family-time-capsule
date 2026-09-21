@@ -114,3 +114,4 @@ describe("adding records to albums from the reading page", () => {
     expect(Object.keys(disk.albums).sort()).toEqual(["a", "b"]);
   });
 });
+

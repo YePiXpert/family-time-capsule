@@ -4,7 +4,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import type { NativeShareManifest } from "../modules/share-intake/src";
-import { ENTITY_KINDS } from "../src/local/model";
+import { clone, emptyLibrary, ENTITY_KINDS, type Library } from "../src/local/model";
+import { LocalStore } from "../src/local/store";
 const env = vi.hoisted(() => ({
   root: "",
   free: Number.POSITIVE_INFINITY,
@@ -1047,3 +1048,56 @@ it("keeps the old single-row library when the cutover cannot finish", async () =
   ).toBe("第一步");
   db.close();
 });
+
+/** 两条记录（r1 带一张照片）和一本已含 r1 的相册，给落款与墓碑的服务测试用。 */
+function signatureFixture(): Library {
+  const lib = emptyLibrary();
+  const date = "2026-09-16T12:00:00.000Z";
+  lib.media.photo = { id: "photo", file: "photo.jpg", name: "baby.jpg", kind: "image", bytes: 8, sha256: "a".repeat(64) };
+  for (const id of ["r1", "r2"])
+    lib.records[id] = { id, title: "", text: `记下 ${id}`, date, location: "", first: false, mediaIds: id === "r1" ? ["photo"] : [], coverId: id === "r1" ? "photo" : null, revision: 1, updatedAt: date };
+  lib.albums.a = { id: "a", name: "a", items: [{ id: "i", recordId: "r1" }], coverId: null, updatedAt: date };
+  return lib;
+}
+
+it("stamps settings.by onto a fresh draft but leaves edits of old records alone", async () => {
+    const { beginDraft } = await import("../src/local/services");
+    let disk: Library = signatureFixture();
+    disk.settings.by = "外婆";
+    const store = new LocalStore({
+      read: async () => disk,
+      write: async (next) => {
+        disk = clone(next);
+      },
+    });
+    await store.open();
+    const fresh = await beginDraft(store);
+    expect(store.get().drafts[fresh]!.content.by).toBe("外婆");
+    const edit = await beginDraft(store, "r1");
+    expect(store.get().drafts[edit]!.content.by).toBeUndefined();
+    await store.change((s) => {
+      delete s.settings.by;
+    });
+    const unsigned = await beginDraft(store);
+    expect(store.get().drafts[unsigned]!.content.by).toBeUndefined();
+  });
+it("deleting an album, a series or a letter through the services leaves tombstones", async () => {
+    const { deleteAlbum, deleteLetter, deleteSeries } = await import("../src/local/services");
+    let disk: Library = signatureFixture();
+    const date = "2026-09-16T12:00:00.000Z";
+    disk.series.t = { id: "t", name: "t", items: [], updatedAt: date };
+    disk.letters.l = { id: "l", title: "", text: "", from: "", openAt: "2042-06-15", writtenAt: date, sealed: false, mediaIds: [], coverId: null, updatedAt: date };
+    const store = new LocalStore({
+      read: async () => disk,
+      write: async (next) => {
+        disk = clone(next);
+      },
+    });
+    await store.open();
+    await deleteAlbum(store, "a");
+    await deleteSeries(store, "t");
+    await deleteLetter(store, "l");
+    expect(Object.keys(store.get().tombstones!).sort()).toEqual(["albums:a", "letters:l", "series:t"]);
+    expect(Object.keys(disk.albums)).toEqual([]);
+    for (const at of Object.values(disk.tombstones!)) expect(Number.isFinite(Date.parse(at))).toBe(true);
+  });

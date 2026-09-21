@@ -34,7 +34,12 @@ export type RecordContent = {
   personIds?: string[];
   /** 她说的话：这一条记的是她的原话，收进语录册；旧记录无此字段。 */
   quote?: boolean;
+  /** 落款：谁写的，用关系称呼（爸爸／妈妈／外婆…），1–20 字、首尾无空白；旧记录无此字段。 */
+  by?: string;
 };
+export const BY_LIMIT = 20;
+/** 落款的候选称呼：用过的排前面，这些兜底。 */
+export const BY_PRESETS = ["爸爸", "妈妈", "外婆", "外公", "奶奶", "爷爷"] as const;
 export type LocalRecord = RecordContent & {
   id: string;
   revision: number;
@@ -130,6 +135,8 @@ export type Library = {
     lockEnabled?: boolean;
     /** 年度重放的配乐：本机音频素材 id；缺省或空表示不配乐。 */
     replayAudioId?: string;
+    /** 这台手机默认的落款（新草稿带上它）；本机设置，不随家人同步。 */
+    by?: string;
   };
   records: Record<string, Stored<LocalRecord>>;
   drafts: Record<string, Stored<RecordDraft>>;
@@ -153,7 +160,30 @@ export type Library = {
   receivedShares: string[];
   /** ISO timestamp of the last successful export; undefined until the first one. */
   lastExportAt?: string;
+  /**
+   * 墓碑：删掉的记录／相册／系列／信／人物，按 "kind:id" 记删除时刻。家人一起写时靠它区分
+   * 「对方删了」与「对方还没收到」，否则合并会把删掉的东西送回来。随备份走、不进开放归档、永不清理。旧库无此字段。
+   */
+  tombstones?: Record<string, string>;
 };
+export const TOMBSTONE_KINDS = [
+  "records",
+  "albums",
+  "series",
+  "letters",
+  "persons",
+] as const;
+export type TombstoneKind = (typeof TOMBSTONE_KINDS)[number];
+export const TOMBSTONE_KEY = /^(records|albums|series|letters|persons):[a-zA-Z0-9_-]{1,128}$/;
+/** 记一块墓碑；同一实体反复删只留最新的时刻。 */
+export function tombstone(
+  s: Library,
+  kind: TombstoneKind,
+  id: string,
+  now: string,
+): void {
+  s.tombstones = { ...s.tombstones, [`${kind}:${id}`]: now };
+}
 export const emptyLibrary = (): Library => ({
   version: 1,
   revision: 0,
@@ -200,7 +230,8 @@ export function normalizeLibrary(value: unknown): void {
     else delete content!.personIds;
   }
 }
-export const emptyContent = (): RecordContent => ({
+/** 新草稿的正文；这台手机设了默认落款就带上。 */
+export const emptyContent = (by?: string): RecordContent => ({
   title: "",
   text: "",
   date: new Date().toISOString(),
@@ -208,6 +239,7 @@ export const emptyContent = (): RecordContent => ({
   first: false,
   mediaIds: [],
   coverId: null,
+  ...(by ? { by } : {}),
 });
 export const clone = <T>(value: T): T =>
   value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
@@ -237,6 +269,7 @@ export function forkLibrary(s: Library): Library {
     settings: { ...s.settings },
     yearNotes: { ...s.yearNotes },
     yearCovers: { ...s.yearCovers },
+    ...(s.tombstones ? { tombstones: { ...s.tombstones } } : {}),
     receivedShares: [...s.receivedShares],
     records: { ...s.records },
     drafts: { ...s.drafts },
@@ -373,9 +406,14 @@ function retagPersons(
 }
 
 /** 删除人物并从全部记录/草稿标记里剥离；只取消标记，不动记录。 */
-export function deletePerson(s: Library, id: string): void {
+export function deletePerson(
+  s: Library,
+  id: string,
+  now = new Date().toISOString(),
+): void {
   if (!s.persons[id]) throw new Error("没有这个人。");
   delete s.persons[id];
+  tombstone(s, "persons", id, now);
   retagPersons(s, id, (ids) => ids.filter((p) => p !== id));
 }
 
@@ -384,11 +422,13 @@ export function mergePersons(
   s: Library,
   sourceId: string,
   targetId: string,
+  now = new Date().toISOString(),
 ): void {
   if (sourceId === targetId) throw new Error("请选择另一个人来合并。");
   if (!s.persons[sourceId] || !s.persons[targetId])
     throw new Error("没有这个人。");
   delete s.persons[sourceId];
+  tombstone(s, "persons", sourceId, now);
   retagPersons(s, sourceId, (ids) => [
     ...new Set(ids.map((p) => (p === sourceId ? targetId : p))),
   ]);
@@ -437,7 +477,12 @@ export function saveRecord(
   clearUnavailableCovers(s);
   return r;
 }
-export function deleteRecord(s: Library, id: string): void {
+export function deleteRecord(
+  s: Library,
+  id: string,
+  now = new Date().toISOString(),
+): void {
+  if (s.records[id]) tombstone(s, "records", id, now);
   delete s.records[id];
   for (const [key, d] of Object.entries(s.drafts))
     if (d.recordId === id) delete s.drafts[key];
@@ -457,6 +502,38 @@ export function deleteRecord(s: Library, id: string): void {
         t.items = t.items.filter((i) => i.recordId !== id);
       });
   clearUnavailableCovers(s);
+}
+/** 删相册：其中的记录保留；指着它的选材会话一并关掉。 */
+export function deleteAlbum(
+  s: Library,
+  id: string,
+  now = new Date().toISOString(),
+): void {
+  if (!s.albums[id]) return;
+  delete s.albums[id];
+  tombstone(s, "albums", id, now);
+  for (const [key, q] of Object.entries(s.selections))
+    if (q.albumId === id) delete s.selections[key];
+}
+/** 删时光系列：照片与记录都保留。 */
+export function deleteSeries(
+  s: Library,
+  id: string,
+  now = new Date().toISOString(),
+): void {
+  if (!s.series[id]) return;
+  delete s.series[id];
+  tombstone(s, "series", id, now);
+}
+/** 删信：录音留给「清理未使用素材」。 */
+export function deleteLetter(
+  s: Library,
+  id: string,
+  now = new Date().toISOString(),
+): void {
+  if (!s.letters[id]) return;
+  delete s.letters[id];
+  tombstone(s, "letters", id, now);
 }
 function clearUnavailableCovers(s: Library): void {
   for (const [key, album] of Object.entries(s.albums))
@@ -597,6 +674,13 @@ const isMap = (v: unknown) =>
   Object.keys(v).every(isId);
 const isFileName = (v: unknown) =>
   typeof v === "string" && /^[a-zA-Z0-9_-]+\.[a-z0-9]{1,8}$/.test(v);
+/** 落款：缺省，或 1–20 字且首尾无空白。 */
+const validBy = (v: unknown) =>
+  v === undefined ||
+  (typeof v === "string" &&
+    v.length >= 1 &&
+    v.length <= BY_LIMIT &&
+    v === v.trim());
 /** 记录与草稿正文共用的一段：文字、日期，以及素材与人物引用都要落到实处。 */
 function validContent(s: Library, c: Stored<RecordContent>): boolean {
   return (
@@ -608,6 +692,7 @@ function validContent(s: Library, c: Stored<RecordContent>): boolean {
     Number.isFinite(Date.parse(c.date)) &&
     typeof c.first === "boolean" &&
     (c.quote === undefined || typeof c.quote === "boolean") &&
+    validBy(c.by) &&
     isIds(c.mediaIds) &&
     c.mediaIds.every((i) => !!s.media[i]) &&
     (c.coverId === null || c.mediaIds.includes(c.coverId)) &&
@@ -656,6 +741,16 @@ function validRoot(s: Library): boolean {
             !isText(at) ||
             !Number.isFinite(Date.parse(at)),
         ))) &&
+    (s.tombstones === undefined ||
+      (!!s.tombstones &&
+        typeof s.tombstones === "object" &&
+        !Array.isArray(s.tombstones) &&
+        !Object.entries(s.tombstones).some(
+          ([key, at]) =>
+            !TOMBSTONE_KEY.test(key) ||
+            !isText(at) ||
+            !Number.isFinite(Date.parse(at)),
+        ))) &&
     !!s.profile &&
     isText(s.profile.name) &&
     isText(s.profile.birthday) &&
@@ -668,6 +763,7 @@ function validRoot(s: Library): boolean {
     (s.settings.replayAudioId === undefined ||
       (typeof s.settings.replayAudioId === "string" &&
         s.media[s.settings.replayAudioId]?.kind === "audio")) &&
+    validBy(s.settings.by) &&
     isIds(s.receivedShares) &&
     (s.lastExportAt === undefined ||
       (isText(s.lastExportAt) &&
@@ -746,6 +842,7 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
               !isText(event.date) ||
               !Number.isFinite(Date.parse(event.date)) ||
               typeof event.first !== "boolean" ||
+              !validBy(event.by) ||
               !isIds(event.mediaIds) ||
               (event.coverId !== null && !isId(event.coverId)) ||
               (event.personIds !== undefined &&
