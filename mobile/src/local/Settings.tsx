@@ -29,6 +29,13 @@ import {
 } from "./archive";
 import { healthFile } from "./health-file";
 import { FamilyCard } from "../sync/FamilyCard";
+import { isLocalBusy, isSyncRunning, markLocalBusy } from "../sync/status";
+import {
+  readRemoteState,
+  subscribeSyncFiles,
+  writeRemoteState,
+  type RemoteState,
+} from "../sync/state";
 import { changeAvgMs } from "./health";
 import { APP_NAME } from "./brand";
 import {
@@ -112,15 +119,17 @@ export function Settings() {
               ? `有 ${sync.conflicts} 段两台手机都改过`
               : sync.running
                 ? "正在同步…"
-                : sync.joined
-                  ? sync.lastSyncAt
-                    ? `上次同步 ${dateTimeLabel(sync.lastSyncAt)}`
-                    : "已加入家人一起写，还没同步过"
-                  : exportedDays === null
-                    ? "还没导出过备份"
-                    : exportedDays === 0
-                      ? "今天导出过"
-                      : `上次导出 ${exportedDays} 天前`
+                : sync.lastError
+                  ? "上次同步没成功，点开看看"
+                  : sync.joined
+                    ? sync.lastSyncAt
+                      ? `上次同步 ${dateTimeLabel(sync.lastSyncAt)}`
+                      : "已加入家人一起写，还没同步过"
+                    : exportedDays === null
+                      ? "还没导出过备份"
+                      : exportedDays === 0
+                        ? "今天导出过"
+                        : `上次导出 ${exportedDays} 天前`
           }
           onPress={() => nav.navigate("Backup")}
         />
@@ -293,12 +302,51 @@ export function Profile() {
   );
 }
 export function Appearance() {
+  const sync = useSyncStatus();
   const state = useLibrary(),
     store = useStore(),
     s = useStyles();
   const { colors } = useTheme();
   const [error, setError] = useState("");
   const [lockAvailable, setLockAvailable] = useState(false);
+  const [remote, setRemote] = useState<RemoteState | null>(null);
+  const [savingAutoSync, setSavingAutoSync] = useState(false);
+  useEffect(() => {
+    let live = true;
+    let version = 0;
+    const refresh = () => {
+      const request = ++version;
+      void readRemoteState()
+        .then((next) => {
+          if (live && request === version) setRemote(next);
+        })
+        .catch((e) => {
+          if (live && request === version) setError(messageOf(e));
+        });
+    };
+    const unsubscribe = subscribeSyncFiles(refresh);
+    refresh();
+    return () => {
+      live = false;
+      unsubscribe();
+    };
+  }, []);
+  const changeAutoSync = async (value: boolean) => {
+    setSavingAutoSync(true);
+    setError("");
+    try {
+      const current = await readRemoteState();
+      if (current) {
+        const next = { ...current, autoSync: value };
+        writeRemoteState(next);
+        setRemote(next);
+      }
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setSavingAutoSync(false);
+    }
+  };
   useEffect(() => {
     void (async () => {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
@@ -370,6 +418,30 @@ export function Appearance() {
           }}
         />
       </View>
+      {sync.joined && (
+        <>
+          <SectionHeader title="家人一起写" />
+          <View style={s.between}>
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+              <Text>回到应用时自动同步</Text>
+              <Text style={s.muted}>
+                回到应用、保存一段时光后 30 秒，自动与家人合一次。照片一起下，流量敏感时可以关掉，手动点「现在同步」照常。
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="回到应用时自动同步"
+              testID="auto-sync-toggle"
+              value={remote?.autoSync === true}
+              disabled={!remote || savingAutoSync}
+              trackColor={{ false: colors.line, true: colors.accentSoft }}
+              thumbColor={remote?.autoSync ? colors.accent : undefined}
+              onValueChange={(value) => {
+                void changeAutoSync(value);
+              }}
+            />
+          </View>
+        </>
+      )}
       <ErrorText message={error} />
     </Page>
   );
@@ -462,6 +534,7 @@ function librarySummary(lib: {
   return `${Object.keys(lib.records).length} 段时光、${Object.keys(lib.albums).length} 本相册、${Object.keys(lib.media).length} 个附件`;
 }
 export function Backup() {
+  const sync = useSyncStatus();
   const state = useLibrary(),
     store = useStore(),
     s = useStyles();
@@ -474,9 +547,20 @@ export function Backup() {
     // 列表只在一次操作结束或删除后重读：读每份清单的 meta 不是免费的。
     [backups, setBackups] = useState(() => listLocalBackups());
   const exportedDays = daysSinceExport(state);
-  const locked = busy || remoteRunning;
+  const [archiving, setArchiving] = useState(false);
+  const locked = busy || remoteRunning || sync.running || archiving;
   const refreshList = () => setBackups(listLocalBackups());
   const perform = async (fn: () => Promise<void>) => {
+    // 确认框可能在同步开始前打开，真正执行时再检查一次。
+    if (isSyncRunning()) {
+      setMessage("正在与家人同步，等它完成再试。");
+      return;
+    }
+    if (isLocalBusy()) {
+      setMessage("上一个操作还没结束，等它完成再试。");
+      return;
+    }
+    markLocalBusy(true);
     setBusy(true);
     setError("");
     setMessage("");
@@ -486,6 +570,7 @@ export function Backup() {
       if (e instanceof BackupStopped) setMessage(e.message);
       else setError(messageOf(e));
     } finally {
+      markLocalBusy(false);
       setBusy(false);
       setStopper(null);
       refreshList();
@@ -515,27 +600,26 @@ export function Backup() {
       purgeExports();
     }
   };
-  const restore = (files: File[], title: string, done: string) =>
-    perform(async () => {
-      const inside = await inspectBackup(files);
-      Alert.alert(
-        title,
-        `会换成这份备份里的 ${librarySummary(inside)}；现在的内容会先备份一份。`,
-        [
-          { text: "取消", style: "cancel" },
-          {
-            text: "恢复并替换",
-            style: "destructive",
-            onPress: () => {
-              void perform(async () => {
-                await restoreBackup(store, files, setMessage);
-                setMessage(done);
-              });
-            },
+  const restore = async (files: File[], title: string, done: string) => {
+    const inside = await inspectBackup(files);
+    Alert.alert(
+      title,
+      `会换成这份备份里的 ${librarySummary(inside)}；现在的内容会先备份一份。`,
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "恢复并替换",
+          style: "destructive",
+          onPress: () => {
+            void perform(async () => {
+              await restoreBackup(store, files, setMessage);
+              setMessage(done);
+            });
           },
-        ],
-      );
-    });
+        },
+      ],
+    );
+  };
   return (
     <Page title="备份与恢复">
       <Card>
@@ -599,7 +683,7 @@ export function Backup() {
         <ErrorText message={error} />
         {/* 平时是上次导出的时间，导出与恢复的进度、结果都在这一行上播报。 */}
         <Text accessibilityLiveRegion="polite">
-          {message ||
+          {(sync.running && !busy ? "正在与家人同步，稍等一下。" : message) ||
             (busy
               ? "正在检查文件…"
               : exportedDays === null
@@ -631,7 +715,7 @@ export function Backup() {
                   compact
                   disabled={locked}
                   onPress={() => {
-                    void restore([file], "恢复这份备份？", "恢复完成。");
+                    void perform(() => restore([file], "恢复这份备份？", "恢复完成。"));
                   }}
                 />
                 <Button
@@ -680,9 +764,9 @@ export function Backup() {
           ))}
         </Card>
       )}
-      <ArchiveCard busy={locked} />
+      <ArchiveCard busy={locked} onRunningChange={setArchiving} />
       <FamilyCard
-        busy={busy}
+        busy={busy || archiving}
         onRunningChange={(running) => {
           setRemoteRunning(running);
           if (!running) refreshList();
@@ -693,7 +777,10 @@ export function Backup() {
 }
 
 /** 开放归档：普通文件夹压缩包，没有这个 App 也能看。进度与停止都在这张卡里，不弹窗。 */
-function ArchiveCard({ busy }: { busy: boolean }) {
+function ArchiveCard({ busy, onRunningChange }: {
+  busy: boolean;
+  onRunningChange: (running: boolean) => void;
+}) {
   const state = useLibrary(),
     store = useStore(),
     s = useStyles();
@@ -710,6 +797,16 @@ function ArchiveCard({ busy }: { busy: boolean }) {
     .reverse();
   const archiving = !!progress;
   const exportArchive = async () => {
+    if (isSyncRunning()) {
+      setMessage("正在与家人同步，等它完成再试。");
+      return;
+    }
+    if (isLocalBusy()) {
+      setMessage("上一个操作还没结束，等它完成再试。");
+      return;
+    }
+    markLocalBusy(true);
+    onRunningChange(true);
     const abort = new AbortController();
     controller.current = abort;
     setError("");
@@ -732,6 +829,8 @@ function ArchiveCard({ busy }: { busy: boolean }) {
       if (e instanceof ArchiveStopped) setMessage(e.message);
       else setError(messageOf(e));
     } finally {
+      markLocalBusy(false);
+      onRunningChange(false);
       controller.current = null;
       setProgress(null);
     }

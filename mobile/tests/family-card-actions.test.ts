@@ -2,6 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { FamilyCard } from "../src/sync/FamilyCard";
 
 const env = vi.hoisted(() => ({
+  running: false,
+  isRunning: vi.fn(),
   slots: [] as unknown[],
   setters: [] as ReturnType<typeof vi.fn>[],
   alerts: [] as { title: string; message: string; buttons: { text: string; onPress?: () => void }[] }[],
@@ -23,12 +25,12 @@ vi.mock("@react-navigation/native", () => ({ useFocusEffect: vi.fn() }));
 vi.mock("expo-local-authentication", () => ({}));
 vi.mock("../src/ai/session", () => ({ getToken: vi.fn() }));
 vi.mock("../src/local/backup", () => ({ BackupStopped: class extends Error {} }));
-vi.mock("../src/local/context", () => ({ useLibrary: () => ({ settings: {} }), useStore: () => ({}) }));
+vi.mock("../src/local/context", () => ({ useLibrary: () => ({ settings: {} }), useStore: () => ({}), useSyncStatus: () => ({ running: env.running }) }));
 vi.mock("../src/local/navigation", () => ({ useNav: () => ({}) }));
 vi.mock("../src/local/ui", () => ({ Button: "Button", Card: "Card", ErrorText: "ErrorText", Text: "Text", dateLabel: String, messageOf: String, useStyles: () => ({}) }));
 vi.mock("../src/sync/crypto", () => ({ keyIdOf: () => "K", newMasterKey: vi.fn() }));
 vi.mock("../src/sync/family", () => ({ runFamilySync: env.sync, joinFamily: env.join, leaveFamily: env.leave }));
-vi.mock("../src/sync/status", () => ({ markSyncRunning: env.mark }));
+vi.mock("../src/sync/status", () => ({ markSyncRunning: env.mark, isSyncRunning: env.isRunning }));
 vi.mock("../src/sync/engine", () => ({ verifyRemoteBackup: vi.fn() }));
 vi.mock("../src/sync/state", () => ({
   clearRemoteState: env.clear, clearSyncFiles: env.clear, forgetKey: env.forget,
@@ -40,7 +42,7 @@ vi.mock("../src/sync/transport", () => ({
   createTransport: () => ({ me: env.me, deleteManifest: env.remove, wipe: env.wipe, wipeFamily: env.wipeFamily }),
 }));
 
-type Element = { type?: unknown; props?: { testID?: string; children?: unknown; onPress?: () => void } };
+type Element = { type?: unknown; props?: { testID?: string; title?: string; disabled?: boolean; message?: string; children?: unknown; onPress?: () => void } };
 function nodes(node: unknown): Element[] {
   if (Array.isArray(node)) return node.flatMap(nodes);
   if (!node || typeof node !== "object") return [];
@@ -53,14 +55,16 @@ function find(node: unknown, id: string): Element | undefined {
   const element = node as Element;
   return element.props?.testID === id ? element : find(element.props?.children, id);
 }
-function render(owner = false, joined = true, status: unknown = null, keyId: string | null = null, signedIn: boolean | null = true) {
+function render(owner = false, joined = true, status: unknown = null, keyId: string | null = null, signedIn: boolean | null = true, lastError = "", conflicts = 0) {
   // useState 槽位：signedIn、remote、progress、message、error、isOwner、conflicts、localKeyId、status、statusError。
-  env.slots = [signedIn, joined ? { enabled: true, keyId: "a".repeat(16) } : null, "", "", "", owner, 0, keyId, status, ""];
+  env.slots = [signedIn, joined ? { enabled: true, keyId: "a".repeat(16), lastError } : null, "", "", "", owner, conflicts, keyId, status, ""];
   env.setters = [];
   return FamilyCard({ busy: false });
 }
 beforeEach(() => {
   vi.clearAllMocks(); env.alerts = [];
+  env.running = false;
+  env.isRunning.mockReturnValue(false);
   env.leave.mockResolvedValue({ removedRemote: true });
   env.sync.mockResolvedValue({ lastSyncSummary: { pulled: 2, pushed: 1, conflicts: 0 } });
   env.join.mockResolvedValue({});
@@ -127,4 +131,32 @@ it("同步失败也会清掉运行标志", async () => {
   find(render(), "remote-backup")!.props!.onPress!();
   await vi.waitFor(() => expect(env.mark).toHaveBeenLastCalledWith(false));
   expect(env.mark.mock.calls).toEqual([[true], [false]]);
+});
+
+it("自动同步时家人卡说明进度、禁用所有动作并隐藏旧错误，没有停止入口", () => {
+  env.running = true;
+  const tree = render(true, true, null, null, true, "上次失败", 1);
+  expect(find(tree, "remote-backup")!.props).toMatchObject({ title: "正在同步…", disabled: true });
+  expect(nodes(tree).filter((el) => el.type === "Button").every((el) => el.props?.disabled)).toBe(true);
+  expect(nodes(tree).filter((el) => el.type === "ErrorText").map((el) => el.props?.message)).toEqual([""]);
+  expect(find(tree, "remote-stop")).toBeUndefined();
+});
+it("未自动同步时保留现在同步标题和旧错误", () => {
+  const tree = render(false, true, null, null, true, "上次失败");
+  expect(find(tree, "remote-backup")!.props).toMatchObject({ title: "现在同步", disabled: false });
+  expect(nodes(tree).find((el) => el.type === "ErrorText")!.props?.message).toBe("上次失败");
+});
+it("自动同步时未加入的加入、开始与继续入口也禁用", () => {
+  env.running = true;
+  expect(find(render(false, false, { manifests: 2, keyId: "x" }), "remote-join")!.props?.disabled).toBe(true);
+  expect(find(render(false, false, { manifests: 0, keyId: null }), "remote-enable")!.props?.disabled).toBe(true);
+  expect(find(render(false, false, { manifests: 2, keyId: "K" }, "K"), "remote-resume")!.props?.disabled).toBe(true);
+});
+it("上下文尚未刷新时同步守卫也会说明原因而不启动手动同步", () => {
+  const tree = render();
+  env.isRunning.mockReturnValue(true);
+  find(tree, "remote-backup")!.props!.onPress!();
+  expect(env.sync).not.toHaveBeenCalled();
+  expect(env.mark).not.toHaveBeenCalled();
+  expect(env.setters[3]).toHaveBeenCalledWith("正在同步，等它完成再试。");
 });

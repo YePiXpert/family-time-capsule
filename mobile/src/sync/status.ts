@@ -27,6 +27,12 @@ export function markSyncRunning(value: boolean): void {
 }
 export const isSyncRunning = () => running;
 
+let localBusy = false;
+export function markLocalBusy(value: boolean): void {
+  localBusy = value;
+}
+export const isLocalBusy = () => localBusy;
+
 export function useSyncStatusValue(): SyncStatus {
   const [status, setStatus] = useState(idleSyncStatus);
   useEffect(() => {

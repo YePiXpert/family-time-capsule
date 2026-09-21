@@ -1,5 +1,6 @@
 import { Conflicts } from "../sync/Conflicts";
 import { useSyncStatusValue } from "../sync/status";
+import { useAutoSync } from "../sync/auto";
 import { AISettingsScreen } from "../ai/Settings";
 import { RecoveryCode } from "../sync/RecoveryCode";
 import {
@@ -130,9 +131,10 @@ function LockGate({ onUnlock }: { onUnlock: () => void }) {
 }
 
 function Root() {
+  const store = useStore();
   const syncStatus = useSyncStatusValue();
+  useAutoSync(store);
   const state = useLibrary(),
-    store = useStore(),
     s = useStyles(),
     theme = useTheme();
   const reduceMotion = useReducedMotion();

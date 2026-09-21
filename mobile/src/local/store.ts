@@ -64,6 +64,28 @@ export class LocalStore {
       for (const kind of ENTITY_KINDS)
         if (!touched.has(kind))
           (state as Record<string, unknown>)[kind] = this.state[kind];
+      // 共享根字段也保留未改时的引用，草稿或设置的保存不应触发家人同步。
+      for (const field of [
+        "profile",
+        "yearNotes",
+        "yearCovers",
+        "yearBooksBoundAt",
+        "tombstones",
+      ] as const) {
+        const before = this.state[field],
+          after = state[field];
+        if (before && after) {
+          const keys = Object.keys(before);
+          if (
+            keys.length === Object.keys(after).length &&
+            keys.every((key) =>
+              Object.hasOwn(after, key) &&
+              (before as Record<string, unknown>)[key] ===
+                (after as Record<string, unknown>)[key],
+            )
+          ) (state as Record<string, unknown>)[field] = before;
+        }
+      }
       validateChange(state, delta);
       try {
         await this.disk.write(state, delta);
