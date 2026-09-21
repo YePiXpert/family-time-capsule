@@ -3,7 +3,7 @@ import { z, ZodError } from 'zod';
 import { Store, Problem, digest, type Member, type BackupManifest } from './store.ts';
 import { inputSchema, parseEditorContext, parseResult, polishBody, POLISH_BODY_LIMIT, transcribeResultSchema } from './contracts.ts';
 import { hashPassword, verifyPassword, timingDummy, needsRehash } from './passwords.ts';
-import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
+import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS, THINKING_POLICY } from './ai-model.ts';
 import type { Provider } from './provider.ts';
 import { BackupStore, FREE_FLOOR, OBJECT_ID, OBJECT_LIMIT } from './backup-store.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -70,7 +70,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   return {ok:true};
  });
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
- app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'high',models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
+ app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'per-mode',thinkingPolicy:THINKING_POLICY,models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
  for(const kind of ['group','write'] as const)app.post(`/api/v1/ai/${kind}`,async req=>{
   const member=auth(req.headers.authorization);
   // 在 schema 的硬上限之前给超长 editor 清单返回该模式的提示。

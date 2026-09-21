@@ -132,7 +132,7 @@ describe("AI editor plan: batching", () => {
 
 describe("AI editor plan: job identity and reuse", () => {
   it("stamps write specs with the mode and group specs without one", () => {
-    expect(AI_MODEL).toBe("deepseek-flash:high");
+    expect(AI_MODEL).toBe("mimo-v2.5:policy-v1");
     expect(runSpec("f".repeat(64), "group", 0, "generate")).toEqual({
       fingerprint: "f".repeat(64),
       kind: "group",

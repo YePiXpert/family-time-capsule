@@ -61,12 +61,12 @@ export function ffmpegTranscoder(opts:{ffmpegPath?:string;tmpDir?:string;timeout
   } finally {await unlink(file);}
  };
 }
-export function cpaTranscriber(baseUrl:string,keyFile:string,model='mimo-v2.5-asr'):Transcriber {
+export function cpaTranscriber(baseUrl:string,keyFile:string,model='mimo-v2.5-asr',readKey=()=>readFileSync(keyFile,'utf8').trim()):Transcriber {
  const endpoint=new URL(baseUrl.replace(/\/$/,'')+'/chat/completions');
  return async(wav,signal)=>{
   let response:Response,raw:string;
   try {
-   response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${readFileSync(keyFile,'utf8').trim()}`},body:JSON.stringify({model,messages:[{role:'system',content:'中文口语，保留昵称与口头语，标点按停顿。'},{role:'user',content:[{type:'input_audio',input_audio:{data:wav.toString('base64'),format:'wav'}}]}]}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(100000)]):AbortSignal.timeout(100000)});
+   response=await fetch(endpoint,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:`Bearer ${readKey()}`},body:JSON.stringify({model,messages:[{role:'system',content:'中文口语，保留昵称与口头语，标点按停顿。'},{role:'user',content:[{type:'input_audio',input_audio:{data:wav.toString('base64'),format:'wav'}}]}]}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(100000)]):AbortSignal.timeout(100000)});
    if(!response.ok){await response.body?.cancel();throw unavailable();}
    // 流式限长，异常网关不能把整个响应无限读进内存；从不打印响应体。
    const chunks:Uint8Array[]=[];let bytes=0;

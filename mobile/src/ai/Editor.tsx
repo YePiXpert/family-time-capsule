@@ -780,7 +780,7 @@ export function AIEditor({
                 />
               </Card>
             )}
-            <Text style={s.footnote}>由 DeepSeek Flash High 提供</Text>
+            <Text style={s.footnote}>由小米 MiMo 2.5 提供</Text>
           </ScrollView>
         </View>
       </View>
