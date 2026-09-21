@@ -122,17 +122,20 @@ export function useRecorder<D extends { recordingFile?: string }>({
   verified,
   persist,
   attachRecording,
+  onFinished,
 }: {
   draftRef: RefObject<D | undefined>;
   verified: RefObject<Set<string>>;
   persist: (next: D, media?: LocalMedia[]) => Promise<unknown>;
   /** 录音入库后把素材 id 挂到草稿上：记录草稿挂在 content.mediaIds，信挂在 mediaIds。 */
   attachRecording: (draft: D, mediaId: string) => D;
+  onFinished?: (media: LocalMedia, info: { seconds?: number }) => void;
 }) {
   const recorder = useRef<AudioRecorder | null>(null);
   const [recording, setRecording] = useState(false);
   const finishJob = useRef<Promise<void> | null>(null);
-  const finishAudioImpl = async () => {
+  const finishAudioImpl = async (opts?: { transcribe?: boolean }) => {
+    const seconds = recorder.current?.currentTime;
     if (recorder.current) {
       await recorder.current.stop();
       recorder.current.release();
@@ -153,10 +156,11 @@ export function useRecorder<D extends { recordingFile?: string }>({
     await persist(next, [media]);
     // preserveMedia 是复制而非移动；入库成功后收回 document 下的原始录音。
     if (f.exists) f.delete();
+    if (opts?.transcribe) onFinished?.(media, { seconds });
   };
-  const finishAudio = () => {
+  const finishAudio = (opts?: { transcribe?: boolean }) => {
     if (finishJob.current) return finishJob.current;
-    const job = finishAudioImpl().finally(() => {
+    const job = finishAudioImpl(opts).finally(() => {
       finishJob.current = null;
     });
     finishJob.current = job;

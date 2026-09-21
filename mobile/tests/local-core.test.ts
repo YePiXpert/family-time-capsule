@@ -1247,3 +1247,16 @@ describe("profile name and origin", () => {
     expect(fullNameLine("林知夏", "  ")).toBe("");
   });
 });
+
+describe("device-only transcription consent", () => {
+  it.each([true, false, undefined])("accepts optional boolean %s", (value) => {
+    const s = fixture();
+    s.settings.transcribeConsent = value;
+    expect(() => validateLibrary(s)).not.toThrow();
+  });
+  it("rejects a string consent", () => {
+    const s = fixture();
+    Object.assign(s.settings, { transcribeConsent: "yes" });
+    expect(() => validateLibrary(s)).toThrow();
+  });
+});

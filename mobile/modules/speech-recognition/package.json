@@ -1,0 +1,11 @@
+{
+  "name": "family-speech-recognition",
+  "version": "1.0.0",
+  "description": "On-device Chinese speech transcription.",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/index.ts",
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

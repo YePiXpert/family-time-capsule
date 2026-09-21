@@ -27,6 +27,8 @@ import { newId, now, createPerson } from "./services";
 import { promptOf } from "./prompts";
 import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
+import { appendTranscript } from "./transcribe";
+import { useTranscription } from "./transcribeHooks";
 import { isEmptyDraft } from "./empties";
 import type { Props } from "./navigation";
 import {
@@ -106,20 +108,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     flush,
     drop,
   } = useDraftPersist(store, setError, setDraft, draft);
-  const {
-    recording,
-    start: startRecording,
-    finishAudio,
-    discardAudio,
-  } = useRecorder({
-    draftRef: current,
-    verified,
-    persist,
-    attachRecording: (d, id) => ({
-      ...d,
-      content: { ...d.content, mediaIds: [...d.content.mediaIds, id] },
-    }),
-  });
   const change = (patch: Partial<RecordContent>) => {
     if (!current.current) return;
     const next = {
@@ -157,6 +145,41 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     if (keystrokeOnly) persistDebounced(next);
     else void persist(next);
   };
+  const transcription = useTranscription(store, async (text) => {
+    const d = current.current;
+    if (!d) return;
+    if (d.photoEvents?.length) {
+      persistDebounced({
+        ...d,
+        photoEvents: d.photoEvents.map((event, index) =>
+          index === 0
+            ? { ...event, text: appendTranscript(event.text, text) }
+            : event,
+        ),
+        updatedAt: now(),
+      });
+    } else {
+      change({ text: appendTranscript(d.content.text, text) });
+    }
+    await flush();
+  });
+  const {
+    recording,
+    start: startRecording,
+    finishAudio,
+    discardAudio,
+  } = useRecorder({
+    draftRef: current,
+    verified,
+    persist,
+    onFinished: (media, info) => {
+      void transcription.begin(media, info.seconds);
+    },
+    attachRecording: (d, id) => ({
+      ...d,
+      content: { ...d.content, mediaIds: [...d.content.mediaIds, id] },
+    }),
+  });
   /** 选了落款就记到草稿上；这台手机还没有默认落款时顺手记下，下一段时光直接带上。 */
   const sign = (by: string | undefined) => {
     change({ by });
@@ -236,6 +259,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     }
   }, [allowExit]);
   const leave = async (action: () => void) => {
+    transcription.stop();
     // 什么都没写就走：草稿静默清理，不留「继续编辑」也不弹确认。
     if (current.current && isEmptyDraft(current.current)) await drop();
     else await flush();
@@ -467,13 +491,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               }}
             />
             <Button
-              title={recording ? "完成录音" : "录音"}
+              title={recording ? "说完了" : "说一段"}
               icon="microphone"
               disabled={busy}
               onPress={() => {
                 void run(async () => {
                   if (current.current?.recordingFile) {
-                    await finishAudio();
+                    await finishAudio({ transcribe: true });
                     return;
                   }
                   await startRecording();
@@ -504,6 +528,25 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               }}
             />
           </View>
+          {transcription.status === "working" && (
+            <View style={s.row}>
+              <Text testID="transcribe-status" style={s.muted}>
+                正在转成文字…
+              </Text>
+              <Button
+                testID="transcribe-stop"
+                title="停止"
+                kind="text"
+                compact
+                onPress={transcription.stop}
+              />
+            </View>
+          )}
+          {transcription.status === "failed" && (
+            <Text testID="transcribe-status" style={s.muted}>
+              {transcription.message}
+            </Text>
+          )}
           {draft.recordingFile && (
             <Card>
               <Text>
@@ -515,7 +558,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 title="恢复并保存录音"
                 disabled={busy}
                 onPress={() => {
-                  void run(finishAudio);
+                  void run(() => finishAudio({ transcribe: true }));
                 }}
               />
               <Button
@@ -889,6 +932,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                       style: "destructive",
                       onPress: () => {
                         void run(async () => {
+                          transcription.stop();
                           await discardAudio();
                           await store.change((s) => {
                             delete s.drafts[draft.id];
@@ -918,6 +962,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             disabled={busy}
             onPress={() => {
               void run(async () => {
+                transcription.stop();
                 if (current.current?.recordingFile) await finishAudio();
                 await flush();
                 // 导入时已校验过的素材不再重复读盘哈希；只查本次会话新增的。
