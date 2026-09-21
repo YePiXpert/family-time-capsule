@@ -1,5 +1,7 @@
 /** 年度成长册的纯排版：封面、寄语、十二月网格、第一次、落款，固定 750 宽长卷。 */
 import { wrapText } from "./keepsake";
+import type { RecordContent } from "./model";
+import { STORY_TOPICS, storyTitle, storyLead } from "./stories";
 import { CHILD_FALLBACK } from "./brand";
 import type { BookBlock, BookChapter, BookInput, BookPhoto } from "./book";
 
@@ -202,15 +204,60 @@ export type YearBookSource = {
       photos: BookPhoto[];
     }[];
   }[];
+  stories?: {
+    topic: string;
+    lead: string;
+    records: YearBookSource["months"][number]["records"];
+  }[];
   firsts: { title: string; date: string }[];
   cover?: BookPhoto;
   colophon: string;
 };
 
+/** 故事只进主题章，余下的记录再分到月章；不改变整年统计。 */
+export function yearBookRecordGroups<T extends Pick<RecordContent, "story">>(
+  records: readonly T[],
+) {
+  return {
+    stories: STORY_TOPICS.map((topic) => ({
+      topic: storyTitle(topic),
+      lead: storyLead(topic),
+      records: records.filter((r) => r.story === topic),
+    })),
+    monthlyRecords: records.filter((r) => !r.story),
+  };
+}
+
+function recordBlocks(
+  records: YearBookSource["months"][number]["records"],
+): BookBlock[] {
+  const blocks: BookBlock[] = [];
+  for (const record of records) {
+    const title = record.title.trim();
+    const text = record.text.trim();
+    if (title || text)
+      blocks.push({
+        kind: "text",
+        ...(title ? { title } : {}),
+        date: record.date,
+        body: text,
+        ...(record.by ? { by: record.by } : {}),
+      });
+    if (record.photos.length)
+      blocks.push({ kind: "photos", photos: record.photos });
+  }
+  return blocks;
+}
+
 export function yearBookInput(source: YearBookSource): BookInput {
   const nick = source.profileName.trim();
   const name = nick || CHILD_FALLBACK;
   const chapters: BookChapter[] = [];
+  for (const story of source.stories ?? []) {
+    const blocks = recordBlocks(story.records);
+    if (blocks.length)
+      chapters.push({ heading: story.topic, lead: story.lead, blocks });
+  }
   const note = source.note.trim();
   if (note)
     chapters.push({
@@ -218,21 +265,7 @@ export function yearBookInput(source: YearBookSource): BookInput {
       blocks: [{ kind: "text", body: note }],
     });
   for (const month of source.months) {
-    const blocks: BookBlock[] = [];
-    for (const record of month.records) {
-      const title = record.title.trim();
-      const text = record.text.trim();
-      if (title || text)
-        blocks.push({
-          kind: "text",
-          ...(title ? { title } : {}),
-          date: record.date,
-          body: text,
-          ...(record.by ? { by: record.by } : {}),
-        });
-      if (record.photos.length)
-        blocks.push({ kind: "photos", photos: record.photos });
-    }
+    const blocks = recordBlocks(month.records);
     if (blocks.length)
       chapters.push({
         heading: month.label,

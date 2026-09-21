@@ -25,6 +25,7 @@ import {
 } from "./model";
 import { newId, now, createPerson } from "./services";
 import { promptOf } from "./prompts";
+import { storyTitle, storyQuestions } from "./stories";
 import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
 import { appendTranscript } from "./transcribe";
@@ -72,6 +73,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [allowExit, setAllowExit] = useState(false),
     [promptSeed, setPromptSeed] = useState(0),
     [promptOff, setPromptOff] = useState(false),
+    [storyQuestion, setStoryQuestion] = useState(0),
     [newPerson, setNewPerson] = useState("");
   const [permDenied, setPermDenied] = useState(false);
   const personList = useMemo(
@@ -127,12 +129,13 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             ),
           }
         : {}),
-      // 落款是整份草稿的：分成几件事时每件事都跟着换。
-      ...("by" in patch && current.current.photoEvents
+      // 落款与故事主题是整份草稿的：分成几件事时每件事都跟着换。
+      ...(("by" in patch || "story" in patch) && current.current.photoEvents
         ? {
             photoEvents: current.current.photoEvents.map((event) => ({
               ...event,
-              by: patch.by,
+              ...("by" in patch ? { by: patch.by } : {}),
+              ...("story" in patch ? { story: patch.story } : {}),
             })),
           }
         : {}),
@@ -441,7 +444,47 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               草稿会自动保留。
             </Text>
           )}
-          {!promptOff &&
+          {!!draft.content.story && (
+            <Card testID="story-card">
+              <Text style={s.muted} testID="story-question">
+                {storyTitle(draft.content.story)} · 第 {storyQuestion + 1}/
+                {storyQuestions(draft.content.story).length} 问：
+                {storyQuestions(draft.content.story)[storyQuestion]}
+              </Text>
+              <View style={s.row}>
+                <Button
+                  compact
+                  title="上一问"
+                  disabled={storyQuestion === 0}
+                  onPress={() => setStoryQuestion((n) => Math.max(0, n - 1))}
+                />
+                <Button
+                  compact
+                  title="下一问"
+                  disabled={
+                    storyQuestion >=
+                    storyQuestions(draft.content.story).length - 1
+                  }
+                  onPress={() =>
+                    setStoryQuestion((n) =>
+                      Math.min(
+                        storyQuestions(draft.content.story!).length - 1,
+                        n + 1,
+                      ),
+                    )
+                  }
+                />
+                <Button
+                  kind="text"
+                  title="这不是故事"
+                  disabled={busy}
+                  onPress={() => change({ story: undefined })}
+                />
+              </View>
+            </Card>
+          )}
+          {!draft.content.story &&
+            !promptOff &&
             !draft.recordId &&
             !draft.content.text.trim() &&
             !draft.photoEvents &&

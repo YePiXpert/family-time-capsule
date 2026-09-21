@@ -5,6 +5,7 @@
  * 素材按原样复制并起人能读的名字；相册、系列、寄语、信、人物各一份 Markdown；
  * 另附整库 JSON 与一个离线网页（index.html + library.js）。
  */
+import { storyTitle } from "./stories";
 import { APP_NAME, CHILD_FALLBACK } from "./brand";
 import { toDayKey } from "./dates";
 import {
@@ -40,6 +41,7 @@ export type ArchiveMedia = {
   bytes: number;
 };
 export type ArchiveRecord = {
+  story?: string;
   id: string;
   date: string;
   day: string;
@@ -245,6 +247,7 @@ export function planArchive(
       location: r.location,
       first: r.first,
       quote: r.quote === true,
+      ...(r.story ? { story: storyTitle(r.story) } : {}),
       persons: (r.personIds ?? []).map(personName).filter(Boolean),
       ...(r.by ? { by: r.by } : {}),
       folder,
@@ -266,6 +269,7 @@ export function planArchive(
           ["落款", r.by],
           ["第一次", r.first ? "是" : undefined],
           ["她说的话", r.quote ? "是" : undefined],
+          ["故事", r.story],
         ]),
         `# ${r.title}`,
         "",

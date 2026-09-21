@@ -23,6 +23,7 @@ export type LocalMedia = {
   /** mediaDirectory 内的持久 512px JPEG 缩略图文件名；旧素材缺省。 */
   thumb?: string;
 };
+export type StoryTopic = "birth" | "pregnancy" | "name" | "met";
 export type RecordContent = {
   title: string;
   text: string;
@@ -35,6 +36,8 @@ export type RecordContent = {
   personIds?: string[];
   /** 她说的话：这一条记的是她的原话，收进语录册；旧记录无此字段。 */
   quote?: boolean;
+  /** 出生的故事，四个固定主题；旧记录无此字段。 */
+  story?: StoryTopic;
   /** 落款：谁写的，用关系称呼（爸爸／妈妈／外婆…），1–20 字、首尾无空白；旧记录无此字段。 */
   by?: string;
 };
@@ -725,6 +728,11 @@ function validContent(s: Library, c: Stored<RecordContent>): boolean {
     Number.isFinite(Date.parse(c.date)) &&
     typeof c.first === "boolean" &&
     (c.quote === undefined || typeof c.quote === "boolean") &&
+    (c.story === undefined ||
+      c.story === "birth" ||
+      c.story === "pregnancy" ||
+      c.story === "name" ||
+      c.story === "met") &&
     validBy(c.by) &&
     isIds(c.mediaIds) &&
     c.mediaIds.every((i) => !!s.media[i]) &&

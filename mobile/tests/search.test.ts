@@ -100,3 +100,16 @@ describe("落款筛选", () => {
     expect(searchRecords(signed, "").map((r) => r.id)).toEqual(["d", "m", "n"]);
   });
 });
+
+it("故事筛选包含四主题，可与关键词和其他筛选叠加", () => {
+  const stories = [
+    record("birth", { story: "birth", text: "那天下雨", first: true }),
+    record("pregnancy", { story: "pregnancy" }),
+    record("name", { story: "name" }),
+    record("met", { story: "met", text: "那天下雨" }),
+    record("ordinary", { text: "那天下雨", first: true }),
+  ];
+  expect(searchRecords(stories, "", { story: true }).map((r) => r.id)).toEqual(["birth", "met", "name", "pregnancy"]);
+  expect(searchRecords(stories, "下雨", { story: true, first: true }).map((r) => r.id)).toEqual(["birth"]);
+  expect(searchRecords(stories, "", { story: false })).toHaveLength(5);
+});

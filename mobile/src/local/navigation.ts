@@ -31,6 +31,7 @@ export type Routes = {
   LetterEditor: { id: string };
   Letter: { id: string };
   Quotes: undefined;
+  Stories: undefined;
   Conflicts: undefined;
   RecoveryCode: { mode: "show" | "join" };
 };
