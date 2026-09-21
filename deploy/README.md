@@ -1,10 +1,12 @@
 # 桉桉成长记 AI 服务
 
-生产入口 `https://capsule.yep.li/api/v1`。新服务复用旧版的 3140 端口，经原有 HTTPS 反向代理访问；模型通过现有 shared-services Docker 网络访问 CPA 的 cli-proxy-api:8317，不经过宿主机端口回流。首页提供应用说明，不承载照片数据库或旧版登录。
+生产入口 `https://capsule.yep.li/api/v1`。新服务复用旧版的 3140 端口，经原有 HTTPS 反向代理访问；模型上游由环境配置指定，未配置时通过 shared-services Docker 网络访问 CPA 的 cli-proxy-api:8317。首页提供应用说明，不承载照片数据库或旧版登录。
 
 ## 配置与启动
 
 使用 `compose.yaml`，设置 `SOURCE_SHA`（完整 main 提交）、`AI_DATA_DIR`、`CPA_KEY_PATH`，临时验证可设置 `APP_PORT=3141`。CPA 密钥文件必须只允许服务器操作人员读取，并允许容器 UID 1000 读取；不加入仓库或日志。生产数据目录需属于 UID 1000。
+
+文字／看图与语音转写可使用独立上游。在 `service.env` 设置 `CPA_BASE_URL`、`CPA_KEY_PATH` 指定文字／看图服务；`TRANSCRIBE_BASE_URL`、`TRANSCRIBE_KEY_PATH` 指定转写服务（不设置则沿用文字服务）。当前部署使用 DeepSeek `https://api.deepseek.com` + `deepseek-flash`，转写使用 MiMo `https://token-plan-cn.xiaomimimo.com/v1` + `mimo-v2.5-asr`。两份密钥均只存服务器 secrets 目录，以只读文件挂载；env 只保存文件路径。修改地址或挂载路径后用下述命令重建容器。
 
 ```
 docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build
@@ -14,7 +16,7 @@ AI 走账号制：空服务第一次在手机「我的 → AI 设置」创建主
 
 AI 固定 `deepseek-flash`，显式启用思考模式并设置 `reasoning_effort: high`。旧版保存的模型选择会归一为 Flash；已有额度、暂停状态和成员权限保留。
 
-「说一段」转写走 CPA 的 `mimo-v2.5-asr`，使用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。三个可选环境变量：`TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（默认沿用 `CPA_BASE_URL`）、`TRANSCRIBE_KEY_FILE`（默认沿用 `CPA_KEY_FILE`）；后两项可通过 Compose override 的 `environment` 覆盖，密钥文件需另挂载为只读。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
+「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（默认沿用文字服务地址）、`TRANSCRIBE_KEY_PATH`（默认沿用文字服务密钥路径），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
 
 八条提示词内置在 `server/src/prompts.ts`：GROUP 按事情分组、WRITE 起个头、POLISH 润色、RECAP 年度寄语、ASK 追问、QUESTION 今天的小问题、LETTER 写信引导、EDITOR 年度册目录建议。提示词全文以 `docs/AI-PROMPTS.md` 为准。editor 的 context 是 JSON，上限 60000 字，服务端不留。
 
