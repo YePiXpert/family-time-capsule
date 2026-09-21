@@ -10,6 +10,9 @@ import {
 import {
   appendToAlbum,
   clone,
+  deleteAlbum as removeAlbum,
+  deleteLetter as removeLetter,
+  deleteSeries as removeSeries,
   editEntity,
   emptyContent,
   LETTER_FROM_LIMIT,
@@ -54,7 +57,7 @@ export async function beginDraft(
       groupPhotosByDay: false,
       content: record
         ? (clone(record) as Mutable<Stored<LocalRecord>>)
-        : emptyContent(),
+        : emptyContent(s.settings.by),
       updatedAt: now(),
     };
     return id;
@@ -204,10 +207,22 @@ export async function openLetter(store: LocalStore, id: string) {
     s.letters[id] = openLetterAt(letter, now());
   });
 }
-/** 删信只删实体；信里的录音和记录一样，留给「清理未使用素材」回收。 */
+/** 删信只删实体（留墓碑）；信里的录音和记录一样，留给「清理未使用素材」回收。 */
 export async function deleteLetter(store: LocalStore, id: string) {
   await store.change((s) => {
-    delete s.letters[id];
+    removeLetter(s, id, now());
+  });
+}
+/** 删相册：记录保留、选材会话关掉、留墓碑。 */
+export async function deleteAlbum(store: LocalStore, id: string) {
+  await store.change((s) => {
+    removeAlbum(s, id, now());
+  });
+}
+/** 删时光系列：照片与记录保留、留墓碑。 */
+export async function deleteSeries(store: LocalStore, id: string) {
+  await store.change((s) => {
+    removeSeries(s, id, now());
   });
 }
 /** 改人物名；trim 后 1-50 字，同名复用规则不适用于改名（保留身份）。 */

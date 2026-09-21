@@ -13,7 +13,7 @@ import {
   sortedRecords,
 } from "./model";
 import { isEmptySeries } from "./empties";
-import { addToSeries, now } from "./services";
+import { addToSeries, deleteSeries, now } from "./services";
 import type { Props } from "./navigation";
 import {
   Button,
@@ -93,11 +93,7 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
           latest = store.get().series[id];
         if (!latest || !isEmptySeries(latest)) return;
         // 清不掉也不拦人：空系列留到下次进来再清。
-        void store
-          .change((s) => {
-            delete s.series[id];
-          })
-          .catch(() => undefined);
+        void deleteSeries(store, id).catch(() => undefined);
       }),
     [navigation, route.params.id, store],
   );
@@ -224,10 +220,7 @@ export function SeriesScreen({ route, navigation }: Props<"Series">) {
                   text: "删除系列",
                   style: "destructive",
                   onPress: () => {
-                    void store
-                      .change((s) => {
-                        delete s.series[route.params.id];
-                      })
+                    void deleteSeries(store, route.params.id)
                       .then(() => navigation.goBack())
                       .catch((e) => setError(messageOf(e)));
                   },
