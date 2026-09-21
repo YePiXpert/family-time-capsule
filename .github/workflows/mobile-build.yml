@@ -82,6 +82,15 @@ jobs:
         working-directory: mobile
       - run: npm run doctor
         working-directory: mobile
+      # 出包路径必须和 ci.yml 一样守住「本机边界」宪法与服务端测试：
+      # 这里只校验 source_sha 是 origin/main 的祖先，并不校验那个提交的 CI 是否绿。
+      - name: Verify local architecture and fixture syntax
+        run: |
+          python3 -m py_compile mobile/scripts/*.py
+          python3 -m unittest discover -s mobile/scripts -p 'test_*.py'
+          python3 mobile/scripts/verify-local-boundary.py
+      - run: npm test
+        working-directory: server
       - run: npx expo export --platform android --output-dir dist-android
         working-directory: mobile
       - run: npx expo export --platform ios --output-dir dist-ios
