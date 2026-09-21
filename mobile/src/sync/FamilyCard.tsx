@@ -4,7 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { getToken } from "../ai/session";
 import { BackupStopped } from "../local/backup";
-import { useLibrary, useStore } from "../local/context";
+import { useLibrary, useStore, useSyncStatus } from "../local/context";
 import { useNav } from "../local/navigation";
 import {
   Button,
@@ -18,7 +18,7 @@ import {
 import { keyIdOf, newMasterKey } from "./crypto";
 import { verifyRemoteBackup } from "./engine";
 import { runFamilySync, joinFamily, leaveFamily } from "./family";
-import { markSyncRunning } from "./status";
+import { isSyncRunning, markSyncRunning } from "./status";
 import { dateTimeLabel } from "../local/dates";
 import { bytesLabel } from "./planner";
 import {
@@ -43,6 +43,7 @@ export function FamilyCard({
   busy: boolean;
   onRunningChange?: (running: boolean) => void;
 }) {
+  const sync = useSyncStatus();
   const library = useLibrary(),
     store = useStore(),
     nav = useNav(),
@@ -117,7 +118,12 @@ export function FamilyCard({
     return () => active.current?.abort();
   }, []);
   const running = !!progress;
+  const syncing = running || sync.running;
   const perform = async (fn: (signal: AbortSignal) => Promise<void>) => {
+    if (isSyncRunning()) {
+      setMessage("正在同步，等它完成再试。");
+      return;
+    }
     const abort = new AbortController();
     controller.current = abort;
     setError("");
@@ -310,7 +316,7 @@ export function FamilyCard({
               title="去登录"
               kind="text"
               compact
-              disabled={busy}
+              disabled={busy || syncing}
               onPress={() => nav.navigate("AISettings")}
             />
           </View>
@@ -328,7 +334,7 @@ export function FamilyCard({
               <Button
                 title="再试一次"
                 kind="text"
-                disabled={busy || running}
+                disabled={busy || syncing}
                 onPress={() => { refresh(); }}
               />
             </>
@@ -341,14 +347,14 @@ export function FamilyCard({
                   <Button
                     title="继续一起写"
                     testID="remote-resume"
-                    disabled={busy || running}
+                    disabled={busy || syncing}
                     onPress={() => { void resume(); }}
                   />
                 ) : (
                   <Button
                     title="加入"
                     testID="remote-join"
-                    disabled={busy || running}
+                    disabled={busy || syncing}
                     onPress={() => nav.navigate("RecoveryCode", { mode: "join" })}
                   />
                 )
@@ -356,7 +362,7 @@ export function FamilyCard({
                 <Button
                   title="开始一起写"
                   testID="remote-enable"
-                  disabled={busy || running}
+                  disabled={busy || syncing}
                   onPress={() => { void enable(); }}
                 />
               )}
@@ -371,7 +377,7 @@ export function FamilyCard({
               ? `上次同步 ${dateTimeLabel(remote.lastSyncAt)} · ${remote.lastSyncSummary?.devices ?? 1} 台手机 · ${bytesLabel(remote.lastSyncSummary?.bytes ?? 0)}`
               : "还没同步过。"}
           </Text>
-          <ErrorText message={error || (!running ? remote.lastError : "") || ""} />
+          <ErrorText message={error || (!syncing ? remote.lastError : "") || ""} />
           {conflicts > 0 && (
             <View style={s.between}>
               <Text>{`有 ${conflicts} 段两台手机都改过`}</Text>
@@ -379,6 +385,7 @@ export function FamilyCard({
                 title="去看看"
                 kind="text"
                 testID="remote-conflicts"
+                disabled={busy || syncing}
                 onPress={() => nav.navigate("Conflicts")}
               />
             </View>
@@ -386,9 +393,9 @@ export function FamilyCard({
           {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
           <View style={s.row}>
             <Button
-              title={progress || "现在同步"}
+              title={progress || (sync.running && !running ? "正在同步…" : "现在同步")}
               testID="remote-backup"
-              disabled={busy || running}
+              disabled={busy || syncing}
               onPress={() => {
                 void syncNow();
               }}
@@ -401,7 +408,7 @@ export function FamilyCard({
               kind="text"
               compact
               testID="remote-code"
-              disabled={busy || running}
+              disabled={busy || syncing}
               onPress={() => {
                 void showCode();
               }}
@@ -411,7 +418,7 @@ export function FamilyCard({
               kind="text"
               compact
               testID="remote-verify"
-              disabled={busy || running}
+              disabled={busy || syncing}
               onPress={() => {
                 void verify();
               }}
@@ -422,7 +429,7 @@ export function FamilyCard({
               compact
               danger
               testID="remote-disable"
-              disabled={busy || running}
+              disabled={busy || syncing}
               onPress={disable}
             />
           </View>
@@ -433,7 +440,7 @@ export function FamilyCard({
               compact
               danger
               testID="remote-wipe-family"
-              disabled={busy || running}
+              disabled={busy || syncing}
               onPress={wipeFamily}
             />
           )}

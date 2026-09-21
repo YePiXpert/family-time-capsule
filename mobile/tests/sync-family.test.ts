@@ -288,6 +288,19 @@ it("空库加入拉齐时光、落款、原件与本机缩略图，并登记本�
   expect(await p.state.readRemoteState()).toEqual(result);
   expect(p.backup.restorePins()).toHaveLength(0);
 });
+it("同步期间关闭自动同步，完成后仍保留关闭状态", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  const publish = deps.transport.putManifest.bind(deps.transport);
+  vi.spyOn(deps.transport, "putManifest").mockImplementationOnce(async (...args) => {
+    const current = await p.state.readRemoteState();
+    p.state.writeRemoteState({ ...current!, autoSync: false });
+    return publish(...args);
+  });
+  const result = await p.family.runFamilySync(p.store, deps);
+  expect(result.autoSync).toBe(false);
+  expect((await p.state.readRemoteState())?.autoSync).toBe(false);
+});
 it("第二次只下载变化的设备，未变设备与本机自己的清单都跳过", async () => {
   const { receiver: p, sender, remote, deps, published } = await seeded();
   const third = await phone();

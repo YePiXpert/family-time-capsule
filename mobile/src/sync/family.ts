@@ -218,6 +218,8 @@ async function syncFamily(
   if (deviceId) seen[deviceId] = pushed.index.sha256;
   const result: RemoteState = {
     ...state,
+    // 同步期间外观页可能关掉自动同步，不能用开始时的快照覆盖她的选择。
+    autoSync: (await readRemoteState())?.autoSync ?? state.autoSync,
     enabled: true,
     seen,
     ...(deviceId ? { deviceId } : {}),

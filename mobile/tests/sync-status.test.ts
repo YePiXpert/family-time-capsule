@@ -71,3 +71,16 @@ it("读文件失败当空，另一份能读的文件仍可用", async () => {
   vi.spyOn(state, "readConflicts").mockRejectedValueOnce(new Error("read failed"));
   expect(await status.readSyncStatus()).toEqual({ joined: false, conflicts: 0 });
 });
+it("本机忙碌标志独立于同步状态，不发通知", async () => {
+  const status = await import("../src/sync/status");
+  const listener = vi.fn();
+  const unsubscribe = status.subscribeSyncRunning(listener);
+  expect(status.isLocalBusy()).toBe(false);
+  status.markLocalBusy(true);
+  expect(status.isLocalBusy()).toBe(true);
+  expect(status.isSyncRunning()).toBe(false);
+  status.markLocalBusy(false);
+  expect(status.isLocalBusy()).toBe(false);
+  expect(listener).not.toHaveBeenCalled();
+  unsubscribe();
+});
