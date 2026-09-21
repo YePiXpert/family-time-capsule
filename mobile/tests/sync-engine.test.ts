@@ -72,6 +72,7 @@ function fakeRemote() {
         bytes: [...objects.values()].reduce((n, b) => n + b.length, 0),
         limitBytes: 20 * 1024 ** 3,
         freeBytes: 100 * 1024 ** 3,
+        manifests: manifest ? 1 : 0,
       };
     },
     async missing(ids) {
@@ -116,6 +117,28 @@ function fakeRemote() {
       return { removed, bytes: 0 };
     },
     async wipe() {
+      objects.clear();
+      manifest = null;
+    },
+    async manifests() {
+      log.push("manifests");
+      return manifest
+        ? [
+            {
+              deviceId: "device-1",
+              memberId: "member-1",
+              deviceName: "测试机",
+              ...manifest,
+            },
+          ]
+        : [];
+    },
+    async deleteManifest(deviceId) {
+      log.push(`deleteManifest ${deviceId}`);
+      manifest = null;
+      return { pruned: 0 };
+    },
+    async wipeFamily() {
       objects.clear();
       manifest = null;
     },
@@ -201,11 +224,15 @@ it("uploads every object once, seals the index, records state, and leaks no plai
   expect(remote.objects.size).toBe(4);
   expect(remote.manifest()?.keyId).toBe(keyIdOf(key()));
   expect(result).toMatchObject({
+    version: 2,
     enabled: true,
+    autoSync: true,
+    seen: {},
     keyId: keyIdOf(key()),
-    lastBackupObjects: 4,
+    lastSyncSummary: { devices: 1, objects: 4, pushed: 4, conflicts: 0 },
   });
-  expect(result.lastBackupBytes).toBeGreaterThan(4 * 1048576 + 3000);
+  expect(result.lastSyncSummary!.bytes).toBeGreaterThan(4 * 1048576 + 3000);
+  expect(result.joinedAt).toBe(result.lastSyncAt);
   expect(await state.readRemoteState()).toEqual(result);
   expect(stages).toContain("正在上传 4/4");
   // 清单登记全部 4 个对象，prune 的 keep 也是这 4 个。

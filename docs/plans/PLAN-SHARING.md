@@ -83,7 +83,7 @@
 
 **提交 8 · 传输层与本机状态**
 - `transport.ts`：`Transport` 加 `manifests(signal)`、`deleteManifest(deviceId, signal)`、`wipeFamily(signal)`（主人）；`RemoteStatus` 加 `manifests: number`。
-- `state.ts`：`RemoteState` 升 `version: 2`（`enabled`、`keyId`、`joinedAt`、`lastSyncAt`、`lastSyncSummary: {devices, bytes}`、`seen: Record<deviceId, sha256>`、`lastError`、`autoSync: boolean`），v1 读入即升级；新增 `readBase()`／`writeBase()`（`sync/base.json`：`Record<kind, Record<id, fingerprint>>`），`readConflicts()`／`writeConflicts()`（`sync/conflicts.json`），都是 `.part` + `moveSync`。
+- `state.ts`：`RemoteState` 升 `version: 2`（`enabled`、`keyId`、`joinedAt`、`lastSyncAt`、`lastSyncSummary: {devices, objects, bytes, pulled, pushed, conflicts}`、`seen: Record<deviceId, sha256>`、`lastError`、`autoSync: boolean`），v1 读入即升级；新增 `readBase()`／`writeBase()`（`sync/base.json`：`{merged: Record<kind, Record<id, fingerprint>>, known: Record<"kind:id", fingerprint[]>}`——`known` 是每个实体本机已经处理过的其他版本，见第三节第 5 条的实施修订），`readConflicts()`／`writeConflicts()`（`sync/conflicts.json`），都是 `.part` + `moveSync`。（已做：2026-09-21）
 - 测试 `sync-transport.test.ts`、新 `sync-state.test.ts`：v1→v2 升级、坏文件归零、原子写。
 
 **提交 9 · 合并（纯函数）**

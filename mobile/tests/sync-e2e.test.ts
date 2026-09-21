@@ -199,7 +199,7 @@ it("backs up to the real service, verifies, and restores onto a wiped phone", as
     key,
     onProgress: (stage) => stages.push(stage),
   });
-  expect(result.lastBackupObjects).toBe(4);
+  expect(result.lastSyncSummary?.objects).toBe(4);
   const status = await transport.status();
   expect(status.keyId).toBe(keyIdOf(key));
   expect(status.objects).toBe(4);

@@ -189,3 +189,80 @@ it("round-trips the manifest index, treats 404 as no manifest yet, and passes ke
   expect(seen.at(-1)!.method).toBe("DELETE");
   expect(seen.at(-1)!.url).toBe("http://service.test/api/v1/backup");
 });
+it("reads the family: status counts manifests (0 on an older service), the manifest carries its device, and the listing is validated", async () => {
+  answer = () => ({
+    status: 200,
+    body: encode({ keyId: null, objects: 0, bytes: 0, limitBytes: 1, freeBytes: 1 }),
+  });
+  expect((await transport().status()).manifests).toBe(0);
+  answer = () => ({ status: 200, body: encode({ keyId: "k", objects: 3, manifests: 2 }) });
+  expect((await transport().status()).manifests).toBe(2);
+  answer = () => ({
+    status: 200,
+    body: encode({
+      deviceId: "d-1",
+      keyId: "ab".repeat(8),
+      index: "QUJD",
+      updatedAt: "t",
+    }),
+  });
+  expect(await transport().getManifest()).toEqual({
+    deviceId: "d-1",
+    keyId: "ab".repeat(8),
+    index: "QUJD",
+    updatedAt: "t",
+  });
+  const listing = [
+    {
+      deviceId: "d-1",
+      memberId: "m-1",
+      deviceName: "爸爸的手机",
+      keyId: "ab".repeat(8),
+      index: "QUJD",
+      updatedAt: "2026-09-21T00:00:02.000Z",
+    },
+    {
+      deviceId: "legacy:m-2",
+      memberId: "m-2",
+      deviceName: null,
+      keyId: "ab".repeat(8),
+      index: "REVG",
+      updatedAt: "2026-09-21T00:00:01.000Z",
+    },
+  ];
+  answer = () => ({ status: 200, body: encode(listing) });
+  expect(await transport().manifests()).toEqual(listing);
+  expect(seen.at(-1)!.url).toBe(
+    "http://service.test/api/v1/backup/manifests",
+  );
+  // 没有设备名的旧行按 null 给；缺字段的条目让整份列表作废，而不是悄悄少一台手机。
+  answer = () => ({
+    status: 200,
+    body: encode([{ ...listing[0], deviceName: undefined }]),
+  });
+  expect((await transport().manifests())[0]!.deviceName).toBeNull();
+  answer = () => ({ status: 200, body: encode([{ deviceId: "d-1" }]) });
+  expect((await failure(() => transport().manifests())).code).toBe(
+    "SERVER_ERROR",
+  );
+  answer = () => ({ status: 200, body: encode({ items: [] }) });
+  expect((await failure(() => transport().manifests())).code).toBe(
+    "SERVER_ERROR",
+  );
+});
+it("deletes one device's manifest, wipes the family only through the admin route, and words OWNER_ONLY", async () => {
+  answer = () => ({ status: 200, body: encode({ ok: true, pruned: 3 }) });
+  expect(await transport().deleteManifest("d-1")).toEqual({ pruned: 3 });
+  expect(seen.at(-1)!.method).toBe("DELETE");
+  expect(seen.at(-1)!.url).toBe(
+    "http://service.test/api/v1/backup/manifests/d-1",
+  );
+  answer = () => ({ status: 200, body: encode({ ok: true }) });
+  await transport().wipeFamily();
+  expect(seen.at(-1)!.method).toBe("DELETE");
+  expect(seen.at(-1)!.url).toBe("http://service.test/api/v1/admin/backup");
+  answer = () => ({ status: 403, body: encode({ code: "OWNER_ONLY" }) });
+  const error = await failure(() => transport().wipeFamily());
+  expect([error.code, error.status]).toEqual(["OWNER_ONLY", 403]);
+  expect(error.message).toContain("主人");
+});
