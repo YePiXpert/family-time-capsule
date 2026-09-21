@@ -64,16 +64,15 @@ export const NUDGE_ORDER: readonly NudgeKind[] = [
 ];
 
 /**
- * 关掉一张卡后它沉默多久：里程碑与节奏当天、备份 7 天、装订本季（装订只在一二月提，
- * 关一次等于今年不再提）、落款卡关一次永远不再问；冲突卡不靠关闭时间——它随冲突留底
- * 一起消失（「知道了」清掉留底）。关闭时间读不出来当没关过。
+ * 关掉一张卡后它沉默多久：冲突、里程碑与节奏当天、备份 7 天、装订本季（装订只在一二月提，
+ * 关一次等于今年不再提）、落款卡关一次永远不再问；冲突卡关闭只让当天不再提，
+ * 留底仍在（「知道了」才清掉留底）。关闭时间读不出来当没关过。
  */
 export function nudgeClosed(
   kind: NudgeKind,
   closedAt: string | undefined,
   today = new Date(),
 ): boolean {
-  if (kind === "conflict") return false;
   if (!closedAt || !Number.isFinite(Date.parse(closedAt))) return false;
   if (kind === "by") return true;
   const at = new Date(closedAt);

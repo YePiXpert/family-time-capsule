@@ -54,6 +54,14 @@ type RemoteStateV1 = {
   lastBackupObjects?: number;
   lastError?: string;
 };
+const syncFileListeners = new Set<() => void>();
+export function subscribeSyncFiles(fn: () => void): () => void {
+  syncFileListeners.add(fn);
+  return () => { syncFileListeners.delete(fn); };
+}
+function notifySyncFiles(): void {
+  for (const fn of syncFileListeners) fn();
+}
 export const syncDirectory = new Directory(Paths.document, DOCS_DIR, "sync");
 const stateFile = () => new File(syncDirectory, "state.json");
 const baseFile = () => new File(syncDirectory, "base.json");
@@ -151,6 +159,7 @@ function writeJson(file: File, value: unknown): void {
   part.write(JSON.stringify(value));
   if (file.exists) file.delete();
   part.moveSync(file);
+  notifySyncFiles();
 }
 export function writeRemoteState(state: RemoteState): void {
   writeJson(stateFile(), state);
@@ -158,6 +167,7 @@ export function writeRemoteState(state: RemoteState): void {
 export function clearRemoteState(): void {
   const file = stateFile();
   if (file.exists) file.delete();
+  notifySyncFiles();
 }
 const isStringMap = (value: unknown): value is Record<string, string> =>
   !!value &&
@@ -222,6 +232,7 @@ export function writeConflicts(items: readonly Conflict[]): void {
 export function clearSyncFiles(): void {
   for (const file of [stateFile(), baseFile(), conflictsFile()])
     if (file.exists) file.delete();
+  notifySyncFiles();
 }
 const options = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,

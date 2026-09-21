@@ -10,3 +10,18 @@ export function useLibrary() {
   const store = useStore();
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
+
+export type SyncStatus = {
+  joined: boolean;
+  lastSyncAt?: string;
+  lastError?: string;
+  conflicts: number;
+  running: boolean;
+};
+export const idleSyncStatus: SyncStatus = {
+  joined: false,
+  conflicts: 0,
+  running: false,
+};
+export const SyncStatusContext = createContext<SyncStatus>(idleSyncStatus);
+export const useSyncStatus = () => useContext(SyncStatusContext);

@@ -13,6 +13,7 @@ import {
 } from "../local/ui";
 import { keyFromMnemonic, mnemonicOf } from "./crypto";
 import { joinFamily } from "./family";
+import { markSyncRunning } from "./status";
 import { loadKey } from "./state";
 import { SyncError, createTransport } from "./transport";
 /**
@@ -26,7 +27,8 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
     [input, setInput] = useState(""),
     [progress, setProgress] = useState(""),
     [message, setMessage] = useState(""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [joined, setJoined] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const show = route.params.mode === "show";
   useEffect(() => {
@@ -52,29 +54,31 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
     setProgress("正在连接远端…");
     try {
       const key = keyFromMnemonic(input);
-      await joinFamily(store, key, {
+      markSyncRunning(true);
+      const result = await joinFamily(store, key, {
         transport: createTransport(),
         onProgress: setProgress,
         signal: abort.signal,
       });
-      setMessage("已加入，同步完成。");
+      setJoined(true);
+      setMessage(`已加入，${result.lastSyncSummary?.devices ?? 1} 台手机在一起写。`);
     } catch (e) {
       if (e instanceof SyncError && e.code === "CANCELED")
         setMessage("已停止。");
       else setError(messageOf(e));
     } finally {
+      markSyncRunning(false);
       controller.current = null;
       setProgress("");
     }
   };
   const running = !!progress;
   return (
-    <Page title="恢复码" testID="recovery-code">
+    <Page title={show ? "恢复码" : "加入家人一起写"} testID="recovery-code">
       {show ? (
         <>
           <Text style={s.muted}>
-            这 12
-            个词就是打开远端备份的唯一钥匙。请抄在纸上，放在家里安全的地方；不要截图，不要发到聊天里。
+            这 12 个词是全家共用的钥匙：家人的手机输入它就能加入一起写，它也是打开远端内容的唯一钥匙。请抄在纸上，放在家里安全的地方；不要截图，不要发到聊天里。
           </Text>
           {words === null ? (
             <Text>正在读取…</Text>
@@ -106,41 +110,51 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
       ) : (
         <>
           <Text style={s.muted}>
-            输入那台手机上抄下的 12
-            个英文词，就能加入家人一起写。本机已有的内容会与家人的内容合在一起。
+            输入家人手机上抄下的 12 个英文词。加入后这台手机已有的时光会与家人的合在一起，草稿只留在各自的手机上。第一次会把家人的照片都下载下来，建议连着 Wi‑Fi。
           </Text>
-          <Field
-            label="恢复码"
-            placeholder="12 个英文词，用空格隔开"
-            value={input}
-            onChangeText={setInput}
-            multiline
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!running}
-            testID="recovery-input"
-          />
+          {!joined && (
+            <Field
+              label="恢复码"
+              placeholder="12 个英文词，用空格隔开"
+              value={input}
+              onChangeText={setInput}
+              multiline
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!running}
+              testID="recovery-input"
+            />
+          )}
           <ErrorText message={error} />
           <Text accessibilityLiveRegion="polite">{progress || message}</Text>
-          <View style={s.row}>
+          {joined ? (
             <Button
-              title={progress ? "正在同步…" : "加入并同步"}
+              title="好"
               primary
-              testID="recovery-start"
-              disabled={running || !input.trim()}
-              onPress={() => {
-                void join();
-              }}
+              testID="recovery-done"
+              onPress={() => navigation.goBack()}
             />
-            {running && (
+          ) : (
+            <View style={s.row}>
               <Button
-                title="停止"
-                kind="text"
-                compact
-                onPress={() => controller.current?.abort()}
+                title={progress ? "正在同步…" : "加入并同步"}
+                primary
+                testID="recovery-start"
+                disabled={running || !input.trim()}
+                onPress={() => {
+                  void join();
+                }}
               />
-            )}
-          </View>
+              {running && (
+                <Button
+                  title="停止"
+                  kind="text"
+                  compact
+                  onPress={() => controller.current?.abort()}
+                />
+              )}
+            </View>
+          )}
         </>
       )}
     </Page>

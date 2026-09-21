@@ -111,3 +111,10 @@ export function milestoneNumeral(m: Milestone): string {
       ? "1"
       : String(m.years);
 }
+
+/** 同年省略年份，时分按本地时区显示。 */
+export function dateTimeLabel(iso: string, today = new Date()): string {
+  const d = new Date(iso);
+  const year = d.getFullYear() === today.getFullYear() ? "" : `${d.getFullYear()}年`;
+  return `${year}${d.getMonth() + 1}月${d.getDate()}日 ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+}

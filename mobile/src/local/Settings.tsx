@@ -4,10 +4,10 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as LocalAuthentication from "expo-local-authentication";
 import { File } from "expo-file-system";
-import { useLibrary, useStore } from "./context";
+import { useLibrary, useStore, useSyncStatus } from "./context";
 import { useNav } from "./navigation";
 import { getToken } from "../ai/client";
-import { birthdayLabel } from "./dates";
+import { birthdayLabel, dateTimeLabel } from "./dates";
 import { preserveMedia } from "./files";
 import {
   BackupStopped,
@@ -28,7 +28,7 @@ import {
   type ArchiveProgress,
 } from "./archive";
 import { healthFile } from "./health-file";
-import { RemoteBackupCard } from "../sync/RemoteBackupCard";
+import { FamilyCard } from "../sync/FamilyCard";
 import { changeAvgMs } from "./health";
 import { APP_NAME } from "./brand";
 import {
@@ -57,6 +57,7 @@ import {
 import { Photo } from "./Media";
 /** 「我的」入口页：分组设置行，副题把最要紧的状态带出来，不用点进去看。 */
 export function Settings() {
+  const sync = useSyncStatus();
   const state = useLibrary(),
     nav = useNav(),
     s = useStyles();
@@ -107,11 +108,19 @@ export function Settings() {
           icon="download"
           label="备份与恢复"
           subtitle={
-            exportedDays === null
-              ? "还没导出过备份"
-              : exportedDays === 0
-                ? "今天导出过"
-                : `上次导出 ${exportedDays} 天前`
+            sync.conflicts > 0
+              ? `有 ${sync.conflicts} 段两台手机都改过`
+              : sync.running
+                ? "正在同步…"
+                : sync.joined
+                  ? sync.lastSyncAt
+                    ? `上次同步 ${dateTimeLabel(sync.lastSyncAt)}`
+                    : "已加入家人一起写，还没同步过"
+                  : exportedDays === null
+                    ? "还没导出过备份"
+                    : exportedDays === 0
+                      ? "今天导出过"
+                      : `上次导出 ${exportedDays} 天前`
           }
           onPress={() => nav.navigate("Backup")}
         />
@@ -457,7 +466,7 @@ export function Backup() {
     store = useStore(),
     s = useStyles();
   const [busy, setBusy] = useState(false),
-    // 远端备份卡里的上传也在读 blob 库：它在跑时这一页的本机操作一样要等。
+    // 家人一起写卡里的同步也在读 blob 库：它在跑时这一页的本机操作一样要等。
     [remoteRunning, setRemoteRunning] = useState(false),
     [message, setMessage] = useState(""),
     [error, setError] = useState(""),
@@ -672,7 +681,13 @@ export function Backup() {
         </Card>
       )}
       <ArchiveCard busy={locked} />
-      <RemoteBackupCard busy={busy} onRunningChange={setRemoteRunning} />
+      <FamilyCard
+        busy={busy}
+        onRunningChange={(running) => {
+          setRemoteRunning(running);
+          if (!running) refreshList();
+        }}
+      />
     </Page>
   );
 }
