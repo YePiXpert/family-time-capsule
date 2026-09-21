@@ -149,6 +149,13 @@ JSON 格式：{"title":"书名","chapters":[{"month":"2026-09","picks":["记录i
 | LETTER | letter | 落款、月龄、拆封日期、当前草稿 | 照片 | 写作 |
 | EDITOR | editor | 这一年的记录（家人明确点了才送） | 照片 | 写作，一年一两次 |
 
+> **这一栏写的是落地后的目标状态，不是今天的代码。** 今天代码里只有四个 writingMode：GROUP／WRITE(`generate`)／POLISH／RECAP
+> （`server/src/prompts.ts` 四条 `*_PROMPT`、`contracts.ts:10` 的 `z.enum(['generate','polish','recap'])`），ASK／QUESTION／LETTER／EDITOR 尚未进代码。
+> 已落地的四条里，与本表的差异有三处，都是「送得比表里少」，**不是隐私超送**：
+> WRITE 与 POLISH 现在不送落款（`mobile/src/ai/plan.ts` 的 `writeContext`、`state.ts` 的 `polishRequest` 只拼标题与正文）；
+> RECAP 现在不送「她说的话」（`state.ts` 的 `recapContext` 只送标题清单、第一次清单与已写寄语）。
+> 三处都随「访谈者」那一版一起补；补的时候要同步改同意书文案（见 `mobile/src/local/Year.tsx` 的起草同意书）。
+
 服务端现状不变：不保存生成正文，成功结果只在内存留 10 分钟；新增 writingMode 时 `contracts.ts` 的 `parseResult` 按上表的 JSON 形状各写一份校验（问题 1～3 条、每条 ≤ 30 字、无禁词、无感叹号与表情；引语必须逐字出现在送去的正文里）。
 
 ## 五、怎么验
