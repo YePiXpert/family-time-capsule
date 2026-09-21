@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, lstatSync, statSync } from 'node:fs';
 import { statfs } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { once } from 'node:events';
 import { finished } from 'node:stream/promises';
-import { Problem } from './store.ts';
+import { Problem, type Store } from './store.ts';
 
 /** 单个对象的硬上限：手机端每对象 ≤ 4 块 × 1 MiB 明文加封装，留一倍余量。 */
 export const OBJECT_LIMIT = 8 * 1024 * 1024;
@@ -19,15 +19,17 @@ export const FAMILY_DIR = 'family';
 /**
  * 一家人共用的密文对象库：`<root>/family/objects/<id 前两位>/<id>`（Build 72 起；之前是 `<root>/<成员 id>/objects/`）。
  * 几台手机共用一把钥匙、各自发布清单，对象 id 按内容与钥匙派生，谁传上来的都是同一份。
- * 文件系统就是事实来源（have／status／prune 都 stat 文件），临时文件写在同一文件系统的
+ * 文件系统就是事实来源；用量在启动时重扫、之后随落盘增量维护。临时文件写在同一文件系统的
  * `<root>/tmp/` 里，收完、长度与哈希都对了才 rename 到位。服务端看不到明文、密钥与文件名。
  */
 export class BackupStore {
   readonly root: string;
+  private totals = { objects: 0, bytes: 0 };
   constructor(root: string) {
     this.root = root;
     mkdirSync(join(root, 'tmp'), { recursive: true });
     mkdirSync(this.spaceDir(), { recursive: true });
+    this.recount();
   }
   private spaceDir() {
     return join(this.root, FAMILY_DIR, 'objects');
@@ -53,7 +55,7 @@ export class BackupStore {
   /**
    * 边收边算 sha256、边计数。超过上限不再落盘但把请求体读完，好让 413 能送到客户端；
    * 声明长度、实际长度、密文哈希三者任一对不上都整份丢弃。已存在的对象重传视为成功（created=false），
-   * 但配额按「比原来多出的字节」算：对象 id 是手机按内容派生的，服务端认不出同 id 换了内容，不能因为 id 在就免检。
+   * 配额仍按「比原来多出的字节」检查；校验通过后先到为准，重传只丢弃临时文件，不能覆盖原密文。
    */
   async receive(
     id: string,
@@ -85,8 +87,14 @@ export class BackupStore {
       if (hash.digest('hex') !== options.sha256) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容校验失败，请重试。');
       const previous = this.stat(id);
       if (options.quotaLeft !== undefined && bytes - (previous ?? 0) > options.quotaLeft) throw new Problem(413, 'QUOTA_FULL', '远端备份空间已用完，请联系主人调整。');
+      if (previous !== null) {
+        rmSync(temp, { force: true });
+        return { bytes, created: false };
+      }
       mkdirSync(dirname(target), { recursive: true });
       renameSync(temp, target);
+      this.totals.objects++;
+      this.totals.bytes += bytes;
       return { bytes, created: previous === null };
     } catch (e) {
       out.destroy();
@@ -119,59 +127,98 @@ export class BackupStore {
     return rows;
   }
   usage(): { objects: number; bytes: number } {
+    return { ...this.totals };
+  }
+  /** 直接搬动对象文件之后重扫；usage 只读已维护的计数，不阻塞每次上传。 */
+  recount(): { objects: number; bytes: number } {
     const rows = this.list();
-    return { objects: rows.length, bytes: rows.reduce((n, r) => n + r.bytes, 0) };
+    this.totals = { objects: rows.length, bytes: rows.reduce((n, r) => n + r.bytes, 0) };
+    return this.usage();
   }
   /**
-   * 只删「不在 keep 里且创建超过 graceMs」的对象：正在上传中的新对象不会被并发的 prune 误伤。
-   * 路由会把全部设备清单登记的对象并进 keep，所以任一台手机给错、给漏 keep 也删不掉别人清单指向的东西。
+   * 只删「不在 keep 里且最后修改超过 graceMs」的对象，一小时宽限是额外保护。
+   * 调用方遇到任一未知登记的清单必须整轮停收；否则把全部清单引用与未过期的上传占位并进 keep。
+   * 慢速首次上传依靠持久占位保护，不能只靠文件的修改时间。
    */
   prune(keep: Set<string>, now = Date.now(), graceMs = 3600000): { removed: number; bytes: number } {
     let removed = 0, bytes = 0;
     for (const row of this.list()) {
       if (keep.has(row.id) || row.mtimeMs > now - graceMs) continue;
-      rmSync(this.objectPath(row.id), { force: true });
+      try { rmSync(this.objectPath(row.id)); } catch (e) { this.recount(); throw e; }
+      this.totals.objects--;
+      this.totals.bytes -= row.bytes;
       removed++; bytes += row.bytes;
     }
     return { removed, bytes };
   }
-  /** 清空整个家庭空间：只给主人，且先删清单再来（见路由）。 */
-  wipe() {
-    rmSync(join(this.root, FAMILY_DIR), { recursive: true, force: true });
+  /** 清空整个家庭空间及上传占位：只给主人，且先删清单再来（见路由）。 */
+  wipe(store:Store) {
+    try { rmSync(join(this.root, FAMILY_DIR), { recursive: true, force: true }); }
+    catch (e) { this.recount(); throw e; }
+    this.totals = { objects: 0, bytes: 0 };
     mkdirSync(this.spaceDir(), { recursive: true });
+    store.clearObjectClaims();
   }
   /**
    * 一次性迁移（Build 72）：把 Build 70／71 按成员分的 `<root>/<成员 uuid>/objects/xx/<id>` 搬进家庭空间。
-   * 同一文件系统内 rename；同 id 已在家庭空间就删源文件（id 按内容派生，两份一样）；搬空的成员目录整个删掉。
+   * 同一文件系统内 rename；同 id 已在家庭空间就删源文件（id 按内容派生，两份一样）；只删搬空的成员目录，失败与不认识的文件保留并记数。
    * 幂等：再跑一次没有成员目录，什么也不发生。
    */
-  migrateMemberSpaces(): { members: number; moved: number; duplicates: number } {
-    let members = 0, moved = 0, duplicates = 0;
-    let names: string[];
-    try { names = readdirSync(this.root); } catch { return { members, moved, duplicates }; }
-    for (const name of names) {
-      if (!MEMBER_ID.test(name)) continue;
-      const memberDir = join(this.root, name);
-      try { if (!statSync(memberDir).isDirectory()) continue; } catch { continue; }
-      members++;
-      const objects = join(memberDir, 'objects');
-      let prefixes: string[] = [];
-      try { prefixes = readdirSync(objects); } catch { /* 没有 objects 子目录 */ }
-      for (const prefix of prefixes) {
-        let files: string[] = [];
-        try { files = readdirSync(join(objects, prefix)); } catch { continue; }
-        for (const id of files) {
-          if (!OBJECT_ID.test(id) || PREFIX(id) !== prefix) continue;
-          const source = join(objects, prefix, id), target = this.objectPath(id);
-          if (existsSync(target)) { rmSync(source, { force: true }); duplicates++; continue; }
-          mkdirSync(dirname(target), { recursive: true });
-          renameSync(source, target);
-          moved++;
-        }
+  migrateMemberSpaces(): { members: number; moved: number; duplicates: number; failed: number } {
+    let members = 0, moved = 0, duplicates = 0, failed = 0;
+    // 只删空目录；失败或不认识的文件必须原地保留，下一次启动还可以重试。
+    const removeEmpty = (dir: string) => {
+      try { rmdirSync(dir); return true; } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') return true;
+        if (code !== 'ENOTEMPTY' && code !== 'EEXIST') failed++;
+        return false;
       }
-      rmSync(memberDir, { recursive: true, force: true });
+    };
+    try {
+      let names: string[];
+      try { names = readdirSync(this.root); } catch { failed++; return { members, moved, duplicates, failed }; }
+      for (const name of names) {
+        if (!MEMBER_ID.test(name)) continue;
+        const memberDir = join(this.root, name);
+        try { if (!lstatSync(memberDir).isDirectory()) { failed++; continue; } } catch { failed++; continue; }
+        members++;
+        const before = failed;
+        const objects = join(memberDir, 'objects');
+        let prefixes: string[] = [];
+        try { prefixes = readdirSync(objects); } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== 'ENOENT') failed++;
+        }
+        for (const prefix of prefixes) {
+          const prefixDir = join(objects, prefix);
+          let files: string[];
+          try {
+            if (!lstatSync(prefixDir).isDirectory()) { failed++; continue; }
+            files = readdirSync(prefixDir);
+          } catch { failed++; continue; }
+          for (const id of files) {
+            if (!OBJECT_ID.test(id) || PREFIX(id) !== prefix) { failed++; continue; }
+            const source = join(prefixDir, id), target = this.objectPath(id);
+            try {
+              if (!lstatSync(source).isFile()) { failed++; continue; }
+              if (existsSync(target)) {
+                if (this.stat(id) === null) { failed++; continue; }
+                rmSync(source); duplicates++; continue;
+              }
+              mkdirSync(dirname(target), { recursive: true });
+              renameSync(source, target);
+              moved++;
+            } catch { failed++; /* 单个对象失败不挡其他家人，源文件保留待下次重试。 */ }
+          }
+          removeEmpty(prefixDir);
+        }
+        removeEmpty(objects);
+        if (!removeEmpty(memberDir) && failed === before) failed++;
+      }
+      return { members, moved, duplicates, failed };
+    } finally {
+      this.recount();
     }
-    return { members, moved, duplicates };
   }
   /**
    * 清掉没收完的临时文件。启动时传 0：监听前不可能有上传在途，留着的全是上次崩溃的残骸，

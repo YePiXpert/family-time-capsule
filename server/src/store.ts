@@ -4,6 +4,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 /** 成员默认远端备份配额 20 GiB；主人可在管理页调整。 */
 export const DEFAULT_BACKUP_LIMIT = 20 * 1024 ** 3;
+/** 尚未发布清单的上传占位：重启仍有效，48 小时未续期才释放。 */
+export const OBJECT_CLAIM_TTL_MS = 48 * 60 * 60 * 1000;
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const uniqueProblem = (error: unknown) =>
   error instanceof Error && String((error as {code?:string}).code ?? error.message).includes('UNIQUE')
@@ -31,6 +33,8 @@ export class Store {
       DROP TABLE IF EXISTS invites;
       CREATE TABLE IF NOT EXISTS backup_manifests_v2(device_id TEXT PRIMARY KEY,member_id TEXT NOT NULL REFERENCES members(id),key_id TEXT NOT NULL,index_b64 TEXT NOT NULL,updated_at INTEGER NOT NULL,objects_json TEXT);
       CREATE INDEX IF NOT EXISTS backup_manifests_v2_member ON backup_manifests_v2(member_id,updated_at);
+      CREATE TABLE IF NOT EXISTS backup_object_claims(device_id TEXT NOT NULL REFERENCES devices(id),object_id TEXT NOT NULL,claimed_at INTEGER NOT NULL,PRIMARY KEY(device_id,object_id));
+      CREATE INDEX IF NOT EXISTS backup_object_claims_time ON backup_object_claims(claimed_at);
     `);
     // 旧库补上账号列（唯一索引用部分索引，多个 NULL 不冲突）。
     const columns=this.db.prepare('PRAGMA table_info(members)').all() as {name:string}[];
@@ -150,11 +154,13 @@ export class Store {
    * 一台设备发布自己的清单：密文索引（服务端只认 keyId 与一段 base64）与它引用的对象 id（prune 永远不删）。
    * 这台设备发布过，成员名下从旧版迁来的整份备份就被包含了，一并删掉。
    */
-  putManifest(deviceId:string,memberId:string,keyId:string,index:string,objects:readonly string[]=[]) {
+  putManifest(deviceId:string,memberId:string,keyId:string,index:string,objects:readonly string[]|null=null) {
     const updatedAt=Date.now();
     this.db.transaction(()=>{
-      this.db.prepare('INSERT INTO backup_manifests_v2(device_id,member_id,key_id,index_b64,updated_at,objects_json) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id) DO UPDATE SET member_id=excluded.member_id,key_id=excluded.key_id,index_b64=excluded.index_b64,updated_at=excluded.updated_at,objects_json=excluded.objects_json').run(deviceId,memberId,keyId,index,updatedAt,JSON.stringify(objects));
+      this.db.prepare('INSERT INTO backup_manifests_v2(device_id,member_id,key_id,index_b64,updated_at,objects_json) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id) DO UPDATE SET member_id=excluded.member_id,key_id=excluded.key_id,index_b64=excluded.index_b64,updated_at=excluded.updated_at,objects_json=excluded.objects_json').run(deviceId,memberId,keyId,index,updatedAt,objects===null?null:JSON.stringify(objects));
       if(!deviceId.startsWith('legacy:'))this.db.prepare("DELETE FROM backup_manifests_v2 WHERE device_id='legacy:'||?").run(memberId);
+      // 完整登记提交成功后，由清单接管保护；只解除本设备的上传占位，与清单写入同一事务。
+      if(objects!==null)this.db.prepare('DELETE FROM backup_object_claims WHERE device_id=?').run(deviceId);
     })();
     return updatedAt;
   }
@@ -164,6 +170,8 @@ export class Store {
   }
   /** 全部设备的清单，新的在前。 */
   manifests(): BackupManifest[] { return this.manifestRows(); }
+  /** 全家合并只取未撤销设备的清单；没有设备行的旧版备份仍参与合并。 */
+  activeManifests(): BackupManifest[] { return this.manifestRows('WHERE d.revoked IS NULL OR d.revoked=0'); }
   manifestOf(deviceId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.device_id=?',deviceId)[0]; }
   /** 成员名下最新的一份（含旧版迁来的）：给 Build 71 的 GET /backup/manifest 用。 */
   latestManifestOf(memberId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.member_id=?',memberId)[0]; }
@@ -175,6 +183,26 @@ export class Store {
       if(row.objects_json)for(const id of JSON.parse(row.objects_json) as string[])keep.add(id);
     return keep;
   }
+  /** 缺 objects 和明确的 [] 不能混为一谈：任一未知清单都让整轮回收停下。 */
+  hasUnknownManifestObjects(): boolean {
+    return !!this.db.prepare('SELECT 1 FROM backup_manifests_v2 WHERE objects_json IS NULL LIMIT 1').get();
+  }
+  /** have 的几千个 id 共用一次事务与一个预备语句；已存在与尚缺的对象都占位。 */
+  claimObjects(deviceId:string,ids:readonly string[],now=Date.now()) {
+    const upsert=this.db.prepare('INSERT INTO backup_object_claims(device_id,object_id,claimed_at) VALUES(?,?,?) ON CONFLICT(device_id,object_id) DO UPDATE SET claimed_at=excluded.claimed_at');
+    this.db.transaction(()=>{
+      this.expireObjectClaims(now);
+      for(const id of ids)upsert.run(deviceId,id,now);
+    })();
+  }
+  private expireObjectClaims(now:number) {
+    this.db.prepare('DELETE FROM backup_object_claims WHERE claimed_at<=?').run(now-OBJECT_CLAIM_TTL_MS);
+  }
+  claimedObjects(now=Date.now()): Set<string> {
+    this.expireObjectClaims(now);
+    return new Set((this.db.prepare('SELECT DISTINCT object_id FROM backup_object_claims').all() as {object_id:string}[]).map(row=>row.object_id));
+  }
+  clearObjectClaims() { this.db.prepare('DELETE FROM backup_object_claims').run(); }
   manifestCount(): number { return (this.db.prepare('SELECT COUNT(*) n FROM backup_manifests_v2').get() as {n:number}).n; }
   deleteManifest(deviceId:string): boolean { return this.db.prepare('DELETE FROM backup_manifests_v2 WHERE device_id=?').run(deviceId).changes>0; }
   /** 成员的全部清单（含旧版迁来的）：Build 71 的 DELETE /backup 与主人按成员删除都走这里；对象留给 prune。 */

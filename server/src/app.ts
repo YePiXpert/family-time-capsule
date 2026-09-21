@@ -120,16 +120,21 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  const manifestView=(m:BackupManifest)=>({deviceId:m.deviceId,memberId:m.memberId,deviceName:m.deviceName,keyId:m.keyId,index:m.index,updatedAt:iso(m.updatedAt)});
  /** 家庭配额剩余：全家共用主人的上限。 */
  const quotaLeft=()=>Math.max(0,store.familyLimitBytes()-backups().usage().bytes);
- /** 删清单之后顺手收拾没人指着的对象（一小时宽限护住上传中的）；对象是全家的，只删无主的。 */
- const sweep=()=>backups().prune(store.manifestObjects());
+ /** 未知清单让整轮停收；已登记清单与未完成上传的持久占位共同保护家庭对象。 */
+ const sweep=(keep:readonly string[]=[])=>{
+  const now=Date.now(),claims=store.claimedObjects(now);
+  if(store.hasUnknownManifestObjects())return {removed:0,bytes:0};
+  return backups().prune(new Set([...keep,...store.manifestObjects(),...claims]),now);
+ };
  app.get('/api/v1/backup/status',async req=>{
   auth(req.headers.authorization);
   const usage=backups().usage(),latest=store.latestManifest();
   return {keyId:latest?.keyId??null,manifestUpdatedAt:latest?iso(latest.updatedAt):null,objects:usage.objects,bytes:usage.bytes,limitBytes:store.familyLimitBytes(),freeBytes:await backups().freeBytes(),manifests:store.manifestCount()};
  });
  app.post('/api/v1/backup/objects/have',async req=>{
-  auth(req.headers.authorization);
+  const member=auth(req.headers.authorization);
   const {ids}=z.object({ids:idList(5000)}).strict().parse(req.body);
+  store.claimObjects(member.deviceId!,ids);
   const present=backups().have(ids);
   return {missing:ids.filter(id=>!present.has(id))};
  });
@@ -149,7 +154,9 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   if(active>=2)throw new Problem(429,'BUSY','正在上传其他内容，请稍后再试。');
   uploading.set(lane,active+1);
   try {
+   store.claimObjects(member.deviceId!,[id]);
    const result=await backups().receive(id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft:left});
+   store.claimObjects(member.deviceId!,[id]);
    return reply.code(result.created?201:200).send({id,bytes:result.bytes});
   } finally {
    const remaining=(uploading.get(lane)??1)-1;
@@ -168,7 +175,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   // objects 是清单引用的对象 id，登记下来让 prune 护住它们（Build 70 的手机不传，视为没登记）。
   // 清单记在这台设备名下：同一成员的两台手机各有一份，成员旧版整份备份迁来的那份随之作废。
   const input=z.object({keyId:z.string().regex(/^[a-f0-9]{16}$/),index:z.string().min(4).max(90000).regex(/^[A-Za-z0-9+/]+=*$/),objects:idList(50000).optional()}).strict().parse(req.body);
-  return {updatedAt:iso(store.putManifest(member.deviceId!,member.id,input.keyId,input.index,input.objects??[]))};
+  return {updatedAt:iso(store.putManifest(member.deviceId!,member.id,input.keyId,input.index,input.objects??null))};
  });
  app.get('/api/v1/backup/manifest',async req=>{
   // 先给这台设备自己的，没有就给成员名下最新的一份（含旧版迁来的）：Build 71 的手机换机后照样能恢复。
@@ -177,7 +184,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   return {deviceId:manifest.deviceId,keyId:manifest.keyId,index:manifest.index,updatedAt:iso(manifest.updatedAt)};
  });
  /** 全家各台设备的清单，新的在前；一起写的手机拿这个去合并。 */
- app.get('/api/v1/backup/manifests',async req=>{auth(req.headers.authorization);return store.manifests().map(manifestView);});
+ app.get('/api/v1/backup/manifests',async req=>{auth(req.headers.authorization);return store.activeManifests().map(manifestView);});
  app.delete('/api/v1/backup/manifests/:deviceId',async req=>{
   const member=auth(req.headers.authorization),{deviceId}=deviceParam.parse(req.params);
   const manifest=store.manifestOf(deviceId);
@@ -191,7 +198,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   const {keep}=z.object({keep:idList(50000)}).strict().parse(req.body);
   // 全家清单登记的对象由服务端自己护住；远端已有清单时空 keep 一定是客户端出错，宁可不收拾。
   if(store.manifestCount()>0&&keep.length===0)throw new Problem(400,'INVALID_INPUT','远端已有清单，keep 不能为空。');
-  return backups().prune(new Set([...keep,...store.manifestObjects()]));
+  return sweep(keep);
  });
  app.delete('/api/v1/backup',async req=>{
   // Build 71 的「删除远端备份」：只删这位成员名下的清单，对象是全家的，无主的才随手收走。
@@ -230,7 +237,7 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  app.delete('/api/v1/admin/backup',async req=>{
   // 主人清空全家远端：先删全部清单再删对象，中途崩溃只会留下没人指着的对象，而不是指着空库的清单。
   owner(req.headers.authorization);
-  store.deleteAllManifests();backups().wipe();return {ok:true};
+  store.deleteAllManifests();backups().wipe(store);return {ok:true};
  });
  app.delete('/api/v1/admin/devices/:id',async req=>{
   const member=owner(req.headers.authorization),{id}=z.object({id:z.string().uuid()}).parse(req.params);

@@ -17,7 +17,7 @@ try {
   const name=process.argv[3];if(!name)throw new Error('Usage: node src/manage.ts wipe-backup family | <登录名或成员名>');
   if(name==='family') {
    // 一家人共用一个对象空间：清空是全家的事，先删全部清单再删对象。
-   store.deleteAllManifests();new BackupStore(process.env.BACKUP_DIR??'/data/backup').wipe();
+   store.deleteAllManifests();new BackupStore(process.env.BACKUP_DIR??'/data/backup').wipe(store);
    console.log('已清空家庭远端空间的全部清单与对象；手机上的资料不受影响。');
   } else {
    const member=store.findByUsernameOrName(name);
