@@ -1,5 +1,4 @@
-import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex } from "@noble/hashes/utils.js";
+import { contentHashOf, hashOf } from "../local/hash";
 import {
   TOMBSTONE_KINDS,
   deletePerson,
@@ -16,6 +15,7 @@ import {
   type Stored,
   type TombstoneKind,
 } from "../local/model";
+export { canonical, contentHashOf, hashOf } from "../local/hash";
 /**
  * 家人一起写的合并：纯函数，不碰磁盘不碰网络。输入本机库、别人的清单（整库快照）与上次同步之基，
  * 输出合并后的库、新记的冲突、要去下载的素材与新的基。任何一步都不改传入的对象。
@@ -25,7 +25,7 @@ import {
  * - known：本机已经处理过的其他版本（曾持有、曾判输、曾判过时）。别人的清单是整库快照，
  *   输掉的旧版会一直躺在里面，认得它们才不会把删掉、改掉的东西送回来，也不会反复出同一张冲突卡。
  * 规则：远端版本与本机相同、与基相同或已认得 → 不看；本机没动 → 取远端（远端比本机还旧的除外：
- * 留本机、出冲突卡）；两边都动 → 按 updatedAt 新者胜、同秒比内容哈希，输的一版留底；内容相同不算冲突。
+ * 留本机、出冲突卡；远端有世系但不源自本机版时，本机输掉的一版也留底）；两边都动 → 按 updatedAt 新者胜、同秒比内容哈希，输的一版留底；内容相同不算冲突。
  * 墓碑：删除时刻晚于实体 updatedAt → 删（本机改过又被删也留底）；实体在墓碑之后改过 → 改者胜。
  * 相册／系列两边都动：名字随赢家，条目取并集（赢家在前）；人物同名自动并成一个（id 小的留下）。
  * 素材按 id 取并集、本机已有的永不被覆盖，只带回合并后共享实体引用到的那些。
@@ -82,31 +82,13 @@ export type Conflict = {
 export const CONFLICT_KINDS = ["records", "letters"] as const;
 export const SHARED_KINDS: readonly TombstoneKind[] = TOMBSTONE_KINDS;
 type SharedKind = TombstoneKind;
-type Shared = { id: string; updatedAt?: string };
+type Shared = { id: string; updatedAt?: string; ancestors?: readonly string[] };
+/** 未带世系的旧版本无法判断因果关系；升级期不据此出卡。 */
+function descendsFrom(candidate: Shared, local: Shared): boolean | undefined {
+  if (!Array.isArray(candidate.ancestors)) return undefined;
+  return candidate.ancestors.includes(contentHashOf(local).slice(0, 16));
+}
 type Version = { fp: string; entity: Shared; device: string | null };
-/** 键排序后的 JSON：两台手机对同一实体算出同一枚指纹。 */
-export function canonical(value: unknown): string {
-  return JSON.stringify(value, (_, v: unknown) =>
-    v && typeof v === "object" && !Array.isArray(v)
-      ? Object.fromEntries(
-          Object.keys(v as Record<string, unknown>)
-            .sort()
-            .map((k) => [k, (v as Record<string, unknown>)[k]]),
-        )
-      : v,
-  );
-}
-export const hashOf = (value: unknown): string =>
-  bytesToHex(sha256(new TextEncoder().encode(canonical(value))));
-/** 内容哈希：不含 updatedAt，也不含 revision（那是这台手机的草稿防撞计数，不随家人走）。 */
-export function contentHashOf(entity: object): string {
-  const {
-    revision: _r,
-    updatedAt: _u,
-    ...rest
-  } = entity as Record<string, unknown>;
-  return hashOf(rest);
-}
 /** 实体指纹 "updatedAt|内容哈希"；没有 updatedAt 的（人物）前半为空。 */
 export function fingerprintOf(entity: Shared): string {
   return `${entity.updatedAt ?? ""}|${contentHashOf(entity)}`;
@@ -465,8 +447,13 @@ export function mergeLibraries(
       }
       if (fpL === M) {
         // 本机没动：拿远端的——除非远端这一版比本机还旧（恢复了旧备份、或时钟不准），那就留本机、出卡。
-        if (!isOlder(C.entity, L)) adopt(kind, id, C.entity);
-        else conflict(kind, id, L, C.entity, C.device);
+        if (isOlder(C.entity, L)) conflict(kind, id, L, C.entity, C.device);
+        else {
+          // 已发布的本机版也可能输给并发编辑：对方有世系却不源自本机版时，本机也留底。
+          if (hashPart(fpL!) !== hashPart(C.fp) && descendsFrom(C.entity, L) === false)
+            conflict(kind, id, C.entity, L, null);
+          adopt(kind, id, C.entity);
+        }
         continue;
       }
       // 两边都动了。

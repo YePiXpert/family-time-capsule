@@ -1,3 +1,4 @@
+import { contentHashOf } from "../src/local/hash";
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -82,11 +83,14 @@ describe("device record lifecycle", () => {
       content: { ...mut(clone(s.records.record!)), text: "补记" },
       updatedAt: date,
     };
+    expect(s.records.record).not.toHaveProperty("ancestors");
+    const previousHash = contentHashOf(s.records.record!).slice(0, 16);
     expect(s.records.record!.text).toBe("第一次挥手");
     saveRecord(s, "edit", "unused", date);
     expect(Object.keys(s.records)).toEqual(["record"]);
     expect(s.records.record!.revision).toBe(2);
     expect(s.records.record!.text).toBe("补记");
+    expect(s.records.record!.ancestors).toEqual([previousHash]);
     expect(Object.keys(s.drafts)).toEqual([]);
     validateLibrary(s);
   });
@@ -1153,7 +1157,10 @@ describe("给以前的时光补落款", () => {
     s.records.signed = { ...s.records.r!, id: "signed", by: "妈妈" };
     s.records.other = { ...s.records.r!, id: "other" };
     expect(unsignedRecords(s).sort()).toEqual(["other", "r"]);
+    const previousHash = contentHashOf(s.records.r!).slice(0, 16);
     expect(stampUnsigned(s, "爸爸")).toBe(2);
+    expect(s.records.r!.ancestors).toEqual([previousHash]);
+    expect(s.records.signed).not.toHaveProperty("ancestors");
     expect(s.records.r!.by).toBe("爸爸");
     expect(s.records.other!.by).toBe("爸爸");
     expect(s.records.signed!.by).toBe("妈妈");
@@ -1163,4 +1170,44 @@ describe("给以前的时光补落款", () => {
     expect(stampUnsigned(s, "爸爸")).toBe(0);
     validateLibrary(s);
   });
+});
+
+describe.each(["records", "letters"] as const)("%s ancestry validation", (kind) => {
+  const withAncestors = (ancestors: unknown) => {
+    const s = fixture();
+    if (kind === "records") saveRecord(s, "draft", "r", date);
+    else s.letters.r = {
+      id: "r", title: "", text: "给你", from: "爸爸", openAt: "2044-06-15",
+      writtenAt: date, sealed: false, mediaIds: [], coverId: null, updatedAt: date,
+    };
+    Object.assign(s[kind].r!, { ancestors });
+    return s;
+  };
+  it.each([undefined, [], Array(8).fill("abcdef0123456789")])("accepts optional bounded ancestry %#", (ancestors) => {
+    const s = withAncestors(ancestors);
+    normalizeLibrary(s);
+    validateLibrary(s);
+    expect(s[kind].r!.ancestors).toEqual(ancestors);
+  });
+  it.each([null, "abcdef0123456789", Array(9).fill("a".repeat(16)), ["G".repeat(16)], ["A".repeat(16)], ["a".repeat(15)], ["a".repeat(17)], [1234567890123456]])(
+    "rejects malformed ancestry %#", (ancestors) => {
+      expect(() => validateLibrary(withAncestors(ancestors))).toThrow();
+    },
+  );
+});
+
+it("drops copied draft ancestry for new records and takes existing ancestry when editing", () => {
+  const s = fixture();
+  Object.assign(mut(s.drafts.draft!).content, { ancestors: ["a".repeat(16)] });
+  const first = saveRecord(s, "draft", "r", date);
+  expect(first).not.toHaveProperty("ancestors");
+  s.records.r = { ...first, ancestors: ["b".repeat(16)] };
+  const previous = s.records.r;
+  s.drafts.edit = {
+    id: "edit", recordId: "r", baseRevision: first.revision, updatedAt: date,
+    content: { ...first, text: "补记" },
+  };
+  Object.assign(mut(s.drafts.edit).content, { ancestors: ["c".repeat(16)] });
+  saveRecord(s, "edit", "r", date);
+  expect(s.records.r!.ancestors).toEqual([contentHashOf(previous).slice(0, 16), "b".repeat(16)]);
 });

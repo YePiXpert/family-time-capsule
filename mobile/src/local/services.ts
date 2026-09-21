@@ -1,3 +1,4 @@
+import { lineage } from "./hash";
 import { randomUUID } from "expo-crypto";
 import { Paths } from "expo-file-system";
 import { DOCS_DIR, LEGACY_DOCS_DIR } from "./brand";
@@ -191,20 +192,22 @@ export function updateLetter(s: Library, letter: Stored<LocalLetter>) {
   const existing = s.letters[letter.id];
   if (!existing) throw new Error("这封信已删除。");
   if (existing.sealed) throw new Error("信已封存，不能再改。");
-  s.letters[letter.id] = clone(letter);
+  s.letters[letter.id] = { ...clone(letter), ancestors: lineage(existing) };
 }
 export async function sealLetter(store: LocalStore, id: string) {
   await store.change((s) => {
     const letter = s.letters[id];
     if (!letter) throw new Error("这封信已删除。");
-    s.letters[id] = sealLetterAt(letter, now());
+    s.letters[id] = { ...sealLetterAt(letter, now()), ancestors: lineage(letter) };
   });
 }
 export async function openLetter(store: LocalStore, id: string) {
   await store.change((s) => {
     const letter = s.letters[id];
     if (!letter) throw new Error("这封信已删除。");
-    s.letters[id] = openLetterAt(letter, now());
+    const opened = openLetterAt(letter, now());
+    if (opened !== letter)
+      s.letters[id] = { ...opened, ancestors: lineage(letter) };
   });
 }
 /** 删信只删实体（留墓碑）；信里的录音和记录一样，留给「清理未使用素材」回收。 */

@@ -1,3 +1,4 @@
+import { lineage } from "../local/hash";
 import type { Library, LocalLetter, LocalRecord } from "../local/model";
 import { repairReferences } from "./merge";
 import type { Conflict } from "./state";
@@ -21,6 +22,9 @@ export function restoreLoser(lib: Library, c: Conflict, now: string): void {
       ...(loser.quote !== undefined ? { quote: loser.quote } : {}),
       ...(loser.by !== undefined ? { by: loser.by } : {}),
       revision: (lib.records[id]?.revision ?? 0) + 1,
+      ...(lib.records[id]
+        ? { ancestors: lineage(lib.records[id]) }
+        : loser.ancestors ? { ancestors: [...loser.ancestors] } : {}),
       updatedAt: now,
     };
   } else if (c.kind === "letters") {
@@ -37,6 +41,9 @@ export function restoreLoser(lib: Library, c: Conflict, now: string): void {
       ...(loser.openedAt !== undefined ? { openedAt: loser.openedAt } : {}),
       mediaIds,
       coverId: loser.coverId && mediaIds.includes(loser.coverId) ? loser.coverId : null,
+      ...(lib.letters[id]
+        ? { ancestors: lineage(lib.letters[id]) }
+        : loser.ancestors ? { ancestors: [...loser.ancestors] } : {}),
       updatedAt: now,
     };
   } else {

@@ -1,3 +1,4 @@
+import { contentHashOf } from "../src/local/hash";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -1254,4 +1255,52 @@ it("A-14 清掉一小时前的清单写入残片，保留新残片与七天内�
   expect(fs.existsSync(stale)).toBe(false);
   expect(fs.existsSync(fresh)).toBe(true);
   expect(fs.existsSync(pin)).toBe(true);
+});
+
+it("records letter ancestry through rewriting, sealing and opening, with no ancestry on creation", async () => {
+  const { beginLetter, updateLetter, sealLetter, openLetter } = await import("../src/local/services");
+  const { LocalStore } = await import("../src/local/store");
+  let disk = emptyLibrary();
+  const store = new LocalStore({ read: async () => disk, write: async (s) => { disk = clone(s); } });
+  await store.open();
+  const id = await beginLetter(store, "爸爸");
+  const created = store.get().letters[id]!;
+  expect(created).not.toHaveProperty("ancestors");
+  await store.change((s) => updateLetter(s, { ...created, text: "给未来的你", ancestors: ["f".repeat(16)] }));
+  const written = store.get().letters[id]!;
+  expect(written.ancestors).toEqual([contentHashOf(created).slice(0, 16)]);
+  await sealLetter(store, id);
+  const sealed = store.get().letters[id]!;
+  expect(sealed.ancestors).toEqual([contentHashOf(written).slice(0, 16), ...written.ancestors!]);
+  await openLetter(store, id);
+  const opened = store.get().letters[id]!;
+  expect(opened.ancestors).toEqual([contentHashOf(sealed).slice(0, 16), ...sealed.ancestors!]);
+  await openLetter(store, id);
+  expect(store.get().letters[id]).toEqual(opened);
+  expect(created).not.toHaveProperty("ancestors");
+  expect(disk.letters[id]).toEqual(opened);
+});
+
+it.each(["xmbm", "xmb"])("preserves record and letter ancestry through %s restore", async (format) => {
+  const { store, backup, model } = await setup();
+  const ancestors = ["abcdef0123456789", "0123456789abcdef"];
+  await store.change((s) => {
+    s.records.r = { ...s.records.r!, ancestors };
+    s.letters.l = {
+      id: "l", title: "给你", text: "慢慢长大", from: "爸爸", openAt: "2044-06-15",
+      writtenAt: "2026-09-20T00:00:00Z", sealed: false, mediaIds: [], coverId: null,
+      updatedAt: "2026-09-20T00:00:00Z", ancestors,
+    };
+  });
+  const saved = model.clone(store.get());
+  const manifest = await backup.createBackup(saved);
+  const exporter = await import("../src/local/backup-export");
+  const file = format === "xmbm" ? manifest : await exporter.writeVolume(exporter.planExport(manifest), 0);
+  await store.change((s) => {
+    model.deleteRecord(s, "r");
+    model.deleteLetter(s, "l");
+  });
+  await backup.restoreBackup(store, file);
+  expect(store.get().records.r).toEqual(saved.records.r);
+  expect(store.get().letters.l).toEqual(saved.letters.l);
 });
