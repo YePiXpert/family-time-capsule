@@ -80,8 +80,12 @@ export function createExpoFileSystemFake(env: FakeEnv) {
       fs.renameSync(this.uri, to);
       this.uri = to;
     }
-    async copy(to: File) {
-      fs.copyFileSync(this.uri, to.uri, fs.constants.COPYFILE_EXCL);
+    async copy(to: File, options?: { overwrite?: boolean }) {
+      fs.copyFileSync(
+        this.uri,
+        to.uri,
+        options?.overwrite ? 0 : fs.constants.COPYFILE_EXCL,
+      );
     }
     async move(to: File) {
       if (

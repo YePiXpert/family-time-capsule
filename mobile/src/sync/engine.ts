@@ -1,5 +1,4 @@
 import { File, FileMode } from "expo-file-system";
-import { randomUUID } from "expo-crypto";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import {
@@ -10,21 +9,16 @@ import {
   type BackupMetaV2,
 } from "../local/backup-format";
 import {
-  backupFileName,
   blobOwners,
   createBackup,
   readManifest,
-  restorePinName,
-  restorePins,
   type RestoreProgress,
 } from "../local/backup";
 import {
   CHUNK,
-  backupDirectory,
   blobFile,
   blobPartFile,
   blobPrefixDirectory,
-  ensureDirectories,
   hashFile,
   type FileHandle,
 } from "../local/files";
@@ -54,11 +48,11 @@ import {
   writeRemoteState,
   type RemoteState,
 } from "./state";
-import { SyncError, type Transport } from "./transport";
+import { SyncError, type RemoteManifest, type Transport } from "./transport";
 /**
  * 远端备份引擎：本机清单备份（.xmbm + blob 库）是源头，远端只是它的密文副本。
  * 备份 = 写本机清单 → 规划对象 → 问远端缺哪些 → 只传缺的 → 传清单对象与索引 → 收拾多余对象。
- * 恢复 = 取索引 → 取清单 → 缺的 blob 逐个下载解密写进 blob 库 → 写一份 .xmbm，交给现有的本机恢复。
+ * 同步复用这里的清单与对象传输，合并和物化由 family.ts 负责。
  * 中途失败不回滚远端：已传上去的对象下次 have 时自然续上。
  */
 export const INDEX_LABEL = "anan-index-v1";
@@ -87,7 +81,7 @@ export type RemoteSummary = {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const utf8 = (text: string) => new TextEncoder().encode(text);
 const stopped = () => new SyncError("CANCELED", "已停止。");
-const throwIfAborted = (signal?: AbortSignal) => {
+export const throwIfAborted = (signal?: AbortSignal) => {
   if (signal?.aborted) throw stopped();
 };
 const KEY_MISMATCH =
@@ -120,6 +114,7 @@ async function uploadContent(
   const h = file.open(FileMode.ReadOnly);
   try {
     for (const plan of plans) {
+      throwIfAborted(deps.signal);
       const sizes = chunkSizes(plan.bytes);
       if (!missing.has(plan.id)) {
         for (const size of sizes) await readExact(h, size);
@@ -146,7 +141,7 @@ const withIds = (key: Uint8Array, plans: ObjectPlan[]): UploadItem[] =>
 const blobBytesOf = (meta: BackupMetaV2) =>
   meta.blobs.reduce((n, blob) => n + blob.bytes, 0);
 /** 先问远端是谁的备份：另一把钥匙的备份在，就不能往上叠。 */
-async function assertSameKey(deps: EngineDeps): Promise<string> {
+export async function assertSameKey(deps: EngineDeps): Promise<string> {
   const keyId = keyIdOf(deps.key);
   const status = await deps.transport.status(deps.signal);
   if (status.keyId && status.keyId !== keyId)
@@ -158,6 +153,29 @@ export async function runRemoteBackup(
   deps: EngineDeps,
 ): Promise<RemoteState> {
   const keyId = await assertSameKey(deps);
+  const pushed = await pushManifest(state, deps);
+  const now = new Date().toISOString();
+  const previous = await readRemoteState(now);
+  const remote: RemoteState = {
+    ...(previous?.keyId === keyId ? previous : freshRemoteState(keyId, now)),
+    enabled: true,
+    lastSyncAt: now,
+    lastSyncSummary: {
+      devices: 1,
+      objects: pushed.objects,
+      bytes: pushed.bytes,
+      pulled: 0,
+      pushed: pushed.pushed,
+      conflicts: 0,
+    },
+  };
+  delete remote.lastError;
+  writeRemoteState(remote);
+  return remote;
+}
+/** 本机清单是上传的唯一来源；已在远端的对象不重复传。 */
+export async function pushManifest(state: Library, deps: EngineDeps) {
+  const keyId = keyIdOf(deps.key);
   deps.onProgress?.("正在整理照片…");
   const manifest = await createBackup(state, deps.onProgress, deps.signal);
   const { meta, entities } = readManifest(manifest);
@@ -206,6 +224,7 @@ export async function runRemoteBackup(
   // 服务端一次最多认 50000 个 id，超过就这轮既不登记也不收拾，宁可多占。
   const ids = all.map((item) => item.id);
   const registered = ids.length <= 50000 ? ids : [];
+  throwIfAborted(deps.signal);
   await deps.transport.putManifest(
     keyId,
     toBase64(sealSmall(deps.key, INDEX_LABEL, utf8(JSON.stringify(index)))),
@@ -213,26 +232,15 @@ export async function runRemoteBackup(
     deps.signal,
   );
   if (registered.length) await deps.transport.prune(registered, deps.signal);
-  const now = new Date().toISOString();
-  const previous = await readRemoteState(now);
-  const remote: RemoteState = {
-    ...(previous?.keyId === keyId ? previous : freshRemoteState(keyId, now)),
-    enabled: true,
-    lastSyncAt: now,
-    lastSyncSummary: {
-      devices: 1,
-      objects: all.length,
-      bytes: index.blobBytes + manifestBytes,
-      pulled: 0,
-      pushed: done,
-      conflicts: 0,
-    },
+  return {
+    index,
+    manifestSha,
+    objects: all.length,
+    bytes: index.blobBytes + manifestBytes,
+    pushed: done,
   };
-  delete remote.lastError;
-  writeRemoteState(remote);
-  return remote;
 }
-function parseIndex(plain: Uint8Array): RemoteIndex {
+export function parseIndex(plain: Uint8Array): RemoteIndex {
   let index: RemoteIndex;
   try {
     index = JSON.parse(new TextDecoder().decode(plain)) as RemoteIndex;
@@ -269,7 +277,7 @@ function parseManifestBytes(bytes: Uint8Array): {
   return { meta, entities: bytes.subarray(12 + metaBytes) };
 }
 /** 逐对象下载并解密一份内容，块按顺序交给 sink。 */
-async function downloadContent(
+export async function downloadContent(
   sha256Hex_: string,
   bytes: number,
   deps: EngineDeps,
@@ -294,15 +302,22 @@ async function downloadContent(
     }
   }
 }
+/** 本设备清单仍用于「验证」；家庭同步按设备条目读取。 */
+async function fetchManifest(deps: EngineDeps) {
+  const remote = await deps.transport.getManifest(deps.signal);
+  if (!remote) throw new SyncError("NOT_FOUND", "远端还没有备份。");
+  return fetchManifestOf(remote, deps);
+}
 /** 取回索引与清单：钥匙不对在下载任何对象之前就判出。 */
-async function fetchManifest(deps: EngineDeps): Promise<{
+export async function fetchManifestOf(
+  remote: Pick<RemoteManifest, "keyId" | "index">,
+  deps: EngineDeps,
+): Promise<{
   index: RemoteIndex;
   meta: BackupMetaV2;
   entities: Uint8Array;
   bytes: Uint8Array;
 }> {
-  const remote = await deps.transport.getManifest(deps.signal);
-  if (!remote) throw new SyncError("NOT_FOUND", "远端还没有备份。");
   if (remote.keyId !== keyIdOf(deps.key))
     throw new SyncError("WRONG_CODE", WRONG_CODE);
   const index = parseIndex(
@@ -343,37 +358,23 @@ export async function verifyRemoteBackup(
     bytes: blobBytesOf(meta) + index.bytes,
   };
 }
-/**
- * 从远端恢复到本机 blob 库并写一份 .xmbm，返回它——之后交给 restoreBackup／recoverStartupBackup，
- * 与本机备份走同一条恢复路径。已经在库里且长度对的 blob 跳过，所以中断后再来就是续传。
- */
-export async function restoreFromRemote(deps: EngineDeps): Promise<File> {
-  const { index, meta, entities, bytes } = await fetchManifest(deps);
-  const owners = blobOwners(decodeLibraryV2(meta, entities));
-  ensureDirectories();
-  // 清单先以「钉子」落地：下载到一半停下，blob 回收也认得这些照片有人要，下次接着下载才是续传。
-  for (const stale of restorePins()) stale.delete();
-  const pin = new File(
-    backupDirectory,
-    restorePinName(new Date(), index.sha256.slice(0, 8)),
-  );
-  writeWhole(pin, bytes);
-  const total = meta.blobs.length;
-  let done = 0;
-  for (const blob of meta.blobs) {
-    throwIfAborted(deps.signal);
-    const target = blobFile(blob.sha256);
-    if (target.exists && target.size === blob.bytes) {
-      deps.onProgress?.(`正在下载 ${++done}/${total}`);
-      continue;
-    }
-    blobPrefixDirectory(blob.sha256).create({
-      intermediates: true,
-      idempotent: true,
-    });
-    const part = blobPartFile(blob.sha256);
-    if (part.exists) part.delete();
-    part.create();
+/** 已完成的 blob 留作续传；半成品只有长度与哈希都对上才换名。 */
+export async function downloadBlob(
+  blob: BackupMetaV2["blobs"][number],
+  deps: EngineDeps,
+  name = blob.sha256.slice(0, 8),
+): Promise<void> {
+  throwIfAborted(deps.signal);
+  const target = blobFile(blob.sha256);
+  if (target.exists && target.size === blob.bytes) return;
+  blobPrefixDirectory(blob.sha256).create({
+    intermediates: true,
+    idempotent: true,
+  });
+  const part = blobPartFile(blob.sha256);
+  if (part.exists) part.delete();
+  part.create();
+  try {
     const h = part.open(FileMode.WriteOnly);
     const digest = sha256.create();
     let written = 0;
@@ -383,42 +384,16 @@ export async function restoreFromRemote(deps: EngineDeps): Promise<File> {
         digest.update(chunk);
         written += chunk.length;
       });
-    } catch (e) {
+    } finally {
       h.close();
-      if (part.exists) part.delete();
-      throw e;
     }
-    h.close();
-    if (written !== blob.bytes || bytesToHex(digest.digest()) !== blob.sha256) {
-      part.delete();
-      throw new SyncError(
-        "CORRUPT",
-        `远端这张照片对不上：${owners.get(blob.sha256)?.name ?? blob.sha256.slice(0, 8)}`,
-      );
-    }
+    if (written !== blob.bytes || bytesToHex(digest.digest()) !== blob.sha256)
+      throw new SyncError("CORRUPT", `远端这张照片对不上：${name}`);
+    throwIfAborted(deps.signal);
     if (target.exists) target.delete();
     await part.move(target);
-    deps.onProgress?.(`正在下载 ${++done}/${total}`);
-  }
-  const out = new File(
-    backupDirectory,
-    backupFileName(new Date(), randomUUID().slice(0, 8), "xmbm"),
-  );
-  writeWhole(out, bytes);
-  // 正式清单在位了，钉子功成身退。
-  if (pin.exists) pin.delete();
-  return out;
-}
-/** 一次写完一个小文件；写不进去就别留一个空壳：任何一份清单读不出来，blob 回收都会停手。 */
-function writeWhole(file: File, bytes: Uint8Array): void {
-  file.create();
-  const h = file.open(FileMode.WriteOnly);
-  try {
-    h.writeBytes(bytes);
   } catch (e) {
-    h.close();
-    file.delete();
+    if (part.exists) part.delete();
     throw e;
   }
-  h.close();
 }

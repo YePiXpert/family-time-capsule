@@ -63,6 +63,9 @@ function fakeRemote() {
   const log: string[] = [];
   let failPuts = 0;
   const transport: Transport = {
+    async me() {
+      return { deviceId: "device-1" };
+    },
     async status() {
       log.push("status");
       return {
@@ -99,7 +102,12 @@ function fakeRemote() {
     },
     async putManifest(keyId, index, objects) {
       log.push(`putManifest ${objects.length}`);
-      manifest = { keyId, index, updatedAt: new Date().toISOString() };
+      manifest = {
+        deviceId: "device-1",
+        keyId,
+        index,
+        updatedAt: new Date().toISOString(),
+      };
       return manifest.updatedAt;
     },
     async getManifest() {
@@ -172,6 +180,7 @@ async function setup() {
   const files = await import("../src/local/files");
   const backup = await import("../src/local/backup");
   const engine = await import("../src/sync/engine");
+  const family = await import("../src/sync/family");
   const state = await import("../src/sync/state");
   const model = await import("../src/local/model");
   const { openLocalStore } = await import("../src/local/disk");
@@ -208,7 +217,7 @@ async function setup() {
     "大照片",
   );
   const small = await addPhoto("small", Buffer.alloc(3000, 42), "小照片");
-  return { files, backup, engine, state, model, store, big, small };
+  return { files, backup, engine, family, state, model, store, big, small };
 }
 it("uploads every object once, seals the index, records state, and leaks no plaintext", async () => {
   const { engine, state, store, big } = await setup();
@@ -319,18 +328,20 @@ it("refuses to stack onto another key's backup and stops before uploading", asyn
     }),
   ).rejects.toThrow("已停止");
 });
-it("pins the remote manifest before downloading so an interrupted restore survives blob collection", async () => {
-  const { engine, backup, files, store, big, small } = await setup();
+it("pins the remote manifest before downloading so an interrupted join survives blob collection", async () => {
+  const { engine, family, backup, files, store, model, big, small } =
+    await setup();
   const remote = fakeRemote();
   const deps = { transport: remote.transport, key: key() };
   await engine.runRemoteBackup(store.get(), deps);
   fs.rmSync(files.blobDirectory.uri, { recursive: true });
   for (const f of fs.readdirSync(files.backupDirectory.uri))
     fs.unlinkSync(path.join(files.backupDirectory.uri, f));
+  await store.change((s) => Object.assign(s, model.emptyLibrary()));
   // 第一张下载完就停。
   const controller = new AbortController();
   await expect(
-    engine.restoreFromRemote({
+    family.joinFamily(store, key(), {
       ...deps,
       signal: controller.signal,
       onProgress: (stage) => {
@@ -350,11 +361,11 @@ it("pins the remote manifest before downloading so an interrupted restore surviv
   expect(fs.existsSync(files.blobFile(downloaded[0]!.sha256).uri)).toBe(true);
   // 接着恢复：只拉清单对象和剩下那张照片的对象，钉子换成正式清单。
   const gets = remote.gets();
-  const manifest = await engine.restoreFromRemote(deps);
+  await family.runFamilySync(store, deps);
   const remaining = downloaded[0] === big ? 1 : 2;
   expect(remote.gets()).toBe(gets + 1 + remaining);
-  expect(fs.readdirSync(files.backupDirectory.uri)).toEqual([manifest.name]);
-  expect(manifest.name).toMatch(/\.xmbm$/);
+  expect(fs.readdirSync(files.backupDirectory.uri)).toHaveLength(1);
+  expect(fs.readdirSync(files.backupDirectory.uri)[0]).toMatch(/\.xmbm$/);
 });
 it("verifies the remote and names how many photo objects are missing", async () => {
   const { engine, store } = await setup();
@@ -376,8 +387,9 @@ it("verifies the remote and names how many photo objects are missing", async () 
     engine.verifyRemoteBackup({ ...deps, key: new Uint8Array(16).fill(5) }),
   ).rejects.toThrow("恢复码");
 });
-it("restores from the remote into the blob store and hands a manifest to the local restore", async () => {
-  const { engine, backup, files, store, model, big, small } = await setup();
+it("joins from the remote through the blob store, resumes, and rejects wrong keys and corrupt blobs", async () => {
+  const { engine, family, files, store, state, model, big, small } =
+    await setup();
   const remote = fakeRemote();
   const deps = { transport: remote.transport, key: key() };
   await engine.runRemoteBackup(store.get(), deps);
@@ -386,15 +398,13 @@ it("restores from the remote into the blob store and hands a manifest to the loc
   for (const f of fs.readdirSync(files.backupDirectory.uri))
     fs.unlinkSync(path.join(files.backupDirectory.uri, f));
   await store.change((s) => {
-    model.deleteRecord(s, "r-big");
-    model.deleteRecord(s, "r-small");
+    Object.assign(s, model.emptyLibrary());
   });
   const stages: string[] = [];
-  const manifest = await engine.restoreFromRemote({
+  await family.joinFamily(store, key(), {
     ...deps,
     onProgress: (s) => stages.push(s),
   });
-  expect(manifest.name).toMatch(/\.xmbm$/);
   expect(stages).toContain("正在下载 2/2");
   // 4 MiB 的 Buffer 别交给 toEqual 逐字节深比较，慢得像卡住。
   expect(
@@ -402,22 +412,23 @@ it("restores from the remote into the blob store and hands a manifest to the loc
       .readFileSync(files.blobFile(big.sha256).uri)
       .equals(Buffer.alloc(4 * 1048576 + 1, 17)),
   ).toBe(true);
-  await backup.restoreBackup(store, manifest);
   expect(store.get().records["r-big"]?.text).toBe("大照片");
   expect(
     fs.readFileSync(files.mediaFile(store.get().media[small.id]!).uri),
   ).toEqual(Buffer.alloc(3000, 42));
-  // 再来一次只拉清单：blob 已在库里就是续传。
+  // 再来一次连本机清单也跳过：seen 已记下自己的设备。
   const gets = remote.gets();
-  await engine.restoreFromRemote(deps);
-  expect(remote.gets()).toBe(gets + 1);
+  await family.runFamilySync(store, deps);
+  expect(remote.gets()).toBe(gets);
   // 错的恢复码在下载任何对象之前就判出；被改动的对象整份失败、不留半成品、不写清单。
   await expect(
-    engine.restoreFromRemote({ ...deps, key: new Uint8Array(16).fill(1) }),
+    family.joinFamily(store, new Uint8Array(16).fill(1), deps),
   ).rejects.toThrow("恢复码");
-  expect(remote.gets()).toBe(gets + 1);
+  expect(remote.gets()).toBe(gets);
   fs.rmSync(files.blobDirectory.uri, { recursive: true });
-  // 失败的恢复留下的只有钉子（restoring-*.xmbm.part），正式清单一份不多。
+  await store.change((s) => Object.assign(s, model.emptyLibrary()));
+  state.clearSyncFiles();
+  // 换机的同步状态也清空；失败的同步留下的只有钉子（restoring-*.xmbm.part），正式清单一份不多。
   const manifestsOf = () =>
     fs.readdirSync(files.backupDirectory.uri).filter((n) => n.endsWith(".xmbm"))
       .length;
@@ -428,7 +439,7 @@ it("restores from the remote into the blob store and hands a manifest to the loc
   const tampered = new Uint8Array(remote.objects.get(smallId)!);
   tampered[tampered.length - 1]! ^= 1;
   remote.objects.set(smallId, tampered);
-  await expect(engine.restoreFromRemote(deps)).rejects.toThrow("对不上");
+  await expect(family.joinFamily(store, key(), deps)).rejects.toThrow("对不上");
   expect(manifestsOf()).toBe(manifests);
   const leftovers = fs
     .readdirSync(files.blobDirectory.uri, { recursive: true })

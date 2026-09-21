@@ -51,6 +51,27 @@ it("sends the bearer token and the base path on every call, and never calls with
   expect(error.message).toContain("登录");
   expect(seen).toHaveLength(1);
 });
+it("me reads the calling device, returns null for missing or invalid fields, and uses shared errors", async () => {
+  const signal = new AbortController().signal;
+  answer = () => ({ status: 200, body: encode({ member: { deviceId: "device-B" } }) });
+  expect(await transport().me(signal)).toEqual({ deviceId: "device-B" });
+  expect(seen[0]).toMatchObject({
+    method: "GET",
+    url: "http://service.test/api/v1/me",
+    headers: { Authorization: "Bearer tok-1" },
+    signal,
+  });
+  for (const body of [{}, { member: {} }, { member: null }, { member: { deviceId: 123 } }]) {
+    answer = () => ({ status: 200, body: encode(body) });
+    expect(await transport().me()).toEqual({ deviceId: null });
+  }
+  answer = () => ({ status: 200, body: new TextEncoder().encode("not json") });
+  expect((await failure(() => transport().me())).code).toBe("SERVER_ERROR");
+  answer = () => ({ status: 401, body: encode({ code: "AUTH_REQUIRED" }) });
+  const error = await failure(() => transport().me());
+  expect([error.code, error.status]).toEqual(["AUTH_REQUIRED", 401]);
+  expect(error.message).toContain("登录");
+});
 it("uploads bytes as octet-stream with the ciphertext hash and reads created from 201", async () => {
   answer = (request) => ({
     status: request.method === "PUT" ? 201 : 200,

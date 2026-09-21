@@ -31,7 +31,7 @@ export type Routes = {
   LetterEditor: { id: string };
   Letter: { id: string };
   Quotes: undefined;
-  RecoveryCode: { mode: "show" | "enter" };
+  RecoveryCode: { mode: "show" | "join" };
 };
 export type Props<T extends keyof Routes> = NativeStackScreenProps<Routes, T>;
 export const useNav = () => useNavigation<NativeStackNavigationProp<Routes>>();
