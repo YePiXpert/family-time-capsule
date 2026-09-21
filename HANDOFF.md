@@ -19,9 +19,9 @@
     手机端 `59ff497`（自写 Expo 模块 `mobile/modules/speech-recognition`：iOS `SFSpeechRecognizer` `requiresOnDeviceRecognition`，安卓存根回退服务端；`client.ts` 加二进制 `upload()`；编辑页「说一段／说完了」录完自动接在正文后、分组时接第一件事；逐段同意，「以后都同意」记在本机 `settings.transcribeConsent`）。
   - Build 74「出生的故事」：`6c72e56`（`RecordContent.story` 四主题、`stories.ts` 每题六问、书架合集常驻入口 + `Stories` 页、编辑页故事问题卡、阅读／搜索／归档带主题、纸书故事章排在寄语之前且月章不重复）。
   - Build 75「访谈者」：服务端 `b76439d`（writingMode ask／question／letter／editor，八条提示词逐字 = `docs/AI-PROMPTS.md`——`prompts.test.ts` 盯着；分模式校验；`server/scripts/probe-text.ts`）、手机端 `208c8e7`（AI 面板「追问我」、联网版「今天的小问题」一天一次本机缓存 `settings.dailyQuestion`、写信「不知道从哪开始？」、生成／润色送落款、寄语送她说的话、同意书 v2 共用 `src/ai/consent.ts`）。
-  - Build 76「年度册的编者」：（待填：提交号——`yearPicks` 共享根字段、AI 建议目录、纸书按目录装订与章首引语、备份提醒认得家人一起写）。
+  - Build 76「年度册的编者」：`5697dc1`（`yearPicks` 共享根字段：按年一块、两台都改取 `updatedAt` 晚的、`repairReferences` 只在真少了引用时换对象；年度册页「AI 建议目录」两次确认才送整年文字、预览可「不要」「不引」、采用才落库、手机端 `checkEditorResult` 再校验；纸书按目录装订、章首引语进 `lead`、建议书名替换封面书名；`backupNudgeBody` 认得 7 天内的家人同步）。
   - 出包流水线 `0b08b53`：quality 作业补 server typecheck；`v*` 标签自动发 GitHub Release（APK／未签名 IPA／`build-source.json`／`sha256sums.txt`，说明取 CHANGELOG 顶节；`contents: write` 只给该作业）。**标签要打轻量标签**（`git tag v1.0.0 <sha>`，不加 `-a`），`github.sha` 才等于提交、workflow 的 SHA 核对才过。
-  - 发版：（待填：交付提交、run、APK／IPA 字节数与 SHA-256）。
+  - 发版：交付提交 `16300f2`（`mobile/app.json` 1.0.0／构建号 73，CHANGELOG 顶节「1.0.0」，README 当前本机版），轻量标签 `v1.0.0` 指向它，标签推送触发 run 35607118819（release 作业会发 GitHub Release `v1.0.0`：APK／未签名 IPA／`build-source.json`／`sha256sums.txt`）。（待填：run 结论、APK／IPA 字节数与 SHA-256——`gh release view v1.0.0` 或 `gh run download 35607118819`。）
   - **服务端生产仍是 `f71f86c`**（审查修复版，2026-09-21 ~07:49 UTC 部署）。**`b76439d` 待主人部署**（自动模式的分类器拦下了生产部署命令，本会话没有再试）：它带转写端点与四个新 writingMode，
     staging 3141 两次全绿（`8a27c6a` 含转写段；`b76439d` 全部段：group／write／ask／question／letter／editor／transcribe／家庭空间，容器 `/tmp` 干净），`probe-text.ts` 12 条样例人工看过：无编造、无禁词、问题具体能答。
     **先部服务端再装 1.0.0 的包**（Build 73+ 的手机对旧服务端会收到 404／400）。步骤（仓库根目录）：
@@ -117,7 +117,7 @@
    docs/plans/PLAN-BUILD-70.md（Build 70 计划 + 顶部实施偏离）、deploy/README.md（服务端部署与远端备份对象库）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install（mobile 的 tests/sync-e2e.test.ts 会拉起真实服务端子进程，server 依赖必须装）。
-4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（2026-09-21 Build 75 之后 50 个文件 708 个测试，待填 1.0.0 的数）；
+4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（1.0.0 时 51 个文件 784 个测试）；
    server 下 npm test、npm run typecheck（146 个测试，server 没有 lint 脚本）；
    python3 mobile/scripts/verify-local-boundary.py；
    python3 -m unittest discover -s mobile/scripts -p 'test_*.py'。
