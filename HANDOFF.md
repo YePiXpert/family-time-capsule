@@ -135,10 +135,10 @@
    git push 与 gh 反过来必须带着代理（直连 github.com 会超时）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·1.0.0（Build 73–76）状态见 HANDOFF 第一节第一条：若「发版」一行还是「待填」，先 git log 看 Build 76 与 1.0.0 收尾提交是否已在 main，
-   再按 AGENTS.md 出包（轻量标签 v1.0.0 触发 mobile-build.yml 的 release 作业，或 workflow_dispatch 完整 40 位 SHA），把 run 与校验和填进第一节。
+第二步·1.0.0（Build 73–76）**已交付**（第一节第一条：提交 16300f2、标签 v1.0.0、run 35607118819 四作业全绿、GitHub Release 上有 APK／IPA／校验和，不过期）。
+   不要再出 1.0.0 的包；此后不加新功能，只做第四节的优化项。再次出包时按 AGENTS.md（workflow_dispatch 完整 40 位 SHA；正式版打轻量标签 v1.0.x 走 release 作业）并递增构建号。
    服务端生产是 f71f86c；**b76439d（转写端点 + 四个新 writingMode）待主人部署**，步骤在第一节，先部服务端再装包。
-   若主人本地还没存下各版 APK/IPA，提醒先 gh run download 存下来（artifacts 30 天过期）。
+   两台真机的 1.0.0 验收（说一段／出生的故事／追问我／编者）还没做，清单在第一节。
 
 第三步·真机验收与下一版：
 - 先按 docs/plans/PLAN-SHARING.md 第五节做真机验收（主人两台手机 + 家人一台）——两台手机真跑同步从未验证过；主人用 Build 71/72 的手机点一次「远端备份 → 现在备份」确认服务端兼容。
