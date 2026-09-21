@@ -48,7 +48,12 @@ import {
   type ObjectPlan,
   type UploadItem,
 } from "./planner";
-import { writeRemoteState, type RemoteState } from "./state";
+import {
+  freshRemoteState,
+  readRemoteState,
+  writeRemoteState,
+  type RemoteState,
+} from "./state";
 import { SyncError, type Transport } from "./transport";
 /**
  * 远端备份引擎：本机清单备份（.xmbm + blob 库）是源头，远端只是它的密文副本。
@@ -208,14 +213,22 @@ export async function runRemoteBackup(
     deps.signal,
   );
   if (registered.length) await deps.transport.prune(registered, deps.signal);
+  const now = new Date().toISOString();
+  const previous = await readRemoteState(now);
   const remote: RemoteState = {
-    version: 1,
+    ...(previous?.keyId === keyId ? previous : freshRemoteState(keyId, now)),
     enabled: true,
-    keyId,
-    lastBackupAt: new Date().toISOString(),
-    lastBackupBytes: index.blobBytes + manifestBytes,
-    lastBackupObjects: all.length,
+    lastSyncAt: now,
+    lastSyncSummary: {
+      devices: 1,
+      objects: all.length,
+      bytes: index.blobBytes + manifestBytes,
+      pulled: 0,
+      pushed: done,
+      conflicts: 0,
+    },
   };
+  delete remote.lastError;
   writeRemoteState(remote);
   return remote;
 }

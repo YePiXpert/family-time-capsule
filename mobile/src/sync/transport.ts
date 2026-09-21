@@ -70,14 +70,28 @@ export const xhrClient: HttpClient = (request) =>
     );
   });
 export type RemoteStatus = {
+  /** 全家最新一份清单的钥匙指纹；服务上还没有清单时为 null。 */
   keyId: string | null;
   manifestUpdatedAt: string | null;
   objects: number;
   bytes: number;
   limitBytes: number;
   freeBytes: number;
+  /** 服务上有几台手机的清单（Build 72 起；旧服务端没有这一项时按 0 算）。 */
+  manifests: number;
 };
 export type RemoteManifest = {
+  /** 这份清单属于哪台设备（Build 72 起服务端才给）。 */
+  deviceId?: string;
+  keyId: string;
+  index: string;
+  updatedAt: string;
+};
+/** 家庭空间里每台手机的清单：谁的、哪台、什么时候发布的；index 仍是密文。 */
+export type RemoteDeviceManifest = {
+  deviceId: string;
+  memberId: string;
+  deviceName: string | null;
   keyId: string;
   index: string;
   updatedAt: string;
@@ -106,7 +120,17 @@ export type Transport = {
     keep: readonly string[],
     signal?: AbortSignal,
   ): Promise<{ removed: number; bytes: number }>;
+  /** 删掉本成员名下的全部清单（Build 71 的「删除远端备份」）；对象是全家的，服务端只顺手收走没人指着的。 */
   wipe(signal?: AbortSignal): Promise<void>;
+  /** 全家每台手机的清单，按发布时间新→旧。 */
+  manifests(signal?: AbortSignal): Promise<RemoteDeviceManifest[]>;
+  /** 退出一起写：删掉一台设备的清单。自己的设备谁都能删，别人的只有主人能删。 */
+  deleteManifest(
+    deviceId: string,
+    signal?: AbortSignal,
+  ): Promise<{ pruned: number }>;
+  /** 主人清空全家远端：全部清单与全部对象。 */
+  wipeFamily(signal?: AbortSignal): Promise<void>;
 };
 const HAVE_BATCH = 2000;
 const MESSAGES: Record<string, string> = {
@@ -116,7 +140,31 @@ const MESSAGES: Record<string, string> = {
   SERVER_FULL: "服务器空间不足，请联系主人。",
   BUSY: "正在上传其他内容，请稍后再试。",
   NOT_FOUND: "远端没有这一份。",
+  OWNER_ONLY: "只有主人能这么做。",
 };
+const UNREADABLE = "服务返回了无法解析的内容。";
+const isText = (value: unknown): value is string => typeof value === "string";
+function deviceManifestOf(value: unknown): RemoteDeviceManifest | null {
+  if (!value || typeof value !== "object") return null;
+  const m = value as Record<string, unknown>;
+  if (
+    !isText(m.deviceId) ||
+    !isText(m.memberId) ||
+    !isText(m.keyId) ||
+    !isText(m.index) ||
+    !isText(m.updatedAt) ||
+    !(m.deviceName === null || m.deviceName === undefined || isText(m.deviceName))
+  )
+    return null;
+  return {
+    deviceId: m.deviceId,
+    memberId: m.memberId,
+    deviceName: isText(m.deviceName) ? m.deviceName : null,
+    keyId: m.keyId,
+    index: m.index,
+    updatedAt: m.updatedAt,
+  };
+}
 function decodeJson(body: Uint8Array): Record<string, unknown> | null {
   try {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(body);
@@ -180,11 +228,7 @@ export function createTransport(
         return { status: response.status, json: {}, body: response.body };
       const json = decodeJson(response.body);
       if (!json)
-        throw new SyncError(
-          "SERVER_ERROR",
-          "服务返回了无法解析的内容。",
-          response.status,
-        );
+        throw new SyncError("SERVER_ERROR", UNREADABLE, response.status);
       return { status: response.status, json, body: response.body };
     }
     const json = decodeJson(response.body);
@@ -212,7 +256,10 @@ export function createTransport(
   return {
     async status(signal) {
       const { json } = await call("GET", "/backup/status", { signal });
-      return json as RemoteStatus;
+      return {
+        ...(json as RemoteStatus),
+        manifests: Number(json.manifests ?? 0),
+      };
     },
     async missing(ids, signal) {
       const missing = new Set<string>();
@@ -256,17 +303,14 @@ export function createTransport(
         allow404: true,
       });
       if (status === 404) return null;
-      if (
-        typeof json.keyId !== "string" ||
-        typeof json.index !== "string" ||
-        typeof json.updatedAt !== "string"
-      )
-        throw new SyncError(
-          "SERVER_ERROR",
-          "服务返回了无法解析的内容。",
-          status,
-        );
-      return json as RemoteManifest;
+      if (!isText(json.keyId) || !isText(json.index) || !isText(json.updatedAt))
+        throw new SyncError("SERVER_ERROR", UNREADABLE, status);
+      return {
+        ...(isText(json.deviceId) ? { deviceId: json.deviceId } : {}),
+        keyId: json.keyId,
+        index: json.index,
+        updatedAt: json.updatedAt,
+      };
     },
     async prune(keep, signal) {
       const { json } = await call("POST", "/backup/prune", {
@@ -280,6 +324,30 @@ export function createTransport(
     },
     async wipe(signal) {
       await call("DELETE", "/backup", { signal });
+    },
+    async manifests(signal) {
+      const { json, status } = await call("GET", "/backup/manifests", {
+        signal,
+      });
+      // 这一路返回的是数组；decodeJson 只认「是个对象」，数组也算。
+      if (!Array.isArray(json))
+        throw new SyncError("SERVER_ERROR", UNREADABLE, status);
+      const out: RemoteDeviceManifest[] = [];
+      for (const item of json as unknown[]) {
+        const m = deviceManifestOf(item);
+        if (!m) throw new SyncError("SERVER_ERROR", UNREADABLE, status);
+        out.push(m);
+      }
+      return out;
+    },
+    async deleteManifest(deviceId, signal) {
+      const { json } = await call("DELETE", `/backup/manifests/${deviceId}`, {
+        signal,
+      });
+      return { pruned: Number(json.pruned ?? 0) };
+    },
+    async wipeFamily(signal) {
+      await call("DELETE", "/admin/backup", { signal });
     },
   };
 }

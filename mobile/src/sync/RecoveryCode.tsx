@@ -14,7 +14,7 @@ import {
 } from "../local/ui";
 import { keyFromMnemonic, keyIdOf, mnemonicOf } from "./crypto";
 import { restoreFromRemote } from "./engine";
-import { loadKey, storeKey, writeRemoteState } from "./state";
+import { freshRemoteState, loadKey, storeKey, writeRemoteState } from "./state";
 import { SyncError, createTransport } from "./transport";
 /**
  * 恢复码页。show：把这台手机的 12 个词摆出来抄；enter：输入 12 个词，从远端恢复到这台手机。
@@ -62,7 +62,7 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
       await restoreBackup(store, file, setProgress, abort.signal);
       // 拿回来了，之后这台手机就用这把钥匙继续往远端备份。
       await storeKey(key);
-      writeRemoteState({ version: 1, enabled: true, keyId: keyIdOf(key) });
+      writeRemoteState(freshRemoteState(keyIdOf(key)));
       setMessage("恢复完成。这台手机之后会用这份恢复码继续备份。");
     } catch (e) {
       if (

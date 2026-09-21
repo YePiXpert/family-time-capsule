@@ -21,6 +21,7 @@ import { bytesLabel } from "./planner";
 import {
   clearRemoteState,
   forgetKey,
+  freshRemoteState,
   loadKey,
   readRemoteState,
   storeKey,
@@ -124,7 +125,7 @@ export function RemoteBackupCard({
           signal,
         });
         setMessage(
-          `远端备份完成：${bytesLabel(result.lastBackupBytes ?? 0)}，${result.lastBackupObjects ?? 0} 份。`,
+          `远端备份完成：${bytesLabel(result.lastSyncSummary?.bytes ?? 0)}，${result.lastSyncSummary?.objects ?? 0} 份。`,
         );
       }),
     );
@@ -147,12 +148,11 @@ export function RemoteBackupCard({
       // 之前关过但没删远端：还是那把钥匙，恢复码不变。
       const key = (await loadKey()) ?? newMasterKey();
       await storeKey(key);
-      writeRemoteState({
-        ...(remote ?? {}),
-        version: 1,
-        enabled: true,
-        keyId: keyIdOf(key),
-      });
+      writeRemoteState(
+        remote
+          ? { ...remote, enabled: true, keyId: keyIdOf(key) }
+          : freshRemoteState(keyIdOf(key)),
+      );
       nav.navigate("RecoveryCode", { mode: "show" });
     });
   const showCode = () =>
@@ -261,8 +261,8 @@ export function RemoteBackupCard({
       ) : (
         <>
           <Text style={s.muted}>
-            {remote.lastBackupAt
-              ? `上次备份 ${dateLabel(remote.lastBackupAt)} · ${bytesLabel(remote.lastBackupBytes ?? 0)} · ${remote.lastBackupObjects ?? 0} 份`
+            {remote.lastSyncAt
+              ? `上次备份 ${dateLabel(remote.lastSyncAt)} · ${bytesLabel(remote.lastSyncSummary?.bytes ?? 0)} · ${remote.lastSyncSummary?.objects ?? 0} 份`
               : "还没备份到远端。"}
           </Text>
           <ErrorText message={error} />
