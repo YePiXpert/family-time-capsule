@@ -1,6 +1,6 @@
 # 桉桉成长记 · Build 72「家人一起写」实施计划（落款 + 多机同步）
 
-> 2026-09-21 起草，待主人批。批了之后从提交 1 开始，服务端先部署再出手机包（AGENTS／HANDOFF 的老规矩）。
+> 2026-09-21 起草，同日主人批准并拍板第七节四条（自动同步默认开；冲突新者胜加留底；「从远端恢复」去掉；那半句用「入淮清洛渐漫漫」，整句诗进扉页，可选提交 15 一起做）。从提交 1 开始，服务端先部署再出手机包。
 > 依据：PRODUCT.md 第四节原则 3「谁写的，和写了什么一样重要」、第八节次序 1；主人同日拍板：落款用关系称呼（爸爸／妈妈／外婆…），不用账号名；1 与 2 都做，先 72 后 73「说一段」。
 > 她叫李清洛，小名桉桉，名字取自苏轼「入淮清洛渐漫漫，人间有味是清欢」——本计划末尾有一个可整体划掉的可选提交，把本名与这句诗放进扉页。
 
@@ -31,7 +31,7 @@
    - albums／series：`name`／`note` 按 LWW，`items` 取并集（基的顺序在前、新增在后）；persons 同名自动合并（`mergePersons`）。
    - 根字段：profile、yearNotes（按年）、yearCovers（按年）、yearBooksBoundAt（按年取早）以「与基不同的那一方」为准，两方都不同时取 createdAt 新的清单。
 6. **一次同步**（`family.ts` 的 `runFamilySync`）：核对钥匙 → `GET /backup/manifests` → 跳过 sha 没变的设备（`sync/state.json` 的 `seen`）→ 逐份下载解密清单 → `merge` → 先把缺的素材逐个下载进 blob 库（写一枚 `restoring-*.xmbm.part` 钉子保护，可停可续）→ 物化到 media 目录并生成缩略图 → **一次** `store.change` 写入合并结果 → `createBackup` 出新清单 → 只传缺的对象 → `PUT /backup/manifest`（服务端按设备存）→ `prune` → 写 base／seen／state。任何一步失败，本机库一个字节没动（与 `restoreBackup` 同一哲学）。
-7. **加入与退出**：备份页最后一张卡由「远端备份」改为「家人一起写」（testID 仍是 `remote-card`，未登录仍只有「去登录」）。已登录未加入：服务上有别人的清单 → 「加入」（输入 12 词恢复码 → 首次同步 = 合并而不是替换，本机已有的内容会一起推上去）；服务上是空的 → 「开始一起写」（生成钥匙 → 抄恢复码 → 首次推送）。已加入：「现在同步」+ 一行「上次同步 9月21日 14:02 · 3 台手机 · 1.2 GB」+ 文字级「查看恢复码」「验证」「退出（本机资料留着）」；主人多一个危险文字「删除远端全部」；「从远端恢复」（整库替换）收进文字级「更多」，留给换机救急。
+7. **加入与退出**：备份页最后一张卡由「远端备份」改为「家人一起写」（testID 仍是 `remote-card`，未登录仍只有「去登录」）。已登录未加入：服务上有别人的清单 → 「加入」（输入 12 词恢复码 → 首次同步 = 合并而不是替换，本机已有的内容会一起推上去）；服务上是空的 → 「开始一起写」（生成钥匙 → 抄恢复码 → 首次推送）。已加入：「现在同步」+ 一行「上次同步 9月21日 14:02 · 3 台手机 · 1.2 GB」+ 文字级「查看恢复码」「验证」「退出（本机资料留着）」；主人多一个危险文字「删除远端全部」。「从远端恢复」（整库替换）**去掉**：换机就是「加入」，空库合并等于全量拉取，一条路够了（主人：精简且强大）。`engine.ts` 的 `restoreFromRemote` 与 `RecoveryCode` 的恢复态一并删除。
 8. **自动同步**：登录且已加入时，回到前台、保存一段时光后 30 秒（防抖）自动跑一次，静默失败只记 `lastError`，进度与结果写在「我的 → 备份与恢复」行的副题上（「上次同步 …」／「有 2 段两台手机都改过」）。宪法禁 `expo-network`，分不出 Wi‑Fi，照片一起下；「外观设置」里给一个「回到应用时自动同步」开关（默认开）。
 9. **老记录补落款**：升级后书架出一张卡（提醒种类 `by`，排在里程碑之前、冲突之后）：「以前的 N 段时光还没有落款，都是{默认落款}写的吗？」→ 「都是」一键写上 ／ 「不用了」永久关闭。逐条也能在编辑页改。
 10. **旧版兼容**：Build 71 能打开 Build 72 的备份（`by`、`tombstones` 都是可选字段，校验不拒绝未知键），只是看不到落款；Build 71 手机的远端备份继续可用（清单归到它的设备名下）。服务端不能回退到本版之前（家庭空间已迁移）。
@@ -91,7 +91,7 @@
 - `tests/sync-merge.test.ts` ≥ 25 例：单边改、双边改（LWW + 冲突留底、同秒比哈希）、删 vs 改、删 vs 没改、双删、相册两边各加一条、系列同月两边各选一张（LWW）、同名人物合并且记录标记改写、只被别人草稿引用的素材不物化、根字段各情形、空基（首次加入）退化为 LWW 且不误报冲突（内容相同不算冲突）、幂等（合并两次结果相同）。
 
 **提交 10 · 同步引擎**
-- `src/sync/family.ts`：`runFamilySync(store, deps)`（第三节第 6 条的流程；复用 `engine.ts` 的 `fetchManifest`→ 抽成 `fetchManifestOf(entry)`、`downloadContent`、`uploadContent`、`runRemoteBackup` 的推送段抽成 `pushManifest(state, deps)`）；`joinFamily(store, key, deps)` = 校验 keyId 与服务上最新清单一致 → `storeKey` → `runFamilySync`；`leaveFamily()` = 删本机钥匙与 state／base／conflicts、`deleteManifest(本设备)`，本机资料不动；`materialize(media)`：blob → media 目录（`mediaFile` 名沿用远端）→ `renderThumb`。`engine.ts` 的 `restoreFromRemote` 改读「本成员最新清单」（旧 GET 语义）继续服务「从远端恢复」。
+- `src/sync/family.ts`：`runFamilySync(store, deps)`（第三节第 6 条的流程；复用 `engine.ts` 的 `fetchManifest`→ 抽成 `fetchManifestOf(entry)`、`downloadContent`、`uploadContent`、`runRemoteBackup` 的推送段抽成 `pushManifest(state, deps)`）；`joinFamily(store, key, deps)` = 校验 keyId 与服务上最新清单一致 → `storeKey` → `runFamilySync`；`leaveFamily()` = 删本机钥匙与 state／base／conflicts、`deleteManifest(本设备)`，本机资料不动；`materialize(media)`：blob → media 目录（`mediaFile` 名沿用远端）→ `renderThumb`。`engine.ts` 的 `restoreFromRemote` 删除（换机 = 加入）。
 - 停止与续传：钉子文件复用 `restorePinName`；`collectBlobs` 已认钉子；中断后下一次同步从缺的 blob 接着下。
 - 测试 `sync-family.test.ts`（假传输 + 假文件系统）：首次加入拉全量、第二次只拉变了的设备、推送只传缺的、中断续传、写库失败时本机不变、退出不删资料。
 
@@ -140,9 +140,9 @@
 - **补落款误标**：只动没有落款的记录，且逐条可改；卡可永久关闭。
 - **草稿不同步**造成「妈妈手机上写了一半的东西主人看不到」：这是刻意的（PRODUCT 原则 7：草稿是这台手机的事），文案在加入页说明一句。
 
-## 七、待主人拍板
+## 七、主人拍板（2026-09-21）
 
-1. 自动同步默认开（回前台 + 保存后 30 秒），照片一起下，不区分 Wi‑Fi——还是默认只手动？
-2. 两台都改同一段：按上面「时间新者胜 + 留底可换回」，不弹窗二选一。
-3. 「从远端恢复」（整库替换）收进「更多」保留，还是彻底去掉？
-4. 可选提交 15（本名与那句诗进扉页）做不做；那半句话用「入淮清洛渐漫漫」还是另选。
+1. 自动同步**默认开**（回前台 + 保存后 30 秒），照片一起下。
+2. 两台都改同一段：时间新者胜 + 留底可换回，**不弹窗**。
+3. 「从远端恢复」**去掉**，换机就是加入（精简且强大）。
+4. 那半句话用「**入淮清洛渐漫漫**」；整句诗与本名进扉页，可选提交 15 **做**。
