@@ -919,16 +919,19 @@ export function SignatureButton({
   onChange,
   disabled = false,
   testID = "editor-by",
+  initiallyOpen = false,
 }: {
   value: string | undefined;
   options: readonly string[];
   onChange: (by: string | undefined) => void;
   disabled?: boolean;
   testID?: string;
+  /** 「我的落款」页一进来就把 chips 铺开。 */
+  initiallyOpen?: boolean;
 }) {
   const s = useStyles();
   const { colors: c } = useTheme();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [custom, setCustom] = useState<string | null>(null);
   const shown = [...new Set([...(value ? [value] : []), ...options])];
   const pick = (by: string | undefined) => {

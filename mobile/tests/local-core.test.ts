@@ -13,7 +13,9 @@ import {
   finishSelection,
   forkLibrary,
   mergePersons,
+  stampUnsigned,
   tombstone,
+  unsignedRecords,
   monthOfItem,
   normalizeLibrary,
   recordsOfPerson,
@@ -1140,6 +1142,25 @@ describe("落款与墓碑", () => {
     }
     const s = fixture();
     s.tombstones = {};
+    validateLibrary(s);
+  });
+});
+
+describe("给以前的时光补落款", () => {
+  it("stamps only unsigned records and leaves revision and updatedAt alone", () => {
+    const s = fixture();
+    saveRecord(s, "draft", "r", date);
+    s.records.signed = { ...s.records.r!, id: "signed", by: "妈妈" };
+    s.records.other = { ...s.records.r!, id: "other" };
+    expect(unsignedRecords(s).sort()).toEqual(["other", "r"]);
+    expect(stampUnsigned(s, "爸爸")).toBe(2);
+    expect(s.records.r!.by).toBe("爸爸");
+    expect(s.records.other!.by).toBe("爸爸");
+    expect(s.records.signed!.by).toBe("妈妈");
+    expect(s.records.r!.revision).toBe(1);
+    expect(s.records.r!.updatedAt).toBe(date);
+    expect(unsignedRecords(s)).toEqual([]);
+    expect(stampUnsigned(s, "爸爸")).toBe(0);
     validateLibrary(s);
   });
 });

@@ -433,6 +433,19 @@ export function mergePersons(
     ...new Set(ids.map((p) => (p === sourceId ? targetId : p))),
   ]);
 }
+/** 还没落款的记录 id：书架「都是{by}写的吗」卡与「我的落款」页都靠它数。 */
+export function unsignedRecords(s: Pick<Library, "records">): string[] {
+  return Object.keys(s.records).filter((id) => !s.records[id]!.by);
+}
+/**
+ * 给还没落款的记录统一写上 by；返回写了几条。只动 by，不动 revision 与 updatedAt：
+ * 这不是内容编辑，别让它在家人合并时压过对方后来真正的改动。
+ */
+export function stampUnsigned(s: Library, by: string): number {
+  const ids = unsignedRecords(s);
+  for (const id of ids) editEntity(s, "records", id, (r) => { r.by = by; });
+  return ids.length;
+}
 export function referencedMedia(s: Library): Set<string> {
   return new Set([
     ...(s.profile.avatarId ? [s.profile.avatarId] : []),

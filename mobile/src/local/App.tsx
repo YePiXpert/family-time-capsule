@@ -60,7 +60,14 @@ import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
 import { SeriesScreen } from "./Series";
 import { Footprint } from "./Footprint";
 import { People } from "./People";
-import { Settings, Profile, Appearance, Storage, Backup } from "./Settings";
+import {
+  Settings,
+  Profile,
+  Appearance,
+  Signature,
+  Storage,
+  Backup,
+} from "./Settings";
 import { Editor } from "./Editor";
 import { RecordScreen } from "./Record";
 import { MediaScreen } from "./Media";
@@ -278,6 +285,7 @@ function Root() {
           <Stack.Screen name="Backup" component={Backup} />
           <Stack.Screen name="AISettings" component={AISettingsScreen} />
           <Stack.Screen name="Appearance" component={Appearance} />
+          <Stack.Screen name="Signature" component={Signature} />
           <Stack.Screen name="LetterEditor" component={LetterEditor} />
           <Stack.Screen name="Letter" component={LetterScreen} />
           <Stack.Screen name="Quotes" component={Quotes} />

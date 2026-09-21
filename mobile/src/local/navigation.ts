@@ -26,6 +26,7 @@ export type Routes = {
   Storage: undefined;
   Backup: undefined;
   Appearance: undefined;
+  Signature: undefined;
   AISettings: undefined;
   LetterEditor: { id: string };
   Letter: { id: string };

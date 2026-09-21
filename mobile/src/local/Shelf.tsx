@@ -32,8 +32,7 @@ import {
   yearKey,
   type LocalMedia,
   type LocalRecord,
-  type Stored,
-} from "./model";
+  type Stored, stampUnsigned, unsignedRecords } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import { CHILD_FALLBACK } from "./brand";
@@ -754,6 +753,10 @@ export function Shelf() {
   const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
   // 同屏只放一张提醒卡：里程碑 > 装订 > 备份 > 节奏；关掉的写进库里，沉默期见 nudge.ts。
   const candidates: NudgeKind[] = [];
+  // 落款卡：这台手机定了默认落款、库里还有没落款的记录时问一次；「都是」一次写上，关掉就永远不再问。
+  const unsigned = useMemo(() => unsignedRecords({ records: recordMap }), [recordMap]);
+  const defaultBy = state.settings.by;
+  if (defaultBy && unsigned.length) candidates.push("by");
   if (milestone) candidates.push("milestone");
   if (bookNudge) candidates.push("book");
   if (backupDue) candidates.push("backup");
@@ -870,6 +873,26 @@ export function Shelf() {
               onPress: captureNow,
             }}
             onClose={() => closeNudge("milestone")}
+          />
+        )}
+        {nudgeKind === "by" && defaultBy && (
+          <NudgeCard
+            titleTestID="by-nudge"
+            title={`以前的 ${unsigned.length} 段时光还没有落款`}
+            body={`都是${defaultBy}写的吗？点「都是」一次写上；不是的话关掉，以后不再问。`}
+            action={{
+              label: "都是",
+              testID: "by-nudge-action",
+              onPress: () => {
+                void store
+                  .change((lib) => {
+                    stampUnsigned(lib, defaultBy);
+                    lib.nudgeClosedAt = { ...lib.nudgeClosedAt, by: now() };
+                  })
+                  .catch((e) => setError(messageOf(e)));
+              },
+            }}
+            onClose={() => closeNudge("by")}
           />
         )}
         {nudgeKind === "book" && bookNudge && (
