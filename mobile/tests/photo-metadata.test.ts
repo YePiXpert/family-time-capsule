@@ -180,7 +180,7 @@ describe("batch photo events", () => {
     const d = s.drafts.draft!;
     d.content.by = "妈妈";
     expect(photoDayGroups(d, s.media).map((g) => g.by)).toEqual(["妈妈", "妈妈"]);
-    d.photoEvents = [
+    mut(d).photoEvents = [
       { ...emptyContent(), mediaIds: ["a", "b"], coverId: "a", by: "外婆" },
       { ...emptyContent(), mediaIds: ["c", "unknown"], coverId: null },
     ];
