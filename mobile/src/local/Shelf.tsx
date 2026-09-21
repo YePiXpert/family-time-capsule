@@ -14,7 +14,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import { useLibrary, useStore } from "./context";
+import { useLibrary, useStore, useSyncStatus } from "./context";
 import { CaptureFab } from "./CaptureFab";
 import {
   beginDraft,
@@ -643,6 +643,7 @@ export function Volume({
 }
 
 export function Shelf() {
+  const sync = useSyncStatus();
   const state = useLibrary(),
     store = useStore(),
     nav = useNav(),
@@ -751,11 +752,12 @@ export function Shelf() {
   const age = ageLine(state.profile.birthday),
     milestone = milestoneOf(state.profile.birthday);
   const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
-  // 同屏只放一张提醒卡：里程碑 > 装订 > 备份 > 节奏；关掉的写进库里，沉默期见 nudge.ts。
+  // 同屏只放一张提醒卡：合并冲突 > 落款 > 里程碑 > 装订 > 备份 > 节奏；关掉的写进库里，沉默期见 nudge.ts。
   const candidates: NudgeKind[] = [];
   // 落款卡：这台手机定了默认落款、库里还有没落款的记录时问一次；「都是」一次写上，关掉就永远不再问。
   const unsigned = useMemo(() => unsignedRecords({ records: recordMap }), [recordMap]);
   const defaultBy = state.settings.by;
+  if (sync.conflicts > 0) candidates.push("conflict");
   if (defaultBy && unsigned.length) candidates.push("by");
   if (milestone) candidates.push("milestone");
   if (bookNudge) candidates.push("book");
@@ -873,6 +875,19 @@ export function Shelf() {
               onPress: captureNow,
             }}
             onClose={() => closeNudge("milestone")}
+          />
+        )}
+        {nudgeKind === "conflict" && (
+          <NudgeCard
+            titleTestID="conflict-nudge"
+            title={`有 ${sync.conflicts} 段两台手机都改过`}
+            body="时间新的一版已经留下，另一版收着，随时可以换回。"
+            action={{
+              label: "去看看",
+              testID: "conflict-nudge-action",
+              onPress: () => nav.navigate("Conflicts"),
+            }}
+            onClose={() => closeNudge("conflict")}
           />
         )}
         {nudgeKind === "by" && defaultBy && (

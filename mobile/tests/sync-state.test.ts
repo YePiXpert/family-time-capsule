@@ -262,3 +262,23 @@ it("clearSyncFiles removes state, base and conflicts together and is idempotent"
   expect(await state.readBase()).toEqual(state.emptyBase());
   expect(await state.readConflicts()).toEqual([]);
 });
+it("notifies once after each completed write or clear, and stops after unsubscribe", async () => {
+  const state = await load();
+  const notify = vi.fn();
+  const unsubscribe = state.subscribeSyncFiles(notify);
+  state.writeRemoteState(state.freshRemoteState(KEY_ID));
+  expect(notify).toHaveBeenCalledTimes(1);
+  state.writeConflicts([]);
+  expect(notify).toHaveBeenCalledTimes(2);
+  state.clearSyncFiles();
+  expect(notify).toHaveBeenCalledTimes(3);
+  state.clearRemoteState();
+  expect(notify).toHaveBeenCalledTimes(4);
+  state.writeBase(state.emptyBase());
+  expect(notify).toHaveBeenCalledTimes(5);
+  unsubscribe();
+  state.writeRemoteState(state.freshRemoteState(KEY_ID));
+  state.writeConflicts([]);
+  state.clearSyncFiles();
+  expect(notify).toHaveBeenCalledTimes(5);
+});

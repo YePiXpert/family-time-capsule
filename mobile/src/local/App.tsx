@@ -1,3 +1,5 @@
+import { Conflicts } from "../sync/Conflicts";
+import { useSyncStatusValue } from "../sync/status";
 import { AISettingsScreen } from "../ai/Settings";
 import { RecoveryCode } from "../sync/RecoveryCode";
 import {
@@ -36,7 +38,12 @@ import { subscribeToPendingNativeShares } from "../../modules/share-intake/src";
 import { openLocalStore } from "./disk";
 import { ensureDirectories, verifyMedia } from "./files";
 import * as LocalAuthentication from "expo-local-authentication";
-import { StoreContext, useLibrary, useStore } from "./context";
+import {
+  StoreContext,
+  SyncStatusContext,
+  useLibrary,
+  useStore,
+} from "./context";
 import {
   LocalTheme,
   Button,
@@ -123,6 +130,7 @@ function LockGate({ onUnlock }: { onUnlock: () => void }) {
 }
 
 function Root() {
+  const syncStatus = useSyncStatusValue();
   const state = useLibrary(),
     store = useStore(),
     s = useStyles(),
@@ -220,7 +228,7 @@ function Root() {
       </>
     );
   return (
-    <>
+    <SyncStatusContext.Provider value={syncStatus}>
       <StatusBar style={theme.dark ? "light" : "dark"} />
       <NavigationContainer
         theme={{
@@ -289,10 +297,11 @@ function Root() {
           <Stack.Screen name="LetterEditor" component={LetterEditor} />
           <Stack.Screen name="Letter" component={LetterScreen} />
           <Stack.Screen name="Quotes" component={Quotes} />
+          <Stack.Screen name="Conflicts" component={Conflicts} />
           <Stack.Screen name="RecoveryCode" component={RecoveryCode} />
         </Stack.Navigator>
       </NavigationContainer>
-    </>
+    </SyncStatusContext.Provider>
   );
 }
 function BoundaryFallback({
