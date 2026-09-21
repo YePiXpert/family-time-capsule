@@ -64,7 +64,9 @@ describe("one nudge card at a time", () => {
     expect(pickNudge([], {}, today)).toBeNull();
     expect(pickNudge([], undefined, today)).toBeNull();
   });
-  it("orders milestone over binding over backup over rhythm", () => {
+  it("orders conflict over signature over milestone over binding over backup over rhythm", () => {
+    expect(pickNudge(["rhythm", "milestone", "by", "conflict"], {}, today)).toBe("conflict");
+    expect(pickNudge(["rhythm", "milestone", "by"], {}, today)).toBe("by");
     expect(pickNudge(["rhythm", "backup", "book", "milestone"], {}, today)).toBe("milestone");
     expect(pickNudge(["rhythm", "backup", "book"], {}, today)).toBe("book");
     expect(pickNudge(["rhythm", "backup"], {}, today)).toBe("backup");
@@ -83,6 +85,13 @@ describe("one nudge card at a time", () => {
     expect(nudgeClosed("rhythm", "2026-09-18T23:59:00.000", today)).toBe(true);
     expect(nudgeClosed("rhythm", "2026-09-17T23:59:00.000", today)).toBe(false);
     expect(nudgeClosed("milestone", "2026-09-17T09:00:00.000", today)).toBe(false);
+  });
+  it("silences the signature card forever and never silences the conflict card by time", () => {
+    expect(nudgeClosed("by", "2020-01-01T09:00:00.000", today)).toBe(true);
+    expect(nudgeClosed("by", undefined, today)).toBe(false);
+    expect(nudgeClosed("conflict", closedNow, today)).toBe(false);
+    expect(pickNudge(["by", "rhythm"], { by: "2020-01-01T09:00:00.000" }, today)).toBe("rhythm");
+    expect(pickNudge(["conflict"], { conflict: closedNow }, today)).toBe("conflict");
   });
   it("silences the backup card for seven days", () => {
     expect(nudgeClosed("backup", "2026-09-12T09:00:00.000", today)).toBe(true);

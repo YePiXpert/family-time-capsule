@@ -31,7 +31,13 @@ import { healthFile } from "./health-file";
 import { RemoteBackupCard } from "../sync/RemoteBackupCard";
 import { changeAvgMs } from "./health";
 import { APP_NAME } from "./brand";
-import { referencedMedia, yearKey } from "./model";
+import {
+  BY_PRESETS,
+  referencedMedia,
+  stampUnsigned,
+  unsignedRecords,
+  yearKey,
+} from "./model";
 import {
   Button,
   Card,
@@ -41,6 +47,7 @@ import {
   SectionHeader,
   SettingsGroup,
   SettingsRow,
+  SignatureButton,
   Text,
   dateLabel,
   messageOf,
@@ -84,6 +91,14 @@ export function Settings() {
           label={`${name}的资料`}
           subtitle={birthday ? `生日 ${birthday}` : "还没填生日"}
           onPress={() => nav.navigate("Profile")}
+        />
+        <SettingsRow
+          icon="edit"
+          label="我的落款"
+          subtitle={
+            state.settings.by ? `—— ${state.settings.by}` : "还没定，记一刻时会问"
+          }
+          onPress={() => nav.navigate("Signature")}
           last
         />
       </SettingsGroup>
@@ -126,6 +141,75 @@ export function Settings() {
           last
         />
       </SettingsGroup>
+    </Page>
+  );
+}
+/** 「我的落款」：这台手机默认的称呼，新草稿自动带上；顺手把以前没落款的也写上。 */
+export function Signature() {
+  const state = useLibrary(),
+    store = useStore(),
+    s = useStyles();
+  const [error, setError] = useState("");
+  const [stamped, setStamped] = useState<number | null>(null);
+  const by = state.settings.by;
+  const unsigned = unsignedRecords(state).length;
+  const used = new Map<string, number>();
+  for (const r of Object.values(state.records))
+    if (r.by) used.set(r.by, (used.get(r.by) ?? 0) + 1);
+  const options = [
+    ...new Set([
+      ...[...used.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
+        .map(([name]) => name),
+      ...BY_PRESETS,
+    ]),
+  ];
+  return (
+    <Page title="我的落款">
+      <Text style={s.muted}>
+        用这台手机记下的每一段时光，都会署上这个称呼。家人一起写时，她长大后就能认出哪一段是谁写的。
+      </Text>
+      <Card>
+        <SignatureButton
+          value={by}
+          options={options}
+          initiallyOpen
+          testID="settings-by"
+          onChange={(next) => {
+            setStamped(null);
+            void store
+              .change((lib) => {
+                const settings = { ...lib.settings };
+                if (next) settings.by = next;
+                else delete settings.by;
+                lib.settings = settings;
+              })
+              .catch((e) => setError(messageOf(e)));
+          }}
+        />
+      </Card>
+      {by && unsigned > 0 && (
+        <Card>
+          <Text>{`以前的 ${unsigned} 段时光还没有落款。`}</Text>
+          <Text style={s.muted}>{`都是${by}写的话，一次写上；不是的就别点。`}</Text>
+          <Button
+            title={`都写上「${by}」`}
+            testID="settings-by-stamp"
+            onPress={() => {
+              void store
+                .change((lib) => {
+                  setStamped(stampUnsigned(lib, by));
+                  lib.nudgeClosedAt = { ...lib.nudgeClosedAt, by: new Date().toISOString() };
+                })
+                .catch((e) => setError(messageOf(e)));
+            }}
+          />
+        </Card>
+      )}
+      {stamped !== null && (
+        <Text style={s.muted}>{`已给 ${stamped} 段时光写上落款。`}</Text>
+      )}
+      <ErrorText message={error} />
     </Page>
   );
 }
