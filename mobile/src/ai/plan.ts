@@ -19,7 +19,7 @@ export function assertGenerateInput(
   mode: WritingMode,
   ids: string[],
   recordId: RecordDraft["recordId"],
-  event: { title?: string; text?: string },
+  event: { title?: string; text?: string; by?: string },
 ): void {
   if (kind === "group") {
     if (recordId)
@@ -31,6 +31,7 @@ export function assertGenerateInput(
   }
   if (kind === "write" && mode === "polish") {
     const request = polishRequest({
+      by: event.by,
       title: event.title ?? "",
       text: event.text ?? "",
     });
@@ -107,9 +108,9 @@ export const batchProgress = (done: number, total: number) =>
 /** 只把前一段发给 AI，本机内容不变；超限必须说明，不静默截断。 */
 export function writeContext(
   kind: "group" | "write",
-  event: { title?: string; text?: string },
+  event: { title?: string; text?: string; by?: string },
 ): { context: string; clipped: (limit: number) => string } {
-  const rawWrite = [event.title, event.text].filter(Boolean).join("\n");
+  const rawWrite = [event.by?.trim() ? `落款：${event.by.trim()}` : "", event.title, event.text].filter(Boolean).join("\n");
   return {
     context: kind === "write" ? rawWrite.slice(0, 3500) : "",
     clipped: (limit: number) =>

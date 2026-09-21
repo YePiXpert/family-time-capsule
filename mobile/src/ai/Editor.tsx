@@ -3,6 +3,10 @@ import { Alert, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
 import type { Library, RecordDraft } from "../local/model";
+import { useLibrary } from "../local/context";
+import { ageLine } from "../local/dates";
+import { storyTitle } from "../local/stories";
+import { AI_CONSENT_TEXT } from "./consent";
 import { photoDayGroups } from "../local/photo-metadata";
 import {
   Button,
@@ -21,6 +25,7 @@ import { JournalIcon } from "../components/JournalIcon";
 import { api, getToken, hasConsent, giveConsent, AIError } from "./client";
 import { thumbnail } from "./images";
 import {
+  askContext,
   PHOTO_REQUEST_LIMIT,
   sourceFingerprint,
   polishRequest,
@@ -46,7 +51,7 @@ import {
   writeContext,
 } from "./plan";
 import type { AIGroup, AIProposal, AIResult, WritingMode } from "./types";
-type Patch = Partial<Pick<RecordDraft, "aiJob" | "aiProposal">>;
+type Patch = Partial<Pick<RecordDraft, "aiJob" | "aiProposal" | "content" | "photoEvents">>;
 type Run = { kind: "group" | "write"; mode: WritingMode };
 export function AIEditor({
   draft,
@@ -61,10 +66,12 @@ export function AIEditor({
   onPatch: (patch: Patch) => Promise<unknown>;
   onApply: (proposal: AIProposal, part?: "title" | "text") => Promise<unknown>;
 }) {
+  const library = useLibrary();
   const s = useStyles(),
     nav = useNav(),
     { colors } = useTheme(),
     insets = useSafeAreaInsets();
+  const [interview, setInterview] = useState<{ questions: string[]; first: boolean; target: string } | null>(null);
   const [open, setOpen] = useState(false),
     [seen, setSeen] = useState(false),
     [busy, setBusy] = useState(false),
@@ -110,6 +117,26 @@ export function AIEditor({
     stale =
       !!proposal && sourceFingerprint(draft, media) !== proposal.fingerprint,
     unseen = !!proposal && !seen;
+  const targetOf = (d: RecordDraft, index: number, ids: string[] = []) => JSON.stringify([d.id, !!d.groupPhotosByDay, index, ids]);
+  const interviewTarget = targetOf(draft, eventIndex, selectedEvent?.mediaIds);
+  const visibleInterview = interview?.target === interviewTarget ? interview : null;
+  const applyQuestion = async (questionIndex?: number) => {
+    if (active.current || disabled || !visibleInterview) return;
+    const question = questionIndex === undefined ? undefined : visibleInterview.questions[questionIndex];
+    active.current = true;
+    try {
+      const { draft: d, media: m } = latest.current;
+      const currentEvents = photoDayGroups(d, m), event = currentEvents[eventIndex];
+      if (!event || targetOf(d, eventIndex, event.mediaIds) !== visibleInterview.target) return;
+      const text = question ? `${event.text}${event.text ? "\n\n" : ""}问：${question}\n` : event.text;
+      if (!d.recordId && d.groupPhotosByDay && d.content.mediaIds.length) {
+        currentEvents[eventIndex] = { ...event, text, ...(!question ? { first: true } : {}) };
+        await onPatch({ photoEvents: currentEvents, ...(!question ? { content: { ...d.content, first: true } } : {}) });
+      } else await onPatch({ content: { ...d.content, text, ...(!question ? { first: true } : {}) } });
+      setInterview((old) => old ? { ...old, questions: old.questions.filter((_, index) => index !== questionIndex), first: question ? old.first : false } : null);
+    } catch (e) { setError(messageOf(e)); }
+    finally { active.current = false; }
+  };
   const chooseTask = (kind: "group" | "write") => {
     setTask(kind);
     setError("");
@@ -152,7 +179,7 @@ export function AIEditor({
       if (!(await hasConsent())) {
         Alert.alert(
           "使用 AI 整理",
-          "生成和分组会把这件事的照片缩略图、拍摄时间及相关文字，润色只把标题和正文，经主人的服务发送给 DeepSeek Flash High。原图和精确 GPS 不发送，结果由你确认。",
+          AI_CONSENT_TEXT,
           [
             { text: "取消", style: "cancel" },
             {
@@ -180,6 +207,25 @@ export function AIEditor({
           snapshotEvents[
             Math.min(eventIndex, Math.max(0, snapshotEvents.length - 1))
           ];
+      if (kind === "write" && mode === "ask") {
+        if (!selected || !(selected.title.trim() || selected.text.trim())) throw new Error("先写几句，AI 才有得问。");
+        setInterview(null);
+        setProgress("正在想问题…");
+        const result = validateResult(await api("/ai/write", {
+          requestId: randomUUID(), photos: [], writingMode: "ask",
+          context: askContext({
+            by: snapshot.draft.content.by,
+            ageLabel: ageLine(library.profile.birthday, new Date(selected.date))?.split(" · ")[0] ?? null,
+            date: selected.date, title: selected.title, text: selected.text, first: selected.first,
+            topic: snapshot.draft.content.story ? storyTitle(snapshot.draft.content.story) : undefined,
+            recent: Object.values(library.records).filter((r) => r.id !== snapshot.draft.recordId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10).map(({ title, date }) => ({ title, date })),
+          }),
+        }, "POST", abort.current.signal), "write", [], "ask");
+        if (abort.current.signal.aborted) throw new AIError("CANCELED", "已停止等待，草稿不变。");
+        setInterview({ questions: result.questions!, first: result.first!, target: targetOf(snapshot.draft, eventIndex, selected.mediaIds) });
+        setProgress("想答哪一个，点一下再接着写。");
+        return;
+      }
       const ids = requestImageIds(
         kind,
         selected?.mediaIds,
@@ -187,6 +233,7 @@ export function AIEditor({
         snapshot.media,
       );
       assertGenerateInput(kind, mode, ids, snapshot.draft.recordId, {
+        by: snapshot.draft.content.by,
         title: selected?.title,
         text: selected?.text,
       });
@@ -201,6 +248,7 @@ export function AIEditor({
         snapshot.media,
       );
       const { context, clipped } = writeContext(kind, {
+        by: snapshot.draft.content.by,
         title: selected?.title,
         text: selected?.text,
       });
@@ -252,6 +300,7 @@ export function AIEditor({
       setRetryable({ kind, mode });
       if (kind === "write" && mode === "polish") {
         const request = polishRequest({
+          by: snapshot.draft.content.by,
           title: selected?.title ?? "",
           text: selected?.text ?? "",
         });
@@ -435,18 +484,30 @@ export function AIEditor({
                 />
               </View>
               <Text style={s.muted}>
-                {writeMode === "generate"
+                {writeMode === "ask" ? "AI 会问几个问题，选想答的接着写。" : writeMode === "generate"
                   ? task === "write" && !eventImages.length
                     ? "这件事还没有照片，暂不能生成。先添加照片，或写下文字后改用润色。"
                     : "根据这件事的照片和已知拍摄信息，写出短标题和一小段正文。"
                   : !selectedEvent?.text.trim()
                     ? "还没有可润色的正文。先写下几句话，再来润色。"
                     : (polishRequest({
+                        by: draft.content.by,
                         title: selectedEvent?.title ?? "",
                         text: selectedEvent?.text ?? "",
                       }).error ??
-                      "只发送这件事的标题和正文，保留你的原意、语气和事实，不发送照片。")}
+                      "只发送这件事的标题、正文和落款，保留你的原意、语气和事实，不发送照片。")}
               </Text>
+              <Text style={s.muted}>访谈者</Text>
+              <Button title="追问我" icon="sparkle" compact testID="ai-ask"
+                disabled={busy || disabled || !(selectedEvent?.title.trim() || selectedEvent?.text.trim())}
+                onPress={() => { chooseWriteMode("ask"); void generate("write", "ask"); }} />
+              {!(selectedEvent?.title.trim() || selectedEvent?.text.trim()) && <Text style={s.muted}>先写几句，AI 才有得问。</Text>}
+              <Text style={s.muted}>追问计一次写作额度；只发送这件事的文字、落款、月龄、日期和最近 10 条记录的标题，不发送照片。</Text>
+              {visibleInterview?.questions.map((question, index) => <Button key={index} title={question} compact testID={`ai-ask-q-${index}`} disabled={busy || disabled} onPress={() => { void applyQuestion(index); }} />)}
+              {visibleInterview?.first && !draft.content.first && !selectedEvent?.first && <View style={{ gap: 8 }}>
+                <Text style={s.muted}>这条像是第一次，标上吗？</Text>
+                <Button title="标上" compact disabled={busy || disabled} onPress={() => { void applyQuestion(); }} />
+              </View>}
               {events.length > 1 && task === "write" && (
                 <View style={{ gap: 8 }}>
                   <Text style={s.muted}>先选一件事</Text>

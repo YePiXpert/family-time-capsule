@@ -1,5 +1,6 @@
 import { SERVICE_URL } from "../local/brand";
 import { getToken, saveToken } from "./session";
+import { AIError } from "./error";
 export {
   disconnect,
   getToken,
@@ -8,13 +9,7 @@ export {
   saveToken,
 } from "./session";
 const BASE = SERVICE_URL;
-export class AIError extends Error {
-  code: string;
-  constructor(code: string, message: string) {
-    super(message);
-    this.code = code;
-  }
-}
+export { AIError } from "./error";
 export async function api<T>(
   path: string,
   body?: unknown,
