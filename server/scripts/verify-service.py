@@ -1,7 +1,7 @@
 """Exercise a running service with synthetic media; never print device tokens."""
 import argparse,base64,json,subprocess,tempfile,time,urllib.request,urllib.error,uuid
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');p.add_argument('--skip-transcribe',action='store_true');args=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');p.add_argument('--skip-transcribe',action='store_true');p.add_argument('--skip-text',action='store_true');args=p.parse_args()
 def call(path,body=None,token=None,method=None):
  headers={} if body is None else {'Content-Type':'application/json'}
  if token:headers['Authorization']='Bearer '+token
@@ -45,6 +45,38 @@ for model in ['deepseek-flash']:
   status,result=call('/api/v1/ai/'+kind,body,member['token']);assert status==200,(model,kind,status,result)
   status,replayed=call('/api/v1/ai/'+kind,body,member['token']);assert replayed==result
   print(model,kind,'passed, replay verified')
+# 合成文本验证访谈者与编者，不打印设备 token 或模型 tokens。
+if not args.skip_text:
+ contexts={
+  'ask':'落款：爸爸。月龄：4 个月。正文：今天她笑了。已标第一次：否。',
+  'question':'月龄：4 个月。今天：2026-09-05。最近标题：窗边、翻过去了。近七天问过：[]。',
+  'letter':'落款：妈妈。月龄：4 个月。拆封日期：2044-05-01。草稿：',
+ }
+ for writing_mode,context in contexts.items():
+  body={'requestId':str(uuid.uuid4()),'writingMode':writing_mode,'context':context,'photos':[]}
+  status,result=call('/api/v1/ai/write',body,member['token']);assert status==200,(writing_mode,status,result)
+  if writing_mode=='question':assert isinstance(result.get('question'),str)
+  else:
+   questions=result.get('questions');assert isinstance(questions,list) and (1 if writing_mode=='ask' else 2)<=len(questions)<=3
+   assert all(isinstance(question,str) for question in questions)
+   if writing_mode=='ask':assert isinstance(result.get('first'),bool)
+  print(writing_mode,'text passed')
+ records=[
+  {'id':'r1','date':'2026-09-01','by':'爸爸','title':'清早的窗','text':'我抱她站在窗边，楼下有人扫地。','first':False,'quote':False,'photos':True},
+  {'id':'r2','date':'2026-09-10','by':'妈妈','title':'翻过去了','text':'她第一次翻过去，我正在叠毛巾。','first':True,'quote':False,'photos':False},
+  {'id':'r3','date':'2026-10-02','by':'外婆','title':'午后的歌','text':'我唱到第二句，她又咿呀了一声。','first':False,'quote':True,'photos':False},
+  {'id':'r4','date':'2026-10-12','by':'爸爸','title':'雨声','text':'雨落在窗台上，她停下来听。','first':False,'quote':False,'photos':True},
+ ]
+ body={'requestId':str(uuid.uuid4()),'writingMode':'editor','photos':[],'context':json.dumps({'year':'2026','records':records},ensure_ascii=False)}
+ status,result=call('/api/v1/ai/write',body,member['token']);assert status==200,('editor',status,result)
+ chapters=result.get('chapters');assert isinstance(chapters,list) and chapters
+ ids={record['id'] for record in records}
+ for chapter in chapters:
+  picks=chapter.get('picks');assert isinstance(picks,list) and 1<=len(picks)<=3 and set(picks)<=ids
+ print('editor text passed')
+ body={'requestId':str(uuid.uuid4()),'writingMode':'ask','context':contexts['ask'],'photos':[{'id':'shapes','image':image}]}
+ assert call('/api/v1/ai/write',body,member['token'])[0]==400
+ print('ask photos rejected')
 # 家庭远端空间（Build 72）：上传 → 重传幂等 → have → 读回逐字节一致 → 坏哈希拒收 → 这台设备发布清单（登记对象）
 # → 全家清单列表里有它 → 同一成员的另一台设备 GET 拿到成员名下最新的一份（Build 71 换机恢复路径）
 # → 空 keep 拒绝、prune 不动新对象 → 成员删自己的清单（对象是全家的，一小时内的新对象留着）。不清空家庭空间。

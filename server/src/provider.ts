@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { MODEL_ID } from './ai-model.ts';
-import { GROUP_PROMPT, WRITE_PROMPT, POLISH_PROMPT, RECAP_PROMPT } from './prompts.ts';
+import { PROMPTS } from './prompts.ts';
 import { Problem } from './store.ts';
 import { parseResult, type AIInput } from './contracts.ts';
 export type ProviderResult={result:ReturnType<typeof parseResult>;tokens:number|null};
@@ -8,9 +8,9 @@ export type Provider=(kind:'group'|'write',input:AIInput)=>Promise<ProviderResul
 export function cpaProvider(baseUrl:string,keyFile:string):Provider {
  const endpoint=new URL(baseUrl.replace(/\/$/,'')+'/chat/completions');
  return async (kind,input) => {
-  const mode=input.writingMode;
-  const instructions=kind==='write'?(mode==='polish'?POLISH_PROMPT:mode==='recap'?RECAP_PROMPT:WRITE_PROMPT):GROUP_PROMPT;
-  const task=mode==='polish'?'润色用户原文，保留原意与事实':mode==='recap'?'根据这一年的记录标题与第一次清单写年度寄语草稿':input.mode==='merge'?'合并属于同一天同一件事情的分组摘要，保留全部照片ID':'分析所选照片';
+  const mode=kind==='write'?(input.writingMode??'generate'):'group';
+  const instructions=PROMPTS[mode];
+  const task=mode==='ask'?'像访谈者追问一到三个问题，不写正文':mode==='question'?'给今天一个小问题':mode==='letter'?'给写信前的两到三个问题':mode==='editor'?'提一个目录建议，不改原文':mode==='polish'?'润色家人原文，保留原意与事实':mode==='recap'?'根据这一年的记录标题与第一次清单写年度寄语草稿':input.mode==='merge'?'合并属于同一天同一件事情的分组摘要，保留全部照片ID':'分析所选照片';
   const content:unknown[]=[{type:'text',text:JSON.stringify({task,userContext:input.context,groups:input.groups})}];
   for(const photo of input.photos) content.push({type:'text',text:JSON.stringify({photoId:photo.id,capturedAt:photo.date??null,localPlaceGroup:photo.place??null})},{type:'image_url',image_url:{url:photo.image,detail:'low'}});
   // High thinking shares max_tokens with the final JSON; reserve room for both.
@@ -27,6 +27,6 @@ export function cpaProvider(baseUrl:string,keyFile:string):Provider {
    if(typeof text!=='string') throw new Error('missing result');
    const clean=text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'');
    return {result:parseResult(JSON.parse(clean),kind,input),tokens:Number.isSafeInteger(data.usage?.total_tokens)&&data.usage.total_tokens>=0?data.usage.total_tokens:null};
-  } catch { throw new Problem(502,'INVALID_RESULT','AI 返回格式不完整，请重试或手动整理。'); }
+  } catch(e) { if(e instanceof Problem)throw e;throw new Problem(502,'INVALID_RESULT','AI 返回格式不完整，请重试或手动整理。'); }
  };
 }
