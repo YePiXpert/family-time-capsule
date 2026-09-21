@@ -9,6 +9,7 @@ services:
     environment:
       SOURCE_SHA: ${SOURCE_SHA}
       CPA_BASE_URL: http://cli-proxy-api:8317/v1
+      TRANSCRIBE_MODEL: ${TRANSCRIBE_MODEL:-mimo-v2.5-asr}
     volumes:
       - ${AI_DATA_DIR:?Set AI_DATA_DIR}:/data
       - ${CPA_KEY_PATH:?Set CPA_KEY_PATH}:/run/secrets/cpa-key:ro

@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import Database from 'better-sqlite3';
-import { DEFAULT_BACKUP_LIMIT, Store } from '../src/store.ts';
+import { unusedTranscribe } from './helpers.ts';
+import { CLAIMS_PER_DEVICE, DEFAULT_BACKUP_LIMIT, Store } from '../src/store.ts';
 import { createApp } from '../src/app.ts';
 import { hashPassword } from '../src/passwords.ts';
 import { BackupStore, FAMILY_DIR, OBJECT_LIMIT } from '../src/backup-store.ts';
@@ -19,7 +20,7 @@ const KEY='0123456789abcdef',INDEX='QUJD';
 function fixture() {
  const dir=mkdtempSync(join(tmpdir(),'anan-backup-test-'));
  const store=new Store(':memory:'),backups=new BackupStore(dir);
- const app=createApp(store,async()=>{throw new Error('no provider in this test');},'test',backups);
+ const app=createApp(store,async()=>{throw new Error('no provider in this test');},'test',backups,unusedTranscribe);
  const owner=store.setup('主人',HASH,'主人手机');
  store.createMember('家人',HASH);const member=store.attach(store.byUsername('家人')!.id,'家人手机');
  store.createMember('外婆',HASH);const other=store.attach(store.byUsername('外婆')!.id,'外婆手机');
@@ -378,7 +379,7 @@ test('A-3 claims survive SQLite reopen, renew per device in batches, and protect
  // 另一台设备发布或退出不能解除上传设备的占位。
  await f.publish(f.other.token,[]);
  const file=join(f.dir,'claims.sqlite');await f.store.db.backup(file);
- const reopened=new Store(file),app=createApp(reopened,async()=>{throw new Error('no provider');},'test',f.backups);
+ const reopened=new Store(file),app=createApp(reopened,async()=>{throw new Error('no provider');},'test',f.backups,unusedTranscribe);
  try {
   t.mock.method(Date,'now',()=>now+49*3600000);
   const left=await app.inject({method:'DELETE',url:'/api/v1/backup',headers:f.headers(f.other.token)});
@@ -537,4 +538,24 @@ for(const action of ['login','device','settings'] as const) test(`权限加固�
   :{method:'PUT' as const,url:'/api/v1/admin/settings',payload:{paused:true,globalPhotos:1,globalWrites:1}};
  const result=await f.app.inject({...request,headers:f.headers()});
  assert.equal(result.statusCode,403);assert.equal(result.json().code,'OWNER_ONLY');
+});
+
+test('每设备对象占位低于上限与恰好到上限都通过，重复 id 不计新增，超一条整批拒绝',async t=>{
+ const f=fixture();t.after(f.close);const device=f.member.member.deviceId!,now=Date.now();
+ const count=()=> (f.store.db.prepare('SELECT COUNT(*) n FROM backup_object_claims WHERE device_id=?').get(device) as {n:number}).n;
+ f.store.claimObjects(device,[oid(1),oid(1)],now);assert.equal(count(),1);
+ const insert=f.store.db.prepare('INSERT INTO backup_object_claims(device_id,object_id,claimed_at) VALUES(?,?,?)');
+ f.store.db.transaction(()=>{for(let n=2;n<CLAIMS_PER_DEVICE-1;n++)insert.run(device,oid(n),now);})();
+ f.store.claimObjects(device,[oid(CLAIMS_PER_DEVICE-1)],now);assert.equal(count(),CLAIMS_PER_DEVICE-1);
+ // 还差一条时提交两条：整批回滚，已有占位也不能被部分续期。
+ const rejected=await f.app.inject({method:'POST',url:'/api/v1/backup/objects/have',headers:f.headers(),payload:{ids:[oid(1),oid(CLAIMS_PER_DEVICE),oid(CLAIMS_PER_DEVICE+1)]}});
+ assert.equal(rejected.statusCode,413);assert.equal(rejected.json().code,'QUOTA_FULL');assert.equal(rejected.json().message,'远端对象数量已到上限，请联系主人。');assert.equal(count(),CLAIMS_PER_DEVICE-1);
+ assert.equal((f.store.db.prepare('SELECT claimed_at FROM backup_object_claims WHERE device_id=? AND object_id=?').get(device,oid(1)) as {claimed_at:number}).claimed_at,now);
+ assert.equal(f.store.db.prepare('SELECT 1 FROM backup_object_claims WHERE device_id=? AND object_id=?').get(device,oid(CLAIMS_PER_DEVICE)),undefined);
+ f.store.claimObjects(device,[oid(CLAIMS_PER_DEVICE),oid(CLAIMS_PER_DEVICE),oid(1)],now);assert.equal(count(),CLAIMS_PER_DEVICE);
+ f.store.claimObjects(device,[oid(1),oid(1)],now+1);assert.equal(count(),CLAIMS_PER_DEVICE);
+ assert.throws(()=>f.store.claimObjects(device,[oid(CLAIMS_PER_DEVICE+1)],now),e=>(e as {status:number;code:string}).status===413&&(e as {code:string}).code==='QUOTA_FULL');
+ // 其他设备有自己的上限；原有过期清理仍能释放行数。
+ f.store.claimObjects(f.other.member.deviceId!,[oid(CLAIMS_PER_DEVICE+1)],now);
+ f.store.claimObjects(device,[oid(CLAIMS_PER_DEVICE+1)],now+48*60*60*1000+2);assert.equal(count(),1);
 });

@@ -4,6 +4,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 /** 成员默认远端备份配额 20 GiB；主人可在管理页调整。 */
 export const DEFAULT_BACKUP_LIMIT = 20 * 1024 ** 3;
+/** 每设备的持久占位上限；重复对象只续期，不新增行。 */
+export const CLAIMS_PER_DEVICE = 100_000;
 /** 尚未发布清单的上传占位：重启仍有效，48 小时未续期才释放。 */
 export const OBJECT_CLAIM_TTL_MS = 48 * 60 * 60 * 1000;
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -110,7 +112,7 @@ export class Store {
     // Failed requests (upstream garbage, timeout) are not the member's fault and must not burn the day's quota.
     return this.db.prepare(`SELECT COALESCE(SUM(photos),0) photos,COALESCE(SUM(writes),0) writes,COUNT(*) calls,COALESCE(SUM(tokens),0) tokens FROM requests WHERE day=? AND status!='failed' ${memberId?'AND member_id=?':''}`).get(...[new Date().toISOString().slice(0,10),...(memberId?[memberId]:[])]) as { photos:number; writes:number; calls:number; tokens:number };
   }
-  reserve(member: Member,id: string,fingerprint: string,photos:number,writes:number,model:string) {
+  reserve(member: Member,id: string,fingerprint: string,photos:number,writes:number,model:string,kind:'text'|'transcribe'='text') {
     return this.db.transaction(() => {
       const prev = this.db.prepare('SELECT fingerprint,status FROM requests WHERE member_id=? AND id=?').get(member.id,id) as {fingerprint:string;status:string}|undefined;
       if (prev) {
@@ -119,7 +121,8 @@ export class Store {
       }
       const settings=this.settings(), mine=this.usage(member.id), all=this.usage();
       if (settings.paused) throw new Problem(503,'AI_PAUSED','主人已暂停 AI，仍可手动编辑。');
-      if (!settings.enabledModels.includes(model)) throw new Problem(400,'MODEL_DISABLED','AI 服务配置已更新，请重新生成。');
+      // 转写模型由服务端装配固定，不受手机端的文本模型白名单约束。
+      if (kind==='text'&&!settings.enabledModels.includes(model)) throw new Problem(400,'MODEL_DISABLED','AI 服务配置已更新，请重新生成。');
       if (mine.photos+photos>member.photo_limit || mine.writes+writes>member.write_limit || mine.calls>=200 || all.photos+photos>settings.globalPhotos || all.writes+writes>settings.globalWrites || all.calls>=1000)
         throw new Problem(429,'QUOTA_EXCEEDED','今日 AI 额度已用完，请联系主人或明天再试。');
       const recent=this.db.prepare('SELECT COUNT(*) n FROM requests WHERE member_id=? AND created_at>?').get(member.id,Date.now()-60000) as {n:number};
@@ -192,7 +195,11 @@ export class Store {
     const upsert=this.db.prepare('INSERT INTO backup_object_claims(device_id,object_id,claimed_at) VALUES(?,?,?) ON CONFLICT(device_id,object_id) DO UPDATE SET claimed_at=excluded.claimed_at');
     this.db.transaction(()=>{
       this.expireObjectClaims(now);
-      for(const id of ids)upsert.run(deviceId,id,now);
+      const count=(this.db.prepare('SELECT COUNT(*) n FROM backup_object_claims WHERE device_id=?').get(deviceId) as {n:number}).n;
+      const exists=this.db.prepare('SELECT 1 FROM backup_object_claims WHERE device_id=? AND object_id=?');
+      const unique=[...new Set(ids)],added=unique.filter(id=>!exists.get(deviceId,id)).length;
+      if(count+added>CLAIMS_PER_DEVICE)throw new Problem(413,'QUOTA_FULL','远端对象数量已到上限，请联系主人。');
+      for(const id of unique)upsert.run(deviceId,id,now);
     })();
   }
   private expireObjectClaims(now:number) {
