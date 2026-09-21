@@ -9,6 +9,7 @@
  * 也让页高不随素材比例漂移。
  */
 import { wrapAll } from "./keepsake";
+import { fullNameLine } from "./model";
 
 const MM = 72 / 25.4;
 /** 成品边长。 */
@@ -51,7 +52,7 @@ export type BookInput = {
   /** 印章里的字：年份或名字首字。 */
   stamp: string;
   cover?: BookPhoto;
-  titlePage?: { name: string; birthday?: string };
+  titlePage?: { name: string; birthday?: string; fullName?: string; motto?: string };
   chapters: BookChapter[];
   colophon: string;
 };
@@ -258,26 +259,45 @@ export function layoutBook(input: BookInput): BookLayout {
     text: input.stamp,
   });
   title.elements.push(
-    text(input.titlePage?.name ?? input.title, middle, BLEED_PT + TRIM_PT * 0.52, HEADING_SIZE, {
+    text(input.titlePage?.name || input.titlePage?.fullName || input.title, middle, BLEED_PT + TRIM_PT * 0.52, HEADING_SIZE, {
       align: "center",
       serif: true,
     }),
   );
+  const hasNameStory = !!(input.titlePage?.fullName || input.titlePage?.motto);
+  const nameLine = input.titlePage?.name && input.titlePage.fullName
+    ? fullNameLine(input.titlePage.fullName, input.titlePage.name)
+    : "";
+  if (nameLine)
+    title.elements.push(
+      text(nameLine, middle, BLEED_PT + TRIM_PT * 0.575, META_SIZE, {
+        align: "center",
+        tone: "muted",
+      }),
+    );
+  if (input.titlePage?.motto)
+    title.elements.push(
+      text(input.titlePage.motto, middle, BLEED_PT + TRIM_PT * 0.615, META_SIZE + 1, {
+        align: "center",
+        serif: true,
+        tone: "muted",
+      }),
+    );
   if (input.titlePage?.birthday)
     title.elements.push(
-      text(input.titlePage.birthday, middle, BLEED_PT + TRIM_PT * 0.58, META_SIZE, {
+      text(input.titlePage.birthday, middle, BLEED_PT + TRIM_PT * (hasNameStory ? 0.66 : 0.58), META_SIZE, {
         align: "center",
         tone: "muted",
       }),
     );
   if (input.subtitle)
     title.elements.push(
-      text(input.subtitle, middle, BLEED_PT + TRIM_PT * 0.63, META_SIZE, {
+      text(input.subtitle, middle, BLEED_PT + TRIM_PT * (hasNameStory ? 0.705 : 0.63), META_SIZE, {
         align: "center",
         tone: "muted",
       }),
     );
-  title.elements.push({ kind: "ornament", y: BLEED_PT + TRIM_PT * 0.7 });
+  title.elements.push({ kind: "ornament", y: BLEED_PT + TRIM_PT * (hasNameStory ? 0.76 : 0.7) });
   commit(title);
 
   for (const chapter of input.chapters) {

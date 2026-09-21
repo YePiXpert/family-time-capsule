@@ -92,7 +92,7 @@ export function Settings() {
     ];
   return (
     <Page title="我的">
-      <Text style={s.muted}>{APP_NAME} · 留住每一个值得记住的日子</Text>
+      <Text style={s.muted}>{APP_NAME} · 入淮清洛渐漫漫</Text>
       <SettingsGroup>
         <SettingsRow
           icon="person"
@@ -236,6 +236,8 @@ export function Profile() {
     store = useStore(),
     s = useStyles();
   const [name, setName] = useState(state.profile.name),
+    [fullName, setFullName] = useState(state.profile.fullName ?? ""),
+    [motto, setMotto] = useState(state.profile.motto ?? ""),
     [birthday, setBirthday] = useState(state.profile.birthday),
     [message, setMessage] = useState("");
   return (
@@ -269,16 +271,41 @@ export function Profile() {
       />
       <Field label="宝宝昵称" value={name} onChangeText={setName} />
       <Field
+        label="本名（可选）"
+        value={fullName}
+        onChangeText={setFullName}
+        testID="profile-full-name"
+      />
+      <Field
         label="生日（可选，格式 2025-01-01）"
         value={birthday}
         onChangeText={setBirthday}
         keyboardType="numbers-and-punctuation"
       />
+      <Field
+        label="名字的来历（可选，一句话）"
+        value={motto}
+        onChangeText={setMotto}
+        multiline
+        testID="profile-motto"
+        style={{ minHeight: 96, textAlignVertical: "top" }}
+      />
+      <Text style={s.muted}>写下这个名字从哪里来。会印在扉页上。</Text>
       <Text accessibilityLiveRegion="polite">{message}</Text>
       <Button
         title="保存资料"
         primary
         onPress={() => {
+          const trimmedFullName = fullName.trim();
+          const trimmedMotto = motto.trim();
+          if (trimmedFullName.length > 20) {
+            setMessage("本名最多 20 个字。");
+            return;
+          }
+          if (trimmedMotto.length > 60) {
+            setMessage("名字的来历最多 60 个字。");
+            return;
+          }
           if (
             birthday &&
             (!/^\d{4}-\d{2}-\d{2}$/.test(birthday) ||
@@ -292,6 +319,10 @@ export function Profile() {
           void store
             .change((s) => {
               s.profile.name = name.trim();
+              if (trimmedFullName) s.profile.fullName = trimmedFullName;
+              else delete s.profile.fullName;
+              if (trimmedMotto) s.profile.motto = trimmedMotto;
+              else delete s.profile.motto;
               s.profile.birthday = birthday;
             })
             .then(() => setMessage("资料已保存"))

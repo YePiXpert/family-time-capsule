@@ -13,6 +13,7 @@ import {
   emptyLibrary,
   finishSelection,
   forkLibrary,
+  fullNameLine,
   mergePersons,
   stampUnsigned,
   tombstone,
@@ -30,6 +31,7 @@ import {
   LocalMedia,
 } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
+
 import { decodeManifest, encodeHeader } from "../src/local/backup-format";
 import {
   ageLine,
@@ -1210,4 +1212,38 @@ it("drops copied draft ancestry for new records and takes existing ancestry when
   Object.assign(mut(s.drafts.edit).content, { ancestors: ["c".repeat(16)] });
   saveRecord(s, "edit", "r", date);
   expect(s.records.r!.ancestors).toEqual([contentHashOf(previous).slice(0, 16), "b".repeat(16)]);
+});
+
+describe("profile name and origin", () => {
+  it.each([
+    ["fullName", 20],
+    ["motto", 60],
+  ] as const)("validates optional %s, including its %i-character limit", (key, limit) => {
+    for (const value of [undefined, "清", "字".repeat(limit)]) {
+      const s = emptyLibrary();
+      s.profile[key] = value;
+      expect(() => validateLibrary(s)).not.toThrow();
+    }
+    for (const value of ["", "字".repeat(limit + 1), " 清", "清 ", "\n清", "清\t", 1, null, {}, []]) {
+      const s = emptyLibrary();
+      Object.assign(s.profile, { [key]: value });
+      expect(() => validateLibrary(s)).toThrow();
+    }
+  });
+  it("preserves both fields through normalization, forks and backup manifests", () => {
+    const s = emptyLibrary();
+    s.profile.fullName = "林知夏";
+    s.profile.motto = "名字来自夏天的第一阵风。";
+    normalizeLibrary(s);
+    const fork = forkLibrary(s);
+    expect(fork.profile).toEqual(s.profile);
+    expect(fork.profile).not.toBe(s.profile);
+    validateLibrary(fork);
+    expect(decodeManifest(encodeHeader(s).slice(12)).library.profile).toEqual(s.profile);
+  });
+  it("omits the full name line when no nickname is filled", () => {
+    expect(fullNameLine("林知夏", "小夏")).toBe("林知夏 · 小名小夏");
+    expect(fullNameLine("林知夏", "")).toBe("");
+    expect(fullNameLine("林知夏", "  ")).toBe("");
+  });
 });

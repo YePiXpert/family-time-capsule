@@ -19,6 +19,7 @@ header{padding:24px 20px 12px;border-bottom:1px solid var(--line)}
 h1{margin:0;font-size:28px;font-weight:600;letter-spacing:.3px}
 h2{font-size:22px;font-weight:600;margin:8px 0 12px}
 .muted{color:var(--muted);font-size:14px}
+.title-motto{color:var(--muted);font-size:16px;line-height:26px;margin:6px 0 0}
 nav.tabs{display:flex;flex-wrap:wrap;gap:8px;padding:12px 20px}
 button.tab,a.chip{border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:999px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer;text-decoration:none;display:inline-block}
 button.tab.on,a.chip.on{background:var(--selected);border-color:var(--accent)}
@@ -48,7 +49,7 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
 </style>
 </head>
 <body>
-<header><h1 id="title">成长记录</h1><div class="muted" id="subtitle"></div></header>
+<header><h1 id="title">成长记录</h1><div id="name-story"></div><div class="muted" id="subtitle"></div></header>
 <nav class="tabs" id="tabs"></nav>
 <main><aside id="side"></aside><section id="content"></section></main>
 <script src="library.js"></script>
@@ -193,8 +194,13 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
       el("content").innerHTML = '<div class="empty">找不到 library.js。请把 index.html 放回归档文件夹再打开。</div>';
       return;
     }
-    var name = lib.child.name || "成长记录";
+    var name = lib.child.name || lib.child.fullName || "成长记录";
+    var nick = lib.child.name || "";
+    var full = lib.child.fullName || "";
+    var line = nick && full ? full + " · 小名" + nick : "";
     el("title").innerHTML = esc(name) + "的成长记录";
+    el("name-story").innerHTML = (line ? '<div class="muted">' + esc(line) + '</div>' : '') +
+      (lib.child.motto ? '<p class="title-motto">' + esc(lib.child.motto) + '</p>' : '');
     var count = lib.records.length + " 条记录";
     if (lib.year) count = lib.year + " 年 · " + count;
     el("subtitle").innerHTML = esc(count) + (lib.child.birthday ? " · 生日 " + esc(dayLabel(lib.child.birthday)) : "") + " · 导出于 " + esc(dayLabel(lib.createdAt.slice(0, 10)));

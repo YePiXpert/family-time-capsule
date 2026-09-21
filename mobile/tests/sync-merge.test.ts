@@ -812,6 +812,20 @@ describe("albums, series and persons", () => {
   });
 });
 describe("root fields and media", () => {
+  it("adopts a motto-only profile change when the other phone is unchanged", () => {
+    const shared = lib((s) => {
+      s.profile = { name: "小夏", fullName: "林知夏", birthday: "2026-08-01", avatarId: null };
+    });
+    const base = baseOf(shared);
+    const remote = copy(shared);
+    remote.profile.motto = "名字来自夏天的第一阵风。";
+    const received = merge(copy(shared), [snap(remote)], base);
+    expect(received.next.profile).toEqual(remote.profile);
+    expect(received.pulled).toBe(1);
+    expect(merge(copy(remote), [snap(shared)], base).next.profile).toEqual(remote.profile);
+    delete remote.profile.motto;
+    expect(merge(received.next, [snap(remote)], received.base).next.profile).toEqual(remote.profile);
+  });
   it("adopts a remote-only profile change and settles a two-sided one the same way on both phones", () => {
     const shared = lib((s) => {
       s.profile = { name: "桉桉", birthday: "2026-08-01", avatarId: null };

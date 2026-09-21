@@ -185,6 +185,8 @@ export function layoutYearbook(input: YearbookInput): YearbookLayout {
 export type YearBookSource = {
   year: string;
   profileName: string;
+  fullName?: string;
+  motto?: string;
   birthday?: string;
   stats: string;
   note: string;
@@ -206,7 +208,8 @@ export type YearBookSource = {
 };
 
 export function yearBookInput(source: YearBookSource): BookInput {
-  const name = source.profileName.trim() || CHILD_FALLBACK;
+  const nick = source.profileName.trim();
+  const name = nick || CHILD_FALLBACK;
   const chapters: BookChapter[] = [];
   const note = source.note.trim();
   if (note)
@@ -248,7 +251,9 @@ export function yearBookInput(source: YearBookSource): BookInput {
     stamp: source.year,
     ...(source.cover ? { cover: source.cover } : {}),
     titlePage: {
-      name,
+      name: nick || source.fullName || name,
+      ...(nick && source.fullName ? { fullName: source.fullName } : {}),
+      ...(source.motto ? { motto: source.motto } : {}),
       ...(source.birthday ? { birthday: source.birthday } : {}),
     },
     chapters,

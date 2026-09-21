@@ -33,6 +33,56 @@ const textsOf = (page: BookPage, size: number) =>
   page.elements.filter((e) => e.kind === "text" && e.size === size);
 
 describe("成册版面", () => {
+  it("本名与来历使用固定的五行版位，来历为衬线辅助色", () => {
+    const titlePage = { name: "小夏", fullName: "林知夏", motto: "名字来自夏天的第一阵风。", birthday: "2026 年 8 月 1 日" };
+    const elements = layoutBook(input({ titlePage })).pages[1]!.elements.slice(2);
+    expect(elements).toHaveLength(5);
+    const middle = BLEED_PT + TRIM_PT / 2;
+    const line = (text: string, position: number, size = 9, serif = false) => ({
+      kind: "text", text, x: middle, y: BLEED_PT + TRIM_PT * position,
+      size, serif, tone: "muted", align: "center",
+    });
+    expect(elements).toEqual([
+      line("林知夏 · 小名小夏", 0.575),
+      line(titlePage.motto, 0.615, 10, true),
+      line(titlePage.birthday, 0.66),
+      line(input().subtitle!, 0.705),
+      { kind: "ornament", y: BLEED_PT + TRIM_PT * 0.76 },
+    ]);
+  });
+  it.each(["fullName", "motto"] as const)("只有 %s 时其余行不补位", (key) => {
+    const titlePage = { name: "", birthday: "生日", [key]: "名字" };
+    const page = layoutBook(input({ titlePage })).pages[1]!;
+    expect(page.elements[1]).toMatchObject({
+      kind: "text", text: key === "fullName" ? "名字" : input().title,
+    });
+    const elements = page.elements.slice(2);
+    expect(elements).toHaveLength(key === "fullName" ? 3 : 4);
+    const lines = elements.filter((e) => e.kind === "text");
+    expect(lines.map((e) => e.text)).toEqual(key === "fullName"
+      ? ["生日", input().subtitle]
+      : ["名字", "生日", input().subtitle]);
+    expect(lines.map((e) => e.y)).toEqual((key === "fullName"
+      ? [0.66, 0.705]
+      : [0.615, 0.66, 0.705]).map((y) => BLEED_PT + TRIM_PT * y));
+    expect(elements.at(-1)).toEqual({ kind: "ornament", y: BLEED_PT + TRIM_PT * 0.76 });
+  });
+  it("昵称与本名都有但没有来历时留空来历版位", () => {
+    const titlePage = { name: "小夏", fullName: "林知夏", birthday: "生日" };
+    const elements = layoutBook(input({ titlePage })).pages[1]!.elements.slice(2);
+    expect(elements).toHaveLength(4);
+    const lines = elements.filter((e) => e.kind === "text");
+    expect(lines.map((e) => e.text)).toEqual(["林知夏 · 小名小夏", "生日", input().subtitle]);
+    expect(elements.map((e) => "y" in e ? e.y : undefined)).toEqual(
+      [0.575, 0.66, 0.705, 0.76].map((y) => BLEED_PT + TRIM_PT * y),
+    );
+  });
+  it("未填本名与来历时保留原有坐标", () => {
+    const elements = layoutBook(input()).pages[1]!.elements.slice(2);
+    expect(elements.map((e) => "y" in e ? e.y : undefined)).toEqual(
+      [0.58, 0.63, 0.70].map((y) => BLEED_PT + TRIM_PT * y),
+    );
+  });
   it("开本是 200mm 见方，四周各 3mm 出血，300 DPI 一页 2433 像素", () => {
     expect(TRIM_PT).toBeCloseTo(200 * MM, 6);
     expect(BLEED_PT).toBeCloseTo(3 * MM, 6);
