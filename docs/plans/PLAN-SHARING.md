@@ -30,6 +30,7 @@
    - media：按 id 取并集，本机已有的**永不**被远端覆盖（thumb、width/height 是本机产物）；只物化被合并后的共享实体引用到的素材，只被别人草稿引用的不下。
    - albums／series：`name`／`note` 按 LWW，`items` 取并集（基的顺序在前、新增在后）；persons 同名自动合并（`mergePersons`）。
    - 根字段：profile、yearNotes（按年）、yearCovers（按年）、yearBooksBoundAt（按年取早）以「与基不同的那一方」为准，两方都不同时取 createdAt 新的清单。
+   **实施修订（提交 9，2026-09-21）**：别人的清单是整库快照，输掉的旧版会一直躺在里面，光有「上次同步的指纹」会把它当成新改动送回来。所以基多记一份 `known`（每个实体本机处理过的全部版本：曾持有、曾判输、曾判过时，每实体最多 32 枚），远端版本与本机相同、与基相同或已认得的一律不看。此外：本机没动而远端那版比本机还旧（对方恢复了旧备份、时钟不准）→ 留本机、出冲突卡而不是倒退；同秒、以及没有时间的根字段与人物，按内容哈希定赢家（两台手机得出同一个）；年度寄语两边都改则两段都留（赢家在前）；相册／系列并集有新增时盖上合并时刻，免得两台各执一版；系列里同一条记录只留一处；`revision` 不进指纹（它只是本机草稿的防撞计数，接别人的版本时在本机原值上加一）。冲突留底只记 records／letters，另一方是删除时 `winner.deleted = true`。
 6. **一次同步**（`family.ts` 的 `runFamilySync`）：核对钥匙 → `GET /backup/manifests` → 跳过 sha 没变的设备（`sync/state.json` 的 `seen`）→ 逐份下载解密清单 → `merge` → 先把缺的素材逐个下载进 blob 库（写一枚 `restoring-*.xmbm.part` 钉子保护，可停可续）→ 物化到 media 目录并生成缩略图 → **一次** `store.change` 写入合并结果 → `createBackup` 出新清单 → 只传缺的对象 → `PUT /backup/manifest`（服务端按设备存）→ `prune` → 写 base／seen／state。任何一步失败，本机库一个字节没动（与 `restoreBackup` 同一哲学）。
 7. **加入与退出**：备份页最后一张卡由「远端备份」改为「家人一起写」（testID 仍是 `remote-card`，未登录仍只有「去登录」）。已登录未加入：服务上有别人的清单 → 「加入」（输入 12 词恢复码 → 首次同步 = 合并而不是替换，本机已有的内容会一起推上去）；服务上是空的 → 「开始一起写」（生成钥匙 → 抄恢复码 → 首次推送）。已加入：「现在同步」+ 一行「上次同步 9月21日 14:02 · 3 台手机 · 1.2 GB」+ 文字级「查看恢复码」「验证」「退出（本机资料留着）」；主人多一个危险文字「删除远端全部」。「从远端恢复」（整库替换）**去掉**：换机就是「加入」，空库合并等于全量拉取，一条路够了（主人：精简且强大）。`engine.ts` 的 `restoreFromRemote` 与 `RecoveryCode` 的恢复态一并删除。
 8. **自动同步**：登录且已加入时，回到前台、保存一段时光后 30 秒（防抖）自动跑一次，静默失败只记 `lastError`，进度与结果写在「我的 → 备份与恢复」行的副题上（「上次同步 …」／「有 2 段两台手机都改过」）。宪法禁 `expo-network`，分不出 Wi‑Fi，照片一起下；「外观设置」里给一个「回到应用时自动同步」开关（默认开）。
@@ -88,7 +89,7 @@
 
 **提交 9 · 合并（纯函数）**
 - `src/sync/merge.ts`：`fingerprintOf(entity)`、`mergeLibraries(local, remotes: {library, createdAt, deviceId}[], base): {next: Library, conflicts: Conflict[], wantedMedia: LocalMedia[], base: Base}`，按第三节第 5 条逐条实现；`applyTombstones`；`unifyPersons`（同名合并复用 `mergePersons`）；`unionItems`。
-- `tests/sync-merge.test.ts` ≥ 25 例：单边改、双边改（LWW + 冲突留底、同秒比哈希）、删 vs 改、删 vs 没改、双删、相册两边各加一条、系列同月两边各选一张（LWW）、同名人物合并且记录标记改写、只被别人草稿引用的素材不物化、根字段各情形、空基（首次加入）退化为 LWW 且不误报冲突（内容相同不算冲突）、幂等（合并两次结果相同）。
+- `tests/sync-merge.test.ts` ≥ 25 例（已做：36 例，2026-09-21）：单边改、双边改（LWW + 冲突留底、同秒比哈希）、删 vs 改、删 vs 没改、双删、相册两边各加一条、系列同月两边各选一张（LWW）、同名人物合并且记录标记改写、只被别人草稿引用的素材不物化、根字段各情形、空基（首次加入）退化为 LWW 且不误报冲突（内容相同不算冲突）、幂等（合并两次结果相同）。
 
 **提交 10 · 同步引擎**
 - `src/sync/family.ts`：`runFamilySync(store, deps)`（第三节第 6 条的流程；复用 `engine.ts` 的 `fetchManifest`→ 抽成 `fetchManifestOf(entry)`、`downloadContent`、`uploadContent`、`runRemoteBackup` 的推送段抽成 `pushManifest(state, deps)`）；`joinFamily(store, key, deps)` = 校验 keyId 与服务上最新清单一致 → `storeKey` → `runFamilySync`；`leaveFamily()` = 删本机钥匙与 state／base／conflicts、`deleteManifest(本设备)`，本机资料不动；`materialize(media)`：blob → media 目录（`mediaFile` 名沿用远端）→ `renderThumb`。`engine.ts` 的 `restoreFromRemote` 删除（换机 = 加入）。

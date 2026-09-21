@@ -1,8 +1,15 @@
 import { Directory, File, Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
-import type { LocalLetter, LocalRecord } from "../local/model";
 import { DOCS_DIR, REMOTE_KEY_ITEM } from "../local/brand";
 import { keyFromHex, keyToHex } from "./crypto";
+import {
+  CONFLICT_KINDS,
+  KNOWN_LIMIT,
+  emptyBase,
+  type Conflict,
+  type SyncBase,
+} from "./merge";
+export { KNOWN_LIMIT, emptyBase, type Conflict, type SyncBase } from "./merge";
 /**
  * 家人一起写的本机状态，三个小 JSON，都在 documents/anan-v1/sync/ 下，都不进 Library
  * （备份里不该带着「我在哪台服务上、见过谁的清单」）；主密钥本体只在系统钥匙串。
@@ -147,23 +154,6 @@ export function clearRemoteState(): void {
   const file = stateFile();
   if (file.exists) file.delete();
 }
-/**
- * 合并之基。merged：上次同步结束时本机库里每个共享实体的指纹（kind → id → 指纹；根字段以 "root" 为 kind），
- * 与它相同 = 「本机这一段没动过」。known：每个实体本机已经处理过的其他版本——曾持有、曾判输、曾判过时——
- * 别人的清单是整库快照，输掉的旧版会一直躺在里面，认得它们才不会把删掉、改掉的东西送回来。
- */
-export type SyncBase = {
-  version: 1;
-  merged: Record<string, Record<string, string>>;
-  known: Record<string, string[]>;
-};
-/** 每个实体最多记这么多枚见过的指纹；改动本来就少，超过就丢最旧的。 */
-export const KNOWN_LIMIT = 32;
-export const emptyBase = (): SyncBase => ({
-  version: 1,
-  merged: {},
-  known: {},
-});
 const isStringMap = (value: unknown): value is Record<string, string> =>
   !!value &&
   typeof value === "object" &&
@@ -185,22 +175,6 @@ export async function readBase(): Promise<SyncBase> {
 export function writeBase(base: SyncBase): void {
   writeJson(baseFile(), base);
 }
-/** 一段时光或一封信的另一版：两台手机都改过时输的那一版，留着可换回。 */
-export type Conflict = {
-  /** "kind:id"；同一实体只留最新一次冲突。 */
-  key: string;
-  kind: "records" | "letters";
-  entityId: string;
-  /** 记下冲突的时刻（同步时刻）。 */
-  at: string;
-  /** 输的一版来自哪台手机；服务端没给设备名时为 null。 */
-  device: string | null;
-  /** 赢的一版的时间与落款，卡片上对照用。 */
-  winner: { updatedAt: string; by?: string };
-  /** 输的一版全文，「用这一版」时作为新一版重新保存。 */
-  loser: LocalRecord | LocalLetter;
-};
-export const CONFLICT_KINDS = ["records", "letters"] as const;
 function conflictOf(value: unknown): Conflict | null {
   if (!value || typeof value !== "object") return null;
   const c = value as Record<string, unknown>;
@@ -223,9 +197,10 @@ function conflictOf(value: unknown): Conflict | null {
 }
 /** 坏掉的冲突文件当作没有冲突：书架少一张卡，总好过打不开。 */
 export async function readConflicts(): Promise<Conflict[]> {
-  const parsed = (await readJson(conflictsFile())) as
-    | { version?: number; items?: unknown[] }
-    | null;
+  const parsed = (await readJson(conflictsFile())) as {
+    version?: number;
+    items?: unknown[];
+  } | null;
   if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.items))
     return [];
   const out: Conflict[] = [];
