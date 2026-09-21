@@ -1,3 +1,4 @@
+import { lineage } from "../src/local/hash";
 import { describe, expect, it } from "vitest";
 import {
   emptyLibrary,
@@ -118,7 +119,7 @@ describe("fingerprints", () => {
     expect(hashOf({ a: 1, b: 2 })).toBe(hashOf({ b: 2, a: 1 }));
     const r = record("r", { text: "x" });
     expect(contentHashOf(r)).toBe(
-      contentHashOf({ ...r, revision: 9, updatedAt: T3 }),
+      contentHashOf({ ...r, revision: 9, updatedAt: T3, ancestors: ["a".repeat(16)] }),
     );
     expect(contentHashOf(r)).not.toBe(contentHashOf({ ...r, text: "y" }));
     expect(fingerprintOf(r)).toBe(`${T0}|${contentHashOf(r)}`);
@@ -983,5 +984,54 @@ describe("root fields and media", () => {
     expect(JSON.stringify(local)).toBe(localBefore);
     expect(JSON.stringify(remote)).toBe(remoteBefore);
     expect(base).toEqual(emptyBase());
+  });
+});
+
+describe("version ancestry", () => {
+  it("keeps the newest parent first and caps ancestry at eight without mutating it", () => {
+    const ancestors = Array.from({ length: 8 }, (_, i) => i.toString(16).repeat(16));
+    const previous = record("r", { ancestors });
+    const result = lineage(previous);
+    expect(result).toEqual([contentHashOf(previous).slice(0, 16), ...ancestors.slice(0, 7)]);
+    expect(previous.ancestors).toEqual(ancestors);
+    expect(lineage(record("r"))).toEqual([contentHashOf(record("r")).slice(0, 16)]);
+  });
+  describe.each(["records", "letters"] as const)("%s", (kind) => {
+    it.each(["sequential", "concurrent", "legacy", "identical"] as const)(
+      "adopts %s remote edits and only retains genuine concurrent losses",
+      (scenario) => {
+        const local = lib();
+        if (kind === "records") local.records.r = record("r");
+        else local.letters.r = letter("r");
+        const previous = local[kind].r!;
+        const base = baseOf(local);
+        const remote = copy(local);
+        const ancestors = scenario === "sequential"
+          ? [contentHashOf(previous).slice(0, 16)] : ["a".repeat(16)];
+        const patch = {
+          updatedAt: T1,
+          text: scenario === "identical" ? previous.text : "远端改写",
+          ...(scenario === "legacy" ? {} : { ancestors }),
+        };
+        if (kind === "records") remote.records.r = { ...remote.records.r!, ...patch };
+        else remote.letters.r = { ...remote.letters.r!, ...patch };
+        const result = merge(local, [snap(remote)], base);
+        expect(result.next[kind].r).toEqual({
+          ...remote[kind].r,
+          ...(kind === "records" ? { revision: local.records.r!.revision + 1 } : {}),
+        });
+        expect(result.pulled).toBe(1);
+        if (scenario === "concurrent") {
+          expect(result.conflicts).toHaveLength(1);
+          expect(result.conflicts[0]).toMatchObject({
+            key: `${kind}:r`, device: null, loser: previous,
+            winner: { updatedAt: T1 },
+          });
+        } else expect(result.conflicts).toEqual([]);
+        const repeated = merge(result.next, [snap(remote)], result.base);
+        expect(repeated.conflicts).toEqual([]);
+        expect(repeated.pulled).toBe(0);
+      },
+    );
   });
 });

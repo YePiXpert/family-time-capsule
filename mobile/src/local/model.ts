@@ -1,3 +1,4 @@
+import { lineage } from "./hash";
 import type { AIJob, AIProposal } from "../ai/types";
 import { validateStoredAI } from "../ai/state";
 /** Device-owned data. No account identity or transport state belongs here. */
@@ -44,6 +45,8 @@ export type LocalRecord = RecordContent & {
   id: string;
   revision: number;
   updatedAt: string;
+  /** 最近八版源内容的哈希前缀，最新的在前；旧版本缺省。 */
+  ancestors?: string[];
 };
 export type RecordDraft = {
   id: string;
@@ -110,6 +113,8 @@ export type LocalLetter = {
   mediaIds: string[];
   coverId: string | null;
   updatedAt: string;
+  /** 最近八版源内容的哈希前缀，最新的在前；旧版本缺省。 */
+  ancestors?: string[];
 };
 export const LETTER_TITLE_LIMIT = 100;
 export const LETTER_TEXT_LIMIT = 5000;
@@ -438,12 +443,15 @@ export function unsignedRecords(s: Pick<Library, "records">): string[] {
   return Object.keys(s.records).filter((id) => !s.records[id]!.by);
 }
 /**
- * 给还没落款的记录统一写上 by；返回写了几条。只动 by，不动 revision 与 updatedAt：
+ * 给还没落款的记录统一写上 by；返回写了几条。写入 by 与世系，不动 revision 与 updatedAt：
  * 这不是内容编辑，别让它在家人合并时压过对方后来真正的改动。
  */
 export function stampUnsigned(s: Library, by: string): number {
   const ids = unsignedRecords(s);
-  for (const id of ids) editEntity(s, "records", id, (r) => { r.by = by; });
+  for (const id of ids) editEntity(s, "records", id, (r) => {
+    r.ancestors = lineage(r);
+    r.by = by;
+  });
   return ids.length;
 }
 export function referencedMedia(s: Library): Set<string> {
@@ -485,6 +493,8 @@ export function saveRecord(
     revision: (existing?.revision ?? 0) + 1,
     updatedAt: now,
   };
+  if (existing) r.ancestors = lineage(existing);
+  else delete r.ancestors; // 草稿可能由旧记录复制而来，新记录不继承世系。
   s.records[id] = r;
   delete s.drafts[draftId];
   clearUnavailableCovers(s);
@@ -784,6 +794,10 @@ function validRoot(s: Library): boolean {
     (!s.profile.avatarId || s.media[s.profile.avatarId]?.kind === "image")
   );
 }
+const validAncestors = (value: unknown): boolean =>
+  value === undefined ||
+  (Array.isArray(value) && value.length <= 8 &&
+    value.every((hash) => typeof hash === "string" && /^[a-f0-9]{16}$/.test(hash)));
 /** 一个实体自身的形状，以及它指向的东西是否都还在。 */
 function validEntity(s: Library, kind: EntityKind, key: string): boolean {
   if (!isId(key)) return false;
@@ -826,6 +840,7 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
       !!r &&
       key === r.id &&
       validContent(s, r) &&
+      validAncestors(r.ancestors) &&
       Number.isInteger(r.revision) &&
       r.revision >= 1 &&
       Number.isFinite(Date.parse(r.updatedAt))
@@ -931,6 +946,7 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
     return (
       !!l &&
       key === l.id &&
+      validAncestors(l.ancestors) &&
       isText(l.title) &&
       l.title.length <= LETTER_TITLE_LIMIT &&
       isText(l.text) &&

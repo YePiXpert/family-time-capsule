@@ -160,7 +160,69 @@ export async function twoPhonesWriteTogether({
     by: "妈妈",
     updatedAt: "2026-09-20T03:00:00Z",
   });
+  const firstConflictsA = await a.state.readConflicts();
+  expect(firstConflictsA).toHaveLength(1);
+  expect(firstConflictsA[0]?.loser).toEqual(versionA);
+  expect(firstConflictsA[0]).toMatchObject({ device: null, winner: { by: "妈妈" } });
+  // A 已看过第一场的留底；B 保留旧卡，下一场验证同键替换。
+  await a.state.writeConflicts([]);
+
+  // 两台都先在旧基上编辑，再轮流发布；两边都要留下爸爸这一版。
+  await edit(a, "爸爸再改一版", "爸爸", "2026-09-20T04:00:00Z");
+  const concurrentA = a.model.clone(a.store.get().records["r-a"]!);
+  b = await openPhone(rootB);
+  await edit(b, "妈妈也改一版", "妈妈", "2026-09-20T05:00:00Z");
+  const concurrentB = b.model.clone(b.store.get().records["r-a"]!);
+
+  a = await openPhone(rootA);
+  const publishedA = await a.family.runFamilySync(a.store, depsA);
+  expect(publishedA.lastSyncSummary).toMatchObject({ pulled: 0, conflicts: 0 });
+  expect(a.store.get().records["r-a"]).toEqual(concurrentA);
   expect(await a.state.readConflicts()).toEqual([]);
+
+  b = await openPhone(rootB);
+  await b.family.runFamilySync(b.store, depsB);
+  expect(b.store.get().records["r-a"]).toEqual(concurrentB);
+  const conflictsB = await b.state.readConflicts();
+  // 同键的新留底替换前一场景的 02:00 版，不叠加卡片。
+  expect(conflictsB).toHaveLength(1);
+  expect(conflictsB[0]).toMatchObject({
+    key: "records:r-a",
+    winner: { by: "妈妈", updatedAt: "2026-09-20T05:00:00Z" },
+  });
+  expect(conflictsB[0]?.loser).toEqual(concurrentA);
+
+  a = await openPhone(rootA);
+  await a.family.runFamilySync(a.store, depsA);
+  // 记录内容收敛；revision 是各手机自己的草稿防撞计数。
+  expect(a.store.get().records["r-a"]).toEqual({
+    ...concurrentB,
+    revision: concurrentA.revision + 1,
+  });
+  const conflictsA = await a.state.readConflicts();
+  expect(conflictsA).toHaveLength(1);
+  expect(conflictsA[0]).toMatchObject({
+    key: "records:r-a",
+    device: null,
+    winner: { by: "妈妈", updatedAt: "2026-09-20T05:00:00Z" },
+  });
+  expect(conflictsA[0]?.loser).toEqual(concurrentA);
+
+  for (const [root, deps, savedConflicts] of [
+    [rootA, depsA, conflictsA],
+    [rootB, depsB, conflictsB],
+  ] as const) {
+    const p = await openPhone(root);
+    const before = p.model.clone(p.store.get());
+    const unchanged = await p.family.runFamilySync(p.store, deps);
+    expect(unchanged.lastSyncSummary).toMatchObject({
+      pulled: 0,
+      pushed: 0,
+      conflicts: 0,
+    });
+    expect(await p.state.readConflicts()).toEqual(savedConflicts);
+    expect(p.store.get()).toEqual({ ...before, revision: before.revision + 1 });
+  }
 
   b = await openPhone(rootB);
   expect(await b.family.leaveFamily({ transport: transportB })).toEqual({

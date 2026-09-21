@@ -285,3 +285,14 @@ describe("planArchive", () => {
     expect(plan.mediaBytes).toBe(0);
   });
 });
+
+it("keeps version ancestry out of open archive text and viewer data", () => {
+  const state = library();
+  const plain = planArchive(state, { now: NOW, includeSealedLetters: true });
+  for (const id of Object.keys(state.records))
+    state.records[id] = { ...state.records[id]!, ancestors: ["abcdef0123456789"] };
+  for (const id of Object.keys(state.letters))
+    state.letters[id] = { ...state.letters[id]!, ancestors: ["0123456789abcdef"] };
+  const withAncestry = planArchive(state, { now: NOW, includeSealedLetters: true });
+  expect(withAncestry).toEqual(plain);
+});

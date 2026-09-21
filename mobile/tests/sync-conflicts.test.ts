@@ -1,3 +1,4 @@
+import { contentHashOf } from "../src/local/hash";
 import { expect, it } from "vitest";
 import { clone, emptyLibrary, validateLibrary, type Library, type LocalLetter, type LocalRecord } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
@@ -21,12 +22,12 @@ function letterConflict(): Conflict {
 }
 it("整个替换记录，递增本机 revision，过滤引用并换掉墓碑对象", () => {
   const lib = fixture(), c = recordConflict(), before = clone(c);
-  const previous = Object.freeze({ ...(c.loser as LocalRecord), revision: 5 });
+  const previous = Object.freeze({ ...(c.loser as LocalRecord), text: "当前留下的一版", ancestors: ["b".repeat(16)], revision: 5 });
   lib.records.r = previous;
   const tombstones = Object.freeze(lib.tombstones!);
   restoreLoser(lib, c, now);
   expect(lib.records.r).not.toBe(previous);
-  expect(lib.records.r).toEqual({ ...c.loser, revision: 6, updatedAt: now, mediaIds: ["photo"], coverId: null, personIds: ["p"] });
+  expect(lib.records.r).toEqual({ ...c.loser, ancestors: [contentHashOf(previous).slice(0, 16), ...previous.ancestors], revision: 6, updatedAt: now, mediaIds: ["photo"], coverId: null, personIds: ["p"] });
   expect(lib.tombstones).toEqual({ "letters:l": at, "records:other": at });
   expect(lib.tombstones).not.toBe(tombstones);
   expect(tombstones["records:r"]).toBe(at);
@@ -46,7 +47,7 @@ it.each([false, true])("换回信，保留全文与时间、过滤附件和墓�
   const previous = lib.letters.l;
   restoreLoser(lib, c, now);
   expect(lib.letters.l).not.toBe(previous);
-  expect(lib.letters.l).toEqual({ ...c.loser, updatedAt: now, mediaIds: ["photo"], coverId: null });
+  expect(lib.letters.l).toEqual({ ...c.loser, ...(previous ? { ancestors: [contentHashOf(previous).slice(0, 16)] } : {}), updatedAt: now, mediaIds: ["photo"], coverId: null });
   expect(lib.tombstones!["letters:l"]).toBeUndefined();
   expect(c).toEqual(before);
 });
@@ -105,4 +106,12 @@ it.each([
   expect(disk.records.r!.text).toBe(c.loser.text);
   expect(disk.records.r!.revision).toBe(8);
   expect(reopened.get().records.r!.text).toBe(c.loser.text);
+});
+
+it.each([recordConflict, letterConflict])("restores missing entities with the loser's own ancestry", (makeConflict) => {
+  const lib = fixture(), c = makeConflict();
+  c.loser.ancestors = ["a".repeat(16), "b".repeat(16)];
+  restoreLoser(lib, c, now);
+  expect(lib[c.kind][c.entityId]!.ancestors).toEqual(c.loser.ancestors);
+  expect(lib[c.kind][c.entityId]!.ancestors).not.toBe(c.loser.ancestors);
 });
