@@ -250,8 +250,8 @@ it("backs up to the real service, verifies, and restores onto a wiped phone", as
       key: new Uint8Array(randomBytes(16)),
     }),
   ).rejects.toThrow("恢复码");
-  // 删库：状态归零。
+  // 删库（Build 72 服务端）：只作废自己名下的清单；对象是全家的，一小时内的新对象留给 prune 收。
   await transport.wipe();
-  expect((await transport.status()).objects).toBe(0);
   expect(await transport.getManifest()).toBeNull();
+  expect((await transport.status()).keyId).toBeNull();
 }, 120000);
