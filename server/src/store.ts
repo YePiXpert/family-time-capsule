@@ -13,7 +13,8 @@ export class Problem extends Error {
   constructor(status: number, code: string, message: string) { super(message); this.status = status; this.code = code; }
 }
 export type Member = { id: string; name: string; role: 'owner'|'member'; enabled: number; photo_limit: number; write_limit: number; username: string|null; backup_limit_bytes: number; deviceId?: string };
-export type BackupManifest = { keyId: string; index: string; updatedAt: number; objects: string[] };
+/** 一台设备发布的清单：密文索引、钥匙指纹、登记的对象。旧版整份备份迁来的行 deviceId 是 `legacy:<成员 id>`，deviceName 为 null。 */
+export type BackupManifest = { deviceId: string; memberId: string; deviceName: string | null; keyId: string; index: string; updatedAt: number; objects: string[] };
 export type Settings = { paused: boolean; defaultModel: string; enabledModels: string[]; globalPhotos: number; globalWrites: number };
 export const initialSettings: Settings = { paused: false, defaultModel: MODEL_ID, enabledModels: [MODEL_ID], globalPhotos: 500, globalWrites: 100 };
 export class Store {
@@ -28,16 +29,21 @@ export class Store {
       CREATE TABLE IF NOT EXISTS requests(member_id TEXT NOT NULL,id TEXT NOT NULL,fingerprint TEXT NOT NULL,day TEXT NOT NULL,photos INTEGER NOT NULL,writes INTEGER NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,tokens INTEGER,error_code TEXT,PRIMARY KEY(member_id,id));
       CREATE INDEX IF NOT EXISTS requests_day ON requests(day,member_id);
       DROP TABLE IF EXISTS invites;
-      CREATE TABLE IF NOT EXISTS backup_manifests(member_id TEXT PRIMARY KEY REFERENCES members(id),key_id TEXT NOT NULL,index_b64 TEXT NOT NULL,updated_at INTEGER NOT NULL,objects_json TEXT);
+      CREATE TABLE IF NOT EXISTS backup_manifests_v2(device_id TEXT PRIMARY KEY,member_id TEXT NOT NULL REFERENCES members(id),key_id TEXT NOT NULL,index_b64 TEXT NOT NULL,updated_at INTEGER NOT NULL,objects_json TEXT);
+      CREATE INDEX IF NOT EXISTS backup_manifests_v2_member ON backup_manifests_v2(member_id,updated_at);
     `);
     // 旧库补上账号列（唯一索引用部分索引，多个 NULL 不冲突）。
     const columns=this.db.prepare('PRAGMA table_info(members)').all() as {name:string}[];
     if(!columns.some(column=>column.name==='username'))this.db.exec('ALTER TABLE members ADD COLUMN username TEXT;ALTER TABLE members ADD COLUMN password_hash TEXT;');
     // Build 70：远端备份配额列；旧库补默认值即可。
     if(!columns.some(column=>column.name==='backup_limit_bytes'))this.db.exec(`ALTER TABLE members ADD COLUMN backup_limit_bytes INTEGER NOT NULL DEFAULT ${DEFAULT_BACKUP_LIMIT}`);
-    // 清单登记自己引用的对象 id，prune 据此护住它们；旧库补列，旧行视为没登记。
-    const manifestColumns=this.db.prepare('PRAGMA table_info(backup_manifests)').all() as {name:string}[];
-    if(!manifestColumns.some(column=>column.name==='objects_json'))this.db.exec('ALTER TABLE backup_manifests ADD COLUMN objects_json TEXT');
+    // Build 72：清单改为按设备存（一家人共用对象空间，各台手机各发布一份）。Build 70／71 按成员存的那张表
+    // 逐行迁成 `legacy:<成员 id>`——成员任一台设备发布过自己的清单后就把它删掉（内容已被包含）。首版没有 objects_json 列。
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='backup_manifests'").get()) {
+      const legacyColumns=this.db.prepare('PRAGMA table_info(backup_manifests)').all() as {name:string}[];
+      const objectsColumn=legacyColumns.some(column=>column.name==='objects_json')?'objects_json':'NULL';
+      this.db.exec(`INSERT OR IGNORE INTO backup_manifests_v2(device_id,member_id,key_id,index_b64,updated_at,objects_json) SELECT 'legacy:'||member_id,member_id,key_id,index_b64,updated_at,${objectsColumn} FROM backup_manifests; DROP TABLE backup_manifests;`);
+    }
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS members_username ON members(username) WHERE username IS NOT NULL');
     this.db.prepare('INSERT OR IGNORE INTO settings VALUES(1,?)').run(JSON.stringify(initialSettings));
     this.setSettings(this.settings());
@@ -135,20 +141,45 @@ export class Store {
     if(member.role==='owner'&&!patch.enabled) throw new Problem(400,'OWNER_REQUIRED','不能停用主人。');
     this.db.prepare('UPDATE members SET enabled=?,photo_limit=?,write_limit=?,backup_limit_bytes=COALESCE(?,backup_limit_bytes) WHERE id=?').run(patch.enabled?1:0,patch.photoLimit,patch.writeLimit,patch.backupLimitBytes??null,id);
   }
+  /** 家庭配额：主人的 backup_limit_bytes 就是全家的上限（一台服务一家人）。 */
+  familyLimitBytes(): number {
+    const row=this.db.prepare("SELECT backup_limit_bytes FROM members WHERE role='owner' ORDER BY rowid LIMIT 1").get() as {backup_limit_bytes:number}|undefined;
+    return row?.backup_limit_bytes??DEFAULT_BACKUP_LIMIT;
+  }
   /**
-   * 远端备份的密文索引：服务端只认 keyId 与一段 base64，内容是什么它不知道。
-   * objects 是这份清单引用的对象 id（对象名本来就在文件系统里，不多泄露什么），prune 永远不删它们。
+   * 一台设备发布自己的清单：密文索引（服务端只认 keyId 与一段 base64）与它引用的对象 id（prune 永远不删）。
+   * 这台设备发布过，成员名下从旧版迁来的整份备份就被包含了，一并删掉。
    */
-  putManifest(memberId:string,keyId:string,index:string,objects:readonly string[]=[]) {
+  putManifest(deviceId:string,memberId:string,keyId:string,index:string,objects:readonly string[]=[]) {
     const updatedAt=Date.now();
-    this.db.prepare('INSERT INTO backup_manifests(member_id,key_id,index_b64,updated_at,objects_json) VALUES(?,?,?,?,?) ON CONFLICT(member_id) DO UPDATE SET key_id=excluded.key_id,index_b64=excluded.index_b64,updated_at=excluded.updated_at,objects_json=excluded.objects_json').run(memberId,keyId,index,updatedAt,JSON.stringify(objects));
+    this.db.transaction(()=>{
+      this.db.prepare('INSERT INTO backup_manifests_v2(device_id,member_id,key_id,index_b64,updated_at,objects_json) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id) DO UPDATE SET member_id=excluded.member_id,key_id=excluded.key_id,index_b64=excluded.index_b64,updated_at=excluded.updated_at,objects_json=excluded.objects_json').run(deviceId,memberId,keyId,index,updatedAt,JSON.stringify(objects));
+      if(!deviceId.startsWith('legacy:'))this.db.prepare("DELETE FROM backup_manifests_v2 WHERE device_id='legacy:'||?").run(memberId);
+    })();
     return updatedAt;
   }
-  manifest(memberId:string): BackupManifest|undefined {
-    const row=this.db.prepare('SELECT key_id,index_b64,updated_at,objects_json FROM backup_manifests WHERE member_id=?').get(memberId) as {key_id:string;index_b64:string;updated_at:number;objects_json:string|null}|undefined;
-    return row?{keyId:row.key_id,index:row.index_b64,updatedAt:row.updated_at,objects:row.objects_json?JSON.parse(row.objects_json) as string[]:[]}:undefined;
+  private manifestRows(where='',...params:unknown[]): BackupManifest[] {
+    const rows=this.db.prepare(`SELECT m.device_id,m.member_id,m.key_id,m.index_b64,m.updated_at,m.objects_json,d.name AS device_name FROM backup_manifests_v2 m LEFT JOIN devices d ON d.id=m.device_id ${where} ORDER BY m.updated_at DESC`).all(...params) as {device_id:string;member_id:string;key_id:string;index_b64:string;updated_at:number;objects_json:string|null;device_name:string|null}[];
+    return rows.map(row=>({deviceId:row.device_id,memberId:row.member_id,deviceName:row.device_name,keyId:row.key_id,index:row.index_b64,updatedAt:row.updated_at,objects:row.objects_json?JSON.parse(row.objects_json) as string[]:[]}));
   }
-  deleteManifest(memberId:string) { this.db.prepare('DELETE FROM backup_manifests WHERE member_id=?').run(memberId); }
+  /** 全部设备的清单，新的在前。 */
+  manifests(): BackupManifest[] { return this.manifestRows(); }
+  manifestOf(deviceId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.device_id=?',deviceId)[0]; }
+  /** 成员名下最新的一份（含旧版迁来的）：给 Build 71 的 GET /backup/manifest 用。 */
+  latestManifestOf(memberId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.member_id=?',memberId)[0]; }
+  latestManifest(): BackupManifest|undefined { return this.manifestRows()[0]; }
+  /** 全部清单登记的对象并集：prune 的保护名单。 */
+  manifestObjects(): Set<string> {
+    const keep=new Set<string>();
+    for(const row of this.db.prepare('SELECT objects_json FROM backup_manifests_v2').all() as {objects_json:string|null}[])
+      if(row.objects_json)for(const id of JSON.parse(row.objects_json) as string[])keep.add(id);
+    return keep;
+  }
+  manifestCount(): number { return (this.db.prepare('SELECT COUNT(*) n FROM backup_manifests_v2').get() as {n:number}).n; }
+  deleteManifest(deviceId:string): boolean { return this.db.prepare('DELETE FROM backup_manifests_v2 WHERE device_id=?').run(deviceId).changes>0; }
+  /** 成员的全部清单（含旧版迁来的）：Build 71 的 DELETE /backup 与主人按成员删除都走这里；对象留给 prune。 */
+  deleteMemberManifests(memberId:string) { this.db.prepare('DELETE FROM backup_manifests_v2 WHERE member_id=?').run(memberId); }
+  deleteAllManifests() { this.db.prepare('DELETE FROM backup_manifests_v2').run(); }
   recentUsage() { return this.db.prepare('SELECT member_id,day,model,status,COUNT(*) calls,SUM(photos) photos,SUM(writes) writes,SUM(tokens) tokens,error_code FROM requests WHERE created_at>? GROUP BY member_id,day,model,status,error_code ORDER BY day DESC').all(Date.now()-30*86400000); }
   close() { this.db.close(); }
 }

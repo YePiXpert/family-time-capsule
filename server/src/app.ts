@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
-import { Store, Problem, digest, type Member } from './store.ts';
+import { Store, Problem, digest, type Member, type BackupManifest } from './store.ts';
 import { inputSchema, parseResult, polishBody, POLISH_BODY_LIMIT } from './contracts.ts';
 import { hashPassword, verifyPassword, timingDummy, needsRehash } from './passwords.ts';
 import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS } from './ai-model.ts';
@@ -109,18 +109,28 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
    throw new Problem(502,'INVALID_RESULT','AI 返回内容无效，草稿仍保留。');
   }
  });
- // ── 远端备份对象库：成员只能碰自己的库；服务端只见密文、对象 id 与字节数。不走 throttle()（反代后按地址限流是全家共享的）。
+ // ── 远端备份对象库（Build 72 起一家人共用）：对象 id 由手机按内容与钥匙派生，谁传上来都是同一份；
+ // 清单按设备各存一份，家人一起写就是各台手机互相读对方的清单。服务端只见密文、对象 id 与字节数。
+ // 不走 throttle()（反代后按地址限流是全家共享的）。
  const objectParams=z.object({id:z.string().regex(OBJECT_ID)});
  const idList=(max:number)=>z.array(z.string().regex(OBJECT_ID)).max(max);
+ const deviceParam=z.object({deviceId:z.string().regex(/^(legacy:)?[0-9a-f-]{36}$/)});
  const uploading=new Map<string,number>();
+ const iso=(ms:number)=>new Date(ms).toISOString();
+ const manifestView=(m:BackupManifest)=>({deviceId:m.deviceId,memberId:m.memberId,deviceName:m.deviceName,keyId:m.keyId,index:m.index,updatedAt:iso(m.updatedAt)});
+ /** 家庭配额剩余：全家共用主人的上限。 */
+ const quotaLeft=()=>Math.max(0,store.familyLimitBytes()-backups().usage().bytes);
+ /** 删清单之后顺手收拾没人指着的对象（一小时宽限护住上传中的）；对象是全家的，只删无主的。 */
+ const sweep=()=>backups().prune(store.manifestObjects());
  app.get('/api/v1/backup/status',async req=>{
-  const member=auth(req.headers.authorization),usage=backups().usage(member.id),manifest=store.manifest(member.id);
-  return {keyId:manifest?.keyId??null,manifestUpdatedAt:manifest?new Date(manifest.updatedAt).toISOString():null,objects:usage.objects,bytes:usage.bytes,limitBytes:member.backup_limit_bytes,freeBytes:await backups().freeBytes()};
+  auth(req.headers.authorization);
+  const usage=backups().usage(),latest=store.latestManifest();
+  return {keyId:latest?.keyId??null,manifestUpdatedAt:latest?iso(latest.updatedAt):null,objects:usage.objects,bytes:usage.bytes,limitBytes:store.familyLimitBytes(),freeBytes:await backups().freeBytes(),manifests:store.manifestCount()};
  });
  app.post('/api/v1/backup/objects/have',async req=>{
-  const member=auth(req.headers.authorization);
+  auth(req.headers.authorization);
   const {ids}=z.object({ids:idList(5000)}).strict().parse(req.body);
-  const present=backups().have(member.id,ids);
+  const present=backups().have(ids);
   return {missing:ids.filter(id=>!present.has(id))};
  });
  app.put('/api/v1/backup/objects/:id',async (req,reply)=>{
@@ -132,22 +142,23 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   if(declared!==undefined&&declared>OBJECT_LIMIT)throw new Problem(413,'TOO_LARGE','这一份太大，请更新应用后重试。');
   if(await backups().freeBytes()<FREE_FLOOR)throw new Problem(507,'SERVER_FULL','服务器空间不足，请联系主人。');
   // 配额按「比原来多出的字节」算：同 id 重传若变大，一样要有余量（receive 收完再按实际字节复核一次）。
-  const usage=backups().usage(member.id),quotaLeft=Math.max(0,member.backup_limit_bytes-usage.bytes),previous=backups().stat(member.id,id)??0;
-  if(declared!==undefined&&declared-previous>quotaLeft)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系主人调整。');
-  const active=uploading.get(member.id)??0;
+  const left=quotaLeft(),previous=backups().stat(id)??0;
+  if(declared!==undefined&&declared-previous>left)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系主人调整。');
+  // 每台设备同时最多两个上传：一台手机把服务端撑满时别的手机不受影响。
+  const lane=member.deviceId??member.id,active=uploading.get(lane)??0;
   if(active>=2)throw new Problem(429,'BUSY','正在上传其他内容，请稍后再试。');
-  uploading.set(member.id,active+1);
+  uploading.set(lane,active+1);
   try {
-   const result=await backups().receive(member.id,id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft});
+   const result=await backups().receive(id,req.body as Readable,{declared,sha256,limit:OBJECT_LIMIT,quotaLeft:left});
    return reply.code(result.created?201:200).send({id,bytes:result.bytes});
   } finally {
-   const left=(uploading.get(member.id)??1)-1;
-   if(left<=0)uploading.delete(member.id);else uploading.set(member.id,left);
+   const remaining=(uploading.get(lane)??1)-1;
+   if(remaining<=0)uploading.delete(lane);else uploading.set(lane,remaining);
   }
  });
  app.get('/api/v1/backup/objects/:id',async (req,reply)=>{
-  const member=auth(req.headers.authorization),{id}=objectParams.parse(req.params);
-  const found=backups().read(member.id,id);
+  auth(req.headers.authorization);const {id}=objectParams.parse(req.params);
+  const found=backups().read(id);
   if(!found)throw new Problem(404,'NOT_FOUND','远端没有这一份。');
   return reply.type('application/octet-stream').header('Content-Length',String(found.size)).send(found.stream);
  });
@@ -155,29 +166,45 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
   const member=auth(req.headers.authorization);
   // 索引是手机封好的密文（≤ 64 KiB 明文），服务端只存 keyId 好让换错恢复码在下载前就判出来；
   // objects 是清单引用的对象 id，登记下来让 prune 护住它们（Build 70 的手机不传，视为没登记）。
+  // 清单记在这台设备名下：同一成员的两台手机各有一份，成员旧版整份备份迁来的那份随之作废。
   const input=z.object({keyId:z.string().regex(/^[a-f0-9]{16}$/),index:z.string().min(4).max(90000).regex(/^[A-Za-z0-9+/]+=*$/),objects:idList(50000).optional()}).strict().parse(req.body);
-  return {updatedAt:new Date(store.putManifest(member.id,input.keyId,input.index,input.objects??[])).toISOString()};
+  return {updatedAt:iso(store.putManifest(member.deviceId!,member.id,input.keyId,input.index,input.objects??[]))};
  });
  app.get('/api/v1/backup/manifest',async req=>{
-  const member=auth(req.headers.authorization),manifest=store.manifest(member.id);
+  // 先给这台设备自己的，没有就给成员名下最新的一份（含旧版迁来的）：Build 71 的手机换机后照样能恢复。
+  const member=auth(req.headers.authorization),manifest=store.manifestOf(member.deviceId!)??store.latestManifestOf(member.id);
   if(!manifest)throw new Problem(404,'NOT_FOUND','远端还没有备份。');
-  return {keyId:manifest.keyId,index:manifest.index,updatedAt:new Date(manifest.updatedAt).toISOString()};
+  return {deviceId:manifest.deviceId,keyId:manifest.keyId,index:manifest.index,updatedAt:iso(manifest.updatedAt)};
+ });
+ /** 全家各台设备的清单，新的在前；一起写的手机拿这个去合并。 */
+ app.get('/api/v1/backup/manifests',async req=>{auth(req.headers.authorization);return store.manifests().map(manifestView);});
+ app.delete('/api/v1/backup/manifests/:deviceId',async req=>{
+  const member=auth(req.headers.authorization),{deviceId}=deviceParam.parse(req.params);
+  const manifest=store.manifestOf(deviceId);
+  if(!manifest)throw new Problem(404,'NOT_FOUND','远端没有这份清单。');
+  if(member.role!=='owner'&&manifest.memberId!==member.id)throw new Problem(403,'OWNER_ONLY','只能删自己设备的清单。');
+  store.deleteManifest(deviceId);
+  return {ok:true,pruned:sweep()};
  });
  app.post('/api/v1/backup/prune',async req=>{
-  const member=auth(req.headers.authorization);
+  auth(req.headers.authorization);
   const {keep}=z.object({keep:idList(50000)}).strict().parse(req.body);
-  // 当前清单登记的对象由服务端自己护住；远端已有清单时空 keep 一定是客户端出错，宁可不收拾。
-  const manifest=store.manifest(member.id);
-  if(manifest&&keep.length===0)throw new Problem(400,'INVALID_INPUT','远端已有清单，keep 不能为空。');
-  return backups().prune(member.id,new Set([...keep,...(manifest?.objects??[])]));
+  // 全家清单登记的对象由服务端自己护住；远端已有清单时空 keep 一定是客户端出错，宁可不收拾。
+  if(store.manifestCount()>0&&keep.length===0)throw new Problem(400,'INVALID_INPUT','远端已有清单，keep 不能为空。');
+  return backups().prune(new Set([...keep,...store.manifestObjects()]));
  });
  app.delete('/api/v1/backup',async req=>{
+  // Build 71 的「删除远端备份」：只删这位成员名下的清单，对象是全家的，无主的才随手收走。
   const member=auth(req.headers.authorization);
-  // 先删索引再删对象：中途崩溃只会留下没人指着的对象，而不是指着空库的索引。
-  store.deleteManifest(member.id);backups().wipe(member.id);
-  return {ok:true};
+  store.deleteMemberManifests(member.id);
+  return {ok:true,pruned:sweep()};
  });
- app.get('/api/v1/admin/overview',async req=>{owner(req.headers.authorization);return {members:store.members().map(m=>({...m,usage:store.usage(m.id),backup:{...backups().usage(m.id),limitBytes:m.backup_limit_bytes}})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS,backupFreeBytes:await backups().freeBytes()};});
+ app.get('/api/v1/admin/overview',async req=>{
+  owner(req.headers.authorization);
+  // 对象空间是全家一份，成员行上只挂各自设备的清单时间；配额取主人的。
+  const manifests=store.manifests();
+  return {members:store.members().map(m=>({...m,usage:store.usage(m.id),manifests:manifests.filter(x=>x.memberId===m.id).map(x=>({deviceId:x.deviceId,deviceName:x.deviceName,updatedAt:iso(x.updatedAt)}))})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS,backup:{...backups().usage(),limitBytes:store.familyLimitBytes(),manifests:manifests.length},backupFreeBytes:await backups().freeBytes()};
+ });
  app.post('/api/v1/admin/members',async (req,reply)=>{
   owner(req.headers.authorization);
   const input=z.object({username,password:z.string().min(8).max(128)}).strict().parse(req.body);
@@ -198,7 +225,12 @@ export function createApp(store:Store,provider:Provider,version='dev',backupStor
  app.delete('/api/v1/admin/members/:id/backup',async req=>{
   owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
   if(!store.fullById(id))throw new Problem(404,'NOT_FOUND','成员不存在。');
-  store.deleteManifest(id);backups().wipe(id);return {ok:true};
+  store.deleteMemberManifests(id);return {ok:true,pruned:sweep()};
+ });
+ app.delete('/api/v1/admin/backup',async req=>{
+  // 主人清空全家远端：先删全部清单再删对象，中途崩溃只会留下没人指着的对象，而不是指着空库的清单。
+  owner(req.headers.authorization);
+  store.deleteAllManifests();backups().wipe();return {ok:true};
  });
  app.delete('/api/v1/admin/devices/:id',async req=>{
   const member=owner(req.headers.authorization),{id}=z.object({id:z.string().uuid()}).parse(req.params);
