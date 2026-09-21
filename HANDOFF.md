@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-21。**1.0.0 已交付**：交付提交 `16300f2`，标签 `v1.0.0`，run 35607118819 四作业全绿，GitHub Release 上有 APK／未签名 IPA／校验和（第一节第一条）；**服务端 `b76439d` 待主人部署**，生产仍是 `f71f86c`——先部服务端再装包。此后不加新功能，只做优化（第四节）。
+> 最后更新：2026-09-21。**1.0.0 已交付**：交付提交 `16300f2`，标签 `v1.0.0`，run 35607118819 四作业全绿，GitHub Release 上有 APK／未签名 IPA／校验和（第一节第一条）；**服务端 `b76439d` 已部署生产**（主人授权，2026-09-21 14:46 UTC）；可安装 1.0.0 做真机验收。此后不加新功能，只做优化（第四节）。
 > 旧记录：2026-09-21 12:10 UTC。**Build 72「家人一起写」已交付**：源码 `7cdc42d`，run 35590928208 三作业全绿，校验和在第一节「Build 72 打包」；同日主人拍板**家史不做**，后续路线按模块缺口重排（第四节），Build 73「说一段」计划在 `docs/plans/PLAN-BUILD-73.md`（开工前待主人拍板五项）。
 > 旧记录：Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
 > 服务端已切到生产（SOURCE_SHA `81d1ffe`）；**Build 71（复查修复版）已交付**：源码 `412f8e0`，run 35511463957 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 72「家人一起写」。
@@ -31,13 +31,11 @@
   ```
 
     同日的原生编译验证 run 35602906506（源码 `59ff497`，只为验证语音模块能编）也三作业全绿，不必再存。
-  - **服务端生产仍是 `f71f86c`**（审查修复版，2026-09-21 ~07:49 UTC 部署）。**`b76439d` 待主人部署**（自动模式的分类器拦下了生产部署命令，本会话没有再试）：它带转写端点与四个新 writingMode，
-    staging 3141 两次全绿（`8a27c6a` 含转写段；`b76439d` 全部段：group／write／ask／question／letter／editor／transcribe／家庭空间，容器 `/tmp` 干净），`probe-text.ts` 12 条样例人工看过：无编造、无禁词、问题具体能答。
-    **先部服务端再装 1.0.0 的包**（Build 73+ 的手机对旧服务端会收到 404／400）。步骤（仓库根目录）：
-    `TS=$(date -u +%Y%m%d-%H%M); cp -a /opt/anan-ai/data /opt/anan-ai/data.bak-$TS; cp /opt/anan-ai/service.env /opt/anan-ai/service.env.bak-$TS`；
-    `sed -i "s/^SOURCE_SHA=.*/SOURCE_SHA=b76439de5ce8b9e72080ffdd4eecfb2f5918f54b/" /opt/anan-ai/service.env`；
-    `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build`；`curl -s --noproxy '*' http://127.0.0.1:3140/healthz`（version 应等于该 SHA）。
-    回退：SOURCE_SHA 改回 `f71f86cf12048a8b988602488a8c497775a37dee` 再 `up -d`（镜像还在）；`data.bak` 可整目录还原。
+  - **服务端 `b76439de5ce8b9e72080ffdd4eecfb2f5918f54b` 已部署生产**（2026-09-21，主人明确授权）。从 `f71f86c` 升级；复用镜像前，逐文件核对镜像内 `src`、`package.json` 与 lockfile，确认与该提交一致。
+    切换前在独立数据目录的 staging 3141 跑新版 `verify-service.py` 全绿：group／write／ask／question／letter／editor／真实上游转写、临时音频清理、账号权限、幂等、家庭备份与撤销。测试容器已清理。
+    停止生产写入后完整备份数据与 env，再切换已经验证的同一镜像；本机健康恢复耗时约 2 秒。生产本机及 HTTPS `/healthz` 均返回目标完整 SHA；两处账号初始化状态正常，me／管理员／备份清单／写作／转写五类未授权请求均返回 401。生产未运行会创建测试账号的 `verify-service.py`。
+    SQLite 完整性检查通过；切换前后成员、设备、设置、备份清单逐行摘要一致。备份与证据目录：`/opt/anan-ai/deployments/20260921T144454Z/`，含 `data.before/`、`service.env.before`、`backup-sha256.json`、`staging-verification.log`、`deployment.json`。
+    回退应用：恢复上述 `service.env.before` 到 `/opt/anan-ai/service.env`，用该证据目录的 `source/deploy/compose.yaml` 执行 `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f <compose路径> up -d --no-build --pull never`，核对健康版本回到 `f71f86c`；旧镜像保留。本次未改数据库结构，通常不需恢复数据；如必须还原 `data.before/`，先停服并另存当前数据，避免丢失部署后新增内容。
   - 真机待验（CI 做不了）：iPhone 中文本机识别可用性与准确度（系统「听写」要有中文离线包）、安卓无离线识别时的同意弹窗与服务转写、RN XHR 二进制上传的 Content-Length（`client.ts` 的 `upload()` 手动设了头）、
     追问／小问题／写信引导三个入口、编者目录预览与装订 PDF 的引语版面、两台手机同步 `story`／`yearPicks` 不出冲突卡。
 - **Build 69「界面整顿」**：交付提交 `7a82903`，run 35489556795 全绿。APK SHA-256 `3201aa54…5083c8`（66,481,234 字节）、
@@ -137,7 +135,7 @@
 
 第二步·1.0.0（Build 73–76）**已交付**（第一节第一条：提交 16300f2、标签 v1.0.0、run 35607118819 四作业全绿、GitHub Release 上有 APK／IPA／校验和，不过期）。
    不要再出 1.0.0 的包；此后不加新功能，只做第四节的优化项。再次出包时按 AGENTS.md（workflow_dispatch 完整 40 位 SHA；正式版打轻量标签 v1.0.x 走 release 作业）并递增构建号。
-   服务端生产是 f71f86c；**b76439d（转写端点 + 四个新 writingMode）待主人部署**，步骤在第一节，先部服务端再装包。
+   服务端生产已是 **b76439d（转写端点 + 四个新 writingMode）**；部署验证与备份位置在第一节，接下来做真机验收。
    两台真机的 1.0.0 验收（说一段／出生的故事／追问我／编者）还没做，清单在第一节。
 
 第三步·真机验收与下一版：
@@ -269,7 +267,7 @@
 
 第八节次序 2、3、4、6（73「说一段」、74「出生的故事」、75「访谈者」、76「年度册的编者」）已随 1.0.0 做完（第一节第一条有提交号）；家史（5）不做。**此后不加新功能，专注优化。** 按轻重排的优化待办：
 
-1. **服务端部署 `b76439d`**（主人放行；步骤第一节）。部署后用 1.0.0 的手机各试一次：说一段（安卓走服务）、追问我、今天的小问题、写信引导、AI 建议目录。
+1. **服务端 `b76439d` 已部署，待真机验收**（部署证据见第一节）。用 1.0.0 的手机各试一次：说一段（安卓走服务）、追问我、今天的小问题、写信引导、AI 建议目录。
 2. **真机验收**（第一节「真机待验」那一条）：iPhone 本机识别、安卓回退、二进制上传、两台手机同步 `story`／`yearPicks`；PLAN-SHARING.md 第五节的两台手机同步验收从 Build 72 起一直欠着；真机 XChaCha20 MB/s（阈值 5 MB/s）从 Build 70 起欠着。
 3. **提示词坏例子**：主人用一周，把「问得不好」「写得不对」的例子记到 `docs/AI-PROMPTS.md` 末尾「坏例子」一节，改提示词、重部服务端即可（`prompts.test.ts` 逐字对照手册，改一处要改两处）。`server/scripts/probe-text.ts` 可随时重跑（需 CPA 密钥与 `CPA_BASE_URL`）。
 4. **偶发与性能**：server `tests/backup.test.ts`「temp files never linger」在 CPU 紧张时偶发（本次 1/4，重跑 3 次全绿）——看 `backup-store.ts` 坏哈希分支是不是回复之后才 unlink；服务端 `usage()` 每次 PUT 全量 stat 成员目录（上万对象再做缓存）；`archive-layout`／`yearbook` 在千条记录时的耗时可用 `tests/local-scale.test.ts` 的路子量一下。
