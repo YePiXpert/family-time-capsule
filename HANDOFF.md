@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-21（1.0.0 收尾中，见第一节第一条；**服务端 `b76439d` 待主人部署**，生产仍是 `f71f86c`）。
+> 最后更新：2026-09-21。**1.0.0 已交付**：交付提交 `16300f2`，标签 `v1.0.0`，run 35607118819 四作业全绿，GitHub Release 上有 APK／未签名 IPA／校验和（第一节第一条）；**服务端 `b76439d` 待主人部署**，生产仍是 `f71f86c`——先部服务端再装包。此后不加新功能，只做优化（第四节）。
 > 旧记录：2026-09-21 12:10 UTC。**Build 72「家人一起写」已交付**：源码 `7cdc42d`，run 35590928208 三作业全绿，校验和在第一节「Build 72 打包」；同日主人拍板**家史不做**，后续路线按模块缺口重排（第四节），Build 73「说一段」计划在 `docs/plans/PLAN-BUILD-73.md`（开工前待主人拍板五项）。
 > 旧记录：Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
 > 服务端已切到生产（SOURCE_SHA `81d1ffe`）；**Build 71（复查修复版）已交付**：源码 `412f8e0`，run 35511463957 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 72「家人一起写」。
@@ -21,7 +21,16 @@
   - Build 75「访谈者」：服务端 `b76439d`（writingMode ask／question／letter／editor，八条提示词逐字 = `docs/AI-PROMPTS.md`——`prompts.test.ts` 盯着；分模式校验；`server/scripts/probe-text.ts`）、手机端 `208c8e7`（AI 面板「追问我」、联网版「今天的小问题」一天一次本机缓存 `settings.dailyQuestion`、写信「不知道从哪开始？」、生成／润色送落款、寄语送她说的话、同意书 v2 共用 `src/ai/consent.ts`）。
   - Build 76「年度册的编者」：`5697dc1`（`yearPicks` 共享根字段：按年一块、两台都改取 `updatedAt` 晚的、`repairReferences` 只在真少了引用时换对象；年度册页「AI 建议目录」两次确认才送整年文字、预览可「不要」「不引」、采用才落库、手机端 `checkEditorResult` 再校验；纸书按目录装订、章首引语进 `lead`、建议书名替换封面书名；`backupNudgeBody` 认得 7 天内的家人同步）。
   - 出包流水线 `0b08b53`：quality 作业补 server typecheck；`v*` 标签自动发 GitHub Release（APK／未签名 IPA／`build-source.json`／`sha256sums.txt`，说明取 CHANGELOG 顶节；`contents: write` 只给该作业）。**标签要打轻量标签**（`git tag v1.0.0 <sha>`，不加 `-a`），`github.sha` 才等于提交、workflow 的 SHA 核对才过。
-  - 发版：交付提交 `16300f2`（`mobile/app.json` 1.0.0／构建号 73，CHANGELOG 顶节「1.0.0」，README 当前本机版），轻量标签 `v1.0.0` 指向它，标签推送触发 run 35607118819（release 作业会发 GitHub Release `v1.0.0`：APK／未签名 IPA／`build-source.json`／`sha256sums.txt`）。（待填：run 结论、APK／IPA 字节数与 SHA-256——`gh release view v1.0.0` 或 `gh run download 35607118819`。）
+  - 发版：交付提交 `16300f2`（`mobile/app.json` 1.0.0／构建号 73，CHANGELOG 顶节「1.0.0」，README 当前本机版），轻量标签 `v1.0.0` 指向它，标签推送触发 run 35607118819（release 作业会发 GitHub Release `v1.0.0`：APK／未签名 IPA／`build-source.json`／`sha256sums.txt`）。run 35607118819 **四作业全绿**（quality／Android APK／iOS unsigned IPA／GitHub Release），`build-source.json` 的 gitSha = `16300f2339ae4c1242cad54b8356c1365a62ffa3`、version 1.0.0、androidVersionCode 73、iosBuildNumber "73"；
+    双端冒烟 `result.json` 布尔项全 true（安卓 12 项、iOS 回归 9 项、iOS 启动 3 项，gitSha 都是 16300f2）。**GitHub Release**：<https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.0>（不过期；artifacts 2026-10-21 过期；VPS 上另有一份在 `/var/tmp/anan-tests/artifacts-35607118819/`）。
+    APK 66,772,050 字节、IPA 11,267,601 字节（IPA 未签名，由主人自签后装机）；SHA-256（与 Release 的 `sha256sums.txt` 一致，本机重新算过）：
+
+  ```text
+  0039f80694f40c7af6010ee5134e8c160a25b4e968ef58a3a52e3558e49c4bb7  FamilyTimeCapsule-android.apk
+  bd41a86d9c698476a85307f8205db9d585976c82a07267ce8daa9c4de9c81fc0  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
+
+    同日的原生编译验证 run 35602906506（源码 `59ff497`，只为验证语音模块能编）也三作业全绿，不必再存。
   - **服务端生产仍是 `f71f86c`**（审查修复版，2026-09-21 ~07:49 UTC 部署）。**`b76439d` 待主人部署**（自动模式的分类器拦下了生产部署命令，本会话没有再试）：它带转写端点与四个新 writingMode，
     staging 3141 两次全绿（`8a27c6a` 含转写段；`b76439d` 全部段：group／write／ask／question／letter／editor／transcribe／家庭空间，容器 `/tmp` 干净），`probe-text.ts` 12 条样例人工看过：无编造、无禁词、问题具体能答。
     **先部服务端再装 1.0.0 的包**（Build 73+ 的手机对旧服务端会收到 404／400）。步骤（仓库根目录）：
