@@ -16,6 +16,7 @@ import { coverForRecords, Volume } from "./Shelf";
 import { NoteCard } from "./NoteCard";
 import { ReplayModal } from "./RecapScreen";
 import { replayPhotos } from "./replay";
+import { byCountsOf, byLine } from "./recap";
 import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
 import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
 import { yearBookInput, type YearbookInput } from "./yearbook";
@@ -172,6 +173,7 @@ export function Year({ route }: Props<"Year">) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const writers = byLine(byCountsOf(records));
   const monthKeys = Array.from(
     { length: 12 },
     (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`,
@@ -228,6 +230,7 @@ export function Year({ route }: Props<"Year">) {
               title: recordTitle(r),
               date: dateLabel(r.date),
               text: r.text,
+              ...(r.by ? { by: r.by } : {}),
               photos: r.mediaIds
                 .map(bookPhoto)
                 .filter((photo): photo is BookPhoto => !!photo),
@@ -325,6 +328,11 @@ export function Year({ route }: Props<"Year">) {
     <Page>
       <Text style={s.title}>{year} 年</Text>
       {!!stats && <Text style={s.muted}>{stats}</Text>}
+      {!!writers && (
+        <Text style={s.muted} testID="year-writers">
+          {writers}
+        </Text>
+      )}
       <View style={s.row}>
         <Button
           title="这一年回顾"

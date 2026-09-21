@@ -49,6 +49,8 @@ export type ArchiveRecord = {
   first: boolean;
   quote: boolean;
   persons: string[];
+  /** 落款（谁写的）；没落款省略。 */
+  by?: string;
   folder: string;
   media: ArchiveMedia[];
 };
@@ -244,6 +246,7 @@ export function planArchive(
       first: r.first,
       quote: r.quote === true,
       persons: (r.personIds ?? []).map(personName).filter(Boolean),
+      ...(r.by ? { by: r.by } : {}),
       folder,
       media: placeMedia(state, r.mediaIds, folder),
     };
@@ -260,12 +263,14 @@ export function planArchive(
           ["标题", r.title],
           ["地点", r.location],
           ["人物", r.persons.join(", ")],
+          ["落款", r.by],
           ["第一次", r.first ? "是" : undefined],
           ["她说的话", r.quote ? "是" : undefined],
         ]),
         `# ${r.title}`,
         "",
         r.text.trim(),
+        ...(r.by ? ["", `—— ${r.by}`] : []),
         r.media.length ? `\n${mediaLinks(r.media, r.folder)}` : "",
         "",
       ].join("\n"),

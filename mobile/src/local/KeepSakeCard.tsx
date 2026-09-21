@@ -70,7 +70,7 @@ function OrnamentLine({ y }: { y: number }) {
 export const KeepSakeCard = forwardRef<
   SvgRef,
   {
-    record: Pick<LocalRecord, "title" | "text" | "date" | "location">;
+    record: Pick<LocalRecord, "title" | "text" | "date" | "location" | "by">;
     profileName: string;
     /** 已降采样的照片与宽高比。 */
     photo?: { uri: string; aspect: number };
@@ -81,6 +81,7 @@ export const KeepSakeCard = forwardRef<
     title: record.title.trim() || record.text.trim().split("\n")[0] || "这一刻",
     text: record.title.trim() ? record.text.trim() : record.text.trim().split("\n").slice(1).join("\n").trim(),
     location: record.location,
+    by: record.by,
     photoAspect: photo?.aspect,
   });
   return (
@@ -169,6 +170,18 @@ export const KeepSakeCard = forwardRef<
           {line.text}
         </SvgText>
       ))}
+      {layout.byY !== null && (
+        <SvgText
+          x={CARD_WIDTH - 48 - 6}
+          y={layout.byY + 26}
+          fontSize={26}
+          fontFamily={serif}
+          fill={INK}
+          textAnchor="end"
+        >
+          {`—— ${record.by}`}
+        </SvgText>
+      )}
       {layout.locationY !== null && (
         <SvgText
           x={CARD_WIDTH / 2}

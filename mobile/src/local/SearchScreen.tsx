@@ -23,10 +23,13 @@ export function SearchScreen(_: Props<"Search">) {
     [quote, setQuote] = useState(false),
     [media, setMedia] = useState<MediaFilter>("any"),
     [year, setYear] = useState(""),
-    [person, setPerson] = useState("");
+    [person, setPerson] = useState(""),
+    [by, setBy] = useState("");
   const { records: recordMap, media: mediaMap, persons: personMap } = state;
-  const { results, years, persons } = useMemo(() => {
+  const { results, years, persons, writers } = useMemo(() => {
     const all = sortedRecords({ records: recordMap });
+    const byCount = new Map<string, number>();
+    for (const r of all) if (r.by) byCount.set(r.by, (byCount.get(r.by) ?? 0) + 1);
     const kinds = Object.fromEntries(
       Object.values(mediaMap).map((m) => [m.id, m.kind] as const),
     );
@@ -40,6 +43,7 @@ export function SearchScreen(_: Props<"Search">) {
           media,
           year: year || undefined,
           person: person || undefined,
+          by: by || undefined,
         },
         kinds,
       ),
@@ -49,10 +53,19 @@ export function SearchScreen(_: Props<"Search">) {
       persons: Object.values(personMap).sort((a, b) =>
         a.name.localeCompare(b.name, "zh"),
       ),
+      writers: [...byCount.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh"))
+        .map(([name]) => name),
     };
-  }, [recordMap, mediaMap, personMap, query, first, quote, media, year, person]);
+  }, [recordMap, mediaMap, personMap, query, first, quote, media, year, person, by]);
   const filtered =
-    query.trim() || first || quote || media !== "any" || !!year || !!person;
+    query.trim() ||
+    first ||
+    quote ||
+    media !== "any" ||
+    !!year ||
+    !!person ||
+    !!by;
   return (
     <Page scroll={false} title="搜索">
       {/* scroll=false 不套 content 边距，这里自行补齐 20 的页面边距。 */}
@@ -84,6 +97,11 @@ export function SearchScreen(_: Props<"Search">) {
               title: p.name,
               active: person === p.id,
             })),
+            ...writers.map((name) => ({
+              key: `b-${name}`,
+              title: `${name}写的`,
+              active: by === name,
+            })),
             { key: "f-first", title: "第一次", active: first },
             { key: "f-quote", title: "她说的话", active: quote },
             { key: "m-av", title: "有声像", active: media === "av" },
@@ -102,6 +120,9 @@ export function SearchScreen(_: Props<"Search">) {
                 } else if (item.key.startsWith("p-")) {
                   const p = item.key.slice(2);
                   setPerson(person === p ? "" : p);
+                } else if (item.key.startsWith("b-")) {
+                  const name = item.key.slice(2);
+                  setBy(by === name ? "" : name);
                 } else if (item.key === "f-first") setFirst(!first);
                 else if (item.key === "f-quote") setQuote(!quote);
                 else if (item.key === "m-av")

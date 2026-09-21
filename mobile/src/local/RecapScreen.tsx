@@ -7,7 +7,7 @@ import { useLibrary, useStore } from "./context";
 import { monthKey, recordTitle, sortedRecords, yearKey } from "./model";
 import { useNav, type Props } from "./navigation";
 import { Stamp } from "./Shelf";
-import { recapOf } from "./recap";
+import { byLine, recapOf } from "./recap";
 import { replayPhotos } from "./replay";
 import { mediaUri } from "./files";
 import { Photo } from "./Media";
@@ -67,6 +67,9 @@ export function RecapScreen({ route }: Props<"Recap">) {
         </Stamp>
         <Text style={s.title}>{year} 年的回顾</Text>
         {!!stats && <Text style={s.muted}>{stats}</Text>}
+        {recap.byCounts.length > 0 && (
+          <Text style={s.muted}>{byLine(recap.byCounts)}</Text>
+        )}
       </View>
       {!!recap.months.length && (
         <View style={{ gap: 12 }}>

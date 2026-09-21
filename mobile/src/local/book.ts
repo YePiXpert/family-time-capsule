@@ -42,7 +42,7 @@ const FOLIO_SIZE = 8;
 export type BookPhoto = { key: string; aspect: number };
 export type BookBlock =
   | { kind: "photos"; photos: BookPhoto[]; captions?: (string | undefined)[] }
-  | { kind: "text"; title?: string; date?: string; body: string }
+  | { kind: "text"; title?: string; date?: string; body: string; by?: string }
   | { kind: "list"; entries: { title: string; date: string }[] };
 export type BookChapter = { heading: string; lead?: string; blocks: BookBlock[] };
 export type BookInput = {
@@ -64,7 +64,7 @@ export type BookElement =
       x: number;
       y: number;
       size: number;
-      align: "left" | "center";
+      align: "left" | "center" | "right";
       serif: boolean;
       tone: "body" | "muted" | "accent";
     }
@@ -342,6 +342,17 @@ export function layoutBook(input: BookInput): BookLayout {
         for (const line of wrapAll(block.body, BODY_SIZE, CONTENT_W)) {
           if (BODY_LEADING > sheet.room) turn();
           sheet.elements.push(text(line, LEFT, sheet.y + BODY_SIZE, BODY_SIZE));
+          sheet.y += BODY_LEADING;
+        }
+        // 落款靠右一行，跟着正文最后一行走。
+        if (block.by) {
+          if (BODY_LEADING > sheet.room) turn();
+          sheet.elements.push(
+            text(`—— ${block.by}`, RIGHT, sheet.y + BODY_SIZE, BODY_SIZE, {
+              align: "right",
+              tone: "muted",
+            }),
+          );
           sheet.y += BODY_LEADING;
         }
         sheet.y += GAP;

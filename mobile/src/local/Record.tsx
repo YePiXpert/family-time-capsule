@@ -327,6 +327,15 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           <Text style={s.heading}>{record.title.trim()}</Text>
         )}
         {!!record.text && <Text selectable>{record.text}</Text>}
+        {!!record.by && (
+          <Text
+            style={[s.muted, { alignSelf: "flex-end" }]}
+            selectable
+            testID="record-by"
+          >
+            {`—— ${record.by}`}
+          </Text>
+        )}
         {!!record.location && (
           <Text style={s.muted} selectable>
             {record.location}

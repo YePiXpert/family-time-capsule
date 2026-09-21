@@ -57,6 +57,8 @@ export type KeepSakeLayout = {
   photo: { x: number; y: number; w: number; h: number } | null;
   titleLines: { y: number; text: string }[];
   bodyLines: { y: number; text: string }[];
+  /** 落款「—— 爸爸」那一行的顶；没落款为 null。 */
+  byY: number | null;
   locationY: number | null;
   ornamentBottomY: number;
   footerY: number;
@@ -66,6 +68,8 @@ export type KeepSakeInput = {
   title: string;
   text: string;
   location?: string;
+  /** 落款（谁写的）。 */
+  by?: string;
   /** 照片宽高比（w/h）；无照片省略。 */
   photoAspect?: number;
 };
@@ -97,6 +101,11 @@ export function layoutKeepSake(input: KeepSakeInput): KeepSakeLayout {
     maxLines: 9,
   }).map((text, i) => ({ y: y + i * 40, text }));
   if (bodyLines.length) y += bodyLines.length * 40 + 16;
+  let byY: number | null = null;
+  if (input.by?.trim()) {
+    byY = y;
+    y += 40;
+  }
   let locationY: number | null = null;
   if (input.location?.trim()) {
     locationY = y;
@@ -113,6 +122,7 @@ export function layoutKeepSake(input: KeepSakeInput): KeepSakeLayout {
     photo,
     titleLines,
     bodyLines,
+    byY,
     locationY,
     ornamentBottomY,
     footerY,

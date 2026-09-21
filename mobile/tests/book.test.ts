@@ -11,8 +11,7 @@ import {
   softPhotoCount,
   type BookBlock,
   type BookInput,
-  type BookPage,
-} from "../src/local/book";
+  type BookPage, type BookLayout } from "../src/local/book";
 
 const MM = 72 / 25.4;
 const photos = (n: number, aspect = 4 / 3) =>
@@ -228,5 +227,24 @@ describe("成册版面", () => {
     expect(softPhotoCount(layout, { p0: small, p1: small })).toBe(2);
     // 不知道尺寸的照片不算软：宁可不提醒，也不凭空吓人。
     expect(softPhotoCount(layout, { p0: big })).toBe(0);
+  });
+});
+
+describe("成册的落款", () => {
+  it("落款靠右、辅助色，紧跟正文最后一行；没落款的记录不多占一行", () => {
+    const plain = layoutBook(input({ chapters: [chapter([{ kind: "text", body: "短短一段。", date: "3月2日" }])] }));
+    const signed = layoutBook(
+      input({ chapters: [chapter([{ kind: "text", body: "短短一段。", date: "3月2日", by: "妈妈" }])] }),
+    );
+    const content = (layout: BookLayout) => layout.pages.find((p) => p.kind === "content")!;
+    const texts = (layout: BookLayout) => content(layout).elements.filter((e) => e.kind === "text");
+    expect(texts(signed)).toHaveLength(texts(plain).length + 1);
+    const by = texts(signed).find((e) => e.kind === "text" && e.text === "—— 妈妈");
+    expect(by).toBeDefined();
+    expect(by!.kind === "text" && by!.align).toBe("right");
+    expect(by!.kind === "text" && by!.tone).toBe("muted");
+    const body = texts(signed).find((e) => e.kind === "text" && e.text === "短短一段。")!;
+    expect(by!.y).toBeGreaterThan(body.y);
+    expect(by!.x).toBeGreaterThan(body.x);
   });
 });

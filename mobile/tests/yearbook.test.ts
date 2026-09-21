@@ -163,6 +163,15 @@ describe("年度册的内容装配", () => {
       { kind: "text", title: "赶海", date: "3月2日", body: "第一次踩到浪。" },
       { kind: "photos", photos },
     ]);
+    // 记录带落款时文字块带上它；没落款不多出键。
+    const signed = yearBookInput(
+      source({
+        months: [march([{ title: "赶海", date: "3月2日", text: "第一次踩到浪。", by: "爸爸", photos: [] }])],
+      }),
+    );
+    expect(signed.chapters[0]!.blocks).toEqual([
+      { kind: "text", title: "赶海", date: "3月2日", body: "第一次踩到浪。", by: "爸爸" },
+    ]);
   });
 
   it("没有文字的记录不排空正文，没有寄语与第一次就不出那两章", () => {
