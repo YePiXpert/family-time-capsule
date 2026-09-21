@@ -95,3 +95,70 @@ export const login = (username: string, password: string, deviceName: string) =>
   });
 export const changePassword = (current: string, next: string) =>
   api("/password", { current: current || undefined, next }, "PUT");
+
+/** 二进制录音只在这里上传；RN 原生 XHR 可直接发送 Uint8Array。 */
+export async function upload<T>(
+  path: string,
+  body: Uint8Array,
+  contentType: string,
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  const canceled = () => new AIError("CANCELED", "已停止等待，草稿不变。");
+  const network = () => new AIError("NETWORK", "现在连不上服务，请稍后再试。");
+  if (signal?.aborted) throw canceled();
+  const token = await getToken();
+  if (signal?.aborted) throw canceled();
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new globalThis.XMLHttpRequest();
+    let settled = false;
+    const done = (action: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", cancel);
+      action();
+    };
+    const cancel = () => {
+      done(() => reject(canceled()));
+      xhr.abort();
+    };
+    xhr.onload = () => {
+      const ok = xhr.status >= 200 && xhr.status < 300;
+      let value: unknown;
+      try {
+        value = JSON.parse(new TextDecoder().decode(
+          new Uint8Array((xhr.response as ArrayBuffer | null) ?? new ArrayBuffer(0)),
+        ));
+      } catch {
+        done(() => reject(new AIError(
+          ok ? "INVALID_RESULT" : "SERVER_ERROR",
+          ok ? "AI 服务返回了无法解析的内容。" : "AI 服务暂时不可用。",
+        )));
+        return;
+      }
+      if (!ok) {
+        const error = value as { code?: unknown; message?: unknown } | null;
+        done(() => reject(new AIError(
+          typeof error?.code === "string" ? error.code : "SERVER_ERROR",
+          typeof error?.message === "string" ? error.message : "AI 服务暂时不可用。",
+        )));
+      } else done(() => resolve(value as T));
+    };
+    xhr.onerror = xhr.ontimeout = () => done(() => reject(network()));
+    xhr.onabort = () => done(() => reject(canceled()));
+    try {
+      xhr.open("POST", BASE + path);
+      xhr.responseType = "arraybuffer";
+      xhr.timeout = 115000;
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.setRequestHeader("Content-Type", contentType);
+      xhr.setRequestHeader("Content-Length", String(body.byteLength));
+      for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
+      signal?.addEventListener("abort", cancel);
+      if (signal?.aborted) { cancel(); return; }
+      xhr.send(body);
+    } catch {
+      done(() => reject(signal?.aborted ? canceled() : network()));
+    }
+  });
+}

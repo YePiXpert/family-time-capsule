@@ -38,6 +38,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("volume-2026-09").waitForExistence(timeout: 20)); shot("home")
         tap("volume-2026-09"); XCTAssertTrue(element("record-fixture").waitForExistence(timeout: 20))
         tap("record-fixture"); tap("record-edit")
+        XCTAssertTrue(element("说一段").waitForExistence(timeout: 20))
         XCTAssertTrue(element("ai-open").waitForExistence(timeout: 20)); shot("ai-entry")
         tap("ai-open")
         XCTAssertTrue(element("ai-generate").waitForExistence(timeout: 20)); shot("ai-panel")
@@ -55,7 +56,8 @@ final class NativeRegressionTests: XCTestCase {
         app.terminate(); app.launch()
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
         tap("editor-by"); tap("editor-by-爸爸")
-        tap("录音"); XCTAssertTrue(element("完成录音").waitForExistence(timeout: 20)); sleep(2); tap("完成录音")
+        // 保留原有录音入库验证；保存这一刻走不转写的路径，模拟器不依赖听写授权。
+        tap("说一段"); XCTAssertTrue(element("说完了").waitForExistence(timeout: 20)); sleep(2)
         tap("capture-save"); XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20)); XCTAssertEqual(element("record-by").label, "—— 爸爸", "Signature missing on the reading page"); shot("record-reading")
         // 阅读页动作在底栏：滚到页尾后底栏仍在，页尾只剩「删除记录」。
         app.swipeUp(); shot("record-bottom-bar")

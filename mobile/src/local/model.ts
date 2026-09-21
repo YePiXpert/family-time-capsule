@@ -146,6 +146,8 @@ export type Library = {
     theme: "auto" | "light" | "dark";
     largeText: boolean;
     lockEnabled?: boolean;
+    /** 这台手机以后录音转写的同意；与写作 AI 同意分开，不随家人同步。 */
+    transcribeConsent?: boolean;
     /** 年度重放的配乐：本机音频素材 id；缺省或空表示不配乐。 */
     replayAudioId?: string;
     /** 这台手机默认的落款（新草稿带上它）；本机设置，不随家人同步。 */
@@ -797,6 +799,8 @@ function validRoot(s: Library): boolean {
     !!s.settings &&
     ["auto", "light", "dark"].includes(s.settings.theme) &&
     typeof s.settings.largeText === "boolean" &&
+    (s.settings.transcribeConsent === undefined ||
+      typeof s.settings.transcribeConsent === "boolean") &&
     (s.settings.lockEnabled === undefined ||
       typeof s.settings.lockEnabled === "boolean") &&
     (s.settings.replayAudioId === undefined ||

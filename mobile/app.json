@@ -16,7 +16,8 @@
       "buildNumber": "72",
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002"
+        "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
+        "NSSpeechRecognitionUsageDescription": "\u628a\u4f60\u8bf4\u7684\u8bdd\u8f6c\u6210\u6587\u5b57\uff0c\u53ea\u5728\u8fd9\u53f0\u624b\u673a\u4e0a\u5b8c\u6210\u3002"
       }
     },
     "android": {

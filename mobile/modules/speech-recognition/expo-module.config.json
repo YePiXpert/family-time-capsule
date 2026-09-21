@@ -1,0 +1,16 @@
+{
+  "platforms": [
+    "apple",
+    "android"
+  ],
+  "apple": {
+    "modules": [
+      "FamilySpeechRecognitionModule"
+    ]
+  },
+  "android": {
+    "modules": [
+      "app.familytimecapsule.speechrecognition.FamilySpeechRecognitionModule"
+    ]
+  }
+}
