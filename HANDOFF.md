@@ -2,7 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-21 12:10 UTC。**Build 72「家人一起写」已交付**：源码 `7cdc42d`，run 35590928208 三作业全绿，校验和在第一节「Build 72 打包」；同日主人拍板**家史不做**，后续路线按模块缺口重排（第四节），Build 73「说一段」计划在 `docs/plans/PLAN-BUILD-73.md`（开工前待主人拍板五项）。
+> 最后更新：2026-09-21（1.0.0 收尾中，见第一节第一条；**服务端 `b76439d` 待主人部署**，生产仍是 `f71f86c`）。
+> 旧记录：2026-09-21 12:10 UTC。**Build 72「家人一起写」已交付**：源码 `7cdc42d`，run 35590928208 三作业全绿，校验和在第一节「Build 72 打包」；同日主人拍板**家史不做**，后续路线按模块缺口重排（第四节），Build 73「说一段」计划在 `docs/plans/PLAN-BUILD-73.md`（开工前待主人拍板五项）。
 > 旧记录：Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
 > 服务端已切到生产（SOURCE_SHA `81d1ffe`）；**Build 71（复查修复版）已交付**：源码 `412f8e0`，run 35511463957 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 72「家人一起写」。
 > 2026-09-21 定位重述：新增 `PRODUCT.md`（不是相册，是一家人写给她的传家册；AI 从代笔改为访谈者与整理者），Build 72 改为「家人一起写」（落款先于同步），原 73「分享」不再单列——见第四节。主人同日拍板五项（PRODUCT.md 第九节）：落款用关系称呼、转写先本机后可用小米 MiMo 一类、「起个头」留着、App 一句话待选、1 与 2 都做；提示词整套在 `docs/AI-PROMPTS.md`。同日晚 `docs/plans/PLAN-SHARING.md` 起草完毕（落款 + 家庭对象空间 + 三方合并，16 个提交），主人当晚批准。
@@ -13,6 +14,23 @@
 
 ## 一、当前状态快照（2026-09-21）
 
+- **1.0.0（Build 73–76）**：主人 2026-09-21 拍板「都做吧，做完了作为 1.0.0 发版然后暂不考虑增加新功能了，专注优化就行」。main 上已合（每笔推送前门禁全绿）：
+  - Build 73「说一段」：服务端 `8a27c6a`（`POST /api/v1/ai/transcribe`：m4a → ffmpeg → 16 kHz 单声道 wav → CPA `mimo-v2.5-asr` 的 chat-style `input_audio`；不落盘不写日志、最长 3 分钟／5 MiB、一次计一次写作；顺手 `BackupStore` 必填、`claims` 每设备 10 万上限），
+    手机端 `59ff497`（自写 Expo 模块 `mobile/modules/speech-recognition`：iOS `SFSpeechRecognizer` `requiresOnDeviceRecognition`，安卓存根回退服务端；`client.ts` 加二进制 `upload()`；编辑页「说一段／说完了」录完自动接在正文后、分组时接第一件事；逐段同意，「以后都同意」记在本机 `settings.transcribeConsent`）。
+  - Build 74「出生的故事」：`6c72e56`（`RecordContent.story` 四主题、`stories.ts` 每题六问、书架合集常驻入口 + `Stories` 页、编辑页故事问题卡、阅读／搜索／归档带主题、纸书故事章排在寄语之前且月章不重复）。
+  - Build 75「访谈者」：服务端 `b76439d`（writingMode ask／question／letter／editor，八条提示词逐字 = `docs/AI-PROMPTS.md`——`prompts.test.ts` 盯着；分模式校验；`server/scripts/probe-text.ts`）、手机端 `208c8e7`（AI 面板「追问我」、联网版「今天的小问题」一天一次本机缓存 `settings.dailyQuestion`、写信「不知道从哪开始？」、生成／润色送落款、寄语送她说的话、同意书 v2 共用 `src/ai/consent.ts`）。
+  - Build 76「年度册的编者」：（待填：提交号——`yearPicks` 共享根字段、AI 建议目录、纸书按目录装订与章首引语、备份提醒认得家人一起写）。
+  - 出包流水线 `0b08b53`：quality 作业补 server typecheck；`v*` 标签自动发 GitHub Release（APK／未签名 IPA／`build-source.json`／`sha256sums.txt`，说明取 CHANGELOG 顶节；`contents: write` 只给该作业）。**标签要打轻量标签**（`git tag v1.0.0 <sha>`，不加 `-a`），`github.sha` 才等于提交、workflow 的 SHA 核对才过。
+  - 发版：（待填：交付提交、run、APK／IPA 字节数与 SHA-256）。
+  - **服务端生产仍是 `f71f86c`**（审查修复版，2026-09-21 ~07:49 UTC 部署）。**`b76439d` 待主人部署**（自动模式的分类器拦下了生产部署命令，本会话没有再试）：它带转写端点与四个新 writingMode，
+    staging 3141 两次全绿（`8a27c6a` 含转写段；`b76439d` 全部段：group／write／ask／question／letter／editor／transcribe／家庭空间，容器 `/tmp` 干净），`probe-text.ts` 12 条样例人工看过：无编造、无禁词、问题具体能答。
+    **先部服务端再装 1.0.0 的包**（Build 73+ 的手机对旧服务端会收到 404／400）。步骤（仓库根目录）：
+    `TS=$(date -u +%Y%m%d-%H%M); cp -a /opt/anan-ai/data /opt/anan-ai/data.bak-$TS; cp /opt/anan-ai/service.env /opt/anan-ai/service.env.bak-$TS`；
+    `sed -i "s/^SOURCE_SHA=.*/SOURCE_SHA=b76439de5ce8b9e72080ffdd4eecfb2f5918f54b/" /opt/anan-ai/service.env`；
+    `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --build`；`curl -s --noproxy '*' http://127.0.0.1:3140/healthz`（version 应等于该 SHA）。
+    回退：SOURCE_SHA 改回 `f71f86cf12048a8b988602488a8c497775a37dee` 再 `up -d`（镜像还在）；`data.bak` 可整目录还原。
+  - 真机待验（CI 做不了）：iPhone 中文本机识别可用性与准确度（系统「听写」要有中文离线包）、安卓无离线识别时的同意弹窗与服务转写、RN XHR 二进制上传的 Content-Length（`client.ts` 的 `upload()` 手动设了头）、
+    追问／小问题／写信引导三个入口、编者目录预览与装订 PDF 的引语版面、两台手机同步 `story`／`yearPicks` 不出冲突卡。
 - **Build 69「界面整顿」**：交付提交 `7a82903`，run 35489556795 全绿。APK SHA-256 `3201aa54…5083c8`（66,481,234 字节）、
   未签名 arm64 IPA SHA-256 `7fac29f2…f336f0`（11,084,240 字节），本地存 `C:\vibe-coding\releases\build-69\`（artifacts 2026-10-20 过期）。
 - **服务端**：2026-09-20 已把 Build 70 的服务端（`/api/v1/backup/*` 对象库、配额、管理端）部署到 capsule.yep.li，
@@ -99,24 +117,24 @@
    docs/plans/PLAN-BUILD-70.md（Build 70 计划 + 顶部实施偏离）、deploy/README.md（服务端部署与远端备份对象库）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install（mobile 的 tests/sync-e2e.test.ts 会拉起真实服务端子进程，server 依赖必须装）。
-4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（2026-09-21 Build 72 收尾时 43 个文件 597 个测试）；
-   server 下 npm test、npm run typecheck（31 个测试，server 没有 lint 脚本）；
+4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（2026-09-21 Build 75 之后 50 个文件 708 个测试，待填 1.0.0 的数）；
+   server 下 npm test、npm run typecheck（146 个测试，server 没有 lint 脚本）；
    python3 mobile/scripts/verify-local-boundary.py；
    python3 -m unittest discover -s mobile/scripts -p 'test_*.py'。
    本机 /tmp 若是满的 tmpfs，跑 mobile 与 server 测试都要 TMPDIR=/var/tmp/anan-tests（先 mkdir）。
-   本机若设置了 http_proxy/https_proxy，对 127.0.0.1 的请求要 env -u http_proxy -u https_proxy -u ALL_PROXY … 绕过。
+   本机若设置了 http_proxy/https_proxy，对 127.0.0.1 的请求要 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy NO_PROXY=127.0.0.1,localhost … 绕过；
+   git push 与 gh 反过来必须带着代理（直连 github.com 会超时）。
 5. gh auth status 可用（出安装包需要 gh CLI）。
 
-第二步·Build 72「家人一起写」安装包已交付（源码 7cdc42d，run 35590928208，校验和在 HANDOFF 第一节，artifacts 2026-10-21 过期）：
-   若主人本地还没存下 build-72 的 APK/IPA，提醒先 gh run download 存下来；过期后要重出同一版就用 7cdc42d 的完整 40 位 SHA 重新派发
-   mobile-build.yml（源码没变就不加构建号）。服务端生产是 473339b（Build 72 家庭空间）；main 上的审查修复（306cee2 那半边）尚未部署，需主人放行：
-   先 cp -a /opt/anan-ai/data /opt/anan-ai/data.bak-<时间>，staging 3141 跑 verify-service.py 全绿再切。
+第二步·1.0.0（Build 73–76）状态见 HANDOFF 第一节第一条：若「发版」一行还是「待填」，先 git log 看 Build 76 与 1.0.0 收尾提交是否已在 main，
+   再按 AGENTS.md 出包（轻量标签 v1.0.0 触发 mobile-build.yml 的 release 作业，或 workflow_dispatch 完整 40 位 SHA），把 run 与校验和填进第一节。
+   服务端生产是 f71f86c；**b76439d（转写端点 + 四个新 writingMode）待主人部署**，步骤在第一节，先部服务端再装包。
+   若主人本地还没存下各版 APK/IPA，提醒先 gh run download 存下来（artifacts 30 天过期）。
 
 第三步·真机验收与下一版：
 - 先按 docs/plans/PLAN-SHARING.md 第五节做真机验收（主人两台手机 + 家人一台）——两台手机真跑同步从未验证过；主人用 Build 71/72 的手机点一次「远端备份 → 现在备份」确认服务端兼容。
-- 后续路线在 HANDOFF 第四节（2026-09-21 按模块缺口重排）：Build 73「说一段」计划 docs/plans/PLAN-BUILD-73.md，开工前主人要拍板其第七节五项；
-  之后 74「出生的故事」→ 75「访谈者」（新增 writingMode，提示词按 docs/AI-PROMPTS.md 全文进 server/src/prompts.ts，含现有四条的重写；先部服务端再出包）→ 76「年度册的编者」。
-- 不做：家史（主人 2026-09-21 拍板）、实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹；原 73「分享」不再单列。
+- 1.0.0 之后**不加新功能，只做优化**（主人 2026-09-21 拍板）：待办清单在 HANDOFF 第四节（真机验收、服务端部署、性能、提示词坏例子、偶发测试）。
+- 不做：新功能、家史（主人 2026-09-21 拍板）、实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
 ```
 
 ## 三、交付清单与 Build 72 进度
@@ -238,16 +256,17 @@
   `unionItems`、`unifyPersons`、`repairReferences`、`SHARED_KINDS`、`KNOWN_LIMIT`／`emptyBase`、类型 `SyncBase`／`Conflict`／`RemoteSnapshot`／`MergeResult`。
   `wantedMedia` 已经剥掉对方的 `thumb`（那是对方手机的产物），物化后再把本机的 `thumb`／`width`／`height` 补回去。
 
-## 四、后续路线（2026-09-21 按模块缺口重排）
+## 四、后续路线：1.0.0 之后只优化（2026-09-21 主人拍板）
 
-定位与次序以 `PRODUCT.md` 第八节为准。地基（Build 43–72）已齐：本机库、备份分卷、加密远端、开放归档、纸书、信、书架、落款、家人一起写。**主人 2026-09-21 拍板：家史（第八节次序 5）不做。** 3、4、6 仍待拍板；下面是主会话读码 + Astra 只读调查（两份结论一致）后的建议分包，每条写清「复用什么／缺什么／接在哪」：
+第八节次序 2、3、4、6（73「说一段」、74「出生的故事」、75「访谈者」、76「年度册的编者」）已随 1.0.0 做完（第一节第一条有提交号）；家史（5）不做。**此后不加新功能，专注优化。** 按轻重排的优化待办：
 
-- **Build 73「说一段」**（已拍板；计划 `docs/plans/PLAN-BUILD-73.md`，开工前要主人定五项：识别路线、安卓回退上游、额度口径、是否拆 73/73b、转写进正文的方式）。录音链路已在（`editorHooks.ts:132-226` 的 expo-audio 录音、audio 素材、`Media.tsx` 播放、归档存「录音／m4a」），缺的是：本机识别模块（自写 Expo Module 照 `modules/share-intake` 的模板，或社区包——本机无网未核实）、`app.json` 的 `NSSpeechRecognitionUsageDescription`、编辑页「录完自动转写 → 追加进正文、失败录音照样入库」、安卓回退的 `POST /api/v1/ai/transcribe`（二进制上传只经 `src/ai/client.ts`、逐段同意——现有 `session.ts` 的同意是一次性全局 yes 不能顶替、服务端不落盘不写日志、单次 3 分钟／5 MB、计一次写作）。转写产物只是正文文字，不动 `merge.ts`，归档与纸书自动覆盖。
-- **Build 74「出生的故事」**：不碰服务端、不依赖 AI。`RecordContent.story?: "birth"|"pregnancy"|"name"|"met"`（可选字段自动进合并指纹；旧包校验不拒未知键）、`local/stories.ts` 固定问题清单（纯函数）、书架合集区「出生的故事」书册行 + `Stories` 路由、编辑页把「今天的小问题」卡换成主题问题卡（`Editor.tsx:420-450` 同形）、归档 front matter 加「故事」行 + 搜索筛选、`yearBookInput` 在「爸爸妈妈的话」前插一章且这些记录不再重复进当月。坑：记录日期必须可解析（`model.ts:723`）——记述日期做日期、大概时间写进正文；开放归档按年分卷（`archive-layout.ts:229`），前史会落在出生前那年的卷，首章按 `story` 收。待拍板：章放第一本书开头还是每年印；一题一条长记录（建议）还是多段串联。
-- **Build 75「访谈者」**：服务端 `contracts.ts:10` 枚举加 ask／question／letter、分模式 `parseResult`（1～3 问、每问 ≤ 30 字、禁词只查模型新增句、`first` 布尔）、`prompts.ts` 换手册第三节全文（含旧四条重写）、`app.ts:82`「没照片就 400」守卫放行新模式、`verify-service.py` 三段自检、新脚本 `server/scripts/probe-text.ts`；手机端 `ai/types.ts`／`state.ts:276` 白名单、`askContext`／`questionContext`／`letterContext`（不送照片、不送别的记录正文）、AI 面板「追问我」（问题 chips，`first` 只建议不改）、「今天的小问题」一天一次 + 近 7 天问过的缓存在设备本地 `settings`、离线退回 `prompts.ts`、`LetterEditor` 加引导入口（目前零 AI）；补三处「送得比表里少」（WRITE／POLISH 送落款、RECAP 送她说的话）并升版 `session.ts` 的一次性同意、同步改 `Year.tsx:76` 同意书与 README「AI 使用」。**先部服务端再出包**（`.strict()` 不认新枚举）；旧四条提示词不改契约，可先单独部署让主人试一周。
-- **Build 76「年度册的编者」**（2027 年一二月装订前）：`writingMode: editor` + 校验（picks ⊂ 送去的 id、引语逐字在原文里、书名 4～8 字）；`context.max(4000)` 装不下全年正文，要单独放宽或分月送；手机端「让 AI 帮挑」→ 目录预览 → 落库根字段 `yearPicks[year]`（接 `Library`／`normalizeLibrary`／`validRoot`／`rootOf`／`forkLibrary`；要同步就再接 `merge.ts:170` 的 rootIds、`sync/auto.ts:98` 的 `sharedFields`、`local/store.ts:68` 的引用保留表）；`yearBookInput` 按 picks 过滤、`lead` 用引语；源记录改删后引语重校验。
-- **小件（随最近的部署／出包带上）**：`mobile-build.yml` quality 作业缺 server typecheck（只有 mobile typecheck 与 server test）与 GitHub Release 作业（`v*` tag 已触发但只存 30 天 artifacts，要 `contents: write`）；书架备份提醒（`Shelf.tsx:927-941`「记录只保存在这台手机上」）已加入家庭时改口吻（读 `SyncStatusContext`，Shelf 不 import sync；同步成功不等于应用之外有备份，只改口吻不取消）；`server/src/app.ts:16` 惰性 `BackupStore` 改必填；`backup_object_claims` 每设备行数上限；密文位腐坏无自愈（不急）。三个 admin 端点 403 用例已补（`server/tests/backup.test.ts:532`），PROJECT-AUDIT 那条待办已过时。
-- 不做：家史（主人拍板）、实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹；原 73「分享」不再单列；「把散落的同一件事接成线索」有愿景无契约，不排期。
+1. **服务端部署 `b76439d`**（主人放行；步骤第一节）。部署后用 1.0.0 的手机各试一次：说一段（安卓走服务）、追问我、今天的小问题、写信引导、AI 建议目录。
+2. **真机验收**（第一节「真机待验」那一条）：iPhone 本机识别、安卓回退、二进制上传、两台手机同步 `story`／`yearPicks`；PLAN-SHARING.md 第五节的两台手机同步验收从 Build 72 起一直欠着；真机 XChaCha20 MB/s（阈值 5 MB/s）从 Build 70 起欠着。
+3. **提示词坏例子**：主人用一周，把「问得不好」「写得不对」的例子记到 `docs/AI-PROMPTS.md` 末尾「坏例子」一节，改提示词、重部服务端即可（`prompts.test.ts` 逐字对照手册，改一处要改两处）。`server/scripts/probe-text.ts` 可随时重跑（需 CPA 密钥与 `CPA_BASE_URL`）。
+4. **偶发与性能**：server `tests/backup.test.ts`「temp files never linger」在 CPU 紧张时偶发（本次 1/4，重跑 3 次全绿）——看 `backup-store.ts` 坏哈希分支是不是回复之后才 unlink；服务端 `usage()` 每次 PUT 全量 stat 成员目录（上万对象再做缓存）；`archive-layout`／`yearbook` 在千条记录时的耗时可用 `tests/local-scale.test.ts` 的路子量一下。
+5. **纸书版面真机看 PDF**：故事章、章首引语（`BookChapter.lead` 多行）、编者书名替换后的封面。
+6. **文案与可达性**：三个访谈入口的文案是工作者自定的（见 `/tmp` 任务报告已并入 CHANGELOG／DESIGN），主人试用后统一口吻；同意书 v2 文案偏长，可再精简。
+7. 密文对象位腐坏无自愈（PROJECT-AUDIT 残留风险 ③，不急）。
 
 ## 五、踩坑清单（务必先读，历史细节在 docs/plans/ 各计划的对应小节）
 
@@ -313,6 +332,13 @@
 - （Build 72）`Library` 的校验比想象严：时光系列里**每条记录、每张照片各只能出现一次**（并集合并后要去重），相册封面必须是册内某条记录的照片，
   合并后一律走一遍 `repairReferences` 再进 `store.change`，否则整库校验会把这一次同步整个拒掉。
 - （Build 72）补落款这类批量写入只改字段、**不碰 `revision`／`updatedAt`**，否则它会在家人合并时压过对方后来真正的改动。
+- （1.0.0）这台机的 shell 有 http_proxy 等六个代理变量（大小写都有）：**git push 与 gh 必须带着代理**（直连 github.com 超时）；
+  只有对 127.0.0.1（`verify-service.py`、`curl …/healthz`、`probe-text.ts` 对 `127.0.0.1:8317`）才 `env -u` 掉全部六个并设 `NO_PROXY=127.0.0.1,localhost`。
+- （1.0.0）CPA 的 ASR（`mimo-v2.5-asr`）只认 chat-style `input_audio`（wav／mp3），`/audio/transcriptions` 是 404，user content 里夹文本 part 会 400——所以 m4a 在服务端用 ffmpeg 转 wav，提示只放 system。
+- （1.0.0）`verify-service.py` 的验证对象 id 随内容走（`0a002a7`）：家庭空间先到为准，固定 id 重复跑会读回上一次的字节而假失败。
+- （1.0.0）Astra（Codex）沙箱不能监听端口、spawn python、写 `.git`，也没有 `/var/tmp`：它报的「环境限制」要在主会话重跑门禁核实；它若把 `result.md` 写进仓库要移出去再提交。
+- （1.0.0）`server/tests/prompts.test.ts` 逐字对照 `docs/AI-PROMPTS.md` 的九个 ```text 块（顺序：SHARED、GROUP、WRITE、POLISH、RECAP、ASK、QUESTION、LETTER、EDITOR）：改手册必须同步改 `prompts.ts`。
+- （1.0.0）`mobile-build.yml` 的 `v*` 标签触发：要轻量标签，`github.sha` 才是提交本身；release 作业 `needs` 三个作业，任一红就不发。
 - （CI 偶发）`statSync().mtimeMs` 有亚毫秒精度，`mtime < Date.now()` 对刚写下的文件不成立：0 宽限的清理要显式短路，别拿时间比。
 
 ## 六、环境备忘
@@ -341,5 +367,12 @@ gh workflow run mobile-build.yml --ref main -f source_sha=<完整40位SHA>
 # 只跑规模基准：
 npx --prefix mobile vitest run --root mobile tests/local-scale.test.ts --reporter=verbose
 # 服务端 staging 验证（别对生产 3140 跑）：
-#   起 3141 容器 → env -u http_proxy -u https_proxy python3 server/scripts/verify-service.py --base http://127.0.0.1:3141 --container <staging容器> → down
+#   起 3141 容器（/var/tmp/anan-staging/service.env：SOURCE_SHA、AI_DATA_DIR=/var/tmp/anan-staging/data、APP_PORT=3141，密钥路径同生产）
+#   docker compose --env-file /var/tmp/anan-staging/service.env -p anan-ai-staging -f deploy/compose.yaml up -d --build
+#   env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy NO_PROXY=127.0.0.1,localhost \
+#     python3 server/scripts/verify-service.py --base http://127.0.0.1:3141 --container anan-ai-staging-ai-1   # 然后 … down
+# 文本探针（真模型，12 条合成样例，人工看编造／禁词／能不能答）：
+#   cd server && env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy CPA_BASE_URL=http://127.0.0.1:8317/v1 node scripts/probe-text.ts
+# 发版（轻量标签触发 mobile-build.yml 的 release 作业）：
+#   git tag v1.0.0 <交付提交SHA> && git push origin v1.0.0
 ```
