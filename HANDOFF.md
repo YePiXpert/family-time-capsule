@@ -63,6 +63,10 @@
   「随便翻翻」（`shuffle` testID，≥ 3 段时光才出现）随机进阅读页，`Record` 路由带 `shuffle: true` 时顶栏右侧「再翻一页」（`shuffle-next`）用 `navigation.replace` 换随机另一段（`shuffle.ts` 的 `pickAnother` 保证不重复当前）。
   顺手修了 CI 偶发红：`sweepTemp(0)` 同毫秒漏删（run 35514369969 的 `ai-quality`）。
 - **下一步**：Build 72「家人一起写」。计划已出：`docs/plans/PLAN-SHARING.md`（2026-09-21，16 个提交：服务端家庭空间 1–3 先部署，落款 4–7，同步 8–13，收尾 14，可选 15 扉页本名与诗），主人 2026-09-21 晚已批，第七节四条已拍板（自动同步默认开、冲突新者胜加留底、去掉「从远端恢复」、半句话「入淮清洛渐漫漫」+ 可选提交 15 做）。**执行中**，进度见第三节的 Build 72 清单。
+  - **服务端已部署（2026-09-21 02:20）**：Build 72 提交 1／2（家庭对象空间 + 按设备清单）在 staging 3141 跑过 `verify-service.py` 全绿，并用生产数据副本 + 合成的成员目录／旧清单行演练过迁移（2 moved／1 member dir removed／旧表迁成 `legacy:` 行）后，
+    生产切到 SOURCE_SHA `473339b62a5d9e0a984652e2bf7ce91571ad71de`（镜像 `anan-ai:473339b…`，healthy，本机与经代理的 HTTPS `/healthz` 都对得上）。切换前数据整目录拷到 `/opt/anan-ai/data.bak-20260921-0220`，旧 env 在 `service.env.bak-20260921-0220`；
+    生产原本没有任何成员对象目录（主人还没用过远端备份），迁移只建了 `backup/family/`。回退到 `81d1ffe` 必须连同 `data.bak` 一起回退（旧版找的是成员目录与旧表）。
+    **待主人**：用 Build 71 的手机点一次「远端备份 → 现在备份」确认兼容（旧手机走 `GET/PUT /backup/manifest`，服务端按设备记、按成员回退）。
 - **工作区**：`git status` 应干净（`.zcode/`、`.commandcode/` 为本地会话目录，已在 .gitignore，不要提交）。
 
 ## 二、恢复提示词（直接复制粘贴）
