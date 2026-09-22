@@ -16,9 +16,16 @@ final class NativeRegressionTests: XCTestCase {
         let e = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in check() }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [e], timeout: 20), .completed, description)
     }
+    /// XCTest 点在元素可见部分的中心。元素只露出屏幕底边一截时，那个点落在 Home 指示条的手势区，
+    /// 系统会吞掉这次点击（1.0.1 的书架把月册收到了底边，run 35679134876 就栽在这里）。
+    /// 所以除了可点，还要求可见中心离底边至少 60，否则先滚动让它整个进入可点区域。
     private func tap(_ id: String) {
         let e = element(id); XCTAssertTrue(e.waitForExistence(timeout: 20), "Missing \(id)")
-        for _ in 0..<12 { if e.isHittable { break }; if e.frame.midY < app.frame.midY { app.swipeDown() } else { app.swipeUp() } }
+        for _ in 0..<12 {
+            let visible = e.frame.intersection(app.frame)
+            if e.isHittable && !visible.isNull && visible.midY < app.frame.maxY - 60 { break }
+            if e.frame.midY < app.frame.midY { app.swipeDown() } else { app.swipeUp() }
+        }
         XCTAssertTrue(e.isHittable, "Unreachable \(id)"); wait("Disabled \(id)") { e.isEnabled }; e.tap()
     }
     private func shot(_ name: String) { let a = XCTAttachment(screenshot: app.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a) }
