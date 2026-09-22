@@ -158,12 +158,12 @@ JSON 格式：{"title":"书名","chapters":[{"month":"2026-09","picks":["记录i
 ## 五、怎么验
 
 1. **静态体检**（server 测试）：每条提示词含 JSON 格式行、以 SHARED 开头、不含「成长相册」这类旧词；每个新 writingMode 的 `parseResult` 有正反例（多于 3 条问题、超长、含禁词、引语不在原文里都要被拒）。
-2. **真模型探针**：`server/scripts/probe.ts` 之外已有文本探针 `server/scripts/probe-text.ts`：十来条手写样例（短句、长段、有名字、有她的原话、写了「第一次」但没标、空白信、给了主题的故事），仅在取得本 App 的凭证许可及费用授权后才可用 `--allow-live` 执行，内容模型目标为 MiMo 2.5；另用 `verify-service.py --allow-live` 对 staging 容器（3141）验证路由（可用 `--skip-text` 跳过文本）。探针只输出状态、耗时和用量，不输出结果正文；未获授权时只做 Mock，详见 `deploy/README.md`。人工看三件事：有没有编造、有没有禁词、问题是否具体到能答。样例不用家庭真实照片与正文。
+2. **真模型探针**：`server/scripts/probe.ts` 之外已有文本探针 `server/scripts/probe-text.ts`：十来条手写样例（短句、长段、有名字、有她的原话、写了「第一次」但没标、空白信、给了主题的故事），仅在主人授权真实调用后才可用 `--allow-live` 执行，内容模型目标为 MiMo 2.5；另用 `verify-service.py --allow-live` 对 staging 容器（3141）验证路由（可用 `--skip-text` 跳过文本）。探针只输出状态、耗时和用量，不输出结果正文；未获授权时只做 Mock，详见 `deploy/README.md`。人工看三件事：有没有编造、有没有禁词、问题是否具体到能答。样例不用家庭真实照片与正文。
 3. **上线后**：主人自己用一周，把「问得不好」的例子记到本文末尾「坏例子」一节，改提示词、重部服务端即可，不用发 App。
 
 ## 六、说一段（转写）不是提示词
 
-转写走另一条路：iPhone 用系统自带的本机识别；安卓回退逐段征得同意，经主人的服务把这一段 m4a 送到 MiMo `mimo-v2.5-asr`（地址与密钥独立配置，真实调用前须满足该凭证的 App 使用许可及费用授权）。服务端先转成 16 kHz 单声道 wav，网关的 `input_audio.format` 只收 wav／mp3，使用 `/chat/completions` 而非 `/audio/transcriptions`。
+转写走另一条路：iPhone 用系统自带的本机识别；安卓回退逐段征得同意，经主人的服务把这一段 m4a 送到 MiMo `mimo-v2.5-asr`（地址与密钥独立配置，真实调用按主人的使用选择与费用授权执行）。服务端先转成 16 kHz 单声道 wav，网关的 `input_audio.format` 只收 wav／mp3，使用 `/chat/completions` 而非 `/audio/transcriptions`。
 
 提示词只有 system 一句：「中文口语，保留昵称与口头语，标点按停顿。」网关不允许 user 消息里带文字，user content 只有一项 `input_audio`。不让模型润色，转写结果只是正文的初稿，录音本身保留在这段时光里，联网仍只经 `src/ai/client.ts`。
 
