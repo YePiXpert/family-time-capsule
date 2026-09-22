@@ -1213,15 +1213,11 @@ export function Shelf() {
             </BookRows>
           </ShelfSection>
         )}
-        <ShelfSection
-          title="专题册"
-          action={
-            albums.length > 0
-              ? { label: "新建相册", testID: "album-new", onPress: createAlbum }
-              : undefined
-          }
-        >
-          {albums.length > 0 ? (
+        {albums.length > 0 ? (
+          <ShelfSection
+            title="专题册"
+            action={{ label: "新建相册", testID: "album-new", onPress: createAlbum }}
+          >
             <BookRows>
               {albums.map((album, i) => (
                 <BookRow
@@ -1236,26 +1232,22 @@ export function Shelf() {
                 />
               ))}
             </BookRows>
-          ) : (
-            <GuideRow
-              icon="book"
-              tone="accent"
-              title="新建相册"
-              hint="还没有相册。把几段时光放在一起，就是一本。"
-              testID="album-new"
-              onPress={createAlbum}
-            />
-          )}
-        </ShelfSection>
-        <ShelfSection
-          title="时间胶囊"
-          action={
-            letters.length > 0
-              ? { label: "写一封信", testID: "letter-new", onPress: createLetter }
-              : undefined
-          }
-        >
-          {letters.length > 0 ? (
+          </ShelfSection>
+        ) : (
+          <GuideRow
+            icon="book"
+            tone="accent"
+            title="新建相册"
+            hint="还没有相册。把几段时光放在一起，就是一本。"
+            testID="album-new"
+            onPress={createAlbum}
+          />
+        )}
+        {letters.length > 0 ? (
+          <ShelfSection
+            title="时间胶囊"
+            action={{ label: "写一封信", testID: "letter-new", onPress: createLetter }}
+          >
             <BookRows>
               {letters.map((letter, i) => (
                 <BookRow
@@ -1278,17 +1270,17 @@ export function Shelf() {
                 />
               ))}
             </BookRows>
-          ) : (
-            <GuideRow
-              icon="seal"
-              tone="indigo"
-              title="写一封信"
-              hint="给多年后的她写一封信，到日子再拆。"
-              testID="letter-new"
-              onPress={createLetter}
-            />
-          )}
-        </ShelfSection>
+          </ShelfSection>
+        ) : (
+          <GuideRow
+            icon="seal"
+            tone="indigo"
+            title="写一封信"
+            hint="给多年后的她写一封信，到日子再拆。"
+            testID="letter-new"
+            onPress={createLetter}
+          />
+        )}
         <ShelfSection
           title="时光系列"
           action={

@@ -136,7 +136,7 @@ export function validateResult(
 ): AIResult {
   if (
     kind === "write" &&
-    (mode === "ask" || mode === "question" || mode === "letter")
+    (mode === "ask" || mode === "question")
   ) {
     const invalid = () => new AIError("INVALID_RESULT", "AI 问得不合规矩，请重试。");
     if (!value || typeof value !== "object") throw invalid();
@@ -149,14 +149,14 @@ export function validateResult(
     }
     if (
       !Array.isArray(result.questions) ||
-      result.questions.length < (mode === "ask" ? 1 : 2) ||
+      result.questions.length < 1 ||
       result.questions.length > 3 ||
       !result.questions.every(validQuestion) ||
-      (mode === "ask" && typeof result.first !== "boolean")
+      typeof result.first !== "boolean"
     ) throw invalid();
     return {
       questions: result.questions,
-      ...(mode === "ask" ? { first: result.first } : {}),
+      first: result.first,
     };
   }
   if (!value || typeof value !== "object") throw new Error("AI 建议无效。");
@@ -302,7 +302,7 @@ export function validateStoredAI(value: unknown): boolean {
     !/^[a-f0-9]{64}$/.test(v.fingerprint) ||
     !["group", "write"].includes(String(v.kind)) ||
     !Number.isInteger(v.eventIndex) ||
-    (v.writingMode !== undefined && !["generate", "polish", "recap", "ask", "question", "letter", "editor"].includes(String(v.writingMode))) ||
+    (v.writingMode !== undefined && !["generate", "polish", "recap", "ask", "question", "editor"].includes(String(v.writingMode))) ||
     typeof v.model !== "string"
   )
     return false;
@@ -411,14 +411,6 @@ export function questionContext(input: {
   asked: string[];
 }): string {
   return `${ageContext(input.ageLabel)}\n今天日期：${input.today.slice(0, 10)}\n最近的记录（只有标题与日期）：\n${recentTitles(input.recent)}\n最近 7 天问过的问题：\n${input.asked.slice(-7).map((q) => q.slice(0, 60)).join("\n")}`.slice(0, 2000);
-}
-export function letterContext(input: {
-  by?: string;
-  ageLabel: string | null;
-  openAt: string;
-  draft: string;
-}): string {
-  return `${signature(input.by, 50)}${ageContext(input.ageLabel)}\n拆封日期：${input.openAt.slice(0, 10)}\n当前草稿：\n${input.draft.trim() ? input.draft.slice(0, 2000) : "（还没写）"}`;
 }
 export function questionPlan(
   cache: DailyQuestionCache | undefined,
