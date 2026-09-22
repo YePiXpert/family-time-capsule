@@ -12,7 +12,7 @@ export const ARCHIVE_VIEWER_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>成长记录 · 开放归档</title>
 <style>
-:root{--paper:#FAF5EC;--card:#FFFFFF;--ink:#3B3129;--muted:#7A6A58;--line:#EBDFCC;--accent:#B4553C;--selected:#F5E7D3}
+:root{--paper:#FAF5EC;--card:#FFFFFF;--ink:#3B3129;--muted:#7A6A58;--line:#EBDFCC;--accent:#B2543B;--selected:#F5E7D3}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:Georgia,"Noto Serif CJK SC","Songti SC","SimSun",serif;line-height:1.6}
 header{padding:24px 20px 12px;border-bottom:1px solid var(--line)}
