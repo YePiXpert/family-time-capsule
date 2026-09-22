@@ -1,12 +1,12 @@
 # 桉桉成长记 AI 服务
 
-生产入口 `https://capsule.yep.li/api/v1`，宿主机 3140，经现有 HTTPS 反代。首页仅提供应用说明。
+生产入口 `[服务地址已省略]`，宿主机 3140，经现有 HTTPS 反代。首页仅提供应用说明。
 
 ## 当前执行边界（2026-09-22）
 
 主人明确要求使用 `mimo-v2.6-pro`，指定中国 Token Plan 地址并提供匹配密钥。文字／看图统一为 Pro，服务转写继续为 `mimo-v2.5-asr`。本次以主人的明确选择作为配置授权。
 
-真实探测和生产切换结果见 [MiMo 适配记录](../docs/MIMO-ADAPTATION.md)。仅更新代码不代表已经部署。
+生产已部署 `e2bd07fe77f5b185257ef1fc255462245a4d1577`，本机及公网健康版本核对通过；旧客户端的新请求直接使用新模型。账号、设备、额度、暂停状态和备份清单保留；原镜像、原配置和切换前数据备份留在服务器私有部署目录。八种内容模式及 ASR 已以合成样例真实验证，详细结果见 [MiMo 适配记录](../docs/MIMO-ADAPTATION.md)。
 
 ## 配置与启动（授权后才执行）
 
@@ -17,7 +17,7 @@
 | 文字、看图、分组、追问、润色、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.6-pro` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
 | 专用转写 | `TRANSCRIBE_PROVIDER=mimo` / `TRANSCRIBE_MODEL=mimo-v2.5-asr` | `TRANSCRIBE_BASE_URL` / `TRANSCRIBE_KEY_PATH` → `/run/secrets/transcribe-key` | `TRANSCRIBE_ACCESS` |
 
-普通 API 必须配普通 Key 和 `https://api.xiaomimimo.com/v1`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。主人明确选择 Token Plan 时设置 `token-plan-authorized`，并配套餐专用 Key 与对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。该字段记录主人的使用选择。没有默认授权、自动充值、按量回退或跨供应商回退。
+普通 API 必须配普通 Key 和 `[服务地址已省略]`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。主人明确选择 Token Plan 时设置 `token-plan-authorized`，并配套餐专用 Key 与对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。该字段记录主人的使用选择。没有默认授权、自动充值、按量回退或跨供应商回退。
 
 密钥只存服务端权限 0600、UID 1000 可读的文件，Compose 只读挂载；env 只放文件路径。直接运行 Node 脚本时使用 `AI_KEY_FILE`／`TRANSCRIBE_KEY_FILE` 的绝对路径。缺少授权、模型不匹配、普通／套餐 Key 与地址混用、错误厂商地址会在启动数据库前拒绝；每次调用仍重读并核对 Key 类型。ASR 不继承文字服务的地址或密钥。旧 `CPA_*` 配置不会静默用于 MiMo。
 
@@ -31,7 +31,7 @@ docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.
 
 AI 走账号制：空服务第一次在手机「我的 → AI 设置」创建主人账号（仅此一次）；家人账号由主人在管理页创建并分发（用户名＋初始密码），换手机直接登录，一个账号可挂多台设备。设备撤销、全局及成员额度在主人管理页调整。全部锁死时在服务器运行 `docker compose ... exec -T ai node src/manage.ts password <登录名或成员名> <新密码>` 兜底重置（先按登录名找，找不到再按成员名）。从旧版升级后已有成员照常使用，主人可在管理页给现有成员（标记「未设登录」）补设登录名与密码。
 
-内容模型固定 `mimo-v2.6-pro`（原生多模态），统一处理文字和图片。`question`／`letter`／`ask`／`polish` 关闭思考，`group`（含分组合并）／`generate`／`recap`／`editor` 开启；这是初始策略，未经真实质量或速度验证。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
+内容模型固定 `mimo-v2.6-pro`（原生多模态），统一处理文字和图片。`question`／`letter`／`ask`／`polish` 关闭思考，`group`（含分组合并）／`generate`／`recap`／`editor` 开启；此策略已通过合成样例真实调用验证，尚未做家庭实际内容的长期质量评估。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
 
 「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（独立必填）、`TRANSCRIBE_KEY_PATH`（独立必填），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
 
@@ -48,7 +48,7 @@ AI 走账号制：空服务第一次在手机「我的 → AI 设置」创建主
 ## 从 xiaomei-ai 改名到 anan-ai（只做一次）
 
 数据目录、compose 项目名与镜像名都从 `xiaomei-ai` 改成了 `anan-ai`。手机端不受影响——
-它只认 `https://capsule.yep.li/api/v1`，域名没变，设备凭证也不在服务端这一侧。
+它只认 `[服务地址已省略]`，域名没变，设备凭证也不在服务端这一侧。
 
 ```sh
 docker compose --env-file /opt/xiaomei-ai/service.env -p xiaomei-ai -f deploy/compose.yaml down
@@ -90,4 +90,4 @@ curl --noproxy '*' -fsS http://127.0.0.1:3140/healthz
 
 `python3 server/scripts/verify-service.py --allow-live --container anan-ai-staging-ai-1` 只接受本机 3141 的隔离 staging，先检查容器配置与独立数据挂载，再执行最多 6 次内容生成和 1 次两秒合成音频转写；回放／无效输入应不触发额外上游调用。脚本验证账号、备份与撤销，会写测试数据，禁止对生产运行。可用 `--skip-transcribe`／`--skip-text` 缩小探测范围；转写探测须在主人授权的调用范围内执行。
 
-本次仅验证脚本的默认拒绝和 Mock 行为，没有执行以上真实探针。来源由健康版本、镜像 ID 和部署提交核对；手机双端验收仍需真机。
+2026-09-22 已完成以上真实探针和隔离 staging 验证，统计见适配记录顶部。来源由健康版本、镜像 ID 和部署提交核对；手机双端验收仍需真机。

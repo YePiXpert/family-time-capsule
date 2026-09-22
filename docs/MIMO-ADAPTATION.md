@@ -1,12 +1,22 @@
 # App 内部 MiMo 适配与上线边界
 
-## 2026-09-22：升级至 V2.6 Pro（待生产切换）
+## 2026-09-22：MiMo V2.6 Pro 已部署
 
 主人要求将 App 的云端 AI 全部切换至小米新模型。已核对[官方 V2.6 发布说明](https://mimo.mi.com/docs/zh-CN/news/latest/v2-6)及 [Chat Completions API](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)：文字、图片、分组与全部写作模式使用 `mimo-v2.6-pro`；专用转写仍为 `mimo-v2.5-asr`。保留现有提示词、逐模式思考策略、16384 completion token 上限、严格 JSON／业务校验和无跨供应商回退。
 
 旧客户端传来的 `mimo-v2.5` 和 DeepSeek 型号仍归一到新内容模型；本机 AI 任务标记和供应商脚注更新为 V2.6 Pro。iPhone 本机识别优先策略及上传范围保持不变。服务端切换无需重发安装包；安装包内脚注须等下次出包更新。
 
-主人随后明确选择 `mimo-v2.6-pro`、`https://token-plan-cn.xiaomimimo.com/v1` 并提供套餐密钥。密钥仅保存于服务端权限 0600 的文件，两路显式配置并独立只读挂载。`token-plan-authorized` 记录这次主人的使用选择。真实验证和生产切换结果将在完成后补充。
+主人随后明确选择 `mimo-v2.6-pro`，并私下提供服务地址与套餐密钥；具体值不写入部署记录。密钥仅保存于服务端权限 0600 的文件，两路显式配置并独立只读挂载。`token-plan-authorized` 记录这次主人的使用选择。生产镜像为 `anan-ai:e2bd07fe77f5b185257ef1fc255462245a4d1577`，已替换原 `b76439d`。
+
+验证结果：
+
+- 本地 mobile 727、server 189 项测试，以及两端类型检查、移动端 lint、11 项 Python 检查和本机边界检查通过。
+- 直接上游探测覆盖 group、generate、ask、question、letter、editor、polish、recap 共八模式，全部成功；测试只使用仓库几何图与合成文字，不发送家庭内容。简单文字样例约 1.5–3 秒，年度目录样例约 45 秒；不是所有请求的延迟承诺。
+- 同一镜像在独立 staging 完成六次内容调用、一次两秒合成音频转写，以及账号鉴权、幂等重放、家庭备份、设备撤销和音频清理检查；未改动生产账号来做测试。测试容器与合成数据已清理。
+- 生产暂停写入后保存数据 tar 和 SHA-256；保存旧镜像 ID、完整 env 与旧 Compose。第一次检查把预期的模型字段归一误判为设置变化，已自动回滚；修正为仅允许 defaultModel／enabledModels 更新后再次切换成功。
+- 本机／公网 healthz 均为上述完整 SHA；匿名账号接口仍返回 401。既有成员、设备、非模型设置及备份清单核对保留。服务仅接受 `mimo-v2.6-pro` 内容模型，ASR 为 `mimo-v2.5-asr`，两路均使用主人指定的中国 Token Plan 地址；无 DeepSeek 回退。
+- 私有运维记录：`/opt/anan-ai/deployments/20260922-mimo26-pro/`。此处保存探测统计、部署结果、原配置和数据备份；密钥只在 secret 文件中。源码脚注已更新，现有安装包的静态文案仍需下次出包更新；此次未发布新安装包。
+
 
 ## 历史记录：2026-09-21 的离线适配边界
 
@@ -20,8 +30,8 @@
 
 | 路径 | 现网模型／地址 | 凭证与只读挂载 |
 | --- | --- | --- |
-| 内容 | `deepseek-flash` / `https://api.deepseek.com` | 普通 API 类型；`/opt/anan-ai/secrets/deepseek-key` → `/run/secrets/cpa-key` |
-| ASR | `mimo-v2.5-asr` / `https://token-plan-cn.xiaomimimo.com/v1` | Token Plan 类型；`/opt/anan-ai/secrets/mimo-key` → `/run/secrets/transcribe-key` |
+| 内容 | `deepseek-flash` / `[服务地址已省略]` | 普通 API 类型；`/opt/anan-ai/secrets/deepseek-key` → `/run/secrets/cpa-key` |
+| ASR | `mimo-v2.5-asr` / `[服务地址已省略]` | Token Plan 类型；`/opt/anan-ai/secrets/mimo-key` → `/run/secrets/transcribe-key` |
 
 两个 secret 文件权限均为 0600；未打印值。前缀识别只用于区分套餐类型，不能证明普通 Key 属于哪家供应商。
 
@@ -30,7 +40,7 @@
 ## 实现与契约
 
 - 内容提供商固定 MiMo，模型固定 `mimo-v2.5`，包括文字、图片、分组／合并、追问、润色、寄语和目录，不接受 Pro。
-- `ai-config.ts` 将提供商、固定模型、地址、secret 文件及授权类型成组校验，启动数据库前校验失败即退出；每次调用重读 secret 并检查套餐类型。普通 API 配 `https://api.xiaomimimo.com/v1` 和普通 Key，Token Plan 配对应套餐地址和套餐 Key。两路配置不互相继承，旧 CPA 变量没有隐式别名。
+- `ai-config.ts` 将提供商、固定模型、地址、secret 文件及授权类型成组校验，启动数据库前校验失败即退出；每次调用重读 secret 并检查套餐类型。普通 API 配 `[服务地址已省略]` 和普通 Key，Token Plan 配对应套餐地址和套餐 Key。两路配置不互相继承，旧 CPA 变量没有隐式别名。
 - `ai-model.ts` 集中定义本次初始策略：question／letter／ask／polish disabled；group（含 merge）／generate／recap／editor enabled。此策略未被实测证明最优。
 - [Chat Completions 文档](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)：使用 `max_completion_tokens=16384`，为思考和最终 JSON 共用；不再发送 `reasoning_effort`／`max_tokens`／采样参数。年度目录没有缩小预算。
 - [结构化输出](https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/text-generation/structured-output)：非流式 `response_format={type:json_object}`；只有 `finish_reason=stop`、非空合法最终 `message.content` 且通过原 `parseResult` 才成功。推理内容不进入记录，不以补字段、丢图片、放宽 ID／引用校验来成功。错误体不输出、不重试或换供应商，重定向也拒绝。

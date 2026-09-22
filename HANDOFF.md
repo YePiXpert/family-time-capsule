@@ -2,7 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-22（减法）。**1.0.3「减法」已在 main、未出包**：主人拍板「不要冗余，贪多嚼不烂」，拿掉出生的故事（24 问并入小问题）、写信引导、时光系列、足迹、年度长图、重放、分成几件事／按事情分组、起个头，AI 不再看照片；提交 `8f36df0`…`feebcec` 与文档收尾提交（第一节第一条）。可安装的仍是 1.0.2（下一条）；服务端不动。验证出包见第一节第一条。
+> 最后更新：2026-09-22。**1.0.2 已交付；AI 服务已切到 MiMo V2.6 Pro**：生产源码 `e2bd07fe77f5b185257ef1fc255462245a4d1577`，文字／看图为 `mimo-v2.6-pro`，云端转写为 `mimo-v2.5-asr`，使用主人指定并提供密钥的中国 Token Plan 地址；八模式和 ASR 合成样例验证通过，账号／设备／额度／备份保留。部署与回滚记录见第一节及 `docs/MIMO-ADAPTATION.md`。安装包仍为 `v1.0.2`，此次服务切换未重新出包。
+> 移动端状态：2026-09-22（减法）。**1.0.3「减法」已在 main、未出包**：主人拍板「不要冗余，贪多嚼不烂」，拿掉出生的故事（24 问并入小问题）、写信引导、时光系列、足迹、年度长图、重放、分成几件事／按事情分组、起个头，AI 不再看照片；提交 `8f36df0`…`feebcec` 与文档收尾提交（第一节第一条）。可安装的仍是 1.0.2（下一条）；本次减法未改服务端；后续模型部署见上。验证出包见第一节第一条。
 > 旧记录：2026-09-22。**1.0.2 已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，轻量标签 `v1.0.2`，run 35691714051 四作业全绿，GitHub Release 上有 APK／未签名 IPA／`build-source.json`／`sha256sums.txt`（第一节第一条）。服务端仍是 `b76439d` + DeepSeek（MiMo 适配未部署，见第一节「MiMo 内容模型适配」）；两台真机的验收仍未做。主人随后把出包流水线并行化（`300b12e`），首次 dispatch 的 iOS 回归红（脚手架超时，录音其实已开始），「说完了」等待放宽到 120 秒后，验证 run 35701034621 已全绿，总耗时约 32 分钟；本轮继续优化测试等待，实测结果待新验证构建（第一节第二条）。
 > 旧记录：2026-09-22。**1.0.2（构建号 75）发版中**：主人复核后拍板发版；发版提交在 main（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本），轻量标签 `v1.0.2` 指向它。标签出包的结果与 Release 校验和待 run 完成后核对再补进第一节；**在那之前不要把 1.0.2 当作已交付**。
 > 旧记录：2026-09-22。**1.0.1（构建号 74）没有交付**：Kimi 的界面焕新 `3c0b017`…`05e229f` 已在 main，附注标签 `v1.0.1` 触发 run 35679134876——quality／Android 绿、iOS 回归红（测试脚手架点在屏幕底边被系统吞掉，应用没有问题）、release 作业跳过，**没有 GitHub Release v1.0.1**，可安装的仍是 1.0.0（下一条）。同日复核修复 `a01a1d8`…`9476895`、脚手架修复 `6238119`／`ae2323d` 与键盘避让修复 `3638d96` 已推 main；验证出包 run 35681782720 又在 iOS 回归红（还是脚手架：续写时的光标点落在新工具栏的「文件」钮上），第三次验证 run 35686815546（workflow_dispatch，源码 `3638d96`）**三作业全绿**（quality／Android APK／iOS unsigned IPA；release 作业非标签触发、按设计跳过，仍没有 Release）。要交付 1.0.1 的内容需主人拍板再出包（第一节第一条）。
@@ -18,7 +19,7 @@
 
 ## 一、当前状态快照（2026-09-22）
 
-- **MiMo V2.6 切换准备（2026-09-22，尚未部署）**：主人要求全部云端 AI 改用小米新模型。内容目标为 `mimo-v2.6-pro`，ASR 为 `mimo-v2.5-asr`；旧客户端型号继续兼容归一，本机任务标记和供应商脚注同步更新。主人已指定中国 Token Plan 地址并提供密钥；生产目前仍是 `b76439d`／DeepSeek，待 staging 验证后切换；见 `docs/MIMO-ADAPTATION.md` 顶部。
+- **MiMo V2.6 Pro 已上线（2026-09-22）**：生产镜像 `anan-ai:e2bd07fe77f5b185257ef1fc255462245a4d1577`，内容为 `mimo-v2.6-pro`，云端 ASR 为 `mimo-v2.5-asr`；两路使用主人指定的中国 Token Plan 地址和提供的密钥。八种内容模式、ASR、隔离服务的账号／幂等／备份检查通过，本机与公网 healthz SHA 一致；原有成员、设备、额度、暂停状态与备份清单保留。旧客户端型号兼容归一；新源码脚注和本机任务标记已更新，现有安装包静态文案需下次出包更新。回滚材料和探测统计在 `/opt/anan-ai/deployments/20260922-mimo26-pro/`。配置记录的是主人选择，不声称小米特别许可；细节见 `docs/MIMO-ADAPTATION.md` 顶部。
 
 - **1.0.3「减法」（未出包；2026-09-22）**：主人拍板记在 PRODUCT.md 第九节末段，细目在 CHANGELOG 顶节。提交：`8f36df0` PRODUCT／CHANGELOG 骨架，`d29255e` 出生的故事并入小问题，`2b13b8d` 信精简与书架空区一行，`39a13cb` 时光系列／足迹页面（`series` 留作旧数据种类），`6cbcd3b` 长图／重放，`feebcec` 分成几件事／按事情分组／起个头／AI 不看照片，之后一笔文档收尾。Astra 逐个提交改工作树、Fable 复核并跑门禁后提交。兼容：实体种类只增不减，`RecordContent.story`／`settings.replayAudioId`／草稿 `photoEvents` 只停写不拒收（分组草稿在 `normalizeLibrary` 并回一份、旧 AI 任务在那里丢弃），服务端未动、所有请求仍带 `photos: []`。门禁：mobile 49 个文件 727 个测试、server 189、typecheck／lint／边界脚本／scripts unittest 全绿。验证出包：文档收尾提交推上 main 后派发一次 `mobile-build.yml`（完整 SHA，不轮询）——run 35728641333（源码 `faddfb3`，12:40 UTC）在 quality 作业就红了——`server/tests/backup.test.ts` 那条已知偶发：两次 `status()` 之间 `freeBytes` 现查磁盘差了 8 KB，与减法无关；修复 `52b5f76`（不再逐字节比 `freeBytes`）后重新派发 run 35729090883（源码 `52b5f76bddcbe690b6e95419a68bf45deaa1ef61`，12:45 UTC，<https://github.com/YePiXpert/family-time-capsule/actions/runs/35729090883>）；结果待主人通知后查一次：Android／iOS 冒烟截图看书架空态、编辑页小问题、AI 面板、年度册「装订纪念册」，`result.json` 不再有 `yearbookSheet`）。
   - 服务端下次部署时删 `generate`／`group`／`letter` 与 ASK 里的故事主题句（第四节第 8 条）。真机待验：书架空态两行入口、编辑页小问题（头六个月的故事题）、AI 面板只剩润色与追问、年度册「装订纪念册」。
@@ -29,7 +30,7 @@
   8663f99ba5d2cdebc7a051701a6a125d7c9859b282bcd1f8016180a67eff6916  FamilyTimeCapsule-ios-unsigned.ipa
   ```
 
-  发版前复核（2026-09-22）：main CI 绿；验证 run 35686815546 的安卓冒烟 12 项、iOS 回归 9 项、iOS 启动 9 项检查全 true；安卓 320／390、深色截图目视正常；Opus 独立复核代码差异无阻塞项；门禁 mobile 789／server 189 全绿。注意：本版 AI 脚注写「由小米 MiMo 2.5 提供」（`6c926e2` 随 MiMo 适配一起改的），请求体不带模型字段，旧服务端照常接受；但生产仍是 DeepSeek，脚注与实际供应商不一致，直到 MiMo 服务端部署为止。
+  发版前复核（2026-09-22）：main CI 绿；验证 run 35686815546 的安卓冒烟 12 项、iOS 回归 9 项、iOS 启动 9 项检查全 true；安卓 320／390、深色截图目视正常；Opus 独立复核代码差异无阻塞项；门禁 mobile 789／server 189 全绿。注意：本版 AI 脚注写「由小米 MiMo 2.5 提供」（`6c926e2`），请求体不带模型字段。2026-09-22 生产已切至 MiMo V2.6 Pro，旧客户端可直接使用；安装包内 2.5 的静态文案需下次出包更新。
 - **出包流水线并行化（主人 `300b12e`，2026-09-22，1.0.2 发版之后）**：iOS 拆成「iOS unsigned IPA」「iOS simulator build」（模拟器应用与 XCUITest runner 只编译一次，打成 tar 传给下游）和矩阵「iOS startup／regression verification」；README 加了一段说明；`smoke-ios-startup.py` 把 Vision OCR 编译成二进制只编一次。首次 dispatch run 35694486774：quality／Android／IPA／模拟器构建／启动校验全绿，**回归校验红**——`NativeRegressionTests.swift` 点「说一段」后 20 秒内没等到「说完了」，但拆解截图与 AX 树显示录音其实已开始（按钮已是「说完了」、卡片「正在录音，离开前请结束并保存。」）：全新运行器上第一次激活音频会话花了 30～50 秒；旧流水线里回归跟在启动冒烟后面、同一运行器早已热身。修法：「说完了」的等待放宽到 120 秒（`5498c66`）。验证 [run 35701034621](https://github.com/YePiXpert/family-time-capsule/actions/runs/35701034621) 已完成：quality、Android、IPA、模拟器构建和两组 iOS 验证全绿，Release 因 dispatch 按设计跳过。07:43:24—08:15:25 UTC，总耗时 32 分 1 秒，比并行化前约 47 分半缩短约 33%；iOS 回归任务 19 分 32 秒，其中主用例 700.158 秒。
   - **第二轮等待优化（待原生验证）**：已存在的控件、已满足的谓词先直接返回，否则仍调用原生等待并使用原超时上限。逐字输入与每字校验保留（早期整串输入有模拟器丢字记录），录音等待 120 秒、导出等待 300 秒、全部业务断言与崩溃观察窗口不变。只改测试脚手架，不改应用／版本／标签；实际提速以新验证构建为准。
 - **1.0.1「界面焕新」（构建号 74，未交付；2026-09-22）**：Kimi 在 main 上直接提交 `3c0b017`（页内返回箭头改为订阅导航栈 state）、`dd6d933`／`0b098f2`／`f3b3b32`／`82f0e23`／`411e7dd`（纸卡纯白与投影、图标砖、我的档案卡、书架单月整宽行与空区行动行、编辑页贴底工具栏、月册吸顶与年度册扉页）、`57500dc`（DESIGN 同步）、`05e229f`（app.json 1.0.1／构建号 74、CHANGELOG 顶节），并打了**附注**标签 `v1.0.1`（规矩是轻量标签；实测 quality 作业的 SHA 核对也过了，`github.sha` 会解析到提交）。
@@ -46,7 +47,7 @@
 
   - 再出包（需主人拍板）：`mobile/app.json` 构建号递增到 75、CHANGELOG 顶节改「1.0.2」并把上面的修复写进去、README 当前版本，打**轻量**标签 `git tag v1.0.2 <sha> && git push origin v1.0.2`，release 作业会自动发 Release；不要动 `v1.0.1` 标签。
 
-- **MiMo 内容模型适配（未部署）**：仓库目标 `mimo-v2.5`，专用 ASR 仍为 `mimo-v2.5-asr`；最小请求适配与 Mock 验证见 `docs/MIMO-ADAPTATION.md`（server 189、mobile 784、类型检查／lint／边界门禁通过）。当时只完成离线适配，没有真实模型调用或生产切换。
+- **历史：2026-09-21 MiMo 内容模型离线适配（已由上方 V2.6 Pro 部署记录取代）**：仓库目标 `mimo-v2.5`，专用 ASR 仍为 `mimo-v2.5-asr`；最小请求适配与 Mock 验证见 `docs/MIMO-ADAPTATION.md`（server 189、mobile 784、类型检查／lint／边界门禁通过）。当时只完成离线适配，没有真实模型调用或生产切换。
   生产仍是 `b76439d` + DeepSeek 普通 API；**既有 ASR 已使用 MiMo Token Plan**，按主人要求保持现状，未停服、删密钥或改配置。新代码需要 `AI_*` 与独立 `TRANSCRIBE_*` 配置，不能直接套用旧 `CPA_*` env；上线／回滚按适配记录执行。
 
 - **1.0.0（Build 73–76）**：主人 2026-09-21 拍板「都做吧，做完了作为 1.0.0 发版然后暂不考虑增加新功能了，专注优化就行」。main 上已合（每笔推送前门禁全绿）：
@@ -71,7 +72,7 @@
     停止生产写入后完整备份数据与 env，再切换已经验证的同一镜像；本机健康恢复耗时约 2 秒。生产本机及 HTTPS `/healthz` 均返回目标完整 SHA；两处账号初始化状态正常，me／管理员／备份清单／写作／转写五类未授权请求均返回 401。生产未运行会创建测试账号的 `verify-service.py`。
     SQLite 完整性检查通过；切换前后成员、设备、设置、备份清单逐行摘要一致。备份与证据目录：`/opt/anan-ai/deployments/20260921T144454Z/`，含 `data.before/`、`service.env.before`、`backup-sha256.json`、`staging-verification.log`、`deployment.json`。
     回退应用：恢复上述 `service.env.before` 到 `/opt/anan-ai/service.env`，用该证据目录的 `source/deploy/compose.yaml` 执行 `docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f <compose路径> up -d --no-build --pull never`，核对健康版本回到 `f71f86c`；旧镜像保留。本次未改数据库结构，通常不需恢复数据；如必须还原 `data.before/`，先停服并另存当前数据，避免丢失部署后新增内容。
-  - **AI 上游直连的历史部署记录（2026-09-21）**：文字／看图 `deepseek-flash`（High）→ `https://api.deepseek.com`；转写 `mimo-v2.5-asr` → `https://token-plan-cn.xiaomimimo.com/v1`。两份独立密钥只在 `/opt/anan-ai/secrets/`，不进仓库。`service.env` 保存地址及密钥路径，当时 `b7eefdf` 的 `deploy/compose.yaml` 支持该配置；MiMo 适配后的 main 已要求新 env，后续操作按 `docs/MIMO-ADAPTATION.md`，不要把新 Compose 套在旧环境上。源码镜像仍是 `b76439d`。
+  - **AI 上游直连的历史部署记录（2026-09-21）**：文字／看图 `deepseek-flash`（High）→ `[服务地址已省略]`；转写 `mimo-v2.5-asr` → `[服务地址已省略]`。两份独立密钥只在 `/opt/anan-ai/secrets/`，不进仓库。`service.env` 保存地址及密钥路径，当时 `b7eefdf` 的 `deploy/compose.yaml` 支持该配置；MiMo 适配后的 main 已要求新 env，后续操作按 `docs/MIMO-ADAPTATION.md`，不要把新 Compose 套在旧环境上。源码镜像仍是 `b76439d`。
     独立 staging 实际调用通过看图分组、写作、ask／question／letter／editor、MiMo 转写与临时文件清理、账号权限及家庭备份；生产已重建容器，挂载密钥和地址核对通过，本机与公网健康正常。验证及回滚 env 存在 `/opt/anan-ai/deployments/upstreams-20260921T150506Z/`；回退上游时恢复其中 `service.env.before`，再用保存的 `b7eefdf` 旧 Compose `up -d --no-build --pull never`，不需要回退数据。
   - 真机待验（CI 做不了）：iPhone 中文本机识别可用性与准确度（系统「听写」要有中文离线包）、安卓无离线识别时的同意弹窗与服务转写、RN XHR 二进制上传的 Content-Length（`client.ts` 的 `upload()` 手动设了头）、
     追问／小问题／写信引导三个入口、编者目录预览与装订 PDF 的引语版面、两台手机同步 `story`／`yearPicks` 不出冲突卡。
