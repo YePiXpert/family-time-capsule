@@ -240,87 +240,19 @@ jobs:
         working-directory: mobile
         env:
           CI: "1"
+      # Cache downloads only; pod-install still resolves and integrates this source.
+      - name: Cache CocoaPods downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+          key: ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-
       - name: Install CocoaPods
         run: npx pod-install ios
         working-directory: mobile
-      - name: Compile Release UI regression runner
-        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
-        working-directory: mobile
-        run: |
-          if ! ruby -rxcodeproj -e 'exit 0'; then
-            gem install --user-install xcodeproj --version 1.27.0 --no-document
-          fi
-          mkdir -p build
-          ruby scripts/ios-regression/create-project.rb build/native-runner-project
-          if ! xcodebuild \
-            -project build/native-runner-project/NativeRegression.xcodeproj -scheme NativeRegression \
-            -configuration Release -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
-            -derivedDataPath build/native-runner CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
-            build-for-testing > build/native-runner-build.log 2>&1; then
-            tail -n 160 build/native-runner-build.log
-            exit 1
-          fi
-      # Historical pinned checkouts may predate this native startup regression.
-      - name: Build release iOS simulator app
-        if: hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
-        working-directory: mobile
-        run: |
-          WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
-          test -n "$WORKSPACE_PATH"
-          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
-          test -n "$SCHEME"
-          mkdir -p build
-          if ! xcodebuild \
-            -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" \
-            -configuration Release -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
-            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
-            build > build/simulator-build.log 2>&1; then
-            tail -n 160 build/simulator-build.log
-            exit 1
-          fi
-      - name: Verify native local-mode startup and relaunch
-        if: hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
-        working-directory: mobile
-        env:
-          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
-        run: |
-          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
-          test -n "$APP_PATH"
-          SIM_ENTITLEMENTS=$(find build/simulator/Build/Intermediates.noindex -name "$(basename "$APP_PATH")-Simulated.xcent" -print -quit)
-          test -n "$SIM_ENTITLEMENTS"
-          python3 scripts/smoke-ios-startup.py "$APP_PATH" --entitlements "$SIM_ENTITLEMENTS" --output build/startup-smoke
-      - name: Preserve native startup evidence
-        if: always() && hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: FamilyTimeCapsule-ios-startup-smoke
-          path: |
-            mobile/build/startup-smoke/
-            mobile/build/simulator-build.log
-          if-no-files-found: error
-          retention-days: 30
-      - name: Verify Release playback and layout with XCUITest
-        id: ios-regression
-        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
-        working-directory: mobile
-        env:
-          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
-        run: |
-          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
-          test -n "$APP_PATH"
-          python3 scripts/smoke-ios-regression.py "$APP_PATH" --runner-build build/native-runner --output build/native-regression
-      - name: Preserve local native regression evidence
-        if: always() && steps.ios-regression.outcome != 'skipped'
-        uses: actions/upload-artifact@v7
-        with:
-          name: FamilyTimeCapsule-ios-local-regression
-          path: mobile/build/native-regression/
-          if-no-files-found: error
-          retention-days: 30
       - name: Create unsigned device archive
         working-directory: mobile
         run: |
@@ -371,13 +303,201 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  ios-simulator:
+    name: iOS simulator build
+    runs-on: macos-26
+    needs: quality
+    env:
+      # Expo SDK 57 requires Xcode >= 26.4. The macos-26 image includes this
+      # pinned stable toolchain while macos-15 currently tops out at 26.3.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.quality.outputs.source_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Verify Xcode toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - run: npm ci
+        working-directory: mobile
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --clean --no-install
+        working-directory: mobile
+        env:
+          CI: "1"
+      # Cache downloads only; pod-install still resolves and integrates this source.
+      - name: Cache CocoaPods downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods/repos
+          key: ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-
+      - name: Install CocoaPods
+        run: npx pod-install ios
+        working-directory: mobile
+      - name: Compile Release UI regression runner
+        if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        run: |
+          if ! ruby -rxcodeproj -e 'exit 0'; then
+            gem install --user-install xcodeproj --version 1.27.0 --no-document
+          fi
+          mkdir -p build
+          ruby scripts/ios-regression/create-project.rb build/native-runner-project
+          if ! xcodebuild \
+            -project build/native-runner-project/NativeRegression.xcodeproj -scheme NativeRegression \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath build/native-runner CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            build-for-testing > build/native-runner-build.log 2>&1; then
+            tail -n 160 build/native-runner-build.log
+            exit 1
+          fi
+      # Historical pinned checkouts may predate this native startup regression.
+      - name: Build release iOS simulator app
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        run: |
+          WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
+          test -n "$WORKSPACE_PATH"
+          SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
+          test -n "$SCHEME"
+          mkdir -p build
+          if ! xcodebuild \
+            -workspace "$WORKSPACE_PATH" -scheme "$SCHEME" \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            build > build/simulator-build.log 2>&1; then
+            tail -n 160 build/simulator-build.log
+            exit 1
+          fi
+      - name: Bundle simulator test inputs
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        run: |
+          APP_PATH=$(find build/simulator/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          SIM_ENTITLEMENTS=$(find build/simulator/Build/Intermediates.noindex -name "$(basename "$APP_PATH")-Simulated.xcent" -print -quit)
+          test -n "$SIM_ENTITLEMENTS"
+          mkdir -p build/ios-test-inputs
+          cp -R "$APP_PATH" build/ios-test-inputs/
+          cp "$SIM_ENTITLEMENTS" build/ios-test-inputs/simulator-entitlements.plist
+          cp build/simulator-build.log build/ios-test-inputs/
+          git rev-parse HEAD > build/ios-test-inputs/source-sha.txt
+          uname -m > build/ios-test-inputs/architecture.txt
+          xcodebuild -version > build/ios-test-inputs/xcode-version.txt
+          # Tar preserves executable bits and framework symlinks across runners.
+          INPUTS=(ios-test-inputs)
+          if [ -f scripts/smoke-ios-regression.py ]; then
+            INPUTS+=(native-runner/Build/Products)
+          fi
+          tar -czf build/ios-simulator-tests.tar.gz -C build "${INPUTS[@]}"
+      - uses: actions/upload-artifact@v7
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
+        with:
+          name: FamilyTimeCapsule-ios-simulator-tests
+          path: mobile/build/ios-simulator-tests.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve simulator build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-ios-simulator-build
+          path: mobile/build/*-build.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  ios-check:
+    name: iOS ${{ matrix.check }} verification
+    runs-on: macos-26
+    needs: [quality, ios-simulator]
+    strategy:
+      # Keep the other evidence bundle even if one suite fails.
+      fail-fast: false
+      matrix:
+        check: [startup, regression]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.quality.outputs.source_sha }}
+      - uses: actions/download-artifact@v7
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
+        with:
+          name: FamilyTimeCapsule-ios-simulator-tests
+          path: mobile/build
+      - name: Restore and verify simulator test inputs
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        run: |
+          tar -xzf build/ios-simulator-tests.tar.gz -C build
+          test "$(cat build/ios-test-inputs/source-sha.txt)" = "$SOURCE_SHA"
+          test "$(cat build/ios-test-inputs/architecture.txt)" = "$(uname -m)"
+          test "$(cat build/ios-test-inputs/xcode-version.txt)" = "$(xcodebuild -version)"
+      - name: Verify native local-mode startup and relaunch
+        if: matrix.check == 'startup' && hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
+        working-directory: mobile
+        env:
+          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+        run: |
+          APP_PATH=$(find build/ios-test-inputs -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          SIM_ENTITLEMENTS=build/ios-test-inputs/simulator-entitlements.plist
+          test -f "$SIM_ENTITLEMENTS"
+          python3 scripts/smoke-ios-startup.py "$APP_PATH" --entitlements "$SIM_ENTITLEMENTS" --output build/startup-smoke
+      - name: Preserve native startup evidence
+        if: always() && matrix.check == 'startup' && hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-ios-startup-smoke
+          path: |
+            mobile/build/startup-smoke/
+            mobile/build/ios-test-inputs/simulator-build.log
+          if-no-files-found: error
+          retention-days: 30
+      - name: Verify Release playback and layout with XCUITest
+        id: ios-regression
+        if: matrix.check == 'regression' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        env:
+          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+        run: |
+          APP_PATH=$(find build/ios-test-inputs -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_PATH"
+          python3 scripts/smoke-ios-regression.py "$APP_PATH" --runner-build build/native-runner --output build/native-regression
+      - name: Preserve local native regression evidence
+        if: always() && matrix.check == 'regression' && steps.ios-regression.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: FamilyTimeCapsule-ios-local-regression
+          path: mobile/build/native-regression/
+          if-no-files-found: error
+          retention-days: 30
+
   release:
     # 只有 v* 标签才发 GitHub Release：三份产物 + build-source.json + sha256sums.txt，
     # 说明取 CHANGELOG 最上面一节。写权限只给这一作业。
     name: GitHub Release
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    needs: [quality, android, ios]
+    needs: [quality, android, ios, ios-check]
     permissions:
       contents: write
     steps:
