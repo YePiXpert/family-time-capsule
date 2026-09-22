@@ -1,7 +1,6 @@
 /** 年度成长册的纯排版：封面、寄语、十二月网格、第一次、落款，固定 750 宽长卷。 */
 import { wrapText } from "./keepsake";
-import type { YearPicks, RecordContent } from "./model";
-import { STORY_TOPICS, storyTitle, storyLead } from "./stories";
+import type { YearPicks } from "./model";
 import { CHILD_FALLBACK } from "./brand";
 import type { BookBlock, BookChapter, BookInput, BookPhoto } from "./book";
 
@@ -205,31 +204,12 @@ export type YearBookSource = {
       photos: BookPhoto[];
     }[];
   }[];
-  stories?: {
-    topic: string;
-    lead: string;
-    records: YearBookSource["months"][number]["records"];
-  }[];
   firsts: { title: string; date: string }[];
   cover?: BookPhoto;
   colophon: string;
 };
 
-/** 故事只进主题章，余下的记录再分到月章；不改变整年统计。 */
-export function yearBookRecordGroups<T extends Pick<RecordContent, "story">>(
-  records: readonly T[],
-) {
-  return {
-    stories: STORY_TOPICS.map((topic) => ({
-      topic: storyTitle(topic),
-      lead: storyLead(topic),
-      records: records.filter((r) => r.story === topic),
-    })),
-    monthlyRecords: records.filter((r) => !r.story),
-  };
-}
-
-/** 每月按目录顺序选材；没收进目录的月照旧全收，故事记录由调用者提前分章。 */
+/** 每月按目录顺序选材；没收进目录的月照旧全收。 */
 export function yearBookMonth<T extends { id: string }>(
   records: readonly T[],
   selection: YearPicks["months"][string] | undefined,
@@ -273,11 +253,6 @@ export function yearBookInput(source: YearBookSource): BookInput {
   const nick = source.profileName.trim();
   const name = nick || CHILD_FALLBACK;
   const chapters: BookChapter[] = [];
-  for (const story of source.stories ?? []) {
-    const blocks = recordBlocks(story.records);
-    if (blocks.length)
-      chapters.push({ heading: story.topic, lead: story.lead, blocks });
-  }
   const note = source.note.trim();
   if (note)
     chapters.push({

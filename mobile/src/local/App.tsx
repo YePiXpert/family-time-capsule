@@ -82,7 +82,6 @@ import { MediaScreen } from "./Media";
 import { LetterEditor } from "./LetterEditor";
 import { LetterScreen } from "./LetterScreen";
 import { Quotes } from "./Quotes";
-import { Stories } from "./Stories";
 import { receiveShares } from "./services";
 import { healthFile } from "./health-file";
 const Stack = createNativeStackNavigator<Routes>();
@@ -300,7 +299,6 @@ function Root() {
           <Stack.Screen name="LetterEditor" component={LetterEditor} />
           <Stack.Screen name="Letter" component={LetterScreen} />
           <Stack.Screen name="Quotes" component={Quotes} />
-          <Stack.Screen name="Stories" component={Stories} />
           <Stack.Screen name="Conflicts" component={Conflicts} />
           <Stack.Screen name="RecoveryCode" component={RecoveryCode} />
         </Stack.Navigator>

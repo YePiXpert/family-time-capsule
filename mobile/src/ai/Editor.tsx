@@ -5,7 +5,6 @@ import { randomUUID } from "expo-crypto";
 import type { Library, RecordDraft } from "../local/model";
 import { useLibrary } from "../local/context";
 import { ageLine } from "../local/dates";
-import { storyTitle } from "../local/stories";
 import { AI_CONSENT_TEXT } from "./consent";
 import { photoDayGroups } from "../local/photo-metadata";
 import {
@@ -222,7 +221,6 @@ export function AIEditor({
             by: snapshot.draft.content.by,
             ageLabel: ageLine(library.profile.birthday, new Date(selected.date))?.split(" · ")[0] ?? null,
             date: selected.date, title: selected.title, text: selected.text, first: selected.first,
-            topic: snapshot.draft.content.story ? storyTitle(snapshot.draft.content.story) : undefined,
             recent: Object.values(library.records).filter((r) => r.id !== snapshot.draft.recordId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10).map(({ title, date }) => ({ title, date })),
           }),
         }, "POST", abort.current.signal), "write", [], "ask");

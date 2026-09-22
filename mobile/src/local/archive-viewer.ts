@@ -94,7 +94,6 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
     if (age) head += ' <span class="muted">' + esc(age) + "</span>";
     if (r.first) head += '<span class="badge">第一次</span>';
     if (r.quote) head += '<span class="badge">她说的话</span>';
-    if (r.story) head += '<span class="badge">' + esc(r.story) + '</span>';
     var meta = [];
     if (r.location) meta.push(esc(r.location));
     if (r.persons && r.persons.length) meta.push(r.persons.map(esc).join("、"));

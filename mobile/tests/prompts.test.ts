@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  STORY_PROMPTS,
+  dailyPromptOf,
+  isStoryDay,
   ageInMonths,
   bandOf,
   promptOf,
@@ -60,5 +63,58 @@ describe("daily writing prompts", () => {
     expect(ageInMonths("2026-12-01", today)).toBeNull();
     expect(bandOf("", today)).toBe("0-6m");
     expect(promptsFor("0-6m")).toContain(promptOf("", today));
+  });
+});
+
+describe("family questions in the daily prompt", () => {
+  const days = Array.from({ length: 60 }, (_, i) => new Date(2026, 8, 18 + i));
+
+  it("keeps 24 unique questions, six per topic in the original order", () => {
+    expect(STORY_PROMPTS).toHaveLength(24);
+    expect(new Set(STORY_PROMPTS).size).toBe(24);
+    const topics = ["出生那天", "怀孕的日子", "名字的来历", "我们怎么认识的"];
+    for (const [index, topic] of topics.entries()) {
+      expect(STORY_PROMPTS.filter((q) => q.startsWith(`${topic}：`))).toHaveLength(6);
+      expect(STORY_PROMPTS.slice(index * 6, index * 6 + 6).every((q) => q.startsWith(`${topic}：`))).toBe(true);
+    }
+  });
+  it("prioritizes family questions in the first months and agrees with the request gate", () => {
+    const birthday = "2026-08-18";
+    expect(days.filter((day) => isStoryDay(birthday, day)).length).toBeGreaterThanOrEqual(30);
+    for (const day of days) {
+      const list = isStoryDay(birthday, day) ? STORY_PROMPTS : promptsFor(bandOf(birthday, day));
+      expect(list).toContain(dailyPromptOf(birthday, day));
+    }
+  });
+  it("stops family questions after the first birthday, including changed seeds", () => {
+    for (const day of days) {
+      expect(isStoryDay("2025-08-18", day)).toBe(false);
+      for (const seed of [0, 1, 2, 7])
+        expect(dailyPromptOf("2025-08-18", day, seed)).toBe(promptOf("2025-08-18", day, seed));
+    }
+  });
+  it("occasionally asks family questions without a usable birthday or at 6–11 months", () => {
+    for (const birthday of ["", "not-a-date", "2027-01-01", "2026-03-18"]) {
+      const count = days.filter((day) => isStoryDay(birthday, day)).length;
+      expect(count).toBeGreaterThan(0);
+      expect(count).toBeLessThan(30);
+      for (const day of days) {
+        const list = isStoryDay(birthday, day) ? STORY_PROMPTS : promptsFor(bandOf(birthday, day));
+        expect(list).toContain(dailyPromptOf(birthday, day));
+      }
+    }
+  });
+  it("returns the same question for the same birthday, day and seed", () => {
+    for (const birthday of ["", "2026-08-18", "2026-03-18", "2025-08-18"]) {
+      for (const day of days) {
+        expect(dailyPromptOf(birthday, day)).toBe(dailyPromptOf(birthday, day, 0));
+        for (const seed of [0, 1, 2, 7]) {
+          expect(dailyPromptOf(birthday, day, seed)).toBe(
+            dailyPromptOf(birthday, new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23), seed),
+          );
+        }
+      }
+    }
+    expect(new Set(Array.from({ length: 20 }, (_, seed) => dailyPromptOf("2026-08-18", today, seed))).size).toBeGreaterThan(1);
   });
 });

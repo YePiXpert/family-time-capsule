@@ -7,7 +7,6 @@ import {
   layoutYearbook,
   yearBookInput,
   yearBookMonth,
-  yearBookRecordGroups,
   type YearBookSource,
   type YearbookInput,
 } from "../src/local/yearbook";
@@ -213,44 +212,6 @@ describe("年度册的内容装配", () => {
   });
 });
 
-describe("故事排在纸书开头", () => {
-  it("按主题顺序分组，故事不重复进入月章，文字、照片和落款都保留", () => {
-    const record = (title: string) => ({ title, date: "3月5日", text: `${title}正文`, by: "妈妈", photos: [{ key: title, aspect: 1 }] });
-    const { stories, monthlyRecords } = yearBookRecordGroups([
-      { ...record("相识"), story: "met" as const },
-      { ...record("日常"), story: undefined },
-      { ...record("出生"), story: "birth" as const },
-      { ...record("再记出生"), story: "birth" as const },
-    ]);
-    expect(monthlyRecords.map((r) => r.title)).toEqual(["日常"]);
-    const book = yearBookInput(source({ stories, note: "给你的话", months: [march(monthlyRecords)] }));
-    expect(book.chapters.map((c) => c.heading)).toEqual(["出生那天", "我们怎么认识的", "爸爸妈妈的话", "三月"]);
-    expect(book.chapters[0]!.lead).toBe("你来到这个世界的那一天。");
-    expect(book.chapters[0]!.blocks).toEqual([
-      { kind: "text", title: "出生", date: "3月5日", body: "出生正文", by: "妈妈" },
-      { kind: "photos", photos: [{ key: "出生", aspect: 1 }] },
-      { kind: "text", title: "再记出生", date: "3月5日", body: "再记出生正文", by: "妈妈" },
-      { kind: "photos", photos: [{ key: "再记出生", aspect: 1 }] },
-    ]);
-    expect(JSON.stringify(book.chapters[3])).not.toContain("出生");
-    expect(JSON.stringify(book.chapters[3])).not.toContain("相识");
-  });
-  it("无故事时保持旧输出逐字相同，空故事列表也一样", () => {
-    const original = source({ note: " 给你的话 ", months: [march([{ title: " 日常 ", date: "3月5日", text: " 正文 ", photos: [] }])], firsts: [{ title: "第一次", date: "3月5日" }] });
-    const expected = JSON.stringify({
-      title: "桉桉的 2026 年", subtitle: "2 段时光", stamp: "2026", titlePage: { name: "桉桉" },
-      chapters: [
-        { heading: "爸爸妈妈的话", blocks: [{ kind: "text", body: "给你的话" }] },
-        { heading: "三月", blocks: [{ kind: "text", title: "日常", date: "3月5日", body: "正文" }] },
-        { heading: "这一年的第一次", blocks: [{ kind: "list", entries: [{ title: "第一次", date: "3月5日" }] }] },
-      ], colophon: "2026 年",
-    });
-    expect(JSON.stringify(yearBookInput(original))).toBe(expected);
-    expect(JSON.stringify(yearBookInput({ ...original, stories: [] }))).toBe(expected);
-  });
-});
-
-
 describe("annual book editor assembly", () => {
   const records = [
     { id: "a", title: "第一段", date: "9月1日", text: "窗边有风。", photos: [{ key: "p", aspect: 1 }] },
@@ -263,16 +224,15 @@ describe("annual book editor assembly", () => {
       { label: "九月", ...yearBookMonth(records, { recordIds: ["b", "a"], quote: { recordId: "c", text: "抓住窗帘。" } }, project) },
       { label: "十月", ...yearBookMonth(records, undefined, project) },
     ], note: "给你", firsts: [{ title: "第一次", date: "9月1日" }],
-      stories: [{ topic: "出生那天", lead: "原来的开头", records: [project(records[2]!)] }],
     }));
     expect(book.title).toBe("窗边的小脚");
     expect(book.subtitle).toBe(`桉桉的 2026 年 · ${source().stats}`);
-    expect(book.chapters.map(c => c.heading)).toEqual(["出生那天", "爸爸妈妈的话", "九月", "十月", "这一年的第一次"]);
-    const month = book.chapters[2]!;
+    expect(book.chapters.map(c => c.heading)).toEqual(["爸爸妈妈的话", "九月", "十月", "这一年的第一次"]);
+    const month = book.chapters[1]!;
     expect(month.lead).toBe("「抓住窗帘。」\n2 段时光 · 1 张照片");
     expect(month.blocks.filter(b => b.kind === "text").map(b => b.title)).toEqual(["第二段", "第一段"]);
-    expect(book.chapters[3]!.blocks.filter(b => b.kind === "text")).toHaveLength(3);
-    expect(book.chapters[0]!.blocks[0]).toMatchObject({ body: "抓住窗帘。" });
+    expect(book.chapters[2]!.blocks.filter(b => b.kind === "text")).toHaveLength(3);
+    expect(book.chapters[0]!.blocks[0]).toMatchObject({ body: "给你" });
   });
   it("without a directory produces byte-identical book input to the previous assembly", () => {
     const previous = source({ months: [{ label: "九月", lead: "3 段时光 · 1 张照片", records: records.map(project) }] });

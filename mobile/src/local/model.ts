@@ -30,6 +30,7 @@ export type LocalMedia = {
   /** mediaDirectory 内的持久 512px JPEG 缩略图文件名；旧素材缺省。 */
   thumb?: string;
 };
+/** 旧主题取值，仅用于读取旧记录与备份。 */
 export type StoryTopic = "birth" | "pregnancy" | "name" | "met";
 export type RecordContent = {
   title: string;
@@ -43,7 +44,7 @@ export type RecordContent = {
   personIds?: string[];
   /** 她说的话：这一条记的是她的原话，收进语录册；旧记录无此字段。 */
   quote?: boolean;
-  /** 出生的故事，四个固定主题；旧记录无此字段。 */
+  /** 旧字段：1.0.3 起不再写入、不再显示；旧记录可能带着它。 */
   story?: StoryTopic;
   /** 落款：谁写的，用关系称呼（爸爸／妈妈／外婆…），1–20 字、首尾无空白；旧记录无此字段。 */
   by?: string;

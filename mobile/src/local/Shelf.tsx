@@ -39,7 +39,6 @@ import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import { backupNudgeBody, bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
 import { clusterPlaces } from "./places";
-import { storiesWritten } from "./stories";
 import { pickAnother } from "./shuffle";
 import {
   ageLine,
@@ -660,9 +659,6 @@ export function Shelf() {
     .filter((r) => r.first)
     .sort((a, b) => a.date.localeCompare(b.date));
   const quotes = records.filter((r) => r.quote);
-  const storyCounts = Object.values(storiesWritten(records));
-  const storyCount = storyCounts.reduce((sum, n) => sum + n, 0);
-  const storiesLeft = storyCounts.filter((n) => n === 0).length;
   // 年份就是书架：最近 6 个月按年归组，每年一条月册封面条；更早的年份收成「往年」几行。
   const shelfMonths = months.slice(0, 6);
   const shelfYearKeys = [...new Set(shelfMonths.map((m) => m.slice(0, 4)))];
@@ -1181,56 +1177,42 @@ export function Shelf() {
             </BookRows>
           </ShelfSection>
         )}
-        <ShelfSection title="合集">
-          <BookRows>
-            <BookRow
-              title="出生的故事"
-              caption={
-                storyCount === 0
-                  ? "还没写：出生那天、怀孕、名字、相识"
-                  : storiesLeft === 0
-                    ? "四个故事都写了"
-                    : `已写 ${storyCount} 段 · 还差 ${storiesLeft} 个故事`
-              }
-              tile={<PaperTile stamp="生" />}
-              testID="volume-stories"
-              onPress={() => nav.navigate("Stories")}
-              last={
-                firsts.length === 0 && quotes.length === 0 && clusters.length === 0
-              }
-            />
-            {firsts.length > 0 && (
-              <BookRow
-                title="第一次合集"
-                caption={`${firsts.length} 个第一次`}
-                tile={<PaperTile icon="star" />}
-                testID="volume-firsts"
-                onPress={() => nav.navigate("Firsts")}
-                last={quotes.length === 0 && clusters.length === 0}
-              />
-            )}
-            {quotes.length > 0 && (
-              <BookRow
-                title="她说的话"
-                caption={`${quotes.length} 句原话`}
-                tile={<PaperTile stamp="语" />}
-                testID="volume-quotes"
-                onPress={() => nav.navigate("Quotes")}
-                last={clusters.length === 0}
-              />
-            )}
-            {clusters.length > 0 && (
-              <BookRow
-                title="足迹"
-                caption={`${clusters.length} 个常去的地方`}
-                tile={<PaperTile icon="pin" />}
-                testID="open-footprint"
-                onPress={() => nav.navigate("Footprint")}
-                last
-              />
-            )}
-          </BookRows>
-        </ShelfSection>
+        {(firsts.length > 0 || quotes.length > 0) && (
+          <ShelfSection title="合集">
+            <BookRows>
+              {firsts.length > 0 && (
+                <BookRow
+                  title="第一次合集"
+                  caption={`${firsts.length} 个第一次`}
+                  tile={<PaperTile icon="star" />}
+                  testID="volume-firsts"
+                  onPress={() => nav.navigate("Firsts")}
+                  last={quotes.length === 0 && clusters.length === 0}
+                />
+              )}
+              {quotes.length > 0 && (
+                <BookRow
+                  title="她说的话"
+                  caption={`${quotes.length} 句原话`}
+                  tile={<PaperTile stamp="语" />}
+                  testID="volume-quotes"
+                  onPress={() => nav.navigate("Quotes")}
+                  last={clusters.length === 0}
+                />
+              )}
+              {clusters.length > 0 && (
+                <BookRow
+                  title="足迹"
+                  caption={`${clusters.length} 个常去的地方`}
+                  tile={<PaperTile icon="pin" />}
+                  testID="open-footprint"
+                  onPress={() => nav.navigate("Footprint")}
+                  last
+                />
+              )}
+            </BookRows>
+          </ShelfSection>
+        )}
         <ShelfSection
           title="专题册"
           action={
