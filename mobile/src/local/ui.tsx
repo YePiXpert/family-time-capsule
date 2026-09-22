@@ -780,12 +780,8 @@ export function useVolumeWidth() {
     (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns
   );
 }
-/** 页内顶栏高度；键盘避让偏移 = 顶部安全区 + 这一行（原生页头下线后 useHeaderHeight 恒为 0）。 */
+/** 页内顶栏高度。键盘避让不用再加它：KeyboardAvoidingView 的布局帧相对整屏 SafeAreaView，已含顶栏。 */
 export const TOP_BAR_HEIGHT = 52;
-export function useTopBarOffset() {
-  const insets = useSafeAreaInsets();
-  return insets.top + TOP_BAR_HEIGHT;
-}
 /**
  * 订阅导航栈的「能否返回」。不能只读一次 `canGoBack()`：返回途中页面会因其他状态
  * （如草稿清理）在栈弹出前重渲染而拿到 true，弹出完成后无人再触发渲染，箭头就残留。

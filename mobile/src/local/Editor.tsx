@@ -40,7 +40,6 @@ import {
   ErrorText,
   Field,
   Page,
-  useTopBarOffset,
   PersonChips,
   SignatureButton,
   Text,
@@ -62,7 +61,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   const store = useStore(),
     state = useLibrary(),
     s = useStyles();
-  const headerHeight = useTopBarOffset();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
       clone(store.get().drafts[route.params.draftId]),
     ),
@@ -427,8 +425,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
+        // 布局帧相对整屏 SafeAreaView、已含页内顶栏，不能再加 keyboardVerticalOffset：
+        // 加了会把底栏抬高一个顶栏，键盘上方多出一条空纸（1.0.0／1.0.1 的真机截图都有）。
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={headerHeight}
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
