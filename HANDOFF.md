@@ -2,7 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-22。**1.0.2 已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，轻量标签 `v1.0.2`，run 35691714051 四作业全绿，GitHub Release 上有 APK／未签名 IPA／`build-source.json`／`sha256sums.txt`（第一节第一条）。服务端仍是 `b76439d` + DeepSeek（MiMo 适配未部署，许可阻塞见第一节「MiMo 内容模型适配」）；两台真机的验收仍未做。主人随后把出包流水线并行化（`300b12e`），首次 dispatch 的 iOS 回归红（脚手架超时，录音其实已开始），「说完了」等待放宽到 120 秒后，验证 run 35701034621 已全绿，总耗时约 32 分钟；本轮继续优化测试等待，实测结果待新验证构建（第一节第二条）。
+> 最后更新：2026-09-22（减法）。**1.0.3「减法」已在 main、未出包**：主人拍板「不要冗余，贪多嚼不烂」，拿掉出生的故事（24 问并入小问题）、写信引导、时光系列、足迹、年度长图、重放、分成几件事／按事情分组、起个头，AI 不再看照片；提交 `8f36df0`…`feebcec` 与文档收尾提交（第一节第一条）。可安装的仍是 1.0.2（下一条）；服务端不动。验证出包见第一节第一条。
+> 旧记录：2026-09-22。**1.0.2 已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，轻量标签 `v1.0.2`，run 35691714051 四作业全绿，GitHub Release 上有 APK／未签名 IPA／`build-source.json`／`sha256sums.txt`（第一节第一条）。服务端仍是 `b76439d` + DeepSeek（MiMo 适配未部署，许可阻塞见第一节「MiMo 内容模型适配」）；两台真机的验收仍未做。主人随后把出包流水线并行化（`300b12e`），首次 dispatch 的 iOS 回归红（脚手架超时，录音其实已开始），「说完了」等待放宽到 120 秒后，验证 run 35701034621 已全绿，总耗时约 32 分钟；本轮继续优化测试等待，实测结果待新验证构建（第一节第二条）。
 > 旧记录：2026-09-22。**1.0.2（构建号 75）发版中**：主人复核后拍板发版；发版提交在 main（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本），轻量标签 `v1.0.2` 指向它。标签出包的结果与 Release 校验和待 run 完成后核对再补进第一节；**在那之前不要把 1.0.2 当作已交付**。
 > 旧记录：2026-09-22。**1.0.1（构建号 74）没有交付**：Kimi 的界面焕新 `3c0b017`…`05e229f` 已在 main，附注标签 `v1.0.1` 触发 run 35679134876——quality／Android 绿、iOS 回归红（测试脚手架点在屏幕底边被系统吞掉，应用没有问题）、release 作业跳过，**没有 GitHub Release v1.0.1**，可安装的仍是 1.0.0（下一条）。同日复核修复 `a01a1d8`…`9476895`、脚手架修复 `6238119`／`ae2323d` 与键盘避让修复 `3638d96` 已推 main；验证出包 run 35681782720 又在 iOS 回归红（还是脚手架：续写时的光标点落在新工具栏的「文件」钮上），第三次验证 run 35686815546（workflow_dispatch，源码 `3638d96`）**三作业全绿**（quality／Android APK／iOS unsigned IPA；release 作业非标签触发、按设计跳过，仍没有 Release）。要交付 1.0.1 的内容需主人拍板再出包（第一节第一条）。
 > 旧记录：2026-09-21。**1.0.0 已交付**：交付提交 `16300f2`，标签 `v1.0.0`，run 35607118819 四作业全绿，GitHub Release 上有 APK／未签名 IPA／校验和（第一节第一条）；**服务端 `b76439d` 已部署生产**（主人授权，2026-09-21 14:46 UTC）；可安装 1.0.0 做真机验收。此后不加新功能，只做优化（第四节）。
@@ -17,6 +18,8 @@
 
 ## 一、当前状态快照（2026-09-22）
 
+- **1.0.3「减法」（未出包；2026-09-22）**：主人拍板记在 PRODUCT.md 第九节末段，细目在 CHANGELOG 顶节。提交：`8f36df0` PRODUCT／CHANGELOG 骨架，`d29255e` 出生的故事并入小问题，`2b13b8d` 信精简与书架空区一行，`39a13cb` 时光系列／足迹页面（`series` 留作旧数据种类），`6cbcd3b` 长图／重放，`feebcec` 分成几件事／按事情分组／起个头／AI 不看照片，之后一笔文档收尾。Astra 逐个提交改工作树、Fable 复核并跑门禁后提交。兼容：实体种类只增不减，`RecordContent.story`／`settings.replayAudioId`／草稿 `photoEvents` 只停写不拒收（分组草稿在 `normalizeLibrary` 并回一份、旧 AI 任务在那里丢弃），服务端未动、所有请求仍带 `photos: []`。门禁：mobile 49 个文件 727 个测试、server 189、typecheck／lint／边界脚本／scripts unittest 全绿。验证出包：文档收尾提交推上 main 后派发一次 `mobile-build.yml`（完整 SHA，不轮询）——RUN_PLACEHOLDER。
+  - 服务端下次部署时删 `generate`／`group`／`letter` 与 ASK 里的故事主题句（第四节第 8 条）。真机待验：书架空态两行入口、编辑页小问题（头六个月的故事题）、AI 面板只剩润色与追问、年度册「装订纪念册」。
 - **1.0.2「界面焕新与复核修复」已交付（构建号 75；2026-09-22）**：主人复核后拍板发版。发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本、HANDOFF 头注），轻量标签 `v1.0.2` 指向它，标签推送触发 run 35691714051，**四作业全绿**（quality／Android APK／iOS unsigned IPA／GitHub Release）。**GitHub Release**：<https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.2>（不过期；artifacts 2026-10-22 过期）。APK 66,776,146 字节、IPA 11,270,531 字节（IPA 未签名，由主人自签后装机）；SHA-256（与 Release 的 `sha256sums.txt` 一致，本机重新算过）：
 
   ```text
@@ -156,7 +159,7 @@
    docs/plans/PLAN-BUILD-70.md（Build 70 计划 + 顶部实施偏离）、deploy/README.md（服务端部署与远端备份对象库）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install（mobile 的 tests/sync-e2e.test.ts 会拉起真实服务端子进程，server 依赖必须装）。
-4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（2026-09-22 时 52 个文件 789 个测试）；
+4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（2026-09-22 减法后 49 个文件 727 个测试）；
    server 下 npm test、npm run typecheck（189 个测试，server 没有 lint 脚本）；
    python3 mobile/scripts/verify-local-boundary.py；
    python3 -m unittest discover -s mobile/scripts -p 'test_*.py'。
@@ -168,13 +171,14 @@
 第二步·1.0.0（Build 73–76）**已交付**（第一节第一条：提交 16300f2、标签 v1.0.0、run 35607118819 四作业全绿、GitHub Release 上有 APK／IPA／校验和，不过期）。
    不要再出 1.0.0 的包；此后不加新功能，只做第四节的优化项。再次出包时按 AGENTS.md（workflow_dispatch 完整 40 位 SHA；正式版打轻量标签 v1.0.x 走 release 作业）并递增构建号。
    服务端生产已是 **b76439d（转写端点 + 四个新 writingMode）**；部署验证与备份位置在第一节，接下来做真机验收。
-   两台真机的 1.0.0 验收（说一段／出生的故事／追问我／编者）还没做，清单在第一节。
+   两台真机的验收（说一段／追问我／今天的小问题／编者）还没做，清单在第一节。
    **1.0.2（构建号 75）已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，标签 `v1.0.2`，run 35691714051 四作业全绿，Release 与校验和在第一节第一条；1.0.1（构建号 74）的标签出包失败、未发布，内容并入 1.0.2。
+   **1.0.3「减法」在 main、未出包**（第一节第一条）：拿掉出生的故事模块（问题并入小问题）、写信引导、时光系列、足迹、长图、重放、分成几件事、AI 分组与起个头；AI 不看照片；服务端未动。出包要主人拍板：构建号 76、CHANGELOG 顶节补构建号、README 当前版本、轻量标签 v1.0.3。
 
 第三步·真机验收与下一版：
 - 先按 docs/plans/PLAN-SHARING.md 第五节做真机验收（主人两台手机 + 家人一台）——两台手机真跑同步从未验证过；主人用 Build 71/72 的手机点一次「远端备份 → 现在备份」确认服务端兼容。
 - 1.0.0 之后**不加新功能，只做优化**（主人 2026-09-21 拍板）：待办清单在 HANDOFF 第四节（真机验收、服务端部署、性能、提示词坏例子、偶发测试）。
-- 不做：新功能、家史（主人 2026-09-21 拍板）、实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹。
+- 不做：新功能、家史（主人 2026-09-21 拍板）、实时协作、云端搜索、第三方云盘、人脸识别、真地图足迹；时光系列／足迹／长图／重放／照片分组／起个头 2026-09-22 拆掉，不再回来。
 ```
 
 ## 三、交付清单与 Build 72 进度
@@ -298,15 +302,16 @@
 
 ## 四、后续路线：1.0.0 之后只优化（2026-09-21 主人拍板）
 
-第八节次序 2、3、4、6（73「说一段」、74「出生的故事」、75「访谈者」、76「年度册的编者」）已随 1.0.0 做完（第一节第一条有提交号）；家史（5）不做。**此后不加新功能，专注优化。** 按轻重排的优化待办：
+第八节次序 2、3、4、6（73「说一段」、74「出生的故事」、75「访谈者」、76「年度册的编者」）已随 1.0.0 做完（第一节第一条有提交号）；家史（5）不做；74 的模块 2026-09-22 拆掉、问题并入小问题（第一节第一条）。**此后不加新功能，专注优化。** 按轻重排的优化待办：
 
-1. **服务端 `b76439d` 已部署，待真机验收**（部署证据见第一节）。用 1.0.0 的手机各试一次：说一段（安卓走服务）、追问我、今天的小问题、写信引导、AI 建议目录。
-2. **真机验收**（第一节「真机待验」那一条）：iPhone 本机识别、安卓回退、二进制上传、两台手机同步 `story`／`yearPicks`；PLAN-SHARING.md 第五节的两台手机同步验收从 Build 72 起一直欠着；真机 XChaCha20 MB/s（阈值 5 MB/s）从 Build 70 起欠着。
+1. **服务端 `b76439d` 已部署，待真机验收**（部署证据见第一节）。用 1.0.0 的手机各试一次：说一段（安卓走服务）、追问我、今天的小问题、AI 建议目录。
+2. **真机验收**（第一节「真机待验」那一条）：iPhone 本机识别、安卓回退、二进制上传、两台手机同步 `yearPicks`（`story` 已是只读旧字段）；PLAN-SHARING.md 第五节的两台手机同步验收从 Build 72 起一直欠着；真机 XChaCha20 MB/s（阈值 5 MB/s）从 Build 70 起欠着。
 3. **提示词坏例子**：主人用一周，把「问得不好」「写得不对」的例子记到 `docs/AI-PROMPTS.md` 末尾「坏例子」一节，改提示词、重部服务端即可（`prompts.test.ts` 逐字对照手册，改一处要改两处）。`server/scripts/probe-text.ts` 可随时重跑（需 CPA 密钥与 `CPA_BASE_URL`）。
 4. **偶发与性能**：server `tests/backup.test.ts`「temp files never linger」在 CPU 紧张时偶发（本次 1/4，重跑 3 次全绿）——看 `backup-store.ts` 坏哈希分支是不是回复之后才 unlink；服务端 `usage()` 每次 PUT 全量 stat 成员目录（上万对象再做缓存）；`archive-layout`／`yearbook` 在千条记录时的耗时可用 `tests/local-scale.test.ts` 的路子量一下。
-5. **纸书版面真机看 PDF**：故事章、章首引语（`BookChapter.lead` 多行）、编者书名替换后的封面。
+5. **纸书版面真机看 PDF**：章首引语（`BookChapter.lead` 多行）、编者书名替换后的封面。
 6. **文案与可达性**：三个访谈入口的文案是工作者自定的（见 `/tmp` 任务报告已并入 CHANGELOG／DESIGN），主人试用后统一口吻；同意书 v2 文案偏长，可再精简。
 7. 密文对象位腐坏无自愈（PROJECT-AUDIT 残留风险 ③，不急）。
+8. **下次部署服务端时做减法**：手机 1.0.3 起不再调用 `kind=group`、`writingMode=generate`／`letter`，ASK 里「给了主题时…」那句也没有客户端会触发。删掉时同步改 `docs/AI-PROMPTS.md` 的 ```text 块与 `server/tests/prompts.test.ts`（逐字对照、数块）；所有手机请求仍带 `photos: []`，`app.ts` 的字段检查别去掉。
 
 ## 五、踩坑清单（务必先读，历史细节在 docs/plans/ 各计划的对应小节）
 
@@ -384,6 +389,8 @@
 - （1.0.1）页内顶栏下面的 `KeyboardAvoidingView` 不要传 `keyboardVerticalOffset`：它的布局帧相对整屏 SafeAreaView、已含顶栏，再加只会把底栏抬高一个顶栏，键盘上方留一条空纸（1.0.0 起两版真机截图都有，`3638d96` 去掉）。
 - （1.0.2 后）流水线拆成并行作业后，XCUITest 回归在全新 macOS 运行器上跑：第一次激活音频会话（`setAudioModeAsync`／`prepareToRecordAsync`）可能要三五十秒，「说完了」20 秒等不到（run 35694486774）。凡是首次触碰系统服务（音频、相机、相册）的步骤都给长超时，别按热身过的旧流水线估时。
 - （CI 偶发）`statSync().mtimeMs` 有亚毫秒精度，`mtime < Date.now()` 对刚写下的文件不成立：0 宽限的清理要显式短路，别拿时间比。
+- （1.0.3）**实体种类只增不减**：`series` 页面拆掉了，但 `ENTITY_KINDS`／`TOMBSTONE_KINDS`／`validEntity`／合并／归档都留着——`backup-format.ts` 拒收未知 kind 的整份备份，`validRoot` 拒收未知墓碑键，`disk.ts` 静默丢未知 kind 的行。旧字段（`RecordContent.story`、`settings.replayAudioId`、草稿的 `photoEvents`）也是只停写、不拒收：`validateStoredAI` 一旦返回 false 会经 `validEntity` 抛 `invalidLibrary`、整库打不开，所以旧 AI 任务要在 `normalizeLibrary` 里丢，不能在校验里拒。
+- （1.0.3）冒烟 `result.json` 的键随功能删减（长图的 `yearbookSheet` 已删）；改 workflow 或写断言前先看 `smoke-android.py` 末尾的 `report.update(...)` 与 `smoke-ios-regression.py`。
 
 ## 六、环境备忘
 
