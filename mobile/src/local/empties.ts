@@ -1,13 +1,11 @@
 import {
-  SERIES_DEFAULT_NAME,
   type LocalLetter,
-  type LocalSeries,
   type RecordDraft,
   type Stored,
 } from "./model";
 
 /**
- * 「点开就建」的实体退出时要不要静默清理：什么都没填的草稿、信、时光系列不该留在书架上，
+ * 「点开就建」的实体退出时要不要静默清理：什么都没填的草稿、信不该留在书架上，
  * 也不该三天后被催。判定只看内容，不看日期、开关这类附带状态。
  */
 
@@ -33,10 +31,4 @@ export function isEmptyLetter(l: Stored<LocalLetter> | LocalLetter): boolean {
   return (
     !l.sealed && !l.title.trim() && !l.text.trim() && l.mediaIds.length === 0
   );
-}
-
-/** 时光系列：还叫默认名（或没名字），且一张照片都没收进。 */
-export function isEmptySeries(s: Stored<LocalSeries> | LocalSeries): boolean {
-  const name = s.name.trim();
-  return s.items.length === 0 && (name === "" || name === SERIES_DEFAULT_NAME);
 }

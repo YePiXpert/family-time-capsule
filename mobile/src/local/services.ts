@@ -13,14 +13,11 @@ import {
   clone,
   deleteAlbum as removeAlbum,
   deleteLetter as removeLetter,
-  deleteSeries as removeSeries,
   editEntity,
   emptyContent,
   LETTER_FROM_LIMIT,
-  monthOfItem,
   newAlbumFrom,
   referencedMedia,
-  SERIES_DEFAULT_NAME,
   type Library,
   type MediaKind,
   type LocalLetter,
@@ -127,46 +124,6 @@ export async function collectUnusedMedia(store: LocalStore) {
   for (const m of removed) deleteMediaFiles(m);
   return removed.reduce((n, m) => n + m.bytes, 0);
 }
-export async function beginSeries(
-  store: LocalStore,
-  name = SERIES_DEFAULT_NAME,
-) {
-  return store.change((s) => {
-    const id = newId();
-    s.series[id] = {
-      id,
-      name: name.trim() || SERIES_DEFAULT_NAME,
-      items: [],
-      updatedAt: now(),
-    };
-    return id;
-  });
-}
-/** 把一张照片收进系列；同月的旧照片会被替换（调用方先向用户确认）。 */
-export async function addToSeries(
-  store: LocalStore,
-  seriesId: string,
-  recordId: string,
-  mediaId: string,
-) {
-  await store.change((s) => {
-    const series = s.series[seriesId];
-    if (!series) throw new Error("时光系列已删除。");
-    const record = s.records[recordId];
-    const media = s.media[mediaId];
-    if (!record) throw new Error("这段时光已删除。");
-    if (!record.mediaIds.includes(mediaId) || media?.kind !== "image")
-      throw new Error("请从这段时光的照片里选。");
-    const month = monthOfItem(record, media);
-    editEntity(s, "series", seriesId, (t) => {
-      t.items = [
-        ...t.items.filter((i) => i.month !== month),
-        { recordId, mediaId, month },
-      ];
-      t.updatedAt = now();
-    });
-  });
-}
 /** 新建一封没封存的信；拆封日默认 18 岁生日（没填生日则今天起 18 年）。 */
 export async function beginLetter(store: LocalStore, from = "") {
   return store.change((s) => {
@@ -220,12 +177,6 @@ export async function deleteLetter(store: LocalStore, id: string) {
 export async function deleteAlbum(store: LocalStore, id: string) {
   await store.change((s) => {
     removeAlbum(s, id, now());
-  });
-}
-/** 删时光系列：照片与记录保留、留墓碑。 */
-export async function deleteSeries(store: LocalStore, id: string) {
-  await store.change((s) => {
-    removeSeries(s, id, now());
   });
 }
 /** 改人物名；trim 后 1-50 字，同名复用规则不适用于改名（保留身份）。 */

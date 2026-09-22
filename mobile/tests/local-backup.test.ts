@@ -5,7 +5,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import type { NativeShareManifest } from "../modules/share-intake/src";
-import { clone, emptyLibrary, ENTITY_KINDS, type Library } from "../src/local/model";
+import { clone, deleteSeries, emptyLibrary, ENTITY_KINDS, type Library } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
 const env = vi.hoisted(() => ({
   root: "",
@@ -1222,8 +1222,8 @@ it("stamps settings.by onto a fresh draft but leaves edits of old records alone"
     const unsigned = await beginDraft(store);
     expect(store.get().drafts[unsigned]!.content.by).toBeUndefined();
   });
-it("deleting an album, a series or a letter through the services leaves tombstones", async () => {
-    const { deleteAlbum, deleteLetter, deleteSeries } = await import("../src/local/services");
+it("deleting albums and letters through services and legacy series through the model leaves tombstones", async () => {
+    const { deleteAlbum, deleteLetter } = await import("../src/local/services");
     let disk: Library = signatureFixture();
     const date = "2026-09-16T12:00:00.000Z";
     disk.series.t = { id: "t", name: "t", items: [], updatedAt: date };
@@ -1236,7 +1236,7 @@ it("deleting an album, a series or a letter through the services leaves tombston
     });
     await store.open();
     await deleteAlbum(store, "a");
-    await deleteSeries(store, "t");
+    await store.change((s) => deleteSeries(s, "t", date));
     await deleteLetter(store, "l");
     expect(Object.keys(store.get().tombstones!).sort()).toEqual(["albums:a", "letters:l", "series:t"]);
     expect(Object.keys(disk.albums)).toEqual([]);

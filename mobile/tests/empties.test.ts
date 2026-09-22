@@ -2,13 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   isEmptyDraft,
   isEmptyLetter,
-  isEmptySeries,
 } from "../src/local/empties";
 import {
   emptyContent,
-  SERIES_DEFAULT_NAME,
   type LocalLetter,
-  type LocalSeries,
   type RecordDraft,
 } from "../src/local/model";
 
@@ -34,14 +31,6 @@ const letter = (over: Partial<LocalLetter> = {}): LocalLetter => ({
   updatedAt: at,
   ...over,
 });
-const series = (over: Partial<LocalSeries> = {}): LocalSeries => ({
-  id: "s1",
-  name: SERIES_DEFAULT_NAME,
-  items: [],
-  updatedAt: at,
-  ...over,
-});
-
 describe("empty drafts", () => {
   it("treats a fresh draft as empty even after touching date, flags or whitespace", () => {
     expect(isEmptyDraft(draft())).toBe(true);
@@ -89,25 +78,5 @@ describe("empty letters", () => {
     expect(isEmptyLetter(letter({ text: "想对你说" }))).toBe(false);
     expect(isEmptyLetter(letter({ mediaIds: ["m1"] }))).toBe(false);
     expect(isEmptyLetter(letter({ sealed: true }))).toBe(false);
-  });
-});
-
-describe("empty series", () => {
-  it("is empty while it still has the default or a blank name and no photos", () => {
-    expect(isEmptySeries(series())).toBe(true);
-    expect(isEmptySeries(series({ name: `  ${SERIES_DEFAULT_NAME} ` }))).toBe(
-      true,
-    );
-    expect(isEmptySeries(series({ name: "   " }))).toBe(true);
-  });
-  it("survives once it is renamed or holds a photo", () => {
-    expect(isEmptySeries(series({ name: "每月一张" }))).toBe(false);
-    expect(
-      isEmptySeries(
-        series({
-          items: [{ recordId: "r1", mediaId: "m1", month: "2026-09" }],
-        }),
-      ),
-    ).toBe(false);
   });
 });

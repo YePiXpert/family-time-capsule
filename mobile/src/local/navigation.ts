@@ -10,7 +10,6 @@ export type Routes = {
   Year: { year: string };
   Recap: { year: string };
   Firsts: undefined;
-  Footprint: undefined;
   People: undefined;
   Title: undefined;
   Settings: undefined;
@@ -18,7 +17,6 @@ export type Routes = {
   /** shuffle：从「随便翻翻」进来，顶栏右侧给「再翻一页」。 */
   Record: { id: string; shuffle?: boolean };
   Album: { id: string };
-  Series: { id: string };
   Picker: { sessionId: string };
   AlbumDetails: { sessionId: string };
   Media: { id: string; recordId?: string };

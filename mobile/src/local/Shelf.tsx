@@ -20,12 +20,10 @@ import {
   beginDraft,
   beginLetter,
   beginSelection,
-  beginSeries,
   now,
 } from "./services";
 import { letterCaption, letterState, sortLetters } from "./letters";
 import {
-  monthIndex,
   fullNameLine,
   sealInitial,
   monthKey,
@@ -38,7 +36,6 @@ import {
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import { backupNudgeBody, bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
-import { clusterPlaces } from "./places";
 import { pickAnother } from "./shuffle";
 import {
   ageLine,
@@ -643,7 +640,6 @@ export function Shelf() {
   const {
     records: recordMap,
     albums: albumMap,
-    series: seriesMap,
     media: mediaMap,
     drafts: draftMap,
     letters: letterMap,
@@ -696,18 +692,6 @@ export function Shelf() {
           b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
       ),
     [albumMap],
-  );
-  const seriesList = useMemo(
-    () =>
-      Object.values(seriesMap).sort(
-        (a, b) =>
-          b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
-      ),
-    [seriesMap],
-  );
-  const clusters = useMemo(
-    () => clusterPlaces(Object.values(mediaMap)),
-    [mediaMap],
   );
   const drafts = useMemo(
     () =>
@@ -770,11 +754,6 @@ export function Shelf() {
   const createLetter = () => {
     void beginLetter(store)
       .then((id) => nav.navigate("LetterEditor", { id }))
-      .catch((e) => setError(messageOf(e)));
-  };
-  const createSeries = () => {
-    void beginSeries(store)
-      .then((id) => nav.navigate("Series", { id }))
       .catch((e) => setError(messageOf(e)));
   };
   return (
@@ -1187,7 +1166,7 @@ export function Shelf() {
                   tile={<PaperTile icon="star" />}
                   testID="volume-firsts"
                   onPress={() => nav.navigate("Firsts")}
-                  last={quotes.length === 0 && clusters.length === 0}
+                  last={quotes.length === 0}
                 />
               )}
               {quotes.length > 0 && (
@@ -1197,16 +1176,6 @@ export function Shelf() {
                   tile={<PaperTile stamp="语" />}
                   testID="volume-quotes"
                   onPress={() => nav.navigate("Quotes")}
-                  last={clusters.length === 0}
-                />
-              )}
-              {clusters.length > 0 && (
-                <BookRow
-                  title="足迹"
-                  caption={`${clusters.length} 个常去的地方`}
-                  tile={<PaperTile icon="pin" />}
-                  testID="open-footprint"
-                  onPress={() => nav.navigate("Footprint")}
                   last
                 />
               )}
@@ -1281,58 +1250,6 @@ export function Shelf() {
             onPress={createLetter}
           />
         )}
-        <ShelfSection
-          title="时光系列"
-          action={
-            seriesList.length > 0
-              ? { label: "新建系列", testID: "series-new", onPress: createSeries }
-              : undefined
-          }
-        >
-          {seriesList.length > 0 ? (
-            <BookRows>
-              {seriesList.map((series, i) => {
-                const items = [...series.items].sort((a, b) =>
-                  a.month.localeCompare(b.month),
-                );
-                const latest = items[items.length - 1];
-                const span =
-                  items.length > 1
-                    ? monthIndex(items[items.length - 1]!.month) -
-                      monthIndex(items[0]!.month) +
-                      1
-                    : 0;
-                return (
-                  <BookRow
-                    key={series.id}
-                    title={series.name}
-                    caption={
-                      items.length
-                        ? span > 1
-                          ? `${items.length} 张 · 跨 ${span} 个月`
-                          : `${items.length} 张照片`
-                        : "还没有照片"
-                    }
-                    cover={latest ? mediaMap[latest.mediaId] : undefined}
-                    tile={<PaperTile icon="image" />}
-                    testID={`series-${series.id}`}
-                    onPress={() => nav.navigate("Series", { id: series.id })}
-                    last={i === seriesList.length - 1}
-                  />
-                );
-              })}
-            </BookRows>
-          ) : (
-            <GuideRow
-              icon="image"
-              tone="pine"
-              title="新建系列"
-              hint="每月一张同款照片，看着她慢慢长大。"
-              testID="series-new"
-              onPress={createSeries}
-            />
-          )}
-        </ShelfSection>
       </ScrollView>
       <CaptureFab />
     </Page>

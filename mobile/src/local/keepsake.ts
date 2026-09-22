@@ -129,68 +129,6 @@ export function layoutKeepSake(input: KeepSakeInput): KeepSakeLayout {
   };
 }
 
-export const SERIES_STRIP_MAX = 4;
-
-/** 超过上限时均匀抽样（保留首尾），让对比条覆盖整段时间线。 */
-export function sampledIndices(count: number, cap: number): number[] {
-  if (count <= cap) return Array.from({ length: count }, (_, i) => i);
-  return Array.from(
-    { length: cap },
-    (_, k) => Math.round((k * (count - 1)) / (cap - 1)),
-  );
-}
-
-export type SeriesStripLayout = {
-  width: number;
-  height: number;
-  titleY: number;
-  ornamentTopY: number;
-  cells: {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    month: string;
-    labelY: number;
-  }[];
-  ornamentBottomY: number;
-  footerY: number;
-};
-
-const CELL_HEIGHT = 440;
-const CELL_GAP = 18;
-
-/** 时光系列对比条：横排 3-4 张、月份标签、固定版面；几何只看张数，不看缺哪个月。 */
-export function layoutSeriesStrip(
-  items: { month: string }[],
-): SeriesStripLayout {
-  const height = 840;
-  const titleY = PADDING + 36;
-  const ornamentTopY = titleY + 40;
-  const top = ornamentTopY + 54;
-  const picked = sampledIndices(items.length, SERIES_STRIP_MAX).map(
-    (i) => items[i]!,
-  );
-  const n = picked.length;
-  const w = n ? (CONTENT_W - CELL_GAP * (n - 1)) / n : CONTENT_W;
-  return {
-    width: CARD_WIDTH,
-    height,
-    titleY,
-    ornamentTopY,
-    cells: picked.map((item, i) => ({
-      x: PADDING + i * (w + CELL_GAP),
-      y: top,
-      w,
-      h: CELL_HEIGHT,
-      month: item.month,
-      labelY: top + CELL_HEIGHT + 36,
-    })),
-    ornamentBottomY: height - PADDING - 72,
-    footerY: height - PADDING - 30,
-  };
-}
-
 /** toDataURL 的回调在 iOS 给完整 data URL，Android 只给裸 base64；两者都收。 */export function pngBytesOfDataUrl(dataUrl: string): Uint8Array {
   const trimmed = dataUrl.trim();
   const comma = trimmed.indexOf(",");
