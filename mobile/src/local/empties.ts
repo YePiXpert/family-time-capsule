@@ -9,7 +9,7 @@ import {
  * 也不该三天后被催。判定只看内容，不看日期、开关这类附带状态。
  */
 
-/** 草稿：没有标题、正文、地点、人物、附件，也没有进行中的录音；分成几件事时每件事也都空。 */
+/** 草稿：没有标题、正文、地点、人物、附件，也没有进行中的录音。 */
 export function isEmptyDraft(d: Stored<RecordDraft> | RecordDraft): boolean {
   const c = d.content;
   return (
@@ -18,11 +18,7 @@ export function isEmptyDraft(d: Stored<RecordDraft> | RecordDraft): boolean {
     !c.location.trim() &&
     !c.personIds?.length &&
     c.mediaIds.length === 0 &&
-    !d.recordingFile &&
-    !d.photoEvents?.some(
-      (event) =>
-        event.mediaIds.length > 0 || event.title.trim() || event.text.trim(),
-    )
+    !d.recordingFile
   );
 }
 

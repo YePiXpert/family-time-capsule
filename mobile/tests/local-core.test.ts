@@ -29,7 +29,6 @@ import {
   type YearPicks,
   type LibraryDelta,
   type Mutable,
-  LocalMedia,
 } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
 
@@ -42,8 +41,6 @@ import {
   milestoneOf,
 } from "../src/local/dates";
 import {
-  clusterPlaces,
-  distanceMeters,
   looksLikeCoordinates,
   placeLabel,
 } from "../src/local/places";
@@ -741,7 +738,7 @@ describe("person tags", () => {
     );
     expect(decoded.library.persons).toEqual({});
   });
-  /** 记录、草稿正文与「按事情分组」的每件事都带着标记，用来验证级联剥离。 */
+  /** 记录与草稿正文都带着标记，用来验证级联剥离。 */
   function cascadeFixture() {
     const s = personFixture();
     s.drafts.d = {
@@ -755,27 +752,15 @@ describe("person tags", () => {
         text: "外婆来了",
         personIds: ["mom", "grandma"],
       },
-      photoEvents: [
-        { ...emptyContent(), date, text: "上午", personIds: ["grandma"] },
-        {
-          ...emptyContent(),
-          date,
-          text: "下午",
-          personIds: ["mom", "grandma"],
-        },
-      ],
     };
     return s;
   }
-  it("strips a deleted person from records, drafts and photo events", () => {
+  it("strips a deleted person from records and drafts", () => {
     const s = cascadeFixture();
     deletePerson(s, "grandma");
     expect(s.persons.grandma).toBeUndefined();
     expect(s.records.r!.personIds).toEqual(["mom"]);
     expect(s.drafts.d!.content.personIds).toEqual(["mom"]);
-    expect(s.drafts.d!.photoEvents![1]!.personIds).toEqual(["mom"]);
-    // 标记被剥空的那件事要删掉整个字段，不留空数组
-    expect("personIds" in s.drafts.d!.photoEvents![0]!).toBe(false);
     validateLibrary(s);
   });
   it("merges a person into another without leaving duplicates", () => {
@@ -786,8 +771,6 @@ describe("person tags", () => {
     // 两个都在的地方合并后只剩一个，不重复
     expect(s.records.r!.personIds).toEqual(["mom"]);
     expect(s.drafts.d!.content.personIds).toEqual(["mom"]);
-    expect(s.drafts.d!.photoEvents![0]!.personIds).toEqual(["mom"]);
-    expect(s.drafts.d!.photoEvents![1]!.personIds).toEqual(["mom"]);
     validateLibrary(s);
   });
   it("refuses to delete or merge people that are not there", () => {
@@ -796,26 +779,12 @@ describe("person tags", () => {
     expect(() => mergePersons(cascadeFixture(), "mom", "nobody")).toThrow();
     expect(() => mergePersons(cascadeFixture(), "mom", "mom")).toThrow();
   });
-  it("rejects photo events that point at a person who is gone", () => {
-    const s = cascadeFixture();
-    // 只在「按事情分组」的某一件事上留下外婆：记录与草稿正文都不带，
-    // 把 content() 本来就有的那条检查排除掉，单独验 photoEvents 这条分支
-    mut(s.records.r!).personIds = ["mom"];
-    s.drafts.d!.content.personIds = ["mom"];
-    s.drafts.d!.photoEvents![1]!.personIds = ["mom"];
-    validateLibrary(s);
-    delete s.persons.grandma;
-    expect(() => validateLibrary(s)).toThrow();
-  });
   it("heals dangling person tags on open instead of locking the library out", () => {
     const s = cascadeFixture();
     delete s.persons.grandma;
     normalizeLibrary(s);
     expect(s.records.r!.personIds).toEqual(["mom"]);
     expect(s.drafts.d!.content.personIds).toEqual(["mom"]);
-    expect(s.drafts.d!.photoEvents![1]!.personIds).toEqual(["mom"]);
-    // 剥空的那件事删掉整个字段，与 deletePerson 的行为一致
-    expect("personIds" in s.drafts.d!.photoEvents![0]!).toBe(false);
     validateLibrary(s);
   });
   it("filters records by person", () => {
@@ -831,58 +800,6 @@ describe("person tags", () => {
       "two",
     ]);
     expect(recordsOfPerson(records, "grandma").map((r) => r.id)).toEqual(["r"]);
-  });
-});
-
-describe("place clustering", () => {
-  const gps = (
-    id: string,
-    latitude: number,
-    longitude: number,
-    capturedAt?: string,
-  ): LocalMedia => ({
-    id,
-    file: `${id}.jpg`,
-    name: `${id}.jpg`,
-    kind: "image",
-    bytes: 4,
-    sha256: id.padEnd(64, "0").slice(0, 64),
-    photoMetadata: {
-      latitude,
-      longitude,
-      ...(capturedAt ? { capturedAt } : {}),
-    },
-  });
-  it("measures real distances in meters", () => {
-    expect(
-      distanceMeters(
-        { latitude: 31.2, longitude: 121.5 },
-        { latitude: 31.2001, longitude: 121.5001 },
-      ),
-    ).toBeLessThan(30);
-    expect(
-      distanceMeters(
-        { latitude: 31.2, longitude: 121.5 },
-        { latitude: 31.21, longitude: 121.5 },
-      ),
-    ).toBeGreaterThan(1000);
-  });
-  it("clusters nearby photos with the first center and skips no-GPS media", () => {
-    const clusters = clusterPlaces([
-      gps("a", 31.2, 121.5, "2026-01-10T09:00:00.000Z"),
-      gps("b", 31.2001, 121.5001, "2026-05-20T09:00:00.000Z"),
-      gps("c", 31.21, 121.5),
-      { ...gps("d", 0, 0), photoMetadata: undefined },
-    ]);
-    expect(clusters).toHaveLength(2);
-    expect(clusters[0]).toMatchObject({
-      center: { latitude: 31.2, longitude: 121.5 },
-      mediaIds: ["a", "b"],
-      firstAt: "2026-01-10T09:00:00.000Z",
-      lastAt: "2026-05-20T09:00:00.000Z",
-    });
-    expect(clusters[1]!.mediaIds).toEqual(["c"]);
-    expect(clusters[1]!.firstAt).toBe("");
   });
 });
 
@@ -1022,7 +939,7 @@ describe("落款与墓碑", () => {
     if (by !== undefined) s.records.r = { ...s.records.r!, by };
     return s;
   };
-  it("accepts a trimmed 1–20 character signature on records, drafts and grouped events", () => {
+  it("accepts a trimmed 1–20 character signature on records and drafts", () => {
     validateLibrary(withRecord("爸爸"));
     validateLibrary(withRecord("外婆"));
     validateLibrary(withRecord("一".repeat(20)));
@@ -1031,9 +948,8 @@ describe("落款与墓碑", () => {
     expect(() => validateLibrary(withRecord("一".repeat(21)))).toThrow();
     const s = fixture();
     mut(s.drafts.draft!).content = { ...s.drafts.draft!.content, by: "妈妈" };
-    mut(s.drafts.draft!).photoEvents = [{ ...emptyContent(), by: "妈妈" }];
     validateLibrary(s);
-    mut(s.drafts.draft!).photoEvents = [{ ...emptyContent(), by: "" }];
+    mut(s.drafts.draft!).content.by = "";
     expect(() => validateLibrary(s)).toThrow();
   });
   it("keeps the default signature in device settings and stamps it onto new content only", () => {
@@ -1286,5 +1202,116 @@ describe("annual editor directory", () => {
   it("allows a title-only directory after the family removes every month", () => {
     const s = fixture(); s.yearPicks = { "2026": { title: "小脚", months: {}, updatedAt: picks().updatedAt } };
     expect(() => validateLibrary(s)).not.toThrow();
+  });
+});
+
+describe("legacy grouped drafts", () => {
+  function groupedFixture() {
+    const s = fixture();
+    Object.assign(s.drafts.draft!, {
+      groupPhotosByDay: true,
+      manualLocation: true,
+      photoEvents: [
+        { ...emptyContent(), date, text: "第一次挥手，后来又笑了。", by: "妈妈" },
+        { ...emptyContent(), date, title: "下午", text: "外婆来了。", mediaIds: ["unknown"], coverId: "unknown", personIds: ["gone"] },
+      ],
+    });
+    s.drafts.draft!.content.by = "爸爸";
+    return s;
+  }
+  it("folds event writing once without importing unvalidated event attachments or tags", () => {
+    const s = groupedFixture();
+    const mediaIds = s.drafts.draft!.content.mediaIds;
+    const coverId = s.drafts.draft!.content.coverId;
+    normalizeLibrary(s);
+    validateLibrary(s);
+    expect(Object.keys(s.drafts)).toEqual(["draft"]);
+    expect(s.drafts.draft!.content.text).toBe("第一次挥手，后来又笑了。\n\n下午\n外婆来了。");
+    expect(s.drafts.draft!.content.mediaIds).toBe(mediaIds);
+    expect(s.drafts.draft!.content.coverId).toBe(coverId);
+    expect(s.drafts.draft!.content.by).toBe("爸爸");
+    for (const key of ["photoEvents", "groupPhotosByDay", "manualLocation"])
+      expect(s.drafts.draft).not.toHaveProperty(key);
+    const once = clone(s);
+    normalizeLibrary(s);
+    expect(s).toEqual(once);
+  });
+  it("preserves unseeded text with its whitespace, keeps the title in its own field and skips empty event fields", () => {
+    const s = fixture();
+    s.drafts.draft!.content.title = "  原题  ";
+    s.drafts.draft!.content.text = "  原文  ";
+    Object.assign(s.drafts.draft!, { photoEvents: [
+      { ...emptyContent(), title: "第一件", text: " 第一段 " },
+      { ...emptyContent(), title: " \n", text: "第二段" },
+    ] });
+    normalizeLibrary(s);
+    validateLibrary(s);
+    expect(s.drafts.draft!.content.text).toBe("第一件\n 第一段 \n\n第二段\n\n  原文  ");
+    expect(s.drafts.draft!.content.title).toBe("  原题  ");
+  });
+  it("does not duplicate seeded title or body and preserves a draft with no event writing", () => {
+    const s = fixture();
+    s.drafts.draft!.content.title = " 原题 ";
+    Object.assign(s.drafts.draft!, { photoEvents: [
+      { ...emptyContent(), title: "原题（补充）", text: "第一次挥手，接着写" },
+    ] });
+    normalizeLibrary(s);
+    expect(s.drafts.draft!.content.text).toBe("原题（补充）\n第一次挥手，接着写");
+    const empty = fixture();
+    Object.assign(empty.drafts.draft!, { photoEvents: [], groupPhotosByDay: true, manualLocation: false });
+    normalizeLibrary(empty);
+    expect(empty.drafts.draft!.content.text).toBe("第一次挥手");
+    expect(empty.drafts.draft).not.toHaveProperty("groupPhotosByDay");
+    validateLibrary(empty);
+  });
+  it("does not repeat the draft's own title as a body line when the first event was seeded from it", () => {
+    const s = fixture();
+    s.drafts.draft!.content.title = "原题";
+    Object.assign(s.drafts.draft!, { photoEvents: [
+      { ...emptyContent(), title: " 原题 ", text: "第一次挥手，接着写" },
+      { ...emptyContent(), title: "下午", text: "外婆来了。" },
+    ] });
+    normalizeLibrary(s);
+    validateLibrary(s);
+    expect(s.drafts.draft!.content.title).toBe("原题");
+    expect(s.drafts.draft!.content.text).toBe("第一次挥手，接着写\n\n下午\n外婆来了。");
+  });
+  it("opens legacy grouped drafts from both the store and a backup", async () => {
+    const legacy = groupedFixture();
+    const store = new LocalStore({ read: async () => clone(legacy), write: async () => {} });
+    await store.open();
+    const manifest = { format: "xiaomei-local", version: 1, createdAt: date, library: legacy, mediaOrder: ["photo"] };
+    const decoded = decodeManifest(new TextEncoder().encode(JSON.stringify(manifest)));
+    expect(decoded.library.drafts).toEqual(store.get().drafts);
+    expect(decoded.library.drafts.draft!.content.text).toBe("第一次挥手，后来又笑了。\n\n下午\n外婆来了。");
+  });
+  it("discards retired AI jobs and proposals before validation while retaining polish", () => {
+    const s = fixture();
+    const job = { fingerprint: "f".repeat(64), kind: "write" as const, writingMode: "polish" as const, eventIndex: 0, model: "old", steps: [] };
+    const legacy = [
+      { kind: "group", writingMode: "polish" },
+      { writingMode: "generate" },
+      { writingMode: "letter" },
+      { writingMode: undefined },
+    ];
+    for (const [index, retired] of legacy.entries()) {
+      const id = `legacy${index}`;
+      s.drafts[id] = { ...clone(s.drafts.draft!), id };
+      Object.assign(s.drafts[id]!, {
+        aiJob: { ...job, ...retired },
+        aiProposal: { ...job, steps: undefined, title: "旧建议", text: "旧建议正文", ...retired },
+      });
+    }
+    s.drafts.draft = { ...s.drafts.draft!, aiJob: job,
+      aiProposal: { fingerprint: job.fingerprint, kind: "write", writingMode: "polish", eventIndex: 0, model: "old", title: "标题", text: "正文" } };
+    normalizeLibrary(s);
+    validateLibrary(s);
+    expect(Object.keys(s.drafts)).toHaveLength(5);
+    for (const id of Object.keys(s.drafts).filter((id) => id !== "draft")) {
+      expect(s.drafts[id]).not.toHaveProperty("aiJob");
+      expect(s.drafts[id]).not.toHaveProperty("aiProposal");
+    }
+    expect(s.drafts.draft!.aiJob).toEqual(job);
+    expect(s.drafts.draft!.aiProposal?.writingMode).toBe("polish");
   });
 });

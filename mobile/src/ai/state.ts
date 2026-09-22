@@ -2,43 +2,19 @@ import { AIError } from "./error";
 import type { DailyQuestionCache, Library, LocalRecord, Stored, YearPicks, RecordDraft, RecordContent } from "../local/model";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { photoDayGroups } from "../local/photo-metadata";
-import { clusterPlaces } from "../local/places";
 import { dateLabel, toDayKey } from "../local/dates";
 import { monthKey, recordTitle, yearKey } from "../local/model";
-import type { AIGroup, AIJob, AIProposal, AIResult, WritingMode } from "./types";
-/** 单次请求送给服务端的照片上限，与服务端 photos 契约一致；分批切块与单批写作共用。 */
-export const PHOTO_REQUEST_LIMIT = 20;
-/** 一份草稿一次 AI 作业的照片上限，超出请分几份草稿；分批路径按 PHOTO_REQUEST_LIMIT 切块，因此不是单次请求的上限。 */
-export const PHOTO_JOB_LIMIT = 100;
+import type { AIJob, AIProposal, AIResult, WritingMode } from "./types";
 /** 单次润色的正文上限；超限必须明确提示，不允许静默截断。与服务端一致。 */
 export const POLISH_BODY_LIMIT = 2000;
 /** 服务端对 context 的整体上限；标题过长时先在本机说明，避免笼统的输入无效。 */
 export const POLISH_CONTEXT_LIMIT = 4000;
-/** 分组请求覆盖草稿里的全部照片，写作请求只覆盖选中的这件事。 */
-export function requestImageIds(
-  kind: "group" | "write",
-  selectedMediaIds: string[] | undefined,
-  draft: RecordDraft,
-  media: Library["media"],
-): string[] {
-  return (
-    kind === "write" ? (selectedMediaIds ?? []) : draft.content.mediaIds
-  ).filter((id) => media[id]?.kind === "image");
-}
-export function sourceFingerprint(draft: RecordDraft, media: Library["media"]) {
+export function sourceFingerprint(draft: RecordDraft) {
   return bytesToHex(
     sha256(
       new TextEncoder().encode(
         JSON.stringify({
           content: draft.content,
-          events: draft.photoEvents,
-          group: draft.groupPhotosByDay,
-          photos: draft.content.mediaIds.map((id) => ({
-            id,
-            hash: media[id]?.sha256,
-            metadata: media[id]?.photoMetadata,
-          })),
         }),
       ),
     ),
@@ -69,9 +45,9 @@ export function polishRequest(event: {
     };
   return { context };
 }
-const modeOf = (value: { writingMode?: WritingMode }): WritingMode =>
-  value.writingMode ?? "generate";
-/** 生成与润色即使输入指纹相同也不能复用彼此的请求与结果。 */
+const modeOf = (value: { writingMode: WritingMode }): WritingMode =>
+  value.writingMode;
+/** 不同写作模式即使输入指纹相同也不能复用彼此的请求与结果。 */
 export function sameJob(
   previous: AIJob | undefined,
   next: Omit<AIJob, "steps">,
@@ -85,59 +61,21 @@ export function sameJob(
     modeOf(previous) === modeOf(next)
   );
 }
-/** 采用建议时写回的位置：分组建议按事情写回，其余直接写 content。 */
+/** 采用建议只写回当前草稿的标题与正文。 */
 export function proposalPatch(
   draft: RecordDraft,
-  media: Library["media"],
   proposal: AIProposal,
   part?: "title" | "text",
-):
-  | Pick<RecordDraft, "content">
-  | Pick<RecordDraft, "photoEvents" | "groupPhotosByDay"> {
-  const accepted =
-    part === "title"
-      ? { ...proposal, text: undefined }
-      : part === "text"
-        ? { ...proposal, title: undefined }
-        : proposal;
-  const events = proposalEvents(draft, media, accepted);
-  // 分组建议必须按事情写回，否则只有第一组留在草稿里、其余照片会被丢掉。
-  const grouped =
-    !draft.recordId &&
-    (proposal.kind === "group" ||
-      (draft.groupPhotosByDay && draft.content.mediaIds.length));
-  if (!grouped) {
-    const content = events[0];
-    if (!content) throw new Error("这件事已改变，请重新生成。");
-    return { content };
-  }
-  return { photoEvents: events, groupPhotosByDay: true };
-}
-/** 在分组预览中调整一张照片的归属；每张照片仍恰好归属一次。 */
-export function moveProposalPhoto(
-  proposal: AIProposal,
-  mediaId: string,
-  targetIndex: number,
-): AIProposal {
-  if (proposal.kind !== "group" || !proposal.groups) return proposal;
-  const groups = proposal.groups.map((g) => ({ ...g, photoIds: [...g.photoIds] }));
-  const source = groups.find((g) => g.photoIds.includes(mediaId));
-  const target = groups[targetIndex];
-  if (!source || !target || source === target) return proposal;
-  target.photoIds.push(mediaId);
-  source.photoIds = source.photoIds.filter((id) => id !== mediaId);
-  return { ...proposal, groups: groups.filter((g) => g.photoIds.length) };
+): Pick<RecordDraft, "content"> {
+  const accepted = part === "title" ? { ...proposal, text: undefined }
+    : part === "text" ? { ...proposal, title: undefined } : proposal;
+  return { content: proposalEvents(draft, accepted)[0]! };
 }
 export function validateResult(
   value: unknown,
-  kind: "group" | "write",
-  ids: string[],
-  mode?: WritingMode,
+  mode: WritingMode,
 ): AIResult {
-  if (
-    kind === "write" &&
-    (mode === "ask" || mode === "question")
-  ) {
+  if (mode === "ask" || mode === "question") {
     const invalid = () => new AIError("INVALID_RESULT", "AI 问得不合规矩，请重试。");
     if (!value || typeof value !== "object") throw invalid();
     const result = value as AIResult;
@@ -161,137 +99,16 @@ export function validateResult(
   }
   if (!value || typeof value !== "object") throw new Error("AI 建议无效。");
   const result = value as AIResult;
-  if (kind === "write") {
-    if (
-      typeof result.title !== "string" ||
-      result.title.length > 100 ||
-      typeof result.text !== "string" ||
-      result.text.length > 2000
-    )
-      throw new Error("AI 文案不完整。");
-    return { title: result.title, text: result.text };
-  }
   if (
-    !Array.isArray(result.groups) ||
-    !result.groups.length ||
-    result.groups.length > 100
-  )
-    throw new Error("AI 分组不完整。");
-  const groups = result.groups;
-  for (const g of groups)
-    if (
-      !g ||
-      typeof g.title !== "string" ||
-      g.title.length > 100 ||
-      typeof g.summary !== "string" ||
-      g.summary.length > 600 ||
-      !Array.isArray(g.photoIds) ||
-      !g.photoIds.length ||
-      g.photoIds.some((id) => typeof id !== "string")
-    )
-      throw new Error("AI 分组内容无效。");
-  const actual = groups.flatMap((g) => g.photoIds);
-  if (
-    actual.length !== ids.length ||
-    new Set(actual).size !== actual.length ||
-    actual.some((id) => !ids.includes(id))
-  )
-    throw new Error("AI 分组有遗漏或重复，请重试。");
-  return { groups };
+    typeof result.title !== "string" || result.title.length > 100 ||
+    typeof result.text !== "string" || result.text.length > 2000
+  ) throw new Error("AI 文案不完整。");
+  return { title: result.title, text: result.text };
 }
-export function proposalEvents(
-  draft: RecordDraft,
-  media: Library["media"],
-  proposal: AIProposal,
-): RecordContent[] {
-  if (sourceFingerprint(draft, media) !== proposal.fingerprint)
-    throw new Error("你已修改照片或记录内容，请重新生成建议，当前编辑已保留。");
-  const existing = photoDayGroups(draft, media);
-  if (proposal.kind === "write") {
-    const selected = existing[proposal.eventIndex];
-    if (!selected) throw new Error("这件事已改变，请重新生成。");
-    existing[proposal.eventIndex] = {
-      ...selected,
-      title: proposal.title ?? selected.title,
-      text: proposal.text ?? selected.text,
-    };
-    return existing;
-  }
-  const images = draft.content.mediaIds.filter(
-    (id) => media[id]?.kind === "image",
-  );
-  const groups = validateResult(proposal, "group", images).groups!;
-  const mapped = groups.map((g): RecordContent => {
-    const dated = g.photoIds
-      .map((id) => media[id]?.photoMetadata?.capturedAt)
-      .filter((date): date is string => !!date);
-    if (new Set(dated.map((date) => date.slice(0, 10))).size > 1)
-      throw new Error("建议混合了不同日期，请重新整理。");
-    // Existing text stays with its original event; do not duplicate or silently discard edits.
-    const source = existing.find((e) =>
-      e.mediaIds.some((id) => g.photoIds.includes(id)),
-    );
-    const location = source?.location ?? "";
-    return {
-      title: g.title,
-      text: "",
-      date: dated[0] ?? source?.date ?? draft.content.date,
-      location,
-      first: false,
-      personIds: draft.content.personIds
-        ? [...draft.content.personIds]
-        : undefined,
-      quote: draft.content.quote,
-      by: source?.by ?? draft.content.by,
-      mediaIds: g.photoIds,
-      coverId: g.photoIds[0] ?? null,
-    };
-  });
-  // Preserve each existing caption once, in the new event containing its first media item.
-  for (const event of existing) {
-    const target = mapped.find((g) =>
-      event.mediaIds.some((id) => g.mediaIds.includes(id)),
-    );
-    if (target && event.text.trim())
-      target.text = [target.text, event.text].filter(Boolean).join("\n\n");
-    if (target && event.title.trim()) target.title = event.title;
-  }
-  for (const event of existing) {
-    const otherIds = event.mediaIds.filter((id) => media[id]?.kind !== "image");
-    if (otherIds.length)
-      mapped.push({
-        ...event,
-        mediaIds: otherIds,
-        coverId: null,
-        text: event.mediaIds.some((id) => media[id]?.kind === "image")
-          ? ""
-          : event.text,
-      });
-  }
-  return mapped;
-}
-export function sameDayChunks(ids: string[], media: Library["media"]) {
-  const days = new Map<string, string[]>();
-  for (const id of ids) {
-    const key = media[id]?.photoMetadata?.capturedAt?.slice(0, 10) ?? "undated";
-    const group = days.get(key) ?? [];
-    group.push(id);
-    days.set(key, group);
-  }
-  return [...days].map(([day, photos]) => ({
-    day,
-    chunks: photos
-      .sort((a, b) =>
-        (media[a]?.photoMetadata?.capturedAt ?? "").localeCompare(
-          media[b]?.photoMetadata?.capturedAt ?? "",
-        ),
-      )
-      .reduce<string[][]>((chunks, id, index) => {
-        if (index % PHOTO_REQUEST_LIMIT === 0) chunks.push([]);
-        chunks[chunks.length - 1]!.push(id);
-        return chunks;
-      }, []),
-  }));
+export function proposalEvents(draft: RecordDraft, proposal: AIProposal): RecordContent[] {
+  if (sourceFingerprint(draft) !== proposal.fingerprint)
+    throw new Error("你已修改记录内容，请重新生成建议，当前编辑已保留。");
+  return [{ ...draft.content, title: proposal.title ?? draft.content.title, text: proposal.text ?? draft.content.text }];
 }
 export function validateStoredAI(value: unknown): boolean {
   if (value === undefined) return true;
@@ -300,9 +117,9 @@ export function validateStoredAI(value: unknown): boolean {
   if (
     typeof v.fingerprint !== "string" ||
     !/^[a-f0-9]{64}$/.test(v.fingerprint) ||
-    !["group", "write"].includes(String(v.kind)) ||
+    v.kind !== "write" ||
     !Number.isInteger(v.eventIndex) ||
-    (v.writingMode !== undefined && !["generate", "polish", "recap", "ask", "question", "editor"].includes(String(v.writingMode))) ||
+    !["polish", "recap", "ask", "question", "editor"].includes(String(v.writingMode)) ||
     typeof v.model !== "string"
   )
     return false;
@@ -313,22 +130,9 @@ export function validateStoredAI(value: unknown): boolean {
         if (typeof step.key !== "string" || typeof step.requestId !== "string")
           return false;
         if (step.result)
-          validateResult(
-            step.result,
-            step.result.groups ? "group" : "write",
-            step.result.groups?.flatMap((g: AIGroup) => g.photoIds) ?? [],
-            v.writingMode as WritingMode | undefined,
-          );
+          validateResult(step.result, v.writingMode as WritingMode);
       }
-    } else
-      validateResult(
-        v,
-        v.kind as "group" | "write",
-        Array.isArray(v.groups)
-          ? v.groups.flatMap((g: AIGroup) => g.photoIds)
-          : [],
-        v.writingMode as WritingMode | undefined,
-      );
+    } else validateResult(v, v.writingMode as WritingMode);
     return true;
   } catch {
     return false;
@@ -367,20 +171,6 @@ export function retryPlan(errorCode: string | null): {
         notice: "这次请求已结束，结果无法恢复；点「重新生成」才会计入今日额度。",
       }
     : { retryOriginal: true, notice: "" };
-}
-
-/** Only anonymous proximity labels leave the phone; precise coordinates remain local. */
-export function localPlaceTags(
-  ids: string[],
-  media: Library["media"],
-): Map<string, string> {
-  const tags = new Map<string, string>();
-  const list = ids.map((id) => media[id]).filter((m) => !!m);
-  clusterPlaces(list).forEach((cluster, index) => {
-    for (const mediaId of cluster.mediaIds)
-      tags.set(mediaId, `地点组${index + 1}`);
-  });
-  return tags;
 }
 
 /** 显式投影标题与日期：即使调用者传来完整记录，也不序列化其他字段。 */

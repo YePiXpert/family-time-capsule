@@ -64,9 +64,9 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("说一段").waitUntilExists(timeout: 20))
         XCTAssertTrue(element("ai-open").waitUntilExists(timeout: 20)); shot("ai-entry")
         tap("ai-open")
-        XCTAssertTrue(element("ai-generate").waitUntilExists(timeout: 20)); shot("ai-panel")
-        tap("ai-generate")
-        XCTAssertTrue(element("ai-join").waitUntilExists(timeout: 20)); shot("ai-enrollment-from-photo")
+        XCTAssertTrue(element("ai-polish").waitUntilExists(timeout: 20)); shot("ai-panel")
+        tap("ai-polish")
+        XCTAssertTrue(element("ai-join").waitUntilExists(timeout: 20)); shot("ai-enrollment-from-polish")
         // Opening the editor persists a draft. Discard this enrollment-only draft
         // so the later backup check can still require no unfinished edits.
         // 原生页头已下线：返回是 Page 自绘的「‹」图标钮（page-back）。
