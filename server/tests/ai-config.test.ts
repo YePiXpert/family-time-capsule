@@ -68,12 +68,12 @@ test('authorized Token Plan exhaustion never switches to an ordinary paid endpoi
  const config=loadMiMoConfig('AI',{...f.env,AI_BASE_URL:'https://token-plan-cn.xiaomimimo.com/v1',AI_ACCESS:'token-plan-authorized'});
  const urls:string[]=[];
  t.mock.method(globalThis,'fetch',async(url:URL)=>{urls.push(url.href);return new Response('',{status:429});});
- await assert.rejects(mimoProvider(config)('write',inputSchema.parse({requestId:randomUUID(),writingMode:'question',context:'合成上下文'})),{code:'UPSTREAM_UNAVAILABLE',status:429});
+ await assert.rejects(mimoProvider(config)(inputSchema.parse({requestId:randomUUID(),writingMode:'question',context:'合成上下文'})),{code:'UPSTREAM_UNAVAILABLE',status:429});
  assert.deepEqual(urls,['https://token-plan-cn.xiaomimimo.com/v1/chat/completions']);
 });
 
 test('live probes refuse to run without explicit invocation before reading any credential',()=>{
- for(const script of ['probe.ts','probe-text.ts']){
+ for(const script of ['probe-text.ts']){
   const r=spawnSync(process.execPath,['scripts/'+script],{cwd:new URL('..',import.meta.url),encoding:'utf8'});
   assert.notEqual(r.status,0);assert.match(r.stderr,/Real calls disabled/);assert.equal(r.stdout,'');
  }

@@ -71,40 +71,32 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
  });
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
  app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'per-mode',thinkingPolicy:THINKING_POLICY,models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
- for(const kind of ['group','write'] as const)app.post(`/api/v1/ai/${kind}`,async req=>{
+ app.post('/api/v1/ai/write',async req=>{
   const member=auth(req.headers.authorization);
   // 在 schema 的硬上限之前给超长 editor 清单返回该模式的提示。
-  const raw=req.body as {writingMode?:unknown;context?:unknown}|null;
+  const raw=req.body as {writingMode?:unknown;context?:unknown;photos?:unknown}|null;
   if(typeof raw?.context==='string'&&raw.context.length>(raw.writingMode==='editor'?60000:4000))throw new Problem(400,'INVALID_INPUT',raw.writingMode==='editor'?'这一年的记录太多，请分月送。':'内容太长');
+  if(Array.isArray(raw?.photos)&&raw.photos.length)throw new Problem(400,'INVALID_INPUT','AI 不再接收照片，请只发送文字。');
   const input=inputSchema.parse(req.body);
-  const textMode=input.writingMode==='ask'||input.writingMode==='question'||input.writingMode==='letter'||input.writingMode==='editor';
-  if(input.writingMode==='ask'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请先写几句再让 AI 追问。');
-  if(input.writingMode==='question'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请提供最近的记录标题。');
-  if(input.writingMode==='letter'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请提供落款与拆封日期。');
-  if(input.writingMode==='editor'&&(kind!=='write'||input.mode!=='photos'||input.photos.length||!input.context.trim()))throw new Problem(400,'INVALID_INPUT','请先送这一年的记录清单。');
+  if(input.writingMode==='ask'&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请先写几句再让 AI 追问。');
+  if(input.writingMode==='question'&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请提供最近的记录标题。');
+  if(input.writingMode==='editor'&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请先送这一年的记录清单。');
   if(input.writingMode==='editor')parseEditorContext(input.context);
-  const polish=kind==='write'&&input.writingMode==='polish';
-  const recap=kind==='write'&&input.writingMode==='recap';
-  if(polish&&(!input.context.trim()||input.photos.length||input.mode!=='photos'))throw new Problem(400,'INVALID_INPUT','请先写下正文再润色。');
-  if(recap&&(!input.context.trim()||input.photos.length||input.mode!=='photos'))throw new Problem(400,'INVALID_INPUT','请先补全这一年的记录清单再起草寄语。');
+  const polish=input.writingMode==='polish';
+  const recap=input.writingMode==='recap';
+  if(polish&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请先写下正文再润色。');
+  if(recap&&!input.context.trim())throw new Problem(400,'INVALID_INPUT','请先补全这一年的记录清单再起草寄语。');
   if(polish&&polishBody(input.context).length>POLISH_BODY_LIMIT)throw new Problem(400,'POLISH_TOO_LONG',`单次润色的正文超过 ${POLISH_BODY_LIMIT} 字上限，请精简后再试。`);
-  if((input.mode==='photos'&&!input.photos.length&&!polish&&!recap&&!textMode)||(input.mode==='merge'&&(kind!=='group'||input.photos.length||!input.groups?.length)))throw new Problem(400,'INVALID_INPUT','请先选择照片。');
-  const ids=input.mode==='photos'?input.photos.map(p=>p.id):input.groups!.flatMap(g=>g.photoIds);
-  if(new Set(ids).size!==ids.length||ids.length>100)throw new Problem(400,'INVALID_INPUT','照片列表重复或超出限制。');
-  for(const photo of input.photos) {
-   const bytes=Buffer.from(photo.image.split(',')[1]!,'base64');
-   if(bytes.length>512*1024||bytes.length<4||bytes[0]!==255||bytes[1]!==216)throw new Problem(400,'INVALID_IMAGE','请发送有效的 JPEG 缩略图。');
-  }
   const cacheKey=member.id+':'+input.requestId;
   for(const [key,value]of cache)if(value.expires<Date.now())cache.delete(key);
-  const status=store.reserve(member,input.requestId,digest(kind+JSON.stringify(input)),input.photos.length,kind==='write'?1:0,input.model);
+  const status=store.reserve(member,input.requestId,digest('write'+JSON.stringify(input)),0,1,input.model);
   if(status!=='new') {
    if(status==='completed'&&cache.has(cacheKey))return cache.get(cacheKey)!.value;
    throw new Problem(409,status==='processing'?'REQUEST_PENDING':'RESULT_EXPIRED',status==='processing'?'这次请求仍在处理中，请稍后重试。':'这次请求已结束，结果无法恢复；可重新生成，原草稿不变。');
   }
   try {
-   const output=await provider(kind,input);
-   const result=parseResult(output.result,kind,input);
+   const output=await provider(input);
+   const result=parseResult(output.result,input);
    store.finish(member.id,input.requestId,output.tokens);
    const value={requestId:input.requestId,model:input.model,...result};
    cache.set(cacheKey,{expires:Date.now()+600000,value});

@@ -4,16 +4,15 @@ import { PROMPTS } from './prompts.ts';
 import { Problem } from './store.ts';
 import { parseResult, type AIInput } from './contracts.ts';
 export type ProviderResult={result:ReturnType<typeof parseResult>;tokens:number|null};
-export type Provider=(kind:'group'|'write',input:AIInput)=>Promise<ProviderResult>;
+export type Provider=(input:AIInput)=>Promise<ProviderResult>;
 export function mimoProvider(config:MiMoConfig):Provider {
  validateMiMoConfig(config,MODEL_ID);
  const endpoint=new URL(config.baseUrl+'/chat/completions');
- return async (kind,input) => {
-  const mode=kind==='write'?(input.writingMode??'generate'):'group';
+ return async (input) => {
+  const mode=input.writingMode;
   const instructions=PROMPTS[mode];
-  const task=mode==='ask'?'像访谈者追问一到三个问题，不写正文':mode==='question'?'给今天一个小问题':mode==='letter'?'给写信前的两到三个问题':mode==='editor'?'提一个目录建议，不改原文':mode==='polish'?'润色家人原文，保留原意与事实':mode==='recap'?'根据这一年的记录标题与第一次清单写年度寄语草稿':input.mode==='merge'?'合并属于同一天同一件事情的分组摘要，保留全部照片ID':'分析所选照片';
-  const content:unknown[]=[{type:'text',text:JSON.stringify({task,userContext:input.context,groups:input.groups})}];
-  for(const photo of input.photos) content.push({type:'text',text:JSON.stringify({photoId:photo.id,capturedAt:photo.date??null,localPlaceGroup:photo.place??null})},{type:'image_url',image_url:{url:photo.image}});
+  const task=mode==='ask'?'像访谈者追问一到三个问题，不写正文':mode==='question'?'给今天一个小问题':mode==='editor'?'提一个目录建议，不改原文':mode==='polish'?'润色家人原文，保留原意与事实':'根据这一年的记录标题与第一次清单写年度寄语草稿';
+  const content:unknown[]=[{type:'text',text:JSON.stringify({task,userContext:input.context})}];
   let response:Response,raw:string;
   try {
    response=await fetch(endpoint,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:`Bearer ${readMiMoKey(config)}`},body:JSON.stringify({model:config.model,messages:[{role:'system',content:instructions},{role:'user',content}],max_completion_tokens:MAX_COMPLETION_TOKENS,stream:false,response_format:{type:'json_object'},thinking:{type:THINKING_POLICY[mode]}}),signal:AbortSignal.timeout(100000)});
@@ -25,7 +24,7 @@ export function mimoProvider(config:MiMoConfig):Provider {
   try {
    const data=JSON.parse(raw),choice=data.choices?.[0],text=choice?.message?.content;
    if(choice?.finish_reason!=='stop'||typeof text!=='string'||!text.trim())throw new Error('incomplete result');
-   return {result:parseResult(JSON.parse(text),kind,input),tokens:Number.isSafeInteger(data.usage?.total_tokens)&&data.usage.total_tokens>=0?data.usage.total_tokens:null};
+   return {result:parseResult(JSON.parse(text),input),tokens:Number.isSafeInteger(data.usage?.total_tokens)&&data.usage.total_tokens>=0?data.usage.total_tokens:null};
   } catch(e) { if(e instanceof Problem)throw e;throw new Problem(502,'INVALID_RESULT','AI 返回格式不完整，请重试或手动整理。'); }
  };
 }

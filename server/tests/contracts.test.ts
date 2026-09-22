@@ -13,35 +13,31 @@ test('questions trim whitespace and count Unicode code points',()=>{
  assert.equal(checkQuestion('𠮷'.repeat(30)),'𠮷'.repeat(30));
  invalid(()=>checkQuestion('𠮷'.repeat(31)));
 });
-for(const mode of ['generate','polish','recap'] as const)test(`${mode} retains title/text limits`,()=>{
- assert.deepEqual(parseResult({title:'标题',text:'正文'},'write',input(mode)),{title:'标题',text:'正文'});
- assert.throws(()=>parseResult({title:'字'.repeat(101),text:''},'write',input(mode)));
- assert.throws(()=>parseResult({title:'',text:'字'.repeat(2001)},'write',input(mode)));
+for(const mode of ['polish','recap'] as const)test(`${mode} retains title/text limits`,()=>{
+ assert.deepEqual(parseResult({title:'标题',text:'正文'},input(mode)),{title:'标题',text:'正文'});
+ assert.throws(()=>parseResult({title:'字'.repeat(101),text:''},input(mode)));
+ assert.throws(()=>parseResult({title:'',text:'字'.repeat(2001)},input(mode)));
 });
 test('ask accepts one through three questions and a boolean first',()=>{
- for(const n of [1,2,3])assert.deepEqual(parseResult({questions:Array(n).fill('谁在旁边？'),first:true},'write',input('ask')),{questions:Array(n).fill('谁在旁边？'),first:true});
+ for(const n of [1,2,3])assert.deepEqual(parseResult({questions:Array(n).fill('谁在旁边？'),first:true},input('ask')),{questions:Array(n).fill('谁在旁边？'),first:true});
 });
-for(const [name,value] of Object.entries({empty:{questions:[],first:false},four:{questions:Array(4).fill('谁在旁边？'),first:false},first:{questions:['谁在旁边？'],first:'false'},missing:{questions:['谁在旁边？']},extra:{questions:['谁在旁边？'],first:false,text:'正文'}}))test(`ask rejects ${name}`,()=>invalid(()=>parseResult(value,'write',input('ask'))));
+for(const [name,value] of Object.entries({empty:{questions:[],first:false},four:{questions:Array(4).fill('谁在旁边？'),first:false},first:{questions:['谁在旁边？'],first:'false'},missing:{questions:['谁在旁边？']},extra:{questions:['谁在旁边？'],first:false,text:'正文'}}))test(`ask rejects ${name}`,()=>invalid(()=>parseResult(value,input('ask'))));
 test('question accepts only its single named field',()=>{
- assert.deepEqual(parseResult({question:'谁在旁边？'},'write',input('question')),{question:'谁在旁边？'});
- invalid(()=>parseResult({question:'谁在旁边？',text:'正文'},'write',input('question')));
- invalid(()=>parseResult({question:12},'write',input('question')));
+ assert.deepEqual(parseResult({question:'谁在旁边？'},input('question')),{question:'谁在旁边？'});
+ invalid(()=>parseResult({question:'谁在旁边？',text:'正文'},input('question')));
+ invalid(()=>parseResult({question:12},input('question')));
 });
-test('letter accepts two or three questions and rejects one or four',()=>{
- for(const n of [2,3])assert.deepEqual(parseResult({questions:Array(n).fill('谁在旁边？')},'write',input('letter')),{questions:Array(n).fill('谁在旁边？')});
- for(const n of [1,4])invalid(()=>parseResult({questions:Array(n).fill('谁在旁边？')},'write',input('letter')));
-});
-for(const mode of ['ask','question','letter'] as const)test(`${mode} applies question content validation`,()=>{
- const value=mode==='ask'?{questions:['温馨吗？'],first:false}:mode==='question'?{question:'温馨吗？'}:{questions:['谁在旁边？','温馨吗？']};
- invalid(()=>parseResult(value,'write',input(mode)));
+for(const mode of ['ask','question'] as const)test(`${mode} applies question content validation`,()=>{
+ const value=mode==='ask'?{questions:['温馨吗？'],first:false}:{question:'温馨吗？'};
+ invalid(()=>parseResult(value,input(mode)));
 });
 test('editor accepts grounded picks and verbatim quotes including family banned words',()=>{
- assert.deepEqual(parseResult(editorResult,'write',input('editor')),editorResult);
+ assert.deepEqual(parseResult(editorResult,input('editor')),editorResult);
  const value=structuredClone(editorResult);value.chapters[0]!.quote={recordId:'r1',text:' 温馨 '};
- const result=parseResult(value,'write',input('editor')) as typeof editorResult;
+ const result=parseResult(value,input('editor')) as typeof editorResult;
  assert.equal(result.chapters[0]!.quote.text,'温馨');
  value.chapters[0]!.quote.text=editorContext.records[0]!.title;
- assert.doesNotThrow(()=>parseResult(value,'write',input('editor')));
+ assert.doesNotThrow(()=>parseResult(value,input('editor')));
 });
 const badEditors:Record<string,(value:typeof editorResult)=>void>={
  unknown:v=>{v.chapters[0]!.picks=['missing'];},
@@ -67,11 +63,11 @@ const badEditors:Record<string,(value:typeof editorResult)=>void>={
 };
 for(const [name,mutate] of Object.entries(badEditors))test(`editor rejects ${name}`,()=>{
  const value=structuredClone(editorResult);mutate(value);
- invalid(()=>parseResult(value,'write',input('editor')),'AI 的目录建议不合规矩，请重试。');
+ invalid(()=>parseResult(value,input('editor')),'AI 的目录建议不合规矩，请重试。');
 });
 test('editor accepts optional quote and Unicode limits',()=>{
  const value={title:'𠮷'.repeat(4),chapters:[{month:'2026-09',picks:['r1']}],notes:'字'.repeat(200)};
- assert.deepEqual(parseResult(value,'write',input('editor')),value);
+ assert.deepEqual(parseResult(value,input('editor')),value);
 });
 test('editor input rejects malformed, oversized and ambiguous record tables',()=>{
  const record=editorContext.records[0]!;
@@ -81,7 +77,7 @@ test('editor input rejects malformed, oversized and ambiguous record tables',()=
 });
 test('editor quote can come from an unpicked record in the same month and be 40 code points',()=>{
  const value=structuredClone(editorResult);value.chapters[0]!.picks=['r2'];value.chapters[0]!.quote.text='字'.repeat(40);
- assert.deepEqual(parseResult(value,'write',input('editor')),value);
+ assert.deepEqual(parseResult(value,input('editor')),value);
 });
 test('editor record fields enforce their bounds and unknown keys are rejected',()=>{
  const record=editorContext.records[0]!;
@@ -90,4 +86,12 @@ test('editor record fields enforce their bounds and unknown keys are rejected',(
  }
  const {by,...withoutBy}=record;
  assert.equal(parseEditorContext(JSON.stringify({...editorContext,records:[withoutBy]})).records.length,1);
+});
+
+test('input requires one of five writing modes, accepts empty photos and stays strict',()=>{
+ const base={requestId:randomUUID(),writingMode:'polish',context:'原文'};
+ assert.deepEqual(inputSchema.parse(base).photos,[]);
+ assert.deepEqual(inputSchema.parse({...base,photos:[]}).photos,[]);
+ for(const writingMode of ['polish','recap','ask','question','editor'])assert.equal(inputSchema.parse({...base,writingMode}).writingMode,writingMode);
+ for(const extra of [{writingMode:undefined},{writingMode:'generate'},{writingMode:'letter'},{photos:[{}]},{photos:null},{mode:'photos'},{groups:[]},{extra:true}])assert.equal(inputSchema.safeParse({...base,...extra}).success,false);
 });

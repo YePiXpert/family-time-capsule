@@ -7,8 +7,8 @@ export const LEGACY_MODEL_IDS = [MODEL_ID, 'mimo-v2.6-flash', 'mimo-v2.5', 'deep
 
 // Owner-selected initial policy, not a claim of measured optimal quality/latency.
 export const THINKING_POLICY = {
- question:'disabled', letter:'disabled', ask:'disabled', polish:'disabled',
- group:'enabled', generate:'enabled', recap:'enabled', editor:'enabled',
+ question:'disabled', ask:'disabled', polish:'disabled',
+ recap:'enabled', editor:'enabled',
 } as const;
 // Shared by reasoning and final JSON; preserve the existing annual-editor budget.
 export const MAX_COMPLETION_TOKENS = 16384;
