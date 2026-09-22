@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Switch, View } from "react-native";
+import { Alert, Pressable, Switch, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -7,7 +7,7 @@ import { File } from "expo-file-system";
 import { useLibrary, useStore, useSyncStatus } from "./context";
 import { useNav } from "./navigation";
 import { getToken } from "../ai/client";
-import { birthdayLabel, dateTimeLabel } from "./dates";
+import { ageLine, birthdayLabel, dateTimeLabel } from "./dates";
 import { preserveMedia } from "./files";
 import {
   BackupStopped,
@@ -37,7 +37,9 @@ import {
   type RemoteState,
 } from "../sync/state";
 import { changeAvgMs } from "./health";
-import { APP_NAME } from "./brand";
+import { APP_NAME, CHILD_FALLBACK } from "./brand";
+import { Stamp } from "./Shelf";
+import { JournalIcon } from "../components/JournalIcon";
 import {
   BY_PRESETS,
   referencedMedia,
@@ -58,16 +60,18 @@ import {
   Text,
   dateLabel,
   messageOf,
+  serif,
   useStyles,
   useTheme,
 } from "./ui";
 import { Photo } from "./Media";
-/** 「我的」入口页：分组设置行，副题把最要紧的状态带出来，不用点进去看。 */
+/** 「我的」入口页：顶部宝宝档案卡，下面分组设置行，副题把最要紧的状态带出来，不用点进去看。 */
 export function Settings() {
   const sync = useSyncStatus();
   const state = useLibrary(),
     nav = useNav(),
-    s = useStyles();
+    s = useStyles(),
+    { colors } = useTheme();
   const [aiState, setAiState] = useState<string | undefined>(undefined);
   useEffect(() => {
     let live = true;
@@ -85,23 +89,68 @@ export function Settings() {
   }, []);
   const name = state.profile.name || "宝宝",
     birthday = birthdayLabel(state.profile.birthday),
+    age = ageLine(state.profile.birthday),
     exportedDays = daysSinceExport(state),
     bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0),
     theme = { auto: "跟随系统", light: "浅色", dark: "深色" }[
       state.settings.theme
     ];
+  const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
   return (
     <Page title="我的">
-      <Text style={s.muted}>{APP_NAME} · 入淮清洛渐漫漫</Text>
+      <Pressable
+        testID="settings-profile"
+        accessibilityRole="button"
+        accessibilityLabel={`${name}的资料`}
+        accessibilityValue={{
+          text: birthday ? (age ?? `生日 ${birthday}`) : "还没填生日",
+        }}
+        onPress={() => nav.navigate("Profile")}
+        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+      >
+        <Card
+          style={{ flexDirection: "row", alignItems: "center", gap: 14 }}
+        >
+          <Stamp size={56} inset={4}>
+            <Text
+              style={{
+                fontFamily: serif,
+                fontSize: 24,
+                lineHeight: 30,
+                color: colors.accent,
+                fontWeight: "600",
+              }}
+            >
+              {initial}
+            </Text>
+          </Stamp>
+          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+            <Text
+              numberOfLines={1}
+              style={{
+                fontFamily: serif,
+                fontSize: 20,
+                lineHeight: 26,
+                fontWeight: "600",
+                letterSpacing: 0.3,
+              }}
+            >
+              {name}
+            </Text>
+            <Text numberOfLines={1} style={s.muted}>
+              {birthday ? (age ?? `生日 ${birthday}`) : "还没填生日，点这里补上"}
+            </Text>
+          </View>
+          <JournalIcon name="chevron-right" color={colors.muted} size={18} />
+        </Card>
+      </Pressable>
+      <Text style={[s.footnote, { textAlign: "center" }]}>
+        {APP_NAME} · 入淮清洛渐漫漫
+      </Text>
       <SettingsGroup>
         <SettingsRow
-          icon="person"
-          label={`${name}的资料`}
-          subtitle={birthday ? `生日 ${birthday}` : "还没填生日"}
-          onPress={() => nav.navigate("Profile")}
-        />
-        <SettingsRow
           icon="edit"
+          tone="apricot"
           label="我的落款"
           subtitle={
             state.settings.by ? `—— ${state.settings.by}` : "还没定，记一刻时会问"
@@ -113,6 +162,7 @@ export function Settings() {
       <SettingsGroup title="资料">
         <SettingsRow
           icon="download"
+          tone="indigo"
           label="备份与恢复"
           subtitle={
             sync.conflicts > 0
@@ -135,6 +185,7 @@ export function Settings() {
         />
         <SettingsRow
           icon="file"
+          tone="pine"
           label="本机存储"
           subtitle={`照片和录音占用 ${(bytes / 1048576).toFixed(1)} MB`}
           onPress={() => nav.navigate("Storage")}
@@ -144,6 +195,7 @@ export function Settings() {
       <SettingsGroup title="家人与 AI">
         <SettingsRow
           icon="sparkle"
+          tone="apricot"
           label="AI 设置"
           subtitle={aiState}
           onPress={() => nav.navigate("AISettings")}
@@ -153,6 +205,7 @@ export function Settings() {
       <SettingsGroup title="应用">
         <SettingsRow
           icon="settings"
+          tone="indigo"
           label="外观设置"
           subtitle={state.settings.largeText ? `${theme} · 更大文字` : theme}
           onPress={() => nav.navigate("Appearance")}
