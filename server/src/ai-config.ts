@@ -15,8 +15,8 @@ const invalid=()=>new Error('Invalid MiMo configuration: check provider, model, 
 
 export function validateMiMoConfig(config:MiMoConfig,model:MiMoConfig['model']) {
  if(config.provider!=='mimo'||config.model!==model||!isAbsolute(config.keyFile))throw invalid();
- // No vendor fallback or arbitrary proxy. Token Plan requires an independently verified
- // official exception for this App; the flag records the operator's authorization only.
+ // No vendor fallback or arbitrary proxy. Token Plan requires explicit owner
+ // selection; the flag records that choice, not a claim of vendor permission.
  if(config.access==='payg-approved') {
   if(config.baseUrl!=='https://api.xiaomimimo.com/v1')throw invalid();
  } else if(config.access==='token-plan-authorized') {

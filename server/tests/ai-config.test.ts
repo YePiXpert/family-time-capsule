@@ -12,14 +12,14 @@ import { randomUUID } from 'node:crypto';
 function fixture(t:TestContext){
  const dir=mkdtempSync(join(tmpdir(),'anan-mimo-config-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const text=join(dir,'text-key'),asr=join(dir,'asr-key');writeFileSync(text,'ordinary-text-test-key');writeFileSync(asr,'ordinary-asr-test-key');
- const env={AI_PROVIDER:'mimo',AI_MODEL:'mimo-v2.6-flash',AI_BASE_URL:'https://api.xiaomimimo.com/v1',AI_KEY_FILE:text,AI_ACCESS:'payg-approved',TRANSCRIBE_PROVIDER:'mimo',TRANSCRIBE_MODEL:'mimo-v2.5-asr',TRANSCRIBE_BASE_URL:'https://api.xiaomimimo.com/v1',TRANSCRIBE_KEY_FILE:asr,TRANSCRIBE_ACCESS:'payg-approved'};
+ const env={AI_PROVIDER:'mimo',AI_MODEL:'mimo-v2.6-pro',AI_BASE_URL:'https://api.xiaomimimo.com/v1',AI_KEY_FILE:text,AI_ACCESS:'payg-approved',TRANSCRIBE_PROVIDER:'mimo',TRANSCRIBE_MODEL:'mimo-v2.5-asr',TRANSCRIBE_BASE_URL:'https://api.xiaomimimo.com/v1',TRANSCRIBE_KEY_FILE:asr,TRANSCRIBE_ACCESS:'payg-approved'};
  return {dir,text,asr,env};
 }
 test('only matching provider/model/address/credential/authorization tuples load, without network',t=>{
  const f=fixture(t);const fetch=t.mock.method(globalThis,'fetch',()=>{throw Error('must not send');});
- assert.equal(loadMiMoConfig('AI',f.env).model,'mimo-v2.6-flash');assert.equal(loadMiMoConfig('TRANSCRIBE',f.env).model,'mimo-v2.5-asr');
+ assert.equal(loadMiMoConfig('AI',f.env).model,'mimo-v2.6-pro');assert.equal(loadMiMoConfig('TRANSCRIBE',f.env).model,'mimo-v2.5-asr');
  for(const patch of [
-  {AI_PROVIDER:'deepseek'},{AI_MODEL:'deepseek-flash'},{AI_MODEL:'mimo-v2.5'},{AI_MODEL:'mimo-v2.6-pro'},{AI_MODEL:'mimo-v2.5-pro'},{AI_MODEL:'mimo-v2.5-asr'},
+  {AI_PROVIDER:'deepseek'},{AI_MODEL:'deepseek-flash'},{AI_MODEL:'mimo-v2.5'},{AI_MODEL:'mimo-v2.6-flash'},{AI_MODEL:'mimo-v2.5-pro'},{AI_MODEL:'mimo-v2.5-asr'},
   {AI_BASE_URL:'https://api.deepseek.com'},{AI_BASE_URL:'https://api.xiaomimimo.com.evil.invalid/v1'},
   {AI_BASE_URL:'https://secret@api.xiaomimimo.com/v1'},{AI_BASE_URL:'https://api.xiaomimimo.com/v1?key=secret'},
   {AI_BASE_URL:'http://api.xiaomimimo.com/v1'},{AI_BASE_URL:'http://cli-proxy-api:8317/v1'},
@@ -30,7 +30,7 @@ test('only matching provider/model/address/credential/authorization tuples load,
  for(const key of ['', 'tp-test-plan-key','contains whitespace']){writeFileSync(f.text,key);assert.throws(()=>loadMiMoConfig('AI',f.env),/Invalid MiMo configuration/);}
  assert.equal(fetch.mock.callCount(),0);
 });
-test('Token Plan needs an explicit official exception and matched endpoint/key, no payg fallback',t=>{
+test('Token Plan requires explicit owner selection and matched endpoint/key, no payg fallback',t=>{
  const f=fixture(t);writeFileSync(f.text,'tp-test-only-key');
  const env={...f.env,AI_BASE_URL:'https://token-plan-cn.xiaomimimo.com/v1',AI_ACCESS:'token-plan-authorized'};
  const c=loadMiMoConfig('AI',env);assert.equal(c.access,'token-plan-authorized');assert.equal(c.baseUrl,env.AI_BASE_URL);
@@ -44,7 +44,7 @@ test('ASR never inherits content credentials or model; injected provider respect
  const content=loadMiMoConfig('AI',env),asr=loadMiMoConfig('TRANSCRIBE',env);
  assert.equal(readMiMoKey(content),'ordinary-text-test-key');
  for(const field of ['TRANSCRIBE_PROVIDER','TRANSCRIBE_BASE_URL','TRANSCRIBE_KEY_FILE','TRANSCRIBE_ACCESS'])assert.throws(()=>loadMiMoConfig('TRANSCRIBE',{...env,[field]:''}));
- assert.throws(()=>loadMiMoConfig('TRANSCRIBE',{...env,TRANSCRIBE_MODEL:'mimo-v2.6-flash'}));
+ assert.throws(()=>loadMiMoConfig('TRANSCRIBE',{...env,TRANSCRIBE_MODEL:'mimo-v2.6-pro'}));
  assert.throws(()=>mimoProvider(asr));
  const fetch=t.mock.method(globalThis,'fetch',async(url:URL,options:RequestInit)=>{
   assert.equal(url.href,'https://token-plan-cn.xiaomimimo.com/v1/chat/completions');

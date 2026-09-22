@@ -457,7 +457,7 @@ export function AISettingsScreen() {
           ))}
         </>
       )}
-      <Text style={s.footnote}>由小米 MiMo 2.6 Flash 提供</Text>
+      <Text style={s.footnote}>由小米 MiMo 2.6 Pro 提供</Text>
     </Page>
   );
 }
