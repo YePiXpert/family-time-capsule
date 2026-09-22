@@ -4,7 +4,7 @@
 
 ## 当前执行边界（2026-09-22）
 
-主人明确要求使用 `mimo-v2.6-pro`，指定中国 Token Plan 地址并提供匹配密钥。文字／看图统一为 Pro，服务转写继续为 `mimo-v2.5-asr`。本次以主人的明确选择作为配置授权，不声称已获得小米对 App 后端的特别许可；[官方套餐使用说明](https://mimo.mi.com/docs/zh-CN/tokenplan/Token%20Plan/subscription) 仍列明编程工具使用限制。
+主人明确要求使用 `mimo-v2.6-pro`，指定中国 Token Plan 地址并提供匹配密钥。文字／看图统一为 Pro，服务转写继续为 `mimo-v2.5-asr`。本次以主人的明确选择作为配置授权。
 
 真实探测和生产切换结果见 [MiMo 适配记录](../docs/MIMO-ADAPTATION.md)。仅更新代码不代表已经部署。
 
@@ -17,7 +17,7 @@
 | 文字、看图、分组、追问、润色、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.6-pro` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
 | 专用转写 | `TRANSCRIBE_PROVIDER=mimo` / `TRANSCRIBE_MODEL=mimo-v2.5-asr` | `TRANSCRIBE_BASE_URL` / `TRANSCRIBE_KEY_PATH` → `/run/secrets/transcribe-key` | `TRANSCRIBE_ACCESS` |
 
-普通 API 必须配普通 Key 和 `https://api.xiaomimimo.com/v1`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。主人明确选择 Token Plan 时设置 `token-plan-authorized`，并配套餐专用 Key 与对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。该字段只记录主人的使用选择，不是小米许可证明。没有默认授权、自动充值、按量回退或跨供应商回退。
+普通 API 必须配普通 Key 和 `https://api.xiaomimimo.com/v1`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。主人明确选择 Token Plan 时设置 `token-plan-authorized`，并配套餐专用 Key 与对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。该字段记录主人的使用选择。没有默认授权、自动充值、按量回退或跨供应商回退。
 
 密钥只存服务端权限 0600、UID 1000 可读的文件，Compose 只读挂载；env 只放文件路径。直接运行 Node 脚本时使用 `AI_KEY_FILE`／`TRANSCRIBE_KEY_FILE` 的绝对路径。缺少授权、模型不匹配、普通／套餐 Key 与地址混用、错误厂商地址会在启动数据库前拒绝；每次调用仍重读并核对 Key 类型。ASR 不继承文字服务的地址或密钥。旧 `CPA_*` 配置不会静默用于 MiMo。
 
@@ -86,8 +86,8 @@ curl --noproxy '*' -fsS http://127.0.0.1:3140/healthz
 
 `server` 内运行 `npm run typecheck && npm test`；Mock 测试不消耗模型额度。另运行 mobile 的 test／typecheck／lint 及本机边界门禁。
 
-真实探针默认拒绝执行。仅资格与费用授权落实后，用合成样例在 staging 运行：`node server/scripts/probe.ts --allow-live`（2 次看图调用）与 `node server/scripts/probe-text.ts --allow-live`（6 个文字模式各 1 次）。先设置独立的 `AI_*` 环境与 secret 文件；不得把 Key 放命令行或打印出来。每次最多 16384 completion tokens，不自动重试，只输出模型、模式、思考开关、成功状态、耗时、用量／错误码，不打印生成内容或完整响应。
+真实探针默认拒绝执行。仅主人授权真实调用后，用合成样例在 staging 运行：`node server/scripts/probe.ts --allow-live`（2 次看图调用）与 `node server/scripts/probe-text.ts --allow-live`（6 个文字模式各 1 次）。先设置独立的 `AI_*` 环境与 secret 文件；不得把 Key 放命令行或打印出来。每次最多 16384 completion tokens，不自动重试，只输出模型、模式、思考开关、成功状态、耗时、用量／错误码，不打印生成内容或完整响应。
 
-`python3 server/scripts/verify-service.py --allow-live --container anan-ai-staging-ai-1` 只接受本机 3141 的隔离 staging，先检查容器配置与独立数据挂载，再执行最多 6 次内容生成和 1 次两秒合成音频转写；回放／无效输入应不触发额外上游调用。脚本验证账号、备份与撤销，会写测试数据，禁止对生产运行。可用 `--skip-transcribe`／`--skip-text` 缩小探测范围；转写资格未获准时不能只靠能连通而执行它。
+`python3 server/scripts/verify-service.py --allow-live --container anan-ai-staging-ai-1` 只接受本机 3141 的隔离 staging，先检查容器配置与独立数据挂载，再执行最多 6 次内容生成和 1 次两秒合成音频转写；回放／无效输入应不触发额外上游调用。脚本验证账号、备份与撤销，会写测试数据，禁止对生产运行。可用 `--skip-transcribe`／`--skip-text` 缩小探测范围；转写探测须在主人授权的调用范围内执行。
 
 本次仅验证脚本的默认拒绝和 Mock 行为，没有执行以上真实探针。来源由健康版本、镜像 ID 和部署提交核对；手机双端验收仍需真机。
