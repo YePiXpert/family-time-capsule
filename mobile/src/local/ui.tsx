@@ -338,6 +338,8 @@ export function Glass({
     </View>
   );
 }
+/** 图标砖色调：accent 赤陶 / apricot 杏 / indigo 靛蓝 / pine 墨绿，一个功能一个颜色锚点。 */
+export type TileTone = keyof typeof light.tiles;
 /** 功能入口的图标砖：彩色浅底圆角方块承着实色图标，给每个功能一个颜色锚点。 */
 export function IconTile({
   icon,
@@ -345,7 +347,7 @@ export function IconTile({
   size = 36,
 }: {
   icon: JournalIconName;
-  tone?: keyof typeof light.tiles;
+  tone?: TileTone;
   size?: number;
 }) {
   const { colors } = useTheme();
@@ -451,7 +453,7 @@ export function SettingsRow({
 }: {
   icon?: JournalIconName;
   /** 图标砖的色调：一个功能一个颜色锚点。 */
-  tone?: keyof typeof light.tiles;
+  tone?: TileTone;
   /** 代替图标的前导视图（书册行的小封面）。 */
   leading?: ReactNode;
   /** 标签走衬线：这一行是一本书。 */
