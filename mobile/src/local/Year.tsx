@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import type { Svg } from "react-native-svg";
 import { randomUUID } from "expo-crypto";
 import { useLibrary, useStore } from "./context";
 import { now } from "./services";
@@ -17,12 +16,8 @@ import {
 import { useNav, type Props } from "./navigation";
 import { coverForRecords, Volume } from "./Shelf";
 import { NoteCard } from "./NoteCard";
-import { ReplayModal } from "./RecapScreen";
-import { replayPhotos } from "./replay";
 import { byCountsOf, byLine } from "./recap";
-import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
-import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
-import { yearBookInput, yearBookMonth, type YearbookInput } from "./yearbook";
+import { yearBookInput, yearBookMonth } from "./yearbook";
 import { planBook, useBookBinder } from "./BookBinder";
 import { BookPreview } from "./BookPreview";
 import type { BookLayout, BookPhoto } from "./book";
@@ -271,19 +266,12 @@ export function Year({ route }: Props<"Year">) {
     { colors } = useTheme(),
     volumeWidth = useVolumeWidth();
   const year = route.params.year;
-  const [replayOpen, setReplayOpen] = useState(false),
-    [person, setPerson] = useState(""),
-    [bookBusy, setBookBusy] = useState(false),
+  const [person, setPerson] = useState(""),
     [coverPick, setCoverPick] = useState(false),
     [exportOpen, setExportOpen] = useState(false),
     [preview, setPreview] = useState<BookLayout | null>(null),
     [error, setError] = useState("");
   const binder = useBookBinder();
-  const bookRef = useRef<Svg | null>(null);
-  const [book, setBook] = useState<{
-    input: YearbookInput;
-    photos: { cover?: YearbookPhoto; months: (YearbookPhoto | undefined)[] };
-  } | null>(null);
   const { records: recordMap } = state;
   const records = useMemo(
     () =>
@@ -291,10 +279,6 @@ export function Year({ route }: Props<"Year">) {
         (r) => yearKey(r.date) === year,
       ),
     [recordMap, year],
-  );
-  const replay = useMemo(
-    () => replayPhotos(records, state.media),
-    [records, state.media],
   );
   const personList = Object.values(state.persons);
   const visibleRecords = person
@@ -407,70 +391,6 @@ export function Year({ route }: Props<"Year">) {
         }),
     });
   };
-  const makeYearbook = async () => {
-    setBookBusy(true);
-    setError("");
-    try {
-      const coverPhoto = await prepareKeepSakePhoto(
-        coverForRecords(records, state.media),
-      );
-      const monthPhotos: (YearbookPhoto | undefined)[] = [];
-      for (const key of monthKeys) {
-        const monthRecords = records.filter((r) => monthKey(r.date) === key);
-        monthPhotos.push(
-          await prepareKeepSakePhoto(
-            coverForRecords(monthRecords, state.media),
-            400,
-          ),
-        );
-      }
-      setBook({
-        input: {
-          year,
-          profileName: state.profile.name,
-          stats,
-          note: state.yearNotes[year] ?? "",
-          months: monthKeys.map((key, index) => ({
-            label: monthLabel(key),
-            count: records.filter((r) => monthKey(r.date) === key).length,
-            photoAspect: monthPhotos[index]?.aspect,
-          })),
-          firsts: records
-            .filter((r) => r.first)
-            .sort((a, b) => a.date.localeCompare(b.date))
-            .map((r) => ({ title: recordTitle(r), date: dateLabel(r.date) })),
-          colophon: `${year} 年`,
-          coverAspect: coverPhoto?.aspect,
-        },
-        photos: { cover: coverPhoto, months: monthPhotos },
-      });
-    } catch (e) {
-      setError(messageOf(e));
-      setBookBusy(false);
-    }
-  };
-  useEffect(() => {
-    if (!book || !bookBusy) return;
-    let cancelled = false;
-    // 两帧之后再取图，确保离屏 Svg 完成布局与位图合成。
-    const first = requestAnimationFrame(() =>
-      requestAnimationFrame(async () => {
-        if (cancelled) return;
-        try {
-          await exportKeepSakeCard(bookRef.current, `yearbook-${year}`);
-        } catch (e) {
-          setError(messageOf(e));
-        } finally {
-          setBookBusy(false);
-          setBook(null);
-        }
-      }),
-    );
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(first);
-    };
-  }, [book, bookBusy, year]);
   return (
     <Page>
       <View style={{ alignItems: "center", gap: 4, paddingTop: 4 }}>
@@ -501,40 +421,21 @@ export function Year({ route }: Props<"Year">) {
           testID="year-recap"
           onPress={() => nav.navigate("Recap", { year })}
         />
-        {replay.length > 0 && (
-          <Button
-            title="重放这一年"
-            compact
-            testID="year-replay"
-            onPress={() => setReplayOpen(true)}
-          />
-        )}
         <Button
-          title={bookBusy ? "正在生成长图…" : "导出成长册"}
+          title="装订纪念册"
           compact
           testID="year-yearbook"
-          disabled={bookBusy || !!binder.job || records.length === 0}
+          disabled={!!binder.job || records.length === 0}
           onPress={() => setExportOpen(!exportOpen)}
         />
       </View>
-      {replay.length === 0 && records.length > 0 && (
-        <Text style={s.muted}>这一年还没有照片，加几张就能整屏重放。</Text>
-      )}
       {exportOpen && (
         <Card compact>
           <Text style={s.muted}>
-            长图一张，适合发给家人；纪念册是 20×20cm 方形开本的 PDF，真分页、带页码，可直接送印。
+            纪念册是 20×20cm 方形开本的 PDF，真分页、带页码，可直接送印；可以先让 AI 建议目录、选好封面，再装订。
           </Text>
           <YearEditor key={year} year={year} records={records} />
           <View style={s.row}>
-            <Button
-              title="长图"
-              compact
-              onPress={() => {
-                setExportOpen(false);
-                void makeYearbook();
-              }}
-            />
             <Button
               title="纪念册 PDF"
               compact
@@ -574,7 +475,6 @@ export function Year({ route }: Props<"Year">) {
       {!!binder.notice && <Text style={s.muted}>{binder.notice}</Text>}
       <ErrorText message={error} />
       <ErrorText message={binder.error} />
-      {replayOpen && <ReplayModal year={year} onClose={() => setReplayOpen(false)} />}
       {personList.length > 0 && (
         <PersonChips
           persons={personList}
@@ -672,19 +572,6 @@ export function Year({ route }: Props<"Year">) {
         />
       )}
       {binder.stage}
-      {book && (
-        <View
-          pointerEvents="none"
-          style={{ position: "absolute", left: -10000, top: 0, opacity: 0 }}
-        >
-          <YearBookCard
-            ref={bookRef}
-            input={book.input}
-            photos={book.photos}
-            profileName={state.profile.name}
-          />
-        </View>
-      )}
     </Page>
   );
 }

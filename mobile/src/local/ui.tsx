@@ -101,20 +101,7 @@ const dark: typeof light = {
     pine: { bg: "rgba(159,190,165,0.16)", fg: "#9FBEA5" },
   },
 };
-// 全屏剧场（重放）固定为暖黑语义，不随浅色/深色切换；页面不得另写 hex。
-// 剧场里的强调色固定取浅色色板的赤陶，避免同一剧场深浅色下两种主按钮色。
-export const overlay = {
-  bg: "#14100C",
-  bgSoft: "rgba(20,16,12,0.95)",
-  ink: "#F2E9DC",
-  muted: "#B8A88F",
-  line: "rgba(255,255,255,0.12)",
-  card: "rgba(255,255,255,0.08)",
-  textScrim: "rgba(20,16,12,0.72)",
-  accent: light.accent,
-  onAccent: light.onAccent,
-};
-// 导出图片（纪念卡/年册）固定纸面浅色，与浅色色板单源。
+// 导出纸面（纪念卡/纸书）固定纸面浅色，与浅色色板单源。
 export const paperPalette = {
   ink: light.ink,
   muted: light.muted,
@@ -176,21 +163,18 @@ export function LocalTheme({ children }: { children: ReactNode }) {
   );
 }
 export const useTheme = () => useContext(ThemeContext);
-/** 双线印章圆环：扉页名字首字与年度册封面共用；固定配色场景（重放剧场）用 color 覆盖。 */
+/** 双线印章圆环：扉页名字首字与年度册封面共用。 */
 export function Stamp({
   size,
   inset = 5,
-  color,
   children,
 }: {
   size: number;
   /** 内圈细线与外缘的留白；里程碑小印 44 用 3。 */
   inset?: number;
-  color?: string;
   children: ReactNode;
 }) {
   const { colors } = useTheme();
-  const ring = color ?? colors.accent;
   return (
     <View
       style={{
@@ -198,7 +182,7 @@ export function Stamp({
         height: size,
         borderRadius: size / 2,
         borderWidth: 2,
-        borderColor: ring,
+        borderColor: colors.accent,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -213,7 +197,7 @@ export function Stamp({
           bottom: inset,
           borderRadius: size / 2 - inset,
           borderWidth: StyleSheet.hairlineWidth,
-          borderColor: ring,
+          borderColor: colors.accent,
           opacity: 0.5,
         }}
       />

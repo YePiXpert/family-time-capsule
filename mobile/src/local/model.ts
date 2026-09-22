@@ -177,8 +177,6 @@ export type Library = {
     lockEnabled?: boolean;
     /** 这台手机以后录音转写的同意；与写作 AI 同意分开，不随家人同步。 */
     transcribeConsent?: boolean;
-    /** 年度重放的配乐：本机音频素材 id；缺省或空表示不配乐。 */
-    replayAudioId?: string;
     /** 这台手机默认的落款（新草稿带上它）；本机设置，不随家人同步。 */
     by?: string;
   };
@@ -498,8 +496,6 @@ export function stampUnsigned(s: Library, by: string): number {
 export function referencedMedia(s: Library): Set<string> {
   return new Set([
     ...(s.profile.avatarId ? [s.profile.avatarId] : []),
-    // 用户为年度重放亲自选的配乐，即使在记录被删后也保留，避免静默换歌或丢失。
-    ...(s.settings.replayAudioId ? [s.settings.replayAudioId] : []),
     ...Object.values(s.records).flatMap((r) => r.mediaIds),
     ...Object.values(s.drafts).flatMap((d) => d.content.mediaIds),
     // 信里的录音与照片也是资料，「清理未使用素材」不能动。
@@ -620,12 +616,6 @@ function clearUnavailableCovers(s: Library): void {
       editEntity(s, "selections", key, (q) => {
         q.coverId = null;
       });
-  // 配乐素材在 referencedMedia 里受保护；这里兜住外部写坏的悬空 id。
-  if (
-    s.settings.replayAudioId &&
-    s.media[s.settings.replayAudioId]?.kind !== "audio"
-  )
-    delete s.settings.replayAudioId;
   // 记录编辑删掉某张照片时，系列里指向它的条目一并退场。
   const present = (i: { recordId: string; mediaId: string }) =>
     !!s.records[i.recordId]?.mediaIds.includes(i.mediaId);
@@ -811,7 +801,7 @@ function validYearPicks(value: Library["yearPicks"]): boolean {
   });
 }
 
-/** 根字段。avatarId 与 replayAudioId 指向素材，所以要看整库。 */
+/** 根字段。avatarId 指向素材，所以要看整库。 */
 function validRoot(s: Library): boolean {
   return (
     s.version === 1 &&
@@ -882,9 +872,6 @@ function validRoot(s: Library): boolean {
       typeof s.settings.transcribeConsent === "boolean") &&
     (s.settings.lockEnabled === undefined ||
       typeof s.settings.lockEnabled === "boolean") &&
-    (s.settings.replayAudioId === undefined ||
-      (typeof s.settings.replayAudioId === "string" &&
-        s.media[s.settings.replayAudioId]?.kind === "audio")) &&
     validBy(s.settings.by) &&
     validDailyQuestion(s.settings.dailyQuestion) &&
     isIds(s.receivedShares) &&
