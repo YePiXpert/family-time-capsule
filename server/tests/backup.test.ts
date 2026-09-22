@@ -51,7 +51,9 @@ test('objects round-trip byte for byte in the family space; repeats are idempote
  assert.equal((await f.app.inject({url:`/api/v1/backup/objects/${oid(1)}`,headers:f.headers(f.other.token)})).statusCode,200);
  const status=await f.status();
  assert.equal(status.objects,1);assert.equal(status.bytes,300000);assert.equal(status.keyId,null);assert.equal(status.manifests,0);assert.equal(status.limitBytes,DEFAULT_BACKUP_LIMIT);assert.ok(status.freeBytes>0);
- assert.deepEqual(await f.status(f.other.token),status);
+ // freeBytes 每次都现查磁盘，两次调用之间可能差几 KB（CI 上偶发），不逐字节比。
+ const {freeBytes:_ownFree,...shared}=status;const {freeBytes:otherFree,...otherShared}=await f.status(f.other.token);
+ assert.deepEqual(otherShared,shared);assert.ok(otherFree>0);
  await f.close();
 });
 test('mismatched, empty or malformed uploads are rejected and leave nothing behind',async()=>{
