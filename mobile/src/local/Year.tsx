@@ -15,7 +15,7 @@ import {
   type YearPicks,
 } from "./model";
 import { useNav, type Props } from "./navigation";
-import { coverForRecords, Stamp, Volume } from "./Shelf";
+import { coverForRecords, Volume } from "./Shelf";
 import { NoteCard } from "./NoteCard";
 import { ReplayModal } from "./RecapScreen";
 import { replayPhotos } from "./replay";
@@ -39,6 +39,7 @@ import {
   Page,
   SectionHeader,
   PersonChips,
+  Stamp,
   Text,
   dateLabel,
   messageOf,

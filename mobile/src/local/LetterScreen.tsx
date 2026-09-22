@@ -5,11 +5,11 @@ import { letterCaption, letterState, openAtLabel } from "./letters";
 import type { LocalMedia } from "./model";
 import type { Props } from "./navigation";
 import { deleteLetter, openLetter } from "./services";
-import { Stamp } from "./Shelf";
 import {
   Button,
   ErrorText,
   Page,
+  Stamp,
   Text,
   dateLabel,
   messageOf,
