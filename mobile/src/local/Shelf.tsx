@@ -52,6 +52,7 @@ import {
   Card,
   ErrorText,
   IconButton,
+  IconTile,
   Ornament,
   PRESS_SPRING,
   Page,
@@ -65,6 +66,7 @@ import {
   serif,
   useStyles,
   useTheme,
+  type TileTone,
 } from "./ui";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { Photo } from "./Media";
@@ -133,7 +135,7 @@ function Strip({ children }: { children: ReactNode }) {
   );
 }
 /**
- * 书架区块：区标题 + 右侧文字级入口；没内容时一行说明，不摆虚位册。
+ * 书架区块：区标题 + 右侧文字级入口；没内容时调用方摆 GuideRow 行动行，不摆虚位册。
  * heading 版给年份用：衬线大标题 + 一行统计——年份就是书架，月册摆在它名下。
  */
 function ShelfSection({
@@ -141,14 +143,12 @@ function ShelfSection({
   caption,
   heading = false,
   action,
-  empty,
   children,
 }: {
   title: string;
   caption?: string;
   heading?: boolean;
   action?: { label: string; onPress: () => void; testID?: string };
-  empty?: string;
   children?: ReactNode;
 }) {
   const s = useStyles();
@@ -178,8 +178,37 @@ function ShelfSection({
       ) : (
         <SectionHeader title={title} action={action} />
       )}
-      {children ? children : !!empty && <Text style={s.muted}>{empty}</Text>}
+      {children}
     </View>
+  );
+}
+/** 空分区的行动行：图标砖 + 一句说明，点按即新建——说明与下一步合一，不摆虚位册。 */
+function GuideRow({
+  icon,
+  tone,
+  title,
+  hint,
+  testID,
+  onPress,
+}: {
+  icon: JournalIconName;
+  tone: TileTone;
+  title: string;
+  hint: string;
+  testID?: string;
+  onPress: () => void;
+}) {
+  return (
+    <BookRows>
+      <SettingsRow
+        leading={<IconTile icon={icon} tone={tone} />}
+        label={title}
+        subtitle={hint}
+        onPress={onPress}
+        testID={testID}
+        last
+      />
+    </BookRows>
   );
 }
 /** 几本书册成组的纸卡：行与行之间只有一条细线。 */
@@ -358,7 +387,7 @@ function RecentFlip({
     </View>
   );
 }
-/** 整宽时光卡：有图时照片 4:3 铺满卡顶，下面日期、衬线标题与正文两行；无图时纸面上正文四行 + 日期。 */
+/** 整宽时光卡：有图时照片 16:10 铺满卡顶，下面日期、衬线标题与正文两行；无图时纸面上正文四行 + 日期。 */
 function RecentCard({
   record,
   cover,
@@ -407,7 +436,7 @@ function RecentCard({
                 overflow: "hidden",
               }}
             >
-              <Photo media={cover} preview ratio={4 / 3} radius={0} />
+              <Photo media={cover} preview ratio={16 / 10} radius={0} />
             </View>
           ) : (
             <View
@@ -782,10 +811,25 @@ export function Shelf() {
       .then((draftId) => nav.navigate("Editor", { draftId }))
       .catch((e) => setError(messageOf(e)));
   };
+  const createAlbum = () => {
+    void beginSelection(store)
+      .then((sessionId) => nav.navigate("Picker", { sessionId }))
+      .catch((e) => setError(messageOf(e)));
+  };
+  const createLetter = () => {
+    void beginLetter(store)
+      .then((id) => nav.navigate("LetterEditor", { id }))
+      .catch((e) => setError(messageOf(e)));
+  };
+  const createSeries = () => {
+    void beginSeries(store)
+      .then((id) => nav.navigate("Series", { id }))
+      .catch((e) => setError(messageOf(e)));
+  };
   return (
     <Page scroll={false} top>
       <ScrollView
-        contentContainerStyle={[s.content, { gap: 24, paddingBottom: 120 }]}
+        contentContainerStyle={[s.content, { gap: 20, paddingBottom: 120 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={s.between}>
@@ -1120,25 +1164,48 @@ export function Shelf() {
               onPress: () => nav.navigate("Year", { year: shelf.year }),
             }}
           >
-            <Strip>
-              {shelf.months.map((m, i) => {
-                const monthRecords = records.filter(
-                  (r) => monthKey(r.date) === m,
-                );
-                return (
-                  <Volume
-                    key={m}
-                    title={monthLabel(m)}
-                    caption={`${monthRecords.length} 段时光`}
-                    cover={coverForRecords(monthRecords, mediaMap)}
-                    testID={`volume-${m}`}
-                    width={stripWidth}
-                    index={i}
-                    onPress={() => nav.navigate("Month", { month: m })}
-                  />
-                );
-              })}
-            </Strip>
+            {shelf.months.length === 1 ? (
+              // 只有一本时不摆封面条：小封面右边会空出一大片，收成整宽书册行。
+              <BookRows>
+                {shelf.months.map((m) => {
+                  const monthRecords = records.filter(
+                    (r) => monthKey(r.date) === m,
+                  );
+                  return (
+                    <BookRow
+                      key={m}
+                      title={monthLabel(m)}
+                      caption={`${monthRecords.length} 段时光`}
+                      cover={coverForRecords(monthRecords, mediaMap)}
+                      tile={<PaperTile icon="calendar" />}
+                      testID={`volume-${m}`}
+                      onPress={() => nav.navigate("Month", { month: m })}
+                      last
+                    />
+                  );
+                })}
+              </BookRows>
+            ) : (
+              <Strip>
+                {shelf.months.map((m, i) => {
+                  const monthRecords = records.filter(
+                    (r) => monthKey(r.date) === m,
+                  );
+                  return (
+                    <Volume
+                      key={m}
+                      title={monthLabel(m)}
+                      caption={`${monthRecords.length} 段时光`}
+                      cover={coverForRecords(monthRecords, mediaMap)}
+                      testID={`volume-${m}`}
+                      width={stripWidth}
+                      index={i}
+                      onPress={() => nav.navigate("Month", { month: m })}
+                    />
+                  );
+                })}
+              </Strip>
+            )}
           </ShelfSection>
         ))}
         {olderYears.length > 0 && (
@@ -1211,18 +1278,13 @@ export function Shelf() {
         </ShelfSection>
         <ShelfSection
           title="专题册"
-          action={{
-            label: "新建相册",
-            testID: "album-new",
-            onPress: () => {
-              void beginSelection(store)
-                .then((sessionId) => nav.navigate("Picker", { sessionId }))
-                .catch((e) => setError(messageOf(e)));
-            },
-          }}
-          empty="还没有相册。把几段时光放在一起，就是一本。"
+          action={
+            albums.length > 0
+              ? { label: "新建相册", testID: "album-new", onPress: createAlbum }
+              : undefined
+          }
         >
-          {albums.length > 0 && (
+          {albums.length > 0 ? (
             <BookRows>
               {albums.map((album, i) => (
                 <BookRow
@@ -1237,22 +1299,26 @@ export function Shelf() {
                 />
               ))}
             </BookRows>
+          ) : (
+            <GuideRow
+              icon="book"
+              tone="accent"
+              title="新建相册"
+              hint="还没有相册。把几段时光放在一起，就是一本。"
+              testID="album-new"
+              onPress={createAlbum}
+            />
           )}
         </ShelfSection>
         <ShelfSection
           title="时间胶囊"
-          action={{
-            label: "写一封信",
-            testID: "letter-new",
-            onPress: () => {
-              void beginLetter(store)
-                .then((id) => nav.navigate("LetterEditor", { id }))
-                .catch((e) => setError(messageOf(e)));
-            },
-          }}
-          empty="给多年后的她写一封信，到日子再拆。"
+          action={
+            letters.length > 0
+              ? { label: "写一封信", testID: "letter-new", onPress: createLetter }
+              : undefined
+          }
         >
-          {letters.length > 0 && (
+          {letters.length > 0 ? (
             <BookRows>
               {letters.map((letter, i) => (
                 <BookRow
@@ -1275,22 +1341,26 @@ export function Shelf() {
                 />
               ))}
             </BookRows>
+          ) : (
+            <GuideRow
+              icon="seal"
+              tone="indigo"
+              title="写一封信"
+              hint="给多年后的她写一封信，到日子再拆。"
+              testID="letter-new"
+              onPress={createLetter}
+            />
           )}
         </ShelfSection>
         <ShelfSection
           title="时光系列"
-          action={{
-            label: "新建系列",
-            testID: "series-new",
-            onPress: () => {
-              void beginSeries(store)
-                .then((id) => nav.navigate("Series", { id }))
-                .catch((e) => setError(messageOf(e)));
-            },
-          }}
-          empty="每月一张同款照片，看着她慢慢长大。"
+          action={
+            seriesList.length > 0
+              ? { label: "新建系列", testID: "series-new", onPress: createSeries }
+              : undefined
+          }
         >
-          {seriesList.length > 0 && (
+          {seriesList.length > 0 ? (
             <BookRows>
               {seriesList.map((series, i) => {
                 const items = [...series.items].sort((a, b) =>
@@ -1323,6 +1393,15 @@ export function Shelf() {
                 );
               })}
             </BookRows>
+          ) : (
+            <GuideRow
+              icon="image"
+              tone="pine"
+              title="新建系列"
+              hint="每月一张同款照片，看着她慢慢长大。"
+              testID="series-new"
+              onPress={createSeries}
+            />
           )}
         </ShelfSection>
       </ScrollView>
