@@ -74,6 +74,10 @@ for result in request.results ?? [] {
 }
 ''')
     try:
+        # Compile Vision OCR once instead of invoking the Swift interpreter for
+        # every screenshot. Keep the full 16-second crash observation per launch.
+        ocr_binary = output / "recognize-text"
+        run("xcrun", "swiftc", str(ocr), "-o", str(ocr_binary))
         boot_simulator(udid, output)
         run("xcrun", "simctl", "ui", udid, "appearance", "light")
         run("xcrun", "simctl", "install", udid, str(args.app.resolve()))
@@ -92,7 +96,7 @@ for result in request.results ?? [] {
             # 横幅几秒后自动消失，重试截图再判失败。
             for attempt in range(3):
                 run("xcrun", "simctl", "io", udid, "screenshot", str(screenshot))
-                recognized = run("swift", str(ocr), str(screenshot))
+                recognized = run(str(ocr_binary), str(screenshot))
                 compact = re.sub(r"\s+", "", recognized)
                 if expected in compact:
                     break
