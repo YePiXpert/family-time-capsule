@@ -57,7 +57,7 @@ const light = {
   onAccent: "#FFFFFF",
   selected: "#F5E7D3",
   error: "#A03C36",
-  glass: "#FFFDF8",
+  glass: "#FFFFFF",
   glassLine: "#EBDFCC",
   accentGlass: "#B4553C",
   selectedGlass: "#F5E7D3",
@@ -66,6 +66,14 @@ const light = {
   glow1: "#F3D9B8",
   glow2: "#EFC5B0",
   glow3: "#E8DCC4",
+  // 功能入口的图标砖：彩色浅底圆角方块 + 实色图标，一个功能一个颜色锚点。
+  // 前景色一律压到与砖底对比 ≥3:1；强调色不提亮——它在纸面上要保住 4.5:1 的文字对比。
+  tiles: {
+    accent: { bg: "rgba(180,85,60,0.12)", fg: "#B4553C" },
+    apricot: { bg: "rgba(196,142,42,0.14)", fg: "#9C6E1E" },
+    indigo: { bg: "rgba(80,104,140,0.12)", fg: "#50688C" },
+    pine: { bg: "rgba(85,118,92,0.13)", fg: "#55765C" },
+  },
 };
 const dark: typeof light = {
   paper: "#221C16",
@@ -77,7 +85,7 @@ const dark: typeof light = {
   onAccent: "#2A1A12",
   selected: "#3A2D20",
   error: "#F0A59D",
-  glass: "#2C241C",
+  glass: "#2E251D",
   glassLine: "#453A2E",
   accentGlass: "#E09B76",
   selectedGlass: "#3A2D20",
@@ -86,6 +94,12 @@ const dark: typeof light = {
   glow1: "#3A2A1C",
   glow2: "#40241C",
   glow3: "#2E2A1E",
+  tiles: {
+    accent: { bg: "rgba(224,155,118,0.16)", fg: "#E09B76" },
+    apricot: { bg: "rgba(217,169,92,0.16)", fg: "#D9A95C" },
+    indigo: { bg: "rgba(163,184,217,0.16)", fg: "#A3B8D9" },
+    pine: { bg: "rgba(159,190,165,0.16)", fg: "#9FBEA5" },
+  },
 };
 // 全屏剧场（重放）固定为暖黑语义，不随浅色/深色切换；页面不得另写 hex。
 // 剧场里的强调色固定取浅色色板的赤陶，避免同一剧场深浅色下两种主按钮色。
@@ -312,15 +326,42 @@ export function Glass({
           borderColor: colors.glassLine,
           backgroundColor: tint ?? colors.glass,
           shadowColor: dark ? "#000000" : "#7A5C3E",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: dark ? 0.3 : 0.06,
-          shadowRadius: 14,
-          elevation: 2,
+          shadowOffset: { width: 0, height: 5 },
+          shadowOpacity: dark ? 0.35 : 0.09,
+          shadowRadius: 18,
+          elevation: 3,
         },
         style,
       ]}
     >
       {children}
+    </View>
+  );
+}
+/** 功能入口的图标砖：彩色浅底圆角方块承着实色图标，给每个功能一个颜色锚点。 */
+export function IconTile({
+  icon,
+  tone = "accent",
+  size = 36,
+}: {
+  icon: JournalIconName;
+  tone?: keyof typeof light.tiles;
+  size?: number;
+}) {
+  const { colors } = useTheme();
+  const tile = colors.tiles[tone];
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: Math.round(size * 0.3),
+        backgroundColor: tile.bg,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <JournalIcon name={icon} color={tile.fg} size={Math.round(size * 0.56)} />
     </View>
   );
 }
@@ -387,18 +428,19 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ gap: 4 }}>
       {title !== undefined && <SectionHeader title={title} />}
       <Card style={{ gap: 0, paddingVertical: 4 }}>{children}</Card>
     </View>
   );
 }
 /**
- * 设置行：图标 + 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。
+ * 设置行：图标砖（或自定义前导）+ 标签 + 副题（读屏作为值朗读）+ 右箭头，放在 SettingsGroup 里成组。
  * 书架的书册行也用它：`leading` 换成小封面，`serifLabel` 让标签走衬线（书名）。
  */
 export function SettingsRow({
   icon,
+  tone = "accent",
   leading,
   serifLabel = false,
   label,
@@ -408,6 +450,8 @@ export function SettingsRow({
   last = false,
 }: {
   icon?: JournalIconName;
+  /** 图标砖的色调：一个功能一个颜色锚点。 */
+  tone?: keyof typeof light.tiles;
   /** 代替图标的前导视图（书册行的小封面）。 */
   leading?: ReactNode;
   /** 标签走衬线：这一行是一本书。 */
@@ -431,15 +475,14 @@ export function SettingsRow({
         flexDirection: "row",
         alignItems: "center",
         gap: 12,
-        minHeight: 52,
+        minHeight: 56,
         paddingVertical: 8,
         borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
         borderBottomColor: colors.line,
         opacity: pressed ? 0.6 : 1,
       })}
     >
-      {leading ??
-        (icon && <JournalIcon name={icon} color={colors.accent} size={22} />)}
+      {leading ?? (icon && <IconTile icon={icon} tone={tone} />)}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         <Text
           numberOfLines={serifLabel ? 2 : undefined}
@@ -457,7 +500,7 @@ export function SettingsRow({
           </Text>
         )}
       </View>
-      <JournalIcon name="chevron-right" color={colors.muted} size={20} />
+      <JournalIcon name="chevron-right" color={colors.muted} size={18} />
     </Pressable>
   );
 }
@@ -527,10 +570,10 @@ export function useStyles() {
   return useMemo(() => {
     const cardShadow: ViewStyle = {
       shadowColor: dark ? "#000000" : "#7A5C3E",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: dark ? 0.3 : 0.06,
-      shadowRadius: 12,
-      elevation: 1,
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: dark ? 0.35 : 0.09,
+      shadowRadius: 18,
+      elevation: 3,
     };
     return StyleSheet.create({
       page: { flex: 1, backgroundColor: c.paper },
@@ -1106,6 +1149,51 @@ export function IconButton({
       })}
     >
       <JournalIcon name={icon} color={colors.accent} size={22} />
+    </Pressable>
+  );
+}
+/**
+ * 工具栏按钮：图标 + 11 号小标签，透明无框，最低 44 触控。
+ * 编辑页的媒体/AI 工具用它排成一行，贴在底栏上方——不跟胶囊按钮抢层级。
+ */
+export function ToolButton({
+  icon,
+  label,
+  onPress,
+  disabled = false,
+  testID,
+}: {
+  icon: JournalIconName;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  testID?: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 52,
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 2,
+        opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
+      })}
+    >
+      <JournalIcon name={icon} color={colors.accent} size={22} />
+      <NativeText
+        maxFontSizeMultiplier={1.4}
+        style={{ fontSize: 11, lineHeight: 15, color: colors.muted }}
+      >
+        {label}
+      </NativeText>
     </Pressable>
   );
 }
