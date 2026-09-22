@@ -44,6 +44,7 @@ import {
   PersonChips,
   SignatureButton,
   Text,
+  ToolButton,
   dateLabel,
   hapticSuccess,
   messageOf,
@@ -348,6 +349,36 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     }
     await attach(imported);
   };
+  const pickFiles = async () => {
+    const r = await DocumentPicker.getDocumentAsync({
+      multiple: true,
+      copyToCacheDirectory: true,
+      type: [
+        "image/*",
+        "video/*",
+        "audio/*",
+        "application/pdf",
+        "text/plain",
+      ],
+    });
+    if (r.canceled) return;
+    const picked: LocalMedia[] = [];
+    for (const a of r.assets)
+      picked.push(
+        await preserveMedia(
+          a.uri,
+          a.name,
+          a.mimeType?.startsWith("image/")
+            ? "image"
+            : a.mimeType?.startsWith("video/")
+              ? "video"
+              : a.mimeType?.startsWith("audio/")
+                ? "audio"
+                : "document",
+        ),
+      );
+    await attach(picked);
+  };
   const dayGroups = photoDayGroups(draft, { ...state.media, ...importedMedia });
   const editEvent = (index: number, patch: Partial<RecordContent>) => {
     const events = photoDayGroups(current.current!, {
@@ -422,19 +453,18 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           {draft.photoEvents ? (
             <Text style={s.muted}>正文已分到下面的每一件事里。</Text>
           ) : (
-            <View style={{ gap: 6 }}>
-              <Field
-                label="这一刻发生了什么"
-                testID="capture-text"
-                editable={!busy}
-                multiline
-                placeholder="今天，她又带来了什么小惊喜？"
-                value={draft.content.text}
-                onChangeText={(text) => change({ text })}
-                onEndEditing={() => void flush()}
-                style={{ minHeight: 160, textAlignVertical: "top" }}
-              />
-            </View>
+            <Field
+              label="这一刻发生了什么"
+              hideLabel
+              testID="capture-text"
+              editable={!busy}
+              multiline
+              placeholder="今天，她又带来了什么小惊喜？"
+              value={draft.content.text}
+              onChangeText={(text) => change({ text })}
+              onEndEditing={() => void flush()}
+              style={{ minHeight: 160, textAlignVertical: "top" }}
+            />
           )}
           <SignatureButton
             value={draft.content.by}
@@ -494,83 +524,34 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                 promptSeed,
               );
               return (
-                <View style={{ gap: 6 }} testID="daily-prompt-card">
-                  <Text style={s.muted} testID="daily-prompt">
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
+                  testID="daily-prompt-card"
+                >
+                  <Text
+                    style={[s.muted, { flex: 1, minWidth: 0 }]}
+                    testID="daily-prompt"
+                  >
                     今天的小问题：{question}
                   </Text>
                   <Text testID="daily-prompt-source" style={{ display: "none" }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{daily.source}</Text>
-                  <View style={s.row}>
-                    <Button
-                      title="换一个"
-                      compact
-                      testID="daily-prompt-next"
-                      onPress={() => { daily.useLocal(); setPromptSeed(promptSeed + 1); }}
-                    />
-                    <Button
-                      title="不问了"
-                      compact
-                      testID="daily-prompt-off"
-                      onPress={() => setPromptOff(true)}
-                    />
-                  </View>
+                  <Button
+                    title="换一个"
+                    kind="text"
+                    compact
+                    testID="daily-prompt-next"
+                    onPress={() => { daily.useLocal(); setPromptSeed(promptSeed + 1); }}
+                  />
+                  <Button
+                    title="不问了"
+                    kind="text"
+                    compact
+                    testID="daily-prompt-off"
+                    onPress={() => setPromptOff(true)}
+                  />
                 </View>
               );
             })()}
-          <View style={s.row}>
-            <Button
-              title="照片"
-              icon="image"
-              disabled={busy || recording}
-              onPress={() => {
-                void run(() => pick(false));
-              }}
-            />
-            <Button
-              title="拍摄"
-              icon="camera"
-              disabled={busy || recording}
-              onPress={() => {
-                void run(() => pick(true));
-              }}
-            />
-            <Button
-              title={recording ? "说完了" : "说一段"}
-              icon="microphone"
-              disabled={busy}
-              onPress={() => {
-                void run(async () => {
-                  if (current.current?.recordingFile) {
-                    await finishAudio({ transcribe: true });
-                    return;
-                  }
-                  await startRecording();
-                });
-              }}
-            />
-            <AIEditor
-              draft={draft}
-              media={{ ...state.media, ...importedMedia }}
-              disabled={busy || recording}
-              onPatch={(patch) =>
-                persist({ ...current.current!, ...patch, updatedAt: now() })
-              }
-              onApply={async (proposal, part) => {
-                const d = current.current!;
-                await persist({
-                  ...d,
-                  ...proposalPatch(
-                    d,
-                    { ...store.get().media, ...pendingMedia.current },
-                    proposal,
-                    part,
-                  ),
-                  aiProposal: undefined,
-                  aiJob: undefined,
-                  updatedAt: now(),
-                });
-              }}
-            />
-          </View>
           {transcription.status === "working" && (
             <View style={s.row}>
               <Text testID="transcribe-status" style={s.muted}>
@@ -896,44 +877,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   />
                 </View>
               </View>
-              <Button
-                title="从文件添加"
-                icon="file"
-                disabled={busy || recording}
-                onPress={() => {
-                  void run(async () => {
-                    const r = await DocumentPicker.getDocumentAsync({
-                      multiple: true,
-                      copyToCacheDirectory: true,
-                      type: [
-                        "image/*",
-                        "video/*",
-                        "audio/*",
-                        "application/pdf",
-                        "text/plain",
-                      ],
-                    });
-                    if (!r.canceled) {
-                      const picked: LocalMedia[] = [];
-                      for (const a of r.assets)
-                        picked.push(
-                          await preserveMedia(
-                            a.uri,
-                            a.name,
-                            a.mimeType?.startsWith("image/")
-                              ? "image"
-                              : a.mimeType?.startsWith("video/")
-                                ? "video"
-                                : a.mimeType?.startsWith("audio/")
-                                  ? "audio"
-                                  : "document",
-                          ),
-                        );
-                      await attach(picked);
-                    }
-                  });
-                }}
-              />
             </>
           )}
           <ErrorText message={error} />
@@ -991,7 +934,71 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             />
           </View>
         </ScrollView>
-        <BottomBar>
+        <BottomBar gap={6}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <ToolButton
+              icon="image"
+              label="照片"
+              disabled={busy || recording}
+              onPress={() => {
+                void run(() => pick(false));
+              }}
+            />
+            <ToolButton
+              icon="camera"
+              label="拍摄"
+              disabled={busy || recording}
+              onPress={() => {
+                void run(() => pick(true));
+              }}
+            />
+            <ToolButton
+              icon="microphone"
+              label={recording ? "说完了" : "说一段"}
+              disabled={busy}
+              onPress={() => {
+                void run(async () => {
+                  if (current.current?.recordingFile) {
+                    await finishAudio({ transcribe: true });
+                    return;
+                  }
+                  await startRecording();
+                });
+              }}
+            />
+            <AIEditor
+              tool
+              draft={draft}
+              media={{ ...state.media, ...importedMedia }}
+              disabled={busy || recording}
+              onPatch={(patch) =>
+                persist({ ...current.current!, ...patch, updatedAt: now() })
+              }
+              onApply={async (proposal, part) => {
+                const d = current.current!;
+                await persist({
+                  ...d,
+                  ...proposalPatch(
+                    d,
+                    { ...store.get().media, ...pendingMedia.current },
+                    proposal,
+                    part,
+                  ),
+                  aiProposal: undefined,
+                  aiJob: undefined,
+                  updatedAt: now(),
+                });
+              }}
+            />
+            <ToolButton
+              icon="file"
+              label="文件"
+              disabled={busy || recording}
+              onPress={() => {
+                void run(pickFiles);
+              }}
+            />
+          </View>
           <Button
             title={
               busy
