@@ -184,7 +184,7 @@ export function Month({ route }: Props<"Month">) {
     store = useStore(),
     nav = useNav(),
     s = useStyles(),
-    { large } = useTheme();
+    { colors, large } = useTheme();
   const insets = useSafeAreaInsets(),
     { width, fontScale } = useWindowDimensions();
   const columns = large || fontScale >= 1.3 ? 1 : width >= 600 ? 3 : 2;
@@ -224,7 +224,7 @@ export function Month({ route }: Props<"Month">) {
           paddingBottom: 96,
         }}
         keyboardShouldPersistTaps="handled"
-        stickySectionHeadersEnabled={false}
+        stickySectionHeadersEnabled
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={{ gap: 12, marginBottom: 12 }}>
@@ -258,7 +258,7 @@ export function Month({ route }: Props<"Month">) {
           </View>
         }
         renderSectionHeader={({ section }) => (
-          <View style={s.dateHeading}>
+          <View style={[s.dateHeading, { backgroundColor: colors.paper }]}>
             <DateStrip>
               <Text style={s.galleryTitle}>{section.title}</Text>
             </DateStrip>

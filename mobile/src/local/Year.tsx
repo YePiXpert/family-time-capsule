@@ -15,7 +15,7 @@ import {
   type YearPicks,
 } from "./model";
 import { useNav, type Props } from "./navigation";
-import { coverForRecords, Volume } from "./Shelf";
+import { coverForRecords, Stamp, Volume } from "./Shelf";
 import { NoteCard } from "./NoteCard";
 import { ReplayModal } from "./RecapScreen";
 import { replayPhotos } from "./replay";
@@ -43,7 +43,9 @@ import {
   dateLabel,
   messageOf,
   monthLabel,
+  serif,
   useStyles,
+  useTheme,
   useVolumeWidth,
 } from "./ui";
 
@@ -265,6 +267,7 @@ export function Year({ route }: Props<"Year">) {
     store = useStore(),
     nav = useNav(),
     s = useStyles(),
+    { colors } = useTheme(),
     volumeWidth = useVolumeWidth();
   const year = route.params.year;
   const [replayOpen, setReplayOpen] = useState(false),
@@ -474,13 +477,27 @@ export function Year({ route }: Props<"Year">) {
   }, [book, bookBusy, year]);
   return (
     <Page>
-      <Text style={s.title}>{year} 年</Text>
-      {!!stats && <Text style={s.muted}>{stats}</Text>}
-      {!!writers && (
-        <Text style={s.muted} testID="year-writers">
-          {writers}
-        </Text>
-      )}
+      <View style={{ alignItems: "center", gap: 4, paddingTop: 4 }}>
+        <Stamp size={72}>
+          <Text
+            style={{
+              fontFamily: serif,
+              fontSize: 22,
+              color: colors.accent,
+              fontWeight: "600",
+            }}
+          >
+            {year}
+          </Text>
+        </Stamp>
+        <Text style={s.title}>{year} 年</Text>
+        {!!stats && <Text style={[s.muted, { textAlign: "center" }]}>{stats}</Text>}
+        {!!writers && (
+          <Text style={[s.muted, { textAlign: "center" }]} testID="year-writers">
+            {writers}
+          </Text>
+        )}
+      </View>
       <View style={s.row}>
         <Button
           title="这一年回顾"
