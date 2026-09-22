@@ -1,6 +1,12 @@
 # App 内部 MiMo 适配与上线边界
 
-## 2026-09-22：MiMo V2.6 Pro 已部署
+## 2026-09-22（晚）：1.0.3 减法版服务端已部署
+
+生产镜像已换为 `anan-ai:8be3a46731b56f17fec0bdbb8aa12575ddefc96b`（发版提交，13:52 UTC 从 `e2bd07f` 切换）：服务端只剩 `POST /api/v1/ai/write` 与五个 writingMode（polish／recap／ask／question／editor），`photos` 必须为空数组，不再向模型发送图片；`/ai/group`、`generate`、`letter` 与 ASK 的故事主题句已删除，旧 1.0.2 手机的对应功能得到 400／404。模型、地址、密钥、思考策略、16384 completion token 上限与严格 JSON 校验不变。
+
+同一镜像先在独立数据目录的 staging 3141 用 `verify-service.py --allow-live` 真实验证：ask 3.1 s／593 tokens、question 7.5 s／490、polish 1.5 s／565（重放 0 tokens）、recap 34.6 s／2191、editor 11.9 s／1104，转写 2 秒合成音 5.6 s／77 tokens；带照片的 ask、`generate` 与 `/ai/group` 分别 400／400／404 且不上游；账号、幂等、家庭备份、设备撤销与临时文件清理通过，测试容器已清理。生产切换前 tar 备份数据并记录四表逐行摘要，切换后本机／公网 healthz 均为发版提交、匿名接口 401、既有行逐行一致。私有运维记录：`/opt/anan-ai/deployments/20260922-1.0.3-reduction/`。下面的 V2.6 Pro 部署记录保留为历史。
+
+## 2026-09-22：MiMo V2.6 Pro 已部署（历史；镜像已被上节取代）
 
 主人要求将 App 的云端 AI 全部切换至小米新模型。已核对[官方 V2.6 发布说明](https://mimo.mi.com/docs/zh-CN/news/latest/v2-6)及 [Chat Completions API](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)：文字、图片、分组与全部写作模式使用 `mimo-v2.6-pro`；专用转写仍为 `mimo-v2.5-asr`。保留现有提示词、逐模式思考策略、16384 completion token 上限、严格 JSON／业务校验和无跨供应商回退。
 
