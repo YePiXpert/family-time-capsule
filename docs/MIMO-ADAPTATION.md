@@ -1,5 +1,13 @@
 # App 内部 MiMo 适配与上线边界
 
+## 2026-09-22：升级至 V2.6（待生产切换）
+
+主人要求将 App 的云端 AI 全部切换至小米新模型。已核对[官方 V2.6 发布说明](https://mimo.mi.com/docs/zh-CN/news/latest/v2-6)及 [Chat Completions API](https://mimo.mi.com/docs/zh-CN/api/chat/openai-api)：文字、图片、分组与全部写作模式使用 `mimo-v2.6-flash`；专用转写仍为 `mimo-v2.5-asr`。保留现有提示词、逐模式思考策略、16384 completion token 上限、严格 JSON／业务校验和无跨供应商回退。
+
+旧客户端传来的 `mimo-v2.5` 和 DeepSeek 型号仍归一到新内容模型；本机 AI 任务标记和供应商脚注更新为 V2.6 Flash。iPhone 本机识别优先策略及上传范围保持不变。服务端切换无需重发安装包；安装包内脚注须等下次出包更新。
+
+截至准备阶段，生产仍运行 `b76439d`（DeepSeek 文字 + MiMo ASR），项目 secret 目录仅发现既有 Token Plan MiMo key。已向主人请求可用于 App 的匹配密钥路径；未调用真实上游或修改生产配置。下面是 2026-09-21 的适配和部署约束记录，V2.5 内容型号由本节 V2.6 Flash 替代。
+
 2026-09-21。只改桉桉成长记的内容模型，开发代理配置不变。没有新增视频、TTS 或通用模型平台，没有发布新安装包。
 
 ## 凭证核对与阻塞项

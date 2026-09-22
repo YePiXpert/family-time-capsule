@@ -2,7 +2,9 @@
 
 生产入口 `https://capsule.yep.li/api/v1`，宿主机 3140，经现有 HTTPS 反代。首页仅提供应用说明。
 
-## 当前执行边界（2026-09-21）
+## 当前执行边界（2026-09-22）
+
+主人已要求将云端 AI 全部切到小米；仓库目标已升级为文字／看图 `mimo-v2.6-flash`、转写 `mimo-v2.5-asr`。生产切换待匹配凭证和 staging 实测，尚未把准备工作记为上线成功。
 
 **仓库中的 MiMo 内容模型适配尚未部署，真实探测未执行。** 只确认有 Token Plan，不等于允许自定义 App 使用，也不等于授权普通 API 计费。[官方套餐说明](https://mimo.mi.com/docs/zh-CN/tokenplan/Token%20Plan/subscription) 的「套餐使用」限制其用于编程工具，排除自定义应用后端。必须先取得适用于本 App 的官方特别许可，或主人明确批准普通按量 API 的费用，才能调用对应上游；两路分别核对。
 
@@ -14,7 +16,7 @@
 
 | 用途 | 提供商／固定模型 | 地址与 secret | 授权记录 |
 | --- | --- | --- | --- |
-| 文字、看图、分组、追问、润色、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.5` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
+| 文字、看图、分组、追问、润色、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.6-flash` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
 | 专用转写 | `TRANSCRIBE_PROVIDER=mimo` / `TRANSCRIBE_MODEL=mimo-v2.5-asr` | `TRANSCRIBE_BASE_URL` / `TRANSCRIBE_KEY_PATH` → `/run/secrets/transcribe-key` | `TRANSCRIBE_ACCESS` |
 
 普通 API 必须配普通 Key 和 `https://api.xiaomimimo.com/v1`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。只有已核验的官方 App 特别许可才可设置 `token-plan-authorized`，并配套餐专用 Key 与许可对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。配置字段仅记录操作人的确认，不能证明许可真实存在。没有默认授权、自动充值、按量回退或跨供应商回退。
@@ -31,7 +33,7 @@ docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.
 
 AI 走账号制：空服务第一次在手机「我的 → AI 设置」创建主人账号（仅此一次）；家人账号由主人在管理页创建并分发（用户名＋初始密码），换手机直接登录，一个账号可挂多台设备。设备撤销、全局及成员额度在主人管理页调整。全部锁死时在服务器运行 `docker compose ... exec -T ai node src/manage.ts password <登录名或成员名> <新密码>` 兜底重置（先按登录名找，找不到再按成员名）。从旧版升级后已有成员照常使用，主人可在管理页给现有成员（标记「未设登录」）补设登录名与密码。
 
-内容模型固定 `mimo-v2.5`，不使用 Pro 替代看图。`question`／`letter`／`ask`／`polish` 关闭思考，`group`（含分组合并）／`generate`／`recap`／`editor` 开启；这是初始策略，未经真实质量或速度验证。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
+内容模型固定 `mimo-v2.6-flash`（原生多模态），统一处理文字和图片。`question`／`letter`／`ask`／`polish` 关闭思考，`group`（含分组合并）／`generate`／`recap`／`editor` 开启；这是初始策略，未经真实质量或速度验证。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
 
 「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（独立必填）、`TRANSCRIBE_KEY_PATH`（独立必填），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
 

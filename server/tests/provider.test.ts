@@ -20,7 +20,7 @@ const invalid=(error:unknown)=>error instanceof Problem&&error.status===502&&err
 function fixture(t:TestContext) {
  const dir=mkdtempSync(join(tmpdir(),'anan-mimo-provider-')),keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key\n');
  t.after(()=>rmSync(dir,{recursive:true,force:true}));
- const config=loadMiMoConfig('AI',{AI_PROVIDER:'mimo',AI_MODEL:'mimo-v2.5',AI_BASE_URL:'https://api.xiaomimimo.com/v1',AI_KEY_FILE:keyFile,AI_ACCESS:'payg-approved'});
+ const config=loadMiMoConfig('AI',{AI_PROVIDER:'mimo',AI_MODEL:'mimo-v2.6-flash',AI_BASE_URL:'https://api.xiaomimimo.com/v1',AI_KEY_FILE:keyFile,AI_ACCESS:'payg-approved'});
  let respond:()=>Response=()=>response(write);
  const sent:{url:string;body:any;authorization:string|null}[]=[];
  t.mock.method(globalThis,'fetch',async(url:URL,options:RequestInit)=>{
@@ -43,7 +43,7 @@ for(const [mode,thinking,result] of modes)test(`MiMo ${mode}: pinned model, ${th
  const out=await f.provider(mode==='group'?'group':'write',input({photos,context,writingMode:mode==='group'?undefined:mode}));
  assert.deepEqual(out,{result,tokens:42});assert.ok(!JSON.stringify(out).includes('private reasoning'));
  assert.equal(f.sent.length,1);const {body,authorization}=f.sent[0]!;
- assert.equal(authorization,'Bearer test-only-key');assert.equal(body.model,'mimo-v2.5');
+ assert.equal(authorization,'Bearer test-only-key');assert.equal(body.model,'mimo-v2.6-flash');
  assert.deepEqual(body.thinking,{type:thinking});assert.equal(body.max_completion_tokens,16384);
  for(const field of ['max_tokens','reasoning_effort','temperature','top_p'])assert.equal(field in body,false,field);
  assert.equal(body.stream,false);assert.deepEqual(body.response_format,{type:'json_object'});
