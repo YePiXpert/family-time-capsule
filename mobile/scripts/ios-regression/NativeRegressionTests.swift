@@ -69,7 +69,9 @@ final class NativeRegressionTests: XCTestCase {
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
         tap("editor-by"); tap("editor-by-爸爸")
         // 保留原有录音入库验证；保存这一刻走不转写的路径，模拟器不依赖听写授权。
-        tap("说一段"); XCTAssertTrue(element("说完了").waitForExistence(timeout: 20)); sleep(2)
+        // 全新 macOS 运行器上第一次激活音频会话可能要三五十秒：流水线拆成并行作业后（`300b12e`），
+        // 回归作业不再跟在启动冒烟后面热身，run 35694486774 等 20 秒没等到「说完了」，拆解截图里录音其实已开始。放宽到 120 秒。
+        tap("说一段"); XCTAssertTrue(element("说完了").waitForExistence(timeout: 120)); sleep(2)
         tap("capture-save"); XCTAssertTrue(element("record-edit").waitForExistence(timeout: 20)); XCTAssertEqual(element("record-by").label, "—— 爸爸", "Signature missing on the reading page"); shot("record-reading")
         // 阅读页动作在底栏：滚到页尾后底栏仍在，页尾只剩「删除记录」。
         app.swipeUp(); shot("record-bottom-bar")
