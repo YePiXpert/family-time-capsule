@@ -1201,7 +1201,7 @@ export function IconButton({
   );
 }
 /**
- * 工具栏按钮：图标 + 11 号小标签，透明无框，最低 44 触控。
+ * 工具栏按钮：图标 + 11 号小标签（大字 13），透明无框，最低 44 触控。
  * 编辑页的媒体/AI 工具用它排成一行，贴在底栏上方——不跟胶囊按钮抢层级。
  */
 export function ToolButton({
@@ -1209,21 +1209,27 @@ export function ToolButton({
   label,
   onPress,
   disabled = false,
+  selected,
+  badge,
+  accessibilityLabel,
   testID,
 }: {
   icon: JournalIconName;
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  selected?: boolean;
+  badge?: ReactNode;
+  accessibilityLabel?: string;
   testID?: string;
 }) {
-  const { colors } = useTheme();
+  const { colors, large } = useTheme();
   return (
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled, selected }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -1235,10 +1241,17 @@ export function ToolButton({
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
-      <JournalIcon name={icon} color={colors.accent} size={22} />
+      <View>
+        <JournalIcon name={icon} color={colors.accent} size={22} />
+        {badge}
+      </View>
       <NativeText
         maxFontSizeMultiplier={1.4}
-        style={{ fontSize: 11, lineHeight: 15, color: colors.muted }}
+        style={{
+          fontSize: large ? 13 : 11,
+          lineHeight: large ? 18 : 15,
+          color: colors.muted,
+        }}
       >
         {label}
       </NativeText>

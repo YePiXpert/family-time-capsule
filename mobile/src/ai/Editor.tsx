@@ -14,6 +14,7 @@ import {
   ErrorText,
   Photo,
   Text,
+  ToolButton,
   dateLabel,
   hapticSuccess,
   messageOf,
@@ -66,7 +67,7 @@ export function AIEditor({
   disabled: boolean;
   onPatch: (patch: Patch) => Promise<unknown>;
   onApply: (proposal: AIProposal, part?: "title" | "text") => Promise<unknown>;
-  /** 工具栏形态：图标下带 11 号小标签，与 ToolButton 排成一行。 */
+  /** 工具栏形态：共用 ToolButton 的标签、字号与状态。 */
   tool?: boolean;
 }) {
   const library = useLibrary();
@@ -789,57 +790,56 @@ export function AIEditor({
       </View>
     </Modal>
   );
+  const badge = unseen ? (
+    <View
+      style={{
+        position: "absolute",
+        top: -2,
+        right: -4,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: colors.accent,
+      }}
+    />
+  ) : undefined;
   return (
     <View style={tool ? { flex: 1 } : undefined}>
-      <Pressable
-        testID="ai-open"
-        accessibilityRole="button"
-        accessibilityLabel={unseen ? "AI 助手，有结果待查看" : "AI 助手"}
-        accessibilityState={{ selected: open }}
-        disabled={disabled}
-        onPress={() => setPanel(true)}
-        style={({ pressed }) =>
-          tool
-            ? {
-                minHeight: 52,
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 2,
-                opacity: pressed || disabled ? 0.6 : 1,
-              }
-            : {
-                width: 44,
-                height: 44,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 22,
-                backgroundColor: open ? colors.selectedGlass : "transparent",
-                opacity: pressed || disabled ? 0.6 : 1,
-              }
-        }
-      >
-        <View>
-          <JournalIcon name="sparkle" color={colors.accent} size={22} />
-          {unseen && (
-            <View
-              style={{
-                position: "absolute",
-                top: -2,
-                right: -4,
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: colors.accent,
-              }}
-            />
-          )}
-        </View>
-        {tool && (
-          <Text style={{ fontSize: 11, lineHeight: 15, color: colors.muted }}>
-            AI
-          </Text>
-        )}
-      </Pressable>
+      {tool ? (
+        <ToolButton
+          testID="ai-open"
+          icon="sparkle"
+          label="AI"
+          accessibilityLabel={unseen ? "AI 助手，有结果待查看" : "AI 助手"}
+          selected={open}
+          disabled={disabled}
+          badge={badge}
+          onPress={() => setPanel(true)}
+        />
+      ) : (
+        <Pressable
+          testID="ai-open"
+          accessibilityRole="button"
+          accessibilityLabel={unseen ? "AI 助手，有结果待查看" : "AI 助手"}
+          accessibilityState={{ selected: open }}
+          disabled={disabled}
+          onPress={() => setPanel(true)}
+          style={({ pressed }) => ({
+            width: 44,
+            height: 44,
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 22,
+            backgroundColor: open ? colors.selectedGlass : "transparent",
+            opacity: pressed || disabled ? 0.6 : 1,
+          })}
+        >
+          <View>
+            <JournalIcon name="sparkle" color={colors.accent} size={22} />
+            {badge}
+          </View>
+        </Pressable>
+      )}
       {sheet}
     </View>
   );

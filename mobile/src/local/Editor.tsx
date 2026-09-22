@@ -934,7 +934,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             />
           </View>
         </ScrollView>
-        <BottomBar gap={6}>
+        <BottomBar gap={8}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
             <ToolButton
               icon="image"
