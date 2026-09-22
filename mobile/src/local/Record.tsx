@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import type { Svg } from "react-native-svg";
 import * as Location from "expo-location";
-import { storyTitle } from "./stories";
 import { useLibrary, useStore } from "./context";
 import {
   addRecordsToAlbum,
@@ -300,7 +299,6 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           <Text style={[s.muted, { color: colors.accent, fontWeight: "600" }]}>
             {dateLabel(record.date)}
             {record.first ? " · 第一次" : ""}
-            {record.story ? ` · ${storyTitle(record.story)}` : ""}
           </Text>
         </DateStrip>
         {(record.personIds?.length ?? 0) > 0 && (

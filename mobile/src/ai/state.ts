@@ -397,10 +397,9 @@ export function askContext(input: {
   title: string;
   text: string;
   first: boolean;
-  topic?: string;
   recent: { title: string; date: string }[];
 }): string {
-  const header = `${signature(input.by)}${ageContext(input.ageLabel)}\n记录日期：${input.date.slice(0, 10)}\n已标第一次：${input.first ? "是" : "否"}\n${input.topic ? `主题：${input.topic.slice(0, 30)}\n` : ""}标题：${input.title.slice(0, 100)}\n正文：\n`;
+  const header = `${signature(input.by)}${ageContext(input.ageLabel)}\n记录日期：${input.date.slice(0, 10)}\n已标第一次：${input.first ? "是" : "否"}\n标题：${input.title.slice(0, 100)}\n正文：\n`;
   const tail = `\n最近的记录（只有标题与日期）：\n${recentTitles(input.recent)}`;
   const clipped = input.text.length > 3000 ? "\n（正文较长，只送前 3000 字）" : "";
   return `${header}${input.text.slice(0, Math.min(3000, 3800 - header.length - tail.length - clipped.length))}${clipped}${tail}`;

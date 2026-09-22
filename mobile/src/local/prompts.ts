@@ -1,4 +1,4 @@
-/** 每日一问：按月龄分段的中文小问题，同日同种子稳定，纯本机无设置项。 */
+/** 每日一问：按月龄分段，出生头几个月优先问家庭往事；同日同种子稳定，纯本机无设置项。 */
 import { parseBirthday } from "./dates";
 
 export type PromptBand = "0-6m" | "6-12m" | "1-2y" | "2-4y" | "4y+";
@@ -186,4 +186,57 @@ export function promptOf(birthday: string, today: Date, seed = 0): string {
   const list = PROMPTS[band];
   const day = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
   return list[hashOf(`${band}|${day}|${seed}`) % list.length]!;
+}
+
+/** 原「出生的故事」的 24 问，合入每日一问，不再给记录标记主题。 */
+export const STORY_PROMPTS: readonly string[] = [
+  "出生那天：她是哪一天、几点出生的？",
+  "出生那天：那天的天气是什么样的？",
+  "出生那天：当时谁在身边？",
+  "出生那天：第一眼看见她时，你记住了什么？",
+  "出生那天：见到她后，你说的第一句话是什么？",
+  "出生那天：那之后还发生了什么？",
+  "怀孕的日子：是哪一天知道怀上她的？",
+  "怀孕的日子：知道后，你们是什么反应？",
+  "怀孕的日子：怀孕时，有哪件小事一直记得？",
+  "怀孕的日子：取名字之前，你们怎么叫她？",
+  "怀孕的日子：那时最担心什么？",
+  "怀孕的日子：那时最期待什么？",
+  "名字的来历：她的名字是谁在什么时候起的？",
+  "名字的来历：这个名字有什么来历或出处？",
+  "名字的来历：还考虑过哪些名字？",
+  "名字的来历：她的小名是怎么来的？",
+  "名字的来历：第一次叫她的名字时，是什么情景？",
+  "名字的来历：希望这个名字带给她什么？",
+  "我们怎么认识的：你们是什么时候、怎么认识的？",
+  "我们怎么认识的：对彼此的第一印象是什么？",
+  "我们怎么认识的：第一次约会是什么样的？",
+  "我们怎么认识的：什么时候决定在一起的？",
+  "我们怎么认识的：家里人知道后怎么说？",
+  "我们怎么认识的：关于你们的相遇，想对她说哪句话？",
+];
+
+function storyShare(months: number | null): readonly [number, number] {
+  if (months === null) return [1, 4];
+  if (months < 6) return [2, 3];
+  if (months < 12) return [1, 4];
+  return [0, 1];
+}
+
+function picksStory(birthday: string, day: string, today: Date, seed: number): boolean {
+  const [numerator, denominator] = storyShare(ageInMonths(birthday, today));
+  return hashOf(`story|${day}|${seed}`) % denominator < numerator;
+}
+
+/** 当天默认出家庭往事问题时，不请求 AI 小问题。 */
+export function isStoryDay(birthday: string, today: Date): boolean {
+  const day = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+  return picksStory(birthday, day, today, 0);
+}
+
+export function dailyPromptOf(birthday: string, today: Date, seed = 0): string {
+  const day = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+  return picksStory(birthday, day, today, seed)
+    ? STORY_PROMPTS[hashOf(`story-pick|${day}|${seed}`) % STORY_PROMPTS.length]!
+    : promptOf(birthday, today, seed);
 }

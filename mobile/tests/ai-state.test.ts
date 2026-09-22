@@ -444,16 +444,16 @@ const recentInterviewRecords = Array.from({ length: 12 }, (_, i) => ({
   text: "别的记录的秘密正文", photos: ["秘密照片"],
 }));
 describe("interviewer contexts", () => {
-  it("asks about this draft, signature, age and topic with only ten short recent titles", () => {
-    const context = askContext({ by: "爸爸", ageLabel: "4 个月", date: "2026-09-05", title: "第一次翻身", text: "当前草稿", first: false, topic: "出生那天", recent: recentInterviewRecords });
-    expect(context).toContain("落款：爸爸\n她的月龄：4 个月\n记录日期：2026-09-05\n已标第一次：否\n主题：出生那天\n标题：第一次翻身\n正文：\n当前草稿");
+  it("asks about this draft, signature and age with only ten short recent titles", () => {
+    const context = askContext({ by: "爸爸", ageLabel: "4 个月", date: "2026-09-05", title: "第一次翻身", text: "当前草稿", first: false, recent: recentInterviewRecords });
+    expect(context).toContain("落款：爸爸\n她的月龄：4 个月\n记录日期：2026-09-05\n已标第一次：否\n标题：第一次翻身\n正文：\n当前草稿");
     expect(context).toContain(recentInterviewRecords[0]!.title.slice(0, 40));
     expect(context).not.toContain(recentInterviewRecords[0]!.title.slice(0, 41));
     expect(context).not.toContain("2026-09-11");
     expect(context).not.toContain("秘密");
   });
   it("bounds long draft and overall context, preserving the clipping explanation", () => {
-    const context = askContext({ by: "爸".repeat(20), ageLabel: "月".repeat(40), date: "2026-09-05", title: "题".repeat(200), text: "文".repeat(5000), first: true, topic: "题".repeat(30), recent: recentInterviewRecords });
+    const context = askContext({ by: "爸".repeat(20), ageLabel: "月".repeat(40), date: "2026-09-05", title: "题".repeat(200), text: "文".repeat(5000), first: true, recent: recentInterviewRecords });
     expect(context.length).toBeLessThanOrEqual(3800);
     expect(context).toContain("（正文较长，只送前 3000 字）");
     expect(context).toContain("已标第一次：是");

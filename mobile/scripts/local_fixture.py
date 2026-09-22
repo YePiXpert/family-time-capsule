@@ -13,9 +13,9 @@ def empty():
                 series={}, persons={}, letters={}, yearNotes={}, yearCovers={}, receivedShares=[])
 
 
-def record(identifier, title, date='2026-09-15T10:00:00.000Z', media=None, by='爸爸', story=None):
+def record(identifier, title, date='2026-09-15T10:00:00.000Z', media=None, by='爸爸'):
     return dict(id=identifier, title=title, text='今天的小小进步，值得好好记住。', date=date, location='', first=False,
-                mediaIds=media or [], coverId=(media or [None])[0], revision=1, updatedAt=date, by=by, **({"story": story} if story else {}))
+                mediaIds=media or [], coverId=(media or [None])[0], revision=1, updatedAt=date, by=by)
 
 ENTITY_KINDS = ('records', 'drafts', 'media', 'albums', 'selections', 'series', 'persons', 'letters')
 

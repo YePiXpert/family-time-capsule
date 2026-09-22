@@ -25,8 +25,7 @@ import {
 } from "./model";
 import { newId, now, createPerson } from "./services";
 import { useDailyQuestion } from "./dailyQuestionHooks";
-import { promptOf } from "./prompts";
-import { storyTitle, storyQuestions } from "./stories";
+import { dailyPromptOf, isStoryDay } from "./prompts";
 import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
 import { appendTranscript } from "./transcribe";
@@ -73,10 +72,10 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [allowExit, setAllowExit] = useState(false),
     [promptSeed, setPromptSeed] = useState(0),
     [promptOff, setPromptOff] = useState(false),
-    [storyQuestion, setStoryQuestion] = useState(0),
     [newPerson, setNewPerson] = useState("");
-  const dailyVisible = !!draft && !draft.content.story && !promptOff && !draft.recordId && !draft.content.text.trim() && !draft.photoEvents;
-  const daily = useDailyQuestion(store, state, dailyVisible);
+  const dailyVisible = !!draft && !promptOff && !draft.recordId && !draft.content.text.trim() && !draft.photoEvents;
+  const storyDay = isStoryDay(state.profile.birthday, new Date());
+  const daily = useDailyQuestion(store, state, dailyVisible && !storyDay);
   const [permDenied, setPermDenied] = useState(false);
   const personList = useMemo(
     () => Object.values(state.persons),
@@ -131,13 +130,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             ),
           }
         : {}),
-      // 落款与故事主题是整份草稿的：分成几件事时每件事都跟着换。
-      ...(("by" in patch || "story" in patch) && current.current.photoEvents
+      // 落款是整份草稿的：分成几件事时每件事都跟着换。
+      ...("by" in patch && current.current.photoEvents
         ? {
             photoEvents: current.current.photoEvents.map((event) => ({
               ...event,
               ...("by" in patch ? { by: patch.by } : {}),
-              ...("story" in patch ? { story: patch.story } : {}),
             })),
           }
         : {}),
@@ -476,48 +474,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               草稿会自动保留。
             </Text>
           )}
-          {!!draft.content.story && (
-            <Card testID="story-card">
-              <Text style={s.muted} testID="story-question">
-                {storyTitle(draft.content.story)} · 第 {storyQuestion + 1}/
-                {storyQuestions(draft.content.story).length} 问：
-                {storyQuestions(draft.content.story)[storyQuestion]}
-              </Text>
-              <View style={s.row}>
-                <Button
-                  compact
-                  title="上一问"
-                  disabled={storyQuestion === 0}
-                  onPress={() => setStoryQuestion((n) => Math.max(0, n - 1))}
-                />
-                <Button
-                  compact
-                  title="下一问"
-                  disabled={
-                    storyQuestion >=
-                    storyQuestions(draft.content.story).length - 1
-                  }
-                  onPress={() =>
-                    setStoryQuestion((n) =>
-                      Math.min(
-                        storyQuestions(draft.content.story!).length - 1,
-                        n + 1,
-                      ),
-                    )
-                  }
-                />
-                <Button
-                  kind="text"
-                  title="这不是故事"
-                  disabled={busy}
-                  onPress={() => change({ story: undefined })}
-                />
-              </View>
-            </Card>
-          )}
           {dailyVisible &&
             (() => {
-              const question = daily.question ?? promptOf(
+              const question = (!storyDay && daily.question) || dailyPromptOf(
                 state.profile.birthday,
                 new Date(),
                 promptSeed,
@@ -533,7 +492,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   >
                     今天的小问题：{question}
                   </Text>
-                  <Text testID="daily-prompt-source" style={{ display: "none" }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{daily.source}</Text>
+                  <Text testID="daily-prompt-source" style={{ display: "none" }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{storyDay ? "local" : daily.source}</Text>
                   <Button
                     title="换一个"
                     kind="text"

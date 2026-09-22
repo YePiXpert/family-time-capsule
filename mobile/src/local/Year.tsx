@@ -22,7 +22,7 @@ import { replayPhotos } from "./replay";
 import { byCountsOf, byLine } from "./recap";
 import { YearBookCard, type YearbookPhoto } from "./YearBookCard";
 import { prepareKeepSakePhoto, exportKeepSakeCard } from "./KeepSakeCard";
-import { yearBookInput, yearBookMonth, yearBookRecordGroups, type YearbookInput } from "./yearbook";
+import { yearBookInput, yearBookMonth, type YearbookInput } from "./yearbook";
 import { planBook, useBookBinder } from "./BookBinder";
 import { BookPreview } from "./BookPreview";
 import type { BookLayout, BookPhoto } from "./book";
@@ -251,7 +251,7 @@ export function YearEditor({ year, records }: { year: string; records: readonly 
             </View>
           ))}
           {!!preview.notes && <Text style={s.muted}>{preview.notes}</Text>}
-          <Text style={s.muted}>未列进目录的月份会保留全部记录；故事章、寄语和第一次清单照旧。</Text>
+          <Text style={s.muted}>未列进目录的月份会保留全部记录；寄语和第一次清单照旧。</Text>
           <View style={s.row}>
             <Button title="采用这份目录" primary compact testID="year-editor-apply" disabled={saving} onPress={() => { void save(preview); }} />
             <Button title="不用" kind="text" compact disabled={saving} onPress={() => setPreview(null)} />
@@ -356,7 +356,6 @@ export function Year({ route }: Props<"Year">) {
   };
   const makeBook = () => {
     const applied = applyYearPicks(state.yearPicks?.[year], records);
-    const { stories, monthlyRecords } = yearBookRecordGroups(records);
     const bookRecord = (r: Stored<LocalRecord>) => ({
       title: recordTitle(r),
       date: dateLabel(r.date),
@@ -376,12 +375,8 @@ export function Year({ route }: Props<"Year">) {
         motto: state.profile.motto,
         stats,
         note: state.yearNotes[year] ?? "",
-        stories: stories.map((story) => ({
-          ...story,
-          records: story.records.map(bookRecord),
-        })),
         months: monthKeys.map((key) => {
-          const monthRecords = monthlyRecords.filter(
+          const monthRecords = records.filter(
             (r) => monthKey(r.date) === key,
           );
           return {
