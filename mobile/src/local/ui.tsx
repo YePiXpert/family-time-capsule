@@ -696,6 +696,24 @@ export function useTopBarOffset() {
   return insets.top + TOP_BAR_HEIGHT;
 }
 /**
+ * 订阅导航栈的「能否返回」。不能只读一次 `canGoBack()`：返回途中页面会因其他状态
+ * （如草稿清理）在栈弹出前重渲染而拿到 true，弹出完成后无人再触发渲染，箭头就残留。
+ */
+function useCanGoBack() {
+  const navigation = useContext(NavigationContext);
+  const [canGoBack, setCanGoBack] = useState(
+    () => navigation?.canGoBack() ?? false,
+  );
+  useEffect(() => {
+    if (!navigation) return;
+    const update = () => setCanGoBack(navigation.canGoBack());
+    update();
+    return navigation.addListener("state", update);
+  }, [navigation]);
+  return canGoBack;
+}
+
+/**
  * 页面容器：安全区 + 氛围底 + 可选滚动。原生页头已下线，返回与标题由这里的顶栏绘制：
  * 表单与设置类页面传 `title`（标题在顶栏），内容类页面不传（顶栏只有返回，标题随内容）；
  * `back` 缺省时看导航栈能否返回，首页自然没有返回钮；弹层（Modal）请显式传 `back={false}`
@@ -722,8 +740,8 @@ export function Page({
 }) {
   const s = useStyles();
   const navigation = useContext(NavigationContext);
-  const showBack =
-    back ?? (onBack !== undefined || (navigation?.canGoBack() ?? false));
+  const canGoBack = useCanGoBack();
+  const showBack = back ?? (onBack !== undefined || canGoBack);
   const hasBar = showBack || title !== undefined || right !== undefined;
   return (
     <SafeAreaView
