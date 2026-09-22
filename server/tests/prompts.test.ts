@@ -14,7 +14,7 @@ test('shared preamble names the family book and lists all 19 banned words',()=>{
 test('all prompt text matches the manual verbatim',()=>{
  const manual=readFileSync(new URL('../../docs/AI-PROMPTS.md',import.meta.url),'utf8');
  const blocks=[...manual.matchAll(/```text\n([\s\S]*?)\n```/g)].map(match=>match[1]!);
- assert.equal(blocks.length,9);assert.equal(SHARED,blocks[0]);
+ assert.equal(blocks.length,6);assert.equal(SHARED,blocks[0]);
  Object.values(PROMPTS).forEach((prompt,i)=>assert.equal(prompt,`${SHARED}\n${blocks[i+1]}`));
 });
 test('static prompt check rejects missing JSON, missing preamble and old wording',()=>{

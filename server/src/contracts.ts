@@ -3,19 +3,15 @@ import { Problem } from './store.ts';
 import { MODEL_ID, LEGACY_MODEL_IDS } from './ai-model.ts';
 import { BANNED_WORDS } from './prompts.ts';
 export { promptIsWellFormed } from './prompts.ts';
-export const photoSchema=z.object({id:z.string().min(1).max(100),date:z.string().max(40).optional(),place:z.string().max(50).optional(),image:z.string().max(710000).regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/)}).strict();
-export const groupSchema=z.object({photoIds:z.array(z.string().min(1).max(100)).min(1).max(100),title:z.string().max(100),summary:z.string().max(600)}).strict();
 export const inputSchema=z.object({
  requestId:z.string().uuid(),model:z.enum(LEGACY_MODEL_IDS).optional().transform(()=>MODEL_ID),
- photos:z.array(photoSchema).max(20).default([]),
+ // 1.0.3 手机仍发送 photos: []；保留字段，严格解析只接受空数组。
+ photos:z.array(z.unknown()).max(0).default([]),
  context:z.string().max(60000).default(''),
-  writingMode:z.enum(['generate','polish','recap','ask','question','letter','editor']).optional(),
- groups:z.array(groupSchema).max(100).optional(),
- mode:z.enum(['photos','merge']).default('photos'),
+ writingMode:z.enum(['polish','recap','ask','question','editor']),
 }).strict();
 export type AIInput=z.infer<typeof inputSchema>;
-export type WritingMode=NonNullable<AIInput['writingMode']>;
-export type Group=z.infer<typeof groupSchema>;
+export type WritingMode=AIInput['writingMode'];
 /** 润色的长度上限只约束正文：客户端把标题和正文放在同一个 context 里。 */
 export const POLISH_BODY_LIMIT=2000;
 const POLISH_BODY_MARK='正文：\n';
@@ -67,26 +63,13 @@ function parseEditorResult(value:unknown,input:AIInput) {
   return result;
  } catch {throw editorError();}
 }
-export function parseResult(value:unknown,kind:'group'|'write',input:AIInput) {
- if(kind==='write') {
-  if(input.writingMode==='editor')return parseEditorResult(value,input);
-  try {
-   if(input.writingMode==='ask')return z.object({questions:z.array(questionSchema).min(1).max(3),first:z.boolean()}).strict().parse(value);
-   if(input.writingMode==='question')return z.object({question:questionSchema}).strict().parse(value);
-   if(input.writingMode==='letter')return z.object({questions:z.array(questionSchema).min(2).max(3)}).strict().parse(value);
-  } catch {throw questionError();}
-  return z.object({title:z.string().max(100),text:z.string().max(2000)}).strict().parse(value);
- }
- const result=z.object({groups:z.array(groupSchema).min(1).max(100)}).strict().parse(value);
- const expected=input.mode==='merge'?input.groups!.flatMap(g=>g.photoIds):input.photos.map(p=>p.id);
- const actual=result.groups.flatMap(g=>g.photoIds);
- if(actual.length!==expected.length || new Set(actual).size!==actual.length || actual.some(id=>!expected.includes(id)))
-  throw new Problem(502,'INVALID_RESULT','AI 分组不完整，请重试或手动整理。');
- // A model can merge groups within a date, but cannot silently combine known different days.
- const dates=new Map(input.photos.map(p=>[p.id,p.date?.slice(0,10)]));
- if(result.groups.some(g=>new Set(g.photoIds.map(id=>dates.get(id)).filter(Boolean)).size>1))
-  throw new Problem(502,'INVALID_RESULT','AI 混合了不同日期，请重试或手动整理。');
- return result;
+export function parseResult(value:unknown,input:AIInput) {
+ if(input.writingMode==='editor')return parseEditorResult(value,input);
+ try {
+  if(input.writingMode==='ask')return z.object({questions:z.array(questionSchema).min(1).max(3),first:z.boolean()}).strict().parse(value);
+  if(input.writingMode==='question')return z.object({question:questionSchema}).strict().parse(value);
+ } catch {throw questionError();}
+ return z.object({title:z.string().max(100),text:z.string().max(2000)}).strict().parse(value);
 }
 
 export const transcribeResultSchema=z.object({text:z.string().trim().max(5000)}).strict();

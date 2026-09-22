@@ -1,4 +1,4 @@
-"""Exercise a running service with synthetic media; never print device tokens."""
+"""Exercise five text modes, transcription and backups with synthetic data; never print device tokens."""
 import argparse,base64,json,subprocess,tempfile,time,urllib.request,urllib.error,uuid
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');p.add_argument('--skip-transcribe',action='store_true');p.add_argument('--skip-text',action='store_true');p.add_argument('--allow-live',action='store_true');args=p.parse_args()
@@ -53,27 +53,29 @@ if status!=200:
 assert status==200
 assert call('/api/v1/admin/overview',token=member['token'])[0]==403
 image='data:image/jpeg;base64,'+base64.b64encode((Path(__file__).parent.parent/'tests/fixtures/shapes.jpg').read_bytes()).decode()
-for model in ['mimo-v2.6-pro']:
- for kind in ['group','write']:
-  body={'requestId':str(uuid.uuid4()),'model':model,'photos':[{'id':'shapes','date':'2020-01-01T12:00:00','image':image}],'context':'这是几何图形测试，请客观描述形状和颜色。'}
-  status,result=call('/api/v1/ai/'+kind,body,member['token']);assert status==200,(model,kind,status)
-  status,replayed=call('/api/v1/ai/'+kind,body,member['token']);assert replayed==result
-  print(model,kind,'passed, replay verified')
-# 合成文本验证访谈者与编者：只记录状态、耗时和用量，不打印设备凭证或正文。
+# 合成文本验证五种模式：只记录状态、耗时和用量，不打印设备凭证或正文。
 if not args.skip_text:
  contexts={
   'ask':'落款：爸爸。月龄：4 个月。正文：今天她笑了。已标第一次：否。',
   'question':'月龄：4 个月。今天：2026-09-05。最近标题：窗边、翻过去了。近七天问过：[]。',
-  'letter':'落款：妈妈。月龄：4 个月。拆封日期：2044-05-01。草稿：',
+  'polish':'落款：妈妈。标题：窗边。正文：今天我我抱她站在窗边。',
+  'recap':'年份：2026。标题：窗边的风、翻过去了。第一次：第一次翻身。她说的话：无。已写寄语：无。',
  }
  for writing_mode,context in contexts.items():
   body={'requestId':str(uuid.uuid4()),'writingMode':writing_mode,'context':context,'photos':[]}
   status,result=call('/api/v1/ai/write',body,member['token']);assert status==200,(writing_mode,status)
   if writing_mode=='question':assert isinstance(result.get('question'),str)
-  else:
-   questions=result.get('questions');assert isinstance(questions,list) and (1 if writing_mode=='ask' else 2)<=len(questions)<=3
+  elif writing_mode=='ask':
+   questions=result.get('questions');assert isinstance(questions,list) and 1<=len(questions)<=3
    assert all(isinstance(question,str) for question in questions)
-   if writing_mode=='ask':assert isinstance(result.get('first'),bool)
+   assert isinstance(result.get('first'),bool)
+  else:assert isinstance(result.get('title'),str) and isinstance(result.get('text'),str)
+  if writing_mode=='polish':
+   before=call('/api/v1/me',token=member['token'])[1]['usage']
+   status,replayed=call('/api/v1/ai/write',body,member['token']);assert status==200 and replayed==result
+   after=call('/api/v1/me',token=member['token'])[1]['usage']
+   assert after==before
+   print('polish replay verified without extra tokens or quota')
   print(writing_mode,'text passed')
  records=[
   {'id':'r1','date':'2026-09-01','by':'爸爸','title':'清早的窗','text':'我抱她站在窗边，楼下有人扫地。','first':False,'quote':False,'photos':True},
@@ -88,9 +90,14 @@ if not args.skip_text:
  for chapter in chapters:
   picks=chapter.get('picks');assert isinstance(picks,list) and 1<=len(picks)<=3 and set(picks)<=ids
  print('editor text passed')
- body={'requestId':str(uuid.uuid4()),'writingMode':'ask','context':contexts['ask'],'photos':[{'id':'shapes','image':image}]}
- assert call('/api/v1/ai/write',body,member['token'])[0]==400
- print('ask photos rejected')
+# 便宜的负例不调用上游，跳过文本生成时也验证。
+body={'requestId':str(uuid.uuid4()),'writingMode':'ask','context':'今天她笑了。','photos':[{'id':'shapes','image':image}]}
+assert call('/api/v1/ai/write',body,member['token'])[0]==400
+print('ask photos rejected')
+body={'requestId':str(uuid.uuid4()),'writingMode':'generate','context':'合成文字','photos':[]}
+status,rejected=call('/api/v1/ai/write',body,member['token']);assert status==400 and rejected['code']=='INVALID_INPUT'
+assert call('/api/v1/ai/group',body,member['token'])[0]==404
+print('removed modes and route rejected')
 # 家庭远端空间（Build 72）：上传 → 重传幂等 → have → 读回逐字节一致 → 坏哈希拒收 → 这台设备发布清单（登记对象）
 # → 全家清单列表里有它 → 同一成员的另一台设备 GET 拿到成员名下最新的一份（Build 71 换机恢复路径）
 # → 空 keep 拒绝、prune 不动新对象 → 成员删自己的清单（对象是全家的，一小时内的新对象留着）。不清空家庭空间。

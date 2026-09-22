@@ -14,7 +14,7 @@
 
 | 用途 | 提供商／固定模型 | 地址与 secret | 授权记录 |
 | --- | --- | --- | --- |
-| 文字、看图、分组、追问、润色、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.6-pro` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
+| 润色、追问、小问题、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.6-pro` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
 | 专用转写 | `TRANSCRIBE_PROVIDER=mimo` / `TRANSCRIBE_MODEL=mimo-v2.5-asr` | `TRANSCRIBE_BASE_URL` / `TRANSCRIBE_KEY_PATH` → `/run/secrets/transcribe-key` | `TRANSCRIBE_ACCESS` |
 
 普通 API 必须配普通 Key 和 `[服务地址已省略]`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。主人明确选择 Token Plan 时设置 `token-plan-authorized`，并配套餐专用 Key 与对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。该字段记录主人的使用选择。没有默认授权、自动充值、按量回退或跨供应商回退。
@@ -31,17 +31,17 @@ docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.
 
 AI 走账号制：空服务第一次在手机「我的 → AI 设置」创建主人账号（仅此一次）；家人账号由主人在管理页创建并分发（用户名＋初始密码），换手机直接登录，一个账号可挂多台设备。设备撤销、全局及成员额度在主人管理页调整。全部锁死时在服务器运行 `docker compose ... exec -T ai node src/manage.ts password <登录名或成员名> <新密码>` 兜底重置（先按登录名找，找不到再按成员名）。从旧版升级后已有成员照常使用，主人可在管理页给现有成员（标记「未设登录」）补设登录名与密码。
 
-内容模型固定 `mimo-v2.6-pro`（原生多模态），统一处理文字和图片。`question`／`letter`／`ask`／`polish` 关闭思考，`group`（含分组合并）／`generate`／`recap`／`editor` 开启；此策略已通过合成样例真实调用验证，尚未做家庭实际内容的长期质量评估。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
+内容模型固定 `mimo-v2.6-pro`，只处理文字，保留五个 writingMode。`question`／`ask`／`polish` 关闭思考，`recap`／`editor` 开启；此策略已通过合成样例真实调用验证，尚未做家庭实际内容的长期质量评估。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
 
 「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（独立必填）、`TRANSCRIBE_KEY_PATH`（独立必填），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
 
-八条提示词内置在 `server/src/prompts.ts`：GROUP 按事情分组、WRITE 起个头、POLISH 润色、RECAP 年度寄语、ASK 追问、QUESTION 今天的小问题、LETTER 写信引导、EDITOR 年度册目录建议。提示词全文以 `docs/AI-PROMPTS.md` 为准。editor 的 context 是 JSON，上限 60000 字，服务端不留。
+五条提示词内置在 `server/src/prompts.ts`：POLISH 润色、RECAP 年度寄语、ASK 追问、QUESTION 今天的小问题、EDITOR 年度册目录建议。提示词全文以 `docs/AI-PROMPTS.md` 为准。editor 的 context 是 JSON，上限 60000 字，服务端不留。
 
 ## 配额与数据
 
-默认每人每天 100 张分析图片、20 次文案；全局 500 张、100 次。图片文案分析计入图片额度。每天 UTC 00:00 重置；上游调用最多并发 2，每人最多 200 次/日、全局 1000 次/日，避免只用摘要绕过额度。暂停与成员额度在发起上游之前检查。反向代理后所有客户端共享同一来源地址，登录、初始化与改密接口的按地址限流实际是全家共享的每分钟预算，属预期行为。
+默认每人每天 20 次写作、全局 100 次，每个内容请求计一次写作。AI 不再看照片，图片额度字段保留（默认每人 100 张、全局 500 张）但不再消耗。每天 UTC 00:00 重置；上游调用最多并发 2，每人最多 200 次/日、全局 1000 次/日，限制请求总量。暂停与成员额度在发起上游之前检查。反向代理后所有客户端共享同一来源地址，登录、初始化与改密接口的按地址限流实际是全家共享的每分钟预算，属预期行为。
 
-相同成员、同一请求 ID 不能再次调用上游；分组与文案的成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。失败或超时不占成员当日额度；上游可能已计费，但不自动重试或换模型。
+相同成员、同一请求 ID 不能再次调用上游；文字请求的成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。失败或超时不占成员当日额度；上游可能已计费，但不自动重试或换模型。
 
 服务 SQLite 保存成员账号（用户名与密码哈希）、设备凭证哈希、请求状态和用量，不保存照片或生成正文。日志仅包含服务启动信息及缺失 ffmpeg 的固定诊断，不含音频或转写文字。无需 Redis、云相册或账号同步。
 
@@ -86,8 +86,8 @@ curl --noproxy '*' -fsS http://127.0.0.1:3140/healthz
 
 `server` 内运行 `npm run typecheck && npm test`；Mock 测试不消耗模型额度。另运行 mobile 的 test／typecheck／lint 及本机边界门禁。
 
-真实探针默认拒绝执行。仅主人授权真实调用后，用合成样例在 staging 运行：`node server/scripts/probe.ts --allow-live`（2 次看图调用）与 `node server/scripts/probe-text.ts --allow-live`（6 个文字模式各 1 次）。先设置独立的 `AI_*` 环境与 secret 文件；不得把 Key 放命令行或打印出来。每次最多 16384 completion tokens，不自动重试，只输出模型、模式、思考开关、成功状态、耗时、用量／错误码，不打印生成内容或完整响应。
+真实探针默认拒绝执行。仅主人授权真实调用后，用合成样例在 staging 运行：`node server/scripts/probe-text.ts --allow-live`（5 个文字模式各 1 次）。先设置独立的 `AI_*` 环境与 secret 文件；不得把 Key 放命令行或打印出来。每次最多 16384 completion tokens，不自动重试，只输出模型、模式、思考开关、成功状态、耗时、用量／错误码，不打印生成内容或完整响应。
 
-`python3 server/scripts/verify-service.py --allow-live --container anan-ai-staging-ai-1` 只接受本机 3141 的隔离 staging，先检查容器配置与独立数据挂载，再执行最多 6 次内容生成和 1 次两秒合成音频转写；回放／无效输入应不触发额外上游调用。脚本验证账号、备份与撤销，会写测试数据，禁止对生产运行。可用 `--skip-transcribe`／`--skip-text` 缩小探测范围；转写探测须在主人授权的调用范围内执行。
+`python3 server/scripts/verify-service.py --allow-live --container anan-ai-staging-ai-1` 只接受本机 3141 的隔离 staging，先检查容器配置与独立数据挂载，再执行最多 5 次内容生成和 1 次转写（两秒合成音频）；回放／无效输入应不触发额外上游调用。脚本验证账号、备份与撤销，会写测试数据，禁止对生产运行。可用 `--skip-transcribe`／`--skip-text` 缩小探测范围；转写探测须在主人授权的调用范围内执行。
 
-2026-09-22 已完成以上真实探针和隔离 staging 验证，统计见适配记录顶部。来源由健康版本、镜像 ID 和部署提交核对；手机双端验收仍需真机。
+2026-09-22 已完成减法前版本的真实探针和隔离 staging 验证，1.0.3 的部署验证待补；统计见适配记录顶部。来源由健康版本、镜像 ID 和部署提交核对；手机双端验收仍需真机。

@@ -10,18 +10,17 @@ import { Store } from '../src/store.ts';
 import { createApp } from '../src/app.ts';
 import { hashPassword } from '../src/passwords.ts';
 import type { Provider } from '../src/provider.ts';
-const image='data:image/jpeg;base64,/9j/2Q==';
 const PW='12345678',HASH=await hashPassword(PW);
 function fixture(provider?:Provider) {
  const store=new Store(':memory:'),dir=mkdtempSync(join(tmpdir(),'anan-app-test-'));
  let calls=0;
- const app=createApp(store,provider??(async(kind,input)=>{calls++;return {tokens:20,result:kind==='write'?{title:'公园',text:'一起散步。'}:{groups:[{photoIds:input.photos.map(p=>p.id),title:'公园',summary:'散步'}]}};}),'test',new BackupStore(dir),unusedTranscribe);
+ const app=createApp(store,provider??(async()=>{calls++;return {tokens:20,result:{title:'公园',text:'一起散步。'}};}),'test',new BackupStore(dir),unusedTranscribe);
  app.addHook('onClose',async()=>{rmSync(dir,{recursive:true,force:true});});
  const owner=store.setup('主人',HASH,'主人手机');
  store.createMember('家人',HASH);
  const member=store.attach(store.byUsername('家人')!.id,'家人手机');
  const headers=(token=member.token)=>({authorization:`Bearer ${token}`});
- const input=()=>({requestId:randomUUID(),model:'mimo-v2.6-pro',photos:[{id:'a',date:'2020-01-01T12:00:00',image}]});
+ const input=()=>({requestId:randomUUID(),model:'mimo-v2.6-pro',photos:[],writingMode:'polish',context:'我们一起去公园。'});
  return {store,app,owner,member,headers,input,calls:()=>calls};
 }
 test('账号系统：一次性初始化，登录校验密码，凭证随设备撤销失效',async()=>{
@@ -74,22 +73,22 @@ test('owner endpoints enforce server-side role and tokens never appear in overvi
 });
 test('identical retries replay only to the same member without spending twice',async()=>{
  const f=fixture(),payload=f.input();
- for(let i=0;i<2;i++)assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload})).statusCode,200);
- assert.equal(f.calls(),1);assert.equal(f.store.usage(f.member.member.id).photos,1);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:{...payload,context:'different'}})).statusCode,409);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(f.owner.token),payload})).statusCode,200);
+ for(let i=0;i<2;i++)assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload})).statusCode,200);
+ assert.equal(f.calls(),1);assert.equal(f.store.usage(f.member.member.id).photos,0);assert.equal(f.store.usage(f.member.member.id).writes,1);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload,context:'different'}})).statusCode,409);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(f.owner.token),payload})).statusCode,200);
  assert.equal(f.calls(),2);
  await f.app.close();f.store.close();
 });
 test('quota is checked before upstream; pause and model allowlist are enforced',async()=>{
  const f=fixture();
- f.store.editMember(f.member.member.id,{enabled:true,photoLimit:0,writeLimit:1});
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()})).statusCode,429);
+ f.store.editMember(f.member.member.id,{enabled:true,photoLimit:0,writeLimit:0});
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:f.input()})).statusCode,429);
  assert.equal(f.calls(),0);
  f.store.setSettings({...f.store.settings(),paused:true});
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(f.owner.token),payload:f.input()})).statusCode,503);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(f.owner.token),payload:f.input()})).statusCode,503);
  f.store.setSettings({...f.store.settings(),paused:false});
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(f.owner.token),payload:{...f.input(),model:'unknown-model'}})).statusCode,400);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(f.owner.token),payload:{...f.input(),model:'unknown-model'}})).statusCode,400);
  await f.app.close();f.store.close();
 });
 test('concurrent duplicate requests do not repeat upstream work',async()=>{
@@ -103,33 +102,26 @@ test('concurrent duplicate requests do not repeat upstream work',async()=>{
  release();assert.equal((await first).statusCode,200);
  await f.app.close();f.store.close();
 });
-test('invalid model output cannot omit, invent or duplicate photo IDs',async()=>{
- const f=fixture(async()=>({tokens:1,result:{groups:[{photoIds:['invented'],title:'x',summary:'x'}]}}));
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()})).statusCode,502);
- // 无效结果属于服务端失败，不再计入当日额度。
- assert.equal(f.store.usage(f.member.member.id).calls,0);
- await f.app.close();f.store.close();
-});
 test('failed upstream requests do not burn the daily quota',async()=>{
  let fail=true;
- const f=fixture(async kind=>{if(fail){fail=false;throw new Error('upstream down');}return {tokens:5,result:kind==='write'?{title:'公园',text:'散步。'}:{groups:[{photoIds:['a'],title:'公园',summary:'散步'}]}};});
+ const f=fixture(async()=>{if(fail){fail=false;throw new Error('upstream down');}return {tokens:5,result:{title:'公园',text:'散步。'}};});
  f.store.editMember(f.member.member.id,{enabled:true,photoLimit:1,writeLimit:1});
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()})).statusCode,502);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:f.input()})).statusCode,502);
  assert.equal(f.store.usage(f.member.member.id).photos,0);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()})).statusCode,200);
- assert.equal(f.store.usage(f.member.member.id).photos,1);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:f.input()})).statusCode,200);
+ assert.equal(f.store.usage(f.member.member.id).photos,0);assert.equal(f.store.usage(f.member.member.id).writes,1);
  await f.app.close();f.store.close();
 });
 test('server restart cannot repeat an uncertain paid request',async()=>{
  const f=fixture();const id=randomUUID();
- f.store.reserve(f.member.member,id,'hash',1,0,'mimo-v2.6-pro');f.store.recover();
- assert.equal(f.store.reserve(f.member.member,id,'hash',1,0,'mimo-v2.6-pro'),'failed');
+ f.store.reserve(f.member.member,id,'hash',0,1,'mimo-v2.6-pro');f.store.recover();
+ assert.equal(f.store.reserve(f.member.member,id,'hash',0,1,'mimo-v2.6-pro'),'failed');
  await f.app.close();f.store.close();
 });
 test('recap drafts a year note from text only and counts as one write',async()=>{
  const f=fixture(async()=>({tokens:9,result:{title:'这一年想说的话',text:'慢慢长大，慢慢来。'}}));
  const payload=()=>({requestId:randomUUID(),writingMode:'recap',photos:[],context:'这一年共有 3 条记录。\n第一次：第一次挥手'});
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload(),photos:[{id:'a',image}]}})).statusCode,400);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload(),photos:[{}]}})).statusCode,400);
  assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload(),context:'   '}})).statusCode,400);
  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:payload()});
  assert.equal(response.statusCode,200);
@@ -141,9 +133,10 @@ test('recap drafts a year note from text only and counts as one write',async()=>
 
 test('fixed MiMo configuration preserves quotas and normalizes previous app selections',async()=>{
  let actualModel='';
- const f=fixture(async(_kind,input)=>{actualModel=input.model;return {tokens:1,result:{title:'记录',text:'照片中的画面。'}};});
+ const f=fixture(async(input)=>{actualModel=input.model;return {tokens:1,result:{title:'记录',text:'照片中的画面。'}};});
  f.store.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({paused:false,defaultModel:'gpt-6-astra',enabledModels:['gpt-6-astra'],globalPhotos:123,globalWrites:17}));
  const config=(await f.app.inject({url:'/api/v1/ai/config',headers:f.headers()})).json();
+ assert.deepEqual(config.thinkingPolicy,{question:'disabled',ask:'disabled',polish:'disabled',recap:'enabled',editor:'enabled'});
  assert.equal(config.defaultModel,'mimo-v2.6-pro');assert.equal(config.reasoningEffort,'per-mode');
  assert.deepEqual(config.models,[{id:'mimo-v2.6-pro',label:'MiMo 2.6 Pro'}]);
  assert.equal(config.globalPhotos,123);assert.equal(config.globalWrites,17);
@@ -159,12 +152,12 @@ test('fixed MiMo configuration preserves quotas and normalizes previous app sele
 
 test('polish carries only the stored text with an explicit length ceiling',async()=>{
  let seen:unknown;
- const f=fixture(async(_kind,input)=>{seen=input;return {tokens:2,result:{title:'一起散步',text:'今天我们去公园走了走。'}};});
- const polish=()=>({requestId:randomUUID(),model:'mimo-v2.6-pro',photos:[],mode:'photos',writingMode:'polish' as const,context:'标题：原稿\n正文：\n我们一起去公园。'});
+ const f=fixture(async(input)=>{seen=input;return {tokens:2,result:{title:'一起散步',text:'今天我们去公园走了走。'}};});
+ const polish=()=>({requestId:randomUUID(),model:'mimo-v2.6-pro',photos:[],writingMode:'polish' as const,context:'标题：原稿\n正文：\n我们一起去公园。'});
  const ok=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:polish()});
  assert.equal(ok.statusCode,200);assert.equal((seen as {photos:unknown[]}).photos.length,0);
  assert.equal(f.store.usage(f.member.member.id).writes,1);assert.equal(f.store.usage(f.member.member.id).photos,0);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),photos:f.input().photos}})).statusCode,400);
+ assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),photos:[{}]}})).statusCode,400);
  assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),context:'   '}})).statusCode,400);
  const tooLong=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...polish(),context:'字'.repeat(2201)}});
  assert.equal(tooLong.statusCode,400);assert.equal(tooLong.json().code,'POLISH_TOO_LONG');
@@ -218,9 +211,9 @@ test('admin login reset logs out every device of that member but not the owner',
 });
 
 // 文本模式走同一条额度、缓存与重放路径。
-for(const writingMode of ['ask','question','letter','editor'] as const)test(`${writingMode} uses one write, no photos and replays without spending again`,async()=>{
+for(const writingMode of ['ask','question','editor'] as const)test(`${writingMode} uses one write, no photos and replays without spending again`,async()=>{
  const {editorContext,editorResult}=await import('./helpers.ts');
- const result=writingMode==='ask'?{questions:['谁在旁边？'],first:false}:writingMode==='question'?{question:'谁在旁边？'}:writingMode==='letter'?{questions:['你现在想记下什么？','想给她留哪句话？']}:editorResult;
+ const result=writingMode==='ask'?{questions:['谁在旁边？'],first:false}:writingMode==='question'?{question:'谁在旁边？'}:editorResult;
  let calls=0;
  const f=fixture(async()=>{calls++;return {result,tokens:7};});
  try {
@@ -234,14 +227,11 @@ for(const writingMode of ['ask','question','letter','editor'] as const)test(`${w
   assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...payload,context:payload.context+' '}})).statusCode,409);
  } finally {await f.app.close();f.store.close();}
 });
-for(const [writingMode,message] of Object.entries({ask:'请先写几句再让 AI 追问。',question:'请提供最近的记录标题。',letter:'请提供落款与拆封日期。',editor:'请先送这一年的记录清单。'}))test(`${writingMode} rejects photos, grouping, merge and blank context before quota`,async()=>{
+for(const [writingMode,message] of Object.entries({ask:'请先写几句再让 AI 追问。',question:'请提供最近的记录标题。',editor:'请先送这一年的记录清单。'}))test(`${writingMode} rejects blank context before quota`,async()=>{
  const f=fixture();
  try {
-  for(const extra of [{photos:f.input().photos},{kind:'group'},{mode:'merge'}, {context:'  '}]){
-   const {kind='write',...overrides}=extra as {kind?:string;photos?:unknown[];mode?:string;context?:string};
-   const response=await f.app.inject({method:'POST',url:`/api/v1/ai/${kind}`,headers:f.headers(),payload:{requestId:randomUUID(),writingMode,context:'合成文字',...overrides}});
-   assert.equal(response.statusCode,400);assert.deepEqual(response.json(),{code:'INVALID_INPUT',message});
-  }
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode,context:'  ',photos:[]}});
+  assert.equal(response.statusCode,400);assert.deepEqual(response.json(),{code:'INVALID_INPUT',message});
   assert.equal(f.calls(),0);assert.equal(f.store.usage(f.member.member.id).writes,0);
  } finally {await f.app.close();f.store.close();}
 });
@@ -258,9 +248,9 @@ test('editor rejects invalid JSON and record shapes before calling provider',asy
 test('context limits are 4000 normally and 60000 for editor, with original JSON forwarded',async()=>{
  const {editorContext,editorResult}=await import('./helpers.ts');
  let received='';
- const f=fixture(async(_kind,input)=>{received=input.context;return {result:editorResult,tokens:1};});
+ const f=fixture(async(input)=>{received=input.context;return {result:editorResult,tokens:1};});
  try {
-  for(const writingMode of ['ask','question','letter','generate','polish','recap','editor']){
+  for(const writingMode of ['ask','question','polish','recap','editor']){
    const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode,context:'字'.repeat(writingMode==='editor'?60001:4001)}});
    assert.equal(response.statusCode,400);assert.deepEqual(response.json(),{code:'INVALID_INPUT',message:writingMode==='editor'?'这一年的记录太多，请分月送。':'内容太长'});
   }
@@ -280,12 +270,37 @@ test('invalid text results return 502 without consuming quota',async()=>{
 });
 test('ask accepts exactly 4000 context characters and editor accepts exactly 60000',async()=>{
  const {editorContext,editorResult}=await import('./helpers.ts');
- const f=fixture(async(_kind,input)=>({result:input.writingMode==='editor'?editorResult:{questions:['谁在旁边？'],first:false},tokens:1}));
+ const f=fixture(async(input)=>({result:input.writingMode==='editor'?editorResult:{questions:['谁在旁边？'],first:false},tokens:1}));
  try {
   const base=JSON.stringify(editorContext);
   for(const [writingMode,context] of [['ask','字'.repeat(4000)],['editor',base+' '.repeat(60000-base.length)]]){
    const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{requestId:randomUUID(),writingMode,context}});
    assert.equal(response.statusCode,200,response.body);
   }
+ } finally {await f.app.close();f.store.close();}
+});
+
+for(const writingMode of [undefined,'generate','letter'])test(`removed or missing writingMode ${writingMode} returns 400 before upstream`,async()=>{
+ const f=fixture();
+ try {
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...f.input(),writingMode}});
+  assert.equal(response.statusCode,400);assert.equal(response.json().code,'INVALID_INPUT');
+  assert.equal(f.calls(),0);assert.equal(f.store.usage(f.member.member.id).writes,0);
+ } finally {await f.app.close();f.store.close();}
+});
+test('removed group route returns the normal 404 without upstream work',async()=>{
+ const f=fixture();
+ try {
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/group',headers:f.headers(),payload:f.input()});
+  assert.equal(response.statusCode,404);assert.equal(f.calls(),0);
+ } finally {await f.app.close();f.store.close();}
+});
+for(const writingMode of ['polish','recap','ask','question','editor'])test(`${writingMode} rejects non-empty photos before upstream`,async()=>{
+ const f=fixture();
+ try {
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...f.input(),writingMode,photos:[{}]}});
+  assert.equal(response.statusCode,400);
+  assert.deepEqual(response.json(),{code:'INVALID_INPUT',message:'AI 不再接收照片，请只发送文字。'});
+  assert.equal(f.calls(),0);assert.equal(f.store.usage(f.member.member.id).writes,0);
  } finally {await f.app.close();f.store.close();}
 });

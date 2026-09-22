@@ -2,8 +2,9 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-22。**1.0.2 已交付；AI 服务已切到 MiMo V2.6 Pro**：生产源码 `e2bd07fe77f5b185257ef1fc255462245a4d1577`，文字／看图为 `mimo-v2.6-pro`，云端转写为 `mimo-v2.5-asr`，使用主人指定并提供密钥的中国 Token Plan 地址；八模式和 ASR 合成样例验证通过，账号／设备／额度／备份保留。部署与回滚记录见第一节及 `docs/MIMO-ADAPTATION.md`。安装包仍为 `v1.0.2`，此次服务切换未重新出包。
-> 移动端状态：2026-09-22（减法）。**1.0.3「减法」已在 main、未出包**：主人拍板「不要冗余，贪多嚼不烂」，拿掉出生的故事（24 问并入小问题）、写信引导、时光系列、足迹、年度长图、重放、分成几件事／按事情分组、起个头，AI 不再看照片；提交 `8f36df0`…`feebcec` 与文档收尾提交（第一节第一条）。可安装的仍是 1.0.2（下一条）；本次减法未改服务端；后续模型部署见上。验证出包见第一节第一条。
+> 最后更新：2026-09-22。**1.0.3（构建号 76）发版中**：主人 2026-09-22 拍板发版＋部署一条龙；发版提交在 main（`mobile/app.json` 1.0.3／构建号 76、服务端减法、CHANGELOG 顶节、README、本文；Fable 复核、门禁全绿后提交），轻量标签 `v1.0.3` 指向它；标签出包结果、Release 校验和与服务端部署记录待 run 完成后补进第一节；**在那之前不要把 1.0.3 当作已交付**。
+> 旧记录：2026-09-22。**1.0.2 已交付；AI 服务已切到 MiMo V2.6 Pro**：生产源码 `e2bd07fe77f5b185257ef1fc255462245a4d1577`，文字／看图为 `mimo-v2.6-pro`，云端转写为 `mimo-v2.5-asr`，使用主人指定并提供密钥的中国 Token Plan 地址；八模式和 ASR 合成样例验证通过，账号／设备／额度／备份保留。部署与回滚记录见第一节及 `docs/MIMO-ADAPTATION.md`。安装包仍为 `v1.0.2`，此次服务切换未重新出包。
+> 旧记录：移动端状态 2026-09-22（减法）。**1.0.3「减法」已在 main、未出包**：主人拍板「不要冗余，贪多嚼不烂」，拿掉出生的故事（24 问并入小问题）、写信引导、时光系列、足迹、年度长图、重放、分成几件事／按事情分组、起个头，AI 不再看照片；提交 `8f36df0`…`feebcec` 与文档收尾提交（第一节第一条）。可安装的仍是 1.0.2（下一条）；本次减法未改服务端；后续模型部署见上。验证出包见第一节第一条。
 > 旧记录：2026-09-22。**1.0.2 已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，轻量标签 `v1.0.2`，run 35691714051 四作业全绿，GitHub Release 上有 APK／未签名 IPA／`build-source.json`／`sha256sums.txt`（第一节第一条）。服务端仍是 `b76439d` + DeepSeek（MiMo 适配未部署，见第一节「MiMo 内容模型适配」）；两台真机的验收仍未做。主人随后把出包流水线并行化（`300b12e`），首次 dispatch 的 iOS 回归红（脚手架超时，录音其实已开始），「说完了」等待放宽到 120 秒后，验证 run 35701034621 已全绿，总耗时约 32 分钟；本轮继续优化测试等待，实测结果待新验证构建（第一节第二条）。
 > 旧记录：2026-09-22。**1.0.2（构建号 75）发版中**：主人复核后拍板发版；发版提交在 main（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本），轻量标签 `v1.0.2` 指向它。标签出包的结果与 Release 校验和待 run 完成后核对再补进第一节；**在那之前不要把 1.0.2 当作已交付**。
 > 旧记录：2026-09-22。**1.0.1（构建号 74）没有交付**：Kimi 的界面焕新 `3c0b017`…`05e229f` 已在 main，附注标签 `v1.0.1` 触发 run 35679134876——quality／Android 绿、iOS 回归红（测试脚手架点在屏幕底边被系统吞掉，应用没有问题）、release 作业跳过，**没有 GitHub Release v1.0.1**，可安装的仍是 1.0.0（下一条）。同日复核修复 `a01a1d8`…`9476895`、脚手架修复 `6238119`／`ae2323d` 与键盘避让修复 `3638d96` 已推 main；验证出包 run 35681782720 又在 iOS 回归红（还是脚手架：续写时的光标点落在新工具栏的「文件」钮上），第三次验证 run 35686815546（workflow_dispatch，源码 `3638d96`）**三作业全绿**（quality／Android APK／iOS unsigned IPA；release 作业非标签触发、按设计跳过，仍没有 Release）。要交付 1.0.1 的内容需主人拍板再出包（第一节第一条）。
@@ -19,10 +20,14 @@
 
 ## 一、当前状态快照（2026-09-22）
 
+- **1.0.3「减法」发版（构建号 76；2026-09-22）**：本次发版内容包含 `mobile/app.json` 的 1.0.3／76 三行版本更新、服务端减法与 CHANGELOG 顶节、README、本文、PRODUCT、`docs/AI-PROMPTS.md`、`deploy/README.md` 同步；Fable 复核并跑门禁（mobile 49 文件 727 测试、server 183、typecheck／lint／边界脚本／scripts unittest 全绿）后提交，轻量标签 `v1.0.3` 指向发版提交；出包与部署结果待补，尚未交付。
+  - 服务端 `contracts.ts`／`app.ts`／`provider.ts`／`ai-model.ts`／`prompts.ts` 只保留 `/api/v1/ai/write` 与必填的 `polish`／`recap`／`ask`／`question`／`editor`，`photos` 只接受空数组，每次请求计一次写作、零张图片；移除 group 路由、generate／letter 模式、相关提示词与 ASK 故事主题句，旧手机相应功能收到 400／404。其余验证、额度、缓存、转写与备份路径不变。
+  - 更新 contracts／app／provider／prompts 测试与 ai-config 的 Provider／探针调用，手册六块逐字对照；`probe-common.ts`／`probe-text.ts` 与 `verify-service.py` 改为五种文字模式，删除 `probe.ts`，保留重放和照片拒收并补旧模式／路由负例。发版提交 SHA、run、Release 校验和、服务端部署记录由 Fable 补。
+
 - **MiMo V2.6 Pro 已上线（2026-09-22）**：生产镜像 `anan-ai:e2bd07fe77f5b185257ef1fc255462245a4d1577`，内容为 `mimo-v2.6-pro`，云端 ASR 为 `mimo-v2.5-asr`；两路使用主人指定的中国 Token Plan 地址和提供的密钥。八种内容模式、ASR、隔离服务的账号／幂等／备份检查通过，本机与公网 healthz SHA 一致；原有成员、设备、额度、暂停状态与备份清单保留。旧客户端型号兼容归一；新源码脚注和本机任务标记已更新，现有安装包静态文案需下次出包更新。回滚材料和探测统计在 `/opt/anan-ai/deployments/20260922-mimo26-pro/`。配置记录的是主人选择，不声称小米特别许可；细节见 `docs/MIMO-ADAPTATION.md` 顶部。
 
-- **1.0.3「减法」（未出包；2026-09-22）**：主人拍板记在 PRODUCT.md 第九节末段，细目在 CHANGELOG 顶节。提交：`8f36df0` PRODUCT／CHANGELOG 骨架，`d29255e` 出生的故事并入小问题，`2b13b8d` 信精简与书架空区一行，`39a13cb` 时光系列／足迹页面（`series` 留作旧数据种类），`6cbcd3b` 长图／重放，`feebcec` 分成几件事／按事情分组／起个头／AI 不看照片，之后一笔文档收尾。Astra 逐个提交改工作树、Fable 复核并跑门禁后提交。兼容：实体种类只增不减，`RecordContent.story`／`settings.replayAudioId`／草稿 `photoEvents` 只停写不拒收（分组草稿在 `normalizeLibrary` 并回一份、旧 AI 任务在那里丢弃），服务端未动、所有请求仍带 `photos: []`。门禁：mobile 49 个文件 727 个测试、server 189、typecheck／lint／边界脚本／scripts unittest 全绿。验证出包：文档收尾提交推上 main 后派发一次 `mobile-build.yml`（完整 SHA，不轮询）——run 35728641333（源码 `faddfb3`，12:40 UTC）在 quality 作业就红了——`server/tests/backup.test.ts` 那条已知偶发：两次 `status()` 之间 `freeBytes` 现查磁盘差了 8 KB，与减法无关；修复 `52b5f76`（不再逐字节比 `freeBytes`）后重新派发 run 35729090883（源码 `52b5f76bddcbe690b6e95419a68bf45deaa1ef61`，12:45 UTC，<https://github.com/YePiXpert/family-time-capsule/actions/runs/35729090883>）；结果待主人通知后查一次：Android／iOS 冒烟截图看书架空态、编辑页小问题、AI 面板、年度册「装订纪念册」，`result.json` 不再有 `yearbookSheet`）。
-  - 服务端下次部署时删 `generate`／`group`／`letter` 与 ASK 里的故事主题句（第四节第 8 条）。真机待验：书架空态两行入口、编辑页小问题（头六个月的故事题）、AI 面板只剩润色与追问、年度册「装订纪念册」。
+- **1.0.3「减法」（手机端，已合 main；2026-09-22）**：主人拍板记在 PRODUCT.md 第九节末段，细目在 CHANGELOG 顶节。提交：`8f36df0` PRODUCT／CHANGELOG 骨架，`d29255e` 出生的故事并入小问题，`2b13b8d` 信精简与书架空区一行，`39a13cb` 时光系列／足迹页面（`series` 留作旧数据种类），`6cbcd3b` 长图／重放，`feebcec` 分成几件事／按事情分组／起个头／AI 不看照片，之后一笔文档收尾。Astra 逐个提交改工作树、Fable 复核并跑门禁后提交。兼容：实体种类只增不减，`RecordContent.story`／`settings.replayAudioId`／草稿 `photoEvents` 只停写不拒收（分组草稿在 `normalizeLibrary` 并回一份、旧 AI 任务在那里丢弃），服务端未动、所有请求仍带 `photos: []`。门禁：mobile 49 个文件 727 个测试、server 189、typecheck／lint／边界脚本／scripts unittest 全绿。验证出包：文档收尾提交推上 main 后派发一次 `mobile-build.yml`（完整 SHA，不轮询）——run 35728641333（源码 `faddfb3`，12:40 UTC）在 quality 作业就红了——`server/tests/backup.test.ts` 那条已知偶发：两次 `status()` 之间 `freeBytes` 现查磁盘差了 8 KB，与减法无关；修复 `52b5f76`（不再逐字节比 `freeBytes`）后重新派发 run 35729090883（源码 `52b5f76bddcbe690b6e95419a68bf45deaa1ef61`，12:45 UTC，<https://github.com/YePiXpert/family-time-capsule/actions/runs/35729090883>）；结果待主人通知后查一次：Android／iOS 冒烟截图看书架空态、编辑页小问题、AI 面板、年度册「装订纪念册」，`result.json` 不再有 `yearbookSheet`）。
+  - 服务端减法已纳入本节首条「1.0.3 发版」，部署结果待 Fable 补。真机待验：书架空态两行入口、编辑页小问题（头六个月的故事题）、AI 面板只剩润色与追问、年度册「装订纪念册」。
 - **1.0.2「界面焕新与复核修复」已交付（构建号 75；2026-09-22）**：主人复核后拍板发版。发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本、HANDOFF 头注），轻量标签 `v1.0.2` 指向它，标签推送触发 run 35691714051，**四作业全绿**（quality／Android APK／iOS unsigned IPA／GitHub Release）。**GitHub Release**：<https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.2>（不过期；artifacts 2026-10-22 过期）。APK 66,776,146 字节、IPA 11,270,531 字节（IPA 未签名，由主人自签后装机）；SHA-256（与 Release 的 `sha256sums.txt` 一致，本机重新算过）：
 
   ```text
@@ -314,7 +319,7 @@
 5. **纸书版面真机看 PDF**：章首引语（`BookChapter.lead` 多行）、编者书名替换后的封面。
 6. **文案与可达性**：三个访谈入口的文案是工作者自定的（见 `/tmp` 任务报告已并入 CHANGELOG／DESIGN），主人试用后统一口吻；同意书 v2 文案偏长，可再精简。
 7. 密文对象位腐坏无自愈（PROJECT-AUDIT 残留风险 ③，不急）。
-8. **下次部署服务端时做减法**：手机 1.0.3 起不再调用 `kind=group`、`writingMode=generate`／`letter`，ASK 里「给了主题时…」那句也没有客户端会触发。删掉时同步改 `docs/AI-PROMPTS.md` 的 ```text 块与 `server/tests/prompts.test.ts`（逐字对照、数块）；所有手机请求仍带 `photos: []`，`app.ts` 的字段检查别去掉。
+8. **服务端减法已随 1.0.3 做完（部署记录见第一节）**：删掉 group 路由、generate／letter 与相关提示词、ASK 故事主题句；手册六个 text 块与 `server/tests/prompts.test.ts` 已同步，所有手机请求仍带 `photos: []`，服务端保留该字段且只接受空数组。代码完成不代表已部署，实际结果待 Fable 补。
 
 ## 五、踩坑清单（务必先读，历史细节在 docs/plans/ 各计划的对应小节）
 
@@ -385,7 +390,7 @@
 - （1.0.0）CPA 的 ASR（`mimo-v2.5-asr`）只认 chat-style `input_audio`（wav／mp3），`/audio/transcriptions` 是 404，user content 里夹文本 part 会 400——所以 m4a 在服务端用 ffmpeg 转 wav，提示只放 system。
 - （1.0.0）`verify-service.py` 的验证对象 id 随内容走（`0a002a7`）：家庭空间先到为准，固定 id 重复跑会读回上一次的字节而假失败。
 - （1.0.0）Astra（Codex）沙箱不能监听端口、spawn python、写 `.git`，也没有 `/var/tmp`：它报的「环境限制」要在主会话重跑门禁核实；它若把 `result.md` 写进仓库要移出去再提交。
-- （1.0.0）`server/tests/prompts.test.ts` 逐字对照 `docs/AI-PROMPTS.md` 的九个 ```text 块（顺序：SHARED、GROUP、WRITE、POLISH、RECAP、ASK、QUESTION、LETTER、EDITOR）：改手册必须同步改 `prompts.ts`。
+- （1.0.0）`server/tests/prompts.test.ts` 逐字对照 `docs/AI-PROMPTS.md` 的六个 ```text 块（顺序：SHARED、POLISH、RECAP、ASK、QUESTION、EDITOR）：改手册必须同步改 `prompts.ts`。
 - （1.0.0）`mobile-build.yml` 的 `v*` 标签触发：要轻量标签，`github.sha` 才是提交本身；release 作业 `needs` 三个作业，任一红就不发。（1.0.1 实测附注标签也能过 quality 的 SHA 核对，`github.sha` 会解析到提交；仍按轻量标签打。）
 - （1.0.1）XCUITest 的 `tap()` 原来只查 `isHittable`：元素半露在屏幕底边时，XCTest 点在可见部分的中心，落进 Home 指示条手势区会被系统吞掉、页面不动（run 35679134876，点击坐标 (90, 814.8)）。现在要求可见中心离底边 ≥ 60，否则先滚动。布局改动让目标恰好停在底边时最容易踩，证据包里的「Synthesized Event」附件（bplist）能读出点击坐标。
 - （1.0.1）XCUITest 的坐标点击要想清楚键盘弹起后那一点是谁：`type()` 续写时点字段右下角挪光标，底栏随键盘贴到字段下沿后那一点成了工具栏的「文件」钮，点开系统文件浏览器、字段失焦，`typeText` 报 "Neither element nor any descendant has keyboard focus"（run 35681782720）。现在点首行右侧空白。
