@@ -514,8 +514,7 @@ it("applies shared capture time and place to the intake draft", async () => {
   const draft = Object.values(store.get().drafts)[0]!;
   expect(draft.content.date).toBe("2025-06-01T10:20:30");
   expect(draft.content.location).toBe("31.200000, 121.500000");
-  // 只有一个可读的拍摄日：不建议分成几件事。
-  expect(draft.groupPhotosByDay).toBe(false);
+  expect(Object.values(store.get().drafts)).toHaveLength(1);
   expect(draft.autoDate).toBe(false);
   expect(draft.autoLocation).toBe(false);
   expect(store.get().media[draft.content.mediaIds[0]!]!.photoMetadata).toEqual({
@@ -527,7 +526,7 @@ it("applies shared capture time and place to the intake draft", async () => {
     store.get().media[draft.content.mediaIds[1]!]!.photoMetadata,
   ).toBeUndefined();
 });
-it("suggests splitting a share into events only when its photos span several days", async () => {
+it("keeps shared photos spanning several days in one draft", async () => {
   const { store } = await setup();
   const { receiveShares } = await import("../src/local/services");
   const originals = `${env.root.replace(/\\/g, "/")}/anan-v1/intake/originals`;
@@ -565,7 +564,9 @@ it("suggests splitting a share into events only when its photos span several day
   await receiveShares(store);
   const draft = Object.values(store.get().drafts)[0]!;
   expect(draft.content.mediaIds).toHaveLength(2);
-  expect(draft.groupPhotosByDay).toBe(true);
+  expect(Object.values(store.get().drafts)).toHaveLength(1);
+  expect(draft).not.toHaveProperty("groupPhotosByDay");
+  expect(draft).not.toHaveProperty("photoEvents");
 });
 it("retains the native share receipt on a failed write and safely retries", async () => {
   const { store } = await setup();

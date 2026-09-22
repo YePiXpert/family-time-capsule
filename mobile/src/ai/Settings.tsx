@@ -199,7 +199,7 @@ export function AISettingsScreen() {
   return (
     <Page title="AI 设置">
       <Text style={s.muted}>
-        用家人账号登录后，AI 可以帮你整理照片、写记录。原图和记录仍在本机。
+        用家人账号登录后，AI 可以帮你润色文字、追问细节。照片和记录仍在本机。
       </Text>
       {me ? (
         <>

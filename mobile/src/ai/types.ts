@@ -1,20 +1,19 @@
-export type WritingMode = "generate" | "polish" | "recap" | "ask" | "question" | "editor";
-export type AIGroup = { photoIds: string[]; title: string; summary: string };
-export type AIResult = { groups?: AIGroup[]; title?: string; text?: string; questions?: string[]; first?: boolean; question?: string };
+export type WritingMode = "polish" | "recap" | "ask" | "question" | "editor";
+export type AIResult = { title?: string; text?: string; questions?: string[]; first?: boolean; question?: string };
 export type AIJob = {
   fingerprint: string;
-  kind: "group" | "write";
+  kind: "write";
   eventIndex: number;
   model: string;
-  writingMode?: WritingMode;
+  writingMode: WritingMode;
   steps: { key: string; requestId: string; result?: AIResult }[];
 };
 export type AIProposal = AIResult & {
   fingerprint: string;
-  kind: "group" | "write";
+  kind: "write";
   eventIndex: number;
   model: string;
-  writingMode?: WritingMode;
+  writingMode: WritingMode;
 };
 export type Member = {
   id: string;

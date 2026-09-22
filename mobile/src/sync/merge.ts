@@ -257,8 +257,7 @@ export function repairReferences(s: Library): void {
   for (const [id, d] of Object.entries(s.drafts))
     if (
       (d.recordId !== null && !s.records[d.recordId]) ||
-      contentBroken(d.content) ||
-      d.photoEvents?.some(contentBroken)
+      contentBroken(d.content)
     )
       editEntity(s, "drafts", id, (draft) => {
         // 正在改的那段被别人删了：草稿留着，改成一段新的时光，一个字不丢。
@@ -267,7 +266,6 @@ export function repairReferences(s: Library): void {
           draft.baseRevision = 0;
         }
         fixContent(draft.content);
-        for (const event of draft.photoEvents ?? []) fixContent(event);
       });
   const recordHas = (recordId: string, mediaId: string | null) =>
     mediaId !== null && !!s.records[recordId]?.mediaIds.includes(mediaId);

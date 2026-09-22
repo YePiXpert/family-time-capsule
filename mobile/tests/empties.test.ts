@@ -38,7 +38,6 @@ describe("empty drafts", () => {
       isEmptyDraft(
         draft({
           autoDate: false,
-          groupPhotosByDay: true,
           content: {
             ...emptyContent(),
             title: "  ",
@@ -60,7 +59,6 @@ describe("empty drafts", () => {
       { content: { ...emptyContent(), personIds: ["p1"] } },
       { content: { ...emptyContent(), mediaIds: ["m1"] } },
       { recordingFile: "rec.m4a" },
-      { photoEvents: [{ ...emptyContent(), text: "第 1 件事的正文" }] },
     ];
     for (const over of filled) expect(isEmptyDraft(draft(over))).toBe(false);
   });

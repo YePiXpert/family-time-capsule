@@ -3,6 +3,7 @@ import {
   emptyLibrary,
   emptyContent,
   validateLibrary,
+  normalizeLibrary,
   type RecordDraft,
   type LocalRecord,
   type YearPicks,
@@ -16,22 +17,18 @@ import {
   questionPlan,
   rememberQuestion,
   validateStoredAI,
-  moveProposalPhoto,
   polishRequest,
   proposalPatch,
   proposalEvents,
   recapContext,
-  requestImageIds,
   retryPlan,
-  sameDayChunks,
-  sameJob,
   sourceFingerprint,
   validateResult,
   POLISH_BODY_LIMIT,
   POLISH_CONTEXT_LIMIT,
 } from "../src/ai/state";
 
-import { writeContext } from "../src/ai/plan";
+import { AI_CONSENT_TEXT } from "../src/ai/consent";
 import { AIError } from "../src/ai/error";
 function fixture() {
   const library = emptyLibrary();
@@ -54,100 +51,37 @@ function fixture() {
     recordId: null,
     baseRevision: 0,
     content: { ...emptyContent(), mediaIds: ["a", "b", "c"], coverId: "a" },
-    groupPhotosByDay: true,
     updatedAt: new Date().toISOString(),
   };
   library.drafts.draft = draft;
   return { library, draft };
 }
 describe("AI suggestions remain reviewable local drafts", () => {
-  it("rejects delayed suggestions after text, photo or grouping changes", () => {
-    const { library, draft } = fixture();
-    const fingerprint = sourceFingerprint(draft, library.media);
+  it("rejects delayed suggestions after record content changes", () => {
+    const { draft } = fixture();
+    const fingerprint = sourceFingerprint(draft);
     const proposal = {
       fingerprint,
       kind: "write" as const,
+      writingMode: "polish" as const,
       eventIndex: 0,
       model: "deepseek-flash",
       title: "散步",
       text: "一起去公园。",
     };
     draft.content.text = "我的新输入";
-    expect(() => proposalEvents(draft, library.media, proposal)).toThrow(
+    expect(() => proposalEvents(draft, proposal)).toThrow(
       "已修改",
     );
     expect(draft.content.text).toBe("我的新输入");
   });
-  it("splits two same-day events and preserves the existing caption exactly once", () => {
-    const { library, draft } = fixture();
-    draft.content.text = "用户亲自写下的文字";
-    const proposal = {
-      fingerprint: sourceFingerprint(draft, library.media),
-      kind: "group" as const,
-      eventIndex: 0,
-      model: "deepseek-flash",
-      groups: [
-        { photoIds: ["a"], title: "上午", summary: "室内" },
-        { photoIds: ["b"], title: "下午", summary: "户外" },
-        { photoIds: ["c"], title: "第二天", summary: "照片" },
-      ],
-    };
-    const events = proposalEvents(draft, library.media, proposal);
-    expect(events.map((e) => e.mediaIds)).toEqual([["a"], ["b"], ["c"]]);
-    expect(events[0]!.date.slice(0, 10)).toBe(events[1]!.date.slice(0, 10));
-    expect(events[0]!.text).toBe("用户亲自写下的文字");
-    expect(events[1]!.text).toBe("");
-    expect(draft.photoEvents).toBeUndefined();
-  });
-  it("does not accept omitted, duplicate, invented or cross-day group membership", () => {
-    for (const ids of [["a"], ["a", "a"], ["a", "fake"]])
-      expect(() =>
-        validateResult(
-          { groups: [{ photoIds: ids, title: "x", summary: "x" }] },
-          "group",
-          ["a", "b"],
-        ),
-      ).toThrow();
-    const { library, draft } = fixture();
-    expect(() =>
-      proposalEvents(draft, library.media, {
-        fingerprint: sourceFingerprint(draft, library.media),
-        kind: "group",
-        eventIndex: 0,
-        model: "x",
-        groups: [{ photoIds: ["a", "b", "c"], title: "x", summary: "x" }],
-      }),
-    ).toThrow("不同日期");
-  });
-  it("keeps people, quote and author on every proposed event", () => {
-    const { library, draft } = fixture();
-    draft.content.personIds = ["妈妈", "爸爸"];
-    draft.content.quote = true;
-    draft.content.by = "妈妈";
-    const events = proposalEvents(draft, library.media, {
-      fingerprint: sourceFingerprint(draft, library.media),
-      kind: "group",
-      eventIndex: 0,
-      model: "deepseek-flash",
-      groups: [
-        { photoIds: ["a"], title: "上午", summary: "室内" },
-        { photoIds: ["b"], title: "下午", summary: "户外" },
-        { photoIds: ["c"], title: "第二天", summary: "照片" },
-      ],
-    });
-    expect(events).toHaveLength(3);
-    for (const event of events) {
-      expect(event.personIds).toEqual(["妈妈", "爸爸"]);
-      expect(event.quote).toBe(true);
-      expect(event.by).toBe("妈妈");
-    }
-  });
-  it("preserves a manually written title when only adopting generated body", () => {
-    const { library, draft } = fixture();
+  it("preserves a manually written title when only adopting polished body", () => {
+    const { draft } = fixture();
     draft.content.title = "手动标题";
-    const events = proposalEvents(draft, library.media, {
-      fingerprint: sourceFingerprint(draft, library.media),
+    const events = proposalEvents(draft, {
+      fingerprint: sourceFingerprint(draft),
       kind: "write",
+      writingMode: "polish",
       eventIndex: 0,
       model: "x",
       text: "AI 正文",
@@ -157,10 +91,11 @@ describe("AI suggestions remain reviewable local drafts", () => {
   });
   it("persists request IDs and suggestions through backup snapshots without credentials or images", () => {
     const { library, draft } = fixture();
-    const fingerprint = sourceFingerprint(draft, library.media);
+    const fingerprint = sourceFingerprint(draft);
     draft.aiJob = {
       fingerprint,
       kind: "write",
+      writingMode: "polish",
       eventIndex: 0,
       model: "x",
       steps: [
@@ -174,6 +109,7 @@ describe("AI suggestions remain reviewable local drafts", () => {
     draft.aiProposal = {
       fingerprint,
       kind: "write",
+      writingMode: "polish",
       eventIndex: 0,
       model: "x",
       title: "标题",
@@ -186,21 +122,6 @@ describe("AI suggestions remain reviewable local drafts", () => {
       text: {},
     });
     expect(() => validateLibrary(restored)).toThrow();
-  });
-  it("chunks large same-day imports without mixing known days", () => {
-    const { library } = fixture();
-    const ids = [];
-    for (let i = 0; i < 45; i++) {
-      const id = `photo${i}`;
-      ids.push(id);
-      library.media[id] = { ...library.media.a!, id };
-    }
-    const days = sameDayChunks([...ids, "c"], library.media);
-    expect(days.map((day) => day.chunks.map((c) => c.length))).toEqual([
-      [20, 20, 5],
-      [1],
-    ]);
-    expect(days.flatMap((d) => d.chunks.flat())).toHaveLength(46);
   });
   it("builds polish requests from title and body only, refusing instead of truncating", () => {
     expect(polishRequest({ title: "公园", text: "今天去公园。" }).context).toBe(
@@ -223,26 +144,6 @@ describe("AI suggestions remain reviewable local drafts", () => {
     expect(long.error).toContain("不会自动截断");
     expect(long.context).toBe("");
   });
-  it("never reuses a generate job for polish, and treats stored jobs without a mode as generate", () => {
-    const next = {
-      fingerprint: "f".repeat(64),
-      kind: "write" as const,
-      eventIndex: 0,
-      model: "mimo-v2.5:policy-v1",
-      writingMode: "polish" as const,
-    };
-    expect(sameJob(undefined, next)).toBe(false);
-    expect(
-      sameJob({ ...next, writingMode: undefined, steps: [] }, next),
-    ).toBe(false);
-    expect(sameJob({ ...next, steps: [] }, next)).toBe(true);
-    expect(
-      sameJob(
-        { ...next, steps: [], writingMode: "generate" as const },
-        { ...next, writingMode: "generate" as const },
-      ),
-    ).toBe(true);
-  });
   it("writes polished text straight into a text-only draft that survives save and restore", () => {
     const { library } = fixture();
     const draft: RecordDraft = {
@@ -255,9 +156,8 @@ describe("AI suggestions remain reviewable local drafts", () => {
     library.drafts[draft.id] = draft;
     const patch = proposalPatch(
       draft,
-      library.media,
       {
-        fingerprint: sourceFingerprint(draft, library.media),
+        fingerprint: sourceFingerprint(draft),
         kind: "write",
         eventIndex: 0,
         model: "mimo-v2.5:policy-v1",
@@ -280,90 +180,6 @@ describe("AI suggestions remain reviewable local drafts", () => {
     expect(restored.drafts["text-only"]!.content.text).toBe(
       "今天第一次自己走完了整个园子。",
     );
-  });
-  it("keeps grouped drafts on photoEvents and honors partial adoption", () => {
-    const { library, draft } = fixture();
-    const proposal = {
-      fingerprint: sourceFingerprint(draft, library.media),
-      kind: "write" as const,
-      eventIndex: 1,
-      model: "mimo-v2.5:policy-v1",
-      writingMode: "generate" as const,
-      title: "第二天的事",
-      text: "新的画面。",
-    };
-    const full = proposalPatch(draft, library.media, proposal);
-    expect("photoEvents" in full && full.photoEvents).toHaveLength(2);
-    expect(
-      "photoEvents" in full && full.photoEvents?.[1]!.title === "第二天的事",
-    ).toBe(true);
-    const bodyOnly = proposalPatch(draft, library.media, proposal, "text");
-    expect(
-      "photoEvents" in bodyOnly &&
-        bodyOnly.photoEvents?.[1]!.title === "" &&
-        bodyOnly.photoEvents?.[1]!.text === "新的画面。",
-    ).toBe(true);
-  });
-  it("adjusts group preview membership without losing or duplicating photos", () => {
-    const { library, draft } = fixture();
-    const proposal = {
-      fingerprint: sourceFingerprint(draft, library.media),
-      kind: "group" as const,
-      eventIndex: 0,
-      model: "mimo-v2.5:policy-v1",
-      groups: [
-        { photoIds: ["a", "b"], title: "上午", summary: "室内" },
-        { photoIds: ["c"], title: "第二天", summary: "照片" },
-      ],
-    };
-    const moved = moveProposalPhoto(proposal, "a", 1);
-    expect(moved.groups?.map((g) => g.photoIds)).toEqual([["b"], ["c", "a"]]);
-    expect(moveProposalPhoto(proposal, "a", 0).groups).toBe(proposal.groups);
-    const emptied = moveProposalPhoto(proposal, "c", 0);
-    expect(emptied.groups?.map((g) => g.photoIds)).toEqual([["a", "b", "c"]]);
-  });
-  it("sends every draft photo to grouping and only the chosen event to writing", () => {
-    const { library, draft } = fixture();
-    library.media.audio = {
-      id: "audio",
-      file: "audio.m4a",
-      name: "audio.m4a",
-      kind: "audio",
-      bytes: 1,
-      sha256: "b".repeat(64),
-    };
-    draft.content.mediaIds = ["a", "b", "c", "audio"];
-    // 分组必须覆盖整份草稿，否则一次请求都不会发出。
-    expect(requestImageIds("group", undefined, draft, library.media)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
-    expect(requestImageIds("write", ["c", "b", "audio"], draft, library.media)).toEqual(
-      ["c", "b"],
-    );
-    expect(requestImageIds("write", undefined, draft, library.media)).toEqual([]);
-  });
-  it("keeps every grouped event when day grouping is switched off before confirming", () => {
-    const { library, draft } = fixture();
-    draft.groupPhotosByDay = false;
-    const proposal = {
-      fingerprint: sourceFingerprint(draft, library.media),
-      kind: "group" as const,
-      eventIndex: 0,
-      model: "mimo-v2.5:policy-v1",
-      groups: [
-        { photoIds: ["a", "b"], title: "上午", summary: "室内" },
-        { photoIds: ["c"], title: "第二天", summary: "照片" },
-      ],
-    };
-    const patch = proposalPatch(draft, library.media, proposal);
-    // 关闭按天分组只是不再自动按日期拆分，确认分组后每条事情都要保留。
-    expect("photoEvents" in patch && patch.photoEvents?.map((e) => e.mediaIds)).toEqual([
-      ["a", "b"],
-      ["c"],
-    ]);
-    expect("photoEvents" in patch && patch.groupPhotosByDay).toBe(true);
   });
   it("refuses an oversized title and body envelope instead of sending a generic error", () => {
     const longTitle = polishRequest({
@@ -408,9 +224,9 @@ describe("annual note recap", () => {
     expect(capped).toContain("字".repeat(500));
     expect(capped).not.toContain("超出部分");
   });
-  it("accepts stored recap jobs beside generate and polish", () => {
+  it("accepts stored recap jobs beside polish", () => {
     const { library, draft } = fixture();
-    const fingerprint = sourceFingerprint(draft, library.media);
+    const fingerprint = sourceFingerprint(draft);
     draft.aiJob = {
       fingerprint,
       kind: "write",
@@ -472,9 +288,6 @@ describe("interviewer contexts", () => {
   it("adds signature and quotes while preserving old output byte for byte", () => {
     expect(polishRequest({ title: " 标题 ", text: "正文" }).context).toBe("标题：标题\n正文：\n正文");
     expect(polishRequest({ by: "爸爸", title: " 标题 ", text: "正文" }).context).toBe("落款：爸爸\n标题：标题\n正文：\n正文");
-    expect(writeContext("write", { title: "标题", text: "正文" }).context).toBe("标题\n正文");
-    expect(writeContext("write", { by: "妈妈", title: "标题", text: "正文" }).context).toBe("落款：妈妈\n标题\n正文");
-    expect(writeContext("group", { by: "爸爸", text: "正文" }).context).toBe("");
     const records = [{ title: "翻身", date: "2026-09-05", first: true }];
     expect(recapContext(records, "寄语")).toBe("这一年共有 1 条记录。\n第一次：翻身\n记录标题：\n翻身\n已写的寄语（仅参考语气与已覆盖内容，不要重复）：\n寄语");
     const quotes = Array.from({ length: 22 }, (_, i) => `第${i}句${"话".repeat(80)}`);
@@ -507,15 +320,15 @@ describe("interviewer response validation", () => {
     ["ask", { questions: ["一", "二", "三"], first: true }],
     ["question", { question: "她今天说了什么？" }],
   ] as const)("accepts %s", (mode, result) => {
-    expect(validateResult(result, "write", [], mode)).toEqual(result);
+    expect(validateResult(result, mode)).toEqual(result);
   });
   it.each([
     ["ask", null], ["ask", { questions: ["一"] }], ["ask", { questions: [], first: true }],
     ["ask", { questions: ["一"], first: "true" }], ["ask", { questions: ["一", "二", "三", "四"], first: true }],
     ["question", { question: " " }], ["question", { question: "问".repeat(31) }], ["question", { question: 1 }],
   ] as const)("rejects invalid %s", (mode, result) => {
-    expect(() => validateResult(result, "write", [], mode)).toThrow(AIError);
-    expect(() => validateResult(result, "write", [], mode)).toThrow("AI 问得不合规矩，请重试。");
+    expect(() => validateResult(result, mode)).toThrow(AIError);
+    expect(() => validateResult(result, mode)).toThrow("AI 问得不合规矩，请重试。");
   });
   it.each(["ask", "question", "editor"])("recognizes stored %s jobs", (writingMode) => {
     expect(validateStoredAI({ fingerprint: "a".repeat(64), kind: "write", eventIndex: 0, model: "model", writingMode, steps: [] })).toBe(true);
@@ -642,4 +455,20 @@ describe("applyYearPicks checks the current originals", () => {
     expect(applyYearPicks(picks, editorRecords())!.months).toEqual(picks.months);
     expect(applyYearPicks(picks, [])).toEqual({ months: {}, droppedRecords: 2, droppedQuotes: 2 });
   });
+});
+
+it("a stored job without a mode is dropped by normalizeLibrary", () => {
+  const { library, draft } = fixture();
+  Object.assign(draft, { aiJob: { fingerprint: sourceFingerprint(draft), kind: "write", eventIndex: 0, model: "old", steps: [] } });
+  normalizeLibrary(library);
+  expect(draft).not.toHaveProperty("aiJob");
+  expect(() => validateLibrary(library)).not.toThrow();
+});
+
+it("describes the reduced text-only AI consent scope", () => {
+  expect(AI_CONSENT_TEXT).toContain("这件事的标题、正文与落款（润色）");
+  expect(AI_CONSENT_TEXT).toContain("（寄语）");
+  expect(AI_CONSENT_TEXT).toContain("（追问与小问题）");
+  expect(AI_CONSENT_TEXT).toContain("不发送别的记录的正文；结果都先预览再采用。");
+  expect(AI_CONSENT_TEXT).not.toContain("照片");
 });

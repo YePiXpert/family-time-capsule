@@ -68,9 +68,6 @@ export type RecordDraft = {
   recordingFile?: string;
   autoDate?: boolean;
   autoLocation?: boolean;
-  groupPhotosByDay?: boolean;
-  manualLocation?: boolean;
-  photoEvents?: RecordContent[];
   aiJob?: AIJob;
   aiProposal?: AIProposal;
 };
@@ -254,16 +251,53 @@ export function normalizeLibrary(value: unknown): void {
   if (s.series === undefined) s.series = {};
   if (s.persons === undefined) s.persons = {};
   if (s.letters === undefined) s.letters = {};
+  for (const raw of Object.values(s.drafts ?? {})) {
+    if (!raw || typeof raw !== "object") continue;
+    const draft = raw as unknown as Record<string, unknown>;
+    const content = draft.content as RecordContent | undefined;
+    // 旧分组的首件事是用草稿自己的标题正文做种子的。按顺序收回每件事的文字：
+    // 事件标题作为小节首行（与草稿标题相同的不重复——标题栏还在），正文原样；
+    // 草稿自己的正文只在没有任何事件以它开头时才补在最后。一个字不丢，标题栏不动。
+    // 附件只认原 content：旧事件可能引用不存在的素材，不能合并它们的 mediaIds。
+    if (content && Array.isArray(draft.photoEvents) && draft.photoEvents.length) {
+      const events = draft.photoEvents as (Partial<RecordContent> | undefined)[];
+      const nonempty = (value: unknown): value is string => typeof value === "string" && !!value.trim();
+      const ownTitle = nonempty(content.title) ? content.title.trim() : "";
+      const parts = events
+        .map((event) => {
+          const title = event?.title, text = event?.text;
+          return [nonempty(title) && title.trim() !== ownTitle ? title : undefined, text]
+            .filter(nonempty)
+            .join("\n");
+        })
+        .filter(Boolean);
+      const own = content.text;
+      if (
+        nonempty(own) &&
+        !events.some((event) => {
+          const text = event?.text;
+          return nonempty(text) && text.trim().startsWith(own.trim());
+        })
+      )
+        parts.push(own);
+      content.text = parts.join("\n\n");
+    }
+    delete draft.photoEvents;
+    delete draft.groupPhotosByDay;
+    delete draft.manualLocation;
+    for (const key of ["aiJob", "aiProposal"] as const) {
+      const ai = draft[key] as { kind?: unknown; writingMode?: unknown } | undefined;
+      if (ai && (ai.kind === "group" || !["polish", "ask", "question", "recap", "editor"].includes(String(ai.writingMode))))
+        delete draft[key];
+    }
+  }
   // 指向已删除人物的标记会让 validateLibrary 拒绝整库。打开与解码备份时先剥掉，
   // 让校验只在「本次改动写坏了」时报错，而不是把人锁在自己的资料外面。
   const persons = s.persons ?? {};
   // 这里拿到的还是刚解析出来的裸对象，尚未进库也尚未冻结，可以原地改。
   for (const content of [
     ...Object.values(s.records ?? {}),
-    ...Object.values(s.drafts ?? {}).flatMap((d) => [
-      d?.content,
-      ...(d?.photoEvents ?? []),
-    ]),
+    ...Object.values(s.drafts ?? {}).map((d) => d?.content),
   ] as (Mutable<RecordContent> | undefined)[]) {
     const tags = content?.personIds;
     if (!Array.isArray(tags)) continue;
@@ -425,7 +459,7 @@ export function recordsOfPerson(
   return records.filter((r) => r.personIds?.includes(personId));
 }
 
-/** 把某个人的标记从全部记录与草稿（含「按事情分组」的每件事）上改写；只动标记，不动记录。 */
+/** 把某个人的标记从全部记录与草稿上改写；只动标记，不动记录。 */
 function retagPersons(
   s: Library,
   personId: string,
@@ -442,10 +476,9 @@ function retagPersons(
   for (const [id, record] of Object.entries(s.records))
     if (tagged(record)) editEntity(s, "records", id, rewrite);
   for (const [id, draft] of Object.entries(s.drafts))
-    if (tagged(draft.content) || draft.photoEvents?.some(tagged))
+    if (tagged(draft.content))
       editEntity(s, "drafts", id, (next) => {
         rewrite(next.content);
-        for (const event of next.photoEvents ?? []) rewrite(event);
       });
 }
 
@@ -942,28 +975,6 @@ function validEntity(s: Library, kind: EntityKind, key: string): boolean {
       validateStoredAI(d.aiJob) &&
       validateStoredAI(d.aiProposal) &&
       (d.autoDate === undefined || typeof d.autoDate === "boolean") &&
-      (d.groupPhotosByDay === undefined ||
-        typeof d.groupPhotosByDay === "boolean") &&
-      (d.manualLocation === undefined ||
-        typeof d.manualLocation === "boolean") &&
-      (d.photoEvents === undefined ||
-        (Array.isArray(d.photoEvents) &&
-          !d.photoEvents.some(
-            (event) =>
-              !event ||
-              !isText(event.title) ||
-              !isText(event.text) ||
-              !isText(event.location) ||
-              !isText(event.date) ||
-              !Number.isFinite(Date.parse(event.date)) ||
-              typeof event.first !== "boolean" ||
-              !validBy(event.by) ||
-              !isIds(event.mediaIds) ||
-              (event.coverId !== null && !isId(event.coverId)) ||
-              (event.personIds !== undefined &&
-                (!isIds(event.personIds) ||
-                  !event.personIds.every((p) => !!s.persons[p]))),
-          ))) &&
       (d.autoLocation === undefined || typeof d.autoLocation === "boolean") &&
       (d.recordId === null || !!s.records[d.recordId]) &&
       Number.isInteger(d.baseRevision) &&

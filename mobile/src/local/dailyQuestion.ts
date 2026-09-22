@@ -19,7 +19,7 @@ export async function requestDailyQuestion(input: {
   await input.save(rememberQuestion(input.getCache(), input.today, null));
   try {
     if (!(await input.getToken()) || !(await input.hasConsent())) return;
-    const result = validateResult(await input.request(), "write", [], "question");
+    const result = validateResult(await input.request(), "question");
     await input.save(rememberQuestion(input.getCache(), input.today, result.question!));
   } catch {
     // 今日尝试已经保存，失败安静地保留本机问题。
