@@ -176,6 +176,52 @@ export function LocalTheme({ children }: { children: ReactNode }) {
   );
 }
 export const useTheme = () => useContext(ThemeContext);
+/** 双线印章圆环：扉页名字首字与年度册封面共用；固定配色场景（重放剧场）用 color 覆盖。 */
+export function Stamp({
+  size,
+  inset = 5,
+  color,
+  children,
+}: {
+  size: number;
+  /** 内圈细线与外缘的留白；里程碑小印 44 用 3。 */
+  inset?: number;
+  color?: string;
+  children: ReactNode;
+}) {
+  const { colors } = useTheme();
+  const ring = color ?? colors.accent;
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 2,
+        borderColor: ring,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: inset,
+          left: inset,
+          right: inset,
+          bottom: inset,
+          borderRadius: size / 2 - inset,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: ring,
+          opacity: 0.5,
+        }}
+      />
+      {children}
+    </View>
+  );
+}
+
 export function Text({ style, ...props }: TextProps) {
   const { colors, large } = useTheme();
   return (

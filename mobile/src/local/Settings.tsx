@@ -38,7 +38,6 @@ import {
 } from "../sync/state";
 import { changeAvgMs } from "./health";
 import { APP_NAME, CHILD_FALLBACK } from "./brand";
-import { Stamp } from "./Shelf";
 import { JournalIcon } from "../components/JournalIcon";
 import {
   BY_PRESETS,
@@ -57,6 +56,7 @@ import {
   SettingsGroup,
   SettingsRow,
   SignatureButton,
+  Stamp,
   Text,
   dateLabel,
   messageOf,

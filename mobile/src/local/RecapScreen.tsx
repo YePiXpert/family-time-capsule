@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { monthKey, recordTitle, sortedRecords, yearKey } from "./model";
 import { useNav, type Props } from "./navigation";
-import { Stamp } from "./Shelf";
 import { byLine, recapOf } from "./recap";
 import { replayPhotos } from "./replay";
 import { mediaUri } from "./files";
@@ -17,6 +16,7 @@ import {
   Card,
   Ornament,
   Page,
+  Stamp,
   Text,
   dateLabel,
   monthLabel,

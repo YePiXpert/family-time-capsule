@@ -58,6 +58,7 @@ import {
   Page,
   SectionHeader,
   SettingsRow,
+  Stamp,
   Text,
   dateLabel,
   hapticLight,
@@ -70,52 +71,6 @@ import {
 } from "./ui";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { Photo } from "./Media";
-
-/** 双线印章圆环：扉页名字首字与年度册封面共用；固定配色场景（重放剧场）用 color 覆盖。 */
-export function Stamp({
-  size,
-  inset = 5,
-  color,
-  children,
-}: {
-  size: number;
-  /** 内圈细线与外缘的留白；里程碑小印 44 用 3。 */
-  inset?: number;
-  color?: string;
-  children: ReactNode;
-}) {
-  const { colors } = useTheme();
-  const ring = color ?? colors.accent;
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: 2,
-        borderColor: ring,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          top: inset,
-          left: inset,
-          right: inset,
-          bottom: inset,
-          borderRadius: size / 2 - inset,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: ring,
-          opacity: 0.5,
-        }}
-      />
-      {children}
-    </View>
-  );
-}
 
 /** 横向封面条：两侧出血到屏幕边，条内间距 12。 */
 function Strip({ children }: { children: ReactNode }) {
