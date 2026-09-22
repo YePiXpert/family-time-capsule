@@ -2,7 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-22。**1.0.2（构建号 75）发版中**：主人复核后拍板发版；发版提交在 main（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本），轻量标签 `v1.0.2` 指向它。标签出包的结果与 Release 校验和待 run 完成后核对再补进第一节；**在那之前不要把 1.0.2 当作已交付**。
+> 最后更新：2026-09-22。**1.0.2 已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，轻量标签 `v1.0.2`，run 35691714051 四作业全绿，GitHub Release 上有 APK／未签名 IPA／`build-source.json`／`sha256sums.txt`（第一节第一条）。服务端仍是 `b76439d` + DeepSeek（MiMo 适配未部署，许可阻塞见第一节「MiMo 内容模型适配」）；两台真机的验收仍未做。主人随后把出包流水线并行化（`300b12e`），首次 dispatch 的 iOS 回归红（脚手架超时，录音其实已开始），「说完了」等待放宽到 120 秒后再验证，结果待查（第一节第二条）。
+> 旧记录：2026-09-22。**1.0.2（构建号 75）发版中**：主人复核后拍板发版；发版提交在 main（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本），轻量标签 `v1.0.2` 指向它。标签出包的结果与 Release 校验和待 run 完成后核对再补进第一节；**在那之前不要把 1.0.2 当作已交付**。
 > 旧记录：2026-09-22。**1.0.1（构建号 74）没有交付**：Kimi 的界面焕新 `3c0b017`…`05e229f` 已在 main，附注标签 `v1.0.1` 触发 run 35679134876——quality／Android 绿、iOS 回归红（测试脚手架点在屏幕底边被系统吞掉，应用没有问题）、release 作业跳过，**没有 GitHub Release v1.0.1**，可安装的仍是 1.0.0（下一条）。同日复核修复 `a01a1d8`…`9476895`、脚手架修复 `6238119`／`ae2323d` 与键盘避让修复 `3638d96` 已推 main；验证出包 run 35681782720 又在 iOS 回归红（还是脚手架：续写时的光标点落在新工具栏的「文件」钮上），第三次验证 run 35686815546（workflow_dispatch，源码 `3638d96`）**三作业全绿**（quality／Android APK／iOS unsigned IPA；release 作业非标签触发、按设计跳过，仍没有 Release）。要交付 1.0.1 的内容需主人拍板再出包（第一节第一条）。
 > 旧记录：2026-09-21。**1.0.0 已交付**：交付提交 `16300f2`，标签 `v1.0.0`，run 35607118819 四作业全绿，GitHub Release 上有 APK／未签名 IPA／校验和（第一节第一条）；**服务端 `b76439d` 已部署生产**（主人授权，2026-09-21 14:46 UTC）；可安装 1.0.0 做真机验收。此后不加新功能，只做优化（第四节）。
 > 旧记录：2026-09-21 12:10 UTC。**Build 72「家人一起写」已交付**：源码 `7cdc42d`，run 35590928208 三作业全绿，校验和在第一节「Build 72 打包」；同日主人拍板**家史不做**，后续路线按模块缺口重排（第四节），Build 73「说一段」计划在 `docs/plans/PLAN-BUILD-73.md`（开工前待主人拍板五项）。
@@ -16,6 +17,15 @@
 
 ## 一、当前状态快照（2026-09-22）
 
+- **1.0.2「界面焕新与复核修复」已交付（构建号 75；2026-09-22）**：主人复核后拍板发版。发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`（`mobile/app.json` 1.0.2／构建号 75、CHANGELOG 顶节「1.0.2」并入 1.0.1 内容与复核修复、README 当前版本、HANDOFF 头注），轻量标签 `v1.0.2` 指向它，标签推送触发 run 35691714051，**四作业全绿**（quality／Android APK／iOS unsigned IPA／GitHub Release）。**GitHub Release**：<https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.2>（不过期；artifacts 2026-10-22 过期）。APK 66,776,146 字节、IPA 11,270,531 字节（IPA 未签名，由主人自签后装机）；SHA-256（与 Release 的 `sha256sums.txt` 一致，本机重新算过）：
+
+  ```text
+  5195171909fcff130138b9cbe5d953281aba83e71d95f0ec2499197df50f91ea  FamilyTimeCapsule-android.apk
+  8663f99ba5d2cdebc7a051701a6a125d7c9859b282bcd1f8016180a67eff6916  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
+
+  发版前复核（2026-09-22）：main CI 绿；验证 run 35686815546 的安卓冒烟 12 项、iOS 回归 9 项、iOS 启动 9 项检查全 true；安卓 320／390、深色截图目视正常；Opus 独立复核代码差异无阻塞项；门禁 mobile 789／server 189 全绿。注意：本版 AI 脚注写「由小米 MiMo 2.5 提供」（`6c926e2` 随 MiMo 适配一起改的），请求体不带模型字段，旧服务端照常接受；但生产仍是 DeepSeek，脚注与实际供应商不一致，直到 MiMo 服务端部署为止。
+- **出包流水线并行化（主人 `300b12e`，2026-09-22，1.0.2 发版之后）**：iOS 拆成「iOS unsigned IPA」「iOS simulator build」（模拟器应用与 XCUITest runner 只编译一次，打成 tar 传给下游）和矩阵「iOS startup／regression verification」；README 加了一段说明；`smoke-ios-startup.py` 把 Vision OCR 编译成二进制只编一次。首次 dispatch run 35694486774：quality／Android／IPA／模拟器构建／启动校验全绿，**回归校验红**——`NativeRegressionTests.swift` 点「说一段」后 20 秒内没等到「说完了」，但拆解截图与 AX 树显示录音其实已开始（按钮已是「说完了」、卡片「正在录音，离开前请结束并保存。」）：全新运行器上第一次激活音频会话花了 30～50 秒；旧流水线里回归跟在启动冒烟后面、同一运行器早已热身。修法：「说完了」的等待放宽到 120 秒；验证 run 见头注。
 - **1.0.1「界面焕新」（构建号 74，未交付；2026-09-22）**：Kimi 在 main 上直接提交 `3c0b017`（页内返回箭头改为订阅导航栈 state）、`dd6d933`／`0b098f2`／`f3b3b32`／`82f0e23`／`411e7dd`（纸卡纯白与投影、图标砖、我的档案卡、书架单月整宽行与空区行动行、编辑页贴底工具栏、月册吸顶与年度册扉页）、`57500dc`（DESIGN 同步）、`05e229f`（app.json 1.0.1／构建号 74、CHANGELOG 顶节），并打了**附注**标签 `v1.0.1`（规矩是轻量标签；实测 quality 作业的 SHA 核对也过了，`github.sha` 会解析到提交）。
   - 标签出包 run 35679134876：quality 绿、Android APK 绿（artifact `FamilyTimeCapsule-android-apk`，2026-10-22 过期）、**iOS 红**、GitHub Release 跳过——**没有 v1.0.1 的 Release，可安装的仍是 1.0.0**。iOS 失败在 `mobile/scripts/ios-regression/NativeRegressionTests.swift` 点「2026年9月」月册后 `record-fixture` 等不到。证据包 `FamilyTimeCapsule-ios-local-regression` 里的点击事件是 (90, 814.8)：书架收紧后月册只在屏幕底边露出 58 点，XCTest 点在可见部分的中心，落进 Home 指示条手势区被系统吞掉；1.0.0 时月册整个在屏幕外，XCTest 会先自动滚动。是测试脚手架的问题，不是应用的问题。
   - 同日 Fable + Astra 复核（无阻塞项），主人拍板全修，已推 main：`a01a1d8`（`Stamp` 搬进 ui.tsx）、`42fb8a9`（我的档案卡允许换行、名字与印章统一回退、`sealInitial` 取首个码点 + 测试）、`d2e2b75`（AI 钮共用 `ToolButton`：禁用 40%、标签 11／13 随更大文字、放大上限 1.4、底栏间距 8）、`6c03726`（AI 弹层重置 `GlassDepth`，卡片不再变平）、`9476895`（浅色赤陶压深到 #B2543B，纸底对比 4.58:1，派生色与归档阅读器 CSS 同步）、`6238119`（XCUITest `tap()` 要求可见中心离底边 ≥ 60 才点）。门禁：mobile 52 个文件 789 个测试、server 189、typecheck／lint／边界／scripts unittest 全绿。这些都在 `v1.0.1` 标签之后，**没进任何安装包**。
@@ -158,7 +168,7 @@
    不要再出 1.0.0 的包；此后不加新功能，只做第四节的优化项。再次出包时按 AGENTS.md（workflow_dispatch 完整 40 位 SHA；正式版打轻量标签 v1.0.x 走 release 作业）并递增构建号。
    服务端生产已是 **b76439d（转写端点 + 四个新 writingMode）**；部署验证与备份位置在第一节，接下来做真机验收。
    两台真机的 1.0.0 验收（说一段／出生的故事／追问我／编者）还没做，清单在第一节。
-   **1.0.1（构建号 74）没有交付**：标签出包与第一次验证出包的 iOS 回归都红（两次都是脚手架问题，已修 `6238119`／`ae2323d`），没有 Release；main 上另有复核修复 `a01a1d8`…`9476895` 与键盘避让修复 `3638d96`，第三次验证 run 35686815546三作业全绿（验证包 artifacts 2026-10-22 过期，校验和在第一节；仍没有 Release）。要交付得再出包：构建号 75、CHANGELOG 1.0.2、轻量标签（第一节第一条）。
+   **1.0.2（构建号 75）已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，标签 `v1.0.2`，run 35691714051 四作业全绿，Release 与校验和在第一节第一条；1.0.1（构建号 74）的标签出包失败、未发布，内容并入 1.0.2。
 
 第三步·真机验收与下一版：
 - 先按 docs/plans/PLAN-SHARING.md 第五节做真机验收（主人两台手机 + 家人一台）——两台手机真跑同步从未验证过；主人用 Build 71/72 的手机点一次「远端备份 → 现在备份」确认服务端兼容。
@@ -371,6 +381,7 @@
 - （1.0.1）XCUITest 的 `tap()` 原来只查 `isHittable`：元素半露在屏幕底边时，XCTest 点在可见部分的中心，落进 Home 指示条手势区会被系统吞掉、页面不动（run 35679134876，点击坐标 (90, 814.8)）。现在要求可见中心离底边 ≥ 60，否则先滚动。布局改动让目标恰好停在底边时最容易踩，证据包里的「Synthesized Event」附件（bplist）能读出点击坐标。
 - （1.0.1）XCUITest 的坐标点击要想清楚键盘弹起后那一点是谁：`type()` 续写时点字段右下角挪光标，底栏随键盘贴到字段下沿后那一点成了工具栏的「文件」钮，点开系统文件浏览器、字段失焦，`typeText` 报 "Neither element nor any descendant has keyboard focus"（run 35681782720）。现在点首行右侧空白。
 - （1.0.1）页内顶栏下面的 `KeyboardAvoidingView` 不要传 `keyboardVerticalOffset`：它的布局帧相对整屏 SafeAreaView、已含顶栏，再加只会把底栏抬高一个顶栏，键盘上方留一条空纸（1.0.0 起两版真机截图都有，`3638d96` 去掉）。
+- （1.0.2 后）流水线拆成并行作业后，XCUITest 回归在全新 macOS 运行器上跑：第一次激活音频会话（`setAudioModeAsync`／`prepareToRecordAsync`）可能要三五十秒，「说完了」20 秒等不到（run 35694486774）。凡是首次触碰系统服务（音频、相机、相册）的步骤都给长超时，别按热身过的旧流水线估时。
 - （CI 偶发）`statSync().mtimeMs` 有亚毫秒精度，`mtime < Date.now()` 对刚写下的文件不成立：0 宽限的清理要显式短路，别拿时间比。
 
 ## 六、环境备忘
