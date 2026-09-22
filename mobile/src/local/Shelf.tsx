@@ -27,6 +27,7 @@ import { letterCaption, letterState, sortLetters } from "./letters";
 import {
   monthIndex,
   fullNameLine,
+  sealInitial,
   monthKey,
   recordTitle,
   sortedRecords,
@@ -36,7 +37,6 @@ import {
   type Stored, stampUnsigned, unsignedRecords } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
-import { CHILD_FALLBACK } from "./brand";
 import { backupNudgeBody, bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
 import { clusterPlaces } from "./places";
 import { storiesWritten } from "./stories";
@@ -740,7 +740,7 @@ export function Shelf() {
       records.length > 0 && (exportedDays === null || exportedDays > 30);
   const age = ageLine(state.profile.birthday),
     milestone = milestoneOf(state.profile.birthday);
-  const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
+  const initial = sealInitial(state.profile.name);
   // 同屏只放一张提醒卡：合并冲突 > 落款 > 里程碑 > 装订 > 备份 > 节奏；关掉的写进库里，沉默期见 nudge.ts。
   const candidates: NudgeKind[] = [];
   // 落款卡：这台手机定了默认落款、库里还有没落款的记录时问一次；「都是」一次写上，关掉就永远不再问。
@@ -1449,7 +1449,7 @@ export function TitlePage() {
     s = useStyles(),
     { colors } = useTheme();
   const nav = useNav();
-  const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
+  const initial = sealInitial(state.profile.name);
   const name = state.profile.name || state.profile.fullName;
   const nameLine = state.profile.fullName
     ? fullNameLine(state.profile.fullName, state.profile.name)

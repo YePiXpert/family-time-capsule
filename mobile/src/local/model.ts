@@ -1,3 +1,4 @@
+import { CHILD_FALLBACK } from "./brand";
 import { lineage } from "./hash";
 import type { AIJob, AIProposal } from "../ai/types";
 import { validateStoredAI } from "../ai/state";
@@ -137,6 +138,10 @@ export type LocalProfile = {
   birthday: string;
   avatarId: string | null;
 };
+/** 名字印章取首个 Unicode 码点，保留扩展汉字；空白名字统一用品牌默认称呼。 */
+export function sealInitial(name: string): string {
+  return Array.from(name.trim() || CHILD_FALLBACK)[0]!;
+}
 /** 应用与纸书扉页共用；开放归档阅读器保持相同拼法。 */
 export function fullNameLine(fullName: string, name: string): string {
   return name.trim() ? `${fullName} · 小名${name.trim()}` : "";
