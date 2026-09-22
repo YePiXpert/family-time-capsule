@@ -98,8 +98,9 @@ export type SeriesItem = {
   /** 形如 "2026-09"，每系列内唯一；取自素材拍摄时间，缺省用记录日期。 */
   month: string;
 };
-/** 新建时光系列的占位名；还叫这个名字又没照片的系列，退出时会被静默清理。 */
+/** 旧版新建时光系列的占位名，保留兼容旧库。 */
 export const SERIES_DEFAULT_NAME = "新时光系列";
+/** 旧数据种类：1.0.3 起不再新建、无页面；保留读写、合并、备份与归档以兼容旧库。 */
 export type LocalSeries = {
   id: string;
   name: string;

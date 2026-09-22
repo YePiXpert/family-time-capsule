@@ -15,16 +15,12 @@ import * as ImageManipulator from "expo-image-manipulator";
 import type { LocalMedia, LocalRecord } from "./model";
 import { mediaUri } from "./files";
 import { CHILD_FALLBACK } from "./brand";
-import { dateLabel, monthLabel, paperPalette, serif } from "./ui";
+import { dateLabel, paperPalette, serif } from "./ui";
 import {
   CARD_WIDTH,
-  SERIES_STRIP_MAX,
   base64ToBytes,
   layoutKeepSake,
-  layoutSeriesStrip,
   pngBytesOfDataUrl,
-  sampledIndices,
-  wrapText,
 } from "./keepsake";
 
 const {
@@ -208,134 +204,7 @@ export const KeepSakeCard = forwardRef<
   );
 });
 
-/** 时光系列对比条：横排照片、月份标签，供离屏导出。 */
-export const SeriesStrip = forwardRef<
-  SvgRef,
-  {
-    name: string;
-    profileName: string;
-    items: { month: string; photo?: { uri: string; aspect: number } }[];
-  }
->(function SeriesStrip({ name, profileName, items }, ref) {
-  const layout = layoutSeriesStrip(items);
-  const picked = sampledIndices(items.length, SERIES_STRIP_MAX).map(
-    (i) => items[i]!,
-  );
-  const title = wrapText(name.trim() || "时光系列", {
-    fontSize: 36,
-    maxWidth: CARD_WIDTH - 96,
-    maxLines: 1,
-  })[0]!;
-  return (
-    <Svg
-      ref={ref}
-      width={layout.width}
-      height={layout.height}
-      testID="series-strip"
-    >
-      <Rect
-        x={0}
-        y={0}
-        width={layout.width}
-        height={layout.height}
-        fill={PAPER}
-      />
-      <Rect
-        x={26}
-        y={26}
-        width={layout.width - 52}
-        height={layout.height - 52}
-        rx={14}
-        fill="none"
-        stroke={LINE}
-        strokeWidth={1}
-      />
-      <SvgText
-        x={CARD_WIDTH / 2}
-        y={layout.titleY}
-        fontSize={36}
-        fontFamily={serif}
-        fontWeight="600"
-        letterSpacing={1}
-        fill={INK}
-        textAnchor="middle"
-      >
-        {title}
-      </SvgText>
-      <OrnamentLine y={layout.ornamentTopY} />
-      {layout.cells.map((cell, i) => (
-        <SeriesCell
-          key={cell.month}
-          index={i}
-          cell={cell}
-          photo={picked[i]?.photo}
-        />
-      ))}
-      <OrnamentLine y={layout.ornamentBottomY} />
-      <SvgText
-        x={CARD_WIDTH / 2}
-        y={layout.footerY}
-        fontSize={20}
-        fill={MUTED}
-        letterSpacing={2}
-        textAnchor="middle"
-      >
-        {`${profileName || CHILD_FALLBACK}的成长记`}
-      </SvgText>
-    </Svg>
-  );
-});
-
-function SeriesCell({
-  index,
-  cell,
-  photo,
-}: {
-  index: number;
-  cell: ReturnType<typeof layoutSeriesStrip>["cells"][number];
-  photo?: { uri: string; aspect: number };
-}) {
-  return (
-    <>
-      {photo && (
-        <>
-          <Defs>
-            <ClipPath id={`series-cell-${index}`}>
-              <Rect
-                x={cell.x}
-                y={cell.y}
-                width={cell.w}
-                height={cell.h}
-                rx={10}
-              />
-            </ClipPath>
-          </Defs>
-          <SvgImage
-            href={photo.uri}
-            x={cell.x}
-            y={cell.y}
-            width={cell.w}
-            height={cell.h}
-            preserveAspectRatio="xMidYMid slice"
-            clipPath={`url(#series-cell-${index})`}
-          />
-        </>
-      )}
-      <SvgText
-        x={cell.x + cell.w / 2}
-        y={cell.labelY}
-        fontSize={22}
-        fill={MUTED}
-        textAnchor="middle"
-      >
-        {monthLabel(cell.month)}
-      </SvgText>
-    </>
-  );
-}
-
-/** 把渲染好的卡片导出为 PNG 文件并呼出系统分享面板。 */
-/** 离屏 Svg 取图：两个导出口共用这一段。 */
+/** 离屏 Svg 取图。 */
 async function renderPng(svg: SvgRef | null): Promise<Uint8Array> {
   if (!svg) throw new Error("纪念卡尚未就绪，请重试。");
   const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -355,6 +224,7 @@ async function renderPng(svg: SvgRef | null): Promise<Uint8Array> {
   if (!bytes.length) throw new Error("纪念卡生成失败，请重试。");
   return bytes;
 }
+/** 把渲染好的卡片导出为 PNG 文件并呼出系统分享面板。 */
 export async function exportKeepSakeCard(
   svg: SvgRef | null,
   recordId: string,

@@ -65,8 +65,6 @@ import { SearchScreen } from "./SearchScreen";
 import { RecapScreen } from "./RecapScreen";
 import { Firsts, Shelf, TitlePage } from "./Shelf";
 import { AlbumScreen, Picker, AlbumDetails } from "./Albums";
-import { SeriesScreen } from "./Series";
-import { Footprint } from "./Footprint";
 import { People } from "./People";
 import {
   Settings,
@@ -279,14 +277,12 @@ function Root() {
           <Stack.Screen name="Year" component={Year} />
           <Stack.Screen name="Recap" component={RecapScreen} />
           <Stack.Screen name="Firsts" component={Firsts} />
-          <Stack.Screen name="Footprint" component={Footprint} />
           <Stack.Screen name="People" component={People} />
           <Stack.Screen name="Title" component={TitlePage} />
           <Stack.Screen name="Settings" component={Settings} />
           <Stack.Screen name="Editor" component={Editor} />
           <Stack.Screen name="Record" component={RecordScreen} />
           <Stack.Screen name="Album" component={AlbumScreen} />
-          <Stack.Screen name="Series" component={SeriesScreen} />
           <Stack.Screen name="Picker" component={Picker} />
           <Stack.Screen name="AlbumDetails" component={AlbumDetails} />
           <Stack.Screen name="Media" component={MediaScreen} />
