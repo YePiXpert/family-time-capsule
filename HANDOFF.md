@@ -2,7 +2,7 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-22。**1.0.3（构建号 76）发版中**：主人 2026-09-22 拍板发版＋部署一条龙；发版提交在 main（`mobile/app.json` 1.0.3／构建号 76、服务端减法、CHANGELOG 顶节、README、本文；Fable 复核、门禁全绿后提交），轻量标签 `v1.0.3` 指向它；标签出包结果、Release 校验和与服务端部署记录待 run 完成后补进第一节；**在那之前不要把 1.0.3 当作已交付**。
+> 最后更新：2026-09-22。**1.0.3（构建号 76）发版中；服务端 1.0.3 已部署生产**：主人 2026-09-22 拍板发版＋部署一条龙；发版提交 `8be3a46731b56f17fec0bdbb8aa12575ddefc96b`（`mobile/app.json` 1.0.3／构建号 76、服务端减法、CHANGELOG 顶节、README、本文；Fable 复核、门禁全绿后提交），轻量标签 `v1.0.3` 指向它，标签推送触发 run 35736146539（13:50 UTC，<https://github.com/YePiXpert/family-time-capsule/actions/runs/35736146539>）；出包结果与 Release 校验和待 run 完成后查一次再补进第一节，**在那之前不要把 1.0.3 当作已交付**。服务端同一提交已于 13:52 UTC 切到生产（镜像 `anan-ai:8be3a46…`，本机与公网 healthz 版本一致，账号／设备／设置／清单逐行保留；staging 五模式＋转写真实验证通过；证据与回滚材料在 `/opt/anan-ai/deployments/20260922-1.0.3-reduction/`），1.0.2 手机的分组／起个头／写信引导从此得到 400／404，其余功能照旧。
 > 旧记录：2026-09-22。**1.0.2 已交付；AI 服务已切到 MiMo V2.6 Pro**：生产源码 `e2bd07fe77f5b185257ef1fc255462245a4d1577`，文字／看图为 `mimo-v2.6-pro`，云端转写为 `mimo-v2.5-asr`，使用主人指定并提供密钥的中国 Token Plan 地址；八模式和 ASR 合成样例验证通过，账号／设备／额度／备份保留。部署与回滚记录见第一节及 `docs/MIMO-ADAPTATION.md`。安装包仍为 `v1.0.2`，此次服务切换未重新出包。
 > 旧记录：移动端状态 2026-09-22（减法）。**1.0.3「减法」已在 main、未出包**：主人拍板「不要冗余，贪多嚼不烂」，拿掉出生的故事（24 问并入小问题）、写信引导、时光系列、足迹、年度长图、重放、分成几件事／按事情分组、起个头，AI 不再看照片；提交 `8f36df0`…`feebcec` 与文档收尾提交（第一节第一条）。可安装的仍是 1.0.2（下一条）；本次减法未改服务端；后续模型部署见上。验证出包见第一节第一条。
 > 旧记录：2026-09-22。**1.0.2 已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，轻量标签 `v1.0.2`，run 35691714051 四作业全绿，GitHub Release 上有 APK／未签名 IPA／`build-source.json`／`sha256sums.txt`（第一节第一条）。服务端仍是 `b76439d` + DeepSeek（MiMo 适配未部署，见第一节「MiMo 内容模型适配」）；两台真机的验收仍未做。主人随后把出包流水线并行化（`300b12e`），首次 dispatch 的 iOS 回归红（脚手架超时，录音其实已开始），「说完了」等待放宽到 120 秒后，验证 run 35701034621 已全绿，总耗时约 32 分钟；本轮继续优化测试等待，实测结果待新验证构建（第一节第二条）。
@@ -20,9 +20,10 @@
 
 ## 一、当前状态快照（2026-09-22）
 
-- **1.0.3「减法」发版（构建号 76；2026-09-22）**：本次发版内容包含 `mobile/app.json` 的 1.0.3／76 三行版本更新、服务端减法与 CHANGELOG 顶节、README、本文、PRODUCT、`docs/AI-PROMPTS.md`、`deploy/README.md` 同步；Fable 复核并跑门禁（mobile 49 文件 727 测试、server 183、typecheck／lint／边界脚本／scripts unittest 全绿）后提交，轻量标签 `v1.0.3` 指向发版提交；出包与部署结果待补，尚未交付。
+- **1.0.3「减法」发版（构建号 76；2026-09-22）**：本次发版内容包含 `mobile/app.json` 的 1.0.3／76 三行版本更新、服务端减法与 CHANGELOG 顶节、README、本文、PRODUCT、`docs/AI-PROMPTS.md`、`deploy/README.md` 同步；Fable 复核并跑门禁（mobile 49 文件 727 测试、server 183、typecheck／lint／边界脚本／scripts unittest 全绿）后提交，发版提交 `8be3a46731b56f17fec0bdbb8aa12575ddefc96b`，轻量标签 `v1.0.3` 指向它，标签推送触发 run 35736146539（<https://github.com/YePiXpert/family-time-capsule/actions/runs/35736146539>，13:50 UTC；release 作业会发 GitHub Release `v1.0.3`：APK／未签名 IPA／`build-source.json`／`sha256sums.txt`）。结果待主人通知后查一次：四作业（quality／Android APK／iOS unsigned IPA／Release）与两组 iOS 验证全绿、`build-source.json` 的 gitSha＝发版提交、version 1.0.3、构建号 76，再把 Release 链接与 SHA-256 补到这里。**在那之前不要把 1.0.3 当作已交付。**
   - 服务端 `contracts.ts`／`app.ts`／`provider.ts`／`ai-model.ts`／`prompts.ts` 只保留 `/api/v1/ai/write` 与必填的 `polish`／`recap`／`ask`／`question`／`editor`，`photos` 只接受空数组，每次请求计一次写作、零张图片；移除 group 路由、generate／letter 模式、相关提示词与 ASK 故事主题句，旧手机相应功能收到 400／404。其余验证、额度、缓存、转写与备份路径不变。
-  - 更新 contracts／app／provider／prompts 测试与 ai-config 的 Provider／探针调用，手册六块逐字对照；`probe-common.ts`／`probe-text.ts` 与 `verify-service.py` 改为五种文字模式，删除 `probe.ts`，保留重放和照片拒收并补旧模式／路由负例。发版提交 SHA、run、Release 校验和、服务端部署记录由 Fable 补。
+  - 更新 contracts／app／provider／prompts 测试与 ai-config 的 Provider／探针调用，手册六块逐字对照；`probe-common.ts`／`probe-text.ts` 与 `verify-service.py` 改为五种文字模式，删除 `probe.ts`，保留重放和照片拒收并补旧模式／路由负例。
+  - **服务端 `8be3a46` 已部署生产（2026-09-22 13:52 UTC，主人「一条龙」授权）**：从 `e2bd07f` 升级，同一提交构建镜像 `anan-ai:8be3a46731b56f17fec0bdbb8aa12575ddefc96b`（标签 `org.opencontainers.image.revision`＝提交）。先在独立数据目录的 staging 3141 跑新版 `verify-service.py --allow-live`：ask 3.1 s／593 tokens、question 7.5 s／490、polish 1.5 s／565（同一请求重放 1 ms／0 tokens、用量不变）、recap 34.6 s／2191、editor 11.9 s／1104；带照片的 ask 400、`generate` 400、`/ai/group` 404 均不上游；转写 2 秒合成音 5.6 s／77 tokens，413／415／401 与临时文件清理、家庭备份对象库、设备撤销全过；staging 已 down。切换：`docker stop` 生产后 tar 备份数据（SHA-256 `5cf6058b069ca4ff…`，全文在证据目录 `data-before.sha256`）并记录四表逐行摘要，再以同一镜像 `up -d --no-build --pull never`（env 只改 `SOURCE_SHA`）；本机与公网 `/healthz` 都返回发版提交，me／admin／备份清单／写作／转写五类匿名请求均 401，成员 1／设备 1／设置 1／清单 0 逐行一致，容器健康。证据与回滚材料：`/opt/anan-ai/deployments/20260922-1.0.3-reduction/`（`previous.env`、`previous-compose.yaml`、`previous-container.json`、`previous-image-id.txt`、`production.env`、`target-compose.yaml`、`data-before.tar`、`deploy.py`、`staging-verification.log`、`deployment-result.json`）。回退：恢复 `previous.env` 到 `/opt/anan-ai/service.env`，用 `previous-compose.yaml` `up -d --no-build --pull never`，核对 healthz 回到 `e2bd07f`；无数据库结构改动，通常不必还原数据。第一次切换曾因公网健康地址拼错（把手机 `brand.ts` 的 `SERVICE_URL`（含 `/api/v1`）直接接 `/healthz`）而由脚本自动回滚（数据未动，`attempt1-*` 是那次的备份），改用站点根 `/healthz` 后第二次切换成功。
 
 - **MiMo V2.6 Pro 已上线（2026-09-22）**：生产镜像 `anan-ai:e2bd07fe77f5b185257ef1fc255462245a4d1577`，内容为 `mimo-v2.6-pro`，云端 ASR 为 `mimo-v2.5-asr`；两路使用主人指定的中国 Token Plan 地址和提供的密钥。八种内容模式、ASR、隔离服务的账号／幂等／备份检查通过，本机与公网 healthz SHA 一致；原有成员、设备、额度、暂停状态与备份清单保留。旧客户端型号兼容归一；新源码脚注和本机任务标记已更新，现有安装包静态文案需下次出包更新。回滚材料和探测统计在 `/opt/anan-ai/deployments/20260922-mimo26-pro/`。配置记录的是主人选择，不声称小米特别许可；细节见 `docs/MIMO-ADAPTATION.md` 顶部。
 
@@ -319,7 +320,7 @@
 5. **纸书版面真机看 PDF**：章首引语（`BookChapter.lead` 多行）、编者书名替换后的封面。
 6. **文案与可达性**：三个访谈入口的文案是工作者自定的（见 `/tmp` 任务报告已并入 CHANGELOG／DESIGN），主人试用后统一口吻；同意书 v2 文案偏长，可再精简。
 7. 密文对象位腐坏无自愈（PROJECT-AUDIT 残留风险 ③，不急）。
-8. **服务端减法已随 1.0.3 做完（部署记录见第一节）**：删掉 group 路由、generate／letter 与相关提示词、ASK 故事主题句；手册六个 text 块与 `server/tests/prompts.test.ts` 已同步，所有手机请求仍带 `photos: []`，服务端保留该字段且只接受空数组。代码完成不代表已部署，实际结果待 Fable 补。
+8. **服务端减法已随 1.0.3 做完（部署记录见第一节）**：删掉 group 路由、generate／letter 与相关提示词、ASK 故事主题句；手册六个 text 块与 `server/tests/prompts.test.ts` 已同步，所有手机请求仍带 `photos: []`，服务端保留该字段且只接受空数组。已于 2026-09-22 13:52 UTC 部署生产（第一节「服务端 `8be3a46` 已部署生产」）。
 
 ## 五、踩坑清单（务必先读，历史细节在 docs/plans/ 各计划的对应小节）
 
@@ -398,6 +399,7 @@
 - （1.0.2 后）流水线拆成并行作业后，XCUITest 回归在全新 macOS 运行器上跑：第一次激活音频会话（`setAudioModeAsync`／`prepareToRecordAsync`）可能要三五十秒，「说完了」20 秒等不到（run 35694486774）。凡是首次触碰系统服务（音频、相机、相册）的步骤都给长超时，别按热身过的旧流水线估时。
 - （CI 偶发）`statSync().mtimeMs` 有亚毫秒精度，`mtime < Date.now()` 对刚写下的文件不成立：0 宽限的清理要显式短路，别拿时间比。
 - （1.0.3）**实体种类只增不减**：`series` 页面拆掉了，但 `ENTITY_KINDS`／`TOMBSTONE_KINDS`／`validEntity`／合并／归档都留着——`backup-format.ts` 拒收未知 kind 的整份备份，`validRoot` 拒收未知墓碑键，`disk.ts` 静默丢未知 kind 的行。旧字段（`RecordContent.story`、`settings.replayAudioId`、草稿的 `photoEvents`）也是只停写、不拒收：`validateStoredAI` 一旦返回 false 会经 `validEntity` 抛 `invalidLibrary`、整库打不开，所以旧 AI 任务要在 `normalizeLibrary` 里丢，不能在校验里拒。
+- （1.0.3 部署）公网健康检查地址是站点根 `/healthz`，不是手机 `brand.ts` 的 `SERVICE_URL`（带 `/api/v1`）再接 `/healthz`——拼错会 404，切换脚本会当作失败自动回滚（2026-09-22 第一次切换就是这样回滚的，数据未动）。`docker inspect <容器>` 输出的是单元素数组，存档后要取 `[0]`。
 - （1.0.3）冒烟 `result.json` 的键随功能删减（长图的 `yearbookSheet` 已删）；改 workflow 或写断言前先看 `smoke-android.py` 末尾的 `report.update(...)` 与 `smoke-ios-regression.py`。
 
 ## 六、环境备忘
