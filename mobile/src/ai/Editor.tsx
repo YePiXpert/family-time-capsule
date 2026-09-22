@@ -12,6 +12,7 @@ import {
   Button,
   Card,
   ErrorText,
+  GlassDepth,
   Photo,
   Text,
   ToolButton,
@@ -414,380 +415,383 @@ export function AIEditor({
       navigationBarTranslucent
       onRequestClose={() => setPanel(false)}
     >
-      <View style={{ flex: 1, justifyContent: "flex-end" }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="收起 AI 面板"
-          testID="ai-close"
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 0,
-            backgroundColor: colors.scrim,
-          }}
-          onPress={() => setPanel(false)}
-        />
-        <View
-          accessibilityViewIsModal
-          style={{
-            // 实色纸面：半透明玻璃会把编辑页底栏透出来。
-            backgroundColor: colors.paper,
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            maxHeight: "82%",
-            paddingTop: 16,
-            paddingHorizontal: 20,
-            paddingBottom: insets.bottom + 12,
-          }}
-        >
-          <View style={s.between}>
-            <Text style={s.heading}>AI 帮你整理</Text>
-            <Button
-              title="收起"
-              compact
-              testID="ai-collapse"
-              onPress={() => setPanel(false)}
-            />
-          </View>
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{
-              gap: 12,
-              paddingTop: 12,
-              paddingBottom: 8,
+      {/* Modal 独立成层，不继承编辑工具栏的嵌套纸面深度。 */}
+      <GlassDepth.Provider value={0}>
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="收起 AI 面板"
+            testID="ai-close"
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              backgroundColor: colors.scrim,
+            }}
+            onPress={() => setPanel(false)}
+          />
+          <View
+            accessibilityViewIsModal
+            style={{
+              // 实色纸面：半透明玻璃会把编辑页底栏透出来。
+              backgroundColor: colors.paper,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              maxHeight: "82%",
+              paddingTop: 16,
+              paddingHorizontal: 20,
+              paddingBottom: insets.bottom + 12,
             }}
           >
-            <View style={{ gap: 8 }}>
-              <Text style={s.muted}>写记录</Text>
-              <View style={s.row}>
-                <Button
-                  title="AI 生成"
-                  icon="sparkle"
-                  compact
-                  selected={task === "write" && writeMode === "generate"}
-                  testID="ai-generate"
-                  disabled={busy || disabled}
-                  onPress={() => {
-                    chooseWriteMode("generate");
-                    void generate("write", "generate");
-                  }}
-                />
-                <Button
-                  title="润色我的文字"
-                  icon="edit"
-                  compact
-                  selected={task === "write" && writeMode === "polish"}
-                  testID="ai-polish"
-                  disabled={busy || disabled}
-                  onPress={() => {
-                    chooseWriteMode("polish");
-                    void generate("write", "polish");
-                  }}
-                />
-              </View>
-              <Text style={s.muted}>
-                {writeMode === "ask" ? "AI 会问几个问题，选想答的接着写。" : writeMode === "generate"
-                  ? task === "write" && !eventImages.length
-                    ? "这件事还没有照片，暂不能生成。先添加照片，或写下文字后改用润色。"
-                    : "根据这件事的照片和已知拍摄信息，写出短标题和一小段正文。"
-                  : !selectedEvent?.text.trim()
-                    ? "还没有可润色的正文。先写下几句话，再来润色。"
-                    : (polishRequest({
-                        by: draft.content.by,
-                        title: selectedEvent?.title ?? "",
-                        text: selectedEvent?.text ?? "",
-                      }).error ??
-                      "只发送这件事的标题、正文和落款，保留你的原意、语气和事实，不发送照片。")}
-              </Text>
-              <Text style={s.muted}>访谈者</Text>
-              <Button title="追问我" icon="sparkle" compact testID="ai-ask"
-                disabled={busy || disabled || !(selectedEvent?.title.trim() || selectedEvent?.text.trim())}
-                onPress={() => { chooseWriteMode("ask"); void generate("write", "ask"); }} />
-              {!(selectedEvent?.title.trim() || selectedEvent?.text.trim()) && <Text style={s.muted}>先写几句，AI 才有得问。</Text>}
-              <Text style={s.muted}>追问计一次写作额度；只发送这件事的文字、落款、月龄、日期和最近 10 条记录的标题，不发送照片。</Text>
-              {visibleInterview?.questions.map((question, index) => <Button key={index} title={question} compact testID={`ai-ask-q-${index}`} disabled={busy || disabled} onPress={() => { void applyQuestion(index); }} />)}
-              {visibleInterview?.first && !draft.content.first && !selectedEvent?.first && <View style={{ gap: 8 }}>
-                <Text style={s.muted}>这条像是第一次，标上吗？</Text>
-                <Button title="标上" compact disabled={busy || disabled} onPress={() => { void applyQuestion(); }} />
-              </View>}
-              {events.length > 1 && task === "write" && (
-                <View style={{ gap: 8 }}>
-                  <Text style={s.muted}>先选一件事</Text>
-                  {events.map((event, index) => (
-                    <Button
-                      key={index}
-                      title={`第 ${index + 1} 件事${event.title ? `：${event.title}` : ""} · ${dateLabel(event.date)}`}
-                      compact
-                      selected={eventIndex === index}
-                      disabled={busy || disabled || matchesView}
-                      onPress={() => setEventIndex(index)}
-                    />
-                  ))}
-                </View>
-              )}
-              {task === "write" && !!eventImages.length && (
-                <View style={{ gap: 8 }}>
-                  <Text style={s.muted}>
-                    这次的照片 · 第 {eventIndex + 1} 件事
-                  </Text>
-                  {photoStrip(selectedEvent!.mediaIds)}
-                </View>
-              )}
+            <View style={s.between}>
+              <Text style={s.heading}>AI 帮你整理</Text>
+              <Button
+                title="收起"
+                compact
+                testID="ai-collapse"
+                onPress={() => setPanel(false)}
+              />
             </View>
-            {!draft.recordId && (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{
+                gap: 12,
+                paddingTop: 12,
+                paddingBottom: 8,
+              }}
+            >
               <View style={{ gap: 8 }}>
-                <Text style={s.muted}>整理照片</Text>
-                <Button
-                  title="分成几件事"
-                  icon="image"
-                  compact
-                  selected={task === "group"}
-                  testID="ai-group"
-                  disabled={busy || disabled}
-                  onPress={() => {
-                    chooseTask("group");
-                    void generate("group");
-                  }}
-                />
-                <Text style={s.muted}>
-                  {totalImages.length < 2
-                    ? "至少需要两张照片才能分成几件事。"
-                    : "结合拍摄时间、匿名地点组和画面，把照片分成几件事，每件事保存为一条记录。"}
-                </Text>
-              </View>
-            )}
-            {pendingOther && !matchesView && (
-              <View style={{ gap: 8 }}>
-                <Text style={s.muted}>
-                  还有一份
-                  {proposal!.kind === "group"
-                    ? "分组"
-                    : modeOf(proposal!) === "polish"
-                      ? "润色"
-                      : "生成"}
-                  建议待确认。
-                </Text>
-                <Button
-                  title={
-                    proposal!.kind === "group"
-                      ? "查看分组建议"
-                      : modeOf(proposal!) === "polish"
-                        ? "查看润色建议"
-                        : "查看生成建议"
-                  }
-                  compact
-                  disabled={busy || disabled}
-                  onPress={viewProposal}
-                />
-              </View>
-            )}
-            {!!progress && (
-              <Text style={s.muted} accessibilityLiveRegion="polite">
-                {progress}
-              </Text>
-            )}
-            {!!notice && <Text style={s.muted}>{notice}</Text>}
-            {busy && (
-              <Button title="停止等待" onPress={() => abort.current?.abort()} />
-            )}
-            <ErrorText message={error} />
-            {!!error && !busy && retryable && (
-              <Card>
-                {!retryPlan(errorCode).retryOriginal && (
-                  <Text style={s.muted}>{retryPlan(errorCode).notice}</Text>
-                )}
+                <Text style={s.muted}>写记录</Text>
                 <View style={s.row}>
-                  {retryPlan(errorCode).retryOriginal && (
-                    <Button
-                      title="重试原请求"
-                      compact
-                      disabled={disabled}
-                      onPress={() => {
-                        void generate(retryable.kind, retryable.mode);
-                      }}
-                    />
-                  )}
                   <Button
-                    title="重新生成（使用新的额度）"
+                    title="AI 生成"
+                    icon="sparkle"
                     compact
-                    disabled={disabled}
+                    selected={task === "write" && writeMode === "generate"}
+                    testID="ai-generate"
+                    disabled={busy || disabled}
                     onPress={() => {
-                      void generate(retryable.kind, retryable.mode, true);
+                      chooseWriteMode("generate");
+                      void generate("write", "generate");
+                    }}
+                  />
+                  <Button
+                    title="润色我的文字"
+                    icon="edit"
+                    compact
+                    selected={task === "write" && writeMode === "polish"}
+                    testID="ai-polish"
+                    disabled={busy || disabled}
+                    onPress={() => {
+                      chooseWriteMode("polish");
+                      void generate("write", "polish");
                     }}
                   />
                 </View>
-              </Card>
-            )}
-            {matchesView && proposal && (
-              <Card>
-                {stale && (
-                  <Text style={{ color: colors.error }}>
-                    你已修改照片或文字，这份建议已过期。重新生成后再采用，当前编辑已保留。
-                  </Text>
+                <Text style={s.muted}>
+                  {writeMode === "ask" ? "AI 会问几个问题，选想答的接着写。" : writeMode === "generate"
+                    ? task === "write" && !eventImages.length
+                      ? "这件事还没有照片，暂不能生成。先添加照片，或写下文字后改用润色。"
+                      : "根据这件事的照片和已知拍摄信息，写出短标题和一小段正文。"
+                    : !selectedEvent?.text.trim()
+                      ? "还没有可润色的正文。先写下几句话，再来润色。"
+                      : (polishRequest({
+                          by: draft.content.by,
+                          title: selectedEvent?.title ?? "",
+                          text: selectedEvent?.text ?? "",
+                        }).error ??
+                        "只发送这件事的标题、正文和落款，保留你的原意、语气和事实，不发送照片。")}
+                </Text>
+                <Text style={s.muted}>访谈者</Text>
+                <Button title="追问我" icon="sparkle" compact testID="ai-ask"
+                  disabled={busy || disabled || !(selectedEvent?.title.trim() || selectedEvent?.text.trim())}
+                  onPress={() => { chooseWriteMode("ask"); void generate("write", "ask"); }} />
+                {!(selectedEvent?.title.trim() || selectedEvent?.text.trim()) && <Text style={s.muted}>先写几句，AI 才有得问。</Text>}
+                <Text style={s.muted}>追问计一次写作额度；只发送这件事的文字、落款、月龄、日期和最近 10 条记录的标题，不发送照片。</Text>
+                {visibleInterview?.questions.map((question, index) => <Button key={index} title={question} compact testID={`ai-ask-q-${index}`} disabled={busy || disabled} onPress={() => { void applyQuestion(index); }} />)}
+                {visibleInterview?.first && !draft.content.first && !selectedEvent?.first && <View style={{ gap: 8 }}>
+                  <Text style={s.muted}>这条像是第一次，标上吗？</Text>
+                  <Button title="标上" compact disabled={busy || disabled} onPress={() => { void applyQuestion(); }} />
+                </View>}
+                {events.length > 1 && task === "write" && (
+                  <View style={{ gap: 8 }}>
+                    <Text style={s.muted}>先选一件事</Text>
+                    {events.map((event, index) => (
+                      <Button
+                        key={index}
+                        title={`第 ${index + 1} 件事${event.title ? `：${event.title}` : ""} · ${dateLabel(event.date)}`}
+                        compact
+                        selected={eventIndex === index}
+                        disabled={busy || disabled || matchesView}
+                        onPress={() => setEventIndex(index)}
+                      />
+                    ))}
+                  </View>
                 )}
-                {proposal.kind === "group" ? (
-                  <>
-                    <Text>分组预览 · {proposal.groups?.length} 件事</Text>
+                {task === "write" && !!eventImages.length && (
+                  <View style={{ gap: 8 }}>
                     <Text style={s.muted}>
-                      核对每件事包含的照片；摘要只帮助辨认分组，不会写入记录正文。
+                      这次的照片 · 第 {eventIndex + 1} 件事
                     </Text>
-                    {adjusting
-                      ? proposal.groups?.map((group, index) => (
-                          <View key={index} style={{ gap: 8 }}>
-                            <Text>
-                              第 {index + 1} 件事：{group.title}
-                            </Text>
-                            {group.photoIds.map((id) => (
-                              <View
-                                key={id}
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  gap: 8,
-                                }}
-                              >
-                                <Photo media={media[id]} size={48} />
-                                <ScrollView
-                                  horizontal
-                                  showsHorizontalScrollIndicator={false}
-                                  contentContainerStyle={{ gap: 8 }}
-                                >
-                                  {proposal.groups!.map((_, target) =>
-                                    target === index ? null : (
-                                      <Button
-                                        key={target}
-                                        title={`移到第 ${target + 1} 件事`}
-                                        compact
-                                        disabled={busy}
-                                        onPress={() => movePhoto(id, target)}
-                                      />
-                                    ),
-                                  )}
-                                </ScrollView>
-                              </View>
-                            ))}
-                          </View>
-                        ))
-                      : proposal.groups?.map((group, index) => (
-                          <View key={index} style={{ gap: 8 }}>
-                            <Text>
-                              第 {index + 1} 件事：{group.title} ·{" "}
-                              {group.photoIds.length} 张
-                            </Text>
-                            {photoStrip(group.photoIds)}
-                            <Text style={s.muted}>
-                              画面摘要：{group.summary}
-                            </Text>
-                          </View>
-                        ))}
-                    <Button
-                      title={adjusting ? "完成调整" : "调整照片归属"}
-                      compact
-                      disabled={busy || disabled}
-                      onPress={() => setAdjusting(!adjusting)}
-                    />
-                    <Button
-                      title="确认照片分组"
-                      primary
-                      disabled={busy || disabled || stale || adjusting}
-                      onPress={() => {
-                        void apply();
-                      }}
-                    />
-                  </>
-                ) : modeOf(proposal) === "polish" ? (
-                  <>
-                    <Text>润色预览 · 与原文对照</Text>
-                    {!stale ? (
-                      <>
-                        <Text style={s.muted}>你的原文</Text>
-                        {!!selectedEvent?.title.trim() && (
-                          <Text>{selectedEvent.title}</Text>
-                        )}
-                        <Text>{selectedEvent?.text}</Text>
-                        <View style={s.line} />
-                      </>
-                    ) : null}
-                    <Text style={s.muted}>润色后</Text>
-                    <Text>{proposal.title}</Text>
-                    <Text>{proposal.text}</Text>
-                    <Button
-                      title="采用润色结果"
-                      primary
-                      disabled={busy || disabled || stale}
-                      onPress={() => {
-                        void apply();
-                      }}
-                    />
-                    <Button
-                      title="只采用标题"
-                      compact
-                      disabled={busy || disabled || stale}
-                      onPress={() => {
-                        void apply("title");
-                      }}
-                    />
-                    <Button
-                      title="只采用正文"
-                      compact
-                      disabled={busy || disabled || stale}
-                      onPress={() => {
-                        void apply("text");
-                      }}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Text>第 {proposal.eventIndex + 1} 件事 · 文字预览</Text>
-                    <Text style={s.muted}>标题</Text>
-                    <Text>{proposal.title}</Text>
-                    <Text style={s.muted}>正文</Text>
-                    <Text>{proposal.text}</Text>
-                    <Button
-                      title="填入标题和正文"
-                      primary
-                      disabled={busy || disabled || stale}
-                      onPress={() => {
-                        void apply();
-                      }}
-                    />
-                    <Button
-                      title="只填入标题"
-                      compact
-                      disabled={busy || disabled || stale}
-                      onPress={() => {
-                        void apply("title");
-                      }}
-                    />
-                    <Button
-                      title="只填入正文"
-                      compact
-                      disabled={busy || disabled || stale}
-                      onPress={() => {
-                        void apply("text");
-                      }}
-                    />
-                  </>
+                    {photoStrip(selectedEvent!.mediaIds)}
+                  </View>
                 )}
-                <Button
-                  title="放弃这份建议"
-                  compact
-                  disabled={busy || disabled}
-                  onPress={() => {
-                    setAdjusting(false);
-                    void onPatch({ aiProposal: undefined }).catch((e) =>
-                      setError(messageOf(e)),
-                    );
-                  }}
-                />
-              </Card>
-            )}
-            <Text style={s.footnote}>由小米 MiMo 2.5 提供</Text>
-          </ScrollView>
+              </View>
+              {!draft.recordId && (
+                <View style={{ gap: 8 }}>
+                  <Text style={s.muted}>整理照片</Text>
+                  <Button
+                    title="分成几件事"
+                    icon="image"
+                    compact
+                    selected={task === "group"}
+                    testID="ai-group"
+                    disabled={busy || disabled}
+                    onPress={() => {
+                      chooseTask("group");
+                      void generate("group");
+                    }}
+                  />
+                  <Text style={s.muted}>
+                    {totalImages.length < 2
+                      ? "至少需要两张照片才能分成几件事。"
+                      : "结合拍摄时间、匿名地点组和画面，把照片分成几件事，每件事保存为一条记录。"}
+                  </Text>
+                </View>
+              )}
+              {pendingOther && !matchesView && (
+                <View style={{ gap: 8 }}>
+                  <Text style={s.muted}>
+                    还有一份
+                    {proposal!.kind === "group"
+                      ? "分组"
+                      : modeOf(proposal!) === "polish"
+                        ? "润色"
+                        : "生成"}
+                    建议待确认。
+                  </Text>
+                  <Button
+                    title={
+                      proposal!.kind === "group"
+                        ? "查看分组建议"
+                        : modeOf(proposal!) === "polish"
+                          ? "查看润色建议"
+                          : "查看生成建议"
+                    }
+                    compact
+                    disabled={busy || disabled}
+                    onPress={viewProposal}
+                  />
+                </View>
+              )}
+              {!!progress && (
+                <Text style={s.muted} accessibilityLiveRegion="polite">
+                  {progress}
+                </Text>
+              )}
+              {!!notice && <Text style={s.muted}>{notice}</Text>}
+              {busy && (
+                <Button title="停止等待" onPress={() => abort.current?.abort()} />
+              )}
+              <ErrorText message={error} />
+              {!!error && !busy && retryable && (
+                <Card>
+                  {!retryPlan(errorCode).retryOriginal && (
+                    <Text style={s.muted}>{retryPlan(errorCode).notice}</Text>
+                  )}
+                  <View style={s.row}>
+                    {retryPlan(errorCode).retryOriginal && (
+                      <Button
+                        title="重试原请求"
+                        compact
+                        disabled={disabled}
+                        onPress={() => {
+                          void generate(retryable.kind, retryable.mode);
+                        }}
+                      />
+                    )}
+                    <Button
+                      title="重新生成（使用新的额度）"
+                      compact
+                      disabled={disabled}
+                      onPress={() => {
+                        void generate(retryable.kind, retryable.mode, true);
+                      }}
+                    />
+                  </View>
+                </Card>
+              )}
+              {matchesView && proposal && (
+                <Card>
+                  {stale && (
+                    <Text style={{ color: colors.error }}>
+                      你已修改照片或文字，这份建议已过期。重新生成后再采用，当前编辑已保留。
+                    </Text>
+                  )}
+                  {proposal.kind === "group" ? (
+                    <>
+                      <Text>分组预览 · {proposal.groups?.length} 件事</Text>
+                      <Text style={s.muted}>
+                        核对每件事包含的照片；摘要只帮助辨认分组，不会写入记录正文。
+                      </Text>
+                      {adjusting
+                        ? proposal.groups?.map((group, index) => (
+                            <View key={index} style={{ gap: 8 }}>
+                              <Text>
+                                第 {index + 1} 件事：{group.title}
+                              </Text>
+                              {group.photoIds.map((id) => (
+                                <View
+                                  key={id}
+                                  style={{
+                                    flexDirection: "row",
+                                    alignItems: "center",
+                                    gap: 8,
+                                  }}
+                                >
+                                  <Photo media={media[id]} size={48} />
+                                  <ScrollView
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={{ gap: 8 }}
+                                  >
+                                    {proposal.groups!.map((_, target) =>
+                                      target === index ? null : (
+                                        <Button
+                                          key={target}
+                                          title={`移到第 ${target + 1} 件事`}
+                                          compact
+                                          disabled={busy}
+                                          onPress={() => movePhoto(id, target)}
+                                        />
+                                      ),
+                                    )}
+                                  </ScrollView>
+                                </View>
+                              ))}
+                            </View>
+                          ))
+                        : proposal.groups?.map((group, index) => (
+                            <View key={index} style={{ gap: 8 }}>
+                              <Text>
+                                第 {index + 1} 件事：{group.title} ·{" "}
+                                {group.photoIds.length} 张
+                              </Text>
+                              {photoStrip(group.photoIds)}
+                              <Text style={s.muted}>
+                                画面摘要：{group.summary}
+                              </Text>
+                            </View>
+                          ))}
+                      <Button
+                        title={adjusting ? "完成调整" : "调整照片归属"}
+                        compact
+                        disabled={busy || disabled}
+                        onPress={() => setAdjusting(!adjusting)}
+                      />
+                      <Button
+                        title="确认照片分组"
+                        primary
+                        disabled={busy || disabled || stale || adjusting}
+                        onPress={() => {
+                          void apply();
+                        }}
+                      />
+                    </>
+                  ) : modeOf(proposal) === "polish" ? (
+                    <>
+                      <Text>润色预览 · 与原文对照</Text>
+                      {!stale ? (
+                        <>
+                          <Text style={s.muted}>你的原文</Text>
+                          {!!selectedEvent?.title.trim() && (
+                            <Text>{selectedEvent.title}</Text>
+                          )}
+                          <Text>{selectedEvent?.text}</Text>
+                          <View style={s.line} />
+                        </>
+                      ) : null}
+                      <Text style={s.muted}>润色后</Text>
+                      <Text>{proposal.title}</Text>
+                      <Text>{proposal.text}</Text>
+                      <Button
+                        title="采用润色结果"
+                        primary
+                        disabled={busy || disabled || stale}
+                        onPress={() => {
+                          void apply();
+                        }}
+                      />
+                      <Button
+                        title="只采用标题"
+                        compact
+                        disabled={busy || disabled || stale}
+                        onPress={() => {
+                          void apply("title");
+                        }}
+                      />
+                      <Button
+                        title="只采用正文"
+                        compact
+                        disabled={busy || disabled || stale}
+                        onPress={() => {
+                          void apply("text");
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Text>第 {proposal.eventIndex + 1} 件事 · 文字预览</Text>
+                      <Text style={s.muted}>标题</Text>
+                      <Text>{proposal.title}</Text>
+                      <Text style={s.muted}>正文</Text>
+                      <Text>{proposal.text}</Text>
+                      <Button
+                        title="填入标题和正文"
+                        primary
+                        disabled={busy || disabled || stale}
+                        onPress={() => {
+                          void apply();
+                        }}
+                      />
+                      <Button
+                        title="只填入标题"
+                        compact
+                        disabled={busy || disabled || stale}
+                        onPress={() => {
+                          void apply("title");
+                        }}
+                      />
+                      <Button
+                        title="只填入正文"
+                        compact
+                        disabled={busy || disabled || stale}
+                        onPress={() => {
+                          void apply("text");
+                        }}
+                      />
+                    </>
+                  )}
+                  <Button
+                    title="放弃这份建议"
+                    compact
+                    disabled={busy || disabled}
+                    onPress={() => {
+                      setAdjusting(false);
+                      void onPatch({ aiProposal: undefined }).catch((e) =>
+                        setError(messageOf(e)),
+                      );
+                    }}
+                  />
+                </Card>
+              )}
+              <Text style={s.footnote}>由小米 MiMo 2.5 提供</Text>
+            </ScrollView>
+          </View>
         </View>
-      </View>
+      </GlassDepth.Provider>
     </Modal>
   );
   const badge = unseen ? (
