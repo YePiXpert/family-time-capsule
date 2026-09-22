@@ -36,7 +36,6 @@ import {
   ErrorText,
   Field,
   Page,
-  useTopBarOffset,
   Text,
   messageOf,
   serif,
@@ -52,7 +51,6 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     store = useStore(),
     s = useStyles(),
     { colors, large } = useTheme();
-  const headerHeight = useTopBarOffset();
   const stored = state.letters[route.params.id];
   const initial: LetterDraft | undefined = stored
     ? { letter: stored }
@@ -330,8 +328,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     <Page scroll={false} title="写一封信">
       <KeyboardAvoidingView
         style={{ flex: 1 }}
+        // 布局帧相对整屏 SafeAreaView、已含页内顶栏，不能再加 keyboardVerticalOffset：
+        // 加了会把底栏抬高一个顶栏，键盘上方多出一条空纸（1.0.0／1.0.1 的真机截图都有）。
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={headerHeight}
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
