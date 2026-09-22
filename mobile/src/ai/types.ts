@@ -1,4 +1,4 @@
-export type WritingMode = "generate" | "polish" | "recap" | "ask" | "question" | "letter" | "editor";
+export type WritingMode = "generate" | "polish" | "recap" | "ask" | "question" | "editor";
 export type AIGroup = { photoIds: string[]; title: string; summary: string };
 export type AIResult = { groups?: AIGroup[]; title?: string; text?: string; questions?: string[]; first?: boolean; question?: string };
 export type AIJob = {

@@ -13,7 +13,6 @@ import {
   applyYearPicks,
   askContext,
   questionContext,
-  letterContext,
   questionPlan,
   rememberQuestion,
   validateStoredAI,
@@ -470,12 +469,6 @@ describe("interviewer contexts", () => {
     expect(context.length).toBeLessThanOrEqual(2000);
     expect(askContext({ ageLabel: null, date: "2026-09-05", title: "", text: "", first: false, recent: [] })).toContain("（未填写或尚未出生）");
   });
-  it("guides empty and long letters with signature and opening date", () => {
-    const input = { by: "妈妈", ageLabel: null, openAt: "2044-09-05", draft: "  " };
-    expect(letterContext(input)).toBe("落款：妈妈\n她的月龄：（未填写或尚未出生）\n拆封日期：2044-09-05\n当前草稿：\n（还没写）");
-    expect(letterContext({ ...input, by: "爸".repeat(50) })).toContain(`落款：${"爸".repeat(50)}\n`);
-    expect(letterContext({ ...input, ageLabel: "4 个月", draft: "文".repeat(3000) }).split("当前草稿：\n")[1]).toHaveLength(2000);
-  });
   it("adds signature and quotes while preserving old output byte for byte", () => {
     expect(polishRequest({ title: " 标题 ", text: "正文" }).context).toBe("标题：标题\n正文：\n正文");
     expect(polishRequest({ by: "爸爸", title: " 标题 ", text: "正文" }).context).toBe("落款：爸爸\n标题：标题\n正文：\n正文");
@@ -513,8 +506,6 @@ describe("interviewer response validation", () => {
     ["ask", { questions: ["谁在旁边？"], first: false }],
     ["ask", { questions: ["一", "二", "三"], first: true }],
     ["question", { question: "她今天说了什么？" }],
-    ["letter", { questions: ["一", "二"] }],
-    ["letter", { questions: ["一", "二", "三"] }],
   ] as const)("accepts %s", (mode, result) => {
     expect(validateResult(result, "write", [], mode)).toEqual(result);
   });
@@ -522,13 +513,11 @@ describe("interviewer response validation", () => {
     ["ask", null], ["ask", { questions: ["一"] }], ["ask", { questions: [], first: true }],
     ["ask", { questions: ["一"], first: "true" }], ["ask", { questions: ["一", "二", "三", "四"], first: true }],
     ["question", { question: " " }], ["question", { question: "问".repeat(31) }], ["question", { question: 1 }],
-    ["letter", { questions: ["一"] }], ["letter", { questions: ["一", null] }],
-    ["letter", { questions: ["一", " "] }], ["letter", { questions: ["一", "问".repeat(31)] }],
   ] as const)("rejects invalid %s", (mode, result) => {
     expect(() => validateResult(result, "write", [], mode)).toThrow(AIError);
     expect(() => validateResult(result, "write", [], mode)).toThrow("AI 问得不合规矩，请重试。");
   });
-  it.each(["ask", "question", "letter", "editor"])("recognizes stored %s jobs", (writingMode) => {
+  it.each(["ask", "question", "editor"])("recognizes stored %s jobs", (writingMode) => {
     expect(validateStoredAI({ fingerprint: "a".repeat(64), kind: "write", eventIndex: 0, model: "model", writingMode, steps: [] })).toBe(true);
   });
 });

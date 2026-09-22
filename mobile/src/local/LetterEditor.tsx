@@ -13,11 +13,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useLibrary, useStore } from "./context";
 import { useRecorder } from "./editorHooks";
 import { isEmptyLetter } from "./empties";
-import { randomUUID } from "expo-crypto";
-import { api, getToken, hasConsent, giveConsent } from "../ai/client";
-import { AI_CONSENT_TEXT } from "../ai/consent";
-import { letterContext, validateResult } from "../ai/state";
-import { ageLine, toDayKey } from "./dates";
+import { toDayKey } from "./dates";
 import { openAtLabel } from "./letters";
 import {
   LETTER_FROM_LIMIT,
@@ -55,11 +51,6 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   const initial: LetterDraft | undefined = stored
     ? { letter: stored }
     : undefined;
-  const [guideBusy, setGuideBusy] = useState(false),
-    [guideError, setGuideError] = useState(""),
-    [guideQuestions, setGuideQuestions] = useState<string[]>([]),
-    [guideNeedsLogin, setGuideNeedsLogin] = useState(false);
-  const guideAbort = useRef<AbortController | null>(null);
   const [draft, setDraft] = useState(initial),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -120,7 +111,6 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   useEffect(
     () => () => {
       mounted.current = false;
-      guideAbort.current?.abort();
       if (writeTimer.current) {
         clearTimeout(writeTimer.current);
         writeTimer.current = null;
@@ -196,7 +186,6 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     }
   };
   const leave = async (action: () => void) => {
-    guideAbort.current?.abort();
     const d = current.current;
     if (d && !d.recordingFile && isEmptyLetter(d.letter)) {
       // 什么都没写就走：这封空信静默删掉，不在书架上留一封「还没封存的草稿」。
@@ -241,50 +230,6 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       ]);
     else void run(() => leave(exit));
   });
-  const guide = async () => {
-    if (guideAbort.current || busy || !current.current) return;
-    const controller = new AbortController();
-    guideAbort.current = controller;
-    setGuideBusy(true);
-    setGuideError("");
-    setGuideNeedsLogin(false);
-    setGuideQuestions([]);
-    try {
-      if (!(await getToken())) {
-        setGuideNeedsLogin(true);
-        throw new Error("先在「AI 设置」加入服务");
-      }
-      if (controller.signal.aborted) return;
-      if (!(await hasConsent())) {
-        const agreed = await new Promise<boolean>((resolve) => Alert.alert("写信前的引导", AI_CONSENT_TEXT, [
-          { text: "取消", style: "cancel", onPress: () => resolve(false) },
-          { text: "同意并继续", onPress: () => { void giveConsent().then(() => resolve(true)).catch(() => resolve(false)); } },
-        ]));
-        if (!agreed) return;
-      }
-      const currentLetter = current.current?.letter;
-      if (!currentLetter || controller.signal.aborted) return;
-      const result = validateResult(await api("/ai/write", {
-        requestId: randomUUID(), photos: [], writingMode: "letter",
-        context: letterContext({ by: currentLetter.from, ageLabel: ageLine(state.profile.birthday)?.split(" · ")[0] ?? null, openAt: currentLetter.openAt, draft: currentLetter.text }),
-      }, "POST", controller.signal), "write", [], "letter");
-      if (!controller.signal.aborted && mounted.current) setGuideQuestions(result.questions!);
-    } catch (e) {
-      if (mounted.current) setGuideError(messageOf(e));
-    } finally {
-      guideAbort.current = null;
-      if (mounted.current) setGuideBusy(false);
-    }
-  };
-  const appendGuideQuestion = (questionIndex: number) => {
-    const question = guideQuestions[questionIndex];
-    const currentLetter = current.current?.letter;
-    if (!currentLetter || busy || !question) return;
-    const text = `${currentLetter.text}${currentLetter.text ? "\n\n" : ""}问：${question}\n`;
-    if (text.length > LETTER_TEXT_LIMIT) { setGuideError("信的正文已满，先留一点空位再添问题。"); return; }
-    change({ text }, true);
-    setGuideQuestions((questions) => questions.filter((_, index) => index !== questionIndex));
-  };
   if (!draft)
     return (
       <Page>
@@ -366,22 +311,6 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
               lineHeight: large ? 30 : 27,
             }}
           />
-          <Button title={guideBusy ? "正在想问题…" : "不知道从哪开始？"} kind="text" testID="letter-guide" disabled={busy || guideBusy} onPress={() => { void guide(); }} />
-          {guideBusy && <Button title="停止" kind="text" onPress={() => guideAbort.current?.abort()} />}
-          {guideQuestions.map((question, index) => (
-            <Text
-              key={index}
-              style={[s.muted, { minHeight: 44, paddingVertical: 12, opacity: busy ? 0.4 : 1 }]}
-              testID={`letter-guide-q-${index}`}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: busy }}
-              onPress={() => appendGuideQuestion(index)}
-            >
-              {question}
-            </Text>
-          ))}
-          <ErrorText message={guideError} />
-          {guideNeedsLogin && <Button title="AI 设置" kind="text" onPress={() => navigation.navigate("AISettings")} />}
           <Field
             label="落款"
             testID="letter-from"
