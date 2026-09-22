@@ -132,11 +132,6 @@ final class NativeRegressionTests: XCTestCase {
           self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
         }
         shot("year-note-after-relaunch")
-        tap("year-yearbook"); tap("长图")
-        // 长卷渲染成功后系统分享面板弹出；截图留证，下面的重启会收起它。
-        sleep(8); shot("yearbook-share-sheet"); assertNoFailure("Yearbook image export")
-        // 再走一遍纪念册 PDF：真分页、逐页取图再写 PDF，比长图慢得多。
-        app.terminate(); app.launch(); tap("volume-year-2026")
         tap("year-yearbook"); tap("纪念册 PDF")
         // 先逐页预览：预览能翻页，就说明版面真的排出来了。
         tap("book-preview-next"); shot("yearbook-preview")

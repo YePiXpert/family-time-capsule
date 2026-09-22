@@ -40,9 +40,6 @@ vi.mock("../src/local/ui", () => ({
 }));
 vi.mock("../src/local/Shelf", () => ({ coverForRecords: vi.fn(), Volume: "Volume" }));
 vi.mock("../src/local/NoteCard", () => ({ NoteCard: "NoteCard" }));
-vi.mock("../src/local/RecapScreen", () => ({ ReplayModal: "ReplayModal" }));
-vi.mock("../src/local/YearBookCard", () => ({ YearBookCard: "YearBookCard" }));
-vi.mock("../src/local/KeepSakeCard", () => ({ prepareKeepSakePhoto: vi.fn(), exportKeepSakeCard: vi.fn() }));
 vi.mock("../src/local/BookBinder", () => ({ planBook: vi.fn(), useBookBinder: vi.fn() }));
 vi.mock("../src/local/BookPreview", () => ({ BookPreview: "BookPreview" }));
 vi.mock("../src/local/PhotoPicker", () => ({ PhotoPicker: "PhotoPicker" }));

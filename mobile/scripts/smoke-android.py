@@ -119,8 +119,6 @@ try:
     tap('keepsake-make');time.sleep(4);shot('keepsake-share-sheet');adb('shell','input','keyevent','4')
     find('record-edit')
     restart();tap(f"volume-year-{time.strftime('%Y')}")
-    tap('year-yearbook');tap('长图');time.sleep(8);shot('yearbook-share-sheet');adb('shell','input','keyevent','4')
-    find('year-yearbook');yearbookExport=True
     # 纪念册：一页 300 DPI 是 2433² 位图，安卓这一步最吃内存，必须真装订一本出来。
     tap('year-yearbook');tap('纪念册 PDF')
     tap('book-preview-next');shot('book-preview');tap('book-preview-bind')
@@ -140,7 +138,7 @@ try:
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
     assert not broken,f'Book export reported {broken}'
     find('year-yearbook');bookExport=True
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,keepsakeCard=True,yearbookSheet=yearbookExport,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,keepsakeCard=True,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
 finally:
     shot('final')
     (args.output/'result.json').write_text(json.dumps(report,indent=2)+'\n')
