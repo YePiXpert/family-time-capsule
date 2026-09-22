@@ -42,6 +42,7 @@ import { JournalIcon } from "../components/JournalIcon";
 import {
   BY_PRESETS,
   referencedMedia,
+  sealInitial,
   stampUnsigned,
   unsignedRecords,
   yearKey,
@@ -87,7 +88,7 @@ export function Settings() {
       live = false;
     };
   }, []);
-  const name = state.profile.name || "宝宝",
+  const name = state.profile.name.trim() || CHILD_FALLBACK,
     birthday = birthdayLabel(state.profile.birthday),
     age = ageLine(state.profile.birthday),
     exportedDays = daysSinceExport(state),
@@ -95,7 +96,7 @@ export function Settings() {
     theme = { auto: "跟随系统", light: "浅色", dark: "深色" }[
       state.settings.theme
     ];
-  const initial = (state.profile.name.trim() || CHILD_FALLBACK)[0]!;
+  const initial = sealInitial(name);
   return (
     <Page title="我的">
       <Pressable
@@ -109,7 +110,7 @@ export function Settings() {
         style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
       >
         <Card
-          style={{ flexDirection: "row", alignItems: "center", gap: 14 }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
         >
           <Stamp size={56} inset={4}>
             <Text
@@ -126,7 +127,6 @@ export function Settings() {
           </Stamp>
           <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
             <Text
-              numberOfLines={1}
               style={{
                 fontFamily: serif,
                 fontSize: 20,
@@ -137,7 +137,7 @@ export function Settings() {
             >
               {name}
             </Text>
-            <Text numberOfLines={1} style={s.muted}>
+            <Text style={s.muted}>
               {birthday ? (age ?? `生日 ${birthday}`) : "还没填生日，点这里补上"}
             </Text>
           </View>
