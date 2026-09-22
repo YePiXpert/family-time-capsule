@@ -19,14 +19,15 @@ final class NativeRegressionTests: XCTestCase {
     /// XCTest 点在元素可见部分的中心。元素只露出屏幕底边一截时，那个点落在 Home 指示条的手势区，
     /// 系统会吞掉这次点击（1.0.1 的书架把月册收到了底边，run 35679134876 就栽在这里）。
     /// 所以除了可点，还要求可见中心离底边至少 60，否则先滚动让它整个进入可点区域。
-    private func tap(_ id: String) {
-        let e = element(id); XCTAssertTrue(e.waitForExistence(timeout: 20), "Missing \(id)")
+    private func tap(_ id: String) { tap(element(id), id) }
+    private func tap(_ e: XCUIElement, _ name: String) {
+        XCTAssertTrue(e.waitForExistence(timeout: 20), "Missing \(name)")
         for _ in 0..<12 {
             let visible = e.frame.intersection(app.frame)
             if e.isHittable && !visible.isNull && visible.midY < app.frame.maxY - 60 { break }
             if e.frame.midY < app.frame.midY { app.swipeDown() } else { app.swipeUp() }
         }
-        XCTAssertTrue(e.isHittable, "Unreachable \(id)"); wait("Disabled \(id)") { e.isEnabled }; e.tap()
+        XCTAssertTrue(e.isHittable, "Unreachable \(name)"); wait("Disabled \(name)") { e.isEnabled }; e.tap()
     }
     private func shot(_ name: String) { let a = XCTAttachment(screenshot: app.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a) }
     /// 导出走的是离屏渲染，失败只会在页面上留一行红字、不弹任何东西——截图看不出来，显式断言。
@@ -36,9 +37,12 @@ final class NativeRegressionTests: XCTestCase {
             XCTAssertFalse(hit.exists, "\(context) reported \(word): \(hit.label)")
         }
     }
+    /// 续写时先把光标挪到已有文字末尾：点首行文字右侧的空白（首行必定露在外面）。
+    /// 不能点字段右下角：键盘弹起后底栏贴着字段下沿，1.0.1 把工具栏放进了底栏，那一点正是「文件」钮，
+    /// 点下去打开系统文件浏览器、字段失焦（run 35681782720 栽在这里）。这里的 initial 都是单行。
     private func type(_ text: String, _ id: String, initial: String = "") {
         let field = element(id); tap(id); var expected = initial
-        if !initial.isEmpty { field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.9)).tap() }
+        if !initial.isEmpty { field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0)).withOffset(CGVector(dx: 0, dy: 20)).tap() }
         for c in text { field.typeText(String(c)); expected.append(c); let value = expected; wait("Input lost: \(value)") { field.value as? String == value } }
     }
     func testLocalRecordAlbumAndBackup() throws {
@@ -77,7 +81,7 @@ final class NativeRegressionTests: XCTestCase {
         app.terminate(); app.launch()
         tap("album-new")
         let own = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "A little story.")).firstMatch
-        XCTAssertTrue(own.waitForExistence(timeout: 20)); own.tap()
+        tap(own, "own record in the material picker")
         tap("record-fixture"); shot("material-selection")
         tap("2026年8月"); tap("record-earlier"); tap("全部月份"); tap("material-done")
         type("Our days", "album-name"); tap("返回调整内容"); tap("material-done")
@@ -85,9 +89,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-reading")
         app.terminate(); app.launch()
         let albumCard = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Our days")).firstMatch
-        XCTAssertTrue(albumCard.waitForExistence(timeout: 20), "Missing album volume")
-        for _ in 0..<12 { if albumCard.isHittable { break }; app.swipeUp() }
-        albumCard.tap()
+        tap(albumCard, "album volume")
         XCTAssertTrue(element("album-reading").waitForExistence(timeout: 20)); shot("album-after-relaunch")
         // 时间胶囊：fixture 里已有一封封存的信；再写一封并封存，重启后仍在书架，打开是「还没到日子」的信封，提前拆封能读到正文。
         app.terminate(); app.launch()
@@ -96,9 +98,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("letter-open-early").waitForExistence(timeout: 20)); shot("letter-sealed")
         app.terminate(); app.launch()
         let letterVolume = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Letter for later")).firstMatch
-        XCTAssertTrue(letterVolume.waitForExistence(timeout: 20), "Missing letter volume")
-        for _ in 0..<12 { if letterVolume.isHittable { break }; app.swipeUp() }
-        letterVolume.tap()
+        tap(letterVolume, "letter volume")
         XCTAssertTrue(element("letter-open-early").waitForExistence(timeout: 20)); shot("letter-after-relaunch")
         tap("letter-open-early"); tap("拆开")
         wait("Letter body did not appear") { self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
