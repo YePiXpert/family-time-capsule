@@ -160,7 +160,7 @@ describe("AI suggestions remain reviewable local drafts", () => {
         fingerprint: sourceFingerprint(draft),
         kind: "write",
         eventIndex: 0,
-        model: "mimo-v2.5:policy-v1",
+        model: "mimo-v2.6-flash:policy-v1",
         writingMode: "polish",
         title: "自己走完",
         text: "今天第一次自己走完了整个园子。",

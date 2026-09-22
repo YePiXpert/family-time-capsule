@@ -21,7 +21,7 @@ def call(path,body=None,token=None,method=None):
  except urllib.error.HTTPError as e:result=(e.code,json.load(e))
  if tracked:
   elapsed=time.monotonic()-started;after=call('/api/v1/me',token=token)[1]['usage']['tokens']
-  print(json.dumps({'model':'mimo-v2.5','mode':(body or {}).get('writingMode',path.rsplit('/',1)[-1]),'success':result[0]==200,'status':result[0],'elapsedMs':round(elapsed*1000),'tokens':after-before}))
+  print(json.dumps({'model':'mimo-v2.6-flash','mode':(body or {}).get('writingMode',path.rsplit('/',1)[-1]),'success':result[0]==200,'status':result[0],'elapsedMs':round(elapsed*1000),'tokens':after-before}))
  return result
 for attempt in range(15):
  try:
@@ -42,8 +42,8 @@ else:
 assert owner['member']['role']=='owner'
 token=owner['token']
 status,config=call('/api/v1/ai/config',token=token);assert status==200
-assert config['defaultModel']=='mimo-v2.5' and config['reasoningEffort']=='per-mode'
-assert config['enabledModels']==['mimo-v2.5']
+assert config['defaultModel']=='mimo-v2.6-flash' and config['reasoningEffort']=='per-mode'
+assert config['enabledModels']==['mimo-v2.6-flash']
 status,created=call('/api/v1/admin/members',{'username':'verification-member','password':password},token);assert status==201 or status==409
 status,member=call('/api/v1/login',{'username':'verification-member','password':password,'deviceName':'synthetic-test'})
 if status!=200:
@@ -53,7 +53,7 @@ if status!=200:
 assert status==200
 assert call('/api/v1/admin/overview',token=member['token'])[0]==403
 image='data:image/jpeg;base64,'+base64.b64encode((Path(__file__).parent.parent/'tests/fixtures/shapes.jpg').read_bytes()).decode()
-for model in ['mimo-v2.5']:
+for model in ['mimo-v2.6-flash']:
  for kind in ['group','write']:
   body={'requestId':str(uuid.uuid4()),'model':model,'photos':[{'id':'shapes','date':'2020-01-01T12:00:00','image':image}],'context':'这是几何图形测试，请客观描述形状和颜色。'}
   status,result=call('/api/v1/ai/'+kind,body,member['token']);assert status==200,(model,kind,status)

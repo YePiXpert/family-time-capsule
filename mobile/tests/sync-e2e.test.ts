@@ -117,7 +117,7 @@ beforeAll(async () => {
       DB_FILE: path.join(serverRoot, "ai.sqlite"),
       BACKUP_DIR: path.join(serverRoot, "backup"),
       AI_PROVIDER: "mimo",
-      AI_MODEL: "mimo-v2.5",
+      AI_MODEL: "mimo-v2.6-flash",
       AI_BASE_URL: "https://api.xiaomimimo.com/v1",
       AI_KEY_FILE: path.join(serverRoot, "cpa-key"),
       AI_ACCESS: "payg-approved", // Fake key; this sync-only fixture never calls AI.

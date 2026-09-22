@@ -6,7 +6,7 @@ import type {
   WritingMode,
 } from "./types";
 /** 当前生效的模型；换模型即换任务，旧的分步结果不再复用。 */
-export const AI_MODEL = "mimo-v2.5:policy-v1";
+export const AI_MODEL = "mimo-v2.6-flash:policy-v1";
 export type AIStep = AIJob["steps"][number];
 export const modeOf = (value: {
   writingMode: WritingMode;
