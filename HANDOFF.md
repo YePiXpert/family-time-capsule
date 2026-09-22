@@ -18,7 +18,7 @@
 
 ## 一、当前状态快照（2026-09-22）
 
-- **MiMo V2.6 切换准备（2026-09-22，尚未部署）**：主人要求全部云端 AI 改用小米新模型。内容目标为 `mimo-v2.6-flash`，ASR 为 `mimo-v2.5-asr`；旧客户端型号继续兼容归一，本机任务标记和供应商脚注同步更新。生产目前仍是 `b76439d`／DeepSeek，待可用于 App 的匹配 MiMo 密钥路径及 staging 验证后切换；见 `docs/MIMO-ADAPTATION.md` 顶部。
+- **MiMo V2.6 切换准备（2026-09-22，尚未部署）**：主人要求全部云端 AI 改用小米新模型。内容目标为 `mimo-v2.6-pro`，ASR 为 `mimo-v2.5-asr`；旧客户端型号继续兼容归一，本机任务标记和供应商脚注同步更新。主人已指定中国 Token Plan 地址并提供密钥；生产目前仍是 `b76439d`／DeepSeek，待 staging 验证后切换；见 `docs/MIMO-ADAPTATION.md` 顶部。
 
 - **1.0.3「减法」（未出包；2026-09-22）**：主人拍板记在 PRODUCT.md 第九节末段，细目在 CHANGELOG 顶节。提交：`8f36df0` PRODUCT／CHANGELOG 骨架，`d29255e` 出生的故事并入小问题，`2b13b8d` 信精简与书架空区一行，`39a13cb` 时光系列／足迹页面（`series` 留作旧数据种类），`6cbcd3b` 长图／重放，`feebcec` 分成几件事／按事情分组／起个头／AI 不看照片，之后一笔文档收尾。Astra 逐个提交改工作树、Fable 复核并跑门禁后提交。兼容：实体种类只增不减，`RecordContent.story`／`settings.replayAudioId`／草稿 `photoEvents` 只停写不拒收（分组草稿在 `normalizeLibrary` 并回一份、旧 AI 任务在那里丢弃），服务端未动、所有请求仍带 `photos: []`。门禁：mobile 49 个文件 727 个测试、server 189、typecheck／lint／边界脚本／scripts unittest 全绿。验证出包：文档收尾提交推上 main 后派发一次 `mobile-build.yml`（完整 SHA，不轮询）——run 35728641333（源码 `faddfb3`，12:40 UTC）在 quality 作业就红了——`server/tests/backup.test.ts` 那条已知偶发：两次 `status()` 之间 `freeBytes` 现查磁盘差了 8 KB，与减法无关；修复 `52b5f76`（不再逐字节比 `freeBytes`）后重新派发 run 35729090883（源码 `52b5f76bddcbe690b6e95419a68bf45deaa1ef61`，12:45 UTC，<https://github.com/YePiXpert/family-time-capsule/actions/runs/35729090883>）；结果待主人通知后查一次：Android／iOS 冒烟截图看书架空态、编辑页小问题、AI 面板、年度册「装订纪念册」，`result.json` 不再有 `yearbookSheet`）。
   - 服务端下次部署时删 `generate`／`group`／`letter` 与 ASK 里的故事主题句（第四节第 8 条）。真机待验：书架空态两行入口、编辑页小问题（头六个月的故事题）、AI 面板只剩润色与追问、年度册「装订纪念册」。
