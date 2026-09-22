@@ -2,7 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-21。**1.0.0 已交付**：交付提交 `16300f2`，标签 `v1.0.0`，run 35607118819 四作业全绿，GitHub Release 上有 APK／未签名 IPA／校验和（第一节第一条）；**服务端 `b76439d` 已部署生产**（主人授权，2026-09-21 14:46 UTC）；可安装 1.0.0 做真机验收。此后不加新功能，只做优化（第四节）。
+> 最后更新：2026-09-22。**1.0.1（构建号 74）没有交付**：Kimi 的界面焕新 `3c0b017`…`05e229f` 已在 main，附注标签 `v1.0.1` 触发 run 35679134876——quality／Android 绿、iOS 回归红（测试脚手架点在屏幕底边被系统吞掉，应用没有问题）、release 作业跳过，**没有 GitHub Release v1.0.1**，可安装的仍是 1.0.0（下一条）。同日复核修复 `a01a1d8`…`9476895`、脚手架修复 `6238119`／`ae2323d` 与键盘避让修复 `3638d96` 已推 main；验证出包 run 35681782720 又在 iOS 回归红（还是脚手架：续写时的光标点落在新工具栏的「文件」钮上），第三次验证 run 35686815546（workflow_dispatch，源码 `3638d96`）**三作业全绿**（quality／Android APK／iOS unsigned IPA；release 作业非标签触发、按设计跳过，仍没有 Release）。要交付 1.0.1 的内容需主人拍板再出包（第一节第一条）。
+> 旧记录：2026-09-21。**1.0.0 已交付**：交付提交 `16300f2`，标签 `v1.0.0`，run 35607118819 四作业全绿，GitHub Release 上有 APK／未签名 IPA／校验和（第一节第一条）；**服务端 `b76439d` 已部署生产**（主人授权，2026-09-21 14:46 UTC）；可安装 1.0.0 做真机验收。此后不加新功能，只做优化（第四节）。
 > 旧记录：2026-09-21 12:10 UTC。**Build 72「家人一起写」已交付**：源码 `7cdc42d`，run 35590928208 三作业全绿，校验和在第一节「Build 72 打包」；同日主人拍板**家史不做**，后续路线按模块缺口重排（第四节），Build 73「说一段」计划在 `docs/plans/PLAN-BUILD-73.md`（开工前待主人拍板五项）。
 > 旧记录：Build 70「传家 · 中」已交付（源码 `7477504`，run 35494972998）；同日复查修了 4 笔（`dfdcad8`／`26e4e19`／`347200a`／`81d1ffe`），
 > 服务端已切到生产（SOURCE_SHA `81d1ffe`）；**Build 71（复查修复版）已交付**：源码 `412f8e0`，run 35511463957 三作业全绿，APK／IPA 校验和在第一节；下一步 Build 72「家人一起写」。
@@ -12,7 +13,21 @@
 
 ---
 
-## 一、当前状态快照（2026-09-21）
+## 一、当前状态快照（2026-09-22）
+
+- **1.0.1「界面焕新」（构建号 74，未交付；2026-09-22）**：Kimi 在 main 上直接提交 `3c0b017`（页内返回箭头改为订阅导航栈 state）、`dd6d933`／`0b098f2`／`f3b3b32`／`82f0e23`／`411e7dd`（纸卡纯白与投影、图标砖、我的档案卡、书架单月整宽行与空区行动行、编辑页贴底工具栏、月册吸顶与年度册扉页）、`57500dc`（DESIGN 同步）、`05e229f`（app.json 1.0.1／构建号 74、CHANGELOG 顶节），并打了**附注**标签 `v1.0.1`（规矩是轻量标签；实测 quality 作业的 SHA 核对也过了，`github.sha` 会解析到提交）。
+  - 标签出包 run 35679134876：quality 绿、Android APK 绿（artifact `FamilyTimeCapsule-android-apk`，2026-10-22 过期）、**iOS 红**、GitHub Release 跳过——**没有 v1.0.1 的 Release，可安装的仍是 1.0.0**。iOS 失败在 `mobile/scripts/ios-regression/NativeRegressionTests.swift` 点「2026年9月」月册后 `record-fixture` 等不到。证据包 `FamilyTimeCapsule-ios-local-regression` 里的点击事件是 (90, 814.8)：书架收紧后月册只在屏幕底边露出 58 点，XCTest 点在可见部分的中心，落进 Home 指示条手势区被系统吞掉；1.0.0 时月册整个在屏幕外，XCTest 会先自动滚动。是测试脚手架的问题，不是应用的问题。
+  - 同日 Fable + Astra 复核（无阻塞项），主人拍板全修，已推 main：`a01a1d8`（`Stamp` 搬进 ui.tsx）、`42fb8a9`（我的档案卡允许换行、名字与印章统一回退、`sealInitial` 取首个码点 + 测试）、`d2e2b75`（AI 钮共用 `ToolButton`：禁用 40%、标签 11／13 随更大文字、放大上限 1.4、底栏间距 8）、`6c03726`（AI 弹层重置 `GlassDepth`，卡片不再变平）、`9476895`（浅色赤陶压深到 #B2543B，纸底对比 4.58:1，派生色与归档阅读器 CSS 同步）、`6238119`（XCUITest `tap()` 要求可见中心离底边 ≥ 60 才点）。门禁：mobile 52 个文件 789 个测试、server 189、typecheck／lint／边界／scripts unittest 全绿。这些都在 `v1.0.1` 标签之后，**没进任何安装包**。
+  - 验证出包 run 35681782720（workflow_dispatch，源码 `6238119`）：quality／Android 绿，**iOS 又红**——过了月册那一步，栽在续写「A little story.」：`type()` 靠点字段右下角（归一化 0.95／0.9）把光标挪到末尾，键盘弹起后底栏贴着字段下沿，1.0.1 把工具栏放进了底栏，那一点 (352, 263) 正是「文件」钮，点开系统文件浏览器、字段失焦，`typeText` 三次报 "Neither element nor any descendant has keyboard focus"。还是脚手架问题。顺带从两版真机截图看出编辑页与写信页键盘上方多出约 100 点空纸：`keyboardVerticalOffset` 传了顶部安全区 + 顶栏高，可 `KeyboardAvoidingView` 的布局帧相对整屏 SafeAreaView、已含顶栏，等于多抬了一个顶栏——1.0.0（`6ddf455` 迁到页内顶栏）起就有，不是 Kimi 引入的。
+  - 修复已推 main：`ae2323d`（`type()` 改点首行右侧；相册／信封书的点击也走同一条 `tap()` 规则）、`3638d96`（两个编辑页去掉 `keyboardVerticalOffset` 与 `useTopBarOffset`，底栏贴键盘上沿；DESIGN 同步）。门禁同上全绿（server 有一处 `backup.test.ts` 比对 `freeBytes` 的偶发失败，重跑两次都 189 全过）。
+  - 第三次验证出包 run 35686815546（workflow_dispatch，源码 `3638d96`）：**quality／Android APK／iOS unsigned IPA 全绿**，release 作业跳过（非标签触发）。iOS 回归两条用例都过（主流程 620.8 秒、备份恢复 35.2 秒），`result.json` 9 项布尔全 true、gitSha `3638d96`、构建号 74；截图里编辑页底栏已贴着键盘上沿、正文框整个露出。artifacts 2026-10-22 过期：`FamilyTimeCapsule-android-apk`（APK 66,776,146 字节）、`FamilyTimeCapsule-ios-unsigned-ipa`（IPA 11,270,529 字节，未签名，由主人自签后装机）。这只是验证包，**没有 GitHub Release**；主人想先装可以直接取这两个 artifact，SHA-256（本机重新算过）：
+
+  ```text
+  5179ad55179b90aa8a8f974c49ab3ed954ea3eb1217a1082b05d18ebe01382da  FamilyTimeCapsule-android.apk
+  f44bbb18c5ece4c7ec06ca929c89573488d31729cc932c2a9f3ff9550eb1bd24  FamilyTimeCapsule-ios-unsigned.ipa
+  ```
+
+  - 再出包（需主人拍板）：`mobile/app.json` 构建号递增到 75、CHANGELOG 顶节改「1.0.2」并把上面的修复写进去、README 当前版本，打**轻量**标签 `git tag v1.0.2 <sha> && git push origin v1.0.2`，release 作业会自动发 Release；不要动 `v1.0.1` 标签。
 
 - **MiMo 内容模型适配（未部署）**：仓库目标 `mimo-v2.5`，专用 ASR 仍为 `mimo-v2.5-asr`；最小请求适配与 Mock 验证见 `docs/MIMO-ADAPTATION.md`（server 189、mobile 784、类型检查／lint／边界门禁通过）。当前只确认主人有 Token Plan，官方禁止把套餐用于自定义 App 后端；没有 App 特别许可，也没有新增按量费用授权，所以此次没有真实模型调用或生产切换。
   生产仍是 `b76439d` + DeepSeek 普通 API；**既有 ASR 已使用 MiMo Token Plan**，按主人要求保持现状，未停服、删密钥或改配置。下面的历史“调用成功”记录只代表技术连通，不代表许可。新代码需要 `AI_*` 与独立 `TRANSCRIBE_*` 配置，不能直接套用旧 `CPA_*` env；上线／回滚按适配记录执行，先补齐两路凭证授权。
@@ -129,8 +144,8 @@
    docs/plans/PLAN-BUILD-70.md（Build 70 计划 + 顶部实施偏离）、deploy/README.md（服务端部署与远端备份对象库）。
 2. git checkout main && git pull --ff-only origin main && git status --short 应干净。
 3. cd mobile && npm install；cd ../server && npm install（mobile 的 tests/sync-e2e.test.ts 会拉起真实服务端子进程，server 依赖必须装）。
-4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（1.0.0 时 51 个文件 784 个测试）；
-   server 下 npm test、npm run typecheck（146 个测试，server 没有 lint 脚本）；
+4. 验证三件套：mobile 下 npm test、npm run typecheck、npm run lint（2026-09-22 时 52 个文件 789 个测试）；
+   server 下 npm test、npm run typecheck（189 个测试，server 没有 lint 脚本）；
    python3 mobile/scripts/verify-local-boundary.py；
    python3 -m unittest discover -s mobile/scripts -p 'test_*.py'。
    本机 /tmp 若是满的 tmpfs，跑 mobile 与 server 测试都要 TMPDIR=/var/tmp/anan-tests（先 mkdir）。
@@ -142,6 +157,7 @@
    不要再出 1.0.0 的包；此后不加新功能，只做第四节的优化项。再次出包时按 AGENTS.md（workflow_dispatch 完整 40 位 SHA；正式版打轻量标签 v1.0.x 走 release 作业）并递增构建号。
    服务端生产已是 **b76439d（转写端点 + 四个新 writingMode）**；部署验证与备份位置在第一节，接下来做真机验收。
    两台真机的 1.0.0 验收（说一段／出生的故事／追问我／编者）还没做，清单在第一节。
+   **1.0.1（构建号 74）没有交付**：标签出包与第一次验证出包的 iOS 回归都红（两次都是脚手架问题，已修 `6238119`／`ae2323d`），没有 Release；main 上另有复核修复 `a01a1d8`…`9476895` 与键盘避让修复 `3638d96`，第三次验证 run 35686815546三作业全绿（验证包 artifacts 2026-10-22 过期，校验和在第一节；仍没有 Release）。要交付得再出包：构建号 75、CHANGELOG 1.0.2、轻量标签（第一节第一条）。
 
 第三步·真机验收与下一版：
 - 先按 docs/plans/PLAN-SHARING.md 第五节做真机验收（主人两台手机 + 家人一台）——两台手机真跑同步从未验证过；主人用 Build 71/72 的手机点一次「远端备份 → 现在备份」确认服务端兼容。
@@ -350,7 +366,10 @@
 - （1.0.0）`verify-service.py` 的验证对象 id 随内容走（`0a002a7`）：家庭空间先到为准，固定 id 重复跑会读回上一次的字节而假失败。
 - （1.0.0）Astra（Codex）沙箱不能监听端口、spawn python、写 `.git`，也没有 `/var/tmp`：它报的「环境限制」要在主会话重跑门禁核实；它若把 `result.md` 写进仓库要移出去再提交。
 - （1.0.0）`server/tests/prompts.test.ts` 逐字对照 `docs/AI-PROMPTS.md` 的九个 ```text 块（顺序：SHARED、GROUP、WRITE、POLISH、RECAP、ASK、QUESTION、LETTER、EDITOR）：改手册必须同步改 `prompts.ts`。
-- （1.0.0）`mobile-build.yml` 的 `v*` 标签触发：要轻量标签，`github.sha` 才是提交本身；release 作业 `needs` 三个作业，任一红就不发。
+- （1.0.0）`mobile-build.yml` 的 `v*` 标签触发：要轻量标签，`github.sha` 才是提交本身；release 作业 `needs` 三个作业，任一红就不发。（1.0.1 实测附注标签也能过 quality 的 SHA 核对，`github.sha` 会解析到提交；仍按轻量标签打。）
+- （1.0.1）XCUITest 的 `tap()` 原来只查 `isHittable`：元素半露在屏幕底边时，XCTest 点在可见部分的中心，落进 Home 指示条手势区会被系统吞掉、页面不动（run 35679134876，点击坐标 (90, 814.8)）。现在要求可见中心离底边 ≥ 60，否则先滚动。布局改动让目标恰好停在底边时最容易踩，证据包里的「Synthesized Event」附件（bplist）能读出点击坐标。
+- （1.0.1）XCUITest 的坐标点击要想清楚键盘弹起后那一点是谁：`type()` 续写时点字段右下角挪光标，底栏随键盘贴到字段下沿后那一点成了工具栏的「文件」钮，点开系统文件浏览器、字段失焦，`typeText` 报 "Neither element nor any descendant has keyboard focus"（run 35681782720）。现在点首行右侧空白。
+- （1.0.1）页内顶栏下面的 `KeyboardAvoidingView` 不要传 `keyboardVerticalOffset`：它的布局帧相对整屏 SafeAreaView、已含顶栏，再加只会把底栏抬高一个顶栏，键盘上方留一条空纸（1.0.0 起两版真机截图都有，`3638d96` 去掉）。
 - （CI 偶发）`statSync().mtimeMs` 有亚毫秒精度，`mtime < Date.now()` 对刚写下的文件不成立：0 宽限的清理要显式短路，别拿时间比。
 
 ## 六、环境备忘
