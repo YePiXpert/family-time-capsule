@@ -12,20 +12,30 @@ private extension XCUIElement {
 @MainActor
 final class NativeRegressionTests: XCTestCase {
     private let app = XCUIApplication(bundleIdentifier: "app.familytimecapsule.mobile")
-    override func setUpWithError() throws { continueAfterFailure = false; app.launch() }
+    override func setUpWithError() throws { continueAfterFailure = false; launchApp() }
     override func tearDownWithError() throws {
         shot("last-screen")
         let tree = XCTAttachment(string: app.debugDescription); tree.name = "accessibility"; tree.lifetime = .keepAlways; add(tree)
         app.terminate()
     }
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
-    private func wait(_ description: String, _ check: @escaping () -> Bool) {
+    private func wait(_ description: String, timeout: TimeInterval = 20, _ check: @escaping () -> Bool) {
         // Most calls acknowledge an already-typed character or enabled button.
         // Avoid scheduling a predicate waiter when its condition is already true.
         if check() { return }
         let e = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in check() }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [e], timeout: 20), .completed, description)
+        XCTAssertEqual(XCTWaiter.wait(for: [e], timeout: timeout), .completed, description)
     }
+    /// 启动后先等本机库开完：书架页头的「我的」或开库失败页出现，才算应用起来了。
+    /// 托管模拟器忙的时候，启动转圈能转四五十秒（run 35827094155 重跑那次，首个 20 秒断言就栽在转圈上）。
+    /// 只给开库这一段放宽到 120 秒；进了书架之后每一步的等待照旧是 20 秒。
+    private func launchApp() {
+        app.launch()
+        wait("App did not finish opening its local library", timeout: 120) {
+            self.element("open-settings").exists || self.element("本机资料暂时无法打开").exists
+        }
+    }
+    private func relaunchApp() { app.terminate(); launchApp() }
     /// XCTest 点在元素可见部分的中心。元素只露出屏幕底边一截时，那个点落在 Home 指示条的手势区，
     /// 系统会吞掉这次点击（1.0.1 的书架把月册收到了底边，run 35679134876 就栽在这里）。
     /// 所以除了可点，还要求可见中心离底边至少 60，否则先滚动让它整个进入可点区域。
@@ -72,11 +82,11 @@ final class NativeRegressionTests: XCTestCase {
         // 原生页头已下线：返回是 Page 自绘的「‹」图标钮（page-back）。
         tap("page-back"); tap("放弃这份草稿"); tap("放弃")
         XCTAssertTrue(element("record-edit").waitUntilExists(timeout: 20))
-        app.terminate(); app.launch()
+        relaunchApp()
         tap("capture-new"); type("A little story.", "capture-text"); shot("editor-keyboard")
         // 文字落盘有 400ms 防抖；留出窗口再终止进程，验证草稿恢复。
         sleep(2)
-        app.terminate(); app.launch()
+        relaunchApp()
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
         tap("editor-by"); tap("editor-by-爸爸")
         // 保留原有录音入库验证；保存这一刻走不转写的路径，模拟器不依赖听写授权。
@@ -91,7 +101,7 @@ final class NativeRegressionTests: XCTestCase {
         tap("keepsake-make")
         // 生成成功后系统分享面板弹出；截图留证，重启后自然收起。
         sleep(5); shot("keepsake-share-sheet"); assertNoFailure("Keepsake export")
-        app.terminate(); app.launch()
+        relaunchApp()
         tap("album-new")
         let own = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "A little story.")).firstMatch
         tap(own, "own record in the material picker")
@@ -100,25 +110,25 @@ final class NativeRegressionTests: XCTestCase {
         type("Our days", "album-name"); tap("返回调整内容"); tap("material-done")
         XCTAssertEqual(element("album-name").value as? String, "Our days"); tap("album-save")
         XCTAssertTrue(element("album-reading").waitUntilExists(timeout: 20)); shot("album-reading")
-        app.terminate(); app.launch()
+        relaunchApp()
         let albumCard = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Our days")).firstMatch
         tap(albumCard, "album volume")
         XCTAssertTrue(element("album-reading").waitUntilExists(timeout: 20)); shot("album-after-relaunch")
         // 时间胶囊：fixture 里已有一封封存的信；再写一封并封存，重启后仍在书架，打开是「还没到日子」的信封，提前拆封能读到正文。
-        app.terminate(); app.launch()
+        relaunchApp()
         tap("letter-new"); type("Letter for later", "letter-title"); type("Words kept for the future.", "letter-text")
         tap("letter-seal"); tap("封存")
         XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20)); shot("letter-sealed")
-        app.terminate(); app.launch()
+        relaunchApp()
         let letterVolume = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Letter for later")).firstMatch
         tap(letterVolume, "letter volume")
         XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20)); shot("letter-after-relaunch")
         tap("letter-open-early"); tap("拆开")
         wait("Letter body did not appear") { self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
         shot("letter-opened")
-        app.terminate(); app.launch(); tap("open-settings"); tap("AI 设置")
+        relaunchApp(); tap("open-settings"); tap("AI 设置")
         XCTAssertTrue(element("ai-join").waitUntilExists(timeout: 20)); shot("ai-settings")
-        app.terminate(); app.launch()
+        relaunchApp()
         tap("volume-year-2026")
         tap("year-note-edit")
         type("Grow slowly, little one.", "year-note-input")
@@ -126,7 +136,7 @@ final class NativeRegressionTests: XCTestCase {
         wait("Year note did not save") {
           self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
         }
-        app.terminate(); app.launch()
+        relaunchApp()
         tap("volume-year-2026")
         wait("Year note did not survive relaunch") {
           self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Grow slowly, little one.")).firstMatch.exists
@@ -142,7 +152,7 @@ final class NativeRegressionTests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(sharedBook.waitUntilExists(timeout: 300), "Book PDF share sheet never appeared")
         shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
-        app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
+        relaunchApp(); tap("open-settings"); tap("备份与恢复")
         // 远端备份卡在最后：离线、未登录时只有「去登录」，没有上传入口。
         XCTAssertTrue(element("remote-card").waitUntilExists(timeout: 20), "Remote backup card missing")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "去登录")).firstMatch.waitUntilExists(timeout: 20), "Remote card should ask to sign in")
@@ -154,7 +164,7 @@ final class NativeRegressionTests: XCTestCase {
         // Export is complete before the OS share sheet opens; Python verifies the bytes.
         sleep(3); shot("backup-export-share-sheet")
         // 开放归档：等系统分享面板里出现 zip 文件名；Python 再用 zipfile 校验缓存里那份。
-        app.terminate(); app.launch(); tap("open-settings"); tap("备份与恢复")
+        relaunchApp(); tap("open-settings"); tap("备份与恢复")
         tap("archive-export")
         let sharedArchive = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "成长记归档-")).firstMatch
         XCTAssertTrue(sharedArchive.waitUntilExists(timeout: 300), "Archive share sheet never appeared")
@@ -166,7 +176,7 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("volume-2026-09").waitUntilExists(timeout: 30))
         tap("volume-2026-09")
         XCTAssertTrue(element("record-fixture").waitUntilExists(timeout: 30)); shot("startup-backup-recovered")
-        app.terminate(); app.launch()
+        relaunchApp()
         tap("volume-2026-09")
         XCTAssertTrue(element("record-fixture").waitUntilExists(timeout: 20)); shot("recovered-library-relaunch")
     }

@@ -134,11 +134,57 @@ jobs:
         working-directory: mobile
         env:
           CI: "1"
+      # 编译缓存：安卓的原生部分（新架构的 appmodules，Reanimated／Worklets／Expo 等各库自己的 CMake
+      # 目标，两种 ABI 各一份）同样经 ccache。CMake 3.17 起认 CMAKE_<LANG>_COMPILER_LAUNCHER 环境变量，
+      # AGP 调 CMake 时原样带着，所以只在构建这一步设它们，所有库一起生效。ccache 不放进 PATH：
+      # React Native 的 ReactNative-application.cmake 在 PATH 上找到 ccache 会再套一层。
+      # NDK 每次构建现装，编译器文件的修改时间次次不同，所以按 `clang -v` 的输出认编译器；
+      # 工作区路径固定，但 .cxx 下的配置目录名由 AGP 算出，不在哈希里带工作目录（hash_dir = false），
+      # 调试信息里的目录可能不准，发布包里的 .so 本来就剥掉了调试信息。
+      # 与 iOS 不同，这里设回退键：没有 modules 宽松项，ccache 逐个核对头文件，旧依赖的结果只会不命中、不会误用。
+      - name: Install ccache
+        id: ccache
+        env:
+          CCACHE_VERSION: "4.14"
+          CCACHE_SHA256: c64760b0b85ba86068f4cd162dc42e2dc39c6f46b0cb8c1990dfccbec7a1fed0
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ccache.tar.gz" \
+            "https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION-linux-x86_64-glibc.tar.gz"
+          echo "$CCACHE_SHA256  $RUNNER_TEMP/ccache.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/ccache.tar.gz" -C "$RUNNER_TEMP"
+          BIN="$RUNNER_TEMP/ccache-bin"
+          CACHE_DIR="$HOME/.cache/ccache"
+          mkdir -p "$BIN"
+          install -m 0755 "$RUNNER_TEMP/ccache-$CCACHE_VERSION-linux-x86_64-glibc/ccache" "$BIN/ccache"
+          cat > "$BIN/ccache.conf" <<EOF
+          cache_dir = $CACHE_DIR
+          compiler_check = %compiler% -v
+          hash_dir = false
+          max_size = 2G
+          EOF
+          echo "CCACHE_CONFIGPATH=$BIN/ccache.conf" >> "$GITHUB_ENV"
+          "$BIN/ccache" --version | head -n 1
+          echo "bin=$BIN/ccache" >> "$GITHUB_OUTPUT"
+          echo "dir=$CACHE_DIR" >> "$GITHUB_OUTPUT"
+      - name: Cache compiler outputs
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.ccache.outputs.dir }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-android-${{ hashFiles('mobile/package-lock.json', 'mobile/plugins/**', 'mobile/modules/**') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-ccache-android-
       - name: Build installable standalone APK
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
+        run: |
+          "$RUNNER_TEMP/ccache-bin/ccache" --zero-stats > /dev/null
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --no-daemon
         working-directory: mobile/android
         env:
           NODE_ENV: production
+          CMAKE_C_COMPILER_LAUNCHER: ${{ steps.ccache.outputs.bin }}
+          CMAKE_CXX_COMPILER_LAUNCHER: ${{ steps.ccache.outputs.bin }}
+      - name: Show compiler cache statistics
+        if: always()
+        run: '"$RUNNER_TEMP/ccache-bin/ccache" --show-stats --verbose || true'
       - name: Sign with the owner release key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -547,10 +593,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  # 两组验证与模拟器构建同时起跑：冷 runner 上建模拟器、启动、热身要三四分钟，
+  # 放在构建的那几分钟里做完，构建一传上测试包就接着装应用。构建失败或被取消，这里跟着失败。
   ios-check:
     name: iOS ${{ matrix.check }} verification
     runs-on: macos-26
-    needs: [source, ios-simulator]
+    needs: source
+    # 等构建要查本次运行里作业的状态。
+    permissions:
+      contents: read
+      actions: read
     strategy:
       # Keep the other evidence bundle even if one suite fails.
       fail-fast: false
@@ -563,6 +615,58 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.source.outputs.source_sha }}
+      # 更早的提交没有 prepare：跳过这步，冒烟脚本照旧自己建模拟器。
+      - name: Boot a simulator while the app builds
+        id: simulator
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
+        working-directory: mobile
+        env:
+          SIMULATOR_NAME: ${{ matrix.check == 'startup' && 'FTC release startup smoke' || 'Anan offline regression' }}
+          EVIDENCE: ${{ matrix.check == 'startup' && 'build/startup-smoke' || 'build/native-regression' }}
+        run: |
+          if ! grep -qF '"prepare"' scripts/ios_simulator.py; then
+            echo "This checkout predates simulator preparation; the smoke script boots its own."
+            exit 0
+          fi
+          python3 scripts/ios_simulator.py prepare --name "$SIMULATOR_NAME" --output "$EVIDENCE" --udid-file "$RUNNER_TEMP/simulator-udid"
+          echo "udid=$(cat "$RUNNER_TEMP/simulator-udid")" >> "$GITHUB_OUTPUT"
+      # 按作业状态等，不按产物等：重跑整个运行时，上一轮同名的测试包还在列表里。
+      # 只重跑失败作业时，没重跑的构建作业沿用上一轮的成功结果，这里立刻放行。
+      - name: Wait for the simulator build
+        if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_JOB: iOS simulator build
+        run: |
+          started=$SECONDS
+          blind=0
+          while true; do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=latest&per_page=100" \
+              --jq "first(.jobs[] | select(.name == \"$BUILD_JOB\")) | \"\(.status) \(.conclusion // \"\")\"") || state=""
+            waited=$((SECONDS - started))
+            case "$state" in
+              "completed success")
+                echo "$BUILD_JOB finished; waited ${waited}s"
+                break ;;
+              completed*)
+                echo "::error::$BUILD_JOB ended as '${state#completed }'; there is no app to verify"
+                exit 1 ;;
+              "")
+                # 接口偶尔出错不要紧；连着五分钟查不到这个作业，就别再干等。
+                blind=$((blind + 1))
+                if (( blind >= 15 )); then
+                  echo "::error::Could not read the state of '$BUILD_JOB' for five minutes"
+                  exit 1
+                fi ;;
+              *)
+                blind=0 ;;
+            esac
+            if (( waited > 5400 )); then
+              echo "::error::Gave up after ${waited}s waiting for $BUILD_JOB (last state: $state)"
+              exit 1
+            fi
+            sleep 20
+          done
       - uses: actions/download-artifact@v7
         if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
         with:
@@ -581,12 +685,14 @@ jobs:
         working-directory: mobile
         env:
           SOURCE_SHA: ${{ needs.source.outputs.source_sha }}
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           APP_PATH=$(find build/ios-test-inputs -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
           SIM_ENTITLEMENTS=build/ios-test-inputs/simulator-entitlements.plist
           test -f "$SIM_ENTITLEMENTS"
-          python3 scripts/smoke-ios-startup.py "$APP_PATH" --entitlements "$SIM_ENTITLEMENTS" --output build/startup-smoke
+          python3 scripts/smoke-ios-startup.py "$APP_PATH" --entitlements "$SIM_ENTITLEMENTS" --output build/startup-smoke \
+            ${SIMULATOR_UDID:+--udid "$SIMULATOR_UDID"}
       - name: Preserve native startup evidence
         if: always() && matrix.check == 'startup' && hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
         uses: actions/upload-artifact@v7
@@ -603,12 +709,15 @@ jobs:
         working-directory: mobile
         env:
           SOURCE_SHA: ${{ needs.source.outputs.source_sha }}
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           APP_PATH=$(find build/ios-test-inputs -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
-          python3 scripts/smoke-ios-regression.py "$APP_PATH" --runner-build build/native-runner --output build/native-regression
+          python3 scripts/smoke-ios-regression.py "$APP_PATH" --runner-build build/native-runner --output build/native-regression \
+            ${SIMULATOR_UDID:+--udid "$SIMULATOR_UDID"}
+      # 模拟器没启动起来时回归这步不会跑，启动日志也要留下。
       - name: Preserve local native regression evidence
-        if: always() && matrix.check == 'regression' && steps.ios-regression.outcome != 'skipped'
+        if: always() && matrix.check == 'regression' && (steps.ios-regression.outcome != 'skipped' || steps.simulator.outcome == 'failure')
         uses: actions/upload-artifact@v7
         with:
           name: FamilyTimeCapsule-ios-local-regression
@@ -622,7 +731,7 @@ jobs:
     name: GitHub Release
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    needs: [source, quality, android, ios, ios-check]
+    needs: [source, quality, android, ios, ios-simulator, ios-check]
     permissions:
       contents: write
     steps:
