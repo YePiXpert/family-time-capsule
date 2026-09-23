@@ -2,7 +2,8 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-22。**1.0.3（构建号 76）已交付；服务端 1.0.3 已部署生产**：主人 2026-09-22 拍板发版＋部署一条龙；发版提交 `8be3a46731b56f17fec0bdbb8aa12575ddefc96b`（`mobile/app.json` 1.0.3／构建号 76、服务端减法、CHANGELOG 顶节、README、本文；Fable 复核、门禁全绿后提交），轻量标签 `v1.0.3` 指向它，标签推送触发 run 35736146539（13:50 UTC，<https://github.com/YePiXpert/family-time-capsule/actions/runs/35736146539>）；首轮 iOS 回归启动超时；attempt 2 重跑后全部作业成功，[GitHub Release v1.0.3](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.3) 已发布，双端包、源码与校验和已下载核对（详见第一节）；两台真机验收仍待完成。服务端同一提交已于 13:52 UTC 切到生产（镜像 `anan-ai:8be3a46…`，本机与公网 healthz 版本一致，账号／设备／设置／清单逐行保留；staging 五模式＋转写真实验证通过；证据与回滚材料在 `/opt/anan-ai/deployments/20260922-1.0.3-reduction/`），1.0.2 手机的分组／起个头／写信引导从此得到 400／404，其余功能照旧。
+> 最后更新：2026-09-23。**main 上有两批未打包的改动**：首页整理（`a973c21`／`864124e`／`510d835`，CHANGELOG 顶节「未打包 — 首页整理」）与出包流水线第二轮提速（`ec60d63`：源提交核对独立成作业、两个 iOS 构建接入 ccache；`8f5c03f`：安卓冒烟点掉别的应用的无响应框）。验证 [run 35815958870](https://github.com/YePiXpert/family-time-capsule/actions/runs/35815958870)（源码 `8f5c03f`，ccache 第一次冷编）**结果待查**，不要当作已通过；可安装的仍是 1.0.3（第一节）。
+> 旧记录：2026-09-22。**1.0.3（构建号 76）已交付；服务端 1.0.3 已部署生产**：主人 2026-09-22 拍板发版＋部署一条龙；发版提交 `8be3a46731b56f17fec0bdbb8aa12575ddefc96b`（`mobile/app.json` 1.0.3／构建号 76、服务端减法、CHANGELOG 顶节、README、本文；Fable 复核、门禁全绿后提交），轻量标签 `v1.0.3` 指向它，标签推送触发 run 35736146539（13:50 UTC，<https://github.com/YePiXpert/family-time-capsule/actions/runs/35736146539>）；首轮 iOS 回归启动超时；attempt 2 重跑后全部作业成功，[GitHub Release v1.0.3](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.3) 已发布，双端包、源码与校验和已下载核对（详见第一节）；两台真机验收仍待完成。服务端同一提交已于 13:52 UTC 切到生产（镜像 `anan-ai:8be3a46…`，本机与公网 healthz 版本一致，账号／设备／设置／清单逐行保留；staging 五模式＋转写真实验证通过；证据与回滚材料在 `/opt/anan-ai/deployments/20260922-1.0.3-reduction/`），1.0.2 手机的分组／起个头／写信引导从此得到 400／404，其余功能照旧。
 > 旧记录：2026-09-22。**1.0.2 已交付；AI 服务已切到 MiMo V2.6 Pro**：生产源码 `e2bd07fe77f5b185257ef1fc255462245a4d1577`，文字／看图为 `mimo-v2.6-pro`，云端转写为 `mimo-v2.5-asr`，使用主人指定并提供密钥的中国 Token Plan 地址；八模式和 ASR 合成样例验证通过，账号／设备／额度／备份保留。部署与回滚记录见第一节及 `docs/MIMO-ADAPTATION.md`。安装包仍为 `v1.0.2`，此次服务切换未重新出包。
 > 旧记录：移动端状态 2026-09-22（减法）。**1.0.3「减法」已在 main、未出包**：主人拍板「不要冗余，贪多嚼不烂」，拿掉出生的故事（24 问并入小问题）、写信引导、时光系列、足迹、年度长图、重放、分成几件事／按事情分组、起个头，AI 不再看照片；提交 `8f36df0`…`feebcec` 与文档收尾提交（第一节第一条）。可安装的仍是 1.0.2（下一条）；本次减法未改服务端；后续模型部署见上。验证出包见第一节第一条。
 > 旧记录：2026-09-22。**1.0.2 已交付**：发版提交 `c8adcde33302c2bbc576463773ac6cf26426b10e`，轻量标签 `v1.0.2`，run 35691714051 四作业全绿，GitHub Release 上有 APK／未签名 IPA／`build-source.json`／`sha256sums.txt`（第一节第一条）。服务端仍是 `b76439d` + DeepSeek（MiMo 适配未部署，见第一节「MiMo 内容模型适配」）；两台真机的验收仍未做。主人随后把出包流水线并行化（`300b12e`），首次 dispatch 的 iOS 回归红（脚手架超时，录音其实已开始），「说完了」等待放宽到 120 秒后，验证 run 35701034621 已全绿，总耗时约 32 分钟；本轮继续优化测试等待，实测结果待新验证构建（第一节第二条）。
@@ -18,7 +19,15 @@
 
 ---
 
-## 一、当前状态快照（2026-09-22）
+## 一、当前状态快照（2026-09-23）
+
+- **出包流水线第二轮提速（2026-09-23，`ec60d63`／`8f5c03f`，待验证）**：主人要求继续压 CI 时间。拆 run 35729090883（`52b5f76`，29.9 分钟）：最长路径是 quality 1.9 分钟 → iOS 模拟器构建 16.5（其中 xcodebuild 14.1，几乎全花在 Reanimated 119／SVG 94／Screens 88／Codegen 42／Worklets 38 等约 450 个 C++／Objective-C++ 编译单元上；React Native 核心已是预编译）→ 两组 iOS 验证 10.8／11.2（模拟器冷启动 1.5～2.5 分钟，启动完成到 XCUITest 开跑 2.2～4.5 分钟，回归主用例 318～353 秒，启动冒烟首个场景 3.3 分钟）；Android 16.9（Gradle 8.2 + 模拟器冒烟 7.2）与 IPA 15.0 不在最长路径上。改法：
+  - 新增「Package source」作业，只核对源提交在 main 上、写 `build-source.json`；Android／IPA／模拟器构建只等它，quality 与之并行；GitHub Release 仍要等 quality、全部构建和两组 iOS 验证。
+  - 两个 iOS 构建装 ccache 4.14（钉版本与 sha256），pod install 时 `USE_CCACHE=1`，走 React Native 自带的 `scripts/xcode/ccache-clang*.sh`（depend 模式、modules／time_macros 宽松）。缓存键 = `package-lock.json` + `mobile/plugins/**` + `mobile/modules/**` + Xcode 构建号，**不设回退键**：依赖一变就完整冷编，杜绝拿旧模块头文件的假命中（modules 宽松模式察觉不到模块内部变化，系统头文件也不进清单）。构建前清零、构建后「Show compiler cache statistics」打印命中率。Swift 不走 ccache。
+  - 两个 iOS 冒烟脚本打印安装、首次启动与 XCUITest 耗时，下一轮据此判断冷模拟器那几分钟花在哪。
+  - 预期：缓存命中时总时长约 19 分钟；依赖变化后的第一次仍约 30 分钟并存下缓存。验证 [run 35815958870](https://github.com/YePiXpert/family-time-capsule/actions/runs/35815958870)（源码 `8f5c03f`）是这把键的第一次，只能证明不坏、存下缓存；**第二次 run 才看得出提速**（看两段 iOS 构建耗时与命中率）。先派的 run 35815781459（`ec60d63`）已取消，由它取代。
+  - 下一步可选：iOS 验证作业与构建同时起跑、先把模拟器启动并热身（约省 2～4 分钟，要在作业里等构建产物）；安卓 app 的 CMake 走 ccache（约 2 分钟）。iOS 这边压下来以后安卓就接近最长路径，两者要一起做才缩短总时长。
+- **首页整理（未打包；2026-09-23）**：主人说「首页还是乱糟糟的」，看过方案后拍板「都做吧」：`a973c21`（iOS 液态玻璃：玻璃及其祖先不带透明度，卡片不淡入）、`864124e`（编辑页／写信页底栏的底部安全区藏到键盘后面）、`510d835`（「专题与信」一张卡、年份下不再有统计行、月名「9 月」、提醒卡文字级动作、空库不挂「最近」、备份提醒等第一段时光满 7 天）；细目在 CHANGELOG 顶节。验证 run 35813660997（源码 `510d835`）：quality、IPA、模拟器构建、iOS 启动与回归全绿；**Android 冒烟红在第一步**——欢迎页已显示，但冷模拟器弹出「Pixel Launcher isn't responding」盖住应用，uiautomator 只抓到弹窗，logcat 无崩溃，属环境抖动。`8f5c03f` 让冒烟点掉别的应用的无响应框（本应用的不点、照样判失败），run 35815958870 一并复验；iOS 截图里首页与编辑页的实际效果也在那次 run 的证据包里核对。
 
 - **1.0.3 出包失败与重跑记录（已通过；2026-09-22）**：主人报告失败后检查 run 35736146539：quality、Android APK、iOS unsigned IPA、iOS simulator build、iOS startup verification 均成功，iOS regression verification 失败，GitHub Release 跳过。`NativeRegressionTests.swift:108` 在专题册保存、重开并断言成功之后，再次 `app.launch()` 约 41 秒超时（尚未建立自动化会话）；录屏末尾停在模拟器桌面。现有证据不足以确定是模拟器启动故障还是应用问题，不跳过回归，也不据此改应用或放宽断言。已成功提交 `gh run rerun 35736146539 --failed`，保留源码 `8be3a46731b56f17fec0bdbb8aa12575ddefc96b`／版本 1.0.3／构建号 76／标签 `v1.0.3`，复用已成功作业的产物；主人通知 CI 绿后检查 [attempt 2](https://github.com/YePiXpert/family-time-capsule/actions/runs/35736146539/attempts/2)：全部七个作业成功，Release 已发布。相同源码与测试在重跑中通过，首轮启动超时未复现，根因仍未确定；未改应用或放宽断言。生产服务无需再次部署。
 
