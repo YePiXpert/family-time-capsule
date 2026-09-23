@@ -80,10 +80,15 @@ for result in request.results ?? [] {
         run("xcrun", "swiftc", str(ocr), "-o", str(ocr_binary))
         boot_simulator(udid, output)
         run("xcrun", "simctl", "ui", udid, "appearance", "light")
+        started = time.monotonic()
         run("xcrun", "simctl", "install", udid, str(args.app.resolve()))
+        # 各阶段耗时只打日志：冷启动的模拟器上首次安装、首次启动常常比后面几次慢得多。
+        print(f"Installed in {time.monotonic() - started:.0f}s", flush=True)
 
         def launch(label, expected):
+            started = time.monotonic()
             result = launch_simulator_app(udid, bundle, output, label)
+            launched = time.monotonic() - started
             match = re.search(r": (\d+)\s*$", result)
             assert match, "Simulator did not report an app process"
             pid = int(match[1])
@@ -104,7 +109,8 @@ for result in request.results ?? [] {
             (output / (label + ".txt")).write_text(recognized + "\n")
             assert expected in compact, f"Expected screen was not visible in {label}"
             report["checks"].append(label)
-            print(f"Native release startup passed: {label}", flush=True)
+            print(f"Native release startup passed: {label} "
+                  f"(launch {launched:.0f}s, total {time.monotonic() - started:.0f}s)", flush=True)
             return Path(run("xcrun", "simctl", "get_app_container", udid, bundle, "data"))
 
         container = launch("fresh-welcome", "开始记录")
