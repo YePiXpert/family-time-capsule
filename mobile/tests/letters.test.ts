@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultOpenAt,
   letterCaption,
+  letterShortCaption,
   letterState,
   openAtLabel,
   openLetterAt,
@@ -89,6 +90,15 @@ describe("labels and order", () => {
     );
     expect(
       letterCaption(letter({ openedAt: "2030-06-15T09:00:00.000Z", from: "" }), today),
+    ).toBe("已拆封");
+  });
+  it("short captions fit a shelf tile: state and the opening year only", () => {
+    const today = new Date(2030, 5, 15);
+    expect(letterShortCaption(letter({ sealed: false }), today)).toBe("还没封存");
+    expect(letterShortCaption(letter(), today)).toBe("封存至 2042");
+    expect(letterShortCaption(letter({ openAt: "2030-06-15" }), today)).toBe("可以拆了");
+    expect(
+      letterShortCaption(letter({ openedAt: "2030-06-15T09:00:00.000Z" }), today),
     ).toBe("已拆封");
   });
   it("sorts drafts, then openable, then sealed by date, then opened newest first", () => {
