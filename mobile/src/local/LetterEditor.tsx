@@ -4,7 +4,6 @@ import {
   AppState,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   View,
 } from "react-native";
@@ -29,6 +28,7 @@ import {
   BottomBar,
   Button,
   Card,
+  DangerCard,
   ErrorText,
   Field,
   Page,
@@ -47,7 +47,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   const state = useLibrary(),
     store = useStore(),
     s = useStyles(),
-    { colors, large } = useTheme(),
+    { large } = useTheme(),
     keyboardOffset = useKeyboardBarOffset();
   const stored = state.letters[route.params.id];
   const initial: LetterDraft | undefined = stored
@@ -424,9 +424,8 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
             </View>
           ))}
           <ErrorText message={error} />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="删除这封信"
+          <DangerCard
+            title="删除这封信"
             testID="letter-delete"
             disabled={busy}
             onPress={() =>
@@ -446,16 +445,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                 },
               ])
             }
-            style={({ pressed }) => ({
-              alignSelf: "center",
-              minHeight: 44,
-              justifyContent: "center",
-              paddingHorizontal: 16,
-              opacity: pressed ? 0.6 : 1,
-            })}
-          >
-            <Text style={[s.muted, { color: colors.muted }]}>删除这封信</Text>
-          </Pressable>
+          />
         </ScrollView>
         <BottomBar>
           <View style={s.row}>

@@ -73,6 +73,8 @@ final class NativeRegressionTests: XCTestCase {
         tap("record-fixture"); tap("record-edit")
         XCTAssertTrue(element("说一段").waitUntilExists(timeout: 20))
         XCTAssertTrue(element("ai-open").waitUntilExists(timeout: 20)); shot("ai-entry")
+        // fixture 这段有标题：标题、地点、人物那张纸卡打开就是展开的；往下滑一屏留一张图给界面审阅。
+        XCTAssertTrue(element("editor-details").waitUntilExists(timeout: 20)); app.swipeUp(); shot("editor-details")
         tap("ai-open")
         XCTAssertTrue(element("ai-polish").waitUntilExists(timeout: 20)); shot("ai-panel")
         tap("ai-polish")
@@ -80,7 +82,7 @@ final class NativeRegressionTests: XCTestCase {
         // Opening the editor persists a draft. Discard this enrollment-only draft
         // so the later backup check can still require no unfinished edits.
         // 原生页头已下线：返回是 Page 自绘的「‹」图标钮（page-back）。
-        tap("page-back"); tap("放弃这份草稿"); tap("放弃")
+        tap("page-back"); tap("editor-discard"); tap("放弃")
         XCTAssertTrue(element("record-edit").waitUntilExists(timeout: 20))
         relaunchApp()
         tap("capture-new"); type("A little story.", "capture-text"); shot("editor-keyboard")

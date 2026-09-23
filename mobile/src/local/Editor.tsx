@@ -7,7 +7,10 @@ import {
   KeyboardAvoidingView,
   Linking,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  TextInput,
   View,
 } from "react-native";
 import { usePreventRemove } from "@react-navigation/native";
@@ -36,8 +39,10 @@ import {
   BottomBar,
   Button,
   Card,
+  DangerCard,
   ErrorText,
   Field,
+  FieldRow,
   Page,
   PersonChips,
   SignatureButton,
@@ -48,23 +53,32 @@ import {
   messageOf,
   useKeyboardBarOffset,
   useStyles,
+  useTheme,
 } from "./ui";
+import { JournalIcon } from "../components/JournalIcon";
 import { Photo, PhotoDetails } from "./Media";
 import {
   applyPhotoMetadata,
   readPhotoMetadata,
 } from "./photo-metadata";
+/** 标题、地点、人物有一样填过，打开编辑页时那张纸卡就展开着，填过的东西不藏起来。 */
+const hasDetails = (d: RecordDraft | undefined) =>
+  !!d &&
+  (!!d.content.title.trim() ||
+    !!d.content.location.trim() ||
+    (d.content.personIds?.length ?? 0) > 0);
 export function Editor({ route, navigation }: Props<"Editor">) {
   const store = useStore(),
     state = useLibrary(),
     s = useStyles(),
+    { colors, large } = useTheme(),
     keyboardOffset = useKeyboardBarOffset();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
       clone(store.get().drafts[route.params.draftId]),
     ),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [details, setDetails] = useState(false),
+    [details, setDetails] = useState(() => hasDetails(draft)),
     [dateOpen, setDateOpen] = useState(false),
     [allowExit, setAllowExit] = useState(false),
     [promptSeed, setPromptSeed] = useState(0),
@@ -272,6 +286,33 @@ export function Editor({ route, navigation }: Props<"Editor">) {
         <Text>这份草稿已经关闭。</Text>
       </Page>
     );
+  // 纸卡收起时那一行摘要：填过的标题、地点、人物按顺序串起来。
+  const detailsSummary = [
+    draft.content.title.trim(),
+    draft.content.location.trim(),
+    (draft.content.personIds ?? [])
+      .map((id) => state.persons[id]?.name)
+      .filter(Boolean)
+      .join("、"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const addPerson = () => {
+    if (!newPerson.trim() || busy) return;
+    void run(async () => {
+      const id = await createPerson(store, newPerson);
+      const currentIds = current.current?.content.personIds ?? [];
+      await persist({
+        ...current.current!,
+        content: {
+          ...current.current!.content,
+          personIds: [...new Set([...currentIds, id])],
+        },
+        updatedAt: now(),
+      });
+      setNewPerson("");
+    });
+  };
   const pick = async (camera: boolean) => {
     await flush();
     const permission = camera
@@ -544,89 +585,165 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               </View>
             ) : null;
           })}
-          <View style={s.row}>
-            <Button
-              title={details ? "收起" : "更多：标题、地点、人物"}
-              kind="text"
-              compact
+          {/* 标题、地点、人物：一张纸卡，收起时一行摘要，点开就地展开成卡里的几行（DESIGN.md「编辑」）。 */}
+          <Card style={{ padding: 0, gap: 0 }}>
+            <Pressable
+              testID="editor-details"
+              accessibilityRole="button"
+              accessibilityLabel="标题、地点、人物"
+              // 展开与否由读屏按 expanded 自己念，值里只放收起时那行摘要。
+              accessibilityValue={
+                details
+                  ? undefined
+                  : { text: detailsSummary || "都可以不填" }
+              }
+              accessibilityState={{ expanded: details }}
               onPress={() => setDetails(!details)}
-            />
-          </View>
-          {details && (
-            <>
-              <Field
-                label="标题（可选）"
-                value={draft.content.title}
-                onChangeText={(title) => change({ title })}
-              />
-              <Field
-                label="地点（可选）"
-                value={draft.content.location}
-                onChangeText={(location) => change({ location })}
-              />
-              <View style={{ gap: 8 }}>
-                <Text style={s.muted}>这一刻有谁（可选）</Text>
-                {personList.length > 0 && (
-                  <PersonChips
-                    persons={personList}
-                    selected={draft.content.personIds ?? []}
-                    compact
-                    chipTestID={(id) => `person-chip-${id}`}
-                    onToggle={(id) => {
-                      const currentIds = draft.content.personIds ?? [];
-                      change({
-                        personIds: currentIds.includes(id)
-                          ? currentIds.filter((x) => x !== id)
-                          : [...currentIds, id],
-                      });
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                minHeight: 52,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+              }}
+            >
+              {/* 卡在 iOS 是液态玻璃：按压透明度落在里面的字上。 */}
+              {({ pressed }) => (
+                <>
+                  <View
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      gap: 2,
+                      opacity: pressed ? 0.6 : 1,
                     }}
-                  />
-                )}
-                {personList.length > 0 && (
-                  <Button
-                    title="整理人物"
-                    compact
-                    testID="open-people"
-                    onPress={() => navigation.navigate("People")}
-                  />
-                )}
-                <View style={s.row}>
-                  <View style={{ flex: 1, minWidth: 200 }}>
-                    <Field
-                      label="添加人物"
-                      hideLabel
-                      testID="person-new-name"
-                      placeholder="例如：妈妈、外婆、小姨"
-                      value={newPerson}
-                      onChangeText={setNewPerson}
-                      editable={!busy}
+                  >
+                    <Text>标题、地点、人物</Text>
+                    {!details && (
+                      <Text numberOfLines={1} style={s.muted}>
+                        {detailsSummary || "都可以不填"}
+                      </Text>
+                    )}
+                  </View>
+                  <View
+                    style={{
+                      opacity: pressed ? 0.6 : 1,
+                      transform: [{ rotate: details ? "180deg" : "0deg" }],
+                    }}
+                  >
+                    <JournalIcon
+                      name="chevron-down"
+                      color={colors.muted}
+                      size={18}
                     />
                   </View>
-                  <Button
-                    title="添加"
-                    testID="person-new-add"
-                    disabled={!newPerson.trim() || busy}
-                    onPress={() => {
-                      void run(async () => {
-                        const id = await createPerson(store, newPerson);
-                        const currentIds =
-                          current.current?.content.personIds ?? [];
-                        await persist({
-                          ...current.current!,
-                          content: {
-                            ...current.current!.content,
-                            personIds: [...new Set([...currentIds, id])],
-                          },
-                          updatedAt: now(),
-                        });
-                        setNewPerson("");
-                      });
-                    }}
-                  />
+                </>
+              )}
+            </Pressable>
+            {details && (
+              <View
+                style={{
+                  paddingHorizontal: 16,
+                  borderTopWidth: StyleSheet.hairlineWidth,
+                  borderTopColor: colors.line,
+                }}
+              >
+                <FieldRow
+                  label="标题"
+                  accessibilityLabel="标题（可选）"
+                  testID="editor-title"
+                  placeholder="例如：第一次翻身"
+                  value={draft.content.title}
+                  onChangeText={(title) => change({ title })}
+                />
+                <FieldRow
+                  label="地点"
+                  accessibilityLabel="地点（可选）"
+                  testID="editor-location"
+                  placeholder="例如：外婆家"
+                  value={draft.content.location}
+                  onChangeText={(location) => change({ location })}
+                />
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    paddingVertical: 4,
+                  }}
+                >
+                  {/* 小标签与右边第一行（chip 或输入）的字对齐：两者都是 44 高、字居中。 */}
+                  <Text style={[s.muted, { minWidth: 40, paddingTop: 11 }]}>
+                    有谁
+                  </Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    {personList.length > 0 && (
+                      <PersonChips
+                        persons={personList}
+                        selected={draft.content.personIds ?? []}
+                        compact
+                        chipTestID={(id) => `person-chip-${id}`}
+                        onToggle={(id) => {
+                          const currentIds = draft.content.personIds ?? [];
+                          change({
+                            personIds: currentIds.includes(id)
+                              ? currentIds.filter((x) => x !== id)
+                              : [...currentIds, id],
+                          });
+                        }}
+                      />
+                    )}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <TextInput
+                        testID="person-new-name"
+                        accessibilityLabel="添加人物"
+                        placeholder="添加一个人，例如：外婆"
+                        placeholderTextColor={colors.muted}
+                        value={newPerson}
+                        onChangeText={setNewPerson}
+                        onSubmitEditing={addPerson}
+                        returnKeyType="done"
+                        editable={!busy}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          color: colors.ink,
+                          fontSize: large ? 19 : 16,
+                          paddingVertical: 12,
+                        }}
+                      />
+                      <Button
+                        title="添加"
+                        kind="text"
+                        compact
+                        testID="person-new-add"
+                        disabled={!newPerson.trim() || busy}
+                        onPress={addPerson}
+                      />
+                    </View>
+                    {personList.length > 0 && (
+                      <View style={{ alignSelf: "flex-start", marginLeft: -8 }}>
+                        <Button
+                          title="整理人物"
+                          kind="text"
+                          compact
+                          testID="open-people"
+                          onPress={() => navigation.navigate("People")}
+                        />
+                      </View>
+                    )}
+                  </View>
                 </View>
               </View>
-            </>
-          )}
+            )}
+          </Card>
           <ErrorText message={error} />
           {error && permDenied && (
             <Button
@@ -647,40 +764,37 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               disabled={busy}
             />
           )}
-          <View style={{ alignItems: "center", paddingTop: 8 }}>
-            <Button
-              title="放弃这份草稿"
-              kind="text"
-              danger
-              disabled={busy}
-              onPress={() =>
-                Alert.alert(
-                  "放弃草稿？",
-                  draft.recordId
-                    ? "原先保存的记录不会改变。"
-                    : "这份草稿将被删除。",
-                  [
-                    { text: "取消", style: "cancel" },
-                    {
-                      text: "放弃",
-                      style: "destructive",
-                      onPress: () => {
-                        void run(async () => {
-                          transcription.stop();
-                          await discardAudio();
-                          await store.change((s) => {
-                            delete s.drafts[draft.id];
-                          });
-                          nextAction.current = () => navigation.goBack();
-                          setAllowExit(true);
+          <DangerCard
+            title="放弃这份草稿"
+            testID="editor-discard"
+            disabled={busy}
+            onPress={() =>
+              Alert.alert(
+                "放弃草稿？",
+                draft.recordId
+                  ? "原先保存的记录不会改变。"
+                  : "这份草稿将被删除。",
+                [
+                  { text: "取消", style: "cancel" },
+                  {
+                    text: "放弃",
+                    style: "destructive",
+                    onPress: () => {
+                      void run(async () => {
+                        transcription.stop();
+                        await discardAudio();
+                        await store.change((s) => {
+                          delete s.drafts[draft.id];
                         });
-                      },
+                        nextAction.current = () => navigation.goBack();
+                        setAllowExit(true);
+                      });
                     },
-                  ],
-                )
-              }
-            />
-          </View>
+                  },
+                ],
+              )
+            }
+          />
         </ScrollView>
         <BottomBar gap={8}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
