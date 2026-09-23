@@ -1061,8 +1061,11 @@ export function Shelf() {
   };
   const shelfCount = tiles.time.length + tiles.topics.length;
   const hasRecords = records.length > 0;
-  // 「最近」区（区标题 + 卡 + 圆点）最矮多高；首屏剩下的比这还少才让整页可以往下滑。
-  const heroMin = 40 + HERO_CARD_MIN + (hero.length > 1 ? 28 : 0);
+  // 「最近」区（区标题 + 8 + 卡 + 圆点）最矮多高；首屏剩下的比这还少才让整页可以往下滑。
+  // 区标题带「随便翻翻」时是文字按钮的 44 高，不带时 32；圆点那一截是投影留白 14 + 8 + 6。
+  const shuffle = records.length >= 3;
+  const heroMin =
+    HERO_CARD_MIN + (shuffle ? 44 : 32) + 8 + (hero.length > 1 ? 28 : 0);
   return (
     <Page scroll={false} top>
       <ScrollView
@@ -1267,27 +1270,37 @@ export function Shelf() {
           />
         )}
         {hasRecords ? (
-          <View style={{ flex: 1, minHeight: heroMin, gap: 8 }}>
-            <SectionHeader
-              title="最近"
-              action={
-                records.length >= 3
-                  ? {
-                      label: "随便翻翻",
-                      testID: "shuffle",
-                      onPress: () => {
-                        const id = pickAnother(records.map((r) => r.id));
-                        if (id) nav.navigate("Record", { id, shuffle: true });
-                      },
-                    }
-                  : undefined
-              }
-            />
-            <RecentFlip
-              items={hero}
-              media={mediaMap}
-              onOpen={(id) => nav.navigate("Record", { id })}
-            />
+          // 「最近」区的高度只由首屏剩下的空间决定：里面的内容绝对定位、不参与撑高。否则有照片的卡
+          // 按 16:10 算出的照片高度会反过来把整页撑高，书架与底行被挤出屏幕、整页又能滑了
+          // （run 35868419219 的 iOS 首页就是这样）。左右出血 20，翻页条才能贴到屏幕边。
+          <View style={{ flex: 1, minHeight: heroMin, marginHorizontal: -20 }}>
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                { paddingHorizontal: 20, gap: 8 },
+              ]}
+            >
+              <SectionHeader
+                title="最近"
+                action={
+                  shuffle
+                    ? {
+                        label: "随便翻翻",
+                        testID: "shuffle",
+                        onPress: () => {
+                          const id = pickAnother(records.map((r) => r.id));
+                          if (id) nav.navigate("Record", { id, shuffle: true });
+                        },
+                      }
+                    : undefined
+                }
+              />
+              <RecentFlip
+                items={hero}
+                media={mediaMap}
+                onOpen={(id) => nav.navigate("Record", { id })}
+              />
+            </View>
           </View>
         ) : (
           // 空库只有这张欢迎卡，不挂「最近」的区标题。
