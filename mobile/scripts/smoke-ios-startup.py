@@ -12,7 +12,7 @@ import plistlib
 import re
 import subprocess
 import time
-from ios_simulator import boot_simulator, cleanup_simulator, launch_simulator_app
+from ios_simulator import boot_simulator, cleanup_simulator, describe_simulator, launch_simulator_app
 from local_fixture import break_state, broken_root, empty, record, write_legacy_state, write_state, read_state
 
 
@@ -32,6 +32,8 @@ def main():
     parser.add_argument("app", type=Path)
     parser.add_argument("--entitlements", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    # 出包流水线在等构建时已把模拟器建好、启动并热身（ios_simulator.py prepare）；本地手跑不传就自己建。
+    parser.add_argument("--udid", help="an already booted simulator owned by this task")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -49,18 +51,23 @@ def main():
     identifier = entitlements.get("application-identifier") or entitlements.get("com.apple.application-identifier")
     assert identifier and identifier.endswith(bundle), "Simulator app is missing its signed application identifier"
     (output / "simulator-entitlements.plist").write_bytes(simulated_entitlements)
-    devices = json.loads(run("xcrun", "simctl", "list", "devices", "available", "--json"))["devices"]
-    candidates = [(runtime, device) for runtime, entries in devices.items() if ".iOS-" in runtime
-                  for device in entries if device.get("isAvailable") and device["name"].startswith("iPhone")]
-    assert candidates, "No available iPhone simulator runtime"
-    runtime, device = max(candidates, key=lambda pair: tuple(int(n) for n in re.findall(r"\d+", pair[0])))
-    # Exercise the design's 390-point phone width with real native layout.
-    types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
-    compact = next((item for item in types if item["identifier"] == "com.apple.CoreSimulator.SimDeviceType.iPhone-16e"), None)
-    if compact:
-        device = {"name": compact["name"], "deviceTypeIdentifier": compact["identifier"]}
-    udid = run("xcrun", "simctl", "create", "FTC release startup smoke", device["deviceTypeIdentifier"], runtime)
-    report = {"gitSha": os.environ.get("SOURCE_SHA"), "buildNumber": info["CFBundleVersion"], "runtime": runtime, "device": device["name"], "checks": []}
+    if args.udid:
+        udid = args.udid
+        simulator = describe_simulator(udid)
+    else:
+        devices = json.loads(run("xcrun", "simctl", "list", "devices", "available", "--json"))["devices"]
+        candidates = [(runtime, device) for runtime, entries in devices.items() if ".iOS-" in runtime
+                      for device in entries if device.get("isAvailable") and device["name"].startswith("iPhone")]
+        assert candidates, "No available iPhone simulator runtime"
+        runtime, device = max(candidates, key=lambda pair: tuple(int(n) for n in re.findall(r"\d+", pair[0])))
+        # Exercise the design's 390-point phone width with real native layout.
+        types = json.loads(run("xcrun", "simctl", "list", "devicetypes", "--json"))["devicetypes"]
+        compact = next((item for item in types if item["identifier"] == "com.apple.CoreSimulator.SimDeviceType.iPhone-16e"), None)
+        if compact:
+            device = {"name": compact["name"], "deviceTypeIdentifier": compact["identifier"]}
+        udid = run("xcrun", "simctl", "create", "FTC release startup smoke", device["deviceTypeIdentifier"], runtime)
+        simulator = {"runtime": runtime, "device": device["name"]}
+    report = {"gitSha": os.environ.get("SOURCE_SHA"), "buildNumber": info["CFBundleVersion"], **simulator, "checks": []}
     ocr = output / "recognize-text.swift"
     ocr.write_text('''import Foundation
 import Vision
@@ -78,7 +85,8 @@ for result in request.results ?? [] {
         # every screenshot. Keep the full 16-second crash observation per launch.
         ocr_binary = output / "recognize-text"
         run("xcrun", "swiftc", str(ocr), "-o", str(ocr_binary))
-        boot_simulator(udid, output)
+        if not args.udid:
+            boot_simulator(udid, output)
         run("xcrun", "simctl", "ui", udid, "appearance", "light")
         started = time.monotonic()
         run("xcrun", "simctl", "install", udid, str(args.app.resolve()))

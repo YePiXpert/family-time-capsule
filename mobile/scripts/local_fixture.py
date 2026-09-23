@@ -1,8 +1,10 @@
 """Synthetic, device-only fixtures; no HTTP fixture server or credentials."""
+from contextlib import closing
 import hashlib
 import json
 import sqlite3
 import struct
+import time
 import zlib
 from pathlib import Path
 
@@ -52,6 +54,23 @@ def break_state(database):
 def broken_root(database):
     with sqlite3.connect(database) as db:
         return db.execute('SELECT json FROM root WHERE id=1').fetchone()[0]
+
+
+def wait_for_library(database: Path, timeout: float = 120) -> float:
+    """应用第一次启动会自己建库并写入根那一行；等它写好再停应用、换 fixture。
+    返回等了几秒。慢模拟器上固定睡几秒不够，快的上又白等。"""
+    started = time.monotonic()
+    while True:
+        if database.exists():
+            try:
+                with closing(sqlite3.connect(database, timeout=1)) as db:
+                    if db.execute('SELECT 1 FROM root WHERE id=1').fetchone():
+                        return time.monotonic() - started
+            except sqlite3.Error:
+                pass  # 表还没建好或正写着，下一轮再看
+        if time.monotonic() - started > timeout:
+            raise AssertionError(f'App did not create its local library within {timeout:.0f}s')
+        time.sleep(1)
 
 
 def read_state(database):
