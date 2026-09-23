@@ -859,6 +859,8 @@ export function Page({
  * 按钮四级：主（primary，实底，每页至多一个）／次（默认纸面胶囊）／文字（kind="text"，
  * 辅助动作：新建、更多、另存、停止）／危险文字（kind="text" + danger：删除、放弃、关闭）。
  * 开关类按钮传 selected，选中时前置勾；禁用态统一 40% 透明。
+ * iOS 液态玻璃胶囊的按压与禁用透明度落在玻璃里面的内容上：玻璃或它的祖先一旦不透明度小于 1，
+ * 系统就不画玻璃，恢复到 1 也不一定画回来。
  */
 export function Button({
   title,
@@ -883,7 +885,10 @@ export function Button({
   selected?: boolean;
   compact?: boolean;
 }) {
-  const { colors: c } = useTheme();
+  const { colors: c, liquid } = useTheme();
+  const depth = useContext(GlassDepth);
+  // 只有页面上直接摆的胶囊是系统玻璃；卡片与底栏里的已退回实色纸面，透明度照旧。
+  const glassPill = liquid && depth === 0 && kind === "pill";
   const color = primary ? c.onAccent : danger ? c.error : c.accent;
   const glyph = selected ? "check" : icon;
   const inner = (
@@ -916,42 +921,59 @@ export function Button({
       hitSlop={kind === "text" ? 6 : undefined}
       style={({ pressed }) => ({
         flexShrink: 1,
-        opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+        opacity: glassPill ? 1 : disabled ? 0.4 : pressed ? 0.7 : 1,
       })}
     >
-      {kind === "text" ? (
-        <View
-          style={{
-            minHeight: 44,
-            paddingHorizontal: compact ? 8 : 12,
-            paddingVertical: 6,
-            flexDirection: "row",
-            gap: 6,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {inner}
-        </View>
-      ) : (
-        <Glass
-          radius={14}
-          tint={
-            primary ? c.accentGlass : selected ? c.selectedGlass : undefined
-          }
-          style={{
-            minHeight: compact ? 44 : 48,
-            paddingHorizontal: compact ? 12 : 16,
-            paddingVertical: compact ? 6 : 10,
-            flexDirection: "row",
-            gap: 8,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {inner}
-        </Glass>
-      )}
+      {({ pressed }) =>
+        kind === "text" ? (
+          <View
+            style={{
+              minHeight: 44,
+              paddingHorizontal: compact ? 8 : 12,
+              paddingVertical: 6,
+              flexDirection: "row",
+              gap: 6,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {inner}
+          </View>
+        ) : (
+          <Glass
+            radius={14}
+            tint={
+              primary ? c.accentGlass : selected ? c.selectedGlass : undefined
+            }
+            style={{
+              minHeight: compact ? 44 : 48,
+              paddingHorizontal: compact ? 12 : 16,
+              paddingVertical: compact ? 6 : 10,
+              flexDirection: "row",
+              gap: 8,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {glassPill ? (
+              <View
+                style={{
+                  flexShrink: 1,
+                  flexDirection: "row",
+                  gap: 8,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+                }}
+              >
+                {inner}
+              </View>
+            ) : (
+              inner
+            )}
+          </Glass>
+        )
+      }
     </Pressable>
   );
 }
