@@ -28,8 +28,13 @@ def screencap():
     return subprocess.check_output(['adb', 'exec-out', 'screencap', '-p'], timeout=60)
 
 
+def bounds(node):
+    """[left, top, right, bottom]；uiautomator 给的是屏幕上露出的那一截。"""
+    return list(map(int, re.findall(r'\d+', node.attrib['bounds'])))
+
+
 def center(node):
-    nums = list(map(int, re.findall(r'\d+', node.attrib['bounds'])))
+    nums = bounds(node)
     return (nums[0] + nums[2]) // 2, (nums[1] + nums[3]) // 2
 
 
@@ -140,6 +145,37 @@ def seek(label, tries=6):
 
 def tap_seek(label, tries=6):
     return tap_node(seek(label, tries))
+
+
+# 露出不到这么宽（像素）的书当作还在屏幕外：点在一窄条的中心容易落到条外。
+SHELF_MIN_VISIBLE = 40
+
+
+def seek_shelf(label, tries=6):
+    """首页一屏放下、不能上下滑：年份、月册、相册与信都在书架（shelf-strip）这一条横着翻的小封面上。
+    目标不在屏幕上、或只露出一窄条时，在书架那一行从右往左拖一下再找。与 seek 一样，缓存里没有就先
+    重新 dump 一次再拖，免得缓存是应用还没画完的一屏。"""
+    for _ in range(tries):
+        cached = _tree is not None
+        node = first_match(hierarchy(), label)
+        if node is None and cached:
+            node = first_match(hierarchy(fresh=True), label)
+        if node is not None:
+            left, _, right, _ = bounds(node)
+            if right - left >= SHELF_MIN_VISIBLE:
+                return node
+        strip = first_match(hierarchy(), 'shelf-strip')
+        if strip is None:
+            raise AssertionError(f'Missing shelf-strip while looking for {label}')
+        left, top, right, bottom = bounds(strip)
+        y = (top + bottom) // 2
+        adb('shell', 'input', 'swipe', str(right - 40), str(y), str(left + 40), str(y), '400')
+        time.sleep(1)
+    raise AssertionError(f'Missing {label}')
+
+
+def tap_shelf(label, tries=6):
+    return tap_node(seek_shelf(label, tries))
 
 
 def wait_until_drawn(timeout=60):

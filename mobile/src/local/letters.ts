@@ -56,6 +56,26 @@ export function letterCaption(
   }
 }
 
+/**
+ * 书架小封面下那一行：一格只有 76 宽，放不下「封存至 2042年6月15日 · 妈妈」，只留状态与拆封年份。
+ * 读屏仍念完整的 `letterCaption`。
+ */
+export function letterShortCaption(
+  letter: Pick<Stored<LocalLetter>, "sealed" | "openAt" | "openedAt">,
+  today = new Date(),
+): string {
+  switch (letterState(letter, today)) {
+    case "draft":
+      return "还没封存";
+    case "sealed":
+      return `封存至 ${letter.openAt.slice(0, 4)}`;
+    case "openable":
+      return "可以拆了";
+    case "opened":
+      return "已拆封";
+  }
+}
+
 /** 草稿在前，然后未拆的按拆封日近到远，拆过的按拆封时间新到旧。 */
 export function sortLetters(
   letters: Stored<LocalLetter>[],

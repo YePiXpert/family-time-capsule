@@ -13,6 +13,19 @@ def screen(*nodes):
     return f'<?xml version="1.0" encoding="UTF-8"?><hierarchy rotation="0">{body}</hierarchy>'
 
 
+def placed(*nodes):
+    """uiautomator XML with explicit bounds: (resource-id, text, content-desc, '[l,t][r,b]')."""
+    body = ''.join(f'<node resource-id="{rid}" text="{text}" content-desc="{desc}" package="{APP}" bounds="{box}"/>'
+                   for rid, text, desc, box in nodes)
+    return f'<?xml version="1.0" encoding="UTF-8"?><hierarchy rotation="0">{body}</hierarchy>'
+
+
+STRIP = ('shelf-strip', '', '', '[0,600][390,720]')
+SHELF_START = placed(STRIP, ('volume-year-2026', '', '2026 年，年度册', '[20,604][96,700]'),
+                     ('volume-2026-09', '', '9 月，2 段时光', '[108,604][184,700]'))
+SHELF_SLIVER = placed(STRIP, ('album-a1', '', 'Our days，1 段时光', '[380,604][390,700]'))
+SHELF_SCROLLED = placed(STRIP, ('album-a1', '', 'Our days，1 段时光', '[200,604][276,700]'),
+                        ('', 'Our days', '', '[200,688][262,708]'))
 SPLASH = screen(('', '', APP))
 SHELF = screen(('open-settings', '', APP), ('', '桉桉的成长记', APP))
 SHELF_WITH_LETTER = screen(('open-settings', '', APP), ('letter-new', '写一封信', APP))
@@ -104,6 +117,30 @@ class HierarchyCacheTests(unittest.TestCase):
         android_ui.seek('letter-new')
         self.assertEqual(adb.count('shell', 'input', 'swipe'), 1)
         self.assertEqual(adb.count('shell', 'uiautomator'), 2)
+
+    def test_seek_shelf_drags_the_strip_sideways_until_the_book_shows(self):
+        # 首页不能上下滑：书架上的书在屏幕右边之外时，在书架那一行横着拖，而不是上下滑。
+        adb = self.device(SHELF_START, SHELF_START, SHELF_SCROLLED)
+        android_ui.hierarchy()
+        node = android_ui.tap_shelf('Our days')
+        self.assertEqual(node.get('resource-id'), 'album-a1')
+        swipes = [args for args in adb.commands if args[:3] == ['shell', 'input', 'swipe']]
+        self.assertEqual(len(swipes), 1)
+        x1, y1, x2, y2 = map(int, swipes[0][3:7])
+        self.assertEqual((y1, y2), (660, 660))
+        self.assertGreater(x1, x2)
+        self.assertEqual(adb.count('shell', 'input', 'tap'), 1)
+
+    def test_seek_shelf_does_not_tap_a_sliver_at_the_edge(self):
+        adb = self.device(SHELF_SLIVER, SHELF_SCROLLED)
+        node = android_ui.seek_shelf('Our days')
+        self.assertEqual(android_ui.bounds(node), [200, 604, 276, 700])
+        self.assertEqual(adb.count('shell', 'input', 'swipe'), 1)
+
+    def test_seek_shelf_needs_the_strip(self):
+        self.device(SHELF)
+        with self.assertRaises(AssertionError):
+            android_ui.seek_shelf('Our days', tries=2)
 
     def test_tap_last_picks_the_dialog_button(self):
         dialog = screen(('record-delete', '删除记录', APP), ('android:id/button1', '删除记录', APP))

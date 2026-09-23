@@ -22,7 +22,10 @@ import {
   useTheme,
 } from "./ui";
 
-const SIZE = 56;
+/** 悬浮钮直径与离屏幕右、下边（安全区之上）的距离：书架最后一行按它对齐，字排在它左边。 */
+export const FAB_SIZE = 56;
+export const FAB_INSET = 20;
+const SIZE = FAB_SIZE;
 
 /**
  * 「记一刻」悬浮钮：书架与月册内页共用这一份，别再各写一遍。
@@ -53,8 +56,8 @@ export function CaptureFab() {
       pointerEvents="box-none"
       style={{
         position: "absolute",
-        right: 20,
-        bottom: insets.bottom + 20,
+        right: FAB_INSET,
+        bottom: insets.bottom + FAB_INSET,
         alignItems: "flex-end",
         gap: 8,
       }}

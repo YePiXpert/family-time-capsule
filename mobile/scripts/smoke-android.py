@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import time
 import xml.etree.ElementTree as ET
-from android_ui import PACKAGE as package, adb, find, hierarchy, screencap, seek, stats, tap, tap_last, tap_seek, wait_until_drawn
+from android_ui import PACKAGE as package, adb, find, hierarchy, screencap, seek, stats, tap, tap_last, tap_seek, tap_shelf, wait_until_drawn
 
 p=argparse.ArgumentParser();p.add_argument('apk');p.add_argument('--output',type=Path,required=True);args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
 def shot(name,fresh=False):
@@ -33,12 +33,13 @@ try:
     restart();find(f'volume-{month}');find(f"volume-year-{time.strftime('%Y')}");shot('home-recent');tap_seek('album-new')
     tree=hierarchy(); row=next(n for n in tree.iter('node') if n.get('resource-id','').startswith('record-'));tap(row.get('resource-id'));shot('selection')
     tap('material-done');tap('album-name');write('Our days');adb('shell','input','keyevent','4');tap('album-save');find('album-reading');shot('album-reading')
-    restart();tap_seek('Our days');find('album-reading');phase('Album')
+    restart();tap_shelf('Our days');find('album-reading');phase('Album')
     # 时间胶囊：写一封信 → 封存 → 重启后书架仍在 → 打开是「还没到日子」的信封 → 提前拆封能读到正文。
+    # 首页一屏放下、不能上下滑：相册与信在书架横条上，找不到就横着拖（tap_shelf）。
     restart();tap_seek('letter-new');tap('letter-title');write('Letter for later');adb('shell','input','keyevent','4')
     tap('letter-text');write('Words kept for the future.');adb('shell','input','keyevent','4')
     tap_seek('letter-seal');tap_last('封存');find('还没到日子');find('letter-open-early');shot('letter-sealed')
-    restart();tap_seek('Letter for later');find('还没到日子')
+    restart();tap_shelf('Letter for later');find('还没到日子')
     tap('letter-open-early');tap_last('拆开');find('Words kept for the future.');shot('letter-opened');letterSealed=True;phase('Letter')
     # 改分辨率后先等书架按新宽度画好再截图。
     restart();adb('shell','wm','size','320x720');find('我的');shot('home-320')

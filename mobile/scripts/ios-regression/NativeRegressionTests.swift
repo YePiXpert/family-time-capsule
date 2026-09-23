@@ -39,13 +39,23 @@ final class NativeRegressionTests: XCTestCase {
     /// XCTest 点在元素可见部分的中心。元素只露出屏幕底边一截时，那个点落在 Home 指示条的手势区，
     /// 系统会吞掉这次点击（1.0.1 的书架把月册收到了底边，run 35679134876 就栽在这里）。
     /// 所以除了可点，还要求可见中心离底边至少 60，否则先滚动让它整个进入可点区域。
+    /// 首页一屏放下、不能上下滑：年份、月册、相册与信都在书架这条横着翻的小封面上。
+    /// 目标在屏幕左右之外（或只露出一截）时，在它那一行横着拖进来，而不是上下滑。
     private func tap(_ id: String) { tap(element(id), id) }
     private func tap(_ e: XCUIElement, _ name: String) {
         XCTAssertTrue(e.waitUntilExists(timeout: 20), "Missing \(name)")
         for _ in 0..<12 {
             let visible = e.frame.intersection(app.frame)
-            if e.isHittable && !visible.isNull && visible.midY < app.frame.maxY - 60 { break }
-            if e.frame.midY < app.frame.midY { app.swipeDown() } else { app.swipeUp() }
+            let offSide = e.frame.minX < app.frame.minX - 1 || e.frame.maxX > app.frame.maxX + 1
+            if e.isHittable && !visible.isNull && !offSide && visible.midY < app.frame.maxY - 60 { break }
+            if offSide {
+                // 拖到头停一下再松手：条不带惯性滑行，下一次点不会只是把还在滑的条按停。
+                let row = e.frame.midY / app.frame.height
+                let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: row))
+                let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: row))
+                let (from, to) = e.frame.midX > app.frame.midX ? (right, left) : (left, right)
+                from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0.3)
+            } else if e.frame.midY < app.frame.midY { app.swipeDown() } else { app.swipeUp() }
         }
         XCTAssertTrue(e.isHittable, "Unreachable \(name)"); wait("Disabled \(name)") { e.isEnabled }; e.tap()
     }
