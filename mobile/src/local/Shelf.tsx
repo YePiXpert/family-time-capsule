@@ -68,8 +68,20 @@ import {
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { Photo } from "./Media";
 
-/** 横向封面条：两侧出血到屏幕边，条内间距 12。 */
-function Strip({ children }: { children: ReactNode }) {
+/** 卡片投影（y5／半径 18）在横向条里要留的底部空间；再往下投影已淡到看不出裁切。 */
+const CARD_SHADOW_ROOM = 14;
+
+/**
+ * 横向封面条：两侧出血到屏幕边，条内间距 12。横向 ScrollView 会裁掉超出自身的投影，
+ * 条里摆卡片（`cards`）时底部留出投影的位置，不然卡片下沿会切出一道横贯全屏的硬边。
+ */
+function Strip({
+  children,
+  cards = false,
+}: {
+  children: ReactNode;
+  cards?: boolean;
+}) {
   return (
     <ScrollView
       horizontal
@@ -77,6 +89,7 @@ function Strip({ children }: { children: ReactNode }) {
       style={{ marginHorizontal: -20 }}
       contentContainerStyle={{
         paddingHorizontal: 20,
+        paddingBottom: cards ? CARD_SHADOW_ROOM : 0,
         gap: 12,
         alignItems: "flex-start",
       }}
@@ -261,7 +274,8 @@ function BookRow({
 }
 /**
  * 「最近」翻页条：整宽时光卡左右翻，按卡吸附，右侧露出下一张的一角提示还能翻；
- * 多于一张时下面一排圆点。只有一段时光时首页顶上就是一张大照片，而不是一个小方块。
+ * 多于一张时下面一排圆点。只有一段时光时不做翻页条：整宽摆一张，与下面各区的卡片左右对齐
+ * （以前右边空出 36 等着露下一张，比下面的卡短一截）。
  */
 function RecentFlip({
   records,
@@ -279,16 +293,28 @@ function RecentFlip({
   // 卡宽 = 可用宽 − 两侧页边 40 − 16：加上 12 的卡距，下一张露出 24。右内边距 36 让最后一张也能对齐页边。
   const cardWidth = Math.max(200, width - insets.left - insets.right - 56);
   const interval = cardWidth + 12;
-  const many = records.length > 1;
   const settle = (x: number) =>
     setIndex(
       Math.min(records.length - 1, Math.max(0, Math.round(x / interval))),
     );
+  // 删掉几段后停在末尾之外的页码收回到最后一张。
+  const current = Math.min(index, records.length - 1);
+  if (records.length === 1) {
+    const record = records[0]!;
+    return (
+      <RecentCard
+        record={record}
+        cover={coverForRecords([record], media)}
+        index={0}
+        testID={`recent-${record.id}`}
+        onPress={() => onOpen(record.id)}
+      />
+    );
+  }
   return (
-    <View style={{ gap: 10 }}>
+    <View>
       <ScrollView
         horizontal
-        scrollEnabled={many}
         showsHorizontalScrollIndicator={false}
         snapToInterval={interval}
         snapToAlignment="start"
@@ -300,6 +326,8 @@ function RecentFlip({
         contentContainerStyle={{
           paddingLeft: 20,
           paddingRight: 36,
+          // 横向 ScrollView 会裁掉卡片的投影：底下留出位置，圆点就排在这段空白之后。
+          paddingBottom: CARD_SHADOW_ROOM,
           gap: 12,
           alignItems: "flex-start",
         }}
@@ -316,29 +344,30 @@ function RecentFlip({
           />
         ))}
       </ScrollView>
-      {many && (
-        <View
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          style={{ flexDirection: "row", justifyContent: "center", gap: 6 }}
-        >
-          {records.map((record, i) => (
-            <View
-              key={record.id}
-              style={{
-                width: i === index ? 16 : 6,
-                height: 6,
-                borderRadius: 3,
-                backgroundColor: i === index ? colors.accent : colors.line,
-              }}
-            />
-          ))}
-        </View>
-      )}
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ flexDirection: "row", justifyContent: "center", gap: 6 }}
+      >
+        {records.map((record, i) => (
+          <View
+            key={record.id}
+            style={{
+              width: i === current ? 16 : 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: i === current ? colors.accent : colors.line,
+            }}
+          />
+        ))}
+      </View>
     </View>
   );
 }
-/** 整宽时光卡：有图时照片 16:10 铺满卡顶，下面日期、衬线标题与正文两行；无图时纸面上正文四行 + 日期。 */
+/**
+ * 时光卡：有图时照片 16:10 铺满卡顶，下面日期、衬线标题与正文两行；无图时纸面上日期、
+ * 起了的标题、正文四行（与阅读页同一顺序）。不传 width 时占满整行。
+ */
 function RecentCard({
   record,
   cover,
@@ -349,83 +378,88 @@ function RecentCard({
 }: {
   record: Stored<LocalRecord>;
   cover?: LocalMedia;
-  width: number;
+  width?: number;
   index: number;
   testID?: string;
   onPress: () => void;
 }) {
-  const s = useStyles();
+  const s = useStyles(),
+    { liquid } = useTheme();
   const reduceMotion = useReducedMotion();
   const title = recordTitle(record);
+  const titled = !!record.title.trim();
   const body = record.text.trim();
   // 标题是拿正文首行凑出来的，就不要再把同一句当摘要重复一遍。
-  const excerpt = record.title.trim()
-    ? body
-    : body.split("\n").slice(1).join(" ").trim();
+  const excerpt = titled ? body : body.split("\n").slice(1).join(" ").trim();
   return (
     <Animated.View
+      // 卡片在 iOS 是液态玻璃：淡入会让祖先透明度从 0 起步，系统就不画玻璃，字直接浮在底色上。
       entering={
-        reduceMotion
+        reduceMotion || liquid
           ? undefined
           : FadeInUp.delay(Math.min(index, 8) * 60).duration(320)
       }
-      style={{ width }}
+      style={width ? { width } : undefined}
     >
-      <Pressable
-        testID={testID}
-        accessibilityRole="button"
-        accessibilityLabel={`${title}，${dateLabel(record.date)}`}
-        onPress={onPress}
-        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-      >
-        <Card style={{ padding: 0, gap: 0 }}>
+      {/* 按压透明度同理落在卡片里面。 */}
+      <Card style={{ padding: 0, gap: 0 }}>
+        <Pressable
+          testID={testID}
+          accessibilityRole="button"
+          accessibilityLabel={`${title}，${dateLabel(record.date)}`}
+          onPress={onPress}
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
           {cover ? (
-            <View
-              style={{
-                borderTopLeftRadius: 16,
-                borderTopRightRadius: 16,
-                overflow: "hidden",
-              }}
-            >
-              <Photo media={cover} preview ratio={16 / 10} radius={0} />
-            </View>
-          ) : (
-            <View
-              style={{
-                paddingHorizontal: 16,
-                paddingTop: 18,
-                minHeight: 120,
-                justifyContent: "center",
-              }}
-            >
-              <Text
-                numberOfLines={4}
+            <>
+              <View
                 style={{
-                  fontFamily: serif,
-                  fontSize: 17,
-                  lineHeight: 27,
-                  letterSpacing: 0.3,
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                  overflow: "hidden",
                 }}
               >
-                {body || title}
-              </Text>
+                <Photo media={cover} preview ratio={16 / 10} radius={0} />
+              </View>
+              <View
+                style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 2 }}
+              >
+                <Text style={s.footnote}>{dateLabel(record.date)}</Text>
+                <Text numberOfLines={1} style={s.heading}>
+                  {title}
+                </Text>
+                {!!excerpt && (
+                  <Text numberOfLines={2} style={s.muted}>
+                    {excerpt}
+                  </Text>
+                )}
+              </View>
+            </>
+          ) : (
+            <View style={{ padding: 16, gap: 4, minHeight: 132 }}>
+              <Text style={s.footnote}>{dateLabel(record.date)}</Text>
+              {titled && (
+                <Text numberOfLines={1} style={s.heading}>
+                  {title}
+                </Text>
+              )}
+              {(!!body || !titled) && (
+                <Text
+                  numberOfLines={titled ? 3 : 4}
+                  style={{
+                    fontFamily: serif,
+                    fontSize: 17,
+                    lineHeight: 27,
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  {body || title}
+                </Text>
+              )}
             </View>
           )}
-          <View style={{ paddingHorizontal: 16, paddingVertical: 12, gap: 2 }}>
-            <Text style={s.footnote}>{dateLabel(record.date)}</Text>
-            {(cover || !!record.title.trim()) && (
-              <Text numberOfLines={1} style={s.heading}>
-                {title}
-              </Text>
-            )}
-            {!!cover && !!excerpt && (
-              <Text numberOfLines={2} style={s.muted}>
-                {excerpt}
-              </Text>
-            )}
-          </View>
-        </Card>
-      </Pressable>
+        </Pressable>
+      </Card>
     </Animated.View>
   );
 }
@@ -450,11 +484,12 @@ function NudgeCard({
   onClose: () => void;
 }) {
   const s = useStyles(),
-    { colors } = useTheme();
+    { colors, liquid } = useTheme();
   const reduceMotion = useReducedMotion();
   return (
     <Animated.View
-      entering={reduceMotion ? undefined : FadeInUp.duration(320)}
+      // 卡片在 iOS 是液态玻璃：淡入会让祖先透明度从 0 起步，系统就不画玻璃（见 RecentCard）。
+      entering={reduceMotion || liquid ? undefined : FadeInUp.duration(320)}
       testID={testID}
     >
       <Card>
@@ -1038,7 +1073,7 @@ export function Shelf() {
         <ErrorText message={error} />
         {anniversaries.length > 0 && (
           <ShelfSection title="那年今日">
-            <Strip>
+            <Strip cards>
               {anniversaries.map((record, index) => (
                 <Pressable
                   key={record.id}

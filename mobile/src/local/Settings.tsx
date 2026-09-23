@@ -99,18 +99,23 @@ export function Settings() {
   const initial = sealInitial(name);
   return (
     <Page title="我的">
-      <Pressable
-        testID="settings-profile"
-        accessibilityRole="button"
-        accessibilityLabel={`${name}的资料`}
-        accessibilityValue={{
-          text: birthday ? (age ?? `生日 ${birthday}`) : "还没填生日",
-        }}
-        onPress={() => nav.navigate("Profile")}
-        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
-      >
-        <Card
-          style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
+      {/* 按压透明度落在卡片里面：卡片在 iOS 是液态玻璃，祖先一变透明玻璃就不画了。 */}
+      <Card style={{ padding: 0 }}>
+        <Pressable
+          testID="settings-profile"
+          accessibilityRole="button"
+          accessibilityLabel={`${name}的资料`}
+          accessibilityValue={{
+            text: birthday ? (age ?? `生日 ${birthday}`) : "还没填生日",
+          }}
+          onPress={() => nav.navigate("Profile")}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            padding: 16,
+            opacity: pressed ? 0.7 : 1,
+          })}
         >
           <Stamp size={56} inset={4}>
             <Text
@@ -142,8 +147,8 @@ export function Settings() {
             </Text>
           </View>
           <JournalIcon name="chevron-right" color={colors.muted} size={18} />
-        </Card>
-      </Pressable>
+        </Pressable>
+      </Card>
       <Text style={[s.footnote, { textAlign: "center" }]}>
         {APP_NAME} · 入淮清洛渐漫漫
       </Text>

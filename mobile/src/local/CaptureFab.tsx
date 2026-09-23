@@ -27,6 +27,8 @@ const SIZE = 56;
 /**
  * 「记一刻」悬浮钮：书架与月册内页共用这一份，别再各写一遍。
  * iOS 液态玻璃下是赤陶 tint 的系统玻璃圆钮，其余平台是实底赤陶加柔和投影。
+ * 玻璃圆钮不做淡入、忙碌时只淡图标：祖先透明度小于 1 时系统不画玻璃，
+ * 书架上就只剩一支白铅笔（1.0.0 真机截图）。
  */
 export function CaptureFab() {
   const store = useStore(),
@@ -59,7 +61,11 @@ export function CaptureFab() {
     >
       <ErrorText message={error} />
       <Animated.View
-        entering={reduceMotion ? undefined : FadeInUp.delay(240).duration(360)}
+        entering={
+          reduceMotion || liquid
+            ? undefined
+            : FadeInUp.delay(240).duration(360)
+        }
         style={pressStyle}
       >
         <Pressable
@@ -84,7 +90,7 @@ export function CaptureFab() {
               borderRadius: SIZE / 2,
               alignItems: "center",
               justifyContent: "center",
-              opacity: busy ? 0.5 : 1,
+              opacity: busy && !liquid ? 0.5 : 1,
             },
             !liquid && { backgroundColor: colors.accent },
             !liquid && s.fabShadow,
@@ -104,7 +110,9 @@ export function CaptureFab() {
               }}
             />
           )}
-          <JournalIcon name="edit" color={colors.onAccent} size={24} />
+          <View style={{ opacity: busy && liquid ? 0.5 : 1 }}>
+            <JournalIcon name="edit" color={colors.onAccent} size={24} />
+          </View>
         </Pressable>
       </Animated.View>
     </View>
