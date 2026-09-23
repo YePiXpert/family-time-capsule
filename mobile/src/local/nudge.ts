@@ -97,6 +97,19 @@ export function pickNudge(
   return null;
 }
 
+/**
+ * 备份提醒：第一段时光（日期最早的那段）满 7 天后，从没导出过或上次导出超过 30 天才提；
+ * 刚开始记的头几天不打扰。
+ */
+export function backupDueOf(
+  firstRecordAt: string | null,
+  exportedDays: number | null,
+  today = new Date(),
+): boolean {
+  if (!firstRecordAt || daysSince(firstRecordAt, today) < 7) return false;
+  return exportedDays === null || exportedDays > 30;
+}
+
 /** 家人同步不等于应用之外的备份；只改变提醒正文。 */
 export function backupNudgeBody(joined: boolean, lastSyncAt: string | undefined, today = new Date()): string {
   return joined && lastSyncAt && daysSince(lastSyncAt, today) <= 7

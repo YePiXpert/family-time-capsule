@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  backupDueOf,
   backupNudgeBody,
   bookNudgeOf,
   daysSince,
@@ -128,5 +129,19 @@ describe("backup reminder recognizes family sync", () => {
     expect(backupNudgeBody(true, undefined, today)).toBe(local);
     expect(backupNudgeBody(true, "invalid", today)).toBe(local);
     expect(backupNudgeBody(true, "2026-09-10T09:00:00", today)).toBe(local);
+  });
+});
+
+describe("backup reminder waits for the first week", () => {
+  it("stays quiet without records or before the first moment is seven days old", () => {
+    expect(backupDueOf(null, null, today)).toBe(false);
+    expect(backupDueOf("2026-09-18T08:00:00.000", null, today)).toBe(false);
+    expect(backupDueOf("2026-09-12T23:00:00.000", null, today)).toBe(false);
+  });
+  it("asks from day seven on until an export is at most thirty days old", () => {
+    expect(backupDueOf("2026-09-11T09:00:00.000", null, today)).toBe(true);
+    expect(backupDueOf("2026-06-01T09:00:00.000", 31, today)).toBe(true);
+    expect(backupDueOf("2026-06-01T09:00:00.000", 30, today)).toBe(false);
+    expect(backupDueOf("2026-06-01T09:00:00.000", 0, today)).toBe(false);
   });
 });

@@ -35,7 +35,14 @@ import {
   type Stored, stampUnsigned, unsignedRecords } from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
-import { backupNudgeBody, bookNudgeOf, nudgeOf, pickNudge, type NudgeKind } from "./nudge";
+import {
+  backupDueOf,
+  backupNudgeBody,
+  bookNudgeOf,
+  nudgeOf,
+  pickNudge,
+  type NudgeKind,
+} from "./nudge";
 import { pickAnother } from "./shuffle";
 import {
   ageLine,
@@ -59,7 +66,6 @@ import {
   dateLabel,
   hapticLight,
   messageOf,
-  monthLabel,
   serif,
   useStyles,
   useTheme,
@@ -99,18 +105,16 @@ function Strip({
   );
 }
 /**
- * 书架区块：区标题 + 右侧文字级入口；没内容时调用方摆 GuideRow 行动行，不摆虚位册。
- * heading 版给年份用：衬线大标题 + 一行统计——年份就是书架，月册摆在它名下。
+ * 书架区块：区标题 + 右侧文字级入口。heading 版给年份用：衬线年份标题——年份就是书架，
+ * 月册摆在它名下；统计留给年度册，书架上不再多一行和月册重复的数字。
  */
 function ShelfSection({
   title,
-  caption,
   heading = false,
   action,
   children,
 }: {
   title: string;
-  caption?: string;
   heading?: boolean;
   action?: { label: string; onPress: () => void; testID?: string };
   children?: ReactNode;
@@ -119,25 +123,22 @@ function ShelfSection({
   return (
     <View style={{ gap: 8 }}>
       {heading ? (
-        <View>
-          <View style={s.between}>
-            <Text
-              accessibilityRole="header"
-              style={[s.heading, { flex: 1, minWidth: 0 }]}
-            >
-              {title}
-            </Text>
-            {action && (
-              <Button
-                title={action.label}
-                kind="text"
-                compact
-                onPress={action.onPress}
-                testID={action.testID}
-              />
-            )}
-          </View>
-          {!!caption && <Text style={s.muted}>{caption}</Text>}
+        <View style={s.between}>
+          <Text
+            accessibilityRole="header"
+            style={[s.heading, { flex: 1, minWidth: 0 }]}
+          >
+            {title}
+          </Text>
+          {action && (
+            <Button
+              title={action.label}
+              kind="text"
+              compact
+              onPress={action.onPress}
+              testID={action.testID}
+            />
+          )}
         </View>
       ) : (
         <SectionHeader title={title} action={action} />
@@ -146,7 +147,10 @@ function ShelfSection({
     </View>
   );
 }
-/** 空分区的行动行：图标砖 + 一句说明，点按即新建——说明与下一步合一，不摆虚位册。 */
+/**
+ * 新建的引导行：图标砖 + 一句说明，点按即新建——说明与下一步合一，不摆虚位册。
+ * 调用方把几行成组放进一张 BookRows。
+ */
 function GuideRow({
   icon,
   tone,
@@ -154,6 +158,7 @@ function GuideRow({
   hint,
   testID,
   onPress,
+  last = false,
 }: {
   icon: JournalIconName;
   tone: TileTone;
@@ -161,20 +166,21 @@ function GuideRow({
   hint: string;
   testID?: string;
   onPress: () => void;
+  last?: boolean;
 }) {
   return (
-    <BookRows>
-      <SettingsRow
-        leading={<IconTile icon={icon} tone={tone} />}
-        label={title}
-        subtitle={hint}
-        onPress={onPress}
-        testID={testID}
-        last
-      />
-    </BookRows>
+    <SettingsRow
+      leading={<IconTile icon={icon} tone={tone} />}
+      label={title}
+      subtitle={hint}
+      onPress={onPress}
+      testID={testID}
+      last={last}
+    />
   );
 }
+/** 年份标题下的月册名：年份已经写在标题上，只留「9 月」。 */
+const monthName = (key: string) => `${Number(key.slice(5, 7))} 月`;
 /** 几本书册成组的纸卡：行与行之间只有一条细线。 */
 function BookRows({ children }: { children: ReactNode }) {
   return <Card style={{ gap: 0, paddingVertical: 4 }}>{children}</Card>;
@@ -463,7 +469,7 @@ function RecentCard({
     </Animated.View>
   );
 }
-/** 书架提醒卡：一行标题（可带印章与引导语）、一句说明、一个次级动作，右上 ✕ 关掉。 */
+/** 书架提醒卡：一行标题（可带印章与引导语）、一句说明、一个文字级动作，右上 ✕ 关掉。 */
 function NudgeCard({
   testID,
   titleTestID,
@@ -492,7 +498,8 @@ function NudgeCard({
       entering={reduceMotion || liquid ? undefined : FadeInUp.duration(320)}
       testID={testID}
     >
-      <Card>
+      {/* 文字级动作自带 44 的触控高，卡底内边距收到 4，字到卡边仍是 16。 */}
+      <Card style={{ paddingBottom: 4 }}>
         <View
           style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}
         >
@@ -509,18 +516,20 @@ function NudgeCard({
               {title}
             </Text>
             {!!body && <Text style={s.muted}>{body}</Text>}
+            {/* 提醒只是建议，动作用文字级、不摆胶囊；左移 8 让字与上面的正文对齐。 */}
+            <View style={{ alignSelf: "flex-start", marginLeft: -8 }}>
+              <Button
+                title={action.label}
+                kind="text"
+                compact
+                testID={action.testID}
+                onPress={action.onPress}
+              />
+            </View>
           </View>
           <View style={{ marginTop: -8, marginRight: -8 }}>
             <IconButton label="关掉这条提醒" icon="close" onPress={onClose} />
           </View>
-        </View>
-        <View style={s.row}>
-          <Button
-            title={action.label}
-            compact
-            testID={action.testID}
-            onPress={action.onPress}
-          />
         </View>
       </Card>
     </Animated.View>
@@ -693,24 +702,23 @@ export function Shelf() {
   // 年份就是书架：最近 6 个月按年归组，每年一条月册封面条；更早的年份收成「往年」几行。
   const shelfMonths = months.slice(0, 6);
   const shelfYearKeys = [...new Set(shelfMonths.map((m) => m.slice(0, 4)))];
-  const yearStats = (year: string) => {
-    const yearRecords = records.filter((r) => yearKey(r.date) === year);
-    const yearFirsts = yearRecords.filter((r) => r.first).length;
-    return {
-      year,
-      caption: yearFirsts
-        ? `${yearRecords.length} 段时光 · ${yearFirsts} 个第一次`
-        : `${yearRecords.length} 段时光`,
-      cover: coverForRecords(yearRecords, mediaMap),
-    };
-  };
   const shelfYears = shelfYearKeys.map((year) => ({
-    ...yearStats(year),
+    year,
     months: shelfMonths.filter((m) => m.startsWith(year)),
   }));
   const olderYears = years
     .filter((year) => !shelfYearKeys.includes(year))
-    .map(yearStats);
+    .map((year) => {
+      const yearRecords = records.filter((r) => yearKey(r.date) === year);
+      const yearFirsts = yearRecords.filter((r) => r.first).length;
+      return {
+        year,
+        caption: yearFirsts
+          ? `${yearRecords.length} 段时光 · ${yearFirsts} 个第一次`
+          : `${yearRecords.length} 段时光`,
+        cover: coverForRecords(yearRecords, mediaMap),
+      };
+    });
   const today = new Date();
   const anniversaries = records.filter((r) => {
     const d = new Date(r.date);
@@ -750,9 +758,13 @@ export function Shelf() {
     years,
     Object.keys(state.yearBooksBoundAt ?? {}),
   );
+  // records 按日期新到旧排，最后一段就是第一段时光：它满 7 天才提备份，刚开始记的头几天不打扰。
   const exportedDays = daysSinceExport(state),
-    backupDue =
-      records.length > 0 && (exportedDays === null || exportedDays > 30);
+    backupDue = backupDueOf(
+      records[records.length - 1]?.date ?? null,
+      exportedDays,
+      today,
+    );
   const age = ageLine(state.profile.birthday),
     milestone = milestoneOf(state.profile.birthday);
   const initial = sealInitial(state.profile.name);
@@ -981,45 +993,46 @@ export function Shelf() {
             onClose={() => closeNudge("rhythm")}
           />
         )}
-        <ShelfSection
-          title="最近"
-          action={
-            records.length >= 3
-              ? {
-                  label: "随便翻翻",
-                  testID: "shuffle",
-                  onPress: () => {
-                    const id = pickAnother(records.map((r) => r.id));
-                    if (id) nav.navigate("Record", { id, shuffle: true });
-                  },
-                }
-              : undefined
-          }
-        >
-          {records.length > 0 ? (
+        {records.length > 0 ? (
+          <ShelfSection
+            title="最近"
+            action={
+              records.length >= 3
+                ? {
+                    label: "随便翻翻",
+                    testID: "shuffle",
+                    onPress: () => {
+                      const id = pickAnother(records.map((r) => r.id));
+                      if (id) nav.navigate("Record", { id, shuffle: true });
+                    },
+                  }
+                : undefined
+            }
+          >
             <RecentFlip
               records={records.slice(0, 10)}
               media={mediaMap}
               onOpen={(id) => nav.navigate("Record", { id })}
             />
-          ) : (
-            <Card>
-              <Text style={s.heading}>把今天的小事留下来</Text>
-              <Text style={s.muted}>
-                写几句话，留一张照片。日子会慢慢长成一册册书。
-              </Text>
-              <View style={s.row}>
-                <Button
-                  title="记一刻"
-                  primary
-                  icon="edit"
-                  testID="capture-first"
-                  onPress={captureNow}
-                />
-              </View>
-            </Card>
-          )}
-        </ShelfSection>
+          </ShelfSection>
+        ) : (
+          // 空库只有这张欢迎卡，不挂「最近」的区标题。
+          <Card>
+            <Text style={s.heading}>把今天的小事留下来</Text>
+            <Text style={s.muted}>
+              写几句话，留一张照片。日子会慢慢长成一册册书。
+            </Text>
+            <View style={s.row}>
+              <Button
+                title="记一刻"
+                primary
+                icon="edit"
+                testID="capture-first"
+                onPress={captureNow}
+              />
+            </View>
+          </Card>
+        )}
         {latestDraft && (
           <Card compact>
             <View style={s.between}>
@@ -1122,7 +1135,6 @@ export function Shelf() {
             key={shelf.year}
             heading
             title={`${shelf.year} 年`}
-            caption={shelf.caption}
             action={{
               label: "翻开年度册",
               testID: `volume-year-${shelf.year}`,
@@ -1139,7 +1151,7 @@ export function Shelf() {
                   return (
                     <BookRow
                       key={m}
-                      title={monthLabel(m)}
+                      title={monthName(m)}
                       caption={`${monthRecords.length} 段时光`}
                       cover={coverForRecords(monthRecords, mediaMap)}
                       tile={<PaperTile icon="calendar" />}
@@ -1159,7 +1171,7 @@ export function Shelf() {
                   return (
                     <Volume
                       key={m}
-                      title={monthLabel(m)}
+                      title={monthName(m)}
                       caption={`${monthRecords.length} 段时光`}
                       cover={coverForRecords(monthRecords, mediaMap)}
                       testID={`volume-${m}`}
@@ -1191,8 +1203,10 @@ export function Shelf() {
             </BookRows>
           </ShelfSection>
         )}
-        {(firsts.length > 0 || quotes.length > 0) && (
-          <ShelfSection title="合集">
+        {firsts.length + quotes.length + albums.length + letters.length > 0 ? (
+          // 专题与信：合集、相册、信收进一张纸卡，书册在上、新建收在卡底一行，
+          // 不再各立区标题、各摆一个红字入口。
+          <ShelfSection title="专题与信">
             <BookRows>
               {firsts.length > 0 && (
                 <BookRow
@@ -1201,7 +1215,6 @@ export function Shelf() {
                   tile={<PaperTile icon="star" />}
                   testID="volume-firsts"
                   onPress={() => nav.navigate("Firsts")}
-                  last={quotes.length === 0}
                 />
               )}
               {quotes.length > 0 && (
@@ -1211,19 +1224,9 @@ export function Shelf() {
                   tile={<PaperTile stamp="语" />}
                   testID="volume-quotes"
                   onPress={() => nav.navigate("Quotes")}
-                  last
                 />
               )}
-            </BookRows>
-          </ShelfSection>
-        )}
-        {albums.length > 0 ? (
-          <ShelfSection
-            title="专题册"
-            action={{ label: "新建相册", testID: "album-new", onPress: createAlbum }}
-          >
-            <BookRows>
-              {albums.map((album, i) => (
+              {albums.map((album) => (
                 <BookRow
                   key={album.id}
                   title={album.name}
@@ -1232,28 +1235,9 @@ export function Shelf() {
                   tile={<PaperTile icon="book" />}
                   testID={`album-${album.id}`}
                   onPress={() => nav.navigate("Album", { id: album.id })}
-                  last={i === albums.length - 1}
                 />
               ))}
-            </BookRows>
-          </ShelfSection>
-        ) : (
-          <GuideRow
-            icon="book"
-            tone="accent"
-            title="新建相册"
-            hint="还没有相册。把几段时光放在一起，就是一本。"
-            testID="album-new"
-            onPress={createAlbum}
-          />
-        )}
-        {letters.length > 0 ? (
-          <ShelfSection
-            title="时间胶囊"
-            action={{ label: "写一封信", testID: "letter-new", onPress: createLetter }}
-          >
-            <BookRows>
-              {letters.map((letter, i) => (
+              {letters.map((letter) => (
                 <BookRow
                   key={letter.id}
                   title={letter.title || "一封信"}
@@ -1270,20 +1254,55 @@ export function Shelf() {
                       { id: letter.id },
                     )
                   }
-                  last={i === letters.length - 1}
                 />
               ))}
+              {/* 左移 8 让字与书册的小封面对齐；靠左摆，滚到页底也不会落在悬浮钮底下。 */}
+              <View style={[s.row, { marginLeft: -8, paddingVertical: 2 }]}>
+                {records.length > 0 && (
+                  <Button
+                    title="新建相册"
+                    kind="text"
+                    compact
+                    icon="plus"
+                    testID="album-new"
+                    onPress={createAlbum}
+                  />
+                )}
+                <Button
+                  title="写一封信"
+                  kind="text"
+                  compact
+                  icon="seal"
+                  testID="letter-new"
+                  onPress={createLetter}
+                />
+              </View>
             </BookRows>
           </ShelfSection>
         ) : (
-          <GuideRow
-            icon="seal"
-            tone="indigo"
-            title="写一封信"
-            hint="给多年后的她写一封信，到日子再拆。"
-            testID="letter-new"
-            onPress={createLetter}
-          />
+          // 还没有任何专题与信：不挂区标题，新建的引导行成组放一张卡。
+          // 没有记录时选材页是空的，先不给「新建相册」。
+          <BookRows>
+            {records.length > 0 && (
+              <GuideRow
+                icon="book"
+                tone="accent"
+                title="新建相册"
+                hint="还没有相册。把几段时光放在一起，就是一本。"
+                testID="album-new"
+                onPress={createAlbum}
+              />
+            )}
+            <GuideRow
+              icon="seal"
+              tone="indigo"
+              title="写一封信"
+              hint="给多年后的她写一封信，到日子再拆。"
+              testID="letter-new"
+              onPress={createLetter}
+              last
+            />
+          </BookRows>
         )}
       </ScrollView>
       <CaptureFab />
