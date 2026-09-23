@@ -55,7 +55,7 @@ npm run lint
 
 只从 main 构建。`ci.yml` 检查本机存储与备份测试、类型、代码规范和移动端打包；`mobile-build.yml` 检查 Android／iOS 原生流程并生成 APK 与未签名设备 IPA。IPA 需要持有者自行签名安装。
 
-原生出包通过质量检查后，并行构建 Android、iOS 真机 IPA 和 iOS 模拟器应用。模拟器应用与 XCUITest runner 只编译一次，以保留权限和符号链接的压缩包传给两个独立任务，并行验证启动／数据恢复与完整界面回归；接收时核对源提交、CPU 架构和 Xcode 版本。GitHub Release 必须等所有构建和两组 iOS 验证通过才发布，提前生成的 IPA 不代表已交付。CocoaPods 只缓存依赖下载，每次仍运行安装；启动截图 OCR 只编译一次，原有崩溃观察时间与检查不减少。这会增加同时使用的 macOS runner 数量，实际节省时间取决于排队和模拟器冷启动；完成后检查一次结果，不轮询等待。
+原生出包先用十几秒核对源提交是否在 main 上，随后质量检查与 Android、iOS 真机 IPA、iOS 模拟器应用的构建同时开始。模拟器应用与 XCUITest runner 只编译一次，以保留权限和符号链接的压缩包传给两个独立任务，并行验证启动／数据恢复与完整界面回归；接收时核对源提交、CPU 架构和 Xcode 版本。GitHub Release 必须等质量检查、所有构建和两组 iOS 验证通过才发布，提前生成的 IPA 不代表已交付。CocoaPods 只缓存依赖下载，每次仍运行安装；两个 iOS 构建用 React Native 自带的 ccache 封装缓存 Pods 的 C／C++／Objective-C++ 编译结果，缓存键钉住依赖锁文件、本地原生代码与 Xcode 构建号，依赖不变时直接命中，依赖一变就完整重编一次，Swift 每次照常编译；启动截图 OCR 只编译一次，原有崩溃观察时间与检查不减少。这会增加同时使用的 macOS runner 数量，实际节省时间取决于排队和模拟器冷启动；完成后检查一次结果，不轮询等待。
 
 当前版本：**1.0.3**（构建号 76）：拿掉出生的故事模块（问题并入小问题）、写信引导、时光系列、足迹、长图、重放、分成几件事、AI 分组与起个头，手机与服务端只保留五种文字 AI 功能，旧数据仍可读、可恢复、可同步；细目见 CHANGELOG 顶节，此后仍不加新功能、只做优化。**[1.0.3 已交付](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.3)**：首轮 iOS 回归启动超时，重跑后全部构建和验证通过。双端包来自 main 提交 `8be3a46731b56f17fec0bdbb8aa12575ddefc96b`；[Android APK](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.0.3/FamilyTimeCapsule-android.apk)、[未签名设备 IPA](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.0.3/FamilyTimeCapsule-ios-unsigned.ipa) 与[校验和](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.0.3/sha256sums.txt) 均已下载核对，IPA 需自行签名。两台真机验收仍待完成。配套服务端已部署，无需重复部署（见 `deploy/README.md` 与 HANDOFF 第一节）。设计规则见 [DESIGN.md](DESIGN.md)。
 

@@ -30,12 +30,18 @@ def main():
     udid = run('xcrun','simctl','create','Anan offline regression','com.apple.CoreSimulator.SimDeviceType.iPhone-16e',runtime['identifier'])
     report = dict(gitSha=os.environ.get('SOURCE_SHA'), buildNumber=info['CFBundleVersion'], success=False)
     try:
-        boot_simulator(udid, out); run('xcrun','simctl','install',udid,str(args.app.resolve())); run('xcrun','simctl','privacy',udid,'grant','microphone',bundle); launch_simulator_app(udid, bundle, out, 'regression-fresh'); time.sleep(12)
+        boot_simulator(udid, out); started = time.monotonic(); run('xcrun','simctl','install',udid,str(args.app.resolve()))
+        # 各阶段耗时只打日志：冷启动的模拟器上首次安装、首次启动常常比后面几次慢得多。
+        print(f'Installed in {time.monotonic() - started:.0f}s', flush=True)
+        run('xcrun','simctl','privacy',udid,'grant','microphone',bundle); started = time.monotonic(); launch_simulator_app(udid, bundle, out, 'regression-fresh')
+        print(f'First launch in {time.monotonic() - started:.0f}s', flush=True); time.sleep(12)
         container = Path(run('xcrun','simctl','get_app_container',udid,bundle,'data')); database = container / 'Documents' / 'SQLite' / 'anan-local-v1.sqlite'
         run('xcrun','simctl','terminate',udid,bundle); baseline = seed(container, database)
+        print('Fixture seeded; starting XCUITest', flush=True)
         xctest = next(args.runner_build.resolve().glob('Build/Products/*.xctestrun'))
         command = ['xcodebuild','test-without-building','-xctestrun',str(xctest),'-destination',f'platform=iOS Simulator,id={udid}','-resultBundlePath',str(out/'local.xcresult'),'-parallel-testing-enabled','NO','-only-testing:NativeRegression/NativeRegressionTests/testLocalRecordAlbumAndBackup']
-        result = subprocess.run(command, capture_output=True, text=True, timeout=900); (out/'xctest.log').write_text(result.stdout + result.stderr)
+        started = time.monotonic(); result = subprocess.run(command, capture_output=True, text=True, timeout=900); (out/'xctest.log').write_text(result.stdout + result.stderr)
+        print(f'Local flow XCUITest finished in {time.monotonic() - started:.0f}s', flush=True)
         subprocess.run(['xcrun','xcresulttool','export','attachments','--path',str(out/'local.xcresult'),'--output-path',str(out/'screenshots')],capture_output=True)
         if result.returncode: print(result.stdout[-12000:] + result.stderr[-12000:]); raise AssertionError('Native local flow failed')
         # 系统分享结果还要对应一份完整的多页 PDF，不能只靠界面没有红字。

@@ -20,8 +20,10 @@ permissions:
   contents: read
 
 jobs:
-  quality:
-    name: React Native quality
+  # 只核对源提交、记下版本号，十几秒就完。原生构建只等这一步，与两分钟的 quality 并行；
+  # GitHub Release 仍要等 quality、全部构建和两组 iOS 验证都通过。
+  source:
+    name: Package source
     runs-on: ubuntu-latest
     outputs:
       source_sha: ${{ steps.source.outputs.sha }}
@@ -64,6 +66,15 @@ jobs:
           path: build-source.json
           if-no-files-found: error
           retention-days: 30
+
+  quality:
+    name: React Native quality
+    runs-on: ubuntu-latest
+    needs: source
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.source_sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -101,11 +112,11 @@ jobs:
   android:
     name: Android APK
     runs-on: ubuntu-latest
-    needs: quality
+    needs: source
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.quality.outputs.source_sha }}
+          ref: ${{ needs.source.outputs.source_sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -187,7 +198,7 @@ jobs:
       - name: Verify offline Release app on Android
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+          SOURCE_SHA: ${{ needs.source.outputs.source_sha }}
         with:
           api-level: 35
           arch: x86_64
@@ -214,7 +225,7 @@ jobs:
   ios:
     name: iOS unsigned IPA
     runs-on: macos-26
-    needs: quality
+    needs: source
     env:
       # Expo SDK 57 requires Xcode >= 26.4. The macos-26 image includes this
       # pinned stable toolchain while macos-15 currently tops out at 26.3.
@@ -222,7 +233,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.quality.outputs.source_sha }}
+          ref: ${{ needs.source.outputs.source_sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
@@ -230,9 +241,11 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - name: Verify Xcode toolchain
+        id: xcode
         run: |
           xcodebuild -version
           swift --version
+          echo "build=$(xcodebuild -version | awk '/Build version/ {print $3}')" >> "$GITHUB_OUTPUT"
       - run: npm ci
         working-directory: mobile
       - name: Generate native iOS project
@@ -250,12 +263,41 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-
+      # 编译缓存：USE_CCACHE=1 时 React Native 在 pod install 里把 Pods 与应用工程的 CC／CXX
+      # 换成它的 ccache 封装（node_modules/react-native/scripts/xcode：depend 模式、modules 宽松）。
+      # 这一步的大头是 Reanimated／SVG／Screens／Worklets 等四百多个 C++／Objective-C++ 文件，
+      # 依赖不变时整份命中；Swift 不走 ccache。键钉住依赖锁文件、本地原生代码与 Xcode 构建号，
+      # 不设回退键：依赖一变就完整冷编一次，不拿旧依赖的结果凑数（modules 宽松模式察觉不到
+      # 模块内部的变化，系统头文件也不进清单）。
+      - name: Install ccache
+        id: ccache
+        env:
+          CCACHE_VERSION: "4.14"
+          CCACHE_SHA256: 353a81ea8680d93387102cfde288ebed381a54272cfdc18224f241add6332b39
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ccache.tar.gz" \
+            "https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION-darwin.tar.gz"
+          echo "$CCACHE_SHA256  $RUNNER_TEMP/ccache.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/ccache.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/ccache-bin"
+          install -m 0755 "$RUNNER_TEMP/ccache-$CCACHE_VERSION-darwin/ccache" "$RUNNER_TEMP/ccache-bin/ccache"
+          echo "$RUNNER_TEMP/ccache-bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ccache-bin/ccache" --version | head -n 1
+          echo "dir=$("$RUNNER_TEMP/ccache-bin/ccache" --get-config cache_dir)" >> "$GITHUB_OUTPUT"
+      - name: Cache compiler outputs
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.ccache.outputs.dir }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-ios-device-${{ steps.xcode.outputs.build }}-${{ hashFiles('mobile/package-lock.json', 'mobile/plugins/**', 'mobile/modules/**') }}
       - name: Install CocoaPods
         run: npx pod-install ios
         working-directory: mobile
+        env:
+          USE_CCACHE: "1"
       - name: Create unsigned device archive
         working-directory: mobile
         run: |
+          ccache --zero-stats > /dev/null
           WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
           test -n "$WORKSPACE_PATH"
           SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
@@ -269,6 +311,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             archive
+      - name: Show compiler cache statistics
+        if: always()
+        run: ccache --show-stats --verbose || true
       - name: Package unsigned IPA
         working-directory: mobile
         run: |
@@ -306,7 +351,7 @@ jobs:
   ios-simulator:
     name: iOS simulator build
     runs-on: macos-26
-    needs: quality
+    needs: source
     env:
       # Expo SDK 57 requires Xcode >= 26.4. The macos-26 image includes this
       # pinned stable toolchain while macos-15 currently tops out at 26.3.
@@ -314,7 +359,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.quality.outputs.source_sha }}
+          ref: ${{ needs.source.outputs.source_sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
@@ -322,9 +367,11 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
       - name: Verify Xcode toolchain
+        id: xcode
         run: |
           xcodebuild -version
           swift --version
+          echo "build=$(xcodebuild -version | awk '/Build version/ {print $3}')" >> "$GITHUB_OUTPUT"
       - run: npm ci
         working-directory: mobile
       - name: Generate native iOS project
@@ -342,9 +389,37 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-
+      # 编译缓存：USE_CCACHE=1 时 React Native 在 pod install 里把 Pods 与应用工程的 CC／CXX
+      # 换成它的 ccache 封装（node_modules/react-native/scripts/xcode：depend 模式、modules 宽松）。
+      # 这一步的大头是 Reanimated／SVG／Screens／Worklets 等四百多个 C++／Objective-C++ 文件，
+      # 依赖不变时整份命中；Swift 不走 ccache。键钉住依赖锁文件、本地原生代码与 Xcode 构建号，
+      # 不设回退键：依赖一变就完整冷编一次，不拿旧依赖的结果凑数（modules 宽松模式察觉不到
+      # 模块内部的变化，系统头文件也不进清单）。
+      - name: Install ccache
+        id: ccache
+        env:
+          CCACHE_VERSION: "4.14"
+          CCACHE_SHA256: 353a81ea8680d93387102cfde288ebed381a54272cfdc18224f241add6332b39
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ccache.tar.gz" \
+            "https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION-darwin.tar.gz"
+          echo "$CCACHE_SHA256  $RUNNER_TEMP/ccache.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/ccache.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/ccache-bin"
+          install -m 0755 "$RUNNER_TEMP/ccache-$CCACHE_VERSION-darwin/ccache" "$RUNNER_TEMP/ccache-bin/ccache"
+          echo "$RUNNER_TEMP/ccache-bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ccache-bin/ccache" --version | head -n 1
+          echo "dir=$("$RUNNER_TEMP/ccache-bin/ccache" --get-config cache_dir)" >> "$GITHUB_OUTPUT"
+      - name: Cache compiler outputs
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.ccache.outputs.dir }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-ios-simulator-${{ steps.xcode.outputs.build }}-${{ hashFiles('mobile/package-lock.json', 'mobile/plugins/**', 'mobile/modules/**') }}
       - name: Install CocoaPods
         run: npx pod-install ios
         working-directory: mobile
+        env:
+          USE_CCACHE: "1"
       - name: Compile Release UI regression runner
         if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         working-directory: mobile
@@ -369,6 +444,7 @@ jobs:
         if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
         working-directory: mobile
         run: |
+          ccache --zero-stats > /dev/null
           WORKSPACE_PATH=$(find ios -maxdepth 1 -name '*.xcworkspace' -print -quit)
           test -n "$WORKSPACE_PATH"
           SCHEME=$(xcodebuild -list -json -workspace "$WORKSPACE_PATH" | ruby -rjson -e 'puts JSON.parse(STDIN.read).dig("workspace", "schemes").first')
@@ -384,6 +460,9 @@ jobs:
             tail -n 160 build/simulator-build.log
             exit 1
           fi
+      - name: Show compiler cache statistics
+        if: always()
+        run: ccache --show-stats --verbose || true
       - name: Bundle simulator test inputs
         if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
         working-directory: mobile
@@ -425,7 +504,7 @@ jobs:
   ios-check:
     name: iOS ${{ matrix.check }} verification
     runs-on: macos-26
-    needs: [quality, ios-simulator]
+    needs: [source, ios-simulator]
     strategy:
       # Keep the other evidence bundle even if one suite fails.
       fail-fast: false
@@ -433,11 +512,11 @@ jobs:
         check: [startup, regression]
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
-      SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+      SOURCE_SHA: ${{ needs.source.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.quality.outputs.source_sha }}
+          ref: ${{ needs.source.outputs.source_sha }}
       - uses: actions/download-artifact@v7
         if: hashFiles('mobile/scripts/smoke-ios-startup.py', 'mobile/scripts/smoke-ios-regression.py') != ''
         with:
@@ -455,7 +534,7 @@ jobs:
         if: matrix.check == 'startup' && hashFiles('mobile/scripts/smoke-ios-startup.py') != ''
         working-directory: mobile
         env:
-          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+          SOURCE_SHA: ${{ needs.source.outputs.source_sha }}
         run: |
           APP_PATH=$(find build/ios-test-inputs -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
@@ -477,7 +556,7 @@ jobs:
         if: matrix.check == 'regression' && hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         working-directory: mobile
         env:
-          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+          SOURCE_SHA: ${{ needs.source.outputs.source_sha }}
         run: |
           APP_PATH=$(find build/ios-test-inputs -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_PATH"
@@ -497,20 +576,20 @@ jobs:
     name: GitHub Release
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    needs: [quality, android, ios, ios-check]
+    needs: [source, quality, android, ios, ios-check]
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.quality.outputs.source_sha }}
+          ref: ${{ needs.source.outputs.source_sha }}
       - uses: actions/download-artifact@v7
         with:
           pattern: FamilyTimeCapsule-{build-source,android-apk,ios-unsigned-ipa}
           path: artifacts
       - name: Collect release files and checksums
         env:
-          SOURCE_SHA: ${{ needs.quality.outputs.source_sha }}
+          SOURCE_SHA: ${{ needs.source.outputs.source_sha }}
         run: |
           mkdir release
           cp artifacts/FamilyTimeCapsule-android-apk/FamilyTimeCapsule-android.apk release/
