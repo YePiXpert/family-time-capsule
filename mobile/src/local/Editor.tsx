@@ -46,6 +46,7 @@ import {
   dateLabel,
   hapticSuccess,
   messageOf,
+  useKeyboardBarOffset,
   useStyles,
 } from "./ui";
 import { Photo, PhotoDetails } from "./Media";
@@ -56,7 +57,8 @@ import {
 export function Editor({ route, navigation }: Props<"Editor">) {
   const store = useStore(),
     state = useLibrary(),
-    s = useStyles();
+    s = useStyles(),
+    keyboardOffset = useKeyboardBarOffset();
   const [draft, setDraft] = useState<RecordDraft | undefined>(() =>
       clone(store.get().drafts[route.params.draftId]),
     ),
@@ -355,8 +357,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        // 布局帧相对整屏 SafeAreaView、已含页内顶栏，不能再加 keyboardVerticalOffset：
-        // 加了会把底栏抬高一个顶栏，键盘上方多出一条空纸（1.0.0／1.0.1 的真机截图都有）。
+        // 布局帧相对整屏 SafeAreaView、已含页内顶栏，不能再加顶栏的偏移（1.0.0／1.0.1 键盘上方
+        // 多出一条空纸）；唯一的偏移是把底栏的底部安全区藏到键盘后面，见 useKeyboardBarOffset。
+        keyboardVerticalOffset={keyboardOffset}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
