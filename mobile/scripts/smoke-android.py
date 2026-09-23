@@ -12,15 +12,28 @@ import xml.etree.ElementTree as ET
 p=argparse.ArgumentParser();p.add_argument('apk');p.add_argument('--output',type=Path,required=True);args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
 package='app.familytimecapsule.mobile'
 def adb(*args): return subprocess.check_output(['adb',*args],timeout=60).decode(errors='replace')
+def dismiss_other_anr(tree):
+  # 冷启动的模拟器上系统桌面偶尔「isn't responding」，弹窗盖住应用，dump 里只剩它
+  # （run 35813660997：欢迎页好好的，找不到 welcome-start）。别的应用的无响应框点「Wait」接着测；
+  # 本应用自己无响应是真问题，不点，留给后面的查找判失败、截图留证。
+  wait=next((n for n in tree.iter('node') if n.get('resource-id')=='android:id/aerr_wait'),None)
+  if wait is None:return False
+  title=' '.join(n.get('text') or '' for n in tree.iter('node') if n.get('resource-id')=='android:id/alertTitle')
+  if '桉桉成长记' in title or package in title:return False
+  nums=list(map(int,re.findall(r'\d+',wait.attrib['bounds'])));adb('shell','input','tap',str((nums[0]+nums[2])//2),str((nums[1]+nums[3])//2))
+  print(f'Dismissed system dialog: {title}',flush=True);time.sleep(2)
+  return True
 def hierarchy():
   # 冷启动或改分辨率后 dump 可能失败一两次；重试避免把环境抖动当代码红。
   last:Exception|None=None
-  for _ in range(3):
+  for _ in range(5):
     try:
       adb('shell','uiautomator','dump','/sdcard/window.xml')
-      return ET.fromstring(adb('shell','cat','/sdcard/window.xml'))
+      tree=ET.fromstring(adb('shell','cat','/sdcard/window.xml'))
     except Exception as e:
-      last=e;time.sleep(2)
+      last=e;time.sleep(2);continue
+    if not dismiss_other_anr(tree):return tree
+  if last is None:raise AssertionError('A system dialog kept covering the app')
   raise last
 def matches(node,label):
   rid=node.get('resource-id','')
