@@ -57,14 +57,14 @@ npm run lint
 
 原生出包先用十几秒核对源提交是否在 main 上，随后质量检查、Android、iOS 真机 IPA、iOS 模拟器应用的构建与两组 iOS 验证同时开始。模拟器应用与 XCUITest runner 只编译一次，以保留权限和符号链接的压缩包传给两个独立任务，并行验证启动／数据恢复与完整界面回归；两个验证任务趁构建的几分钟先建好、启动并热身各自的模拟器，再按作业状态等构建完成（构建失败或取消则随之失败），接收时核对源提交、CPU 架构和 Xcode 版本。完整回归里只有「XCTest 等不到模拟器把应用拉起来」（Timed out attempting to launch app）这一种失败会卸载重装、重新写入测试数据、整段重跑一次，两次的证据都保留；断言失败和崩溃照旧直接判红。GitHub Release 必须等质量检查、所有构建和两组 iOS 验证通过才发布，提前生成的 IPA 不代表已交付。CocoaPods 只缓存依赖下载，每次仍运行安装；两个 iOS 构建在 xcodebuild 命令行上把 C／C++／Objective-C++ 编译器换成 ccache（配置与 React Native 自带的 ccache.conf 相同，路径全部写死，不依赖 Xcode 往编译任务里传环境变量），缓存键钉住依赖锁文件、本地原生代码与 Xcode 构建号，依赖不变时直接命中，依赖一变就完整重编一次，Swift 与链接照常；Android 各库的 CMake 原生编译经编译器启动器环境变量走 ccache（NDK 每次现装，按 `clang -v` 的输出认编译器；预编译头按 ccache 的要求放宽 `pch_defines,time_macros`；这边逐个核对头文件，缓存键允许回退，配置一改就换键）；Android 冒烟复用同一屏的无障碍层级，只在有输入后重新 dump；启动截图 OCR 只编译一次，原有崩溃观察时间与检查不减少。这会增加同时使用的 macOS runner 数量（最多四台），实际节省时间取决于排队和模拟器冷启动；完成后检查一次结果，不轮询等待。
 
-当前版本：**1.0.4**（构建号 77）：首页整理——iOS 液态玻璃不再丢，合集、专题册、时间胶囊并成一张「专题与信」卡，提醒卡改为文字级动作，备份提醒等第一段时光满 7 天再出，编辑页与写信页的保存按钮贴着键盘。只改手机端，细目见 CHANGELOG 顶节；此后仍不加新功能、只做优化。安装包计划来自 GitHub Release `v1.0.4`，是否已发布、校验和以 HANDOFF 第一节为准，两个包必须来自同一 main 提交。在那之前可安装的仍是 **[1.0.3](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.3)**：双端包来自 main 提交 `8be3a46731b56f17fec0bdbb8aa12575ddefc96b`，校验和已核对，IPA 需自行签名。1.0.4 不改服务端，1.0.3 部署的服务端照用，无需重新部署（见 `deploy/README.md` 与 HANDOFF 第一节）。两台真机验收仍待完成。设计规则见 [DESIGN.md](DESIGN.md)。
+当前版本：**1.0.4**（构建号 77）：首页整理——iOS 液态玻璃不再丢，合集、专题册、时间胶囊并成一张「专题与信」卡，提醒卡改为文字级动作，备份提醒等第一段时光满 7 天再出，编辑页与写信页的保存按钮贴着键盘。只改手机端，细目见 CHANGELOG「1.0.4」一节；此后仍不加新功能、只做优化。**[1.0.4 已交付](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.4)**：标签构建一次全绿。双端包来自 main 提交 `703fe075a944e926995a507f7b9767543ab5de62`；[Android APK](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.0.4/FamilyTimeCapsule-android.apk)、[未签名设备 IPA](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.0.4/FamilyTimeCapsule-ios-unsigned.ipa) 与[校验和](https://github.com/YePiXpert/family-time-capsule/releases/download/v1.0.4/sha256sums.txt) 均已下载核对，IPA 需自行签名。1.0.4 不改服务端，1.0.3 部署的服务端照用，无需重新部署（见 `deploy/README.md` 与 HANDOFF 第一节）。两台真机验收仍待完成。设计规则见 [DESIGN.md](DESIGN.md)。
 
 
 安装包 SHA-256（完整来源与原生验证记录见 HANDOFF 第一节）：
 
 ```text
-cf2bd67d9263cff5320470df0fa437a7ab0fb65291f99c9429150bb9c2841cdf  FamilyTimeCapsule-android.apk
-5c9f92cb539e82b4a75aaf5b8b9d152f9300eab88d9524c1fa4893226d01971c  FamilyTimeCapsule-ios-unsigned.ipa
+63e2e555d1c971b4fa7ef18f46729e7d9b3db6e35343480de321655b53bc3624  FamilyTimeCapsule-android.apk
+c570a95290045cf238ea1dcf619826141cd25953c4f9e6d95b1fb5d8cf40170d  FamilyTimeCapsule-ios-unsigned.ipa
 ```
 
 ## 书架与回看
