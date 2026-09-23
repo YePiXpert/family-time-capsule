@@ -142,6 +142,11 @@ jobs:
       # 工作区路径固定，但 .cxx 下的配置目录名由 AGP 算出，不在哈希里带工作目录（hash_dir = false），
       # 调试信息里的目录可能不准，发布包里的 .so 本来就剥掉了调试信息。
       # 与 iOS 不同，这里设回退键：没有 modules 宽松项，ccache 逐个核对头文件，旧依赖的结果只会不命中、不会误用。
+      # Reanimated、Worklets、expo-modules-core 用预编译头，不开 pch_defines,time_macros 时 ccache 一律不缓存
+      # （run 35832730488：598 次里 408 次「Could not use precompiled header」）。Reanimated 自带
+      # -Xclang -fno-pch-timestamp，预编译头可复现，能命中；另两个的预编译头记着头文件修改时间，
+      # ccache 4.14 对这种情况逐个核对修改时间、预处理模式也不复用 clang 的预编译头，只会不命中，不会拿旧的凑数。
+      # 键里的 v2 跟着这份配置走：精确命中的键不会再保存，改配置不换键，新进缓存的内容永远存不下来。
       - name: Install ccache
         id: ccache
         env:
@@ -161,6 +166,7 @@ jobs:
           compiler_check = %compiler% -v
           hash_dir = false
           max_size = 2G
+          sloppiness = pch_defines,time_macros
           EOF
           echo "CCACHE_CONFIGPATH=$BIN/ccache.conf" >> "$GITHUB_ENV"
           "$BIN/ccache" --version | head -n 1
@@ -170,7 +176,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ steps.ccache.outputs.dir }}
-          key: ${{ runner.os }}-${{ runner.arch }}-ccache-android-${{ hashFiles('mobile/package-lock.json', 'mobile/plugins/**', 'mobile/modules/**') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-ccache-android-v2-${{ hashFiles('mobile/package-lock.json', 'mobile/plugins/**', 'mobile/modules/**') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-android-
       - name: Build installable standalone APK
