@@ -263,10 +263,15 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-
-      # 编译缓存：USE_CCACHE=1 时 React Native 在 pod install 里把 Pods 与应用工程的 CC／CXX
-      # 换成它的 ccache 封装（node_modules/react-native/scripts/xcode：depend 模式、modules 宽松）。
-      # 这一步的大头是 Reanimated／SVG／Screens／Worklets 等四百多个 C++／Objective-C++ 文件，
-      # 依赖不变时整份命中；Swift 不走 ccache。键钉住依赖锁文件、本地原生代码与 Xcode 构建号，
+      # 编译缓存：构建时在 xcodebuild 命令行上把 CC 指向下面生成的 ccache-clang，所有 target 的
+      # C／C++／Objective-C++ 编译都经 ccache；链接和 Swift 照旧。这一步的大头是 Reanimated／SVG／
+      # Screens／Worklets 等四百多个 C++／Objective-C++ 文件，依赖不变时整份命中。
+      # 不用 React Native 的 USE_CCACHE=1（run 35815958870 两处都坏）：它把
+      # $(REACT_NATIVE_PATH)/…/ccache-clang.sh 写进工程级 CC／LD，分享扩展不走 CocoaPods、没有
+      # PODS_ROOT，链接路径拼成 /../../node_modules/…；它的封装又靠 $CCACHE_BINARY 找 ccache，
+      # Xcode 26 的编译任务拿不到构建设置环境变量，编译直接走了 clang。所以这里的封装把 ccache、
+      # 配置、缓存目录和真正的 clang 全写成绝对路径；配置与 React Native 的 scripts/xcode/ccache.conf
+      # 同一套（depend 模式、modules 等宽松项）。键钉住依赖锁文件、本地原生代码与 Xcode 构建号，
       # 不设回退键：依赖一变就完整冷编一次，不拿旧依赖的结果凑数（modules 宽松模式察觉不到
       # 模块内部的变化，系统头文件也不进清单）。
       - name: Install ccache
@@ -279,11 +284,30 @@ jobs:
             "https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION-darwin.tar.gz"
           echo "$CCACHE_SHA256  $RUNNER_TEMP/ccache.tar.gz" | shasum -a 256 -c -
           tar -xzf "$RUNNER_TEMP/ccache.tar.gz" -C "$RUNNER_TEMP"
-          mkdir -p "$RUNNER_TEMP/ccache-bin"
-          install -m 0755 "$RUNNER_TEMP/ccache-$CCACHE_VERSION-darwin/ccache" "$RUNNER_TEMP/ccache-bin/ccache"
-          echo "$RUNNER_TEMP/ccache-bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/ccache-bin/ccache" --version | head -n 1
-          echo "dir=$("$RUNNER_TEMP/ccache-bin/ccache" --get-config cache_dir)" >> "$GITHUB_OUTPUT"
+          BIN="$RUNNER_TEMP/ccache-bin"
+          CACHE_DIR="$HOME/Library/Caches/ccache"
+          CLANG=$(xcrun --find clang)
+          test -x "$CLANG"
+          mkdir -p "$BIN"
+          install -m 0755 "$RUNNER_TEMP/ccache-$CCACHE_VERSION-darwin/ccache" "$BIN/ccache"
+          cat > "$BIN/ccache.conf" <<EOF
+          cache_dir = $CACHE_DIR
+          sloppiness = clang_index_store,file_stat_matches,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros
+          file_clone = true
+          depend_mode = true
+          inode_cache = true
+          EOF
+          cat > "$BIN/ccache-clang" <<EOF
+          #!/bin/sh
+          export CCACHE_CONFIGPATH='$BIN/ccache.conf'
+          exec '$BIN/ccache' '$CLANG' "\$@"
+          EOF
+          chmod +x "$BIN/ccache-clang"
+          echo "$BIN" >> "$GITHUB_PATH"
+          echo "CCACHE_CONFIGPATH=$BIN/ccache.conf" >> "$GITHUB_ENV"
+          "$BIN/ccache" --version | head -n 1
+          cat "$BIN/ccache-clang"
+          echo "dir=$CACHE_DIR" >> "$GITHUB_OUTPUT"
       - name: Cache compiler outputs
         uses: actions/cache@v4
         with:
@@ -292,8 +316,6 @@ jobs:
       - name: Install CocoaPods
         run: npx pod-install ios
         working-directory: mobile
-        env:
-          USE_CCACHE: "1"
       - name: Create unsigned device archive
         working-directory: mobile
         run: |
@@ -310,6 +332,7 @@ jobs:
             -archivePath build/FamilyTimeCapsule.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            CC="$RUNNER_TEMP/ccache-bin/ccache-clang" \
             archive
       - name: Show compiler cache statistics
         if: always()
@@ -389,10 +412,15 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-${{ hashFiles('mobile/package-lock.json', 'mobile/app.json', 'mobile/plugins/**', 'mobile/modules/**') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-pods-xcode26.6-
-      # 编译缓存：USE_CCACHE=1 时 React Native 在 pod install 里把 Pods 与应用工程的 CC／CXX
-      # 换成它的 ccache 封装（node_modules/react-native/scripts/xcode：depend 模式、modules 宽松）。
-      # 这一步的大头是 Reanimated／SVG／Screens／Worklets 等四百多个 C++／Objective-C++ 文件，
-      # 依赖不变时整份命中；Swift 不走 ccache。键钉住依赖锁文件、本地原生代码与 Xcode 构建号，
+      # 编译缓存：构建时在 xcodebuild 命令行上把 CC 指向下面生成的 ccache-clang，所有 target 的
+      # C／C++／Objective-C++ 编译都经 ccache；链接和 Swift 照旧。这一步的大头是 Reanimated／SVG／
+      # Screens／Worklets 等四百多个 C++／Objective-C++ 文件，依赖不变时整份命中。
+      # 不用 React Native 的 USE_CCACHE=1（run 35815958870 两处都坏）：它把
+      # $(REACT_NATIVE_PATH)/…/ccache-clang.sh 写进工程级 CC／LD，分享扩展不走 CocoaPods、没有
+      # PODS_ROOT，链接路径拼成 /../../node_modules/…；它的封装又靠 $CCACHE_BINARY 找 ccache，
+      # Xcode 26 的编译任务拿不到构建设置环境变量，编译直接走了 clang。所以这里的封装把 ccache、
+      # 配置、缓存目录和真正的 clang 全写成绝对路径；配置与 React Native 的 scripts/xcode/ccache.conf
+      # 同一套（depend 模式、modules 等宽松项）。键钉住依赖锁文件、本地原生代码与 Xcode 构建号，
       # 不设回退键：依赖一变就完整冷编一次，不拿旧依赖的结果凑数（modules 宽松模式察觉不到
       # 模块内部的变化，系统头文件也不进清单）。
       - name: Install ccache
@@ -405,11 +433,30 @@ jobs:
             "https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION-darwin.tar.gz"
           echo "$CCACHE_SHA256  $RUNNER_TEMP/ccache.tar.gz" | shasum -a 256 -c -
           tar -xzf "$RUNNER_TEMP/ccache.tar.gz" -C "$RUNNER_TEMP"
-          mkdir -p "$RUNNER_TEMP/ccache-bin"
-          install -m 0755 "$RUNNER_TEMP/ccache-$CCACHE_VERSION-darwin/ccache" "$RUNNER_TEMP/ccache-bin/ccache"
-          echo "$RUNNER_TEMP/ccache-bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/ccache-bin/ccache" --version | head -n 1
-          echo "dir=$("$RUNNER_TEMP/ccache-bin/ccache" --get-config cache_dir)" >> "$GITHUB_OUTPUT"
+          BIN="$RUNNER_TEMP/ccache-bin"
+          CACHE_DIR="$HOME/Library/Caches/ccache"
+          CLANG=$(xcrun --find clang)
+          test -x "$CLANG"
+          mkdir -p "$BIN"
+          install -m 0755 "$RUNNER_TEMP/ccache-$CCACHE_VERSION-darwin/ccache" "$BIN/ccache"
+          cat > "$BIN/ccache.conf" <<EOF
+          cache_dir = $CACHE_DIR
+          sloppiness = clang_index_store,file_stat_matches,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros
+          file_clone = true
+          depend_mode = true
+          inode_cache = true
+          EOF
+          cat > "$BIN/ccache-clang" <<EOF
+          #!/bin/sh
+          export CCACHE_CONFIGPATH='$BIN/ccache.conf'
+          exec '$BIN/ccache' '$CLANG' "\$@"
+          EOF
+          chmod +x "$BIN/ccache-clang"
+          echo "$BIN" >> "$GITHUB_PATH"
+          echo "CCACHE_CONFIGPATH=$BIN/ccache.conf" >> "$GITHUB_ENV"
+          "$BIN/ccache" --version | head -n 1
+          cat "$BIN/ccache-clang"
+          echo "dir=$CACHE_DIR" >> "$GITHUB_OUTPUT"
       - name: Cache compiler outputs
         uses: actions/cache@v4
         with:
@@ -418,8 +465,6 @@ jobs:
       - name: Install CocoaPods
         run: npx pod-install ios
         working-directory: mobile
-        env:
-          USE_CCACHE: "1"
       - name: Compile Release UI regression runner
         if: hashFiles('mobile/scripts/smoke-ios-regression.py') != ''
         working-directory: mobile
@@ -456,6 +501,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
             -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            CC="$RUNNER_TEMP/ccache-bin/ccache-clang" \
             build > build/simulator-build.log 2>&1; then
             tail -n 160 build/simulator-build.log
             exit 1
