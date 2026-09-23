@@ -1124,6 +1124,14 @@ export function SignatureButton({
     </View>
   );
 }
+/**
+ * 编辑页（记一刻、写信）的 KeyboardAvoidingView 拿它当 keyboardVerticalOffset：键盘弹起时 Home 指示条
+ * 已被盖住，底栏的底部安全区留白就藏到键盘后面，保存按钮离键盘上沿 16，而不是再多出一条约 34 的空纸。
+ * 布局帧相对整屏 SafeAreaView、已含页内顶栏，除此之外不要再加偏移。
+ */
+export function useKeyboardBarOffset() {
+  return -useSafeAreaInsets().bottom;
+}
 export function BottomBar({
   children,
   gap = 8,
