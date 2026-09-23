@@ -1287,6 +1287,96 @@ export function Field({
     </View>
   );
 }
+/**
+ * 纸卡里的一行短输入：左侧辅助色小标签、右侧无框输入，行间一条细线（编辑页的标题、地点）。
+ * 卡里不再套一层白框（卡不套卡），也不是标签悬在白框上面的网页表单；标签列最少 40，几行对齐。
+ */
+export function FieldRow({
+  label,
+  last = false,
+  ...props
+}: TextInputProps & { label: string; last?: boolean }) {
+  const s = useStyles();
+  const { colors, large } = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        minHeight: 48,
+        borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
+        borderBottomColor: colors.line,
+      }}
+    >
+      <Text style={[s.muted, { minWidth: 40 }]}>{label}</Text>
+      <TextInput
+        accessibilityLabel={label}
+        {...props}
+        placeholderTextColor={colors.muted}
+        style={[
+          {
+            flex: 1,
+            minWidth: 0,
+            color: colors.ink,
+            fontSize: large ? 19 : 16,
+            paddingVertical: 12,
+          },
+          props.style,
+        ]}
+      />
+    </View>
+  );
+}
+/**
+ * 页尾的危险动作（放弃这份草稿、删除记录、删除这封草稿信）：单独一张纸卡，居中一行错误色字，
+ * 与上面的卡同一套语汇——不再是飘在纸面上、左右都不挨着的一行红字。确认仍走系统弹窗。
+ * 按压与禁用的透明度落在字上：卡在 iOS 是液态玻璃，祖先一透明系统就不画。
+ */
+export function DangerCard({
+  title,
+  onPress,
+  disabled = false,
+  testID,
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+  testID?: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Card style={{ padding: 0, gap: 0 }}>
+      <Pressable
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
+        onPress={onPress}
+        style={{
+          minHeight: 48,
+          paddingHorizontal: 16,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {({ pressed }) => (
+          <Text
+            style={{
+              color: colors.error,
+              fontWeight: "600",
+              textAlign: "center",
+              opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
+            }}
+          >
+            {title}
+          </Text>
+        )}
+      </Pressable>
+    </Card>
+  );
+}
 export function ErrorText({ message }: { message: string }) {
   const { colors } = useTheme();
   return message ? (
@@ -1310,25 +1400,33 @@ export function Photo({
   preview = false,
   label,
   radius = 12,
+  fill = false,
 }: {
   media: LocalMedia | undefined;
   contain?: boolean;
   size?: number;
-  /** 固定裁切比例（书架封面 4:3）；缺省按素材真实宽高比。 */
+  /** 固定裁切比例（书架小封面与月册网格 1:1）；缺省按素材真实宽高比。 */
   ratio?: number;
   /** 列表/封面等小图场景：优先渲染持久缩略图。 */
   preview?: boolean;
   /** 读屏标签；缺省读作「照片」，不读原始文件名。 */
   label?: string;
-  /** 圆角；书册行里 60 宽的小封面用 8。 */
+  /** 圆角；首页「最近」卡顶的照片由外层裁圆角，传 0。 */
   radius?: number;
+  /** 撑满父容器、不按比例：首页「最近」卡的照片高度随首屏剩下的空间走。 */
+  fill?: boolean;
 }) {
   const s = useStyles();
   const [error, setError] = useState(false);
   const [thumbFailed, setThumbFailed] = useState(false);
   if (!media || error)
     return (
-      <View style={[s.section, { minHeight: size ?? 120, width: size }]}>
+      <View
+        style={[
+          s.section,
+          fill ? { flex: 1, overflow: "hidden" } : { minHeight: size ?? 120, width: size },
+        ]}
+      >
         <Text>照片暂时无法读取</Text>
         <Text style={s.muted}>这段时光还在，缺的照片可以从备份恢复。</Text>
       </View>
@@ -1348,16 +1446,18 @@ export function Photo({
         else setError(true);
       }}
       style={[
-        {
-          width: "100%",
-          borderRadius: radius,
-          aspectRatio: size
-            ? 1
-            : (ratio ??
-              (media.width && media.height
-                ? media.width / media.height
-                : 4 / 3)),
-        },
+        fill
+          ? { flex: 1, width: "100%", borderRadius: radius }
+          : {
+              width: "100%",
+              borderRadius: radius,
+              aspectRatio: size
+                ? 1
+                : (ratio ??
+                  (media.width && media.height
+                    ? media.width / media.height
+                    : 4 / 3)),
+            },
         size ? { width: size, height: size } : undefined,
       ]}
     />

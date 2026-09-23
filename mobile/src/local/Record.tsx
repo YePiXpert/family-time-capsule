@@ -25,6 +25,7 @@ import {
   BottomBar,
   Button,
   Card,
+  DangerCard,
   DateStrip,
   ErrorText,
   IconButton,
@@ -455,32 +456,29 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
             />
           </View>
         )}
-        <View style={{ alignItems: "center", paddingTop: 8 }}>
-          <Button
-            title="删除记录"
-            kind="text"
-            danger
-            onPress={() =>
-              Alert.alert(
-                "删除这段时光？",
-                "它也会从所有相册里移出，删了就找不回来。",
-                [
-                  { text: "取消", style: "cancel" },
-                  {
-                    text: "删除记录",
-                    style: "destructive",
-                    onPress: () => {
-                      void store
-                        .change((lib) => deleteRecord(lib, record.id))
-                        .then(() => navigation.goBack())
-                        .catch((e) => setError(messageOf(e)));
-                    },
+        <DangerCard
+          title="删除记录"
+          testID="record-delete"
+          onPress={() =>
+            Alert.alert(
+              "删除这段时光？",
+              "它也会从所有相册里移出，删了就找不回来。",
+              [
+                { text: "取消", style: "cancel" },
+                {
+                  text: "删除记录",
+                  style: "destructive",
+                  onPress: () => {
+                    void store
+                      .change((lib) => deleteRecord(lib, record.id))
+                      .then(() => navigation.goBack())
+                      .catch((e) => setError(messageOf(e)));
                   },
-                ],
-              )
-            }
-          />
-        </View>
+                },
+              ],
+            )
+          }
+        />
       </ScrollView>
       <BottomBar>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
