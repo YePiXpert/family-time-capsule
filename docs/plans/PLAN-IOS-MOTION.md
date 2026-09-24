@@ -118,3 +118,26 @@
 | 隐私遮挡 | AI 面板、选照片、装订预览打开时上划进多任务；开锁时切后台 | 多任务卡片只见纸面；锁盖住一切 |
 | 封信 | 成功、失败（如拆封日已过）、动画中返回、再次进入 | 只在成功后播一次；再次进入不播 |
 | 可达性 | 320／390 宽、浅深色、大字、键盘 | 主要操作可达，短页不回弹 |
+
+## 八、实施结果（2026-09-24）
+
+| 阶段 | 提交 | 实际完成 | 改动文件 |
+| --- | --- | --- | --- |
+| M0 | `61fd4c4` | 本文件：盘点、参照对应、分配表、降级路线 | `docs/plans/PLAN-IOS-MOTION.md` |
+| M1＋M2 | `1bdeb50` | 全局 `default` 转场、`fullScreenGestureEnabled: false`；主题里实时的 `reduceMotion`，并用 `ReducedMotionConfig` 让 Reanimated 全局跟着变；`MOTION` token；`usePressScale`（0.97）；记一刻玻璃只用原生按压；`liquid` 加 `isGlassEffectAPIAvailable()`；年度册月册去掉逐个进场 | `ui.tsx`、`App.tsx`、`CaptureFab.tsx`、`Shelf.tsx`、`Year.tsx` |
+| M3 | `7c48530` | `SheetModal`（AI 面板）与 `PrivacyCover`（AI 面板、选照片、装订预览）；`ToolButton` 可接 `ref` 用于还焦点 | `ui.tsx`、`lock.ts`、`App.tsx`、`ai/Editor.tsx`、`PhotoPicker.tsx`、`BookPreview.tsx`、`tests/ai-editor.test.ts`（只改 mock） |
+| M4A | `de4e823` | 封信成功触感、一次性 `sealed` 参数、等 `transitionEnd` 后落印、「封好了」与读屏播报；原生冒烟断言改为「封好了」＋重启后「还没到日子」（顺带验证不重播） | `navigation.ts`、`LetterEditor.tsx`、`LetterScreen.tsx`、`smoke-android.py`、`NativeRegressionTests.swift` |
+| M4B | — | 只做可行性记录（第六节），没有生产代码 | — |
+| M5 | 本次文档提交 | `DESIGN.md`「动效与转场」、`CHANGELOG.md` 未打包条目、`HANDOFF.md` 待验事项 | — |
+
+**正式启用：** 平台默认 push、仅边缘侧滑、实时减少动态、运行时玻璃检测、纸面 0.97 按压、记一刻原生玻璃按压、AI 面板受控开合与焦点回归、Modal 隐私遮挡、封信落印。
+
+**降级（有意不做）：** 写记录／写信的原生 modal 与 formSheet（锁层阻断）；短选择器改原生 sheet（同上，且需改导航结构）；`GlassContainer`（没有需要合并的同组玻璃控件）；clear 玻璃；AI 面板下拉手势关闭（需要在 Modal 里另起手势根，本轮不扩）。
+
+**只做可行性：** 书册封面／缩略图 zoom（第六节）。
+
+**验证：** 每次推送前手机 `vitest` 830/830、`tsc`、`eslint`、`verify-local-boundary.py`、Python 工具测试 45/45 通过；服务端 217/217 与类型检查通过（服务端未改）。`SheetModal` 的开、收、收到一半折回、收完卸下，用 react-native-web + Reanimated（带 worklets Babel 插件）在 Chromium 里跑过一遍，只算逻辑自查。
+
+**没有做到的：** 改前／改后原生录屏、真机帧率、第七节原生待测项全部未测——本机没有模拟器或真机，本轮也未授权派发 `mobile-build.yml`。网页预览与单测不代替原生验收。
+
+**其他发现（未改）：** AI 面板脚注仍写「由小米 MiMo 2.6 Pro 提供」，而 HANDOFF 记录文字任务已换成 `gpt-6-astra`；属于 AI 文案，按本轮边界没动，需主人确认后单独修。编辑纸／信纸在 iOS 是玻璃 Card（见第一节），是否改实色纸面待主人真机对比后定。
