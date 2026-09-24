@@ -8,7 +8,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
 import { CaptureFab, FAB_INSET, FAB_SIZE } from "./CaptureFab";
-import { monthKey, type LocalRecord, type Stored } from "./model";
+import { monthKey, type LocalRecord, type Stored, compareDates } from "./model";
 import { useNav, type Props } from "./navigation";
 import { recordMatches } from "./search";
 import { beginDraft } from "./services";
@@ -198,7 +198,7 @@ export function Month({ route }: Props<"Month">) {
     return Object.values(recordMap)
       .filter((r) => monthKey(r.date) === route.params.month)
       .filter((r) => recordMatches(r, query))
-      .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+      .sort((a, b) => compareDates(b.date, a.date) || a.id.localeCompare(b.id));
   }, [recordMap, query, route.params.month]);
   const byDay = new Map<string, Stored<LocalRecord>[]>();
   for (const record of records) {

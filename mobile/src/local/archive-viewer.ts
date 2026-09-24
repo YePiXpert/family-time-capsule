@@ -102,7 +102,7 @@ input.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
       (meta.length ? '<div class="muted">' + meta.join(" · ") + "</div>" : "") +
       (r.text ? '<p class="text">' + esc(r.text) + "</p>" : "") + mediaHtml(r.media) + "</article>";
   }
-  function byDate(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
+  function byDate(a, b) { return Date.parse(a.date) - Date.parse(b.date) || (a.date < b.date ? -1 : a.date > b.date ? 1 : 0); }
   function months() {
     var map = {};
     lib.records.forEach(function (r) { var m = r.day.slice(0, 7); map[m] = (map[m] || 0) + 1; });

@@ -98,7 +98,8 @@ export function daysSinceExport(
   if (Number.isNaN(exported.getTime())) return null;
   const start = (d: Date) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  return Math.floor((start(today) - start(exported)) / 86400000);
+  // 两个本地零点相差的是整天数，但跨夏令时那天只有 23 小时：取整而不是向下取，免得少算一天。
+  return Math.round((start(today) - start(exported)) / 86400000);
 }
 /** 应用内保留的备份，最新的在前。 */
 export function retainedBackups(): File[] {
@@ -258,6 +259,17 @@ async function writeManifestTo(
   signal?: AbortSignal,
 ): Promise<void> {
   ensureDirectories();
+  // 录到一半的录音是这台手机上的临时文件，不属于库：草稿照备，只是不带它。
+  // 否则应用在录音中被杀、那份草稿又没再打开，之后每次备份与家人同步都会被拦下。
+  const pending = Object.values(state.drafts).filter((d) => d.recordingFile);
+  if (pending.length) {
+    const drafts = { ...state.drafts };
+    for (const d of pending) {
+      const { recordingFile: _pending, ...rest } = d;
+      drafts[d.id] = rest;
+    }
+    state = { ...state, drafts };
+  }
   const entities = encodeEntities(state);
   const head = encodeMetaV2(state, entities.length, entityCount(state), {
     magic: BACKUP_MAGIC_V3,

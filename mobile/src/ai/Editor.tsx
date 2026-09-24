@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
-import type { RecordDraft } from "../local/model";
+import { compareDates, type RecordDraft } from "../local/model";
 import { useLibrary } from "../local/context";
 import { ageLine } from "../local/dates";
 import { AI_CONSENT_TEXT } from "./consent";
@@ -164,7 +164,7 @@ export function AIEditor({
             by: snapshot.draft.content.by,
             ageLabel: ageLine(library.profile.birthday, new Date(selected.date))?.split(" · ")[0] ?? null,
             date: selected.date, title: selected.title, text: selected.text, first: selected.first,
-            recent: Object.values(library.records).filter((r) => r.id !== snapshot.draft.recordId).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10).map(({ title, date }) => ({ title, date })),
+            recent: Object.values(library.records).filter((r) => r.id !== snapshot.draft.recordId).sort((a, b) => compareDates(b.date, a.date)).slice(0, 10).map(({ title, date }) => ({ title, date })),
           }),
         }, "POST", abort.current.signal), "ask");
         if (abort.current.signal.aborted) throw new AIError("CANCELED", "已停止等待，草稿不变。");

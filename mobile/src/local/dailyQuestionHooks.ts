@@ -4,7 +4,7 @@ import { randomUUID } from "expo-crypto";
 import { api, getToken, hasConsent } from "../ai/client";
 import { questionContext, recentQuestions } from "../ai/state";
 import { ageLine, toDayKey } from "./dates";
-import type { Library } from "./model";
+import { compareDates, type Library } from "./model";
 import type { LocalStore } from "./store";
 import { dailyQuestionSource, requestDailyQuestion } from "./dailyQuestion";
 
@@ -34,7 +34,7 @@ export function useDailyQuestion(store: LocalStore, state: Library, enabled: boo
           context: questionContext({
             ageLabel: ageLine(current.profile.birthday)?.split(" · ")[0] ?? null,
             today,
-            recent: Object.values(current.records).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10).map(({ title, date }) => ({ title, date })),
+            recent: Object.values(current.records).sort((a, b) => compareDates(b.date, a.date)).slice(0, 10).map(({ title, date }) => ({ title, date })),
             asked: recentQuestions(current.settings.dailyQuestion, today).map(({ question }) => question),
           }),
         }, "POST");

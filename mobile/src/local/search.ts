@@ -1,4 +1,4 @@
-import { yearKey, type LocalRecord, type Stored } from "./model";
+import { yearKey, type LocalRecord, type Stored, compareDates } from "./model";
 
 export type MediaFilter = "any" | "av" | "none";
 export type SearchFilters = {
@@ -54,6 +54,6 @@ export function searchRecords(
       if (media === "none" && r.mediaIds.length) return false;
       return recordMatches(r, needle);
     })
-    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
+    .sort((a, b) => compareDates(b.date, a.date) || a.id.localeCompare(b.id))
     .slice(0, 100);
 }

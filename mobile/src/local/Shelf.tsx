@@ -40,7 +40,9 @@ import {
   type LocalMedia,
   type LocalRecord,
   type RecordDraft,
-  type Stored, stampUnsigned, unsignedRecords } from "./model";
+  type Stored, stampUnsigned, unsignedRecords,
+  compareDates,
+} from "./model";
 import { useNav } from "./navigation";
 import { daysSinceExport } from "./backup";
 import {
@@ -1463,7 +1465,7 @@ export function Firsts() {
   const nav = useNav();
   const firsts = sortedRecords(state)
     .filter((r) => r.first)
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => compareDates(a.date, b.date));
   return (
     <Page title="第一次合集">
       <Text style={s.muted}>

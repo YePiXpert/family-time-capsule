@@ -15,6 +15,7 @@ import {
   type LocalMedia,
   type MediaKind,
   type Stored,
+  compareDates,
 } from "./model";
 
 export type ArchiveEntry =
@@ -228,7 +229,7 @@ export function planArchive(
 
   const records = sortedRecords(state)
     .filter((r) => !year || yearOf(r.date) === year)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    .sort((a, b) => compareDates(a.date, b.date) || a.id.localeCompare(b.id));
   const included = new Set(records.map((r) => r.id));
   const archived: ArchiveRecord[] = records.map((r) => {
     const day = toDayKey(new Date(r.date));

@@ -1,7 +1,7 @@
 import { Pressable, View } from "react-native";
 import { useLibrary } from "./context";
 import { ageLine } from "./dates";
-import { recordTitle, sortedRecords } from "./model";
+import { recordTitle, sortedRecords, compareDates } from "./model";
 import { useNav } from "./navigation";
 import {
   Button,
@@ -26,7 +26,7 @@ export function Quotes() {
     { colors, large } = useTheme();
   const quotes = sortedRecords(state)
     .filter((r) => r.quote)
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => compareDates(a.date, b.date));
   return (
     <Page title="她说的话">
       <Text style={s.muted}>
