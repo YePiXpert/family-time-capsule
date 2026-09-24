@@ -433,6 +433,9 @@ test('A-8 主人撤销设备只退出全家合并，备份仍可恢复且对象�
   const restored=await f.app.inject({url:'/api/v1/backup/manifest',headers:f.headers(replacement.token)});
   assert.equal(restored.statusCode,200);
   assert.deepEqual(restored.json(),{deviceId:saved.deviceId,keyId:KEY,index:INDEX,updatedAt:new Date(saved.updatedAt).toISOString()});
+  // 手机端换机恢复只走全家列表：同成员的新手机要看得到旧机那份，别人看不到。
+  const own=await f.app.inject({url:'/api/v1/backup/manifests',headers:f.headers(replacement.token)});
+  assert.deepEqual(own.json().map((m:{deviceId:string})=>m.deviceId).sort(),[saved.deviceId,f.other.member.deviceId].sort());
  });
  await t.test('撤销后越过宽限并过期 claim，清单独占的对象仍在',async()=>{
   afterClaimsExpire(t);

@@ -173,8 +173,12 @@ export class Store {
   }
   /** 全部设备的清单，新的在前。 */
   manifests(): BackupManifest[] { return this.manifestRows(); }
-  /** 全家合并只取未撤销设备的清单；没有设备行的旧版备份仍参与合并。 */
-  activeManifests(): BackupManifest[] { return this.manifestRows('WHERE d.revoked IS NULL OR d.revoked=0'); }
+  /**
+   * 全家合并只取未撤销设备的清单；没有设备行的旧版备份仍参与合并。
+   * 请求者自己名下被撤销的设备照给：丢了手机、换机后改密或被主人撤销旧机，新手机仍要能把旧机那份合回来——
+   * 手机端换机恢复只走这个列表。
+   */
+  activeManifests(memberId?:string): BackupManifest[] { return this.manifestRows('WHERE d.revoked IS NULL OR d.revoked=0 OR m.member_id=?',memberId??null); }
   manifestOf(deviceId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.device_id=?',deviceId)[0]; }
   /** 成员名下最新的一份（含旧版迁来的）：给 Build 71 的 GET /backup/manifest 用。 */
   latestManifestOf(memberId:string): BackupManifest|undefined { return this.manifestRows('WHERE m.member_id=?',memberId)[0]; }
