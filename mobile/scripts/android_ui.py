@@ -105,6 +105,17 @@ def find(label, tries=30):
     raise AssertionError(f'Missing {label}')
 
 
+def scrolls_around(tree, label):
+    """最里层包着 label 的 ScrollView 还能不能滚：uiautomator 的 scrollable 看内容是否高过视口，与 scrollEnabled 无关。"""
+    holder = None
+    for node in tree.iter('node'):
+        if node.get('class', '').endswith('ScrollView') and any(matches(n, label) for n in node.iter('node')):
+            holder = node  # 先序遍历：越往后越里层
+    if holder is None:
+        raise AssertionError(f'No ScrollView around {label}')
+    return holder.get('scrollable') == 'true'
+
+
 def tap_node(node):
     x, y = center(node)
     adb('shell', 'input', 'tap', str(x), str(y))

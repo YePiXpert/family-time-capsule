@@ -180,5 +180,27 @@ class HierarchyCacheTests(unittest.TestCase):
         self.assertEqual(adb.count('shell', 'input', 'tap'), 0)
 
 
+class ScrollsAroundTests(unittest.TestCase):
+    """The editor must fit one screen: judge the innermost ScrollView around the sheet."""
+
+    def tree(self, inner_scrollable):
+        import xml.etree.ElementTree as ET
+        return ET.fromstring(
+            '<hierarchy><node class="android.widget.ScrollView" scrollable="false" resource-id="" text="" content-desc="" bounds="[0,0][390,844]">'
+            f'<node class="android.widget.ScrollView" scrollable="{inner_scrollable}" resource-id="" text="" content-desc="" bounds="[0,76][390,679]">'
+            '<node class="android.view.ViewGroup" resource-id="editor-sheet" text="" content-desc="" bounds="[20,96][370,659]"/>'
+            '</node></node></hierarchy>')
+
+    def test_fits(self):
+        self.assertFalse(android_ui.scrolls_around(self.tree('false'), 'editor-sheet'))
+
+    def test_overflow_is_seen_on_the_inner_scroll_view(self):
+        self.assertTrue(android_ui.scrolls_around(self.tree('true'), 'editor-sheet'))
+
+    def test_missing_sheet_fails_loudly(self):
+        with self.assertRaises(AssertionError):
+            android_ui.scrolls_around(self.tree('false'), 'letter-sheet')
+
+
 if __name__ == '__main__':
     unittest.main()
