@@ -26,7 +26,8 @@ export type Routes = {
   Appearance: undefined;
   Signature: undefined;
   LetterEditor: { id: string };
-  Letter: { id: string };
+  /** sealed：刚封存成功、从写信页转过来，只播一次印章落定；读过就清掉，再进来不播。 */
+  Letter: { id: string; sealed?: boolean };
   Quotes: undefined;
   Conflicts: undefined;
   Family: undefined;
