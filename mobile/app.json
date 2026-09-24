@@ -7,13 +7,13 @@
       "android"
     ],
     "scheme": "familytimecapsule",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "app.familytimecapsule.mobile",
-      "buildNumber": "77",
+      "buildNumber": "78",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "\u9009\u62e9\u8981\u4fdd\u5b58\u5230\u6849\u6849\u6210\u957f\u8bb0\u7684\u7167\u7247\u6216\u89c6\u9891\u3002",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "app.familytimecapsule.mobile",
-      "versionCode": 77,
+      "versionCode": 78,
       "blockedPermissions": [
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.SYSTEM_ALERT_WINDOW",
