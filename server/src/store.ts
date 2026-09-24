@@ -240,6 +240,9 @@ export class Store {
       if(!row||digest(claim)!==row.claim_hash) throw new Problem(404,'NOT_FOUND','没有这条申请。');
       if(row.status==='pending') return {status:'pending' as const};
       if(row.status!=='approved') throw new Problem(410,'PAIR_CLOSED',row.status==='confirmed'?'这台手机已经加入了。':row.status==='cancelled'?'管理者取消了这次加入。':'这次加入过期了，请重新打开二维码。');
+      // 领取凭据不能绕过设备与成员的当前授权继续拿钥匙包。
+      if(!this.db.prepare('SELECT 1 FROM devices d JOIN members m ON m.id=d.member_id WHERE d.id=? AND d.revoked=0 AND m.enabled=1 AND d.pending_until IS NOT NULL').get(row.device_id))
+        throw new Problem(410,'PAIR_CLOSED','这次加入已经结束了，请让管理者重新批准。');
       const token=randomBytes(32).toString('base64url');
       this.db.prepare('UPDATE devices SET token_hash=? WHERE id=?').run(digest(token),row.device_id);
       const binding=JSON.parse(row.binding_json!) as PairBinding;
@@ -313,15 +316,21 @@ export class Store {
     this.expirePairs(now);
     return this.db.prepare('SELECT id,member_id,name,revoked,created_at,last_used_at,approved_by,pending_until IS NOT NULL AS pending FROM devices ORDER BY created_at DESC').all();
   }
-  /** 还能用的管理者设备（启用的管理者名下、没撤销、不在待确认）：少于一台家庭就没人能批准新手机了。 */
-  private activeAdminDevices(): string[] {
-    return (this.db.prepare("SELECT d.id FROM devices d JOIN members m ON m.id=d.member_id WHERE m.role='admin' AND m.enabled=1 AND d.revoked=0 AND d.pending_until IS NULL").all() as {id:string}[]).map(row=>row.id);
+  /** 还能用的管理者设备：已确认、未撤销且一年内用过，和 auth 的有效期规则一致。 */
+  private activeAdminDevices(now=Date.now()) {
+    return this.db.prepare("SELECT d.id,d.member_id FROM devices d JOIN members m ON m.id=d.member_id WHERE m.role='admin' AND m.enabled=1 AND d.revoked=0 AND d.pending_until IS NULL AND COALESCE(d.last_used_at,d.created_at)>=?").all(now-DEVICE_IDLE_MS) as {id:string;member_id:string}[];
+  }
+  private requireOtherAdminDevice(memberId:string) {
+    const active=this.activeAdminDevices();
+    if(active.length>0&&active.every(device=>device.member_id===memberId))
+      throw new Problem(400,'LAST_ADMIN_DEVICE','这是最后一位有有效手机的管理者，请先让另一位管理者的手机完成加入。');
   }
   revoke(id:string) {
     this.db.transaction(()=>{
       const active=this.activeAdminDevices();
-      if(active.length===1&&active[0]===id) throw new Problem(400,'LAST_ADMIN_DEVICE','这是最后一台管理者手机，停用后就没人能批准新手机了。');
+      if(active.length===1&&active[0]!.id===id) throw new Problem(400,'LAST_ADMIN_DEVICE','这是最后一台管理者手机，停用后就没人能批准新手机了。');
       this.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(id);
+      this.db.prepare("UPDATE pair_requests SET status='cancelled',enc=NULL,ct=NULL WHERE device_id=? AND status='approved'").run(id);
     })();
   }
   /** 启停与额度；不能停用最后一位启用的管理者。 */
@@ -330,7 +339,13 @@ export class Store {
       const member=this.db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE id=?`).get(id) as Member|undefined;
       if(!member) throw new Problem(404,'NOT_FOUND','成员不存在。');
       if(member.role==='admin'&&member.enabled&&!patch.enabled&&this.admins().length<=1) throw new Problem(400,'ADMIN_REQUIRED','至少要留一位管理者。');
+      if(member.role==='admin'&&member.enabled&&!patch.enabled)this.requireOtherAdminDevice(id);
       this.db.prepare('UPDATE members SET enabled=?,photo_limit=?,write_limit=?,backup_limit_bytes=COALESCE(?,backup_limit_bytes) WHERE id=?').run(patch.enabled?1:0,patch.photoLimit,patch.writeLimit,patch.backupLimitBytes??null,id);
+      // 启停成员时未完成的批准一并作废，必须重新扫码。
+      if(!patch.enabled||!member.enabled) {
+        const open=this.db.prepare("SELECT id FROM pair_requests WHERE member_id=? AND status='approved'").all(id) as {id:string}[];
+        for(const request of open)this.cancelPair(request.id);
+      }
     })();
   }
   /** 改称呼与角色；不能把最后一位启用的管理者降成家人。改称呼不动任何旧落款（落款是内容）。 */
@@ -339,6 +354,7 @@ export class Store {
       const member=this.db.prepare(`SELECT ${MEMBER_COLUMNS} FROM members WHERE id=?`).get(id) as Member|undefined;
       if(!member) throw new Problem(404,'NOT_FOUND','成员不存在。');
       if(member.role==='admin'&&patch.role!=='admin'&&member.enabled&&this.admins().length<=1) throw new Problem(400,'ADMIN_REQUIRED','至少要留一位管理者。');
+      if(member.role==='admin'&&patch.role!=='admin'&&member.enabled)this.requireOtherAdminDevice(id);
       if(patch.name!==member.name&&this.db.prepare('SELECT 1 FROM members WHERE name=? AND id!=?').get(patch.name,id)) throw new Problem(409,'NAME_TAKEN',`家里已经有「${patch.name}」了。`);
       this.db.prepare('UPDATE members SET name=?,role=? WHERE id=?').run(patch.name,patch.role,id);
     })();

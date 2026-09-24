@@ -1,8 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Props } from "../src/local/navigation";
 import type { Overview } from "../src/family/api";
+import { FamilyError } from "../src/family/api";
 import { FamilyScreen, deviceLine, isLastAdminDevice } from "../src/family/FamilyScreen";
-import { checkPositions, firstWrong } from "../src/family/Words";
+import { RecoveryWords, checkPositions, firstWrong } from "../src/family/Words";
 import { qrModules } from "../src/family/Qr";
 
 const env = vi.hoisted(() => ({
@@ -13,6 +14,7 @@ const env = vi.hoisted(() => ({
   api: {} as Record<string, ReturnType<typeof vi.fn>>,
   share: vi.fn(), newest: vi.fn(), leave: vi.fn(), mark: vi.fn(), busy: vi.fn(),
   forgetToken: vi.fn(), forgetDeviceKey: vi.fn(), token: vi.fn(),
+  prepare: vi.fn(), complete: vi.fn(), recoveryAdmins: vi.fn(),
 }));
 vi.mock("react", () => ({
   useState: (initial: unknown) => {
@@ -54,9 +56,13 @@ vi.mock("../src/family/api", async () => {
 });
 vi.mock("../src/family/session", () => ({ getToken: env.token, forgetToken: env.forgetToken }));
 vi.mock("../src/family/keys", () => ({ forgetDeviceKey: env.forgetDeviceKey }));
-vi.mock("../src/family/pairing", () => ({}));
+vi.mock("../src/family/pairing", () => ({
+  prepareFamilyStart: env.prepare,
+  completeFamilyStart: env.complete,
+  recoveryAdmins: env.recoveryAdmins,
+}));
 
-type Element = { type?: unknown; props?: { testID?: string; children?: unknown; title?: string; message?: string; onPress?: () => void } };
+type Element = { type?: unknown; props?: { testID?: string; children?: unknown; title?: string; message?: string; onPress?: () => void; onDone?: () => void; onChangeText?: (text: string) => void; words?: string; submitError?: string } };
 function nodes(node: unknown): Element[] {
   if (Array.isArray(node)) return node.flatMap(nodes);
   if (!node || typeof node !== "object") return [];
@@ -100,7 +106,7 @@ const overview = (devices: Partial<Overview["devices"][number]>[]): Overview => 
     { id: "m2", name: "外婆", role: "member", enabled: 1, photo_limit: 100, write_limit: 20 },
   ],
   devices: devices.map((d, i) => ({
-    id: `d${i + 1}`, member_id: "m1", name: `手机${i + 1}`, revoked: 0, created_at: 0,
+    id: `d${i + 1}`, member_id: "m1", name: `手机${i + 1}`, revoked: 0, created_at: Date.now(),
     last_used_at: null, approved_by: null, pending: 0, ...d,
   })),
 });
@@ -117,6 +123,35 @@ it("没加入时给三个入口，不出现任何登录与密码", () => {
   expect(text(tree)).toContain("这台手机已被停用");
   expect(text(tree)).not.toMatch(/登录|用户名/);
   expect(nodes(tree).filter((el) => el.type === "Field" || el.type === "FieldRow")).toEqual([]);
+});
+it("先抄下并核对恢复码，再提交激活；提交失败留在核对页并可找回", async () => {
+  const prepared = { words: "paper recovery words", key: joined.key, familyId: "f", input: {} };
+  env.prepare.mockResolvedValueOnce(prepared);
+  const form = render({ kind: "start" });
+  find(form, "family-activation")!.props!.onChangeText!("activation");
+  find(form, "family-member-name")!.props!.onChangeText!("爸爸");
+  find(render(), "family-start-submit")!.props!.onPress!();
+  await vi.waitFor(() => expect((env.slots[STEP] as { kind: string }).kind).toBe("startWords"));
+  expect(env.prepare).toHaveBeenCalledWith({ api: env.api }, { activationCode: "activation", memberName: "爸爸", deviceName: "iPhone" });
+  expect(env.complete).not.toHaveBeenCalled();
+
+  let tree = render();
+  const words = nodes(tree).find((node) => node.type === RecoveryWords)!;
+  expect(words.props!.words).toBe(prepared.words);
+  expect(find(tree, "family-start-recover")).toBeUndefined();
+  env.complete.mockRejectedValueOnce(new Error("钥匙串没存住"));
+  words.props!.onDone!();
+  await vi.waitFor(() => expect(env.slots[ERROR]).toBe("钥匙串没存住"));
+  expect(env.complete).toHaveBeenCalledWith({ api: env.api }, prepared);
+  expect(env.slots[STEP]).toEqual({ kind: "startWords", prepared });
+  tree = render();
+  expect(nodes(tree).find((node) => node.type === RecoveryWords)!.props!.submitError).toBe("钥匙串没存住");
+
+  const recovery = { secret: new Uint8Array(16).fill(1), admins: [{ id: "m", name: "爸爸" }] };
+  env.recoveryAdmins.mockResolvedValueOnce(recovery);
+  find(tree, "family-start-recover")!.props!.onPress!();
+  await vi.waitFor(() => expect(env.slots[STEP]).toEqual({ kind: "pick", ...recovery }));
+  expect(env.recoveryAdmins).toHaveBeenCalledWith({ api: env.api }, prepared.words);
 });
 it("已获准与第一次同步分开：先说是谁，按了才同步，本机已有几段先讲清楚", async () => {
   env.records = { a: {}, b: {}, c: {} };
@@ -162,7 +197,11 @@ it("最后一台管理者手机不能退出：先拦下，不忘钥匙、不撤�
 });
 it("退出：先撤下远端那一份，再作废令牌，最后忘掉令牌与设备密钥", async () => {
   const order: string[] = [];
-  env.leave.mockImplementation(async () => { order.push("sync"); return { removedRemote: true }; });
+  env.leave.mockImplementation(async ({ revokeDevice }: { revokeDevice: () => Promise<void> }) => {
+    order.push("sync");
+    await revokeDevice();
+    return { removedRemote: true };
+  });
   env.api.leave!.mockImplementation(async () => { order.push("server"); });
   env.forgetToken.mockImplementation(async () => { order.push("token"); });
   env.forgetDeviceKey.mockImplementation(async () => { order.push("device-key"); });
@@ -171,6 +210,20 @@ it("退出：先撤下远端那一份，再作废令牌，最后忘掉令牌与�
   env.alerts[0]!.buttons.find((b) => b.text === "退出")!.onPress!();
   await vi.waitFor(() => expect((env.slots[STEP] as { kind: string }).kind).toBe("out"));
   expect(order).toEqual(["sync", "server", "token", "device-key"]);
+  expect(env.mark.mock.calls).toEqual([[true], [false]]);
+});
+it("设备清单已过时、服务拒绝最后一台管理者退出时保留凭据", async () => {
+  env.leave.mockImplementation(async ({ revokeDevice }: { revokeDevice: () => Promise<void> }) => {
+    await revokeDevice();
+    return { removedRemote: true };
+  });
+  env.api.leave!.mockRejectedValueOnce(new FamilyError("LAST_ADMIN_DEVICE", "这是最后一台管理者手机。", 400));
+  find(render({ kind: "home", family, overview: overview([{}, {}]) }), "family-leave")!.props!.onPress!();
+  env.alerts[0]!.buttons.find((b) => b.text === "退出")!.onPress!();
+  await vi.waitFor(() => expect(env.slots[ERROR]).toContain("最后一台管理者手机"));
+  expect(env.forgetToken).not.toHaveBeenCalled();
+  expect(env.forgetDeviceKey).not.toHaveBeenCalled();
+  expect((env.slots[STEP] as { kind: string }).kind).toBe("home");
   expect(env.mark.mock.calls).toEqual([[true], [false]]);
 });
 it("家人（非管理者）看不到添加、设备与换恢复码", () => {
@@ -188,6 +241,12 @@ it("最后一台管理者设备的判断与服务端一致：待确认、已停�
   expect(deviceLine(overview([{ pending: 1 }]).devices[0]!)).toContain("等这台手机确认");
   expect(deviceLine(overview([{}]).devices[0]!)).toBe("还没用过");
   expect(deviceLine(overview([{ last_used_at: Date.UTC(2026, 8, 20) }]).devices[0]!)).toMatch(/^最后使用 /);
+});
+it("一年未使用的管理者手机不能作为退出后的接替设备", () => {
+  const now = Date.now(), cutoff = now - 365 * 24 * 60 * 60 * 1000;
+  expect(isLastAdminDevice(overview([{}, { last_used_at: cutoff - 1 }]), "d1", now)).toBe(true);
+  expect(isLastAdminDevice(overview([{}, { created_at: cutoff - 1 }]), "d1", now)).toBe(true);
+  expect(isLastAdminDevice(overview([{}, { last_used_at: cutoff }]), "d1", now)).toBe(false);
 });
 it("恢复码核对：随机抽 3 个不同位置，大小写与空格不算错", () => {
   for (let i = 0; i < 50; i++) {

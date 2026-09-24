@@ -884,6 +884,21 @@ it("同步成功记住本机设备 ID，退出直接删除它且保留同成员�
   expect(remote.manifests.has("A")).toBe(true);
   expect(remote.manifests.has("B")).toBe(false);
 });
+it.each(["LAST_ADMIN_DEVICE", "NETWORK"])("服务端因 %s 没有确认设备退出时保留内容钥匙与同步状态", async (code) => {
+  const { receiver: p, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  const previous = await p.state.readRemoteState();
+  const error = Object.assign(new Error("退出未确认"), { code });
+  const revokeDevice = vi.fn(async () => {
+    expect(await p.state.loadKey()).toEqual(key);
+    throw error;
+  });
+  await expect(p.family.leaveFamily({ ...deps, revokeDevice })).rejects.toBe(error);
+  expect(revokeDevice).toHaveBeenCalledOnce();
+  expect(await p.state.loadKey()).toEqual(key);
+  expect(await p.state.readRemoteState()).toEqual(previous);
+  expect(Object.keys(p.store.get().records)).toHaveLength(2);
+});
 it.each([
   "NETWORK",
   "TIMEOUT",

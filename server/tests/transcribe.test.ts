@@ -95,6 +95,39 @@ test('写作额度用尽在两个假件之前拒绝；暂停规则也沿用',asy
  const second=await f.post();assert.equal(second.statusCode,429);assert.equal(second.json().code,'QUOTA_EXCEEDED');assert.equal(f.decoded.length,1);assert.equal(f.sent.length,1);
  f.store.setSettings({...f.store.settings(),paused:true});const paused=await f.post();assert.equal(paused.statusCode,503);assert.equal(paused.json().code,'AI_PAUSED');
 });
+test('上传途中停用手机，在预留额度和转码前拒绝',async t=>{
+ const f=fixture(t);
+ const payload=Readable.from((async function*(){
+  yield input.subarray(0,1);
+  f.store.revoke(f.owner.member.deviceId!);
+  yield input.subarray(1);
+ })());
+ const response=await f.app.inject({method:'POST',url:'/api/v1/ai/transcribe',headers:f.headers(),payload});
+ assert.equal(response.statusCode,401);assert.equal(response.json().code,'AUTH_REQUIRED');
+ assert.equal(f.decoded.length,0);assert.equal(f.sent.length,0);assert.equal(f.rows().length,0);
+ assert.equal((await f.post({},f.second.token)).statusCode,200);
+});
+test('上传途中调低额度，预留时使用最新的成员上限',async t=>{
+ const f=fixture(t);
+ const payload=Readable.from((async function*(){
+  yield input.subarray(0,1);
+  f.store.editMember(f.owner.member.id,{enabled:true,photoLimit:0,writeLimit:0});
+  yield input.subarray(1);
+ })());
+ const response=await f.app.inject({method:'POST',url:'/api/v1/ai/transcribe',headers:f.headers(),payload});
+ assert.equal(response.statusCode,429);assert.equal(response.json().code,'QUOTA_EXCEEDED');
+ assert.equal(f.decoded.length,0);assert.equal(f.sent.length,0);assert.equal(f.rows().length,0);
+});
+test('转码途中停用手机，不调用上游也不扣文案额度',async t=>{
+ const f=fixture(t);
+ f.setTranscoder(async()=>{f.store.revoke(f.owner.member.deviceId!);return {wav,seconds:1};});
+ const response=await f.post();
+ assert.equal(response.statusCode,401);assert.equal(response.json().code,'AUTH_REQUIRED');
+ assert.equal(f.decoded.length,1);assert.equal(f.sent.length,0);
+ assert.equal(f.usage().writes,0);assert.equal(f.rows()[0]!.status,'failed');
+ assert.equal(f.rows()[0]!.error_code,'AUTH_REQUIRED');
+ assert.equal((await f.post({},f.second.token)).statusCode,200);
+});
 test('同设备最多一个，全服务最多两个，结束后归还名额',async t=>{
  const f=fixture(t);let release!:()=>void,started!:()=>void;
  const gate=new Promise<void>(resolve=>{release=resolve;}),both=new Promise<void>(resolve=>{started=resolve;});let count=0;

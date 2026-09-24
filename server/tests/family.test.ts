@@ -231,6 +231,48 @@ test('不需要登录的申请接口有上限与限流；申请本身不带任�
  assert.throws(()=>empty.createPair({publicKey:b64url(32),deviceName:'手机',claimHash:sha('a')}),/还没有家庭/);
 });
 
+for(const action of ['revoke','disable'] as const) {
+ test(`批准后${action}的手机不能再领取钥匙包，重新启用家人也不会恢复未完成的批准`,async t=>{
+  const f=fixture(t),memberId=randomUUID(),r=await f.request('外婆的手机');
+  assert.equal((await f.approve(r.id,{id:memberId,name:'外婆',role:'member'})).status,200);
+  const first=await f.collect(r.id,r.claim);assert.equal(first.status,200);
+  const stopped=action==='revoke'
+   ?await f.call('DELETE',`/api/v1/admin/devices/${first.body.member.deviceId}`,undefined,f.admin!.token)
+   :await f.call('PATCH',`/api/v1/admin/members/${memberId}`,{enabled:false,photoLimit:1,writeLimit:1},f.admin!.token);
+  assert.equal(stopped.status,200);
+  const denied=await f.collect(r.id,r.claim);
+  assert.equal(denied.status,410);assert.equal(denied.body.code,'PAIR_CLOSED');
+  assert.ok(!('token' in denied.body));assert.ok(!('ct' in denied.body));
+  assert.equal((await f.call('GET','/api/v1/me',undefined,first.body.token)).status,401);
+  const closed=f.store.db.prepare('SELECT status,enc,ct FROM pair_requests WHERE id=?').get(r.id) as {status:string;enc:string|null;ct:string|null};
+  assert.deepEqual(closed,{status:'cancelled',enc:null,ct:null});
+  if(action==='disable') {
+   assert.equal((await f.call('PATCH',`/api/v1/admin/members/${memberId}`,{enabled:true,photoLimit:1,writeLimit:1},f.admin!.token)).status,200);
+   assert.equal((await f.collect(r.id,r.claim)).status,410);
+   assert.equal((await f.call('GET','/api/v1/me',undefined,first.body.token)).status,401);
+  }
+  const replacement=await f.join({id:memberId},'外婆的新手机');
+  assert.equal((await f.call('GET','/api/v1/me',undefined,replacement.token)).status,200);
+ });
+}
+
+for(const action of ['revoked','disabled'] as const) {
+ test(`旧库残留的 approved 申请也不能向${action}手机下发钥匙包`,async t=>{
+  const f=fixture(t),memberId=randomUUID(),r=await f.request();
+  const approved=await f.approve(r.id,{id:memberId,name:'妈妈',role:'member'});
+  assert.equal(approved.status,200);
+  if(action==='revoked')f.store.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(approved.body.binding.deviceId);
+  else f.store.db.prepare('UPDATE members SET enabled=0 WHERE id=?').run(memberId);
+  const denied=await f.collect(r.id,r.claim);
+  assert.equal(denied.status,410);assert.equal(denied.body.code,'PAIR_CLOSED');
+  assert.ok(!('token' in denied.body));assert.ok(!('ct' in denied.body));
+  if(action==='disabled') {
+   assert.equal((await f.call('PATCH',`/api/v1/admin/members/${memberId}`,{enabled:true,photoLimit:1,writeLimit:1},f.admin!.token)).status,200);
+   assert.equal((await f.collect(r.id,r.claim)).status,410);
+  }
+ });
+}
+
 test('所有管理者手机都没了：凭恢复证明选「我是谁」，登记新管理者手机，挂着的配对作废',async t=>{
  const f=fixture(t);
  const mom=await f.join({id:randomUUID(),name:'妈妈',role:'admin'});
@@ -317,6 +359,48 @@ test('一年没用过的手机要重新批准；最后使用时间至多每小�
  assert.equal(used(),now+2*3600*1000);
  t.mock.restoreAll();t.mock.method(Date,'now',()=>now+2*3600*1000+DEVICE_IDLE_MS+1);
  assert.equal((await f.call('GET','/api/v1/me',undefined,member.token)).status,401);
+});
+
+for(const state of ['pending','revoked','idle','missing'] as const) {
+ test(`其他管理者的手机${state}时，不能退出、停用或降级最后一台有效管理者手机`,async t=>{
+  const f=fixture(t),dad=f.admin!;
+  const otherId=randomUUID();
+  if(state==='pending') {
+   const r=await f.request();
+   assert.equal((await f.approve(r.id,{id:otherId,name:'妈妈',role:'admin'})).status,200);
+  } else {
+   f.store.insertMember(otherId,'妈妈','admin');
+   if(state!=='missing') {
+    const other=f.store.attach(otherId,'妈妈的手机');
+    if(state==='revoked')f.store.revoke(other.member.deviceId!);
+    else f.store.db.prepare('UPDATE devices SET last_used_at=? WHERE id=?').run(Date.now()-DEVICE_IDLE_MS-1000,other.member.deviceId);
+   }
+  }
+  for(const result of [
+   await f.call('POST','/api/v1/me/leave',{},dad.token),
+   await f.call('PATCH',`/api/v1/admin/members/${dad.member.id}`,{enabled:false,photoLimit:1,writeLimit:1},dad.token),
+   await f.call('PUT',`/api/v1/admin/members/${dad.member.id}/profile`,{name:'老爸',role:'member'},dad.token),
+  ]) {
+   assert.equal(result.status,400);assert.equal(result.body.code,'LAST_ADMIN_DEVICE');
+  }
+  const unchanged=f.store.memberById(dad.member.id);
+  assert.equal(unchanged.enabled,1);assert.equal(unchanged.role,'admin');assert.equal(unchanged.name,'爸爸');
+  assert.equal((await f.call('GET','/api/v1/admin/overview',undefined,dad.token)).status,200);
+ });
+}
+
+test('另一位管理者有有效手机时，可以停用或降级管理者；普通资料更新不受影响',async t=>{
+ for(const action of ['disable','demote'] as const) {
+  const f=fixture(t),dad=f.admin!;
+  const mom=await f.join({id:randomUUID(),name:'妈妈',role:'admin'});
+  const changed=action==='disable'
+   ?await f.call('PATCH',`/api/v1/admin/members/${dad.member.id}`,{enabled:false,photoLimit:1,writeLimit:1},mom.token)
+   :await f.call('PUT',`/api/v1/admin/members/${dad.member.id}/profile`,{name:'老爸',role:'member'},mom.token);
+  assert.equal(changed.status,200);
+  assert.equal((await f.call('GET','/api/v1/admin/overview',undefined,mom.token)).status,200);
+  assert.equal((await f.call('PATCH',`/api/v1/admin/members/${mom.member.id}`,{enabled:true,photoLimit:2,writeLimit:2},mom.token)).status,200);
+  assert.equal((await f.call('PUT',`/api/v1/admin/members/${mom.member.id}/profile`,{name:'萌萌',role:'admin'},mom.token)).status,200);
+ }
 });
 
 test('部署端最后一招：把一位家人升为管理者',async t=>{

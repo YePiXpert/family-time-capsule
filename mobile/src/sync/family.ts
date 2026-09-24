@@ -422,9 +422,14 @@ export async function readNewestManifest(
   return { deviceName: newest.deviceName, createdAt: manifest.meta.createdAt };
 }
 
-/** 退出不需要打开本机库；可离线退出，但服务拒绝删除时先保留本机钥匙。 */
+/**
+ * 退出不需要打开本机库。先撤下清单、作废设备，再忘掉本机钥匙；
+ * 家庭服务拒绝退出（例如已成为最后一台管理者手机）或暂时不可达时，保留钥匙与同步状态。
+ */
 export async function leaveFamily(
-  deps: Pick<EngineDeps, "transport" | "signal">,
+  deps: Pick<EngineDeps, "transport" | "signal"> & {
+    revokeDevice?: () => Promise<unknown>;
+  },
 ): Promise<{ removedRemote: boolean }> {
   let removedRemote = false;
   try {
@@ -445,6 +450,7 @@ export async function leaveFamily(
     )
       throw e;
   }
+  await deps.revokeDevice?.();
   await forgetKey();
   clearSyncFiles();
   return { removedRemote };
