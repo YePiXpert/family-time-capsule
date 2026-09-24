@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import time
 import xml.etree.ElementTree as ET
-from android_ui import PACKAGE as package, adb, find, hierarchy, screencap, seek, stats, tap, tap_last, tap_seek, tap_shelf, wait_until_drawn
+from android_ui import PACKAGE as package, adb, find, hierarchy, screencap, scrolls_around, seek, stats, tap, tap_last, tap_seek, tap_shelf, wait_until_drawn
 
 p=argparse.ArgumentParser();p.add_argument('apk');p.add_argument('--output',type=Path,required=True);args=p.parse_args();args.output.mkdir(parents=True,exist_ok=True)
 def shot(name,fresh=False):
@@ -27,6 +27,12 @@ try:
     adb('shell','wm','size','390x844');adb('shell','wm','density','160')
     launch();tap('welcome-start');shot('home-390');phase('Welcome')
     tap('capture-new');find('说一段');tap('capture-text');write('Offline little story.');find('AI 助手');adb('shell','input','keyevent','4');shot('editor')
+    # 键盘收起后编辑页一屏放下、不能上下滑（1.0.5 出包：纸比滚动区高出一截，整页还能滑）。键盘收起有动画，多看几次。
+    for attempt in range(5):
+        if not scrolls_around(hierarchy(fresh=attempt>0),'editor-sheet'): break
+        time.sleep(1)
+    else: shot('editor-scrolls',fresh=True);raise AssertionError('Editor sheet is taller than its scroll area with the keyboard down')
+    report['editorFits']=True
     restart();tap('继续编辑');assert find('capture-text').get('text')=='Offline little story.'
     tap('editor-by');tap('editor-by-爸爸');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸';shot('record-reading')
     tap('record-edit');tap('capture-text');adb('shell','input','keyevent','KEYCODE_MOVE_END');write(' More.');adb('shell','input','keyevent','4');tap('capture-save');find('record-edit');assert find('record-by').get('text')=='—— 爸爸';phase('Record and draft')

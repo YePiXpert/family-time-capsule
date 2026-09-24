@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AppState,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -84,10 +85,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [allowExit, setAllowExit] = useState(false),
     [promptSeed, setPromptSeed] = useState(0),
     [newPerson, setNewPerson] = useState(""),
-    [viewport, setViewport] = useState(0),
-    [height, setHeight] = useState(0),
     [contentHeight, setContentHeight] = useState(0),
     [pickedId, setPickedId] = useState<string | null>(null);
+  const { viewport, height, measure } = useSheetViewport();
   const dailyVisible =
     !!draft && !draft.recordId && !draft.content.text.trim();
   const storyDay = isStoryDay(state.profile.birthday, new Date());
@@ -478,12 +478,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
           keyboardShouldPersistTaps="handled"
           // 上下都是 20（s.content 底部原是 32）：纸的高度按这 40 算，放得下时内容正好一屏。
           contentContainerStyle={[s.content, { paddingBottom: 20 }]}
-          // 纸卡至少铺满没弹键盘时的可见高度：记下最高的一次，键盘弹起、滚动区变矮时纸不跟着缩。
-          onLayout={(e) => {
-            const h = e.nativeEvent.layout.height;
-            setHeight(h);
-            setViewport((v) => Math.max(v, h));
-          }}
+          // 纸卡铺满没弹键盘时的可见高度，键盘弹起、滚动区变矮时纸不跟着缩，见 useSheetViewport。
+          onLayout={(e) => measure(e.nativeEvent.layout.height)}
           onContentSizeChange={(_, h) => setContentHeight(h)}
           // 纸刚好铺满一屏：放得下就不能滑、不回弹（iOS 纵向默认总回弹）；键盘弹起、展开标题地点人物、
           // 字多到纸放不下时才可以滑。
@@ -1037,6 +1033,54 @@ const KIND_NAMES: Record<LocalMedia["kind"], string> = {
   video: "视频",
   document: "文件",
 };
+/**
+ * 纸的高度跟着「键盘收着时」滚动区最新量到的高度走；键盘弹起期间只记当前高度，纸不缩。
+ * 不能取历来最高：安卓的底部安全区晚一拍才到，首帧量到的高了 24，纸就永远多出一截、整页能滑（1.0.5 出包截图）。
+ * 安卓的 keyboardDidShow 可能晚于滚动区变矮的那次布局：弹起前 500ms 内矮了一大截的那次「收着」高度不算数，退回它之前那个。
+ */
+function useSheetViewport() {
+  const [viewport, setViewport] = useState(0);
+  const [height, setHeight] = useState(0);
+  const open = useRef(false);
+  const current = useRef(0);
+  const closed = useRef({ height: 0, before: 0, at: 0 });
+  useEffect(() => {
+    const ios = Platform.OS === "ios";
+    const show = Keyboard.addListener(
+      ios ? "keyboardWillShow" : "keyboardDidShow",
+      () => {
+        open.current = true;
+        const c = closed.current;
+        // 只认键盘那么大的一跳（>100）：安全区晚到只差几十，不能被当成键盘退回去。
+        if (!ios && c.before - c.height > 100 && Date.now() - c.at < 500) {
+          c.height = c.before;
+          setViewport(c.before);
+        }
+      },
+    );
+    const hide = Keyboard.addListener(
+      ios ? "keyboardWillHide" : "keyboardDidHide",
+      () => {
+        open.current = false;
+        // 滚动区已经长回来（安卓先布局后发事件）就用它；还没长回来，下一次布局会接上。
+        setViewport((v) => Math.max(v, current.current));
+      },
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const measure = (h: number) => {
+    current.current = h;
+    setHeight(h);
+    if (open.current) return;
+    const c = closed.current;
+    closed.current = { height: h, before: c.height, at: Date.now() };
+    setViewport(h);
+  };
+  return { viewport, height, measure };
+}
 const OPEN_LABELS: Record<LocalMedia["kind"], string> = {
   image: "看大图",
   audio: "听录音",
