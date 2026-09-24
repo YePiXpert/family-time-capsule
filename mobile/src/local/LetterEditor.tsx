@@ -3,6 +3,7 @@ import {
   Alert,
   AppState,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -14,10 +15,10 @@ import { usePreventRemove } from "@react-navigation/native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { JournalIcon } from "../components/JournalIcon";
 import { useLibrary, useStore } from "./context";
-import { useRecorder } from "./editorHooks";
+import { PermissionDenied, useRecorder } from "./editorHooks";
 import { isEmptyLetter } from "./empties";
 import { toDayKey } from "./dates";
-import { openAtLabel } from "./letters";
+import { openAtLabel, PAST_OPEN_AT } from "./letters";
 import {
   LETTER_FROM_LIMIT,
   LETTER_TEXT_LIMIT,
@@ -61,6 +62,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     : undefined;
   const [draft, setDraft] = useState(initial),
     [error, setError] = useState(""),
+    [permDenied, setPermDenied] = useState(false),
     [busy, setBusy] = useState(false),
     [dateOpen, setDateOpen] = useState(false),
     [allowExit, setAllowExit] = useState(false),
@@ -152,7 +154,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   });
   useEffect(() => {
     const sub = AppState.addEventListener("change", (status) => {
-      if (status !== "active") {
+      // iOS 拉下控制中心、弹系统框只是 inactive：录音照录，只落一次盘；真退到后台才收尾录音。
+      if (status === "inactive") void flush().catch((e) => setError(messageOf(e)));
+      else if (status !== "active") {
         void (async () => {
           await finishRef.current();
           await flush();
@@ -180,9 +184,11 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     operation.current = true;
     setBusy(true);
     setError("");
+    setPermDenied(false);
     try {
       await fn();
     } catch (e) {
+      if (e instanceof PermissionDenied) setPermDenied(true);
       setError(messageOf(e));
     } finally {
       operation.current = false;
@@ -254,6 +260,10 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   const seal = () => {
     if (!letter.text.trim()) {
       setError("信还是空的，先写点什么。");
+      return;
+    }
+    if (letter.openAt <= toDayKey(new Date())) {
+      setError(PAST_OPEN_AT);
       return;
     }
     Alert.alert(
@@ -418,7 +428,12 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                 {Platform.OS === "ios" && (
                   <Button
                     title="日期选好了"
-                    onPress={() => setDateOpen(false)}
+                    onPress={() => {
+                      // 拆封日已过时滚轮停在明天但不触发 onChange：按看到的那天记下。
+                      if (letter.openAt < toDayKey(tomorrow))
+                        change({ openAt: toDayKey(tomorrow) });
+                      setDateOpen(false);
+                    }}
                   />
                 )}
               </View>
@@ -535,9 +550,21 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                   compact
                   disabled={busy || recording}
                   onPress={() =>
-                    change({
-                      mediaIds: letter.mediaIds.filter((id) => id !== media.id),
-                    })
+                    // 去掉后这段录音不在任何地方引用，清理素材时会被删掉：先问一句。
+                    Alert.alert("去掉这段录音？", "去掉后信里就没有这段录音了。", [
+                      { text: "取消", style: "cancel" },
+                      {
+                        text: "去掉",
+                        style: "destructive",
+                        onPress: () => {
+                          const ids = current.current?.letter.mediaIds;
+                          if (ids)
+                            change({
+                              mediaIds: ids.filter((id) => id !== media.id),
+                            });
+                        },
+                      },
+                    ])
                   }
                 />
               </View>
@@ -545,6 +572,19 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
             {!!error && (
               <View style={{ paddingBottom: 4 }}>
                 <ErrorText message={error} />
+                {permDenied && (
+                  <View style={[s.row, { marginLeft: -8 }]}>
+                    <Button
+                      title="去系统设置开启"
+                      kind="text"
+                      compact
+                      onPress={() => {
+                        setPermDenied(false);
+                        void Linking.openSettings();
+                      }}
+                    />
+                  </View>
+                )}
               </View>
             )}
             {/* 页脚一行：左边「录一段话」，右边落款「—— 妈妈」，落款直接写在纸上。 */}

@@ -97,13 +97,17 @@ export function sortLetters(
   });
 }
 
-/** 封存：正文不能是空的；标题与落款去掉首尾空白。封存后 updateLetter 会拒绝改动。 */
+export const PAST_OPEN_AT = "拆封的日子已经到了，换一个以后的日子再封存。";
+/** 封存：正文不能是空的；拆封日要在封存那天之后；标题与落款去掉首尾空白。封存后 updateLetter 会拒绝改动。 */
 export function sealLetterAt(
   letter: Stored<LocalLetter>,
   at: string,
 ): Stored<LocalLetter> {
   if (letter.sealed) throw new Error("这封信已经封存了。");
   if (!letter.text.trim()) throw new Error("信还是空的，先写点什么。");
+  // 日期选择只挡得住新选的日子：草稿放久了，原先选的拆封日可能已经过了。
+  if (letter.openAt <= toDayKey(new Date(at)))
+    throw new Error(PAST_OPEN_AT);
   return {
     ...letter,
     title: letter.title.trim(),

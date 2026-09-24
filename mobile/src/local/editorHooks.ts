@@ -21,6 +21,8 @@ import type { LocalStore } from "./store";
 import { messageOf } from "./ui";
 
 /** 草稿持久化：立即写、文字防抖写、失焦/退出冲刷共用一条写路径。 */
+/** 系统权限被拒：界面据此给「去系统设置开启」，而不是「重试」。 */
+export class PermissionDenied extends Error {}
 export function useDraftPersist(
   store: LocalStore,
   onError: (message: string) => void,
@@ -188,7 +190,8 @@ export function useRecorder<D extends { recordingFile?: string }>({
   };
   const start = async () => {
     const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) throw new Error("请在系统设置中允许使用麦克风。");
+    if (!permission.granted)
+      throw new PermissionDenied("请在系统设置中允许使用麦克风。");
     await setAudioModeAsync({
       allowsRecording: true,
       playsInSilentMode: true,
