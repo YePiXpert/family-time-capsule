@@ -1373,6 +1373,7 @@ export function Field({
     <View style={{ gap: 8 }}>
       {!hideLabel && <Text style={s.muted}>{label}</Text>}
       <TextInput
+        maxFontSizeMultiplier={TEXT_MAX_SCALE}
         {...props}
         accessibilityLabel={label}
         placeholderTextColor={colors.muted}
@@ -1405,6 +1406,7 @@ export function FieldRow({
     >
       <Text style={[s.muted, { minWidth: 40 }]}>{label}</Text>
       <TextInput
+        maxFontSizeMultiplier={TEXT_MAX_SCALE}
         accessibilityLabel={label}
         {...props}
         placeholderTextColor={colors.muted}
