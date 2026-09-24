@@ -1486,8 +1486,31 @@ export function Photo({
   fill?: boolean;
 }) {
   const s = useStyles();
+  const { colors } = useTheme();
   const [error, setError] = useState(false);
   const [thumbFailed, setThumbFailed] = useState(false);
+  // 小格子（编辑页 96 的附件格、书架封面、月册网格）放不下两句话：只画同尺寸的占位与图标，
+  // 不然两行说明在窄格里折成十来行，把格子和整页撑高。读屏照样读出缺图。
+  if ((!media || error) && (size !== undefined || ratio !== undefined))
+    return (
+      <View
+        accessible
+        accessibilityLabel="照片暂时无法读取"
+        style={[
+          {
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: radius,
+            backgroundColor: colors.selected,
+          },
+          size !== undefined
+            ? { width: size, height: size }
+            : { width: "100%", aspectRatio: ratio },
+        ]}
+      >
+        <JournalIcon name="image" color={colors.muted} size={22} />
+      </View>
+    );
   if (!media || error)
     return (
       <View

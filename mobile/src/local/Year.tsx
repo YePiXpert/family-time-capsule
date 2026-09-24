@@ -302,11 +302,15 @@ export function Year({ route }: Props<"Year">) {
       }).length,
     0,
   );
+  // 统计与册子收整年，不跟着人物筛选走：翻一本缺了人的年册没有意义，副标题也要和书里的数目对得上。
+  const yearFirsts = records
+    .filter((r) => r.first)
+    .sort((a, b) => a.date.localeCompare(b.date));
   const stats = [
     `${records.length} 段时光`,
     photos ? `${photos} 张照片` : "",
     av ? `${av} 段影音` : "",
-    firsts.length ? `${firsts.length} 个第一次` : "",
+    yearFirsts.length ? `${yearFirsts.length} 个第一次` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -315,10 +319,6 @@ export function Year({ route }: Props<"Year">) {
     { length: 12 },
     (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`,
   );
-  // 册子收整年，不跟着人物筛选走：翻一本缺了人的年册没有意义。
-  const yearFirsts = records
-    .filter((r) => r.first)
-    .sort((a, b) => a.date.localeCompare(b.date));
   const yearPhotoIds = useMemo(
     () => [
       ...new Set(
