@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | react-native | 0.86.3 | `AccessibilityInfo.isReduceMotionEnabled()` 与 `reduceMotionChanged` 事件可用 |
 | expo | 57.0.25 | — |
-| @react-navigation/native-stack | 7.18.10 | `animation`、`animationTypeForReplace`、`fullScreenGestureEnabled`、`gestureEnabled`；`usePreventRemove` 生效时给 iOS 原生栈设 `preventNativeDismiss`，侧滑被原生拦下后走 `beforeRemove` |
+| @react-navigation/native-stack | 7.18.10 | `animation`、`fullScreenGestureEnabled`、`gestureEnabled`；`animationTypeForReplace` 类型注释写默认 `pop`，实际代码默认 `push`（`NativeStackView.native.tsx:106`）；`usePreventRemove` 生效时给 iOS 原生栈设 `preventNativeDismiss`，侧滑被原生拦下后走 `beforeRemove` |
 | react-native-screens | 4.26.2 | `default`／`flip` 以外的动画在 iOS 都是自定义 animator（`RNSScreenStackAnimator isCustomAnimation`）；**iOS 26 起 `fullScreenSwipeEnabled` 未设时默认 `YES`**（`RNSScreen.mm isFullScreenSwipeEffectivelyEnabled`），用系统 `interactiveContentPopGestureRecognizer`；`default`／modal 类转场时长不可配 |
 | react-native-reanimated | 4.5.1 | `useReducedMotion()` 只返回**启动时**的系统设置（`src/hook/useReducedMotion.ts`），改设置不重渲染；Shared Element Transitions 仍需实验 flag |
 | expo-glass-effect | 57.0.4 | 导出 `GlassView`（`glassEffectStyle` 可为 `{style, animate, animationDuration}`）、`GlassContainer`（`spacing`）、`isLiquidGlassAvailable`、`isGlassEffectAPIAvailable`（部分 iOS 26 beta 缺 API 会崩，官方建议使用前检查） |
@@ -34,7 +34,7 @@
 | 进场动画 | 书架小封面、提醒卡、最近卡 `FadeInUp`（玻璃卡在 iOS 已跳过）；年度册月册 `Volume` 在**被 push 进来的**年度页上逐个 `FadeInUp` | `Shelf.tsx`、`Year.tsx` |
 | 弹层 | AI 面板、选照片、装订预览都是 RN `Modal`（`slide`），`visible={… && !locked}`；AI 面板是 `transparent` + 暗色蒙层，蒙层跟着面板一起从底下滑上来 | `ai/Editor.tsx`、`PhotoPicker.tsx`、`BookPreview.tsx` |
 | 应用锁／隐私遮挡 | 锁与 iOS 多任务纸面遮罩是主窗口里 NavigationContainer 之后的一层 View；RN Modal 自成窗口画在它上面：锁住时 Modal 收起，但**iOS inactive 的纸面遮罩盖不住已打开的 Modal**（多任务界面里 AI 面板照常露出） | `App.tsx`、`lock.ts` |
-| 封信 | 确认后 `flush → sealLetter → leave → navigation.replace("Letter")`；无成功反馈；replace 默认用 pop 动画（像在后退） | `LetterEditor.tsx:259` |
+| 封信 | 确认后 `flush → sealLetter → leave → navigation.replace("Letter")`（replace 走 push 动画）；没有成功反馈 | `LetterEditor.tsx:259` |
 | 看图 | iOS 用 ScrollView 原生缩放，Android 用 RNGH 捏合／拖动 | `Media.tsx` |
 
 **与主人计划的出入（需要主人知道）：** 计划把「信纸」列为保持纸面，但编辑页与写信页那张「纸」（`editor-sheet`、`letter-sheet`）以及阅读卡目前都是 `Card`，在 iOS 液态玻璃下是 regular 玻璃。本轮不改（会改变主人已在真机上认可的整页观感，属于重设计）；若要严格执行「纸面负责阅读」，建议下一轮给 `Card` 加实色纸面选项，先在写信页做真机对比再定。
@@ -65,7 +65,6 @@
 | 所有普通路径（书架 → 年／月／专题册 → 记录、设置及子页、家庭、备份、外观、信、看图） | `animation: "default"`（iOS 原生层级推进，Android 平台默认）；减少动态时 `none` | 原生转场可被侧滑中途撤销；页内顶栏不变。fade 期间原生容器透明度 < 1，与「玻璃祖先不能透明」的已知问题同源，改 push 顺带避开 |
 | iOS 返回手势 | 全局 `fullScreenGestureEnabled: false`：只留左边缘侧滑 | 计划要求不全局开整屏返回；避免与看原图拖动、横向书架条、最近卡、正文选字冲突。代价：iOS 26 上「屏幕中间右滑返回」不再生效 |
 | 写记录、写信 | **保留原栈（card + 平台默认 push）**，不改 `modal`／`formSheet`／`fullScreenModal` | 阻断项成立：原生 modal 由 UIKit 呈现在 RN 根视图之上，主窗口里的应用锁与 iOS 多任务遮罩会被它盖住；编辑页还会 `popTo("Record")`、写信页 `replace("Letter")`，跨呈现方式替换更难验证。退出仍全部走现有 `usePreventRemove` |
-| 封信后进入信 | `Letter`、`LetterEditor` 设 `animationTypeForReplace: "push"` | 封存是向前一步，不该像后退 |
 | 短选择器 | 不改成原生 sheet；试点对象是现有 AI 底部面板（受控 RN Modal） | 原生 formSheet 同样在锁之上；把回调型选择器改成路由会改导航结构。改良：蒙层淡入、面板上滑、收放可反向打断、关闭后读屏焦点回到「AI」钮 |
 | 已打开的 Modal 与隐私遮挡 | Modal 里补一层同样的纸面遮罩，跟随 iOS inactive | 修复第一节列出的露出问题，不改变锁的时机 |
 | 看原图 | 不动缩放逻辑 | 只受益于关闭整屏返回 |
@@ -87,7 +86,7 @@
 
 | 阶段 | 内容 | 拟改文件 | 收益 | 风险／降级 |
 | --- | --- | --- | --- | --- |
-| M1 | 实时减少动态；动效 token；全局 `default` 转场；关整屏返回；封信 replace 用 push；年度页去掉与 push 叠加的逐个进场 | `ui.tsx`、`App.tsx`、`CaptureFab.tsx`、`Shelf.tsx` | 有方向的层级、可撤销侧滑、减少动态改设置即生效 | 原生转场只能真机验；若某页 push 时玻璃闪烁，单页退回 `fade` |
+| M1 | 实时减少动态；动效 token；全局 `default` 转场；关整屏返回；年度页去掉与 push 叠加的逐个进场 | `ui.tsx`、`App.tsx`、`CaptureFab.tsx`、`Shelf.tsx` | 有方向的层级、可撤销侧滑、减少动态改设置即生效 | 原生转场只能真机验；若某页 push 时玻璃闪烁，单页退回 `fade` |
 | M2 | 运行时玻璃 API 检测；记一刻玻璃按压只用原生反馈；纸面按压统一 0.97 | `ui.tsx`、`CaptureFab.tsx`、`Shelf.tsx` | 按压不再过重；老 beta 不崩 | 真机 A/B 未做 |
 | M3 | AI 面板开合改良与焦点回归；Modal 隐私遮挡 | `ai/Editor.tsx`、`ui.tsx`、`lock.ts`、`App.tsx`、`PhotoPicker.tsx`、`BookPreview.tsx` | 蒙层不再整块滑动；多任务不露面板 | Modal 仍在锁之上，锁住时照旧收起 |
 | M4A | 封信反馈：写入成功后的一次「收拢 + 落定」+ 成功触感 + 读屏播报 | `navigation.ts`、`LetterEditor.tsx`、`LetterScreen.tsx` | 封存有仪式感且不超前 | 路由参数只作一次性提示，读取后清掉；不影响信的状态 |

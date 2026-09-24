@@ -8,13 +8,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, {
-  FadeInUp,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { useLibrary, useStore, useSyncStatus } from "./context";
 import { CaptureFab, FAB_INSET, FAB_SIZE } from "./CaptureFab";
 import {
@@ -74,7 +68,6 @@ import {
   IconButton,
   IconTile,
   Ornament,
-  PRESS_SPRING,
   Page,
   SectionHeader,
   SettingsRow,
@@ -85,6 +78,7 @@ import {
   messageOf,
   serif,
   useLargeLayout,
+  usePressScale,
   useStyles,
   useTextScale,
   useTheme,
@@ -266,12 +260,8 @@ function ShelfTileView({
   onPress: () => void;
 }) {
   const s = useStyles(),
-    { large } = useTheme();
-  const reduceMotion = useReducedMotion();
-  const scale = useSharedValue(1);
-  const pressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+    { large, reduceMotion } = useTheme();
+  const press = usePressScale();
   const size = useTileSize();
   return (
     <Animated.View
@@ -280,23 +270,15 @@ function ShelfTileView({
           ? undefined
           : FadeInUp.delay(Math.min(index, 8) * 50).duration(300)
       }
-      style={[{ width: size }, pressStyle]}
+      style={[{ width: size }, press.style]}
     >
       <Pressable
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={`${title}，${spokenCaption ?? caption}`}
         onPress={onPress}
-        onPressIn={() => {
-          if (reduceMotion) return;
-          // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
-          scale.value = withSpring(0.94, PRESS_SPRING);
-        }}
-        onPressOut={() => {
-          if (reduceMotion) return;
-          // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
-          scale.value = withSpring(1, PRESS_SPRING);
-        }}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
         style={{ gap: 6 }}
       >
         {cover ? (
@@ -580,8 +562,7 @@ function RecentCard({
   onPress: () => void;
 }) {
   const s = useStyles(),
-    { colors, liquid } = useTheme();
-  const reduceMotion = useReducedMotion();
+    { colors, liquid, reduceMotion } = useTheme();
   const { record, yearsAgo } = item;
   const title = recordTitle(record);
   const titled = !!record.title.trim();
@@ -694,8 +675,7 @@ function NudgeCard({
   onClose: () => void;
 }) {
   const s = useStyles(),
-    { colors, liquid } = useTheme();
-  const reduceMotion = useReducedMotion();
+    { colors, liquid, reduceMotion } = useTheme();
   return (
     <Animated.View
       // 卡片在 iOS 是液态玻璃：淡入会让祖先透明度从 0 起步，系统就不画玻璃（见 RecentCard）。
@@ -807,7 +787,6 @@ export function Volume({
   onPress,
   testID,
   width,
-  index = 0,
   ratio = 4 / 3,
 }: {
   title: string;
@@ -819,41 +798,22 @@ export function Volume({
   onPress: () => void;
   testID?: string;
   width: number;
-  index?: number;
   /** 封面裁切比例，默认 4:3；年度册里的月册网格用 1。 */
   ratio?: number;
 }) {
   const s = useStyles(),
     { colors, large } = useTheme();
-  const reduceMotion = useReducedMotion();
-  const scale = useSharedValue(1);
-  const pressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const press = usePressScale();
+  // 不做逐个进场：年度册是被原生 push 进来的一整页，再让封面一张张浮上来就是两套位移叠在一起。
   return (
-    <Animated.View
-      entering={
-        reduceMotion
-          ? undefined
-          : FadeInUp.delay(Math.min(index, 8) * 60).duration(320)
-      }
-      style={[{ width }, pressStyle]}
-    >
+    <Animated.View style={[{ width }, press.style]}>
       <Pressable
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={`${title}，${caption}`}
         onPress={onPress}
-        onPressIn={() => {
-          if (reduceMotion) return;
-          // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
-          scale.value = withSpring(0.96, PRESS_SPRING);
-        }}
-        onPressOut={() => {
-          if (reduceMotion) return;
-          // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
-          scale.value = withSpring(1, PRESS_SPRING);
-        }}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
         style={{ gap: 6 }}
       >
         {cover ? (

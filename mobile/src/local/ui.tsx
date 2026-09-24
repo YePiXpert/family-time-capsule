@@ -33,7 +33,19 @@ import {
 } from "react-native-safe-area-context";
 import { NavigationContext } from "@react-navigation/native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import {
+  GlassView,
+  isGlassEffectAPIAvailable,
+  isLiquidGlassAvailable,
+} from "expo-glass-effect";
+import {
+  ReduceMotion,
+  ReducedMotionConfig,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { useLibrary } from "./context";
@@ -113,8 +125,21 @@ export const paperPalette = {
   emptyCell: "#F5EDE1",
 };
 export const serif = Platform.select({ ios: "Georgia", android: "serif" });
-/** 书册与悬浮钮的统一按压弹簧。 */
-export const PRESS_SPRING = { damping: 14, stiffness: 220 };
+/**
+ * 动效起点（项目自定，不是 Apple 规格；见 docs/plans/PLAN-IOS-MOTION.md）。
+ * 页面转场用平台默认，时长不可配也不在这里配；减少动态时这里的动画全部不播。
+ */
+export const MOTION = {
+  /** 纸面卡片（书册封面、纸面记一刻）按下缩到多少；玻璃按压交给系统 isInteractive。 */
+  pressScale: 0.97,
+  /** 按压回位的轻弹簧，阻尼比约 0.6：几乎不过冲。 */
+  pressSpring: { damping: 22, stiffness: 320 },
+  /** 自绘底部面板打开、收起（毫秒）；收放可被反向打断。 */
+  panelIn: 240,
+  panelOut: 200,
+  /** 封信后印章落定，单次。 */
+  seal: 440,
+};
 // 启动/错误页在 LocalTheme 之外渲染，只能按系统深浅色取色板。
 export const paletteOf = (isDark: boolean) => (isDark ? dark : light);
 const ThemeContext = createContext({
@@ -122,49 +147,107 @@ const ThemeContext = createContext({
   large: false,
   dark: false,
   liquid: false,
+  reduceMotion: false,
 });
-function useReduceTransparency() {
-  const [reduce, setReduce] = useState(false);
+/** 订阅一项系统辅助设置：先读一次，之后随系统事件更新，切到设置里改完回来即生效。 */
+function useAccessibilitySetting(
+  read: () => Promise<boolean>,
+  event: "reduceTransparencyChanged" | "reduceMotionChanged",
+  platforms: readonly string[],
+  initial = false,
+) {
+  const [on, setOn] = useState(initial);
+  const enabled = platforms.includes(Platform.OS);
   useEffect(() => {
-    if (Platform.OS !== "ios") return;
+    if (!enabled) return;
     let alive = true;
-    void AccessibilityInfo.isReduceTransparencyEnabled().then((v) => {
-      if (alive) setReduce(v);
-    });
-    const sub = AccessibilityInfo.addEventListener(
-      "reduceTransparencyChanged",
-      (v: boolean) => setReduce(v),
+    void read()
+      .then((v) => {
+        if (alive) setOn(v);
+      })
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener(event, (v: boolean) =>
+      setOn(v),
     );
     return () => {
       alive = false;
       sub.remove();
     };
-  }, []);
-  return reduce;
+  }, [read, event, enabled]);
+  return on;
 }
+const readReduceTransparency = () =>
+  AccessibilityInfo.isReduceTransparencyEnabled();
+const readReduceMotion = () => AccessibilityInfo.isReduceMotionEnabled();
+const IOS = ["ios"] as const,
+  MOBILE = ["ios", "android"] as const;
 export function LocalTheme({ children }: { children: ReactNode }) {
   const s = useLibrary(),
     system = useColorScheme();
   const isDark =
     s.settings.theme === "dark" ||
     (s.settings.theme === "auto" && system === "dark");
-  const reduceTransparency = useReduceTransparency();
+  const reduceTransparency = useAccessibilitySetting(
+    readReduceTransparency,
+    "reduceTransparencyChanged",
+    IOS,
+  );
+  // Reanimated 的 useReducedMotion 只是启动那一刻的值：拿它当首帧，之后跟着系统事件走。
+  const reduceMotion = useAccessibilitySetting(
+    readReduceMotion,
+    "reduceMotionChanged",
+    MOBILE,
+    useReducedMotion(),
+  );
+  // 编译期可用之外还要运行时真有这套 API：部分 iOS 26 beta 缺它，一画玻璃就崩。
   const liquid =
-    Platform.OS === "ios" && isLiquidGlassAvailable() && !reduceTransparency;
+    Platform.OS === "ios" &&
+    isLiquidGlassAvailable() &&
+    isGlassEffectAPIAvailable() &&
+    !reduceTransparency;
   const value = useMemo(
     () => ({
       colors: isDark ? dark : light,
       large: s.settings.largeText,
       dark: isDark,
       liquid,
+      reduceMotion,
     }),
-    [isDark, s.settings.largeText, liquid],
+    [isDark, s.settings.largeText, liquid, reduceMotion],
   );
   return (
-    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+    <ThemeContext.Provider value={value}>
+      {/* Reanimated 自己的全局开关也只认启动时的设置：同步成实时值，进场、弹簧、缩放复位一起跟着改。 */}
+      <ReducedMotionConfig
+        mode={reduceMotion ? ReduceMotion.Always : ReduceMotion.Never}
+      />
+      {children}
+    </ThemeContext.Provider>
   );
 }
 export const useTheme = () => useContext(ThemeContext);
+/**
+ * 纸面卡片的按压：按下轻缩到 MOTION.pressScale、松手弹回，点击本身不等回弹。
+ * 只给纸面用：玻璃有系统的按压反馈，再缩就叠成两层。减少动态时不缩。
+ * `style` 放在 Animated.View 上（缩放不是透明度，玻璃祖先可以用）。
+ */
+export function usePressScale() {
+  const { reduceMotion } = useTheme();
+  const scale = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  const to = (value: number) => {
+    // 减少动态中途打开时，也要把缩了一半的卡片放回原位。
+    // eslint-disable-next-line react-hooks/immutability -- reanimated 共享值的就地修改是其既定用法
+    scale.value = reduceMotion ? 1 : withSpring(value, MOTION.pressSpring);
+  };
+  return {
+    style,
+    onPressIn: () => to(MOTION.pressScale),
+    onPressOut: () => to(1),
+  };
+}
 /** 印章里的字：圆环不跟系统字号变大，字也不跟——Text 在印章里取 1 倍，免得撑出圆环。 */
 const InStamp = createContext(false);
 /** 双线印章圆环：扉页名字首字与年度册封面共用。里面的字是装饰，不跟系统字号放大。 */

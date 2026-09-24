@@ -453,7 +453,7 @@ export function Year({ route }: Props<"Year">) {
         <View style={{ gap: 16 }}>
           <SectionHeader title="这一年的月册" />
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {months.map((m, i) => {
+            {months.map((m) => {
               const monthRecords = visibleRecords.filter(
                 (r) => monthKey(r.date) === m,
               );
@@ -465,7 +465,6 @@ export function Year({ route }: Props<"Year">) {
                   cover={coverForRecords(monthRecords, state.media)}
                   testID={`year-volume-${m}`}
                   width={volumeWidth}
-                  index={i}
                   ratio={1}
                   onPress={() => nav.navigate("Month", { month: m })}
                 />
