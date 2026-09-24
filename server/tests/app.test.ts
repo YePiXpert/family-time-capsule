@@ -17,7 +17,7 @@ function fixture(provider?:Provider) {
  const owner=seedFamily(store);
  const member=addMember(store,'家人','家人手机');
  const headers=(token=member.token)=>({authorization:`Bearer ${token}`});
- const input=()=>({requestId:randomUUID(),model:'mimo-v2.6-pro',photos:[],writingMode:'polish',context:'我们一起去公园。'});
+ const input=()=>({requestId:randomUUID(),model:'gpt-6-astra',photos:[],writingMode:'polish',context:'我们一起去公园。'});
  return {store,app,owner,member,headers,input,calls:()=>calls};
 }
 test('admin endpoints enforce server-side role and tokens never appear in overview',async()=>{
@@ -77,8 +77,8 @@ test('failed upstream requests do not burn the daily quota',async()=>{
 });
 test('server restart cannot repeat an uncertain paid request',async()=>{
  const f=fixture();const id=randomUUID();
- f.store.reserve(f.member.member,id,'hash',0,1,'mimo-v2.6-pro');f.store.recover();
- assert.equal(f.store.reserve(f.member.member,id,'hash',0,1,'mimo-v2.6-pro'),'failed');
+ f.store.reserve(f.member.member,id,'hash',0,1,'gpt-6-astra');f.store.recover();
+ assert.equal(f.store.reserve(f.member.member,id,'hash',0,1,'gpt-6-astra'),'failed');
  await f.app.close();f.store.close();
 });
 test('recap drafts a year note from text only and counts as one write',async()=>{
@@ -94,21 +94,21 @@ test('recap drafts a year note from text only and counts as one write',async()=>
  await f.app.close();f.store.close();
 });
 
-test('fixed MiMo configuration preserves quotas and normalizes previous app selections',async()=>{
+test('fixed Astra configuration preserves quotas and normalizes previous app selections',async()=>{
  let actualModel='';
  const f=fixture(async(input)=>{actualModel=input.model;return {tokens:1,result:{title:'记录',text:'照片中的画面。'}};});
  f.store.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({paused:false,defaultModel:'gpt-6-astra',enabledModels:['gpt-6-astra'],globalPhotos:123,globalWrites:17}));
  const config=(await f.app.inject({url:'/api/v1/ai/config',headers:f.headers()})).json();
- assert.deepEqual(config.thinkingPolicy,{question:'disabled',ask:'disabled',polish:'disabled',recap:'enabled',editor:'enabled'});
- assert.equal(config.defaultModel,'mimo-v2.6-pro');assert.equal(config.reasoningEffort,'per-mode');
- assert.deepEqual(config.models,[{id:'mimo-v2.6-pro',label:'MiMo 2.6 Pro'}]);
+ assert.deepEqual(config.reasoningPolicy,{question:'medium',ask:'medium',polish:'medium',recap:'medium',editor:'medium'});
+ assert.equal(config.defaultModel,'gpt-6-astra');assert.equal(config.reasoningEffort,'medium');
+ assert.deepEqual(config.models,[{id:'gpt-6-astra',label:'GPT-6 Astra'}]);
  assert.equal(config.globalPhotos,123);assert.equal(config.globalWrites,17);
  const update=await f.app.inject({method:'PUT',url:'/api/v1/admin/settings',headers:f.headers(f.owner.token),payload:{paused:false,defaultModel:'gpt-5.6-luna',enabledModels:['gpt-5.6-luna'],globalPhotos:90,globalWrites:9}});
- assert.equal(update.statusCode,200);assert.deepEqual(f.store.settings().enabledModels,['mimo-v2.6-pro']);
+ assert.equal(update.statusCode,200);assert.deepEqual(f.store.settings().enabledModels,['gpt-6-astra']);
  assert.equal(f.store.settings().globalPhotos,90);
- for(const model of ['mimo-v2.6-flash','mimo-v2.5','deepseek-flash','gpt-5.6-luna',undefined]){
+ for(const model of ['mimo-v2.6-pro','mimo-v2.6-flash','mimo-v2.5','deepseek-flash','gpt-5.6-luna',undefined]){
   const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...f.input(),model}});
-  assert.equal(response.statusCode,200);assert.equal(actualModel,'mimo-v2.6-pro');assert.equal(response.json().model,'mimo-v2.6-pro');
+  assert.equal(response.statusCode,200);assert.equal(actualModel,'gpt-6-astra');assert.equal(response.json().model,'gpt-6-astra');
  }
  await f.app.close();f.store.close();
 });
@@ -116,7 +116,7 @@ test('fixed MiMo configuration preserves quotas and normalizes previous app sele
 test('polish carries only the stored text with an explicit length ceiling',async()=>{
  let seen:unknown;
  const f=fixture(async(input)=>{seen=input;return {tokens:2,result:{title:'一起散步',text:'今天我们去公园走了走。'}};});
- const polish=()=>({requestId:randomUUID(),model:'mimo-v2.6-pro',photos:[],writingMode:'polish' as const,context:'标题：原稿\n正文：\n我们一起去公园。'});
+ const polish=()=>({requestId:randomUUID(),model:'gpt-6-astra',photos:[],writingMode:'polish' as const,context:'标题：原稿\n正文：\n我们一起去公园。'});
  const ok=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:polish()});
  assert.equal(ok.statusCode,200);assert.equal((seen as {photos:unknown[]}).photos.length,0);
  assert.equal(f.store.usage(f.member.member.id).writes,1);assert.equal(f.store.usage(f.member.member.id).photos,0);

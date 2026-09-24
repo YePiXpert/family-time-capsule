@@ -4,8 +4,8 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { mimoProvider } from '../src/provider.ts';
-import { loadMiMoConfig } from '../src/ai-config.ts';
+import { textProvider } from '../src/provider.ts';
+import { loadAIConfig } from '../src/ai-config.ts';
 import { inputSchema, type AIInput } from '../src/contracts.ts';
 import { PROMPTS } from '../src/prompts.ts';
 import { Problem } from '../src/store.ts';
@@ -16,33 +16,33 @@ const input=(extra:Partial<AIInput>={})=>inputSchema.parse({requestId:randomUUID
 const response=(result:unknown,finish_reason:unknown='stop')=>Response.json({choices:[{finish_reason,message:{content:JSON.stringify(result),reasoning_content:'private reasoning'}}],usage:{total_tokens:42}});
 const invalid=(error:unknown)=>error instanceof Problem&&error.status===502&&error.code==='INVALID_RESULT';
 function fixture(t:TestContext) {
- const dir=mkdtempSync(join(tmpdir(),'anan-mimo-provider-')),keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key\n');
+ const dir=mkdtempSync(join(tmpdir(),'anan-text-provider-')),keyFile=join(dir,'key');writeFileSync(keyFile,'test-only-key\n');
  t.after(()=>rmSync(dir,{recursive:true,force:true}));
- const config=loadMiMoConfig('AI',{AI_PROVIDER:'mimo',AI_MODEL:'mimo-v2.6-pro',AI_BASE_URL:'https://api.xiaomimimo.com/v1',AI_KEY_FILE:keyFile,AI_ACCESS:'payg-approved'});
+ const config=loadAIConfig('AI',{AI_MODEL:'gpt-6-astra',UPSTREAM_BASE_URL:'https://upstream.example.invalid/v1',UPSTREAM_KEY_FILE:keyFile});
  let respond:()=>Response=()=>response(write);
  const sent:{url:string;body:any;authorization:string|null}[]=[];
  t.mock.method(globalThis,'fetch',async(url:URL,options:RequestInit)=>{
-  assert.equal(url.href,'https://api.xiaomimimo.com/v1/chat/completions');
+  assert.equal(url.href,'https://upstream.example.invalid/v1/chat/completions');
   assert.equal(options.method,'POST');assert.equal(options.redirect,'error');assert.ok(options.signal instanceof AbortSignal);
   sent.push({url:url.href,body:JSON.parse(String(options.body)),authorization:new Headers(options.headers).get('authorization')});
   return respond();
  });
- return {provider:mimoProvider(config),sent,keyFile,respond:(fn:()=>Response)=>{respond=fn;}};
+ return {provider:textProvider(config),sent,keyFile,respond:(fn:()=>Response)=>{respond=fn;}};
 }
 const modes=[
- ['polish','disabled',write],['recap','enabled',write],
- ['ask','disabled',{questions:['谁在旁边？'],first:false}],['question','disabled',{question:'谁在旁边？'}],
- ['editor','enabled',editorResult],
+ ['polish','medium',write],['recap','medium',write],
+ ['ask','medium',{questions:['谁在旁边？'],first:false}],['question','medium',{question:'谁在旁边？'}],
+ ['editor','medium',editorResult],
 ] as const;
-for(const [mode,thinking,result] of modes)test(`MiMo ${mode}: pinned model, ${thinking} thinking and exact existing prompt`,async t=>{
+for(const [mode,thinking,result] of modes)test(`GPT-6 Astra ${mode}: pinned model, ${thinking} reasoning and exact existing prompt`,async t=>{
  const f=fixture(t);f.respond(()=>response(result));
  const context=mode==='editor'?JSON.stringify(editorContext):'合成上下文';
  const out=await f.provider(input({context,writingMode:mode}));
  assert.deepEqual(out,{result,tokens:42});assert.ok(!JSON.stringify(out).includes('private reasoning'));
  assert.equal(f.sent.length,1);const {body,authorization}=f.sent[0]!;
- assert.equal(authorization,'Bearer test-only-key');assert.equal(body.model,'mimo-v2.6-pro');
- assert.deepEqual(body.thinking,{type:thinking});assert.equal(body.max_completion_tokens,16384);
- for(const field of ['max_tokens','reasoning_effort','temperature','top_p'])assert.equal(field in body,false,field);
+ assert.equal(authorization,'Bearer test-only-key');assert.equal(body.model,'gpt-6-astra');
+ assert.equal(body.reasoning_effort,thinking);assert.equal(body.max_completion_tokens,16384);
+ for(const field of ['max_tokens','thinking','temperature','top_p'])assert.equal(field in body,false,field);
  assert.equal(body.stream,false);assert.deepEqual(body.response_format,{type:'json_object'});
  assert.equal(body.messages[0].content,PROMPTS[mode]);
  assert.equal(JSON.parse(body.messages[1].content[0].text).userContext,context);
@@ -92,8 +92,8 @@ test('body read failure, malformed JSON and oversized responses fail closed',asy
  await assert.rejects(f.provider(input()),{code:'UPSTREAM_UNAVAILABLE',status:502});
  for(const body of ['not JSON','x'.repeat(250001)]){f.respond(()=>new Response(body));await assert.rejects(f.provider(input()),invalid);}
 });
-test('read secret on each request; mismatched rotated key is rejected before any request',async t=>{
+test('read secret on each request; malformed rotated key is rejected before any request',async t=>{
  const f=fixture(t);await f.provider(input());writeFileSync(f.keyFile,'rotated-test-key');await f.provider(input());
  assert.equal(f.sent[1]!.authorization,'Bearer rotated-test-key');
- writeFileSync(f.keyFile,'tp-test-only-mismatch');await assert.rejects(f.provider(input()),{code:'UPSTREAM_UNAVAILABLE'});assert.equal(f.sent.length,2);
+ writeFileSync(f.keyFile,'invalid key with whitespace');await assert.rejects(f.provider(input()),{code:'UPSTREAM_UNAVAILABLE'});assert.equal(f.sent.length,2);
 });

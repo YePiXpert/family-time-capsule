@@ -31,7 +31,7 @@ const writeProposal = (writingMode: "polish" = "polish"): AIProposal => ({
 
 describe("AI editor plan: job identity and reuse", () => {
   it("stamps write specs with the required mode", () => {
-    expect(AI_MODEL).toBe("mimo-v2.6-pro:policy-v1");
+    expect(AI_MODEL).toBe("gpt-6-astra:policy-v1");
     expect(runSpec("f".repeat(64), "polish")).toEqual({
       fingerprint: "f".repeat(64),
       kind: "write",

@@ -8,20 +8,13 @@ services:
       - "10.66.66.2:${APP_PORT:-3140}:3000"
     environment:
       SOURCE_SHA: ${SOURCE_SHA}
-      AI_PROVIDER: ${AI_PROVIDER:?Set AI_PROVIDER}
-      AI_MODEL: ${AI_MODEL:?Set AI_MODEL}
-      AI_BASE_URL: ${AI_BASE_URL:?Set AI_BASE_URL}
-      AI_KEY_FILE: /run/secrets/ai-key
-      AI_ACCESS: ${AI_ACCESS:?Confirm App usage and billing authorization}
-      TRANSCRIBE_PROVIDER: ${TRANSCRIBE_PROVIDER:?Set TRANSCRIBE_PROVIDER}
+      AI_MODEL: ${AI_MODEL:-gpt-6-astra}
       TRANSCRIBE_MODEL: ${TRANSCRIBE_MODEL:-mimo-v2.5-asr}
-      TRANSCRIBE_BASE_URL: ${TRANSCRIBE_BASE_URL:?Set independent ASR base URL}
-      TRANSCRIBE_KEY_FILE: /run/secrets/transcribe-key
-      TRANSCRIBE_ACCESS: ${TRANSCRIBE_ACCESS:?Confirm ASR usage and billing authorization}
+      UPSTREAM_BASE_URL: ${UPSTREAM_BASE_URL:?Set UPSTREAM_BASE_URL}
+      UPSTREAM_KEY_FILE: /run/secrets/upstream-key
     volumes:
       - ${AI_DATA_DIR:?Set AI_DATA_DIR}:/data
-      - ${AI_KEY_PATH:?Set AI_KEY_PATH}:/run/secrets/ai-key:ro
-      - ${TRANSCRIBE_KEY_PATH:?Set independent ASR key path}:/run/secrets/transcribe-key:ro
+      - ${UPSTREAM_KEY_PATH:?Set UPSTREAM_KEY_PATH}:/run/secrets/upstream-key:ro
     networks: [default, cpa]
     read_only: true
     tmpfs:
