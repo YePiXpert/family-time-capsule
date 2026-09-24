@@ -19,6 +19,7 @@ final class NativeRegressionTests: XCTestCase {
         app.terminate()
     }
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
+    private func labelled(_ text: String) -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch }
     private func wait(_ description: String, timeout: TimeInterval = 20, _ check: @escaping () -> Bool) {
         // Most calls acknowledge an already-typed character or enabled button.
         // Avoid scheduling a predicate waiter when its condition is already true.
@@ -145,15 +146,18 @@ final class NativeRegressionTests: XCTestCase {
         let albumCard = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Our days")).firstMatch
         tap(albumCard, "album volume")
         XCTAssertTrue(element("album-reading").waitUntilExists(timeout: 20)); shot("album-after-relaunch")
-        // 时间胶囊：fixture 里已有一封封存的信；再写一封并封存，重启后仍在书架，打开是「还没到日子」的信封，提前拆封能读到正文。
+        // 时间胶囊：fixture 里已有一封封存的信；再写一封并封存（刚封好是「封好了」），重启后仍在书架，
+        // 打开是「还没到日子」的信封（落印只在封存那一次播），提前拆封能读到正文。
         relaunchApp()
         tap("letter-new"); type("Letter for later", "letter-title"); type("Words kept for the future.", "letter-text")
         tap("letter-seal"); tap("封存")
-        XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20)); shot("letter-sealed")
+        XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20))
+        XCTAssertTrue(labelled("封好了").waitUntilExists(timeout: 20)); shot("letter-sealed")
         relaunchApp()
         let letterVolume = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Letter for later")).firstMatch
         tap(letterVolume, "letter volume")
-        XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20)); shot("letter-after-relaunch")
+        XCTAssertTrue(element("letter-open-early").waitUntilExists(timeout: 20))
+        XCTAssertTrue(labelled("还没到日子").exists); XCTAssertFalse(labelled("封好了").exists); shot("letter-after-relaunch")
         tap("letter-open-early"); tap("拆开")
         wait("Letter body did not appear") { self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
         shot("letter-opened")

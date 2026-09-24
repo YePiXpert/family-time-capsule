@@ -39,6 +39,7 @@ import {
   IconButton,
   Page,
   Text,
+  hapticSuccess,
   messageOf,
   serif,
   useKeyboardBarOffset,
@@ -278,8 +279,10 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
               await sealLetter(store, letter.id);
               // 封存后这份草稿不再写回：任何迟到的落盘都会被「信已封存」拒绝。
               current.current = undefined;
+              // 写入成功之后才给成功触感与落印；封存失败走 run 的错误提示，什么都不播。
+              hapticSuccess();
               await leave(() =>
-                navigation.replace("Letter", { id: letter.id }),
+                navigation.replace("Letter", { id: letter.id, sealed: true }),
               );
             });
           },
