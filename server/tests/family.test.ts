@@ -338,3 +338,13 @@ test('管理页看得到每台手机的最后使用时间与待确认状态，�
  const text=JSON.stringify(overview.body);
  assert.ok(!text.includes(got.body.token));assert.ok(!text.includes(got.body.ct));assert.ok(!text.includes('token_hash'));
 });
+
+test('一台手机退出家庭：作废自己的令牌；最后一台管理者手机不能自己退',async t=>{
+ const f=fixture(t);
+ const grandma=await f.join({id:randomUUID(),name:'外婆',role:'member'});
+ assert.equal((await f.call('POST','/api/v1/me/leave',{},grandma.token)).status,200);
+ assert.equal((await f.call('GET','/api/v1/me',undefined,grandma.token)).status,401);
+ const refused=await f.call('POST','/api/v1/me/leave',{},f.admin!.token);
+ assert.equal(refused.status,400);assert.equal(refused.body.code,'LAST_ADMIN_DEVICE');
+ assert.equal((await f.call('POST','/api/v1/me/leave',{})).status,401);
+});

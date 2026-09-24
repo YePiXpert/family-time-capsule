@@ -109,6 +109,8 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   const input=z.object({keyId:hex(8),version:z.number().int().min(2),envelope:recovery.shape.envelope,verifier:hex(32)}).strict().parse(req.body);
   store.setRecovery(input);return {ok:true};
  });
+ // 这台手机退出家庭：自己作废自己的令牌（最后一台管理者手机不行）；清单留给家人合并。
+ app.post('/api/v1/me/leave',async req=>{const member=auth(req.headers.authorization);store.revoke(member.deviceId!);return {ok:true};});
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
  app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'per-mode',thinkingPolicy:THINKING_POLICY,models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
  app.post('/api/v1/ai/write',async req=>{
