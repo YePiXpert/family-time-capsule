@@ -235,7 +235,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   return {deviceId:manifest.deviceId,keyId:manifest.keyId,index:manifest.index,updatedAt:iso(manifest.updatedAt)};
  });
  /** 全家各台设备的清单，新的在前；一起写的手机拿这个去合并。 */
- app.get('/api/v1/backup/manifests',async req=>{auth(req.headers.authorization);return store.activeManifests().map(manifestView);});
+ app.get('/api/v1/backup/manifests',async req=>{const member=auth(req.headers.authorization);return store.activeManifests(member.id).map(manifestView);});
  app.delete('/api/v1/backup/manifests/:deviceId',async req=>{
   const member=auth(req.headers.authorization),{deviceId}=deviceParam.parse(req.params);
   const manifest=store.manifestOf(deviceId);
