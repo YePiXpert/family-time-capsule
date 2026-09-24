@@ -362,7 +362,10 @@ export function createTransport(
       const { json } = await call("DELETE", `/backup/manifests/${deviceId}`, {
         signal,
       });
-      return { pruned: Number(json.pruned ?? 0) };
+      // 服务端回的是 sweep 的结果 {removed, bytes}；只取回收了几个对象。
+      const pruned = json.pruned as { removed?: unknown } | undefined;
+      const removed = Number(pruned?.removed ?? 0);
+      return { pruned: Number.isFinite(removed) ? removed : 0 };
     },
     async wipeFamily(signal) {
       await call("DELETE", "/admin/backup", { signal });
