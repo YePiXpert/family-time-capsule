@@ -3,6 +3,18 @@ import type { Library, LocalLetter, LocalRecord } from "../local/model";
 import { repairReferences } from "./merge";
 import type { Conflict } from "./state";
 
+/** 留底版本用到的素材：只登记在 conflicts.json 里，本机「清理没用到的」不能把它们当垃圾删掉。 */
+export function conflictMediaIds(conflicts: readonly Conflict[]): Set<string> {
+  const ids = new Set<string>();
+  for (const c of conflicts) {
+    const loser = c.loser as { mediaIds?: unknown; avatarId?: unknown } | undefined;
+    if (Array.isArray(loser?.mediaIds))
+      for (const id of loser.mediaIds) if (typeof id === "string") ids.add(id);
+    if (typeof loser?.avatarId === "string") ids.add(loser.avatarId);
+  }
+  return ids;
+}
+
 /** 留底作为刚写的新一版：实体与根字段都整个替换，不触碰冻结的旧值。 */
 export function restoreLoser(lib: Library, c: Conflict, now: string): void {
   const id = c.entityId;

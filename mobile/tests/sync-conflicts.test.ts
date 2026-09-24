@@ -2,7 +2,7 @@ import { contentHashOf } from "../src/local/hash";
 import { expect, it } from "vitest";
 import { clone, emptyLibrary, validateLibrary, type Library, type LocalLetter, type LocalRecord } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
-import { restoreLoser } from "../src/sync/conflicts";
+import { conflictMediaIds, restoreLoser } from "../src/sync/conflicts";
 import type { Conflict } from "../src/sync/state";
 const at = "2026-09-20T10:00:00.000Z", now = "2026-09-21T10:00:00.000Z";
 function fixture() {
@@ -114,4 +114,10 @@ it.each([recordConflict, letterConflict])("restores missing entities with the lo
   restoreLoser(lib, c, now);
   expect(lib[c.kind][c.entityId]!.ancestors).toEqual(c.loser.ancestors);
   expect(lib[c.kind][c.entityId]!.ancestors).not.toBe(c.loser.ancestors);
+});
+
+it("留底版本用到的素材都登记出来，本机清理不会删掉它们", () => {
+  const profile = { key: "profile", kind: "profile", entityId: "profile", at, device: null, winner: { updatedAt: now }, loser: { name: "桉桉", avatarId: "face" } } as unknown as Conflict;
+  expect([...conflictMediaIds([recordConflict(), letterConflict(), profile])].sort()).toEqual(["face", "gone", "photo"]);
+  expect(conflictMediaIds([])).toEqual(new Set());
 });

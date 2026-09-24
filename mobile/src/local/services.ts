@@ -113,10 +113,16 @@ export async function createAlbumWithRecords(
     (s) => newAlbumFrom(s, newId(), recordIds, newId, now(), name).id,
   );
 }
-export async function collectUnusedMedia(store: LocalStore) {
+/** keep：库外还有人要的素材（两台手机都改过时留底的那一版），不算没用到。 */
+export async function collectUnusedMedia(
+  store: LocalStore,
+  keep: ReadonlySet<string> = new Set(),
+) {
   const removed = await store.change((s) => {
     const refs = referencedMedia(s);
-    const unused = Object.values(s.media).filter((m) => !refs.has(m.id));
+    const unused = Object.values(s.media).filter(
+      (m) => !refs.has(m.id) && !keep.has(m.id),
+    );
     for (const m of unused) delete s.media[m.id];
     return unused;
   });

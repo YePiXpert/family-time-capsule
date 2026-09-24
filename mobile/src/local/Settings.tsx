@@ -30,7 +30,9 @@ import {
 import { healthFile } from "./health-file";
 import { FamilyCard } from "../sync/FamilyCard";
 import { isLocalBusy, isSyncRunning, markLocalBusy } from "../sync/status";
+import { conflictMediaIds } from "../sync/conflicts";
 import {
+  readConflicts,
   readRemoteState,
   subscribeSyncFiles,
   writeRemoteState,
@@ -566,7 +568,10 @@ export function Storage() {
               {
                 text: "清理",
                 onPress: () => {
-                  void collectUnusedMedia(store)
+                  void readConflicts()
+                    .then((conflicts) =>
+                      collectUnusedMedia(store, conflictMediaIds(conflicts)),
+                    )
                     .then((n) =>
                       setMessage(`已清理 ${(n / 1048576).toFixed(1)} MB`),
                     )
