@@ -395,7 +395,9 @@ export function Year({ route }: Props<"Year">) {
     <Page>
       <View style={{ alignItems: "center", gap: 4, paddingTop: 4 }}>
         <Stamp size={72}>
+          {/* 印章里的年份是装饰，不跟系统字号放大，免得四个数字撑出圆环。 */}
           <Text
+            maxFontSizeMultiplier={1}
             style={{
               fontFamily: serif,
               fontSize: 22,

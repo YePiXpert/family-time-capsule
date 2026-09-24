@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { FlatList, View } from "react-native";
 import { useLibrary } from "./context";
-import { sortedRecords } from "./model";
+import { sortedRecords, yearKey } from "./model";
 import { useNav, type Props } from "./navigation";
 import { searchRecords, type MediaFilter } from "./search";
 import { RecordCard } from "./Home";
@@ -47,7 +47,8 @@ export function SearchScreen(_: Props<"Search">) {
         },
         kinds,
       ),
-      years: [...new Set(all.map((r) => r.date.slice(0, 4)))].sort((a, b) =>
+      // 与筛选同一口径按本地年份：UTC+8 元旦凌晨的记录不能挂到上一年的标签下。
+      years: [...new Set(all.map((r) => yearKey(r.date)))].sort((a, b) =>
         b.localeCompare(a),
       ),
       persons: Object.values(personMap).sort((a, b) =>

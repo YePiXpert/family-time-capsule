@@ -84,10 +84,9 @@ export function milestoneOf(
   const days = calendarDays(born, today);
   // 出生当天算第 1 天，第 100 天即出生后 99 个整日。
   if (days === 99) return { kind: "hundred" };
-  const sameDay =
-    today.getMonth() === born.getMonth() && today.getDate() === born.getDate();
-  if (!sameDay) return null;
+  // 与 nthBirthday 同一口径：2 月 29 日出生的，平年在 2 月 28 日过。
   const years = today.getFullYear() - born.getFullYear();
+  if (toDayKey(today) !== nthBirthday(birthday, years)) return null;
   if (years === 0) return { kind: "birthday" };
   return { kind: "anniversary", years };
 }

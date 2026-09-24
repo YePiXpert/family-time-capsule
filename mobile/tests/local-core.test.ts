@@ -535,6 +535,12 @@ describe("keepsake dates", () => {
     expect(milestoneOf("2024-06-15", new Date(2026, 8, 17))).toBeNull();
     expect(milestoneOf("", new Date())).toBeNull();
   });
+  it("gives a leap-day birthday its milestone on 28 February in common years", () => {
+    expect(milestoneOf("2024-02-29", new Date(2025, 1, 28))).toEqual({ kind: "anniversary", years: 1 });
+    expect(milestoneOf("2024-02-29", new Date(2025, 2, 1))).toBeNull();
+    expect(milestoneOf("2024-02-29", new Date(2028, 1, 29))).toEqual({ kind: "anniversary", years: 4 });
+    expect(milestoneOf("2024-02-29", new Date(2028, 1, 28))).toBeNull();
+  });
 });
 
 describe("album keepsake notes", () => {

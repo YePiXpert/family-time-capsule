@@ -7,7 +7,7 @@ import { File } from "expo-file-system";
 import { useLibrary, useStore, useSyncStatus } from "./context";
 import { useNav } from "./navigation";
 import { getToken } from "../ai/client";
-import { ageLine, birthdayLabel, dateTimeLabel } from "./dates";
+import { ageLine, birthdayLabel, dateTimeLabel, toDayKey } from "./dates";
 import { preserveMedia } from "./files";
 import {
   BackupStopped,
@@ -367,7 +367,7 @@ export function Profile() {
             (!/^\d{4}-\d{2}-\d{2}$/.test(birthday) ||
               !Number.isFinite(Date.parse(birthday)) ||
               new Date(birthday).toISOString().slice(0, 10) !== birthday ||
-              birthday > new Date().toISOString().slice(0, 10))
+              birthday > toDayKey(new Date()))
           ) {
             setMessage("请填写有效的出生日期。");
             return;

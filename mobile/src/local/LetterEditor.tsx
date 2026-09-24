@@ -602,6 +602,8 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
                     placeholder="落款"
                     placeholderTextColor={colors.muted}
                     value={letter.from}
+                    // 与撑宽度的那行字同一个放大上限，否则大字号下框比字窄、落款被切。
+                    maxFontSizeMultiplier={1.6}
                     maxLength={LETTER_FROM_LIMIT}
                     editable={!busy}
                     onChangeText={(from) => change({ from }, true)}
