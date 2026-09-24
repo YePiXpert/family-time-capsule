@@ -419,6 +419,38 @@ it.each(["deleted", "legacy", "unknown-device"])("内容未变但 %s 时仍发�
   expect(second.lastPush!.entitiesSha).toBe(first.lastPush!.entitiesSha);
   expect(second.lastPush!.manifestSha).toBe(second.seen[second.deviceId!]);
 });
+it("恢复了一份旧备份：重读全家清单，家人之后的改动按世系并回来，不出卡", async () => {
+  const { receiver: p, sender, remote, deps } = await seeded();
+  await p.family.joinFamily(p.store, key, deps);
+  const before = structuredClone(p.store.get().records["r-a"]!);
+  sender.activate();
+  const { lineage } = await import("../src/local/hash");
+  await sender.store.change((s) => {
+    const previous = s.records["r-a"]!;
+    s.records["r-a"] = {
+      ...previous,
+      text: "她笑了，还会拍手了",
+      updatedAt: "2026-09-23T00:00:00Z",
+      ancestors: lineage(previous),
+    };
+  });
+  await sender.engine.pushManifest(sender.store.get(), {
+    transport: remote.client("爸爸手机"),
+    key,
+  });
+  p.activate();
+  await p.family.runFamilySync(p.store, deps);
+  expect(p.store.get().records["r-a"]!.text).toBe("她笑了，还会拍手了");
+  // 换回备份那一刻的库（restoreBackup 的结果），备份页随后清掉合并记录。
+  await p.store.change((s) => {
+    s.records["r-a"] = before;
+  });
+  await p.state.forgetMergeHistory();
+  const result = await p.family.runFamilySync(p.store, deps);
+  expect(p.store.get().records["r-a"]!.text).toBe("她笑了，还会拍手了");
+  expect(result.lastSyncSummary!.conflicts).toBe(0);
+  expect(await p.state.readConflicts()).toEqual([]);
+});
 it("有一份录到一半的草稿：库没变就不再重传清单", async () => {
   const { receiver: p, deps } = await seeded();
   await p.store.change((s) => {

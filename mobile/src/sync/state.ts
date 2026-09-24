@@ -215,6 +215,17 @@ export async function readBase(): Promise<SyncBase> {
 export function writeBase(base: SyncBase): void {
   writeJson(baseFile(), base);
 }
+/**
+ * 本机库被整份换掉（恢复了一份备份）：基与已读清单描述的都不再是这台手机上的东西。
+ * 清掉后下一轮把全家的清单重读一遍、按版本世系并回来；否则这台手机会停在备份那一刻，跟家人各执一版。
+ */
+export async function forgetMergeHistory(): Promise<void> {
+  const base = baseFile();
+  if (base.exists) base.delete();
+  const state = await readRemoteState();
+  if (state) writeRemoteState({ ...state, seen: {} });
+  else notifySyncFiles();
+}
 function conflictOf(value: unknown): Conflict | null {
   if (!value || typeof value !== "object") return null;
   const c = value as Record<string, unknown>;
