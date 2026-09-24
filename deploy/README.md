@@ -4,32 +4,26 @@
 
 ## 当前执行边界（2026-09-24）
 
-主人明确要求使用 `mimo-v2.6-pro`，指定中国 Token Plan 地址并提供匹配密钥。文字统一为 Pro（1.0.3 起不看图），服务转写继续为 `mimo-v2.5-asr`。本次以主人的明确选择作为配置授权。
+主人指定文字模型为 **GPT-6 Astra medium**（`gpt-6-astra`），专用转写为 `mimo-v2.5-asr`，两者共用主人提供的兼容上游与密钥。部署结果见 HANDOFF 第一节；通过隔离 staging 验证后再切换生产。
 
-生产已部署 `bc948a1918bcf9ebee43fbbd183f8f25e3547253`（2026-09-24 13:40 UTC 从 `c40f063` 切换；新增 `manage.ts ai` 管理命令、失败调用计入每日调用上限；无数据库结构改动，env 只改 `SOURCE_SHA`；staging 验证与逐行核对见 HANDOFF 第一节）。此前：`c40f063ca26bfdd1978fd37dc1dcdc0bcc0f627a`（1.1.0 发版提交；主人 2026-09-24「发包吧，服务端也一起部署」；11:27 UTC 从 1.0.8 的 `e200eb5` 切换）。安装包的标签最终指向 `0b5fe11`（只跟进 Expo 补丁版本与相应的安装后补丁核对，`server/` 与 `deploy/` 与 `c40f063` 完全相同），所以服务端不重新部署。这次是「家庭与设备」：启动时自动迁移数据库（新增家庭、配对申请、激活码三张表，设备表加公钥、批准者、待确认期限与最后使用时间，原主人改为管理者，用户名与密码列留着不再用）；模型与配置不变（env 只改 `SOURCE_SHA`）。切换前先做了两步：在独立数据目录的 staging 跑新版 `verify-service.py`（跳过付费的文字与转写调用），激活、配对、恢复、管理者隔离、幂等、家庭备份空间与撤销全部通过；再拿生产库的一致性副本让新镜像迁移一遍，核对原有列逐行不变，然后删掉这份副本。切换后本机与公网健康版本核对通过，`/api/v1/status` 为「已初始化、尚未建家庭」，六类匿名请求 401，成员（角色 owner→admin 以外）、设备、设置、备份清单的原有列逐行保留。部署脚本失败时连同切换前的数据目录一起回滚，因为旧镜像不认迁移后的库。原镜像、原配置和切换前数据备份留在服务器私有部署目录，记录见 HANDOFF 第一节。
+## 配置与启动
 
-下一步（手机端）：主人装 1.1.0 后在「我的 → 家庭与设备」点「升级为家庭管理者」，凭现有令牌建家庭（不需要激活码），抄下新的 12 个恢复词。
+配置示例见 [.env.example](.env.example)。上游地址只放私有 `UPSTREAM_BASE_URL`，密钥只放权限 0600、UID 1000 可读的文件；Compose 通过 `UPSTREAM_KEY_PATH` 只读挂载为 `/run/secrets/upstream-key`，运行时变量为 `UPSTREAM_KEY_FILE`。不把地址或密钥写入仓库、日志或本文。
 
-## 配置与启动（授权后才执行）
+| 用途 | 固定模型 | 推理 |
+| --- | --- | --- |
+| 润色、追问、小问题、寄语、目录 | `AI_MODEL=gpt-6-astra` | `reasoning_effort=medium` |
+| 录音转写 | `TRANSCRIBE_MODEL=mimo-v2.5-asr` | 专用音频请求 |
 
-配置示例见 [.env.example](.env.example)，完整离线验证与上线／回滚步骤见 [MiMo 适配记录](../docs/MIMO-ADAPTATION.md)。新 Compose 必须使用新配置，不能直接复用旧的 CPA 环境文件。
+已移除原 DeepSeek／MiMo 专用提供商、地址、双密钥和 Token Plan 授权配置，旧 `CPA_*`、`AI_BASE_URL`、`TRANSCRIBE_BASE_URL` 等变量不作回退。缺少新上游地址、密钥或模型不匹配时，在打开数据库前拒绝启动。上游必须为 HTTPS，禁止地址内凭证、查询参数与片段；不跟随重定向，不自动重试或切换供应商。每次调用重读密钥以支持轮换。
 
-| 用途 | 提供商／固定模型 | 地址与 secret | 授权记录 |
-| --- | --- | --- | --- |
-| 润色、追问、小问题、寄语、目录 | `AI_PROVIDER=mimo` / `AI_MODEL=mimo-v2.6-pro` | `AI_BASE_URL` / `AI_KEY_PATH` → `/run/secrets/ai-key` | `AI_ACCESS` |
-| 专用转写 | `TRANSCRIBE_PROVIDER=mimo` / `TRANSCRIBE_MODEL=mimo-v2.5-asr` | `TRANSCRIBE_BASE_URL` / `TRANSCRIBE_KEY_PATH` → `/run/secrets/transcribe-key` | `TRANSCRIBE_ACCESS` |
-
-普通 API 必须配普通 Key 和 `[服务地址已省略]`，经主人明确批准计费后设置对应 `*_ACCESS=payg-approved`。主人明确选择 Token Plan 时设置 `token-plan-authorized`，并配套餐专用 Key 与对应的 `token-plan-cn`／`token-plan-sgp`／`token-plan-ams` 地址。该字段记录主人的使用选择。没有默认授权、自动充值、按量回退或跨供应商回退。
-
-密钥只存服务端权限 0600、UID 1000 可读的文件，Compose 只读挂载；env 只放文件路径。直接运行 Node 脚本时使用 `AI_KEY_FILE`／`TRANSCRIBE_KEY_FILE` 的绝对路径。缺少授权、模型不匹配、普通／套餐 Key 与地址混用、错误厂商地址会在启动数据库前拒绝；每次调用仍重读并核对 Key 类型。ASR 不继承文字服务的地址或密钥。旧 `CPA_*` 配置不会静默用于 MiMo。
-
-在两路密钥与地址匹配、主人已指定使用方式、隔离 staging 验证通过且已保存旧配置／镜像及数据备份后执行：
+生产与 staging 使用不同的数据目录和端口。按目标 main 提交构建镜像，先跑隔离 staging，保存切换前数据库、镜像与私有回滚配置，再执行：
 
 ```sh
 docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --no-build --pull never
 ```
 
-部署前须按目标提交另行构建并验证镜像；实际部署状态见适配记录顶部。数据目录、端口及 `SOURCE_SHA` 的配置方式不变。
+切换后核对本机及公网健康版本、家庭／成员／设备／备份记录与额度；旧模型选择归一为 Astra，其余设置保持。成功后从活动配置及专用密钥目录移除旧供应商配置；回滚材料仅存私有部署目录。
 
 家庭与设备（1.1.0 起）：一台服务就是一家人，没有用户名和密码。
 
@@ -47,9 +41,9 @@ AI 管理留在服务器，沿用库里已有的暂停状态与额度（默认�
 - 全家文案上限：`docker compose ... exec -T ai node src/manage.ts ai limit global <每日文案次数>`。
 - 一位家人的文案上限：`docker compose ... exec -T ai node src/manage.ts ai limit <家人称呼> <每日文案次数>`，称呼须精确匹配，启停与照片额度保留。次数须为非负整数，0 表示没有文案额度；`global` 专指全家。也可在 `server/` 用 `npm run ai -- ...`。
 
-内容模型固定 `mimo-v2.6-pro`，只处理文字，保留五个 writingMode。`question`／`ask`／`polish` 关闭思考，`recap`／`editor` 开启；此策略已通过合成样例真实调用验证，尚未做家庭实际内容的长期质量评估。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
+内容模型固定 `gpt-6-astra`，五个 writingMode 都用 `reasoning_effort: medium`，不发送 MiMo 的 `thinking` 参数或采样参数。预算仍为 `max_completion_tokens: 16384`，包含推理与最终 JSON。接口保持非流式 `/chat/completions`，只接受 `finish_reason=stop`、非空合法 JSON 和原业务校验通过的最终 `message.content`；不向手机返回推理过程。旧手机的模型字段仍兼容接收，但所有新请求统一使用 Astra，额度、暂停状态和成员权限保留。
 
-「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（独立必填）、`TRANSCRIBE_KEY_PATH`（独立必填），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
+「说一段」继续使用 `mimo-v2.5-asr`，调用同一上游 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，将 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。音频仅在内存及 tmpfs 转码临时文件中处理，不写日志、不缓存、不进数据库。转码后清理临时文件；仅完整有效结果计一次写作额度，同一请求 ID 不重复转写。
 
 五条提示词内置在 `server/src/prompts.ts`：POLISH 润色、RECAP 年度寄语、ASK 追问、QUESTION 今天的小问题、EDITOR 年度册目录建议。提示词全文以 `docs/AI-PROMPTS.md` 为准。editor 的 context 是 JSON，上限 60000 字，服务端不留。
 
@@ -102,7 +96,7 @@ curl --noproxy '*' -fsS http://127.0.0.1:3140/healthz
 
 `server` 内运行 `npm run typecheck && npm test`；Mock 测试不消耗模型额度。另运行 mobile 的 test／typecheck／lint 及本机边界门禁。
 
-真实探针默认拒绝执行。仅主人授权真实调用后，用合成样例在 staging 运行：`node server/scripts/probe-text.ts --allow-live`（5 个文字模式各 1 次）。先设置独立的 `AI_*` 环境与 secret 文件；不得把 Key 放命令行或打印出来。每次最多 16384 completion tokens，不自动重试，只输出模型、模式、思考开关、成功状态、耗时、用量／错误码，不打印生成内容或完整响应。
+真实探针默认拒绝执行。仅主人授权真实调用后，用合成样例在 staging 运行：`node server/scripts/probe-text.ts --allow-live`（5 个文字模式各 1 次）。先设置 `AI_MODEL`、`UPSTREAM_BASE_URL` 与 `UPSTREAM_KEY_FILE`；不得把 Key 放命令行或打印出来。每次最多 16384 completion tokens，不自动重试，只输出模型、模式、思考开关、成功状态、耗时、用量／错误码，不打印生成内容或完整响应。
 
 `python3 server/scripts/verify-service.py --allow-live --container anan-ai-staging-ai-1` 只接受本机 3141 的隔离 staging，先检查容器配置与独立数据挂载，再执行最多 5 次内容生成和 1 次转写（两秒合成音频）；回放／无效输入应不触发额外上游调用。脚本用 `manage.ts activation` 在 staging 容器里开家庭，验证激活、扫码配对（服务端状态机，钥匙包是合成的）、恢复码找回、管理者隔离、备份与撤销，最后一行是「Family activation, device pairing, recovery, admin isolation, model results, idempotency, family backup space and revocation verified.」；会写测试数据，禁止对生产运行。可用 `--skip-transcribe`／`--skip-text` 缩小探测范围；转写探测须在主人授权的调用范围内执行。
 

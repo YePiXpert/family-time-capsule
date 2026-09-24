@@ -7,7 +7,7 @@ if args.base!='http://127.0.0.1:3141':p.error('Use isolated staging at http://12
 inspection=json.loads(subprocess.check_output(['docker','inspect',args.container],text=True))[0]
 assert any(binding['HostPort']=='3141' for binding in inspection['NetworkSettings']['Ports'].get('3000/tcp',[]) or []),'Container must be staging on 3141'
 assert all(mount['Source']!='/opt/anan-ai/data' for mount in inspection['Mounts']),'Production data must not be used'
-check="import{loadMiMoConfig}from'./src/ai-config.ts';loadMiMoConfig('AI');"+("loadMiMoConfig('TRANSCRIBE');" if not args.skip_transcribe else '')
+check="import{loadAIConfig}from'./src/ai-config.ts';loadAIConfig('AI');"+("loadAIConfig('TRANSCRIBE');" if not args.skip_transcribe else '')
 subprocess.run(['docker','exec',args.container,'node','--input-type=module','-e',check],check=True)
 def call(path,body=None,token=None,method=None):
  tracked=path.startswith('/api/v1/ai/') and path!='/api/v1/ai/config' and token
@@ -21,7 +21,7 @@ def call(path,body=None,token=None,method=None):
  except urllib.error.HTTPError as e:result=(e.code,json.load(e))
  if tracked:
   elapsed=time.monotonic()-started;after=call('/api/v1/me',token=token)[1]['usage']['tokens']
-  print(json.dumps({'model':'mimo-v2.6-pro','mode':(body or {}).get('writingMode',path.rsplit('/',1)[-1]),'success':result[0]==200,'status':result[0],'elapsedMs':round(elapsed*1000),'tokens':after-before}))
+  print(json.dumps({'model':'gpt-6-astra','mode':(body or {}).get('writingMode',path.rsplit('/',1)[-1]),'success':result[0]==200,'status':result[0],'elapsedMs':round(elapsed*1000),'tokens':after-before}))
  return result
 for attempt in range(15):
  try:
@@ -52,8 +52,8 @@ else:
 assert owner['member']['role']=='admin'
 token=owner['token']
 status,config=call('/api/v1/ai/config',token=token);assert status==200
-assert config['defaultModel']=='mimo-v2.6-pro' and config['reasoningEffort']=='per-mode'
-assert config['enabledModels']==['mimo-v2.6-pro']
+assert config['defaultModel']=='gpt-6-astra' and config['reasoningEffort']=='medium'
+assert config['enabledModels']==['gpt-6-astra']
 for gone in ('/api/v1/setup','/api/v1/login'):assert call(gone,{})[0]==404
 def pair(member,device_name):
  """新手机登记申请 → 管理者批准 → 新手机凭领取凭据领令牌 → 确认。"""

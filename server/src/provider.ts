@@ -1,12 +1,12 @@
-import { MODEL_ID, THINKING_POLICY, MAX_COMPLETION_TOKENS } from './ai-model.ts';
-import { readMiMoKey, validateMiMoConfig, type MiMoConfig } from './ai-config.ts';
+import { MODEL_ID, REASONING_POLICY, MAX_COMPLETION_TOKENS } from './ai-model.ts';
+import { readAIKey, validateAIConfig, type AIConfig } from './ai-config.ts';
 import { PROMPTS } from './prompts.ts';
 import { Problem } from './store.ts';
 import { parseResult, type AIInput } from './contracts.ts';
 export type ProviderResult={result:ReturnType<typeof parseResult>;tokens:number|null};
 export type Provider=(input:AIInput)=>Promise<ProviderResult>;
-export function mimoProvider(config:MiMoConfig):Provider {
- validateMiMoConfig(config,MODEL_ID);
+export function textProvider(config:AIConfig):Provider {
+ validateAIConfig(config,MODEL_ID);
  const endpoint=new URL(config.baseUrl+'/chat/completions');
  return async (input) => {
   const mode=input.writingMode;
@@ -15,7 +15,7 @@ export function mimoProvider(config:MiMoConfig):Provider {
   const content:unknown[]=[{type:'text',text:JSON.stringify({task,userContext:input.context})}];
   let response:Response,raw:string;
   try {
-   response=await fetch(endpoint,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:`Bearer ${readMiMoKey(config)}`},body:JSON.stringify({model:config.model,messages:[{role:'system',content:instructions},{role:'user',content}],max_completion_tokens:MAX_COMPLETION_TOKENS,stream:false,response_format:{type:'json_object'},thinking:{type:THINKING_POLICY[mode]}}),signal:AbortSignal.timeout(100000)});
+   response=await fetch(endpoint,{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:`Bearer ${readAIKey(config)}`},body:JSON.stringify({model:config.model,messages:[{role:'system',content:instructions},{role:'user',content}],max_completion_tokens:MAX_COMPLETION_TOKENS,stream:false,response_format:{type:'json_object'},reasoning_effort:REASONING_POLICY[mode]}),signal:AbortSignal.timeout(100000)});
    if(!response.ok) { await response.body?.cancel(); throw new Problem(response.status===429?429:502,'UPSTREAM_UNAVAILABLE',response.status===429?'模型当前额度或并发受限，请稍后再试。':'AI 暂时不可用，请稍后重试。'); }
    const chunks:Uint8Array[]=[];let bytes=0;
    for await(const chunk of response.body??[]){bytes+=chunk.length;if(bytes>250000)throw new Problem(502,'INVALID_RESULT','AI 返回内容过大，请重试。');chunks.push(chunk);}
