@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  BackHandler,
   StyleSheet,
   Text as NativeText,
   View,
@@ -85,6 +86,11 @@ import { healthFile } from "./health-file";
 const Stack = createNativeStackNavigator<Routes>();
 function LockGate({ onUnlock }: { onUnlock: () => void }) {
   const s = useStyles();
+  // 锁着时安卓返回键不能穿过这一层去翻下面的页面。
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => sub.remove();
+  }, []);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const unlock = async () => {
@@ -141,8 +147,9 @@ function Root() {
     [locked, setLocked] = useState(state.settings.lockEnabled === true);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (status) => {
-      // 退到后台即重新上锁；回到前台由解锁门接管。
-      if (status !== "active" && state.settings.lockEnabled) setLocked(true);
+      // 退到后台即重新上锁；回到前台由解锁门接管。只认 background：iOS 拉下控制中心、
+      // 弹权限框、面容验证本身都只是 inactive，不该把人锁在门外。
+      if (status === "background" && state.settings.lockEnabled) setLocked(true);
     });
     return () => sub.remove();
   }, [state.settings.lockEnabled]);
@@ -220,16 +227,16 @@ function Root() {
         </Glass>
       </Page>
     );
-  if (locked)
-    return (
-      <>
-        <StatusBar style={theme.dark ? "light" : "dark"} />
-        <LockGate onUnlock={() => setLocked(false)} />
-      </>
-    );
+  // 锁是盖在页面上的一层，不替换导航：拍照、选照片、分享面板都会让安卓进后台，
+  // 替换掉导航会卸载正在写的编辑页、丢掉返回栈，选回来的照片也没处落。
   return (
     <SyncStatusContext.Provider value={syncStatus}>
       <StatusBar style={theme.dark ? "light" : "dark"} />
+      <View
+        style={{ flex: 1 }}
+        accessibilityElementsHidden={locked}
+        importantForAccessibility={locked ? "no-hide-descendants" : "auto"}
+      >
       <NavigationContainer
         theme={{
           ...(theme.dark ? DarkTheme : DefaultTheme),
@@ -299,6 +306,12 @@ function Root() {
           <Stack.Screen name="RecoveryCode" component={RecoveryCode} />
         </Stack.Navigator>
       </NavigationContainer>
+      </View>
+      {locked ? (
+        <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
+          <LockGate onUnlock={() => setLocked(false)} />
+        </View>
+      ) : null}
     </SyncStatusContext.Provider>
   );
 }
