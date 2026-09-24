@@ -53,9 +53,11 @@ try:
     # 改分辨率后先等书架按新宽度画好再截图。
     restart();adb('shell','wm','size','320x720');find('我的');shot('home-320')
     tap('我的');tap('AI 设置');find('ai-join');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
+    # 家庭与设备：没加入时「加入已有家庭／开始一个家庭／用恢复码找回」，不联网也打得开。
+    tap('家庭与设备');find('family-out');find('family-join');find('family-recover');shot('family-out-320');familyOffline=True;adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')
-    # 远端备份卡：离线、未登录时只有一句说明与「去登录」，没有任何上传入口。
-    restart();tap('我的');tap('备份与恢复');seek('remote-card');seek('去登录');shot('backup-remote-offline');remoteCardOffline=True;phase('Settings')
+    # 远端备份卡：没加入家庭时只有一句说明与「去加入家庭」，没有任何上传入口。
+    restart();tap('我的');tap('备份与恢复');seek('remote-card');seek('remote-family');shot('backup-remote-offline');remoteCardOffline=True;phase('Settings')
     # 备份闭环：导出 → 删一条记录 → 从本机保留的备份恢复 → 内容还原。
     restart();tap('我的');tap('备份与恢复');tap('backup-export')
     time.sleep(3);adb('shell','input','keyevent','4');time.sleep(1)  # 退出系统分享面板
@@ -101,7 +103,7 @@ try:
     broken=[n.get('text') for n in hierarchy().iter('node') if any(w in (n.get('text') or '') for w in ('失败','超时','尚未就绪'))]
     assert not broken,f'Book export reported {broken}'
     find('year-yearbook');bookExport=True;phase('Yearbook')
-    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,keepsakeCard=True,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
+    report.update(success=True,offlineStartup=True,draftRecovered=True,albumSurvivedRelaunch=True,aiSettingsOffline=True,backupRoundtrip=True,remoteCardOffline=remoteCardOffline,familyOffline=familyOffline,keepsakeCard=True,yearbookBook=bookExport,letterSealed=letterSealed,archiveSheet=archiveSheet,widths=[320,390])
 finally:
     report['timing']=dict(seconds=round(time.monotonic()-started),dumps=stats['dumps'],dumpSeconds=round(stats['dumpSeconds']))
     shot('final',fresh=True)
