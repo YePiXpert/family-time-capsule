@@ -84,7 +84,9 @@ import {
   hapticLight,
   messageOf,
   serif,
+  useLargeLayout,
   useStyles,
+  useTextScale,
   useTheme,
   type TileTone,
 } from "./ui";
@@ -95,14 +97,40 @@ import { Photo } from "./Media";
 const CARD_SHADOW_ROOM = 14;
 /**
  * 「最近」卡最矮多高：首屏剩下的地方比这还少（更大文字、小屏、提醒卡与草稿同时在），
- * 首页才退回可以往下滑——宁可滑一点，也不把照片压成一道缝。
+ * 首页才退回可以往下滑——宁可滑一点，也不把照片压成一道缝。卡里最少的内容
+ * （照片 + 日期 + 标题一行 + 正文一行）按实际行高比这还高时，以内容为准，见 heroCardMin。
  */
 const HERO_CARD_MIN = 180;
 /** 有字的卡上照片最矮多高：卡矮时照片先让出地方给字，但不压成一道缝。 */
 const HERO_PHOTO_MIN = 64;
-/** 书架一格的宽，也是方形小封面的边长；更大文字时放大。 */
+/** 有图的卡照片下那一段字的上下内边距与行距；无图的卡是纸面内边距与行距。 */
+const HERO_TEXT_PAD = 12,
+  HERO_TEXT_GAP = 2,
+  HERO_PLAIN_PAD = 16,
+  HERO_PLAIN_GAP = 4;
+/** 「N 年前的今天」前面日历图标的边长。 */
+const HERO_EYEBROW_ICON = 16;
+/** 卡里衬线正文的字号与行高（系统字号放大之前），跟应用的「更大文字」走。 */
+const heroBodyFont = (large: boolean) =>
+  large ? { fontSize: 19, lineHeight: 30 } : { fontSize: 17, lineHeight: 27 };
+/** 书架一格的宽，也是方形小封面的边长；按大字排版（更大文字或系统字号 ≥ 1.3）时放大。 */
 const TILE = 76;
 const TILE_LARGE = 92;
+/** 书架一格的书名：衬线一行，字号跟应用的「更大文字」走。 */
+const tileTitleFont = (large: boolean) =>
+  large ? { fontSize: 16, lineHeight: 22 } : { fontSize: 14, lineHeight: 20 };
+/** 书名最长的那本（「第一次合集」）有几个字：格宽至少放得下这么多字，书名不截成「202…」。 */
+const TILE_TITLE_CHARS = 5;
+/**
+ * 书架一格的边长：大字排版时放大；系统字号再往上放大时，格宽跟着实际字号走，
+ * 至少放得下 TILE_TITLE_CHARS 个书名字（含字距）。
+ */
+function useTileSize() {
+  const { large } = useTheme();
+  const base = useLargeLayout() ? TILE_LARGE : TILE;
+  const title = tileTitleFont(large).fontSize * useTextScale();
+  return Math.max(base, Math.ceil((title + 0.3) * TILE_TITLE_CHARS));
+}
 
 /**
  * 新建的引导行：图标砖 + 一句说明，点按即新建——说明与下一步合一，不摆虚位册。
@@ -189,9 +217,8 @@ function TileCover({
       />
       {stamp ? (
         <Stamp size={Math.round(size * 0.56)} inset={3}>
-          {/* 印章里的字是装饰，读屏念的是整格的标签；不跟系统字号放大，免得撑出圆环。 */}
+          {/* 印章里的字是装饰，读屏念的是整格的标签；Stamp 让它不跟系统字号放大。 */}
           <Text
-            maxFontSizeMultiplier={1}
             style={{
               fontFamily: serif,
               fontSize: stamp.length > 2 ? 12 : 17,
@@ -245,7 +272,7 @@ function ShelfTileView({
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
-  const size = large ? TILE_LARGE : TILE;
+  const size = useTileSize();
   return (
     <Animated.View
       entering={
@@ -284,8 +311,7 @@ function ShelfTileView({
               fontFamily: serif,
               fontWeight: "600",
               letterSpacing: 0.3,
-              fontSize: large ? 16 : 14,
-              lineHeight: large ? 22 : 20,
+              ...tileTitleFont(large),
             }}
           >
             {title}
@@ -303,8 +329,8 @@ function ShelfTileView({
  * 首页一屏放下，书再多也只是往右翻，不再一段段往下排。条不跟着首屏拉高（flexGrow 0）。
  */
 function ShelfStrip({ time, topics }: { time: ReactNode[]; topics: ReactNode[] }) {
-  const { colors, large } = useTheme();
-  const size = large ? TILE_LARGE : TILE;
+  const { colors } = useTheme();
+  const size = useTileSize();
   return (
     <ScrollView
       testID="shelf-strip"
@@ -430,10 +456,11 @@ function RecentFlip({
  * 没落款时放得下三行才摆一枚装饰线。字少时空白留在正文与落款之间，像一页信。
  */
 function SerifBody({ text, by }: { text: string; by?: string }) {
-  const s = useStyles();
-  const { fontScale } = useWindowDimensions();
-  // 系统字号会把行高一起放大，最多 1.6 倍（Text 的 maxFontSizeMultiplier）。
-  const line = 27 * Math.min(Math.max(fontScale, 1), 1.6);
+  const s = useStyles(),
+    { large } = useTheme();
+  const font = heroBodyFont(large);
+  // 系统字号会把行高一起放大（useTextScale）。
+  const line = font.lineHeight * useTextScale();
   const [room, setRoom] = useState(1);
   const footer = room >= (by ? 2 : 3);
   return (
@@ -452,8 +479,7 @@ function SerifBody({ text, by }: { text: string; by?: string }) {
             left: 0,
             right: 0,
             fontFamily: serif,
-            fontSize: 17,
-            lineHeight: 27,
+            ...font,
             letterSpacing: 0.3,
           }}
         >
@@ -470,6 +496,64 @@ function SerifBody({ text, by }: { text: string; by?: string }) {
         </View>
       )}
     </View>
+  );
+}
+/**
+ * 卡上的正文：有图的卡总摆标题，标题是拿正文首行凑出来的，就不要再把同一句当正文重复一遍；
+ * 无图的卡没起标题时不摆标题，正文从首行读起。
+ */
+function heroWords(record: Stored<LocalRecord>, cover: LocalMedia | undefined) {
+  const titled = !!record.title.trim();
+  const body = record.text.trim();
+  return cover
+    ? titled
+      ? body
+      : body.split("\n").slice(1).join(" ").trim()
+    : titled
+      ? body
+      : body || recordTitle(record);
+}
+/**
+ * 一张时光卡最矮多高才放得下它最少的内容：（照片 64、）「N 年前的今天」、日期、标题一行、正文一行，
+ * 与 RecentCard 同一套内边距与行距。行高是实际排版用的（应用大字 × 系统字号），不写死像素。
+ */
+function heroCardMin(
+  item: HeroItem<Stored<LocalRecord>>,
+  cover: LocalMedia | undefined,
+  lines: { footnote: number; heading: number; body: number },
+) {
+  const words = heroWords(item.record, cover);
+  const eyebrow =
+    item.yearsAgo !== undefined
+      ? [Math.max(HERO_EYEBROW_ICON, lines.footnote)]
+      : [];
+  const stack = (heights: number[], gap: number) =>
+    heights.reduce((a, b) => a + b, 0) + gap * (heights.length - 1);
+  if (cover)
+    return (
+      HERO_PHOTO_MIN +
+      HERO_TEXT_PAD * 2 +
+      stack(
+        [
+          ...eyebrow,
+          lines.footnote,
+          lines.heading,
+          ...(words ? [lines.body] : []),
+        ],
+        HERO_TEXT_GAP,
+      )
+    );
+  return (
+    HERO_PLAIN_PAD * 2 +
+    stack(
+      [
+        ...eyebrow,
+        lines.footnote,
+        ...(item.record.title.trim() ? [lines.heading] : []),
+        lines.body,
+      ],
+      HERO_PLAIN_GAP,
+    )
   );
 }
 /**
@@ -501,20 +585,15 @@ function RecentCard({
   const { record, yearsAgo } = item;
   const title = recordTitle(record);
   const titled = !!record.title.trim();
-  const body = record.text.trim();
-  // 有图的卡总摆标题：标题是拿正文首行凑出来的，就不要再把同一句当正文重复一遍。
-  // 无图的卡没起标题时不摆标题，正文从首行读起。
-  const words = cover
-    ? titled
-      ? body
-      : body.split("\n").slice(1).join(" ").trim()
-    : titled
-      ? body
-      : body || title;
+  const words = heroWords(record, cover);
   const anniversary = yearsAgo !== undefined;
   const eyebrow = anniversary && (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-      <JournalIcon name="calendar" color={colors.accent} size={16} />
+      <JournalIcon
+        name="calendar"
+        color={colors.accent}
+        size={HERO_EYEBROW_ICON}
+      />
       <Text style={[s.footnote, { color: colors.accent, fontWeight: "600" }]}>
         {yearsAgo} 年前的今天
       </Text>
@@ -563,8 +642,8 @@ function RecentCard({
                 style={{
                   flexGrow: words ? 1 : 0,
                   paddingHorizontal: 16,
-                  paddingVertical: 12,
-                  gap: 2,
+                  paddingVertical: HERO_TEXT_PAD,
+                  gap: HERO_TEXT_GAP,
                 }}
               >
                 {eyebrow}
@@ -576,7 +655,9 @@ function RecentCard({
               </View>
             </>
           ) : (
-            <View style={{ flex: 1, padding: 16, gap: 4 }}>
+            <View
+              style={{ flex: 1, padding: HERO_PLAIN_PAD, gap: HERO_PLAIN_GAP }}
+            >
               {eyebrow}
               <Text style={s.footnote}>{dateLabel(record.date)}</Text>
               {titled && (
@@ -879,11 +960,13 @@ export function Shelf() {
     store = useStore(),
     nav = useNav(),
     s = useStyles(),
-    { colors } = useTheme();
+    { colors, large } = useTheme();
+  const textScale = useTextScale();
   const insets = useSafeAreaInsets();
   const [error, setError] = useState(""),
     [viewport, setViewport] = useState(0),
-    [contentHeight, setContentHeight] = useState(0);
+    [contentHeight, setContentHeight] = useState(0),
+    [heroHeader, setHeroHeader] = useState(0);
   // store 只在某个集合真的动过时才换它的引用，所以按集合记忆：改一条草稿不会
   // 让一万条记录重新排序，主题、尺寸与本页 useState 引起的重渲染都命中缓存。
   const {
@@ -1087,10 +1170,28 @@ export function Shelf() {
   const shelfCount = tiles.time.length + tiles.topics.length;
   const hasRecords = records.length > 0;
   // 「最近」区（区标题 + 8 + 卡 + 圆点）最矮多高；首屏剩下的比这还少才让整页可以往下滑。
-  // 区标题带「随便翻翻」时是文字按钮的 44 高，不带时 32；圆点那一截是投影留白 14 + 8 + 6。
+  // 区标题按量到的高（系统字号放大时文字按钮会高过 44），没量到前带「随便翻翻」时是 44、不带 32；
+  // 卡取 180 与每张卡最少内容的较大者（更大文字、系统字号放大时内容更高）；圆点那一截是投影留白 14 + 8 + 6。
   const shuffle = records.length >= 3;
-  const heroMin =
-    HERO_CARD_MIN + (shuffle ? 44 : 32) + 8 + (hero.length > 1 ? 28 : 0);
+  const lines = {
+    footnote: s.footnote.lineHeight * textScale,
+    heading: s.heading.lineHeight * textScale,
+    body: heroBodyFont(large).lineHeight * textScale,
+  };
+  const cardMin = hero.reduce(
+    (most, item) =>
+      Math.max(
+        most,
+        heroCardMin(item, coverForRecords([item.record], mediaMap), lines),
+      ),
+    HERO_CARD_MIN,
+  );
+  const heroMin = Math.ceil(
+    cardMin +
+      (heroHeader || (shuffle ? 44 : 32)) +
+      8 +
+      (hero.length > 1 ? 28 : 0),
+  );
   return (
     <Page scroll={false} top>
       <ScrollView
@@ -1315,21 +1416,26 @@ export function Shelf() {
                 { paddingHorizontal: 20, gap: 8 },
               ]}
             >
-              <SectionHeader
-                title="最近"
-                action={
-                  shuffle
-                    ? {
-                        label: "随便翻翻",
-                        testID: "shuffle",
-                        onPress: () => {
-                          const id = pickAnother(records.map((r) => r.id));
-                          if (id) nav.navigate("Record", { id, shuffle: true });
-                        },
-                      }
-                    : undefined
-                }
-              />
+              <View
+                onLayout={(e) => setHeroHeader(e.nativeEvent.layout.height)}
+              >
+                <SectionHeader
+                  title="最近"
+                  action={
+                    shuffle
+                      ? {
+                          label: "随便翻翻",
+                          testID: "shuffle",
+                          onPress: () => {
+                            const id = pickAnother(records.map((r) => r.id));
+                            if (id)
+                              nav.navigate("Record", { id, shuffle: true });
+                          },
+                        }
+                      : undefined
+                  }
+                />
+              </View>
               <RecentFlip
                 items={hero}
                 media={mediaMap}
@@ -1381,7 +1487,10 @@ export function Shelf() {
             <View
               style={{
                 flexDirection: "row",
+                // 窄屏大字放不下两个动作时整个换到下一行，不把字一个个折开；右边照样让出悬浮钮。
+                flexWrap: "wrap",
                 alignItems: "center",
+                alignContent: "center",
                 minHeight: FAB_SIZE,
                 marginLeft: -8,
                 paddingRight: FAB_SIZE + 12,
