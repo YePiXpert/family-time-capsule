@@ -17,7 +17,7 @@ function askConsent(signal: AbortSignal): Promise<TranscriptionConsent> {
     const cancel = () => finish("cancel");
     signal.addEventListener("abort", cancel);
     if (signal.aborted) { cancel(); return; }
-    Alert.alert("把这段录音转成文字？", "会把这一段录音经主人的服务发送给转写模型（小米 MiMo），只用来转成文字；服务器不保存声音，转写计一次写作额度。", [
+    Alert.alert("把这段录音转成文字？", "会把这一段录音经家里的服务发送给转写模型（小米 MiMo），只用来转成文字；服务器不保存声音，转写计一次写作额度。", [
       { text: "取消", style: "cancel", onPress: cancel },
       { text: "这次同意", onPress: () => finish("once") },
       { text: "以后都同意", onPress: () => finish("always") },

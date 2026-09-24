@@ -48,7 +48,7 @@ it("sends the bearer token and the base path on every call, and never calls with
   );
   const error = await failure(() => anonymous.status());
   expect(error.code).toBe("AUTH_REQUIRED");
-  expect(error.message).toContain("登录");
+  expect(error.message).toContain("家庭与设备");
   expect(seen).toHaveLength(1);
 });
 it("me reads the calling device, returns null for missing or invalid fields, and uses shared errors", async () => {
@@ -70,7 +70,7 @@ it("me reads the calling device, returns null for missing or invalid fields, and
   answer = () => ({ status: 401, body: encode({ code: "AUTH_REQUIRED" }) });
   const error = await failure(() => transport().me());
   expect([error.code, error.status]).toEqual(["AUTH_REQUIRED", 401]);
-  expect(error.message).toContain("登录");
+  expect(error.message).toContain("家庭与设备");
 });
 it("uploads bytes as octet-stream with the ciphertext hash and reads created from 201", async () => {
   answer = (request) => ({
@@ -147,7 +147,7 @@ it("maps service errors by code, gateway pages by status and a lost connection t
     status: 507,
     body: encode({
       code: "SERVER_FULL",
-      message: "服务器空间不足，请联系主人。",
+      message: "服务器空间不足，请联系管理者。",
     }),
   });
   error = await failure(() => transport().status());
@@ -271,7 +271,7 @@ it("reads the family: status counts manifests (0 on an older service), the manif
     "SERVER_ERROR",
   );
 });
-it("deletes one device's manifest, wipes the family only through the admin route, and words OWNER_ONLY", async () => {
+it("deletes one device's manifest, wipes the family only through the admin route, and words ADMIN_ONLY", async () => {
   answer = () => ({ status: 200, body: encode({ ok: true, pruned: { removed: 3, bytes: 1024 } }) });
   expect(await transport().deleteManifest("d-1")).toEqual({ pruned: 3 });
   expect(seen.at(-1)!.method).toBe("DELETE");
@@ -282,10 +282,10 @@ it("deletes one device's manifest, wipes the family only through the admin route
   await transport().wipeFamily();
   expect(seen.at(-1)!.method).toBe("DELETE");
   expect(seen.at(-1)!.url).toBe("http://service.test/api/v1/admin/backup");
-  answer = () => ({ status: 403, body: encode({ code: "OWNER_ONLY" }) });
+  answer = () => ({ status: 403, body: encode({ code: "ADMIN_ONLY" }) });
   const error = await failure(() => transport().wipeFamily());
-  expect([error.code, error.status]).toEqual(["OWNER_ONLY", 403]);
-  expect(error.message).toContain("主人");
+  expect([error.code, error.status]).toEqual(["ADMIN_ONLY", 403]);
+  expect(error.message).toContain("管理者");
 });
 
 it("omits unknown manifest references but preserves an explicitly empty list", async () => {

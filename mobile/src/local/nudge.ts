@@ -113,6 +113,6 @@ export function backupDueOf(
 /** 家人同步不等于应用之外的备份；只改变提醒正文。 */
 export function backupNudgeBody(joined: boolean, lastSyncAt: string | undefined, today = new Date()): string {
   return joined && lastSyncAt && daysSince(lastSyncAt, today) <= 7
-    ? "家人一起写已把记录同步到主人的服务，但那不是应用之外的备份。导出一份，把这段时光留到应用之外。"
+    ? "家人一起写已把记录同步到家里的服务，但那不是应用之外的备份。导出一份，把这段时光留到应用之外。"
     : "记录只保存在这台手机上。定期导出一份，把这段时光留到应用之外。";
 }

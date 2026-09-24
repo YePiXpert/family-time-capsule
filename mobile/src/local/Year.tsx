@@ -156,7 +156,7 @@ export function YearEditor({ year, records }: { year: string; records: readonly 
       }
       const send = await new Promise<boolean>((resolve) => Alert.alert(
         "送整年文字给 AI？",
-        `会把 ${year} 年全部 ${records.length} 段时光的标题、正文、落款和日期（不含照片、不含别的年份）经主人的服务发送给 AI，只用来建议目录，服务端不保存；结果你可以逐条改。计一次写作额度。${records.length > 400 ? "记录较多，本次只送最新 400 段。" : ""}`,
+        `会把 ${year} 年全部 ${records.length} 段时光的标题、正文、落款和日期（不含照片、不含别的年份）经家里的服务发送给 AI，只用来建议目录，服务端不保存；结果你可以逐条改。计一次写作额度。${records.length > 400 ? "记录较多，本次只送最新 400 段。" : ""}`,
         [
           { text: "取消", style: "cancel", onPress: () => resolve(false) },
           { text: "发送", onPress: () => resolve(true) },

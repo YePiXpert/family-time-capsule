@@ -28,7 +28,7 @@ it("accepts exact server limits and rejects one byte or fraction of a second ove
   expect(serverPrecheck({ seconds: 180.01 })).not.toBeNull();
 });
 it("explains login on both platforms and Chinese dictation on iPhone", () => {
-  expect(transcribeHint("none", "android")).toBe("这台手机没有中文本机识别；登录家人账号后可以经主人的服务转文字。");
+  expect(transcribeHint("none", "android")).toBe("这台手机没有中文本机识别；加入家庭后可以经家里的服务转文字。");
   expect(transcribeHint("none", "ios")).toBe(transcribeHint("none", "android") + "iPhone 在系统设置里开启中文听写后可本机识别。");
   expect(transcribeHint("on-device", "ios")).toBe("");
 });
