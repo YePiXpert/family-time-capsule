@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, rmdirSync, lstatSync, statSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, rmSync, rmdirSync, lstatSync, statSync } from 'node:fs';
 import { statfs } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { once } from 'node:events';
@@ -25,6 +25,7 @@ export const FAMILY_DIR = 'family';
 export class BackupStore {
   readonly root: string;
   private totals = { objects: 0, bytes: 0 };
+  private generation: string | null = null;
   constructor(root: string) {
     this.root = root;
     mkdirSync(join(root, 'tmp'), { recursive: true });
@@ -33,6 +34,21 @@ export class BackupStore {
   }
   private spaceDir() {
     return join(this.root, FAMILY_DIR, 'objects');
+  }
+  private readGeneration(): string | null {
+    try { return readFileSync(join(this.root, '.usage-generation'), 'utf8'); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; }
+  }
+  /** CLI 清空与常驻服务共用这一标记；原子替换避免读到半份内容。 */
+  private changeGeneration() {
+    const temp = join(this.root, 'tmp', `${randomUUID()}.generation`);
+    try {
+      writeFileSync(temp, randomUUID(), { flag: 'wx', mode: 0o644 });
+      renameSync(temp, join(this.root, '.usage-generation'));
+    } finally { rmSync(temp, { force: true }); }
+  }
+  private refreshUsage() {
+    if (this.readGeneration() !== this.generation) this.recount();
   }
   objectPath(id: string) {
     if (!OBJECT_ID.test(id)) throw new Problem(400, 'INVALID_INPUT', '对象标识无效。');
@@ -81,6 +97,7 @@ export class BackupStore {
       }
       out.end();
       await finished(out);
+      this.refreshUsage();
       if (overflow) throw new Problem(413, 'TOO_LARGE', '这一份太大，请更新应用后重试。');
       if (!bytes) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容为空。');
       if (options.declared !== undefined && options.declared !== bytes) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容不完整，请重试。');
@@ -127,13 +144,17 @@ export class BackupStore {
     return rows;
   }
   usage(): { objects: number; bytes: number } {
+    this.refreshUsage();
     return { ...this.totals };
   }
-  /** 直接搬动对象文件之后重扫；usage 只读已维护的计数，不阻塞每次上传。 */
+  /** 直接搬动对象文件之后重扫；平时 usage 只核对标记，CLI 清空后才重扫。 */
   recount(): { objects: number; bytes: number } {
+    const generation = this.readGeneration();
     const rows = this.list();
     this.totals = { objects: rows.length, bytes: rows.reduce((n, r) => n + r.bytes, 0) };
-    return this.usage();
+    // 扫描期间若另一进程又清空了，保留扫描前的标记，下次读取会再次校准。
+    this.generation = generation;
+    return { ...this.totals };
   }
   /**
    * 只删「不在 keep 里且最后修改超过 graceMs」的对象，一小时宽限是额外保护。
@@ -141,6 +162,7 @@ export class BackupStore {
    * 慢速首次上传依靠持久占位保护，不能只靠文件的修改时间。
    */
   prune(keep: Set<string>, now = Date.now(), graceMs = 3600000): { removed: number; bytes: number } {
+    this.refreshUsage();
     let removed = 0, bytes = 0;
     for (const row of this.list()) {
       if (keep.has(row.id) || row.mtimeMs > now - graceMs) continue;
@@ -153,11 +175,15 @@ export class BackupStore {
   }
   /** 清空整个家庭空间及上传占位：只给主人，且先删清单再来（见路由）。 */
   wipe(store:Store) {
-    try { rmSync(join(this.root, FAMILY_DIR), { recursive: true, force: true }); }
-    catch (e) { this.recount(); throw e; }
-    this.totals = { objects: 0, bytes: 0 };
-    mkdirSync(this.spaceDir(), { recursive: true });
-    store.clearObjectClaims();
+    this.changeGeneration();
+    try {
+      rmSync(join(this.root, FAMILY_DIR), { recursive: true, force: true });
+      mkdirSync(this.spaceDir(), { recursive: true });
+      store.clearObjectClaims();
+    } finally {
+      // 删除中途失败也要通知常驻服务，以实际残留为准，不能把用量伪装成零。
+      try { this.changeGeneration(); } finally { this.recount(); }
+    }
   }
   /**
    * 一次性迁移（Build 72）：把 Build 70／71 按成员分的 `<root>/<成员 uuid>/objects/xx/<id>` 搬进家庭空间。
