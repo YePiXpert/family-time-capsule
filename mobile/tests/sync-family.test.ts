@@ -419,6 +419,25 @@ it.each(["deleted", "legacy", "unknown-device"])("内容未变但 %s 时仍发�
   expect(second.lastPush!.entitiesSha).toBe(first.lastPush!.entitiesSha);
   expect(second.lastPush!.manifestSha).toBe(second.seen[second.deviceId!]);
 });
+it("有一份录到一半的草稿：库没变就不再重传清单", async () => {
+  const { receiver: p, deps } = await seeded();
+  await p.store.change((s) => {
+    s.drafts.d = {
+      id: "d",
+      recordId: null,
+      baseRevision: 0,
+      updatedAt: "2026-09-20T00:00:00Z",
+      content: { ...p.model.emptyContent(), text: "说到一半" },
+      recordingFile: "ExpoAudio/pending.m4a",
+    };
+  });
+  await p.family.joinFamily(p.store, key, deps);
+  const publish = vi.spyOn(deps.transport, "putManifest");
+  const again = await p.family.runFamilySync(p.store, deps);
+  expect(publish).not.toHaveBeenCalled();
+  expect(again.lastSyncSummary!.pushed).toBe(0);
+  expect(p.store.get().drafts.d!.recordingFile).toBe("ExpoAudio/pending.m4a");
+});
 it("第二次只下载变化的设备，未变设备与本机自己的清单都跳过", async () => {
   const { receiver: p, sender, remote, deps, published } = await seeded();
   const third = await phone();

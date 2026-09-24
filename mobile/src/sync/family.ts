@@ -1,6 +1,11 @@
 import { File, FileMode } from "expo-file-system";
 import { randomUUID } from "expo-crypto";
-import { BackupStopped, restorePinName, restorePins } from "../local/backup";
+import {
+  BackupStopped,
+  restorePinName,
+  restorePins,
+  withoutPendingRecordings,
+} from "../local/backup";
 import { decodeLibraryV2, encodeEntities } from "../local/backup-format";
 import {
   backupDirectory,
@@ -307,7 +312,8 @@ async function syncFamily(
   const unchanged =
     state.lastPush &&
     ownIndex?.sha256 === state.lastPush.manifestSha &&
-    sha256Hex(encodeEntities(store.get())) === state.lastPush.entitiesSha;
+    sha256Hex(encodeEntities(withoutPendingRecordings(store.get()))) ===
+      state.lastPush.entitiesSha;
   const pushed = unchanged ? null : await pushManifest(store.get(), deps);
   throwIfAborted(deps.signal);
   const { deviceId } = await deps.transport.me(deps.signal);
