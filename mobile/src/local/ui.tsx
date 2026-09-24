@@ -8,11 +8,14 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type Ref,
+  type RefObject,
 } from "react";
 import {
   AccessibilityInfo,
   Image,
   Keyboard,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -38,19 +41,23 @@ import {
   isGlassEffectAPIAvailable,
   isLiquidGlassAvailable,
 } from "expo-glass-effect";
-import {
+import Animated, {
+  Easing,
   ReduceMotion,
   ReducedMotionConfig,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withSpring,
+  withTiming,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { useLibrary } from "./context";
 import { File } from "expo-file-system";
 import { mediaDirectory, mediaUri } from "./files";
+import { useCovered, useLocked } from "./lock";
 
 /** 主动作触感反馈；设备不支持或调用失败时静默略过。 */
 export const hapticLight = () => {
@@ -1351,6 +1358,154 @@ export function BottomBar({
     </View>
   );
 }
+/**
+ * Modal 里的纸面遮罩：iOS 开着应用锁、应用在多任务界面或后台时盖住面板内容。
+ * 主窗口那层遮罩盖不到 Modal 自己的窗口，所以每个 Modal 的最后一个子元素放一个它。
+ */
+export function PrivacyCover() {
+  const covered = useCovered();
+  const { colors } = useTheme();
+  return covered ? (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[StyleSheet.absoluteFill, { backgroundColor: colors.paper }]}
+    />
+  ) : null;
+}
+/**
+ * 底部面板（AI）：受控的 RN Modal。蒙层淡入、面板从下沿推上来，两者跟着同一个进度走；
+ * 收起途中再打开就从当前位置折回，收完才卸下 Modal。锁上时立即收起（Modal 画在锁之上），
+ * 减少动态时直接出现、直接消失。关掉之后读屏焦点回到打开它的按钮。
+ * 只管呈现：开没开由调用方决定，收起面板不取消面板里的任务。
+ */
+export function SheetModal({
+  visible,
+  onClose,
+  closeLabel,
+  closeTestID,
+  returnFocus,
+  children,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  /** 点蒙层收起的读屏标签。 */
+  closeLabel: string;
+  closeTestID?: string;
+  /** 打开面板的那个按钮：面板收完，读屏焦点回到它。 */
+  returnFocus?: RefObject<View | null>;
+  children: ReactNode;
+}) {
+  const { colors, reduceMotion } = useTheme();
+  const locked = useLocked();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const show = visible && !locked;
+  const instant = reduceMotion || locked;
+  const [mounted, setMounted] = useState(show);
+  // 打开当场挂上 Modal；收起要等动画走完，不播动画的收起当场卸下。
+  if (show && !mounted) setMounted(true);
+  if (!show && mounted && instant) setMounted(false);
+  const showing = useRef(show);
+  const progress = useSharedValue(show ? 1 : 0);
+  const panelHeight = useSharedValue(windowHeight);
+  useEffect(() => {
+    showing.current = show;
+    // 收完这一刻又被要求打开（进度折回时回调带 finished=false，不会走到这里）也不卸。
+    const unmount = () => {
+      if (!showing.current) setMounted(false);
+    };
+    if (show)
+      progress.value = instant
+        ? 1
+        : withTiming(1, {
+            duration: MOTION.panelIn,
+            easing: Easing.out(Easing.cubic),
+          });
+    else if (instant) progress.value = 0;
+    else
+      progress.value = withTiming(
+        0,
+        { duration: MOTION.panelOut, easing: Easing.in(Easing.cubic) },
+        (finished) => {
+          "worklet";
+          if (finished) scheduleOnRN(unmount);
+        },
+      );
+  }, [show, instant, progress]);
+  const focusBack = () => {
+    const target = returnFocus?.current;
+    // 因为上锁才收起的不还：按钮在锁下面，读屏够不着。
+    if (target && !showing.current && !locked)
+      AccessibilityInfo.sendAccessibilityEvent(target, "focus");
+  };
+  // iOS 等 Modal 真正退场（onDismiss）再还焦点；安卓没有 onDismiss，卸下后还。
+  const wasMounted = useRef(mounted);
+  useEffect(() => {
+    if (Platform.OS !== "ios" && wasMounted.current && !mounted) focusBack();
+    wasMounted.current = mounted;
+  });
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
+  const panelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: (1 - progress.value) * panelHeight.value }],
+  }));
+  return (
+    <Modal
+      visible={mounted}
+      animationType="none"
+      transparent
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onClose}
+      onDismiss={focusBack}
+    >
+      {/* Modal 独立成层，不继承打开它的工具栏的嵌套纸面深度。 */}
+      <GlassDepth.Provider value={0}>
+        <View style={{ flex: 1, justifyContent: "flex-end" }}>
+          {/* 蒙层不是玻璃，也不是面板的祖先：淡入用透明度没问题。 */}
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: colors.scrim },
+              scrimStyle,
+            ]}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={closeLabel}
+              testID={closeTestID}
+              style={StyleSheet.absoluteFill}
+              onPress={onClose}
+            />
+          </Animated.View>
+          {/* 面板只做位移：里面有玻璃胶囊，祖先不能改透明度。 */}
+          <Animated.View
+            accessibilityViewIsModal
+            onLayout={(e) => {
+              panelHeight.value = e.nativeEvent.layout.height;
+            }}
+            style={[
+              {
+                // 实色纸面：半透明玻璃会把编辑页底栏透出来。
+                backgroundColor: colors.paper,
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                maxHeight: "82%",
+                paddingTop: 16,
+                paddingHorizontal: 20,
+                paddingBottom: insets.bottom + 12,
+              },
+              panelStyle,
+            ]}
+          >
+            {children}
+          </Animated.View>
+        </View>
+        <PrivacyCover />
+      </GlassDepth.Provider>
+    </Modal>
+  );
+}
 export function IconButton({
   label,
   icon,
@@ -1402,6 +1557,7 @@ export function ToolButton({
   badge,
   accessibilityLabel,
   testID,
+  ref,
 }: {
   icon: JournalIconName;
   label: string;
@@ -1411,10 +1567,13 @@ export function ToolButton({
   badge?: ReactNode;
   accessibilityLabel?: string;
   testID?: string;
+  /** 打开面板的按钮交给 SheetModal，面板收起后读屏焦点回到这里。 */
+  ref?: Ref<View>;
 }) {
   const { colors, large } = useTheme();
   return (
     <Pressable
+      ref={ref}
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}

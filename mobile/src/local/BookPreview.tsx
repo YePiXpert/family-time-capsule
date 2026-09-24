@@ -24,6 +24,7 @@ import {
   Card,
   ErrorText,
   Page,
+  PrivacyCover,
   Text,
   messageOf,
   useStyles,
@@ -197,6 +198,7 @@ export function BookPreview({
           </ScrollView>
         </Page>
       </View>
+      <PrivacyCover />
     </Modal>
   );
 }

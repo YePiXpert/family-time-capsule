@@ -28,19 +28,17 @@ vi.mock("react", async original => ({
     if (cleanup) env.cleanups.push(cleanup);
   },
 }));
-vi.mock("react-native", () => ({ View: "View", Pressable: "Pressable", Modal: "Modal", ScrollView: "ScrollView" }));
-vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
+vi.mock("react-native", () => ({ View: "View", Pressable: "Pressable", ScrollView: "ScrollView" }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "00000000-0000-4000-8000-000000000001" }));
 vi.mock("../src/local/context", () => ({ useLibrary: () => emptyLibrary() }));
 vi.mock("../src/local/navigation", () => ({ useNav: () => ({ navigate: env.navigate }) }));
-vi.mock("../src/local/lock", () => ({ useLocked: () => false }));
 vi.mock("../src/components/JournalIcon", () => ({ JournalIcon: "JournalIcon" }));
 vi.mock("../src/ai/client", async () => ({
   api: env.api, getToken: env.token, AIError: (await import("../src/ai/error")).AIError,
 }));
 vi.mock("../src/local/ui", () => ({
   Button: "Button", Card: "Card", ErrorText: "ErrorText", Text: "Text", ToolButton: "ToolButton",
-  GlassDepth: { Provider: "Provider" }, hapticSuccess: vi.fn(),
+  SheetModal: "SheetModal", hapticSuccess: vi.fn(),
   messageOf: (e: Error) => e.message, useStyles: () => ({}), useTheme: () => ({ colors: {} }),
 }));
 type Control = { children?: ReactNode; testID?: string; title?: string; onPress?: () => void };

@@ -9,7 +9,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary } from "./context";
 import { Photo } from "./Media";
 import { useLocked } from "./lock";
-import { Button, Page, Text, useStyles, useTheme } from "./ui";
+import {
+  Button,
+  Page,
+  PrivacyCover,
+  Text,
+  useStyles,
+  useTheme,
+} from "./ui";
 
 /** 一格候选照片：mediaId 兼作 key，label 给读屏，caption 是图下一行说明。 */
 export type PhotoChoice = {
@@ -102,6 +109,7 @@ export function PhotoPicker<T extends PhotoChoice>({
           />
         </Page>
       </View>
+      <PrivacyCover />
     </Modal>
   );
 }

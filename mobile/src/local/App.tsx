@@ -84,7 +84,7 @@ import { LetterScreen } from "./LetterScreen";
 import { Quotes } from "./Quotes";
 import { receiveShares } from "./services";
 import { healthFile } from "./health-file";
-import { LockedContext } from "./lock";
+import { CoveredContext, LockedContext } from "./lock";
 const Stack = createNativeStackNavigator<Routes>();
 /** 解锁门与欢迎页：一张卡放在屏幕正中；字大、屏矮放不下时照常可滑。 */
 function CenteredPage({ children }: { children: ReactNode }) {
@@ -256,6 +256,7 @@ function Root() {
   // 替换掉导航会卸载正在写的编辑页、丢掉返回栈，选回来的照片也没处落。
   return (
     <LockedContext.Provider value={locked}>
+    <CoveredContext.Provider value={covered}>
     <SyncStatusContext.Provider value={syncStatus}>
       <StatusBar style={theme.dark ? "light" : "dark"} />
       <View
@@ -350,6 +351,7 @@ function Root() {
         />
       ) : null}
     </SyncStatusContext.Provider>
+    </CoveredContext.Provider>
     </LockedContext.Provider>
   );
 }
