@@ -32,6 +32,12 @@
   - 本机没有模拟器：改版在 react-native-web 预览里对过 390／420／320 宽、浅深色、更大文字、键盘、长文、照片与混合素材；真机渲染只能看出包截图。门禁全绿：mobile 50 个文件 736 项测试、server 183 项、typecheck／lint、边界脚本、脚本单测 38 项。
   - 验证出包：推送后派 `mobile-build.yml`，看 iOS 回归的 ai-entry／editor-details／editor-keyboard 与安卓冒烟的 editor 截图；结果补在这里。
 
+- **编辑页一屏放下（2026-09-24，未打包）**：主人看过一张纸的改版说「记下这一刻怎么还是上下滑的，iOS 上下滑感觉很不正经；都可以不填这几个字太直白了」。改法：
+  - 纸下面的 `DangerCard`「放弃这份草稿」拿掉，改成 `Page right` 里一枚 `IconButton`（`trash`，读屏「放弃这份草稿」，testID 仍是 `editor-discard`，确认弹窗不变）；`IconButton` 新增可选 `disabled`（40% 透明、不响应），忙碌时禁用。iOS 回归按 testID 点，不用改。
+  - 滚动区照首页的做法：`onLayout` 另记当前高度、`onContentSizeChange` 记内容高，内容高过当前高 1 以上才 `scrollEnabled`；`alwaysBounceVertical={false}`、安卓 `overScrollMode="never"`。`s.content` 底部原是 32，编辑页改成 20，与纸的 `minHeight = 最高视口 − 40` 对上——原先多出的 12 让整页总能滑一点。键盘弹起时滚动区变矮、纸不缩，照样可以滑。
+  - 「标题、地点、人物」收起时没填过就空着，读屏也不念值。
+  - react-native-web 预览里对过：390 宽新草稿与带照片、320 宽更大文字、键盘弹起；新草稿往下滚 2000 截图与不滚逐字节相同。
+
 - **首页一屏放下与编辑页细节（2026-09-23，`7ab85f7`／`24068f5`／`dec20b5`，未打包）**：主人看了真机截图提两点——编辑页「更多：标题、地点、人物」与「放弃这份草稿」不合群、展开后更怪；首页上下滑动怪怪的，内容不多就让小地方左右切、用小图标，首屏固定。改法见 CHANGELOG 顶节与 DESIGN.md「书架」「编辑」两条，要点：
   - 首页：`Page scroll={false}` 里自己放一个 ScrollView，`flexGrow: 1` 的内容区里「最近」区 `flex: 1` 吃掉剩下的高度；量到内容高于视口才 `scrollEnabled`，不回弹（`alwaysBounceVertical={false}`、安卓 `overScrollMode="never"`）。「最近」卡最矮 180，再矮就退回可滑。书架是一条横向 ScrollView（`shelf-strip`，`flexGrow: 0`），76 见方的小封面；顺序由 `shelf-plan.ts` 的纯函数定（`shelfTiles`、`heroItems`，有单测）。
   - 「最近」卡：照片最多 16:10、卡矮先缩照片（不低于 64），多出来的高度给衬线正文（PRODUCT.md 原则 2）。正文 `SerifBody` 绝对定位、不参与撑高，按量到的高度排整行；放得下两行时最后一行给落款（原则 3），没落款三行起给一枚装饰线。
