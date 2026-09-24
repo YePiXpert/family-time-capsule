@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { api, getToken, hasConsent } from "../ai/client";
+import { api, getToken } from "../ai/client";
 import { questionContext, recentQuestions } from "../ai/state";
 import { ageLine, toDayKey } from "./dates";
 import { compareDates, type Library } from "./model";
@@ -26,7 +26,6 @@ export function useDailyQuestion(store: LocalStore, state: Library, enabled: boo
       getCache: () => store.get().settings.dailyQuestion,
       save: (cache) => store.change((s) => { s.settings.dailyQuestion = cache; }),
       getToken,
-      hasConsent,
       request: () => {
         const current = store.get();
         return api("/ai/write", {

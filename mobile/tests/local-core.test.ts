@@ -1155,7 +1155,7 @@ describe("profile name and origin", () => {
   });
 });
 
-describe("device-only transcription consent", () => {
+describe("legacy transcription consent field", () => {
   it.each([true, false, undefined])("accepts optional boolean %s", (value) => {
     const s = fixture();
     s.settings.transcribeConsent = value;

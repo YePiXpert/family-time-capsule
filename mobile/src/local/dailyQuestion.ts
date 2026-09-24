@@ -11,14 +11,13 @@ export async function requestDailyQuestion(input: {
   getCache: () => DailyQuestionCache | undefined;
   save: (cache: DailyQuestionCache) => Promise<unknown>;
   getToken: () => Promise<string | null>;
-  hasConsent: () => Promise<boolean>;
   request: () => Promise<unknown>;
   changed?: boolean;
 }) {
   if (input.changed || questionPlan(input.getCache(), input.today) !== "request") return;
   await input.save(rememberQuestion(input.getCache(), input.today, null));
   try {
-    if (!(await input.getToken()) || !(await input.hasConsent())) return;
+    if (!(await input.getToken())) return;
     const result = validateResult(await input.request(), "question");
     await input.save(rememberQuestion(input.getCache(), input.today, result.question!));
   } catch {

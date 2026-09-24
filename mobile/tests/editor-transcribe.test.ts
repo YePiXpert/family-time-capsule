@@ -4,15 +4,11 @@ import { runTranscription, type TranscriptionDeps, type TranscriptionState } fro
 
 function fixture(overrides: Partial<TranscriptionDeps> = {}) {
   let text = "原来的正文";
-  const settings = { transcribeConsent: false };
   const states: TranscriptionState[] = [];
   const controller = new AbortController();
   const deps: TranscriptionDeps = {
     availability: async () => "on-device",
     signedIn: async () => true,
-    consent: () => settings.transcribeConsent,
-    askConsent: vi.fn(async () => "cancel" as const),
-    rememberConsent: vi.fn(async () => { settings.transcribeConsent = true; }),
     onDevice: vi.fn(async () => "她笑了"),
     onServer: vi.fn(async () => "她笑了"),
     onTranscript: vi.fn((words) => { text = appendTranscript(text, words); }),
@@ -20,35 +16,27 @@ function fixture(overrides: Partial<TranscriptionDeps> = {}) {
     platform: "android",
     ...overrides,
   };
-  return { deps, states, settings, controller, text: () => text,
+  return { deps, states, controller, text: () => text,
     type: (next: string) => { text = next; },
     run: () => runTranscription(deps, controller.signal) };
 }
-it("appends on-device words without asking server consent or uploading", async () => {
+it("appends on-device words without uploading", async () => {
   const f = fixture(); await f.run();
   expect(f.text()).toBe("原来的正文\n\n她笑了");
   expect(f.deps.onServer).not.toHaveBeenCalled();
-  expect(f.deps.askConsent).not.toHaveBeenCalled();
   expect(f.states.at(-1)).toEqual({ status: "idle", message: "" });
 });
-it("canceling consent does not upload or remember anything", async () => {
+it("without on-device recognition a joined phone transcribes on the server straight away", async () => {
   const f = fixture({ availability: async () => "unavailable" }); await f.run();
-  expect(f.deps.onServer).not.toHaveBeenCalled();
-  expect(f.deps.rememberConsent).not.toHaveBeenCalled();
-  expect(f.text()).toBe("原来的正文");
+  expect(f.deps.onServer).toHaveBeenCalledOnce();
+  expect(f.text()).toBe("原来的正文\n\n她笑了");
   expect(f.states.at(-1)).toEqual({ status: "idle", message: "" });
 });
-it.each(["once", "always"] as const)("honors %s consent", async (choice) => {
-  const f = fixture({ availability: async () => "unavailable", askConsent: async () => choice });
-  await f.run();
-  expect(f.deps.onServer).toHaveBeenCalledOnce();
-  expect(f.settings.transcribeConsent).toBe(choice === "always");
-  expect(f.deps.rememberConsent).toHaveBeenCalledTimes(choice === "always" ? 1 : 0);
-});
-it("remembered consent skips the question", async () => {
-  const f = fixture({ availability: async () => "unavailable", consent: () => true }); await f.run();
-  expect(f.deps.askConsent).not.toHaveBeenCalled();
-  expect(f.deps.onServer).toHaveBeenCalledOnce();
+it("a phone that has not joined explains how to get transcription and uploads nothing", async () => {
+  const f = fixture({ availability: async () => "unavailable", signedIn: async () => false }); await f.run();
+  expect(f.deps.onServer).not.toHaveBeenCalled();
+  expect(f.text()).toBe("原来的正文");
+  expect(f.states.at(-1)?.status).toBe("failed");
 });
 function deferred() {
   let resolve!: (text: string) => void;
@@ -76,13 +64,13 @@ it("empty recognition keeps text and explains that audio is saved", async () => 
   expect(f.deps.onTranscript).not.toHaveBeenCalled();
   expect(f.states.at(-1)).toEqual({ status: "failed", message: "没听清，录音已保存。" });
 });
-it("ignores consent chosen after cancellation", async () => {
-  let answer!: (choice: "always") => void;
-  const f = fixture({ availability: async () => "unavailable", askConsent: () => new Promise((resolve) => { answer = resolve; }) });
+it("stopping before the server route starts uploads nothing", async () => {
+  let signIn!: (yes: boolean) => void;
+  const f = fixture({ availability: async () => "unavailable", signedIn: () => new Promise((resolve) => { signIn = resolve; }) });
   const job = f.run(); await Promise.resolve(); await Promise.resolve();
-  f.controller.abort(); answer("always"); await job;
-  expect(f.deps.rememberConsent).not.toHaveBeenCalled();
+  f.controller.abort(); signIn(true); await job;
   expect(f.deps.onServer).not.toHaveBeenCalled();
+  expect(f.text()).toBe("原来的正文");
 });
 it.each([
   ["DENIED", "ignored", "没有语音识别权限，可在系统设置里开启；录音已保存。"],

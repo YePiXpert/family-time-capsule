@@ -2,7 +2,6 @@ import { SERVICE_URL } from "../local/brand";
 import { getToken } from "../family/session";
 import { AIError } from "./error";
 export { getToken } from "../family/session";
-export { giveConsent, hasConsent } from "./session";
 const BASE = SERVICE_URL;
 export { AIError } from "./error";
 export async function api<T>(

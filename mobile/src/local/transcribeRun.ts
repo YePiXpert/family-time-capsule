@@ -5,13 +5,9 @@ export type TranscriptionState = {
   status: "idle" | "working" | "failed";
   message: string;
 };
-export type TranscriptionConsent = "cancel" | "once" | "always";
 export type TranscriptionDeps = {
   availability: () => Promise<SpeechAvailability>;
   signedIn: () => Promise<boolean>;
-  consent: () => boolean;
-  askConsent: (signal: AbortSignal) => Promise<TranscriptionConsent>;
-  rememberConsent: () => Promise<unknown>;
   onDevice: (signal: AbortSignal) => Promise<string>;
   onServer: (signal: AbortSignal) => Promise<string>;
   onTranscript: (text: string) => void | Promise<void>;
@@ -30,17 +26,10 @@ export async function runTranscription(deps: TranscriptionDeps, signal: AbortSig
     if (signal.aborted) return;
     const signedIn = await deps.signedIn();
     if (signal.aborted) return;
-    const route = chooseRoute({ availability, signedIn, consent: deps.consent() });
+    const route = chooseRoute({ availability, signedIn });
     if (route === "none") {
       state("failed", transcribeHint(route, deps.platform));
       return;
-    }
-    if (route === "server-consent") {
-      const choice = await deps.askConsent(signal);
-      if (signal.aborted) return;
-      if (choice === "cancel") { state("idle"); return; }
-      if (choice === "always") await deps.rememberConsent();
-      if (signal.aborted) return;
     }
     const text = await (route === "on-device" ? deps.onDevice(signal) : deps.onServer(signal));
     if (signal.aborted) return;

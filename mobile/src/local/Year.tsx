@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { useLibrary, useStore } from "./context";
 import { now } from "./services";
@@ -24,9 +24,8 @@ import { BookPreview } from "./BookPreview";
 import type { BookLayout, BookPhoto } from "./book";
 import { PhotoPicker } from "./PhotoPicker";
 import { CHILD_FALLBACK } from "./brand";
-import { AI_CONSENT_TEXT } from "../ai/consent";
 import { applyYearPicks, checkEditorResult, editorContext, recapContext } from "../ai/state";
-import { api, getToken, hasConsent, giveConsent } from "../ai/client";
+import { api, getToken } from "../ai/client";
 import {
   Button,
   Card,
@@ -69,30 +68,9 @@ function YearNote({ year }: { year: string }) {
           const token = await getToken();
           if (signal.aborted) throw new Error("已停止起草。");
           if (!token) {
-            nav.navigate("AISettings");
-            throw new Error("先在「AI 设置」加入服务，再来起草寄语。");
+            nav.navigate("Family");
+            throw new Error("先在「家庭与设备」加入家庭，再来起草寄语。");
           }
-          if (!(await hasConsent())) {
-            const agreed = await new Promise<boolean>((resolve) =>
-              Alert.alert(
-                "用 AI 起草寄语",
-                AI_CONSENT_TEXT,
-                [
-                  { text: "取消", style: "cancel", onPress: () => resolve(false) },
-                  {
-                    text: "同意并继续",
-                    onPress: () => {
-                      void giveConsent()
-                        .then(() => resolve(true))
-                        .catch(() => resolve(false));
-                    },
-                  },
-                ],
-              ),
-            );
-            if (!agreed) throw new Error("没有开始起草。");
-          }
-          if (signal.aborted) throw new Error("已停止起草。");
           const records = sortedRecords(state).filter(
             (r) => yearKey(r.date) === year,
           );
@@ -118,7 +96,7 @@ function YearNote({ year }: { year: string }) {
   );
 }
 
-/** 整年正文只有这里在两次同意之后发送；建议在采用之前只留在页面 state。 */
+/** 整年正文只有这里、在家人点「AI 建议目录」时发送；建议在采用之前只留在页面 state。 */
 export function YearEditor({ year, records }: { year: string; records: readonly Stored<LocalRecord>[] }) {
   const state = useLibrary(), store = useStore(), nav = useNav(), s = useStyles();
   const [preview, setPreview] = useState<YearPicks | null>(null);
@@ -140,29 +118,9 @@ export function YearEditor({ year, records }: { year: string; records: readonly 
       const token = await getToken();
       if (!active()) return;
       if (!token) {
-        nav.navigate("AISettings");
-        throw new Error("先在「AI 设置」加入服务，再来建议目录。");
+        nav.navigate("Family");
+        throw new Error("先在「家庭与设备」加入家庭，再来建议目录。");
       }
-      const consent = await hasConsent();
-      if (!active()) return;
-      if (!consent) {
-        const agreed = await new Promise<boolean>((resolve) => Alert.alert(
-          "用 AI 建议目录", AI_CONSENT_TEXT, [
-            { text: "取消", style: "cancel", onPress: () => resolve(false) },
-            { text: "同意并继续", onPress: () => { void giveConsent().then(() => resolve(true)).catch(() => resolve(false)); } },
-          ], { cancelable: true, onDismiss: () => resolve(false) },
-        ));
-        if (!agreed || !active()) return;
-      }
-      const send = await new Promise<boolean>((resolve) => Alert.alert(
-        "送整年文字给 AI？",
-        `会把 ${year} 年全部 ${records.length} 段时光的标题、正文、落款和日期（不含照片、不含别的年份）经家里的服务发送给 AI，只用来建议目录，服务端不保存；结果你可以逐条改。计一次写作额度。${records.length > 400 ? "记录较多，本次只送最新 400 段。" : ""}`,
-        [
-          { text: "取消", style: "cancel", onPress: () => resolve(false) },
-          { text: "发送", onPress: () => resolve(true) },
-        ], { cancelable: true, onDismiss: () => resolve(false) },
-      ));
-      if (!send || !active()) return;
       const context = editorContext(year, records, state.media);
       const result = await api<unknown>("/ai/write", {
         requestId: randomUUID(), photos: [], context, writingMode: "editor",

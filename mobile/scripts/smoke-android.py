@@ -52,7 +52,7 @@ try:
     tap('letter-open-early');tap_last('拆开');find('Words kept for the future.');shot('letter-opened');letterSealed=True;phase('Letter')
     # 改分辨率后先等书架按新宽度画好再截图。
     restart();adb('shell','wm','size','320x720');find('我的');shot('home-320')
-    tap('我的');tap('AI 设置');find('ai-join');shot('ai-settings-offline-320');adb('shell','input','keyevent','4')
+    tap('我的')
     # 家庭与设备：没加入时「加入已有家庭／开始一个家庭／用恢复码找回」，不联网也打得开。
     tap('家庭与设备');find('family-out');find('family-join');find('family-recover');shot('family-out-320');familyOffline=True;adb('shell','input','keyevent','4')
     tap('外观设置');tap('深色');shot('dark-320')

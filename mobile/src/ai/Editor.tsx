@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, View } from "react-native";
+import { Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { randomUUID } from "expo-crypto";
 import { compareDates, type RecordDraft } from "../local/model";
 import { useLibrary } from "../local/context";
 import { ageLine } from "../local/dates";
-import { AI_CONSENT_TEXT } from "./consent";
 import {
   Button,
   Card,
@@ -20,7 +19,7 @@ import {
 } from "../local/ui";
 import { useNav } from "../local/navigation";
 import { JournalIcon } from "../components/JournalIcon";
-import { api, getToken, hasConsent, giveConsent, AIError } from "./client";
+import { api, getToken, AIError } from "./client";
 import {
   askContext,
   sourceFingerprint,
@@ -125,27 +124,9 @@ export function AIEditor({
     active.current = true;
     try {
       if (!(await getToken())) {
-        // 先收起面板，避免它盖在 AI 设置页上。
+        // 这台手机还没加入家庭：先收起面板，带去「家庭与设备」加入。
         setPanel(false);
-        nav.navigate("AISettings");
-        return;
-      }
-      if (!(await hasConsent())) {
-        Alert.alert(
-          "使用 AI 整理",
-          AI_CONSENT_TEXT,
-          [
-            { text: "取消", style: "cancel" },
-            {
-              text: "同意并继续",
-              onPress: () => {
-                void giveConsent()
-                  .then(() => requestWriting(mode, fresh))
-                  .catch((e) => setError(messageOf(e)));
-              },
-            },
-          ],
-        );
+        nav.navigate("Family");
         return;
       }
       setBusy(true);
