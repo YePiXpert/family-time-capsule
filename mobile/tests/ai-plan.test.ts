@@ -110,12 +110,11 @@ describe("AI editor plan: pre-flight validation", () => {
 });
 
 describe("AI editor plan: retry classification", () => {
-  it("keeps retry-same-request for every error code except retired results", () => {
+  it("keeps retry-same-request for every error code except retired or failed-on-server results", () => {
     for (const code of [
       "NETWORK",
       "CANCELED",
       "SERVER_ERROR",
-      "INVALID_RESULT",
       "QUOTA_EXCEEDED",
       "anything-else",
       null,
@@ -127,6 +126,12 @@ describe("AI editor plan: retry classification", () => {
       retryOriginal: false,
       notice: "这次请求已结束，结果无法恢复；点「重新生成」才会计入今日额度。",
     });
+    // 服务端已把这次记为失败、不会重跑：只给「重新生成」。
+    for (const code of ["INVALID_RESULT", "UPSTREAM_UNAVAILABLE"])
+      expect(retryPlan(code)).toEqual({
+        retryOriginal: false,
+        notice: "这次没有生成出来，不计今日额度；点「重新生成」再试一次。",
+      });
   });
 });
 
