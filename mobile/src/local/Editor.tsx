@@ -33,7 +33,7 @@ import { preserveMedia, verifyMedia } from "./files";
 import { useDraftPersist, useRecorder } from "./editorHooks";
 import { appendTranscript } from "./transcribe";
 import { useTranscription } from "./transcribeHooks";
-import { isEmptyDraft } from "./empties";
+import { isEmptyDraft, isUntouchedEdit } from "./empties";
 import type { Props } from "./navigation";
 import {
   BottomBar,
@@ -248,8 +248,14 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   }, [allowExit]);
   const leave = async (action: () => void) => {
     transcription.stop();
-    // 什么都没写就走：草稿静默清理，不留「继续编辑」也不弹确认。
-    if (current.current && isEmptyDraft(current.current)) await drop();
+    // 什么都没写、或打开已有记录却什么都没改就走：草稿静默清理，不留「继续编辑」也不弹确认。
+    const d = current.current;
+    if (
+      d &&
+      (isEmptyDraft(d) ||
+        isUntouchedEdit(d, d.recordId ? state.records[d.recordId] : undefined))
+    )
+      await drop();
     else await flush();
     nextAction.current = action;
     setAllowExit(true);

@@ -1,5 +1,7 @@
 import {
   type LocalLetter,
+  type LocalRecord,
+  type RecordContent,
   type RecordDraft,
   type Stored,
 } from "./model";
@@ -20,6 +22,36 @@ export function isEmptyDraft(d: Stored<RecordDraft> | RecordDraft): boolean {
     c.mediaIds.length === 0 &&
     !d.recordingFile
   );
+}
+
+const CONTENT_KEYS = [
+  "title",
+  "text",
+  "date",
+  "location",
+  "first",
+  "quote",
+  "by",
+  "coverId",
+  "mediaIds",
+  "personIds",
+] as const satisfies readonly (keyof RecordContent)[];
+/**
+ * 编辑已有记录的草稿：打开时整条复制，永远不「空」。什么都没改就走也该静默清理，
+ * 否则书架挂着「上次没写完」，原记录之后一改，这份草稿就再也存不进去。
+ */
+export function isUntouchedEdit(
+  d: Stored<RecordDraft> | RecordDraft,
+  record: Stored<LocalRecord> | LocalRecord | undefined,
+): boolean {
+  if (!d.recordId || !record || d.recordingFile || d.aiJob || d.aiProposal)
+    return false;
+  const c = d.content as RecordContent;
+  const r = record as RecordContent;
+  // 旧记录可能缺 quote／personIds／by：缺省与空值一视同仁。
+  const norm = (v: unknown) =>
+    JSON.stringify(Array.isArray(v) && !v.length ? null : v || null);
+  return CONTENT_KEYS.every((k) => norm(c[k]) === norm(r[k]));
 }
 
 /** 信：还没封存，且没有标题、正文、录音（落款与拆封日不算内容）。 */

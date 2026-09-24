@@ -17,7 +17,7 @@ import {
   createAlbumWithRecords,
   now,
 } from "./services";
-import { deleteRecord, editEntity } from "./model";
+import { deleteRecord, patchRecord } from "./model";
 import { looksLikeCoordinates, placeLabel } from "./places";
 import { pickAnother } from "./shuffle";
 import type { Props } from "./navigation";
@@ -135,11 +135,9 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
           text: "写入地点",
           onPress: () => {
             void store
-              .change((lib) => {
-                editEntity(lib, "records", record.id, (target) => {
-                  target.location = label;
-                });
-              })
+              .change((lib) =>
+                patchRecord(lib, record.id, { location: label }, now()),
+              )
               .catch((e) => setError(messageOf(e)));
           },
         },
@@ -153,12 +151,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
   const toggle = (key: "first" | "quote") => {
     void store
       .change((lib) => {
-        editEntity(lib, "records", record.id, (r) => {
-          if (key === "first") r.first = !r.first;
-          else r.quote = !r.quote;
-          r.revision++;
-          r.updatedAt = now();
-        });
+        const r = lib.records[record.id];
+        if (r) patchRecord(lib, r.id, { [key]: !r[key] }, now());
       })
       .catch((e) => setError(messageOf(e)));
   };
