@@ -5,9 +5,9 @@ const path = require("node:path");
 // sourceType/cameraDevice is unavailable, including on the iOS simulator.
 const manifest = require.resolve("expo-image-picker/package.json");
 const picker = JSON.parse(fs.readFileSync(manifest, "utf8"));
-// 57.0.19 retains the same unguarded UIKit camera setup verbatim; the exact
+// 57.0.20 (like 57.0.19) retains the same unguarded UIKit camera setup verbatim; the exact
 // source check below remains mandatory before applying this patch.
-if (picker.version !== "57.0.19") {
+if (picker.version !== "57.0.20") {
   throw new Error(`Review the camera availability patch for expo-image-picker ${picker.version}`);
 }
 const file = path.join(path.dirname(manifest), "ios/ImagePickerModule.swift");
