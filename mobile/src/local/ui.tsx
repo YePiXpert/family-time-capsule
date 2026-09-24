@@ -165,7 +165,9 @@ export function LocalTheme({ children }: { children: ReactNode }) {
   );
 }
 export const useTheme = () => useContext(ThemeContext);
-/** 双线印章圆环：扉页名字首字与年度册封面共用。 */
+/** 印章里的字：圆环不跟系统字号变大，字也不跟——Text 在印章里取 1 倍，免得撑出圆环。 */
+const InStamp = createContext(false);
+/** 双线印章圆环：扉页名字首字与年度册封面共用。里面的字是装饰，不跟系统字号放大。 */
 export function Stamp({
   size,
   inset = 5,
@@ -203,16 +205,34 @@ export function Stamp({
           opacity: 0.5,
         }}
       />
-      {children}
+      <InStamp.Provider value={true}>{children}</InStamp.Provider>
     </View>
   );
 }
 
+/** 系统字号最多把字放大到几倍（Text 的 maxFontSizeMultiplier）。 */
+export const TEXT_MAX_SCALE = 1.6;
+/**
+ * 系统字号实际把 Text 的字号与行高放大几倍：封顶 TEXT_MAX_SCALE；小于 1 按 1 算，
+ * 按它排版宁可多留一点地方。
+ */
+export function useTextScale() {
+  const { fontScale } = useWindowDimensions();
+  return Math.min(Math.max(fontScale, 1), TEXT_MAX_SCALE);
+}
+/** 按大字排版：应用的「更大文字」，或系统字号放大到 1.3 倍以上。 */
+export function useLargeLayout() {
+  const { large } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  return large || fontScale >= 1.3;
+}
+
 export function Text({ style, ...props }: TextProps) {
   const { colors, large } = useTheme();
+  const inStamp = useContext(InStamp);
   return (
     <NativeText
-      maxFontSizeMultiplier={1.6}
+      maxFontSizeMultiplier={inStamp ? 1 : TEXT_MAX_SCALE}
       {...props}
       style={[
         {
@@ -758,10 +778,10 @@ export function useStyles() {
 }
 /** 书架与年度册的册宽：大字单列、页边 20、列间距 16，按安全区取可用宽。 */
 export function useVolumeWidth() {
-  const { large } = useTheme();
-  const { width, fontScale } = useWindowDimensions();
+  const largeLayout = useLargeLayout();
+  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const columns = large || fontScale >= 1.3 ? 1 : 2;
+  const columns = largeLayout ? 1 : 2;
   return (
     (width - insets.left - insets.right - 40 - 16 * (columns - 1)) / columns
   );
@@ -835,7 +855,12 @@ export function Page({
           )}
           <View style={[s.topTitleBox, !showBack && s.topTitleFlush]}>
             {title !== undefined && (
-              <Text accessibilityRole="header" style={s.topTitle}>
+              // 顶栏一行 52：标题跟系统字号最多放大 1.3 倍，不然窄屏上五个字就折成两行。
+              <Text
+                accessibilityRole="header"
+                maxFontSizeMultiplier={1.3}
+                style={s.topTitle}
+              >
                 {title}
               </Text>
             )}
