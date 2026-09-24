@@ -18,7 +18,7 @@ import {
 import { keyIdOf, newMasterKey } from "./crypto";
 import { verifyRemoteBackup } from "./engine";
 import { runFamilySync, joinFamily, leaveFamily } from "./family";
-import { isSyncRunning, markSyncRunning } from "./status";
+import { claimSync, markSyncRunning } from "./status";
 import { dateTimeLabel } from "../local/dates";
 import { bytesLabel } from "./planner";
 import {
@@ -120,7 +120,7 @@ export function FamilyCard({
   const running = !!progress;
   const syncing = running || sync.running;
   const perform = async (fn: (signal: AbortSignal) => Promise<void>) => {
-    if (isSyncRunning()) {
+    if (!claimSync()) {
       setMessage("正在同步，等它完成再试。");
       return;
     }
@@ -141,6 +141,7 @@ export function FamilyCard({
         setMessage("已停止。");
       else setError(messageOf(e));
     } finally {
+      markSyncRunning(false);
       controller.current = null;
       setProgress("");
       onRunningChange?.(false);
@@ -164,45 +165,35 @@ export function FamilyCard({
   const syncNow = () =>
     perform((signal) =>
       withKey(signal, async (key) => {
-        markSyncRunning(true);
-        try {
-          const result = await runFamilySync(store, {
-            transport: createTransport(),
-            key,
-            onProgress: setProgress,
-            signal,
-          });
-          const { pulled = 0, pushed = 0, conflicts = 0 } =
-            result.lastSyncSummary ?? {};
-          const parts = [
-            pulled > 0 ? `从家人那里并入 ${pulled} 处改动` : "",
-            pushed > 0 ? `往远端新传 ${pushed} 份` : "",
-            conflicts > 0 ? `${conflicts} 段两台手机都改过` : "",
-          ].filter(Boolean);
-          setMessage(
-            pulled === 0 && pushed === 0 && conflicts === 0
-              ? "已经是最新的了。"
-              : `同步完成：${parts.join("，")}。`,
-          );
-        } finally {
-          markSyncRunning(false);
-        }
+        const result = await runFamilySync(store, {
+          transport: createTransport(),
+          key,
+          onProgress: setProgress,
+          signal,
+        });
+        const { pulled = 0, pushed = 0, conflicts = 0 } =
+          result.lastSyncSummary ?? {};
+        const parts = [
+          pulled > 0 ? `从家人那里并入 ${pulled} 处改动` : "",
+          pushed > 0 ? `往远端新传 ${pushed} 份` : "",
+          conflicts > 0 ? `${conflicts} 段两台手机都改过` : "",
+        ].filter(Boolean);
+        setMessage(
+          pulled === 0 && pushed === 0 && conflicts === 0
+            ? "已经是最新的了。"
+            : `同步完成：${parts.join("，")}。`,
+        );
       }),
     );
   const resume = () =>
     perform((signal) =>
       withKey(signal, async (key) => {
-        markSyncRunning(true);
-        try {
-          await joinFamily(store, key, {
-            transport: createTransport(),
-            onProgress: setProgress,
-            signal,
-          });
-          setMessage("已加入，同步完成。");
-        } finally {
-          markSyncRunning(false);
-        }
+        await joinFamily(store, key, {
+          transport: createTransport(),
+          onProgress: setProgress,
+          signal,
+        });
+        setMessage("已加入，同步完成。");
       }),
     );
   const verify = () =>

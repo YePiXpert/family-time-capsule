@@ -26,6 +26,15 @@ export function markSyncRunning(value: boolean): void {
   for (const fn of listeners) fn();
 }
 export const isSyncRunning = () => running;
+/**
+ * 查空闲与占住在同一步完成：手动同步、恢复码加入与自动同步之间不能有 await 的空档，
+ * 否则两轮同时写同一份清单临时文件。占到了才返回 true，结束时 markSyncRunning(false)。
+ */
+export function claimSync(): boolean {
+  if (running) return false;
+  markSyncRunning(true);
+  return true;
+}
 
 let localBusy = false;
 export function markLocalBusy(value: boolean): void {

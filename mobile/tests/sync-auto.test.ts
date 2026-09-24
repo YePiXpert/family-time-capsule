@@ -25,7 +25,12 @@ vi.mock("react-native", () => ({ AppState: {
 vi.mock("../src/ai/session", () => ({ getToken: vi.fn() }));
 vi.mock("../src/sync/state", () => ({ loadKey: vi.fn(), readRemoteState: vi.fn(), writeRemoteState: vi.fn() }));
 vi.mock("../src/sync/family", () => ({ runFamilySync: vi.fn() }));
-vi.mock("../src/sync/status", () => ({ isLocalBusy: vi.fn(), isSyncRunning: vi.fn(), markSyncRunning: vi.fn() }));
+vi.mock("../src/sync/status", () => {
+  const isSyncRunning = vi.fn(), markSyncRunning = vi.fn();
+  // 与真实 claimSync 同义：空闲才占住。
+  const claimSync = vi.fn(() => (isSyncRunning() ? false : (markSyncRunning(true), true)));
+  return { isLocalBusy: vi.fn(), isSyncRunning, markSyncRunning, claimSync };
+});
 vi.mock("../src/sync/transport", async (importOriginal) => ({
   ...await importOriginal<typeof import("../src/sync/transport")>(),
   createTransport: () => ({}),

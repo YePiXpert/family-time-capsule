@@ -30,7 +30,11 @@ vi.mock("../src/local/navigation", () => ({ useNav: () => ({}) }));
 vi.mock("../src/local/ui", () => ({ Button: "Button", Card: "Card", ErrorText: "ErrorText", Text: "Text", dateLabel: String, messageOf: String, useStyles: () => ({}) }));
 vi.mock("../src/sync/crypto", () => ({ keyIdOf: () => "K", newMasterKey: vi.fn() }));
 vi.mock("../src/sync/family", () => ({ runFamilySync: env.sync, joinFamily: env.join, leaveFamily: env.leave }));
-vi.mock("../src/sync/status", () => ({ markSyncRunning: env.mark, isSyncRunning: env.isRunning }));
+vi.mock("../src/sync/status", () => ({
+  markSyncRunning: env.mark,
+  isSyncRunning: env.isRunning,
+  claimSync: () => (env.isRunning() ? false : (env.mark(true), true)),
+}));
 vi.mock("../src/sync/engine", () => ({ verifyRemoteBackup: vi.fn() }));
 vi.mock("../src/sync/state", () => ({
   clearRemoteState: env.clear, clearSyncFiles: env.clear, forgetKey: env.forget,
