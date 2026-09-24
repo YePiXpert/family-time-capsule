@@ -38,6 +38,7 @@ import {
   runSpec,
   successProgress,
 } from "./plan";
+import { useLocked } from "../local/lock";
 import type { AIProposal, AIResult, WritingMode } from "./types";
 type Patch = Partial<Pick<RecordDraft, "aiJob" | "aiProposal" | "content">>;
 type EditorMode = Extract<WritingMode, "polish" | "ask">;
@@ -57,6 +58,7 @@ export function AIEditor({
   tool?: boolean;
 }) {
   const library = useLibrary();
+  const locked = useLocked();
   const s = useStyles(),
     nav = useNav(),
     { colors } = useTheme(),
@@ -258,7 +260,7 @@ export function AIEditor({
   };
   const sheet = (
     <Modal
-      visible={open}
+      visible={open && !locked}
       animationType="slide"
       transparent
       statusBarTranslucent
