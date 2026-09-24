@@ -801,6 +801,7 @@ export async function restoreBackup(
   // 正要恢复的那份可能就是最旧的保留备份：先保护它不被清掉，恢复完再按常规收拾。
   const prior = await writeManifest(store.get(), onProgress, signal, inputs);
   let restored: Library | null = null;
+  let replaced: LocalMedia[] = [];
   try {
     onProgress?.("正在校验并解包备份…");
     restored = await inspectBackup(inputs, true, signal);
@@ -808,6 +809,12 @@ export async function restoreBackup(
     onProgress?.("正在写入本机资料…");
     const next = restored;
     await store.change((current) => {
+      replaced = Object.values(current.media);
+      // 整库换成备份那一份：备份里没有的可选根字段（墓碑、上次导出时刻、提醒沉默期…）
+      // 不能留着恢复前的值——留下的墓碑会让下次同步把刚恢复的记录再删一遍。
+      for (const key of Object.keys(current))
+        if (!Object.hasOwn(next, key))
+          delete (current as Partial<Record<string, unknown>>)[key];
       Object.assign(current, next);
     });
   } catch (e) {
@@ -815,6 +822,16 @@ export async function restoreBackup(
       for (const m of Object.values(restored.media)) deleteMediaFiles(m);
     throw e;
   }
+  // 恢复出来的素材都是新文件名，恢复前的原件与缩略图从此没人引用（「恢复前」那份备份里有副本），
+  // 不删就每恢复一次多占一整份照片的空间，「清理没用到的」也够不着它们。
+  const kept = new Set(Object.values(restored.media).map((m) => m.file));
+  for (const m of replaced)
+    if (!kept.has(m.file))
+      try {
+        deleteMediaFiles(m);
+      } catch {
+        // 删不掉只是多占空间，恢复已经完成。
+      }
   // 恢复完按常规只留三份；刚写的「恢复前」那份占一个位，最旧的让位。收拾出错不影响已完成的恢复。
   tidyBackups([prior]);
   return prior;
