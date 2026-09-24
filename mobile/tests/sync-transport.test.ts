@@ -272,7 +272,7 @@ it("reads the family: status counts manifests (0 on an older service), the manif
   );
 });
 it("deletes one device's manifest, wipes the family only through the admin route, and words OWNER_ONLY", async () => {
-  answer = () => ({ status: 200, body: encode({ ok: true, pruned: 3 }) });
+  answer = () => ({ status: 200, body: encode({ ok: true, pruned: { removed: 3, bytes: 1024 } }) });
   expect(await transport().deleteManifest("d-1")).toEqual({ pruned: 3 });
   expect(seen.at(-1)!.method).toBe("DELETE");
   expect(seen.at(-1)!.url).toBe(
