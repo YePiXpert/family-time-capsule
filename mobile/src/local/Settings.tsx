@@ -542,10 +542,30 @@ export function Storage() {
     s = useStyles();
   const [message, setMessage] = useState(""),
     [healthOpen, setHealthOpen] = useState(false);
+  // 冲突留底版引用的照片清理时会留下，计数也要一样算，不然按钮永远剩几个、清了却是 0 MB。
+  const [kept, setKept] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void readConflicts()
+        .then((conflicts) => {
+          if (alive) setKept(conflictMediaIds(conflicts));
+        })
+        .catch(() => {});
+    };
+    load();
+    const off = subscribeSyncFiles(load);
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
   const health = healthFile().get();
   const refs = referencedMedia(state);
   const bytes = Object.values(state.media).reduce((n, m) => n + m.bytes, 0),
-    unused = Object.values(state.media).filter((m) => !refs.has(m.id));
+    unused = Object.values(state.media).filter(
+      (m) => !refs.has(m.id) && !kept.has(m.id),
+    );
   return (
     <Page title="本机存储">
       <Text>
@@ -563,7 +583,7 @@ export function Storage() {
         onPress={() =>
           Alert.alert(
             "清理没用到的照片和录音？",
-            "只清理没有被任何时光、草稿或头像用到的；正在用的都会留下。",
+            "只清理没有被任何时光、草稿或头像用到的；正在用的、两台手机都改过时留底那一版的都会留下。",
             [
               { text: "取消", style: "cancel" },
               {
