@@ -206,7 +206,8 @@ describe("first join and single-sided edits", () => {
     expect(conflicts).toEqual([]);
     expect(pulled).toBe(7);
     expect(base.merged.records!.r1).toBe(fingerprintOf(next.records.r1!));
-    expect(base.merged.root!.profile).toBe(hashOf(next.profile));
+    expect(base.merged.root!["profile:name"]).toBe(hashOf(next.profile.name));
+    expect(base.merged.root!.profile).toBeUndefined();
     expect(base.merged.media).toBeUndefined();
   });
   it("takes the remote edit when the local copy is unchanged since the last sync", () => {
@@ -836,8 +837,7 @@ describe("root fields and media", () => {
     expect(received.next.profile).toEqual(remote.profile);
     expect(received.pulled).toBe(1);
     expect(merge(copy(remote), [snap(shared)], base).next.profile).toEqual(remote.profile);
-    delete remote.profile.motto;
-    expect(merge(received.next, [snap(remote)], received.base).next.profile).toEqual(remote.profile);
+    expect(merge(received.next, [snap(remote)], received.base).pulled).toBe(0);
   });
   it("adopts a remote-only profile change and settles a two-sided one the same way on both phones", () => {
     const shared = lib((s) => {
@@ -859,6 +859,57 @@ describe("root fields and media", () => {
     // 输的一版下一轮不再被拿起来。
     const again = merge(onA.next, [snap(b)], onA.base);
     expect(again.pulled).toBe(0);
+  });
+  it("keeps both phones' profile edits when they changed different fields", () => {
+    const shared = lib((s) => {
+      s.profile = { name: "桉桉", birthday: "2026-08-01", avatarId: null };
+    });
+    const base = baseOf(shared);
+    const a = copy(shared);
+    a.profile = { ...a.profile, name: "李清洛", motto: "入淮清洛渐漫漫" };
+    const b = copy(shared);
+    b.profile = { ...b.profile, birthday: "2026-08-02" };
+    const expected = { name: "李清洛", motto: "入淮清洛渐漫漫", birthday: "2026-08-02", avatarId: null };
+    const onA = merge(a, [snap(b)], base);
+    const onB = merge(b, [snap(a)], base);
+    expect(onA.next.profile).toEqual(expected);
+    expect(onB.next.profile).toEqual(expected);
+    expect(onA.pulled).toBe(1);
+  });
+  it("reads a base saved before profile fields merged separately", () => {
+    const shared = lib((s) => {
+      s.profile = { name: "桉桉", birthday: "2026-08-01", avatarId: null };
+    });
+    const base = baseOf(shared);
+    const root = base.merged.root!;
+    for (const key of Object.keys(root)) if (key.startsWith("profile:")) delete root[key];
+    root.profile = hashOf(shared.profile);
+    const a = copy(shared);
+    a.profile = { ...a.profile, name: "李清洛", motto: "入淮清洛渐漫漫" };
+    // 一边没动：另一边的改动照收，没动的那边不会把它改回去。
+    expect(merge(copy(shared), [snap(a)], base).next.profile).toEqual(a.profile);
+    expect(merge(a, [snap(shared)], base).next.profile).toEqual(a.profile);
+    // 转过一轮之后按字段记基：再各改一项，两边都留下。
+    const after = merge(copy(shared), [snap(a)], base);
+    expect(after.base.merged.root!.profile).toBeUndefined();
+    const b = copy(after.next);
+    b.profile = { ...b.profile, birthday: "2026-08-02" };
+    const c = copy(after.next);
+    c.profile = { ...c.profile, fullName: "李清洛" };
+    expect(merge(b, [snap(c)], after.base).next.profile).toEqual({
+      ...a.profile, birthday: "2026-08-02", fullName: "李清洛",
+    });
+  });
+  it("on a first join an empty profile field is unset, not an edit, on either side", () => {
+    const family = lib((s) => {
+      s.profile = { name: "桉桉", birthday: "2026-08-01", avatarId: null };
+    });
+    const fresh = lib((s) => {
+      s.profile = { name: "", birthday: "", avatarId: null, motto: "名字来自一首诗" };
+    });
+    const expected = { name: "桉桉", birthday: "2026-08-01", avatarId: null, motto: "名字来自一首诗" };
+    expect(merge(fresh, [snap(family)]).next.profile).toEqual(expected);
+    expect(merge(family, [snap(fresh)]).next.profile).toEqual(expected);
   });
   it("merges year notes per year and joins two-sided edits so no words are lost", () => {
     const shared = lib((s) => {

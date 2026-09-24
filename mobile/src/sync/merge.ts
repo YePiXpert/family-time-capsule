@@ -167,23 +167,30 @@ function removePerson(s: Library, id: string, deletedAt: string): void {
   else deletePerson(s, id, deletedAt);
 }
 type RootId = string;
-/** 根字段拆成小块各自合并：profile 整个一块，年度寄语／年度封面按年一块。 */
+/** 资料按字段各一块：一台改名字、另一台改生日，两边都留下。 */
+const PROFILE_FIELDS = ["name", "fullName", "motto", "birthday", "avatarId"] as const;
+type ProfileField = (typeof PROFILE_FIELDS)[number];
+/** 根字段拆成小块各自合并：资料按字段一块，年度寄语／年度封面按年一块。 */
 function rootIds(lib: Library): RootId[] {
   return [
-    "profile",
+    ...PROFILE_FIELDS.map((f) => `profile:${f}`),
     ...Object.keys(lib.yearNotes).map((y) => `yearNotes:${y}`),
     ...Object.keys(lib.yearCovers).map((y) => `yearCovers:${y}`),
     ...Object.keys(lib.yearPicks ?? {}).map((y) => `yearPicks:${y}`),
   ];
 }
 function rootValue(lib: Library, id: RootId): unknown {
-  if (id === "profile") return lib.profile;
+  if (id.startsWith("profile:"))
+    return lib.profile[id.slice(8) as ProfileField];
   const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
   return lib[field]?.[year];
 }
 function setRoot(lib: Library, id: RootId, value: unknown): void {
-  if (id === "profile") {
-    lib.profile = value as Library["profile"];
+  if (id.startsWith("profile:")) {
+    const profile: Record<string, unknown> = { ...lib.profile };
+    if (value === undefined) delete profile[id.slice(8)];
+    else profile[id.slice(8)] = value;
+    lib.profile = profile as Library["profile"];
     return;
   }
   const [field, year] = id.split(":") as ["yearNotes" | "yearCovers" | "yearPicks", string];
@@ -199,6 +206,8 @@ function setRoot(lib: Library, id: RootId, value: unknown): void {
   if (value === undefined) delete lib[field][year];
   else lib[field][year] = value as string;
 }
+const isBlank = (value: unknown) =>
+  value === undefined || value === null || value === "";
 const rootFp = (value: unknown) => (value === undefined ? "-" : hashOf(value));
 /** 两台都改了同一年的寄语：谁都不丢，赢家在前、另一段接在后面；一段已包含另一段时取长的。 */
 function joinNotes(winner: string, loser: string): string {
@@ -354,7 +363,7 @@ export function mergeLibraries(
   base: SyncBase,
   now: string = new Date().toISOString(),
 ): MergeResult {
-  // 清单新的在前：根字段两边都改时取新清单，素材也先从新清单里找。
+  // 清单新的在前：同一实体的几份远端版本按新旧排，素材也先从新清单里找。
   const ordered = [...remotes].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
   );
@@ -511,7 +520,27 @@ export function mergeLibraries(
       conflict(kind, id, winner.entity, loser.entity, loser.device);
     }
   }
-  // 根字段。
+  // 根字段。旧基只记着整份资料的指纹：哪一边的资料与它相同，那一边的各字段就是基。
+  const legacyProfile = base.merged.root?.profile;
+  const unchangedProfile =
+    legacyProfile === undefined
+      ? undefined
+      : [local, ...ordered.map((r) => r.library)].find(
+          (lib) => hashOf(lib.profile) === legacyProfile,
+        )?.profile;
+  const legacyProfileBase = (id: RootId) =>
+    unchangedProfile && id.startsWith("profile:")
+      ? rootFp(unchangedProfile[id.slice(8) as ProfileField])
+      : undefined;
+  // 资料拆成几项合并，拉来几项也只算一处改动。
+  let profilePulled = false;
+  const countRoot = (id: RootId) => {
+    if (id.startsWith("profile:")) {
+      if (profilePulled) return;
+      profilePulled = true;
+    }
+    pulled++;
+  };
   const rootKeys = new Set(rootIds(local));
   for (const r of ordered)
     for (const id of rootIds(r.library)) rootKeys.add(id);
@@ -519,7 +548,7 @@ export function mergeLibraries(
     const key = `root:${id}`;
     const localValue = rootValue(local, id);
     const fpL = rootFp(localValue);
-    const M = base.merged.root?.[id];
+    const M = base.merged.root?.[id] ?? legacyProfileBase(id);
     const knownHere = new Set(base.known[key] ?? []);
     remember(key, M);
     remember(key, fpL);
@@ -528,6 +557,8 @@ export function mergeLibraries(
       const value = rootValue(r.library, id);
       const fp = rootFp(value);
       if (fp === fpL || fp === M || knownHere.has(fp)) continue;
+      // 还没有基（头一回合并）时，空着的一项就是没填过，不算改动。
+      if (M === undefined && isBlank(value)) continue;
       if (candidates.some((c) => c.fp === fp)) continue;
       candidates.push({ fp, value });
     }
@@ -535,9 +566,9 @@ export function mergeLibraries(
     for (const other of rest) remember(key, other.fp);
     if (!C) continue;
     remember(key, C.fp);
-    if (fpL === M || (M === undefined && localValue === undefined)) {
+    if (fpL === M || (M === undefined && isBlank(localValue))) {
       setRoot(next, id, C.value);
-      pulled++;
+      countRoot(id);
       continue;
     }
     // 两边都改：默认按内容哈希；目录先比更新时间；年度寄语谁都不丢。
@@ -558,7 +589,7 @@ export function mergeLibraries(
     }
     if (rootFp(value) !== fpL) {
       setRoot(next, id, value);
-      pulled++;
+      countRoot(id);
     }
   }
   // 装订时刻：谁先装订算谁的（按年取早）。
