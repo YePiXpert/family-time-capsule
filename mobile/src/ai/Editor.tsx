@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Pressable, ScrollView, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { compareDates, type RecordDraft } from "../local/model";
 import { useLibrary } from "../local/context";
@@ -9,7 +8,7 @@ import {
   Button,
   Card,
   ErrorText,
-  GlassDepth,
+  SheetModal,
   Text,
   ToolButton,
   hapticSuccess,
@@ -37,7 +36,6 @@ import {
   runSpec,
   successProgress,
 } from "./plan";
-import { useLocked } from "../local/lock";
 import type { AIProposal, AIResult, WritingMode } from "./types";
 type Patch = Partial<Pick<RecordDraft, "aiJob" | "aiProposal" | "content">>;
 type EditorMode = Extract<WritingMode, "polish" | "ask">;
@@ -57,11 +55,9 @@ export function AIEditor({
   tool?: boolean;
 }) {
   const library = useLibrary();
-  const locked = useLocked();
   const s = useStyles(),
     nav = useNav(),
-    { colors } = useTheme(),
-    insets = useSafeAreaInsets();
+    { colors } = useTheme();
   const [interview, setInterview] = useState<{ questions: string[]; first: boolean; target: string } | null>(null);
   const [open, setOpen] = useState(false),
     [seen, setSeen] = useState(false),
@@ -78,7 +74,8 @@ export function AIEditor({
   const active = useRef(false),
     openRef = useRef(false),
     abort = useRef<AbortController | null>(null),
-    latest = useRef({ draft });
+    latest = useRef({ draft }),
+    openButton = useRef<View>(null);
   // 面板是否打开要能同步读取：结果可能在收起面板之后才返回。
   const setPanel = (value: boolean) => {
     openRef.current = value;
@@ -243,216 +240,182 @@ export function AIEditor({
     setProgress("");
   };
   const sheet = (
-    <Modal
-      visible={open && !locked}
-      animationType="slide"
-      transparent
-      statusBarTranslucent
-      navigationBarTranslucent
-      onRequestClose={() => setPanel(false)}
+    <SheetModal
+      visible={open}
+      onClose={() => setPanel(false)}
+      closeLabel="收起 AI 面板"
+      closeTestID="ai-close"
+      returnFocus={openButton}
     >
-      {/* Modal 独立成层，不继承编辑工具栏的嵌套纸面深度。 */}
-      <GlassDepth.Provider value={0}>
-        <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="收起 AI 面板"
-            testID="ai-close"
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: 0,
-              backgroundColor: colors.scrim,
-            }}
-            onPress={() => setPanel(false)}
-          />
-          <View
-            accessibilityViewIsModal
-            style={{
-              // 实色纸面：半透明玻璃会把编辑页底栏透出来。
-              backgroundColor: colors.paper,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              maxHeight: "82%",
-              paddingTop: 16,
-              paddingHorizontal: 20,
-              paddingBottom: insets.bottom + 12,
-            }}
-          >
-            <View style={s.between}>
-              <Text style={s.heading}>AI 帮你整理</Text>
+      <View style={s.between}>
+        <Text style={s.heading}>AI 帮你整理</Text>
+        <Button
+          title="收起"
+          compact
+          testID="ai-collapse"
+          onPress={() => setPanel(false)}
+        />
+      </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={false}
+        contentContainerStyle={{
+          gap: 12,
+          paddingTop: 12,
+          paddingBottom: 8,
+        }}
+      >
+        <View style={{ gap: 8 }}>
+          <Text style={s.muted}>写记录</Text>
+          <View style={s.row}>
+            <Button
+              title="润色我的文字"
+              icon="edit"
+              compact
+              selected={writeMode === "polish"}
+              testID="ai-polish"
+              disabled={busy || disabled}
+              onPress={() => {
+                chooseWriteMode("polish");
+                void requestWriting("polish");
+              }}
+            />
+          </View>
+          <Text style={s.muted}>
+            {writeMode === "ask" ? "AI 会问几个问题，选想答的接着写。" : !selectedEvent?.text.trim()
+                ? "还没有可润色的正文。先写下几句话，再来润色。"
+                : (polishRequest({
+                    by: draft.content.by,
+                    title: selectedEvent?.title ?? "",
+                    text: selectedEvent?.text ?? "",
+                  }).error ??
+                  "只发送这件事的标题、正文和落款，保留你的原意、语气和事实，不发送照片。")}
+          </Text>
+          <Text style={s.muted}>访谈者</Text>
+          <Button title="追问我" icon="sparkle" compact testID="ai-ask"
+            disabled={busy || disabled || !(selectedEvent?.title.trim() || selectedEvent?.text.trim())}
+            onPress={() => { chooseWriteMode("ask"); void requestWriting("ask"); }} />
+          {!(selectedEvent?.title.trim() || selectedEvent?.text.trim()) && <Text style={s.muted}>先写几句，AI 才有得问。</Text>}
+          <Text style={s.muted}>追问计一次写作额度；只发送这件事的文字、落款、月龄、日期和最近 10 条记录的标题，不发送照片。</Text>
+          {visibleInterview?.questions.map((question, index) => <Button key={index} title={question} compact testID={`ai-ask-q-${index}`} disabled={busy || disabled} onPress={() => { void applyQuestion(index); }} />)}
+          {visibleInterview?.first && !draft.content.first && <View style={{ gap: 8 }}>
+            <Text style={s.muted}>这条像是第一次，标上吗？</Text>
+            <Button title="标上" compact disabled={busy || disabled} onPress={() => { void applyQuestion(); }} />
+          </View>}
+        </View>
+        {pendingOther && !matchesView && (
+          <View style={{ gap: 8 }}>
+            <Text style={s.muted}>
+              还有一份润色建议待确认。
+            </Text>
+            <Button
+              title="查看润色建议"
+              compact
+              disabled={busy || disabled}
+              onPress={viewProposal}
+            />
+          </View>
+        )}
+        {!!progress && (
+          <Text style={s.muted} accessibilityLiveRegion="polite">
+            {progress}
+          </Text>
+        )}
+        {busy && (
+          <Button title="停止等待" onPress={() => abort.current?.abort()} />
+        )}
+        <ErrorText message={error} />
+        {!!error && !busy && retryable && (
+          <Card>
+            {!retryPlan(errorCode).retryOriginal && (
+              <Text style={s.muted}>{retryPlan(errorCode).notice}</Text>
+            )}
+            <View style={s.row}>
+              {retryPlan(errorCode).retryOriginal && (
+                <Button
+                  title="重试原请求"
+                  compact
+                  disabled={disabled}
+                  onPress={() => {
+                    void requestWriting(retryable.mode);
+                  }}
+                />
+              )}
               <Button
-                title="收起"
+                title="重新生成（使用新的额度）"
                 compact
-                testID="ai-collapse"
-                onPress={() => setPanel(false)}
+                disabled={disabled}
+                onPress={() => {
+                  void requestWriting(retryable.mode, true);
+                }}
               />
             </View>
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              alwaysBounceVertical={false}
-              contentContainerStyle={{
-                gap: 12,
-                paddingTop: 12,
-                paddingBottom: 8,
-              }}
-            >
-              <View style={{ gap: 8 }}>
-                <Text style={s.muted}>写记录</Text>
-                <View style={s.row}>
-                  <Button
-                    title="润色我的文字"
-                    icon="edit"
-                    compact
-                    selected={writeMode === "polish"}
-                    testID="ai-polish"
-                    disabled={busy || disabled}
-                    onPress={() => {
-                      chooseWriteMode("polish");
-                      void requestWriting("polish");
-                    }}
-                  />
-                </View>
-                <Text style={s.muted}>
-                  {writeMode === "ask" ? "AI 会问几个问题，选想答的接着写。" : !selectedEvent?.text.trim()
-                      ? "还没有可润色的正文。先写下几句话，再来润色。"
-                      : (polishRequest({
-                          by: draft.content.by,
-                          title: selectedEvent?.title ?? "",
-                          text: selectedEvent?.text ?? "",
-                        }).error ??
-                        "只发送这件事的标题、正文和落款，保留你的原意、语气和事实，不发送照片。")}
-                </Text>
-                <Text style={s.muted}>访谈者</Text>
-                <Button title="追问我" icon="sparkle" compact testID="ai-ask"
-                  disabled={busy || disabled || !(selectedEvent?.title.trim() || selectedEvent?.text.trim())}
-                  onPress={() => { chooseWriteMode("ask"); void requestWriting("ask"); }} />
-                {!(selectedEvent?.title.trim() || selectedEvent?.text.trim()) && <Text style={s.muted}>先写几句，AI 才有得问。</Text>}
-                <Text style={s.muted}>追问计一次写作额度；只发送这件事的文字、落款、月龄、日期和最近 10 条记录的标题，不发送照片。</Text>
-                {visibleInterview?.questions.map((question, index) => <Button key={index} title={question} compact testID={`ai-ask-q-${index}`} disabled={busy || disabled} onPress={() => { void applyQuestion(index); }} />)}
-                {visibleInterview?.first && !draft.content.first && <View style={{ gap: 8 }}>
-                  <Text style={s.muted}>这条像是第一次，标上吗？</Text>
-                  <Button title="标上" compact disabled={busy || disabled} onPress={() => { void applyQuestion(); }} />
-                </View>}
-              </View>
-              {pendingOther && !matchesView && (
-                <View style={{ gap: 8 }}>
-                  <Text style={s.muted}>
-                    还有一份润色建议待确认。
-                  </Text>
-                  <Button
-                    title="查看润色建议"
-                    compact
-                    disabled={busy || disabled}
-                    onPress={viewProposal}
-                  />
-                </View>
-              )}
-              {!!progress && (
-                <Text style={s.muted} accessibilityLiveRegion="polite">
-                  {progress}
-                </Text>
-              )}
-              {busy && (
-                <Button title="停止等待" onPress={() => abort.current?.abort()} />
-              )}
-              <ErrorText message={error} />
-              {!!error && !busy && retryable && (
-                <Card>
-                  {!retryPlan(errorCode).retryOriginal && (
-                    <Text style={s.muted}>{retryPlan(errorCode).notice}</Text>
-                  )}
-                  <View style={s.row}>
-                    {retryPlan(errorCode).retryOriginal && (
-                      <Button
-                        title="重试原请求"
-                        compact
-                        disabled={disabled}
-                        onPress={() => {
-                          void requestWriting(retryable.mode);
-                        }}
-                      />
+          </Card>
+        )}
+        {matchesView && proposal && (
+          <Card>
+            {stale && (
+              <Text style={{ color: colors.error }}>
+                你已修改记录内容，这份建议已过期。重新生成后再采用，当前编辑已保留。
+              </Text>
+            )}
+            {modeOf(proposal) === "polish" && (
+              <>
+                <Text>润色预览 · 与原文对照</Text>
+                {!stale ? (
+                  <>
+                    <Text style={s.muted}>你的原文</Text>
+                    {!!selectedEvent?.title.trim() && (
+                      <Text>{selectedEvent.title}</Text>
                     )}
-                    <Button
-                      title="重新生成（使用新的额度）"
-                      compact
-                      disabled={disabled}
-                      onPress={() => {
-                        void requestWriting(retryable.mode, true);
-                      }}
-                    />
-                  </View>
-                </Card>
-              )}
-              {matchesView && proposal && (
-                <Card>
-                  {stale && (
-                    <Text style={{ color: colors.error }}>
-                      你已修改记录内容，这份建议已过期。重新生成后再采用，当前编辑已保留。
-                    </Text>
-                  )}
-                  {modeOf(proposal) === "polish" && (
-                    <>
-                      <Text>润色预览 · 与原文对照</Text>
-                      {!stale ? (
-                        <>
-                          <Text style={s.muted}>你的原文</Text>
-                          {!!selectedEvent?.title.trim() && (
-                            <Text>{selectedEvent.title}</Text>
-                          )}
-                          <Text>{selectedEvent?.text}</Text>
-                          <View style={s.line} />
-                        </>
-                      ) : null}
-                      <Text style={s.muted}>润色后</Text>
-                      <Text>{proposal.title}</Text>
-                      <Text>{proposal.text}</Text>
-                      <Button
-                        title="采用润色结果"
-                        primary
-                        disabled={busy || disabled || stale}
-                        onPress={() => {
-                          void apply();
-                        }}
-                      />
-                      <Button
-                        title="只采用标题"
-                        compact
-                        disabled={busy || disabled || stale}
-                        onPress={() => {
-                          void apply("title");
-                        }}
-                      />
-                      <Button
-                        title="只采用正文"
-                        compact
-                        disabled={busy || disabled || stale}
-                        onPress={() => {
-                          void apply("text");
-                        }}
-                      />
-                    </>
-                  )}
-                  <Button
-                    title="放弃这份建议"
-                    compact
-                    disabled={busy || disabled}
-                    onPress={() => {
-                      void onPatch({ aiProposal: undefined }).catch((e) =>
-                        setError(messageOf(e)),
-                      );
-                    }}
-                  />
-                </Card>
-              )}
-              <Text style={s.footnote}>由小米 MiMo 2.6 Pro 提供</Text>
-            </ScrollView>
-          </View>
-        </View>
-      </GlassDepth.Provider>
-    </Modal>
+                    <Text>{selectedEvent?.text}</Text>
+                    <View style={s.line} />
+                  </>
+                ) : null}
+                <Text style={s.muted}>润色后</Text>
+                <Text>{proposal.title}</Text>
+                <Text>{proposal.text}</Text>
+                <Button
+                  title="采用润色结果"
+                  primary
+                  disabled={busy || disabled || stale}
+                  onPress={() => {
+                    void apply();
+                  }}
+                />
+                <Button
+                  title="只采用标题"
+                  compact
+                  disabled={busy || disabled || stale}
+                  onPress={() => {
+                    void apply("title");
+                  }}
+                />
+                <Button
+                  title="只采用正文"
+                  compact
+                  disabled={busy || disabled || stale}
+                  onPress={() => {
+                    void apply("text");
+                  }}
+                />
+              </>
+            )}
+            <Button
+              title="放弃这份建议"
+              compact
+              disabled={busy || disabled}
+              onPress={() => {
+                void onPatch({ aiProposal: undefined }).catch((e) =>
+                  setError(messageOf(e)),
+                );
+              }}
+            />
+          </Card>
+        )}
+        <Text style={s.footnote}>由小米 MiMo 2.6 Pro 提供</Text>
+      </ScrollView>
+    </SheetModal>
   );
   const badge = unseen ? (
     <View
@@ -471,6 +434,7 @@ export function AIEditor({
     <View style={tool ? { flex: 1 } : undefined}>
       {tool ? (
         <ToolButton
+          ref={openButton}
           testID="ai-open"
           icon="sparkle"
           label="AI"
@@ -482,6 +446,7 @@ export function AIEditor({
         />
       ) : (
         <Pressable
+          ref={openButton}
           testID="ai-open"
           accessibilityRole="button"
           accessibilityLabel={unseen ? "AI 助手，有结果待查看" : "AI 助手"}

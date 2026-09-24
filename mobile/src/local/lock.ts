@@ -6,3 +6,9 @@ import { createContext, useContext } from "react";
  */
 export const LockedContext = createContext(false);
 export const useLocked = () => useContext(LockedContext);
+/**
+ * iOS 开着应用锁、应用不在前台（多任务界面、控制中心、进后台）时为真：主窗口盖一层纸面。
+ * 这时面板不收（拉一下控制中心不该把面板关掉），由 Modal 里的 PrivacyCover 自己再盖一层。
+ */
+export const CoveredContext = createContext(false);
+export const useCovered = () => useContext(CoveredContext);
