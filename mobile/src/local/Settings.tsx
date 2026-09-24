@@ -725,7 +725,13 @@ export function Backup() {
           style: "destructive",
           onPress: () => {
             void perform(async () => {
-              await restoreBackup(store, files, setMessage);
+              await restoreBackup(
+                store,
+                files,
+                setMessage,
+                undefined,
+                conflictMediaIds(await readConflicts()),
+              );
               // 一起写的手机：下一轮把全家的清单重读一遍，把备份之后家人的改动并回来。
               await forgetMergeHistory();
               setMessage(done);
