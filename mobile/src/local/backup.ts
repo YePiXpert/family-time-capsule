@@ -233,6 +233,21 @@ async function writeManifest(
   tidyBackups([out, ...protect]);
   return out;
 }
+/**
+ * 录到一半的录音是这台手机上的临时文件，不属于库：草稿照备，只是不带它。
+ * 否则应用在录音中被杀、那份草稿又没再打开，之后每次备份与家人同步都会被拦下；
+ * 家人同步判断「这次跟上次上传的一样」也要用同一份去掉它的库。
+ */
+export function withoutPendingRecordings(state: Library): Library {
+  const pending = Object.values(state.drafts).filter((d) => d.recordingFile);
+  if (!pending.length) return state;
+  const drafts = { ...state.drafts };
+  for (const d of pending) {
+    const { recordingFile: _pending, ...rest } = d;
+    drafts[d.id] = rest;
+  }
+  return { ...state, drafts };
+}
 /** 家人同步只留一份独立清单，不进入保留备份列表，也不挤占三份保留位。 */
 export async function createSyncManifest(
   state: Library,
@@ -259,17 +274,7 @@ async function writeManifestTo(
   signal?: AbortSignal,
 ): Promise<void> {
   ensureDirectories();
-  // 录到一半的录音是这台手机上的临时文件，不属于库：草稿照备，只是不带它。
-  // 否则应用在录音中被杀、那份草稿又没再打开，之后每次备份与家人同步都会被拦下。
-  const pending = Object.values(state.drafts).filter((d) => d.recordingFile);
-  if (pending.length) {
-    const drafts = { ...state.drafts };
-    for (const d of pending) {
-      const { recordingFile: _pending, ...rest } = d;
-      drafts[d.id] = rest;
-    }
-    state = { ...state, drafts };
-  }
+  state = withoutPendingRecordings(state);
   const entities = encodeEntities(state);
   const head = encodeMetaV2(state, entities.length, entityCount(state), {
     magic: BACKUP_MAGIC_V3,
