@@ -40,8 +40,8 @@ import {
   Button,
   Card,
   DangerCard,
+  DateStrip,
   ErrorText,
-  Field,
   FieldRow,
   Page,
   PersonChips,
@@ -49,13 +49,14 @@ import {
   Text,
   ToolButton,
   dateLabel,
+  serif,
   hapticSuccess,
   messageOf,
   useKeyboardBarOffset,
   useStyles,
   useTheme,
 } from "./ui";
-import { JournalIcon } from "../components/JournalIcon";
+import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { Photo, PhotoDetails } from "./Media";
 import {
   applyPhotoMetadata,
@@ -82,9 +83,11 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [dateOpen, setDateOpen] = useState(false),
     [allowExit, setAllowExit] = useState(false),
     [promptSeed, setPromptSeed] = useState(0),
-    [promptOff, setPromptOff] = useState(false),
-    [newPerson, setNewPerson] = useState("");
-  const dailyVisible = !!draft && !promptOff && !draft.recordId && !draft.content.text.trim();
+    [newPerson, setNewPerson] = useState(""),
+    [viewport, setViewport] = useState(0),
+    [pickedId, setPickedId] = useState<string | null>(null);
+  const dailyVisible =
+    !!draft && !draft.recordId && !draft.content.text.trim();
   const storyDay = isStoryDay(state.profile.birthday, new Date());
   const daily = useDailyQuestion(store, state, dailyVisible && !storyDay);
   const [permDenied, setPermDenied] = useState(false);
@@ -382,20 +385,50 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       );
     await attach(picked);
   };
+  const question = dailyVisible
+    ? (!storyDay && daily.question) ||
+      dailyPromptOf(state.profile.birthday, new Date(), promptSeed)
+    : null;
+  const attachments = draft.content.mediaIds
+    .map((id) => state.media[id] ?? importedMedia[id])
+    .filter((m): m is LocalMedia => !!m);
+  const photoCount = attachments.filter((m) => m.kind === "image").length;
+  const pickedMedia = attachments.find((m) => m.id === pickedId);
+  const tileLabel = (m: LocalMedia) => {
+    const n = attachments.filter((o) => o.kind === m.kind).indexOf(m) + 1;
+    if (m.kind !== "image") return `${KIND_NAMES[m.kind]} ${n}`;
+    const cover = photoCount > 1 && draft.content.coverId === m.id;
+    return `第 ${n} 张照片${cover ? "，封面" : ""}`;
+  };
+  const removeMedia = (id: string) =>
+    Alert.alert("从草稿里移出？", "只从这份草稿移出，手机里的原文件不动。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "移除",
+        style: "destructive",
+        onPress: () => {
+          setPickedId(null);
+          change({
+            mediaIds: draft.content.mediaIds.filter((x) => x !== id),
+            coverId:
+              draft.content.coverId === id ? null : draft.content.coverId,
+          });
+        },
+      },
+    ]);
+  const discardRecording = () =>
+    Alert.alert("放弃录音？", "这段录音将不加入记录。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "放弃",
+        style: "destructive",
+        onPress: () => {
+          void run(discardAudio);
+        },
+      },
+    ]);
   return (
-    <Page
-      scroll={false}
-      title={draft.recordId ? "编辑这一刻" : "记下这一刻"}
-      right={
-        <Button
-          title={dateLabel(draft.content.date)}
-          icon="calendar"
-          kind="text"
-          compact
-          onPress={() => setDateOpen(!dateOpen)}
-        />
-      }
-    >
+    <Page scroll={false} title={draft.recordId ? "编辑这一刻" : "记下这一刻"}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         // 布局帧相对整屏 SafeAreaView、已含页内顶栏，不能再加顶栏的偏移（1.0.0／1.0.1 键盘上方
@@ -406,226 +439,340 @@ export function Editor({ route, navigation }: Props<"Editor">) {
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.content}
+          // 纸卡至少铺满没弹键盘时的可见高度：记下最高的一次，键盘弹起、滚动区变矮时纸不跟着缩。
+          onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            setViewport((v) => Math.max(v, h));
+          }}
         >
-          {dateOpen && (
-            <>
-              <DateTimePicker
-                value={new Date(draft.content.date)}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={(_, date) => {
-                  if (Platform.OS !== "ios") setDateOpen(false);
-                  if (date) change({ date: date.toISOString() });
-                }}
-              />
-              {Platform.OS === "ios" && (
-                <Button title="日期选好了" onPress={() => setDateOpen(false)} />
-              )}
-            </>
-          )}
-          <Field
-            label="这一刻发生了什么"
-            hideLabel
-            testID="capture-text"
-            editable={!busy}
-            multiline
-            placeholder="今天，她又带来了什么小惊喜？"
-            value={draft.content.text}
-            onChangeText={(text) => change({ text })}
-            onEndEditing={() => void flush()}
-            style={{ minHeight: 160, textAlignVertical: "top" }}
-          />
-          <SignatureButton
-            value={draft.content.by}
-            options={byOptions}
-            disabled={busy}
-            onChange={sign}
-          />
-          <Text style={[s.muted, { fontSize: 12, lineHeight: 16 }]}>
-            草稿会自动保留。
-          </Text>
-          {dailyVisible &&
-            (() => {
-              const question = (!storyDay && daily.question) || dailyPromptOf(
-                state.profile.birthday,
-                new Date(),
-                promptSeed,
-              );
-              return (
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
-                  testID="daily-prompt-card"
-                >
-                  <Text
-                    style={[s.muted, { flex: 1, minWidth: 0 }]}
-                    testID="daily-prompt"
+          {/* 一张纸：日期、正文、素材、落款、标题地点人物都写在这张纸上（DESIGN.md「编辑」）。 */}
+          <Card
+            testID="editor-sheet"
+            style={{
+              // s.content 上下各留 20：纸的下沿停在底栏上方 20，页尾的「放弃这份草稿」在下一屏。
+              minHeight: viewport > 0 ? viewport - 40 : undefined,
+              paddingHorizontal: 20,
+              paddingTop: 8,
+              paddingBottom: 0,
+              gap: 0,
+            }}
+          >
+            {/* 页眉一行：左边日期（与阅读页同一条强调色小竖条，点开就地改），右边「换个问题」，正对着下面的问题。 */}
+            <View style={s.between}>
+              <Pressable
+                testID="editor-date"
+                accessibilityRole="button"
+                accessibilityLabel={`日期：${dateLabel(draft.content.date)}`}
+                accessibilityHint="点按修改日期"
+                accessibilityState={{ expanded: dateOpen }}
+                hitSlop={6}
+                onPress={() => setDateOpen(!dateOpen)}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                {/* 卡在 iOS 是液态玻璃：按压透明度落在里面的字上。 */}
+                {({ pressed }) => (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                      opacity: pressed ? 0.6 : 1,
+                    }}
                   >
-                    今天的小问题：{question}
+                    <DateStrip>
+                      <Text
+                        style={[
+                          s.muted,
+                          { color: colors.accent, fontWeight: "600" },
+                        ]}
+                      >
+                        {dateLabel(draft.content.date)}
+                      </Text>
+                    </DateStrip>
+                    <JournalIcon
+                      name="chevron-down"
+                      color={colors.accent}
+                      size={14}
+                    />
+                  </View>
+                )}
+              </Pressable>
+              {question && (
+                <View testID="daily-prompt-card">
+                  <Text
+                    testID="daily-prompt-source"
+                    style={{ display: "none" }}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    {storyDay ? "local" : daily.source}
                   </Text>
-                  <Text testID="daily-prompt-source" style={{ display: "none" }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{storyDay ? "local" : daily.source}</Text>
                   <Button
-                    title="换一个"
+                    title="换个问题"
                     kind="text"
                     compact
                     testID="daily-prompt-next"
-                    onPress={() => { daily.useLocal(); setPromptSeed(promptSeed + 1); }}
-                  />
-                  <Button
-                    title="不问了"
-                    kind="text"
-                    compact
-                    testID="daily-prompt-off"
-                    onPress={() => setPromptOff(true)}
+                    onPress={() => {
+                      daily.useLocal();
+                      setPromptSeed(promptSeed + 1);
+                    }}
                   />
                 </View>
-              );
-            })()}
-          {transcription.status === "working" && (
-            <View style={s.row}>
-              <Text testID="transcribe-status" style={s.muted}>
-                正在转成文字…
-              </Text>
-              <Button
-                testID="transcribe-stop"
-                title="停止"
-                kind="text"
-                compact
-                onPress={transcription.stop}
-              />
+              )}
             </View>
-          )}
-          {transcription.status === "failed" && (
-            <Text testID="transcribe-status" style={s.muted}>
-              {transcription.message}
-            </Text>
-          )}
-          {draft.recordingFile && (
-            <Card>
-              <Text>
-                {recording
-                  ? "正在录音，离开前请结束并保存。"
-                  : "有一段未完成的录音"}
-              </Text>
-              <Button
-                title="恢复并保存录音"
-                disabled={busy}
-                onPress={() => {
-                  void run(() => finishAudio({ transcribe: true }));
-                }}
-              />
-              <Button
-                title="放弃这段录音"
-                disabled={busy}
-                onPress={() =>
-                  Alert.alert("放弃录音？", "这段录音将不加入记录。", [
-                    { text: "取消", style: "cancel" },
-                    {
-                      text: "放弃",
-                      style: "destructive",
-                      onPress: () => {
-                        void run(discardAudio);
-                      },
-                    },
-                  ])
-                }
-              />
-            </Card>
-          )}
-          {draft.content.mediaIds.map((id) => {
-            const m = state.media[id] ?? importedMedia[id];
-            return m ? (
-              <View key={id} style={{ gap: 8 }}>
-                {m.kind === "image" ? (
-                  <Photo media={m} preview />
-                ) : (
-                  <Text>{m.name}</Text>
+            {dateOpen && (
+              <View style={{ gap: 8, paddingBottom: 8 }}>
+                <DateTimePicker
+                  value={new Date(draft.content.date)}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(_, date) => {
+                    if (Platform.OS !== "ios") setDateOpen(false);
+                    if (date) change({ date: date.toISOString() });
+                  }}
+                />
+                {Platform.OS === "ios" && (
+                  <Button title="日期选好了" onPress={() => setDateOpen(false)} />
                 )}
-                <PhotoDetails media={m} />
-                <View style={s.row}>
-                  <Button
-                    title="查看"
-                    onPress={() => navigation.navigate("Media", { id })}
-                  />
-                  {m.kind === "image" && (
+              </View>
+            )}
+            {/* 正文直接写在纸上：无框、衬线、行距放宽；今天的小问题就是占位句，一动笔它就退场。 */}
+            <TextInput
+              testID="capture-text"
+              accessibilityLabel="这一刻发生了什么"
+              editable={!busy}
+              multiline
+              placeholder={question ?? "今天，她又带来了什么小惊喜？"}
+              placeholderTextColor={colors.muted}
+              value={draft.content.text}
+              onChangeText={(text) => change({ text })}
+              onEndEditing={() => void flush()}
+              textAlignVertical="top"
+              style={{
+                flexGrow: 1,
+                minHeight: 132,
+                paddingTop: 4,
+                paddingBottom: 12,
+                paddingHorizontal: 0,
+                color: colors.ink,
+                fontFamily: serif,
+                fontSize: large ? 20 : 17,
+                lineHeight: large ? 32 : 28,
+              }}
+            />
+            {recording && (
+              <View style={[s.row, { flexWrap: "nowrap" }]}>
+                <View
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: colors.error,
+                  }}
+                />
+                <Text style={[s.muted, { flex: 1, minWidth: 0 }]}>
+                  正在录音…
+                </Text>
+                <Button
+                  title="放弃"
+                  kind="text"
+                  danger
+                  compact
+                  disabled={busy}
+                  onPress={discardRecording}
+                />
+              </View>
+            )}
+            {!recording && !!draft.recordingFile && (
+              <View style={[s.row, { flexWrap: "nowrap" }]}>
+                <Text style={[s.muted, { flex: 1, minWidth: 0 }]}>
+                  有一段录音还没保存
+                </Text>
+                <Button
+                  title="保存录音"
+                  kind="text"
+                  compact
+                  disabled={busy}
+                  onPress={() => {
+                    void run(() => finishAudio({ transcribe: true }));
+                  }}
+                />
+                <Button
+                  title="放弃"
+                  kind="text"
+                  danger
+                  compact
+                  disabled={busy}
+                  onPress={discardRecording}
+                />
+              </View>
+            )}
+            {transcription.status === "working" && (
+              <View style={s.row}>
+                <Text testID="transcribe-status" style={s.muted}>
+                  正在转成文字…
+                </Text>
+                <Button
+                  testID="transcribe-stop"
+                  title="停止"
+                  kind="text"
+                  compact
+                  onPress={transcription.stop}
+                />
+              </View>
+            )}
+            {transcription.status === "failed" && (
+              <Text testID="transcribe-status" style={s.muted}>
+                {transcription.message}
+              </Text>
+            )}
+            {!!error && (
+              <View style={{ paddingBottom: 4 }}>
+                <ErrorText message={error} />
+                <View style={[s.row, { marginLeft: -8 }]}>
+                  {permDenied ? (
                     <Button
-                      title={
-                        draft.content.coverId === id ? "当前封面" : "设为封面"
-                      }
-                      selected={draft.content.coverId === id}
-                      onPress={() => change({ coverId: id })}
+                      title="去系统设置开启"
+                      kind="text"
+                      compact
+                      disabled={busy}
+                      onPress={() => {
+                        setPermDenied(false);
+                        void Linking.openSettings();
+                      }}
+                    />
+                  ) : (
+                    <Button
+                      title="重试暂存"
+                      kind="text"
+                      compact
+                      disabled={busy}
+                      onPress={() => {
+                        void run(flush);
+                      }}
                     />
                   )}
-                  <Button
-                    title="移除"
-                    onPress={() =>
-                      Alert.alert(
-                        "从草稿里移出？",
-                        "只从这份草稿移出，手机里的原文件不动。",
-                        [
-                          { text: "取消", style: "cancel" },
-                          {
-                            text: "移除",
-                            style: "destructive",
-                            onPress: () =>
-                              change({
-                                mediaIds: draft.content.mediaIds.filter(
-                                  (x) => x !== id,
-                                ),
-                                coverId:
-                                  draft.content.coverId === id
-                                    ? null
-                                    : draft.content.coverId,
-                              }),
-                          },
-                        ],
-                      )
-                    }
-                  />
                 </View>
               </View>
-            ) : null;
-          })}
-          {/* 标题、地点、人物：一张纸卡，收起时一行摘要，点开就地展开成卡里的几行（DESIGN.md「编辑」）。 */}
-          <Card style={{ padding: 0, gap: 0 }}>
+            )}
+            {attachments.length > 0 && (
+              <View style={{ paddingTop: 4, paddingBottom: 4 }}>
+                {/* 素材是插图：一排小方格，点一下选中，下面出这一格的动作。 */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  style={{ marginHorizontal: -20 }}
+                  contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+                >
+                  {attachments.map((m, i) => (
+                    <MediaTile
+                      key={m.id}
+                      testID={`editor-media-${i}`}
+                      media={m}
+                      label={tileLabel(m)}
+                      cover={photoCount > 1 && draft.content.coverId === m.id}
+                      picked={pickedId === m.id}
+                      onPress={() =>
+                        setPickedId(pickedId === m.id ? null : m.id)
+                      }
+                    />
+                  ))}
+                </ScrollView>
+                {pickedMedia && (
+                  <View style={{ paddingTop: 8 }}>
+                    <PhotoDetails media={pickedMedia} />
+                    <View style={[s.row, { gap: 0, marginLeft: -8 }]}>
+                      <Button
+                        title={OPEN_LABELS[pickedMedia.kind]}
+                        kind="text"
+                        compact
+                        testID="editor-media-open"
+                        onPress={() =>
+                          navigation.navigate("Media", { id: pickedMedia.id })
+                        }
+                      />
+                      {pickedMedia.kind === "image" &&
+                        draft.content.coverId !== pickedMedia.id && (
+                          <Button
+                            title="设为封面"
+                            kind="text"
+                            compact
+                            testID="editor-media-cover"
+                            onPress={() =>
+                              change({ coverId: pickedMedia.id })
+                            }
+                          />
+                        )}
+                      <Button
+                        title="移除"
+                        kind="text"
+                        danger
+                        compact
+                        testID="editor-media-remove"
+                        onPress={() => removeMedia(pickedMedia.id)}
+                      />
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+            {/* 页脚一行：右边是落款；动了笔、有东西可留了，左边才出「草稿会自动保留」。 */}
+            <SignatureButton
+              value={draft.content.by}
+              options={byOptions}
+              disabled={busy}
+              onChange={sign}
+              leading={
+                question ? null : (
+                  <Text style={s.footnote}>草稿会自动保留</Text>
+                )
+              }
+            />
+            <View
+              style={{
+                height: StyleSheet.hairlineWidth,
+                backgroundColor: colors.line,
+                marginHorizontal: -20,
+                marginTop: 8,
+              }}
+            />
             <Pressable
               testID="editor-details"
               accessibilityRole="button"
               accessibilityLabel="标题、地点、人物"
               // 展开与否由读屏按 expanded 自己念，值里只放收起时那行摘要。
               accessibilityValue={
-                details
-                  ? undefined
-                  : { text: detailsSummary || "都可以不填" }
+                details ? undefined : { text: detailsSummary || "都可以不填" }
               }
               accessibilityState={{ expanded: details }}
               onPress={() => setDetails(!details)}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                gap: 12,
+                gap: 8,
                 minHeight: 52,
-                paddingHorizontal: 16,
-                paddingVertical: 8,
               }}
             >
-              {/* 卡在 iOS 是液态玻璃：按压透明度落在里面的字上。 */}
               {({ pressed }) => (
                 <>
-                  <View
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      gap: 2,
-                      opacity: pressed ? 0.6 : 1,
-                    }}
+                  <Text style={{ opacity: pressed ? 0.6 : 1 }}>
+                    标题、地点、人物
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      s.muted,
+                      {
+                        flex: 1,
+                        minWidth: 0,
+                        textAlign: "right",
+                        opacity: pressed ? 0.6 : 1,
+                      },
+                    ]}
                   >
-                    <Text>标题、地点、人物</Text>
-                    {!details && (
-                      <Text numberOfLines={1} style={s.muted}>
-                        {detailsSummary || "都可以不填"}
-                      </Text>
-                    )}
-                  </View>
+                    {details ? "" : detailsSummary || "都可以不填"}
+                  </Text>
                   <View
                     style={{
                       opacity: pressed ? 0.6 : 1,
@@ -644,7 +791,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             {details && (
               <View
                 style={{
-                  paddingHorizontal: 16,
+                  paddingBottom: 8,
                   borderTopWidth: StyleSheet.hairlineWidth,
                   borderTopColor: colors.line,
                 }}
@@ -744,26 +891,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               </View>
             )}
           </Card>
-          <ErrorText message={error} />
-          {error && permDenied && (
-            <Button
-              title="去系统设置开启"
-              onPress={() => {
-                setPermDenied(false);
-                void Linking.openSettings();
-              }}
-              disabled={busy}
-            />
-          )}
-          {error && !permDenied && (
-            <Button
-              title="重试暂存"
-              onPress={() => {
-                void run(flush);
-              }}
-              disabled={busy}
-            />
-          )}
           <DangerCard
             title="放弃这份草稿"
             testID="editor-discard"
@@ -886,5 +1013,139 @@ export function Editor({ route, navigation }: Props<"Editor">) {
         </BottomBar>
       </KeyboardAvoidingView>
     </Page>
+  );
+}
+const TILE = 96;
+const KIND_NAMES: Record<LocalMedia["kind"], string> = {
+  image: "照片",
+  audio: "录音",
+  video: "视频",
+  document: "文件",
+};
+const OPEN_LABELS: Record<LocalMedia["kind"], string> = {
+  image: "看大图",
+  audio: "听录音",
+  video: "看视频",
+  document: "打开文件",
+};
+const KIND_ICONS: Record<LocalMedia["kind"], JournalIconName> = {
+  image: "image",
+  audio: "audio",
+  video: "video",
+  document: "file",
+};
+/** 纸上的一格素材：照片（与有缩略图的视频）是圆角小方图，录音与文件是带图标的浅底小签。 */
+function MediaTile({
+  media,
+  label,
+  cover,
+  picked,
+  onPress,
+  testID,
+}: {
+  media: LocalMedia;
+  label: string;
+  /** 不止一张照片时，封面那格角上标「封面」。 */
+  cover: boolean;
+  picked: boolean;
+  onPress: () => void;
+  testID?: string;
+}) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  const picture =
+    media.kind === "image" || (media.kind === "video" && !!media.thumb);
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: picked }}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        width: TILE,
+        height: TILE,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      {picture ? (
+        <Photo media={media} preview size={TILE} label={label} />
+      ) : (
+        <View
+          style={{
+            flex: 1,
+            borderRadius: 12,
+            backgroundColor: colors.selected,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+          }}
+        >
+          <JournalIcon
+            name={KIND_ICONS[media.kind]}
+            color={colors.accent}
+            size={24}
+          />
+          <Text style={s.footnote}>{KIND_NAMES[media.kind]}</Text>
+        </View>
+      )}
+      {media.kind === "video" && picture && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            right: 6,
+            bottom: 6,
+            width: 24,
+            height: 24,
+            borderRadius: 12,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <JournalIcon name="play" color="#FFFFFF" size={14} />
+        </View>
+      )}
+      {cover && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 6,
+            bottom: 6,
+            paddingHorizontal: 6,
+            borderRadius: 6,
+            backgroundColor: colors.accent,
+          }}
+        >
+          <Text
+            style={{
+              color: colors.onAccent,
+              fontSize: 11,
+              lineHeight: 16,
+              fontWeight: "600",
+            }}
+          >
+            封面
+          </Text>
+        </View>
+      )}
+      {picked && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            borderRadius: 12,
+            borderWidth: 2,
+            borderColor: colors.accent,
+          }}
+        />
+      )}
+    </Pressable>
   );
 }
