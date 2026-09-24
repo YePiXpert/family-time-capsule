@@ -30,6 +30,7 @@
   - `LetterEditor.tsx`：`Card`（`letter-sheet`）里是拆封日期（`letter-open-at`，`DateStrip` 同款）、无框标题与正文（`letter-title`／`letter-text`）、录音行、页脚「录一段话」（`letter-record`，文字级）与落款（`letter-from`：一行看不见的同款字撑出宽度、输入框 `absoluteFill` 盖在上面，所以随字宽贴右）。删除是顶栏 `IconButton`（`letter-delete`）。`Field` 与 `DangerCard` 不再用在这页；testID 都没变，iOS 回归与安卓冒烟的写信流程不用改。
   - 其余纵向滚动区一律 `alwaysBounceVertical={false}`：`Page` 的 `scroll` 默认滚动区、阅读页、月册 `SectionList`、相册／选材／选封面三个 `FlatList`、搜索结果、照片选择、AI 面板。横向条与看大图的缩放区不动。
   - 安卓冒烟：`assert_fits(sheet)` 收拢编辑页那段检查，写信页在正文写完、按返回收起键盘后再查一次（`letterFits`，另截 `letter-editor`）。iOS 回归只查编辑页。
+  - 「我的」（主人随后让做）：`Settings.tsx` 五行 `SettingsRow` 收进一个 `SettingsGroup`、去掉三个区标题；色调只用 `accent`（落款、AI）与 `apricot`（备份、存储、外观）；`JournalIcon` 新增 `archive`／`phone`／`appearance`（半圆用 `fill="currentColor"`，Svg 上加了 `color`）；脚注挪到页尾、上面一枚 `Ornament`。`indigo`／`pine` 色调仍留给书架的引导行。预览新增 `settings` 场景（`stubs/settings.tsx` 把备份、归档、同步、AI 客户端换成空壳）。
   - react-native-web 预览（`entry.tsx` 新增 `letter`／`letter-full` 场景）对过：390 宽空信与写满、深色、320 宽更大文字（信长，可滑）、录音中、键盘；空信往下滚 2000 与不滚逐字节相同，编辑页同。
 
 - **1.0.6 发版（2026-09-24，构建号 79）**：修 1.0.5 出包截图里安卓编辑页还能滑的问题（CHANGELOG「1.0.6」）。

@@ -52,6 +52,7 @@ import {
   Card,
   ErrorText,
   Field,
+  Ornament,
   Page,
   SectionHeader,
   SettingsGroup,
@@ -149,25 +150,21 @@ export function Settings() {
           <JournalIcon name="chevron-right" color={colors.muted} size={18} />
         </Pressable>
       </Card>
-      <Text style={[s.footnote, { textAlign: "center" }]}>
-        {APP_NAME} · 入淮清洛渐漫漫
-      </Text>
+      {/* 五行设置收在一张纸卡里，不分组、不挂区标题：几张一行的小卡叠起来像一摞盒子。
+          图标砖只用两个暖色：写的事（落款、AI）赤陶，保管与这台手机（备份、存储、外观）杏色。 */}
       <SettingsGroup>
         <SettingsRow
           icon="edit"
-          tone="apricot"
+          tone="accent"
           label="我的落款"
           subtitle={
             state.settings.by ? `—— ${state.settings.by}` : "还没定，记一刻时会问"
           }
           onPress={() => nav.navigate("Signature")}
-          last
         />
-      </SettingsGroup>
-      <SettingsGroup title="资料">
         <SettingsRow
-          icon="download"
-          tone="indigo"
+          icon="archive"
+          tone="apricot"
           label="备份与恢复"
           subtitle={
             sync.conflicts > 0
@@ -189,34 +186,35 @@ export function Settings() {
           onPress={() => nav.navigate("Backup")}
         />
         <SettingsRow
-          icon="file"
-          tone="pine"
+          icon="phone"
+          tone="apricot"
           label="本机存储"
           subtitle={`照片和录音占用 ${(bytes / 1048576).toFixed(1)} MB`}
           onPress={() => nav.navigate("Storage")}
-          last
         />
-      </SettingsGroup>
-      <SettingsGroup title="家人与 AI">
         <SettingsRow
           icon="sparkle"
-          tone="apricot"
+          tone="accent"
           label="AI 设置"
           subtitle={aiState}
           onPress={() => nav.navigate("AISettings")}
-          last
         />
-      </SettingsGroup>
-      <SettingsGroup title="应用">
         <SettingsRow
-          icon="settings"
-          tone="indigo"
+          icon="appearance"
+          tone="apricot"
           label="外观设置"
           subtitle={state.settings.largeText ? `${theme} · 更大文字` : theme}
           onPress={() => nav.navigate("Appearance")}
           last
         />
       </SettingsGroup>
+      {/* 页尾像书的版权页：一枚装饰线，下面一行书名与那句诗。 */}
+      <View style={{ gap: 8, paddingTop: 8 }}>
+        <Ornament />
+        <Text style={[s.footnote, { textAlign: "center" }]}>
+          {APP_NAME} · 入淮清洛渐漫漫
+        </Text>
+      </View>
     </Page>
   );
 }

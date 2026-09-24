@@ -5,7 +5,7 @@ export type JournalIconName =
   | "settings" | "search" | "calendar" | "star" | "play" | "pause" | "check"
   | "chevron-right" | "chevron-down" | "arrow-left" | "trash" | "edit"
   | "download" | "close" | "video" | "audio" | "heart" | "sparkle"
-  | "seal" | "quote" | "pin";
+  | "seal" | "quote" | "pin" | "archive" | "phone" | "appearance";
 
 /**
  * 统一图标语言：24px 网格、1.8px 描边、圆角端点。
@@ -51,6 +51,21 @@ const paths: Record<JournalIconName, React.ReactNode> = {
     <Path d="m14.4 6.7 2.9 2.9" />
   </>,
   download: <Path d="M12 4v10.2M8 10.3l4 4 4-4M5 19.2h14" />,
+  // 收纳箱：备份与恢复（把时光收好，也从这里取回）。
+  archive: <>
+    <Rect x={3.6} y={4.6} width={16.8} height={4.4} rx={1.2} />
+    <Path d="M5.2 9v9.2c0 .7.6 1.3 1.3 1.3h11c.7 0 1.3-.6 1.3-1.3V9M10 12.6h4" />
+  </>,
+  // 这台手机：本机存储。
+  phone: <>
+    <Rect x={6.4} y={3.2} width={11.2} height={17.6} rx={2.4} />
+    <Path d="M10.6 17.6h2.8" />
+  </>,
+  // 半明半暗的圆：外观（浅色／深色）。
+  appearance: <>
+    <Circle cx={12} cy={12} r={7.6} />
+    <Path d="M12 4.4a7.6 7.6 0 0 1 0 15.2z" fill="currentColor" />
+  </>,
   close: <Path d="M6.2 6.2l11.6 11.6M17.8 6.2 6.2 17.8" />,
   video: <>
     <Rect x={3.5} y={6.5} width={12.8} height={11.5} rx={2.6} />
@@ -102,7 +117,7 @@ const paths: Record<JournalIconName, React.ReactNode> = {
 
 export function JournalIcon({ name, color, size = 24 }: { name: JournalIconName; color: string; size?: number }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" accessible={false}>
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" color={color} stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" accessible={false}>
       {paths[name]}
     </Svg>
   );
