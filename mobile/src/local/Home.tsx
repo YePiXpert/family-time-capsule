@@ -7,7 +7,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary, useStore } from "./context";
-import { CaptureFab } from "./CaptureFab";
+import { CaptureFab, FAB_INSET, FAB_SIZE } from "./CaptureFab";
 import { monthKey, type LocalRecord, type Stored } from "./model";
 import { useNav, type Props } from "./navigation";
 import { recordMatches } from "./search";
@@ -222,7 +222,8 @@ export function Month({ route }: Props<"Month">) {
         contentContainerStyle={{
           paddingHorizontal: 20,
           paddingTop: 12,
-          paddingBottom: 96,
+          // 滚到底时最后一行要露出「记一刻」按钮上方：按钮离底边还隔着安全区。
+          paddingBottom: insets.bottom + FAB_INSET + FAB_SIZE + 20,
         }}
         keyboardShouldPersistTaps="handled"
         stickySectionHeadersEnabled

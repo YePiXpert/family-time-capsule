@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 import { useLibrary, useStore } from "./context";
 import { letterCaption, letterState, openAtLabel } from "./letters";
-import type { LocalMedia } from "./model";
+import { letterSeal, type LocalMedia } from "./model";
 import type { Props } from "./navigation";
 import { deleteLetter, openLetter } from "./services";
 import {
@@ -136,7 +136,7 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
                 color: colors.accent,
               }}
             >
-              {letter.from.trim().charAt(0) || "信"}
+              {letterSeal(letter.from)}
             </Text>
           </Stamp>
           <Text style={[s.title, { textAlign: "center" }]}>{title}</Text>

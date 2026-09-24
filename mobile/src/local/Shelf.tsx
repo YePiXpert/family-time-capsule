@@ -31,6 +31,7 @@ import {
 import {
   fullNameLine,
   sealInitial,
+  letterSeal,
   monthKey,
   recordTitle,
   sortedRecords,
@@ -1044,7 +1045,7 @@ export function Shelf() {
             title={letter.title || "一封信"}
             caption={letterShortCaption(letter, today)}
             spokenCaption={letterCaption(letter, today)}
-            stamp={letter.from.trim().charAt(0) || "信"}
+            stamp={letterSeal(letter.from)}
             testID={`letter-${letter.id}`}
             onPress={() =>
               nav.navigate(

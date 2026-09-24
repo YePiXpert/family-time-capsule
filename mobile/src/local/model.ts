@@ -141,6 +141,10 @@ export type LocalProfile = {
 export function sealInitial(name: string): string {
   return Array.from(name.trim() || CHILD_FALLBACK)[0]!;
 }
+/** 信封圆章：落款首个码点（emoji、扩展汉字不被劈成半个），没有落款用「信」。 */
+export function letterSeal(from: string): string {
+  return Array.from(from.trim())[0] ?? "信";
+}
 /** 应用与纸书扉页共用；开放归档阅读器保持相同拼法。 */
 export function fullNameLine(fullName: string, name: string): string {
   return name.trim() ? `${fullName} · 小名${name.trim()}` : "";
