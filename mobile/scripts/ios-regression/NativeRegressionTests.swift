@@ -158,6 +158,11 @@ final class NativeRegressionTests: XCTestCase {
         shot("letter-opened")
         relaunchApp(); tap("open-settings"); tap("AI 设置")
         XCTAssertTrue(element("ai-join").waitUntilExists(timeout: 20)); shot("ai-settings")
+        // 家庭与设备：没加入时三个入口，不联网也能打开；没有任何账号密码输入。
+        relaunchApp(); tap("open-settings"); tap("settings-family")
+        XCTAssertTrue(element("family-out").waitUntilExists(timeout: 20), "Family page should open offline")
+        XCTAssertTrue(element("family-join").exists); XCTAssertTrue(element("family-start").exists); XCTAssertTrue(element("family-recover").exists)
+        shot("family-out")
         relaunchApp()
         tap("volume-year-2026")
         tap("year-note-edit")
@@ -183,9 +188,9 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(sharedBook.waitUntilExists(timeout: 300), "Book PDF share sheet never appeared")
         shot("yearbook-pdf-share-sheet"); assertNoFailure("Yearbook PDF export")
         relaunchApp(); tap("open-settings"); tap("备份与恢复")
-        // 远端备份卡在最后：离线、未登录时只有「去登录」，没有上传入口。
+        // 远端备份卡在最后：没加入家庭时只有「去加入家庭」，没有上传入口。
         XCTAssertTrue(element("remote-card").waitUntilExists(timeout: 20), "Remote backup card missing")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "去登录")).firstMatch.waitUntilExists(timeout: 20), "Remote card should ask to sign in")
+        XCTAssertTrue(element("remote-family").waitUntilExists(timeout: 20), "Remote card should point to the family page")
         XCTAssertFalse(element("remote-backup").exists, "Remote card must not offer uploads while signed out")
         tap("恢复这份备份"); tap("恢复并替换")
         wait("Restore did not finish") { self.app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "恢复完成")).firstMatch.exists }
