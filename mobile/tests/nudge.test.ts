@@ -119,7 +119,7 @@ describe("one nudge card at a time", () => {
 
 describe("backup reminder recognizes family sync", () => {
   const local = "记录只保存在这台手机上。定期导出一份，把这段时光留到应用之外。";
-  const synced = "家人一起写已把记录同步到主人的服务，但那不是应用之外的备份。导出一份，把这段时光留到应用之外。";
+  const synced = "家人一起写已把记录同步到家里的服务，但那不是应用之外的备份。导出一份，把这段时光留到应用之外。";
   it("uses the synced wording through day seven", () => {
     expect(backupNudgeBody(true, "2026-09-18T09:00:00", today)).toBe(synced);
     expect(backupNudgeBody(true, "2026-09-11T09:00:00", today)).toBe(synced);

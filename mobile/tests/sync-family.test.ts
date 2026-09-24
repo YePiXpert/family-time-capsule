@@ -889,7 +889,7 @@ it.each([
   "TIMEOUT",
   "AUTH_REQUIRED",
   "NOT_FOUND",
-  "OWNER_ONLY",
+  "ADMIN_ONLY",
   "SERVER_ERROR",
 ])("退出时 %s 按约定决定是否清除本机状态", async (code) => {
   const { receiver: p, deps } = await seeded();

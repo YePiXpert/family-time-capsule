@@ -24,6 +24,6 @@ export function serverPrecheck(input: { bytes?: number; seconds?: number }): str
 }
 export function transcribeHint(route: TranscribeRoute, platform: "ios" | "android"): string {
   if (route !== "none") return "";
-  return "这台手机没有中文本机识别；登录家人账号后可以经主人的服务转文字。" +
+  return "这台手机没有中文本机识别；加入家庭后可以经家里的服务转文字。" +
     (platform === "ios" ? "iPhone 在系统设置里开启中文听写后可本机识别。" : "");
 }

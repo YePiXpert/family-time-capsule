@@ -97,7 +97,7 @@ export type RemoteDeviceManifest = {
   updatedAt: string;
 };
 export type Transport = {
-  /** 当前登录的本机设备；不按成员回退到其他手机。 */
+  /** 当前获准的本机设备；不按成员回退到其他手机。 */
   me(signal?: AbortSignal): Promise<{ deviceId: string | null; role?: "admin" | "member" }>;
   status(signal?: AbortSignal): Promise<RemoteStatus>;
   /** 返回远端还没有的 id。 */
@@ -131,18 +131,18 @@ export type Transport = {
     deviceId: string,
     signal?: AbortSignal,
   ): Promise<{ pruned: number }>;
-  /** 主人清空全家远端：全部清单与全部对象。 */
+  /** 管理者清空全家远端：全部清单与全部对象。 */
   wipeFamily(signal?: AbortSignal): Promise<void>;
 };
 const HAVE_BATCH = 2000;
 const MESSAGES: Record<string, string> = {
-  AUTH_REQUIRED: "请先在「AI 设置」里登录家人账号。",
-  QUOTA_FULL: "远端备份空间已用完，请联系主人调整。",
+  AUTH_REQUIRED: "这台手机还没加入家庭，或已被停用。请到「我的 → 家庭与设备」加入。",
+  QUOTA_FULL: "远端备份空间已用完，请联系管理者调整。",
   TOO_LARGE: "这一份太大，请更新应用后重试。",
-  SERVER_FULL: "服务器空间不足，请联系主人。",
+  SERVER_FULL: "服务器空间不足，请联系管理者。",
   BUSY: "正在上传其他内容，请稍后再试。",
   NOT_FOUND: "远端没有这一份。",
-  OWNER_ONLY: "只有主人能这么做。",
+  ADMIN_ONLY: "只有管理者能这么做。",
 };
 const UNREADABLE = "服务返回了无法解析的内容。";
 const isText = (value: unknown): value is string => typeof value === "string";

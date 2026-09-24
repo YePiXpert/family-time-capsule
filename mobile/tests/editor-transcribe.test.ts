@@ -95,6 +95,6 @@ it.each([
 });
 it("unavailable without login gives a hint without uploading", async () => {
   const f = fixture({ availability: async () => "unavailable", signedIn: async () => false }); await f.run();
-  expect(f.states.at(-1)?.message).toContain("登录家人账号");
+  expect(f.states.at(-1)?.message).toContain("加入家庭");
   expect(f.deps.onServer).not.toHaveBeenCalled();
 });
