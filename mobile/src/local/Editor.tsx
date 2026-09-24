@@ -57,6 +57,7 @@ import {
   useSheetViewport,
   useStyles,
   useTheme,
+  TEXT_MAX_SCALE,
 } from "./ui";
 import { JournalIcon, type JournalIconName } from "../components/JournalIcon";
 import { Photo, PhotoDetails } from "./Media";
@@ -587,6 +588,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
             )}
             {/* 正文直接写在纸上：无框、衬线、行距放宽；今天的小问题就是占位句，一动笔它就退场。 */}
             <TextInput
+              maxFontSizeMultiplier={TEXT_MAX_SCALE}
               testID="capture-text"
               accessibilityLabel="这一刻发生了什么"
               editable={!busy}
@@ -900,6 +902,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                       }}
                     >
                       <TextInput
+                        maxFontSizeMultiplier={TEXT_MAX_SCALE}
                         testID="person-new-name"
                         accessibilityLabel="添加人物"
                         placeholder="添加一个人，例如：外婆"

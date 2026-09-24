@@ -45,6 +45,7 @@ import {
   useSheetViewport,
   useStyles,
   useTheme,
+  TEXT_MAX_SCALE,
 } from "./ui";
 
 /** 编辑中的信：实体本身加一段还没入库的录音文件名（录音结束后才变成素材）。 */
@@ -438,6 +439,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
             )}
             {/* 标题与正文直接写在纸上：无框、衬线；说明留给占位句与封存前的确认。 */}
             <TextInput
+              maxFontSizeMultiplier={TEXT_MAX_SCALE}
               testID="letter-title"
               accessibilityLabel="标题"
               placeholder="给十八岁的你"
@@ -457,6 +459,7 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
               ]}
             />
             <TextInput
+              maxFontSizeMultiplier={TEXT_MAX_SCALE}
               testID="letter-text"
               accessibilityLabel="正文"
               placeholder="写给多年后的她。此刻想对她说的话…"
