@@ -31,6 +31,7 @@ import { useDailyQuestion } from "./dailyQuestionHooks";
 import { dailyPromptOf, isStoryDay } from "./prompts";
 import { preserveMedia, verifyMedia } from "./files";
 import { PermissionDenied, useDraftPersist, useRecorder } from "./editorHooks";
+import { ExitGate } from "./exitGate";
 import { appendTranscript } from "./transcribe";
 import { useTranscription } from "./transcribeHooks";
 import { isEmptyDraft, isUntouchedEdit } from "./empties";
@@ -113,10 +114,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       ]),
     ];
   }, [state.records, state.settings.by]);
-  const nextAction = useRef<(() => void) | null>(null),
-    operation = useRef(false),
+  const operation = useRef(false),
     // 保存进行中按了返回：记下来，这一轮操作结束后再走，不用一行红字拦人。
-    pendingExit = useRef<(() => void) | null>(null);
+    [exits] = useState(() => new ExitGate());
   const {
     current,
     verified,
@@ -193,11 +193,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       operation.current = false;
       setBusy(false);
     }
-    const exit = pendingExit.current;
-    if (exit) {
-      pendingExit.current = null;
-      void run(() => leave(exit));
-    }
+    const exit = exits.release();
+    if (exit) void run(() => leave(exit));
+  };
+  const exitWith = (action: () => void) => {
+    exits.decide(action);
+    setAllowExit(true);
   };
   const attach = async (media: LocalMedia[]) => {
     if (!current.current) return;
@@ -244,11 +245,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   }, [flush]);
   useEffect(() => {
     if (allowExit) {
-      const action = nextAction.current;
-      nextAction.current = null;
-      action?.();
+      exits.take()?.();
     }
-  }, [allowExit]);
+  }, [allowExit, exits]);
   const leave = async (action: () => void) => {
     transcription.stop();
     // 什么都没写、或打开已有记录却什么都没改就走：草稿静默清理，不留「继续编辑」也不弹确认。
@@ -260,13 +259,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     )
       await drop();
     else await flush();
-    nextAction.current = action;
-    setAllowExit(true);
+    exitWith(action);
   };
   usePreventRemove(!allowExit, ({ data }) => {
     const exit = () => navigation.dispatch(data.action);
     if (operation.current) {
-      pendingExit.current = exit;
+      exits.hold(exit);
       return;
     }
     if (current.current?.recordingFile)
@@ -455,8 +453,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               await store.change((s) => {
                 delete s.drafts[draft.id];
               });
-              nextAction.current = () => navigation.goBack();
-              setAllowExit(true);
+              exitWith(() => navigation.goBack());
             });
           },
         },
@@ -1027,9 +1024,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                   saveRecord(s, draft.id, newId(), now()),
                 );
                 hapticSuccess();
-                nextAction.current = () =>
-                  navigation.popTo("Record", { id: record.id });
-                setAllowExit(true);
+                exitWith(() =>
+                  navigation.popTo("Record", { id: record.id }));
               });
             }}
           />
