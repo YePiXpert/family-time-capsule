@@ -86,7 +86,7 @@ export class BackupStore {
       if (options.declared !== undefined && options.declared !== bytes) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容不完整，请重试。');
       if (hash.digest('hex') !== options.sha256) throw new Problem(400, 'OBJECT_CORRUPT', '上传内容校验失败，请重试。');
       const previous = this.stat(id);
-      if (options.quotaLeft !== undefined && bytes - (previous ?? 0) > options.quotaLeft) throw new Problem(413, 'QUOTA_FULL', '远端备份空间已用完，请联系主人调整。');
+      if (options.quotaLeft !== undefined && bytes - (previous ?? 0) > options.quotaLeft) throw new Problem(413, 'QUOTA_FULL', '远端备份空间已用完，请联系管理者调整。');
       if (previous !== null) {
         rmSync(temp, { force: true });
         return { bytes, created: false };

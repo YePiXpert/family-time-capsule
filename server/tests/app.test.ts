@@ -2,71 +2,29 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BackupStore } from '../src/backup-store.ts';
-import { unusedTranscribe } from './helpers.ts';
+import { unusedTranscribe, seedFamily, addMember } from './helpers.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../src/store.ts';
 import { createApp } from '../src/app.ts';
-import { hashPassword } from '../src/passwords.ts';
 import type { Provider } from '../src/provider.ts';
-const PW='12345678',HASH=await hashPassword(PW);
 function fixture(provider?:Provider) {
  const store=new Store(':memory:'),dir=mkdtempSync(join(tmpdir(),'anan-app-test-'));
  let calls=0;
  const app=createApp(store,provider??(async()=>{calls++;return {tokens:20,result:{title:'公园',text:'一起散步。'}};}),'test',new BackupStore(dir),unusedTranscribe);
  app.addHook('onClose',async()=>{rmSync(dir,{recursive:true,force:true});});
- const owner=store.setup('主人',HASH,'主人手机');
- store.createMember('家人',HASH);
- const member=store.attach(store.byUsername('家人')!.id,'家人手机');
+ const owner=seedFamily(store);
+ const member=addMember(store,'家人','家人手机');
  const headers=(token=member.token)=>({authorization:`Bearer ${token}`});
  const input=()=>({requestId:randomUUID(),model:'mimo-v2.6-pro',photos:[],writingMode:'polish',context:'我们一起去公园。'});
  return {store,app,owner,member,headers,input,calls:()=>calls};
 }
-test('账号系统：一次性初始化，登录校验密码，凭证随设备撤销失效',async()=>{
- const f=fixture();
- assert.equal((await f.app.inject({url:'/api/v1/status'})).json().initialized,true);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/setup',payload:{username:'新人',password:PW,deviceName:'手机'}})).statusCode,409);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'wrong-password',deviceName:'手机'}})).statusCode,401);
- const response=await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'手机'}});
- assert.equal(response.statusCode,200);assert.equal(response.json().member.username,'家人');
- assert.ok(!response.body.includes('password_hash'));
- f.store.revoke(response.json().member.deviceId);
- assert.equal((await f.app.inject({url:'/api/v1/me',headers:{authorization:`Bearer ${response.json().token}`}})).statusCode,401);
- // 一台新库从零初始化：第一台设备成为主人，用户名全局唯一。
- const fresh=new Store(':memory:');
- assert.equal(fresh.setup('主人',HASH,'手机').member.role,'owner');
- assert.throws(()=>fresh.createMember('主人',HASH),/用户名/);
- fresh.close();
- // 修改密码必须先过当前密码这一关。
- assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{current:'wrong-password',next:'123456789'}})).statusCode,401);
- await f.app.close();f.store.close();
-});
-test('legacy hashes are upgraded on the next successful login',async()=>{
- const f=fixture();
- const { scryptSync, randomBytes }=await import('node:crypto');
- const salt=randomBytes(16);
- f.store.db.prepare('UPDATE members SET password_hash=? WHERE id=?').run(`scrypt:${salt.toString('hex')}:${scryptSync(PW,salt,32,{N:16384,r:8,p:1}).toString('hex')}`,f.member.member.id);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'wrong-password',deviceName:'手机'}})).statusCode,401);
- assert.ok(f.store.fullById(f.member.member.id)!.password_hash!.startsWith('scrypt:'));
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'手机'}})).statusCode,200);
- assert.ok(f.store.fullById(f.member.member.id)!.password_hash!.startsWith('scrypt2:32768:'));
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'手机'}})).statusCode,200);
- // 兜底命令：登录名优先，改过登录名后旧成员名仍可用。
- f.store.setLogin(f.member.member.id,'家人新',HASH);
- assert.equal(f.store.findByUsernameOrName('家人新').id,f.member.member.id);
- assert.equal(f.store.findByUsernameOrName('家人').id,f.member.member.id);
- assert.throws(()=>f.store.findByUsernameOrName('没有的人'),/不存在/);
- await f.app.close();f.store.close();
-});
-test('owner endpoints enforce server-side role and tokens never appear in overview',async()=>{
+test('admin endpoints enforce server-side role and tokens never appear in overview',async()=>{
  const f=fixture();
  assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers()})).statusCode,403);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/members',headers:f.headers(),payload:{username:'外婆',password:PW}})).statusCode,403);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/members',headers:f.headers(f.owner.token),payload:{username:'外婆',password:PW}})).statusCode,201);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/admin/members',headers:f.headers(f.owner.token),payload:{username:'外婆',password:PW}})).statusCode,409);
- assert.equal((await f.app.inject({method:'PUT',url:`/api/v1/admin/members/${f.member.member.id}/login`,headers:f.headers(f.owner.token),payload:{username:'家人新',password:'87654321'}})).statusCode,200);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人新',password:'87654321',deviceName:'手机'}})).statusCode,200);
+ // 用户名密码的入口都没了。
+ for(const url of ['/api/v1/setup','/api/v1/login','/api/v1/admin/members'])assert.equal((await f.app.inject({method:'POST',url,headers:f.headers(f.owner.token),payload:{}})).statusCode,404);
  const response=await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers(f.owner.token)});
  assert.equal(response.statusCode,200);assert.ok(!response.body.includes('password_hash'));assert.ok(!response.body.includes(f.member.token));
  await f.app.close();f.store.close();
@@ -171,28 +129,6 @@ test('polish carries only the stored text with an explicit length ceiling',async
  await f.app.close();f.store.close();
 });
 
-test('password change gates on current password and logs out other devices only',async()=>{
- const f=fixture();
- const second=await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:PW,deviceName:'旧手机'}});
- assert.equal(second.statusCode,200);
- assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{current:'wrong-password',next:'876543219'}})).statusCode,401);
- assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{current:PW,next:'876543219'}})).statusCode,200);
- assert.equal((await f.app.inject({url:'/api/v1/me',headers:f.headers()})).statusCode,200);
- assert.equal((await f.app.inject({url:'/api/v1/me',headers:{authorization:`Bearer ${second.json().token}`}})).statusCode,401);
- // 老数据里没有密码哈希的成员可以不带 current 直接设置密码。
- f.store.db.prepare('UPDATE members SET password_hash=NULL WHERE id=?').run(f.member.member.id);
- assert.equal((await f.app.inject({method:'PUT',url:'/api/v1/password',headers:f.headers(),payload:{next:'111122223'}})).statusCode,200);
- assert.equal((await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'111122223',deviceName:'手机'}})).statusCode,200);
- await f.app.close();f.store.close();
-});
-test('rapid logins from one address hit the per-IP throttle',async()=>{
- const f=fixture();
- for(let i=0;i<11;i++) {
-  const response=await f.app.inject({method:'POST',url:'/api/v1/login',payload:{username:'家人',password:'wrong-password',deviceName:'手机'}});
-  assert.equal(response.statusCode,i<10?401:429);
- }
- await f.app.close();f.store.close();
-});
 test('auth revoked mid-flight returns 401 but cannot overwrite the completed request',async()=>{
  const f=fixture(async()=>{f.store.revoke(f.member.member.deviceId!);return {tokens:33,result:{title:'公园',text:'一起散步。'}};});
  const payload=f.input();
@@ -202,14 +138,6 @@ test('auth revoked mid-flight returns 401 but cannot overwrite the completed req
  assert.equal(row.status,'completed');assert.equal(row.tokens,33);
  await f.app.close();f.store.close();
 });
-test('admin login reset logs out every device of that member but not the owner',async()=>{
- const f=fixture();
- assert.equal((await f.app.inject({method:'PUT',url:`/api/v1/admin/members/${f.member.member.id}/login`,headers:f.headers(f.owner.token),payload:{username:'家人新',password:'87654321'}})).statusCode,200);
- assert.equal((await f.app.inject({url:'/api/v1/me',headers:f.headers()})).statusCode,401);
- assert.equal((await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers(f.owner.token)})).statusCode,200);
- await f.app.close();f.store.close();
-});
-
 // 文本模式走同一条额度、缓存与重放路径。
 for(const writingMode of ['ask','question','editor'] as const)test(`${writingMode} uses one write, no photos and replays without spending again`,async()=>{
  const {editorContext,editorResult}=await import('./helpers.ts');

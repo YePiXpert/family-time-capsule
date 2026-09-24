@@ -7,11 +7,11 @@ import {
   it,
   vi,
 } from "vitest";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { createTransport, type HttpClient } from "../src/sync/transport";
 import { keyIdOf } from "../src/sync/crypto";
@@ -146,18 +146,35 @@ beforeAll(async () => {
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  const setup = await fetch(`${base}/setup`, {
+  // 空服务开家庭：部署端的一次性激活码（与服务端同一个库），第一位管理者。钥匙包与恢复包在这里是合成的：
+  // 服务端只管状态机、不解包；手机端的真封包在 family-pairing 的测试里验。
+  const printed = execFileSync(process.execPath, ["src/manage.ts", "activation"], {
+    cwd: serverDir,
+    env: { ...clean, DB_FILE: path.join(serverRoot, "ai.sqlite"), NODE_NO_WARNINGS: "1" },
+    encoding: "utf8",
+  });
+  const code = /[0-9A-Z]{5}(?:-[0-9A-Z]{5}){4}/.exec(printed)?.[0];
+  if (!code) throw new Error(`没拿到激活码：${printed}`);
+  const setup = await fetch(`${base}/family/activate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      username: "e2eowner",
-      password: "e2e-password-123",
+      activationCode: code,
+      memberId: randomUUID(),
+      memberName: "爸爸",
       deviceName: "vitest",
+      publicKey: randomBytes(32).toString("base64url"),
+      familyId: randomUUID(),
+      keyId: "0123456789abcdef",
+      recovery: {
+        envelope: randomBytes(57).toString("base64"),
+        verifier: createHash("sha256").update("ab".repeat(32)).digest("hex"),
+      },
     }),
   });
   if (setup.status !== 201)
     throw new Error(
-      `setup 失败：${setup.status} ${await setup.text()}\n${logs.join("")}`,
+      `开家庭失败：${setup.status} ${await setup.text()}\n${logs.join("")}`,
     );
   token = ((await setup.json()) as { token: string }).token;
 }, 60000);
@@ -284,23 +301,43 @@ it("backs up to the real service, verifies, and joins from a wiped phone", async
   expect((await transport.status()).keyId).toBeNull();
 }, 120000);
 it("两台手机一起写 through the real service", async () => {
-  const member = { username: "e2emom", password: "e2e-password-456" };
-  const created = await fetch(`${base}/admin/members`, {
+  // 妈妈的手机：登记申请 → 爸爸批准 → 妈妈凭领取凭据领令牌 → 确认。
+  const json = { "Content-Type": "application/json" };
+  const claim = randomBytes(16).toString("hex");
+  const created = await fetch(`${base}/pair/requests`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(member),
+    headers: json,
+    body: JSON.stringify({
+      publicKey: randomBytes(32).toString("base64url"),
+      deviceName: "vitest-b",
+      claimHash: createHash("sha256").update(claim).digest("hex"),
+    }),
   });
   expect(created.status).toBe(201);
-  const login = await fetch(`${base}/login`, {
+  const { requestId } = (await created.json()) as { requestId: string };
+  const approved = await fetch(`${base}/pair/requests/${requestId}/approve`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...member, deviceName: "vitest-b" }),
+    headers: { ...json, Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      member: { id: randomUUID(), name: "妈妈", role: "member" },
+      enc: randomBytes(32).toString("base64url"),
+      ct: randomBytes(80).toString("base64url"),
+    }),
   });
-  expect(login.status).toBe(200);
-  const tokenB = ((await login.json()) as { token: string }).token;
+  expect(approved.status).toBe(200);
+  const collected = await fetch(`${base}/pair/requests/${requestId}/collect`, {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({ claim }),
+  });
+  expect(collected.status).toBe(200);
+  const tokenB = ((await collected.json()) as { token: string }).token;
+  const confirmed = await fetch(`${base}/pair/requests/${requestId}/confirm`, {
+    method: "POST",
+    headers: { ...json, Authorization: `Bearer ${tokenB}` },
+    body: "{}",
+  });
+  expect(confirmed.status).toBe(200);
   expect(tokenB).toBeTruthy();
   const transportA = createTransport(nodeHttp, base, async () => token);
   const transportB = createTransport(nodeHttp, base, async () => tokenB);

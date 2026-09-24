@@ -6,13 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import Database from 'better-sqlite3';
-import { unusedTranscribe } from './helpers.ts';
+import { unusedTranscribe, seedFamily, addMember } from './helpers.ts';
 import { CLAIMS_PER_DEVICE, DEFAULT_BACKUP_LIMIT, Store } from '../src/store.ts';
 import { createApp } from '../src/app.ts';
-import { hashPassword } from '../src/passwords.ts';
 import { BackupStore, FAMILY_DIR, OBJECT_LIMIT } from '../src/backup-store.ts';
 
-const PW='12345678',HASH=await hashPassword(PW);
 const sha=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 const oid=(n:number)=>n.toString(16).padStart(64,'0');
 const octet={'content-type':'application/octet-stream'};
@@ -21,9 +19,9 @@ function fixture() {
  const dir=mkdtempSync(join(tmpdir(),'anan-backup-test-'));
  const store=new Store(':memory:'),backups=new BackupStore(dir);
  const app=createApp(store,async()=>{throw new Error('no provider in this test');},'test',backups,unusedTranscribe);
- const owner=store.setup('主人',HASH,'主人手机');
- store.createMember('家人',HASH);const member=store.attach(store.byUsername('家人')!.id,'家人手机');
- store.createMember('外婆',HASH);const other=store.attach(store.byUsername('外婆')!.id,'外婆手机');
+ const owner=seedFamily(store);
+ const member=addMember(store,'家人','家人手机');
+ const other=addMember(store,'外婆','外婆手机');
  const headers=(token=member.token,extra:Record<string,string>={})=>({authorization:`Bearer ${token}`,...extra});
  const put=(id:string,bytes:Buffer,token=member.token,digestHex=sha(bytes))=>app.inject({method:'PUT',url:`/api/v1/backup/objects/${id}`,headers:headers(token,{...octet,'x-object-sha256':digestHex}),payload:bytes});
  const publish=(token:string,objects?:string[],keyId=KEY,index=INDEX)=>app.inject({method:'PUT',url:'/api/v1/backup/manifest',headers:headers(token),payload:objects?{keyId,index,objects}:{keyId,index}});
@@ -480,10 +478,10 @@ test('A-8 没有设备行的 legacy 清单仍列入全家合并',async t=>{
  assert.deepEqual(listed.json().map((m:{deviceId:string})=>m.deviceId).sort(),[legacy,f.other.member.deviceId].sort());
  assert.equal(listed.json().find((m:{deviceId:string})=>m.deviceId===legacy).index,INDEX);
 });
-test('A-8 重置成员登录只撤销令牌，保留其设备清单',async t=>{
+test('A-8 管理者停用一台设备只撤销令牌，保留其设备清单',async t=>{
  const f=fixture();t.after(f.close);
  await f.publish(f.member.token,[]);
- const result=await f.app.inject({method:'PUT',url:`/api/v1/admin/members/${f.member.member.id}/login`,headers:f.headers(f.owner.token),payload:{username:'家人',password:'new-password'}});
+ const result=await f.app.inject({method:'DELETE',url:`/api/v1/admin/devices/${f.member.member.deviceId}`,headers:f.headers(f.owner.token)});
  assert.equal(result.statusCode,200);
  assert.ok(f.store.manifestOf(f.member.member.deviceId!));
  assert.equal((await f.app.inject({url:'/api/v1/backup/manifests',headers:f.headers()})).statusCode,401);
@@ -545,14 +543,14 @@ test('迁移加固：不合法的文件保留在原目录，不递归删掉',t=>
  assert.deepEqual(f.backups.migrateMemberSpaces(),{members:1,moved:0,duplicates:0,failed:1});
  assert.equal(readFileSync(junk,'utf8'),'必须保留');assertUsage(t,f.backups);
 });
-for(const action of ['login','device','settings'] as const) test(`权限加固：家人调用 ${action} 管理入口返回 403`,async t=>{
+for(const action of ['profile','device','settings'] as const) test(`权限加固：家人调用 ${action} 管理入口返回 403`,async t=>{
  const f=fixture();t.after(f.close);
- const request=action==='login'
-  ?{method:'PUT' as const,url:`/api/v1/admin/members/${f.other.member.id}/login`,payload:{username:'外婆',password:'new-password'}}
+ const request=action==='profile'
+  ?{method:'PUT' as const,url:`/api/v1/admin/members/${f.other.member.id}/profile`,payload:{name:'外婆',role:'admin'}}
   :action==='device'?{method:'DELETE' as const,url:`/api/v1/admin/devices/${f.other.member.deviceId}`}
   :{method:'PUT' as const,url:'/api/v1/admin/settings',payload:{paused:true,globalPhotos:1,globalWrites:1}};
  const result=await f.app.inject({...request,headers:f.headers()});
- assert.equal(result.statusCode,403);assert.equal(result.json().code,'OWNER_ONLY');
+ assert.equal(result.statusCode,403);assert.equal(result.json().code,'ADMIN_ONLY');
 });
 
 test('每设备对象占位低于上限与恰好到上限都通过，重复 id 不计新增，超一条整批拒绝',async t=>{
@@ -564,7 +562,7 @@ test('每设备对象占位低于上限与恰好到上限都通过，重复 id �
  f.store.claimObjects(device,[oid(CLAIMS_PER_DEVICE-1)],now);assert.equal(count(),CLAIMS_PER_DEVICE-1);
  // 还差一条时提交两条：整批回滚，已有占位也不能被部分续期。
  const rejected=await f.app.inject({method:'POST',url:'/api/v1/backup/objects/have',headers:f.headers(),payload:{ids:[oid(1),oid(CLAIMS_PER_DEVICE),oid(CLAIMS_PER_DEVICE+1)]}});
- assert.equal(rejected.statusCode,413);assert.equal(rejected.json().code,'QUOTA_FULL');assert.equal(rejected.json().message,'远端对象数量已到上限，请联系主人。');assert.equal(count(),CLAIMS_PER_DEVICE-1);
+ assert.equal(rejected.statusCode,413);assert.equal(rejected.json().code,'QUOTA_FULL');assert.equal(rejected.json().message,'远端对象数量已到上限，请联系管理者。');assert.equal(count(),CLAIMS_PER_DEVICE-1);
  assert.equal((f.store.db.prepare('SELECT claimed_at FROM backup_object_claims WHERE device_id=? AND object_id=?').get(device,oid(1)) as {claimed_at:number}).claimed_at,now);
  assert.equal(f.store.db.prepare('SELECT 1 FROM backup_object_claims WHERE device_id=? AND object_id=?').get(device,oid(CLAIMS_PER_DEVICE)),undefined);
  f.store.claimObjects(device,[oid(CLAIMS_PER_DEVICE),oid(CLAIMS_PER_DEVICE),oid(1)],now);assert.equal(count(),CLAIMS_PER_DEVICE);
