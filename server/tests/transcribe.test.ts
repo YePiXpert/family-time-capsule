@@ -10,13 +10,14 @@ import { createServer } from 'node:http';
 import { createApp } from '../src/app.ts';
 import { Store, Problem } from '../src/store.ts';
 import { BackupStore } from '../src/backup-store.ts';
+import { seedFamily } from './helpers.ts';
 import { cpaTranscriber, ffmpegTranscoder, wavHeader, type Transcoder, type Transcriber } from '../src/transcribe.ts';
 
 const input=Buffer.from('测试 m4a 原体'),wav=Buffer.concat([wavHeader(32000),Buffer.alloc(32000)]);
 const problem=(code:string,status?:number)=>(error:unknown)=>error instanceof Problem&&error.code===code&&(status===undefined||error.status===status);
 function fixture(t:TestContext) {
  const dir=mkdtempSync(join(tmpdir(),'anan-transcribe-test-')),store=new Store(':memory:');
- const owner=store.setup('主人','测试密码哈希','手机'),second=store.attach(owner.member.id,'第二台'),third=store.attach(owner.member.id,'第三台');
+ const owner=seedFamily(store,'主人','手机'),second=store.attach(owner.member.id,'第二台'),third=store.attach(owner.member.id,'第三台');
  let transcode:Transcoder=async()=>({wav,seconds:12}),transcribe:Transcriber=async()=>({text:' 你好呀 ',tokens:9});
  const decoded:Buffer[]=[],sent:Buffer[]=[];
  const app=createApp(store,async()=>{throw new Error('本测试不调用文本模型');},'test',new BackupStore(join(dir,'backup')),{

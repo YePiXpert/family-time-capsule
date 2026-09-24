@@ -1,5 +1,5 @@
-"""Exercise five text modes, transcription and backups with synthetic data; never print device tokens."""
-import argparse,base64,json,subprocess,tempfile,time,urllib.request,urllib.error,uuid
+"""Exercise family activation, device pairing, recovery, five text modes, transcription and backups with synthetic data; never print device tokens."""
+import argparse,base64,hashlib,json,os,re,subprocess,tempfile,time,urllib.request,urllib.error,uuid
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--base',default='http://127.0.0.1:3141');p.add_argument('--container',default='anan-ai-staging-ai-1');p.add_argument('--skip-transcribe',action='store_true');p.add_argument('--skip-text',action='store_true');p.add_argument('--allow-live',action='store_true');args=p.parse_args()
 if not args.allow_live:p.error('Real calls disabled: obtain App usage/billing authorization before --allow-live.')
@@ -31,26 +31,51 @@ for attempt in range(15):
   if attempt==14: raise
   time.sleep(1)
 print('health ready');assert call('/api/v1/me')[0]==401
-password='verification-passphrase'
+# 家庭与设备：服务端只管状态机、不解钥匙包，所以公钥、钥匙包与恢复包都用合成随机字节。
+b64url=lambda n:base64.urlsafe_b64encode(os.urandom(n)).decode().rstrip('=')
+sha=lambda text:hashlib.sha256(text.encode()).hexdigest()
+proof=os.urandom(32).hex();key_id='0123456789abcdef'
 status,state=call('/api/v1/status');assert status==200
 if state['initialized']:
- # 复跑：用兜底命令给既有主人重设密码后登录（这也是丢手机时的找回路径）。
- subprocess.run(['docker','exec',args.container,'node','src/manage.ts','password','deployment-owner',password],check=True)
- status,owner=call('/api/v1/login',{'username':'deployment-owner','password':password,'deviceName':'deployment-verification'});assert status==200
+ # 复跑：已有家庭时直接在容器里给第一位管理者登记一台验证设备（令牌只进本进程，不打印）。
+ script="import{Store}from'./src/store.ts';const s=new Store('/data/ai.sqlite');const a=s.admins()[0];process.stdout.write(JSON.stringify(s.attach(a.id,'deployment-verification')));s.close();"
+ owner=json.loads(subprocess.check_output(['docker','exec',args.container,'node','--input-type=module','-e',script],text=True))
 else:
- status,owner=call('/api/v1/setup',{'username':'deployment-owner','password':password,'deviceName':'deployment-verification'});assert status==201
-assert owner['member']['role']=='owner'
+ printed=subprocess.check_output(['docker','exec',args.container,'node','src/manage.ts','activation'],text=True)
+ code=re.search(r'[0-9A-Z]{5}(?:-[0-9A-Z]{5}){4}',printed).group(0)
+ family={'familyId':str(uuid.uuid4()),'keyId':key_id,'recovery':{'envelope':base64.b64encode(os.urandom(57)).decode(),'verifier':sha(proof)}}
+ body={'activationCode':code,'memberId':str(uuid.uuid4()),'memberName':'deployment-owner','deviceName':'deployment-verification','publicKey':b64url(32),**family}
+ assert call('/api/v1/family/activate',{**body,'activationCode':'00000-00000-00000-00000-00000'})[0]==403
+ status,owner=call('/api/v1/family/activate',body);assert status==201,status
+ assert call('/api/v1/family/activate',body)[0]==409
+ assert call('/api/v1/status')[1]=={'initialized':True,'family':True}
+assert owner['member']['role']=='admin'
 token=owner['token']
 status,config=call('/api/v1/ai/config',token=token);assert status==200
 assert config['defaultModel']=='mimo-v2.6-pro' and config['reasoningEffort']=='per-mode'
 assert config['enabledModels']==['mimo-v2.6-pro']
-status,created=call('/api/v1/admin/members',{'username':'verification-member','password':password},token);assert status==201 or status==409
-status,member=call('/api/v1/login',{'username':'verification-member','password':password,'deviceName':'synthetic-test'})
-if status!=200:
- # 开放加入时代留下的旧成员没有密码，补上同一条兜底命令后再登录。
- subprocess.run(['docker','exec',args.container,'node','src/manage.ts','password','verification-member',password],check=True)
- status,member=call('/api/v1/login',{'username':'verification-member','password':password,'deviceName':'synthetic-test'})
-assert status==200
+for gone in ('/api/v1/setup','/api/v1/login'):assert call(gone,{})[0]==404
+def pair(member,device_name):
+ """新手机登记申请 → 管理者批准 → 新手机凭领取凭据领令牌 → 确认。"""
+ claim=os.urandom(16).hex();public_key=b64url(32)
+ status,created=call('/api/v1/pair/requests',{'publicKey':public_key,'deviceName':device_name,'claimHash':sha(claim)});assert status==201,status
+ request_id=created['requestId']
+ status,seen=call('/api/v1/pair/requests/'+request_id,token=token);assert status==200 and seen['publicKey']==public_key and seen['status']=='pending'
+ assert call('/api/v1/pair/requests/'+request_id+'/collect',{'claim':claim})[0]==202
+ status,approved=call('/api/v1/pair/requests/'+request_id+'/approve',{'member':member,'enc':b64url(32),'ct':b64url(80)},token);assert status==200,status
+ assert approved['binding']['deviceId']==seen['deviceId'] and approved['binding']['approverDeviceId']==owner['member']['deviceId']
+ assert call('/api/v1/pair/requests/'+request_id+'/collect',{'claim':'00'*16})[0]==404
+ status,got=call('/api/v1/pair/requests/'+request_id+'/collect',{'claim':claim});assert status==200 and got['binding']==approved['binding']
+ assert call('/api/v1/pair/requests/'+request_id+'/confirm',{},got['token'])[0]==200
+ assert call('/api/v1/pair/requests/'+request_id+'/collect',{'claim':claim})[0]==410
+ return got
+member_id=str(uuid.uuid4())
+member=pair({'id':member_id,'name':'verification-member','role':'member'},'synthetic-test')
+assert member['member']['role']=='member'
+if not state['initialized']:
+ assert call('/api/v1/recovery/claim',{'proof':os.urandom(32).hex()})[0]==403
+ status,admins=call('/api/v1/recovery/claim',{'proof':proof});assert status==200 and [a['name'] for a in admins['admins']]==['deployment-owner']
+print('family activation, pairing and recovery check passed')
 assert call('/api/v1/admin/overview',token=member['token'])[0]==403
 image='data:image/jpeg;base64,'+base64.b64encode((Path(__file__).parent.parent/'tests/fixtures/shapes.jpg').read_bytes()).decode()
 # 合成文本验证五种模式：只记录状态、耗时和用量，不打印设备凭证或正文。
@@ -145,7 +170,7 @@ index=base64.b64encode(b'verification-index').decode()
 status,_=call('/api/v1/backup/manifest',{'keyId':'0123456789abcdef','index':index,'objects':[object_id]},member['token'],method='PUT');assert status==200
 status,manifest=call('/api/v1/backup/manifest',token=member['token']);assert status==200 and manifest['keyId']=='0123456789abcdef' and manifest['deviceId']==member['member']['deviceId']
 status,manifests=call('/api/v1/backup/manifests',token=member['token']);assert status==200 and any(m['deviceId']==member['member']['deviceId'] and m['index']==index and m['deviceName']=='synthetic-test' for m in manifests)
-status,second=call('/api/v1/login',{'username':'verification-member','password':password,'deviceName':'synthetic-second'});assert status==200
+second=pair({'id':member_id},'synthetic-second')
 status,fallback=call('/api/v1/backup/manifest',token=second['token']);assert status==200 and fallback['deviceId']==member['member']['deviceId'] and fallback['index']==index
 status,state=call('/api/v1/backup/status',token=member['token']);assert status==200 and state['objects']>=1 and state['bytes']>=len(blob) and state['keyId']=='0123456789abcdef' and state['manifests']>=1 and state['limitBytes']>0
 status,refused=call('/api/v1/backup/prune',{'keep':[]},member['token']);assert status==400 and refused['code']=='INVALID_INPUT'
@@ -163,4 +188,4 @@ for device in overview['devices']:
 assert call('/api/v1/me',token=member['token'])[0]==401
 # Revoke the temporary owner device through the local administrator, leaving no test access active.
 subprocess.run(['docker','exec',args.container,'node','--input-type=module','-e',"import{Store}from'./src/store.ts';const s=new Store('/data/ai.sqlite');s.db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(process.argv[1]);s.close();",owner['member']['deviceId']],check=True,stdout=subprocess.DEVNULL)
-print('Accounts, login, owner isolation, model results, idempotency, family backup space and revocation verified.')
+print('Family activation, device pairing, recovery, admin isolation, model results, idempotency, family backup space and revocation verified.')

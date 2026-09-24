@@ -2,7 +2,6 @@ import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 import { Store, Problem, digest, type Member, type BackupManifest } from './store.ts';
 import { inputSchema, parseEditorContext, parseResult, polishBody, POLISH_BODY_LIMIT, transcribeResultSchema } from './contracts.ts';
-import { hashPassword, verifyPassword, timingDummy, needsRehash } from './passwords.ts';
 import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS, THINKING_POLICY } from './ai-model.ts';
 import type { Provider } from './provider.ts';
 import { BackupStore, FREE_FLOOR, OBJECT_ID, OBJECT_LIMIT } from './backup-store.ts';
@@ -18,7 +17,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
  const cache=new Map<string,{expires:number;value:unknown}>();
  const attempts=new Map<string,{count:number;expires:number}>();
  const auth=(header?:string) => store.auth(header?.startsWith('Bearer ')?header.slice(7):'');
- const owner=(header?:string) => {const member=auth(header);if(member.role!=='owner')throw new Problem(403,'OWNER_ONLY','此操作仅限主人。');return member;};
+ const admin=(header?:string) => {const member=auth(header);if(member.role!=='admin')throw new Problem(403,'ADMIN_ONLY','此操作仅限管理者。');return member;};
  app.setErrorHandler((err,_request,reply)=>{
   if(err instanceof Problem) return reply.code(err.status).send({code:err.code,message:err.message});
   if(err instanceof ZodError) return reply.code(400).send({code:'INVALID_INPUT',message:'输入内容无效，请检查后重试。'});
@@ -30,44 +29,85 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
  });
  app.addHook('onSend',async (_request,reply)=>{reply.header('Cache-Control','no-store');reply.header('X-Content-Type-Options','nosniff');});
  app.get('/healthz',async ()=>{store.db.prepare('SELECT 1').get();return {status:'ok',version};});
- app.get('/',async (_request,reply)=>reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>桉桉成长记</title><style>body{font:18px system-ui;max-width:600px;margin:15vh auto;padding:24px;background:#F7F8F5;color:#202923;line-height:1.8}h1{font-size:28px}</style><h1>桉桉成长记</h1><p>留住每一个值得记住的日子。</p><p>请在手机应用中记录、整理照片和使用 AI。照片与成长记录保存在你的手机，家人用账号登录后即可使用 AI。</p></html>'));
- app.get('/api/v1/status',async ()=>({initialized:store.initialized()}));
- // 用户名给家人用：中文、字母、数字、下划线、连字符；密码只限长度，不搞组合规则。
- const username=z.string().trim().regex(/^[\p{L}\p{N}_-]{2,40}$/u,'用户名需 2–40 个字符，可用中文、字母、数字、下划线或连字符');
- const credentials=z.object({username,password:z.string().min(8).max(128),deviceName:z.string().trim().min(1).max(80)}).strict();
- const throttle=(req:{ip:string},perIp:number,globalLimit:number)=>{
+ app.get('/',async (_request,reply)=>reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>桉桉成长记</title><style>body{font:18px system-ui;max-width:600px;margin:15vh auto;padding:24px;background:#F7F8F5;color:#202923;line-height:1.8}h1{font-size:28px}</style><h1>桉桉成长记</h1><p>留住每一个值得记住的日子。</p><p>请在手机应用中记录。成长记录保存在家人的手机上；家人一起写时，这里只存加密后的内容。AI 只处理家人当次主动提交的文字或声音。</p></html>'));
+ app.get('/api/v1/status',async ()=>({initialized:store.initialized(),family:!!store.family()}));
+ // ── 家庭与设备（1.1.0）：没有用户名密码。空服务凭部署端激活码开家庭；新手机由管理者当面扫码批准；
+ // 所有管理者手机都没了，凭恢复码找回。服务端只存令牌哈希、设备公钥、加密的钥匙包与恢复证明的哈希。
+ const throttle=(req:{ip:string},scope:string,perIp:number,globalLimit:number)=>{
   for(const [key,value] of attempts)if(value.expires<Date.now())attempts.delete(key);
-  // Per-connection-address plus global throttle; do not trust spoofable forwarded headers.
-  for(const key of [req.ip,'global']) {
+  // Per-connection-address plus global throttle per endpoint; do not trust spoofable forwarded headers.
+  for(const [key,limit] of [[`${scope}:${req.ip}`,perIp],[`${scope}:global`,globalLimit]] as const) {
    const entry=attempts.get(key)??{count:0,expires:Date.now()+60000};entry.count++;attempts.set(key,entry);
-   if(entry.count>(key==='global'?globalLimit:perIp))throw new Problem(429,'RATE_LIMIT','尝试过多，请稍后再试。');
+   if(entry.count>limit)throw new Problem(429,'RATE_LIMIT','尝试过多，请稍后再试。');
   }
  };
- app.post('/api/v1/setup',async (req,reply)=>{
-  throttle(req,20,60);
-  const input=credentials.parse(req.body);
-  return reply.code(201).send(store.setup(input.username,await hashPassword(input.password),input.deviceName));
+ const name=z.string().trim().min(1).max(20);
+ const deviceName=z.string().trim().min(1).max(80);
+ const key32=z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+ const hex=(bytes:number)=>z.string().regex(new RegExp(`^[a-f0-9]{${bytes*2}}$`));
+ const recovery=z.object({envelope:z.string().min(40).max(200).regex(/^[A-Za-z0-9+/]+=*$/),verifier:hex(32)}).strict();
+ const familyInput={familyId:z.string().uuid(),keyId:hex(8),recovery};
+ const pairParams=z.object({id:z.string().uuid()});
+ app.post('/api/v1/family/activate',async (req,reply)=>{
+  throttle(req,'activate',10,30);
+  const input=z.object({activationCode:z.string().min(20).max(40),memberId:z.string().uuid(),memberName:name,deviceName,publicKey:key32,...familyInput}).strict().parse(req.body);
+  const {activationCode,...rest}=input;
+  return reply.code(201).send(store.activate(activationCode,rest));
  });
- app.post('/api/v1/login',async req=>{
-  throttle(req,10,60);
-  const input=credentials.parse(req.body);
-  const member=store.byUsername(input.username);
-  const ok=member?await verifyPassword(input.password,member.password_hash):await timingDummy(input.password);
-  if(!member||!ok)throw new Problem(401,'LOGIN_INVALID','用户名或密码不对。');
-  // 旧格式或低成本的哈希趁着手里有明文密码顺手升级。
-  if(needsRehash(member.password_hash))store.setPassword(member.id,await hashPassword(input.password));
-  return store.attach(member.id,input.deviceName);
+ app.post('/api/v1/family/upgrade',async req=>{
+  const member=admin(req.headers.authorization);
+  const input=z.object({publicKey:key32,...familyInput}).strict().parse(req.body);
+  const family=store.upgrade(member,input);
+  return {familyId:family.familyId,keyId:family.keyId,recoveryVersion:family.recoveryVersion};
  });
- app.put('/api/v1/password',async req=>{
-  throttle(req,10,60);
-  const member=auth(req.headers.authorization);
-  const input=z.object({current:z.string().optional(),next:z.string().min(8).max(128)}).strict().parse(req.body);
-  const full=store.fullById(member.id);
-  if(full?.password_hash&&!(input.current&&await verifyPassword(input.current,full.password_hash)))throw new Problem(401,'PASSWORD_WRONG','当前密码不对。');
-  store.setPassword(member.id,await hashPassword(input.next));
-  // 改密后其他设备一律下线，只保留当前这台。
-  store.revokeOthers(member.id,member.deviceId!);
+ app.get('/api/v1/family',async req=>{
+  const member=auth(req.headers.authorization),family=store.family();
+  if(!family)throw new Problem(404,'FAMILY_MISSING','这台服务还没有家庭。');
+  return {familyId:family.familyId,keyId:family.keyId,recoveryVersion:family.recoveryVersion,me:{memberId:member.id,deviceId:member.deviceId,name:member.name,role:member.role},members:store.members().map(m=>({id:m.id,name:m.name,role:m.role,enabled:!!m.enabled}))};
+ });
+ app.post('/api/v1/pair/requests',async (req,reply)=>{
+  throttle(req,'pair',10,30);
+  const input=z.object({publicKey:key32,deviceName,claimHash:hex(32)}).strict().parse(req.body);
+  return reply.code(201).send(store.createPair(input));
+ });
+ app.get('/api/v1/pair/requests/:id',async req=>{
+  admin(req.headers.authorization);
+  return store.pairForApprover(pairParams.parse(req.params).id);
+ });
+ app.post('/api/v1/pair/requests/:id/approve',async req=>{
+  const approver=admin(req.headers.authorization),{id}=pairParams.parse(req.params);
+  const input=z.object({member:z.object({id:z.string().uuid(),name:name.optional(),role:z.enum(['admin','member']).optional()}).strict(),enc:key32,ct:z.string().regex(/^[A-Za-z0-9_-]{24,600}$/)}).strict().parse(req.body);
+  return {binding:store.approvePair(approver,id,input)};
+ });
+ app.post('/api/v1/pair/requests/:id/collect',async (req,reply)=>{
+  throttle(req,'collect',90,300);
+  const {id}=pairParams.parse(req.params),{claim}=z.object({claim:hex(16)}).strict().parse(req.body);
+  const result=store.collectPair(id,claim);
+  return reply.code(result.status==='pending'?202:200).send(result);
+ });
+ app.post('/api/v1/pair/requests/:id/confirm',async req=>{
+  const device=auth(req.headers.authorization);
+  store.confirmPair(device,pairParams.parse(req.params).id);
   return {ok:true};
+ });
+ app.post('/api/v1/pair/requests/:id/cancel',async req=>{
+  const {id}=pairParams.parse(req.params),body=z.object({claim:hex(16).optional()}).strict().parse(req.body??{});
+  if(body.claim===undefined){admin(req.headers.authorization);store.cancelPair(id);}
+  else {throttle(req,'collect',90,300);store.cancelPair(id,body.claim);}
+  return {ok:true};
+ });
+ app.post('/api/v1/recovery/claim',async req=>{
+  throttle(req,'recovery',5,10);
+  const input=z.object({proof:hex(32),memberId:z.string().uuid().optional(),deviceName:deviceName.optional(),publicKey:key32.optional()}).strict().parse(req.body);
+  // 第一步只核对恢复证明、列出管理者让选「我是谁」；第二步才登记新手机。
+  if(!input.memberId||!input.deviceName||!input.publicKey){store.checkRecovery(input.proof);return {admins:store.admins().map(m=>({id:m.id,name:m.name}))};}
+  const {family,...device}=store.recoverAdmin(input.proof,{memberId:input.memberId,deviceName:input.deviceName,publicKey:input.publicKey});
+  return {...device,familyId:family.familyId,keyId:family.keyId,recovery:{envelope:family.recoveryEnvelope,version:family.recoveryVersion}};
+ });
+ app.put('/api/v1/admin/recovery',async req=>{
+  admin(req.headers.authorization);
+  const input=z.object({keyId:hex(8),version:z.number().int().min(2),envelope:recovery.shape.envelope,verifier:hex(32)}).strict().parse(req.body);
+  store.setRecovery(input);return {ok:true};
  });
  app.get('/api/v1/me',async req=>{const member=auth(req.headers.authorization);return {member,usage:store.usage(member.id),resetTimezone:'UTC'};});
  app.get('/api/v1/ai/config',async req=>{auth(req.headers.authorization);const config=store.settings();return {...config,reasoningEffort:'per-mode',thinkingPolicy:THINKING_POLICY,models:[{id:MODEL_ID,label:MODEL_LABEL}]};});
@@ -142,7 +182,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
    let audio:{wav:Buffer;seconds:number};
    try {audio=await transcribe.transcoder(input,{maxSeconds:180});}
    catch(error){
-    if((error as NodeJS.ErrnoException)?.code==='ENOENT'){console.error('转写不可用：未找到 ffmpeg。');throw new Problem(503,'UPSTREAM_UNAVAILABLE','转文字暂时不可用，请联系主人。');}
+    if((error as NodeJS.ErrnoException)?.code==='ENOENT'){console.error('转写不可用：未找到 ffmpeg。');throw new Problem(503,'UPSTREAM_UNAVAILABLE','转文字暂时不可用，请联系管理者。');}
     if(error instanceof Problem&&error.code==='AUDIO_TOO_LONG')throw error;
     throw new Problem(400,'INVALID_AUDIO','这段录音读不出来，换一段试试。');
    }
@@ -196,10 +236,10 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   const declared=req.headers['content-length']===undefined?undefined:Number(req.headers['content-length']);
   if(declared!==undefined&&!(Number.isSafeInteger(declared)&&declared>=0))throw new Problem(400,'INVALID_INPUT','请求长度无效。');
   if(declared!==undefined&&declared>OBJECT_LIMIT)throw new Problem(413,'TOO_LARGE','这一份太大，请更新应用后重试。');
-  if(await backupStore.freeBytes()<FREE_FLOOR)throw new Problem(507,'SERVER_FULL','服务器空间不足，请联系主人。');
+  if(await backupStore.freeBytes()<FREE_FLOOR)throw new Problem(507,'SERVER_FULL','服务器空间不足，请联系管理者。');
   // 配额按「比原来多出的字节」算：同 id 重传若变大，一样要有余量（receive 收完再按实际字节复核一次）。
   const left=quotaLeft(),previous=backupStore.stat(id)??0;
-  if(declared!==undefined&&declared-previous>left)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系主人调整。');
+  if(declared!==undefined&&declared-previous>left)throw new Problem(413,'QUOTA_FULL','远端备份空间已用完，请联系管理者调整。');
   // 每台设备同时最多两个上传：一台手机把服务端撑满时别的手机不受影响。
   const lane=member.deviceId??member.id,active=uploading.get(lane)??0;
   if(active>=2)throw new Problem(429,'BUSY','正在上传其他内容，请稍后再试。');
@@ -240,7 +280,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   const member=auth(req.headers.authorization),{deviceId}=deviceParam.parse(req.params);
   const manifest=store.manifestOf(deviceId);
   if(!manifest)throw new Problem(404,'NOT_FOUND','远端没有这份清单。');
-  if(member.role!=='owner'&&manifest.memberId!==member.id)throw new Problem(403,'OWNER_ONLY','只能删自己设备的清单。');
+  if(member.role!=='admin'&&manifest.memberId!==member.id)throw new Problem(403,'ADMIN_ONLY','只能删自己设备的清单。');
   store.deleteManifest(deviceId);
   return {ok:true,pruned:sweep()};
  });
@@ -258,45 +298,37 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
   return {ok:true,pruned:sweep()};
  });
  app.get('/api/v1/admin/overview',async req=>{
-  owner(req.headers.authorization);
+  admin(req.headers.authorization);
   // 对象空间是全家一份，成员行上只挂各自设备的清单时间；配额取主人的。
   const manifests=store.manifests();
   return {members:store.members().map(m=>({...m,usage:store.usage(m.id),manifests:manifests.filter(x=>x.memberId===m.id).map(x=>({deviceId:x.deviceId,deviceName:x.deviceName,updatedAt:iso(x.updatedAt)}))})),devices:store.devices(),usage:store.usage(),recent:store.recentUsage(),settings:store.settings(),availableModels:MODEL_IDS,backup:{...backupStore.usage(),limitBytes:store.familyLimitBytes(),manifests:manifests.length},backupFreeBytes:await backupStore.freeBytes()};
  });
- app.post('/api/v1/admin/members',async (req,reply)=>{
-  owner(req.headers.authorization);
-  const input=z.object({username,password:z.string().min(8).max(128)}).strict().parse(req.body);
-  return reply.code(201).send(store.createMember(input.username,await hashPassword(input.password)));
- });
- app.put('/api/v1/admin/members/:id/login',async req=>{
-  owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
-  const input=z.object({username,password:z.string().min(8).max(128)}).strict().parse(req.body);
-  store.setLogin(id,input.username,await hashPassword(input.password));
-  // 主人重置登录后，该成员所有设备全部下线，需用新密码重新登录。
-  store.revokeAll(id);return {ok:true};
+ app.put('/api/v1/admin/members/:id/profile',async req=>{
+  admin(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
+  store.setProfile(id,z.object({name,role:z.enum(['admin','member'])}).strict().parse(req.body));return {ok:true};
  });
  app.patch('/api/v1/admin/members/:id',async req=>{
-  owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
+  admin(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
   const input=z.object({enabled:z.boolean(),photoLimit:z.number().int().min(0).max(10000),writeLimit:z.number().int().min(0).max(10000),backupLimitBytes:z.number().int().min(0).max(10*1024**4).optional()}).strict().parse(req.body);
   store.editMember(id,input);return {ok:true};
  });
  app.delete('/api/v1/admin/members/:id/backup',async req=>{
-  owner(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
-  if(!store.fullById(id))throw new Problem(404,'NOT_FOUND','成员不存在。');
+  admin(req.headers.authorization);const {id}=z.object({id:z.string().uuid()}).parse(req.params);
+  if(!store.hasMember(id))throw new Problem(404,'NOT_FOUND','成员不存在。');
   store.deleteMemberManifests(id);return {ok:true,pruned:sweep()};
  });
  app.delete('/api/v1/admin/backup',async req=>{
   // 主人清空全家远端：先删全部清单再删对象，中途崩溃只会留下没人指着的对象，而不是指着空库的清单。
-  owner(req.headers.authorization);
+  admin(req.headers.authorization);
   store.deleteAllManifests();backupStore.wipe(store);return {ok:true};
  });
  app.delete('/api/v1/admin/devices/:id',async req=>{
-  const member=owner(req.headers.authorization),{id}=z.object({id:z.string().uuid()}).parse(req.params);
-  if(id===member.deviceId)throw new Problem(400,'CURRENT_DEVICE','不能撤销当前主人设备。');
+  const member=admin(req.headers.authorization),{id}=z.object({id:z.string().uuid()}).parse(req.params);
+  if(id===member.deviceId)throw new Problem(400,'CURRENT_DEVICE','不能停用正在用的这台手机。');
   store.revoke(id);return {ok:true};
  });
  app.put('/api/v1/admin/settings',async req=>{
-  owner(req.headers.authorization);
+  admin(req.headers.authorization);
   const input=z.object({paused:z.boolean(),defaultModel:z.enum(LEGACY_MODEL_IDS).optional(),enabledModels:z.array(z.enum(LEGACY_MODEL_IDS)).max(4).optional(),globalPhotos:z.number().int().min(0).max(50000),globalWrites:z.number().int().min(0).max(10000)}).strict().parse(req.body);
   store.setSettings({...input,defaultModel:MODEL_ID,enabledModels:[MODEL_ID]});return {ok:true};
  });
