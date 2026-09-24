@@ -56,6 +56,16 @@ test('objects round-trip byte for byte in the family space; repeats are idempote
  assert.deepEqual(otherShared,shared);assert.ok(otherFree>0);
  await f.close();
 });
+test('two devices uploading the same object at once count it once and keep the first bytes',async()=>{
+ const f=fixture();const bytes=randomBytes(200000);
+ // 两台手机同时传同一份（同 id 同字节）：校验后「查有没有—落盘—记数」是一段同步代码，不会交错。
+ const [a,b]=await Promise.all([f.put(oid(7),bytes),f.put(oid(7),bytes,f.other.token)]);
+ assert.deepEqual([a.statusCode,b.statusCode].sort(),[200,201]);
+ const status=await f.status();
+ assert.equal(status.objects,1);assert.equal(status.bytes,200000);
+ assert.deepEqual(readdirSync(join(f.dir,'tmp')),[]);
+ await f.close();
+});
 test('mismatched, empty or malformed uploads are rejected and leave nothing behind',async()=>{
  const f=fixture();const bytes=randomBytes(1000);
  const wrong=await f.put(oid(2),bytes,f.member.token,sha(Buffer.from('other')));
