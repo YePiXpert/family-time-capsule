@@ -69,6 +69,7 @@ export function AlbumScreen({ route, navigation }: Props<"Album">) {
     <Page scroll={false}>
       <FlatList
         testID="album-reading"
+        alwaysBounceVertical={false}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
         data={album.items}
@@ -363,6 +364,7 @@ export function Picker({ route, navigation }: Props<"Picker">) {
       <FlatList
         ref={list}
         testID="material-list"
+        alwaysBounceVertical={false}
         data={records.filter(
           (r) =>
             (!q.month || monthKey(r.date) === q.month) &&
@@ -481,6 +483,7 @@ export function AlbumDetails({ route, navigation }: Props<"AlbumDetails">) {
         // 「返回调整内容」「保存相册」和选封面都会失灵一次，必须显式放行。
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
+        alwaysBounceVertical={false}
         data={photos}
         keyExtractor={(id) => id}
         numColumns={2}

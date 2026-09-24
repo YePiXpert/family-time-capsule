@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AppState,
-  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -54,6 +53,7 @@ import {
   hapticSuccess,
   messageOf,
   useKeyboardBarOffset,
+  useSheetViewport,
   useStyles,
   useTheme,
 } from "./ui";
@@ -1033,54 +1033,6 @@ const KIND_NAMES: Record<LocalMedia["kind"], string> = {
   video: "视频",
   document: "文件",
 };
-/**
- * 纸的高度跟着「键盘收着时」滚动区最新量到的高度走；键盘弹起期间只记当前高度，纸不缩。
- * 不能取历来最高：安卓的底部安全区晚一拍才到，首帧量到的高了 24，纸就永远多出一截、整页能滑（1.0.5 出包截图）。
- * 安卓的 keyboardDidShow 可能晚于滚动区变矮的那次布局：弹起前 500ms 内矮了一大截的那次「收着」高度不算数，退回它之前那个。
- */
-function useSheetViewport() {
-  const [viewport, setViewport] = useState(0);
-  const [height, setHeight] = useState(0);
-  const open = useRef(false);
-  const current = useRef(0);
-  const closed = useRef({ height: 0, before: 0, at: 0 });
-  useEffect(() => {
-    const ios = Platform.OS === "ios";
-    const show = Keyboard.addListener(
-      ios ? "keyboardWillShow" : "keyboardDidShow",
-      () => {
-        open.current = true;
-        const c = closed.current;
-        // 只认键盘那么大的一跳（>100）：安全区晚到只差几十，不能被当成键盘退回去。
-        if (!ios && c.before - c.height > 100 && Date.now() - c.at < 500) {
-          c.height = c.before;
-          setViewport(c.before);
-        }
-      },
-    );
-    const hide = Keyboard.addListener(
-      ios ? "keyboardWillHide" : "keyboardDidHide",
-      () => {
-        open.current = false;
-        // 滚动区已经长回来（安卓先布局后发事件）就用它；还没长回来，下一次布局会接上。
-        setViewport((v) => Math.max(v, current.current));
-      },
-    );
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-  const measure = (h: number) => {
-    current.current = h;
-    setHeight(h);
-    if (open.current) return;
-    const c = closed.current;
-    closed.current = { height: h, before: c.height, at: Date.now() };
-    setViewport(h);
-  };
-  return { viewport, height, measure };
-}
 const OPEN_LABELS: Record<LocalMedia["kind"], string> = {
   image: "看大图",
   audio: "听录音",

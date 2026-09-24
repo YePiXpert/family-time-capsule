@@ -5,12 +5,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
   AccessibilityInfo,
   Image,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -845,6 +847,8 @@ export function Page({
         <ScrollView
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
+          // iOS 纵向滚动区默认内容再短也回弹：放得下就不动，真长才滑。所有纵向列表同理。
+          alwaysBounceVertical={false}
           contentContainerStyle={s.content}
         >
           {children}
@@ -1145,6 +1149,55 @@ export function SignatureButton({
 export function useKeyboardBarOffset() {
   return -useSafeAreaInsets().bottom;
 }
+/**
+ * 一屏一张纸的页面（编辑、写信）：纸的高度跟着「键盘收着时」滚动区最新量到的高度走；键盘弹起期间只记当前高度，纸不缩。
+ * 用法：滚动区 onLayout 调 measure，纸 minHeight = viewport − 上下内边距，内容高过 height 才 scrollEnabled。
+ * 不能取历来最高：安卓的底部安全区晚一拍才到，首帧量到的高了 24，纸就永远多出一截、整页能滑（1.0.5 出包截图）。
+ * 安卓的 keyboardDidShow 可能晚于滚动区变矮的那次布局：弹起前 500ms 内矮了一大截的那次「收着」高度不算数，退回它之前那个。
+ */
+export function useSheetViewport() {
+  const [viewport, setViewport] = useState(0);
+  const [height, setHeight] = useState(0);
+  const open = useRef(false);
+  const current = useRef(0);
+  const closed = useRef({ height: 0, before: 0, at: 0 });
+  useEffect(() => {
+    const ios = Platform.OS === "ios";
+    const show = Keyboard.addListener(
+      ios ? "keyboardWillShow" : "keyboardDidShow",
+      () => {
+        open.current = true;
+        const c = closed.current;
+        // 只认键盘那么大的一跳（>100）：安全区晚到只差几十，不能被当成键盘退回去。
+        if (!ios && c.before - c.height > 100 && Date.now() - c.at < 500) {
+          c.height = c.before;
+          setViewport(c.before);
+        }
+      },
+    );
+    const hide = Keyboard.addListener(
+      ios ? "keyboardWillHide" : "keyboardDidHide",
+      () => {
+        open.current = false;
+        // 滚动区已经长回来（安卓先布局后发事件）就用它；还没长回来，下一次布局会接上。
+        setViewport((v) => Math.max(v, current.current));
+      },
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  const measure = (h: number) => {
+    current.current = h;
+    setHeight(h);
+    if (open.current) return;
+    const c = closed.current;
+    closed.current = { height: h, before: c.height, at: Date.now() };
+    setViewport(h);
+  };
+  return { viewport, height, measure };
+}
 export function BottomBar({
   children,
   gap = 8,
@@ -1345,7 +1398,7 @@ export function FieldRow({
   );
 }
 /**
- * 页尾的危险动作（删除记录、删除这封草稿信）：单独一张纸卡，居中一行错误色字，
+ * 页尾的危险动作（阅读页的删除记录）：单独一张纸卡，居中一行错误色字，
  * 与上面的卡同一套语汇——不再是飘在纸面上、左右都不挨着的一行红字。确认仍走系统弹窗。
  * 按压与禁用的透明度落在字上：卡在 iOS 是液态玻璃，祖先一透明系统就不画。
  */

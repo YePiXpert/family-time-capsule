@@ -25,6 +25,13 @@
 
 ## 一、当前状态快照（2026-09-24）
 
+- **写信一张纸、放得下的页面不回弹（2026-09-24，未打包）**：主人在 iPhone 上试过 1.0.6「还行」，让做「2 3」（其余页面不回弹、写信页一张纸），「4」（编辑页键盘弹起时纸要不要跟着缩）只评估。改法见 CHANGELOG 顶节与 DESIGN.md「写信」：
+  - `useSheetViewport` 从 `Editor.tsx` 挪进 `ui.tsx` 导出，编辑页与写信页共用；写信页照编辑页的做法（`scrollEnabled` 看内容高、`alwaysBounceVertical={false}`、底部内边距 20、纸 `minHeight = viewport − 40`）。
+  - `LetterEditor.tsx`：`Card`（`letter-sheet`）里是拆封日期（`letter-open-at`，`DateStrip` 同款）、无框标题与正文（`letter-title`／`letter-text`）、录音行、页脚「录一段话」（`letter-record`，文字级）与落款（`letter-from`：一行看不见的同款字撑出宽度、输入框 `absoluteFill` 盖在上面，所以随字宽贴右）。删除是顶栏 `IconButton`（`letter-delete`）。`Field` 与 `DangerCard` 不再用在这页；testID 都没变，iOS 回归与安卓冒烟的写信流程不用改。
+  - 其余纵向滚动区一律 `alwaysBounceVertical={false}`：`Page` 的 `scroll` 默认滚动区、阅读页、月册 `SectionList`、相册／选材／选封面三个 `FlatList`、搜索结果、照片选择、AI 面板。横向条与看大图的缩放区不动。
+  - 安卓冒烟：`assert_fits(sheet)` 收拢编辑页那段检查，写信页在正文写完、按返回收起键盘后再查一次（`letterFits`，另截 `letter-editor`）。iOS 回归只查编辑页。
+  - react-native-web 预览（`entry.tsx` 新增 `letter`／`letter-full` 场景）对过：390 宽空信与写满、深色、320 宽更大文字（信长，可滑）、录音中、键盘；空信往下滚 2000 与不滚逐字节相同，编辑页同。
+
 - **1.0.6 发版（2026-09-24，构建号 79）**：修 1.0.5 出包截图里安卓编辑页还能滑的问题（CHANGELOG「1.0.6」）。
   - 原因：`Editor.tsx` 原先把纸的 `minHeight` 定为滚动区量到过的最高高度减 40。安卓的底部安全区晚一拍才到（这台模拟器 24），首次布局时底栏矮 24、滚动区高 24，取最高就一直多这一截。1.0.5 的安卓层级：滚动区 `[0,76][390,679]`（603 高），「标题、地点、人物」一行被切在 679，`scrollable="true"`。
   - 改法：`useSheetViewport`（`Editor.tsx` 末尾）——键盘收着时每次布局都更新纸高；弹起期间只记当前高度（iOS 用 `keyboardWillShow／WillHide`，安卓 `keyboardDidShow／DidHide`）；安卓的 `keyboardDidShow` 若晚于变矮的那次布局，弹起前 500ms 内矮了 100 以上的那次高度作废、退回上一个（安全区晚到只差几十，不会被当成键盘）；收起时取已长回的高度，没长回就等下一次布局。

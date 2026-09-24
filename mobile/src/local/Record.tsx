@@ -220,7 +220,10 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
         ) : undefined
       }
     >
-      <ScrollView contentContainerStyle={s.content}>
+      <ScrollView
+        alwaysBounceVertical={false}
+        contentContainerStyle={s.content}
+      >
         {photos.length > 0 && (
           <View style={{ gap: 8 }}>
             <ScrollView

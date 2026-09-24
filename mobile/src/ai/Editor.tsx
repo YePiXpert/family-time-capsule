@@ -306,6 +306,7 @@ export function AIEditor({
             </View>
             <ScrollView
               showsVerticalScrollIndicator={false}
+              alwaysBounceVertical={false}
               contentContainerStyle={{
                 gap: 12,
                 paddingTop: 12,
