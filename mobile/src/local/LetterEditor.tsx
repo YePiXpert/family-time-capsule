@@ -16,6 +16,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { JournalIcon } from "../components/JournalIcon";
 import { useLibrary, useStore } from "./context";
 import { PermissionDenied, useRecorder } from "./editorHooks";
+import { ExitGate } from "./exitGate";
 import { isEmptyLetter } from "./empties";
 import { toDayKey } from "./dates";
 import { openAtLabel, PAST_OPEN_AT } from "./letters";
@@ -76,9 +77,8 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
     writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     mounted = useRef(true),
     operation = useRef(false),
-    nextAction = useRef<(() => void) | null>(null),
     // 保存进行中按了返回：记下来，这一轮操作结束后再走，不用一行红字拦人。
-    pendingExit = useRef<(() => void) | null>(null);
+    [exits] = useState(() => new ExitGate());
   const writeNow = useCallback(() => {
     const d = current.current;
     if (!d) return Promise.resolve();
@@ -167,11 +167,9 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
   }, [flush]);
   useEffect(() => {
     if (allowExit) {
-      const action = nextAction.current;
-      nextAction.current = null;
-      action?.();
+      exits.take()?.();
     }
-  }, [allowExit]);
+  }, [allowExit, exits]);
   const change = (patch: Partial<LocalLetter>, keystroke = false) => {
     const d = current.current;
     if (!d) return;
@@ -194,11 +192,12 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       operation.current = false;
       if (mounted.current) setBusy(false);
     }
-    const exit = pendingExit.current;
-    if (exit) {
-      pendingExit.current = null;
-      void run(() => leave(exit));
-    }
+    const exit = exits.release();
+    if (exit) void run(() => leave(exit));
+  };
+  const exitWith = (action: () => void) => {
+    exits.decide(action);
+    setAllowExit(true);
   };
   const leave = async (action: () => void) => {
     const d = current.current;
@@ -211,13 +210,12 @@ export function LetterEditor({ route, navigation }: Props<"LetterEditor">) {
       await deleteLetter(store, d.letter.id);
       current.current = undefined;
     } else await flush();
-    nextAction.current = action;
-    setAllowExit(true);
+    exitWith(action);
   };
   usePreventRemove(!allowExit, ({ data }) => {
     const exit = () => navigation.dispatch(data.action);
     if (operation.current) {
-      pendingExit.current = exit;
+      exits.hold(exit);
       return;
     }
     if (current.current?.recordingFile)
