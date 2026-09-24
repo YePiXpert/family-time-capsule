@@ -5,6 +5,7 @@
  * 真正的成品分辨率在 BookBinder 那边。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocked } from "./lock";
 import {
   Modal,
   PixelRatio,
@@ -40,6 +41,7 @@ export function BookPreview({
   onClose: () => void;
   onBind: () => void;
 }) {
+  const locked = useLocked();
   const s = useStyles(),
     { colors } = useTheme();
   // Modal 自成一个窗口，安全区从应用级 provider 取值手动补，别指望 SafeAreaView 在这里量对。
@@ -120,7 +122,7 @@ export function BookPreview({
 
   return (
     <Modal
-      visible
+      visible={!locked}
       animationType="slide"
       onRequestClose={onClose}
       testID="book-preview"

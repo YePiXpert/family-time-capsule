@@ -16,6 +16,9 @@ import {
   Alert,
   AppState,
   BackHandler,
+  Keyboard,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text as NativeText,
   View,
@@ -49,8 +52,8 @@ import {
 import {
   LocalTheme,
   Button,
+  Card,
   ErrorText,
-  Glass,
   Page,
   Text,
   messageOf,
@@ -83,7 +86,25 @@ import { LetterScreen } from "./LetterScreen";
 import { Quotes } from "./Quotes";
 import { receiveShares } from "./services";
 import { healthFile } from "./health-file";
+import { LockedContext } from "./lock";
 const Stack = createNativeStackNavigator<Routes>();
+/** 解锁门与欢迎页：一张卡放在屏幕正中；字大、屏矮放不下时照常可滑。 */
+function CenteredPage({ children }: { children: ReactNode }) {
+  const s = useStyles();
+  return (
+    <Page top scroll={false}>
+      <ScrollView
+        alwaysBounceVertical={false}
+        contentContainerStyle={[
+          s.content,
+          { flexGrow: 1, justifyContent: "center" },
+        ]}
+      >
+        {children}
+      </ScrollView>
+    </Page>
+  );
+}
 function LockGate({ onUnlock }: { onUnlock: () => void }) {
   const s = useStyles();
   // 锁着时安卓返回键不能穿过这一层去翻下面的页面。
@@ -113,9 +134,8 @@ function LockGate({ onUnlock }: { onUnlock: () => void }) {
     }
   };
   return (
-    <Page top>
-      <View style={{ minHeight: 140 }} />
-      <Glass radius={24} style={{ padding: 20, gap: 12 }}>
+    <CenteredPage>
+      <Card style={{ padding: 20, borderRadius: 24 }}>
         <Text style={s.muted}>{APP_NAME}</Text>
         <Text style={s.title}>这些时光只属于你们</Text>
         <Text style={s.muted}>用指纹、面容或锁屏密码解锁继续。</Text>
@@ -129,8 +149,8 @@ function LockGate({ onUnlock }: { onUnlock: () => void }) {
             void unlock();
           }}
         />
-      </Glass>
-    </Page>
+      </Card>
+    </CenteredPage>
   );
 }
 
@@ -144,12 +164,20 @@ function Root() {
   const reduceMotion = useReducedMotion();
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [locked, setLocked] = useState(state.settings.lockEnabled === true);
+    [locked, setLocked] = useState(state.settings.lockEnabled === true),
+    // iOS 切到多任务界面前先 inactive、快照在进后台时拍：先盖一层纸面，快照里不露内容。
+    [covered, setCovered] = useState(false);
   useEffect(() => {
     const sub = AppState.addEventListener("change", (status) => {
-      // 退到后台即重新上锁；回到前台由解锁门接管。只认 background：iOS 拉下控制中心、
-      // 弹权限框、面容验证本身都只是 inactive，不该把人锁在门外。
-      if (status === "background" && state.settings.lockEnabled) setLocked(true);
+      if (!state.settings.lockEnabled) return;
+      // 退到后台即重新上锁；回到前台由解锁门接管。只在 background 上锁：iOS 拉下控制中心、
+      // 弹权限框、面容验证本身都只是 inactive，不该把人锁在门外，只盖一层、回来就掀开。
+      if (status === "background") {
+        // 收起键盘：输入框不再是第一响应者，回来时 iOS 不会把键盘弹在锁上、字打进盖住的草稿。
+        Keyboard.dismiss();
+        setLocked(true);
+      }
+      if (Platform.OS === "ios") setCovered(status !== "active");
     });
     return () => sub.remove();
   }, [state.settings.lockEnabled]);
@@ -201,9 +229,8 @@ function Root() {
   }, [store]);
   if (!state.welcome)
     return (
-      <Page top>
-        <View style={{ minHeight: 120 }} />
-        <Glass radius={24} style={{ padding: 20, gap: 12 }}>
+      <CenteredPage>
+        <Card style={{ padding: 20, borderRadius: 24 }}>
           <Text style={s.muted}>{APP_NAME}</Text>
           <Text style={s.title}>记下今天的小事</Text>
           <Text>写几句话，留一张照片，慢慢整理成相册。</Text>
@@ -224,12 +251,13 @@ function Root() {
                 .finally(() => setBusy(false));
             }}
           />
-        </Glass>
-      </Page>
+        </Card>
+      </CenteredPage>
     );
   // 锁是盖在页面上的一层，不替换导航：拍照、选照片、分享面板都会让安卓进后台，
   // 替换掉导航会卸载正在写的编辑页、丢掉返回栈，选回来的照片也没处落。
   return (
+    <LockedContext.Provider value={locked}>
     <SyncStatusContext.Provider value={syncStatus}>
       <StatusBar style={theme.dark ? "light" : "dark"} />
       <View
@@ -311,8 +339,16 @@ function Root() {
         <View style={StyleSheet.absoluteFill} accessibilityViewIsModal>
           <LockGate onUnlock={() => setLocked(false)} />
         </View>
+      ) : covered ? (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: theme.colors.paper },
+          ]}
+        />
       ) : null}
     </SyncStatusContext.Provider>
+    </LockedContext.Provider>
   );
 }
 function BoundaryFallback({

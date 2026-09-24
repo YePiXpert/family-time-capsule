@@ -8,6 +8,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary } from "./context";
 import { Photo } from "./Media";
+import { useLocked } from "./lock";
 import { Button, Page, Text, useStyles, useTheme } from "./ui";
 
 /** 一格候选照片：mediaId 兼作 key，label 给读屏，caption 是图下一行说明。 */
@@ -42,6 +43,7 @@ export function PhotoPicker<T extends PhotoChoice>({
   onClose: () => void;
   testID?: string;
 }) {
+  const locked = useLocked();
   const state = useLibrary(),
     s = useStyles(),
     { colors } = useTheme();
@@ -51,7 +53,7 @@ export function PhotoPicker<T extends PhotoChoice>({
   const tile = (width - 40 - 12) / 2;
   return (
     <Modal
-      visible={visible}
+      visible={visible && !locked}
       animationType="slide"
       onRequestClose={onClose}
       accessibilityViewIsModal
