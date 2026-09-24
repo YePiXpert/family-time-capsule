@@ -18,11 +18,10 @@ export type AIProposal = AIResult & {
 export type Member = {
   id: string;
   name: string;
-  role: "owner" | "member";
+  role: "admin" | "member";
   enabled: number;
   photo_limit: number;
   write_limit: number;
-  username?: string | null;
   deviceId?: string;
 };
 export type Usage = {

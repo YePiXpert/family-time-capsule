@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { getToken } from "../ai/session";
+import { getToken } from "../family/session";
 import { BackupStopped } from "../local/backup";
 import { useLibrary, useStore, useSyncStatus } from "../local/context";
 import { useNav } from "../local/navigation";
@@ -85,7 +85,7 @@ export function FamilyCard({
           await Promise.all([
             transport.me()
               .then((identity) => {
-                if (!cancelled) setIsOwner(identity.role === "owner");
+                if (!cancelled) setIsOwner(identity.role === "admin");
               })
               .catch((e: unknown) => {
                 if (!cancelled) setError(messageOf(e));

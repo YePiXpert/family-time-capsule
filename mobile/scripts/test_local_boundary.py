@@ -18,6 +18,7 @@ def clean_tree(root: Path):
     write(root, 'src/local/brand.ts', f'export const SERVICE_URL = "{SERVICE_URL}";\n')
     write(root, 'src/ai/client.ts', 'import { SERVICE_URL } from "../local/brand";\nexport const api = () => fetch(SERVICE_URL);\n')
     write(root, 'src/sync/transport.ts', 'export const client = () => new XMLHttpRequest();\n')
+    write(root, 'src/family/api.ts', 'import { SERVICE_URL } from "../local/brand";\nexport const call = () => fetch(SERVICE_URL);\n')
     write(root, 'src/local/App.tsx', 'import { RemoteBackupCard } from "../sync/RemoteBackupCard";\n')
     write(root, 'src/local/Settings.tsx', 'import { RemoteBackupCard } from "../sync/RemoteBackupCard";\n')
     write(root, 'src/local/Shelf.tsx', 'export const shelf = 1;\n')
@@ -52,7 +53,7 @@ class LocalBoundaryTest(unittest.TestCase):
     def test_only_app_and_settings_may_import_sync(self):
         write(self.root, 'src/local/Shelf.tsx', 'import { pushManifest } from "../sync/engine";\n')
         problems = check(self.root)
-        self.assertEqual(problems, ['src/local may not import src/sync: src/local/Shelf.tsx'])
+        self.assertEqual(problems, ['src/local may not import src/sync or src/family: src/local/Shelf.tsx'])
 
     def test_feature_imports_of_local_pages_are_flagged(self):
         for feature in ('sync', 'ai'):
@@ -89,3 +90,30 @@ class LocalBoundaryTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FamilyBoundaryTest(unittest.TestCase):
+    """家庭与设备（1.1.0）：第三个联网文件；src/local 只有两个界面文件能碰它；它也不能引本机页面。"""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        clean_tree(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_family_api_may_network_but_other_family_files_may_not(self):
+        self.assertEqual(check(self.root), [])
+        write(self.root, 'src/family/pairing.ts', 'export const poll = () => fetch("x");\n')
+        self.assertTrue(any('src/family/pairing.ts' in p for p in check(self.root)))
+
+    def test_local_journal_may_not_import_family(self):
+        write(self.root, 'src/local/Shelf.tsx', 'import { getToken } from "../family/session";\n')
+        self.assertTrue(any('src/local/Shelf.tsx' in p for p in check(self.root)))
+        write(self.root, 'src/local/Shelf.tsx', 'export const shelf = 1;\n')
+        write(self.root, 'src/local/Settings.tsx', 'import { FamilyScreen } from "../family/FamilyScreen";\n')
+        self.assertEqual(check(self.root), [])
+
+    def test_family_may_not_import_local_pages(self):
+        write(self.root, 'src/family/FamilyScreen.tsx', 'import { Shelf } from "../local/Shelf";\n')
+        self.assertTrue(any('src/family/FamilyScreen.tsx' in p for p in check(self.root)))

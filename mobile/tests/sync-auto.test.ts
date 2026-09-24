@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAutoSync, sharedChanged, useAutoSync } from "../src/sync/auto";
 import { emptyLibrary, emptyContent } from "../src/local/model";
 import { LocalStore } from "../src/local/store";
-import { getToken } from "../src/ai/session";
+import { getToken } from "../src/family/session";
 import { loadKey, readRemoteState, writeRemoteState } from "../src/sync/state";
 import { SyncError } from "../src/sync/transport";
 import { runFamilySync } from "../src/sync/family";
@@ -22,7 +22,7 @@ vi.mock("react-native", () => ({ AppState: {
     return { remove: native.remove };
   },
 } }));
-vi.mock("../src/ai/session", () => ({ getToken: vi.fn() }));
+vi.mock("../src/family/session", () => ({ getToken: vi.fn() }));
 vi.mock("../src/sync/state", () => ({ loadKey: vi.fn(), readRemoteState: vi.fn(), writeRemoteState: vi.fn() }));
 vi.mock("../src/sync/family", () => ({ runFamilySync: vi.fn() }));
 vi.mock("../src/sync/status", () => {
