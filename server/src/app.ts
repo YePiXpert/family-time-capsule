@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { z, ZodError } from 'zod';
 import { Store, Problem, digest, type Member, type BackupManifest } from './store.ts';
 import { inputSchema, parseEditorContext, parseResult, polishBody, POLISH_BODY_LIMIT, transcribeResultSchema } from './contracts.ts';
-import { MODEL_ID, MODEL_LABEL, MODEL_IDS, LEGACY_MODEL_IDS, REASONING_POLICY } from './ai-model.ts';
+import { MODEL_ID, MODEL_LABEL, MODEL_IDS, REASONING_POLICY } from './ai-model.ts';
 import type { Provider } from './provider.ts';
 import { BackupStore, FREE_FLOOR, OBJECT_ID, OBJECT_LIMIT } from './backup-store.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -331,7 +331,7 @@ export function createApp(store:Store,provider:Provider,version:string,backupSto
  });
  app.put('/api/v1/admin/settings',async req=>{
   admin(req.headers.authorization);
-  const input=z.object({paused:z.boolean(),defaultModel:z.enum(LEGACY_MODEL_IDS).optional(),enabledModels:z.array(z.enum(LEGACY_MODEL_IDS)).max(4).optional(),globalPhotos:z.number().int().min(0).max(50000),globalWrites:z.number().int().min(0).max(10000)}).strict().parse(req.body);
+  const input=z.object({paused:z.boolean(),defaultModel:z.enum(MODEL_IDS).optional(),enabledModels:z.array(z.enum(MODEL_IDS)).max(4).optional(),globalPhotos:z.number().int().min(0).max(50000),globalWrites:z.number().int().min(0).max(10000)}).strict().parse(req.body);
   store.setSettings({...input,defaultModel:MODEL_ID,enabledModels:[MODEL_ID]});return {ok:true};
  });
  return app;
