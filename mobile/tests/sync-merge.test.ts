@@ -326,6 +326,19 @@ describe("both sides changed", () => {
     });
     expect((conflicts[0]!.loser as LocalRecord).text).toBe("妈妈的版本");
   });
+  it("brings back the photos only the losing remote version uses, so 用这一版 keeps them", () => {
+    const { shared, base } = start();
+    const local = copy(shared);
+    local.records.r = record("r", { text: "爸爸的版本", updatedAt: T2, revision: 2 });
+    const remote = copy(shared);
+    remote.media.m9 = media("m9");
+    remote.records.r = record("r", { text: "妈妈的版本", updatedAt: T1, mediaIds: ["m9"] });
+    const { next, conflicts, wantedMedia } = merge(local, [snap(remote)], base);
+    expect(next.records.r!.text).toBe("爸爸的版本");
+    expect((conflicts[0]!.loser as LocalRecord).mediaIds).toEqual(["m9"]);
+    expect(wantedMedia.map((m) => m.id)).toEqual(["m9"]);
+    expect(next.media.m9).toBeTruthy();
+  });
   it("breaks a same-second tie by content hash so both phones pick the same winner", () => {
     const { shared, base } = start();
     const a = copy(shared);

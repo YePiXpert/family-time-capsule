@@ -569,9 +569,13 @@ export function mergeLibraries(
         bound[year] = at;
   if (Object.keys(bound).length) next.yearBooksBoundAt = bound;
   if (Object.keys(tombstones).length) next.tombstones = tombstones;
-  // 素材：按 id 取并集，本机已有的永不被覆盖；只带回合并后共享实体引用到的那些。
+  // 素材：按 id 取并集，本机已有的永不被覆盖；只带回合并后共享实体引用到的那些，
+  // 外加留底版本引用的——本机那版赢了时，对方那版的照片只有现在能拿到，「用这一版」才不丢图。
   const wantedMedia: Stored<LocalMedia>[] = [];
-  for (const mediaId of referencedShared(next)) {
+  const loserMedia = conflicts.flatMap(
+    (c) => (c.loser as LocalRecord | LocalLetter).mediaIds,
+  );
+  for (const mediaId of new Set([...referencedShared(next), ...loserMedia])) {
     if (next.media[mediaId]) continue;
     for (const r of ordered) {
       const m = r.library.media[mediaId];
