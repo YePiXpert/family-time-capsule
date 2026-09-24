@@ -67,6 +67,22 @@ final class NativeRegressionTests: XCTestCase {
             XCTAssertFalse(hit.exists, "\(context) reported \(word): \(hit.label)")
         }
     }
+    /// 一屏放下的页面不能上下滑：从 `handle` 往上快拖 300 再松手，`probe` 的位置与大小都不能变。
+    /// 页面能滑时，快拖会一直滑到底、停在那里（1.0.5 安卓编辑页多出约 24，整页还能滑）。
+    /// 起点不落在正文上：多行输入框自己就是一个滚动视图，会把这一拖吞掉，外面的页面就算能滑也测不出来。
+    private func assertFixed(_ probe: String, draggingFrom handle: String) {
+        let e = element(probe), from = element(handle)
+        XCTAssertTrue(e.waitUntilExists(timeout: 20), "Missing \(probe)"); XCTAssertTrue(from.waitUntilExists(timeout: 20), "Missing \(handle)")
+        XCTAssertEqual(app.keyboards.count, 0, "Keyboard is up; the fixed-page check needs it down")
+        // 转场淡入与布局还在动时读到的框不算：等连续两次读到同一个框。
+        var settled = e.frame
+        for _ in 0..<10 { usleep(300_000); let now = e.frame; if now == settled { break }; settled = now }
+        let start = from.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -300)), withVelocity: .fast, thenHoldForDuration: 0)
+        sleep(1)
+        XCTAssertEqual(e.frame.minY, settled.minY, accuracy: 1, "\(probe) moved after a drag: the page scrolls although it fits one screen")
+        XCTAssertEqual(e.frame.height, settled.height, accuracy: 1, "\(probe) changed size after a drag")
+    }
     /// 续写时先把光标挪到已有文字末尾：点首行文字右侧的空白（首行必定露在外面）。
     /// 不能点字段右下角：键盘弹起后底栏贴着字段下沿，1.0.1 把工具栏放进了底栏，那一点正是「文件」钮，
     /// 点下去打开系统文件浏览器、字段失焦（run 35681782720 栽在这里）。这里的 initial 都是单行。
@@ -100,6 +116,8 @@ final class NativeRegressionTests: XCTestCase {
         sleep(2)
         relaunchApp()
         tap("继续编辑"); wait("Draft did not survive relaunch") { self.element("capture-text").value as? String == "A little story." }
+        // 键盘收着、标题地点人物收着：编辑页一屏放下，往上拖也不动（安卓冒烟的 editorFits 同一条）。
+        assertFixed("capture-text", draggingFrom: "editor-details"); shot("editor-fixed")
         tap("editor-by"); tap("editor-by-爸爸")
         // 保留原有录音入库验证；保存这一刻走不转写的路径，模拟器不依赖听写授权。
         // 全新 macOS 运行器上第一次激活音频会话可能要三五十秒：流水线拆成并行作业后（`300b12e`），
