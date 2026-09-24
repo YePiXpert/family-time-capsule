@@ -619,7 +619,7 @@ it("退出只删本设备的清单与同步状态，库和素材逐字节不变"
   expect(remote.manifests.has("爸爸手机")).toBe(true);
   expect(await p.state.loadKey()).toBeNull();
   expect(await p.state.readRemoteState()).toBeNull();
-  expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual([]);
+  expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual(["conflicts.json"]);
   expect(p.store.get()).toBe(before);
   expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual(media);
 });
@@ -667,7 +667,7 @@ it("同成员两台手机中未发布的 B 退出，不删回退得到的 A 清�
   expect(remote.manifests.get("A")).toEqual(manifestA);
   expect(await p.state.loadKey()).toBeNull();
   expect(await p.state.readRemoteState()).toBeNull();
-  expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual([]);
+  expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual(["conflicts.json"]);
   expect(p.store.get()).toEqual(before);
   expect(directoryBytes(p.files.mediaDirectory.uri)).toEqual(media);
 });
@@ -783,7 +783,7 @@ it.each([
   if (recoverable) {
     expect(await p.family.leaveFamily(deps)).toEqual({ removedRemote: false });
     expect(await p.state.loadKey()).toBeNull();
-    expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual([]);
+    expect(fs.readdirSync(p.state.syncDirectory.uri)).toEqual(["conflicts.json"]);
   } else {
     await expect(p.family.leaveFamily(deps)).rejects.toMatchObject({ code });
     expect(await p.state.loadKey()).toEqual(key);
