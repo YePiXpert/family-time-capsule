@@ -850,6 +850,33 @@ it("上传失败仍保留新旧冲突，同一实体只留最新一次，重试�
   await p.family.runFamilySync(p.store, deps);
   expect(await p.state.readConflicts()).toEqual(conflicts);
 });
+it("合并写入本机后上传失败：基与已读清单已跟上，改了拉来的时光再同步不出假冲突、不重下", async () => {
+  const { receiver: p, remote, deps, published } = await seeded();
+  const put = deps.transport.put;
+  deps.transport.put = async () => {
+    throw new Error("上传失败");
+  };
+  await expect(p.family.joinFamily(p.store, key, deps)).rejects.toThrow(
+    "上传失败",
+  );
+  expect(p.store.get().records["r-a"]?.text).toBe("她笑了");
+  await p.store.change((s) => {
+    s.records["r-a"] = {
+      ...s.records["r-a"]!,
+      text: "她笑了，还拍了手",
+      updatedAt: "2026-09-23T00:00:00Z",
+    };
+  });
+  deps.transport.put = put;
+  remote.log.length = 0;
+  const result = await p.family.runFamilySync(p.store, deps);
+  expect(await p.state.readConflicts()).toEqual([]);
+  expect(result.lastSyncSummary!.conflicts).toBe(0);
+  expect(p.store.get().records["r-a"]?.text).toBe("她笑了，还拍了手");
+  expect(remote.log).not.toContain(
+    `get ${objectIdOf(key, published.index.sha256, 0)}`,
+  );
+});
 it("物化生成缩略图途中失败，清掉本轮原件与半张缩略图", async () => {
   const { receiver: p, deps } = await seeded();
   const before = p.store.get();
