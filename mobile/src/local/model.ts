@@ -176,7 +176,7 @@ export type Library = {
     /** 每天的小问题，仅留在这台手机。 */
     dailyQuestion?: DailyQuestionCache;
     lockEnabled?: boolean;
-    /** 这台手机以后录音转写的同意；与写作 AI 同意分开，不随家人同步。 */
+    /** 旧版本留下的转写同意；现在不再询问，只为读得进旧库而保留。 */
     transcribeConsent?: boolean;
     /** 这台手机默认的落款（新草稿带上它）；本机设置，不随家人同步。 */
     by?: string;

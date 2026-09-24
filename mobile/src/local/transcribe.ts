@@ -1,16 +1,14 @@
 import type { SpeechAvailability } from "../../modules/speech-recognition/src";
 
-export type TranscribeRoute = "on-device" | "server-consent" | "server" | "none";
+export type TranscribeRoute = "on-device" | "server" | "none";
 export const TRANSCRIBE_MAX_SECONDS = 180;
 export const TRANSCRIBE_MAX_BYTES = 5 * 1024 * 1024;
 export function chooseRoute(input: {
   availability: SpeechAvailability;
   signedIn: boolean;
-  consent: boolean;
 }): TranscribeRoute {
   if (input.availability === "on-device") return "on-device";
-  if (!input.signedIn) return "none";
-  return input.consent ? "server" : "server-consent";
+  return input.signedIn ? "server" : "none";
 }
 export function appendTranscript(text: string, transcript: string): string {
   const words = transcript.trim();

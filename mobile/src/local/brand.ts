@@ -20,11 +20,9 @@ export const LEGACY_RECOVERED_PREFIX = "xiaomei-recovered-";
 export const LEGACY_BACKUP_PREFIX = "xiaomei";
 /** 服务地址：AI 与远端备份都只认这一处；宪法脚本断言这个字面量只出现在本文件。 */
 export const SERVICE_URL = "https://capsule.yep.li/api/v1";
-/** 设备 AI 凭证与同意标记在 SecureStore 里的键名。 */
+/** 设备令牌在 SecureStore 里的键名。 */
 export const AI_SESSION_KEY = "anan-ai-device-v1";
-export const AI_CONSENT_KEY = "anan-ai-consent-v1";
 export const LEGACY_AI_SESSION_KEY = "xiaomei-ai-device-v1";
-export const LEGACY_AI_CONSENT_KEY = "xiaomei-ai-consent-v1";
 /** 远端备份主密钥（恢复码本体）在 SecureStore 里的键名；只在这台设备、解锁后可读。 */
 export const REMOTE_KEY_ITEM = "anan-backup-key-v1";
 /** 本机设备私钥（X25519，接收管理者封来的钥匙包）在 SecureStore 里的键名；只在这台设备、解锁后可读。 */

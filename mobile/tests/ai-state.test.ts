@@ -28,7 +28,6 @@ import {
   POLISH_CONTEXT_LIMIT,
 } from "../src/ai/state";
 
-import { AI_CONSENT_TEXT } from "../src/ai/consent";
 import { AIError } from "../src/ai/error";
 function fixture() {
   const library = emptyLibrary();
@@ -465,10 +464,3 @@ it("a stored job without a mode is dropped by normalizeLibrary", () => {
   expect(() => validateLibrary(library)).not.toThrow();
 });
 
-it("describes the reduced text-only AI consent scope", () => {
-  expect(AI_CONSENT_TEXT).toContain("这件事的标题、正文与落款（润色）");
-  expect(AI_CONSENT_TEXT).toContain("（寄语）");
-  expect(AI_CONSENT_TEXT).toContain("（追问与小问题）");
-  expect(AI_CONSENT_TEXT).toContain("不发送别的记录的正文；结果都先预览再采用。");
-  expect(AI_CONSENT_TEXT).not.toContain("照片");
-});

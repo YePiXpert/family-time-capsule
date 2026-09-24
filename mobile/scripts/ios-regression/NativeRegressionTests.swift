@@ -103,8 +103,9 @@ final class NativeRegressionTests: XCTestCase {
         XCTAssertTrue(element("editor-details").waitUntilExists(timeout: 20)); app.swipeUp(); shot("editor-details")
         tap("ai-open")
         XCTAssertTrue(element("ai-polish").waitUntilExists(timeout: 20)); shot("ai-panel")
+        // 没加入家庭时点润色：不弹同意框，直接带去「家庭与设备」。
         tap("ai-polish")
-        XCTAssertTrue(element("ai-join").waitUntilExists(timeout: 20)); shot("ai-enrollment-from-polish")
+        XCTAssertTrue(element("family-out").waitUntilExists(timeout: 20)); shot("ai-enrollment-from-polish")
         // Opening the editor persists a draft. Discard this enrollment-only draft
         // so the later backup check can still require no unfinished edits.
         // 原生页头已下线：返回是 Page 自绘的「‹」图标钮（page-back）。
@@ -156,8 +157,6 @@ final class NativeRegressionTests: XCTestCase {
         tap("letter-open-early"); tap("拆开")
         wait("Letter body did not appear") { self.app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Words kept for the future.")).firstMatch.exists }
         shot("letter-opened")
-        relaunchApp(); tap("open-settings"); tap("AI 设置")
-        XCTAssertTrue(element("ai-join").waitUntilExists(timeout: 20)); shot("ai-settings")
         // 家庭与设备：没加入时三个入口，不联网也能打开；没有任何账号密码输入。
         relaunchApp(); tap("open-settings"); tap("settings-family")
         XCTAssertTrue(element("family-out").waitUntilExists(timeout: 20), "Family page should open offline")

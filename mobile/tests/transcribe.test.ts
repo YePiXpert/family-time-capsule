@@ -2,14 +2,13 @@ import { describe, expect, it } from "vitest";
 import { appendTranscript, chooseRoute, serverPrecheck, transcribeHint, TRANSCRIBE_MAX_BYTES } from "../src/local/transcribe";
 
 describe("transcription route", () => {
-  it("prefers on-device without needing login or consent", () => {
-    for (const signedIn of [true, false]) for (const consent of [true, false])
-      expect(chooseRoute({ availability: "on-device", signedIn, consent })).toBe("on-device");
+  it("prefers on-device without needing to join a family", () => {
+    for (const signedIn of [true, false])
+      expect(chooseRoute({ availability: "on-device", signedIn })).toBe("on-device");
   });
-  it("requires login, then separate transcription consent", () => {
-    expect(chooseRoute({ availability: "unavailable", signedIn: false, consent: true })).toBe("none");
-    expect(chooseRoute({ availability: "unavailable", signedIn: true, consent: false })).toBe("server-consent");
-    expect(chooseRoute({ availability: "unavailable", signedIn: true, consent: true })).toBe("server");
+  it("goes straight to the server once the phone has joined, without asking", () => {
+    expect(chooseRoute({ availability: "unavailable", signedIn: false })).toBe("none");
+    expect(chooseRoute({ availability: "unavailable", signedIn: true })).toBe("server");
   });
 });
 it.each([

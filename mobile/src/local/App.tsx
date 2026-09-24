@@ -1,7 +1,6 @@
 import { Conflicts } from "../sync/Conflicts";
 import { useSyncStatusValue } from "../sync/status";
 import { useAutoSync } from "../sync/auto";
-import { AISettingsScreen } from "../ai/Settings";
 import { FamilyScreen } from "../family/FamilyScreen";
 import {
   Component,
@@ -324,7 +323,6 @@ function Root() {
           <Stack.Screen name="Profile" component={Profile} />
           <Stack.Screen name="Storage" component={Storage} />
           <Stack.Screen name="Backup" component={Backup} />
-          <Stack.Screen name="AISettings" component={AISettingsScreen} />
           <Stack.Screen name="Appearance" component={Appearance} />
           <Stack.Screen name="Signature" component={Signature} />
           <Stack.Screen name="LetterEditor" component={LetterEditor} />

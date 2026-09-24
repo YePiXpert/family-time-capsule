@@ -204,12 +204,6 @@ export function Settings() {
           onPress={() => nav.navigate("Family")}
         />
         <SettingsRow
-          icon="sparkle"
-          tone="accent"
-          label="AI 设置"
-          onPress={() => nav.navigate("AISettings")}
-        />
-        <SettingsRow
           icon="appearance"
           tone="apricot"
           label="外观设置"

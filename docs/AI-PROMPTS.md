@@ -109,7 +109,7 @@ JSON 格式：{"title":"书名","chapters":[{"month":"2026-09","picks":["记录i
 | EDITOR | editor | 这一年的记录（家人明确点了才送） | 照片 | 写作，一年一两次 |
 
 > **服务端五条提示词都已进代码。** `server/src/prompts.ts` 按 POLISH／RECAP／ASK／QUESTION／EDITOR 排列；`contracts.ts` 的 `writingMode` 必填，只接受 `polish`／`recap`／`ask`／`question`／`editor`。所有手机请求仍带 `photos: []`，服务端只接受空数组，不再接收图片。
-> 手机端 Build 75 已补送 WRITE／POLISH 的落款与 RECAP 的「她说的话」，并共用 v2 同意书；Build 76 接上 EDITOR，年度册页明确点「AI 建议目录」并确认本次整年文字说明后才送，不含照片或别的年份，结果先预览、家人采用才保存。
+> 手机端 Build 75 已补送 WRITE／POLISH 的落款与 RECAP 的「她说的话」；Build 76 接上 EDITOR，年度册页明确点「AI 建议目录」才送，不含照片或别的年份，结果先预览、家人采用才保存。1.1.0 之后（主人 2026-09-24）手机端不再弹任何 AI 同意框：点 AI 按钮就是当次主动提交。
 
 服务端现状不变：不保存生成正文，成功结果只在内存留 10 分钟；新增 writingMode 时 `contracts.ts` 的 `parseResult` 按上表的 JSON 形状各写一份校验（问题 1～3 条、每条 ≤ 30 字、无禁词、无感叹号与表情；引语必须逐字出现在送去的正文里）。
 
@@ -121,7 +121,7 @@ JSON 格式：{"title":"书名","chapters":[{"month":"2026-09","picks":["记录i
 
 ## 六、说一段（转写）不是提示词
 
-转写走另一条路：iPhone 用系统自带的本机识别；安卓回退逐段征得同意，经主人的服务把这一段 m4a 送到 MiMo `mimo-v2.5-asr`（地址与密钥独立配置，真实调用按主人的使用选择与费用授权执行）。服务端先转成 16 kHz 单声道 wav，网关的 `input_audio.format` 只收 wav／mp3，使用 `/chat/completions` 而非 `/audio/transcriptions`。
+转写走另一条路：iPhone 用系统自带的本机识别；安卓回退经主人的服务把这一段 m4a 送到 MiMo `mimo-v2.5-asr`（地址与密钥独立配置，真实调用按主人的使用选择与费用授权执行）。服务端先转成 16 kHz 单声道 wav，网关的 `input_audio.format` 只收 wav／mp3，使用 `/chat/completions` 而非 `/audio/transcriptions`。
 
 提示词只有 system 一句：「中文口语，保留昵称与口头语，标点按停顿。」网关不允许 user 消息里带文字，user content 只有一项 `input_audio`。不让模型润色，转写结果只是正文的初稿，录音本身保留在这段时光里，联网仍只经 `src/ai/client.ts`。
 

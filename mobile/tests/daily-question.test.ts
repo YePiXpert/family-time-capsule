@@ -9,7 +9,6 @@ function fixture() {
     getCache: () => cache,
     save: vi.fn(async (next: DailyQuestionCache) => { cache = next; }),
     getToken: vi.fn(async (): Promise<string | null> => "token"),
-    hasConsent: vi.fn(async () => true),
     request: vi.fn(async (): Promise<unknown> => ({ question: "她今天说了什么？" })),
   };
   return input;
@@ -36,15 +35,14 @@ describe("daily question request policy", () => {
     expect(input.request).toHaveBeenCalledTimes(1);
     expect(dailyQuestionSource(input.getCache(), input.today, false)).toBe("local");
   });
-  it.each(["token", "consent"])("silently uses local prompts without %s", async (missing) => {
+  it("silently uses local prompts on a phone that has not joined", async () => {
     const input = fixture();
-    if (missing === "token") input.getToken.mockResolvedValue(null);
-    else input.hasConsent.mockResolvedValue(false);
+    input.getToken.mockResolvedValue(null);
     await requestDailyQuestion(input);
     expect(input.request).not.toHaveBeenCalled();
     expect(input.getCache()?.requestedDay).toBe(input.today);
     expect(dailyQuestionSource(input.getCache(), input.today, false)).toBe("local");
-    input.getToken.mockResolvedValue("token"); input.hasConsent.mockResolvedValue(true);
+    input.getToken.mockResolvedValue("token");
     await requestDailyQuestion(input);
     expect(input.request).not.toHaveBeenCalled();
   });

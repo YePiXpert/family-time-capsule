@@ -147,7 +147,7 @@ export function FamilyScreen({ navigation }: Props<"Family">) {
     [api],
   );
   useEffect(() => {
-    // 与 AI 设置同一个做法：先读本机钥匙串，再决定要不要问服务端。
+    // 先读本机钥匙串，再决定要不要问服务端。
     void getToken().then(
       () => load(),
       (e: unknown) => setError(messageOf(e)),

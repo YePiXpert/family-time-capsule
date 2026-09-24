@@ -146,7 +146,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     if (keystrokeOnly) persistDebounced(next);
     else void persist(next);
   };
-  const transcription = useTranscription(store, async (text) => {
+  const transcription = useTranscription(async (text) => {
     const d = current.current;
     if (!d) return;
     change({ text: appendTranscript(d.content.text, text) });
