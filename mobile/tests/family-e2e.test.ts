@@ -5,10 +5,12 @@ import { x25519 } from "@noble/curves/ed25519.js";
 import { createFamilyApi, fetchRequest, FamilyError, type FamilyApi } from "../src/family/api";
 import {
   approveJoin,
+  completeFamilyStart,
   inspectJoin,
   parsePairQr,
   pairQrText,
   pollJoin,
+  prepareFamilyStart,
   recoverAsAdmin,
   recoveryAdmins,
   regenerateRecovery,
@@ -129,6 +131,54 @@ it("开家庭、扫码加手机、换恢复码、凭恢复码找回，钥匙一�
   expect(lost.box.key).toEqual(started.key);
   expect((await lost.api.family()).me).toMatchObject({ memberId: dadId, role: "admin" });
 }, 60000);
+
+it.each(["response lost", "token not stored"])(
+  "开家庭先给恢复码；%s 后仍可用纸上那套找回",
+  async (failure) => {
+    const other = await startServer();
+    try {
+      const admin = phone(other.base);
+      const activation = vi.spyOn(admin.api, "activate");
+      const prepared = await prepareFamilyStart(admin, {
+        activationCode: ` ${other.activationCode()} `,
+        memberName: " 爸爸 ",
+        deviceName: " 爸爸的手机 ",
+      });
+      expect(activation).not.toHaveBeenCalled();
+      expect(await admin.api.status()).toEqual({ initialized: false, family: false });
+      expect(prepared.words.split(" ")).toHaveLength(12);
+      expect(admin.box.key).toEqual(prepared.key);
+      expect(admin.box.token).toBeNull();
+      expect(prepared.input).toMatchObject({
+        memberName: "爸爸", deviceName: "爸爸的手机",
+        familyId: prepared.familyId, keyId: keyIdOf(prepared.key),
+      });
+
+      if (failure === "response lost") {
+        activation.mockImplementationOnce(async (input) => {
+          // 服务端已经提交，手机没收到响应；纸上那套必须已经可用。
+          await createFamilyApi(fetchRequest(other.base)).activate(input);
+          throw new FamilyError("NETWORK", "现在连不上服务，请稍后再试。");
+        });
+        await expect(completeFamilyStart(admin, prepared)).rejects.toMatchObject({ code: "NETWORK" });
+      } else {
+        admin.vault.saveToken = async () => { throw new Error("钥匙串写失败"); };
+        await expect(completeFamilyStart(admin, prepared)).rejects.toThrow("钥匙串写失败");
+      }
+      expect(activation).toHaveBeenCalledWith(prepared.input);
+      expect(admin.box.token).toBeNull();
+      const replacement = phone(other.base);
+      const { secret, admins } = await recoveryAdmins(replacement, prepared.words);
+      const recovered = await recoverAsAdmin(replacement, secret, admins[0]!.id, "找回的手机");
+      expect(recovered.key).toEqual(prepared.key);
+      expect(recovered.familyId).toBe(prepared.familyId);
+      expect((await replacement.api.family()).me).toMatchObject({ name: "爸爸", role: "admin" });
+    } finally {
+      await other.stop();
+    }
+  },
+  60000,
+);
 
 it("二维码里的公钥和服务端对不上就停；不是配对码的解析失败", async () => {
   // 各用例各起一个服务端，互不借状态。
