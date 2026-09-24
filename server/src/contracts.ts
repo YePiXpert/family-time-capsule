@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { Problem } from './store.ts';
-import { MODEL_ID, LEGACY_MODEL_IDS } from './ai-model.ts';
+import { MODEL_ID } from './ai-model.ts';
 import { BANNED_WORDS } from './prompts.ts';
 export { promptIsWellFormed } from './prompts.ts';
 export const inputSchema=z.object({
- requestId:z.string().uuid(),model:z.enum(LEGACY_MODEL_IDS).optional().transform(()=>MODEL_ID),
+ requestId:z.string().uuid(),model:z.literal(MODEL_ID).default(MODEL_ID),
  // 1.0.3 手机仍发送 photos: []；保留字段，严格解析只接受空数组。
  photos:z.array(z.unknown()).max(0).default([]),
  context:z.string().max(60000).default(''),

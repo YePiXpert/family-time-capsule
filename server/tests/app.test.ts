@@ -94,7 +94,7 @@ test('recap drafts a year note from text only and counts as one write',async()=>
  await f.app.close();f.store.close();
 });
 
-test('fixed Astra configuration preserves quotas and normalizes previous app selections',async()=>{
+test('fixed Astra configuration preserves quotas and rejects other models',async()=>{
  let actualModel='';
  const f=fixture(async(input)=>{actualModel=input.model;return {tokens:1,result:{title:'记录',text:'照片中的画面。'}};});
  f.store.db.prepare('UPDATE settings SET value=? WHERE id=1').run(JSON.stringify({paused:false,defaultModel:'gpt-6-astra',enabledModels:['gpt-6-astra'],globalPhotos:123,globalWrites:17}));
@@ -103,10 +103,16 @@ test('fixed Astra configuration preserves quotas and normalizes previous app sel
  assert.equal(config.defaultModel,'gpt-6-astra');assert.equal(config.reasoningEffort,'medium');
  assert.deepEqual(config.models,[{id:'gpt-6-astra',label:'GPT-6 Astra'}]);
  assert.equal(config.globalPhotos,123);assert.equal(config.globalWrites,17);
- const update=await f.app.inject({method:'PUT',url:'/api/v1/admin/settings',headers:f.headers(f.owner.token),payload:{paused:false,defaultModel:'gpt-5.6-luna',enabledModels:['gpt-5.6-luna'],globalPhotos:90,globalWrites:9}});
+ const update=await f.app.inject({method:'PUT',url:'/api/v1/admin/settings',headers:f.headers(f.owner.token),payload:{paused:false,defaultModel:'gpt-6-astra',enabledModels:['gpt-6-astra'],globalPhotos:90,globalWrites:9}});
  assert.equal(update.statusCode,200);assert.deepEqual(f.store.settings().enabledModels,['gpt-6-astra']);
  assert.equal(f.store.settings().globalPhotos,90);
- for(const model of ['mimo-v2.6-pro','mimo-v2.6-flash','mimo-v2.5','deepseek-flash','gpt-5.6-luna',undefined]){
+ for(const model of ['mimo-v2.6-pro','deepseek-flash','gpt-5.6-luna','gpt-6-luna','gpt-6-sol']){
+  const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...f.input(),model}});
+  assert.equal(response.statusCode,400);assert.equal(actualModel,'');
+  const settings=await f.app.inject({method:'PUT',url:'/api/v1/admin/settings',headers:f.headers(f.owner.token),payload:{paused:false,defaultModel:model,enabledModels:[model],globalPhotos:90,globalWrites:9}});
+  assert.equal(settings.statusCode,400);
+ }
+ for(const model of ['gpt-6-astra',undefined]){
   const response=await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:{...f.input(),model}});
   assert.equal(response.statusCode,200);assert.equal(actualModel,'gpt-6-astra');assert.equal(response.json().model,'gpt-6-astra');
  }

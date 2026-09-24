@@ -23,7 +23,7 @@
 docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.yaml up -d --no-build --pull never
 ```
 
-切换后核对本机及公网健康版本、家庭／成员／设备／备份记录与额度；旧模型选择归一为 Astra，其余设置保持。成功后从活动配置及专用密钥目录移除旧供应商配置；回滚材料仅存私有部署目录。
+切换后核对本机及公网健康版本、家庭／成员／设备／备份记录与额度；仅模型设置更新为 Astra，其余设置保持。成功后从活动配置及专用密钥目录移除旧供应商配置；回滚材料仅存私有部署目录。
 
 家庭与设备（1.1.0 起）：一台服务就是一家人，没有用户名和密码。
 
@@ -41,7 +41,7 @@ AI 管理留在服务器，沿用库里已有的暂停状态与额度（默认�
 - 全家文案上限：`docker compose ... exec -T ai node src/manage.ts ai limit global <每日文案次数>`。
 - 一位家人的文案上限：`docker compose ... exec -T ai node src/manage.ts ai limit <家人称呼> <每日文案次数>`，称呼须精确匹配，启停与照片额度保留。次数须为非负整数，0 表示没有文案额度；`global` 专指全家。也可在 `server/` 用 `npm run ai -- ...`。
 
-内容模型固定 `gpt-6-astra`，五个 writingMode 都用 `reasoning_effort: medium`，不发送 MiMo 的 `thinking` 参数或采样参数。预算仍为 `max_completion_tokens: 16384`，包含推理与最终 JSON。接口保持非流式 `/chat/completions`，只接受 `finish_reason=stop`、非空合法 JSON 和原业务校验通过的最终 `message.content`；不向手机返回推理过程。旧手机的模型字段仍兼容接收，但所有新请求统一使用 Astra，额度、暂停状态和成员权限保留。
+内容模型固定 `gpt-6-astra`，五个 writingMode 都用 `reasoning_effort: medium`，不发送 MiMo 的 `thinking` 参数或采样参数。预算仍为 `max_completion_tokens: 16384`，包含推理与最终 JSON。接口保持非流式 `/chat/completions`，只接受 `finish_reason=stop`、非空合法 JSON 和原业务校验通过的最终 `message.content`；不向手机返回推理过程。文字请求省略模型时使用 Astra；显式传入其他模型名称一律拒绝，额度、暂停状态和成员权限保留。
 
 「说一段」继续使用 `mimo-v2.5-asr`，调用同一上游 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，将 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。音频仅在内存及 tmpfs 转码临时文件中处理，不写日志、不缓存、不进数据库。转码后清理临时文件；仅完整有效结果计一次写作额度，同一请求 ID 不重复转写。
 
