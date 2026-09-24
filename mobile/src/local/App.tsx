@@ -32,7 +32,6 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { useReducedMotion } from "react-native-reanimated";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { APP_NAME } from "./brand";
@@ -160,7 +159,7 @@ function Root() {
   const state = useLibrary(),
     s = useStyles(),
     theme = useTheme();
-  const reduceMotion = useReducedMotion();
+  const reduceMotion = theme.reduceMotion;
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [locked, setLocked] = useState(state.settings.lockEnabled === true),
@@ -302,7 +301,12 @@ function Root() {
             // 原生页头下线：返回与标题由 Page 基元的页内顶栏绘制（见 DESIGN.md 统一规则）。
             headerShown: false,
             contentStyle: { backgroundColor: theme.colors.paper },
-            animation: reduceMotion ? "none" : "fade",
+            // 平台默认的层级推进（iOS 右进左出、侧滑可中途撤销）；减少动态时不做转场。
+            // 淡入淡出期间原生容器透明度 < 1，页面里的液态玻璃会暂时画不出来。
+            animation: reduceMotion ? "none" : "default",
+            // 只留左边缘侧滑返回：iOS 26 默认整屏右滑都算返回，会抢看原图的拖动、
+            // 书架横条与最近卡的左右翻、正文里的拖选。
+            fullScreenGestureEnabled: false,
           }}
         >
           <Stack.Screen name="Shelf" component={Shelf} />
