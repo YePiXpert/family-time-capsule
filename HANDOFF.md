@@ -2,7 +2,9 @@
 
 > 用途：换电脑后，把下面「恢复提示词」整段粘给新会话里的 AI 代理即可继续开发。
 > 本文档自包含；细节规范都在仓库内文件里，提示词会引导代理去读。
-> 最后更新：2026-09-24（1.1.1 发版时）。**1.1.1（构建号 83）发版中**：主人说「发包，清理缓存和垃圾，确保干净」。发版提交在 main（`mobile/app.json` 1.1.1／构建号 83、CHANGELOG 顶节「1.1.1」、README、本文），轻量标签 `v1.1.1` 指向它，标签推送触发出包；结果与校验和核对后补在第一节。服务端 `bc948a1` 已部署生产（13:40 UTC）。工作区里另一个 Codex 会话的 11 个未提交改动（服务端停用后复查权限、配对领取加固、家庭页）主人决定不进本版，原样留着。
+> 最后更新：2026-09-24。**1.1.1（构建号 83）已交付**（第一节第一条）；服务端 `bc948a1` 在生产。
+>
+> 旧记录：2026-09-24（1.1.1 发版时）。**1.1.1（构建号 83）发版中**：主人说「发包，清理缓存和垃圾，确保干净」。发版提交在 main（`mobile/app.json` 1.1.1／构建号 83、CHANGELOG 顶节「1.1.1」、README、本文），轻量标签 `v1.1.1` 指向它，标签推送触发出包；结果与校验和核对后补在第一节。服务端 `bc948a1` 已部署生产（13:40 UTC）。工作区里另一个 Codex 会话的 11 个未提交改动（服务端停用后复查权限、配对领取加固、家庭页）主人决定不进本版，原样留着。
 >
 > 旧记录：2026-09-24。**main 上有未打包的「AI 全开」（`5c4247b`／`bc948a1`，CHANGELOG 顶节）；服务端 `bc948a1` 已部署生产（13:40 UTC）**，见第一节第一条。可安装的仍是 1.1.0（构建号 82），下一次发版是构建号 83。
 >
@@ -35,6 +37,10 @@
 
 ## 一、当前状态快照（2026-09-24）
 
+- **1.1.1 安装包（构建号 83，2026-09-24 已交付）**：源码 `e03ba55acf174c74d911be2b0978857e2e824487`，标签 `v1.1.1`，[run 36008778382](https://github.com/YePiXpert/family-time-capsule/actions/runs/36008778382) 八个作业一次全绿（14:23 UTC 结束），[Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.1) 已下载核对：`sha256sums.txt` 三项全对；`build-source.json` 为 `e03ba55…`／1.1.1／双端 83；IPA 内 `CFBundleShortVersionString` 1.1.1、`CFBundleVersion` 83；安卓回归与 iOS 完整回归报告都针对 `e03ba55`、各项全 true；iOS `ai-enrollment-from-polish` 截图落在「家庭与设备」的「还没加入家庭」（截在淡入转场中途）。
+  - SHA-256：`623f75c8760f141a1248f84b5ae814469a0770f6d1786f24ea3de1cd972c58ab` FamilyTimeCapsule-android.apk；`938eb84783635c6b7663d3807849aa37886528e29e756c8fdaa85a16984cad5d` FamilyTimeCapsule-ios-unsigned.ipa；`709b8f013d0692810b1d90b9e97491d5246dda150cfb2f5d5826b12b14e252e8` build-source.json。
+  - 清理（主人「清理缓存和垃圾，确保干净」）：删掉仓库根目录旧 Next.js 的 `node_modules`、`next-env.d.ts`、`build/`、`data/`、`test-results/`、`mobile/dist*`、`.expo`、`__pycache__`，以及 `/var/tmp`、`/tmp` 里本项目一小时前的测试、出包、staging 与证据残留，约 4 GB；门禁在清理后重跑全绿。13:21 另有一轮清理（`/var/tmp/family-cleanup-20260924/`）；之后生产回滚用的 `anan-ai:c40f063…` 镜像不见了，已按同一提交重建（revision 标签核对）。
+  - 工作区里另一个 Codex 会话的 11 个未提交改动（服务端停用后复查权限、配对领取加固、家庭页等）主人决定不进 1.1.1，原样留着，没审、没测、没部署。
 - **AI 全开（未打包）＋服务端 `bc948a1` 已部署生产（2026-09-24 13:40:48 UTC，主人「做完顺便把服务端也部署了」）**：主人说「ai 就不要设置了吧，默认是打开的就行」「不需要弹窗，全删。ai全开就行」。`5c4247b` 删掉「AI 设置」页与全部 AI 同意弹窗；Astra 只读审核后主人说「全做」，`bc948a1` 补上 `manage.ts ai status|pause|resume|limit`、失败调用计入每日调用上限（不占文案额度）、年度册超过 400 段行内说明、编辑页读令牌时退出不再发请求、PRODUCT.md 边界写清。服务端从 `c40f063` 切换，无数据库结构改动，env 只改 `SOURCE_SHA`；同一提交构建镜像 `anan-ai:bc948a1…`（revision 标签核对）；独立数据目录的 staging 3141 跑 `verify-service.py --skip-text --skip-transcribe` 全过，并试过 `ai status/pause/resume/limit` 与两种拒绝，之后拆掉 staging、删掉测试数据。切换后本机与公网健康版本一致，`/api/v1/status` 为「已初始化、已有家庭」，六类匿名请求 401，成员、设备（除最后使用时间）、家庭、设置、备份清单逐行不变。生产 `ai status`：AI 开启，全家每日文案 100、「yep」每日 20，没有遗留的暂停或自定义额度。证据与回滚材料在服务器私有部署目录 `20260924-ai-always-on/`。手机端改动要等下一次发版（构建号 83）才装得上；iOS／安卓原生回归脚本已随 `5c4247b` 改过，还没在 CI 上跑。
 - **1.1.0 安装包（构建号 82，2026-09-24 已交付）**：源码 `0b5fe11723041dc2abd75dca03caa6accee32558`，标签 `v1.1.0`，[run 35998899145](https://github.com/YePiXpert/family-time-capsule/actions/runs/35998899145)（12:24–12:50 UTC）八个作业全绿，[Release](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.1.0) 已发布。下载核对：`sha256sum -c` 三项 OK；`build-source.json` gitSha `0b5fe11`、1.1.0、安卓 versionCode 82、iOS build 82；IPA Info.plist 1.1.0／82，相机用途含「扫家人手机上的加入二维码」；安卓冒烟 14 项、iOS 回归 9 项、iOS 启动 3 项全为真，证据 gitSha 都是 `0b5fe11`；「家庭与设备」没加入页截图（iOS、安卓 320 宽）看过。
   - SHA-256：`3f0875b3d673a3a155e8afa39a9cd3c224bd965eeb64f4d666f4202574c755e5` FamilyTimeCapsule-android.apk；`a2cae38b76a8f4e3cbc27c0b40549c0202a5b5c23b432592b30b48b027be48e3` FamilyTimeCapsule-ios-unsigned.ipa；`013ab9189a81d72e1a73d56e789a259d9af358858f1a772a43c0a700f5bf37ca` build-source.json。
