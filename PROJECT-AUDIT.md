@@ -1,5 +1,7 @@
 # 全项目审查（PROJECT-AUDIT）
 
+> 历史审查／设计记录。保留决策与技术依据；其中旧版本、操作命令和待办不代表当前状态。当前范围见 [PRODUCT](PRODUCT.md)，交付与待验事项见 [HANDOFF](HANDOFF.md)。
+
 > 目的：暂停功能开发，对**整个项目**做一次以实际代码为依据的审查与验证，不限于最近提交或家庭同步模块。
 > 文档本身（PRODUCT／DESIGN／AGENTS／README／CHANGELOG／HANDOFF／plans）也在审查范围内：矛盾与过时内容一并记录。
 > 起点：`318274e`（Build 72 提交 10），工作区干净，`main` == `origin/main`。
@@ -143,7 +145,7 @@ AISettings · LetterEditor · Letter · Quotes（语录）· RecoveryCode（恢�
 - 位置：`server/scripts/probe-upload-limit.py:34`、`deploy/README.md`「反代」一节、`server/src/app.ts:196-201`
 - 主审复核：三处原文都亲自读过。脚本 `finally` 无条件 `if token: request('/backup', None, token, 'DELETE')`；
   而 Build 72 把 `DELETE /api/v1/backup` 从「只删本成员这一份清单」改成了 `store.deleteMemberManifests(member.id)`（**该成员名下全部设备**）+ `sweep()`（**全家 prune**）。
-  `deploy/README.md` 明写「每次改反代或升级服务后用 `probe-upload-limit.py --username <成员> --password <密码> --mb 4 9 --container anan-ai-ai-1` 探一次」，`--base` 默认就是 `https://capsule.yep.li/api/v1`（生产）。
+  `deploy/README.md` 明写「每次改反代或升级服务后用 `probe-upload-limit.py --username <成员> --password <密码> --mb 4 9 --container anan-ai-ai-1` 探一次」，`--base` 默认就是 `https://service.example.invalid/api/v1`（生产）。
 - 影响：按文档办事的一次例行探测 = 删掉该成员全部清单 + 触发全家回收。主人是目前唯一发布过清单的人，因此保护名单会直接变空 → **全家对象库被扫空**。
 - 现状：主人尚未用过远端备份，生产库里没有对象，所以**至今没有造成损失**；但这是一颗对着生产的定时雷，必须在任何人再次按文档探测之前拆掉。
 - **未执行验证**：按规则不对生产做破坏性验证；仅凭三处源码与文档原文判定，且服务端审查代理在沙箱里用临时库复现过同一条（备份前 10 个对象 → `DELETE /backup` → 0 个对象、0 份清单）。
