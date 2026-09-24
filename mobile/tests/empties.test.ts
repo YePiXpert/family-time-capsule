@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   isEmptyDraft,
   isEmptyLetter,
+  isUntouchedEdit,
 } from "../src/local/empties";
 import {
   emptyContent,
   type LocalLetter,
+  type LocalRecord,
   type RecordDraft,
 } from "../src/local/model";
 
@@ -61,6 +63,44 @@ describe("empty drafts", () => {
       { recordingFile: "rec.m4a" },
     ];
     for (const over of filled) expect(isEmptyDraft(draft(over))).toBe(false);
+  });
+});
+
+describe("untouched edit drafts", () => {
+  const record: LocalRecord = {
+    ...emptyContent(),
+    id: "r1",
+    revision: 3,
+    title: "第一次翻身",
+    text: "从左边翻过去了。",
+    date: at,
+    mediaIds: ["m1"],
+    updatedAt: at,
+  };
+  // 打开编辑时整条复制：带着 id、revision 这类记录字段。
+  const edit = (content: Partial<LocalRecord> = {}, over: Partial<RecordDraft> = {}) =>
+    draft({ recordId: "r1", baseRevision: 3, content: { ...record, ...content }, ...over });
+  it("drops a draft that is still a copy of the record", () => {
+    expect(isUntouchedEdit(edit(), record)).toBe(true);
+    // 旧记录缺 quote／personIds：草稿里补了空值也算没改。
+    expect(isUntouchedEdit(edit({ quote: false, personIds: [] }), record)).toBe(true);
+  });
+  it("keeps any change, recording, AI work, new drafts and drafts of deleted records", () => {
+    for (const change of [
+      { text: "从左边翻过去了。还笑了。" },
+      { title: "" },
+      { first: true },
+      { quote: true },
+      { location: "家里" },
+      { personIds: ["p1"] },
+      { mediaIds: [] },
+      { date: "2026-09-21T08:00:00.000Z" },
+      { by: "妈妈" },
+    ])
+      expect(isUntouchedEdit(edit(change), record)).toBe(false);
+    expect(isUntouchedEdit(edit({}, { recordingFile: "rec.m4a" }), record)).toBe(false);
+    expect(isUntouchedEdit(edit({}, { recordId: null }), record)).toBe(false);
+    expect(isUntouchedEdit(edit(), undefined)).toBe(false);
   });
 });
 

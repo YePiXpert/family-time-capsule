@@ -554,7 +554,7 @@ export function saveRecord(
   const id = d.recordId ?? recordId;
   const existing = s.records[id];
   if (d.recordId && (!existing || existing.revision !== d.baseRevision))
-    throw new Error("原记录已改变，草稿仍已保留，请返回核对。");
+    throw new Error("原记录已改变，草稿仍已保留，请返回核对；要按新的记录重写，先点右上角垃圾桶放弃这份草稿。");
   if (d.content.mediaIds.some((id) => !s.media[id]))
     throw new Error("有素材尚未保存完整，请重试。");
   const r: LocalRecord = {
@@ -569,6 +569,36 @@ export function saveRecord(
   delete s.drafts[draftId];
   clearUnavailableCovers(s);
   return r;
+}
+/**
+ * 阅读页直接改记录的几项（第一次、她说的话、地点）：记录升一版。这条记录若有基于上一版的编辑草稿，
+ * 草稿里没动过的那几项跟着改、基准版本跟上，免得之后保存一直被「原记录已改变」拦住；
+ * 草稿里改过的项保留草稿的写法。
+ */
+export function patchRecord(
+  s: Library,
+  id: string,
+  patch: Partial<Pick<RecordContent, "first" | "quote" | "location">>,
+  now: string,
+): void {
+  const before = s.records[id];
+  if (!before) return;
+  editEntity(s, "records", id, (r) => {
+    Object.assign(r, patch);
+    r.revision++;
+    r.updatedAt = now;
+  });
+  const keys = Object.keys(patch) as (keyof typeof patch)[];
+  for (const d of Object.values(s.drafts)) {
+    if (d.recordId !== id || d.baseRevision !== before.revision) continue;
+    editEntity(s, "drafts", d.id, (next) => {
+      // 旧记录没有 quote 字段、地点可能是空串：都按「没有」比。
+      for (const key of keys)
+        if ((next.content[key] || false) === (before[key] || false))
+          Object.assign(next.content, { [key]: patch[key] });
+      next.baseRevision = before.revision + 1;
+    });
+  }
 }
 export function deleteRecord(
   s: Library,

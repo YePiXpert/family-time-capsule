@@ -20,6 +20,7 @@ import {
   unsignedRecords,
   monthOfItem,
   normalizeLibrary,
+  patchRecord,
   recordsOfPerson,
   referencedMedia,
   saveRecord,
@@ -107,6 +108,29 @@ describe("device record lifecycle", () => {
     expect(() => saveRecord(s, "edit", "x", date)).toThrow("原记录已改变");
     expect(s.drafts.edit.content.text).toBe("old input");
     expect(s.records.record!.revision).toBe(1);
+  });
+  it("lets reading-page toggles follow an edit draft instead of blocking its save", () => {
+    const s = fixture();
+    saveRecord(s, "draft", "record", date);
+    s.drafts.edit = {
+      id: "edit",
+      recordId: "record",
+      baseRevision: 1,
+      content: { ...mut(clone(s.records.record!)), text: "补记", location: "公园" },
+      updatedAt: date,
+    };
+    patchRecord(s, "record", { first: true }, date);
+    patchRecord(s, "record", { location: "家里" }, date);
+    expect(s.records.record!.revision).toBe(3);
+    expect(s.records.record!.location).toBe("家里");
+    // 草稿没动过的「第一次」跟上；草稿自己改过的地点保留草稿的。
+    expect(s.drafts.edit.baseRevision).toBe(3);
+    expect(s.drafts.edit.content.first).toBe(true);
+    expect(s.drafts.edit.content.location).toBe("公园");
+    saveRecord(s, "edit", "unused", date);
+    expect(s.records.record!.text).toBe("补记");
+    expect(s.records.record!.first).toBe(true);
+    validateLibrary(s);
   });
   it("rejects empty records", () => {
     const s = fixture();
