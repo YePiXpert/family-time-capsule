@@ -165,12 +165,19 @@ export function retryPlan(errorCode: string | null): {
   retryOriginal: boolean;
   notice: string;
 } {
-  return errorCode === "RESULT_EXPIRED"
-    ? {
-        retryOriginal: false,
-        notice: "这次请求已结束，结果无法恢复；点「重新生成」才会计入今日额度。",
-      }
-    : { retryOriginal: true, notice: "" };
+  if (errorCode === "RESULT_EXPIRED")
+    return {
+      retryOriginal: false,
+      notice: "这次请求已结束，结果无法恢复；点「重新生成」才会计入今日额度。",
+    };
+  // 服务端调用过模型却没拿到可用结果：那次请求已记为失败（可能已付费，服务端不重跑），
+  // 原样重试只会得到 409；本机校验不过的结果重试也只会拿回同一份。失败不计今日额度。
+  if (errorCode === "INVALID_RESULT" || errorCode === "UPSTREAM_UNAVAILABLE")
+    return {
+      retryOriginal: false,
+      notice: "这次没有生成出来，不计今日额度；点「重新生成」再试一次。",
+    };
+  return { retryOriginal: true, notice: "" };
 }
 
 /** 显式投影标题与日期：即使调用者传来完整记录，也不序列化其他字段。 */
