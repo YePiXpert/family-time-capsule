@@ -30,7 +30,7 @@ import { newId, now, createPerson } from "./services";
 import { useDailyQuestion } from "./dailyQuestionHooks";
 import { dailyPromptOf, isStoryDay } from "./prompts";
 import { preserveMedia, verifyMedia } from "./files";
-import { useDraftPersist, useRecorder } from "./editorHooks";
+import { PermissionDenied, useDraftPersist, useRecorder } from "./editorHooks";
 import { appendTranscript } from "./transcribe";
 import { useTranscription } from "./transcribeHooks";
 import { isEmptyDraft, isUntouchedEdit } from "./empties";
@@ -187,6 +187,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     try {
       await fn();
     } catch (e) {
+      if (e instanceof PermissionDenied) setPermDenied(true);
       setError(messageOf(e));
     } finally {
       operation.current = false;
@@ -230,7 +231,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
   });
   useEffect(() => {
     const sub = AppState.addEventListener("change", (status) => {
-      if (status !== "active") {
+      // iOS 拉下控制中心、弹系统框只是 inactive：录音照录，只落一次盘；真退到后台才收尾录音。
+      if (status === "inactive") void flush().catch((e) => setError(messageOf(e)));
+      else if (status !== "active") {
         void (async () => {
           await finishRef.current();
           await flush();
@@ -330,8 +333,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      setPermDenied(true);
-      throw new Error(
+      throw new PermissionDenied(
         camera ? "请在系统设置中允许拍摄。" : "请在系统设置中允许选择照片。",
       );
     }
@@ -416,10 +418,12 @@ export function Editor({ route, navigation }: Props<"Editor">) {
         style: "destructive",
         onPress: () => {
           setPickedId(null);
+          // 读当下的草稿：弹窗开着时可能刚有录音收尾加进来，不能拿打开弹窗那一刻的列表覆盖。
+          const content = current.current?.content;
+          if (!content) return;
           change({
-            mediaIds: draft.content.mediaIds.filter((x) => x !== id),
-            coverId:
-              draft.content.coverId === id ? null : draft.content.coverId,
+            mediaIds: content.mediaIds.filter((x) => x !== id),
+            coverId: content.coverId === id ? null : content.coverId,
           });
         },
       },
@@ -736,6 +740,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                         kind="text"
                         compact
                         testID="editor-media-open"
+                        // 录音中不开播放页：播放会抢录音的音频会话，还会录进去。
+                        disabled={recording}
                         onPress={() =>
                           navigation.navigate("Media", { id: pickedMedia.id })
                         }

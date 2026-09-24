@@ -184,6 +184,12 @@ describe("seal and open transitions", () => {
     );
     expect(() => sealLetterAt(letter(), "x")).toThrow("已经封存");
   });
+  it("refuses to seal a letter whose opening day has already come", () => {
+    const at = new Date(2026, 8, 24, 12).toISOString();
+    for (const openAt of ["2026-09-23", "2026-09-24"])
+      expect(() => sealLetterAt(letter({ sealed: false, openAt }), at)).toThrow("拆封的日子已经到了");
+    expect(sealLetterAt(letter({ sealed: false, openAt: "2026-09-25" }), at).sealed).toBe(true);
+  });
   it("opens a sealed letter once and keeps the first opening time", () => {
     const opened = openLetterAt(letter(), "2042-06-15T08:00:00.000Z");
     expect(opened.openedAt).toBe("2042-06-15T08:00:00.000Z");
