@@ -1116,7 +1116,7 @@ describe("version ancestry", () => {
 
 describe.each(["records", "letters"] as const)("ancestry without a base: %s", (kind) => {
     const chain = () => {
-      const put = (s: Library, text: string, at: string, previous?: LocalRecord | LocalLetter) => {
+      const put = (s: Library, text: string, at: string, previous?: Parameters<typeof lineage>[0]) => {
         const patch = { text, updatedAt: at, ...(previous ? { ancestors: lineage(previous) } : {}) };
         if (kind === "records") s.records.r = record("r", patch);
         else s.letters.r = letter("r", patch);
