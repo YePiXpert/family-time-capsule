@@ -40,6 +40,13 @@ docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.
 - 所有管理者手机都丢了：新手机「用恢复码找回」（12 个词只在管理者的纸上；服务端存恢复包密文与恢复证明的哈希，按地址严格限流）。
 - 最后一招（管理者手机与恢复码都丢了，还有家人的手机）：`docker compose ... exec -T ai node src/manage.ts promote <家人称呼>` 把一位家人升为管理者，再让他在手机上重新生成恢复码。
 
+AI 管理留在服务器，沿用库里已有的暂停状态与额度（默认值只在新服务初始化）：
+
+- 查看：`docker compose ... exec -T ai node src/manage.ts ai status`，列出全家暂停状态、每日文案／照片上限、每位家人的角色与启停、每日上限及今日文案／调用次数；每天 UTC 00:00 重置，不打印令牌或密钥。
+- 暂停／恢复：`docker compose ... exec -T ai node src/manage.ts ai pause`／`docker compose ... exec -T ai node src/manage.ts ai resume`，其他设置保留。
+- 全家文案上限：`docker compose ... exec -T ai node src/manage.ts ai limit global <每日文案次数>`。
+- 一位家人的文案上限：`docker compose ... exec -T ai node src/manage.ts ai limit <家人称呼> <每日文案次数>`，称呼须精确匹配，启停与照片额度保留。次数须为非负整数，0 表示没有文案额度；`global` 专指全家。也可在 `server/` 用 `npm run ai -- ...`。
+
 内容模型固定 `mimo-v2.6-pro`，只处理文字，保留五个 writingMode。`question`／`ask`／`polish` 关闭思考，`recap`／`editor` 开启；此策略已通过合成样例真实调用验证，尚未做家庭实际内容的长期质量评估。策略集中在 `server/src/ai-model.ts`。只发送 `max_completion_tokens: 16384`（含思考与最终 JSON），不发送 `reasoning_effort`、`max_tokens` 或采样参数。接口仍为非流式 JSON；只有 `finish_reason=stop`、非空合法 JSON 且通过原业务校验才成功，只解析最终 `message.content`。旧版 DeepSeek／更早模型选择归一为 MiMo，额度、暂停状态和成员权限保留。
 
 「说一段」转写使用 `mimo-v2.5-asr`，调用 `/chat/completions` 的 `input_audio`（wav）形状。镜像自带 ffmpeg，把手机的 m4a 转为 16 kHz 单声道 wav；最长 3 分钟、请求体最多 5 MiB。Compose 支持 `TRANSCRIBE_MODEL`（默认 `mimo-v2.5-asr`）、`TRANSCRIBE_BASE_URL`（独立必填）、`TRANSCRIBE_KEY_PATH`（独立必填），并将转写密钥挂载到容器的 `/run/secrets/transcribe-key`。服务端不留声音：音频只在内存 tmpfs 里停留到转码结束，不写日志、不缓存、不进数据库；只记一次写作额度。失败不计当日额度，转写结果不缓存，同一请求 ID 重放只返回处理中或结果已过期。
@@ -50,7 +57,7 @@ docker compose --env-file /opt/anan-ai/service.env -p anan-ai -f deploy/compose.
 
 默认每人每天 20 次写作、全局 100 次，每个内容请求计一次写作。AI 不再看照片，图片额度字段保留（默认每人 100 张、全局 500 张）但不再消耗。每天 UTC 00:00 重置；上游调用最多并发 2，每人最多 200 次/日、全局 1000 次/日，限制请求总量。暂停与成员额度在发起上游之前检查。反向代理后所有客户端共享同一来源地址，激活、配对、领取与恢复接口的按地址限流实际是全家共享的预算，属预期行为。
 
-相同成员、同一请求 ID 不能再次调用上游；文字请求的成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。失败或超时不占成员当日额度；上游可能已计费，但不自动重试或换模型。
+相同成员、同一请求 ID 不能再次调用上游；文字请求的成功结果内存保留 10 分钟，重启或过期后返回明确状态，由用户选择是否重新生成。失败或超时不占当日文案／照片额度，但计入每人 200 次／全家 1000 次的调用上限；上游可能已计费，但不自动重试或换模型。
 
 服务 SQLite 保存家庭（id、钥匙指纹、恢复包密文、恢复证明哈希与版本）、成员（称呼、角色、启停、额度）、设备（令牌哈希、公钥、批准者、最后使用时间）、配对申请（领取凭据哈希；钥匙包只留到新手机确认）、激活码哈希、请求状态和用量，不保存照片、生成正文、内容钥匙或恢复词。日志仅包含服务启动信息及缺失 ffmpeg 的固定诊断，不含音频或转写文字。无需 Redis、云相册或账号同步。
 

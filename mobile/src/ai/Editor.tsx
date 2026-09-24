@@ -122,8 +122,12 @@ export function AIEditor({
   ) => {
     if (active.current || disabled) return;
     active.current = true;
+    // 读令牌时也能被卸载清理取消，避免离开编辑页后才发出请求。
+    abort.current = new AbortController();
     try {
-      if (!(await getToken())) {
+      const token = await getToken();
+      if (abort.current.signal.aborted) return;
+      if (!token) {
         // 这台手机还没加入家庭：先收起面板，带去「家庭与设备」加入。
         setPanel(false);
         nav.navigate("Family");
@@ -133,7 +137,6 @@ export function AIEditor({
       setError("");
       setRetryable(null);
       setErrorCode(null);
-      abort.current = new AbortController();
       const snapshot = latest.current,
         fp = sourceFingerprint(snapshot.draft);
       const selected = snapshot.draft.content;

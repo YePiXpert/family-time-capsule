@@ -68,6 +68,11 @@ test('failed upstream requests do not burn the daily quota',async()=>{
  assert.equal(f.store.usage(f.member.member.id).photos,0);
  assert.equal((await f.app.inject({method:'POST',url:'/api/v1/ai/write',headers:f.headers(),payload:f.input()})).statusCode,200);
  assert.equal(f.store.usage(f.member.member.id).photos,0);assert.equal(f.store.usage(f.member.member.id).writes,1);
+ const me=await f.app.inject({url:'/api/v1/me',headers:f.headers()});
+ assert.equal(me.json().usage.calls,2);assert.equal(me.json().usage.writes,1);
+ const overview=await f.app.inject({url:'/api/v1/admin/overview',headers:f.headers(f.owner.token)});
+ assert.equal(overview.json().usage.calls,2);assert.equal(overview.json().usage.writes,1);
+ assert.equal(overview.json().members.find((m:{id:string})=>m.id===f.member.member.id).usage.calls,2);
  await f.app.close();f.store.close();
 });
 test('server restart cannot repeat an uncertain paid request',async()=>{
