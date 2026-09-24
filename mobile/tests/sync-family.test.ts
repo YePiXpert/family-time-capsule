@@ -324,6 +324,18 @@ it("空库加入拉齐时光、落款、原件与本机缩略图，并登记本�
   expect(await p.state.readRemoteState()).toEqual(result);
   expect(p.backup.restorePins()).toHaveLength(0);
 });
+it("取定上传那一版在合并写入本机之后：自动同步据此只补排之后的改动", async () => {
+  const { receiver: p, deps } = await seeded();
+  const events: string[] = [];
+  const unsubscribe = p.store.subscribe(() => events.push("write"));
+  await p.family.joinFamily(p.store, key, {
+    ...deps,
+    onSnapshot: () => events.push("snapshot"),
+  });
+  unsubscribe();
+  expect(events.filter((e) => e === "snapshot")).toHaveLength(1);
+  expect(events.lastIndexOf("write")).toBeLessThan(events.indexOf("snapshot"));
+});
 it("同步期间关闭自动同步，完成后仍保留关闭状态", async () => {
   const { receiver: p, deps } = await seeded();
   await p.family.joinFamily(p.store, key, deps);

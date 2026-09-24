@@ -66,6 +66,8 @@ export type EngineDeps = {
   key: Uint8Array;
   onProgress?: RestoreProgress;
   signal?: AbortSignal;
+  /** 家人同步取定要上传的那一版库时同步调用：此后的改动不在这一轮里，自动同步据此补排一轮。 */
+  onSnapshot?: () => void;
 };
 export type RemoteSummary = {
   createdAt: string;

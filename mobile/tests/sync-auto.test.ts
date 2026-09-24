@@ -72,6 +72,33 @@ describe("自动同步排期", () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
+  it("同步中取定上传那一版之后的改动，结束后补排一轮；之前的（含合并写入）不补", async () => {
+    const { auto, run } = setup();
+    const task = deferred();
+    run.mockReturnValueOnce(task.promise);
+    auto.onForeground();
+    await tick();
+    expect(run).toHaveBeenCalledTimes(1);
+    // 合并写入本机：在取定上传之前，随这一轮一起传走。
+    auto.onLibraryChange();
+    auto.snapshotTaken();
+    task.resolve();
+    await tick();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(run).toHaveBeenCalledTimes(1);
+    // 第二轮：取定之后她又改了一处，这一轮带不走。
+    const second = deferred();
+    run.mockReturnValueOnce(second.promise);
+    auto.onForeground();
+    await tick();
+    auto.snapshotTaken();
+    auto.onLibraryChange();
+    second.resolve();
+    await tick();
+    expect(run).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(run).toHaveBeenCalledTimes(3);
+  });
   it("连续五次保存从最后一次起防抖 30 秒，只跑一次", async () => {
     const { auto, run } = setup();
     for (let i = 0; i < 5; i++) {
@@ -140,13 +167,14 @@ describe("自动同步排期", () => {
     await vi.advanceTimersByTimeAsync(30_000);
     expect(run).toHaveBeenCalledTimes(1);
   });
-  it("自动同步写库通知被忽略，不在结束后再排期", async () => {
+  it("自动同步自己写库的通知在取定上传之前，不在结束后再排期", async () => {
     const { auto, run } = setup();
     const task = deferred();
     run.mockReturnValueOnce(task.promise);
     auto.onForeground();
     await tick();
     auto.onLibraryChange();
+    auto.snapshotTaken();
     task.resolve();
     await vi.advanceTimersByTimeAsync(90_000);
     expect(run).toHaveBeenCalledTimes(1);
