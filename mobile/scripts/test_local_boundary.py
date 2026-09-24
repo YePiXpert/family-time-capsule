@@ -55,6 +55,13 @@ class LocalBoundaryTest(unittest.TestCase):
         problems = check(self.root)
         self.assertEqual(problems, ['src/local may not import src/sync or src/family: src/local/Shelf.tsx'])
 
+    def test_local_may_not_read_the_keychain(self):
+        write(self.root, 'src/local/backup.ts', 'import * as SecureStore from "expo-secure-store";\n')
+        self.assertEqual(check(self.root), ['src/local may not read the keychain (expo-secure-store): src/local/backup.ts'])
+        write(self.root, 'src/family/session.ts', 'import * as SecureStore from "expo-secure-store";\n')
+        write(self.root, 'src/local/backup.ts', 'export const b = 1;\n')
+        self.assertEqual(check(self.root), [])
+
     def test_feature_imports_of_local_pages_are_flagged(self):
         for feature in ('sync', 'ai'):
             with self.subTest(feature=feature):
