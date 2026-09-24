@@ -449,11 +449,18 @@ export function indexMonth(index: number): string {
     m = (index % 12) + 1;
   return `${y}-${String(m).padStart(2, "0")}`;
 }
+/**
+ * 按时刻比两个记录日期。库里有两种写法：日期选择器存 UTC（带 Z），照片拍摄时刻存不带时区的本地时间；
+ * 按字符串比，UTC+8 相差 8 小时以内的两条会排反。解析不了的退回字符串比。
+ */
+export function compareDates(a: string, b: string): number {
+  return Date.parse(a) - Date.parse(b) || a.localeCompare(b);
+}
 export function sortedRecords(
   s: Pick<Library, "records">,
 ): Stored<LocalRecord>[] {
   return Object.values(s.records).sort(
-    (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
+    (a, b) => compareDates(b.date, a.date) || a.id.localeCompare(b.id),
   );
 }
 export function recordsOfPerson(

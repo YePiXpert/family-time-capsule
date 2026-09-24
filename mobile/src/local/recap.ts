@@ -3,6 +3,7 @@ import {
   type LocalMedia,
   type LocalRecord,
   type Stored,
+  compareDates,
 } from "./model";
 
 export type YearRecap = {
@@ -58,7 +59,7 @@ export function recapOf(
       .map(([month, list]) => ({ month, count: list.length, cover: coverOf(list) })),
     firsts: records
       .filter((r) => r.first)
-      .sort((a, b) => a.date.localeCompare(b.date)),
+      .sort((a, b) => compareDates(a.date, b.date)),
     photos: records.reduce(
       (n, r) =>
         n + r.mediaIds.filter((id) => kindOf(id) === "image").length,

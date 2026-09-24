@@ -21,6 +21,7 @@ import {
   monthOfItem,
   normalizeLibrary,
   patchRecord,
+  compareDates,
   recordsOfPerson,
   referencedMedia,
   saveRecord,
@@ -540,6 +541,17 @@ describe("keepsake dates", () => {
     expect(milestoneOf("2024-02-29", new Date(2025, 2, 1))).toBeNull();
     expect(milestoneOf("2024-02-29", new Date(2028, 1, 29))).toEqual({ kind: "anniversary", years: 4 });
     expect(milestoneOf("2024-02-29", new Date(2028, 1, 28))).toBeNull();
+  });
+});
+
+describe("record date order", () => {
+  it("orders a photo's zone-less local time against picker UTC times by the actual moment", () => {
+    // 拍摄时刻：本地 09:00；选择器：本地 08:30 与 09:30 换成的 UTC。
+    const photo = "2026-09-24T09:00:00";
+    const before = new Date(2026, 8, 24, 8, 30).toISOString();
+    const after = new Date(2026, 8, 24, 9, 30).toISOString();
+    expect([after, photo, before].sort(compareDates)).toEqual([before, photo, after]);
+    expect(compareDates("bad", "bad")).toBe(0);
   });
 });
 

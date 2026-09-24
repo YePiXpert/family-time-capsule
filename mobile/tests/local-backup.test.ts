@@ -218,6 +218,25 @@ it("a restore drops the deletion markers made since the backup and the files it 
   expect(fs.existsSync(oldFile)).toBe(false);
   expect(fs.readFileSync(files.mediaFile(restored).uri)).toEqual(Buffer.alloc(600000, 17));
 });
+it("backs up a draft with an unfinished recording, leaving the device-local audio behind", async () => {
+  const { store, backup, model } = await setup();
+  await store.change((s) => {
+    s.drafts.d = {
+      id: "d",
+      recordId: null,
+      baseRevision: 0,
+      updatedAt: new Date().toISOString(),
+      content: { ...model.emptyContent(), text: "说到一半" },
+      recordingFile: "ExpoAudio/pending.m4a",
+    };
+  });
+  const out = await backup.createBackup(store.get());
+  const inspected = await backup.inspectBackup(out);
+  expect(inspected.drafts.d).toBeTruthy();
+  expect(inspected.drafts.d!.recordingFile).toBeUndefined();
+  // 本机的草稿不动：录音还在，回到编辑页照样能保存。
+  expect(store.get().drafts.d!.recordingFile).toBe("ExpoAudio/pending.m4a");
+});
 it("rejects an altered, lost or truncated backup before changing current data", async () => {
   const { store, backup, files, media } = await setup();
   const out = await backup.createBackup(store.get());

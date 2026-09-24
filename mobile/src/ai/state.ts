@@ -3,7 +3,7 @@ import type { DailyQuestionCache, Library, LocalRecord, Stored, YearPicks, Recor
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { dateLabel, toDayKey } from "../local/dates";
-import { monthKey, recordTitle, yearKey } from "../local/model";
+import { monthKey, recordTitle, yearKey, compareDates } from "../local/model";
 import type { AIJob, AIProposal, AIResult, WritingMode } from "./types";
 /** 单次润色的正文上限；超限必须明确提示，不允许静默截断。与服务端一致。 */
 export const POLISH_BODY_LIMIT = 2000;
@@ -229,7 +229,7 @@ export function rememberQuestion(
 /** 只投影本次确认的年份与文字；最多取最新 400 条，仍按日期升序发出。 */
 export function editorContext(year: string, records: readonly Stored<LocalRecord>[], media: Library["media"]): string {
   const selected = records.filter((r) => yearKey(r.date) === year)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).slice(-400);
+    .sort((a, b) => compareDates(a.date, b.date) || a.id.localeCompare(b.id)).slice(-400);
   if (!/^\d{4}$/.test(year) || !selected.length ||
     new Set(selected.map((r) => r.id)).size !== selected.length ||
     selected.some((r) => !r.id || r.id.length > 100))

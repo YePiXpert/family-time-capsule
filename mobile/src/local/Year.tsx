@@ -12,6 +12,7 @@ import {
   type LocalRecord,
   type Stored,
   type YearPicks,
+  compareDates,
 } from "./model";
 import { useNav, type Props } from "./navigation";
 import { coverForRecords, Volume } from "./Shelf";
@@ -286,7 +287,7 @@ export function Year({ route }: Props<"Year">) {
     : records;
   const firsts = visibleRecords
     .filter((r) => r.first)
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => compareDates(a.date, b.date));
   const months = [...new Set(visibleRecords.map((r) => monthKey(r.date)))];
   const photos = records.reduce(
     (n, r) =>
@@ -305,7 +306,7 @@ export function Year({ route }: Props<"Year">) {
   // 统计与册子收整年，不跟着人物筛选走：翻一本缺了人的年册没有意义，副标题也要和书里的数目对得上。
   const yearFirsts = records
     .filter((r) => r.first)
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => compareDates(a.date, b.date));
   const stats = [
     `${records.length} 段时光`,
     photos ? `${photos} 张照片` : "",
