@@ -1,5 +1,7 @@
 # 桉桉成长记 · Build 70「传家 · 中」资料不灭 · 实施计划
 
+> 历史审查／设计记录。保留决策与技术依据；其中旧版本、操作命令和待办不代表当前状态。当前范围见 [PRODUCT](../../PRODUCT.md)，交付与待验事项见 [HANDOFF](../../HANDOFF.md)。
+
 > 2026-09-20 开工时由 `docs/plans/PLAN-BUILD-69.md` 第二部分展开。约束清单 1–34 与提交概要原文留在那里，本文件只写每个提交要动的文件、函数签名、测试清单与验收。主人已拍板：一个安装包含 A 本机 blob 备份库、B `.xmb` 分卷、C 加密远端备份（含远端恢复）、D 宪法修订；**恢复码即密钥**（12 词 BIP39，无口令、无 scrypt）；VPS 可用磁盘 50–200 GB；手机资料 < 5 GB。
 
 > **实施偏离（2026-09-20 收尾时记）**：
@@ -15,7 +17,7 @@
 ## 一、开工时确认的环境事实
 
 - 开发机就是 VPS（hostname `gateway`）：`anan-ai-ai-1` 容器镜像 `anan-ai:9bd192a…`，`/opt/anan-ai/data` 即容器内 `/data`（UID 1000），磁盘 296 GB／可用 238 GB；`server/` 与 `deploy/` 自 9bd192a 起没有改动。部署就是 `deploy/README.md` 那一条 compose 命令，在本仓库目录执行；`deploy/backup.sh` 也 `cd` 到本仓库。
-- 公网 HTTPS 反代**不在这台机上**（1panel openresty 里没有 capsule.yep.li 的站点配置），上限仍按「未知」处理：服务端部署后用一次性 token 对新端点 PUT 4 MB 与 9 MB 各探一次，区分我们的 JSON 413 与反代的 HTML 413。
+- 公网 HTTPS 反代**不在这台机上**（1panel openresty 里没有 service.example.invalid 的站点配置），上限仍按「未知」处理：服务端部署后用一次性 token 对新端点 PUT 4 MB 与 9 MB 各探一次，区分我们的 JSON 413 与反代的 HTML 413。
 - 手机端新依赖：`@noble/ciphers@2.4.0`、`@scure/bip39@2.4.0`（带 `@scure/base@2.4.0`）都钉 `@noble/hashes@2.4.0`，因此 `@noble/hashes` 从 2.0.1 升到 2.4.0，`npm ls @noble/hashes` 必须只有一份。Hermes 没有 `crypto.getRandomValues`：主密钥只能用 `expo-crypto` 的 `getRandomBytes(16)`，绝不调用 noble／scure 的随机函数。
 - 本机 `/tmp` 是满的 tmpfs：mobile 测试要 `TMPDIR=/var/tmp/anan-tests`。
 
@@ -35,7 +37,7 @@
   - 每个 `src/**` 文件都不得含子串 `serverUrl`、`credentials`；
   - `src/local/**` 里只有 `App.tsx`、`Settings.tsx` 允许 import `../sync/`；`src/sync/**` 不得 import `../local/`（除 `brand`、`model`、`backup*`、`files` 这几处只读依赖——按 import 路径白名单）；
   - `package.json` 不得含 `next`、`better-auth`、`drizzle-orm`、`expo-network`；
-  - 服务地址字面量 `https://capsule.yep.li/api/v1` 只在 `src/local/brand.ts`（`SERVICE_URL`），`src/ai/client.ts` 里不再出现字面量。
+  - 服务地址字面量 `https://service.example.invalid/api/v1` 只在 `src/local/brand.ts`（`SERVICE_URL`），`src/ai/client.ts` 里不再出现字面量。
 - `mobile/scripts/verify-local-boundary.py` 变薄包装（调用 `check` 并打印）；`mobile/scripts/test_local_boundary.py` 6 例（临时目录造违规：越界 fetch、`credentials` 子串、local 越权 import sync、地址字面量跑到别处、禁用依赖、干净树通过）。
 - `src/local/brand.ts` 增 `SERVICE_URL`；`src/ai/client.ts` 改为 `import { SERVICE_URL }`。
 - `AGENTS.md` 加一句：「备份传输只走 `src/sync`；`src/local` 不得联网；远端只存密文，密钥只以恢复码形式离开手机。」

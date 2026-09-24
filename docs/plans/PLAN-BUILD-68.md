@@ -1,4 +1,6 @@
 <!-- 2026-09-19 批准的 Build 68 计划原文，归档留证。实施中的几处偏离：
+
+> 历史审查／设计记录。保留决策与技术依据；其中旧版本、操作命令和待办不代表当前状态。当前范围见 [PRODUCT](../../PRODUCT.md)，交付与待验事项见 [HANDOFF](../../HANDOFF.md)。
   · ZIP 改为「按需 ZIP64」而非「始终 ZIP64」（主流工具都是这么做的，macOS/Windows 自带解压兼容最好；测试用 forceZip64 把两条路径都走一遍）；
   · 提交 4（HANDOFF 重写）并入收尾提交，避免写两遍；
   · 编辑页本就没有「第一次」开关，「她说的话」只在阅读页切换；Quotes 路由随提交 13 一起加；
@@ -46,7 +48,7 @@
 - 测试 `tests/local-scale.test.ts` 新增：改一条 draft 后 `store.get().records === prev.records`；顺手记录 `sortedRecords(10k)` 耗时到「基线」注释。
 
 ### 提交 4 · HANDOFF.md 重写
-- 结构：① 当前状态（Build 67 已交付 dfbf592 / run 35434384089，服务端 capsule.yep.li 已上线并清库，下一版 68）② 恢复提示词（环境自检 + "继续 Build 68，见本文件第三节"）③ Build 68 清单（本计划摘要）④ 后续路线 69/70 ⑤ 踩坑清单（原样保留）⑥ 环境备忘（TMPDIR、Node 26、/tmp 满、根目录 Next.js 残留可删）。
+- 结构：① 当前状态（Build 67 已交付 dfbf592 / run 35434384089，服务端 service.example.invalid 已上线并清库，下一版 68）② 恢复提示词（环境自检 + "继续 Build 68，见本文件第三节"）③ Build 68 清单（本计划摘要）④ 后续路线 69/70 ⑤ 踩坑清单（原样保留）⑥ 环境备忘（TMPDIR、Node 26、/tmp 满、根目录 Next.js 残留可删）。
 - 删掉所有"继续 Build 65 / Build 66 AI 成册 / 下一步 Build 64"的旧编号叙述。
 
 ---

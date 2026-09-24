@@ -249,7 +249,7 @@
 - 本机备份改成「照片只存一份」：应用内保留的三份备份不再是三份整包，而是三份很小的清单（`.xmbm`），照片与录音按内容哈希放进本机 blob 库（`anan-v1/blobs/ab/<sha256>`），三份保留备份只占一份照片的空间；写入先落 `.part`、长度与 sha256 双验再改名；回收只删「所有清单都不再引用」的字节，任一清单读不出就这一轮不删。备份页每份显示的是「清单 + 它引用的照片」的真实大小。
 - 导出分卷：「导出完整备份」先写清单，再从 blob 库拼成 `.xmb` 交给系统分享面板；装得下时与 Build 68 的 `.xmb` 逐字节相同，超过 2 GB 自动分成几卷（`-vol1of3`），一卷一卷保存，进行中可「停止」。恢复时把几卷一起选中即可，乱序也认；缺卷、重复、混选、他份的卷都用人话说明。旧的 v1／v2 `.xmb` 照样能恢复；恢复最旧的那份保留备份时不再先被清掉（旧版会失败）。
 - 加密远端备份（可选，在「我的 → 备份与恢复」最后一张卡）：登录家人账号后可以开启；开启时生成一把钥匙，展示为 12 个英文词的恢复码——恢复码就是钥匙，没有口令，抄在纸上就是整份远端备份的唯一钥匙。照片、录音与记录在手机上按 1 MiB 块用 XChaCha20-Poly1305 加密后再上传，对象 id 与 nonce 都由钥匙按内容派生，服务器只见密文、对象 id 与字节数，见不到照片哈希、文件名或任何内容；重装、换手机、断点续传都算得出同样的对象 id，所以只传远端缺的。「验证远端备份」核对索引、清单与每一份对象都在；「从远端恢复」输入 12 个词，缺的照片逐份下载解密进 blob 库，再走与本机备份完全相同的恢复路径，恢复后这台手机改用这份恢复码继续备份。「关闭远端备份」可以只关闭（远端留着，恢复码仍有效）或同时删除远端。
-- 服务端（已于 2026-09-20 部署到 capsule.yep.li，对旧版 App 完全向后兼容）：新增 `/api/v1/backup/*` 对象库——对象以文件系统为准（`/data/backup/<成员>/objects/`），流式落盘边算密文哈希，单对象上限 8 MiB，每成员默认 20 GiB 配额（主人可在管理页调整）、磁盘剩余低于 5 GiB 一律拒收、每成员同时最多 2 个上传；`prune` 只删不在 keep 且创建超过一小时的对象；成员可删自己的远端备份，主人可删任一成员的；`manage.ts wipe-backup` 兜底。`verify-service.py` 顺带走一遍对象库，`probe-upload-limit.py` 探反代请求体上限（本次探过 16 MB 直达服务，反代无需改）。
+- 服务端（已于 2026-09-20 部署到 service.example.invalid，对旧版 App 完全向后兼容）：新增 `/api/v1/backup/*` 对象库——对象以文件系统为准（`/data/backup/<成员>/objects/`），流式落盘边算密文哈希，单对象上限 8 MiB，每成员默认 20 GiB 配额（主人可在管理页调整）、磁盘剩余低于 5 GiB 一律拒收、每成员同时最多 2 个上传；`prune` 只删不在 keep 且创建超过一小时的对象；成员可删自己的远端备份，主人可删任一成员的；`manage.ts wipe-backup` 兜底。`verify-service.py` 顺带走一遍对象库，`probe-upload-limit.py` 探反代请求体上限（本次探过 16 MB 直达服务，反代无需改）。
 - 宪法修订：`mobile/scripts/local_boundary.py`（可导入、带测试）——联网只允许在 `src/ai/client.ts` 与 `src/sync/transport.ts`；`src/local/**` 只有 App.tsx 与 Settings.tsx 可以 import `../sync/`；服务地址字面量只在 `brand.ts` 的 `SERVICE_URL`。AI 凭证读写抽到 `ai/session.ts` 供 AI 与远端备份共用。
 - 工程：新依赖 `@noble/ciphers`、`@scure/bip39`（`@noble/hashes` 升到 2.4.0，只有一份）；主密钥只从 `expo-crypto` 取随机（Hermes 没有 `crypto.getRandomValues`）；传输层用 XMLHttpRequest（二进制体与 arraybuffer 响应），HttpClient 可注入；`tests/sync-e2e.test.ts` 拉起真实服务端子进程跑完整闭环（CI 的 quality 作业多装一次 server 依赖）；expo-file-system／expo-sqlite 的测试假件抽到 `tests/helpers/`。测试 mobile 299 → 335，server 20 → 30。双端冒烟：iOS 核对每个 blob 的文件名就是内容 sha256、保留备份都是 `.xmbm`；两端断言离线时远端卡只有「去登录」。Node 端 XChaCha20-Poly1305 封装 64 MiB 约 220 MB/s；真机 MB/s 待首个真机版实测后记入 HANDOFF。
 
@@ -281,7 +281,7 @@
 ## Build 67 — AI 改为账号登录
 
 - 家人各一个账号：空服务第一次在「我的 → AI 设置」创建主人账号（仅此一次），家人账号由主人在管理页创建（用户名＋初始密码）；换手机直接登录，一个账号可挂多台设备，丢手机重新登录即可——不再是「重新邀请」，也没有公网陌生人直接进来的口子。邀请码与中间过渡的开放加入（未部署过）一并成为历史。
-- 2026-09-19 已随本版上线服务端（capsule.yep.li，同时完成 xiaomei-ai→anan-ai 的目录、compose 与备份 unit 改名迁移），并按主人指示清库从零：装上本版后第一个进 AI 设置的就是「创建主人账号」。
+- 2026-09-19 已随本版上线服务端（service.example.invalid，同时完成 xiaomei-ai→anan-ai 的目录、compose 与备份 unit 改名迁移），并按主人指示清库从零：装上本版后第一个进 AI 设置的就是「创建主人账号」。
 - 密码体系零新增依赖：node:crypto 内置 scrypt（N=16384、随机盐、timingSafeEqual）；登录失败统一「用户名或密码不对」，用户名不存在时也跑同代价派生防时序探测；`/setup` 与 `/login` 限速（登录每 IP 每分钟 10 次）；自己可改密码（要过当前密码），主人可给任何成员设置或重置登录；全部锁死时 `manage.ts password <成员名> <新密码>` 在服务器兜底。
 - 服务端接口：`GET /status`（是否已初始化）、`POST /setup`、`POST /login`、`PUT /password`、`POST /admin/members`、`PUT /admin/members/:id/login`；旧库启动时自动补 `username`/`password_hash` 列（部分唯一索引，过渡期允许多个未设登录的成员），已有设备凭证、额度与用量不受影响；所有对外返回的成员对象一律剔除密码哈希。
 - 手机端 AI 设置页：未登录时按服务状态显示「创建主人账号」或「登录」表单；登录后可改密码、退出登录；主人管理页新增创建家人账号与成员「保存登录」（旧成员显示「未设登录」标记）。
