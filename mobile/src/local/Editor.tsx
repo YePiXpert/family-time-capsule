@@ -39,10 +39,10 @@ import {
   BottomBar,
   Button,
   Card,
-  DangerCard,
   DateStrip,
   ErrorText,
   FieldRow,
+  IconButton,
   Page,
   PersonChips,
   SignatureButton,
@@ -85,6 +85,8 @@ export function Editor({ route, navigation }: Props<"Editor">) {
     [promptSeed, setPromptSeed] = useState(0),
     [newPerson, setNewPerson] = useState(""),
     [viewport, setViewport] = useState(0),
+    [height, setHeight] = useState(0),
+    [contentHeight, setContentHeight] = useState(0),
     [pickedId, setPickedId] = useState<string | null>(null);
   const dailyVisible =
     !!draft && !draft.recordId && !draft.content.text.trim();
@@ -427,8 +429,44 @@ export function Editor({ route, navigation }: Props<"Editor">) {
         },
       },
     ]);
+  const discardDraft = () =>
+    Alert.alert(
+      "放弃草稿？",
+      draft.recordId ? "原先保存的记录不会改变。" : "这份草稿将被删除。",
+      [
+        { text: "取消", style: "cancel" },
+        {
+          text: "放弃",
+          style: "destructive",
+          onPress: () => {
+            void run(async () => {
+              transcription.stop();
+              await discardAudio();
+              await store.change((s) => {
+                delete s.drafts[draft.id];
+              });
+              nextAction.current = () => navigation.goBack();
+              setAllowExit(true);
+            });
+          },
+        },
+      ],
+    );
   return (
-    <Page scroll={false} title={draft.recordId ? "编辑这一刻" : "记下这一刻"}>
+    <Page
+      scroll={false}
+      title={draft.recordId ? "编辑这一刻" : "记下这一刻"}
+      // 放弃收进顶栏右侧一枚垃圾桶：页尾不再多一张卡，整页一屏放下、不上下滑。
+      right={
+        <IconButton
+          label="放弃这份草稿"
+          icon="trash"
+          testID="editor-discard"
+          disabled={busy}
+          onPress={discardDraft}
+        />
+      }
+    >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         // 布局帧相对整屏 SafeAreaView、已含页内顶栏，不能再加顶栏的偏移（1.0.0／1.0.1 键盘上方
@@ -438,18 +476,26 @@ export function Editor({ route, navigation }: Props<"Editor">) {
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={s.content}
+          // 上下都是 20（s.content 底部原是 32）：纸的高度按这 40 算，放得下时内容正好一屏。
+          contentContainerStyle={[s.content, { paddingBottom: 20 }]}
           // 纸卡至少铺满没弹键盘时的可见高度：记下最高的一次，键盘弹起、滚动区变矮时纸不跟着缩。
           onLayout={(e) => {
             const h = e.nativeEvent.layout.height;
+            setHeight(h);
             setViewport((v) => Math.max(v, h));
           }}
+          onContentSizeChange={(_, h) => setContentHeight(h)}
+          // 纸刚好铺满一屏：放得下就不能滑、不回弹（iOS 纵向默认总回弹）；键盘弹起、展开标题地点人物、
+          // 字多到纸放不下时才可以滑。
+          scrollEnabled={contentHeight > height + 1}
+          alwaysBounceVertical={false}
+          overScrollMode="never"
         >
           {/* 一张纸：日期、正文、素材、落款、标题地点人物都写在这张纸上（DESIGN.md「编辑」）。 */}
           <Card
             testID="editor-sheet"
             style={{
-              // s.content 上下各留 20：纸的下沿停在底栏上方 20，页尾的「放弃这份草稿」在下一屏。
+              // s.content 上下各留 20：纸的下沿停在底栏上方 20，正好一屏。
               minHeight: viewport > 0 ? viewport - 40 : undefined,
               paddingHorizontal: 20,
               paddingTop: 8,
@@ -741,9 +787,9 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               testID="editor-details"
               accessibilityRole="button"
               accessibilityLabel="标题、地点、人物"
-              // 展开与否由读屏按 expanded 自己念，值里只放收起时那行摘要。
+              // 展开与否由读屏按 expanded 自己念，值里只放收起时那行摘要；没填过就不念。
               accessibilityValue={
-                details ? undefined : { text: detailsSummary || "都可以不填" }
+                details || !detailsSummary ? undefined : { text: detailsSummary }
               }
               accessibilityState={{ expanded: details }}
               onPress={() => setDetails(!details)}
@@ -771,7 +817,7 @@ export function Editor({ route, navigation }: Props<"Editor">) {
                       },
                     ]}
                   >
-                    {details ? "" : detailsSummary || "都可以不填"}
+                    {details ? "" : detailsSummary}
                   </Text>
                   <View
                     style={{
@@ -891,37 +937,6 @@ export function Editor({ route, navigation }: Props<"Editor">) {
               </View>
             )}
           </Card>
-          <DangerCard
-            title="放弃这份草稿"
-            testID="editor-discard"
-            disabled={busy}
-            onPress={() =>
-              Alert.alert(
-                "放弃草稿？",
-                draft.recordId
-                  ? "原先保存的记录不会改变。"
-                  : "这份草稿将被删除。",
-                [
-                  { text: "取消", style: "cancel" },
-                  {
-                    text: "放弃",
-                    style: "destructive",
-                    onPress: () => {
-                      void run(async () => {
-                        transcription.stop();
-                        await discardAudio();
-                        await store.change((s) => {
-                          delete s.drafts[draft.id];
-                        });
-                        nextAction.current = () => navigation.goBack();
-                        setAllowExit(true);
-                      });
-                    },
-                  },
-                ],
-              )
-            }
-          />
         </ScrollView>
         <BottomBar gap={8}>
           <View style={{ flexDirection: "row", alignItems: "center" }}>

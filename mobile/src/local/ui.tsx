@@ -1193,12 +1193,14 @@ export function IconButton({
   icon,
   onPress,
   selected = false,
+  disabled = false,
   testID,
 }: {
   label: string;
   icon: JournalIconName;
   onPress: () => void;
   selected?: boolean;
+  disabled?: boolean;
   testID?: string;
 }) {
   const { colors } = useTheme();
@@ -1207,7 +1209,8 @@ export function IconButton({
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
+      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
         width: 44,
@@ -1216,7 +1219,7 @@ export function IconButton({
         justifyContent: "center",
         borderRadius: 22,
         backgroundColor: selected ? colors.selectedGlass : "transparent",
-        opacity: pressed ? 0.6 : 1,
+        opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}
     >
       <JournalIcon name={icon} color={colors.accent} size={22} />
@@ -1342,7 +1345,7 @@ export function FieldRow({
   );
 }
 /**
- * 页尾的危险动作（放弃这份草稿、删除记录、删除这封草稿信）：单独一张纸卡，居中一行错误色字，
+ * 页尾的危险动作（删除记录、删除这封草稿信）：单独一张纸卡，居中一行错误色字，
  * 与上面的卡同一套语汇——不再是飘在纸面上、左右都不挨着的一行红字。确认仍走系统弹窗。
  * 按压与禁用的透明度落在字上：卡在 iOS 是液态玻璃，祖先一透明系统就不画。
  */
