@@ -31,6 +31,7 @@
   - 其余纵向滚动区一律 `alwaysBounceVertical={false}`：`Page` 的 `scroll` 默认滚动区、阅读页、月册 `SectionList`、相册／选材／选封面三个 `FlatList`、搜索结果、照片选择、AI 面板。横向条与看大图的缩放区不动。
   - 安卓冒烟：`assert_fits(sheet)` 收拢编辑页那段检查，写信页在正文写完、按返回收起键盘后再查一次（`letterFits`，另截 `letter-editor`）。iOS 回归只查编辑页。
   - 「我的」（主人随后让做）：`Settings.tsx` 五行 `SettingsRow` 收进一个 `SettingsGroup`、去掉三个区标题；色调只用 `accent`（落款、AI）与 `apricot`（备份、存储、外观）；`JournalIcon` 新增 `archive`／`phone`／`appearance`（半圆用 `fill="currentColor"`，Svg 上加了 `color`）；脚注挪到页尾、上面一枚 `Ornament`。`indigo`／`pine` 色调仍留给书架的引导行。预览新增 `settings` 场景（`stubs/settings.tsx` 把备份、归档、同步、AI 客户端换成空壳）。
+  - 验证出包 [run 35954036132](https://github.com/YePiXpert/family-time-capsule/actions/runs/35954036132)（`workflow_dispatch`，源码 `9a1d6e9`：写信一张纸与不回弹，「我的」整理在它之后的 `1f66d12`、没进这次出包）七个作业全绿；安卓证据 `editorFits`／`letterFits` 都为真，写信页滚动区 `[0,76][390,739]`、纸 `[20,96][370,719]`（离底栏 20）、`scrollable="false"`，截图 `letter-editor` 正常。
   - react-native-web 预览（`entry.tsx` 新增 `letter`／`letter-full` 场景）对过：390 宽空信与写满、深色、320 宽更大文字（信长，可滑）、录音中、键盘；空信往下滚 2000 与不滚逐字节相同，编辑页同。
 
 - **1.0.6 发版（2026-09-24，构建号 79）**：修 1.0.5 出包截图里安卓编辑页还能滑的问题（CHANGELOG「1.0.6」）。
