@@ -139,9 +139,22 @@ export function createFamilyApi(
     const { status, json } = await request(method, path, body, bearer, opts.signal);
     if (status >= 200 && status < 300) return { status, value: json as T };
     const error = (json ?? {}) as { code?: unknown; message?: unknown };
+    // 只有带我们自己 code 的应答才照搬 message；反代的错误页、旧服务端没有的路由（Fastify 的英文 404）按状态码给人话。
+    if (typeof error.code === "string")
+      throw new FamilyError(
+        error.code,
+        typeof error.message === "string" ? error.message : "服务暂时不可用，请稍后再试。",
+        status,
+      );
     throw new FamilyError(
-      typeof error.code === "string" ? error.code : "SERVER_ERROR",
-      typeof error.message === "string" ? error.message : "服务暂时不可用，请稍后再试。",
+      status === 401 ? "AUTH_REQUIRED" : status === 404 ? "NOT_SUPPORTED" : status === 429 ? "BUSY" : "SERVER_ERROR",
+      status === 401
+        ? "这台手机还没获准，或已被停用；请让管理者扫码加入。"
+        : status === 404
+          ? "服务端还不支持家庭与设备，请等管理者把服务升级后再试。"
+          : status === 429
+            ? "操作太频繁，请过一会儿再试。"
+            : "服务暂时不可用，请稍后再试。",
       status,
     );
   };
