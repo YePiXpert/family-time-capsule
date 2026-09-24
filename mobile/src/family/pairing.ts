@@ -251,27 +251,52 @@ function recoveryFor(key: Uint8Array, familyId: string, version: number, random:
     },
   };
 }
-/** 空服务开家庭：激活码、第一位管理者、这台手机。返回只显示这一次的 12 个恢复词。 */
-export async function startFamily(
+export type PreparedFamilyStart = {
+  words: string;
+  familyId: string;
+  key: Uint8Array;
+  input: Parameters<FamilyApi["activate"]>[0];
+};
+/** 先备好钥匙与恢复码供人抄写核对；此时不建家庭，恢复秘密只留在这份内存结果里。 */
+export async function prepareFamilyStart(
   d: FlowDeps,
   input: { activationCode: string; memberName: string; deviceName: string },
-): Promise<{ words: string; familyId: string; key: Uint8Array }> {
-  const { api, vault, random, uuid } = deps(d);
+): Promise<PreparedFamilyStart> {
+  const { vault, random, uuid } = deps(d);
   const key = await contentKey(vault, random);
   const device = await vault.ensureDeviceKey();
   const familyId = uuid();
   const { words, recovery } = recoveryFor(key, familyId, 1, random);
-  const joined = await api.activate({
-    activationCode: input.activationCode.trim(),
-    memberId: uuid(),
-    memberName: input.memberName.trim(),
-    deviceName: input.deviceName.trim(),
-    publicKey: toBase64Url(device.publicKey),
+  return {
+    words,
     familyId,
-    keyId: keyIdOf(key),
-    recovery,
-  });
+    key,
+    input: {
+      activationCode: input.activationCode.trim(),
+      memberId: uuid(),
+      memberName: input.memberName.trim(),
+      deviceName: input.deviceName.trim(),
+      publicKey: toBase64Url(device.publicKey),
+      familyId,
+      keyId: keyIdOf(key),
+      recovery,
+    },
+  };
+}
+/** 核对纸上的恢复码后提交同一份恢复包；响应丢失或令牌没存住时，纸上那套仍可找回。 */
+export async function completeFamilyStart(d: FlowDeps, prepared: PreparedFamilyStart): Promise<void> {
+  const { api, vault } = deps(d);
+  const joined = await api.activate(prepared.input);
   await vault.saveToken(joined.token);
+}
+/** 空服务开家庭的组合流程；界面分开调用准备与提交，先让管理者抄好恢复码。 */
+export async function startFamily(
+  d: FlowDeps,
+  input: { activationCode: string; memberName: string; deviceName: string },
+): Promise<{ words: string; familyId: string; key: Uint8Array }> {
+  const prepared = await prepareFamilyStart(d, input);
+  await completeFamilyStart(d, prepared);
+  const { words, familyId, key } = prepared;
   return { words, familyId, key };
 }
 /** 1.0.8 的主人手机（已有令牌、还没有家庭行）：升级为家庭管理者，只发生一次。 */
