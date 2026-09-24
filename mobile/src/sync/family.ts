@@ -212,6 +212,14 @@ async function syncFamily(
       conflicts.set(conflict.key, conflict);
   }
   writeConflicts([...conflicts.values()]);
+  // 合并已落进本机库：基和已读清单也要跟上。否则上传失败后下一轮拿旧基再合一遍，
+  // 本机改过的拉取内容会被当成两边都改而出假冲突卡，那几份清单也要重下。
+  writeBase(merged.base);
+  writeRemoteState({
+    ...state,
+    autoSync: (await readRemoteState())?.autoSync ?? state.autoSync,
+    seen: { ...seen },
+  });
   const own = state.deviceId
     ? entries.find(
         (entry) => entry.deviceId === state.deviceId && entry.keyId === keyId,
