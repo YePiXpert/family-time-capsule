@@ -26,6 +26,8 @@
 
 ## 一、当前状态快照（2026-09-24）
 
+- **封存信「信」字修复（2026-09-24，未打包）**：`LetterScreen.tsx` 信封圆章里的字 34 号、没写行高，吃了 `ui.tsx` `Text` 的默认行高 25，iOS 切掉上半截（1.0.6、1.0.7 的 `letter-sealed` 截图都是「1古」）。改为 `lineHeight: 42`、`maxFontSizeMultiplier={1}`（同书架印章）。全仓查过：没写行高且字号 ≥ 22 的只剩年度册／回顾的 22 号年份与写信落款 20／23，默认行高够用。验证看 iOS 回归的 `letter-sealed` 截图。
+
 - **1.0.7 发版（2026-09-24，构建号 80）**：主人说「通过了就发包吧」。发版前的验证出包 [run 35956124298](https://github.com/YePiXpert/family-time-capsule/actions/runs/35956124298)（`workflow_dispatch`，源码 `e98d10e55ce404334a60ff93ccd91e8a01eeb843`）八个作业全绿（Release 按设计跳过）；下载的 APK 里有 A3 的赤陶背景、纸色章前景与单色图标，IPA 里有 `AppIcon60x60@2x.png`。
   - **已交付**：发版提交 `124add6278c9d2655939ad3786915052c2ea4258`，轻量标签 `v1.0.7`，[run 35957515368](https://github.com/YePiXpert/family-time-capsule/actions/runs/35957515368)（04:52–05:08 UTC，15.4 分钟）八个作业一次全绿。[GitHub Release v1.0.7](https://github.com/YePiXpert/family-time-capsule/releases/tag/v1.0.7)：APK 66,989,423 字节、未签名 IPA 11,946,364 字节，`sha256sum -c` 三项通过（APK `19d58dfa…08e5c4`、IPA `b04c283c…04eac7`）；`build-source.json` 为 `124add6278c9d2655939ad3786915052c2ea4258`／1.0.7／80；IPA 主应用与分享扩展 Info.plist 都是 1.0.7／80。三份证据 `result.json` 的 gitSha 都是发版提交、`success` 为真，安卓 `editorFits`／`letterFits` 都为真。
   - 截图核对：安卓写信页一张纸铺满、日期／标题／正文／「录一段话」／「—— 落款」都在纸上，删除在顶栏；iOS `editor-fixed` 纸不动。已知小问题（1.0.6 起就有，不是这版引入）：iOS 封存信页 `LetterScreen.tsx` 圆章里的「信」字上半截被切掉，看起来像「1古」，待修。
