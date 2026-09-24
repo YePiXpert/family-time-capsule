@@ -129,6 +129,8 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
       const label = placeLabel(candidate, record.location);
       if (label === record.location)
         throw new Error("没有查到这组坐标的地名，地点保持原样。");
+      // 查地名要一会儿：人已经离开这一页（比如进了编辑页）就不再弹，免得确认落在编辑页上、改动基线对不上。
+      if (!navigation.isFocused()) return;
       Alert.alert("用这个地名？", label, [
         { text: "取消", style: "cancel" },
         {
@@ -485,6 +487,7 @@ export function RecordScreen({ route, navigation }: Props<"Record">) {
               primary
               icon="edit"
               testID="record-edit"
+              disabled={placeBusy}
               onPress={() => {
                 void beginDraft(store, record.id)
                   .then((draftId) => navigation.navigate("Editor", { draftId }))
