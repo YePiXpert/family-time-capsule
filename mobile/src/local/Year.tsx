@@ -175,6 +175,9 @@ export function YearEditor({ year, records }: { year: string; records: readonly 
       ) : (
         <Text style={s.muted}>AI 可以按这一年的记录建议一份目录：每月挑 1～3 条进正文、每章一句她或你们的原话做引语、起一个书名；你拍板。</Text>
       )}
+      {records.length > 400 && (
+        <Text style={s.muted}>这一年有 {records.length} 段，AI 只读最新 400 段。</Text>
+      )}
       {!preview && (
         <View style={s.row}>
           <Button title={busy ? "正在读这一年…" : "AI 建议目录"} icon="sparkle" compact testID="year-editor-suggest" disabled={busy || saving || records.length === 0} onPress={() => { void suggest(); }} />

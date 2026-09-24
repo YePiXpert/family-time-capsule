@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Store } from './store.ts';
 import { BackupStore } from './backup-store.ts';
+import { manageAI } from './manage-ai.ts';
 const file=process.env.DB_FILE??'/data/ai.sqlite';mkdirSync(dirname(file),{recursive:true});
 const store=new Store(file);
 try {
@@ -13,6 +14,8 @@ try {
   // 最后一招：所有管理者手机与恢复码都没了，把一位家人升为管理者（他的手机本来就有钥匙）。
   const name=process.argv[3];if(!name)throw new Error('Usage: node src/manage.ts promote <家人称呼>');
   store.promote(name);console.log(`已把「${name}」设为管理者；请在他的手机上重新生成恢复码。`);
+ } else if(process.argv[2]==='ai') {
+  console.log(manageAI(store,process.argv.slice(3)));
  } else if(process.argv[2]==='backup') {
   const destination=process.argv[3];if(!destination)throw new Error('Provide a backup destination');
   await store.db.backup(destination);console.log('Backup complete');
@@ -27,5 +30,5 @@ try {
    store.deleteMemberManifests(member.id);
    console.log(`已删除成员「${name}」名下的远端清单；对象由其他清单决定去留，手机上的资料不受影响。`);
   }
- } else throw new Error('Use activation, promote <家人称呼>, backup <目标文件> or wipe-backup family | <家人称呼>');
+ } else throw new Error('Use activation, promote <家人称呼>, ai status | pause | resume | limit global <每日文案次数> | limit <家人称呼> <每日文案次数>, backup <目标文件> or wipe-backup family | <家人称呼>');
 } finally {store.close();}

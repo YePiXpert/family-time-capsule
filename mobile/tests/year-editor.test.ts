@@ -116,3 +116,11 @@ it("invalid server suggestions show the specific error without offering apply", 
 it("an empty year disables the suggestion action", () => {
   env.state!.records = {}; expect(control("year-editor-suggest")!.disabled).toBe(true);
 });
+it.each([400, 401])("the inline limit note appears only above 400 records (%i)", count => {
+  const record = env.state!.records.r!;
+  env.state!.records = Object.fromEntries(Array.from({ length: count }, (_, i) => [`r${i}`, { ...record, id: `r${i}` }]));
+  const notes = controls(render()).filter(p => Array.isArray(p.children) && p.children.join("").includes("AI 只读最新 400 段"));
+  expect(notes).toHaveLength(count > 400 ? 1 : 0);
+  if (count > 400) expect((notes[0]!.children as ReactNode[]).join("")).toBe("这一年有 401 段，AI 只读最新 400 段。");
+  expect(control("year-editor-suggest")).toBeDefined();
+});

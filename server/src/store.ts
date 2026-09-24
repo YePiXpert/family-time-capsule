@@ -279,8 +279,8 @@ export class Store {
     return member;
   }
   usage(memberId?: string) {
-    // Failed requests (upstream garbage, timeout) are not the member's fault and must not burn the day's quota.
-    return this.db.prepare(`SELECT COALESCE(SUM(photos),0) photos,COALESCE(SUM(writes),0) writes,COUNT(*) calls,COALESCE(SUM(tokens),0) tokens FROM requests WHERE day=? AND status!='failed' ${memberId?'AND member_id=?':''}`).get(...[new Date().toISOString().slice(0,10),...(memberId?[memberId]:[])]) as { photos:number; writes:number; calls:number; tokens:number };
+    // 失败不占照片／文案额度，也不计成功用量；所有尝试仍计入调用上限（上游可能已计费）。
+    return this.db.prepare(`SELECT COALESCE(SUM(CASE WHEN status!='failed' THEN photos ELSE 0 END),0) photos,COALESCE(SUM(CASE WHEN status!='failed' THEN writes ELSE 0 END),0) writes,COUNT(*) calls,COALESCE(SUM(CASE WHEN status!='failed' THEN tokens ELSE 0 END),0) tokens FROM requests WHERE day=? ${memberId?'AND member_id=?':''}`).get(...[new Date().toISOString().slice(0,10),...(memberId?[memberId]:[])]) as { photos:number; writes:number; calls:number; tokens:number };
   }
   reserve(member: Member,id: string,fingerprint: string,photos:number,writes:number,model:string,kind:'text'|'transcribe'='text') {
     return this.db.transaction(() => {
