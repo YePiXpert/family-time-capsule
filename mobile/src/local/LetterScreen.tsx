@@ -125,10 +125,13 @@ export function LetterScreen({ route, navigation }: Props<"Letter">) {
           ]}
         >
           <Stamp size={96} inset={8}>
+            {/* 行高要跟字号走：默认行高 25 在 iOS 上会切掉 34 号字的上半截。 */}
             <Text
+              maxFontSizeMultiplier={1}
               style={{
                 fontFamily: serif,
                 fontSize: 34,
+                lineHeight: 42,
                 fontWeight: "600",
                 color: colors.accent,
               }}
