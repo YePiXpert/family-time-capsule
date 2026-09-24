@@ -13,7 +13,7 @@ import {
 } from "../local/ui";
 import { keyFromMnemonic, mnemonicOf } from "./crypto";
 import { joinFamily } from "./family";
-import { markSyncRunning } from "./status";
+import { claimSync, markSyncRunning } from "./status";
 import { loadKey } from "./state";
 import { SyncError, createTransport } from "./transport";
 /**
@@ -47,6 +47,10 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
     return () => active.current?.abort();
   }, []);
   const join = async () => {
+    if (!claimSync()) {
+      setMessage("正在同步，等它完成再试。");
+      return;
+    }
     const abort = new AbortController();
     controller.current = abort;
     setError("");
@@ -54,7 +58,6 @@ export function RecoveryCode({ route, navigation }: Props<"RecoveryCode">) {
     setProgress("正在连接远端…");
     try {
       const key = keyFromMnemonic(input);
-      markSyncRunning(true);
       const result = await joinFamily(store, key, {
         transport: createTransport(),
         onProgress: setProgress,

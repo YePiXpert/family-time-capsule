@@ -30,7 +30,7 @@ vi.mock("../src/local/ui", () => ({
 }));
 vi.mock("../src/sync/crypto", () => ({ keyFromMnemonic: () => new Uint8Array(32), mnemonicOf: vi.fn() }));
 vi.mock("../src/sync/family", () => ({ joinFamily: env.join }));
-vi.mock("../src/sync/status", () => ({ markSyncRunning: env.mark }));
+vi.mock("../src/sync/status", () => ({ markSyncRunning: env.mark, claimSync: () => (env.mark(true), true) }));
 vi.mock("../src/sync/state", () => ({
   loadKey: vi.fn(),
   readConflicts: async () => structuredClone(env.items),

@@ -66,6 +66,16 @@ it("运行状态只有变化才通知，退订后不再通知", async () => {
   status.markSyncRunning(true);
   expect(listener).toHaveBeenCalledTimes(2);
 });
+it("claimSync 查空闲与占住一步完成：第二个来的拿不到，释放后才能再占", async () => {
+  const status = await import("../src/sync/status");
+  status.markSyncRunning(false);
+  expect(status.claimSync()).toBe(true);
+  expect(status.isSyncRunning()).toBe(true);
+  expect(status.claimSync()).toBe(false);
+  status.markSyncRunning(false);
+  expect(status.claimSync()).toBe(true);
+  status.markSyncRunning(false);
+});
 it("读文件失败当空，另一份能读的文件仍可用", async () => {
   const state = await import("../src/sync/state");
   const status = await import("../src/sync/status");

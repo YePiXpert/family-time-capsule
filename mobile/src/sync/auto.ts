@@ -6,7 +6,7 @@ import type { Library } from "../local/model";
 import type { LocalStore } from "../local/store";
 import { runFamilySync } from "./family";
 import { loadKey, readRemoteState, writeRemoteState } from "./state";
-import { isLocalBusy, isSyncRunning, markSyncRunning } from "./status";
+import { claimSync, isLocalBusy, isSyncRunning, markSyncRunning } from "./status";
 import { createTransport, SyncError } from "./transport";
 
 export type AutoSyncDeps = {
@@ -119,7 +119,7 @@ export function useAutoSync(store: LocalStore): void {
       },
       isBusy: () => isSyncRunning() || isLocalBusy(),
       run: async (signal) => {
-        markSyncRunning(true);
+        if (!claimSync()) return;
         try {
           const key = await loadKey();
           if (!key || signal.aborted) return;
