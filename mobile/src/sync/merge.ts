@@ -33,7 +33,7 @@ export { canonical, contentHashOf, hashOf } from "../local/hash";
 export type RemoteSnapshot = {
   deviceId: string;
   deviceName: string | null;
-  /** 清单的 createdAt：根字段（没有 updatedAt）两台都改时靠它排先后。 */
+  /** 清单的 createdAt：同一素材出现在多份清单里时，优先找较新的那份。 */
   createdAt: string;
   library: Library;
 };
@@ -209,7 +209,7 @@ function setRoot(lib: Library, id: RootId, value: unknown): void {
 const isBlank = (value: unknown) =>
   value === undefined || value === null || value === "";
 const rootFp = (value: unknown) => (value === undefined ? "-" : hashOf(value));
-/** 两台都改了同一年的寄语：谁都不丢，赢家在前、另一段接在后面；一段已包含另一段时取长的。 */
+/** 多台都改了同一年的寄语：谁都不丢，赢家在前、另一段接在后面；一段已包含另一段时取长的。 */
 function joinNotes(winner: string, loser: string): string {
   if (winner.includes(loser)) return winner;
   if (loser.includes(winner)) return loser;
@@ -570,30 +570,27 @@ export function mergeLibraries(
       if (candidates.some((c) => c.fp === fp)) continue;
       candidates.push({ fp, value });
     }
-    const [C, ...rest] = candidates;
-    for (const other of rest) remember(key, other.fp);
-    if (!C) continue;
-    remember(key, C.fp);
-    if (fpL === M || (M === undefined && isBlank(localValue))) {
-      setRoot(next, id, C.value);
-      countRoot(id);
-      continue;
-    }
-    // 两边都改：默认按内容哈希；目录先比更新时间；年度寄语谁都不丢。
-    const remoteWins = C.fp.localeCompare(fpL) > 0;
-    let value = remoteWins ? C.value : localValue;
-    if (
-      id.startsWith("yearNotes:") &&
-      typeof C.value === "string" &&
-      typeof localValue === "string"
-    )
-      value = remoteWins
-        ? joinNotes(C.value, localValue)
-        : joinNotes(localValue, C.value);
-    if (id.startsWith("yearPicks:") && C.value && localValue) {
-      const remoteAt = Date.parse((C.value as { updatedAt: string }).updatedAt);
-      const localAt = Date.parse((localValue as { updatedAt: string }).updatedAt);
-      if (remoteAt !== localAt) value = remoteAt > localAt ? C.value : localValue;
+    if (!candidates.length) continue;
+    for (const candidate of candidates) remember(key, candidate.fp);
+    // 所有改过的版本一起比较：只拿第一台会把其他手机的改动记成「见过」却丢掉。
+    // 本机没动（或初次加入时没填）不参加竞争，单边删除仍能传过来。
+    if (fpL !== M && !(M === undefined && isBlank(localValue)))
+      candidates.push({ fp: fpL, value: localValue });
+    candidates.sort((a, b) => {
+      if (id.startsWith("yearPicks:") && a.value && b.value) {
+        const at = Date.parse((a.value as { updatedAt: string }).updatedAt);
+        const bt = Date.parse((b.value as { updatedAt: string }).updatedAt);
+        if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return bt - at;
+      }
+      return b.fp.localeCompare(a.fp);
+    });
+    // 默认按内容哈希；目录先比更新时间；年度寄语按同一顺序接上每台手机的文字。
+    let value = candidates[0]!.value;
+    if (id.startsWith("yearNotes:") && typeof value === "string") {
+      let joined = value;
+      for (const candidate of candidates.slice(1))
+        if (typeof candidate.value === "string") joined = joinNotes(joined, candidate.value);
+      value = joined;
     }
     if (rootFp(value) !== fpL) {
       setRoot(next, id, value);
