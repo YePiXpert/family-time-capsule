@@ -1177,6 +1177,56 @@ it("restores with progress and lets other writes through while it unpacks", asyn
   expect(stages[stages.length - 1]).toContain("写入本机资料");
   expect(store.get().records.r?.text).toBe("第一步");
 });
+it("a record written while the restore unpacks is backed up into the before-restore copy, not lost", async () => {
+  const { store, backup, model } = await setup();
+  const out = await backup.createBackup(store.get());
+  let queued: Promise<unknown> | null = null;
+  const before = await backup.restoreBackup(store, out, (stage) => {
+    // 分享进来的一段：落在「恢复前」备份之后、替换之前。
+    if (stage.includes("解包") && !queued)
+      queued = store.change((s) => {
+        s.drafts.shared = {
+          id: "shared",
+          recordId: null,
+          baseRevision: 0,
+          updatedAt: new Date().toISOString(),
+          content: { ...model.emptyContent(), text: "恢复途中分享进来的" },
+        };
+        model.saveRecord(s, "shared", "r-shared", new Date().toISOString());
+      });
+  });
+  await queued;
+  expect(store.get().records["r-shared"]).toBeUndefined();
+  expect((await backup.inspectBackup(before)).records["r-shared"]?.text).toBe(
+    "恢复途中分享进来的",
+  );
+});
+it("stops without replacing anything when writes keep landing during the restore", async () => {
+  const { store, backup } = await setup();
+  const out = await backup.createBackup(store.get());
+  await store.change((s) => {
+    s.profile.name = "恢复前的名字";
+  });
+  await expect(
+    backup.restoreBackup(store, out, (stage) => {
+      if (stage.includes("写入本机资料")) void store.change(() => {});
+    }),
+  ).rejects.toThrow("没有被替换");
+  expect(store.get().profile.name).toBe("恢复前的名字");
+});
+it("keeps the photos a conflict's other version needs when the backup predates them", async () => {
+  const { store, backup, files } = await setup();
+  const out = await backup.createBackup(store.get());
+  const original = path.join(env.root, "loser.jpg");
+  fs.writeFileSync(original, Buffer.alloc(4000, 9));
+  const loser = await files.preserveMedia(original, "另一版.jpg", "image");
+  await store.change((s) => {
+    s.media[loser.id] = loser;
+  });
+  await backup.restoreBackup(store, out, undefined, undefined, new Set([loser.id]));
+  expect(store.get().media[loser.id]).toEqual(loser);
+  expect(fs.readFileSync(files.mediaFile(loser).uri)).toEqual(Buffer.alloc(4000, 9));
+});
 it("labels a retained backup by its local day and minute, never by file name", async () => {
   const backup = await import("../src/local/backup");
   const at = new Date(2026, 8, 19, 15, 44);

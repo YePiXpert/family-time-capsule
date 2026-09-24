@@ -807,33 +807,67 @@ async function rebuildThumbs(
  * 就是把界面连同自动保存一起卡住，而且没有任何进度。全部准备好之后，只用一次很短
  * 的 change 整体切换；中途任何一步失败，当前库一个字节都没动过。
  */
+/** 恢复途中本机又写了东西：这一轮不替换，先把新内容也备份进「恢复前」再换。 */
+class ChangedDuringRestore extends Error {}
+/** 「恢复前」备份之后又被写了几次仍追不上，就停下、不替换。 */
+const RESTORE_ATTEMPTS = 3;
 export async function restoreBackup(
   store: LocalStore,
   input: File | File[],
   onProgress?: RestoreProgress,
   signal?: AbortSignal,
+  /** 冲突留底版引用的素材：备份里没有也留着，「用这一版」才不丢图。 */
+  keep: ReadonlySet<string> = new Set(),
 ): Promise<File> {
   const inputs = Array.isArray(input) ? input : [input];
   onProgress?.("正在备份当前内容…");
   // 正要恢复的那份可能就是最旧的保留备份：先保护它不被清掉，恢复完再按常规收拾。
-  const prior = await writeManifest(store.get(), onProgress, signal, inputs);
+  let snapshot = store.get();
+  let prior = await writeManifest(snapshot, onProgress, signal, inputs);
   let restored: Library | null = null;
   let replaced: LocalMedia[] = [];
+  let carried = new Set<string>();
   try {
     onProgress?.("正在校验并解包备份…");
     restored = await inspectBackup(inputs, true, signal);
     await rebuildThumbs(restored, onProgress, signal);
-    onProgress?.("正在写入本机资料…");
     const next = restored;
-    await store.change((current) => {
-      replaced = Object.values(current.media);
-      // 整库换成备份那一份：备份里没有的可选根字段（墓碑、上次导出时刻、提醒沉默期…）
-      // 不能留着恢复前的值——留下的墓碑会让下次同步把刚恢复的记录再删一遍。
-      for (const key of Object.keys(current))
-        if (!Object.hasOwn(next, key))
-          delete (current as Partial<Record<string, unknown>>)[key];
-      Object.assign(current, next);
-    });
+    for (let attempt = 1; ; attempt++) {
+      onProgress?.("正在写入本机资料…");
+      try {
+        await store.change((current) => {
+          // 「恢复前」那份备份之后本机又写过（分享进来的照片、编辑页落盘、同步）：
+          // 换掉就只剩那份备份里没有的空白，所以不换，回头连它一起再备份一次。
+          if (store.get() !== snapshot) throw new ChangedDuringRestore();
+          replaced = Object.values(current.media);
+          const kept = Object.fromEntries(
+            [...keep]
+              .filter((id) => current.media[id] && !next.media[id])
+              .map((id) => [id, current.media[id]!] as const),
+          );
+          carried = new Set(Object.values(kept).map((m) => m.file));
+          // 整库换成备份那一份：备份里没有的可选根字段（墓碑、上次导出时刻、提醒沉默期…）
+          // 不能留着恢复前的值——留下的墓碑会让下次同步把刚恢复的记录再删一遍。
+          for (const key of Object.keys(current))
+            if (!Object.hasOwn(next, key))
+              delete (current as Partial<Record<string, unknown>>)[key];
+          Object.assign(current, next, { media: { ...next.media, ...kept } });
+        });
+        break;
+      } catch (e) {
+        if (!(e instanceof ChangedDuringRestore)) throw e;
+        if (attempt >= RESTORE_ATTEMPTS)
+          throw new Error(
+            "恢复期间本机一直在写入新内容，已停下，现在的内容没有被替换；请稍后再恢复一次。",
+          );
+        onProgress?.("恢复途中又有新内容，正在重新备份当前内容…");
+        snapshot = store.get();
+        prior = await writeManifest(snapshot, onProgress, signal, [
+          ...inputs,
+          prior,
+        ]);
+      }
+    }
   } catch (e) {
     if (restored)
       for (const m of Object.values(restored.media)) deleteMediaFiles(m);
@@ -841,7 +875,10 @@ export async function restoreBackup(
   }
   // 恢复出来的素材都是新文件名，恢复前的原件与缩略图从此没人引用（「恢复前」那份备份里有副本），
   // 不删就每恢复一次多占一整份照片的空间，「清理没用到的」也够不着它们。
-  const kept = new Set(Object.values(restored.media).map((m) => m.file));
+  const kept = new Set([
+    ...Object.values(restored.media).map((m) => m.file),
+    ...carried,
+  ]);
   for (const m of replaced)
     if (!kept.has(m.file))
       try {
